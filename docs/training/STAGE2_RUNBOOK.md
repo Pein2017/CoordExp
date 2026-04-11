@@ -5,7 +5,7 @@ doc_type: runbook
 status: canonical
 domain: training
 summary: YAML-first runbook for active Stage-2 training, including direct learner runs and vLLM server-mode launches.
-updated: 2026-03-22
+updated: 2026-04-03
 ---
 
 # Stage-2 Training Runbook
@@ -66,6 +66,9 @@ Current internal ownership seams:
   - `stage2_ab.channel_b.insertion_order: tail_append | sorted`
   - default `tail_append` preserves the historical clean-prefix plus FN-tail path
   - `sorted` applies a final top-left sort over the retained anchor objects plus FN objects before final teacher-forced serialization
+- Channel-B duplicate control is configured only through:
+  - `stage2_ab.channel_b.duplicate_control.iou_threshold`
+  - `stage2_ab.channel_b.duplicate_control.center_radius_scale`
 - Channel-B pseudo-positive mode is opt-in through:
   - `stage2_ab.channel_b.pseudo_positive.enabled`
   - `stage2_ab.channel_b.pseudo_positive.coord_weight`
@@ -98,7 +101,9 @@ Current internal ownership seams:
   - selected `pseudo_positive` anchors -> coord + global prefix structure CE
   - support-positive retained `shielded_anchor` objects that stay below promotion threshold -> support-weighted coord + global prefix structure CE
   - cluster-demoted pseudo-positive candidates -> global prefix structure CE only
-  - `dead_anchor` -> no positive supervision, with duplicate-like branch suppression only
+  - duplicate control runs before GT matching on the assembled anchor + explorer evidence surface
+  - non-exempt duplicate-control non-survivors are removed from the clean prefix and contribute only duplicate-burst unlikelihood
+  - `dead_anchor` -> no positive supervision, with duplicate-control suppression only
   - pseudo-positive selection remains anchor-centric: candidates start from unmatched anchor clean objects with explorer support; explorer-only non-GT-backed objects are not promoted into prefix positives
 - Default authored pseudo-positive profile:
   - `triage_posterior.num_rollouts: 4`
@@ -106,8 +111,9 @@ Current internal ownership seams:
   - enabled `K=2` remains the explicit no-promotion control
 - Enabled failure semantics:
   - malformed anchor preparation drops that sample from Channel-B training
-  - malformed rollouts that remain invalid after salvage parsing abort the step by default
-  - `stage2_ab.channel_b.invalid_rollout_policy: dump_and_continue` dumps and skips the offending sample instead
+  - malformed explorer rollouts that remain invalid after salvage parsing abort the step by default only when pseudo-positive mode is enabled
+  - outside pseudo-positive mode, malformed rollouts fall back to the existing empty-prefix / FN-only handling instead of taking the invalid-rollout abort path
+  - `stage2_ab.channel_b.invalid_rollout_policy: dump_and_continue` dumps and skips the offending pseudo-positive sample instead
   - zero-object explorers remain valid zero-support evidence
 - deprecated authored knobs fail fast in active/training configs:
   - `custom.trainer_variant: rollout_matching_sft`
@@ -117,6 +123,9 @@ Current internal ownership seams:
   - `stage2_ab.coord_ctx_embed_mode`
   - `stage2_ab.coord_decode_mode`
   - `rollout_matching.coord_decode_mode`
+  - legacy flat duplicate-control leaves:
+    - `stage2_ab.channel_b.duplicate_iou_threshold`
+    - `stage2_ab.channel_b.center_radius_scale`
 
 ## Recommended Config Entry Points
 
@@ -162,7 +171,9 @@ For the first enabled runs, verify:
 - `train/triage/unlabeled_consistent_count` remains the total shielded-anchor count
 - `train/triage/pseudo_positive_subthreshold_count` currently mirrors that retained shielded-anchor total; use `train/triage/pseudo_positive_cluster_demoted_count` to separate cluster losers from plain below-threshold support-positive anchors
 - `rollout/explorer/*` remains interpretable as mean-over-valid-explorer-view aggregates
-- duplicate-burst unlikelihood remains narrow; do not expect every dead anchor to emit unlikelihood targets
+- `dup/raw/duplicate_like_max_cluster_size` and `dup/raw/desc_entropy` move on hard duplicate-collapse scenes before the additive suppression counters do
+- `stage2_ab/channel_b/dup/N_clusters_suppressed` and `stage2_ab/channel_b/dup/N_objects_suppressed` remain sparse policy counters rather than raw pathology gauges
+- duplicate-burst unlikelihood remains narrow; do not expect every suppressed object or dead anchor to emit unlikelihood targets
 
 ### Server-Mode Mixed A/B Run
 
@@ -197,6 +208,8 @@ What to expect:
 
 - A-only runs finish without Channel-B rollout metric families such as `rollout/*`
 - mixed A/B runs emit Channel-B rollout metrics and duplicate diagnostics
+- duplicate-control runs should emit both raw gauges under `dup/raw/*` and
+  additive policy counters under `stage2_ab/channel_b/dup/N_*`
 - eval-enabled server-mode runs emit grouped eval families such as `eval/detection/*`
 - eval-enabled runs also materialize offline-compatible eval artifacts under
   `eval_detection/step_<global_step>/` when

@@ -3,6 +3,7 @@ import json
 from pathlib import Path
 
 import pytest
+import src.trainers.final_checkpoint as final_checkpoint_mod
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -154,6 +155,113 @@ def test_restartable_checkpoint_writes_repo_sidecar_and_validates(
     assert payload["disabled_diagnostics"] == ["coord_diag"]
     callback_payload = load_coordexp_checkpoint_state(ckpt)["callback_state"]
     assert any(key.endswith("SaveDelayCallback") for key in callback_payload)
+
+
+def test_step_save_strategy_records_best_checkpoint_state(tmp_path: Path) -> None:
+    out_dir = tmp_path / "out"
+    trainer_cls = with_final_checkpoint(Trainer)
+    args = TrainingArguments(
+        output_dir=str(out_dir),
+        per_device_train_batch_size=2,
+        save_strategy="steps",
+        save_steps=1,
+        logging_steps=1,
+        report_to=[],
+        save_only_model=True,
+        save_safetensors=True,
+        use_cpu=True,
+        remove_unused_columns=False,
+    )
+
+    trainer = trainer_cls(
+        model=_TinyModel(),
+        args=args,
+        train_dataset=_TinyDataset(),
+    )
+    try:
+        trainer.callback_handler.callbacks = []
+    except Exception:
+        pass
+
+    trainer.create_optimizer_and_scheduler(num_training_steps=1)
+    trainer.state.global_step = 1
+    trainer.state.best_global_step = 1
+
+    try:
+        trainer._save_checkpoint(trainer.model, trial=None)  # type: ignore[misc]
+    except TypeError:
+        trainer._save_checkpoint(trainer.model, trial=None, metrics=None)  # type: ignore[misc,call-arg]
+
+    ckpt = out_dir / "checkpoint-1"
+    state = json.loads((ckpt / "trainer_state.json").read_text())
+    assert trainer.state.best_model_checkpoint == str(ckpt)
+    assert state["best_model_checkpoint"] == str(ckpt)
+    assert state["best_global_step"] == 1
+
+
+def test_bounded_ddp_checkpoint_path_respects_save_total_limit(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    out_dir = tmp_path / "out"
+    trainer_cls = with_final_checkpoint(Trainer)
+    args = TrainingArguments(
+        output_dir=str(out_dir),
+        per_device_train_batch_size=2,
+        save_strategy="steps",
+        save_steps=1,
+        save_total_limit=1,
+        logging_steps=1,
+        report_to=[],
+        save_only_model=True,
+        save_safetensors=True,
+        use_cpu=True,
+        remove_unused_columns=False,
+    )
+
+    trainer = trainer_cls(
+        model=_TinyModel(),
+        args=args,
+        train_dataset=_TinyDataset(),
+    )
+    try:
+        trainer.callback_handler.callbacks = []
+    except Exception:
+        pass
+
+    trainer.create_optimizer_and_scheduler(num_training_steps=2)
+
+    monkeypatch.setattr(
+        type(trainer),
+        "_should_use_bounded_ddp_checkpoint_save",
+        lambda self, model: True,
+    )
+    monkeypatch.setattr(
+        final_checkpoint_mod,
+        "ddp_rank0_coordinated_fail_fast",
+        lambda *, fn_rank0_only, **_kwargs: fn_rank0_only(),
+    )
+    monkeypatch.setattr(
+        final_checkpoint_mod,
+        "ddp_any_rank_fail_fast",
+        lambda *, fn, **_kwargs: fn(),
+    )
+
+    trainer.state.global_step = 1
+    trainer.state.best_global_step = 1
+    trainer._save_checkpoint(trainer.model, trial=None)  # type: ignore[misc]
+
+    trainer.state.global_step = 2
+    trainer.state.best_global_step = 2
+    trainer._save_checkpoint(trainer.model, trial=None)  # type: ignore[misc]
+
+    ckpt1 = out_dir / "checkpoint-1"
+    ckpt2 = out_dir / "checkpoint-2"
+    assert not ckpt1.exists()
+    assert ckpt2.is_dir()
+    state = json.loads((ckpt2 / "trainer_state.json").read_text())
+    assert trainer.state.best_model_checkpoint == str(ckpt2)
+    assert state["best_model_checkpoint"] == str(ckpt2)
 
 
 def test_restartable_checkpoint_preflight_rejects_artifact_only_sidecar(

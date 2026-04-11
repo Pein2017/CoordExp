@@ -70,7 +70,9 @@ stage2_ab:
     b_ratio: 0.05
   channel_b:
     insertion_order: tail_append
-    duplicate_iou_threshold: 0.90
+    duplicate_control:
+      iou_threshold: 0.90
+      center_radius_scale: 0.8
     triage_posterior:
       num_rollouts: 2
       explorer_temperature: 0.7

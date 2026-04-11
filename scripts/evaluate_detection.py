@@ -18,6 +18,10 @@ import json
 from pathlib import Path
 from typing import Any, Dict, Mapping
 
+from src.eval.artifacts import (
+    resolve_duplicate_guard_report_path,
+    resolve_guarded_prediction_artifact_path,
+)
 from src.eval.detection import EvalOptions, evaluate_and_save
 from src.utils import get_logger
 
@@ -51,6 +55,25 @@ def _load_yaml(path: Path) -> Dict[str, Any]:
 
 def _get(cfg: Mapping[str, Any], key: str, default: Any) -> Any:
     return cfg[key] if key in cfg else default
+
+
+def _resolve_duplicate_control_enabled(cfg: Mapping[str, Any]) -> bool:
+    raw = cfg.get("duplicate_control", {})
+    if raw is None:
+        return False
+    if not isinstance(raw, Mapping):
+        raise ValueError("duplicate_control must be a mapping")
+    unknown_keys = sorted(str(key) for key in raw.keys() if str(key) != "enabled")
+    if unknown_keys:
+        rendered = ", ".join(f"duplicate_control.{key}" for key in unknown_keys)
+        raise ValueError(
+            f"Unknown duplicate-control keys are unsupported: {rendered}. "
+            "Only duplicate_control.enabled is allowed."
+        )
+    enabled = raw.get("enabled", False)
+    if isinstance(enabled, bool):
+        return enabled
+    raise ValueError("duplicate_control.enabled must be a bool")
 
 
 def parse_args() -> argparse.Namespace:
@@ -166,7 +189,9 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def _resolve_from_yaml(ycfg: Mapping[str, Any], args: argparse.Namespace) -> tuple[Path, EvalOptions]:
+def _resolve_from_yaml(
+    ycfg: Mapping[str, Any], args: argparse.Namespace
+) -> tuple[Path, EvalOptions]:
     if "use_pred_score" in ycfg:
         raise ValueError(
             "use_pred_score is unsupported. Fixed-score evaluation has been removed; "
@@ -180,8 +205,14 @@ def _resolve_from_yaml(ycfg: Mapping[str, Any], args: argparse.Namespace) -> tup
         raise ValueError("pred_jsonl must be set (either in YAML or via --pred_jsonl)")
 
     metrics = str(args.metrics or _get(ycfg, "metrics", "both"))
+    duplicate_control_enabled = _resolve_duplicate_control_enabled(ycfg)
+    wants_scored_family = metrics.strip().lower() in {"coco", "lvis", "both"}
 
-    strict_parse = bool(args.strict_parse) if args.strict_parse else bool(_get(ycfg, "strict_parse", False))
+    strict_parse = (
+        bool(args.strict_parse)
+        if args.strict_parse
+        else bool(_get(ycfg, "strict_parse", False))
+    )
 
     use_segm = (
         bool(args.use_segm)
@@ -223,6 +254,12 @@ def _resolve_from_yaml(ycfg: Mapping[str, Any], args: argparse.Namespace) -> tup
         semantic_device=str(args.semantic_device or _get(ycfg, "semantic_device", "auto")),
         semantic_batch_size=int(args.semantic_batch_size or _get(ycfg, "semantic_batch_size", 64)),
         lvis_max_dets=int(args.lvis_max_dets or _get(ycfg, "lvis_max_dets", 300)),
+        duplicate_control_enabled=duplicate_control_enabled,
+        guarded_pred_path=resolve_guarded_prediction_artifact_path(
+            out_dir=out_dir,
+            scored_input=wants_scored_family,
+        ),
+        duplicate_guard_report_path=resolve_duplicate_guard_report_path(out_dir=out_dir),
     )
 
     return pred_jsonl, options
@@ -253,6 +290,7 @@ def _resolve_legacy(args: argparse.Namespace) -> tuple[Path, EvalOptions]:
         semantic_device=str(args.semantic_device or "auto"),
         semantic_batch_size=int(args.semantic_batch_size or 64),
         lvis_max_dets=int(args.lvis_max_dets or 300),
+        duplicate_control_enabled=False,
     )
 
     return args.pred_jsonl, options
@@ -271,6 +309,17 @@ def main() -> None:
                     "pred_jsonl": str(pred_jsonl),
                     "out_dir": str(options.output_dir),
                     "metrics": options.metrics,
+                    "duplicate_control_enabled": options.duplicate_control_enabled,
+                    "guarded_pred_jsonl": (
+                        str(options.guarded_pred_path)
+                        if options.guarded_pred_path is not None
+                        else None
+                    ),
+                    "duplicate_guard_report_json": (
+                        str(options.duplicate_guard_report_path)
+                        if options.duplicate_guard_report_path is not None
+                        else None
+                    ),
                     "use_segm": options.use_segm,
                     "overlay": options.overlay,
                     "overlay_k": options.overlay_k,

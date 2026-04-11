@@ -10,13 +10,16 @@ pytest.importorskip("pycocotools")
 from src.eval.detection import (
     EvalCounters,
     EvalOptions,
+    _apply_offline_duplicate_control,
     _prepare_all,
     _prepare_all_separate,
     _prepare_pred_objects,
     evaluate_and_save,
     export_coco_submission,
+    load_jsonl,
     preds_to_gt_records,
 )
+from src.infer.pipeline import resolve_artifacts
 
 
 def _write_jsonl(path: Path, records: list[dict]) -> None:
@@ -189,6 +192,167 @@ def test_evaluate_and_save_both_includes_f1ish_metrics(
     summary = evaluate_and_save(pred_path, options=options)
     assert summary["metrics"]["bbox_AP50"] > 0.9
     assert "f1ish@0.30_f1_loc_micro" in summary["metrics"]
+
+
+def test_evaluate_and_save_duplicate_control_emits_scored_guarded_family(
+    tmp_path: Path, monkeypatch
+) -> None:
+    pred_path = tmp_path / "gt_vs_pred_scored.jsonl"
+    record = _one_record(image="img.png")
+    record["pred"] = [
+        {
+            "type": "bbox_2d",
+            "points": [0, 0, 63, 47],
+            "desc": "box",
+            "score": 0.95,
+        },
+        {
+            "type": "bbox_2d",
+            "points": [0, 0, 63, 47],
+            "desc": "box",
+            "score": 0.70,
+        },
+    ]
+    _write_jsonl(pred_path, [record])
+
+    class _StubEncoder:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def encode_norm_texts(self, texts):
+            import numpy as np
+
+            return {str(t): np.array([1.0, 0.0], dtype=np.float32) for t in texts}
+
+    monkeypatch.setattr("src.eval.detection.SemanticDescEncoder", _StubEncoder)
+
+    out_dir = tmp_path / "eval"
+    options = EvalOptions(
+        metrics="both",
+        strict_parse=True,
+        use_segm=False,
+        output_dir=out_dir,
+        overlay=False,
+        num_workers=0,
+        semantic_model="sentence-transformers/all-MiniLM-L6-v2",
+        duplicate_control_enabled=True,
+    )
+
+    summary = evaluate_and_save(pred_path, options=options)
+
+    guarded_pred_path = out_dir / "gt_vs_pred_scored_guarded.jsonl"
+    guarded_metrics_path = out_dir / "metrics_guarded.json"
+    report_path = out_dir / "duplicate_guard_report.json"
+    assert guarded_pred_path.exists()
+    assert guarded_metrics_path.exists()
+    assert report_path.exists()
+    assert (out_dir / "per_image_guarded.json").exists()
+    assert (out_dir / "per_class_guarded.csv").exists()
+    assert (out_dir / "matches_guarded.jsonl").exists()
+    assert (out_dir / "matches@0.30_guarded.jsonl").exists()
+
+    guarded_records = load_jsonl(guarded_pred_path, EvalCounters(), strict=True)
+    assert len(guarded_records) == 1
+    assert len(guarded_records[0]["pred"]) == 1
+    assert guarded_records[0]["pred"][0]["score"] == pytest.approx(0.95)
+
+    report = json.loads(report_path.read_text(encoding="utf-8"))
+    assert report["total_predictions_inspected"] == 2
+    assert report["total_predictions_suppressed"] == 1
+    assert report["total_guarded_records_affected"] == 1
+    assert report["suppression_reasons"] == {"duplicate_cluster_non_survivor": 1}
+    assert report["records"][0]["suppressed_indices"] == [1]
+
+    guarded_metrics = json.loads(guarded_metrics_path.read_text(encoding="utf-8"))
+    assert "metrics" in guarded_metrics
+    assert "guarded" in summary
+    assert summary["duplicate_control"]["total_predictions_suppressed"] == 1
+
+
+def test_evaluate_and_save_duplicate_control_preserves_raw_family_naming(
+    tmp_path: Path, monkeypatch
+) -> None:
+    pred_path = tmp_path / "gt_vs_pred.jsonl"
+    record = _one_record(image="img.png")
+    record["pred"] = [
+        {
+            "type": "bbox_2d",
+            "points": [0, 0, 63, 47],
+            "desc": "box",
+        },
+        {
+            "type": "bbox_2d",
+            "points": [0, 0, 63, 47],
+            "desc": "box",
+        },
+    ]
+    record.pop("pred_score_source", None)
+    record.pop("pred_score_version", None)
+    for pred in record["pred"]:
+        pred.pop("score", None)
+    _write_jsonl(pred_path, [record])
+
+    class _StubEncoder:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def encode_norm_texts(self, texts):
+            import numpy as np
+
+            return {str(t): np.array([1.0, 0.0], dtype=np.float32) for t in texts}
+
+    monkeypatch.setattr("src.eval.detection.SemanticDescEncoder", _StubEncoder)
+
+    out_dir = tmp_path / "eval"
+    summary = evaluate_and_save(
+        pred_path,
+        options=EvalOptions(
+            metrics="f1ish",
+            strict_parse=True,
+            use_segm=False,
+            output_dir=out_dir,
+            overlay=False,
+            num_workers=0,
+            semantic_model="sentence-transformers/all-MiniLM-L6-v2",
+            duplicate_control_enabled=True,
+        ),
+    )
+
+    assert (out_dir / "gt_vs_pred_guarded.jsonl").exists()
+    assert not (out_dir / "gt_vs_pred_scored_guarded.jsonl").exists()
+    assert (out_dir / "metrics_guarded.json").exists()
+    assert (out_dir / "duplicate_guard_report.json").exists()
+    assert summary["duplicate_control"]["total_predictions_suppressed"] == 1
+
+
+def test_apply_offline_duplicate_control_handles_gapped_prediction_indices() -> None:
+    record = _one_record(image="img.png")
+    record["pred"] = [
+        {"unexpected": "skip-me"},
+        {
+            "type": "bbox_2d",
+            "points": [0, 0, 63, 47],
+            "desc": "box",
+            "score": 0.95,
+        },
+        {
+            "type": "bbox_2d",
+            "points": [0, 0, 63, 47],
+            "desc": "box",
+            "score": 0.70,
+        },
+    ]
+
+    guarded_records, report = _apply_offline_duplicate_control([record])
+
+    assert len(guarded_records) == 1
+    assert guarded_records[0]["pred"][0] == {"unexpected": "skip-me"}
+    assert len(guarded_records[0]["pred"]) == 2
+    assert guarded_records[0]["pred"][1]["score"] == pytest.approx(0.95)
+    assert report["total_predictions_inspected"] == 2
+    assert report["total_predictions_suppressed"] == 1
+    assert report["records"][0]["kept_indices"] == [1]
+    assert report["records"][0]["suppressed_indices"] == [2]
 
 
 def test_evaluate_and_save_both_does_not_force_lvis_backfill_for_coco_proxy_artifact(
@@ -422,6 +586,26 @@ def test_prepare_all_and_prepare_all_separate_parity(tmp_path: Path) -> None:
     assert combined[4] == separate[4]  # coco_preds
     assert combined[5] == separate[5]  # run_segm
     assert combined[6] == separate[6]  # per_image
+
+
+def test_resolve_artifacts_populates_guarded_eval_paths(tmp_path: Path) -> None:
+    artifacts, stages = resolve_artifacts(
+        {
+            "run": {"output_dir": str(tmp_path), "name": "demo"},
+            "stages": {"infer": False, "eval": True, "vis": False},
+        }
+    )
+
+    assert stages.eval is True
+    assert artifacts.run_dir == tmp_path / "demo"
+    assert artifacts.gt_vs_pred_guarded_jsonl == tmp_path / "demo" / "gt_vs_pred_guarded.jsonl"
+    assert artifacts.gt_vs_pred_scored_guarded_jsonl == (
+        tmp_path / "demo" / "gt_vs_pred_scored_guarded.jsonl"
+    )
+    assert artifacts.metrics_guarded_json == tmp_path / "demo" / "eval" / "metrics_guarded.json"
+    assert artifacts.duplicate_guard_report_json == (
+        tmp_path / "demo" / "eval" / "duplicate_guard_report.json"
+    )
 
 
 def test_evaluate_and_save_fails_when_semantic_encoder_unavailable(

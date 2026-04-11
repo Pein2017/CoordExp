@@ -2,7 +2,44 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Any, Dict, List, Tuple
+from typing import Any, Dict, Iterable, List, Tuple
+
+
+def with_stem_suffix(path: Path, suffix: str) -> Path:
+    if not suffix:
+        return path
+    return path.with_name(f"{path.stem}{suffix}{path.suffix}")
+
+
+def resolve_guarded_prediction_artifact_path(
+    *,
+    out_dir: Path,
+    scored_input: bool,
+) -> Path:
+    name = "gt_vs_pred_scored_guarded.jsonl" if scored_input else "gt_vs_pred_guarded.jsonl"
+    return out_dir / name
+
+
+def resolve_duplicate_guard_report_path(*, out_dir: Path) -> Path:
+    return out_dir / "duplicate_guard_report.json"
+
+
+def resolve_matches_artifact_path(
+    *,
+    out_dir: Path,
+    iou_thr_key: str | None,
+    name_suffix: str = "",
+) -> Path:
+    if iou_thr_key:
+        return out_dir / f"matches@{iou_thr_key}{name_suffix}.jsonl"
+    return out_dir / f"matches{name_suffix}.jsonl"
+
+
+def write_jsonl_records(path: Path, rows: Iterable[Dict[str, Any]]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w", encoding="utf-8") as handle:
+        for row in rows:
+            handle.write(json.dumps(row, ensure_ascii=False) + "\n")
 
 
 def write_outputs(
@@ -12,30 +49,31 @@ def write_outputs(
     coco_preds: List[Dict[str, Any]] | None,
     summary: Dict[str, Any],
     per_image: List[Dict[str, Any]],
+    name_suffix: str = "",
 ) -> None:
     out_dir.mkdir(parents=True, exist_ok=True)
     if coco_gt is not None:
-        (out_dir / "coco_gt.json").write_text(
+        with_stem_suffix(out_dir / "coco_gt.json", name_suffix).write_text(
             json.dumps(coco_gt, ensure_ascii=False), encoding="utf-8"
         )
     if coco_preds is not None:
-        (out_dir / "coco_preds.json").write_text(
+        with_stem_suffix(out_dir / "coco_preds.json", name_suffix).write_text(
             json.dumps(coco_preds, ensure_ascii=False), encoding="utf-8"
         )
     metrics_payload = {
         "metrics": summary.get("metrics", {}),
         "counters": summary.get("counters", {}),
     }
-    (out_dir / "metrics.json").write_text(
+    with_stem_suffix(out_dir / "metrics.json", name_suffix).write_text(
         json.dumps(metrics_payload, ensure_ascii=False, indent=2), encoding="utf-8"
     )
     if coco_gt is not None and coco_preds is not None:
-        (out_dir / "per_class.csv").write_text(
+        with_stem_suffix(out_dir / "per_class.csv", name_suffix).write_text(
             "category,AP\n"
             + "\n".join(f"{k},{v}" for k, v in summary.get("per_class", {}).items()),
             encoding="utf-8",
         )
-    (out_dir / "per_image.json").write_text(
+    with_stem_suffix(out_dir / "per_image.json", name_suffix).write_text(
         json.dumps(per_image, ensure_ascii=False, indent=2), encoding="utf-8"
     )
 

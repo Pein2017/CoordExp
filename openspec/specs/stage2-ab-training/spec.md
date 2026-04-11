@@ -1,4 +1,4 @@
-# stage2-ab-training Specification
+## MODIFIED Requirements
 
 ## Purpose
 Define the Stage-2 AB training contract (Channel-A supervised, Channel-B rollout-matching) including the configuration surface and reproducibility-critical invariants.
@@ -1598,7 +1598,7 @@ Normative behavior:
 - **THEN** the run fails fast with actionable guidance
 - **AND** it does not proceed as if the checkpoint were restartable.
 
-### Requirement: Stage-2 AB Channel-B uses anchor-rooted rollout triage with legacy K=2 compatibility and default K=4 pseudo-positive evidence
+### Requirement: Stage-2 AB Channel-B uses anchor-rooted rollout triage with pre-match duplicate-control and default K=4 pseudo-positive evidence
 When `custom.trainer_variant: stage2_two_channel`, the canonical Channel-B
 contract SHALL build its clean teacher-forced target from rollout evidence
 rooted in the anchor clean sequence.
@@ -1617,21 +1617,42 @@ Normative behavior:
     profile configured under `stage2_ab.channel_b.triage_posterior`,
   - repo-authored default pseudo-positive profiles SHOULD set `num_rollouts`
     to `4`,
-- each rollout MUST independently reuse the existing bounded salvage + strict
-  record acceptance + bbox-valid filtering + sequential dedup + Hungarian
-  matching path,
-- GT-backed semantics MUST inherit the existing Channel-B accepted-clean
-  Hungarian + gating contract,
+- after anchor and explorer rollouts complete bounded salvage, strict record
+  acceptance, and bbox-valid filtering, Channel-B preparation MUST assemble one
+  duplicate-control evidence surface across:
+  - anchor objects that may survive or be suppressed,
+  - explorer evidence that may trigger conservative crowd-safe exemptions,
+- duplicate-control MUST run once on that assembled evidence surface before any
+  GT Hungarian matching occurs,
+- duplicate-like grouping MUST be deterministic and MUST operate on parsed
+  bbox objects before GT matching,
+- duplicate-like grouping MUST be able to merge local same-description repeats
+  that are not strictly sequential neighbors in emission order,
+- GT-backed semantics apply only after duplicate-control has already reduced the
+  anchor survivor set and MUST inherit the existing Channel-B accepted-clean
+  Hungarian + gating contract on that post-policy survivor set,
 - the final positive target MUST be built by editing the anchor clean sequence
   rather than rebuilding a union order,
 - explorer-only non-GT-backed objects MUST be treated as dead by default,
 - a GT hit found only on one or more explorer views MUST project to
   `recovered_fn`, not to anchor retention,
+- duplicate-like objects that are spatially spread or explorer-supported MUST
+  be eligible for crowd-safe exemption rather than automatic duplicate
+  suppression,
 - when `stage2_ab.channel_b.pseudo_positive.enabled=true` and the anchor view
   fails to complete accepted-clean preparation, the sample MUST be dropped from
   Channel-B training for that step,
 - the enabled pseudo-positive contract MUST NOT use the canonical empty-prefix
   fallback for malformed anchor preparation.
+
+Typed duplicate-control config contract:
+- `stage2_ab.channel_b.duplicate_control` is the canonical authored mapping for
+  this feature,
+- the mapping MUST permit exactly:
+  - `iou_threshold`
+  - `center_radius_scale`
+- no other authored duplicate-control knobs are allowed in the first landing,
+- unknown keys under `stage2_ab.channel_b.duplicate_control` MUST fail fast.
 
 #### Scenario: Enabled pseudo-positive drops malformed anchor samples
 - **WHEN** `stage2_ab.channel_b.pseudo_positive.enabled=true`
@@ -1641,131 +1662,20 @@ Normative behavior:
 - **AND** the trainer does not fall back to the empty-prefix FN-only path for
   that sample.
 
-### Requirement: Stage-2 AB Channel-B v3-specific knobs are typed and grouped
-The Stage-2 AB config SHALL expose v3-specific rollout knobs under
-`stage2_ab.channel_b.triage_posterior`.
+#### Scenario: Local same-description duplicate cluster is collapsed before GT matching
+- **WHEN** an anchor rollout emits multiple same-description bbox objects that
+  form one deterministic local duplicate-like cluster
+- **AND** the assembled anchor plus explorer evidence does not trigger a
+  crowd-safe exemption
+- **THEN** the Channel-B preparation keeps one deterministic survivor on the
+  anchor surface before GT matching
+- **AND** the remaining members are carried as duplicate-candidate
+  continuations rather than additional kept anchor objects.
 
-Normative behavior:
-- `stage2_ab.channel_b.triage_posterior` MUST be a typed mapping,
-- the mapping MUST accept only:
-  - `num_rollouts`
-  - `explorer_temperature`
-  - `explorer_top_p`
-  - `explorer_top_k`
-  - `unlabeled_consistent_iou_threshold`
-  - `recovered_ground_truth_weight_multiplier`
-- when `stage2_ab.channel_b.pseudo_positive.enabled=false`, `num_rollouts`
-  MUST equal `2`,
-- when `stage2_ab.channel_b.pseudo_positive.enabled=true`, `num_rollouts` MUST
-  be an integer greater than or equal to `2`,
-- unknown keys under `stage2_ab.channel_b.triage_posterior` MUST fail fast.
-
-#### Scenario: Unknown pseudo-positive key fails fast
-- **WHEN** a Stage-2 AB config includes an unknown key under
-  `stage2_ab.channel_b.pseudo_positive`
-- **THEN** configuration parsing fails fast
-- **AND** the error indicates the full dotted path of the unknown key.
-
-#### Scenario: Enabled pseudo-positive accepts arbitrary K at or above two total rollouts
-- **WHEN** `stage2_ab.channel_b.pseudo_positive.enabled=true`
-- **THEN** config loading fails fast unless
-  `stage2_ab.channel_b.triage_posterior.num_rollouts >= 2`.
-
-### Requirement: Stage-2 AB arbitrary-K explorer observability remains deterministic and aggregate
-When `stage2_ab.channel_b.pseudo_positive.enabled=true`, the Stage-2 AB trainer
-SHALL keep legacy single-explorer observability surfaces meaningful by
-defining them as deterministic aggregate explorer summaries.
-
-Normative behavior:
-- aggregate explorer metric families such as `rollout/explorer/*` MUST
-  represent deterministic summaries across valid explorer views rather than one
-  arbitrarily chosen explorer view,
-- `rollout/explorer/pred_objects`, `rollout/explorer/valid_pred_objects`,
-  `rollout/explorer/parse_truncated_rate`,
-  `rollout/explorer/gen_new_tokens_mean`,
-  `rollout/explorer/gen_new_tokens_p90`,
-  `rollout/explorer/near_iou90_any`, and
-  `rollout/explorer/near_iou90_same` MUST use mean-over-valid-explorer-view
-  aggregation so their semantics remain comparable across different
-  `num_rollouts` values,
-- explorer decode-profile observability such as `rollout/explorer/temperature`,
-  `rollout/explorer/do_sample`, `rollout/explorer/top_p`,
-  `rollout/explorer/top_k`, and `explorer_decode_mode` MUST report the shared
-  explorer decode profile used for all explorer views,
-- `stage2/raw_rollouts` MUST continue to count the total raw rollout
-  trajectories produced across the anchor rollout plus all explorer rollouts,
-- `rollout/parse_truncated_rate` MUST continue to represent the parse-truncated
-  ratio over those total raw rollouts,
-- per-sample explorer-local metadata that cannot be losslessly merged, such as
-  dead explorer index lists, MUST move to explorer-indexed carriers such as
-  `dead_explorer_indices_by_view` rather than overloading the legacy singular
-  field.
-
-#### Scenario: Enabled arbitrary-K keeps explorer metrics aggregate rather than arbitrary
-- **WHEN** `stage2_ab.channel_b.pseudo_positive.enabled=true`
-- **AND** `stage2_ab.channel_b.triage_posterior.num_rollouts > 2`
-- **THEN** legacy `rollout/explorer/*` metrics still have a defined
-  deterministic meaning
-- **AND** explorer-local metadata is emitted through explorer-indexed carriers
-  rather than singular merged fields.
-
-#### Scenario: Enabled pseudo-positive uses independent deterministic association and ratio-based voting per explorer
-- **WHEN** `stage2_ab.channel_b.pseudo_positive.enabled=true`
-- **THEN** each explorer view is associated to the anchor view independently
-  under the canonical one-to-one IoU rule
-- **AND** support ratios are computed from those independent deterministic
-  associations using the sample's `valid_explorer_count`.
-
-#### Scenario: Single-forward target realization with pseudo-positive enabled
-- **WHEN** `stage2_ab.channel_b.pseudo_positive.enabled=true`
-- **THEN** all loss terms are derived from a single teacher-forced forward over
-  the edited anchor target
-- **AND** no second teacher-forced explore payload is required.
-
-#### Scenario: Enabled pseudo-positive does not add desc-side rollout supervision
-- **WHEN** `stage2_ab.channel_b.pseudo_positive.enabled=true`
-- **THEN** only the selected pseudo-positive anchor subset is removed from
-  blanket FP-neutral coord masking
-- **AND** the same step does not add pseudo-positive desc CE
-- **AND** retained prefix objects may still share the global rollout-prefix
-  structure CE surface.
-
-#### Scenario: Enabled pseudo-positive does not use anchor empty-prefix fallback
-- **WHEN** `stage2_ab.channel_b.pseudo_positive.enabled=true`
-- **AND** the anchor rollout cannot be recovered into accepted-clean
-  preparation
-- **THEN** the sample is dropped from Channel-B training for the step
-- **AND** the empty-prefix fallback is not used for that sample.
-
-### Requirement: Stage-2 AB can add decoded-box size auxiliaries through `bbox_size_aux`
-Stage-2 AB SHALL support optional decoded-box size auxiliaries on the existing
-coord-supervised decoded-box path without changing bbox parameterization or
-decode format.
-
-Normative behavior:
-- when `bbox_size_aux.config.log_wh_weight > 0`, the trainer MUST add
-  log-width/log-height supervision on canonicalized decoded boxes for every
-  Channel-B coord-supervised object group,
-- when `bbox_size_aux.config.oversize_penalty_weight > 0`, the trainer MAY add
-  the thresholded oversize penalty on decoded boxes for the same
-  coord-supervised groups,
-- when `stage2_ab.channel_b.pseudo_positive.enabled=true`, selected
-  pseudo-positive objects MAY participate in `bbox_size_aux` through the same
-  coord-supervised group path as matched-clean and FN-injection objects,
-- pseudo-positive `bbox_size_aux` targets MUST use the selected anchor object's
-  own canonical coordinate bins rather than explorer-consensus geometry,
-- Channel-A and Channel-B applicability MUST remain controlled by the authored
-  `channels` field on the `bbox_size_aux` module entry,
-- `bbox_size_aux` MUST remain separate from `bbox_geo` in the authored pipeline
-  so the new size loss is an independently removable plugin module,
-- `bbox_size_aux` MUST consume the current four bbox coord slots in the
-  existing `xyxy` order rather than introducing a new bbox expression.
-
-#### Scenario: Pseudo-positive size aux uses anchor geometry
-- **WHEN** `stage2_ab.channel_b.pseudo_positive.enabled=true`
-- **AND** a selected pseudo-positive anchor object participates in
-  `bbox_size_aux`
-- **THEN** its target decoded box is derived from that anchor object's own
-  canonical coordinates
-- **AND** no explorer-consensus geometry target is constructed for
-  `bbox_size_aux`.
+#### Scenario: Spread-out same-description crowded objects avoid duplicate collapse targeting
+- **WHEN** an anchor rollout emits multiple same-description bbox objects that
+  are spatially separated enough to satisfy the crowd-safety rule
+- **THEN** Channel-B preparation does not force those objects into one
+  duplicate-suppression cluster
+- **AND** the rollout can retain multiple kept objects subject to the existing
+  matching and triage rules.

@@ -40,16 +40,37 @@ from src.common.lvis_semantics import (
     build_lvis_category_catalog,
     extract_lvis_image_policy,
 )
+from src.common.duplicate_control import (
+    DuplicateControlConfig,
+    DuplicateControlObject,
+    DuplicateControlResult,
+    apply_duplicate_policy,
+    duplicate_control_object_from_mapping,
+    validate_duplicate_control_config,
+)
 from src.common.prediction_parsing import GEOM_KEYS
 from src.common.semantic_desc import SemanticDescEncoder, normalize_desc
 from src.common.io import load_jsonl_with_diagnostics
-from src.eval.artifacts import build_per_image_report, write_outputs
+from src.eval.artifacts import (
+    build_per_image_report,
+    resolve_duplicate_guard_report_path,
+    resolve_guarded_prediction_artifact_path,
+    resolve_matches_artifact_path,
+    write_jsonl_records,
+    write_outputs,
+)
 from src.utils import get_logger
 from src.vis import materialize_gt_vs_pred_vis_resource, render_gt_vs_pred_review
 
 logger = get_logger(__name__)
 
 _DEFAULT_SEMANTIC_MODEL = "sentence-transformers/all-MiniLM-L6-v2"
+_OFFLINE_DUPLICATE_CONTROL_CONFIG = validate_duplicate_control_config(
+    iou_threshold=0.90,
+    center_radius_scale=0.80,
+)
+_OFFLINE_DUPLICATE_CONTROL_SUPPORT_IOU_THRESHOLD = 0.50
+_SUPPRESSION_REASON_DUPLICATE_CLUSTER = "duplicate_cluster_non_survivor"
 
 
 def _normalize_desc(desc: str) -> str:
@@ -58,6 +79,10 @@ def _normalize_desc(desc: str) -> str:
 
 def _fmt_iou_thr(iou_thr: float) -> str:
     return f"{float(iou_thr):.2f}"
+
+
+def _wants_official_metrics(metrics: str) -> bool:
+    return str(metrics).strip().lower() in {"coco", "lvis", "both"}
 
 
 def _normalize_lvis_frequency_label(value: Any) -> str:
@@ -964,6 +989,10 @@ class EvalOptions:
     semantic_device: str = "auto"
     semantic_batch_size: int = 64
     lvis_max_dets: int = 300
+    duplicate_control_enabled: bool = False
+    guarded_pred_path: Optional[Path] = None
+    duplicate_guard_report_path: Optional[Path] = None
+    artifact_name_suffix: str = ""
 
     def __post_init__(self) -> None:
         semantic_model = str(self.semantic_model or "").strip()
@@ -973,6 +1002,10 @@ class EvalOptions:
                 "Semantic matching is mandatory; empty values are unsupported."
             )
         self.semantic_model = semantic_model
+        artifact_name_suffix = str(self.artifact_name_suffix or "").strip()
+        if artifact_name_suffix and not artifact_name_suffix.startswith("_"):
+            artifact_name_suffix = f"_{artifact_name_suffix}"
+        self.artifact_name_suffix = artifact_name_suffix
 
 
 @dataclass
@@ -2433,6 +2466,380 @@ def _prepare_all_separate(
     )
 
 
+def _resolve_guarded_pred_path(
+    *,
+    pred_path: Path,
+    options: EvalOptions,
+) -> Path:
+    if options.guarded_pred_path is not None:
+        return options.guarded_pred_path
+    return resolve_guarded_prediction_artifact_path(
+        out_dir=options.output_dir,
+        scored_input=_wants_official_metrics(options.metrics),
+    )
+
+
+def _resolve_duplicate_guard_report_path_for_options(options: EvalOptions) -> Path:
+    if options.duplicate_guard_report_path is not None:
+        return options.duplicate_guard_report_path
+    return resolve_duplicate_guard_report_path(out_dir=options.output_dir)
+
+
+def _duplicate_control_objects_for_record(
+    record: Mapping[str, Any],
+) -> Tuple[List[DuplicateControlObject], set[int]]:
+    raw_predictions = record.get("pred")
+    pred_key = "pred"
+    if not isinstance(raw_predictions, list):
+        raw_predictions = record.get("predictions")
+        pred_key = "predictions"
+    if not isinstance(raw_predictions, list):
+        return [], set()
+
+    width_raw = record.get("width")
+    height_raw = record.get("height")
+    try:
+        width = int(width_raw) if width_raw is not None else None
+        height = int(height_raw) if height_raw is not None else None
+    except (TypeError, ValueError):
+        width = None
+        height = None
+
+    objects: List[DuplicateControlObject] = []
+    controlled_indices: set[int] = set()
+    for pred_index, obj in enumerate(raw_predictions):
+        if not isinstance(obj, Mapping):
+            continue
+        candidate = duplicate_control_object_from_mapping(
+            obj,
+            index=pred_index,
+            width=width,
+            height=height,
+            source=pred_key,
+        )
+        if candidate is None:
+            continue
+        objects.append(candidate)
+        controlled_indices.add(int(pred_index))
+    return objects, controlled_indices
+
+
+def _record_identity(record: Mapping[str, Any], fallback_index: int) -> Dict[str, Any]:
+    image_id = record.get("image_id", record.get("index", fallback_index))
+    image = record.get("image")
+    images = record.get("images")
+    return {
+        "record_index": int(fallback_index),
+        "image_id": image_id,
+        "image": image,
+        "images": images if isinstance(images, list) else None,
+    }
+
+
+def _build_duplicate_guard_report(
+    *,
+    pred_records: Sequence[Mapping[str, Any]],
+    results_by_record: Sequence[Tuple[DuplicateControlResult, set[int]]],
+) -> Dict[str, Any]:
+    total_predictions_inspected = 0
+    total_predictions_suppressed = 0
+    total_guarded_records_affected = 0
+    suppression_reasons: Dict[str, int] = OrderedDict()
+    exemption_reasons: Dict[str, int] = OrderedDict()
+    counter_metrics: Dict[str, float] = OrderedDict()
+    records_report: List[Dict[str, Any]] = []
+
+    for record_idx, (record, (result, controlled_indices)) in enumerate(
+        zip(pred_records, results_by_record)
+    ):
+        inspected = len(controlled_indices)
+        suppressed = len(result.suppressed_indices)
+        total_predictions_inspected += inspected
+        total_predictions_suppressed += suppressed
+        if suppressed > 0:
+            total_guarded_records_affected += 1
+            suppression_reasons[_SUPPRESSION_REASON_DUPLICATE_CLUSTER] = (
+                suppression_reasons.get(_SUPPRESSION_REASON_DUPLICATE_CLUSTER, 0)
+                + suppressed
+            )
+
+        for cluster in result.clusters:
+            for reason in cluster.exemption_reasons:
+                exemption_reasons[str(reason)] = exemption_reasons.get(str(reason), 0) + 1
+
+        for key, value in result.counter_metrics.items():
+            counter_metrics[str(key)] = counter_metrics.get(str(key), 0.0) + float(value)
+
+        record_report = {
+            **_record_identity(record, record_idx),
+            "inspected_predictions": int(inspected),
+            "suppressed_predictions": int(suppressed),
+            "kept_indices": [int(idx) for idx in result.kept_indices],
+            "suppressed_indices": [int(idx) for idx in result.suppressed_indices],
+            "exempt_indices": [int(idx) for idx in result.exempt_indices],
+            "survivor_indices": [int(idx) for idx in result.survivor_indices],
+            "support_counts": [int(value) for value in result.support_counts],
+            "support_rates": [float(value) for value in result.support_rates],
+            "suppression_reasons": (
+                {_SUPPRESSION_REASON_DUPLICATE_CLUSTER: int(suppressed)}
+                if suppressed > 0
+                else {}
+            ),
+            "clusters": [
+                {
+                    "cluster_id": int(cluster.cluster_id),
+                    "member_indices": [int(idx) for idx in cluster.member_indices],
+                    "survivor_index": int(cluster.survivor_index),
+                    "suppressed_indices": [int(idx) for idx in cluster.suppressed_indices],
+                    "is_exempt": bool(cluster.is_exempt),
+                    "exemption_reasons": [str(reason) for reason in cluster.exemption_reasons],
+                    "max_center_distance": float(cluster.max_center_distance),
+                }
+                for cluster in result.clusters
+            ],
+            "decisions": [
+                {
+                    "object_index": int(decision.object_index),
+                    "cluster_id": (
+                        int(decision.cluster_id) if decision.cluster_id is not None else None
+                    ),
+                    "action": str(decision.action),
+                    "survivor_index": int(decision.survivor_index),
+                    "support_count": int(decision.support_count),
+                    "support_rate": float(decision.support_rate),
+                    "border_saturated": bool(decision.border_saturated),
+                    "is_exempt": bool(decision.is_exempt),
+                    "exemption_reasons": [
+                        str(reason) for reason in decision.exemption_reasons
+                    ],
+                }
+                for decision in result.decisions
+            ],
+        }
+        records_report.append(record_report)
+
+    return {
+        "policy": "offline_conservative",
+        "config": {
+            "iou_threshold": float(_OFFLINE_DUPLICATE_CONTROL_CONFIG.iou_threshold),
+            "center_radius_scale": float(
+                _OFFLINE_DUPLICATE_CONTROL_CONFIG.center_radius_scale
+            ),
+            "support_iou_threshold": float(
+                _OFFLINE_DUPLICATE_CONTROL_SUPPORT_IOU_THRESHOLD
+            ),
+        },
+        "total_records": int(len(pred_records)),
+        "total_predictions_inspected": int(total_predictions_inspected),
+        "total_predictions_suppressed": int(total_predictions_suppressed),
+        "total_guarded_records_affected": int(total_guarded_records_affected),
+        "suppression_reasons": OrderedDict(
+            (str(key), int(value))
+            for key, value in sorted(suppression_reasons.items(), key=lambda item: item[0])
+        ),
+        "exemption_reasons": OrderedDict(
+            (str(key), int(value))
+            for key, value in sorted(exemption_reasons.items(), key=lambda item: item[0])
+        ),
+        "counter_metrics": OrderedDict(
+            (str(key), float(value))
+            for key, value in sorted(counter_metrics.items(), key=lambda item: item[0])
+        ),
+        "records": records_report,
+    }
+
+
+def _apply_offline_duplicate_control(
+    pred_records: Sequence[Mapping[str, Any]],
+) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
+    guarded_records: List[Dict[str, Any]] = []
+    results_by_record: List[Tuple[DuplicateControlResult, set[int]]] = []
+    config: DuplicateControlConfig = _OFFLINE_DUPLICATE_CONTROL_CONFIG
+
+    for record in pred_records:
+        guarded_record = copy.deepcopy(dict(record))
+        raw_predictions = guarded_record.get("pred")
+        pred_key = "pred"
+        if not isinstance(raw_predictions, list):
+            raw_predictions = guarded_record.get("predictions")
+            pred_key = "predictions"
+        if not isinstance(raw_predictions, list):
+            guarded_records.append(guarded_record)
+            empty_result = apply_duplicate_policy(
+                anchor_objects=(),
+                explorer_objects_by_view=(),
+                config=config,
+                support_iou_threshold=_OFFLINE_DUPLICATE_CONTROL_SUPPORT_IOU_THRESHOLD,
+            )
+            results_by_record.append((empty_result, set()))
+            continue
+
+        objects, controlled_indices = _duplicate_control_objects_for_record(guarded_record)
+        if objects:
+            result = apply_duplicate_policy(
+                anchor_objects=objects,
+                explorer_objects_by_view=(),
+                config=config,
+                support_iou_threshold=_OFFLINE_DUPLICATE_CONTROL_SUPPORT_IOU_THRESHOLD,
+            )
+            kept_indices = set(int(idx) for idx in result.kept_indices)
+            guarded_record[pred_key] = [
+                obj
+                for pred_index, obj in enumerate(raw_predictions)
+                if pred_index not in controlled_indices or pred_index in kept_indices
+            ]
+        else:
+            result = apply_duplicate_policy(
+                anchor_objects=(),
+                explorer_objects_by_view=(),
+                config=config,
+                support_iou_threshold=_OFFLINE_DUPLICATE_CONTROL_SUPPORT_IOU_THRESHOLD,
+            )
+        results_by_record.append((result, controlled_indices))
+        guarded_records.append(guarded_record)
+
+    report = _build_duplicate_guard_report(
+        pred_records=pred_records,
+        results_by_record=results_by_record,
+    )
+    return guarded_records, report
+
+
+def _evaluate_preloaded_records(
+    pred_records: List[Dict[str, Any]],
+    *,
+    pred_path: Path,
+    options: EvalOptions,
+    materialize_vis_resource: bool,
+    render_overlay: bool,
+) -> Dict[str, Any]:
+    from src.infer.pipeline import resolve_root_image_dir_for_jsonl
+
+    counters = EvalCounters()
+    metrics_mode = str(options.metrics).strip().lower()
+    want_official = _wants_official_metrics(metrics_mode)
+    want_f1ish = metrics_mode in {"f1ish", "both"}
+
+    (
+        gt_samples,
+        pred_samples,
+        categories,
+        coco_gt_dict,
+        results,
+        run_segm,
+        per_image,
+    ) = _prepare_all(
+        pred_records,
+        options,
+        counters,
+        prepare_coco=want_official,
+    )
+
+    metrics: Dict[str, float] = {}
+    per_class: Dict[str, float] = {}
+    if want_official:
+        coco_gt = COCO()
+        coco_gt.dataset = copy.deepcopy(coco_gt_dict)
+        coco_gt.createIndex()
+        if _use_lvis_backend(gt_samples, options=options):
+            metrics, per_class = _run_lvis_eval(
+                coco_gt,
+                results,
+                options=options,
+                run_segm=run_segm,
+            )
+        else:
+            metrics, per_class = _run_coco_eval(
+                coco_gt,
+                results,
+                options=options,
+                run_segm=run_segm,
+            )
+
+    if _use_lvis_backend(gt_samples, options=options):
+        metrics.update(
+            {
+                "lvis_diag_matched_verified_positive": float(
+                    counters.lvis_matched_verified_positive
+                ),
+                "lvis_diag_verified_negative_unmatched": float(
+                    counters.lvis_verified_negative_unmatched
+                ),
+                "lvis_diag_ignored_not_exhaustive": float(
+                    counters.lvis_ignored_not_exhaustive
+                ),
+                "lvis_diag_ignored_unevaluable": float(
+                    counters.lvis_ignored_unevaluable
+                ),
+            }
+        )
+
+    summary = {
+        "metrics": metrics,
+        "per_class": per_class,
+        "counters": counters.to_dict(),
+        "categories": categories,
+    }
+
+    if want_f1ish:
+        f1ish_summary = evaluate_f1ish(
+            gt_samples,
+            pred_samples,
+            per_image,
+            options=options,
+        )
+        summary["metrics"].update(f1ish_summary["metrics"])
+    else:
+        f1ish_summary = {"matches_by_thr": {}}
+
+    vis_resource_path: Optional[Path] = None
+    if materialize_vis_resource:
+        vis_matches: Dict[int, Dict[str, Any]] | None = None
+        if want_f1ish:
+            primary_thr = _select_primary_f1ish_iou_thr(options.f1ish_iou_thrs)
+            primary_key = _fmt_iou_thr(primary_thr)
+            vis_matches = _matches_by_record_idx(
+                f1ish_summary.get("matches_by_thr", {}).get(primary_key, [])
+            )
+
+        vis_resource_path = materialize_gt_vs_pred_vis_resource(
+            pred_path,
+            source_kind="detection_eval",
+            external_matches=vis_matches,
+            materialize_matching=True,
+        )
+
+    write_outputs(
+        options.output_dir,
+        coco_gt=coco_gt_dict if want_official else None,
+        coco_preds=results if want_official else None,
+        summary=summary,
+        per_image=per_image,
+        name_suffix=options.artifact_name_suffix,
+    )
+
+    if render_overlay and options.overlay and vis_resource_path is not None:
+        root_dir, root_source = resolve_root_image_dir_for_jsonl(pred_path)
+        if root_dir is not None:
+            logger.info(
+                "Overlay image root resolved (source=%s): %s",
+                root_source,
+                root_dir,
+            )
+
+        overlay_dir = options.output_dir / "overlays"
+        render_gt_vs_pred_review(
+            vis_resource_path,
+            out_dir=overlay_dir,
+            limit=options.overlay_k,
+            root_image_dir=root_dir,
+            root_source=root_source,
+            record_order="error_first",
+        )
+
+    return summary
+
+
 def evaluate_detection(
     gt_path: Path,
     pred_path: Path | None = None,
@@ -2512,133 +2919,79 @@ def evaluate_and_save(
     *,
     options: EvalOptions,
 ) -> Dict[str, Any]:
-    from src.infer.pipeline import resolve_root_image_dir_for_jsonl
-
-    counters = EvalCounters()
-    metrics_mode = str(options.metrics).strip().lower()
-    want_official = metrics_mode in {"coco", "lvis", "both"}
-    want_f1ish = metrics_mode in {"f1ish", "both"}
-
-    pred_records = load_jsonl(pred_path, counters, strict=options.strict_parse)
+    load_counters = EvalCounters()
+    pred_records = load_jsonl(pred_path, load_counters, strict=options.strict_parse)
     pred_records = _maybe_backfill_lvis_metadata_for_eval(
         pred_records,
         pred_path=pred_path,
         options=options,
     )
-    (
-        gt_samples,
-        pred_samples,
-        categories,
-        coco_gt_dict,
-        results,
-        run_segm,
-        per_image,
-    ) = _prepare_all(
+
+    if load_counters.invalid_json:
+        logger.info(
+            "Evaluation ingestion skipped %d invalid JSONL records from %s",
+            load_counters.invalid_json,
+            pred_path,
+        )
+
+    summary = _evaluate_preloaded_records(
         pred_records,
-        options,
-        counters,
-        prepare_coco=want_official,
+        pred_path=pred_path,
+        options=options,
+        materialize_vis_resource=True,
+        render_overlay=True,
+    )
+    if load_counters.invalid_json:
+        summary["counters"]["invalid_json"] = (
+            int(summary["counters"].get("invalid_json", 0)) + load_counters.invalid_json
+        )
+        metrics_path = options.output_dir / f"metrics{options.artifact_name_suffix}.json"
+        if metrics_path.is_file():
+            metrics_payload = json.loads(metrics_path.read_text(encoding="utf-8"))
+            counters_payload = metrics_payload.get("counters", {})
+            if isinstance(counters_payload, dict):
+                counters_payload["invalid_json"] = summary["counters"]["invalid_json"]
+                metrics_payload["counters"] = counters_payload
+                metrics_path.write_text(
+                    json.dumps(metrics_payload, ensure_ascii=False, indent=2),
+                    encoding="utf-8",
+                )
+
+    if not options.duplicate_control_enabled:
+        return summary
+
+    guarded_pred_path = _resolve_guarded_pred_path(pred_path=pred_path, options=options)
+    duplicate_guard_report_path = _resolve_duplicate_guard_report_path_for_options(options)
+    guarded_records, duplicate_guard_report = _apply_offline_duplicate_control(pred_records)
+    write_jsonl_records(guarded_pred_path, guarded_records)
+    duplicate_guard_report_path.parent.mkdir(parents=True, exist_ok=True)
+    duplicate_guard_report_path.write_text(
+        json.dumps(duplicate_guard_report, ensure_ascii=False, indent=2),
+        encoding="utf-8",
     )
 
-    metrics: Dict[str, float] = {}
-    per_class: Dict[str, float] = {}
-    if want_official:
-        coco_gt = COCO()
-        coco_gt.dataset = copy.deepcopy(coco_gt_dict)
-        coco_gt.createIndex()
-        if _use_lvis_backend(gt_samples, options=options):
-            metrics, per_class = _run_lvis_eval(
-                coco_gt,
-                results,
-                options=options,
-                run_segm=run_segm,
-            )
-        else:
-            metrics, per_class = _run_coco_eval(
-                coco_gt,
-                results,
-                options=options,
-                run_segm=run_segm,
-            )
-
-    if _use_lvis_backend(gt_samples, options=options):
-        metrics.update(
-            {
-                "lvis_diag_matched_verified_positive": float(
-                    counters.lvis_matched_verified_positive
-                ),
-                "lvis_diag_verified_negative_unmatched": float(
-                    counters.lvis_verified_negative_unmatched
-                ),
-                "lvis_diag_ignored_not_exhaustive": float(
-                    counters.lvis_ignored_not_exhaustive
-                ),
-                "lvis_diag_ignored_unevaluable": float(
-                    counters.lvis_ignored_unevaluable
-                ),
-            }
-        )
-
-    summary = {
-        "metrics": metrics,
-        "per_class": per_class,
-        "counters": counters.to_dict(),
-        "categories": categories,
-    }
-
-    if want_f1ish:
-        f1ish_summary = evaluate_f1ish(
-            gt_samples,
-            pred_samples,
-            per_image,
-            options=options,
-        )
-        summary["metrics"].update(f1ish_summary["metrics"])
-    else:
-        f1ish_summary = {"matches_by_thr": {}}
-
-    vis_matches: Dict[int, Dict[str, Any]] | None = None
-    if want_f1ish:
-        primary_thr = _select_primary_f1ish_iou_thr(options.f1ish_iou_thrs)
-        primary_key = _fmt_iou_thr(primary_thr)
-        vis_matches = _matches_by_record_idx(
-            f1ish_summary.get("matches_by_thr", {}).get(primary_key, [])
-        )
-
-    vis_resource_path = materialize_gt_vs_pred_vis_resource(
-        pred_path,
-        source_kind="detection_eval",
-        external_matches=vis_matches,
-        materialize_matching=True,
+    logger.info(
+        "Duplicate-control guard emitted raw+guarded outputs: guarded_pred=%s report=%s",
+        guarded_pred_path,
+        duplicate_guard_report_path,
     )
 
-    write_outputs(
-        options.output_dir,
-        coco_gt=coco_gt_dict if want_official else None,
-        coco_preds=results if want_official else None,
-        summary=summary,
-        per_image=per_image,
+    guarded_options = copy.copy(options)
+    guarded_options.artifact_name_suffix = "_guarded"
+    guarded_options.overlay = False
+    guarded_options.duplicate_control_enabled = False
+    guarded_options.guarded_pred_path = None
+    guarded_options.duplicate_guard_report_path = None
+
+    guarded_summary = _evaluate_preloaded_records(
+        guarded_records,
+        pred_path=guarded_pred_path,
+        options=guarded_options,
+        materialize_vis_resource=False,
+        render_overlay=False,
     )
-
-    if options.overlay:
-        root_dir, root_source = resolve_root_image_dir_for_jsonl(pred_path)
-        if root_dir is not None:
-            logger.info(
-                "Overlay image root resolved (source=%s): %s",
-                root_source,
-                root_dir,
-            )
-
-        overlay_dir = options.output_dir / "overlays"
-        render_gt_vs_pred_review(
-            vis_resource_path,
-            out_dir=overlay_dir,
-            limit=options.overlay_k,
-            root_image_dir=root_dir,
-            root_source=root_source,
-            record_order="error_first",
-        )
-
+    summary["guarded"] = guarded_summary
+    summary["duplicate_control"] = duplicate_guard_report
     return summary
 
 
@@ -3036,14 +3389,13 @@ def evaluate_f1ish(
         out_dir = options.output_dir
         out_dir.mkdir(parents=True, exist_ok=True)
         is_primary = abs(float(thr) - float(primary_thr)) < 1e-9
-        if is_primary:
-            matches_path = out_dir / "matches.jsonl"
-        else:
-            matches_path = out_dir / f"matches@{thr_key}.jsonl"
+        matches_path = resolve_matches_artifact_path(
+            out_dir=out_dir,
+            iou_thr_key=None if is_primary else thr_key,
+            name_suffix=options.artifact_name_suffix,
+        )
         if is_primary or len(iou_thrs) > 1:
-            with matches_path.open("w", encoding="utf-8") as f:
-                for row in matches_records:
-                    f.write(json.dumps(row, ensure_ascii=False) + "\n")
+            write_jsonl_records(matches_path, matches_records)
         matches_records_by_thr[thr_key] = matches_records
 
     return {

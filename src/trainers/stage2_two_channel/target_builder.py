@@ -1,7 +1,14 @@
-from collections import Counter
 from dataclasses import dataclass
 from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
 
+from src.common.duplicate_control import (
+    DuplicateControlDecision,
+    DuplicateControlResult,
+    compute_duplicate_metrics,
+    duplicate_control_object_from_bbox,
+    apply_duplicate_policy,
+    validate_duplicate_control_config,
+)
 from src.common.semantic_desc import normalize_desc
 from src.common.object_field_order import build_object_payload
 from src.utils.assistant_json import dumps_coordjson
@@ -26,6 +33,19 @@ class _CanonicalPrefixData:
 
 
 @dataclass(frozen=True)
+class _ChannelBDuplicateControlResult:
+    kept_anchor_objects: List[GTObject]
+    suppressed_duplicate_objects_by_boundary: Dict[int, List[GTObject]]
+    decisions: List[DuplicateControlDecision]
+    support_counts: List[int]
+    support_rates: List[float]
+    survivor_anchor_indices: List[int]
+    exempt_anchor_indices: List[int]
+    suppressed_anchor_indices: List[int]
+    counter_metrics: Dict[str, float]
+
+
+@dataclass(frozen=True)
 class _ChannelBTriageResult:
     association_pairs_by_view: List[List[Tuple[int, int]]]
     anchor_gt_backed_indices: List[int]
@@ -47,7 +67,7 @@ class _ChannelBTriageResult:
     valid_explorer_count: int
     kept_anchor_objects: List[GTObject]
     kept_anchor_new_index_by_old: Dict[int, int]
-    duplicate_bursts_by_boundary: Dict[int, List[GTObject]]
+    suppressed_duplicate_objects_by_boundary: Dict[int, List[GTObject]]
 
 
 @dataclass(frozen=True)
@@ -97,18 +117,14 @@ def _gt_object_topleft_anchor(obj: GTObject) -> Tuple[int, int]:
     return (int(min(ys)), int(min(xs)))
 
 
-def _sort_gt_objects_by_topleft(objects: Sequence[GTObject]) -> List[GTObject]:
-    return sorted(list(objects), key=_gt_object_topleft_anchor)
-
-
 def _sorted_duplicate_bursts_by_boundary(
     *,
     sorted_objects: Sequence[GTObject],
-    duplicate_bursts_by_boundary: Mapping[int, Sequence[GTObject]],
+    suppressed_duplicate_objects_by_boundary: Mapping[int, Sequence[GTObject]],
 ) -> Dict[int, List[GTObject]]:
     remapped: Dict[int, List[GTObject]] = {}
     sorted_base = list(sorted_objects)
-    for duplicates in duplicate_bursts_by_boundary.values():
+    for duplicates in suppressed_duplicate_objects_by_boundary.values():
         for dup in duplicates:
             annotated = [(obj, False) for obj in sorted_base] + [(dup, True)]
             sorted_annotated = sorted(
@@ -232,38 +248,98 @@ def _bbox_iou_norm1000_xyxy(box_a: Sequence[int], box_b: Sequence[int]) -> float
 
 def _compute_duplicate_diagnostics(
     parsed_bbox_objects_raw: Sequence[GTObject],
+    *,
+    duplicate_iou_threshold: float = 0.90,
+    center_radius_scale: float = 0.80,
 ) -> Dict[str, float]:
-    norm_descs = [normalize_desc(obj.desc) for obj in parsed_bbox_objects_raw]
-    max_desc_count = 0
-    if norm_descs:
-        counts = Counter(norm_descs)
-        max_desc_count = int(max(counts.values()))
+    config = validate_duplicate_control_config(
+        iou_threshold=float(duplicate_iou_threshold),
+        center_radius_scale=float(center_radius_scale),
+    )
+    duplicate_objects = [
+        duplicate_control_object_from_bbox(
+            index=int(index),
+            desc=str(obj.desc),
+            bbox_norm1000=obj.points_norm1000,
+            source="anchor",
+        )
+        for index, obj in enumerate(parsed_bbox_objects_raw)
+    ]
+    metrics = compute_duplicate_metrics(duplicate_objects, config=config)
+    return metrics
 
-    saturated = 0
-    for obj in parsed_bbox_objects_raw:
-        if any(int(v) in {0, 999} for v in obj.points_norm1000):
-            saturated += 1
 
-    near_same_desc = 0
-    near_any_desc = 0
-    for i, obj_i in enumerate(parsed_bbox_objects_raw):
-        for j in range(int(i + 1), int(len(parsed_bbox_objects_raw))):
-            obj_j = parsed_bbox_objects_raw[j]
-            iou = _bbox_iou_norm1000_xyxy(obj_i.points_norm1000, obj_j.points_norm1000)
-            if iou < 0.90:
-                continue
-            near_any_desc += 1
-            if norm_descs[i] == norm_descs[j]:
-                near_same_desc += 1
+def _apply_channel_b_duplicate_control(
+    *,
+    anchor_objects_raw: Sequence[GTObject],
+    explorer_objects_raw_by_view: Sequence[Sequence[GTObject]],
+    duplicate_iou_threshold: float,
+    center_radius_scale: float,
+    unlabeled_consistent_iou_threshold: float,
+) -> _ChannelBDuplicateControlResult:
+    config = validate_duplicate_control_config(
+        iou_threshold=float(duplicate_iou_threshold),
+        center_radius_scale=float(center_radius_scale),
+    )
+    anchor_duplicate_objects = [
+        duplicate_control_object_from_bbox(
+            index=int(index),
+            desc=str(obj.desc),
+            bbox_norm1000=obj.points_norm1000,
+            source="anchor",
+        )
+        for index, obj in enumerate(anchor_objects_raw)
+    ]
+    explorer_duplicate_objects_by_view = [
+        [
+            duplicate_control_object_from_bbox(
+                index=int(index),
+                desc=str(obj.desc),
+                bbox_norm1000=obj.points_norm1000,
+                source="explorer",
+            )
+            for index, obj in enumerate(explorer_objects_raw)
+        ]
+        for explorer_objects_raw in explorer_objects_raw_by_view
+    ]
+    result: DuplicateControlResult = apply_duplicate_policy(
+        anchor_objects=anchor_duplicate_objects,
+        explorer_objects_by_view=explorer_duplicate_objects_by_view,
+        config=config,
+        support_iou_threshold=float(unlabeled_consistent_iou_threshold),
+    )
 
-    n_raw = int(len(parsed_bbox_objects_raw))
-    saturation_rate = (float(saturated) / float(n_raw)) if n_raw > 0 else 0.0
-    return {
-        "dup/max_desc_count": float(max_desc_count),
-        "dup/saturation_rate": float(saturation_rate),
-        "dup/near_iou90_pairs_same_desc_count": float(near_same_desc),
-        "dup/near_iou90_pairs_any_desc_count": float(near_any_desc),
-    }
+    kept_anchor_objects = [
+        anchor_objects_raw[int(index)] for index in result.kept_indices
+    ]
+    kept_indices_sorted = [int(index) for index in result.kept_indices]
+    kept_index_set = set(kept_indices_sorted)
+    suppressed_duplicate_objects_by_boundary: Dict[int, List[GTObject]] = {}
+    for suppressed_index in sorted(int(index) for index in result.suppressed_indices):
+        boundary = int(
+            sum(
+                1
+                for kept_index in kept_indices_sorted
+                if int(kept_index) < int(suppressed_index)
+            )
+        )
+        if int(suppressed_index) in kept_index_set:
+            continue
+        suppressed_duplicate_objects_by_boundary.setdefault(boundary, []).append(
+            anchor_objects_raw[int(suppressed_index)]
+        )
+
+    return _ChannelBDuplicateControlResult(
+        kept_anchor_objects=list(kept_anchor_objects),
+        suppressed_duplicate_objects_by_boundary=suppressed_duplicate_objects_by_boundary,
+        decisions=list(result.decisions),
+        support_counts=[int(value) for value in result.support_counts],
+        support_rates=[float(value) for value in result.support_rates],
+        survivor_anchor_indices=[int(index) for index in result.survivor_indices],
+        exempt_anchor_indices=[int(index) for index in result.exempt_indices],
+        suppressed_anchor_indices=[int(index) for index in result.suppressed_indices],
+        counter_metrics=dict(result.counter_metrics),
+    )
 
 
 def _sequential_dedup_bbox_objects(
@@ -271,47 +347,30 @@ def _sequential_dedup_bbox_objects(
     parsed_bbox_objects_raw: Sequence[GTObject],
     duplicate_iou_threshold: float,
 ) -> Tuple[List[GTObject], Dict[int, List[GTObject]]]:
-    accepted_objects_clean: List[GTObject] = []
-    accepted_norm_descs: List[str] = []
-    duplicate_bursts_by_boundary: Dict[int, List[GTObject]] = {}
-
-    for obj in parsed_bbox_objects_raw:
-        boundary = int(len(accepted_objects_clean))
-        obj_norm_desc = normalize_desc(obj.desc)
-        is_duplicate = False
-
-        for accepted, accepted_norm_desc in zip(
-            accepted_objects_clean,
-            accepted_norm_descs,
-        ):
-            if obj_norm_desc != accepted_norm_desc:
-                continue
-            if (
-                _bbox_iou_norm1000_xyxy(
-                    obj.points_norm1000,
-                    accepted.points_norm1000,
-                )
-                < float(duplicate_iou_threshold)
-            ):
-                continue
-            duplicate_bursts_by_boundary.setdefault(boundary, []).append(obj)
-            is_duplicate = True
-            break
-
-        if is_duplicate:
-            continue
-
-        accepted_objects_clean.append(obj)
-        accepted_norm_descs.append(obj_norm_desc)
-
-    return accepted_objects_clean, duplicate_bursts_by_boundary
+    result = _apply_channel_b_duplicate_control(
+        anchor_objects_raw=parsed_bbox_objects_raw,
+        explorer_objects_raw_by_view=[],
+        duplicate_iou_threshold=float(duplicate_iou_threshold),
+        center_radius_scale=0.0,
+        unlabeled_consistent_iou_threshold=0.0,
+    )
+    return (
+        list(result.kept_anchor_objects),
+        dict(result.suppressed_duplicate_objects_by_boundary),
+    )
 
 
 def _build_channel_b_triage(
     *,
     accepted_objects_clean: Sequence[GTObject],
-    duplicate_bursts_by_boundary: Mapping[int, Sequence[GTObject]],
-    explorer_accepted_objects_clean_by_view: Sequence[Sequence[GTObject]],
+    suppressed_duplicate_objects_by_boundary: Optional[
+        Mapping[int, Sequence[GTObject]]
+    ] = None,
+    explorer_objects_raw_by_view: Optional[Sequence[Sequence[GTObject]]] = None,
+    duplicate_bursts_by_boundary: Optional[Mapping[int, Sequence[GTObject]]] = None,
+    explorer_accepted_objects_clean_by_view: Optional[
+        Sequence[Sequence[GTObject]]
+    ] = None,
     anchor_match_by_pred: Mapping[int, int],
     explorer_match_by_pred_by_view: Sequence[Mapping[int, int]],
     unlabeled_consistent_iou_threshold: float,
@@ -319,8 +378,16 @@ def _build_channel_b_triage(
     pseudo_positive_enabled: bool,
     anchor_policy_statuses: Sequence[Optional[str]] = (),
 ) -> _ChannelBTriageResult:
+    if duplicate_bursts_by_boundary is not None:
+        suppressed_duplicate_objects_by_boundary = duplicate_bursts_by_boundary
+    if explorer_accepted_objects_clean_by_view is not None:
+        explorer_objects_raw_by_view = explorer_accepted_objects_clean_by_view
+    if suppressed_duplicate_objects_by_boundary is None:
+        suppressed_duplicate_objects_by_boundary = {}
+    if explorer_objects_raw_by_view is None:
+        explorer_objects_raw_by_view = []
     anchor_gt_backed_indices = sorted(int(pred_i) for pred_i in anchor_match_by_pred.keys())
-    valid_explorer_count = int(len(explorer_accepted_objects_clean_by_view))
+    valid_explorer_count = int(len(explorer_objects_raw_by_view))
     anchor_support_counts = [0 for _ in range(len(accepted_objects_clean))]
     association_pairs_by_view: List[List[Tuple[int, int]]] = []
     dead_explorer_indices_by_view: List[List[int]] = []
@@ -350,15 +417,15 @@ def _build_channel_b_triage(
             for gt_anchor_i in anchor_gt_backed_indices
         )
 
-    for explorer_accepted_objects_clean, explorer_match_by_pred in zip(
-        explorer_accepted_objects_clean_by_view,
+    for explorer_objects_raw, explorer_match_by_pred in zip(
+        explorer_objects_raw_by_view,
         explorer_match_by_pred_by_view,
     ):
         association_pairs = [
             (int(anchor_i), int(explorer_i))
             for anchor_i, explorer_i in associate_one_to_one_max_iou(
                 anchors=accepted_objects_clean,
-                explorers=explorer_accepted_objects_clean,
+                explorers=explorer_objects_raw,
                 min_iou=float(unlabeled_consistent_iou_threshold),
             )
         ]
@@ -369,7 +436,7 @@ def _build_channel_b_triage(
         dead_explorer_indices_by_view.append(
             [
                 int(explorer_i)
-                for explorer_i in range(len(explorer_accepted_objects_clean))
+                for explorer_i in range(len(explorer_objects_raw))
                 if int(explorer_i) not in explorer_match_by_pred
             ]
         )
@@ -529,11 +596,11 @@ def _build_channel_b_triage(
         kept_anchor_objects.append(anchor_obj)
         kept_anchor_count += 1
 
-    # Duplicate bursts are discovered on the pre-triage accepted-anchor surface, but
-    # duplicate-burst UL is realized against the post-triage clean prefix. Remap each
-    # pre-triage boundary onto the number of kept anchors that survive before it so
-    # duplicate bursts still activate when earlier anchors or the whole duplicate
-    # cluster survivor die during triage.
+    # Duplicate-control suppression is discovered on the pre-triage accepted-anchor
+    # surface, but duplicate UL is realized against the post-triage clean prefix.
+    # Remap each pre-triage suppression boundary onto the number of kept anchors
+    # that survive before it so duplicate UL still activates when earlier anchors
+    # or the whole duplicate-cluster survivor die during triage.
     kept_prefix_count_by_old_boundary: List[int] = [0]
     kept_prefix_count = 0
     for anchor_i in range(len(accepted_objects_clean)):
@@ -541,16 +608,18 @@ def _build_channel_b_triage(
             kept_prefix_count += 1
         kept_prefix_count_by_old_boundary.append(int(kept_prefix_count))
 
-    remapped_duplicate_bursts_by_boundary: Dict[int, List[GTObject]] = {}
-    for boundary, duplicates in duplicate_bursts_by_boundary.items():
+    remapped_suppressed_duplicate_objects_by_boundary: Dict[int, List[GTObject]] = {}
+    for boundary, duplicates in suppressed_duplicate_objects_by_boundary.items():
         boundary_i = int(boundary)
         if boundary_i < 0 or boundary_i > len(accepted_objects_clean):
             raise ValueError(
-                "pre-triage duplicate burst boundary escaped accepted-anchor span: "
+                "pre-triage duplicate suppression boundary escaped accepted-anchor span: "
                 f"boundary={boundary_i} accepted={len(accepted_objects_clean)}"
             )
         kept_boundary = int(kept_prefix_count_by_old_boundary[boundary_i])
-        remapped_duplicate_bursts_by_boundary.setdefault(kept_boundary, []).extend(
+        remapped_suppressed_duplicate_objects_by_boundary.setdefault(
+            kept_boundary, []
+        ).extend(
             [obj for obj in duplicates]
         )
 
@@ -594,7 +663,9 @@ def _build_channel_b_triage(
         valid_explorer_count=int(valid_explorer_count),
         kept_anchor_objects=kept_anchor_objects,
         kept_anchor_new_index_by_old=kept_anchor_new_index_by_old,
-        duplicate_bursts_by_boundary=remapped_duplicate_bursts_by_boundary,
+        suppressed_duplicate_objects_by_boundary=(
+            remapped_suppressed_duplicate_objects_by_boundary
+        ),
     )
 
 
@@ -609,12 +680,12 @@ def _build_channel_b_supervision_targets(
     recovered_ground_truth_weight_multiplier: float,
     pseudo_positive_enabled: bool,
     pseudo_positive_coord_weight: float,
-    duplicate_iou_threshold: float,
+    duplicate_iou_threshold: float | None = None,
+    insertion_order: str = "tail_append",
     object_field_order: str,
     bbox_groups_from_token_ids_fn: Any,
     matched_prefix_structure_positions_fn: Any,
     serialize_append_fragment_fn: Any,
-    insertion_order: str = "tail_append",
 ) -> _ChannelBSupervisionTargets:
     insertion_order_resolved = _normalize_channel_b_insertion_order(insertion_order)
     prefix_bbox_groups: List[Dict[str, Any]] = []
@@ -974,7 +1045,7 @@ def _build_channel_b_supervision_targets(
                             if prefix_adjacent_prev_bins_by_index[int(sorted_idx)] is not None
                             else {}
                         ),
-                    }
+                    },
                 )
                 for local_idx, tbin in zip(coord_group, gt_bins):
                     prefix_pos.append(int(local_idx))
@@ -1032,7 +1103,9 @@ def _build_channel_b_supervision_targets(
         clean_target_text = str(clean_prefix.prefix_text) + str(append_text)
         sorted_duplicate_bursts = _sorted_duplicate_bursts_by_boundary(
             sorted_objects=sorted_objects,
-            duplicate_bursts_by_boundary=triage.duplicate_bursts_by_boundary,
+            suppressed_duplicate_objects_by_boundary=(
+                triage.suppressed_duplicate_objects_by_boundary
+            ),
         )
         (
             duplicate_burst_unlikelihood_targets,
@@ -1044,7 +1117,7 @@ def _build_channel_b_supervision_targets(
             clean_target_text=clean_target_text,
             accepted_objects_clean=sorted_objects,
             fn_objects=[],
-            duplicate_bursts_by_boundary=sorted_duplicate_bursts,
+            suppressed_duplicate_objects_by_boundary=sorted_duplicate_bursts,
             boundary_prefix_texts=clean_prefix.boundary_prefix_texts,
             object_field_order=object_field_order,
         )
@@ -1082,7 +1155,9 @@ def _build_channel_b_supervision_targets(
             clean_target_text=clean_target_text,
             accepted_objects_clean=triage.kept_anchor_objects,
             fn_objects=fn_objs,
-            duplicate_bursts_by_boundary=triage.duplicate_bursts_by_boundary,
+            suppressed_duplicate_objects_by_boundary=(
+                triage.suppressed_duplicate_objects_by_boundary
+            ),
             boundary_prefix_texts=clean_prefix.boundary_prefix_texts,
             object_field_order=object_field_order,
         )
@@ -1179,6 +1254,13 @@ def _build_channel_b_meta_entry(
     anchor_decode_mode: str,
     explorer_decode_mode: str,
     valid_explorer_count: int,
+    duplicate_clusters_total: int,
+    duplicate_clusters_exempt: int,
+    duplicate_clusters_suppressed: int,
+    duplicate_objects_suppressed: int,
+    duplicate_survivor_anchor_indices: Sequence[int],
+    duplicate_exempt_anchor_indices: Sequence[int],
+    duplicate_suppressed_anchor_indices: Sequence[int],
     anchor_gt_backed_indices: Sequence[int],
     anchor_support_counts: Sequence[int],
     anchor_support_rates: Sequence[float],
@@ -1303,6 +1385,19 @@ def _build_channel_b_meta_entry(
         "anchor_decode_mode": str(anchor_decode_mode),
         "explorer_decode_mode": str(explorer_decode_mode),
         "valid_explorer_count": int(valid_explorer_count),
+        "duplicate_clusters_total": int(duplicate_clusters_total),
+        "duplicate_clusters_exempt": int(duplicate_clusters_exempt),
+        "duplicate_clusters_suppressed": int(duplicate_clusters_suppressed),
+        "duplicate_objects_suppressed": int(duplicate_objects_suppressed),
+        "duplicate_survivor_anchor_indices": [
+            int(idx) for idx in duplicate_survivor_anchor_indices
+        ],
+        "duplicate_exempt_anchor_indices": [
+            int(idx) for idx in duplicate_exempt_anchor_indices
+        ],
+        "duplicate_suppressed_anchor_indices": [
+            int(idx) for idx in duplicate_suppressed_anchor_indices
+        ],
         "anchor_gt_backed_indices": [int(idx) for idx in anchor_gt_backed_indices],
         "anchor_support_counts": [int(v) for v in anchor_support_counts],
         "anchor_support_rates": [float(v) for v in anchor_support_rates],
@@ -1482,10 +1577,14 @@ def _build_duplicate_burst_unlikelihood_targets(
     clean_target_text: str,
     accepted_objects_clean: Sequence[GTObject],
     fn_objects: Sequence[GTObject],
-    duplicate_bursts_by_boundary: Mapping[int, Sequence[GTObject]],
+    suppressed_duplicate_objects_by_boundary: Optional[
+        Mapping[int, Sequence[GTObject]]
+    ] = None,
     boundary_prefix_texts: Sequence[str],
     object_field_order: str,
 ) -> Tuple[List[Stage2DuplicateBurstUnlikelihoodTarget], int, int]:
+    if suppressed_duplicate_objects_by_boundary is None:
+        suppressed_duplicate_objects_by_boundary = {}
     targets_by_boundary_token: dict[
         tuple[int, int], Stage2DuplicateBurstUnlikelihoodTarget
     ] = {}
@@ -1494,7 +1593,9 @@ def _build_duplicate_burst_unlikelihood_targets(
     y_train_ids_list = [int(t) for t in y_train_ids]
     clean_target_text_s = str(clean_target_text)
 
-    for boundary, duplicates in sorted(duplicate_bursts_by_boundary.items()):
+    for boundary, duplicates in sorted(
+        suppressed_duplicate_objects_by_boundary.items()
+    ):
         boundary_i = int(boundary)
         if boundary_i < 0 or boundary_i >= len(boundary_prefix_texts):
             raise ValueError(
@@ -1628,9 +1729,9 @@ __all__ = [
     "_build_channel_b_supervision_targets",
     "_build_channel_b_meta_entry",
     "_bbox_iou_norm1000_xyxy",
+    "_apply_channel_b_duplicate_control",
     "_compute_duplicate_diagnostics",
     "_build_canonical_prefix_data",
     "_build_duplicate_burst_unlikelihood_targets",
     "_desc_tail_positions_and_weights",
-    "_sequential_dedup_bbox_objects",
 ]

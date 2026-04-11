@@ -5,7 +5,7 @@ doc_type: reference
 status: canonical
 domain: training
 summary: Canonical training metric families for Stage-1 and the active Stage-2 single-pass contract.
-updated: 2026-03-29
+updated: 2026-04-03
 ---
 
 # Training Metrics and Losses
@@ -138,8 +138,8 @@ Interpretation note:
   - post-weighting objective atoms
 - `coord_diag/<...>`:
   - coord-distribution diagnostics
-- `dup/<...>` and `stage2_ab/channel_b/dup/<...>`:
-  - duplicate-collapse diagnostics and counters
+- `dup/raw/<...>` and `stage2_ab/channel_b/dup/<...>`:
+  - pre-match duplicate-control diagnostics and policy counters
 - `rollout/<...>`:
   - rollout parsing, matching, and coverage diagnostics
 - `eval/...` or `eval_det_*`:
@@ -205,6 +205,10 @@ Interpretation note:
 - `loss/B_coord/bbox_smoothl1` follows the same configured regression semantics
   as Channel-A
 - `loss/B_coord/bbox_ciou` remains canonical `xyxy` CIoU
+- duplicate control now runs on the assembled anchor plus explorer object
+  surface before GT matching
+- non-exempt non-survivors disappear from the positive clean prefix and only
+  contribute the unchanged collapsed UL payload shape
 
 ## Channel-B Pseudo-Positive And Arbitrary-K Notes
 
@@ -270,10 +274,31 @@ Failure telemetry:
 
 Canonical duplicate/rollout families include:
 
-- `dup/*`
+- `dup/raw/*`
 - `stage2_ab/channel_b/dup/N_*`
 - `rollout/*`
 - `time/rollout_*`
+
+Duplicate-control gauges are emitted on the raw pre-match object surface and
+finalize as weighted means:
+
+- `dup/raw/max_desc_count`
+- `dup/raw/saturation_rate`
+- `dup/raw/duplicate_like_max_cluster_size`
+- `dup/raw/desc_entropy`
+- `dup/raw/near_iou90_pairs_same_desc_count`
+- `dup/raw/near_iou90_pairs_any_desc_count`
+
+Canonical Channel-B duplicate-control counters remain additive:
+
+- `stage2_ab/channel_b/dup/N_raw_bbox_valid`
+- `stage2_ab/channel_b/dup/N_clean_accepted`
+- `stage2_ab/channel_b/dup/N_clusters_total`
+- `stage2_ab/channel_b/dup/N_clusters_exempt`
+- `stage2_ab/channel_b/dup/N_clusters_suppressed`
+- `stage2_ab/channel_b/dup/N_objects_suppressed`
+- `stage2_ab/channel_b/dup/N_ul_boundaries`
+- `stage2_ab/channel_b/dup/N_duplicate_burst_unlikelihood_skipped_no_divergence`
 
 Use `docs/training/STAGE2_RUNBOOK.md` for the contract that produces these
 families and `docs/ARTIFACTS.md` for where the corresponding monitor dumps and

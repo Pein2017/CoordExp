@@ -387,7 +387,20 @@ def resolve_stage2_ab_metric_spec(key: str) -> MetricSpec:
     if key.startswith("stage2_ab/") and "/N_" in key:
         return MetricSpec(local_mode="sum", ddp_mode="sum")
 
-    if key in {"dup/max_desc_count", "dup/saturation_rate"}:
+    if key.startswith("dup/raw/"):
+        if key in {
+            "dup/raw/max_desc_count",
+            "dup/raw/saturation_rate",
+            "dup/raw/duplicate_like_max_cluster_size",
+            "dup/raw/desc_entropy",
+        }:
+            return MetricSpec(
+                local_mode="weighted_mean",
+                ddp_mode="weighted_mean",
+                ddp_weight_key=stage2_weight_key,
+            )
+        if key.endswith(("_count", "_total", "_sum", "_num", "_den")):
+            return MetricSpec(local_mode="sum", ddp_mode="sum")
         return MetricSpec(
             local_mode="weighted_mean",
             ddp_mode="weighted_mean",
@@ -407,7 +420,6 @@ def resolve_stage2_ab_metric_spec(key: str) -> MetricSpec:
     if (
         key.startswith("loss/")
         or key.startswith("train/optimization/")
-        or key in {"dup/max_desc_count", "dup/saturation_rate"}
         or key.startswith("stage2/channel_")
         or key.startswith("rollout/")
         or key.startswith("coord_diag/")

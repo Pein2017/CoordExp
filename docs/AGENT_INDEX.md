@@ -6,7 +6,7 @@ status: canonical
 domain: repo
 summary: Agent-first retrieval guide for CoordExp documentation and research notes.
 tags: [agents, retrieval, docs]
-updated: 2026-03-22
+updated: 2026-04-03
 ---
 
 # Agent Index
@@ -49,9 +49,11 @@ Human support entrypoints:
   - [docs/data/README.md](data/README.md)
   - [docs/data/CONTRACT.md](data/CONTRACT.md)
   - [docs/data/PREPARATION.md](data/PREPARATION.md)
+  - [docs/data/PACKING.md](data/PACKING.md) for Stage-1 static-packing and hard-cap questions
 - Stage-1 training:
   - [docs/training/README.md](training/README.md)
   - [docs/training/STAGE1_OBJECTIVE.md](training/STAGE1_OBJECTIVE.md)
+  - [docs/data/PACKING.md](data/PACKING.md)
 - Stage-2 training:
   - [docs/training/README.md](training/README.md)
   - [docs/training/STAGE2_RUNBOOK.md](training/STAGE2_RUNBOOK.md)

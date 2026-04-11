@@ -1,0 +1,8 @@
+extends: ./2b-ab_mixed_coco1024_lvis_proxy_channel_b_pseudo_positive_dup_targeting.yaml
+
+model:
+  model: output/stage1_2b/coco_bbox_max60-1024-lvis_proxy-center_parameterization-ckpt_1564-merged
+
+training:
+  run_name: epoch_1-k4-eff_size_96-b_ratio_0.85-lvis_proxy-2b-pseudo_positive-dup_targeting-ckpt1564_merged
+  artifact_subdir: stage2_ab/prod/2b_lvis_proxy_pseudo_positive_dup_targeting_ckpt1564_merged

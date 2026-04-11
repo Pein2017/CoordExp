@@ -5,7 +5,7 @@ doc_type: reference
 status: canonical
 domain: training
 summary: Stage-1 objective surfaces and coord-token training behavior.
-updated: 2026-03-29
+updated: 2026-04-03
 ---
 
 # Coord Objective & Adapter
@@ -14,6 +14,9 @@ This document details the specialized training objectives and architectural adap
 
 Scope note:
 - This page is primarily the Stage-1 / baseline coord-objective reference.
+- The canonical Stage-1 packing contract now lives in [`../data/PACKING.md`](../data/PACKING.md):
+  one hard `global_max_length` cap, offline static packing, full-length probing before plan build,
+  and fail-fast when any atomic sample exceeds the cap.
 - For Stage-2 pipeline-declared training, the canonical objective surface now lives under:
   - `stage2_ab.pipeline` for `custom.trainer_variant: stage2_two_channel`
   - `rollout_matching.pipeline` for `custom.trainer_variant: stage2_rollout_aligned`

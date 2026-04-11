@@ -156,6 +156,7 @@ def evaluate_and_save_outputs(
         coco_preds=results if want_coco else None,
         summary=summary,
         per_image=per_image,
+        name_suffix=getattr(options, "artifact_name_suffix", ""),
     )
 
     if options.overlay:

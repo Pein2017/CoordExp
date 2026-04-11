@@ -35,9 +35,11 @@ Stage-1 packing guardrails (current implementation):
 - For sorted-vs-random ordering ablations, pin `training.encoded_sample_cache.enabled` explicitly in YAML. Random-order runs remain cache-ineligible, and the sorted arm should not keep an implicit cache-only advantage.
 - Packed dataset wrappers expect the template to expose `packing` and `padding_free` attributes (ms-swift templates do; custom templates must implement them).
 - Stage-1 static packing now defaults to a dataset-local auto-cache root instead of a run-scoped `training.output_dir/static_packing` folder. When `training.static_packing_cache.root_dir` is omitted or `null`, the runner resolves the base cache under `<jsonl_dir>/cache/static_packing/global_max_length_<N>/{train,eval}/`.
-- Static packing artifacts are stored under a fingerprinted subdirectory beneath that base root. If a legacy direct cache already exists at the base root, the packer will adopt it on first reuse and migrate it into the fingerprinted layout automatically.
-- Each length bucket now also writes an `INDEX.json` setup guard at the base root. The first successful setup in that bucket becomes the recorded standard, and later runs in the same bucket fail fast if prompt/order/template or other packing-relevant fingerprint fields drift. This is intentional: it prevents an occasional non-standard run from silently creating a second "standard-looking" cache under the same length bucket.
+- Static packing artifacts are stored under a fingerprinted subdirectory beneath that base root. Legacy direct-root caches are not reused; the runner treats stale or incompatible packing artifacts as disposable and regenerates the current fingerprinted cache on launch.
+- Each length bucket also writes an `INDEX.json` marker at the base root. When prompt/order/template or other packing-relevant fingerprint fields change, the runner warns and rewrites that marker to the latest setup before rebuilding any affected cache artifacts.
 - `training.static_packing_cache.root_dir` is optional and only needed when you want to override the default dataset-local base root.
+- Stage-1 static packing uses one hard length cap: `global_max_length` / `template.max_length`.
+- Static packing probes each atomic sample at full length before building the pack plan. If any sample exceeds that hard cap, packing now fails fast instead of silently truncating or skipping it.
 
 ## Why this is the new default
 - Dramatically cuts padding waste (≈0% slack vs ~40–50% with padding).
@@ -47,7 +49,7 @@ Stage-1 packing guardrails (current implementation):
 
 ## Recommended training knobs
 ```
-global_max_length: 16000
+global_max_length: 12000
 per_device_train_batch_size: 1
 effective_batch_size: 12        # world=4 → grad_accum ≈ 3
 num_train_epochs: 4
@@ -85,6 +87,6 @@ conda run -n ms python scripts/analysis/token_length_analysis.py \
 ## Migration checklist
 1) Update configs to the defaults above in the current Stage-1 tree (`configs/stage1/`).
 2) Align `eval_steps`/`save_steps` to ~80 and `save_delay_steps` to ~200 for 4-epoch runs.
-3) Monitor GPU memory; if headroom shrinks, drop to `global_max_length: 12000` and keep eff_bs=12.
+3) If any atomic sample exceeds `global_max_length`, fix that upstream in preprocessing or route it to a separate run; Stage-1 static packing will not truncate it.
 4) Keep ROOT_IMAGE_DIR set for dataset paths; packing requires non-lazy tokenize.
 5) If comparing to padding runs, match total samples (epochs) rather than optimizer steps.

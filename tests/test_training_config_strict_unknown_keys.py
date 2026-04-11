@@ -722,6 +722,33 @@ def test_unknown_stage2_ab_key_fails_fast():
     assert "Migration guidance" in msg
 
 
+def test_unknown_stage2_ab_channel_b_duplicate_control_key_fails_fast() -> None:
+    payload = _base_stage2_two_channel_payload()
+    payload["stage2_ab"]["channel_b"] = {
+        "duplicate_control": {
+            "iou_threshold": 0.9,
+            "unexpected": 1,
+        }
+    }
+
+    with pytest.raises(ValueError) as exc:
+        TrainingConfig.from_mapping(payload, PromptOverrides())
+
+    assert "stage2_ab.channel_b.duplicate_control.unexpected" in str(exc.value)
+
+
+def test_legacy_stage2_ab_channel_b_duplicate_iou_threshold_fails_fast() -> None:
+    payload = _base_stage2_two_channel_payload()
+    payload["stage2_ab"]["channel_b"] = {"duplicate_iou_threshold": 0.9}
+
+    with pytest.raises(ValueError) as exc:
+        TrainingConfig.from_mapping(payload, PromptOverrides())
+
+    assert "stage2_ab.channel_b.duplicate_iou_threshold has been removed" in str(
+        exc.value
+    )
+
+
 def test_legacy_rollout_server_paired_list_shape_fails_fast():
     payload = _base_training_payload()
     payload["rollout_matching"] = {

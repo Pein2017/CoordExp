@@ -103,6 +103,11 @@ eval:
   overlay_k: 12
   num_workers: 0
 
+  # Optional offline duplicate-control post-op for the eval stage. Raw outputs
+  # remain the main research/debug surface; guarded companions are additive.
+  duplicate_control:
+    enabled: false
+
   # Description matching always uses sentence-transformers/all-MiniLM-L6-v2; unmatched predictions are dropped.
   semantic_model: sentence-transformers/all-MiniLM-L6-v2
   semantic_threshold: 0.6

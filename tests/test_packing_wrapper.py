@@ -244,25 +244,23 @@ def test_static_packing_keeps_exact_max_length_sample_and_skips_overlength_sampl
 ):
     dataset = _FakeDataset([80, 81, 20, 20, 20, 20])
     template = _FakeTemplate(max_length=80)
-    wrapped = build_static_packed_dataset(
-        dataset,
-        template=template,
-        packing_length=80,
-        min_fill_ratio=0.5,
-        packing_drop_last=False,
-        dataloader_drop_last=False,
-        allow_single_long=True,
-        cache_dir=tmp_path / "static_cache",
-        fingerprint=_static_fingerprint("exact_max_skip_overlength"),
-        world_size=1,
-        train_dataloader_shuffle=False,
-    )
-
-    pack_indices = wrapped.pack_plan
-
-    assert [0] in pack_indices
-    assert all(1 not in pack for pack in pack_indices)
-    assert all(sum(dataset.lengths[i] for i in pack) <= 80 for pack in pack_indices)
+    with pytest.raises(
+        ValueError,
+        match="full encoded length exceeds packing_length/global_max_length",
+    ):
+        build_static_packed_dataset(
+            dataset,
+            template=template,
+            packing_length=80,
+            min_fill_ratio=0.5,
+            packing_drop_last=False,
+            dataloader_drop_last=False,
+            allow_single_long=True,
+            cache_dir=tmp_path / "static_cache",
+            fingerprint=_static_fingerprint("exact_max_skip_overlength"),
+            world_size=1,
+            train_dataloader_shuffle=False,
+        )
 
 
 def test_skip_overlength_even_when_allow_single_long_is_enabled():
@@ -567,11 +565,11 @@ def test_static_packing_computes_missing_length_cache_entries(tmp_path: Path):
     assert all(v is not None for v in payload_after["lengths"])
 
 
-def test_static_packing_adopts_legacy_direct_cache_root(tmp_path: Path):
+def test_static_packing_ignores_legacy_direct_cache_root(tmp_path: Path):
     cache_dir = tmp_path / "legacy_cache"
     lengths = [20, 24, 28, 32]
 
-    _ = build_static_packed_dataset(
+    dataset = build_static_packed_dataset(
         _FakeDataset(lengths),
         template=_FakeTemplate(max_length=64),
         packing_length=64,
@@ -587,21 +585,27 @@ def test_static_packing_adopts_legacy_direct_cache_root(tmp_path: Path):
     )
 
     fingerprinted_cache_dir = _resolved_static_cache_dir(cache_dir)
+    lengths_payload = json.loads(
+        (fingerprinted_cache_dir / "lengths.json").read_text(encoding="utf-8")
+    )
+    plan_payload = json.loads(
+        (fingerprinted_cache_dir / "plan_ws1_drop0.json").read_text(encoding="utf-8")
+    )
     legacy_lengths = cache_dir / "lengths.json"
     legacy_plan = cache_dir / "plan_ws1_drop0.json"
     legacy_lengths.write_text(
-        (fingerprinted_cache_dir / "lengths.json").read_text(encoding="utf-8"),
+        json.dumps(lengths_payload),
         encoding="utf-8",
     )
     legacy_plan.write_text(
-        (fingerprinted_cache_dir / "plan_ws1_drop0.json").read_text(encoding="utf-8"),
+        json.dumps(plan_payload),
         encoding="utf-8",
     )
     (fingerprinted_cache_dir / "lengths.json").unlink()
     (fingerprinted_cache_dir / "plan_ws1_drop0.json").unlink()
     fingerprinted_cache_dir.rmdir()
 
-    _ = build_static_packed_dataset(
+    rebuilt = build_static_packed_dataset(
         _FakeDataset(lengths),
         template=_FakeTemplate(max_length=64),
         packing_length=64,
@@ -616,9 +620,56 @@ def test_static_packing_adopts_legacy_direct_cache_root(tmp_path: Path):
         length_precompute_workers=1,
     )
 
-    adopted_cache_dir = _resolved_static_cache_dir(cache_dir)
-    assert (adopted_cache_dir / "lengths.json").exists()
-    assert (adopted_cache_dir / "plan_ws1_drop0.json").exists()
+    rebuilt_cache_dir = _resolved_static_cache_dir(cache_dir)
+    assert (rebuilt_cache_dir / "lengths.json").exists()
+    assert (rebuilt_cache_dir / "plan_ws1_drop0.json").exists()
+    assert rebuilt.raw_plan == dataset.raw_plan
+    assert rebuilt.pack_plan == dataset.pack_plan
+
+
+def test_static_packing_regenerates_stale_plan_cache_version(tmp_path: Path):
+    cache_dir = tmp_path / "stale_plan_version_cache"
+
+    dataset = build_static_packed_dataset(
+        _FakeDataset([20, 24, 28, 32]),
+        template=_FakeTemplate(max_length=64),
+        packing_length=64,
+        min_fill_ratio=0.5,
+        packing_drop_last=False,
+        dataloader_drop_last=False,
+        allow_single_long=True,
+        cache_dir=cache_dir,
+        fingerprint=_static_fingerprint("stale_plan_version"),
+        world_size=1,
+        train_dataloader_shuffle=False,
+        length_precompute_workers=1,
+    )
+
+    fingerprinted_cache_dir = _resolved_static_cache_dir(cache_dir)
+    plan_path = fingerprinted_cache_dir / "plan_ws1_drop0.json"
+    payload = json.loads(plan_path.read_text(encoding="utf-8"))
+    payload["version"] = 1
+    plan_path.write_text(json.dumps(payload), encoding="utf-8")
+
+    rebuilt = build_static_packed_dataset(
+        _FakeDataset([20, 24, 28, 32]),
+        template=_FakeTemplate(max_length=64),
+        packing_length=64,
+        min_fill_ratio=0.5,
+        packing_drop_last=False,
+        dataloader_drop_last=False,
+        allow_single_long=True,
+        cache_dir=cache_dir,
+        fingerprint=_static_fingerprint("stale_plan_version"),
+        world_size=1,
+        train_dataloader_shuffle=False,
+        length_precompute_workers=1,
+    )
+
+    payload_after = json.loads(plan_path.read_text(encoding="utf-8"))
+    assert payload_after["version"] == 3
+    assert rebuilt.raw_plan == dataset.raw_plan
+    assert rebuilt.pack_plan == dataset.pack_plan
 
 
 def test_static_packing_writes_setup_index(tmp_path: Path):
@@ -641,12 +692,12 @@ def test_static_packing_writes_setup_index(tmp_path: Path):
 
     index_path = cache_dir / "INDEX.json"
     payload = json.loads(index_path.read_text(encoding="utf-8"))
-    assert payload["guard_policy"] == "one_setup_per_base_root"
+    assert payload["guard_policy"] == "latest_setup_wins"
     assert payload["cache_layout"] == "fingerprinted_v1"
     assert payload["setup_fingerprint"]["test_case"] == "indexed"
 
 
-def test_static_packing_setup_index_rejects_mismatched_setup(tmp_path: Path):
+def test_static_packing_setup_index_regenerates_mismatched_setup(tmp_path: Path):
     cache_dir = tmp_path / "guarded_cache"
 
     _ = build_static_packed_dataset(
@@ -664,27 +715,29 @@ def test_static_packing_setup_index_rejects_mismatched_setup(tmp_path: Path):
         length_precompute_workers=1,
     )
 
-    with pytest.raises(ValueError, match="setup guard violation"):
-        _ = build_static_packed_dataset(
-            _FakeDataset([20, 24, 28, 32]),
-            template=_FakeTemplate(max_length=64),
-            packing_length=64,
-            min_fill_ratio=0.5,
-            packing_drop_last=False,
-            dataloader_drop_last=False,
-            allow_single_long=True,
-            cache_dir=cache_dir,
-            fingerprint=_static_fingerprint("different_prompt_variant"),
-            world_size=1,
-            train_dataloader_shuffle=False,
-            length_precompute_workers=1,
-        )
+    _ = build_static_packed_dataset(
+        _FakeDataset([20, 24, 28, 32]),
+        template=_FakeTemplate(max_length=64),
+        packing_length=64,
+        min_fill_ratio=0.5,
+        packing_drop_last=False,
+        dataloader_drop_last=False,
+        allow_single_long=True,
+        cache_dir=cache_dir,
+        fingerprint=_static_fingerprint("different_prompt_variant"),
+        world_size=1,
+        train_dataloader_shuffle=False,
+        length_precompute_workers=1,
+    )
+
+    payload = json.loads((cache_dir / "INDEX.json").read_text(encoding="utf-8"))
+    assert payload["setup_fingerprint"]["test_case"] == "different_prompt_variant"
 
 
-def test_static_packing_setup_index_rejects_legacy_mismatched_setup_without_index(
+def test_static_packing_setup_index_regenerates_stale_index_version(
     tmp_path: Path,
 ):
-    cache_dir = tmp_path / "legacy_guarded_cache"
+    cache_dir = tmp_path / "stale_index_cache"
 
     _ = build_static_packed_dataset(
         _FakeDataset([20, 24, 28, 32]),
@@ -695,43 +748,35 @@ def test_static_packing_setup_index_rejects_legacy_mismatched_setup_without_inde
         dataloader_drop_last=False,
         allow_single_long=True,
         cache_dir=cache_dir,
-        fingerprint=_static_fingerprint("legacy_standard"),
+        fingerprint=_static_fingerprint("stale_index"),
         world_size=1,
         train_dataloader_shuffle=False,
         length_precompute_workers=1,
     )
 
-    fingerprinted_cache_dir = _resolved_static_cache_dir(cache_dir)
-    legacy_lengths = cache_dir / "lengths.json"
-    legacy_plan = cache_dir / "plan_ws1_drop0.json"
-    legacy_lengths.write_text(
-        (fingerprinted_cache_dir / "lengths.json").read_text(encoding="utf-8"),
-        encoding="utf-8",
-    )
-    legacy_plan.write_text(
-        (fingerprinted_cache_dir / "plan_ws1_drop0.json").read_text(encoding="utf-8"),
-        encoding="utf-8",
-    )
-    (cache_dir / "INDEX.json").unlink()
-    (fingerprinted_cache_dir / "lengths.json").unlink()
-    (fingerprinted_cache_dir / "plan_ws1_drop0.json").unlink()
-    fingerprinted_cache_dir.rmdir()
+    index_path = cache_dir / "INDEX.json"
+    payload = json.loads(index_path.read_text(encoding="utf-8"))
+    payload["version"] = 0
+    index_path.write_text(json.dumps(payload), encoding="utf-8")
 
-    with pytest.raises(ValueError, match="setup guard violation"):
-        _ = build_static_packed_dataset(
-            _FakeDataset([20, 24, 28, 32]),
-            template=_FakeTemplate(max_length=64),
-            packing_length=64,
-            min_fill_ratio=0.5,
-            packing_drop_last=False,
-            dataloader_drop_last=False,
-            allow_single_long=True,
-            cache_dir=cache_dir,
-            fingerprint=_static_fingerprint("legacy_different"),
-            world_size=1,
-            train_dataloader_shuffle=False,
-            length_precompute_workers=1,
-        )
+    _ = build_static_packed_dataset(
+        _FakeDataset([20, 24, 28, 32]),
+        template=_FakeTemplate(max_length=64),
+        packing_length=64,
+        min_fill_ratio=0.5,
+        packing_drop_last=False,
+        dataloader_drop_last=False,
+        allow_single_long=True,
+        cache_dir=cache_dir,
+        fingerprint=_static_fingerprint("stale_index"),
+        world_size=1,
+        train_dataloader_shuffle=False,
+        length_precompute_workers=1,
+    )
+
+    payload_after = json.loads(index_path.read_text(encoding="utf-8"))
+    assert payload_after["version"] == 1
+    assert payload_after["setup_fingerprint"]["test_case"] == "stale_index"
 
 
 def test_static_packing_warns_before_first_time_build(

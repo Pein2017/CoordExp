@@ -1,0 +1,9 @@
+extends: ./2b_lvis_proxy_pseudo_positive_dup_targeting_ckpt1564_merged_checkpoint_ddp_4steps.yaml
+
+training:
+  run_name: smoke_4steps-2b-lvis_proxy-ckpt1564_merged-checkpoint_ddp_direct
+  artifact_subdir: stage2_ab/smoke/2b_lvis_proxy_pseudo_positive_dup_targeting_ckpt1564_merged_checkpoint_ddp_direct_4steps
+
+rollout_matching:
+  rollout_backend: hf
+  eval_rollout_backend: hf

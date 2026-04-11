@@ -1,8 +1,11 @@
 from __future__ import annotations
 
 import copy
+import logging
+import os
 from pathlib import Path
 import random
+import time
 from typing import Any, Dict, List, Literal, Mapping, MutableMapping, Optional, Sequence
 
 from torch.utils.data import Dataset
@@ -27,6 +30,33 @@ from .utils import (
 
 # Exposed for debugging (e.g., OOM tracing)
 LAST_SAMPLE_DEBUG: Dict[str, Any] = {}
+logger = logging.getLogger(__name__)
+
+
+def _dataset_timing_enabled() -> bool:
+    raw = str(os.environ.get("COORDEXP_DATASET_TIMING", "")).strip().lower()
+    return raw in {"1", "true", "yes", "on"}
+
+
+def _dataset_timing_min_ms() -> float:
+    raw = str(os.environ.get("COORDEXP_DATASET_TIMING_MIN_MS", "")).strip()
+    if not raw:
+        return 250.0
+    try:
+        return max(float(raw), 0.0)
+    except ValueError:
+        return 250.0
+
+
+def _append_timing_line(line: str) -> None:
+    path = str(os.environ.get("COORDEXP_TIMING_LOG", "")).strip()
+    if not path:
+        return
+    try:
+        with open(path, "a", encoding="utf-8") as f:
+            f.write(line.rstrip() + "\n")
+    except OSError:
+        return
 
 
 def _extract_sample_length(sample: Mapping[str, Any]) -> int | None:
@@ -663,19 +693,38 @@ class BaseCaptionDataset(Dataset):
 
         base_idx = self._index_perm[index % len(self._index_perm)]
         record_for_debug: Mapping[str, Any] = self.base_records[base_idx]
+        timing_enabled = _dataset_timing_enabled()
+        t0 = time.perf_counter() if timing_enabled else 0.0
+        t_prepare_ms = 0.0
+        t_encode_ms = 0.0
+        if timing_enabled:
+            try:
+                image_id = record_for_debug.get("image_id")
+            except Exception:
+                image_id = None
+            _append_timing_line(
+                "dataset_fetch_start "
+                f"base_idx={int(base_idx)} index={int(index)} image_id={image_id}"
+            )
 
         if self._encoded_sample_cache is not None:
             encoded = copy.deepcopy(self._encoded_sample_cache.load_sample(base_idx))
         else:
+            t_prepare_start = time.perf_counter() if timing_enabled else 0.0
             record = self._prepare_record_for_fetch(
                 base_idx=int(base_idx),
                 index=int(index),
             )
+            if timing_enabled:
+                t_prepare_ms = (time.perf_counter() - t_prepare_start) * 1000.0
+                t_encode_start = time.perf_counter()
             encoded = self._encode_record(
                 record=record,
                 builder=self._create_builder(self.mode),
                 system_prompt=self._current_system_prompt(),
             )
+            if timing_enabled:
+                t_encode_ms = (time.perf_counter() - t_encode_start) * 1000.0
             record_for_debug = record
 
         if not isinstance(encoded, MutableMapping):
@@ -693,6 +742,39 @@ class BaseCaptionDataset(Dataset):
 
         self.last_sample_debug = info
         LAST_SAMPLE_DEBUG.update(info)
+        if timing_enabled:
+            total_ms = (time.perf_counter() - t0) * 1000.0
+            if total_ms >= _dataset_timing_min_ms():
+                sample_len = _extract_sample_length(encoded)
+                try:
+                    object_count = len(record_for_debug.get("objects") or [])
+                except Exception:
+                    object_count = None
+                try:
+                    images = list(record_for_debug.get("images") or [])
+                    image_ref = images[0] if images else None
+                except Exception:
+                    image_ref = None
+                logger.info(
+                    "dataset_timing: total_ms=%.1f prepare_ms=%.1f encode_ms=%.1f "
+                    "base_idx=%s index=%s image_id=%s objects=%s length=%s image=%s",
+                    total_ms,
+                    t_prepare_ms,
+                    t_encode_ms,
+                    int(base_idx),
+                    int(index),
+                    record_for_debug.get("image_id"),
+                    object_count,
+                    sample_len,
+                    image_ref,
+                )
+                _append_timing_line(
+                    "dataset_timing "
+                    f"total_ms={total_ms:.1f} prepare_ms={t_prepare_ms:.1f} "
+                    f"encode_ms={t_encode_ms:.1f} base_idx={int(base_idx)} "
+                    f"index={int(index)} image_id={record_for_debug.get('image_id')} "
+                    f"objects={object_count} length={sample_len} image={image_ref}"
+                )
 
         return encoded
 

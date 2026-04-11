@@ -5,6 +5,16 @@ from pathlib import Path
 from typing import Any, Dict, Optional
 
 
+def build_eval_artifact_paths(*, run_dir: Path, eval_dir: Path) -> Dict[str, Path]:
+    return {
+        "gt_vs_pred_guarded_jsonl": run_dir / "gt_vs_pred_guarded.jsonl",
+        "gt_vs_pred_scored_guarded_jsonl": run_dir / "gt_vs_pred_scored_guarded.jsonl",
+        "metrics_json": eval_dir / "metrics.json",
+        "metrics_guarded_json": eval_dir / "metrics_guarded.json",
+        "duplicate_guard_report_json": eval_dir / "duplicate_guard_report.json",
+    }
+
+
 def resolve_infer_artifact_paths(
     *,
     cfg: Any,

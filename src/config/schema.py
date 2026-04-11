@@ -1742,8 +1742,76 @@ class Stage2ABChannelBPseudoPositiveConfig:
 
 
 @dataclass(frozen=True)
+class Stage2ABChannelBDuplicateControlConfig:
+    iou_threshold: float = 0.90
+    center_radius_scale: float = 0.80
+
+    @classmethod
+    def from_mapping(cls, payload: Any) -> "Stage2ABChannelBDuplicateControlConfig":
+        if payload is None:
+            return cls()
+        if not isinstance(payload, Mapping):
+            raise TypeError(
+                "stage2_ab.channel_b.duplicate_control must be a mapping when provided"
+            )
+
+        data: MutableMapping[str, Any] = dict(payload)
+
+        iou_threshold_raw = data.pop("iou_threshold", cls.iou_threshold)
+        try:
+            iou_threshold = float(iou_threshold_raw)
+        except (TypeError, ValueError) as exc:
+            raise TypeError(
+                "stage2_ab.channel_b.duplicate_control.iou_threshold must be a float/int"
+            ) from exc
+        if not math.isfinite(iou_threshold):
+            raise ValueError(
+                "stage2_ab.channel_b.duplicate_control.iou_threshold must be finite"
+            )
+        if iou_threshold < 0.0 or iou_threshold > 1.0:
+            raise ValueError(
+                "stage2_ab.channel_b.duplicate_control.iou_threshold must be in [0, 1]"
+            )
+
+        center_radius_scale_raw = data.pop(
+            "center_radius_scale",
+            cls.center_radius_scale,
+        )
+        try:
+            center_radius_scale = float(center_radius_scale_raw)
+        except (TypeError, ValueError) as exc:
+            raise TypeError(
+                "stage2_ab.channel_b.duplicate_control.center_radius_scale must be a float/int"
+            ) from exc
+        if not math.isfinite(center_radius_scale):
+            raise ValueError(
+                "stage2_ab.channel_b.duplicate_control.center_radius_scale must be finite"
+            )
+        if center_radius_scale < 0.0:
+            raise ValueError(
+                "stage2_ab.channel_b.duplicate_control.center_radius_scale must be >= 0"
+            )
+
+        if data:
+            unknown = [
+                f"stage2_ab.channel_b.duplicate_control.{str(k)}"
+                for k in sorted(data.keys(), key=lambda x: str(x))
+            ]
+            raise ValueError(
+                f"Unknown stage2_ab.channel_b.duplicate_control keys: {unknown}"
+            )
+
+        return cls(
+            iou_threshold=iou_threshold,
+            center_radius_scale=center_radius_scale,
+        )
+
+
+@dataclass(frozen=True)
 class Stage2ABChannelBConfig:
-    duplicate_iou_threshold: float = 0.90
+    duplicate_control: Stage2ABChannelBDuplicateControlConfig = field(
+        default_factory=Stage2ABChannelBDuplicateControlConfig
+    )
     producer_wait_timeout_s: Optional[float] = None
     ddp_phase_timeout_s: Optional[float] = None
     invalid_rollout_policy: str = "abort"
@@ -1830,24 +1898,20 @@ class Stage2ABChannelBConfig:
                     "use stage2_ab.channel_b.pseudo_positive instead."
                 )
 
-        duplicate_iou_threshold_raw = data.pop(
-            "duplicate_iou_threshold",
-            cls.duplicate_iou_threshold,
+        if "duplicate_iou_threshold" in data:
+            raise ValueError(
+                "stage2_ab.channel_b.duplicate_iou_threshold has been removed. "
+                "Use stage2_ab.channel_b.duplicate_control.iou_threshold instead."
+            )
+        if "center_radius_scale" in data:
+            raise ValueError(
+                "stage2_ab.channel_b.center_radius_scale has been removed. "
+                "Use stage2_ab.channel_b.duplicate_control.center_radius_scale instead."
+            )
+
+        duplicate_control = Stage2ABChannelBDuplicateControlConfig.from_mapping(
+            data.pop("duplicate_control", None)
         )
-        try:
-            duplicate_iou_threshold = float(duplicate_iou_threshold_raw)
-        except (TypeError, ValueError) as exc:
-            raise TypeError(
-                "stage2_ab.channel_b.duplicate_iou_threshold must be a float/int"
-            ) from exc
-        if not math.isfinite(duplicate_iou_threshold):
-            raise ValueError(
-                "stage2_ab.channel_b.duplicate_iou_threshold must be finite"
-            )
-        if duplicate_iou_threshold < 0.0 or duplicate_iou_threshold > 1.0:
-            raise ValueError(
-                "stage2_ab.channel_b.duplicate_iou_threshold must be in [0, 1]"
-            )
 
         invalid_rollout_policy_raw = data.pop(
             "invalid_rollout_policy",
@@ -1929,7 +1993,7 @@ class Stage2ABChannelBConfig:
             )
 
         return cls(
-            duplicate_iou_threshold=duplicate_iou_threshold,
+            duplicate_control=duplicate_control,
             producer_wait_timeout_s=producer_wait_timeout_s,
             ddp_phase_timeout_s=ddp_phase_timeout_s,
             invalid_rollout_policy=invalid_rollout_policy,

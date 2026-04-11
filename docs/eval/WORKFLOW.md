@@ -6,7 +6,7 @@ status: canonical
 domain: eval
 summary: YAML-first runbook for inference, confidence post-processing, evaluation, and visualization.
 tags: [eval, infer, runbook]
-updated: 2026-03-22
+updated: 2026-04-03
 ---
 
 # Evaluation Workflow
@@ -27,7 +27,10 @@ input JSONL + checkpoint
   -> confidence post-op (when COCO scoring is needed)
   -> gt_vs_pred_scored.jsonl
   -> evaluation
-  -> metrics.json / per_image.json / optional overlays
+  -> raw metrics/artifacts
+  -> optional duplicate-control guard
+  -> guarded metrics/artifacts
+  -> metrics.json / metrics_guarded.json / per_image.json / per_image_guarded.json / optional overlays
 ```
 
 ## YAML-First Commands
@@ -52,6 +55,14 @@ Run evaluation:
 PYTHONPATH=. conda run -n ms python scripts/evaluate_detection.py \
   --config configs/eval/detection.yaml
 ```
+
+Duplicate-control guard note:
+
+- `scripts/evaluate_detection.py` accepts the YAML-only toggle
+  `duplicate_control.enabled: true`
+- when enabled, the evaluator keeps the raw input artifact authoritative and
+  additionally emits guarded companions plus a duplicate-control report
+- prefer reporting both raw and guarded metrics together when comparing runs
 
 Run Oracle-K analysis:
 
@@ -93,10 +104,25 @@ After confidence post-op:
 After evaluation:
 
 - `metrics.json`
+- `metrics_guarded.json` when `duplicate_control.enabled: true`
 - `per_image.json`
+- `per_image_guarded.json` when `duplicate_control.enabled: true`
+- `duplicate_guard_report.json` when `duplicate_control.enabled: true`
+- `matches_guarded.jsonl` and `matches@<thr>_guarded.jsonl` when match exports
+  are enabled under duplicate control
 - optional `per_class.csv`, `matches.jsonl`, and overlays
 - `vis_resources/gt_vs_pred.jsonl` when the shared GT-vs-Pred reviewer is
   materialized for `scripts/run_vis.sh` or evaluator overlays
+
+Guarded-artifact rule:
+
+- non-COCO raw evaluation continues to consume `gt_vs_pred.jsonl`
+- score-aware COCO evaluation continues to consume `gt_vs_pred_scored.jsonl`
+- guarded companions follow the same input family:
+  - `gt_vs_pred_guarded.jsonl`
+  - `gt_vs_pred_scored_guarded.jsonl`
+- treat the raw artifact as the main research/debug surface and the guarded
+  artifact as the safety/post-op surface
 
 ## COCO + LVIS Proxy Evaluation
 
