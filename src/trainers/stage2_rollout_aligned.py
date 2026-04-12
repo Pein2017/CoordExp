@@ -50,7 +50,7 @@ from src.common.object_field_order import (
     normalize_object_field_order,
     normalize_object_ordering,
 )
-from src.common.geometry import bbox_from_points, flatten_points
+from src.common.geometry import bbox_from_points, flatten_points, normalize_bbox_format
 from src.common.prediction_parsing import (
     extract_special_tokens,
     load_prediction_dict,
@@ -1454,6 +1454,15 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
         if not isinstance(cfg, Mapping):
             raise TypeError(
                 "rollout_matching_cfg must be a mapping (injected from rollout_matching)"
+            )
+        bbox_format = normalize_bbox_format(
+            cfg.get("bbox_format", "xyxy"),
+            path="rollout_matching.bbox_format",
+        )
+        if bbox_format != "xyxy":
+            raise ValueError(
+                "rollout_matching.bbox_format must remain 'xyxy' for stage-2 trainers "
+                "until target construction is updated for alternate bbox parameterizations."
             )
 
         removed = [

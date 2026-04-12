@@ -714,6 +714,7 @@ class CoordSoftCEW1LossMixin:
             object_field_order=str(
                 getattr(self, "object_field_order", "desc_first") or "desc_first"
             ),
+            bbox_format=str(getattr(self, "bbox_format", "xyxy") or "xyxy"),
         )
 
         if result is None:
@@ -1036,6 +1037,7 @@ class BBoxGeoLossMixin:
             object_field_order=str(
                 getattr(self, "object_field_order", "desc_first") or "desc_first"
             ),
+            bbox_format=str(getattr(self, "bbox_format", "xyxy") or "xyxy"),
         )
         if result is None:
             return (loss, outputs) if return_outputs else loss
@@ -1255,6 +1257,7 @@ class BBoxSizeAuxLossMixin:
             object_field_order=str(
                 getattr(self, "object_field_order", "desc_first") or "desc_first"
             ),
+            bbox_format=str(getattr(self, "bbox_format", "xyxy") or "xyxy"),
         )
         if result is None:
             return (loss, outputs) if return_outputs else loss

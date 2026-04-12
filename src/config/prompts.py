@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import Optional
 
+from src.common.geometry.bbox_formats import normalize_bbox_format
 from src.common.object_field_order import normalize_object_field_order
 
 from .prompt_variants import (
@@ -19,6 +20,12 @@ _USER_EXAMPLE_DESC_FIRST = (
 )
 _USER_EXAMPLE_GEOMETRY_FIRST = (
     '{"bbox_2d": [<|coord_110|>, <|coord_310|>, <|coord_410|>, <|coord_705|>], "desc": "black cat near sofa"}'
+)
+_USER_EXAMPLE_DESC_FIRST_CXCYWH = (
+    '{"desc": "black cat", "bbox_2d": [<|coord_260|>, <|coord_508|>, <|coord_300|>, <|coord_395|>]}'
+)
+_USER_EXAMPLE_GEOMETRY_FIRST_CXCYWH = (
+    '{"bbox_2d": [<|coord_260|>, <|coord_508|>, <|coord_300|>, <|coord_395|>], "desc": "black cat near sofa"}'
 )
 
 # Ordering instructions (shared across coord modes)
@@ -92,12 +99,53 @@ def _apply_geometry_first_system_wording(base_prompt: str) -> str:
 
 
 def _apply_geometry_first_user_wording(base_prompt: str) -> str:
-    return base_prompt.replace(
+    return (
+        base_prompt.replace(
         "has desc before one geometry (bbox_2d or poly)",
         "has one geometry (bbox_2d or poly) before desc",
-    ).replace(
+    )
+        .replace(
         f"Use the exact per-object format: {_USER_EXAMPLE_DESC_FIRST}.",
         f"Use the exact per-object format: {_USER_EXAMPLE_GEOMETRY_FIRST}.",
+    )
+        .replace(
+        f"Use the exact per-object format: {_USER_EXAMPLE_DESC_FIRST_CXCYWH}.",
+        f"Use the exact per-object format: {_USER_EXAMPLE_GEOMETRY_FIRST_CXCYWH}.",
+    )
+    )
+
+
+def _apply_bbox_format_system_wording(base_prompt: str, *, bbox_format: str) -> str:
+    bbox_format_norm = normalize_bbox_format(bbox_format, path="custom.bbox_format")
+    if bbox_format_norm == "xyxy":
+        return base_prompt
+    return (
+        base_prompt.replace(
+            "bbox_2d is [x1, y1, x2, y2] with x1<=x2 and y1<=y2.\n",
+            "bbox_2d is [cx, cy, w, h] where (cx, cy) is the box center and w/h are non-negative box size terms.\n",
+        )
+        .replace(
+            "  * bbox_2d: [<|coord_12|>, <|coord_34|>, <|coord_256|>, <|coord_480|>]\n",
+            "  * bbox_2d: [<|coord_128|>, <|coord_257|>, <|coord_244|>, <|coord_446|>]\n",
+        )
+        .replace(
+            "  For bbox_2d, anchor is (y1, x1) from [x1, y1, x2, y2].\n",
+            "  For bbox_2d, anchor is the implied top-left (cy-h/2, cx-w/2) from [cx, cy, w, h].\n",
+        )
+    )
+
+
+def _apply_bbox_format_user_wording(base_prompt: str, *, bbox_format: str) -> str:
+    bbox_format_norm = normalize_bbox_format(bbox_format, path="custom.bbox_format")
+    if bbox_format_norm == "xyxy":
+        return base_prompt
+    return (
+        base_prompt.replace(
+            "For bbox_2d anchors, use (y1, x1) from [x1, y1, x2, y2]. ",
+            "For bbox_2d anchors, use the implied top-left (cy-h/2, cx-w/2) from [cx, cy, w, h]. ",
+        )
+        .replace(_USER_EXAMPLE_DESC_FIRST, _USER_EXAMPLE_DESC_FIRST_CXCYWH)
+        .replace(_USER_EXAMPLE_GEOMETRY_FIRST, _USER_EXAMPLE_GEOMETRY_FIRST_CXCYWH)
     )
 
 
@@ -106,6 +154,7 @@ def build_dense_system_prompt(
     coord_mode: str = "coord_tokens",
     prompt_variant: Optional[str] = None,
     object_field_order: str = "desc_first",
+    bbox_format: str = "xyxy",
 ) -> str:
     """Return system prompt for dense mode with coord-tokens-only contract."""
     coord_mode_key = str(coord_mode).lower()
@@ -124,6 +173,9 @@ def build_dense_system_prompt(
     field_order = normalize_object_field_order(
         object_field_order, path="custom.object_field_order"
     )
+    base_prompt = _apply_bbox_format_system_wording(
+        base_prompt, bbox_format=bbox_format
+    )
     if field_order == "geometry_first":
         base_prompt = _apply_geometry_first_system_wording(base_prompt)
 
@@ -138,6 +190,7 @@ def build_dense_user_prompt(
     coord_mode: str = "coord_tokens",
     prompt_variant: Optional[str] = None,
     object_field_order: str = "desc_first",
+    bbox_format: str = "xyxy",
 ) -> str:
     """Return user prompt for dense mode with coord-tokens-only contract."""
     coord_mode_key = str(coord_mode).lower()
@@ -156,6 +209,9 @@ def build_dense_user_prompt(
     field_order = normalize_object_field_order(
         object_field_order, path="custom.object_field_order"
     )
+    base_prompt = _apply_bbox_format_user_wording(
+        base_prompt, bbox_format=bbox_format
+    )
     if field_order == "geometry_first":
         base_prompt = _apply_geometry_first_user_wording(base_prompt)
 
@@ -170,6 +226,7 @@ def get_template_prompts(
     coord_mode: str = "coord_tokens",
     prompt_variant: Optional[str] = None,
     object_field_order: str = "desc_first",
+    bbox_format: str = "xyxy",
 ) -> tuple[str, str]:
     """Return (system, user) prompts for dense mode with variant support."""
     return (
@@ -178,12 +235,14 @@ def get_template_prompts(
             coord_mode=coord_mode,
             prompt_variant=prompt_variant,
             object_field_order=object_field_order,
+            bbox_format=bbox_format,
         ),
         build_dense_user_prompt(
             ordering=ordering,
             coord_mode=coord_mode,
             prompt_variant=prompt_variant,
             object_field_order=object_field_order,
+            bbox_format=bbox_format,
         ),
     )
 

@@ -690,6 +690,7 @@ def _build_static_packing_fingerprint(
         "custom_json_format": getattr(custom_config, "json_format", None),
         "custom_object_ordering": getattr(custom_config, "object_ordering", None),
         "custom_object_field_order": getattr(custom_config, "object_field_order", None),
+        "custom_bbox_format": getattr(custom_config, "bbox_format", None),
         "custom_use_summary": bool(getattr(custom_config, "use_summary", False)),
         "custom_offline_max_pixels": getattr(custom_config, "offline_max_pixels", None),
         "coord_tokens": coord_tokens_payload,
@@ -731,6 +732,20 @@ def _coord_tokens_fingerprint_payload(custom_config: Any) -> Any:
     if isinstance(coord_tokens_cfg, Mapping):
         return dict(coord_tokens_cfg)
     return None
+
+
+def _validate_bbox_format_contract(
+    *,
+    custom_config: Any,
+    trainer_variant: str | None,
+) -> None:
+    bbox_format = str(getattr(custom_config, "bbox_format", "xyxy") or "xyxy").strip().lower()
+    variant = str(trainer_variant or "").strip()
+    if variant in {"stage2_two_channel", "stage2_rollout_aligned"} and bbox_format != "xyxy":
+        raise ValueError(
+            "custom.bbox_format=cxcywh is currently unsupported for stage-2 trainer variants. "
+            "Stage-2 target construction still assumes canonical xyxy ordering; use custom.bbox_format=xyxy."
+        )
 
 
 def _build_encoded_sample_cache_fingerprint(
@@ -778,6 +793,7 @@ def _build_encoded_sample_cache_fingerprint(
         "custom_json_format": getattr(custom_config, "json_format", None),
         "custom_object_ordering": getattr(custom_config, "object_ordering", None),
         "custom_object_field_order": getattr(custom_config, "object_field_order", None),
+        "custom_bbox_format": getattr(custom_config, "bbox_format", None),
         "custom_use_summary": bool(getattr(custom_config, "use_summary", False)),
         "custom_offline_max_pixels": getattr(custom_config, "offline_max_pixels", None),
         "coord_tokens": coord_tokens_payload,
@@ -1591,6 +1607,11 @@ def main():
         system_prompt_summary=system_prompt_summary,
     )
     dataset: Any
+    trainer_variant = getattr(train_args, "trainer_variant", None)
+    _validate_bbox_format_contract(
+        custom_config=custom_config,
+        trainer_variant=trainer_variant,
+    )
     logger.info(
         "Serialization order config: object_ordering=%s object_field_order=%s",
         custom_config.object_ordering,
@@ -1615,6 +1636,7 @@ def main():
         seed=dataset_seed,
         object_ordering=custom_config.object_ordering,
         object_field_order=custom_config.object_field_order,
+        bbox_format=custom_config.bbox_format,
         encoded_sample_cache=train_encoded_sample_cache_request,
     )
     if train_encoded_sample_cache_request is not None:
@@ -1623,7 +1645,6 @@ def main():
         training_config.training, sft.template, train_args
     )
     _validate_attention_backend_for_packing(training_config=training_config)
-    trainer_variant = getattr(train_args, "trainer_variant", None)
     base_dataset_len = None
     try:
         base_dataset_len = len(dataset)
@@ -2188,6 +2209,7 @@ def main():
             seed=dataset_seed,
             object_ordering=custom_config.object_ordering,
             object_field_order=custom_config.object_field_order,
+            bbox_format=custom_config.bbox_format,
             encoded_sample_cache=eval_encoded_sample_cache_request,
         )
         base_eval_len = len(eval_dataset)
@@ -2446,6 +2468,7 @@ def main():
                 prompt_variant=str(prompt_variant),
                 object_field_order=str(custom_config.object_field_order),
                 object_ordering=str(custom_config.object_ordering),
+                bbox_format=str(custom_config.bbox_format),
                 metrics=str(stage1_eval_cfg.metrics),
                 use_segm=bool(stage1_eval_cfg.use_segm),
                 strict_parse=bool(stage1_eval_cfg.strict_parse),
@@ -2646,6 +2669,7 @@ def main():
                     "prompt_variant": prompt_variant_from_extra,
                     "object_ordering": str(custom_config.object_ordering),
                     "object_field_order": str(custom_config.object_field_order),
+                    "bbox_format": str(custom_config.bbox_format),
                 }
             )
             setattr(trainer, "rollout_matching_cfg", rollout_cfg)
@@ -2749,6 +2773,7 @@ def main():
         setattr(trainer, "bbox_geo_cfg", bbox_geo_cfg)
     if bbox_size_aux_cfg is not None:
         setattr(trainer, "bbox_size_aux_cfg", bbox_size_aux_cfg)
+    setattr(trainer, "bbox_format", str(custom_config.bbox_format))
     if token_type_cfg is not None:
         setattr(trainer, "token_type_metrics_cfg", token_type_cfg)
     if instability_monitor_cfg is not None:

@@ -6,6 +6,7 @@ from typing import Any, Mapping
 import torch
 
 from src.trainers.teacher_forcing.geometry import (
+    bbox_tensor_to_xyxy,
     canonicalize_bbox_xyxy,
     compute_bbox_regression_loss,
     bbox_smoothl1_ciou_loss,
@@ -51,6 +52,7 @@ def compute_stage1_bbox_geo_loss(
     decode_temperature: float,
     decode_mode: str = "exp",
     object_field_order: str = "desc_first",
+    bbox_format: str = "xyxy",
 ) -> BBoxGeoResult | None:
     quartets = extract_stage1_bbox_quartets(
         logits=logits,
@@ -59,6 +61,7 @@ def compute_stage1_bbox_geo_loss(
         coord_id_map=coord_id_map,
         tokenizer=tokenizer,
         object_field_order=object_field_order,
+        bbox_format=bbox_format,
     )
     if quartets is None:
         return None
@@ -81,7 +84,7 @@ def compute_stage1_bbox_geo_loss(
         temperature=float(max(1e-6, decode_temperature)),
         mode=str(decode_mode or "exp"),
     )
-    pred_boxes = canonicalize_bbox_xyxy(pred.reshape(-1, 4))
+    pred_boxes = bbox_tensor_to_xyxy(pred.reshape(-1, 4), bbox_format=bbox_format)
     target_boxes = canonicalize_bbox_xyxy(quartets.target_boxes_xyxy)
 
     parameterization = _cfg_str(cfg, "parameterization", "xyxy").strip().lower()

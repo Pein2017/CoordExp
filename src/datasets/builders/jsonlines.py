@@ -9,6 +9,10 @@ from src.common.object_field_order import (
     build_object_payload,
     normalize_object_field_order,
 )
+from src.common.geometry.bbox_formats import (
+    convert_bbox_2d_points,
+    normalize_bbox_format,
+)
 from src.coord_tokens.codec import sequence_has_coord_tokens, tokens_to_ints
 from src.utils.assistant_json import dumps_coordjson
 from src.utils.coordjson_transpiler import coordjson_to_strict_json
@@ -54,6 +58,7 @@ class JSONLinesBuilder(BaseBuilder):
         json_format: Literal["standard"] = "standard",
         coord_tokens_enabled: bool = False,
         object_field_order: ObjectFieldOrder = "desc_first",
+        bbox_format: str = "xyxy",
         **kwargs,
     ) -> None:
         super().__init__(**kwargs)
@@ -63,6 +68,7 @@ class JSONLinesBuilder(BaseBuilder):
         self.json_format = json_format
         self.coord_tokens_enabled = bool(coord_tokens_enabled)
         self.object_field_order = normalize_object_field_order(object_field_order)
+        self.bbox_format = normalize_bbox_format(bbox_format, path="custom.bbox_format")
 
     def _get_summary_text(self, record: ConversationRecord, record_index: int) -> str:
         """Extract and validate summary from record.
@@ -224,6 +230,20 @@ class JSONLinesBuilder(BaseBuilder):
                 if cached_numeric is not None
                 else self._select_numeric_points(obj, geom_type, points)
             )
+            if geom_type == "bbox_2d":
+                original_xyxy = obj.get("_bbox_xyxy_original")
+                if original_xyxy is not None:
+                    points_for_meta = [int(round(float(v))) for v in list(original_xyxy)]
+                else:
+                    points_for_meta = [
+                        int(round(v))
+                        for v in convert_bbox_2d_points(
+                            points_for_meta,
+                            src_format=self.bbox_format,
+                            dst_format="xyxy",
+                            path=f"objects[{image_id}].bbox_2d",
+                        )
+                    ]
             objects_out["bbox"].append(points_for_meta)
             objects_out["image_id"].append(image_id)
             desc = obj.get("desc")

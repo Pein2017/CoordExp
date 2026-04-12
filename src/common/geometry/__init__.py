@@ -15,6 +15,12 @@ from src.datasets.geometry import (  # noqa: F401
     transform_geometry,
     geometry_from_dict,
 )
+from .bbox_formats import (  # noqa: F401
+    ALLOWED_BBOX_FORMATS,
+    BBoxFormat,
+    convert_bbox_2d_points,
+    normalize_bbox_format,
+)
 from .coord_utils import (  # noqa: F401
     COORD_TOKEN_RE,
     MAX_BIN,
@@ -41,6 +47,10 @@ __all__ = [
     "points_to_xyxy",
     "transform_geometry",
     "geometry_from_dict",
+    "BBoxFormat",
+    "ALLOWED_BBOX_FORMATS",
+    "normalize_bbox_format",
+    "convert_bbox_2d_points",
     # coord utils
     "COORD_TOKEN_RE",
     "MAX_BIN",

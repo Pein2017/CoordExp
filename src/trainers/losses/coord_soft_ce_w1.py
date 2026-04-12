@@ -140,6 +140,7 @@ def compute_coord_soft_ce_w1_loss(
     model_accepts_loss_kwargs: bool,
     accelerator_num_processes: int | None,
     object_field_order: str = "desc_first",
+    bbox_format: str = "xyxy",
 ) -> CoordSoftCEW1Result | None:
     """Compute the coord_soft_ce_w1 loss term from a single forward pass.
 
@@ -324,6 +325,7 @@ def compute_coord_soft_ce_w1_loss(
             include_adjacent_metadata=True,
             require_desc_keys=(filter_mode == "same_desc"),
             object_field_order=object_field_order,
+            bbox_format=bbox_format,
         )
         if (
             quartets is not None

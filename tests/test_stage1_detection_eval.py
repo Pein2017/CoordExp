@@ -68,6 +68,7 @@ def test_stage1_detection_eval_backfills_lvis_metadata_and_logs_metrics(
         prompt_variant="lvis_stage1_federated",
         object_field_order="desc_first",
         object_ordering="sorted",
+        bbox_format="xyxy",
         metrics="lvis",
         use_segm=False,
         strict_parse=True,

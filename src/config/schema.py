@@ -22,6 +22,7 @@ from src.common.object_field_order import (
     normalize_object_field_order,
     normalize_object_ordering,
 )
+from src.common.geometry.bbox_formats import BBoxFormat, normalize_bbox_format
 from src.trainers.teacher_forcing.module_registry import (
     ALLOWED_DIAGNOSTIC_MODULES,
     ALLOWED_OBJECTIVE_MODULES,
@@ -1089,6 +1090,7 @@ class CustomConfig:
     json_format: AllowedJsonFormat
     object_field_order: ObjectFieldOrder
     object_ordering: ObjectOrdering = "sorted"
+    bbox_format: BBoxFormat = "xyxy"
     coord_tokens: CoordTokensConfig = field(default_factory=CoordTokensConfig)
     coord_offset: CoordOffsetConfig = field(default_factory=CoordOffsetConfig)
     coord_soft_ce_w1: CoordSoftCEW1Config = field(default_factory=CoordSoftCEW1Config)
@@ -1134,6 +1136,7 @@ class CustomConfig:
             raise ValueError(
                 "custom.object_field_order must be one of {'desc_first', 'geometry_first'}"
             )
+        normalize_bbox_format(self.bbox_format, path="custom.bbox_format")
         if not isinstance(self.use_summary, bool):
             raise TypeError("custom.use_summary must be a boolean value")
         if not isinstance(self.val_sample_with_replacement, bool):
@@ -1226,6 +1229,7 @@ class CustomConfig:
         dump_conversation_path = data.pop("dump_conversation_path", None)
         object_ordering_raw = data.pop("object_ordering", "sorted")
         object_field_order_raw = data.pop("object_field_order", None)
+        bbox_format_raw = data.pop("bbox_format", "xyxy")
         if object_field_order_raw is None:
             raise ValueError("custom.object_field_order must be provided")
         val_jsonl = data.pop("val_jsonl", None)
@@ -1327,6 +1331,9 @@ class CustomConfig:
         object_field_order = normalize_object_field_order(
             object_field_order_raw, path="custom.object_field_order"
         )
+        bbox_format = normalize_bbox_format(
+            bbox_format_raw, path="custom.bbox_format"
+        )
 
         if data:
             unknown = sorted(str(k) for k in data.keys())
@@ -1340,6 +1347,7 @@ class CustomConfig:
             json_format=json_format,
             object_ordering=object_ordering,
             object_field_order=object_field_order,
+            bbox_format=bbox_format,
             coord_tokens=coord_tokens,
             coord_offset=coord_offset,
             coord_soft_ce_w1=coord_soft_ce_w1,

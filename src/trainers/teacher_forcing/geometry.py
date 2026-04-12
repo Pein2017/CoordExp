@@ -6,6 +6,8 @@ from dataclasses import dataclass
 import torch
 import torch.nn.functional as F
 
+from src.common.geometry.bbox_formats import normalize_bbox_format
+
 
 @dataclass(frozen=True)
 class BBoxLossResult:
@@ -80,6 +82,29 @@ def canonicalize_bbox_xyxy(box_xyxy: torch.Tensor) -> torch.Tensor:
     x_hi = torch.maximum(x1, x2).clamp(0.0, 1.0)
     y_hi = torch.maximum(y1, y2).clamp(0.0, 1.0)
     return torch.stack([x_lo, y_lo, x_hi, y_hi], dim=-1)
+
+
+def bbox_tensor_to_xyxy(
+    box_tensor: torch.Tensor,
+    *,
+    bbox_format: str = "xyxy",
+) -> torch.Tensor:
+    if box_tensor.ndim != 2 or int(box_tensor.shape[-1]) != 4:
+        raise ValueError("box_tensor must have shape [N, 4]")
+
+    bbox_format_norm = normalize_bbox_format(
+        bbox_format, path="bbox_format"
+    )
+    boxes = box_tensor.float()
+    if bbox_format_norm == "xyxy":
+        return canonicalize_bbox_xyxy(boxes)
+
+    cx, cy, w, h = boxes.unbind(dim=-1)
+    half_w = w * 0.5
+    half_h = h * 0.5
+    return canonicalize_bbox_xyxy(
+        torch.stack([cx - half_w, cy - half_h, cx + half_w, cy + half_h], dim=-1)
+    )
 
 
 def _reduce_weighted_mean(

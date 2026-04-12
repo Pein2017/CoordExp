@@ -7,6 +7,7 @@ import torch
 
 from src.trainers.teacher_forcing.geometry import (
     BBoxSizeStats,
+    bbox_tensor_to_xyxy,
     compute_bbox_log_size_loss,
     compute_bbox_oversize_penalty,
     expectation_decode_coords,
@@ -115,6 +116,7 @@ def compute_stage1_bbox_size_aux_loss(
     decode_temperature: float,
     decode_mode: str = "exp",
     object_field_order: str = "desc_first",
+    bbox_format: str = "xyxy",
 ) -> BBoxSizeAuxResult | None:
     quartets = extract_stage1_bbox_quartets(
         logits=logits,
@@ -123,6 +125,7 @@ def compute_stage1_bbox_size_aux_loss(
         coord_id_map=coord_id_map,
         tokenizer=tokenizer,
         object_field_order=object_field_order,
+        bbox_format=bbox_format,
     )
     if quartets is None:
         return None
@@ -156,7 +159,7 @@ def compute_stage1_bbox_size_aux_loss(
         temperature=float(max(1e-6, decode_temperature)),
         mode=str(decode_mode or "exp"),
     )
-    pred_boxes = pred.reshape(-1, 4)
+    pred_boxes = bbox_tensor_to_xyxy(pred.reshape(-1, 4), bbox_format=bbox_format)
 
     result = compute_bbox_size_aux_from_boxes(
         pred_boxes_xyxy=pred_boxes,

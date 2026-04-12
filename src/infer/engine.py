@@ -71,7 +71,7 @@ from src.infer.artifacts import (
 )
 from src.infer.backends import generate_batch, generate_hf_batch, generate_vllm_batch
 from src.common.coord_standardizer import CoordinateStandardizer
-from src.common.geometry import flatten_points, has_coord_tokens
+from src.common.geometry import BBoxFormat, flatten_points, has_coord_tokens, normalize_bbox_format
 from src.common.object_field_order import (
     ObjectFieldOrder,
     ObjectOrdering,
@@ -137,6 +137,7 @@ class InferenceConfig:
     prompt_variant: str = DEFAULT_PROMPT_VARIANT
     object_field_order: ObjectFieldOrder = "desc_first"
     object_ordering: ObjectOrdering = "sorted"
+    bbox_format: BBoxFormat = "xyxy"
     pred_coord_mode: Literal["auto", "norm1000", "pixel"] = "auto"
 
     # Canonical unified artifact names (can be overridden by pipeline runner).
@@ -352,6 +353,10 @@ class InferenceEngine:
             path="infer.object_ordering",
         )
         self.cfg.object_ordering = self.object_ordering
+        self.bbox_format = normalize_bbox_format(
+            cfg.bbox_format, path="infer.bbox_format"
+        )
+        self.cfg.bbox_format = self.bbox_format
 
         self.requested_mode = cfg.mode
         self.resolved_mode = cfg.mode
@@ -363,7 +368,10 @@ class InferenceEngine:
 
         # Shared parser/standardizer: always emit pixel-space points.
         self.coord = CoordinateStandardizer(
-            self.resolved_mode, pred_coord_mode=cfg.pred_coord_mode
+            self.resolved_mode,
+            pred_coord_mode=cfg.pred_coord_mode,
+            gt_bbox_format="xyxy",
+            pred_bbox_format=self.bbox_format,
         )
 
         self.processor: AutoProcessor | None = None
@@ -648,6 +656,7 @@ class InferenceEngine:
             coord_mode="coord_tokens",
             prompt_variant=self.prompt_variant,
             object_field_order=self.object_field_order,
+            bbox_format=self.bbox_format,
         )
         return [
             {"role": "system", "content": [{"type": "text", "text": system_prompt}]},
@@ -787,6 +796,7 @@ class InferenceEngine:
             coord_mode="coord_tokens",
             prompt_variant=self.prompt_variant,
             object_field_order=self.object_field_order,
+            bbox_format=self.bbox_format,
         )
         messages = [
             {"role": "system", "content": system_prompt},
@@ -875,6 +885,7 @@ class InferenceEngine:
             coord_mode="coord_tokens",
             prompt_variant=self.prompt_variant,
             object_field_order=self.object_field_order,
+            bbox_format=self.bbox_format,
         )
 
         # Build OpenAI-style messages; vLLM supports a batch of message lists.

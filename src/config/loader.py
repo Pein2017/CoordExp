@@ -13,6 +13,7 @@ from src.common.object_field_order import (
     normalize_object_field_order,
     normalize_object_ordering,
 )
+from src.common.geometry.bbox_formats import normalize_bbox_format
 
 from .prompts import (
     SYSTEM_PROMPT_SUMMARY,
@@ -376,6 +377,7 @@ class ConfigLoader:
         use_summary = False
         ordering_hint: str = "sorted"
         object_field_order: str | None = None
+        bbox_format: str = "xyxy"
         prompt_variant: Optional[str] = None
 
         custom_section = config.get("custom")
@@ -405,6 +407,10 @@ class ConfigLoader:
                 raise ValueError("custom.object_field_order must be provided")
             object_field_order = normalize_object_field_order(
                 object_field_order_raw, path="custom.object_field_order"
+            )
+            bbox_format = normalize_bbox_format(
+                custom_section.get("bbox_format", "xyxy"),
+                path="custom.bbox_format",
             )
 
             coord_tokens_cfg = custom_section.get("coord_tokens")
@@ -458,6 +464,7 @@ class ConfigLoader:
                 coord_mode="coord_tokens",
                 prompt_variant=prompt_variant,
                 object_field_order=object_field_order,
+                bbox_format=bbox_format,
             )
             output_variant = "dense"
 

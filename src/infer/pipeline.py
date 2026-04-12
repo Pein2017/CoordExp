@@ -20,6 +20,7 @@ from src.common.object_field_order import (
     normalize_object_field_order,
     normalize_object_ordering,
 )
+from src.common.geometry import normalize_bbox_format
 from src.config.prompts import resolve_dense_prompt_variant_key
 from src.infer.artifacts import build_eval_artifact_paths
 from src.utils import get_logger
@@ -553,6 +554,10 @@ def run_pipeline(
     resolved_prompt_variant, resolved_object_field_order, resolved_object_ordering = (
         _resolve_infer_prompt_controls(infer_cfg)
     )
+    resolved_bbox_format = normalize_bbox_format(
+        infer_cfg.get("bbox_format", "xyxy"),
+        path="infer.bbox_format",
+    )
 
     artifacts, stages = resolve_artifacts(cfg)
 
@@ -614,6 +619,7 @@ def run_pipeline(
             "prompt_variant": resolved_prompt_variant,
             "object_field_order": resolved_object_field_order,
             "object_ordering": resolved_object_ordering,
+            "bbox_format": resolved_bbox_format,
         },
         "eval": {
             "duplicate_control": {
@@ -705,6 +711,7 @@ def _run_infer_stage(
         Literal["auto", "norm1000", "pixel"],
         pred_coord_mode_raw,
     )
+    bbox_format = resolved_bbox_format
 
     backend_cfg = _get_map(infer_cfg, "backend")
     backend_type_raw = _require_choice(backend_cfg, "type", {"hf", "vllm"})
@@ -753,6 +760,7 @@ def _run_infer_stage(
         prompt_variant=prompt_variant,
         object_field_order=object_field_order,
         object_ordering=object_ordering,
+        bbox_format=bbox_format,
         pred_coord_mode=pred_coord_mode,
         out_path=str(artifacts.gt_vs_pred_jsonl),
         pred_token_trace_path=str(artifacts.pred_token_trace_jsonl),

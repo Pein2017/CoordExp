@@ -15,6 +15,10 @@ from src.common.object_field_order import (
     ObjectFieldOrder,
     normalize_object_field_order,
 )
+from src.common.geometry.bbox_formats import (
+    convert_bbox_2d_points,
+    normalize_bbox_format,
+)
 from src.config.prompts import USER_PROMPT_SUMMARY
 from src.config.schema import CoordTokensConfig
 from src.coord_tokens.validator import annotate_coord_tokens
@@ -99,6 +103,7 @@ class BaseCaptionDataset(Dataset):
         offline_max_pixels: Optional[int] = None,
         object_ordering: Literal["sorted", "random"] = "sorted",
         object_field_order: ObjectFieldOrder = "desc_first",
+        bbox_format: str = "xyxy",
         encoded_sample_cache: Optional[Mapping[str, Any]] = None,
     ):
         self.use_summary = bool(use_summary)
@@ -120,6 +125,9 @@ class BaseCaptionDataset(Dataset):
         self.coord_tokens = coord_tokens or CoordTokensConfig()
         self.object_ordering: Literal["sorted", "random"] = object_ordering
         self.object_field_order = normalize_object_field_order(object_field_order)
+        self.bbox_format = normalize_bbox_format(
+            bbox_format, path="custom.bbox_format"
+        )
 
         if self.use_summary:
             if self.system_prompt_summary is None:
@@ -303,6 +311,7 @@ class BaseCaptionDataset(Dataset):
             json_format=self.json_format,
             coord_tokens_enabled=self.coord_tokens.enabled,
             object_field_order=self.object_field_order,
+            bbox_format=self.bbox_format,
         )
 
 
@@ -333,6 +342,33 @@ class BaseCaptionDataset(Dataset):
     def _maybe_annotate_coord_tokens(self, record: Dict[str, Any]) -> None:
         if self.coord_tokens.enabled:
             annotate_coord_tokens(record)
+
+    def _apply_bbox_format(self, record: Dict[str, Any]) -> None:
+        if self.bbox_format == "xyxy":
+            return
+        objects = record.get("objects") or []
+        if not isinstance(objects, list):
+            raise ValueError("record.objects must be a list before bbox-format conversion")
+        for obj_idx, obj in enumerate(objects):
+            if not isinstance(obj, dict):
+                continue
+            bbox = obj.get("bbox_2d")
+            if bbox is None:
+                continue
+            original_xyxy = convert_bbox_2d_points(
+                bbox,
+                src_format="xyxy",
+                dst_format="xyxy",
+                path=f"objects[{obj_idx}].bbox_2d",
+            )
+            converted = convert_bbox_2d_points(
+                bbox,
+                src_format="xyxy",
+                dst_format=self.bbox_format,
+                path=f"objects[{obj_idx}].bbox_2d",
+            )
+            obj["_bbox_xyxy_original"] = [int(round(v)) for v in original_xyxy]
+            obj["bbox_2d"] = [int(round(v)) for v in converted]
 
     def _enforce_max_pixels(self, record: Mapping[str, Any], *, base_idx: int) -> None:
         """Fail fast if a record would exceed the configured offline image budget.
@@ -564,6 +600,7 @@ class BaseCaptionDataset(Dataset):
 
         self._enforce_max_pixels(record, base_idx=int(base_idx))
         self._apply_object_ordering(record, rng_local)
+        self._apply_bbox_format(record)
         self._maybe_annotate_coord_tokens(record)
         return record
 
@@ -578,6 +615,7 @@ class BaseCaptionDataset(Dataset):
 
         rng_local = random.Random(self.seed ^ ((int(base_idx) + 1) * 0x9E3779B1))
         self._apply_object_ordering(record, rng_local)
+        self._apply_bbox_format(record)
         self._maybe_annotate_coord_tokens(record)
         return record
 
@@ -610,6 +648,7 @@ class BaseCaptionDataset(Dataset):
                 "mode": self.mode,
                 "object_ordering": self.object_ordering,
                 "object_field_order": self.object_field_order,
+                "bbox_format": self.bbox_format,
                 "coord_tokens_enabled": bool(self.coord_tokens.enabled),
                 "offline_max_pixels": self.offline_max_pixels,
                 "system_prompt": self._current_system_prompt(),

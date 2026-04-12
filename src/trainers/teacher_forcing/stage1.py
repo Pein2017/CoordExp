@@ -5,6 +5,7 @@ from typing import Any, Sequence
 
 import torch
 
+from src.trainers.teacher_forcing.geometry import bbox_tensor_to_xyxy
 from src.common.semantic_desc import normalize_desc
 from src.utils.coordjson_transpiler import parse_coordjson
 
@@ -154,6 +155,7 @@ def extract_stage1_bbox_quartets(
     include_adjacent_metadata: bool = False,
     require_desc_keys: bool = False,
     object_field_order: str = "desc_first",
+    bbox_format: str = "xyxy",
 ) -> Stage1BBoxQuartets | None:
     if not isinstance(logits, torch.Tensor) or not isinstance(labels, torch.Tensor):
         raise TypeError("logits and labels must be torch.Tensors")
@@ -240,7 +242,11 @@ def extract_stage1_bbox_quartets(
     flat_logits_full = logits_next[coord_mask]
     flat_coord_logits = flat_logits_full.index_select(dim=-1, index=coord_ids)
     flat_target_bins = target_bins_all[coord_mask]
-    target_boxes = flat_target_bins.float().reshape(-1, 4) / 999.0
+    target_boxes_raw = flat_target_bins.float().reshape(-1, 4) / 999.0
+    target_boxes = bbox_tensor_to_xyxy(
+        target_boxes_raw,
+        bbox_format=bbox_format,
+    )
 
     adjacent_prev_target_bins: torch.Tensor | None = None
     adjacent_has_prev_mask: torch.Tensor | None = None

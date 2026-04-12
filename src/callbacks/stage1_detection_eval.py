@@ -318,6 +318,7 @@ class Stage1DetectionEvalCallback(TrainerCallback):
         prompt_variant: str,
         object_field_order: str,
         object_ordering: str,
+        bbox_format: str,
         metrics: str,
         use_segm: bool,
         strict_parse: bool,
@@ -347,6 +348,7 @@ class Stage1DetectionEvalCallback(TrainerCallback):
         self.prompt_variant = str(prompt_variant)
         self.object_field_order = str(object_field_order)
         self.object_ordering = str(object_ordering)
+        self.bbox_format = str(bbox_format)
         self.metrics_mode = str(metrics).strip().lower()
         self.eval_options = EvalOptions(
             metrics=self.metrics_mode,
@@ -412,6 +414,7 @@ class Stage1DetectionEvalCallback(TrainerCallback):
             prompt_variant=self.prompt_variant,
             object_field_order=self.object_field_order,
             object_ordering=self.object_ordering,
+            bbox_format=self.bbox_format,
             pred_coord_mode="auto",
             out_path=str(eval_dir / "gt_vs_pred.jsonl"),
             summary_path=str(eval_dir / "infer_summary.json"),

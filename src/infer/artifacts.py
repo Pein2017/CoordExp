@@ -60,6 +60,7 @@ def build_infer_resolved_meta(
         "model_checkpoint": owner.cfg.model_checkpoint,
         "gt_jsonl": owner.cfg.gt_jsonl,
         "pred_coord_mode": owner.cfg.pred_coord_mode,
+        "bbox_format": owner.cfg.bbox_format,
         "prompt_variant": owner.prompt_variant,
         "object_field_order": owner.object_field_order,
         "object_ordering": owner.object_ordering,
@@ -130,6 +131,7 @@ def build_infer_summary_payload(
         "infer": {
             "gt_jsonl": owner.cfg.gt_jsonl,
             "pred_coord_mode": owner.cfg.pred_coord_mode,
+            "bbox_format": owner.cfg.bbox_format,
             "prompt_variant": owner.prompt_variant,
             "object_field_order": owner.object_field_order,
             "object_ordering": owner.object_ordering,
