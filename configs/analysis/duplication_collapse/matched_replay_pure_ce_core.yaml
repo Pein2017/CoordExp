@@ -1,0 +1,124 @@
+run:
+  name: duplication-collapse-matched-replay-pure-ce-core
+  output_dir: output/analysis
+  checkpoint_name_filter: merged
+  stages: [inventory, select_cases, reproduce, probe, compare, report]
+
+workspace:
+  root_dir: research/duplication_collapse_pure_ce
+
+subset:
+  max_cases_per_checkpoint: 4
+  max_cases_total: 4
+  min_pred_objects: 6
+  min_duplicate_pairs: 999999
+  duplicate_iou_threshold: 0.65
+  local_center_radius_scale: 0.9
+  size_ratio_min: 0.7
+  replay_case_aliases: [stage1_softce_w1_4b, stage1_pure_ce_ckpt1932]
+  pinned_line_indices:
+    stage1_ce_ciou_ckpt1564: [3892]
+    stage1_2b_center_param_ckpt1564: [1040, 3079]
+    stage2_pseudo_positive_ckpt300: [0]
+
+execution:
+  device: cuda:0
+  cuda_visible_devices: "4"
+  reproduce_batch_size: 1
+  reproduce_attn_implementation: auto
+  probe_attn_implementation: eager
+  teacher_forced_attn_implementation: eager
+
+decode:
+  temperature: 0.0
+  top_p: 0.9
+  repetition_penalty: 1.05
+  max_new_tokens: 3084
+  seed: 42
+
+probe:
+  max_cases: 12
+  step_window_before: 1
+  step_window_after: 1
+  token_top_k: 8
+  capture_native_vision: true
+  enable_interventions: true
+  intervention_max_cases: 12
+  late_layer_count: 2
+  visual_bias_scale: 1.15
+  history_attenuation_scale: 0.5
+  intervention_coord_only: true
+  intervention_greedy_steps: 8
+
+controls:
+  max_cases: 12
+  include_close_candidate: true
+  coord_neighbor_radius: 2
+  same_desc_iou_threshold: 0.5
+
+report:
+  write_markdown: true
+
+checkpoints:
+  - alias: stage1_ce_ciou_ckpt1564
+    path: output/stage1/coco_lvis_proxy-ce_ciou-ckpt_1564-merged
+    historical_artifact_dirs:
+      - output/infer/coco1024_valfull_lvis_proxy_ckpt1564_merged
+    prompt_variant: coco_80
+    object_field_order: desc_first
+    stage: stage1
+    objective_family: ce_ciou_proxy
+    geometry_regime: bbox_xyxy_1024
+    rollout_training_regime: teacher_forcing_only
+    coord_soft_ce_w1_state: disabled
+    parent_checkpoint: stage1_softce_w1_4b
+    family_comparison_role: ce_proxy_disabled_continuation
+
+  - alias: stage1_2b_center_param_ckpt1564
+    path: output/stage1_2b/coco_bbox_max60-1024-lvis_proxy-center_parameterization-ckpt_1564-merged
+    historical_artifact_dirs:
+      - output/infer/coco1024_valfull_lvis_proxy_stage1_2b_ckpt1564_merged
+    prompt_variant: coco_80
+    object_field_order: desc_first
+    stage: stage1
+    objective_family: center_parameterization_proxy
+    geometry_regime: center_size_1024
+    rollout_training_regime: teacher_forcing_only
+    coord_soft_ce_w1_state: disabled
+    parent_checkpoint: stage1_2b_hard_soft_ce
+    family_comparison_role: ce_proxy_disabled_continuation
+
+  - alias: stage2_pseudo_positive_ckpt300
+    path: output/stage2_ab/prod/pseudo_positive-ckpt_300_merged-v1
+    historical_artifact_dirs:
+      - output/infer/suspicious_duplication_subset_guarded_eval
+    prompt_variant: coco_80
+    object_field_order: desc_first
+    stage: stage2
+    objective_family: pseudo_positive_ckpt300
+    geometry_regime: bbox_xyxy_1024
+    rollout_training_regime: pseudo_positive_rollout_training
+    coord_soft_ce_w1_state: unknown
+    family_comparison_role: stage2_rollout_family
+
+  - alias: stage1_softce_w1_4b
+    path: output/stage1/coco_bbox_max60-coco80-desc_first/epoch_4-softce_w1-coco80-ckpt_1832-merged
+    prompt_variant: coco_80
+    object_field_order: desc_first
+    stage: stage1
+    objective_family: softce_w1_4b
+    geometry_regime: bbox_xyxy_768
+    rollout_training_regime: teacher_forcing_only
+    coord_soft_ce_w1_state: enabled
+    family_comparison_role: soft_coordinate_supervised
+
+  - alias: stage1_pure_ce_ckpt1932
+    path: output/stage1/coco_bbox_max60-coco80-desc_first-pure_ce/ckpt-1932_merged
+    prompt_variant: coco_80
+    object_field_order: desc_first
+    stage: stage1
+    objective_family: pure_ce_4b
+    geometry_regime: bbox_xyxy_768
+    rollout_training_regime: teacher_forcing_only
+    coord_soft_ce_w1_state: disabled
+    family_comparison_role: pure_ce_baseline

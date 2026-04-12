@@ -1,0 +1,55 @@
+run:
+  name: duplication-collapse-family-compare
+  output_dir: output/analysis
+  checkpoint_name_filter: merged
+  stages: [inventory, report]
+
+workspace:
+  root_dir: research/duplication_collapse_family_compare
+
+decode:
+  temperature: 0.0
+  top_p: 0.9
+  repetition_penalty: 1.05
+  max_new_tokens: 3084
+  seed: 42
+
+report:
+  write_markdown: true
+
+checkpoints:
+  - alias: stage1_ce_ciou_ckpt1564
+    path: output/stage1/coco_lvis_proxy-ce_ciou-ckpt_1564-merged
+    historical_artifact_dirs:
+      - output/infer/coco1024_valfull_lvis_proxy_ckpt1564_merged
+    prompt_variant: coco_80
+    object_field_order: desc_first
+    stage: stage1
+    objective_family: ce_ciou_proxy
+    geometry_regime: bbox_xyxy_1024
+    rollout_training_regime: teacher_forcing_only
+    coord_soft_ce_w1_state: disabled
+    parent_checkpoint: stage1_softce_w1_4b
+    family_comparison_role: ce_proxy_disabled_continuation
+
+  - alias: stage1_softce_w1_4b
+    path: output/stage1/coco_bbox_max60-coco80-desc_first/epoch_4-softce_w1-coco80-ckpt_1832-merged
+    prompt_variant: coco_80
+    object_field_order: desc_first
+    stage: stage1
+    objective_family: softce_w1_4b
+    geometry_regime: bbox_xyxy_1024
+    rollout_training_regime: teacher_forcing_only
+    coord_soft_ce_w1_state: enabled
+    family_comparison_role: soft_coordinate_supervised
+
+  - alias: stage1_adjrep_global_2b
+    path: output/stage1/lvis_bbox_max60_1024_adjacent_repulsion_global/epoch_4-hard_ce_soft_ce_w1_ciou_bbox_size-adjrep_global-2b-merged
+    prompt_variant: coco_80
+    object_field_order: desc_first
+    stage: stage1
+    objective_family: hard_soft_ce_w1_ciou_bbox_size_adjrep
+    geometry_regime: bbox_xyxy_1024
+    rollout_training_regime: teacher_forcing_only
+    coord_soft_ce_w1_state: enabled
+    family_comparison_role: soft_coordinate_supervised

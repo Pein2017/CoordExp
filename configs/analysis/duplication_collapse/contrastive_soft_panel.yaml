@@ -1,0 +1,90 @@
+run:
+  name: duplication-collapse-contrastive-soft-panel
+  output_dir: output/analysis
+  checkpoint_name_filter: merged
+  stages: [inventory, select_cases, reproduce, probe, compare, report]
+
+workspace:
+  root_dir: research/duplication_collapse_contrastive
+
+subset:
+  max_cases_per_checkpoint: 12
+  max_cases_total: 36
+  min_pred_objects: 1
+  min_duplicate_pairs: 999999
+  duplicate_iou_threshold: 0.65
+  local_center_radius_scale: 0.9
+  size_ratio_min: 0.7
+  bootstrap_case_manifest_jsonl: configs/analysis/duplication_collapse/contrastive_cases.jsonl
+
+execution:
+  device: cuda:0
+  cuda_visible_devices: "3"
+  reproduce_batch_size: 1
+  reproduce_attn_implementation: auto
+  probe_attn_implementation: eager
+  teacher_forced_attn_implementation: eager
+
+decode:
+  temperature: 0.0
+  top_p: 0.9
+  repetition_penalty: 1.05
+  max_new_tokens: 3084
+  seed: 42
+
+probe:
+  max_cases: 36
+  step_window_before: 1
+  step_window_after: 1
+  token_top_k: 8
+  capture_native_vision: true
+  enable_interventions: false
+  intervention_max_cases: 0
+  late_layer_count: 2
+  visual_bias_scale: 1.15
+  history_attenuation_scale: 0.5
+  intervention_coord_only: true
+  intervention_greedy_steps: 8
+
+controls:
+  max_cases: 36
+  include_close_candidate: true
+  coord_neighbor_radius: 2
+  same_desc_iou_threshold: 0.5
+
+report:
+  write_markdown: true
+
+checkpoints:
+  - alias: stage1_softce_w1_4b
+    path: output/stage1/coco_bbox_max60-coco80-desc_first/epoch_4-softce_w1-coco80-ckpt_1832-merged
+    prompt_variant: coco_80
+    object_field_order: desc_first
+    stage: stage1
+    objective_family: softce_w1_4b
+    geometry_regime: bbox_xyxy_1024
+    rollout_training_regime: teacher_forcing_only
+    coord_soft_ce_w1_state: enabled
+    family_comparison_role: soft_coordinate_supervised
+
+  - alias: stage1_adjrep_global_2b
+    path: output/stage1/lvis_bbox_max60_1024_adjacent_repulsion_global/epoch_4-hard_ce_soft_ce_w1_ciou_bbox_size-adjrep_global-2b-merged
+    prompt_variant: coco_80
+    object_field_order: desc_first
+    stage: stage1
+    objective_family: hard_soft_ce_w1_ciou_bbox_size_adjrep
+    geometry_regime: bbox_xyxy_1024
+    rollout_training_regime: teacher_forcing_only
+    coord_soft_ce_w1_state: enabled
+    family_comparison_role: soft_coordinate_supervised
+
+  - alias: stage1_2b_hard_soft_ce
+    path: output/stage1_2b/coco_bbox_max60-hard_soft_ce-2b-merged
+    prompt_variant: coco_80
+    object_field_order: desc_first
+    stage: stage1
+    objective_family: hard_soft_ce_2b
+    geometry_regime: bbox_xyxy_1024
+    rollout_training_regime: teacher_forcing_only
+    coord_soft_ce_w1_state: enabled
+    family_comparison_role: soft_coordinate_supervised
