@@ -1,0 +1,9 @@
+run:
+  mode: crowding_audit
+  name: duplication-followup-crowding-class-panel
+  output_root: research/duplication_followup
+
+crowding_audit:
+  cases_manifest_jsonl: configs/analysis/duplication_collapse/contrastive_cases.jsonl
+  compare_case_rows_jsonl:
+    - research/duplication_collapse_pure_ce/duplication-collapse-contrastive-pure-ce-panel/compare/case_rows.jsonl

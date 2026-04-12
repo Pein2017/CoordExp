@@ -1,0 +1,19 @@
+run:
+  mode: prefix_perturbation
+  name: duplication-followup-prefix-perturb-stage2
+  output_root: research/duplication_followup
+
+execution:
+  device: cuda
+  attn_implementation: sdpa
+
+prefix_perturbation:
+  cases_manifest_jsonl: configs/analysis/duplication_collapse/contrastive_cases.jsonl
+  line_idx_filter: [0]
+  max_new_tokens: 64
+  targets:
+    - alias: stage2_pseudo_positive_ckpt300
+      checkpoint_path: output/stage2_ab/prod/pseudo_positive-ckpt_300_merged-v1
+      reproduce_gt_vs_pred_jsonl: research/duplication_collapse_pure_ce/duplication-collapse-contrastive-pure-ce-panel/reproduce/stage2_pseudo_positive_ckpt300/gt_vs_pred.jsonl
+      prompt_variant: coco_80
+      object_field_order: desc_first
