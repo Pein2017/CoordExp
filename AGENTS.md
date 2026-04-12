@@ -48,6 +48,10 @@
 
 This project has a graphify knowledge graph at graphify-out/.
 
+Codex setup:
+- The graphify skill lives at `.codex/skills/graphify/SKILL.md`
+- Keep the skill repo-local instead of relying on `~/.agents/skills/graphify/SKILL.md`
+
 Rules:
 - Before answering architecture or codebase questions, read graphify-out/GRAPH_REPORT.md for god nodes and community structure
 - If graphify-out/wiki/index.md exists, navigate it instead of reading raw files
