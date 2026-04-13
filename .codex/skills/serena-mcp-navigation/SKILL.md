@@ -70,3 +70,13 @@ Choose the minimal editing approach:
 - Use scoped searches to avoid overwhelming results
 - Leverage `find_referencing_symbols` early for relationship mapping
 - Reserve CLI tools for documentation and bulk text scanning
+
+## Pairing With RTK
+
+Use Serena for code semantics and RTK for shell compaction:
+
+- Start with `rtk` when you need to read docs, inspect logs, scan the repo, or summarize `git`/test output before touching code.
+- Use `rg` or `rtk grep` to narrow candidate files, then switch to Serena for Python symbol discovery and editing.
+- Treat Serena as the source of truth for Python structure. Do not rely on `rtk smart`, raw full-file reads, or broad text search when the task depends on references, callers, or symbol boundaries.
+- After Serena-driven edits, switch back to `rtk` for compact verification: `rtk pytest`, `rtk git diff`, `rtk log`, and similar checks.
+- If exact stdout or shell semantics matter, bypass RTK deliberately and say why.

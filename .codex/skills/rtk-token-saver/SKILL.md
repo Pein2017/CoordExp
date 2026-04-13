@@ -71,6 +71,24 @@ Use the raw command instead when:
 - Do not claim the output is verbatim if RTK filtered it.
 - In ambiguous cases, prefer saving tokens unless there is a concrete downside to filtering.
 
+## Pairing With Serena MCP
+
+Use RTK and Serena as complementary layers, not as a single chained tool:
+
+- Use `rtk` first for repo orientation: `rtk read` for docs/prose, `rtk grep`/`rtk find` for coarse search, `rtk git ...` for status/diff, and `rtk pytest`/`rtk test` for compact verification.
+- Once the task enters Python code understanding or editing, switch to Serena MCP for symbol-aware navigation, reference discovery, and precise edits.
+- Return to `rtk` for post-edit verification such as targeted tests, diffs, logs, or other shell-heavy checks.
+- Do not try to replace Serena with `rtk smart` or aggressive file filtering when you need call relationships, symbol boundaries, or safe edits.
+- Do not force `rtk` into exact-output workflows; raw `sed`, raw script execution, or other unfiltered commands are still the right tool when exact stdout matters.
+
+Typical split:
+
+1. `rtk read docs/PROJECT_CONTEXT.md`
+2. `rtk grep "TargetSymbol" src`
+3. Serena MCP: `get_symbols_overview` -> `find_symbol` -> `find_referencing_symbols`
+4. `rtk pytest tests/...`
+5. `rtk git diff`
+
 ## Verification
 
 - Rewrite probe:
