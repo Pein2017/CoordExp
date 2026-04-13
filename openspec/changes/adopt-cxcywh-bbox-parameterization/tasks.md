@@ -73,5 +73,5 @@
   canonical unscored inference/eval artifacts,
   fail-fast rejection of scored/confidence paths,
   and cache invalidation across prompt formatting changes.
-- [ ] 6.2 Run targeted validation and replay commits `f16f6a2` and `f30aea7`
+- [x] 6.2 Run targeted validation and replay commits `f16f6a2` and `f30aea7`
   on top of the rewritten branch.
