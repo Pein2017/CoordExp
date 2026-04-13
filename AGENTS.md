@@ -36,6 +36,9 @@
 
 ## Self-Improving
 - Activate the `self-improving` skill when the user explicitly names it, asks to remember a reusable preference/correction/workflow, asks what has been learned, or wants repeated mistakes captured for future sessions.
+- Also activate it proactively when a session shows repeated mistakes, repeated rework, multi-turn debugging/relaunch loops, environment footguns, or a clearly reusable successful workflow that is likely to recur in this workspace.
+- It is acceptable to trigger the skill just to inspect existing repo-local memory, decide whether a reusable lesson exists, or briefly propose capturing that lesson for future sessions; do not wait for the user to say the exact skill name once the pattern is clear.
+- Keep memory writes conservative: prefer proposing or recording the smallest reusable correction/workflow lesson rather than writing broad behavioral rules from a single one-off request.
 - Keep mutable self-improving memory under `.self-improving/`; do not write workspace memory into `.codex/skills/self-improving/` or a machine-global home directory.
 - Treat `.self-improving/` as exported repo-local project state rather than private scratch; the files under it are intended to be shared/visible in this workspace when relevant.
 
