@@ -137,7 +137,7 @@ def collect_launcher_metadata_from_env() -> dict[str, str]:
     return meta
 
 
-def write_run_metadata_file(
+def build_run_metadata_payload(
     *,
     output_dir: str | Path,
     config_path: str,
@@ -148,7 +148,7 @@ def write_run_metadata_file(
     manifest_files: Mapping[str, Any] | None,
     train_cache_info: Mapping[str, Any] | None,
     eval_cache_info: Mapping[str, Any] | None,
-) -> Path:
+) -> dict[str, Any]:
     git_state = _safe_git_state(repo_root)
     status_lines_raw = git_state.get("status_porcelain", [])
     if isinstance(status_lines_raw, list):
@@ -182,11 +182,47 @@ def write_run_metadata_file(
         train_cache_info=train_cache_info,
         eval_cache_info=eval_cache_info,
     )
+    return meta
 
+
+def write_run_metadata_file_from_payload(
+    *,
+    output_dir: str | Path,
+    payload: Mapping[str, Any],
+) -> Path:
     out_path = Path(str(output_dir)) / "run_metadata.json"
     out_path.parent.mkdir(parents=True, exist_ok=True)
     out_path.write_text(
-        json.dumps(meta, ensure_ascii=False, indent=2) + "\n",
+        json.dumps(dict(payload), ensure_ascii=False, indent=2) + "\n",
         encoding="utf-8",
     )
     return out_path
+
+
+def write_run_metadata_file(
+    *,
+    output_dir: str | Path,
+    config_path: str,
+    base_config_path: str | None,
+    run_name: str,
+    dataset_seed: int,
+    repo_root: Path,
+    manifest_files: Mapping[str, Any] | None,
+    train_cache_info: Mapping[str, Any] | None,
+    eval_cache_info: Mapping[str, Any] | None,
+) -> Path:
+    payload = build_run_metadata_payload(
+        output_dir=output_dir,
+        config_path=config_path,
+        base_config_path=base_config_path,
+        run_name=run_name,
+        dataset_seed=dataset_seed,
+        repo_root=repo_root,
+        manifest_files=manifest_files,
+        train_cache_info=train_cache_info,
+        eval_cache_info=eval_cache_info,
+    )
+    return write_run_metadata_file_from_payload(
+        output_dir=output_dir,
+        payload=payload,
+    )

@@ -1475,6 +1475,134 @@ class DebugConfig:
 
 
 @dataclass(frozen=True)
+class ExperimentConfig:
+    """Structured, human-authored run context for retrospective analysis."""
+
+    title: Optional[str] = None
+    purpose: Optional[str] = None
+    hypothesis: Optional[str] = None
+    baseline: Optional[str] = None
+    key_deviations: tuple[str, ...] = ()
+    runtime_settings: tuple[str, ...] = ()
+    comments: tuple[str, ...] = ()
+    tags: tuple[str, ...] = ()
+
+    @staticmethod
+    def _coerce_optional_text(value: Any, field_name: str) -> Optional[str]:
+        if value in (None, "", False):
+            return None
+        if not isinstance(value, str):
+            raise TypeError(f"{field_name} must be a string when provided")
+        text = value.strip()
+        return text or None
+
+    @staticmethod
+    def _coerce_text_list(value: Any, field_name: str) -> tuple[str, ...]:
+        if value is None:
+            return ()
+        if isinstance(value, str):
+            items: Sequence[Any] = [value]
+        elif isinstance(value, Sequence) and not isinstance(value, (str, bytes)):
+            items = value
+        else:
+            raise TypeError(
+                f"{field_name} must be a string or a list of strings when provided"
+            )
+
+        normalized: list[str] = []
+        for idx, item in enumerate(items):
+            if not isinstance(item, str):
+                raise TypeError(f"{field_name}[{idx}] must be a string")
+            text = item.strip()
+            if not text:
+                raise ValueError(f"{field_name}[{idx}] must not be empty")
+            normalized.append(text)
+        return tuple(normalized)
+
+    def has_authored_content(self) -> bool:
+        return any(
+            (
+                self.title,
+                self.purpose,
+                self.hypothesis,
+                self.baseline,
+                self.key_deviations,
+                self.runtime_settings,
+                self.comments,
+                self.tags,
+            )
+        )
+
+    def to_mapping(self) -> dict[str, Any]:
+        out: dict[str, Any] = {}
+        if self.title is not None:
+            out["title"] = self.title
+        if self.purpose is not None:
+            out["purpose"] = self.purpose
+        if self.hypothesis is not None:
+            out["hypothesis"] = self.hypothesis
+        if self.baseline is not None:
+            out["baseline"] = self.baseline
+        if self.key_deviations:
+            out["key_deviations"] = list(self.key_deviations)
+        if self.runtime_settings:
+            out["runtime_settings"] = list(self.runtime_settings)
+        if self.comments:
+            out["comments"] = list(self.comments)
+        if self.tags:
+            out["tags"] = list(self.tags)
+        return out
+
+    @classmethod
+    def from_mapping(cls, payload: Optional[Mapping[str, Any]]) -> "ExperimentConfig":
+        if payload is None:
+            return cls()
+        if not isinstance(payload, Mapping):
+            raise TypeError("experiment section must be a mapping when provided")
+
+        data: MutableMapping[str, Any] = dict(payload)
+        title = cls._coerce_optional_text(data.pop("title", None), "experiment.title")
+        purpose = cls._coerce_optional_text(
+            data.pop("purpose", None), "experiment.purpose"
+        )
+        hypothesis = cls._coerce_optional_text(
+            data.pop("hypothesis", None), "experiment.hypothesis"
+        )
+        baseline = cls._coerce_optional_text(
+            data.pop("baseline", None), "experiment.baseline"
+        )
+        key_deviations = cls._coerce_text_list(
+            data.pop("key_deviations", None),
+            "experiment.key_deviations",
+        )
+        runtime_settings = cls._coerce_text_list(
+            data.pop("runtime_settings", None),
+            "experiment.runtime_settings",
+        )
+        comments = cls._coerce_text_list(
+            data.pop("comments", None),
+            "experiment.comments",
+        )
+        tags = cls._coerce_text_list(data.pop("tags", None), "experiment.tags")
+
+        if data:
+            unknown = sorted(str(k) for k in data.keys())
+            rendered = [f"experiment.{k}" for k in unknown]
+            raise ValueError(f"Unknown experiment keys: {rendered}")
+
+        return cls(
+            title=title,
+            purpose=purpose,
+            hypothesis=hypothesis,
+            baseline=baseline,
+            key_deviations=key_deviations,
+            runtime_settings=runtime_settings,
+            comments=comments,
+            tags=tags,
+        )
+
+
+@dataclass(frozen=True)
 class Stage2ABScheduleConfig:
     """Deterministic Stage-2 AB channel schedule."""
 
@@ -2494,6 +2622,7 @@ class Stage2ABConfig:
 class TrainingConfig:
     template: Mapping[str, Any]
     custom: CustomConfig
+    experiment: ExperimentConfig = field(default_factory=ExperimentConfig)
     debug: DebugConfig = field(default_factory=DebugConfig)
     model: Mapping[str, Any] = field(default_factory=dict)
     quantization: Mapping[str, Any] = field(default_factory=dict)
@@ -2592,6 +2721,7 @@ class TrainingConfig:
         custom_bbox_size_aux_present = bool(
             isinstance(custom_raw, Mapping) and "bbox_size_aux" in custom_raw
         )
+        experiment = ExperimentConfig.from_mapping(data.pop("experiment", None))
         debug = DebugConfig.from_mapping(data.pop("debug", None))
         deepspeed = DeepSpeedConfig.from_mapping(data.pop("deepspeed", None))
         global_max_length = data.pop("global_max_length", None)
@@ -2863,6 +2993,7 @@ class TrainingConfig:
         return cls(
             template=template,
             custom=custom,
+            experiment=experiment,
             debug=debug,
             model=model,
             quantization=quantization,

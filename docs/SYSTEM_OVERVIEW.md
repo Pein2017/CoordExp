@@ -194,6 +194,9 @@ CoordExp writes paper-ready artifacts as part of normal execution.
 - Training outputs usually include:
   - `resolved_config.json`
   - `runtime_env.json`
+  - `effective_runtime.json`
+  - `pipeline_manifest.json`
+  - `experiment_manifest.json`
   - `run_metadata.json`
   - `logging.jsonl`
 - Inference/eval outputs usually include:

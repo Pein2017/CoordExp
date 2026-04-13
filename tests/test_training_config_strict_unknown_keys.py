@@ -79,6 +79,41 @@ def test_training_internal_packing_keys_are_allowed():
     assert cfg.training["artifact_subdir"] == "stage1/example"
 
 
+def test_experiment_unknown_key_fails_fast() -> None:
+    payload = _base_training_payload()
+    payload["experiment"] = {
+        "purpose": "Validate authored experiment intent",
+        "unknown_key": 1,
+    }
+
+    with pytest.raises(ValueError) as exc:
+        TrainingConfig.from_mapping(payload, PromptOverrides())
+
+    assert "experiment.unknown_key" in str(exc.value)
+
+
+def test_experiment_section_parses_and_serializes() -> None:
+    payload = _base_training_payload()
+    payload["experiment"] = {
+        "title": "Stage-2 smoke",
+        "purpose": "Validate the new manifest path.",
+        "hypothesis": "Authored metadata survives strict loading.",
+        "key_deviations": ["Uses a concise run name."],
+        "runtime_settings": ["Runs as a smoke profile."],
+        "comments": ["Synthetic test payload."],
+        "tags": ["smoke", "metadata"],
+    }
+
+    cfg = TrainingConfig.from_mapping(payload, PromptOverrides())
+
+    assert cfg.experiment.title == "Stage-2 smoke"
+    assert cfg.experiment.purpose == "Validate the new manifest path."
+    assert cfg.experiment.key_deviations == ("Uses a concise run name.",)
+    assert cfg.experiment.runtime_settings == ("Runs as a smoke profile.",)
+    assert cfg.experiment.tags == ("smoke", "metadata")
+    assert cfg.experiment.to_mapping()["comments"] == ["Synthetic test payload."]
+
+
 @pytest.mark.parametrize(
     ("key", "bad_value"),
     [

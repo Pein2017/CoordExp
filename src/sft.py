@@ -37,6 +37,7 @@ from .coord_tokens.offset_adapter import (
     reattach_coord_offset_hooks,
 )
 from .bootstrap.pipeline_manifest import build_pipeline_manifest
+from .bootstrap.experiment_manifest import write_experiment_manifest_file
 from .bootstrap.trainer_setup import (
     build_trainer_callbacks,
     compose_trainer_class,
@@ -61,9 +62,10 @@ from .utils import (
 from .optim import register_coord_offset_optimizer
 from .bootstrap.run_metadata import (
     attach_encoded_sample_cache_run_metadata as _attach_encoded_sample_cache_run_metadata_impl,
+    build_run_metadata_payload,
     collect_dependency_provenance as _collect_dependency_provenance_impl,
     collect_launcher_metadata_from_env as _collect_launcher_metadata_from_env_impl,
-    write_run_metadata_file,
+    write_run_metadata_file_from_payload,
 )
 
 
@@ -2952,20 +2954,51 @@ def main():
                 "train_args.output_dir is not set; cannot write run metadata"
             )
 
-        out_path = write_run_metadata_file(
-            output_dir=Path(str(out_dir)),
-            config_path=str(getattr(args, "config", "") or ""),
-            base_config_path=str(getattr(args, "base_config", "") or "")
+        config_path = str(getattr(args, "config", "") or "")
+        base_config_path = (
+            str(getattr(args, "base_config", "") or "")
             if getattr(args, "base_config", None)
-            else None,
-            run_name=str(getattr(train_args, "run_name", "") or ""),
+            else None
+        )
+        run_name = str(getattr(train_args, "run_name", "") or "")
+        repo_root = Path(__file__).resolve().parents[1]
+        run_metadata_payload = build_run_metadata_payload(
+            output_dir=Path(str(out_dir)),
+            config_path=config_path,
+            base_config_path=base_config_path,
+            run_name=run_name,
             dataset_seed=dataset_seed,
-            repo_root=Path(__file__).resolve().parents[1],
+            repo_root=repo_root,
             manifest_files=written,
             train_cache_info=train_encoded_sample_cache_info,
             eval_cache_info=eval_encoded_sample_cache_info,
         )
+        out_path = write_run_metadata_file_from_payload(
+            output_dir=Path(str(out_dir)),
+            payload=run_metadata_payload,
+        )
         logger.info("Wrote run metadata: %s", str(out_path))
+
+        experiment_cfg = getattr(training_config, "experiment", None)
+        authored_experiment = None
+        if experiment_cfg is not None:
+            to_mapping = getattr(experiment_cfg, "to_mapping", None)
+            if callable(to_mapping):
+                authored_experiment = to_mapping()
+
+        experiment_manifest_path = write_experiment_manifest_file(
+            output_dir=Path(str(out_dir)),
+            config_path=config_path,
+            base_config_path=base_config_path,
+            run_name=run_name,
+            dataset_seed=dataset_seed,
+            experiment=authored_experiment,
+            effective_runtime=effective_runtime,
+            pipeline_manifest=selected_pipeline_manifest,
+            run_metadata=run_metadata_payload,
+            manifest_files=written,
+        )
+        logger.info("Wrote experiment manifest: %s", str(experiment_manifest_path))
 
     if heartbeat_writer is not None:
         heartbeat_writer.emit("train_call_enter")

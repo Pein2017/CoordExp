@@ -159,8 +159,11 @@ Center-size experiment note:
 - the experimental mode only changes the internal bbox regression term:
   stronger center supervision, softer `log_w` / `log_h`, CIoU still on
   canonical `xyxy`
-- verify the intended mode from `resolved_config.json`; `run_metadata.json`
-  remains provenance-only and does not redefine loss semantics
+- verify the intended mode from `resolved_config.json`
+- use `experiment_manifest.json` for authored run purpose / hypothesis / key
+  deviations plus a runtime summary
+- `run_metadata.json` remains the low-level provenance sidecar and does not
+  redefine loss semantics
 
 ## First Pseudo-Positive Checks
 
@@ -191,6 +194,32 @@ conda run -n ms bash scripts/train_stage2.sh
 JSONL validation, GPU-split checks, rollout-server boot, and launcher metadata
 export to `src.launchers.stage2_vllm_server`.
 
+## Experiment Authoring
+
+Prefer a concise `training.run_name` and put experiment intent in the top-level
+`experiment` block instead of encoding every ablation detail into path names.
+
+```yaml
+experiment:
+  title: Stage-2 A-only center-size smoke
+  purpose: >
+    Smoke-test the center-size bbox regression path under the A-only trainer.
+  hypothesis: >
+    Center-size bbox supervision should resolve cleanly without changing the
+    canonical xyxy artifact contract.
+  key_deviations:
+    - Enables `bbox_geo.config.parameterization: center_size`.
+    - Caps the run at two optimizer steps.
+  runtime_settings:
+    - Runs the Stage-2 two-channel trainer in A-only mode.
+  comments:
+    - Use this for contract validation, not model-quality comparison.
+```
+
+`resolved_config.json` remains the authoritative exact-config record.
+`experiment_manifest.json` is the operator-facing summary that combines this
+authored context with executed-runtime and provenance summaries.
+
 ## Smoke Expectations
 
 After a healthy launch, check the run directory for:
@@ -199,6 +228,7 @@ After a healthy launch, check the run directory for:
 - `runtime_env.json`
 - `effective_runtime.json`
 - `pipeline_manifest.json`
+- `experiment_manifest.json`
 - `train_data_provenance.json`
 - `eval_data_provenance.json` when eval data is configured
 - `run_metadata.json`

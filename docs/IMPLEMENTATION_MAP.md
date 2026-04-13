@@ -184,6 +184,7 @@ Open these docs first:
 
 Open these code files first:
 - `src/sft.py`
+- `src/bootstrap/experiment_manifest.py`
 - `src/bootstrap/pipeline_manifest.py`
 - `src/bootstrap/run_metadata.py`
 - `src/bootstrap/trainer_setup.py`
@@ -192,6 +193,7 @@ Open these code files first:
 - `src/callbacks/`
 
 Run these tests first:
+- `tests/test_experiment_manifest_file.py`
 - `tests/test_run_manifest_files.py`
 - `tests/test_run_metadata_file.py`
 - `tests/test_dependency_provenance.py`

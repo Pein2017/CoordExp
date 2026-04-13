@@ -13,6 +13,7 @@ from src.analysis.unmatched_proposal_verifier import (
     build_rollout_proposal_table,
     load_study_config,
     resolve_checkpoint_path,
+    resolve_prompt_controls_for_checkpoint,
     summarize_checkpoint,
     summarize_collection_health,
     summarize_manual_audit,
@@ -152,6 +153,48 @@ def test_summarize_collection_health_marks_invalid_runs(tmp_path: Path) -> None:
     assert summary["collection_valid"] is False
     assert "raw_output_missing" in summary["parser_failure_counts"]
     assert summary["collection_invalid_reason"] is not None
+
+
+def test_resolve_prompt_controls_for_checkpoint_follows_experiment_manifest_pointer(
+    tmp_path: Path,
+) -> None:
+    checkpoint_dir = tmp_path / "run" / "checkpoint-1"
+    checkpoint_dir.mkdir(parents=True)
+    nested_dir = checkpoint_dir / "nested"
+    nested_dir.mkdir(parents=True)
+
+    resolved_path = nested_dir / "resolved_config.json"
+    resolved_path.write_text(
+        json.dumps(
+            {
+                "cfg": {
+                    "infer": {
+                        "prompt_variant": "desc_first",
+                        "object_field_order": "desc_first",
+                    }
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    (checkpoint_dir / "experiment_manifest.json").write_text(
+        json.dumps({"artifacts": {"resolved_config": "nested/resolved_config.json"}}),
+        encoding="utf-8",
+    )
+
+    prompt_variant, object_field_order, prompt_source = (
+        resolve_prompt_controls_for_checkpoint(
+            checkpoint_dir,
+            default_prompt_variant="sorted",
+            default_object_field_order="geometry_first",
+            override_prompt_variant=None,
+            override_object_field_order=None,
+        )
+    )
+
+    assert prompt_variant == "desc_first"
+    assert object_field_order == "desc_first"
+    assert prompt_source.endswith("nested/resolved_config.json")
 
 
 def test_load_study_config_reads_authority_first_surfaces(tmp_path: Path) -> None:

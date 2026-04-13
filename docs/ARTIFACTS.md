@@ -184,6 +184,15 @@ artifacts into `training.output_dir` before training starts:
 - `pipeline_manifest.json`
   - First-class pipeline identity / manifest artifact assembled from
     `src/bootstrap/pipeline_manifest.py`.
+- `experiment_manifest.json`
+  - Primary run-level overview artifact for retrospective analysis.
+  - Combines:
+    - authored `experiment.*` narrative when present,
+    - run identity (`config_path`, `run_name`, `output_dir`, `dataset_seed`),
+    - executed-runtime summary,
+    - provenance summary,
+    - pointers to the authoritative artifact files.
+  - emitted via `src/bootstrap/experiment_manifest.py`
 - `train_data_provenance.json`
   - Stable train-split source identity and optional digests for supported
     local inputs.
@@ -191,11 +200,14 @@ artifacts into `training.output_dir` before training starts:
   - Stable eval-split source identity and optional digests when eval data is
     configured.
 - `run_metadata.json`
-  - Best-effort provenance and run identity:
+  - Low-level provenance artifact:
     - `git_sha`, `git_branch`, `git_dirty`, `git_status_porcelain` (truncated)
     - `created_at` (UTC ISO8601)
     - `upstream` dependency provenance (ms-swift / transformers, etc.)
     - launcher metadata (Stage-2 server/learner topology), when present
+    - encoded-sample-cache runtime metadata, when present
+  - treat this as the detailed provenance sidecar; use
+    `experiment_manifest.json` as the first run-level orientation artifact.
   - emitted via `src/bootstrap/run_metadata.py`
 - `config_source.yaml` / `base_config_source.yaml`
   - Best-effort copies of the YAML sources used to build the run.

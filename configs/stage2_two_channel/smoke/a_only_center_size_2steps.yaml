@@ -1,7 +1,31 @@
 extends: ./a_only.yaml
 
+experiment:
+  title: Stage-2 A-only center-size smoke
+  purpose: >
+    Smoke-test the Stage-2 A-only path with center-size bbox regression enabled
+    and a minimal two-step runtime budget.
+  hypothesis: >
+    The center-size bbox_geo parameterization should resolve cleanly through the
+    A-only Stage-2 trainer without changing the canonical xyxy artifact
+    contract.
+  baseline: Standard Stage-2 A-only smoke without center-size bbox_geo.
+  key_deviations:
+    - "Uses bbox_geo.config.parameterization: center_size with center_weight 1.0 and size_weight 0.25."
+    - Limits training to two optimizer steps and disables eval/save for smoke validation.
+  runtime_settings:
+    - Runs the stage2_two_channel trainer in A-only mode.
+    - Keeps artifacts under the shared stage2_ab smoke subtree while using a concise run_name.
+  comments:
+    - Use this profile to validate the center-size supervision path, not to compare model quality.
+  tags:
+    - stage2
+    - smoke
+    - a-only
+    - center-size
+
 training:
-  run_name: smoke_2steps-stage2-a_only-center_size_bbox_geo
+  run_name: stage2_a_only_center_size_smoke
   artifact_subdir: stage2_ab/smoke/a_only_center_size_2steps
   max_steps: 2
   eval_strategy: "no"

@@ -739,8 +739,14 @@ def test_stage2_center_size_smoke_config_resolves_bbox_geo_parameterization() ->
     )
 
     objective = {module.name: module for module in cfg.stage2_ab.pipeline.objective}
-    assert cfg.training["run_name"] == "smoke_2steps-stage2-a_only-center_size_bbox_geo"
+    assert cfg.training["run_name"] == "stage2_a_only_center_size_smoke"
     assert cfg.training["artifact_subdir"] == "stage2_ab/smoke/a_only_center_size_2steps"
+    assert cfg.experiment.title == "Stage-2 A-only center-size smoke"
+    assert (
+        cfg.experiment.purpose
+        == "Smoke-test the Stage-2 A-only path with center-size bbox regression enabled and a minimal two-step runtime budget."
+    )
+    assert cfg.experiment.tags == ("stage2", "smoke", "a-only", "center-size")
     assert objective["bbox_geo"].config["parameterization"] == "center_size"
     assert objective["bbox_geo"].config["center_weight"] == pytest.approx(1.0)
     assert objective["bbox_geo"].config["size_weight"] == pytest.approx(0.25)

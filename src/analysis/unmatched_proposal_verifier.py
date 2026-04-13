@@ -678,6 +678,22 @@ def _extract_prompt_controls_from_mapping(
     return prompt_variant, object_field_order
 
 
+def _resolve_nested_resolved_config_candidate(
+    candidate: Path,
+    raw: Mapping[str, Any],
+) -> Optional[Path]:
+    artifacts_raw = raw.get("artifacts")
+    if not isinstance(artifacts_raw, Mapping):
+        return None
+    resolved_raw = artifacts_raw.get("resolved_config")
+    if not isinstance(resolved_raw, str) or not resolved_raw.strip():
+        return None
+    resolved_path = Path(resolved_raw)
+    if resolved_path.is_absolute():
+        return resolved_path
+    return candidate.parent / resolved_path
+
+
 def resolve_prompt_controls_for_checkpoint(
     checkpoint_path: Path,
     *,
@@ -695,8 +711,10 @@ def resolve_prompt_controls_for_checkpoint(
 
     candidates = [
         checkpoint_path / "resolved_config.json",
+        checkpoint_path / "experiment_manifest.json",
         checkpoint_path / "run_metadata.json",
         checkpoint_path.parent / "resolved_config.json",
+        checkpoint_path.parent / "experiment_manifest.json",
         checkpoint_path.parent / "run_metadata.json",
     ]
     pointer = checkpoint_path / "resolved_config.path"
@@ -709,7 +727,10 @@ def resolve_prompt_controls_for_checkpoint(
 
     found_prompt = override_prompt_variant
     found_order = override_object_field_order
-    for candidate in candidates:
+    idx = 0
+    while idx < len(candidates):
+        candidate = candidates[idx]
+        idx += 1
         if not candidate.is_file():
             continue
         try:
@@ -718,6 +739,9 @@ def resolve_prompt_controls_for_checkpoint(
             continue
         if not isinstance(raw, Mapping):
             continue
+        nested_resolved = _resolve_nested_resolved_config_candidate(candidate, raw)
+        if nested_resolved is not None and nested_resolved not in candidates:
+            candidates.insert(idx, nested_resolved)
         prompt_variant, object_field_order = _extract_prompt_controls_from_mapping(raw)
         if found_prompt is None and prompt_variant:
             found_prompt = prompt_variant
