@@ -661,6 +661,9 @@ def test_run_pipeline_wires_and_records_prompt_variant(
     assert resolved["infer"]["prompt_variant"] == "coco_80"
     assert resolved["infer"]["object_field_order"] == "geometry_first"
     assert resolved["infer"]["object_ordering"] == "random"
+    assert resolved["infer"]["bbox_format"] == "xyxy"
+    assert isinstance(resolved["infer"]["prompt_template_hash"], str)
+    assert len(resolved["infer"]["prompt_template_hash"]) == 64
 
 
 def test_run_pipeline_defaults_object_ordering_to_sorted(
@@ -714,6 +717,130 @@ def test_run_pipeline_defaults_object_ordering_to_sorted(
 
     assert captured["object_ordering"] == "sorted"
     assert resolved["infer"]["object_ordering"] == "sorted"
+
+
+def test_run_pipeline_rejects_center_log_size_confidence_postop(
+    tmp_path: Path, monkeypatch
+) -> None:
+    monkeypatch.delenv("ROOT_IMAGE_DIR", raising=False)
+
+    yaml_stub = types.SimpleNamespace(safe_load=lambda raw: json.loads(raw))
+    monkeypatch.setitem(sys.modules, "yaml", yaml_stub)
+
+    gt_jsonl = tmp_path / "data" / "gt.jsonl"
+    gt_jsonl.parent.mkdir(parents=True, exist_ok=True)
+    gt_jsonl.write_text("", encoding="utf-8")
+
+    cfg = {
+        "run": {"name": "demo", "output_dir": str(tmp_path / "out")},
+        "stages": {"infer": False, "eval": False, "vis": False},
+        "infer": {
+            "gt_jsonl": str(gt_jsonl),
+            "bbox_format": "center_log_size",
+        },
+        "confidence": {"score_mode": "token_trace"},
+    }
+
+    config_path = tmp_path / "pipeline.json"
+    config_path.write_text(json.dumps(cfg, ensure_ascii=False), encoding="utf-8")
+
+    with pytest.raises(
+        ValueError,
+        match="center_log_size does not support confidence post-op in V1",
+    ):
+        run_pipeline(config_path=config_path)
+
+
+def test_run_pipeline_supports_center_log_size_official_eval_via_constant_scores(
+    tmp_path: Path, monkeypatch
+) -> None:
+    monkeypatch.delenv("ROOT_IMAGE_DIR", raising=False)
+
+    yaml_stub = types.SimpleNamespace(safe_load=lambda raw: json.loads(raw))
+    monkeypatch.setitem(sys.modules, "yaml", yaml_stub)
+
+    gt_jsonl = tmp_path / "data" / "gt.jsonl"
+    gt_jsonl.parent.mkdir(parents=True, exist_ok=True)
+    gt_jsonl.write_text("", encoding="utf-8")
+
+    cfg = {
+        "run": {"name": "demo", "output_dir": str(tmp_path / "out")},
+        "stages": {"infer": False, "eval": True, "vis": False},
+        "infer": {
+            "gt_jsonl": str(gt_jsonl),
+            "bbox_format": "center_log_size",
+        },
+        "eval": {"metrics": "coco"},
+    }
+
+    config_path = tmp_path / "pipeline.json"
+    config_path.write_text(json.dumps(cfg, ensure_ascii=False), encoding="utf-8")
+
+    artifacts, _ = resolve_artifacts(cfg)
+    artifacts.run_dir.mkdir(parents=True, exist_ok=True)
+    _write_jsonl(
+        artifacts.gt_vs_pred_jsonl,
+        [
+            {
+                "image": "demo.jpg",
+                "width": 640,
+                "height": 480,
+                "mode": "coord",
+                "coord_mode": "norm1000",
+                "gt": [],
+                "pred": [
+                    {
+                        "type": "bbox_2d",
+                        "points": [10, 20, 110, 120],
+                        "bbox": [10, 20, 110, 120],
+                        "desc": "cat",
+                    }
+                ],
+                "raw_output_json": {
+                    "objects": [
+                        {
+                            "bbox_2d": [
+                                "<|coord_200|>",
+                                "<|coord_300|>",
+                                "<|coord_400|>",
+                                "<|coord_500|>",
+                            ],
+                            "desc": "cat",
+                        }
+                    ]
+                },
+                "raw_special_tokens": [],
+                "raw_ends_with_im_end": True,
+                "errors": [],
+                "error_entries": [],
+            }
+        ],
+    )
+
+    import src.eval.detection as detection
+
+    captured: dict[str, Path] = {}
+
+    def _fake_eval(pred_path: Path, *, options):  # type: ignore[no-untyped-def]
+        captured["pred_path"] = Path(pred_path)
+        rows = [
+            json.loads(line)
+            for line in Path(pred_path).read_text(encoding="utf-8").splitlines()
+            if line.strip()
+        ]
+        assert rows[0]["pred_score_source"] == "center_log_size_constant"
+        assert rows[0]["pred_score_version"] == 1
+        assert rows[0]["pred"][0]["score"] == 1.0
+        assert options.metrics == "coco"
+        return {"metrics": {}, "per_class": {}, "counters": {}, "categories": {}}
+
+    monkeypatch.setattr(detection, "evaluate_and_save", _fake_eval)
+
+    run_pipeline(config_path=config_path)
+
+    assert artifacts.gt_vs_pred_scored_jsonl is not None
+    assert artifacts.gt_vs_pred_scored_jsonl.exists()
+    assert captured["pred_path"] == artifacts.gt_vs_pred_scored_jsonl
 
 
 def test_run_pipeline_rejects_unknown_prompt_variant_with_available_keys(

@@ -14,14 +14,21 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, List, Literal, Mapping, Optional, Tuple, cast
 
+from src.common.geometry.bbox_parameterization import normalize_bbox_format
 from src.common.object_field_order import (
     ObjectFieldOrder,
     ObjectOrdering,
     normalize_object_field_order,
     normalize_object_ordering,
 )
-from src.common.geometry import normalize_bbox_format
-from src.config.prompts import resolve_dense_prompt_variant_key
+from src.config.prompts import get_template_prompt_hash, resolve_dense_prompt_variant_key
+from src.eval.artifacts import (
+    CENTER_LOG_SIZE_CONSTANT_PRED_SCORE_SOURCE,
+    CENTER_LOG_SIZE_CONSTANT_PRED_SCORE_VERSION,
+    CENTER_LOG_SIZE_CONSTANT_SCORE,
+    with_constant_scores,
+    write_jsonl_records,
+)
 from src.infer.artifacts import build_eval_artifact_paths
 from src.utils import get_logger
 
@@ -175,11 +182,15 @@ def _detect_infer_distributed_env() -> Tuple[int, int, int, bool]:
 
 def _resolve_infer_prompt_controls(
     infer_cfg: Mapping[str, Any],
-) -> Tuple[str, ObjectFieldOrder, ObjectOrdering]:
+) -> Tuple[str, str, ObjectFieldOrder, ObjectOrdering]:
     prompt_variant_raw = infer_cfg.get("prompt_variant", None)
     if prompt_variant_raw is not None and not isinstance(prompt_variant_raw, str):
         raise ValueError("infer.prompt_variant must be a string when provided")
     prompt_variant = resolve_dense_prompt_variant_key(prompt_variant_raw)
+    bbox_format = normalize_bbox_format(
+        infer_cfg.get("bbox_format", "xyxy"),
+        path="infer.bbox_format",
+    )
 
     object_ordering = normalize_object_ordering(
         infer_cfg.get("object_ordering", "sorted"),
@@ -192,7 +203,7 @@ def _resolve_infer_prompt_controls(
         path="infer.object_field_order",
     )
 
-    return prompt_variant, object_field_order, object_ordering
+    return prompt_variant, bbox_format, object_field_order, object_ordering
 
 
 def _derive_run_dir(cfg: Mapping[str, Any]) -> Path:
@@ -551,14 +562,19 @@ def run_pipeline(
         cfg = apply_overrides(cfg, overrides)
 
     infer_cfg = _get_map(cfg, "infer")
-    resolved_prompt_variant, resolved_object_field_order, resolved_object_ordering = (
-        _resolve_infer_prompt_controls(infer_cfg)
+    (
+        resolved_prompt_variant,
+        resolved_bbox_format,
+        resolved_object_field_order,
+        resolved_object_ordering,
+    ) = _resolve_infer_prompt_controls(infer_cfg)
+    resolved_prompt_hash = get_template_prompt_hash(
+        ordering=resolved_object_ordering,
+        coord_mode="coord_tokens",
+        prompt_variant=resolved_prompt_variant,
+        object_field_order=resolved_object_field_order,
+        bbox_format=resolved_bbox_format,
     )
-    resolved_bbox_format = normalize_bbox_format(
-        infer_cfg.get("bbox_format", "xyxy"),
-        path="infer.bbox_format",
-    )
-
     artifacts, stages = resolve_artifacts(cfg)
 
     artifacts.run_dir.mkdir(parents=True, exist_ok=True)
@@ -617,9 +633,10 @@ def run_pipeline(
         },
         "infer": {
             "prompt_variant": resolved_prompt_variant,
+            "bbox_format": resolved_bbox_format,
             "object_field_order": resolved_object_field_order,
             "object_ordering": resolved_object_ordering,
-            "bbox_format": resolved_bbox_format,
+            "prompt_template_hash": resolved_prompt_hash,
         },
         "eval": {
             "duplicate_control": {
@@ -642,6 +659,13 @@ def run_pipeline(
         str(resolved_config_path.resolve()),
         encoding="utf-8",
     )
+
+    if resolved_bbox_format == "center_log_size":
+        confidence_cfg = _get_map(cfg, "confidence")
+        if confidence_cfg:
+            raise ValueError(
+                "infer.bbox_format=center_log_size does not support confidence post-op in V1; remove the confidence section."
+            )
 
     if stages.infer:
         _run_infer_stage(cfg, artifacts, root_image_dir=root_image_dir)
@@ -700,8 +724,8 @@ def _run_infer_stage(
     mode_raw = _require_choice(infer_cfg, "mode", {"coord", "text", "auto"})
     mode = cast(Literal["coord", "text", "auto"], mode_raw)
 
-    prompt_variant, object_field_order, object_ordering = _resolve_infer_prompt_controls(
-        infer_cfg
+    prompt_variant, bbox_format, object_field_order, object_ordering = (
+        _resolve_infer_prompt_controls(infer_cfg)
     )
 
     pred_coord_mode_raw = _require_choice(
@@ -711,8 +735,6 @@ def _run_infer_stage(
         Literal["auto", "norm1000", "pixel"],
         pred_coord_mode_raw,
     )
-    bbox_format = resolved_bbox_format
-
     backend_cfg = _get_map(infer_cfg, "backend")
     backend_type_raw = _require_choice(backend_cfg, "type", {"hf", "vllm"})
     backend_type = cast(Literal["hf", "vllm"], backend_type_raw)
@@ -758,9 +780,9 @@ def _run_infer_stage(
         model_checkpoint=model_checkpoint,
         mode=mode,
         prompt_variant=prompt_variant,
+        bbox_format=bbox_format,
         object_field_order=object_field_order,
         object_ordering=object_ordering,
-        bbox_format=bbox_format,
         pred_coord_mode=pred_coord_mode,
         out_path=str(artifacts.gt_vs_pred_jsonl),
         pred_token_trace_path=str(artifacts.pred_token_trace_jsonl),
@@ -791,10 +813,50 @@ def _maybe_run_confidence_postop(
         run_confidence_postop,
     )
 
+    infer_cfg = _get_map(cfg, "infer")
+    bbox_format = normalize_bbox_format(
+        infer_cfg.get("bbox_format", "xyxy"),
+        path="infer.bbox_format",
+    )
+    confidence_cfg = _get_map(cfg, "confidence")
+    eval_cfg = _get_map(cfg, "eval")
+    stages_cfg = _get_map(cfg, "stages")
+    eval_enabled = _get_bool(stages_cfg, "eval", False) if stages_cfg else False
+    metrics_mode = str(eval_cfg.get("metrics", "both")).strip().lower()
+    want_scored = bool(confidence_cfg) or (
+        eval_enabled and metrics_mode in {"coco", "lvis", "both"}
+    )
+    if not want_scored and bbox_format == "xyxy":
+        want_scored = True
+    if not want_scored:
+        return
     base_path = artifacts.gt_vs_pred_jsonl
     trace_path = artifacts.pred_token_trace_jsonl
     scored_path = artifacts.gt_vs_pred_scored_jsonl
     if scored_path is None:
+        return
+    if bbox_format == "center_log_size":
+        if not base_path.is_file():
+            return
+        newest_input_mtime = base_path.stat().st_mtime
+        if scored_path.is_file() and scored_path.stat().st_mtime >= newest_input_mtime:
+            return
+        rows: List[Dict[str, Any]] = []
+        with base_path.open("r", encoding="utf-8") as fin:
+            for line in fin:
+                text = line.strip()
+                if not text:
+                    continue
+                rows.append(json.loads(text))
+        write_jsonl_records(
+            scored_path,
+            with_constant_scores(
+                records=rows,
+                pred_score_source=CENTER_LOG_SIZE_CONSTANT_PRED_SCORE_SOURCE,
+                pred_score_version=CENTER_LOG_SIZE_CONSTANT_PRED_SCORE_VERSION,
+                constant_score=CENTER_LOG_SIZE_CONSTANT_SCORE,
+            ),
+        )
         return
     if not base_path.is_file():
         return
@@ -821,7 +883,6 @@ def _maybe_run_confidence_postop(
     ):
         return
 
-    confidence_cfg = _get_map(cfg, "confidence")
     postop_cfg = {
         "confidence": dict(confidence_cfg) if confidence_cfg else {},
         "artifacts": {
@@ -846,6 +907,11 @@ def _maybe_run_confidence_postop(
 def _run_eval_stage(cfg: Mapping[str, Any], artifacts: ResolvedArtifacts) -> None:
     from src.eval.detection import EvalOptions, evaluate_and_save
 
+    infer_cfg = _get_map(cfg, "infer")
+    bbox_format = normalize_bbox_format(
+        infer_cfg.get("bbox_format", "xyxy"),
+        path="infer.bbox_format",
+    )
     eval_cfg = _get_map(cfg, "eval")
     duplicate_control_enabled = _resolve_eval_duplicate_control_enabled(eval_cfg)
 
@@ -870,6 +936,7 @@ def _run_eval_stage(cfg: Mapping[str, Any], artifacts: ResolvedArtifacts) -> Non
 
     # Unified pipeline contract:
     # - COCO metrics require scored artifacts.
+    # - center_log_size uses a constant-score scored artifact for official eval.
     # - f1ish-only runs can use the base artifact.
     if want_official:
         scored_path = artifacts.gt_vs_pred_scored_jsonl

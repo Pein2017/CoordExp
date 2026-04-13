@@ -24,7 +24,8 @@ Implementation ownership note:
 input JSONL + checkpoint
   -> inference
   -> gt_vs_pred.jsonl
-  -> confidence post-op (when COCO scoring is needed)
+  -> confidence post-op (xyxy) OR constant-score compatibility scoring
+     (center_log_size, when official metrics are needed)
   -> gt_vs_pred_scored.jsonl
   -> evaluation
   -> raw metrics/artifacts
@@ -48,6 +49,19 @@ Run confidence post-op:
 PYTHONPATH=. conda run -n ms python scripts/postop_confidence.py \
   --config configs/postop/confidence.yaml
 ```
+
+`center_log_size` note:
+
+- do not run confidence post-op for `infer.bbox_format: center_log_size`
+- the unified pipeline instead materializes `gt_vs_pred_scored.jsonl` directly
+  from canonical standardized predictions with deterministic constant-score
+  provenance when COCO/LVIS metrics are requested
+- only use this infer path with checkpoints that were actually trained against
+  the model-facing `center_log_size` serialization contract
+- forcing a legacy `xyxy`-trained checkpoint through
+  `infer.bbox_format: center_log_size` can still produce canonicalized eval
+  artifacts, but those rollouts are not semantically valid evidence for the new
+  parameterization
 
 Run evaluation:
 
@@ -101,6 +115,12 @@ After confidence post-op:
 - `gt_vs_pred_scored.jsonl`
 - `confidence_postop_summary.json`
 
+After `center_log_size` official-eval compatibility scoring:
+
+- `gt_vs_pred_scored.jsonl`
+- no `pred_confidence.jsonl`
+- no `confidence_postop_summary.json`
+
 After evaluation:
 
 - `metrics.json`
@@ -118,6 +138,8 @@ Guarded-artifact rule:
 
 - non-COCO raw evaluation continues to consume `gt_vs_pred.jsonl`
 - score-aware COCO evaluation continues to consume `gt_vs_pred_scored.jsonl`
+- for `center_log_size`, that scored artifact is constant-score compatibility
+  output rather than confidence output
 - guarded companions follow the same input family:
   - `gt_vs_pred_guarded.jsonl`
   - `gt_vs_pred_scored_guarded.jsonl`

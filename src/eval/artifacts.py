@@ -2,7 +2,11 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Tuple
+from typing import Any, Dict, Iterable, List, Mapping, Sequence, Tuple
+
+CENTER_LOG_SIZE_CONSTANT_PRED_SCORE_SOURCE = "center_log_size_constant"
+CENTER_LOG_SIZE_CONSTANT_PRED_SCORE_VERSION = 1
+CENTER_LOG_SIZE_CONSTANT_SCORE = 1.0
 
 
 def with_stem_suffix(path: Path, suffix: str) -> Path:
@@ -40,6 +44,33 @@ def write_jsonl_records(path: Path, rows: Iterable[Dict[str, Any]]) -> None:
     with path.open("w", encoding="utf-8") as handle:
         for row in rows:
             handle.write(json.dumps(row, ensure_ascii=False) + "\n")
+
+
+def with_constant_scores(
+    *,
+    records: Sequence[Mapping[str, Any]],
+    pred_score_source: str,
+    pred_score_version: int,
+    constant_score: float,
+) -> List[Dict[str, Any]]:
+    scored_rows: List[Dict[str, Any]] = []
+    score = float(constant_score)
+    for row in records:
+        scored_row = dict(row)
+        scored_row["pred_score_source"] = str(pred_score_source)
+        scored_row["pred_score_version"] = int(pred_score_version)
+        preds_raw = row.get("pred")
+        preds_out: List[Dict[str, Any]] = []
+        if isinstance(preds_raw, list):
+            for pred in preds_raw:
+                if not isinstance(pred, Mapping):
+                    continue
+                pred_out = dict(pred)
+                pred_out["score"] = float(pred_out.get("score", score))
+                preds_out.append(pred_out)
+        scored_row["pred"] = preds_out
+        scored_rows.append(scored_row)
+    return scored_rows
 
 
 def write_outputs(

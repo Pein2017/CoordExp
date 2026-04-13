@@ -11,6 +11,7 @@ from src.config.prompt_variants import (
 from src.config.prompts import (
     SYSTEM_PROMPT_SUMMARY,
     USER_PROMPT_SUMMARY,
+    get_template_prompt_hash,
     get_template_prompts,
 )
 from src.infer.engine import GenerationConfig, InferenceConfig, InferenceEngine
@@ -37,6 +38,21 @@ def test_prompt_variant_resolution_is_deterministic_across_repeated_calls() -> N
     )
 
     assert first == second
+
+
+def test_prompt_template_hash_changes_when_bbox_format_changes() -> None:
+    xyxy_hash = get_template_prompt_hash(
+        prompt_variant="lvis_stage1_federated",
+        bbox_format="xyxy",
+        object_field_order="desc_first",
+    )
+    center_log_size_hash = get_template_prompt_hash(
+        prompt_variant="lvis_stage1_federated",
+        bbox_format="center_log_size",
+        object_field_order="desc_first",
+    )
+
+    assert xyxy_hash != center_log_size_hash
 
 
 @pytest.mark.parametrize("object_ordering", ["sorted", "random"])
@@ -69,6 +85,47 @@ def test_prompt_variant_cross_surface_parity_between_training_and_inference(
 
     assert infer_system == train_prompts.system
     assert infer_user == train_prompts.user
+
+
+@pytest.mark.parametrize("object_field_order", ["desc_first", "geometry_first"])
+def test_prompt_variant_cross_surface_parity_for_center_log_size(
+    object_field_order: str,
+) -> None:
+    train_prompts = ConfigLoader.resolve_prompts(
+        {
+            "custom": {
+                "bbox_format": "center_log_size",
+                "object_ordering": "sorted",
+                "object_field_order": object_field_order,
+                "coord_tokens": {"enabled": True},
+                "extra": {"prompt_variant": "lvis_stage1_federated"},
+            }
+        }
+    )
+
+    inf_cfg = InferenceConfig(
+        gt_jsonl="dummy.jsonl",
+        model_checkpoint="dummy",
+        mode="text",
+        prompt_variant="lvis_stage1_federated",
+        bbox_format="center_log_size",
+        object_field_order=object_field_order,
+        object_ordering="sorted",
+    )
+    engine = InferenceEngine(inf_cfg, GenerationConfig())
+
+    messages = engine._build_messages(Image.new("RGB", (16, 16), color=(0, 0, 0)))
+    infer_system = messages[0]["content"][0]["text"]
+    infer_user = messages[1]["content"][0]["text"]
+
+    assert infer_system == train_prompts.system
+    assert infer_user == train_prompts.user
+    if object_field_order == "geometry_first":
+        assert "geometry key (bbox_2d OR poly) before desc" in infer_system
+        assert "geometry (bbox_2d or poly) before desc" in infer_user
+    else:
+        assert "desc before exactly one geometry key" in infer_system
+        assert "desc before one geometry" in infer_user
 
 
 def test_inference_object_ordering_defaults_to_sorted() -> None:
@@ -216,6 +273,23 @@ def test_lvis_federated_prompt_variants_encode_partial_label_semantics() -> None
 
     assert "Detect every object in the image" not in stage1_system
     assert "Detect every object in the image" not in stage2_system
+
+
+def test_center_log_size_prompts_explain_u_of_s_and_render_variant_placeholders() -> None:
+    default_system, default_user = get_template_prompts(bbox_format="center_log_size")
+    lvis_system, lvis_user = get_template_prompts(
+        prompt_variant="lvis_stage1_federated",
+        bbox_format="center_log_size",
+    )
+
+    for prompt in (default_system, default_user, lvis_system, lvis_user):
+        assert "[cx, cy, u(w), u(h)]" in prompt
+        assert "log(max(s, 1/1024))" in prompt
+        assert "__BBOX_" not in prompt
+        assert "__USER_EXAMPLE_" not in prompt
+
+    assert "bbox_2d is [x1, y1, x2, y2]" not in lvis_system
+    assert '{"desc": "category", "bbox_2d": [<|coord_110|>' not in lvis_user
 
 
 def test_unknown_prompt_variant_error_lists_unknown_and_available_keys() -> None:

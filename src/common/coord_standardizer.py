@@ -15,13 +15,15 @@ from typing import Any, Dict, Iterable, List, Literal, Sequence, Tuple, cast
 from src.common.geometry import (
     MAX_BIN,
     bbox_from_points,
-    clamp_and_round,
     coerce_point_list,
-    convert_bbox_2d_points,
     denorm_and_clamp,
     flatten_points,
-    ints_to_pixels_norm1000,
     is_degenerate_bbox,
+)
+from src.common.geometry.bbox_parameterization import (
+    AllowedBBoxFormat,
+    DEFAULT_BBOX_FORMAT,
+    center_log_size_norm1000_to_xyxy_norm1000,
     normalize_bbox_format,
 )
 from src.common.prediction_parsing import GEOM_KEYS, coords_are_pixel, parse_prediction
@@ -59,20 +61,14 @@ class CoordinateStandardizer:
         *,
         emit_text: bool = True,
         pred_coord_mode: Literal["auto", "norm1000", "pixel"] = "auto",
-        gt_bbox_format: str = "xyxy",
-        pred_bbox_format: str = "xyxy",
+        bbox_format: AllowedBBoxFormat = DEFAULT_BBOX_FORMAT,
     ) -> None:
         self.mode = mode
         self.emit_text = emit_text
         if pred_coord_mode not in {"auto", "norm1000", "pixel"}:
             raise ValueError("pred_coord_mode must be auto|norm1000|pixel")
         self.pred_coord_mode = pred_coord_mode
-        self.gt_bbox_format = normalize_bbox_format(
-            gt_bbox_format, path="gt_bbox_format"
-        )
-        self.pred_bbox_format = normalize_bbox_format(
-            pred_bbox_format, path="pred_bbox_format"
-        )
+        self.bbox_format = normalize_bbox_format(bbox_format, path="infer.bbox_format")
 
     @staticmethod
     def _points_to_text(points: Sequence[int]) -> str:
@@ -177,23 +173,17 @@ class CoordinateStandardizer:
                     points, had_tokens=had_tokens, width=width, height=height
                 )
 
-        if coord_mode == "pixel":
-            pts_scaled = [float(v) for v in points]
-        else:
-            ints = [int(round(float(p))) for p in points]
-            pts_scaled = ints_to_pixels_norm1000(ints, width, height)
+        points_for_scale: Sequence[float] = points
+        if (
+            not is_gt
+            and kind == "bbox_2d"
+            and self.bbox_format == "center_log_size"
+        ):
+            if coord_mode != "norm1000":
+                raise ValueError("bbox_format_pred_mode")
+            points_for_scale = center_log_size_norm1000_to_xyxy_norm1000(points)
 
-        bbox_format = self.gt_bbox_format if is_gt else self.pred_bbox_format
-        if kind == "bbox_2d":
-            pts_xyxy = convert_bbox_2d_points(
-                pts_scaled,
-                src_format=bbox_format,
-                dst_format="xyxy",
-                path="bbox_2d",
-            )
-            pts_px = clamp_and_round(pts_xyxy, width, height)
-        else:
-            pts_px = clamp_and_round(pts_scaled, width, height)
+        pts_px = denorm_and_clamp(points_for_scale, width, height, coord_mode=coord_mode)
 
         if kind == "bbox_2d" and len(pts_px) != 4:
             raise ValueError("bbox_points")

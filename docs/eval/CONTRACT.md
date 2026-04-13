@@ -42,6 +42,8 @@ This page defines the current infer/eval artifact contract.
   - `error_entries`
 - Geometry objects live under `gt` and `pred`; legacy top-level prediction
   aliases are not canonical.
+- `raw_output_json` is the parsed best-effort raw payload from the shared
+  salvage/parser path, not a verbatim raw-text mirror.
 
 ## Coordinate Handling
 
@@ -57,11 +59,17 @@ This page defines the current infer/eval artifact contract.
 - F1-ish-only evaluation may consume the base pipeline artifact.
 - COCO evaluation consumes the scored artifact `gt_vs_pred_scored.jsonl`.
 - COCO scoring uses `pred[*].score` from the scored artifact.
+- when `infer.bbox_format=center_log_size`, official score-aware evaluation may
+  still consume `gt_vs_pred_scored.jsonl`, but that scored artifact is
+  materialized from the canonical raw artifact with deterministic constant-score
+  provenance rather than confidence reconstruction
 - Scored COCO inputs must also include:
   - `pred_score_source`
   - `pred_score_version`
 - Missing or invalid scores are contract violations for COCO evaluation.
 - Unscored legacy artifacts are not supported for COCO metrics.
+- confidence post-op remains `xyxy`-only; `center_log_size` does not support
+  confidence-derived score reconstruction in V1.
 
 ## Failure Policy
 

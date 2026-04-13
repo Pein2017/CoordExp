@@ -11,13 +11,15 @@ from typing import Any, Dict, List, Literal, Mapping, MutableMapping, Optional, 
 from torch.utils.data import Dataset
 from swift.llm import MaxLengthError
 
+from src.common.geometry.bbox_parameterization import (
+    AllowedBBoxFormat,
+    DEFAULT_BBOX_FORMAT,
+    normalize_bbox_format,
+)
+from src.common.geometry.bbox_formats import convert_bbox_2d_points
 from src.common.object_field_order import (
     ObjectFieldOrder,
     normalize_object_field_order,
-)
-from src.common.geometry.bbox_formats import (
-    convert_bbox_2d_points,
-    normalize_bbox_format,
 )
 from src.config.prompts import USER_PROMPT_SUMMARY
 from src.config.schema import CoordTokensConfig
@@ -103,7 +105,7 @@ class BaseCaptionDataset(Dataset):
         offline_max_pixels: Optional[int] = None,
         object_ordering: Literal["sorted", "random"] = "sorted",
         object_field_order: ObjectFieldOrder = "desc_first",
-        bbox_format: str = "xyxy",
+        bbox_format: AllowedBBoxFormat = DEFAULT_BBOX_FORMAT,
         encoded_sample_cache: Optional[Mapping[str, Any]] = None,
     ):
         self.use_summary = bool(use_summary)

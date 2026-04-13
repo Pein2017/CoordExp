@@ -13,7 +13,7 @@ from src.common.object_field_order import (
     normalize_object_field_order,
     normalize_object_ordering,
 )
-from src.common.geometry.bbox_formats import normalize_bbox_format
+from src.common.geometry.bbox_parameterization import normalize_bbox_format
 
 from .prompts import (
     SYSTEM_PROMPT_SUMMARY,
@@ -379,6 +379,7 @@ class ConfigLoader:
         object_field_order: str | None = None
         bbox_format: str = "xyxy"
         prompt_variant: Optional[str] = None
+        bbox_format: str = "xyxy"
 
         custom_section = config.get("custom")
         if custom_section is not None:

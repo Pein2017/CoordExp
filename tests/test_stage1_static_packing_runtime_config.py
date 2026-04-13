@@ -412,6 +412,115 @@ def test_static_packing_fingerprint_tracks_offline_pixels_and_coord_tokens() -> 
     assert fingerprint_a != fingerprint_b
 
 
+def test_static_packing_fingerprint_tracks_bbox_parameterization() -> None:
+    packing_cfg = _parse_packing_config(
+        training_cfg={"packing": True, "packing_mode": "static"},
+        template=_Template(max_length=128),
+        train_args=SimpleNamespace(max_model_len=0),
+    )
+
+    training_cfg = SimpleNamespace(
+        global_max_length=1024,
+        template={"system": "sys", "truncation_strategy": "raise"},
+        training={"train_dataloader_shuffle": True},
+    )
+    common_custom = dict(
+        user_prompt="prompt",
+        emit_norm="none",
+        json_format="standard",
+        object_ordering="sorted",
+        object_field_order="desc_first",
+        use_summary=False,
+        system_prompt_dense=None,
+        system_prompt_summary=None,
+        offline_max_pixels=1048576,
+        coord_tokens={"enabled": True, "skip_bbox_norm": True},
+    )
+
+    xyxy = _build_static_packing_fingerprint(
+        training_config=training_cfg,
+        custom_config=SimpleNamespace(**common_custom, bbox_format="xyxy"),
+        template=_Template(max_length=128),
+        train_args=SimpleNamespace(max_model_len=512),
+        dataset_seed=7,
+        packing_cfg=packing_cfg,
+        train_jsonl="train.jsonl",
+    )
+    center_log_size = _build_static_packing_fingerprint(
+        training_config=training_cfg,
+        custom_config=SimpleNamespace(
+            **common_custom, bbox_format="center_log_size"
+        ),
+        template=_Template(max_length=128),
+        train_args=SimpleNamespace(max_model_len=512),
+        dataset_seed=7,
+        packing_cfg=packing_cfg,
+        train_jsonl="train.jsonl",
+    )
+
+    assert xyxy["custom_bbox_format"] == "xyxy"
+    assert center_log_size["custom_bbox_format"] == "center_log_size"
+    assert xyxy != center_log_size
+
+
+def test_static_packing_fingerprint_tracks_prompt_variant_and_template_hash() -> None:
+    packing_cfg = _parse_packing_config(
+        training_cfg={"packing": True, "packing_mode": "static"},
+        template=_Template(max_length=128),
+        train_args=SimpleNamespace(max_model_len=0),
+    )
+
+    training_cfg = SimpleNamespace(
+        global_max_length=1024,
+        template={"system": "sys", "truncation_strategy": "raise"},
+        training={"train_dataloader_shuffle": True},
+    )
+    common_custom = dict(
+        user_prompt="prompt",
+        emit_norm="none",
+        json_format="standard",
+        bbox_format="center_log_size",
+        object_ordering="sorted",
+        object_field_order="geometry_first",
+        use_summary=False,
+        system_prompt_dense=None,
+        system_prompt_summary=None,
+        offline_max_pixels=1048576,
+        coord_tokens={"enabled": True, "skip_bbox_norm": True},
+    )
+
+    default_fp = _build_static_packing_fingerprint(
+        training_config=training_cfg,
+        custom_config=SimpleNamespace(
+            **common_custom,
+            extra={"prompt_variant": "default"},
+        ),
+        template=_Template(max_length=128),
+        train_args=SimpleNamespace(max_model_len=512),
+        dataset_seed=7,
+        packing_cfg=packing_cfg,
+        train_jsonl="train.jsonl",
+    )
+    lvis_fp = _build_static_packing_fingerprint(
+        training_config=training_cfg,
+        custom_config=SimpleNamespace(
+            **common_custom,
+            extra={"prompt_variant": "lvis_stage1_federated"},
+        ),
+        template=_Template(max_length=128),
+        train_args=SimpleNamespace(max_model_len=512),
+        dataset_seed=7,
+        packing_cfg=packing_cfg,
+        train_jsonl="train.jsonl",
+    )
+
+    assert default_fp["custom_prompt_variant"] == "default"
+    assert lvis_fp["custom_prompt_variant"] == "lvis_stage1_federated"
+    assert isinstance(default_fp["custom_prompt_template_hash"], str)
+    assert isinstance(lvis_fp["custom_prompt_template_hash"], str)
+    assert default_fp["custom_prompt_template_hash"] != lvis_fp["custom_prompt_template_hash"]
+
+
 def test_static_packing_fingerprint_preserves_legacy_null_fusion_keys() -> None:
     packing_cfg = _parse_packing_config(
         training_cfg={"packing": True, "packing_mode": "static"},

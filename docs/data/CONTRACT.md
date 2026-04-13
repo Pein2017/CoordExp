@@ -5,7 +5,7 @@ doc_type: contract
 status: canonical
 domain: data
 summary: Authoritative JSONL, geometry, and runtime assumptions for dataset ingestion.
-updated: 2026-03-18
+updated: 2026-04-13
 ---
 
 # Data JSONL Contract (Global)
@@ -48,8 +48,38 @@ Note: only `bbox_2d` and `poly` are supported in CoordExp; `line` geometries are
 - Assistant dense outputs use top-level `{"objects": [...]}` and bare CoordTok literals in geometry arrays (e.g., `[<|coord_123|>, <|coord_456|>, ...]`).
 - Parsing boundary for assistant-output-like text is `CoordJSON -> strict JSON` transpilation, then `json.loads`.
 
+### Canonical raw bbox vs model-facing bbox parameterization
+- Raw JSONL `bbox_2d` remains canonical `xyxy`, even when model-facing training
+  or inference text is rendered with another bbox parameterization.
+- In raw JSONL and other model-independent geometry surfaces, bbox coords remain
+  the current linear norm1000 / coord-token contract for canonical
+  `[x1, y1, x2, y2]`.
+- Runtime may render model-facing `bbox_2d` as an internal center-log-size
+  tuple for prompts or teacher-forced targets.
+- When runtime renders model-facing `bbox_2d` as center-log-size:
+  - external field names remain unchanged (`bbox_2d`, `desc`, etc.),
+  - the four model-facing slots represent `[cx, cy, u(w), u(h)]`,
+  - `u(s) = (log(max(s, s_min)) - log(s_min)) / -log(s_min)` is the shared
+    log-size expression,
+  - each slot `z` is still carried by the existing coord-token lattice via
+    `k = clamp(floor(999 * z + 0.5), 0, 999)` and `<|coord_k|>`,
+  - inverse parsing first decodes `z_hat = k / 999`,
+  - width/height are serialized through the shared fixed log-size chart rather
+    than as raw linear size bins,
+  - canonical geometry is reconstructed from the decoded slots as
+    `x1 = cx - w / 2`, `y1 = cy - h / 2`, `x2 = cx + w / 2`, `y2 = cy + h / 2`,
+  - reconstructed boxes then follow the shared canonical `xyxy`
+    clamp/canonicalization rules,
+  - downstream parsing/eval boundaries must invert that chart before
+    canonicalizing back to `xyxy`.
+- Model-independent caches, metadata, and emitted evaluation artifacts MUST
+  remain canonical `xyxy`.
+
 ## Invariants
 - For training, coords MUST be pre-normalized to norm1000 (ints 0..999) or pre-tokenized `<|coord_k|>` values. Width/height must always be present.
+- This raw-data invariant applies to canonical raw JSONL and other
+  model-independent geometry surfaces. It does not imply that every model-facing
+  bbox slot is always interpreted through the same linear chart at runtime.
 - Image paths remain relative in JSONL; loaders resolve them to absolute paths.
 - Geometry is validated; records with multiple geometry fields per object are rejected.
 - Runtime payload emission is fail-fast: builders/preprocessors reject objects with missing geometry, multiple geometry fields, invalid bbox/poly arity, or empty `desc` instead of serializing partial objects.

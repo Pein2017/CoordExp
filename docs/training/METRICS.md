@@ -40,6 +40,7 @@ Stage-1 training families that parity tests expect to stay user-visible.
   - `coord_softce_w1/soft_ce`
   - `coord_softce_w1/w1`
   - `coord_softce_w1/gate`
+  - `coord_softce_w1/text_gate`
   - `coord_softce_w1/adjacent_repulsion`
 - coord diagnostics:
   - `coord_diag/enabled`
@@ -49,10 +50,12 @@ Stage-1 training families that parity tests expect to stay user-visible.
   - `coord_diag/soft_ce`
   - `coord_diag/w1`
   - `coord_diag/gate`
+  - `coord_diag/text_gate`
   - `coord_diag/adjacent_repulsion`
   - `coord_diag/coord_tokens`
   - `coord_diag/coord_tokens_per_sample`
   - `coord_diag/coord_vocab_mass`
+  - `coord_diag/text_coord_vocab_mass`
   - `coord_diag/adjacent_repulsion_pair_count`
   - `coord_diag/adjacent_repulsion_applied_count`
   - `coord_diag/adjacent_repulsion_copy_score_mean`
@@ -63,6 +66,12 @@ Stage-1 training families that parity tests expect to stay user-visible.
   - `coord_diag/expected_bin_abs_err_p90`
   - `coord_diag/w1_to_delta`
 
+Stage-1 `center_log_size` note:
+
+- The draft `adopt-cxcywh-bbox-parameterization` profile uses `coord_softce_w1/ce`,
+  `coord_softce_w1/gate`, and `coord_softce_w1/text_gate` while forcing
+  `soft_ce` and `w1` to zero.
+
 ### BBox Geo
 
 - `loss/geo/bbox_geo`
@@ -72,6 +81,8 @@ Stage-1 training families that parity tests expect to stay user-visible.
 - `bbox_geo/groups_total`
 - `bbox_geo/groups_per_sample`
 - `bbox_geo/coord_slots_total`
+- `bbox_geo/skipped_incomplete_rows`
+- `bbox_geo/skipped_incomplete_coord_slots`
 
 Interpretation note:
 
@@ -93,6 +104,8 @@ Interpretation note:
 - `bbox_size_aux/groups_total`
 - `bbox_size_aux/groups_per_sample`
 - `bbox_size_aux/coord_slots_total`
+- `bbox_size_aux/skipped_incomplete_rows`
+- `bbox_size_aux/skipped_incomplete_coord_slots`
 - `bbox_size_aux/mean_width`
 - `bbox_size_aux/mean_height`
 - `bbox_size_aux/mean_log_area`
@@ -106,6 +119,8 @@ Interpretation note:
 - `bbox_geo/groups_total`
 - `bbox_geo/groups_per_sample`
 - `bbox_geo/coord_slots_total`
+- `bbox_geo/skipped_incomplete_rows`
+- `bbox_geo/skipped_incomplete_coord_slots`
 
 ### Token-Type Aggregates And Coord Monitors
 

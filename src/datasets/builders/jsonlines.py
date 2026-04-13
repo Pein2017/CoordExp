@@ -4,16 +4,19 @@ import base64
 import os
 from typing import Any, Dict, Iterable, List, Literal, Mapping, Optional
 
+from src.common.geometry.bbox_parameterization import (
+    AllowedBBoxFormat,
+    DEFAULT_BBOX_FORMAT,
+    normalize_bbox_format,
+    xyxy_norm1000_to_center_log_size_bins,
+)
+from src.common.geometry.bbox_formats import convert_bbox_2d_points
 from src.common.object_field_order import (
     ObjectFieldOrder,
     build_object_payload,
     normalize_object_field_order,
 )
-from src.common.geometry.bbox_formats import (
-    convert_bbox_2d_points,
-    normalize_bbox_format,
-)
-from src.coord_tokens.codec import sequence_has_coord_tokens, tokens_to_ints
+from src.coord_tokens.codec import ints_to_tokens, sequence_has_coord_tokens, tokens_to_ints
 from src.utils.assistant_json import dumps_coordjson
 from src.utils.coordjson_transpiler import coordjson_to_strict_json
 
@@ -58,7 +61,7 @@ class JSONLinesBuilder(BaseBuilder):
         json_format: Literal["standard"] = "standard",
         coord_tokens_enabled: bool = False,
         object_field_order: ObjectFieldOrder = "desc_first",
-        bbox_format: str = "xyxy",
+        bbox_format: AllowedBBoxFormat = DEFAULT_BBOX_FORMAT,
         **kwargs,
     ) -> None:
         super().__init__(**kwargs)
@@ -68,7 +71,7 @@ class JSONLinesBuilder(BaseBuilder):
         self.json_format = json_format
         self.coord_tokens_enabled = bool(coord_tokens_enabled)
         self.object_field_order = normalize_object_field_order(object_field_order)
-        self.bbox_format = normalize_bbox_format(bbox_format, path="custom.bbox_format")
+        self.bbox_format = normalize_bbox_format(bbox_format, path="bbox_format")
 
     def _get_summary_text(self, record: ConversationRecord, record_index: int) -> str:
         """Extract and validate summary from record.
@@ -179,7 +182,11 @@ class JSONLinesBuilder(BaseBuilder):
                 desc=desc,
                 geometry_key=geom_type,
                 geometry_value=self._format_points(
-                    text_points, width, height, geom_type
+                    text_points,
+                    width,
+                    height,
+                    geom_type,
+                    numeric_points=numeric_points,
                 ),
                 object_field_order=self.object_field_order,
             )
@@ -234,6 +241,10 @@ class JSONLinesBuilder(BaseBuilder):
                 original_xyxy = obj.get("_bbox_xyxy_original")
                 if original_xyxy is not None:
                     points_for_meta = [int(round(float(v))) for v in list(original_xyxy)]
+                elif self.bbox_format == "center_log_size":
+                    points_for_meta = [
+                        int(round(float(v))) for v in list(points_for_meta)
+                    ]
                 else:
                     points_for_meta = [
                         int(round(v))
@@ -251,8 +262,24 @@ class JSONLinesBuilder(BaseBuilder):
                 objects_out["ref"].append(desc.split("/")[0])
 
     def _format_points(
-        self, points: List[float], width: float, height: float, geom_type: str
+        self,
+        points: List[float],
+        width: float,
+        height: float,
+        geom_type: str,
+        *,
+        numeric_points: Optional[List[Any]] = None,
     ) -> List[int | float]:
+        if geom_type == "bbox_2d" and self.bbox_format == "center_log_size":
+            source_points = numeric_points if numeric_points is not None else points
+            if sequence_has_coord_tokens(source_points):
+                norm_points = tokens_to_ints(source_points, require_even=True)
+            else:
+                norm_points = [int(round(float(v))) for v in source_points]
+            transformed = xyxy_norm1000_to_center_log_size_bins(norm_points)
+            if self.coord_tokens_enabled:
+                return ints_to_tokens(transformed)
+            return transformed
         if self.coord_tokens_enabled:
             return list(points)
         _assert_norm_range(points, geom_type)

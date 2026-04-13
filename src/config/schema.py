@@ -22,7 +22,11 @@ from src.common.object_field_order import (
     normalize_object_field_order,
     normalize_object_ordering,
 )
-from src.common.geometry.bbox_formats import BBoxFormat, normalize_bbox_format
+from src.common.geometry.bbox_parameterization import (
+    AllowedBBoxFormat,
+    DEFAULT_BBOX_FORMAT,
+    normalize_bbox_format,
+)
 from src.trainers.teacher_forcing.module_registry import (
     ALLOWED_DIAGNOSTIC_MODULES,
     ALLOWED_OBJECTIVE_MODULES,
@@ -265,6 +269,7 @@ class CoordSoftCEW1Config:
     soft_ce_weight: float = 1.0
     w1_weight: float = 1.0
     gate_weight: float = 1.0
+    text_gate_weight: float = 0.0
     temperature: float = 1.0
     target_sigma: float = 2.0
     target_truncate: Optional[int] = None
@@ -288,6 +293,7 @@ class CoordSoftCEW1Config:
             "soft_ce_weight",
             "w1_weight",
             "gate_weight",
+            "text_gate_weight",
             "temperature",
             "target_sigma",
             "target_truncate",
@@ -315,6 +321,7 @@ class CoordSoftCEW1Config:
         soft_ce_weight = _parse_float("soft_ce_weight", cls.soft_ce_weight)
         w1_weight = _parse_float("w1_weight", cls.w1_weight)
         gate_weight = _parse_float("gate_weight", cls.gate_weight)
+        text_gate_weight = _parse_float("text_gate_weight", cls.text_gate_weight)
         temperature = _parse_float("temperature", cls.temperature)
         target_sigma = _parse_float("target_sigma", cls.target_sigma)
         adjacent_repulsion_weight = _parse_float(
@@ -354,6 +361,8 @@ class CoordSoftCEW1Config:
             raise ValueError("coord_soft_ce_w1.w1_weight must be >= 0")
         if gate_weight < 0:
             raise ValueError("coord_soft_ce_w1.gate_weight must be >= 0")
+        if text_gate_weight < 0:
+            raise ValueError("coord_soft_ce_w1.text_gate_weight must be >= 0")
         if adjacent_repulsion_weight < 0:
             raise ValueError(
                 "coord_soft_ce_w1.adjacent_repulsion_weight must be >= 0"
@@ -376,10 +385,11 @@ class CoordSoftCEW1Config:
             and soft_ce_weight == 0
             and w1_weight == 0
             and gate_weight == 0
+            and text_gate_weight == 0
             and adjacent_repulsion_weight == 0
         ):
             raise ValueError(
-                "coord_soft_ce_w1 is enabled but ce_weight, soft_ce_weight, w1_weight, gate_weight, and adjacent_repulsion_weight are all 0"
+                "coord_soft_ce_w1 is enabled but ce_weight, soft_ce_weight, w1_weight, gate_weight, text_gate_weight, and adjacent_repulsion_weight are all 0"
             )
         if temperature <= 0:
             raise ValueError("coord_soft_ce_w1.temperature must be > 0")
@@ -394,6 +404,7 @@ class CoordSoftCEW1Config:
             soft_ce_weight=soft_ce_weight,
             w1_weight=w1_weight,
             gate_weight=gate_weight,
+            text_gate_weight=text_gate_weight,
             temperature=temperature,
             target_sigma=target_sigma,
             target_truncate=target_truncate,
@@ -1089,8 +1100,8 @@ class CustomConfig:
     emit_norm: AllowedNorm
     json_format: AllowedJsonFormat
     object_field_order: ObjectFieldOrder
+    bbox_format: AllowedBBoxFormat = DEFAULT_BBOX_FORMAT
     object_ordering: ObjectOrdering = "sorted"
-    bbox_format: BBoxFormat = "xyxy"
     coord_tokens: CoordTokensConfig = field(default_factory=CoordTokensConfig)
     coord_offset: CoordOffsetConfig = field(default_factory=CoordOffsetConfig)
     coord_soft_ce_w1: CoordSoftCEW1Config = field(default_factory=CoordSoftCEW1Config)
@@ -1145,6 +1156,7 @@ class CustomConfig:
             )
         if self.json_format not in ALLOWED_JSON_FORMATS:
             raise ValueError("custom.json_format must be 'standard'")
+        normalize_bbox_format(self.bbox_format, path="custom.bbox_format")
         if self.offline_max_pixels is not None and int(self.offline_max_pixels) <= 0:
             raise ValueError("custom.offline_max_pixels must be > 0 when provided")
         # NOTE: Coord tokens can be supervised either via distribution losses
@@ -1229,7 +1241,6 @@ class CustomConfig:
         dump_conversation_path = data.pop("dump_conversation_path", None)
         object_ordering_raw = data.pop("object_ordering", "sorted")
         object_field_order_raw = data.pop("object_field_order", None)
-        bbox_format_raw = data.pop("bbox_format", "xyxy")
         if object_field_order_raw is None:
             raise ValueError("custom.object_field_order must be provided")
         val_jsonl = data.pop("val_jsonl", None)
@@ -1283,6 +1294,10 @@ class CustomConfig:
         if json_format_raw is None:
             raise ValueError("custom.json_format must be provided")
         json_format = _normalize_json_format(json_format_raw)
+        bbox_format = normalize_bbox_format(
+            data.pop("bbox_format", DEFAULT_BBOX_FORMAT),
+            path="custom.bbox_format",
+        )
 
         # `custom.extra` is the only intentional extension bucket.
         nested_extra_raw = data.pop("extra", None)
@@ -1331,9 +1346,6 @@ class CustomConfig:
         object_field_order = normalize_object_field_order(
             object_field_order_raw, path="custom.object_field_order"
         )
-        bbox_format = normalize_bbox_format(
-            bbox_format_raw, path="custom.bbox_format"
-        )
 
         if data:
             unknown = sorted(str(k) for k in data.keys())
@@ -1345,9 +1357,9 @@ class CustomConfig:
             user_prompt=str(user_prompt) if user_prompt is not None else "",
             emit_norm=cast("AllowedNorm", emit_norm_value),
             json_format=json_format,
-            object_ordering=object_ordering,
             object_field_order=object_field_order,
             bbox_format=bbox_format,
+            object_ordering=object_ordering,
             coord_tokens=coord_tokens,
             coord_offset=coord_offset,
             coord_soft_ce_w1=coord_soft_ce_w1,
@@ -2777,6 +2789,76 @@ class TrainingConfig:
                             "silent truncation drift between training and rollouts. "
                             f"Got global_max_length={int(global_max_length)} vllm.max_model_len={vllm_max_model_len}."
                         )
+
+        if custom.bbox_format == "center_log_size":
+            if trainer_variant in {"stage2_two_channel", "stage2_rollout_aligned"}:
+                raise ValueError(
+                    "custom.bbox_format=center_log_size is Stage-1-only in V1 and is unsupported for stage2 trainer variants."
+                )
+            if stage2_pipeline_present or rollout_pipeline_present:
+                raise ValueError(
+                    "custom.bbox_format=center_log_size is Stage-1-only in V1 and cannot be combined with stage2_ab.pipeline or rollout_matching.pipeline."
+                )
+            if not bool(getattr(custom.coord_tokens, "enabled", False)):
+                raise ValueError(
+                    "custom.bbox_format=center_log_size requires custom.coord_tokens.enabled=true."
+                )
+            if not bool(getattr(custom.coord_tokens, "skip_bbox_norm", False)):
+                raise ValueError(
+                    "custom.bbox_format=center_log_size requires custom.coord_tokens.skip_bbox_norm=true."
+                )
+
+            coord_cfg = custom.coord_soft_ce_w1
+            if not bool(getattr(coord_cfg, "enabled", False)):
+                raise ValueError(
+                    "custom.bbox_format=center_log_size requires custom.coord_soft_ce_w1.enabled=true."
+                )
+            if float(getattr(coord_cfg, "ce_weight", 0.0)) <= 0.0:
+                raise ValueError(
+                    "custom.bbox_format=center_log_size requires custom.coord_soft_ce_w1.ce_weight > 0."
+                )
+            if float(getattr(coord_cfg, "soft_ce_weight", 0.0)) != 0.0:
+                raise ValueError(
+                    "custom.bbox_format=center_log_size requires custom.coord_soft_ce_w1.soft_ce_weight = 0."
+                )
+            if float(getattr(coord_cfg, "w1_weight", 0.0)) != 0.0:
+                raise ValueError(
+                    "custom.bbox_format=center_log_size requires custom.coord_soft_ce_w1.w1_weight = 0."
+                )
+            if float(getattr(coord_cfg, "gate_weight", 0.0)) <= 0.0:
+                raise ValueError(
+                    "custom.bbox_format=center_log_size requires custom.coord_soft_ce_w1.gate_weight > 0."
+                )
+            if float(getattr(coord_cfg, "text_gate_weight", 0.0)) <= 0.0:
+                raise ValueError(
+                    "custom.bbox_format=center_log_size requires custom.coord_soft_ce_w1.text_gate_weight > 0."
+                )
+            if float(getattr(coord_cfg, "temperature", 1.0)) != 1.0:
+                raise ValueError(
+                    "custom.bbox_format=center_log_size requires custom.coord_soft_ce_w1.temperature = 1.0."
+                )
+            if float(getattr(coord_cfg, "target_sigma", 2.0)) != 2.0:
+                raise ValueError(
+                    "custom.bbox_format=center_log_size requires custom.coord_soft_ce_w1.target_sigma = 2.0."
+                )
+            if getattr(coord_cfg, "target_truncate", None) is not None:
+                raise ValueError(
+                    "custom.bbox_format=center_log_size requires custom.coord_soft_ce_w1.target_truncate = null."
+                )
+            if float(getattr(coord_cfg, "adjacent_repulsion_weight", 0.0)) != 0.0:
+                raise ValueError(
+                    "custom.bbox_format=center_log_size requires custom.coord_soft_ce_w1.adjacent_repulsion_weight = 0."
+                )
+            if custom_bbox_geo_present or bool(getattr(custom.bbox_geo, "enabled", False)):
+                raise ValueError(
+                    "custom.bbox_format=center_log_size rejects custom.bbox_geo in V1."
+                )
+            if custom_bbox_size_aux_present or bool(
+                getattr(custom.bbox_size_aux, "enabled", False)
+            ):
+                raise ValueError(
+                    "custom.bbox_format=center_log_size rejects custom.bbox_size_aux in V1."
+                )
 
         return cls(
             template=template,

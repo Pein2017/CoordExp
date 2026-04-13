@@ -18,6 +18,15 @@ Normative behavior:
   - non-COCO / raw evaluation paths may consume `gt_vs_pred.jsonl`,
   - score-aware COCO evaluation paths must continue to consume
     `gt_vs_pred_scored.jsonl`,
+- when a run resolves `infer.bbox_format=center_log_size`, the pipeline MUST:
+  - keep the canonical standardized artifact family authoritative,
+  - reject confidence post-op,
+  - allow raw/non-COCO evaluation to consume `gt_vs_pred.jsonl`,
+  - allow score-aware COCO/LVIS evaluation to consume
+    `gt_vs_pred_scored.jsonl` after it is materialized from the canonical raw
+    artifact via a deterministic constant-score compatibility policy,
+  - allow duplicate-control to emit `gt_vs_pred_guarded.jsonl` or
+    `gt_vs_pred_scored_guarded.jsonl` according to the active eval input family,
 - when `eval.duplicate_control.enabled=false`, eval behavior remains the normal
   raw-only path,
 - when `eval.duplicate_control.enabled=true`, the eval stage MUST:
@@ -78,6 +87,13 @@ typed overrides, deterministic defaults relative to the run directory SHALL be:
 - **WHEN** the eval stage runs
 - **THEN** it emits only the normal raw evaluation outputs
 - **AND** it does not emit guarded duplicate-control artifacts.
+
+#### Scenario: `center_log_size` materializes a constant-score scored artifact for official eval
+- **GIVEN** an inference/eval run with `infer.bbox_format=center_log_size`
+- **WHEN** the pipeline is asked for score-aware COCO/LVIS evaluation
+- **THEN** it materializes `gt_vs_pred_scored.jsonl` from canonical standardized
+  predictions using deterministic constant-score provenance
+- **AND** it keeps confidence post-op disabled for that run.
 
 ### Requirement: `resolved_config.json` is the canonical resolved manifest
 Inference-pipeline SHALL persist resolved run metadata in `resolved_config.json`
