@@ -194,7 +194,7 @@ Rationale:
 - It also makes the gating requirement implementable instead of leaving
   coord-vs-text separation implicit.
 
-### 6. Standardized inference artifacts remain canonical while raw output stays verbatim
+### 6. Standardized inference artifacts remain canonical while raw payloads stay parsed-best-effort
 
 Decision:
 
@@ -205,23 +205,28 @@ Decision:
   - `vis_resources/gt_vs_pred.jsonl`
   - visualization/eval-ready copies derived from the canonical standardized
     artifact
-- `raw_output_json` remains the verbatim model-facing payload.
-- Confidence post-op and scored/guarded-scored artifacts remain `xyxy`-only in
-  V1:
+- `raw_output_json` remains the parsed best-effort raw payload emitted by the
+  shared salvage/parser path rather than a verbatim raw-text mirror.
+- Confidence post-op remains `xyxy`-only in V1:
   - `pred_confidence.jsonl`
-  - `gt_vs_pred_scored.jsonl`
-  - `gt_vs_pred_scored_guarded.jsonl`
   - any pipeline step that requires the raw bbox payload to be `(x1, y1, x2,
     y2)` bins
-- When `infer.bbox_format=center_log_size`, those scored/confidence surfaces
-  MUST fail fast instead of silently reinterpreting raw bins.
+- When `infer.bbox_format=center_log_size`, those confidence surfaces MUST fail
+  fast instead of silently reinterpreting raw bins.
+- Official score-aware evaluation remains allowed:
+  - `gt_vs_pred_scored.jsonl`
+  - `gt_vs_pred_scored_guarded.jsonl`
+  are materialized from the canonical standardized `gt_vs_pred.jsonl` using a
+  deterministic constant-score compatibility policy rather than confidence
+  reconstruction.
 - Canonical raw duplicate-control on already-standardized `xyxy` artifacts may
   remain available:
   - `gt_vs_pred_guarded.jsonl`
 
 Rationale:
 
-- This preserves both evaluation stability and raw-output auditability.
+- This preserves evaluation stability without pretending the raw-bin
+  confidence contract already understands `[cx, cy, u(w), u(h)]`.
 
 ### 7. Prompt/cache identity still needs full rendered-sample determinism
 
@@ -262,7 +267,8 @@ Rationale:
 3. Update Stage-1 dataset rendering and prompt templates.
 4. Update Stage-1 coord supervision to the pure-CE-plus-gating profile.
 5. Update standalone inference parsing and canonicalized artifact emission, and
-   reject confidence/scored surfaces for `center_log_size`.
+   reject confidence post-op for `center_log_size` while allowing
+   constant-score official-eval compatibility artifacts.
 6. Add focused tests and then replay later commits on top of the rewritten
    branch.
 

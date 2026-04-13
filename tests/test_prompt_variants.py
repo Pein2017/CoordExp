@@ -87,13 +87,16 @@ def test_prompt_variant_cross_surface_parity_between_training_and_inference(
     assert infer_user == train_prompts.user
 
 
-def test_prompt_variant_cross_surface_parity_for_center_log_size() -> None:
+@pytest.mark.parametrize("object_field_order", ["desc_first", "geometry_first"])
+def test_prompt_variant_cross_surface_parity_for_center_log_size(
+    object_field_order: str,
+) -> None:
     train_prompts = ConfigLoader.resolve_prompts(
         {
             "custom": {
                 "bbox_format": "center_log_size",
                 "object_ordering": "sorted",
-                "object_field_order": "desc_first",
+                "object_field_order": object_field_order,
                 "coord_tokens": {"enabled": True},
                 "extra": {"prompt_variant": "lvis_stage1_federated"},
             }
@@ -106,6 +109,7 @@ def test_prompt_variant_cross_surface_parity_for_center_log_size() -> None:
         mode="text",
         prompt_variant="lvis_stage1_federated",
         bbox_format="center_log_size",
+        object_field_order=object_field_order,
         object_ordering="sorted",
     )
     engine = InferenceEngine(inf_cfg, GenerationConfig())
@@ -116,6 +120,12 @@ def test_prompt_variant_cross_surface_parity_for_center_log_size() -> None:
 
     assert infer_system == train_prompts.system
     assert infer_user == train_prompts.user
+    if object_field_order == "geometry_first":
+        assert "geometry key (bbox_2d OR poly) before desc" in infer_system
+        assert "geometry (bbox_2d or poly) before desc" in infer_user
+    else:
+        assert "desc before exactly one geometry key" in infer_system
+        assert "desc before one geometry" in infer_user
 
 
 def test_inference_object_ordering_defaults_to_sorted() -> None:

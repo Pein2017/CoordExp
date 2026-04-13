@@ -40,10 +40,12 @@ coord slots and no regression-style bbox losses.
 - Keep Stage-1 and standalone inference canonical at the external boundary by
   decoding model-facing center-log-size predictions back to `xyxy` before
   standardized artifact emission.
-- Explicitly keep trainer-driven rollout/eval prompt rebuilding, Stage-2
-  training, and confidence/scored artifact post-processing out of scope for V1;
-  those surfaces remain `xyxy`-only and must fail fast if
-  `center_log_size` is requested.
+- Explicitly keep trainer-driven rollout/eval prompt rebuilding and Stage-2
+  training out of scope for V1; those surfaces remain `xyxy`-only and must
+  fail fast if `center_log_size` is requested.
+- Keep confidence post-op out of scope for V1, while still allowing official
+  score-aware evaluation to run on a constant-score compatibility artifact
+  derived from the canonical standardized `gt_vs_pred.jsonl`.
 - Persist the full resolved prompt identity, including a prompt/template hash,
   in reproducibility metadata so prompt-text drift is auditable.
 

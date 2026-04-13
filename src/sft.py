@@ -43,6 +43,7 @@ from .bootstrap.trainer_setup import (
     instantiate_trainer,
 )
 from .config import ConfigLoader
+from .config.prompts import get_template_prompt_hash, resolve_dense_prompt_variant_key
 from .config.strict_dataclass import dataclass_asdict_no_none
 from .datasets import (
     BaseCaptionDataset,
@@ -107,6 +108,34 @@ def _resolve_model_checkpoint_path(training_config: Any) -> str | None:
         return None
     model_checkpoint = model_checkpoint.strip()
     return model_checkpoint or None
+
+
+def _resolve_dense_prompt_identity(custom_config: Any) -> dict[str, Any]:
+    use_summary = bool(getattr(custom_config, "use_summary", False))
+    prompt_variant = resolve_dense_prompt_variant_key(
+        (
+            getattr(custom_config, "extra", {}) or {}
+        ).get("prompt_variant")
+        if isinstance(getattr(custom_config, "extra", {}) or {}, Mapping)
+        else None
+    )
+    if use_summary:
+        prompt_template_hash = None
+    else:
+        prompt_template_hash = get_template_prompt_hash(
+            ordering=str(getattr(custom_config, "object_ordering", "sorted") or "sorted"),
+            coord_mode="coord_tokens",
+            prompt_variant=prompt_variant,
+            object_field_order=str(
+                getattr(custom_config, "object_field_order", "desc_first")
+                or "desc_first"
+            ),
+            bbox_format=str(getattr(custom_config, "bbox_format", "xyxy") or "xyxy"),
+        )
+    return {
+        "prompt_variant": prompt_variant,
+        "prompt_template_hash": prompt_template_hash,
+    }
 
 
 # Use the model's native chat_template (JSON/Jinja) shipped with the tokenizer
@@ -661,6 +690,7 @@ def _build_static_packing_fingerprint(
     template_cfg = getattr(training_config, "template", {}) or {}
     training_cfg = getattr(training_config, "training", {}) or {}
     coord_tokens_payload = _coord_tokens_fingerprint_payload(custom_config)
+    prompt_identity = _resolve_dense_prompt_identity(custom_config)
 
     split = str(dataset_split or "train").strip().lower()
     if split not in {"train", "eval"}:
@@ -691,6 +721,9 @@ def _build_static_packing_fingerprint(
         "custom_bbox_format": getattr(custom_config, "bbox_format", None),
         "custom_object_ordering": getattr(custom_config, "object_ordering", None),
         "custom_object_field_order": getattr(custom_config, "object_field_order", None),
+        "custom_prompt_variant": prompt_identity["prompt_variant"],
+        "custom_prompt_template_hash": prompt_identity["prompt_template_hash"],
+        "custom_coord_mode": "coord_tokens",
         "custom_use_summary": bool(getattr(custom_config, "use_summary", False)),
         "custom_offline_max_pixels": getattr(custom_config, "offline_max_pixels", None),
         "coord_tokens": coord_tokens_payload,
@@ -749,6 +782,7 @@ def _build_encoded_sample_cache_fingerprint(
     system_prompt_summary: str | None = None,
 ) -> dict[str, Any]:
     template_cfg = getattr(training_config, "template", {}) or {}
+    prompt_identity = _resolve_dense_prompt_identity(custom_config)
     split = str(dataset_split or "train").strip().lower()
     if split not in {"train", "eval"}:
         raise ValueError(
@@ -780,6 +814,9 @@ def _build_encoded_sample_cache_fingerprint(
         "custom_bbox_format": getattr(custom_config, "bbox_format", None),
         "custom_object_ordering": getattr(custom_config, "object_ordering", None),
         "custom_object_field_order": getattr(custom_config, "object_field_order", None),
+        "custom_prompt_variant": prompt_identity["prompt_variant"],
+        "custom_prompt_template_hash": prompt_identity["prompt_template_hash"],
+        "custom_coord_mode": "coord_tokens",
         "custom_use_summary": bool(getattr(custom_config, "use_summary", False)),
         "custom_offline_max_pixels": getattr(custom_config, "offline_max_pixels", None),
         "coord_tokens": coord_tokens_payload,

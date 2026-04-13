@@ -340,6 +340,56 @@ def test_center_log_size_profile_rejects_non_pure_soft_ce() -> None:
         TrainingConfig.from_mapping(payload, PromptOverrides())
 
 
+def test_center_log_size_profile_rejects_coord_tokens_disabled() -> None:
+    payload = _base_training_payload()
+    payload["custom"]["bbox_format"] = "center_log_size"
+    payload["custom"]["coord_tokens"] = {
+        "enabled": False,
+        "skip_bbox_norm": True,
+    }
+    payload["custom"]["coord_soft_ce_w1"] = {
+        "enabled": True,
+        "ce_weight": 1.0,
+        "soft_ce_weight": 0.0,
+        "w1_weight": 0.0,
+        "gate_weight": 1.0,
+        "text_gate_weight": 1.0,
+        "temperature": 1.0,
+        "target_sigma": 2.0,
+    }
+
+    with pytest.raises(
+        ValueError,
+        match=r"custom\.coord_tokens\.enabled must be true",
+    ):
+        TrainingConfig.from_mapping(payload, PromptOverrides())
+
+
+def test_center_log_size_profile_rejects_skip_bbox_norm_false() -> None:
+    payload = _base_training_payload()
+    payload["custom"]["bbox_format"] = "center_log_size"
+    payload["custom"]["coord_tokens"] = {
+        "enabled": True,
+        "skip_bbox_norm": False,
+    }
+    payload["custom"]["coord_soft_ce_w1"] = {
+        "enabled": True,
+        "ce_weight": 1.0,
+        "soft_ce_weight": 0.0,
+        "w1_weight": 0.0,
+        "gate_weight": 1.0,
+        "text_gate_weight": 1.0,
+        "temperature": 1.0,
+        "target_sigma": 2.0,
+    }
+
+    with pytest.raises(
+        ValueError,
+        match=r"custom\.coord_tokens\.skip_bbox_norm must be true",
+    ):
+        TrainingConfig.from_mapping(payload, PromptOverrides())
+
+
 def test_training_encoded_sample_cache_keys_are_allowed_and_normalized() -> None:
     payload = _base_training_payload()
     payload["training"] = {

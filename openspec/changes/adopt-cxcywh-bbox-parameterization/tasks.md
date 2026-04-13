@@ -55,10 +55,11 @@
 
 - [x] 5.1 Update standalone inference to parse center-log-size predictions and
   canonicalize them to pixel `xyxy` before standardized artifact emission.
-- [x] 5.2 Keep `raw_output_json` verbatim while unscored standardized/vis
-  artifacts stay canonical `xyxy`.
-- [x] 5.3 Reject confidence/scored artifact paths for `center_log_size` until
-  their raw-bin contracts are rewritten.
+- [x] 5.2 Keep `raw_output_json` as the parsed best-effort raw payload while
+  standardized/vis artifacts stay canonical `xyxy`.
+- [x] 5.3 Reject confidence post-op for `center_log_size`, but materialize the
+  official scored-eval artifact family from canonical standardized predictions
+  using a deterministic constant-score compatibility policy.
 - [x] 5.3 Record the resolved prompt identity and bbox parameterization in
   reproducibility artifacts, including a prompt/template hash.
 
@@ -70,8 +71,9 @@
   CE-only coord supervision,
   gating behavior,
   fail-fast rejection of non-pure settings,
-  canonical unscored inference/eval artifacts,
-  fail-fast rejection of scored/confidence paths,
+  canonical inference/eval artifacts,
+  fail-fast rejection of confidence post-op,
+  constant-score official-eval compatibility for `center_log_size`,
   and cache invalidation across prompt formatting changes.
 - [x] 6.2 Run targeted validation and replay commits `f16f6a2` and `f30aea7`
   on top of the rewritten branch.

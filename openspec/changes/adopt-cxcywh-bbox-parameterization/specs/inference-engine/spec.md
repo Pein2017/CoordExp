@@ -25,7 +25,8 @@ Normative behavior:
   - `vis_resources/gt_vs_pred.jsonl`
   - visualization/eval-ready copies derived from the canonical standardized
     artifact
-- `raw_output_json` MUST remain the verbatim model-facing payload.
+- `raw_output_json` MUST remain the parsed best-effort raw payload produced by
+  the shared salvage/parser path.
 
 #### Scenario: Center-log-size inference emits canonical standardized artifacts
 - **WHEN** an inference run resolves `infer.bbox_format=center_log_size`
@@ -33,34 +34,44 @@ Normative behavior:
 - **AND** standardized prediction artifacts are emitted as canonical pixel-space
   `xyxy`.
 
-#### Scenario: Raw output remains verbatim
+#### Scenario: Raw output remains parsed best-effort
 - **WHEN** an inference run resolves `infer.bbox_format=center_log_size`
-- **THEN** `raw_output_json` preserves the original model-facing generated bbox
+- **THEN** `raw_output_json` preserves the parsed model-facing generated bbox
   payload
 - **AND** only standardized artifact views are canonicalized.
 
-### Requirement: Confidence/scored post-processing remains unsupported for `center_log_size` in V1
-The V1 inference path SHALL keep confidence post-processing and scored artifact
-generation out of scope until their raw-bin contracts are updated for
-`[cx, cy, u(w), u(h)]`.
+### Requirement: Confidence post-processing remains unsupported for `center_log_size` in V1
+The V1 inference path SHALL keep confidence post-processing out of scope until
+its raw-bin contract is updated for `[cx, cy, u(w), u(h)]`.
 
 Normative behavior:
 
 - when `infer.bbox_format=center_log_size`, the following outputs/surfaces MUST
   be rejected or skipped with an explicit fail-fast diagnostic:
   - `pred_confidence.jsonl`
+  - any post-op that assumes raw bbox bins are `(x1, y1, x2, y2)`
+- official score-aware evaluation MAY still consume:
   - `gt_vs_pred_scored.jsonl`
   - `gt_vs_pred_scored_guarded.jsonl`
-  - any post-op that assumes raw bbox bins are `(x1, y1, x2, y2)`
+  when those artifacts are materialized from canonical standardized predictions
+  via a deterministic constant-score compatibility policy
 - canonical raw duplicate-control on already-standardized `xyxy` artifacts MAY
   remain available, including `gt_vs_pred_guarded.jsonl`
-- `xyxy` inference remains responsible for the existing confidence/scored paths.
+- `xyxy` inference remains responsible for the existing confidence post-op path.
 
 #### Scenario: Confidence post-op request fails fast
 - **WHEN** an inference/post-processing run combines
-  `infer.bbox_format=center_log_size` with a confidence/scored artifact request
-- **THEN** the run fails fast with guidance that V1 supports canonical
-  unscored artifacts only.
+  `infer.bbox_format=center_log_size` with a confidence-postop request
+- **THEN** the run fails fast with guidance that V1 does not support
+  confidence-based score reconstruction for center-log-size bbox slots.
+
+#### Scenario: Official eval uses a constant-score compatibility artifact
+- **WHEN** an inference/eval run resolves `infer.bbox_format=center_log_size`
+- **AND** official score-aware metrics are requested
+- **THEN** the run may materialize `gt_vs_pred_scored.jsonl` from canonical
+  standardized predictions using a deterministic constant-score provenance
+- **AND** the evaluator consumes that scored compatibility artifact instead of a
+  confidence-reconstructed artifact.
 
 ## MODIFIED Requirements
 

@@ -12,6 +12,7 @@ from transformers import (
 )
 
 from src.common.semantic_desc import normalize_desc
+from src.eval.artifacts import with_constant_scores
 from src.eval.detection import EvalOptions, evaluate_and_save
 from src.infer.engine import GenerationConfig, InferenceConfig, InferenceEngine
 from src.utils import get_logger
@@ -279,33 +280,6 @@ def _maybe_backfill_lvis_metadata(
     return out
 
 
-def _with_constant_scores(
-    *,
-    records: Sequence[Mapping[str, Any]],
-    pred_score_source: str,
-    pred_score_version: int,
-    constant_score: float,
-) -> List[Dict[str, Any]]:
-    scored_rows: List[Dict[str, Any]] = []
-    score = float(constant_score)
-    for row in records:
-        scored_row = dict(row)
-        scored_row["pred_score_source"] = str(pred_score_source)
-        scored_row["pred_score_version"] = int(pred_score_version)
-        preds_raw = row.get("pred")
-        preds_out: List[Dict[str, Any]] = []
-        if isinstance(preds_raw, list):
-            for pred in preds_raw:
-                if not isinstance(pred, Mapping):
-                    continue
-                pred_out = dict(pred)
-                pred_out["score"] = float(pred_out.get("score", score))
-                preds_out.append(pred_out)
-        scored_row["pred"] = preds_out
-        scored_rows.append(scored_row)
-    return scored_rows
-
-
 class Stage1DetectionEvalCallback(TrainerCallback):
     """Run generation-backed detection eval during Stage-1 evaluation windows."""
 
@@ -445,14 +419,17 @@ class Stage1DetectionEvalCallback(TrainerCallback):
         )
         _write_jsonl(base_jsonl_path, base_rows)
 
-        scored_rows = _with_constant_scores(
-            records=base_rows,
-            pred_score_source=self.pred_score_source,
-            pred_score_version=self.pred_score_version,
-            constant_score=self.constant_score,
-        )
-        scored_jsonl_path = eval_dir / "gt_vs_pred_scored.jsonl"
-        _write_jsonl(scored_jsonl_path, scored_rows)
+        want_official = self.metrics_mode in {"coco", "lvis", "both"}
+        pred_jsonl_path = base_jsonl_path
+        if want_official:
+            scored_rows = with_constant_scores(
+                records=base_rows,
+                pred_score_source=self.pred_score_source,
+                pred_score_version=self.pred_score_version,
+                constant_score=self.constant_score,
+            )
+            pred_jsonl_path = eval_dir / "gt_vs_pred_scored.jsonl"
+            _write_jsonl(pred_jsonl_path, scored_rows)
 
         options = EvalOptions(
             metrics=self.eval_options.metrics,
@@ -473,7 +450,7 @@ class Stage1DetectionEvalCallback(TrainerCallback):
             semantic_batch_size=int(self.eval_options.semantic_batch_size),
             lvis_max_dets=int(self.eval_options.lvis_max_dets),
         )
-        summary = evaluate_and_save(scored_jsonl_path, options=options)
+        summary = evaluate_and_save(pred_jsonl_path, options=options)
         det_metrics = dict(summary.get("metrics", {}))
 
         if metrics is not None:

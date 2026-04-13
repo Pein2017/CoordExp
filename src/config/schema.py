@@ -2798,6 +2798,14 @@ class TrainingConfig:
                 raise ValueError(
                     "custom.bbox_format=center_log_size is Stage-1-only in V1 and cannot be combined with stage2_ab.pipeline or rollout_matching.pipeline."
                 )
+            if not bool(getattr(custom.coord_tokens, "enabled", False)):
+                raise ValueError(
+                    "custom.bbox_format=center_log_size requires custom.coord_tokens.enabled=true."
+                )
+            if not bool(getattr(custom.coord_tokens, "skip_bbox_norm", False)):
+                raise ValueError(
+                    "custom.bbox_format=center_log_size requires custom.coord_tokens.skip_bbox_norm=true."
+                )
 
             coord_cfg = custom.coord_soft_ce_w1
             if not bool(getattr(coord_cfg, "enabled", False)):

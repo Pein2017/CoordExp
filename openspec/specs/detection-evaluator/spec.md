@@ -13,11 +13,10 @@ Normative duplicate-control behavior:
 - malformed or invalid geometry records remain owned by the existing evaluator
   validation contract and MUST NOT be reclassified as duplicate-control actions,
 - when evaluation consumes artifacts produced under
-  `infer.bbox_format=center_log_size`, the evaluator MUST narrow to the raw
-  standardized artifact family:
-  - `gt_vs_pred.jsonl`
-  - optional `gt_vs_pred_guarded.jsonl`
-  - score-aware COCO/scored artifact families are unsupported and MUST fail fast
+  `infer.bbox_format=center_log_size`, the evaluator MAY consume either:
+  - the canonical raw standardized artifact family for raw/non-COCO metrics, or
+  - a score-aware compatibility artifact family derived from the canonical raw
+    artifact via deterministic constant-score provenance for official metrics,
 - when duplicate-control is enabled, the evaluator MUST preserve the raw
   validated prediction view and build a guarded prediction view separately,
 - the guarded companion artifact MUST match the active evaluation input family:

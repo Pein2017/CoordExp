@@ -137,6 +137,20 @@ This V1 profile exists to isolate the parameterization question under minimal
 loss complexity. It is not the same recipe as the legacy `xyxy` Stage-1
 baseline documented above.
 
+Evaluation note:
+
+- standalone inference/eval still emits canonical pixel `xyxy` standardized
+  artifacts
+- official score-aware evaluation remains available through a deterministic
+  constant-score `gt_vs_pred_scored.jsonl` compatibility artifact
+- confidence post-op remains unsupported for `center_log_size` in this V1 path
+- checkpoints trained on the legacy model-facing `xyxy` serialization are not
+  semantically compatible with `infer.bbox_format: center_log_size`
+- if you force an old `xyxy` checkpoint through the `center_log_size` infer
+  path, the runtime may still emit canonicalized `xyxy` artifacts, but those
+  outputs should be treated as a compatibility stress test rather than as valid
+  `center_log_size` rollout behavior
+
 ## Stage-1 bbox geometry loss
 
 Stage-1 can also supervise decoded bbox geometry directly from the same

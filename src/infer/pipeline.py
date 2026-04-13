@@ -22,6 +22,13 @@ from src.common.object_field_order import (
     normalize_object_ordering,
 )
 from src.config.prompts import get_template_prompt_hash, resolve_dense_prompt_variant_key
+from src.eval.artifacts import (
+    CENTER_LOG_SIZE_CONSTANT_PRED_SCORE_SOURCE,
+    CENTER_LOG_SIZE_CONSTANT_PRED_SCORE_VERSION,
+    CENTER_LOG_SIZE_CONSTANT_SCORE,
+    with_constant_scores,
+    write_jsonl_records,
+)
 from src.infer.artifacts import build_eval_artifact_paths
 from src.utils import get_logger
 
@@ -656,15 +663,9 @@ def run_pipeline(
 
     if resolved_bbox_format == "center_log_size":
         confidence_cfg = _get_map(cfg, "confidence")
-        eval_cfg = _get_map(cfg, "eval")
-        metrics_mode = str(eval_cfg.get("metrics", "both")).strip().lower()
         if confidence_cfg:
             raise ValueError(
                 "infer.bbox_format=center_log_size does not support confidence post-op in V1; remove the confidence section."
-            )
-        if stages.eval and metrics_mode in {"coco", "lvis", "both"}:
-            raise ValueError(
-                "infer.bbox_format=center_log_size supports only raw/unscored evaluation artifacts in V1; set eval.metrics=f1ish or switch bbox_format back to xyxy."
             )
 
     if stages.infer:
@@ -837,9 +838,28 @@ def _maybe_run_confidence_postop(
     if scored_path is None:
         return
     if bbox_format == "center_log_size":
-        raise ValueError(
-            "infer.bbox_format=center_log_size does not support confidence post-op in V1."
+        if not base_path.is_file():
+            return
+        newest_input_mtime = base_path.stat().st_mtime
+        if scored_path.is_file() and scored_path.stat().st_mtime >= newest_input_mtime:
+            return
+        rows: List[Dict[str, Any]] = []
+        with base_path.open("r", encoding="utf-8") as fin:
+            for line in fin:
+                text = line.strip()
+                if not text:
+                    continue
+                rows.append(json.loads(text))
+        write_jsonl_records(
+            scored_path,
+            with_constant_scores(
+                records=rows,
+                pred_score_source=CENTER_LOG_SIZE_CONSTANT_PRED_SCORE_SOURCE,
+                pred_score_version=CENTER_LOG_SIZE_CONSTANT_PRED_SCORE_VERSION,
+                constant_score=CENTER_LOG_SIZE_CONSTANT_SCORE,
+            ),
         )
+        return
     if not base_path.is_file():
         return
     if not trace_path.is_file():
@@ -915,13 +935,10 @@ def _run_eval_stage(cfg: Mapping[str, Any], artifacts: ResolvedArtifacts) -> Non
 
     metrics_mode = str(eval_cfg.get("metrics", "both")).strip().lower()
     want_official = metrics_mode in {"coco", "lvis", "both"}
-    if bbox_format == "center_log_size" and want_official:
-        raise ValueError(
-            "infer.bbox_format=center_log_size supports only raw/unscored evaluation in V1; official scored evaluation is unsupported."
-        )
 
     # Unified pipeline contract:
     # - COCO metrics require scored artifacts.
+    # - center_log_size uses a constant-score scored artifact for official eval.
     # - f1ish-only runs can use the base artifact.
     if want_official:
         scored_path = artifacts.gt_vs_pred_scored_jsonl

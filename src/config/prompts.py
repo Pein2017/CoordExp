@@ -32,8 +32,9 @@ _USER_EXAMPLE_GEOMETRY_FIRST_CENTER_LOG_SIZE = (
 
 _BBOX_SYSTEM_RULE_PLACEHOLDER = "__BBOX_SYSTEM_RULE__"
 _BBOX_USER_RULE_PLACEHOLDER = "__BBOX_USER_RULE__"
-_USER_EXAMPLE_DESC_FIRST_PLACEHOLDER = "__USER_EXAMPLE_DESC_FIRST__"
-_USER_EXAMPLE_GEOMETRY_FIRST_PLACEHOLDER = "__USER_EXAMPLE_GEOMETRY_FIRST__"
+_OBJECT_FIELD_ORDER_SYSTEM_RULE_PLACEHOLDER = "__OBJECT_FIELD_ORDER_SYSTEM_RULE__"
+_OBJECT_FIELD_ORDER_USER_RULE_PLACEHOLDER = "__OBJECT_FIELD_ORDER_USER_RULE__"
+_USER_EXAMPLE_PLACEHOLDER = "__USER_EXAMPLE__"
 
 # Ordering instructions (shared across coord modes)
 _ORDER_RULE_SORTED = (
@@ -48,7 +49,7 @@ _ORDER_RULE_RANDOM = (
 _SYSTEM_PREFIX_TOKENS = (
     'You are a general-purpose object detection and grounding assistant. Output exactly one CoordJSON object {"objects": [...]} with no extra text.\n'
     '- The top-level object must contain exactly one key "objects".\n'
-    "- Each objects[] record must place desc before exactly one geometry key (bbox_2d OR poly); never emit multiple geometries.\n"
+    f"- {_OBJECT_FIELD_ORDER_SYSTEM_RULE_PLACEHOLDER}\n"
     '- If uncertain, set desc="unknown" and give the reason succinctly.\n'
     "- Geometry formatting rules:\n"
     f"  * {_BBOX_SYSTEM_RULE_PLACEHOLDER}\n"
@@ -72,18 +73,20 @@ SYSTEM_PROMPT_RANDOM_TOKENS = _SYSTEM_PREFIX_TOKENS.replace(
 USER_PROMPT_SORTED_TOKENS = (
     "Detect and list every object in the image, ordered by image-space top-left "
     "(y1, x1) top-to-bottom then left-to-right. For poly anchors, use (minY, minX) over all vertices. "
-    "Return a single CoordJSON object {\"objects\": [...]} where each record has desc before one geometry (bbox_2d or poly) using bare `<|coord_N|>` tokens (0–999). "
+    "Return a single CoordJSON object {\"objects\": [...]} where each record "
+    f"{_OBJECT_FIELD_ORDER_USER_RULE_PLACEHOLDER} using bare `<|coord_N|>` tokens (0–999). "
     f"{_BBOX_USER_RULE_PLACEHOLDER} "
     "Use the exact per-object format: "
-    f"{_USER_EXAMPLE_DESC_FIRST_PLACEHOLDER}. "
+    f"{_USER_EXAMPLE_PLACEHOLDER}. "
     "Do not quote coord tokens, do not emit extra keys, and emit no extra text."
 )
 USER_PROMPT_RANDOM_TOKENS = (
     "Detect and list every object in the image (any ordering is acceptable). "
-    "Return a single CoordJSON object {\"objects\": [...]} where each record has desc before one geometry (bbox_2d or poly) using bare `<|coord_N|>` tokens (0–999). "
+    "Return a single CoordJSON object {\"objects\": [...]} where each record "
+    f"{_OBJECT_FIELD_ORDER_USER_RULE_PLACEHOLDER} using bare `<|coord_N|>` tokens (0–999). "
     f"{_BBOX_USER_RULE_PLACEHOLDER} "
     "Use the exact per-object format: "
-    f"{_USER_EXAMPLE_DESC_FIRST_PLACEHOLDER}. "
+    f"{_USER_EXAMPLE_PLACEHOLDER}. "
     "Do not quote coord tokens, do not emit extra keys, and emit no extra text."
 )
 
@@ -98,25 +101,24 @@ SYSTEM_PROMPT_SUMMARY = "You are an assistant that writes a concise English one-
 USER_PROMPT_SUMMARY = "Summarize the image in one short English sentence."
 
 
-def _apply_geometry_first_system_wording(base_prompt: str) -> str:
-    return base_prompt.replace(
-        "Each objects[] record must place desc before exactly one geometry key (bbox_2d OR poly); never emit multiple geometries.",
-        "Each objects[] record must place exactly one geometry key (bbox_2d OR poly) before desc; never emit multiple geometries.",
-    )
-
-
-def _apply_geometry_first_user_wording(base_prompt: str) -> str:
-    return base_prompt.replace(
-        "has desc before one geometry (bbox_2d or poly)",
-        "has one geometry (bbox_2d or poly) before desc",
-    ).replace(
-        f"Use the exact per-object format: {_USER_EXAMPLE_DESC_FIRST_PLACEHOLDER}.",
-        f"Use the exact per-object format: {_USER_EXAMPLE_GEOMETRY_FIRST_PLACEHOLDER}.",
-    )
-
-
-def _bbox_prompt_fragments(bbox_format: str) -> dict[str, str]:
+def _prompt_fragments(*, bbox_format: str, object_field_order: str) -> dict[str, str]:
     bbox_format_key = normalize_bbox_format(bbox_format, path="bbox_format")
+    field_order = normalize_object_field_order(
+        object_field_order,
+        path="custom.object_field_order",
+    )
+    if field_order == "geometry_first":
+        field_order_system_rule = (
+            "Each objects[] record must place exactly one geometry key (bbox_2d OR poly) before desc; never emit multiple geometries."
+        )
+        field_order_user_rule = "has one geometry (bbox_2d or poly) before desc"
+        user_example = _USER_EXAMPLE_GEOMETRY_FIRST_CENTER_LOG_SIZE
+    else:
+        field_order_system_rule = (
+            "Each objects[] record must place desc before exactly one geometry key (bbox_2d OR poly); never emit multiple geometries."
+        )
+        field_order_user_rule = "has desc before one geometry (bbox_2d or poly)"
+        user_example = _USER_EXAMPLE_DESC_FIRST_CENTER_LOG_SIZE
     if bbox_format_key == "center_log_size":
         return {
             _BBOX_SYSTEM_RULE_PLACEHOLDER: (
@@ -128,14 +130,20 @@ def _bbox_prompt_fragments(bbox_format: str) -> dict[str, str]:
                 "Use bbox_2d as [cx, cy, u(w), u(h)] where "
                 "u(s) = (log(max(s, 1/1024)) - log(1/1024)) / -log(1/1024)."
             ),
-            _USER_EXAMPLE_DESC_FIRST_PLACEHOLDER: _USER_EXAMPLE_DESC_FIRST_CENTER_LOG_SIZE,
-            _USER_EXAMPLE_GEOMETRY_FIRST_PLACEHOLDER: _USER_EXAMPLE_GEOMETRY_FIRST_CENTER_LOG_SIZE,
+            _OBJECT_FIELD_ORDER_SYSTEM_RULE_PLACEHOLDER: field_order_system_rule,
+            _OBJECT_FIELD_ORDER_USER_RULE_PLACEHOLDER: field_order_user_rule,
+            _USER_EXAMPLE_PLACEHOLDER: user_example,
         }
+    if field_order == "geometry_first":
+        user_example = _USER_EXAMPLE_GEOMETRY_FIRST_XYXY
+    else:
+        user_example = _USER_EXAMPLE_DESC_FIRST_XYXY
     return {
         _BBOX_SYSTEM_RULE_PLACEHOLDER: "bbox_2d is [x1, y1, x2, y2] with x1<=x2 and y1<=y2.",
         _BBOX_USER_RULE_PLACEHOLDER: "Use bbox_2d as [x1, y1, x2, y2].",
-        _USER_EXAMPLE_DESC_FIRST_PLACEHOLDER: _USER_EXAMPLE_DESC_FIRST_XYXY,
-        _USER_EXAMPLE_GEOMETRY_FIRST_PLACEHOLDER: _USER_EXAMPLE_GEOMETRY_FIRST_XYXY,
+        _OBJECT_FIELD_ORDER_SYSTEM_RULE_PLACEHOLDER: field_order_system_rule,
+        _OBJECT_FIELD_ORDER_USER_RULE_PLACEHOLDER: field_order_user_rule,
+        _USER_EXAMPLE_PLACEHOLDER: user_example,
     }
 
 
@@ -143,6 +151,7 @@ def _render_prompt_text(
     template: str,
     *,
     bbox_format: str,
+    object_field_order: str,
     variant_key: str,
     field_name: str,
     required_placeholders: tuple[str, ...] = (),
@@ -153,7 +162,10 @@ def _render_prompt_text(
         raise ValueError(
             f"Prompt variant '{variant_key}' {field_name} must contain placeholders {missing}."
         )
-    for placeholder, replacement in _bbox_prompt_fragments(bbox_format).items():
+    for placeholder, replacement in _prompt_fragments(
+        bbox_format=bbox_format,
+        object_field_order=object_field_order,
+    ).items():
         rendered = rendered.replace(placeholder, replacement)
     return rendered
 
@@ -182,21 +194,24 @@ def build_dense_system_prompt(
     field_order = normalize_object_field_order(
         object_field_order, path="custom.object_field_order"
     )
-    if field_order == "geometry_first":
-        base_prompt = _apply_geometry_first_system_wording(base_prompt)
 
     variant = resolve_prompt_variant(prompt_variant)
     if variant.dense_system_override is not None:
         return _render_prompt_text(
             variant.dense_system_override,
             bbox_format=bbox_format,
+            object_field_order=field_order,
             variant_key=variant.key,
             field_name="dense_system_override",
-            required_placeholders=(_BBOX_SYSTEM_RULE_PLACEHOLDER,),
+            required_placeholders=(
+                _BBOX_SYSTEM_RULE_PLACEHOLDER,
+                _OBJECT_FIELD_ORDER_SYSTEM_RULE_PLACEHOLDER,
+            ),
         )
     return _render_prompt_text(
         f"{base_prompt}{variant.dense_system_suffix}",
         bbox_format=bbox_format,
+        object_field_order=field_order,
         variant_key=variant.key,
         field_name="dense_system_prompt",
     )
@@ -226,32 +241,25 @@ def build_dense_user_prompt(
     field_order = normalize_object_field_order(
         object_field_order, path="custom.object_field_order"
     )
-    if field_order == "geometry_first":
-        base_prompt = _apply_geometry_first_user_wording(base_prompt)
 
     variant = resolve_prompt_variant(prompt_variant)
     if variant.dense_user_override is not None:
-        user_override = str(variant.dense_user_override)
-        if field_order == "geometry_first":
-            user_override = _apply_geometry_first_user_wording(user_override)
-        required_example_placeholder = (
-            _USER_EXAMPLE_GEOMETRY_FIRST_PLACEHOLDER
-            if field_order == "geometry_first"
-            else _USER_EXAMPLE_DESC_FIRST_PLACEHOLDER
-        )
         return _render_prompt_text(
-            user_override,
+            str(variant.dense_user_override),
             bbox_format=bbox_format,
+            object_field_order=field_order,
             variant_key=variant.key,
             field_name="dense_user_override",
             required_placeholders=(
                 _BBOX_USER_RULE_PLACEHOLDER,
-                required_example_placeholder,
+                _OBJECT_FIELD_ORDER_USER_RULE_PLACEHOLDER,
+                _USER_EXAMPLE_PLACEHOLDER,
             ),
         )
     return _render_prompt_text(
         f"{base_prompt}{variant.dense_user_suffix}",
         bbox_format=bbox_format,
+        object_field_order=field_order,
         variant_key=variant.key,
         field_name="dense_user_prompt",
     )

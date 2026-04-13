@@ -325,6 +325,7 @@ def compute_coord_soft_ce_w1_loss(
         gate_sum = (gate_per_token * token_weights.to(dtype=gate_per_token.dtype)).sum()
 
     text_gate_contrib = softce_sum.new_tensor(0.0)
+    text_gate_sum = softce_sum.new_tensor(0.0)
     text_gate_coord_mass_mean = None
     if text_gate_weight != 0.0:
         text_positions_mask = masked_labels[:, 1 : seq_len + 1] != -100
@@ -360,7 +361,28 @@ def compute_coord_soft_ce_w1_loss(
                     else 1.0,
                     )
                 )
-                text_gate_loss = text_gate_per_token.mean().to(dtype=softce_sum.dtype)
+                text_gate_sum = text_gate_per_token.sum().to(dtype=softce_sum.dtype)
+
+                text_gate_denom_local = torch.tensor(
+                    float(int(text_gate_per_token.numel())),
+                    device=text_gate_sum.device,
+                    dtype=text_gate_sum.dtype,
+                )
+                text_gate_denom = text_gate_denom_local
+                if (
+                    average_tokens_across_devices
+                    and model_accepts_loss_kwargs
+                    and dist.is_available()
+                    and dist.is_initialized()
+                ):
+                    text_gate_denom = text_gate_denom_local.detach().clone()
+                    dist.all_reduce(text_gate_denom, op=dist.ReduceOp.SUM)
+                text_gate_denom = torch.where(
+                    text_gate_denom > 0,
+                    text_gate_denom,
+                    text_gate_denom.new_tensor(1.0),
+                )
+                text_gate_loss = text_gate_sum / text_gate_denom
                 text_gate_contrib = float(text_gate_weight) * text_gate_loss
 
     denom = torch.where(denom > 0, denom, denom.new_tensor(1.0))
@@ -449,6 +471,7 @@ def compute_coord_soft_ce_w1_loss(
         w1_contrib = w1_contrib * scale
         ce_contrib = ce_contrib * scale
         gate_contrib = gate_contrib * scale
+        text_gate_contrib = text_gate_contrib * scale
     coord_loss = (
         ce_contrib
         + softce_contrib

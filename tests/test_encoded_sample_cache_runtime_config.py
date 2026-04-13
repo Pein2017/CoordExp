@@ -130,6 +130,58 @@ def test_encoded_sample_cache_fingerprint_tracks_bbox_format(tmp_path) -> None:
     assert xyxy != center_log_size
 
 
+def test_encoded_sample_cache_fingerprint_tracks_prompt_variant_and_template_hash(
+    tmp_path,
+) -> None:
+    train_jsonl = tmp_path / "train.jsonl"
+    train_jsonl.write_text('{"id": 1}\n', encoding="utf-8")
+
+    default_fp = _build_encoded_sample_cache_fingerprint(
+        training_config=SimpleNamespace(
+            global_max_length=1024,
+            template={"system": "sys", "truncation_strategy": "raise"},
+        ),
+        custom_config=SimpleNamespace(
+            **{**_custom_config().__dict__, "bbox_format": "center_log_size"},
+            extra={"prompt_variant": "default"},
+        ),
+        template=_Template(max_length=128),
+        train_args=SimpleNamespace(max_model_len=512),
+        dataset_seed=7,
+        dataset_jsonl=str(train_jsonl),
+        dataset_split="train",
+        dataset_mode="dense",
+        sample_limit=64,
+        system_prompt_dense="sys",
+        system_prompt_summary=None,
+    )
+    lvis_fp = _build_encoded_sample_cache_fingerprint(
+        training_config=SimpleNamespace(
+            global_max_length=1024,
+            template={"system": "sys", "truncation_strategy": "raise"},
+        ),
+        custom_config=SimpleNamespace(
+            **{**_custom_config().__dict__, "bbox_format": "center_log_size"},
+            extra={"prompt_variant": "lvis_stage1_federated"},
+        ),
+        template=_Template(max_length=128),
+        train_args=SimpleNamespace(max_model_len=512),
+        dataset_seed=7,
+        dataset_jsonl=str(train_jsonl),
+        dataset_split="train",
+        dataset_mode="dense",
+        sample_limit=64,
+        system_prompt_dense="sys",
+        system_prompt_summary=None,
+    )
+
+    assert default_fp["custom_prompt_variant"] == "default"
+    assert lvis_fp["custom_prompt_variant"] == "lvis_stage1_federated"
+    assert isinstance(default_fp["custom_prompt_template_hash"], str)
+    assert isinstance(lvis_fp["custom_prompt_template_hash"], str)
+    assert default_fp["custom_prompt_template_hash"] != lvis_fp["custom_prompt_template_hash"]
+
+
 def test_attach_encoded_sample_cache_run_metadata_scopes_train_and_eval() -> None:
     meta: dict[str, object] = {}
     _attach_encoded_sample_cache_run_metadata(

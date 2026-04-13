@@ -137,7 +137,7 @@ PROMPT_VARIANT_REGISTRY: Mapping[str, PromptVariant] = {
         dense_system_override=(
             'You are a dense object annotation assistant for LVIS federated labels. Output exactly one CoordJSON object {"objects": [...]} with no extra text.\n'
             '- The top-level object must contain exactly one key "objects".\n'
-            "- Each objects[] record must place desc before exactly one geometry key (bbox_2d OR poly); never emit multiple geometries.\n"
+            "- __OBJECT_FIELD_ORDER_SYSTEM_RULE__\n"
             '- Use the canonical LVIS category string for `desc`; keep category names exact and concise.\n'
             "- Geometry formatting rules:\n"
             "  * __BBOX_SYSTEM_RULE__\n"
@@ -154,9 +154,10 @@ PROMPT_VARIANT_REGISTRY: Mapping[str, PromptVariant] = {
         dense_user_override=(
             "Return the verified LVIS annotation subset for this image as a single CoordJSON object "
             '{"objects": [...]} using bare `<|coord_N|>` tokens (0–999). '
-            "Use canonical LVIS category names, preserve one record per annotated instance, and keep geometry exact. __BBOX_USER_RULE__ "
+            "Use canonical LVIS category names, preserve one record per annotated instance, and keep geometry exact. "
+            "Each record __OBJECT_FIELD_ORDER_USER_RULE__. __BBOX_USER_RULE__ "
             "Important: omitted visible categories may be intentionally unlabeled under LVIS federated annotations, so the target is a verified subset rather than an exhaustive absence claim. "
-            'Use the exact per-object format: __USER_EXAMPLE_DESC_FIRST__. '
+            'Use the exact per-object format: __USER_EXAMPLE__. '
             "Do not quote coord tokens, do not emit extra keys, and emit no extra text."
         ),
     ),
@@ -165,7 +166,7 @@ PROMPT_VARIANT_REGISTRY: Mapping[str, PromptVariant] = {
         dense_system_override=(
             'You are a dense object detection assistant for LVIS-style federated annotations. Output exactly one CoordJSON object {"objects": [...]} with no extra text.\n'
             '- The top-level object must contain exactly one key "objects".\n'
-            "- Each objects[] record must place desc before exactly one geometry key (bbox_2d OR poly); never emit multiple geometries.\n"
+            "- __OBJECT_FIELD_ORDER_SYSTEM_RULE__\n"
             '- Use the canonical LVIS category string for `desc`; keep category names exact and concise.\n'
             "- Geometry formatting rules:\n"
             "  * __BBOX_SYSTEM_RULE__\n"
@@ -182,8 +183,9 @@ PROMPT_VARIANT_REGISTRY: Mapping[str, PromptVariant] = {
             "List clearly visible LVIS objects in this image as a single CoordJSON object "
             '{"objects": [...]} using bare `<|coord_N|>` tokens (0–999). '
             "Do not assume unlisted categories are absent just because the verified subset may be partial; continue with additional visible instances when you can localize them confidently. "
-            "Use canonical LVIS category names, one atomic instance per record, and do not emit duplicate near-identical boxes. __BBOX_USER_RULE__ "
-            'Use the exact per-object format: __USER_EXAMPLE_DESC_FIRST__. '
+            "Use canonical LVIS category names, one atomic instance per record, and do not emit duplicate near-identical boxes. "
+            "Each record __OBJECT_FIELD_ORDER_USER_RULE__. __BBOX_USER_RULE__ "
+            'Use the exact per-object format: __USER_EXAMPLE__. '
             "Do not quote coord tokens, do not emit extra keys, and emit no extra text."
         ),
     ),
