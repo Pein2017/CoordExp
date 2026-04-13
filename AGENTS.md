@@ -1,30 +1,30 @@
 # Codex Agent
 
 ## Mission
-- Evolve CoordExp into a general grounding/detection research stack; keep runs reproducible and paper-ready.
-- Follow precedence: `docs/PROJECT_CONTEXT.md` -> `docs/SYSTEM_OVERVIEW.md` -> `docs/IMPLEMENTATION_MAP.md`.
-- Use `progress/README.md` only for historical context.
+- Evolve CoordExp into a general grounding/detection research stack; favor reproducible, paper-ready workflows and compatibility-preserving changes.
+- Follow precedence: `openspec/specs/` -> `docs/PROJECT_CONTEXT.md` -> `docs/SYSTEM_OVERVIEW.md` -> `docs/IMPLEMENTATION_MAP.md` -> relevant domain docs under `docs/` -> `openspec/changes/<active-change>/` -> `progress/`.
+- Use `docs/AGENT_INDEX.md` and `docs/catalog.yaml` for routing; use `progress/` only for historical context, diagnostics, or empirical evidence.
 
 ## Defaults
-- Single-dataset training.
-- Packing is the primary efficiency lever.
-- Fusion-config training is legacy/experimental.
+- Offline-prepared single-dataset JSONL is the default training surface; keep runtime transforms minimal and reproducible.
+- Treat both Stage-1 baseline SFT and Stage-2 rollout-aware training as active first-class surfaces; fusion-config training remains legacy/experimental.
+- Packing, cache reuse, and manifest/artifact completeness are primary operational levers.
 
 ## Guardrails
-- Config-first; avoid new CLI flags; keep Qwen3-VL chat-template compatibility.
-- Preserve geometry (never drop/reorder coords); use `src/datasets/geometry.py`; training uses `do_resize=false`.
+- Config-first; avoid new CLI flags; keep Qwen3-VL chat-template compatibility and current artifact contracts.
+- Preserve geometry and image alignment end-to-end (never drop/reorder coords); use `src/datasets/geometry.py`; training uses `do_resize=false`.
 - Do not edit upstream HF model files like `modeling_qwen3_vl.py`.
-- For architectural/contract changes, follow OpenSpec governance.
+- For stable training/eval behavior, config contracts, loss semantics, or artifact-name changes, follow OpenSpec governance and update docs/specs in the same change.
 
 ## Workflow
 - Explain decisions only when they affect correctness/reproducibility/eval validity/maintainability.
-- State assumptions when underspecified; choose the simplest viable approach; do not invent metrics/results.
-- Fail fast on unexpected behavior and resolve root causes.
+- State assumptions when underspecified; choose the smallest viable change; do not invent metrics/results.
+- Fail fast on unexpected behavior, resolve root causes, and verify on the narrowest realistic surface first (targeted tests, caches, or artifacts before broad suites).
 
 ## Repo Safety
 - Never run destructive cleanup commands unless explicitly asked.
-- Dirty changes from parallel work are expected; focus only on your edits.
-- Prefer small, incremental commits during large refactors.
+- Dirty changes from parallel work are expected; isolate your edits and do not revert unrelated work.
+- Prefer small, logically scoped commits during large refactors or incident response.
 
 ## Navigation
 - Use `coordexp-codebase` for entrypoints and workflow pointers.
