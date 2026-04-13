@@ -598,3 +598,56 @@ def test_stage1_adjacent_repulsion_fails_fast_when_desc_grouping_is_ambiguous() 
             require_desc_keys=True,
             object_field_order="desc_first",
         )
+
+
+def test_stage1_text_gate_penalizes_coord_vocab_mass_on_non_coord_positions() -> None:
+    vocab = 256
+    coord_token_ids = [100, 101, 102, 103]
+    coord_id_map = _build_coord_id_map(vocab, coord_token_ids)
+    labels = torch.tensor([[0, 5, 100, 6, 101]], dtype=torch.long)
+    masked_labels = labels.clone()
+    masked_labels[0, 2] = -100
+    masked_labels[0, 4] = -100
+    token_types = torch.tensor(
+        [[-1, 1, 2, 3, 2]],
+        dtype=torch.long,
+    )
+
+    logits = torch.full((1, 4, vocab), -20.0)
+    logits[0, 0, 100] = 20.0
+    logits[0, 1, 100] = 20.0
+    logits[0, 2, 101] = 20.0
+    logits[0, 3, 101] = 20.0
+
+    cfg = CoordSoftCEW1Config.from_mapping(
+        {
+            "enabled": True,
+            "ce_weight": 1.0,
+            "soft_ce_weight": 0.0,
+            "w1_weight": 0.0,
+            "gate_weight": 0.0,
+            "text_gate_weight": 1.0,
+            "temperature": 1.0,
+            "target_sigma": 2.0,
+        }
+    )
+
+    result = compute_coord_soft_ce_w1_loss(
+        logits=logits,
+        labels=labels,
+        masked_labels=masked_labels,
+        coord_token_weights=None,
+        coord_token_ids=coord_token_ids,
+        coord_id_map=coord_id_map,
+        tokenizer=DummyTokenizer(),
+        token_types=token_types,
+        cfg=cfg,
+        average_tokens_across_devices=False,
+        model_accepts_loss_kwargs=False,
+        accelerator_num_processes=None,
+    )
+
+    assert result is not None
+    assert float(result.text_gate_contrib.detach().item()) > 0.5
+    assert result.text_gate_coord_mass_mean is not None
+    assert float(result.text_gate_coord_mass_mean.detach().item()) > 0.9

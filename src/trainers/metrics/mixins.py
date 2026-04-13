@@ -707,6 +707,7 @@ class CoordSoftCEW1LossMixin:
             coord_token_ids=coord_token_ids,
             coord_id_map=coord_id_map,
             tokenizer=getattr(getattr(self, "template", None), "tokenizer", None),
+            token_types=getattr(extras, "token_types", None),
             cfg=cfg,
             average_tokens_across_devices=avg_tokens,
             model_accepts_loss_kwargs=model_accepts,
@@ -761,6 +762,7 @@ class CoordSoftCEW1LossMixin:
         loss_w1 = getattr(result, "w1_contrib", None)
         loss_ce = getattr(result, "ce_contrib", None)
         loss_gate = getattr(result, "gate_contrib", None)
+        loss_text_gate = getattr(result, "text_gate_contrib", None)
 
         if not isinstance(loss_total, torch.Tensor):
             return
@@ -776,6 +778,11 @@ class CoordSoftCEW1LossMixin:
             reporter.update("coord_softce_w1/ce", float(loss_ce.detach().cpu().item()))
         if isinstance(loss_gate, torch.Tensor):
             reporter.update("coord_softce_w1/gate", float(loss_gate.detach().cpu().item()))
+        if isinstance(loss_text_gate, torch.Tensor):
+            reporter.update(
+                "coord_softce_w1/text_gate",
+                float(loss_text_gate.detach().cpu().item()),
+            )
         loss_adjacent = getattr(result, "adjacent_repulsion_contrib", None)
         if isinstance(loss_adjacent, torch.Tensor):
             reporter.update(
@@ -796,6 +803,11 @@ class CoordSoftCEW1LossMixin:
             reporter.update("coord_diag/ce", float(loss_ce.detach().cpu().item()))
         if isinstance(loss_gate, torch.Tensor):
             reporter.update("coord_diag/gate", float(loss_gate.detach().cpu().item()))
+        if isinstance(loss_text_gate, torch.Tensor):
+            reporter.update(
+                "coord_diag/text_gate",
+                float(loss_text_gate.detach().cpu().item()),
+            )
         if isinstance(loss_adjacent, torch.Tensor):
             reporter.update(
                 "coord_diag/adjacent_repulsion",
@@ -821,6 +833,12 @@ class CoordSoftCEW1LossMixin:
         if isinstance(gate_mass_mean, torch.Tensor):
             reporter.update(
                 "coord_diag/coord_vocab_mass", float(gate_mass_mean.detach().cpu().item())
+            )
+        text_gate_coord_mass_mean = getattr(result, "text_gate_coord_mass_mean", None)
+        if isinstance(text_gate_coord_mass_mean, torch.Tensor):
+            reporter.update(
+                "coord_diag/text_coord_vocab_mass",
+                float(text_gate_coord_mass_mean.detach().cpu().item()),
             )
 
         coord_acc_top5 = getattr(result, "coord_acc_top5", None)

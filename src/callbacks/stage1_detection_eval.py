@@ -316,6 +316,7 @@ class Stage1DetectionEvalCallback(TrainerCallback):
         output_root: str,
         model_checkpoint: str,
         prompt_variant: str,
+        bbox_format: str = "xyxy",
         object_field_order: str,
         object_ordering: str,
         metrics: str,
@@ -345,6 +346,7 @@ class Stage1DetectionEvalCallback(TrainerCallback):
         self.output_root = Path(output_root)
         self.model_checkpoint = str(model_checkpoint)
         self.prompt_variant = str(prompt_variant)
+        self.bbox_format = str(bbox_format)
         self.object_field_order = str(object_field_order)
         self.object_ordering = str(object_ordering)
         self.metrics_mode = str(metrics).strip().lower()
@@ -410,6 +412,7 @@ class Stage1DetectionEvalCallback(TrainerCallback):
             model_checkpoint=self.model_checkpoint,
             mode="auto",
             prompt_variant=self.prompt_variant,
+            bbox_format=self.bbox_format,
             object_field_order=self.object_field_order,
             object_ordering=self.object_ordering,
             pred_coord_mode="auto",

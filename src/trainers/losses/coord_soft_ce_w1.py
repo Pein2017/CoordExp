@@ -8,10 +8,9 @@ import torch.distributed as dist
 import torch.nn.functional as F
 
 from src.coord_tokens.soft_ce_w1 import coord_soft_ce_w1
-from src.trainers.teacher_forcing.adjacent_repulsion import (
-    compute_adjacent_repulsion,
-)
-from src.trainers.teacher_forcing.stage1 import extract_stage1_bbox_quartets
+
+TOKEN_TYPE_DESC = 1
+TOKEN_TYPE_FORMAT = 3
 
 
 @dataclass(frozen=True)
@@ -21,11 +20,13 @@ class CoordSoftCEW1Result:
     w1_contrib: torch.Tensor
     ce_contrib: torch.Tensor
     gate_contrib: torch.Tensor
+    text_gate_contrib: torch.Tensor
     adjacent_repulsion_contrib: torch.Tensor
 
     coord_tokens: int
 
     gate_mass_mean: torch.Tensor | None
+    text_gate_coord_mass_mean: torch.Tensor | None
     coord_acc_top5: torch.Tensor | None
     coord_p_gt_mean: torch.Tensor | None
     coord_margin_mean: torch.Tensor | None
@@ -126,6 +127,34 @@ def coord_vocab_gate_loss(
     return gate, mass_mean
 
 
+def coord_vocab_text_gate_loss(
+    logits_full: torch.Tensor,
+    logits_coord: torch.Tensor,
+    *,
+    temperature: float,
+) -> tuple[torch.Tensor, torch.Tensor]:
+    """Penalize coord-vocab mass leaking onto supervised non-coord positions."""
+
+    if temperature <= 0:
+        raise ValueError("temperature must be > 0")
+
+    full = torch.nan_to_num(
+        logits_full.float(), nan=0.0, posinf=1e4, neginf=-1e4
+    ).clamp(min=-1e4, max=1e4) / float(temperature)
+    coord = torch.nan_to_num(
+        logits_coord.float(), nan=0.0, posinf=1e4, neginf=-1e4
+    ).clamp(min=-1e4, max=1e4) / float(temperature)
+
+    lse_all = torch.logsumexp(full, dim=-1)
+    lse_coord = torch.logsumexp(coord, dim=-1)
+    coord_mass = torch.exp((lse_coord - lse_all).clamp(min=-50.0, max=0.0))
+    non_coord_mass = (1.0 - coord_mass).clamp(min=1e-6, max=1.0)
+    gate = -torch.log(non_coord_mass)
+    gate = torch.nan_to_num(gate, nan=0.0, posinf=1e4, neginf=0.0)
+    mass_mean = torch.nan_to_num(coord_mass.mean(), nan=0.0, posinf=1.0, neginf=0.0)
+    return gate, mass_mean
+
+
 def compute_coord_soft_ce_w1_loss(
     *,
     logits: torch.Tensor,
@@ -135,6 +164,7 @@ def compute_coord_soft_ce_w1_loss(
     coord_token_ids: list[int],
     coord_id_map: torch.Tensor,
     tokenizer: Any | None,
+    token_types: torch.Tensor | None = None,
     cfg: Any,
     average_tokens_across_devices: bool,
     model_accepts_loss_kwargs: bool,
@@ -221,6 +251,7 @@ def compute_coord_soft_ce_w1_loss(
     soft_ce_weight = float(getattr(cfg, "soft_ce_weight", 1.0))
     w1_weight = float(getattr(cfg, "w1_weight", 1.0))
     gate_weight = float(getattr(cfg, "gate_weight", 0.0))
+    text_gate_weight = float(getattr(cfg, "text_gate_weight", 0.0))
 
     out = coord_soft_ce_w1(
         flat_logits,
@@ -293,6 +324,45 @@ def compute_coord_soft_ce_w1_loss(
         )
         gate_sum = (gate_per_token * token_weights.to(dtype=gate_per_token.dtype)).sum()
 
+    text_gate_contrib = softce_sum.new_tensor(0.0)
+    text_gate_coord_mass_mean = None
+    if text_gate_weight != 0.0:
+        text_positions_mask = masked_labels[:, 1 : seq_len + 1] != -100
+        if isinstance(token_types, torch.Tensor) and tuple(token_types.shape) == tuple(
+            labels.shape
+        ):
+            token_types_next = token_types[:, 1 : seq_len + 1]
+            text_positions_mask = text_positions_mask & (
+                (token_types_next == TOKEN_TYPE_DESC)
+                | (token_types_next == TOKEN_TYPE_FORMAT)
+            )
+        eos_token_id = getattr(tokenizer, "eos_token_id", None)
+        if isinstance(eos_token_id, int):
+            text_positions_mask = text_positions_mask & (labels_next != eos_token_id)
+
+        if bool(text_positions_mask.any().item()):
+            text_logits_full = logits_next[text_positions_mask]
+            coord_ids = torch.tensor(
+                coord_token_ids,
+                device=text_logits_full.device,
+                dtype=torch.long,
+            )
+            valid = (coord_ids >= 0) & (coord_ids < int(text_logits_full.shape[-1]))
+            coord_ids = coord_ids[valid]
+            if int(coord_ids.numel()) > 0:
+                text_logits_coord = text_logits_full.index_select(dim=-1, index=coord_ids)
+                text_gate_per_token, text_gate_coord_mass_mean = (
+                    coord_vocab_text_gate_loss(
+                    text_logits_full,
+                    text_logits_coord,
+                    temperature=float(temperature)
+                    if float(temperature) > 0
+                    else 1.0,
+                    )
+                )
+                text_gate_loss = text_gate_per_token.mean().to(dtype=softce_sum.dtype)
+                text_gate_contrib = float(text_gate_weight) * text_gate_loss
+
     denom = torch.where(denom > 0, denom, denom.new_tensor(1.0))
 
     softce_loss = softce_sum / denom
@@ -312,6 +382,11 @@ def compute_coord_soft_ce_w1_loss(
         0.0, float(getattr(cfg, "adjacent_repulsion_weight", 0.0))
     )
     if adjacent_repulsion_weight != 0.0:
+        from src.trainers.teacher_forcing.adjacent_repulsion import (
+            compute_adjacent_repulsion,
+        )
+        from src.trainers.teacher_forcing.stage1 import extract_stage1_bbox_quartets
+
         filter_mode = str(
             getattr(cfg, "adjacent_repulsion_filter_mode", "same_desc")
         ).strip().lower()
@@ -361,6 +436,7 @@ def compute_coord_soft_ce_w1_loss(
         + softce_contrib
         + w1_contrib
         + gate_contrib
+        + text_gate_contrib
         + adjacent_repulsion_contrib
     )
 
@@ -378,6 +454,7 @@ def compute_coord_soft_ce_w1_loss(
         + softce_contrib
         + w1_contrib
         + gate_contrib
+        + text_gate_contrib
         + adjacent_repulsion_contrib
     )
 
@@ -386,6 +463,9 @@ def compute_coord_soft_ce_w1_loss(
     w1_contrib = torch.nan_to_num(w1_contrib, nan=0.0, posinf=1e4, neginf=0.0)
     ce_contrib = torch.nan_to_num(ce_contrib, nan=0.0, posinf=1e4, neginf=0.0)
     gate_contrib = torch.nan_to_num(gate_contrib, nan=0.0, posinf=1e4, neginf=0.0)
+    text_gate_contrib = torch.nan_to_num(
+        text_gate_contrib, nan=0.0, posinf=1e4, neginf=0.0
+    )
     adjacent_repulsion_contrib = torch.nan_to_num(
         adjacent_repulsion_contrib, nan=0.0, posinf=1e4, neginf=0.0
     )
@@ -398,9 +478,11 @@ def compute_coord_soft_ce_w1_loss(
         w1_contrib=w1_contrib,
         ce_contrib=ce_contrib,
         gate_contrib=gate_contrib,
+        text_gate_contrib=text_gate_contrib,
         adjacent_repulsion_contrib=adjacent_repulsion_contrib,
         coord_tokens=coord_tokens,
         gate_mass_mean=gate_mass_mean,
+        text_gate_coord_mass_mean=text_gate_coord_mass_mean,
         coord_acc_top5=coord_acc_top5,
         coord_p_gt_mean=coord_p_gt_mean,
         coord_margin_mean=coord_margin_mean,

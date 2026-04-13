@@ -20,6 +20,12 @@ from src.common.geometry import (
     flatten_points,
     is_degenerate_bbox,
 )
+from src.common.geometry.bbox_parameterization import (
+    AllowedBBoxFormat,
+    DEFAULT_BBOX_FORMAT,
+    center_log_size_norm1000_to_xyxy_norm1000,
+    normalize_bbox_format,
+)
 from src.common.prediction_parsing import GEOM_KEYS, coords_are_pixel, parse_prediction
 
 GeomType = Literal["bbox_2d", "poly"]
@@ -55,12 +61,14 @@ class CoordinateStandardizer:
         *,
         emit_text: bool = True,
         pred_coord_mode: Literal["auto", "norm1000", "pixel"] = "auto",
+        bbox_format: AllowedBBoxFormat = DEFAULT_BBOX_FORMAT,
     ) -> None:
         self.mode = mode
         self.emit_text = emit_text
         if pred_coord_mode not in {"auto", "norm1000", "pixel"}:
             raise ValueError("pred_coord_mode must be auto|norm1000|pixel")
         self.pred_coord_mode = pred_coord_mode
+        self.bbox_format = normalize_bbox_format(bbox_format, path="infer.bbox_format")
 
     @staticmethod
     def _points_to_text(points: Sequence[int]) -> str:
@@ -165,7 +173,17 @@ class CoordinateStandardizer:
                     points, had_tokens=had_tokens, width=width, height=height
                 )
 
-        pts_px = denorm_and_clamp(points, width, height, coord_mode=coord_mode)
+        points_for_scale: Sequence[float] = points
+        if (
+            not is_gt
+            and kind == "bbox_2d"
+            and self.bbox_format == "center_log_size"
+        ):
+            if coord_mode != "norm1000":
+                raise ValueError("bbox_format_pred_mode")
+            points_for_scale = center_log_size_norm1000_to_xyxy_norm1000(points)
+
+        pts_px = denorm_and_clamp(points_for_scale, width, height, coord_mode=coord_mode)
 
         if kind == "bbox_2d" and len(pts_px) != 4:
             raise ValueError("bbox_points")

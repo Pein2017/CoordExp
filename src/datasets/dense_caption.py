@@ -11,6 +11,11 @@ from typing import Any, Dict, List, Literal, Mapping, MutableMapping, Optional, 
 from torch.utils.data import Dataset
 from swift.llm import MaxLengthError
 
+from src.common.geometry.bbox_parameterization import (
+    AllowedBBoxFormat,
+    DEFAULT_BBOX_FORMAT,
+    normalize_bbox_format,
+)
 from src.common.object_field_order import (
     ObjectFieldOrder,
     normalize_object_field_order,
@@ -99,6 +104,7 @@ class BaseCaptionDataset(Dataset):
         offline_max_pixels: Optional[int] = None,
         object_ordering: Literal["sorted", "random"] = "sorted",
         object_field_order: ObjectFieldOrder = "desc_first",
+        bbox_format: AllowedBBoxFormat = DEFAULT_BBOX_FORMAT,
         encoded_sample_cache: Optional[Mapping[str, Any]] = None,
     ):
         self.use_summary = bool(use_summary)
@@ -120,6 +126,9 @@ class BaseCaptionDataset(Dataset):
         self.coord_tokens = coord_tokens or CoordTokensConfig()
         self.object_ordering: Literal["sorted", "random"] = object_ordering
         self.object_field_order = normalize_object_field_order(object_field_order)
+        self.bbox_format = normalize_bbox_format(
+            bbox_format, path="custom.bbox_format"
+        )
 
         if self.use_summary:
             if self.system_prompt_summary is None:
@@ -303,6 +312,7 @@ class BaseCaptionDataset(Dataset):
             json_format=self.json_format,
             coord_tokens_enabled=self.coord_tokens.enabled,
             object_field_order=self.object_field_order,
+            bbox_format=self.bbox_format,
         )
 
 

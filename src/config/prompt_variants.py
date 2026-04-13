@@ -140,7 +140,7 @@ PROMPT_VARIANT_REGISTRY: Mapping[str, PromptVariant] = {
             "- Each objects[] record must place desc before exactly one geometry key (bbox_2d OR poly); never emit multiple geometries.\n"
             '- Use the canonical LVIS category string for `desc`; keep category names exact and concise.\n'
             "- Geometry formatting rules:\n"
-            "  * bbox_2d is [x1, y1, x2, y2] with x1<=x2 and y1<=y2.\n"
+            "  * __BBOX_SYSTEM_RULE__\n"
             "  * poly is a flat list [x1, y1, x2, y2, ...] with an even number of coords and >= 6 entries.\n"
             "    - Preserve adjacency: consecutive vertices are connected, and the last connects back to the first.\n"
             "    - Use a consistent vertex order: start from the top-most (then left-most) vertex, then go clockwise around the centroid.\n"
@@ -154,9 +154,9 @@ PROMPT_VARIANT_REGISTRY: Mapping[str, PromptVariant] = {
         dense_user_override=(
             "Return the verified LVIS annotation subset for this image as a single CoordJSON object "
             '{"objects": [...]} using bare `<|coord_N|>` tokens (0–999). '
-            "Use canonical LVIS category names, preserve one record per annotated instance, and keep geometry exact. "
+            "Use canonical LVIS category names, preserve one record per annotated instance, and keep geometry exact. __BBOX_USER_RULE__ "
             "Important: omitted visible categories may be intentionally unlabeled under LVIS federated annotations, so the target is a verified subset rather than an exhaustive absence claim. "
-            'Use the exact per-object format: {"desc": "category", "bbox_2d": [<|coord_110|>, <|coord_310|>, <|coord_410|>, <|coord_705|>]}. '
+            'Use the exact per-object format: __USER_EXAMPLE_DESC_FIRST__. '
             "Do not quote coord tokens, do not emit extra keys, and emit no extra text."
         ),
     ),
@@ -168,7 +168,7 @@ PROMPT_VARIANT_REGISTRY: Mapping[str, PromptVariant] = {
             "- Each objects[] record must place desc before exactly one geometry key (bbox_2d OR poly); never emit multiple geometries.\n"
             '- Use the canonical LVIS category string for `desc`; keep category names exact and concise.\n'
             "- Geometry formatting rules:\n"
-            "  * bbox_2d is [x1, y1, x2, y2] with x1<=x2 and y1<=y2.\n"
+            "  * __BBOX_SYSTEM_RULE__\n"
             "  * poly is a flat list [x1, y1, x2, y2, ...] with an even number of coords and >= 6 entries.\n"
             "    - Preserve adjacency: consecutive vertices are connected, and the last connects back to the first.\n"
             "    - Use a consistent vertex order: start from the top-most (then left-most) vertex, then go clockwise around the centroid.\n"
@@ -182,8 +182,8 @@ PROMPT_VARIANT_REGISTRY: Mapping[str, PromptVariant] = {
             "List clearly visible LVIS objects in this image as a single CoordJSON object "
             '{"objects": [...]} using bare `<|coord_N|>` tokens (0–999). '
             "Do not assume unlisted categories are absent just because the verified subset may be partial; continue with additional visible instances when you can localize them confidently. "
-            "Use canonical LVIS category names, one atomic instance per record, and do not emit duplicate near-identical boxes. "
-            'Use the exact per-object format: {"desc": "category", "bbox_2d": [<|coord_110|>, <|coord_310|>, <|coord_410|>, <|coord_705|>]}. '
+            "Use canonical LVIS category names, one atomic instance per record, and do not emit duplicate near-identical boxes. __BBOX_USER_RULE__ "
+            'Use the exact per-object format: __USER_EXAMPLE_DESC_FIRST__. '
             "Do not quote coord tokens, do not emit extra keys, and emit no extra text."
         ),
     ),

@@ -11,6 +11,7 @@ The system SHALL expose coord auxiliary supervision through `custom.coord_soft_c
 - `soft_ce_weight` (float; default `1.0`)
 - `w1_weight` (float; default `1.0`)
 - `gate_weight` (float; default `1.0`)
+- `text_gate_weight` (float; default `0.0`; reserved for Stage-1 profiles that explicitly supervise non-coord positions)
 - `temperature` (float; default `1.0`)
 - `target_sigma` (float; default `2.0`)
 - `target_truncate` (int or null; default `null`)
@@ -19,7 +20,7 @@ Validation contract:
 - All weights MUST be `>= 0`.
 - `temperature` and `target_sigma` MUST be `> 0`.
 - `target_truncate` MUST be `null` or an integer `>= 0`.
-- If `enabled=true`, at least one of `ce_weight`, `soft_ce_weight`, `w1_weight`, `gate_weight` MUST be non-zero.
+- If `enabled=true`, at least one of `ce_weight`, `soft_ce_weight`, `w1_weight`, `gate_weight`, `text_gate_weight` MUST be non-zero.
 
 Legacy compatibility:
 - `custom.coord_loss` is deprecated and SHALL be ignored (non-fatal) for config compatibility.
@@ -54,6 +55,7 @@ The coord auxiliary objective SHALL supervise coord-token distributions using th
 Normative behavior:
 - The soft target distribution and W1 terms SHALL be computed through the shared `coord_soft_ce_w1` helper.
 - Optional hard CE and coord-vocab gate contributions SHALL be included according to configured weights.
+- Optional non-coord `text_gate` contributions MAY also be included for profiles that explicitly enable `text_gate_weight`.
 - The auxiliary objective SHALL apply at coord-token positions only.
 - This capability SHALL NOT define bbox/poly IoU geometry losses (those belong to other objective modules/capabilities).
 
@@ -88,12 +90,13 @@ When coord auxiliary supervision contributes to loss, the trainer SHALL emit sta
 - `coord_softce_w1/w1`
 - `coord_softce_w1/ce` (when hard CE is active)
 - `coord_softce_w1/gate` (when gate is active)
+- `coord_softce_w1/text_gate` (when text gate is active)
 
 The trainer SHALL also emit stable diagnostics keys under `coord_diag/*`, including:
 - `coord_diag/enabled`
 - `coord_diag/loss`
 - `coord_diag/coord_tokens`
-- `coord_diag/soft_ce`, `coord_diag/w1`, `coord_diag/ce`, `coord_diag/gate` (as available)
+- `coord_diag/soft_ce`, `coord_diag/w1`, `coord_diag/ce`, `coord_diag/gate`, `coord_diag/text_gate` (as available)
 - distribution diagnostics such as `coord_diag/coord_vocab_mass`, `coord_diag/acc_top5`, `coord_diag/p_gt_mean`, `coord_diag/margin_mean`, `coord_diag/expected_bin_mae`, `coord_diag/expected_bin_abs_err_p90`, `coord_diag/w1_to_delta`, `coord_diag/coord_tokens_per_sample`.
 
 #### Scenario: Enabled coord aux emits stable metric namespaces

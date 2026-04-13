@@ -28,10 +28,19 @@ Scope note:
   - `custom.coord_soft_ce_w1.*`
   - `custom.bbox_geo.*`
   - `custom.bbox_size_aux.*`
+- Narrow V1 exception:
+  - the draft OpenSpec change `adopt-cxcywh-bbox-parameterization` defines an
+    experimental `custom.bbox_format: center_log_size` profile for Stage-1 only
+  - under that profile, the allowed Stage-1 surface narrows to
+    `custom.coord_soft_ce_w1.*` with hard CE plus positive coord/text gating
+  - `custom.bbox_geo.*`, `custom.bbox_size_aux.*`, soft CE, W1, and trainer-side
+    rollout/Stage-2 surfaces are intentionally out of scope and should be
+    treated as invalid for that experiment
 
 ## Coord distribution loss (coord tokens)
 
-CoordExp can supervise coordinate tokens with **distribution-based losses** (recommended default):
+CoordExp can supervise coordinate tokens with **distribution-based losses**
+(recommended default for the existing `xyxy` Stage-1 baseline):
 
 - Standard full-vocab CE is applied **only to non-coordinate tokens** (text + JSON structure).
 - At `<|coord_*|>` positions, the model is supervised via:
@@ -68,6 +77,29 @@ custom:
 - Stage-2 note:
   - `stage2_two_channel` and `stage2_rollout_aligned` still use provenance-aware metric families, but the active single-pass Stage-2 contract now routes Channel-A through `loss/text/*`, `loss/coord/*`, and `coord_diag/*`, while Channel-B uses `loss/B_rollout_text/*`, `loss/B_coord/*`, and `coord_diag/B/*`.
   - Historical iterative groups such as `loss/A1_*`, `loss/A2_*`, `coord_diag/A1/*`, and `coord_diag/A2/*` are no longer part of the active Stage-2 contract.
+
+## Stage-1 `center_log_size` V1 experiment
+
+When the draft `adopt-cxcywh-bbox-parameterization` change is active and
+`custom.bbox_format: center_log_size`, the Stage-1 loss surface is intentionally
+much narrower than the existing `xyxy` baseline:
+
+- model-facing `bbox_2d` slots become `[cx, cy, u(w), u(h)]`
+- coord-token bbox supervision is hard CE only
+- `custom.coord_soft_ce_w1.enabled` must remain `true`
+- `ce_weight > 0`
+- `soft_ce_weight = 0`
+- `w1_weight = 0`
+- `gate_weight > 0`
+- `text_gate_weight > 0`
+- `temperature = 1.0`, `target_sigma = 2.0`, and `target_truncate = null`
+  are compatibility-only defaults and do not define a soft-label path here
+- `custom.bbox_geo.*` and `custom.bbox_size_aux.*` are out of scope for this
+  experiment
+
+This V1 profile exists to isolate the parameterization question under minimal
+loss complexity. It is not the same recipe as the legacy `xyxy` Stage-1
+baseline documented above.
 
 ## Stage-1 bbox geometry loss
 
@@ -108,8 +140,9 @@ Semantics:
   regression term, so compare it across runs only after joining against
   `resolved_config.json`
 
-This is the intended way to run a pure-SFT Stage-1 recipe with
-hard CE + soft CE + W1 + CIoU + bbox-size aux enabled together.
+This is the intended way to run a legacy pure-SFT Stage-1 recipe with
+hard CE + soft CE + W1 + CIoU + bbox-size aux enabled together. It does not
+describe the narrower `center_log_size` V1 experiment above.
 
 ## Decoded BBox Geometry Loss (Stage-1)
 

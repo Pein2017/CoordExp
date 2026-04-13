@@ -62,6 +62,11 @@ from PIL import Image
 from tqdm import tqdm
 from transformers import AutoProcessor, Qwen3VLForConditionalGeneration
 
+from src.common.geometry.bbox_parameterization import (
+    AllowedBBoxFormat,
+    DEFAULT_BBOX_FORMAT,
+    normalize_bbox_format,
+)
 from src.infer.artifacts import (
     build_infer_resolved_meta,
     build_infer_summary_payload,
@@ -80,6 +85,7 @@ from src.common.object_field_order import (
 )
 from src.config.prompts import (
     DEFAULT_PROMPT_VARIANT,
+    get_template_prompt_hash,
     get_template_prompts,
     resolve_dense_prompt_variant_key,
 )
@@ -135,6 +141,7 @@ class InferenceConfig:
     model_checkpoint: str
     mode: Literal["coord", "text", "auto"]
     prompt_variant: str = DEFAULT_PROMPT_VARIANT
+    bbox_format: AllowedBBoxFormat = DEFAULT_BBOX_FORMAT
     object_field_order: ObjectFieldOrder = "desc_first"
     object_ordering: ObjectOrdering = "sorted"
     pred_coord_mode: Literal["auto", "norm1000", "pixel"] = "auto"
@@ -342,6 +349,10 @@ class InferenceEngine:
 
         self.prompt_variant = resolve_dense_prompt_variant_key(cfg.prompt_variant)
         self.cfg.prompt_variant = self.prompt_variant
+        self.bbox_format = normalize_bbox_format(
+            cfg.bbox_format, path="infer.bbox_format"
+        )
+        self.cfg.bbox_format = self.bbox_format
         self.object_field_order = normalize_object_field_order(
             cfg.object_field_order,
             path="infer.object_field_order",
@@ -361,9 +372,26 @@ class InferenceEngine:
                 cfg.gt_jsonl, sample_size=int(cfg.detect_samples or 128)
             )
 
+        self.system_prompt, self.user_prompt = get_template_prompts(
+            ordering=self.object_ordering,
+            coord_mode="coord_tokens",
+            prompt_variant=self.prompt_variant,
+            object_field_order=self.object_field_order,
+            bbox_format=self.bbox_format,
+        )
+        self.prompt_template_hash = get_template_prompt_hash(
+            ordering=self.object_ordering,
+            coord_mode="coord_tokens",
+            prompt_variant=self.prompt_variant,
+            object_field_order=self.object_field_order,
+            bbox_format=self.bbox_format,
+        )
+
         # Shared parser/standardizer: always emit pixel-space points.
         self.coord = CoordinateStandardizer(
-            self.resolved_mode, pred_coord_mode=cfg.pred_coord_mode
+            self.resolved_mode,
+            pred_coord_mode=cfg.pred_coord_mode,
+            bbox_format=self.bbox_format,
         )
 
         self.processor: AutoProcessor | None = None
@@ -643,18 +671,12 @@ class InferenceEngine:
         return resolved
 
     def _build_messages(self, image: Image.Image) -> List[Dict[str, Any]]:
-        system_prompt, user_prompt = get_template_prompts(
-            ordering=self.object_ordering,
-            coord_mode="coord_tokens",
-            prompt_variant=self.prompt_variant,
-            object_field_order=self.object_field_order,
-        )
         return [
-            {"role": "system", "content": [{"type": "text", "text": system_prompt}]},
+            {"role": "system", "content": [{"type": "text", "text": self.system_prompt}]},
             {
                 "role": "user",
                 "content": [
-                    {"type": "text", "text": user_prompt},
+                    {"type": "text", "text": self.user_prompt},
                     {"type": "image", "image": image},
                 ],
             },
@@ -782,18 +804,12 @@ class InferenceEngine:
         image.save(buf, format="PNG")
         b64 = base64.b64encode(buf.getvalue()).decode("ascii")
 
-        system_prompt, user_prompt = get_template_prompts(
-            ordering=self.object_ordering,
-            coord_mode="coord_tokens",
-            prompt_variant=self.prompt_variant,
-            object_field_order=self.object_field_order,
-        )
         messages = [
-            {"role": "system", "content": system_prompt},
+            {"role": "system", "content": self.system_prompt},
             {
                 "role": "user",
                 "content": [
-                    {"type": "text", "text": user_prompt},
+                    {"type": "text", "text": self.user_prompt},
                     {
                         "type": "image_url",
                         "image_url": {"url": f"data:image/png;base64,{b64}"},
@@ -870,13 +886,6 @@ class InferenceEngine:
         except ImportError as exc:
             return [GenerationResult(text="", error=exc) for _ in images]
 
-        system_prompt, user_prompt = get_template_prompts(
-            ordering=self.object_ordering,
-            coord_mode="coord_tokens",
-            prompt_variant=self.prompt_variant,
-            object_field_order=self.object_field_order,
-        )
-
         # Build OpenAI-style messages; vLLM supports a batch of message lists.
         msg_batch = []
         for image in images:
@@ -885,11 +894,11 @@ class InferenceEngine:
             b64 = base64.b64encode(buf.getvalue()).decode("ascii")
             msg_batch.append(
                 [
-                    {"role": "system", "content": system_prompt},
+                    {"role": "system", "content": self.system_prompt},
                     {
                         "role": "user",
                         "content": [
-                            {"type": "text", "text": user_prompt},
+                            {"type": "text", "text": self.user_prompt},
                             {
                                 "type": "image_url",
                                 "image_url": {"url": f"data:image/png;base64,{b64}"},

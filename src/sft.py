@@ -688,6 +688,7 @@ def _build_static_packing_fingerprint(
         # caches remain addressable after fusion was disabled in the schema.
         "custom_fusion_config": getattr(custom_config, "fusion_config", None),
         "custom_json_format": getattr(custom_config, "json_format", None),
+        "custom_bbox_format": getattr(custom_config, "bbox_format", None),
         "custom_object_ordering": getattr(custom_config, "object_ordering", None),
         "custom_object_field_order": getattr(custom_config, "object_field_order", None),
         "custom_use_summary": bool(getattr(custom_config, "use_summary", False)),
@@ -776,6 +777,7 @@ def _build_encoded_sample_cache_fingerprint(
         "custom_user_prompt": getattr(custom_config, "user_prompt", None),
         "custom_emit_norm": getattr(custom_config, "emit_norm", None),
         "custom_json_format": getattr(custom_config, "json_format", None),
+        "custom_bbox_format": getattr(custom_config, "bbox_format", None),
         "custom_object_ordering": getattr(custom_config, "object_ordering", None),
         "custom_object_field_order": getattr(custom_config, "object_field_order", None),
         "custom_use_summary": bool(getattr(custom_config, "use_summary", False)),
@@ -1615,6 +1617,7 @@ def main():
         seed=dataset_seed,
         object_ordering=custom_config.object_ordering,
         object_field_order=custom_config.object_field_order,
+        bbox_format=custom_config.bbox_format,
         encoded_sample_cache=train_encoded_sample_cache_request,
     )
     if train_encoded_sample_cache_request is not None:
@@ -2188,6 +2191,7 @@ def main():
             seed=dataset_seed,
             object_ordering=custom_config.object_ordering,
             object_field_order=custom_config.object_field_order,
+            bbox_format=custom_config.bbox_format,
             encoded_sample_cache=eval_encoded_sample_cache_request,
         )
         base_eval_len = len(eval_dataset)
@@ -2444,6 +2448,7 @@ def main():
                 output_root=str(getattr(train_args, "output_dir", ".") or "."),
                 model_checkpoint=str(model_checkpoint),
                 prompt_variant=str(prompt_variant),
+                bbox_format=str(custom_config.bbox_format),
                 object_field_order=str(custom_config.object_field_order),
                 object_ordering=str(custom_config.object_ordering),
                 metrics=str(stage1_eval_cfg.metrics),

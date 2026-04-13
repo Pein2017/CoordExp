@@ -48,6 +48,7 @@ _COORD_TERM_STATE_KEYS = {
     "coord_ehuber": "coord_ehuber_contrib",
     "coord_entropy": "coord_entropy_contrib",
     "coord_gate": "coord_gate_contrib",
+    "text_gate": "text_gate_contrib",
 }
 
 
@@ -108,6 +109,7 @@ def build_stage1_coord_monitor_terms(
             "adjacent_repulsion_weight",
         ),
         ("S1/coord_gate", "gate_contrib", "gate_weight"),
+        ("S1/text_gate", "text_gate_contrib", "text_gate_weight"),
     )
     for name, attr_name, weight_key in candidates:
         if float(_cfg_float(cfg, weight_key, 0.0)) == 0.0:

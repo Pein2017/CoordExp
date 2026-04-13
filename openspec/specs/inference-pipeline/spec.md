@@ -18,6 +18,11 @@ Normative behavior:
   - non-COCO / raw evaluation paths may consume `gt_vs_pred.jsonl`,
   - score-aware COCO evaluation paths must continue to consume
     `gt_vs_pred_scored.jsonl`,
+- when a run resolves `infer.bbox_format=center_log_size`, the pipeline MUST
+  narrow to the raw standardized artifact family:
+  - raw/non-COCO evaluation may consume `gt_vs_pred.jsonl`
+  - raw duplicate-control may emit `gt_vs_pred_guarded.jsonl`
+  - score-aware COCO evaluation and scored guarded artifacts MUST fail fast
 - when `eval.duplicate_control.enabled=false`, eval behavior remains the normal
   raw-only path,
 - when `eval.duplicate_control.enabled=true`, the eval stage MUST:
@@ -78,6 +83,13 @@ typed overrides, deterministic defaults relative to the run directory SHALL be:
 - **WHEN** the eval stage runs
 - **THEN** it emits only the normal raw evaluation outputs
 - **AND** it does not emit guarded duplicate-control artifacts.
+
+#### Scenario: `center_log_size` rejects scored evaluation paths
+- **GIVEN** an inference/eval run with `infer.bbox_format=center_log_size`
+- **WHEN** the pipeline is asked for score-aware COCO evaluation or
+  `gt_vs_pred_scored*.jsonl` artifacts
+- **THEN** it fails fast with guidance that V1 supports canonical raw
+  standardized artifacts and raw guarded duplicate-control only.
 
 ### Requirement: `resolved_config.json` is the canonical resolved manifest
 Inference-pipeline SHALL persist resolved run metadata in `resolved_config.json`
