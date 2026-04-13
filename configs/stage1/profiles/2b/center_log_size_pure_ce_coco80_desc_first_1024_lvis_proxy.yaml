@@ -2,6 +2,8 @@ extends:
   - ./coord_soft_ce_gate_coco80_desc_first.yaml
   - ../../../_shared/datasets/coco_1024_bbox_max60_lvis_proxy.yaml
 
+global_max_length: 14000
+
 model:
   model: model_cache/models/Qwen/Qwen3-VL-2B-Instruct-coordexp
 
