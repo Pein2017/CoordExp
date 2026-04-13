@@ -31,6 +31,11 @@
 - Use `coordexp-research-context` for broad background, read-order, and historical Stage-2 context.
 - For any `*.py` file, Serena MCP is mandatory for exploration and editing.
 
+## Self-Improving
+- Activate the `self-improving` skill when the user explicitly names it, asks to remember a reusable preference/correction/workflow, asks what has been learned, or wants repeated mistakes captured for future sessions.
+- Keep mutable self-improving memory under `.self-improving/`; do not write workspace memory into `.codex/skills/self-improving/` or a machine-global home directory.
+- Treat `.self-improving/` as exported repo-local project state rather than private scratch; the files under it are intended to be shared/visible in this workspace when relevant.
+
 ## Model
 - Allocate subagent model capacity by subtask type instead of using one fixed default.
 - Use `gpt-5.4-mini` for pure information collection only: repo scans, file discovery, fact extraction, or status gathering with little synthesis or judgment.
