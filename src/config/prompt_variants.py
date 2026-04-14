@@ -119,16 +119,17 @@ PROMPT_VARIANT_REGISTRY: Mapping[str, PromptVariant] = {
             "(case-sensitive): "
             f"{COCO_80_CLASS_LIST_COMPACT}.\n"
             "- Do not emit any class outside this list; if uncertain, choose the closest canonical class and keep details concise.\n"
-            "- Coverage: locate each clearly visible object instance; when multiple instances of the same class exist, output multiple records (one per instance).\n"
+            "- Coverage: locate each clearly visible object instance, including small or partially occluded instances when they are still localizable; when multiple instances of the same class exist, output multiple records (one per instance).\n"
             "- Atomic instances: each record must refer to exactly one object instance; each bbox_2d must tightly cover a single instance.\n"
+            "- Prefer one tight atomic box for a clearly visible instance rather than omitting it because the boundary is slightly uncertain.\n"
             "- Do not output group boxes that cover multiple instances (e.g., a long thin strip over a crowd or shelf row).\n"
             "- Avoid duplicates: do not output multiple near-identical boxes for the same instance.\n"
-            "- If you cannot localize a single instance, omit it.\n"
         ),
         dense_user_suffix=(
             " Restrict `desc` to this COCO-80 class list: "
             f"{COCO_80_CLASS_LIST_COMPACT}."
-            " Locate each clearly visible object instance; output one record per instance."
+            " Locate each clearly visible object instance, including small or partially occluded instances when they are still localizable; output one record per instance."
+            " Prefer including a clearly visible, localizable instance rather than omitting it because the boundary is slightly uncertain."
             " Each record must correspond to exactly one object instance with an atomic bbox; do not use one box to cover multiple objects and do not repeat near-identical boxes."
         ),
     ),
@@ -148,13 +149,13 @@ PROMPT_VARIANT_REGISTRY: Mapping[str, PromptVariant] = {
             "- Coordinates must be written as coord tokens `<|coord_N|>` only.\n"
             "- LVIS federated policy: this target is the verified annotation subset for the image, not an exhaustive statement about all visible categories.\n"
             "- Omitted visible categories may be intentionally unlabeled; do not interpret omission as absence.\n"
-            "- Emit one record per verified annotated instance, keep boxes/polygons atomic, avoid duplicates, and emit no extra commentary.\n"
+            "- Emit one record per verified annotated instance, including small or partially occluded instances when they are still localizable; keep boxes/polygons atomic, avoid duplicates, and prefer inclusion over omission when a grounded single-instance geometry is available.\n"
             "- JSON layout: single line; one space after colons and commas; double quotes for keys/strings; no trailing text.\n"
         ),
         dense_user_override=(
             "Return the verified LVIS annotation subset for this image as a single CoordJSON object "
             '{"objects": [...]} using bare `<|coord_N|>` tokens (0–999). '
-            "Use canonical LVIS category names, preserve one record per annotated instance, and keep geometry exact. "
+            "Use canonical LVIS category names, preserve one record per annotated instance, keep geometry exact, and include every verified annotated instance you can localize, including small or partially occluded ones. "
             "Each record __OBJECT_FIELD_ORDER_USER_RULE__. __BBOX_USER_RULE__ "
             "Important: omitted visible categories may be intentionally unlabeled under LVIS federated annotations, so the target is a verified subset rather than an exhaustive absence claim. "
             'Use the exact per-object format: __USER_EXAMPLE__. '
@@ -176,13 +177,13 @@ PROMPT_VARIANT_REGISTRY: Mapping[str, PromptVariant] = {
             "    - Do NOT sort poly points by x/y; that can create self-intersections.\n"
             "- Coordinates must be written as coord tokens `<|coord_N|>` only.\n"
             "- LVIS federated policy: some visible categories may be unlabeled in the verified subset, so do not assume an omitted category is absent.\n"
-            "- Continue listing clearly visible, well-localized instances when confident, but keep one record per atomic instance, avoid duplicates, and stay within canonical LVIS category names.\n"
+            "- Continue listing clearly visible, localizable instances, including small or partially occluded ones, even when boundaries are mildly uncertain; keep one record per atomic instance, avoid duplicates, and stay within canonical LVIS category names.\n"
             "- JSON layout: single line; one space after colons and commas; double quotes for keys/strings; no trailing text.\n"
         ),
         dense_user_override=(
             "List clearly visible LVIS objects in this image as a single CoordJSON object "
             '{"objects": [...]} using bare `<|coord_N|>` tokens (0–999). '
-            "Do not assume unlisted categories are absent just because the verified subset may be partial; continue with additional visible instances when you can localize them confidently. "
+            "Do not assume unlisted categories are absent just because the verified subset may be partial; continue with additional visible instances when you can localize them, including small or partially occluded ones, and prefer inclusion over omission when the boundary is mildly uncertain. "
             "Use canonical LVIS category names, one atomic instance per record, and do not emit duplicate near-identical boxes. "
             "Each record __OBJECT_FIELD_ORDER_USER_RULE__. __BBOX_USER_RULE__ "
             'Use the exact per-object format: __USER_EXAMPLE__. '

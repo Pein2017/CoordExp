@@ -266,10 +266,12 @@ def test_lvis_federated_prompt_variants_encode_partial_label_semantics() -> None
     assert "verified annotation subset" in stage1_system
     assert "omission as absence" in stage1_system
     assert "verified subset rather than an exhaustive absence claim" in stage1_user
+    assert "including small or partially occluded ones" in stage1_user
 
     assert "do not assume an omitted category is absent" in stage2_system
     assert "continue listing clearly visible" in stage2_system.lower()
     assert "continue with additional visible instances" in stage2_user
+    assert "prefer inclusion over omission" in stage2_user
 
     assert "Detect every object in the image" not in stage1_system
     assert "Detect every object in the image" not in stage2_system
@@ -284,9 +286,11 @@ def test_center_log_size_prompts_explain_u_of_s_and_render_variant_placeholders(
 
     for prompt in (default_system, default_user, lvis_system, lvis_user):
         assert "[cx, cy, u(w), u(h)]" in prompt
-        assert "log(max(s, 1/1024))" in prompt
         assert "__BBOX_" not in prompt
         assert "__USER_EXAMPLE_" not in prompt
+
+    for prompt in (default_system, lvis_system):
+        assert "log(max(s, 1/1024))" in prompt
 
     assert "bbox_2d is [x1, y1, x2, y2]" not in lvis_system
     assert '{"desc": "category", "bbox_2d": [<|coord_110|>' not in lvis_user

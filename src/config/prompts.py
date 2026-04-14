@@ -15,7 +15,7 @@ from .prompt_variants import (
 )
 
 # Shared prior rules (kept flat for easy embedding in system prompt)
-PRIOR_RULES = '- Open-domain object detection/grounding on public datasets; cover all visible targets. If none, return {"objects": []}.\n'
+PRIOR_RULES = '- Open-domain object detection/grounding on public datasets; cover all visible targets.\n'
 
 _USER_EXAMPLE_DESC_FIRST_XYXY = (
     '{"desc": "black cat", "bbox_2d": [<|coord_110|>, <|coord_310|>, <|coord_410|>, <|coord_705|>]}'
@@ -50,7 +50,7 @@ _SYSTEM_PREFIX_TOKENS = (
     'You are a general-purpose object detection and grounding assistant. Output exactly one CoordJSON object {"objects": [...]} with no extra text.\n'
     '- The top-level object must contain exactly one key "objects".\n'
     f"- {_OBJECT_FIELD_ORDER_SYSTEM_RULE_PLACEHOLDER}\n"
-    '- If uncertain, set desc="unknown" and give the reason succinctly.\n'
+    "- Prefer including a clearly visible, localizable instance rather than omitting it because the boundary is slightly uncertain.\n"
     "- Geometry formatting rules:\n"
     f"  * {_BBOX_SYSTEM_RULE_PLACEHOLDER}\n"
     "  * poly is a flat list [x1, y1, x2, y2, ...] with an even number of coords and >= 6 entries.\n"
@@ -71,22 +71,24 @@ SYSTEM_PROMPT_RANDOM_TOKENS = _SYSTEM_PREFIX_TOKENS.replace(
     "Prior rules:\n", _ORDER_RULE_RANDOM + "Prior rules:\n"
 )
 USER_PROMPT_SORTED_TOKENS = (
-    "Detect and list every object in the image, ordered by image-space top-left "
+    "Detect and list every clearly visible object instance in the image, ordered by image-space top-left "
     "(y1, x1) top-to-bottom then left-to-right. For poly anchors, use (minY, minX) over all vertices. "
-    "Return a single CoordJSON object {\"objects\": [...]} where each record "
-    f"{_OBJECT_FIELD_ORDER_USER_RULE_PLACEHOLDER} using bare `<|coord_N|>` tokens (0–999). "
+    "Return a single CoordJSON object {\"objects\": [...]} using bare `<|coord_N|>` tokens (0–999) where each record "
+    f"{_OBJECT_FIELD_ORDER_USER_RULE_PLACEHOLDER}. "
     f"{_BBOX_USER_RULE_PLACEHOLDER} "
     "Use the exact per-object format: "
     f"{_USER_EXAMPLE_PLACEHOLDER}. "
+    "Prefer including a clearly visible, localizable instance rather than omitting it because the boundary is slightly uncertain. "
     "Do not quote coord tokens, do not emit extra keys, and emit no extra text."
 )
 USER_PROMPT_RANDOM_TOKENS = (
-    "Detect and list every object in the image (any ordering is acceptable). "
-    "Return a single CoordJSON object {\"objects\": [...]} where each record "
-    f"{_OBJECT_FIELD_ORDER_USER_RULE_PLACEHOLDER} using bare `<|coord_N|>` tokens (0–999). "
+    "Detect and list every clearly visible object instance in the image (any ordering is acceptable). "
+    "Return a single CoordJSON object {\"objects\": [...]} using bare `<|coord_N|>` tokens (0–999) where each record "
+    f"{_OBJECT_FIELD_ORDER_USER_RULE_PLACEHOLDER}. "
     f"{_BBOX_USER_RULE_PLACEHOLDER} "
     "Use the exact per-object format: "
     f"{_USER_EXAMPLE_PLACEHOLDER}. "
+    "Prefer including a clearly visible, localizable instance rather than omitting it because the boundary is slightly uncertain. "
     "Do not quote coord tokens, do not emit extra keys, and emit no extra text."
 )
 
@@ -126,10 +128,7 @@ def _prompt_fragments(*, bbox_format: str, object_field_order: str) -> dict[str,
                 "(log(max(s, 1/1024)) - log(1/1024)) / -log(1/1024); "
                 "cx/cy are normalized box centers, and u(w)/u(h) are normalized log-size slots."
             ),
-            _BBOX_USER_RULE_PLACEHOLDER: (
-                "Use bbox_2d as [cx, cy, u(w), u(h)] where "
-                "u(s) = (log(max(s, 1/1024)) - log(1/1024)) / -log(1/1024)."
-            ),
+            _BBOX_USER_RULE_PLACEHOLDER: "Use bbox_2d as [cx, cy, u(w), u(h)].",
             _OBJECT_FIELD_ORDER_SYSTEM_RULE_PLACEHOLDER: field_order_system_rule,
             _OBJECT_FIELD_ORDER_USER_RULE_PLACEHOLDER: field_order_user_rule,
             _USER_EXAMPLE_PLACEHOLDER: user_example,
