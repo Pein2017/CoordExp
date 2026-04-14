@@ -10,7 +10,7 @@ Normative behavior:
 - for this V1 change, the Stage-1 canonical config surface extends
   `custom.coord_soft_ce_w1` with:
   - `text_gate_weight` (float; default `1.0`)
-- when `custom.bbox_format=center_log_size`, Stage-1 bbox coord slots MUST be
+- when `custom.bbox_format=cxcy_logw_logh`, Stage-1 bbox coord slots MUST be
   supervised through the `custom.coord_soft_ce_w1` surface in a pure-CE profile:
   - `enabled` MUST be `true`
   - `ce_weight` MUST be `> 0`
@@ -35,14 +35,14 @@ Normative behavior:
 - this V1 change MUST reject decoded-box regression losses.
 
 #### Scenario: Stage-1 center-log-size runs in pure-CE mode
-- **GIVEN** `custom.bbox_format=center_log_size`
+- **GIVEN** `custom.bbox_format=cxcy_logw_logh`
 - **WHEN** config validation runs for the V1 experiment
 - **THEN** `ce_weight` is active for coord slots
 - **AND** `custom.coord_soft_ce_w1.enabled` is `true`
 - **AND** `soft_ce_weight` and `w1_weight` are both zero.
 
 #### Scenario: Gating remains active across coord and non-coord positions
-- **GIVEN** `custom.bbox_format=center_log_size`
+- **GIVEN** `custom.bbox_format=cxcy_logw_logh`
 - **WHEN** the loss is computed
 - **THEN** coord positions receive coord-gate supervision
 - **AND** supervised `struct|desc` positions receive text-gate supervision.
@@ -54,7 +54,7 @@ Normative behavior:
 - **AND** negative values fail fast.
 
 #### Scenario: Non-pure coord settings fail fast
-- **GIVEN** `custom.bbox_format=center_log_size`
+- **GIVEN** `custom.bbox_format=cxcy_logw_logh`
 - **WHEN** config validation sees `soft_ce_weight > 0`, `w1_weight > 0`, or
   non-default soft-target shaping knobs
 - **THEN** validation fails fast with guidance that the V1 profile is hard-CE
@@ -83,7 +83,7 @@ Normative behavior:
   supervision only.
 
 #### Scenario: Decoded-box regression surfaces fail fast
-- **GIVEN** `custom.bbox_format=center_log_size`
+- **GIVEN** `custom.bbox_format=cxcy_logw_logh`
 - **WHEN** config validation sees `custom.bbox_geo.enabled=true` or
   `custom.bbox_size_aux.enabled=true`
 - **THEN** validation fails fast with guidance that V1 is limited to

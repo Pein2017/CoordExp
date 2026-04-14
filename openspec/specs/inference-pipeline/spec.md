@@ -18,7 +18,7 @@ Normative behavior:
   - non-COCO / raw evaluation paths may consume `gt_vs_pred.jsonl`,
   - score-aware COCO evaluation paths must continue to consume
     `gt_vs_pred_scored.jsonl`,
-- when a run resolves `infer.bbox_format=center_log_size`, the pipeline MUST:
+- when a run resolves `infer.bbox_format=cxcy_logw_logh`, the pipeline MUST:
   - keep the canonical standardized artifact family authoritative,
   - reject confidence post-op,
   - allow raw/non-COCO evaluation to consume `gt_vs_pred.jsonl`,
@@ -88,8 +88,8 @@ typed overrides, deterministic defaults relative to the run directory SHALL be:
 - **THEN** it emits only the normal raw evaluation outputs
 - **AND** it does not emit guarded duplicate-control artifacts.
 
-#### Scenario: `center_log_size` materializes a constant-score scored artifact for official eval
-- **GIVEN** an inference/eval run with `infer.bbox_format=center_log_size`
+#### Scenario: `cxcy_logw_logh` materializes a constant-score scored artifact for official eval
+- **GIVEN** an inference/eval run with `infer.bbox_format=cxcy_logw_logh`
 - **WHEN** the pipeline is asked for score-aware COCO/LVIS evaluation
 - **THEN** it materializes `gt_vs_pred_scored.jsonl` from canonical standardized
   predictions using deterministic constant-score provenance

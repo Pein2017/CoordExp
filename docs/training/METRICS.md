@@ -66,7 +66,7 @@ Stage-1 training families that parity tests expect to stay user-visible.
   - `coord_diag/expected_bin_abs_err_p90`
   - `coord_diag/w1_to_delta`
 
-Stage-1 `center_log_size` note:
+Stage-1 `cxcy_logw_logh` note:
 
 - The draft `adopt-cxcywh-bbox-parameterization` profile uses `coord_softce_w1/ce`,
   `coord_softce_w1/gate`, and `coord_softce_w1/text_gate` while forcing

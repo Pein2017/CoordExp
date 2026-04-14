@@ -1,0 +1,52 @@
+# Materialize the constant-score scored artifact for an already completed
+# cxcy_logw_logh infer run, without rerunning decode.
+#
+# Prerequisite:
+# 1. Complete the infer-only run with
+#    configs/infer/coco_1024/coco_bbox_max60-coco80-desc_first-1024-lvis_proxy-cxcy_logw_logh-pure_ce-2b-ckpt2600-merged.yaml
+#
+# Run:
+#   PYTHONPATH=. conda run -n ms python scripts/run_infer.py \
+#     --config configs/infer/coco_1024/coco_bbox_max60-coco80-desc_first-1024-lvis_proxy-cxcy_logw_logh-pure_ce-2b-ckpt2600-materialize_scored.yaml
+#
+# Notes:
+# - This reuses the existing `gt_vs_pred.jsonl` artifact and writes
+#   `gt_vs_pred_scored.jsonl` with the built-in constant-score compatibility
+#   path for `infer.bbox_format: cxcy_logw_logh`.
+# - Confidence post-op must remain disabled for this V1 path.
+
+run:
+  name: coco1024_valfull_lvis_proxy_cxcy_logw_logh_pure_ce_2b_ckpt2600_merged
+  output_dir: output/infer
+
+stages:
+  infer: false
+  eval: false
+  vis: false
+
+infer:
+  gt_jsonl: public_data/coco/rescale_32_1024_bbox_max60_lvis_proxy/val.coord.jsonl
+  model_checkpoint: output/stage1_2b/cxcy_logw_logh-pure_ce-2b-ckpt_2600-merged
+
+  prompt_variant: coco_80
+  bbox_format: cxcy_logw_logh
+  object_field_order: desc_first
+  object_ordering: sorted
+
+  mode: auto
+  pred_coord_mode: auto
+
+  backend:
+    type: hf
+
+  generation:
+    temperature: 0.0
+    top_p: 0.9
+    max_new_tokens: 3084
+    repetition_penalty: 1.05
+    batch_size: 4
+    seed: 42
+
+  device: cuda:0
+  limit: 0
+  detect_samples: 128

@@ -719,7 +719,7 @@ def test_run_pipeline_defaults_object_ordering_to_sorted(
     assert resolved["infer"]["object_ordering"] == "sorted"
 
 
-def test_run_pipeline_rejects_center_log_size_confidence_postop(
+def test_run_pipeline_rejects_cxcy_logw_logh_confidence_postop(
     tmp_path: Path, monkeypatch
 ) -> None:
     monkeypatch.delenv("ROOT_IMAGE_DIR", raising=False)
@@ -736,7 +736,7 @@ def test_run_pipeline_rejects_center_log_size_confidence_postop(
         "stages": {"infer": False, "eval": False, "vis": False},
         "infer": {
             "gt_jsonl": str(gt_jsonl),
-            "bbox_format": "center_log_size",
+            "bbox_format": "cxcy_logw_logh",
         },
         "confidence": {"score_mode": "token_trace"},
     }
@@ -746,12 +746,12 @@ def test_run_pipeline_rejects_center_log_size_confidence_postop(
 
     with pytest.raises(
         ValueError,
-        match="center_log_size does not support confidence post-op in V1",
+        match="cxcy_logw_logh does not support confidence post-op in V1",
     ):
         run_pipeline(config_path=config_path)
 
 
-def test_run_pipeline_supports_center_log_size_official_eval_via_constant_scores(
+def test_run_pipeline_supports_cxcy_logw_logh_official_eval_via_constant_scores(
     tmp_path: Path, monkeypatch
 ) -> None:
     monkeypatch.delenv("ROOT_IMAGE_DIR", raising=False)
@@ -768,7 +768,7 @@ def test_run_pipeline_supports_center_log_size_official_eval_via_constant_scores
         "stages": {"infer": False, "eval": True, "vis": False},
         "infer": {
             "gt_jsonl": str(gt_jsonl),
-            "bbox_format": "center_log_size",
+            "bbox_format": "cxcy_logw_logh",
         },
         "eval": {"metrics": "coco"},
     }
@@ -828,7 +828,7 @@ def test_run_pipeline_supports_center_log_size_official_eval_via_constant_scores
             for line in Path(pred_path).read_text(encoding="utf-8").splitlines()
             if line.strip()
         ]
-        assert rows[0]["pred_score_source"] == "center_log_size_constant"
+        assert rows[0]["pred_score_source"] == "cxcy_logw_logh_constant"
         assert rows[0]["pred_score_version"] == 1
         assert rows[0]["pred"][0]["score"] == 1.0
         assert options.metrics == "coco"

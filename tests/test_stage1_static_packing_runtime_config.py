@@ -446,10 +446,10 @@ def test_static_packing_fingerprint_tracks_bbox_parameterization() -> None:
         packing_cfg=packing_cfg,
         train_jsonl="train.jsonl",
     )
-    center_log_size = _build_static_packing_fingerprint(
+    cxcy_logw_logh = _build_static_packing_fingerprint(
         training_config=training_cfg,
         custom_config=SimpleNamespace(
-            **common_custom, bbox_format="center_log_size"
+            **common_custom, bbox_format="cxcy_logw_logh"
         ),
         template=_Template(max_length=128),
         train_args=SimpleNamespace(max_model_len=512),
@@ -459,8 +459,8 @@ def test_static_packing_fingerprint_tracks_bbox_parameterization() -> None:
     )
 
     assert xyxy["custom_bbox_format"] == "xyxy"
-    assert center_log_size["custom_bbox_format"] == "center_log_size"
-    assert xyxy != center_log_size
+    assert cxcy_logw_logh["custom_bbox_format"] == "cxcy_logw_logh"
+    assert xyxy != cxcy_logw_logh
 
 
 def test_static_packing_fingerprint_tracks_prompt_variant_and_template_hash() -> None:
@@ -479,7 +479,7 @@ def test_static_packing_fingerprint_tracks_prompt_variant_and_template_hash() ->
         user_prompt="prompt",
         emit_norm="none",
         json_format="standard",
-        bbox_format="center_log_size",
+        bbox_format="cxcy_logw_logh",
         object_ordering="sorted",
         object_field_order="geometry_first",
         use_summary=False,

@@ -8,7 +8,7 @@
 ## 2. Config And Shared Conversion
 
 - [x] 2.1 Support `custom.bbox_format` and `infer.bbox_format` values:
-  `xyxy | center_log_size`.
+  `xyxy | cxcy_logw_logh`.
 - [x] 2.2 Add shared helpers that convert canonical `xyxy` boxes to/from
   model-facing center-log-size slots using the fixed V1 log-size floor
   `1/1024`.
@@ -25,7 +25,7 @@
 - [x] 3.1 Replace fragile override rewriting with structured prompt placeholders
   for bbox parameterization wording and examples.
 - [x] 3.2 Update prompt text so `bbox_2d` is described as
-  `[cx, cy, u(w), u(h)]` under `center_log_size`, with the shared log-size
+  `[cx, cy, u(w), u(h)]` under `cxcy_logw_logh`, with the shared log-size
   expression defined explicitly.
 - [x] 3.3 Update Stage-1 dataset rendering / serialization so external
   canonical geometry stays `xyxy` while model-facing bbox slots use
@@ -49,7 +49,7 @@
   - `w1_weight > 0`
   - non-default soft-target shaping knobs
   - `bbox_geo` / `bbox_size_aux`
-  - Stage-2 or rollout surfaces requesting `center_log_size`
+  - Stage-2 or rollout surfaces requesting `cxcy_logw_logh`
 
 ## 5. Inference And Canonical Artifacts
 
@@ -57,7 +57,7 @@
   canonicalize them to pixel `xyxy` before standardized artifact emission.
 - [x] 5.2 Keep `raw_output_json` as the parsed best-effort raw payload while
   standardized/vis artifacts stay canonical `xyxy`.
-- [x] 5.3 Reject confidence post-op for `center_log_size`, but materialize the
+- [x] 5.3 Reject confidence post-op for `cxcy_logw_logh`, but materialize the
   official scored-eval artifact family from canonical standardized predictions
   using a deterministic constant-score compatibility policy.
 - [x] 5.3 Record the resolved prompt identity and bbox parameterization in
@@ -73,7 +73,7 @@
   fail-fast rejection of non-pure settings,
   canonical inference/eval artifacts,
   fail-fast rejection of confidence post-op,
-  constant-score official-eval compatibility for `center_log_size`,
+  constant-score official-eval compatibility for `cxcy_logw_logh`,
   and cache invalidation across prompt formatting changes.
 - [x] 6.2 Run targeted validation and replay commits `f16f6a2` and `f30aea7`
   on top of the rewritten branch.

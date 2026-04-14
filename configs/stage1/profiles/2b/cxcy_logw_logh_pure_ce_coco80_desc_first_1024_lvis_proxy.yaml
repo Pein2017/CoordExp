@@ -23,12 +23,12 @@ experiment:
     Stage-1 pure-CE training with the canonical xyxy internal bbox
     parameterization.
   key_deviations:
-    - Uses the experimental center_log_size path, corresponding to a cxcylogwlogh-style internal factorization.
+    - Uses the experimental cxcy_logw_logh path, corresponding to a cxcylogwlogh-style internal factorization.
     - Explicitly factorizes bbox prediction into center/location (cx, cy) and scale (logw, logh).
     - Keeps the objective minimal by using Stage-1 pure CE before introducing stronger numerical supervision or richer auxiliary losses.
   runtime_settings:
     - Runs as a Stage-1 2B profile on the COCO 1024 bbox-max60 LVIS-proxy dataset family.
-    - "Uses bbox_format: center_log_size for the model-facing geometry contract while keeping external evaluation artifacts canonicalized downstream."
+    - "Uses bbox_format: cxcy_logw_logh for the model-facing geometry contract while keeping external evaluation artifacts canonicalized downstream."
     - Uses pure CE on bbox coord slots with coord/text gates enabled and soft labels, W1, adjacent repulsion, and bbox regression auxiliaries disabled.
   comments:
     - Motivation and prior diagnosis are documented in progress/diagnostics/duplication_collapse_final_analysis_2026-04-13.md.
@@ -43,11 +43,11 @@ experiment:
 
 training:
   num_train_epochs: 4
-  artifact_subdir: stage1_2b/coco_bbox_max60-coco80-desc_first-1024-lvis_proxy-center_log_size-pure_ce
-  run_name: epoch_4-center_log_size-pure_ce-coco80-desc_first-1024-lvis_proxy-from-base-2B
+  artifact_subdir: stage1_2b/coco_bbox_max60-coco80-desc_first-1024-lvis_proxy-cxcy_logw_logh-pure_ce
+  run_name: epoch_4-cxcy_logw_logh-pure_ce-coco80-desc_first-1024-lvis_proxy-from-base-2B
 
 custom:
-  bbox_format: center_log_size
+  bbox_format: cxcy_logw_logh
   coord_soft_ce_w1:
     enabled: true
     # Narrow V1 experiment:

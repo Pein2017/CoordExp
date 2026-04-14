@@ -23,7 +23,7 @@ from src.common.geometry import (
 from src.common.geometry.bbox_parameterization import (
     AllowedBBoxFormat,
     DEFAULT_BBOX_FORMAT,
-    center_log_size_norm1000_to_xyxy_norm1000,
+    cxcy_logw_logh_norm1000_to_xyxy_norm1000,
     normalize_bbox_format,
 )
 from src.common.prediction_parsing import GEOM_KEYS, coords_are_pixel, parse_prediction
@@ -177,11 +177,11 @@ class CoordinateStandardizer:
         if (
             not is_gt
             and kind == "bbox_2d"
-            and self.bbox_format == "center_log_size"
+            and self.bbox_format == "cxcy_logw_logh"
         ):
             if coord_mode != "norm1000":
                 raise ValueError("bbox_format_pred_mode")
-            points_for_scale = center_log_size_norm1000_to_xyxy_norm1000(points)
+            points_for_scale = cxcy_logw_logh_norm1000_to_xyxy_norm1000(points)
 
         pts_px = denorm_and_clamp(points_for_scale, width, height, coord_mode=coord_mode)
 

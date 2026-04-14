@@ -2,13 +2,13 @@
 
 import base64
 import os
-from typing import Any, Dict, Iterable, List, Literal, Mapping, Optional
+from typing import Any, Dict, Iterable, List, Literal, Mapping, Optional, Sequence
 
 from src.common.geometry.bbox_parameterization import (
     AllowedBBoxFormat,
     DEFAULT_BBOX_FORMAT,
     normalize_bbox_format,
-    xyxy_norm1000_to_center_log_size_bins,
+    xyxy_norm1000_to_cxcy_logw_logh_bins,
 )
 from src.common.geometry.bbox_formats import convert_bbox_2d_points
 from src.common.object_field_order import (
@@ -241,7 +241,7 @@ class JSONLinesBuilder(BaseBuilder):
                 original_xyxy = obj.get("_bbox_xyxy_original")
                 if original_xyxy is not None:
                     points_for_meta = [int(round(float(v))) for v in list(original_xyxy)]
-                elif self.bbox_format == "center_log_size":
+                elif self.bbox_format == "cxcy_logw_logh":
                     points_for_meta = [
                         int(round(float(v))) for v in list(points_for_meta)
                     ]
@@ -270,13 +270,13 @@ class JSONLinesBuilder(BaseBuilder):
         *,
         numeric_points: Optional[List[Any]] = None,
     ) -> List[int | float]:
-        if geom_type == "bbox_2d" and self.bbox_format == "center_log_size":
+        if geom_type == "bbox_2d" and self.bbox_format == "cxcy_logw_logh":
             source_points = numeric_points if numeric_points is not None else points
             if sequence_has_coord_tokens(source_points):
                 norm_points = tokens_to_ints(source_points, require_even=True)
             else:
                 norm_points = [int(round(float(v))) for v in source_points]
-            transformed = xyxy_norm1000_to_center_log_size_bins(norm_points)
+            transformed = xyxy_norm1000_to_cxcy_logw_logh_bins(norm_points)
             if self.coord_tokens_enabled:
                 return ints_to_tokens(transformed)
             return transformed
@@ -300,6 +300,19 @@ class JSONLinesBuilder(BaseBuilder):
     def _select_numeric_points(
         self, obj: Mapping[str, Any], geom_type: str, points: List[Any]
     ) -> List[Any]:
+        if self.bbox_format == "cxcy_logw_logh" and geom_type == "bbox_2d":
+            # DenseCaptionDataset may already have converted bbox_2d into the
+            # model-facing chart while retaining canonical xyxy here.
+            # Prefer the canonical sidecar so we do not re-encode a converted box.
+            original_xyxy = (
+                obj.get("_bbox_xyxy_original")
+                if isinstance(obj, Mapping)
+                else None
+            )
+            if isinstance(original_xyxy, Sequence) and len(original_xyxy) == 4:
+                nums = [int(round(float(v))) for v in original_xyxy]
+                _assert_norm_range(nums, geom_type)
+                return nums
         if self.coord_tokens_enabled:
             numeric_map = obj.get("_coord_token_ints") if isinstance(obj, Mapping) else None
             if isinstance(numeric_map, Mapping) and geom_type in numeric_map:

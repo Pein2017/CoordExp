@@ -32,6 +32,11 @@ from src.analysis.unmatched_proposal_verifier import (
     resolve_checkpoint_path,
     resolve_prompt_controls_for_checkpoint,
 )
+from src.common.geometry.bbox_parameterization import (
+    DEFAULT_BBOX_FORMAT,
+    AllowedBBoxFormat,
+    normalize_bbox_format,
+)
 from src.common.object_field_order import (
     build_object_payload,
     normalize_object_field_order,
@@ -40,6 +45,13 @@ from src.common.paths import resolve_image_path_strict
 from src.common.semantic_desc import normalize_desc
 from src.config.prompts import resolve_dense_prompt_variant_key
 from src.coord_tokens.codec import get_coord_token_ids, int_to_token
+from src.eval.artifacts import (
+    CXCY_LOGW_LOGH_CONSTANT_PRED_SCORE_SOURCE,
+    CXCY_LOGW_LOGH_CONSTANT_PRED_SCORE_VERSION,
+    CXCY_LOGW_LOGH_CONSTANT_SCORE,
+    with_constant_scores,
+    write_jsonl_records,
+)
 from src.eval.confidence_postop import ConfidencePostOpOptions, ConfidencePostOpPaths, run_confidence_postop
 from src.infer.engine import GenerationConfig, InferenceConfig, InferenceEngine
 from src.utils.assistant_json import dumps_coordjson
@@ -94,6 +106,7 @@ class CheckpointSpec:
     path: str
     historical_artifact_dirs: Tuple[str, ...] = ()
     prompt_variant: Optional[str] = None
+    bbox_format: AllowedBBoxFormat = DEFAULT_BBOX_FORMAT
     object_field_order: Optional[str] = None
     stage: str = "unknown"
     objective_family: str = "unknown"
@@ -435,6 +448,10 @@ def load_study_config(path: Path) -> StudyConfig:
                     if item.get("prompt_variant") is not None
                     else None
                 ),
+                bbox_format=normalize_bbox_format(
+                    item.get("bbox_format", DEFAULT_BBOX_FORMAT),
+                    path=f"checkpoints[{idx}].bbox_format",
+                ),
                 object_field_order=(
                     normalize_object_field_order(
                         str(item.get("object_field_order")),
@@ -698,6 +715,7 @@ def _inventory_row(checkpoint: ResolvedStudyCheckpoint) -> Dict[str, Any]:
         "checkpoint_path": str(checkpoint.resolved.path),
         "checkpoint_resolve_source": checkpoint.resolved.resolve_source,
         "prompt_variant": checkpoint.resolved.prompt_variant,
+        "bbox_format": checkpoint.spec.bbox_format,
         "object_field_order": checkpoint.resolved.object_field_order,
         "prompt_control_source": checkpoint.resolved.prompt_control_source,
         "stage": checkpoint.spec.stage,
@@ -1489,6 +1507,7 @@ def _run_reproduction_for_checkpoint(
         model_checkpoint=str(checkpoint.resolved.path),
         mode="coord",
         prompt_variant=checkpoint.resolved.prompt_variant,
+        bbox_format=checkpoint.spec.bbox_format,
         object_field_order=checkpoint.resolved.object_field_order,
         out_path=str(reproduce_root / "gt_vs_pred.jsonl"),
         pred_token_trace_path=str(reproduce_root / "pred_token_trace.jsonl"),
@@ -1508,22 +1527,59 @@ def _run_reproduction_for_checkpoint(
     )
     engine = InferenceEngine(infer_cfg, gen_cfg)
     out_path, summary_path = engine.infer()
-    confidence_summary = run_confidence_postop(
-        ConfidencePostOpPaths(
-            gt_vs_pred_jsonl=out_path,
-            pred_token_trace_jsonl=reproduce_root / "pred_token_trace.jsonl",
-            pred_confidence_jsonl=reproduce_root / "pred_confidence.jsonl",
-            gt_vs_pred_scored_jsonl=reproduce_root / "gt_vs_pred_scored.jsonl",
-            confidence_postop_summary_json=reproduce_root / "confidence_postop_summary.json",
-        ),
-        options=ConfidencePostOpOptions(),
-    )
+    pred_confidence_path = reproduce_root / "pred_confidence.jsonl"
+    scored_path = reproduce_root / "gt_vs_pred_scored.jsonl"
+    confidence_summary_path = reproduce_root / "confidence_postop_summary.json"
+    if checkpoint.spec.bbox_format == "cxcy_logw_logh":
+        rows = _read_jsonl(out_path)
+        write_jsonl_records(
+            scored_path,
+            with_constant_scores(
+                records=rows,
+                pred_score_source=CXCY_LOGW_LOGH_CONSTANT_PRED_SCORE_SOURCE,
+                pred_score_version=CXCY_LOGW_LOGH_CONSTANT_PRED_SCORE_VERSION,
+                constant_score=CXCY_LOGW_LOGH_CONSTANT_SCORE,
+            ),
+        )
+        confidence_summary = {
+            "total_samples": int(len(rows)),
+            "total_pred_objects": int(
+                sum(
+                    len(record.get("pred") or [])
+                    for record in rows
+                    if isinstance(record.get("pred"), list)
+                )
+            ),
+            "kept_pred_objects": None,
+            "dropped_pred_objects": None,
+            "kept_fraction": None,
+            "pred_score_source": CXCY_LOGW_LOGH_CONSTANT_PRED_SCORE_SOURCE,
+            "pred_score_version": CXCY_LOGW_LOGH_CONSTANT_PRED_SCORE_VERSION,
+            "confidence_method": "constant_score_materialization",
+        }
+        confidence_summary_path.write_text(
+            json.dumps(confidence_summary, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+        if pred_confidence_path.exists():
+            pred_confidence_path.unlink()
+    else:
+        confidence_summary = run_confidence_postop(
+            ConfidencePostOpPaths(
+                gt_vs_pred_jsonl=out_path,
+                pred_token_trace_jsonl=reproduce_root / "pred_token_trace.jsonl",
+                pred_confidence_jsonl=pred_confidence_path,
+                gt_vs_pred_scored_jsonl=scored_path,
+                confidence_postop_summary_json=confidence_summary_path,
+            ),
+            options=ConfidencePostOpOptions(),
+        )
     return {
         "subset_jsonl": str(subset_path),
         "gt_vs_pred_jsonl": str(out_path),
         "pred_token_trace_jsonl": str(reproduce_root / "pred_token_trace.jsonl"),
-        "pred_confidence_jsonl": str(reproduce_root / "pred_confidence.jsonl"),
-        "gt_vs_pred_scored_jsonl": str(reproduce_root / "gt_vs_pred_scored.jsonl"),
+        "pred_confidence_jsonl": str(pred_confidence_path),
+        "gt_vs_pred_scored_jsonl": str(scored_path),
         "summary_json": str(summary_path),
         "confidence_summary": confidence_summary,
     }
@@ -1677,10 +1733,15 @@ class Qwen3VLSurgeryProber:
         self,
         *,
         checkpoint: ResolvedCheckpoint,
+        bbox_format: AllowedBBoxFormat = DEFAULT_BBOX_FORMAT,
         device: str,
         attn_implementation: str,
     ) -> None:
         self.checkpoint = checkpoint
+        self.bbox_format = normalize_bbox_format(
+            bbox_format,
+            path="duplication_collapse.prober.bbox_format",
+        )
         self.device = device
         self.attn_implementation = attn_implementation
         self.model = self._load_model()
@@ -1737,6 +1798,7 @@ class Qwen3VLSurgeryProber:
             model_checkpoint=str(self.checkpoint.path),
             mode="coord",
             prompt_variant=self.checkpoint.prompt_variant,
+            bbox_format=self.bbox_format,
             object_field_order=self.checkpoint.object_field_order,
             out_path="unused.jsonl",
             device=self.device,
@@ -3772,6 +3834,7 @@ def run_study(config_path: Path) -> Dict[str, Any]:
                     torch.cuda.empty_cache()
             prober = Qwen3VLSurgeryProber(
                 checkpoint=checkpoint.resolved,
+                bbox_format=checkpoint.spec.bbox_format,
                 device=cfg.execution.device,
                 attn_implementation=cfg.execution.probe_attn_implementation,
             )

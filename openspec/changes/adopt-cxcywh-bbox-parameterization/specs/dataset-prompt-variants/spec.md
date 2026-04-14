@@ -16,7 +16,7 @@ Normative behavior:
 
 #### Scenario: Override variant renders center-log-size wording
 - **WHEN** an override-style prompt variant is resolved with
-  `bbox_format=center_log_size`
+  `bbox_format=cxcy_logw_logh`
 - **THEN** the final prompt text uses the structured center-log-size fragment
 - **AND** it does not rely on brittle free-text replacement.
 
@@ -53,7 +53,7 @@ Prompt resolution inputs for dense prompts MUST include:
   across calls.
 
 ### Requirement: Prompt text reflects Stage-1 center-log-size serialization
-The shared dense prompt resolver SHALL describe `center_log_size` as
+The shared dense prompt resolver SHALL describe `cxcy_logw_logh` as
 `bbox_2d: [cx, cy, u(w), u(h)]` on model-facing surfaces, with `u(*)` defined
 as the shared log-size expression.
 
@@ -68,26 +68,26 @@ Normative behavior:
   - bbox format from `infer.bbox_format`
   - coord mode from the canonical dense resolver mode `coord_tokens`
 - trainer-driven rollout/eval prompt rebuilding MUST reject
-  `bbox_format=center_log_size` for this V1 change,
-- when `bbox_format=center_log_size`, prompt wording MUST make clear that the
+  `bbox_format=cxcy_logw_logh` for this V1 change,
+- when `bbox_format=cxcy_logw_logh`, prompt wording MUST make clear that the
   third and fourth slots represent `u(w), u(h)` in the shared log-size
   expression rather than raw `x2, y2`, raw linear `w, h`, or unnormalized
   `log(w), log(h)`.
 
 #### Scenario: Stage-1 prompt applies center-log-size wording
-- **WHEN** `custom.bbox_format=center_log_size`
+- **WHEN** `custom.bbox_format=cxcy_logw_logh`
 - **THEN** the Stage-1 prompt instructs the model to emit
   `bbox_2d: [cx, cy, u(w), u(h)]`
 - **AND** it defines `u(*)` as the shared log-size expression.
 
 #### Scenario: Inference prompt matches Stage-1 bbox semantics
-- **WHEN** `infer.bbox_format=center_log_size`
+- **WHEN** `infer.bbox_format=cxcy_logw_logh`
 - **THEN** inference message construction applies the same center-log-size
   semantics as Stage-1 prompt resolution.
 
 #### Scenario: Rollout/eval prompt rebuilding rejects center-log-size
 - **WHEN** trainer-driven rollout/eval prompt rebuilding requests
-  `bbox_format=center_log_size`
+  `bbox_format=cxcy_logw_logh`
 - **THEN** prompt resolution fails fast with guidance that V1 is limited to
   Stage-1 and standalone inference.
 

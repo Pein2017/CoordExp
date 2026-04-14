@@ -54,9 +54,9 @@ Note: only `bbox_2d` and `poly` are supported in CoordExp; `line` geometries are
 - In raw JSONL and other model-independent geometry surfaces, bbox coords remain
   the current linear norm1000 / coord-token contract for canonical
   `[x1, y1, x2, y2]`.
-- Runtime may render model-facing `bbox_2d` as an internal center-log-size
+- Runtime may render model-facing `bbox_2d` as an internal `cxcy_logw_logh`
   tuple for prompts or teacher-forced targets.
-- When runtime renders model-facing `bbox_2d` as center-log-size:
+- When runtime renders model-facing `bbox_2d` as `cxcy_logw_logh`:
   - external field names remain unchanged (`bbox_2d`, `desc`, etc.),
   - the four model-facing slots represent `[cx, cy, u(w), u(h)]`,
   - `u(s) = (log(max(s, s_min)) - log(s_min)) / -log(s_min)` is the shared

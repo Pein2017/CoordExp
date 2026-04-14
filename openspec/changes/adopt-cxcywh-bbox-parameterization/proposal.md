@@ -42,7 +42,7 @@ coord slots and no regression-style bbox losses.
   standardized artifact emission.
 - Explicitly keep trainer-driven rollout/eval prompt rebuilding and Stage-2
   training out of scope for V1; those surfaces remain `xyxy`-only and must
-  fail fast if `center_log_size` is requested.
+  fail fast if `cxcy_logw_logh` is requested.
 - Keep confidence post-op out of scope for V1, while still allowing official
   score-aware evaluation to run on a constant-score compatibility artifact
   derived from the canonical standardized `gt_vs_pred.jsonl`.
@@ -83,7 +83,7 @@ coord slots and no regression-style bbox losses.
 - Stage-2 is intentionally out of scope for this V1 change.
 - Verification must cover:
   - Stage-1 prompt rendering for `[cx, cy, u(w), u(h)]`
-  - internal `xyxy <-> center_log_size` conversion
+  - internal `xyxy <-> cxcy_logw_logh` conversion
   - hard-CE-only coord supervision with retained coord-gate and text-gate terms
   - canonical `xyxy` inference/eval artifacts
   - prompt/cache determinism for the new model-facing parameterization

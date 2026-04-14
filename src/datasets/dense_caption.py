@@ -15,7 +15,7 @@ from src.common.geometry.bbox_parameterization import (
     AllowedBBoxFormat,
     DEFAULT_BBOX_FORMAT,
     normalize_bbox_format,
-    xyxy_norm1000_to_center_log_size_bins,
+    xyxy_norm1000_to_cxcy_logw_logh_bins,
 )
 from src.common.geometry.bbox_formats import convert_bbox_2d_points
 from src.common.object_field_order import (
@@ -365,12 +365,12 @@ class BaseCaptionDataset(Dataset):
                 dst_format="xyxy",
                 path=f"objects[{obj_idx}].bbox_2d",
             )
-            if self.bbox_format == "center_log_size":
+            if self.bbox_format == "cxcy_logw_logh":
                 if sequence_has_coord_tokens(bbox):
                     norm_bbox = tokens_to_ints(bbox, require_even=True)
                 else:
                     norm_bbox = [int(round(float(v))) for v in bbox]
-                converted = xyxy_norm1000_to_center_log_size_bins(norm_bbox)
+                converted = xyxy_norm1000_to_cxcy_logw_logh_bins(norm_bbox)
             else:
                 converted = convert_bbox_2d_points(
                     bbox,

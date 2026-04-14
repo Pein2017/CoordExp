@@ -339,9 +339,9 @@ def test_custom_coord_soft_ce_w1_unknown_key_fails_fast() -> None:
     assert "coord_soft_ce_w1.unknown_flag" in str(exc.value)
 
 
-def test_center_log_size_profile_accepts_pure_ce_with_positive_gates() -> None:
+def test_cxcy_logw_logh_profile_accepts_pure_ce_with_positive_gates() -> None:
     payload = _base_training_payload()
-    payload["custom"]["bbox_format"] = "center_log_size"
+    payload["custom"]["bbox_format"] = "cxcy_logw_logh"
     payload["custom"]["coord_soft_ce_w1"] = {
         "enabled": True,
         "ce_weight": 1.0,
@@ -355,13 +355,13 @@ def test_center_log_size_profile_accepts_pure_ce_with_positive_gates() -> None:
 
     cfg = TrainingConfig.from_mapping(payload, PromptOverrides())
 
-    assert cfg.custom.bbox_format == "center_log_size"
+    assert cfg.custom.bbox_format == "cxcy_logw_logh"
     assert cfg.custom.coord_soft_ce_w1.text_gate_weight == 1.0
 
 
-def test_center_log_size_profile_rejects_non_pure_soft_ce() -> None:
+def test_cxcy_logw_logh_profile_rejects_non_pure_soft_ce() -> None:
     payload = _base_training_payload()
-    payload["custom"]["bbox_format"] = "center_log_size"
+    payload["custom"]["bbox_format"] = "cxcy_logw_logh"
     payload["custom"]["coord_soft_ce_w1"] = {
         "enabled": True,
         "ce_weight": 1.0,
@@ -375,9 +375,9 @@ def test_center_log_size_profile_rejects_non_pure_soft_ce() -> None:
         TrainingConfig.from_mapping(payload, PromptOverrides())
 
 
-def test_center_log_size_profile_rejects_coord_tokens_disabled() -> None:
+def test_cxcy_logw_logh_profile_rejects_coord_tokens_disabled() -> None:
     payload = _base_training_payload()
-    payload["custom"]["bbox_format"] = "center_log_size"
+    payload["custom"]["bbox_format"] = "cxcy_logw_logh"
     payload["custom"]["coord_tokens"] = {
         "enabled": False,
         "skip_bbox_norm": True,
@@ -400,9 +400,9 @@ def test_center_log_size_profile_rejects_coord_tokens_disabled() -> None:
         TrainingConfig.from_mapping(payload, PromptOverrides())
 
 
-def test_center_log_size_profile_rejects_skip_bbox_norm_false() -> None:
+def test_cxcy_logw_logh_profile_rejects_skip_bbox_norm_false() -> None:
     payload = _base_training_payload()
-    payload["custom"]["bbox_format"] = "center_log_size"
+    payload["custom"]["bbox_format"] = "cxcy_logw_logh"
     payload["custom"]["coord_tokens"] = {
         "enabled": True,
         "skip_bbox_norm": False,

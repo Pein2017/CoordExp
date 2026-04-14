@@ -1,0 +1,43 @@
+# Run all COCO + proxy-expanded evaluation views from one scored cxcy_logw_logh
+# run directory.
+#
+# Prerequisite:
+# 1. Infer once with
+#    configs/infer/coco_1024/coco_bbox_max60-coco80-desc_first-1024-lvis_proxy-cxcy_logw_logh-pure_ce-2b-ckpt2600-merged.yaml
+#
+# Run:
+#   PYTHONPATH=. conda run -n ms python scripts/evaluate_proxy_detection_bundle.py \
+#     --config configs/eval/coco_1024/valfull_lvis_proxy_cxcy_logw_logh_pure_ce_2b_ckpt2600_bundle.yaml
+
+run_dir: output/infer/coco1024_valfull_lvis_proxy_cxcy_logw_logh_pure_ce_2b_ckpt2600_merged
+
+artifacts:
+  scored_jsonl: output/infer/coco1024_valfull_lvis_proxy_cxcy_logw_logh_pure_ce_2b_ckpt2600_merged/gt_vs_pred_scored.jsonl
+  proxy_views_dir: output/infer/coco1024_valfull_lvis_proxy_cxcy_logw_logh_pure_ce_2b_ckpt2600_merged/proxy_eval_views
+  output_root: output/infer/coco1024_valfull_lvis_proxy_cxcy_logw_logh_pure_ce_2b_ckpt2600_merged
+  summary_json: output/infer/coco1024_valfull_lvis_proxy_cxcy_logw_logh_pure_ce_2b_ckpt2600_merged/proxy_eval_bundle_summary.json
+
+views:
+  - coco_real
+  - coco_real_strict
+  - coco_real_strict_plausible
+
+metadata_namespace: coordexp_proxy_supervision
+
+eval:
+  metrics: both
+  use_segm: false
+  strict_parse: false
+  lvis_max_dets: 300
+
+  overlay: false
+  overlay_k: 12
+  num_workers: 8
+
+  semantic_model: model_cache/all-MiniLM-L6-v2-local
+  semantic_threshold: 0.5
+  semantic_device: cuda:1
+  semantic_batch_size: 64
+
+  f1ish_iou_thrs: [0.3, 0.5]
+  f1ish_pred_scope: annotated

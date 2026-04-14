@@ -46,13 +46,13 @@ def test_prompt_template_hash_changes_when_bbox_format_changes() -> None:
         bbox_format="xyxy",
         object_field_order="desc_first",
     )
-    center_log_size_hash = get_template_prompt_hash(
+    cxcy_logw_logh_hash = get_template_prompt_hash(
         prompt_variant="lvis_stage1_federated",
-        bbox_format="center_log_size",
+        bbox_format="cxcy_logw_logh",
         object_field_order="desc_first",
     )
 
-    assert xyxy_hash != center_log_size_hash
+    assert xyxy_hash != cxcy_logw_logh_hash
 
 
 @pytest.mark.parametrize("object_ordering", ["sorted", "random"])
@@ -88,13 +88,13 @@ def test_prompt_variant_cross_surface_parity_between_training_and_inference(
 
 
 @pytest.mark.parametrize("object_field_order", ["desc_first", "geometry_first"])
-def test_prompt_variant_cross_surface_parity_for_center_log_size(
+def test_prompt_variant_cross_surface_parity_for_cxcy_logw_logh(
     object_field_order: str,
 ) -> None:
     train_prompts = ConfigLoader.resolve_prompts(
         {
             "custom": {
-                "bbox_format": "center_log_size",
+                "bbox_format": "cxcy_logw_logh",
                 "object_ordering": "sorted",
                 "object_field_order": object_field_order,
                 "coord_tokens": {"enabled": True},
@@ -108,7 +108,7 @@ def test_prompt_variant_cross_surface_parity_for_center_log_size(
         model_checkpoint="dummy",
         mode="text",
         prompt_variant="lvis_stage1_federated",
-        bbox_format="center_log_size",
+        bbox_format="cxcy_logw_logh",
         object_field_order=object_field_order,
         object_ordering="sorted",
     )
@@ -277,11 +277,11 @@ def test_lvis_federated_prompt_variants_encode_partial_label_semantics() -> None
     assert "Detect every object in the image" not in stage2_system
 
 
-def test_center_log_size_prompts_explain_u_of_s_and_render_variant_placeholders() -> None:
-    default_system, default_user = get_template_prompts(bbox_format="center_log_size")
+def test_cxcy_logw_logh_prompts_explain_u_of_s_and_render_variant_placeholders() -> None:
+    default_system, default_user = get_template_prompts(bbox_format="cxcy_logw_logh")
     lvis_system, lvis_user = get_template_prompts(
         prompt_variant="lvis_stage1_federated",
-        bbox_format="center_log_size",
+        bbox_format="cxcy_logw_logh",
     )
 
     for prompt in (default_system, default_user, lvis_system, lvis_user):

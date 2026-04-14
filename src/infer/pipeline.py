@@ -23,9 +23,9 @@ from src.common.object_field_order import (
 )
 from src.config.prompts import get_template_prompt_hash, resolve_dense_prompt_variant_key
 from src.eval.artifacts import (
-    CENTER_LOG_SIZE_CONSTANT_PRED_SCORE_SOURCE,
-    CENTER_LOG_SIZE_CONSTANT_PRED_SCORE_VERSION,
-    CENTER_LOG_SIZE_CONSTANT_SCORE,
+    CXCY_LOGW_LOGH_CONSTANT_PRED_SCORE_SOURCE,
+    CXCY_LOGW_LOGH_CONSTANT_PRED_SCORE_VERSION,
+    CXCY_LOGW_LOGH_CONSTANT_SCORE,
     with_constant_scores,
     write_jsonl_records,
 )
@@ -660,11 +660,11 @@ def run_pipeline(
         encoding="utf-8",
     )
 
-    if resolved_bbox_format == "center_log_size":
+    if resolved_bbox_format == "cxcy_logw_logh":
         confidence_cfg = _get_map(cfg, "confidence")
         if confidence_cfg:
             raise ValueError(
-                "infer.bbox_format=center_log_size does not support confidence post-op in V1; remove the confidence section."
+                "infer.bbox_format=cxcy_logw_logh does not support confidence post-op in V1; remove the confidence section."
             )
 
     if stages.infer:
@@ -826,7 +826,9 @@ def _maybe_run_confidence_postop(
     want_scored = bool(confidence_cfg) or (
         eval_enabled and metrics_mode in {"coco", "lvis", "both"}
     )
-    if not want_scored and bbox_format == "xyxy":
+    # `cxcy_logw_logh` uses a deterministic constant-score scored artifact for
+    # official evaluation, so infer-only runs still need scored materialization.
+    if not want_scored and bbox_format in {"xyxy", "cxcy_logw_logh"}:
         want_scored = True
     if not want_scored:
         return
@@ -835,7 +837,7 @@ def _maybe_run_confidence_postop(
     scored_path = artifacts.gt_vs_pred_scored_jsonl
     if scored_path is None:
         return
-    if bbox_format == "center_log_size":
+    if bbox_format == "cxcy_logw_logh":
         if not base_path.is_file():
             return
         newest_input_mtime = base_path.stat().st_mtime
@@ -852,9 +854,9 @@ def _maybe_run_confidence_postop(
             scored_path,
             with_constant_scores(
                 records=rows,
-                pred_score_source=CENTER_LOG_SIZE_CONSTANT_PRED_SCORE_SOURCE,
-                pred_score_version=CENTER_LOG_SIZE_CONSTANT_PRED_SCORE_VERSION,
-                constant_score=CENTER_LOG_SIZE_CONSTANT_SCORE,
+                pred_score_source=CXCY_LOGW_LOGH_CONSTANT_PRED_SCORE_SOURCE,
+                pred_score_version=CXCY_LOGW_LOGH_CONSTANT_PRED_SCORE_VERSION,
+                constant_score=CXCY_LOGW_LOGH_CONSTANT_SCORE,
             ),
         )
         return
@@ -936,7 +938,7 @@ def _run_eval_stage(cfg: Mapping[str, Any], artifacts: ResolvedArtifacts) -> Non
 
     # Unified pipeline contract:
     # - COCO metrics require scored artifacts.
-    # - center_log_size uses a constant-score scored artifact for official eval.
+    # - cxcy_logw_logh uses a constant-score scored artifact for official eval.
     # - f1ish-only runs can use the base artifact.
     if want_official:
         scored_path = artifacts.gt_vs_pred_scored_jsonl

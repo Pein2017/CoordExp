@@ -106,13 +106,13 @@ def test_encoded_sample_cache_fingerprint_tracks_bbox_format(tmp_path) -> None:
         system_prompt_dense="sys",
         system_prompt_summary=None,
     )
-    center_log_size = _build_encoded_sample_cache_fingerprint(
+    cxcy_logw_logh = _build_encoded_sample_cache_fingerprint(
         training_config=SimpleNamespace(
             global_max_length=1024,
             template={"system": "sys", "truncation_strategy": "raise"},
         ),
         custom_config=SimpleNamespace(
-            **{**_custom_config().__dict__, "bbox_format": "center_log_size"}
+            **{**_custom_config().__dict__, "bbox_format": "cxcy_logw_logh"}
         ),
         template=_Template(max_length=128),
         train_args=SimpleNamespace(max_model_len=512),
@@ -126,8 +126,8 @@ def test_encoded_sample_cache_fingerprint_tracks_bbox_format(tmp_path) -> None:
     )
 
     assert xyxy["custom_bbox_format"] == "xyxy"
-    assert center_log_size["custom_bbox_format"] == "center_log_size"
-    assert xyxy != center_log_size
+    assert cxcy_logw_logh["custom_bbox_format"] == "cxcy_logw_logh"
+    assert xyxy != cxcy_logw_logh
 
 
 def test_encoded_sample_cache_fingerprint_tracks_prompt_variant_and_template_hash(
@@ -142,7 +142,7 @@ def test_encoded_sample_cache_fingerprint_tracks_prompt_variant_and_template_has
             template={"system": "sys", "truncation_strategy": "raise"},
         ),
         custom_config=SimpleNamespace(
-            **{**_custom_config().__dict__, "bbox_format": "center_log_size"},
+            **{**_custom_config().__dict__, "bbox_format": "cxcy_logw_logh"},
             extra={"prompt_variant": "default"},
         ),
         template=_Template(max_length=128),
@@ -161,7 +161,7 @@ def test_encoded_sample_cache_fingerprint_tracks_prompt_variant_and_template_has
             template={"system": "sys", "truncation_strategy": "raise"},
         ),
         custom_config=SimpleNamespace(
-            **{**_custom_config().__dict__, "bbox_format": "center_log_size"},
+            **{**_custom_config().__dict__, "bbox_format": "cxcy_logw_logh"},
             extra={"prompt_variant": "lvis_stage1_federated"},
         ),
         template=_Template(max_length=128),

@@ -10,12 +10,12 @@ Normative behavior:
 - the supported model-facing bbox parameterizations for this V1 change SHALL be
   exactly:
   - `xyxy`
-  - `center_log_size`
+  - `cxcy_logw_logh`
 - Stage-1 training SHALL resolve the parameterization from `custom.bbox_format`,
 - standalone inference SHALL resolve the parameterization from
   `infer.bbox_format`,
 - Stage-2 training, rollout-matching, and trainer-driven rollout/eval prompt
-  rebuilding MUST reject `center_log_size` in this V1 change,
+  rebuilding MUST reject `cxcy_logw_logh` in this V1 change,
 - raw JSONL, builder metadata, standardized prediction artifacts, evaluation
   inputs, benchmarking inputs, and visualization inputs MUST remain canonical
   `xyxy`,
@@ -24,19 +24,19 @@ Normative behavior:
 - `poly` behavior remains unchanged.
 
 #### Scenario: External artifacts remain canonical `xyxy`
-- **WHEN** a run uses `bbox_format=center_log_size`
+- **WHEN** a run uses `bbox_format=cxcy_logw_logh`
 - **THEN** raw JSONL and standardized evaluation/visualization artifacts remain
   canonical `bbox_2d: [x1, y1, x2, y2]`
 - **AND** no downstream evaluator schema migration is required.
 
-#### Scenario: Stage-2 rejects `center_log_size`
+#### Scenario: Stage-2 rejects `cxcy_logw_logh`
 - **WHEN** a Stage-2 or rollout-driven config requests
-  `custom.bbox_format=center_log_size`
+  `custom.bbox_format=cxcy_logw_logh`
 - **THEN** config validation fails fast with guidance that V1 is limited to
   Stage-1 and standalone inference.
 
-### Requirement: `center_log_size` is produced through a fixed internal conversion layer
-When model-facing `bbox_2d` uses `center_log_size`, the runtime SHALL derive it
+### Requirement: `cxcy_logw_logh` is produced through a fixed internal conversion layer
+When model-facing `bbox_2d` uses `cxcy_logw_logh`, the runtime SHALL derive it
 from canonical `xyxy` through a shared internal conversion layer.
 
 Normative behavior:
@@ -52,7 +52,7 @@ Normative behavior:
 - width and height MUST then enter the fixed V1 normalized log-size chart with
   global floor `s_min = 1/1024`:
   - `u(s) = (log(max(s, s_min)) - log(s_min)) / -log(s_min)`
-- model-facing `center_log_size` serialization MUST use:
+- model-facing `cxcy_logw_logh` serialization MUST use:
   - `[cx, cy, u(w), u(h)]`
 - each model-facing normalized slot `z` in `{cx, cy, u(w), u(h)}` MUST be
   quantized onto the coord-token lattice with:
@@ -72,18 +72,18 @@ Normative behavior:
   rendered or parsed.
 
 #### Scenario: Stage-1 renders center-log-size without mutating canonical geometry
-- **WHEN** a Stage-1 sample resolves `custom.bbox_format=center_log_size`
+- **WHEN** a Stage-1 sample resolves `custom.bbox_format=cxcy_logw_logh`
 - **THEN** model-facing bbox slots are rendered as center-log-size
 - **AND** the underlying canonical geometry remains `xyxy`.
 
 #### Scenario: Inference decodes center-log-size back to canonical geometry
-- **WHEN** standalone inference resolves `infer.bbox_format=center_log_size`
+- **WHEN** standalone inference resolves `infer.bbox_format=cxcy_logw_logh`
 - **THEN** parsed model-facing bbox slots are decoded through the shared inverse
   helper
 - **AND** standardized predictions are canonicalized to `xyxy`.
 
 #### Scenario: Stage-1 targets stay on the coord-token lattice
-- **WHEN** Stage-1 renders `center_log_size` bbox slots
+- **WHEN** Stage-1 renders `cxcy_logw_logh` bbox slots
 - **THEN** each slot is emitted through the existing `<|coord_k|>` vocabulary
 - **AND** no raw decimal bbox serialization is introduced.
 
@@ -106,7 +106,7 @@ Normative behavior:
 - bbox-format-only fingerprinting is insufficient.
 
 #### Scenario: Changing bbox parameterization invalidates cache identity
-- **WHEN** rendered dense samples switch between `xyxy` and `center_log_size`
+- **WHEN** rendered dense samples switch between `xyxy` and `cxcy_logw_logh`
 - **THEN** the cache identity changes
 - **AND** stale rendered samples are not reused.
 

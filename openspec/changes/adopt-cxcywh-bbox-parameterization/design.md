@@ -52,7 +52,7 @@ center-log-size parameterization help under minimal loss complexity?
 
 ## Decisions
 
-### 1. V1 uses a Stage-1/inference model-facing `center_log_size` parameterization
+### 1. V1 uses a Stage-1/inference model-facing `cxcy_logw_logh` parameterization
 
 Decision:
 
@@ -60,11 +60,11 @@ Decision:
 - `infer.bbox_format` remains the standalone inference-side knob.
 - Supported values for V1 are:
   - `xyxy`
-  - `center_log_size`
+  - `cxcy_logw_logh`
 - Stage-2 training, rollout-matching, and trainer-driven rollout/eval prompt
-  rebuilding are out of scope for `center_log_size` in V1 and MUST fail fast if
+  rebuilding are out of scope for `cxcy_logw_logh` in V1 and MUST fail fast if
   they request it.
-- `center_log_size` means model-facing `bbox_2d` is serialized as:
+- `cxcy_logw_logh` means model-facing `bbox_2d` is serialized as:
   - `[cx, cy, lw, lh]`
   where `lw = u(w)` and `lh = u(h)` are normalized log-size slots in the
   shared encoded space.
@@ -86,14 +86,14 @@ Decision:
   - benchmarking/evaluation inputs
   - visualization inputs
 - Only model-facing rendered targets / prompts / parsed predictions may use
-  `center_log_size`.
+  `cxcy_logw_logh`.
 
 Rationale:
 
 - This keeps downstream tooling stable and avoids a schema migration outside the
   training/inference boundary.
 
-### 3. The serializer uses an internal `xyxy -> center_log_size` conversion
+### 3. The serializer uses an internal `xyxy -> cxcy_logw_logh` conversion
 
 Decision:
 
@@ -147,7 +147,7 @@ Alternatives considered:
 Decision:
 
 - Dense prompt variants must render bbox instructions in terms of
-  `[cx, cy, u(w), u(h)]` when `bbox_format=center_log_size`.
+  `[cx, cy, u(w), u(h)]` when `bbox_format=cxcy_logw_logh`.
 - Prompt wording must define the size expression explicitly as:
   - `u(s) = (log(max(s, s_min)) - log(s_min)) / -log(s_min)`
 - Override-style prompt variants must use structured placeholders for:
@@ -198,7 +198,7 @@ Rationale:
 
 Decision:
 
-- Standalone inference may prompt for and parse `center_log_size`.
+- Standalone inference may prompt for and parse `cxcy_logw_logh`.
 - After parsing, standardized prediction objects are canonicalized to pixel
   `xyxy` before writing:
   - `gt_vs_pred.jsonl`
@@ -211,7 +211,7 @@ Decision:
   - `pred_confidence.jsonl`
   - any pipeline step that requires the raw bbox payload to be `(x1, y1, x2,
     y2)` bins
-- When `infer.bbox_format=center_log_size`, those confidence surfaces MUST fail
+- When `infer.bbox_format=cxcy_logw_logh`, those confidence surfaces MUST fail
   fast instead of silently reinterpreting raw bins.
 - Official score-aware evaluation remains allowed:
   - `gt_vs_pred_scored.jsonl`
@@ -267,7 +267,7 @@ Rationale:
 3. Update Stage-1 dataset rendering and prompt templates.
 4. Update Stage-1 coord supervision to the pure-CE-plus-gating profile.
 5. Update standalone inference parsing and canonicalized artifact emission, and
-   reject confidence post-op for `center_log_size` while allowing
+   reject confidence post-op for `cxcy_logw_logh` while allowing
    constant-score official-eval compatibility artifacts.
 6. Add focused tests and then replay later commits on top of the rewritten
    branch.

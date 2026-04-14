@@ -23,10 +23,10 @@ _USER_EXAMPLE_DESC_FIRST_XYXY = (
 _USER_EXAMPLE_GEOMETRY_FIRST_XYXY = (
     '{"bbox_2d": [<|coord_110|>, <|coord_310|>, <|coord_410|>, <|coord_705|>], "desc": "black cat near sofa"}'
 )
-_USER_EXAMPLE_DESC_FIRST_CENTER_LOG_SIZE = (
+_USER_EXAMPLE_DESC_FIRST_CXCY_LOGW_LOGH = (
     '{"desc": "black cat", "bbox_2d": [<|coord_260|>, <|coord_507|>, <|coord_408|>, <|coord_612|>]}'
 )
-_USER_EXAMPLE_GEOMETRY_FIRST_CENTER_LOG_SIZE = (
+_USER_EXAMPLE_GEOMETRY_FIRST_CXCY_LOGW_LOGH = (
     '{"bbox_2d": [<|coord_260|>, <|coord_507|>, <|coord_408|>, <|coord_612|>], "desc": "black cat near sofa"}'
 )
 
@@ -114,14 +114,14 @@ def _prompt_fragments(*, bbox_format: str, object_field_order: str) -> dict[str,
             "Each objects[] record must place exactly one geometry key (bbox_2d OR poly) before desc; never emit multiple geometries."
         )
         field_order_user_rule = "has one geometry (bbox_2d or poly) before desc"
-        user_example = _USER_EXAMPLE_GEOMETRY_FIRST_CENTER_LOG_SIZE
+        user_example = _USER_EXAMPLE_GEOMETRY_FIRST_CXCY_LOGW_LOGH
     else:
         field_order_system_rule = (
             "Each objects[] record must place desc before exactly one geometry key (bbox_2d OR poly); never emit multiple geometries."
         )
         field_order_user_rule = "has desc before one geometry (bbox_2d or poly)"
-        user_example = _USER_EXAMPLE_DESC_FIRST_CENTER_LOG_SIZE
-    if bbox_format_key == "center_log_size":
+        user_example = _USER_EXAMPLE_DESC_FIRST_CXCY_LOGW_LOGH
+    if bbox_format_key == "cxcy_logw_logh":
         return {
             _BBOX_SYSTEM_RULE_PLACEHOLDER: (
                 "bbox_2d is [cx, cy, u(w), u(h)] where u(s) = "

@@ -3,7 +3,7 @@ from __future__ import annotations
 import math
 from typing import Literal, Sequence, cast
 
-AllowedBBoxFormat = Literal["xyxy", "center_log_size"]
+AllowedBBoxFormat = Literal["xyxy", "cxcy_logw_logh"]
 
 DEFAULT_BBOX_FORMAT: AllowedBBoxFormat = "xyxy"
 BBOX_SIZE_FLOOR: float = 1.0 / 1024.0
@@ -20,9 +20,9 @@ def normalize_bbox_format(
     if not isinstance(value, str):
         raise TypeError(f"{path} must be a string when provided")
     normalized = value.strip().lower().replace("-", "_")
-    if normalized not in {"xyxy", "center_log_size"}:
+    if normalized not in {"xyxy", "cxcy_logw_logh"}:
         raise ValueError(
-            f"{path} must be one of ['center_log_size', 'xyxy'], got {value!r}"
+            f"{path} must be one of ['cxcy_logw_logh', 'xyxy'], got {value!r}"
         )
     return cast(AllowedBBoxFormat, normalized)
 
@@ -59,7 +59,7 @@ def log_size_decode(encoded: float, *, size_floor: float = BBOX_SIZE_FLOOR) -> f
     return float(size_floor) * ((1.0 / float(size_floor)) ** u)
 
 
-def xyxy_norm_to_center_log_size_norm(points: Sequence[float]) -> list[float]:
+def xyxy_norm_to_cxcy_logw_logh_norm(points: Sequence[float]) -> list[float]:
     x1, y1, x2, y2 = _canonical_xyxy_norm(points)
     width = max(x2 - x1, BBOX_SIZE_FLOOR)
     height = max(y2 - y1, BBOX_SIZE_FLOOR)
@@ -71,7 +71,7 @@ def xyxy_norm_to_center_log_size_norm(points: Sequence[float]) -> list[float]:
     ]
 
 
-def center_log_size_norm_to_xyxy_norm(points: Sequence[float]) -> list[float]:
+def cxcy_logw_logh_norm_to_xyxy_norm(points: Sequence[float]) -> list[float]:
     if len(points) != 4:
         raise ValueError(f"bbox_2d must contain 4 values, got {len(points)}")
     cx = min(max(float(points[0]), 0.0), 1.0)
@@ -86,16 +86,16 @@ def center_log_size_norm_to_xyxy_norm(points: Sequence[float]) -> list[float]:
     ]
 
 
-def xyxy_norm1000_to_center_log_size_bins(points: Sequence[float | int]) -> list[int]:
+def xyxy_norm1000_to_cxcy_logw_logh_bins(points: Sequence[float | int]) -> list[int]:
     norm = [decode_norm1000_slot(v) for v in points]
-    return [quantize_norm1000_slot(v) for v in xyxy_norm_to_center_log_size_norm(norm)]
+    return [quantize_norm1000_slot(v) for v in xyxy_norm_to_cxcy_logw_logh_norm(norm)]
 
 
-def center_log_size_norm1000_to_xyxy_norm1000(
+def cxcy_logw_logh_norm1000_to_xyxy_norm1000(
     points: Sequence[float | int],
 ) -> list[float]:
     norm = [decode_norm1000_slot(v) for v in points]
-    return [float(MAX_BIN) * v for v in center_log_size_norm_to_xyxy_norm(norm)]
+    return [float(MAX_BIN) * v for v in cxcy_logw_logh_norm_to_xyxy_norm(norm)]
 
 
 __all__ = [
@@ -103,13 +103,13 @@ __all__ = [
     "BBOX_SIZE_FLOOR",
     "DEFAULT_BBOX_FORMAT",
     "MAX_BIN",
-    "center_log_size_norm1000_to_xyxy_norm1000",
-    "center_log_size_norm_to_xyxy_norm",
+    "cxcy_logw_logh_norm1000_to_xyxy_norm1000",
+    "cxcy_logw_logh_norm_to_xyxy_norm",
     "decode_norm1000_slot",
     "log_size_decode",
     "log_size_encode",
     "normalize_bbox_format",
     "quantize_norm1000_slot",
-    "xyxy_norm1000_to_center_log_size_bins",
-    "xyxy_norm_to_center_log_size_norm",
+    "xyxy_norm1000_to_cxcy_logw_logh_bins",
+    "xyxy_norm_to_cxcy_logw_logh_norm",
 ]

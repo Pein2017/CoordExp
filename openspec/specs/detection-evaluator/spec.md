@@ -13,7 +13,7 @@ Normative duplicate-control behavior:
 - malformed or invalid geometry records remain owned by the existing evaluator
   validation contract and MUST NOT be reclassified as duplicate-control actions,
 - when evaluation consumes artifacts produced under
-  `infer.bbox_format=center_log_size`, the evaluator MAY consume either:
+  `infer.bbox_format=cxcy_logw_logh`, the evaluator MAY consume either:
   - the canonical raw standardized artifact family for raw/non-COCO metrics, or
   - a score-aware compatibility artifact family derived from the canonical raw
     artifact via deterministic constant-score provenance for official metrics,
