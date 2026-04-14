@@ -71,12 +71,12 @@ Normative behavior:
 - shared encode/decode helpers MUST be used wherever model-facing bbox slots are
   rendered or parsed.
 
-#### Scenario: Stage-1 renders center-log-size without mutating canonical geometry
+#### Scenario: Stage-1 renders cxcy-logw-logh without mutating canonical geometry
 - **WHEN** a Stage-1 sample resolves `custom.bbox_format=cxcy_logw_logh`
-- **THEN** model-facing bbox slots are rendered as center-log-size
+- **THEN** model-facing bbox slots are rendered as cxcy-logw-logh
 - **AND** the underlying canonical geometry remains `xyxy`.
 
-#### Scenario: Inference decodes center-log-size back to canonical geometry
+#### Scenario: Inference decodes cxcy-logw-logh back to canonical geometry
 - **WHEN** standalone inference resolves `infer.bbox_format=cxcy_logw_logh`
 - **THEN** parsed model-facing bbox slots are decoded through the shared inverse
   helper

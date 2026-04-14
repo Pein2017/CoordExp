@@ -6,6 +6,8 @@ from typing import Literal, Sequence, cast
 AllowedBBoxFormat = Literal["xyxy", "cxcy_logw_logh"]
 
 DEFAULT_BBOX_FORMAT: AllowedBBoxFormat = "xyxy"
+CXCY_LOGW_LOGH_SLOT_ORDER = "cxcy_logw_logh"
+CXCY_LOGW_LOGH_CONVERSION_VERSION = 1
 BBOX_SIZE_FLOOR: float = 1.0 / 1024.0
 MAX_BIN: int = 999
 
@@ -101,6 +103,8 @@ def cxcy_logw_logh_norm1000_to_xyxy_norm1000(
 __all__ = [
     "AllowedBBoxFormat",
     "BBOX_SIZE_FLOOR",
+    "CXCY_LOGW_LOGH_CONVERSION_VERSION",
+    "CXCY_LOGW_LOGH_SLOT_ORDER",
     "DEFAULT_BBOX_FORMAT",
     "MAX_BIN",
     "cxcy_logw_logh_norm1000_to_xyxy_norm1000",

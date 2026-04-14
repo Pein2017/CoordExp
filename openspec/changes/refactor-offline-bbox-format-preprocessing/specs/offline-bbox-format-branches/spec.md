@@ -10,6 +10,10 @@ Normative behavior:
   preset split JSONL such as `train.jsonl` / `val.jsonl` produced by the shared
   public-data pipeline,
 - the source records MUST remain canonical `xyxy` at the record boundary,
+- the source records MUST contain `bbox_2d` geometry only for this first
+  implementation surface,
+- the derivation stage MUST fail fast if any source record contains `poly` or
+  if geometry types are mixed across the source artifact,
 - the derivation stage MUST NOT accept an already-derived non-canonical branch
   as input for another bbox-format conversion,
 - the derivation stage MUST fail fast if the source artifact lacks the metadata
@@ -37,13 +41,13 @@ Normative behavior:
 - the canonical preset root under `public_data/<dataset>/<preset>/` MUST remain
   unchanged,
 - the derived branch root MUST be
-  `public_data/<dataset>/<preset>/bbox_formats/<format>/`,
+  `public_data/<dataset>/<preset>_<format>/`,
 - each derived branch MUST emit:
-  - `train.jsonl` containing offline-prepared numeric bbox tuples in the
-    derived chart,
+  - `train.jsonl` containing offline-prepared norm1000 integer bbox tuples in
+    the derived chart,
   - `train.coord.jsonl` containing the tokenized version of the same prepared
     tuples,
-  - `val.jsonl` containing offline-prepared numeric bbox tuples in the derived
+  - `val.jsonl` containing offline-prepared norm1000 integer bbox tuples in the derived
     chart when a canonical val source exists,
   - `val.coord.jsonl` containing the tokenized version of the same prepared
     tuples when a canonical val source exists,
@@ -54,7 +58,7 @@ Normative behavior:
 #### Scenario: Derived branch writes into a separate root
 - **WHEN** offline derivation is run for `cxcy_logw_logh`
 - **THEN** the outputs are written under
-  `public_data/<dataset>/<preset>/bbox_formats/cxcy_logw_logh/`
+  `public_data/<dataset>/<preset>_cxcy_logw_logh/`
 - **AND** the canonical preset files remain in place.
 
 #### Scenario: Missing val split preserves split semantics
@@ -74,6 +78,8 @@ Normative behavior:
   - derived bbox format,
   - derived bbox slot order,
   - coord-token/norm contract version,
+  - numeric split contract stating that `<split>.jsonl` uses norm1000 integer
+    slots on the same lattice as `<split>.coord.jsonl`,
   - bbox-format conversion version,
   - generator command or resolved configuration,
 - each emitted record MUST include metadata that identifies:

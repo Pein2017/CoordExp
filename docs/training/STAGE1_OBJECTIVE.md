@@ -29,8 +29,8 @@ Scope note:
   - `custom.bbox_geo.*`
   - `custom.bbox_size_aux.*`
 - Narrow V1 exception:
-  - the draft OpenSpec change `adopt-cxcywh-bbox-parameterization` defines an
-    experimental `custom.bbox_format: cxcy_logw_logh` profile for Stage-1 only
+  - `custom.bbox_format: cxcy_logw_logh` defines an experimental Stage-1-only
+    profile
   - under that profile, the allowed Stage-1 surface narrows to
     `custom.coord_soft_ce_w1.*` with hard CE plus positive coord/text gating
   - `custom.bbox_geo.*`, `custom.bbox_size_aux.*`, soft CE, W1, and trainer-side
@@ -147,9 +147,8 @@ custom:
 
 ## Stage-1 `cxcy_logw_logh` V1 experiment
 
-When the draft `adopt-cxcywh-bbox-parameterization` change is active and
-`custom.bbox_format: cxcy_logw_logh`, the Stage-1 loss surface is intentionally
-much narrower than the existing `xyxy` baseline:
+When `custom.bbox_format: cxcy_logw_logh`, the Stage-1 loss surface is
+intentionally much narrower than the existing `xyxy` baseline:
 
 - model-facing `bbox_2d` slots become `[cx, cy, u(w), u(h)]`
 - coord-token bbox supervision is hard CE only
@@ -181,6 +180,10 @@ Evaluation note:
   path, the runtime may still emit canonicalized `xyxy` artifacts, but those
   outputs should be treated as a compatibility stress test rather than as valid
   `cxcy_logw_logh` rollout behavior
+- training data for this profile must come from the offline-prepared
+  derived preset root such as
+  `public_data/<dataset>/<preset>_cxcy_logw_logh/train.coord.jsonl` rather
+  than a runtime reinterpretation of canonical preset JSONL
 
 ## Stage-1 bbox geometry loss
 

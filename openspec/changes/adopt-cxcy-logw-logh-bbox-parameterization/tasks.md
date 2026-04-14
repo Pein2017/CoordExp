@@ -1,7 +1,7 @@
 ## 1. OpenSpec Narrowing
 
 - [x] 1.1 Rewrite the bbox-parameterization change around the Stage-1-only
-  center-log-size experiment.
+  cxcy-logw-logh experiment.
 - [x] 1.2 Remove Stage-2 and regression-loss requirements from this V1 change so
   there is one unambiguous contract source of truth.
 
@@ -10,7 +10,7 @@
 - [x] 2.1 Support `custom.bbox_format` and `infer.bbox_format` values:
   `xyxy | cxcy_logw_logh`.
 - [x] 2.2 Add shared helpers that convert canonical `xyxy` boxes to/from
-  model-facing center-log-size slots using the fixed V1 log-size floor
+  model-facing cxcy-logw-logh slots using the fixed V1 log-size floor
   `1/1024`.
 - [x] 2.3 Make the coord-token carrier contract explicit for the new
   parameterization:
@@ -29,12 +29,12 @@
   expression defined explicitly.
 - [x] 3.3 Update Stage-1 dataset rendering / serialization so external
   canonical geometry stays `xyxy` while model-facing bbox slots use
-  center-log-size.
+  cxcy-logw-logh.
 
 ## 4. Stage-1 Loss Surface
 
 - [x] 4.1 Keep standard CE on non-coord tokens unchanged.
-- [x] 4.2 Update Stage-1 coord-token supervision so the center-log-size
+- [x] 4.2 Update Stage-1 coord-token supervision so the cxcy-logw-logh
   experiment runs in pure-CE mode:
   - coord CE enabled
   - soft CE disabled
@@ -53,7 +53,7 @@
 
 ## 5. Inference And Canonical Artifacts
 
-- [x] 5.1 Update standalone inference to parse center-log-size predictions and
+- [x] 5.1 Update standalone inference to parse cxcy-logw-logh predictions and
   canonicalize them to pixel `xyxy` before standardized artifact emission.
 - [x] 5.2 Keep `raw_output_json` as the parsed best-effort raw payload while
   standardized/vis artifacts stay canonical `xyxy`.
@@ -67,7 +67,7 @@
 
 - [x] 6.1 Add focused tests covering:
   prompt-template parity,
-  center-log-size encode/decode,
+  cxcy-logw-logh encode/decode,
   CE-only coord supervision,
   gating behavior,
   fail-fast rejection of non-pure settings,

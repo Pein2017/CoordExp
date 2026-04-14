@@ -14,6 +14,13 @@ def canonical_suffix(max_objects: int) -> str:
     return f"_max{int(max_objects)}"
 
 
+def bbox_format_suffix(bbox_format: str) -> str:
+    normalized = str(bbox_format or "").strip().lower().replace("-", "_")
+    if not normalized or normalized == "xyxy":
+        return ""
+    return f"_{normalized}"
+
+
 def _extract_trailing_max_value(name: str) -> int | None:
     match = _CANONICAL_MAX_SUFFIX_RE.search(name)
     if match is None:
@@ -73,3 +80,13 @@ def apply_max_suffix(base_preset: str, max_objects: int | None) -> str:
 def resolve_effective_preset(base_preset: str, max_objects: int | None) -> str:
     """Resolve emitted preset using canonical naming only."""
     return apply_max_suffix(base_preset, max_objects)
+
+
+def resolve_bbox_format_preset(base_preset: str, bbox_format: str | None) -> str:
+    """Resolve a standalone derived preset name for an offline bbox-format dataset."""
+    suffix = bbox_format_suffix(str(bbox_format or ""))
+    if not suffix:
+        return base_preset
+    if str(base_preset).endswith(suffix):
+        return str(base_preset)
+    return f"{base_preset}{suffix}"

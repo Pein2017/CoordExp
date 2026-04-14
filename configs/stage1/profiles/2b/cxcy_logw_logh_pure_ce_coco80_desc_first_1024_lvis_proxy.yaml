@@ -37,7 +37,7 @@ experiment:
     - stage1
     - exploratory
     - pure-ce
-    - center-log-size
+    - cxcy-logw-logh
     - cxcylogwlogh
     - duplication-collapse
 
@@ -48,6 +48,8 @@ training:
 
 custom:
   bbox_format: cxcy_logw_logh
+  train_jsonl: public_data/coco/rescale_32_1024_bbox_max60_lvis_proxy_cxcy_logw_logh/train.coord.jsonl
+  val_jsonl: public_data/coco/rescale_32_1024_bbox_max60_lvis_proxy_cxcy_logw_logh/val.coord.jsonl
   coord_soft_ce_w1:
     enabled: true
     # Narrow V1 experiment:

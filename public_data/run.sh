@@ -45,12 +45,13 @@ Commands:
   convert    Dataset-specific conversion into public_data/<dataset>/raw/{train,val}.jsonl
   rescale    Shared smart-resize into public_data/<dataset>/<preset>/
   coord      Shared coord-token conversion inside public_data/<dataset>/<preset>/
+  bbox-format  Offline bbox-format branch derivation under public_data/<dataset>/<preset>/bbox_formats/
   validate   Validate raw and/or preset artifacts; also sanity-check chat template on *.coord.jsonl
   all        download -> convert -> rescale -> coord -> validate
   help       Print this message and exit 0
 
 Runner flags:
-  --preset <name>          Preset dir name under public_data/<dataset>/ (used by rescale|coord|validate|all)
+  --preset <name>          Preset dir name under public_data/<dataset>/ (used by rescale|coord|bbox-format|validate|all)
   --conda-env <name>       Conda env name for python steps (default: ms)
   --skip-image-check       Skip image existence checks during validation
   --raw-only               For validate: validate only raw artifacts (no preset required)
@@ -67,6 +68,7 @@ Examples:
   ./public_data/run.sh vg all --preset rescale_32_768_bbox -- --objects-version 1.2.0
   ./public_data/run.sh lvis all --preset rescale_32_768_bbox
   ./public_data/run.sh lvis all --preset rescale_32_768_poly_20 -- --use-polygon
+  ./public_data/run.sh coco bbox-format --preset rescale_32_1024_bbox_max60_lvis_proxy -- --bbox-format cxcy_logw_logh
 EOF
 }
 
@@ -332,6 +334,31 @@ case "${COMMAND}" in
       "${PIPELINE_ARGS[@]}" \
       "${PASSTHROUGH_ARGS[@]}"
     set_paths_for_preset
+    ;;
+  bbox-format)
+    [[ -n "${PRESET}" ]] || die "bbox-format requires --preset <name>"
+    set_paths_for_preset
+    banner "[${DATASET}] bbox-format -> derived preset root"
+    if [[ ! -f "${PRESET_TRAIN_JSONL}" && ! -f "${PRESET_TRAIN_COORD_JSONL}" ]]; then
+      die "bbox-format requires canonical preset source files. Expected ${PRESET_TRAIN_JSONL} or ${PRESET_TRAIN_COORD_JSONL}"
+    fi
+    if [[ -n "${PIPELINE_MAX_OBJECTS}" ]]; then
+      die "PUBLIC_DATA_MAX_OBJECTS is only supported for 'coord'. Run bbox-format directly on the canonical preset."
+    fi
+    PIPELINE_ARGS=(
+      --mode bbox-format
+      --dataset-id "${DATASET}"
+      --dataset-dir "${DATASET_DIR}"
+      --raw-dir "${RAW_DIR}"
+      --preset "${PRESET}"
+    )
+    if [[ ${#PASSTHROUGH_ARGS[@]} -gt 0 ]]; then
+      run_py public_data/scripts/run_pipeline_factory.py \
+        "${PIPELINE_ARGS[@]}" \
+        -- "${PASSTHROUGH_ARGS[@]}"
+    else
+      die "bbox-format requires '-- --bbox-format <format>'"
+    fi
     ;;
   validate)
     if [[ "${RAW_ONLY}" == "true" && "${PRESET_ONLY}" == "true" ]]; then

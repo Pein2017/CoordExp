@@ -27,6 +27,15 @@ For a dataset id `<ds>`:
   - `public_data/<ds>/<preset>/train.coord.jsonl` (coord-token artifact)
   - `public_data/<ds>/<preset>/val.coord.jsonl` (optional)
   - `public_data/<ds>/<preset>/images/...`
+- Offline bbox-format preset outputs (shared bbox-format step writes these):
+  - `public_data/<ds>/<preset>_cxcy_logw_logh/train.jsonl`
+    (model-facing norm1000 integer artifact)
+  - `public_data/<ds>/<preset>_cxcy_logw_logh/train.norm.jsonl`
+    (same numeric lattice, kept for preset compatibility)
+  - `public_data/<ds>/<preset>_cxcy_logw_logh/train.coord.jsonl`
+    (tokenized artifact on the same lattice)
+  - matching `val.*` files when a val split exists
+  - `public_data/<ds>/<preset>_cxcy_logw_logh/pipeline_manifest.json`
 
 Image paths in JSONL are a contract requirement: they MUST be relative to the JSONL directory
 (`docs/data/CONTRACT.md`).
@@ -59,6 +68,7 @@ Tune shared preprocessing options (run steps separately; args after `--` go to t
 ```bash
 ./public_data/run.sh <dataset> rescale --preset <preset> -- --image-factor 32 --max-pixels $((32*32*768))
 ./public_data/run.sh <dataset> coord   --preset <preset>
+./public_data/run.sh <dataset> bbox-format --preset <preset> -- --bbox-format cxcy_logw_logh
 ./public_data/run.sh <dataset> validate --preset <preset> --skip-image-check
 ```
 
@@ -82,12 +92,29 @@ Notes:
   - optional max-object filtering
   - norm1000 numeric normalization
   - coord-token expansion
+  - optional offline bbox-format branch derivation
   - writer + manifest emission
   - optional in-plan validation stage
 - Output layer:
   - standardized `*.jsonl`, `*.norm.jsonl`, `*.coord.jsonl`
+  - standardized sibling derived preset roots such as
+    `<preset>_cxcy_logw_logh/{train,val}.jsonl`, `.norm.jsonl`, `.coord.jsonl`
   - relative image-path preservation
   - reproducibility manifest: `pipeline_manifest.json`
+
+## Offline Bbox-Format Branches
+
+The bbox-format preset is a separate offline workflow, not a runtime training
+feature.
+
+- It derives from canonical preset JSONL only.
+- The first supported branch surface is `bbox_2d`-only.
+- Any `poly` geometry or mixed geometry in the source preset fails fast.
+- `<preset>_cxcy_logw_logh/<split>.jsonl` stores norm1000 integer
+  `[cx, cy, logw, logh]` slots.
+- `<preset>_cxcy_logw_logh/<split>.coord.jsonl` stores the tokenized form
+  of the same lattice.
+- `all` remains canonical-only and does not create bbox-format branches.
 
 ## Max-Object Filtering (`max{N}`)
 Max-object filtering is **off by default**.
@@ -158,6 +185,10 @@ Produced records look like:
 - `*.norm.jsonl` uses normalized integers in [0,999].
 - `*.coord.jsonl` uses `<|coord_k|>` tokens.
 - Exactly one geometry per object (`bbox_2d` OR `poly`).
+- `<preset>_cxcy_logw_logh/<split>.jsonl` uses norm1000 integer
+  `bbox_2d` slots in `[cx, cy, logw, logh]`.
+- `<preset>_cxcy_logw_logh/<split>.coord.jsonl` uses the tokenized form of
+  those same slots.
 
 ## Validation
 ### Validator CLI

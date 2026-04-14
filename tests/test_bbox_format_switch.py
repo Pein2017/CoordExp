@@ -4,27 +4,15 @@ from types import SimpleNamespace
 
 import pytest
 import torch
-from PIL import Image
 
-from src.config.loader import ConfigLoader
-from src.config.schema import PromptOverrides, TrainingConfig
-from src.datasets.dense_caption import BaseCaptionDataset
 from src.common.coord_standardizer import CoordinateStandardizer
-from src.infer.engine import GenerationConfig, InferenceConfig, InferenceEngine
-from src.sft import (
-    PackingRuntimeConfig,
-    _build_static_packing_fingerprint,
-    _validate_bbox_format_contract,
+from src.common.geometry.bbox_parameterization import (
+    xyxy_norm1000_to_cxcy_logw_logh_bins,
 )
+from src.config.schema import PromptOverrides, TrainingConfig
+from src.sft import _validate_bbox_format_contract
 from src.trainers.losses.bbox_geo import compute_stage1_bbox_geo_loss
 from src.trainers.losses.bbox_size_aux import compute_stage1_bbox_size_aux_loss
-
-
-class _Template:
-    def __init__(self) -> None:
-        self.system = "system"
-        self.max_length = 256
-        self.max_pixels = 16384
 
 
 def _base_training_payload() -> dict:
@@ -59,12 +47,21 @@ def _perfect_next_token_logits(labels: torch.Tensor, *, vocab: int) -> torch.Ten
     return logits
 
 
-def test_custom_bbox_format_accepts_cxcywh_and_rejects_unknown() -> None:
+def test_custom_bbox_format_accepts_cxcy_logw_logh_and_rejects_unknown() -> None:
     payload = _base_training_payload()
-    payload["custom"]["bbox_format"] = "cxcywh"
+    payload["custom"]["bbox_format"] = "cxcy_logw_logh"
+    payload["custom"]["coord_tokens"] = {"enabled": True, "skip_bbox_norm": True}
+    payload["custom"]["coord_soft_ce_w1"] = {
+        "enabled": True,
+        "ce_weight": 1.0,
+        "soft_ce_weight": 0.0,
+        "w1_weight": 0.0,
+        "gate_weight": 1.0,
+        "text_gate_weight": 1.0,
+    }
 
     cfg = TrainingConfig.from_mapping(payload, PromptOverrides())
-    assert cfg.custom.bbox_format == "cxcywh"
+    assert cfg.custom.bbox_format == "cxcy_logw_logh"
 
     bad_payload = _base_training_payload()
     bad_payload["custom"]["bbox_format"] = "corners_plus"
@@ -72,99 +69,39 @@ def test_custom_bbox_format_accepts_cxcywh_and_rejects_unknown() -> None:
         TrainingConfig.from_mapping(bad_payload, PromptOverrides())
 
 
-def test_prompt_resolution_and_inference_parity_reflect_bbox_format() -> None:
-    train_prompts = ConfigLoader.resolve_prompts(
-        {
-            "custom": {
-                "object_ordering": "sorted",
-                "object_field_order": "desc_first",
-                "bbox_format": "cxcywh",
-                "coord_tokens": {"enabled": True},
-            }
-        }
+def test_coord_standardizer_converts_cxcy_logw_logh_predictions_to_xyxy() -> None:
+    serialized = xyxy_norm1000_to_cxcy_logw_logh_bins([100, 200, 400, 700])
+    standardizer = CoordinateStandardizer(
+        "text",
+        pred_coord_mode="norm1000",
+        bbox_format="cxcy_logw_logh",
     )
-
-    assert "[cx, cy, w, h]" in train_prompts.system
-    assert "[cx, cy, w, h]" in train_prompts.user
-    assert "implied top-left" in train_prompts.user
-
-    engine = InferenceEngine(
-        InferenceConfig(
-            gt_jsonl="dummy.jsonl",
-            model_checkpoint="dummy",
-            mode="text",
-            bbox_format="cxcywh",
-            object_ordering="sorted",
-        ),
-        GenerationConfig(),
-    )
-    messages = engine._build_messages(Image.new("RGB", (16, 16), color=(0, 0, 0)))
-
-    assert messages[0]["content"][0]["text"] == train_prompts.system
-    assert messages[1]["content"][0]["text"] == train_prompts.user
-
-
-def test_dataset_runtime_bbox_conversion_is_model_facing_only() -> None:
-    dataset = BaseCaptionDataset(
-        base_records=[
-            {
-                "images": ["dummy.jpg"],
-                "width": 100,
-                "height": 80,
-                "objects": [
-                    {"desc": "cat", "bbox_2d": [10, 20, 30, 60]},
-                ],
-            }
-        ],
-        template=_Template(),
-        user_prompt="Locate objects",
-        emit_norm="none",
-        json_format="standard",
-        bbox_format="cxcywh",
-    )
-
-    prepared = dataset._prepare_record_for_cache(base_idx=0)
-    assert prepared["objects"][0]["bbox_2d"] == [20, 40, 20, 40]
-    assert prepared["objects"][0]["_bbox_xyxy_original"] == [10, 20, 30, 60]
-
-    builder = dataset._create_builder("dense")
-    rendered, _messages = dataset._render_prepared_record(
-        record=prepared,
-        builder=builder,
-        system_prompt=None,
-    )
-    assert rendered["assistant_payload"]["objects"][0]["bbox_2d"] == [
-        "<|coord_20|>",
-        "<|coord_40|>",
-        "<|coord_20|>",
-        "<|coord_40|>",
-    ]
-    assert rendered["objects"]["bbox"][0] == [10, 20, 30, 60]
-
-
-def test_coord_standardizer_converts_cxcywh_predictions_to_xyxy() -> None:
-    standardizer = CoordinateStandardizer("text", pred_bbox_format="cxcywh")
     errors: list[str] = []
-    raw_text = '{"obj":{"bbox_2d":[50,25,20,10],"desc":"car"}}'
+    raw_text = (
+        '{"objects":[{"bbox_2d":['
+        f"{serialized[0]},{serialized[1]},{serialized[2]},{serialized[3]}"
+        '],"desc":"car"}]}'
+    )
+
     preds = standardizer.process_prediction_text(
         raw_text,
-        width=100,
-        height=50,
+        width=999,
+        height=999,
         errors=errors,
     )
 
     assert errors == []
-    assert preds[0]["points"] == [40, 20, 60, 30]
-    assert preds[0]["points_text"] == "40 20 60 30"
+    assert preds[0]["points"] == [100, 200, 400, 699]
+    assert preds[0]["points_text"] == "100 200 400 699"
 
 
-def test_stage1_bbox_losses_accept_cxcywh_serialization() -> None:
+def test_stage1_bbox_losses_accept_cxcy_logw_logh_serialization() -> None:
     vocab = 1200
     coord_token_ids = [100 + i for i in range(1000)]
     coord_id_map = _build_coord_id_map(vocab, coord_token_ids)
-    cxcywh_bins = [200, 300, 300, 400]
+    encoded_bins = xyxy_norm1000_to_cxcy_logw_logh_bins([200, 300, 500, 700])
     labels = torch.tensor(
-        [[0, 100 + cxcywh_bins[0], 100 + cxcywh_bins[1], 100 + cxcywh_bins[2], 100 + cxcywh_bins[3]]],
+        [[0, 100 + encoded_bins[0], 100 + encoded_bins[1], 100 + encoded_bins[2], 100 + encoded_bins[3]]],
         dtype=torch.long,
     )
     logits = _perfect_next_token_logits(labels, vocab=vocab)
@@ -177,7 +114,7 @@ def test_stage1_bbox_losses_accept_cxcywh_serialization() -> None:
         tokenizer=None,
         cfg={"smoothl1_weight": 1.0, "ciou_weight": 1.0},
         decode_temperature=1.0,
-        bbox_format="cxcywh",
+        bbox_format="cxcy_logw_logh",
     )
     size = compute_stage1_bbox_size_aux_loss(
         logits=logits,
@@ -187,7 +124,7 @@ def test_stage1_bbox_losses_accept_cxcywh_serialization() -> None:
         tokenizer=None,
         cfg={"log_wh_weight": 1.0, "oversize_penalty_weight": 0.0, "eps": 1e-6},
         decode_temperature=1.0,
-        bbox_format="cxcywh",
+        bbox_format="cxcy_logw_logh",
     )
 
     assert geo is not None
@@ -196,54 +133,9 @@ def test_stage1_bbox_losses_accept_cxcywh_serialization() -> None:
     assert float(size.total_loss.detach().cpu().item()) == pytest.approx(0.0, abs=1e-8)
 
 
-def test_static_packing_fingerprint_tracks_bbox_format() -> None:
-    template = _Template()
-    train_args = SimpleNamespace(max_model_len=512)
-    packing_cfg = PackingRuntimeConfig(enabled=True, mode="static", packing_length=256)
-
-    xyxy_cfg = SimpleNamespace(
-        user_prompt="prompt",
-        emit_norm="none",
-        json_format="standard",
-        object_ordering="sorted",
-        object_field_order="desc_first",
-        bbox_format="xyxy",
-        use_summary=False,
-        offline_max_pixels=None,
-        coord_tokens=None,
-        fusion_config=None,
-        system_prompt_dense=None,
-        system_prompt_summary=None,
-    )
-    cxcywh_cfg = SimpleNamespace(**{**xyxy_cfg.__dict__, "bbox_format": "cxcywh"})
-
-    fp_xyxy = _build_static_packing_fingerprint(
-        training_config=SimpleNamespace(template={}, training={}),
-        custom_config=xyxy_cfg,
-        template=template,
-        train_args=train_args,
-        dataset_seed=7,
-        packing_cfg=packing_cfg,
-        train_jsonl="train.jsonl",
-    )
-    fp_cxcywh = _build_static_packing_fingerprint(
-        training_config=SimpleNamespace(template={}, training={}),
-        custom_config=cxcywh_cfg,
-        template=template,
-        train_args=train_args,
-        dataset_seed=7,
-        packing_cfg=packing_cfg,
-        train_jsonl="train.jsonl",
-    )
-
-    assert fp_xyxy["custom_bbox_format"] == "xyxy"
-    assert fp_cxcywh["custom_bbox_format"] == "cxcywh"
-    assert fp_xyxy != fp_cxcywh
-
-
-def test_stage2_variants_fail_fast_for_non_xyxy_bbox_format() -> None:
-    with pytest.raises(ValueError, match="custom.bbox_format=cxcywh"):
+def test_validate_bbox_format_contract_rejects_stage2_cxcy_logw_logh() -> None:
+    with pytest.raises(ValueError, match="custom.bbox_format=cxcy_logw_logh"):
         _validate_bbox_format_contract(
-            custom_config=SimpleNamespace(bbox_format="cxcywh"),
+            custom_config=SimpleNamespace(bbox_format="cxcy_logw_logh"),
             trainer_variant="stage2_two_channel",
         )

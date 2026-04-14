@@ -1,5 +1,5 @@
 run:
-  name: duplication-collapse-contrastive-center-log-size-pure-ce-panel
+  name: duplication-collapse-contrastive-cxcy-logw-logh-pure-ce-panel
   output_dir: output/analysis
   checkpoint_name_filter: merged
   stages: [inventory, select_cases, reproduce, probe, compare, report]

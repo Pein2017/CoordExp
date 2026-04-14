@@ -6,7 +6,10 @@ from dataclasses import dataclass
 import torch
 import torch.nn.functional as F
 
-from src.common.geometry.bbox_formats import normalize_bbox_format
+from src.common.geometry.bbox_parameterization import (
+    BBOX_SIZE_FLOOR,
+    normalize_bbox_format,
+)
 
 
 @dataclass(frozen=True)
@@ -99,7 +102,11 @@ def bbox_tensor_to_xyxy(
     if bbox_format_norm == "xyxy":
         return canonicalize_bbox_xyxy(boxes)
 
-    cx, cy, w, h = boxes.unbind(dim=-1)
+    cx, cy, logw, logh = boxes.unbind(dim=-1)
+    size_floor = float(BBOX_SIZE_FLOOR)
+    inv_floor = boxes.new_tensor(1.0 / size_floor)
+    w = size_floor * torch.pow(inv_floor, logw.clamp(0.0, 1.0))
+    h = size_floor * torch.pow(inv_floor, logh.clamp(0.0, 1.0))
     half_w = w * 0.5
     half_h = h * 0.5
     return canonicalize_bbox_xyxy(

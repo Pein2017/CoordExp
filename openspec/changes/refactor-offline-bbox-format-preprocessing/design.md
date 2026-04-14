@@ -55,7 +55,7 @@ Decision:
   `public_data/<dataset>/<preset>/`.
 - Non-canonical model-facing artifacts live under a dedicated derived branch
   root, for example:
-  `public_data/<dataset>/<preset>/bbox_formats/<format>/`.
+  `public_data/<dataset>/<preset>_<format>/`.
 
 Rationale:
 - This preserves existing `xyxy` consumers, keeps evaluation/visualization
@@ -78,11 +78,16 @@ Decision:
   reads canonical preset split artifacts after shared rescale preparation.
 - For each available split, it emits a derived branch-local JSONL set using the
   same split naming pattern:
-  - `train.jsonl` / `val.jsonl` contain offline-prepared numeric bbox tuples in
-    the requested model-facing chart,
+  - `train.jsonl` / `val.jsonl` contain offline-prepared norm1000 integer bbox
+    tuples in the requested model-facing chart,
   - `train.coord.jsonl` / `val.coord.jsonl` contain the tokenized version of
     those same prepared tuples.
 - It does not derive from runtime dataset objects or from ad hoc prompt text.
+- The first implementation surface is intentionally bbox-only:
+  - the source preset MUST contain `bbox_2d` geometry only,
+  - any `poly` or mixed-geometry source fails fast,
+  - the derived branch preserves the object schema but rewrites only
+    `bbox_2d` slots.
 
 Rationale:
 - Keeping the branch inside `public_data/` makes derivation part of the same
@@ -138,6 +143,18 @@ Alternatives considered:
 - Keep both paths and let configs choose:
   rejected because it preserves too much subtle risk for paper-critical
   geometry experiments.
+
+### 4.5 Freeze the derived branch root
+
+Decision:
+- The canonical derived branch root is
+  `public_data/<dataset>/<preset>_<format>/`.
+- This change does not leave the subdirectory name open for later bikeshedding.
+
+Rationale:
+- The branch root is now part of the provenance contract, cache identity, and
+  workflow documentation.
+- Leaving the name unresolved would create churn without improving safety.
 
 ### 5. Prepared branches are self-describing and provenance-gated
 
@@ -240,10 +257,10 @@ Rollback:
   rolled back by removing the branch generator and keeping configs on canonical
   `xyxy` artifacts; no canonical dataset rewrite is required.
 
-## Open Questions
+## Resolved Notes
 
-- Should the derived branch path use `bbox_formats/<format>/` or another
-  canonical subdirectory name such as `model_facing/<format>/`?
-- Should the derived branch keep only `train.jsonl` / `val.jsonl` plus
-  `train.coord.jsonl` / `val.coord.jsonl`, or should it also emit a separate
-  decoded parity helper artifact for audits against canonical `xyxy`?
+- The derived branch root is fixed to `<preset>_<format>/`.
+- The branch contract in this change requires only `train.jsonl` / `val.jsonl`,
+  `train.coord.jsonl` / `val.coord.jsonl`, and `manifest.json` for the first
+  implementation surface. Any additional parity helpers are optional audit
+  artifacts, not part of the branch contract.

@@ -1,6 +1,6 @@
 ## ADDED Requirements
 
-### Requirement: Inference can parse model-facing center-log-size bbox slots and emit canonical artifacts
+### Requirement: Inference can parse model-facing cxcy-logw-logh bbox slots and emit canonical artifacts
 The unified inference engine SHALL support the V1 model-facing
 `cxcy_logw_logh` bbox parameterization while keeping standardized artifacts
 canonical.
@@ -30,7 +30,7 @@ Normative behavior:
 
 #### Scenario: Center-log-size inference emits canonical standardized artifacts
 - **WHEN** an inference run resolves `infer.bbox_format=cxcy_logw_logh`
-- **THEN** generation messages request center-log-size bbox output
+- **THEN** generation messages request cxcy-logw-logh bbox output
 - **AND** standardized prediction artifacts are emitted as canonical pixel-space
   `xyxy`.
 
@@ -63,7 +63,7 @@ Normative behavior:
 - **WHEN** an inference/post-processing run combines
   `infer.bbox_format=cxcy_logw_logh` with a confidence-postop request
 - **THEN** the run fails fast with guidance that V1 does not support
-  confidence-based score reconstruction for center-log-size bbox slots.
+  confidence-based score reconstruction for cxcy-logw-logh bbox slots.
 
 #### Scenario: Official eval uses a constant-score compatibility artifact
 - **WHEN** an inference/eval run resolves `infer.bbox_format=cxcy_logw_logh`
@@ -85,7 +85,7 @@ Minimum YAML schema MUST include:
 - `infer.object_field_order`
 - `infer.bbox_format` (`xyxy | cxcy_logw_logh`; default `xyxy`)
 
-#### Scenario: YAML config requests center-log-size inference
+#### Scenario: YAML config requests cxcy-logw-logh inference
 - **WHEN** a user runs inference with `infer.bbox_format=cxcy_logw_logh`
 - **THEN** the run succeeds
 - **AND** standardized artifacts remain canonical `xyxy`.

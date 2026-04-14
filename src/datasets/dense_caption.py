@@ -13,11 +13,12 @@ from swift.llm import MaxLengthError
 
 from src.common.geometry.bbox_parameterization import (
     AllowedBBoxFormat,
+    CXCY_LOGW_LOGH_CONVERSION_VERSION,
+    CXCY_LOGW_LOGH_SLOT_ORDER,
     DEFAULT_BBOX_FORMAT,
+    cxcy_logw_logh_norm1000_to_xyxy_norm1000,
     normalize_bbox_format,
-    xyxy_norm1000_to_cxcy_logw_logh_bins,
 )
-from src.common.geometry.bbox_formats import convert_bbox_2d_points
 from src.common.object_field_order import (
     ObjectFieldOrder,
     normalize_object_field_order,
@@ -348,38 +349,61 @@ class BaseCaptionDataset(Dataset):
             annotate_coord_tokens(record)
 
     def _apply_bbox_format(self, record: Dict[str, Any]) -> None:
+        metadata = record.get("metadata")
+        prepared_format_raw = (
+            metadata.get("prepared_bbox_format") if isinstance(metadata, Mapping) else None
+        )
         if self.bbox_format == "xyxy":
+            if prepared_format_raw not in (None, "", "xyxy"):
+                raise ValueError(
+                    "custom.bbox_format=xyxy cannot consume an offline-prepared non-canonical bbox branch. "
+                    "Use a canonical xyxy dataset or set custom.bbox_format to match the prepared branch."
+                )
             return
+        if not isinstance(metadata, Mapping):
+            raise ValueError(
+                "custom.bbox_format=cxcy_logw_logh requires record metadata provenance from an offline-prepared branch."
+            )
+        prepared_format = normalize_bbox_format(
+            prepared_format_raw,
+            path="metadata.prepared_bbox_format",
+        )
+        if prepared_format != self.bbox_format:
+            raise ValueError(
+                "custom.bbox_format does not match record metadata.prepared_bbox_format for "
+                f"offline-prepared bbox data: expected {self.bbox_format!r}, got {prepared_format!r}."
+            )
+        if str(metadata.get("prepared_bbox_slot_order") or "") != CXCY_LOGW_LOGH_SLOT_ORDER:
+            raise ValueError(
+                "custom.bbox_format=cxcy_logw_logh requires metadata.prepared_bbox_slot_order='cxcy_logw_logh'."
+            )
+        if str(metadata.get("prepared_bbox_source_format") or "") != "xyxy":
+            raise ValueError(
+                "custom.bbox_format=cxcy_logw_logh requires metadata.prepared_bbox_source_format='xyxy'."
+            )
+        version = metadata.get("prepared_bbox_conversion_version")
+        if int(version) != CXCY_LOGW_LOGH_CONVERSION_VERSION:
+            raise ValueError(
+                "custom.bbox_format=cxcy_logw_logh requires a supported prepared_bbox_conversion_version."
+            )
         objects = record.get("objects") or []
         if not isinstance(objects, list):
-            raise ValueError("record.objects must be a list before bbox-format conversion")
+            raise ValueError("record.objects must be a list before bbox-format validation")
         for obj_idx, obj in enumerate(objects):
             if not isinstance(obj, dict):
                 continue
             bbox = obj.get("bbox_2d")
             if bbox is None:
                 continue
-            original_xyxy = convert_bbox_2d_points(
-                bbox,
-                src_format="xyxy",
-                dst_format="xyxy",
-                path=f"objects[{obj_idx}].bbox_2d",
-            )
-            if self.bbox_format == "cxcy_logw_logh":
-                if sequence_has_coord_tokens(bbox):
-                    norm_bbox = tokens_to_ints(bbox, require_even=True)
-                else:
-                    norm_bbox = [int(round(float(v))) for v in bbox]
-                converted = xyxy_norm1000_to_cxcy_logw_logh_bins(norm_bbox)
+            if sequence_has_coord_tokens(bbox):
+                norm_bbox = tokens_to_ints(bbox, require_even=True)
             else:
-                converted = convert_bbox_2d_points(
-                    bbox,
-                    src_format="xyxy",
-                    dst_format=self.bbox_format,
-                    path=f"objects[{obj_idx}].bbox_2d",
-                )
+                norm_bbox = [int(round(float(v))) for v in bbox]
+            original_xyxy = [
+                int(round(v))
+                for v in cxcy_logw_logh_norm1000_to_xyxy_norm1000(norm_bbox)
+            ]
             obj["_bbox_xyxy_original"] = [int(round(v)) for v in original_xyxy]
-            obj["bbox_2d"] = [int(round(v)) for v in converted]
 
     def _enforce_max_pixels(self, record: Mapping[str, Any], *, base_idx: int) -> None:
         """Fail fast if a record would exceed the configured offline image budget.

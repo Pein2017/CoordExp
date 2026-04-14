@@ -66,7 +66,7 @@ def with_constant_scores(
                 if not isinstance(pred, Mapping):
                     continue
                 pred_out = dict(pred)
-                pred_out["score"] = float(pred_out.get("score", score))
+                pred_out["score"] = score
                 preds_out.append(pred_out)
         scored_row["pred"] = preds_out
         scored_rows.append(scored_row)

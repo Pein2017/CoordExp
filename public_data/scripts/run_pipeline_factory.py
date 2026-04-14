@@ -7,9 +7,10 @@ from pathlib import Path
 from public_data.defaults import DEFAULT_NUM_WORKERS
 from public_data.pipeline import PipelineConfig, PipelinePlanner
 from public_data.pipeline.adapters import build_default_registry
+from public_data.scripts.derive_bbox_format_branch import derive_bbox_format_branch
 
 INGESTION_MODES = {"download", "convert"}
-PIPELINE_MODES = {"rescale", "coord", "validate", "full"}
+PIPELINE_MODES = {"rescale", "coord", "validate", "full", "bbox-format"}
 
 
 def parse_args() -> argparse.Namespace:
@@ -56,7 +57,7 @@ def parse_args() -> argparse.Namespace:
         unknown = unknown[1:]
     args.passthrough_args = tuple(unknown)
 
-    if args.mode in {"rescale", "coord", "full"} and not args.preset:
+    if args.mode in {"rescale", "coord", "full", "bbox-format"} and not args.preset:
         parser.error(f"--preset is required for mode '{args.mode}'")
 
     if args.mode == "validate":
@@ -70,7 +71,11 @@ def parse_args() -> argparse.Namespace:
             "Run rescale/full first, then coord with --max-objects."
         )
 
-    if args.mode in PIPELINE_MODES and unknown:
+    if args.mode == "bbox-format":
+        if len(unknown) < 2 or unknown[0] != "--bbox-format":
+            parser.error("mode 'bbox-format' requires passthrough args: --bbox-format <format>")
+
+    if args.mode in PIPELINE_MODES and unknown and args.mode != "bbox-format":
         print(f"[pipeline][warn] Ignoring unsupported passthrough args: {' '.join(unknown)}")
 
     return args
@@ -90,6 +95,16 @@ def main() -> None:
         print(f"[pipeline] dataset={args.dataset_id}")
         print(f"[pipeline] ingestion={args.mode}")
         print(f"[pipeline] raw_dir={args.dataset_dir / 'raw'}")
+        return
+
+    if args.mode == "bbox-format":
+        output_dir = derive_bbox_format_branch(
+            preset_dir=args.dataset_dir / str(args.preset),
+            bbox_format=args.passthrough_args[1],
+        )
+        print(f"[pipeline] dataset={args.dataset_id}")
+        print(f"[pipeline] preset={output_dir.name}")
+        print(f"[pipeline] output_dir={output_dir}")
         return
 
     if args.mode == "validate":

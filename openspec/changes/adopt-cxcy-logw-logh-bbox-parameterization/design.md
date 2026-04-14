@@ -18,7 +18,7 @@ V1 is intentionally smaller:
 - regression-style bbox losses are deferred.
 
 This gives us a fast path to answer the actual research question: does a
-center-log-size parameterization help under minimal loss complexity?
+cxcy-logw-logh parameterization help under minimal loss complexity?
 
 ## Goals / Non-Goals
 
@@ -30,7 +30,7 @@ center-log-size parameterization help under minimal loss complexity?
 - Keep canonical `xyxy` on raw JSONL, builder metadata, standardized inference
   artifacts, evaluation, benchmarking, and visualization.
 - Implement one shared Stage-1/inference conversion layer between canonical
-  `xyxy` and model-facing center-log-size slots.
+  `xyxy` and model-facing cxcy-logw-logh slots.
 - Update prompt templates so the model is clearly instructed to emit
   `[cx, cy, u(w), u(h)]`, with `u(*)` defined as the shared log-size
   expression.
@@ -261,9 +261,9 @@ Rationale:
 
 ## Migration Plan
 
-1. Rewrite the OpenSpec change around the Stage-1-only center-log-size scope.
+1. Rewrite the OpenSpec change around the Stage-1-only cxcy-logw-logh scope.
 2. Add shared encode/decode helpers between canonical `xyxy` and model-facing
-   center-log-size slots.
+   cxcy-logw-logh slots.
 3. Update Stage-1 dataset rendering and prompt templates.
 4. Update Stage-1 coord supervision to the pure-CE-plus-gating profile.
 5. Update standalone inference parsing and canonicalized artifact emission, and
@@ -275,5 +275,5 @@ Rationale:
 ## Open Questions
 
 - None for the narrowed V1 scope. The user has decided to keep external `xyxy`
-  canonical, use internal center-log-size conversion, limit training to
+  canonical, use internal cxcy-logw-logh conversion, limit training to
   Stage-1, and defer regression-style bbox losses.

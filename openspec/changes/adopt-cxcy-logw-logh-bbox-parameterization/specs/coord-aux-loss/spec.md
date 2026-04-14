@@ -1,6 +1,6 @@
 ## ADDED Requirements
 
-### Requirement: Stage-1 center-log-size experiment uses hard coord-token CE plus positive gating
+### Requirement: Stage-1 cxcy-logw-logh experiment uses hard coord-token CE plus positive gating
 The Stage-1 bbox-parameterization experiment SHALL keep the coord-token loss
 surface minimal by using pure CE on bbox coord slots while retaining gating
 terms that separate coord and non-coord token families.
@@ -34,7 +34,7 @@ Normative behavior:
   - `coord_diag/text_gate`
 - this V1 change MUST reject decoded-box regression losses.
 
-#### Scenario: Stage-1 center-log-size runs in pure-CE mode
+#### Scenario: Stage-1 cxcy-logw-logh runs in pure-CE mode
 - **GIVEN** `custom.bbox_format=cxcy_logw_logh`
 - **WHEN** config validation runs for the V1 experiment
 - **THEN** `ce_weight` is active for coord slots
@@ -61,7 +61,7 @@ Normative behavior:
   only.
 
 ### Requirement: Regression-style bbox losses are rejected in the V1 experiment
-The V1 center-log-size experiment SHALL defer regression-style bbox losses so
+The V1 cxcy-logw-logh experiment SHALL defer regression-style bbox losses so
 the parameterization can be evaluated under minimal loss complexity.
 
 Normative behavior:
@@ -77,7 +77,7 @@ Normative behavior:
   rather than on raw width/height.
 
 #### Scenario: V1 does not depend on decoded-box regression
-- **WHEN** the Stage-1 center-log-size experiment is enabled
+- **WHEN** the Stage-1 cxcy-logw-logh experiment is enabled
 - **THEN** training remains well-defined without `bbox_geo` or `bbox_size_aux`
 - **AND** the parameterization experiment is evaluated under CE-plus-gating
   supervision only.

@@ -26,9 +26,12 @@ branch instead of reconstructing model-facing geometry online.
   path.
 - Require each non-canonical prepared-data branch to export split-local JSONL
   artifacts for both train and val when those splits exist:
-  - `train.jsonl` / `val.jsonl` for the offline-prepared numeric branch,
+  - `train.jsonl` / `val.jsonl` for the offline-prepared norm1000 integer branch,
   - `train.coord.jsonl` / `val.coord.jsonl` for the tokenized training branch,
   - plus branch provenance metadata.
+- Scope the first offline branch to `bbox_2d`-only presets and fail fast on
+  `poly` or mixed-geometry sources instead of carrying forward the current
+  mixed-geometry branching.
 - **BREAKING**: remove the supported Stage-1 online bbox-format conversion path
   for `cxcy_logw_logh`; configs that request that experiment must point to an
   offline-prepared `cxcy_logw_logh` dataset branch and MUST fail fast when the

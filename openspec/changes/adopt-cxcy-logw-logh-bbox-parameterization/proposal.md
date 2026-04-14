@@ -25,7 +25,7 @@ coord slots and no regression-style bbox losses.
   metadata, standardized inference artifacts, evaluation, benchmarking, and
   visualization.
 - Add an internal conversion layer in Stage-1 dataset rendering / serialization
-  that converts canonical `xyxy` boxes into a model-facing center-log-size
+  that converts canonical `xyxy` boxes into a model-facing cxcy-logw-logh
   tuple while keeping external field names unchanged:
   - field name remains `bbox_2d`
   - non-geometry fields such as `desc` remain unchanged
@@ -38,7 +38,7 @@ coord slots and no regression-style bbox losses.
     non-coord token families
   - defer soft-CE, W1, Smooth L1, bbox geometry regression, and bbox size aux
 - Keep Stage-1 and standalone inference canonical at the external boundary by
-  decoding model-facing center-log-size predictions back to `xyxy` before
+  decoding model-facing cxcy-logw-logh predictions back to `xyxy` before
   standardized artifact emission.
 - Explicitly keep trainer-driven rollout/eval prompt rebuilding and Stage-2
   training out of scope for V1; those surfaces remain `xyxy`-only and must
@@ -53,15 +53,15 @@ coord slots and no regression-style bbox losses.
 
 ### New Capabilities
 - `bbox-parameterization-contract`: defines the Stage-1/inference-facing
-  center-log-size bbox serialization while preserving canonical external
+  cxcy-logw-logh bbox serialization while preserving canonical external
   `xyxy`.
 
 ### Modified Capabilities
 - `dataset-prompt-variants`: dense prompts now support structured wording for
-  the center-log-size bbox parameterization.
-- `inference-engine`: inference can parse model-facing center-log-size bbox
+  the cxcy-logw-logh bbox parameterization.
+- `inference-engine`: inference can parse model-facing cxcy-logw-logh bbox
   predictions and canonicalize them before standardized artifact emission.
-- `coord-aux-loss`: Stage-1 coord-token supervision can run the center-log-size
+- `coord-aux-loss`: Stage-1 coord-token supervision can run the cxcy-logw-logh
   experiment in hard-CE-only mode while retaining explicit coord-gate and
   text-gate terms.
 

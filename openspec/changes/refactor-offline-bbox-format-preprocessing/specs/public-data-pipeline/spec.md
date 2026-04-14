@@ -112,7 +112,8 @@ Mutual exclusivity:
 - **GIVEN** the user runs `public_data/run.sh <dataset> all --preset <preset>`
 - **WHEN** canonical preprocessing completes successfully
 - **THEN** the runner produces canonical raw/rescale/coord/validate outputs only
-- **AND** it does not silently create `bbox_formats/<format>/` artifacts.
+- **AND** it does not silently create sibling derived preset roots such as
+  `<preset>_cxcy_logw_logh/`.
 
 #### Scenario: Conda environment is unavailable
 - **GIVEN** `conda` or the requested conda environment is not available on the system
@@ -131,13 +132,16 @@ Normative behavior:
   `conda run -n <conda-env> python ...`,
 - the step SHALL consume canonical `train.jsonl` and `val.jsonl`
   (when present) from the preset root,
+- the step SHALL accept only canonical `bbox_2d`-only preset sources for the
+  first implementation surface,
+- the step SHALL fail fast on any `poly` geometry or mixed-geometry source,
 - the step SHALL require the desired bbox format to be passed explicitly
   through the shared derivation interface,
 - the step SHALL write derived artifacts only under
-  `public_data/<dataset>/<preset>/bbox_formats/<format>/`,
+  `public_data/<dataset>/<preset>_<format>/`,
 - for each available split, the step SHALL emit:
-  - `<split>.jsonl` containing offline-prepared numeric bbox tuples for the
-    requested chart,
+  - `<split>.jsonl` containing offline-prepared norm1000 integer bbox tuples
+    for the requested chart,
   - `<split>.coord.jsonl` containing the tokenized version of the same prepared
     tuples,
 - the step SHALL fail fast if the canonical source artifacts are missing,
@@ -147,7 +151,7 @@ Normative behavior:
 - **WHEN** the user runs
   `public_data/run.sh <dataset> bbox-format --preset <preset> -- --bbox-format cxcy_logw_logh`
 - **THEN** the runner emits the derived branch under
-  `bbox_formats/cxcy_logw_logh/`
+  `<preset>_cxcy_logw_logh/`
 - **AND** it leaves the canonical preset artifacts unchanged.
 
 #### Scenario: Derivation rejects a non-canonical preset source
@@ -162,20 +166,23 @@ branches under a preset in addition to raw and canonical preset outputs.
 
 Normative behavior:
 - `validate --preset <preset>` SHALL inspect canonical preset artifacts and any
-  discovered `bbox_formats/<format>/` branches under that preset,
+  discovered sibling derived preset roots for that canonical preset, including
+  `<preset>_cxcy_logw_logh/` when present,
 - validation for derived branches SHALL check:
   - required branch files for both the numeric split JSONL and coord-token
     split JSONL surfaces,
   - manifest presence and schema,
   - record-level prepared bbox-format metadata,
   - record-level slot-order metadata,
+  - that numeric split JSONL uses norm1000 integer slots on the same lattice as
+    the corresponding coord-token split JSONL,
   - geometry arity and coord-token/norm lattice validity,
 - validation SHALL fail fast on missing manifest/provenance fields or geometry
   contract violations in derived branches.
 
 #### Scenario: Validate inspects a derived branch
 - **WHEN** the user runs `public_data/run.sh <dataset> validate --preset <preset>`
-- **AND** `bbox_formats/cxcy_logw_logh/` exists under that preset
+- **AND** `<preset>_cxcy_logw_logh/` exists under that canonical preset root
 - **THEN** validation includes the derived branch files
 - **AND** reports derived-branch provenance/contract errors if present.
 

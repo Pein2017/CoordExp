@@ -117,6 +117,7 @@ def test_stage1_detection_eval_backfills_lvis_metadata_and_logs_metrics(
                 {
                     "desc": "cat",
                     "bbox_2d": [10, 20, 110, 120],
+                    "score": 0.17,
                 }
             ],
             "raw_output_json": {"objects": []},

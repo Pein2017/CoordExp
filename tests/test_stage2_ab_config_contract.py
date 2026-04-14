@@ -876,7 +876,7 @@ def test_stage2_pipeline_accepts_bbox_geo_center_size_keys() -> None:
     assert float(bbox_geo_cfg["size_weight"]) == pytest.approx(0.25)
 
 
-@pytest.mark.parametrize("parameterization", ["center", "cxcywh"])
+@pytest.mark.parametrize("parameterization", ["center", "corner_size"])
 def test_stage2_pipeline_rejects_bbox_geo_invalid_parameterization(
     parameterization: str,
 ) -> None:

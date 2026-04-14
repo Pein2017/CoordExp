@@ -68,7 +68,7 @@ Stage-1 training families that parity tests expect to stay user-visible.
 
 Stage-1 `cxcy_logw_logh` note:
 
-- The draft `adopt-cxcywh-bbox-parameterization` profile uses `coord_softce_w1/ce`,
+- The `cxcy_logw_logh` Stage-1 profile uses `coord_softce_w1/ce`,
   `coord_softce_w1/gate`, and `coord_softce_w1/text_gate` while forcing
   `soft_ce` and `w1` to zero.
 

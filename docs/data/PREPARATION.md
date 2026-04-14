@@ -26,6 +26,7 @@ Raw annotations/images
   → smart resize (public_data/scripts/rescale_jsonl.py)
   → tiny subset (public_data/scripts/sample_dataset.py)
   → coord tokens (public_data/scripts/convert_to_coord_tokens.py)
+  → bbox-format branch (optional, public_data/run.sh <dataset> bbox-format)
   → (optional) image-level filter (public_data/scripts/filter_low_diversity_images.py)
   → training (custom.train_jsonl / custom.val_jsonl)
 ```
@@ -44,6 +45,8 @@ The preferred way to prepare public datasets is the unified runner:
 
 **Key Commands**:
 - `all`: download + convert + rescale + coord + validate (using a preset).
+- `bbox-format`: derive an offline non-canonical bbox branch from a canonical
+  preset.
 - `validate`: check annotation structure and optionally image presence.
 
 **Examples**:
@@ -53,6 +56,9 @@ The preferred way to prepare public datasets is the unified runner:
 
 # LVIS polygons (segmentation → poly)
 ./public_data/run.sh lvis all --preset rescale_32_768_poly_20 -- --use-polygon --poly-max-points 20
+
+# Derive an offline cxcy_logw_logh branch from an existing canonical preset
+./public_data/run.sh coco bbox-format --preset rescale_32_1024_bbox_max60_lvis_proxy -- --bbox-format cxcy_logw_logh
 ```
 
 ---
@@ -158,6 +164,30 @@ For LVIS, there is also a legacy single-script baseline:
 bash public_data/scripts/lvis_full_pipeline.sh
 ```
 
+## Offline Bbox-Format Branches
+
+Use the offline bbox-format branch only when you need a non-canonical
+model-facing training surface such as `cxcy_logw_logh`.
+
+- Source contract:
+  - the source preset remains canonical `xyxy`
+  - the first supported branch surface is `bbox_2d`-only
+  - `poly` or mixed-geometry presets fail fast
+- Output contract:
+  - `public_data/<dataset>/<preset>_cxcy_logw_logh/<split>.jsonl`
+    stores norm1000 integer `bbox_2d` slots in `[cx, cy, logw, logh]`
+  - `public_data/<dataset>/<preset>_cxcy_logw_logh/<split>.norm.jsonl`
+    keeps the same numeric lattice in preset-compatible layout
+  - `public_data/<dataset>/<preset>_cxcy_logw_logh/<split>.coord.jsonl`
+    stores the tokenized form of the same lattice
+  - `pipeline_manifest.json` records canonical source lineage plus
+    prepared-bbox provenance
+- Training contract:
+  - `custom.train_jsonl` / `custom.val_jsonl` for `custom.bbox_format:
+    cxcy_logw_logh` must point at the derived preset artifacts
+  - runtime dataset code must not convert canonical `xyxy` sources into
+    `cxcy_logw_logh` on the fly
+
 ---
 
 ## Quality & Visualization
@@ -192,6 +222,10 @@ This exports both `bbox_only` and `poly_prefer_semantic` train/val JSONLs. See `
 ## Handoff to Training
 
 - Point `custom.train_jsonl` / `custom.val_jsonl` to the resized or coord-token JSONL.
+- For `custom.bbox_format: cxcy_logw_logh`, point them to the offline-prepared
+  derived preset root such as
+  `public_data/<dataset>/<preset>_cxcy_logw_logh/train.coord.jsonl`, not to
+  the canonical preset root.
 - For LVIS, pick a dataset-fixed variant that matches your ablation goal:
   - Geometry ablations: use `public_data/scripts/export_lvis_bbox_poly_prefer_semantic_max60.sh` outputs under `public_data/lvis/`.
   - Sequence-length control: apply a simple record-level `max_objects` cap (e.g., 60).

@@ -48,38 +48,32 @@ Note: only `bbox_2d` and `poly` are supported in CoordExp; `line` geometries are
 - Assistant dense outputs use top-level `{"objects": [...]}` and bare CoordTok literals in geometry arrays (e.g., `[<|coord_123|>, <|coord_456|>, ...]`).
 - Parsing boundary for assistant-output-like text is `CoordJSON -> strict JSON` transpilation, then `json.loads`.
 
-### Canonical raw bbox vs model-facing bbox parameterization
-- Raw JSONL `bbox_2d` remains canonical `xyxy`, even when model-facing training
-  or inference text is rendered with another bbox parameterization.
-- In raw JSONL and other model-independent geometry surfaces, bbox coords remain
-  the current linear norm1000 / coord-token contract for canonical
-  `[x1, y1, x2, y2]`.
-- Runtime may render model-facing `bbox_2d` as an internal `cxcy_logw_logh`
-  tuple for prompts or teacher-forced targets.
-- When runtime renders model-facing `bbox_2d` as `cxcy_logw_logh`:
-  - external field names remain unchanged (`bbox_2d`, `desc`, etc.),
-  - the four model-facing slots represent `[cx, cy, u(w), u(h)]`,
-  - `u(s) = (log(max(s, s_min)) - log(s_min)) / -log(s_min)` is the shared
-    log-size expression,
-  - each slot `z` is still carried by the existing coord-token lattice via
-    `k = clamp(floor(999 * z + 0.5), 0, 999)` and `<|coord_k|>`,
-  - inverse parsing first decodes `z_hat = k / 999`,
-  - width/height are serialized through the shared fixed log-size chart rather
-    than as raw linear size bins,
-  - canonical geometry is reconstructed from the decoded slots as
-    `x1 = cx - w / 2`, `y1 = cy - h / 2`, `x2 = cx + w / 2`, `y2 = cy + h / 2`,
-  - reconstructed boxes then follow the shared canonical `xyxy`
-    clamp/canonicalization rules,
-  - downstream parsing/eval boundaries must invert that chart before
-    canonicalizing back to `xyxy`.
-- Model-independent caches, metadata, and emitted evaluation artifacts MUST
-  remain canonical `xyxy`.
+### Canonical preset data vs offline-prepared bbox-format branches
+- Canonical raw and preset JSONL remain model-independent `xyxy` surfaces.
+- Runtime training and builder code MUST NOT reinterpret canonical preset
+  `bbox_2d` records into another bbox chart on the fly.
+- Non-canonical model-facing bbox charts are authored offline under
+  sibling preset roots such as
+  `public_data/<dataset>/<preset>_cxcy_logw_logh/`.
+- For `<preset>_cxcy_logw_logh/`:
+  - `<split>.jsonl` stores norm1000 integer `bbox_2d` slots in
+    `[cx, cy, logw, logh]`,
+  - `<split>.norm.jsonl` mirrors the same numeric lattice in preset-compatible
+    layout,
+  - `<split>.coord.jsonl` stores the tokenized form of that same lattice,
+  - branch records must include prepared-bbox provenance metadata,
+  - the first supported branch surface is `bbox_2d`-only and fails fast on
+    `poly` or mixed geometry.
+- Inference, visualization, matching, and emitted evaluation artifacts remain
+  canonical `xyxy`; any `cxcy_logw_logh` prediction surface must be inverted
+  back to canonical `xyxy` before those downstream boundaries.
 
 ## Invariants
 - For training, coords MUST be pre-normalized to norm1000 (ints 0..999) or pre-tokenized `<|coord_k|>` values. Width/height must always be present.
 - This raw-data invariant applies to canonical raw JSONL and other
-  model-independent geometry surfaces. It does not imply that every model-facing
-  bbox slot is always interpreted through the same linear chart at runtime.
+  model-independent geometry surfaces. Offline-prepared bbox-format branches may
+  encode model-facing bbox slots differently, but they must declare that branch
+  provenance explicitly instead of relying on runtime reinterpretation.
 - Image paths remain relative in JSONL; loaders resolve them to absolute paths.
 - Geometry is validated; records with multiple geometry fields per object are rejected.
 - Runtime payload emission is fail-fast: builders/preprocessors reject objects with missing geometry, multiple geometry fields, invalid bbox/poly arity, or empty `desc` instead of serializing partial objects.
