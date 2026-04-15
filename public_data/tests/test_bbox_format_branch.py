@@ -11,7 +11,12 @@ from public_data.scripts.derive_bbox_format_branch import derive_bbox_format_bra
 from src.common.geometry.bbox_parameterization import (
     CXCY_LOGW_LOGH_CONVERSION_VERSION,
     CXCY_LOGW_LOGH_SLOT_ORDER,
+    CXCYWH_CONVERSION_VERSION,
+    CXCYWH_SLOT_ORDER,
+    cxcy_logw_logh_norm1000_to_xyxy_norm1000,
+    cxcywh_norm1000_to_xyxy_norm1000,
     xyxy_norm1000_to_cxcy_logw_logh_bins,
+    xyxy_norm1000_to_cxcywh_bins,
 )
 
 
@@ -179,3 +184,122 @@ def test_derive_bbox_format_branch_accepts_canonical_coord_only_preset(tmp_path:
     source_image = base_preset_dir / "images/train2017/000000000001.jpg"
     assert derived_image.exists()
     assert source_image.stat().st_ino == derived_image.stat().st_ino
+
+
+def test_derive_bbox_format_branch_resorts_for_decoded_xyxy_order_after_conversion(
+    tmp_path: Path,
+) -> None:
+    preset_dir = tmp_path / "public_data" / "coco" / "rescale_32_768_bbox"
+    row = {
+        "images": ["images/train2017/000000000001.jpg"],
+        "objects": [
+            {"bbox_2d": [566, 462, 605, 480], "desc": "truck"},
+            {"bbox_2d": [572, 462, 604, 481], "desc": "car"},
+        ],
+        "width": 1000,
+        "height": 1000,
+    }
+    _write_jsonl(preset_dir / "train.jsonl", [row])
+    _write_image(preset_dir / row["images"][0], width=row["width"], height=row["height"])
+
+    branch_root = derive_bbox_format_branch(
+        preset_dir=preset_dir,
+        bbox_format="cxcy_logw_logh",
+    )
+
+    train_row = json.loads((branch_root / "train.jsonl").read_text(encoding="utf-8").splitlines()[0])
+    prepared_boxes = [obj["bbox_2d"] for obj in train_row["objects"]]
+    decoded_anchors = [
+        tuple(
+            float(v)
+            for v in (
+                cxcy_logw_logh_norm1000_to_xyxy_norm1000(bbox)[1],
+                cxcy_logw_logh_norm1000_to_xyxy_norm1000(bbox)[0],
+            )
+        )
+        for bbox in prepared_boxes
+    ]
+
+    assert [obj["desc"] for obj in train_row["objects"]] == ["car", "truck"]
+    assert decoded_anchors == sorted(decoded_anchors)
+
+
+def test_derive_bbox_format_branch_emits_cxcywh_numeric_coord_and_manifest(tmp_path: Path) -> None:
+    preset_dir = tmp_path / "public_data" / "coco" / "rescale_32_768_bbox"
+    _setup_canonical_preset(preset_dir)
+
+    branch_root = derive_bbox_format_branch(
+        preset_dir=preset_dir,
+        bbox_format="cxcywh",
+    )
+
+    train_numeric = branch_root / "train.jsonl"
+    train_coord = branch_root / "train.coord.jsonl"
+    manifest = branch_root / "pipeline_manifest.json"
+    assert train_numeric.is_file()
+    assert train_coord.is_file()
+    assert manifest.is_file()
+    assert branch_root.name == "rescale_32_768_bbox_cxcywh"
+
+    train_row = json.loads(train_numeric.read_text(encoding="utf-8").splitlines()[0])
+    expected_norm = convert_record_to_ints(
+        {
+            "images": ["images/train2017/000000000001.jpg"],
+            "objects": [{"bbox_2d": [10, 12, 80, 60], "desc": "person"}],
+            "width": 128,
+            "height": 96,
+        },
+        ["bbox_2d"],
+        assume_normalized=False,
+    )
+    expected_bins = xyxy_norm1000_to_cxcywh_bins(expected_norm["objects"][0]["bbox_2d"])
+    assert train_row["objects"][0]["bbox_2d"] == expected_bins
+    assert train_row["metadata"]["prepared_bbox_format"] == "cxcywh"
+    assert train_row["metadata"]["prepared_bbox_slot_order"] == CXCYWH_SLOT_ORDER
+    assert (
+        train_row["metadata"]["prepared_bbox_conversion_version"]
+        == CXCYWH_CONVERSION_VERSION
+    )
+
+    coord_row = json.loads(train_coord.read_text(encoding="utf-8").splitlines()[0])
+    assert coord_row["objects"][0]["bbox_2d"] == [
+        f"<|coord_{value}|>" for value in expected_bins
+    ]
+
+
+def test_derive_bbox_format_branch_resorts_cxcywh_for_decoded_xyxy_order_after_conversion(
+    tmp_path: Path,
+) -> None:
+    preset_dir = tmp_path / "public_data" / "coco" / "rescale_32_768_bbox"
+    row = {
+        "images": ["images/train2017/000000000001.jpg"],
+        "objects": [
+            {"bbox_2d": [566, 462, 605, 480], "desc": "truck"},
+            {"bbox_2d": [572, 462, 604, 481], "desc": "car"},
+        ],
+        "width": 1000,
+        "height": 1000,
+    }
+    _write_jsonl(preset_dir / "train.jsonl", [row])
+    _write_image(preset_dir / row["images"][0], width=row["width"], height=row["height"])
+
+    branch_root = derive_bbox_format_branch(
+        preset_dir=preset_dir,
+        bbox_format="cxcywh",
+    )
+
+    train_row = json.loads((branch_root / "train.jsonl").read_text(encoding="utf-8").splitlines()[0])
+    prepared_boxes = [obj["bbox_2d"] for obj in train_row["objects"]]
+    decoded_anchors = [
+        tuple(
+            float(v)
+            for v in (
+                cxcywh_norm1000_to_xyxy_norm1000(bbox)[1],
+                cxcywh_norm1000_to_xyxy_norm1000(bbox)[0],
+            )
+        )
+        for bbox in prepared_boxes
+    ]
+
+    assert [obj["desc"] for obj in train_row["objects"]] == ["car", "truck"]
+    assert decoded_anchors == sorted(decoded_anchors)

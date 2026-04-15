@@ -425,6 +425,42 @@ def test_cxcy_logw_logh_profile_rejects_skip_bbox_norm_false() -> None:
         TrainingConfig.from_mapping(payload, PromptOverrides())
 
 
+def test_cxcywh_profile_accepts_pure_ce_with_positive_gates() -> None:
+    payload = _base_training_payload()
+    payload["custom"]["bbox_format"] = "cxcywh"
+    payload["custom"]["coord_soft_ce_w1"] = {
+        "enabled": True,
+        "ce_weight": 1.0,
+        "soft_ce_weight": 0.0,
+        "w1_weight": 0.0,
+        "gate_weight": 1.0,
+        "text_gate_weight": 1.0,
+        "temperature": 1.0,
+        "target_sigma": 2.0,
+    }
+
+    cfg = TrainingConfig.from_mapping(payload, PromptOverrides())
+
+    assert cfg.custom.bbox_format == "cxcywh"
+    assert cfg.custom.coord_soft_ce_w1.text_gate_weight == 1.0
+
+
+def test_cxcywh_profile_rejects_non_pure_soft_ce() -> None:
+    payload = _base_training_payload()
+    payload["custom"]["bbox_format"] = "cxcywh"
+    payload["custom"]["coord_soft_ce_w1"] = {
+        "enabled": True,
+        "ce_weight": 1.0,
+        "soft_ce_weight": 0.5,
+        "w1_weight": 0.0,
+        "gate_weight": 1.0,
+        "text_gate_weight": 1.0,
+    }
+
+    with pytest.raises(ValueError, match=r"soft_ce_weight = 0"):
+        TrainingConfig.from_mapping(payload, PromptOverrides())
+
+
 def test_training_encoded_sample_cache_keys_are_allowed_and_normalized() -> None:
     payload = _base_training_payload()
     payload["training"] = {

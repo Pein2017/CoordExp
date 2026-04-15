@@ -778,7 +778,7 @@ def _validate_bbox_format_contract(
     variant = str(trainer_variant or "").strip()
     if variant in {"stage2_two_channel", "stage2_rollout_aligned"} and bbox_format != "xyxy":
         raise ValueError(
-            "custom.bbox_format=cxcy_logw_logh is currently unsupported for stage-2 trainer variants. "
+            f"custom.bbox_format={bbox_format} is currently unsupported for stage-2 trainer variants. "
             "Stage-2 target construction still assumes canonical xyxy ordering; use custom.bbox_format=xyxy."
         )
 

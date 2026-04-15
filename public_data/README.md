@@ -34,8 +34,14 @@ For a dataset id `<ds>`:
     (same numeric lattice, kept for preset compatibility)
   - `public_data/<ds>/<preset>_cxcy_logw_logh/train.coord.jsonl`
     (tokenized artifact on the same lattice)
+  - `public_data/<ds>/<preset>_cxcywh/train.jsonl`
+    (model-facing norm1000 integer artifact)
+  - `public_data/<ds>/<preset>_cxcywh/train.norm.jsonl`
+    (same numeric lattice, kept for preset compatibility)
+  - `public_data/<ds>/<preset>_cxcywh/train.coord.jsonl`
+    (tokenized artifact on the same lattice)
   - matching `val.*` files when a val split exists
-  - `public_data/<ds>/<preset>_cxcy_logw_logh/pipeline_manifest.json`
+  - `public_data/<ds>/<preset>_<bbox_format>/pipeline_manifest.json`
 
 Image paths in JSONL are a contract requirement: they MUST be relative to the JSONL directory
 (`docs/data/CONTRACT.md`).
@@ -69,6 +75,7 @@ Tune shared preprocessing options (run steps separately; args after `--` go to t
 ./public_data/run.sh <dataset> rescale --preset <preset> -- --image-factor 32 --max-pixels $((32*32*768))
 ./public_data/run.sh <dataset> coord   --preset <preset>
 ./public_data/run.sh <dataset> bbox-format --preset <preset> -- --bbox-format cxcy_logw_logh
+./public_data/run.sh <dataset> bbox-format --preset <preset> -- --bbox-format cxcywh
 ./public_data/run.sh <dataset> validate --preset <preset> --skip-image-check
 ```
 
@@ -99,6 +106,8 @@ Notes:
   - standardized `*.jsonl`, `*.norm.jsonl`, `*.coord.jsonl`
   - standardized sibling derived preset roots such as
     `<preset>_cxcy_logw_logh/{train,val}.jsonl`, `.norm.jsonl`, `.coord.jsonl`
+  - standardized sibling derived preset roots such as
+    `<preset>_cxcywh/{train,val}.jsonl`, `.norm.jsonl`, `.coord.jsonl`
   - relative image-path preservation
   - reproducibility manifest: `pipeline_manifest.json`
 
@@ -114,6 +123,10 @@ feature.
   `[cx, cy, logw, logh]` slots.
 - `<preset>_cxcy_logw_logh/<split>.coord.jsonl` stores the tokenized form
   of the same lattice.
+- `<preset>_cxcywh/<split>.jsonl` stores norm1000 integer `[cx, cy, w, h]`
+  slots on the same 0..999 lattice.
+- `<preset>_cxcywh/<split>.coord.jsonl` stores the tokenized form of the
+  same lattice.
 - `all` remains canonical-only and does not create bbox-format branches.
 
 ## Max-Object Filtering (`max{N}`)
@@ -189,6 +202,10 @@ Produced records look like:
   `bbox_2d` slots in `[cx, cy, logw, logh]`.
 - `<preset>_cxcy_logw_logh/<split>.coord.jsonl` uses the tokenized form of
   those same slots.
+- `<preset>_cxcywh/<split>.jsonl` uses norm1000 integer `bbox_2d` slots in
+  `[cx, cy, w, h]`.
+- `<preset>_cxcywh/<split>.coord.jsonl` uses the tokenized form of those same
+  slots.
 
 ## Validation
 ### Validator CLI

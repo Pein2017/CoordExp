@@ -30,6 +30,7 @@ experiment:
     - Runs as a Stage-1 2B profile on the COCO 1024 bbox-max60 LVIS-proxy dataset family.
     - "Uses bbox_format: cxcy_logw_logh for the model-facing geometry contract while keeping external evaluation artifacts canonicalized downstream."
     - Uses pure CE on bbox coord slots with coord/text gates enabled and soft labels, W1, adjacent repulsion, and bbox regression auxiliaries disabled.
+    - Effective size is `128`
   comments:
     - Motivation and prior diagnosis are documented in progress/diagnostics/duplication_collapse_final_analysis_2026-04-13.md.
     - If this direction looks promising, follow-up runs should test stronger numerical supervision and richer loss designs on top of the same parameterization.

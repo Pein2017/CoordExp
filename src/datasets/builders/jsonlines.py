@@ -8,7 +8,6 @@ from src.common.geometry.bbox_parameterization import (
     AllowedBBoxFormat,
     DEFAULT_BBOX_FORMAT,
     normalize_bbox_format,
-    xyxy_norm1000_to_cxcy_logw_logh_bins,
 )
 from src.common.object_field_order import (
     ObjectFieldOrder,
@@ -179,7 +178,7 @@ class JSONLinesBuilder(BaseBuilder):
             obj.setdefault("_coord_numeric_cache", {})[geom_type] = numeric_points
             bbox_prepared = bool(
                 geom_type == "bbox_2d"
-                and self.bbox_format == "cxcy_logw_logh"
+                and self.bbox_format != "xyxy"
                 and isinstance(obj.get("_bbox_xyxy_original"), Sequence)
                 and len(obj.get("_bbox_xyxy_original")) == 4
             )
@@ -265,7 +264,7 @@ class JSONLinesBuilder(BaseBuilder):
         numeric_points: Optional[List[Any]] = None,
         already_prepared: bool = False,
     ) -> List[int | float]:
-        if geom_type == "bbox_2d" and self.bbox_format == "cxcy_logw_logh":
+        if geom_type == "bbox_2d" and self.bbox_format != "xyxy":
             if already_prepared:
                 source_points = numeric_points if numeric_points is not None else points
                 if self.coord_tokens_enabled:
@@ -278,8 +277,8 @@ class JSONLinesBuilder(BaseBuilder):
                 _assert_norm_range(ints, geom_type)
                 return ints
             raise ValueError(
-                "bbox_format=cxcy_logw_logh requires offline-prepared bbox records; "
-                "runtime xyxy->cxcy_logw_logh conversion is no longer supported."
+                f"bbox_format={self.bbox_format} requires offline-prepared bbox records; "
+                f"runtime xyxy->{self.bbox_format} conversion is no longer supported."
             )
         if self.coord_tokens_enabled:
             return list(points)

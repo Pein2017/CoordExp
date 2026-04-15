@@ -137,6 +137,7 @@ train_jsonl = _resolve_path_for_config(train_jsonl_raw.strip(), config_path)
 val_jsonl = _resolve_path_for_config(val_jsonl_raw.strip(), config_path)
 
 offline_max_pixels_raw = getattr(cfg.custom, "offline_max_pixels", None)
+BBOX_FORMAT = getattr(cfg.custom, "bbox_format", "xyxy")
 max_pixels_source = "custom.offline_max_pixels"
 if offline_max_pixels_raw is None:
     max_pixels_raw = cfg.template.get("max_pixels")
@@ -155,6 +156,7 @@ if max_pixels <= 0:
 emit("TRAIN_JSONL_RESOLVED", train_jsonl)
 emit("VAL_JSONL_RESOLVED", val_jsonl)
 emit("OFFLINE_MAX_PIXELS", max_pixels)
+emit("BBOX_FORMAT", BBOX_FORMAT)
 PY
 )
 
@@ -172,12 +174,14 @@ echo "[PRECHECK] Validating JSONL contracts + offline_max_pixels before launchin
 echo "========================================================================"
 echo "[PRECHECK] train_jsonl: ${TRAIN_JSONL_RESOLVED}"
 echo "[PRECHECK] val_jsonl: ${VAL_JSONL_RESOLVED}"
+echo "[PRECHECK] bbox_format: ${BBOX_FORMAT}"
 echo "[PRECHECK] offline_max_pixels: ${OFFLINE_MAX_PIXELS}"
 echo "[PRECHECK] multiple_of: 32"
 echo "========================================================================"
 
 "${PYTHON_BIN[@]}" "${REPO_DIR}/public_data/scripts/validate_jsonl.py" \
   "${TRAIN_JSONL_RESOLVED}" \
+  --bbox-format "${BBOX_FORMAT}" \
   --max-pixels "${OFFLINE_MAX_PIXELS}" \
   --multiple-of 32 \
   --image-check-mode exists \
@@ -187,6 +191,7 @@ echo "========================================================================"
 # Spot-check open+size alignment on train to catch any meta/image mismatch.
 "${PYTHON_BIN[@]}" "${REPO_DIR}/public_data/scripts/validate_jsonl.py" \
   "${TRAIN_JSONL_RESOLVED}" \
+  --bbox-format "${BBOX_FORMAT}" \
   --max-pixels "${OFFLINE_MAX_PIXELS}" \
   --multiple-of 32 \
   --image-check-mode open \
@@ -196,6 +201,7 @@ echo "========================================================================"
 # Validate val with full open+size checks (usually small enough).
 "${PYTHON_BIN[@]}" "${REPO_DIR}/public_data/scripts/validate_jsonl.py" \
   "${VAL_JSONL_RESOLVED}" \
+  --bbox-format "${BBOX_FORMAT}" \
   --max-pixels "${OFFLINE_MAX_PIXELS}" \
   --multiple-of 32 \
   --image-check-mode open \

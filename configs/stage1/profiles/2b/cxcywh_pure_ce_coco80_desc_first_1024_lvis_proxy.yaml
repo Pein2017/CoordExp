@@ -1,0 +1,67 @@
+extends:
+  - ./coord_soft_ce_gate_coco80_desc_first.yaml
+  - ../../../_shared/datasets/coco_1024_bbox_max60_lvis_proxy.yaml
+
+global_max_length: 14000
+
+model:
+  model: model_cache/models/Qwen/Qwen3-VL-2B-Instruct-coordexp
+
+experiment:
+  title: Stage-1 pure-CE exploratory cxcywh parameterization run
+  purpose: >
+    Matched Stage-1 pure-CE ablation for the linear center-size chart,
+    intended to compare canonical xyxy, cxcy_logw_logh, and cxcywh under the
+    same 2B / COCO-1024 / LVIS-proxy training surface.
+  hypothesis: >
+    If log-size slots are the main source of geometric drift and burst-heavy
+    decoding, then replacing logw/logh with linear w/h on the same 0..999
+    coord lattice may recover some AP and reduce duplication pressure.
+  baseline: >
+    Stage-1 pure-CE training with the canonical xyxy internal bbox
+    parameterization, alongside the offline-prepared cxcy_logw_logh branch.
+  key_deviations:
+    - Uses the experimental cxcywh path, corresponding to a center plus linear size factorization.
+    - Keeps all four slots on the same normalized 0..999 coord lattice used by Qwen3-VL pretraining.
+    - Keeps the objective minimal by using Stage-1 pure CE before introducing stronger numerical supervision or richer auxiliary losses.
+  runtime_settings:
+    - Runs as a Stage-1 2B profile on the COCO 1024 bbox-max60 LVIS-proxy dataset family.
+    - "Uses bbox_format: cxcywh for the model-facing geometry contract while keeping external evaluation artifacts canonicalized downstream."
+    - Uses pure CE on bbox coord slots with coord/text gates enabled and soft labels, W1, adjacent repulsion, and bbox regression auxiliaries disabled.
+    - Effective size is `128`
+  comments:
+    - Motivation and prior diagnosis are documented in progress/diagnostics/duplication_collapse_final_analysis_2026-04-13.md and progress/diagnostics/cxcy_logw_logh_retrain_reanalysis_2026-04-15.md.
+    - This profile is intended for direct three-way ablation against xyxy and cxcy_logw_logh.
+  tags:
+    - stage1
+    - exploratory
+    - pure-ce
+    - cxcywh
+    - center-wh
+    - duplication-collapse
+
+training:
+  num_train_epochs: 4
+  artifact_subdir: stage1_2b/coco_bbox_max60-coco80-desc_first-1024-lvis_proxy-cxcywh-pure_ce
+  run_name: epoch_4-cxcywh-pure_ce-coco80-desc_first-1024-lvis_proxy-from-base-2B
+
+custom:
+  bbox_format: cxcywh
+  train_jsonl: public_data/coco/rescale_32_1024_bbox_max60_lvis_proxy_cxcywh/train.coord.jsonl
+  val_jsonl: public_data/coco/rescale_32_1024_bbox_max60_lvis_proxy_cxcywh/val.coord.jsonl
+  coord_soft_ce_w1:
+    enabled: true
+    # Narrow V1 experiment:
+    # - coord-token CE on bbox slots
+    # - coord-vocab gate
+    # - text/structure gate
+    # No soft labels, W1, adjacent repulsion, or bbox regression auxiliaries.
+    ce_weight: 1.0
+    soft_ce_weight: 0.0
+    w1_weight: 0.0
+    gate_weight: 1.0
+    text_gate_weight: 1.0
+    temperature: 1.0
+    target_sigma: 2.0
+    target_truncate: null
+    adjacent_repulsion_weight: 0.0

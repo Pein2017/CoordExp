@@ -124,10 +124,30 @@ def test_encoded_sample_cache_fingerprint_tracks_bbox_format(tmp_path) -> None:
         system_prompt_dense="sys",
         system_prompt_summary=None,
     )
+    cxcywh = _build_encoded_sample_cache_fingerprint(
+        training_config=SimpleNamespace(
+            global_max_length=1024,
+            template={"system": "sys", "truncation_strategy": "raise"},
+        ),
+        custom_config=SimpleNamespace(
+            **{**_custom_config().__dict__, "bbox_format": "cxcywh"}
+        ),
+        template=_Template(max_length=128),
+        train_args=SimpleNamespace(max_model_len=512),
+        dataset_seed=7,
+        dataset_jsonl=str(train_jsonl),
+        dataset_split="train",
+        dataset_mode="dense",
+        sample_limit=64,
+        system_prompt_dense="sys",
+        system_prompt_summary=None,
+    )
 
     assert xyxy["custom_bbox_format"] == "xyxy"
     assert cxcy_logw_logh["custom_bbox_format"] == "cxcy_logw_logh"
+    assert cxcywh["custom_bbox_format"] == "cxcywh"
     assert xyxy != cxcy_logw_logh
+    assert cxcy_logw_logh != cxcywh
 
 
 def test_encoded_sample_cache_fingerprint_tracks_prompt_variant_and_template_hash(

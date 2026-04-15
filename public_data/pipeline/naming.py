@@ -4,6 +4,7 @@ import re
 
 _CANONICAL_MAX_SUFFIX_RE = re.compile(r"(?:_max(\d+))+$")
 _LEGACY_MAX_SUFFIX_RE = re.compile(r"(?:_max_(\d+))+$")
+_RESCALE_PRESET_RE = re.compile(r"^rescale_(\d+)_(\d+)(?:_|$)")
 
 
 def max_token(max_objects: int) -> str:
@@ -90,3 +91,15 @@ def resolve_bbox_format_preset(base_preset: str, bbox_format: str | None) -> str
     if str(base_preset).endswith(suffix):
         return str(base_preset)
     return f"{base_preset}{suffix}"
+
+
+def infer_rescale_contract_from_preset(
+    preset_name: str,
+) -> tuple[int, int] | None:
+    """Infer (image_factor, max_pixels) from canonical rescale preset naming."""
+    match = _RESCALE_PRESET_RE.match(str(preset_name or "").strip())
+    if match is None:
+        return None
+    image_factor = int(match.group(1))
+    max_pixels_units = int(match.group(2))
+    return image_factor, image_factor * image_factor * max_pixels_units

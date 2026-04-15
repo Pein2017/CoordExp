@@ -29,6 +29,12 @@ _USER_EXAMPLE_DESC_FIRST_CXCY_LOGW_LOGH = (
 _USER_EXAMPLE_GEOMETRY_FIRST_CXCY_LOGW_LOGH = (
     '{"bbox_2d": [<|coord_260|>, <|coord_507|>, <|coord_408|>, <|coord_612|>], "desc": "black cat near sofa"}'
 )
+_USER_EXAMPLE_DESC_FIRST_CXCYWH = (
+    '{"desc": "black cat", "bbox_2d": [<|coord_260|>, <|coord_507|>, <|coord_300|>, <|coord_395|>]}'
+)
+_USER_EXAMPLE_GEOMETRY_FIRST_CXCYWH = (
+    '{"bbox_2d": [<|coord_260|>, <|coord_507|>, <|coord_300|>, <|coord_395|>], "desc": "black cat near sofa"}'
+)
 
 _BBOX_SYSTEM_RULE_PLACEHOLDER = "__BBOX_SYSTEM_RULE__"
 _BBOX_USER_RULE_PLACEHOLDER = "__BBOX_USER_RULE__"
@@ -129,6 +135,22 @@ def _prompt_fragments(*, bbox_format: str, object_field_order: str) -> dict[str,
                 "cx/cy are normalized box centers, and u(w)/u(h) are normalized log-size slots."
             ),
             _BBOX_USER_RULE_PLACEHOLDER: "Use bbox_2d as [cx, cy, u(w), u(h)].",
+            _OBJECT_FIELD_ORDER_SYSTEM_RULE_PLACEHOLDER: field_order_system_rule,
+            _OBJECT_FIELD_ORDER_USER_RULE_PLACEHOLDER: field_order_user_rule,
+            _USER_EXAMPLE_PLACEHOLDER: user_example,
+        }
+    if bbox_format_key == "cxcywh":
+        if field_order == "geometry_first":
+            user_example = _USER_EXAMPLE_GEOMETRY_FIRST_CXCYWH
+        else:
+            user_example = _USER_EXAMPLE_DESC_FIRST_CXCYWH
+        return {
+            _BBOX_SYSTEM_RULE_PLACEHOLDER: (
+                "bbox_2d is [cx, cy, w, h]; all four slots are normalized image-space "
+                "quantities on the same 0..999 coord lattice. cx/cy are normalized box centers, "
+                "and w/h are normalized box width and height."
+            ),
+            _BBOX_USER_RULE_PLACEHOLDER: "Use bbox_2d as [cx, cy, w, h].",
             _OBJECT_FIELD_ORDER_SYSTEM_RULE_PLACEHOLDER: field_order_system_rule,
             _OBJECT_FIELD_ORDER_USER_RULE_PLACEHOLDER: field_order_user_rule,
             _USER_EXAMPLE_PLACEHOLDER: user_example,

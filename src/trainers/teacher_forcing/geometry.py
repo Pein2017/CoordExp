@@ -101,6 +101,15 @@ def bbox_tensor_to_xyxy(
     boxes = box_tensor.float()
     if bbox_format_norm == "xyxy":
         return canonicalize_bbox_xyxy(boxes)
+    if bbox_format_norm == "cxcywh":
+        cx, cy, w, h = boxes.unbind(dim=-1)
+        w = w.clamp(float(BBOX_SIZE_FLOOR), 1.0)
+        h = h.clamp(float(BBOX_SIZE_FLOOR), 1.0)
+        half_w = w * 0.5
+        half_h = h * 0.5
+        return canonicalize_bbox_xyxy(
+            torch.stack([cx - half_w, cy - half_h, cx + half_w, cy + half_h], dim=-1)
+        )
 
     cx, cy, logw, logh = boxes.unbind(dim=-1)
     size_floor = float(BBOX_SIZE_FLOOR)

@@ -15,8 +15,11 @@ from src.common.geometry.bbox_parameterization import (
     AllowedBBoxFormat,
     CXCY_LOGW_LOGH_CONVERSION_VERSION,
     CXCY_LOGW_LOGH_SLOT_ORDER,
+    CXCYWH_CONVERSION_VERSION,
+    CXCYWH_SLOT_ORDER,
     DEFAULT_BBOX_FORMAT,
     cxcy_logw_logh_norm1000_to_xyxy_norm1000,
+    cxcywh_norm1000_to_xyxy_norm1000,
     normalize_bbox_format,
 )
 from src.common.object_field_order import (
@@ -40,6 +43,86 @@ from .utils import (
 # Exposed for debugging (e.g., OOM tracing)
 LAST_SAMPLE_DEBUG: Dict[str, Any] = {}
 logger = logging.getLogger(__name__)
+
+
+def _prepared_bbox_slot_order_for_format(bbox_format: AllowedBBoxFormat) -> str:
+    if bbox_format == "cxcy_logw_logh":
+        return CXCY_LOGW_LOGH_SLOT_ORDER
+    if bbox_format == "cxcywh":
+        return CXCYWH_SLOT_ORDER
+    raise ValueError(f"Unsupported prepared bbox format {bbox_format!r}.")
+
+
+def _prepared_bbox_conversion_version_for_format(bbox_format: AllowedBBoxFormat) -> int:
+    if bbox_format == "cxcy_logw_logh":
+        return CXCY_LOGW_LOGH_CONVERSION_VERSION
+    if bbox_format == "cxcywh":
+        return CXCYWH_CONVERSION_VERSION
+    raise ValueError(f"Unsupported prepared bbox format {bbox_format!r}.")
+
+
+def _prepared_bbox_to_xyxy_norm1000(
+    norm_bbox: Sequence[int],
+    *,
+    bbox_format: AllowedBBoxFormat,
+) -> list[float]:
+    if bbox_format == "cxcy_logw_logh":
+        return [float(v) for v in cxcy_logw_logh_norm1000_to_xyxy_norm1000(norm_bbox)]
+    if bbox_format == "cxcywh":
+        return [float(v) for v in cxcywh_norm1000_to_xyxy_norm1000(norm_bbox)]
+    raise ValueError(f"Unsupported prepared bbox format {bbox_format!r}.")
+
+
+def _canonical_bbox_xyxy_for_sorted_check(
+    obj: Mapping[str, Any],
+    *,
+    bbox_format: AllowedBBoxFormat,
+) -> list[float] | None:
+    bbox = obj.get("bbox_2d")
+    if not isinstance(bbox, Sequence) or isinstance(bbox, (str, bytes)) or len(bbox) != 4:
+        return None
+
+    if bbox_format == "xyxy":
+        try:
+            return [float(v) for v in bbox]
+        except (TypeError, ValueError):
+            return None
+
+    try:
+        norm_bbox = (
+            tokens_to_ints(bbox)
+            if sequence_has_coord_tokens(bbox)
+            else [int(round(float(v))) for v in bbox]
+        )
+    except (TypeError, ValueError):
+        return None
+    return _prepared_bbox_to_xyxy_norm1000(norm_bbox, bbox_format=bbox_format)
+
+
+def _find_first_unsorted_object_pair_for_bbox_format(
+    objects: Sequence[Mapping[str, Any]],
+    *,
+    bbox_format: AllowedBBoxFormat,
+) -> tuple[int, int, tuple[float, float], tuple[float, float]] | None:
+    if bbox_format == "xyxy":
+        return find_first_unsorted_object_pair_by_topleft(objects)
+
+    previous_anchor: tuple[float, float] | None = None
+    previous_index: int | None = None
+    for index, obj in enumerate(objects):
+        canonical_bbox = _canonical_bbox_xyxy_for_sorted_check(
+            obj,
+            bbox_format=bbox_format,
+        )
+        if canonical_bbox is None:
+            current_anchor = (float("inf"), float("inf"))
+        else:
+            current_anchor = (float(canonical_bbox[1]), float(canonical_bbox[0]))
+        if previous_anchor is not None and previous_index is not None and current_anchor < previous_anchor:
+            return (previous_index, index, previous_anchor, current_anchor)
+        previous_anchor = current_anchor
+        previous_index = index
+    return None
 
 
 def _dataset_timing_enabled() -> bool:
@@ -328,7 +411,10 @@ class BaseCaptionDataset(Dataset):
             return
 
         if self.object_ordering == "sorted":
-            unsorted = find_first_unsorted_object_pair_by_topleft(objects_list)
+            unsorted = _find_first_unsorted_object_pair_for_bbox_format(
+                objects_list,
+                bbox_format=self.bbox_format,
+            )
             if unsorted is not None:
                 prev_idx, curr_idx, prev_anchor, curr_anchor = unsorted
                 raise ValueError(
@@ -362,7 +448,8 @@ class BaseCaptionDataset(Dataset):
             return
         if not isinstance(metadata, Mapping):
             raise ValueError(
-                "custom.bbox_format=cxcy_logw_logh requires record metadata provenance from an offline-prepared branch."
+                f"custom.bbox_format={self.bbox_format} requires record metadata provenance "
+                "from an offline-prepared branch."
             )
         prepared_format = normalize_bbox_format(
             prepared_format_raw,
@@ -373,18 +460,23 @@ class BaseCaptionDataset(Dataset):
                 "custom.bbox_format does not match record metadata.prepared_bbox_format for "
                 f"offline-prepared bbox data: expected {self.bbox_format!r}, got {prepared_format!r}."
             )
-        if str(metadata.get("prepared_bbox_slot_order") or "") != CXCY_LOGW_LOGH_SLOT_ORDER:
+        expected_slot_order = _prepared_bbox_slot_order_for_format(self.bbox_format)
+        if str(metadata.get("prepared_bbox_slot_order") or "") != expected_slot_order:
             raise ValueError(
-                "custom.bbox_format=cxcy_logw_logh requires metadata.prepared_bbox_slot_order='cxcy_logw_logh'."
+                f"custom.bbox_format={self.bbox_format} requires "
+                f"metadata.prepared_bbox_slot_order='{expected_slot_order}'."
             )
         if str(metadata.get("prepared_bbox_source_format") or "") != "xyxy":
             raise ValueError(
-                "custom.bbox_format=cxcy_logw_logh requires metadata.prepared_bbox_source_format='xyxy'."
+                f"custom.bbox_format={self.bbox_format} requires "
+                "metadata.prepared_bbox_source_format='xyxy'."
             )
         version = metadata.get("prepared_bbox_conversion_version")
-        if int(version) != CXCY_LOGW_LOGH_CONVERSION_VERSION:
+        expected_version = _prepared_bbox_conversion_version_for_format(self.bbox_format)
+        if int(version) != expected_version:
             raise ValueError(
-                "custom.bbox_format=cxcy_logw_logh requires a supported prepared_bbox_conversion_version."
+                f"custom.bbox_format={self.bbox_format} requires a supported "
+                "prepared_bbox_conversion_version."
             )
         objects = record.get("objects") or []
         if not isinstance(objects, list):
@@ -401,7 +493,10 @@ class BaseCaptionDataset(Dataset):
                 norm_bbox = [int(round(float(v))) for v in bbox]
             original_xyxy = [
                 int(round(v))
-                for v in cxcy_logw_logh_norm1000_to_xyxy_norm1000(norm_bbox)
+                for v in _prepared_bbox_to_xyxy_norm1000(
+                    norm_bbox,
+                    bbox_format=self.bbox_format,
+                )
             ]
             obj["_bbox_xyxy_original"] = [int(round(v)) for v in original_xyxy]
 

@@ -22,7 +22,7 @@ from .bbox_parameterization import (  # noqa: F401
 )
 
 BBoxFormat = AllowedBBoxFormat
-ALLOWED_BBOX_FORMATS = ("xyxy", "cxcy_logw_logh")
+ALLOWED_BBOX_FORMATS = ("xyxy", "cxcy_logw_logh", "cxcywh")
 from .coord_utils import (  # noqa: F401
     COORD_TOKEN_RE,
     MAX_BIN,

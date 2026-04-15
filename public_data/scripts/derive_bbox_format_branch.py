@@ -6,7 +6,7 @@ import copy
 import json
 import os
 from pathlib import Path
-from typing import Iterable, Mapping
+from typing import Callable, Iterable, Mapping, Sequence
 
 from public_data.pipeline.naming import resolve_bbox_format_preset
 from public_data.pipeline.types import SplitArtifactPaths
@@ -19,8 +19,13 @@ from public_data.scripts.convert_to_coord_tokens import (
 from src.common.geometry.bbox_parameterization import (
     CXCY_LOGW_LOGH_CONVERSION_VERSION,
     CXCY_LOGW_LOGH_SLOT_ORDER,
+    CXCYWH_CONVERSION_VERSION,
+    CXCYWH_SLOT_ORDER,
+    cxcy_logw_logh_norm1000_to_xyxy_norm1000,
+    cxcywh_norm1000_to_xyxy_norm1000,
     normalize_bbox_format,
     xyxy_norm1000_to_cxcy_logw_logh_bins,
+    xyxy_norm1000_to_cxcywh_bins,
 )
 from src.coord_tokens.codec import is_coord_token, token_to_int
 
@@ -103,6 +108,46 @@ def _validate_canonical_source_record(
             )
 
 
+def _prepared_bbox_slot_order(bbox_format: str) -> str:
+    bbox_format_norm = normalize_bbox_format(bbox_format, path="bbox_format")
+    if bbox_format_norm == "cxcy_logw_logh":
+        return CXCY_LOGW_LOGH_SLOT_ORDER
+    if bbox_format_norm == "cxcywh":
+        return CXCYWH_SLOT_ORDER
+    raise ValueError(f"Offline bbox-format derivation does not support {bbox_format!r}.")
+
+
+def _prepared_bbox_conversion_version(bbox_format: str) -> int:
+    bbox_format_norm = normalize_bbox_format(bbox_format, path="bbox_format")
+    if bbox_format_norm == "cxcy_logw_logh":
+        return CXCY_LOGW_LOGH_CONVERSION_VERSION
+    if bbox_format_norm == "cxcywh":
+        return CXCYWH_CONVERSION_VERSION
+    raise ValueError(f"Offline bbox-format derivation does not support {bbox_format!r}.")
+
+
+def _prepared_bbox_encoder(
+    bbox_format: str,
+) -> Callable[[Sequence[float | int]], list[int]]:
+    bbox_format_norm = normalize_bbox_format(bbox_format, path="bbox_format")
+    if bbox_format_norm == "cxcy_logw_logh":
+        return xyxy_norm1000_to_cxcy_logw_logh_bins
+    if bbox_format_norm == "cxcywh":
+        return xyxy_norm1000_to_cxcywh_bins
+    raise ValueError(f"Offline bbox-format derivation does not support {bbox_format!r}.")
+
+
+def _prepared_bbox_decoder(
+    bbox_format: str,
+) -> Callable[[Sequence[float | int]], list[float]]:
+    bbox_format_norm = normalize_bbox_format(bbox_format, path="bbox_format")
+    if bbox_format_norm == "cxcy_logw_logh":
+        return cxcy_logw_logh_norm1000_to_xyxy_norm1000
+    if bbox_format_norm == "cxcywh":
+        return cxcywh_norm1000_to_xyxy_norm1000
+    raise ValueError(f"Offline bbox-format derivation does not support {bbox_format!r}.")
+
+
 def _prepare_record_metadata(
     record: dict,
     *,
@@ -115,9 +160,11 @@ def _prepare_record_metadata(
     metadata.update(
         {
             "prepared_bbox_format": bbox_format,
-            "prepared_bbox_slot_order": CXCY_LOGW_LOGH_SLOT_ORDER,
+            "prepared_bbox_slot_order": _prepared_bbox_slot_order(bbox_format),
             "prepared_bbox_source_format": "xyxy",
-            "prepared_bbox_conversion_version": CXCY_LOGW_LOGH_CONVERSION_VERSION,
+            "prepared_bbox_conversion_version": _prepared_bbox_conversion_version(
+                bbox_format
+            ),
             "prepared_bbox_source_file": str(source_path),
             "prepared_bbox_source_record_index": int(line_num - 1),
             "prepared_bbox_source_surface": str(source_kind),
@@ -139,6 +186,22 @@ def _normalize_local_image_rel_path(rel_path: str, *, source_path: Path) -> str:
     )
 
 
+def _sort_bbox_only_objects_for_prepared_bbox_format(record: dict, *, bbox_format: str) -> None:
+    objects = record.get("objects") or []
+    if not isinstance(objects, list) or not objects:
+        return
+    decoder = _prepared_bbox_decoder(bbox_format)
+
+    def _decoded_anchor(obj: Mapping[str, object]) -> tuple[float, float]:
+        bbox = obj.get("bbox_2d")
+        if not isinstance(bbox, list) or len(bbox) != 4:
+            return (float("inf"), float("inf"))
+        decoded = decoder([int(round(float(v))) for v in bbox])
+        return (float(decoded[1]), float(decoded[0]))
+
+    record["objects"] = sorted(list(objects), key=_decoded_anchor)
+
+
 def _derive_split_records(
     *,
     source_path: Path,
@@ -148,6 +211,7 @@ def _derive_split_records(
     numeric_rows: list[dict] = []
     coord_rows: list[dict] = []
     image_source_paths: dict[str, Path] = {}
+    encode_bbox = _prepared_bbox_encoder(bbox_format)
 
     with source_path.open("r", encoding="utf-8") as fin:
         for line_num, raw_line in enumerate(fin, start=1):
@@ -202,7 +266,11 @@ def _derive_split_records(
                     raise ValueError(
                         f"Expected normalized bbox_2d quartet at {source_path}:{line_num}."
                     )
-                obj["bbox_2d"] = xyxy_norm1000_to_cxcy_logw_logh_bins(bbox)
+                obj["bbox_2d"] = encode_bbox(bbox)
+            _sort_bbox_only_objects_for_prepared_bbox_format(
+                numeric_record,
+                bbox_format=bbox_format,
+            )
 
             _prepare_record_metadata(
                 numeric_record,
@@ -258,9 +326,10 @@ def _materialize_images_hardlinks(
 
 def derive_bbox_format_branch(*, preset_dir: Path, bbox_format: str) -> Path:
     bbox_format_norm = normalize_bbox_format(bbox_format, path="bbox_format")
-    if bbox_format_norm != "cxcy_logw_logh":
+    if bbox_format_norm not in {"cxcy_logw_logh", "cxcywh"}:
         raise ValueError(
-            f"Unsupported bbox-format branch {bbox_format!r}; expected 'cxcy_logw_logh'."
+            "Unsupported bbox-format branch "
+            f"{bbox_format!r}; expected one of ['cxcy_logw_logh', 'cxcywh']."
         )
 
     split_sources = _iter_split_paths(preset_dir)
@@ -301,10 +370,12 @@ def derive_bbox_format_branch(*, preset_dir: Path, bbox_format: str) -> Path:
                 "source_preset_dir": str(preset_dir),
                 "source_bbox_format": "xyxy",
                 "derived_bbox_format": bbox_format_norm,
-                "derived_bbox_slot_order": CXCY_LOGW_LOGH_SLOT_ORDER,
+                "derived_bbox_slot_order": _prepared_bbox_slot_order(bbox_format_norm),
                 "coord_token_norm_contract_version": 1,
                 "numeric_split_contract": "norm1000_int_bbox_2d_same_lattice_as_coord",
-                "bbox_format_conversion_version": CXCY_LOGW_LOGH_CONVERSION_VERSION,
+                "bbox_format_conversion_version": _prepared_bbox_conversion_version(
+                    bbox_format_norm
+                ),
                 "splits": {
                     split: {
                         "source": str(source_path),

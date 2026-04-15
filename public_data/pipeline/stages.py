@@ -12,6 +12,7 @@ from public_data.scripts.convert_to_coord_tokens import (
     convert_record_to_tokens,
 )
 from public_data.scripts.rescale_jsonl import run_smart_resize
+from public_data.pipeline.naming import infer_rescale_contract_from_preset
 from public_data.scripts.validate_jsonl import JSONLValidator
 from src.datasets.preprocessors.resize import SmartResizeParams
 
@@ -342,8 +343,14 @@ class ValidationStage(PipelineStage):
             expected_max_pixels: Optional[int] = None
             expected_multiple_of: Optional[int] = None
             if not is_raw_input:
-                expected_max_pixels = int(cfg.max_pixels)
-                expected_multiple_of = int(cfg.image_factor)
+                inferred_contract = infer_rescale_contract_from_preset(
+                    state.effective_preset
+                )
+                if inferred_contract is not None:
+                    expected_multiple_of, expected_max_pixels = inferred_contract
+                else:
+                    expected_max_pixels = int(cfg.max_pixels)
+                    expected_multiple_of = int(cfg.image_factor)
 
             check_image_sizes = False
             if check_images:

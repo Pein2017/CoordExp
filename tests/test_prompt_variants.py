@@ -296,6 +296,24 @@ def test_cxcy_logw_logh_prompts_explain_u_of_s_and_render_variant_placeholders()
     assert '{"desc": "category", "bbox_2d": [<|coord_110|>' not in lvis_user
 
 
+def test_cxcywh_prompts_explain_center_and_linear_size_slots() -> None:
+    default_system, default_user = get_template_prompts(bbox_format="cxcywh")
+    lvis_system, lvis_user = get_template_prompts(
+        prompt_variant="lvis_stage1_federated",
+        bbox_format="cxcywh",
+    )
+
+    for prompt in (default_system, default_user, lvis_system, lvis_user):
+        assert "[cx, cy, w, h]" in prompt
+        assert "__BBOX_" not in prompt
+        assert "__USER_EXAMPLE_" not in prompt
+
+    for prompt in (default_system, lvis_system):
+        assert "normalized box width and height" in prompt
+
+    assert "bbox_2d is [x1, y1, x2, y2]" not in lvis_system
+
+
 def test_unknown_prompt_variant_error_lists_unknown_and_available_keys() -> None:
     with pytest.raises(ValueError, match="Unknown prompt variant") as exc_info:
         get_template_prompts(prompt_variant="unknown_variant")

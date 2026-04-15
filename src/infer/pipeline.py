@@ -26,6 +26,9 @@ from src.eval.artifacts import (
     CXCY_LOGW_LOGH_CONSTANT_PRED_SCORE_SOURCE,
     CXCY_LOGW_LOGH_CONSTANT_PRED_SCORE_VERSION,
     CXCY_LOGW_LOGH_CONSTANT_SCORE,
+    CXCYWH_CONSTANT_PRED_SCORE_SOURCE,
+    CXCYWH_CONSTANT_PRED_SCORE_VERSION,
+    CXCYWH_CONSTANT_SCORE,
     with_constant_scores,
     write_jsonl_records,
 )
@@ -660,11 +663,11 @@ def run_pipeline(
         encoding="utf-8",
     )
 
-    if resolved_bbox_format == "cxcy_logw_logh":
+    if resolved_bbox_format in {"cxcy_logw_logh", "cxcywh"}:
         confidence_cfg = _get_map(cfg, "confidence")
         if confidence_cfg:
             raise ValueError(
-                "infer.bbox_format=cxcy_logw_logh does not support confidence post-op in V1; remove the confidence section."
+                f"infer.bbox_format={resolved_bbox_format} does not support confidence post-op in V1; remove the confidence section."
             )
 
     if stages.infer:
@@ -826,9 +829,9 @@ def _maybe_run_confidence_postop(
     want_scored = bool(confidence_cfg) or (
         eval_enabled and metrics_mode in {"coco", "lvis", "both"}
     )
-    # `cxcy_logw_logh` uses a deterministic constant-score scored artifact for
+    # Non-xyxy prepared bbox formats use a deterministic constant-score scored artifact for
     # official evaluation, so infer-only runs still need scored materialization.
-    if not want_scored and bbox_format in {"xyxy", "cxcy_logw_logh"}:
+    if not want_scored and bbox_format in {"xyxy", "cxcy_logw_logh", "cxcywh"}:
         want_scored = True
     if not want_scored:
         return
@@ -837,7 +840,7 @@ def _maybe_run_confidence_postop(
     scored_path = artifacts.gt_vs_pred_scored_jsonl
     if scored_path is None:
         return
-    if bbox_format == "cxcy_logw_logh":
+    if bbox_format in {"cxcy_logw_logh", "cxcywh"}:
         if not base_path.is_file():
             return
         newest_input_mtime = base_path.stat().st_mtime
@@ -854,9 +857,21 @@ def _maybe_run_confidence_postop(
             scored_path,
             with_constant_scores(
                 records=rows,
-                pred_score_source=CXCY_LOGW_LOGH_CONSTANT_PRED_SCORE_SOURCE,
-                pred_score_version=CXCY_LOGW_LOGH_CONSTANT_PRED_SCORE_VERSION,
-                constant_score=CXCY_LOGW_LOGH_CONSTANT_SCORE,
+                pred_score_source=(
+                    CXCY_LOGW_LOGH_CONSTANT_PRED_SCORE_SOURCE
+                    if bbox_format == "cxcy_logw_logh"
+                    else CXCYWH_CONSTANT_PRED_SCORE_SOURCE
+                ),
+                pred_score_version=(
+                    CXCY_LOGW_LOGH_CONSTANT_PRED_SCORE_VERSION
+                    if bbox_format == "cxcy_logw_logh"
+                    else CXCYWH_CONSTANT_PRED_SCORE_VERSION
+                ),
+                constant_score=(
+                    CXCY_LOGW_LOGH_CONSTANT_SCORE
+                    if bbox_format == "cxcy_logw_logh"
+                    else CXCYWH_CONSTANT_SCORE
+                ),
             ),
         )
         return

@@ -49,6 +49,9 @@ from src.eval.artifacts import (
     CXCY_LOGW_LOGH_CONSTANT_PRED_SCORE_SOURCE,
     CXCY_LOGW_LOGH_CONSTANT_PRED_SCORE_VERSION,
     CXCY_LOGW_LOGH_CONSTANT_SCORE,
+    CXCYWH_CONSTANT_PRED_SCORE_SOURCE,
+    CXCYWH_CONSTANT_PRED_SCORE_VERSION,
+    CXCYWH_CONSTANT_SCORE,
     with_constant_scores,
     write_jsonl_records,
 )
@@ -1530,15 +1533,30 @@ def _run_reproduction_for_checkpoint(
     pred_confidence_path = reproduce_root / "pred_confidence.jsonl"
     scored_path = reproduce_root / "gt_vs_pred_scored.jsonl"
     confidence_summary_path = reproduce_root / "confidence_postop_summary.json"
-    if checkpoint.spec.bbox_format == "cxcy_logw_logh":
+    if checkpoint.spec.bbox_format in {"cxcy_logw_logh", "cxcywh"}:
         rows = _read_jsonl(out_path)
+        pred_score_source = (
+            CXCY_LOGW_LOGH_CONSTANT_PRED_SCORE_SOURCE
+            if checkpoint.spec.bbox_format == "cxcy_logw_logh"
+            else CXCYWH_CONSTANT_PRED_SCORE_SOURCE
+        )
+        pred_score_version = (
+            CXCY_LOGW_LOGH_CONSTANT_PRED_SCORE_VERSION
+            if checkpoint.spec.bbox_format == "cxcy_logw_logh"
+            else CXCYWH_CONSTANT_PRED_SCORE_VERSION
+        )
+        constant_score = (
+            CXCY_LOGW_LOGH_CONSTANT_SCORE
+            if checkpoint.spec.bbox_format == "cxcy_logw_logh"
+            else CXCYWH_CONSTANT_SCORE
+        )
         write_jsonl_records(
             scored_path,
             with_constant_scores(
                 records=rows,
-                pred_score_source=CXCY_LOGW_LOGH_CONSTANT_PRED_SCORE_SOURCE,
-                pred_score_version=CXCY_LOGW_LOGH_CONSTANT_PRED_SCORE_VERSION,
-                constant_score=CXCY_LOGW_LOGH_CONSTANT_SCORE,
+                pred_score_source=pred_score_source,
+                pred_score_version=pred_score_version,
+                constant_score=constant_score,
             ),
         )
         confidence_summary = {
@@ -1553,8 +1571,8 @@ def _run_reproduction_for_checkpoint(
             "kept_pred_objects": None,
             "dropped_pred_objects": None,
             "kept_fraction": None,
-            "pred_score_source": CXCY_LOGW_LOGH_CONSTANT_PRED_SCORE_SOURCE,
-            "pred_score_version": CXCY_LOGW_LOGH_CONSTANT_PRED_SCORE_VERSION,
+            "pred_score_source": pred_score_source,
+            "pred_score_version": pred_score_version,
             "confidence_method": "constant_score_materialization",
         }
         confidence_summary_path.write_text(

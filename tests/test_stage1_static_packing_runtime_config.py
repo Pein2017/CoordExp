@@ -457,10 +457,23 @@ def test_static_packing_fingerprint_tracks_bbox_parameterization() -> None:
         packing_cfg=packing_cfg,
         train_jsonl="train.jsonl",
     )
+    cxcywh = _build_static_packing_fingerprint(
+        training_config=training_cfg,
+        custom_config=SimpleNamespace(
+            **common_custom, bbox_format="cxcywh"
+        ),
+        template=_Template(max_length=128),
+        train_args=SimpleNamespace(max_model_len=512),
+        dataset_seed=7,
+        packing_cfg=packing_cfg,
+        train_jsonl="train.jsonl",
+    )
 
     assert xyxy["custom_bbox_format"] == "xyxy"
     assert cxcy_logw_logh["custom_bbox_format"] == "cxcy_logw_logh"
+    assert cxcywh["custom_bbox_format"] == "cxcywh"
     assert xyxy != cxcy_logw_logh
+    assert cxcy_logw_logh != cxcywh
 
 
 def test_static_packing_fingerprint_tracks_prompt_variant_and_template_hash() -> None:

@@ -26,6 +26,12 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from src.coord_tokens.codec import is_coord_token, token_to_int  # noqa: E402
+from src.common.geometry.bbox_parameterization import (  # noqa: E402
+    MAX_BIN,
+    cxcy_logw_logh_norm1000_to_xyxy_norm1000,
+    cxcywh_norm1000_to_xyxy_norm1000,
+    normalize_bbox_format,
+)
 
 
 DISALLOWED_GEOMETRY_KEYS = {"bbox", "polygon", "line", "line_points"}
@@ -70,6 +76,7 @@ class JSONLValidator:
         check_images: bool = True,
         verbose: bool = False,
         *,
+        bbox_format: str = "xyxy",
         expected_max_pixels: Optional[int] = None,
         expected_multiple_of: Optional[int] = None,
         check_image_sizes: bool = False,
@@ -94,6 +101,7 @@ class JSONLValidator:
         self.image_check_n = int(image_check_n)
         self.enforce_rescale_images_real_dir = bool(enforce_rescale_images_real_dir)
         self.check_image_sizes = bool(check_image_sizes) or mode == "open"
+        self.bbox_format = normalize_bbox_format(bbox_format, path="bbox_format")
         self.expected_max_pixels = expected_max_pixels
         self.expected_multiple_of = expected_multiple_of
         self.verbose = verbose
@@ -115,6 +123,30 @@ class JSONLValidator:
             "invalid_geometries": 0,
             "categories": set(),
         }
+
+    def _resolve_sample_bbox_format(
+        self,
+        sample: Dict[str, Any],
+        *,
+        line_num: int,
+    ) -> Optional[str]:
+        metadata = sample.get("metadata")
+        prepared_format = (
+            metadata.get("prepared_bbox_format") if isinstance(metadata, dict) else None
+        )
+        bbox_format_raw = prepared_format if prepared_format not in (None, "") else self.bbox_format
+        try:
+            return normalize_bbox_format(bbox_format_raw, path="metadata.prepared_bbox_format")
+        except ValueError as exc:
+            self.errors.append(
+                ValidationError(
+                    line_num,
+                    "metadata.prepared_bbox_format",
+                    str(exc),
+                )
+            )
+            self.stats["invalid_bboxes"] += 1
+            return None
     
     def validate_file(self, jsonl_path: str) -> bool:
         """
@@ -206,6 +238,9 @@ class JSONLValidator:
             True if sample is valid
         """
         sample_valid = True
+        bbox_format = self._resolve_sample_bbox_format(sample, line_num=line_num)
+        if bbox_format is None:
+            sample_valid = False
 
         # Check required fields
         required_fields = ["images", "objects", "width", "height"]
@@ -302,9 +337,16 @@ class JSONLValidator:
             sample_valid = False
         else:
             self.stats["total_objects"] += len(objects)
-            if width_ok and height_ok:
+            if width_ok and height_ok and bbox_format is not None:
                 for obj_idx, obj in enumerate(objects):
-                    if not self.validate_object(obj, line_num, obj_idx, width, height):
+                    if not self.validate_object(
+                        obj,
+                        line_num,
+                        obj_idx,
+                        width,
+                        height,
+                        bbox_format=bbox_format,
+                    ):
                         sample_valid = False
             else:
                 # If width/height are invalid, object-bound checks are meaningless.
@@ -425,6 +467,8 @@ class JSONLValidator:
         obj_idx: int,
         img_width: int,
         img_height: int,
+        *,
+        bbox_format: str,
     ) -> bool:
         """Validate one object annotation against docs/data/CONTRACT.md."""
         prefix = f"objects[{obj_idx}]"
@@ -578,7 +622,41 @@ class JSONLValidator:
                 obj_valid = False
 
             if len(coords) == 4:
-                x1, y1, x2, y2 = coords
+                xyxy_coords = list(coords)
+                if bbox_format in {"cxcy_logw_logh", "cxcywh"}:
+                    for i, coord in enumerate(coords):
+                        if coord < 0.0 or coord > float(MAX_BIN):
+                            self.errors.append(
+                                ValidationError(
+                                    line_num,
+                                    f"{prefix}.bbox_2d[{i}]",
+                                    f"Expected norm1000 slot in [0,{MAX_BIN}], got {coord}",
+                                )
+                            )
+                            self.stats["invalid_bboxes"] += 1
+                            obj_valid = False
+                    if obj_valid:
+                        try:
+                            if bbox_format == "cxcy_logw_logh":
+                                xyxy_coords = list(
+                                    cxcy_logw_logh_norm1000_to_xyxy_norm1000(coords)
+                                )
+                            else:
+                                xyxy_coords = list(
+                                    cxcywh_norm1000_to_xyxy_norm1000(coords)
+                                )
+                        except Exception as exc:
+                            self.errors.append(
+                                ValidationError(
+                                    line_num,
+                                    f"{prefix}.bbox_2d",
+                                    f"Failed to decode {bbox_format} bbox: {exc}",
+                                )
+                            )
+                            self.stats["invalid_bboxes"] += 1
+                            return False
+
+                x1, y1, x2, y2 = xyxy_coords
 
                 if x2 <= x1:
                     self.errors.append(
@@ -602,8 +680,8 @@ class JSONLValidator:
                     self.stats["invalid_bboxes"] += 1
                     obj_valid = False
 
-                # Bounds checks only make sense for pixel-space numbers.
-                if not _sequence_has_coord_tokens(bbox):
+                # Bounds checks only make sense for canonical pixel-space xyxy numbers.
+                if bbox_format == "xyxy" and not _sequence_has_coord_tokens(bbox):
                     if x2 < 0 or x1 > img_width:
                         self.warnings.append(
                             f"Line {line_num}, {prefix}.bbox_2d: Box completely outside image width"
@@ -772,6 +850,16 @@ def main() -> None:
 
     parser.add_argument("jsonl_file", type=str, help="JSONL file to validate")
     parser.add_argument(
+        "--bbox-format",
+        type=str,
+        default="xyxy",
+        choices=["xyxy", "cxcy_logw_logh", "cxcywh"],
+        help=(
+            "Interpret bbox_2d as canonical xyxy or a prepared non-canonical surface "
+            "(cxcy_logw_logh / cxcywh) unless overridden by metadata.prepared_bbox_format."
+        ),
+    )
+    parser.add_argument(
         "--max-pixels",
         type=int,
         default=None,
@@ -817,6 +905,7 @@ def main() -> None:
     validator = JSONLValidator(
         check_images=image_check_mode != "none",
         verbose=args.verbose,
+        bbox_format=args.bbox_format,
         expected_max_pixels=args.max_pixels,
         expected_multiple_of=args.multiple_of,
         check_image_sizes=image_check_mode == "open",

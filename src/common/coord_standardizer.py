@@ -24,6 +24,7 @@ from src.common.geometry.bbox_parameterization import (
     AllowedBBoxFormat,
     DEFAULT_BBOX_FORMAT,
     cxcy_logw_logh_norm1000_to_xyxy_norm1000,
+    cxcywh_norm1000_to_xyxy_norm1000,
     normalize_bbox_format,
 )
 from src.common.prediction_parsing import GEOM_KEYS, coords_are_pixel, parse_prediction
@@ -174,14 +175,13 @@ class CoordinateStandardizer:
                 )
 
         points_for_scale: Sequence[float] = points
-        if (
-            not is_gt
-            and kind == "bbox_2d"
-            and self.bbox_format == "cxcy_logw_logh"
-        ):
+        if not is_gt and kind == "bbox_2d" and self.bbox_format != "xyxy":
             if coord_mode != "norm1000":
                 raise ValueError("bbox_format_pred_mode")
-            points_for_scale = cxcy_logw_logh_norm1000_to_xyxy_norm1000(points)
+            if self.bbox_format == "cxcy_logw_logh":
+                points_for_scale = cxcy_logw_logh_norm1000_to_xyxy_norm1000(points)
+            else:
+                points_for_scale = cxcywh_norm1000_to_xyxy_norm1000(points)
 
         pts_px = denorm_and_clamp(points_for_scale, width, height, coord_mode=coord_mode)
 

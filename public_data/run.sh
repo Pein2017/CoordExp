@@ -69,6 +69,7 @@ Examples:
   ./public_data/run.sh lvis all --preset rescale_32_768_bbox
   ./public_data/run.sh lvis all --preset rescale_32_768_poly_20 -- --use-polygon
   ./public_data/run.sh coco bbox-format --preset rescale_32_1024_bbox_max60_lvis_proxy -- --bbox-format cxcy_logw_logh
+  ./public_data/run.sh coco bbox-format --preset rescale_32_1024_bbox_max60_lvis_proxy -- --bbox-format cxcywh
 EOF
 }
 

@@ -2920,74 +2920,75 @@ class TrainingConfig:
                             f"Got global_max_length={int(global_max_length)} vllm.max_model_len={vllm_max_model_len}."
                         )
 
-        if custom.bbox_format == "cxcy_logw_logh":
+        if custom.bbox_format in {"cxcy_logw_logh", "cxcywh"}:
+            bbox_format_label = str(custom.bbox_format)
             if trainer_variant in {"stage2_two_channel", "stage2_rollout_aligned"}:
                 raise ValueError(
-                    "custom.bbox_format=cxcy_logw_logh is Stage-1-only in V1 and is unsupported for stage2 trainer variants."
+                    f"custom.bbox_format={bbox_format_label} is Stage-1-only in V1 and is unsupported for stage2 trainer variants."
                 )
             if stage2_pipeline_present or rollout_pipeline_present:
                 raise ValueError(
-                    "custom.bbox_format=cxcy_logw_logh is Stage-1-only in V1 and cannot be combined with stage2_ab.pipeline or rollout_matching.pipeline."
+                    f"custom.bbox_format={bbox_format_label} is Stage-1-only in V1 and cannot be combined with stage2_ab.pipeline or rollout_matching.pipeline."
                 )
             if not bool(getattr(custom.coord_tokens, "enabled", False)):
                 raise ValueError(
-                    "custom.bbox_format=cxcy_logw_logh requires custom.coord_tokens.enabled=true."
+                    f"custom.bbox_format={bbox_format_label} requires custom.coord_tokens.enabled=true."
                 )
             if not bool(getattr(custom.coord_tokens, "skip_bbox_norm", False)):
                 raise ValueError(
-                    "custom.bbox_format=cxcy_logw_logh requires custom.coord_tokens.skip_bbox_norm=true."
+                    f"custom.bbox_format={bbox_format_label} requires custom.coord_tokens.skip_bbox_norm=true."
                 )
 
             coord_cfg = custom.coord_soft_ce_w1
             if not bool(getattr(coord_cfg, "enabled", False)):
                 raise ValueError(
-                    "custom.bbox_format=cxcy_logw_logh requires custom.coord_soft_ce_w1.enabled=true."
+                    f"custom.bbox_format={bbox_format_label} requires custom.coord_soft_ce_w1.enabled=true."
                 )
             if float(getattr(coord_cfg, "ce_weight", 0.0)) <= 0.0:
                 raise ValueError(
-                    "custom.bbox_format=cxcy_logw_logh requires custom.coord_soft_ce_w1.ce_weight > 0."
+                    f"custom.bbox_format={bbox_format_label} requires custom.coord_soft_ce_w1.ce_weight > 0."
                 )
             if float(getattr(coord_cfg, "soft_ce_weight", 0.0)) != 0.0:
                 raise ValueError(
-                    "custom.bbox_format=cxcy_logw_logh requires custom.coord_soft_ce_w1.soft_ce_weight = 0."
+                    f"custom.bbox_format={bbox_format_label} requires custom.coord_soft_ce_w1.soft_ce_weight = 0."
                 )
             if float(getattr(coord_cfg, "w1_weight", 0.0)) != 0.0:
                 raise ValueError(
-                    "custom.bbox_format=cxcy_logw_logh requires custom.coord_soft_ce_w1.w1_weight = 0."
+                    f"custom.bbox_format={bbox_format_label} requires custom.coord_soft_ce_w1.w1_weight = 0."
                 )
             if float(getattr(coord_cfg, "gate_weight", 0.0)) <= 0.0:
                 raise ValueError(
-                    "custom.bbox_format=cxcy_logw_logh requires custom.coord_soft_ce_w1.gate_weight > 0."
+                    f"custom.bbox_format={bbox_format_label} requires custom.coord_soft_ce_w1.gate_weight > 0."
                 )
             if float(getattr(coord_cfg, "text_gate_weight", 0.0)) <= 0.0:
                 raise ValueError(
-                    "custom.bbox_format=cxcy_logw_logh requires custom.coord_soft_ce_w1.text_gate_weight > 0."
+                    f"custom.bbox_format={bbox_format_label} requires custom.coord_soft_ce_w1.text_gate_weight > 0."
                 )
             if float(getattr(coord_cfg, "temperature", 1.0)) != 1.0:
                 raise ValueError(
-                    "custom.bbox_format=cxcy_logw_logh requires custom.coord_soft_ce_w1.temperature = 1.0."
+                    f"custom.bbox_format={bbox_format_label} requires custom.coord_soft_ce_w1.temperature = 1.0."
                 )
             if float(getattr(coord_cfg, "target_sigma", 2.0)) != 2.0:
                 raise ValueError(
-                    "custom.bbox_format=cxcy_logw_logh requires custom.coord_soft_ce_w1.target_sigma = 2.0."
+                    f"custom.bbox_format={bbox_format_label} requires custom.coord_soft_ce_w1.target_sigma = 2.0."
                 )
             if getattr(coord_cfg, "target_truncate", None) is not None:
                 raise ValueError(
-                    "custom.bbox_format=cxcy_logw_logh requires custom.coord_soft_ce_w1.target_truncate = null."
+                    f"custom.bbox_format={bbox_format_label} requires custom.coord_soft_ce_w1.target_truncate = null."
                 )
             if float(getattr(coord_cfg, "adjacent_repulsion_weight", 0.0)) != 0.0:
                 raise ValueError(
-                    "custom.bbox_format=cxcy_logw_logh requires custom.coord_soft_ce_w1.adjacent_repulsion_weight = 0."
+                    f"custom.bbox_format={bbox_format_label} requires custom.coord_soft_ce_w1.adjacent_repulsion_weight = 0."
                 )
             if custom_bbox_geo_present or bool(getattr(custom.bbox_geo, "enabled", False)):
                 raise ValueError(
-                    "custom.bbox_format=cxcy_logw_logh rejects custom.bbox_geo in V1."
+                    f"custom.bbox_format={bbox_format_label} rejects custom.bbox_geo in V1."
                 )
             if custom_bbox_size_aux_present or bool(
                 getattr(custom.bbox_size_aux, "enabled", False)
             ):
                 raise ValueError(
-                    "custom.bbox_format=cxcy_logw_logh rejects custom.bbox_size_aux in V1."
+                    f"custom.bbox_format={bbox_format_label} rejects custom.bbox_size_aux in V1."
                 )
 
         return cls(

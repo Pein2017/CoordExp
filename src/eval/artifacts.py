@@ -7,6 +7,9 @@ from typing import Any, Dict, Iterable, List, Mapping, Sequence, Tuple
 CXCY_LOGW_LOGH_CONSTANT_PRED_SCORE_SOURCE = "cxcy_logw_logh_constant"
 CXCY_LOGW_LOGH_CONSTANT_PRED_SCORE_VERSION = 1
 CXCY_LOGW_LOGH_CONSTANT_SCORE = 1.0
+CXCYWH_CONSTANT_PRED_SCORE_SOURCE = "cxcywh_constant"
+CXCYWH_CONSTANT_PRED_SCORE_VERSION = 1
+CXCYWH_CONSTANT_SCORE = 1.0
 
 
 def with_stem_suffix(path: Path, suffix: str) -> Path:
