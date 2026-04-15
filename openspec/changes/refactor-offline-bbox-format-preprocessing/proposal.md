@@ -16,10 +16,12 @@ branch instead of reconstructing model-facing geometry online.
 
 - Add a first-class offline preprocessing capability that derives
   bbox-format-specific training artifacts from canonical raw/prepared datasets,
-  starting with `cxcy_logw_logh = [cx, cy, logw, logh]`.
+  with initial supported non-canonical branches:
+  - `cxcy_logw_logh = [cx, cy, logw, logh]`
+  - `cxcywh = [cx, cy, w, h]`
 - Define a fully separate prepared-data workflow branch for non-canonical
-  bbox parameterizations so `xyxy` and `cxcy_logw_logh` datasets are generated,
-  stored, and referenced independently from the start.
+  bbox parameterizations so `xyxy`, `cxcy_logw_logh`, and `cxcywh` datasets are
+  generated, stored, and referenced independently from the start.
 - Keep canonical raw and evaluation-facing artifacts in `xyxy`, but require
   model-facing non-canonical training datasets to be authored offline in
   `public_data/` rather than synthesized inside the runtime dataset/builder
@@ -33,15 +35,16 @@ branch instead of reconstructing model-facing geometry online.
   `poly` or mixed-geometry sources instead of carrying forward the current
   mixed-geometry branching.
 - **BREAKING**: remove the supported Stage-1 online bbox-format conversion path
-  for `cxcy_logw_logh`; configs that request that experiment must point to an
-  offline-prepared `cxcy_logw_logh` dataset branch and MUST fail fast when the
-  dataset provenance or geometry contract does not match.
+  for non-canonical bbox formats; configs that request `cxcy_logw_logh` or
+  `cxcywh` must point to a matching offline-prepared dataset branch and MUST
+  fail fast when the dataset provenance or geometry contract does not match.
 - Add strict safety guards and provenance:
   - prepared dataset metadata must record canonical source artifact, emitted
     bbox format, coord-token contract, and conversion version,
   - prepared dataset metadata must also record the model-facing slot-order
-    contract so `cxcy_logw_logh` remains unambiguously
-    `[cx, cy, logw, logh]`,
+    contract so each branch remains unambiguous, including:
+    - `cxcy_logw_logh = [cx, cy, logw, logh]`
+    - `cxcywh = [cx, cy, w, h]`,
   - training/runtime must reject mixed or ambiguous surfaces,
   - cache identity and run metadata must include prepared bbox-format branch
     provenance.
@@ -54,7 +57,7 @@ branch instead of reconstructing model-facing geometry online.
 ### New Capabilities
 - `offline-bbox-format-branches`: defines offline derivation, naming,
   provenance, and safety rules for prepared bbox-format-specific dataset
-  branches such as `cxcy_logw_logh`.
+  branches such as `cxcy_logw_logh` and `cxcywh`.
 
 ### Modified Capabilities
 - `public-data-pipeline`: add a first-class offline bbox-format derivation
@@ -62,8 +65,9 @@ branch instead of reconstructing model-facing geometry online.
 - `public-data-adapter-factory`: clarify that adapters emit canonical raw
   records and that non-canonical bbox parameterization derivation happens only
   in shared offline preprocessing stages.
-- `coord-aux-loss`: require Stage-1 `cxcy_logw_logh` training to consume
-  offline-prepared datasets and reject runtime bbox-format conversion.
+- `coord-aux-loss`: require Stage-1 non-canonical bbox-format training
+  (`cxcy_logw_logh`, `cxcywh`) to consume offline-prepared datasets and reject
+  runtime bbox-format conversion.
 - `encoded-training-cache`: require cache provenance/fingerprints to capture the
   prepared bbox-format branch identity and reject ambiguous mixed surfaces.
 
@@ -86,5 +90,5 @@ branch instead of reconstructing model-facing geometry online.
 - Reproducibility impact:
   - bbox-format conversion becomes explicit, offline, and auditable
   - runtime branching and redundant conversion logic are reduced
-  - research comparisons between `xyxy` and `cxcy_logw_logh` become cleaner
-    because each run starts from a distinct prepared-data branch
+- research comparisons between `xyxy`, `cxcy_logw_logh`, and `cxcywh` become
+    cleaner because each run starts from a distinct prepared-data branch

@@ -66,11 +66,11 @@ Stage-1 training families that parity tests expect to stay user-visible.
   - `coord_diag/expected_bin_abs_err_p90`
   - `coord_diag/w1_to_delta`
 
-Stage-1 `cxcy_logw_logh` note:
+Stage-1 non-canonical bbox note:
 
-- The `cxcy_logw_logh` Stage-1 profile uses `coord_softce_w1/ce`,
-  `coord_softce_w1/gate`, and `coord_softce_w1/text_gate` while forcing
-  `soft_ce` and `w1` to zero.
+- The `cxcy_logw_logh` and `cxcywh` Stage-1 profiles use
+  `coord_softce_w1/ce`, `coord_softce_w1/gate`, and
+  `coord_softce_w1/text_gate` while forcing `soft_ce` and `w1` to zero.
 
 ### BBox Geo
 

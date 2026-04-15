@@ -29,8 +29,8 @@ Scope note:
   - `custom.bbox_geo.*`
   - `custom.bbox_size_aux.*`
 - Narrow V1 exception:
-  - `custom.bbox_format: cxcy_logw_logh` defines an experimental Stage-1-only
-    profile
+  - `custom.bbox_format: cxcy_logw_logh` or `custom.bbox_format: cxcywh`
+    defines an experimental Stage-1-only profile
   - under that profile, the allowed Stage-1 surface narrows to
     `custom.coord_soft_ce_w1.*` with hard CE plus positive coord/text gating
   - `custom.bbox_geo.*`, `custom.bbox_size_aux.*`, soft CE, W1, and trainer-side
@@ -145,12 +145,13 @@ custom:
   - `stage2_two_channel` and `stage2_rollout_aligned` still use provenance-aware metric families, but the active single-pass Stage-2 contract now routes Channel-A through `loss/text/*`, `loss/coord/*`, and `coord_diag/*`, while Channel-B uses `loss/B_rollout_text/*`, `loss/B_coord/*`, and `coord_diag/B/*`.
   - Historical iterative groups such as `loss/A1_*`, `loss/A2_*`, `coord_diag/A1/*`, and `coord_diag/A2/*` are no longer part of the active Stage-2 contract.
 
-## Stage-1 `cxcy_logw_logh` V1 experiment
+## Stage-1 non-canonical bbox V1 experiments
 
-When `custom.bbox_format: cxcy_logw_logh`, the Stage-1 loss surface is
-intentionally much narrower than the existing `xyxy` baseline:
+When `custom.bbox_format` is `cxcy_logw_logh` or `cxcywh`, the Stage-1 loss
+surface is intentionally much narrower than the existing `xyxy` baseline:
 
-- model-facing `bbox_2d` slots become `[cx, cy, u(w), u(h)]`
+- model-facing `bbox_2d` slots become either `[cx, cy, u(w), u(h)]` or
+  `[cx, cy, w, h]`
 - coord-token bbox supervision is hard CE only
 - `custom.coord_soft_ce_w1.enabled` must remain `true`
 - `ce_weight > 0`
@@ -173,16 +174,19 @@ Evaluation note:
   artifacts
 - official score-aware evaluation remains available through a deterministic
   constant-score `gt_vs_pred_scored.jsonl` compatibility artifact
-- confidence post-op remains unsupported for `cxcy_logw_logh` in this V1 path
+- confidence post-op remains unsupported for these non-canonical formats in
+  this V1 path
 - checkpoints trained on the legacy model-facing `xyxy` serialization are not
-  semantically compatible with `infer.bbox_format: cxcy_logw_logh`
-- if you force an old `xyxy` checkpoint through the `cxcy_logw_logh` infer
+  semantically compatible with non-canonical `infer.bbox_format`
+- if you force an old `xyxy` checkpoint through the `cxcy_logw_logh` or
+  `cxcywh` infer
   path, the runtime may still emit canonicalized `xyxy` artifacts, but those
   outputs should be treated as a compatibility stress test rather than as valid
-  `cxcy_logw_logh` rollout behavior
+  non-canonical rollout behavior
 - training data for this profile must come from the offline-prepared
   derived preset root such as
-  `public_data/<dataset>/<preset>_cxcy_logw_logh/train.coord.jsonl` rather
+  `public_data/<dataset>/<preset>_cxcy_logw_logh/train.coord.jsonl` or
+  `public_data/<dataset>/<preset>_cxcywh/train.coord.jsonl` rather
   than a runtime reinterpretation of canonical preset JSONL
 
 ## Stage-1 bbox geometry loss

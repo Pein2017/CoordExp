@@ -57,8 +57,9 @@ The preferred way to prepare public datasets is the unified runner:
 # LVIS polygons (segmentation → poly)
 ./public_data/run.sh lvis all --preset rescale_32_768_poly_20 -- --use-polygon --poly-max-points 20
 
-# Derive an offline cxcy_logw_logh branch from an existing canonical preset
+# Derive offline non-canonical bbox branches from an existing canonical preset
 ./public_data/run.sh coco bbox-format --preset rescale_32_1024_bbox_max60_lvis_proxy -- --bbox-format cxcy_logw_logh
+./public_data/run.sh coco bbox-format --preset rescale_32_1024_bbox_max60_lvis_proxy -- --bbox-format cxcywh
 ```
 
 ---
@@ -167,7 +168,7 @@ bash public_data/scripts/lvis_full_pipeline.sh
 ## Offline Bbox-Format Branches
 
 Use the offline bbox-format branch only when you need a non-canonical
-model-facing training surface such as `cxcy_logw_logh`.
+model-facing training surface such as `cxcy_logw_logh` or `cxcywh`.
 
 - Source contract:
   - the source preset remains canonical `xyxy`
@@ -180,13 +181,20 @@ model-facing training surface such as `cxcy_logw_logh`.
     keeps the same numeric lattice in preset-compatible layout
   - `public_data/<dataset>/<preset>_cxcy_logw_logh/<split>.coord.jsonl`
     stores the tokenized form of the same lattice
+  - `public_data/<dataset>/<preset>_cxcywh/<split>.jsonl`
+    stores norm1000 integer `bbox_2d` slots in `[cx, cy, w, h]`
+  - `public_data/<dataset>/<preset>_cxcywh/<split>.norm.jsonl`
+    keeps the same numeric lattice in preset-compatible layout
+  - `public_data/<dataset>/<preset>_cxcywh/<split>.coord.jsonl`
+    stores the tokenized form of the same lattice
   - `pipeline_manifest.json` records canonical source lineage plus
     prepared-bbox provenance
 - Training contract:
-  - `custom.train_jsonl` / `custom.val_jsonl` for `custom.bbox_format:
-    cxcy_logw_logh` must point at the derived preset artifacts
+  - `custom.train_jsonl` / `custom.val_jsonl` for non-canonical
+    `custom.bbox_format` values (`cxcy_logw_logh`, `cxcywh`) must point at
+    the derived preset artifacts
   - runtime dataset code must not convert canonical `xyxy` sources into
-    `cxcy_logw_logh` on the fly
+    another bbox chart on the fly
 
 ---
 
@@ -226,6 +234,10 @@ This exports both `bbox_only` and `poly_prefer_semantic` train/val JSONLs. See `
   derived preset root such as
   `public_data/<dataset>/<preset>_cxcy_logw_logh/train.coord.jsonl`, not to
   the canonical preset root.
+- For `custom.bbox_format: cxcywh`, point them to the offline-prepared
+  derived preset root such as
+  `public_data/<dataset>/<preset>_cxcywh/train.coord.jsonl`, not to the
+  canonical preset root.
 - For LVIS, pick a dataset-fixed variant that matches your ablation goal:
   - Geometry ablations: use `public_data/scripts/export_lvis_bbox_poly_prefer_semantic_max60.sh` outputs under `public_data/lvis/`.
   - Sequence-length control: apply a simple record-level `max_objects` cap (e.g., 60).

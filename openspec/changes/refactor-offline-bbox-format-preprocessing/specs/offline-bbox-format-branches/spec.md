@@ -25,6 +25,12 @@ Normative behavior:
 - **THEN** the system emits a derived `cxcy_logw_logh` branch
 - **AND** the source `bbox_2d` values are interpreted as canonical `xyxy`.
 
+#### Scenario: Canonical preset dataset is accepted for cxcywh derivation
+- **WHEN** the user runs offline bbox-format derivation on a canonical
+  `train.jsonl`
+- **THEN** the system emits a derived `cxcywh` branch
+- **AND** the source `bbox_2d` values are interpreted as canonical `xyxy`.
+
 #### Scenario: Non-canonical source is rejected
 - **WHEN** the user attempts to derive a bbox-format branch from an artifact that
   already declares a non-canonical prepared bbox format
@@ -59,6 +65,12 @@ Normative behavior:
 - **WHEN** offline derivation is run for `cxcy_logw_logh`
 - **THEN** the outputs are written under
   `public_data/<dataset>/<preset>_cxcy_logw_logh/`
+- **AND** the canonical preset files remain in place.
+
+#### Scenario: cxcywh branch writes into a separate root
+- **WHEN** offline derivation is run for `cxcywh`
+- **THEN** the outputs are written under
+  `public_data/<dataset>/<preset>_cxcywh/`
 - **AND** the canonical preset files remain in place.
 
 #### Scenario: Missing val split preserves split semantics
@@ -113,6 +125,10 @@ Normative behavior:
   byte-identical derived outputs,
 - for `cxcy_logw_logh`, the derived chart MUST serialize bbox slots in the
   order `[cx, cy, logw, logh]`,
+- for `cxcywh`, the derived chart MUST serialize bbox slots in the order
+  `[cx, cy, w, h]`,
+- for `cxcywh`, `w` and `h` MUST be normalized onto the same `0..999`
+  coordinate lattice used by Qwen3-VL coordinate tokens before tokenization,
 - any intentional change to the conversion semantics MUST bump the
   bbox-format conversion version recorded in manifests and record metadata,
 - downstream compatibility checks MUST treat a conversion-version mismatch as a

@@ -93,6 +93,13 @@ Mutual exclusivity:
 - **THEN** the runner exits non-zero and prints which required canonical source
   file is missing.
 
+#### Scenario: User derives a cxcywh branch from a canonical preset
+- **WHEN** the user runs
+  `public_data/run.sh <dataset> bbox-format --preset <preset> -- --bbox-format cxcywh`
+- **THEN** the runner emits the derived branch under
+  `<preset>_cxcywh/`
+- **AND** it leaves the canonical preset artifacts unchanged.
+
 #### Scenario: User runs `all` without a preset and the dataset has no default
 - **GIVEN** the dataset plugin does not define a default preset
 - **WHEN** the user runs `public_data/run.sh <dataset> all`
@@ -144,6 +151,9 @@ Normative behavior:
     for the requested chart,
   - `<split>.coord.jsonl` containing the tokenized version of the same prepared
     tuples,
+- supported initial non-canonical charts SHALL include:
+  - `cxcy_logw_logh`
+  - `cxcywh`,
 - the step SHALL fail fast if the canonical source artifacts are missing,
   malformed, or already marked as non-canonical.
 
@@ -152,6 +162,13 @@ Normative behavior:
   `public_data/run.sh <dataset> bbox-format --preset <preset> -- --bbox-format cxcy_logw_logh`
 - **THEN** the runner emits the derived branch under
   `<preset>_cxcy_logw_logh/`
+- **AND** it leaves the canonical preset artifacts unchanged.
+
+#### Scenario: User derives a cxcywh branch from a canonical preset
+- **WHEN** the user runs
+  `public_data/run.sh <dataset> bbox-format --preset <preset> -- --bbox-format cxcywh`
+- **THEN** the runner emits the derived branch under
+  `<preset>_cxcywh/`
 - **AND** it leaves the canonical preset artifacts unchanged.
 
 #### Scenario: Derivation rejects a non-canonical preset source
@@ -167,7 +184,7 @@ branches under a preset in addition to raw and canonical preset outputs.
 Normative behavior:
 - `validate --preset <preset>` SHALL inspect canonical preset artifacts and any
   discovered sibling derived preset roots for that canonical preset, including
-  `<preset>_cxcy_logw_logh/` when present,
+  `<preset>_cxcy_logw_logh/` and `<preset>_cxcywh/` when present,
 - validation for derived branches SHALL check:
   - required branch files for both the numeric split JSONL and coord-token
     split JSONL surfaces,
@@ -183,6 +200,12 @@ Normative behavior:
 #### Scenario: Validate inspects a derived branch
 - **WHEN** the user runs `public_data/run.sh <dataset> validate --preset <preset>`
 - **AND** `<preset>_cxcy_logw_logh/` exists under that canonical preset root
+- **THEN** validation includes the derived branch files
+- **AND** reports derived-branch provenance/contract errors if present.
+
+#### Scenario: Validate inspects a cxcywh derived branch
+- **WHEN** the user runs `public_data/run.sh <dataset> validate --preset <preset>`
+- **AND** `<preset>_cxcywh/` exists under that canonical preset root
 - **THEN** validation includes the derived branch files
 - **AND** reports derived-branch provenance/contract errors if present.
 

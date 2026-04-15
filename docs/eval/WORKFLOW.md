@@ -25,7 +25,7 @@ input JSONL + checkpoint
   -> inference
   -> gt_vs_pred.jsonl
   -> confidence post-op (xyxy) OR constant-score compatibility scoring
-     (cxcy_logw_logh, when official metrics are needed)
+     (cxcy_logw_logh / cxcywh, when official metrics are needed)
   -> gt_vs_pred_scored.jsonl
   -> evaluation
   -> raw metrics/artifacts
@@ -50,16 +50,18 @@ PYTHONPATH=. conda run -n ms python scripts/postop_confidence.py \
   --config configs/postop/confidence.yaml
 ```
 
-`cxcy_logw_logh` note:
+Non-canonical bbox note:
 
-- do not run confidence post-op for `infer.bbox_format: cxcy_logw_logh`
+- do not run confidence post-op for `infer.bbox_format: cxcy_logw_logh` or
+  `infer.bbox_format: cxcywh`
 - the unified pipeline instead materializes `gt_vs_pred_scored.jsonl` directly
   from canonical standardized predictions with deterministic constant-score
   provenance when COCO/LVIS metrics are requested
 - only use this infer path with checkpoints that were actually trained against
-  the model-facing `cxcy_logw_logh` serialization contract
+  the matching non-canonical serialization contract
 - forcing a legacy `xyxy`-trained checkpoint through
-  `infer.bbox_format: cxcy_logw_logh` can still produce canonicalized eval
+  `infer.bbox_format: cxcy_logw_logh` or `infer.bbox_format: cxcywh` can still
+  produce canonicalized eval
   artifacts, but those rollouts are not semantically valid evidence for the new
   parameterization
 
@@ -115,7 +117,7 @@ After confidence post-op:
 - `gt_vs_pred_scored.jsonl`
 - `confidence_postop_summary.json`
 
-After `cxcy_logw_logh` official-eval compatibility scoring:
+After non-canonical official-eval compatibility scoring:
 
 - `gt_vs_pred_scored.jsonl`
 - no `pred_confidence.jsonl`
@@ -138,8 +140,8 @@ Guarded-artifact rule:
 
 - non-COCO raw evaluation continues to consume `gt_vs_pred.jsonl`
 - score-aware COCO evaluation continues to consume `gt_vs_pred_scored.jsonl`
-- for `cxcy_logw_logh`, that scored artifact is constant-score compatibility
-  output rather than confidence output
+- for `cxcy_logw_logh` and `cxcywh`, that scored artifact is constant-score
+  compatibility output rather than confidence output
 - guarded companions follow the same input family:
   - `gt_vs_pred_guarded.jsonl`
   - `gt_vs_pred_scored_guarded.jsonl`

@@ -24,6 +24,14 @@ Normative behavior:
 - **THEN** the fingerprints differ
 - **AND** cache reuse does not cross the branch boundary.
 
+#### Scenario: Cache reuse is blocked between cxcy_logw_logh and cxcywh
+- **GIVEN** two runs share the same cache root
+- **AND** one uses an offline `cxcy_logw_logh` branch while the other uses an
+  offline `cxcywh` branch
+- **WHEN** cache lookup resolves the fingerprint
+- **THEN** the fingerprints differ
+- **AND** cache reuse does not cross the branch boundary.
+
 #### Scenario: Cache manifest records prepared branch identity
 - **WHEN** encoded-sample caching is enabled for a derived bbox-format branch
 - **THEN** the cache manifest records the prepared bbox-format provenance

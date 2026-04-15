@@ -54,7 +54,8 @@ Note: only `bbox_2d` and `poly` are supported in CoordExp; `line` geometries are
   `bbox_2d` records into another bbox chart on the fly.
 - Non-canonical model-facing bbox charts are authored offline under
   sibling preset roots such as
-  `public_data/<dataset>/<preset>_cxcy_logw_logh/`.
+  `public_data/<dataset>/<preset>_cxcy_logw_logh/` and
+  `public_data/<dataset>/<preset>_cxcywh/`.
 - For `<preset>_cxcy_logw_logh/`:
   - `<split>.jsonl` stores norm1000 integer `bbox_2d` slots in
     `[cx, cy, logw, logh]`,
@@ -64,9 +65,19 @@ Note: only `bbox_2d` and `poly` are supported in CoordExp; `line` geometries are
   - branch records must include prepared-bbox provenance metadata,
   - the first supported branch surface is `bbox_2d`-only and fails fast on
     `poly` or mixed geometry.
+- For `<preset>_cxcywh/`:
+  - `<split>.jsonl` stores norm1000 integer `bbox_2d` slots in
+    `[cx, cy, w, h]`,
+  - `<split>.norm.jsonl` mirrors the same numeric lattice in preset-compatible
+    layout,
+  - `<split>.coord.jsonl` stores the tokenized form of that same lattice,
+  - branch records must include prepared-bbox provenance metadata,
+  - the first supported branch surface is `bbox_2d`-only and fails fast on
+    `poly` or mixed geometry.
 - Inference, visualization, matching, and emitted evaluation artifacts remain
-  canonical `xyxy`; any `cxcy_logw_logh` prediction surface must be inverted
-  back to canonical `xyxy` before those downstream boundaries.
+  canonical `xyxy`; any non-canonical prediction surface such as
+  `cxcy_logw_logh` or `cxcywh` must be inverted back to canonical `xyxy`
+  before those downstream boundaries.
 
 ## Invariants
 - For training, coords MUST be pre-normalized to norm1000 (ints 0..999) or pre-tokenized `<|coord_k|>` values. Width/height must always be present.

@@ -30,7 +30,9 @@ Stakeholders:
 - Move model-facing bbox-format derivation out of the runtime dataset/builder
   path and into the offline public-data pipeline.
 - Create a fully separate prepared-data branch for non-canonical bbox formats,
-  beginning with `cxcy_logw_logh`.
+  with initial supported branches:
+  - `cxcy_logw_logh`
+  - `cxcywh`
 - Export branch-local split artifacts for both train and val when present,
   using the same split naming pattern inside the derived branch root
   (`train.jsonl`, `val.jsonl`, `train.coord.jsonl`, `val.coord.jsonl`).
@@ -44,7 +46,9 @@ Stakeholders:
 - Redesigning Stage-2 or rollout training around non-canonical bbox formats.
 - Editing upstream HF/Qwen3-VL internals.
 - Supporting arbitrary new bbox charts in this change beyond establishing the
-  branch architecture and first implementation surface for `cxcy_logw_logh`.
+  branch architecture and first implementation surfaces for:
+  - `cxcy_logw_logh`
+  - `cxcywh`
 
 ## Decisions
 
@@ -104,22 +108,35 @@ Alternatives considered:
   rejected because it weakens inspectability and makes validation/debugging
   depend on token parsing alone.
 
-### 3. Preserve the established `cxcy_logw_logh` slot order
+### 3. Preserve explicit slot-order contracts for both non-canonical branches
 
 Decision:
 - The offline-prepared `cxcy_logw_logh` chart continues to mean
   `[cx, cy, logw, logh]`.
-- This slot order is recorded in branch manifests and record-level metadata.
+- A second offline-prepared `cxcywh` chart is added and means
+  `[cx, cy, w, h]`, where `w` and `h` are normalized onto the same `0..999`
+  lattice used by Qwen3-VL coordinate tokens.
+- Slot order is recorded in branch manifests and record-level metadata for
+  every non-canonical prepared branch.
 
 Rationale:
-- The existing inference/eval and geometry helpers already assume that chart.
-- Changing slot order at the same time as the offline refactor would introduce
-  a second confound and broaden the contract change unnecessarily.
+- The existing inference/eval and geometry helpers already assume the
+  `cxcy_logw_logh` chart.
+- The new `cxcywh` branch is a tightly controlled ablation against both
+  canonical `xyxy` and `cxcy_logw_logh`, so its slot order should be explicit
+  and minimal.
+- Changing slot order ambiguously at the same time as the offline refactor
+  would introduce a second confound and broaden the contract change
+  unnecessarily.
 
 Alternatives considered:
 - Switch to `[cx, cy, logh, logw]` in the same change:
   rejected because it would create an incompatible new chart rather than
   isolating the current chart into an offline branch.
+- Use center coordinates plus linear size only as the new default for all
+  non-canonical branches:
+  rejected because the ablation requires both `cxcy_logw_logh` and `cxcywh`
+  to coexist as separate prepared branches.
 
 ### 4. Runtime training stops owning bbox-format conversion
 
@@ -127,6 +144,9 @@ Decision:
 - Stage-1 training with non-canonical bbox formats SHALL require an
   offline-prepared dataset branch whose provenance explicitly matches the
   requested `custom.bbox_format`.
+- The initial supported non-canonical Stage-1 branches are:
+  - `cxcy_logw_logh`
+  - `cxcywh`
 - The supported online conversion path is removed for that workflow.
 
 Rationale:
@@ -227,8 +247,8 @@ Alternatives considered:
   actionable: configs must point to the derived branch for non-canonical
   experiments.
 - [Over-scoping the first refactor] -> Limit the initial implementation to the
-  branch architecture plus `cxcy_logw_logh`; preserve canonical inference/eval
-  behavior unchanged.
+  branch architecture plus `cxcy_logw_logh` and `cxcywh`; preserve canonical
+  inference/eval behavior unchanged apart from the new branch-aware decode path.
 - [Confusion between canonical raw data and model-facing derived data] ->
   Require explicit manifest metadata and record-level provenance stamps.
 - [Potential incompatibility with existing cache contents] -> Treat this as a
@@ -239,7 +259,9 @@ Alternatives considered:
 
 1. Add the offline bbox-format derivation stage and branch manifest contract in
    `public_data/`.
-2. Generate the first `cxcy_logw_logh` derived branch under `public_data/`,
+2. Generate the first non-canonical derived branches under `public_data/`:
+   - `cxcy_logw_logh`
+   - `cxcywh`
    including branch-local `train.jsonl` / `val.jsonl` and matching
    `train.coord.jsonl` / `val.coord.jsonl` outputs when those splits exist.
 3. Update training config validation so non-canonical bbox formats require a
@@ -247,8 +269,10 @@ Alternatives considered:
 4. Update Stage-1 configs/examples to point at the derived branch.
 5. Invalidate or segregate encoded-sample caches via the new provenance-aware
    fingerprint.
-6. Retrain the affected `cxcy_logw_logh` experiments from the offline-prepared
-  branch and re-run the existing infer/eval workflow.
+6. Retrain the affected non-canonical experiments from the offline-prepared
+   branches and re-run the existing infer/eval workflow for:
+   - `cxcy_logw_logh`
+   - `cxcywh`
 
 Rollback:
 - Canonical `xyxy` training/eval remains available because canonical preset
