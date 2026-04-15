@@ -30,9 +30,10 @@
 - Use `coordexp-codebase` for entrypoints and workflow pointers.
 - Use `coordexp-research-context` for broad background, read-order, and historical Stage-2 context.
 - Prefer `rtk` for noisy shell workflows first: docs/prose reads, `git`, search, logs, test output, and other multi-line command output where compact summaries help.
+- When a command already depends on a project-specific environment wrapper, keep that wrapper under `rtk` instead of dropping it. In this repo, tests should prefer `rtk conda run -n ms python -m pytest ...` over bare `rtk pytest ...`.
 - For any `*.py` file, Serena MCP is mandatory for exploration and editing.
 - For Python work, use `rg`/`rtk` to narrow files or directories first, then switch to Serena MCP for symbol-level analysis, reference tracing, and precise edits.
-- Do not force `rtk` into exact-output workflows; fall back to raw commands when machine-readable stdout, delicate quoting, or verbatim output matters.
+- Do not force `rtk` into exact-output workflows, or into wrappers where it would silently change interpreter/environment selection; fall back to raw commands when machine-readable stdout, delicate quoting, verbatim output, or exact runtime binding matters.
 
 ## Self-Improving
 - Activate the `self-improving` skill when the user explicitly names it, asks to remember a reusable preference/correction/workflow, asks what has been learned, or wants repeated mistakes captured for future sessions.

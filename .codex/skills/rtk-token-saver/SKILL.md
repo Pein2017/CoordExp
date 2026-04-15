@@ -36,7 +36,7 @@ command -v rtk
 ```bash
 rtk git status
 rtk grep "TODO" src
-rtk pytest tests/test_example.py
+rtk conda run -n ms python -m pytest tests/test_example.py
 rtk read docs/PROJECT_CONTEXT.md
 ```
 3. Only if direct `rtk ...` is awkward or unsupported, fall back to the raw command.
@@ -51,6 +51,11 @@ RTK is the default for commands that usually emit a lot of text, and for ordinar
 - `npm`, `pnpm`, `tsc`, `next`, `lint`, `format`
 - `curl`, logs, and error-focused runs when RTK has a matching subcommand
 
+For test and lint commands, preserve any existing project-specific wrapper:
+
+- good: `rtk conda run -n ms python -m pytest tests/test_example.py`
+- risky: `rtk pytest tests/test_example.py` when the repo expects a non-default environment
+
 ## When To Skip RTK
 
 Use the raw command instead when:
@@ -58,6 +63,7 @@ Use the raw command instead when:
 - the user explicitly asks for verbatim output
 - exact machine-readable stdout matters more than compression
 - the command depends on shell state, heredocs, or delicate quoting
+- the command depends on a specific interpreter, venv, conda env, or launcher and `rtk ...` would bypass that wrapper
 - RTK has no useful rewrite/filter for the command
 - the command is already trivially tiny and wrapping it would add more noise than value
 
@@ -66,7 +72,8 @@ Use the raw command instead when:
 - Default order:
   1. For most shell commands, prefer RTK first.
   2. Call `rtk ...` directly when the mapping is obvious.
-  3. If direct `rtk ...` is not a good fit, run the raw command instead of introducing wrapper indirection.
+  3. If the repo already has a required wrapper such as `conda run -n ms`, keep that wrapper under `rtk`.
+  4. If direct `rtk ...` is not a good fit, run the raw command instead of introducing wrapper indirection.
 - If you need exact output for debugging, say why you are bypassing RTK.
 - Do not claim the output is verbatim if RTK filtered it.
 - In ambiguous cases, prefer saving tokens unless there is a concrete downside to filtering.
@@ -75,7 +82,7 @@ Use the raw command instead when:
 
 Use RTK and Serena as complementary layers, not as a single chained tool:
 
-- Use `rtk` first for repo orientation: `rtk read` for docs/prose, `rtk grep`/`rtk find` for coarse search, `rtk git ...` for status/diff, and `rtk pytest`/`rtk test` for compact verification.
+- Use `rtk` first for repo orientation: `rtk read` for docs/prose, `rtk grep`/`rtk find` for coarse search, `rtk git ...` for status/diff, and `rtk conda run -n ms python -m pytest ...` for compact verification in this repo.
 - Once the task enters Python code understanding or editing, switch to Serena MCP for symbol-aware navigation, reference discovery, and precise edits.
 - Return to `rtk` for post-edit verification such as targeted tests, diffs, logs, or other shell-heavy checks.
 - Do not try to replace Serena with `rtk smart` or aggressive file filtering when you need call relationships, symbol boundaries, or safe edits.
@@ -86,7 +93,7 @@ Typical split:
 1. `rtk read docs/PROJECT_CONTEXT.md`
 2. `rtk grep "TargetSymbol" src`
 3. Serena MCP: `get_symbols_overview` -> `find_symbol` -> `find_referencing_symbols`
-4. `rtk pytest tests/...`
+4. `rtk conda run -n ms python -m pytest tests/...`
 5. `rtk git diff`
 
 ## Verification
