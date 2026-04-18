@@ -24,7 +24,7 @@ Implementation ownership note:
 input JSONL + checkpoint
   -> inference
   -> gt_vs_pred.jsonl
-  -> confidence post-op (xyxy) OR constant-score compatibility scoring
+  -> confidence post-op (xyxy coord-token or xyxy raw-text norm1000) OR constant-score compatibility scoring
      (cxcy_logw_logh / cxcywh, when official metrics are needed)
   -> gt_vs_pred_scored.jsonl
   -> evaluation
@@ -64,6 +64,18 @@ Non-canonical bbox note:
   produce canonicalized eval
   artifacts, but those rollouts are not semantically valid evidence for the new
   parameterization
+
+Raw-text xyxy norm1000 benchmark note:
+
+- use canonical `*.norm.jsonl` data surfaces
+- set `infer.mode: text`
+- set `infer.pred_coord_mode: norm1000`
+- keep `infer.bbox_format: xyxy`
+- do not rely on `auto` heuristics for this benchmark path
+- confidence post-op remains the scored-eval path here, but it aligns numeric
+  bbox spans from the raw norm1000 JSON output instead of coord-token spans
+- evaluation/visualization then denormalize through per-record `width` /
+  `height` into canonical pixel-space `xyxy`
 
 Run evaluation:
 

@@ -15,6 +15,7 @@ Span matching is deterministic and auditable:
 from __future__ import annotations
 
 import math
+import string
 from dataclasses import dataclass
 from typing import Sequence, Set, Tuple
 
@@ -134,6 +135,109 @@ def assign_spans_left_to_right(
     return out
 
 
+def _strip_numeric_token_wrappers(text: str) -> str:
+    return str(text).strip().strip("[,]").strip()
+
+
+def find_numeric_literal_candidates(
+    tokens: Sequence[str],
+    expected_literal: int | str,
+    *,
+    min_start: int = 0,
+    used_indices: Set[int] | None = None,
+    max_span_tokens: int = 6,
+) -> list[Tuple[int, ...]]:
+    """Return candidate token spans whose concatenation matches one JSON integer."""
+
+    expected = str(int(expected_literal))
+    if not expected:
+        return []
+
+    used = used_indices or set()
+    candidates: list[Tuple[int, ...]] = []
+    n_tokens = len(tokens)
+    max_span = max(int(max_span_tokens), 1)
+
+    for start in range(max(0, int(min_start)), n_tokens):
+        if start in used:
+            continue
+
+        combined = ""
+        local: list[int] = []
+        for end in range(start, min(n_tokens, start + max_span)):
+            if end in used:
+                break
+            local.append(end)
+            combined += str(tokens[end])
+            cleaned = _strip_numeric_token_wrappers(combined)
+            if not cleaned:
+                continue
+            if any(ch not in string.digits for ch in cleaned):
+                break
+            if not expected.startswith(cleaned):
+                break
+            if cleaned == expected:
+                kept = tuple(
+                    idx
+                    for idx in local
+                    if _strip_numeric_token_wrappers(tokens[idx]) != ""
+                )
+                if kept:
+                    candidates.append(kept)
+
+    return candidates
+
+
+def assign_numeric_spans_left_to_right(
+    *,
+    generated_token_text: Sequence[str],
+    expected_sequences: Sequence[Sequence[int]],
+) -> list[SpanMatch | None]:
+    """Assign numeric JSON integer spans deterministically in object order."""
+
+    used: set[int] = set()
+    cursor = 0
+    out: list[SpanMatch | None] = []
+
+    for expected_values in expected_sequences:
+        matched: list[int] = []
+        ambiguous = 0
+        local_used = set(used)
+        local_cursor = cursor
+        ok = True
+
+        for value in expected_values:
+            candidates = find_numeric_literal_candidates(
+                generated_token_text,
+                value,
+                min_start=local_cursor,
+                used_indices=local_used,
+            )
+            if not candidates:
+                ok = False
+                break
+            chosen = candidates[0]
+            ambiguous += max(0, len(candidates) - 1)
+            matched.extend(chosen)
+            local_used.update(chosen)
+            local_cursor = max(local_cursor, chosen[-1] + 1)
+
+        if not ok:
+            out.append(None)
+            continue
+
+        used = local_used
+        cursor = local_cursor
+        out.append(
+            SpanMatch(
+                matched_token_indices=tuple(matched),
+                ambiguous_matches=int(ambiguous),
+            )
+        )
+
+    return out
+
+
 def reduce_mean_logprob(logprobs: Sequence[float]) -> float:
     """Mean reducer for natural-log probabilities."""
 
@@ -174,10 +278,12 @@ def is_valid_confidence_score(score: float) -> bool:
 __all__ = [
     "EXPECTED_BBOX_COORD_TOKEN_COUNT",
     "SpanMatch",
+    "assign_numeric_spans_left_to_right",
     "assign_spans_left_to_right",
     "compute_bbox_confidence_from_logprobs",
     "coord_bins_to_tokens",
     "find_exact_subsequence_candidates",
+    "find_numeric_literal_candidates",
     "is_valid_confidence_score",
     "map_exp",
     "reduce_mean_logprob",

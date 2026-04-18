@@ -38,7 +38,11 @@ _RELAUNCH_ENV = "COORDEXP_INFER_ALREADY_DISTRIBUTED"
 
 def _add_legacy_infer_flags(ap: argparse.ArgumentParser, *, required: bool) -> None:
     ap.add_argument("--gt_jsonl", required=required, help="Path to ground-truth JSONL")
-    ap.add_argument("--model_checkpoint", required=required, help="Checkpoint path")
+    ap.add_argument(
+        "--model_checkpoint",
+        required=required,
+        help="Full merged checkpoint path, or adapter directory shorthand",
+    )
     ap.add_argument(
         "--mode",
         required=required,

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import math
 import os
 import sys
 import types
@@ -26,6 +27,24 @@ def _write_jsonl(path: Path, records: list[object]) -> None:
                 f.write(r + "\n")
             else:
                 f.write(json.dumps(r, ensure_ascii=False) + "\n")
+
+
+def _write_adapter_checkpoint(
+    path: Path,
+    *,
+    base_model_name_or_path: str = "base-model",
+) -> None:
+    path.mkdir(parents=True, exist_ok=True)
+    (path / "adapter_config.json").write_text(
+        json.dumps(
+            {
+                "base_model_name_or_path": base_model_name_or_path,
+                "modules_to_save": [],
+            },
+            ensure_ascii=True,
+        ),
+        encoding="utf-8",
+    )
 
 
 def test_detect_mode_from_gt_coord_tokens(tmp_path: Path) -> None:
@@ -354,6 +373,152 @@ def test_run_pipeline_auto_materializes_scored_artifact_from_token_trace(
     assert scored[0]["pred"][0]["score"] > 0.0
 
 
+def test_run_pipeline_supports_norm1000_raw_text_confidence_postop(
+    tmp_path: Path, monkeypatch
+) -> None:
+    monkeypatch.delenv("ROOT_IMAGE_DIR", raising=False)
+
+    yaml_stub = types.SimpleNamespace(safe_load=lambda raw: json.loads(raw))
+    monkeypatch.setitem(sys.modules, "yaml", yaml_stub)
+
+    gt_jsonl = tmp_path / "data" / "gt.norm.jsonl"
+    gt_jsonl.parent.mkdir(parents=True, exist_ok=True)
+    gt_jsonl.write_text("", encoding="utf-8")
+
+    cfg = {
+        "run": {"name": "demo", "output_dir": str(tmp_path / "out")},
+        "stages": {"infer": False, "eval": False, "vis": False},
+        "infer": {
+            "gt_jsonl": str(gt_jsonl),
+            "mode": "text",
+            "pred_coord_mode": "norm1000",
+            "bbox_format": "xyxy",
+        },
+    }
+    config_path = tmp_path / "pipeline.json"
+    config_path.write_text(json.dumps(cfg, ensure_ascii=False), encoding="utf-8")
+
+    artifacts, _stages = resolve_artifacts(cfg)
+    artifacts.run_dir.mkdir(parents=True, exist_ok=True)
+    _write_jsonl(
+        artifacts.gt_vs_pred_jsonl,
+        [
+            {
+                "image": "img.png",
+                "width": 1000,
+                "height": 1000,
+                "mode": "text",
+                "pred_coord_mode": "norm1000",
+                "gt": [],
+                "pred": [
+                    {
+                        "type": "bbox_2d",
+                        "points": [100, 200, 300, 400],
+                        "desc": "box",
+                    }
+                ],
+                "raw_output_json": {
+                    "objects": [
+                        {
+                            "desc": "box",
+                            "bbox_2d": [100, 200, 300, 400],
+                        }
+                    ]
+                },
+                "raw_special_tokens": [],
+                "raw_ends_with_im_end": True,
+                "errors": [],
+            }
+        ],
+    )
+    _write_jsonl(
+        artifacts.pred_token_trace_jsonl,
+        [
+            {
+                "line_idx": 0,
+                "generated_token_text": [
+                    '{"',
+                    "objects",
+                    '":',
+                    ' [{"',
+                    "desc",
+                    '":',
+                    ' "',
+                    "box",
+                    '",',
+                    ' "',
+                    "bbox",
+                    "_",
+                    "2",
+                    "d",
+                    '":',
+                    " [",
+                    "100",
+                    ",",
+                    " ",
+                    "200",
+                    ",",
+                    " ",
+                    "300",
+                    ",",
+                    " ",
+                    "400",
+                    "]}",
+                    "]}",
+                ],
+                "token_logprobs": [
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    -0.4,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    -1.0,
+                    0.0,
+                    0.0,
+                    -1.0,
+                    0.0,
+                    0.0,
+                    -1.0,
+                    0.0,
+                    0.0,
+                    -1.0,
+                    0.0,
+                    0.0,
+                ],
+            }
+        ],
+    )
+
+    run_pipeline(config_path=config_path)
+
+    resolved = json.loads(
+        (artifacts.run_dir / "resolved_config.json").read_text(encoding="utf-8")
+    )
+    assert resolved["infer"]["coord_mode"] == "norm1000_text"
+    assert artifacts.gt_vs_pred_scored_jsonl is not None
+    scored = [
+        json.loads(line)
+        for line in artifacts.gt_vs_pred_scored_jsonl.read_text(
+            encoding="utf-8"
+        ).splitlines()
+        if line.strip()
+    ]
+    assert scored[0]["pred_score_source"] == "confidence_postop"
+    assert scored[0]["pred_score_version"] == 2
+    assert scored[0]["pred"][0]["score"] == pytest.approx(math.exp(-1.0))
+
+
 def test_resolve_root_image_dir_for_jsonl_uses_manifest_pointer(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.delenv("ROOT_IMAGE_DIR", raising=False)
 
@@ -664,6 +829,165 @@ def test_run_pipeline_wires_and_records_prompt_variant(
     assert resolved["infer"]["bbox_format"] == "xyxy"
     assert isinstance(resolved["infer"]["prompt_template_hash"], str)
     assert len(resolved["infer"]["prompt_template_hash"]) == 64
+
+
+
+
+
+def test_run_pipeline_records_adapter_shorthand_resolution(
+    tmp_path: Path, monkeypatch
+) -> None:
+    monkeypatch.delenv("ROOT_IMAGE_DIR", raising=False)
+
+    yaml_stub = types.SimpleNamespace(safe_load=lambda raw: json.loads(raw))
+    monkeypatch.setitem(sys.modules, "yaml", yaml_stub)
+
+    gt_jsonl = tmp_path / "data" / "gt.jsonl"
+    gt_jsonl.parent.mkdir(parents=True, exist_ok=True)
+    gt_jsonl.write_text("", encoding="utf-8")
+
+    adapter_dir = tmp_path / "adapter"
+    _write_adapter_checkpoint(adapter_dir, base_model_name_or_path="base-from-config")
+
+    cfg = {
+        "run": {"name": "demo", "output_dir": str(tmp_path / "out")},
+        "stages": {"infer": True, "eval": False, "vis": False},
+        "infer": {
+            "gt_jsonl": str(gt_jsonl),
+            "model_checkpoint": str(adapter_dir),
+            "mode": "text",
+            "pred_coord_mode": "auto",
+            "generation": {
+                "temperature": 0.0,
+                "top_p": 1.0,
+                "max_new_tokens": 4,
+                "repetition_penalty": 1.0,
+                "batch_size": 1,
+            },
+            "backend": {"type": "hf"},
+        },
+    }
+
+    config_path = tmp_path / "pipeline.json"
+    config_path.write_text(json.dumps(cfg, ensure_ascii=False), encoding="utf-8")
+
+    import src.infer.engine as infer_engine
+
+    captured: dict[str, object] = {}
+
+    def _fake_infer(self):
+        captured["checkpoint_mode"] = self.cfg.checkpoint_mode
+        captured["requested_model_checkpoint"] = self.cfg.requested_model_checkpoint
+        captured["requested_adapter_checkpoint"] = self.cfg.requested_adapter_checkpoint
+        captured["resolved_base_model_checkpoint"] = (
+            self.cfg.resolved_base_model_checkpoint
+        )
+        captured["resolved_adapter_checkpoint"] = (
+            self.cfg.resolved_adapter_checkpoint
+        )
+        Path(self.cfg.out_path).write_text("", encoding="utf-8")
+        Path(self.cfg.summary_path or "").write_text("{}", encoding="utf-8")
+        return Path(self.cfg.out_path), Path(self.cfg.summary_path or "")
+
+    monkeypatch.setattr(infer_engine.InferenceEngine, "infer", _fake_infer)
+
+    artifacts = run_pipeline(config_path=config_path)
+    resolved = load_resolved_config(artifacts.run_dir / "resolved_config.json")
+
+    assert captured["checkpoint_mode"] == "adapter_shorthand"
+    assert captured["requested_model_checkpoint"] == str(adapter_dir)
+    assert captured["requested_adapter_checkpoint"] is None
+    assert captured["resolved_base_model_checkpoint"] == "base-from-config"
+    assert captured["resolved_adapter_checkpoint"] == str(adapter_dir)
+    assert resolved["infer"]["checkpoint_mode"] == "adapter_shorthand"
+    assert resolved["infer"]["requested_model_checkpoint"] == str(adapter_dir)
+    assert resolved["infer"]["requested_adapter_checkpoint"] is None
+    assert resolved["infer"]["resolved_base_model_checkpoint"] == "base-from-config"
+    assert resolved["infer"]["resolved_adapter_checkpoint"] == str(adapter_dir)
+
+
+def test_run_pipeline_rejects_explicit_adapter_checkpoint(
+    tmp_path: Path, monkeypatch
+) -> None:
+    monkeypatch.delenv("ROOT_IMAGE_DIR", raising=False)
+
+    yaml_stub = types.SimpleNamespace(safe_load=lambda raw: json.loads(raw))
+    monkeypatch.setitem(sys.modules, "yaml", yaml_stub)
+
+    gt_jsonl = tmp_path / "data" / "gt.jsonl"
+    gt_jsonl.parent.mkdir(parents=True, exist_ok=True)
+    gt_jsonl.write_text("", encoding="utf-8")
+
+    adapter_dir = tmp_path / "adapter"
+    _write_adapter_checkpoint(adapter_dir, base_model_name_or_path="unused-base")
+
+    cfg = {
+        "run": {"name": "demo", "output_dir": str(tmp_path / "out")},
+        "stages": {"infer": True, "eval": False, "vis": False},
+        "infer": {
+            "gt_jsonl": str(gt_jsonl),
+            "model_checkpoint": "base-model",
+            "adapter_checkpoint": str(adapter_dir),
+            "mode": "text",
+            "pred_coord_mode": "auto",
+            "generation": {
+                "temperature": 0.0,
+                "top_p": 1.0,
+                "max_new_tokens": 4,
+                "repetition_penalty": 1.0,
+                "batch_size": 1,
+            },
+            "backend": {"type": "hf"},
+        },
+    }
+
+    config_path = tmp_path / "pipeline.json"
+    config_path.write_text(json.dumps(cfg, ensure_ascii=False), encoding="utf-8")
+
+    with pytest.raises(ValueError, match="infer.adapter_checkpoint is no longer supported"):
+        run_pipeline(config_path=config_path)
+
+
+def test_run_pipeline_rejects_vllm_adapter_shorthand(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    monkeypatch.delenv("ROOT_IMAGE_DIR", raising=False)
+
+    yaml_stub = types.SimpleNamespace(safe_load=lambda raw: json.loads(raw))
+    monkeypatch.setitem(sys.modules, "yaml", yaml_stub)
+
+    gt_jsonl = tmp_path / "data" / "gt.jsonl"
+    gt_jsonl.parent.mkdir(parents=True, exist_ok=True)
+    gt_jsonl.write_text("", encoding="utf-8")
+
+    adapter_dir = tmp_path / "adapter"
+    _write_adapter_checkpoint(adapter_dir, base_model_name_or_path="base-from-config")
+
+    cfg = {
+        "run": {"name": "demo", "output_dir": str(tmp_path / "out")},
+        "stages": {"infer": True, "eval": False, "vis": False},
+        "infer": {
+            "gt_jsonl": str(gt_jsonl),
+            "model_checkpoint": str(adapter_dir),
+            "mode": "text",
+            "pred_coord_mode": "auto",
+            "generation": {
+                "temperature": 0.0,
+                "top_p": 1.0,
+                "max_new_tokens": 4,
+                "repetition_penalty": 1.0,
+                "batch_size": 1,
+            },
+            "backend": {"type": "vllm"},
+        },
+    }
+
+    config_path = tmp_path / "pipeline.json"
+    config_path.write_text(json.dumps(cfg, ensure_ascii=False), encoding="utf-8")
+
+    with pytest.raises(ValueError, match="DoRA \\+ coord_offset_adapter"):
+        run_pipeline(config_path=config_path)
 
 
 def test_run_pipeline_defaults_object_ordering_to_sorted(

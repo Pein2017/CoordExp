@@ -20,6 +20,44 @@ def _write_img(path: Path, *, size: int = 32) -> None:
     img.save(path)
 
 
+def _write_adapter_checkpoint(
+    path: Path,
+    *,
+    base_model_name_or_path: str = "base-model",
+    with_coord_offset: bool = False,
+    tie_head: bool = True,
+) -> None:
+    path.mkdir(parents=True, exist_ok=True)
+    modules_to_save = ["coord_offset_adapter"] if with_coord_offset else []
+    (path / "adapter_config.json").write_text(
+        json.dumps(
+            {
+                "base_model_name_or_path": base_model_name_or_path,
+                "modules_to_save": modules_to_save,
+            },
+            ensure_ascii=True,
+        ),
+        encoding="utf-8",
+    )
+    if with_coord_offset:
+        import torch
+        from safetensors.torch import save_file
+
+        payload = {
+            "base_model.model.coord_offset_adapter.coord_ids": torch.tensor(
+                [2, 5], dtype=torch.long
+            ),
+            "base_model.model.coord_offset_adapter.embed_offset": torch.zeros(
+                2, 4, dtype=torch.float32
+            ),
+        }
+        if not tie_head:
+            payload["base_model.model.coord_offset_adapter.head_offset"] = (
+                torch.zeros(2, 4, dtype=torch.float32)
+            )
+        save_file(payload, str(path / "adapter_model.safetensors"))
+
+
 def test_infer_hf_batch_size_microbatches(tmp_path, monkeypatch):
     monkeypatch.delenv("ROOT_IMAGE_DIR", raising=False)
 
@@ -290,6 +328,248 @@ def test_hf_attention_backend_fallback_is_recorded_in_summary(tmp_path, monkeypa
     summary = json.loads(summary_path.read_text(encoding="utf-8"))
     assert summary["backend"]["attn_implementation_requested"] == "flash_attention_2"
     assert summary["backend"]["attn_implementation_selected"] == "sdpa"
+
+
+def test_hf_adapter_checkpoint_loads_via_swift_shorthand_and_records_resolved_base(
+    tmp_path, monkeypatch
+):
+    monkeypatch.delenv("ROOT_IMAGE_DIR", raising=False)
+
+    _write_img(tmp_path / "img_0.png")
+    adapter_dir = tmp_path / "adapter-dir"
+    _write_adapter_checkpoint(
+        adapter_dir,
+        base_model_name_or_path="base-model",
+    )
+
+    gt_path = tmp_path / "gt.jsonl"
+    gt_path.write_text(
+        json.dumps(
+            {
+                "images": ["img_0.png"],
+                "width": 32,
+                "height": 32,
+                "objects": [{"bbox_2d": [0, 0, 10, 10], "desc": "obj"}],
+            },
+            ensure_ascii=True,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    out_path = tmp_path / "gt_vs_pred.jsonl"
+    summary_path = tmp_path / "summary.json"
+
+    inf_cfg = InferenceConfig(
+        gt_jsonl=str(gt_path),
+        model_checkpoint=str(adapter_dir),
+        mode="text",
+        pred_coord_mode="auto",
+        out_path=str(out_path),
+        summary_path=str(summary_path),
+        device="cpu",
+        limit=0,
+        backend_type="hf",
+        backend={},
+        detect_samples=1,
+    )
+    gen_cfg = GenerationConfig(
+        temperature=0.0,
+        top_p=1.0,
+        max_new_tokens=16,
+        repetition_penalty=1.0,
+        batch_size=1,
+        seed=123,
+    )
+
+    load_calls: dict[str, list[object]] = {"qwen": [], "processor": [], "swift": []}
+
+    class _DummyBaseModel:
+        def __init__(self) -> None:
+            self.device = None
+
+        def to(self, device: str):
+            self.device = device
+            return self
+
+        def eval(self):
+            return self
+
+    class _WrappedModel:
+        def __init__(self, base_model) -> None:
+            self.base_model = base_model
+            self.eval_called = False
+
+        def eval(self):
+            self.eval_called = True
+            return self
+
+    class _DummyTokenizer:
+        padding_side = "right"
+        pad_token_id = None
+        eos_token_id = 1
+
+    class _DummyProcessor:
+        def __init__(self) -> None:
+            self.tokenizer = _DummyTokenizer()
+
+    class _DummyAutoProcessor:
+        @staticmethod
+        def from_pretrained(model_checkpoint: str, **_kwargs):
+            load_calls["processor"].append(model_checkpoint)
+            return _DummyProcessor()
+
+    class _DummyQwen:
+        @staticmethod
+        def from_pretrained(model_checkpoint: str, **kwargs):
+            load_calls["qwen"].append((model_checkpoint, kwargs["attn_implementation"]))
+            return _DummyBaseModel()
+
+    class _DummySwift:
+        @staticmethod
+        def from_pretrained(model, *, model_id: str, inference_mode: bool, **_kwargs):
+            load_calls["swift"].append((model, model_id, inference_mode))
+            return _WrappedModel(model)
+
+    fake_swift_module = types.ModuleType("swift")
+    fake_swift_module.Swift = _DummySwift
+
+    monkeypatch.setattr(infer_engine, "AutoProcessor", _DummyAutoProcessor)
+    monkeypatch.setattr(infer_engine, "Qwen3VLForConditionalGeneration", _DummyQwen)
+    monkeypatch.setitem(sys.modules, "swift", fake_swift_module)
+
+    engine = InferenceEngine(inf_cfg, gen_cfg)
+    engine.load_model()
+
+    assert load_calls["qwen"] == [("base-model", "sdpa")]
+    assert load_calls["processor"] == ["base-model"]
+    assert len(load_calls["swift"]) == 1
+    assert load_calls["swift"][0][1:] == (str(adapter_dir), True)
+    assert isinstance(engine.model, _WrappedModel)
+    assert engine.model.eval_called is True
+
+    def _fake_generate_batch(images):
+        text = '{"objects": [{"desc": "obj", "bbox_2d": [<|coord_0|>, <|coord_0|>, <|coord_10|>, <|coord_10|>]}]}<|im_end|>'
+        return [GenerationResult(text=text, error=None) for _ in images]
+
+    monkeypatch.setattr(engine, "_generate_batch", _fake_generate_batch)
+    engine.infer()
+
+    summary = json.loads(summary_path.read_text(encoding="utf-8"))
+    assert summary["backend"]["model_checkpoint"] == str(adapter_dir)
+    assert summary["backend"]["adapter_checkpoint"] is None
+    assert summary["backend"]["checkpoint_mode"] == "adapter_shorthand"
+    assert summary["backend"]["requested_model_checkpoint"] == str(adapter_dir)
+    assert summary["backend"]["resolved_base_model_checkpoint"] == "base-model"
+    assert summary["backend"]["resolved_adapter_checkpoint"] == str(adapter_dir)
+
+
+def test_hf_coord_offset_adapter_is_preinstalled_before_swift_reload(
+    tmp_path, monkeypatch
+):
+    adapter_dir = tmp_path / "adapter-dir"
+    _write_adapter_checkpoint(
+        adapter_dir,
+        base_model_name_or_path="base-model",
+        with_coord_offset=True,
+        tie_head=False,
+    )
+
+    inf_cfg = InferenceConfig(
+        gt_jsonl=str(tmp_path / "gt.jsonl"),
+        model_checkpoint=str(adapter_dir),
+        mode="text",
+        pred_coord_mode="auto",
+        out_path=str(tmp_path / "gt_vs_pred.jsonl"),
+        summary_path=str(tmp_path / "summary.json"),
+        device="cpu",
+        limit=0,
+        backend_type="hf",
+        backend={},
+        detect_samples=1,
+    )
+    gen_cfg = GenerationConfig(
+        temperature=0.0,
+        top_p=1.0,
+        max_new_tokens=16,
+        repetition_penalty=1.0,
+        batch_size=1,
+        seed=123,
+    )
+
+    load_order: list[tuple[object, ...]] = []
+
+    class _DummyBaseModel:
+        def to(self, _device: str):
+            return self
+
+        def eval(self):
+            return self
+
+    class _WrappedModel:
+        def __init__(self, base_model) -> None:
+            self.base_model = base_model
+            self.eval_called = False
+
+        def eval(self):
+            self.eval_called = True
+            return self
+
+    class _DummyTokenizer:
+        padding_side = "right"
+        pad_token_id = None
+        eos_token_id = 1
+
+    class _DummyProcessor:
+        def __init__(self) -> None:
+            self.tokenizer = _DummyTokenizer()
+
+    class _DummyAutoProcessor:
+        @staticmethod
+        def from_pretrained(model_checkpoint: str, **_kwargs):
+            assert model_checkpoint == "base-model"
+            return _DummyProcessor()
+
+    class _DummyQwen:
+        @staticmethod
+        def from_pretrained(model_checkpoint: str, **kwargs):
+            assert model_checkpoint == "base-model"
+            assert kwargs["attn_implementation"] == "sdpa"
+            return _DummyBaseModel()
+
+    class _DummySwift:
+        @staticmethod
+        def from_pretrained(model, *, model_id: str, inference_mode: bool, **_kwargs):
+            load_order.append(("swift", model_id, inference_mode))
+            return _WrappedModel(model)
+
+    def _fake_install(model, *, coord_ids, tie_head, dtype=None):
+        load_order.append(("install", tuple(coord_ids), tie_head, dtype))
+        return object()
+
+    def _fake_reattach(model):
+        load_order.append(("reattach", type(model).__name__))
+        return object()
+
+    fake_swift_module = types.ModuleType("swift")
+    fake_swift_module.Swift = _DummySwift
+
+    monkeypatch.setattr(infer_engine, "AutoProcessor", _DummyAutoProcessor)
+    monkeypatch.setattr(infer_engine, "Qwen3VLForConditionalGeneration", _DummyQwen)
+    monkeypatch.setattr(infer_engine, "install_coord_offset_adapter", _fake_install)
+    monkeypatch.setattr(infer_engine, "reattach_coord_offset_hooks", _fake_reattach)
+    monkeypatch.setitem(sys.modules, "swift", fake_swift_module)
+
+    engine = InferenceEngine(inf_cfg, gen_cfg)
+    engine.load_model()
+
+    assert load_order == [
+        ("install", (2, 5), False, None),
+        ("swift", str(adapter_dir), True),
+        ("reattach", "_WrappedModel"),
+    ]
+    assert isinstance(engine.model, _WrappedModel)
+    assert engine.model.eval_called is True
 
 
 def test_infer_emits_sample_scoped_errors_and_summary_counters(tmp_path, monkeypatch):

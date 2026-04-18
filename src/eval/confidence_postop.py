@@ -19,10 +19,11 @@ from pathlib import Path
 from typing import Any, Literal, Mapping, Sequence
 
 from src.common.coord_standardizer import CoordinateStandardizer
-from src.common.geometry import decode_coord, flatten_points
+from src.common.geometry import decode_coord, flatten_points, has_coord_tokens
 from src.common.geometry.object_geometry import extract_single_geometry
 from src.eval.bbox_confidence import (
     EXPECTED_BBOX_COORD_TOKEN_COUNT,
+    assign_numeric_spans_left_to_right,
     assign_spans_left_to_right,
     compute_bbox_confidence_from_logprobs,
     coord_bins_to_tokens,
@@ -31,7 +32,7 @@ from src.eval.bbox_confidence import (
 
 PRED_SCORE_SOURCE = "confidence_postop"
 PRED_SCORE_VERSION = 2
-CONFIDENCE_METHOD = "bbox_desc_fused_logprob_exp"
+CONFIDENCE_METHOD = "bbox_logprob_confidence_exp"
 
 MISSING_TRACE = "missing_trace"
 TRACE_LEN_MISMATCH = "trace_len_mismatch"
@@ -216,7 +217,7 @@ def _compact_object(obj: Mapping[str, Any]) -> dict[str, Any] | None:
     }
 
 
-def _extract_bbox_coord_bins(raw_object: Mapping[str, Any]) -> list[int] | None:
+def _extract_bbox_norm_bins(raw_object: Mapping[str, Any]) -> list[int] | None:
     try:
         gtype, points_raw = extract_single_geometry(
             raw_object,
@@ -237,9 +238,21 @@ def _extract_bbox_coord_bins(raw_object: Mapping[str, Any]) -> list[int] | None:
     bins: list[int] = []
     for value in flat:
         decoded = decode_coord(value)
-        if decoded is None:
+        if decoded is not None:
+            bins.append(int(decoded))
+            continue
+        if isinstance(value, bool):
             return None
-        bins.append(int(decoded))
+        try:
+            numeric = float(value)
+        except (TypeError, ValueError):
+            return None
+        if not math.isfinite(numeric):
+            return None
+        integer = int(round(numeric))
+        if not (0 <= integer <= 999):
+            return None
+        bins.append(integer)
     return bins
 
 
@@ -249,6 +262,7 @@ def _reconstruct_pred_alignment(
     width: int,
     height: int,
     mode: str,
+    pred_coord_mode: str,
 ) -> tuple[list[dict[str, Any]], list[list[int] | None]] | None:
     if not isinstance(raw_output_json, dict):
         return None
@@ -256,7 +270,7 @@ def _reconstruct_pred_alignment(
     if not isinstance(objects, list):
         return None
 
-    standardizer = CoordinateStandardizer(mode=mode, pred_coord_mode="auto")
+    standardizer = CoordinateStandardizer(mode=mode, pred_coord_mode=pred_coord_mode)
     reconstructed: list[dict[str, Any]] = []
     bbox_bins_by_object: list[list[int] | None] = []
 
@@ -278,7 +292,7 @@ def _reconstruct_pred_alignment(
             continue
         reconstructed.append(compact)
         if compact["type"] == "bbox_2d":
-            bbox_bins_by_object.append(_extract_bbox_coord_bins(raw_obj))
+            bbox_bins_by_object.append(_extract_bbox_norm_bins(raw_obj))
         else:
             bbox_bins_by_object.append(None)
 
@@ -318,6 +332,7 @@ def _confidence_details(
     matched_token_indices: Sequence[int],
     ambiguous_matches: int,
     failure_reason: str | None,
+    geom_span_mode: str | None = None,
     desc_span_token_indices: Sequence[int] | None = None,
     fusion_weights: Mapping[str, float] | None = None,
 ) -> dict[str, Any]:
@@ -328,6 +343,8 @@ def _confidence_details(
         "ambiguous_matches": int(ambiguous_matches),
         "failure_reason": failure_reason,
     }
+    if geom_span_mode is not None:
+        out["geom_span_mode"] = str(geom_span_mode)
     if desc_span_token_indices is not None:
         out["desc_span_token_indices"] = [int(i) for i in desc_span_token_indices]
     if fusion_weights is not None:
@@ -349,6 +366,7 @@ def _build_object_result(
     coord_token_count: int,
     matched_token_indices: Sequence[int],
     ambiguous_matches: int,
+    geom_span_mode: str | None = None,
     score_geom: float | None = None,
     score_desc: float | None = None,
     score_fusion: float | None = None,
@@ -371,6 +389,7 @@ def _build_object_result(
             matched_token_indices=matched_token_indices,
             ambiguous_matches=ambiguous_matches,
             failure_reason=failure_reason,
+            geom_span_mode=geom_span_mode,
             desc_span_token_indices=desc_span_token_indices,
             fusion_weights=fusion_weights,
         ),
@@ -554,6 +573,7 @@ def _compute_sample_confidence_objects(
                 width=width,
                 height=height,
                 mode=_as_mode(record.get("mode")),
+                pred_coord_mode=str(record.get("pred_coord_mode") or "auto"),
             )
 
     bbox_bins_by_object: list[list[int] | None] = [None] * len(pred_objs)
@@ -571,26 +591,63 @@ def _compute_sample_confidence_objects(
             )
         bbox_bins_by_object = reconstructed_bins
 
-    expected_sequences: list[tuple[int, tuple[str, ...]]] = []
+    span_mode_by_object: list[str | None] = [None] * len(pred_objs)
+    coord_expected_sequences: list[tuple[int, tuple[str, ...]]] = []
+    numeric_expected_sequences: list[tuple[int, tuple[int, ...]]] = []
     for object_idx, pred_obj in enumerate(pred_objs):
         if str(pred_obj.get("type", "")) != "bbox_2d":
             continue
         bins = bbox_bins_by_object[object_idx]
         if bins is None:
             continue
-        try:
-            tokens = coord_bins_to_tokens(bins)
-        except ValueError:
+        raw_output_obj = None
+        if isinstance(raw_output_json, Mapping):
+            raw_objects = raw_output_json.get("objects")
+            if isinstance(raw_objects, list) and object_idx < len(raw_objects):
+                candidate = raw_objects[object_idx]
+                if isinstance(candidate, Mapping):
+                    raw_output_obj = candidate
+        if raw_output_obj is not None and flatten_points(
+            raw_output_obj.get("bbox_2d")
+            if "bbox_2d" in raw_output_obj
+            else raw_output_obj.get("points")
+        ) is not None:
+            flat_values = flatten_points(
+                raw_output_obj.get("bbox_2d")
+                if "bbox_2d" in raw_output_obj
+                else raw_output_obj.get("points")
+            )
+        else:
+            flat_values = None
+
+        if flat_values is not None and has_coord_tokens(flat_values):
+            try:
+                tokens = coord_bins_to_tokens(bins)
+            except ValueError:
+                continue
+            span_mode_by_object[object_idx] = "coord_tokens"
+            coord_expected_sequences.append((object_idx, tokens))
             continue
-        expected_sequences.append((object_idx, tokens))
+
+        span_mode_by_object[object_idx] = "numeric_text"
+        numeric_expected_sequences.append(
+            (object_idx, tuple(int(v) for v in bins))
+        )
 
     span_matches_by_idx: dict[int, Any] = {}
-    if expected_sequences:
+    if coord_expected_sequences:
         assignments = assign_spans_left_to_right(
             generated_token_text=trace.generated_token_text,
-            expected_sequences=[tokens for _, tokens in expected_sequences],
+            expected_sequences=[tokens for _, tokens in coord_expected_sequences],
         )
-        for (object_idx, _tokens), match in zip(expected_sequences, assignments):
+        for (object_idx, _tokens), match in zip(coord_expected_sequences, assignments):
+            span_matches_by_idx[object_idx] = match
+    if numeric_expected_sequences:
+        assignments = assign_numeric_spans_left_to_right(
+            generated_token_text=trace.generated_token_text,
+            expected_sequences=[values for _, values in numeric_expected_sequences],
+        )
+        for (object_idx, _values), match in zip(numeric_expected_sequences, assignments):
             span_matches_by_idx[object_idx] = match
 
     results: list[dict[str, Any]] = []
@@ -614,6 +671,7 @@ def _compute_sample_confidence_objects(
             continue
 
         bins = bbox_bins_by_object[object_idx]
+        geom_span_mode = span_mode_by_object[object_idx]
         if bins is None:
             results.append(
                 _build_object_result(
@@ -626,6 +684,7 @@ def _compute_sample_confidence_objects(
                     coord_token_count=0,
                     matched_token_indices=[],
                     ambiguous_matches=0,
+                    geom_span_mode=geom_span_mode,
                 )
             )
             continue
@@ -643,6 +702,7 @@ def _compute_sample_confidence_objects(
                     coord_token_count=EXPECTED_BBOX_COORD_TOKEN_COUNT,
                     matched_token_indices=[],
                     ambiguous_matches=0,
+                    geom_span_mode=geom_span_mode,
                 )
             )
             continue
@@ -653,6 +713,10 @@ def _compute_sample_confidence_objects(
         desc_window_start = desc_window_cursor
         if matched_indices:
             desc_window_cursor = max(desc_window_cursor, matched_indices[-1] + 1)
+        coord_token_count = len(matched_indices)
+        active_fusion_weights = (
+            fusion_weights if geom_span_mode == "coord_tokens" else None
+        )
         if not all(math.isfinite(lp) for lp in matched_logprobs):
             results.append(
                 _build_object_result(
@@ -662,9 +726,10 @@ def _compute_sample_confidence_objects(
                     score=None,
                     kept=False,
                     failure_reason=NONFINITE_LOGPROB,
-                    coord_token_count=EXPECTED_BBOX_COORD_TOKEN_COUNT,
+                    coord_token_count=coord_token_count,
                     matched_token_indices=matched_indices,
                     ambiguous_matches=ambiguous_matches,
+                    geom_span_mode=geom_span_mode,
                 )
             )
             continue
@@ -679,9 +744,10 @@ def _compute_sample_confidence_objects(
                     score=None,
                     kept=False,
                     failure_reason=NONFINITE_LOGPROB,
-                    coord_token_count=EXPECTED_BBOX_COORD_TOKEN_COUNT,
+                    coord_token_count=coord_token_count,
                     matched_token_indices=matched_indices,
                     ambiguous_matches=ambiguous_matches,
+                    geom_span_mode=geom_span_mode,
                 )
             )
             continue
@@ -692,84 +758,90 @@ def _compute_sample_confidence_objects(
         desc_span_token_indices: list[int] | None = None
         final_score = score_geom
 
-        desc_value = _normalize_desc(pred_obj.get("desc", ""))
-        desc_span_token_indices = _extract_desc_span_indices(
-            generated_token_text=trace.generated_token_text,
-            coord_start_idx=matched_indices[0],
-            window_start_idx=desc_window_start,
-        )
-        desc_missing = desc_span_token_indices is None
-        desc_empty = not desc_missing and len(desc_span_token_indices) == 0
-
-        if desc_missing:
-            if options.desc_span_policy == "strict":
-                results.append(
-                    _build_object_result(
-                        object_idx=object_idx,
-                        pred_obj=pred_obj,
-                        confidence=None,
-                        score=None,
-                        kept=False,
-                        failure_reason=MISSING_DESC_SPAN,
-                        coord_token_count=EXPECTED_BBOX_COORD_TOKEN_COUNT,
-                        matched_token_indices=matched_indices,
-                        ambiguous_matches=ambiguous_matches,
-                        score_geom=score_geom,
-                        desc_span_token_indices=None,
-                        fusion_weights=fusion_weights,
-                    )
-                )
-                continue
-        elif desc_empty or not desc_value:
-            if options.empty_desc_policy == "drop":
-                results.append(
-                    _build_object_result(
-                        object_idx=object_idx,
-                        pred_obj=pred_obj,
-                        confidence=None,
-                        score=None,
-                        kept=False,
-                        failure_reason=MISSING_DESC_SPAN,
-                        coord_token_count=EXPECTED_BBOX_COORD_TOKEN_COUNT,
-                        matched_token_indices=matched_indices,
-                        ambiguous_matches=ambiguous_matches,
-                        score_geom=score_geom,
-                        desc_span_token_indices=desc_span_token_indices,
-                        fusion_weights=fusion_weights,
-                    )
-                )
-                continue
-        else:
-            score_desc = _coerce_desc_score(
-                desc_token_indices=desc_span_token_indices,
-                trace=trace,
+        if geom_span_mode == "coord_tokens":
+            desc_value = _normalize_desc(pred_obj.get("desc", ""))
+            desc_span_token_indices = _extract_desc_span_indices(
+                generated_token_text=trace.generated_token_text,
+                coord_start_idx=matched_indices[0],
+                window_start_idx=desc_window_start,
             )
+            desc_missing = desc_span_token_indices is None
+            desc_empty = not desc_missing and len(desc_span_token_indices) == 0
+
+            if desc_missing:
+                if options.desc_span_policy == "strict":
+                    results.append(
+                        _build_object_result(
+                            object_idx=object_idx,
+                            pred_obj=pred_obj,
+                            confidence=None,
+                            score=None,
+                            kept=False,
+                            failure_reason=MISSING_DESC_SPAN,
+                            coord_token_count=coord_token_count,
+                            matched_token_indices=matched_indices,
+                            ambiguous_matches=ambiguous_matches,
+                            geom_span_mode=geom_span_mode,
+                            score_geom=score_geom,
+                            desc_span_token_indices=None,
+                            fusion_weights=active_fusion_weights,
+                        )
+                    )
+                    continue
+            elif desc_empty or not desc_value:
+                if options.empty_desc_policy == "drop":
+                    results.append(
+                        _build_object_result(
+                            object_idx=object_idx,
+                            pred_obj=pred_obj,
+                            confidence=None,
+                            score=None,
+                            kept=False,
+                            failure_reason=MISSING_DESC_SPAN,
+                            coord_token_count=coord_token_count,
+                            matched_token_indices=matched_indices,
+                            ambiguous_matches=ambiguous_matches,
+                            geom_span_mode=geom_span_mode,
+                            score_geom=score_geom,
+                            desc_span_token_indices=desc_span_token_indices,
+                            fusion_weights=active_fusion_weights,
+                        )
+                    )
+                    continue
+            else:
+                score_desc = _coerce_desc_score(
+                    desc_token_indices=desc_span_token_indices,
+                    trace=trace,
+                )
+                if score_desc is None:
+                    results.append(
+                        _build_object_result(
+                            object_idx=object_idx,
+                            pred_obj=pred_obj,
+                            confidence=None,
+                            score=None,
+                            kept=False,
+                            failure_reason=NONFINITE_LOGPROB,
+                            coord_token_count=coord_token_count,
+                            matched_token_indices=matched_indices,
+                            ambiguous_matches=ambiguous_matches,
+                            geom_span_mode=geom_span_mode,
+                            score_geom=score_geom,
+                            desc_span_token_indices=desc_span_token_indices,
+                            fusion_weights=active_fusion_weights,
+                        )
+                    )
+                    continue
+
             if score_desc is None:
-                results.append(
-                    _build_object_result(
-                        object_idx=object_idx,
-                        pred_obj=pred_obj,
-                        confidence=None,
-                        score=None,
-                        kept=False,
-                        failure_reason=NONFINITE_LOGPROB,
-                        coord_token_count=EXPECTED_BBOX_COORD_TOKEN_COUNT,
-                        matched_token_indices=matched_indices,
-                        ambiguous_matches=ambiguous_matches,
-                        score_geom=score_geom,
-                        desc_span_token_indices=desc_span_token_indices,
-                        fusion_weights=fusion_weights,
-                    )
+                score_fusion = score_geom
+            else:
+                score_fusion = (
+                    float(fusion_weights["w_geom"]) * score_geom
+                    + float(fusion_weights["w_desc"]) * float(score_desc)
                 )
-                continue
-
-        if score_desc is None:
-            score_fusion = score_geom
         else:
-            score_fusion = (
-                float(fusion_weights["w_geom"]) * score_geom
-                + float(fusion_weights["w_desc"]) * float(score_desc)
-            )
+            score_fusion = score_geom
         if not is_valid_confidence_score(score_fusion):
             results.append(
                 _build_object_result(
@@ -779,14 +851,15 @@ def _compute_sample_confidence_objects(
                     score=None,
                     kept=False,
                     failure_reason=NONFINITE_LOGPROB,
-                    coord_token_count=EXPECTED_BBOX_COORD_TOKEN_COUNT,
+                    coord_token_count=coord_token_count,
                     matched_token_indices=matched_indices,
                     ambiguous_matches=ambiguous_matches,
+                    geom_span_mode=geom_span_mode,
                     score_geom=score_geom,
                     score_desc=score_desc,
                     score_fusion=score_fusion,
                     desc_span_token_indices=desc_span_token_indices,
-                    fusion_weights=fusion_weights,
+                    fusion_weights=active_fusion_weights,
                 )
             )
             continue
@@ -800,14 +873,15 @@ def _compute_sample_confidence_objects(
                 score=float(final_score),
                 kept=True,
                 failure_reason=None,
-                coord_token_count=EXPECTED_BBOX_COORD_TOKEN_COUNT,
+                coord_token_count=coord_token_count,
                 matched_token_indices=matched_indices,
                 ambiguous_matches=ambiguous_matches,
+                geom_span_mode=geom_span_mode,
                 score_geom=score_geom,
                 score_desc=score_desc,
                 score_fusion=final_score,
                 desc_span_token_indices=desc_span_token_indices,
-                fusion_weights=fusion_weights,
+                fusion_weights=active_fusion_weights,
             )
         )
 

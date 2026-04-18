@@ -20,7 +20,10 @@ Minimum YAML schema (normative; exact key names MAY differ if documented consist
   - `artifacts.run_dir` (string), OR
   - `run.name` (string) and `run.output_dir` (string) to construct a canonical run directory.
 - `infer.gt_jsonl` (string) as dataset input,
-- `infer.model_checkpoint` (string) (+ optional adapters, if supported),
+- `infer.model_checkpoint` (string),
+- `infer.adapter_checkpoint` (string, optional; supported on the HF backend and
+  interpreted as a separate Swift adapter directory layered onto the base model
+  from `infer.model_checkpoint`),
 - `infer.backend.type` (`hf` or `vllm`),
 - `infer.mode` (`coord` | `text` | `auto`) and `infer.pred_coord_mode` (`auto` | `norm1000` | `pixel`),
 - `infer.generation` settings (temperature, top_p, max_new_tokens, repetition_penalty, seed),

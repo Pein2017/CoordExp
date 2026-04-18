@@ -32,13 +32,15 @@ def _bbox_record(
     x2: int,
     y2: int,
     raw_output_json: dict | None,
+    mode: str = "coord",
+    pred_coord_mode: str = "pixel",
 ) -> dict:
     return {
         "image": image,
         "width": 1000,
         "height": 1000,
-        "mode": "coord",
-        "coord_mode": "pixel",
+        "mode": mode,
+        "pred_coord_mode": pred_coord_mode,
         "gt": [],
         "pred": [
             {
@@ -64,6 +66,19 @@ def _bbox_raw(x1: int, y1: int, x2: int, y2: int, *, desc: str = "box") -> dict:
                     f"<|coord_{x2}|>",
                     f"<|coord_{y2}|>",
                 ],
+                "desc": desc,
+            }
+        ]
+    }
+
+
+def _bbox_raw_numeric(
+    x1: int, y1: int, x2: int, y2: int, *, desc: str = "box"
+) -> dict:
+    return {
+        "objects": [
+            {
+                "bbox_2d": [x1, y1, x2, y2],
                 "desc": desc,
             }
         ]
@@ -410,6 +425,113 @@ def test_confidence_postop_fuses_geom_and_desc_scores(tmp_path: Path) -> None:
     scored_records = [json.loads(line) for line in scored_path.read_text(encoding="utf-8").splitlines()]
     assert scored_records[0]["pred_score_version"] == PRED_SCORE_VERSION
     assert scored_records[0]["pred"][0]["score"] == pytest.approx(expected_fusion)
+
+
+def test_confidence_postop_supports_norm1000_numeric_bbox_spans(tmp_path: Path) -> None:
+    gt_vs_pred_path = tmp_path / "gt_vs_pred.jsonl"
+    trace_path = tmp_path / "pred_token_trace.jsonl"
+    pred_confidence_path = tmp_path / "pred_confidence.jsonl"
+    scored_path = tmp_path / "gt_vs_pred_scored.jsonl"
+    summary_path = tmp_path / "confidence_postop_summary.json"
+
+    record = _bbox_record(
+        image="img_numeric.png",
+        x1=100,
+        y1=200,
+        x2=300,
+        y2=400,
+        raw_output_json=_bbox_raw_numeric(100, 200, 300, 400, desc="box"),
+        mode="text",
+        pred_coord_mode="norm1000",
+    )
+    _write_jsonl(gt_vs_pred_path, [record])
+
+    generated_token_text = [
+        '{"',
+        "objects",
+        '":',
+        ' [{"',
+        "desc",
+        '":',
+        ' "',
+        "box",
+        '",',
+        ' "',
+        "bbox",
+        "_",
+        "2",
+        "d",
+        '":',
+        " [",
+        "100",
+        ",",
+        " ",
+        "200",
+        ",",
+        " ",
+        "300",
+        ",",
+        " ",
+        "400",
+        "]}",
+        "]}",
+    ]
+    token_logprobs = [0.0] * len(generated_token_text)
+    token_logprobs[16] = math.log(0.2)
+    token_logprobs[19] = math.log(0.2)
+    token_logprobs[22] = math.log(0.2)
+    token_logprobs[25] = math.log(0.2)
+    _write_jsonl(
+        trace_path,
+        [
+            {
+                "line_idx": 0,
+                "generated_token_text": generated_token_text,
+                "token_logprobs": token_logprobs,
+            }
+        ],
+    )
+
+    summary = run_confidence_postop(
+        paths=paths_from_config(
+            {
+                "artifacts": {
+                    "gt_vs_pred_jsonl": str(gt_vs_pred_path),
+                    "pred_token_trace_jsonl": str(trace_path),
+                    "pred_confidence_jsonl": str(pred_confidence_path),
+                    "gt_vs_pred_scored_jsonl": str(scored_path),
+                    "confidence_postop_summary_json": str(summary_path),
+                }
+            }
+        ),
+        options=ConfidencePostOpOptions(
+            fusion_w_geom=0.6,
+            fusion_w_desc=0.4,
+        ),
+    )
+
+    assert summary["pred_score_version"] == PRED_SCORE_VERSION
+    assert summary["kept_pred_objects"] == 1
+
+    confidence_records = [
+        json.loads(line)
+        for line in pred_confidence_path.read_text(encoding="utf-8").splitlines()
+    ]
+    obj = confidence_records[0]["objects"][0]
+    assert obj["kept"] is True
+    assert obj["score_geom"] == pytest.approx(0.2)
+    assert obj["score_desc"] is None
+    assert obj["score_fusion"] == pytest.approx(0.2)
+    assert obj["confidence_details"]["method"] == CONFIDENCE_METHOD
+    assert obj["confidence_details"]["geom_span_mode"] == "numeric_text"
+    assert "desc_span_token_indices" not in obj["confidence_details"]
+    assert "fusion_weights" not in obj["confidence_details"]
+
+    scored_records = [
+        json.loads(line) for line in scored_path.read_text(encoding="utf-8").splitlines()
+    ]
+    assert scored_records[0]["pred_score_version"] == PRED_SCORE_VERSION
+    assert scored_records[0]["pred"][0]["score"] == pytest.approx(0.2)
 
 
 def test_confidence_postop_strict_desc_policy_drops_on_missing_desc_span(

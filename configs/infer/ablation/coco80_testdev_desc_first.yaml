@@ -26,8 +26,10 @@ stages:
 
 infer:
   gt_jsonl: public_data/coco/rescale_32_1024_bbox/test-dev.jsonl
-  # Replace with your merged checkpoint path.
+  # Use a merged checkpoint here, or set this to the base model path and provide
+  # infer.adapter_checkpoint for direct HF adapter inference.
   model_checkpoint: output/stage1/coco_bbox_max60-coco80-desc_first/REPLACE_WITH_CHECKPOINT
+  # adapter_checkpoint: output/stage1/.../checkpoint-XXX
 
   mode: auto
   pred_coord_mode: auto

@@ -21,7 +21,11 @@ from src.common.object_field_order import (
     normalize_object_field_order,
     normalize_object_ordering,
 )
-from src.config.prompts import get_template_prompt_hash, resolve_dense_prompt_variant_key
+from src.config.prompts import (
+    coord_mode_from_coord_tokens_enabled,
+    get_template_prompt_hash,
+    resolve_dense_prompt_variant_key,
+)
 from src.eval.artifacts import (
     CXCY_LOGW_LOGH_CONSTANT_PRED_SCORE_SOURCE,
     CXCY_LOGW_LOGH_CONSTANT_PRED_SCORE_VERSION,
@@ -33,6 +37,10 @@ from src.eval.artifacts import (
     write_jsonl_records,
 )
 from src.infer.artifacts import build_eval_artifact_paths
+from src.infer.checkpoints import (
+    VLLM_ADAPTER_UNSUPPORTED_MESSAGE,
+    resolve_inference_checkpoint,
+)
 from src.utils import get_logger
 
 logger = get_logger(__name__)
@@ -207,6 +215,34 @@ def _resolve_infer_prompt_controls(
     )
 
     return prompt_variant, bbox_format, object_field_order, object_ordering
+
+
+def _resolve_infer_coord_mode(
+    infer_cfg: Mapping[str, Any],
+) -> str:
+    requested_mode = str(infer_cfg.get("mode", "auto") or "auto").strip().lower()
+    if requested_mode == "coord":
+        return coord_mode_from_coord_tokens_enabled(True)
+    if requested_mode == "text":
+        return coord_mode_from_coord_tokens_enabled(False)
+    if requested_mode == "auto":
+        gt_jsonl = str(infer_cfg.get("gt_jsonl", "") or "").strip()
+        if not gt_jsonl:
+            return coord_mode_from_coord_tokens_enabled(True)
+        if not Path(gt_jsonl).is_file():
+            return coord_mode_from_coord_tokens_enabled(True)
+        detect_samples_raw = infer_cfg.get("detect_samples", 128)
+        try:
+            detect_samples = int(detect_samples_raw)
+        except (TypeError, ValueError):
+            detect_samples = 128
+        from src.infer.engine import detect_mode_from_gt
+
+        resolved_mode, _reason = detect_mode_from_gt(
+            gt_jsonl, sample_size=max(detect_samples, 1)
+        )
+        return coord_mode_from_coord_tokens_enabled(resolved_mode == "coord")
+    raise ValueError("infer.mode must be one of {'coord', 'text', 'auto'}")
 
 
 def _derive_run_dir(cfg: Mapping[str, Any]) -> Path:
@@ -565,15 +601,31 @@ def run_pipeline(
         cfg = apply_overrides(cfg, overrides)
 
     infer_cfg = _get_map(cfg, "infer")
+    requested_model_checkpoint = _get_str(infer_cfg, "model_checkpoint")
+    requested_adapter_checkpoint = _get_str(infer_cfg, "adapter_checkpoint")
+    resolved_checkpoint = None
+    if requested_model_checkpoint:
+        resolved_checkpoint = resolve_inference_checkpoint(
+            model_checkpoint=requested_model_checkpoint,
+            adapter_checkpoint=requested_adapter_checkpoint,
+        )
+        backend_cfg = _get_map(infer_cfg, "backend")
+        backend_type = str(backend_cfg.get("type") or "").strip().lower()
+        if (
+            resolved_checkpoint.resolved_adapter_checkpoint is not None
+            and backend_type == "vllm"
+        ):
+            raise ValueError(VLLM_ADAPTER_UNSUPPORTED_MESSAGE)
     (
         resolved_prompt_variant,
         resolved_bbox_format,
         resolved_object_field_order,
         resolved_object_ordering,
     ) = _resolve_infer_prompt_controls(infer_cfg)
+    resolved_coord_mode = _resolve_infer_coord_mode(infer_cfg)
     resolved_prompt_hash = get_template_prompt_hash(
         ordering=resolved_object_ordering,
-        coord_mode="coord_tokens",
+        coord_mode=resolved_coord_mode,
         prompt_variant=resolved_prompt_variant,
         object_field_order=resolved_object_field_order,
         bbox_format=resolved_bbox_format,
@@ -636,10 +688,36 @@ def run_pipeline(
         },
         "infer": {
             "prompt_variant": resolved_prompt_variant,
+            "coord_mode": resolved_coord_mode,
             "bbox_format": resolved_bbox_format,
             "object_field_order": resolved_object_field_order,
             "object_ordering": resolved_object_ordering,
             "prompt_template_hash": resolved_prompt_hash,
+            "checkpoint_mode": (
+                resolved_checkpoint.checkpoint_mode
+                if resolved_checkpoint is not None
+                else None
+            ),
+            "requested_model_checkpoint": (
+                resolved_checkpoint.requested_model_checkpoint
+                if resolved_checkpoint is not None
+                else requested_model_checkpoint
+            ),
+            "requested_adapter_checkpoint": (
+                resolved_checkpoint.requested_adapter_checkpoint
+                if resolved_checkpoint is not None
+                else requested_adapter_checkpoint
+            ),
+            "resolved_base_model_checkpoint": (
+                resolved_checkpoint.resolved_base_model_checkpoint
+                if resolved_checkpoint is not None
+                else requested_model_checkpoint
+            ),
+            "resolved_adapter_checkpoint": (
+                resolved_checkpoint.resolved_adapter_checkpoint
+                if resolved_checkpoint is not None
+                else requested_adapter_checkpoint
+            ),
         },
         "eval": {
             "duplicate_control": {
@@ -724,6 +802,11 @@ def _run_infer_stage(
 
     gt_jsonl = _require_str(infer_cfg, "gt_jsonl")
     model_checkpoint = _require_str(infer_cfg, "model_checkpoint")
+    adapter_checkpoint = _get_str(infer_cfg, "adapter_checkpoint")
+    resolved_checkpoint = resolve_inference_checkpoint(
+        model_checkpoint=model_checkpoint,
+        adapter_checkpoint=adapter_checkpoint,
+    )
     mode_raw = _require_choice(infer_cfg, "mode", {"coord", "text", "auto"})
     mode = cast(Literal["coord", "text", "auto"], mode_raw)
 
@@ -741,6 +824,8 @@ def _run_infer_stage(
     backend_cfg = _get_map(infer_cfg, "backend")
     backend_type_raw = _require_choice(backend_cfg, "type", {"hf", "vllm"})
     backend_type = cast(Literal["hf", "vllm"], backend_type_raw)
+    if resolved_checkpoint.resolved_adapter_checkpoint is not None and backend_type != "hf":
+        raise ValueError(VLLM_ADAPTER_UNSUPPORTED_MESSAGE)
 
     gen_cfg_map = _get_map(infer_cfg, "generation")
     if not gen_cfg_map:
@@ -781,6 +866,12 @@ def _run_infer_stage(
     inf_cfg = InferenceConfig(
         gt_jsonl=gt_jsonl,
         model_checkpoint=model_checkpoint,
+        adapter_checkpoint=adapter_checkpoint,
+        checkpoint_mode=resolved_checkpoint.checkpoint_mode,
+        requested_model_checkpoint=resolved_checkpoint.requested_model_checkpoint,
+        requested_adapter_checkpoint=resolved_checkpoint.requested_adapter_checkpoint,
+        resolved_base_model_checkpoint=resolved_checkpoint.resolved_base_model_checkpoint,
+        resolved_adapter_checkpoint=resolved_checkpoint.resolved_adapter_checkpoint,
         mode=mode,
         prompt_variant=prompt_variant,
         bbox_format=bbox_format,
@@ -924,11 +1015,6 @@ def _maybe_run_confidence_postop(
 def _run_eval_stage(cfg: Mapping[str, Any], artifacts: ResolvedArtifacts) -> None:
     from src.eval.detection import EvalOptions, evaluate_and_save
 
-    infer_cfg = _get_map(cfg, "infer")
-    bbox_format = normalize_bbox_format(
-        infer_cfg.get("bbox_format", "xyxy"),
-        path="infer.bbox_format",
-    )
     eval_cfg = _get_map(cfg, "eval")
     duplicate_control_enabled = _resolve_eval_duplicate_control_enabled(eval_cfg)
 

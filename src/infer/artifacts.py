@@ -5,6 +5,24 @@ from pathlib import Path
 from typing import Any, Dict, Optional
 
 
+def _checkpoint_meta(owner: Any) -> Dict[str, Any]:
+    return {
+        "checkpoint_mode": getattr(owner.cfg, "checkpoint_mode", "full_model"),
+        "requested_model_checkpoint": getattr(
+            owner.cfg, "requested_model_checkpoint", owner.cfg.model_checkpoint
+        ),
+        "requested_adapter_checkpoint": getattr(
+            owner.cfg, "requested_adapter_checkpoint", owner.cfg.adapter_checkpoint
+        ),
+        "resolved_base_model_checkpoint": getattr(
+            owner.cfg, "resolved_base_model_checkpoint", owner.cfg.model_checkpoint
+        ),
+        "resolved_adapter_checkpoint": getattr(
+            owner.cfg, "resolved_adapter_checkpoint", owner.cfg.adapter_checkpoint
+        ),
+    }
+
+
 def build_eval_artifact_paths(*, run_dir: Path, eval_dir: Path) -> Dict[str, Path]:
     return {
         "gt_vs_pred_guarded_jsonl": run_dir / "gt_vs_pred_guarded.jsonl",
@@ -53,14 +71,16 @@ def build_infer_resolved_meta(
     summary_path: Path,
     trace_path: Optional[Path],
 ) -> Dict[str, Any]:
+    checkpoint_meta = _checkpoint_meta(owner)
     resolved_meta = {
         "mode": owner.resolved_mode,
         "mode_resolution_reason": owner.mode_reason,
         "backend": backend,
         "model_checkpoint": owner.cfg.model_checkpoint,
+        "adapter_checkpoint": owner.cfg.adapter_checkpoint,
+        **checkpoint_meta,
         "gt_jsonl": owner.cfg.gt_jsonl,
         "pred_coord_mode": owner.cfg.pred_coord_mode,
-        "bbox_format": owner.cfg.bbox_format,
         "prompt_variant": owner.prompt_variant,
         "bbox_format": owner.bbox_format,
         "object_field_order": owner.object_field_order,
@@ -114,6 +134,7 @@ def build_infer_summary_payload(
     determinism: str,
     batch_size: int,
 ) -> Dict[str, Any]:
+    checkpoint_meta = _checkpoint_meta(owner)
     summary_payload: Dict[str, Any] = {
         "mode": owner.resolved_mode,
         "determinism": determinism,
@@ -121,6 +142,8 @@ def build_infer_summary_payload(
         "backend": {
             "type": backend,
             "model_checkpoint": owner.cfg.model_checkpoint,
+            "adapter_checkpoint": owner.cfg.adapter_checkpoint,
+            **checkpoint_meta,
         },
         "generation": {
             "temperature": owner.gen_cfg.temperature,
@@ -133,7 +156,6 @@ def build_infer_summary_payload(
         "infer": {
             "gt_jsonl": owner.cfg.gt_jsonl,
             "pred_coord_mode": owner.cfg.pred_coord_mode,
-            "bbox_format": owner.cfg.bbox_format,
             "prompt_variant": owner.prompt_variant,
             "bbox_format": owner.bbox_format,
             "object_field_order": owner.object_field_order,

@@ -83,14 +83,24 @@ from src.common.object_field_order import (
     normalize_object_field_order,
     normalize_object_ordering,
 )
+from src.coord_tokens.offset_adapter import (
+    install_coord_offset_adapter,
+    reattach_coord_offset_hooks,
+)
 from src.config.prompts import (
     DEFAULT_PROMPT_VARIANT,
+    coord_mode_from_coord_tokens_enabled,
     get_template_prompt_hash,
     get_template_prompts,
     resolve_dense_prompt_variant_key,
 )
 from src.common.prediction_parsing import extract_special_tokens, load_prediction_dict
 from src.common.paths import resolve_image_path_strict
+from src.infer.checkpoints import (
+    ResolvedInferenceCheckpoint,
+    VLLM_ADAPTER_UNSUPPORTED_MESSAGE,
+    resolve_inference_checkpoint,
+)
 from src.utils import get_logger
 
 _DISTRIBUTED_SOURCE_INDEX_KEY = "_coordexp_source_index"
@@ -145,6 +155,12 @@ class InferenceConfig:
     object_field_order: ObjectFieldOrder = "desc_first"
     object_ordering: ObjectOrdering = "sorted"
     pred_coord_mode: Literal["auto", "norm1000", "pixel"] = "auto"
+    adapter_checkpoint: Optional[str] = None
+    checkpoint_mode: str = "full_model"
+    requested_model_checkpoint: Optional[str] = None
+    requested_adapter_checkpoint: Optional[str] = None
+    resolved_base_model_checkpoint: Optional[str] = None
+    resolved_adapter_checkpoint: Optional[str] = None
 
     # Canonical unified artifact names (can be overridden by pipeline runner).
     out_path: str = "gt_vs_pred.jsonl"
@@ -347,6 +363,26 @@ class InferenceEngine:
             device = f"cuda:{self.cfg.local_rank}"
         self.cfg.device = device
 
+        self.resolved_checkpoint: ResolvedInferenceCheckpoint = (
+            resolve_inference_checkpoint(
+                model_checkpoint=cfg.model_checkpoint,
+                adapter_checkpoint=cfg.adapter_checkpoint,
+            )
+        )
+        self.cfg.checkpoint_mode = self.resolved_checkpoint.checkpoint_mode
+        self.cfg.requested_model_checkpoint = (
+            self.resolved_checkpoint.requested_model_checkpoint
+        )
+        self.cfg.requested_adapter_checkpoint = (
+            self.resolved_checkpoint.requested_adapter_checkpoint
+        )
+        self.cfg.resolved_base_model_checkpoint = (
+            self.resolved_checkpoint.resolved_base_model_checkpoint
+        )
+        self.cfg.resolved_adapter_checkpoint = (
+            self.resolved_checkpoint.resolved_adapter_checkpoint
+        )
+
         self.prompt_variant = resolve_dense_prompt_variant_key(cfg.prompt_variant)
         self.cfg.prompt_variant = self.prompt_variant
         self.bbox_format = normalize_bbox_format(
@@ -375,17 +411,20 @@ class InferenceEngine:
             self.resolved_mode, self.mode_reason = detect_mode_from_gt(
                 cfg.gt_jsonl, sample_size=int(cfg.detect_samples or 128)
             )
+        coord_mode = coord_mode_from_coord_tokens_enabled(
+            self.resolved_mode == "coord"
+        )
 
         self.system_prompt, self.user_prompt = get_template_prompts(
             ordering=self.object_ordering,
-            coord_mode="coord_tokens",
+            coord_mode=coord_mode,
             prompt_variant=self.prompt_variant,
             object_field_order=self.object_field_order,
             bbox_format=self.bbox_format,
         )
         self.prompt_template_hash = get_template_prompt_hash(
             ordering=self.object_ordering,
-            coord_mode="coord_tokens",
+            coord_mode=coord_mode,
             prompt_variant=self.prompt_variant,
             object_field_order=self.object_field_order,
             bbox_format=self.bbox_format,
@@ -399,7 +438,7 @@ class InferenceEngine:
         )
 
         self.processor: AutoProcessor | None = None
-        self.model: Qwen3VLForConditionalGeneration | None = None
+        self.model: Any | None = None
         self.vllm_llm: Any | None = None
         self.attn_implementation_requested: Optional[str] = None
         self.attn_implementation_selected: Optional[str] = None
@@ -559,11 +598,22 @@ class InferenceEngine:
 
     def load_model(self) -> None:
         backend = str(self.cfg.backend_type).lower().strip()
+        resolved_base_model_checkpoint = str(
+            self.cfg.resolved_base_model_checkpoint or self.cfg.model_checkpoint
+        ).strip()
+        resolved_adapter_checkpoint = str(
+            self.cfg.resolved_adapter_checkpoint or ""
+        ).strip()
+        coord_offset_spec = None
+        if self.resolved_checkpoint.adapter_info is not None:
+            coord_offset_spec = self.resolved_checkpoint.adapter_info.coord_offset_spec
 
         # HF backend loads model+processor. For vLLM we support two modes:
         # - server: OpenAI-compatible HTTP server (default)
         # - local: in-process vLLM Python API (no HTTP server)
         if backend == "vllm":
+            if resolved_adapter_checkpoint:
+                raise RuntimeError(VLLM_ADAPTER_UNSUPPORTED_MESSAGE)
             self._seed()
             if self._vllm_mode() == "local":
                 self._load_vllm_local()
@@ -595,12 +645,47 @@ class InferenceEngine:
             errors: List[str] = []
             for idx, cand in enumerate(candidates):
                 try:
-                    model = Qwen3VLForConditionalGeneration.from_pretrained(
-                        self.cfg.model_checkpoint,
+                    base_model = Qwen3VLForConditionalGeneration.from_pretrained(
+                        resolved_base_model_checkpoint,
                         torch_dtype=torch.bfloat16,
                         attn_implementation=cand,
                     )
-                    self.model = model.to(self.cfg.device)
+                    model = base_model.to(self.cfg.device)
+                    if resolved_adapter_checkpoint:
+                        if coord_offset_spec is not None:
+                            install_coord_offset_adapter(
+                                model,
+                                coord_ids=coord_offset_spec.coord_ids,
+                                tie_head=coord_offset_spec.tie_head,
+                            )
+                        try:
+                            from swift import Swift
+                        except ImportError as exc:
+                            raise RuntimeError(
+                                "HF adapter shorthand inference requires the 'swift' "
+                                "package in the active environment."
+                            ) from exc
+                        try:
+                            model = Swift.from_pretrained(
+                                model,
+                                model_id=resolved_adapter_checkpoint,
+                                inference_mode=True,
+                            )
+                        except Exception as exc:
+                            raise RuntimeError(
+                                "Failed to load Swift adapter checkpoint "
+                                f"{resolved_adapter_checkpoint!r} onto base model "
+                                f"{resolved_base_model_checkpoint!r}."
+                            ) from exc
+                        if coord_offset_spec is not None:
+                            reattached = reattach_coord_offset_hooks(model)
+                            if reattached is None:
+                                raise RuntimeError(
+                                    "coord_offset_adapter was declared in the adapter "
+                                    "checkpoint, but its runtime hooks could not be "
+                                    "reattached after Swift loading."
+                                )
+                    self.model = model
                     self.model.eval()
                     self.attn_implementation_selected = cand
                     break
@@ -636,7 +721,7 @@ class InferenceEngine:
 
         if self.processor is None:
             self.processor = AutoProcessor.from_pretrained(
-                self.cfg.model_checkpoint, trust_remote_code=True
+                resolved_base_model_checkpoint, trust_remote_code=True
             )
 
         # Decoder-only models require left padding for correct generation.
