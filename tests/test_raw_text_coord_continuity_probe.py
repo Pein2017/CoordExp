@@ -25,6 +25,8 @@ from src.analysis.raw_text_coord_continuity_probe import (
     render_pretty_inline_assistant_text,
     run_phase0_audit,
     run_study,
+    select_self_prefix_duplicate_anchor,
+    summarize_bad_basin_coordinate_records,
     summarize_pilot_coordinate_records,
 )
 from src.infer.checkpoints import (
@@ -283,6 +285,68 @@ cohorts:
     assert (run_dir / "cohorts" / "train_supplemental.jsonl").exists()
 
 
+def test_run_study_materializes_bad_basin_summary_when_stage_present(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class _Tokenizer:
+        def tokenize(self, text: str) -> list[str]:
+            return list(text)
+
+    monkeypatch.setattr(
+        continuity_probe_module,
+        "_load_tokenizer_for_audit",
+        lambda model_path: _Tokenizer(),
+    )
+    monkeypatch.setattr(
+        continuity_probe_module,
+        "_run_bad_basin_scoring",
+        lambda **kwargs: {"candidate_rows_total": 3, "num_probes": 1},
+    )
+    out_dir = tmp_path / "analysis"
+    val_jsonl = tmp_path / "val.jsonl"
+    train_jsonl = tmp_path / "train.jsonl"
+    payload = json.dumps({"image_id": 1, "image": "val_1.jpg"}) + "\n"
+    val_jsonl.write_text(payload, encoding="utf-8")
+    train_jsonl.write_text(payload, encoding="utf-8")
+    config_path = tmp_path / "probe.yaml"
+    config_path.write_text(
+        f"""
+run:
+  name: bad-basin-stage
+  output_dir: {out_dir.as_posix()}
+  stages: [audit, bad_basin]
+
+models:
+  base:
+    alias: base
+    path: model_cache/models/Qwen/Qwen3-VL-2B-Instruct-coordexp
+    prompt_surface: upper_bound
+  pure_ce:
+    alias: pure_ce
+    path: output/stage1_2b/demo-checkpoint
+    prompt_surface: canonical
+
+cohorts:
+  val_headline:
+    jsonl_path: {val_jsonl.as_posix()}
+    sample_count: 1
+    seed: 17
+  train_supplemental:
+    jsonl_path: {train_jsonl.as_posix()}
+    sample_count: 1
+    seed: 29
+        """.strip(),
+        encoding="utf-8",
+    )
+
+    run_study(config_path)
+
+    run_dir = out_dir / "bad-basin-stage"
+    summary = json.loads((run_dir / "summary.json").read_text(encoding="utf-8"))
+    assert summary["bad_basin"]["candidate_rows_total"] == 3
+
+
 def test_run_phase0_audit_records_requested_numbers() -> None:
     class _Tokenizer:
         def encode(self, text: str, add_special_tokens: bool = False) -> list[int]:
@@ -435,6 +499,58 @@ def test_summarize_pilot_coordinate_records_groups_probe_metrics() -> None:
     assert summary["slot_metrics"][0]["model_alias"] == "base"
 
 
+def test_summarize_bad_basin_coordinate_records_reports_gt_and_pred_centers() -> None:
+    rows = [
+        {
+            "scoring_status": "ok",
+            "model_alias": "pure_ce",
+            "case_id": "dup-1",
+            "slot": "x1",
+            "image_id": 1,
+            "object_index": 2,
+            "candidate_value": 100,
+            "score": -0.2,
+            "gt_value": 140,
+            "pred_value": 100,
+        },
+        {
+            "scoring_status": "ok",
+            "model_alias": "pure_ce",
+            "case_id": "dup-1",
+            "slot": "x1",
+            "image_id": 1,
+            "object_index": 2,
+            "candidate_value": 104,
+            "score": -0.3,
+            "gt_value": 140,
+            "pred_value": 100,
+        },
+        {
+            "scoring_status": "ok",
+            "model_alias": "pure_ce",
+            "case_id": "dup-1",
+            "slot": "x1",
+            "image_id": 1,
+            "object_index": 2,
+            "candidate_value": 140,
+            "score": -0.9,
+            "gt_value": 140,
+            "pred_value": 100,
+        },
+    ]
+
+    summary = summarize_bad_basin_coordinate_records(rows)
+
+    assert summary["candidate_rows_total"] == 3
+    assert summary["num_probes"] == 1
+    assert {row["center_kind"] for row in summary["center_metrics"]} == {"gt", "pred"}
+    assert (
+        summary["probe_metrics"][0]["pred_center_mass_at_4"]
+        > summary["probe_metrics"][0]["gt_center_mass_at_4"]
+    )
+    assert summary["probe_metrics"][0]["wrong_anchor_advantage_at_4"] > 0.0
+
+
 def test_build_study_hard_cases_prefers_duplicate_prone_rows() -> None:
     rows = [
         {"image_id": 1, "pred_count": 8, "max_desc_count": 3, "same_desc_duplicate_pair_count": 0},
@@ -444,6 +560,33 @@ def test_build_study_hard_cases_prefers_duplicate_prone_rows() -> None:
     hard = build_study_hard_cases(rows, max_cases=1)
 
     assert hard[0]["image_id"] == 2
+
+
+def test_select_self_prefix_duplicate_anchor_prefers_local_duplicate_pair() -> None:
+    row = {
+        "image_id": 1000,
+        "width": 1000,
+        "height": 1000,
+        "pred": [
+            {"type": "bbox_2d", "points": [100, 100, 200, 200], "desc": "person"},
+            {"type": "bbox_2d", "points": [108, 102, 208, 202], "desc": "person"},
+            {"type": "bbox_2d", "points": [700, 100, 820, 260], "desc": "clock"},
+        ],
+        "gt": [
+            {"type": "bbox_2d", "points": [102, 101, 202, 201], "desc": "person"},
+            {"type": "bbox_2d", "points": [410, 120, 510, 260], "desc": "person"},
+            {"type": "bbox_2d", "points": [700, 100, 820, 260], "desc": "clock"},
+        ],
+    }
+
+    anchor = select_self_prefix_duplicate_anchor(row)
+
+    assert anchor is not None
+    assert anchor["object_index"] == 1
+    assert anchor["source_object_index"] == 0
+    assert anchor["pair_metrics"]["duplicate_like"] is True
+    assert anchor["gt_next"]["desc"] == "person"
+    assert anchor["gt_next"]["points"] == [410, 120, 510, 260]
 
 
 def test_mine_duplicate_like_rows_prefers_same_desc_local_duplicates(
