@@ -7,6 +7,10 @@ import json
 import pytest
 
 from src.analysis.duplication_collapse_analysis import mine_duplicate_like_rows
+from src.analysis.raw_text_coord_continuity_report import (
+    compute_basin_metrics,
+    compute_vision_lift_rows,
+)
 from src.analysis.raw_text_coord_continuity_probe import (
     build_random_cohort,
     build_study_hard_cases,
@@ -389,3 +393,63 @@ def test_mine_duplicate_like_rows_preserves_zero_line_idx_in_selection_reason(
 
     assert rows[0]["line_idx"] == 0
     assert "line_idx=0" in str(rows[0]["selection_reason"])
+
+
+def test_compute_basin_metrics_uses_gt_center() -> None:
+    rows = [
+        {"candidate_value": 209, "score": 0.0, "gt_value": 210},
+        {"candidate_value": 210, "score": 0.0, "gt_value": 210},
+        {"candidate_value": 212, "score": 0.0, "gt_value": 210},
+        {"candidate_value": 214, "score": 0.0, "gt_value": 210},
+        {"candidate_value": 218, "score": 0.0, "gt_value": 210},
+        {"candidate_value": 226, "score": 0.0, "gt_value": 210},
+    ]
+
+    metrics = compute_basin_metrics(rows, center_key="gt_value")
+
+    assert metrics["mass_at_1"] == pytest.approx(2.0 / 6.0)
+    assert metrics["mass_at_2"] == pytest.approx(3.0 / 6.0)
+    assert metrics["mass_at_4"] == pytest.approx(4.0 / 6.0)
+    assert metrics["mass_at_8"] == pytest.approx(5.0 / 6.0)
+    assert metrics["mass_at_16"] == pytest.approx(1.0)
+    assert metrics["mass_at_1"] <= metrics["mass_at_2"] <= metrics["mass_at_4"] <= metrics["mass_at_8"] <= metrics["mass_at_16"]
+    assert metrics["local_expected_abs_error"] == pytest.approx(31.0 / 6.0)
+    assert metrics["half_height_width"] == pytest.approx(16.0)
+
+
+def test_compute_vision_lift_rows_pairs_correct_and_swapped() -> None:
+    rows = [
+        {"case_id": "a", "slot": "x1", "image_condition": "correct", "gt_score": -0.1},
+        {"case_id": "a", "slot": "x1", "image_condition": "swapped", "gt_score": -0.9},
+        {"case_id": "b", "slot": "y2", "image_condition": "correct", "gt_score": -0.4},
+        {"case_id": "b", "slot": "y2", "image_condition": "swapped", "gt_score": -0.6},
+        {"case_id": "c", "slot": "x2", "image_condition": "correct", "gt_score": -0.2},
+    ]
+
+    lifted = compute_vision_lift_rows(rows)
+
+    assert [row["case_id"] for row in lifted] == ["a", "b"]
+    assert [row["slot"] for row in lifted] == ["x1", "y2"]
+    assert lifted[0]["vision_lift"] == pytest.approx(0.8)
+    assert lifted[1]["vision_lift"] == pytest.approx(0.2)
+
+
+def test_compute_basin_metrics_rejects_non_finite_scores() -> None:
+    rows = [
+        {"candidate_value": 199, "score": float("-inf"), "gt_value": 200},
+        {"candidate_value": 200, "score": float("-inf"), "gt_value": 200},
+    ]
+
+    with pytest.raises(ValueError, match="finite"):
+        compute_basin_metrics(rows, center_key="gt_value")
+
+
+def test_compute_vision_lift_rows_rejects_duplicate_conditions() -> None:
+    rows = [
+        {"case_id": "a", "slot": "x1", "image_condition": "correct", "gt_score": -0.1},
+        {"case_id": "a", "slot": "x1", "image_condition": "correct", "gt_score": -0.4},
+        {"case_id": "a", "slot": "x1", "image_condition": "swapped", "gt_score": -0.9},
+    ]
+
+    with pytest.raises(ValueError, match="duplicate image_condition"):
+        compute_vision_lift_rows(rows)
