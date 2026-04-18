@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 from collections import defaultdict
+import json
+from pathlib import Path
 from typing import Sequence
 
 import numpy as np
@@ -95,3 +97,70 @@ def compute_vision_lift_rows(
             }
         )
     return lifted_rows
+
+
+def summarize_wrong_anchor_advantage(
+    rows: Sequence[dict[str, object]],
+) -> dict[str, float]:
+    gt_metrics = compute_basin_metrics(rows, center_key="gt_value")
+    pred_metrics = compute_basin_metrics(rows, center_key="pred_value")
+    return {
+        "gt_center_mass_at_4": gt_metrics["mass_at_4"],
+        "pred_center_mass_at_4": pred_metrics["mass_at_4"],
+        "wrong_anchor_advantage_at_4": (
+            pred_metrics["mass_at_4"] - gt_metrics["mass_at_4"]
+        ),
+    }
+
+
+def build_xy_heatmap_grid(
+    rows: Sequence[dict[str, object]],
+) -> dict[str, object]:
+    x_values = sorted({int(row["candidate_x1"]) for row in rows})
+    y_values = sorted({int(row["candidate_y1"]) for row in rows})
+    score_lookup: dict[tuple[int, int], float] = {}
+    for row in rows:
+        key = (int(row["candidate_x1"]), int(row["candidate_y1"]))
+        if key in score_lookup:
+            raise ValueError(f"duplicate heatmap cell: {key}")
+        score_lookup[key] = float(row["score"])
+    for y_value in y_values:
+        for x_value in x_values:
+            if (x_value, y_value) not in score_lookup:
+                raise ValueError(f"missing heatmap cell: {(x_value, y_value)}")
+    return {
+        "x_values": x_values,
+        "y_values": y_values,
+        "z_matrix": [
+            [score_lookup[(x_value, y_value)] for x_value in x_values]
+            for y_value in y_values
+        ],
+    }
+
+
+def _write_json(path: Path, payload: object) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
+def _write_jsonl(path: Path, rows: Sequence[dict[str, object]]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        "\n".join(json.dumps(row, ensure_ascii=False) for row in rows) + ("\n" if rows else ""),
+        encoding="utf-8",
+    )
+
+
+def write_report_bundle(
+    *,
+    out_dir: Path,
+    summary: dict[str, object],
+    report_md: str,
+    per_coord_rows: Sequence[dict[str, object]],
+    hard_cases: Sequence[dict[str, object]],
+) -> None:
+    out_dir.mkdir(parents=True, exist_ok=True)
+    (out_dir / "report.md").write_text(report_md, encoding="utf-8")
+    _write_json(out_dir / "summary.json", summary)
+    _write_jsonl(out_dir / "per_coord_scores.jsonl", per_coord_rows)
+    _write_jsonl(out_dir / "hard_cases.jsonl", hard_cases)

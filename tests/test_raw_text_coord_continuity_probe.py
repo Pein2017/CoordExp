@@ -7,9 +7,13 @@ import json
 import pytest
 
 from src.analysis.duplication_collapse_analysis import mine_duplicate_like_rows
+from src.analysis.duplication_followup import build_prefix_perturbation_variants
 from src.analysis.raw_text_coord_continuity_report import (
+    build_xy_heatmap_grid,
     compute_basin_metrics,
     compute_vision_lift_rows,
+    summarize_wrong_anchor_advantage,
+    write_report_bundle,
 )
 from src.analysis.raw_text_coord_continuity_probe import (
     build_random_cohort,
@@ -175,6 +179,9 @@ cohorts:
     assert len(train_rows) == 12
     assert summary["cohorts"]["val_headline"]["num_rows"] == 8
     assert summary["cohorts"]["train_supplemental"]["num_rows"] == 12
+    assert not (run_dir / "report.md").exists()
+    assert not (run_dir / "per_coord_scores.jsonl").exists()
+    assert not (run_dir / "hard_cases.jsonl").exists()
 
 
 def test_run_study_resolves_config_relative_cohort_paths_when_cwd_changes(
@@ -453,3 +460,135 @@ def test_compute_vision_lift_rows_rejects_duplicate_conditions() -> None:
 
     with pytest.raises(ValueError, match="duplicate image_condition"):
         compute_vision_lift_rows(rows)
+
+
+def test_summarize_wrong_anchor_advantage_prefers_pred_center_when_requested() -> None:
+    rows = [
+        {"candidate_value": 101, "score": -0.2, "gt_value": 140, "pred_value": 100},
+        {"candidate_value": 104, "score": -0.3, "gt_value": 140, "pred_value": 100},
+        {"candidate_value": 140, "score": -0.9, "gt_value": 140, "pred_value": 100},
+    ]
+
+    summary = summarize_wrong_anchor_advantage(rows)
+
+    assert summary["pred_center_mass_at_4"] > summary["gt_center_mass_at_4"]
+    assert summary["wrong_anchor_advantage_at_4"] > 0.0
+
+
+def test_build_xy_heatmap_grid_preserves_cartesian_order() -> None:
+    rows = [
+        {"candidate_x1": 10, "candidate_y1": 20, "score": -0.1},
+        {"candidate_x1": 10, "candidate_y1": 21, "score": -0.2},
+        {"candidate_x1": 11, "candidate_y1": 20, "score": -0.3},
+        {"candidate_x1": 11, "candidate_y1": 21, "score": -0.4},
+    ]
+
+    heatmap = build_xy_heatmap_grid(rows)
+
+    assert heatmap["x_values"] == [10, 11]
+    assert heatmap["y_values"] == [20, 21]
+    assert heatmap["z_matrix"] == [[-0.1, -0.3], [-0.2, -0.4]]
+
+
+def test_build_xy_heatmap_grid_rejects_duplicate_cells() -> None:
+    rows = [
+        {"candidate_x1": 10, "candidate_y1": 20, "score": -0.1},
+        {"candidate_x1": 10, "candidate_y1": 20, "score": -0.9},
+    ]
+
+    with pytest.raises(ValueError, match="duplicate heatmap cell"):
+        build_xy_heatmap_grid(rows)
+
+
+def test_build_xy_heatmap_grid_rejects_sparse_grids() -> None:
+    rows = [
+        {"candidate_x1": 10, "candidate_y1": 20, "score": -0.1},
+        {"candidate_x1": 10, "candidate_y1": 21, "score": -0.2},
+        {"candidate_x1": 11, "candidate_y1": 20, "score": -0.3},
+    ]
+
+    with pytest.raises(ValueError, match="missing heatmap cell"):
+        build_xy_heatmap_grid(rows)
+
+
+def test_build_prefix_perturbation_variants_exposes_expected_labels() -> None:
+    variants = build_prefix_perturbation_variants(
+        prefix_objects=[{"desc": "person", "bbox_2d": [10, 10, 20, 20]}],
+        source_index_in_prefix=0,
+        gt_next={"desc": "person", "bbox_2d": [12, 14, 24, 28]},
+    )
+
+    assert [label for label, _ in variants] == [
+        "drop_source",
+        "replace_source_with_gt_next",
+        "interp_source_to_gt_next_0p5",
+        "source_x1y1_from_gt_next",
+    ]
+
+
+def test_write_report_bundle_materializes_required_outputs(tmp_path: Path) -> None:
+    out_dir = tmp_path / "probe"
+
+    write_report_bundle(
+        out_dir=out_dir,
+        summary={"questions": {"q1": "inconclusive"}},
+        report_md="# Demo\n",
+        per_coord_rows=[{"case_id": "a", "slot": "x1", "candidate_value": 100, "score": -0.1}],
+        hard_cases=[{"case_id": "hard-1"}],
+    )
+
+    assert (out_dir / "report.md").exists()
+    assert (out_dir / "summary.json").exists()
+    assert (out_dir / "per_coord_scores.jsonl").exists()
+    assert (out_dir / "hard_cases.jsonl").exists()
+
+
+def test_run_study_materializes_report_bundle_when_report_stage_present(
+    tmp_path: Path,
+) -> None:
+    out_dir = tmp_path / "analysis"
+    val_jsonl = tmp_path / "val.jsonl"
+    train_jsonl = tmp_path / "train.jsonl"
+    val_jsonl.write_text(json.dumps({"image_id": 1, "image": "val_1.jpg"}) + "\n", encoding="utf-8")
+    train_jsonl.write_text(
+        json.dumps({"image_id": 2, "image": "train_2.jpg"}) + "\n",
+        encoding="utf-8",
+    )
+    config_path = tmp_path / "probe.yaml"
+    config_path.write_text(
+        f"""
+run:
+  name: report-stage
+  output_dir: {out_dir.as_posix()}
+  stages: [audit, report]
+
+models:
+  base:
+    alias: base
+    path: model_cache/models/Qwen/Qwen3-VL-2B-Instruct-coordexp
+    prompt_surface: upper_bound
+  pure_ce:
+    alias: pure_ce
+    path: output/stage1_2b/demo-checkpoint
+    prompt_surface: canonical
+
+cohorts:
+  val_headline:
+    jsonl_path: {val_jsonl.as_posix()}
+    sample_count: 1
+    seed: 17
+  train_supplemental:
+    jsonl_path: {train_jsonl.as_posix()}
+    sample_count: 1
+    seed: 29
+        """.strip(),
+        encoding="utf-8",
+    )
+
+    run_study(config_path)
+
+    run_dir = out_dir / "report-stage"
+    assert (run_dir / "report.md").exists()
+    assert (run_dir / "summary.json").exists()
+    assert (run_dir / "per_coord_scores.jsonl").exists()
+    assert (run_dir / "hard_cases.jsonl").exists()

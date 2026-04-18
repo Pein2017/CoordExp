@@ -7,6 +7,8 @@ import random
 
 import yaml
 
+from src.analysis.raw_text_coord_continuity_report import write_report_bundle
+
 _VALID_STAGES = ("audit", "pilot", "canonical", "bad_basin", "dense_scene", "report")
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
@@ -256,5 +258,14 @@ def run_study(config_path: Path) -> dict[str, object]:
             "train_supplemental": train_cohort,
         },
     }
-    _write_json(run_dir / "summary.json", summary)
+    if "report" in cfg.run.stages:
+        write_report_bundle(
+            out_dir=run_dir,
+            summary=summary,
+            report_md="# Raw-Text Coordinate Continuity Probe\n",
+            per_coord_rows=[],
+            hard_cases=[],
+        )
+    else:
+        _write_json(run_dir / "summary.json", summary)
     return {"run_dir": str(run_dir), "summary": summary}
