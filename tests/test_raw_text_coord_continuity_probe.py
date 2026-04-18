@@ -18,12 +18,14 @@ from src.analysis.raw_text_coord_continuity_report import (
 )
 from src.analysis.raw_text_coord_continuity_probe import (
     _resolve_audit_model_info,
+    build_candidate_values_around,
     build_random_cohort,
     build_study_hard_cases,
     load_study_config,
     render_pretty_inline_assistant_text,
     run_phase0_audit,
     run_study,
+    summarize_pilot_coordinate_records,
 )
 from src.infer.checkpoints import (
     AdapterCheckpointInfo,
@@ -78,6 +80,8 @@ cohorts:
     assert cfg.models.pure_ce.prompt_surface == "canonical"
     assert cfg.cohorts.val_headline.sample_count == 500
     assert cfg.cohorts.train_supplemental.seed == 29
+    assert cfg.scoring.device == "cuda:0"
+    assert cfg.scoring.pilot_slots == ("x1", "y1", "x2", "y2")
 
 
 def test_load_study_config_rejects_unknown_stage(tmp_path: Path) -> None:
@@ -128,6 +132,11 @@ def test_run_study_materializes_run_dir_and_summary(
         continuity_probe_module,
         "_load_tokenizer_for_audit",
         lambda model_path: _Tokenizer(),
+    )
+    monkeypatch.setattr(
+        continuity_probe_module,
+        "_run_pilot_scoring",
+        lambda **kwargs: {"candidate_rows_total": 0, "num_probes": 0},
     )
     out_dir = tmp_path / "analysis"
     val_jsonl = tmp_path / "val.jsonl"
@@ -199,6 +208,7 @@ cohorts:
     assert len(train_rows) == 12
     assert summary["cohorts"]["val_headline"]["num_rows"] == 8
     assert summary["cohorts"]["train_supplemental"]["num_rows"] == 12
+    assert summary["pilot"]["candidate_rows_total"] == 0
     assert not (run_dir / "report.md").exists()
     assert not (run_dir / "per_coord_scores.jsonl").exists()
     assert not (run_dir / "hard_cases.jsonl").exists()
@@ -349,6 +359,11 @@ def test_build_random_cohort_is_deterministic() -> None:
     assert [row["image_id"] for row in left] == [row["image_id"] for row in right]
 
 
+def test_build_candidate_values_around_clamps_to_norm1000_range() -> None:
+    assert build_candidate_values_around(1, radius=2) == [0, 1, 2, 3]
+    assert build_candidate_values_around(998, radius=3) == [995, 996, 997, 998, 999]
+
+
 def test_render_pretty_inline_assistant_text_reorders_bbox_first_rows() -> None:
     row = {
         "objects": [
@@ -368,6 +383,56 @@ def test_render_pretty_inline_assistant_text_reorders_bbox_first_rows() -> None:
     assert assistant_text == (
         '{"objects": [{"desc": "clock", "bbox_2d": [699, 284, 722, 336]}]}'
     )
+
+
+def test_summarize_pilot_coordinate_records_groups_probe_metrics() -> None:
+    rows = [
+        {
+            "scoring_status": "ok",
+            "model_alias": "base",
+            "cohort_name": "val_headline",
+            "image_id": 1,
+            "object_index": 0,
+            "slot": "x1",
+            "desc": "clock",
+            "gt_value": 100,
+            "candidate_value": 99,
+            "score": -1.0,
+        },
+        {
+            "scoring_status": "ok",
+            "model_alias": "base",
+            "cohort_name": "val_headline",
+            "image_id": 1,
+            "object_index": 0,
+            "slot": "x1",
+            "desc": "clock",
+            "gt_value": 100,
+            "candidate_value": 100,
+            "score": 0.0,
+        },
+        {
+            "scoring_status": "failed",
+            "model_alias": "base",
+            "cohort_name": "val_headline",
+            "image_id": 1,
+            "object_index": 0,
+            "slot": "x1",
+            "desc": "clock",
+            "gt_value": 100,
+            "candidate_value": 101,
+            "failure_reason": "demo",
+        },
+    ]
+
+    summary = summarize_pilot_coordinate_records(rows)
+
+    assert summary["candidate_rows_total"] == 3
+    assert summary["candidate_rows_ok"] == 2
+    assert summary["candidate_rows_failed"] == 1
+    assert summary["num_probes"] == 1
+    assert summary["probe_metrics"][0]["best_candidate_value"] == 100
+    assert summary["slot_metrics"][0]["model_alias"] == "base"
 
 
 def test_build_study_hard_cases_prefers_duplicate_prone_rows() -> None:

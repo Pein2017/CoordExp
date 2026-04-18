@@ -1,5 +1,5 @@
 run:
-  name: raw-text-continuity-smoke
+  name: raw-text-continuity-pilot-medium
   output_dir: output/analysis
   stages: [audit, pilot]
 
@@ -24,18 +24,18 @@ models:
 cohorts:
   val_headline:
     jsonl_path: public_data/coco/rescale_32_1024_bbox_max60/val.norm.jsonl
-    sample_count: 8
+    sample_count: 32
     seed: 17
   train_supplemental:
     jsonl_path: public_data/coco/rescale_32_1024_bbox_max60/train.norm.jsonl
-    sample_count: 16
+    sample_count: 64
     seed: 29
 
 scoring:
   device: cuda:0
   attn_implementation: auto
   pilot_cohort: val_headline
-  pilot_max_rows_per_model: 1
+  pilot_max_rows_per_model: 8
   pilot_max_objects_per_row: 1
-  pilot_candidate_radius: 1
-  pilot_slots: [x1, y1]
+  pilot_candidate_radius: 8
+  pilot_slots: [x1, y1, x2, y2]

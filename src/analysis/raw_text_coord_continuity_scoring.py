@@ -47,11 +47,44 @@ def replace_bbox_slot_value(
     candidate_value: int,
     object_index: int | None = None,
 ) -> str:
+    bbox_match, number_match = _find_bbox_slot_text_match(
+        assistant_text=assistant_text,
+        slot=slot,
+        original_bbox=original_bbox,
+        object_index=object_index,
+    )
+    bbox_content = bbox_match.group("content")
+    replacement = str(int(candidate_value))
+    replaced_content = (
+        bbox_content[: number_match.start()]
+        + replacement
+        + bbox_content[number_match.end() :]
+    )
+    return (
+        assistant_text[: bbox_match.start("content")]
+        + replaced_content
+        + assistant_text[bbox_match.end("content") :]
+    )
+
+
+def _find_bbox_slot_text_match(
+    *,
+    assistant_text: str,
+    slot: str,
+    original_bbox: Sequence[int],
+    object_index: int | None = None,
+) -> tuple[re.Match[str], re.Match[str]]:
     payload = json.loads(assistant_text)
+    if isinstance(payload, dict):
+        payload_rows = payload.get("objects")
+    else:
+        payload_rows = payload
+    if not isinstance(payload_rows, list):
+        raise ValueError("assistant_payload_objects_missing")
     slot_index = {"x1": 0, "y1": 1, "x2": 2, "y2": 3}[slot]
     bbox_row_indices: list[int] = []
     target_bbox_match_idx: int | None = None
-    for row_idx, row in enumerate(payload):
+    for row_idx, row in enumerate(payload_rows):
         bbox = list(row.get("bbox_2d") or [])
         if bbox:
             bbox_row_indices.append(int(row_idx))
@@ -70,18 +103,34 @@ def replace_bbox_slot_value(
     number_matches = list(_INT_PATTERN.finditer(bbox_content))
     if len(number_matches) <= int(slot_index):
         raise ValueError("bbox_text_not_found")
-    number_match = number_matches[int(slot_index)]
-    replacement = str(int(candidate_value))
-    replaced_content = (
-        bbox_content[: number_match.start()]
-        + replacement
-        + bbox_content[number_match.end() :]
+    return bbox_match, number_matches[int(slot_index)]
+
+
+def _relative_positions_for_slot_text(
+    *,
+    tokenizer: object,
+    assistant_text: str,
+    slot: str,
+    original_bbox: Sequence[int],
+    object_index: int | None = None,
+) -> list[int]:
+    encode = getattr(tokenizer, "encode")
+    bbox_match, number_match = _find_bbox_slot_text_match(
+        assistant_text=assistant_text,
+        slot=slot,
+        original_bbox=original_bbox,
+        object_index=object_index,
     )
-    return (
-        assistant_text[: bbox_match.start("content")]
-        + replaced_content
-        + assistant_text[bbox_match.end("content") :]
+    slot_char_start = bbox_match.start("content") + number_match.start()
+    slot_char_end = bbox_match.start("content") + number_match.end()
+    prefix_ids = list(encode(assistant_text[:slot_char_start], add_special_tokens=False))
+    through_slot_ids = list(
+        encode(assistant_text[:slot_char_end], add_special_tokens=False)
     )
+    positions = list(range(len(prefix_ids), len(through_slot_ids)))
+    if not positions:
+        raise ValueError("slot_text_token_span_empty")
+    return positions
 
 
 def build_candidate_coordinate_span(
@@ -117,7 +166,13 @@ def build_candidate_coordinate_span(
     changed_stop = len(candidate_ids) - suffix_len
     assistant_relative_positions = list(range(prefix_len, changed_stop))
     if not assistant_relative_positions:
-        raise ValueError("replacement produced no token change")
+        assistant_relative_positions = _relative_positions_for_slot_text(
+            tokenizer=tokenizer,
+            assistant_text=candidate_assistant_text,
+            slot=slot,
+            original_bbox=original_bbox,
+            object_index=object_index,
+        )
     return {
         "candidate_assistant_text": candidate_assistant_text,
         "assistant_relative_positions": assistant_relative_positions,

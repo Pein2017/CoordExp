@@ -30,3 +30,12 @@ cohorts:
     jsonl_path: public_data/coco/rescale_32_1024_bbox_max60/train.norm.jsonl
     sample_count: 1500
     seed: 29
+
+scoring:
+  device: cuda:0
+  attn_implementation: auto
+  pilot_cohort: val_headline
+  pilot_max_rows_per_model: 8
+  pilot_max_objects_per_row: 2
+  pilot_candidate_radius: 4
+  pilot_slots: [x1, y1, x2, y2]

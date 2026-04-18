@@ -1,24 +1,32 @@
 from __future__ import annotations
 
+import gc
 from dataclasses import dataclass
 import json
 from pathlib import Path
 import random
+from statistics import mean
 
+from PIL import Image
 import yaml
 
 from src.common.object_field_order import build_object_payload
+from src.common.paths import resolve_image_path_strict
 from src.infer.checkpoints import resolve_inference_checkpoint
 from src.utils.assistant_json import (
     CANONICAL_JSON_SEPARATORS,
     dumps_canonical_json,
     dumps_coordjson,
 )
-from src.analysis.raw_text_coord_continuity_report import write_report_bundle
+from src.analysis.raw_text_coord_continuity_report import (
+    compute_basin_metrics,
+    write_report_bundle,
+)
 
 _VALID_STAGES = ("audit", "pilot", "canonical", "bad_basin", "dense_scene", "report")
 REPO_ROOT = Path(__file__).resolve().parents[2]
 _CANONICAL_JSON_SURFACE = "pretty_inline"
+_SLOT_TO_INDEX = {"x1": 0, "y1": 1, "x2": 2, "y2": 3}
 
 
 @dataclass(frozen=True)
@@ -59,10 +67,22 @@ class StudyCohorts:
 
 
 @dataclass(frozen=True)
+class ScoringConfig:
+    device: str = "cuda:0"
+    attn_implementation: str = "auto"
+    pilot_cohort: str = "val_headline"
+    pilot_max_rows_per_model: int = 2
+    pilot_max_objects_per_row: int = 1
+    pilot_candidate_radius: int = 1
+    pilot_slots: tuple[str, ...] = ("x1", "y1", "x2", "y2")
+
+
+@dataclass(frozen=True)
 class StudyConfig:
     run: RunConfig
     models: StudyModels
     cohorts: StudyCohorts
+    scoring: ScoringConfig
 
 
 def _load_yaml(config_path: Path) -> dict[str, object]:
@@ -255,6 +275,16 @@ def render_pretty_inline_assistant_text(
     return dumps_coordjson({"objects": rendered_objects})
 
 
+def build_candidate_values_around(
+    center_value: int,
+    *,
+    radius: int,
+) -> list[int]:
+    lower = max(0, int(center_value) - int(radius))
+    upper = min(999, int(center_value) + int(radius))
+    return list(range(lower, upper + 1))
+
+
 def run_phase0_audit(scorer: object) -> dict[str, object]:
     numbers = [0, 1, 9, 10, 99, 100, 199, 200, 210, 999]
     tokenizer = getattr(scorer, "tokenizer")
@@ -301,6 +331,99 @@ def build_study_hard_cases(
         reverse=True,
     )
     return ordered[:max_cases]
+
+
+def _load_probe_image(
+    record: dict[str, object],
+    *,
+    subset_path: Path,
+    source_jsonl_path: Path,
+) -> Image.Image:
+    image_rel = str(((record.get("images") or [None])[0] or record.get("image") or ""))
+    resolved = resolve_image_path_strict(
+        image_rel,
+        jsonl_dir=subset_path.parent,
+        root_image_dir=source_jsonl_path.parent,
+    )
+    if resolved is None:
+        raise FileNotFoundError(f"Unable to resolve image path {image_rel!r}")
+    return Image.open(resolved).convert("RGB")
+
+
+def summarize_pilot_coordinate_records(
+    rows: list[dict[str, object]],
+) -> dict[str, object]:
+    ok_rows = [row for row in rows if str(row.get("scoring_status")) == "ok"]
+    grouped: dict[tuple[object, ...], list[dict[str, object]]] = {}
+    for row in ok_rows:
+        key = (
+            row.get("model_alias"),
+            row.get("cohort_name"),
+            row.get("image_id"),
+            row.get("object_index"),
+            row.get("slot"),
+        )
+        grouped.setdefault(key, []).append(row)
+
+    probe_metrics: list[dict[str, object]] = []
+    for group_rows in grouped.values():
+        exemplar = group_rows[0]
+        best_row = max(group_rows, key=lambda row: float(row["score"]))
+        metrics = compute_basin_metrics(group_rows, center_key="gt_value")
+        probe_metrics.append(
+            {
+                "model_alias": exemplar["model_alias"],
+                "cohort_name": exemplar["cohort_name"],
+                "image_id": exemplar["image_id"],
+                "object_index": exemplar["object_index"],
+                "slot": exemplar["slot"],
+                "desc": exemplar["desc"],
+                "gt_value": exemplar["gt_value"],
+                "num_candidates": len(group_rows),
+                "best_candidate_value": best_row["candidate_value"],
+                "best_candidate_is_gt": int(
+                    int(best_row["candidate_value"]) == int(exemplar["gt_value"])
+                ),
+                **metrics,
+            }
+        )
+
+    by_model_slot: dict[tuple[str, str], list[dict[str, object]]] = {}
+    for row in probe_metrics:
+        key = (str(row["model_alias"]), str(row["slot"]))
+        by_model_slot.setdefault(key, []).append(row)
+    slot_metrics: list[dict[str, object]] = []
+    metric_keys = (
+        "mass_at_1",
+        "mass_at_2",
+        "mass_at_4",
+        "mass_at_8",
+        "mass_at_16",
+        "local_expected_abs_error",
+        "half_height_width",
+        "best_candidate_is_gt",
+    )
+    for (model_alias, slot), metric_rows in sorted(by_model_slot.items()):
+        slot_metrics.append(
+            {
+                "model_alias": model_alias,
+                "slot": slot,
+                "num_probes": len(metric_rows),
+                **{
+                    key: float(mean(float(row[key]) for row in metric_rows))
+                    for key in metric_keys
+                },
+            }
+        )
+
+    return {
+        "candidate_rows_total": len(rows),
+        "candidate_rows_ok": len(ok_rows),
+        "candidate_rows_failed": len(rows) - len(ok_rows),
+        "num_probes": len(probe_metrics),
+        "slot_metrics": slot_metrics,
+        "probe_metrics": probe_metrics,
+    }
 
 
 def _materialize_random_cohort(
@@ -362,11 +485,190 @@ def _run_tokenization_audit(
     return summary
 
 
+def _run_pilot_scoring(
+    *,
+    cfg: StudyConfig,
+    config_dir: Path,
+    run_dir: Path,
+) -> dict[str, object]:
+    from src.analysis.raw_text_coord_continuity_scoring import (
+        score_candidate_coordinate_sequence,
+    )
+    from src.analysis.unmatched_proposal_verifier import TeacherForcedScorer
+    import torch
+
+    pilot_dir = run_dir / "pilot"
+    pilot_cohort = str(cfg.scoring.pilot_cohort)
+    subset_path = run_dir / "cohorts" / f"{pilot_cohort}.jsonl"
+    if not subset_path.exists():
+        raise FileNotFoundError(f"pilot cohort manifest not found: {subset_path}")
+    cohort_cfg = getattr(cfg.cohorts, pilot_cohort, None)
+    if cohort_cfg is None:
+        raise ValueError(f"unknown pilot cohort: {pilot_cohort}")
+    source_jsonl_path = _resolve_input_path(
+        cohort_cfg.jsonl_path,
+        config_dir=config_dir,
+    )
+    source_rows = _read_jsonl(subset_path)[: int(cfg.scoring.pilot_max_rows_per_model)]
+    selected_slots = tuple(str(slot) for slot in cfg.scoring.pilot_slots)
+    invalid_slots = tuple(slot for slot in selected_slots if slot not in _SLOT_TO_INDEX)
+    if invalid_slots:
+        raise ValueError(f"unsupported pilot slot(s): {', '.join(invalid_slots)}")
+
+    model_summaries: dict[str, object] = {}
+    all_rows: list[dict[str, object]] = []
+    models = {
+        "base": cfg.models.base,
+        "pure_ce": cfg.models.pure_ce,
+    }
+    for model_key, model_cfg in models.items():
+        resolved_model_path = _resolve_input_path(model_cfg.path, config_dir=config_dir)
+        scorer = TeacherForcedScorer(
+            checkpoint_path=resolved_model_path,
+            device=cfg.scoring.device,
+            attn_implementation=cfg.scoring.attn_implementation,
+            coord_mode=model_cfg.coord_mode,
+        )
+        model_rows: list[dict[str, object]] = []
+        try:
+            for row_idx, row in enumerate(source_rows):
+                base_row = {
+                    "model_key": model_key,
+                    "model_alias": model_cfg.alias,
+                    "cohort_name": pilot_cohort,
+                    "row_index": row_idx,
+                    "image_id": row.get("image_id"),
+                    "prompt_surface": model_cfg.prompt_surface,
+                    "coord_mode": model_cfg.coord_mode,
+                    "prompt_variant": model_cfg.prompt_variant,
+                    "object_field_order": model_cfg.object_field_order,
+                    "json_surface": model_cfg.json_surface,
+                }
+                try:
+                    assistant_text = render_pretty_inline_assistant_text(
+                        row,
+                        object_field_order=model_cfg.object_field_order,
+                    )
+                    image = _load_probe_image(
+                        row,
+                        subset_path=subset_path,
+                        source_jsonl_path=source_jsonl_path,
+                    )
+                except (FileNotFoundError, ValueError) as exc:
+                    model_rows.append(
+                        {
+                            **base_row,
+                            "scoring_status": "failed",
+                            "failure_reason": str(exc),
+                        }
+                    )
+                    continue
+                try:
+                    objects = row.get("objects")
+                    if not isinstance(objects, list):
+                        raise ValueError("row.objects must be a list")
+                    for object_index, obj in enumerate(objects):
+                        if int(object_index) >= int(cfg.scoring.pilot_max_objects_per_row):
+                            break
+                        if not isinstance(obj, dict):
+                            continue
+                        bbox = obj.get("bbox_2d")
+                        if not isinstance(bbox, list) or len(bbox) != 4:
+                            continue
+                        desc = str(obj.get("desc") or "").strip()
+                        bbox_values = [int(value) for value in bbox]
+                        for slot in selected_slots:
+                            gt_value = int(bbox_values[int(_SLOT_TO_INDEX[slot])])
+                            for candidate_value in build_candidate_values_around(
+                                gt_value,
+                                radius=cfg.scoring.pilot_candidate_radius,
+                            ):
+                                try:
+                                    scored = score_candidate_coordinate_sequence(
+                                        scorer=scorer,
+                                        image=image,
+                                        assistant_text=assistant_text,
+                                        slot=slot,
+                                        original_bbox=bbox_values,
+                                        candidate_value=candidate_value,
+                                        prompt_variant=model_cfg.prompt_variant,
+                                        object_field_order=model_cfg.object_field_order,
+                                        object_index=object_index,
+                                    )
+                                    model_rows.append(
+                                        {
+                                            **base_row,
+                                            "scoring_status": "ok",
+                                            "failure_reason": None,
+                                            "object_index": object_index,
+                                            "desc": desc,
+                                            "slot": slot,
+                                            "gt_value": gt_value,
+                                            "candidate_value": int(candidate_value),
+                                            "numeric_distance": abs(
+                                                int(candidate_value) - int(gt_value)
+                                            ),
+                                            "score": float(scored["sum_logprob"]),
+                                            "sum_logprob": float(scored["sum_logprob"]),
+                                            "mean_logprob": float(scored["mean_logprob"]),
+                                            "token_count": int(scored["count"]),
+                                            "candidate_token_span": len(
+                                                list(scored["absolute_positions"])
+                                            ),
+                                        }
+                                    )
+                                except (RuntimeError, ValueError) as exc:
+                                    model_rows.append(
+                                        {
+                                            **base_row,
+                                            "scoring_status": "failed",
+                                            "failure_reason": str(exc),
+                                            "object_index": object_index,
+                                            "desc": desc,
+                                            "slot": slot,
+                                            "gt_value": gt_value,
+                                            "candidate_value": int(candidate_value),
+                                        }
+                                    )
+                finally:
+                    image.close()
+        finally:
+            del scorer
+            gc.collect()
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+
+        per_model_path = pilot_dir / f"{model_key}_per_coord_scores.jsonl"
+        per_model_summary = summarize_pilot_coordinate_records(model_rows)
+        _write_jsonl(per_model_path, model_rows)
+        _write_json(pilot_dir / f"{model_key}_summary.json", per_model_summary)
+        model_summaries[model_key] = {
+            **per_model_summary,
+            "per_coord_scores_path": str(per_model_path),
+        }
+        all_rows.extend(model_rows)
+
+    combined_summary = summarize_pilot_coordinate_records(all_rows)
+    combined_path = pilot_dir / "per_coord_scores.jsonl"
+    _write_jsonl(combined_path, all_rows)
+    summary = {
+        "cohort_name": pilot_cohort,
+        "models": model_summaries,
+        "per_coord_scores_path": str(combined_path),
+        **combined_summary,
+    }
+    _write_json(pilot_dir / "summary.json", summary)
+    return summary
+
+
 def load_study_config(config_path: Path) -> StudyConfig:
     raw = _load_yaml(config_path)
     run_raw = _require_mapping(raw, "run")
     models_raw = _require_mapping(raw, "models")
     cohorts_raw = _require_mapping(raw, "cohorts")
+    scoring_raw = raw.get("scoring") or {}
+    if not isinstance(scoring_raw, dict):
+        raise ValueError("scoring must be a mapping")
     stages = tuple(str(value) for value in run_raw.get("stages") or ())
     invalid_stages = tuple(stage for stage in stages if stage not in _VALID_STAGES)
     if invalid_stages:
@@ -443,6 +745,24 @@ def load_study_config(config_path: Path) -> StudyConfig:
                 seed=int(_require_mapping(cohorts_raw, "train_supplemental")["seed"]),
             ),
         ),
+        scoring=ScoringConfig(
+            device=str(scoring_raw.get("device", "cuda:0")),
+            attn_implementation=str(scoring_raw.get("attn_implementation", "auto")),
+            pilot_cohort=str(scoring_raw.get("pilot_cohort", "val_headline")),
+            pilot_max_rows_per_model=int(
+                scoring_raw.get("pilot_max_rows_per_model", 2)
+            ),
+            pilot_max_objects_per_row=int(
+                scoring_raw.get("pilot_max_objects_per_row", 1)
+            ),
+            pilot_candidate_radius=int(
+                scoring_raw.get("pilot_candidate_radius", 1)
+            ),
+            pilot_slots=tuple(
+                str(slot)
+                for slot in (scoring_raw.get("pilot_slots") or ("x1", "y1", "x2", "y2"))
+            ),
+        ),
     )
 
 
@@ -493,6 +813,12 @@ def run_study(config_path: Path) -> dict[str, object]:
     }
     if "audit" in cfg.run.stages:
         summary["audit"] = _run_tokenization_audit(
+            cfg=cfg,
+            config_dir=resolved_config_path.parent,
+            run_dir=run_dir,
+        )
+    if "pilot" in cfg.run.stages:
+        summary["pilot"] = _run_pilot_scoring(
             cfg=cfg,
             config_dir=resolved_config_path.parent,
             run_dir=run_dir,
