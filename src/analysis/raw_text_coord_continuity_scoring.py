@@ -3,9 +3,13 @@
 from __future__ import annotations
 
 import json
+import re
 from typing import Sequence
 
 import torch
+
+_BBOX_ARRAY_PATTERN = re.compile(r'"bbox_2d"\s*:\s*\[(?P<content>[^\]]*)\]')
+_INT_PATTERN = re.compile(r"-?\d+")
 
 
 def score_span_logprobs(
@@ -45,15 +49,124 @@ def replace_bbox_slot_value(
 ) -> str:
     payload = json.loads(assistant_text)
     slot_index = {"x1": 0, "y1": 1, "x2": 2, "y2": 3}[slot]
+    bbox_row_indices: list[int] = []
+    target_bbox_match_idx: int | None = None
     for row_idx, row in enumerate(payload):
         bbox = list(row.get("bbox_2d") or [])
+        if bbox:
+            bbox_row_indices.append(int(row_idx))
         if object_index is not None and int(object_index) != int(row_idx):
             continue
         if bbox == list(original_bbox):
-            bbox[slot_index] = int(candidate_value)
-            row["bbox_2d"] = bbox
-            return json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
-    raise ValueError("original_bbox_not_found")
+            target_bbox_match_idx = len(bbox_row_indices) - 1
+            break
+    if target_bbox_match_idx is None:
+        raise ValueError("original_bbox_not_found")
+    bbox_matches = list(_BBOX_ARRAY_PATTERN.finditer(assistant_text))
+    if int(target_bbox_match_idx) >= len(bbox_matches):
+        raise ValueError("bbox_text_not_found")
+    bbox_match = bbox_matches[int(target_bbox_match_idx)]
+    bbox_content = bbox_match.group("content")
+    number_matches = list(_INT_PATTERN.finditer(bbox_content))
+    if len(number_matches) <= int(slot_index):
+        raise ValueError("bbox_text_not_found")
+    number_match = number_matches[int(slot_index)]
+    replacement = str(int(candidate_value))
+    replaced_content = (
+        bbox_content[: number_match.start()]
+        + replacement
+        + bbox_content[number_match.end() :]
+    )
+    return (
+        assistant_text[: bbox_match.start("content")]
+        + replaced_content
+        + assistant_text[bbox_match.end("content") :]
+    )
+
+
+def build_candidate_coordinate_span(
+    *,
+    tokenizer: object,
+    assistant_text: str,
+    slot: str,
+    original_bbox: Sequence[int],
+    candidate_value: int,
+    object_index: int | None = None,
+) -> dict[str, object]:
+    candidate_assistant_text = replace_bbox_slot_value(
+        assistant_text=assistant_text,
+        slot=slot,
+        original_bbox=original_bbox,
+        candidate_value=candidate_value,
+        object_index=object_index,
+    )
+    encode = getattr(tokenizer, "encode")
+    original_ids = list(encode(assistant_text, add_special_tokens=False))
+    candidate_ids = list(encode(candidate_assistant_text, add_special_tokens=False))
+    prefix_len = 0
+    for left_id, right_id in zip(original_ids, candidate_ids):
+        if int(left_id) != int(right_id):
+            break
+        prefix_len += 1
+    max_suffix = min(len(original_ids), len(candidate_ids)) - prefix_len
+    suffix_len = 0
+    while suffix_len < max_suffix:
+        if int(original_ids[-(suffix_len + 1)]) != int(candidate_ids[-(suffix_len + 1)]):
+            break
+        suffix_len += 1
+    changed_stop = len(candidate_ids) - suffix_len
+    assistant_relative_positions = list(range(prefix_len, changed_stop))
+    if not assistant_relative_positions:
+        raise ValueError("replacement produced no token change")
+    return {
+        "candidate_assistant_text": candidate_assistant_text,
+        "assistant_relative_positions": assistant_relative_positions,
+    }
+
+
+def score_candidate_coordinate_sequence(
+    *,
+    scorer: object,
+    image: object,
+    assistant_text: str,
+    slot: str,
+    original_bbox: Sequence[int],
+    candidate_value: int,
+    prompt_variant: str,
+    object_field_order: str,
+    object_index: int | None = None,
+) -> dict[str, object]:
+    candidate = build_candidate_coordinate_span(
+        tokenizer=getattr(scorer, "tokenizer"),
+        assistant_text=assistant_text,
+        slot=slot,
+        original_bbox=original_bbox,
+        candidate_value=candidate_value,
+        object_index=object_index,
+    )
+    prepared = scorer.prepare_example(
+        image=image,
+        assistant_text=str(candidate["candidate_assistant_text"]),
+        desc_positions_rel=[],
+        prompt_variant=prompt_variant,
+        object_field_order=object_field_order,
+    )
+    assistant_start = int(getattr(prepared, "assistant_start"))
+    absolute_positions = [
+        assistant_start + int(pos)
+        for pos in candidate["assistant_relative_positions"]
+    ]
+    score = scorer.score_prepared_spans(
+        prepared=prepared,
+        image=image,
+        spans=[absolute_positions],
+    )[0]
+    return {
+        **candidate,
+        **score,
+        "candidate_value": int(candidate_value),
+        "absolute_positions": absolute_positions,
+    }
 
 
 def lexical_features_for_candidate(

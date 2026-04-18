@@ -1,11 +1,16 @@
 from __future__ import annotations
 
+from types import SimpleNamespace
+
+import pytest
 import torch
 
 from src.analysis.unmatched_proposal_verifier import PreparedExample
 from src.analysis.raw_text_coord_continuity_scoring import (
+    build_candidate_coordinate_span,
     lexical_features_for_candidate,
     replace_bbox_slot_value,
+    score_candidate_coordinate_sequence,
     score_span_logprobs,
 )
 
@@ -108,3 +113,135 @@ def test_lexical_features_use_true_character_edit_distance() -> None:
     )
 
     assert features["char_edit_distance"] == 2
+
+
+def test_build_candidate_coordinate_span_tracks_replaced_number_tokens() -> None:
+    class _Tokenizer:
+        def encode(self, text: str, add_special_tokens: bool = False) -> list[int]:
+            del add_special_tokens
+            return [ord(ch) for ch in text]
+
+    assistant_text = '[{"desc":"book","bbox_2d":[99,200,210,250]}]'
+    candidate = build_candidate_coordinate_span(
+        tokenizer=_Tokenizer(),
+        assistant_text=assistant_text,
+        slot="x1",
+        original_bbox=(99, 200, 210, 250),
+        candidate_value=100,
+    )
+
+    candidate_ids = _Tokenizer().encode(candidate["candidate_assistant_text"])
+    span_text = "".join(chr(candidate_ids[pos]) for pos in candidate["assistant_relative_positions"])
+
+    assert candidate["candidate_assistant_text"] == '[{"desc":"book","bbox_2d":[100,200,210,250]}]'
+    assert span_text == "100"
+
+
+def test_score_candidate_coordinate_sequence_uses_prepared_span_scoring() -> None:
+    class _Tokenizer:
+        def encode(self, text: str, add_special_tokens: bool = False) -> list[int]:
+            del add_special_tokens
+            return [ord(ch) for ch in text]
+
+    class _Scorer:
+        tokenizer = _Tokenizer()
+
+        def __init__(self) -> None:
+            self.prepared_texts: list[str] = []
+            self.scored_spans: list[list[list[int]]] = []
+
+        def prepare_example(
+            self,
+            *,
+            image: object,
+            assistant_text: str,
+            desc_positions_rel: list[int],
+            prompt_variant: str,
+            object_field_order: str,
+        ) -> SimpleNamespace:
+            del image, desc_positions_rel, prompt_variant, object_field_order
+            self.prepared_texts.append(assistant_text)
+            return SimpleNamespace(assistant_start=7, full_text="unused")
+
+        def score_prepared_spans(
+            self,
+            *,
+            prepared: SimpleNamespace,
+            image: object,
+            spans: list[list[int]],
+        ) -> list[dict[str, float | int]]:
+            del prepared, image
+            self.scored_spans.append(spans)
+            return [{"count": len(spans[0]), "sum_logprob": -1.5, "mean_logprob": -0.5}]
+
+    scorer = _Scorer()
+    result = score_candidate_coordinate_sequence(
+        scorer=scorer,
+        image=object(),
+        assistant_text='[{"desc":"book","bbox_2d":[99,200,210,250]}]',
+        slot="x1",
+        original_bbox=(99, 200, 210, 250),
+        candidate_value=100,
+        prompt_variant="plain",
+        object_field_order="bbox_then_desc",
+    )
+
+    assert scorer.prepared_texts == ['[{"desc":"book","bbox_2d":[100,200,210,250]}]']
+    assert scorer.scored_spans == [[[34, 35, 36]]]
+    assert result["count"] == 3
+    assert result["candidate_value"] == 100
+    assert result["assistant_relative_positions"] == [27, 28, 29]
+
+
+def test_build_candidate_coordinate_span_rejects_noop_replacement() -> None:
+    class _Tokenizer:
+        def encode(self, text: str, add_special_tokens: bool = False) -> list[int]:
+            del add_special_tokens
+            return [ord(ch) for ch in text]
+
+    with pytest.raises(ValueError, match="replacement produced no token change"):
+        build_candidate_coordinate_span(
+            tokenizer=_Tokenizer(),
+            assistant_text='[{"desc":"book","bbox_2d":[99,200,210,250]}]',
+            slot="x1",
+            original_bbox=(99, 200, 210, 250),
+            candidate_value=99,
+        )
+
+
+def test_build_candidate_coordinate_span_preserves_pretty_printed_json() -> None:
+    class _Tokenizer:
+        def encode(self, text: str, add_special_tokens: bool = False) -> list[int]:
+            del add_special_tokens
+            return [ord(ch) for ch in text]
+
+    assistant_text = '[ {"desc": "book", "bbox_2d": [99, 200, 210, 250]} ]'
+    candidate = build_candidate_coordinate_span(
+        tokenizer=_Tokenizer(),
+        assistant_text=assistant_text,
+        slot="x1",
+        original_bbox=(99, 200, 210, 250),
+        candidate_value=100,
+    )
+
+    candidate_ids = _Tokenizer().encode(candidate["candidate_assistant_text"])
+    span_text = "".join(chr(candidate_ids[pos]) for pos in candidate["assistant_relative_positions"])
+
+    assert candidate["candidate_assistant_text"] == '[ {"desc": "book", "bbox_2d": [100, 200, 210, 250]} ]'
+    assert span_text == "100"
+
+
+def test_build_candidate_coordinate_span_rejects_pretty_printed_noop() -> None:
+    class _Tokenizer:
+        def encode(self, text: str, add_special_tokens: bool = False) -> list[int]:
+            del add_special_tokens
+            return [ord(ch) for ch in text]
+
+    with pytest.raises(ValueError, match="replacement produced no token change"):
+        build_candidate_coordinate_span(
+            tokenizer=_Tokenizer(),
+            assistant_text='[ {"desc": "book", "bbox_2d": [99, 200, 210, 250]} ]',
+            slot="x1",
+            original_bbox=(99, 200, 210, 250),
+            candidate_value=99,
+        )
