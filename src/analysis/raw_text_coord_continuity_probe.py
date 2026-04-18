@@ -7,10 +7,13 @@ import random
 
 import yaml
 
+from src.infer.checkpoints import resolve_inference_checkpoint
+from src.utils.assistant_json import CANONICAL_JSON_SEPARATORS, dumps_canonical_json
 from src.analysis.raw_text_coord_continuity_report import write_report_bundle
 
 _VALID_STAGES = ("audit", "pilot", "canonical", "bad_basin", "dense_scene", "report")
 REPO_ROOT = Path(__file__).resolve().parents[2]
+_CANONICAL_JSON_SURFACE = "pretty_inline"
 
 
 @dataclass(frozen=True)
@@ -25,6 +28,10 @@ class ModelConfig:
     alias: str
     path: str
     prompt_surface: str
+    coord_mode: str = "norm1000_text"
+    prompt_variant: str = "coco_80"
+    object_field_order: str = "desc_first"
+    json_surface: str = _CANONICAL_JSON_SURFACE
 
 
 @dataclass(frozen=True)
@@ -109,20 +116,129 @@ def _write_jsonl(path: Path, rows: list[dict[str, object]]) -> None:
     )
 
 
+def _resolve_audit_model_info(model_path: Path) -> dict[str, object]:
+    resolved = resolve_inference_checkpoint(model_checkpoint=str(model_path))
+    processor_source = str(resolved.resolved_base_model_checkpoint)
+    processor_source_path = Path(processor_source)
+    return {
+        "requested_model_path": str(model_path),
+        "checkpoint_mode": resolved.checkpoint_mode,
+        "resolved_base_model_checkpoint": resolved.resolved_base_model_checkpoint,
+        "resolved_adapter_checkpoint": resolved.resolved_adapter_checkpoint,
+        "processor_source": processor_source,
+        "processor_source_is_local": processor_source_path.exists(),
+        "has_coord_offset_adapter": bool(
+            resolved.adapter_info is not None
+            and resolved.adapter_info.coord_offset_spec is not None
+        ),
+    }
+
+
+def _load_tokenizer_for_audit(model_path: Path) -> object:
+    from transformers import AutoProcessor
+
+    model_info = _resolve_audit_model_info(model_path)
+    processor_source = str(model_info["processor_source"])
+    processor = AutoProcessor.from_pretrained(
+        processor_source,
+        trust_remote_code=True,
+        local_files_only=bool(model_info["processor_source_is_local"]),
+    )
+    tokenizer = getattr(processor, "tokenizer", None)
+    if tokenizer is None:
+        raise RuntimeError(
+            f"processor at {processor_source} did not expose a tokenizer"
+        )
+    return tokenizer
+
+
+def _tokenize_text_for_audit(tokenizer: object, text: str) -> dict[str, object]:
+    if hasattr(tokenizer, "encode"):
+        input_ids = list(tokenizer.encode(text, add_special_tokens=False))
+    else:
+        tokens = list(getattr(tokenizer, "tokenize")(text))
+        return {
+            "text": text,
+            "token_ids": list(range(len(tokens))),
+            "tokens": tokens,
+            "token_count": len(tokens),
+        }
+    if hasattr(tokenizer, "convert_ids_to_tokens"):
+        tokens = list(tokenizer.convert_ids_to_tokens(input_ids))
+    else:
+        tokens = list(getattr(tokenizer, "tokenize")(text))
+    return {
+        "text": text,
+        "token_ids": input_ids,
+        "tokens": tokens,
+        "token_count": len(input_ids),
+    }
+
+
+def _first_diff_index(left: list[int], right: list[int]) -> int | None:
+    for idx, (left_id, right_id) in enumerate(zip(left, right)):
+        if int(left_id) != int(right_id):
+            return idx
+    if len(left) != len(right):
+        return min(len(left), len(right))
+    return None
+
+
+def _build_surface_form_audit(tokenizer: object) -> dict[str, object]:
+    sample_payload = {
+        "objects": [
+            {"desc": "book", "bbox_2d": [199, 200, 210, 250]},
+            {"desc": "book", "bbox_2d": [231, 200, 260, 280]},
+        ]
+    }
+    pretty_inline = dumps_canonical_json(sample_payload)
+    compact = json.dumps(sample_payload, ensure_ascii=False, separators=(",", ":"))
+    pretty_multiline = json.dumps(sample_payload, ensure_ascii=False, indent=2)
+    variants = [
+        ("pretty_inline", pretty_inline),
+        ("compact", compact),
+        ("pretty_multiline", pretty_multiline),
+    ]
+    tokenized = [
+        {
+            "label": label,
+            **_tokenize_text_for_audit(tokenizer, text),
+        }
+        for label, text in variants
+    ]
+    canonical_token_ids = list(tokenized[0]["token_ids"])
+    for row in tokenized[1:]:
+        row["first_diff_vs_pretty_inline"] = _first_diff_index(
+            canonical_token_ids,
+            list(row["token_ids"]),
+        )
+    tokenized[0]["first_diff_vs_pretty_inline"] = None
+    return {
+        "canonical_label": _CANONICAL_JSON_SURFACE,
+        "canonical_separators": list(CANONICAL_JSON_SEPARATORS),
+        "sample_payload": sample_payload,
+        "variants": tokenized,
+    }
+
+
 def run_phase0_audit(scorer: object) -> dict[str, object]:
     numbers = [0, 1, 9, 10, 99, 100, 199, 200, 210, 999]
     tokenizer = getattr(scorer, "tokenizer")
     rows = []
     for value in numbers:
-        tokens = list(tokenizer.tokenize(str(value)))
+        tokenized = _tokenize_text_for_audit(tokenizer, str(value))
         rows.append(
             {
                 "value": value,
-                "tokens": tokens,
-                "token_count": len(tokens),
+                "tokens": tokenized["tokens"],
+                "token_ids": tokenized["token_ids"],
+                "token_count": tokenized["token_count"],
             }
         )
-    return {"numbers": rows}
+    return {
+        "numbers": rows,
+        "surface_forms": _build_surface_form_audit(tokenizer),
+    }
 
 
 def build_random_cohort(
@@ -179,6 +295,39 @@ def _materialize_random_cohort(
     }
 
 
+def _run_tokenization_audit(
+    *,
+    cfg: StudyConfig,
+    config_dir: Path,
+    run_dir: Path,
+) -> dict[str, object]:
+    audit_dir = run_dir / "audit"
+    models = {
+        "base": cfg.models.base,
+        "pure_ce": cfg.models.pure_ce,
+    }
+    artifacts: dict[str, object] = {}
+    for model_key, model_cfg in models.items():
+        resolved_model_path = _resolve_input_path(model_cfg.path, config_dir=config_dir)
+        model_info = _resolve_audit_model_info(resolved_model_path)
+        tokenizer = _load_tokenizer_for_audit(resolved_model_path)
+        audit = run_phase0_audit(type("AuditSurface", (), {"tokenizer": tokenizer})())
+        audit["model_alias"] = model_cfg.alias
+        audit["model_path"] = model_cfg.path
+        audit["resolved_model_path"] = str(resolved_model_path)
+        audit["serialization_surface"] = _CANONICAL_JSON_SURFACE
+        audit["model_resolution"] = model_info
+        out_path = audit_dir / f"{model_key}_tokenization.json"
+        _write_json(out_path, audit)
+        artifacts[model_key] = str(out_path)
+    summary = {
+        "artifacts": artifacts,
+        "serialization_surface": _CANONICAL_JSON_SURFACE,
+    }
+    _write_json(audit_dir / "summary.json", summary)
+    return summary
+
+
 def load_study_config(config_path: Path) -> StudyConfig:
     raw = _load_yaml(config_path)
     run_raw = _require_mapping(raw, "run")
@@ -199,11 +348,53 @@ def load_study_config(config_path: Path) -> StudyConfig:
                 alias=str(_require_mapping(models_raw, "base")["alias"]),
                 path=str(_require_mapping(models_raw, "base")["path"]),
                 prompt_surface=str(_require_mapping(models_raw, "base")["prompt_surface"]),
+                coord_mode=str(
+                    _require_mapping(models_raw, "base").get("coord_mode", "norm1000_text")
+                ),
+                prompt_variant=str(
+                    _require_mapping(models_raw, "base").get("prompt_variant", "coco_80")
+                ),
+                object_field_order=str(
+                    _require_mapping(models_raw, "base").get(
+                        "object_field_order",
+                        "desc_first",
+                    )
+                ),
+                json_surface=str(
+                    _require_mapping(models_raw, "base").get(
+                        "json_surface",
+                        _CANONICAL_JSON_SURFACE,
+                    )
+                ),
             ),
             pure_ce=ModelConfig(
                 alias=str(_require_mapping(models_raw, "pure_ce")["alias"]),
                 path=str(_require_mapping(models_raw, "pure_ce")["path"]),
                 prompt_surface=str(_require_mapping(models_raw, "pure_ce")["prompt_surface"]),
+                coord_mode=str(
+                    _require_mapping(models_raw, "pure_ce").get(
+                        "coord_mode",
+                        "norm1000_text",
+                    )
+                ),
+                prompt_variant=str(
+                    _require_mapping(models_raw, "pure_ce").get(
+                        "prompt_variant",
+                        "coco_80",
+                    )
+                ),
+                object_field_order=str(
+                    _require_mapping(models_raw, "pure_ce").get(
+                        "object_field_order",
+                        "desc_first",
+                    )
+                ),
+                json_surface=str(
+                    _require_mapping(models_raw, "pure_ce").get(
+                        "json_surface",
+                        _CANONICAL_JSON_SURFACE,
+                    )
+                ),
             ),
         ),
         cohorts=StudyCohorts(
@@ -246,11 +437,19 @@ def run_study(config_path: Path) -> dict[str, object]:
                 "alias": cfg.models.base.alias,
                 "path": cfg.models.base.path,
                 "prompt_surface": cfg.models.base.prompt_surface,
+                "coord_mode": cfg.models.base.coord_mode,
+                "prompt_variant": cfg.models.base.prompt_variant,
+                "object_field_order": cfg.models.base.object_field_order,
+                "json_surface": cfg.models.base.json_surface,
             },
             "pure_ce": {
                 "alias": cfg.models.pure_ce.alias,
                 "path": cfg.models.pure_ce.path,
                 "prompt_surface": cfg.models.pure_ce.prompt_surface,
+                "coord_mode": cfg.models.pure_ce.coord_mode,
+                "prompt_variant": cfg.models.pure_ce.prompt_variant,
+                "object_field_order": cfg.models.pure_ce.object_field_order,
+                "json_surface": cfg.models.pure_ce.json_surface,
             },
         },
         "cohorts": {
@@ -258,6 +457,12 @@ def run_study(config_path: Path) -> dict[str, object]:
             "train_supplemental": train_cohort,
         },
     }
+    if "audit" in cfg.run.stages:
+        summary["audit"] = _run_tokenization_audit(
+            cfg=cfg,
+            config_dir=resolved_config_path.parent,
+            run_dir=run_dir,
+        )
     if "report" in cfg.run.stages:
         write_report_bundle(
             out_dir=run_dir,

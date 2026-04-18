@@ -6,6 +6,7 @@ import json
 
 import pytest
 
+import src.analysis.raw_text_coord_continuity_probe as continuity_probe_module
 from src.analysis.duplication_collapse_analysis import mine_duplicate_like_rows
 from src.analysis.duplication_followup import build_prefix_perturbation_variants
 from src.analysis.raw_text_coord_continuity_report import (
@@ -16,11 +17,17 @@ from src.analysis.raw_text_coord_continuity_report import (
     write_report_bundle,
 )
 from src.analysis.raw_text_coord_continuity_probe import (
+    _resolve_audit_model_info,
     build_random_cohort,
     build_study_hard_cases,
     load_study_config,
     run_phase0_audit,
     run_study,
+)
+from src.infer.checkpoints import (
+    AdapterCheckpointInfo,
+    CoordOffsetAdapterSpec,
+    ResolvedInferenceCheckpoint,
 )
 
 
@@ -108,7 +115,19 @@ cohorts:
         load_study_config(config_path)
 
 
-def test_run_study_materializes_run_dir_and_summary(tmp_path: Path) -> None:
+def test_run_study_materializes_run_dir_and_summary(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class _Tokenizer:
+        def tokenize(self, text: str) -> list[str]:
+            return list(text)
+
+    monkeypatch.setattr(
+        continuity_probe_module,
+        "_load_tokenizer_for_audit",
+        lambda model_path: _Tokenizer(),
+    )
     out_dir = tmp_path / "analysis"
     val_jsonl = tmp_path / "val.jsonl"
     train_jsonl = tmp_path / "train.jsonl"
@@ -188,6 +207,15 @@ def test_run_study_resolves_config_relative_cohort_paths_when_cwd_changes(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    class _Tokenizer:
+        def tokenize(self, text: str) -> list[str]:
+            return list(text)
+
+    monkeypatch.setattr(
+        continuity_probe_module,
+        "_load_tokenizer_for_audit",
+        lambda model_path: _Tokenizer(),
+    )
     config_dir = tmp_path / "configs"
     data_dir = config_dir / "data"
     outside_dir = tmp_path / "outside"
@@ -246,6 +274,13 @@ cohorts:
 
 def test_run_phase0_audit_records_requested_numbers() -> None:
     class _Tokenizer:
+        def encode(self, text: str, add_special_tokens: bool = False) -> list[int]:
+            assert add_special_tokens is False
+            return [ord(ch) for ch in text]
+
+        def convert_ids_to_tokens(self, token_ids: list[int]) -> list[str]:
+            return [chr(tok_id) for tok_id in token_ids]
+
         def tokenize(self, text: str) -> list[str]:
             return list(text)
 
@@ -257,6 +292,51 @@ def test_run_phase0_audit_records_requested_numbers() -> None:
     values = [row["value"] for row in audit["numbers"]]
     assert values == [0, 1, 9, 10, 99, 100, 199, 200, 210, 999]
     assert audit["numbers"][3]["tokens"] == ["1", "0"]
+    assert audit["surface_forms"]["canonical_label"] == "pretty_inline"
+    variants = {
+        row["label"]: row for row in audit["surface_forms"]["variants"]
+    }
+    assert variants["pretty_inline"]["token_count"] > variants["compact"]["token_count"]
+    assert variants["compact"]["first_diff_vs_pretty_inline"] == 11
+
+
+def test_resolve_audit_model_info_uses_base_processor_for_adapter_shorthand(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    base_dir = tmp_path / "base-model"
+    adapter_dir = tmp_path / "adapter-checkpoint"
+    base_dir.mkdir()
+    adapter_dir.mkdir()
+    monkeypatch.setattr(
+        continuity_probe_module,
+        "resolve_inference_checkpoint",
+        lambda model_checkpoint: ResolvedInferenceCheckpoint(
+            checkpoint_mode="adapter_shorthand",
+            requested_model_checkpoint=str(adapter_dir),
+            requested_adapter_checkpoint=None,
+            resolved_base_model_checkpoint=str(base_dir),
+            resolved_adapter_checkpoint=str(adapter_dir),
+            adapter_info=AdapterCheckpointInfo(
+                path=str(adapter_dir),
+                base_model_name_or_path=str(base_dir),
+                modules_to_save=("coord_offset_adapter",),
+                coord_offset_spec=CoordOffsetAdapterSpec(
+                    coord_ids=(1, 2, 3),
+                    tie_head=True,
+                ),
+            ),
+        ),
+    )
+
+    info = _resolve_audit_model_info(adapter_dir)
+
+    assert info["checkpoint_mode"] == "adapter_shorthand"
+    assert info["resolved_base_model_checkpoint"] == str(base_dir)
+    assert info["resolved_adapter_checkpoint"] == str(adapter_dir)
+    assert info["processor_source"] == str(base_dir)
+    assert info["processor_source_is_local"] is True
+    assert info["has_coord_offset_adapter"] is True
 
 
 def test_build_random_cohort_is_deterministic() -> None:
@@ -545,7 +625,17 @@ def test_write_report_bundle_materializes_required_outputs(tmp_path: Path) -> No
 
 def test_run_study_materializes_report_bundle_when_report_stage_present(
     tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    class _Tokenizer:
+        def tokenize(self, text: str) -> list[str]:
+            return list(text)
+
+    monkeypatch.setattr(
+        continuity_probe_module,
+        "_load_tokenizer_for_audit",
+        lambda model_path: _Tokenizer(),
+    )
     out_dir = tmp_path / "analysis"
     val_jsonl = tmp_path / "val.jsonl"
     train_jsonl = tmp_path / "train.jsonl"
@@ -592,3 +682,72 @@ cohorts:
     assert (run_dir / "summary.json").exists()
     assert (run_dir / "per_coord_scores.jsonl").exists()
     assert (run_dir / "hard_cases.jsonl").exists()
+
+
+def test_run_study_materializes_audit_artifacts_for_models(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class _Tokenizer:
+        def tokenize(self, text: str) -> list[str]:
+            return list(text)
+
+    def _fake_load_tokenizer_for_audit(model_path: Path) -> _Tokenizer:
+        assert model_path.exists()
+        return _Tokenizer()
+
+    monkeypatch.setattr(
+        continuity_probe_module,
+        "_load_tokenizer_for_audit",
+        _fake_load_tokenizer_for_audit,
+    )
+    out_dir = tmp_path / "analysis"
+    base_model = tmp_path / "base-model"
+    pure_model = tmp_path / "pure-model"
+    base_model.mkdir()
+    pure_model.mkdir()
+    val_jsonl = tmp_path / "val.jsonl"
+    train_jsonl = tmp_path / "train.jsonl"
+    val_jsonl.write_text(json.dumps({"image_id": 1, "image": "val_1.jpg"}) + "\n", encoding="utf-8")
+    train_jsonl.write_text(
+        json.dumps({"image_id": 2, "image": "train_2.jpg"}) + "\n",
+        encoding="utf-8",
+    )
+    config_path = tmp_path / "probe.yaml"
+    config_path.write_text(
+        f"""
+run:
+  name: audit-stage
+  output_dir: {out_dir.as_posix()}
+  stages: [audit]
+
+models:
+  base:
+    alias: base
+    path: {base_model.as_posix()}
+    prompt_surface: upper_bound
+  pure_ce:
+    alias: pure_ce
+    path: {pure_model.as_posix()}
+    prompt_surface: canonical
+
+cohorts:
+  val_headline:
+    jsonl_path: {val_jsonl.as_posix()}
+    sample_count: 1
+    seed: 17
+  train_supplemental:
+    jsonl_path: {train_jsonl.as_posix()}
+    sample_count: 1
+    seed: 29
+        """.strip(),
+        encoding="utf-8",
+    )
+
+    run_study(config_path)
+
+    run_dir = out_dir / "audit-stage"
+    assert (run_dir / "audit" / "base_tokenization.json").exists()
+    assert (run_dir / "audit" / "pure_ce_tokenization.json").exists()
+    summary = json.loads((run_dir / "audit" / "summary.json").read_text(encoding="utf-8"))
+    assert summary["serialization_surface"] == "pretty_inline"

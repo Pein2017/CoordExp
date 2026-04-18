@@ -8,10 +8,18 @@ models:
     alias: base
     path: model_cache/models/Qwen/Qwen3-VL-2B-Instruct-coordexp
     prompt_surface: upper_bound
+    coord_mode: norm1000_text
+    prompt_variant: coco_80
+    object_field_order: desc_first
+    json_surface: pretty_inline
   pure_ce:
     alias: pure_ce
     path: output/stage1_2b/coco_bbox_max60-coco80-desc_first-1024-lvis_proxy-raw_text_xyxy-pure_ce/epoch_4-raw_text_xyxy-pure_ce-coco80-desc_first-1024-lvis_proxy-from-base-2B/v1-20260417-084341/checkpoint-552
     prompt_surface: canonical
+    coord_mode: norm1000_text
+    prompt_variant: coco_80
+    object_field_order: desc_first
+    json_surface: pretty_inline
 
 cohorts:
   val_headline:
