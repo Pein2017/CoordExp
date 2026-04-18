@@ -35,11 +35,11 @@ from src.common.object_field_order import (
 )
 from src.vis import DEFAULT_BBOX_OUTLINE_WIDTH
 from src.common.paths import resolve_image_path_strict
-from src.common.prediction_parsing import extract_special_tokens
 from src.common.semantic_desc import normalize_desc
 from src.config.prompts import get_template_prompts
 from src.infer.pipeline import run_pipeline
 from src.analysis.rollout_parity import collect_stage2_parity_gt_vs_pred
+from src.analysis.raw_text_coord_continuity_scoring import score_span_logprobs
 from src.trainers.rollout_matching.contracts import GTObject
 from src.trainers.rollout_matching.parsing import (
     find_desc_value_token_positions_by_span,
@@ -197,6 +197,8 @@ class PreparedExample:
     assistant_text: str
     desc_positions: List[int]
     full_input_ids: List[int]
+    assistant_start: int = 0
+    assistant_input_ids: List[int] = field(default_factory=list)
 
 
 @dataclass(frozen=True)
@@ -1823,6 +1825,8 @@ class TeacherForcedScorer:
             assistant_text=str(assistant_text),
             desc_positions=desc_positions,
             full_input_ids=[int(v) for v in full_ids],
+            assistant_start=int(start),
+            assistant_input_ids=[int(v) for v in assistant_ids],
         )
 
     def score_prepared_batch(
@@ -1944,6 +1948,43 @@ class TeacherForcedScorer:
                 desc_positions=list(desc_positions),
             )
             for desc_positions in desc_positions_list
+        ]
+
+    def score_prepared_spans(
+        self,
+        *,
+        prepared: PreparedExample,
+        image: Image.Image,
+        spans: Sequence[Sequence[int]],
+    ) -> List[Dict[str, float | int]]:
+        model_inputs = self.processor(
+            text=[prepared.full_text],
+            images=[image],
+            return_tensors="pt",
+            padding=True,
+        )
+        model_inputs = {
+            key: value.to(self.device) if isinstance(value, torch.Tensor) else value
+            for key, value in model_inputs.items()
+        }
+        with torch.inference_mode():
+            outputs = self.model(**model_inputs, use_cache=False)
+        logits = getattr(outputs, "logits", None)
+        if not isinstance(logits, torch.Tensor):
+            raise RuntimeError("teacher-forced scorer did not return logits")
+        input_ids = model_inputs.get("input_ids")
+        if not isinstance(input_ids, torch.Tensor):
+            raise RuntimeError("teacher-forced scorer missing input_ids")
+        if logits.shape[:2] != input_ids.shape[:2]:
+            raise RuntimeError("teacher-forced scorer requires unsliced logits")
+        return [
+            score_span_logprobs(
+                logits=logits,
+                input_ids=input_ids,
+                batch_idx=0,
+                positions=list(span),
+            )
+            for span in spans
         ]
 
 
