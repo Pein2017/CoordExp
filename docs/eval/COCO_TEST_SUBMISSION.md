@@ -62,8 +62,8 @@ Why this matters:
 ## 3. Run Real COCO Test-Dev Inference
 
 Point the config either to your final merged checkpoint, or set
-`infer.model_checkpoint` to the base model plus `infer.adapter_checkpoint` to
-the adapter directory when using the HF backend, and run:
+`infer.model_checkpoint` directly to the local adapter directory so the
+pipeline resolves the base model from `adapter_config.json`, and run:
 
 ```bash
 PYTHONPATH=. conda run -n ms python scripts/run_infer.py \
