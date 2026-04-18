@@ -1,0 +1,26 @@
+"""Run the raw-text coordinate continuity probe study from a YAML manifest."""
+
+from __future__ import annotations
+
+import json
+import sys
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[2]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+from src.analysis.raw_text_coord_continuity_probe import run_study  # noqa: E402
+
+
+def main() -> None:
+    import argparse
+
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--config", type=Path, required=True, help="Path to the study YAML config.")
+    args = parser.parse_args()
+    print(json.dumps(run_study(args.config), ensure_ascii=False, indent=2))
+
+
+if __name__ == "__main__":
+    main()

@@ -1,0 +1,24 @@
+run:
+  name: raw-text-continuity-default
+  output_dir: output/analysis
+  stages: [audit, pilot, canonical, bad_basin, dense_scene, report]
+
+models:
+  base:
+    alias: base
+    path: model_cache/models/Qwen/Qwen3-VL-2B-Instruct-coordexp
+    prompt_surface: upper_bound
+  pure_ce:
+    alias: pure_ce
+    path: output/stage1_2b/coco_bbox_max60-coco80-desc_first-1024-lvis_proxy-raw_text_xyxy-pure_ce/epoch_4-raw_text_xyxy-pure_ce-coco80-desc_first-1024-lvis_proxy-from-base-2B/v1-20260417-084341/checkpoint-552
+    prompt_surface: canonical
+
+cohorts:
+  val_headline:
+    jsonl_path: public_data/coco/rescale_32_1024_bbox_max60/val.coord.jsonl
+    sample_count: 500
+    seed: 17
+  train_supplemental:
+    jsonl_path: public_data/coco/rescale_32_1024_bbox_max60/train.coord.jsonl
+    sample_count: 1500
+    seed: 29
