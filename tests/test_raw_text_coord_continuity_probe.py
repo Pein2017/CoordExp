@@ -6,7 +6,11 @@ import json
 
 import pytest
 
-from src.analysis.raw_text_coord_continuity_probe import load_study_config, run_study
+from src.analysis.raw_text_coord_continuity_probe import (
+    load_study_config,
+    run_phase0_audit,
+    run_study,
+)
 
 
 def test_load_study_config_parses_lanes_and_cohorts(tmp_path: Path) -> None:
@@ -136,3 +140,18 @@ cohorts:
     assert summary["run_name"] == "raw-text-continuity-smoke"
     assert summary["stages"] == ["audit", "pilot"]
     assert summary["models"]["base"]["alias"] == "base"
+
+
+def test_run_phase0_audit_records_requested_numbers() -> None:
+    class _Tokenizer:
+        def tokenize(self, text: str) -> list[str]:
+            return list(text)
+
+    class _Scorer:
+        tokenizer = _Tokenizer()
+
+    audit = run_phase0_audit(_Scorer())
+
+    values = [row["value"] for row in audit["numbers"]]
+    assert values == [0, 1, 9, 10, 99, 100, 199, 200, 210, 999]
+    assert audit["numbers"][3]["tokens"] == ["1", "0"]

@@ -3,7 +3,11 @@ from __future__ import annotations
 import torch
 
 from src.analysis.unmatched_proposal_verifier import PreparedExample
-from src.analysis.raw_text_coord_continuity_scoring import score_span_logprobs
+from src.analysis.raw_text_coord_continuity_scoring import (
+    lexical_features_for_candidate,
+    replace_bbox_slot_value,
+    score_span_logprobs,
+)
 
 
 def test_score_span_logprobs_supports_multi_token_chunk() -> None:
@@ -52,3 +56,55 @@ def test_prepared_example_accepts_legacy_four_field_shape() -> None:
 
     assert prepared.assistant_start == 0
     assert prepared.assistant_input_ids == []
+
+
+def test_replace_bbox_slot_value_preserves_json_boundaries() -> None:
+    assistant_text = '[{"desc":"book","bbox_2d":[199,200,210,250]}]'
+    replaced = replace_bbox_slot_value(
+        assistant_text=assistant_text,
+        slot="x1",
+        original_bbox=(199, 200, 210, 250),
+        candidate_value=231,
+    )
+
+    assert replaced == '[{"desc":"book","bbox_2d":[231,200,210,250]}]'
+
+
+def test_replace_bbox_slot_value_can_target_later_duplicate_bbox() -> None:
+    assistant_text = '[{"desc":"a","bbox_2d":[1,2,3,4]},{"desc":"b","bbox_2d":[1,2,3,4]}]'
+    replaced = replace_bbox_slot_value(
+        assistant_text=assistant_text,
+        slot="x1",
+        original_bbox=(1, 2, 3, 4),
+        candidate_value=9,
+        object_index=1,
+    )
+
+    assert replaced == '[{"desc":"a","bbox_2d":[1,2,3,4]},{"desc":"b","bbox_2d":[9,2,3,4]}]'
+
+
+def test_lexical_features_capture_numeric_and_token_shape() -> None:
+    features = lexical_features_for_candidate(
+        candidate_value=210,
+        center_value=199,
+        gt_value=200,
+        tokenizer_tokens=["2", "1", "0"],
+        center_tokens=["1", "9", "9"],
+    )
+
+    assert features["numeric_distance_to_center"] == 11
+    assert features["numeric_distance_to_gt"] == 10
+    assert features["digit_length_match"] == 1
+    assert features["token_count"] == 3
+
+
+def test_lexical_features_use_true_character_edit_distance() -> None:
+    features = lexical_features_for_candidate(
+        candidate_value=121,
+        center_value=212,
+        gt_value=121,
+        tokenizer_tokens=["1", "2", "1"],
+        center_tokens=["2", "1", "2"],
+    )
+
+    assert features["char_edit_distance"] == 2

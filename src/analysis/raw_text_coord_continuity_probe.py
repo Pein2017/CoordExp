@@ -68,6 +68,22 @@ def _write_json(path: Path, payload: object) -> None:
     path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
+def run_phase0_audit(scorer: object) -> dict[str, object]:
+    numbers = [0, 1, 9, 10, 99, 100, 199, 200, 210, 999]
+    tokenizer = getattr(scorer, "tokenizer")
+    rows = []
+    for value in numbers:
+        tokens = list(tokenizer.tokenize(str(value)))
+        rows.append(
+            {
+                "value": value,
+                "tokens": tokens,
+                "token_count": len(tokens),
+            }
+        )
+    return {"numbers": rows}
+
+
 def load_study_config(config_path: Path) -> StudyConfig:
     raw = _load_yaml(config_path)
     run_raw = _require_mapping(raw, "run")
