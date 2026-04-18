@@ -21,6 +21,7 @@ from src.analysis.raw_text_coord_continuity_probe import (
     build_random_cohort,
     build_study_hard_cases,
     load_study_config,
+    render_pretty_inline_assistant_text,
     run_phase0_audit,
     run_study,
 )
@@ -346,6 +347,27 @@ def test_build_random_cohort_is_deterministic() -> None:
     right = build_random_cohort(rows, sample_count=4, seed=17)
 
     assert [row["image_id"] for row in left] == [row["image_id"] for row in right]
+
+
+def test_render_pretty_inline_assistant_text_reorders_bbox_first_rows() -> None:
+    row = {
+        "objects": [
+            {
+                "bbox_2d": [699, 284, 722, 336],
+                "desc": "clock",
+                "category_id": 85,
+            }
+        ]
+    }
+
+    assistant_text = render_pretty_inline_assistant_text(
+        row,
+        object_field_order="desc_first",
+    )
+
+    assert assistant_text == (
+        '{"objects": [{"desc": "clock", "bbox_2d": [699, 284, 722, 336]}]}'
+    )
 
 
 def test_build_study_hard_cases_prefers_duplicate_prone_rows() -> None:

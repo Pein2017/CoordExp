@@ -7,8 +7,13 @@ import random
 
 import yaml
 
+from src.common.object_field_order import build_object_payload
 from src.infer.checkpoints import resolve_inference_checkpoint
-from src.utils.assistant_json import CANONICAL_JSON_SEPARATORS, dumps_canonical_json
+from src.utils.assistant_json import (
+    CANONICAL_JSON_SEPARATORS,
+    dumps_canonical_json,
+    dumps_coordjson,
+)
 from src.analysis.raw_text_coord_continuity_report import write_report_bundle
 
 _VALID_STAGES = ("audit", "pilot", "canonical", "bad_basin", "dense_scene", "report")
@@ -219,6 +224,35 @@ def _build_surface_form_audit(tokenizer: object) -> dict[str, object]:
         "sample_payload": sample_payload,
         "variants": tokenized,
     }
+
+
+def render_pretty_inline_assistant_text(
+    row: dict[str, object],
+    *,
+    object_field_order: str,
+) -> str:
+    objects_raw = row.get("objects")
+    if not isinstance(objects_raw, list):
+        raise ValueError("row.objects must be a list")
+    rendered_objects: list[dict[str, object]] = []
+    for idx, obj in enumerate(objects_raw):
+        if not isinstance(obj, dict):
+            raise ValueError(f"row.objects[{idx}] must be a mapping")
+        desc = str(obj.get("desc") or "").strip()
+        bbox = obj.get("bbox_2d")
+        if not isinstance(bbox, list) or len(bbox) != 4:
+            raise ValueError(
+                f"row.objects[{idx}].bbox_2d must be a 4-element list for raw-text xyxy probing"
+            )
+        rendered_objects.append(
+            build_object_payload(
+                desc=desc,
+                geometry_key="bbox_2d",
+                geometry_value=list(bbox),
+                object_field_order=object_field_order,
+            )
+        )
+    return dumps_coordjson({"objects": rendered_objects})
 
 
 def run_phase0_audit(scorer: object) -> dict[str, object]:
