@@ -3,10 +3,12 @@ from __future__ import annotations
 from dataclasses import dataclass
 import json
 from pathlib import Path
+import random
 
 import yaml
 
 _VALID_STAGES = ("audit", "pilot", "canonical", "bad_basin", "dense_scene", "report")
+REPO_ROOT = Path(__file__).resolve().parents[2]
 
 
 @dataclass(frozen=True)
@@ -68,6 +70,43 @@ def _write_json(path: Path, payload: object) -> None:
     path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
+def _resolve_input_path(path_str: str, *, config_dir: Path) -> Path:
+    path = Path(path_str)
+    if path.is_absolute():
+        return path
+    config_relative = config_dir / path
+    if config_relative.exists():
+        return config_relative
+    return REPO_ROOT / path
+
+
+def _resolve_output_dir(path_str: str) -> Path:
+    path = Path(path_str)
+    if path.is_absolute():
+        return path
+    return REPO_ROOT / path
+
+
+def _read_jsonl(path: Path) -> list[dict[str, object]]:
+    rows: list[dict[str, object]] = []
+    for line in path.read_text(encoding="utf-8").splitlines():
+        if not line.strip():
+            continue
+        payload = json.loads(line)
+        if not isinstance(payload, dict):
+            raise ValueError(f"jsonl row in {path} must be a mapping")
+        rows.append(payload)
+    return rows
+
+
+def _write_jsonl(path: Path, rows: list[dict[str, object]]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        "".join(f"{json.dumps(row, ensure_ascii=False)}\n" for row in rows),
+        encoding="utf-8",
+    )
+
+
 def run_phase0_audit(scorer: object) -> dict[str, object]:
     numbers = [0, 1, 9, 10, 99, 100, 199, 200, 210, 999]
     tokenizer = getattr(scorer, "tokenizer")
@@ -82,6 +121,60 @@ def run_phase0_audit(scorer: object) -> dict[str, object]:
             }
         )
     return {"numbers": rows}
+
+
+def build_random_cohort(
+    rows: list[dict[str, object]],
+    *,
+    sample_count: int,
+    seed: int,
+) -> list[dict[str, object]]:
+    cohort = list(rows)
+    random.Random(seed).shuffle(cohort)
+    return cohort[:sample_count]
+
+
+def build_study_hard_cases(
+    rows: list[dict[str, object]],
+    *,
+    max_cases: int,
+) -> list[dict[str, object]]:
+    ordered = sorted(
+        rows,
+        key=lambda row: (
+            int(row.get("same_desc_duplicate_pair_count") or 0),
+            int(row.get("max_desc_count") or 0),
+            int(row.get("pred_count") or 0),
+        ),
+        reverse=True,
+    )
+    return ordered[:max_cases]
+
+
+def _materialize_random_cohort(
+    cohort_name: str,
+    cohort_cfg: CohortConfig,
+    *,
+    config_dir: Path,
+    run_dir: Path,
+) -> dict[str, object]:
+    source_path = _resolve_input_path(cohort_cfg.jsonl_path, config_dir=config_dir)
+    source_rows = _read_jsonl(source_path)
+    selected_rows = build_random_cohort(
+        source_rows,
+        sample_count=cohort_cfg.sample_count,
+        seed=cohort_cfg.seed,
+    )
+    manifest_path = run_dir / "cohorts" / f"{cohort_name}.jsonl"
+    _write_jsonl(manifest_path, selected_rows)
+    return {
+        "jsonl_path": cohort_cfg.jsonl_path,
+        "resolved_jsonl_path": str(source_path),
+        "sample_count": cohort_cfg.sample_count,
+        "seed": cohort_cfg.seed,
+        "manifest_path": str(manifest_path),
+        "num_rows": len(selected_rows),
+    }
 
 
 def load_study_config(config_path: Path) -> StudyConfig:
@@ -127,9 +220,22 @@ def load_study_config(config_path: Path) -> StudyConfig:
 
 
 def run_study(config_path: Path) -> dict[str, object]:
-    cfg = load_study_config(config_path)
-    run_dir = Path(cfg.run.output_dir) / cfg.run.name
+    resolved_config_path = config_path.resolve()
+    cfg = load_study_config(resolved_config_path)
+    run_dir = _resolve_output_dir(cfg.run.output_dir) / cfg.run.name
     run_dir.mkdir(parents=True, exist_ok=True)
+    val_cohort = _materialize_random_cohort(
+        "val_headline",
+        cfg.cohorts.val_headline,
+        config_dir=resolved_config_path.parent,
+        run_dir=run_dir,
+    )
+    train_cohort = _materialize_random_cohort(
+        "train_supplemental",
+        cfg.cohorts.train_supplemental,
+        config_dir=resolved_config_path.parent,
+        run_dir=run_dir,
+    )
     summary = {
         "run_name": cfg.run.name,
         "stages": list(cfg.run.stages),
@@ -146,16 +252,8 @@ def run_study(config_path: Path) -> dict[str, object]:
             },
         },
         "cohorts": {
-            "val_headline": {
-                "jsonl_path": cfg.cohorts.val_headline.jsonl_path,
-                "sample_count": cfg.cohorts.val_headline.sample_count,
-                "seed": cfg.cohorts.val_headline.seed,
-            },
-            "train_supplemental": {
-                "jsonl_path": cfg.cohorts.train_supplemental.jsonl_path,
-                "sample_count": cfg.cohorts.train_supplemental.sample_count,
-                "seed": cfg.cohorts.train_supplemental.seed,
-            },
+            "val_headline": val_cohort,
+            "train_supplemental": train_cohort,
         },
     }
     _write_json(run_dir / "summary.json", summary)

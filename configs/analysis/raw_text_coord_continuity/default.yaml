@@ -15,10 +15,10 @@ models:
 
 cohorts:
   val_headline:
-    jsonl_path: public_data/coco/rescale_32_1024_bbox_max60/val.coord.jsonl
+    jsonl_path: public_data/coco/rescale_32_1024_bbox_max60/val.norm.jsonl
     sample_count: 500
     seed: 17
   train_supplemental:
-    jsonl_path: public_data/coco/rescale_32_1024_bbox_max60/train.coord.jsonl
+    jsonl_path: public_data/coco/rescale_32_1024_bbox_max60/train.norm.jsonl
     sample_count: 1500
     seed: 29

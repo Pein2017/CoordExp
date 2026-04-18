@@ -9,7 +9,7 @@ from collections import Counter, defaultdict
 from dataclasses import dataclass, field
 from pathlib import Path
 from statistics import mean
-from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
+from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
 
 import torch
 import yaml
@@ -1088,13 +1088,81 @@ def _selection_priority(row: Mapping[str, Any]) -> Tuple[int, int, int, int, int
 def _selection_reason(row: Mapping[str, Any]) -> str:
     onset = row.get("onset") or {}
     desc = str((onset.get("desc") or row.get("top_desc") or "")).strip()
+    line_idx_raw = row.get("line_idx")
+    line_idx = -1 if line_idx_raw is None else int(line_idx_raw)
     return (
         f"same-desc duplicate family desc={desc or 'unknown'} "
         f"pred_count={int(row.get('pred_count') or 0)} "
         f"max_desc_count={int(row.get('max_desc_count') or 0)} "
         f"duplicate_pairs={int(row.get('same_desc_duplicate_pair_count') or 0)} "
-        f"line_idx={int(row.get('line_idx') or -1)}"
+        f"line_idx={line_idx}"
     )
+
+
+def mine_duplicate_like_rows(
+    *,
+    gt_vs_pred_path: Path,
+    max_cases: int,
+    min_pred_objects: int,
+    min_duplicate_pairs: int,
+    duplicate_iou_threshold: float,
+    size_ratio_min: float = 0.75,
+    local_center_radius_scale: float = 0.8,
+) -> List[Dict[str, Any]]:
+    subset_cfg = SubsetConfig(
+        max_cases_per_checkpoint=max_cases,
+        max_cases_total=max_cases,
+        min_pred_objects=min_pred_objects,
+        min_duplicate_pairs=min_duplicate_pairs,
+        duplicate_iou_threshold=duplicate_iou_threshold,
+        local_center_radius_scale=local_center_radius_scale,
+        size_ratio_min=size_ratio_min,
+    )
+    cfg_stub = type("CfgStub", (), {"subset": subset_cfg})()
+    rows: List[Dict[str, Any]] = []
+    for line_idx, row in enumerate(_read_jsonl(gt_vs_pred_path)):
+        preds = list(row.get("pred") or [])
+        if len(preds) < int(min_pred_objects):
+            continue
+        desc_counter: Counter[str] = Counter()
+        duplicate_pair_count = 0
+        for pred in preds:
+            desc = normalize_desc(str(pred.get("desc") or ""))
+            if desc:
+                desc_counter[desc] += 1
+        for right_idx in range(1, len(preds)):
+            for left_idx in range(right_idx):
+                metrics = _pair_duplicate_metrics(
+                    preds[left_idx],
+                    preds[right_idx],
+                    cfg=cfg_stub,
+                )
+                if metrics is not None and metrics["duplicate_like"]:
+                    duplicate_pair_count += 1
+        if duplicate_pair_count < int(min_duplicate_pairs):
+            continue
+        top_desc = max(desc_counter, key=desc_counter.get) if desc_counter else None
+        mined_row = {
+            "source_gt_vs_pred_jsonl": str(gt_vs_pred_path),
+            "line_idx": int(line_idx),
+            "image": str(row.get("image") or ""),
+            "image_id": row.get("image_id"),
+            "pred_count": int(len(preds)),
+            "max_desc_count": int(max(desc_counter.values()) if desc_counter else 0),
+            "top_desc": top_desc,
+            "same_desc_duplicate_pair_count": int(duplicate_pair_count),
+            "onset": None,
+        }
+        mined_row["selection_reason"] = _selection_reason(mined_row)
+        rows.append(mined_row)
+    rows.sort(
+        key=lambda row: (
+            _selection_priority(row),
+            -int(row["line_idx"]),
+        ),
+        reverse=True,
+    )
+    return rows[:max_cases]
 
 
 def _mine_cases_for_checkpoint(
@@ -3097,12 +3165,10 @@ def _run_control_comparisons(
         if reproduce_row is None or probe_row is None:
             continue
         gt_rows = _read_jsonl(Path(str(reproduce_row["gt_vs_pred_jsonl"])))
-        conf_rows = _load_confidence_index(Path(str(reproduce_row["pred_confidence_jsonl"])))
         if int(case.get("local_line_idx", 0)) >= len(gt_rows):
             continue
         local_idx = int(case["local_line_idx"])
         reproduce_gt = gt_rows[local_idx]
-        reproduce_conf = conf_rows.get(local_idx)
         onset = (
             probe_row.get("active_onset")
             or probe_row.get("reproduced_onset")
@@ -3157,6 +3223,8 @@ def _run_control_comparisons(
 
             def _candidate_summary(
                 candidate_object: Optional[Mapping[str, Any]],
+                *,
+                scorer: TeacherForcedScorer = scorer,
             ) -> Optional[Dict[str, Any]]:
                 if candidate_object is None:
                     return None
@@ -3939,6 +4007,7 @@ __all__ = [
     "_inventory_row",
     "_pair_duplicate_metrics",
     "load_study_config",
+    "mine_duplicate_like_rows",
     "run_duplication_collapse_analysis_study",
     "run_study",
 ]
