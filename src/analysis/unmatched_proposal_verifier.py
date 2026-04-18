@@ -2044,6 +2044,59 @@ class TeacherForcedScorer:
             for span in spans
         ]
 
+    def score_prepared_batch_spans(
+        self,
+        *,
+        examples: Sequence[PreparedExample],
+        images: Sequence[Image.Image],
+        spans_list: Sequence[Sequence[int]],
+    ) -> List[Dict[str, float | int]]:
+        if len(examples) != len(images):
+            raise ValueError("examples/images length mismatch")
+        if len(examples) != len(spans_list):
+            raise ValueError("examples/spans length mismatch")
+        if not examples:
+            return []
+        model_inputs = self.processor(
+            text=[example.full_text for example in examples],
+            images=list(images),
+            return_tensors="pt",
+            padding=True,
+        )
+        model_inputs = {
+            key: value.to(self.device) if isinstance(value, torch.Tensor) else value
+            for key, value in model_inputs.items()
+        }
+        with torch.inference_mode():
+            outputs = self.model(**model_inputs, use_cache=False)
+        logits = getattr(outputs, "logits", None)
+        if not isinstance(logits, torch.Tensor):
+            raise RuntimeError("teacher-forced scorer did not return logits")
+        input_ids = model_inputs.get("input_ids")
+        if not isinstance(input_ids, torch.Tensor):
+            raise RuntimeError("teacher-forced scorer missing input_ids")
+        if logits.shape[:2] != input_ids.shape[:2]:
+            raise RuntimeError("teacher-forced scorer requires unsliced logits")
+        padded_len = int(input_ids.shape[1])
+        scored: List[Dict[str, float | int]] = []
+        for batch_idx, (example, span) in enumerate(zip(examples, spans_list)):
+            seq_len = int(len(example.full_input_ids))
+            pad_offset = int(padded_len - seq_len)
+            observed_ids = input_ids[batch_idx, pad_offset:].detach().cpu().tolist()
+            if [int(value) for value in observed_ids] != [
+                int(value) for value in example.full_input_ids
+            ]:
+                raise RuntimeError("assistant_span_build_failed")
+            scored.append(
+                score_span_logprobs(
+                    logits=logits,
+                    input_ids=input_ids,
+                    batch_idx=batch_idx,
+                    positions=[pad_offset + int(position) for position in span],
+                )
+            )
+        return scored
+
 
 def _find_subsequence(
     haystack: Sequence[int],

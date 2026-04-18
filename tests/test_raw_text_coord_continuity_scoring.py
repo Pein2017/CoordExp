@@ -10,6 +10,7 @@ from src.analysis.raw_text_coord_continuity_scoring import (
     lexical_features_for_candidate,
     replace_bbox_slot_value,
     score_candidate_coordinate_sequence,
+    score_candidate_coordinate_sequences_batch,
     score_span_logprobs,
 )
 
@@ -205,6 +206,89 @@ def test_score_candidate_coordinate_sequence_uses_prepared_span_scoring() -> Non
     assert result["count"] == 3
     assert result["candidate_value"] == 100
     assert result["assistant_relative_positions"] == [27, 28, 29]
+
+
+def test_score_candidate_coordinate_sequences_batch_batches_span_scoring() -> None:
+    class _Tokenizer:
+        def encode(self, text: str, add_special_tokens: bool = False) -> list[int]:
+            del add_special_tokens
+            return [ord(ch) for ch in text]
+
+    class _Scorer:
+        tokenizer = _Tokenizer()
+
+        def __init__(self) -> None:
+            self.prepared_texts: list[str] = []
+            self.scored_batches: list[dict[str, object]] = []
+
+        def prepare_example(
+            self,
+            *,
+            image: object,
+            assistant_text: str,
+            desc_positions_rel: list[int],
+            prompt_variant: str,
+            object_field_order: str,
+        ) -> SimpleNamespace:
+            del image, desc_positions_rel, prompt_variant, object_field_order
+            self.prepared_texts.append(assistant_text)
+            return SimpleNamespace(assistant_start=7, full_text=f"full::{assistant_text}")
+
+        def score_prepared_batch_spans(
+            self,
+            *,
+            examples: list[SimpleNamespace],
+            images: list[object],
+            spans_list: list[list[int]],
+        ) -> list[dict[str, float | int]]:
+            self.scored_batches.append(
+                {
+                    "full_texts": [example.full_text for example in examples],
+                    "images": images,
+                    "spans_list": spans_list,
+                }
+            )
+            return [
+                {
+                    "count": len(span),
+                    "sum_logprob": -float(index + 1),
+                    "mean_logprob": -float(index + 1) / float(len(span)),
+                }
+                for index, span in enumerate(spans_list)
+            ]
+
+    scorer = _Scorer()
+    image = object()
+
+    results = score_candidate_coordinate_sequences_batch(
+        scorer=scorer,
+        image=image,
+        assistant_text='[{"desc":"book","bbox_2d":[99,200,210,250]}]',
+        slot="x1",
+        original_bbox=(99, 200, 210, 250),
+        candidate_values=[100, 99],
+        prompt_variant="plain",
+        object_field_order="bbox_then_desc",
+    )
+
+    assert scorer.prepared_texts == [
+        '[{"desc":"book","bbox_2d":[100,200,210,250]}]',
+        '[{"desc":"book","bbox_2d":[99,200,210,250]}]',
+    ]
+    assert scorer.scored_batches == [
+        {
+            "full_texts": [
+                'full::[{"desc":"book","bbox_2d":[100,200,210,250]}]',
+                'full::[{"desc":"book","bbox_2d":[99,200,210,250]}]',
+            ],
+            "images": [image, image],
+            "spans_list": [[34, 35, 36], [34, 35]],
+        }
+    ]
+    assert [result["candidate_value"] for result in results] == [100, 99]
+    assert [result["count"] for result in results] == [3, 2]
+    assert results[0]["assistant_relative_positions"] == [27, 28, 29]
+    assert results[1]["assistant_relative_positions"] == [27, 28]
 
 
 def test_build_candidate_coordinate_span_scores_noop_replacement_span() -> None:

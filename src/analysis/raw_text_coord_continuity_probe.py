@@ -492,6 +492,7 @@ def _run_pilot_scoring(
     run_dir: Path,
 ) -> dict[str, object]:
     from src.analysis.raw_text_coord_continuity_scoring import (
+        score_candidate_coordinate_sequences_batch,
         score_candidate_coordinate_sequence,
     )
     from src.analysis.unmatched_proposal_verifier import TeacherForcedScorer
@@ -579,10 +580,52 @@ def _run_pilot_scoring(
                         bbox_values = [int(value) for value in bbox]
                         for slot in selected_slots:
                             gt_value = int(bbox_values[int(_SLOT_TO_INDEX[slot])])
-                            for candidate_value in build_candidate_values_around(
+                            candidate_values = build_candidate_values_around(
                                 gt_value,
                                 radius=cfg.scoring.pilot_candidate_radius,
-                            ):
+                            )
+                            try:
+                                scored_rows = score_candidate_coordinate_sequences_batch(
+                                    scorer=scorer,
+                                    image=image,
+                                    assistant_text=assistant_text,
+                                    slot=slot,
+                                    original_bbox=bbox_values,
+                                    candidate_values=candidate_values,
+                                    prompt_variant=model_cfg.prompt_variant,
+                                    object_field_order=model_cfg.object_field_order,
+                                    object_index=object_index,
+                                )
+                                for scored in scored_rows:
+                                    candidate_value = int(scored["candidate_value"])
+                                    model_rows.append(
+                                        {
+                                            **base_row,
+                                            "scoring_status": "ok",
+                                            "failure_reason": None,
+                                            "object_index": object_index,
+                                            "desc": desc,
+                                            "slot": slot,
+                                            "gt_value": gt_value,
+                                            "candidate_value": candidate_value,
+                                            "numeric_distance": abs(
+                                                candidate_value - int(gt_value)
+                                            ),
+                                            "score": float(scored["sum_logprob"]),
+                                            "sum_logprob": float(scored["sum_logprob"]),
+                                            "mean_logprob": float(
+                                                scored["mean_logprob"]
+                                            ),
+                                            "token_count": int(scored["count"]),
+                                            "candidate_token_span": len(
+                                                list(scored["absolute_positions"])
+                                            ),
+                                        }
+                                    )
+                                continue
+                            except (RuntimeError, ValueError):
+                                pass
+                            for candidate_value in candidate_values:
                                 try:
                                     scored = score_candidate_coordinate_sequence(
                                         scorer=scorer,

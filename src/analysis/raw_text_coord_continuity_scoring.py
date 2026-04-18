@@ -191,37 +191,89 @@ def score_candidate_coordinate_sequence(
     object_field_order: str,
     object_index: int | None = None,
 ) -> dict[str, object]:
-    candidate = build_candidate_coordinate_span(
-        tokenizer=getattr(scorer, "tokenizer"),
+    return score_candidate_coordinate_sequences_batch(
+        scorer=scorer,
+        image=image,
         assistant_text=assistant_text,
         slot=slot,
         original_bbox=original_bbox,
-        candidate_value=candidate_value,
-        object_index=object_index,
-    )
-    prepared = scorer.prepare_example(
-        image=image,
-        assistant_text=str(candidate["candidate_assistant_text"]),
-        desc_positions_rel=[],
+        candidate_values=[candidate_value],
         prompt_variant=prompt_variant,
         object_field_order=object_field_order,
-    )
-    assistant_start = int(getattr(prepared, "assistant_start"))
-    absolute_positions = [
-        assistant_start + int(pos)
-        for pos in candidate["assistant_relative_positions"]
-    ]
-    score = scorer.score_prepared_spans(
-        prepared=prepared,
-        image=image,
-        spans=[absolute_positions],
+        object_index=object_index,
     )[0]
-    return {
-        **candidate,
-        **score,
-        "candidate_value": int(candidate_value),
-        "absolute_positions": absolute_positions,
-    }
+
+
+def score_candidate_coordinate_sequences_batch(
+    *,
+    scorer: object,
+    image: object,
+    assistant_text: str,
+    slot: str,
+    original_bbox: Sequence[int],
+    candidate_values: Sequence[int],
+    prompt_variant: str,
+    object_field_order: str,
+    object_index: int | None = None,
+) -> list[dict[str, object]]:
+    if not candidate_values:
+        return []
+    prepared_examples: list[object] = []
+    candidate_rows: list[dict[str, object]] = []
+    spans_list: list[list[int]] = []
+    for candidate_value in candidate_values:
+        candidate = build_candidate_coordinate_span(
+            tokenizer=getattr(scorer, "tokenizer"),
+            assistant_text=assistant_text,
+            slot=slot,
+            original_bbox=original_bbox,
+            candidate_value=candidate_value,
+            object_index=object_index,
+        )
+        prepared = scorer.prepare_example(
+            image=image,
+            assistant_text=str(candidate["candidate_assistant_text"]),
+            desc_positions_rel=[],
+            prompt_variant=prompt_variant,
+            object_field_order=object_field_order,
+        )
+        assistant_start = int(getattr(prepared, "assistant_start"))
+        absolute_positions = [
+            assistant_start + int(pos)
+            for pos in candidate["assistant_relative_positions"]
+        ]
+        prepared_examples.append(prepared)
+        spans_list.append(absolute_positions)
+        candidate_rows.append(
+            {
+                **candidate,
+                "candidate_value": int(candidate_value),
+                "absolute_positions": absolute_positions,
+            }
+        )
+    batch_score = getattr(scorer, "score_prepared_batch_spans", None)
+    if callable(batch_score):
+        score_rows = batch_score(
+            examples=prepared_examples,
+            images=[image] * len(prepared_examples),
+            spans_list=spans_list,
+        )
+    else:
+        score_rows = [
+            scorer.score_prepared_spans(
+                prepared=prepared,
+                image=image,
+                spans=[span],
+            )[0]
+            for prepared, span in zip(prepared_examples, spans_list)
+        ]
+    return [
+        {
+            **candidate_row,
+            **score_row,
+        }
+        for candidate_row, score_row in zip(candidate_rows, score_rows)
+    ]
 
 
 def lexical_features_for_candidate(
