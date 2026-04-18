@@ -67,6 +67,49 @@ def replace_bbox_slot_value(
     )
 
 
+def replace_bbox_slot_values(
+    *,
+    assistant_text: str,
+    original_bbox: Sequence[int],
+    candidate_values_by_slot: dict[str, int],
+    object_index: int | None = None,
+) -> str:
+    if not candidate_values_by_slot:
+        return assistant_text
+    bbox_match, _ = _find_bbox_slot_text_match(
+        assistant_text=assistant_text,
+        slot=next(iter(candidate_values_by_slot)),
+        original_bbox=original_bbox,
+        object_index=object_index,
+    )
+    bbox_content = bbox_match.group("content")
+    number_matches = list(_INT_PATTERN.finditer(bbox_content))
+    slot_to_index = {"x1": 0, "y1": 1, "x2": 2, "y2": 3}
+    replacements: list[tuple[int, int, str]] = []
+    for slot, candidate_value in candidate_values_by_slot.items():
+        slot_index = int(slot_to_index[slot])
+        if len(number_matches) <= slot_index:
+            raise ValueError("bbox_text_not_found")
+        number_match = number_matches[slot_index]
+        replacements.append(
+            (number_match.start(), number_match.end(), str(int(candidate_value)))
+        )
+    replacements.sort(key=lambda item: item[0])
+    replaced_parts: list[str] = []
+    cursor = 0
+    for start, end, replacement in replacements:
+        replaced_parts.append(bbox_content[cursor:start])
+        replaced_parts.append(replacement)
+        cursor = end
+    replaced_parts.append(bbox_content[cursor:])
+    replaced_content = "".join(replaced_parts)
+    return (
+        assistant_text[: bbox_match.start("content")]
+        + replaced_content
+        + assistant_text[bbox_match.end("content") :]
+    )
+
+
 def _find_bbox_slot_text_match(
     *,
     assistant_text: str,
@@ -133,6 +176,30 @@ def _relative_positions_for_slot_text(
     return positions
 
 
+def _find_changed_text_span(
+    *,
+    tokenizer: object,
+    original_assistant_text: str,
+    candidate_assistant_text: str,
+) -> list[int]:
+    encode = getattr(tokenizer, "encode")
+    original_ids = list(encode(original_assistant_text, add_special_tokens=False))
+    candidate_ids = list(encode(candidate_assistant_text, add_special_tokens=False))
+    prefix_len = 0
+    for left_id, right_id in zip(original_ids, candidate_ids):
+        if int(left_id) != int(right_id):
+            break
+        prefix_len += 1
+    max_suffix = min(len(original_ids), len(candidate_ids)) - prefix_len
+    suffix_len = 0
+    while suffix_len < max_suffix:
+        if int(original_ids[-(suffix_len + 1)]) != int(candidate_ids[-(suffix_len + 1)]):
+            break
+        suffix_len += 1
+    changed_stop = len(candidate_ids) - suffix_len
+    return list(range(prefix_len, changed_stop))
+
+
 def build_candidate_coordinate_span(
     *,
     tokenizer: object,
@@ -149,22 +216,11 @@ def build_candidate_coordinate_span(
         candidate_value=candidate_value,
         object_index=object_index,
     )
-    encode = getattr(tokenizer, "encode")
-    original_ids = list(encode(assistant_text, add_special_tokens=False))
-    candidate_ids = list(encode(candidate_assistant_text, add_special_tokens=False))
-    prefix_len = 0
-    for left_id, right_id in zip(original_ids, candidate_ids):
-        if int(left_id) != int(right_id):
-            break
-        prefix_len += 1
-    max_suffix = min(len(original_ids), len(candidate_ids)) - prefix_len
-    suffix_len = 0
-    while suffix_len < max_suffix:
-        if int(original_ids[-(suffix_len + 1)]) != int(candidate_ids[-(suffix_len + 1)]):
-            break
-        suffix_len += 1
-    changed_stop = len(candidate_ids) - suffix_len
-    assistant_relative_positions = list(range(prefix_len, changed_stop))
+    assistant_relative_positions = _find_changed_text_span(
+        tokenizer=tokenizer,
+        original_assistant_text=assistant_text,
+        candidate_assistant_text=candidate_assistant_text,
+    )
     if not assistant_relative_positions:
         assistant_relative_positions = _relative_positions_for_slot_text(
             tokenizer=tokenizer,
@@ -172,6 +228,57 @@ def build_candidate_coordinate_span(
             slot=slot,
             original_bbox=original_bbox,
             object_index=object_index,
+        )
+    return {
+        "candidate_assistant_text": candidate_assistant_text,
+        "assistant_relative_positions": assistant_relative_positions,
+    }
+
+
+def build_candidate_coordinate_span_multi(
+    *,
+    tokenizer: object,
+    assistant_text: str,
+    original_bbox: Sequence[int],
+    candidate_values_by_slot: dict[str, int],
+    object_index: int | None = None,
+) -> dict[str, object]:
+    slot_to_index = {"x1": 0, "y1": 1, "x2": 2, "y2": 3}
+    candidate_bbox = [int(value) for value in original_bbox]
+    for slot, candidate_value in candidate_values_by_slot.items():
+        candidate_bbox[int(slot_to_index[slot])] = int(candidate_value)
+    candidate_assistant_text = replace_bbox_slot_values(
+        assistant_text=assistant_text,
+        original_bbox=original_bbox,
+        candidate_values_by_slot=candidate_values_by_slot,
+        object_index=object_index,
+    )
+    assistant_relative_positions = _find_changed_text_span(
+        tokenizer=tokenizer,
+        original_assistant_text=assistant_text,
+        candidate_assistant_text=candidate_assistant_text,
+    )
+    if not assistant_relative_positions:
+        fallback_text_positions = [
+            _relative_positions_for_slot_text(
+                tokenizer=tokenizer,
+                assistant_text=candidate_assistant_text,
+                slot=slot,
+                original_bbox=candidate_bbox,
+                object_index=object_index,
+            )
+            for slot in sorted(
+                candidate_values_by_slot,
+                key=lambda value: slot_to_index[value],
+            )
+        ]
+        merged_positions = sorted(
+            {pos for span in fallback_text_positions for pos in span}
+        )
+        if not merged_positions:
+            raise ValueError("slot_text_token_span_empty")
+        assistant_relative_positions = list(
+            range(merged_positions[0], merged_positions[-1] + 1)
         )
     return {
         "candidate_assistant_text": candidate_assistant_text,
@@ -258,6 +365,87 @@ def score_candidate_coordinate_sequences_batch(
             images=[image] * len(prepared_examples),
             spans_list=spans_list,
         )
+    else:
+        score_rows = [
+            scorer.score_prepared_spans(
+                prepared=prepared,
+                image=image,
+                spans=[span],
+            )[0]
+            for prepared, span in zip(prepared_examples, spans_list)
+        ]
+    return [
+        {
+            **candidate_row,
+            **score_row,
+        }
+        for candidate_row, score_row in zip(candidate_rows, score_rows)
+    ]
+
+
+def score_candidate_coordinate_xy_grid_batch(
+    *,
+    scorer: object,
+    image: object,
+    assistant_text: str,
+    original_bbox: Sequence[int],
+    candidate_xy_pairs: Sequence[tuple[int, int]],
+    prompt_variant: str,
+    object_field_order: str,
+    object_index: int | None = None,
+    batch_size: int | None = None,
+) -> list[dict[str, object]]:
+    if not candidate_xy_pairs:
+        return []
+    prepared_examples: list[object] = []
+    candidate_rows: list[dict[str, object]] = []
+    spans_list: list[list[int]] = []
+    for candidate_x1, candidate_y1 in candidate_xy_pairs:
+        candidate = build_candidate_coordinate_span_multi(
+            tokenizer=getattr(scorer, "tokenizer"),
+            assistant_text=assistant_text,
+            original_bbox=original_bbox,
+            candidate_values_by_slot={
+                "x1": int(candidate_x1),
+                "y1": int(candidate_y1),
+            },
+            object_index=object_index,
+        )
+        prepared = scorer.prepare_example(
+            image=image,
+            assistant_text=str(candidate["candidate_assistant_text"]),
+            desc_positions_rel=[],
+            prompt_variant=prompt_variant,
+            object_field_order=object_field_order,
+        )
+        assistant_start = int(getattr(prepared, "assistant_start"))
+        absolute_positions = [
+            assistant_start + int(pos)
+            for pos in candidate["assistant_relative_positions"]
+        ]
+        prepared_examples.append(prepared)
+        spans_list.append(absolute_positions)
+        candidate_rows.append(
+            {
+                **candidate,
+                "candidate_x1": int(candidate_x1),
+                "candidate_y1": int(candidate_y1),
+                "absolute_positions": absolute_positions,
+            }
+        )
+    score_rows: list[dict[str, object]] = []
+    chunk_size = len(prepared_examples) if batch_size is None else max(1, int(batch_size))
+    batch_score = getattr(scorer, "score_prepared_batch_spans", None)
+    if callable(batch_score):
+        for start in range(0, len(prepared_examples), chunk_size):
+            stop = start + chunk_size
+            score_rows.extend(
+                batch_score(
+                    examples=prepared_examples[start:stop],
+                    images=[image] * len(prepared_examples[start:stop]),
+                    spans_list=spans_list[start:stop],
+                )
+            )
     else:
         score_rows = [
             scorer.score_prepared_spans(
