@@ -1,0 +1,52 @@
+extends:
+  - ./pure_ce_coco80_desc_first.yaml
+  - ../../../_shared/datasets/coco_1024_bbox_max60_lvis_proxy.yaml
+
+global_max_length: 18000
+
+model:
+  model: model_cache/models/Qwen/Qwen3-VL-2B-Instruct-coordexp
+
+experiment:
+  title: Stage-1 pure-CE raw-text xyxy norm1000 benchmark
+  purpose: >
+    Minimal Stage-1 benchmark that keeps canonical xyxy geometry and the shared
+    0..999 norm1000 lattice, but removes <|coord_*|> supervision in favor of
+    bare JSON integer coordinates.
+  hypothesis: >
+    If the special coord-token interface itself introduces optimization tax or
+    duplication pressure, then raw-text xyxy on the same norm1000 lattice
+    should recover precision and reduce burst-heavy failures relative to the
+    coord-token branch.
+  baseline: >
+    Stage-1 pure-CE canonical xyxy coord-token training on the same 2B / COCO
+    1024 / LVIS-proxy surface.
+  key_deviations:
+    - Uses canonical xyxy geometry throughout.
+    - Consumes public_data *.norm.jsonl directly instead of *.coord.jsonl.
+    - Disables coord-token rendering so bbox_2d is emitted as bare JSON integers.
+    - Keeps pure CE only; no coord-vocab auxiliary or bbox regression auxiliary losses.
+  runtime_settings:
+    - Runs as a Stage-1 2B profile on the COCO 1024 bbox-max60 LVIS-proxy dataset family.
+    - Uses infer/eval in text mode with norm1000 coordinates and pixel-space canonicalization downstream.
+  tags:
+    - stage1
+    - exploratory
+    - pure-ce
+    - raw-text
+    - xyxy
+    - norm1000
+
+training:
+  artifact_subdir: stage1_2b/coco_bbox_max60-coco80-desc_first-1024-lvis_proxy-raw_text_xyxy-pure_ce
+  run_name: epoch_4-raw_text_xyxy-pure_ce-coco80-desc_first-1024-lvis_proxy-from-base-2B
+
+custom:
+  bbox_format: xyxy
+  train_jsonl: public_data/coco/rescale_32_1024_bbox_max60_lvis_proxy/train.norm.jsonl
+  val_jsonl: public_data/coco/rescale_32_1024_bbox_max60_lvis_proxy/val.norm.jsonl
+  coord_tokens:
+    enabled: false
+    skip_bbox_norm: true
+  coord_soft_ce_w1:
+    enabled: false
