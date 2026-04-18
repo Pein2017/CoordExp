@@ -185,6 +185,31 @@ def test_dumps_coordjson_golden_strings_for_orders_and_poly() -> None:
     )
 
 
+def test_dumps_coordjson_allows_bare_norm1000_integers() -> None:
+    payload = {
+        "objects": [
+            {
+                "desc": "cat",
+                "bbox_2d": [1, 2, 3, 4],
+            }
+        ]
+    }
+
+    assert dumps_coordjson(payload) == (
+        '{"objects": [{"desc": "cat", "bbox_2d": [1, 2, 3, 4]}]}'
+    )
+
+
+def test_coordjson_strict_bbox_desc_first_accepts_bare_norm1000_integers() -> None:
+    text = '{"objects": [{"desc": "cat", "bbox_2d": [1, 2, 3, 4]}]}'
+    strict = coordjson_to_strict_json(
+        text,
+        mode="strict",
+        object_field_order="desc_first",
+    )
+    assert strict == '{"objects": [{"desc": "cat", "bbox_2d": [1, 2, 3, 4]}]}'
+
+
 def test_dumps_canonical_json_uses_single_line_spacing() -> None:
     strict = dumps_canonical_json({"objects": [{"desc": "cat", "bbox_2d": [1, 2, 3, 4]}]})
     assert strict == '{"objects": [{"desc": "cat", "bbox_2d": [1, 2, 3, 4]}]}'

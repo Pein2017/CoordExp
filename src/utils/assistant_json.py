@@ -45,8 +45,15 @@ def _render_coordjson_value(value: Any, *, coord_context: bool = False) -> str:
     if coord_context:
         if isinstance(value, str) and is_coord_token(value):
             return value
+        if isinstance(value, int) and not isinstance(value, bool):
+            if 0 <= int(value) <= 999:
+                return json.dumps(int(value), ensure_ascii=False)
+            raise ValueError(
+                "CoordJSON geometry integer literals must be in [0,999]"
+            )
         raise ValueError(
-            "CoordJSON geometry arrays must contain bare coord tokens like <|coord_123|>"
+            "CoordJSON geometry arrays must contain bare coord tokens like <|coord_123|> "
+            "or bare norm1000 integers in [0,999]"
         )
 
     if isinstance(value, str):
@@ -62,7 +69,7 @@ def _render_coordjson_value(value: Any, *, coord_context: bool = False) -> str:
 
 
 def dumps_coordjson(value: Mapping[str, Any]) -> str:
-    """Serialize CoordJSON text using canonical spacing and bare CoordTok literals."""
+    """Serialize CoordJSON text using canonical spacing and bare geometry literals."""
 
     if not isinstance(value, Mapping):
         raise TypeError("CoordJSON payload must be a mapping")

@@ -73,7 +73,7 @@ def test_prompt_variant_cross_surface_parity_between_training_and_inference(
     inf_cfg = InferenceConfig(
         gt_jsonl="dummy.jsonl",
         model_checkpoint="dummy",
-        mode="text",
+        mode="coord",
         prompt_variant="coco_80",
         object_ordering=object_ordering,
     )
@@ -106,7 +106,7 @@ def test_prompt_variant_cross_surface_parity_for_cxcy_logw_logh(
     inf_cfg = InferenceConfig(
         gt_jsonl="dummy.jsonl",
         model_checkpoint="dummy",
-        mode="text",
+        mode="coord",
         prompt_variant="lvis_stage1_federated",
         bbox_format="cxcy_logw_logh",
         object_field_order=object_field_order,
@@ -181,24 +181,25 @@ def test_training_prompt_resolution_uses_ordering_plus_variant() -> None:
 
 
 def test_coord_mode_numeric_is_rejected() -> None:
-    with pytest.raises(ValueError, match="coord_mode must be 'coord_tokens'"):
+    with pytest.raises(ValueError, match="must be one of"):
         get_template_prompts(coord_mode="numeric")
 
 
-def test_training_prompt_resolution_rejects_coord_tokens_disabled() -> None:
-    with pytest.raises(
-        ValueError,
-        match="custom.coord_tokens.enabled must be true",
-    ):
-        ConfigLoader.resolve_prompts(
-            {
-                "custom": {
-                    "object_field_order": "desc_first",
-                    "coord_tokens": {"enabled": False},
-                    "extra": {"prompt_variant": "default"},
-                }
+def test_training_prompt_resolution_supports_norm1000_raw_text() -> None:
+    prompts = ConfigLoader.resolve_prompts(
+        {
+            "custom": {
+                "object_field_order": "desc_first",
+                "coord_tokens": {"enabled": False},
+                "extra": {"prompt_variant": "default"},
             }
-        )
+        }
+    )
+
+    assert "<|coord_" not in prompts.system
+    assert "<|coord_" not in prompts.user
+    assert "bare JSON integers" in prompts.system
+    assert '"bbox_2d": [110, 310, 410, 705]' in prompts.user
 
 
 def test_training_prompt_resolution_rejects_skip_bbox_norm_false() -> None:

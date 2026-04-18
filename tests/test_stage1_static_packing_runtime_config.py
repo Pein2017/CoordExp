@@ -407,8 +407,10 @@ def test_static_packing_fingerprint_tracks_offline_pixels_and_coord_tokens() -> 
         "enabled": True,
         "skip_bbox_norm": True,
     }
+    assert fingerprint_a["custom_coord_mode"] == "coord_tokens"
     assert fingerprint_b["custom_offline_max_pixels"] == 2097152
     assert fingerprint_b["coord_tokens"] == {"enabled": False}
+    assert fingerprint_b["custom_coord_mode"] == "norm1000_text"
     assert fingerprint_a != fingerprint_b
 
 

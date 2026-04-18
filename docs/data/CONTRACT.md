@@ -13,8 +13,8 @@ updated: 2026-04-13
 This document defines the universal JSONL format consumed by all CoordExp training/eval datasets (public detection/grounding and any legacy sources). Every record MUST adhere to this contract so the shared chat-template pipeline can process all sources.
 
 Important separation:
-- This contract is for **raw JSONL files** (`*.train/val.coord.jsonl`), which must remain strict JSON.
-- Model-facing assistant text is rendered as **CoordJSON** (`{"objects": [...]}` with bare coord tokens in geometry arrays) and is transpiled to strict JSON before parsing/matching/eval.
+- This contract is for **raw JSONL files** (`*.jsonl`, `*.norm.jsonl`, `*.coord.jsonl`), which must remain strict JSON.
+- Model-facing assistant text is rendered as **CoordJSON** (`{"objects": [...]}`) and may express geometry either with bare coord tokens or bare norm1000 JSON integers, depending on the authored geometry-expression mode.
 
 ## Top-Level Record
 - **Provenance**: Records are typically produced by dataset-specific converters (e.g., `public_data/scripts/convert_lvis.py`) and then resized/tokenized via `public_data/scripts/rescale_jsonl.py` and `public_data/scripts/convert_to_coord_tokens.py` (see [`PREPARATION.md`](PREPARATION.md)). Regardless of source, they MUST match this contract.
@@ -38,14 +38,18 @@ Note: only `bbox_2d` and `poly` are supported in CoordExp; `line` geometries are
 ### Geometry keys and coordinate space (canonical)
 - Accepted geometry keys are **only** `bbox_2d` or `poly` (plus optional `poly_points`). Legacy aliases `bbox` or `polygon` must be converted during preprocessing.
 - **Training coordinate space is pre-normalized norm1000**:
-  - Numeric coords must be integers in `0..999`, OR
+  - Numeric coords may be bare integers in `0..999`, OR
   - coord tokens `<|coord_k|>` where `k ∈ [0, 999]`.
   Pixel-space floats are allowed only as intermediate artifacts before conversion; do not feed them directly into training.
-- Coord-token mode is mandatory: coords must be pre-quantized to the norm1000 grid (ints `0..999` or `<|coord_k|>`). Keep `custom.coord_tokens.skip_bbox_norm: true` to prevent double scaling.
+- Keep `custom.coord_tokens.skip_bbox_norm: true` in both geometry-expression modes to prevent double scaling.
 
 ### Raw JSONL vs assistant CoordJSON
-- Raw JSONL must stay strict JSON, so coord tokens are quoted strings (e.g., `"<|coord_123|>"`).
-- Assistant dense outputs use top-level `{"objects": [...]}` and bare CoordTok literals in geometry arrays (e.g., `[<|coord_123|>, <|coord_456|>, ...]`).
+- Raw JSONL must stay strict JSON:
+  - coord-token surfaces store quoted token strings (e.g., `"<|coord_123|>"`),
+  - raw-text norm1000 surfaces store bare numeric integers (e.g., `123`).
+- Assistant dense outputs use top-level `{"objects": [...]}` and either:
+  - bare CoordTok literals in geometry arrays (e.g., `[<|coord_123|>, <|coord_456|>, ...]`), or
+  - bare norm1000 integers (e.g., `[123, 456, 789, 900]`).
 - Parsing boundary for assistant-output-like text is `CoordJSON -> strict JSON` transpilation, then `json.loads`.
 
 ### Canonical preset data vs offline-prepared bbox-format branches
@@ -96,7 +100,10 @@ Note: only `bbox_2d` and `poly` are supported in CoordExp; `line` geometries are
   - rotate so the top-most (then left-most) vertex is first
   This matches the public-data converters (e.g., `public_data/scripts/convert_to_coord_tokens.py`) and the prompt spec.
 - Optional fields (e.g., `summary`, `poly_points`, `metadata`) may be absent; templates and preprocessors must tolerate absence.
-- **Coord-token mode (required)**: Keep `custom.coord_tokens.enabled: true` and `custom.coord_tokens.skip_bbox_norm: true`. Raw JSONL may store coords as ints or quoted token strings; assistant dense targets render CoordJSON with bare coord tokens.
+- Geometry-expression modes:
+  - `custom.coord_tokens.enabled: true` => coord-token assistant targets backed by `*.coord.jsonl`
+  - `custom.coord_tokens.enabled: false` => raw-text norm1000 assistant targets backed by `*.norm.jsonl`
+  In both cases keep `custom.coord_tokens.skip_bbox_norm: true`.
 
 ## Example
 ```json

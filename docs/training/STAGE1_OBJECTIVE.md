@@ -189,6 +189,29 @@ Evaluation note:
   `public_data/<dataset>/<preset>_cxcywh/train.coord.jsonl` rather
   than a runtime reinterpretation of canonical preset JSONL
 
+## Stage-1 raw-text xyxy benchmark
+
+The minimal raw-text benchmark keeps canonical `xyxy` geometry and the shared
+norm1000 lattice, but removes coord-token rendering:
+
+- train from canonical `train.norm.jsonl` / `val.norm.jsonl`
+- set `custom.coord_tokens.enabled: false`
+- keep `custom.coord_tokens.skip_bbox_norm: true`
+- keep `custom.bbox_format: xyxy`
+- keep `custom.coord_soft_ce_w1.enabled: false` for the pure-CE slice
+
+Inference/eval for this benchmark must stay explicit:
+
+- `infer.mode: text`
+- `infer.pred_coord_mode: norm1000`
+- `infer.bbox_format: xyxy`
+
+Evaluation and visualization always canonicalize through
+`norm1000 -> pixel-space xyxy` using the per-record image `width` and `height`
+before drawing boxes or scoring metrics. Score-aware mAP for this benchmark
+comes from numeric-span confidence post-op on the raw bbox integers rather than
+from constant-score compatibility artifacts.
+
 ## Stage-1 bbox geometry loss
 
 Stage-1 can also supervise decoded bbox geometry directly from the same

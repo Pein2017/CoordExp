@@ -32,6 +32,7 @@ from src.common.geometry.bbox_parameterization import (  # noqa: E402
     cxcywh_norm1000_to_xyxy_norm1000,
     normalize_bbox_format,
 )
+from src.common.geometry.coord_utils import ints_to_pixels_norm1000  # noqa: E402
 
 
 DISALLOWED_GEOMETRY_KEYS = {"bbox", "polygon", "line", "line_points"}
@@ -102,6 +103,7 @@ class JSONLValidator:
         self.enforce_rescale_images_real_dir = bool(enforce_rescale_images_real_dir)
         self.check_image_sizes = bool(check_image_sizes) or mode == "open"
         self.bbox_format = normalize_bbox_format(bbox_format, path="bbox_format")
+        self._current_numeric_coord_mode = "pixel"
         self.expected_max_pixels = expected_max_pixels
         self.expected_multiple_of = expected_multiple_of
         self.verbose = verbose
@@ -123,6 +125,15 @@ class JSONLValidator:
             "invalid_geometries": 0,
             "categories": set(),
         }
+
+    @staticmethod
+    def _infer_numeric_coord_mode_from_path(
+        jsonl_path: Path,
+    ) -> str:
+        name = str(jsonl_path.name)
+        if name.endswith(".norm.jsonl"):
+            return "norm1000"
+        return "pixel"
 
     def _resolve_sample_bbox_format(
         self,
@@ -163,6 +174,9 @@ class JSONLValidator:
         print("=" * 60)
 
         jsonl_path_obj = Path(jsonl_path)
+        self._current_numeric_coord_mode = self._infer_numeric_coord_mode_from_path(
+            jsonl_path_obj
+        )
         jsonl_dir = os.path.dirname(os.path.abspath(jsonl_path))
 
         if not self._enforce_images_dir_policy(jsonl_path_obj):
@@ -680,8 +694,31 @@ class JSONLValidator:
                     self.stats["invalid_bboxes"] += 1
                     obj_valid = False
 
-                # Bounds checks only make sense for canonical pixel-space xyxy numbers.
+                # Bounds checks for canonical xyxy:
+                # - pixel-space *.jsonl: use raw xyxy numbers
+                # - norm1000 *.norm.jsonl: denormalize to pixel-space first
                 if bbox_format == "xyxy" and not _sequence_has_coord_tokens(bbox):
+                    if self._current_numeric_coord_mode == "norm1000":
+                        for i, coord in enumerate(coords):
+                            if coord < 0.0 or coord > float(MAX_BIN):
+                                self.errors.append(
+                                    ValidationError(
+                                        line_num,
+                                        f"{prefix}.bbox_2d[{i}]",
+                                        f"Expected norm1000 slot in [0,{MAX_BIN}], got {coord}",
+                                    )
+                                )
+                                self.stats["invalid_bboxes"] += 1
+                                obj_valid = False
+                        if not obj_valid:
+                            return False
+                        pixel_coords = ints_to_pixels_norm1000(
+                            [int(round(v)) for v in coords],
+                            float(img_width),
+                            float(img_height),
+                        )
+                        x1, y1, x2, y2 = pixel_coords
+
                     if x2 < 0 or x1 > img_width:
                         self.warnings.append(
                             f"Line {line_num}, {prefix}.bbox_2d: Box completely outside image width"

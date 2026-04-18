@@ -235,13 +235,9 @@ class CoordTokensConfig:
     skip_bbox_norm: bool = True
 
     def __post_init__(self) -> None:
-        if not self.enabled:
-            raise ValueError(
-                "Coord-token-only contract: custom.coord_tokens.enabled must be true."
-            )
         if not self.skip_bbox_norm:
             raise ValueError(
-                "Coord-token-only contract: custom.coord_tokens.skip_bbox_norm must be true to avoid double normalization."
+                "Pre-normalized geometry contract: custom.coord_tokens.skip_bbox_norm must be true to avoid double normalization."
             )
 
     @classmethod

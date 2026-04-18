@@ -44,7 +44,11 @@ from .bootstrap.trainer_setup import (
     instantiate_trainer,
 )
 from .config import ConfigLoader
-from .config.prompts import get_template_prompt_hash, resolve_dense_prompt_variant_key
+from .config.prompts import (
+    coord_mode_from_coord_tokens_enabled,
+    get_template_prompt_hash,
+    resolve_dense_prompt_variant_key,
+)
 from .config.strict_dataclass import dataclass_asdict_no_none
 from .datasets import (
     BaseCaptionDataset,
@@ -112,8 +116,22 @@ def _resolve_model_checkpoint_path(training_config: Any) -> str | None:
     return model_checkpoint or None
 
 
+def _resolve_custom_coord_mode(custom_config: Any) -> str:
+    coord_tokens_cfg = getattr(custom_config, "coord_tokens", None)
+    enabled = True
+    if coord_tokens_cfg is not None:
+        if is_dataclass(coord_tokens_cfg):
+            enabled = bool(getattr(coord_tokens_cfg, "enabled", True))
+        elif isinstance(coord_tokens_cfg, Mapping):
+            enabled = bool(coord_tokens_cfg.get("enabled", True))
+        else:
+            enabled = bool(getattr(coord_tokens_cfg, "enabled", True))
+    return coord_mode_from_coord_tokens_enabled(enabled)
+
+
 def _resolve_dense_prompt_identity(custom_config: Any) -> dict[str, Any]:
     use_summary = bool(getattr(custom_config, "use_summary", False))
+    coord_mode = _resolve_custom_coord_mode(custom_config)
     prompt_variant = resolve_dense_prompt_variant_key(
         (
             getattr(custom_config, "extra", {}) or {}
@@ -126,7 +144,7 @@ def _resolve_dense_prompt_identity(custom_config: Any) -> dict[str, Any]:
     else:
         prompt_template_hash = get_template_prompt_hash(
             ordering=str(getattr(custom_config, "object_ordering", "sorted") or "sorted"),
-            coord_mode="coord_tokens",
+            coord_mode=coord_mode,
             prompt_variant=prompt_variant,
             object_field_order=str(
                 getattr(custom_config, "object_field_order", "desc_first")
@@ -692,6 +710,7 @@ def _build_static_packing_fingerprint(
     template_cfg = getattr(training_config, "template", {}) or {}
     training_cfg = getattr(training_config, "training", {}) or {}
     coord_tokens_payload = _coord_tokens_fingerprint_payload(custom_config)
+    coord_mode = _resolve_custom_coord_mode(custom_config)
     prompt_identity = _resolve_dense_prompt_identity(custom_config)
 
     split = str(dataset_split or "train").strip().lower()
@@ -725,7 +744,7 @@ def _build_static_packing_fingerprint(
         "custom_object_field_order": getattr(custom_config, "object_field_order", None),
         "custom_prompt_variant": prompt_identity["prompt_variant"],
         "custom_prompt_template_hash": prompt_identity["prompt_template_hash"],
-        "custom_coord_mode": "coord_tokens",
+        "custom_coord_mode": coord_mode,
         "custom_use_summary": bool(getattr(custom_config, "use_summary", False)),
         "custom_offline_max_pixels": getattr(custom_config, "offline_max_pixels", None),
         "coord_tokens": coord_tokens_payload,
@@ -774,8 +793,31 @@ def _validate_bbox_format_contract(
     custom_config: Any,
     trainer_variant: str | None,
 ) -> None:
+    coord_mode = _resolve_custom_coord_mode(custom_config)
     bbox_format = str(getattr(custom_config, "bbox_format", "xyxy") or "xyxy").strip().lower()
     variant = str(trainer_variant or "").strip()
+    for path_attr in ("train_jsonl", "val_jsonl"):
+        path_value = getattr(custom_config, path_attr, None)
+        if not path_value:
+            continue
+        path_text = str(path_value)
+        if coord_mode == "coord_tokens":
+            if not path_text.endswith(".coord.jsonl"):
+                raise ValueError(
+                    f"{path_attr}={path_text} is incompatible with custom.coord_tokens.enabled=true; "
+                    "use a *.coord.jsonl surface."
+                )
+        else:
+            if path_text.endswith(".coord.jsonl"):
+                raise ValueError(
+                    f"{path_attr}={path_text} is incompatible with custom.coord_tokens.enabled=false; "
+                    "use a *.norm.jsonl surface."
+                )
+            if not path_text.endswith(".norm.jsonl"):
+                raise ValueError(
+                    f"{path_attr}={path_text} is incompatible with custom.coord_tokens.enabled=false; "
+                    "raw-text norm1000 runs require a *.norm.jsonl surface."
+                )
     if variant in {"stage2_two_channel", "stage2_rollout_aligned"} and bbox_format != "xyxy":
         raise ValueError(
             f"custom.bbox_format={bbox_format} is currently unsupported for stage-2 trainer variants. "
@@ -799,6 +841,7 @@ def _build_encoded_sample_cache_fingerprint(
 ) -> dict[str, Any]:
     template_cfg = getattr(training_config, "template", {}) or {}
     prompt_identity = _resolve_dense_prompt_identity(custom_config)
+    coord_mode = _resolve_custom_coord_mode(custom_config)
     split = str(dataset_split or "train").strip().lower()
     if split not in {"train", "eval"}:
         raise ValueError(
@@ -832,7 +875,7 @@ def _build_encoded_sample_cache_fingerprint(
         "custom_object_field_order": getattr(custom_config, "object_field_order", None),
         "custom_prompt_variant": prompt_identity["prompt_variant"],
         "custom_prompt_template_hash": prompt_identity["prompt_template_hash"],
-        "custom_coord_mode": "coord_tokens",
+        "custom_coord_mode": coord_mode,
         "custom_use_summary": bool(getattr(custom_config, "use_summary", False)),
         "custom_offline_max_pixels": getattr(custom_config, "offline_max_pixels", None),
         "coord_tokens": coord_tokens_payload,

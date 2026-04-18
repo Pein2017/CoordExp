@@ -75,7 +75,17 @@ def _normalize_bbox_2d_to_norm1000(
     if len(values) != 4:
         raise AssertionError(f"bbox_2d must have 4 numbers, got len={len(values)}")
 
-    x1, y1, x2, y2 = (float(values[0]), float(values[1]), float(values[2]), float(values[3]))
+    def _coerce_norm1000_value(raw: object) -> float:
+        if is_coord_token(raw):
+            return float(token_to_int(str(raw)))
+        return float(raw)
+
+    x1, y1, x2, y2 = (
+        _coerce_norm1000_value(values[0]),
+        _coerce_norm1000_value(values[1]),
+        _coerce_norm1000_value(values[2]),
+        _coerce_norm1000_value(values[3]),
+    )
 
     if assume_normalized:
         # Values are already in [0,999]-like space; preserve extents with floor/ceil.

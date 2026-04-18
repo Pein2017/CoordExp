@@ -154,3 +154,38 @@ def test_validate_jsonl_auto_detects_prepared_cxcywh_from_metadata(tmp_path: Pat
     validator = JSONLValidator(check_images=True, check_image_sizes=True)
 
     assert validator.validate_file(str(jsonl_path))
+
+
+def test_validate_jsonl_treats_norm_jsonl_xyxy_numbers_as_norm1000(tmp_path: Path) -> None:
+    jsonl_path = tmp_path / "train.norm.jsonl"
+    row = {
+        "images": ["images/train2017/000000000001.jpg"],
+        "width": 128,
+        "height": 96,
+        "objects": [{"bbox_2d": [900, 100, 950, 300], "desc": "person"}],
+    }
+    _write_jsonl(jsonl_path, [row])
+    _write_image(tmp_path / row["images"][0], width=row["width"], height=row["height"])
+
+    validator = JSONLValidator(check_images=True, check_image_sizes=True)
+
+    assert validator.validate_file(str(jsonl_path))
+    assert not any("completely outside image width" in warning for warning in validator.warnings)
+    assert not any("completely outside image height" in warning for warning in validator.warnings)
+
+
+def test_validate_jsonl_rejects_out_of_range_norm1000_xyxy_numbers(tmp_path: Path) -> None:
+    jsonl_path = tmp_path / "train.norm.jsonl"
+    row = {
+        "images": ["images/train2017/000000000001.jpg"],
+        "width": 128,
+        "height": 96,
+        "objects": [{"bbox_2d": [1005, 100, 950, 300], "desc": "person"}],
+    }
+    _write_jsonl(jsonl_path, [row])
+    _write_image(tmp_path / row["images"][0], width=row["width"], height=row["height"])
+
+    validator = JSONLValidator(check_images=False)
+
+    assert not validator.validate_file(str(jsonl_path))
+    assert any("Expected norm1000 slot" in error.message for error in validator.errors)

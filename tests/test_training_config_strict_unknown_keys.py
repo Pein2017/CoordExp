@@ -395,7 +395,7 @@ def test_cxcy_logw_logh_profile_rejects_coord_tokens_disabled() -> None:
 
     with pytest.raises(
         ValueError,
-        match=r"custom\.coord_tokens\.enabled must be true",
+        match=r"requires custom\.coord_tokens\.enabled=true",
     ):
         TrainingConfig.from_mapping(payload, PromptOverrides())
 
@@ -423,6 +423,27 @@ def test_cxcy_logw_logh_profile_rejects_skip_bbox_norm_false() -> None:
         match=r"custom\.coord_tokens\.skip_bbox_norm must be true",
     ):
         TrainingConfig.from_mapping(payload, PromptOverrides())
+
+
+def test_xyxy_raw_text_profile_accepts_pure_ce_norm1000_training_surface() -> None:
+    payload = _base_training_payload()
+    payload["custom"]["bbox_format"] = "xyxy"
+    payload["custom"]["coord_tokens"] = {
+        "enabled": False,
+        "skip_bbox_norm": True,
+    }
+    payload["custom"]["coord_soft_ce_w1"] = {
+        "enabled": False,
+    }
+    payload["custom"]["train_jsonl"] = "public_data/coco/demo/train.norm.jsonl"
+    payload["custom"]["val_jsonl"] = "public_data/coco/demo/val.norm.jsonl"
+
+    cfg = TrainingConfig.from_mapping(payload, PromptOverrides())
+
+    assert cfg.custom.coord_tokens.enabled is False
+    assert cfg.custom.coord_tokens.skip_bbox_norm is True
+    assert cfg.custom.coord_soft_ce_w1.enabled is False
+    assert str(cfg.custom.train_jsonl).endswith("train.norm.jsonl")
 
 
 def test_cxcywh_profile_accepts_pure_ce_with_positive_gates() -> None:

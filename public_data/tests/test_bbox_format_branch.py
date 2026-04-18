@@ -186,6 +186,33 @@ def test_derive_bbox_format_branch_accepts_canonical_coord_only_preset(tmp_path:
     assert source_image.stat().st_ino == derived_image.stat().st_ino
 
 
+def test_convert_record_to_ints_accepts_coord_bbox_with_assume_normalized() -> None:
+    row = {
+        "images": ["images/train2017/000000000001.jpg"],
+        "objects": [
+            {
+                "bbox_2d": [
+                    "<|coord_100|>",
+                    "<|coord_200|>",
+                    "<|coord_400|>",
+                    "<|coord_700|>",
+                ],
+                "desc": "person",
+            }
+        ],
+        "width": 128,
+        "height": 96,
+    }
+
+    converted = convert_record_to_ints(
+        row,
+        ["bbox_2d"],
+        assume_normalized=True,
+    )
+
+    assert converted["objects"][0]["bbox_2d"] == [100, 200, 400, 700]
+
+
 def test_derive_bbox_format_branch_resorts_for_decoded_xyxy_order_after_conversion(
     tmp_path: Path,
 ) -> None:

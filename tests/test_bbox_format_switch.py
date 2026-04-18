@@ -142,6 +142,36 @@ def test_validate_bbox_format_contract_rejects_stage2_cxcy_logw_logh() -> None:
         )
 
 
+def test_validate_bbox_format_contract_rejects_raw_text_on_coord_surface() -> None:
+    with pytest.raises(
+        ValueError,
+        match=r"custom\.coord_tokens\.enabled=false; use a \*\.norm\.jsonl surface",
+    ):
+        _validate_bbox_format_contract(
+            custom_config=SimpleNamespace(
+                bbox_format="xyxy",
+                coord_tokens=SimpleNamespace(enabled=False),
+                train_jsonl="public_data/coco/demo/train.coord.jsonl",
+            ),
+            trainer_variant="",
+        )
+
+
+def test_validate_bbox_format_contract_rejects_coord_mode_on_norm_surface() -> None:
+    with pytest.raises(
+        ValueError,
+        match=r"custom\.coord_tokens\.enabled=true; use a \*\.coord\.jsonl surface",
+    ):
+        _validate_bbox_format_contract(
+            custom_config=SimpleNamespace(
+                bbox_format="xyxy",
+                coord_tokens=SimpleNamespace(enabled=True),
+                train_jsonl="public_data/coco/demo/train.norm.jsonl",
+            ),
+            trainer_variant="",
+        )
+
+
 def test_custom_bbox_format_accepts_cxcywh() -> None:
     payload = _base_training_payload()
     payload["custom"]["bbox_format"] = "cxcywh"

@@ -18,6 +18,7 @@ from src.common.geometry.bbox_parameterization import normalize_bbox_format
 from .prompts import (
     SYSTEM_PROMPT_SUMMARY,
     USER_PROMPT_SUMMARY,
+    coord_mode_from_coord_tokens_enabled,
     get_template_prompts,
 )
 from .schema import PromptOverrides, SaveDelayConfig, TrainingConfig
@@ -426,10 +427,6 @@ class ConfigLoader:
                 coord_tokens_cfg.get("enabled", True),
                 "custom.coord_tokens.enabled",
             )
-            if not coord_tokens_enabled:
-                raise ValueError(
-                    "Coord-token-only contract: custom.coord_tokens.enabled must be true."
-                )
 
             skip_bbox_norm = ConfigLoader._coerce_bool(
                 coord_tokens_cfg.get("skip_bbox_norm", True),
@@ -437,7 +434,7 @@ class ConfigLoader:
             )
             if not skip_bbox_norm:
                 raise ValueError(
-                    "Coord-token-only contract: custom.coord_tokens.skip_bbox_norm must be true."
+                    "Pre-normalized geometry contract: custom.coord_tokens.skip_bbox_norm must be true."
                 )
 
             extra_cfg = custom_section.get("extra", {})
@@ -462,7 +459,9 @@ class ConfigLoader:
         else:
             default_system, default_user = get_template_prompts(
                 ordering=ordering_hint,
-                coord_mode="coord_tokens",
+                coord_mode=coord_mode_from_coord_tokens_enabled(
+                    coord_tokens_enabled
+                ),
                 prompt_variant=prompt_variant,
                 object_field_order=object_field_order,
                 bbox_format=bbox_format,

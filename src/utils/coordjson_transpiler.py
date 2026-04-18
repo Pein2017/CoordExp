@@ -11,6 +11,7 @@ CoordJSONMode = Literal["strict", "salvage"]
 ObjectFieldOrder = Literal["desc_first", "geometry_first"]
 
 _COORD_LITERAL_RE = re.compile(r"<\|coord_(\d{1,4})\|>")
+_INT_LITERAL_RE = re.compile(r"(0|[1-9]\d{0,2})")
 _GEOMETRY_KEYS = {"bbox_2d", "poly"}
 _ALLOWED_RECORD_KEYS = {"bbox_2d", "poly", "desc"}
 _ALLOWED_OBJECT_FIELD_ORDER: tuple[ObjectFieldOrder, ObjectFieldOrder] = (
@@ -115,6 +116,22 @@ def _parse_coord_literal(text: str, idx: int, end: int) -> Tuple[int, int]:
         raise _RecordValidationError(
             "wrong_arity",
             f"Coord literal out of range at char {int(idx)}: {value}",
+        )
+    return value, int(match.end())
+
+
+def _parse_norm1000_int_literal(text: str, idx: int, end: int) -> Tuple[int, int]:
+    match = _INT_LITERAL_RE.match(text, int(idx), int(end))
+    if match is None:
+        raise _RecordValidationError(
+            "wrong_arity",
+            f"Malformed norm1000 integer literal at char {int(idx)}",
+        )
+    value = int(match.group(1))
+    if value < 0 or value > 999:
+        raise _RecordValidationError(
+            "wrong_arity",
+            f"Norm1000 integer literal out of range at char {int(idx)}: {value}",
         )
     return value, int(match.end())
 
@@ -276,12 +293,15 @@ def _parse_coord_array(raw: str) -> List[int]:
             i += 1
             break
 
-        if text[i] != "<":
+        if text[i] == "<":
+            value, i = _parse_coord_literal(text, i, n)
+        elif text[i].isdigit():
+            value, i = _parse_norm1000_int_literal(text, i, n)
+        else:
             raise _RecordValidationError(
                 "wrong_arity",
-                "Geometry arrays must be CoordTok-only (bare <|coord_k|> literals)",
+                "Geometry arrays must contain bare <|coord_k|> literals or bare norm1000 integers",
             )
-        value, i = _parse_coord_literal(text, i, n)
         values.append(int(value))
 
         i = _skip_ws(text, i, n)
@@ -411,12 +431,12 @@ def _parse_record(
 
     if geometry_key == "bbox_2d":
         if len(geometry_values) != 4:
-            raise _RecordValidationError("wrong_arity", "bbox_2d must contain exactly 4 CoordTok values")
+            raise _RecordValidationError("wrong_arity", "bbox_2d must contain exactly 4 geometry values")
     else:
         if len(geometry_values) < 6 or len(geometry_values) % 2 != 0:
             raise _RecordValidationError(
                 "wrong_arity",
-                "poly must contain an even number of CoordTok values and at least 6 entries",
+                "poly must contain an even number of geometry values and at least 6 entries",
             )
 
     return ParsedCoordJSONRecord(

@@ -113,7 +113,12 @@ PYTHONPATH=. conda run -n ms python public_data/scripts/convert_to_coord_tokens.
 ```
 - Converts pixel coords into **norm1000 integer coords** (0..999) and/or `<|coord_k|>` tokens.
 - Pixel -> norm scaling clamps into range and ensures `bbox_2d` stays strictly valid after rounding (no collapse).
-- Train with `custom.emit_norm: none`, `custom.coord_tokens.enabled: true`, and `custom.coord_tokens.skip_bbox_norm: true`.
+- For coord-token training, use `train.coord.jsonl` / `val.coord.jsonl` with
+  `custom.coord_tokens.enabled: true`.
+- For raw-text norm1000 training, use `train.norm.jsonl` / `val.norm.jsonl`
+  with `custom.coord_tokens.enabled: false`.
+- In both modes keep `custom.emit_norm: none` and
+  `custom.coord_tokens.skip_bbox_norm: true`.
 
 ---
 
