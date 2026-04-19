@@ -524,10 +524,11 @@ def _render_report_md(summary: dict[str, Any]) -> str:
             [
                 "## Manual Review",
                 "",
-                "A human-in-the-loop review interface is available for curated 2D heatmaps and workbook-style interpretation.",
+                "A human-in-the-loop review interface is available for bbox-first auditing on the original image, with 2D heatmaps kept as supporting mechanism evidence rather than the primary annotation surface.",
                 "",
                 f"- Review gallery: `{manual_review['review_md']}`",
                 f"- Annotation workbook: `{manual_review['annotation_workbook_md']}`",
+                f"- BBox audit template: `{manual_review['bbox_annotations_template']}`",
                 f"- Structured templates: `{manual_review['case_annotations_template']}` and `{manual_review['panel_annotations_template']}`",
                 "",
             ]
@@ -689,10 +690,12 @@ def build_final_report_bundle(config_path: Path) -> dict[str, Any]:
             "manifest_path": str(manual_review_manifest),
             "review_md": str(manual_review_dir / "review.md"),
             "annotation_workbook_md": str(manual_review_dir / "annotation_workbook.md"),
+            "bbox_annotations_template": str(manual_review_dir / "bbox_annotations_template.jsonl"),
             "case_annotations_template": str(manual_review_dir / "case_annotations_template.jsonl"),
             "panel_annotations_template": str(manual_review_dir / "panel_annotations_template.jsonl"),
             "num_cases": manifest.get("num_cases"),
             "num_panels": manifest.get("num_panels"),
+            "num_bbox_audit_panels": manifest.get("num_bbox_audit_panels"),
         }
 
     merged_rows = _merge_atomic_rows(

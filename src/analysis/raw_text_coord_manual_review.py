@@ -10,6 +10,12 @@ from typing import Any, Sequence
 from PIL import Image, ImageDraw, ImageFont
 import yaml
 
+from src.analysis.duplication_collapse_analysis import _choose_gt_next_candidate
+from src.analysis.raw_text_coord_perturbation_probe import _controls_stub
+from src.common.geometry import bbox_from_points, coerce_point_list, denorm_and_clamp
+from src.common.geometry.object_geometry import extract_single_geometry
+from src.vis.gt_vs_pred import canonicalize_gt_vs_pred_record, render_gt_vs_pred_review
+
 
 @dataclass(frozen=True)
 class ManualReviewRunConfig:
@@ -227,6 +233,263 @@ def _build_panel_annotation_templates(
     return templates
 
 
+def _normalize_desc(value: object) -> str:
+    return str(value or "").strip().casefold()
+
+
+def _object_desc(obj: dict[str, Any]) -> str:
+    return str(obj.get("desc") or obj.get("category_name") or "").strip()
+
+
+def _resolve_case_image_path(
+    *,
+    case_row: dict[str, Any],
+    source_payload: dict[str, Any],
+    source_jsonl_path: Path,
+    selected_cases_jsonl_path: Path,
+) -> str:
+    for value, base_dir in (
+        (case_row.get("images"), selected_cases_jsonl_path.parent),
+        (case_row.get("image"), selected_cases_jsonl_path.parent),
+        (source_payload.get("images"), source_jsonl_path.parent),
+        (source_payload.get("image"), source_jsonl_path.parent),
+    ):
+        if isinstance(value, list) and value:
+            path = Path(str(value[0]))
+        elif isinstance(value, str) and value.strip():
+            path = Path(value)
+        else:
+            continue
+        if path.is_absolute():
+            return str(path)
+        return str((base_dir / path).resolve())
+    raise FileNotFoundError("case_image_not_found")
+
+
+def _load_bbox_audit_context(
+    *,
+    case_row: dict[str, Any],
+    selected_cases_jsonl_path: Path,
+    source_cache: dict[Path, list[dict[str, Any]]],
+) -> dict[str, Any]:
+    source_jsonl_path = Path(str(case_row["source_gt_vs_pred_jsonl"]))
+    if source_jsonl_path not in source_cache:
+        source_cache[source_jsonl_path] = _read_jsonl(source_jsonl_path)
+    source_payload = source_cache[source_jsonl_path][int(case_row["line_idx"])]
+    preds = list(source_payload.get("pred") or [])
+    gt_objects = list(source_payload.get("gt") or [])
+    object_index = int(case_row["object_index"])
+    source_object_index = int(case_row["source_object_index"])
+    pred_object = dict(preds[object_index])
+    source_object = dict(preds[source_object_index])
+    gt_next = _choose_gt_next_candidate(
+        prefix_objects=[dict(obj) for obj in preds[:object_index]],
+        gt_objects=gt_objects,
+        source_object=source_object,
+        cfg=_controls_stub(),
+    )
+    if gt_next is None:
+        raise ValueError("unable_to_choose_gt_next_for_bbox_audit")
+    desc_key = _normalize_desc(_object_desc(pred_object) or case_row.get("top_desc"))
+    same_desc_gt = [
+        dict(obj)
+        for obj in gt_objects
+        if _normalize_desc(_object_desc(dict(obj))) == desc_key
+    ]
+    if not same_desc_gt:
+        same_desc_gt = [dict(obj) for obj in gt_objects]
+    image_path = _resolve_case_image_path(
+        case_row=case_row,
+        source_payload=source_payload,
+        source_jsonl_path=source_jsonl_path,
+        selected_cases_jsonl_path=selected_cases_jsonl_path,
+    )
+    return {
+        "image_path": image_path,
+        "width": int(source_payload.get("width") or case_row.get("width") or 0),
+        "height": int(source_payload.get("height") or case_row.get("height") or 0),
+        "record_coord_mode": str(source_payload.get("coord_mode") or "pixel"),
+        "same_desc_gt": same_desc_gt,
+        "pred_object": pred_object,
+        "source_object": source_object,
+        "gt_next": dict(gt_next),
+        "top_desc": _object_desc(pred_object) or str(case_row.get("top_desc") or ""),
+    }
+
+
+def _canonical_object(
+    obj: dict[str, Any],
+    *,
+    index: int,
+    width: int,
+    height: int,
+    record_coord_mode: str,
+) -> dict[str, Any]:
+    geom_type = "bbox_2d"
+    raw_points: Sequence[Any] | None = None
+    coord_mode_hint = str(
+        obj.get("_coord_mode") or obj.get("coord_mode") or record_coord_mode or ""
+    ).strip()
+
+    if obj.get("bbox") is not None:
+        raw_points = obj.get("bbox")
+        geom_type = "bbox_2d"
+    elif obj.get("points_norm1000") is not None:
+        raw_points = obj.get("points_norm1000")
+        geom_type = str(obj.get("geom_type") or obj.get("type") or "bbox_2d").strip()
+        coord_mode_hint = "norm1000"
+    else:
+        geom_type, raw_points = extract_single_geometry(
+            obj,
+            allow_type_and_points=True,
+            allow_nested_points=True,
+            path=f"object[{index}]",
+        )
+
+    points_numeric, had_tokens = coerce_point_list(raw_points or [])
+    if points_numeric is None:
+        raise ValueError(f"failed to coerce geometry coordinates for object[{index}]")
+    coord_mode = "norm1000" if (had_tokens or coord_mode_hint == "norm1000") else "pixel"
+    points_px = denorm_and_clamp(
+        points_numeric,
+        width,
+        height,
+        coord_mode=coord_mode,
+    )
+    if geom_type == "bbox_2d":
+        if len(points_px) != 4:
+            raise ValueError(f"bbox_2d for object[{index}] must contain 4 values")
+        x1, y1, x2, y2 = [int(value) for value in points_px]
+    else:
+        x1f, y1f, x2f, y2f = bbox_from_points(points_px)
+        x1, y1, x2, y2 = (
+            int(round(x1f)),
+            int(round(y1f)),
+            int(round(x2f)),
+            int(round(y2f)),
+        )
+    x_lo, x_hi = (x1, x2) if x1 <= x2 else (x2, x1)
+    y_lo, y_hi = (y1, y2) if y1 <= y2 else (y2, y1)
+    return {
+        "index": int(index),
+        "desc": _object_desc(obj),
+        "bbox_2d": [x_lo, y_lo, x_hi, y_hi],
+    }
+
+
+def _render_bbox_audit_case(
+    *,
+    case_row: dict[str, Any],
+    source_label: str,
+    review_dir: Path,
+    selected_cases_jsonl_path: Path,
+    source_cache: dict[Path, list[dict[str, Any]]],
+) -> list[dict[str, Any]]:
+    context = _load_bbox_audit_context(
+        case_row=case_row,
+        selected_cases_jsonl_path=selected_cases_jsonl_path,
+        source_cache=source_cache,
+    )
+    case_id = str(case_row["case_id"])
+    case_dir = review_dir / "bbox_audit" / f"{_sanitize_case_id(case_id)}__{source_label}"
+    render_dir = case_dir / "rendered"
+    render_dir.mkdir(parents=True, exist_ok=True)
+    gt_objects = [
+        _canonical_object(
+            obj,
+            index=index,
+            width=context["width"],
+            height=context["height"],
+            record_coord_mode=context["record_coord_mode"],
+        )
+        for index, obj in enumerate(context["same_desc_gt"])
+    ]
+    role_objects = [
+        ("baseline_pred", context["pred_object"]),
+        ("source_anchor", context["source_object"]),
+        ("chosen_gt_next", context["gt_next"]),
+    ]
+    canonical_records: list[dict[str, Any]] = []
+    canonical_role_objects: list[tuple[str, dict[str, Any]]] = []
+    for record_idx, (role, candidate) in enumerate(role_objects):
+        canonical_candidate = _canonical_object(
+            candidate,
+            index=0,
+            width=context["width"],
+            height=context["height"],
+            record_coord_mode=context["record_coord_mode"],
+        )
+        canonical_role_objects.append((role, canonical_candidate))
+        raw_record = {
+            "record_idx": record_idx,
+            "source_kind": "raw_text_coord_bbox_audit",
+            "image": context["image_path"],
+            "width": context["width"],
+            "height": context["height"],
+            "coord_mode": "pixel",
+            "gt": gt_objects,
+            "pred": [canonical_candidate],
+            "provenance": {
+                "source_jsonl_dir": str(Path(context["image_path"]).parent),
+                "case_id": case_id,
+                "audit_role": role,
+                "source_label": source_label,
+            },
+        }
+        canonical_records.append(
+            canonicalize_gt_vs_pred_record(
+                raw_record,
+                fallback_record_idx=record_idx,
+                source_kind="raw_text_coord_bbox_audit",
+                materialize_matching=True,
+            )
+        )
+    records_path = case_dir / "records.jsonl"
+    _write_jsonl(records_path, canonical_records)
+    render_gt_vs_pred_review(records_path, out_dir=render_dir, limit=0)
+    outputs: list[dict[str, Any]] = []
+    for index, (role, canonical_candidate) in enumerate(canonical_role_objects):
+        default_path = render_dir / f"vis_{index:04d}.png"
+        final_path = render_dir / f"{role}.png"
+        if default_path.exists():
+            default_path.replace(final_path)
+        outputs.append(
+            {
+                "role": role,
+                "figure_path": str(final_path),
+                "bbox_2d": canonical_candidate["bbox_2d"],
+                "desc": canonical_candidate["desc"] or context["top_desc"],
+            }
+        )
+    return outputs
+
+
+def _build_bbox_annotation_templates(
+    bbox_panels: Sequence[dict[str, Any]],
+    *,
+    case_id: str,
+    source_label: str,
+) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    for panel in bbox_panels:
+        rows.append(
+            {
+                "bbox_audit_id": f"{source_label}::{case_id}::{panel['role']}",
+                "case_id": case_id,
+                "source_label": source_label,
+                "role": panel["role"],
+                "bbox_2d": panel["bbox_2d"],
+                "desc": panel["desc"],
+                "figure_path": panel["figure_path"],
+                "bbox_judgment": "",
+                "is_correct_instance": "",
+                "is_gt_missing": "",
+                "notes": "",
+            }
+        )
+    return rows
+
+
 def _write_json(path: Path, data: Any) -> None:
     path.write_text(json.dumps(data, indent=2, ensure_ascii=False, sort_keys=True) + "\n", encoding="utf-8")
 
@@ -252,9 +515,17 @@ def _render_review_md(
         "",
         "## What To Do",
         "",
-        "1. Open each contact sheet and inspect the strongest panels.",
-        "2. Fill `annotation_workbook.md` for free-form interpretation.",
-        "3. Optionally fill `case_annotations_template.jsonl` and `panel_annotations_template.jsonl` for structured notes.",
+        "1. Start with the bbox-audit figures on the original image.",
+        "2. For each candidate box, decide only four things: `correct`, `wrong-instance`, `GT-missing`, or `unclear`.",
+        "3. Treat the heatmap contact sheets as mechanism evidence only after the bbox judgment is done.",
+        "4. Fill `annotation_workbook.md` in plain language.",
+        "5. Optionally fill the structured JSONL templates if you want machine-readable summaries.",
+        "",
+        "## What These Figures Are",
+        "",
+        "- `bbox_audit/*.png`: original image plus GT-vs-candidate overlay. This is the main human task.",
+        "- `contact_sheets/*.png`: score-landscape summaries over candidate coordinates. These are not raw attention maps.",
+        "- If we add attention later, it should be read only as an auxiliary 'where the model looked' overlay, not the primary judgment surface.",
         "",
         "## Current Machine Verdicts",
         "",
@@ -277,6 +548,13 @@ def _render_review_md(
         image_path = case.get("image_path")
         if image_path:
             lines.append(f"- Source image: [image]({image_path})")
+        bbox_panels = case.get("bbox_panels") or []
+        if bbox_panels:
+            lines.extend(["", "BBox audit panels:"])
+            for panel in bbox_panels:
+                lines.append(
+                    f"- `{panel['role']}` bbox `{panel['bbox_2d']}`: [figure]({panel['figure_path']})"
+                )
         lines.extend(
             [
                 "",
@@ -294,6 +572,10 @@ def _render_review_md(
             [
                 "",
                 "Suggested human prompts:",
+                "- For `baseline_pred`: is the bbox actually correct on the image?",
+                "- If `baseline_pred` looks valid but unmatched, is this a GT-miss candidate?",
+                "- Does `baseline_pred` land on the wrong same-desc instance?",
+                "- Compare `baseline_pred` vs `source_anchor`: do they look like the same local instance family?",
                 "- Which panel most clearly shows a GT-centered good basin?",
                 "- Which panel most clearly shows a wrong local basin around the predicted anchor?",
                 "- Which perturbation most clearly moves the basin, and in which direction?",
@@ -308,7 +590,7 @@ def _render_annotation_workbook(cases: Sequence[dict[str, Any]]) -> str:
     lines = [
         "# Annotation Workbook",
         "",
-        "Fill the sections below with your manual interpretation. Free-form notes are encouraged.",
+        "Fill the sections below with your manual interpretation. Start from bbox correctness, then use the heatmaps only as supporting mechanism evidence.",
         "",
     ]
     for case in cases:
@@ -322,6 +604,9 @@ def _render_annotation_workbook(cases: Sequence[dict[str, Any]]) -> str:
                 "",
                 "### Interpretation",
                 "",
+                "- baseline_pred judgment (correct / wrong-instance / GT-missing / unclear):",
+                "- source_anchor judgment:",
+                "- chosen_gt_next judgment:",
                 "- Overall reading:",
                 "- Strongest panel(s):",
                 "- Evidence of good basin:",
@@ -347,10 +632,13 @@ def build_manual_review_bundle(config_path: Path) -> dict[str, Any]:
     cases_for_review: list[dict[str, Any]] = []
     case_annotation_rows: list[dict[str, Any]] = []
     panel_annotation_rows: list[dict[str, Any]] = []
+    bbox_annotation_rows: list[dict[str, Any]] = []
+    source_cache: dict[Path, list[dict[str, Any]]] = {}
 
     for source in cfg.sources:
         source_dir = _resolve(source.path, config_dir=config_dir)
-        selected_cases = _read_jsonl(source_dir / "selected_cases.jsonl")
+        selected_cases_jsonl_path = source_dir / "selected_cases.jsonl"
+        selected_cases = _read_jsonl(selected_cases_jsonl_path)
         heatmap_rows = _read_jsonl(source_dir / "heatmaps.jsonl")
         panels_by_case: dict[str, list[dict[str, Any]]] = {}
         for row in heatmap_rows:
@@ -375,6 +663,22 @@ def build_manual_review_bundle(config_path: Path) -> dict[str, Any]:
                 "contact_sheet_path": str(contact_sheet_path),
                 "panels": sorted(case_panels, key=_panel_sort_key),
             }
+            if "source_gt_vs_pred_jsonl" in selected_case:
+                bbox_panels = _render_bbox_audit_case(
+                    case_row=selected_case,
+                    source_label=source.label,
+                    review_dir=review_dir,
+                    selected_cases_jsonl_path=selected_cases_jsonl_path,
+                    source_cache=source_cache,
+                )
+                case_row["bbox_panels"] = bbox_panels
+                bbox_annotation_rows.extend(
+                    _build_bbox_annotation_templates(
+                        bbox_panels,
+                        case_id=case_id,
+                        source_label=source.label,
+                    )
+                )
             cases_for_review.append(case_row)
             case_annotation_rows.append(
                 _build_case_annotation_template(selected_case, source.label)
@@ -388,12 +692,14 @@ def build_manual_review_bundle(config_path: Path) -> dict[str, Any]:
         "review_dir": str(review_dir),
         "num_cases": len(cases_for_review),
         "num_panels": len(panel_annotation_rows),
+        "num_bbox_audit_panels": len(bbox_annotation_rows),
         "cases": [
             {
                 "case_id": case["case_id"],
                 "source_label": case["source_label"],
                 "contact_sheet_path": case["contact_sheet_path"],
                 "num_panels": len(case["panels"]),
+                "num_bbox_audit_panels": len(case.get("bbox_panels") or []),
             }
             for case in cases_for_review
         ],
@@ -401,6 +707,7 @@ def build_manual_review_bundle(config_path: Path) -> dict[str, Any]:
     _write_json(review_dir / "manifest.json", manifest)
     _write_jsonl(review_dir / "case_annotations_template.jsonl", case_annotation_rows)
     _write_jsonl(review_dir / "panel_annotations_template.jsonl", panel_annotation_rows)
+    _write_jsonl(review_dir / "bbox_annotations_template.jsonl", bbox_annotation_rows)
     (review_dir / "review.md").write_text(
         _render_review_md(cases=cases_for_review, review_dir=review_dir, final_summary=final_summary),
         encoding="utf-8",
