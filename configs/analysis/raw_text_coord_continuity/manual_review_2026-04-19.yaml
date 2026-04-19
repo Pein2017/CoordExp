@@ -1,0 +1,9 @@
+run:
+  final_bundle_dir: output/analysis/raw-text-coord-continuity-probe-2026-04-18
+  review_subdir: manual_review
+
+sources:
+  - label: base_family_focus
+    path: output/analysis/raw-text-heatmap-focus-base-family-top1
+  - label: pure_family_focus
+    path: output/analysis/raw-text-heatmap-focus-pure-family-top1

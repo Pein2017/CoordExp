@@ -518,6 +518,20 @@ def _render_report_md(summary: dict[str, Any]) -> str:
             "",
         ]
     )
+    manual_review = summary.get("manual_review")
+    if isinstance(manual_review, dict):
+        lines.extend(
+            [
+                "## Manual Review",
+                "",
+                "A human-in-the-loop review interface is available for curated 2D heatmaps and workbook-style interpretation.",
+                "",
+                f"- Review gallery: `{manual_review['review_md']}`",
+                f"- Annotation workbook: `{manual_review['annotation_workbook_md']}`",
+                f"- Structured templates: `{manual_review['case_annotations_template']}` and `{manual_review['panel_annotations_template']}`",
+                "",
+            ]
+        )
     return "\n".join(lines)
 
 
@@ -667,6 +681,19 @@ def build_final_report_bundle(config_path: Path) -> dict[str, Any]:
             "looks unnecessary if continuity is the only target, while other benefits remain open."
         ),
     }
+    manual_review_dir = run_dir / "manual_review"
+    manual_review_manifest = manual_review_dir / "manifest.json"
+    if manual_review_manifest.exists():
+        manifest = _read_json(manual_review_manifest)
+        summary["manual_review"] = {
+            "manifest_path": str(manual_review_manifest),
+            "review_md": str(manual_review_dir / "review.md"),
+            "annotation_workbook_md": str(manual_review_dir / "annotation_workbook.md"),
+            "case_annotations_template": str(manual_review_dir / "case_annotations_template.jsonl"),
+            "panel_annotations_template": str(manual_review_dir / "panel_annotations_template.jsonl"),
+            "num_cases": manifest.get("num_cases"),
+            "num_panels": manifest.get("num_panels"),
+        }
 
     merged_rows = _merge_atomic_rows(
         [
