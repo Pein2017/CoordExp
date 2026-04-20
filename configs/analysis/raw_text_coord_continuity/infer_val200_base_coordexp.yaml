@@ -1,0 +1,35 @@
+run:
+  name: coco1024_val200_lvis_proxy_base_coordexp_rawtext_probe
+  output_dir: output/infer
+
+stages:
+  infer: true
+  eval: false
+  vis: false
+
+infer:
+  gt_jsonl: public_data/coco/rescale_32_1024_bbox_max60_lvis_proxy/val.coord.jsonl
+  model_checkpoint: model_cache/models/Qwen/Qwen3-VL-2B-Instruct-coordexp
+
+  prompt_variant: coco_80
+  object_field_order: desc_first
+  object_ordering: sorted
+  bbox_format: xyxy
+
+  mode: coord
+  pred_coord_mode: norm1000
+
+  backend:
+    type: hf
+
+  generation:
+    temperature: 0.0
+    top_p: 0.9
+    max_new_tokens: 3084
+    repetition_penalty: 1.05
+    batch_size: 4
+    seed: 42
+
+  device: cuda:2
+  limit: 200
+  detect_samples: 128

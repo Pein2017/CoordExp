@@ -35,11 +35,16 @@ from src.common.object_field_order import (
 )
 from src.vis import DEFAULT_BBOX_OUTLINE_WIDTH
 from src.common.paths import resolve_image_path_strict
-from src.common.prediction_parsing import extract_special_tokens
 from src.common.semantic_desc import normalize_desc
 from src.config.prompts import get_template_prompts
+from src.coord_tokens.offset_adapter import (
+    install_coord_offset_adapter,
+    reattach_coord_offset_hooks,
+)
+from src.infer.checkpoints import resolve_inference_checkpoint
 from src.infer.pipeline import run_pipeline
 from src.analysis.rollout_parity import collect_stage2_parity_gt_vs_pred
+from src.analysis.raw_text_coord_continuity_scoring import score_span_logprobs
 from src.trainers.rollout_matching.contracts import GTObject
 from src.trainers.rollout_matching.parsing import (
     find_desc_value_token_positions_by_span,
@@ -197,6 +202,8 @@ class PreparedExample:
     assistant_text: str
     desc_positions: List[int]
     full_input_ids: List[int]
+    assistant_start: int = 0
+    assistant_input_ids: List[int] = field(default_factory=list)
 
 
 @dataclass(frozen=True)
@@ -1684,13 +1691,24 @@ class TeacherForcedScorer:
         checkpoint_path: Path,
         device: str,
         attn_implementation: str = "auto",
+        coord_mode: str = "coord_tokens",
     ) -> None:
         self.checkpoint_path = checkpoint_path
         self.device = device
         self.attn_implementation = attn_implementation
+        self.coord_mode = str(coord_mode).strip() or "coord_tokens"
+        self.resolved_checkpoint = resolve_inference_checkpoint(
+            model_checkpoint=str(checkpoint_path)
+        )
         self.model = self._load_model()
+        processor_source = str(
+            self.resolved_checkpoint.resolved_base_model_checkpoint
+        ).strip()
+        processor_source_is_local = Path(processor_source).exists()
         self.processor = AutoProcessor.from_pretrained(
-            str(checkpoint_path), trust_remote_code=True
+            processor_source,
+            trust_remote_code=True,
+            local_files_only=processor_source_is_local,
         )
         tokenizer = getattr(self.processor, "tokenizer", None)
         if tokenizer is None:
@@ -1715,6 +1733,15 @@ class TeacherForcedScorer:
                 requested = "flash_attention_2"
             else:
                 requested = "sdpa"
+        resolved_base_model_checkpoint = str(
+            self.resolved_checkpoint.resolved_base_model_checkpoint
+        ).strip()
+        resolved_adapter_checkpoint = str(
+            self.resolved_checkpoint.resolved_adapter_checkpoint or ""
+        ).strip()
+        coord_offset_spec = None
+        if self.resolved_checkpoint.adapter_info is not None:
+            coord_offset_spec = self.resolved_checkpoint.adapter_info.coord_offset_spec
         candidates: List[str] = []
         for cand in (requested, "flash_attention_2", "sdpa", "eager"):
             value = str(cand).strip().lower()
@@ -1723,12 +1750,44 @@ class TeacherForcedScorer:
         last_exc: Exception | None = None
         for cand in candidates:
             try:
-                model = Qwen3VLForConditionalGeneration.from_pretrained(
-                    str(self.checkpoint_path),
+                base_model = Qwen3VLForConditionalGeneration.from_pretrained(
+                    resolved_base_model_checkpoint,
                     torch_dtype=torch.bfloat16,
                     attn_implementation=cand,
                 )
-                model = model.to(self.device)
+                model = base_model.to(self.device)
+                if resolved_adapter_checkpoint:
+                    if coord_offset_spec is not None:
+                        install_coord_offset_adapter(
+                            model,
+                            coord_ids=coord_offset_spec.coord_ids,
+                            tie_head=coord_offset_spec.tie_head,
+                        )
+                    try:
+                        from swift import Swift
+                    except ImportError as exc:
+                        raise RuntimeError(
+                            "TeacherForcedScorer adapter shorthand requires the 'swift' package."
+                        ) from exc
+                    try:
+                        model = Swift.from_pretrained(
+                            model,
+                            model_id=resolved_adapter_checkpoint,
+                            inference_mode=True,
+                        )
+                    except Exception as exc:
+                        raise RuntimeError(
+                            "Failed to load scorer adapter checkpoint "
+                            f"{resolved_adapter_checkpoint!r} onto base model "
+                            f"{resolved_base_model_checkpoint!r}."
+                        ) from exc
+                    if coord_offset_spec is not None:
+                        reattached = reattach_coord_offset_hooks(model)
+                        if reattached is None:
+                            raise RuntimeError(
+                                "coord_offset_adapter was declared in the adapter checkpoint, "
+                                "but its runtime hooks could not be reattached after Swift loading."
+                            )
                 model.eval()
                 return model
             except (ImportError, OSError, RuntimeError, ValueError) as exc:
@@ -1749,7 +1808,7 @@ class TeacherForcedScorer:
     ) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
         system_prompt, user_prompt = get_template_prompts(
             ordering="sorted",
-            coord_mode="coord_tokens",
+            coord_mode=self.coord_mode,
             prompt_variant=prompt_variant,
             object_field_order=object_field_order,
         )
@@ -1823,6 +1882,8 @@ class TeacherForcedScorer:
             assistant_text=str(assistant_text),
             desc_positions=desc_positions,
             full_input_ids=[int(v) for v in full_ids],
+            assistant_start=int(start),
+            assistant_input_ids=[int(v) for v in assistant_ids],
         )
 
     def score_prepared_batch(
@@ -1945,6 +2006,96 @@ class TeacherForcedScorer:
             )
             for desc_positions in desc_positions_list
         ]
+
+    def score_prepared_spans(
+        self,
+        *,
+        prepared: PreparedExample,
+        image: Image.Image,
+        spans: Sequence[Sequence[int]],
+    ) -> List[Dict[str, float | int]]:
+        model_inputs = self.processor(
+            text=[prepared.full_text],
+            images=[image],
+            return_tensors="pt",
+            padding=True,
+        )
+        model_inputs = {
+            key: value.to(self.device) if isinstance(value, torch.Tensor) else value
+            for key, value in model_inputs.items()
+        }
+        with torch.inference_mode():
+            outputs = self.model(**model_inputs, use_cache=False)
+        logits = getattr(outputs, "logits", None)
+        if not isinstance(logits, torch.Tensor):
+            raise RuntimeError("teacher-forced scorer did not return logits")
+        input_ids = model_inputs.get("input_ids")
+        if not isinstance(input_ids, torch.Tensor):
+            raise RuntimeError("teacher-forced scorer missing input_ids")
+        if logits.shape[:2] != input_ids.shape[:2]:
+            raise RuntimeError("teacher-forced scorer requires unsliced logits")
+        return [
+            score_span_logprobs(
+                logits=logits,
+                input_ids=input_ids,
+                batch_idx=0,
+                positions=list(span),
+            )
+            for span in spans
+        ]
+
+    def score_prepared_batch_spans(
+        self,
+        *,
+        examples: Sequence[PreparedExample],
+        images: Sequence[Image.Image],
+        spans_list: Sequence[Sequence[int]],
+    ) -> List[Dict[str, float | int]]:
+        if len(examples) != len(images):
+            raise ValueError("examples/images length mismatch")
+        if len(examples) != len(spans_list):
+            raise ValueError("examples/spans length mismatch")
+        if not examples:
+            return []
+        model_inputs = self.processor(
+            text=[example.full_text for example in examples],
+            images=list(images),
+            return_tensors="pt",
+            padding=True,
+        )
+        model_inputs = {
+            key: value.to(self.device) if isinstance(value, torch.Tensor) else value
+            for key, value in model_inputs.items()
+        }
+        with torch.inference_mode():
+            outputs = self.model(**model_inputs, use_cache=False)
+        logits = getattr(outputs, "logits", None)
+        if not isinstance(logits, torch.Tensor):
+            raise RuntimeError("teacher-forced scorer did not return logits")
+        input_ids = model_inputs.get("input_ids")
+        if not isinstance(input_ids, torch.Tensor):
+            raise RuntimeError("teacher-forced scorer missing input_ids")
+        if logits.shape[:2] != input_ids.shape[:2]:
+            raise RuntimeError("teacher-forced scorer requires unsliced logits")
+        padded_len = int(input_ids.shape[1])
+        scored: List[Dict[str, float | int]] = []
+        for batch_idx, (example, span) in enumerate(zip(examples, spans_list)):
+            seq_len = int(len(example.full_input_ids))
+            pad_offset = int(padded_len - seq_len)
+            observed_ids = input_ids[batch_idx, pad_offset:].detach().cpu().tolist()
+            if [int(value) for value in observed_ids] != [
+                int(value) for value in example.full_input_ids
+            ]:
+                raise RuntimeError("assistant_span_build_failed")
+            scored.append(
+                score_span_logprobs(
+                    logits=logits,
+                    input_ids=input_ids,
+                    batch_idx=batch_idx,
+                    positions=[pad_offset + int(position) for position in span],
+                )
+            )
+        return scored
 
 
 def _find_subsequence(

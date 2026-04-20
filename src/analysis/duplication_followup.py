@@ -11,7 +11,6 @@ from statistics import mean, median
 from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
 
 import torch
-from PIL import Image
 
 from src.analysis.duplication_collapse_analysis import (
     Qwen3VLSurgeryProber,
@@ -21,7 +20,6 @@ from src.analysis.duplication_collapse_analysis import (
     _bbox_iou,
     _bbox_xyxy,
     _choose_gt_next_candidate,
-    _clone_object_with_bbox,
     _coord_split_candidate,
     _interpolate_object_bbox,
     _load_image_for_case,
@@ -32,7 +30,7 @@ from src.analysis.duplication_collapse_analysis import (
     _write_jsonl,
 )
 from src.common.semantic_desc import normalize_desc
-from src.utils.coordjson_transpiler import CoordJSONValidationError, parse_coordjson
+from src.utils.coordjson_transpiler import parse_coordjson
 
 
 def _norm1000_to_pixel_bbox(
@@ -379,6 +377,19 @@ def _perturbation_variants(
             x1y1_prefix[int(source_index_in_prefix)] = x1y1
             variants.append(("source_x1y1_from_gt_next", x1y1_prefix))
     return variants
+
+
+def build_prefix_perturbation_variants(
+    *,
+    prefix_objects: Sequence[Mapping[str, Any]],
+    source_index_in_prefix: int,
+    gt_next: Optional[Mapping[str, Any]],
+) -> List[Tuple[str, List[Dict[str, Any]]]]:
+    return _perturbation_variants(
+        prefix_objects=prefix_objects,
+        source_index_in_prefix=source_index_in_prefix,
+        gt_next=gt_next,
+    )
 
 
 def _escape_label(
