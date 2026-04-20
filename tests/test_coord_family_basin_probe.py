@@ -7,6 +7,7 @@ import pytest
 
 from src.analysis.coord_family_basin_probe import (
     BasinProbeRow,
+    summarize_canonical_basin_rows,
     run_basin_probe,
     summarize_basin_rows,
 )
@@ -16,6 +17,7 @@ def test_summarize_basin_rows_reports_mass_at_4_and_local_error() -> None:
     rows = [
         BasinProbeRow(
             family_alias="cxcywh_pure_ce",
+            probe_id="case-a",
             slot="cx",
             center_value=500,
             target_value=500,
@@ -25,6 +27,7 @@ def test_summarize_basin_rows_reports_mass_at_4_and_local_error() -> None:
         ),
         BasinProbeRow(
             family_alias="cxcywh_pure_ce",
+            probe_id="case-a",
             slot="cx",
             center_value=500,
             target_value=500,
@@ -37,7 +40,12 @@ def test_summarize_basin_rows_reports_mass_at_4_and_local_error() -> None:
     summary = summarize_basin_rows(rows)
 
     assert summary[0]["family_alias"] == "cxcywh_pure_ce"
+    assert summary[0]["probe_id"] == "case-a"
     assert summary[0]["slot"] == "cx"
+    assert summary[0]["bbox_format"] == "cxcywh"
+    assert summary[0]["pred_coord_mode"] == "norm1000"
+    assert summary[0]["canonical_projection_kind"] == "cxcywh_to_xyxy"
+    assert summary[0]["native_slots"] == ["cx", "cy", "w", "h"]
     assert "mass_at_4" in summary[0]
     assert "local_expected_abs_error" in summary[0]
 
@@ -46,6 +54,7 @@ def test_summarize_basin_rows_rejects_slot_not_in_family_registry() -> None:
     rows = [
         BasinProbeRow(
             family_alias="cxcywh_pure_ce",
+            probe_id="case-a",
             slot="x1",
             center_value=500,
             target_value=500,
@@ -59,6 +68,64 @@ def test_summarize_basin_rows_rejects_slot_not_in_family_registry() -> None:
         summarize_basin_rows(rows)
 
 
+def test_summarize_canonical_basin_rows_projects_when_native_bbox_context_is_available() -> None:
+    rows = [
+        BasinProbeRow(
+            family_alias="cxcywh_pure_ce",
+            probe_id="case-a",
+            slot="cx",
+            center_value=500,
+            target_value=500,
+            candidate_value=500,
+            score_mean=-0.1,
+            abs_distance_to_target=0,
+            native_target_values=(500, 500, 200, 100),
+            native_center_values=(500, 500, 200, 100),
+        ),
+        BasinProbeRow(
+            family_alias="cxcywh_pure_ce",
+            probe_id="case-a",
+            slot="cx",
+            center_value=500,
+            target_value=500,
+            candidate_value=504,
+            score_mean=-0.2,
+            abs_distance_to_target=4,
+            native_target_values=(500, 500, 200, 100),
+            native_center_values=(500, 500, 200, 100),
+        ),
+        BasinProbeRow(
+            family_alias="center_parameterization",
+            probe_id="case-b",
+            slot="cx",
+            center_value=300,
+            target_value=300,
+            candidate_value=300,
+            score_mean=-0.4,
+            abs_distance_to_target=0,
+            native_target_values=(300, 300, 50, 40),
+            native_center_values=(300, 300, 50, 40),
+        ),
+    ]
+
+    summary = summarize_canonical_basin_rows(rows)
+
+    assert summary["probe_metrics"][0]["family_alias"] == "cxcywh_pure_ce"
+    assert summary["probe_metrics"][0]["probe_id"] == "case-a"
+    assert summary["probe_metrics"][0]["canonical_compare_group"] == "canonical_xyxy_norm1000"
+    assert summary["probe_metrics"][0]["pred_coord_mode"] == "norm1000"
+    assert summary["probe_metrics"][0]["target_bbox_metrics"]["mass_at_4"] > 0.0
+    assert summary["family_rollup"][0]["family_alias"] == "cxcywh_pure_ce"
+    assert summary["family_rollup"][0]["probe_count"] == 1
+    assert summary["skipped"] == [
+        {
+            "family_alias": "center_parameterization",
+            "probe_id": "case-b",
+            "reason": "unsupported_projection:family_specific",
+        }
+    ]
+
+
 def test_run_basin_probe_materializes_summary_bundle(tmp_path: Path) -> None:
     config_path = tmp_path / "basin.yaml"
     output_dir = tmp_path / "analysis"
@@ -70,19 +137,25 @@ run:
 
 probe_rows:
   - family_alias: cxcywh_pure_ce
+    probe_id: case-a
     slot: cx
     center_value: 500
     target_value: 500
     candidate_value: 500
     score_mean: -0.1
     abs_distance_to_target: 0
+    native_target_values: [500, 500, 200, 100]
+    native_center_values: [500, 500, 200, 100]
   - family_alias: cxcywh_pure_ce
+    probe_id: case-a
     slot: cx
     center_value: 500
     target_value: 500
     candidate_value: 504
     score_mean: -0.2
     abs_distance_to_target: 4
+    native_target_values: [500, 500, 200, 100]
+    native_center_values: [500, 500, 200, 100]
         """.strip(),
         encoding="utf-8",
     )
@@ -97,8 +170,11 @@ probe_rows:
     assert rows_path.exists()
     summary = json.loads(summary_path.read_text(encoding="utf-8"))
     assert summary["run_name"] == "coord-family-basin-smoke"
-    assert summary["slot_metrics"][0]["family_alias"] == "cxcywh_pure_ce"
-    assert summary["slot_metrics"][0]["slot"] == "cx"
+    assert summary["family_native_slot_metrics"][0]["family_alias"] == "cxcywh_pure_ce"
+    assert summary["family_native_slot_metrics"][0]["slot"] == "cx"
+    assert summary["canonical_comparison_view"]["probe_metrics"][0]["family_alias"] == "cxcywh_pure_ce"
+    assert result["family_native_metric_count"] == 1
+    assert result["canonical_metric_count"] == 1
 
 
 def test_run_basin_probe_prefers_workspace_root_for_worktree_outputs(
@@ -116,6 +192,7 @@ run:
 
 probe_rows:
   - family_alias: base_xyxy_merged
+    probe_id: case-a
     slot: x1
     center_value: 500
     target_value: 500

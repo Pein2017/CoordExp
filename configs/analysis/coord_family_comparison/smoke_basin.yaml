@@ -4,33 +4,45 @@ run:
 
 probe_rows:
   - family_alias: base_xyxy_merged
+    probe_id: base-case
     slot: x1
     center_value: 512
     target_value: 512
     candidate_value: 512
     score_mean: -0.10
     abs_distance_to_target: 0
+    native_target_values: [512, 320, 768, 640]
+    native_center_values: [512, 320, 768, 640]
 
   - family_alias: base_xyxy_merged
+    probe_id: base-case
     slot: x1
     center_value: 512
     target_value: 512
     candidate_value: 516
     score_mean: -0.20
     abs_distance_to_target: 4
+    native_target_values: [512, 320, 768, 640]
+    native_center_values: [512, 320, 768, 640]
 
   - family_alias: cxcywh_pure_ce
+    probe_id: cxcywh-case
     slot: cx
     center_value: 500
     target_value: 500
     candidate_value: 500
     score_mean: -0.05
     abs_distance_to_target: 0
+    native_target_values: [500, 500, 200, 100]
+    native_center_values: [500, 500, 200, 100]
 
   - family_alias: cxcywh_pure_ce
+    probe_id: cxcywh-case
     slot: cx
     center_value: 500
     target_value: 500
     candidate_value: 504
     score_mean: -0.25
     abs_distance_to_target: 4
+    native_target_values: [500, 500, 200, 100]
+    native_center_values: [500, 500, 200, 100]
