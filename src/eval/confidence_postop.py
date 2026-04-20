@@ -197,6 +197,16 @@ def _record_pred_coord_mode_for_alignment(record: Mapping[str, Any]) -> str:
     return "auto"
 
 
+def _candidate_pred_coord_modes_for_alignment(record: Mapping[str, Any]) -> list[str]:
+    primary = _record_pred_coord_mode_for_alignment(record)
+    candidates: list[str] = [primary]
+    if _record_uses_coord_token_surface(record):
+        for mode in ("norm1000", "pixel"):
+            if mode not in candidates:
+                candidates.append(mode)
+    return candidates
+
+
 def _record_uses_coord_token_surface(record: Mapping[str, Any]) -> bool:
     raw_special_tokens = record.get("raw_special_tokens")
     if not isinstance(raw_special_tokens, list):
@@ -588,22 +598,32 @@ def _compute_sample_confidence_objects(
         except ValueError:
             reconstructed = None
         else:
-            reconstructed = _reconstruct_pred_alignment(
-                raw_output_json=raw_output_json,
-                width=width,
-                height=height,
-                mode=_as_mode(record.get("mode")),
-                pred_coord_mode=_record_pred_coord_mode_for_alignment(record),
-            )
+            reconstructed = None
+            emitted_matches = False
+            for pred_coord_mode in _candidate_pred_coord_modes_for_alignment(record):
+                candidate = _reconstruct_pred_alignment(
+                    raw_output_json=raw_output_json,
+                    width=width,
+                    height=height,
+                    mode=_as_mode(record.get("mode")),
+                    pred_coord_mode=pred_coord_mode,
+                )
+                if candidate is None:
+                    continue
+                reconstructed = candidate
+                reconstructed_pred, _ = candidate
+                if _pred_alignment_matches(pred_objs, reconstructed_pred):
+                    emitted_matches = True
+                    break
+            if reconstructed is not None and not emitted_matches:
+                return _build_sample_failure_objects(
+                    pred_objs,
+                    failure_reason=PRED_ALIGNMENT_MISMATCH,
+                )
 
     bbox_bins_by_object: list[list[int] | None] = [None] * len(pred_objs)
     if reconstructed is not None:
         reconstructed_pred, reconstructed_bins = reconstructed
-        if not _pred_alignment_matches(pred_objs, reconstructed_pred):
-            return _build_sample_failure_objects(
-                pred_objs,
-                failure_reason=PRED_ALIGNMENT_MISMATCH,
-            )
         if len(reconstructed_bins) != len(pred_objs):
             return _build_sample_failure_objects(
                 pred_objs,
