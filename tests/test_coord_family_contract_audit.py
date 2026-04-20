@@ -1,0 +1,263 @@
+from __future__ import annotations
+
+import json
+from pathlib import Path
+
+import pytest
+import yaml
+
+from src.analysis.coord_family_contract_audit import (
+    FamilySpec,
+    build_family_inventory,
+    infer_checkpoint_runtime_mode,
+    load_contract_audit_config,
+    run_contract_audit,
+)
+
+
+def test_infer_checkpoint_runtime_mode_prefers_adapter_when_adapter_config_exists(
+    tmp_path: Path,
+) -> None:
+    ckpt = tmp_path / "adapter_ckpt"
+    ckpt.mkdir()
+    (ckpt / "adapter_config.json").write_text(
+        json.dumps({"base_model_name_or_path": "model_cache/models/Qwen/Qwen3-VL-2B-Instruct"}),
+        encoding="utf-8",
+    )
+
+    mode = infer_checkpoint_runtime_mode(ckpt)
+
+    assert mode == "adapter"
+
+
+def test_build_family_inventory_records_required_contract_fields(tmp_path: Path) -> None:
+    merged = tmp_path / "merged_ckpt"
+    merged.mkdir()
+    (merged / "config.json").write_text("{}", encoding="utf-8")
+
+    adapter = tmp_path / "adapter_ckpt"
+    adapter.mkdir()
+    (adapter / "adapter_config.json").write_text(
+        json.dumps({"base_model_name_or_path": "model_cache/models/Qwen/Qwen3-VL-2B-Instruct"}),
+        encoding="utf-8",
+    )
+
+    specs = [
+        FamilySpec(
+            alias="base_xyxy_merged",
+            checkpoint_path=str(merged),
+            checkpoint_hint="merged",
+            infer_mode="coord",
+            bbox_format="xyxy",
+            pred_coord_mode="pixel",
+            eval_compatibility_path="confidence_postop",
+            is_headline_2b_family=True,
+        ),
+        FamilySpec(
+            alias="raw_text_xyxy_pure_ce",
+            checkpoint_path=str(adapter),
+            checkpoint_hint="adapter",
+            infer_mode="coord",
+            bbox_format="xyxy",
+            pred_coord_mode="norm1000",
+            eval_compatibility_path="confidence_postop",
+            is_headline_2b_family=True,
+        ),
+    ]
+
+    rows = build_family_inventory(specs)
+
+    assert rows[0]["alias"] == "base_xyxy_merged"
+    assert rows[0]["checkpoint_type"] == "merged"
+    assert rows[0]["runtime_load_pattern"] == "model_checkpoint only"
+    assert rows[0]["bbox_format"] == "xyxy"
+    assert rows[0]["pred_coord_mode"] == "pixel"
+    assert rows[0]["eval_compatibility_path"] == "confidence_postop"
+    assert rows[0]["is_headline_2b_family"] is True
+    assert rows[1]["alias"] == "raw_text_xyxy_pure_ce"
+    assert rows[1]["checkpoint_type"] == "adapter"
+    assert rows[1]["runtime_load_pattern"] == "model_checkpoint + adapter_checkpoint"
+    assert rows[1]["resolved_base_model_checkpoint"] == "model_cache/models/Qwen/Qwen3-VL-2B-Instruct"
+    assert rows[1]["resolved_adapter_checkpoint"] == str(adapter)
+
+
+def test_load_contract_audit_config_parses_run_and_families(tmp_path: Path) -> None:
+    config_path = tmp_path / "audit.yaml"
+    config_path.write_text(
+        """
+run:
+  name: coord-family-smoke
+  output_dir: output/analysis
+
+families:
+  - alias: base_xyxy_merged
+    checkpoint_path: output/stage1_2b/base
+    checkpoint_hint: merged
+    infer_mode: coord
+    bbox_format: xyxy
+    pred_coord_mode: pixel
+    eval_compatibility_path: confidence_postop
+    is_headline_2b_family: true
+        """.strip(),
+        encoding="utf-8",
+    )
+
+    cfg = load_contract_audit_config(config_path)
+
+    assert cfg.run.name == "coord-family-smoke"
+    assert cfg.run.output_dir == "output/analysis"
+    assert cfg.families[0].alias == "base_xyxy_merged"
+    assert cfg.families[0].checkpoint_path == "output/stage1_2b/base"
+    assert cfg.families[0].pred_coord_mode == "pixel"
+    assert cfg.families[0].eval_compatibility_path == "confidence_postop"
+    assert cfg.families[0].is_headline_2b_family is True
+
+
+def test_run_contract_audit_materializes_inventory_bundle(tmp_path: Path) -> None:
+    merged = tmp_path / "merged_ckpt"
+    merged.mkdir()
+    (merged / "config.json").write_text("{}", encoding="utf-8")
+
+    config_path = tmp_path / "audit.yaml"
+    output_dir = tmp_path / "analysis"
+    config_path.write_text(
+        f"""
+run:
+  name: coord-family-smoke
+  output_dir: {output_dir.as_posix()}
+
+families:
+  - alias: base_xyxy_merged
+    checkpoint_path: {merged.as_posix()}
+    checkpoint_hint: merged
+    infer_mode: coord
+    bbox_format: xyxy
+    pred_coord_mode: pixel
+    eval_compatibility_path: confidence_postop
+    is_headline_2b_family: true
+        """.strip(),
+        encoding="utf-8",
+    )
+
+    result = run_contract_audit(config_path)
+
+    run_dir = output_dir / "coord-family-smoke"
+    inventory_path = run_dir / "family_inventory.json"
+    summary_path = run_dir / "summary.json"
+    report_path = run_dir / "family_contract_audit.md"
+    assert result["run_dir"] == str(run_dir)
+    assert inventory_path.exists()
+    assert summary_path.exists()
+    assert report_path.exists()
+    inventory = json.loads(inventory_path.read_text(encoding="utf-8"))
+    summary = json.loads(summary_path.read_text(encoding="utf-8"))
+    assert inventory[0]["alias"] == "base_xyxy_merged"
+    assert inventory[0]["runtime_load_pattern"] == "model_checkpoint only"
+    assert inventory[0]["pred_coord_mode"] == "pixel"
+    assert inventory[0]["eval_compatibility_path"] == "confidence_postop"
+    assert inventory[0]["is_headline_2b_family"] is True
+    assert summary["run_name"] == "coord-family-smoke"
+    assert summary["family_count"] == 1
+    assert summary["families"][0]["alias"] == "base_xyxy_merged"
+
+
+def test_run_contract_audit_resolves_repo_relative_checkpoint_paths(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    merged = tmp_path / "output/stage1_2b/base_xyxy_merged"
+    merged.mkdir(parents=True)
+    (merged / "config.json").write_text("{}", encoding="utf-8")
+    config_path = tmp_path / "audit.yaml"
+    config_path.write_text(
+        """
+run:
+  name: coord-family-smoke
+  output_dir: output/analysis
+
+families:
+  - alias: base_xyxy_merged
+    checkpoint_path: output/stage1_2b/base_xyxy_merged
+    checkpoint_hint: merged
+    infer_mode: coord
+    bbox_format: xyxy
+    pred_coord_mode: pixel
+    eval_compatibility_path: confidence_postop
+    is_headline_2b_family: true
+        """.strip(),
+        encoding="utf-8",
+    )
+    other_cwd = tmp_path / "elsewhere"
+    other_cwd.mkdir()
+    monkeypatch.chdir(other_cwd)
+
+    result = run_contract_audit(config_path, repo_root=tmp_path)
+
+    summary = json.loads(Path(result["summary_json"]).read_text(encoding="utf-8"))
+    assert summary["families"][0]["checkpoint_exists"] is True
+    assert summary["families"][0]["checkpoint_path"] == "output/stage1_2b/base_xyxy_merged"
+
+
+def test_run_contract_audit_prefers_workspace_root_for_worktree_relative_checkpoints(
+    tmp_path: Path,
+) -> None:
+    workspace_root = tmp_path / "workspace"
+    repo_root = workspace_root / ".worktrees" / "feature"
+    repo_root.mkdir(parents=True)
+    merged = workspace_root / "output/stage1_2b/base_xyxy_merged"
+    merged.mkdir(parents=True)
+    (merged / "config.json").write_text("{}", encoding="utf-8")
+    config_path = repo_root / "audit.yaml"
+    config_path.write_text(
+        """
+run:
+  name: coord-family-smoke
+  output_dir: output/analysis
+
+families:
+  - alias: base_xyxy_merged
+    checkpoint_path: output/stage1_2b/base_xyxy_merged
+    checkpoint_hint: merged
+    infer_mode: coord
+    bbox_format: xyxy
+    pred_coord_mode: pixel
+    eval_compatibility_path: confidence_postop
+    is_headline_2b_family: true
+        """.strip(),
+        encoding="utf-8",
+    )
+
+    result = run_contract_audit(config_path, repo_root=repo_root)
+
+    summary = json.loads(Path(result["summary_json"]).read_text(encoding="utf-8"))
+    assert summary["families"][0]["checkpoint_exists"] is True
+    assert summary["families"][0]["resolved_checkpoint_path"] == str(merged)
+
+
+def test_bundled_configs_track_headline_2b_families() -> None:
+    worktree_root = Path(__file__).resolve().parents[1]
+    base_cfg = yaml.safe_load(
+        (worktree_root / "configs/analysis/coord_family_comparison/base.yaml").read_text(
+            encoding="utf-8"
+        )
+    )
+    smoke_cfg = yaml.safe_load(
+        (
+            worktree_root
+            / "configs/analysis/coord_family_comparison/smoke_inventory.yaml"
+        ).read_text(encoding="utf-8")
+    )
+
+    base_aliases = [row["alias"] for row in base_cfg["families"]]
+    assert base_aliases == [
+        "base_xyxy_merged",
+        "raw_text_xyxy_pure_ce",
+        "cxcywh_pure_ce",
+        "cxcy_logw_logh_pure_ce",
+        "center_parameterization",
+        "hard_soft_ce_2b",
+    ]
+
+    smoke_paths = [row["checkpoint_path"] for row in smoke_cfg["families"]]
+    assert all("some_adapter_checkpoint" not in path for path in smoke_paths)
+    assert all("smoke_adapter_checkpoint" not in path for path in smoke_paths)
