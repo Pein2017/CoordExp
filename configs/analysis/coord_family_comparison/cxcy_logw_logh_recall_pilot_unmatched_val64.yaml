@@ -68,3 +68,6 @@ manual_audit:
 checkpoints:
   - name: cxcy_logw_logh_pure_ce
     path: output/stage1_2b/coco_bbox_max60-coco80-desc_first-1024-lvis_proxy-cxcy_logw_logh-pure_ce/epoch_4-cxcy_logw_logh-pure_ce-coco80-desc_first-1024-lvis_proxy-from-base-2B/v3-20260414-102133/checkpoint-716
+    bbox_format: cxcy_logw_logh
+    infer_mode: coord
+    pred_coord_mode: norm1000

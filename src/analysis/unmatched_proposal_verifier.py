@@ -33,6 +33,7 @@ from src.common.object_field_order import (
     build_object_payload,
     normalize_object_field_order,
 )
+from src.common.geometry.bbox_parameterization import normalize_bbox_format
 from src.vis import DEFAULT_BBOX_OUTLINE_WIDTH
 from src.common.paths import resolve_image_path_strict
 from src.common.semantic_desc import normalize_desc
@@ -91,6 +92,9 @@ class CheckpointSpec:
     name: str
     prompt_variant: Optional[str] = None
     object_field_order: Optional[str] = None
+    bbox_format: Optional[str] = None
+    infer_mode: Optional[str] = None
+    pred_coord_mode: Optional[str] = None
 
 
 @dataclass(frozen=True)
@@ -294,6 +298,24 @@ def _normalize_stages(values: Any) -> Tuple[str, ...]:
     return tuple(out)
 
 
+def _optional_choice_str(
+    value: Any,
+    *,
+    allowed: set[str],
+    path: str,
+) -> Optional[str]:
+    if value is None:
+        return None
+    text = str(value).strip()
+    if not text:
+        return None
+    lowered = text.lower()
+    if lowered not in allowed:
+        allowed_text = ", ".join(sorted(allowed))
+        raise ValueError(f"{path} must be one of {{{allowed_text}}}")
+    return lowered
+
+
 def load_study_config(path: Path) -> StudyConfig:
     raw = _load_yaml(path)
 
@@ -335,6 +357,24 @@ def load_study_config(path: Path) -> StudyConfig:
                     )
                     if ckpt_raw.get("object_field_order") is not None
                     else None
+                ),
+                bbox_format=(
+                    normalize_bbox_format(
+                        ckpt_raw["bbox_format"],
+                        path=f"checkpoints[{idx}].bbox_format",
+                    )
+                    if ckpt_raw.get("bbox_format") is not None
+                    else None
+                ),
+                infer_mode=_optional_choice_str(
+                    ckpt_raw.get("infer_mode"),
+                    allowed={"auto", "coord", "text"},
+                    path=f"checkpoints[{idx}].infer_mode",
+                ),
+                pred_coord_mode=_optional_choice_str(
+                    ckpt_raw.get("pred_coord_mode"),
+                    allowed={"auto", "norm1000", "pixel"},
+                    path=f"checkpoints[{idx}].pred_coord_mode",
                 ),
             )
         )
@@ -1086,7 +1126,7 @@ def _build_pipeline_yaml(
     output_root: Path,
     subset_path: Path,
     root_image_dir: Path,
-    checkpoint_name: str,
+    checkpoint: CheckpointSpec,
     checkpoint_path: Path,
     prompt_variant: str,
     object_field_order: str,
@@ -1097,7 +1137,7 @@ def _build_pipeline_yaml(
     backend_type = "hf" if backend_mode == "hf" else "vllm"
     return {
         "run": {
-            "name": checkpoint_name,
+            "name": checkpoint.name,
             "output_dir": str(output_root),
             "root_image_dir": str(root_image_dir),
         },
@@ -1107,8 +1147,9 @@ def _build_pipeline_yaml(
             "model_checkpoint": str(checkpoint_path),
             "prompt_variant": prompt_variant,
             "object_field_order": object_field_order,
-            "mode": "auto",
-            "pred_coord_mode": "auto",
+            "mode": checkpoint.infer_mode or "auto",
+            "bbox_format": checkpoint.bbox_format or "xyxy",
+            "pred_coord_mode": checkpoint.pred_coord_mode or "auto",
             "backend": (
                 {
                     "type": "hf",
@@ -1267,7 +1308,7 @@ def _build_stage2_parity_collection_config(
     *,
     subset_path: Path,
     root_image_dir: Path,
-    checkpoint_name: str,
+    checkpoint: CheckpointSpec,
     checkpoint_path: Path,
     prompt_variant: str,
     object_field_order: str,
@@ -1276,7 +1317,7 @@ def _build_stage2_parity_collection_config(
 ) -> Dict[str, Any]:
     return {
         "run": {
-            "name": str(checkpoint_name),
+            "name": str(checkpoint.name),
             "root_image_dir": str(root_image_dir),
         },
         "collection": {
@@ -1304,6 +1345,9 @@ def _build_stage2_parity_collection_config(
             "model_checkpoint": str(checkpoint_path),
             "prompt_variant": str(prompt_variant),
             "object_field_order": str(object_field_order),
+            "mode": str(checkpoint.infer_mode or "auto"),
+            "bbox_format": str(checkpoint.bbox_format or "xyxy"),
+            "pred_coord_mode": str(checkpoint.pred_coord_mode or "auto"),
         },
         "eval": {
             "f1ish_iou_thrs": [float(v) for v in eval_cfg.f1ish_iou_thrs],
@@ -1393,7 +1437,7 @@ def run_collection_for_checkpoint(
         pipeline_cfg = _build_stage2_parity_collection_config(
             subset_path=subset_path,
             root_image_dir=root_image_dir,
-            checkpoint_name=run_dir.name,
+            checkpoint=checkpoint,
             checkpoint_path=resolved_checkpoint_path,
             prompt_variant=prompt_variant,
             object_field_order=object_field_order,
@@ -1406,7 +1450,7 @@ def run_collection_for_checkpoint(
             output_root=output_root,
             subset_path=subset_path,
             root_image_dir=root_image_dir,
-            checkpoint_name=run_dir.name,
+            checkpoint=checkpoint,
             checkpoint_path=resolved_checkpoint_path,
             prompt_variant=prompt_variant,
             object_field_order=object_field_order,
