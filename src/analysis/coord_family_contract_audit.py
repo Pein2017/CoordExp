@@ -320,13 +320,13 @@ def _render_markdown(rows: list[dict[str, Any]], summary: dict[str, Any]) -> str
         f"- Runtime-ready families: {summary['runtime_contract_ready_count']}",
         f"- Checkpoint types: {json.dumps(summary['checkpoint_type_counts'], sort_keys=True)}",
         "",
-        "| Alias | Type | Load Pattern | Infer Mode | BBox Format | Pred Coord Mode | Eval Path | Headline 2B | Runtime Ready |",
-        "| --- | --- | --- | --- | --- | --- | --- | --- | --- |",
+        "| Alias | Checkpoint Path | Type | Load Pattern | Infer Mode | BBox Format | Pred Coord Mode | Eval Path | Headline 2B | Runtime Ready |",
+        "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |",
     ]
     for row in rows:
         lines.append(
-            "| {alias} | {checkpoint_type} | {runtime_load_pattern} | {infer_mode} | "
-            "{bbox_format} | {pred_coord_mode} | {eval_compatibility_path} | "
+            "| {alias} | {checkpoint_path} | {checkpoint_type} | {runtime_load_pattern} | "
+            "{infer_mode} | {bbox_format} | {pred_coord_mode} | {eval_compatibility_path} | "
             "{is_headline_2b_family} | {runtime_contract_ready} |".format(**row)
         )
     return "\n".join(lines) + "\n"

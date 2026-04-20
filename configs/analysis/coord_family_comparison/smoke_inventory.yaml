@@ -17,6 +17,7 @@ families:
   - alias: raw_text_xyxy_pure_ce
     checkpoint_path: output/stage1_2b/coco_bbox_max60-coco80-desc_first-1024-lvis_proxy-raw_text_xyxy-pure_ce/epoch_4-raw_text_xyxy-pure_ce-coco80-desc_first-1024-lvis_proxy-from-base-2B/v1-20260417-084341/checkpoint-552
     checkpoint_hint: adapter
+    infer_mode: text
     pred_coord_mode: norm1000
 
   - alias: cxcywh_pure_ce

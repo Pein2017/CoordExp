@@ -151,6 +151,7 @@ families:
     assert report_path.exists()
     inventory = json.loads(inventory_path.read_text(encoding="utf-8"))
     summary = json.loads(summary_path.read_text(encoding="utf-8"))
+    report_text = report_path.read_text(encoding="utf-8")
     assert inventory[0]["alias"] == "base_xyxy_merged"
     assert inventory[0]["runtime_load_pattern"] == "model_checkpoint only"
     assert inventory[0]["pred_coord_mode"] == "pixel"
@@ -159,6 +160,8 @@ families:
     assert summary["run_name"] == "coord-family-smoke"
     assert summary["family_count"] == 1
     assert summary["families"][0]["alias"] == "base_xyxy_merged"
+    assert "| Checkpoint Path |" in report_text
+    assert str(merged) in report_text
 
 
 def test_run_contract_audit_resolves_repo_relative_checkpoint_paths(
@@ -257,6 +260,12 @@ def test_bundled_configs_track_headline_2b_families() -> None:
         "center_parameterization",
         "hard_soft_ce_2b",
     ]
+    raw_text_row = next(row for row in base_cfg["families"] if row["alias"] == "raw_text_xyxy_pure_ce")
+    raw_text_smoke_row = next(
+        row for row in smoke_cfg["families"] if row["alias"] == "raw_text_xyxy_pure_ce"
+    )
+    assert raw_text_row["infer_mode"] == "text"
+    assert raw_text_smoke_row["infer_mode"] == "text"
 
     smoke_paths = [row["checkpoint_path"] for row in smoke_cfg["families"]]
     assert all("some_adapter_checkpoint" not in path for path in smoke_paths)
