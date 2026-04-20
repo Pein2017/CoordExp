@@ -187,6 +187,26 @@ def _as_mode(value: Any) -> str:
     return "coord" if mode == "coord" else "text"
 
 
+def _record_pred_coord_mode_for_alignment(record: Mapping[str, Any]) -> str:
+    pred_coord_mode = str(record.get("pred_coord_mode") or "").strip().lower()
+    if pred_coord_mode in {"auto", "norm1000", "pixel"}:
+        return pred_coord_mode
+    coord_mode = str(record.get("coord_mode") or "").strip().lower()
+    if coord_mode in {"norm1000", "pixel"}:
+        return coord_mode
+    return "auto"
+
+
+def _record_uses_coord_token_surface(record: Mapping[str, Any]) -> bool:
+    raw_special_tokens = record.get("raw_special_tokens")
+    if not isinstance(raw_special_tokens, list):
+        return False
+    for token in raw_special_tokens:
+        if decode_coord(token) is not None:
+            return True
+    return False
+
+
 def _normalize_desc(desc: Any) -> str:
     return str(desc or "").strip()
 
@@ -573,7 +593,7 @@ def _compute_sample_confidence_objects(
                 width=width,
                 height=height,
                 mode=_as_mode(record.get("mode")),
-                pred_coord_mode=str(record.get("pred_coord_mode") or "auto"),
+                pred_coord_mode=_record_pred_coord_mode_for_alignment(record),
             )
 
     bbox_bins_by_object: list[list[int] | None] = [None] * len(pred_objs)
@@ -594,6 +614,7 @@ def _compute_sample_confidence_objects(
     span_mode_by_object: list[str | None] = [None] * len(pred_objs)
     coord_expected_sequences: list[tuple[int, tuple[str, ...]]] = []
     numeric_expected_sequences: list[tuple[int, tuple[int, ...]]] = []
+    record_uses_coord_tokens = _record_uses_coord_token_surface(record)
     for object_idx, pred_obj in enumerate(pred_objs):
         if str(pred_obj.get("type", "")) != "bbox_2d":
             continue
@@ -620,7 +641,7 @@ def _compute_sample_confidence_objects(
         else:
             flat_values = None
 
-        if flat_values is not None and has_coord_tokens(flat_values):
+        if (flat_values is not None and has_coord_tokens(flat_values)) or record_uses_coord_tokens:
             try:
                 tokens = coord_bins_to_tokens(bins)
             except ValueError:
