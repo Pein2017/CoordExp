@@ -17,6 +17,7 @@ Prefer this over `bypy` when:
 
 - `BaiduPCS-Go` sees the Baidu Netdisk root `/`, not `bypy`'s `/apps/bypy` sandbox.
 - A path that exists under `bypy` may still need to be created again under the real root for `BaiduPCS-Go`.
+- By default, preserve the original repo-relative path under the Netdisk root. If the local path is relative to the repo such as `./some/subtree/run-a`, prefer remote `/some/subtree/run-a` rather than adding an extra prefix such as `/output/...` unless the user explicitly asks for a different remote root.
 - For large model checkpoints, start with conservative upload settings:
   `--norapid -p 1 -l 1 --retry 8`
 - Upload and download both support parallelism. Prefer raising concurrent file count first, then per-file threads.
@@ -64,9 +65,9 @@ Successful login should show the real Netdisk root and the account quota.
 Before uploading, explicitly create the remote path if it may not exist:
 
 ```bash
-/absolute/path/to/BaiduPCS-Go mkdir /output
-/absolute/path/to/BaiduPCS-Go mkdir /output/stage1_2b
-/absolute/path/to/BaiduPCS-Go mkdir /output/stage1_2b/my-run
+/absolute/path/to/BaiduPCS-Go mkdir /some
+/absolute/path/to/BaiduPCS-Go mkdir /some/subtree
+/absolute/path/to/BaiduPCS-Go mkdir /some/subtree/run-a
 ```
 
 Ignore `31061 文件已存在`.
@@ -79,14 +80,15 @@ Example:
 
 ```bash
 bash scripts/upload_dir.sh \
-  /abs/local/output/stage1_2b/coco_bbox_max60-coco80-desc_first-1024-lvis_proxy-merged \
-  /output/stage1_2b/coco_bbox_max60-coco80-desc_first-1024-lvis_proxy-merged \
+  /abs/repo/some/subtree/run-a \
+  /some/subtree/run-a \
   /abs/path/to/BaiduPCS-Go
 ```
 
 The script:
 - ensures the remote parent directories exist
 - uploads the directory to `dirname(REMOTE_DIR)` so the original folder name is preserved
+- should usually mirror the local repo-relative path under `/`
 - defaults to conservative settings with `--norapid -p 1 -l 1 --retry 8`
 - can be tuned with environment variables instead of editing the script
 
@@ -95,7 +97,7 @@ Example with parallel uploads across files while keeping `--norapid`:
 ```bash
 BAIDUPCS_UPLOAD_PARALLEL_FILES=4 \
 BAIDUPCS_UPLOAD_FILE_THREADS=1 \
-bash scripts/upload_dir.sh /abs/local/dir /output/stage1_2b/my-run /abs/path/to/BaiduPCS-Go
+bash scripts/upload_dir.sh /abs/repo/some/subtree/run-a /some/subtree/run-a /abs/path/to/BaiduPCS-Go
 ```
 
 Example with more aggressive per-file parallelism:
@@ -104,7 +106,7 @@ Example with more aggressive per-file parallelism:
 BAIDUPCS_UPLOAD_NO_RAPID=0 \
 BAIDUPCS_UPLOAD_FILE_THREADS=4 \
 BAIDUPCS_UPLOAD_PARALLEL_FILES=2 \
-bash scripts/upload_dir.sh /abs/local/dir /output/stage1_2b/my-run /abs/path/to/BaiduPCS-Go
+bash scripts/upload_dir.sh /abs/repo/some/subtree/run-a /some/subtree/run-a /abs/path/to/BaiduPCS-Go
 ```
 
 Use the aggressive mode only when higher throughput matters more than the safer `--norapid` path.
@@ -117,8 +119,8 @@ Example:
 
 ```bash
 bash scripts/download_dir.sh \
-  /output/stage1_2b/coco_bbox_max60-coco80-desc_first-1024-lvis_proxy-merged \
-  /abs/local/output_cache \
+  /some/subtree/run-a \
+  /abs/repo \
   /abs/path/to/BaiduPCS-Go
 ```
 
@@ -135,7 +137,7 @@ Example with higher download parallelism:
 ```bash
 BAIDUPCS_DOWNLOAD_THREADS=8 \
 BAIDUPCS_DOWNLOAD_PARALLEL_FILES=4 \
-bash scripts/download_dir.sh /output/stage1_2b/my-run /abs/local/output_cache /abs/path/to/BaiduPCS-Go
+bash scripts/download_dir.sh /some/subtree/run-a /abs/repo /abs/path/to/BaiduPCS-Go
 ```
 
 ## 6. Run inside tmux for large transfers
@@ -169,7 +171,7 @@ tmux attach -t baidupcs_upload
 Check the target directory:
 
 ```bash
-/absolute/path/to/BaiduPCS-Go ls /output/stage1_2b/my-run
+/absolute/path/to/BaiduPCS-Go ls /some/subtree/run-a
 ```
 
 For a large upload, validate the highest-risk artifacts first:
@@ -181,7 +183,7 @@ For a large download, validate:
 - the expected top-level folder exists under the local parent directory
 - shard counts and file sizes match `ls` output from the remote side
 - loader-critical files such as tokenizer/config/index files are present
-- if an account-prefixed staging tree was used, confirm the contents were merged into the intended repo path under `output/`
+- if an account-prefixed staging tree was used, confirm the contents were merged into the intended repo path that matches the original relative layout
 
 ## 8. Failure handling
 
