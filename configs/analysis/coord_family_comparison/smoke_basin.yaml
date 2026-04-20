@@ -1,0 +1,36 @@
+run:
+  name: coord-family-basin-smoke
+  output_dir: output/analysis
+
+probe_rows:
+  - family_alias: base_xyxy_merged
+    slot: x1
+    center_value: 512
+    target_value: 512
+    candidate_value: 512
+    score_mean: -0.10
+    abs_distance_to_target: 0
+
+  - family_alias: base_xyxy_merged
+    slot: x1
+    center_value: 512
+    target_value: 512
+    candidate_value: 516
+    score_mean: -0.20
+    abs_distance_to_target: 4
+
+  - family_alias: cxcywh_pure_ce
+    slot: cx
+    center_value: 500
+    target_value: 500
+    candidate_value: 500
+    score_mean: -0.05
+    abs_distance_to_target: 0
+
+  - family_alias: cxcywh_pure_ce
+    slot: cx
+    center_value: 500
+    target_value: 500
+    candidate_value: 504
+    score_mean: -0.25
+    abs_distance_to_target: 4
