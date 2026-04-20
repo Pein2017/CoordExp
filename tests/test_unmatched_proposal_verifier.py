@@ -3,11 +3,13 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import src.analysis.unmatched_proposal_verifier as verifier_module
 from src.analysis.unmatched_proposal_verifier import (
     CollectionGateConfig,
     _binary_metrics,
     _find_subsequence,
     _pseudo_label_ready,
+    _resolve_run_dir,
     _render_report,
     build_gt_and_negative_tables,
     build_rollout_proposal_table,
@@ -247,12 +249,34 @@ checkpoints:
     assert config.manual_audit.score_key == "counterfactual"
 
 
-def test_resolve_checkpoint_path_labels_common_root() -> None:
+def test_resolve_checkpoint_path_labels_common_root(tmp_path: Path, monkeypatch) -> None:
+    worktree_root = tmp_path / "repo" / ".worktrees" / "coord-family-comparison"
+    common_root = tmp_path / "repo"
+    checkpoint = common_root / "output" / "stage2_ab" / "prod" / "ul-res_1024-ckpt_300_merged"
+    checkpoint.mkdir(parents=True)
+    monkeypatch.setattr(verifier_module, "REPO_ROOT", worktree_root)
+    monkeypatch.setattr(verifier_module, "COMMON_REPO_ROOT", common_root)
+
     path, source = resolve_checkpoint_path(
         "output/stage2_ab/prod/ul-res_1024-ckpt_300_merged"
     )
     assert path.exists()
-    assert source in {"config_path_common_root", "config_path_worktree"}
+    assert source == "config_path_common_root"
+
+
+def test_resolve_run_dir_prefers_common_root_for_relative_output_dir(tmp_path: Path) -> None:
+    repo_root = tmp_path / "repo" / ".worktrees" / "coord-family-comparison"
+    common_root = tmp_path / "repo"
+    run_dir = _resolve_run_dir(
+        output_dir="output/analysis",
+        run_name="coord-family-recall-pilot",
+        repo_root=repo_root,
+        common_repo_root=common_root,
+    )
+
+    assert run_dir == (
+        common_root / "output" / "analysis" / "coord-family-recall-pilot"
+    ).resolve()
 
 
 def test_render_report_includes_authority_first_downgrade() -> None:

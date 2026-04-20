@@ -227,6 +227,19 @@ def _load_yaml(path: Path) -> Mapping[str, Any]:
     return obj
 
 
+def _resolve_run_dir(
+    *,
+    output_dir: str,
+    run_name: str,
+    repo_root: Path,
+    common_repo_root: Path,
+) -> Path:
+    output_path = Path(output_dir)
+    if not output_path.is_absolute():
+        output_path = common_repo_root / output_path
+    return (output_path / run_name).resolve()
+
+
 def _ensure_tuple_floats(values: Any) -> Tuple[float, ...]:
     if values is None:
         return (_PRIMARY_IOU_THRESHOLD,)
@@ -3779,7 +3792,12 @@ def load_manual_audit_artifacts(run_dir: Path) -> Dict[str, Any]:
 
 
 def run_study(config: StudyConfig) -> Dict[str, Any]:
-    run_dir = (REPO_ROOT / config.run.output_dir / config.run.name).resolve()
+    run_dir = _resolve_run_dir(
+        output_dir=config.run.output_dir,
+        run_name=config.run.name,
+        repo_root=REPO_ROOT,
+        common_repo_root=COMMON_REPO_ROOT,
+    )
     run_dir.mkdir(parents=True, exist_ok=True)
     if _stage_enabled(config, "prepare"):
         prepared = prepare_study_inputs(config, run_dir=run_dir)
