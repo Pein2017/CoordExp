@@ -22,6 +22,7 @@ class ComparisonReportInputs:
     basin_summary_json: str
     recall_summary_json: str
     vision_rows: tuple[dict[str, Any], ...]
+    eval_snapshot_json: str | None = None
 
 
 @dataclass(frozen=True)
@@ -99,8 +100,18 @@ def load_comparison_report_config(config_path: Path) -> ComparisonReportConfig:
             basin_summary_json=_require_nonempty_str(inputs_raw, "basin_summary_json"),
             recall_summary_json=_require_nonempty_str(inputs_raw, "recall_summary_json"),
             vision_rows=_require_row_list(inputs_raw, "vision_rows"),
+            eval_snapshot_json=_optional_nonempty_str(inputs_raw, "eval_snapshot_json"),
         ),
     )
+
+
+def _optional_nonempty_str(parent: dict[str, Any], key: str) -> str | None:
+    value = parent.get(key)
+    if value is None:
+        return None
+    if not isinstance(value, str) or not value.strip():
+        raise ValueError(f"{key} must be a non-empty string when provided.")
+    return value.strip()
 
 
 def _artifact_root_for_repo(repo_root: Path) -> Path:
@@ -147,6 +158,34 @@ def _float_value(row: dict[str, Any], *keys: str) -> float | None:
             continue
         return float(value)
     return None
+
+
+def _build_eval_rows(snapshot_payload: dict[str, Any]) -> list[dict[str, Any]]:
+    families = snapshot_payload.get("families", {})
+    if not isinstance(families, dict):
+        raise ValueError("eval snapshot must contain a 'families' mapping.")
+    rows: list[dict[str, Any]] = []
+    for family_alias, payload in sorted(families.items()):
+        if not isinstance(payload, dict):
+            continue
+        row = {"family_alias": str(family_alias)}
+        row.update(dict(payload))
+        rows.append(row)
+    return rows
+
+
+def _rank_eval_rows(eval_rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    ranked = [dict(row) for row in eval_rows]
+    ranked.sort(
+        key=lambda row: (
+            -float(row.get("bbox_AP") or float("-inf")),
+            -float(row.get("bbox_AP50") or float("-inf")),
+            -float(row.get("f1_full_micro_050") or float("-inf")),
+        )
+    )
+    for index, row in enumerate(ranked, start=1):
+        row["rank"] = index
+    return ranked
 
 
 def derive_family_verdicts(
@@ -254,14 +293,29 @@ def derive_family_verdicts(
 
 
 def _render_report_md(summary: dict[str, Any]) -> str:
+    basin_source = str(summary["source_artifacts"]["basin_summary_json"])
+    recall_source = str(summary["source_artifacts"]["recall_summary_json"])
+    using_smoke_mechanism_inputs = "smoke" in basin_source or "smoke" in recall_source
     lines = [
         "# Coordinate Family Comparison Report",
         "",
-        "This is a minimal comparative scaffold for later family-level synthesis.",
-        "",
-        "## Families",
+        "This is a comparative progress scaffold for later family-level synthesis.",
         "",
     ]
+    if using_smoke_mechanism_inputs:
+        lines.extend(
+            [
+                "> Note: the mechanism layer in this report still comes from smoke basin/recall inputs.",
+                "> The matched val200 eval ranking below is real; the family verdicts section is provisional until non-smoke basin/recall summaries are available.",
+                "",
+            ]
+        )
+    lines.extend(
+        [
+            "## Families",
+            "",
+        ]
+    )
     verdicts = summary["verdicts"]
     if not verdicts:
         lines.append("- No family verdicts were derived from the provided inputs.")
@@ -276,6 +330,26 @@ def _render_report_md(summary: dict[str, Any]) -> str:
     lines.extend(
         [
             "",
+            "## Matched val200 Eval",
+            "",
+        ]
+    )
+    eval_rows = summary.get("eval_rows", [])
+    if not eval_rows:
+        lines.append("- No eval snapshot rows were provided.")
+    else:
+        lines.append("| Rank | Family | bbox_AP | bbox_AP50 | F1@0.50 | TP | FP | FN |")
+        lines.append("|---|---|---:|---:|---:|---:|---:|---:|")
+        for row in eval_rows:
+            lines.append(
+                f"| {row.get('rank', '-')} | `{row['family_alias']}` | "
+                f"{row.get('bbox_AP')} | {row.get('bbox_AP50')} | "
+                f"{row.get('f1_full_micro_050')} | {row.get('tp_full_050')} | "
+                f"{row.get('fp_full_050')} | {row.get('fn_full_050')} |"
+            )
+    lines.extend(
+        [
+            "",
             "## Sources",
             "",
             f"- Basin summary: `{summary['source_artifacts']['basin_summary_json']}`",
@@ -283,6 +357,9 @@ def _render_report_md(summary: dict[str, Any]) -> str:
             f"- Vision rows: `{len(summary['vision_rows'])}` inline rows",
         ]
     )
+    eval_snapshot_json = summary["source_artifacts"].get("eval_snapshot_json")
+    if eval_snapshot_json is not None:
+        lines.append(f"- Eval snapshot: `{eval_snapshot_json}`")
     return "\n".join(lines) + "\n"
 
 
@@ -308,11 +385,25 @@ def build_comparison_report(
         config_dir=config_dir,
         artifact_root=artifact_root,
     )
+    eval_snapshot_path = (
+        _resolve_input_path(
+            config.inputs.eval_snapshot_json,
+            config_dir=config_dir,
+            artifact_root=artifact_root,
+        )
+        if config.inputs.eval_snapshot_json is not None
+        else None
+    )
     basin_payload = _read_json(basin_summary_path)
     canonical_view = basin_payload.get("canonical_comparison_view", {})
     basin_rows = list(canonical_view.get("family_rollup", []))
     recall_rows = list(_read_json(recall_summary_path).get("family_metrics", []))
     vision_rows = [dict(row) for row in config.inputs.vision_rows]
+    eval_rows = (
+        _rank_eval_rows(_build_eval_rows(_read_json(eval_snapshot_path)))
+        if eval_snapshot_path is not None
+        else []
+    )
 
     verdicts = derive_family_verdicts(
         basin_rows=basin_rows,
@@ -324,16 +415,19 @@ def build_comparison_report(
         "source_artifacts": {
             "basin_summary_json": str(basin_summary_path),
             "recall_summary_json": str(recall_summary_path),
+            "eval_snapshot_json": str(eval_snapshot_path) if eval_snapshot_path is not None else None,
         },
         "basin_rows": basin_rows,
         "recall_rows": recall_rows,
         "vision_rows": vision_rows,
+        "eval_rows": eval_rows,
         "verdicts": verdicts,
     }
     _write_json(run_dir / "summary.json", summary)
     _write_jsonl(run_dir / "basin_rows.jsonl", basin_rows)
     _write_jsonl(run_dir / "recall_rows.jsonl", recall_rows)
     _write_jsonl(run_dir / "vision_rows.jsonl", vision_rows)
+    _write_jsonl(run_dir / "eval_rows.jsonl", eval_rows)
     (run_dir / "report.md").write_text(_render_report_md(summary), encoding="utf-8")
     return {
         "config_path": str(resolved_config_path),

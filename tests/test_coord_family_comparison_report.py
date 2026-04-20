@@ -17,6 +17,7 @@ def test_smoke_configs_exist() -> None:
         "configs/analysis/coord_family_comparison/smoke_basin.yaml",
         "configs/analysis/coord_family_comparison/smoke_recall.yaml",
         "configs/analysis/coord_family_comparison/final_report_smoke.yaml",
+        "configs/analysis/coord_family_comparison/interim_report_2026-04-20.yaml",
     ]:
         assert (worktree_root / rel).exists(), rel
 
@@ -47,6 +48,7 @@ def test_derive_family_verdicts_flags_family_with_high_bad_basin_as_risky() -> N
 def test_build_comparison_report_materializes_summary_bundle(tmp_path: Path) -> None:
     basin_summary = tmp_path / "basin_summary.json"
     recall_summary = tmp_path / "recall_summary.json"
+    eval_snapshot = tmp_path / "eval_snapshot.json"
     config_path = tmp_path / "report.yaml"
     output_dir = tmp_path / "analysis"
     basin_summary.write_text(
@@ -81,6 +83,24 @@ def test_build_comparison_report_materializes_summary_bundle(tmp_path: Path) -> 
         ),
         encoding="utf-8",
     )
+    eval_snapshot.write_text(
+        json.dumps(
+            {
+                "families": {
+                    "cxcywh_pure_ce": {
+                        "record_count": 200,
+                        "bbox_AP": 0.27,
+                        "bbox_AP50": 0.40,
+                        "f1_full_micro_050": 0.46,
+                        "tp_full_050": 740,
+                        "fp_full_050": 997,
+                        "fn_full_050": 704,
+                    }
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
     config_path.write_text(
         f"""
 run:
@@ -90,6 +110,7 @@ run:
 inputs:
   basin_summary_json: {basin_summary.as_posix()}
   recall_summary_json: {recall_summary.as_posix()}
+  eval_snapshot_json: {eval_snapshot.as_posix()}
   vision_rows:
     - family_alias: cxcywh_pure_ce
       vision_lift: 4.0
@@ -105,15 +126,19 @@ inputs:
     basin_rows_path = run_dir / "basin_rows.jsonl"
     recall_rows_path = run_dir / "recall_rows.jsonl"
     vision_rows_path = run_dir / "vision_rows.jsonl"
+    eval_rows_path = run_dir / "eval_rows.jsonl"
     assert result["run_dir"] == str(run_dir)
     assert summary_path.exists()
     assert report_path.exists()
     assert basin_rows_path.exists()
     assert recall_rows_path.exists()
     assert vision_rows_path.exists()
+    assert eval_rows_path.exists()
     summary = json.loads(summary_path.read_text(encoding="utf-8"))
     assert summary["run_name"] == "coord-family-report-smoke"
     assert summary["verdicts"]["cxcywh_pure_ce"]["family_health"] == "risky"
+    assert summary["eval_rows"][0]["family_alias"] == "cxcywh_pure_ce"
+    assert "Matched val200 Eval" in report_path.read_text(encoding="utf-8")
 
 
 def test_build_comparison_report_prefers_workspace_root_for_worktree_outputs(
@@ -203,3 +228,60 @@ inputs:
         "mixed",
         "risky",
     }
+
+
+def test_build_comparison_report_resolves_workspace_relative_eval_snapshot_from_worktree_config(
+    tmp_path: Path,
+) -> None:
+    workspace_root = tmp_path / "workspace"
+    repo_root = workspace_root / ".worktrees" / "feature"
+    repo_root.mkdir(parents=True)
+    basin_summary = workspace_root / "output/analysis/coord-family-basin-smoke/summary.json"
+    recall_summary = workspace_root / "output/analysis/coord-family-recall-smoke/summary.json"
+    eval_snapshot = workspace_root / "output/analysis/coord-family-progress/current_eval_metrics_snapshot.json"
+    basin_summary.parent.mkdir(parents=True)
+    recall_summary.parent.mkdir(parents=True)
+    eval_snapshot.parent.mkdir(parents=True)
+    basin_summary.write_text(
+        json.dumps({"canonical_comparison_view": {"family_rollup": []}}),
+        encoding="utf-8",
+    )
+    recall_summary.write_text(json.dumps({"family_metrics": []}), encoding="utf-8")
+    eval_snapshot.write_text(
+        json.dumps(
+            {
+                "families": {
+                    "center_parameterization": {
+                        "bbox_AP": 0.42,
+                        "bbox_AP50": 0.60,
+                        "f1_full_micro_050": 0.61,
+                        "tp_full_050": 947,
+                        "fp_full_050": 710,
+                        "fn_full_050": 497,
+                    }
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    config_path = repo_root / "report.yaml"
+    config_path.write_text(
+        """
+run:
+  name: coord-family-report-smoke
+  output_dir: output/analysis
+
+inputs:
+  basin_summary_json: output/analysis/coord-family-basin-smoke/summary.json
+  recall_summary_json: output/analysis/coord-family-recall-smoke/summary.json
+  eval_snapshot_json: output/analysis/coord-family-progress/current_eval_metrics_snapshot.json
+  vision_rows: []
+        """.strip(),
+        encoding="utf-8",
+    )
+
+    result = build_comparison_report(config_path, repo_root=repo_root)
+
+    summary = json.loads(Path(result["summary_json"]).read_text(encoding="utf-8"))
+    assert summary["eval_rows"][0]["family_alias"] == "center_parameterization"
+    assert summary["eval_rows"][0]["rank"] == 1
