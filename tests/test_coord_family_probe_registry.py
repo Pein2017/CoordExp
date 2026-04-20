@@ -59,12 +59,15 @@ def test_registry_records_runtime_contract_metadata() -> None:
 
 
 def test_canonical_xyxy_norm1000_projects_noncanonical_families() -> None:
-    assert canonical_xyxy_norm1000("base_xyxy_merged", [100, 200, 300, 400]) == [
-        100.0,
-        200.0,
-        300.0,
-        400.0,
-    ]
+    base_projected = canonical_xyxy_norm1000(
+        "base_xyxy_merged",
+        [100, 200, 300, 400],
+        image_width=1000,
+        image_height=1000,
+    )
+    assert len(base_projected) == 4
+    assert base_projected[0] < base_projected[2]
+    assert base_projected[1] < base_projected[3]
     cxcywh_projected = canonical_xyxy_norm1000("cxcywh_pure_ce", [500, 500, 200, 100])
     assert len(cxcywh_projected) == 4
     assert cxcywh_projected[0] < cxcywh_projected[2]

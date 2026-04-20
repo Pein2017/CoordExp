@@ -13,6 +13,8 @@ probe_rows:
     abs_distance_to_target: 0
     native_target_values: [512, 320, 768, 640]
     native_center_values: [512, 320, 768, 640]
+    image_width: 1024
+    image_height: 1024
 
   - family_alias: base_xyxy_merged
     probe_id: base-case
@@ -24,6 +26,8 @@ probe_rows:
     abs_distance_to_target: 4
     native_target_values: [512, 320, 768, 640]
     native_center_values: [512, 320, 768, 640]
+    image_width: 1024
+    image_height: 1024
 
   - family_alias: cxcywh_pure_ce
     probe_id: cxcywh-case

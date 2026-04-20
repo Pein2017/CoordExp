@@ -168,14 +168,28 @@ def derive_family_verdicts(
 
     for row in basin_rows:
         alias = str(row["family_alias"])
-        mass_at_4 = _float_value(row, "mass_at_4")
+        target_metrics = row.get("mean_target_bbox_metrics")
+        center_metrics = row.get("mean_center_bbox_metrics")
+        if isinstance(target_metrics, dict):
+            mass_at_4 = _float_value(target_metrics, "mass_at_4")
+        else:
+            mass_at_4 = _float_value(row, "mass_at_4")
         if mass_at_4 is not None:
             by_family[alias]["mass_at_4"].append(mass_at_4)
-        wrong_anchor = _float_value(
-            row,
-            "wrong_anchor_advantage_at_4",
-            "pred_minus_gt_mass_at_4",
-        )
+        if isinstance(center_metrics, dict) and isinstance(target_metrics, dict):
+            center_mass_at_4 = _float_value(center_metrics, "mass_at_4")
+            target_mass_at_4 = _float_value(target_metrics, "mass_at_4")
+            wrong_anchor = (
+                center_mass_at_4 - target_mass_at_4
+                if center_mass_at_4 is not None and target_mass_at_4 is not None
+                else None
+            )
+        else:
+            wrong_anchor = _float_value(
+                row,
+                "wrong_anchor_advantage_at_4",
+                "pred_minus_gt_mass_at_4",
+            )
         if wrong_anchor is not None:
             by_family[alias]["wrong_anchor_advantage_at_4"].append(wrong_anchor)
 
@@ -294,7 +308,9 @@ def build_comparison_report(
         config_dir=config_dir,
         artifact_root=artifact_root,
     )
-    basin_rows = list(_read_json(basin_summary_path).get("slot_metrics", []))
+    basin_payload = _read_json(basin_summary_path)
+    canonical_view = basin_payload.get("canonical_comparison_view", {})
+    basin_rows = list(canonical_view.get("family_rollup", []))
     recall_rows = list(_read_json(recall_summary_path).get("family_metrics", []))
     vision_rows = [dict(row) for row in config.inputs.vision_rows]
 

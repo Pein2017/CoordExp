@@ -26,8 +26,8 @@ def test_derive_family_verdicts_flags_family_with_high_bad_basin_as_risky() -> N
         basin_rows=[
             {
                 "family_alias": "cxcywh_pure_ce",
-                "mass_at_4": 0.82,
-                "wrong_anchor_advantage_at_4": 0.22,
+                "mean_target_bbox_metrics": {"mass_at_4": 0.82},
+                "mean_center_bbox_metrics": {"mass_at_4": 1.04},
             }
         ],
         recall_rows=[
@@ -52,14 +52,16 @@ def test_build_comparison_report_materializes_summary_bundle(tmp_path: Path) -> 
     basin_summary.write_text(
         json.dumps(
             {
-                "slot_metrics": [
-                    {
-                        "family_alias": "cxcywh_pure_ce",
-                        "slot": "cx",
-                        "mass_at_4": 0.82,
-                        "wrong_anchor_advantage_at_4": 0.22,
-                    }
-                ]
+                "canonical_comparison_view": {
+                    "family_rollup": [
+                        {
+                            "family_alias": "cxcywh_pure_ce",
+                            "canonical_compare_group": "canonical_xyxy_norm1000",
+                            "mean_target_bbox_metrics": {"mass_at_4": 0.82},
+                            "mean_center_bbox_metrics": {"mass_at_4": 1.04},
+                        }
+                    ]
+                }
             }
         ),
         encoding="utf-8",
@@ -158,7 +160,20 @@ def test_build_comparison_report_resolves_workspace_relative_inputs_from_worktre
     basin_summary.parent.mkdir(parents=True)
     recall_summary.parent.mkdir(parents=True)
     basin_summary.write_text(
-        json.dumps({"slot_metrics": [{"family_alias": "base_xyxy_merged", "mass_at_4": 0.7}]}),
+        json.dumps(
+            {
+                "canonical_comparison_view": {
+                    "family_rollup": [
+                        {
+                            "family_alias": "base_xyxy_merged",
+                            "canonical_compare_group": "canonical_xyxy_norm1000",
+                            "mean_target_bbox_metrics": {"mass_at_4": 0.7},
+                            "mean_center_bbox_metrics": {"mass_at_4": 0.75},
+                        }
+                    ]
+                }
+            }
+        ),
         encoding="utf-8",
     )
     recall_summary.write_text(

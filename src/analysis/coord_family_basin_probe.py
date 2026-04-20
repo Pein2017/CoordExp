@@ -37,6 +37,8 @@ class BasinProbeRow:
     abs_distance_to_target: int
     native_target_values: tuple[int, int, int, int] | None = None
     native_center_values: tuple[int, int, int, int] | None = None
+    image_width: int | None = None
+    image_height: int | None = None
 
 
 @dataclass(frozen=True)
@@ -107,6 +109,15 @@ def _optional_int_quad(parent: dict[str, Any], key: str) -> tuple[int, int, int,
     return tuple(int(v) for v in value)
 
 
+def _optional_positive_int(parent: dict[str, Any], key: str) -> int | None:
+    value = parent.get(key)
+    if value is None:
+        return None
+    if not isinstance(value, int) or value <= 0:
+        raise ValueError(f"{key} must be a positive integer when provided.")
+    return int(value)
+
+
 def load_basin_probe_config(config_path: Path) -> BasinProbeConfig:
     payload = _load_yaml(config_path)
     run_raw = _require_mapping(payload, "run")
@@ -139,6 +150,8 @@ def load_basin_probe_config(config_path: Path) -> BasinProbeConfig:
                 abs_distance_to_target=_require_int(item, "abs_distance_to_target"),
                 native_target_values=_optional_int_quad(item, "native_target_values"),
                 native_center_values=_optional_int_quad(item, "native_center_values"),
+                image_width=_optional_positive_int(item, "image_width"),
+                image_height=_optional_positive_int(item, "image_height"),
             )
         )
     return BasinProbeConfig(run=run, probe_rows=tuple(probe_rows))
@@ -321,8 +334,21 @@ def summarize_canonical_basin_rows(rows: list[BasinProbeRow]) -> dict[str, list[
             )
             continue
 
+        if spec.pred_coord_mode == "pixel" and any(
+            row.image_width is None or row.image_height is None for row in group_rows
+        ):
+            skipped.append(
+                _canonical_skip(
+                    family_alias=family_alias,
+                    probe_id=probe_id,
+                    reason="missing_image_size_for_pixel_projection",
+                )
+            )
+            continue
+
         target_contexts = {row.native_target_values for row in group_rows}
         center_contexts = {row.native_center_values for row in group_rows}
+        image_sizes = {(row.image_width, row.image_height) for row in group_rows}
         if len(target_contexts) != 1 or len(center_contexts) != 1:
             skipped.append(
                 _canonical_skip(
@@ -332,12 +358,32 @@ def summarize_canonical_basin_rows(rows: list[BasinProbeRow]) -> dict[str, list[
                 )
             )
             continue
+        if spec.pred_coord_mode == "pixel" and len(image_sizes) != 1:
+            skipped.append(
+                _canonical_skip(
+                    family_alias=family_alias,
+                    probe_id=probe_id,
+                    reason="inconsistent_image_size_context",
+                )
+            )
+            continue
 
         target_values = next(iter(target_contexts))
         center_values = next(iter(center_contexts))
+        image_width, image_height = next(iter(image_sizes))
         try:
-            target_bbox_xyxy = canonical_xyxy_norm1000(family_alias, target_values)
-            center_bbox_xyxy = canonical_xyxy_norm1000(family_alias, center_values)
+            target_bbox_xyxy = canonical_xyxy_norm1000(
+                family_alias,
+                target_values,
+                image_width=image_width,
+                image_height=image_height,
+            )
+            center_bbox_xyxy = canonical_xyxy_norm1000(
+                family_alias,
+                center_values,
+                image_width=image_width,
+                image_height=image_height,
+            )
         except NotImplementedError:
             skipped.append(
                 _canonical_skip(
@@ -362,8 +408,18 @@ def summarize_canonical_basin_rows(rows: list[BasinProbeRow]) -> dict[str, list[
                 slot_index=slot_index,
                 candidate_value=row.candidate_value,
             )
-            candidate_target_bbox = canonical_xyxy_norm1000(family_alias, candidate_target_values)
-            candidate_center_bbox = canonical_xyxy_norm1000(family_alias, candidate_center_values)
+            candidate_target_bbox = canonical_xyxy_norm1000(
+                family_alias,
+                candidate_target_values,
+                image_width=image_width,
+                image_height=image_height,
+            )
+            candidate_center_bbox = canonical_xyxy_norm1000(
+                family_alias,
+                candidate_center_values,
+                image_width=image_width,
+                image_height=image_height,
+            )
             target_distance_rows.append(
                 {
                     "score": row.score_mean,
@@ -387,7 +443,7 @@ def summarize_canonical_basin_rows(rows: list[BasinProbeRow]) -> dict[str, list[
                 "bbox_format": spec.bbox_format,
                 "pred_coord_mode": spec.pred_coord_mode,
                 "canonical_projection_kind": spec.canonical_projection_kind,
-                "canonical_compare_group": f"canonical_xyxy_{spec.pred_coord_mode}",
+                "canonical_compare_group": "canonical_xyxy_norm1000",
                 "target_bbox_xyxy": target_bbox_xyxy,
                 "center_bbox_xyxy": center_bbox_xyxy,
                 "target_bbox_metrics": _compute_distance_metrics(
@@ -412,7 +468,7 @@ def summarize_canonical_basin_rows(rows: list[BasinProbeRow]) -> dict[str, list[
                 "family_alias": family_alias,
                 "probe_count": len(metrics),
                 "pred_coord_mode": metrics[0]["pred_coord_mode"],
-                "canonical_compare_group": metrics[0]["canonical_compare_group"],
+                "canonical_compare_group": "canonical_xyxy_norm1000",
                 "mean_target_bbox_metrics": _mean_metric_dicts(
                     [metric["target_bbox_metrics"] for metric in metrics]
                 ),
@@ -471,6 +527,8 @@ def run_basin_probe(
             "abs_distance_to_target": row.abs_distance_to_target,
             "native_target_values": list(row.native_target_values) if row.native_target_values else None,
             "native_center_values": list(row.native_center_values) if row.native_center_values else None,
+            "image_width": row.image_width,
+            "image_height": row.image_height,
         }
         for row in config.probe_rows
     ]

@@ -71,6 +71,20 @@ def test_summarize_basin_rows_rejects_slot_not_in_family_registry() -> None:
 def test_summarize_canonical_basin_rows_projects_when_native_bbox_context_is_available() -> None:
     rows = [
         BasinProbeRow(
+            family_alias="base_xyxy_merged",
+            probe_id="case-base",
+            slot="x1",
+            center_value=100,
+            target_value=100,
+            candidate_value=100,
+            score_mean=-0.05,
+            abs_distance_to_target=0,
+            native_target_values=(100, 200, 300, 400),
+            native_center_values=(100, 200, 300, 400),
+            image_width=1000,
+            image_height=1000,
+        ),
+        BasinProbeRow(
             family_alias="cxcywh_pure_ce",
             probe_id="case-a",
             slot="cx",
@@ -110,18 +124,23 @@ def test_summarize_canonical_basin_rows_projects_when_native_bbox_context_is_ava
 
     summary = summarize_canonical_basin_rows(rows)
 
-    assert summary["probe_metrics"][0]["family_alias"] == "cxcywh_pure_ce"
-    assert summary["probe_metrics"][0]["probe_id"] == "case-a"
+    assert [row["family_alias"] for row in summary["probe_metrics"]] == [
+        "base_xyxy_merged",
+        "cxcywh_pure_ce",
+    ]
     assert summary["probe_metrics"][0]["canonical_compare_group"] == "canonical_xyxy_norm1000"
-    assert summary["probe_metrics"][0]["pred_coord_mode"] == "norm1000"
-    assert summary["probe_metrics"][0]["target_bbox_metrics"]["mass_at_4"] > 0.0
-    assert summary["family_rollup"][0]["family_alias"] == "cxcywh_pure_ce"
-    assert summary["family_rollup"][0]["probe_count"] == 1
+    assert summary["probe_metrics"][1]["canonical_compare_group"] == "canonical_xyxy_norm1000"
+    assert summary["probe_metrics"][1]["pred_coord_mode"] == "norm1000"
+    assert summary["probe_metrics"][1]["target_bbox_metrics"]["mass_at_4"] > 0.0
+    assert [row["family_alias"] for row in summary["family_rollup"]] == [
+        "base_xyxy_merged",
+        "cxcywh_pure_ce",
+    ]
     assert summary["skipped"] == [
         {
             "family_alias": "center_parameterization",
             "probe_id": "case-b",
-            "reason": "unsupported_projection:family_specific",
+            "reason": "missing_image_size_for_pixel_projection",
         }
     ]
 
@@ -136,6 +155,18 @@ run:
   output_dir: {output_dir.as_posix()}
 
 probe_rows:
+  - family_alias: base_xyxy_merged
+    probe_id: case-base
+    slot: x1
+    center_value: 100
+    target_value: 100
+    candidate_value: 100
+    score_mean: -0.05
+    abs_distance_to_target: 0
+    native_target_values: [100, 200, 300, 400]
+    native_center_values: [100, 200, 300, 400]
+    image_width: 1000
+    image_height: 1000
   - family_alias: cxcywh_pure_ce
     probe_id: case-a
     slot: cx
@@ -170,11 +201,13 @@ probe_rows:
     assert rows_path.exists()
     summary = json.loads(summary_path.read_text(encoding="utf-8"))
     assert summary["run_name"] == "coord-family-basin-smoke"
-    assert summary["family_native_slot_metrics"][0]["family_alias"] == "cxcywh_pure_ce"
-    assert summary["family_native_slot_metrics"][0]["slot"] == "cx"
-    assert summary["canonical_comparison_view"]["probe_metrics"][0]["family_alias"] == "cxcywh_pure_ce"
-    assert result["family_native_metric_count"] == 1
-    assert result["canonical_metric_count"] == 1
+    assert len(summary["family_native_slot_metrics"]) == 2
+    assert [row["family_alias"] for row in summary["canonical_comparison_view"]["probe_metrics"]] == [
+        "base_xyxy_merged",
+        "cxcywh_pure_ce",
+    ]
+    assert result["family_native_metric_count"] == 2
+    assert result["canonical_metric_count"] == 2
 
 
 def test_run_basin_probe_prefers_workspace_root_for_worktree_outputs(
