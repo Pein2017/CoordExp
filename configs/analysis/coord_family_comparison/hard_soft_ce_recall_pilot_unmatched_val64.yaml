@@ -1,0 +1,73 @@
+run:
+  name: coord-family-recall-pilot-hard-soft-ce-val64
+  output_dir: output/analysis
+  stages: [prepare, collect, gate, score, audit, report]
+
+dataset:
+  jsonl_path: public_data/coco/rescale_32_1024_bbox_max60_lvis_proxy/val.coord.jsonl
+  sample_count: 64
+  seed: 42
+
+prompts:
+  prompt_variant: coco_80
+  object_field_order: desc_first
+
+collection:
+  backend_mode: hf
+  device: cuda:7
+  cuda_visible_devices: null
+  temperature: 0.3
+  top_p: 0.9
+  max_new_tokens: 3084
+  repetition_penalty: 1.05
+  batch_size: 4
+  seed: 42
+  gpu_memory_utilization: 0.8
+  tensor_parallel_size: 1
+  max_model_len: 14000
+  max_num_seqs: 16
+  enforce_eager: true
+  disable_custom_all_reduce: true
+  reuse_existing: true
+
+collection_gate:
+  nonempty_pred_image_rate_min: 0.2
+  pred_count_total_min: 20
+  unmatched_count_min: 10
+
+eval:
+  semantic_model: model_cache/all-MiniLM-L6-v2-local
+  semantic_threshold: 0.5
+  semantic_device: cuda:7
+  semantic_batch_size: 64
+  num_workers: 8
+  f1ish_iou_thrs: [0.5]
+  f1ish_pred_scope: all
+  use_segm: false
+
+scoring:
+  device: cuda:7
+  attn_implementation: auto
+  gt_batch_size: 4
+  masked_batch_size: 4
+  rollout_counterfactual_scope: all
+  mask_fill: 127
+
+report:
+  histogram_bins: 20
+  top_k_values: [10, 25, 50]
+  audit_pack_top_n: 24
+  authoritative_temperatures: [0.3]
+  audit_labels_path: null
+
+manual_audit:
+  sample_count: 24
+  score_key: combined_linear
+  label_path: null
+
+checkpoints:
+  - name: hard_soft_ce_2b
+    path: output/stage1_2b/coco_bbox_max60-hard_soft_ce-2b-merged
+    bbox_format: xyxy
+    infer_mode: coord
+    pred_coord_mode: pixel

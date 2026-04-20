@@ -295,6 +295,7 @@ def test_build_pipeline_yaml_applies_checkpoint_infer_contract_overrides(
         output_root=tmp_path / "analysis",
         subset_path=tmp_path / "sampled.coord.jsonl",
         root_image_dir=tmp_path / "images",
+        run_name="cxcywh-pure-ce",
         checkpoint=checkpoint,
         checkpoint_path=tmp_path / "checkpoint-1",
         prompt_variant="coco_80",
@@ -303,6 +304,7 @@ def test_build_pipeline_yaml_applies_checkpoint_infer_contract_overrides(
         eval_cfg=verifier_module.EvalConfig(),
     )
 
+    assert payload["run"]["name"] == "cxcywh-pure-ce"
     assert payload["infer"]["bbox_format"] == "cxcywh"
     assert payload["infer"]["mode"] == "coord"
     assert payload["infer"]["pred_coord_mode"] == "norm1000"

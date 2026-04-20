@@ -1,4 +1,4 @@
-out_dir: output/eval/coord-family-rawtext-oracle-k-val64
+out_dir: output/eval/coord-family-base-xyxy-oracle-k-val64
 
 strict_parse: false
 f1ish_iou_thrs: [0.5]
@@ -7,22 +7,22 @@ num_workers: 8
 
 semantic_model: model_cache/all-MiniLM-L6-v2-local
 semantic_threshold: 0.5
-semantic_device: cuda:1
+semantic_device: cuda:2
 semantic_batch_size: 64
 
 baseline_run:
-  label: raw_text_temp00_seed42
+  label: base_xyxy_temp00_seed42
   pipeline_config: configs/infer/pipeline.yaml
   overrides:
     run.root_image_dir: /data/CoordExp/public_data/coco/rescale_32_1024_bbox_max60_lvis_proxy
-    infer.gt_jsonl: output/analysis/coord-family-recall-pilot-rawtext-val64/subset/sampled.text_pixel.jsonl
-    infer.model_checkpoint: output/stage1_2b/coco_bbox_max60-coco80-desc_first-1024-lvis_proxy-raw_text_xyxy-pure_ce/epoch_4-raw_text_xyxy-pure_ce-coco80-desc_first-1024-lvis_proxy-from-base-2B/v1-20260417-084341/checkpoint-552
+    infer.gt_jsonl: output/analysis/coord-family-recall-pilot-base-xyxy-val64/subset/sampled.coord.jsonl
+    infer.model_checkpoint: output/stage1_2b/coco_bbox_max60-coco80-desc_first-1024-lvis_proxy-merged
     infer.prompt_variant: coco_80
     infer.object_field_order: desc_first
     infer.object_ordering: sorted
-    infer.mode: text
+    infer.mode: coord
     infer.bbox_format: xyxy
-    infer.pred_coord_mode: norm1000
+    infer.pred_coord_mode: pixel
     infer.backend.type: hf
     infer.generation.temperature: 0.0
     infer.generation.top_p: 0.9
@@ -30,22 +30,22 @@ baseline_run:
     infer.generation.repetition_penalty: 1.05
     infer.generation.batch_size: 4
     infer.generation.seed: 42
-    infer.device: cuda:1
+    infer.device: cuda:2
     infer.limit: 0
 
 oracle_runs:
-  - label: raw_text_temp07_seed101
+  - label: base_xyxy_temp07_seed101
     pipeline_config: configs/infer/pipeline.yaml
     overrides:
       run.root_image_dir: /data/CoordExp/public_data/coco/rescale_32_1024_bbox_max60_lvis_proxy
-      infer.gt_jsonl: output/analysis/coord-family-recall-pilot-rawtext-val64/subset/sampled.text_pixel.jsonl
-      infer.model_checkpoint: output/stage1_2b/coco_bbox_max60-coco80-desc_first-1024-lvis_proxy-raw_text_xyxy-pure_ce/epoch_4-raw_text_xyxy-pure_ce-coco80-desc_first-1024-lvis_proxy-from-base-2B/v1-20260417-084341/checkpoint-552
+      infer.gt_jsonl: output/analysis/coord-family-recall-pilot-base-xyxy-val64/subset/sampled.coord.jsonl
+      infer.model_checkpoint: output/stage1_2b/coco_bbox_max60-coco80-desc_first-1024-lvis_proxy-merged
       infer.prompt_variant: coco_80
       infer.object_field_order: desc_first
       infer.object_ordering: sorted
-      infer.mode: text
+      infer.mode: coord
       infer.bbox_format: xyxy
-      infer.pred_coord_mode: norm1000
+      infer.pred_coord_mode: pixel
       infer.backend.type: hf
       infer.generation.temperature: 0.7
       infer.generation.top_p: 0.95
@@ -53,20 +53,20 @@ oracle_runs:
       infer.generation.repetition_penalty: 1.05
       infer.generation.batch_size: 4
       infer.generation.seed: 101
-      infer.device: cuda:1
+      infer.device: cuda:2
       infer.limit: 0
-  - label: raw_text_temp07_seed102
+  - label: base_xyxy_temp07_seed102
     pipeline_config: configs/infer/pipeline.yaml
     overrides:
       run.root_image_dir: /data/CoordExp/public_data/coco/rescale_32_1024_bbox_max60_lvis_proxy
-      infer.gt_jsonl: output/analysis/coord-family-recall-pilot-rawtext-val64/subset/sampled.text_pixel.jsonl
-      infer.model_checkpoint: output/stage1_2b/coco_bbox_max60-coco80-desc_first-1024-lvis_proxy-raw_text_xyxy-pure_ce/epoch_4-raw_text_xyxy-pure_ce-coco80-desc_first-1024-lvis_proxy-from-base-2B/v1-20260417-084341/checkpoint-552
+      infer.gt_jsonl: output/analysis/coord-family-recall-pilot-base-xyxy-val64/subset/sampled.coord.jsonl
+      infer.model_checkpoint: output/stage1_2b/coco_bbox_max60-coco80-desc_first-1024-lvis_proxy-merged
       infer.prompt_variant: coco_80
       infer.object_field_order: desc_first
       infer.object_ordering: sorted
-      infer.mode: text
+      infer.mode: coord
       infer.bbox_format: xyxy
-      infer.pred_coord_mode: norm1000
+      infer.pred_coord_mode: pixel
       infer.backend.type: hf
       infer.generation.temperature: 0.7
       infer.generation.top_p: 0.95
@@ -74,20 +74,20 @@ oracle_runs:
       infer.generation.repetition_penalty: 1.05
       infer.generation.batch_size: 4
       infer.generation.seed: 102
-      infer.device: cuda:1
+      infer.device: cuda:2
       infer.limit: 0
-  - label: raw_text_temp07_seed103
+  - label: base_xyxy_temp07_seed103
     pipeline_config: configs/infer/pipeline.yaml
     overrides:
       run.root_image_dir: /data/CoordExp/public_data/coco/rescale_32_1024_bbox_max60_lvis_proxy
-      infer.gt_jsonl: output/analysis/coord-family-recall-pilot-rawtext-val64/subset/sampled.text_pixel.jsonl
-      infer.model_checkpoint: output/stage1_2b/coco_bbox_max60-coco80-desc_first-1024-lvis_proxy-raw_text_xyxy-pure_ce/epoch_4-raw_text_xyxy-pure_ce-coco80-desc_first-1024-lvis_proxy-from-base-2B/v1-20260417-084341/checkpoint-552
+      infer.gt_jsonl: output/analysis/coord-family-recall-pilot-base-xyxy-val64/subset/sampled.coord.jsonl
+      infer.model_checkpoint: output/stage1_2b/coco_bbox_max60-coco80-desc_first-1024-lvis_proxy-merged
       infer.prompt_variant: coco_80
       infer.object_field_order: desc_first
       infer.object_ordering: sorted
-      infer.mode: text
+      infer.mode: coord
       infer.bbox_format: xyxy
-      infer.pred_coord_mode: norm1000
+      infer.pred_coord_mode: pixel
       infer.backend.type: hf
       infer.generation.temperature: 0.7
       infer.generation.top_p: 0.95
@@ -95,20 +95,20 @@ oracle_runs:
       infer.generation.repetition_penalty: 1.05
       infer.generation.batch_size: 4
       infer.generation.seed: 103
-      infer.device: cuda:1
+      infer.device: cuda:2
       infer.limit: 0
-  - label: raw_text_temp07_seed104
+  - label: base_xyxy_temp07_seed104
     pipeline_config: configs/infer/pipeline.yaml
     overrides:
       run.root_image_dir: /data/CoordExp/public_data/coco/rescale_32_1024_bbox_max60_lvis_proxy
-      infer.gt_jsonl: output/analysis/coord-family-recall-pilot-rawtext-val64/subset/sampled.text_pixel.jsonl
-      infer.model_checkpoint: output/stage1_2b/coco_bbox_max60-coco80-desc_first-1024-lvis_proxy-raw_text_xyxy-pure_ce/epoch_4-raw_text_xyxy-pure_ce-coco80-desc_first-1024-lvis_proxy-from-base-2B/v1-20260417-084341/checkpoint-552
+      infer.gt_jsonl: output/analysis/coord-family-recall-pilot-base-xyxy-val64/subset/sampled.coord.jsonl
+      infer.model_checkpoint: output/stage1_2b/coco_bbox_max60-coco80-desc_first-1024-lvis_proxy-merged
       infer.prompt_variant: coco_80
       infer.object_field_order: desc_first
       infer.object_ordering: sorted
-      infer.mode: text
+      infer.mode: coord
       infer.bbox_format: xyxy
-      infer.pred_coord_mode: norm1000
+      infer.pred_coord_mode: pixel
       infer.backend.type: hf
       infer.generation.temperature: 0.7
       infer.generation.top_p: 0.95
@@ -116,5 +116,5 @@ oracle_runs:
       infer.generation.repetition_penalty: 1.05
       infer.generation.batch_size: 4
       infer.generation.seed: 104
-      infer.device: cuda:1
+      infer.device: cuda:2
       infer.limit: 0

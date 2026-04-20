@@ -1126,6 +1126,7 @@ def _build_pipeline_yaml(
     output_root: Path,
     subset_path: Path,
     root_image_dir: Path,
+    run_name: str,
     checkpoint: CheckpointSpec,
     checkpoint_path: Path,
     prompt_variant: str,
@@ -1137,7 +1138,7 @@ def _build_pipeline_yaml(
     backend_type = "hf" if backend_mode == "hf" else "vllm"
     return {
         "run": {
-            "name": checkpoint.name,
+            "name": run_name,
             "output_dir": str(output_root),
             "root_image_dir": str(root_image_dir),
         },
@@ -1308,6 +1309,7 @@ def _build_stage2_parity_collection_config(
     *,
     subset_path: Path,
     root_image_dir: Path,
+    run_name: str,
     checkpoint: CheckpointSpec,
     checkpoint_path: Path,
     prompt_variant: str,
@@ -1317,7 +1319,7 @@ def _build_stage2_parity_collection_config(
 ) -> Dict[str, Any]:
     return {
         "run": {
-            "name": str(checkpoint.name),
+            "name": str(run_name),
             "root_image_dir": str(root_image_dir),
         },
         "collection": {
@@ -1437,6 +1439,7 @@ def run_collection_for_checkpoint(
         pipeline_cfg = _build_stage2_parity_collection_config(
             subset_path=subset_path,
             root_image_dir=root_image_dir,
+            run_name=run_dir.name,
             checkpoint=checkpoint,
             checkpoint_path=resolved_checkpoint_path,
             prompt_variant=prompt_variant,
@@ -1450,6 +1453,7 @@ def run_collection_for_checkpoint(
             output_root=output_root,
             subset_path=subset_path,
             root_image_dir=root_image_dir,
+            run_name=run_dir.name,
             checkpoint=checkpoint,
             checkpoint_path=resolved_checkpoint_path,
             prompt_variant=prompt_variant,
