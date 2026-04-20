@@ -5,8 +5,8 @@ run:
 artifact_sources:
   - family_alias: hard_soft_ce_2b
     oracle_fn_objects_jsonl: output/eval/coord-family-hard-soft-ce-oracle-k-val64/fn_objects.jsonl
-    gt_proxy_scores_jsonl: output/analysis/coord-family-recall-pilot-hard-soft-ce-val64/checkpoints/hard_soft_ce_2b/gt_proxy_scores.jsonl
-    proposal_proxy_scores_jsonl: output/analysis/coord-family-recall-pilot-hard-soft-ce-val64/checkpoints/hard_soft_ce_2b/proposal_proxy_scores.jsonl
+    gt_proxy_scores_jsonl: output/analysis/coord-family-recall-pilot-hard-soft-ce-val64/checkpoints/hard-soft-ce-2b/gt_proxy_scores.jsonl
+    proposal_proxy_scores_jsonl: output/analysis/coord-family-recall-pilot-hard-soft-ce-val64/checkpoints/hard-soft-ce-2b/proposal_proxy_scores.jsonl
     score_field: combined_linear
     oracle_recovery_field: ever_recovered_loc
     oracle_fn_filter_field: baseline_fn_loc

@@ -5,8 +5,8 @@ run:
 artifact_sources:
   - family_alias: raw_text_xyxy_pure_ce
     oracle_fn_objects_jsonl: output/eval/coord-family-rawtext-oracle-k-val64/fn_objects.jsonl
-    gt_proxy_scores_jsonl: output/analysis/coord-family-recall-pilot-rawtext-val64/checkpoints/raw_text_xyxy_pure_ce/gt_proxy_scores.jsonl
-    proposal_proxy_scores_jsonl: output/analysis/coord-family-recall-pilot-rawtext-val64/checkpoints/raw_text_xyxy_pure_ce/proposal_proxy_scores.jsonl
+    gt_proxy_scores_jsonl: output/analysis/coord-family-recall-pilot-rawtext-val64/checkpoints/raw-text-xyxy-pure-ce/gt_proxy_scores.jsonl
+    proposal_proxy_scores_jsonl: output/analysis/coord-family-recall-pilot-rawtext-val64/checkpoints/raw-text-xyxy-pure-ce/proposal_proxy_scores.jsonl
     score_field: combined_linear
     oracle_recovery_field: ever_recovered_loc
     oracle_fn_filter_field: baseline_fn_loc

@@ -1,0 +1,40 @@
+run:
+  name: coord-family-recall-progress-2026-04-20
+  output_dir: output/analysis
+
+families:
+  - family_alias: center_parameterization
+    sample_size: 64
+    verifier_summary_json: output/analysis/coord-family-recall-pilot-center-val64/checkpoints/center-parameterization/summary.json
+    oracle_summary_json: output/eval/coord-family-center-oracle-k-val64/summary.json
+    recall_probe_summary_json: output/analysis/coord-family-recall-center-val64/summary.json
+
+  - family_alias: raw_text_xyxy_pure_ce
+    sample_size: 64
+    verifier_summary_json: output/analysis/coord-family-recall-pilot-rawtext-val64/checkpoints/raw-text-xyxy-pure-ce/summary.json
+    oracle_summary_json: output/eval/coord-family-rawtext-oracle-k-val64/summary.json
+    recall_probe_summary_json: output/analysis/coord-family-recall-rawtext-val64/summary.json
+
+  - family_alias: cxcywh_pure_ce
+    sample_size: 64
+    verifier_summary_json: output/analysis/coord-family-recall-pilot-cxcywh-val64/checkpoints/cxcywh-pure-ce/summary.json
+    oracle_summary_json: output/eval/coord-family-cxcywh-oracle-k-val64/summary.json
+    recall_probe_summary_json: output/analysis/coord-family-recall-cxcywh-val64/summary.json
+
+  - family_alias: cxcy_logw_logh_pure_ce
+    sample_size: 64
+    verifier_summary_json: output/analysis/coord-family-recall-pilot-cxcy-logw-logh-val64/checkpoints/cxcy-logw-logh-pure-ce/summary.json
+    oracle_summary_json: output/eval/coord-family-cxcy-logw-logh-oracle-k-val64/summary.json
+    recall_probe_summary_json: output/analysis/coord-family-recall-cxcy-logw-logh-val64/summary.json
+
+  - family_alias: base_xyxy_merged
+    sample_size: 64
+    verifier_summary_json: output/analysis/coord-family-recall-pilot-base-xyxy-val64/checkpoints/base-xyxy-merged/summary.json
+    oracle_summary_json: output/eval/coord-family-base-xyxy-oracle-k-val64/summary.json
+    recall_probe_summary_json: output/analysis/coord-family-recall-base-xyxy-val64/summary.json
+
+  - family_alias: hard_soft_ce_2b
+    sample_size: 64
+    verifier_summary_json: output/analysis/coord-family-recall-pilot-hard-soft-ce-val64/checkpoints/hard-soft-ce-2b/summary.json
+    oracle_summary_json: output/eval/coord-family-hard-soft-ce-oracle-k-val64/summary.json
+    recall_probe_summary_json: output/analysis/coord-family-recall-hard-soft-ce-val64/summary.json
