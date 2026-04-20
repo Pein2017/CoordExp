@@ -7,6 +7,6 @@ inputs:
   recall_summary_json: output/analysis/coord-family-recall-smoke/summary.json
   vision_rows:
     - family_alias: base_xyxy_merged
-      vision_lift: 1.0
+      vision_lift: 1.2
     - family_alias: cxcywh_pure_ce
       vision_lift: 4.0

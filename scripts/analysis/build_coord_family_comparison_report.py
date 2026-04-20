@@ -1,4 +1,4 @@
-"""Build the coordinate-family comparison report bundle from a YAML manifest."""
+"""Build a minimal coordinate-family comparison report bundle from prior probe summaries."""
 
 from __future__ import annotations
 
@@ -10,16 +10,14 @@ ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from src.analysis.coord_family_comparison_report import (  # noqa: E402
-    build_comparison_report,
-)
+from src.analysis.coord_family_comparison_report import build_comparison_report  # noqa: E402
 
 
 def main() -> None:
     import argparse
 
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--config", type=Path, required=True, help="Path to the comparison-report YAML config.")
+    parser.add_argument("--config", type=Path, required=True, help="Path to the report YAML config.")
     args = parser.parse_args()
     print(
         json.dumps(
