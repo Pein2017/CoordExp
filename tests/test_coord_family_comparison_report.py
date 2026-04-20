@@ -141,6 +141,88 @@ inputs:
     assert "Matched val200 Eval" in report_path.read_text(encoding="utf-8")
 
 
+def test_build_comparison_report_accepts_recall_progress_snapshot_format(
+    tmp_path: Path,
+) -> None:
+    basin_summary = tmp_path / "basin_summary.json"
+    recall_summary = tmp_path / "recall_progress_summary.json"
+    config_path = tmp_path / "report.yaml"
+    output_dir = tmp_path / "analysis"
+    basin_summary.write_text(
+        json.dumps(
+            {
+                "canonical_comparison_view": {
+                    "family_rollup": [
+                        {
+                            "family_alias": "center_parameterization",
+                            "canonical_compare_group": "canonical_xyxy_norm1000",
+                            "mean_target_bbox_metrics": {"mass_at_4": 0.78},
+                            "mean_center_bbox_metrics": {"mass_at_4": 0.81},
+                        }
+                    ]
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    recall_summary.write_text(
+        json.dumps(
+            {
+                "families": {
+                    "center_parameterization": {
+                        "status": "oracle_and_verifier_complete",
+                        "baseline_recall_loc": 0.61,
+                        "oracle_k_recall_loc": 0.70,
+                        "recall_probe": {
+                            "family_alias": "center_parameterization",
+                            "suppressed_fn_rate": 0.0,
+                            "competitive_fn_rate": 0.04,
+                            "weak_visual_fn_rate": 0.96,
+                            "oracle_k_recovery_rate": 0.25,
+                        },
+                    },
+                    "raw_text_xyxy_pure_ce": {
+                        "status": "verifier_complete_oracle_blocked_by_family_native_contract",
+                        "oracle_blocker": {
+                            "kind": "family_native_norm_text_surface",
+                            "detail": "Requires a norm-surface subset aligned with family-native legality.",
+                        },
+                    },
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    config_path.write_text(
+        f"""
+run:
+  name: coord-family-report-real-recall
+  output_dir: {output_dir.as_posix()}
+
+inputs:
+  basin_summary_json: {basin_summary.as_posix()}
+  recall_summary_json: {recall_summary.as_posix()}
+  vision_rows:
+    - family_alias: center_parameterization
+      vision_lift: 4.0
+        """.strip(),
+        encoding="utf-8",
+    )
+
+    result = build_comparison_report(config_path)
+
+    summary = json.loads(Path(result["summary_json"]).read_text(encoding="utf-8"))
+    assert summary["recall_rows"][0]["family_alias"] == "center_parameterization"
+    assert summary["recall_rows"][0]["status"] == "oracle_and_verifier_complete"
+    assert summary["recall_rows"][0]["oracle_k_recovery_rate"] == 0.25
+    assert summary["recall_rows"][1]["family_alias"] == "raw_text_xyxy_pure_ce"
+    assert summary["recall_rows"][1]["oracle_blocker_kind"] == "family_native_norm_text_surface"
+    report_text = Path(result["report_md"]).read_text(encoding="utf-8")
+    assert "Recall Status" in report_text
+    assert "oracle_and_verifier_complete" in report_text
+    assert "family_native_norm_text_surface" in report_text
+
+
 def test_build_comparison_report_prefers_workspace_root_for_worktree_outputs(
     tmp_path: Path,
 ) -> None:

@@ -1,0 +1,12 @@
+run:
+  name: coord-family-recall-cxcy-logw-logh-val64
+  output_dir: output/analysis
+
+artifact_sources:
+  - family_alias: cxcy_logw_logh_pure_ce
+    oracle_fn_objects_jsonl: output/eval/coord-family-cxcy-logw-logh-oracle-k-val64/fn_objects.jsonl
+    gt_proxy_scores_jsonl: output/analysis/coord-family-recall-pilot-cxcy-logw-logh-val64/checkpoints/cxcy_logw_logh_pure_ce/gt_proxy_scores.jsonl
+    proposal_proxy_scores_jsonl: output/analysis/coord-family-recall-pilot-cxcy-logw-logh-val64/checkpoints/cxcy_logw_logh_pure_ce/proposal_proxy_scores.jsonl
+    score_field: combined_linear
+    oracle_recovery_field: ever_recovered_loc
+    oracle_fn_filter_field: baseline_fn_loc

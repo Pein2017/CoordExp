@@ -174,6 +174,64 @@ def _build_eval_rows(snapshot_payload: dict[str, Any]) -> list[dict[str, Any]]:
     return rows
 
 
+def _build_recall_rows(recall_payload: dict[str, Any]) -> list[dict[str, Any]]:
+    legacy_rows = recall_payload.get("family_metrics")
+    if isinstance(legacy_rows, list):
+        rows: list[dict[str, Any]] = []
+        for row in legacy_rows:
+            if not isinstance(row, dict):
+                continue
+            rows.append(dict(row))
+        return rows
+
+    family_payloads = recall_payload.get("families")
+    if not isinstance(family_payloads, dict):
+        return []
+
+    rows = []
+    scalar_keys = (
+        "baseline_recall_loc",
+        "oracle_k_recall_loc",
+        "baseline_fn_count_loc",
+        "recoverable_fn_count_loc",
+        "systematic_fn_count_loc",
+        "recoverable_fraction_of_baseline_fn_loc",
+        "sample_size",
+    )
+    verifier_keys = ("pred_count_total", "unmatched_count", "duplicate_like_rate")
+    for family_alias, family_payload in sorted(family_payloads.items()):
+        if not isinstance(family_payload, dict):
+            continue
+        row: dict[str, Any] = {"family_alias": str(family_alias)}
+        status = family_payload.get("status")
+        if isinstance(status, str) and status.strip():
+            row["status"] = status.strip()
+        for key in scalar_keys:
+            if key in family_payload:
+                row[key] = family_payload[key]
+        recall_probe = family_payload.get("recall_probe")
+        if isinstance(recall_probe, dict):
+            for key, value in recall_probe.items():
+                if key == "family_alias":
+                    continue
+                row[key] = value
+        verifier = family_payload.get("verifier")
+        if isinstance(verifier, dict):
+            for key in verifier_keys:
+                if key in verifier:
+                    row[key] = verifier[key]
+        oracle_blocker = family_payload.get("oracle_blocker")
+        if isinstance(oracle_blocker, dict):
+            blocker_kind = oracle_blocker.get("kind")
+            blocker_detail = oracle_blocker.get("detail")
+            if isinstance(blocker_kind, str) and blocker_kind.strip():
+                row["oracle_blocker_kind"] = blocker_kind.strip()
+            if isinstance(blocker_detail, str) and blocker_detail.strip():
+                row["oracle_blocker_detail"] = blocker_detail.strip()
+        rows.append(row)
+    return rows
+
+
 def _rank_eval_rows(eval_rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
     ranked = [dict(row) for row in eval_rows]
     ranked.sort(
@@ -295,18 +353,26 @@ def derive_family_verdicts(
 def _render_report_md(summary: dict[str, Any]) -> str:
     basin_source = str(summary["source_artifacts"]["basin_summary_json"])
     recall_source = str(summary["source_artifacts"]["recall_summary_json"])
-    using_smoke_mechanism_inputs = "smoke" in basin_source or "smoke" in recall_source
+    basin_uses_smoke_inputs = "smoke" in basin_source
+    recall_uses_smoke_inputs = "smoke" in recall_source
     lines = [
         "# Coordinate Family Comparison Report",
         "",
         "This is a comparative progress scaffold for later family-level synthesis.",
         "",
     ]
-    if using_smoke_mechanism_inputs:
+    if basin_uses_smoke_inputs or recall_uses_smoke_inputs:
+        mechanism_note_parts = []
+        mechanism_note_parts.append(
+            f"basin layer={'smoke' if basin_uses_smoke_inputs else 'real'}"
+        )
+        mechanism_note_parts.append(
+            f"recall layer={'smoke' if recall_uses_smoke_inputs else 'real'}"
+        )
         lines.extend(
             [
-                "> Note: the mechanism layer in this report still comes from smoke basin/recall inputs.",
-                "> The matched val200 eval ranking below is real; the family verdicts section is provisional until non-smoke basin/recall summaries are available.",
+                f"> Note: the mechanism layer is mixed ({', '.join(mechanism_note_parts)}).",
+                "> The matched val200 eval ranking below is real; family verdicts stay provisional until the remaining non-smoke basin/recall summaries land.",
                 "",
             ]
         )
@@ -327,6 +393,43 @@ def _render_report_md(summary: dict[str, Any]) -> str:
                 f"wrong-anchor={verdict['max_wrong_anchor_advantage_at_4']}, "
                 f"vision_lift={verdict['mean_vision_lift']})"
             )
+    recall_rows = summary.get("recall_rows", [])
+    recall_status_rows = [
+        row
+        for row in recall_rows
+        if row.get("status") is not None or row.get("oracle_blocker_kind") is not None
+    ]
+    if recall_status_rows:
+        lines.extend(
+            [
+                "",
+                "## Recall Status",
+                "",
+            ]
+        )
+        for row in recall_status_rows:
+            details: list[str] = []
+            if row.get("status") is not None:
+                details.append(f"status={row['status']}")
+            baseline_recall_loc = row.get("baseline_recall_loc")
+            oracle_k_recall_loc = row.get("oracle_k_recall_loc")
+            if baseline_recall_loc is not None:
+                details.append(f"baseline_recall_loc={baseline_recall_loc}")
+            if oracle_k_recall_loc is not None:
+                details.append(f"oracle_k_recall_loc={oracle_k_recall_loc}")
+            oracle_k_recovery_rate = row.get("oracle_k_recovery_rate")
+            if oracle_k_recovery_rate is not None:
+                details.append(f"oracle_k_recovery_rate={oracle_k_recovery_rate}")
+            competitive_fn_rate = row.get("competitive_fn_rate")
+            if competitive_fn_rate is not None:
+                details.append(f"competitive_fn_rate={competitive_fn_rate}")
+            weak_visual_fn_rate = row.get("weak_visual_fn_rate")
+            if weak_visual_fn_rate is not None:
+                details.append(f"weak_visual_fn_rate={weak_visual_fn_rate}")
+            oracle_blocker_kind = row.get("oracle_blocker_kind")
+            if oracle_blocker_kind is not None:
+                details.append(f"oracle_blocker_kind={oracle_blocker_kind}")
+            lines.append(f"- `{row['family_alias']}`: " + ", ".join(details))
     lines.extend(
         [
             "",
@@ -397,7 +500,7 @@ def build_comparison_report(
     basin_payload = _read_json(basin_summary_path)
     canonical_view = basin_payload.get("canonical_comparison_view", {})
     basin_rows = list(canonical_view.get("family_rollup", []))
-    recall_rows = list(_read_json(recall_summary_path).get("family_metrics", []))
+    recall_rows = _build_recall_rows(_read_json(recall_summary_path))
     vision_rows = [dict(row) for row in config.inputs.vision_rows]
     eval_rows = (
         _rank_eval_rows(_build_eval_rows(_read_json(eval_snapshot_path)))

@@ -4,7 +4,7 @@ run:
 
 inputs:
   basin_summary_json: output/analysis/coord-family-basin-smoke/summary.json
-  recall_summary_json: output/analysis/coord-family-recall-smoke/summary.json
+  recall_summary_json: output/analysis/coord-family-recall-progress-2026-04-20/summary.json
   eval_snapshot_json: output/analysis/coord-family-comparison-progress-2026-04-20/current_eval_metrics_snapshot.json
   vision_rows:
     - family_alias: raw_text_xyxy_pure_ce
