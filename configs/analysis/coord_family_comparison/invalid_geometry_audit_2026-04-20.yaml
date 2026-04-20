@@ -1,0 +1,12 @@
+run:
+  name: coord-family-invalid-geometry-audit-2026-04-20
+  output_dir: output/analysis
+
+families:
+  - family_alias: base_xyxy_merged
+    gt_vs_pred_jsonl: output/analysis/coord-family-recall-pilot-base-xyxy-val64/checkpoints/base-xyxy-merged/gt_vs_pred.jsonl
+    raw_coord_mode: pixel
+
+  - family_alias: hard_soft_ce_2b
+    gt_vs_pred_jsonl: output/analysis/coord-family-recall-pilot-hard-soft-ce-val64/checkpoints/hard-soft-ce-2b/gt_vs_pred.jsonl
+    raw_coord_mode: pixel
