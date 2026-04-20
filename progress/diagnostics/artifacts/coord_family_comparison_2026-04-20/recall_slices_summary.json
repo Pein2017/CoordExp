@@ -1,0 +1,1032 @@
+{
+  "artifacts": {
+    "slice_rows_jsonl": "/data/CoordExp/output/analysis/coord-family-recall-slices-2026-04-20/slice_rows.jsonl"
+  },
+  "families": {
+    "base_xyxy_merged": {
+      "by_crowd_bucket": [
+        {
+          "crowd_bucket": "crowded",
+          "fn_count": 392,
+          "mean_recover_fraction_loc": 0.005739795918367347,
+          "recoverable_fn_count": 5,
+          "recoverable_fraction": 0.012755102040816327,
+          "systematic_fn_count": 387
+        },
+        {
+          "crowd_bucket": "moderate",
+          "fn_count": 88,
+          "mean_recover_fraction_loc": 0.002840909090909091,
+          "recoverable_fn_count": 1,
+          "recoverable_fraction": 0.011363636363636364,
+          "systematic_fn_count": 87
+        },
+        {
+          "crowd_bucket": "isolated",
+          "fn_count": 26,
+          "mean_recover_fraction_loc": 0.0,
+          "recoverable_fn_count": 0,
+          "recoverable_fraction": 0.0,
+          "systematic_fn_count": 26
+        }
+      ],
+      "by_same_desc_bucket": [
+        {
+          "fn_count": 354,
+          "mean_recover_fraction_loc": 0.0035310734463276836,
+          "recoverable_fn_count": 3,
+          "recoverable_fraction": 0.00847457627118644,
+          "same_desc_bucket": "triple_plus",
+          "systematic_fn_count": 351
+        },
+        {
+          "fn_count": 95,
+          "mean_recover_fraction_loc": 0.010526315789473684,
+          "recoverable_fn_count": 2,
+          "recoverable_fraction": 0.021052631578947368,
+          "same_desc_bucket": "singleton",
+          "systematic_fn_count": 93
+        },
+        {
+          "fn_count": 57,
+          "mean_recover_fraction_loc": 0.0043859649122807015,
+          "recoverable_fn_count": 1,
+          "recoverable_fraction": 0.017543859649122806,
+          "same_desc_bucket": "pair",
+          "systematic_fn_count": 56
+        }
+      ],
+      "by_size_bucket": [
+        {
+          "fn_count": 226,
+          "mean_recover_fraction_loc": 0.0055309734513274336,
+          "recoverable_fn_count": 3,
+          "recoverable_fraction": 0.01327433628318584,
+          "size_bucket": "small",
+          "systematic_fn_count": 223
+        },
+        {
+          "fn_count": 99,
+          "mean_recover_fraction_loc": 0.0,
+          "recoverable_fn_count": 0,
+          "recoverable_fraction": 0.0,
+          "size_bucket": "medium",
+          "systematic_fn_count": 99
+        },
+        {
+          "fn_count": 98,
+          "mean_recover_fraction_loc": 0.0,
+          "recoverable_fn_count": 0,
+          "recoverable_fraction": 0.0,
+          "size_bucket": "tiny",
+          "systematic_fn_count": 98
+        },
+        {
+          "fn_count": 83,
+          "mean_recover_fraction_loc": 0.015060240963855422,
+          "recoverable_fn_count": 3,
+          "recoverable_fraction": 0.03614457831325301,
+          "size_bucket": "large",
+          "systematic_fn_count": 80
+        }
+      ],
+      "overall": {
+        "baseline_fn_count_loc": 506,
+        "recoverable_fn_count_loc": 6,
+        "recoverable_fraction_of_baseline_fn_loc": 0.011857707509881422,
+        "systematic_fn_count_loc": 500
+      },
+      "top_categories": [
+        {
+          "category_name": "person",
+          "fn_count": 107,
+          "mean_recover_fraction_loc": 0.002336448598130841,
+          "recoverable_fn_count": 1,
+          "recoverable_fraction": 0.009345794392523364,
+          "systematic_fn_count": 106
+        },
+        {
+          "category_name": "car",
+          "fn_count": 27,
+          "mean_recover_fraction_loc": 0.0,
+          "recoverable_fn_count": 0,
+          "recoverable_fraction": 0.0,
+          "systematic_fn_count": 27
+        },
+        {
+          "category_name": "umbrella",
+          "fn_count": 27,
+          "mean_recover_fraction_loc": 0.018518518518518517,
+          "recoverable_fn_count": 1,
+          "recoverable_fraction": 0.037037037037037035,
+          "systematic_fn_count": 26
+        },
+        {
+          "category_name": "book",
+          "fn_count": 25,
+          "mean_recover_fraction_loc": 0.0,
+          "recoverable_fn_count": 0,
+          "recoverable_fraction": 0.0,
+          "systematic_fn_count": 25
+        },
+        {
+          "category_name": "cup",
+          "fn_count": 23,
+          "mean_recover_fraction_loc": 0.0,
+          "recoverable_fn_count": 0,
+          "recoverable_fraction": 0.0,
+          "systematic_fn_count": 23
+        },
+        {
+          "category_name": "handbag",
+          "fn_count": 19,
+          "mean_recover_fraction_loc": 0.0,
+          "recoverable_fn_count": 0,
+          "recoverable_fraction": 0.0,
+          "systematic_fn_count": 19
+        },
+        {
+          "category_name": "kite",
+          "fn_count": 19,
+          "mean_recover_fraction_loc": 0.0,
+          "recoverable_fn_count": 0,
+          "recoverable_fraction": 0.0,
+          "systematic_fn_count": 19
+        },
+        {
+          "category_name": "bowl",
+          "fn_count": 18,
+          "mean_recover_fraction_loc": 0.0,
+          "recoverable_fn_count": 0,
+          "recoverable_fraction": 0.0,
+          "systematic_fn_count": 18
+        },
+        {
+          "category_name": "surfboard",
+          "fn_count": 17,
+          "mean_recover_fraction_loc": 0.0,
+          "recoverable_fn_count": 0,
+          "recoverable_fraction": 0.0,
+          "systematic_fn_count": 17
+        },
+        {
+          "category_name": "broccoli",
+          "fn_count": 15,
+          "mean_recover_fraction_loc": 0.03333333333333333,
+          "recoverable_fn_count": 1,
+          "recoverable_fraction": 0.06666666666666667,
+          "systematic_fn_count": 14
+        },
+        {
+          "category_name": "cake",
+          "fn_count": 13,
+          "mean_recover_fraction_loc": 0.0,
+          "recoverable_fn_count": 0,
+          "recoverable_fraction": 0.0,
+          "systematic_fn_count": 13
+        },
+        {
+          "category_name": "sheep",
+          "fn_count": 13,
+          "mean_recover_fraction_loc": 0.0,
+          "recoverable_fn_count": 0,
+          "recoverable_fraction": 0.0,
+          "systematic_fn_count": 13
+        },
+        {
+          "category_name": "traffic light",
+          "fn_count": 13,
+          "mean_recover_fraction_loc": 0.0,
+          "recoverable_fn_count": 0,
+          "recoverable_fraction": 0.0,
+          "systematic_fn_count": 13
+        },
+        {
+          "category_name": "chair",
+          "fn_count": 11,
+          "mean_recover_fraction_loc": 0.022727272727272728,
+          "recoverable_fn_count": 1,
+          "recoverable_fraction": 0.09090909090909091,
+          "systematic_fn_count": 10
+        },
+        {
+          "category_name": "dining table",
+          "fn_count": 9,
+          "mean_recover_fraction_loc": 0.0,
+          "recoverable_fn_count": 0,
+          "recoverable_fraction": 0.0,
+          "systematic_fn_count": 9
+        },
+        {
+          "category_name": "sink",
+          "fn_count": 9,
+          "mean_recover_fraction_loc": 0.0,
+          "recoverable_fn_count": 0,
+          "recoverable_fraction": 0.0,
+          "systematic_fn_count": 9
+        },
+        {
+          "category_name": "giraffe",
+          "fn_count": 8,
+          "mean_recover_fraction_loc": 0.0,
+          "recoverable_fn_count": 0,
+          "recoverable_fraction": 0.0,
+          "systematic_fn_count": 8
+        },
+        {
+          "category_name": "refrigerator",
+          "fn_count": 8,
+          "mean_recover_fraction_loc": 0.0,
+          "recoverable_fn_count": 0,
+          "recoverable_fraction": 0.0,
+          "systematic_fn_count": 8
+        },
+        {
+          "category_name": "bird",
+          "fn_count": 7,
+          "mean_recover_fraction_loc": 0.0,
+          "recoverable_fn_count": 0,
+          "recoverable_fraction": 0.0,
+          "systematic_fn_count": 7
+        },
+        {
+          "category_name": "bottle",
+          "fn_count": 7,
+          "mean_recover_fraction_loc": 0.0,
+          "recoverable_fn_count": 0,
+          "recoverable_fraction": 0.0,
+          "systematic_fn_count": 7
+        }
+      ]
+    },
+    "center_parameterization": {
+      "by_crowd_bucket": [
+        {
+          "crowd_bucket": "crowded",
+          "fn_count": 193,
+          "mean_recover_fraction_loc": 0.12046632124352331,
+          "recoverable_fn_count": 46,
+          "recoverable_fraction": 0.23834196891191708,
+          "systematic_fn_count": 147
+        },
+        {
+          "crowd_bucket": "moderate",
+          "fn_count": 21,
+          "mean_recover_fraction_loc": 0.13095238095238096,
+          "recoverable_fn_count": 8,
+          "recoverable_fraction": 0.38095238095238093,
+          "systematic_fn_count": 13
+        },
+        {
+          "crowd_bucket": "isolated",
+          "fn_count": 2,
+          "mean_recover_fraction_loc": 0.0,
+          "recoverable_fn_count": 0,
+          "recoverable_fraction": 0.0,
+          "systematic_fn_count": 2
+        }
+      ],
+      "by_same_desc_bucket": [
+        {
+          "fn_count": 159,
+          "mean_recover_fraction_loc": 0.10849056603773585,
+          "recoverable_fn_count": 35,
+          "recoverable_fraction": 0.22012578616352202,
+          "same_desc_bucket": "triple_plus",
+          "systematic_fn_count": 124
+        },
+        {
+          "fn_count": 30,
+          "mean_recover_fraction_loc": 0.08333333333333333,
+          "recoverable_fn_count": 7,
+          "recoverable_fraction": 0.23333333333333334,
+          "same_desc_bucket": "pair",
+          "systematic_fn_count": 23
+        },
+        {
+          "fn_count": 27,
+          "mean_recover_fraction_loc": 0.23148148148148148,
+          "recoverable_fn_count": 12,
+          "recoverable_fraction": 0.4444444444444444,
+          "same_desc_bucket": "singleton",
+          "systematic_fn_count": 15
+        }
+      ],
+      "by_size_bucket": [
+        {
+          "fn_count": 105,
+          "mean_recover_fraction_loc": 0.14047619047619048,
+          "recoverable_fn_count": 32,
+          "recoverable_fraction": 0.3047619047619048,
+          "size_bucket": "small",
+          "systematic_fn_count": 73
+        },
+        {
+          "fn_count": 70,
+          "mean_recover_fraction_loc": 0.05357142857142857,
+          "recoverable_fn_count": 8,
+          "recoverable_fraction": 0.11428571428571428,
+          "size_bucket": "tiny",
+          "systematic_fn_count": 62
+        },
+        {
+          "fn_count": 23,
+          "mean_recover_fraction_loc": 0.18478260869565216,
+          "recoverable_fn_count": 8,
+          "recoverable_fraction": 0.34782608695652173,
+          "size_bucket": "large",
+          "systematic_fn_count": 15
+        },
+        {
+          "fn_count": 18,
+          "mean_recover_fraction_loc": 0.18055555555555555,
+          "recoverable_fn_count": 6,
+          "recoverable_fraction": 0.3333333333333333,
+          "size_bucket": "medium",
+          "systematic_fn_count": 12
+        }
+      ],
+      "overall": {
+        "baseline_fn_count_loc": 216,
+        "recoverable_fn_count_loc": 54,
+        "recoverable_fraction_of_baseline_fn_loc": 0.25,
+        "systematic_fn_count_loc": 162
+      },
+      "top_categories": [
+        {
+          "category_name": "person",
+          "fn_count": 25,
+          "mean_recover_fraction_loc": 0.03,
+          "recoverable_fn_count": 3,
+          "recoverable_fraction": 0.12,
+          "systematic_fn_count": 22
+        },
+        {
+          "category_name": "book",
+          "fn_count": 24,
+          "mean_recover_fraction_loc": 0.11458333333333333,
+          "recoverable_fn_count": 5,
+          "recoverable_fraction": 0.20833333333333334,
+          "systematic_fn_count": 19
+        },
+        {
+          "category_name": "cup",
+          "fn_count": 15,
+          "mean_recover_fraction_loc": 0.016666666666666666,
+          "recoverable_fn_count": 1,
+          "recoverable_fraction": 0.06666666666666667,
+          "systematic_fn_count": 14
+        },
+        {
+          "category_name": "handbag",
+          "fn_count": 14,
+          "mean_recover_fraction_loc": 0.08928571428571429,
+          "recoverable_fn_count": 3,
+          "recoverable_fraction": 0.21428571428571427,
+          "systematic_fn_count": 11
+        },
+        {
+          "category_name": "bowl",
+          "fn_count": 12,
+          "mean_recover_fraction_loc": 0.16666666666666666,
+          "recoverable_fn_count": 4,
+          "recoverable_fraction": 0.3333333333333333,
+          "systematic_fn_count": 8
+        },
+        {
+          "category_name": "chair",
+          "fn_count": 9,
+          "mean_recover_fraction_loc": 0.4166666666666667,
+          "recoverable_fn_count": 4,
+          "recoverable_fraction": 0.4444444444444444,
+          "systematic_fn_count": 5
+        },
+        {
+          "category_name": "cake",
+          "fn_count": 8,
+          "mean_recover_fraction_loc": 0.0625,
+          "recoverable_fn_count": 2,
+          "recoverable_fraction": 0.25,
+          "systematic_fn_count": 6
+        },
+        {
+          "category_name": "car",
+          "fn_count": 8,
+          "mean_recover_fraction_loc": 0.28125,
+          "recoverable_fn_count": 5,
+          "recoverable_fraction": 0.625,
+          "systematic_fn_count": 3
+        },
+        {
+          "category_name": "dining table",
+          "fn_count": 8,
+          "mean_recover_fraction_loc": 0.09375,
+          "recoverable_fn_count": 3,
+          "recoverable_fraction": 0.375,
+          "systematic_fn_count": 5
+        },
+        {
+          "category_name": "kite",
+          "fn_count": 7,
+          "mean_recover_fraction_loc": 0.14285714285714285,
+          "recoverable_fn_count": 3,
+          "recoverable_fraction": 0.42857142857142855,
+          "systematic_fn_count": 4
+        },
+        {
+          "category_name": "refrigerator",
+          "fn_count": 7,
+          "mean_recover_fraction_loc": 0.03571428571428571,
+          "recoverable_fn_count": 1,
+          "recoverable_fraction": 0.14285714285714285,
+          "systematic_fn_count": 6
+        },
+        {
+          "category_name": "surfboard",
+          "fn_count": 7,
+          "mean_recover_fraction_loc": 0.03571428571428571,
+          "recoverable_fn_count": 1,
+          "recoverable_fraction": 0.14285714285714285,
+          "systematic_fn_count": 6
+        },
+        {
+          "category_name": "traffic light",
+          "fn_count": 7,
+          "mean_recover_fraction_loc": 0.0,
+          "recoverable_fn_count": 0,
+          "recoverable_fraction": 0.0,
+          "systematic_fn_count": 7
+        },
+        {
+          "category_name": "broccoli",
+          "fn_count": 6,
+          "mean_recover_fraction_loc": 0.08333333333333333,
+          "recoverable_fn_count": 1,
+          "recoverable_fraction": 0.16666666666666666,
+          "systematic_fn_count": 5
+        },
+        {
+          "category_name": "apple",
+          "fn_count": 5,
+          "mean_recover_fraction_loc": 0.0,
+          "recoverable_fn_count": 0,
+          "recoverable_fraction": 0.0,
+          "systematic_fn_count": 5
+        },
+        {
+          "category_name": "umbrella",
+          "fn_count": 5,
+          "mean_recover_fraction_loc": 0.15,
+          "recoverable_fn_count": 1,
+          "recoverable_fraction": 0.2,
+          "systematic_fn_count": 4
+        },
+        {
+          "category_name": "giraffe",
+          "fn_count": 4,
+          "mean_recover_fraction_loc": 0.1875,
+          "recoverable_fn_count": 1,
+          "recoverable_fraction": 0.25,
+          "systematic_fn_count": 3
+        },
+        {
+          "category_name": "potted plant",
+          "fn_count": 4,
+          "mean_recover_fraction_loc": 0.125,
+          "recoverable_fn_count": 2,
+          "recoverable_fraction": 0.5,
+          "systematic_fn_count": 2
+        },
+        {
+          "category_name": "sheep",
+          "fn_count": 4,
+          "mean_recover_fraction_loc": 0.125,
+          "recoverable_fn_count": 1,
+          "recoverable_fraction": 0.25,
+          "systematic_fn_count": 3
+        },
+        {
+          "category_name": "sink",
+          "fn_count": 4,
+          "mean_recover_fraction_loc": 0.3125,
+          "recoverable_fn_count": 2,
+          "recoverable_fraction": 0.5,
+          "systematic_fn_count": 2
+        }
+      ]
+    },
+    "hard_soft_ce_2b": {
+      "by_crowd_bucket": [
+        {
+          "crowd_bucket": "crowded",
+          "fn_count": 390,
+          "mean_recover_fraction_loc": 0.005128205128205128,
+          "recoverable_fn_count": 6,
+          "recoverable_fraction": 0.015384615384615385,
+          "systematic_fn_count": 384
+        },
+        {
+          "crowd_bucket": "moderate",
+          "fn_count": 87,
+          "mean_recover_fraction_loc": 0.0,
+          "recoverable_fn_count": 0,
+          "recoverable_fraction": 0.0,
+          "systematic_fn_count": 87
+        },
+        {
+          "crowd_bucket": "isolated",
+          "fn_count": 26,
+          "mean_recover_fraction_loc": 0.028846153846153848,
+          "recoverable_fn_count": 2,
+          "recoverable_fraction": 0.07692307692307693,
+          "systematic_fn_count": 24
+        }
+      ],
+      "by_same_desc_bucket": [
+        {
+          "fn_count": 353,
+          "mean_recover_fraction_loc": 0.004957507082152974,
+          "recoverable_fn_count": 5,
+          "recoverable_fraction": 0.014164305949008499,
+          "same_desc_bucket": "triple_plus",
+          "systematic_fn_count": 348
+        },
+        {
+          "fn_count": 93,
+          "mean_recover_fraction_loc": 0.010752688172043012,
+          "recoverable_fn_count": 3,
+          "recoverable_fraction": 0.03225806451612903,
+          "same_desc_bucket": "singleton",
+          "systematic_fn_count": 90
+        },
+        {
+          "fn_count": 57,
+          "mean_recover_fraction_loc": 0.0,
+          "recoverable_fn_count": 0,
+          "recoverable_fraction": 0.0,
+          "same_desc_bucket": "pair",
+          "systematic_fn_count": 57
+        }
+      ],
+      "by_size_bucket": [
+        {
+          "fn_count": 224,
+          "mean_recover_fraction_loc": 0.0,
+          "recoverable_fn_count": 0,
+          "recoverable_fraction": 0.0,
+          "size_bucket": "small",
+          "systematic_fn_count": 224
+        },
+        {
+          "fn_count": 99,
+          "mean_recover_fraction_loc": 0.010101010101010102,
+          "recoverable_fn_count": 2,
+          "recoverable_fraction": 0.020202020202020204,
+          "size_bucket": "medium",
+          "systematic_fn_count": 97
+        },
+        {
+          "fn_count": 98,
+          "mean_recover_fraction_loc": 0.0,
+          "recoverable_fn_count": 0,
+          "recoverable_fraction": 0.0,
+          "size_bucket": "tiny",
+          "systematic_fn_count": 98
+        },
+        {
+          "fn_count": 82,
+          "mean_recover_fraction_loc": 0.021341463414634148,
+          "recoverable_fn_count": 6,
+          "recoverable_fraction": 0.07317073170731707,
+          "size_bucket": "large",
+          "systematic_fn_count": 76
+        }
+      ],
+      "overall": {
+        "baseline_fn_count_loc": 503,
+        "recoverable_fn_count_loc": 8,
+        "recoverable_fraction_of_baseline_fn_loc": 0.015904572564612324,
+        "systematic_fn_count_loc": 495
+      },
+      "top_categories": [
+        {
+          "category_name": "person",
+          "fn_count": 107,
+          "mean_recover_fraction_loc": 0.014018691588785047,
+          "recoverable_fn_count": 4,
+          "recoverable_fraction": 0.037383177570093455,
+          "systematic_fn_count": 103
+        },
+        {
+          "category_name": "car",
+          "fn_count": 27,
+          "mean_recover_fraction_loc": 0.0,
+          "recoverable_fn_count": 0,
+          "recoverable_fraction": 0.0,
+          "systematic_fn_count": 27
+        },
+        {
+          "category_name": "umbrella",
+          "fn_count": 26,
+          "mean_recover_fraction_loc": 0.0,
+          "recoverable_fn_count": 0,
+          "recoverable_fraction": 0.0,
+          "systematic_fn_count": 26
+        },
+        {
+          "category_name": "book",
+          "fn_count": 25,
+          "mean_recover_fraction_loc": 0.0,
+          "recoverable_fn_count": 0,
+          "recoverable_fraction": 0.0,
+          "systematic_fn_count": 25
+        },
+        {
+          "category_name": "cup",
+          "fn_count": 23,
+          "mean_recover_fraction_loc": 0.0,
+          "recoverable_fn_count": 0,
+          "recoverable_fraction": 0.0,
+          "systematic_fn_count": 23
+        },
+        {
+          "category_name": "handbag",
+          "fn_count": 19,
+          "mean_recover_fraction_loc": 0.0,
+          "recoverable_fn_count": 0,
+          "recoverable_fraction": 0.0,
+          "systematic_fn_count": 19
+        },
+        {
+          "category_name": "kite",
+          "fn_count": 19,
+          "mean_recover_fraction_loc": 0.0,
+          "recoverable_fn_count": 0,
+          "recoverable_fraction": 0.0,
+          "systematic_fn_count": 19
+        },
+        {
+          "category_name": "bowl",
+          "fn_count": 18,
+          "mean_recover_fraction_loc": 0.0,
+          "recoverable_fn_count": 0,
+          "recoverable_fraction": 0.0,
+          "systematic_fn_count": 18
+        },
+        {
+          "category_name": "surfboard",
+          "fn_count": 16,
+          "mean_recover_fraction_loc": 0.0,
+          "recoverable_fn_count": 0,
+          "recoverable_fraction": 0.0,
+          "systematic_fn_count": 16
+        },
+        {
+          "category_name": "broccoli",
+          "fn_count": 14,
+          "mean_recover_fraction_loc": 0.0,
+          "recoverable_fn_count": 0,
+          "recoverable_fraction": 0.0,
+          "systematic_fn_count": 14
+        },
+        {
+          "category_name": "cake",
+          "fn_count": 13,
+          "mean_recover_fraction_loc": 0.0,
+          "recoverable_fn_count": 0,
+          "recoverable_fraction": 0.0,
+          "systematic_fn_count": 13
+        },
+        {
+          "category_name": "sheep",
+          "fn_count": 13,
+          "mean_recover_fraction_loc": 0.0,
+          "recoverable_fn_count": 0,
+          "recoverable_fraction": 0.0,
+          "systematic_fn_count": 13
+        },
+        {
+          "category_name": "traffic light",
+          "fn_count": 13,
+          "mean_recover_fraction_loc": 0.0,
+          "recoverable_fn_count": 0,
+          "recoverable_fraction": 0.0,
+          "systematic_fn_count": 13
+        },
+        {
+          "category_name": "chair",
+          "fn_count": 11,
+          "mean_recover_fraction_loc": 0.0,
+          "recoverable_fn_count": 0,
+          "recoverable_fraction": 0.0,
+          "systematic_fn_count": 11
+        },
+        {
+          "category_name": "refrigerator",
+          "fn_count": 9,
+          "mean_recover_fraction_loc": 0.027777777777777776,
+          "recoverable_fn_count": 1,
+          "recoverable_fraction": 0.1111111111111111,
+          "systematic_fn_count": 8
+        },
+        {
+          "category_name": "sink",
+          "fn_count": 9,
+          "mean_recover_fraction_loc": 0.0,
+          "recoverable_fn_count": 0,
+          "recoverable_fraction": 0.0,
+          "systematic_fn_count": 9
+        },
+        {
+          "category_name": "dining table",
+          "fn_count": 8,
+          "mean_recover_fraction_loc": 0.0625,
+          "recoverable_fn_count": 1,
+          "recoverable_fraction": 0.125,
+          "systematic_fn_count": 7
+        },
+        {
+          "category_name": "giraffe",
+          "fn_count": 8,
+          "mean_recover_fraction_loc": 0.0,
+          "recoverable_fn_count": 0,
+          "recoverable_fraction": 0.0,
+          "systematic_fn_count": 8
+        },
+        {
+          "category_name": "bird",
+          "fn_count": 7,
+          "mean_recover_fraction_loc": 0.0,
+          "recoverable_fn_count": 0,
+          "recoverable_fraction": 0.0,
+          "systematic_fn_count": 7
+        },
+        {
+          "category_name": "bottle",
+          "fn_count": 7,
+          "mean_recover_fraction_loc": 0.0,
+          "recoverable_fn_count": 0,
+          "recoverable_fraction": 0.0,
+          "systematic_fn_count": 7
+        }
+      ]
+    },
+    "raw_text_xyxy_pure_ce": {
+      "by_crowd_bucket": [
+        {
+          "crowd_bucket": "crowded",
+          "fn_count": 249,
+          "mean_recover_fraction_loc": 0.20080321285140562,
+          "recoverable_fn_count": 109,
+          "recoverable_fraction": 0.43775100401606426,
+          "systematic_fn_count": 140
+        },
+        {
+          "crowd_bucket": "moderate",
+          "fn_count": 39,
+          "mean_recover_fraction_loc": 0.25,
+          "recoverable_fn_count": 19,
+          "recoverable_fraction": 0.48717948717948717,
+          "systematic_fn_count": 20
+        },
+        {
+          "crowd_bucket": "isolated",
+          "fn_count": 8,
+          "mean_recover_fraction_loc": 0.34375,
+          "recoverable_fn_count": 6,
+          "recoverable_fraction": 0.75,
+          "systematic_fn_count": 2
+        }
+      ],
+      "by_same_desc_bucket": [
+        {
+          "fn_count": 203,
+          "mean_recover_fraction_loc": 0.22536945812807882,
+          "recoverable_fn_count": 96,
+          "recoverable_fraction": 0.4729064039408867,
+          "same_desc_bucket": "triple_plus",
+          "systematic_fn_count": 107
+        },
+        {
+          "fn_count": 56,
+          "mean_recover_fraction_loc": 0.23214285714285715,
+          "recoverable_fn_count": 29,
+          "recoverable_fraction": 0.5178571428571429,
+          "same_desc_bucket": "singleton",
+          "systematic_fn_count": 27
+        },
+        {
+          "fn_count": 37,
+          "mean_recover_fraction_loc": 0.10135135135135136,
+          "recoverable_fn_count": 9,
+          "recoverable_fraction": 0.24324324324324326,
+          "same_desc_bucket": "pair",
+          "systematic_fn_count": 28
+        }
+      ],
+      "by_size_bucket": [
+        {
+          "fn_count": 140,
+          "mean_recover_fraction_loc": 0.21071428571428572,
+          "recoverable_fn_count": 63,
+          "recoverable_fraction": 0.45,
+          "size_bucket": "small",
+          "systematic_fn_count": 77
+        },
+        {
+          "fn_count": 74,
+          "mean_recover_fraction_loc": 0.11148648648648649,
+          "recoverable_fn_count": 22,
+          "recoverable_fraction": 0.2972972972972973,
+          "size_bucket": "tiny",
+          "systematic_fn_count": 52
+        },
+        {
+          "fn_count": 45,
+          "mean_recover_fraction_loc": 0.28888888888888886,
+          "recoverable_fn_count": 30,
+          "recoverable_fraction": 0.6666666666666666,
+          "size_bucket": "medium",
+          "systematic_fn_count": 15
+        },
+        {
+          "fn_count": 37,
+          "mean_recover_fraction_loc": 0.31756756756756754,
+          "recoverable_fn_count": 19,
+          "recoverable_fraction": 0.5135135135135135,
+          "size_bucket": "large",
+          "systematic_fn_count": 18
+        }
+      ],
+      "overall": {
+        "baseline_fn_count_loc": 296,
+        "recoverable_fn_count_loc": 134,
+        "recoverable_fraction_of_baseline_fn_loc": 0.4527027027027027,
+        "systematic_fn_count_loc": 162
+      },
+      "top_categories": [
+        {
+          "category_name": "person",
+          "fn_count": 31,
+          "mean_recover_fraction_loc": 0.2661290322580645,
+          "recoverable_fn_count": 17,
+          "recoverable_fraction": 0.5483870967741935,
+          "systematic_fn_count": 14
+        },
+        {
+          "category_name": "book",
+          "fn_count": 25,
+          "mean_recover_fraction_loc": 0.08,
+          "recoverable_fn_count": 7,
+          "recoverable_fraction": 0.28,
+          "systematic_fn_count": 18
+        },
+        {
+          "category_name": "cup",
+          "fn_count": 22,
+          "mean_recover_fraction_loc": 0.20454545454545456,
+          "recoverable_fn_count": 12,
+          "recoverable_fraction": 0.5454545454545454,
+          "systematic_fn_count": 10
+        },
+        {
+          "category_name": "bowl",
+          "fn_count": 17,
+          "mean_recover_fraction_loc": 0.4411764705882353,
+          "recoverable_fn_count": 11,
+          "recoverable_fraction": 0.6470588235294118,
+          "systematic_fn_count": 6
+        },
+        {
+          "category_name": "handbag",
+          "fn_count": 17,
+          "mean_recover_fraction_loc": 0.1323529411764706,
+          "recoverable_fn_count": 5,
+          "recoverable_fraction": 0.29411764705882354,
+          "systematic_fn_count": 12
+        },
+        {
+          "category_name": "cake",
+          "fn_count": 13,
+          "mean_recover_fraction_loc": 0.09615384615384616,
+          "recoverable_fn_count": 5,
+          "recoverable_fraction": 0.38461538461538464,
+          "systematic_fn_count": 8
+        },
+        {
+          "category_name": "sheep",
+          "fn_count": 13,
+          "mean_recover_fraction_loc": 0.3269230769230769,
+          "recoverable_fn_count": 9,
+          "recoverable_fraction": 0.6923076923076923,
+          "systematic_fn_count": 4
+        },
+        {
+          "category_name": "chair",
+          "fn_count": 12,
+          "mean_recover_fraction_loc": 0.4166666666666667,
+          "recoverable_fn_count": 7,
+          "recoverable_fraction": 0.5833333333333334,
+          "systematic_fn_count": 5
+        },
+        {
+          "category_name": "dining table",
+          "fn_count": 9,
+          "mean_recover_fraction_loc": 0.027777777777777776,
+          "recoverable_fn_count": 1,
+          "recoverable_fraction": 0.1111111111111111,
+          "systematic_fn_count": 8
+        },
+        {
+          "category_name": "umbrella",
+          "fn_count": 9,
+          "mean_recover_fraction_loc": 0.3888888888888889,
+          "recoverable_fn_count": 5,
+          "recoverable_fraction": 0.5555555555555556,
+          "systematic_fn_count": 4
+        },
+        {
+          "category_name": "broccoli",
+          "fn_count": 8,
+          "mean_recover_fraction_loc": 0.21875,
+          "recoverable_fn_count": 4,
+          "recoverable_fraction": 0.5,
+          "systematic_fn_count": 4
+        },
+        {
+          "category_name": "kite",
+          "fn_count": 8,
+          "mean_recover_fraction_loc": 0.125,
+          "recoverable_fn_count": 3,
+          "recoverable_fraction": 0.375,
+          "systematic_fn_count": 5
+        },
+        {
+          "category_name": "car",
+          "fn_count": 7,
+          "mean_recover_fraction_loc": 0.14285714285714285,
+          "recoverable_fn_count": 4,
+          "recoverable_fraction": 0.5714285714285714,
+          "systematic_fn_count": 3
+        },
+        {
+          "category_name": "remote",
+          "fn_count": 7,
+          "mean_recover_fraction_loc": 0.10714285714285714,
+          "recoverable_fn_count": 1,
+          "recoverable_fraction": 0.14285714285714285,
+          "systematic_fn_count": 6
+        },
+        {
+          "category_name": "surfboard",
+          "fn_count": 7,
+          "mean_recover_fraction_loc": 0.0,
+          "recoverable_fn_count": 0,
+          "recoverable_fraction": 0.0,
+          "systematic_fn_count": 7
+        },
+        {
+          "category_name": "carrot",
+          "fn_count": 6,
+          "mean_recover_fraction_loc": 0.16666666666666666,
+          "recoverable_fn_count": 4,
+          "recoverable_fraction": 0.6666666666666666,
+          "systematic_fn_count": 2
+        },
+        {
+          "category_name": "refrigerator",
+          "fn_count": 6,
+          "mean_recover_fraction_loc": 0.041666666666666664,
+          "recoverable_fn_count": 1,
+          "recoverable_fraction": 0.16666666666666666,
+          "systematic_fn_count": 5
+        },
+        {
+          "category_name": "apple",
+          "fn_count": 5,
+          "mean_recover_fraction_loc": 0.0,
+          "recoverable_fn_count": 0,
+          "recoverable_fraction": 0.0,
+          "systematic_fn_count": 5
+        },
+        {
+          "category_name": "bottle",
+          "fn_count": 5,
+          "mean_recover_fraction_loc": 0.45,
+          "recoverable_fn_count": 4,
+          "recoverable_fraction": 0.8,
+          "systematic_fn_count": 1
+        },
+        {
+          "category_name": "traffic light",
+          "fn_count": 5,
+          "mean_recover_fraction_loc": 0.05,
+          "recoverable_fn_count": 1,
+          "recoverable_fraction": 0.2,
+          "systematic_fn_count": 4
+        }
+      ]
+    }
+  },
+  "run_name": "coord-family-recall-slices-2026-04-20"
+}

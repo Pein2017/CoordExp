@@ -6,7 +6,7 @@ status: canonical
 domain: research-history
 summary: Router for failure investigations, threshold studies, and operator notes that support diagnosis.
 tags: [progress, diagnostics, investigations]
-updated: 2026-04-11
+updated: 2026-04-20
 ---
 
 # Diagnostics Index
@@ -22,6 +22,10 @@ Prefer `progress/benchmarks/` when the output is mainly a measured run-vs-run or
 
 ## Current Clusters
 
+- Active Stage-1 raw-text continuity and coord-family investigations
+  - [raw_text_coord_continuity_probe_2026-04-20.md](raw_text_coord_continuity_probe_2026-04-20.md)
+  - [coord_family_basin_and_recall_comparison_2026-04-20.md](coord_family_basin_and_recall_comparison_2026-04-20.md)
+  - [raw_text_continuity_and_coord_family_synthesis_2026-04-20.md](raw_text_continuity_and_coord_family_synthesis_2026-04-20.md)
 - Active 2B Channel-A / prefix / FN investigations
   - [stage2_2b_stage1_vs_aonly_prefix_fn_2026-03-16.md](stage2_2b_stage1_vs_aonly_prefix_fn_2026-03-16.md)
   - [stage2_2b_fn_factor_results_2026-03-17.md](stage2_2b_fn_factor_results_2026-03-17.md)

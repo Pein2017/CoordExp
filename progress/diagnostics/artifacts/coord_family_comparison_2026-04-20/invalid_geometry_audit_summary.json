@@ -1,0 +1,190 @@
+{
+  "artifacts": {
+    "invalid_rows_jsonl": "/data/CoordExp/output/analysis/coord-family-invalid-geometry-audit-2026-04-20/invalid_rows.jsonl"
+  },
+  "families": {
+    "base_xyxy_merged": {
+      "alignment_rate": 0.2727272727272727,
+      "failure_family_counts": [
+        {
+          "count": 128,
+          "failure_family": "overflow_right"
+        },
+        {
+          "count": 52,
+          "failure_family": "overflow_bottom"
+        }
+      ],
+      "images_with_invalid_geometry": 11,
+      "invalid_desc_counts": [
+        {
+          "count": 117,
+          "desc": "book"
+        },
+        {
+          "count": 26,
+          "desc": "cake"
+        },
+        {
+          "count": 10,
+          "desc": "person"
+        },
+        {
+          "count": 7,
+          "desc": "cup"
+        },
+        {
+          "count": 3,
+          "desc": "bird"
+        },
+        {
+          "count": 3,
+          "desc": "bottle"
+        },
+        {
+          "count": 2,
+          "desc": "surfboard"
+        },
+        {
+          "count": 1,
+          "desc": "backpack"
+        },
+        {
+          "count": 1,
+          "desc": "cell phone"
+        },
+        {
+          "count": 1,
+          "desc": "chair"
+        },
+        {
+          "count": 1,
+          "desc": "couch"
+        },
+        {
+          "count": 1,
+          "desc": "elephant"
+        },
+        {
+          "count": 1,
+          "desc": "handbag"
+        },
+        {
+          "count": 1,
+          "desc": "knife"
+        },
+        {
+          "count": 1,
+          "desc": "snowboard"
+        },
+        {
+          "count": 1,
+          "desc": "sports ball"
+        },
+        {
+          "count": 1,
+          "desc": "umbrella"
+        },
+        {
+          "count": 1,
+          "desc": "vase"
+        },
+        {
+          "count": 1,
+          "desc": "wine glass"
+        }
+      ],
+      "invalid_geometry_error_entries": 152,
+      "invalid_raw_object_count": 180,
+      "near_norm1000_ceiling_count": 68
+    },
+    "hard_soft_ce_2b": {
+      "alignment_rate": 0.25,
+      "failure_family_counts": [
+        {
+          "count": 49,
+          "failure_family": "overflow_bottom"
+        },
+        {
+          "count": 24,
+          "failure_family": "overflow_right"
+        }
+      ],
+      "images_with_invalid_geometry": 12,
+      "invalid_desc_counts": [
+        {
+          "count": 22,
+          "desc": "cake"
+        },
+        {
+          "count": 15,
+          "desc": "person"
+        },
+        {
+          "count": 14,
+          "desc": "book"
+        },
+        {
+          "count": 4,
+          "desc": "bottle"
+        },
+        {
+          "count": 3,
+          "desc": "bird"
+        },
+        {
+          "count": 3,
+          "desc": "cup"
+        },
+        {
+          "count": 2,
+          "desc": "surfboard"
+        },
+        {
+          "count": 1,
+          "desc": "backpack"
+        },
+        {
+          "count": 1,
+          "desc": "bowl"
+        },
+        {
+          "count": 1,
+          "desc": "cell phone"
+        },
+        {
+          "count": 1,
+          "desc": "chair"
+        },
+        {
+          "count": 1,
+          "desc": "couch"
+        },
+        {
+          "count": 1,
+          "desc": "elephant"
+        },
+        {
+          "count": 1,
+          "desc": "handbag"
+        },
+        {
+          "count": 1,
+          "desc": "snowboard"
+        },
+        {
+          "count": 1,
+          "desc": "sports ball"
+        },
+        {
+          "count": 1,
+          "desc": "umbrella"
+        }
+      ],
+      "invalid_geometry_error_entries": 46,
+      "invalid_raw_object_count": 73,
+      "near_norm1000_ceiling_count": 16
+    }
+  },
+  "run_name": "coord-family-invalid-geometry-audit-2026-04-20"
+}

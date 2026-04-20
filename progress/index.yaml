@@ -1,5 +1,5 @@
 schema_version: 1
-updated: 2026-03-22
+updated: 2026-04-20
 
 entrypoints:
   human: progress/README.md
@@ -19,6 +19,9 @@ groups:
     - progress/directions/stage2_emish_set_supervision_v1.md
   diagnostics:
     - progress/diagnostics/README.md
+    - progress/diagnostics/raw_text_coord_continuity_probe_2026-04-20.md
+    - progress/diagnostics/coord_family_basin_and_recall_comparison_2026-04-20.md
+    - progress/diagnostics/raw_text_continuity_and_coord_family_synthesis_2026-04-20.md
     - progress/diagnostics/stage2_near_duplication_2026-03-05.md
     - progress/diagnostics/stage2_ul_capture_highres1024_2026-03-09.md
     - progress/diagnostics/stage2_triage_posterior_coco1024_train_dynamics_2026-03-12.md
@@ -54,6 +57,21 @@ notes:
     kind: router
     status: canonical
     summary: Router for failure investigations, threshold studies, and operator notes.
+  - path: progress/diagnostics/raw_text_coord_continuity_probe_2026-04-20.md
+    title: Raw-Text Coordinate Continuity Probe
+    kind: diagnostic-study
+    status: completed-diagnostic
+    summary: Permanent archive for the raw-text continuity study showing that continuity already exists without coord tokens and can also form wrong local basins.
+  - path: progress/diagnostics/coord_family_basin_and_recall_comparison_2026-04-20.md
+    title: Coordinate Family Basin and Recall Comparison
+    kind: diagnostic-study
+    status: active-reference
+    summary: Permanent archive for the 2B-first family comparison, including recall mechanism, FN slicing, and invalid-geometry failure-family analysis.
+  - path: progress/diagnostics/raw_text_continuity_and_coord_family_synthesis_2026-04-20.md
+    title: Raw-Text Continuity and Coordinate Family Synthesis
+    kind: decision-summary
+    status: active-reference
+    summary: Decision-oriented synthesis tying the raw-text continuity findings to the coordinate-family comparison and final research recommendations.
   - path: progress/benchmarks/README.md
     title: Benchmarks Index
     kind: router
