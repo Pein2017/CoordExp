@@ -13,6 +13,7 @@ from src.infer.checkpoints import resolve_inference_checkpoint
 REPO_ROOT = Path(__file__).resolve().parents[2]
 _VALID_CHECKPOINT_HINTS = frozenset({"auto", "adapter", "merged"})
 _VALID_INFER_MODES = frozenset({"auto", "coord", "text"})
+_VALID_PRED_COORD_MODES = frozenset({"auto", "pixel", "norm1000"})
 
 
 @dataclass(frozen=True)
@@ -119,6 +120,11 @@ def _resolve_family_specs(payload: dict[str, Any]) -> tuple[FamilySpec, ...]:
             "pred_coord_mode",
             _optional_nonempty_str(defaults, "pred_coord_mode", "pixel"),
         )
+        if pred_coord_mode not in _VALID_PRED_COORD_MODES:
+            raise ValueError(
+                f"families[{index}].pred_coord_mode must be one of "
+                f"{sorted(_VALID_PRED_COORD_MODES)}."
+            )
         eval_compatibility_path = _optional_nonempty_str(
             item,
             "eval_compatibility_path",
@@ -295,7 +301,7 @@ def summarize_family_inventory(rows: list[dict[str, Any]]) -> dict[str, Any]:
 def _run_dir(run: RunSpec, repo_root: Path) -> Path:
     output_dir = Path(run.output_dir)
     if not output_dir.is_absolute():
-        output_dir = repo_root / output_dir
+        output_dir = _artifact_root_for_repo(repo_root) / output_dir
     return output_dir / run.name
 
 

@@ -113,6 +113,33 @@ families:
     assert cfg.families[0].is_headline_2b_family is True
 
 
+def test_load_contract_audit_config_rejects_invalid_pred_coord_mode(
+    tmp_path: Path,
+) -> None:
+    config_path = tmp_path / "audit.yaml"
+    config_path.write_text(
+        """
+run:
+  name: coord-family-smoke
+  output_dir: output/analysis
+
+families:
+  - alias: base_xyxy_merged
+    checkpoint_path: output/stage1_2b/base
+    checkpoint_hint: merged
+    infer_mode: coord
+    bbox_format: xyxy
+    pred_coord_mode: nonsense
+    eval_compatibility_path: confidence_postop
+    is_headline_2b_family: true
+        """.strip(),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="pred_coord_mode"):
+        load_contract_audit_config(config_path)
+
+
 def test_run_contract_audit_materializes_inventory_bundle(tmp_path: Path) -> None:
     merged = tmp_path / "merged_ckpt"
     merged.mkdir()
@@ -232,7 +259,9 @@ families:
 
     result = run_contract_audit(config_path, repo_root=repo_root)
 
+    expected_run_dir = workspace_root / "output/analysis/coord-family-smoke"
     summary = json.loads(Path(result["summary_json"]).read_text(encoding="utf-8"))
+    assert result["run_dir"] == str(expected_run_dir)
     assert summary["families"][0]["checkpoint_exists"] is True
     assert summary["families"][0]["resolved_checkpoint_path"] == str(merged)
 
@@ -266,6 +295,10 @@ def test_bundled_configs_track_headline_2b_families() -> None:
     )
     assert raw_text_row["infer_mode"] == "text"
     assert raw_text_smoke_row["infer_mode"] == "text"
+    assert raw_text_row["checkpoint_hint"] == "adapter"
+    assert raw_text_smoke_row["checkpoint_hint"] == "adapter"
+    assert raw_text_row["pred_coord_mode"] == "norm1000"
+    assert raw_text_smoke_row["pred_coord_mode"] == "norm1000"
 
     smoke_paths = [row["checkpoint_path"] for row in smoke_cfg["families"]]
     assert all("some_adapter_checkpoint" not in path for path in smoke_paths)
