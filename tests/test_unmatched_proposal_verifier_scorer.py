@@ -289,6 +289,154 @@ def test_teacher_forced_scorer_score_prepared_batch_spans_handles_left_padding(
     assert all(float(row["mean_logprob"]) > -0.1 for row in scored)
 
 
+def test_teacher_forced_scorer_score_prepared_batch_span_token_rows_rebases_padding(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    base_dir = tmp_path / "base-model"
+    checkpoint_dir = tmp_path / "checkpoint"
+    base_dir.mkdir()
+    checkpoint_dir.mkdir()
+    monkeypatch.setattr(
+        verifier_module,
+        "resolve_inference_checkpoint",
+        lambda model_checkpoint: ResolvedInferenceCheckpoint(
+            checkpoint_mode="full_model",
+            requested_model_checkpoint=str(checkpoint_dir),
+            requested_adapter_checkpoint=None,
+            resolved_base_model_checkpoint=str(base_dir),
+            resolved_adapter_checkpoint=None,
+            adapter_info=AdapterCheckpointInfo(
+                path=str(checkpoint_dir),
+                base_model_name_or_path=str(base_dir),
+                modules_to_save=(),
+                coord_offset_spec=None,
+            ),
+        ),
+    )
+
+    class _Tokenizer:
+        pad_token_id = None
+        eos_token_id = 0
+        padding_side = "right"
+
+        def decode(
+            self,
+            token_ids: list[int],
+            *,
+            skip_special_tokens: bool = False,
+            clean_up_tokenization_spaces: bool = False,
+        ) -> str:
+            del skip_special_tokens, clean_up_tokenization_spaces
+            return "|".join(str(int(token_id)) for token_id in token_ids)
+
+    encoded = {
+        "short": [5, 7, 5],
+        "longer": [20, 21, 22, 23, 24],
+    }
+
+    class _Processor:
+        tokenizer = _Tokenizer()
+
+        def __call__(
+            self,
+            *,
+            text: list[str],
+            images: list[object],
+            return_tensors: str,
+            padding: bool,
+        ) -> dict[str, torch.Tensor]:
+            del images, return_tensors, padding
+            rows = [encoded[item] for item in text]
+            padded_len = max(len(row) for row in rows)
+            padded_rows = [[0] * (padded_len - len(row)) + list(row) for row in rows]
+            return {"input_ids": torch.tensor(padded_rows, dtype=torch.long)}
+
+    class _Model:
+        def __call__(self, **kwargs):
+            input_ids = kwargs["input_ids"]
+            logits = torch.full(
+                (
+                    int(input_ids.shape[0]),
+                    int(input_ids.shape[1]),
+                    32,
+                ),
+                -20.0,
+            )
+            logits[0, 2, 7] = 6.0
+            logits[0, 2, 8] = 5.0
+            logits[0, 3, 5] = 6.0
+            logits[0, 3, 8] = 5.0
+            logits[1, 2, 23] = 6.0
+            logits[1, 2, 8] = 5.0
+            logits[1, 3, 24] = 6.0
+            logits[1, 3, 8] = 5.0
+            return type("Outputs", (), {"logits": logits})()
+
+    monkeypatch.setattr(
+        verifier_module.TeacherForcedScorer,
+        "_load_model",
+        lambda self: _Model(),
+    )
+    monkeypatch.setattr(
+        verifier_module.AutoProcessor,
+        "from_pretrained",
+        lambda path, **kwargs: _Processor(),
+    )
+
+    scorer = verifier_module.TeacherForcedScorer(
+        checkpoint_path=checkpoint_dir,
+        device="cpu",
+        coord_mode="norm1000_text",
+    )
+    examples = [
+        verifier_module.PreparedExample(
+            full_text="short",
+            assistant_text="75",
+            desc_positions=[],
+            full_input_ids=encoded["short"],
+            assistant_start=1,
+            assistant_input_ids=[7, 5],
+        ),
+        verifier_module.PreparedExample(
+            full_text="longer",
+            assistant_text="21222324",
+            desc_positions=[],
+            full_input_ids=encoded["longer"],
+            assistant_start=1,
+            assistant_input_ids=[21, 22, 23, 24],
+        ),
+    ]
+
+    scored = scorer.score_prepared_batch_span_token_rows(
+        examples=examples,
+        images=[
+            Image.new("RGB", (2, 2), color=(0, 0, 0)),
+            Image.new("RGB", (2, 2), color=(0, 0, 0)),
+        ],
+        spans_list=[[1, 2], [3, 4]],
+        repetition_penalty=2.0,
+    )
+
+    assert [[row["position"] for row in rows] for rows in scored] == [[1, 2], [3, 4]]
+    assert [
+        [row["assistant_relative_position"] for row in rows]
+        for rows in scored
+    ] == [[0, 1], [2, 3]]
+    assert [[row["token_text"] for row in rows] for rows in scored] == [
+        ["7", "5"],
+        ["23", "24"],
+    ]
+    assert scored[0][0]["history_ids"] == [5]
+    assert scored[0][1]["history_ids"] == [5, 7]
+    assert float(scored[0][1]["processed_logprob"]) < float(
+        scored[0][1]["raw_logprob"]
+    )
+    assert float(scored[1][0]["processed_logprob"]) == float(
+        scored[1][0]["raw_logprob"]
+    )
+
+
 def test_teacher_forced_scorer_score_prepared_batch_hidden_states_returns_last_layer() -> None:
     scorer = verifier_module.TeacherForcedScorer.__new__(
         verifier_module.TeacherForcedScorer

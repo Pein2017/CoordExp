@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import pytest
 import torch
 from transformers import RepetitionPenaltyLogitsProcessor
 
@@ -35,6 +36,39 @@ def test_group_raw_text_token_rows_partitions_desc_digit_and_structure() -> None
     assert "".join(row["token_text"] for row in grouped["digit"]) == "12345678"
     assert grouped["structure"][0]["token_text"] == "{"
     assert sum(len(rows) for rows in grouped.values()) == len(token_rows)
+
+
+def test_group_raw_text_token_rows_requires_rebase_for_absolute_positions() -> None:
+    class _Tokenizer:
+        def encode(self, text: str, add_special_tokens: bool = False) -> list[int]:
+            del add_special_tokens
+            return [ord(ch) for ch in text]
+
+    candidate_assistant_text = '{"desc":"cup","bbox_2d":[12,34,56,78]}'
+    token_rows = [
+        {
+            "position": 5 + position,
+            "token_text": char,
+        }
+        for position, char in enumerate(candidate_assistant_text)
+    ]
+
+    with pytest.raises(KeyError, match="position_base"):
+        group_raw_text_token_rows(
+            tokenizer=_Tokenizer(),
+            candidate_assistant_text=candidate_assistant_text,
+            token_rows=token_rows,
+        )
+
+    grouped = group_raw_text_token_rows(
+        tokenizer=_Tokenizer(),
+        candidate_assistant_text=candidate_assistant_text,
+        token_rows=token_rows,
+        position_base=5,
+    )
+
+    assert "".join(row["token_text"] for row in grouped["desc"]) == "cup"
+    assert "".join(row["token_text"] for row in grouped["digit"]) == "12345678"
 
 
 def test_score_processed_span_token_rows_uses_full_history_and_records_rows() -> None:

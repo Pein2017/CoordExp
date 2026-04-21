@@ -74,6 +74,7 @@ def group_raw_text_token_rows(
     tokenizer: object,
     candidate_assistant_text: str,
     token_rows: Sequence[Mapping[str, object]],
+    position_base: int | None = None,
 ) -> dict[str, list[dict[str, object]]]:
     desc_positions = _token_positions_for_matches(
         tokenizer=tokenizer,
@@ -105,7 +106,7 @@ def group_raw_text_token_rows(
         "structure": [],
     }
     for row in token_rows:
-        position = _extract_token_row_position(row)
+        position = _extract_token_row_position(row, position_base=position_base)
         copied = dict(row)
         if position in desc_positions:
             grouped["desc"].append(copied)
@@ -182,9 +183,18 @@ def _token_positions_for_matches(
     return token_positions
 
 
-def _extract_token_row_position(row: Mapping[str, object]) -> int:
+def _extract_token_row_position(
+    row: Mapping[str, object],
+    *,
+    position_base: int | None,
+) -> int:
     if "assistant_relative_position" in row:
         return int(row["assistant_relative_position"])
+    if "position" in row and position_base is not None:
+        return int(row["position"]) - int(position_base)
     if "position" in row:
-        return int(row["position"])
-    raise KeyError("token row missing position key")
+        raise KeyError(
+            "token row with absolute position requires position_base or "
+            "assistant_relative_position"
+        )
+    raise KeyError("token row missing assistant_relative_position")
