@@ -534,6 +534,229 @@ def test_confidence_postop_supports_norm1000_numeric_bbox_spans(tmp_path: Path) 
     assert scored_records[0]["pred"][0]["score"] == pytest.approx(0.2)
 
 
+def test_confidence_postop_falls_back_to_coord_mode_for_pixel_alignment(
+    tmp_path: Path,
+) -> None:
+    gt_vs_pred_path = tmp_path / "gt_vs_pred.jsonl"
+    trace_path = tmp_path / "pred_token_trace.jsonl"
+    pred_confidence_path = tmp_path / "pred_confidence.jsonl"
+    scored_path = tmp_path / "gt_vs_pred_scored.jsonl"
+    summary_path = tmp_path / "confidence_postop_summary.json"
+
+    record = _bbox_record(
+        image="img_pixel.png",
+        x1=700,
+        y1=281,
+        x2=722,
+        y2=333,
+        raw_output_json=_bbox_raw_numeric(700, 281, 722, 333, desc="box"),
+        mode="coord",
+        pred_coord_mode="pixel",
+    )
+    record["width"] = 1024
+    record["height"] = 1024
+    record["coord_mode"] = "pixel"
+    record.pop("pred_coord_mode")
+    record["raw_special_tokens"] = [
+        "<|coord_700|>",
+        "<|coord_281|>",
+        "<|coord_722|>",
+        "<|coord_333|>",
+        "<|im_end|>",
+    ]
+    _write_jsonl(gt_vs_pred_path, [record])
+
+    generated_token_text = [
+        '{"',
+        "objects",
+        '":',
+        ' [{"',
+        "desc",
+        '":',
+        ' "',
+        "box",
+        '",',
+        ' "',
+        "bbox",
+        "_",
+        "2",
+        "d",
+        '":',
+        " [",
+        "<|coord_700|>",
+        ",",
+        " ",
+        "<|coord_281|>",
+        ",",
+        " ",
+        "<|coord_722|>",
+        ",",
+        " ",
+        "<|coord_333|>",
+        ']}',
+        "]}",
+        "<|im_end|>",
+    ]
+    token_logprobs = [0.0] * len(generated_token_text)
+    token_logprobs[7] = math.log(0.6)
+    token_logprobs[16] = math.log(0.2)
+    token_logprobs[19] = math.log(0.2)
+    token_logprobs[22] = math.log(0.2)
+    token_logprobs[25] = math.log(0.2)
+    _write_jsonl(
+        trace_path,
+        [
+            {
+                "line_idx": 0,
+                "generated_token_text": generated_token_text,
+                "token_logprobs": token_logprobs,
+            }
+        ],
+    )
+
+    summary = run_confidence_postop(
+        paths=paths_from_config(
+            {
+                "artifacts": {
+                    "gt_vs_pred_jsonl": str(gt_vs_pred_path),
+                    "pred_token_trace_jsonl": str(trace_path),
+                    "pred_confidence_jsonl": str(pred_confidence_path),
+                    "gt_vs_pred_scored_jsonl": str(scored_path),
+                    "confidence_postop_summary_json": str(summary_path),
+                }
+            }
+        ),
+        options=ConfidencePostOpOptions(
+            fusion_w_geom=0.6,
+            fusion_w_desc=0.4,
+        ),
+    )
+
+    assert summary["kept_pred_objects"] == 1
+    confidence_records = [
+        json.loads(line)
+        for line in pred_confidence_path.read_text(encoding="utf-8").splitlines()
+    ]
+    obj = confidence_records[0]["objects"][0]
+    assert obj["kept"] is True
+    assert obj["confidence_details"]["failure_reason"] is None
+    assert obj["confidence_details"]["geom_span_mode"] == "coord_tokens"
+    scored_records = [
+        json.loads(line) for line in scored_path.read_text(encoding="utf-8").splitlines()
+    ]
+    assert scored_records[0]["pred"][0]["score"] > 0.0
+
+
+def test_confidence_postop_tries_norm1000_alignment_for_coord_token_surface(
+    tmp_path: Path,
+) -> None:
+    gt_vs_pred_path = tmp_path / "gt_vs_pred.jsonl"
+    trace_path = tmp_path / "pred_token_trace.jsonl"
+    pred_confidence_path = tmp_path / "pred_confidence.jsonl"
+    scored_path = tmp_path / "gt_vs_pred_scored.jsonl"
+    summary_path = tmp_path / "confidence_postop_summary.json"
+
+    record = _bbox_record(
+        image="img_center_like.png",
+        x1=874,
+        y1=234,
+        x2=901,
+        y2=277,
+        raw_output_json=_bbox_raw_numeric(700, 281, 722, 333, desc="clock"),
+        mode="coord",
+        pred_coord_mode="pixel",
+    )
+    record["width"] = 1248
+    record["height"] = 832
+    record["coord_mode"] = "pixel"
+    record.pop("pred_coord_mode")
+    record["pred"][0]["desc"] = "clock"
+    record["raw_special_tokens"] = [
+        "<|coord_700|>",
+        "<|coord_281|>",
+        "<|coord_722|>",
+        "<|coord_333|>",
+        "<|im_end|>",
+    ]
+    _write_jsonl(gt_vs_pred_path, [record])
+
+    generated_token_text = [
+        '{"',
+        "objects",
+        '":',
+        ' [{"',
+        "desc",
+        '":',
+        ' "',
+        "clock",
+        '",',
+        ' "',
+        "bbox",
+        "_",
+        "2",
+        "d",
+        '":',
+        " [",
+        "<|coord_700|>",
+        ",",
+        " ",
+        "<|coord_281|>",
+        ",",
+        " ",
+        "<|coord_722|>",
+        ",",
+        " ",
+        "<|coord_333|>",
+        ']}',
+        "]}",
+        "<|im_end|>",
+    ]
+    token_logprobs = [0.0] * len(generated_token_text)
+    token_logprobs[7] = math.log(0.6)
+    token_logprobs[16] = math.log(0.2)
+    token_logprobs[19] = math.log(0.2)
+    token_logprobs[22] = math.log(0.2)
+    token_logprobs[25] = math.log(0.2)
+    _write_jsonl(
+        trace_path,
+        [
+            {
+                "line_idx": 0,
+                "generated_token_text": generated_token_text,
+                "token_logprobs": token_logprobs,
+            }
+        ],
+    )
+
+    summary = run_confidence_postop(
+        paths=paths_from_config(
+            {
+                "artifacts": {
+                    "gt_vs_pred_jsonl": str(gt_vs_pred_path),
+                    "pred_token_trace_jsonl": str(trace_path),
+                    "pred_confidence_jsonl": str(pred_confidence_path),
+                    "gt_vs_pred_scored_jsonl": str(scored_path),
+                    "confidence_postop_summary_json": str(summary_path),
+                }
+            }
+        ),
+        options=ConfidencePostOpOptions(
+            fusion_w_geom=0.6,
+            fusion_w_desc=0.4,
+        ),
+    )
+
+    assert summary["kept_pred_objects"] == 1
+    confidence_records = [
+        json.loads(line)
+        for line in pred_confidence_path.read_text(encoding="utf-8").splitlines()
+    ]
+    obj = confidence_records[0]["objects"][0]
+    assert obj["kept"] is True
+    assert obj["confidence_details"]["failure_reason"] is None
+    assert obj["confidence_details"]["geom_span_mode"] == "coord_tokens"
+
+
 def test_confidence_postop_strict_desc_policy_drops_on_missing_desc_span(
     tmp_path: Path,
 ) -> None:

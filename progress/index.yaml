@@ -1,5 +1,5 @@
 schema_version: 1
-updated: 2026-03-22
+updated: 2026-04-20
 
 entrypoints:
   human: progress/README.md

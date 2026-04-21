@@ -1,0 +1,20 @@
+run:
+  name: coord-family-recall-slices-2026-04-20
+  output_dir: output/analysis
+
+families:
+  - family_alias: center_parameterization
+    oracle_fn_objects_jsonl: output/eval/coord-family-center-oracle-k-val64/fn_objects.jsonl
+    subset_jsonl: output/analysis/coord-family-recall-pilot-center-val64/subset/sampled.coord.jsonl
+
+  - family_alias: raw_text_xyxy_pure_ce
+    oracle_fn_objects_jsonl: output/eval/coord-family-rawtext-oracle-k-val64/fn_objects.jsonl
+    subset_jsonl: output/analysis/coord-family-recall-pilot-rawtext-val64/subset/sampled.coord.jsonl
+
+  - family_alias: base_xyxy_merged
+    oracle_fn_objects_jsonl: output/eval/coord-family-base-xyxy-oracle-k-val64/fn_objects.jsonl
+    subset_jsonl: output/analysis/coord-family-recall-pilot-base-xyxy-val64/subset/sampled.coord.jsonl
+
+  - family_alias: hard_soft_ce_2b
+    oracle_fn_objects_jsonl: output/eval/coord-family-hard-soft-ce-oracle-k-val64/fn_objects.jsonl
+    subset_jsonl: output/analysis/coord-family-recall-pilot-hard-soft-ce-val64/subset/sampled.coord.jsonl

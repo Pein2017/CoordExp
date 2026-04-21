@@ -1,7 +1,7 @@
 ---
 title: Coordinate Family Basin and Recall Comparison
 date: 2026-04-20
-status: consolidated-interim
+status: consolidated-final
 owner: codex
 branches:
   - codex/coord-family-comparison

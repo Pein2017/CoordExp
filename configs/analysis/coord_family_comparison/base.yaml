@@ -1,0 +1,43 @@
+run:
+  name: coord-family-contract-audit
+  output_dir: output/analysis
+
+defaults:
+  infer_mode: coord
+  bbox_format: xyxy
+  checkpoint_hint: merged
+  pred_coord_mode: pixel
+  eval_compatibility_path: confidence_postop
+  is_headline_2b_family: true
+
+families:
+  - alias: base_xyxy_merged
+    checkpoint_path: output/stage1_2b/coco_bbox_max60-coco80-desc_first-1024-lvis_proxy-merged
+
+  - alias: raw_text_xyxy_pure_ce
+    checkpoint_path: output/stage1_2b/coco_bbox_max60-coco80-desc_first-1024-lvis_proxy-raw_text_xyxy-pure_ce/epoch_4-raw_text_xyxy-pure_ce-coco80-desc_first-1024-lvis_proxy-from-base-2B/v1-20260417-084341/checkpoint-552
+    checkpoint_hint: adapter
+    infer_mode: text
+    pred_coord_mode: norm1000
+
+  - alias: cxcywh_pure_ce
+    checkpoint_path: output/stage1_2b/coco_bbox_max60-coco80-desc_first-1024-lvis_proxy-cxcywh-pure_ce/epoch_4-cxcywh-pure_ce-coco80-desc_first-1024-lvis_proxy-from-base-2B/v0-20260415-060451/checkpoint-692
+    checkpoint_hint: adapter
+    bbox_format: cxcywh
+    pred_coord_mode: norm1000
+    eval_compatibility_path: constant_score_scored_jsonl
+
+  - alias: cxcy_logw_logh_pure_ce
+    checkpoint_path: output/stage1_2b/coco_bbox_max60-coco80-desc_first-1024-lvis_proxy-cxcy_logw_logh-pure_ce/epoch_4-cxcy_logw_logh-pure_ce-coco80-desc_first-1024-lvis_proxy-from-base-2B/v3-20260414-102133/checkpoint-716
+    checkpoint_hint: adapter
+    bbox_format: cxcy_logw_logh
+    pred_coord_mode: norm1000
+    eval_compatibility_path: constant_score_scored_jsonl
+
+  - alias: center_parameterization
+    checkpoint_path: output/stage1_2b/coco_bbox_max60-1024-lvis_proxy-center_parameterization-ckpt_1564-merged
+    bbox_format: center_parameterization
+    eval_compatibility_path: family_specific_projection_audit
+
+  - alias: hard_soft_ce_2b
+    checkpoint_path: output/stage1_2b/coco_bbox_max60-hard_soft_ce-2b-merged

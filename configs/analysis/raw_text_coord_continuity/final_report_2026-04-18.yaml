@@ -1,0 +1,21 @@
+run:
+  name: raw-text-coord-continuity-probe-2026-04-18
+  output_dir: output/analysis
+
+artifacts:
+  audit_dir: output/analysis/raw-text-continuity-pilot-medium/audit
+  pilot_broad_dir: output/analysis/raw-text-continuity-pilot-broad-x1y1/pilot
+  pilot_broad_swapped_dir: output/analysis/raw-text-continuity-pilot-broad-x1y1-swapped-next-abs/pilot
+  pilot_crowded_dir: output/analysis/raw-text-continuity-pilot-crowded-same-class-val64-rerun/pilot
+  pilot_model_mined_dir: output/analysis/raw-text-continuity-pilot-model-mined-duplicate-prone-pure-ce-val200-relaxed-norm1000/pilot
+  bad_basin_base_dir: output/analysis/raw-text-bad-basin-model-mined-base-coordexp-val200-relaxed-norm1000/bad_basin
+  bad_basin_pure_dir: output/analysis/raw-text-bad-basin-model-mined-duplicate-prone-pure-ce-val200-relaxed-norm1000/bad_basin
+  lexical_summary_json: output/analysis/raw-text-lexical-confound-broad-2026-04-18/regression_summary.json
+  lexical_per_model_json: output/analysis/raw-text-lexical-confound-broad-2026-04-18/regression_summary_per_model.json
+  perturb_base_dir: output/analysis/raw-text-bad-basin-perturb-base-mined-top2
+  perturb_pure_dir: output/analysis/raw-text-bad-basin-perturb-pure-mined-top6
+  heatmap_base_dir: output/analysis/raw-text-heatmap-base-mined-top2
+  heatmap_pure_dir: output/analysis/raw-text-heatmap-pure-mined-top3
+  diagnosis_docs:
+    - progress/diagnostics/stage1_coord_basin_duplication_mechanism_2026-04-11.md
+    - progress/diagnostics/duplication_collapse_final_analysis_2026-04-13.md

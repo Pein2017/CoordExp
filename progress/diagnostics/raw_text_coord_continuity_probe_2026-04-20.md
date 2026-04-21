@@ -188,7 +188,7 @@ The runtime-root summaries copied into `progress/` are:
 The original study design references remain in:
 
 - `docs/superpowers/specs/2026-04-18-raw-text-coord-continuity-probe-design.md`
-- `docs/superpowers/plans/2026-04-18-raw-text-coord-continuity-probe-design.md`
+- `docs/superpowers/plans/2026-04-18-raw-text-coordinate-continuity-probe.md`
 
 ## Bottom Line
 

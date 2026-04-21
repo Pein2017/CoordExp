@@ -197,6 +197,26 @@ def _record_pred_coord_mode_for_alignment(record: Mapping[str, Any]) -> str:
     return "auto"
 
 
+def _candidate_pred_coord_modes_for_alignment(record: Mapping[str, Any]) -> list[str]:
+    primary = _record_pred_coord_mode_for_alignment(record)
+    candidates: list[str] = [primary]
+    if _record_uses_coord_token_surface(record):
+        for mode in ("norm1000", "pixel"):
+            if mode not in candidates:
+                candidates.append(mode)
+    return candidates
+
+
+def _record_uses_coord_token_surface(record: Mapping[str, Any]) -> bool:
+    raw_special_tokens = record.get("raw_special_tokens")
+    if not isinstance(raw_special_tokens, list):
+        return False
+    for token in raw_special_tokens:
+        if decode_coord(token) is not None:
+            return True
+    return False
+
+
 def _normalize_desc(desc: Any) -> str:
     return str(desc or "").strip()
 
@@ -578,22 +598,32 @@ def _compute_sample_confidence_objects(
         except ValueError:
             reconstructed = None
         else:
-            reconstructed = _reconstruct_pred_alignment(
-                raw_output_json=raw_output_json,
-                width=width,
-                height=height,
-                mode=_as_mode(record.get("mode")),
-                pred_coord_mode=str(record.get("pred_coord_mode") or "auto"),
-            )
+            reconstructed = None
+            emitted_matches = False
+            for pred_coord_mode in _candidate_pred_coord_modes_for_alignment(record):
+                candidate = _reconstruct_pred_alignment(
+                    raw_output_json=raw_output_json,
+                    width=width,
+                    height=height,
+                    mode=_as_mode(record.get("mode")),
+                    pred_coord_mode=pred_coord_mode,
+                )
+                if candidate is None:
+                    continue
+                reconstructed = candidate
+                reconstructed_pred, _ = candidate
+                if _pred_alignment_matches(pred_objs, reconstructed_pred):
+                    emitted_matches = True
+                    break
+            if reconstructed is not None and not emitted_matches:
+                return _build_sample_failure_objects(
+                    pred_objs,
+                    failure_reason=PRED_ALIGNMENT_MISMATCH,
+                )
 
     bbox_bins_by_object: list[list[int] | None] = [None] * len(pred_objs)
     if reconstructed is not None:
         reconstructed_pred, reconstructed_bins = reconstructed
-        if not _pred_alignment_matches(pred_objs, reconstructed_pred):
-            return _build_sample_failure_objects(
-                pred_objs,
-                failure_reason=PRED_ALIGNMENT_MISMATCH,
-            )
         if len(reconstructed_bins) != len(pred_objs):
             return _build_sample_failure_objects(
                 pred_objs,
@@ -604,6 +634,7 @@ def _compute_sample_confidence_objects(
     span_mode_by_object: list[str | None] = [None] * len(pred_objs)
     coord_expected_sequences: list[tuple[int, tuple[str, ...]]] = []
     numeric_expected_sequences: list[tuple[int, tuple[int, ...]]] = []
+    record_uses_coord_tokens = _record_uses_coord_token_surface(record)
     for object_idx, pred_obj in enumerate(pred_objs):
         if str(pred_obj.get("type", "")) != "bbox_2d":
             continue
@@ -630,7 +661,7 @@ def _compute_sample_confidence_objects(
         else:
             flat_values = None
 
-        if flat_values is not None and has_coord_tokens(flat_values):
+        if (flat_values is not None and has_coord_tokens(flat_values)) or record_uses_coord_tokens:
             try:
                 tokens = coord_bins_to_tokens(bins)
             except ValueError:

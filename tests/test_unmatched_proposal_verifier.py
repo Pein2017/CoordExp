@@ -3,11 +3,13 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import src.analysis.unmatched_proposal_verifier as verifier_module
 from src.analysis.unmatched_proposal_verifier import (
     CollectionGateConfig,
     _binary_metrics,
     _find_subsequence,
     _pseudo_label_ready,
+    _resolve_run_dir,
     _render_report,
     build_gt_and_negative_tables,
     build_rollout_proposal_table,
@@ -247,12 +249,95 @@ checkpoints:
     assert config.manual_audit.score_key == "counterfactual"
 
 
-def test_resolve_checkpoint_path_labels_common_root() -> None:
+def test_load_study_config_reads_checkpoint_infer_contract_overrides(
+    tmp_path: Path,
+) -> None:
+    config_path = tmp_path / "study.yaml"
+    config_path.write_text(
+        """
+run:
+  name: test
+  output_dir: output/analysis
+
+dataset:
+  jsonl_path: public_data/coco/rescale_32_1024_bbox_max60/val.coord.jsonl
+
+checkpoints:
+  - name: cxcywh
+    path: output/stage1_2b/cxcywh/checkpoint-1
+    bbox_format: cxcywh
+    infer_mode: coord
+    pred_coord_mode: norm1000
+""".strip()
+        + "\n",
+        encoding="utf-8",
+    )
+
+    config = load_study_config(config_path)
+
+    assert config.checkpoints[0].bbox_format == "cxcywh"
+    assert config.checkpoints[0].infer_mode == "coord"
+    assert config.checkpoints[0].pred_coord_mode == "norm1000"
+
+
+def test_build_pipeline_yaml_applies_checkpoint_infer_contract_overrides(
+    tmp_path: Path,
+) -> None:
+    checkpoint = verifier_module.CheckpointSpec(
+        path="output/stage1_2b/cxcywh/checkpoint-1",
+        name="cxcywh_pure_ce",
+        bbox_format="cxcywh",
+        infer_mode="coord",
+        pred_coord_mode="norm1000",
+    )
+
+    payload = verifier_module._build_pipeline_yaml(
+        output_root=tmp_path / "analysis",
+        subset_path=tmp_path / "sampled.coord.jsonl",
+        root_image_dir=tmp_path / "images",
+        run_name="cxcywh-pure-ce",
+        checkpoint=checkpoint,
+        checkpoint_path=tmp_path / "checkpoint-1",
+        prompt_variant="coco_80",
+        object_field_order="desc_first",
+        collection=verifier_module.CollectionConfig(backend_mode="hf", device="cuda:4"),
+        eval_cfg=verifier_module.EvalConfig(),
+    )
+
+    assert payload["run"]["name"] == "cxcywh-pure-ce"
+    assert payload["infer"]["bbox_format"] == "cxcywh"
+    assert payload["infer"]["mode"] == "coord"
+    assert payload["infer"]["pred_coord_mode"] == "norm1000"
+
+
+def test_resolve_checkpoint_path_labels_common_root(tmp_path: Path, monkeypatch) -> None:
+    worktree_root = tmp_path / "repo" / ".worktrees" / "coord-family-comparison"
+    common_root = tmp_path / "repo"
+    checkpoint = common_root / "output" / "stage2_ab" / "prod" / "ul-res_1024-ckpt_300_merged"
+    checkpoint.mkdir(parents=True)
+    monkeypatch.setattr(verifier_module, "REPO_ROOT", worktree_root)
+    monkeypatch.setattr(verifier_module, "COMMON_REPO_ROOT", common_root)
+
     path, source = resolve_checkpoint_path(
         "output/stage2_ab/prod/ul-res_1024-ckpt_300_merged"
     )
     assert path.exists()
-    assert source in {"config_path_common_root", "config_path_worktree"}
+    assert source == "config_path_common_root"
+
+
+def test_resolve_run_dir_prefers_common_root_for_relative_output_dir(tmp_path: Path) -> None:
+    repo_root = tmp_path / "repo" / ".worktrees" / "coord-family-comparison"
+    common_root = tmp_path / "repo"
+    run_dir = _resolve_run_dir(
+        output_dir="output/analysis",
+        run_name="coord-family-recall-pilot",
+        repo_root=repo_root,
+        common_repo_root=common_root,
+    )
+
+    assert run_dir == (
+        common_root / "output" / "analysis" / "coord-family-recall-pilot"
+    ).resolve()
 
 
 def test_render_report_includes_authority_first_downgrade() -> None:

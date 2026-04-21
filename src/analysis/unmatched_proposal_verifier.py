@@ -33,13 +33,19 @@ from src.common.object_field_order import (
     build_object_payload,
     normalize_object_field_order,
 )
+from src.common.geometry.bbox_parameterization import normalize_bbox_format
 from src.vis import DEFAULT_BBOX_OUTLINE_WIDTH
 from src.common.paths import resolve_image_path_strict
-from src.common.prediction_parsing import extract_special_tokens
 from src.common.semantic_desc import normalize_desc
 from src.config.prompts import get_template_prompts
+from src.coord_tokens.offset_adapter import (
+    install_coord_offset_adapter,
+    reattach_coord_offset_hooks,
+)
+from src.infer.checkpoints import resolve_inference_checkpoint
 from src.infer.pipeline import run_pipeline
 from src.analysis.rollout_parity import collect_stage2_parity_gt_vs_pred
+from src.analysis.raw_text_coord_continuity_scoring import score_span_logprobs
 from src.trainers.rollout_matching.contracts import GTObject
 from src.trainers.rollout_matching.parsing import (
     find_desc_value_token_positions_by_span,
@@ -86,6 +92,9 @@ class CheckpointSpec:
     name: str
     prompt_variant: Optional[str] = None
     object_field_order: Optional[str] = None
+    bbox_format: Optional[str] = None
+    infer_mode: Optional[str] = None
+    pred_coord_mode: Optional[str] = None
 
 
 @dataclass(frozen=True)
@@ -197,6 +206,8 @@ class PreparedExample:
     assistant_text: str
     desc_positions: List[int]
     full_input_ids: List[int]
+    assistant_start: int = 0
+    assistant_input_ids: List[int] = field(default_factory=list)
 
 
 @dataclass(frozen=True)
@@ -218,6 +229,19 @@ def _load_yaml(path: Path) -> Mapping[str, Any]:
     if not isinstance(obj, Mapping):
         raise ValueError(f"Expected YAML mapping at {path}")
     return obj
+
+
+def _resolve_run_dir(
+    *,
+    output_dir: str,
+    run_name: str,
+    repo_root: Path,
+    common_repo_root: Path,
+) -> Path:
+    output_path = Path(output_dir)
+    if not output_path.is_absolute():
+        output_path = common_repo_root / output_path
+    return (output_path / run_name).resolve()
 
 
 def _ensure_tuple_floats(values: Any) -> Tuple[float, ...]:
@@ -274,6 +298,24 @@ def _normalize_stages(values: Any) -> Tuple[str, ...]:
     return tuple(out)
 
 
+def _optional_choice_str(
+    value: Any,
+    *,
+    allowed: set[str],
+    path: str,
+) -> Optional[str]:
+    if value is None:
+        return None
+    text = str(value).strip()
+    if not text:
+        return None
+    lowered = text.lower()
+    if lowered not in allowed:
+        allowed_text = ", ".join(sorted(allowed))
+        raise ValueError(f"{path} must be one of {{{allowed_text}}}")
+    return lowered
+
+
 def load_study_config(path: Path) -> StudyConfig:
     raw = _load_yaml(path)
 
@@ -315,6 +357,24 @@ def load_study_config(path: Path) -> StudyConfig:
                     )
                     if ckpt_raw.get("object_field_order") is not None
                     else None
+                ),
+                bbox_format=(
+                    normalize_bbox_format(
+                        ckpt_raw["bbox_format"],
+                        path=f"checkpoints[{idx}].bbox_format",
+                    )
+                    if ckpt_raw.get("bbox_format") is not None
+                    else None
+                ),
+                infer_mode=_optional_choice_str(
+                    ckpt_raw.get("infer_mode"),
+                    allowed={"auto", "coord", "text"},
+                    path=f"checkpoints[{idx}].infer_mode",
+                ),
+                pred_coord_mode=_optional_choice_str(
+                    ckpt_raw.get("pred_coord_mode"),
+                    allowed={"auto", "norm1000", "pixel"},
+                    path=f"checkpoints[{idx}].pred_coord_mode",
                 ),
             )
         )
@@ -1066,7 +1126,8 @@ def _build_pipeline_yaml(
     output_root: Path,
     subset_path: Path,
     root_image_dir: Path,
-    checkpoint_name: str,
+    run_name: str,
+    checkpoint: CheckpointSpec,
     checkpoint_path: Path,
     prompt_variant: str,
     object_field_order: str,
@@ -1077,7 +1138,7 @@ def _build_pipeline_yaml(
     backend_type = "hf" if backend_mode == "hf" else "vllm"
     return {
         "run": {
-            "name": checkpoint_name,
+            "name": run_name,
             "output_dir": str(output_root),
             "root_image_dir": str(root_image_dir),
         },
@@ -1087,8 +1148,9 @@ def _build_pipeline_yaml(
             "model_checkpoint": str(checkpoint_path),
             "prompt_variant": prompt_variant,
             "object_field_order": object_field_order,
-            "mode": "auto",
-            "pred_coord_mode": "auto",
+            "mode": checkpoint.infer_mode or "auto",
+            "bbox_format": checkpoint.bbox_format or "xyxy",
+            "pred_coord_mode": checkpoint.pred_coord_mode or "auto",
             "backend": (
                 {
                     "type": "hf",
@@ -1247,7 +1309,8 @@ def _build_stage2_parity_collection_config(
     *,
     subset_path: Path,
     root_image_dir: Path,
-    checkpoint_name: str,
+    run_name: str,
+    checkpoint: CheckpointSpec,
     checkpoint_path: Path,
     prompt_variant: str,
     object_field_order: str,
@@ -1256,7 +1319,7 @@ def _build_stage2_parity_collection_config(
 ) -> Dict[str, Any]:
     return {
         "run": {
-            "name": str(checkpoint_name),
+            "name": str(run_name),
             "root_image_dir": str(root_image_dir),
         },
         "collection": {
@@ -1284,6 +1347,9 @@ def _build_stage2_parity_collection_config(
             "model_checkpoint": str(checkpoint_path),
             "prompt_variant": str(prompt_variant),
             "object_field_order": str(object_field_order),
+            "mode": str(checkpoint.infer_mode or "auto"),
+            "bbox_format": str(checkpoint.bbox_format or "xyxy"),
+            "pred_coord_mode": str(checkpoint.pred_coord_mode or "auto"),
         },
         "eval": {
             "f1ish_iou_thrs": [float(v) for v in eval_cfg.f1ish_iou_thrs],
@@ -1373,7 +1439,8 @@ def run_collection_for_checkpoint(
         pipeline_cfg = _build_stage2_parity_collection_config(
             subset_path=subset_path,
             root_image_dir=root_image_dir,
-            checkpoint_name=run_dir.name,
+            run_name=run_dir.name,
+            checkpoint=checkpoint,
             checkpoint_path=resolved_checkpoint_path,
             prompt_variant=prompt_variant,
             object_field_order=object_field_order,
@@ -1386,7 +1453,8 @@ def run_collection_for_checkpoint(
             output_root=output_root,
             subset_path=subset_path,
             root_image_dir=root_image_dir,
-            checkpoint_name=run_dir.name,
+            run_name=run_dir.name,
+            checkpoint=checkpoint,
             checkpoint_path=resolved_checkpoint_path,
             prompt_variant=prompt_variant,
             object_field_order=object_field_order,
@@ -1684,13 +1752,24 @@ class TeacherForcedScorer:
         checkpoint_path: Path,
         device: str,
         attn_implementation: str = "auto",
+        coord_mode: str = "coord_tokens",
     ) -> None:
         self.checkpoint_path = checkpoint_path
         self.device = device
         self.attn_implementation = attn_implementation
+        self.coord_mode = str(coord_mode).strip() or "coord_tokens"
+        self.resolved_checkpoint = resolve_inference_checkpoint(
+            model_checkpoint=str(checkpoint_path)
+        )
         self.model = self._load_model()
+        processor_source = str(
+            self.resolved_checkpoint.resolved_base_model_checkpoint
+        ).strip()
+        processor_source_is_local = Path(processor_source).exists()
         self.processor = AutoProcessor.from_pretrained(
-            str(checkpoint_path), trust_remote_code=True
+            processor_source,
+            trust_remote_code=True,
+            local_files_only=processor_source_is_local,
         )
         tokenizer = getattr(self.processor, "tokenizer", None)
         if tokenizer is None:
@@ -1715,6 +1794,15 @@ class TeacherForcedScorer:
                 requested = "flash_attention_2"
             else:
                 requested = "sdpa"
+        resolved_base_model_checkpoint = str(
+            self.resolved_checkpoint.resolved_base_model_checkpoint
+        ).strip()
+        resolved_adapter_checkpoint = str(
+            self.resolved_checkpoint.resolved_adapter_checkpoint or ""
+        ).strip()
+        coord_offset_spec = None
+        if self.resolved_checkpoint.adapter_info is not None:
+            coord_offset_spec = self.resolved_checkpoint.adapter_info.coord_offset_spec
         candidates: List[str] = []
         for cand in (requested, "flash_attention_2", "sdpa", "eager"):
             value = str(cand).strip().lower()
@@ -1723,12 +1811,44 @@ class TeacherForcedScorer:
         last_exc: Exception | None = None
         for cand in candidates:
             try:
-                model = Qwen3VLForConditionalGeneration.from_pretrained(
-                    str(self.checkpoint_path),
+                base_model = Qwen3VLForConditionalGeneration.from_pretrained(
+                    resolved_base_model_checkpoint,
                     torch_dtype=torch.bfloat16,
                     attn_implementation=cand,
                 )
-                model = model.to(self.device)
+                model = base_model.to(self.device)
+                if resolved_adapter_checkpoint:
+                    if coord_offset_spec is not None:
+                        install_coord_offset_adapter(
+                            model,
+                            coord_ids=coord_offset_spec.coord_ids,
+                            tie_head=coord_offset_spec.tie_head,
+                        )
+                    try:
+                        from swift import Swift
+                    except ImportError as exc:
+                        raise RuntimeError(
+                            "TeacherForcedScorer adapter shorthand requires the 'swift' package."
+                        ) from exc
+                    try:
+                        model = Swift.from_pretrained(
+                            model,
+                            model_id=resolved_adapter_checkpoint,
+                            inference_mode=True,
+                        )
+                    except Exception as exc:
+                        raise RuntimeError(
+                            "Failed to load scorer adapter checkpoint "
+                            f"{resolved_adapter_checkpoint!r} onto base model "
+                            f"{resolved_base_model_checkpoint!r}."
+                        ) from exc
+                    if coord_offset_spec is not None:
+                        reattached = reattach_coord_offset_hooks(model)
+                        if reattached is None:
+                            raise RuntimeError(
+                                "coord_offset_adapter was declared in the adapter checkpoint, "
+                                "but its runtime hooks could not be reattached after Swift loading."
+                            )
                 model.eval()
                 return model
             except (ImportError, OSError, RuntimeError, ValueError) as exc:
@@ -1749,7 +1869,7 @@ class TeacherForcedScorer:
     ) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
         system_prompt, user_prompt = get_template_prompts(
             ordering="sorted",
-            coord_mode="coord_tokens",
+            coord_mode=self.coord_mode,
             prompt_variant=prompt_variant,
             object_field_order=object_field_order,
         )
@@ -1823,6 +1943,8 @@ class TeacherForcedScorer:
             assistant_text=str(assistant_text),
             desc_positions=desc_positions,
             full_input_ids=[int(v) for v in full_ids],
+            assistant_start=int(start),
+            assistant_input_ids=[int(v) for v in assistant_ids],
         )
 
     def score_prepared_batch(
@@ -1945,6 +2067,96 @@ class TeacherForcedScorer:
             )
             for desc_positions in desc_positions_list
         ]
+
+    def score_prepared_spans(
+        self,
+        *,
+        prepared: PreparedExample,
+        image: Image.Image,
+        spans: Sequence[Sequence[int]],
+    ) -> List[Dict[str, float | int]]:
+        model_inputs = self.processor(
+            text=[prepared.full_text],
+            images=[image],
+            return_tensors="pt",
+            padding=True,
+        )
+        model_inputs = {
+            key: value.to(self.device) if isinstance(value, torch.Tensor) else value
+            for key, value in model_inputs.items()
+        }
+        with torch.inference_mode():
+            outputs = self.model(**model_inputs, use_cache=False)
+        logits = getattr(outputs, "logits", None)
+        if not isinstance(logits, torch.Tensor):
+            raise RuntimeError("teacher-forced scorer did not return logits")
+        input_ids = model_inputs.get("input_ids")
+        if not isinstance(input_ids, torch.Tensor):
+            raise RuntimeError("teacher-forced scorer missing input_ids")
+        if logits.shape[:2] != input_ids.shape[:2]:
+            raise RuntimeError("teacher-forced scorer requires unsliced logits")
+        return [
+            score_span_logprobs(
+                logits=logits,
+                input_ids=input_ids,
+                batch_idx=0,
+                positions=list(span),
+            )
+            for span in spans
+        ]
+
+    def score_prepared_batch_spans(
+        self,
+        *,
+        examples: Sequence[PreparedExample],
+        images: Sequence[Image.Image],
+        spans_list: Sequence[Sequence[int]],
+    ) -> List[Dict[str, float | int]]:
+        if len(examples) != len(images):
+            raise ValueError("examples/images length mismatch")
+        if len(examples) != len(spans_list):
+            raise ValueError("examples/spans length mismatch")
+        if not examples:
+            return []
+        model_inputs = self.processor(
+            text=[example.full_text for example in examples],
+            images=list(images),
+            return_tensors="pt",
+            padding=True,
+        )
+        model_inputs = {
+            key: value.to(self.device) if isinstance(value, torch.Tensor) else value
+            for key, value in model_inputs.items()
+        }
+        with torch.inference_mode():
+            outputs = self.model(**model_inputs, use_cache=False)
+        logits = getattr(outputs, "logits", None)
+        if not isinstance(logits, torch.Tensor):
+            raise RuntimeError("teacher-forced scorer did not return logits")
+        input_ids = model_inputs.get("input_ids")
+        if not isinstance(input_ids, torch.Tensor):
+            raise RuntimeError("teacher-forced scorer missing input_ids")
+        if logits.shape[:2] != input_ids.shape[:2]:
+            raise RuntimeError("teacher-forced scorer requires unsliced logits")
+        padded_len = int(input_ids.shape[1])
+        scored: List[Dict[str, float | int]] = []
+        for batch_idx, (example, span) in enumerate(zip(examples, spans_list)):
+            seq_len = int(len(example.full_input_ids))
+            pad_offset = int(padded_len - seq_len)
+            observed_ids = input_ids[batch_idx, pad_offset:].detach().cpu().tolist()
+            if [int(value) for value in observed_ids] != [
+                int(value) for value in example.full_input_ids
+            ]:
+                raise RuntimeError("assistant_span_build_failed")
+            scored.append(
+                score_span_logprobs(
+                    logits=logits,
+                    input_ids=input_ids,
+                    batch_idx=batch_idx,
+                    positions=[pad_offset + int(position) for position in span],
+                )
+            )
+        return scored
 
 
 def _find_subsequence(
@@ -3628,7 +3840,12 @@ def load_manual_audit_artifacts(run_dir: Path) -> Dict[str, Any]:
 
 
 def run_study(config: StudyConfig) -> Dict[str, Any]:
-    run_dir = (REPO_ROOT / config.run.output_dir / config.run.name).resolve()
+    run_dir = _resolve_run_dir(
+        output_dir=config.run.output_dir,
+        run_name=config.run.name,
+        repo_root=REPO_ROOT,
+        common_repo_root=COMMON_REPO_ROOT,
+    )
     run_dir.mkdir(parents=True, exist_ok=True)
     if _stage_enabled(config, "prepare"):
         prepared = prepare_study_inputs(config, run_dir=run_dir)

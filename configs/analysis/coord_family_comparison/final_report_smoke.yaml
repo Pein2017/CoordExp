@@ -1,0 +1,12 @@
+run:
+  name: coord-family-report-smoke
+  output_dir: output/analysis
+
+inputs:
+  basin_summary_json: output/analysis/coord-family-basin-smoke/summary.json
+  recall_summary_json: output/analysis/coord-family-recall-smoke/summary.json
+  vision_rows:
+    - family_alias: base_xyxy_merged
+      vision_lift: 1.2
+    - family_alias: cxcywh_pure_ce
+      vision_lift: 4.0

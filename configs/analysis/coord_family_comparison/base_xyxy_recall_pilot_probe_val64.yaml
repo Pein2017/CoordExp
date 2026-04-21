@@ -1,0 +1,12 @@
+run:
+  name: coord-family-recall-base-xyxy-val64
+  output_dir: output/analysis
+
+artifact_sources:
+  - family_alias: base_xyxy_merged
+    oracle_fn_objects_jsonl: output/eval/coord-family-base-xyxy-oracle-k-val64/fn_objects.jsonl
+    gt_proxy_scores_jsonl: output/analysis/coord-family-recall-pilot-base-xyxy-val64/checkpoints/base-xyxy-merged/gt_proxy_scores.jsonl
+    proposal_proxy_scores_jsonl: output/analysis/coord-family-recall-pilot-base-xyxy-val64/checkpoints/base-xyxy-merged/proposal_proxy_scores.jsonl
+    score_field: combined_linear
+    oracle_recovery_field: ever_recovered_loc
+    oracle_fn_filter_field: baseline_fn_loc

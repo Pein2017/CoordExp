@@ -1,0 +1,22 @@
+run:
+  name: coord-family-recall-smoke
+  output_dir: output/analysis
+
+fn_rows:
+  - family_alias: base_xyxy_merged
+    teacher_forced_support: 0.30
+    proposal_support: 0.25
+    oracle_k_recovered: false
+    competitor_margin: 0.05
+
+  - family_alias: cxcywh_pure_ce
+    teacher_forced_support: 0.75
+    proposal_support: 0.80
+    oracle_k_recovered: true
+    competitor_margin: -0.05
+
+  - family_alias: cxcywh_pure_ce
+    teacher_forced_support: 0.45
+    proposal_support: 0.50
+    oracle_k_recovered: false
+    competitor_margin: 0.30
