@@ -124,6 +124,10 @@ ERROR_CANONICAL = {
     "multi_image_not_supported": "multi_image_not_supported",
 }
 
+STOP_PRESSURE_MODE_MIN_NEW_TOKENS_AFTER_OBJECT_OPEN = (
+    "min_new_tokens_after_object_open"
+)
+
 
 @dataclass
 class GenerationConfig:
@@ -135,6 +139,21 @@ class GenerationConfig:
     # Keep at 1 by default to preserve memory headroom.
     batch_size: int = 1
     seed: Optional[int] = None
+    stop_pressure_mode: Optional[str] = None
+    stop_pressure_min_new_tokens: int = 0
+    stop_pressure_trigger_rule: Optional[str] = None
+
+    @property
+    def stop_pressure_active(self) -> bool:
+        return (
+            self.stop_pressure_mode
+            == STOP_PRESSURE_MODE_MIN_NEW_TOKENS_AFTER_OBJECT_OPEN
+            and int(self.stop_pressure_min_new_tokens) > 0
+        )
+
+    def apply_hf_stop_pressure(self, gen_kwargs: Dict[str, Any]) -> None:
+        if self.stop_pressure_active:
+            gen_kwargs["min_new_tokens"] = int(self.stop_pressure_min_new_tokens)
 
 
 @dataclass
@@ -819,6 +838,7 @@ class InferenceEngine:
         )
         if self.gen_cfg.repetition_penalty is not None:
             gen_kwargs["repetition_penalty"] = self.gen_cfg.repetition_penalty
+        self.gen_cfg.apply_hf_stop_pressure(gen_kwargs)
 
         # NOTE: Do not pass `generator=` into `model.generate()`.
         #

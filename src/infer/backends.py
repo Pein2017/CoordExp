@@ -71,6 +71,7 @@ def generate_hf_batch(
     )
     if owner.gen_cfg.repetition_penalty is not None:
         gen_kwargs["repetition_penalty"] = owner.gen_cfg.repetition_penalty
+    owner.gen_cfg.apply_hf_stop_pressure(gen_kwargs)
 
     with torch.inference_mode():
         try:

@@ -152,6 +152,12 @@ def build_infer_summary_payload(
             "repetition_penalty": owner.gen_cfg.repetition_penalty,
             "batch_size": batch_size,
             "seed": owner.gen_cfg.seed,
+            "stop_pressure": {
+                "mode": owner.gen_cfg.stop_pressure_mode,
+                "min_new_tokens": owner.gen_cfg.stop_pressure_min_new_tokens,
+                "trigger_rule": owner.gen_cfg.stop_pressure_trigger_rule,
+                "active": owner.gen_cfg.stop_pressure_active,
+            },
         },
         "infer": {
             "gt_jsonl": owner.cfg.gt_jsonl,

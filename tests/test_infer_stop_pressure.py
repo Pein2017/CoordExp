@@ -1,0 +1,140 @@
+import types
+
+import torch
+from PIL import Image
+
+from src.infer.artifacts import build_infer_summary_payload
+from src.infer.backends import generate_hf_batch
+from src.infer.engine import GenerationConfig
+
+
+def test_generation_config_carries_stop_pressure_fields():
+    cfg = GenerationConfig(
+        stop_pressure_mode="min_new_tokens_after_object_open",
+        stop_pressure_min_new_tokens=24,
+        stop_pressure_trigger_rule="object_open",
+    )
+
+    assert cfg.stop_pressure_mode == "min_new_tokens_after_object_open"
+    assert cfg.stop_pressure_min_new_tokens == 24
+    assert cfg.stop_pressure_trigger_rule == "object_open"
+
+
+def test_build_infer_summary_payload_records_stop_pressure_block():
+    owner = types.SimpleNamespace(
+        resolved_mode="text",
+        requested_mode="text",
+        mode_reason="explicit",
+        prompt_variant="default",
+        bbox_format="norm1000",
+        object_field_order="desc_first",
+        object_ordering="sorted",
+        prompt_template_hash="prompt-hash",
+        attn_implementation_requested="sdpa",
+        attn_implementation_selected="sdpa",
+        cfg=types.SimpleNamespace(
+            model_checkpoint="model",
+            adapter_checkpoint=None,
+            gt_jsonl="gt.jsonl",
+            pred_coord_mode="auto",
+            device="cpu",
+            limit=8,
+            distributed_enabled=False,
+        ),
+        gen_cfg=GenerationConfig(
+            temperature=0.0,
+            top_p=1.0,
+            max_new_tokens=128,
+            repetition_penalty=1.0,
+            batch_size=2,
+            seed=7,
+            stop_pressure_mode="min_new_tokens_after_object_open",
+            stop_pressure_min_new_tokens=24,
+            stop_pressure_trigger_rule="object_open",
+        ),
+    )
+    counters = types.SimpleNamespace(
+        to_summary=lambda: {
+            "total_read": 2,
+            "total_emitted": 2,
+            "counters": {},
+            "error_codes": [],
+        }
+    )
+
+    payload = build_infer_summary_payload(
+        owner=owner,
+        counters=counters,
+        backend="hf",
+        determinism="seeded",
+        batch_size=owner.gen_cfg.batch_size,
+    )
+
+    assert payload["generation"]["stop_pressure"] == {
+        "mode": "min_new_tokens_after_object_open",
+        "min_new_tokens": 24,
+        "trigger_rule": "object_open",
+        "active": True,
+    }
+
+
+def test_generate_hf_batch_sets_min_new_tokens_for_targeted_stop_pressure():
+    image = Image.new("RGB", (8, 8), color=(0, 0, 0))
+    captured_kwargs: dict[str, object] = {}
+
+    class _DummyTokenizer:
+        def decode(self, _token_ids, **_kwargs) -> str:
+            return '{"objects": []}'
+
+        def batch_decode(self, _token_ids, **_kwargs):
+            return []
+
+    class _DummyProcessor:
+        def __init__(self) -> None:
+            self.tokenizer = _DummyTokenizer()
+
+        def apply_chat_template(self, _message, **_kwargs) -> str:
+            return "prompt"
+
+        def __call__(self, *, text, images, return_tensors, padding):
+            assert text == ["prompt"]
+            assert len(images) == 1
+            assert return_tensors == "pt"
+            assert padding is True
+            return {
+                "input_ids": torch.tensor([[11, 12]], dtype=torch.long),
+                "attention_mask": torch.tensor([[1, 1]], dtype=torch.long),
+            }
+
+    class _DummyModel:
+        def generate(self, **kwargs):
+            captured_kwargs.update(kwargs)
+            return torch.tensor([[11, 12, 13]], dtype=torch.long)
+
+    owner = types.SimpleNamespace(
+        model=_DummyModel(),
+        processor=_DummyProcessor(),
+        logger=types.SimpleNamespace(warning=lambda *args, **kwargs: None),
+        cfg=types.SimpleNamespace(device="cpu"),
+        gen_cfg=GenerationConfig(
+            temperature=0.0,
+            top_p=1.0,
+            max_new_tokens=32,
+            repetition_penalty=1.0,
+            batch_size=1,
+            seed=5,
+            stop_pressure_mode="min_new_tokens_after_object_open",
+            stop_pressure_min_new_tokens=9,
+            stop_pressure_trigger_rule="object_open",
+        ),
+        _build_messages=lambda _image: [{"role": "user", "content": "describe"}],
+    )
+
+    results = generate_hf_batch(
+        owner=owner,
+        images=[image],
+        result_factory=lambda **kwargs: kwargs,
+    )
+
+    assert len(results) == 1
+    assert captured_kwargs["min_new_tokens"] == 9

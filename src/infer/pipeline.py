@@ -851,6 +851,17 @@ def _run_infer_stage(
 
     seed_val = gen_cfg_map.get("seed", None)
     seed = int(seed_val) if seed_val is not None else None
+    stop_pressure_cfg = _get_map(gen_cfg_map, "stop_pressure")
+    stop_pressure_min_new_tokens_raw = stop_pressure_cfg.get("min_new_tokens", 0)
+    if stop_pressure_min_new_tokens_raw is None:
+        stop_pressure_min_new_tokens = 0
+    else:
+        try:
+            stop_pressure_min_new_tokens = int(stop_pressure_min_new_tokens_raw)
+        except (TypeError, ValueError) as exc:
+            raise ValueError(
+                "infer.generation.stop_pressure.min_new_tokens must be an int"
+            ) from exc
 
     gen_cfg = GenerationConfig(
         temperature=_f("temperature", 0.01),
@@ -859,6 +870,9 @@ def _run_infer_stage(
         repetition_penalty=_f("repetition_penalty", 1.05),
         batch_size=_i("batch_size", 1),
         seed=seed,
+        stop_pressure_mode=_get_str(stop_pressure_cfg, "mode"),
+        stop_pressure_min_new_tokens=stop_pressure_min_new_tokens,
+        stop_pressure_trigger_rule=_get_str(stop_pressure_cfg, "trigger_rule"),
     )
 
     rank, local_rank, world_size, distributed_enabled = _detect_infer_distributed_env()
