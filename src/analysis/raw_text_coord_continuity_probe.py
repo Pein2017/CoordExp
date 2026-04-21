@@ -579,22 +579,35 @@ def summarize_bad_basin_coordinate_records(
         exemplar = group_rows[0]
         pred_metrics = compute_basin_metrics(group_rows, center_key="pred_value")
         gt_metrics = compute_basin_metrics(group_rows, center_key="gt_value")
+        previous_metrics = None
+        if all(row.get("previous_value") is not None for row in group_rows):
+            previous_metrics = compute_basin_metrics(
+                group_rows,
+                center_key="previous_value",
+            )
         wrong_anchor = summarize_wrong_anchor_advantage(group_rows)
-        probe_metrics.append(
-            {
-                "model_alias": exemplar["model_alias"],
-                "case_id": exemplar["case_id"],
-                "image_id": exemplar["image_id"],
-                "object_index": exemplar["object_index"],
-                "slot": exemplar["slot"],
-                "pred_value": exemplar["pred_value"],
-                "gt_value": exemplar["gt_value"],
-                "num_candidates": len(group_rows),
-                **{f"pred_center_{key}": value for key, value in pred_metrics.items()},
-                **{f"gt_center_{key}": value for key, value in gt_metrics.items()},
-                **wrong_anchor,
-            }
-        )
+        probe_row = {
+            "model_alias": exemplar["model_alias"],
+            "case_id": exemplar["case_id"],
+            "image_id": exemplar["image_id"],
+            "object_index": exemplar["object_index"],
+            "slot": exemplar["slot"],
+            "pred_value": exemplar["pred_value"],
+            "gt_value": exemplar["gt_value"],
+            "num_candidates": len(group_rows),
+            **{f"pred_center_{key}": value for key, value in pred_metrics.items()},
+            **{f"gt_center_{key}": value for key, value in gt_metrics.items()},
+            **wrong_anchor,
+        }
+        if previous_metrics is not None:
+            probe_row["previous_value"] = exemplar["previous_value"]
+            probe_row.update(
+                {
+                    f"previous_center_{key}": value
+                    for key, value in previous_metrics.items()
+                }
+            )
+        probe_metrics.append(probe_row)
 
     by_model_slot_center: dict[tuple[str, str, str], list[dict[str, object]]] = {}
     metric_keys = (
@@ -607,7 +620,10 @@ def summarize_bad_basin_coordinate_records(
         "half_height_width",
     )
     for probe in probe_metrics:
-        for center_kind in ("pred", "gt"):
+        center_kinds = ["pred", "gt"]
+        if probe.get("previous_value") is not None:
+            center_kinds.append("previous")
+        for center_kind in center_kinds:
             by_model_slot_center.setdefault(
                 (str(probe["model_alias"]), str(probe["slot"]), center_kind),
                 [],

@@ -1,0 +1,8 @@
+input:
+  selected_cases_jsonl: /data/CoordExp/output/analysis/raw-text-coordinate-mechanism-fn-suppression-model-native-20260421/selected_cases.jsonl
+  per_case_margins_jsonl: /data/CoordExp/output/analysis/raw-text-coordinate-mechanism-fn-suppression-model-native-20260421/per_case_margins.jsonl
+  baseline_gt_vs_pred_jsonl: /data/CoordExp/output/analysis/coord-family-recall-pilot-rawtext-val64/checkpoints/raw-text-xyxy-pure-ce/gt_vs_pred.jsonl
+
+output:
+  output_dir: /data/CoordExp/output/analysis/raw-text-coordinate-mechanism-fn-suppression-model-native-20260421/review_gallery
+  title: Raw-Text FN Suppression Review

@@ -1,0 +1,29 @@
+run:
+  name: raw-text-coordinate-mechanism-fn-suppression-model-native-20260421
+  output_dir: /data/CoordExp/output/analysis
+
+input:
+  fn_objects_jsonl: /data/CoordExp/output/eval/coord-family-rawtext-oracle-k-val64/fn_objects.jsonl
+  gt_proxy_scores_jsonl: /data/CoordExp/output/analysis/coord-family-recall-pilot-rawtext-val64/checkpoints/raw-text-xyxy-pure-ce/gt_proxy_scores.jsonl
+  proposal_proxy_scores_jsonl: /data/CoordExp/output/analysis/coord-family-recall-pilot-rawtext-val64/checkpoints/raw-text-xyxy-pure-ce/proposal_proxy_scores.jsonl
+  baseline_gt_vs_pred_jsonl: /data/CoordExp/output/analysis/coord-family-recall-pilot-rawtext-val64/checkpoints/raw-text-xyxy-pure-ce/gt_vs_pred.jsonl
+  baseline_pred_token_trace_jsonl: /data/CoordExp/output/analysis/coord-family-recall-pilot-rawtext-val64/checkpoints/raw-text-xyxy-pure-ce/pred_token_trace.jsonl
+  max_cases: 5
+  min_recover_fraction_full: 0.5
+  scoring_surface: model_native
+
+models:
+  base_only:
+    alias: base_only
+    path: /data/CoordExp/model_cache/models/Qwen/Qwen3-VL-2B-Instruct-coordexp
+    prompt_variant: coco_80
+    object_field_order: desc_first
+  base_plus_adapter:
+    alias: base_plus_adapter
+    path: /data/CoordExp/output/stage1_2b/coco_bbox_max60-coco80-desc_first-1024-lvis_proxy-raw_text_xyxy-pure_ce/epoch_4-raw_text_xyxy-pure_ce-coco80-desc_first-1024-lvis_proxy-from-base-2B/v1-20260417-084341/checkpoint-552
+    prompt_variant: coco_80
+    object_field_order: desc_first
+
+scoring:
+  device: cuda:0
+  attn_implementation: auto
