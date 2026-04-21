@@ -63,6 +63,16 @@ def test_build_family_inventory_records_required_contract_fields(tmp_path: Path)
             eval_compatibility_path="confidence_postop",
             is_headline_2b_family=True,
         ),
+        FamilySpec(
+            alias="mixed_objective_sota_adapter",
+            checkpoint_path=str(adapter),
+            checkpoint_hint="adapter",
+            infer_mode="coord",
+            bbox_format="xyxy",
+            pred_coord_mode="auto",
+            eval_compatibility_path="confidence_postop",
+            is_headline_2b_family=False,
+        ),
     ]
 
     rows = build_family_inventory(specs)
@@ -79,6 +89,10 @@ def test_build_family_inventory_records_required_contract_fields(tmp_path: Path)
     assert rows[1]["runtime_load_pattern"] == "model_checkpoint + adapter_checkpoint"
     assert rows[1]["resolved_base_model_checkpoint"] == "model_cache/models/Qwen/Qwen3-VL-2B-Instruct"
     assert rows[1]["resolved_adapter_checkpoint"] == str(adapter)
+    assert rows[2]["alias"] == "mixed_objective_sota_adapter"
+    assert rows[2]["checkpoint_type"] == "adapter"
+    assert rows[2]["pred_coord_mode"] == "auto"
+    assert rows[2]["runtime_load_pattern"] == "model_checkpoint + adapter_checkpoint"
 
 
 def test_load_contract_audit_config_parses_run_and_families(tmp_path: Path) -> None:
