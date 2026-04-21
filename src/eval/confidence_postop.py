@@ -187,6 +187,16 @@ def _as_mode(value: Any) -> str:
     return "coord" if mode == "coord" else "text"
 
 
+def _record_pred_coord_mode_for_alignment(record: Mapping[str, Any]) -> str:
+    pred_coord_mode = str(record.get("pred_coord_mode") or "").strip().lower()
+    if pred_coord_mode in {"auto", "norm1000", "pixel"}:
+        return pred_coord_mode
+    coord_mode = str(record.get("coord_mode") or "").strip().lower()
+    if coord_mode in {"norm1000", "pixel"}:
+        return coord_mode
+    return "auto"
+
+
 def _normalize_desc(desc: Any) -> str:
     return str(desc or "").strip()
 
