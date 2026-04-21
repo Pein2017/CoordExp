@@ -874,6 +874,14 @@ def _run_infer_stage(
         stop_pressure_min_new_tokens=stop_pressure_min_new_tokens,
         stop_pressure_trigger_rule=_get_str(stop_pressure_cfg, "trigger_rule"),
     )
+    if backend_type != "hf" and (
+        gen_cfg.stop_pressure_mode is not None
+        or int(gen_cfg.stop_pressure_min_new_tokens) > 0
+        or gen_cfg.stop_pressure_trigger_rule is not None
+    ):
+        raise ValueError(
+            "infer.generation.stop_pressure is only supported for infer.backend.type=hf"
+        )
 
     rank, local_rank, world_size, distributed_enabled = _detect_infer_distributed_env()
 

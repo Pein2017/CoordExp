@@ -62,7 +62,7 @@ def ensure_infer_artifact_dirs(
         trace_path.parent.mkdir(parents=True, exist_ok=True)
 
 
-def _generation_meta(owner: Any, *, batch_size: int) -> Dict[str, Any]:
+def _generation_meta(owner: Any, *, backend: str, batch_size: int) -> Dict[str, Any]:
     return {
         "temperature": owner.gen_cfg.temperature,
         "top_p": owner.gen_cfg.top_p,
@@ -74,7 +74,7 @@ def _generation_meta(owner: Any, *, batch_size: int) -> Dict[str, Any]:
             "mode": owner.gen_cfg.stop_pressure_mode,
             "min_new_tokens": owner.gen_cfg.stop_pressure_min_new_tokens,
             "trigger_rule": owner.gen_cfg.stop_pressure_trigger_rule,
-            "active": owner.gen_cfg.stop_pressure_active,
+            "active": backend == "hf" and owner.gen_cfg.stop_pressure_active,
         },
     }
 
@@ -105,7 +105,7 @@ def build_infer_resolved_meta(
         "prompt_template_hash": owner.prompt_template_hash,
         "device": owner.cfg.device,
         "limit": owner.cfg.limit,
-        "generation": _generation_meta(owner, batch_size=batch_size),
+        "generation": _generation_meta(owner, backend=backend, batch_size=batch_size),
         "artifacts": {
             "gt_vs_pred_jsonl": str(out_path),
             "pred_token_trace_jsonl": str(trace_path) if trace_path is not None else None,
@@ -155,7 +155,7 @@ def build_infer_summary_payload(
             "adapter_checkpoint": owner.cfg.adapter_checkpoint,
             **checkpoint_meta,
         },
-        "generation": _generation_meta(owner, batch_size=batch_size),
+        "generation": _generation_meta(owner, backend=backend, batch_size=batch_size),
         "infer": {
             "gt_jsonl": owner.cfg.gt_jsonl,
             "pred_coord_mode": owner.cfg.pred_coord_mode,

@@ -1,9 +1,11 @@
 import types
 from pathlib import Path
 
+import pytest
 import torch
 from PIL import Image
 
+import src.infer.pipeline as infer_pipeline
 from src.infer.artifacts import build_infer_resolved_meta, build_infer_summary_payload
 from src.infer.backends import generate_hf_batch
 from src.infer.engine import GenerationConfig
@@ -79,6 +81,53 @@ def test_build_infer_summary_payload_records_stop_pressure_block():
     }
 
 
+def test_build_infer_summary_payload_marks_stop_pressure_inactive_for_vllm():
+    owner = types.SimpleNamespace(
+        resolved_mode="text",
+        requested_mode="text",
+        mode_reason="explicit",
+        prompt_variant="default",
+        bbox_format="norm1000",
+        object_field_order="desc_first",
+        object_ordering="sorted",
+        prompt_template_hash="prompt-hash",
+        attn_implementation_requested=None,
+        attn_implementation_selected=None,
+        cfg=types.SimpleNamespace(
+            model_checkpoint="model",
+            adapter_checkpoint=None,
+            gt_jsonl="gt.jsonl",
+            pred_coord_mode="auto",
+            device="cpu",
+            limit=8,
+            distributed_enabled=False,
+        ),
+        gen_cfg=GenerationConfig(
+            stop_pressure_mode="min_new_tokens_after_object_open",
+            stop_pressure_min_new_tokens=24,
+            stop_pressure_trigger_rule="object_open",
+        ),
+    )
+    counters = types.SimpleNamespace(
+        to_summary=lambda: {
+            "total_read": 1,
+            "total_emitted": 1,
+            "counters": {},
+            "error_codes": [],
+        }
+    )
+
+    payload = build_infer_summary_payload(
+        owner=owner,
+        counters=counters,
+        backend="vllm",
+        determinism="seeded",
+        batch_size=1,
+    )
+
+    assert payload["generation"]["stop_pressure"]["active"] is False
+
+
 def test_build_infer_resolved_meta_records_stop_pressure_block():
     owner = types.SimpleNamespace(
         resolved_mode="text",
@@ -131,6 +180,61 @@ def test_build_infer_resolved_meta_records_stop_pressure_block():
         "trigger_rule": "object_open",
         "active": True,
     }
+
+
+def test_run_infer_stage_rejects_stop_pressure_for_vllm_backend(
+    tmp_path: Path,
+    monkeypatch,
+):
+    monkeypatch.setattr(
+        infer_pipeline,
+        "resolve_inference_checkpoint",
+        lambda **kwargs: types.SimpleNamespace(
+            checkpoint_mode="full_model",
+            requested_model_checkpoint=kwargs["model_checkpoint"],
+            requested_adapter_checkpoint=kwargs.get("adapter_checkpoint"),
+            resolved_base_model_checkpoint=kwargs["model_checkpoint"],
+            resolved_adapter_checkpoint=None,
+        ),
+    )
+
+    cfg = {
+        "infer": {
+            "gt_jsonl": str(tmp_path / "gt.jsonl"),
+            "model_checkpoint": "dummy-model",
+            "mode": "text",
+            "pred_coord_mode": "auto",
+            "backend": {"type": "vllm"},
+            "generation": {
+                "temperature": 0.0,
+                "top_p": 1.0,
+                "max_new_tokens": 32,
+                "repetition_penalty": 1.0,
+                "batch_size": 1,
+                "stop_pressure": {
+                    "mode": "min_new_tokens_after_object_open",
+                    "min_new_tokens": 9,
+                    "trigger_rule": "object_open",
+                },
+            },
+        }
+    }
+    artifacts = infer_pipeline.ResolvedArtifacts(
+        run_dir=tmp_path / "run",
+        gt_vs_pred_jsonl=tmp_path / "gt_vs_pred.jsonl",
+        pred_token_trace_jsonl=tmp_path / "pred_token_trace.jsonl",
+        gt_vs_pred_scored_jsonl=None,
+        summary_json=tmp_path / "summary.json",
+        eval_dir=tmp_path / "eval",
+        vis_dir=tmp_path / "vis",
+    )
+
+    with pytest.raises(ValueError, match="only supported for infer.backend.type=hf"):
+        infer_pipeline._run_infer_stage(
+            cfg,
+            artifacts,
+            root_image_dir=None,
+        )
 
 
 def test_generate_hf_batch_sets_min_new_tokens_for_targeted_stop_pressure():
