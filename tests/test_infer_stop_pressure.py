@@ -1,9 +1,10 @@
 import types
+from pathlib import Path
 
 import torch
 from PIL import Image
 
-from src.infer.artifacts import build_infer_summary_payload
+from src.infer.artifacts import build_infer_resolved_meta, build_infer_summary_payload
 from src.infer.backends import generate_hf_batch
 from src.infer.engine import GenerationConfig
 
@@ -68,6 +69,60 @@ def test_build_infer_summary_payload_records_stop_pressure_block():
         backend="hf",
         determinism="seeded",
         batch_size=owner.gen_cfg.batch_size,
+    )
+
+    assert payload["generation"]["stop_pressure"] == {
+        "mode": "min_new_tokens_after_object_open",
+        "min_new_tokens": 24,
+        "trigger_rule": "object_open",
+        "active": True,
+    }
+
+
+def test_build_infer_resolved_meta_records_stop_pressure_block():
+    owner = types.SimpleNamespace(
+        resolved_mode="text",
+        requested_mode="text",
+        mode_reason="explicit",
+        prompt_variant="default",
+        bbox_format="norm1000",
+        object_field_order="desc_first",
+        object_ordering="sorted",
+        prompt_template_hash="prompt-hash",
+        cfg=types.SimpleNamespace(
+            model_checkpoint="model",
+            adapter_checkpoint=None,
+            checkpoint_mode="full_model",
+            requested_model_checkpoint="model",
+            requested_adapter_checkpoint=None,
+            resolved_base_model_checkpoint="model",
+            resolved_adapter_checkpoint=None,
+            gt_jsonl="gt.jsonl",
+            pred_coord_mode="auto",
+            device="cpu",
+            limit=8,
+            distributed_enabled=False,
+        ),
+        gen_cfg=GenerationConfig(
+            temperature=0.0,
+            top_p=1.0,
+            max_new_tokens=128,
+            repetition_penalty=1.0,
+            batch_size=2,
+            seed=7,
+            stop_pressure_mode="min_new_tokens_after_object_open",
+            stop_pressure_min_new_tokens=24,
+            stop_pressure_trigger_rule="object_open",
+        ),
+    )
+
+    payload = build_infer_resolved_meta(
+        owner=owner,
+        backend="hf",
+        batch_size=owner.gen_cfg.batch_size,
+        out_path=Path("gt_vs_pred.jsonl"),
+        summary_path=Path("summary.json"),
+        trace_path=None,
     )
 
     assert payload["generation"]["stop_pressure"] == {
