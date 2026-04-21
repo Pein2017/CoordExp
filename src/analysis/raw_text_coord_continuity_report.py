@@ -104,13 +104,24 @@ def summarize_wrong_anchor_advantage(
 ) -> dict[str, float]:
     gt_metrics = compute_basin_metrics(rows, center_key="gt_value")
     pred_metrics = compute_basin_metrics(rows, center_key="pred_value")
-    return {
+    summary = {
         "gt_center_mass_at_4": gt_metrics["mass_at_4"],
         "pred_center_mass_at_4": pred_metrics["mass_at_4"],
         "wrong_anchor_advantage_at_4": (
             pred_metrics["mass_at_4"] - gt_metrics["mass_at_4"]
         ),
     }
+    if all(row.get("previous_value") is not None for row in rows):
+        previous_metrics = compute_basin_metrics(rows, center_key="previous_value")
+        summary.update(
+            {
+                "previous_center_mass_at_4": previous_metrics["mass_at_4"],
+                "previous_minus_gt_mass_at_4": (
+                    previous_metrics["mass_at_4"] - gt_metrics["mass_at_4"]
+                ),
+            }
+        )
+    return summary
 
 
 def build_xy_heatmap_grid(

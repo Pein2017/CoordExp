@@ -106,6 +106,23 @@ def test_replace_bbox_slot_value_supports_coordjson_top_level_object() -> None:
     )
 
 
+def test_replace_bbox_slot_value_supports_fenced_json_blocks() -> None:
+    assistant_text = (
+        '```json\n{"objects": [{"desc": "book", "bbox_2d": [199, 200, 210, 250]}]}\n```'
+    )
+    replaced = replace_bbox_slot_value(
+        assistant_text=assistant_text,
+        slot="x1",
+        original_bbox=(199, 200, 210, 250),
+        candidate_value=231,
+    )
+
+    assert (
+        replaced
+        == '```json\n{"objects": [{"desc": "book", "bbox_2d": [231, 200, 210, 250]}]}\n```'
+    )
+
+
 def test_replace_bbox_slot_values_updates_multiple_slots() -> None:
     assistant_text = '{"objects": [{"desc": "book", "bbox_2d": [199, 200, 210, 250]}]}'
     replaced = replace_bbox_slot_values(

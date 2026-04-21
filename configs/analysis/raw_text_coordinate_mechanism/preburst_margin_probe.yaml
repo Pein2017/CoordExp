@@ -1,0 +1,26 @@
+run:
+  name: raw-text-coordinate-mechanism-preburst-margin-model-native-20260421
+  output_dir: /data/CoordExp/output/analysis
+
+input:
+  case_bank_jsonl: /data/CoordExp/output/analysis/raw-text-coordinate-mechanism/case_bank.jsonl
+  max_cases_per_model: 8
+  case_serializer_surface: model_native
+  scoring_surface: model_native
+  candidate_labels: [gt_next, exact_duplicate, predicted_object]
+
+models:
+  base_only:
+    alias: base_only
+    path: /data/CoordExp/model_cache/models/Qwen/Qwen3-VL-2B-Instruct-coordexp
+    prompt_variant: coco_80
+    object_field_order: desc_first
+  base_plus_adapter:
+    alias: base_plus_adapter
+    path: /data/CoordExp/output/stage1_2b/coco_bbox_max60-coco80-desc_first-1024-lvis_proxy-raw_text_xyxy-pure_ce/epoch_4-raw_text_xyxy-pure_ce-coco80-desc_first-1024-lvis_proxy-from-base-2B/v1-20260417-084341/checkpoint-552
+    prompt_variant: coco_80
+    object_field_order: desc_first
+
+scoring:
+  device: cuda:0
+  attn_implementation: auto

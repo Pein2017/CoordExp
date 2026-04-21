@@ -512,6 +512,7 @@ def test_summarize_bad_basin_coordinate_records_reports_gt_and_pred_centers() ->
             "score": -0.2,
             "gt_value": 140,
             "pred_value": 100,
+            "previous_value": 104,
         },
         {
             "scoring_status": "ok",
@@ -524,6 +525,7 @@ def test_summarize_bad_basin_coordinate_records_reports_gt_and_pred_centers() ->
             "score": -0.3,
             "gt_value": 140,
             "pred_value": 100,
+            "previous_value": 104,
         },
         {
             "scoring_status": "ok",
@@ -536,6 +538,7 @@ def test_summarize_bad_basin_coordinate_records_reports_gt_and_pred_centers() ->
             "score": -0.9,
             "gt_value": 140,
             "pred_value": 100,
+            "previous_value": 104,
         },
     ]
 
@@ -543,12 +546,17 @@ def test_summarize_bad_basin_coordinate_records_reports_gt_and_pred_centers() ->
 
     assert summary["candidate_rows_total"] == 3
     assert summary["num_probes"] == 1
-    assert {row["center_kind"] for row in summary["center_metrics"]} == {"gt", "pred"}
+    assert {row["center_kind"] for row in summary["center_metrics"]} == {
+        "gt",
+        "pred",
+        "previous",
+    }
     assert (
         summary["probe_metrics"][0]["pred_center_mass_at_4"]
         > summary["probe_metrics"][0]["gt_center_mass_at_4"]
     )
     assert summary["probe_metrics"][0]["wrong_anchor_advantage_at_4"] > 0.0
+    assert summary["probe_metrics"][0]["previous_center_mass_at_4"] > 0.0
 
 
 def test_build_study_hard_cases_prefers_duplicate_prone_rows() -> None:

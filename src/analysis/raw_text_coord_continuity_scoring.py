@@ -12,6 +12,22 @@ _BBOX_ARRAY_PATTERN = re.compile(r'"bbox_2d"\s*:\s*\[(?P<content>[^\]]*)\]')
 _INT_PATTERN = re.compile(r"-?\d+")
 
 
+def _extract_json_payload_text(assistant_text: str) -> str:
+    stripped = assistant_text.strip()
+    if stripped.endswith("<|im_end|>"):
+        stripped = stripped[: -len("<|im_end|>")].rstrip()
+    if stripped.startswith("```"):
+        fence_match = re.match(
+            r"^```(?:json)?\s*(?P<content>.*?)\s*```$",
+            stripped,
+            flags=re.DOTALL,
+        )
+        if fence_match is None:
+            raise ValueError("assistant_payload_fence_unclosed")
+        stripped = fence_match.group("content").strip()
+    return stripped
+
+
 def score_span_logprobs(
     *,
     logits: torch.Tensor,
@@ -117,7 +133,7 @@ def _find_bbox_slot_text_match(
     original_bbox: Sequence[int],
     object_index: int | None = None,
 ) -> tuple[re.Match[str], re.Match[str]]:
-    payload = json.loads(assistant_text)
+    payload = json.loads(_extract_json_payload_text(assistant_text))
     if isinstance(payload, dict):
         payload_rows = payload.get("objects")
     else:
