@@ -900,7 +900,7 @@ def _run_infer_stage(
         )
     if stop_pressure_mode is None:
         if (
-            int(stop_pressure_min_new_tokens) > 0
+            int(stop_pressure_min_new_tokens) != 0
             or stop_pressure_trigger_rule is not None
         ):
             raise ValueError(

@@ -287,6 +287,43 @@ def test_run_infer_stage_rejects_unknown_stop_pressure_trigger_rule(
         )
 
 
+def test_run_infer_stage_rejects_unknown_stop_pressure_mode(
+    tmp_path: Path,
+    monkeypatch,
+):
+    monkeypatch.setattr(
+        infer_pipeline,
+        "resolve_inference_checkpoint",
+        lambda **kwargs: types.SimpleNamespace(
+            checkpoint_mode="full_model",
+            requested_model_checkpoint=kwargs["model_checkpoint"],
+            requested_adapter_checkpoint=kwargs.get("adapter_checkpoint"),
+            resolved_base_model_checkpoint=kwargs["model_checkpoint"],
+            resolved_adapter_checkpoint=None,
+        ),
+    )
+
+    cfg = _minimal_infer_stage_cfg(
+        tmp_path,
+        backend_type="hf",
+        stop_pressure={
+            "mode": "force_continue",
+            "min_new_tokens": 9,
+            "trigger_rule": "raw_text_object_open",
+        },
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="stop_pressure.mode must be 'min_new_tokens_after_object_open'",
+    ):
+        infer_pipeline._run_infer_stage(
+            cfg,
+            _minimal_artifacts(tmp_path),
+            root_image_dir=None,
+        )
+
+
 def test_run_infer_stage_requires_positive_min_new_tokens_for_stop_pressure(
     tmp_path: Path,
     monkeypatch,
@@ -314,6 +351,38 @@ def test_run_infer_stage_requires_positive_min_new_tokens_for_stop_pressure(
     )
 
     with pytest.raises(ValueError, match="min_new_tokens must be > 0"):
+        infer_pipeline._run_infer_stage(
+            cfg,
+            _minimal_artifacts(tmp_path),
+            root_image_dir=None,
+        )
+
+
+def test_run_infer_stage_rejects_stop_pressure_fields_without_mode(
+    tmp_path: Path,
+    monkeypatch,
+):
+    monkeypatch.setattr(
+        infer_pipeline,
+        "resolve_inference_checkpoint",
+        lambda **kwargs: types.SimpleNamespace(
+            checkpoint_mode="full_model",
+            requested_model_checkpoint=kwargs["model_checkpoint"],
+            requested_adapter_checkpoint=kwargs.get("adapter_checkpoint"),
+            resolved_base_model_checkpoint=kwargs["model_checkpoint"],
+            resolved_adapter_checkpoint=None,
+        ),
+    )
+
+    cfg = _minimal_infer_stage_cfg(
+        tmp_path,
+        backend_type="hf",
+        stop_pressure={
+            "min_new_tokens": -3,
+        },
+    )
+
+    with pytest.raises(ValueError, match="stop_pressure.mode is required"):
         infer_pipeline._run_infer_stage(
             cfg,
             _minimal_artifacts(tmp_path),
