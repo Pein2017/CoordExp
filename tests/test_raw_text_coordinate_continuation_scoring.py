@@ -133,4 +133,12 @@ def test_score_candidate_continuations_batch_scores_changed_chunk_only() -> None
             ],
         }
     ]
+    assert [row["assistant_relative_positions"] for row in scored] == [
+        list(range(54, 97)),
+        list(range(54, 97)),
+    ]
+    assert [row["absolute_positions"] for row in scored] == [
+        list(range(59, 102)),
+        list(range(59, 102)),
+    ]
     assert [row["count"] for row in scored] == [43, 43]

@@ -154,6 +154,7 @@ def test_teacher_forced_scorer_build_messages_uses_requested_coord_mode(
         coord_mode="norm1000_text",
     )
 
+    assert scorer.coord_mode == "norm1000_text"
     prompt_messages, full_messages = scorer.build_messages(
         image=Image.new("RGB", (8, 8), color=(0, 0, 0)),
         assistant_text='{"objects": []}',
