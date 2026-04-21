@@ -1,5 +1,5 @@
 schema_version: 1
-updated: 2026-04-20
+updated: 2026-04-21
 
 entrypoints:
   human: progress/README.md
@@ -22,6 +22,7 @@ groups:
     - progress/diagnostics/raw_text_coord_continuity_probe_2026-04-20.md
     - progress/diagnostics/coord_family_basin_and_recall_comparison_2026-04-20.md
     - progress/diagnostics/raw_text_continuity_and_coord_family_synthesis_2026-04-20.md
+    - progress/diagnostics/mixed_objective_sota_checkpoint_probe_2026-04-21.md
     - progress/diagnostics/stage2_near_duplication_2026-03-05.md
     - progress/diagnostics/stage2_ul_capture_highres1024_2026-03-09.md
     - progress/diagnostics/stage2_triage_posterior_coco1024_train_dynamics_2026-03-12.md
@@ -72,6 +73,11 @@ notes:
     kind: decision-summary
     status: active-reference
     summary: Decision-oriented synthesis tying the raw-text continuity findings to the coordinate-family comparison and final research recommendations.
+  - path: progress/diagnostics/mixed_objective_sota_checkpoint_probe_2026-04-21.md
+    title: Mixed-Objective SOTA Checkpoint Probe
+    kind: diagnostic-study
+    status: active-reference
+    summary: Focused probe of the new 2B mixed-objective adapter checkpoint showing strong val200 detection, stable surface behavior, and a low-recall profile dominated by weak-visual misses.
   - path: progress/benchmarks/README.md
     title: Benchmarks Index
     kind: router

@@ -1,0 +1,44 @@
+{
+  "run_name": "mixed-objective-sota-contract-audit",
+  "family_count": 1,
+  "checkpoint_type_counts": {
+    "adapter": 1
+  },
+  "infer_mode_counts": {
+    "coord": 1
+  },
+  "bbox_format_counts": {
+    "xyxy": 1
+  },
+  "runtime_contract_ready_count": 1,
+  "runtime_contract_not_ready_aliases": [],
+  "families": [
+    {
+      "alias": "mixed_objective_sota_adapter",
+      "checkpoint_path": "/data/CoordExp/output_remote/stage1_2b/coco_bbox_max60-hard_ce_soft_ce_w1_gate/epoch_4-from-base-2B/v0-20260227-050057/checkpoint-1332",
+      "resolved_checkpoint_path": "/data/CoordExp/output_remote/stage1_2b/coco_bbox_max60-hard_ce_soft_ce_w1_gate/epoch_4-from-base-2B/v0-20260227-050057/checkpoint-1332",
+      "checkpoint_hint": "adapter",
+      "checkpoint_exists": true,
+      "checkpoint_type": "adapter",
+      "contract_resolution_source": "runtime_detection",
+      "runtime_checkpoint_mode": "adapter_shorthand",
+      "runtime_load_pattern": "model_checkpoint + adapter_checkpoint",
+      "infer_mode": "coord",
+      "bbox_format": "xyxy",
+      "pred_coord_mode": "auto",
+      "eval_compatibility_path": "confidence_postop",
+      "is_headline_2b_family": false,
+      "resolved_base_model_checkpoint": "/data/CoordExp/model_cache_remote/model_cache/models/Qwen/Qwen3-VL-2B-Instruct-coordexp",
+      "resolved_adapter_checkpoint": "/data/CoordExp/output_remote/stage1_2b/coco_bbox_max60-hard_ce_soft_ce_w1_gate/epoch_4-from-base-2B/v0-20260227-050057/checkpoint-1332",
+      "adapter_base_model_name_or_path": "/data/CoordExp/model_cache_remote/model_cache/models/Qwen/Qwen3-VL-2B-Instruct-coordexp",
+      "adapter_modules_to_save": [
+        "coord_offset_adapter"
+      ],
+      "vllm_supported": false,
+      "runtime_contract_ready": true,
+      "notes": [
+        "vLLM local/server inference does not support adapter shorthand checkpoints."
+      ]
+    }
+  ]
+}

@@ -1,0 +1,86 @@
+{
+  "run_name": "coord-family-recall-mixed-objective-sota-val64",
+  "artifacts": {
+    "fn_rows_jsonl": "/data/CoordExp/output/analysis/coord-family-recall-mixed-objective-sota-val64/fn_rows.jsonl",
+    "artifact_sources": [
+      {
+        "family_alias": "mixed_objective_sota_adapter",
+        "oracle_fn_objects_jsonl": "/data/CoordExp/output/eval/coord-family-mixed-objective-sota-oracle-k-val64/fn_objects.jsonl",
+        "gt_proxy_scores_jsonl": "/data/CoordExp/output/analysis/coord-family-recall-pilot-mixed-objective-sota-val64/checkpoints/mixed-objective-sota-adapter/gt_proxy_scores.jsonl",
+        "proposal_proxy_scores_jsonl": "/data/CoordExp/output/analysis/coord-family-recall-pilot-mixed-objective-sota-val64/checkpoints/mixed-objective-sota-adapter/proposal_proxy_scores.jsonl",
+        "score_field": "combined_linear",
+        "oracle_recovery_field": "ever_recovered_loc",
+        "oracle_fn_filter_field": "baseline_fn_loc"
+      }
+    ]
+  },
+  "fn_row_count": 223,
+  "family_metrics": [
+    {
+      "family_alias": "mixed_objective_sota_adapter",
+      "fn_count": 223,
+      "suppressed_fn_count": 0,
+      "competitive_fn_count": 18,
+      "weak_visual_fn_count": 205,
+      "suppressed_fn_rate": 0.0,
+      "competitive_fn_rate": 0.08071748878923767,
+      "weak_visual_fn_rate": 0.9192825112107623,
+      "mechanism_counts": {
+        "suppressed_fn": 0,
+        "competitive_fn": 18,
+        "weak_visual_fn": 205
+      },
+      "mechanism_rates": {
+        "suppressed_fn": 0.0,
+        "competitive_fn": 0.08071748878923767,
+        "weak_visual_fn": 0.9192825112107623
+      },
+      "teacher_forced_support_mean": -3.4944227486626094,
+      "proposal_support_mean": 0.01895675317054372,
+      "oracle_k_recovery_rate": 0.26905829596412556,
+      "competitor_margin_mean": 0.034905037359628265
+    }
+  ],
+  "family_mechanism_rows": [
+    {
+      "family_alias": "mixed_objective_sota_adapter",
+      "fn_mechanism": "competitive_fn",
+      "fn_count": 18,
+      "fn_rate": 0.08071748878923767,
+      "teacher_forced_support_mean": -5.283134248521593,
+      "proposal_support_mean": -0.17905553181966147,
+      "oracle_k_recovery_rate": 0.2222222222222222,
+      "competitor_margin_mean": 0.9774821599324545
+    },
+    {
+      "family_alias": "mixed_objective_sota_adapter",
+      "fn_mechanism": "weak_visual_fn",
+      "fn_count": 205,
+      "fn_rate": 0.9192825112107623,
+      "teacher_forced_support_mean": -3.3373651535530398,
+      "proposal_support_mean": 0.03634319770626906,
+      "oracle_k_recovery_rate": 0.2731707317073171,
+      "competitor_margin_mean": -0.047857831939449154
+    }
+  ],
+  "mechanism_summary": {
+    "fn_count": 223,
+    "family_count": 1,
+    "suppressed_fn_count": 0,
+    "competitive_fn_count": 18,
+    "weak_visual_fn_count": 205,
+    "suppressed_fn_rate": 0.0,
+    "competitive_fn_rate": 0.08071748878923767,
+    "weak_visual_fn_rate": 0.9192825112107623,
+    "mechanism_counts": {
+      "suppressed_fn": 0,
+      "competitive_fn": 18,
+      "weak_visual_fn": 205
+    },
+    "mechanism_rates": {
+      "suppressed_fn": 0.0,
+      "competitive_fn": 0.08071748878923767,
+      "weak_visual_fn": 0.9192825112107623
+    }
+  }
+}
