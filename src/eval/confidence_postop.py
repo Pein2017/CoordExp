@@ -566,6 +566,7 @@ def _compute_sample_confidence_objects(
     trace: TraceRecord | None,
     options: ConfidencePostOpOptions,
 ) -> list[dict[str, Any]]:
+    record_mode = _as_mode(record.get("mode"))
     w_geom, w_desc = options.normalized_weights()
     fusion_weights = {
         "w_geom": float(w_geom),
@@ -661,7 +662,12 @@ def _compute_sample_confidence_objects(
         else:
             flat_values = None
 
-        if (flat_values is not None and has_coord_tokens(flat_values)) or record_uses_coord_tokens:
+        # Coord-token inference may still materialize numeric `raw_output_json`
+        # bbox bins after salvage/parsing. The scoring path should follow the
+        # record's generation mode, not just the serialized raw JSON surface.
+        if record_mode == "coord" or record_uses_coord_tokens or (
+            flat_values is not None and has_coord_tokens(flat_values)
+        ):
             try:
                 tokens = coord_bins_to_tokens(bins)
             except ValueError:

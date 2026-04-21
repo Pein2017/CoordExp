@@ -633,6 +633,7 @@ def test_confidence_postop_falls_back_to_coord_mode_for_pixel_alignment(
     )
 
     assert summary["kept_pred_objects"] == 1
+    assert summary["pred_score_version"] == PRED_SCORE_VERSION
     confidence_records = [
         json.loads(line)
         for line in pred_confidence_path.read_text(encoding="utf-8").splitlines()
@@ -641,10 +642,16 @@ def test_confidence_postop_falls_back_to_coord_mode_for_pixel_alignment(
     assert obj["kept"] is True
     assert obj["confidence_details"]["failure_reason"] is None
     assert obj["confidence_details"]["geom_span_mode"] == "coord_tokens"
+    assert obj["score_geom"] == pytest.approx(0.2)
+    assert obj["score_desc"] == pytest.approx(0.6)
+    assert obj["score_fusion"] == pytest.approx(0.36)
+    assert obj["confidence_details"]["method"] == CONFIDENCE_METHOD
+    assert obj["confidence_details"]["matched_token_indices"] == [16, 19, 22, 25]
     scored_records = [
         json.loads(line) for line in scored_path.read_text(encoding="utf-8").splitlines()
     ]
-    assert scored_records[0]["pred"][0]["score"] > 0.0
+    assert scored_records[0]["pred_score_version"] == PRED_SCORE_VERSION
+    assert scored_records[0]["pred"][0]["score"] == pytest.approx(0.36)
 
 
 def test_confidence_postop_tries_norm1000_alignment_for_coord_token_surface(
