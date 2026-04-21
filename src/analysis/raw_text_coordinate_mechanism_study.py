@@ -26,7 +26,10 @@ from src.analysis.raw_text_coordinate_exploratory import (
     label_fn_bucket,
 )
 from src.analysis.raw_text_coordinate_mechanism_report import write_report_bundle
-from src.analysis.raw_text_coordinate_review_queue import build_review_queue_rows
+from src.analysis.raw_text_coordinate_review_queue import (
+    build_review_queue_rows,
+    materialize_review_gallery,
+)
 
 
 @dataclass(frozen=True)
@@ -315,10 +318,12 @@ def _serialize_case_rows(rows: Sequence[object]) -> list[dict[str, object]]:
             "image_id": row.image_id,
             "line_idx": row.line_idx,
             "record_idx": row.record_idx,
+            "source_gt_vs_pred_jsonl": row.source_gt_vs_pred_jsonl,
             "bucket": row.bucket,
             "review_bucket": row.review_bucket,
             "source_object_index": row.source_object_index,
             "onset_object_index": row.onset_object_index,
+            "object_index": row.onset_object_index,
             "gt_idx": row.gt_idx,
             "selection_rank": row.selection_rank,
             "serializer_surface": row.serializer_surface,
@@ -373,6 +378,7 @@ def _run_case_bank_stage(
                         "image_id": mined_row.get("image_id"),
                         "line_idx": line_idx,
                         "record_idx": line_idx,
+                        "source_gt_vs_pred_jsonl": str(gt_vs_pred_path),
                         "source_object_index": int(anchor_row["source_object_index"]),
                         "onset_object_index": int(anchor_row["object_index"]),
                         "selection_rank": selection_rank,
@@ -387,6 +393,7 @@ def _run_case_bank_stage(
                         "image_id": mined_fn_row.get("image_id"),
                         "line_idx": int(mined_fn_row["line_idx"]),
                         "record_idx": int(mined_fn_row["record_idx"]),
+                        "source_gt_vs_pred_jsonl": str(gt_vs_pred_path),
                         "gt_idx": int(mined_fn_row["gt_idx"]),
                         "selection_rank": int(mined_fn_row["selection_rank"]),
                         "serializer_surface": serializer_surface,
@@ -547,7 +554,15 @@ def run_review_and_report_stage(
     shortlist: list[dict[str, object]],
     summary: dict[str, object],
 ) -> None:
+    review_dir = output_dir / "review_gallery"
+    gallery_rows = materialize_review_gallery(shortlist=shortlist, output_dir=review_dir)
     review_rows = build_review_queue_rows(shortlist=shortlist)
+    gallery_lookup = {row["case_uid"]: row for row in gallery_rows}
+    for row in review_rows:
+        gallery_row = gallery_lookup.get(row["case_uid"])
+        if gallery_row is not None:
+            row["asset_links"] = str(gallery_row["review_image"])
+    summary["review_gallery_path"] = str(review_dir / "review.html")
     write_report_bundle(
         output_dir=output_dir,
         summary=summary,
@@ -656,6 +671,33 @@ def _run_study_impl(
             ).items()
         }
         summary["source_artifacts"] = source_artifacts
+    if (
+        ("review" in requested_stages or "report" in requested_stages)
+        and not shortlist_rows
+    ):
+        case_bank_rows, shortlist_rows, source_artifacts = _run_case_bank_stage(
+            resolved_cfg,
+            anchor=repo_root,
+        )
+        summary["case_bank_counts"] = {
+            f"{bucket}:{model_alias}": count
+            for (bucket, model_alias), count in Counter(
+                (row["review_bucket"], row["model_alias"]) for row in case_bank_rows
+            ).items()
+        }
+        summary["shortlist_counts"] = {
+            f"{bucket}:{model_alias}": count
+            for (bucket, model_alias), count in Counter(
+                (row["review_bucket"], row["model_alias"]) for row in shortlist_rows
+            ).items()
+        }
+        summary["source_artifacts"] = source_artifacts
+    if "review" in requested_stages or "report" in requested_stages:
+        run_review_and_report_stage(
+            output_dir=run_dir,
+            shortlist=shortlist_rows,
+            summary=summary,
+        )
 
     _write_json(run_dir / "stage_manifest.json", stage_manifest)
     _write_json(run_dir / "summary.json", summary)

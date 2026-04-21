@@ -22,6 +22,14 @@ def write_report_bundle(
         f"- review_rows: {len(review_rows)}\n",
         encoding="utf-8",
     )
+    if summary.get("review_gallery_path"):
+        (output_dir / "report.md").write_text(
+            "# Raw-Text Coordinate Mechanism Report\n\n"
+            f"- questions: {len(summary)}\n"
+            f"- review_rows: {len(review_rows)}\n"
+            f"- review_gallery: {summary['review_gallery_path']}\n",
+            encoding="utf-8",
+        )
     with (output_dir / "review_queue.csv").open(
         "w",
         encoding="utf-8",

@@ -11,6 +11,7 @@ def test_build_case_bank_rows_emits_required_fields() -> None:
             "image_id": 11,
             "line_idx": 0,
             "record_idx": 0,
+            "source_gt_vs_pred_jsonl": "/tmp/base_plus_adapter.jsonl",
             "source_object_index": 2,
             "onset_object_index": 3,
             "selection_rank": 1,
@@ -23,6 +24,7 @@ def test_build_case_bank_rows_emits_required_fields() -> None:
             "image_id": 22,
             "line_idx": 1,
             "record_idx": 4,
+            "source_gt_vs_pred_jsonl": "/tmp/base_only.jsonl",
             "gt_idx": 5,
             "selection_rank": 3,
             "serializer_surface": "model_native",
@@ -36,6 +38,7 @@ def test_build_case_bank_rows_emits_required_fields() -> None:
 
     assert rows[0].bucket == "first_burst_onset"
     assert rows[0].case_uid == "base_plus_adapter:11:0:0:first_burst_onset:src2:on3"
+    assert rows[0].source_gt_vs_pred_jsonl == "/tmp/base_plus_adapter.jsonl"
     assert rows[1].bucket == "labeled_fn"
     assert rows[1].case_uid == "base_only:22:1:4:labeled_fn:gt5"
     assert rows[1].serializer_surface == "model_native"
@@ -49,6 +52,7 @@ def test_freeze_review_shortlist_respects_fp_and_fn_budgets() -> None:
                 "image_id": idx,
                 "line_idx": 0,
                 "record_idx": idx,
+                "source_gt_vs_pred_jsonl": "/tmp/fp.jsonl",
                 "source_object_index": idx,
                 "onset_object_index": idx + 1,
                 "selection_rank": idx,
@@ -62,6 +66,7 @@ def test_freeze_review_shortlist_respects_fp_and_fn_budgets() -> None:
                 "image_id": 100 + idx,
                 "line_idx": 0,
                 "record_idx": idx,
+                "source_gt_vs_pred_jsonl": "/tmp/fn.jsonl",
                 "gt_idx": idx,
                 "selection_rank": idx,
                 "serializer_surface": "pretty_inline",
@@ -85,6 +90,7 @@ def test_freeze_review_shortlist_budgets_unique_cases_not_serializer_rows() -> N
                 "image_id": 1,
                 "line_idx": 0,
                 "record_idx": 0,
+                "source_gt_vs_pred_jsonl": "/tmp/base_only.jsonl",
                 "source_object_index": 1,
                 "onset_object_index": 2,
                 "selection_rank": 1,
@@ -95,6 +101,7 @@ def test_freeze_review_shortlist_budgets_unique_cases_not_serializer_rows() -> N
                 "image_id": 1,
                 "line_idx": 0,
                 "record_idx": 0,
+                "source_gt_vs_pred_jsonl": "/tmp/base_only.jsonl",
                 "source_object_index": 1,
                 "onset_object_index": 2,
                 "selection_rank": 1,
@@ -105,6 +112,7 @@ def test_freeze_review_shortlist_budgets_unique_cases_not_serializer_rows() -> N
                 "image_id": 2,
                 "line_idx": 0,
                 "record_idx": 0,
+                "source_gt_vs_pred_jsonl": "/tmp/base_plus_adapter.jsonl",
                 "source_object_index": 3,
                 "onset_object_index": 4,
                 "selection_rank": 1,
@@ -115,6 +123,7 @@ def test_freeze_review_shortlist_budgets_unique_cases_not_serializer_rows() -> N
                 "image_id": 2,
                 "line_idx": 0,
                 "record_idx": 0,
+                "source_gt_vs_pred_jsonl": "/tmp/base_plus_adapter.jsonl",
                 "source_object_index": 3,
                 "onset_object_index": 4,
                 "selection_rank": 1,
@@ -127,6 +136,7 @@ def test_freeze_review_shortlist_budgets_unique_cases_not_serializer_rows() -> N
                 "image_id": 10,
                 "line_idx": 1,
                 "record_idx": 1,
+                "source_gt_vs_pred_jsonl": "/tmp/base_only_fn.jsonl",
                 "gt_idx": 7,
                 "selection_rank": 1,
                 "serializer_surface": "pretty_inline",
@@ -136,6 +146,7 @@ def test_freeze_review_shortlist_budgets_unique_cases_not_serializer_rows() -> N
                 "image_id": 10,
                 "line_idx": 1,
                 "record_idx": 1,
+                "source_gt_vs_pred_jsonl": "/tmp/base_only_fn.jsonl",
                 "gt_idx": 8,
                 "selection_rank": 2,
                 "serializer_surface": "pretty_inline",

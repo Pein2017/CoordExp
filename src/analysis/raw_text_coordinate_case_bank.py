@@ -11,6 +11,7 @@ class CaseRow:
     image_id: int
     line_idx: int
     record_idx: int
+    source_gt_vs_pred_jsonl: str
     bucket: str
     review_bucket: str
     source_object_index: int | None
@@ -79,6 +80,7 @@ def build_case_bank_rows(
                 image_id=int(row["image_id"]),
                 line_idx=int(row["line_idx"]),
                 record_idx=int(row["record_idx"]),
+                source_gt_vs_pred_jsonl=str(row["source_gt_vs_pred_jsonl"]),
                 bucket="first_burst_onset",
                 review_bucket="FP",
                 source_object_index=int(row["source_object_index"]),
@@ -96,6 +98,7 @@ def build_case_bank_rows(
                 image_id=int(row["image_id"]),
                 line_idx=int(row["line_idx"]),
                 record_idx=int(row["record_idx"]),
+                source_gt_vs_pred_jsonl=str(row["source_gt_vs_pred_jsonl"]),
                 bucket="labeled_fn",
                 review_bucket="FN",
                 source_object_index=None,
