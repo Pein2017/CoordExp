@@ -1,0 +1,83 @@
+{
+  "out_dir": "/data/CoordExp/output/eval/coord-family-mixed-objective-sota-oracle-k-val64",
+  "baseline_run": {
+    "label": "mixed_objective_sota_temp00_seed42",
+    "pred_jsonl": "/data/CoordExp/output/eval/coord-family-mixed-objective-sota-oracle-k-val64/materialized/baseline_00_mixed_objective_sota_temp00_seed42/gt_vs_pred.jsonl",
+    "pred_token_trace_jsonl": "/data/CoordExp/output/eval/coord-family-mixed-objective-sota-oracle-k-val64/materialized/baseline_00_mixed_objective_sota_temp00_seed42/pred_token_trace.jsonl",
+    "resolved_config_json": "/data/CoordExp/output/eval/coord-family-mixed-objective-sota-oracle-k-val64/materialized/baseline_00_mixed_objective_sota_temp00_seed42/resolved_config.json",
+    "materialized": true,
+    "run_dir": "/data/CoordExp/output/eval/coord-family-mixed-objective-sota-oracle-k-val64/materialized/baseline_00_mixed_objective_sota_temp00_seed42",
+    "eval_dir": "/data/CoordExp/output/eval/coord-family-mixed-objective-sota-oracle-k-val64/runs/baseline_00_mixed_objective_sota_temp00_seed42"
+  },
+  "oracle_runs": [
+    {
+      "label": "mixed_objective_sota_temp07_seed101",
+      "pred_jsonl": "/data/CoordExp/output/eval/coord-family-mixed-objective-sota-oracle-k-val64/materialized/oracle_01_mixed_objective_sota_temp07_seed101/gt_vs_pred.jsonl",
+      "pred_token_trace_jsonl": "/data/CoordExp/output/eval/coord-family-mixed-objective-sota-oracle-k-val64/materialized/oracle_01_mixed_objective_sota_temp07_seed101/pred_token_trace.jsonl",
+      "resolved_config_json": "/data/CoordExp/output/eval/coord-family-mixed-objective-sota-oracle-k-val64/materialized/oracle_01_mixed_objective_sota_temp07_seed101/resolved_config.json",
+      "materialized": true,
+      "run_dir": "/data/CoordExp/output/eval/coord-family-mixed-objective-sota-oracle-k-val64/materialized/oracle_01_mixed_objective_sota_temp07_seed101",
+      "eval_dir": "/data/CoordExp/output/eval/coord-family-mixed-objective-sota-oracle-k-val64/runs/oracle_01_mixed_objective_sota_temp07_seed101"
+    },
+    {
+      "label": "mixed_objective_sota_temp07_seed102",
+      "pred_jsonl": "/data/CoordExp/output/eval/coord-family-mixed-objective-sota-oracle-k-val64/materialized/oracle_02_mixed_objective_sota_temp07_seed102/gt_vs_pred.jsonl",
+      "pred_token_trace_jsonl": "/data/CoordExp/output/eval/coord-family-mixed-objective-sota-oracle-k-val64/materialized/oracle_02_mixed_objective_sota_temp07_seed102/pred_token_trace.jsonl",
+      "resolved_config_json": "/data/CoordExp/output/eval/coord-family-mixed-objective-sota-oracle-k-val64/materialized/oracle_02_mixed_objective_sota_temp07_seed102/resolved_config.json",
+      "materialized": true,
+      "run_dir": "/data/CoordExp/output/eval/coord-family-mixed-objective-sota-oracle-k-val64/materialized/oracle_02_mixed_objective_sota_temp07_seed102",
+      "eval_dir": "/data/CoordExp/output/eval/coord-family-mixed-objective-sota-oracle-k-val64/runs/oracle_02_mixed_objective_sota_temp07_seed102"
+    },
+    {
+      "label": "mixed_objective_sota_temp07_seed103",
+      "pred_jsonl": "/data/CoordExp/output/eval/coord-family-mixed-objective-sota-oracle-k-val64/materialized/oracle_03_mixed_objective_sota_temp07_seed103/gt_vs_pred.jsonl",
+      "pred_token_trace_jsonl": "/data/CoordExp/output/eval/coord-family-mixed-objective-sota-oracle-k-val64/materialized/oracle_03_mixed_objective_sota_temp07_seed103/pred_token_trace.jsonl",
+      "resolved_config_json": "/data/CoordExp/output/eval/coord-family-mixed-objective-sota-oracle-k-val64/materialized/oracle_03_mixed_objective_sota_temp07_seed103/resolved_config.json",
+      "materialized": true,
+      "run_dir": "/data/CoordExp/output/eval/coord-family-mixed-objective-sota-oracle-k-val64/materialized/oracle_03_mixed_objective_sota_temp07_seed103",
+      "eval_dir": "/data/CoordExp/output/eval/coord-family-mixed-objective-sota-oracle-k-val64/runs/oracle_03_mixed_objective_sota_temp07_seed103"
+    },
+    {
+      "label": "mixed_objective_sota_temp07_seed104",
+      "pred_jsonl": "/data/CoordExp/output/eval/coord-family-mixed-objective-sota-oracle-k-val64/materialized/oracle_04_mixed_objective_sota_temp07_seed104/gt_vs_pred.jsonl",
+      "pred_token_trace_jsonl": "/data/CoordExp/output/eval/coord-family-mixed-objective-sota-oracle-k-val64/materialized/oracle_04_mixed_objective_sota_temp07_seed104/pred_token_trace.jsonl",
+      "resolved_config_json": "/data/CoordExp/output/eval/coord-family-mixed-objective-sota-oracle-k-val64/materialized/oracle_04_mixed_objective_sota_temp07_seed104/resolved_config.json",
+      "materialized": true,
+      "run_dir": "/data/CoordExp/output/eval/coord-family-mixed-objective-sota-oracle-k-val64/materialized/oracle_04_mixed_objective_sota_temp07_seed104",
+      "eval_dir": "/data/CoordExp/output/eval/coord-family-mixed-objective-sota-oracle-k-val64/runs/oracle_04_mixed_objective_sota_temp07_seed104"
+    }
+  ],
+  "oracle_run_count": 4,
+  "primary_iou_thr": 0.5,
+  "f1ish_pred_scope": "all",
+  "iou_thresholds": {
+    "0.50": {
+      "baseline": {
+        "tp_loc": 340,
+        "fn_loc": 223,
+        "recall_loc": 0.6039076376554174,
+        "tp_full": 337,
+        "fn_full": 226,
+        "recall_full": 0.5985790408525755
+      },
+      "oracle_k": {
+        "tp_loc": 393,
+        "fn_loc": 170,
+        "recall_loc": 0.6980461811722913,
+        "tp_full": 386,
+        "fn_full": 177,
+        "recall_full": 0.6856127886323268
+      }
+    }
+  },
+  "primary_recovery": {
+    "baseline_fn_count_loc": 223,
+    "baseline_fn_count_full": 226,
+    "recoverable_fn_count_loc": 60,
+    "recoverable_fn_count_full": 56,
+    "systematic_fn_count_loc": 163,
+    "systematic_fn_count_full": 170,
+    "recover_fraction_loc": 0.1109865470852018,
+    "recover_fraction_full": 0.10287610619469026
+  }
+}

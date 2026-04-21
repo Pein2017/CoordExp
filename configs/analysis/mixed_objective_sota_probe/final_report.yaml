@@ -1,0 +1,10 @@
+run:
+  name: mixed-objective-sota-probe-2026-04-21
+  output_dir: /data/CoordExp/output/analysis/mixed-objective-sota-probe-2026-04-21
+
+inputs:
+  base_metadata_yaml: /data/CoordExp/.worktrees/mixed-objective-sota-probe/configs/analysis/mixed_objective_sota_probe/base.yaml
+  contract_summary_json: /data/CoordExp/output/analysis/mixed-objective-sota-contract-audit/summary.json
+  eval_bundle_summary_json: /data/CoordExp/output/infer/coco1024_val200_lvis_proxy_mixed_objective_sota/proxy_eval_bundle_summary.json
+  recall_summary_json: /data/CoordExp/output/analysis/coord-family-recall-mixed-objective-sota-val64/summary.json
+  basin_summary_json: /data/CoordExp/output/analysis/mixed-objective-sota-basin-focus/summary.json

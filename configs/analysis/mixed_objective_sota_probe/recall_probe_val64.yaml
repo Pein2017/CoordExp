@@ -1,0 +1,12 @@
+run:
+  name: coord-family-recall-mixed-objective-sota-val64
+  output_dir: /data/CoordExp/output/analysis
+
+artifact_sources:
+  - family_alias: mixed_objective_sota_adapter
+    oracle_fn_objects_jsonl: /data/CoordExp/output/eval/coord-family-mixed-objective-sota-oracle-k-val64/fn_objects.jsonl
+    gt_proxy_scores_jsonl: /data/CoordExp/output/analysis/coord-family-recall-pilot-mixed-objective-sota-val64/checkpoints/mixed-objective-sota-adapter/gt_proxy_scores.jsonl
+    proposal_proxy_scores_jsonl: /data/CoordExp/output/analysis/coord-family-recall-pilot-mixed-objective-sota-val64/checkpoints/mixed-objective-sota-adapter/proposal_proxy_scores.jsonl
+    score_field: combined_linear
+    oracle_recovery_field: ever_recovered_loc
+    oracle_fn_filter_field: baseline_fn_loc

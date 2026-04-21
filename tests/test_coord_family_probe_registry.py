@@ -34,6 +34,17 @@ def test_registry_covers_all_headline_2b_families_from_bundled_inventory() -> No
     assert [get_family_probe_spec(alias).alias for alias in aliases] == aliases
 
 
+def test_mixed_objective_sota_alias_is_registered() -> None:
+    spec = get_family_probe_spec("mixed_objective_sota_adapter")
+
+    assert spec.alias == "mixed_objective_sota_adapter"
+    assert spec.native_slots == ("x1", "y1", "x2", "y2")
+    assert spec.requires_canonical_projection is True
+    assert spec.infer_mode == "coord"
+    assert spec.bbox_format == "xyxy"
+    assert spec.pred_coord_mode == "pixel"
+
+
 def test_native_slot_names_cover_required_native_semantics() -> None:
     assert native_slot_names("base_xyxy_merged") == ("x1", "y1", "x2", "y2")
     assert native_slot_names("cxcywh_pure_ce") == ("cx", "cy", "w", "h")

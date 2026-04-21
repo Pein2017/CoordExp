@@ -1,0 +1,35 @@
+run:
+  name: coco1024_val200_lvis_proxy_mixed_objective_sota
+  output_dir: /data/CoordExp/output/infer
+
+stages:
+  infer: true
+  eval: false
+  vis: false
+
+infer:
+  gt_jsonl: /data/CoordExp/public_data/coco/rescale_32_1024_bbox_max60_lvis_proxy/val.coord.jsonl
+  model_checkpoint: /data/CoordExp/output_remote/stage1_2b/coco_bbox_max60-hard_ce_soft_ce_w1_gate/epoch_4-from-base-2B/v0-20260227-050057/checkpoint-1332
+
+  prompt_variant: coco_80
+  object_field_order: desc_first
+  object_ordering: sorted
+
+  mode: coord
+  bbox_format: xyxy
+  pred_coord_mode: auto
+
+  backend:
+    type: hf
+
+  generation:
+    temperature: 0.01
+    top_p: 0.95
+    max_new_tokens: 1024
+    repetition_penalty: 1.05
+    batch_size: 8
+    seed: 42
+
+  device: cuda:0
+  limit: 200
+  detect_samples: 128

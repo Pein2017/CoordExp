@@ -89,6 +89,17 @@ _REGISTRY: dict[str, FamilyProbeSpec] = {
         eval_compatibility_path="confidence_postop",
         canonical_projection_kind="identity_xyxy",
     ),
+    "mixed_objective_sota_adapter": FamilyProbeSpec(
+        alias="mixed_objective_sota_adapter",
+        native_slots=("x1", "y1", "x2", "y2"),
+        requires_family_native_probe=True,
+        requires_canonical_projection=True,
+        infer_mode="coord",
+        bbox_format="xyxy",
+        pred_coord_mode="pixel",
+        eval_compatibility_path="confidence_postop",
+        canonical_projection_kind="identity_xyxy",
+    ),
 }
 
 

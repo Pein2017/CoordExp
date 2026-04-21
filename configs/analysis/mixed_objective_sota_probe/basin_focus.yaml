@@ -1,0 +1,12 @@
+run:
+  name: mixed-objective-sota-basin-focus
+  output_dir: /data/CoordExp/output/analysis
+
+inputs:
+  target_alias: mixed_objective_sota_adapter
+  eval_run_dir: /data/CoordExp/output/infer/coco1024_val200_lvis_proxy_mixed_objective_sota
+  hard_cases_jsonl: /data/CoordExp/output/analysis/raw-text-continuity-hard-mining-2026-04-18/model_mined_duplicate_prone_pure_ce_val200_relaxed_norm1000.jsonl
+  reference_bundle_summaries:
+    center_parameterization: /data/CoordExp/output/infer/coco1024_val200_lvis_proxy_stage1_2b_ckpt1564_merged/proxy_eval_bundle_summary.json
+    raw_text_xyxy_pure_ce: /data/CoordExp/output/infer/coco1024_val200_lvis_proxy_rawtext_xyxy_v1_ckpt552_fanout8/proxy_eval_bundle_summary.json
+    hard_soft_ce_2b: /data/CoordExp/output/infer/coco1024_val200_lvis_proxy_hard_soft_ce_2b/proxy_eval_bundle_summary.json

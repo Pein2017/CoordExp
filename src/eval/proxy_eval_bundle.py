@@ -3,13 +3,18 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Dict, Mapping, Sequence
+from typing import Any, Dict, Mapping
 
 from src.eval.detection import EvalOptions, evaluate_and_save
 from src.eval.proxy_views import (
     DEFAULT_METADATA_NAMESPACE,
     materialize_proxy_eval_views,
     supported_proxy_views,
+)
+
+REPO_ROOT = Path(__file__).resolve().parents[2]
+COMMON_REPO_ROOT = (
+    REPO_ROOT.parent.parent if REPO_ROOT.parent.name == ".worktrees" else REPO_ROOT
 )
 
 
@@ -31,6 +36,17 @@ class ProxyEvalBundleOptions:
 
 def _default_output_dir(output_root: Path, view: str) -> Path:
     return output_root / f"eval_{view}"
+
+
+def _resolve_existing_input_path(path_raw: str) -> Path:
+    raw = Path(str(path_raw))
+    if raw.is_absolute():
+        return raw.absolute()
+    for root in (REPO_ROOT, COMMON_REPO_ROOT):
+        candidate = (root / raw).absolute()
+        if candidate.exists():
+            return candidate
+    return (COMMON_REPO_ROOT / raw).absolute()
 
 
 def _resolve_artifacts(cfg: Mapping[str, Any]) -> ProxyEvalBundleArtifacts:
@@ -87,7 +103,9 @@ def options_from_config(cfg: Mapping[str, Any]) -> ProxyEvalBundleOptions:
         overlay_k=int(eval_cfg.get("overlay_k", 12)),
         num_workers=int(eval_cfg.get("num_workers", 0)),
         semantic_model=str(
-            eval_cfg.get("semantic_model", "sentence-transformers/all-MiniLM-L6-v2")
+            _resolve_existing_input_path(str(eval_cfg.get("semantic_model")))
+            if str(eval_cfg.get("semantic_model", "")).strip().startswith("model_cache/")
+            else eval_cfg.get("semantic_model", "sentence-transformers/all-MiniLM-L6-v2")
         ),
         semantic_threshold=float(eval_cfg.get("semantic_threshold", 0.6)),
         semantic_device=str(eval_cfg.get("semantic_device", "auto")),
@@ -171,4 +189,3 @@ __all__ = [
     "run_proxy_eval_bundle",
     "_resolve_artifacts",
 ]
-

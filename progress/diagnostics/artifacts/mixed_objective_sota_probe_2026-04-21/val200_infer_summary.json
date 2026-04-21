@@ -1,0 +1,41 @@
+{
+  "mode": "coord",
+  "determinism": "strict",
+  "errors_total": 0,
+  "errors_by_code": {},
+  "counters": {},
+  "error_codes": [],
+  "total_read": 201,
+  "total_emitted": 200,
+  "backend": {
+    "type": "hf",
+    "model_checkpoint": "/data/CoordExp/output_remote/stage1_2b/coco_bbox_max60-hard_ce_soft_ce_w1_gate/epoch_4-from-base-2B/v0-20260227-050057/checkpoint-1332",
+    "adapter_checkpoint": null,
+    "checkpoint_mode": "adapter_shorthand",
+    "requested_model_checkpoint": "/data/CoordExp/output_remote/stage1_2b/coco_bbox_max60-hard_ce_soft_ce_w1_gate/epoch_4-from-base-2B/v0-20260227-050057/checkpoint-1332",
+    "requested_adapter_checkpoint": null,
+    "resolved_base_model_checkpoint": "/data/CoordExp/model_cache_remote/model_cache/models/Qwen/Qwen3-VL-2B-Instruct-coordexp",
+    "resolved_adapter_checkpoint": "/data/CoordExp/output_remote/stage1_2b/coco_bbox_max60-hard_ce_soft_ce_w1_gate/epoch_4-from-base-2B/v0-20260227-050057/checkpoint-1332",
+    "attn_implementation_requested": "flash_attention_2",
+    "attn_implementation_selected": "flash_attention_2"
+  },
+  "generation": {
+    "temperature": 0.01,
+    "top_p": 0.95,
+    "max_new_tokens": 1024,
+    "repetition_penalty": 1.05,
+    "batch_size": 8,
+    "seed": 42
+  },
+  "infer": {
+    "gt_jsonl": "/data/CoordExp/public_data/coco/rescale_32_1024_bbox_max60_lvis_proxy/val.coord.jsonl",
+    "pred_coord_mode": "auto",
+    "prompt_variant": "coco_80",
+    "bbox_format": "xyxy",
+    "object_field_order": "desc_first",
+    "object_ordering": "sorted",
+    "prompt_template_hash": "80bc24bfb8e85787924a3fc1d616cf211fbaa7d33ce357fa75b73b38f40ab5bc",
+    "device": "cuda:0",
+    "limit": 200
+  }
+}

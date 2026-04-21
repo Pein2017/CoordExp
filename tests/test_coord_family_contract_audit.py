@@ -63,6 +63,16 @@ def test_build_family_inventory_records_required_contract_fields(tmp_path: Path)
             eval_compatibility_path="confidence_postop",
             is_headline_2b_family=True,
         ),
+        FamilySpec(
+            alias="mixed_objective_sota_adapter",
+            checkpoint_path=str(adapter),
+            checkpoint_hint="adapter",
+            infer_mode="coord",
+            bbox_format="xyxy",
+            pred_coord_mode="auto",
+            eval_compatibility_path="confidence_postop",
+            is_headline_2b_family=False,
+        ),
     ]
 
     rows = build_family_inventory(specs)
@@ -79,6 +89,10 @@ def test_build_family_inventory_records_required_contract_fields(tmp_path: Path)
     assert rows[1]["runtime_load_pattern"] == "model_checkpoint + adapter_checkpoint"
     assert rows[1]["resolved_base_model_checkpoint"] == "model_cache/models/Qwen/Qwen3-VL-2B-Instruct"
     assert rows[1]["resolved_adapter_checkpoint"] == str(adapter)
+    assert rows[2]["alias"] == "mixed_objective_sota_adapter"
+    assert rows[2]["checkpoint_type"] == "adapter"
+    assert rows[2]["pred_coord_mode"] == "auto"
+    assert rows[2]["runtime_load_pattern"] == "model_checkpoint + adapter_checkpoint"
 
 
 def test_load_contract_audit_config_parses_run_and_families(tmp_path: Path) -> None:
@@ -303,3 +317,49 @@ def test_bundled_configs_track_headline_2b_families() -> None:
     smoke_paths = [row["checkpoint_path"] for row in smoke_cfg["families"]]
     assert all("some_adapter_checkpoint" not in path for path in smoke_paths)
     assert all("smoke_adapter_checkpoint" not in path for path in smoke_paths)
+
+
+def test_mixed_objective_probe_configs_track_adapter_checkpoint() -> None:
+    worktree_root = Path(__file__).resolve().parents[1]
+    base_cfg = yaml.safe_load(
+        (
+            worktree_root / "configs/analysis/mixed_objective_sota_probe/base.yaml"
+        ).read_text(encoding="utf-8")
+    )
+    eval_cfg = yaml.safe_load(
+        (
+            worktree_root / "configs/analysis/mixed_objective_sota_probe/eval_val200.yaml"
+        ).read_text(encoding="utf-8")
+    )
+    audit_cfg = yaml.safe_load(
+        (
+            worktree_root / "configs/analysis/mixed_objective_sota_probe/contract_audit.yaml"
+        ).read_text(encoding="utf-8")
+    )
+    recall_cfg = yaml.safe_load(
+        (
+            worktree_root
+            / "configs/analysis/mixed_objective_sota_probe/recall_unmatched_val64.yaml"
+        ).read_text(encoding="utf-8")
+    )
+
+    family = base_cfg["target_family"]
+    assert family["alias"] == "mixed_objective_sota_adapter"
+    assert family["checkpoint_hint"] == "adapter"
+    assert family["checkpoint_path"].endswith("checkpoint-1332")
+
+    assert eval_cfg["infer"]["model_checkpoint"].endswith("checkpoint-1332")
+    assert eval_cfg["infer"]["pred_coord_mode"] == "auto"
+    assert eval_cfg["infer"]["limit"] == 200
+
+    audit_family = audit_cfg["families"][0]
+    assert audit_family["alias"] == "mixed_objective_sota_adapter"
+    assert audit_family["checkpoint_path"].endswith("checkpoint-1332")
+    assert audit_cfg["defaults"]["checkpoint_hint"] == "adapter"
+    assert audit_cfg["defaults"]["pred_coord_mode"] == "auto"
+
+    checkpoint = recall_cfg["checkpoints"][0]
+    assert checkpoint["name"] == "mixed-objective-sota-adapter"
+    assert checkpoint["path"].endswith("checkpoint-1332")
+    assert checkpoint["checkpoint_hint"] == "adapter"
+    assert checkpoint["pred_coord_mode"] == "auto"

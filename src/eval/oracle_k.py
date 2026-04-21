@@ -20,6 +20,11 @@ from .detection import (
     load_jsonl,
 )
 
+REPO_ROOT = Path(__file__).resolve().parents[2]
+COMMON_REPO_ROOT = (
+    REPO_ROOT.parent.parent if REPO_ROOT.parent.name == ".worktrees" else REPO_ROOT
+)
+
 
 @dataclass(frozen=True)
 class OracleKRunSpec:
@@ -109,6 +114,17 @@ def _require_label(value: Any, *, field_name: str) -> str:
     return label
 
 
+def _resolve_existing_input_path(path_raw: str) -> Path:
+    raw = Path(str(path_raw))
+    if raw.is_absolute():
+        return raw.absolute()
+    for root in (REPO_ROOT, COMMON_REPO_ROOT):
+        candidate = (root / raw).absolute()
+        if candidate.exists():
+            return candidate
+    return (COMMON_REPO_ROOT / raw).absolute()
+
+
 def _parse_run_spec(cfg: Mapping[str, Any], *, field_name: str) -> OracleKRunSpec:
     label = _require_label(cfg.get("label"), field_name=f"{field_name}.label")
     pred_jsonl = _optional_path(cfg.get("pred_jsonl"), field_name=f"{field_name}.pred_jsonl")
@@ -172,7 +188,9 @@ def load_oracle_k_config(config_path: Path) -> OracleKConfig:
         overlay=False,
         num_workers=int(cfg.get("num_workers", 0)),
         semantic_model=str(
-            cfg.get("semantic_model", "sentence-transformers/all-MiniLM-L6-v2")
+            _resolve_existing_input_path(str(cfg.get("semantic_model")))
+            if str(cfg.get("semantic_model", "")).strip().startswith("model_cache/")
+            else cfg.get("semantic_model", "sentence-transformers/all-MiniLM-L6-v2")
         ),
         semantic_threshold=float(cfg.get("semantic_threshold", 0.6)),
         semantic_device=str(cfg.get("semantic_device", "auto")),
