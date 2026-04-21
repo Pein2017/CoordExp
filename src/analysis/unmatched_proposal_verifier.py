@@ -4021,6 +4021,7 @@ def run_study(config: StudyConfig) -> Dict[str, Any]:
                 checkpoint_path=Path(str(manifest["checkpoint_path_resolved"])),
                 device=config.scoring.device,
                 attn_implementation=config.scoring.attn_implementation,
+                coord_mode="norm1000_text",
             )
             gt_scored = score_gt_table(
                 rows=gt_rows,
