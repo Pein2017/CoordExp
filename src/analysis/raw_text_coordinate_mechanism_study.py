@@ -15,6 +15,8 @@ from src.analysis.raw_text_coordinate_exploratory import (
     build_prefix_intervention_matrix,
     label_fn_bucket,
 )
+from src.analysis.raw_text_coordinate_mechanism_report import write_report_bundle
+from src.analysis.raw_text_coordinate_review_queue import build_review_queue_rows
 
 
 @dataclass(frozen=True)
@@ -205,3 +207,17 @@ def run_exploratory_stage(*, cases: list[dict[str, object]]) -> dict[str, object
         "intervention_count": intervention_count,
         "fn_bucket_counts": fn_bucket_counts,
     }
+
+
+def run_review_and_report_stage(
+    *,
+    output_dir: Path,
+    shortlist: list[dict[str, object]],
+    summary: dict[str, object],
+) -> None:
+    review_rows = build_review_queue_rows(shortlist=shortlist)
+    write_report_bundle(
+        output_dir=output_dir,
+        summary=summary,
+        review_rows=review_rows,
+    )
