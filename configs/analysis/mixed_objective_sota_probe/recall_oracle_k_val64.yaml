@@ -1,0 +1,120 @@
+out_dir: /data/CoordExp/output/eval/coord-family-mixed-objective-sota-oracle-k-val64
+
+strict_parse: false
+f1ish_iou_thrs: [0.5]
+f1ish_pred_scope: all
+num_workers: 8
+
+semantic_model: model_cache/all-MiniLM-L6-v2-local
+semantic_threshold: 0.5
+semantic_device: cuda:3
+semantic_batch_size: 64
+
+baseline_run:
+  label: mixed_objective_sota_temp00_seed42
+  pipeline_config: configs/infer/pipeline.yaml
+  overrides:
+    run.root_image_dir: /data/CoordExp/public_data/coco/rescale_32_1024_bbox_max60_lvis_proxy
+    infer.gt_jsonl: /data/CoordExp/output/analysis/coord-family-recall-pilot-mixed-objective-sota-val64/subset/sampled.coord.jsonl
+    infer.model_checkpoint: /data/CoordExp/output_remote/stage1_2b/coco_bbox_max60-hard_ce_soft_ce_w1_gate/epoch_4-from-base-2B/v0-20260227-050057/checkpoint-1332
+    infer.prompt_variant: coco_80
+    infer.object_field_order: desc_first
+    infer.object_ordering: sorted
+    infer.mode: coord
+    infer.bbox_format: xyxy
+    infer.pred_coord_mode: auto
+    infer.backend.type: hf
+    infer.generation.temperature: 0.0
+    infer.generation.top_p: 0.9
+    infer.generation.max_new_tokens: 3084
+    infer.generation.repetition_penalty: 1.05
+    infer.generation.batch_size: 8
+    infer.generation.seed: 42
+    infer.device: cuda:2
+    infer.limit: 0
+
+oracle_runs:
+  - label: mixed_objective_sota_temp07_seed101
+    pipeline_config: configs/infer/pipeline.yaml
+    overrides:
+      run.root_image_dir: /data/CoordExp/public_data/coco/rescale_32_1024_bbox_max60_lvis_proxy
+      infer.gt_jsonl: /data/CoordExp/output/analysis/coord-family-recall-pilot-mixed-objective-sota-val64/subset/sampled.coord.jsonl
+      infer.model_checkpoint: /data/CoordExp/output_remote/stage1_2b/coco_bbox_max60-hard_ce_soft_ce_w1_gate/epoch_4-from-base-2B/v0-20260227-050057/checkpoint-1332
+      infer.prompt_variant: coco_80
+      infer.object_field_order: desc_first
+      infer.object_ordering: sorted
+      infer.mode: coord
+      infer.bbox_format: xyxy
+      infer.pred_coord_mode: auto
+      infer.backend.type: hf
+      infer.generation.temperature: 0.7
+      infer.generation.top_p: 0.95
+      infer.generation.max_new_tokens: 3084
+      infer.generation.repetition_penalty: 1.05
+      infer.generation.batch_size: 8
+      infer.generation.seed: 101
+      infer.device: cuda:2
+      infer.limit: 0
+  - label: mixed_objective_sota_temp07_seed102
+    pipeline_config: configs/infer/pipeline.yaml
+    overrides:
+      run.root_image_dir: /data/CoordExp/public_data/coco/rescale_32_1024_bbox_max60_lvis_proxy
+      infer.gt_jsonl: /data/CoordExp/output/analysis/coord-family-recall-pilot-mixed-objective-sota-val64/subset/sampled.coord.jsonl
+      infer.model_checkpoint: /data/CoordExp/output_remote/stage1_2b/coco_bbox_max60-hard_ce_soft_ce_w1_gate/epoch_4-from-base-2B/v0-20260227-050057/checkpoint-1332
+      infer.prompt_variant: coco_80
+      infer.object_field_order: desc_first
+      infer.object_ordering: sorted
+      infer.mode: coord
+      infer.bbox_format: xyxy
+      infer.pred_coord_mode: auto
+      infer.backend.type: hf
+      infer.generation.temperature: 0.7
+      infer.generation.top_p: 0.95
+      infer.generation.max_new_tokens: 3084
+      infer.generation.repetition_penalty: 1.05
+      infer.generation.batch_size: 8
+      infer.generation.seed: 102
+      infer.device: cuda:2
+      infer.limit: 0
+  - label: mixed_objective_sota_temp07_seed103
+    pipeline_config: configs/infer/pipeline.yaml
+    overrides:
+      run.root_image_dir: /data/CoordExp/public_data/coco/rescale_32_1024_bbox_max60_lvis_proxy
+      infer.gt_jsonl: /data/CoordExp/output/analysis/coord-family-recall-pilot-mixed-objective-sota-val64/subset/sampled.coord.jsonl
+      infer.model_checkpoint: /data/CoordExp/output_remote/stage1_2b/coco_bbox_max60-hard_ce_soft_ce_w1_gate/epoch_4-from-base-2B/v0-20260227-050057/checkpoint-1332
+      infer.prompt_variant: coco_80
+      infer.object_field_order: desc_first
+      infer.object_ordering: sorted
+      infer.mode: coord
+      infer.bbox_format: xyxy
+      infer.pred_coord_mode: auto
+      infer.backend.type: hf
+      infer.generation.temperature: 0.7
+      infer.generation.top_p: 0.95
+      infer.generation.max_new_tokens: 3084
+      infer.generation.repetition_penalty: 1.05
+      infer.generation.batch_size: 8
+      infer.generation.seed: 103
+      infer.device: cuda:2
+      infer.limit: 0
+  - label: mixed_objective_sota_temp07_seed104
+    pipeline_config: configs/infer/pipeline.yaml
+    overrides:
+      run.root_image_dir: /data/CoordExp/public_data/coco/rescale_32_1024_bbox_max60_lvis_proxy
+      infer.gt_jsonl: /data/CoordExp/output/analysis/coord-family-recall-pilot-mixed-objective-sota-val64/subset/sampled.coord.jsonl
+      infer.model_checkpoint: /data/CoordExp/output_remote/stage1_2b/coco_bbox_max60-hard_ce_soft_ce_w1_gate/epoch_4-from-base-2B/v0-20260227-050057/checkpoint-1332
+      infer.prompt_variant: coco_80
+      infer.object_field_order: desc_first
+      infer.object_ordering: sorted
+      infer.mode: coord
+      infer.bbox_format: xyxy
+      infer.pred_coord_mode: auto
+      infer.backend.type: hf
+      infer.generation.temperature: 0.7
+      infer.generation.top_p: 0.95
+      infer.generation.max_new_tokens: 3084
+      infer.generation.repetition_penalty: 1.05
+      infer.generation.batch_size: 8
+      infer.generation.seed: 104
+      infer.device: cuda:2
+      infer.limit: 0

@@ -1,0 +1,18 @@
+target_family:
+  alias: mixed_objective_sota_adapter
+  checkpoint_path: /data/CoordExp/output_remote/stage1_2b/coco_bbox_max60-hard_ce_soft_ce_w1_gate/epoch_4-from-base-2B/v0-20260227-050057/checkpoint-1332
+  checkpoint_hint: adapter
+  infer_mode: coord
+  bbox_format: xyxy
+  pred_coord_mode: auto
+
+references:
+  - alias: center_parameterization
+    bundle_summary_json: /data/CoordExp/output/infer/coco1024_val200_lvis_proxy_stage1_2b_ckpt1564_merged/proxy_eval_bundle_summary.json
+    recall_summary_json: /data/CoordExp/output/analysis/coord-family-recall-center-val64/summary.json
+  - alias: raw_text_xyxy_pure_ce
+    bundle_summary_json: /data/CoordExp/output/infer/coco1024_val200_lvis_proxy_rawtext_xyxy_v1_ckpt552_fanout8/proxy_eval_bundle_summary.json
+    recall_summary_json: /data/CoordExp/output/analysis/coord-family-recall-rawtext-val64/summary.json
+  - alias: hard_soft_ce_2b
+    bundle_summary_json: /data/CoordExp/output/infer/coco1024_val200_lvis_proxy_hard_soft_ce_2b/proxy_eval_bundle_summary.json
+    recall_summary_json: /data/CoordExp/output/analysis/coord-family-recall-hard-soft-ce-val64/summary.json
