@@ -286,3 +286,62 @@ def test_teacher_forced_scorer_score_prepared_batch_spans_handles_left_padding(
 
     assert [row["count"] for row in scored] == [2, 2]
     assert all(float(row["mean_logprob"]) > -0.1 for row in scored)
+
+
+def test_teacher_forced_scorer_score_prepared_batch_hidden_states_returns_last_layer() -> None:
+    scorer = verifier_module.TeacherForcedScorer.__new__(
+        verifier_module.TeacherForcedScorer
+    )
+    scorer.device = "cpu"
+
+    class _Tokenizer:
+        pad_token_id = 0
+        eos_token_id = 0
+        padding_side = "left"
+
+    class _Processor:
+        tokenizer = _Tokenizer()
+
+        def __call__(
+            self,
+            *,
+            text: list[str],
+            images: list[object],
+            return_tensors: str,
+            padding: bool,
+        ) -> dict[str, torch.Tensor]:
+            del text, images, return_tensors, padding
+            return {"input_ids": torch.tensor([[1, 2, 3]], dtype=torch.long)}
+
+    class _Model:
+        def __call__(self, **kwargs):
+            del kwargs
+            last_hidden = torch.tensor(
+                [[[1.0, 0.0], [2.0, 0.0], [3.0, 0.0]]],
+                dtype=torch.float32,
+            )
+            return type(
+                "_Outputs",
+                (),
+                {"hidden_states": (torch.zeros_like(last_hidden), last_hidden)},
+            )()
+
+    scorer.processor = _Processor()
+    scorer.model = _Model()
+
+    examples = [
+        verifier_module.PreparedExample(
+            full_text="demo",
+            assistant_text="demo",
+            desc_positions=[0],
+            full_input_ids=[1, 2, 3],
+            assistant_start=0,
+            assistant_input_ids=[1, 2, 3],
+        )
+    ]
+    hidden = scorer.score_prepared_batch_hidden_states(
+        examples=examples,
+        images=[Image.new("RGB", (4, 4), color="white")],
+    )
+
+    assert tuple(hidden.shape) == (1, 3, 2)

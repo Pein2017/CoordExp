@@ -2158,6 +2158,33 @@ class TeacherForcedScorer:
             )
         return scored
 
+    def score_prepared_batch_hidden_states(
+        self,
+        *,
+        examples: Sequence[PreparedExample],
+        images: Sequence[Image.Image],
+    ) -> torch.Tensor:
+        model_inputs = self.processor(
+            text=[example.full_text for example in examples],
+            images=list(images),
+            return_tensors="pt",
+            padding=True,
+        )
+        model_inputs = {
+            key: value.to(self.device) if isinstance(value, torch.Tensor) else value
+            for key, value in model_inputs.items()
+        }
+        with torch.inference_mode():
+            outputs = self.model(
+                **model_inputs,
+                use_cache=False,
+                output_hidden_states=True,
+            )
+        hidden_states = getattr(outputs, "hidden_states", None)
+        if hidden_states is None:
+            raise RuntimeError("teacher-forced scorer missing hidden states")
+        return hidden_states[-1]
+
 
 def _find_subsequence(
     haystack: Sequence[int],
