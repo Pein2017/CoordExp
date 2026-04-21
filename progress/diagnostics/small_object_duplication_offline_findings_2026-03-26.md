@@ -68,9 +68,9 @@ Study inputs:
 Relevant harness implementation:
 
 - Study module:
-  [src/analysis/small_object_duplication_study.py](/data/CoordExp/.worktrees/small-object-duplication-offline-diagnostics/src/analysis/small_object_duplication_study.py)
+  [small_object_duplication_study.py](/data/CoordExp/src/analysis/small_object_duplication_study.py)
 - Protocol note:
-  [small_object_duplication_offline_protocol_2026-03-25.md](/data/CoordExp/.worktrees/small-object-duplication-offline-diagnostics/progress/diagnostics/small_object_duplication_offline_protocol_2026-03-25.md)
+  [small_object_duplication_offline_protocol_2026-03-25.md](/data/CoordExp/progress/diagnostics/small_object_duplication_offline_protocol_2026-03-25.md)
 
 ---
 

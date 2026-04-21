@@ -19,10 +19,10 @@ The initial monitor-dump source is:
 
 ## Entry Points
 
-- Study module: [src/analysis/small_object_duplication_study.py](/data/CoordExp/.worktrees/small-object-duplication-offline-diagnostics/src/analysis/small_object_duplication_study.py)
-- Default config: [default.yaml](/data/CoordExp/.worktrees/small-object-duplication-offline-diagnostics/configs/analysis/small_object_duplication/default.yaml)
-- Cohort-only smoke: [smoke.yaml](/data/CoordExp/.worktrees/small-object-duplication-offline-diagnostics/configs/analysis/small_object_duplication/smoke.yaml)
-- Model-backed smoke: [smoke_model.yaml](/data/CoordExp/.worktrees/small-object-duplication-offline-diagnostics/configs/analysis/small_object_duplication/smoke_model.yaml)
+- Study module: [small_object_duplication_study.py](/data/CoordExp/src/analysis/small_object_duplication_study.py)
+- Default config: [default.yaml](/data/CoordExp/configs/analysis/small_object_duplication/default.yaml)
+- Cohort-only smoke: [smoke.yaml](/data/CoordExp/configs/analysis/small_object_duplication/smoke.yaml)
+- Model-backed smoke: [smoke_model.yaml](/data/CoordExp/configs/analysis/small_object_duplication/smoke_model.yaml)
 
 ## What The Study Produces
 

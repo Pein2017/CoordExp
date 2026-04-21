@@ -1,20 +1,20 @@
 ---
 title: Stage-2 Small-Object Duplication Offline Diagnostics Synthesis
-status: active-diagnostic
+status: consolidated-final
 scope: stage2-channel-b
 topics: [stage2, duplication, small-objects, offline-diagnostics, decoding, prefix-dynamics, teacher-forcing]
 references:
   - progress/diagnostics/stage2_near_duplication_2026-03-05.md
   - progress/diagnostics/stage2_pseudo_positive_k4_coord_only_findings_2026-03-24.md
-  - .worktrees/small-object-duplication-offline-diagnostics/progress/diagnostics/small_object_duplication_offline_protocol_2026-03-25.md
-  - .worktrees/small-object-duplication-offline-diagnostics/progress/diagnostics/small_object_duplication_offline_findings_2026-03-26.md
-  - .worktrees/duplication-offline-diagnostics-cuda1/progress/diagnostics/stage2_small_object_duplication_offline_diagnostics_2026-03-26.md
+  - progress/diagnostics/small_object_duplication_offline_protocol_2026-03-25.md
+  - progress/diagnostics/small_object_duplication_offline_findings_2026-03-26.md
+  - progress/diagnostics/stage2_small_object_duplication_offline_diagnostics_2026-03-26.md
 ---
 
 # Stage-2 Small-Object Duplication Offline Diagnostics Synthesis (2026-03-26)
 
 Date: 2026-03-26  
-Purpose: consolidate the protocol and findings from two parallel offline experiments run in separate worktrees against `output/stage2_ab/prod/pseudo_positive-ckpt_300_merged-v1`.
+Purpose: consolidate the protocol and findings from two parallel offline experiments that were originally executed in separate worktrees against `output/stage2_ab/prod/pseudo_positive-ckpt_300_merged-v1`.
 
 The short version is:
 
@@ -28,19 +28,21 @@ The short version is:
 
 ### Experiment A: broad fixed-checkpoint harness (`small-object-duplication-offline-diagnostics`)
 
-- Worktree: `.worktrees/small-object-duplication-offline-diagnostics`
-- Protocol note: `.worktrees/small-object-duplication-offline-diagnostics/progress/diagnostics/small_object_duplication_offline_protocol_2026-03-25.md`
-- Findings note: `.worktrees/small-object-duplication-offline-diagnostics/progress/diagnostics/small_object_duplication_offline_findings_2026-03-26.md`
+- Protocol note:
+  `progress/diagnostics/small_object_duplication_offline_protocol_2026-03-25.md`
+- Findings note:
+  `progress/diagnostics/small_object_duplication_offline_findings_2026-03-26.md`
 - Config: `configs/analysis/small_object_duplication/default.yaml`
 - Artifact root: `output/analysis/small-object-duplication-ckpt300-offline/`
 - Scope: `43` monitor-dump samples, `12` mined duplication cases, `8` crowded controls, decode temperatures `{0.0, 0.01, 0.05, 0.1, 0.2}`, one-object prefix probes, and teacher-forced candidate scoring.
 
 ### Experiment B: crowded subset deep-dive (`duplication-offline-diagnostics-cuda1`)
 
-- Worktree: `.worktrees/duplication-offline-diagnostics-cuda1`
-- Findings note: `.worktrees/duplication-offline-diagnostics-cuda1/progress/diagnostics/stage2_small_object_duplication_offline_diagnostics_2026-03-26.md`
+- Findings note:
+  `progress/diagnostics/stage2_small_object_duplication_offline_diagnostics_2026-03-26.md`
 - Config: `configs/analysis/small_object_duplication_diagnostics/ckpt300_crowded_cuda1.yaml`
-- Trustworthy artifact root: `output/analysis/ckpt300_crowded_cuda1_v2_bboxfix/`
+- Original trustworthy artifact root:
+  `output/analysis/ckpt300_crowded_cuda1_v2_bboxfix/`
 - Scope: `8` crowded monitor-selected samples with at least one small GT object, decode temperatures `{0.0, 0.1, 0.3, 0.7}`, per-sample local-pair metrics, prefix probes, and exact-duplicate counterfactual scoring.
 - Important correction: `_extract_bbox_px(...)` had to be fixed to accept `bbox_2d.points=[x1, y1, x2, y2]`; earlier pre-`v2_bboxfix` artifacts should be treated as superseded.
 

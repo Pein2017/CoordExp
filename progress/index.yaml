@@ -19,10 +19,10 @@ groups:
     - progress/directions/stage2_emish_set_supervision_v1.md
   diagnostics:
     - progress/diagnostics/README.md
+    - progress/diagnostics/raw_text_coordinate_mechanism_findings_2026-04-21.md
     - progress/diagnostics/raw_text_coord_continuity_probe_2026-04-20.md
     - progress/diagnostics/coord_family_basin_and_recall_comparison_2026-04-20.md
     - progress/diagnostics/raw_text_continuity_and_coord_family_synthesis_2026-04-20.md
-    - progress/diagnostics/mixed_objective_sota_checkpoint_probe_2026-04-21.md
     - progress/diagnostics/stage2_near_duplication_2026-03-05.md
     - progress/diagnostics/stage2_ul_capture_highres1024_2026-03-09.md
     - progress/diagnostics/stage2_triage_posterior_coco1024_train_dynamics_2026-03-12.md
@@ -39,6 +39,7 @@ groups:
     - progress/audits/stage2_channel_a_coord_loss_2026-02-25.md
   benchmarks:
     - progress/benchmarks/README.md
+    - progress/benchmarks/mixed_objective_sota_checkpoint_probe_2026-04-21.md
     - progress/benchmarks/stage1_coco80_4b_res_768_vs_1024_2026-02-26.md
     - progress/benchmarks/stage1_coco80_temp0_compare_2026-02-26.md
     - progress/benchmarks/stage1_coco_2b_ce_softce_res_768_vs_1024_2026-02-27.md
@@ -63,6 +64,11 @@ notes:
     kind: diagnostic-study
     status: completed-diagnostic
     summary: Permanent archive for the raw-text continuity study showing that continuity already exists without coord tokens and can also form wrong local basins.
+  - path: progress/diagnostics/raw_text_coordinate_mechanism_findings_2026-04-21.md
+    title: Raw-Text Coordinate Mechanism Findings
+    kind: diagnostic-study
+    status: canonical-mechanism-summary
+    summary: Current mechanism-first read on raw-text continuity, duplicate-burst attraction, and FN stop-pressure under the fixed raw-text checkpoint pair.
   - path: progress/diagnostics/coord_family_basin_and_recall_comparison_2026-04-20.md
     title: Coordinate Family Basin and Recall Comparison
     kind: diagnostic-study
@@ -73,11 +79,11 @@ notes:
     kind: decision-summary
     status: active-reference
     summary: Decision-oriented synthesis tying the raw-text continuity findings to the coordinate-family comparison and final research recommendations.
-  - path: progress/diagnostics/mixed_objective_sota_checkpoint_probe_2026-04-21.md
+  - path: progress/benchmarks/mixed_objective_sota_checkpoint_probe_2026-04-21.md
     title: Mixed-Objective SOTA Checkpoint Probe
-    kind: diagnostic-study
+    kind: benchmark-study
     status: active-reference
-    summary: Focused probe of the new 2B mixed-objective adapter checkpoint showing strong val200 detection, stable surface behavior, and a low-recall profile dominated by weak-visual misses.
+    summary: Focused checkpoint-selection probe of the new 2B mixed-objective adapter showing strong val200 detection, stable surface behavior, and a low-recall profile dominated by weak-visual misses.
   - path: progress/benchmarks/README.md
     title: Benchmarks Index
     kind: router

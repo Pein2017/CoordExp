@@ -42,9 +42,9 @@ Important headline:
 
 ## 0) Artifact Provenance
 
-Implementation worktree:
+Original execution mode:
 
-- `/data/CoordExp/.worktrees/duplication-offline-diagnostics-cuda1`
+- dedicated temporary worktree `duplication-offline-diagnostics-cuda1`
 
 Study config:
 
@@ -449,4 +449,3 @@ It does support:
 - and a score surface that often fails to prefer the **true next instance** over duplicate-like continuations.
 
 That is the main discovery from this pass.
-
