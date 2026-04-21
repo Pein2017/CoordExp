@@ -1,0 +1,15 @@
+run:
+  name: mixed-objective-sota-contract-audit
+  output_dir: /data/CoordExp/output/analysis
+
+defaults:
+  infer_mode: coord
+  bbox_format: xyxy
+  checkpoint_hint: adapter
+  pred_coord_mode: auto
+  eval_compatibility_path: confidence_postop
+  is_headline_2b_family: false
+
+families:
+  - alias: mixed_objective_sota_adapter
+    checkpoint_path: /data/CoordExp/output_remote/stage1_2b/coco_bbox_max60-hard_ce_soft_ce_w1_gate/epoch_4-from-base-2B/v0-20260227-050057/checkpoint-1332

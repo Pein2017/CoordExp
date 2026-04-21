@@ -331,6 +331,11 @@ def test_mixed_objective_probe_configs_track_adapter_checkpoint() -> None:
             worktree_root / "configs/analysis/mixed_objective_sota_probe/eval_val200.yaml"
         ).read_text(encoding="utf-8")
     )
+    audit_cfg = yaml.safe_load(
+        (
+            worktree_root / "configs/analysis/mixed_objective_sota_probe/contract_audit.yaml"
+        ).read_text(encoding="utf-8")
+    )
     recall_cfg = yaml.safe_load(
         (
             worktree_root
@@ -346,6 +351,12 @@ def test_mixed_objective_probe_configs_track_adapter_checkpoint() -> None:
     assert eval_cfg["infer"]["model_checkpoint"].endswith("checkpoint-1332")
     assert eval_cfg["infer"]["pred_coord_mode"] == "auto"
     assert eval_cfg["infer"]["limit"] == 200
+
+    audit_family = audit_cfg["families"][0]
+    assert audit_family["alias"] == "mixed_objective_sota_adapter"
+    assert audit_family["checkpoint_path"].endswith("checkpoint-1332")
+    assert audit_cfg["defaults"]["checkpoint_hint"] == "adapter"
+    assert audit_cfg["defaults"]["pred_coord_mode"] == "auto"
 
     checkpoint = recall_cfg["checkpoints"][0]
     assert checkpoint["name"] == "mixed-objective-sota-adapter"

@@ -4,7 +4,7 @@ run:
 
 inputs:
   base_metadata_yaml: /data/CoordExp/.worktrees/mixed-objective-sota-probe/configs/analysis/mixed_objective_sota_probe/base.yaml
-  contract_summary_json: /data/CoordExp/output/analysis/coord-family-contract-audit/mixed_objective_sota_adapter_summary.json
+  contract_summary_json: /data/CoordExp/output/analysis/mixed-objective-sota-contract-audit/summary.json
   eval_bundle_summary_json: /data/CoordExp/output/infer/coco1024_val200_lvis_proxy_mixed_objective_sota/proxy_eval_bundle_summary.json
   recall_summary_json: /data/CoordExp/output/analysis/coord-family-recall-mixed-objective-sota-val64/summary.json
   basin_summary_json: /data/CoordExp/output/analysis/mixed-objective-sota-basin-focus/summary.json
