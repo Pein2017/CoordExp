@@ -14,8 +14,16 @@ def main() -> None:
 
     parser = argparse.ArgumentParser()
     parser.add_argument("--config", required=True)
+    parser.add_argument("--stage")
+    parser.add_argument("--model-alias")
+    parser.add_argument("--branch")
     args = parser.parse_args()
-    result = run_study(Path(args.config))
+    result = run_study(
+        Path(args.config),
+        stage_override=args.stage,
+        model_alias=args.model_alias,
+        branch_name=args.branch,
+    )
     print(result["run_dir"])
 
 

@@ -125,3 +125,59 @@ review:
     assert (run_dir / "stage_manifest.json").exists()
     assert (run_dir / "summary.json").exists()
     assert (run_dir / "case_bank.jsonl").exists()
+
+
+def test_run_study_respects_stage_and_branch_overrides(tmp_path: Path) -> None:
+    config_path = tmp_path / "study.yaml"
+    config_path.write_text(
+        f"""
+run:
+  name: override-study
+  output_dir: {tmp_path.as_posix()}
+  stages: [contract, case_bank, confirmatory]
+
+models:
+  base_only:
+    alias: base_only
+    base_path: model_cache/models/Qwen/Qwen3-VL-2B-Instruct-coordexp
+    adapter_path: null
+    prompt_variant: coco_80
+    object_field_order: desc_first
+    serializer_surfaces: [model_native, pretty_inline]
+  base_plus_adapter:
+    alias: base_plus_adapter
+    base_path: model_cache/models/Qwen/Qwen3-VL-2B-Instruct-coordexp
+    adapter_path: output/stage1_2b/demo/checkpoint-552
+    prompt_variant: coco_80
+    object_field_order: desc_first
+    serializer_surfaces: [model_native, pretty_inline]
+
+dataset:
+  train_jsonl: public_data/coco/rescale_32_1024_bbox_max60/train.norm.jsonl
+  val_jsonl: public_data/coco/rescale_32_1024_bbox_max60/val.norm.jsonl
+
+execution:
+  gpu_ids: [0]
+  reuse_existing: true
+
+review:
+  fp_budget: 2
+  fn_budget: 1
+        """.strip(),
+        encoding="utf-8",
+    )
+
+    result = run_study(
+        config_path,
+        stage_override="contract",
+        model_alias="base_only",
+        branch_name="duplicate_fp",
+    )
+    manifest = (tmp_path / "override-study" / "stage_manifest.json").read_text(
+        encoding="utf-8"
+    )
+
+    assert result["requested_stage"] == "contract"
+    assert '"stages": [\n    "contract"\n  ]' in manifest
+    assert '"requested_model_alias": "base_only"' in manifest
+    assert '"requested_branch_name": "duplicate_fp"' in manifest

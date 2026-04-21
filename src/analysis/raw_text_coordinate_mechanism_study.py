@@ -238,23 +238,36 @@ def run_review_and_report_stage(
         review_rows=review_rows,
     )
 
-
-def run_study(config_path: Path) -> dict[str, object]:
+def _run_study_impl(
+    config_path: Path,
+    *,
+    stage_override: str | None = None,
+    model_alias: str | None = None,
+    branch_name: str | None = None,
+) -> dict[str, object]:
     cfg = load_study_config(config_path)
     run_dir = Path(cfg.run.output_dir) / cfg.run.name
     run_dir.mkdir(parents=True, exist_ok=True)
+    requested_stages = (
+        [stage_override] if stage_override is not None else list(cfg.run.stages)
+    )
 
     stage_manifest = {
         "run_name": cfg.run.name,
-        "stages": list(cfg.run.stages),
+        "stages": requested_stages,
         "models": [
             cfg.models.base_only.alias,
             cfg.models.base_plus_adapter.alias,
         ],
+        "requested_model_alias": model_alias,
+        "requested_branch_name": branch_name,
     }
     summary = {
         "run_name": cfg.run.name,
-        "stage_count": len(cfg.run.stages),
+        "stage_count": len(requested_stages),
+        "requested_stage": stage_override,
+        "requested_model_alias": model_alias,
+        "requested_branch_name": branch_name,
         "review_budgets": {
             "fp": cfg.review.fp_budget,
             "fn": cfg.review.fn_budget,
@@ -270,4 +283,20 @@ def run_study(config_path: Path) -> dict[str, object]:
         "stage_manifest_path": str(run_dir / "stage_manifest.json"),
         "summary_path": str(run_dir / "summary.json"),
         "case_bank_path": str(run_dir / "case_bank.jsonl"),
+        "requested_stage": stage_override,
     }
+
+
+def run_study(
+    config_path: Path,
+    *,
+    stage_override: str | None = None,
+    model_alias: str | None = None,
+    branch_name: str | None = None,
+) -> dict[str, object]:
+    return _run_study_impl(
+        config_path,
+        stage_override=stage_override,
+        model_alias=model_alias,
+        branch_name=branch_name,
+    )
