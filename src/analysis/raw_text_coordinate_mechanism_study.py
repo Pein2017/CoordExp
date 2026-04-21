@@ -11,6 +11,10 @@ from src.analysis.raw_text_coordinate_case_bank import (
     freeze_review_shortlist,
 )
 from src.analysis.raw_text_coordinate_behavior import summarize_confirmatory_records
+from src.analysis.raw_text_coordinate_exploratory import (
+    build_prefix_intervention_matrix,
+    label_fn_bucket,
+)
 
 
 @dataclass(frozen=True)
@@ -174,4 +178,30 @@ def run_confirmatory_stage(
         "serializer_surfaces": sorted(
             {row["serializer_surface"] for row in summary_rows}
         ),
+    }
+
+
+def run_exploratory_stage(*, cases: list[dict[str, object]]) -> dict[str, object]:
+    intervention_count = 0
+    fn_bucket_counts: dict[str, int] = {}
+    for case in cases:
+        if case["review_bucket"] == "FP":
+            intervention_count += len(
+                build_prefix_intervention_matrix(
+                    source_object=case["source_object"],
+                    gt_next=case["gt_next"],
+                )
+            )
+        else:
+            bucket = label_fn_bucket(
+                recovered_by_sampling=bool(case["recovered_by_sampling"]),
+                recovered_by_clean_prefix=bool(case["recovered_by_clean_prefix"]),
+                recovered_by_stop_probe=bool(case["recovered_by_stop_probe"]),
+                has_teacher_forced_support=bool(case["has_teacher_forced_support"]),
+                ambiguity_flag=bool(case["ambiguity_flag"]),
+            )
+            fn_bucket_counts[bucket] = fn_bucket_counts.get(bucket, 0) + 1
+    return {
+        "intervention_count": intervention_count,
+        "fn_bucket_counts": fn_bucket_counts,
     }
