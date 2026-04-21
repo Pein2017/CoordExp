@@ -127,6 +127,7 @@ ERROR_CANONICAL = {
 STOP_PRESSURE_MODE_MIN_NEW_TOKENS_AFTER_OBJECT_OPEN = (
     "min_new_tokens_after_object_open"
 )
+STOP_PRESSURE_TRIGGER_RULE_RAW_TEXT_OBJECT_OPEN = "raw_text_object_open"
 
 
 @dataclass
@@ -148,6 +149,8 @@ class GenerationConfig:
         return (
             self.stop_pressure_mode
             == STOP_PRESSURE_MODE_MIN_NEW_TOKENS_AFTER_OBJECT_OPEN
+            and self.stop_pressure_trigger_rule
+            == STOP_PRESSURE_TRIGGER_RULE_RAW_TEXT_OBJECT_OPEN
             and int(self.stop_pressure_min_new_tokens) > 0
         )
 

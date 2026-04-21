@@ -794,7 +794,13 @@ def _run_infer_stage(
     *,
     root_image_dir: Optional[str],
 ) -> None:
-    from src.infer.engine import GenerationConfig, InferenceConfig, InferenceEngine
+    from src.infer.engine import (
+        GenerationConfig,
+        InferenceConfig,
+        InferenceEngine,
+        STOP_PRESSURE_MODE_MIN_NEW_TOKENS_AFTER_OBJECT_OPEN,
+        STOP_PRESSURE_TRIGGER_RULE_RAW_TEXT_OBJECT_OPEN,
+    )
 
     infer_cfg = _get_map(cfg, "infer")
     if not infer_cfg:
@@ -862,6 +868,8 @@ def _run_infer_stage(
             raise ValueError(
                 "infer.generation.stop_pressure.min_new_tokens must be an int"
             ) from exc
+    stop_pressure_mode = _get_str(stop_pressure_cfg, "mode")
+    stop_pressure_trigger_rule = _get_str(stop_pressure_cfg, "trigger_rule")
 
     gen_cfg = GenerationConfig(
         temperature=_f("temperature", 0.01),
@@ -870,18 +878,51 @@ def _run_infer_stage(
         repetition_penalty=_f("repetition_penalty", 1.05),
         batch_size=_i("batch_size", 1),
         seed=seed,
-        stop_pressure_mode=_get_str(stop_pressure_cfg, "mode"),
+        stop_pressure_mode=stop_pressure_mode,
         stop_pressure_min_new_tokens=stop_pressure_min_new_tokens,
-        stop_pressure_trigger_rule=_get_str(stop_pressure_cfg, "trigger_rule"),
+        stop_pressure_trigger_rule=stop_pressure_trigger_rule,
     )
-    if backend_type != "hf" and (
-        gen_cfg.stop_pressure_mode is not None
-        or int(gen_cfg.stop_pressure_min_new_tokens) > 0
-        or gen_cfg.stop_pressure_trigger_rule is not None
+    if stop_pressure_mode not in (
+        None,
+        STOP_PRESSURE_MODE_MIN_NEW_TOKENS_AFTER_OBJECT_OPEN,
     ):
         raise ValueError(
-            "infer.generation.stop_pressure is only supported for infer.backend.type=hf"
+            "infer.generation.stop_pressure.mode must be "
+            "'min_new_tokens_after_object_open'"
         )
+    if stop_pressure_trigger_rule not in (
+        None,
+        STOP_PRESSURE_TRIGGER_RULE_RAW_TEXT_OBJECT_OPEN,
+    ):
+        raise ValueError(
+            "infer.generation.stop_pressure.trigger_rule must be "
+            "'raw_text_object_open'"
+        )
+    if stop_pressure_mode is None:
+        if (
+            int(stop_pressure_min_new_tokens) > 0
+            or stop_pressure_trigger_rule is not None
+        ):
+            raise ValueError(
+                "infer.generation.stop_pressure.mode is required when "
+                "stop-pressure fields are set"
+            )
+    else:
+        if backend_type != "hf":
+            raise ValueError(
+                "infer.generation.stop_pressure is only supported for "
+                "infer.backend.type=hf"
+            )
+        if int(stop_pressure_min_new_tokens) <= 0:
+            raise ValueError(
+                "infer.generation.stop_pressure.min_new_tokens must be > 0 "
+                "when stop pressure is enabled"
+            )
+        if stop_pressure_trigger_rule != STOP_PRESSURE_TRIGGER_RULE_RAW_TEXT_OBJECT_OPEN:
+            raise ValueError(
+                "infer.generation.stop_pressure.trigger_rule must be "
+                "'raw_text_object_open' when stop pressure is enabled"
+            )
 
     rank, local_rank, world_size, distributed_enabled = _detect_infer_distributed_env()
 
