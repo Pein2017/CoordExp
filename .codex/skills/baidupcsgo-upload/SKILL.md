@@ -5,7 +5,7 @@ description: Install and use qjfoidnh/BaiduPCS-Go on Ubuntu to upload files or w
 
 # BaiduPCS-Go Upload
 
-Use this skill for Ubuntu-based Baidu Netdisk uploads or downloads when reliability matters more than speed, but expose parallelism when the user wants higher throughput.
+Use this skill for Ubuntu-based Baidu Netdisk uploads or downloads when throughput matters more than resource economy, and default to the fastest stable parallelism that BaiduPCS-Go supports well.
 
 Prefer this over `bypy` when:
 - `bypy` hits `Slice MD5 mismatch`, `31064 file is not authorized`, or other large-file upload failures
@@ -125,16 +125,16 @@ bash scripts/download_dir.sh \
 The script:
 - sets `BaiduPCS-Go`'s save directory to the provided local parent directory
 - downloads with `--fullpath` so the remote folder structure is preserved
-- defaults to parallel download settings `--mode locate -p 4 -l 2 --retry 8 --ow --mtime`
+- defaults to parallel download settings `--mode locate -p 8 -l 4 --retry 8 --ow --mtime`
 - may still create an account-prefixed staging directory such as `1592545883_Pien1722/output/...` under the chosen local parent before the final files are merged into the repo tree
 
 This account prefix is a BaiduPCS-Go download behavior, not a transfer failure. Treat it as the staging area for the current login session.
 
-Example with higher download parallelism:
+Example with even more aggressive download parallelism:
 
 ```bash
-BAIDUPCS_DOWNLOAD_THREADS=8 \
-BAIDUPCS_DOWNLOAD_PARALLEL_FILES=4 \
+BAIDUPCS_DOWNLOAD_THREADS=12 \
+BAIDUPCS_DOWNLOAD_PARALLEL_FILES=6 \
 bash scripts/download_dir.sh /output/stage1_2b/my-run /abs/local/output_cache /abs/path/to/BaiduPCS-Go
 ```
 
@@ -194,7 +194,8 @@ If login succeeds but uploads fail:
 
 If downloads fail:
 - try `BAIDUPCS_DOWNLOAD_MODE=pcs` when `locate` hits authorization issues
-- reduce `BAIDUPCS_DOWNLOAD_THREADS` and `BAIDUPCS_DOWNLOAD_PARALLEL_FILES` if the transfer becomes unstable
+- keep the high default parallelism unless the transfer becomes unstable
+- if instability appears, reduce `BAIDUPCS_DOWNLOAD_THREADS` first, then `BAIDUPCS_DOWNLOAD_PARALLEL_FILES`
 - keep `--mtime` enabled unless you specifically want fresh local timestamps
 
 If `bypy` already uploaded files somewhere else:

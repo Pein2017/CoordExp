@@ -8,8 +8,8 @@ Usage: download_dir.sh REMOTE_PATH LOCAL_PARENT_DIR [BAIDUPCS_BIN]
 This downloads REMOTE_PATH into LOCAL_PARENT_DIR while preserving the remote folder name.
 
 Environment overrides:
-  BAIDUPCS_DOWNLOAD_THREADS         per-file download threads, default: 4
-  BAIDUPCS_DOWNLOAD_PARALLEL_FILES  number of files downloaded concurrently, default: 2
+  BAIDUPCS_DOWNLOAD_THREADS         per-file download threads, default: 8
+  BAIDUPCS_DOWNLOAD_PARALLEL_FILES  number of files downloaded concurrently, default: 4
   BAIDUPCS_DOWNLOAD_RETRY           retry count, default: 8
   BAIDUPCS_DOWNLOAD_MODE            download mode, default: locate
   BAIDUPCS_DOWNLOAD_NOCHECK         1 disables checksum verification, default: 0
@@ -26,8 +26,8 @@ fi
 REMOTE_PATH="$1"
 LOCAL_PARENT_DIR="$2"
 BAIDUPCS_BIN="${3:-${BAIDUPCS_BIN:-BaiduPCS-Go}}"
-DOWNLOAD_THREADS="${BAIDUPCS_DOWNLOAD_THREADS:-4}"
-DOWNLOAD_PARALLEL_FILES="${BAIDUPCS_DOWNLOAD_PARALLEL_FILES:-2}"
+DOWNLOAD_THREADS="${BAIDUPCS_DOWNLOAD_THREADS:-8}"
+DOWNLOAD_PARALLEL_FILES="${BAIDUPCS_DOWNLOAD_PARALLEL_FILES:-4}"
 DOWNLOAD_RETRY="${BAIDUPCS_DOWNLOAD_RETRY:-8}"
 DOWNLOAD_MODE="${BAIDUPCS_DOWNLOAD_MODE:-locate}"
 DOWNLOAD_NOCHECK="${BAIDUPCS_DOWNLOAD_NOCHECK:-0}"
