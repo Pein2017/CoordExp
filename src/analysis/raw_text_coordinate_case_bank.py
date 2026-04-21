@@ -21,10 +21,48 @@ class CaseRow:
 
 
 def _case_uid(row: dict[str, object], bucket: str) -> str:
-    return (
+    base_uid = (
         f"{row['model_alias']}:{row['image_id']}:{row['line_idx']}:"
         f"{row['record_idx']}:{bucket}"
     )
+    if bucket == "first_burst_onset":
+        return (
+            f"{base_uid}:src{row['source_object_index']}:"
+            f"on{row['onset_object_index']}"
+        )
+    if bucket == "labeled_fn":
+        return f"{base_uid}:gt{row['gt_idx']}"
+    return base_uid
+
+
+def _serializer_surface_priority(surface: str) -> int:
+    if surface == "model_native":
+        return 0
+    if surface == "pretty_inline":
+        return 1
+    return 2
+
+
+def _representative_case_rows(rows: list[CaseRow]) -> list[CaseRow]:
+    ordered = sorted(
+        rows,
+        key=lambda row: (
+            row.selection_rank,
+            row.model_alias,
+            row.image_id,
+            row.line_idx,
+            _serializer_surface_priority(row.serializer_surface),
+            row.case_uid,
+        ),
+    )
+    representatives: list[CaseRow] = []
+    seen_case_uids: set[str] = set()
+    for row in ordered:
+        if row.case_uid in seen_case_uids:
+            continue
+        representatives.append(row)
+        seen_case_uids.add(row.case_uid)
+    return representatives
 
 
 def build_case_bank_rows(
@@ -73,7 +111,9 @@ def build_case_bank_rows(
         key=lambda row: (
             review_bucket_order[row.review_bucket],
             row.selection_rank,
+            row.model_alias,
             row.case_uid,
+            _serializer_surface_priority(row.serializer_surface),
         ),
     )
 
@@ -84,6 +124,11 @@ def freeze_review_shortlist(
     fp_budget: int,
     fn_budget: int,
 ) -> list[CaseRow]:
-    fp_rows = [row for row in rows if row.review_bucket == "FP"][:fp_budget]
-    fn_rows = [row for row in rows if row.review_bucket == "FN"][:fn_budget]
+    representative_rows = _representative_case_rows(rows)
+    fp_rows = [row for row in representative_rows if row.review_bucket == "FP"][
+        :fp_budget
+    ]
+    fn_rows = [row for row in representative_rows if row.review_bucket == "FN"][
+        :fn_budget
+    ]
     return fp_rows + fn_rows

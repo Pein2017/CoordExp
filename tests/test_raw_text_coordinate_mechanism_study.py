@@ -1,6 +1,7 @@
 from pathlib import Path
 
 from src.analysis.raw_text_coordinate_mechanism_study import (
+    _resolve_best_gt_vs_pred_source,
     load_study_config,
     plan_stage_cells,
     run_study,
@@ -125,6 +126,39 @@ review:
     assert (run_dir / "stage_manifest.json").exists()
     assert (run_dir / "summary.json").exists()
     assert (run_dir / "case_bank.jsonl").exists()
+    assert (run_dir / "contract_audit.json").exists()
+
+
+def test_resolve_best_gt_vs_pred_source_prefers_fuller_existing_candidate(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    repo_root = tmp_path / "repo"
+    short_path = repo_root / "output/infer/short/gt_vs_pred.jsonl"
+    full_path = repo_root / "output/infer/full/gt_vs_pred.jsonl"
+    short_path.parent.mkdir(parents=True, exist_ok=True)
+    full_path.parent.mkdir(parents=True, exist_ok=True)
+    short_path.write_text("{}\n" * 3, encoding="utf-8")
+    full_path.write_text("{}\n" * 7, encoding="utf-8")
+    monkeypatch.setattr(
+        "src.analysis.raw_text_coordinate_mechanism_study._GT_VS_PRED_CANDIDATE_PATHS",
+        {
+            "base_plus_adapter": (
+                "output/infer/short/gt_vs_pred.jsonl",
+                "output/infer/full/gt_vs_pred.jsonl",
+            )
+        },
+    )
+
+    selected = _resolve_best_gt_vs_pred_source(
+        model_alias="base_plus_adapter",
+        anchor=repo_root,
+    )
+
+    assert selected is not None
+    assert selected["path"] == full_path
+    assert selected["row_count"] == 7
+    assert selected["candidate_count"] == 2
 
 
 def test_run_study_respects_stage_and_branch_overrides(tmp_path: Path) -> None:
