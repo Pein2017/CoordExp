@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Sequence
@@ -74,6 +75,21 @@ def _load_yaml(path: Path) -> dict[str, Any]:
     if not isinstance(payload, dict):
         raise TypeError("study config must be a mapping")
     return payload
+
+
+def _write_json(path: Path, payload: dict[str, object]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        json.dumps(payload, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+
+
+def _write_jsonl(path: Path, rows: list[dict[str, object]]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w", encoding="utf-8") as handle:
+        for row in rows:
+            handle.write(json.dumps(row, sort_keys=True) + "\n")
 
 
 def load_study_config(config_path: Path) -> StudyConfig:
@@ -221,3 +237,37 @@ def run_review_and_report_stage(
         summary=summary,
         review_rows=review_rows,
     )
+
+
+def run_study(config_path: Path) -> dict[str, object]:
+    cfg = load_study_config(config_path)
+    run_dir = Path(cfg.run.output_dir) / cfg.run.name
+    run_dir.mkdir(parents=True, exist_ok=True)
+
+    stage_manifest = {
+        "run_name": cfg.run.name,
+        "stages": list(cfg.run.stages),
+        "models": [
+            cfg.models.base_only.alias,
+            cfg.models.base_plus_adapter.alias,
+        ],
+    }
+    summary = {
+        "run_name": cfg.run.name,
+        "stage_count": len(cfg.run.stages),
+        "review_budgets": {
+            "fp": cfg.review.fp_budget,
+            "fn": cfg.review.fn_budget,
+        },
+    }
+    case_bank_rows: list[dict[str, object]] = []
+
+    _write_json(run_dir / "stage_manifest.json", stage_manifest)
+    _write_json(run_dir / "summary.json", summary)
+    _write_jsonl(run_dir / "case_bank.jsonl", case_bank_rows)
+    return {
+        "run_dir": str(run_dir),
+        "stage_manifest_path": str(run_dir / "stage_manifest.json"),
+        "summary_path": str(run_dir / "summary.json"),
+        "case_bank_path": str(run_dir / "case_bank.jsonl"),
+    }
