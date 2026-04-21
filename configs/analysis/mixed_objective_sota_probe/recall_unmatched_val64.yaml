@@ -36,7 +36,7 @@ collection_gate:
   unmatched_count_min: 10
 
 eval:
-  semantic_model: model_cache/all-MiniLM-L6-v2-local
+  semantic_model: /data/CoordExp/model_cache/all-MiniLM-L6-v2-local
   semantic_threshold: 0.5
   semantic_device: cuda:5
   semantic_batch_size: 64

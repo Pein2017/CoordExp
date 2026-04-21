@@ -12,6 +12,7 @@ from src.eval.oracle_k import (
     OracleKConfig,
     OracleKRunSpec,
     evaluate_oracle_k,
+    load_oracle_k_config,
     run_oracle_k_from_config,
 )
 
@@ -424,3 +425,35 @@ def test_oracle_k_can_materialize_pipeline_runs_from_yaml(
     assert summary["oracle_run_count"] == 1
     assert summary["oracle_runs"][0]["materialized"] is True
     assert summary["oracle_runs"][0]["pred_jsonl"] == str(materialized_path)
+
+
+def test_oracle_k_config_resolves_local_model_cache_path(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    repo_root = tmp_path / "repo"
+    local_model = repo_root / "model_cache" / "all-MiniLM-L6-v2-local"
+    local_model.mkdir(parents=True)
+    baseline = tmp_path / "baseline.jsonl"
+    _write_jsonl(baseline, [_record(image="img.png", gt_desc="cat")])
+    config_path = tmp_path / "oracle_k.yaml"
+    config_path.write_text(
+        "\n".join(
+            [
+                f"out_dir: {tmp_path / 'oracle_k'}",
+                "semantic_model: model_cache/all-MiniLM-L6-v2-local",
+                "baseline_run:",
+                "  label: baseline",
+                f"  pred_jsonl: {baseline}",
+                "oracle_runs:",
+                "  - label: baseline_copy",
+                f"    pred_jsonl: {baseline}",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr("src.eval.oracle_k.REPO_ROOT", repo_root)
+    monkeypatch.setattr("src.eval.oracle_k.COMMON_REPO_ROOT", repo_root)
+
+    config = load_oracle_k_config(config_path)
+    assert config.eval_options.semantic_model == str(local_model)

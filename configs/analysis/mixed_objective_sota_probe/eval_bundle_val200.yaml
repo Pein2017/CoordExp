@@ -23,7 +23,7 @@ eval:
   overlay_k: 12
   num_workers: 8
 
-  semantic_model: model_cache/all-MiniLM-L6-v2-local
+  semantic_model: /data/CoordExp/model_cache/all-MiniLM-L6-v2-local
   semantic_threshold: 0.5
   semantic_device: cuda:1
   semantic_batch_size: 64
