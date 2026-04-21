@@ -7,7 +7,7 @@ num_workers: 8
 
 semantic_model: model_cache/all-MiniLM-L6-v2-local
 semantic_threshold: 0.5
-semantic_device: cuda:3
+semantic_device: cuda:7
 semantic_batch_size: 64
 
 baseline_run:
@@ -30,7 +30,7 @@ baseline_run:
     infer.generation.repetition_penalty: 1.05
     infer.generation.batch_size: 8
     infer.generation.seed: 42
-    infer.device: cuda:2
+    infer.device: cuda:6
     infer.limit: 0
 
 oracle_runs:
@@ -53,7 +53,7 @@ oracle_runs:
       infer.generation.repetition_penalty: 1.05
       infer.generation.batch_size: 8
       infer.generation.seed: 101
-      infer.device: cuda:2
+      infer.device: cuda:6
       infer.limit: 0
   - label: mixed_objective_sota_temp07_seed102
     pipeline_config: configs/infer/pipeline.yaml
@@ -74,7 +74,7 @@ oracle_runs:
       infer.generation.repetition_penalty: 1.05
       infer.generation.batch_size: 8
       infer.generation.seed: 102
-      infer.device: cuda:2
+      infer.device: cuda:6
       infer.limit: 0
   - label: mixed_objective_sota_temp07_seed103
     pipeline_config: configs/infer/pipeline.yaml
@@ -95,7 +95,7 @@ oracle_runs:
       infer.generation.repetition_penalty: 1.05
       infer.generation.batch_size: 8
       infer.generation.seed: 103
-      infer.device: cuda:2
+      infer.device: cuda:6
       infer.limit: 0
   - label: mixed_objective_sota_temp07_seed104
     pipeline_config: configs/infer/pipeline.yaml
@@ -116,5 +116,5 @@ oracle_runs:
       infer.generation.repetition_penalty: 1.05
       infer.generation.batch_size: 8
       infer.generation.seed: 104
-      infer.device: cuda:2
+      infer.device: cuda:6
       infer.limit: 0

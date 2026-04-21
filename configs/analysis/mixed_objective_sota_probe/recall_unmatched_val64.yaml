@@ -14,7 +14,7 @@ prompts:
 
 collection:
   backend_mode: hf
-  device: cuda:0
+  device: cuda:4
   cuda_visible_devices: null
   temperature: 0.3
   top_p: 0.9
@@ -38,7 +38,7 @@ collection_gate:
 eval:
   semantic_model: model_cache/all-MiniLM-L6-v2-local
   semantic_threshold: 0.5
-  semantic_device: cuda:1
+  semantic_device: cuda:5
   semantic_batch_size: 64
   num_workers: 8
   f1ish_iou_thrs: [0.5]
@@ -46,7 +46,7 @@ eval:
   use_segm: false
 
 scoring:
-  device: cuda:0
+  device: cuda:4
   attn_implementation: auto
   gt_batch_size: 8
   masked_batch_size: 8
