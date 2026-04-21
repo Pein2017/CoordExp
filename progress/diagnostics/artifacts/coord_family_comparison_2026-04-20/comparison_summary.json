@@ -1,0 +1,308 @@
+{
+  "basin_rows": [
+    {
+      "canonical_compare_group": "canonical_xyxy_norm1000",
+      "family_alias": "base_xyxy_merged",
+      "mean_center_bbox_metrics": {
+        "half_height_width": 0.0,
+        "local_expected_abs_error": 1.8555065169444203,
+        "mass_at_1": 0.52497918747894,
+        "mass_at_16": 1.0,
+        "mass_at_2": 0.52497918747894,
+        "mass_at_4": 1.0,
+        "mass_at_8": 1.0
+      },
+      "mean_target_bbox_metrics": {
+        "half_height_width": 0.0,
+        "local_expected_abs_error": 1.8555065169444203,
+        "mass_at_1": 0.52497918747894,
+        "mass_at_16": 1.0,
+        "mass_at_2": 0.52497918747894,
+        "mass_at_4": 1.0,
+        "mass_at_8": 1.0
+      },
+      "pred_coord_mode": "pixel",
+      "probe_count": 1
+    },
+    {
+      "canonical_compare_group": "canonical_xyxy_norm1000",
+      "family_alias": "cxcywh_pure_ce",
+      "mean_center_bbox_metrics": {
+        "half_height_width": 0.0,
+        "local_expected_abs_error": 1.8006640107500629,
+        "mass_at_1": 0.549833997312478,
+        "mass_at_16": 1.0,
+        "mass_at_2": 0.549833997312478,
+        "mass_at_4": 1.0,
+        "mass_at_8": 1.0
+      },
+      "mean_target_bbox_metrics": {
+        "half_height_width": 0.0,
+        "local_expected_abs_error": 1.8006640107500629,
+        "mass_at_1": 0.549833997312478,
+        "mass_at_16": 1.0,
+        "mass_at_2": 0.549833997312478,
+        "mass_at_4": 1.0,
+        "mass_at_8": 1.0
+      },
+      "pred_coord_mode": "norm1000",
+      "probe_count": 1
+    }
+  ],
+  "eval_rows": [
+    {
+      "bbox_AP": 0.4220818648401396,
+      "bbox_AP50": 0.600747198341825,
+      "bundle_summary": "/data/CoordExp/output/infer/coco1024_val200_lvis_proxy_stage1_2b_ckpt1564_merged/proxy_eval_bundle_summary.json",
+      "f1_full_micro_050": 0.6107707191228636,
+      "family_alias": "center_parameterization",
+      "fn_full_050": 497.0,
+      "fp_full_050": 710.0,
+      "objects_in": 1564,
+      "pred_total_050": 1724.0,
+      "rank": 1,
+      "record_count": 200,
+      "tp_full_050": 947.0
+    },
+    {
+      "bbox_AP": 0.34401092701713487,
+      "bbox_AP50": 0.44998226893484994,
+      "bundle_summary": "/data/CoordExp/output/infer/coco1024_val200_lvis_proxy_rawtext_xyxy_v1_ckpt552_fanout8/proxy_eval_bundle_summary.json",
+      "f1_full_micro_050": 0.5899960614415125,
+      "family_alias": "raw_text_xyxy_pure_ce",
+      "fn_full_050": 695.0,
+      "fp_full_050": 346.0,
+      "objects_in": 1564,
+      "pred_total_050": 1115.0,
+      "rank": 2,
+      "record_count": 200,
+      "tp_full_050": 749.0
+    },
+    {
+      "bbox_AP": 0.27915398081379983,
+      "bbox_AP50": 0.42921469838416487,
+      "bundle_summary": "/data/CoordExp/output/infer/coco1024_val200_lvis_proxy_cxcy_logw_logh_pure_ce/proxy_eval_bundle_summary.json",
+      "f1_full_micro_050": 0.5083388925950635,
+      "family_alias": "cxcy_logw_logh_pure_ce",
+      "fn_full_050": 682.0,
+      "fp_full_050": 792.0,
+      "objects_in": 1564,
+      "pred_total_050": 1586.0,
+      "rank": 3,
+      "record_count": 200,
+      "tp_full_050": 762.0
+    },
+    {
+      "bbox_AP": 0.27252623412406707,
+      "bbox_AP50": 0.4003027885168362,
+      "bundle_summary": "/data/CoordExp/output/infer/coco1024_val200_lvis_proxy_cxcywh_pure_ce_merged/proxy_eval_bundle_summary.json",
+      "f1_full_micro_050": 0.46526249607041814,
+      "family_alias": "cxcywh_pure_ce",
+      "fn_full_050": 704.0,
+      "fp_full_050": 997.0,
+      "objects_in": 1564,
+      "pred_total_050": 1774.0,
+      "rank": 4,
+      "record_count": 200,
+      "tp_full_050": 740.0
+    },
+    {
+      "bbox_AP": 0.05679256527630405,
+      "bbox_AP50": 0.14066405488087785,
+      "bundle_summary": "/data/CoordExp/output/infer/coco1024_val200_lvis_proxy_hard_soft_ce_2b/proxy_eval_bundle_summary.json",
+      "f1_full_micro_050": 0.15785554728220402,
+      "family_alias": "hard_soft_ce_2b",
+      "fn_full_050": 1232.0,
+      "fp_full_050": 1030.0,
+      "objects_in": 1564,
+      "pred_total_050": 1287.0,
+      "rank": 5,
+      "record_count": 200,
+      "tp_full_050": 212.0
+    },
+    {
+      "bbox_AP": 0.05494939499748911,
+      "bbox_AP50": 0.14049510410819718,
+      "bundle_summary": "/data/CoordExp/output/infer/coco1024_val200_lvis_proxy_base_xyxy_merged/proxy_eval_bundle_summary.json",
+      "f1_full_micro_050": 0.14068692206076616,
+      "family_alias": "base_xyxy_merged",
+      "fn_full_050": 1231.0,
+      "fp_full_050": 1371.0,
+      "objects_in": 1564,
+      "pred_total_050": 1625.0,
+      "rank": 6,
+      "record_count": 200,
+      "tp_full_050": 213.0
+    }
+  ],
+  "recall_rows": [
+    {
+      "duplicate_like_rate": 0.004366812227074236,
+      "family_alias": "base_xyxy_merged",
+      "pred_count_total": 458,
+      "sample_size": 64,
+      "status": "verifier_complete_oracle_pending",
+      "unmatched_count": 403
+    },
+    {
+      "baseline_fn_count_loc": 216,
+      "baseline_recall_loc": 0.6163410301953819,
+      "competitive_fn_count": 9,
+      "competitive_fn_rate": 0.041666666666666664,
+      "competitor_margin_mean": -0.02450326489813534,
+      "duplicate_like_rate": 0.003875968992248062,
+      "family_alias": "center_parameterization",
+      "fn_count": 216,
+      "mechanism_counts": {
+        "competitive_fn": 9,
+        "suppressed_fn": 0,
+        "weak_visual_fn": 207
+      },
+      "mechanism_rates": {
+        "competitive_fn": 0.041666666666666664,
+        "suppressed_fn": 0.0,
+        "weak_visual_fn": 0.9583333333333334
+      },
+      "oracle_k_recall_loc": 0.6998223801065719,
+      "oracle_k_recovery_rate": 0.25,
+      "pred_count_total": 516,
+      "proposal_support_mean": 0.0188410355720991,
+      "recoverable_fn_count_loc": 54,
+      "recoverable_fraction_of_baseline_fn_loc": 0.12037037037037036,
+      "sample_size": 64,
+      "status": "oracle_and_verifier_complete",
+      "suppressed_fn_count": 0,
+      "suppressed_fn_rate": 0.0,
+      "systematic_fn_count_loc": 162,
+      "teacher_forced_support_mean": -3.216048799915078,
+      "unmatched_count": 165,
+      "weak_visual_fn_count": 207,
+      "weak_visual_fn_rate": 0.9583333333333334
+    },
+    {
+      "duplicate_like_rate": 0.0017152658662092624,
+      "family_alias": "cxcy_logw_logh_pure_ce",
+      "pred_count_total": 583,
+      "sample_size": 64,
+      "status": "verifier_complete_oracle_pending",
+      "unmatched_count": 325
+    },
+    {
+      "duplicate_like_rate": 0.006622516556291391,
+      "family_alias": "cxcywh_pure_ce",
+      "pred_count_total": 604,
+      "sample_size": 64,
+      "status": "verifier_complete_oracle_pending",
+      "unmatched_count": 322
+    },
+    {
+      "duplicate_like_rate": 0.0024330900243309003,
+      "family_alias": "hard_soft_ce_2b",
+      "pred_count_total": 411,
+      "sample_size": 64,
+      "status": "verifier_complete_oracle_pending",
+      "unmatched_count": 353
+    },
+    {
+      "baseline_fn_count_loc": 296,
+      "baseline_recall_loc": 0.47424511545293074,
+      "competitive_fn_count": 4,
+      "competitive_fn_rate": 0.013513513513513514,
+      "competitor_margin_mean": -0.09472097040296674,
+      "duplicate_like_rate": 0.0,
+      "family_alias": "raw_text_xyxy_pure_ce",
+      "fn_count": 296,
+      "mechanism_counts": {
+        "competitive_fn": 4,
+        "suppressed_fn": 2,
+        "weak_visual_fn": 290
+      },
+      "mechanism_rates": {
+        "competitive_fn": 0.013513513513513514,
+        "suppressed_fn": 0.006756756756756757,
+        "weak_visual_fn": 0.9797297297297297
+      },
+      "oracle_k_recall_loc": 0.7069271758436945,
+      "oracle_k_recovery_rate": 0.4527027027027027,
+      "pred_count_total": 343,
+      "proposal_support_mean": -0.0005622876657022012,
+      "recoverable_fn_count_loc": 134,
+      "recoverable_fraction_of_baseline_fn_loc": 0.21114864864864866,
+      "sample_size": 64,
+      "status": "oracle_and_verifier_complete",
+      "suppressed_fn_count": 2,
+      "suppressed_fn_rate": 0.006756756756756757,
+      "systematic_fn_count_loc": 162,
+      "teacher_forced_support_mean": -2.9218598378671183,
+      "unmatched_count": 63,
+      "weak_visual_fn_count": 290,
+      "weak_visual_fn_rate": 0.9797297297297297
+    }
+  ],
+  "run_name": "coord-family-comparison-progress-2026-04-20",
+  "source_artifacts": {
+    "basin_summary_json": "/data/CoordExp/output/analysis/coord-family-basin-smoke/summary.json",
+    "eval_snapshot_json": "/data/CoordExp/output/analysis/coord-family-comparison-progress-2026-04-20/current_eval_metrics_snapshot.json",
+    "recall_summary_json": "/data/CoordExp/output/analysis/coord-family-recall-progress-2026-04-20/summary.json"
+  },
+  "verdicts": {
+    "base_xyxy_merged": {
+      "family_health": "strong",
+      "max_wrong_anchor_advantage_at_4": 0.0,
+      "mean_competitive_fn_rate": null,
+      "mean_mass_at_4": 1.0,
+      "mean_suppressed_fn_rate": null,
+      "mean_vision_lift": 4.5098,
+      "mean_weak_visual_fn_rate": null,
+      "num_basin_rows": 1,
+      "num_recall_rows": 0,
+      "num_vision_rows": 1
+    },
+    "center_parameterization": {
+      "family_health": "mixed",
+      "max_wrong_anchor_advantage_at_4": null,
+      "mean_competitive_fn_rate": 0.041666666666666664,
+      "mean_mass_at_4": null,
+      "mean_suppressed_fn_rate": 0.0,
+      "mean_vision_lift": null,
+      "mean_weak_visual_fn_rate": 0.9583333333333334,
+      "num_basin_rows": 0,
+      "num_recall_rows": 1,
+      "num_vision_rows": 0
+    },
+    "cxcywh_pure_ce": {
+      "family_health": "strong",
+      "max_wrong_anchor_advantage_at_4": 0.0,
+      "mean_competitive_fn_rate": null,
+      "mean_mass_at_4": 1.0,
+      "mean_suppressed_fn_rate": null,
+      "mean_vision_lift": null,
+      "mean_weak_visual_fn_rate": null,
+      "num_basin_rows": 1,
+      "num_recall_rows": 0,
+      "num_vision_rows": 0
+    },
+    "raw_text_xyxy_pure_ce": {
+      "family_health": "mixed",
+      "max_wrong_anchor_advantage_at_4": null,
+      "mean_competitive_fn_rate": 0.013513513513513514,
+      "mean_mass_at_4": null,
+      "mean_suppressed_fn_rate": 0.006756756756756757,
+      "mean_vision_lift": 4.8757,
+      "mean_weak_visual_fn_rate": 0.9797297297297297,
+      "num_basin_rows": 0,
+      "num_recall_rows": 1,
+      "num_vision_rows": 1
+    }
+  },
+  "vision_rows": [
+    {
+      "family_alias": "raw_text_xyxy_pure_ce",
+      "vision_lift": 4.8757
+    },
+    {
+      "family_alias": "base_xyxy_merged",
+      "vision_lift": 4.5098
+    }
+  ]
+}
