@@ -6,6 +6,11 @@ from typing import Any, Sequence
 
 import yaml
 
+from src.analysis.raw_text_coordinate_case_bank import (
+    build_case_bank_rows,
+    freeze_review_shortlist,
+)
+
 
 @dataclass(frozen=True)
 class RunConfig:
@@ -134,3 +139,25 @@ def plan_stage_cells(
                 }
             )
     return cells
+
+
+def run_case_bank_stage(
+    *,
+    duplicate_rows: list[dict[str, object]],
+    fn_rows: list[dict[str, object]],
+    fp_budget: int,
+    fn_budget: int,
+) -> dict[str, object]:
+    case_rows = build_case_bank_rows(
+        duplicate_rows=duplicate_rows,
+        fn_rows=fn_rows,
+    )
+    shortlist = freeze_review_shortlist(
+        case_rows,
+        fp_budget=fp_budget,
+        fn_budget=fn_budget,
+    )
+    return {
+        "case_row_count": len(case_rows),
+        "shortlist_count": len(shortlist),
+    }

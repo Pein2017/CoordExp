@@ -1,0 +1,76 @@
+from src.analysis.raw_text_coordinate_case_bank import (
+    build_case_bank_rows,
+    freeze_review_shortlist,
+)
+
+
+def test_build_case_bank_rows_emits_required_fields() -> None:
+    duplicate_rows = [
+        {
+            "model_alias": "base_plus_adapter",
+            "image_id": 11,
+            "line_idx": 0,
+            "record_idx": 0,
+            "source_object_index": 2,
+            "onset_object_index": 3,
+            "selection_rank": 1,
+            "serializer_surface": "pretty_inline",
+        }
+    ]
+    fn_rows = [
+        {
+            "model_alias": "base_only",
+            "image_id": 22,
+            "line_idx": 1,
+            "record_idx": 4,
+            "gt_idx": 5,
+            "selection_rank": 3,
+            "serializer_surface": "model_native",
+        }
+    ]
+
+    rows = build_case_bank_rows(
+        duplicate_rows=duplicate_rows,
+        fn_rows=fn_rows,
+    )
+
+    assert rows[0].bucket == "first_burst_onset"
+    assert rows[0].case_uid == "base_plus_adapter:11:0:0:first_burst_onset"
+    assert rows[1].bucket == "labeled_fn"
+    assert rows[1].serializer_surface == "model_native"
+
+
+def test_freeze_review_shortlist_respects_fp_and_fn_budgets() -> None:
+    rows = build_case_bank_rows(
+        duplicate_rows=[
+            {
+                "model_alias": "base_plus_adapter",
+                "image_id": idx,
+                "line_idx": 0,
+                "record_idx": idx,
+                "source_object_index": idx,
+                "onset_object_index": idx + 1,
+                "selection_rank": idx,
+                "serializer_surface": "pretty_inline",
+            }
+            for idx in range(20)
+        ],
+        fn_rows=[
+            {
+                "model_alias": "base_only",
+                "image_id": 100 + idx,
+                "line_idx": 0,
+                "record_idx": idx,
+                "gt_idx": idx,
+                "selection_rank": idx,
+                "serializer_surface": "pretty_inline",
+            }
+            for idx in range(10)
+        ],
+    )
+
+    shortlist = freeze_review_shortlist(rows, fp_budget=15, fn_budget=5)
+
+    assert len(shortlist) == 20
+    assert sum(row.review_bucket == "FP" for row in shortlist) == 15
+    assert sum(row.review_bucket == "FN" for row in shortlist) == 5
