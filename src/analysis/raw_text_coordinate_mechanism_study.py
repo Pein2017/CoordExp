@@ -10,6 +10,7 @@ from src.analysis.raw_text_coordinate_case_bank import (
     build_case_bank_rows,
     freeze_review_shortlist,
 )
+from src.analysis.raw_text_coordinate_behavior import summarize_confirmatory_records
 
 
 @dataclass(frozen=True)
@@ -160,4 +161,17 @@ def run_case_bank_stage(
     return {
         "case_row_count": len(case_rows),
         "shortlist_count": len(shortlist),
+    }
+
+
+def run_confirmatory_stage(
+    *,
+    records: list[dict[str, object]],
+) -> dict[str, object]:
+    summary_rows = summarize_confirmatory_records(records=records)
+    return {
+        "summary_rows": summary_rows,
+        "serializer_surfaces": sorted(
+            {row["serializer_surface"] for row in summary_rows}
+        ),
     }

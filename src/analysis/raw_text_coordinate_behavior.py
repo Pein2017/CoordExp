@@ -67,3 +67,47 @@ def summarize_choice_margin(
         "winner": winner,
         "margin": winner_score - runner_up_score,
     }
+
+
+def summarize_confirmatory_records(
+    *,
+    records: list[dict[str, object]],
+) -> list[dict[str, object]]:
+    grouped: dict[tuple[str, str, str], list[dict[str, object]]] = {}
+    for record in records:
+        key = (
+            str(record["model_alias"]),
+            str(record["serializer_surface"]),
+            str(record["slot"]),
+        )
+        grouped.setdefault(key, []).append(record)
+
+    summary_rows: list[dict[str, object]] = []
+    for (model_alias, serializer_surface, slot), group in grouped.items():
+        correct_scores = [
+            float(row["logprob_sum"])
+            for row in group
+            if row["image_condition"] == "correct"
+        ]
+        swapped_scores = [
+            float(row["logprob_sum"])
+            for row in group
+            if row["image_condition"] == "swapped"
+        ]
+        mass_at_4 = sum(
+            1
+            for row in group
+            if row["image_condition"] == "correct"
+            and int(row["distance_to_gt"]) <= 4
+        ) / max(1, sum(1 for row in group if row["image_condition"] == "correct"))
+        summary_rows.append(
+            {
+                "model_alias": model_alias,
+                "serializer_surface": serializer_surface,
+                "slot": slot,
+                "mass_at_4": mass_at_4,
+                "vision_lift": (sum(correct_scores) / max(1, len(correct_scores)))
+                - (sum(swapped_scores) / max(1, len(swapped_scores))),
+            }
+        )
+    return summary_rows
