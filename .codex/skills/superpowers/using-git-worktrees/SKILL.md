@@ -1,6 +1,6 @@
 ---
 name: using-git-worktrees
-description: Use when starting feature work that needs isolation from current workspace or before executing implementation plans - creates isolated git worktrees with smart directory selection and safety verification
+description: Use when worktree mode has already been chosen, or when the user explicitly asks to create an isolated workspace
 ---
 
 # Using Git Worktrees
@@ -9,9 +9,16 @@ description: Use when starting feature work that needs isolation from current wo
 
 Git worktrees create isolated workspaces sharing the same repository, allowing work on multiple branches simultaneously without switching.
 
-**Core principle:** Systematic directory selection + safety verification = reliable isolation.
+**Core principle:** This skill provisions worktrees safely. It does not decide worktree policy.
 
 **Announce at start:** "I'm using the using-git-worktrees skill to set up an isolated workspace."
+
+## Boundaries
+
+- `worktree-feature-loop` decides whether to use `worktree` or `inplace`
+- `using-git-worktrees` creates or enters the worktree once that decision is made
+
+Do not use this skill to debate whether isolation is needed. If a higher-level workflow already chose `execution_mode=worktree`, follow it directly.
 
 ## Directory Selection Process
 
@@ -27,13 +34,17 @@ ls -d worktrees 2>/dev/null      # Alternative
 
 **If found:** Use that directory. If both exist, `.worktrees` wins.
 
-### 2. Check CLAUDE.md
+### 2. Check Repo Instructions / CLAUDE.md / AGENTS.md
 
 ```bash
 grep -i "worktree.*director" CLAUDE.md 2>/dev/null
 ```
 
+Also inspect repo-local agent guidance (for example `AGENTS.md`) if available.
+
 **If preference specified:** Use it without asking.
+
+**CoordExp default:** prefer project-local `.worktrees/` under the repo root.
 
 ### 3. Ask User
 
@@ -97,6 +108,22 @@ esac
 git worktree add "$path" -b "$BRANCH_NAME"
 cd "$path"
 ```
+
+### 2.5. Path Discipline in Worktrees
+
+Before launching long-running jobs, record both the worktree repo root and the shared repository root:
+
+```bash
+repo_root=$(git rev-parse --show-toplevel)
+common_root=$(git -C "$repo_root" rev-parse --path-format=absolute --show-toplevel)
+printf 'repo_root=%s\ncommon_root=%s\n' "$repo_root" "$common_root"
+```
+
+When running from a worktree:
+
+- prefer absolute paths for datasets, checkpoints, and durable artifact targets
+- for shared paths such as `output/`, `progress/`, caches, and public datasets, anchor to the shared common root unless a workflow explicitly wants worktree-local output
+- do not assume repo-relative paths still resolve to the shared root once inside `.worktrees/...`
 
 ### 3. Run Project Setup
 
@@ -209,10 +236,10 @@ Ready to implement auth feature
 ## Integration
 
 **Called by:**
-- **brainstorming** (Phase 4) - REQUIRED when design is approved and implementation follows
-- **subagent-driven-development** - REQUIRED before executing any tasks
-- **executing-plans** - REQUIRED before executing any tasks
-- Any skill needing isolated workspace
+- **worktree-feature-loop** - preferred owner of worktree policy and lifecycle
+- **brainstorming** only when a higher-level workflow has already decided on worktree mode
+- **subagent-driven-development** / **executing-plans** only when they are explicitly handling setup
+- Any workflow where the user explicitly asked for a worktree
 
 **Pairs with:**
 - **finishing-a-development-branch** - REQUIRED for cleanup after work complete

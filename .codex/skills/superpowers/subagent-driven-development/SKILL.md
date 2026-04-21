@@ -265,7 +265,8 @@ Done!
 ## Integration
 
 **Required workflow skills:**
-- **superpowers:using-git-worktrees** - REQUIRED: Set up isolated workspace before starting
+- **worktree-feature-loop** - preferred owner of worktree-vs-inplace decisions and lifecycle
+- **superpowers:using-git-worktrees** - use only after worktree mode has already been chosen
 - **superpowers:writing-plans** - Creates the plan this skill executes
 - **superpowers:requesting-code-review** - Code review template for reviewer subagents
 - **superpowers:finishing-a-development-branch** - Complete development after all tasks

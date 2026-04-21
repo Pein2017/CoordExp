@@ -1,11 +1,18 @@
 ---
 name: worktree-feature-loop
-description: "Manage feature development in concurrent environments with an optional worktree lifecycle. Use when starting feature/fix/research tasks that may need isolation: decide whether a new worktree is needed, request user approval before creating one when not explicitly requested, choose spec path (existing OpenSpec from main, draft new OpenSpec, or no spec), implement, run audit/review rounds, merge to main, and clean up safely."
+description: "Use when starting feature, fix, or research work in a repo where isolation may matter; decides worktree vs inplace execution and owns the lifecycle from setup through cleanup"
 ---
 
 # Worktree Feature Loop
 
-Run this loop for each independent feature task so multiple agents can work in parallel without stepping on each other.
+Run this loop for each independent feature or research task so multiple agents can work in parallel without stepping on each other.
+
+This is the policy owner for worktree usage.
+
+- It decides `execution_mode=worktree|inplace`
+- It chooses the preferred root, usually `.worktrees/`
+- It delegates actual creation to `using-git-worktrees`
+- It owns the lifecycle through merge/cleanup
 
 ## Quick Inputs
 
@@ -15,22 +22,33 @@ Capture these before doing work:
 - `spec_mode`: `existing`, `new`, or `none`
 - `worktree_root`: use `.worktrees/` by default; if user explicitly requests a different root (for example `worktrees/` or `.wortrees/`), use that path
 
+## Default Policy
+
+Default to `execution_mode=worktree` for:
+
+- research tasks
+- multi-file changes
+- tasks expected to live for more than one logical commit
+- tasks that may run in parallel with other work
+- tasks started while the current tree is dirty
+- tasks involving long-running experiments, evaluation, or artifact generation
+
+Use `execution_mode=inplace` only when the task is small, local, and isolation is clearly unnecessary.
+
+For CoordExp-style work, prefer `.worktrees/` unless the user explicitly requests a different root.
+
 ## Lifecycle
 
 1. Decide whether to use a new worktree.
 - If the user explicitly asks for a worktree, create one.
+- If repo policy or task type matches the default policy above, choose `worktree`.
 - If the request is simple editing and isolation is not required, work in the current tree.
-- If unclear, ask for permission before creating a new worktree.
+- If no default policy applies and the trade-off is unclear, ask for permission before creating a new worktree.
 
-2. Create an isolated worktree only after explicit request or approval.
-```bash
-mkdir -p <worktree_root>
-git worktree add <worktree_root>/<task_slug> -b <branch_name> <base_branch>
-```
-If `<branch_name>` already exists:
-```bash
-git worktree add <worktree_root>/<task_slug> <branch_name>
-```
+2. If `execution_mode=worktree`, invoke `using-git-worktrees`.
+- Pass `worktree_root`, `branch_name`, and `base_branch`
+- Let that skill handle ignore checks, creation, setup, and baseline verification
+- Do not duplicate directory-selection or ignore-verification logic here
 
 3. Choose the spec path before coding.
 - `existing`: start from an existing OpenSpec already on `main`, then implement from the worktree
@@ -43,6 +61,7 @@ git worktree add <worktree_root>/<task_slug> <branch_name>
 - Keep changes scoped to this task
 - Commit incrementally with clear messages
 - Run targeted checks after each logical slice
+- When running from a worktree, prefer absolute or shared-root-anchored paths for shared outputs, datasets, checkpoints, and caches.
 
 5. Run audit and review rounds until clean.
 - Self-check and fix obvious issues
@@ -50,25 +69,21 @@ git worktree add <worktree_root>/<task_slug> <branch_name>
 - Address external review findings and rerun checks
 - Repeat until implementation artifacts and behavior match requirements/spec
 
-6. Merge into `main` after verification passes.
+6. Finish using `finishing-a-development-branch` after verification passes.
 If implementation used a worktree, verify it is clean first:
 ```bash
 git -C <worktree_root>/<task_slug> status --short
 ```
-Then merge on `main`:
-```bash
-git checkout main
-git pull --ff-only
-git merge --no-ff <branch_name>
-```
-Use project-preferred merge style if different.
 
-7. Clean up the worktree only after successful merge.
-```bash
-git worktree remove <worktree_root>/<task_slug>
-git branch -d <branch_name>
-```
-If cleanup might remove uncommitted work, stop and ask for explicit confirmation.
+Then hand off final branch resolution to `finishing-a-development-branch`:
+- merge locally
+- PR
+- keep as-is
+- discard
+
+7. Clean up the worktree only after branch resolution is complete.
+- Remove the worktree only after merge or discard is finished.
+- If cleanup might remove uncommitted work, stop and ask for explicit confirmation.
 
 ## Concurrent Development Rules
 
