@@ -17,10 +17,7 @@ import shutil
 from pathlib import Path
 from typing import List
 
-import torch
 from transformers import AutoTokenizer, Qwen3VLForConditionalGeneration
-
-TRANSFORMERS_RESIZE_SEED = 0
 
 
 def build_coord_tokens(num_bins: int, include_wildcard: bool = True) -> List[str]:
@@ -35,29 +32,6 @@ def build_coord_tokens(num_bins: int, include_wildcard: bool = True) -> List[str
     if include_wildcard:
         tokens = ["<|coord_*|>"] + tokens
     return tokens
-
-
-def resize_token_embeddings_deterministically(
-    model: Qwen3VLForConditionalGeneration,
-    *,
-    new_vocab_size: int,
-    seed: int = TRANSFORMERS_RESIZE_SEED,
-) -> None:
-    """Preserve Transformers mean-resizing behavior while making it reproducible."""
-    cpu_rng_state = torch.random.get_rng_state()
-    cuda_rng_states = None
-    if torch.cuda.is_available():
-        cuda_rng_states = torch.cuda.get_rng_state_all()
-
-    try:
-        torch.manual_seed(seed)
-        if torch.cuda.is_available():
-            torch.cuda.manual_seed_all(seed)
-        model.resize_token_embeddings(new_vocab_size, mean_resizing=True)
-    finally:
-        torch.random.set_rng_state(cpu_rng_state)
-        if cuda_rng_states is not None:
-            torch.cuda.set_rng_state_all(cuda_rng_states)
 
 
 def _default_2b_dir() -> Path:
@@ -118,11 +92,7 @@ def main() -> None:
     print(f"[+] Added {added} tokens; new vocab size = {len(tokenizer)}")
 
     print("[+] Resizing model embeddings...")
-    resize_token_embeddings_deterministically(model, new_vocab_size=len(tokenizer))
-    if added > 0:
-        print(
-            f"[+] Resized with Transformers mean-resizing under fixed seed {TRANSFORMERS_RESIZE_SEED}."
-        )
+    model.resize_token_embeddings(len(tokenizer))
 
     # Qwen3-VL default: tie-head (single shared lookup table for embedding + lm_head).
     # After resizing, force tie_word_embeddings and re-tie weights so new tokens
