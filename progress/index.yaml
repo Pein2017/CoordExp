@@ -19,6 +19,7 @@ groups:
     - progress/directions/stage2_emish_set_supervision_v1.md
   diagnostics:
     - progress/diagnostics/README.md
+    - progress/diagnostics/stage2_birth_first_channel_b_decision_study_2026-04-22.md
     - progress/diagnostics/raw_text_coordinate_mechanism_findings_2026-04-21.md
     - progress/diagnostics/raw_text_decode_bias_mechanism_findings_2026-04-22.md
     - progress/diagnostics/raw_text_coord_continuity_probe_2026-04-20.md
@@ -60,6 +61,11 @@ notes:
     kind: router
     status: canonical
     summary: Router for failure investigations, threshold studies, and operator notes.
+  - path: progress/diagnostics/stage2_birth_first_channel_b_decision_study_2026-04-22.md
+    title: Stage-2 Birth-First Channel-B Decision Study
+    kind: diagnostic-study
+    status: active-reference
+    summary: Decision-facing record of the merged-vLLM operator fix, the paired birth-first versus control small-fraction study, and the current recommendation to tighten birth-first before larger promotion.
   - path: progress/diagnostics/raw_text_coord_continuity_probe_2026-04-20.md
     title: Raw-Text Coordinate Continuity Probe
     kind: diagnostic-study

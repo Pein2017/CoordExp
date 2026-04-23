@@ -22,6 +22,11 @@ Prefer `progress/benchmarks/` when the output is mainly a measured run-vs-run or
 
 ## Current Clusters
 
+- Active Stage-2 birth-first Channel-B decision study
+  - Start with
+    [stage2_birth_first_channel_b_decision_study_2026-04-22.md](stage2_birth_first_channel_b_decision_study_2026-04-22.md)
+    for the merged-vLLM operator fix, the paired small-fraction control versus
+    birth-first result, and the current recommendation.
 - Active Stage-1 raw-text mechanism and coordinate-family investigations
   - Start here for the current raw-text mechanism read:
     [raw_text_coordinate_mechanism_findings_2026-04-21.md](raw_text_coordinate_mechanism_findings_2026-04-21.md)
