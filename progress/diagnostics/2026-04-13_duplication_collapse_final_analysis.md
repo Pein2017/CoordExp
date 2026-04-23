@@ -26,7 +26,7 @@ It also integrates the key conclusions that were derived from:
   soft-CE / W1, and mixed-objective behavior.
 
 The goal of this document is to leave one durable, self-contained analysis
-artifact under `docs/progress/` while keeping the machine-readable runtime
+artifact under `progress/` while keeping the machine-readable runtime
 artifacts in their existing research roots.
 
 ## Runtime Artifact Organization
@@ -85,9 +85,9 @@ that the final synthesis remained consistent with the written study record:
 - `research/duplication_followup/findings_2026-04-13.md`
 - `docs/training/STAGE1_OBJECTIVE.md`
 - `docs/data/CONTRACT.md`
-- `progress/pretrain/stage1_ablation_2026-01-26.md`
-- `progress/benchmarks/stage1_training_dynamics_4b_2026-02-26.md`
-- `progress/benchmarks/stage1_coco80_4b_res_768_vs_1024_2026-02-26.md`
+- `progress/pretrain/2026-01-26_stage1_ablation.md`
+- `progress/benchmarks/2026-02-26_stage1_training_dynamics_4b.md`
+- `progress/benchmarks/2026-02-26_stage1_coco80_4b_res_768_vs_1024.md`
 
 No other study-specific markdown was present in the primary research output
 roots. The rest of the study state lives in JSON, JSONL, manifests, and code.

@@ -8,7 +8,7 @@ references:
   - docs/training/STAGE2_DESIGN.md
   - docs/training/STAGE2_RUNBOOK.md
   - progress/directions/full_idea_v3.md
-  - progress/diagnostics/stage2_ul_capture_highres1024_2026-03-09.md
+  - progress/diagnostics/2026-03-09_stage2_ul_capture_highres1024.md
 ---
 
 # Stage-2 AB COCO1024 Triage-Posterior Train Dynamics Through Step 300 (2026-03-12)
@@ -31,7 +31,7 @@ This note should be read together with:
 
 - the stable v3 design summary in `docs/training/STAGE2_DESIGN.md`,
 - the long-form direction in `progress/directions/full_idea_v3.md`,
-- and the earlier high-res Stage-2 diagnostic in `progress/diagnostics/stage2_ul_capture_highres1024_2026-03-09.md`.
+- and the earlier high-res Stage-2 diagnostic in `progress/diagnostics/2026-03-09_stage2_ul_capture_highres1024.md`.
 
 ---
 

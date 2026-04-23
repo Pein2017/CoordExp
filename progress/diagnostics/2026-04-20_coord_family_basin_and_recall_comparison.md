@@ -6,7 +6,7 @@ owner: codex
 branches:
   - codex/coord-family-comparison
 depends_on:
-  - progress/diagnostics/raw_text_coord_continuity_probe_2026-04-20.md
+  - progress/diagnostics/2026-04-20_raw_text_coord_continuity_probe.md
 ---
 
 # Coordinate Family Basin and Recall Comparison

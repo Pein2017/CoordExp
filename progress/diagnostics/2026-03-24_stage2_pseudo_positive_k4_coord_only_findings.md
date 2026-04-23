@@ -6,8 +6,8 @@ topics: [stage2, channel-b, pseudo-positive, k4, train-dynamics, recall, duplica
 references:
   - docs/PROJECT_CONTEXT.md
   - docs/training/STAGE2_RUNBOOK.md
-  - progress/diagnostics/stage2_triage_posterior_coco1024_train_dynamics_2026-03-12.md
-  - progress/diagnostics/stage2_near_duplication_2026-03-05.md
+  - progress/diagnostics/2026-03-12_stage2_triage_posterior_coco1024_train_dynamics.md
+  - progress/diagnostics/2026-03-05_stage2_near_duplication.md
 ---
 
 # Stage-2 K=4 Pseudo-Positive Findings (Coord-Only, Prefix Structure Disabled) (2026-03-24)

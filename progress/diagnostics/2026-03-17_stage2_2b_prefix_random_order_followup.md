@@ -11,7 +11,7 @@ summary: Follow-up note for the 2B FN investigation after the repaired Hard-16 p
 
 This note extends:
 
-- `progress/diagnostics/stage2_2b_fn_factor_results_2026-03-17.md`
+- `progress/diagnostics/2026-03-17_stage2_2b_fn_factor_results.md`
 
 It tracks two follow-up threads:
 

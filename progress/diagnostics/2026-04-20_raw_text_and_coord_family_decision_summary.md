@@ -1,14 +1,14 @@
 ---
-title: Raw-Text Continuity and Coordinate Family Synthesis
+title: Raw-Text and Coord-Family Decision Summary
 date: 2026-04-20
 status: decision-summary
 owner: codex
 depends_on:
-  - progress/diagnostics/raw_text_coord_continuity_probe_2026-04-20.md
-  - progress/diagnostics/coord_family_basin_and_recall_comparison_2026-04-20.md
+  - progress/diagnostics/2026-04-20_raw_text_coord_continuity_probe.md
+  - progress/diagnostics/2026-04-20_coord_family_basin_and_recall_comparison.md
 ---
 
-# Raw-Text Continuity and Coordinate Family Synthesis
+# Raw-Text and Coord-Family Decision Summary
 
 ## Why This Note Exists
 
@@ -19,7 +19,7 @@ The two super-power studies answered related but different questions:
 2. across available 2B coordinate families, which setups are actually strong,
    stable, and worth pursuing?
 
-This note merges those answers into one decision-oriented historical record.
+This note merges those answers into one decision-oriented supporting summary.
 
 ## Cross-Study Conclusions
 

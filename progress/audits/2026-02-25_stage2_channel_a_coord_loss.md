@@ -130,7 +130,7 @@ Good news for parseability:
 - `coord_diag/coord_vocab_mass_mean` stays extremely high and trends up slightly (~0.9983 → ~0.9998).
 - `loss/coord_gate` drops by ~O(10×), indicating the gate penalty is becoming easier to satisfy.
 
-This is consistent with the earlier diagnosis that coord‑vocab “type leakage” can be a major format/parseability failure mode (see `progress/diagnostics/stage2_channel_a_coord_gate_2026-02-21.md`).
+This is consistent with the earlier diagnosis that coord‑vocab “type leakage” can be a major format/parseability failure mode (see `progress/diagnostics/2026-02-21_stage2_channel_a_coord_gate.md`).
 
 ---
 
@@ -311,5 +311,5 @@ If either A/B suggests that improvements require anchoring A1 directly, that’s
   - `src/trainers/teacher_forcing/modules/token_ce.py` (coord tokens masked out of CE)
   - `src/trainers/teacher_forcing/objective_pipeline.py` (module weighting + logging)
   - Prior related notes:
-    - `progress/diagnostics/stage2_channel_a_coord_gate_2026-02-21.md`
-    - `progress/diagnostics/stage2_softctx_discretization_vs_stage1_bbox_2026-02-22.md`
+    - `progress/diagnostics/2026-02-21_stage2_channel_a_coord_gate.md`
+    - `progress/diagnostics/2026-02-22_stage2_softctx_discretization_vs_stage1_bbox.md`

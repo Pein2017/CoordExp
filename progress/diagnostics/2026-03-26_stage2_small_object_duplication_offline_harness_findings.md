@@ -1,16 +1,16 @@
 ---
-title: Small Object Duplication Offline Findings (Checkpoint 300, Fixed-Checkpoint Study)
+title: Stage-2 Small-Object Duplication Offline Harness Findings (Checkpoint 300, Fixed-Checkpoint Study)
 status: active-diagnostic
 scope: stage2-offline-analysis
 topics: [small-object-duplication, offline-diagnostics, decoding, prefix-dynamics, teacher-forcing]
 references:
-  - progress/diagnostics/small_object_duplication_offline_protocol_2026-03-25.md
-  - progress/diagnostics/stage2_near_duplication_2026-03-05.md
-  - progress/diagnostics/stage2_pseudo_positive_k4_coord_only_findings_2026-03-24.md
+  - progress/diagnostics/2026-03-25_stage2_small_object_duplication_offline_protocol.md
+  - progress/diagnostics/2026-03-05_stage2_near_duplication.md
+  - progress/diagnostics/2026-03-24_stage2_pseudo_positive_k4_coord_only_findings.md
   - src/analysis/small_object_duplication_study.py
 ---
 
-# Small Object Duplication Offline Findings (Checkpoint 300, Fixed-Checkpoint Study) (2026-03-26)
+# Stage-2 Small-Object Duplication Offline Harness Findings (Checkpoint 300, Fixed-Checkpoint Study) (2026-03-26)
 
 Date: 2026-03-26  
 Status note: this note records the completed offline diagnostic study requested for
@@ -70,7 +70,7 @@ Relevant harness implementation:
 - Study module:
   [small_object_duplication_study.py](/data/CoordExp/src/analysis/small_object_duplication_study.py)
 - Protocol note:
-  [small_object_duplication_offline_protocol_2026-03-25.md](/data/CoordExp/progress/diagnostics/small_object_duplication_offline_protocol_2026-03-25.md)
+  [2026-03-25_stage2_small_object_duplication_offline_protocol.md](/data/CoordExp/progress/diagnostics/2026-03-25_stage2_small_object_duplication_offline_protocol.md)
 
 ---
 

@@ -240,7 +240,7 @@ If your goal is “I want to inspect suspicious predictions on images”:
 If your goal is “I want to inspect Stage-2 rollout / monitor failures”:
 
 1. `vis_tools/vis_monitor_dump_gt_vs_pred.py`
-2. `progress/diagnostics/stage2_ul_capture_highres1024_2026-03-09.md`
+2. `progress/diagnostics/2026-03-09_stage2_ul_capture_highres1024.md`
 
 If your goal is “I want side-by-side rollout comparison”:
 

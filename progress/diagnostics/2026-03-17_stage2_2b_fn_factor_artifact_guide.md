@@ -1,13 +1,13 @@
 ---
-title: 2B FN-Factor Artifact Bundle Summary
+title: 2B FN-Factor Artifact Guide
 date: 2026-03-17
 status: complete
 topics: [stage2, 2b, fn-analysis, artifact-summary, review-queue]
-tags: [2b, diagnostics, rollout, fn, hard-subset, artifact-bundle]
-summary: Operator summary of the completed 2B FN-factor artifact bundle after the repaired Hard-16 prefix rerun. This note explains what each artifact is for, which conclusions are stable, and how to read the review queues without confusing them for aggregate result tables.
+tags: [2b, diagnostics, rollout, fn, hard-subset, artifact-guide]
+summary: Operator guide to the completed 2B FN-factor artifact bundle after the repaired Hard-16 prefix rerun. This note explains what each artifact is for, which conclusions are stable, and how to read the review queues without confusing them for aggregate result tables.
 ---
 
-# 2B FN-Factor Artifact Bundle Summary (2026-03-17)
+# 2B FN-Factor Artifact Guide (2026-03-17)
 
 This note compresses the current 2B FN-factor artifact bundle into one operator-facing readout.
 
@@ -18,7 +18,7 @@ Primary artifacts:
 - Hard-32 extension report:
   `output/analysis/rollout-fn-factor-2b-hard32-extension-20260317/report.md`
 - combined result note:
-  `progress/diagnostics/stage2_2b_fn_factor_results_2026-03-17.md`
+  `progress/diagnostics/2026-03-17_stage2_2b_fn_factor_results.md`
 - Hard-16 review queue:
   `output/analysis/rollout-fn-factor-2b-hard16-full-20260317/review_queue.jsonl`
 - Hard-32 review queue:
@@ -74,7 +74,7 @@ It does **not** contain the repaired prefix rerun. So treat it as the true `32`-
 
 Use the combined result note for the current human-readable interpretation:
 
-- `progress/diagnostics/stage2_2b_fn_factor_results_2026-03-17.md`
+- `progress/diagnostics/2026-03-17_stage2_2b_fn_factor_results.md`
 
 That is now the best single file to read if you want the up-to-date argument rather than the raw tables.
 
@@ -249,7 +249,7 @@ So use the recovery summaries for authoritative prefix counts, and the review qu
 
 If you want the shortest path from headline conclusion to artifact inspection:
 
-1. `progress/diagnostics/stage2_2b_fn_factor_results_2026-03-17.md`
+1. `progress/diagnostics/2026-03-17_stage2_2b_fn_factor_results.md`
 2. refreshed Hard-16 `report.md`
 3. Hard-32 extension `report.md`
 4. Hard-16 `recovery/*.summary.json`
@@ -257,4 +257,4 @@ If you want the shortest path from headline conclusion to artifact inspection:
 
 If you want the repair-specific follow-up and the still-pending random-order training ablation state, then continue to:
 
-- `progress/diagnostics/stage2_2b_prefix_random_order_followup_2026-03-17.md`
+- `progress/diagnostics/2026-03-17_stage2_2b_prefix_random_order_followup.md`

@@ -71,9 +71,9 @@ Checkpoint README note:
   - `monitor_dumps/*.json` for sample-level and aggregate rollout evidence
   - `monitor_dumps/vis_step_*/class_summary.json` where available
 - Historical overlap used only for interpretation, not for March 2026 metrics:
-  - `progress/diagnostics/stage2_channel_a_coord_loss_2026-02-25.md`
-  - `progress/diagnostics/stage2_channel_a_visual_audit_2026-02-25.md`
-  - `progress/diagnostics/stage2_softctx_discretization_vs_stage1_bbox_2026-02-22.md`
+  - `progress/diagnostics/2026-02-25_stage2_channel_a_coord_loss.md`
+  - `progress/diagnostics/2026-02-25_stage2_channel_a_visual_audit.md`
+  - `progress/diagnostics/2026-02-22_stage2_softctx_discretization_vs_stage1_bbox.md`
 
 ## 4. Per-Run Evidence
 
@@ -389,9 +389,9 @@ Direct evidence for that read:
   - large semantic-region boxes instead of one box per instance
 
 This aligns with the older historical interpretation in:
-- `stage2_channel_a_coord_loss_2026-02-25.md`
-- `stage2_channel_a_visual_audit_2026-02-25.md`
-- `stage2_softctx_discretization_vs_stage1_bbox_2026-02-22.md`
+- `2026-02-25_stage2_channel_a_coord_loss.md`
+- `2026-02-25_stage2_channel_a_visual_audit.md`
+- `2026-02-22_stage2_softctx_discretization_vs_stage1_bbox.md`
 
 The March random-order runs reproduce that same failure pattern under a different order regime rather than overturning it.
 

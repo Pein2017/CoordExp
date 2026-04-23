@@ -6,7 +6,7 @@ topics: [oracle-k, stochastic-decoding, stage2, channel-b, unlikelihood, truncat
 references:
   - docs/PROJECT_CONTEXT.md
   - docs/eval/WORKFLOW.md
-  - progress/diagnostics/stage2_ul_capture_highres1024_2026-03-09.md
+  - progress/diagnostics/2026-03-09_stage2_ul_capture_highres1024.md
 ---
 
 # Oracle-K on Stage-2 High-Res 1024 Runs (First-200 COCO Val)
@@ -28,7 +28,7 @@ Important naming clarification for this note:
 
 For the two Channel-B-related checkpoints, the training-side background and failure-mode interpretation should be read together with:
 
-- `progress/diagnostics/stage2_ul_capture_highres1024_2026-03-09.md`
+- `progress/diagnostics/2026-03-09_stage2_ul_capture_highres1024.md`
 
 ---
 

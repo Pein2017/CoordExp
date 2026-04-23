@@ -1,4 +1,17 @@
-# Small Object Duplication Offline Protocol (2026-03-25)
+---
+title: Stage-2 Small-Object Duplication Offline Protocol
+date: 2026-03-25
+status: supporting-protocol
+scope: stage2-channel-b
+topics: [stage2, duplication, small-objects, offline-diagnostics, protocol]
+references:
+  - progress/diagnostics/2026-03-26_stage2_small_object_duplication_offline_harness_findings.md
+  - progress/diagnostics/2026-03-26_stage2_small_object_duplication_crowded_deep_dive.md
+  - progress/diagnostics/2026-03-26_stage2_small_object_duplication_offline_synthesis.md
+  - src/analysis/small_object_duplication_study.py
+---
+
+# Stage-2 Small-Object Duplication Offline Protocol (2026-03-25)
 
 ## Goal
 

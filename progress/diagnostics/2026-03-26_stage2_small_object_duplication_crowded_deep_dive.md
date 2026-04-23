@@ -1,15 +1,15 @@
 ---
-title: Stage-2 Small-Object Duplication Offline Diagnostics
+title: Stage-2 Small-Object Duplication Crowded Deep-Dive
 status: active-diagnostic
 scope: stage2-channel-b
 topics: [stage2, duplication, small-objects, offline-diagnostics, decoding]
 references:
   - docs/PROJECT_CONTEXT.md
-  - progress/diagnostics/stage2_near_duplication_2026-03-05.md
-  - progress/diagnostics/stage2_ul_capture_highres1024_2026-03-09.md
+  - progress/diagnostics/2026-03-05_stage2_near_duplication.md
+  - progress/diagnostics/2026-03-09_stage2_ul_capture_highres1024.md
 ---
 
-# Stage-2 Small-Object Duplication Offline Diagnostics (2026-03-26)
+# Stage-2 Small-Object Duplication Crowded Deep-Dive (2026-03-26)
 
 Date: 2026-03-26  
 Authoring context: fixed-checkpoint offline diagnostics in isolated worktree  

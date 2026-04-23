@@ -3,16 +3,15 @@ title: Full Idea v3
 status: proposal
 scope: stage2-channel-b
 topics: [stage2, channel-b, k2-rollout, recoverability, unlabeled, triage-posterior]
-supersedes: progress/full_idea_v2.md
+supersedes: progress/directions/stage2_clean_prefix_v2.md
 references:
   - docs/PROJECT_CONTEXT.md
   - docs/training/STAGE2_RUNBOOK.md
   - openspec/specs/stage2-ab-training/spec.md
-  - progress/full_idea_v2.md
-  - progress/full_idea_v2_draft.md
-  - progress/diagnostics/stage2_ab_near_duplication_diagnosis_2026-03-05.md
-  - progress/diagnostics/stage2_ul_capture_highres1024_2026-03-09.md
-  - progress/benchmarks/stage2_oracle_k_first200_2026-03-11.md
+  - progress/directions/stage2_clean_prefix_v2.md
+  - progress/diagnostics/2026-03-05_stage2_near_duplication.md
+  - progress/diagnostics/2026-03-09_stage2_ul_capture_highres1024.md
+  - progress/benchmarks/2026-03-11_stage2_oracle_k_first200.md
 ---
 
 # CoordExp v3: K=2 Triage-Posterior Training for V-LLM Detection

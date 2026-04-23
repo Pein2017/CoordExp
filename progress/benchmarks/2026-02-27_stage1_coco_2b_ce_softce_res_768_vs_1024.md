@@ -16,7 +16,7 @@ This note records measured detection metrics for the **2B** stage-1 mixed object
 - `rescale_32_1024_bbox_max60`
 
 Reference style/precedent:
-- `progress/benchmarks/stage1_coco80_4b_res_768_vs_1024_2026-02-26.md`
+- `progress/benchmarks/2026-02-26_stage1_coco80_4b_res_768_vs_1024.md`
 
 ## 0) Checkpoint + eval mapping
 

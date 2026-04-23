@@ -22,8 +22,8 @@ Status note:
 This note records an important diagnosis from Stage-2 AB Channel-A-only experiments (COCO bbox max60, COCO-80 prompt variant), focusing on rollout degradation modes and why a continuous self-context expectation update can diverge from real (discrete) rollout behavior.
 
 Related docs:
-- `progress/diagnostics/stage2_channel_a_coord_gate_2026-02-21.md` (coord gate loss + em_detach CE-grad bug fix)
-- `progress/benchmarks/stage2_channel_a_infer_eval_2026-02-01.md` (earlier infer/eval notes on repetition_penalty)
+- `progress/diagnostics/2026-02-21_stage2_channel_a_coord_gate.md` (coord gate loss + em_detach CE-grad bug fix)
+- `progress/benchmarks/2026-02-01_stage2_channel_a_infer_eval.md` (earlier infer/eval notes on repetition_penalty)
 
 
 ## Executive Summary

@@ -6,7 +6,7 @@ status: canonical
 domain: research-history
 summary: Router for measured run comparisons, checkpoint selection notes, and evaluation sweeps.
 tags: [progress, benchmarks, evaluation]
-updated: 2026-04-21
+updated: 2026-04-23
 ---
 
 # Benchmarks Index
@@ -22,19 +22,22 @@ Typical fits:
 
 Prefer `progress/diagnostics/` when the main question is root cause or failure analysis.
 
+Family-specific score audits can stay in `progress/diagnostics/` when the main
+point is failure-mode interpretation rather than a final run-vs-run benchmark.
+
 ## Current Clusters
 
 - Stage-1 detection result reports
-  - [stage1_raw_text_vs_coord_token_repetition_penalty_sweep_2026-04-23.md](stage1_raw_text_vs_coord_token_repetition_penalty_sweep_2026-04-23.md)
-  - [stage1_coco80_4b_res_768_vs_1024_2026-02-26.md](stage1_coco80_4b_res_768_vs_1024_2026-02-26.md)
-  - [stage1_coco80_temp0_compare_2026-02-26.md](stage1_coco80_temp0_compare_2026-02-26.md)
-  - [stage1_coco_2b_ce_softce_res_768_vs_1024_2026-02-27.md](stage1_coco_2b_ce_softce_res_768_vs_1024_2026-02-27.md)
-  - [stage1_training_dynamics_4b_2026-02-26.md](stage1_training_dynamics_4b_2026-02-26.md)
-  - [mixed_objective_sota_checkpoint_probe_2026-04-21.md](mixed_objective_sota_checkpoint_probe_2026-04-21.md)
+  - [2026-04-23_stage1_raw_text_vs_coord_token_repetition_penalty_sweep.md](2026-04-23_stage1_raw_text_vs_coord_token_repetition_penalty_sweep.md)
+  - [2026-02-26_stage1_coco80_4b_res_768_vs_1024.md](2026-02-26_stage1_coco80_4b_res_768_vs_1024.md)
+  - [2026-02-26_stage1_coco80_temp0_compare.md](2026-02-26_stage1_coco80_temp0_compare.md)
+  - [2026-02-27_stage1_coco_2b_ce_softce_res_768_vs_1024.md](2026-02-27_stage1_coco_2b_ce_softce_res_768_vs_1024.md)
+  - [2026-02-26_stage1_training_dynamics_4b.md](2026-02-26_stage1_training_dynamics_4b.md)
+  - [2026-04-21_mixed_objective_sota_checkpoint_probe.md](2026-04-21_mixed_objective_sota_checkpoint_probe.md)
 - Stage-2 evaluation and selection notes
-  - [stage2_channel_a_infer_eval_2026-02-01.md](stage2_channel_a_infer_eval_2026-02-01.md)
-  - [stage2_oracle_k_first200_2026-03-11.md](stage2_oracle_k_first200_2026-03-11.md)
-  - [stage2_rollout_temperature_refinement_2026-03-11.md](stage2_rollout_temperature_refinement_2026-03-11.md)
+  - [2026-02-01_stage2_channel_a_infer_eval.md](2026-02-01_stage2_channel_a_infer_eval.md)
+  - [2026-03-11_stage2_oracle_k_first200.md](2026-03-11_stage2_oracle_k_first200.md)
+  - [2026-03-11_stage2_rollout_temperature_refinement.md](2026-03-11_stage2_rollout_temperature_refinement.md)
 
 ## COCO Official Results
 

@@ -241,8 +241,8 @@ The updated 2B FN-factor story is now:
 
 If you want the operator-oriented artifact summary next, read:
 
-- `progress/diagnostics/stage2_2b_fn_factor_artifact_bundle_2026-03-17.md`
+- `progress/diagnostics/2026-03-17_stage2_2b_fn_factor_artifact_guide.md`
 
 If you want the repair and pending random-order follow-up state, read:
 
-- `progress/diagnostics/stage2_2b_prefix_random_order_followup_2026-03-17.md`
+- `progress/diagnostics/2026-03-17_stage2_2b_prefix_random_order_followup.md`

@@ -4,11 +4,11 @@ status: consolidated-final
 scope: stage2-channel-b
 topics: [stage2, duplication, small-objects, offline-diagnostics, decoding, prefix-dynamics, teacher-forcing]
 references:
-  - progress/diagnostics/stage2_near_duplication_2026-03-05.md
-  - progress/diagnostics/stage2_pseudo_positive_k4_coord_only_findings_2026-03-24.md
-  - progress/diagnostics/small_object_duplication_offline_protocol_2026-03-25.md
-  - progress/diagnostics/small_object_duplication_offline_findings_2026-03-26.md
-  - progress/diagnostics/stage2_small_object_duplication_offline_diagnostics_2026-03-26.md
+  - progress/diagnostics/2026-03-05_stage2_near_duplication.md
+  - progress/diagnostics/2026-03-24_stage2_pseudo_positive_k4_coord_only_findings.md
+  - progress/diagnostics/2026-03-25_stage2_small_object_duplication_offline_protocol.md
+  - progress/diagnostics/2026-03-26_stage2_small_object_duplication_offline_harness_findings.md
+  - progress/diagnostics/2026-03-26_stage2_small_object_duplication_crowded_deep_dive.md
 ---
 
 # Stage-2 Small-Object Duplication Offline Diagnostics Synthesis (2026-03-26)
@@ -29,9 +29,9 @@ The short version is:
 ### Experiment A: broad fixed-checkpoint harness (`small-object-duplication-offline-diagnostics`)
 
 - Protocol note:
-  `progress/diagnostics/small_object_duplication_offline_protocol_2026-03-25.md`
+  `progress/diagnostics/2026-03-25_stage2_small_object_duplication_offline_protocol.md`
 - Findings note:
-  `progress/diagnostics/small_object_duplication_offline_findings_2026-03-26.md`
+  `progress/diagnostics/2026-03-26_stage2_small_object_duplication_offline_harness_findings.md`
 - Config: `configs/analysis/small_object_duplication/default.yaml`
 - Artifact root: `output/analysis/small-object-duplication-ckpt300-offline/`
 - Scope: `43` monitor-dump samples, `12` mined duplication cases, `8` crowded controls, decode temperatures `{0.0, 0.01, 0.05, 0.1, 0.2}`, one-object prefix probes, and teacher-forced candidate scoring.
@@ -39,7 +39,7 @@ The short version is:
 ### Experiment B: crowded subset deep-dive (`duplication-offline-diagnostics-cuda1`)
 
 - Findings note:
-  `progress/diagnostics/stage2_small_object_duplication_offline_diagnostics_2026-03-26.md`
+  `progress/diagnostics/2026-03-26_stage2_small_object_duplication_crowded_deep_dive.md`
 - Config: `configs/analysis/small_object_duplication_diagnostics/ckpt300_crowded_cuda1.yaml`
 - Original trustworthy artifact root:
   `output/analysis/ckpt300_crowded_cuda1_v2_bboxfix/`

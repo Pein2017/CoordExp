@@ -1,5 +1,5 @@
 ---
-title: 2B COCO1024 Channel-A-Only Similarity, FN Hypotheses, and Prefix-Sensitivity Plan
+title: 2B Stage-1 vs A-Only Prefix/FN Hypotheses Plan
 status: active-diagnostic
 scope: stage2-channel-a
 topics: [stage2, 2b, channel-a, stage1-vs-stage2, fn-analysis, prefix, rollout-ordering]
@@ -7,13 +7,13 @@ references:
   - docs/PROJECT_CONTEXT.md
   - docs/SYSTEM_OVERVIEW.md
   - docs/data/CONTRACT.md
-  - progress/diagnostics/stage2_ul_capture_highres1024_2026-03-09.md
-  - progress/diagnostics/stage2_triage_posterior_coco1024_train_dynamics_2026-03-12.md
-  - progress/diagnostics/stage2_channel_a_visual_audit_2026-02-25.md
-  - progress/diagnostics/stage2_softctx_discretization_vs_stage1_bbox_2026-02-22.md
+  - progress/diagnostics/2026-03-09_stage2_ul_capture_highres1024.md
+  - progress/diagnostics/2026-03-12_stage2_triage_posterior_coco1024_train_dynamics.md
+  - progress/diagnostics/2026-02-25_stage2_channel_a_visual_audit.md
+  - progress/diagnostics/2026-02-22_stage2_softctx_discretization_vs_stage1_bbox.md
 ---
 
-# 2B COCO1024 Channel-A-Only Similarity, FN Hypotheses, and Prefix-Sensitivity Plan (2026-03-16)
+# 2B Stage-1 vs A-Only Prefix/FN Hypotheses Plan (2026-03-16)
 
 Date: 2026-03-16  
 Status note: this note records a focused qualitative + subset-based comparison between the 2B Stage-1 checkpoint and the early high-res 2B Channel-A-only continuation, then proposes a concrete experiment plan for investigating prefix sensitivity and persistent FN behavior.
@@ -32,9 +32,9 @@ The short version is:
 
 This note should be read together with:
 
-- `progress/diagnostics/stage2_ul_capture_highres1024_2026-03-09.md`
-- `progress/diagnostics/stage2_triage_posterior_coco1024_train_dynamics_2026-03-12.md`
-- `progress/diagnostics/stage2_channel_a_visual_audit_2026-02-25.md`
+- `progress/diagnostics/2026-03-09_stage2_ul_capture_highres1024.md`
+- `progress/diagnostics/2026-03-12_stage2_triage_posterior_coco1024_train_dynamics.md`
+- `progress/diagnostics/2026-02-25_stage2_channel_a_visual_audit.md`
 
 ---
 

@@ -4,7 +4,7 @@ date: 2026-04-22
 status: active-diagnostic
 owner: codex
 depends_on:
-  - progress/diagnostics/raw_text_coordinate_mechanism_findings_2026-04-21.md
+  - progress/diagnostics/2026-04-21_raw_text_coordinate_mechanism_findings.md
   - output/analysis/raw-text-decode-bias-laneb-val200-bs4-fanout8/report/summary.json
   - output/analysis/raw-text-decode-bias-counterfactual-val200-bs4/report/summary.json
   - output/analysis/raw-text-decode-bias-dense-repeat12-rp-bs4/report/summary.json

@@ -445,7 +445,7 @@ not a fixed “recommended default”.
 
 Practical tuning signals (non-exhaustive):
 - If set-level errors dominate (missed objects, extra objects, ordering/format issues), higher `b_ratio` usually helps because Channel-B directly trains on rollout prefixes + matching.
-- If training shows strong "near-duplication" pressure (same `desc` repeated many times with near-identical boxes), `b_ratio` interacts with how often the model is exposed to self-generated prefixes; see `progress/diagnostics/stage2_near_duplication_2026-03-05.md` for a concrete observed failure mode to watch for.
+- If training shows strong "near-duplication" pressure (same `desc` repeated many times with near-identical boxes), `b_ratio` interacts with how often the model is exposed to self-generated prefixes; see `progress/diagnostics/2026-03-05_stage2_near_duplication.md` for a concrete observed failure mode to watch for.
 - If throughput / queue availability is limiting (actor cannot keep up), `b_ratio` should be chosen to avoid implicit fallback behavior; prefer strict fail-fast semantics to keep `ρ_hat` well-defined (Section 6.1.1).
 
 Rationale:

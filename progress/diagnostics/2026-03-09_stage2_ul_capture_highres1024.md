@@ -7,7 +7,7 @@ references:
   - docs/PROJECT_CONTEXT.md
   - docs/training/STAGE2_DESIGN.md
   - progress/directions/stage2_clean_prefix_v2.md
-  - progress/diagnostics/stage2_near_duplication_2026-03-05.md
+  - progress/diagnostics/2026-03-05_stage2_near_duplication.md
 ---
 
 # Stage-2 AB Continuation @ ~1024px: UL Capture Baseline and Post-Fix Rerun (2026-03-09/10)
@@ -32,7 +32,7 @@ That is the exact failure mode where an overly aggressive duplicate cleaner / hi
 
 Related notes:
 
-- prior duplicate-heavy baseline and tail-instability context: `progress/diagnostics/stage2_near_duplication_2026-03-05.md`
+- prior duplicate-heavy baseline and tail-instability context: `progress/diagnostics/2026-03-05_stage2_near_duplication.md`
 - current design intent: `docs/training/STAGE2_DESIGN.md`
 - clean-prefix v2 direction: `progress/directions/stage2_clean_prefix_v2.md`
 

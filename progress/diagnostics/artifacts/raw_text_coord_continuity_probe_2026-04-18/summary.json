@@ -15,8 +15,8 @@
     "heatmap_base_dir": "/data/CoordExp/output/analysis/raw-text-heatmap-base-mined-top2",
     "heatmap_pure_dir": "/data/CoordExp/output/analysis/raw-text-heatmap-pure-mined-top3",
     "diagnosis_docs": [
-      "/data/CoordExp/progress/diagnostics/stage1_coord_basin_duplication_mechanism_2026-04-11.md",
-      "/data/CoordExp/progress/diagnostics/duplication_collapse_final_analysis_2026-04-13.md"
+      "/data/CoordExp/progress/diagnostics/2026-04-11_stage1_coord_basin_duplication_mechanism.md",
+      "/data/CoordExp/progress/diagnostics/2026-04-13_duplication_collapse_final_analysis.md"
     ]
   },
   "audit": {

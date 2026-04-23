@@ -16,7 +16,7 @@ Note: referenced run artifacts may be pruned; paths are best-effort pointers.
 
 This note analyzes *training-time dynamics* (teacher-forcing metrics) for three **4B-sized** stage-1 runs whose merged checkpoints were evaluated in:
 
-- [progress/benchmarks/stage1_coco80_4b_res_768_vs_1024_2026-02-26.md](stage1_coco80_4b_res_768_vs_1024_2026-02-26.md)
+- [progress/benchmarks/2026-02-26_stage1_coco80_4b_res_768_vs_1024.md](2026-02-26_stage1_coco80_4b_res_768_vs_1024.md)
 
 The question: why do these checkpoints differ so much on COCO80 detection metrics, even though many training scalars look broadly similar?
 

@@ -204,11 +204,11 @@ The practical recommendation is:
 
 This note extends, but does not replace, the earlier coord-family comparison and synthesis work:
 
-- [coord_family_basin_and_recall_comparison_2026-04-20.md](/data/CoordExp/progress/diagnostics/coord_family_basin_and_recall_comparison_2026-04-20.md)
-- [raw_text_continuity_and_coord_family_synthesis_2026-04-20.md](/data/CoordExp/progress/diagnostics/raw_text_continuity_and_coord_family_synthesis_2026-04-20.md)
+- [2026-04-20_coord_family_basin_and_recall_comparison.md](/data/CoordExp/progress/diagnostics/2026-04-20_coord_family_basin_and_recall_comparison.md)
+- [2026-04-20_raw_text_and_coord_family_decision_summary.md](/data/CoordExp/progress/diagnostics/2026-04-20_raw_text_and_coord_family_decision_summary.md)
 
 It also updates the practical meaning of the older benchmark note:
 
-- [stage1_coco_2b_ce_softce_res_768_vs_1024_2026-02-27.md](/data/CoordExp/progress/benchmarks/stage1_coco_2b_ce_softce_res_768_vs_1024_2026-02-27.md)
+- [2026-02-27_stage1_coco_2b_ce_softce_res_768_vs_1024.md](/data/CoordExp/progress/benchmarks/2026-02-27_stage1_coco_2b_ce_softce_res_768_vs_1024.md)
 
 That older benchmark established the family as promising. This probe shows that the new adapter checkpoint is not only promising on AP, but also stable enough to deserve ongoing diagnostic attention.

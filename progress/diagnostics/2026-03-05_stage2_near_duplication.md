@@ -24,8 +24,8 @@ Update scope for 2026-03-06:
 
 Related notes:
 - Design intent / algorithm: `docs/training/STAGE2_DESIGN.md` and `progress/directions/stage2_clean_prefix_v2.md`
-- Prior failure mode summary (B-hot + length growth): `progress/diagnostics/stage2_b_ratio_085_instability_2026-02-17.md`
-- Visual duplication analysis patterns (crowded books/people): `progress/diagnostics/stage2_channel_a_visual_audit_2026-02-25.md`
+- Prior failure mode summary (B-hot + length growth): `progress/diagnostics/2026-02-17_stage2_b_ratio_085_instability.md`
+- Visual duplication analysis patterns (crowded books/people): `progress/diagnostics/2026-02-25_stage2_channel_a_visual_audit.md`
 
 ---
 
