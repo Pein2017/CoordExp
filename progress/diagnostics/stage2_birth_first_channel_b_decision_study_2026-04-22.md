@@ -1,16 +1,16 @@
 ---
 title: Stage-2 Birth-First Channel-B Decision Study
 date: 2026-04-22
-status: active-reference
+status: consolidated-final
 owner: codex
 depends_on:
-  - .worktrees/birth-first-stage2-channel-b/openspec/changes/birth-first-stage2-channel-b/design.md
-  - .worktrees/birth-first-stage2-channel-b/docs/superpowers/specs/2026-04-22-birth-first-stage2-channel-b-design.md
-  - .worktrees/birth-first-stage2-channel-b/output/stage2_ab/smoke/birth_first_k2_control_vllm_bonly_1step_merged1332/smoke_1step-birth_first_k2_control-vllm-bonly-merged1332/v0-20260422-132453/logging.jsonl
-  - .worktrees/birth-first-stage2-channel-b/output/stage2_ab/smoke/birth_first_k2_enabled_vllm_smallfrac_merged1332/smallfrac_8steps-birth_first_k2_enabled-vllm-merged1332/v0-20260422-133522/logging.jsonl
-  - .worktrees/birth-first-stage2-channel-b/output/stage2_ab/smoke/birth_first_k2_control_vllm_smallfrac_merged1332/smallfrac_8steps-birth_first_k2_control-vllm-merged1332/v0-20260422-134034/logging.jsonl
-  - .worktrees/birth-first-stage2-channel-b/temp/birth_first_smallfrac_runs/2026-04-22/enabled_vllm_smallfrac_merged1332_0123.log
-  - .worktrees/birth-first-stage2-channel-b/temp/birth_first_smallfrac_runs/2026-04-22/control_vllm_smallfrac_merged1332_4567.log
+  - openspec/changes/birth-first-stage2-channel-b/design.md
+  - docs/superpowers/specs/2026-04-22-birth-first-stage2-channel-b-design.md
+  - progress/diagnostics/artifacts/stage2_birth_first_channel_b_decision_study_2026-04-22/control_vllm_bonly_merged1332_logging.jsonl
+  - progress/diagnostics/artifacts/stage2_birth_first_channel_b_decision_study_2026-04-22/enabled_smallfrac_logging.jsonl
+  - progress/diagnostics/artifacts/stage2_birth_first_channel_b_decision_study_2026-04-22/control_smallfrac_logging.jsonl
+  - progress/diagnostics/artifacts/stage2_birth_first_channel_b_decision_study_2026-04-22/enabled_smallfrac_launch.log
+  - progress/diagnostics/artifacts/stage2_birth_first_channel_b_decision_study_2026-04-22/control_smallfrac_launch.log
 ---
 
 # Stage-2 Birth-First Channel-B Decision Study
@@ -42,7 +42,7 @@ The whole study was intentionally pinned to one checkpoint family:
 The vLLM server-side study surface was converted to a merged full model through:
 
 - merge script:
-  `/data/CoordExp/.worktrees/birth-first-stage2-channel-b/scripts/merge_coord.sh`
+  `/data/CoordExp/scripts/merge_coord.sh`
 - merged checkpoint:
   `/data/CoordExp/output_remote/stage1_2b/coco_bbox_max60-hard_ce_soft_ce_w1_gate/epoch_4-from-base-2B/v0-20260227-050057/checkpoint-1332-merged-full`
 
@@ -58,28 +58,36 @@ The intended algorithmic change under test stayed narrow:
 ### Spec / design surface
 
 - OpenSpec design:
-  `/data/CoordExp/.worktrees/birth-first-stage2-channel-b/openspec/changes/birth-first-stage2-channel-b/design.md`
+  `/data/CoordExp/openspec/changes/birth-first-stage2-channel-b/design.md`
 - superpower design note:
-  `/data/CoordExp/.worktrees/birth-first-stage2-channel-b/docs/superpowers/specs/2026-04-22-birth-first-stage2-channel-b-design.md`
+  `/data/CoordExp/docs/superpowers/specs/2026-04-22-birth-first-stage2-channel-b-design.md`
+
+### Stable evidence bundle
+
+The original runs lived in a transient worktree. The durable evidence copied
+into the main repo for this note is:
+
+- bundle root:
+  `/data/CoordExp/progress/diagnostics/artifacts/stage2_birth_first_channel_b_decision_study_2026-04-22/`
 
 ### Operator validation surface
 
 - merged-model B-only vLLM smoke:
-  `/data/CoordExp/.worktrees/birth-first-stage2-channel-b/output/stage2_ab/smoke/birth_first_k2_control_vllm_bonly_1step_merged1332/smoke_1step-birth_first_k2_control-vllm-bonly-merged1332/v0-20260422-132453`
+  `/data/CoordExp/progress/diagnostics/artifacts/stage2_birth_first_channel_b_decision_study_2026-04-22/control_vllm_bonly_merged1332_logging.jsonl`
 
 ### Paired decision study
 
 - enabled run:
-  `/data/CoordExp/.worktrees/birth-first-stage2-channel-b/output/stage2_ab/smoke/birth_first_k2_enabled_vllm_smallfrac_merged1332/smallfrac_8steps-birth_first_k2_enabled-vllm-merged1332/v0-20260422-133522`
+  `/data/CoordExp/progress/diagnostics/artifacts/stage2_birth_first_channel_b_decision_study_2026-04-22/enabled_smallfrac_logging.jsonl`
 - control run:
-  `/data/CoordExp/.worktrees/birth-first-stage2-channel-b/output/stage2_ab/smoke/birth_first_k2_control_vllm_smallfrac_merged1332/smallfrac_8steps-birth_first_k2_control-vllm-merged1332/v0-20260422-134034`
+  `/data/CoordExp/progress/diagnostics/artifacts/stage2_birth_first_channel_b_decision_study_2026-04-22/control_smallfrac_logging.jsonl`
 
 ### Paired launch logs
 
 - enabled:
-  `/data/CoordExp/.worktrees/birth-first-stage2-channel-b/temp/birth_first_smallfrac_runs/2026-04-22/enabled_vllm_smallfrac_merged1332_0123.log`
+  `/data/CoordExp/progress/diagnostics/artifacts/stage2_birth_first_channel_b_decision_study_2026-04-22/enabled_smallfrac_launch.log`
 - control:
-  `/data/CoordExp/.worktrees/birth-first-stage2-channel-b/temp/birth_first_smallfrac_runs/2026-04-22/control_vllm_smallfrac_merged1332_4567.log`
+  `/data/CoordExp/progress/diagnostics/artifacts/stage2_birth_first_channel_b_decision_study_2026-04-22/control_smallfrac_launch.log`
 
 ## Main Reliable Results
 

@@ -1,0 +1,1077 @@
+[INFO:swift] Successfully registered `/data/ms-swift/swift/llm/dataset/data/dataset_info.json`.
+[INFO] ========================================================================
+[INFO] [PRECHECK] Validating JSONL contracts + offline_max_pixels before launching GPUs
+[INFO] ========================================================================
+[INFO] [PRECHECK] train_jsonl: /data/CoordExp/public_data/coco/rescale_32_1024_bbox_max60/train.coord.jsonl
+[INFO] [PRECHECK] val_jsonl: /data/CoordExp/public_data/coco/rescale_32_1024_bbox_max60/val.coord.jsonl
+[INFO] [PRECHECK] offline_max_pixels: 1048576
+[INFO] [PRECHECK] template.max_pixels(runtime): 1048576
+[INFO] [PRECHECK] multiple_of: 32
+[INFO] ========================================================================
+[INFO:swift] Successfully registered `/data/ms-swift/swift/llm/dataset/data/dataset_info.json`.
+Validating: /data/CoordExp/public_data/coco/rescale_32_1024_bbox_max60/train.coord.jsonl
+============================================================
+
+============================================================
+Validation Results
+============================================================
+
+✓ Statistics:
+  Total lines: 117247
+  Structurally valid samples: 117247
+  Valid samples: 117247
+  Total objects: 848656
+  max_pixels violations: 0
+  multiple_of violations: 0
+  Image check mode: exists
+  Image spot-check count: 117247
+  Missing images: 0
+  Image open failures: 0
+  Image size mismatches: 0
+  Invalid bboxes: 0
+  Invalid polys: 0
+  Unique categories: 80
+  Avg objects/sample: 7.24
+
+✓ No errors found
+
+============================================================
+✓ VALIDATION PASSED
+============================================================
+
+[INFO:swift] Successfully registered `/data/ms-swift/swift/llm/dataset/data/dataset_info.json`.
+Validating: /data/CoordExp/public_data/coco/rescale_32_1024_bbox_max60/train.coord.jsonl
+============================================================
+
+============================================================
+Validation Results
+============================================================
+
+✓ Statistics:
+  Total lines: 117247
+  Structurally valid samples: 117247
+  Valid samples: 117247
+  Total objects: 848656
+  max_pixels violations: 0
+  multiple_of violations: 0
+  Image check mode: open
+  Image spot-check count: 256
+  Missing images: 0
+  Image open failures: 0
+  Image size mismatches: 0
+  Invalid bboxes: 0
+  Invalid polys: 0
+  Unique categories: 80
+  Avg objects/sample: 7.24
+
+✓ No errors found
+
+============================================================
+✓ VALIDATION PASSED
+============================================================
+
+[INFO:swift] Successfully registered `/data/ms-swift/swift/llm/dataset/data/dataset_info.json`.
+Validating: /data/CoordExp/public_data/coco/rescale_32_1024_bbox_max60/val.coord.jsonl
+============================================================
+
+============================================================
+Validation Results
+============================================================
+
+✓ Statistics:
+  Total lines: 4951
+  Structurally valid samples: 4951
+  Valid samples: 4951
+  Total objects: 36273
+  max_pixels violations: 0
+  multiple_of violations: 0
+  Image check mode: open
+  Image spot-check count: 4951
+  Missing images: 0
+  Image open failures: 0
+  Image size mismatches: 0
+  Invalid bboxes: 0
+  Invalid polys: 0
+  Unique categories: 80
+  Avg objects/sample: 7.33
+
+✓ No errors found
+
+============================================================
+✓ VALIDATION PASSED
+============================================================
+
+[INFO] ========================================================================
+[INFO]   Stage-2 AB vLLM Server + Learner Launcher (Python)
+[INFO] ========================================================================
+[INFO] [INFO] Config:      /data/CoordExp/.worktrees/birth-first-stage2-channel-b/configs/stage2_two_channel/smoke/birth_first_k2_control_vllm_smallfrac_merged1332.yaml
+[INFO] [INFO] Server GPUs: 4,5,6 (dp=3, tp=1)
+[INFO] [INFO] Train GPUs:  7 (world_size=1)
+[INFO] [INFO] Server:      127.0.0.1:8000
+[INFO] [INFO] Model:       /data/CoordExp/output_remote/stage1_2b/coco_bbox_max60-hard_ce_soft_ce_w1_gate/epoch_4-from-base-2B/v0-20260227-050057/checkpoint-1332-merged-full
+[INFO] [INFO] ROOT_IMAGE_DIR: /data/CoordExp/public_data/coco/rescale_32_1024_bbox_max60
+[INFO] [INFO] torch_dtype: bfloat16
+[INFO] [INFO] eager:       True
+[INFO] [INFO] max_model_len:14000
+[INFO] [INFO] enable_lora: False (full-sync-only; adapter sync unsupported)
+[INFO] [INFO] vllm_engine_kwargs: {"mm_processor_kwargs": {"do_resize": false}}
+[INFO] [INFO] nccl_monitor:1 heartbeat_s:120 dump_on_timeout:1
+[INFO] ========================================================================
+[INFO] [RUN] (cwd=/data/CoordExp/.worktrees/birth-first-stage2-channel-b) CUDA_VISIBLE_DEVICES=4,5,6 swift rollout --model /data/CoordExp/output_remote/stage1_2b/coco_bbox_max60-hard_ce_soft_ce_w1_gate/epoch_4-from-base-2B/v0-20260227-050057/checkpoint-1332-merged-full --host 127.0.0.1 --port 8000 --infer_backend vllm --torch_dtype bfloat16 --vllm_data_parallel_size 3 --vllm_tensor_parallel_size 1 --vllm_enforce_eager true --vllm_gpu_memory_utilization 0.9 --vllm_max_model_len 14000 --vllm_enable_lora false --template qwen3_vl --max_length 14000 --truncation_strategy delete --max_pixels 1048576 --vllm_engine_kwargs '{"mm_processor_kwargs":{"do_resize":false}}'
+[INFO] Waiting for vLLM server readiness: http://127.0.0.1:8000/health/
+run sh: `/root/miniconda3/envs/ms/bin/python3.12 /data/ms-swift/swift/cli/rollout.py --model /data/CoordExp/output_remote/stage1_2b/coco_bbox_max60-hard_ce_soft_ce_w1_gate/epoch_4-from-base-2B/v0-20260227-050057/checkpoint-1332-merged-full --host 127.0.0.1 --port 8000 --infer_backend vllm --torch_dtype bfloat16 --vllm_data_parallel_size 3 --vllm_tensor_parallel_size 1 --vllm_enforce_eager true --vllm_gpu_memory_utilization 0.9 --vllm_max_model_len 14000 --vllm_enable_lora false --template qwen3_vl --max_length 14000 --truncation_strategy delete --max_pixels 1048576 --vllm_engine_kwargs {"mm_processor_kwargs":{"do_resize":false}}`
+INFO 04-22 13:39:52 [__init__.py:216] Automatically detected platform cuda.
+[INFO:swift] Successfully registered `/data/ms-swift/swift/llm/dataset/data/dataset_info.json`.
+[INFO:swift] rank: -1, local_rank: -1, world_size: 1, local_world_size: 1
+`torch_dtype` is deprecated! Use `dtype` instead!
+[INFO:swift] Setting model_type: qwen3_vl
+[INFO:swift] Setting args.lazy_tokenize: True
+[INFO:swift] args.result_path: /data/CoordExp/.worktrees/birth-first-stage2-channel-b/result/checkpoint-1332-merged-full/deploy_result/20260422-133955.jsonl
+[INFO:swift] Global seed set to 42
+[INFO:swift] args: RolloutArguments(use_ray=False, ray_exp_name=None, device_groups=None, model='/data/CoordExp/output_remote/stage1_2b/coco_bbox_max60-hard_ce_soft_ce_w1_gate/epoch_4-from-base-2B/v0-20260227-050057/checkpoint-1332-merged-full', model_type='qwen3_vl', model_revision=None, task_type='causal_lm', torch_dtype=torch.bfloat16, attn_impl=None, new_special_tokens=[], num_labels=None, problem_type=None, rope_scaling=None, device_map=None, max_memory={}, max_model_len=None, local_repo_path=None, init_strategy=None, template='qwen3_vl', system=None, max_length=14000, truncation_strategy='delete', max_pixels=1048576, agent_template=None, norm_bbox=None, use_chat_template=True, padding_free=False, padding_side='right', loss_scale='default', sequence_parallel_size=1, response_prefix=None, template_backend='swift', dataset=[], val_dataset=[], split_dataset_ratio=0.0, data_seed=42, dataset_num_proc=1, load_from_cache_file=False, dataset_shuffle=True, val_dataset_shuffle=False, streaming=False, interleave_prob=None, stopping_strategy='first_exhausted', shuffle_buffer_size=1000, download_mode='reuse_dataset_if_exists', columns={}, strict=False, remove_unused_columns=True, model_name=None, model_author=None, custom_dataset_info=[], quant_method=None, quant_bits=None, hqq_axis=None, bnb_4bit_compute_dtype=torch.bfloat16, bnb_4bit_quant_type='nf4', bnb_4bit_use_double_quant=True, bnb_4bit_quant_storage=None, max_new_tokens=None, temperature=None, top_k=None, top_p=None, repetition_penalty=None, num_beams=1, stream=False, stop_words=[], logprobs=False, top_logprobs=None, ckpt_dir=None, lora_modules=[], tuner_backend='peft', train_type='lora', adapters=[], external_plugins=[], seed=42, model_kwargs={}, load_args=True, load_data_args=False, packing=False, packing_length=None, lazy_tokenize=True, cached_dataset=[], custom_register_path=[], use_hf=False, hub_token=None, ddp_timeout=18000000, ddp_backend=None, ignore_args_error=False, use_swift_lora=False, vllm_gpu_memory_utilization=0.9, vllm_tensor_parallel_size=1, vllm_pipeline_parallel_size=1, vllm_enable_expert_parallel=False, vllm_max_num_seqs=256, vllm_max_model_len=14000, vllm_disable_custom_all_reduce=True, vllm_enforce_eager=True, vllm_limit_mm_per_prompt={}, vllm_max_lora_rank=16, vllm_enable_prefix_caching=None, vllm_use_async_engine=False, vllm_quantization=None, vllm_reasoning_parser=None, vllm_disable_cascade_attn=False, vllm_mm_processor_cache_gb=None, vllm_engine_kwargs={'mm_processor_kwargs': {'do_resize': False}}, vllm_data_parallel_size=3, sglang_tp_size=1, sglang_pp_size=1, sglang_dp_size=1, sglang_ep_size=1, sglang_enable_ep_moe=False, sglang_mem_fraction_static=None, sglang_context_length=None, sglang_disable_cuda_graph=False, sglang_quantization=None, sglang_kv_cache_dtype='auto', sglang_enable_dp_attention=False, sglang_disable_custom_all_reduce=True, lmdeploy_tp=1, lmdeploy_session_len=None, lmdeploy_cache_max_entry_count=0.8, lmdeploy_quant_policy=0, lmdeploy_vision_batch_size=1, merge_lora=False, safe_serialization=True, max_shard_size='5GB', infer_backend='vllm', result_path='/data/CoordExp/.worktrees/birth-first-stage2-channel-b/result/checkpoint-1332-merged-full/deploy_result/20260422-133955.jsonl', write_batch_size=1000, metric=None, max_batch_size=1, val_dataset_sample=None, reranker_use_activation=True, host='127.0.0.1', port=8000, api_key=None, ssl_keyfile=None, ssl_certfile=None, owned_by='swift', served_model_name=None, verbose=True, log_interval=20, log_level='info', max_logprobs=20, use_gym_env=False, multi_turn_scheduler=None, max_turns=None, vllm_enable_lora=False, gym_env=None, context_manager=None)
+[INFO:swift] Start time of running main: 2026-04-22 13:39:55.380657
+[INFO:swift] swift.__version__: 3.10.0.dev0
+INFO:     Started server process [3722192]
+INFO:     Waiting for application startup.
+INFO 04-22 13:39:58 [__init__.py:216] Automatically detected platform cuda.
+INFO 04-22 13:39:58 [__init__.py:216] Automatically detected platform cuda.
+INFO 04-22 13:39:58 [__init__.py:216] Automatically detected platform cuda.
+[INFO:swift] Successfully registered `/data/ms-swift/swift/llm/dataset/data/dataset_info.json`.
+[INFO:swift] Successfully registered `/data/ms-swift/swift/llm/dataset/data/dataset_info.json`.
+[INFO:swift] Successfully registered `/data/ms-swift/swift/llm/dataset/data/dataset_info.json`.
+`torch_dtype` is deprecated! Use `dtype` instead!
+`torch_dtype` is deprecated! Use `dtype` instead!
+`torch_dtype` is deprecated! Use `dtype` instead!
+[INFO:swift] Setting max_ratio: 200. You can adjust this hyperparameter through the environment variable: `MAX_RATIO`.
+[INFO:swift] Setting frame_factor: 2. You can adjust this hyperparameter through the environment variable: `FRAME_FACTOR`.
+[INFO:swift] Setting fps: 2.0. You can adjust this hyperparameter through the environment variable: `FPS`.
+[INFO:swift] Setting fps_min_frames: 4. You can adjust this hyperparameter through the environment variable: `FPS_MIN_FRAMES`.
+[INFO:swift] Setting fps_max_frames: 768. You can adjust this hyperparameter through the environment variable: `FPS_MAX_FRAMES`.
+[INFO:swift] Setting image_max_token_num: 16384. You can adjust this hyperparameter through the environment variable: `IMAGE_MAX_TOKEN_NUM`.
+[INFO:swift] Setting image_min_token_num: 4. You can adjust this hyperparameter through the environment variable: `IMAGE_MIN_TOKEN_NUM`.
+[INFO:swift] Setting spatial_merge_size: 2. You can adjust this hyperparameter through the environment variable: `SPATIAL_MERGE_SIZE`.
+[INFO:swift] Setting video_max_token_num: 768. You can adjust this hyperparameter through the environment variable: `VIDEO_MAX_TOKEN_NUM`.
+[INFO:swift] Setting video_min_token_num: 128. You can adjust this hyperparameter through the environment variable: `VIDEO_MIN_TOKEN_NUM`.
+[INFO:swift] default_system: None
+[INFO:swift] max_length: 14000
+[INFO:swift] response_prefix: ''
+[INFO:swift] agent_template: hermes
+[INFO:swift] norm_bbox: norm1000
+[INFO:swift] Using environment variable `ROOT_IMAGE_DIR`, Setting ROOT_IMAGE_DIR: /data/CoordExp/public_data/coco/rescale_32_1024_bbox_max60.
+[INFO:swift] Setting QWENVL_BBOX_FORMAT: legacy. You can adjust this hyperparameter through the environment variable: `QWENVL_BBOX_FORMAT`.
+[INFO:swift] Setting max_model_len: 14000
+The argument `trust_remote_code` is to be used with Auto classes. It has no effect here and is ignored.
+INFO 04-22 13:40:02 [model.py:547] Resolved architecture: Qwen3VLForConditionalGeneration
+INFO 04-22 13:40:02 [model.py:1510] Using max model len 14000
+[INFO:swift] Setting max_ratio: 200. You can adjust this hyperparameter through the environment variable: `MAX_RATIO`.
+[INFO:swift] Setting frame_factor: 2. You can adjust this hyperparameter through the environment variable: `FRAME_FACTOR`.
+[INFO:swift] Setting fps: 2.0. You can adjust this hyperparameter through the environment variable: `FPS`.
+[INFO:swift] Setting fps_min_frames: 4. You can adjust this hyperparameter through the environment variable: `FPS_MIN_FRAMES`.
+[INFO:swift] Setting fps_max_frames: 768. You can adjust this hyperparameter through the environment variable: `FPS_MAX_FRAMES`.
+[INFO:swift] Setting image_max_token_num: 16384. You can adjust this hyperparameter through the environment variable: `IMAGE_MAX_TOKEN_NUM`.
+[INFO:swift] Setting image_min_token_num: 4. You can adjust this hyperparameter through the environment variable: `IMAGE_MIN_TOKEN_NUM`.
+[INFO:swift] Setting spatial_merge_size: 2. You can adjust this hyperparameter through the environment variable: `SPATIAL_MERGE_SIZE`.
+[INFO:swift] Setting video_max_token_num: 768. You can adjust this hyperparameter through the environment variable: `VIDEO_MAX_TOKEN_NUM`.
+[INFO:swift] Setting video_min_token_num: 128. You can adjust this hyperparameter through the environment variable: `VIDEO_MIN_TOKEN_NUM`.
+[INFO:swift] default_system: None
+[INFO:swift] max_length: 14000
+[INFO:swift] response_prefix: ''
+[INFO:swift] agent_template: hermes
+[INFO:swift] norm_bbox: norm1000
+[INFO:swift] Using environment variable `ROOT_IMAGE_DIR`, Setting ROOT_IMAGE_DIR: /data/CoordExp/public_data/coco/rescale_32_1024_bbox_max60.
+[INFO:swift] Setting QWENVL_BBOX_FORMAT: legacy. You can adjust this hyperparameter through the environment variable: `QWENVL_BBOX_FORMAT`.
+[INFO:swift] Setting max_model_len: 14000
+The argument `trust_remote_code` is to be used with Auto classes. It has no effect here and is ignored.
+INFO 04-22 13:40:03 [model.py:547] Resolved architecture: Qwen3VLForConditionalGeneration
+INFO 04-22 13:40:03 [model.py:1510] Using max model len 14000
+INFO 04-22 13:40:03 [scheduler.py:205] Chunked prefill is enabled with max_num_batched_tokens=5120.
+INFO 04-22 13:40:03 [__init__.py:381] Cudagraph is disabled under eager mode
+INFO 04-22 13:40:03 [scheduler.py:205] Chunked prefill is enabled with max_num_batched_tokens=5120.
+INFO 04-22 13:40:03 [__init__.py:381] Cudagraph is disabled under eager mode
+[INFO:swift] Setting max_ratio: 200. You can adjust this hyperparameter through the environment variable: `MAX_RATIO`.
+[INFO:swift] Setting frame_factor: 2. You can adjust this hyperparameter through the environment variable: `FRAME_FACTOR`.
+[INFO:swift] Setting fps: 2.0. You can adjust this hyperparameter through the environment variable: `FPS`.
+[INFO:swift] Setting fps_min_frames: 4. You can adjust this hyperparameter through the environment variable: `FPS_MIN_FRAMES`.
+[INFO:swift] Setting fps_max_frames: 768. You can adjust this hyperparameter through the environment variable: `FPS_MAX_FRAMES`.
+[INFO:swift] Setting image_max_token_num: 16384. You can adjust this hyperparameter through the environment variable: `IMAGE_MAX_TOKEN_NUM`.
+[INFO:swift] Setting image_min_token_num: 4. You can adjust this hyperparameter through the environment variable: `IMAGE_MIN_TOKEN_NUM`.
+[INFO:swift] Setting spatial_merge_size: 2. You can adjust this hyperparameter through the environment variable: `SPATIAL_MERGE_SIZE`.
+[INFO:swift] Setting video_max_token_num: 768. You can adjust this hyperparameter through the environment variable: `VIDEO_MAX_TOKEN_NUM`.
+[INFO:swift] Setting video_min_token_num: 128. You can adjust this hyperparameter through the environment variable: `VIDEO_MIN_TOKEN_NUM`.
+[INFO:swift] default_system: None
+[INFO:swift] max_length: 14000
+[INFO:swift] response_prefix: ''
+[INFO:swift] agent_template: hermes
+[INFO:swift] norm_bbox: norm1000
+[INFO:swift] Using environment variable `ROOT_IMAGE_DIR`, Setting ROOT_IMAGE_DIR: /data/CoordExp/public_data/coco/rescale_32_1024_bbox_max60.
+[INFO:swift] Setting QWENVL_BBOX_FORMAT: legacy. You can adjust this hyperparameter through the environment variable: `QWENVL_BBOX_FORMAT`.
+[INFO:swift] Setting max_model_len: 14000
+The argument `trust_remote_code` is to be used with Auto classes. It has no effect here and is ignored.
+INFO 04-22 13:40:03 [model.py:547] Resolved architecture: Qwen3VLForConditionalGeneration
+INFO 04-22 13:40:03 [model.py:1510] Using max model len 14000
+INFO 04-22 13:40:03 [scheduler.py:205] Chunked prefill is enabled with max_num_batched_tokens=5120.
+INFO 04-22 13:40:03 [__init__.py:381] Cudagraph is disabled under eager mode
+INFO 04-22 13:40:06 [__init__.py:216] Automatically detected platform cuda.
+INFO 04-22 13:40:06 [__init__.py:216] Automatically detected platform cuda.
+INFO 04-22 13:40:06 [__init__.py:216] Automatically detected platform cuda.
+[INFO:swift] Successfully registered `/data/ms-swift/swift/llm/dataset/data/dataset_info.json`.
+[INFO:swift] Successfully registered `/data/ms-swift/swift/llm/dataset/data/dataset_info.json`.
+[INFO:swift] Successfully registered `/data/ms-swift/swift/llm/dataset/data/dataset_info.json`.
+[1;36m(EngineCore_DP2 pid=3722422)[0;0m INFO 04-22 13:40:10 [core.py:644] Waiting for init message from front-end.
+[1;36m(EngineCore_DP0 pid=3722416)[0;0m INFO 04-22 13:40:10 [core.py:644] Waiting for init message from front-end.
+[1;36m(EngineCore_DP1 pid=3722419)[0;0m INFO 04-22 13:40:10 [core.py:644] Waiting for init message from front-end.
+[Gloo] Rank 0 is connected to 2 peer ranks. Expected number of connected peer ranks is : 2
+[Gloo] Rank 2[W422 13:40:10.233358499 Utils.hpp:137] Warning: Environment variable TORCH_NCCL_TRACE_BUFFER_SIZE is deprecated; use TORCH_FR_BUFFER_SIZE instead (function operator())
+ is connected to 2 peer ranks. Expected number of connected peer ranks is : 2
+[Gloo] Rank 1 is connected to 2 peer ranks. Expected number of connected peer ranks is : 2
+[W422 13:40:10.233479828 Utils.hpp:137] Warning: Environment variable TORCH_NCCL_TRACE_BUFFER_SIZE is deprecated; use TORCH_FR_BUFFER_SIZE instead (function operator())
+[W422 13:40:10.233498266 Utils.hpp:137] Warning: Environment variable TORCH_NCCL_TRACE_BUFFER_SIZE is deprecated; use TORCH_FR_BUFFER_SIZE instead (function operator())
+[1;36m(EngineCore_DP0 pid=3722416)[0;0m INFO 04-22 13:40:10 [core.py:77] Initializing a V1 LLM engine (v0.11.0) with config: model='/data/CoordExp/output_remote/stage1_2b/coco_bbox_max60-hard_ce_soft_ce_w1_gate/epoch_4-from-base-2B/v0-20260227-050057/checkpoint-1332-merged-full', speculative_config=None, tokenizer='/data/CoordExp/output_remote/stage1_2b/coco_bbox_max60-hard_ce_soft_ce_w1_gate/epoch_4-from-base-2B/v0-20260227-050057/checkpoint-1332-merged-full', skip_tokenizer_init=False, tokenizer_mode=auto, revision=None, tokenizer_revision=None, trust_remote_code=True, dtype=torch.bfloat16, max_seq_len=14000, download_dir=None, load_format=dummy, tensor_parallel_size=1, pipeline_parallel_size=1, data_parallel_size=3, disable_custom_all_reduce=True, quantization=None, enforce_eager=True, kv_cache_dtype=auto, device_config=cuda, structured_outputs_config=StructuredOutputsConfig(backend='auto', disable_fallback=False, disable_any_whitespace=False, disable_additional_properties=False, reasoning_parser=''), observability_config=ObservabilityConfig(show_hidden_metrics_for_version=None, otlp_traces_endpoint=None, collect_detailed_traces=None), seed=0, served_model_name=/data/CoordExp/output_remote/stage1_2b/coco_bbox_max60-hard_ce_soft_ce_w1_gate/epoch_4-from-base-2B/v0-20260227-050057/checkpoint-1332-merged-full, enable_prefix_caching=True, chunked_prefill_enabled=True, pooler_config=None, compilation_config={"level":0,"debug_dump_path":"","cache_dir":"","backend":"","custom_ops":[],"splitting_ops":null,"use_inductor":true,"compile_sizes":[],"inductor_compile_config":{"enable_auto_functionalized_v2":false},"inductor_passes":{},"cudagraph_mode":0,"use_cudagraph":true,"cudagraph_num_of_warmups":0,"cudagraph_capture_sizes":[],"cudagraph_copy_inputs":false,"full_cuda_graph":false,"use_inductor_graph_partition":false,"pass_config":{},"max_capture_size":0,"local_cache_dir":null}
+[1;36m(EngineCore_DP2 pid=3722422)[0;0m [1;36m(EngineCore_DP1 pid=3722419)[0;0m INFO 04-22 13:40:10 [core.py:77] Initializing a V1 LLM engine (v0.11.0) with config: model='/data/CoordExp/output_remote/stage1_2b/coco_bbox_max60-hard_ce_soft_ce_w1_gate/epoch_4-from-base-2B/v0-20260227-050057/checkpoint-1332-merged-full', speculative_config=None, tokenizer='/data/CoordExp/output_remote/stage1_2b/coco_bbox_max60-hard_ce_soft_ce_w1_gate/epoch_4-from-base-2B/v0-20260227-050057/checkpoint-1332-merged-full', skip_tokenizer_init=False, tokenizer_mode=auto, revision=None, tokenizer_revision=None, trust_remote_code=True, dtype=torch.bfloat16, max_seq_len=14000, download_dir=None, load_format=dummy, tensor_parallel_size=1, pipeline_parallel_size=1, data_parallel_size=3, disable_custom_all_reduce=True, quantization=None, enforce_eager=True, kv_cache_dtype=auto, device_config=cuda, structured_outputs_config=StructuredOutputsConfig(backend='auto', disable_fallback=False, disable_any_whitespace=False, disable_additional_properties=False, reasoning_parser=''), observability_config=ObservabilityConfig(show_hidden_metrics_for_version=None, otlp_traces_endpoint=None, collect_detailed_traces=None), seed=0, served_model_name=/data/CoordExp/output_remote/stage1_2b/coco_bbox_max60-hard_ce_soft_ce_w1_gate/epoch_4-from-base-2B/v0-20260227-050057/checkpoint-1332-merged-full, enable_prefix_caching=True, chunked_prefill_enabled=True, pooler_config=None, compilation_config={"level":0,"debug_dump_path":"","cache_dir":"","backend":"","custom_ops":[],"splitting_ops":null,"use_inductor":true,"compile_sizes":[],"inductor_compile_config":{"enable_auto_functionalized_v2":false},"inductor_passes":{},"cudagraph_mode":0,"use_cudagraph":true,"cudagraph_num_of_warmups":0,"cudagraph_capture_sizes":[],"cudagraph_copy_inputs":false,"full_cuda_graph":false,"use_inductor_graph_partition":false,"pass_config":{},"max_capture_size":0,"local_cache_dir":null}
+INFO 04-22 13:40:10 [core.py:77] Initializing a V1 LLM engine (v0.11.0) with config: model='/data/CoordExp/output_remote/stage1_2b/coco_bbox_max60-hard_ce_soft_ce_w1_gate/epoch_4-from-base-2B/v0-20260227-050057/checkpoint-1332-merged-full', speculative_config=None, tokenizer='/data/CoordExp/output_remote/stage1_2b/coco_bbox_max60-hard_ce_soft_ce_w1_gate/epoch_4-from-base-2B/v0-20260227-050057/checkpoint-1332-merged-full', skip_tokenizer_init=False, tokenizer_mode=auto, revision=None, tokenizer_revision=None, trust_remote_code=True, dtype=torch.bfloat16, max_seq_len=14000, download_dir=None, load_format=dummy, tensor_parallel_size=1, pipeline_parallel_size=1, data_parallel_size=3, disable_custom_all_reduce=True, quantization=None, enforce_eager=True, kv_cache_dtype=auto, device_config=cuda, structured_outputs_config=StructuredOutputsConfig(backend='auto', disable_fallback=False, disable_any_whitespace=False, disable_additional_properties=False, reasoning_parser=''), observability_config=ObservabilityConfig(show_hidden_metrics_for_version=None, otlp_traces_endpoint=None, collect_detailed_traces=None), seed=0, served_model_name=/data/CoordExp/output_remote/stage1_2b/coco_bbox_max60-hard_ce_soft_ce_w1_gate/epoch_4-from-base-2B/v0-20260227-050057/checkpoint-1332-merged-full, enable_prefix_caching=True, chunked_prefill_enabled=True, pooler_config=None, compilation_config={"level":0,"debug_dump_path":"","cache_dir":"","backend":"","custom_ops":[],"splitting_ops":null,"use_inductor":true,"compile_sizes":[],"inductor_compile_config":{"enable_auto_functionalized_v2":false},"inductor_passes":{},"cudagraph_mode":0,"use_cudagraph":true,"cudagraph_num_of_warmups":0,"cudagraph_capture_sizes":[],"cudagraph_copy_inputs":false,"full_cuda_graph":false,"use_inductor_graph_partition":false,"pass_config":{},"max_capture_size":0,"local_cache_dir":null}
+[1;36m(EngineCore_DP2 pid=3722422)[0;0m INFO 04-22 13:40:11 [worker_base.py:243] Injected <class 'swift.llm.infer.rollout.WeightSyncWorkerExtension'> into <class 'vllm.v1.worker.gpu_worker.Worker'> for extended collective_rpc calls ['close_communicator', 'init_communicator', 'update_adapter_flattened_param', 'update_flattened_params', 'update_named_param']
+[1;36m(EngineCore_DP1 pid=3722419)[0;0m INFO 04-22 13:40:11 [worker_base.py:243] Injected <class 'swift.llm.infer.rollout.WeightSyncWorkerExtension'> into <class 'vllm.v1.worker.gpu_worker.Worker'> for extended collective_rpc calls ['close_communicator', 'init_communicator', 'update_adapter_flattened_param', 'update_flattened_params', 'update_named_param']
+[1;36m(EngineCore_DP0 pid=3722416)[0;0m INFO 04-22 13:40:11 [worker_base.py:243] Injected <class 'swift.llm.infer.rollout.WeightSyncWorkerExtension'> into <class 'vllm.v1.worker.gpu_worker.Worker'> for extended collective_rpc calls ['close_communicator', 'init_communicator', 'update_adapter_flattened_param', 'update_flattened_params', 'update_named_param']
+[1;36m(EngineCore_DP2 pid=3722422)[0;0m INFO 04-22 13:40:11 [parallel_state.py:1047] Adjusting world_size=3 rank=2 distributed_init_method=tcp://127.0.0.1:40458 for DP
+[1;36m(EngineCore_DP1 pid=3722419)[0;0m INFO 04-22 13:40:12 [parallel_state.py:1047] Adjusting world_size=3 rank=1 distributed_init_method=tcp://127.0.0.1:40458 for DP
+[1;36m(EngineCore_DP0 pid=3722416)[0;0m INFO 04-22 13:40:12 [parallel_state.py:1047] Adjusting world_size=3 rank=0 distributed_init_method=tcp://127.0.0.1:40458 for DP
+[Gloo] Rank 2 is connected to 2 peer ranks. Expected number of connected peer ranks is : 2
+[Gloo] Rank 0 is connected to 2 peer ranks. Expected number of connected peer ranks is : 2
+[Gloo] Rank 1 is connected to 2 peer ranks. Expected number of connected peer ranks is : 2
+[Gloo] Rank 0 is connected to 0 peer ranks. Expected number of connected peer ranks is : 0
+[Gloo] Rank 0 is connected to 0 peer ranks. Expected number of connected peer ranks is : 0
+[Gloo] Rank 0 is connected to 0 peer ranks. Expected number of connected peer ranks is : 0
+[Gloo] Rank 0 is connected to 0 peer ranks. Expected number of connected peer ranks is : 0
+[Gloo] Rank 0 is connected to 0 peer ranks. Expected number of connected peer ranks is : 0
+[Gloo] Rank 0 is connected to 0 peer ranks. Expected number of connected peer ranks is : 0
+[Gloo] Rank 0 is connected to 0 peer ranks. [Gloo] Rank Expected number of connected peer ranks is : 0[Gloo] Rank 0 is connected to 0
+0 is connected to  peer ranks. 0Expected number of connected peer ranks is :  peer ranks. 0Expected number of connected peer ranks is : 
+0
+[Gloo] Rank 0 is connected to 2 peer ranks. Expected number of connected peer ranks is : 2
+[Gloo] Rank 2 is connected to 2 peer ranks. Expected number of connected peer ranks is : 2
+[Gloo] Rank 1 is connected to 2 peer ranks. Expected number of connected peer ranks is : 2
+[1;36m(EngineCore_DP0 pid=3722416)[0;0m INFO 04-22 13:40:12 [__init__.py:1384] Found nccl from library libnccl.so.2
+[1;36m(EngineCore_DP0 pid=3722416)[0;0m INFO 04-22 13:40:12 [pynccl.py:103] vLLM is using nccl==2.27.3
+[1;36m(EngineCore_DP2 pid=3722422)[0;0m INFO 04-22 13:40:12 [__init__.py:1384] Found nccl from library libnccl.so.2
+[1;36m(EngineCore_DP2 pid=3722422)[0;0m INFO 04-22 13:40:12 [pynccl.py:103] vLLM is using nccl==2.27.3
+[1;36m(EngineCore_DP1 pid=3722419)[0;0m INFO 04-22 13:40:12 [__init__.py:1384] Found nccl from library libnccl.so.2
+[1;36m(EngineCore_DP1 pid=3722419)[0;0m INFO 04-22 13:40:12 [pynccl.py:103] vLLM is using nccl==2.27.3
+[Gloo] Rank 0 is connected to 2 peer ranks. Expected number of connected peer ranks is : 2
+[Gloo] Rank [Gloo] Rank 21 is connected to  is connected to 22 peer ranks.  peer ranks. Expected number of connected peer ranks is : Expected number of connected peer ranks is : 22
+
+[1;36m(EngineCore_DP0 pid=3722416)[0;0m INFO 04-22 13:40:13 [__init__.py:1384] Found nccl from library libnccl.so.2
+[1;36m(EngineCore_DP2 pid=3722422)[0;0m INFO 04-22 13:40:13 [__init__.py:1384] Found nccl from library libnccl.so.2
+[1;36m(EngineCore_DP1 pid=3722419)[0;0m INFO 04-22 13:40:13 [__init__.py:1384] Found nccl from library libnccl.so.2
+[1;36m(EngineCore_DP2 pid=3722422)[0;0m INFO 04-22 13:40:13 [pynccl.py:103] vLLM is using nccl==2.27.3
+[1;36m(EngineCore_DP0 pid=3722416)[0;0m INFO 04-22 13:40:13 [pynccl.py:103] vLLM is using nccl==2.27.3
+[1;36m(EngineCore_DP1 pid=3722419)[0;0m INFO 04-22 13:40:13 [pynccl.py:103] vLLM is using nccl==2.27.3
+[1;36m(EngineCore_DP0 pid=3722416)[0;0m INFO 04-22 13:40:14 [cuda_communicator.py:100] Using AllGather-ReduceScatter all2all manager.
+[1;36m(EngineCore_DP2 pid=3722422)[0;0m [1;36m(EngineCore_DP1 pid=3722419)[0;0m INFO 04-22 13:40:14 [cuda_communicator.py:100] Using AllGather-ReduceScatter all2all manager.
+INFO 04-22 13:40:14 [cuda_communicator.py:100] Using AllGather-ReduceScatter all2all manager.
+[1;36m(EngineCore_DP0 pid=3722416)[0;0m INFO 04-22 13:40:14 [parallel_state.py:1208] rank 0 in world size 3 is assigned as DP rank 0, PP rank 0, TP rank 0, EP rank 0
+[1;36m(EngineCore_DP2 pid=3722422)[0;0m INFO 04-22 13:40:14 [parallel_state.py:1208] rank 2 in world size 3 is assigned as DP rank 2, PP rank 0, TP rank 0, EP rank 2
+[1;36m(EngineCore_DP1 pid=3722419)[0;0m INFO 04-22 13:40:14 [parallel_state.py:1208] rank 1 in world size 3 is assigned as DP rank 1, PP rank 0, TP rank 0, EP rank 1
+[1;36m(EngineCore_DP2 pid=3722422)[0;0m WARNING 04-22 13:40:14 [topk_topp_sampler.py:66] FlashInfer is not available. Falling back to the PyTorch-native implementation of top-p & top-k sampling. For the best performance, please install FlashInfer.
+[1;36m(EngineCore_DP0 pid=3722416)[0;0m WARNING 04-22 13:40:14 [topk_topp_sampler.py:66] FlashInfer is not available. Falling back to the PyTorch-native implementation of top-p & top-k sampling. For the best performance, please install FlashInfer.
+[1;36m(EngineCore_DP1 pid=3722419)[0;0m WARNING 04-22 13:40:14 [topk_topp_sampler.py:66] FlashInfer is not available. Falling back to the PyTorch-native implementation of top-p & top-k sampling. For the best performance, please install FlashInfer.
+[1;36m(EngineCore_DP0 pid=3722416)[0;0m INFO 04-22 13:40:16 [gpu_model_runner.py:2602] Starting to load model /data/CoordExp/output_remote/stage1_2b/coco_bbox_max60-hard_ce_soft_ce_w1_gate/epoch_4-from-base-2B/v0-20260227-050057/checkpoint-1332-merged-full...
+[1;36m(EngineCore_DP2 pid=3722422)[0;0m INFO 04-22 13:40:16 [gpu_model_runner.py:2602] Starting to load model /data/CoordExp/output_remote/stage1_2b/coco_bbox_max60-hard_ce_soft_ce_w1_gate/epoch_4-from-base-2B/v0-20260227-050057/checkpoint-1332-merged-full...
+[1;36m(EngineCore_DP1 pid=3722419)[0;0m INFO 04-22 13:40:16 [gpu_model_runner.py:2602] Starting to load model /data/CoordExp/output_remote/stage1_2b/coco_bbox_max60-hard_ce_soft_ce_w1_gate/epoch_4-from-base-2B/v0-20260227-050057/checkpoint-1332-merged-full...
+[1;36m(EngineCore_DP0 pid=3722416)[0;0m INFO 04-22 13:40:17 [gpu_model_runner.py:2634] Loading model from scratch...
+[1;36m(EngineCore_DP2 pid=3722422)[0;0m INFO 04-22 13:40:17 [gpu_model_runner.py:2634] Loading model from scratch...
+[1;36m(EngineCore_DP1 pid=3722419)[0;0m INFO 04-22 13:40:17 [gpu_model_runner.py:2634] Loading model from scratch...
+[1;36m(EngineCore_DP0 pid=3722416)[0;0m INFO 04-22 13:40:17 [cuda.py:366] Using Flash Attention backend on V1 engine.
+[1;36m(EngineCore_DP2 pid=3722422)[0;0m INFO 04-22 13:40:17 [cuda.py:366] Using Flash Attention backend on V1 engine.
+[1;36m(EngineCore_DP1 pid=3722419)[0;0m INFO 04-22 13:40:17 [cuda.py:366] Using Flash Attention backend on V1 engine.
+[1;36m(EngineCore_DP0 pid=3722416)[0;0m INFO 04-22 13:40:17 [gpu_model_runner.py:2653] Model loading took 4.2745 GiB and 0.139565 seconds
+[1;36m(EngineCore_DP2 pid=3722422)[0;0m INFO 04-22 13:40:17 [gpu_model_runner.py:2653] Model loading took 4.2745 GiB and 0.136849 seconds
+[1;36m(EngineCore_DP1 pid=3722419)[0;0m INFO 04-22 13:40:17 [gpu_model_runner.py:2653] Model loading took 4.2745 GiB and 0.140617 seconds
+[1;36m(EngineCore_DP0 pid=3722416)[0;0m INFO 04-22 13:40:17 [gpu_model_runner.py:3344] Encoder cache will be initialized with a budget of 151250 tokens, and profiled with 1 video items of the maximum feature size.
+[1;36m(EngineCore_DP2 pid=3722422)[0;0m INFO 04-22 13:40:17 [gpu_model_runner.py:3344] Encoder cache will be initialized with a budget of 151250 tokens, and profiled with 1 video items of the maximum feature size.
+[1;36m(EngineCore_DP1 pid=3722419)[0;0m INFO 04-22 13:40:18 [gpu_model_runner.py:3344] Encoder cache will be initialized with a budget of 151250 tokens, and profiled with 1 video items of the maximum feature size.
+[rank1]:[W422 13:40:23.823394340 Utils.hpp:137] Warning: Environment variable TORCH_NCCL_TRACE_BUFFER_SIZE is deprecated; use TORCH_FR_BUFFER_SIZE instead (function operator())
+[rank2]:[W422 13:40:23.823422162 Utils.hpp:137] Warning: Environment variable TORCH_NCCL_TRACE_BUFFER_SIZE is deprecated; use TORCH_FR_BUFFER_SIZE instead (function operator())
+[rank0]:[W422 13:40:23.823441333 Utils.hpp:137] Warning: Environment variable TORCH_NCCL_TRACE_BUFFER_SIZE is deprecated; use TORCH_FR_BUFFER_SIZE instead (function operator())
+[1;36m(EngineCore_DP2 pid=3722422)[0;0m INFO 04-22 13:40:24 [gpu_worker.py:298] Available KV cache memory: 62.79 GiB
+[1;36m(EngineCore_DP0 pid=3722416)[0;0m INFO 04-22 13:40:24 [gpu_worker.py:298] Available KV cache memory: 62.79 GiB
+[1;36m(EngineCore_DP1 pid=3722419)[0;0m INFO 04-22 13:40:24 [gpu_worker.py:298] Available KV cache memory: 62.79 GiB
+[1;36m(EngineCore_DP2 pid=3722422)[0;0m INFO 04-22 13:40:24 [kv_cache_utils.py:1087] GPU KV cache size: 587,888 tokens
+[1;36m(EngineCore_DP2 pid=3722422)[0;0m INFO 04-22 13:40:24 [kv_cache_utils.py:1091] Maximum concurrency for 14,000 tokens per request: 41.99x
+[1;36m(EngineCore_DP0 pid=3722416)[0;0m INFO 04-22 13:40:24 [kv_cache_utils.py:1087] GPU KV cache size: 587,888 tokens
+[1;36m(EngineCore_DP0 pid=3722416)[0;0m INFO 04-22 13:40:24 [kv_cache_utils.py:1091] Maximum concurrency for 14,000 tokens per request: 41.99x
+[1;36m(EngineCore_DP1 pid=3722419)[0;0m INFO 04-22 13:40:24 [kv_cache_utils.py:1087] GPU KV cache size: 587,888 tokens
+[1;36m(EngineCore_DP1 pid=3722419)[0;0m INFO 04-22 13:40:24 [kv_cache_utils.py:1091] Maximum concurrency for 14,000 tokens per request: 41.99x
+[1;36m(EngineCore_DP2 pid=3722422)[0;0m WARNING 04-22 13:40:25 [cudagraph_dispatcher.py:106] cudagraph dispatching keys are not initialized. No cudagraph will be used.
+[1;36m(EngineCore_DP0 pid=3722416)[0;0m WARNING 04-22 13:40:25 [cudagraph_dispatcher.py:106] cudagraph dispatching keys are not initialized. No cudagraph will be used.
+[1;36m(EngineCore_DP1 pid=3722419)[0;0m WARNING 04-22 13:40:25 [cudagraph_dispatcher.py:106] cudagraph dispatching keys are not initialized. No cudagraph will be used.
+[1;36m(EngineCore_DP2 pid=3722422)[0;0m INFO 04-22 13:40:25 [core.py:210] init engine (profile, create kv cache, warmup model) took 7.76 seconds
+[1;36m(EngineCore_DP0 pid=3722416)[0;0m INFO 04-22 13:40:25 [core.py:210] init engine (profile, create kv cache, warmup model) took 7.78 seconds
+[1;36m(EngineCore_DP1 pid=3722419)[0;0m INFO 04-22 13:40:25 [core.py:210] init engine (profile, create kv cache, warmup model) took 7.64 seconds
+[1;36m(EngineCore_DP2 pid=3722422)[0;0m INFO 04-22 13:40:26 [__init__.py:381] Cudagraph is disabled under eager mode
+[1;36m(EngineCore_DP0 pid=3722416)[0;0m INFO 04-22 13:40:26 [__init__.py:381] Cudagraph is disabled under eager mode
+[1;36m(EngineCore_DP1 pid=3722419)[0;0m INFO 04-22 13:40:26 [__init__.py:381] Cudagraph is disabled under eager mode
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://127.0.0.1:8000 (Press CTRL+C to quit)
+INFO:     127.0.0.1:26588 - "GET /health/ HTTP/1.1" 200 OK
+INFO:     127.0.0.1:26600 - "GET /get_world_size/ HTTP/1.1" 200 OK
+[INFO] vLLM server is ready. data_parallel_world_size=3 tensor_parallel_size=1 total_server_gpus=3 group_port=51216 (communicator initializes after learner startup)
+[INFO] [RUN] (cwd=/data/CoordExp/.worktrees/birth-first-stage2-channel-b) CUDA_VISIBLE_DEVICES=7 torchrun --nproc_per_node=1 --master_addr=127.0.0.1 --master_port=13189 -m src.sft --config /data/CoordExp/.worktrees/birth-first-stage2-channel-b/configs/stage2_two_channel/smoke/birth_first_k2_control_vllm_smallfrac_merged1332.yaml
+[INFO:swift] Successfully registered `/data/ms-swift/swift/llm/dataset/data/dataset_info.json`.
+[INFO:swift.custom.__main__] ======================================================================
+[INFO:swift.custom.__main__]   MS-Swift Training with YAML Configuration
+[INFO:swift.custom.__main__] ======================================================================
+[INFO:swift.custom.__main__] Config file: /data/CoordExp/.worktrees/birth-first-stage2-channel-b/configs/stage2_two_channel/smoke/birth_first_k2_control_vllm_smallfrac_merged1332.yaml
+[INFO:swift.custom.__main__] ======================================================================
+[INFO:swift.custom.__main__] Loading configuration...
+[INFO:swift] rank: 0, local_rank: 0, world_size: 1, local_world_size: 1
+`torch_dtype` is deprecated! Use `dtype` instead!
+[INFO:swift] Setting model_type: qwen3_vl
+[INFO:swift] Setting args.rope_scaling: {'mrope_interleaved': True, 'mrope_section': [24, 20, 20], 'rope_type': 'default', 'original_max_position_embeddings': 262144, 'factor': 1.0}
+[INFO:swift] Setting args.max_model_len: 14000
+[INFO:swift] Because len(args.val_dataset) > 0, setting split_dataset_ratio: 0.0
+[INFO:swift] Setting args.lazy_tokenize: True
+[W422 13:40:33.695068943 Utils.hpp:137] Warning: Environment variable NCCL_ASYNC_ERROR_HANDLING is deprecated; use TORCH_NCCL_ASYNC_ERROR_HANDLING instead (function operator())
+[INFO:swift] output_dir: /data/CoordExp/.worktrees/birth-first-stage2-channel-b/output/stage2_ab/smoke/birth_first_k2_control_vllm_smallfrac_merged1332/smallfrac_8steps-birth_first_k2_control-vllm-merged1332/v0-20260422-134034
+[INFO:swift.custom.__main__] Initializing ms-swift pipeline...
+[INFO:swift] Global seed set to 17
+[INFO:swift] args: TrainArguments(
+_n_gpu=-1,
+acc_strategy=token,
+accelerator_config={'dispatch_batches': False},
+adafactor=False,
+adalora_beta1=0.85,
+adalora_beta2=0.85,
+adalora_deltaT=1,
+adalora_init_r=12,
+adalora_orth_reg_weight=0.5,
+adalora_target_r=8,
+adalora_tfinal=0,
+adalora_tinit=0,
+adam_beta1=0.9,
+adam_beta2=0.95,
+adam_epsilon=1e-08,
+adapter_act=gelu,
+adapter_length=128,
+adapters=[],
+add_version=True,
+agent_template=None,
+aligner_lr=5e-05,
+attn_impl=flash_attention_2,
+auto_find_batch_size=False,
+average_tokens_across_devices=True,
+batch_eval_metrics=False,
+bf16=True,
+bf16_full_eval=False,
+bnb_4bit_compute_dtype=torch.bfloat16,
+bnb_4bit_quant_storage=None,
+bnb_4bit_quant_type=nf4,
+bnb_4bit_use_double_quant=True,
+boft_block_num=0,
+boft_block_size=4,
+boft_dropout=0.0,
+boft_n_butterfly_factor=1,
+cached_dataset=[],
+check_model=True,
+ckpt_dir=None,
+columns={},
+create_checkpoint_symlink=False,
+custom_dataset_info=[],
+custom_register_path=[],
+data_seed=42,
+dataloader_drop_last=True,
+dataloader_num_workers=0,
+dataloader_persistent_workers=False,
+dataloader_pin_memory=True,
+dataloader_prefetch_factor=None,
+dataset=['dummy'],
+dataset_num_proc=8,
+dataset_shuffle=True,
+ddp_backend=None,
+ddp_broadcast_buffers=None,
+ddp_bucket_cap_mb=None,
+ddp_find_unused_parameters=None,
+ddp_timeout=18000000,
+debug=,
+deepspeed=None,
+deepspeed_autotp_size=None,
+device_groups=None,
+device_map=None,
+disable_tqdm=None,
+do_eval=True,
+do_predict=False,
+do_train=False,
+download_mode=reuse_dataset_if_exists,
+ds3_gather_for_generation=True,
+early_stop_interval=None,
+enable_channel_loss=False,
+enable_dft_loss=False,
+eval_accumulation_steps=None,
+eval_dataset=[],
+eval_dataset_args=None,
+eval_delay=0,
+eval_do_concat_batches=True,
+eval_generation_config=None,
+eval_limit=None,
+eval_on_start=False,
+eval_steps=8,
+eval_strategy=steps,
+eval_use_evalscope=False,
+eval_use_gather_object=False,
+external_plugins=[],
+extra_eval_args=None,
+fourier_n_frequency=2000,
+fourier_scaling=300.0,
+fp16=False,
+fp16_backend=auto,
+fp16_full_eval=False,
+fp16_opt_level=O1,
+freeze_aligner=False,
+freeze_llm=False,
+freeze_parameters=[],
+freeze_parameters_ratio=0.0,
+freeze_parameters_regex=None,
+freeze_vit=False,
+fsdp=None,
+fsdp_config=None,
+fsdp_min_num_params=0,
+fsdp_transformer_layer_cls_to_wrap=None,
+full_determinism=False,
+galore_cos_threshold=0.4,
+galore_gamma_proj=2,
+galore_optim_per_parameter=False,
+galore_proj_bits=4,
+galore_proj_group_size=256,
+galore_proj_quant=False,
+galore_proj_type=std,
+galore_quantization=False,
+galore_queue_size=5,
+galore_rank=128,
+galore_scale=1.0,
+galore_target_modules=None,
+galore_update_proj_gap=50,
+galore_with_embedding=False,
+generation_config=None,
+generation_max_length=None,
+generation_num_beams=None,
+gradient_accumulation_steps=96,
+gradient_checkpointing=True,
+gradient_checkpointing_kwargs=None,
+greater_is_better=True,
+group_by_length=False,
+half_precision_backend=auto,
+hqq_axis=None,
+hub_always_push=False,
+hub_model_id=None,
+hub_private_repo=None,
+hub_revision=None,
+hub_strategy=every_save,
+hub_token=<HUB_TOKEN>,
+ignore_args_error=False,
+ignore_data_skip=False,
+include_for_metrics=[],
+include_inputs_for_metrics=False,
+include_num_input_tokens_seen=False,
+include_tokens_per_second=False,
+init_strategy=None,
+init_weights=True,
+interleave_prob=None,
+jit_mode_eval=False,
+label_names=None,
+label_smoothing_factor=0.0,
+lazy_tokenize=True,
+learning_rate=2e-05,
+length_column_name=length,
+liger_kernel_config=None,
+lisa_activated_layers=0,
+lisa_step_interval=20,
+llamapro_num_groups=None,
+llamapro_num_new_blocks=4,
+load_args=False,
+load_best_model_at_end=False,
+load_data_args=False,
+load_from_cache_file=False,
+local_rank=0,
+local_repo_path=None,
+log_level=passive,
+log_level_replica=warning,
+log_on_each_node=True,
+logging_dir=/data/CoordExp/.worktrees/birth-first-stage2-channel-b/tb/stage2_ab/smoke/birth_first_k2_control_vllm_smallfrac_merged1332/smallfrac_8steps-birth_first_k2_control-vllm-merged1332,
+logging_first_step=True,
+logging_nan_inf_filter=True,
+logging_steps=1,
+logging_strategy=steps,
+logprobs=False,
+lora_alpha=32,
+lora_bias=none,
+lora_dropout=0.0,
+lora_dtype=None,
+lora_ga_batch_size=2,
+lora_ga_direction=ArB2r,
+lora_ga_iters=2,
+lora_ga_max_length=1024,
+lora_ga_scale=stable,
+lora_ga_stable_gamma=16,
+lora_modules=[],
+lora_rank=16,
+lorap_lr_ratio=None,
+loss_scale=default,
+loss_type=None,
+lr_scheduler_kwargs={'min_lr': 1e-06},
+lr_scheduler_type=cosine_warmup_with_min_lr,
+max_epochs=None,
+max_grad_norm=1.0,
+max_length=14000,
+max_memory={},
+max_model_len=14000,
+max_new_tokens=64,
+max_pixels=1048576,
+max_steps=8,
+metric=None,
+metric_for_best_model=detection/mAP,
+model=/data/CoordExp/output_remote/stage1_2b/coco_bbox_max60-hard_ce_soft_ce_w1_gate/epoch_4-from-base-2B/v0-20260227-050057/checkpoint-1332-merged-full,
+model_author=None,
+model_kwargs={},
+model_name=None,
+model_revision=None,
+model_type=qwen3_vl,
+modules_to_save=[],
+mp_parameters=,
+neftune_noise_alpha=None,
+new_special_tokens=[],
+no_cuda=False,
+norm_bbox=None,
+num_beams=1,
+num_labels=None,
+num_train_epochs=1,
+optim=adamw_torch_fused,
+optim_args=None,
+optim_target_modules=None,
+optimizer=multimodal,
+output_dir=/data/CoordExp/.worktrees/birth-first-stage2-channel-b/output/stage2_ab/smoke/birth_first_k2_control_vllm_smallfrac_merged1332/smallfrac_8steps-birth_first_k2_control-vllm-merged1332/v0-20260422-134034,
+overwrite_output_dir=False,
+packing=False,
+packing_length=None,
+padding_free=False,
+padding_side=right,
+parallelism_config=None,
+past_index=-1,
+per_device_eval_batch_size=4,
+per_device_train_batch_size=1,
+predict_with_generate=False,
+prediction_loss_only=False,
+problem_type=None,
+project=huggingface,
+push_to_hub=False,
+push_to_hub_model_id=None,
+push_to_hub_organization=None,
+push_to_hub_token=<PUSH_TO_HUB_TOKEN>,
+quant_bits=None,
+quant_method=None,
+ray_exp_name=None,
+ray_scope=last,
+reft_args=None,
+reft_intervention_type=LoreftIntervention,
+reft_layer_key=None,
+reft_layers=None,
+reft_rank=4,
+remove_unused_columns=True,
+repetition_penalty=None,
+report_to=['tensorboard'],
+response_prefix=None,
+restore_callback_states_from_checkpoint=False,
+resume_from_checkpoint=None,
+resume_only_model=False,
+rope_scaling={'mrope_interleaved': True, 'mrope_section': [24, 20, 20], 'rope_type': 'default', 'original_max_position_embeddings': 262144, 'factor': 1.0},
+router_aux_loss_coef=0.0,
+run_name=smallfrac_8steps-birth_first_k2_control-vllm-merged1332,
+save_on_each_node=False,
+save_only_model=True,
+save_safetensors=True,
+save_steps=300,
+save_strategy=no,
+save_total_limit=2,
+seed=17,
+sequence_parallel_size=1,
+shuffle_buffer_size=1000,
+skip_memory_metrics=True,
+sortish_sampler=False,
+split_dataset_ratio=0.0,
+stop_words=[],
+stopping_strategy=first_exhausted,
+stream=False,
+streaming=False,
+strict=False,
+swanlab_exp_name=None,
+swanlab_lark_secret=None,
+swanlab_lark_webhook_url=None,
+swanlab_mode=cloud,
+swanlab_project=None,
+swanlab_token=<SWANLAB_TOKEN>,
+swanlab_workspace=None,
+system=You are a general-purpose object detection and grounding assistant. Output exactly one CoordJSON object {"objects": [...]} with no extra text.
+- The top-level object must contain exactly one key "objects".
+- Each objects[] record must place desc before exactly one geometry key (bbox_2d OR poly); never emit multiple geometries.
+- Prefer including a clearly visible, localizable instance rather than omitting it because the boundary is slightly uncertain.
+- Geometry formatting rules:
+  * bbox_2d is [x1, y1, x2, y2] with x1<=x2 and y1<=y2.
+  * poly is a flat list [x1, y1, x2, y2, ...] with an even number of coords and >= 6 entries.
+    - Preserve adjacency: consecutive vertices are connected, and the last connects back to the first.
+    - Use a consistent vertex order: start from the top-most (then left-most) vertex, then go clockwise around the centroid.
+    - Do NOT sort poly points by x/y; that can create self-intersections.
+- Coordinates must be written as coord tokens `<|coord_N|>` only. Examples that tokenize correctly:
+  * bbox_2d: [<|coord_12|>, <|coord_34|>, <|coord_256|>, <|coord_480|>]
+  * poly: [<|coord_10|>, <|coord_20|>, <|coord_200|>, <|coord_20|>, <|coord_200|>, <|coord_220|>, <|coord_10|>, <|coord_220|>]
+- Coordinates are integers in [0,999]; always keep bare `<|coord_...|>` literals (no quotes) in geometry arrays.
+- JSON layout: single line; one space after colons and commas; double quotes for keys/strings; no trailing text.
+- Order objects by image-space top-left anchor (y1, x1): top-to-bottom then left-to-right.
+  For poly, anchor is (minY, minX) over polygon vertices.
+Prior rules:
+- Open-domain object detection/grounding on public datasets; cover all visible targets.
+- COCO-80 closed-class policy: `desc` must be exactly one canonical class name from this list (case-sensitive): person, bicycle, car, motorcycle, airplane, bus, train, truck, boat, traffic light, fire hydrant, stop sign, parking meter, bench, bird, cat, dog, horse, sheep, cow, elephant, bear, zebra, giraffe, backpack, umbrella, handbag, tie, suitcase, frisbee, skis, snowboard, sports ball, kite, baseball bat, baseball glove, skateboard, surfboard, tennis racket, bottle, wine glass, cup, fork, knife, spoon, bowl, banana, apple, sandwich, orange, broccoli, carrot, hot dog, pizza, donut, cake, chair, couch, potted plant, bed, dining table, toilet, tv, laptop, mouse, remote, keyboard, cell phone, microwave, oven, toaster, sink, refrigerator, book, clock, vase, scissors, teddy bear, hair drier, toothbrush.
+- Do not emit any class outside this list; if uncertain, choose the closest canonical class and keep details concise.
+- Coverage: locate each clearly visible object instance, including small or partially occluded instances when they are still localizable; when multiple instances of the same class exist, output multiple records (one per instance).
+- Atomic instances: each record must refer to exactly one object instance; each bbox_2d must tightly cover a single instance.
+- Prefer one tight atomic box for a clearly visible instance rather than omitting it because the boundary is slightly uncertain.
+- Do not output group boxes that cover multiple instances (e.g., a long thin strip over a crowd or shelf row).
+- Avoid duplicates: do not output multiple near-identical boxes for the same instance.
+,
+target_modules=['all-linear'],
+target_parameters=None,
+target_regex=None,
+task_type=causal_lm,
+temperature=0.0,
+template=qwen3_vl,
+template_backend=swift,
+tf32=None,
+top_k=None,
+top_logprobs=None,
+top_p=None,
+torch_compile=False,
+torch_compile_backend=None,
+torch_compile_mode=None,
+torch_dtype=torch.bfloat16,
+torch_empty_cache_steps=None,
+torchdynamo=None,
+tpu_metrics_debug=False,
+tpu_num_cores=None,
+trackio_space_id=trackio,
+train_dataloader_shuffle=True,
+train_type=lora,
+trainable_parameters=[],
+trainable_parameters_regex=None,
+truncation_strategy=raise,
+tuner_backend=peft,
+use_chat_template=True,
+use_cpu=False,
+use_dora=True,
+use_flash_ckpt=False,
+use_galore=False,
+use_hf=False,
+use_legacy_prediction_loop=False,
+use_liger_kernel=False,
+use_logits_to_keep=None,
+use_mps_device=False,
+use_ray=False,
+use_rslora=False,
+use_swift_lora=False,
+val_dataset=['dummy'],
+val_dataset_shuffle=False,
+vera_d_initial=0.1,
+vera_dropout=0.0,
+vera_projection_prng_key=0,
+vera_rank=256,
+vit_gradient_checkpointing=None,
+vit_lr=2e-05,
+warmup_ratio=0.05,
+warmup_steps=0,
+weight_decay=0.0,
+zero_hpz_partition_size=None,
+)
+[INFO:swift] attn_impl: flash_attention_2
+[INFO:swift] model_kwargs: {'device_map': 'cuda:0', 'dtype': torch.bfloat16}
+Loading checkpoint shards:   0%|          | 0/2 [00:00<?, ?it/s]Loading checkpoint shards:  50%|█████     | 1/2 [00:00<00:00,  1.16it/s]Loading checkpoint shards: 100%|██████████| 2/2 [00:01<00:00,  1.47it/s]Loading checkpoint shards: 100%|██████████| 2/2 [00:01<00:00,  1.41it/s]
+[INFO:swift] Setting max_ratio: 200. You can adjust this hyperparameter through the environment variable: `MAX_RATIO`.
+[INFO:swift] Setting frame_factor: 2. You can adjust this hyperparameter through the environment variable: `FRAME_FACTOR`.
+[INFO:swift] Setting fps: 2.0. You can adjust this hyperparameter through the environment variable: `FPS`.
+[INFO:swift] Setting fps_min_frames: 4. You can adjust this hyperparameter through the environment variable: `FPS_MIN_FRAMES`.
+[INFO:swift] Setting fps_max_frames: 768. You can adjust this hyperparameter through the environment variable: `FPS_MAX_FRAMES`.
+[INFO:swift] Setting image_max_token_num: 16384. You can adjust this hyperparameter through the environment variable: `IMAGE_MAX_TOKEN_NUM`.
+[INFO:swift] Setting image_min_token_num: 4. You can adjust this hyperparameter through the environment variable: `IMAGE_MIN_TOKEN_NUM`.
+[INFO:swift] Setting spatial_merge_size: 2. You can adjust this hyperparameter through the environment variable: `SPATIAL_MERGE_SIZE`.
+[INFO:swift] Setting video_max_token_num: 768. You can adjust this hyperparameter through the environment variable: `VIDEO_MAX_TOKEN_NUM`.
+[INFO:swift] Setting video_min_token_num: 128. You can adjust this hyperparameter through the environment variable: `VIDEO_MIN_TOKEN_NUM`.
+[INFO:swift] model.hf_device_map: {'': device(type='cuda', index=0)}
+[INFO:swift] model_info: ModelInfo(model_type='qwen3_vl', model_dir='/data/CoordExp/output_remote/stage1_2b/coco_bbox_max60-hard_ce_soft_ce_w1_gate/epoch_4-from-base-2B/v0-20260227-050057/checkpoint-1332-merged-full', torch_dtype=torch.bfloat16, max_model_len=262144, quant_method=None, quant_bits=None, rope_scaling={'mrope_interleaved': True, 'mrope_section': [24, 20, 20], 'rope_type': 'default'}, is_moe_model=False, config=Qwen3VLConfig {
+  "architectures": [
+    "Qwen3VLForConditionalGeneration"
+  ],
+  "dtype": "bfloat16",
+  "hidden_size": 2048,
+  "image_token_id": 151655,
+  "model_type": "qwen3_vl",
+  "pad_token_id": 151643,
+  "text_config": {
+    "attention_bias": false,
+    "attention_dropout": 0.0,
+    "bos_token_id": 151643,
+    "dtype": "bfloat16",
+    "eos_token_id": 151645,
+    "head_dim": 128,
+    "hidden_act": "silu",
+    "hidden_size": 2048,
+    "initializer_range": 0.02,
+    "intermediate_size": 6144,
+    "max_position_embeddings": 14000,
+    "model_type": "qwen3_vl_text",
+    "num_attention_heads": 16,
+    "num_hidden_layers": 28,
+    "num_key_value_heads": 8,
+    "pad_token_id": 151643,
+    "rms_norm_eps": 1e-06,
+    "rope_scaling": {
+      "factor": 1.0,
+      "mrope_interleaved": true,
+      "mrope_section": [
+        24,
+        20,
+        20
+      ],
+      "original_max_position_embeddings": 262144,
+      "rope_type": "default"
+    },
+    "rope_theta": 5000000,
+    "tie_word_embeddings": true,
+    "use_cache": true,
+    "vocab_size": 152670
+  },
+  "tie_word_embeddings": true,
+  "transformers_version": "4.57.1",
+  "video_token_id": 151656,
+  "vision_config": {
+    "deepstack_visual_indexes": [
+      5,
+      11,
+      17
+    ],
+    "depth": 24,
+    "dtype": "bfloat16",
+    "hidden_act": "gelu_pytorch_tanh",
+    "hidden_size": 1024,
+    "in_channels": 3,
+    "initializer_range": 0.02,
+    "intermediate_size": 4096,
+    "model_type": "qwen3_vl",
+    "num_heads": 16,
+    "num_position_embeddings": 2304,
+    "out_hidden_size": 2048,
+    "pad_token_id": 151643,
+    "patch_size": 16,
+    "spatial_merge_size": 2,
+    "temporal_patch_size": 2
+  },
+  "vision_end_token_id": 151653,
+  "vision_start_token_id": 151652
+}
+, task_type='causal_lm', num_labels=None)
+[INFO:swift] model.generation_config: GenerationConfig {
+  "bos_token_id": 151643,
+  "eos_token_id": [
+    151645,
+    151643
+  ],
+  "max_new_tokens": 64,
+  "pad_token_id": 151643
+}
+
+[INFO:swift] default_system: 'You are a general-purpose object detection and grounding assistant. Output exactly one CoordJSON object {"objects": [...]} with no extra text.\n- The top-level object must contain exactly one key "objects".\n- Each objects[] record must place desc before exactly one geometry key (bbox_2d OR poly); never emit multiple geometries.\n- Prefer including a clearly visible, localizable instance rather than omitting it because the boundary is slightly uncertain.\n- Geometry formatting rules:\n  * bbox_2d is [x1, y1, x2, y2] with x1<=x2 and y1<=y2.\n  * poly is a flat list [x1, y1, x2, y2, ...] with an even number of coords and >= 6 entries.\n    - Preserve adjacency: consecutive vertices are connected, and the last connects back to the first.\n    - Use a consistent vertex order: start from the top-most (then left-most) vertex, then go clockwise around the centroid.\n    - Do NOT sort poly points by x/y; that can create self-intersections.\n- Coordinates must be written as coord tokens `<|coord_N|>` only. Examples that tokenize correctly:\n  * bbox_2d: [<|coord_12|>, <|coord_34|>, <|coord_256|>, <|coord_480|>]\n  * poly: [<|coord_10|>, <|coord_20|>, <|coord_200|>, <|coord_20|>, <|coord_200|>, <|coord_220|>, <|coord_10|>, <|coord_220|>]\n- Coordinates are integers in [0,999]; always keep bare `<|coord_...|>` literals (no quotes) in geometry arrays.\n- JSON layout: single line; one space after colons and commas; double quotes for keys/strings; no trailing text.\n- Order objects by image-space top-left anchor (y1, x1): top-to-bottom then left-to-right.\n  For poly, anchor is (minY, minX) over polygon vertices.\nPrior rules:\n- Open-domain object detection/grounding on public datasets; cover all visible targets.\n- COCO-80 closed-class policy: `desc` must be exactly one canonical class name from this list (case-sensitive): person, bicycle, car, motorcycle, airplane, bus, train, truck, boat, traffic light, fire hydrant, stop sign, parking meter, bench, bird, cat, dog, horse, sheep, cow, elephant, bear, zebra, giraffe, backpack, umbrella, handbag, tie, suitcase, frisbee, skis, snowboard, sports ball, kite, baseball bat, baseball glove, skateboard, surfboard, tennis racket, bottle, wine glass, cup, fork, knife, spoon, bowl, banana, apple, sandwich, orange, broccoli, carrot, hot dog, pizza, donut, cake, chair, couch, potted plant, bed, dining table, toilet, tv, laptop, mouse, remote, keyboard, cell phone, microwave, oven, toaster, sink, refrigerator, book, clock, vase, scissors, teddy bear, hair drier, toothbrush.\n- Do not emit any class outside this list; if uncertain, choose the closest canonical class and keep details concise.\n- Coverage: locate each clearly visible object instance, including small or partially occluded instances when they are still localizable; when multiple instances of the same class exist, output multiple records (one per instance).\n- Atomic instances: each record must refer to exactly one object instance; each bbox_2d must tightly cover a single instance.\n- Prefer one tight atomic box for a clearly visible instance rather than omitting it because the boundary is slightly uncertain.\n- Do not output group boxes that cover multiple instances (e.g., a long thin strip over a crowd or shelf row).\n- Avoid duplicates: do not output multiple near-identical boxes for the same instance.\n'
+[INFO:swift] max_length: 14000
+[INFO:swift] response_prefix: ''
+[INFO:swift] agent_template: hermes
+[INFO:swift] norm_bbox: norm1000
+[INFO:swift] Using environment variable `ROOT_IMAGE_DIR`, Setting ROOT_IMAGE_DIR: /data/CoordExp/public_data/coco/rescale_32_1024_bbox_max60.
+[INFO:swift] Setting QWENVL_BBOX_FORMAT: legacy. You can adjust this hyperparameter through the environment variable: `QWENVL_BBOX_FORMAT`.
+[INFO:swift.custom.__main__] Model: /data/CoordExp/output_remote/stage1_2b/coco_bbox_max60-hard_ce_soft_ce_w1_gate/epoch_4-from-base-2B/v0-20260227-050057/checkpoint-1332-merged-full
+[INFO:swift.custom.__main__] Training type: lora
+[INFO:swift.custom.__main__] LoRA rank: 16, alpha: 32
+[INFO:swift.custom.__main__] custom.train_sample_limit: 768
+[INFO:swift.custom.__main__] custom.val_sample_limit: 128
+[INFO:swift.custom.__main__] Dense mode only (custom.use_summary=false)
+[INFO:swift.custom.__main__] Serialization order config: object_ordering=sorted object_field_order=desc_first
+[INFO:swift.custom.__main__] Loading training dataset: public_data/coco/rescale_32_1024_bbox_max60/train.coord.jsonl
+[INFO:swift.custom.__main__] Packing enabled for rollout-matching: dataset packing is disabled; trainer will apply dynamic post-rollout packing for the teacher-forced forward pass.
+[INFO:swift.custom.__main__] Training dataset size (reported/approx): 768
+[INFO:swift.custom.__main__] Loading validation dataset: public_data/coco/rescale_32_1024_bbox_max60/val.coord.jsonl
+[INFO:swift.custom.__main__] Validation dataset size: 128
+[INFO:swift.custom.__main__] Preparing model with tuner...
+[INFO:swift] lora_config: LoraConfig(task_type='CAUSAL_LM', peft_type=<PeftType.LORA: 'LORA'>, auto_mapping=None, base_model_name_or_path='/data/CoordExp/output_remote/stage1_2b/coco_bbox_max60-hard_ce_soft_ce_w1_gate/epoch_4-from-base-2B/v0-20260227-050057/checkpoint-1332-merged-full', revision=None, inference_mode=False, r=16, target_modules='^(model.language_model.*\\.(v_proj|q_proj|down_proj|gate_proj|o_proj|k_proj|up_proj)|(?!(model.visual.merger|model.visual.deepstack_merger_list))model.visual.*\\.(linear_fc1|linear_fc2|attn.proj|qkv)|model.visual.merger.*\\.(linear_fc2|linear_fc1)|model.visual.deepstack_merger_list.*\\.(linear_fc2|linear_fc1))$', exclude_modules=None, lora_alpha=32, lora_dropout=0.0, fan_in_fan_out=False, bias='none', use_rslora=False, modules_to_save=[], init_lora_weights=True, layers_to_transform=None, layers_pattern=None, rank_pattern={}, alpha_pattern={}, megatron_config=None, megatron_core='megatron.core', trainable_token_indices=None, loftq_config={}, eva_config=None, corda_config=None, use_dora=True, use_qalora=False, qalora_group_size=16, layer_replication=None, runtime_config=LoraRuntimeConfig(ephemeral_gpu_offload=False), lora_bias=False, target_parameters=None, lora_dtype=None, lorap_lr_ratio=None, lorap_emb_lr=1e-06)
+[INFO:swift.custom.__main__] Model after tuner: PeftModelForCausalLM
+[INFO:swift.custom.__main__] Setting up trainer...
+[WARNING:swift.custom.__main__] Overriding per_device_eval_batch_size=4 with rollout eval_decode_batch_size=32 for rollout trainer variants.
+[INFO:swift.custom.__main__] SaveDelayCallback enabled: checkpoint saves blocked until step 100
+The model is already on multiple devices. Skipping the move to device specified in `args`.
+[2026-04-22 13:40:52,110] [INFO] [real_accelerator.py:260:get_accelerator] Setting ds_accelerator to cuda (auto detect)
+[2026-04-22 13:40:53,294] [INFO] [logging.py:107:log_dist] [Rank -1] [TorchCheckpointEngine] Initialized with serialization = False
+[INFO:swift] use_reentrant: False
+Stage2-AB: forcing args.average_tokens_across_devices=false by default; loss/metrics are locally normalized and globally reduced at the step boundary.
+[INFO:swift.custom.__main__] Rollout-matching config injected: rollout_backend=vllm packing_enabled=True pipeline_checksum= objective=[] diagnostics=[] config=/data/CoordExp/.worktrees/birth-first-stage2-channel-b/configs/stage2_two_channel/smoke/birth_first_k2_control_vllm_smallfrac_merged1332.yaml run_name=smallfrac_8steps-birth_first_k2_control-vllm-merged1332 seed=17
+[INFO:swift.custom.__main__] Stage2-AB config injected: b_ratio=0.75 pipeline_checksum=affedb267147bfe3640aaf942dfbd83bcd0f77bb4f5a942a9996a199aa13a98b objective=['token_ce', 'loss_duplicate_burst_unlikelihood', 'bbox_geo', 'bbox_size_aux', 'coord_reg'] diagnostics=['coord_diag'] config=/data/CoordExp/.worktrees/birth-first-stage2-channel-b/configs/stage2_two_channel/smoke/birth_first_k2_control_vllm_smallfrac_merged1332.yaml run_name=smallfrac_8steps-birth_first_k2_control-vllm-merged1332 seed=17
+[INFO:swift.custom.__main__] LossGradientMonitor enabled: interval_steps=50 require_sync_gradients=True param_strategy=auto_last_lm_layernorm
+[INFO:swift.custom.__main__] ======================================================================
+[INFO:swift.custom.__main__]   Starting Training
+[INFO:swift.custom.__main__] ======================================================================
+[INFO:swift.custom.__main__]   Output directory: /data/CoordExp/.worktrees/birth-first-stage2-channel-b/output/stage2_ab/smoke/birth_first_k2_control_vllm_smallfrac_merged1332/smallfrac_8steps-birth_first_k2_control-vllm-merged1332/v0-20260422-134034
+[INFO:swift.custom.__main__]   Epochs: 1
+[INFO:swift.custom.__main__]   Effective batch size: 96
+[INFO:swift.custom.__main__] ======================================================================
+[INFO:swift.custom.__main__] Wrote run manifest files: effective_runtime=effective_runtime.json, eval_data_provenance=eval_data_provenance.json, pipeline_manifest=pipeline_manifest.json, resolved_config=resolved_config.json, runtime_env=runtime_env.json, train_data_provenance=train_data_provenance.json
+[INFO:swift.custom.__main__] Wrote run metadata: /data/CoordExp/.worktrees/birth-first-stage2-channel-b/output/stage2_ab/smoke/birth_first_k2_control_vllm_smallfrac_merged1332/smallfrac_8steps-birth_first_k2_control-vllm-merged1332/v0-20260422-134034/run_metadata.json
+[INFO:swift.custom.__main__] Wrote experiment manifest: /data/CoordExp/.worktrees/birth-first-stage2-channel-b/output/stage2_ab/smoke/birth_first_k2_control_vllm_smallfrac_merged1332/smallfrac_8steps-birth_first_k2_control-vllm-merged1332/v0-20260422-134034/experiment_manifest.json
+[INFO:swift] The logging file will be saved in: /data/CoordExp/.worktrees/birth-first-stage2-channel-b/output/stage2_ab/smoke/birth_first_k2_control_vllm_smallfrac_merged1332/smallfrac_8steps-birth_first_k2_control-vllm-merged1332/v0-20260422-134034/logging.jsonl
+[INFO:swift] Successfully registered post_encode hook: ['PeftModelForCausalLM'].
+The tokenizer has new PAD/BOS/EOS tokens that differ from the model config and generation config. The model config and generation config were aligned accordingly, being updated with the tokenizer's values. Updated tokens: {'eos_token_id': 151645, 'bos_token_id': None}.
+Train:   0%|          | 0/8 [00:00<?, ?it/s]Could not estimate the number of tokens of the input, floating-point operations will not be computed
+Train:  12%|█▎        | 1/8 [01:30<10:30, 90.13s/it]                                                    {'loss': 0.7560817, 'grad_norm': 0.99050915, 'learning_rate': 1.906e-05, 'loss/text/struct_ce': 0.00342617, 'loss/text/desc_ce': 0.02131925, 'loss/coord/bbox_smoothl1': 0.00170247, 'loss/coord/bbox_ciou': 0.2354632, 'loss/coord/bbox_log_wh': 0.01652176, 'loss/coord/coord_token_ce': 0.06957634, 'loss/coord/coord_soft_ce': 0.358314, 'loss/coord/coord_w1': 0.00061958, 'loss/coord/coord_gate': 0.04913866, 'loss/coord/text_gate': 2e-07, 'coord_diag/adjacent_repulsion_pair_count': 0.0, 'coord_diag/adjacent_repulsion_applied_count': 0.0, 'coord_diag/adjacent_repulsion_copy_score_mean': 0.0, 'coord_diag/coord_tokens_total': 3244.0, 'coord_diag/acc_top5': 0.40331997, 'coord_diag/p_gt_mean': 0.06103096, 'coord_diag/margin_mean': 0.82385122, 'coord_diag/expected_bin_mae': 23.14554608, 'coord_diag/expected_bin_abs_err_p90': 56.49317129, 'coord_diag/coord_vocab_mass_mean': 0.95392453, 'stage2/channel_a': 1.0, 'stage2/channel_b': 0.0, 'stage2_ab/b_ratio_realized': 0.0, 'time/channel_a_teacher_encode_s': 1.92687245, 'time/channel_a_prepare_segments_s': 2.32793595, 'time/post_rollout_pack_s': 0.01520636, 'time/channel_a_collate_s': 0.69117188, 'time/sft_total_time': 86.71636988, 'time/rollout_total_time': 0.0, 'train/samples_total': 96.0, 'train/micro_steps': 18.0, 'train/samples_per_micro': 5.33333333, 'time/forward_s': 21.30021616, 'packing/post_rollout_fill': 0.93552381, 'packing/post_rollout_selected_total_len': 13097.33333333, 'packing/post_rollout_segments': 5.33333333, 'packing/post_rollout_buffer': 5.0, 'train/samples_seen': 96.0, 'epoch': 0.12, 'global_step/max_steps': '1/8', 'percentage': '12.50%', 'elapsed_time': '1m 30s', 'remaining_time': '10m 30s', 'memory(GiB)': 51.88, 'train_speed(iter/s)': 0.011095}
+Train:  12%|█▎        | 1/8 [01:30<10:30, 90.13s/it]Train:  12%|█▎        | 1/8 [01:30<10:30, 90.13s/it]INFO:     127.0.0.1:9348 - "GET /get_world_size/ HTTP/1.1" 200 OK
+[INFO:swift] vLLM rollout server world_size(s): [3]
+[INFO:swift] Rollout decode batching (vLLM server): context=train decode_batch_size_cap=32 learner_world_size=1 rollout_server_world_sizes=[3] rollout_world_size=3 per_rank_chunk=96 total_chunk_across_ranks=96
+INFO 04-22 13:42:27 [__init__.py:216] Automatically detected platform cuda.
+INFO:     127.0.0.1:9354 - "GET /health/ HTTP/1.1" 200 OK
+INFO:     127.0.0.1:9366 - "POST /get_engine_type/ HTTP/1.1" 200 OK
+[INFO:swift] vLLM rollout server engine_type: {'engine_type': 'LLMEngine', 'enable_multi_turn': False, 'use_gym_env': False, 'enable_lora': False}
+INFO:     127.0.0.1:9366 - "GET /get_world_size/ HTTP/1.1" 200 OK
+INFO:     127.0.0.1:9366 - "POST /init_communicator/ HTTP/1.1" 200 OK
+INFO 04-22 13:42:27 [__init__.py:1384] Found nccl from library libnccl.so.2
+INFO 04-22 13:42:27 [pynccl.py:103] vLLM is using nccl==2.27.3
+[rank2]:[W422 13:42:37.915099357 socket.cpp:200] [c10d] The hostname of the client socket cannot be retrieved. err=-3
+[1;36m(EngineCore_DP2 pid=3722422)[0;0m INFO 04-22 13:42:37 [__init__.py:1384] Found nccl from library libnccl.so.2
+[1;36m(EngineCore_DP2 pid=3722422)[0;0m INFO 04-22 13:42:37 [pynccl.py:103] vLLM is using nccl==2.27.3
+[rank1]:[W422 13:42:37.916420720 socket.cpp:200] [c10d] The hostname of the client socket cannot be retrieved. err=-3
+[rank0]:[W422 13:42:37.916571104 socket.cpp:200] [c10d] The hostname of the client socket cannot be retrieved. err=-3
+[1;36m(EngineCore_DP1 pid=3722419)[0;0m INFO 04-22 13:42:37 [__init__.py:1384] Found nccl from library libnccl.so.2
+[1;36m(EngineCore_DP1 pid=3722419)[0;0m INFO 04-22 13:42:37 [pynccl.py:103] vLLM is using nccl==2.27.3
+[1;36m(EngineCore_DP0 pid=3722416)[0;0m INFO 04-22 13:42:37 [__init__.py:1384] Found nccl from library libnccl.so.2
+[1;36m(EngineCore_DP0 pid=3722416)[0;0m INFO 04-22 13:42:37 [pynccl.py:103] vLLM is using nccl==2.27.3
+INFO:     127.0.0.1:9786 - "POST /update_flattened_params/ HTTP/1.1" 200 OK
+INFO:     127.0.0.1:9786 - "POST /update_flattened_params/ HTTP/1.1" 200 OK
+INFO:     127.0.0.1:9786 - "POST /update_flattened_params/ HTTP/1.1" 200 OK
+INFO:     127.0.0.1:9786 - "POST /update_flattened_params/ HTTP/1.1" 200 OK
+INFO:     127.0.0.1:9786 - "POST /update_flattened_params/ HTTP/1.1" 200 OK
+INFO:     127.0.0.1:9786 - "POST /update_flattened_params/ HTTP/1.1" 200 OK
+INFO:     127.0.0.1:9786 - "POST /update_flattened_params/ HTTP/1.1" 200 OK
+INFO:     127.0.0.1:9786 - "POST /update_flattened_params/ HTTP/1.1" 200 OK
+INFO:     127.0.0.1:9786 - "POST /update_flattened_params/ HTTP/1.1" 200 OK
+INFO:     127.0.0.1:9786 - "POST /update_flattened_params/ HTTP/1.1" 200 OK
+[1;36m(EngineCore_DP2 pid=3722422)[0;0m [1;36m(EngineCore_DP1 pid=3722419)[0;0m INFO 04-22 13:42:38 [block_pool.py:378] Successfully reset prefix cache
+INFO 04-22 13:42:38 [block_pool.py:378] Successfully reset prefix cache
+[1;36m(EngineCore_DP0 pid=3722416)[0;0m INFO 04-22 13:42:38 [block_pool.py:378] Successfully reset prefix cache
+INFO:     127.0.0.1:9786 - "POST /reset_prefix_cache/ HTTP/1.1" 200 OK
+[INFO:swift] vLLM server rollout metadata: servers=[{'base_url': 'http://127.0.0.1:8000', 'group_port': 51216}] sync_mode=full request_n=96 rollout_seed_base=1000020 request_index_offset=0 effective_seed_base=1000020 decode_batch_size_cap=32 per_rank_chunk=96 learner_world_size=1 learner_rank=0 server_world_sizes=[3] per_server_rank_caps=[96] round_cap_total=96 seed_plan=[{'round': 0, 'server_idx': 0, 'base_url': 'http://127.0.0.1:8000', 'start': 0, 'end': 96, 'cap_for_rank': 96, 'seed': 1000020}]
+  0%|          | 0/32 [00:00<?, ?it/s]  0%|          | 0/32 [00:00<?, ?it/s]  0%|          | 0/32 [00:00<?, ?it/s]  3%|▎         | 1/32 [00:02<01:02,  2.03s/it]  3%|▎         | 1/32 [00:02<01:15,  2.44s/it]  3%|▎         | 1/32 [00:02<01:07,  2.18s/it] 25%|██▌       | 8/32 [00:02<00:05,  4.21it/s]  9%|▉         | 3/32 [00:02<00:16,  1.73it/s] 12%|█▎        | 4/32 [00:02<00:13,  2.07it/s] 16%|█▌        | 5/32 [00:02<00:11,  2.41it/s] 38%|███▊      | 12/32 [00:02<00:03,  5.70it/s] 28%|██▊       | 9/32 [00:02<00:03,  6.41it/s] 53%|█████▎    | 17/32 [00:03<00:02,  7.34it/s] 28%|██▊       | 9/32 [00:03<00:05,  3.95it/s] 41%|████      | 13/32 [00:03<00:02,  6.38it/s] 38%|███▊      | 12/32 [00:03<00:04,  4.70it/s] 50%|█████     | 16/32 [00:03<00:02,  6.71it/s] 56%|█████▋    | 18/32 [00:07<00:08,  1.64it/s] 59%|█████▉    | 19/32 [00:09<00:10,  1.27it/s] 62%|██████▎   | 20/32 [00:12<00:13,  1.10s/it] 56%|█████▋    | 18/32 [00:20<00:01,  7.34it/s] 38%|███▊      | 12/32 [00:20<00:04,  4.70it/s] 66%|██████▌   | 21/32 [01:02<01:56, 10.62s/it] 41%|████      | 13/32 [01:02<02:53,  9.14s/it] 59%|█████▉    | 19/32 [01:02<01:17,  5.97s/it] 84%|████████▍ | 27/32 [01:02<00:19,  3.99s/it] 69%|██████▉   | 22/32 [01:02<00:30,  3.09s/it] 78%|███████▊  | 25/32 [01:02<00:22,  3.24s/it]100%|██████████| 32/32 [01:02<00:00,  1.51s/it]100%|██████████| 32/32 [01:02<00:00,  1.95s/it]
+100%|██████████| 32/32 [01:02<00:00,  1.97s/it]
+100%|██████████| 32/32 [01:02<00:00,  1.96s/it]
+INFO:     127.0.0.1:9786 - "POST /infer/ HTTP/1.1" 200 OK
+  0%|          | 0/32 [00:00<?, ?it/s]  0%|          | 0/32 [00:00<?, ?it/s]  0%|          | 0/32 [00:00<?, ?it/s]  3%|▎         | 1/32 [00:00<00:14,  2.15it/s]  3%|▎         | 1/32 [00:00<00:16,  1.85it/s]  3%|▎         | 1/32 [00:00<00:16,  1.87it/s] 19%|█▉        | 6/32 [00:00<00:02, 12.09it/s]  6%|▋         | 2/32 [00:00<00:09,  3.24it/s] 28%|██▊       | 9/32 [00:00<00:02, 10.60it/s]  9%|▉         | 3/32 [00:01<00:09,  3.14it/s] 16%|█▌        | 5/32 [00:00<00:04,  5.67it/s] 25%|██▌       | 8/32 [00:01<00:02, 11.06it/s] 28%|██▊       | 9/32 [00:01<00:02, 10.68it/s] 44%|████▍     | 14/32 [00:01<00:01, 13.58it/s] 44%|████▍     | 14/32 [00:01<00:01, 17.72it/s] 38%|███▊      | 12/32 [00:01<00:02,  7.96it/s] 44%|████▍     | 14/32 [00:01<00:01,  9.20it/s] 50%|█████     | 16/32 [00:02<00:01,  8.17it/s] 56%|█████▋    | 18/32 [00:02<00:01,  7.69it/s] 53%|█████▎    | 17/32 [00:02<00:02,  5.38it/s] 50%|█████     | 16/32 [00:03<00:04,  3.81it/s] 59%|█████▉    | 19/32 [00:04<00:04,  3.14it/s] 66%|██████▌   | 21/32 [00:05<00:04,  2.52it/s] 69%|██████▉   | 22/32 [00:07<00:05,  1.80it/s] 72%|███████▏  | 23/32 [00:07<00:04,  1.94it/s] 62%|██████▎   | 20/32 [00:08<00:11,  1.01it/s] 66%|██████▌   | 21/32 [00:08<00:09,  1.16it/s] 56%|█████▋    | 18/32 [00:12<00:19,  1.36s/it] 59%|█████▉    | 19/32 [00:13<00:16,  1.29s/it] 62%|██████▎   | 20/32 [00:14<00:15,  1.27s/it] 75%|███████▌  | 24/32 [00:57<01:21, 10.25s/it] 69%|██████▉   | 22/32 [00:57<01:41, 10.20s/it] 66%|██████▌   | 21/32 [00:57<01:45,  9.58s/it] 91%|█████████ | 29/32 [00:57<00:10,  3.47s/it] 84%|████████▍ | 27/32 [00:57<00:17,  3.55s/it] 97%|█████████▋| 31/32 [00:57<00:03,  3.48s/it]100%|██████████| 32/32 [00:58<00:00,  1.81s/it]
+100%|██████████| 32/32 [00:57<00:00,  1.81s/it]
+100%|██████████| 32/32 [00:57<00:00,  1.81s/it]
+INFO:     127.0.0.1:9786 - "POST /infer/ HTTP/1.1" 200 OK
+Train:  25%|██▌       | 2/8 [05:20<17:15, 172.52s/it]                                                     {'loss': 1.23397815, 'grad_norm': 5.16605711, 'learning_rate': 1.642e-05, 'loss/B_rollout_text/struct_ce': 0.19600313, 'loss/B_rollout_text/desc_ce': 0.02176289, 'stage2_ab/channel_b/birth_first/N_continue_over_eos_boundaries': 0.0, 'stage2_ab/channel_b/birth_first/N_continue_over_eos_skipped_no_recovered_boundary': 0.0, 'train/optimization/loss_duplicate_burst_unlikelihood': 0.34047311, 'loss/B_rollout_text/duplicate_burst_unlikelihood': 0.34047311, 'diag/duplicate_burst/num_terms': 7.0, 'diag/duplicate_burst/num_ul_boundaries': 7.0, 'diag/duplicate_burst/loss_per_term': 6.50134686, 'loss/B_coord/bbox_smoothl1': 0.00238609, 'loss/B_coord/bbox_ciou': 0.18958367, 'loss/B_coord/bbox_log_wh': 0.01174667, 'loss/B_coord/coord_token_ce': 0.06922145, 'loss/B_coord/coord_soft_ce': 0.35871349, 'loss/B_coord/coord_w1': 0.00064213, 'loss/B_coord/coord_gate': 0.04339267, 'loss/B_coord/text_gate': 5.267e-05, 'coord_diag/B/adjacent_repulsion_pair_count': 0.0, 'coord_diag/B/adjacent_repulsion_applied_count': 0.0, 'coord_diag/B/adjacent_repulsion_copy_score_mean': 0.0, 'coord_diag/B/coord_tokens_total': 2504.0, 'coord_diag/B/acc_top5': 0.39264776, 'coord_diag/B/p_gt_mean': 0.06776303, 'coord_diag/B/margin_mean': 0.91509179, 'coord_diag/B/expected_bin_mae': 25.84519337, 'coord_diag/B/expected_bin_abs_err_p90': 59.88849008, 'coord_diag/B/coord_vocab_mass_mean': 0.9586647, 'stage2/channel_a': 0.0, 'stage2/channel_b': 1.0, 'stage2_ab/b_ratio_realized': 0.5, 'stage2/raw_rollouts': 288.0, 'stage2/invalid_rollout': 4.0, 'stage2_ab/channel_b/invalid_rollout': 4.0, 'stage2/drop_poly': 0.0, 'stage2/drop_unknown': 0.0, 'stage2/drop_bbox_invalid': 6.0, 'rollout/seed_base': 52084.375, 'rollout/parse_truncated': 45.0, 'rollout/anchor/pred_objects': 213.0, 'rollout/anchor/valid_pred_objects': 207.0, 'rollout/anchor/parse_truncated_rate': 0.46875, 'rollout/anchor/gen_new_tokens_mean': 1521.21875, 'rollout/anchor/gen_new_tokens_p90': 3084.0, 'rollout/anchor/near_iou90_any': 19.0, 'rollout/anchor/near_iou90_same': 10.0, 'rollout/explorer/pred_objects': 2.02083333, 'rollout/explorer/valid_pred_objects': 2.01041667, 'rollout/explorer/parse_truncated_rate': 0.4375, 'rollout/explorer/gen_new_tokens_mean': 1116.55208333, 'rollout/explorer/gen_new_tokens_p90': 3084.0, 'rollout/explorer/near_iou90_any': 0.01041667, 'rollout/explorer/near_iou90_same': 0.0, 'rollout/explorer/temperature': 0.7, 'rollout/explorer/do_sample': 1.0, 'rollout/explorer/top_p': 0.95, 'rollout/explorer/top_k': 64.0, 'rollout/matched_for_supervision_count': 2880.0, 'rollout/matched_for_supervision_over_valid_pred': 0.77294686, 'stage2_ab/channel_b/closure_supervision/N_drop': 0.0, 'stage2_ab/channel_b/prompt_tok_mismatch': 0.0, 'stage2_ab/channel_b/prompt_tok_mismatch_rate': 0.0, 'stage2_ab/channel_b/invalid_rollout_sample_dropped': 0.0, 'stage2_ab/channel_b/invalid_rollout_sample_dropped_rate': 0.0, 'stage2_ab/channel_b/_prompt_tok_mismatch_num': 0.0, 'stage2_ab/channel_b/_prompt_tok_mismatch_den': 96.0, 'dup/raw/max_desc_count': 0.07703993, 'dup/raw/saturation_rate': 0.01529044, 'dup/raw/duplicate_like_max_cluster_size': 0.06022135, 'dup/raw/desc_entropy': 0.02046646, 'dup/raw/near_iou90_pairs_same_desc_count': 10.0, 'dup/raw/near_iou90_pairs_any_desc_count': 19.0, 'stage2_ab/channel_b/dup/N_raw_bbox_valid': 207.0, 'stage2_ab/channel_b/dup/N_clean_accepted': 191.0, 'stage2_ab/channel_b/dup/N_clusters_total': 10.0, 'stage2_ab/channel_b/dup/N_clusters_exempt': 3.0, 'stage2_ab/channel_b/dup/N_clusters_suppressed': 7.0, 'stage2_ab/channel_b/dup/N_objects_suppressed': 16.0, 'stage2_ab/channel_b/dup/N_ul_boundaries': 7.0, 'stage2_ab/channel_b/dup/N_duplicate_burst_unlikelihood_skipped_no_divergence': 0.0, 'train/triage/gt_backed_count': 160.0, 'train/triage/unlabeled_consistent_count': 4.0, 'train/triage/support_positive_shielded_count': 4.0, 'train/triage/neutral_shielded_count': 0.0, 'train/triage/dead_anchor_count': 27.0, 'train/triage/lvis_verified_positive_dead_count': 0.0, 'train/triage/lvis_verified_negative_dead_count': 0.0, 'train/triage/lvis_not_exhaustive_count': 0.0, 'train/triage/lvis_unevaluable_count': 31.0, 'train/triage/explorer_only_dead_count': 49.0, 'train/triage/pseudo_positive_candidate_count': 0.0, 'train/triage/pseudo_positive_subthreshold_count': 4.0, 'train/triage/pseudo_positive_selected_count': 0.0, 'train/triage/pseudo_positive_cluster_demoted_count': 0.0, 'train/triage/anchor_preparation_dropped_count': 0.0, 'train/triage/pseudo_positive_support_rate_num': 0.0, 'train/triage/pseudo_positive_support_rate_den': 0.0, 'train/triage/pseudo_positive_selected_support_rate_num': 0.0, 'train/triage/pseudo_positive_selected_support_rate_den': 0.0, 'train/triage/recovered_ground_truth_count': 14.0, 'train/triage/recovered_ground_truth_rate_num': 14.0, 'train/triage/recovered_ground_truth_rate_den': 14.0, 'train/triage/recovered_ground_truth_rate': 1.0, 'train/triage/dead_anchor_rate_num': 27.0, 'train/triage/dead_anchor_rate_den': 191.0, 'train/triage/dead_anchor_rate': 0.14136126, 'train/triage/explorer_only_dead_rate_num': 49.0, 'train/triage/explorer_only_dead_rate_den': 193.0, 'train/triage/explorer_only_dead_rate': 0.25388601, 'stage2_ab/channel_b/strict_drop/N_valid_pred': 207.0, 'stage2_ab/channel_b/strict_drop/N_drop_invalid': 20.0, 'stage2_ab/channel_b/strict_drop/reason/other': 2.0, 'stage2_ab/channel_b/strict_drop/reason/wrong_arity': 6.0, 'stage2_ab/channel_b/strict_drop/reason/unexpected_keys': 6.0, 'stage2_ab/channel_b/strict_drop/reason/bbox_invalid': 6.0, 'time/rollout_generate_s': 125.46654195, 'time/rollout_parse_match_s': 3.78262101, 'time/rollout_teacher_encode_s': 2.22471945, 'time/post_rollout_pack_s': 0.01147802, 'rollout/parse_truncated_rate': 0.46875, 'loss/B_rollout_text/continue_over_eos_margin': 0.0, 'snapshot/coord_diag/acc_top5': 0.40331997, 'snapshot/coord_diag/adjacent_repulsion_applied_count': 0.0, 'snapshot/coord_diag/adjacent_repulsion_copy_score_mean': 0.0, 'snapshot/coord_diag/adjacent_repulsion_pair_count': 0.0, 'snapshot/coord_diag/coord_tokens_total': 3244.0, 'snapshot/coord_diag/coord_vocab_mass_mean': 0.95392453, 'snapshot/coord_diag/expected_bin_abs_err_p90': 56.49317129, 'snapshot/coord_diag/expected_bin_mae': 23.14554608, 'snapshot/coord_diag/margin_mean': 0.82385122, 'snapshot/coord_diag/p_gt_mean': 0.06103096, 'snapshot/loss/coord/bbox_ciou': 0.2354632, 'snapshot/loss/coord/bbox_log_wh': 0.01652176, 'snapshot/loss/coord/bbox_smoothl1': 0.00170247, 'snapshot/loss/coord/coord_gate': 0.04913866, 'snapshot/loss/coord/coord_soft_ce': 0.358314, 'snapshot/loss/coord/coord_token_ce': 0.06957634, 'snapshot/loss/coord/coord_w1': 0.00061958, 'snapshot/loss/coord/text_gate': 2e-07, 'snapshot/loss/text/desc_ce': 0.02131925, 'snapshot/loss/text/struct_ce': 0.00342617, 'snapshot/time/channel_a_collate_s': 0.69117188, 'snapshot/time/channel_a_prepare_segments_s': 2.32793595, 'snapshot/time/channel_a_teacher_encode_s': 1.92687245, 'time/sft_total_time': 169.95738865, 'time/rollout_total_time': 131.79557564, 'train/samples_total': 96.0, 'train/micro_steps': 18.0, 'train/samples_per_micro': 5.33333333, 'time/forward_s': 21.39150546, 'rollout/parse_dropped_invalid': 14.0, 'rollout/parse_dropped_ambiguous': 0.0, 'rollout/parse_obj_total': 221.0, 'rollout/parse_obj_valid_frac': 0.93665158, 'rollout/parse_obj_drop_frac': 0.06334842, 'rollout/sample_valid_pred_rate': 0.95833333, 'rollout/sample_any_match_rate': 0.9375, 'rollout/fn_appended_total': 466.0, 'rollout/gating_rejections': 516.0, 'rollout/gating_rejection_rate': 0.49855072, 'rollout/valid_pred_objects_total': 207.0, 'rollout/gt_objects_total': 626.0, 'rollout/precision': 0.77294686, 'rollout/recall': 0.25559105, 'rollout/f1': 0.38415366, 'rollout/fp_total': 47.0, 'rollout/fn_total': 466.0, 'rollout/gt_per_sample': 6.52083333, 'rollout/pred_per_sample': 2.15625, 'rollout/fp_per_sample': 0.48958333, 'rollout/fn_per_sample': 4.85416667, 'rollout/matched_maskiou_mean': 0.89326417, 'rollout/matched_maskiou_count': 160.0, 'rollout/excluded_rate': 0.0, 'rollout/prefix_coord_targets_total': 640.0, 'rollout/prefix_coord_targets_per_matched': 4.0, 'rollout/tail_ignore_frac': 0.0, 'rollout/prompt_len_mean': 2248.01041667, 'rollout/prompt_len_p90': 2278.0, 'rollout/prefix_len_mean': 44.90625, 'rollout/rollout_len_mean': 1521.21875, 'rollout/rollout_len_p90': 3084.0, 'rollout/train_len_mean': 166.16666667, 'rollout/train_len_p90': 359.0, 'rollout/append_len_mean': 121.26041667, 'rollout/append_len_p90': 343.0, 'rollout/encoded_len_mean': 2414.17708333, 'rollout/encoded_len_p90': 2635.5, 'rollout/decode_non_beam_count': 96.0, 'rollout/decode_beam_count': 0.0, 'rollout/matched_for_supervision': 160.0, 'rollout/excluded_from_supervision': 0.0, 'rollout/do_sample': 0.0, 'rollout/temperature': 0.0, 'rollout/top_p': 1.0, 'rollout/top_k': -1.0, 'packing/post_rollout_fill': 0.91968651, 'packing/post_rollout_selected_total_len': 12875.61111111, 'packing/post_rollout_segments': 5.33333333, 'packing/post_rollout_buffer': 4.0, 'rollout/gen_new_tokens_total': 146037.0, 'rollout/gen_new_tokens_mean': 1521.21875, 'rollout/gen_new_tokens_p90': 3084.0, 'rollout/gen_new_tokens_p99': 3084.0, 'rollout/gen_tokens_per_s': 1163.95174152, 'train/samples_seen': 192.0, 'epoch': 0.25, 'global_step/max_steps': '2/8', 'percentage': '25.00%', 'elapsed_time': '5m 20s', 'remaining_time': '16m 1s', 'memory(GiB)': 52.05, 'train_speed(iter/s)': 0.006243}
+Train:  25%|██▌       | 2/8 [05:20<17:15, 172.52s/it]Train:  25%|██▌       | 2/8 [05:20<17:15, 172.52s/it]INFO:     127.0.0.1:33694 - "POST /update_flattened_params/ HTTP/1.1" 200 OK
+INFO:     127.0.0.1:33694 - "POST /update_flattened_params/ HTTP/1.1" 200 OK
+INFO:     127.0.0.1:33694 - "POST /update_flattened_params/ HTTP/1.1" 200 OK
+INFO:     127.0.0.1:33694 - "POST /update_flattened_params/ HTTP/1.1" 200 OK
+INFO:     127.0.0.1:33694 - "POST /update_flattened_params/ HTTP/1.1" 200 OK
+INFO:     127.0.0.1:33694 - "POST /update_flattened_params/ HTTP/1.1" 200 OK
+INFO:     127.0.0.1:33694 - "POST /update_flattened_params/ HTTP/1.1" 200 OK
+INFO:     127.0.0.1:33694 - "POST /update_flattened_params/ HTTP/1.1" 200 OK
+INFO:     127.0.0.1:33694 - "POST /update_flattened_params/ HTTP/1.1" 200 OK
+INFO:     127.0.0.1:33694 - "POST /update_flattened_params/ HTTP/1.1" 200 OK
+[1;36m(EngineCore_DP2 pid=3722422)[0;0m INFO 04-22 13:46:17 [block_pool.py:378] Successfully reset prefix cache
+[1;36m(EngineCore_DP1 pid=3722419)[0;0m INFO 04-22 13:46:17 [block_pool.py:378] Successfully reset prefix cache
+[1;36m(EngineCore_DP0 pid=3722416)[0;0m INFO 04-22 13:46:17 [block_pool.py:378] Successfully reset prefix cache
+INFO:     127.0.0.1:33694 - "POST /reset_prefix_cache/ HTTP/1.1" 200 OK
+[INFO:swift] vLLM server rollout metadata: servers=[{'base_url': 'http://127.0.0.1:8000', 'group_port': 51216}] sync_mode=full request_n=96 rollout_seed_base=2000023 request_index_offset=0 effective_seed_base=2000023 decode_batch_size_cap=32 per_rank_chunk=96 learner_world_size=1 learner_rank=0 server_world_sizes=[3] per_server_rank_caps=[96] round_cap_total=96 seed_plan=[{'round': 0, 'server_idx': 0, 'base_url': 'http://127.0.0.1:8000', 'start': 0, 'end': 96, 'cap_for_rank': 96, 'seed': 2000023}]
+  0%|          | 0/32 [00:00<?, ?it/s]  0%|          | 0/32 [00:00<?, ?it/s]  0%|          | 0/32 [00:00<?, ?it/s]  3%|▎         | 1/32 [00:01<01:01,  2.00s/it]  3%|▎         | 1/32 [00:02<01:14,  2.40s/it]  3%|▎         | 1/32 [00:02<01:14,  2.41s/it]  6%|▋         | 2/32 [00:02<00:26,  1.12it/s]  6%|▋         | 2/32 [00:02<00:32,  1.08s/it]  9%|▉         | 3/32 [00:02<00:21,  1.35it/s] 16%|█▌        | 5/32 [00:02<00:12,  2.14it/s] 12%|█▎        | 4/32 [00:02<00:13,  2.12it/s] 19%|█▉        | 6/32 [00:03<00:07,  3.55it/s] 28%|██▊       | 9/32 [00:03<00:05,  4.40it/s] 28%|██▊       | 9/32 [00:02<00:03,  6.17it/s] 44%|████▍     | 14/32 [00:03<00:02,  7.50it/s] 38%|███▊      | 12/32 [00:03<00:03,  6.51it/s] 34%|███▍      | 11/32 [00:03<00:05,  3.66it/s] 44%|████▍     | 14/32 [00:07<00:10,  1.74it/s] 41%|████      | 13/32 [00:07<00:14,  1.28it/s] 47%|████▋     | 15/32 [00:10<00:15,  1.11it/s] 50%|█████     | 16/32 [00:13<00:02,  7.50it/s] 53%|█████▎    | 17/32 [00:20<00:27,  1.86s/it] 44%|████▍     | 14/32 [01:05<03:08, 10.45s/it] 56%|█████▋    | 18/32 [01:05<01:40,  7.18s/it] 50%|█████     | 16/32 [01:05<02:44, 10.27s/it] 88%|████████▊ | 28/32 [01:05<00:10,  2.61s/it] 91%|█████████ | 29/32 [01:05<00:07,  2.44s/it] 72%|███████▏  | 23/32 [01:05<00:29,  3.28s/it]100%|██████████| 32/32 [01:05<00:00,  2.06s/it]
+100%|██████████| 32/32 [01:05<00:00,  2.06s/it]
+100%|██████████| 32/32 [01:05<00:00,  2.05s/it]
+INFO:     127.0.0.1:33694 - "POST /infer/ HTTP/1.1" 200 OK
+  0%|          | 0/32 [00:00<?, ?it/s]  0%|          | 0/32 [00:00<?, ?it/s]  0%|          | 0/32 [00:00<?, ?it/s]  3%|▎         | 1/32 [00:00<00:17,  1.80it/s]  3%|▎         | 1/32 [00:00<00:16,  1.92it/s]  3%|▎         | 1/32 [00:00<00:18,  1.72it/s]  6%|▋         | 2/32 [00:00<00:08,  3.47it/s]  9%|▉         | 3/32 [00:00<00:08,  3.57it/s] 16%|█▌        | 5/32 [00:00<00:04,  5.69it/s]  9%|▉         | 3/32 [00:00<00:08,  3.37it/s] 28%|██▊       | 9/32 [00:01<00:02, 10.69it/s] 19%|█▉        | 6/32 [00:01<00:03,  7.90it/s] 28%|██▊       | 9/32 [00:01<00:01, 11.87it/s] 44%|████▍     | 14/32 [00:01<00:01, 14.04it/s] 34%|███▍      | 11/32 [00:01<00:02, 10.16it/s] 38%|███▊      | 12/32 [00:01<00:02,  9.38it/s] 44%|████▍     | 14/32 [00:02<00:02,  6.44it/s] 53%|█████▎    | 17/32 [00:02<00:02,  6.87it/s] 59%|█████▉    | 19/32 [00:02<00:02,  5.78it/s] 50%|█████     | 16/32 [00:03<00:04,  3.96it/s] 66%|██████▌   | 21/32 [00:03<00:02,  3.93it/s] 53%|█████▎    | 17/32 [00:04<00:04,  3.36it/s] 69%|██████▉   | 22/32 [00:05<00:04,  2.04it/s] 72%|███████▏  | 23/32 [00:07<00:05,  1.52it/s] 75%|███████▌  | 24/32 [00:07<00:04,  1.80it/s] 56%|█████▋    | 18/32 [00:09<00:14,  1.05s/it] 59%|█████▉    | 19/32 [00:13<00:19,  1.47s/it] 62%|██████▎   | 20/32 [00:13<00:14,  1.21s/it] 66%|██████▌   | 21/32 [00:13<00:10,  1.02it/s] 50%|█████     | 16/32 [00:16<00:32,  2.03s/it] 53%|█████▎    | 17/32 [00:40<01:22,  5.51s/it] 56%|█████▋    | 18/32 [00:40<01:03,  4.56s/it] 56%|█████▋    | 18/32 [00:56<01:03,  4.56s/it] 78%|███████▊  | 25/32 [01:03<01:29, 12.75s/it] 69%|██████▉   | 22/32 [01:03<02:05, 12.54s/it] 59%|█████▉    | 19/32 [01:03<01:47,  8.25s/it] 97%|█████████▋| 31/32 [01:03<00:04,  4.42s/it] 88%|████████▊ | 28/32 [01:03<00:16,  4.14s/it] 94%|█████████▍| 30/32 [01:03<00:03,  1.93s/it]100%|██████████| 32/32 [01:03<00:00,  1.98s/it]
+100%|██████████| 32/32 [01:03<00:00,  1.98s/it]
+100%|██████████| 32/32 [01:03<00:00,  1.98s/it]
+INFO:     127.0.0.1:33694 - "POST /infer/ HTTP/1.1" 200 OK
+Train:  38%|███▊      | 3/8 [09:05<16:23, 196.71s/it]                                                     {'loss': 0.92455637, 'grad_norm': 1.10910308, 'learning_rate': 1.261e-05, 'loss/B_rollout_text/struct_ce': 0.19958292, 'loss/B_rollout_text/desc_ce': 0.02357349, 'stage2_ab/channel_b/birth_first/N_continue_over_eos_boundaries': 0.0, 'stage2_ab/channel_b/birth_first/N_continue_over_eos_skipped_no_recovered_boundary': 0.0, 'train/optimization/loss_duplicate_burst_unlikelihood': 0.00450012, 'loss/B_rollout_text/duplicate_burst_unlikelihood': 0.00450012, 'diag/duplicate_burst/num_terms': 7.0, 'diag/duplicate_burst/num_ul_boundaries': 7.0, 'diag/duplicate_burst/loss_per_term': 0.08268971, 'loss/B_coord/bbox_smoothl1': 0.00258481, 'loss/B_coord/bbox_ciou': 0.20582736, 'loss/B_coord/bbox_log_wh': 0.01341476, 'loss/B_coord/coord_token_ce': 0.06891629, 'loss/B_coord/coord_soft_ce': 0.35826396, 'loss/B_coord/coord_w1': 0.00068269, 'loss/B_coord/coord_gate': 0.04704858, 'loss/B_coord/text_gate': 0.00016131, 'coord_diag/B/adjacent_repulsion_pair_count': 0.0, 'coord_diag/B/adjacent_repulsion_applied_count': 0.0, 'coord_diag/B/adjacent_repulsion_copy_score_mean': 0.0, 'coord_diag/B/coord_tokens_total': 2836.0, 'coord_diag/B/acc_top5': 0.41406682, 'coord_diag/B/p_gt_mean': 0.06774685, 'coord_diag/B/margin_mean': 0.87657542, 'coord_diag/B/expected_bin_mae': 27.35574287, 'coord_diag/B/expected_bin_abs_err_p90': 65.2052319, 'coord_diag/B/coord_vocab_mass_mean': 0.95659944, 'stage2/channel_a': 0.0, 'stage2/channel_b': 1.0, 'stage2_ab/b_ratio_realized': 0.66666667, 'stage2/raw_rollouts': 288.0, 'stage2/invalid_rollout': 5.0, 'stage2_ab/channel_b/invalid_rollout': 5.0, 'stage2/drop_poly': 0.0, 'stage2/drop_unknown': 0.0, 'stage2/drop_bbox_invalid': 7.0, 'rollout/seed_base': 104167.86458333, 'rollout/parse_truncated': 54.0, 'rollout/anchor/pred_objects': 246.0, 'rollout/anchor/valid_pred_objects': 239.0, 'rollout/anchor/parse_truncated_rate': 0.5625, 'rollout/anchor/gen_new_tokens_mean': 1683.02083333, 'rollout/anchor/gen_new_tokens_p90': 3084.0, 'rollout/anchor/near_iou90_any': 11.0, 'rollout/anchor/near_iou90_same': 11.0, 'rollout/explorer/pred_objects': 1.91666667, 'rollout/explorer/valid_pred_objects': 1.90625, 'rollout/explorer/parse_truncated_rate': 0.39583333, 'rollout/explorer/gen_new_tokens_mean': 1189.60416667, 'rollout/explorer/gen_new_tokens_p90': 3084.0, 'rollout/explorer/near_iou90_any': 0.0, 'rollout/explorer/near_iou90_same': 0.0, 'rollout/explorer/temperature': 0.7, 'rollout/explorer/do_sample': 1.0, 'rollout/explorer/top_p': 0.95, 'rollout/explorer/top_k': 64.0, 'rollout/matched_for_supervision_count': 2952.0, 'rollout/matched_for_supervision_over_valid_pred': 0.68619247, 'stage2_ab/channel_b/closure_supervision/N_drop': 0.0, 'stage2_ab/channel_b/prompt_tok_mismatch': 0.0, 'stage2_ab/channel_b/prompt_tok_mismatch_rate': 0.0, 'stage2_ab/channel_b/invalid_rollout_sample_dropped': 0.0, 'stage2_ab/channel_b/invalid_rollout_sample_dropped_rate': 0.0, 'stage2_ab/channel_b/_prompt_tok_mismatch_num': 0.0, 'stage2_ab/channel_b/_prompt_tok_mismatch_den': 96.0, 'dup/raw/max_desc_count': 0.08355035, 'dup/raw/saturation_rate': 0.01665582, 'dup/raw/duplicate_like_max_cluster_size': 0.05696615, 'dup/raw/desc_entropy': 0.02746567, 'dup/raw/near_iou90_pairs_same_desc_count': 11.0, 'dup/raw/near_iou90_pairs_any_desc_count': 11.0, 'stage2_ab/channel_b/dup/N_raw_bbox_valid': 239.0, 'stage2_ab/channel_b/dup/N_clean_accepted': 219.0, 'stage2_ab/channel_b/dup/N_clusters_total': 14.0, 'stage2_ab/channel_b/dup/N_clusters_exempt': 2.0, 'stage2_ab/channel_b/dup/N_clusters_suppressed': 12.0, 'stage2_ab/channel_b/dup/N_objects_suppressed': 20.0, 'stage2_ab/channel_b/dup/N_ul_boundaries': 7.0, 'stage2_ab/channel_b/dup/N_duplicate_burst_unlikelihood_skipped_no_divergence': 0.0, 'train/triage/gt_backed_count': 164.0, 'train/triage/unlabeled_consistent_count': 7.0, 'train/triage/support_positive_shielded_count': 7.0, 'train/triage/neutral_shielded_count': 0.0, 'train/triage/dead_anchor_count': 48.0, 'train/triage/lvis_verified_positive_dead_count': 0.0, 'train/triage/lvis_verified_negative_dead_count': 0.0, 'train/triage/lvis_not_exhaustive_count': 0.0, 'train/triage/lvis_unevaluable_count': 55.0, 'train/triage/explorer_only_dead_count': 34.0, 'train/triage/pseudo_positive_candidate_count': 0.0, 'train/triage/pseudo_positive_subthreshold_count': 7.0, 'train/triage/pseudo_positive_selected_count': 0.0, 'train/triage/pseudo_positive_cluster_demoted_count': 0.0, 'train/triage/anchor_preparation_dropped_count': 0.0, 'train/triage/pseudo_positive_support_rate_num': 0.0, 'train/triage/pseudo_positive_support_rate_den': 0.0, 'train/triage/pseudo_positive_selected_support_rate_num': 0.0, 'train/triage/pseudo_positive_selected_support_rate_den': 0.0, 'train/triage/recovered_ground_truth_count': 27.0, 'train/triage/recovered_ground_truth_rate_num': 27.0, 'train/triage/recovered_ground_truth_rate_den': 27.0, 'train/triage/recovered_ground_truth_rate': 1.0, 'train/triage/dead_anchor_rate_num': 48.0, 'train/triage/dead_anchor_rate_den': 219.0, 'train/triage/dead_anchor_rate': 0.21917808, 'train/triage/explorer_only_dead_rate_num': 34.0, 'train/triage/explorer_only_dead_rate_den': 183.0, 'train/triage/explorer_only_dead_rate': 0.18579235, 'stage2_ab/channel_b/strict_drop/N_valid_pred': 239.0, 'stage2_ab/channel_b/strict_drop/N_drop_invalid': 108.0, 'stage2_ab/channel_b/strict_drop/reason/bbox_invalid': 7.0, 'stage2_ab/channel_b/strict_drop/reason/wrong_arity': 94.0, 'stage2_ab/channel_b/strict_drop/reason/unexpected_keys': 3.0, 'stage2_ab/channel_b/strict_drop/reason/other': 4.0, 'time/rollout_generate_s': 131.68267698, 'time/rollout_parse_match_s': 3.700261, 'time/rollout_teacher_encode_s': 2.08578111, 'time/post_rollout_pack_s': 0.0111759, 'rollout/parse_truncated_rate': 0.5625, 'loss/B_rollout_text/continue_over_eos_margin': 0.0, 'snapshot/coord_diag/acc_top5': 0.40331997, 'snapshot/coord_diag/adjacent_repulsion_applied_count': 0.0, 'snapshot/coord_diag/adjacent_repulsion_copy_score_mean': 0.0, 'snapshot/coord_diag/adjacent_repulsion_pair_count': 0.0, 'snapshot/coord_diag/coord_tokens_total': 3244.0, 'snapshot/coord_diag/coord_vocab_mass_mean': 0.95392453, 'snapshot/coord_diag/expected_bin_abs_err_p90': 56.49317129, 'snapshot/coord_diag/expected_bin_mae': 23.14554608, 'snapshot/coord_diag/margin_mean': 0.82385122, 'snapshot/coord_diag/p_gt_mean': 0.06103096, 'snapshot/loss/coord/bbox_ciou': 0.2354632, 'snapshot/loss/coord/bbox_log_wh': 0.01652176, 'snapshot/loss/coord/bbox_smoothl1': 0.00170247, 'snapshot/loss/coord/coord_gate': 0.04913866, 'snapshot/loss/coord/coord_soft_ce': 0.358314, 'snapshot/loss/coord/coord_token_ce': 0.06957634, 'snapshot/loss/coord/coord_w1': 0.00061958, 'snapshot/loss/coord/text_gate': 2e-07, 'snapshot/loss/text/desc_ce': 0.02131925, 'snapshot/loss/text/struct_ce': 0.00342617, 'snapshot/time/channel_a_collate_s': 0.69117188, 'snapshot/time/channel_a_prepare_segments_s': 2.32793595, 'snapshot/time/channel_a_teacher_encode_s': 1.92687245, 'time/sft_total_time': 253.88695026, 'time/rollout_total_time': 269.58673516, 'train/samples_total': 96.0, 'train/micro_steps': 18.0, 'train/samples_per_micro': 5.33333333, 'time/forward_s': 21.16586382, 'rollout/parse_dropped_invalid': 101.0, 'rollout/parse_dropped_ambiguous': 0.0, 'rollout/parse_obj_total': 340.0, 'rollout/parse_obj_valid_frac': 0.70294118, 'rollout/parse_obj_drop_frac': 0.29705882, 'rollout/sample_valid_pred_rate': 0.94791667, 'rollout/sample_any_match_rate': 0.91666667, 'rollout/fn_appended_total': 545.0, 'rollout/gating_rejections': 677.0, 'rollout/gating_rejection_rate': 0.5665272, 'rollout/valid_pred_objects_total': 239.0, 'rollout/gt_objects_total': 709.0, 'rollout/precision': 0.68619247, 'rollout/recall': 0.23131171, 'rollout/f1': 0.34599156, 'rollout/fp_total': 75.0, 'rollout/fn_total': 545.0, 'rollout/gt_per_sample': 7.38541667, 'rollout/pred_per_sample': 2.48958333, 'rollout/fp_per_sample': 0.78125, 'rollout/fn_per_sample': 5.67708333, 'rollout/matched_maskiou_mean': 0.88105589, 'rollout/matched_maskiou_count': 164.0, 'rollout/excluded_rate': 0.0, 'rollout/prefix_coord_targets_total': 656.0, 'rollout/prefix_coord_targets_per_matched': 4.0, 'rollout/tail_ignore_frac': 0.0, 'rollout/prompt_len_mean': 2242.75, 'rollout/prompt_len_p90': 2278.0, 'rollout/prefix_len_mean': 46.48958333, 'rollout/rollout_len_mean': 1683.02083333, 'rollout/rollout_len_p90': 3084.0, 'rollout/train_len_mean': 187.66666667, 'rollout/train_len_p90': 418.5, 'rollout/append_len_mean': 141.17708333, 'rollout/append_len_p90': 379.0, 'rollout/encoded_len_mean': 2430.41666667, 'rollout/encoded_len_p90': 2685.0, 'rollout/decode_non_beam_count': 96.0, 'rollout/decode_beam_count': 0.0, 'rollout/matched_for_supervision': 164.0, 'rollout/excluded_from_supervision': 0.0, 'rollout/do_sample': 0.0, 'rollout/temperature': 0.0, 'rollout/top_p': 1.0, 'rollout/top_k': -1.0, 'packing/post_rollout_fill': 0.92587302, 'packing/post_rollout_selected_total_len': 12962.22222222, 'packing/post_rollout_segments': 5.33333333, 'packing/post_rollout_buffer': 5.0, 'rollout/gen_new_tokens_total': 161570.0, 'rollout/gen_new_tokens_mean': 1683.02083333, 'rollout/gen_new_tokens_p90': 3084.0, 'rollout/gen_new_tokens_p99': 3084.0, 'rollout/gen_tokens_per_s': 1226.96472845, 'train/samples_seen': 288.0, 'epoch': 0.38, 'global_step/max_steps': '3/8', 'percentage': '37.50%', 'elapsed_time': '9m 5s', 'remaining_time': '15m 9s', 'memory(GiB)': 52.05, 'train_speed(iter/s)': 0.005496}
+Train:  38%|███▊      | 3/8 [09:05<16:23, 196.71s/it]Train:  38%|███▊      | 3/8 [09:05<16:23, 196.71s/it]INFO:     127.0.0.1:3276 - "POST /update_flattened_params/ HTTP/1.1" 200 OK
+INFO:     127.0.0.1:3276 - "POST /update_flattened_params/ HTTP/1.1" 200 OK
+INFO:     127.0.0.1:3276 - "POST /update_flattened_params/ HTTP/1.1" 200 OK
+INFO:     127.0.0.1:3276 - "POST /update_flattened_params/ HTTP/1.1" 200 OK
+INFO:     127.0.0.1:3276 - "POST /update_flattened_params/ HTTP/1.1" 200 OK
+INFO:     127.0.0.1:3276 - "POST /update_flattened_params/ HTTP/1.1" 200 OK
+INFO:     127.0.0.1:3276 - "POST /update_flattened_params/ HTTP/1.1" 200 OK
+INFO:     127.0.0.1:3276 - "POST /update_flattened_params/ HTTP/1.1" 200 OK
+INFO:     127.0.0.1:3276 - "POST /update_flattened_params/ HTTP/1.1" 200 OK
+INFO:     127.0.0.1:3276 - "POST /update_flattened_params/ HTTP/1.1" 200 OK
+[1;36m(EngineCore_DP0 pid=3722416)[0;0m INFO 04-22 13:50:03 [block_pool.py:378] Successfully reset prefix cache
+[1;36m(EngineCore_DP1 pid=3722419)[0;0m INFO 04-22 13:50:03 [block_pool.py:378] Successfully reset prefix cache
+[1;36m(EngineCore_DP2 pid=3722422)[0;0m INFO 04-22 13:50:03 [block_pool.py:378] Successfully reset prefix cache
+INFO:     127.0.0.1:3276 - "POST /reset_prefix_cache/ HTTP/1.1" 200 OK
+[INFO:swift] vLLM server rollout metadata: servers=[{'base_url': 'http://127.0.0.1:8000', 'group_port': 51216}] sync_mode=full request_n=96 rollout_seed_base=3000026 request_index_offset=0 effective_seed_base=3000026 decode_batch_size_cap=32 per_rank_chunk=96 learner_world_size=1 learner_rank=0 server_world_sizes=[3] per_server_rank_caps=[96] round_cap_total=96 seed_plan=[{'round': 0, 'server_idx': 0, 'base_url': 'http://127.0.0.1:8000', 'start': 0, 'end': 96, 'cap_for_rank': 96, 'seed': 3000026}]
+  0%|          | 0/32 [00:00<?, ?it/s]  0%|          | 0/32 [00:00<?, ?it/s]  0%|          | 0/32 [00:00<?, ?it/s]  3%|▎         | 1/32 [00:02<01:04,  2.10s/it]  3%|▎         | 1/32 [00:02<01:04,  2.09s/it]  3%|▎         | 1/32 [00:01<01:00,  1.96s/it]  6%|▋         | 2/32 [00:02<00:28,  1.04it/s]  6%|▋         | 2/32 [00:02<00:28,  1.05it/s]  6%|▋         | 2/32 [00:02<00:32,  1.07s/it]  9%|▉         | 3/32 [00:02<00:20,  1.43it/s]  9%|▉         | 3/32 [00:02<00:21,  1.38it/s] 12%|█▎        | 4/32 [00:02<00:12,  2.29it/s] 19%|█▉        | 6/32 [00:02<00:06,  3.80it/s] 22%|██▏       | 7/32 [00:02<00:05,  4.35it/s] 25%|██▌       | 8/32 [00:02<00:04,  5.31it/s] 28%|██▊       | 9/32 [00:03<00:04,  4.75it/s] 28%|██▊       | 9/32 [00:02<00:04,  5.04it/s] 31%|███▏      | 10/32 [00:03<00:04,  5.49it/s] 34%|███▍      | 11/32 [00:03<00:03,  6.28it/s] 34%|███▍      | 11/32 [00:03<00:03,  6.37it/s] 41%|████      | 13/32 [00:03<00:02,  8.35it/s] 44%|████▍     | 14/32 [00:03<00:02,  7.13it/s] 41%|████      | 13/32 [00:03<00:03,  5.12it/s] 47%|████▋     | 15/32 [00:05<00:05,  3.04it/s] 50%|█████     | 16/32 [00:05<00:04,  3.20it/s] 44%|████▍     | 14/32 [00:08<00:18,  1.05s/it] 47%|████▋     | 15/32 [00:08<00:15,  1.13it/s] 50%|█████     | 16/32 [00:09<00:12,  1.27it/s] 50%|█████     | 16/32 [00:18<00:05,  3.04it/s] 53%|█████▎    | 17/32 [01:03<02:23,  9.53s/it] 53%|█████▎    | 17/32 [01:03<02:12,  8.84s/it] 53%|█████▎    | 17/32 [01:03<03:30, 14.01s/it] 81%|████████▏ | 26/32 [01:03<00:18,  3.07s/it] 84%|████████▍ | 27/32 [01:03<00:15,  3.10s/it] 88%|████████▊ | 28/32 [01:03<00:10,  2.74s/it]100%|██████████| 32/32 [01:03<00:00,  2.00s/it]
+100%|██████████| 32/32 [01:03<00:00,  2.00s/it]
+100%|██████████| 32/32 [01:03<00:00,  1.99s/it]
+INFO:     127.0.0.1:3276 - "POST /infer/ HTTP/1.1" 200 OK
+  0%|          | 0/32 [00:00<?, ?it/s]  0%|          | 0/32 [00:00<?, ?it/s]  0%|          | 0/32 [00:00<?, ?it/s]  3%|▎         | 1/32 [00:00<00:19,  1.58it/s]  3%|▎         | 1/32 [00:00<00:21,  1.43it/s]  3%|▎         | 1/32 [00:00<00:22,  1.36it/s]  6%|▋         | 2/32 [00:00<00:10,  2.97it/s]  9%|▉         | 3/32 [00:01<00:10,  2.72it/s]  6%|▋         | 2/32 [00:01<00:18,  1.67it/s] 19%|█▉        | 6/32 [00:01<00:04,  6.15it/s]  9%|▉         | 3/32 [00:01<00:12,  2.23it/s]  9%|▉         | 3/32 [00:01<00:11,  2.60it/s] 22%|██▏       | 7/32 [00:01<00:03,  6.82it/s] 19%|█▉        | 6/32 [00:01<00:05,  4.48it/s] 28%|██▊       | 9/32 [00:01<00:03,  5.93it/s] 31%|███▏      | 10/32 [00:01<00:03,  6.43it/s] 28%|██▊       | 9/32 [00:01<00:03,  7.42it/s] 38%|███▊      | 12/32 [00:02<00:02,  7.14it/s] 44%|████▍     | 14/32 [00:02<00:02,  7.23it/s] 41%|████      | 13/32 [00:02<00:03,  5.96it/s] 44%|████▍     | 14/32 [00:02<00:02,  6.56it/s] 44%|████▍     | 14/32 [00:02<00:03,  5.07it/s] 50%|█████     | 16/32 [00:02<00:02,  6.33it/s] 47%|████▋     | 15/32 [00:03<00:03,  4.98it/s] 53%|█████▎    | 17/32 [00:03<00:02,  5.51it/s] 47%|████▋     | 15/32 [00:03<00:05,  3.20it/s] 59%|█████▉    | 19/32 [00:04<00:04,  2.91it/s] 50%|█████     | 16/32 [00:05<00:08,  1.91it/s] 62%|██████▎   | 20/32 [00:06<00:06,  1.90it/s] 66%|██████▌   | 21/32 [00:06<00:05,  2.11it/s] 69%|██████▉   | 22/32 [00:07<00:05,  1.70it/s] 72%|███████▏  | 23/32 [00:07<00:05,  1.75it/s] 75%|███████▌  | 24/32 [00:09<00:07,  1.06it/s] 53%|█████▎    | 17/32 [00:09<00:22,  1.48s/it] 50%|█████     | 16/32 [00:10<00:24,  1.51s/it] 53%|█████▎    | 17/32 [00:12<00:25,  1.68s/it] 56%|█████▋    | 18/32 [00:12<00:18,  1.32s/it] 59%|█████▉    | 19/32 [00:23<00:49,  3.83s/it] 56%|█████▋    | 18/32 [00:36<01:46,  7.61s/it] 78%|███████▊  | 25/32 [01:04<01:46, 15.19s/it] 59%|█████▉    | 19/32 [01:04<02:44, 12.64s/it] 62%|██████▎   | 20/32 [01:04<02:41, 13.46s/it] 72%|███████▏  | 23/32 [01:04<00:46,  5.15s/it] 97%|█████████▋| 31/32 [01:04<00:04,  4.63s/it] 88%|████████▊ | 28/32 [01:04<00:13,  3.36s/it]100%|██████████| 32/32 [01:04<00:00,  2.01s/it]
+100%|██████████| 32/32 [01:04<00:00,  2.01s/it]
+100%|██████████| 32/32 [01:04<00:00,  2.01s/it]
+INFO:     127.0.0.1:3276 - "POST /infer/ HTTP/1.1" 200 OK
+Train:  50%|█████     | 4/8 [12:51<13:52, 208.17s/it]                                                     {'loss': 0.89306599, 'grad_norm': 39.0413475, 'learning_rate': 8.39e-06, 'loss/B_rollout_text/struct_ce': 0.16750249, 'loss/B_rollout_text/desc_ce': 0.02210755, 'stage2_ab/channel_b/birth_first/N_continue_over_eos_boundaries': 0.0, 'stage2_ab/channel_b/birth_first/N_continue_over_eos_skipped_no_recovered_boundary': 0.0, 'train/optimization/loss_duplicate_burst_unlikelihood': 0.0066958, 'loss/B_rollout_text/duplicate_burst_unlikelihood': 0.0066958, 'diag/duplicate_burst/num_terms': 6.0, 'diag/duplicate_burst/num_ul_boundaries': 6.0, 'diag/duplicate_burst/loss_per_term': 0.11349899, 'loss/B_coord/bbox_smoothl1': 0.00276166, 'loss/B_coord/bbox_ciou': 0.20523752, 'loss/B_coord/bbox_log_wh': 0.01496439, 'loss/B_coord/coord_token_ce': 0.0701017, 'loss/B_coord/coord_soft_ce': 0.36363506, 'loss/B_coord/coord_w1': 0.0007134, 'loss/B_coord/coord_gate': 0.03909607, 'loss/B_coord/text_gate': 0.00025036, 'coord_diag/B/adjacent_repulsion_pair_count': 0.0, 'coord_diag/B/adjacent_repulsion_applied_count': 0.0, 'coord_diag/B/adjacent_repulsion_copy_score_mean': 0.0, 'coord_diag/B/coord_tokens_total': 2944.0, 'coord_diag/B/acc_top5': 0.3977012, 'coord_diag/B/p_gt_mean': 0.06643283, 'coord_diag/B/margin_mean': 0.86809911, 'coord_diag/B/expected_bin_mae': 27.99359769, 'coord_diag/B/expected_bin_abs_err_p90': 68.30274248, 'coord_diag/B/coord_vocab_mass_mean': 0.96245177, 'stage2/channel_a': 0.0, 'stage2/channel_b': 1.0, 'stage2_ab/b_ratio_realized': 0.75, 'stage2/raw_rollouts': 288.0, 'stage2/invalid_rollout': 9.0, 'stage2_ab/channel_b/invalid_rollout': 9.0, 'stage2/drop_poly': 0.0, 'stage2/drop_unknown': 0.0, 'stage2/drop_bbox_invalid': 11.0, 'rollout/seed_base': 156251.35416667, 'rollout/parse_truncated': 47.0, 'rollout/anchor/pred_objects': 242.0, 'rollout/anchor/valid_pred_objects': 231.0, 'rollout/anchor/parse_truncated_rate': 0.48958333, 'rollout/anchor/gen_new_tokens_mean': 1588.5625, 'rollout/anchor/gen_new_tokens_p90': 3084.0, 'rollout/anchor/near_iou90_any': 3.0, 'rollout/anchor/near_iou90_same': 0.0, 'rollout/explorer/pred_objects': 2.45833333, 'rollout/explorer/valid_pred_objects': 2.45833333, 'rollout/explorer/parse_truncated_rate': 0.54166667, 'rollout/explorer/gen_new_tokens_mean': 1235.58333333, 'rollout/explorer/gen_new_tokens_p90': 3084.0, 'rollout/explorer/near_iou90_any': 0.0, 'rollout/explorer/near_iou90_same': 0.0, 'rollout/explorer/temperature': 0.7, 'rollout/explorer/do_sample': 1.0, 'rollout/explorer/top_p': 0.95, 'rollout/explorer/top_k': 64.0, 'rollout/matched_for_supervision_count': 3294.0, 'rollout/matched_for_supervision_over_valid_pred': 0.79220779, 'stage2_ab/channel_b/closure_supervision/N_drop': 0.0, 'stage2_ab/channel_b/prompt_tok_mismatch': 0.0, 'stage2_ab/channel_b/prompt_tok_mismatch_rate': 0.0, 'stage2_ab/channel_b/invalid_rollout_sample_dropped': 0.0, 'stage2_ab/channel_b/invalid_rollout_sample_dropped_rate': 0.0, 'stage2_ab/channel_b/_prompt_tok_mismatch_num': 0.0, 'stage2_ab/channel_b/_prompt_tok_mismatch_den': 96.0, 'dup/raw/max_desc_count': 0.07432726, 'dup/raw/saturation_rate': 0.01404261, 'dup/raw/duplicate_like_max_cluster_size': 0.05425347, 'dup/raw/desc_entropy': 0.03017538, 'dup/raw/near_iou90_pairs_same_desc_count': 0.0, 'dup/raw/near_iou90_pairs_any_desc_count': 3.0, 'stage2_ab/channel_b/dup/N_raw_bbox_valid': 231.0, 'stage2_ab/channel_b/dup/N_clean_accepted': 225.0, 'stage2_ab/channel_b/dup/N_clusters_total': 12.0, 'stage2_ab/channel_b/dup/N_clusters_exempt': 6.0, 'stage2_ab/channel_b/dup/N_clusters_suppressed': 6.0, 'stage2_ab/channel_b/dup/N_objects_suppressed': 6.0, 'stage2_ab/channel_b/dup/N_ul_boundaries': 6.0, 'stage2_ab/channel_b/dup/N_duplicate_burst_unlikelihood_skipped_no_divergence': 0.0, 'train/triage/gt_backed_count': 183.0, 'train/triage/unlabeled_consistent_count': 8.0, 'train/triage/support_positive_shielded_count': 8.0, 'train/triage/neutral_shielded_count': 0.0, 'train/triage/dead_anchor_count': 34.0, 'train/triage/lvis_verified_positive_dead_count': 0.0, 'train/triage/lvis_verified_negative_dead_count': 0.0, 'train/triage/lvis_not_exhaustive_count': 0.0, 'train/triage/lvis_unevaluable_count': 42.0, 'train/triage/explorer_only_dead_count': 55.0, 'train/triage/pseudo_positive_candidate_count': 0.0, 'train/triage/pseudo_positive_subthreshold_count': 8.0, 'train/triage/pseudo_positive_selected_count': 0.0, 'train/triage/pseudo_positive_cluster_demoted_count': 0.0, 'train/triage/anchor_preparation_dropped_count': 0.0, 'train/triage/pseudo_positive_support_rate_num': 0.0, 'train/triage/pseudo_positive_support_rate_den': 0.0, 'train/triage/pseudo_positive_selected_support_rate_num': 0.0, 'train/triage/pseudo_positive_selected_support_rate_den': 0.0, 'train/triage/recovered_ground_truth_count': 38.0, 'train/triage/recovered_ground_truth_rate_num': 38.0, 'train/triage/recovered_ground_truth_rate_den': 38.0, 'train/triage/recovered_ground_truth_rate': 1.0, 'train/triage/dead_anchor_rate_num': 34.0, 'train/triage/dead_anchor_rate_den': 225.0, 'train/triage/dead_anchor_rate': 0.15111111, 'train/triage/explorer_only_dead_rate_num': 55.0, 'train/triage/explorer_only_dead_rate_den': 236.0, 'train/triage/explorer_only_dead_rate': 0.23305085, 'stage2_ab/channel_b/strict_drop/N_valid_pred': 231.0, 'stage2_ab/channel_b/strict_drop/N_drop_invalid': 238.0, 'stage2_ab/channel_b/strict_drop/reason/other': 10.0, 'stage2_ab/channel_b/strict_drop/reason/wrong_arity': 23.0, 'stage2_ab/channel_b/strict_drop/reason/unexpected_keys': 6.0, 'stage2_ab/channel_b/strict_drop/reason/missing_desc': 188.0, 'stage2_ab/channel_b/strict_drop/reason/bbox_invalid': 11.0, 'time/rollout_generate_s': 130.69625927, 'time/rollout_parse_match_s': 3.71860078, 'time/rollout_teacher_encode_s': 2.20215003, 'time/post_rollout_pack_s': 0.01147123, 'rollout/parse_truncated_rate': 0.48958333, 'loss/B_rollout_text/continue_over_eos_margin': 0.0, 'snapshot/coord_diag/acc_top5': 0.40331997, 'snapshot/coord_diag/adjacent_repulsion_applied_count': 0.0, 'snapshot/coord_diag/adjacent_repulsion_copy_score_mean': 0.0, 'snapshot/coord_diag/adjacent_repulsion_pair_count': 0.0, 'snapshot/coord_diag/coord_tokens_total': 3244.0, 'snapshot/coord_diag/coord_vocab_mass_mean': 0.95392453, 'snapshot/coord_diag/expected_bin_abs_err_p90': 56.49317129, 'snapshot/coord_diag/expected_bin_mae': 23.14554608, 'snapshot/coord_diag/margin_mean': 0.82385122, 'snapshot/coord_diag/p_gt_mean': 0.06103096, 'snapshot/loss/coord/bbox_ciou': 0.2354632, 'snapshot/loss/coord/bbox_log_wh': 0.01652176, 'snapshot/loss/coord/bbox_smoothl1': 0.00170247, 'snapshot/loss/coord/coord_gate': 0.04913866, 'snapshot/loss/coord/coord_soft_ce': 0.358314, 'snapshot/loss/coord/coord_token_ce': 0.06957634, 'snapshot/loss/coord/coord_w1': 0.00061958, 'snapshot/loss/coord/text_gate': 2e-07, 'snapshot/loss/text/desc_ce': 0.02131925, 'snapshot/loss/text/struct_ce': 0.00342617, 'snapshot/time/channel_a_collate_s': 0.69117188, 'snapshot/time/channel_a_prepare_segments_s': 2.32793595, 'snapshot/time/channel_a_teacher_encode_s': 1.92687245, 'time/sft_total_time': 339.02712567, 'time/rollout_total_time': 406.52875434, 'train/samples_total': 96.0, 'train/micro_steps': 18.0, 'train/samples_per_micro': 5.33333333, 'time/forward_s': 21.67927898, 'rollout/parse_dropped_invalid': 227.0, 'rollout/parse_dropped_ambiguous': 0.0, 'rollout/parse_obj_total': 458.0, 'rollout/parse_obj_valid_frac': 0.50436681, 'rollout/parse_obj_drop_frac': 0.49563319, 'rollout/sample_valid_pred_rate': 0.88541667, 'rollout/sample_any_match_rate': 0.85416667, 'rollout/fn_appended_total': 553.0, 'rollout/gating_rejections': 714.0, 'rollout/gating_rejection_rate': 0.61818182, 'rollout/valid_pred_objects_total': 231.0, 'rollout/gt_objects_total': 736.0, 'rollout/precision': 0.79220779, 'rollout/recall': 0.2486413, 'rollout/f1': 0.37849018, 'rollout/fp_total': 48.0, 'rollout/fn_total': 553.0, 'rollout/gt_per_sample': 7.66666667, 'rollout/pred_per_sample': 2.40625, 'rollout/fp_per_sample': 0.5, 'rollout/fn_per_sample': 5.76041667, 'rollout/matched_maskiou_mean': 0.88906041, 'rollout/matched_maskiou_count': 183.0, 'rollout/excluded_rate': 0.0, 'rollout/prefix_coord_targets_total': 732.0, 'rollout/prefix_coord_targets_per_matched': 4.0, 'rollout/tail_ignore_frac': 0.0, 'rollout/prompt_len_mean': 2249.46875, 'rollout/prompt_len_p90': 2278.0, 'rollout/prefix_len_mean': 51.71875, 'rollout/rollout_len_mean': 1588.5625, 'rollout/rollout_len_p90': 3084.0, 'rollout/train_len_mean': 194.5625, 'rollout/train_len_p90': 396.5, 'rollout/append_len_mean': 142.84375, 'rollout/append_len_p90': 342.0, 'rollout/encoded_len_mean': 2444.03125, 'rollout/encoded_len_p90': 2642.0, 'rollout/decode_non_beam_count': 96.0, 'rollout/decode_beam_count': 0.0, 'rollout/matched_for_supervision': 183.0, 'rollout/excluded_from_supervision': 0.0, 'rollout/do_sample': 0.0, 'rollout/temperature': 0.0, 'rollout/top_p': 1.0, 'rollout/top_k': -1.0, 'packing/post_rollout_fill': 0.93105952, 'packing/post_rollout_selected_total_len': 13034.83333333, 'packing/post_rollout_segments': 5.33333333, 'packing/post_rollout_buffer': 5.0, 'rollout/gen_new_tokens_total': 152502.0, 'rollout/gen_new_tokens_mean': 1588.5625, 'rollout/gen_new_tokens_p90': 3084.0, 'rollout/gen_new_tokens_p99': 3084.0, 'rollout/gen_tokens_per_s': 1166.8428833, 'train/samples_seen': 384.0, 'epoch': 0.5, 'global_step/max_steps': '4/8', 'percentage': '50.00%', 'elapsed_time': '12m 51s', 'remaining_time': '12m 51s', 'memory(GiB)': 52.05, 'train_speed(iter/s)': 0.005184}
+Train:  50%|█████     | 4/8 [12:51<13:52, 208.17s/it]Train:  50%|█████     | 4/8 [12:51<13:52, 208.17s/it]Train:  62%|██████▎   | 5/8 [14:21<08:16, 165.39s/it]                                                     {'loss': 0.67402154, 'grad_norm': 0.65170795, 'learning_rate': 4.58e-06, 'loss/text/struct_ce': 0.00792276, 'loss/text/desc_ce': 0.02056464, 'loss/coord/bbox_smoothl1': 0.00125896, 'loss/coord/bbox_ciou': 0.18300345, 'loss/coord/bbox_log_wh': 0.00906679, 'loss/coord/coord_token_ce': 0.06623478, 'loss/coord/coord_soft_ce': 0.3436142, 'loss/coord/coord_w1': 0.00050755, 'loss/coord/coord_gate': 0.04184833, 'loss/coord/text_gate': 9e-08, 'coord_diag/adjacent_repulsion_pair_count': 0.0, 'coord_diag/adjacent_repulsion_applied_count': 0.0, 'coord_diag/adjacent_repulsion_copy_score_mean': 0.0, 'coord_diag/coord_tokens_total': 2752.0, 'coord_diag/acc_top5': 0.43754125, 'coord_diag/p_gt_mean': 0.07170282, 'coord_diag/margin_mean': 0.79218494, 'coord_diag/expected_bin_mae': 19.13603034, 'coord_diag/expected_bin_abs_err_p90': 45.04179281, 'coord_diag/coord_vocab_mass_mean': 0.9602918, 'stage2/channel_a': 1.0, 'stage2/channel_b': 0.0, 'stage2_ab/b_ratio_realized': 0.6, 'time/channel_a_teacher_encode_s': 1.74806144, 'time/channel_a_prepare_segments_s': 2.0736689, 'time/post_rollout_pack_s': 0.01213643, 'time/channel_a_collate_s': 0.68431896, 'snapshot/coord_diag/B/acc_top5': 0.3977012, 'snapshot/coord_diag/B/adjacent_repulsion_applied_count': 0.0, 'snapshot/coord_diag/B/adjacent_repulsion_copy_score_mean': 0.0, 'snapshot/coord_diag/B/adjacent_repulsion_pair_count': 0.0, 'snapshot/coord_diag/B/coord_tokens_total': 2944.0, 'snapshot/coord_diag/B/coord_vocab_mass_mean': 0.96245177, 'snapshot/coord_diag/B/expected_bin_abs_err_p90': 68.30274248, 'snapshot/coord_diag/B/expected_bin_mae': 27.99359769, 'snapshot/coord_diag/B/margin_mean': 0.86809911, 'snapshot/coord_diag/B/p_gt_mean': 0.06643283, 'snapshot/diag/duplicate_burst/loss_per_term': 0.11349899, 'snapshot/diag/duplicate_burst/num_terms': 6.0, 'snapshot/diag/duplicate_burst/num_ul_boundaries': 6.0, 'snapshot/dup/raw/desc_entropy': 0.03017538, 'snapshot/dup/raw/duplicate_like_max_cluster_size': 0.05425347, 'snapshot/dup/raw/max_desc_count': 0.07432726, 'snapshot/dup/raw/near_iou90_pairs_any_desc_count': 3.0, 'snapshot/dup/raw/near_iou90_pairs_same_desc_count': 0.0, 'snapshot/dup/raw/saturation_rate': 0.01404261, 'snapshot/loss/B_coord/bbox_ciou': 0.20523752, 'snapshot/loss/B_coord/bbox_log_wh': 0.01496439, 'snapshot/loss/B_coord/bbox_smoothl1': 0.00276166, 'snapshot/loss/B_coord/coord_gate': 0.03909607, 'snapshot/loss/B_coord/coord_soft_ce': 0.36363506, 'snapshot/loss/B_coord/coord_token_ce': 0.0701017, 'snapshot/loss/B_coord/coord_w1': 0.0007134, 'snapshot/loss/B_coord/text_gate': 0.00025036, 'snapshot/loss/B_rollout_text/continue_over_eos_margin': 0.0, 'snapshot/loss/B_rollout_text/desc_ce': 0.02210755, 'snapshot/loss/B_rollout_text/duplicate_burst_unlikelihood': 0.0066958, 'snapshot/loss/B_rollout_text/struct_ce': 0.16750249, 'snapshot/rollout/anchor/gen_new_tokens_mean': 1588.5625, 'snapshot/rollout/anchor/gen_new_tokens_p90': 3084.0, 'snapshot/rollout/anchor/near_iou90_any': 3.0, 'snapshot/rollout/anchor/near_iou90_same': 0.0, 'snapshot/rollout/anchor/parse_truncated_rate': 0.48958333, 'snapshot/rollout/anchor/pred_objects': 242.0, 'snapshot/rollout/anchor/valid_pred_objects': 231.0, 'snapshot/rollout/explorer/do_sample': 1.0, 'snapshot/rollout/explorer/gen_new_tokens_mean': 1235.58333333, 'snapshot/rollout/explorer/gen_new_tokens_p90': 3084.0, 'snapshot/rollout/explorer/near_iou90_any': 0.0, 'snapshot/rollout/explorer/near_iou90_same': 0.0, 'snapshot/rollout/explorer/parse_truncated_rate': 0.54166667, 'snapshot/rollout/explorer/pred_objects': 2.45833333, 'snapshot/rollout/explorer/temperature': 0.7, 'snapshot/rollout/explorer/top_k': 64.0, 'snapshot/rollout/explorer/top_p': 0.95, 'snapshot/rollout/explorer/valid_pred_objects': 2.45833333, 'snapshot/rollout/matched_for_supervision_count': 3294.0, 'snapshot/rollout/matched_for_supervision_over_valid_pred': 0.79220779, 'snapshot/rollout/parse_truncated': 99.0, 'snapshot/rollout/parse_truncated_rate': 0.34375, 'snapshot/rollout/seed_base': 156251.35416667, 'snapshot/stage2/drop_bbox_invalid': 11.0, 'snapshot/stage2/drop_poly': 0.0, 'snapshot/stage2/drop_unknown': 0.0, 'snapshot/stage2/invalid_rollout': 9.0, 'snapshot/stage2/raw_rollouts': 288.0, 'snapshot/stage2_ab/channel_b/_prompt_tok_mismatch_den': 96.0, 'snapshot/stage2_ab/channel_b/_prompt_tok_mismatch_num': 0.0, 'snapshot/stage2_ab/channel_b/birth_first/N_continue_over_eos_boundaries': 0.0, 'snapshot/stage2_ab/channel_b/birth_first/N_continue_over_eos_skipped_no_recovered_boundary': 0.0, 'snapshot/stage2_ab/channel_b/closure_supervision/N_drop': 0.0, 'snapshot/stage2_ab/channel_b/dup/N_clean_accepted': 225.0, 'snapshot/stage2_ab/channel_b/dup/N_clusters_exempt': 6.0, 'snapshot/stage2_ab/channel_b/dup/N_clusters_suppressed': 6.0, 'snapshot/stage2_ab/channel_b/dup/N_clusters_total': 12.0, 'snapshot/stage2_ab/channel_b/dup/N_duplicate_burst_unlikelihood_skipped_no_divergence': 0.0, 'snapshot/stage2_ab/channel_b/dup/N_objects_suppressed': 6.0, 'snapshot/stage2_ab/channel_b/dup/N_raw_bbox_valid': 231.0, 'snapshot/stage2_ab/channel_b/dup/N_ul_boundaries': 6.0, 'snapshot/stage2_ab/channel_b/invalid_rollout': 9.0, 'snapshot/stage2_ab/channel_b/invalid_rollout_sample_dropped': 0.0, 'snapshot/stage2_ab/channel_b/invalid_rollout_sample_dropped_rate': 0.0, 'snapshot/stage2_ab/channel_b/prompt_tok_mismatch': 0.0, 'snapshot/stage2_ab/channel_b/prompt_tok_mismatch_rate': 0.0, 'snapshot/stage2_ab/channel_b/strict_drop/N_drop_invalid': 238.0, 'snapshot/stage2_ab/channel_b/strict_drop/N_valid_pred': 231.0, 'snapshot/stage2_ab/channel_b/strict_drop/reason/bbox_invalid': 11.0, 'snapshot/stage2_ab/channel_b/strict_drop/reason/missing_desc': 188.0, 'snapshot/stage2_ab/channel_b/strict_drop/reason/other': 10.0, 'snapshot/stage2_ab/channel_b/strict_drop/reason/unexpected_keys': 6.0, 'snapshot/stage2_ab/channel_b/strict_drop/reason/wrong_arity': 23.0, 'snapshot/time/rollout_generate_s': 130.69625927, 'snapshot/time/rollout_parse_match_s': 3.71860078, 'snapshot/time/rollout_teacher_encode_s': 2.20215003, 'snapshot/train/triage/anchor_preparation_dropped_count': 0.0, 'snapshot/train/triage/dead_anchor_count': 34.0, 'snapshot/train/triage/dead_anchor_rate': 0.15111111, 'snapshot/train/triage/dead_anchor_rate_den': 225.0, 'snapshot/train/triage/dead_anchor_rate_num': 34.0, 'snapshot/train/triage/explorer_only_dead_count': 55.0, 'snapshot/train/triage/explorer_only_dead_rate': 0.23305085, 'snapshot/train/triage/explorer_only_dead_rate_den': 236.0, 'snapshot/train/triage/explorer_only_dead_rate_num': 55.0, 'snapshot/train/triage/gt_backed_count': 183.0, 'snapshot/train/triage/lvis_not_exhaustive_count': 0.0, 'snapshot/train/triage/lvis_unevaluable_count': 42.0, 'snapshot/train/triage/lvis_verified_negative_dead_count': 0.0, 'snapshot/train/triage/lvis_verified_positive_dead_count': 0.0, 'snapshot/train/triage/neutral_shielded_count': 0.0, 'snapshot/train/triage/pseudo_positive_candidate_count': 0.0, 'snapshot/train/triage/pseudo_positive_cluster_demoted_count': 0.0, 'snapshot/train/triage/pseudo_positive_selected_count': 0.0, 'snapshot/train/triage/pseudo_positive_selected_support_rate_den': 0.0, 'snapshot/train/triage/pseudo_positive_selected_support_rate_num': 0.0, 'snapshot/train/triage/pseudo_positive_subthreshold_count': 8.0, 'snapshot/train/triage/pseudo_positive_support_rate_den': 0.0, 'snapshot/train/triage/pseudo_positive_support_rate_num': 0.0, 'snapshot/train/triage/recovered_ground_truth_count': 38.0, 'snapshot/train/triage/recovered_ground_truth_rate': 1.0, 'snapshot/train/triage/recovered_ground_truth_rate_den': 38.0, 'snapshot/train/triage/recovered_ground_truth_rate_num': 38.0, 'snapshot/train/triage/support_positive_shielded_count': 8.0, 'snapshot/train/triage/unlabeled_consistent_count': 8.0, 'time/sft_total_time': 425.32945818, 'time/rollout_total_time': 406.52875434, 'train/samples_total': 96.0, 'train/micro_steps': 18.0, 'train/samples_per_micro': 5.33333333, 'time/forward_s': 21.70408532, 'packing/post_rollout_fill': 0.92394048, 'packing/post_rollout_selected_total_len': 12935.16666667, 'packing/post_rollout_segments': 5.33333333, 'packing/post_rollout_buffer': 4.0, 'train/samples_seen': 480.0, 'epoch': 0.62, 'global_step/max_steps': '5/8', 'percentage': '62.50%', 'elapsed_time': '14m 21s', 'remaining_time': '8m 36s', 'memory(GiB)': 52.07, 'train_speed(iter/s)': 0.005806}
+Train:  62%|██████▎   | 5/8 [14:21<08:16, 165.39s/it]Train:  62%|██████▎   | 5/8 [14:21<08:16, 165.39s/it]INFO:     127.0.0.1:6262 - "POST /update_flattened_params/ HTTP/1.1" 200 OK
+INFO:     127.0.0.1:6262 - "POST /update_flattened_params/ HTTP/1.1" 200 OK
+INFO:     127.0.0.1:6262 - "POST /update_flattened_params/ HTTP/1.1" 200 OK
+INFO:     127.0.0.1:6262 - "POST /update_flattened_params/ HTTP/1.1" 200 OK
+INFO:     127.0.0.1:6262 - "POST /update_flattened_params/ HTTP/1.1" 200 OK
+INFO:     127.0.0.1:6262 - "POST /update_flattened_params/ HTTP/1.1" 200 OK
+INFO:     127.0.0.1:6262 - "POST /update_flattened_params/ HTTP/1.1" 200 OK
+INFO:     127.0.0.1:6262 - "POST /update_flattened_params/ HTTP/1.1" 200 OK
+INFO:     127.0.0.1:6262 - "POST /update_flattened_params/ HTTP/1.1" 200 OK
+INFO:     127.0.0.1:6262 - "POST /update_flattened_params/ HTTP/1.1" 200 OK
+[1;36m(EngineCore_DP2 pid=3722422)[0;0m INFO 04-22 13:55:18 [block_pool.py:378] Successfully reset prefix cache
+[1;36m(EngineCore_DP1 pid=3722419)[0;0m INFO 04-22 13:55:18 [block_pool.py:378] Successfully reset prefix cache
+[1;36m(EngineCore_DP0 pid=3722416)[0;0m INFO 04-22 13:55:18 [block_pool.py:378] Successfully reset prefix cache
+INFO:     127.0.0.1:6262 - "POST /reset_prefix_cache/ HTTP/1.1" 200 OK
+[INFO:swift] vLLM server rollout metadata: servers=[{'base_url': 'http://127.0.0.1:8000', 'group_port': 51216}] sync_mode=full request_n=96 rollout_seed_base=5000032 request_index_offset=0 effective_seed_base=5000032 decode_batch_size_cap=32 per_rank_chunk=96 learner_world_size=1 learner_rank=0 server_world_sizes=[3] per_server_rank_caps=[96] round_cap_total=96 seed_plan=[{'round': 0, 'server_idx': 0, 'base_url': 'http://127.0.0.1:8000', 'start': 0, 'end': 96, 'cap_for_rank': 96, 'seed': 5000032}]
+  0%|          | 0/32 [00:00<?, ?it/s]  0%|          | 0/32 [00:00<?, ?it/s]  0%|          | 0/32 [00:00<?, ?it/s]  3%|▎         | 1/32 [00:02<01:05,  2.10s/it]  3%|▎         | 1/32 [00:02<01:03,  2.04s/it]  3%|▎         | 1/32 [00:01<00:56,  1.82s/it]  6%|▋         | 2/32 [00:02<00:28,  1.06it/s]  6%|▋         | 2/32 [00:01<00:24,  1.22it/s]  6%|▋         | 2/32 [00:02<00:28,  1.06it/s] 12%|█▎        | 4/32 [00:02<00:13,  2.13it/s] 12%|█▎        | 4/32 [00:02<00:12,  2.31it/s] 12%|█▎        | 4/32 [00:02<00:14,  1.93it/s] 28%|██▊       | 9/32 [00:02<00:03,  6.07it/s] 25%|██▌       | 8/32 [00:02<00:04,  5.38it/s] 38%|███▊      | 12/32 [00:03<00:03,  6.05it/s] 28%|██▊       | 9/32 [00:03<00:05,  4.25it/s] 38%|███▊      | 12/32 [00:03<00:03,  6.15it/s] 44%|████▍     | 14/32 [00:03<00:03,  5.90it/s] 50%|█████     | 16/32 [00:04<00:02,  6.15it/s] 38%|███▊      | 12/32 [00:12<00:03,  5.38it/s] 41%|████      | 13/32 [00:17<00:31,  1.63s/it] 41%|████      | 13/32 [00:23<00:03,  6.05it/s] 44%|████▍     | 14/32 [00:29<00:55,  3.09s/it] 47%|████▋     | 15/32 [00:36<01:03,  3.76s/it] 44%|████▍     | 14/32 [00:48<01:48,  6.01s/it] 47%|████▋     | 15/32 [01:04<02:08,  7.58s/it] 56%|█████▋    | 18/32 [01:04<01:59,  8.54s/it] 50%|█████     | 16/32 [01:03<02:09,  8.06s/it] 88%|████████▊ | 28/32 [01:04<00:11,  2.85s/it] 72%|███████▏  | 23/32 [01:04<00:24,  2.72s/it] 78%|███████▊  | 25/32 [01:04<00:16,  2.39s/it]100%|██████████| 32/32 [01:04<00:00,  2.02s/it]
+100%|██████████| 32/32 [01:04<00:00,  2.02s/it]
+100%|██████████| 32/32 [01:04<00:00,  2.01s/it]
+INFO:     127.0.0.1:6262 - "POST /infer/ HTTP/1.1" 200 OK
+  0%|          | 0/32 [00:00<?, ?it/s]  0%|          | 0/32 [00:00<?, ?it/s]  0%|          | 0/32 [00:00<?, ?it/s]  3%|▎         | 1/32 [00:00<00:20,  1.52it/s]  3%|▎         | 1/32 [00:00<00:20,  1.51it/s]  6%|▋         | 2/32 [00:00<00:10,  2.86it/s]  9%|▉         | 3/32 [00:00<00:06,  4.51it/s]  3%|▎         | 1/32 [00:00<00:24,  1.24it/s]  6%|▋         | 2/32 [00:01<00:17,  1.75it/s] 12%|█▎        | 4/32 [00:01<00:08,  3.39it/s] 12%|█▎        | 4/32 [00:01<00:08,  3.26it/s] 22%|██▏       | 7/32 [00:01<00:03,  7.66it/s] 25%|██▌       | 8/32 [00:01<00:03,  7.76it/s] 25%|██▌       | 8/32 [00:01<00:03,  7.92it/s] 38%|███▊      | 12/32 [00:01<00:02,  8.46it/s] 34%|███▍      | 11/32 [00:01<00:02,  7.61it/s] 31%|███▏      | 10/32 [00:01<00:03,  6.04it/s] 41%|████      | 13/32 [00:02<00:02,  6.85it/s] 47%|████▋     | 15/32 [00:02<00:03,  5.08it/s] 50%|█████     | 16/32 [00:03<00:03,  5.18it/s] 47%|████▋     | 15/32 [00:03<00:04,  3.89it/s] 53%|█████▎    | 17/32 [00:03<00:04,  3.54it/s] 50%|█████     | 16/32 [00:04<00:04,  3.21it/s] 56%|█████▋    | 18/32 [00:06<00:12,  1.15it/s] 59%|█████▉    | 19/32 [00:08<00:13,  1.02s/it] 53%|█████▎    | 17/32 [00:10<00:18,  1.22s/it] 62%|██████▎   | 20/32 [00:10<00:16,  1.41s/it] 56%|█████▋    | 18/32 [00:12<00:20,  1.43s/it] 38%|███▊      | 12/32 [00:17<00:02,  8.46it/s] 59%|█████▉    | 19/32 [00:21<00:39,  3.01s/it] 41%|████      | 13/32 [00:24<01:04,  3.38s/it] 44%|████▍     | 14/32 [00:25<00:55,  3.08s/it] 47%|████▋     | 15/32 [00:41<01:36,  5.66s/it] 50%|█████     | 16/32 [00:46<01:28,  5.56s/it] 62%|██████▎   | 20/32 [01:07<02:33, 12.78s/it] 66%|██████▌   | 21/32 [01:07<02:53, 15.81s/it] 53%|█████▎    | 17/32 [01:07<02:17,  9.17s/it] 84%|████████▍ | 27/32 [01:07<00:24,  4.89s/it] 94%|█████████▍| 30/32 [01:07<00:06,  3.00s/it] 91%|█████████ | 29/32 [01:07<00:05,  1.80s/it]100%|██████████| 32/32 [01:07<00:00,  2.11s/it]
+100%|██████████| 32/32 [01:07<00:00,  2.12s/it]100%|██████████| 32/32 [01:07<00:00,  2.11s/it]
+
+INFO:     127.0.0.1:6262 - "POST /infer/ HTTP/1.1" 200 OK
+Train:  75%|███████▌  | 6/8 [18:12<06:15, 187.68s/it]                                                     {'loss': 0.94884819, 'grad_norm': 1.11850917, 'learning_rate': 1.94e-06, 'loss/B_rollout_text/struct_ce': 0.17096065, 'loss/B_rollout_text/desc_ce': 0.02294599, 'stage2_ab/channel_b/birth_first/N_continue_over_eos_boundaries': 0.0, 'stage2_ab/channel_b/birth_first/N_continue_over_eos_skipped_no_recovered_boundary': 0.0, 'train/optimization/loss_duplicate_burst_unlikelihood': 0.00095767, 'loss/B_rollout_text/duplicate_burst_unlikelihood': 0.00095767, 'diag/duplicate_burst/num_terms': 4.0, 'diag/duplicate_burst/num_ul_boundaries': 4.0, 'diag/duplicate_burst/loss_per_term': 0.0183872, 'loss/B_coord/bbox_smoothl1': 0.00225852, 'loss/B_coord/bbox_ciou': 0.25205936, 'loss/B_coord/bbox_log_wh': 0.01882796, 'loss/B_coord/coord_token_ce': 0.07047883, 'loss/B_coord/coord_soft_ce': 0.36363073, 'loss/B_coord/coord_w1': 0.00067498, 'loss/B_coord/coord_gate': 0.04591688, 'loss/B_coord/text_gate': 0.00013655, 'coord_diag/B/adjacent_repulsion_pair_count': 0.0, 'coord_diag/B/adjacent_repulsion_applied_count': 0.0, 'coord_diag/B/adjacent_repulsion_copy_score_mean': 0.0, 'coord_diag/B/coord_tokens_total': 3172.0, 'coord_diag/B/acc_top5': 0.40353111, 'coord_diag/B/p_gt_mean': 0.06378023, 'coord_diag/B/margin_mean': 0.87302622, 'coord_diag/B/expected_bin_mae': 26.23437895, 'coord_diag/B/expected_bin_abs_err_p90': 65.57822941, 'coord_diag/B/coord_vocab_mass_mean': 0.95620393, 'stage2/channel_a': 0.0, 'stage2/channel_b': 1.0, 'stage2_ab/b_ratio_realized': 0.66666667, 'stage2/raw_rollouts': 288.0, 'stage2/invalid_rollout': 6.0, 'stage2_ab/channel_b/invalid_rollout': 6.0, 'stage2/drop_poly': 0.0, 'stage2/drop_unknown': 0.0, 'stage2/drop_bbox_invalid': 45.0, 'rollout/seed_base': 260418.33333333, 'rollout/parse_truncated': 55.0, 'rollout/anchor/pred_objects': 289.0, 'rollout/anchor/valid_pred_objects': 244.0, 'rollout/anchor/parse_truncated_rate': 0.57291667, 'rollout/anchor/gen_new_tokens_mean': 1697.47916667, 'rollout/anchor/gen_new_tokens_p90': 3084.0, 'rollout/anchor/near_iou90_any': 32.0, 'rollout/anchor/near_iou90_same': 32.0, 'rollout/explorer/pred_objects': 2.625, 'rollout/explorer/valid_pred_objects': 2.625, 'rollout/explorer/parse_truncated_rate': 0.45833333, 'rollout/explorer/gen_new_tokens_mean': 1444.3125, 'rollout/explorer/gen_new_tokens_p90': 3084.0, 'rollout/explorer/near_iou90_any': 0.0, 'rollout/explorer/near_iou90_same': 0.0, 'rollout/explorer/temperature': 0.7, 'rollout/explorer/do_sample': 1.0, 'rollout/explorer/top_p': 0.95, 'rollout/explorer/top_k': 64.0, 'rollout/matched_for_supervision_count': 2907.0, 'rollout/matched_for_supervision_over_valid_pred': 0.62704918, 'stage2_ab/channel_b/closure_supervision/N_drop': 0.0, 'stage2_ab/channel_b/prompt_tok_mismatch': 0.0, 'stage2_ab/channel_b/prompt_tok_mismatch_rate': 0.0, 'stage2_ab/channel_b/invalid_rollout_sample_dropped': 0.0, 'stage2_ab/channel_b/invalid_rollout_sample_dropped_rate': 0.0, 'stage2_ab/channel_b/_prompt_tok_mismatch_num': 0.0, 'stage2_ab/channel_b/_prompt_tok_mismatch_den': 96.0, 'dup/raw/max_desc_count': 0.09548611, 'dup/raw/saturation_rate': 0.01381454, 'dup/raw/duplicate_like_max_cluster_size': 0.06998698, 'dup/raw/desc_entropy': 0.02258297, 'dup/raw/near_iou90_pairs_same_desc_count': 32.0, 'dup/raw/near_iou90_pairs_any_desc_count': 32.0, 'stage2_ab/channel_b/dup/N_raw_bbox_valid': 244.0, 'stage2_ab/channel_b/dup/N_clean_accepted': 221.0, 'stage2_ab/channel_b/dup/N_clusters_total': 11.0, 'stage2_ab/channel_b/dup/N_clusters_exempt': 5.0, 'stage2_ab/channel_b/dup/N_clusters_suppressed': 6.0, 'stage2_ab/channel_b/dup/N_objects_suppressed': 23.0, 'stage2_ab/channel_b/dup/N_ul_boundaries': 4.0, 'stage2_ab/channel_b/dup/N_duplicate_burst_unlikelihood_skipped_no_divergence': 0.0, 'train/triage/gt_backed_count': 153.0, 'train/triage/unlabeled_consistent_count': 8.0, 'train/triage/support_positive_shielded_count': 8.0, 'train/triage/neutral_shielded_count': 0.0, 'train/triage/dead_anchor_count': 60.0, 'train/triage/lvis_verified_positive_dead_count': 0.0, 'train/triage/lvis_verified_negative_dead_count': 0.0, 'train/triage/lvis_not_exhaustive_count': 0.0, 'train/triage/lvis_unevaluable_count': 68.0, 'train/triage/explorer_only_dead_count': 106.0, 'train/triage/pseudo_positive_candidate_count': 0.0, 'train/triage/pseudo_positive_subthreshold_count': 8.0, 'train/triage/pseudo_positive_selected_count': 0.0, 'train/triage/pseudo_positive_cluster_demoted_count': 0.0, 'train/triage/anchor_preparation_dropped_count': 0.0, 'train/triage/pseudo_positive_support_rate_num': 0.0, 'train/triage/pseudo_positive_support_rate_den': 0.0, 'train/triage/pseudo_positive_selected_support_rate_num': 0.0, 'train/triage/pseudo_positive_selected_support_rate_den': 0.0, 'train/triage/recovered_ground_truth_count': 31.0, 'train/triage/recovered_ground_truth_rate_num': 31.0, 'train/triage/recovered_ground_truth_rate_den': 31.0, 'train/triage/recovered_ground_truth_rate': 1.0, 'train/triage/dead_anchor_rate_num': 60.0, 'train/triage/dead_anchor_rate_den': 221.0, 'train/triage/dead_anchor_rate': 0.27149321, 'train/triage/explorer_only_dead_rate_num': 106.0, 'train/triage/explorer_only_dead_rate_den': 252.0, 'train/triage/explorer_only_dead_rate': 0.42063492, 'stage2_ab/channel_b/strict_drop/N_valid_pred': 244.0, 'stage2_ab/channel_b/strict_drop/N_drop_invalid': 256.0, 'stage2_ab/channel_b/strict_drop/reason/wrong_arity': 76.0, 'stage2_ab/channel_b/strict_drop/reason/other': 4.0, 'stage2_ab/channel_b/strict_drop/reason/unexpected_keys': 131.0, 'stage2_ab/channel_b/strict_drop/reason/bbox_invalid': 45.0, 'time/rollout_generate_s': 134.64120527, 'time/rollout_parse_match_s': 4.64061802, 'time/rollout_teacher_encode_s': 2.22703982, 'time/post_rollout_pack_s': 0.01334538, 'rollout/parse_truncated_rate': 0.57291667, 'loss/B_rollout_text/continue_over_eos_margin': 0.0, 'snapshot/coord_diag/acc_top5': 0.43754125, 'snapshot/coord_diag/adjacent_repulsion_applied_count': 0.0, 'snapshot/coord_diag/adjacent_repulsion_copy_score_mean': 0.0, 'snapshot/coord_diag/adjacent_repulsion_pair_count': 0.0, 'snapshot/coord_diag/coord_tokens_total': 2752.0, 'snapshot/coord_diag/coord_vocab_mass_mean': 0.9602918, 'snapshot/coord_diag/expected_bin_abs_err_p90': 45.04179281, 'snapshot/coord_diag/expected_bin_mae': 19.13603034, 'snapshot/coord_diag/margin_mean': 0.79218494, 'snapshot/coord_diag/p_gt_mean': 0.07170282, 'snapshot/loss/coord/bbox_ciou': 0.18300345, 'snapshot/loss/coord/bbox_log_wh': 0.00906679, 'snapshot/loss/coord/bbox_smoothl1': 0.00125896, 'snapshot/loss/coord/coord_gate': 0.04184833, 'snapshot/loss/coord/coord_soft_ce': 0.3436142, 'snapshot/loss/coord/coord_token_ce': 0.06623478, 'snapshot/loss/coord/coord_w1': 0.00050755, 'snapshot/loss/coord/text_gate': 9e-08, 'snapshot/loss/text/desc_ce': 0.02056464, 'snapshot/loss/text/struct_ce': 0.00792276, 'snapshot/stage2_ab/channel_b/strict_drop/reason/missing_desc': 188.0, 'snapshot/time/channel_a_collate_s': 0.68431896, 'snapshot/time/channel_a_prepare_segments_s': 2.0736689, 'snapshot/time/channel_a_teacher_encode_s': 1.74806144, 'time/sft_total_time': 510.69374399, 'time/rollout_total_time': 548.42048747, 'train/samples_total': 96.0, 'train/micro_steps': 19.0, 'train/samples_per_micro': 5.05263158, 'time/forward_s': 21.66558822, 'rollout/parse_dropped_invalid': 211.0, 'rollout/parse_dropped_ambiguous': 0.0, 'rollout/parse_obj_total': 455.0, 'rollout/parse_obj_valid_frac': 0.53626374, 'rollout/parse_obj_drop_frac': 0.46373626, 'rollout/sample_valid_pred_rate': 0.9375, 'rollout/sample_any_match_rate': 0.89583333, 'rollout/fn_appended_total': 640.0, 'rollout/gating_rejections': 748.0, 'rollout/gating_rejection_rate': 0.61311475, 'rollout/valid_pred_objects_total': 244.0, 'rollout/gt_objects_total': 793.0, 'rollout/precision': 0.62704918, 'rollout/recall': 0.19293821, 'rollout/f1': 0.29508197, 'rollout/fp_total': 91.0, 'rollout/fn_total': 640.0, 'rollout/gt_per_sample': 8.26041667, 'rollout/pred_per_sample': 2.54166667, 'rollout/fp_per_sample': 0.94791667, 'rollout/fn_per_sample': 6.66666667, 'rollout/matched_maskiou_mean': 0.86707824, 'rollout/matched_maskiou_count': 153.0, 'rollout/excluded_rate': 0.0, 'rollout/prefix_coord_targets_total': 612.0, 'rollout/prefix_coord_targets_per_matched': 4.0, 'rollout/tail_ignore_frac': 0.0, 'rollout/prompt_len_mean': 2245.8125, 'rollout/prompt_len_p90': 2278.0, 'rollout/prefix_len_mean': 44.25, 'rollout/rollout_len_mean': 1697.47916667, 'rollout/rollout_len_p90': 3084.0, 'rollout/train_len_mean': 210.48958333, 'rollout/train_len_p90': 452.0, 'rollout/append_len_mean': 166.23958333, 'rollout/append_len_p90': 392.5, 'rollout/encoded_len_mean': 2456.30208333, 'rollout/encoded_len_p90': 2711.0, 'rollout/decode_non_beam_count': 96.0, 'rollout/decode_beam_count': 0.0, 'rollout/matched_for_supervision': 153.0, 'rollout/excluded_from_supervision': 0.0, 'rollout/do_sample': 0.0, 'rollout/temperature': 0.0, 'rollout/top_p': 1.0, 'rollout/top_k': -1.0, 'packing/post_rollout_fill': 0.88648496, 'packing/post_rollout_selected_total_len': 12410.78947368, 'packing/post_rollout_segments': 5.05263158, 'packing/post_rollout_buffer': 5.0, 'rollout/gen_new_tokens_total': 162958.0, 'rollout/gen_new_tokens_mean': 1697.47916667, 'rollout/gen_new_tokens_p90': 3084.0, 'rollout/gen_new_tokens_p99': 3084.0, 'rollout/gen_tokens_per_s': 1210.31299206, 'train/samples_seen': 576.0, 'epoch': 0.75, 'global_step/max_steps': '6/8', 'percentage': '75.00%', 'elapsed_time': '18m 12s', 'remaining_time': '6m 4s', 'memory(GiB)': 52.07, 'train_speed(iter/s)': 0.005494}
+Train:  75%|███████▌  | 6/8 [18:12<06:15, 187.68s/it]Train:  75%|███████▌  | 6/8 [18:12<06:15, 187.68s/it]INFO:     127.0.0.1:62972 - "POST /update_flattened_params/ HTTP/1.1" 200 OK
+INFO:     127.0.0.1:62972 - "POST /update_flattened_params/ HTTP/1.1" 200 OK
+INFO:     127.0.0.1:62972 - "POST /update_flattened_params/ HTTP/1.1" 200 OK
+INFO:     127.0.0.1:62972 - "POST /update_flattened_params/ HTTP/1.1" 200 OK
+INFO:     127.0.0.1:62972 - "POST /update_flattened_params/ HTTP/1.1" 200 OK
+INFO:     127.0.0.1:62972 - "POST /update_flattened_params/ HTTP/1.1" 200 OK
+INFO:     127.0.0.1:62972 - "POST /update_flattened_params/ HTTP/1.1" 200 OK
+INFO:     127.0.0.1:62972 - "POST /update_flattened_params/ HTTP/1.1" 200 OK
+INFO:     127.0.0.1:62972 - "POST /update_flattened_params/ HTTP/1.1" 200 OK
+INFO:     127.0.0.1:62972 - "POST /update_flattened_params/ HTTP/1.1" 200 OK
+[1;36m(EngineCore_DP1 pid=3722419)[0;0m INFO 04-22 13:59:09 [block_pool.py:378] Successfully reset prefix cache
+[1;36m(EngineCore_DP0 pid=3722416)[0;0m INFO 04-22 13:59:09 [block_pool.py:378] Successfully reset prefix cache
+[1;36m(EngineCore_DP2 pid=3722422)[0;0m INFO 04-22 13:59:09 [block_pool.py:378] Successfully reset prefix cache
+INFO:     127.0.0.1:62972 - "POST /reset_prefix_cache/ HTTP/1.1" 200 OK
+[INFO:swift] vLLM server rollout metadata: servers=[{'base_url': 'http://127.0.0.1:8000', 'group_port': 51216}] sync_mode=full request_n=96 rollout_seed_base=6000035 request_index_offset=0 effective_seed_base=6000035 decode_batch_size_cap=32 per_rank_chunk=96 learner_world_size=1 learner_rank=0 server_world_sizes=[3] per_server_rank_caps=[96] round_cap_total=96 seed_plan=[{'round': 0, 'server_idx': 0, 'base_url': 'http://127.0.0.1:8000', 'start': 0, 'end': 96, 'cap_for_rank': 96, 'seed': 6000035}]
+  0%|          | 0/32 [00:00<?, ?it/s]  0%|          | 0/32 [00:00<?, ?it/s]  0%|          | 0/32 [00:00<?, ?it/s]  3%|▎         | 1/32 [00:02<01:02,  2.02s/it]  3%|▎         | 1/32 [00:02<01:04,  2.10s/it]  3%|▎         | 1/32 [00:02<01:11,  2.31s/it] 12%|█▎        | 4/32 [00:02<00:12,  2.33it/s] 12%|█▎        | 4/32 [00:02<00:13,  2.13it/s]  9%|▉         | 3/32 [00:02<00:17,  1.70it/s] 19%|█▉        | 6/32 [00:02<00:09,  2.82it/s] 12%|█▎        | 4/32 [00:02<00:14,  1.87it/s] 28%|██▊       | 9/32 [00:02<00:04,  4.92it/s] 25%|██▌       | 8/32 [00:02<00:04,  5.01it/s] 19%|█▉        | 6/32 [00:02<00:10,  2.56it/s] 34%|███▍      | 11/32 [00:03<00:03,  5.26it/s] 28%|██▊       | 9/32 [00:03<00:06,  3.35it/s] 31%|███▏      | 10/32 [00:03<00:07,  2.99it/s] 41%|████      | 13/32 [00:04<00:04,  4.58it/s] 44%|████▍     | 14/32 [00:04<00:04,  4.39it/s] 50%|█████     | 16/32 [00:05<00:04,  3.56it/s] 47%|████▋     | 15/32 [00:08<00:16,  1.02it/s] 34%|███▍      | 11/32 [00:21<00:03,  5.26it/s] 50%|█████     | 16/32 [00:22<00:04,  3.56it/s] 38%|███▊      | 12/32 [01:07<03:35, 10.80s/it] 53%|█████▎    | 17/32 [01:07<02:50, 11.39s/it] 53%|█████▎    | 17/32 [01:07<01:48,  7.26s/it] 59%|█████▉    | 19/32 [01:07<00:53,  4.08s/it] 72%|███████▏  | 23/32 [01:07<00:40,  4.46s/it] 81%|████████▏ | 26/32 [01:08<00:17,  2.99s/it] 91%|█████████ | 29/32 [01:07<00:05,  1.80s/it]100%|██████████| 32/32 [01:07<00:00,  1.94s/it]100%|██████████| 32/32 [01:08<00:00,  2.13s/it]
+100%|██████████| 32/32 [01:08<00:00,  2.13s/it]
+100%|██████████| 32/32 [01:08<00:00,  2.13s/it]
+INFO:     127.0.0.1:62972 - "POST /infer/ HTTP/1.1" 200 OK
+  0%|          | 0/32 [00:00<?, ?it/s]  0%|          | 0/32 [00:00<?, ?it/s]  0%|          | 0/32 [00:00<?, ?it/s]  3%|▎         | 1/32 [00:00<00:17,  1.73it/s]  3%|▎         | 1/32 [00:00<00:18,  1.65it/s]  3%|▎         | 1/32 [00:00<00:21,  1.43it/s]  9%|▉         | 3/32 [00:00<00:05,  5.28it/s]  9%|▉         | 3/32 [00:00<00:05,  5.09it/s] 19%|█▉        | 6/32 [00:01<00:04,  5.85it/s]  9%|▉         | 3/32 [00:01<00:10,  2.67it/s] 16%|█▌        | 5/32 [00:01<00:06,  4.29it/s] 25%|██▌       | 8/32 [00:01<00:03,  7.86it/s] 16%|█▌        | 5/32 [00:01<00:05,  4.79it/s] 41%|████      | 13/32 [00:01<00:01, 15.01it/s] 19%|█▉        | 6/32 [00:01<00:05,  4.59it/s] 28%|██▊       | 9/32 [00:01<00:02, 10.02it/s] 31%|███▏      | 10/32 [00:01<00:03,  6.01it/s] 50%|█████     | 16/32 [00:02<00:02,  6.52it/s] 34%|███▍      | 11/32 [00:02<00:05,  4.10it/s] 41%|████      | 13/32 [00:02<00:03,  5.57it/s] 47%|████▋     | 15/32 [00:02<00:02,  6.45it/s] 38%|███▊      | 12/32 [00:02<00:05,  3.90it/s] 50%|█████     | 16/32 [00:03<00:03,  4.99it/s] 53%|█████▎    | 17/32 [00:03<00:03,  4.80it/s] 56%|█████▋    | 18/32 [00:04<00:04,  2.83it/s] 56%|█████▋    | 18/32 [00:06<00:12,  1.10it/s] 59%|█████▉    | 19/32 [00:10<00:20,  1.59s/it] 62%|██████▎   | 20/32 [00:10<00:15,  1.27s/it] 69%|██████▉   | 22/32 [00:12<00:11,  1.19s/it] 72%|███████▏  | 23/32 [00:13<00:09,  1.01s/it] 44%|████▍     | 14/32 [00:20<00:45,  2.50s/it] 56%|█████▋    | 18/32 [00:22<00:04,  2.83it/s] 47%|████▋     | 15/32 [00:23<00:45,  2.65s/it] 59%|█████▉    | 19/32 [00:24<00:42,  3.26s/it] 50%|█████     | 16/32 [00:30<00:55,  3.47s/it] 53%|█████▎    | 17/32 [00:31<00:43,  2.88s/it] 56%|█████▋    | 18/32 [00:35<00:43,  3.11s/it] 75%|███████▌  | 24/32 [01:05<01:51, 13.94s/it] 59%|█████▉    | 19/32 [01:05<02:10, 10.02s/it] 62%|██████▎   | 20/32 [01:05<01:57,  9.77s/it] 88%|████████▊ | 28/32 [01:05<00:22,  5.75s/it] 88%|████████▊ | 28/32 [01:05<00:09,  2.39s/it] 84%|████████▍ | 27/32 [01:06<00:18,  3.60s/it]100%|██████████| 32/32 [01:06<00:00,  2.07s/it]
+100%|██████████| 32/32 [01:06<00:00,  2.07s/it]
+100%|██████████| 32/32 [01:06<00:00,  2.07s/it]
+INFO:     127.0.0.1:62972 - "POST /infer/ HTTP/1.1" 200 OK
+Train:  88%|████████▊ | 7/8 [22:04<03:22, 202.29s/it]                                                     {'loss': 0.91611564, 'grad_norm': 2.99600101, 'learning_rate': 1e-06, 'loss/B_rollout_text/struct_ce': 0.14448076, 'loss/B_rollout_text/desc_ce': 0.01899425, 'stage2_ab/channel_b/birth_first/N_continue_over_eos_boundaries': 0.0, 'stage2_ab/channel_b/birth_first/N_continue_over_eos_skipped_no_recovered_boundary': 0.0, 'train/optimization/loss_duplicate_burst_unlikelihood': 0.03378733, 'loss/B_rollout_text/duplicate_burst_unlikelihood': 0.03378733, 'diag/duplicate_burst/num_terms': 13.0, 'diag/duplicate_burst/num_ul_boundaries': 11.0, 'diag/duplicate_burst/loss_per_term': 0.62366738, 'loss/B_coord/bbox_smoothl1': 0.00220961, 'loss/B_coord/bbox_ciou': 0.22209063, 'loss/B_coord/bbox_log_wh': 0.01574954, 'loss/B_coord/coord_token_ce': 0.07012468, 'loss/B_coord/coord_soft_ce': 0.3630229, 'loss/B_coord/coord_w1': 0.00067853, 'loss/B_coord/coord_gate': 0.04484162, 'loss/B_coord/text_gate': 0.00013574, 'coord_diag/B/adjacent_repulsion_pair_count': 0.0, 'coord_diag/B/adjacent_repulsion_applied_count': 0.0, 'coord_diag/B/adjacent_repulsion_copy_score_mean': 0.0, 'coord_diag/B/coord_tokens_total': 2980.0, 'coord_diag/B/acc_top5': 0.40903743, 'coord_diag/B/p_gt_mean': 0.06486638, 'coord_diag/B/margin_mean': 0.91641267, 'coord_diag/B/expected_bin_mae': 26.76716195, 'coord_diag/B/expected_bin_abs_err_p90': 67.99266771, 'coord_diag/B/coord_vocab_mass_mean': 0.9574028, 'stage2/channel_a': 0.0, 'stage2/channel_b': 1.0, 'stage2_ab/b_ratio_realized': 0.71428571, 'stage2/raw_rollouts': 288.0, 'stage2/invalid_rollout': 9.0, 'stage2_ab/channel_b/invalid_rollout': 9.0, 'stage2/drop_poly': 0.0, 'stage2/drop_unknown': 0.0, 'stage2/drop_bbox_invalid': 117.0, 'rollout/seed_base': 375002.1875, 'rollout/parse_truncated': 49.0, 'rollout/anchor/pred_objects': 415.0, 'rollout/anchor/valid_pred_objects': 298.0, 'rollout/anchor/parse_truncated_rate': 0.51041667, 'rollout/anchor/gen_new_tokens_mean': 1732.625, 'rollout/anchor/gen_new_tokens_p90': 3084.0, 'rollout/anchor/near_iou90_any': 6.0, 'rollout/anchor/near_iou90_same': 3.0, 'rollout/explorer/pred_objects': 2.47916667, 'rollout/explorer/valid_pred_objects': 2.45833333, 'rollout/explorer/parse_truncated_rate': 0.46875, 'rollout/explorer/gen_new_tokens_mean': 1306.38541667, 'rollout/explorer/gen_new_tokens_p90': 3084.0, 'rollout/explorer/near_iou90_any': 0.01041667, 'rollout/explorer/near_iou90_same': 0.0, 'rollout/explorer/temperature': 0.7, 'rollout/explorer/do_sample': 1.0, 'rollout/explorer/top_p': 0.95, 'rollout/explorer/top_k': 64.0, 'rollout/matched_for_supervision_count': 2988.0, 'rollout/matched_for_supervision_over_valid_pred': 0.55704698, 'stage2_ab/channel_b/closure_supervision/N_drop': 0.0, 'stage2_ab/channel_b/prompt_tok_mismatch': 0.0, 'stage2_ab/channel_b/prompt_tok_mismatch_rate': 0.0, 'stage2_ab/channel_b/invalid_rollout_sample_dropped': 0.0, 'stage2_ab/channel_b/invalid_rollout_sample_dropped_rate': 0.0, 'stage2_ab/channel_b/_prompt_tok_mismatch_num': 0.0, 'stage2_ab/channel_b/_prompt_tok_mismatch_den': 96.0, 'dup/raw/max_desc_count': 0.13867188, 'dup/raw/saturation_rate': 0.01772294, 'dup/raw/duplicate_like_max_cluster_size': 0.08984375, 'dup/raw/desc_entropy': 0.03023647, 'dup/raw/near_iou90_pairs_same_desc_count': 3.0, 'dup/raw/near_iou90_pairs_any_desc_count': 6.0, 'stage2_ab/channel_b/dup/N_raw_bbox_valid': 298.0, 'stage2_ab/channel_b/dup/N_clean_accepted': 224.0, 'stage2_ab/channel_b/dup/N_clusters_total': 23.0, 'stage2_ab/channel_b/dup/N_clusters_exempt': 3.0, 'stage2_ab/channel_b/dup/N_clusters_suppressed': 20.0, 'stage2_ab/channel_b/dup/N_objects_suppressed': 74.0, 'stage2_ab/channel_b/dup/N_ul_boundaries': 11.0, 'stage2_ab/channel_b/dup/N_duplicate_burst_unlikelihood_skipped_no_divergence': 0.0, 'train/triage/gt_backed_count': 166.0, 'train/triage/unlabeled_consistent_count': 7.0, 'train/triage/support_positive_shielded_count': 7.0, 'train/triage/neutral_shielded_count': 0.0, 'train/triage/dead_anchor_count': 51.0, 'train/triage/lvis_verified_positive_dead_count': 0.0, 'train/triage/lvis_verified_negative_dead_count': 0.0, 'train/triage/lvis_not_exhaustive_count': 0.0, 'train/triage/lvis_unevaluable_count': 58.0, 'train/triage/explorer_only_dead_count': 67.0, 'train/triage/pseudo_positive_candidate_count': 0.0, 'train/triage/pseudo_positive_subthreshold_count': 7.0, 'train/triage/pseudo_positive_selected_count': 0.0, 'train/triage/pseudo_positive_cluster_demoted_count': 0.0, 'train/triage/anchor_preparation_dropped_count': 0.0, 'train/triage/pseudo_positive_support_rate_num': 0.0, 'train/triage/pseudo_positive_support_rate_den': 0.0, 'train/triage/pseudo_positive_selected_support_rate_num': 0.0, 'train/triage/pseudo_positive_selected_support_rate_den': 0.0, 'train/triage/recovered_ground_truth_count': 31.0, 'train/triage/recovered_ground_truth_rate_num': 31.0, 'train/triage/recovered_ground_truth_rate_den': 31.0, 'train/triage/recovered_ground_truth_rate': 1.0, 'train/triage/dead_anchor_rate_num': 51.0, 'train/triage/dead_anchor_rate_den': 224.0, 'train/triage/dead_anchor_rate': 0.22767857, 'train/triage/explorer_only_dead_rate_num': 67.0, 'train/triage/explorer_only_dead_rate_den': 236.0, 'train/triage/explorer_only_dead_rate': 0.28389831, 'stage2_ab/channel_b/strict_drop/N_valid_pred': 298.0, 'stage2_ab/channel_b/strict_drop/N_drop_invalid': 168.0, 'stage2_ab/channel_b/strict_drop/reason/other': 14.0, 'stage2_ab/channel_b/strict_drop/reason/missing_desc': 2.0, 'stage2_ab/channel_b/strict_drop/reason/bbox_invalid': 117.0, 'stage2_ab/channel_b/strict_drop/reason/wrong_arity': 33.0, 'stage2_ab/channel_b/strict_drop/reason/unexpected_keys': 2.0, 'time/rollout_generate_s': 136.86611957, 'time/rollout_parse_match_s': 3.97567081, 'time/rollout_teacher_encode_s': 2.27417938, 'time/post_rollout_pack_s': 0.01568897, 'rollout/parse_truncated_rate': 0.51041667, 'loss/B_rollout_text/continue_over_eos_margin': 0.0, 'snapshot/coord_diag/acc_top5': 0.43754125, 'snapshot/coord_diag/adjacent_repulsion_applied_count': 0.0, 'snapshot/coord_diag/adjacent_repulsion_copy_score_mean': 0.0, 'snapshot/coord_diag/adjacent_repulsion_pair_count': 0.0, 'snapshot/coord_diag/coord_tokens_total': 2752.0, 'snapshot/coord_diag/coord_vocab_mass_mean': 0.9602918, 'snapshot/coord_diag/expected_bin_abs_err_p90': 45.04179281, 'snapshot/coord_diag/expected_bin_mae': 19.13603034, 'snapshot/coord_diag/margin_mean': 0.79218494, 'snapshot/coord_diag/p_gt_mean': 0.07170282, 'snapshot/loss/coord/bbox_ciou': 0.18300345, 'snapshot/loss/coord/bbox_log_wh': 0.00906679, 'snapshot/loss/coord/bbox_smoothl1': 0.00125896, 'snapshot/loss/coord/coord_gate': 0.04184833, 'snapshot/loss/coord/coord_soft_ce': 0.3436142, 'snapshot/loss/coord/coord_token_ce': 0.06623478, 'snapshot/loss/coord/coord_w1': 0.00050755, 'snapshot/loss/coord/text_gate': 9e-08, 'snapshot/loss/text/desc_ce': 0.02056464, 'snapshot/loss/text/struct_ce': 0.00792276, 'snapshot/time/channel_a_collate_s': 0.68431896, 'snapshot/time/channel_a_prepare_segments_s': 2.0736689, 'snapshot/time/channel_a_teacher_encode_s': 1.74806144, 'time/sft_total_time': 595.75515079, 'time/rollout_total_time': 691.88570141, 'train/samples_total': 96.0, 'train/micro_steps': 18.0, 'train/samples_per_micro': 5.33333333, 'time/forward_s': 21.60779868, 'rollout/parse_dropped_invalid': 51.0, 'rollout/parse_dropped_ambiguous': 0.0, 'rollout/parse_obj_total': 349.0, 'rollout/parse_obj_valid_frac': 0.85386819, 'rollout/parse_obj_drop_frac': 0.14613181, 'rollout/sample_valid_pred_rate': 0.90625, 'rollout/sample_any_match_rate': 0.875, 'rollout/fn_appended_total': 579.0, 'rollout/gating_rejections': 723.0, 'rollout/gating_rejection_rate': 0.4852349, 'rollout/valid_pred_objects_total': 298.0, 'rollout/gt_objects_total': 745.0, 'rollout/precision': 0.55704698, 'rollout/recall': 0.22281879, 'rollout/f1': 0.31831256, 'rollout/fp_total': 132.0, 'rollout/fn_total': 579.0, 'rollout/gt_per_sample': 7.76041667, 'rollout/pred_per_sample': 3.10416667, 'rollout/fp_per_sample': 1.375, 'rollout/fn_per_sample': 6.03125, 'rollout/matched_maskiou_mean': 0.88421999, 'rollout/matched_maskiou_count': 166.0, 'rollout/excluded_rate': 0.0, 'rollout/prefix_coord_targets_total': 664.0, 'rollout/prefix_coord_targets_per_matched': 4.0, 'rollout/tail_ignore_frac': 0.0, 'rollout/prompt_len_mean': 2244.65625, 'rollout/prompt_len_p90': 2278.0, 'rollout/prefix_len_mean': 47.21875, 'rollout/rollout_len_mean': 1732.625, 'rollout/rollout_len_p90': 3084.0, 'rollout/train_len_mean': 197.65625, 'rollout/train_len_p90': 386.5, 'rollout/append_len_mean': 150.4375, 'rollout/append_len_p90': 359.0, 'rollout/encoded_len_mean': 2442.3125, 'rollout/encoded_len_p90': 2639.5, 'rollout/decode_non_beam_count': 96.0, 'rollout/decode_beam_count': 0.0, 'rollout/matched_for_supervision': 166.0, 'rollout/excluded_from_supervision': 0.0, 'rollout/do_sample': 0.0, 'rollout/temperature': 0.0, 'rollout/top_p': 1.0, 'rollout/top_k': -1.0, 'packing/post_rollout_fill': 0.93040476, 'packing/post_rollout_selected_total_len': 13025.66666667, 'packing/post_rollout_segments': 5.33333333, 'packing/post_rollout_buffer': 5.0, 'rollout/gen_new_tokens_total': 166332.0, 'rollout/gen_new_tokens_mean': 1732.625, 'rollout/gen_new_tokens_p90': 3084.0, 'rollout/gen_new_tokens_p99': 3084.0, 'rollout/gen_tokens_per_s': 1215.28980675, 'train/samples_seen': 672.0, 'epoch': 0.88, 'global_step/max_steps': '7/8', 'percentage': '87.50%', 'elapsed_time': '22m 4s', 'remaining_time': '3m 9s', 'memory(GiB)': 52.07, 'train_speed(iter/s)': 0.005285}
+Train:  88%|████████▊ | 7/8 [22:04<03:22, 202.29s/it]Train:  88%|████████▊ | 7/8 [22:04<03:22, 202.29s/it]INFO:     127.0.0.1:53910 - "POST /update_flattened_params/ HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53910 - "POST /update_flattened_params/ HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53910 - "POST /update_flattened_params/ HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53910 - "POST /update_flattened_params/ HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53910 - "POST /update_flattened_params/ HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53910 - "POST /update_flattened_params/ HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53910 - "POST /update_flattened_params/ HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53910 - "POST /update_flattened_params/ HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53910 - "POST /update_flattened_params/ HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53910 - "POST /update_flattened_params/ HTTP/1.1" 200 OK
+[1;36m(EngineCore_DP2 pid=3722422)[0;0m INFO 04-22 14:03:01 [block_pool.py:378] Successfully reset prefix cache
+[1;36m(EngineCore_DP1 pid=3722419)[0;0m INFO 04-22 14:03:01 [block_pool.py:378] Successfully reset prefix cache
+[1;36m(EngineCore_DP0 pid=3722416)[0;0m INFO 04-22 14:03:01 [block_pool.py:378] Successfully reset prefix cache
+INFO:     127.0.0.1:53910 - "POST /reset_prefix_cache/ HTTP/1.1" 200 OK
+[INFO:swift] vLLM server rollout metadata: servers=[{'base_url': 'http://127.0.0.1:8000', 'group_port': 51216}] sync_mode=full request_n=96 rollout_seed_base=7000038 request_index_offset=0 effective_seed_base=7000038 decode_batch_size_cap=32 per_rank_chunk=96 learner_world_size=1 learner_rank=0 server_world_sizes=[3] per_server_rank_caps=[96] round_cap_total=96 seed_plan=[{'round': 0, 'server_idx': 0, 'base_url': 'http://127.0.0.1:8000', 'start': 0, 'end': 96, 'cap_for_rank': 96, 'seed': 7000038}]
+  0%|          | 0/32 [00:00<?, ?it/s]  0%|          | 0/32 [00:00<?, ?it/s]  0%|          | 0/32 [00:00<?, ?it/s]  3%|▎         | 1/32 [00:02<01:02,  2.03s/it]  3%|▎         | 1/32 [00:01<01:01,  1.98s/it]  3%|▎         | 1/32 [00:02<01:08,  2.22s/it]  6%|▋         | 2/32 [00:02<00:28,  1.07it/s]  6%|▋         | 2/32 [00:02<00:27,  1.09it/s]  9%|▉         | 3/32 [00:02<00:20,  1.43it/s]  9%|▉         | 3/32 [00:02<00:22,  1.31it/s] 12%|█▎        | 4/32 [00:02<00:13,  2.08it/s] 22%|██▏       | 7/32 [00:02<00:05,  4.65it/s] 22%|██▏       | 7/32 [00:02<00:06,  3.75it/s] 28%|██▊       | 9/32 [00:02<00:03,  5.94it/s] 31%|███▏      | 10/32 [00:03<00:04,  5.06it/s] 34%|███▍      | 11/32 [00:03<00:04,  4.96it/s] 38%|███▊      | 12/32 [00:03<00:03,  6.26it/s] 41%|████      | 13/32 [00:03<00:03,  5.07it/s] 44%|████▍     | 14/32 [00:05<00:06,  2.89it/s] 44%|████▍     | 14/32 [00:08<00:15,  1.14it/s] 47%|████▋     | 15/32 [00:15<00:32,  1.90s/it] 47%|████▋     | 15/32 [00:19<00:05,  2.89it/s] 50%|█████     | 16/32 [00:42<01:05,  4.09s/it] 53%|█████▎    | 17/32 [01:04<01:35,  6.33s/it] 47%|████▋     | 15/32 [01:04<02:33,  9.00s/it] 50%|█████     | 16/32 [01:04<03:01, 11.34s/it] 72%|███████▏  | 23/32 [01:04<00:30,  3.39s/it] 84%|████████▍ | 27/32 [01:04<00:11,  2.26s/it] 81%|████████▏ | 26/32 [01:04<00:17,  2.96s/it]100%|██████████| 32/32 [01:04<00:00,  2.03s/it]
+100%|██████████| 32/32 [01:04<00:00,  2.03s/it]
+100%|██████████| 32/32 [01:04<00:00,  2.03s/it]
+INFO:     127.0.0.1:53910 - "POST /infer/ HTTP/1.1" 200 OK
+  0%|          | 0/32 [00:00<?, ?it/s]  0%|          | 0/32 [00:00<?, ?it/s]  0%|          | 0/32 [00:00<?, ?it/s]  3%|▎         | 1/32 [00:00<00:18,  1.66it/s]  3%|▎         | 1/32 [00:00<00:18,  1.65it/s]  3%|▎         | 1/32 [00:00<00:23,  1.33it/s]  6%|▋         | 2/32 [00:00<00:11,  2.71it/s]  6%|▋         | 2/32 [00:01<00:18,  1.64it/s] 12%|█▎        | 4/32 [00:01<00:07,  3.76it/s]  6%|▋         | 2/32 [00:01<00:17,  1.68it/s] 16%|█▌        | 5/32 [00:01<00:05,  5.07it/s] 19%|█▉        | 6/32 [00:01<00:04,  6.40it/s] 22%|██▏       | 7/32 [00:01<00:03,  7.25it/s] 25%|██▌       | 8/32 [00:01<00:02,  8.72it/s] 34%|███▍      | 11/32 [00:01<00:01, 12.93it/s] 31%|███▏      | 10/32 [00:01<00:02, 10.16it/s] 34%|███▍      | 11/32 [00:01<00:02,  7.18it/s] 41%|████      | 13/32 [00:02<00:02,  7.62it/s] 38%|███▊      | 12/32 [00:02<00:05,  3.94it/s] 44%|████▍     | 14/32 [00:03<00:04,  4.36it/s] 47%|████▋     | 15/32 [00:03<00:04,  3.96it/s] 47%|████▋     | 15/32 [00:04<00:06,  2.63it/s] 50%|█████     | 16/32 [00:04<00:05,  2.68it/s] 53%|█████▎    | 17/32 [00:05<00:07,  1.96it/s] 47%|████▋     | 15/32 [00:07<00:13,  1.25it/s] 56%|█████▋    | 18/32 [00:08<00:09,  1.45it/s] 50%|█████     | 16/32 [00:11<00:21,  1.35s/it] 56%|█████▋    | 18/32 [00:14<00:34,  2.49s/it] 56%|█████▋    | 18/32 [00:23<00:09,  1.45it/s] 59%|█████▉    | 19/32 [00:58<02:52, 13.23s/it] 62%|██████▎   | 20/32 [01:06<02:22, 11.84s/it] 59%|█████▉    | 19/32 [01:06<01:41,  7.82s/it] 53%|█████▎    | 17/32 [01:06<03:00, 12.01s/it] 88%|████████▊ | 28/32 [01:06<00:12,  3.01s/it] 75%|███████▌  | 24/32 [01:06<00:37,  4.69s/it] 84%|████████▍ | 27/32 [01:06<00:15,  3.16s/it]100%|██████████| 32/32 [01:06<00:00,  2.09s/it]100%|██████████| 32/32 [01:06<00:00,  2.09s/it]100%|██████████| 32/32 [01:06<00:00,  2.09s/it]
+
+
+INFO:     127.0.0.1:53910 - "POST /infer/ HTTP/1.1" 200 OK
+Train: 100%|██████████| 8/8 [25:52<00:00, 210.57s/it]                                                     {'loss': 1.27785003, 'grad_norm': 6.74631548, 'learning_rate': 1.94e-06, 'loss/B_rollout_text/struct_ce': 0.20047799, 'loss/B_rollout_text/desc_ce': 0.02122748, 'stage2_ab/channel_b/birth_first/N_continue_over_eos_boundaries': 0.0, 'stage2_ab/channel_b/birth_first/N_continue_over_eos_skipped_no_recovered_boundary': 0.0, 'train/optimization/loss_duplicate_burst_unlikelihood': 0.3427346, 'loss/B_rollout_text/duplicate_burst_unlikelihood': 0.3427346, 'diag/duplicate_burst/num_terms': 10.0, 'diag/duplicate_burst/num_ul_boundaries': 10.0, 'diag/duplicate_burst/loss_per_term': 5.52523767, 'loss/B_coord/bbox_smoothl1': 0.00253757, 'loss/B_coord/bbox_ciou': 0.22015617, 'loss/B_coord/bbox_log_wh': 0.01465345, 'loss/B_coord/coord_token_ce': 0.07044395, 'loss/B_coord/coord_soft_ce': 0.36511415, 'loss/B_coord/coord_w1': 0.00071343, 'loss/B_coord/coord_gate': 0.03968684, 'loss/B_coord/text_gate': 0.00010437, 'coord_diag/B/adjacent_repulsion_pair_count': 0.0, 'coord_diag/B/adjacent_repulsion_applied_count': 0.0, 'coord_diag/B/adjacent_repulsion_copy_score_mean': 0.0, 'coord_diag/B/coord_tokens_total': 2492.0, 'coord_diag/B/acc_top5': 0.42347325, 'coord_diag/B/p_gt_mean': 0.06680354, 'coord_diag/B/margin_mean': 0.90950571, 'coord_diag/B/expected_bin_mae': 27.51553903, 'coord_diag/B/expected_bin_abs_err_p90': 69.43811468, 'coord_diag/B/coord_vocab_mass_mean': 0.96193571, 'stage2/channel_a': 0.0, 'stage2/channel_b': 1.0, 'stage2_ab/b_ratio_realized': 0.75, 'stage2/raw_rollouts': 288.0, 'stage2/invalid_rollout': 4.0, 'stage2_ab/channel_b/invalid_rollout': 4.0, 'stage2/drop_poly': 0.0, 'stage2/drop_unknown': 0.0, 'stage2/drop_bbox_invalid': 37.0, 'rollout/seed_base': 364585.3125, 'rollout/parse_truncated': 54.0, 'rollout/anchor/pred_objects': 265.0, 'rollout/anchor/valid_pred_objects': 228.0, 'rollout/anchor/parse_truncated_rate': 0.5625, 'rollout/anchor/gen_new_tokens_mean': 1699.69791667, 'rollout/anchor/gen_new_tokens_p90': 3084.0, 'rollout/anchor/near_iou90_any': 45.0, 'rollout/anchor/near_iou90_same': 38.0, 'rollout/explorer/pred_objects': 2.36458333, 'rollout/explorer/valid_pred_objects': 2.34375, 'rollout/explorer/parse_truncated_rate': 0.52083333, 'rollout/explorer/gen_new_tokens_mean': 1467.25, 'rollout/explorer/gen_new_tokens_p90': 3084.0, 'rollout/explorer/near_iou90_any': 0.01041667, 'rollout/explorer/near_iou90_same': 0.0, 'rollout/explorer/temperature': 0.7, 'rollout/explorer/do_sample': 1.0, 'rollout/explorer/top_p': 0.95, 'rollout/explorer/top_k': 64.0, 'rollout/matched_for_supervision_count': 3240.0, 'rollout/matched_for_supervision_over_valid_pred': 0.78947368, 'stage2_ab/channel_b/closure_supervision/N_drop': 0.0, 'stage2_ab/channel_b/prompt_tok_mismatch': 0.0, 'stage2_ab/channel_b/prompt_tok_mismatch_rate': 0.0, 'stage2_ab/channel_b/invalid_rollout_sample_dropped': 0.0, 'stage2_ab/channel_b/invalid_rollout_sample_dropped_rate': 0.0, 'stage2_ab/channel_b/_prompt_tok_mismatch_num': 0.0, 'stage2_ab/channel_b/_prompt_tok_mismatch_den': 96.0, 'dup/raw/max_desc_count': 0.08083767, 'dup/raw/saturation_rate': 0.01600066, 'dup/raw/duplicate_like_max_cluster_size': 0.0640191, 'dup/raw/desc_entropy': 0.02692415, 'dup/raw/near_iou90_pairs_same_desc_count': 38.0, 'dup/raw/near_iou90_pairs_any_desc_count': 45.0, 'stage2_ab/channel_b/dup/N_raw_bbox_valid': 228.0, 'stage2_ab/channel_b/dup/N_clean_accepted': 208.0, 'stage2_ab/channel_b/dup/N_clusters_total': 17.0, 'stage2_ab/channel_b/dup/N_clusters_exempt': 7.0, 'stage2_ab/channel_b/dup/N_clusters_suppressed': 10.0, 'stage2_ab/channel_b/dup/N_objects_suppressed': 20.0, 'stage2_ab/channel_b/dup/N_ul_boundaries': 10.0, 'stage2_ab/channel_b/dup/N_duplicate_burst_unlikelihood_skipped_no_divergence': 0.0, 'train/triage/gt_backed_count': 180.0, 'train/triage/unlabeled_consistent_count': 2.0, 'train/triage/support_positive_shielded_count': 2.0, 'train/triage/neutral_shielded_count': 0.0, 'train/triage/dead_anchor_count': 26.0, 'train/triage/lvis_verified_positive_dead_count': 0.0, 'train/triage/lvis_verified_negative_dead_count': 0.0, 'train/triage/lvis_not_exhaustive_count': 0.0, 'train/triage/lvis_unevaluable_count': 28.0, 'train/triage/explorer_only_dead_count': 53.0, 'train/triage/pseudo_positive_candidate_count': 0.0, 'train/triage/pseudo_positive_subthreshold_count': 2.0, 'train/triage/pseudo_positive_selected_count': 0.0, 'train/triage/pseudo_positive_cluster_demoted_count': 0.0, 'train/triage/anchor_preparation_dropped_count': 0.0, 'train/triage/pseudo_positive_support_rate_num': 0.0, 'train/triage/pseudo_positive_support_rate_den': 0.0, 'train/triage/pseudo_positive_selected_support_rate_num': 0.0, 'train/triage/pseudo_positive_selected_support_rate_den': 0.0, 'train/triage/recovered_ground_truth_count': 25.0, 'train/triage/recovered_ground_truth_rate_num': 25.0, 'train/triage/recovered_ground_truth_rate_den': 25.0, 'train/triage/recovered_ground_truth_rate': 1.0, 'train/triage/dead_anchor_rate_num': 26.0, 'train/triage/dead_anchor_rate_den': 208.0, 'train/triage/dead_anchor_rate': 0.125, 'train/triage/explorer_only_dead_rate_num': 53.0, 'train/triage/explorer_only_dead_rate_den': 225.0, 'train/triage/explorer_only_dead_rate': 0.23555556, 'stage2_ab/channel_b/strict_drop/N_valid_pred': 228.0, 'stage2_ab/channel_b/strict_drop/N_drop_invalid': 185.0, 'stage2_ab/channel_b/strict_drop/reason/bbox_invalid': 37.0, 'stage2_ab/channel_b/strict_drop/reason/other': 5.0, 'stage2_ab/channel_b/strict_drop/reason/wrong_arity': 142.0, 'stage2_ab/channel_b/strict_drop/reason/unexpected_keys': 1.0, 'time/rollout_generate_s': 134.21083535, 'time/rollout_parse_match_s': 4.02470737, 'time/rollout_teacher_encode_s': 2.13362453, 'time/post_rollout_pack_s': 0.01264469, 'rollout/parse_truncated_rate': 0.5625, 'loss/B_rollout_text/continue_over_eos_margin': 0.0, 'snapshot/coord_diag/acc_top5': 0.43754125, 'snapshot/coord_diag/adjacent_repulsion_applied_count': 0.0, 'snapshot/coord_diag/adjacent_repulsion_copy_score_mean': 0.0, 'snapshot/coord_diag/adjacent_repulsion_pair_count': 0.0, 'snapshot/coord_diag/coord_tokens_total': 2752.0, 'snapshot/coord_diag/coord_vocab_mass_mean': 0.9602918, 'snapshot/coord_diag/expected_bin_abs_err_p90': 45.04179281, 'snapshot/coord_diag/expected_bin_mae': 19.13603034, 'snapshot/coord_diag/margin_mean': 0.79218494, 'snapshot/coord_diag/p_gt_mean': 0.07170282, 'snapshot/loss/coord/bbox_ciou': 0.18300345, 'snapshot/loss/coord/bbox_log_wh': 0.00906679, 'snapshot/loss/coord/bbox_smoothl1': 0.00125896, 'snapshot/loss/coord/coord_gate': 0.04184833, 'snapshot/loss/coord/coord_soft_ce': 0.3436142, 'snapshot/loss/coord/coord_token_ce': 0.06623478, 'snapshot/loss/coord/coord_w1': 0.00050755, 'snapshot/loss/coord/text_gate': 9e-08, 'snapshot/loss/text/desc_ce': 0.02056464, 'snapshot/loss/text/struct_ce': 0.00792276, 'snapshot/stage2_ab/channel_b/strict_drop/reason/missing_desc': 2.0, 'snapshot/time/channel_a_collate_s': 0.68431896, 'snapshot/time/channel_a_prepare_segments_s': 2.0736689, 'snapshot/time/channel_a_teacher_encode_s': 1.74806144, 'time/sft_total_time': 679.69493367, 'time/rollout_total_time': 832.54881377, 'train/samples_total': 96.0, 'train/micro_steps': 18.0, 'train/samples_per_micro': 5.33333333, 'time/forward_s': 21.57406589, 'rollout/parse_dropped_invalid': 148.0, 'rollout/parse_dropped_ambiguous': 0.0, 'rollout/parse_obj_total': 376.0, 'rollout/parse_obj_valid_frac': 0.60638298, 'rollout/parse_obj_drop_frac': 0.39361702, 'rollout/sample_valid_pred_rate': 0.94791667, 'rollout/sample_any_match_rate': 0.94791667, 'rollout/fn_appended_total': 443.0, 'rollout/gating_rejections': 611.0, 'rollout/gating_rejection_rate': 0.53596491, 'rollout/valid_pred_objects_total': 228.0, 'rollout/gt_objects_total': 623.0, 'rollout/precision': 0.78947368, 'rollout/recall': 0.28892456, 'rollout/f1': 0.42303173, 'rollout/fp_total': 48.0, 'rollout/fn_total': 443.0, 'rollout/gt_per_sample': 6.48958333, 'rollout/pred_per_sample': 2.375, 'rollout/fp_per_sample': 0.5, 'rollout/fn_per_sample': 4.61458333, 'rollout/matched_maskiou_mean': 0.88477805, 'rollout/matched_maskiou_count': 180.0, 'rollout/excluded_rate': 0.0, 'rollout/prefix_coord_targets_total': 720.0, 'rollout/prefix_coord_targets_per_matched': 4.0, 'rollout/tail_ignore_frac': 0.0, 'rollout/prompt_len_mean': 2249.61458333, 'rollout/prompt_len_p90': 2278.0, 'rollout/prefix_len_mean': 49.26041667, 'rollout/rollout_len_mean': 1699.69791667, 'rollout/rollout_len_p90': 3084.0, 'rollout/train_len_mean': 164.58333333, 'rollout/train_len_p90': 398.0, 'rollout/append_len_mean': 115.32291667, 'rollout/append_len_p90': 364.5, 'rollout/encoded_len_mean': 2414.19791667, 'rollout/encoded_len_p90': 2631.5, 'rollout/decode_non_beam_count': 96.0, 'rollout/decode_beam_count': 0.0, 'rollout/matched_for_supervision': 180.0, 'rollout/excluded_from_supervision': 0.0, 'rollout/do_sample': 0.0, 'rollout/temperature': 0.0, 'rollout/top_p': 1.0, 'rollout/top_k': -1.0, 'packing/post_rollout_fill': 0.91969444, 'packing/post_rollout_selected_total_len': 12875.72222222, 'packing/post_rollout_segments': 5.33333333, 'packing/post_rollout_buffer': 5.0, 'rollout/gen_new_tokens_total': 163171.0, 'rollout/gen_new_tokens_mean': 1699.69791667, 'rollout/gen_new_tokens_p90': 3084.0, 'rollout/gen_new_tokens_p99': 3084.0, 'rollout/gen_tokens_per_s': 1215.78112208, 'train/samples_seen': 768.0, 'epoch': 1.0, 'global_step/max_steps': '8/8', 'percentage': '100.00%', 'elapsed_time': '25m 52s', 'remaining_time': '0s', 'memory(GiB)': 52.09, 'train_speed(iter/s)': 0.005152}
+Train: 100%|██████████| 8/8 [25:52<00:00, 210.57s/it]Train: 100%|██████████| 8/8 [25:52<00:00, 210.57s/it][INFO:swift] Starting evaluate(): resolved_eval_rollout_backend=vllm vllm_mode=server
+INFO:     127.0.0.1:2344 - "POST /update_flattened_params/ HTTP/1.1" 200 OK
+INFO:     127.0.0.1:2344 - "POST /update_flattened_params/ HTTP/1.1" 200 OK
+INFO:     127.0.0.1:2344 - "POST /update_flattened_params/ HTTP/1.1" 200 OK
+INFO:     127.0.0.1:2344 - "POST /update_flattened_params/ HTTP/1.1" 200 OK
+INFO:     127.0.0.1:2344 - "POST /update_flattened_params/ HTTP/1.1" 200 OK
+INFO:     127.0.0.1:2344 - "POST /update_flattened_params/ HTTP/1.1" 200 OK
+INFO:     127.0.0.1:2344 - "POST /update_flattened_params/ HTTP/1.1" 200 OK
+INFO:     127.0.0.1:2344 - "POST /update_flattened_params/ HTTP/1.1" 200 OK
+INFO:     127.0.0.1:2344 - "POST /update_flattened_params/ HTTP/1.1" 200 OK
+INFO:     127.0.0.1:2344 - "POST /update_flattened_params/ HTTP/1.1" 200 OK
+[1;36m(EngineCore_DP0 pid=3722416)[0;0m INFO 04-22 14:06:48 [block_pool.py:378] Successfully reset prefix cache
+[1;36m(EngineCore_DP1 pid=3722419)[0;0m INFO 04-22 14:06:48 [block_pool.py:378] Successfully reset prefix cache
+[1;36m(EngineCore_DP2 pid=3722422)[0;0m INFO 04-22 14:06:48 [block_pool.py:378] Successfully reset prefix cache
+INFO:     127.0.0.1:2344 - "POST /reset_prefix_cache/ HTTP/1.1" 200 OK
+[INFO:swift] Rollout decode batching (vLLM server): context=eval decode_batch_size_cap=32 learner_world_size=1 rollout_server_world_sizes=[3] rollout_world_size=3 per_rank_chunk=96 total_chunk_across_ranks=96
+[INFO:swift] vLLM server rollout metadata: servers=[{'base_url': 'http://127.0.0.1:8000', 'group_port': 51216}] sync_mode=full request_n=32 rollout_seed_base=8000041 request_index_offset=0 effective_seed_base=8000041 decode_batch_size_cap=32 per_rank_chunk=96 learner_world_size=1 learner_rank=0 server_world_sizes=[3] per_server_rank_caps=[96] round_cap_total=96 seed_plan=[{'round': 0, 'server_idx': 0, 'base_url': 'http://127.0.0.1:8000', 'start': 0, 'end': 32, 'cap_for_rank': 96, 'seed': 8000041}]
+  0%|          | 0/10 [00:00<?, ?it/s]  0%|          | 0/11 [00:00<?, ?it/s]  0%|          | 0/11 [00:00<?, ?it/s] 10%|█         | 1/10 [00:01<00:15,  1.74s/it] 20%|██        | 2/10 [00:02<00:08,  1.01s/it]  9%|▉         | 1/11 [00:02<00:21,  2.17s/it]  9%|▉         | 1/11 [00:02<00:21,  2.20s/it] 18%|█▊        | 2/11 [00:02<00:10,  1.18s/it] 30%|███       | 3/10 [00:02<00:05,  1.24it/s] 27%|██▋       | 3/11 [00:02<00:06,  1.29it/s] 40%|████      | 4/10 [00:03<00:04,  1.45it/s] 45%|████▌     | 5/11 [00:03<00:03,  1.71it/s] 50%|█████     | 5/10 [00:03<00:03,  1.53it/s] 55%|█████▍    | 6/11 [00:04<00:03,  1.47it/s] 45%|████▌     | 5/11 [00:04<00:05,  1.13it/s] 55%|█████▍    | 6/11 [00:05<00:03,  1.30it/s] 60%|██████    | 6/10 [00:05<00:04,  1.04s/it] 70%|███████   | 7/10 [00:06<00:02,  1.17it/s] 64%|██████▎   | 7/11 [00:06<00:03,  1.13it/s] 73%|███████▎  | 8/11 [00:06<00:02,  1.36it/s] 73%|███████▎  | 8/11 [00:06<00:02,  1.31it/s] 82%|████████▏ | 9/11 [00:06<00:01,  1.54it/s] 82%|████████▏ | 9/11 [00:07<00:01,  1.23it/s] 90%|█████████ | 9/10 [00:07<00:00,  1.26it/s] 91%|█████████ | 10/11 [00:08<00:00,  1.37it/s]100%|██████████| 11/11 [00:09<00:00,  1.07s/it]100%|██████████| 10/10 [00:10<00:00,  1.40s/it]100%|██████████| 11/11 [00:12<00:00,  1.48s/it]100%|██████████| 11/11 [00:12<00:00,  1.14s/it]
+100%|██████████| 10/10 [00:12<00:00,  1.26s/it]
+100%|██████████| 11/11 [00:12<00:00,  1.14s/it]
+INFO:     127.0.0.1:2344 - "POST /infer/ HTTP/1.1" 200 OK
+  0%|          | 0/10 [00:00<?, ?it/s]  0%|          | 0/11 [00:00<?, ?it/s]  0%|          | 0/11 [00:00<?, ?it/s] 10%|█         | 1/10 [00:01<00:09,  1.07s/it]  9%|▉         | 1/11 [00:01<00:14,  1.45s/it] 20%|██        | 2/10 [00:01<00:05,  1.47it/s]  9%|▉         | 1/11 [00:01<00:14,  1.49s/it] 40%|████      | 4/10 [00:01<00:02,  2.58it/s] 27%|██▋       | 3/11 [00:02<00:05,  1.44it/s] 50%|█████     | 5/10 [00:02<00:02,  2.46it/s] 64%|██████▎   | 7/11 [00:02<00:01,  3.38it/s] 36%|███▋      | 4/11 [00:02<00:04,  1.56it/s] 60%|██████    | 6/10 [00:02<00:01,  2.24it/s] 73%|███████▎  | 8/11 [00:02<00:00,  3.04it/s] 70%|███████   | 7/10 [00:03<00:01,  2.35it/s] 45%|████▌     | 5/11 [00:03<00:03,  1.75it/s] 73%|███████▎  | 8/11 [00:04<00:01,  2.38it/s] 90%|█████████ | 9/10 [00:05<00:00,  1.57it/s] 91%|█████████ | 10/11 [00:05<00:00,  2.42it/s]100%|██████████| 11/11 [00:05<00:00,  1.98it/s] 82%|████████▏ | 9/11 [00:06<00:02,  1.03s/it]100%|██████████| 10/10 [00:10<00:00,  1.85s/it] 91%|█████████ | 10/11 [00:13<00:02,  2.32s/it]100%|██████████| 11/11 [00:13<00:00,  1.84s/it]100%|██████████| 11/11 [00:13<00:00,  1.27s/it]
+100%|██████████| 10/10 [00:13<00:00,  1.40s/it]
+100%|██████████| 11/11 [00:13<00:00,  1.27s/it]
+INFO:     127.0.0.1:2344 - "POST /infer/ HTTP/1.1" 200 OK
+  0%|          | 0/10 [00:00<?, ?it/s]  0%|          | 0/11 [00:00<?, ?it/s]  0%|          | 0/11 [00:00<?, ?it/s] 10%|█         | 1/10 [00:01<00:09,  1.06s/it] 20%|██        | 2/10 [00:01<00:05,  1.51it/s]  9%|▉         | 1/11 [00:01<00:14,  1.44s/it]  9%|▉         | 1/11 [00:01<00:14,  1.46s/it] 36%|███▋      | 4/11 [00:01<00:02,  2.52it/s] 73%|███████▎  | 8/11 [00:01<00:00,  5.25it/s] 70%|███████   | 7/10 [00:01<00:00,  4.66it/s]100%|██████████| 11/11 [00:02<00:00,  4.56it/s] 73%|███████▎  | 8/11 [00:02<00:00,  3.47it/s] 80%|████████  | 8/10 [00:03<00:00,  2.46it/s] 90%|█████████ | 9/10 [00:05<00:00,  1.30it/s] 82%|████████▏ | 9/11 [00:05<00:01,  1.29it/s] 91%|█████████ | 10/11 [00:06<00:00,  1.49it/s]100%|██████████| 11/11 [00:07<00:00,  1.12it/s]100%|██████████| 10/10 [00:09<00:00,  1.47s/it]100%|██████████| 10/10 [00:09<00:00,  1.05it/s]
+100%|██████████| 11/11 [00:09<00:00,  1.16it/s]
+100%|██████████| 11/11 [00:09<00:00,  1.16it/s]
+INFO:     127.0.0.1:2344 - "POST /infer/ HTTP/1.1" 200 OK
+  0%|          | 0/10 [00:00<?, ?it/s]  0%|          | 0/11 [00:00<?, ?it/s]  0%|          | 0/11 [00:00<?, ?it/s]  9%|▉         | 1/11 [00:01<00:10,  1.06s/it] 10%|█         | 1/10 [00:01<00:13,  1.51s/it] 27%|██▋       | 3/11 [00:01<00:03,  2.27it/s]  9%|▉         | 1/11 [00:01<00:15,  1.51s/it] 30%|███       | 3/10 [00:01<00:03,  1.79it/s] 36%|███▋      | 4/11 [00:02<00:02,  2.39it/s] 45%|████▌     | 5/11 [00:02<00:02,  2.91it/s] 50%|█████     | 5/10 [00:02<00:02,  2.38it/s] 60%|██████    | 6/10 [00:02<00:01,  2.48it/s] 45%|████▌     | 5/11 [00:03<00:04,  1.25it/s] 55%|█████▍    | 6/11 [00:04<00:04,  1.21it/s] 64%|██████▎   | 7/11 [00:04<00:02,  1.57it/s] 64%|██████▎   | 7/11 [00:05<00:03,  1.18it/s] 73%|███████▎  | 8/11 [00:05<00:01,  1.90it/s] 73%|███████▎  | 8/11 [00:05<00:02,  1.30it/s] 82%|████████▏ | 9/11 [00:05<00:01,  1.63it/s] 82%|████████▏ | 9/11 [00:06<00:01,  1.51it/s] 91%|█████████ | 10/11 [00:07<00:00,  1.16it/s] 90%|█████████ | 9/10 [00:07<00:01,  1.07s/it] 91%|█████████ | 10/11 [00:07<00:01,  1.01s/it]100%|██████████| 10/10 [00:08<00:00,  1.05s/it]100%|██████████| 11/11 [00:11<00:00,  1.63s/it]100%|██████████| 11/11 [00:12<00:00,  2.25s/it]100%|██████████| 11/11 [00:12<00:00,  1.18s/it]
+100%|██████████| 10/10 [00:12<00:00,  1.30s/it]
+100%|██████████| 11/11 [00:12<00:00,  1.18s/it]
+INFO:     127.0.0.1:2344 - "POST /infer/ HTTP/1.1" 200 OK
+
+GT:   0%|          | 0/128 [00:00<?, ?img/s][AGT: 100%|██████████| 128/128 [00:00<00:00, 17932.76img/s]
+
+Pred:   0%|          | 0/128 [00:00<?, ?img/s][APred: 100%|██████████| 128/128 [00:00<00:00, 18362.09img/s]
+creating index...
+index created!
+Loading and preparing results...
+DONE (t=0.00s)
+creating index...
+index created!
+Running per image evaluation...
+Evaluate annotation type *bbox*
+DONE (t=0.13s).
+Accumulating evaluation results...
+DONE (t=0.19s).
+ Average Precision  (AP) @[ IoU=0.50:0.95 | area=   all | maxDets=100 ] = 0.449
+ Average Precision  (AP) @[ IoU=0.50      | area=   all | maxDets=100 ] = 0.623
+ Average Precision  (AP) @[ IoU=0.75      | area=   all | maxDets=100 ] = 0.449
+ Average Precision  (AP) @[ IoU=0.50:0.95 | area= small | maxDets=100 ] = 0.165
+ Average Precision  (AP) @[ IoU=0.50:0.95 | area=medium | maxDets=100 ] = 0.278
+ Average Precision  (AP) @[ IoU=0.50:0.95 | area= large | maxDets=100 ] = 0.555
+ Average Recall     (AR) @[ IoU=0.50:0.95 | area=   all | maxDets=  1 ] = 0.420
+ Average Recall     (AR) @[ IoU=0.50:0.95 | area=   all | maxDets= 10 ] = 0.519
+ Average Recall     (AR) @[ IoU=0.50:0.95 | area=   all | maxDets=100 ] = 0.519
+ Average Recall     (AR) @[ IoU=0.50:0.95 | area= small | maxDets=100 ] = 0.179
+ Average Recall     (AR) @[ IoU=0.50:0.95 | area=medium | maxDets=100 ] = 0.316
+ Average Recall     (AR) @[ IoU=0.50:0.95 | area= large | maxDets=100 ] = 0.606
+                                                     {'eval/runtime/runtime_s': 56.92665594, 'eval/runtime/samples_per_s': 2.24850727, 'eval/runtime/steps_per_s': 0.07026585, 'eval/detection/precision': 0.67995444, 'eval/detection/recall': 0.66481069, 'eval/detection/f1': 0.6722973, 'eval/detection/pred_objects': 878.0, 'eval/detection/gt_objects_total': 898.0, 'eval/detection/matched': 597.0, 'eval/detection/fp_total': 281.0, 'eval/detection/fn_total': 301.0, 'eval/parsing/gating_rejections': 3362.0, 'eval/parsing/parse_dropped_invalid': 2.0, 'eval/parsing/parse_dropped_ambiguous': 0.0, 'eval/parsing/parse_truncated_rate': 0.0, 'eval/parsing/sample_valid_pred_rate': 1.0, 'eval/detection/sample_any_match_rate': 0.984375, 'eval/detection/matched_maskiou_mean': 0.83865279, 'eval/runtime/trace_fallback_count': 0.0, 'eval/runtime/vllm_decode_error_count': 0.0, 'eval/config/prompt_variant_is_coco_80': 1.0, 'eval/runtime/config_score_mode_is_constant': 0.0, 'eval/runtime/config_score_mode_is_confidence_postop': 1.0, 'eval/config/effective_score_mode_is_constant': 0.0, 'eval/config/effective_score_mode_is_confidence_postop': 1.0, 'eval/runtime/config_pred_score_version': 2.0, 'eval/runtime/effective_pred_score_version': 2.0, 'eval/runtime/config_pred_score_source_is_eval_rollout_constant': 1.0, 'eval/runtime/config_pred_score_source_is_confidence_postop': 0.0, 'eval/runtime/effective_pred_score_source_is_eval_rollout_constant': 0.0, 'eval/runtime/effective_pred_score_source_is_confidence_postop': 1.0, 'eval/runtime/coco_eval_runtime_s': 1.27475632, 'eval/runtime/coco_eval_ok': 1.0, 'eval/detection/mAP': 0.44942755, 'eval/runtime/coco_counter_empty_pred': 0.0, 'eval/runtime/coco_counter_invalid_geometry': 0.0, 'eval/runtime/coco_counter_invalid_coord': 0.0, 'eval/runtime/coco_counter_missing_size': 0.0, 'eval/runtime/coco_counter_size_mismatch': 0.0, 'eval/runtime/coco_counter_degenerate': 0.0, 'eval/runtime/coco_counter_unknown_dropped': 0.0, 'eval/runtime/coco_counter_semantic_mapped': 1.0, 'eval/runtime/coco_counter_semantic_unmapped': 0.0, 'epoch': 1.0, 'global_step/max_steps': '8/8', 'percentage': '100.00%', 'elapsed_time': '26m 51s', 'remaining_time': '0s', 'memory(GiB)': 52.09, 'train_speed(iter/s)': 0.004966}
+Train: 100%|██████████| 8/8 [26:51<00:00, 210.57s/it]Train: 100%|██████████| 8/8 [26:51<00:00, 210.57s/it]                                                     {'train_runtime': 1611.0712, 'train_samples_per_second': 0.477, 'train_steps_per_second': 0.005, 'train_loss': 0.9530647, 'epoch': 1.0, 'global_step/max_steps': '8/8', 'percentage': '100.00%', 'elapsed_time': '26m 51s', 'remaining_time': '0s', 'memory(GiB)': 52.09, 'train_speed(iter/s)': 0.004966}
+Train: 100%|██████████| 8/8 [26:51<00:00, 210.57s/it]Train: 100%|██████████| 8/8 [26:51<00:00, 210.57s/it]Train: 100%|██████████| 8/8 [26:51<00:00, 201.38s/it]
+INFO:     127.0.0.1:2344 - "POST /close_communicator/ HTTP/1.1" 200 OK
+[INFO:swift] last_model_checkpoint: None
+[INFO:swift] best_model_checkpoint: None
+[INFO:swift] images_dir: /data/CoordExp/.worktrees/birth-first-stage2-channel-b/output/stage2_ab/smoke/birth_first_k2_control_vllm_smallfrac_merged1332/smallfrac_8steps-birth_first_k2_control-vllm-merged1332/v0-20260422-134034/images
+[INFO:swift.custom.__main__] Sanitized logging.jsonl: removed trailing trainer-state payload appended by upstream ms-swift.
+INFO:     127.0.0.1:17838 - "POST /close_communicator/ HTTP/1.1" 200 OK
+[INFO] Stopping vLLM server (pid=3722178)
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+[rank1]:[W422 14:08:24.801203333 ProcessGroupNCCL.cpp:1538] Warning: WARNING: destroy_process_group() was not called before program exit, which can leak resources. For more info, please see https://pytorch.org/docs/stable/distributed.html#shutdown (function operator())
+[rank2]:[W422 14:08:24.897590605 ProcessGroupNCCL.cpp:1538] Warning: WARNING: destroy_process_group() was not called before program exit, which can leak resources. For more info, please see https://pytorch.org/docs/stable/distributed.html#shutdown (function operator())
+[rank0]:[W422 14:08:24.110822722 ProcessGroupNCCL.cpp:1538] Warning: WARNING: destroy_process_group() was not called before program exit, which can leak resources. For more info, please see https://pytorch.org/docs/stable/distributed.html#shutdown (function operator())
+INFO:     Application shutdown complete.
+INFO:     Finished server process [3722192]
+/root/miniconda3/envs/ms/lib/python3.12/multiprocessing/resource_tracker.py:279: UserWarning: resource_tracker: There appear to be 3 leaked semaphore objects to clean up at shutdown
+  warnings.warn('resource_tracker: There appear to be %d '
