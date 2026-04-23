@@ -45,6 +45,10 @@ from src.coord_tokens.offset_adapter import (
 from src.infer.checkpoints import resolve_inference_checkpoint
 from src.infer.pipeline import run_pipeline
 from src.analysis.rollout_parity import collect_stage2_parity_gt_vs_pred
+from src.analysis.raw_text_coordinate_decode_bias_scoring import (
+    build_repetition_penalty_processors,
+    score_processed_span_token_rows,
+)
 from src.analysis.raw_text_coord_continuity_scoring import score_span_logprobs
 from src.trainers.rollout_matching.contracts import GTObject
 from src.trainers.rollout_matching.parsing import (
@@ -2105,6 +2109,21 @@ class TeacherForcedScorer:
             for span in spans
         ]
 
+    def score_prepared_span_token_rows(
+        self,
+        *,
+        prepared: PreparedExample,
+        image: Image.Image,
+        positions: Sequence[int],
+        repetition_penalty: float = 1.0,
+    ) -> List[Dict[str, Any]]:
+        return self.score_prepared_batch_span_token_rows(
+            examples=[prepared],
+            images=[image],
+            spans_list=[list(positions)],
+            repetition_penalty=repetition_penalty,
+        )[0]
+
     def score_prepared_batch_spans(
         self,
         *,
@@ -2157,6 +2176,76 @@ class TeacherForcedScorer:
                 )
             )
         return scored
+
+    def score_prepared_batch_span_token_rows(
+        self,
+        *,
+        examples: Sequence[PreparedExample],
+        images: Sequence[Image.Image],
+        spans_list: Sequence[Sequence[int]],
+        repetition_penalty: float = 1.0,
+    ) -> List[List[Dict[str, Any]]]:
+        if len(examples) != len(images):
+            raise ValueError("examples/images length mismatch")
+        if len(examples) != len(spans_list):
+            raise ValueError("examples/spans length mismatch")
+        if not examples:
+            return []
+        model_inputs = self.processor(
+            text=[example.full_text for example in examples],
+            images=list(images),
+            return_tensors="pt",
+            padding=True,
+        )
+        model_inputs = {
+            key: value.to(self.device) if isinstance(value, torch.Tensor) else value
+            for key, value in model_inputs.items()
+        }
+        with torch.inference_mode():
+            outputs = self.model(**model_inputs, use_cache=False)
+        logits = getattr(outputs, "logits", None)
+        if not isinstance(logits, torch.Tensor):
+            raise RuntimeError("teacher-forced scorer did not return logits")
+        input_ids = model_inputs.get("input_ids")
+        if not isinstance(input_ids, torch.Tensor):
+            raise RuntimeError("teacher-forced scorer missing input_ids")
+        if logits.shape[:2] != input_ids.shape[:2]:
+            raise RuntimeError("teacher-forced scorer requires unsliced logits")
+        padded_len = int(input_ids.shape[1])
+        processors = build_repetition_penalty_processors(
+            repetition_penalty=repetition_penalty
+        )
+        scored_rows: List[List[Dict[str, Any]]] = []
+        for batch_idx, (example, span) in enumerate(zip(examples, spans_list)):
+            seq_len = int(len(example.full_input_ids))
+            pad_offset = int(padded_len - seq_len)
+            observed_ids = input_ids[batch_idx, pad_offset:].detach().cpu().tolist()
+            if [int(value) for value in observed_ids] != [
+                int(value) for value in example.full_input_ids
+            ]:
+                raise RuntimeError("assistant_span_build_failed")
+            token_rows = score_processed_span_token_rows(
+                logits=logits,
+                input_ids=input_ids,
+                batch_idx=batch_idx,
+                positions=[pad_offset + int(position) for position in span],
+                tokenizer=self.tokenizer,
+                logits_processors=processors,
+                history_start=pad_offset,
+            )
+            remapped_rows: List[Dict[str, Any]] = []
+            for row in token_rows:
+                unpadded_position = int(row["position"]) - pad_offset
+                remapped_rows.append(
+                    {
+                        **row,
+                        "position": unpadded_position,
+                        "assistant_relative_position": unpadded_position
+                        - int(example.assistant_start),
+                    }
+                )
+            scored_rows.append(remapped_rows)
+        return scored_rows
 
     def score_prepared_batch_hidden_states(
         self,
@@ -3932,6 +4021,7 @@ def run_study(config: StudyConfig) -> Dict[str, Any]:
                 checkpoint_path=Path(str(manifest["checkpoint_path_resolved"])),
                 device=config.scoring.device,
                 attn_implementation=config.scoring.attn_implementation,
+                coord_mode="norm1000_text",
             )
             gt_scored = score_gt_table(
                 rows=gt_rows,

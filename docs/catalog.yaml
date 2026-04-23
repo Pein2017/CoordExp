@@ -164,6 +164,14 @@ progress:
       title: Diagnostics Index
       type: router
       status: canonical
+    - path: progress/diagnostics/raw_text_coordinate_mechanism_findings_2026-04-21.md
+      title: Raw-Text Coordinate Mechanism Findings
+      type: mechanism-summary
+      status: active-reference
+    - path: progress/diagnostics/raw_text_decode_bias_mechanism_findings_2026-04-22.md
+      title: Raw-Text Decode-Bias Mechanism Findings
+      type: diagnostic-study
+      status: active-reference
     - path: progress/diagnostics/stage2_near_duplication_2026-03-05.md
       title: 'Stage-2 AB Near-Duplication: Diagnosis + EM/MLE-Aligned Directions (2026-03-05)'
       type: diagnosis

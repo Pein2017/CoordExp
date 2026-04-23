@@ -654,6 +654,116 @@ def test_confidence_postop_falls_back_to_coord_mode_for_pixel_alignment(
     assert scored_records[0]["pred"][0]["score"] == pytest.approx(0.36)
 
 
+def test_confidence_postop_tries_norm1000_alignment_for_raw_text_pixel_records(
+    tmp_path: Path,
+) -> None:
+    gt_vs_pred_path = tmp_path / "gt_vs_pred.jsonl"
+    trace_path = tmp_path / "pred_token_trace.jsonl"
+    pred_confidence_path = tmp_path / "pred_confidence.jsonl"
+    scored_path = tmp_path / "gt_vs_pred_scored.jsonl"
+    summary_path = tmp_path / "confidence_postop_summary.json"
+
+    record = _bbox_record(
+        image="img_text_pixel.png",
+        x1=811,
+        y1=308,
+        x2=911,
+        y2=578,
+        raw_output_json=_bbox_raw_numeric(650, 370, 730, 695, desc="box"),
+        mode="text",
+        pred_coord_mode="pixel",
+    )
+    record["width"] = 1248
+    record["height"] = 832
+    record["coord_mode"] = "pixel"
+    record.pop("pred_coord_mode")
+    _write_jsonl(gt_vs_pred_path, [record])
+
+    generated_token_text = [
+        '{"',
+        "objects",
+        '":',
+        ' [{"',
+        "desc",
+        '":',
+        ' "',
+        "box",
+        '",',
+        ' "',
+        "bbox",
+        "_",
+        "2",
+        "d",
+        '":',
+        " [",
+        "650",
+        ",",
+        " ",
+        "370",
+        ",",
+        " ",
+        "730",
+        ",",
+        " ",
+        "695",
+        "]}",
+        "]}",
+    ]
+    token_logprobs = [0.0] * len(generated_token_text)
+    token_logprobs[16] = math.log(0.2)
+    token_logprobs[19] = math.log(0.2)
+    token_logprobs[22] = math.log(0.2)
+    token_logprobs[25] = math.log(0.2)
+    _write_jsonl(
+        trace_path,
+        [
+            {
+                "line_idx": 0,
+                "generated_token_text": generated_token_text,
+                "token_logprobs": token_logprobs,
+            }
+        ],
+    )
+
+    summary = run_confidence_postop(
+        paths=paths_from_config(
+            {
+                "artifacts": {
+                    "gt_vs_pred_jsonl": str(gt_vs_pred_path),
+                    "pred_token_trace_jsonl": str(trace_path),
+                    "pred_confidence_jsonl": str(pred_confidence_path),
+                    "gt_vs_pred_scored_jsonl": str(scored_path),
+                    "confidence_postop_summary_json": str(summary_path),
+                }
+            }
+        ),
+        options=ConfidencePostOpOptions(
+            fusion_w_geom=0.6,
+            fusion_w_desc=0.4,
+        ),
+    )
+
+    assert summary["kept_pred_objects"] == 1
+    assert summary["pred_score_version"] == PRED_SCORE_VERSION
+    confidence_records = [
+        json.loads(line)
+        for line in pred_confidence_path.read_text(encoding="utf-8").splitlines()
+    ]
+    obj = confidence_records[0]["objects"][0]
+    assert obj["kept"] is True
+    assert obj["confidence_details"]["failure_reason"] is None
+    assert obj["confidence_details"]["geom_span_mode"] == "numeric_text"
+    assert obj["score_geom"] == pytest.approx(0.2)
+    assert obj["score_desc"] is None
+    assert obj["score_fusion"] == pytest.approx(0.2)
+    scored_records = [
+        json.loads(line) for line in scored_path.read_text(encoding="utf-8").splitlines()
+    ]
+    assert scored_records[0]["pred_score_version"] == PRED_SCORE_VERSION
+    assert scored_records[0]["pred"][0]["score"] == pytest.approx(0.2)
+    assert scored_records[0]["pred"][0]["points"] == [811, 308, 911, 578]
+
+
 def test_confidence_postop_tries_norm1000_alignment_for_coord_token_surface(
     tmp_path: Path,
 ) -> None:

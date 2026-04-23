@@ -1,0 +1,55 @@
+run:
+  name: raw-text-decode-bias-smoke
+  output_dir: output/analysis
+  stages: [hydrate]
+
+study:
+  history_scope: full_model_history
+  val200_source_jsonl: /data/CoordExp/public_data/coco/rescale_32_1024_bbox_max60/val.norm.jsonl
+  val200_source_indices: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67, 68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89, 90, 91, 92, 93, 94, 95, 96, 97, 98, 99, 100, 101, 102, 103, 104, 105, 106, 107, 108, 109, 110, 111, 112, 113, 114, 115, 116, 117, 118, 119, 120, 121, 122, 123, 124, 125, 126, 127, 128, 129, 130, 131, 132, 133, 134, 135, 136, 137, 138, 139, 140, 141, 142, 143, 144, 145, 146, 147, 148, 149, 150, 151, 152, 153, 154, 155, 156, 157, 158, 159, 160, 161, 162, 163, 164, 165, 166, 167, 168, 169, 170, 171, 172, 173, 174, 175, 176, 177, 178, 179, 180, 181, 182, 183, 184, 185, 186, 187, 188, 189, 190, 191, 192, 193, 194, 195, 196, 197, 198, 199]
+
+decode:
+  dataset_variant: lvis_proxy
+  pipeline_config: configs/infer/pipeline.yaml
+  val200_source_jsonl: /data/CoordExp/public_data/coco/rescale_32_1024_bbox_max60_lvis_proxy/val.norm.jsonl
+  device: cuda:0
+  semantic_device: cuda:0
+  top_p: 0.9
+  max_new_tokens: 3084
+  batch_size: 1
+  seed: 42
+  detect_samples: 128
+  stop_pressure_mode: suppress_terminating_tokens_after_object_boundary
+  stop_pressure_min_new_tokens: 0
+  views: [coco_real, coco_real_strict, coco_real_strict_plausible]
+  semantic_model: model_cache/all-MiniLM-L6-v2-local
+  semantic_threshold: 0.5
+  semantic_batch_size: 64
+  num_workers: 8
+  metrics: both
+  use_segm: false
+  strict_parse: false
+  lvis_max_dets: 300
+  f1ish_iou_thrs: [0.3, 0.5]
+  f1ish_pred_scope: annotated
+
+scoring:
+  device: cuda:0
+  attn_implementation: auto
+  repetition_penalties: [1.0, 1.02, 1.05, 1.10]
+
+models:
+  base_only:
+    alias: base_only
+    base_path: /data/CoordExp/model_cache/models/Qwen/Qwen3-VL-2B-Instruct-coordexp
+    adapter_path: null
+    prompt_variant: coco_80
+    object_field_order: desc_first
+    coord_mode: norm1000_text
+  base_plus_adapter:
+    alias: base_plus_adapter
+    base_path: /data/CoordExp/model_cache/models/Qwen/Qwen3-VL-2B-Instruct-coordexp
+    adapter_path: /data/CoordExp/output/stage1_2b/coco_bbox_max60-coco80-desc_first-1024-lvis_proxy-raw_text_xyxy-pure_ce/epoch_4-raw_text_xyxy-pure_ce-coco80-desc_first-1024-lvis_proxy-from-base-2B/v1-20260417-084341/checkpoint-552
+    prompt_variant: coco_80
+    object_field_order: desc_first
+    coord_mode: norm1000_text
