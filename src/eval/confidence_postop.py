@@ -200,7 +200,23 @@ def _record_pred_coord_mode_for_alignment(record: Mapping[str, Any]) -> str:
 def _candidate_pred_coord_modes_for_alignment(record: Mapping[str, Any]) -> list[str]:
     primary = _record_pred_coord_mode_for_alignment(record)
     candidates: list[str] = [primary]
-    if _record_uses_coord_token_surface(record):
+    raw_output_json = record.get("raw_output_json")
+    uses_numeric_text_bbox_surface = False
+    if _as_mode(record.get("mode")) == "text" and isinstance(raw_output_json, Mapping):
+        raw_objects = raw_output_json.get("objects")
+        if isinstance(raw_objects, list):
+            for raw_obj in raw_objects:
+                if not isinstance(raw_obj, Mapping):
+                    continue
+                flat_values = flatten_points(
+                    raw_obj.get("bbox_2d")
+                    if "bbox_2d" in raw_obj
+                    else raw_obj.get("points")
+                )
+                if flat_values is not None and not has_coord_tokens(flat_values):
+                    uses_numeric_text_bbox_surface = True
+                    break
+    if _record_uses_coord_token_surface(record) or uses_numeric_text_bbox_surface:
         for mode in ("norm1000", "pixel"):
             if mode not in candidates:
                 candidates.append(mode)

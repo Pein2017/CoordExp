@@ -61,6 +61,14 @@ def generate_hf_batch(
     model_inputs = {
         key: value.to(owner.cfg.device) for key, value in model_inputs.items()
     }
+    attention_mask = model_inputs.get("attention_mask")
+    if isinstance(attention_mask, torch.Tensor) and attention_mask.ndim == 2:
+        prompt_lengths = [
+            int(value)
+            for value in attention_mask.sum(dim=1).detach().cpu().tolist()
+        ]
+    else:
+        prompt_lengths = [int(model_inputs["input_ids"].shape[1]) for _ in images]
 
     gen_kwargs = dict(
         max_new_tokens=owner.gen_cfg.max_new_tokens,
@@ -71,6 +79,12 @@ def generate_hf_batch(
     )
     if owner.gen_cfg.repetition_penalty is not None:
         gen_kwargs["repetition_penalty"] = owner.gen_cfg.repetition_penalty
+    logits_processor = owner.gen_cfg.build_hf_stop_pressure_logits_processor(
+        tokenizer=owner.processor.tokenizer,
+        prompt_lengths=prompt_lengths,
+    )
+    if logits_processor is not None:
+        gen_kwargs["logits_processor"] = logits_processor
     owner.gen_cfg.apply_hf_stop_pressure(gen_kwargs)
 
     with torch.inference_mode():

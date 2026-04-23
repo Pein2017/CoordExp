@@ -22,8 +22,10 @@ Prefer `progress/benchmarks/` when the output is mainly a measured run-vs-run or
 
 ## Current Clusters
 
-- Active Stage-1 raw-text continuity and coord-family investigations
+- Active raw-text continuity, mechanism, and decode-bias investigations
   - [raw_text_coord_continuity_probe_2026-04-20.md](raw_text_coord_continuity_probe_2026-04-20.md)
+  - [raw_text_coordinate_mechanism_findings_2026-04-21.md](raw_text_coordinate_mechanism_findings_2026-04-21.md)
+  - [raw_text_decode_bias_mechanism_findings_2026-04-22.md](raw_text_decode_bias_mechanism_findings_2026-04-22.md)
   - [coord_family_basin_and_recall_comparison_2026-04-20.md](coord_family_basin_and_recall_comparison_2026-04-20.md)
   - [raw_text_continuity_and_coord_family_synthesis_2026-04-20.md](raw_text_continuity_and_coord_family_synthesis_2026-04-20.md)
   - [mixed_objective_sota_checkpoint_probe_2026-04-21.md](mixed_objective_sota_checkpoint_probe_2026-04-21.md)

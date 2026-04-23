@@ -6,6 +6,7 @@ from transformers import RepetitionPenaltyLogitsProcessor
 
 from src.analysis.raw_text_coordinate_decode_bias_scoring import (
     group_raw_text_token_rows,
+    inspect_processed_position,
     score_processed_span_token_rows,
 )
 
@@ -108,3 +109,71 @@ def test_score_processed_span_token_rows_uses_full_history_and_records_rows() ->
     assert "processed_logprob" in rows[0]
     assert float(rows[0]["processed_logprob"]) < float(rows[0]["raw_logprob"])
     assert float(rows[1]["processed_logprob"]) == float(rows[1]["raw_logprob"])
+
+
+def test_inspect_processed_position_reports_focus_tokens_top_tokens_and_group_summaries() -> None:
+    class _Tokenizer:
+        _DECODE = {
+            0: "hist",
+            1: "]",
+            2: ", {",
+            3: ', "poly"',
+            4: "}",
+            5: "x",
+            6: ",",
+            7: "<|im_end|>",
+        }
+
+        def decode(
+            self,
+            token_ids: list[int],
+            *,
+            skip_special_tokens: bool = False,
+            clean_up_tokenization_spaces: bool = False,
+        ) -> str:
+            del skip_special_tokens, clean_up_tokenization_spaces
+            return "".join(self._DECODE[int(token_id)] for token_id in token_ids)
+
+    input_ids = torch.tensor([[0, 5, 1]], dtype=torch.long)
+    logits = torch.full((1, 3, 8), -20.0)
+    logits[0, 1, 1] = 7.0
+    logits[0, 1, 2] = 6.0
+    logits[0, 1, 3] = 5.0
+    logits[0, 1, 4] = 4.0
+
+    row = inspect_processed_position(
+        logits=logits,
+        input_ids=input_ids,
+        batch_idx=0,
+        position=2,
+        tokenizer=_Tokenizer(),
+        top_k=3,
+        focus_token_ids={
+            "close_now": 1,
+            "next_object": 2,
+        },
+        group_token_ids={
+            "close_now": [1, 4],
+            "next_object": [2, 6],
+            "wrong_schema": [3],
+        },
+    )
+
+    assert row["position"] == 2
+    assert row["token_id"] == 1
+    assert row["token_text"] == "]"
+    assert row["history_ids"] == [0, 5]
+    assert [token["token_id"] for token in row["top_tokens"]] == [1, 2, 3]
+    assert row["focus_tokens"]["close_now"]["token_text"] == "]"
+    assert row["focus_tokens"]["next_object"]["token_text"] == ", {"
+    assert (
+        row["group_summaries"]["close_now"]["raw_top_token_text"] == "]"
+    )
+    assert (
+        row["group_summaries"]["wrong_schema"]["raw_top_token_text"] == ', "poly"'
+    )
+    assert (
+        float(row["group_summaries"]["close_now"]["raw_prob_mass"])
+        > float(row["group_summaries"]["next_object"]["raw_prob_mass"])
+        > float(row["group_summaries"]["wrong_schema"]["raw_prob_mass"])
+    )

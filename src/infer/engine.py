@@ -55,7 +55,7 @@ import time
 from contextlib import nullcontext
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Dict, List, Literal, Mapping, Optional, Tuple
+from typing import Any, Dict, List, Literal, Mapping, Optional, Sequence, Tuple
 
 import torch
 from PIL import Image
@@ -128,6 +128,28 @@ STOP_PRESSURE_MODE_MIN_NEW_TOKENS_AFTER_OBJECT_OPEN = (
     "min_new_tokens_after_object_open"
 )
 STOP_PRESSURE_TRIGGER_RULE_RAW_TEXT_OBJECT_OPEN = "raw_text_object_open"
+STOP_PRESSURE_MODE_SUPPRESS_TERMINATING_TOKENS_AFTER_OBJECT_BOUNDARY = (
+    "suppress_terminating_tokens_after_object_boundary"
+)
+STOP_PRESSURE_MODE_SUPPRESS_SPECIAL_TERMINATING_TOKENS_AFTER_OBJECT_BOUNDARY = (
+    "suppress_special_terminating_tokens_after_object_boundary"
+)
+STOP_PRESSURE_MODE_SUPPRESS_FIRST_STRUCTURAL_CLOSURE_AFTER_OBJECT_BOUNDARY = (
+    "suppress_first_structural_closure_after_object_boundary"
+)
+STOP_PRESSURE_MODE_STEER_FIRST_ARRAY_BRANCH_TO_NEXT_OBJECT_AFTER_OBJECT_BOUNDARY = (
+    "steer_first_array_branch_to_next_object_after_object_boundary"
+)
+STOP_PRESSURE_MODE_STEER_BBOX_TAIL_CLOSURE_TO_NEXT_OBJECT = (
+    "steer_bbox_tail_closure_to_next_object"
+)
+STOP_PRESSURE_MODE_STEER_BBOX_TAIL_THEN_OBJECT_OPEN = (
+    "steer_bbox_tail_then_object_open"
+)
+STOP_PRESSURE_MODE_STEER_BBOX_TAIL_THEN_OBJECT_OPEN_ONCE = (
+    "steer_bbox_tail_then_object_open_once"
+)
+STOP_PRESSURE_TRIGGER_RULE_RAW_TEXT_OBJECT_BOUNDARY = "raw_text_object_boundary"
 
 
 @dataclass
@@ -143,6 +165,7 @@ class GenerationConfig:
     stop_pressure_mode: Optional[str] = None
     stop_pressure_min_new_tokens: int = 0
     stop_pressure_trigger_rule: Optional[str] = None
+    stop_pressure_logit_bias: float = 0.0
 
     @property
     def stop_pressure_active(self) -> bool:
@@ -152,11 +175,152 @@ class GenerationConfig:
             and self.stop_pressure_trigger_rule
             == STOP_PRESSURE_TRIGGER_RULE_RAW_TEXT_OBJECT_OPEN
             and int(self.stop_pressure_min_new_tokens) > 0
+        ) or (
+            self.stop_pressure_mode
+            == STOP_PRESSURE_MODE_SUPPRESS_TERMINATING_TOKENS_AFTER_OBJECT_BOUNDARY
+            and self.stop_pressure_trigger_rule
+            == STOP_PRESSURE_TRIGGER_RULE_RAW_TEXT_OBJECT_BOUNDARY
+        ) or (
+            self.stop_pressure_mode
+            == STOP_PRESSURE_MODE_SUPPRESS_SPECIAL_TERMINATING_TOKENS_AFTER_OBJECT_BOUNDARY
+            and self.stop_pressure_trigger_rule
+            == STOP_PRESSURE_TRIGGER_RULE_RAW_TEXT_OBJECT_BOUNDARY
+        ) or (
+            self.stop_pressure_mode
+            == STOP_PRESSURE_MODE_SUPPRESS_FIRST_STRUCTURAL_CLOSURE_AFTER_OBJECT_BOUNDARY
+            and self.stop_pressure_trigger_rule
+            == STOP_PRESSURE_TRIGGER_RULE_RAW_TEXT_OBJECT_BOUNDARY
+        ) or (
+            self.stop_pressure_mode
+            == STOP_PRESSURE_MODE_STEER_FIRST_ARRAY_BRANCH_TO_NEXT_OBJECT_AFTER_OBJECT_BOUNDARY
+            and self.stop_pressure_trigger_rule
+            == STOP_PRESSURE_TRIGGER_RULE_RAW_TEXT_OBJECT_BOUNDARY
+            and float(self.stop_pressure_logit_bias) > 0.0
+        ) or (
+            self.stop_pressure_mode
+            == STOP_PRESSURE_MODE_STEER_BBOX_TAIL_CLOSURE_TO_NEXT_OBJECT
+            and self.stop_pressure_trigger_rule
+            == STOP_PRESSURE_TRIGGER_RULE_RAW_TEXT_OBJECT_BOUNDARY
+            and float(self.stop_pressure_logit_bias) > 0.0
+        ) or (
+            self.stop_pressure_mode
+            == STOP_PRESSURE_MODE_STEER_BBOX_TAIL_THEN_OBJECT_OPEN
+            and self.stop_pressure_trigger_rule
+            == STOP_PRESSURE_TRIGGER_RULE_RAW_TEXT_OBJECT_BOUNDARY
+            and float(self.stop_pressure_logit_bias) > 0.0
+        ) or (
+            self.stop_pressure_mode
+            == STOP_PRESSURE_MODE_STEER_BBOX_TAIL_THEN_OBJECT_OPEN_ONCE
+            and self.stop_pressure_trigger_rule
+            == STOP_PRESSURE_TRIGGER_RULE_RAW_TEXT_OBJECT_BOUNDARY
+            and float(self.stop_pressure_logit_bias) > 0.0
         )
 
     def apply_hf_stop_pressure(self, gen_kwargs: Dict[str, Any]) -> None:
-        if self.stop_pressure_active:
+        if (
+            self.stop_pressure_mode
+            == STOP_PRESSURE_MODE_MIN_NEW_TOKENS_AFTER_OBJECT_OPEN
+            and self.stop_pressure_trigger_rule
+            == STOP_PRESSURE_TRIGGER_RULE_RAW_TEXT_OBJECT_OPEN
+            and int(self.stop_pressure_min_new_tokens) > 0
+        ):
             gen_kwargs["min_new_tokens"] = int(self.stop_pressure_min_new_tokens)
+
+    def build_hf_stop_pressure_logits_processor(
+        self,
+        *,
+        tokenizer: object,
+        prompt_lengths: Sequence[int],
+    ) -> object | None:
+        if self.stop_pressure_trigger_rule != STOP_PRESSURE_TRIGGER_RULE_RAW_TEXT_OBJECT_BOUNDARY:
+            return None
+        suppress_structural_close_tokens: bool
+        if (
+            self.stop_pressure_mode
+            == STOP_PRESSURE_MODE_SUPPRESS_TERMINATING_TOKENS_AFTER_OBJECT_BOUNDARY
+        ):
+            suppress_structural_close_tokens = True
+            suppress_special_terminators = True
+            fresh_boundary_only = False
+        elif (
+            self.stop_pressure_mode
+            == STOP_PRESSURE_MODE_SUPPRESS_SPECIAL_TERMINATING_TOKENS_AFTER_OBJECT_BOUNDARY
+        ):
+            suppress_structural_close_tokens = False
+            suppress_special_terminators = True
+            fresh_boundary_only = False
+        elif (
+            self.stop_pressure_mode
+            == STOP_PRESSURE_MODE_SUPPRESS_FIRST_STRUCTURAL_CLOSURE_AFTER_OBJECT_BOUNDARY
+        ):
+            suppress_structural_close_tokens = True
+            suppress_special_terminators = False
+            fresh_boundary_only = True
+        elif (
+            self.stop_pressure_mode
+            == STOP_PRESSURE_MODE_STEER_FIRST_ARRAY_BRANCH_TO_NEXT_OBJECT_AFTER_OBJECT_BOUNDARY
+        ):
+            from src.infer.stop_pressure import (
+                build_array_branch_continuation_steering_logits_processor,
+            )
+
+            return build_array_branch_continuation_steering_logits_processor(
+                tokenizer=tokenizer,
+                prompt_lengths=prompt_lengths,
+                continuation_bias=float(self.stop_pressure_logit_bias),
+            )
+        elif (
+            self.stop_pressure_mode
+            == STOP_PRESSURE_MODE_STEER_BBOX_TAIL_CLOSURE_TO_NEXT_OBJECT
+        ):
+            from src.infer.stop_pressure import (
+                build_bbox_tail_closure_steering_logits_processor,
+            )
+
+            return build_bbox_tail_closure_steering_logits_processor(
+                tokenizer=tokenizer,
+                prompt_lengths=prompt_lengths,
+                continuation_bias=float(self.stop_pressure_logit_bias),
+            )
+        elif (
+            self.stop_pressure_mode
+            == STOP_PRESSURE_MODE_STEER_BBOX_TAIL_THEN_OBJECT_OPEN
+        ):
+            from src.infer.stop_pressure import (
+                build_bbox_tail_then_object_open_steering_logits_processor,
+            )
+
+            return build_bbox_tail_then_object_open_steering_logits_processor(
+                tokenizer=tokenizer,
+                prompt_lengths=prompt_lengths,
+                continuation_bias=float(self.stop_pressure_logit_bias),
+            )
+        elif (
+            self.stop_pressure_mode
+            == STOP_PRESSURE_MODE_STEER_BBOX_TAIL_THEN_OBJECT_OPEN_ONCE
+        ):
+            from src.infer.stop_pressure import (
+                build_bbox_tail_then_object_open_once_steering_logits_processor,
+            )
+
+            return build_bbox_tail_then_object_open_once_steering_logits_processor(
+                tokenizer=tokenizer,
+                prompt_lengths=prompt_lengths,
+                continuation_bias=float(self.stop_pressure_logit_bias),
+            )
+        else:
+            return None
+        from src.infer.stop_pressure import (
+            build_terminating_token_suppression_logits_processor,
+        )
+
+        return build_terminating_token_suppression_logits_processor(
+            tokenizer=tokenizer,
+            prompt_lengths=prompt_lengths,
+            suppress_structural_close_tokens=suppress_structural_close_tokens,
+            suppress_special_terminators=suppress_special_terminators,
+            fresh_boundary_only=fresh_boundary_only,
+        )
 
 
 @dataclass
@@ -831,6 +995,14 @@ class InferenceEngine:
             text=prompt_text, images=[image], return_tensors="pt"
         )
         model_inputs = {k: v.to(self.cfg.device) for k, v in model_inputs.items()}
+        attention_mask = model_inputs.get("attention_mask")
+        if isinstance(attention_mask, torch.Tensor) and attention_mask.ndim == 2:
+            prompt_lengths = [
+                int(value)
+                for value in attention_mask.sum(dim=1).detach().cpu().tolist()
+            ]
+        else:
+            prompt_lengths = [int(model_inputs["input_ids"].shape[1])]
 
         gen_kwargs = dict(
             max_new_tokens=self.gen_cfg.max_new_tokens,
@@ -841,6 +1013,12 @@ class InferenceEngine:
         )
         if self.gen_cfg.repetition_penalty is not None:
             gen_kwargs["repetition_penalty"] = self.gen_cfg.repetition_penalty
+        logits_processor = self.gen_cfg.build_hf_stop_pressure_logits_processor(
+            tokenizer=self.processor.tokenizer,
+            prompt_lengths=prompt_lengths,
+        )
+        if logits_processor is not None:
+            gen_kwargs["logits_processor"] = logits_processor
         self.gen_cfg.apply_hf_stop_pressure(gen_kwargs)
 
         # NOTE: Do not pass `generator=` into `model.generate()`.

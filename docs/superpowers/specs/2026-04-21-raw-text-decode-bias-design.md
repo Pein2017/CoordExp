@@ -150,6 +150,29 @@ Source:
 This population should favor scenes where repeated instances of the same class
 are valid rather than already degenerate.
 
+### P4. Hybrid hard-sample research pack
+
+Used for:
+
+- deeper follow-up after the main `val200` and counterfactual lanes finish
+- selecting publication-grade examples instead of relying on one monolithic
+  shortlist
+- building a compact in-depth pack that covers both EOS-like suppression and
+  legitimate crowded same-class repetition
+
+Source:
+
+- joint mining over:
+  - enriched mechanism cases
+  - baseline `val200` prevalence rows
+  - dense same-class valid-repeat rows
+  - completed counterfactual outputs
+  - completed end-to-end decode outputs
+
+This is not a replacement for the explicit study populations above. It is a
+derived research pack meant to support sharper qualitative and targeted
+follow-up analysis once the main evidence lanes already exist.
+
 ## Design Principle
 
 Keep one canonical truth per concern:
@@ -161,6 +184,74 @@ Keep one canonical truth per concern:
 
 This avoids duplicating case-selection logic or splitting evidence across two
 incompatible research harnesses.
+
+## EOS Intervention Refinement
+
+The EOS-side decode intervention should now be understood as a branchpoint
+steering problem, not a special-token suppression problem.
+
+The next decode probe should therefore use a local positive-steering mode with
+this exact contract:
+
+- activate only at a fresh completed-object boundary inside the top-level
+  `objects` array
+- suppress any token whose stripped decoded form begins with `]`, because on
+  this surface that represents either immediate list closure or fused
+  close-plus-schema-drift continuation
+- positively bias comma-led continuation tokens, because after a completed
+  object the correct next step is a comma that keeps enumeration inside the
+  `objects` array
+- keep special EOS tokens out of the mechanism claim; they may still appear as
+  trailers, but they are not the decisive stop lever
+
+The first live execution surface for this refined probe is the exact
+`base_only stop_signature19` slice, with a one-case smoke on source index
+`123` before the full 19-case run.
+
+## Hybrid Hard-Sample Mining Protocol
+
+After the main study lanes complete, the decode-bias study should support one
+explicit mining pass for harder and more representative follow-up examples.
+
+The purpose is to avoid two common failure modes:
+
+- over-indexing on pathological duplicate bursts that are visually unusual
+- reporting only broad aggregate `val200` numbers without concrete,
+  interpretable hard cases
+
+The hybrid mining pass should score each candidate case along at least four
+axes:
+
+1. `eos_bias_strength`
+   - derived from branchpoint preference, sum-vs-mean divergence, and the
+     `stop_pressure_signature` rule
+2. `valid_repeat_sensitivity`
+   - derived from repeat-penalty change on valid continuation, repeat-penalty
+     change on exact duplicate, and the resulting continuation-vs-duplicate
+     margin shift
+3. `crowdedness_and_repeat_density`
+   - derived from GT object count, same-class count, and whether target dense
+     categories such as `person`, `book`, `chair`, `bowl`, and `baseball bat`
+     are repeated
+4. `representativeness`
+   - derived from whether the scene looks like a normal crowded detection case
+     rather than only an extreme pathology case, with both `base_only` and
+     `base_plus_adapter` behavior preserved for comparison
+
+The mining pass should emit three explicit packs, not one collapsed shortlist:
+
+- `eos_hard_shortlist`
+  - strongest EOS-like suppression cases, especially where `base_only` shows a
+    sum-vs-mean signature
+- `dense_valid_repeat_shortlist`
+  - crowded same-class scenes where repeated instances are legitimate and
+    repeat penalty materially changes the continuation-vs-duplicate margin
+- `representative_mixed_shortlist`
+  - compact publication-style examples spanning both mechanisms without
+    over-representing pathological bursts
+
+These packs should preserve exact `image_id`, source index, artifact handles,
+and case provenance so later targeted reruns can be driven from them directly.
 
 ## Raw-Text Contract
 
@@ -321,6 +412,65 @@ Required views:
 - token-count delta
 - matched-length or continuation-only normalized comparison
 
+#### A1b. Branchpoint token census
+
+After the EOS counterfactual rows exist, the study must run one explicit
+branchpoint-token census on the same raw-text prefixes.
+
+This lane exists because the fixed EOS interventions already showed that the
+important stop decision is not the later special EOS token. The decisive
+competition happens at the structural JSON close boundary.
+
+The census must therefore not be framed as:
+
+- special EOS token vs continuation
+
+It must instead read the actual token competition at the structural boundary.
+
+Required design:
+
+- do not invent a hand-authored `poly` or other irrelevant schema candidate
+  string for scoring
+- keep the analysis on real next-token distributions from the teacher-forced
+  scorer
+- group tokens by boundary role rather than by one forced wrong-schema replay
+
+The census should expose two related branchpoints when tokenization allows:
+
+1. `array_close_branch`
+   - context: immediately after a completed object while still inside the
+     top-level `objects` list
+   - compare:
+     - structural array-close tokens
+     - valid next-object continuation tokens
+   - report:
+     - actual stop-path first-token logprob
+     - actual continue-path first-token logprob
+     - top-k token table
+     - exact group mass for `close_now` and `next_object`
+
+2. `final_close_branch`
+   - context: after the stop path has already closed the `objects` list and is
+     deciding whether to close the enclosing JSON object
+   - compare:
+     - final close-now token
+     - generic wrong-schema continuation mass, defined as top-level comma-based
+       continuation rather than a hand-injected field name
+   - report:
+     - actual final-close token logprob
+     - top-k token table
+     - exact group mass for `close_now` and `wrong_schema`
+
+If tokenization fuses the array-close and final-close decision into one token,
+the artifact must record that explicitly rather than pretending the second
+branchpoint was measured.
+
+This lane is the primary mechanism bridge between:
+
+- the teacher-forced EOS-like evidence
+- the negative results from blunt closure suppression
+- the next positive intervention design
+
 #### A2. Repeat-penalty counterfactual
 
 Rescore the same candidate continuations under:
@@ -340,6 +490,37 @@ Candidate set should include, when available:
 
 The key requirement is to hold candidate text fixed while changing only the
 decode-time repetition processor.
+
+#### A3. Hard-sample case cards
+
+For mined hard samples, the study should support one compact case-card surface
+that joins:
+
+- source identity:
+  - `image_id`
+  - source index
+  - model alias
+  - population pack membership
+- GT scene statistics:
+  - total GT object count
+  - max same-class count
+  - repeated target categories when present
+- EOS summary:
+  - branchpoint preference
+  - sum-vs-mean margin
+  - whether the sample matches `stop_pressure_signature`
+- repeat summary:
+  - continuation and exact-duplicate deltas from `1.00` to the selected higher
+    penalties
+  - token-group deltas for `desc`, `digit`, and `structure`
+- downstream recommendation:
+  - whether the sample is best used as:
+    - EOS exemplar
+    - dense valid-repeat exemplar
+    - mixed representative exemplar
+
+The case-card output is not a new scoring family. It is a synthesis layer built
+on top of the existing machine-readable row artifacts.
 
 ### Lane B: End-to-end HF decode lane
 
@@ -369,7 +550,12 @@ Preferred intervention shape:
 
 - retain the canonical HF decode policy
 - add one explicit stop-pressure mode:
-  - `decode.stop_pressure.mode: min_new_tokens_after_object_open`
+  - `decode.stop_pressure.mode: suppress_terminating_tokens_after_object_boundary`
+  - `decode.stop_pressure.trigger_rule: raw_text_object_boundary`
+  - semantics: when the raw-text decoder is at a valid top-level `objects`
+    list boundary immediately after a completed object, suppress close-now
+    terminating tokens such as structural `]` / `]}` continuations and known
+    end-of-turn special tokens
 - record exact keys in the manifest:
   - `decode.stop_pressure.mode`
   - `decode.stop_pressure.min_new_tokens`
@@ -426,6 +612,10 @@ For each case, report:
 - `continue_minus_eos_mean_logprob`
 - token counts for both paths
 - matched-length or continuation-only normalized comparison
+- branchpoint-token census rows when the census lane is enabled:
+  - `array_close_branch`
+  - `final_close_branch`
+  - fused-token status when applicable
 
 #### EOS classification rule
 
@@ -510,6 +700,14 @@ Required headline reporting:
   - `bowl`
   - `baseball bat`
 
+Required hard-sample reporting:
+
+- one mined `eos_hard_shortlist`
+- one mined `dense_valid_repeat_shortlist`
+- one mined `representative_mixed_shortlist`
+- one case-card table that can be used to trace each shortlisted sample back to
+  the exact source artifacts and replay settings
+
 The report must always state the scope as `val200`; it must not blur these
 results into a full-val claim.
 
@@ -547,6 +745,7 @@ Expected contents:
 - `counterfactual_repeat_penalty/`
 - `decode_val200_repeat_penalty/`
 - `decode_val200_stop_pressure/`
+- `hard_sample_mining/`
 - `report/`
 
 Each lane should also write machine-readable row tables such as:
@@ -554,6 +753,8 @@ Each lane should also write machine-readable row tables such as:
 - `case_rows.jsonl`
 - `summary_rows.jsonl`
 - `sweep_rows.jsonl`
+- `shortlist.jsonl`
+- `case_cards.jsonl`
 
 Artifact naming must preserve:
 
@@ -589,6 +790,10 @@ For the full `val200` run, verify:
 - report tables distinguish:
   - counterfactual evidence
   - end-to-end decode evidence
+- mined hard-sample packs distinguish:
+  - EOS-hard examples
+  - dense same-class valid-repeat examples
+  - representative mixed examples
 
 No result should be promoted from partial logs. Only completed artifacts under
 the run directory count as evidence.
@@ -637,6 +842,20 @@ Mitigation:
 - keep the raw-text `xyxy` / `norm1000_text` contract explicit in config,
   scoring, and report language
 
+### R5. Hard-sample overfitting
+
+Risk:
+
+- the deeper follow-up may accidentally overfit to spectacular but unrepresentative
+  cases
+
+Mitigation:
+
+- keep separate packs for `EOS-hard`, `dense_valid_repeat`, and
+  `representative_mixed`
+- preserve GT crowdedness statistics and source provenance in every case card
+- keep aggregate `val200` reporting as the main headline evidence
+
 ## Out Of Scope
 
 - coord-token comparisons
@@ -650,9 +869,11 @@ The design is complete when the repo can support:
 
 1. a smoke decode-bias study run
 2. a full `val200` decode-bias run
-3. a concise diagnostic note in `progress/diagnostics/`
-4. machine-readable artifacts that let a later agent reconstruct:
+3. a mined hard-sample pack with case cards for deeper research
+4. a concise diagnostic note in `progress/diagnostics/`
+5. machine-readable artifacts that let a later agent reconstruct:
    - which cases were scored
    - which decode settings were used
    - how the conclusions were separated between counterfactual and end-to-end
      evidence
+   - how shortlisted hard samples were chosen and replayed

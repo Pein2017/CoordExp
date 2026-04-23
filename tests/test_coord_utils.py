@@ -54,7 +54,7 @@ from src.common.geometry import (
     denorm_and_clamp,
     is_degenerate_bbox,
 )
-from src.eval.parsing import extract_special_tokens, parse_prediction
+from src.eval.parsing import extract_special_tokens, load_prediction_dict, parse_prediction
 from src.eval.detection import EvalOptions, evaluate_detection
 
 
@@ -116,6 +116,37 @@ def test_extract_special_tokens_can_preserve_duplicate_sequence() -> None:
         "<|im_end|>",
         "<|coord_11|>",
         "<|im_end|>",
+    ]
+
+
+def test_load_prediction_dict_strips_extra_top_level_keys_when_objects_present() -> None:
+    raw = (
+        '{"objects": [{"desc": "obj", "bbox_2d": [1, 2, 3, 4]}], '
+        '"poly": [0, 0, 10, 0, 10, 10]}'
+    )
+
+    parsed = load_prediction_dict(raw)
+
+    assert parsed == {
+        "objects": [{"desc": "obj", "bbox_2d": [1, 2, 3, 4]}],
+    }
+
+
+def test_parse_prediction_ignores_extra_top_level_poly_field() -> None:
+    raw = (
+        '{"objects": [{"desc": "obj", "bbox_2d": [1, 2, 3, 4]}], '
+        '"poly": [0, 0, 10, 0, 10, 10]}'
+    )
+
+    parsed = parse_prediction(raw)
+
+    assert parsed == [
+        {
+            "desc": "obj",
+            "type": "bbox_2d",
+            "points": [1, 2, 3, 4],
+            "_had_tokens": False,
+        }
     ]
 
 

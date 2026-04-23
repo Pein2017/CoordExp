@@ -69,6 +69,68 @@ def score_processed_span_token_rows(
     return rows
 
 
+def inspect_processed_position(
+    *,
+    logits: torch.Tensor,
+    input_ids: torch.Tensor,
+    batch_idx: int,
+    position: int,
+    tokenizer: object | None = None,
+    logits_processors: Sequence[object] | LogitsProcessorList | None = None,
+    history_start: int = 0,
+    top_k: int = 10,
+    focus_token_ids: Mapping[str, int] | None = None,
+    group_token_ids: Mapping[str, Sequence[int]] | None = None,
+) -> dict[str, object]:
+    if int(position) <= 0 or int(position) >= int(input_ids.shape[1]):
+        raise ValueError(f"position out of range: {position}")
+    processors = _coerce_logits_processors(logits_processors)
+    raw_logits = logits[batch_idx, int(position) - 1].float()
+    history_ids = [
+        int(value)
+        for value in input_ids[batch_idx, int(history_start) : int(position)]
+        .detach()
+        .cpu()
+        .tolist()
+    ]
+    processed_logits = _apply_logits_processors(
+        raw_logits=raw_logits,
+        history_ids=history_ids,
+        processors=processors,
+    )
+    token_id = int(input_ids[batch_idx, int(position)].item())
+    row = {
+        "position": int(position),
+        "token_id": token_id,
+        "token_text": _decode_token_text(tokenizer=tokenizer, token_id=token_id),
+        "history_ids": history_ids,
+        "raw_logprob": _token_logprob(logits=raw_logits, token_id=token_id),
+        "processed_logprob": _token_logprob(
+            logits=processed_logits,
+            token_id=token_id,
+        ),
+        "top_tokens": _top_token_rows(
+            raw_logits=raw_logits,
+            processed_logits=processed_logits,
+            tokenizer=tokenizer,
+            top_k=top_k,
+        ),
+        "focus_tokens": _focus_token_rows(
+            raw_logits=raw_logits,
+            processed_logits=processed_logits,
+            tokenizer=tokenizer,
+            focus_token_ids=focus_token_ids,
+        ),
+        "group_summaries": _group_token_summaries(
+            raw_logits=raw_logits,
+            processed_logits=processed_logits,
+            tokenizer=tokenizer,
+            group_token_ids=group_token_ids,
+        ),
+    }
+    return row
+
+
 def group_raw_text_token_rows(
     *,
     tokenizer: object,
@@ -181,6 +243,134 @@ def _token_positions_for_matches(
         through_ids = list(encode(text[: int(char_end)], add_special_tokens=False))
         token_positions.update(range(len(prefix_ids), len(through_ids)))
     return token_positions
+
+
+def _top_token_rows(
+    *,
+    raw_logits: torch.Tensor,
+    processed_logits: torch.Tensor,
+    tokenizer: object | None,
+    top_k: int,
+) -> list[dict[str, object]]:
+    if int(top_k) <= 0:
+        raise ValueError("top_k must be >= 1")
+    limit = min(int(top_k), int(raw_logits.shape[-1]))
+    values, indices = torch.topk(raw_logits, k=limit)
+    rows: list[dict[str, object]] = []
+    for value, token_idx in zip(values.detach().cpu().tolist(), indices.detach().cpu().tolist()):
+        token_id = int(token_idx)
+        rows.append(
+            {
+                "token_id": token_id,
+                "token_text": _decode_token_text(tokenizer=tokenizer, token_id=token_id),
+                "raw_logprob": _token_logprob(logits=raw_logits, token_id=token_id),
+                "processed_logprob": _token_logprob(
+                    logits=processed_logits,
+                    token_id=token_id,
+                ),
+                "raw_logit": float(value),
+            }
+        )
+    return rows
+
+
+def _focus_token_rows(
+    *,
+    raw_logits: torch.Tensor,
+    processed_logits: torch.Tensor,
+    tokenizer: object | None,
+    focus_token_ids: Mapping[str, int] | None,
+) -> dict[str, dict[str, object]]:
+    if not focus_token_ids:
+        return {}
+    focus_rows: dict[str, dict[str, object]] = {}
+    vocab_size = int(raw_logits.shape[-1])
+    for label, token_id_raw in focus_token_ids.items():
+        token_id = int(token_id_raw)
+        if token_id < 0 or token_id >= vocab_size:
+            continue
+        focus_rows[str(label)] = {
+            "token_id": token_id,
+            "token_text": _decode_token_text(tokenizer=tokenizer, token_id=token_id),
+            "raw_logprob": _token_logprob(logits=raw_logits, token_id=token_id),
+            "processed_logprob": _token_logprob(
+                logits=processed_logits,
+                token_id=token_id,
+            ),
+        }
+    return focus_rows
+
+
+def _group_token_summaries(
+    *,
+    raw_logits: torch.Tensor,
+    processed_logits: torch.Tensor,
+    tokenizer: object | None,
+    group_token_ids: Mapping[str, Sequence[int]] | None,
+) -> dict[str, dict[str, object]]:
+    if not group_token_ids:
+        return {}
+    raw_log_norm = torch.logsumexp(raw_logits, dim=-1)
+    processed_log_norm = torch.logsumexp(processed_logits, dim=-1)
+    vocab_size = int(raw_logits.shape[-1])
+    summaries: dict[str, dict[str, object]] = {}
+    for group_name, token_ids in group_token_ids.items():
+        unique_ids = sorted(
+            {
+                int(token_id)
+                for token_id in token_ids
+                if 0 <= int(token_id) < vocab_size
+            }
+        )
+        if not unique_ids:
+            summaries[str(group_name)] = {
+                "token_count": 0,
+                "raw_prob_mass": 0.0,
+                "raw_logprob_mass": None,
+                "raw_top_token_id": None,
+                "raw_top_token_text": None,
+                "raw_top_token_logprob": None,
+                "processed_prob_mass": 0.0,
+                "processed_logprob_mass": None,
+                "processed_top_token_id": None,
+                "processed_top_token_text": None,
+                "processed_top_token_logprob": None,
+            }
+            continue
+        raw_group_logits = raw_logits[unique_ids]
+        processed_group_logits = processed_logits[unique_ids]
+        raw_mass = torch.logsumexp(raw_group_logits, dim=-1) - raw_log_norm
+        processed_mass = torch.logsumexp(processed_group_logits, dim=-1) - processed_log_norm
+        raw_top_offset = int(torch.argmax(raw_group_logits).detach().cpu().item())
+        processed_top_offset = int(torch.argmax(processed_group_logits).detach().cpu().item())
+        raw_top_token_id = int(unique_ids[raw_top_offset])
+        processed_top_token_id = int(unique_ids[processed_top_offset])
+        summaries[str(group_name)] = {
+            "token_count": len(unique_ids),
+            "raw_prob_mass": float(torch.exp(raw_mass).detach().cpu().item()),
+            "raw_logprob_mass": float(raw_mass.detach().cpu().item()),
+            "raw_top_token_id": raw_top_token_id,
+            "raw_top_token_text": _decode_token_text(
+                tokenizer=tokenizer,
+                token_id=raw_top_token_id,
+            ),
+            "raw_top_token_logprob": _token_logprob(
+                logits=raw_logits,
+                token_id=raw_top_token_id,
+            ),
+            "processed_prob_mass": float(torch.exp(processed_mass).detach().cpu().item()),
+            "processed_logprob_mass": float(processed_mass.detach().cpu().item()),
+            "processed_top_token_id": processed_top_token_id,
+            "processed_top_token_text": _decode_token_text(
+                tokenizer=tokenizer,
+                token_id=processed_top_token_id,
+            ),
+            "processed_top_token_logprob": _token_logprob(
+                logits=processed_logits,
+                token_id=processed_top_token_id,
+            ),
+        }
+    return summaries
 
 
 def _extract_token_row_position(

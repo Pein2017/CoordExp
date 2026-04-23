@@ -1,5 +1,5 @@
 schema_version: 1
-updated: 2026-04-21
+updated: 2026-04-22
 
 entrypoints:
   human: progress/README.md
@@ -20,6 +20,8 @@ groups:
   diagnostics:
     - progress/diagnostics/README.md
     - progress/diagnostics/raw_text_coord_continuity_probe_2026-04-20.md
+    - progress/diagnostics/raw_text_coordinate_mechanism_findings_2026-04-21.md
+    - progress/diagnostics/raw_text_decode_bias_mechanism_findings_2026-04-22.md
     - progress/diagnostics/coord_family_basin_and_recall_comparison_2026-04-20.md
     - progress/diagnostics/raw_text_continuity_and_coord_family_synthesis_2026-04-20.md
     - progress/diagnostics/mixed_objective_sota_checkpoint_probe_2026-04-21.md
@@ -63,6 +65,16 @@ notes:
     kind: diagnostic-study
     status: completed-diagnostic
     summary: Permanent archive for the raw-text continuity study showing that continuity already exists without coord tokens and can also form wrong local basins.
+  - path: progress/diagnostics/raw_text_coordinate_mechanism_findings_2026-04-21.md
+    title: Raw-Text Coordinate Mechanism Findings
+    kind: mechanism-summary
+    status: active-reference
+    summary: Decision-facing historical record for the rebuilt raw-text-only mechanism study, including continuity, pre-burst margin, and FN suppression evidence.
+  - path: progress/diagnostics/raw_text_decode_bias_mechanism_findings_2026-04-22.md
+    title: Raw-Text Decode-Bias Mechanism Findings
+    kind: diagnostic-study
+    status: active-reference
+    summary: Current decode-bias diagnosis tying EOS-like suppression, repeat-penalty behavior, failed closure interventions, branchpoint token census evidence, and broader one-shot exact-no-op validation into one raw-text-only record.
   - path: progress/diagnostics/coord_family_basin_and_recall_comparison_2026-04-20.md
     title: Coordinate Family Basin and Recall Comparison
     kind: diagnostic-study
