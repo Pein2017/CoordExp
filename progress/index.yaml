@@ -41,6 +41,7 @@ groups:
     - progress/audits/stage2_channel_a_coord_loss_2026-02-25.md
   benchmarks:
     - progress/benchmarks/README.md
+    - progress/benchmarks/stage1_raw_text_vs_coord_token_repetition_penalty_sweep_2026-04-23.md
     - progress/benchmarks/mixed_objective_sota_checkpoint_probe_2026-04-21.md
     - progress/benchmarks/stage1_coco80_4b_res_768_vs_1024_2026-02-26.md
     - progress/benchmarks/stage1_coco80_temp0_compare_2026-02-26.md
@@ -96,6 +97,11 @@ notes:
     kind: benchmark-study
     status: active-reference
     summary: Focused checkpoint-selection probe of the new 2B mixed-objective adapter showing strong val200 detection, stable surface behavior, and a low-recall profile dominated by weak-visual misses.
+  - path: progress/benchmarks/stage1_raw_text_vs_coord_token_repetition_penalty_sweep_2026-04-23.md
+    title: Raw-Text vs Coord-Token Repetition-Penalty Sweep
+    kind: benchmark-study
+    status: active-reference
+    summary: Val200 detection benchmark comparing the raw-text adapter and coord-token checkpoint across repetition_penalty 1.00, 1.05, and 1.10, including the repaired raw-text scorer read.
   - path: progress/benchmarks/README.md
     title: Benchmarks Index
     kind: router

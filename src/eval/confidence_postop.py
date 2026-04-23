@@ -202,7 +202,7 @@ def _candidate_pred_coord_modes_for_alignment(record: Mapping[str, Any]) -> list
     candidates: list[str] = [primary]
     raw_output_json = record.get("raw_output_json")
     uses_numeric_text_bbox_surface = False
-    if _as_mode(record.get("mode")) == "text" and isinstance(raw_output_json, Mapping):
+    if isinstance(raw_output_json, Mapping):
         raw_objects = raw_output_json.get("objects")
         if isinstance(raw_objects, list):
             for raw_obj in raw_objects:
@@ -582,7 +582,6 @@ def _compute_sample_confidence_objects(
     trace: TraceRecord | None,
     options: ConfidencePostOpOptions,
 ) -> list[dict[str, Any]]:
-    record_mode = _as_mode(record.get("mode"))
     w_geom, w_desc = options.normalized_weights()
     fusion_weights = {
         "w_geom": float(w_geom),
@@ -604,6 +603,7 @@ def _compute_sample_confidence_objects(
             pred_objs,
             failure_reason=TRACE_LEN_MISMATCH,
         )
+    trace_uses_coord_token_surface = has_coord_tokens(trace.generated_token_text)
 
     raw_output_json = record.get("raw_output_json")
     if raw_output_json is None:
@@ -681,7 +681,7 @@ def _compute_sample_confidence_objects(
         # Coord-token inference may still materialize numeric `raw_output_json`
         # bbox bins after salvage/parsing. The scoring path should follow the
         # record's generation mode, not just the serialized raw JSON surface.
-        if record_mode == "coord" or record_uses_coord_tokens or (
+        if trace_uses_coord_token_surface or record_uses_coord_tokens or (
             flat_values is not None and has_coord_tokens(flat_values)
         ):
             try:

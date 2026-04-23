@@ -25,6 +25,7 @@ Prefer `progress/diagnostics/` when the main question is root cause or failure a
 ## Current Clusters
 
 - Stage-1 detection result reports
+  - [stage1_raw_text_vs_coord_token_repetition_penalty_sweep_2026-04-23.md](stage1_raw_text_vs_coord_token_repetition_penalty_sweep_2026-04-23.md)
   - [stage1_coco80_4b_res_768_vs_1024_2026-02-26.md](stage1_coco80_4b_res_768_vs_1024_2026-02-26.md)
   - [stage1_coco80_temp0_compare_2026-02-26.md](stage1_coco80_temp0_compare_2026-02-26.md)
   - [stage1_coco_2b_ce_softce_res_768_vs_1024_2026-02-27.md](stage1_coco_2b_ce_softce_res_768_vs_1024_2026-02-27.md)
