@@ -104,7 +104,7 @@ def load_prediction_dict(text: str) -> Dict[str, Any] | None:
         if isinstance(parsed, dict):
             objects = parsed.get("objects")
             if isinstance(objects, list):
-                return parsed
+                return {"objects": list(objects)}
 
             # Common legacy shape: {"0": {..obj..}, "1": {..obj..}}
             if parsed and all(isinstance(k, str) and k.isdigit() for k in parsed.keys()):

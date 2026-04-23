@@ -25,6 +25,10 @@ Prefer `progress/benchmarks/` when the output is mainly a measured run-vs-run or
 - Active Stage-1 raw-text mechanism and coordinate-family investigations
   - Start here for the current raw-text mechanism read:
     [raw_text_coordinate_mechanism_findings_2026-04-21.md](raw_text_coordinate_mechanism_findings_2026-04-21.md)
+  - Use
+    [raw_text_decode_bias_mechanism_findings_2026-04-22.md](raw_text_decode_bias_mechanism_findings_2026-04-22.md)
+    for the decode-time EOS / repeat-penalty / branchpoint follow-up on the
+    same raw-text-only checkpoint pair.
   - Use [coord_family_basin_and_recall_comparison_2026-04-20.md](coord_family_basin_and_recall_comparison_2026-04-20.md)
     for the cross-family comparison.
   - Treat

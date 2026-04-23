@@ -340,6 +340,119 @@ def test_resolve_run_dir_prefers_common_root_for_relative_output_dir(tmp_path: P
     ).resolve()
 
 
+def test_run_study_constructs_raw_text_teacher_forced_scorer_for_scoring(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    run_dir = tmp_path / "analysis-run"
+    checkpoint_dir = tmp_path / "checkpoint"
+    checkpoint_dir.mkdir()
+    captured: list[dict[str, object]] = []
+
+    config = verifier_module.StudyConfig(
+        run=verifier_module.RunConfig(
+            name="decode-bias",
+            output_dir="output/analysis",
+            stages=("scoring",),
+        ),
+        dataset=verifier_module.DatasetConfig(jsonl_path="unused.jsonl", sample_count=1),
+        collection=verifier_module.CollectionConfig(),
+        collection_gate=verifier_module.CollectionGateConfig(),
+        eval=verifier_module.EvalConfig(),
+        scoring=verifier_module.ScoringConfig(device="cpu", attn_implementation="sdpa"),
+        prompts=verifier_module.PromptConfig(),
+        report=verifier_module.ReportConfig(),
+        manual_audit=verifier_module.ManualAuditConfig(),
+        checkpoints=(verifier_module.CheckpointSpec(path=str(checkpoint_dir), name="ckpt"),),
+    )
+
+    monkeypatch.setattr(verifier_module, "_resolve_run_dir", lambda **kwargs: run_dir)
+    monkeypatch.setattr(
+        verifier_module,
+        "_stage_enabled",
+        lambda cfg, stage: stage == "scoring",
+    )
+    monkeypatch.setattr(
+        verifier_module,
+        "load_prepared_study_inputs",
+        lambda path: {
+            "subset_path": str(tmp_path / "subset.jsonl"),
+            "subset_records": [],
+            "subset_meta": {"sample_count": 1},
+            "root_image_dir": str(tmp_path),
+            "gt_rows": [],
+        },
+    )
+    monkeypatch.setattr(
+        verifier_module,
+        "prepare_collection_outputs",
+        lambda cfg, **kwargs: (
+            {
+                "checkpoint_path_resolved": str(checkpoint_dir),
+                "prompt_variant": "qwen3_vl",
+                "object_field_order": "desc_first",
+                "temperature": 0.1,
+            },
+            [],
+        ),
+    )
+    monkeypatch.setattr(
+        verifier_module,
+        "summarize_collection_health",
+        lambda **kwargs: {
+            "collection_valid": False,
+            "collection_invalid_reason": "no_unmatched",
+        },
+    )
+    monkeypatch.setattr(
+        verifier_module,
+        "apply_collection_gate_to_rows",
+        lambda rows, **kwargs: list(rows),
+    )
+
+    class _Scorer:
+        def __init__(self, **kwargs) -> None:
+            captured.append(dict(kwargs))
+
+    monkeypatch.setattr(verifier_module, "TeacherForcedScorer", _Scorer)
+    monkeypatch.setattr(verifier_module, "score_gt_table", lambda **kwargs: [])
+    monkeypatch.setattr(
+        verifier_module,
+        "mark_rollout_scoring_skipped",
+        lambda rows, **kwargs: list(rows),
+    )
+    monkeypatch.setattr(
+        verifier_module,
+        "write_unmatched_audit_pack",
+        lambda **kwargs: {"index_jsonl": str(run_dir / "audit_pack" / "index.jsonl")},
+    )
+    monkeypatch.setattr(
+        verifier_module,
+        "summarize_checkpoint",
+        lambda **kwargs: {"checkpoint": kwargs["checkpoint_name"]},
+    )
+    monkeypatch.setattr(
+        verifier_module,
+        "load_manual_audit_artifacts",
+        lambda path: {"manifest": {}, "summary": {}, "rows": []},
+    )
+    monkeypatch.setattr(verifier_module, "write_aggregate_tables", lambda *args, **kwargs: {})
+    monkeypatch.setattr(verifier_module, "_write_json", lambda *args, **kwargs: None)
+    monkeypatch.setattr(verifier_module, "_write_jsonl", lambda *args, **kwargs: None)
+    monkeypatch.setattr(verifier_module, "_write_csv", lambda *args, **kwargs: None)
+
+    verifier_module.run_study(config)
+
+    assert captured == [
+        {
+            "checkpoint_path": checkpoint_dir,
+            "device": "cpu",
+            "attn_implementation": "sdpa",
+            "coord_mode": "norm1000_text",
+        }
+    ]
+
+
 def test_render_report_includes_authority_first_downgrade() -> None:
     report = _render_report(
         config=type(

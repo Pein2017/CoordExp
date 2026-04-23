@@ -1,5 +1,5 @@
 schema_version: 1
-updated: 2026-04-21
+updated: 2026-04-22
 
 entrypoints:
   human: progress/README.md
@@ -20,6 +20,7 @@ groups:
   diagnostics:
     - progress/diagnostics/README.md
     - progress/diagnostics/raw_text_coordinate_mechanism_findings_2026-04-21.md
+    - progress/diagnostics/raw_text_decode_bias_mechanism_findings_2026-04-22.md
     - progress/diagnostics/raw_text_coord_continuity_probe_2026-04-20.md
     - progress/diagnostics/coord_family_basin_and_recall_comparison_2026-04-20.md
     - progress/diagnostics/raw_text_continuity_and_coord_family_synthesis_2026-04-20.md
@@ -69,6 +70,11 @@ notes:
     kind: diagnostic-study
     status: canonical-mechanism-summary
     summary: Current mechanism-first read on raw-text continuity, duplicate-burst attraction, and FN stop-pressure under the fixed raw-text checkpoint pair.
+  - path: progress/diagnostics/raw_text_decode_bias_mechanism_findings_2026-04-22.md
+    title: Raw-Text Decode-Bias Mechanism Findings
+    kind: diagnostic-study
+    status: active-reference
+    summary: Current decode-bias diagnosis tying EOS-like suppression, repeat-penalty behavior, failed closure interventions, branchpoint token census evidence, and broader one-shot exact-no-op validation into one raw-text-only record.
   - path: progress/diagnostics/coord_family_basin_and_recall_comparison_2026-04-20.md
     title: Coordinate Family Basin and Recall Comparison
     kind: diagnostic-study
