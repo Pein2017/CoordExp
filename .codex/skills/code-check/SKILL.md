@@ -1,6 +1,6 @@
 ---
 name: code-check
-description: "Fail-fast Python code check: run ruff (format + lint) and a pyright-compatible type checker on explicit paths. Avoid shell globs like `*.py`; prefer directories (src/tests/.) or explicit files so runs are reproducible from any working directory."
+description: "Use when running fail-fast Python static checks with ruff and a pyright-compatible type checker on explicit paths, especially before claiming CoordExp code changes are clean."
 ---
 
 # Python Code Check (fail-fast static checks)
@@ -19,6 +19,7 @@ Do **not** consider code-check complete unless a type checker was executed.
 - Finalization rule: if type checking was skipped or failed, report that explicitly and do not claim static checks passed
 
 It does **not** attempt schema/architecture review.
+It does **not** replace targeted behavioral tests from `docs/IMPLEMENTATION_MAP.md`.
 
 ## 0) Pick a scope (mandatory)
 
@@ -31,6 +32,7 @@ Always pass explicit paths. Prefer directories for reproducibility.
 ## 1) Run standard checks directly (recommended)
 
 Run these from the repo root (`.`) or any directory; just pass paths that exist in the repo.
+For noisy runs in CoordExp, `rtk conda run -n ms ...` is acceptable when filtered output is enough; keep the `conda run -n ms` environment wrapper either way.
 
 **Formatter drift (no writes):**
 ```bash
@@ -67,3 +69,13 @@ conda run -n ms basedpyright -p pyrightconfig.json
 # or:
 conda run -n ms pyright -p pyrightconfig.json
 ```
+
+## 3) CoordExp follow-up
+
+After static checks, run the smallest relevant tests named by `docs/IMPLEMENTATION_MAP.md` for the touched area, for example data/geometry, Stage-1, Stage-2, infer/eval, or artifact/provenance tests.
+
+When reporting results, keep static checks separate from behavioral verification:
+
+- "ruff and basedpyright passed" means static checks passed
+- "targeted tests passed" requires a separate fresh test command
+- if type checking is skipped or too broad/expensive to finish, say that explicitly

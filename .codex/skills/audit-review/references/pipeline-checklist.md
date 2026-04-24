@@ -32,6 +32,16 @@ Use this to find correctness, reproducibility, and evaluation-validity risks in 
 - Outputs include enough metadata to reproduce: dataset id, preset/run name, seed, max_objects, etc.
 - Artifact naming is self-describing (avoid ambiguous “train.jsonl” meaning multiple things).
 - Manifest/summaries are written deterministically and consistently.
+- Training outputs include the expected manifest family: `resolved_config.json`, `runtime_env.json`, `effective_runtime.json`, `pipeline_manifest.json`, `experiment_manifest.json`, `run_metadata.json`.
+- Infer/eval outputs include the expected artifact family: `summary.json`, `resolved_config.json`, `resolved_config.path`, `gt_vs_pred.jsonl`, `gt_vs_pred_scored.jsonl`, `metrics.json`, and guarded companions when enabled.
+- Downstream eval/vis jobs can recover authoritative root-image and config provenance without guessing from the current working directory.
+
+### 6.1 Evaluation Validity
+- Official COCO/LVIS style metrics consume scored artifacts, not raw unscored predictions.
+- Raw-text `xyxy` norm1000 paths use numeric-text confidence alignment, not coord-token span alignment.
+- `cxcy_logw_logh` / `cxcywh` results are only treated as evidence for checkpoints trained on that serialization.
+- Proxy views are labeled explicitly (`coco_real`, `coco_real_strict`, `coco_real_strict_plausible`) and not compared as if they were the same benchmark.
+- Benchmark notes state scope: `val200`, `limit=200`, first-200, full-val, checkpoint ids, raw-text vs coord-token, and GPU launch shape for timing.
 
 ### 7. Backward Compatibility / Deprecations
 - Deprecated knobs are rejected (fail-fast) or removed; no warning-only no-ops.
@@ -42,4 +52,4 @@ Use this to find correctness, reproducibility, and evaluation-validity risks in 
 - There is at least one “parity” or regression test for contract-critical behavior.
 - Add or suggest the smallest test that proves the invariant (avoid broad refactors).
 - Prefer tests that do not require network; use fixtures or synthetic slices.
-
+- Prefer targeted tests from `docs/IMPLEMENTATION_MAP.md` before broad suites.

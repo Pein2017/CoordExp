@@ -1,6 +1,6 @@
 ---
 name: rtk-token-saver
-description: Use `rtk` as the default execution layer for shell commands when available. Automatically apply it to commands likely to produce multi-line or noisy output (e.g., git, search, file reads, tests, logs), without requiring explicit user instruction. Prefer `rtk` in exploratory or shell-heavy workflows to reduce token usage. Fall back to raw commands only when exact, unfiltered output is required, RTK adds risk (e.g., quoting/state), or provides no meaningful benefit.
+description: "Use when shell output is likely to be noisy and token-heavy: broad search, docs reads, git diff/status/log, tests, logs, file discovery, or daily repo orientation. Skip when exact stdout, machine-readable output, delicate shell semantics, or tiny commands matter more than compression."
 ---
 
 # RTK Token Saver
@@ -13,6 +13,17 @@ Direct `rtk ...` calls are simpler, easier to reason about, and avoid path-resol
 
 - Use RTK-filtered shell output by default for shell commands whenever compaction is likely to help.
 - Fall back to the raw command when RTK has no rewrite or when exact raw output matters more than compression.
+- Treat RTK as a noise-control layer, not a replacement for semantic code navigation or exact-output commands.
+
+## Measured Effect
+
+In `/data/CoordExp`, `rtk gain --project` showed about `1.3M` tokens saved across `2265` commands, a `65.8%` overall reduction. The largest wins came from broad search and discovery:
+
+- `rtk grep`: biggest aggregate saver
+- `rtk read`: useful in aggregate for docs/progress reads
+- `rtk find`, `rtk ls`, and `rtk git diff`: strong when output is large
+
+Daily savings can be near zero when commands are already tiny or fall back to raw execution. That is fine; use RTK where output volume is the problem.
 
 ## Autonomous Activation
 
@@ -45,8 +56,9 @@ rtk read docs/PROJECT_CONTEXT.md
 
 RTK is the default for commands that usually emit a lot of text, and for ordinary shell work where compact output is preferable:
 
-- `git ...`
-- `rg`, `grep`, `find`, `ls`, `read`, `sed -n`
+- `git status`, `git diff`, `git log`
+- broad `rg`/`grep`, `find`, `ls`, `tree`
+- docs/prose reads with `rtk read`
 - `pytest`, `ruff`, `mypy`, `cargo`, `go test`
 - `npm`, `pnpm`, `tsc`, `next`, `lint`, `format`
 - `curl`, logs, and error-focused runs when RTK has a matching subcommand
@@ -66,6 +78,8 @@ Use the raw command instead when:
 - the command depends on a specific interpreter, venv, conda env, or launcher and `rtk ...` would bypass that wrapper
 - RTK has no useful rewrite/filter for the command
 - the command is already trivially tiny and wrapping it would add more noise than value
+- a narrow exact line read is needed, such as `sed -n '120,170p' file.py` or `nl -ba file.py | sed -n '120,170p'`
+- downstream parsing depends on exact JSON/CSV/table output, such as `jq`, `python -c`, or a script whose stdout is consumed directly
 
 ## Working Rules
 
@@ -77,6 +91,8 @@ Use the raw command instead when:
 - If you need exact output for debugging, say why you are bypassing RTK.
 - Do not claim the output is verbatim if RTK filtered it.
 - In ambiguous cases, prefer saving tokens unless there is a concrete downside to filtering.
+- Use `rtk gain`, `rtk gain --project`, and `rtk gain --history` to inspect actual savings instead of guessing about impact.
+- Use `rtk rewrite "<command>"` to see whether a raw command maps cleanly to an RTK equivalent.
 
 ## Pairing With Serena MCP
 
@@ -96,6 +112,8 @@ Typical split:
 4. `rtk conda run -n ms python -m pytest tests/...`
 5. `rtk git diff`
 
+Do not use RTK as a substitute for Serena. If the task depends on Python call relationships, class/method boundaries, symbol references, or precise code edits, use Serena after narrowing with `rg`/`rtk`.
+
 ## Verification
 
 - Rewrite probe:
@@ -105,6 +123,11 @@ rtk rewrite "git status"
 - Direct execution:
 ```bash
 rtk git status
+```
+- Savings:
+```bash
+rtk gain --project
+rtk gain --project --history
 ```
 - Raw fallback for unsupported commands:
 ```bash

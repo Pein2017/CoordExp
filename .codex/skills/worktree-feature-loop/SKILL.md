@@ -36,6 +36,7 @@ Default to `execution_mode=worktree` for:
 Use `execution_mode=inplace` only when the task is small, local, and isolation is clearly unnecessary.
 
 For CoordExp-style work, prefer `.worktrees/` unless the user explicitly requests a different root.
+Remember that `mcp/codexUI` is a nested git repo; do not sweep nested-repo changes into parent CoordExp commits.
 
 ## Lifecycle
 
@@ -62,6 +63,8 @@ For CoordExp-style work, prefer `.worktrees/` unless the user explicitly request
 - Commit incrementally with clear messages
 - Run targeted checks after each logical slice
 - When running from a worktree, prefer absolute or shared-root-anchored paths for shared outputs, datasets, checkpoints, and caches.
+- For one-off debug artifacts, use `temp/` and clean it up after durable results are extracted unless the user asks to keep it.
+- For inference/eval fanout from a worktree, preserve or explicitly rewrite canonical image roots before launching shards.
 
 5. Run audit and review rounds until clean.
 - Self-check and fix obvious issues
@@ -84,12 +87,14 @@ Then hand off final branch resolution to `finishing-a-development-branch`:
 7. Clean up the worktree only after branch resolution is complete.
 - Remove the worktree only after merge or discard is finished.
 - If cleanup might remove uncommitted work, stop and ask for explicit confirmation.
+- If a research worktree produced durable findings, first copy or summarize the canonical outputs into `progress/` or the requested docs/artifact location.
 
 ## Concurrent Development Rules
 
 - One task per worktree and one active branch per worktree.
 - Never modify another task's worktree unless explicitly asked.
 - Treat dirty files in other worktrees as expected; focus only on your assigned worktree.
+- Treat dirty changes in the main checkout and nested repos as user or parallel-agent work unless proven otherwise.
 - Report every handoff with exact `worktree_path`, `branch_name`, spec mode, and validation status.
 
 ## OpenSpec Handling

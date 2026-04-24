@@ -1,6 +1,6 @@
 ---
 name: audit-review
-description: Read-only audit/review for CoordExp code/spec/design (including OpenSpec change audits). Use to produce an evidence-backed findings report (P0/P1/P2) for a separate implementer, focusing on pipeline/data-flow correctness and reproducibility risks.
+description: Use when producing a read-only CoordExp audit of code, configs, specs, artifacts, docs, progress notes, or OpenSpec changes for correctness, reproducibility, pipeline, and eval-validity risks.
 ---
 
 # Audit Review
@@ -9,6 +9,9 @@ description: Read-only audit/review for CoordExp code/spec/design (including Ope
 
 Produce an audit report that helps an implementer safely change/refine CoordExp without guessing.
 Optimize for correctness, reproducibility, and contract/pipeline integrity rather than style refactors.
+
+Use the repo's source-of-truth order: `openspec/specs/` -> `docs/` -> `openspec/changes/<active-change>/` -> `progress/`.
+Use `progress/` for evidence, diagnostics, benchmark scope, and history; do not answer current-behavior questions from it when docs/specs cover the contract.
 
 ## Output Contract (What You Deliver)
 
@@ -30,6 +33,7 @@ Use `references/report-template.md` if you want a ready-made skeleton.
 - Always check and report `git status --porcelain` at the start; if the worktree is dirty and it matters, ask before proceeding.
 - For Python code exploration: Serena MCP is mandatory (symbol-aware navigation; provide `relative_path` constraints).
 - Never invent results. If a claim cannot be verified, label it as a hypothesis and keep it out of severity-ranked findings.
+- Do not conflate benchmark scopes. Report `val200`, `limit=200`, first-200, proxy view, full-val, raw-text vs coord-token, checkpoint ids, and launch shape when they affect the claim.
 
 ## Workflow (Breadth Pass -> Depth Pass -> Report)
 
@@ -48,9 +52,10 @@ Assume the deliverable is a report for a separate implementer unless the user ex
 - Run `git status --porcelain` and note any dirty files.
 - If auditing a change/PR, capture `git diff --name-only` (or change directory file listing) to bound the search.
 - Identify entrypoints and contracts:
-- Docs/specs: `openspec/changes/...`, `docs/`, `public_data/README.md`, dataset contracts, config schema.
-- Code: likely entrypoints (`src/trainers/`, `src/infer/`, `src/eval/`, `src/datasets/`, `public_data/`).
-- Tests: locate tests adjacent to the target area and any policy scans.
+  - Docs/specs: `docs/AGENT_INDEX.md`, `docs/catalog.yaml`, `docs/PROJECT_CONTEXT.md`, `docs/SYSTEM_OVERVIEW.md`, `docs/IMPLEMENTATION_MAP.md`, relevant `openspec/specs/`, relevant domain docs.
+  - Progress: `progress/index.yaml`, `progress/README.md`, and the matching category router when you need empirical evidence.
+  - Code: likely entrypoints (`src/bootstrap/`, `src/config/loader.py`, `src/datasets/geometry.py`, `src/trainers/`, `src/infer/`, `src/eval/`, `public_data/`).
+  - Tests: locate tests adjacent to the target area and any policy scans.
 - Grep for relevant context (fast, wide net):
 - Use `rg` to find: config keys, CLI flags, spec terms, artifact filenames, error messages.
 - Use `references/grep-seeds.md` when you need good starting patterns.
@@ -63,15 +68,21 @@ Assume the deliverable is a report for a separate implementer unless the user ex
 Pick 3–5 top risk areas based on impact and likelihood, then deep-dive with evidence:
 
 - Pipeline and process flow:
-- Trace data flow: input -> transforms -> packing -> training/infer/eval -> artifacts.
-- Verify invariant-sensitive steps (geometry, ordering, normalization).
+  - Trace data flow: input -> transforms -> packing -> training/infer/eval -> artifacts.
+  - Verify invariant-sensitive steps (geometry, ordering, normalization).
+  - Route geometry checks through `src/datasets/geometry.py`, not ad hoc bbox math.
 - Configuration and contracts:
-- Check strict parsing / unknown-key behavior (fail-fast vs silently ignored).
-- Check backward-compat surfaces (stable CLI contracts, deprecated keys policy).
+  - Check strict parsing / unknown-key behavior (fail-fast vs silently ignored).
+  - Check backward-compat surfaces (stable CLI contracts, deprecated keys policy).
+  - Check that stable workflows stay YAML-first instead of adding CLI flags.
+- Artifacts and eval validity:
+  - Verify training manifests: `resolved_config.json`, `runtime_env.json`, `effective_runtime.json`, `pipeline_manifest.json`, `experiment_manifest.json`, `run_metadata.json`.
+  - Verify infer/eval artifacts: `summary.json`, `resolved_config.json`, `resolved_config.path`, `gt_vs_pred.jsonl`, `gt_vs_pred_scored.jsonl`, `metrics.json`, and guarded companions when enabled.
+  - For current infer behavior inspect `src/infer/pipeline.py::run_pipeline`; for current eval behavior inspect `src/eval/detection.py::evaluate_and_save`.
 - Determinism and reproducibility:
-- Look for ordering-dependent behavior, random seeds, multiprocess I/O, filesystem-dependent nondeterminism.
+  - Look for ordering-dependent behavior, random seeds, multiprocess I/O, filesystem-dependent nondeterminism.
 - Silent failure policy:
-- Ensure unexpected exceptions are not swallowed in core paths; best-effort behavior should be narrow and justified.
+  - Ensure unexpected exceptions are not swallowed in core paths; best-effort behavior should be narrow and justified.
 
 ### Step 3: Validate Or Falsify With Targeted Tests (Optional, But High Value)
 

@@ -1,4 +1,4 @@
 interface:
   display_name: "Detection Visualization"
   short_description: "Canonical detection GT/pred visualization"
-  default_prompt: "Use $detection-gt-vs-pred-visualization to render or modify detection GT/pred visualizations through the shared CoordExp pipeline and contract."
+  default_prompt: "Use $detection-gt-vs-pred-visualization to render or modify CoordExp detection GT/pred visualizations through the shared canonical pipeline. Preserve raw/scored/guarded/proxy artifact identity, use resolved config/root-image provenance when present, and avoid bespoke renderer-local schema or denormalization logic."

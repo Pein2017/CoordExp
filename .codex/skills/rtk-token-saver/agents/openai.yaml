@@ -1,7 +1,7 @@
 interface:
   display_name: "RTK Token Saver"
-  short_description: "Default to RTK for applicable Codex shell commands"
-  default_prompt: "Use $rtk-token-saver and default to RTK for applicable shell commands in this Codex session."
+  short_description: "Use RTK for noisy shell output, not exact stdout"
+  default_prompt: "Use $rtk-token-saver for noisy shell work such as broad search, docs reads, git output, tests, logs, and discovery. Preserve project wrappers like `conda run -n ms`; bypass RTK for exact stdout, machine-readable output, delicate quoting, tiny commands, or Python symbol reasoning that should use Serena."
 
 policy:
   allow_implicit_invocation: true

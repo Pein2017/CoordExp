@@ -1,3 +1,3 @@
 interface:
   display_name: "Worktree Feature Loop"
-  short_description: "Guide a concurrent-safe feature worktree lifecycle"
+  short_description: "Guide a concurrent-safe CoordExp worktree lifecycle"

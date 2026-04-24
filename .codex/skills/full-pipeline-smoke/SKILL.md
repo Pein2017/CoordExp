@@ -1,6 +1,6 @@
 ---
 name: full-pipeline-smoke
-description: Build and run production-like smoke tests for new features by going through the full pipeline cycle (data -> transforms/packing -> training/infer/rollout -> metrics/artifacts), using YAML inheritance so smoke differs from prod only by a few runtime knobs (sample limits/max_steps/output dirs).
+description: Use when validating CoordExp features through a production-like smoke path that exercises data, packing, training or rollout, inference, scoring, evaluation, metrics, and reproducibility artifacts.
 metadata:
   short-description: Full-cycle smoke workflow
 ---
@@ -8,10 +8,11 @@ metadata:
 # Full-Cycle Smoke Testing (Production-Like)
 
 Use this skill whenever you add a new feature and want a **real smoke test** that exercises the **entire pipeline path** (not a unit test) while staying close to production conditions.
+Start from `docs/IMPLEMENTATION_MAP.md` for the area under test, and keep the smoke aligned with the relevant docs/spec contract.
 
 ## Core Principle
 
-**Smoke configs must be production configs with fewer samples.**  
+**Smoke configs must be production configs with fewer samples.**
 Keep all main hyperparameters identical to production; only change runtime knobs.
 
 This prevents “smoke drift” where smoke passes but production fails.
@@ -26,7 +27,10 @@ A real smoke test should pass through as many of these as relevant to the featur
 - Forward + backward + optimizer step (at least 1–3 steps)
 - Any feature-specific stage (e.g., rollouts, matching, decoding, post-processing)
 - Logging/metrics emission (at least one log line with the key metrics)
-- Artifact creation (optional): minimal output dir, minimal vis dumps
+- Artifact creation and provenance breadcrumbs:
+  - training: `resolved_config.json`, `runtime_env.json`, `effective_runtime.json`, `pipeline_manifest.json`, `experiment_manifest.json`, `run_metadata.json`
+  - infer/eval: `summary.json`, `resolved_config.json`, `resolved_config.path`, `gt_vs_pred.jsonl`, `gt_vs_pred_scored.jsonl`, `metrics.json`
+  - guarded eval, when enabled: `metrics_guarded.json`, `per_image_guarded.json`, `duplicate_guard_report.json`
 
 ## YAML Hierarchy Pattern (Required)
 
@@ -91,6 +95,7 @@ Before writing any YAML:
    - e.g., if a schedule has multiple phases, ensure smoke reaches each phase at least once
 3) Set sample limits so the dataloader can provide enough samples for those steps
 4) Ensure length caps in smoke match prod (so truncation/packing contracts are exercised)
+5) Decide which artifacts prove the feature path ran; do not rely on a final log line alone
 
 ## Regression Loop: Feature Building -> Smoke -> Guardrail
 
@@ -103,8 +108,29 @@ Recommended loop:
    - At least one optimizer step completes
    - Key metrics counters/logs are present
    - No silent truncation/invalid parse spikes (feature-dependent)
+   - resolved configs and manifests exist and point to the intended inputs/checkpoints
+   - infer/eval jobs emit the expected raw, scored, guarded, and summary artifacts
 4) Add/adjust a minimal test that runs the smoke config (if repo has such tests)
 5) Document the canonical smoke command in the relevant runbook
+
+## CoordExp Verification Surface
+
+Use `conda run -n ms python ...` from the repo root. Wrap noisy commands with `rtk` only when filtered output is acceptable.
+
+Before a smoke run:
+
+- confirm the config extends the intended production config
+- confirm only runtime knobs changed (`max_steps`, sample limits, output/log dirs, save/eval cadence)
+- confirm prompt, packing, geometry, checkpoint, decoding, and coordinate-surface settings match production unless the smoke explicitly tests them
+- for worktrees or `temp/` runs, confirm image roots and JSONL paths resolve to stable shared data, not transient scratch
+
+After a smoke run:
+
+- verify top-level summaries/manifests, not only process exit
+- for inference, inspect `summary.json` and `resolved_config.json` instead of reconstructing CLI args
+- for downstream eval/vis, verify `resolved_config.path` exists next to `gt_vs_pred.jsonl`
+- for COCO/LVIS proxy paths, report the exact view (`coco_real`, `coco_real_strict`, `coco_real_strict_plausible`)
+- label scope precisely: smoke sample count, `val200`, `limit=200`, first-200, full-val, raw-text vs coord-token, and checkpoint id when relevant
 
 ## Worktree / Branch Smoke Runs
 
@@ -154,6 +180,10 @@ export WORKTREE_DATA_DIR="/path/to/worktree/data"
 
 - Prefer YAML-first changes over adding new CLI flags.
 - For current Stage-1 baseline work, prefer `configs/stage1/`; treat `configs/fusion/` as the historical/experimental multi-dataset surface.
+- For Stage-2 smoke, use `configs/stage2_two_channel/` and preserve the authored `stage2_ab.pipeline.*` or `rollout_matching.pipeline.*` contract.
+- For infer/eval smoke, prefer the unified YAML pipeline under `configs/infer/`, `configs/postop/`, `configs/eval/`, and `configs/bench/`.
+- For raw-text `xyxy` norm1000 smoke, set `infer.mode: text`, `infer.pred_coord_mode: norm1000`, and keep the repaired confidence-scoring path in the loop.
+- For `cxcy_logw_logh` or `cxcywh`, only treat outputs as valid evidence for checkpoints trained on that exact serialization.
 - If local HTTP services are involved (server-mode rollouts), ensure proxy is disabled:
   - `unset http_proxy https_proxy HTTP_PROXY HTTPS_PROXY all_proxy ALL_PROXY`
   - ensure `NO_PROXY` contains `127.0.0.1,localhost`

@@ -1,6 +1,6 @@
 ---
 name: detection-gt-vs-pred-visualization
-description: Render, modify, or debug detection-style GT/pred visualizations in CoordExp when the user asks to draw objects on an input image, inspect an input-image-plus-expected-output-object-list pairing, review evaluator/monitor GT-vs-Pred scenes, or compare multiple detection outputs. Reuse the shared canonical visualization pipeline and exact GT-vs-Pred contract instead of building a bespoke renderer or ad hoc schema.
+description: Use when rendering, modifying, or debugging CoordExp detection GT/pred visualizations from raw, scored, guarded, proxy, evaluator, monitor, comparison, or ad hoc image/object artifacts.
 ---
 
 # Detection GT/Pred Visualization
@@ -26,7 +26,9 @@ Do not introduce a new renderer unless the current pipeline cannot express the r
 
 1. Identify the input family:
    - raw `gt_vs_pred.jsonl` or `gt_vs_pred_scored.jsonl`
+   - guarded `gt_vs_pred_guarded.jsonl` or `gt_vs_pred_scored_guarded.jsonl`
    - canonical `vis_resources/gt_vs_pred.jsonl`
+   - proxy-eval views such as `eval_coco_real/`, `eval_coco_real_strict/`, or `eval_coco_real_strict_plausible/`
    - evaluator-selected scenes or precomputed matching payloads
    - comparison members such as `pred_hf.jsonl` and `pred_vllm.jsonl`
    - ad hoc `image + expected object list` requests
@@ -36,6 +38,13 @@ Do not introduce a new renderer unless the current pipeline cannot express the r
    - comparison scene: call `compose_comparison_scenes_from_jsonls(...)` or the compare script
 3. Keep input and output paths explicit.
 4. Fail fast on contract violations; do not hide missing fields with renderer-local fallback logic.
+
+Before rendering from a derived artifact:
+
+- read `resolved_config.path` next to `gt_vs_pred.jsonl` when present
+- recover root-image provenance from the authoritative resolved config or artifact metadata
+- verify width/height and image paths resolve before drawing
+- preserve whether the source is raw, scored, guarded, or proxy-expanded in output labels/reporting
 
 ## Canonical Contract
 
@@ -71,6 +80,9 @@ Do not introduce a new renderer unless the current pipeline cannot express the r
 - Preserve explicit prediction indices when the source provides them; matching may refer to stable non-dense indices.
 - Canonicalize GT ordering deterministically through the shared adapter; let it remap source-local GT indices into `canonical_gt_index`.
 - Do not overwrite raw `<run_dir>/gt_vs_pred.jsonl`; derived canonical resources belong under `<run_dir>/vis_resources/gt_vs_pred.jsonl`.
+- Do not overwrite scored or guarded prediction artifacts; visualization resources are sidecars.
+- Treat guarded artifacts as post-op views. Keep raw artifacts available for model-output inspection.
+- For raw-text `xyxy` norm1000 artifacts, do not add renderer-local denormalization logic; rely on the canonical artifact/eval path to provide pixel-space boxes.
 - Shared GT-vs-Pred review rendering requires canonical matching. Materialize or normalize matching before rendering; do not recompute matching inside the renderer as a fallback.
 - Keep the default review semantics unchanged:
   - `1x2` layout
@@ -106,3 +118,5 @@ Do not introduce a new renderer unless the current pipeline cannot express the r
   - `src/vis/comparison.py`
   - `src/infer/vis.py`
   - `src/eval/detection.py`
+  - `docs/eval/WORKFLOW.md`
+  - `docs/ARTIFACTS.md`

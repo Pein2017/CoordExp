@@ -1,6 +1,6 @@
 ---
 name: serena-mcp-navigation
-description: "Serena MCP navigation for code analysis: Use for symbol-aware code exploration, reference finding, and precise editing. Trigger when users need to navigate codebases, find symbol definitions/references, or make targeted code changes with superior accuracy and efficiency compared to CLI tools."
+description: "Use when code work needs symbol-aware navigation, reference finding, call-site tracing, or precise edits, especially for CoordExp Python files after narrowing candidates with rg or rtk."
 ---
 
 # Serena MCP Navigation
@@ -23,8 +23,9 @@ Navigate codebases with symbol-aware precision using Serena MCP tools. Superior 
 
 ### Make Precise Edits
 1. Locate symbol using definition workflow above
-2. For small changes: use `replace_content` with tight regex
-3. For whole methods: use `replace_symbol_body` after retrieving current body
+2. For whole methods/functions/classes: use `replace_symbol_body` after retrieving current body
+3. For insertions: use `insert_before_symbol` near a known symbol when available
+4. For small text-only changes outside a symbol body, use `apply_patch`
 
 ## Tool Selection Guide
 
@@ -35,6 +36,7 @@ Navigate codebases with symbol-aware precision using Serena MCP tools. Superior 
 - Finding references, callers, and dependencies
 - Precise code editing and refactoring
 - Deep implementation analysis
+- CoordExp Python exploration and editing after an initial `rg`/`rtk` narrowing pass
 
 ### Use CLI tools for:
 - Documentation and prose scanning
@@ -59,9 +61,9 @@ Use `find_referencing_symbols` to immediately surface all relationships:
 
 ### Code Editing
 Choose the minimal editing approach:
-- **Small changes**: `replace_content` with regex
 - **Whole symbols**: `replace_symbol_body` after retrieving current body
 - **Insertions**: `insert_before_symbol`/`insert_after_symbol` near relevant symbols
+- **Small text-only changes**: use `apply_patch` after Serena identifies the correct location
 
 ## Best Practices
 
@@ -70,6 +72,7 @@ Choose the minimal editing approach:
 - Use scoped searches to avoid overwhelming results
 - Leverage `find_referencing_symbols` early for relationship mapping
 - Reserve CLI tools for documentation and bulk text scanning
+- For Markdown, YAML, JSON, exact line reads, and generated artifacts, prefer shell reads plus `apply_patch`; Serena is most valuable where symbol boundaries or references matter.
 
 ## Pairing With RTK
 
@@ -78,5 +81,5 @@ Use Serena for code semantics and RTK for shell compaction:
 - Start with `rtk` when you need to read docs, inspect logs, scan the repo, or summarize `git`/test output before touching code.
 - Use `rg` or `rtk grep` to narrow candidate files, then switch to Serena for Python symbol discovery and editing.
 - Treat Serena as the source of truth for Python structure. Do not rely on `rtk smart`, raw full-file reads, or broad text search when the task depends on references, callers, or symbol boundaries.
-- After Serena-driven edits, switch back to `rtk` for compact verification: `rtk pytest`, `rtk git diff`, `rtk log`, and similar checks.
+- After Serena-driven edits, switch back to `rtk` for compact verification: `rtk conda run -n ms python -m pytest ...`, `rtk git diff`, `rtk log`, and similar checks.
 - If exact stdout or shell semantics matter, bypass RTK deliberately and say why.
