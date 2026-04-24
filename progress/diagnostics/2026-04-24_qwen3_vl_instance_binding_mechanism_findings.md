@@ -1,7 +1,7 @@
 ---
-title: Qwen3-VL Instance Binding Mechanism Temporary Conclusion
+title: Qwen3-VL Instance Binding Mechanism Findings
 date: 2026-04-24
-status: temporary-diagnostic
+status: canonical-mechanism-summary
 owner: codex
 depends_on:
   - output/analysis/qwen3-vl-instance-binding-mechanism-20260424/report/report.md
@@ -15,14 +15,13 @@ depends_on:
   - output/analysis/qwen3-vl-instance-binding-core-diagnosis-20260424/core_diagnosis/summary.json
 ---
 
-# Qwen3-VL Instance Binding Mechanism Temporary Conclusion
+# Qwen3-VL Instance Binding Mechanism Findings
 
 ## Why This Note Exists
 
-This is a local temporary progress note for the fixed-checkpoint Qwen3-VL
-instance-binding mechanism study. It preserves the first-pass conclusion and
-sets up the next diagnosis loop before the result is promoted to a canonical
-progress finding.
+This is the canonical progress note for the fixed-checkpoint Qwen3-VL
+instance-binding mechanism study. It preserves the first-pass evidence loop,
+the core-diagnosis addendum, and the final closure decision.
 
 The note is intentionally not a benchmark record. It is a mechanism diagnosis
 for one fixed CoordExp checkpoint:
@@ -33,15 +32,21 @@ Primary artifact root:
 
 `/data/CoordExp/output/analysis/qwen3-vl-instance-binding-mechanism-20260424`
 
-Implementation worktree:
+Implementation worktree used for the study:
 
 `/data/CoordExp/.worktrees/qwen3-vl-instance-binding`
 
+Closure state:
+
+- promoted to `main`
+- worktree/branch can be removed after merge verification
+- no broader benchmark claim is made here
+
 ## Current Decision
 
-First-pass conclusion:
+Final closure conclusion:
 
-`converged_first_pass_mixed_soft_pre_x1_coordinate_hardening`
+`converged_mixed_partial_pre_x1_binding_with_pre_coordinate_readout`
 
 The best-supported mechanism read is the mixed view:
 
@@ -49,7 +54,9 @@ The best-supported mechanism read is the mixed view:
 - pre-`x1` state is not strong enough to call the instance fully selected in
   difficult same-desc scenes
 - `x1/y1` remains the hard local coordinate-basin split
-- schema-context tokens are causally important, not inert JSON punctuation
+- late schema/pre-coordinate states act as a readout or carrier for partial
+  binding, but punctuation/schema tokens are not proven to be the original
+  storage site of instance identity
 
 This rejects the strongest H0 form, where there is no meaningful binding before
 `x1`. It also rejects the strongest H1 form, where a mostly selected instance is
@@ -146,16 +153,16 @@ first coordinate token then behaves like a local-basin commitment step: once
 `x1/y1` starts, the autoregressive state has much more information about which
 object it is continuing.
 
-Schema-context states are the most suspicious pre-`x1` mechanism site. They are
-not merely delimiters that help parse JSON. Under attenuation, they change
-target-vs-distractor margins much more than desc or previous-geometry spans.
-Under donor copying, they can shift mass toward a same-desc donor while
-non-schema spans remain nearly inert.
+Schema/pre-coordinate states are the most suspicious pre-`x1` mechanism site,
+but the core-diagnosis addendum makes the causal reading narrower than the
+first-pass result. Broad schema context is high-impact, yet the strongest
+localized site is the bracket / immediate-pre-`x1` slot. Desc-closing quote and
+field-delimiter states are nearly inert.
 
-The current evidence is still not enough to say whether schema-context states
-directly carry identity, or whether they are a routing/readout interface that
-pulls geometry-bearing information from broader residual state and visual
-context. That distinction is the next core diagnosis.
+The final read is therefore not "schema punctuation stores identity." The safer
+mechanism is that late schema/pre-coordinate residual states act as a readout or
+carrier for a partial same-desc instance preference, while `x1/y1` performs the
+hard coordinate-basin commitment.
 
 ## Core Diagnosis Addendum
 
@@ -234,144 +241,39 @@ does not prove they are where binding is first formed.
 
 ## Open Uncertainty
 
-Do not overclaim these results yet:
+Do not overclaim these results:
 
 - Donor activation patching can create out-of-distribution residual states.
-- The donor copy currently uses the highest competing same-desc candidate, so
-  it needs randomized-donor and wrong-image controls.
-- The schema-context span is still broad; it includes tokens between desc end
-  and pre-`x1`, not a fine-grained quote/key/bracket decomposition.
+- The core addendum fixed the most important donor-control gap, but wrong-image
+  disruption means schema/pre-coordinate effects remain control-sensitive.
 - The current rollout contrast is only `64` curated cases, not a broad eval.
 - The sparse controls verify that the machinery is sane, but the main
   conclusion is about difficult repeated-object scenes.
 
-## Next Diagnosis Plan
+## Closure Decision
 
-Goal:
+Close this fixed-checkpoint mechanism loop.
 
-Separate three possibilities inside the current mixed conclusion:
+The original research question has enough causal evidence for a decision-facing
+mechanism answer. Additional hidden-state patch variants would probably refine
+the language but are unlikely to change the conclusion for this checkpoint and
+curated subset.
 
-1. schema-context states directly carry intended instance identity
-2. schema-context states are a routing/readout site for geometry-bearing state
-3. schema-context donor effects are partly positional or serialization
-   disruption artifacts
+What would reopen the question:
 
-### Diagnosis 1: Randomized Donor Controls
+- A fresh same-desc subset shows a qualitatively different pre-`x1` versus
+  post-`x1` probe gap.
+- Another nearby checkpoint shows strong pre-`x1` binding without a coordinate
+  hardening jump.
+- Manual review finds that the current high-effect bracket/pre-`x1` patch rows
+  are dominated by candidate-label or visual-ambiguity artifacts.
+- A broader rollout-derived duplicate-collapse cohort contradicts the
+  same-desc hardening pattern.
 
-Run donor patching again on the same `56` donor-eligible cases with additional
-donor definitions:
+Recommended next loop, if needed, should be a generality check rather than
+another same-surface mechanism probe:
 
-- `same_image_best_competitor`: current donor policy
-- `same_image_random_same_desc`: random same-desc non-target donor
-- `wrong_image_same_desc`: same desc from another image
-- `wrong_image_any_desc`: position-matched object from another image
-- `self_noop`: target span copied into itself
-
-Primary metrics:
-
-- donor mass delta
-- target mass delta
-- changed-to-donor rate
-- patched top-is-donor rate
-- coordinate-distribution KL from baseline
-
-Decision read:
-
-- If only same-image same-desc donors transfer, schema-context states are likely
-  image-grounded and identity-relevant.
-- If wrong-image donors transfer similarly, the result may be positional or
-  serialization disruption rather than instance binding.
-- If self-noop changes margins, the patching mechanism is too intrusive and
-  must be repaired before interpretation.
-
-### Diagnosis 2: Fine-Grained Schema Localization
-
-Split `schema_context` into narrower roles:
-
-- desc closing quote
-- desc comma / field delimiter
-- `bbox_2d` key tokens
-- colon after key
-- opening bracket
-- immediate pre-`x1` token
-
-Run attenuation and donor copying over these spans, with the last several
-decoder layers separated instead of bundled.
-
-Decision read:
-
-- A narrow high-effect bracket or pre-`x1` site supports a coordinate-basin
-  readout mechanism.
-- A broader effect across quote/key/bracket supports schema-context routing.
-- A desc-closing-only effect would suggest identity is already being packed
-  immediately after semantic description.
-
-### Diagnosis 3: Layer-Wise Causal Boundary
-
-Repeat donor patching for the implicated schema spans across late-layer bands:
-
-- early/middle sanity anchors
-- layer `-8` through final layer
-- final two layers separately
-
-Primary metrics:
-
-- first layer where donor mass delta becomes non-trivial
-- first layer where changed-to-donor events appear
-- alignment with probe-layer onset
-
-Decision read:
-
-- If causal donor transfer appears only in very late layers, late language
-  layers are probably reading out/routing a partially bound instance.
-- If it appears earlier and grows smoothly, identity may be represented before
-  the final coordinate readout path.
-
-### Diagnosis 4: Coordinate-Basin Chain
-
-Measure not only pre-`x1` effects but also the immediate chain:
-
-- pre-`x1` distribution
-- post-`x1` distribution over `y1`
-- post-`y1` distribution over `x2`
-- whether donor/schema patching changes the local basin after the first
-  coordinate is fixed
-
-Decision read:
-
-- If schema patching changes pre-`x1` but `x1` still dominates downstream
-  recovery, the boundary remains coordinate-first.
-- If schema patching flips the whole box trajectory before any coordinate is
-  emitted, schema-context binding is stronger than the current mixed read.
-
-### Diagnosis 5: Wider Same-Desc Rollout Split
-
-After the causal controls, widen only the rollout-derived contrast, not a full
-benchmark sweep:
-
-- target `128..192` repeated/same-desc object sites
-- preserve sparse controls
-- keep generation batch size `8`
-- run 8 tmux shards
-- label healthy, duplicate-collapse-like, near-duplicate-like, and wrong-desc
-  cases as before
-
-Decision read:
-
-- If the good/bad contrast and donor/schema effects stay stable, promote this
-  note to a canonical diagnostic.
-- If the effect collapses under randomized controls or wider rollout, keep this
-  as a first-pass artifact and revise the mechanism conclusion.
-
-## Immediate Implementation Recommendation
-
-Implement Diagnosis 1 and Diagnosis 2 first. They are the cheapest and most
-decisive:
-
-1. Add donor-policy support to the donor-patching stage.
-2. Add fine-grained schema span extraction.
-3. Run both over the existing `56` donor-eligible cases on 8 GPUs.
-4. Merge into a new artifact root:
-   `/data/CoordExp/output/analysis/qwen3-vl-instance-binding-core-diagnosis-20260424`
-5. Update this progress note or replace it with a canonical diagnostic only
-   after the randomized controls are interpreted.
+- fresh hard-case subset or manually audited duplicate-collapse cohort
+- same minimal probe/patch metrics
+- no new benchmark sweep unless the goal changes from mechanism diagnosis to
+  checkpoint evaluation
