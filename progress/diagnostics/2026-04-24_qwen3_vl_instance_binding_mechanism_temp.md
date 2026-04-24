@@ -11,6 +11,8 @@ depends_on:
   - output/analysis/qwen3-vl-instance-binding-mechanism-20260424/merge_patching/summary.json
   - output/analysis/qwen3-vl-instance-binding-mechanism-20260424/donor_patching/summary.json
   - output/analysis/qwen3-vl-instance-binding-mechanism-20260424/rollout_failure_split/summary.json
+  - output/analysis/qwen3-vl-instance-binding-core-diagnosis-20260424/core_diagnosis/report.md
+  - output/analysis/qwen3-vl-instance-binding-core-diagnosis-20260424/core_diagnosis/summary.json
 ---
 
 # Qwen3-VL Instance Binding Mechanism Temporary Conclusion
@@ -154,6 +156,81 @@ The current evidence is still not enough to say whether schema-context states
 directly carry identity, or whether they are a routing/readout interface that
 pulls geometry-bearing information from broader residual state and visual
 context. That distinction is the next core diagnosis.
+
+## Core Diagnosis Addendum
+
+Artifact root:
+
+`/data/CoordExp/output/analysis/qwen3-vl-instance-binding-core-diagnosis-20260424`
+
+Executed addendum:
+
+- `5040` hidden-state patch rows over the same `56` donor-eligible repeated
+  object sites
+- `98` previous-geometry token-edit rows
+- donor policies: same-image best competitor, same-image random same-desc,
+  wrong-image same-desc, wrong-image any-desc, and self-noop
+- spans: broad schema context, desc closing quote, field delimiter, `bbox_2d`
+  key/colon/bracket vicinity, immediate pre-`x1`, current desc, and previous
+  `x1/y1`
+
+Chance-normalized probe context:
+
+- pre-`x1`: top1 `0.421875`, mean chance `0.259943`, lift `+0.161932`
+- post-`x1`: top1 `0.593750`, mean chance `0.259943`, lift `+0.333807`
+
+Carrier-vs-cause controls:
+
+- same-image best-competitor schema donor delta: `+0.028810`
+- same-image random same-desc schema donor delta: `+0.020564`
+- same-image best-competitor bbox-open-bracket donor delta: `+0.051062`
+- wrong-image same-desc schema target delta: `-0.052666`
+- wrong-image any-desc schema target delta: `-0.054127`
+- wrong-image same-desc bbox-open-bracket target delta: `-0.114017`
+- self-noop schema KL: `0.0`
+
+Fine-grained localization:
+
+- `bbox_open_bracket` and `immediate_pre_x1` are equivalent under the current
+  token inventory, so treat them as one site rather than two independent
+  confirmations.
+- bracket / immediate pre-`x1` is the strongest causal carrier:
+  aggregate donor delta `+0.044136`, target delta `-0.088192`, KL `1.255485`.
+- broad `schema_context` is still high-impact but weaker:
+  aggregate donor delta `+0.010846`, target delta `-0.034504`, KL `0.467019`.
+- desc closing quote and field delimiter are nearly inert:
+  desc-closing KL `0.000071`, field-delimiter KL `0.000065`, and zero
+  flip-to-donor rate.
+- previous `x1/y1` hidden-state patch is also near zero:
+  aggregate donor delta `+0.000019`, target delta `+0.000279`, KL `0.000154`.
+
+Token-content edit vs hidden-state patch:
+
+- previous `x1/y1` hidden-state patch donor delta: `+0.000005`
+- previous `x1/y1` token edit to competitor source delta: `-0.017340`
+- previous `x1/y1` token edit target delta: `-0.031328`
+- token edit top-candidate flip rate: `0.591837`
+- token edit flip-to-source rate: `0.020408`
+
+Updated decision:
+
+The comment's proposed extension was worth doing, and it makes the conclusion
+more conservative. Weak/partial pre-`x1` binding still exists, and late
+schema-adjacent states can carry that partial binding. But the strongest causal
+site is the bracket / immediate-pre-`x1` slot, not desc-ending punctuation or
+field delimiters. Same-image same-desc donors can transfer mass toward another
+candidate, but wrong-image replacements at the same syntax sites also strongly
+disrupt the target distribution. So the safest mechanism read is:
+
+`partial pre-x1 binding exists; late schema/pre-coordinate states act as a
+readout or carrier for that partial binding; x1/y1 remains the main hard
+commitment step; punctuation/schema tokens should not yet be called the original
+storage site of instance identity.`
+
+This supersedes the stronger wording above that schema-context tokens are
+"causally important, not inert JSON punctuation" only if read as an origin
+claim. They are causally important as late readout/carrier sites; the addendum
+does not prove they are where binding is first formed.
 
 ## Open Uncertainty
 

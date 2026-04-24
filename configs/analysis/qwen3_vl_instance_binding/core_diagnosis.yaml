@@ -1,0 +1,73 @@
+run:
+  artifact_root: /data/CoordExp/output/analysis/qwen3-vl-instance-binding-core-diagnosis-20260424
+
+model:
+  checkpoint: /data/CoordExp/output_remote/stage1_2b/coco_bbox_max60-hard_ce_soft_ce_w1_gate/epoch_4-from-base-2B/v0-20260227-050057/checkpoint-1332-merged-full
+  prompt_variant: coco_80
+  object_field_order: desc_first
+
+data:
+  dataset_jsonls:
+    - /data/CoordExp/public_data/coco/rescale_32_1024_bbox_max60/val.coord.jsonl
+    - /data/CoordExp/public_data/coco/rescale_32_1024_bbox_max60_lvis_proxy/val.coord.jsonl
+
+execution:
+  gpu_ids: [0, 1, 2, 3, 4, 5, 6, 7]
+  shard_count: 8
+  per_gpu_generation_batch_size: 8
+  per_gpu_teacher_forced_batch_size: 8
+  teacher_forced_attn_implementation: auto
+
+case_selection:
+  priority_descs: [book, person, chair, baseball bat, bowl, sheep]
+  max_cases: 64
+  min_same_desc_candidates: 2
+  include_sparse_controls: true
+  max_sparse_controls: 8
+
+multimodality:
+  coordinate_slots: [x1, x2]
+  neighbor_radius: 3
+  top_k: 12
+
+patching:
+  spans: [current_desc, schema_context, previous_geometry, previous_x1_y1]
+  model_layers: [24, 25, 26, 27]
+  attenuation_scale: 0.0
+  max_cases: 64
+
+core_diagnosis:
+  baseline_artifact_root: /data/CoordExp/output/analysis/qwen3-vl-instance-binding-mechanism-20260424
+  donor_policies:
+    - same_image_best_competitor
+    - same_image_random_same_desc
+    - wrong_image_same_desc
+    - wrong_image_any_desc
+    - self_noop
+  spans:
+    - schema_context
+    - current_desc
+    - previous_x1_y1
+    - desc_closing_quote
+    - field_delimiter
+    - bbox_key_region
+    - bbox_colon_region
+    - bbox_open_bracket
+    - immediate_pre_x1
+  layer_sets:
+    late: [24, 25, 26, 27]
+    final_pair: [-2, -1]
+  token_edit_policies:
+    - previous_x1_y1_to_best_competitor
+    - previous_x1_y1_to_target
+  max_cases: 64
+  seed: 42
+
+rollout:
+  max_cases: 64
+  temperature: 0.0
+  top_p: 0.9
+  max_new_tokens: 1536
+  repetition_penalty: 1.05
+  batch_size: 8
+  seed: 42

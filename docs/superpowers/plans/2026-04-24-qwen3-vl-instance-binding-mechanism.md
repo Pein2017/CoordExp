@@ -44,6 +44,34 @@ Remaining highest-value controls:
 - wrong-image schema-context controls
 - a wider same-desc rollout split if the conclusion will be promoted to a durable diagnostic note
 
+Core diagnosis update:
+
+- Follow-up artifact root:
+  `/data/CoordExp/output/analysis/qwen3-vl-instance-binding-core-diagnosis-20260424`
+- The randomized-donor, wrong-image, self-noop, fine-grained schema, and
+  previous-geometry token-edit controls have now been implemented and run on 8
+  tmux/GPU shards.
+- Merged output: `5040` patch rows and `98` token-edit rows.
+- Updated conclusion:
+  `schema_context_effect_present_but_control_sensitive`.
+
+Decision summary after the addendum:
+
+- The `0.422 / 0.594` probe result should be reported with chance-normalized
+  lift: pre-`x1` `+0.162`, post-`x1` `+0.334`.
+- Same-image schema donor transfer exists, including random same-desc donors,
+  but wrong-image same-syntax replacements also strongly disrupt target mass.
+- The strongest site is bracket / immediate-pre-`x1`, not desc-closing quote or
+  field delimiter; in the current inventory bracket and immediate-pre-`x1` are
+  equivalent.
+- Previous `x1/y1` hidden-state patching remains near zero, while token-content
+  edits perturb the distribution broadly and do not reliably flip to the edited
+  source.
+- The refined mechanism read is partial pre-`x1` binding carried or read out by
+  late schema/pre-coordinate state, with `x1/y1` still the hard commitment
+  boundary. Do not claim schema punctuation is the original binding storage
+  site.
+
 ---
 
 ## Scope

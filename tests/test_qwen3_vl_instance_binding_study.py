@@ -11,6 +11,10 @@ from src.analysis.qwen3_vl_instance_binding import (
     CaseSelectionConfig,
     RuntimePathConfig,
     _best_other_candidate_from_alignment,
+    _fine_schema_relative_spans_from_inventory,
+    _select_core_donor_spec,
+    _stage_shard_jsonl_paths,
+    _summarize_core_diagnosis_rows,
     _summarize_donor_patching_rows,
     audit_checkpoint_surface,
     candidate_alignment_from_distribution,
@@ -918,3 +922,171 @@ def test_summarize_donor_patching_rows_reports_span_effects() -> None:
     assert schema["flip_to_donor_rate"] == pytest.approx(0.5)
     assert schema["patched_top_is_donor_rate"] == pytest.approx(1.0)
     assert schema["mean_num_position_pairs"] == pytest.approx(4.0)
+
+
+def test_fine_schema_relative_spans_from_inventory_splits_transition() -> None:
+    spans = _fine_schema_relative_spans_from_inventory(
+        {
+            "roles": {
+                "desc_end": 10,
+                "desc_closing_quote": 11,
+                "field_delimiter": 12,
+                "bbox_key": 15,
+                "bbox_open_bracket": 18,
+                "pre_x1": 18,
+            }
+        }
+    )
+
+    assert spans["schema_context"] == [11, 12, 13, 14, 15, 16, 17]
+    assert spans["desc_closing_quote"] == [11]
+    assert spans["field_delimiter"] == [12]
+    assert spans["bbox_key_region"] == [15, 16]
+    assert spans["bbox_colon_region"] == [17]
+    assert spans["bbox_open_bracket"] == [18]
+    assert spans["immediate_pre_x1"] == [18]
+
+
+def test_select_core_donor_spec_covers_control_policies() -> None:
+    objects = [
+        {"desc": "book", "bbox_2d": ["<|coord_1|>"] * 4},
+        {"desc": "book", "bbox_2d": ["<|coord_2|>"] * 4},
+        {"desc": "book", "bbox_2d": ["<|coord_3|>"] * 4},
+    ]
+    case = {
+        "case_id": "case-0",
+        "image_id": "image-0",
+        "desc": "book",
+        "target_object_index": 0,
+        "candidate_object_indices": [0, 1, 2],
+        "objects": objects,
+    }
+    same_desc_wrong_image = {
+        "case_id": "case-1",
+        "image_id": "image-1",
+        "desc": "book",
+        "target_object_index": 0,
+        "candidate_object_indices": [0],
+        "objects": [{"desc": "book", "bbox_2d": ["<|coord_4|>"] * 4}],
+    }
+    any_desc_wrong_image = {
+        "case_id": "case-2",
+        "image_id": "image-2",
+        "desc": "person",
+        "target_object_index": 0,
+        "candidate_object_indices": [0],
+        "objects": [{"desc": "person", "bbox_2d": ["<|coord_5|>"] * 4}],
+    }
+    alignment = {
+        "candidate_rows": [
+            {"label": "target", "object_index": 0, "neighborhood_mass": 0.4},
+            {"label": "candidate_1", "object_index": 1, "neighborhood_mass": 0.5},
+            {"label": "candidate_2", "object_index": 2, "neighborhood_mass": 0.9},
+        ]
+    }
+    all_cases = [case, same_desc_wrong_image, any_desc_wrong_image]
+
+    best = _select_core_donor_spec(
+        policy="same_image_best_competitor",
+        case=case,
+        all_cases=all_cases,
+        baseline_alignment=alignment,
+        seed=7,
+    )
+    self_noop = _select_core_donor_spec(
+        policy="self_noop",
+        case=case,
+        all_cases=all_cases,
+        baseline_alignment=alignment,
+        seed=7,
+    )
+    wrong_same = _select_core_donor_spec(
+        policy="wrong_image_same_desc",
+        case=case,
+        all_cases=all_cases,
+        baseline_alignment=alignment,
+        seed=7,
+    )
+    wrong_any = _select_core_donor_spec(
+        policy="wrong_image_any_desc",
+        case=case,
+        all_cases=[case, any_desc_wrong_image],
+        baseline_alignment=alignment,
+        seed=7,
+    )
+
+    assert best is not None
+    assert best["donor_case_id"] == "case-0"
+    assert best["donor_object_index"] == 2
+    assert best["donor_label"] == "candidate_2"
+    assert best["donor_in_target_candidates"] is True
+    assert self_noop is not None
+    assert self_noop["donor_label"] == "target"
+    assert wrong_same is not None
+    assert wrong_same["donor_case_id"] == "case-1"
+    assert wrong_same["donor_in_target_candidates"] is False
+    assert wrong_any is not None
+    assert wrong_any["donor_case_id"] == "case-2"
+    assert wrong_any["donor_object_index"] == 0
+
+
+def test_summarize_core_diagnosis_rows_ignores_missing_donor_delta() -> None:
+    summary = _summarize_core_diagnosis_rows(
+        [
+            {
+                "donor_policy": "same_image_best_competitor",
+                "span": "bbox_open_bracket",
+                "layer_set": "late",
+                "target_mass_delta": -0.10,
+                "donor_mass_delta": 0.05,
+                "coord_kl_from_baseline": 0.20,
+                "top_candidate_flipped_to_donor": True,
+            },
+            {
+                "donor_policy": "same_image_best_competitor",
+                "span": "bbox_open_bracket",
+                "layer_set": "late",
+                "target_mass_delta": -0.20,
+                "donor_mass_delta": 0.01,
+                "coord_kl_from_baseline": 0.10,
+                "top_candidate_flipped_to_donor": False,
+            },
+            {
+                "donor_policy": "wrong_image_same_desc",
+                "span": "bbox_open_bracket",
+                "layer_set": "late",
+                "target_mass_delta": -0.30,
+                "donor_mass_delta": None,
+                "coord_kl_from_baseline": 0.50,
+                "top_candidate_flipped_to_donor": False,
+            },
+        ]
+    )
+
+    same = summary["policy_span_layer_summaries"][
+        "same_image_best_competitor|bbox_open_bracket|late"
+    ]
+    wrong = summary["policy_span_layer_summaries"][
+        "wrong_image_same_desc|bbox_open_bracket|late"
+    ]
+    assert same["num_rows"] == 2
+    assert same["mean_target_mass_delta"] == pytest.approx(-0.15)
+    assert same["mean_donor_mass_delta"] == pytest.approx(0.03)
+    assert same["flip_to_donor_rate"] == pytest.approx(0.5)
+    assert same["mean_coord_kl_from_baseline"] == pytest.approx(0.15)
+    assert wrong["num_rows"] == 1
+    assert wrong["mean_donor_mass_delta"] is None
+    assert wrong["mean_target_mass_delta"] == pytest.approx(-0.30)
+
+
+def test_stage_shard_jsonl_paths_exclude_prior_merged_outputs(tmp_path: Path) -> None:
+    stage_dir = tmp_path / "core_diagnosis"
+    stage_dir.mkdir()
+    shard = stage_dir / "core_patch_results_shard_000-of-008.jsonl"
+    merged = stage_dir / "core_patch_results_merged.jsonl"
+    token_edit = stage_dir / "core_token_edit_results_shard_000-of-008.jsonl"
+    shard.write_text("{}", encoding="utf-8")
+    merged.write_text("{}", encoding="utf-8")
+    token_edit.write_text("{}", encoding="utf-8")
+
+    assert _stage_shard_jsonl_paths(stage_dir, "core_patch_results") == [shard]

@@ -72,6 +72,35 @@ Open uncertainty:
 - The next highest-value controls are randomized-donor patching, wrong-image
   schema-context controls, and a larger same-desc rollout split.
 
+Core diagnosis addendum:
+
+- Artifact root:
+  `/data/CoordExp/output/analysis/qwen3-vl-instance-binding-core-diagnosis-20260424/`
+- The addendum executed the randomized-donor and fine-grained schema controls
+  on the same `56` donor-eligible repeated-object cases.
+- Chance-normalized probe context clarifies the first-pass `0.422 / 0.594`
+  result: pre-`x1` lift over per-case chance is `+0.162`; post-`x1` lift is
+  `+0.334`.
+- Same-image schema donor transfer is present for both best-competitor and
+  random same-desc donors, but wrong-image same-syntax replacements also cause
+  large target distribution disruption.
+- The strongest causal carrier is the bracket / immediate-pre-`x1` slot; under
+  the current token inventory those two names refer to the same effective site.
+- Desc-closing quote and field-delimiter controls are nearly inert, so the
+  current evidence should not be framed as punctuation being the origin of
+  binding.
+- Previous `x1/y1` hidden-state patching is near zero, while previous-geometry
+  token-content edits perturb the distribution broadly without flipping to the
+  edited source often. This favors "token content can reshape downstream
+  encoding" over "previous geometry hidden states directly store the binding."
+
+Refined conclusion after the addendum:
+
+`partial pre-x1 binding exists; late schema/pre-coordinate states act as a
+readout or carrier for that partial binding; x1/y1 remains the main hard
+commitment step; punctuation/schema tokens should not yet be called the original
+storage site of instance identity.`
+
 ## Starting Thesis
 
 Prior CoordExp diagnostic notes already make the x1/y1 coordinate-basin story

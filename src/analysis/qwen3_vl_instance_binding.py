@@ -11,6 +11,7 @@ from __future__ import annotations
 import json
 import math
 import subprocess
+import hashlib
 from collections import Counter, defaultdict
 from dataclasses import dataclass
 from glob import glob
@@ -111,6 +112,41 @@ class PatchingConfig:
 
 
 @dataclass(frozen=True)
+class CoreDiagnosisConfig:
+    donor_policies: tuple[str, ...] = (
+        "same_image_best_competitor",
+        "same_image_random_same_desc",
+        "wrong_image_same_desc",
+        "wrong_image_any_desc",
+        "self_noop",
+    )
+    spans: tuple[str, ...] = (
+        "schema_context",
+        "current_desc",
+        "previous_x1_y1",
+        "desc_closing_quote",
+        "field_delimiter",
+        "bbox_key_region",
+        "bbox_colon_region",
+        "bbox_open_bracket",
+        "immediate_pre_x1",
+    )
+    layer_sets: tuple[tuple[str, tuple[int, ...]], ...] = (
+        ("late", (24, 25, 26, 27)),
+        ("final_pair", (-2, -1)),
+    )
+    max_cases: int = 64
+    seed: int = 42
+    token_edit_policies: tuple[str, ...] = (
+        "previous_x1_y1_to_best_competitor",
+        "previous_x1_y1_to_target",
+    )
+    baseline_artifact_root: str = (
+        "/data/CoordExp/output/analysis/qwen3-vl-instance-binding-mechanism-20260424"
+    )
+
+
+@dataclass(frozen=True)
 class RolloutConfig:
     max_cases: int = 64
     temperature: float = 0.0
@@ -129,6 +165,7 @@ class StudyConfig:
     case_selection: CaseSelectionConfig
     multimodality: MultimodalityConfig
     patching: PatchingConfig
+    core_diagnosis: CoreDiagnosisConfig
     rollout: RolloutConfig
 
 
@@ -366,6 +403,17 @@ def _write_resolved_config(config: StudyConfig) -> None:
             "model_layers": list(config.patching.model_layers),
             "attenuation_scale": config.patching.attenuation_scale,
             "max_cases": config.patching.max_cases,
+        },
+        "core_diagnosis": {
+            "donor_policies": list(config.core_diagnosis.donor_policies),
+            "spans": list(config.core_diagnosis.spans),
+            "layer_sets": {
+                name: list(layers) for name, layers in config.core_diagnosis.layer_sets
+            },
+            "max_cases": config.core_diagnosis.max_cases,
+            "seed": config.core_diagnosis.seed,
+            "token_edit_policies": list(config.core_diagnosis.token_edit_policies),
+            "baseline_artifact_root": config.core_diagnosis.baseline_artifact_root,
         },
         "rollout": {
             "max_cases": config.rollout.max_cases,
@@ -763,6 +811,24 @@ def _as_tuple_strs(value: Any, *, default: tuple[str, ...]) -> tuple[str, ...]:
     return tuple(str(item) for item in value)
 
 
+def _as_layer_sets(
+    value: Any, *, default: tuple[tuple[str, tuple[int, ...]], ...]
+) -> tuple[tuple[str, tuple[int, ...]], ...]:
+    if value is None:
+        return default
+    if not isinstance(value, Mapping):
+        raise TypeError("expected layer_sets to be a mapping")
+    layer_sets: list[tuple[str, tuple[int, ...]]] = []
+    for name, raw_layers in value.items():
+        layer_sets.append(
+            (
+                str(name),
+                _as_tuple_ints(raw_layers, default=()),
+            )
+        )
+    return tuple(layer_sets)
+
+
 def load_study_config(config_path: Path) -> StudyConfig:
     config_path = config_path.resolve()
     raw = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
@@ -777,6 +843,7 @@ def load_study_config(config_path: Path) -> StudyConfig:
     case_raw = raw.get("case_selection") or {}
     multimodality_raw = raw.get("multimodality") or {}
     patching_raw = raw.get("patching") or {}
+    core_raw = raw.get("core_diagnosis") or {}
     rollout_raw = raw.get("rollout") or {}
     if not all(
         isinstance(item, Mapping)
@@ -788,12 +855,13 @@ def load_study_config(config_path: Path) -> StudyConfig:
             case_raw,
             multimodality_raw,
             patching_raw,
+            core_raw,
             rollout_raw,
         )
     ):
         raise TypeError(
-            "run/model/data/execution/case_selection/multimodality/patching/rollout "
-            "must be mappings"
+            "run/model/data/execution/case_selection/multimodality/patching/"
+            "core_diagnosis/rollout must be mappings"
         )
     paths = resolve_runtime_paths(
         RuntimePathConfig(
@@ -849,6 +917,30 @@ def load_study_config(config_path: Path) -> StudyConfig:
         attenuation_scale=float(patching_raw.get("attenuation_scale", 0.0)),
         max_cases=int(patching_raw.get("max_cases", 64)),
     )
+    core_diagnosis = CoreDiagnosisConfig(
+        donor_policies=_as_tuple_strs(
+            core_raw.get("donor_policies"),
+            default=CoreDiagnosisConfig().donor_policies,
+        ),
+        spans=_as_tuple_strs(
+            core_raw.get("spans"),
+            default=CoreDiagnosisConfig().spans,
+        ),
+        layer_sets=_as_layer_sets(
+            core_raw.get("layer_sets"),
+            default=CoreDiagnosisConfig().layer_sets,
+        ),
+        max_cases=int(core_raw.get("max_cases", 64)),
+        seed=int(core_raw.get("seed", 42)),
+        token_edit_policies=_as_tuple_strs(
+            core_raw.get("token_edit_policies"),
+            default=CoreDiagnosisConfig().token_edit_policies,
+        ),
+        baseline_artifact_root=str(
+            core_raw.get("baseline_artifact_root")
+            or CoreDiagnosisConfig().baseline_artifact_root
+        ),
+    )
     rollout = RolloutConfig(
         max_cases=int(rollout_raw.get("max_cases", 64)),
         temperature=float(rollout_raw.get("temperature", 0.0)),
@@ -865,6 +957,7 @@ def load_study_config(config_path: Path) -> StudyConfig:
         case_selection=case_selection,
         multimodality=multimodality,
         patching=patching,
+        core_diagnosis=core_diagnosis,
         rollout=rollout,
     )
 
@@ -1339,6 +1432,13 @@ def _read_jsonl_globs(patterns: Sequence[str]) -> list[dict[str, Any]]:
             seen_paths.add(resolved)
             rows.extend(_read_jsonl_rows(path))
     return rows
+
+
+def _stage_shard_jsonl_paths(stage_dir: Path, stem: str) -> list[Path]:
+    merged_name = f"{stem}_merged.jsonl"
+    return sorted(
+        path for path in stage_dir.glob(f"{stem}_*.jsonl") if path.name != merged_name
+    )
 
 
 def _summarize_multimodality_rows(rows: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
@@ -2253,6 +2353,77 @@ def _register_token_copy_hooks(
     return hooks
 
 
+def _register_cross_example_copy_hooks(
+    *,
+    model: Any,
+    token_position_pairs: Sequence[tuple[int, int, int, int]],
+    model_layers: Sequence[int],
+) -> list[Any]:
+    import torch
+
+    pairs = [
+        (
+            int(recipient_batch),
+            int(recipient_pos),
+            int(donor_batch),
+            int(donor_pos),
+        )
+        for recipient_batch, recipient_pos, donor_batch, donor_pos in token_position_pairs
+        if int(recipient_batch) >= 0
+        and int(recipient_pos) >= 0
+        and int(donor_batch) >= 0
+        and int(donor_pos) >= 0
+    ]
+    if not pairs:
+        return []
+    decoder_layers = _decoder_layers(model)
+    if not decoder_layers:
+        return []
+    hooks: list[Any] = []
+
+    def _pre_hook(
+        _module: torch.nn.Module,
+        args: tuple[Any, ...],
+        kwargs: Mapping[str, Any],
+    ) -> tuple[tuple[Any, ...], dict[str, Any]] | None:
+        if not args:
+            return None
+        hidden_states = args[0]
+        if not isinstance(hidden_states, torch.Tensor):
+            return None
+        batch_size = int(hidden_states.shape[0])
+        seq_len = int(hidden_states.shape[1])
+        active_pairs = [
+            (recipient_batch, recipient_pos, donor_batch, donor_pos)
+            for recipient_batch, recipient_pos, donor_batch, donor_pos in pairs
+            if recipient_batch < batch_size
+            and donor_batch < batch_size
+            and recipient_pos < seq_len
+            and donor_pos < seq_len
+        ]
+        if not active_pairs:
+            return None
+        modified = hidden_states.clone()
+        original = hidden_states
+        for recipient_batch, recipient_pos, donor_batch, donor_pos in active_pairs:
+            modified[recipient_batch, recipient_pos, :] = original[
+                donor_batch, donor_pos, :
+            ]
+        return (modified, *args[1:]), dict(kwargs)
+
+    for raw_layer in model_layers:
+        layer_idx = int(raw_layer)
+        if layer_idx < 0:
+            layer_idx = len(decoder_layers) + layer_idx
+        if 0 <= layer_idx < len(decoder_layers):
+            hooks.append(
+                decoder_layers[layer_idx].register_forward_pre_hook(
+                    _pre_hook, with_kwargs=True
+                )
+            )
+    return hooks
+
+
 def _candidate_margin_from_alignment(alignment: Mapping[str, Any]) -> dict[str, Any]:
     candidate_rows = alignment.get("candidate_rows") or []
     if not isinstance(candidate_rows, Sequence) or isinstance(
@@ -2340,6 +2511,305 @@ def _best_other_candidate_from_alignment(
     return best
 
 
+def _fine_schema_relative_spans_from_inventory(
+    inventory: Mapping[str, Any],
+) -> dict[str, list[int]]:
+    roles = dict(inventory.get("roles") or {})
+    desc_end = int(roles.get("desc_end", -1))
+    desc_closing_quote = int(roles.get("desc_closing_quote", -1))
+    field_delimiter = int(roles.get("field_delimiter", -1))
+    bbox_key = int(roles.get("bbox_key", -1))
+    bbox_open_bracket = int(roles.get("bbox_open_bracket", -1))
+    pre_x1 = int(roles.get("pre_x1", -1))
+    schema_context = (
+        list(range(desc_end + 1, pre_x1))
+        if desc_end >= 0 and pre_x1 > desc_end + 1
+        else []
+    )
+    key_stop = max(bbox_key, bbox_open_bracket - 1)
+    return {
+        "schema_context": schema_context,
+        "desc_closing_quote": [desc_closing_quote] if desc_closing_quote >= 0 else [],
+        "field_delimiter": [field_delimiter] if field_delimiter >= 0 else [],
+        "bbox_key_region": (
+            list(range(bbox_key, key_stop))
+            if bbox_key >= 0 and key_stop > bbox_key
+            else []
+        ),
+        "bbox_colon_region": ([bbox_open_bracket - 1] if bbox_open_bracket > 0 else []),
+        "bbox_open_bracket": [bbox_open_bracket] if bbox_open_bracket >= 0 else [],
+        "immediate_pre_x1": [pre_x1] if pre_x1 >= 0 else [],
+    }
+
+
+def _stable_index(parts: Sequence[Any], modulo: int) -> int:
+    if modulo <= 0:
+        return 0
+    digest = hashlib.sha256(
+        "||".join(str(part) for part in parts).encode("utf-8")
+    ).hexdigest()
+    return int(digest[:16], 16) % modulo
+
+
+def _object_has_coord_bbox(obj: Mapping[str, Any]) -> bool:
+    bbox = obj.get("bbox_2d")
+    return bool(
+        isinstance(bbox, Sequence)
+        and not isinstance(bbox, (str, bytes))
+        and len(bbox) == 4
+    )
+
+
+def _candidate_label_for_object(case: Mapping[str, Any], object_index: int) -> str:
+    if int(object_index) == int(case.get("target_object_index", -1)):
+        return "target"
+    return f"candidate_{int(object_index)}"
+
+
+def _select_core_donor_spec(
+    *,
+    policy: str,
+    case: Mapping[str, Any],
+    all_cases: Sequence[Mapping[str, Any]],
+    baseline_alignment: Mapping[str, Any],
+    seed: int,
+) -> dict[str, Any] | None:
+    objects_raw = case.get("objects") or []
+    if not isinstance(objects_raw, Sequence) or isinstance(objects_raw, (str, bytes)):
+        return None
+    objects = [obj for obj in objects_raw if isinstance(obj, Mapping)]
+    target_idx = int(case.get("target_object_index", -1))
+    case_id = str(case.get("case_id") or "")
+    target_desc = str(case.get("desc") or "")
+
+    if policy == "self_noop":
+        if 0 <= target_idx < len(objects):
+            return {
+                "donor_policy": policy,
+                "donor_case_id": case_id,
+                "donor_image_id": str(case.get("image_id") or ""),
+                "donor_object_index": target_idx,
+                "donor_label": "target",
+                "donor_in_target_candidates": True,
+                "donor_desc": str(objects[target_idx].get("desc") or target_desc),
+                "donor_case": case,
+            }
+        return None
+
+    if policy == "same_image_best_competitor":
+        donor = _best_other_candidate_from_alignment(baseline_alignment)
+        if donor is None:
+            return None
+        donor_object_index = int(donor["object_index"])
+        if donor_object_index < 0 or donor_object_index >= len(objects):
+            return None
+        return {
+            "donor_policy": policy,
+            "donor_case_id": case_id,
+            "donor_image_id": str(case.get("image_id") or ""),
+            "donor_object_index": donor_object_index,
+            "donor_label": str(donor["label"]),
+            "donor_in_target_candidates": True,
+            "donor_desc": str(objects[donor_object_index].get("desc") or ""),
+            "donor_case": case,
+        }
+
+    if policy == "same_image_random_same_desc":
+        donor_rows = [
+            row
+            for row in baseline_alignment.get("candidate_rows") or []
+            if isinstance(row, Mapping) and str(row.get("label") or "") != "target"
+        ]
+        if not donor_rows:
+            return None
+        donor_row = sorted(donor_rows, key=lambda row: str(row.get("label") or ""))[
+            _stable_index((seed, case_id, policy), len(donor_rows))
+        ]
+        donor = _best_other_candidate_from_alignment({"candidate_rows": [donor_row]})
+        if donor is None:
+            return None
+        donor_object_index = int(donor["object_index"])
+        if donor_object_index < 0 or donor_object_index >= len(objects):
+            return None
+        return {
+            "donor_policy": policy,
+            "donor_case_id": case_id,
+            "donor_image_id": str(case.get("image_id") or ""),
+            "donor_object_index": donor_object_index,
+            "donor_label": str(donor["label"]),
+            "donor_in_target_candidates": True,
+            "donor_desc": str(objects[donor_object_index].get("desc") or ""),
+            "donor_case": case,
+        }
+
+    if policy in {"wrong_image_same_desc", "wrong_image_any_desc"}:
+        donor_options: list[tuple[Mapping[str, Any], int]] = []
+        for other_case in all_cases:
+            if str(other_case.get("case_id") or "") == case_id:
+                continue
+            if str(other_case.get("image_id") or "") == str(case.get("image_id") or ""):
+                continue
+            other_objects_raw = other_case.get("objects") or []
+            if not isinstance(other_objects_raw, Sequence) or isinstance(
+                other_objects_raw, (str, bytes)
+            ):
+                continue
+            other_objects = [
+                obj for obj in other_objects_raw if isinstance(obj, Mapping)
+            ]
+            for object_index, obj in enumerate(other_objects):
+                if not _object_has_coord_bbox(obj):
+                    continue
+                if (
+                    policy == "wrong_image_same_desc"
+                    and str(obj.get("desc") or "") != target_desc
+                ):
+                    continue
+                donor_options.append((other_case, object_index))
+        if not donor_options:
+            return None
+        donor_case, donor_object_index = donor_options[
+            _stable_index((seed, case_id, policy), len(donor_options))
+        ]
+        donor_objects = donor_case.get("objects") or []
+        donor_obj = (
+            donor_objects[donor_object_index]
+            if isinstance(donor_objects, Sequence)
+            and not isinstance(donor_objects, (str, bytes))
+            and isinstance(donor_objects[donor_object_index], Mapping)
+            else {}
+        )
+        return {
+            "donor_policy": policy,
+            "donor_case_id": str(donor_case.get("case_id") or ""),
+            "donor_image_id": str(donor_case.get("image_id") or ""),
+            "donor_object_index": int(donor_object_index),
+            "donor_label": f"{policy}:{donor_case.get('case_id')}:{donor_object_index}",
+            "donor_in_target_candidates": False,
+            "donor_desc": str(donor_obj.get("desc") or ""),
+            "donor_case": donor_case,
+        }
+
+    raise ValueError(f"unknown core donor policy: {policy}")
+
+
+def _mean_optional(values: Iterable[Any]) -> float | None:
+    numeric = [
+        float(value)
+        for value in values
+        if value is not None and not isinstance(value, bool)
+    ]
+    if not numeric:
+        return None
+    return sum(numeric) / len(numeric)
+
+
+def _summarize_core_group(rows: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
+    count = len(rows)
+    if count == 0:
+        return {
+            "num_rows": 0,
+            "mean_target_mass_delta": None,
+            "mean_donor_mass_delta": None,
+            "mean_coord_kl_from_baseline": None,
+            "flip_to_donor_rate": 0.0,
+        }
+    return {
+        "num_rows": count,
+        "mean_target_mass_delta": _mean_optional(
+            row.get("target_mass_delta") for row in rows
+        ),
+        "mean_donor_mass_delta": _mean_optional(
+            row.get("donor_mass_delta") for row in rows
+        ),
+        "mean_coord_kl_from_baseline": _mean_optional(
+            row.get("coord_kl_from_baseline") for row in rows
+        ),
+        "flip_to_donor_rate": sum(
+            bool(row.get("top_candidate_flipped_to_donor")) for row in rows
+        )
+        / count,
+        "top_candidate_flip_rate": sum(
+            bool(row.get("top_candidate_flipped")) for row in rows
+        )
+        / count,
+    }
+
+
+def _summarize_core_diagnosis_rows(
+    rows: Sequence[Mapping[str, Any]],
+) -> dict[str, Any]:
+    policy_groups: dict[str, list[Mapping[str, Any]]] = defaultdict(list)
+    span_groups: dict[str, list[Mapping[str, Any]]] = defaultdict(list)
+    layer_groups: dict[str, list[Mapping[str, Any]]] = defaultdict(list)
+    policy_span_layer_groups: dict[str, list[Mapping[str, Any]]] = defaultdict(list)
+    for row in rows:
+        policy = str(row.get("donor_policy") or "")
+        span = str(row.get("span") or "")
+        layer_set = str(row.get("layer_set") or "")
+        policy_groups[policy].append(row)
+        span_groups[span].append(row)
+        layer_groups[layer_set].append(row)
+        policy_span_layer_groups[f"{policy}|{span}|{layer_set}"].append(row)
+    return {
+        "num_rows": len(rows),
+        "policy_summaries": {
+            key: _summarize_core_group(group)
+            for key, group in sorted(policy_groups.items())
+        },
+        "span_summaries": {
+            key: _summarize_core_group(group)
+            for key, group in sorted(span_groups.items())
+        },
+        "layer_set_summaries": {
+            key: _summarize_core_group(group)
+            for key, group in sorted(layer_groups.items())
+        },
+        "policy_span_layer_summaries": {
+            key: _summarize_core_group(group)
+            for key, group in sorted(policy_span_layer_groups.items())
+        },
+    }
+
+
+def _summarize_core_token_edit_rows(
+    rows: Sequence[Mapping[str, Any]],
+) -> dict[str, Any]:
+    edit_groups: dict[str, list[Mapping[str, Any]]] = defaultdict(list)
+    for row in rows:
+        edit_groups[str(row.get("edit_policy") or "")].append(row)
+    summaries: dict[str, Any] = {}
+    for edit_policy, group in sorted(edit_groups.items()):
+        count = len(group)
+        summaries[edit_policy] = {
+            "num_rows": count,
+            "mean_target_mass_delta": _mean_optional(
+                row.get("target_mass_delta") for row in group
+            ),
+            "mean_source_mass_delta": _mean_optional(
+                row.get("source_mass_delta") for row in group
+            ),
+            "mean_coord_kl_from_baseline": _mean_optional(
+                row.get("coord_kl_from_baseline") for row in group
+            ),
+            "top_candidate_flip_rate": (
+                sum(bool(row.get("top_candidate_flipped")) for row in group) / count
+                if count
+                else 0.0
+            ),
+            "flip_to_source_rate": (
+                sum(bool(row.get("top_candidate_flipped_to_source")) for row in group)
+                / count
+                if count
+                else 0.0
+            ),
+        }
+    return {
+        "num_rows": len(rows),
+        "edit_policy_summaries": summaries,
+    }
+
+
 def _relative_spans_for_object(
     *,
     tokenizer: Any,
@@ -2362,6 +2832,45 @@ def _relative_spans_for_object(
         target_object_index=int(object_index),
         target_inventory=inventory,
     )
+
+
+def _all_relative_spans_for_object(
+    *,
+    tokenizer: Any,
+    assistant_text: str,
+    objects: Sequence[Mapping[str, Any]],
+    object_index: int,
+) -> dict[str, list[int]]:
+    inventory = _target_position_inventory(
+        tokenizer=tokenizer,
+        assistant_text=assistant_text,
+        target_object=objects[int(object_index)],
+        desc_occurrence_index=_desc_occurrence_index(
+            objects, object_index=int(object_index)
+        ),
+    )
+    spans = _intervention_relative_spans(
+        tokenizer=tokenizer,
+        assistant_text=assistant_text,
+        objects=objects,
+        target_object_index=int(object_index),
+        target_inventory=inventory,
+    )
+    spans.update(_fine_schema_relative_spans_from_inventory(inventory))
+    return spans
+
+
+def _coord_kl_divergence(
+    baseline_probs: Mapping[int, float],
+    patched_probs: Mapping[int, float],
+) -> float:
+    eps = 1e-12
+    total = 0.0
+    for key, p_raw in baseline_probs.items():
+        p = max(float(p_raw), eps)
+        q = max(float(patched_probs.get(int(key), 0.0) or 0.0), eps)
+        total += p * math.log(p / q)
+    return float(total)
 
 
 def _run_single_case_x1_alignment(
@@ -2467,6 +2976,7 @@ def _run_single_case_x1_alignment(
             "alignment": alignment,
             "margin": _candidate_margin_from_alignment(alignment),
             "top_coord_bins": top_rows,
+            "coord_probs": full_probs,
             "assistant_start": int(assistant_start),
             "absolute_roles": absolute_roles,
             "relative_spans": _intervention_relative_spans(
@@ -2479,6 +2989,687 @@ def _run_single_case_x1_alignment(
         }
     finally:
         image.close()
+
+
+def _run_pair_case_x1_alignment(
+    *,
+    scorer: Any,
+    target_case: Mapping[str, Any],
+    donor_case: Mapping[str, Any],
+    donor_object_index: int,
+    span_name: str,
+    model_layers: Sequence[int],
+    config: StudyConfig,
+) -> dict[str, Any]:
+    import torch
+    from PIL import Image
+
+    from src.coord_tokens.codec import get_coord_token_ids
+
+    target_objects_raw = target_case.get("objects") or []
+    donor_objects_raw = donor_case.get("objects") or []
+    if not isinstance(target_objects_raw, Sequence) or isinstance(
+        target_objects_raw, (str, bytes)
+    ):
+        raise ValueError(f"case {target_case.get('case_id')} has invalid objects")
+    if not isinstance(donor_objects_raw, Sequence) or isinstance(
+        donor_objects_raw, (str, bytes)
+    ):
+        raise ValueError(f"case {donor_case.get('case_id')} has invalid objects")
+    target_objects = [obj for obj in target_objects_raw if isinstance(obj, Mapping)]
+    donor_objects = [obj for obj in donor_objects_raw if isinstance(obj, Mapping)]
+    target_idx = int(target_case.get("target_object_index", 0))
+    donor_idx = int(donor_object_index)
+    target_object = target_objects[target_idx]
+    target_assistant_text = _render_assistant_text(target_objects)
+    donor_assistant_text = _render_assistant_text(donor_objects)
+    target_inventory = _target_position_inventory(
+        tokenizer=scorer.tokenizer,
+        assistant_text=target_assistant_text,
+        target_object=target_object,
+        desc_occurrence_index=_desc_occurrence_index(
+            target_objects, object_index=target_idx
+        ),
+    )
+    donor_inventory = _target_position_inventory(
+        tokenizer=scorer.tokenizer,
+        assistant_text=donor_assistant_text,
+        target_object=donor_objects[donor_idx],
+        desc_occurrence_index=_desc_occurrence_index(
+            donor_objects, object_index=donor_idx
+        ),
+    )
+    target_spans = _all_relative_spans_for_object(
+        tokenizer=scorer.tokenizer,
+        assistant_text=target_assistant_text,
+        objects=target_objects,
+        object_index=target_idx,
+    )
+    donor_spans = _all_relative_spans_for_object(
+        tokenizer=scorer.tokenizer,
+        assistant_text=donor_assistant_text,
+        objects=donor_objects,
+        object_index=donor_idx,
+    )
+    target_image = Image.open(str(target_case["image_path"])).convert("RGB")
+    donor_image = Image.open(str(donor_case["image_path"])).convert("RGB")
+    try:
+        _, target_messages = scorer.build_messages(
+            image=target_image,
+            assistant_text=target_assistant_text,
+            prompt_variant="coco_80",
+            object_field_order="desc_first",
+        )
+        _, donor_messages = scorer.build_messages(
+            image=donor_image,
+            assistant_text=donor_assistant_text,
+            prompt_variant="coco_80",
+            object_field_order="desc_first",
+        )
+        target_full_text = scorer.processor.apply_chat_template(
+            target_messages,
+            tokenize=False,
+            add_generation_prompt=False,
+        )
+        donor_full_text = scorer.processor.apply_chat_template(
+            donor_messages,
+            tokenize=False,
+            add_generation_prompt=False,
+        )
+        model_inputs = scorer.processor(
+            text=[target_full_text, donor_full_text],
+            images=[target_image, donor_image],
+            return_tensors="pt",
+            padding=True,
+        )
+        model_inputs = {
+            key: value.to(scorer.device) if isinstance(value, torch.Tensor) else value
+            for key, value in model_inputs.items()
+        }
+        input_ids = model_inputs.get("input_ids")
+        if not isinstance(input_ids, torch.Tensor):
+            raise RuntimeError("core diagnosis forward missing input_ids")
+        target_full_ids = [int(v) for v in input_ids[0].detach().cpu().tolist()]
+        donor_full_ids = [int(v) for v in input_ids[1].detach().cpu().tolist()]
+        target_assistant_start = _find_subsequence(
+            target_full_ids,
+            target_inventory["assistant_ids"],
+            start_hint=max(
+                0,
+                len(target_full_ids) - len(target_inventory["assistant_ids"]) - 128,
+            ),
+        )
+        donor_assistant_start = _find_subsequence(
+            donor_full_ids,
+            donor_inventory["assistant_ids"],
+            start_hint=max(
+                0,
+                len(donor_full_ids) - len(donor_inventory["assistant_ids"]) - 128,
+            ),
+        )
+        if target_assistant_start is None or donor_assistant_start is None:
+            raise ValueError("assistant ids not found for core donor pair")
+        target_roles = {
+            role: int(target_assistant_start + rel_pos)
+            for role, rel_pos in dict(target_inventory["roles"]).items()
+        }
+        target_positions = [int(pos) for pos in target_spans.get(str(span_name), [])]
+        donor_positions = [int(pos) for pos in donor_spans.get(str(span_name), [])]
+        copy_pairs = [
+            (
+                0,
+                int(target_assistant_start + target_pos),
+                1,
+                int(donor_assistant_start + donor_pos),
+            )
+            for target_pos, donor_pos in zip(target_positions, donor_positions)
+        ]
+        hooks = _register_cross_example_copy_hooks(
+            model=scorer.model,
+            token_position_pairs=copy_pairs,
+            model_layers=model_layers,
+        )
+        try:
+            with torch.inference_mode():
+                outputs = scorer.model(**model_inputs, use_cache=False)
+        finally:
+            for hook in hooks:
+                hook.remove()
+        logits = getattr(outputs, "logits", None)
+        if not isinstance(logits, torch.Tensor):
+            raise RuntimeError("core diagnosis forward missing logits")
+        coord_token_ids = get_coord_token_ids(scorer.tokenizer, validate=True)
+        full_probs, top_rows = _top_coord_probs(
+            logits=logits[0, int(target_roles["pre_x1"])],
+            coord_token_ids=coord_token_ids,
+            top_k=config.multimodality.top_k,
+        )
+        alignment = candidate_alignment_from_distribution(
+            slot="x1",
+            probs=full_probs,
+            candidates=_candidate_rows_for_case(target_case),
+            target_label="target",
+            neighbor_radius=config.multimodality.neighbor_radius,
+        )
+        return {
+            "alignment": alignment,
+            "margin": _candidate_margin_from_alignment(alignment),
+            "top_coord_bins": top_rows,
+            "coord_probs": full_probs,
+            "num_position_pairs": len(copy_pairs),
+        }
+    finally:
+        target_image.close()
+        donor_image.close()
+
+
+def _case_with_previous_x1_y1_from_object(
+    case: Mapping[str, Any], *, source_object_index: int
+) -> dict[str, Any] | None:
+    objects_raw = case.get("objects") or []
+    if not isinstance(objects_raw, Sequence) or isinstance(objects_raw, (str, bytes)):
+        return None
+    target_idx = int(case.get("target_object_index", -1))
+    previous_idx = target_idx - 1
+    if previous_idx < 0 or previous_idx >= len(objects_raw):
+        return None
+    if source_object_index < 0 or source_object_index >= len(objects_raw):
+        return None
+    source = objects_raw[source_object_index]
+    previous = objects_raw[previous_idx]
+    if not isinstance(source, Mapping) or not isinstance(previous, Mapping):
+        return None
+    source_bbox = source.get("bbox_2d")
+    previous_bbox = previous.get("bbox_2d")
+    if (
+        not isinstance(source_bbox, Sequence)
+        or isinstance(source_bbox, (str, bytes))
+        or len(source_bbox) != 4
+        or not isinstance(previous_bbox, Sequence)
+        or isinstance(previous_bbox, (str, bytes))
+        or len(previous_bbox) != 4
+    ):
+        return None
+    new_objects: list[dict[str, Any]] = []
+    for idx, obj in enumerate(objects_raw):
+        if not isinstance(obj, Mapping):
+            continue
+        new_obj = dict(obj)
+        bbox = list(obj.get("bbox_2d") or [])
+        if idx == previous_idx and len(bbox) == 4:
+            bbox[0] = source_bbox[0]
+            bbox[1] = source_bbox[1]
+            new_obj["bbox_2d"] = bbox
+        new_objects.append(new_obj)
+    new_case = dict(case)
+    new_case["objects"] = new_objects
+    return new_case
+
+
+def _run_core_diagnosis_stage(
+    *,
+    config: StudyConfig,
+    shard_index: int | None,
+    num_shards: int | None,
+) -> dict[str, Any]:
+    import gc
+
+    import torch
+
+    from src.analysis.unmatched_proposal_verifier import TeacherForcedScorer
+
+    all_cases = _read_selected_cases(
+        config.paths.artifact_root / "cases" / "selected_cases.jsonl"
+    )[: max(0, int(config.core_diagnosis.max_cases))]
+    if not all_cases:
+        raise FileNotFoundError("core_diagnosis requires selected cases")
+    active_cases = (
+        distribute_items_by_shard(
+            all_cases, shard_index=shard_index, num_shards=num_shards
+        )
+        if shard_index is not None and num_shards is not None
+        else all_cases
+    )
+    device = "cuda:0" if torch.cuda.is_available() else "cpu"
+    scorer = TeacherForcedScorer(
+        checkpoint_path=config.paths.checkpoint,
+        device=device,
+        attn_implementation="auto",
+    )
+    patch_rows: list[dict[str, Any]] = []
+    token_edit_rows: list[dict[str, Any]] = []
+    processed = 0
+    skipped_no_competitor = 0
+    skipped_policy = Counter()
+    try:
+        for case in active_cases:
+            baseline = _run_single_case_x1_alignment(
+                scorer=scorer,
+                case=case,
+                config=config,
+            )
+            baseline_alignment = dict(baseline["alignment"])
+            baseline_margin = dict(baseline["margin"])
+            best_competitor = _best_other_candidate_from_alignment(baseline_alignment)
+            if best_competitor is None:
+                skipped_no_competitor += 1
+                continue
+            baseline_mass_by_label = _candidate_mass_by_label(baseline_alignment)
+            baseline_target_mass = float(baseline_mass_by_label.get("target", 0.0))
+            baseline_probs = dict(baseline.get("coord_probs") or {})
+            for policy in config.core_diagnosis.donor_policies:
+                donor_spec = _select_core_donor_spec(
+                    policy=policy,
+                    case=case,
+                    all_cases=all_cases,
+                    baseline_alignment=baseline_alignment,
+                    seed=config.core_diagnosis.seed,
+                )
+                if donor_spec is None:
+                    skipped_policy[str(policy)] += 1
+                    continue
+                donor_case = donor_spec.get("donor_case")
+                if not isinstance(donor_case, Mapping):
+                    skipped_policy[str(policy)] += 1
+                    continue
+                donor_label = str(donor_spec["donor_label"])
+                donor_in_target_candidates = bool(
+                    donor_spec.get("donor_in_target_candidates")
+                )
+                baseline_donor_mass = (
+                    float(baseline_mass_by_label.get(donor_label, 0.0))
+                    if donor_in_target_candidates
+                    else None
+                )
+                for layer_set, model_layers in config.core_diagnosis.layer_sets:
+                    for span_name in config.core_diagnosis.spans:
+                        patched = _run_pair_case_x1_alignment(
+                            scorer=scorer,
+                            target_case=case,
+                            donor_case=donor_case,
+                            donor_object_index=int(donor_spec["donor_object_index"]),
+                            span_name=str(span_name),
+                            model_layers=model_layers,
+                            config=config,
+                        )
+                        patched_alignment = dict(patched["alignment"])
+                        patched_margin = dict(patched["margin"])
+                        patched_mass_by_label = _candidate_mass_by_label(
+                            patched_alignment
+                        )
+                        patched_target_mass = float(
+                            patched_mass_by_label.get("target", 0.0)
+                        )
+                        patched_donor_mass = (
+                            float(patched_mass_by_label.get(donor_label, 0.0))
+                            if donor_in_target_candidates
+                            else None
+                        )
+                        baseline_top = str(baseline_margin["top_candidate_label"])
+                        patched_top = str(patched_margin["top_candidate_label"])
+                        patch_rows.append(
+                            {
+                                "case_id": str(case["case_id"]),
+                                "image_id": str(case.get("image_id") or ""),
+                                "desc": str(case.get("desc") or ""),
+                                "donor_policy": str(policy),
+                                "span": str(span_name),
+                                "layer_set": str(layer_set),
+                                "model_layers": list(model_layers),
+                                "donor_case_id": str(donor_spec["donor_case_id"]),
+                                "donor_image_id": str(donor_spec["donor_image_id"]),
+                                "donor_object_index": int(
+                                    donor_spec["donor_object_index"]
+                                ),
+                                "donor_label": donor_label,
+                                "donor_desc": str(donor_spec.get("donor_desc") or ""),
+                                "donor_in_target_candidates": donor_in_target_candidates,
+                                "num_position_pairs": int(
+                                    patched.get("num_position_pairs", 0) or 0
+                                ),
+                                "baseline_target_mass": baseline_target_mass,
+                                "patched_target_mass": patched_target_mass,
+                                "target_mass_delta": patched_target_mass
+                                - baseline_target_mass,
+                                "baseline_donor_mass": baseline_donor_mass,
+                                "patched_donor_mass": patched_donor_mass,
+                                "donor_mass_delta": (
+                                    patched_donor_mass - baseline_donor_mass
+                                    if patched_donor_mass is not None
+                                    and baseline_donor_mass is not None
+                                    else None
+                                ),
+                                "baseline_margin": baseline_margin[
+                                    "target_vs_best_other_margin"
+                                ],
+                                "patched_margin": patched_margin[
+                                    "target_vs_best_other_margin"
+                                ],
+                                "margin_delta": float(
+                                    patched_margin["target_vs_best_other_margin"]
+                                )
+                                - float(baseline_margin["target_vs_best_other_margin"]),
+                                "coord_kl_from_baseline": _coord_kl_divergence(
+                                    baseline_probs,
+                                    dict(patched.get("coord_probs") or {}),
+                                ),
+                                "baseline_top_candidate": baseline_top,
+                                "patched_top_candidate": patched_top,
+                                "top_candidate_flipped": baseline_top != patched_top,
+                                "top_candidate_flipped_to_donor": (
+                                    baseline_top != donor_label
+                                    and patched_top == donor_label
+                                ),
+                            }
+                        )
+            for edit_policy in config.core_diagnosis.token_edit_policies:
+                if edit_policy == "previous_x1_y1_to_best_competitor":
+                    source_object_index = int(best_competitor["object_index"])
+                    edit_donor_label = str(best_competitor["label"])
+                elif edit_policy == "previous_x1_y1_to_target":
+                    source_object_index = int(case.get("target_object_index", -1))
+                    edit_donor_label = "target"
+                else:
+                    raise ValueError(f"unknown core token edit policy: {edit_policy}")
+                edited_case = _case_with_previous_x1_y1_from_object(
+                    case, source_object_index=source_object_index
+                )
+                if edited_case is None:
+                    continue
+                edited = _run_single_case_x1_alignment(
+                    scorer=scorer,
+                    case=edited_case,
+                    config=config,
+                )
+                edited_alignment = dict(edited["alignment"])
+                edited_margin = dict(edited["margin"])
+                edited_mass_by_label = _candidate_mass_by_label(edited_alignment)
+                edited_target_mass = float(edited_mass_by_label.get("target", 0.0))
+                baseline_edit_donor_mass = float(
+                    baseline_mass_by_label.get(edit_donor_label, 0.0)
+                )
+                edited_donor_mass = float(
+                    edited_mass_by_label.get(edit_donor_label, 0.0)
+                )
+                baseline_top = str(baseline_margin["top_candidate_label"])
+                edited_top = str(edited_margin["top_candidate_label"])
+                token_edit_rows.append(
+                    {
+                        "case_id": str(case["case_id"]),
+                        "image_id": str(case.get("image_id") or ""),
+                        "desc": str(case.get("desc") or ""),
+                        "edit_policy": str(edit_policy),
+                        "source_object_index": source_object_index,
+                        "source_label": edit_donor_label,
+                        "baseline_target_mass": baseline_target_mass,
+                        "edited_target_mass": edited_target_mass,
+                        "target_mass_delta": edited_target_mass - baseline_target_mass,
+                        "baseline_source_mass": baseline_edit_donor_mass,
+                        "edited_source_mass": edited_donor_mass,
+                        "source_mass_delta": edited_donor_mass
+                        - baseline_edit_donor_mass,
+                        "baseline_margin": baseline_margin[
+                            "target_vs_best_other_margin"
+                        ],
+                        "edited_margin": edited_margin["target_vs_best_other_margin"],
+                        "margin_delta": float(
+                            edited_margin["target_vs_best_other_margin"]
+                        )
+                        - float(baseline_margin["target_vs_best_other_margin"]),
+                        "coord_kl_from_baseline": _coord_kl_divergence(
+                            baseline_probs,
+                            dict(edited.get("coord_probs") or {}),
+                        ),
+                        "baseline_top_candidate": baseline_top,
+                        "edited_top_candidate": edited_top,
+                        "top_candidate_flipped": baseline_top != edited_top,
+                        "top_candidate_flipped_to_source": (
+                            baseline_top != edit_donor_label
+                            and edited_top == edit_donor_label
+                        ),
+                    }
+                )
+            processed += 1
+    finally:
+        del scorer
+        gc.collect()
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+
+    shard_label = (
+        f"shard_{int(shard_index):03d}-of-{int(num_shards):03d}"
+        if shard_index is not None and num_shards is not None
+        else "shard_all"
+    )
+    stage_dir = config.paths.artifact_root / "core_diagnosis"
+    _write_jsonl(stage_dir / f"core_patch_results_{shard_label}.jsonl", patch_rows)
+    _write_jsonl(
+        stage_dir / f"core_token_edit_results_{shard_label}.jsonl",
+        token_edit_rows,
+    )
+    summary = {
+        "stage": "core_diagnosis",
+        "status": "ok",
+        "device": device,
+        "num_input_cases": len(all_cases),
+        "num_shard_cases": len(active_cases),
+        "num_processed_cases": processed,
+        "num_skipped_no_competitor": skipped_no_competitor,
+        "skipped_policy_counts": {
+            key: int(value) for key, value in sorted(skipped_policy.items())
+        },
+        "shard_index": shard_index,
+        "num_shards": num_shards,
+        "patch": _summarize_core_diagnosis_rows(patch_rows),
+        "token_edit": _summarize_core_token_edit_rows(token_edit_rows),
+    }
+    _write_json(stage_dir / f"summary_{shard_label}.json", summary)
+    return summary
+
+
+def _run_merge_core_diagnosis_stage(config: StudyConfig) -> dict[str, Any]:
+    stage_dir = config.paths.artifact_root / "core_diagnosis"
+    patch_rows: list[dict[str, Any]] = []
+    token_edit_rows: list[dict[str, Any]] = []
+    for path in _stage_shard_jsonl_paths(stage_dir, "core_patch_results"):
+        patch_rows.extend(_read_jsonl_rows(path))
+    for path in _stage_shard_jsonl_paths(stage_dir, "core_token_edit_results"):
+        token_edit_rows.extend(_read_jsonl_rows(path))
+    if not patch_rows:
+        raise FileNotFoundError("merge_core_diagnosis requires core patch rows")
+    _write_jsonl(stage_dir / "core_patch_results_merged.jsonl", patch_rows)
+    _write_jsonl(stage_dir / "core_token_edit_results_merged.jsonl", token_edit_rows)
+    patch_summary = _summarize_core_diagnosis_rows(patch_rows)
+    token_edit_summary = _summarize_core_token_edit_rows(token_edit_rows)
+    baseline_root = Path(config.core_diagnosis.baseline_artifact_root)
+    probe_summary_path = baseline_root / "binding_probe" / "summary.json"
+    probe_summary = (
+        json.loads(probe_summary_path.read_text(encoding="utf-8"))
+        if probe_summary_path.exists()
+        else {}
+    )
+    role_best = probe_summary.get("role_best") or {}
+    pre_x1_probe = dict(role_best.get("pre_x1") or {})
+    post_x1_probe = dict(role_best.get("post_x1") or {})
+    policy_span_layer = patch_summary["policy_span_layer_summaries"]
+    late_schema = dict(
+        policy_span_layer.get("same_image_best_competitor|schema_context|late") or {}
+    )
+    late_bracket = dict(
+        policy_span_layer.get("same_image_best_competitor|bbox_open_bracket|late") or {}
+    )
+    late_wrong_image = dict(
+        policy_span_layer.get("wrong_image_same_desc|schema_context|late") or {}
+    )
+    late_random_schema = dict(
+        policy_span_layer.get("same_image_random_same_desc|schema_context|late") or {}
+    )
+    late_wrong_any_schema = dict(
+        policy_span_layer.get("wrong_image_any_desc|schema_context|late") or {}
+    )
+    late_wrong_image_bracket = dict(
+        policy_span_layer.get("wrong_image_same_desc|bbox_open_bracket|late") or {}
+    )
+    late_self = dict(policy_span_layer.get("self_noop|schema_context|late") or {})
+    late_previous_hidden = dict(
+        policy_span_layer.get("same_image_best_competitor|previous_x1_y1|late") or {}
+    )
+    span_summaries = patch_summary.get("span_summaries") or {}
+    span_schema = dict(span_summaries.get("schema_context") or {})
+    span_desc_quote = dict(span_summaries.get("desc_closing_quote") or {})
+    span_field_delimiter = dict(span_summaries.get("field_delimiter") or {})
+    span_bracket = dict(span_summaries.get("bbox_open_bracket") or {})
+    span_pre_x1 = dict(span_summaries.get("immediate_pre_x1") or {})
+    span_previous_hidden = dict(span_summaries.get("previous_x1_y1") or {})
+    token_edits = token_edit_summary.get("edit_policy_summaries") or {}
+    previous_to_competitor_edit = dict(
+        token_edits.get("previous_x1_y1_to_best_competitor") or {}
+    )
+    schema_donor_delta = late_schema.get("mean_donor_mass_delta")
+    bracket_donor_delta = late_bracket.get("mean_donor_mass_delta")
+    wrong_image_target_delta = late_wrong_image.get("mean_target_mass_delta")
+    self_kl = late_self.get("mean_coord_kl_from_baseline")
+    hidden_previous_donor_delta = late_previous_hidden.get("mean_donor_mass_delta")
+    token_previous_source_delta = previous_to_competitor_edit.get(
+        "mean_source_mass_delta"
+    )
+    if (
+        isinstance(schema_donor_delta, float)
+        and schema_donor_delta > 0.01
+        and isinstance(wrong_image_target_delta, float)
+        and abs(wrong_image_target_delta) < 0.02
+        and isinstance(self_kl, float)
+        and self_kl < 0.01
+    ):
+        conclusion = "schema_context_specific_identity_routing_supported"
+    elif isinstance(schema_donor_delta, float) and schema_donor_delta > 0.01:
+        conclusion = "schema_context_effect_present_but_control_sensitive"
+    else:
+        conclusion = "schema_context_donor_transfer_not_replicated"
+    summary = {
+        "stage": "merge_core_diagnosis",
+        "status": "ok",
+        "conclusion": conclusion,
+        "num_patch_rows": len(patch_rows),
+        "num_token_edit_rows": len(token_edit_rows),
+        "patch": patch_summary,
+        "token_edit": token_edit_summary,
+        "probe_chance_normalized": {
+            "pre_x1_top1_accuracy": pre_x1_probe.get("top1_accuracy"),
+            "pre_x1_mean_chance_top1": pre_x1_probe.get("mean_chance_top1"),
+            "pre_x1_chance_normalized_lift": pre_x1_probe.get("chance_normalized_lift"),
+            "post_x1_top1_accuracy": post_x1_probe.get("top1_accuracy"),
+            "post_x1_mean_chance_top1": post_x1_probe.get("mean_chance_top1"),
+            "post_x1_chance_normalized_lift": post_x1_probe.get(
+                "chance_normalized_lift"
+            ),
+        },
+        "key_effects": {
+            "late_schema": late_schema,
+            "late_random_same_desc_schema": late_random_schema,
+            "late_bbox_open_bracket": late_bracket,
+            "late_wrong_image_same_desc_schema": late_wrong_image,
+            "late_wrong_image_any_desc_schema": late_wrong_any_schema,
+            "late_wrong_image_same_desc_bbox_open_bracket": late_wrong_image_bracket,
+            "late_self_noop_schema": late_self,
+            "late_previous_x1_y1_hidden_patch": late_previous_hidden,
+            "previous_x1_y1_token_edit_to_competitor": previous_to_competitor_edit,
+            "span_schema_context": span_schema,
+            "span_desc_closing_quote": span_desc_quote,
+            "span_field_delimiter": span_field_delimiter,
+            "span_bbox_open_bracket": span_bracket,
+            "span_immediate_pre_x1": span_pre_x1,
+            "span_previous_x1_y1": span_previous_hidden,
+            "schema_donor_delta": schema_donor_delta,
+            "bbox_open_bracket_donor_delta": bracket_donor_delta,
+            "wrong_image_schema_target_delta": wrong_image_target_delta,
+            "self_noop_schema_kl": self_kl,
+            "hidden_previous_donor_delta": hidden_previous_donor_delta,
+            "token_previous_source_delta": token_previous_source_delta,
+        },
+    }
+    _write_json(stage_dir / "summary.json", summary)
+    report_lines = [
+        "# Qwen3-VL Instance Binding Core Diagnosis",
+        "",
+        f"Artifact root: `{config.paths.artifact_root}`",
+        "",
+        "## Conclusion",
+        "",
+        f"`{conclusion}`",
+        "",
+        "## Chance-Normalized Probe Context",
+        "",
+        "- Pre-x1 top1 / chance / lift: "
+        f"`{pre_x1_probe.get('top1_accuracy')}` / "
+        f"`{pre_x1_probe.get('mean_chance_top1')}` / "
+        f"`{pre_x1_probe.get('chance_normalized_lift')}`.",
+        "- Post-x1 top1 / chance / lift: "
+        f"`{post_x1_probe.get('top1_accuracy')}` / "
+        f"`{post_x1_probe.get('mean_chance_top1')}` / "
+        f"`{post_x1_probe.get('chance_normalized_lift')}`.",
+        "",
+        "## Carrier-Vs-Cause Controls",
+        "",
+        f"- Same-image best-competitor schema donor delta: `{schema_donor_delta}`.",
+        "- Same-image random same-desc schema donor delta: "
+        f"`{late_random_schema.get('mean_donor_mass_delta')}`.",
+        "- Same-image best-competitor bbox-open-bracket donor delta: "
+        f"`{bracket_donor_delta}`.",
+        f"- Wrong-image same-desc schema target delta: `{wrong_image_target_delta}`.",
+        "- Wrong-image any-desc schema target delta: "
+        f"`{late_wrong_any_schema.get('mean_target_mass_delta')}`.",
+        "- Wrong-image same-desc bbox-open-bracket target delta: "
+        f"`{late_wrong_image_bracket.get('mean_target_mass_delta')}`.",
+        f"- Self-noop schema KL: `{self_kl}`.",
+        "",
+        "## Fine-Grained Schema Localization",
+        "",
+        "- `bbox_open_bracket` and `immediate_pre_x1` are equivalent in this "
+        "token inventory; do not count them as independent sites.",
+        "- Aggregate bbox-open-bracket donor / target delta / KL: "
+        f"`{span_bracket.get('mean_donor_mass_delta')}` / "
+        f"`{span_bracket.get('mean_target_mass_delta')}` / "
+        f"`{span_bracket.get('mean_coord_kl_from_baseline')}`.",
+        "- Aggregate desc-closing-quote donor / target delta / KL: "
+        f"`{span_desc_quote.get('mean_donor_mass_delta')}` / "
+        f"`{span_desc_quote.get('mean_target_mass_delta')}` / "
+        f"`{span_desc_quote.get('mean_coord_kl_from_baseline')}`.",
+        "- Aggregate field-delimiter donor / target delta / KL: "
+        f"`{span_field_delimiter.get('mean_donor_mass_delta')}` / "
+        f"`{span_field_delimiter.get('mean_target_mass_delta')}` / "
+        f"`{span_field_delimiter.get('mean_coord_kl_from_baseline')}`.",
+        "- Aggregate previous-x1/y1 hidden-patch donor / target delta / KL: "
+        f"`{span_previous_hidden.get('mean_donor_mass_delta')}` / "
+        f"`{span_previous_hidden.get('mean_target_mass_delta')}` / "
+        f"`{span_previous_hidden.get('mean_coord_kl_from_baseline')}`.",
+        "",
+        "## Token Edit Vs Hidden Patch",
+        "",
+        f"- Previous x1/y1 hidden-patch donor delta: `{hidden_previous_donor_delta}`.",
+        f"- Previous x1/y1 token-edit source delta: `{token_previous_source_delta}`.",
+        "",
+        "## Interpretation",
+        "",
+        "This core diagnosis is designed to distinguish whether schema-context "
+        "states are the origin of binding, a late readout carrier, or just a "
+        "fragile near-x1 slot. Read the control rows before treating schema "
+        "effects as identity-specific.",
+        "",
+        "Decision read: the evidence still supports weak/partial pre-x1 "
+        "binding, but the causal boundary is more conservative than the first "
+        "pass. The strongest intervention site is the bracket/immediate-pre-x1 "
+        "slot, while desc-closing quote and field-delimiter states are nearly "
+        "inert. Same-image same-desc donor copies can transfer mass, but "
+        "wrong-image copies at the same syntax sites also strongly disrupt "
+        "the target distribution. That pattern supports a late readout/carrier "
+        "mechanism more than a clean claim that schema punctuation is the "
+        "original storage site of instance identity.",
+    ]
+    (stage_dir / "report.md").write_text(
+        "\n".join(report_lines) + "\n", encoding="utf-8"
+    )
+    return summary
 
 
 def _summarize_patching_rows(rows: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
@@ -3399,6 +4590,14 @@ def run_study_stage(
         )
     if stage == "merge_donor_patching":
         return _run_merge_donor_patching_stage(config)
+    if stage == "core_diagnosis":
+        return _run_core_diagnosis_stage(
+            config=config,
+            shard_index=shard_index,
+            num_shards=num_shards,
+        )
+    if stage == "merge_core_diagnosis":
+        return _run_merge_core_diagnosis_stage(config)
     if stage == "good_bad_panels":
         return _run_good_bad_panels_stage(config)
     if stage == "prepare_rollout_shards":
@@ -3420,6 +4619,7 @@ def run_study_stage(
 __all__ = [
     "REQUIRED_POSITION_ROLES",
     "CaseSelectionConfig",
+    "CoreDiagnosisConfig",
     "ExecutionConfig",
     "InstanceBindingCase",
     "MultimodalityConfig",
