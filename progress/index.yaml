@@ -1,5 +1,5 @@
 schema_version: 1
-updated: 2026-04-23
+updated: 2026-04-24
 
 entrypoints:
   human: progress/README.md
@@ -25,6 +25,7 @@ groups:
   diagnostics:
     - progress/diagnostics/README.md
     - progress/diagnostics/artifacts/README.md
+    - progress/diagnostics/2026-04-24_qwen3_vl_instance_binding_mechanism_temp.md
     - progress/diagnostics/2026-04-22_stage2_birth_first_channel_b_decision_study.md
     - progress/diagnostics/2026-04-21_raw_text_coordinate_mechanism_findings.md
     - progress/diagnostics/2026-04-22_raw_text_decode_bias_mechanism_findings.md
@@ -116,6 +117,11 @@ notes:
     kind: diagnostic-study
     status: active-reference
     summary: Decision-facing record of the merged-vLLM operator fix and the birth-first versus control small-fraction study.
+  - path: progress/diagnostics/2026-04-24_qwen3_vl_instance_binding_mechanism_temp.md
+    title: Qwen3-VL Instance Binding Mechanism Temporary Conclusion
+    kind: diagnostic-study
+    status: temporary-diagnostic
+    summary: Temporary first-pass mechanism conclusion for fixed-checkpoint coord-token instance binding, including rollout contrast, donor patching, and the next core-diagnosis plan.
   - path: progress/diagnostics/2026-03-17_stage2_2b_fn_factor_results.md
     title: 2B Rollout FN-Factor Results After Hard-16 Prefix Repair
     kind: diagnostic-study

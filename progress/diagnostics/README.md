@@ -6,7 +6,7 @@ status: canonical
 domain: research-history
 summary: Router for failure investigations, mechanism studies, threshold sweeps, and operator notes that support diagnosis.
 tags: [progress, diagnostics, investigations]
-updated: 2026-04-23
+updated: 2026-04-24
 ---
 
 # Diagnostics Index
@@ -22,6 +22,12 @@ Prefer `progress/benchmarks/` when the output is mainly a measured run-vs-run or
 
 ## Current Clusters
 
+- Active Qwen3-VL coord-token instance-binding mechanism study
+  - Start with
+    [2026-04-24_qwen3_vl_instance_binding_mechanism_temp.md](2026-04-24_qwen3_vl_instance_binding_mechanism_temp.md)
+    for the temporary first-pass conclusion on pre-`x1` soft binding,
+    schema-context causal effects, donor patching, and the next core-diagnosis
+    plan.
 - Active Stage-2 birth-first Channel-B decision study
   - Start with
     [2026-04-22_stage2_birth_first_channel_b_decision_study.md](2026-04-22_stage2_birth_first_channel_b_decision_study.md)
