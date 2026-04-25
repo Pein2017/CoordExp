@@ -328,6 +328,15 @@ def encode_set_continuation_branch(
     candidate_mask = _span_mask(seq_len, candidate_start_token, candidate_end_token)
     close_sequence_mask = _span_mask(seq_len, candidate_end_token, seq_len)
     close_start_mask = _span_mask(seq_len, candidate_end_token, close_start_token)
+    if (
+        not bool(close_start_mask.any().item())
+        and bool(close_sequence_mask.any().item())
+    ):
+        # Some tokenizers merge the first close character with the previous
+        # token. Keep close-start supervision well-defined by using the first
+        # available structural-close label token.
+        first_close = close_sequence_mask.nonzero(as_tuple=False)[0]
+        close_start_mask[int(first_close[0]), int(first_close[1])] = True
 
     coord_mask = torch.zeros_like(candidate_mask)
     token_strings = _token_strings_for_labels(template, labels)

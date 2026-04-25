@@ -84,6 +84,17 @@ class _FakeTemplate:
         }
 
 
+class _CloseStartMergeTokenizer(_FakeTokenizer):
+    def encode_text(self, text: str) -> list[int]:
+        return super().encode_text(text.replace("]", ""))
+
+
+class _CloseStartMergeTemplate(_FakeTemplate):
+    def __init__(self) -> None:
+        super().__init__()
+        self.tokenizer = _CloseStartMergeTokenizer()
+
+
 def _raw_sample() -> dict[str, Any]:
     return {
         "input_ids": [1, 2],
@@ -169,6 +180,24 @@ def test_branch_encoder_builds_candidate_masks_and_restores_template_system() ->
     assert branch.candidate_index == 1
     assert template.system == "original-system"
     assert "system prompt" in template.system_values_seen
+
+
+def test_branch_encoder_falls_back_when_close_start_token_merges() -> None:
+    template = _CloseStartMergeTemplate()
+    meta = build_stage1_set_continuation_collator()([_raw_sample()])[
+        "set_continuation_meta"
+    ][0]
+
+    branch = encode_set_continuation_branch(
+        meta=meta,
+        template=template,
+        prefix_indices=[0, 1],
+        candidate_index=None,
+        object_field_order="desc_first",
+    )
+
+    assert branch.structural_close_sequence_mask.sum().item() > 0
+    assert branch.structural_close_start_mask.sum().item() == 1
 
 
 def test_branch_encoder_rejects_missing_messages_with_actionable_error() -> None:
