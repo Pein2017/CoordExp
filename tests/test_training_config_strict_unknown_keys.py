@@ -261,6 +261,7 @@ def test_custom_eval_detection_lvis_metrics_are_accepted() -> None:
     assert cfg.custom.eval_detection.enabled is True
     assert cfg.custom.eval_detection.metrics == "lvis"
     assert cfg.custom.eval_detection.lvis_max_dets == 300
+    assert cfg.custom.eval_detection.distributed is True
     assert (
         cfg.custom.eval_detection.lvis_annotations_json
         == "public_data/lvis/raw/annotations/lvis_v1_val.json"

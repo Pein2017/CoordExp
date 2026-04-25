@@ -364,6 +364,34 @@ Normative behavior:
 - **THEN** the run artifacts include enough information to recover sampler,
   branch, PEM, structural-close, aux, and benchmark settings after training.
 
+### Requirement: Train-time detection eval shards generation under DDP
+When `custom.eval_detection.enabled=true`, train-time Stage-1 detection eval
+SHALL support rank-sharded generation while preserving rank-0-owned scoring.
+
+Normative behavior:
+- `custom.eval_detection.distributed` defaults to `true`,
+- when DDP world size is greater than one and distributed eval is enabled, every
+  rank MUST run generation for a deterministic shard of the eval JSONL using its
+  live training model replica,
+- shard assignment MUST preserve the standalone inference contract based on
+  source-index modulo world size,
+- rank 0 MUST merge shard outputs into the canonical
+  `eval_detection/step_<N>/gt_vs_pred.jsonl` before scoring,
+- only rank 0 MUST run final detection metric scoring and inject
+  `eval_det_*` metrics,
+- non-zero ranks MUST not materialize final scored outputs or mutate the metrics
+  dictionary after their shard generation completes,
+- one-rank and `distributed: false` runs MUST retain the existing rank-0-only
+  callback behavior.
+
+#### Scenario: DDP eval uses all learner GPUs for generation
+- **GIVEN** Stage-1 training runs with world size 8
+- **AND** `custom.eval_detection.enabled=true`
+- **AND** `custom.eval_detection.distributed=true`
+- **WHEN** an eval step starts
+- **THEN** all eight ranks decode disjoint eval shards
+- **AND** rank 0 merges the shards and computes the final metric payload.
+
 ### Requirement: Production profile is config-addressable
 The change SHALL provide one checked-in production config profile with a stable
 benchmark identity for the all-feature set-continuation training run.
@@ -384,6 +412,8 @@ Normative behavior:
 - the production profile MUST use `training.packing: false`; packed SFT may be
   a separately named throughput/control ablation but MUST NOT be silently mixed
   into the set-continuation production run,
+- the production profile MUST enable distributed train-time detection eval so
+  val200 generation uses all DDP learner ranks before rank-0 scoring,
 - the production profile MUST enable exact full-entry candidate scoring,
   close-start suppression, weak/disabled final close supervision,
   fixed-threshold PEM threshold loss, and a mixed subset-prefix sampler with

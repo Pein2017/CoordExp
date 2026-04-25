@@ -2882,6 +2882,7 @@ def main():
                 repetition_penalty=float(stage1_eval_cfg.repetition_penalty),
                 limit=callback_eval_limit,
                 seed=dataset_seed,
+                distributed=bool(getattr(stage1_eval_cfg, "distributed", True)),
                 lvis_annotations_json=getattr(
                     stage1_eval_cfg, "lvis_annotations_json", None
                 ),

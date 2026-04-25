@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path, PurePosixPath
 from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence
 
@@ -31,6 +32,53 @@ def _is_world_process_zero(*, args: TrainingArguments, state: TrainerState) -> b
     if isinstance(local_rank, int):
         return int(local_rank) in {-1, 0}
     return True
+
+
+def _resolve_distributed_runtime(args: TrainingArguments) -> tuple[int, int, int, bool]:
+    try:
+        import torch.distributed as dist
+    except (ImportError, TypeError, ValueError):
+        dist = None  # type: ignore[assignment]
+
+    if dist is not None and dist.is_available() and dist.is_initialized():
+        rank = int(dist.get_rank())
+        world_size = max(int(dist.get_world_size()), 1)
+        local_rank_raw = os.environ.get("LOCAL_RANK") or getattr(
+            args, "local_process_index", None
+        )
+        if local_rank_raw is None:
+            local_rank_raw = getattr(args, "local_rank", rank)
+        try:
+            local_rank = int(local_rank_raw)
+        except (TypeError, ValueError):
+            local_rank = rank
+        return rank, local_rank, world_size, world_size > 1
+
+    rank_raw = getattr(args, "process_index", None)
+    if rank_raw is None:
+        rank_raw = os.environ.get("RANK", 0)
+    local_rank_raw = getattr(args, "local_process_index", None)
+    if local_rank_raw is None:
+        local_rank_raw = getattr(args, "local_rank", None)
+    if local_rank_raw is None:
+        local_rank_raw = os.environ.get("LOCAL_RANK", rank_raw)
+    world_size_raw = getattr(args, "world_size", None)
+    if world_size_raw is None:
+        world_size_raw = os.environ.get("WORLD_SIZE", 1)
+
+    try:
+        rank = int(rank_raw)
+    except (TypeError, ValueError):
+        rank = 0
+    try:
+        local_rank = int(local_rank_raw)
+    except (TypeError, ValueError):
+        local_rank = rank
+    try:
+        world_size = max(int(world_size_raw), 1)
+    except (TypeError, ValueError):
+        world_size = 1
+    return rank, local_rank, world_size, world_size > 1
 
 
 def _unwrap_runtime_model(model: Any) -> Any:
@@ -315,6 +363,7 @@ class Stage1DetectionEvalCallback(TrainerCallback):
         limit: Optional[int],
         seed: Optional[int],
         lvis_annotations_json: Optional[str],
+        distributed: bool = True,
     ) -> None:
         self.gt_jsonl = Path(gt_jsonl)
         self.output_root = Path(output_root)
@@ -343,6 +392,7 @@ class Stage1DetectionEvalCallback(TrainerCallback):
         self.constant_score = float(constant_score)
         self.limit = int(limit) if limit is not None else None
         self.seed = int(seed) if seed is not None else None
+        self.distributed = bool(distributed)
         self.lvis_annotations_json = (
             str(lvis_annotations_json) if lvis_annotations_json is not None else None
         )
@@ -368,7 +418,13 @@ class Stage1DetectionEvalCallback(TrainerCallback):
         metrics: Optional[Dict[str, float]] = None,
         **kwargs: Any,
     ) -> None:
-        if not _is_world_process_zero(args=args, state=state):
+        rank, local_rank, world_size, runtime_distributed = (
+            _resolve_distributed_runtime(args)
+        )
+        distributed_eval = bool(self.distributed and runtime_distributed)
+        is_rank0 = int(rank) == 0
+
+        if not distributed_eval and not _is_world_process_zero(args=args, state=state):
             return
 
         model = kwargs.get("model")
@@ -396,6 +452,10 @@ class Stage1DetectionEvalCallback(TrainerCallback):
             device=device,
             limit=int(self.limit or 0),
             backend_type="hf",
+            rank=rank if distributed_eval else 0,
+            local_rank=local_rank if distributed_eval else 0,
+            world_size=world_size if distributed_eval else 1,
+            distributed_enabled=distributed_eval,
         )
         engine = InferenceEngine(infer_cfg, self.gen_cfg, logger=logger)
         engine.model = runtime_model
@@ -410,6 +470,15 @@ class Stage1DetectionEvalCallback(TrainerCallback):
             if was_training:
                 runtime_model.train()
         self._processor = engine.processor
+
+        if distributed_eval and not is_rank0:
+            logger.info(
+                "Stage-1 detection eval shard finished at step=%s rank=%s/%s",
+                int(getattr(state, "global_step", 0) or 0),
+                rank,
+                world_size,
+            )
+            return
 
         base_rows = _load_jsonl(base_jsonl_path)
         base_rows = _maybe_backfill_lvis_metadata(

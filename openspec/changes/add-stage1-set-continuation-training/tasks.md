@@ -82,6 +82,8 @@
 - [x] Add benchmark manifest validation that records intended variable, comparator, eval scope/view, sample count, checkpoint/base identity, inference decoding controls, and comparability label.
 - [x] Add benchmark manifest validation that records effective coord-slot scoring, aux objective settings, PEM threshold calibration provenance, realized prefix-mode coverage, and realized branch/token budget.
 - [x] Add sparse-label FP caveat/report fields for proxy or partial-label eval views.
+- [x] Add distributed train-time detection eval generation so DDP ranks decode
+      eval shards while rank 0 merges/scales/logs final metrics.
 
 ## 8. Documentation
 

@@ -443,7 +443,7 @@ Each profile must resolve:
 - `custom.trainer_variant`;
 - `custom.stage1_set_continuation.*` where applicable;
 - `training.packing: false`;
-- dataset JSONL, prompt variant, object field order, seed, resolution/preset, effective batch/sample budget, optimizer-step budget, checkpoint/base/adapter identity, inference decoding controls, and eval plan.
+- dataset JSONL, prompt variant, object field order, seed, resolution/preset, effective batch/sample budget, optimizer-step budget, checkpoint/base/adapter identity, inference decoding controls, and eval plan, including whether train-time eval generation is rank-sharded under DDP.
 - coord-token settings, effective coord-slot scoring surface, aux objective
   settings (`coord_soft_ce_w1`, `bbox_geo`, `bbox_size_aux`), PEM threshold
   calibration provenance where applicable, realized prefix-mode coverage,
@@ -459,6 +459,13 @@ comparison.
 Each run or report must include a benchmark manifest or an `experiment_manifest.json` section that records the intended variable versus the comparator group and labels comparability as `accuracy-comparable`, `throughput-comparable`, or `not-comparable`.
 
 Benchmark reports must state eval scope and view explicitly: `val200`, `limit=200`, full-val, proxy view, sample count, prediction count totals/means, AP/AP50/AP75, recall/precision at relevant thresholds, and sparse-label caveats. COCO-real headline views and proxy-expanded analysis views must not be mixed silently.
+
+Train-time detection eval should use all learner ranks for generation when the
+run is launched under DDP. The existing inference engine already owns
+source-index modulo sharding and rank-0 shard merge; the Stage-1 callback should
+reuse that path, then keep final detection scoring and metric injection on rank
+0 only. This separates the expensive decode work from the comparatively small
+metric aggregation step without changing canonical eval artifacts.
 
 ## Architecture
 

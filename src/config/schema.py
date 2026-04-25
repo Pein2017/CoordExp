@@ -1030,6 +1030,7 @@ class Stage1EvalDetectionConfig:
     top_p: float = 1.0
     repetition_penalty: float = 1.0
     limit: Optional[int] = None
+    distributed: bool = True
     lvis_annotations_json: Optional[str] = None
 
     def __post_init__(self) -> None:

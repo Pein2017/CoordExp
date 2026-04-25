@@ -307,6 +307,14 @@ training surface first. LVIS-proxy should be evaluated as a follow-up
 dataset-choice ablation, not silently mixed into the first objective-change
 run.
 
+Train-time detection evaluation is distributed by default through
+`custom.eval_detection.distributed: true`. Under DDP, every rank reuses its live
+training model replica to decode a deterministic shard of the eval JSONL, rank 0
+merges the shard artifacts back into the canonical `gt_vs_pred.jsonl`, and only
+rank 0 runs final detection scoring/log injection. This keeps val200 generation
+from occupying only GPU 0 while preserving rank-0-owned metric semantics and the
+existing `eval_detection/step_<N>/` artifact layout.
+
 The profile pins `coord_soft_ce_w1`, `bbox_geo`, and `bbox_size_aux` disabled
 so the first production run isolates the continuation objective. Its
 `custom.extra.benchmark_report.same_budget_label` value is a comparison note,

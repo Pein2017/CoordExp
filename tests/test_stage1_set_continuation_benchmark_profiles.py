@@ -93,7 +93,8 @@ def test_production_profile_resolves_and_pins_common_contract() -> None:
     assert cfg.custom.eval_detection.enabled is True
     assert cfg.custom.eval_detection.metrics == "f1ish"
     assert cfg.custom.eval_detection.limit == 200
-    assert cfg.custom.eval_detection.max_new_tokens == 1024
+    assert cfg.custom.eval_detection.max_new_tokens == 3084
+    assert cfg.custom.eval_detection.distributed is True
     assert cfg.custom.eval_detection.temperature == pytest.approx(0.0)
     assert cfg.custom.eval_detection.top_p == pytest.approx(1.0)
     assert cfg.custom.eval_detection.repetition_penalty == pytest.approx(1.05)
