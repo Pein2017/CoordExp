@@ -1247,6 +1247,31 @@ def _is_stage1_set_continuation_variant(trainer_variant: str | None) -> bool:
     return str(trainer_variant or "") == "stage1_set_continuation"
 
 
+def _inject_stage1_set_continuation_trainer_config(
+    *,
+    trainer: Any,
+    training_config: Any,
+) -> None:
+    custom_config = getattr(training_config, "custom", None)
+    sc_cfg = getattr(custom_config, "stage1_set_continuation", None)
+    if sc_cfg is None:
+        raise ValueError(
+            "training_config.custom.stage1_set_continuation is required for "
+            "custom.trainer_variant=stage1_set_continuation"
+        )
+    setattr(trainer, "stage1_set_continuation_cfg", sc_cfg)
+    setattr(
+        trainer,
+        "object_field_order",
+        str(getattr(custom_config, "object_field_order", "desc_first") or "desc_first"),
+    )
+    setattr(
+        trainer,
+        "object_ordering",
+        str(getattr(custom_config, "object_ordering", "sorted") or "sorted"),
+    )
+
+
 def _validate_stage1_static_packing_policy(
     *,
     packing_cfg: PackingRuntimeConfig,
@@ -2874,6 +2899,11 @@ def main():
         trainer_kwargs=trainer_kwargs,
         heartbeat_writer=heartbeat_writer,
     )
+    if trainer_variant == "stage1_set_continuation":
+        _inject_stage1_set_continuation_trainer_config(
+            trainer=trainer,
+            training_config=training_config,
+        )
     # Rollout-matching evaluators emit rollout/* metrics only.
     # Guard against inherited defaults like eval_token_acc, which would crash
     # best-checkpoint selection at evaluation time.

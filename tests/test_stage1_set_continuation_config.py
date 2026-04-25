@@ -6,7 +6,10 @@ import pytest
 
 from src.bootstrap.trainer_setup import compose_trainer_class
 from src.config.schema import PromptOverrides, TrainingConfig
-from src.sft import resolve_trainer_cls
+from src.sft import (
+    _inject_stage1_set_continuation_trainer_config,
+    resolve_trainer_cls,
+)
 from src.trainers.metrics.mixins import (
     CoordSoftCEW1LossMixin,
     GradAccumLossScaleMixin,
@@ -181,6 +184,22 @@ def test_resolve_trainer_cls_routes_stage1_set_continuation_variant() -> None:
         base.__name__ == "Stage1SetContinuationTrainer"
         for base in trainer_cls.__mro__
     )
+
+
+def test_inject_stage1_set_continuation_trainer_config_sets_runtime_attrs() -> None:
+    cfg = TrainingConfig.from_mapping(
+        _stage1_set_continuation_payload(), PromptOverrides()
+    )
+    trainer = SimpleNamespace()
+
+    _inject_stage1_set_continuation_trainer_config(
+        trainer=trainer,
+        training_config=cfg,
+    )
+
+    assert trainer.stage1_set_continuation_cfg is cfg.custom.stage1_set_continuation
+    assert trainer.object_field_order == str(cfg.custom.object_field_order)
+    assert trainer.object_ordering == str(cfg.custom.object_ordering)
 
 
 def test_compose_trainer_class_skips_ordinary_stage1_mixins_for_set_continuation() -> None:
