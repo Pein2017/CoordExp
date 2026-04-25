@@ -121,6 +121,8 @@ def test_set_continuation_profiles_pin_variant_and_branch_semantics(
     assert sc.candidates.mode == "exact"
     assert sc.candidates.max_candidates is None
     assert sc.subset_sampling.prefix_order == "random"
+    assert cfg.deepspeed is not None
+    assert cfg.deepspeed.enabled is False
     assert (
         sc.metric_schema_version == "stage1_set_continuation_metrics_v1"
     )

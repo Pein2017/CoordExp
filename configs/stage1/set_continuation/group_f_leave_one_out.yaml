@@ -16,6 +16,9 @@ training:
   num_train_epochs: 4
   effective_batch_size: 128
 
+deepspeed:
+  enabled: false
+
 benchmark:
   group_id: group_f_leave_one_out
   control_group_id: group_c_exact_mp
