@@ -56,10 +56,10 @@
 - [x] Implement `mp/logZ_scored_raw`, `mp/logZ_remaining_exact`, and `mp/logZ_remaining_est`.
 - [x] Implement `loss/mp` from exact or raw scored-candidate logZ according to candidate mode.
 - [x] Implement responsibility statistics over scored candidates.
-- [x] Implement PEM replacement mode in v1: `positive_evidence_margin.mode=replace_mp`.
-- [x] Require exactly one of `rho` or `log_rho` when PEM replacement mode is enabled.
+- [x] Implement PEM threshold-loss objective in v1: `positive_evidence_margin.objective=threshold_loss`.
+- [x] Require exactly one of `rho` or `log_rho` when PEM threshold loss is enabled.
 - [x] Ensure PEM uses exact logZ or uniform-importance estimated logZ, not raw sampled logZ.
-- [x] Log `loss/mp_diagnostic` when PEM replacement mode optimizes `loss/pem`.
+- [x] Log `loss/mp_diagnostic` when PEM threshold loss optimizes `loss/pem`.
 - [x] Implement `loss/anti_close_start` for `R != empty`.
 - [x] Implement `loss/weak_schema_close` for `R = empty`.
 - [x] Exclude `R = empty` and zero-weight full-prefix metric-only samples from MP objective denominators.
@@ -104,7 +104,7 @@
 - [x] Add unit tests for structural close-start and close-sequence token spans.
 - [x] Add unit tests for subset sampling ratios, deterministic seeded behavior, small-object-count fallback, and random/preserved prefix order modes.
 - [x] Add unit tests for candidate subsampling, exact mode, raw/corrected logZ, and PEM calibration.
-- [x] Add unit tests for MP logsumexp, PEM replacement-mode total loss, anti-close, and weak schema close.
+- [x] Add unit tests for MP logsumexp, PEM threshold-loss total loss, close-start suppression, and weak schema close.
 - [x] Add branch-local auxiliary adapter tests and missing-state failure tests.
 - [x] Add a tiny trainer smoke test with one image and at least two objects.
 - [x] Add config-resolution tests for the production entry config and its all-feature contract.

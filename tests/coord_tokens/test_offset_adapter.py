@@ -102,6 +102,26 @@ def test_forward_backward_affects_only_coord_offsets_untied():
     assert model.lm_head.weight.grad is None
 
 
+def test_repeated_forward_graphs_backprop_without_inplace_version_error():
+    model = TinyLM(vocab_size=1010, hidden_size=8)
+    adapter = install_coord_offset_adapter(
+        model, coord_ids=list(range(10, 1010)), tie_head=True, dtype="float32"
+    )
+
+    loss = torch.zeros(())
+    for seq_len in (128, 97, 53):
+        input_ids = torch.randint(0, 1010, (1, seq_len), dtype=torch.long)
+        logits = model(input_ids)
+        loss = loss + logits[..., 10:20].log_softmax(dim=-1).sum()
+
+    loss.backward()
+
+    assert adapter.embed_offset.grad is not None
+    assert torch.isfinite(adapter.embed_offset.grad).all()
+    assert model.embed_tokens.weight.grad is None
+    assert model.lm_head.weight.grad is None
+
+
 def test_coord_offset_config_parsing_on_off():
     cfg_default = CoordOffsetConfig.from_mapping(None)
     assert cfg_default.enabled is False
@@ -127,4 +147,3 @@ def test_coord_offset_config_parsing_on_off():
     assert cfg.head_lr == 2e-4
     assert cfg.weight_decay == 0.1
     assert cfg.dtype == "bf16"
-

@@ -199,6 +199,58 @@ def test_step_save_strategy_records_best_checkpoint_state(tmp_path: Path) -> Non
     assert state["best_global_step"] == 1
 
 
+def test_minimal_artifact_checkpoint_prunes_state_files(tmp_path: Path) -> None:
+    out_dir = tmp_path / "out"
+    trainer_cls = with_final_checkpoint(Trainer)
+    args = TrainingArguments(
+        output_dir=str(out_dir),
+        per_device_train_batch_size=2,
+        save_strategy="steps",
+        save_steps=1,
+        logging_steps=1,
+        report_to=[],
+        save_only_model=True,
+        save_safetensors=True,
+        use_cpu=True,
+        remove_unused_columns=False,
+    )
+    setattr(args, "checkpoint_mode", "artifact_only")
+    setattr(args, "minimal_checkpoint_artifacts", True)
+
+    trainer = trainer_cls(
+        model=_TinyModel(),
+        args=args,
+        train_dataset=_TinyDataset(),
+    )
+    try:
+        trainer.callback_handler.callbacks = []
+    except Exception:
+        pass
+
+    trainer.create_optimizer_and_scheduler(num_training_steps=1)
+    trainer.state.global_step = 1
+
+    try:
+        trainer._save_checkpoint(trainer.model, trial=None)  # type: ignore[misc]
+    except TypeError:
+        trainer._save_checkpoint(trainer.model, trial=None, metrics=None)  # type: ignore[misc,call-arg]
+
+    ckpt = out_dir / "checkpoint-1"
+    files = _collect_checkpoint_files(ckpt)
+    assert any(
+        name in files for name in {"model.safetensors", "pytorch_model.bin"}
+    ), f"Expected model weights in checkpoint; got files={sorted(files)}"
+    forbidden = {
+        "coordexp_checkpoint_state.pt",
+        "trainer_state.json",
+        "training_args.bin",
+        "optimizer.pt",
+        "scheduler.pt",
+        "rng_state.pth",
+    }
+    assert forbidden.isdisjoint(files), f"Found state files: {sorted(forbidden & files)}"
+
+
 def test_bounded_ddp_checkpoint_path_respects_save_total_limit(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

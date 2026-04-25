@@ -329,12 +329,12 @@ baseline trainer.
 Objective atoms:
 
 - `loss/mp`: optimized MP loss when PEM is disabled.
-- `loss/mp_diagnostic`: MP loss logged even when PEM replacement mode is the
+- `loss/mp_diagnostic`: MP loss logged even when the PEM threshold loss is the
   optimized objective.
 - `loss/pem`: positive-evidence margin loss when
-  `positive_evidence_margin.mode=replace_mp`.
-- `loss/anti_close_start`: weighted anti-close objective when observed GT
-  remains.
+  `positive_evidence_margin.objective=threshold_loss`.
+- `loss/anti_close_start`: weighted close-start suppression objective when
+  observed GT remains.
 - `loss/anti_stop`: compatibility alias for `loss/anti_close_start`.
 - `loss/weak_schema_close`: weighted weak global CoordJSON close-sequence loss
   for empty-remaining prefixes.

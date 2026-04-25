@@ -51,11 +51,11 @@ def _stage1_set_continuation_payload() -> dict:
                     "max_candidates": 8,
                 },
                 "structural_close": {
-                    "anti_close_weight": 0.1,
-                    "final_close_weight": 0.2,
+                    "close_start_suppression_weight": 0.1,
+                    "final_schema_close_weight": 0.2,
                 },
                 "positive_evidence_margin": {
-                    "mode": "replace_mp",
+                    "objective": "threshold_loss",
                     "threshold_space": "full_entry_logZ",
                     "rho": 0.75,
                     "threshold_calibration": "calib-v1",
@@ -79,9 +79,9 @@ def test_stage1_set_continuation_parses_successfully() -> None:
     assert stage1_cfg.subset_sampling.prefix_order == "random"
     assert stage1_cfg.candidates.mode == "uniform_subsample"
     assert stage1_cfg.candidates.max_candidates == 8
-    assert stage1_cfg.structural_close.anti_close_weight == pytest.approx(0.1)
-    assert stage1_cfg.structural_close.final_close_weight == pytest.approx(0.2)
-    assert stage1_cfg.positive_evidence_margin.mode == "replace_mp"
+    assert stage1_cfg.structural_close.close_start_suppression_weight == pytest.approx(0.1)
+    assert stage1_cfg.structural_close.final_schema_close_weight == pytest.approx(0.2)
+    assert stage1_cfg.positive_evidence_margin.objective == "threshold_loss"
     assert (
         stage1_cfg.positive_evidence_margin.threshold_space == "full_entry_logZ"
     )
@@ -91,6 +91,29 @@ def test_stage1_set_continuation_parses_successfully() -> None:
     assert (
         stage1_cfg.metric_schema_version == "stage1_set_continuation_metrics_v1"
     )
+
+
+def test_stage1_set_continuation_accepts_legacy_close_and_pem_names() -> None:
+    payload = _stage1_set_continuation_payload()
+    stage1_payload = payload["custom"]["stage1_set_continuation"]
+    stage1_payload["structural_close"] = {
+        "anti_close_weight": 0.3,
+        "final_close_weight": 0.4,
+    }
+    stage1_payload["positive_evidence_margin"] = {
+        "mode": "replace_mp",
+        "threshold_space": "full_entry_logZ",
+        "rho": 0.8,
+        "threshold_calibration": "legacy-calib",
+    }
+
+    cfg = TrainingConfig.from_mapping(payload, PromptOverrides())
+
+    stage1_cfg = cfg.custom.stage1_set_continuation
+    assert stage1_cfg.structural_close.close_start_suppression_weight == pytest.approx(0.3)
+    assert stage1_cfg.structural_close.final_schema_close_weight == pytest.approx(0.4)
+    assert stage1_cfg.positive_evidence_margin.objective == "threshold_loss"
+    assert stage1_cfg.positive_evidence_margin.rho == pytest.approx(0.8)
 
 
 def test_stage1_set_continuation_unknown_nested_key_reports_dotted_path() -> None:
@@ -152,7 +175,7 @@ def test_stage1_set_continuation_rejects_packing_flags(
 def test_stage1_set_continuation_positive_evidence_margin_requires_exactly_one_threshold() -> None:
     payload = _stage1_set_continuation_payload()
     payload["custom"]["stage1_set_continuation"]["positive_evidence_margin"] = {
-        "mode": "replace_mp",
+        "objective": "threshold_loss",
         "threshold_space": "full_entry_logZ",
         "rho": 0.75,
         "log_rho": -0.28,
@@ -165,7 +188,7 @@ def test_stage1_set_continuation_positive_evidence_margin_requires_exactly_one_t
 def test_stage1_set_continuation_positive_evidence_margin_requires_calibration_note() -> None:
     payload = _stage1_set_continuation_payload()
     payload["custom"]["stage1_set_continuation"]["positive_evidence_margin"] = {
-        "mode": "replace_mp",
+        "objective": "threshold_loss",
         "threshold_space": "full_entry_logZ",
         "rho": 0.75,
     }

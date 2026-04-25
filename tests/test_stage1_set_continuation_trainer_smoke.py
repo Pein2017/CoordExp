@@ -198,8 +198,8 @@ def _cfg(
     random_subset: float = 0.0,
     leave_one_out: float = 0.0,
     full_prefix: float = 0.0,
-    anti_close_weight: float = 0.0,
-    final_close_weight: float = 0.0,
+    close_start_suppression_weight: float = 0.0,
+    final_schema_close_weight: float = 0.0,
     pem: Mapping[str, Any] | None = None,
 ) -> Stage1SetContinuationConfig:
     return Stage1SetContinuationConfig.from_mapping(
@@ -213,10 +213,10 @@ def _cfg(
             },
             "candidates": {"mode": "exact"},
             "structural_close": {
-                "anti_close_weight": anti_close_weight,
-                "final_close_weight": final_close_weight,
+                "close_start_suppression_weight": close_start_suppression_weight,
+                "final_schema_close_weight": final_schema_close_weight,
             },
-            "positive_evidence_margin": dict(pem or {"mode": "disabled"}),
+            "positive_evidence_margin": dict(pem or {"objective": "disabled"}),
         }
     )
 
@@ -301,11 +301,48 @@ def test_trainer_exact_mp_scores_two_independent_branches_and_logs_metrics() -> 
     assert _latest_metric(trainer, "stop/p_continue_start_when_remaining_exists") < 0.01
 
 
-def test_trainer_pem_replacement_logs_pem_and_mp_diagnostic() -> None:
+def test_trainer_evaluate_uses_callback_without_prediction_loop() -> None:
+    trainer = _trainer(_cfg())
+    model = _FakeModel()
+    trainer.model = model
+    trainer.control = SimpleNamespace(should_evaluate=True)
+    logged: list[dict[str, float]] = []
+
+    class _CallbackHandler:
+        def __init__(self, model):
+            self.model = model
+
+        def call_event(self, event, args, state, control, **kwargs):
+            assert event == "on_evaluate"
+            kwargs["model"] = self.model
+            return self.on_evaluate(args, state, control, **kwargs)
+
+        def on_evaluate(self, args, state, control, **kwargs):
+            assert kwargs["model"] is self.model
+            metrics = kwargs["metrics"]
+            metrics["eval_det_f1ish/f1@0.5"] = 0.25
+            return control
+
+    def _fail_prediction_step(*args, **kwargs):
+        raise AssertionError("generic prediction loop should not run")
+
+    trainer.callback_handler = _CallbackHandler(model)
+    trainer.prediction_step = _fail_prediction_step
+    trainer.log = lambda metrics: logged.append(dict(metrics))
+
+    metrics = trainer.evaluate()
+
+    assert metrics["eval_det_f1ish/f1@0.5"] == pytest.approx(0.25)
+    assert "eval/runtime" in metrics
+    assert trainer.control.should_evaluate is False
+    assert logged and logged[-1]["eval_det_f1ish/f1@0.5"] == pytest.approx(0.25)
+
+
+def test_trainer_pem_threshold_loss_logs_pem_and_mp_diagnostic() -> None:
     trainer = _trainer(
         _cfg(
             pem={
-                "mode": "replace_mp",
+                "objective": "threshold_loss",
                 "log_rho": math.log(0.9),
                 "threshold_calibration": "authored_fixed_ablation",
             }
@@ -321,8 +358,8 @@ def test_trainer_pem_replacement_logs_pem_and_mp_diagnostic() -> None:
     assert _latest_metric(trainer, "loss/mp_diagnostic") < 0.1
 
 
-def test_trainer_anti_close_weight_contributes_when_remaining_exists() -> None:
-    trainer = _trainer(_cfg(anti_close_weight=0.5))
+def test_trainer_close_start_suppression_contributes_when_remaining_exists() -> None:
+    trainer = _trainer(_cfg(close_start_suppression_weight=0.5))
     model = _FakeModel()
     trainer.model = model
 
@@ -361,7 +398,9 @@ def test_trainer_adds_branch_local_coord_aux_when_enabled() -> None:
 
 
 def test_trainer_weak_schema_close_runs_for_full_prefix_samples() -> None:
-    trainer = _trainer(_cfg(empty=0.0, full_prefix=1.0, final_close_weight=0.25))
+    trainer = _trainer(
+        _cfg(empty=0.0, full_prefix=1.0, final_schema_close_weight=0.25)
+    )
     model = _FakeModel()
     trainer.model = model
 
@@ -377,7 +416,7 @@ def test_trainer_weak_schema_close_runs_for_full_prefix_samples() -> None:
 
 
 def test_full_prefix_metric_only_sample_does_not_dilute_batch_objective() -> None:
-    cfg = _cfg(empty=1.0, final_close_weight=0.0)
+    cfg = _cfg(empty=1.0, final_schema_close_weight=0.0)
     single_trainer = _trainer(cfg)
     single_model = _FakeModel()
     single_trainer.model = single_model
@@ -493,6 +532,18 @@ def test_numeric_estimator_and_branch_semantics_metrics_are_emitted() -> None:
     assert _latest_metric(trainer, "mp/branch_forwards_per_sample") == pytest.approx(
         3.0
     )
+
+
+def test_trainer_pads_candidate_forwards_to_distributed_max_count() -> None:
+    trainer = _trainer(_cfg())
+    trainer._ddp_max_int = lambda value, model: 4
+    model = _FakeModel()
+    trainer.model = model
+
+    trainer.compute_loss(model, _batch(), return_outputs=False)
+
+    assert len(model.calls) == 5
+    assert _latest_metric(trainer, "mp/num_candidates_scored") == pytest.approx(2.0)
 
 
 def test_set_continuation_requires_raw_metadata_batch() -> None:

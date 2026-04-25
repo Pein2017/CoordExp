@@ -1,5 +1,8 @@
 extends:
   - ../_shared/coord_soft_ce_gate_2b.yaml
+  # Keep the first production run on the original COCO Stage-1 coord-token
+  # surface on purpose. LVIS-proxy should be tested next as a dataset-choice
+  # ablation rather than mixed into this objective-change run.
   - ../../_shared/datasets/coco_1024_bbox_max60.yaml
   - ../../_shared/prompts/coco80_desc_first.yaml
 
@@ -9,14 +12,23 @@ model:
 training:
   output_root: /data/CoordExp/output_remote/stage1_2b/set_continuation
   logging_root: /data/CoordExp/output_remote/stage1_2b/set_continuation/tb
-  artifact_subdir: production_full_features
-  run_name: stage1-set-continuation-full-features-2b-sota1332-coco1024-val200
+  artifact_subdir: coco1024_sota1332_setcont_pem_close_suppress
+  run_name: setcont-coco1024-sota1332-pem-close-suppress
   packing: false
   eval_packing: false
   encoded_sample_cache:
     enabled: false
   num_train_epochs: 4
   effective_batch_size: 128
+  learning_rate: 5.0e-5
+  vit_lr: 1.0e-5
+  aligner_lr: 5.0e-5
+  metric_for_best_model: eval_det_f1ish@0.50_f1_full_micro
+  greater_is_better: true
+  eval_steps: 100
+  save_steps: 100
+  save_total_limit: 2
+  save_delay_steps: 200
 
 deepspeed:
   enabled: false
@@ -24,38 +36,45 @@ deepspeed:
 benchmark:
   group_id: stage1_set_continuation_full_features
   control_group_id: stage1_sft_sota1332
-  intended_variable: subset-conditioned full-entry multi-positive continuation with anti-close and fixed-rho PEM
+  intended_variable: subset-conditioned full-entry multi-positive continuation with close-start suppression and fixed-rho PEM threshold loss
   comparability_label: accuracy-comparable
 
 experiment:
   title: Stage-1 set-continuation full-feature production
   purpose: Continue training the SOTA coord-token Stage-1 SFT checkpoint with the new set-continuation objective.
-  hypothesis: Full-entry multi-positive supervision with subset prefixes, anti-close continuation pressure, and fixed-rho PEM improves continuation recall and reduces fixed-order competition.
+  hypothesis: Full-entry multi-positive supervision with subset prefixes, close-start suppression, and fixed-rho PEM threshold loss improves continuation recall and reduces fixed-order competition.
   baseline: output_remote/stage1_2b/coco_bbox_max60-hard_ce_soft_ce_w1_gate/epoch_4-from-base-2B/v0-20260227-050057/checkpoint-1332-merged-full
   key_deviations:
     - "trainer_variant: stage1_set_continuation"
-    - "objective: fixed-rho PEM replacement with full-entry MP diagnostic"
-    - "prefix sampling: empty/random/leave-one-out mixture with leave-one-out emphasis"
-    - "structural close: anti-close enabled when observed GT remains; weak final close disabled"
+    - "objective: fixed-rho PEM threshold loss with full-entry MP diagnostic"
+    - "dataset: original COCO coord-token train surface; LVIS-proxy is reserved for follow-up dataset ablation"
+    - "prefix sampling: balanced empty/random/leave-one-out mixture"
+    - "structural close: close-start suppression enabled when observed GT remains; weak final schema close disabled"
     - "execution: repeated independent candidate forwards; no prefix cache; no branch attention mask"
     - "coordinates: coord-token-only scoring; raw-text integer coordinates unsupported"
   runtime_settings:
     - "packing=false and eval_packing=false"
+    - "checkpoint_mode=artifact_only; stage1_set_continuation prunes checkpoint state files and keeps adapter artifacts only"
     - "deepspeed.enabled=false because repeated independent candidate forwards are incompatible with ZeRO-2 reduction"
     - "num_train_epochs=4"
     - "effective_batch_size=128"
+    - "lr: llm=5e-5, vit=1e-5, aligner=5e-5, coord_offset=5e-5"
+    - "metric_for_best_model=eval_det_f1ish@0.50_f1_full_micro"
     - "val_sample_limit=200"
   tags:
     - stage1
     - set-continuation
     - multi-positive
     - pem
-    - anti-close
+    - close-start-suppression
     - coord-token
 
 custom:
   trainer_variant: stage1_set_continuation
   val_sample_limit: 200
+  coord_offset:
+    embed_lr: 5.0e-5
+    head_lr: 5.0e-5
   coord_soft_ce_w1:
     enabled: false
   bbox_geo:
@@ -72,19 +91,19 @@ custom:
     eps: 1.0e-6
   stage1_set_continuation:
     subset_sampling:
-      empty_prefix_ratio: 0.20
-      random_subset_ratio: 0.30
-      leave_one_out_ratio: 0.50
+      empty_prefix_ratio: 0.30
+      random_subset_ratio: 0.50
+      leave_one_out_ratio: 0.20
       full_prefix_ratio: 0.0
       prefix_order: random
     candidates:
       mode: exact
       max_candidates: null
     structural_close:
-      anti_close_weight: 0.05
-      final_close_weight: 0.0
+      close_start_suppression_weight: 0.05
+      final_schema_close_weight: 0.0
     positive_evidence_margin:
-      mode: replace_mp
+      objective: threshold_loss
       threshold_space: full_entry_logZ
       rho: 0.90
       threshold_calibration: fixed_rho_0.90_no_external_evaluator_v1
@@ -93,17 +112,19 @@ custom:
     metrics: f1ish
     strict_parse: true
     limit: 200
-    batch_size: 1
-    max_new_tokens: 1024
+    batch_size: 4
+    max_new_tokens: 3084
     temperature: 0.0
     top_p: 1.0
-    repetition_penalty: 1.0
+    repetition_penalty: 1.05
     f1ish_pred_scope: annotated
   extra:
     benchmark_report:
       eval_scope: val200
       eval_view: f1ish_annotated
+      dataset_choice: original_coco_coord_token_train_surface
+      dataset_ablation_note: original_coco_first_lvis_proxy_followup
       prediction_surface: coord_token_xyxy
-      decoding_controls: greedy_temp0_top_p1_rep1
+      decoding_controls: greedy_temp0_top_p1_rep1p05
       same_budget_label: repeated_forward_correctness_v1
       sparse_label_caveat: annotated_view_may_count_unlabeled_true_positives_as_fp

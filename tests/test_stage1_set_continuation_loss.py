@@ -108,13 +108,13 @@ def test_sampled_raw_logz_omits_population_correction() -> None:
     assert result.log_z_estimator == "sampled_raw"
 
 
-def test_pem_replace_does_not_add_mp_loss() -> None:
+def test_pem_threshold_loss_does_not_add_mp_loss() -> None:
     scores = torch.tensor([-2.0, -3.0])
     log_z = torch.logsumexp(scores, dim=0)
 
     result = compute_mp_pem_losses(
         scores=scores,
-        pem_mode="replace_mp",
+        pem_mode="threshold_loss",
         log_rho=torch.tensor(-1.0),
     )
 
@@ -130,7 +130,7 @@ def test_pem_requires_exactly_one_threshold() -> None:
     with pytest.raises(ValueError, match="exactly one"):
         compute_mp_pem_losses(
             scores=torch.tensor([-2.0]),
-            pem_mode="replace_mp",
+            pem_mode="threshold_loss",
             rho=0.9,
             log_rho=torch.tensor(-0.1),
         )

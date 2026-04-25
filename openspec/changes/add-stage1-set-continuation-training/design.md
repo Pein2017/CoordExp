@@ -222,7 +222,7 @@ P_close_start(S) = P(first structural closure token | image, prompt, prefix)
 logP_close_sequence(S) = sum_t log P(closure_t | image, prompt, prefix, closure_<t)
 ```
 
-When `R != empty`, add optional anti-close:
+When `R != empty`, add optional close-start suppression:
 
 ```text
 loss/anti_close_start = -log(1 - P_close_start(S))
@@ -231,13 +231,13 @@ loss/anti_close_start = -log(1 - P_close_start(S))
 When `R == empty`, optionally apply weak structural-close supervision:
 
 ```text
-loss/weak_schema_close = final_close_weight * (-logP_close_sequence(S))
+loss/weak_schema_close = final_schema_close_weight * (-logP_close_sequence(S))
 ```
 
 Initial recommendation:
 
-- `anti_close_weight` configurable, default off or small for safe ablation;
-- `final_close_weight` configurable, default `0.0` for sparse-label experiments;
+- `close_start_suppression_weight` configurable, default off or small for safe ablation;
+- `final_schema_close_weight` configurable, default `0.0` for sparse-label experiments;
 - object-entry terminators remain part of candidate-entry CE;
 - stop mass includes only the configured structural closure schema, not chat/EOS tokens and not object-close tokens.
 
@@ -264,7 +264,7 @@ loss/mp = -logZ_remaining_exact      # exact mode
 loss/mp = -logZ_scored_raw           # sampled mode
 ```
 
-PEM is included in v1 behind config, disabled by default. The source-idea PEM experiment is replacement-mode, not additive to MP:
+PEM is included in v1 behind config, disabled by default. The source-idea PEM experiment optimizes a threshold loss, not an additive penalty on top of MP:
 
 ```text
 loss/pem = max(0, log(rho) - logZ_remaining)
@@ -277,14 +277,14 @@ Config shape:
 custom:
   stage1_set_continuation:
     positive_evidence_margin:
-      mode: disabled          # disabled | replace_mp
+      objective: disabled     # disabled | threshold_loss
       threshold_space: full_entry_logZ
       rho: null               # optional probability-space threshold
       log_rho: null           # optional log-space threshold
       threshold_calibration: null  # authored_fixed_ablation | calibration note/id
 ```
 
-When `mode: replace_mp`, the trainer logs `loss/pem` as the optimized objective and logs `loss/mp_diagnostic = -logZ_*` without adding it to total loss. This preserves the intended margin behavior: observed GT mass must clear the configured threshold, but the model is not pushed to assign all probability mass to observed remaining GT after the margin is satisfied.
+When `objective: threshold_loss`, the trainer logs `loss/pem` as the optimized objective and logs `loss/mp_diagnostic = -logZ_*` without adding it to total loss. This preserves the intended margin behavior: observed GT mass must clear the configured threshold, but the model is not pushed to assign all probability mass to observed remaining GT after the margin is satisfied.
 
 V1 must require exactly one threshold input when PEM is enabled: `rho` or `log_rho`. Numeric examples such as `rho: 0.90` may appear in benchmark profiles, but they should be treated as explicit experiment choices rather than silent defaults because full-entry sequence probabilities are length-sensitive.
 
@@ -417,8 +417,8 @@ The implementation should make these groups config-addressable:
 - Group A: ordinary SFT baseline.
 - Group B: ordinary SFT with structural schema-close masked or downweighted.
 - Group C: one-prefix exact MP.
-- Group D: subset MP plus anti-close-start.
-- Group E: fixed-rho/log-rho PEM replacement-mode.
+- Group D: subset MP plus close-start suppression.
+- Group E: fixed-rho/log-rho PEM threshold-loss objective.
 - Group F: leave-one-out emphasis.
 
 These group letters are local to this OpenSpec implementation and supersede
@@ -474,7 +474,7 @@ offline JSONL
        -> Stage1SetContinuationBranchEncoder
        -> repeated independent branch forwards
        -> full-entry score aggregation
-       -> MP / PEM / anti-close / weak-schema-close losses
+       -> MP / PEM / close-start-suppression / weak-schema-close losses
        -> mechanism metrics
        -> run artifact and benchmark-manifest provenance
 ```

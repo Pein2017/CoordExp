@@ -35,7 +35,7 @@ Add an off-by-default Stage-1 trainer variant for subset-conditioned set-continu
 
 - Keep object-entry end tokens supervised as part of `entry(o)`.
 - Treat global detection-list structural closure separately from object-entry end tokens.
-- Add optional anti-close-start supervision when observed remaining objects exist.
+- Add optional close-start suppression when observed remaining objects exist.
 - Add weak or masked structural-close supervision when no observed GT remains.
 - Support fixed-rho positive-evidence margin (PEM) in v1, configurable and disabled by default.
 - Support exact all-remaining candidate scoring and configurable candidate subsampling.
@@ -84,7 +84,7 @@ Expected code touch points:
 - A branch encoder that owns template state, multimodal/image alignment, branch tokenization, label masks, and structural-close spans.
 - Branch-local auxiliary loss adapters for compatible coord-token losses.
 - Metrics logging for MP, PEM, structural-close, candidate, auxiliary-loss, and budget diagnostics.
-- Benchmark configs for ordinary SFT, weak structural-close SFT, MP, MP plus anti-close, fixed-rho PEM, and leave-one-out emphasis.
+- Benchmark configs for ordinary SFT, weak structural-close SFT, MP, MP plus close-start suppression, fixed-rho PEM threshold loss, and leave-one-out emphasis.
 - Focused tests for serialization, sampler behavior, loss math, stop-token handling, packing rejection, and metric key parity.
 
 Correctness and reproducibility impact:

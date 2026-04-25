@@ -114,9 +114,10 @@ class CoordOffsetAdapter(nn.Module):
             idx = torch.searchsorted(coord_ids, matched_ids)
             offsets = self.embed_offset.to(output.device).index_select(0, idx)
 
-            flat_out = output.view(-1, output.size(-1))
-            flat_out[mask] = flat_out[mask] + offsets.to(flat_out.dtype)
-            return output
+            delta = torch.zeros_like(output)
+            flat_delta = delta.reshape(-1, delta.size(-1))
+            flat_delta[mask] = offsets.to(flat_delta.dtype)
+            return output + delta
 
         def _head_hook(module: nn.Module, inputs, output):
             if not isinstance(output, torch.Tensor):
@@ -138,11 +139,13 @@ class CoordOffsetAdapter(nn.Module):
             extra_logits = flat_hidden.to(head_offset.dtype) @ head_offset.T  # (N, num_ids)
 
             coord_ids = self.coord_ids.to(output.device)
-            flat_output = output.view(-1, output.size(-1))
-            # Expand coord_ids to match extra_logits shape for scatter_add_
-            scatter_idx = coord_ids.unsqueeze(0).expand(extra_logits.size(0), -1)
-            flat_output.scatter_add_(1, scatter_idx, extra_logits.to(flat_output.dtype))
-            return output
+            delta = torch.zeros_like(output)
+            flat_delta = delta.reshape(-1, delta.size(-1))
+            # Clone the expanded index so repeated independent forwards do not
+            # share a view-backed LongTensor across autograd graphs.
+            scatter_idx = coord_ids.unsqueeze(0).expand(extra_logits.size(0), -1).clone()
+            flat_delta.scatter_add_(1, scatter_idx, extra_logits.to(flat_delta.dtype))
+            return output + delta
 
         if self._embed_hook_handle is None:
             self._embed_hook_handle = embed_module.register_forward_hook(_embed_hook)

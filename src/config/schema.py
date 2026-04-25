@@ -1178,36 +1178,48 @@ class Stage1SetContinuationCandidatesConfig:
 
 @dataclass(frozen=True)
 class Stage1SetContinuationStructuralCloseConfig:
-    anti_close_weight: float = 0.0
-    final_close_weight: float = 0.0
+    close_start_suppression_weight: float = 0.0
+    final_schema_close_weight: float = 0.0
 
     def __post_init__(self) -> None:
-        anti_close_weight = float(self.anti_close_weight)
-        final_close_weight = float(self.final_close_weight)
-        object.__setattr__(self, "anti_close_weight", anti_close_weight)
-        object.__setattr__(self, "final_close_weight", final_close_weight)
-        if anti_close_weight < 0.0:
+        close_start_suppression_weight = float(self.close_start_suppression_weight)
+        final_schema_close_weight = float(self.final_schema_close_weight)
+        object.__setattr__(
+            self, "close_start_suppression_weight", close_start_suppression_weight
+        )
+        object.__setattr__(
+            self, "final_schema_close_weight", final_schema_close_weight
+        )
+        if close_start_suppression_weight < 0.0:
             raise ValueError(
-                "custom.stage1_set_continuation.structural_close.anti_close_weight must be >= 0"
+                "custom.stage1_set_continuation.structural_close.close_start_suppression_weight must be >= 0"
             )
-        if final_close_weight < 0.0:
+        if final_schema_close_weight < 0.0:
             raise ValueError(
-                "custom.stage1_set_continuation.structural_close.final_close_weight must be >= 0"
+                "custom.stage1_set_continuation.structural_close.final_schema_close_weight must be >= 0"
             )
+
+    @property
+    def anti_close_weight(self) -> float:
+        return self.close_start_suppression_weight
+
+    @property
+    def final_close_weight(self) -> float:
+        return self.final_schema_close_weight
 
 
 @dataclass(frozen=True)
 class Stage1SetContinuationPositiveEvidenceMarginConfig:
-    mode: Literal["disabled", "replace_mp"] = "disabled"
+    objective: Literal["disabled", "threshold_loss"] = "disabled"
     threshold_space: Literal["full_entry_logZ"] = "full_entry_logZ"
     rho: Optional[float] = None
     log_rho: Optional[float] = None
     threshold_calibration: Optional[str] = None
 
     def __post_init__(self) -> None:
-        if self.mode not in {"disabled", "replace_mp"}:
+        if self.objective not in {"disabled", "threshold_loss"}:
             raise ValueError(
-                "custom.stage1_set_continuation.positive_evidence_margin.mode must be one of {'disabled', 'replace_mp'}"
+                "custom.stage1_set_continuation.positive_evidence_margin.objective must be one of {'disabled', 'threshold_loss'}"
             )
         if self.threshold_space != "full_entry_logZ":
             raise ValueError(
@@ -1234,10 +1246,10 @@ class Stage1SetContinuationPositiveEvidenceMarginConfig:
                 self, "threshold_calibration", threshold_calibration
             )
 
-        if self.mode == "replace_mp":
+        if self.objective == "threshold_loss":
             if (rho is None) == (log_rho is None):
                 raise ValueError(
-                    "custom.stage1_set_continuation.positive_evidence_margin.replace_mp requires exactly one of rho/log_rho"
+                    "custom.stage1_set_continuation.positive_evidence_margin.threshold_loss requires exactly one of rho/log_rho"
                 )
             if rho is not None and not (0.0 < rho <= 1.0):
                 raise ValueError(
@@ -1245,8 +1257,68 @@ class Stage1SetContinuationPositiveEvidenceMarginConfig:
                 )
             if threshold_calibration is None:
                 raise ValueError(
-                    "custom.stage1_set_continuation.positive_evidence_margin.threshold_calibration must be provided when mode=replace_mp"
+                    "custom.stage1_set_continuation.positive_evidence_margin.threshold_calibration must be provided when objective=threshold_loss"
                 )
+
+    @property
+    def mode(self) -> str:
+        if self.objective == "threshold_loss":
+            return "replace_mp"
+        return self.objective
+
+
+def _apply_legacy_stage1_alias(
+    raw: dict[Any, Any],
+    *,
+    old_key: str,
+    new_key: str,
+    path: str,
+    value_map: Mapping[Any, Any] | None = None,
+) -> None:
+    if old_key not in raw:
+        return
+    if new_key in raw:
+        raise ValueError(
+            f"{path} must not set both legacy '{old_key}' and canonical '{new_key}'"
+        )
+    value = raw.pop(old_key)
+    if value_map is not None:
+        value = value_map.get(value, value)
+    raw[new_key] = value
+
+
+def _normalize_stage1_set_continuation_payload(payload: Any) -> Any:
+    if not isinstance(payload, Mapping):
+        return payload
+    raw: dict[Any, Any] = dict(payload)
+    structural_close = raw.get("structural_close")
+    if isinstance(structural_close, Mapping):
+        close_raw: dict[Any, Any] = dict(structural_close)
+        _apply_legacy_stage1_alias(
+            close_raw,
+            old_key="anti_close_weight",
+            new_key="close_start_suppression_weight",
+            path="custom.stage1_set_continuation.structural_close",
+        )
+        _apply_legacy_stage1_alias(
+            close_raw,
+            old_key="final_close_weight",
+            new_key="final_schema_close_weight",
+            path="custom.stage1_set_continuation.structural_close",
+        )
+        raw["structural_close"] = close_raw
+    positive_evidence_margin = raw.get("positive_evidence_margin")
+    if isinstance(positive_evidence_margin, Mapping):
+        pem_raw: dict[Any, Any] = dict(positive_evidence_margin)
+        _apply_legacy_stage1_alias(
+            pem_raw,
+            old_key="mode",
+            new_key="objective",
+            path="custom.stage1_set_continuation.positive_evidence_margin",
+            value_map={"replace_mp": "threshold_loss"},
+        )
+        raw["positive_evidence_margin"] = pem_raw
+    return raw
 
 
 @dataclass(frozen=True)
@@ -1269,6 +1341,7 @@ class Stage1SetContinuationConfig:
     def from_mapping(cls, payload: Any) -> "Stage1SetContinuationConfig":
         if payload is None:
             return cls()
+        payload = _normalize_stage1_set_continuation_payload(payload)
         return parse_dataclass_strict(
             cls,
             payload,

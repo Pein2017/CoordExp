@@ -215,7 +215,7 @@ Normative behavior:
   serialization,
 - `loss/anti_close_start = -log(1 - P_close_start(S))` applies only when
   `R != empty` and its weight is non-zero,
-- `loss/weak_schema_close = final_close_weight * (-logP_close_sequence(S))`
+- `loss/weak_schema_close = final_schema_close_weight * (-logP_close_sequence(S))`
   applies only when `R = empty` and its weight is non-zero,
 - `<|im_end|>`, `<|end_of_text|>`, EOS, chat-template stops, and object-entry
   close tokens are not part of `P_close_start` or `logP_close_sequence`,
@@ -225,7 +225,7 @@ Normative behavior:
 
 #### Scenario: Remaining observed GT exists
 - **GIVEN** `R != empty`
-- **WHEN** anti-close is enabled
+- **WHEN** close-start suppression is enabled
 - **THEN** the trainer penalizes the first structural closure decision token
 - **AND** does not penalize chat EOS or assistant stop tokens.
 
@@ -233,15 +233,16 @@ Normative behavior:
 - **GIVEN** `R = empty`
 - **WHEN** weak structural-close supervision is enabled
 - **THEN** the trainer teacher-forces the full structural closure sequence
-- **AND** scales it by `final_close_weight`, which may be `0.0`.
+- **AND** scales it by `final_schema_close_weight`, which may be `0.0`.
 
-### Requirement: Positive-evidence margin supports replacement-mode in v1
+### Requirement: Positive-evidence margin supports threshold-loss objective in v1
 The trainer SHALL support fixed-threshold PEM in v1, disabled by default, and
-the source-idea Group E objective SHALL use PEM as a replacement for MP rather
-than an additive penalty on top of MP.
+the source-idea objective SHALL use PEM as a threshold loss rather than an
+additive penalty on top of MP.
 
 Normative behavior:
-- `positive_evidence_margin.mode` MUST support `disabled` and `replace_mp`,
+- `positive_evidence_margin.objective` MUST support `disabled` and
+  `threshold_loss`,
 - when PEM is enabled, exactly one of `rho` or `log_rho` MUST be configured,
 - `positive_evidence_margin.threshold_space` MUST be recorded and v1 SHALL use
   `full_entry_logZ`,
@@ -249,18 +250,18 @@ Normative behavior:
   explicit statement that the threshold is an authored fixed ablation value,
 - PEM uses `logZ_remaining_exact` in exact mode and `logZ_remaining_est` in
   uniform-subsample mode,
-- when `mode=replace_mp`, `loss/pem` is optimized and `loss/mp_diagnostic` is
-  logged without contributing to total loss,
+- when `objective=threshold_loss`, `loss/pem` is optimized and
+  `loss/mp_diagnostic` is logged without contributing to total loss,
 - additive PEM, if later supported, MUST be a separately named ablation and
   MUST NOT be described as preserving probability space for latent positives.
 
 #### Scenario: PEM disabled
-- **GIVEN** `positive_evidence_margin.mode: disabled`
+- **GIVEN** `positive_evidence_margin.objective: disabled`
 - **WHEN** loss is computed for `R != empty`
 - **THEN** the trainer optimizes the standard MP objective.
 
-#### Scenario: PEM replacement mode
-- **GIVEN** `positive_evidence_margin.mode: replace_mp`
+#### Scenario: PEM threshold-loss objective
+- **GIVEN** `positive_evidence_margin.objective: threshold_loss`
 - **AND** a configured threshold
 - **WHEN** loss is computed for `R != empty`
 - **THEN** the trainer optimizes
@@ -384,8 +385,8 @@ Normative behavior:
   a separately named throughput/control ablation but MUST NOT be silently mixed
   into the set-continuation production run,
 - the production profile MUST enable exact full-entry candidate scoring,
-  anti-close-start continuation pressure, weak/disabled final close supervision,
-  fixed-threshold PEM replacement mode, and a mixed subset-prefix sampler with
+  close-start suppression, weak/disabled final close supervision,
+  fixed-threshold PEM threshold loss, and a mixed subset-prefix sampler with
   leave-one-out coverage,
 - benchmark manifests MUST record the intended variable versus the comparator,
   comparability label, realized branch/token budget, realized prefix-mode

@@ -48,10 +48,13 @@ def test_production_profile_resolves_and_pins_common_contract() -> None:
     assert cfg.training["logging_root"] == (
         "/data/CoordExp/output_remote/stage1_2b/set_continuation/tb"
     )
-    assert cfg.training["artifact_subdir"] == "production_full_features"
+    assert (
+        cfg.training["artifact_subdir"]
+        == "coco1024_sota1332_setcont_pem_close_suppress"
+    )
     assert (
         cfg.training["run_name"]
-        == "stage1-set-continuation-full-features-2b-sota1332-coco1024-val200"
+        == "setcont-coco1024-sota1332-pem-close-suppress"
     )
     assert cfg.training["packing"] is False
     assert cfg.training["eval_packing"] is False
@@ -59,6 +62,13 @@ def test_production_profile_resolves_and_pins_common_contract() -> None:
     assert cfg.training["seed"] == 17
     assert cfg.training["num_train_epochs"] == 4
     assert cfg.training["effective_batch_size"] == 128
+    assert cfg.training["learning_rate"] == pytest.approx(5.0e-5)
+    assert cfg.training["vit_lr"] == pytest.approx(1.0e-5)
+    assert cfg.training["aligner_lr"] == pytest.approx(5.0e-5)
+    assert cfg.training["metric_for_best_model"] == (
+        "eval_det_f1ish@0.50_f1_full_micro"
+    )
+    assert cfg.training["greater_is_better"] is True
     assert cfg.training.get("max_steps") is None
     assert cfg.custom.train_sample_limit is None
     assert str(cfg.custom.train_jsonl).endswith(
@@ -75,6 +85,8 @@ def test_production_profile_resolves_and_pins_common_contract() -> None:
     assert cfg.custom.coord_tokens.skip_bbox_norm is True
     assert cfg.custom.coord_offset.enabled is True
     assert cfg.custom.coord_offset.tie_head is True
+    assert cfg.custom.coord_offset.embed_lr == pytest.approx(5.0e-5)
+    assert cfg.custom.coord_offset.head_lr == pytest.approx(5.0e-5)
     assert cfg.custom.coord_soft_ce_w1.enabled is False
     assert cfg.custom.bbox_geo.enabled is False
     assert cfg.custom.bbox_size_aux.enabled is False
@@ -84,14 +96,16 @@ def test_production_profile_resolves_and_pins_common_contract() -> None:
     assert cfg.custom.eval_detection.max_new_tokens == 1024
     assert cfg.custom.eval_detection.temperature == pytest.approx(0.0)
     assert cfg.custom.eval_detection.top_p == pytest.approx(1.0)
-    assert cfg.custom.eval_detection.repetition_penalty == pytest.approx(1.0)
+    assert cfg.custom.eval_detection.repetition_penalty == pytest.approx(1.05)
     assert cfg.custom.eval_detection.f1ish_pred_scope == "annotated"
 
     report = cfg.custom.extra["benchmark_report"]
     assert report["eval_scope"] == "val200"
     assert report["eval_view"] == "f1ish_annotated"
+    assert report["dataset_choice"] == "original_coco_coord_token_train_surface"
+    assert report["dataset_ablation_note"] == "original_coco_first_lvis_proxy_followup"
     assert report["prediction_surface"] == "coord_token_xyxy"
-    assert report["decoding_controls"] == "greedy_temp0_top_p1_rep1"
+    assert report["decoding_controls"] == "greedy_temp0_top_p1_rep1p05"
     assert report["same_budget_label"] == "repeated_forward_correctness_v1"
     assert (
         report["sparse_label_caveat"]
@@ -108,14 +122,14 @@ def test_production_profile_enables_all_set_continuation_features() -> None:
     assert sc is not None
     assert sc.candidates.mode == "exact"
     assert sc.candidates.max_candidates is None
-    assert sc.subset_sampling.empty_prefix_ratio == pytest.approx(0.20)
-    assert sc.subset_sampling.random_subset_ratio == pytest.approx(0.30)
-    assert sc.subset_sampling.leave_one_out_ratio == pytest.approx(0.50)
+    assert sc.subset_sampling.empty_prefix_ratio == pytest.approx(0.30)
+    assert sc.subset_sampling.random_subset_ratio == pytest.approx(0.50)
+    assert sc.subset_sampling.leave_one_out_ratio == pytest.approx(0.20)
     assert sc.subset_sampling.full_prefix_ratio == pytest.approx(0.0)
     assert sc.subset_sampling.prefix_order == "random"
-    assert sc.structural_close.anti_close_weight == pytest.approx(0.05)
-    assert sc.structural_close.final_close_weight == pytest.approx(0.0)
-    assert pem.mode == "replace_mp"
+    assert sc.structural_close.close_start_suppression_weight == pytest.approx(0.05)
+    assert sc.structural_close.final_schema_close_weight == pytest.approx(0.0)
+    assert pem.objective == "threshold_loss"
     assert pem.threshold_space == "full_entry_logZ"
     assert pem.rho == pytest.approx(0.90)
     assert pem.log_rho is None
@@ -182,7 +196,7 @@ def test_effective_runtime_records_production_set_continuation_provenance() -> N
     assert sc_runtime["prefix_gradient"] == "non_detached_recomputed_per_branch"
     assert sc_runtime["metric_schema_version"] == "stage1_set_continuation_metrics_v1"
     assert sc_runtime["positive_evidence_margin"] == {
-        "mode": "replace_mp",
+        "objective": "threshold_loss",
         "threshold_space": "full_entry_logZ",
         "rho": 0.90,
         "threshold_calibration": "fixed_rho_0.90_no_external_evaluator_v1",
@@ -208,7 +222,7 @@ def test_experiment_manifest_mirrors_production_runtime_summary(tmp_path: Path) 
         "benchmark": {"group_id": "stage1_set_continuation_full_features"},
         "benchmark_group_id": "stage1_set_continuation_full_features",
         "control_group_id": "stage1_sft_sota1332",
-        "intended_variable": "full-entry MP plus anti-close and PEM",
+        "intended_variable": "full-entry MP plus close-start suppression and PEM",
         "comparability_label": "accuracy-comparable",
         "stage1_set_continuation": {
             "candidate_scoring_mode": "exact",

@@ -190,9 +190,9 @@ custom:
   trainer_variant: stage1_set_continuation
   stage1_set_continuation:
     subset_sampling:
-      empty_prefix_ratio: 0.20
-      random_subset_ratio: 0.30
-      leave_one_out_ratio: 0.50
+      empty_prefix_ratio: 0.30
+      random_subset_ratio: 0.50
+      leave_one_out_ratio: 0.20
       full_prefix_ratio: 0.0
       prefix_order: random
     candidates:
@@ -200,11 +200,12 @@ custom:
       max_candidates: null
 ```
 
-The checked-in production profile uses the `20/30/50/0` mixture above to keep
-first-object and arbitrary-prefix coverage while putting substantial pressure
-on nearly-complete prefixes. Schema defaults remain `30/45/20/5`, so the
-explicit production config is the source of truth for this run. A non-zero
-`full_prefix_ratio` remains supported for explicit weak-close ablations.
+The checked-in production profile uses the `30/50/20/0` mixture above to keep
+first-object and arbitrary-prefix coverage while still sampling
+nearly-complete leave-one-out prefixes. Schema defaults remain `30/45/20/5`,
+so the explicit production config is the source of truth for this run. A
+non-zero `full_prefix_ratio` remains supported for explicit weak-close
+ablations.
 
 Candidate modes:
 
@@ -220,31 +221,32 @@ Candidate modes:
 
 Structural-close controls:
 
-- `structural_close.anti_close_weight` adds
+- `structural_close.close_start_suppression_weight` adds
   `loss/anti_close_start = -log(1 - P_close_start(prefix))` when observed GT
   remains.
-- `structural_close.final_close_weight` adds weak teacher-forced close-sequence
-  loss only when no observed GT remains.
+- `structural_close.final_schema_close_weight` adds weak teacher-forced
+  close-sequence loss only when no observed GT remains.
 - Object-entry close tokens remain supervised inside candidate entries.
 - Compatibility aliases `loss/anti_stop`, `loss/eod`, and `stop/p_stop_*` are
   emitted for dashboards, but the authoritative v1 semantics are structural
   close-start and CoordJSON close-sequence probabilities.
 
-PEM replacement mode is included in v1:
+PEM threshold loss is included in v1:
 
 ```yaml
 positive_evidence_margin:
-  mode: replace_mp
+  objective: threshold_loss
   threshold_space: full_entry_logZ
   rho: 0.90
   threshold_calibration: fixed_rho_0.90_no_external_evaluator_v1
 ```
 
-When PEM is enabled, `loss/pem` is optimized and `loss/mp_diagnostic` records
-the MP loss without adding it to the total objective.
+When `objective: threshold_loss`, `loss/pem` is optimized and
+`loss/mp_diagnostic` records the MP loss without adding it to the total
+objective.
 
-Current parser contract: `mode=replace_mp` requires exactly one of `rho` or
-`log_rho`; `threshold_space` is fixed to `full_entry_logZ`; and
+Current parser contract: `objective=threshold_loss` requires exactly one of
+`rho` or `log_rho`; `threshold_space` is fixed to `full_entry_logZ`; and
 `threshold_calibration` must be a non-empty provenance string. The checked-in
 production profile uses an authored fixed threshold, not an externally
 calibrated evaluator threshold.
@@ -288,11 +290,22 @@ coord-token Stage-1 SFT checkpoint:
 output_remote/stage1_2b/coco_bbox_max60-hard_ce_soft_ce_w1_gate/epoch_4-from-base-2B/v0-20260227-050057/checkpoint-1332-merged-full
 ```
 
-The profile enables exact full-entry MP scoring, the `20/30/50/0`
-empty/random/leave-one-out/full prefix mixture, anti-close continuation
-pressure, final close supervision disabled, and fixed-rho PEM replacement with
-`rho=0.90`. It remains 2B, COCO80 desc-first, coord-token-only,
+The profile enables exact full-entry MP scoring, the `30/50/20/0`
+empty/random/leave-one-out/full prefix mixture, close-start suppression when
+observed GT remains, final schema close supervision disabled, and fixed-rho
+PEM threshold loss with `rho=0.90`. It remains 2B, COCO80 desc-first,
+coord-token-only,
 `val200`/`f1ish_annotated`, and `training.packing: false`.
+
+Because this run continues from an already four-epoch fine-tuned SOTA
+checkpoint, the production config uses reduced continuation learning rates:
+`learning_rate=5e-5`, `vit_lr=1e-5`, `aligner_lr=5e-5`, and coord-offset
+`embed_lr=head_lr=5e-5`.
+
+The production entry intentionally keeps the original COCO Stage-1 coord-token
+training surface first. LVIS-proxy should be evaluated as a follow-up
+dataset-choice ablation, not silently mixed into the first objective-change
+run.
 
 The profile pins `coord_soft_ce_w1`, `bbox_geo`, and `bbox_size_aux` disabled
 so the first production run isolates the continuation objective. Its

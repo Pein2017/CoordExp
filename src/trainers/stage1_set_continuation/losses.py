@@ -138,7 +138,7 @@ def _resolve_log_rho(
     dtype: torch.dtype,
 ) -> torch.Tensor:
     if (rho is None) == (log_rho is None):
-        raise ValueError("PEM replace_mp requires exactly one of rho/log_rho")
+        raise ValueError("PEM threshold_loss requires exactly one of rho/log_rho")
     if rho is not None:
         if not (0.0 < float(rho) <= 1.0):
             raise ValueError("rho must satisfy 0 < rho <= 1")
@@ -146,6 +146,12 @@ def _resolve_log_rho(
     if isinstance(log_rho, torch.Tensor):
         return log_rho.to(device=device, dtype=dtype)
     return torch.tensor(float(log_rho), device=device, dtype=dtype)
+
+
+def _normalize_pem_objective(pem_mode: str) -> str:
+    if pem_mode == "replace_mp":
+        return "threshold_loss"
+    return pem_mode
 
 
 def _estimate_log_z(
@@ -220,8 +226,9 @@ def compute_mp_pem_losses(
 ) -> MultiPositiveLossResult:
     if scores.ndim != 1:
         raise ValueError("scores must be rank-1")
-    if pem_mode not in {"disabled", "replace_mp"}:
-        raise ValueError("pem_mode must be one of {'disabled', 'replace_mp'}")
+    pem_mode = _normalize_pem_objective(str(pem_mode))
+    if pem_mode not in {"disabled", "threshold_loss"}:
+        raise ValueError("pem_mode must be one of {'disabled', 'threshold_loss'}")
     if int(scores.numel()) == 0:
         zero = _zero_like_scores(scores)
         return MultiPositiveLossResult(
@@ -248,7 +255,7 @@ def compute_mp_pem_losses(
         scored_count=resolved_scored_count,
     )
     loss_mp = -log_z
-    if pem_mode == "replace_mp":
+    if pem_mode == "threshold_loss":
         threshold = _resolve_log_rho(
             rho=rho,
             log_rho=log_rho,

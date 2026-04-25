@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import time
 from collections.abc import Mapping
 from typing import Any
 
@@ -91,6 +92,29 @@ class Stage1SetContinuationTrainer(
         )
         cache[key] = coord_id_map
         return coord_id_map
+
+    def _ddp_max_int(self, value: int, model: Any) -> int:
+        if (
+            not torch.distributed.is_available()
+            or not torch.distributed.is_initialized()
+            or torch.distributed.get_world_size() <= 1
+        ):
+            return int(value)
+        device = None
+        parameters = getattr(model, "parameters", None)
+        if callable(parameters):
+            for parameter in parameters():
+                device = parameter.device
+                break
+        if device is None:
+            device = torch.device(
+                f"cuda:{torch.cuda.current_device()}"
+                if torch.cuda.is_available()
+                else "cpu"
+            )
+        tensor = torch.tensor([int(value)], dtype=torch.long, device=device)
+        torch.distributed.all_reduce(tensor, op=torch.distributed.ReduceOp.MAX)
+        return int(tensor.item())
 
     def _seed_parts(
         self, meta: Mapping[str, Any], sample_offset: int
@@ -630,8 +654,13 @@ class Stage1SetContinuationTrainer(
             )
         total_loss: torch.Tensor | None = None
         objective_contributes = False
+        sync_contributes = False
         last_outputs: Any = None
         aux_accum: dict[str, dict[str, Any]] = {}
+        max_candidate_forwards = self._ddp_max_int(len(candidate_indices), model)
+        padding_forwards = max(0, max_candidate_forwards - len(candidate_indices))
+        metrics["mp/ddp_candidate_forward_sync_count"] = float(max_candidate_forwards)
+        metrics["mp/ddp_candidate_padding_forwards"] = float(padding_forwards)
 
         if candidate_indices:
             candidate_results: list[CandidateLogProbResult] = []
@@ -665,12 +694,12 @@ class Stage1SetContinuationTrainer(
             if sample.candidate_scoring_mode == "uniform_subsample":
                 estimator = (
                     "uniform_importance"
-                    if cfg.positive_evidence_margin.mode == "replace_mp"
+                    if cfg.positive_evidence_margin.objective == "threshold_loss"
                     else "sampled_raw"
                 )
             mp_result = compute_mp_pem_losses(
                 scores=score_tensor,
-                pem_mode=str(cfg.positive_evidence_margin.mode),
+                pem_mode=str(cfg.positive_evidence_margin.objective),
                 rho=cfg.positive_evidence_margin.rho,
                 log_rho=cfg.positive_evidence_margin.log_rho,
                 estimator=estimator,
@@ -719,7 +748,7 @@ class Stage1SetContinuationTrainer(
             metrics["loss/pem"] = float(mp_result.loss_pem.detach().item())
             metrics["loss/mp"] = (
                 float(mp_result.loss_mp.detach().item())
-                if cfg.positive_evidence_margin.mode == "disabled"
+                if cfg.positive_evidence_margin.objective == "disabled"
                 else 0.0
             )
             metrics["mp/loss_mp_denominator_samples"] = 1.0
@@ -729,6 +758,7 @@ class Stage1SetContinuationTrainer(
                 total_loss = total_loss + aux_loss
                 objective_contributes = True
         else:
+            candidate_results = []
             metrics.update(
                 {
                     "loss/mp": 0.0,
@@ -752,6 +782,29 @@ class Stage1SetContinuationTrainer(
                 }
             )
 
+        for _ in range(padding_forwards):
+            # DDP ranks must execute the same number of branch graphs before the
+            # shared backward. Padding forwards are zero-loss and metric-free.
+            padding_branch = self._encode_branch(
+                meta=meta,
+                prefix_indices=prefix_indices,
+                candidate_index=None,
+            )
+            padding_outputs, _padding_inputs = self._forward_branch(
+                model=model,
+                branch=padding_branch,
+            )
+            last_outputs = padding_outputs
+            logits = getattr(padding_outputs, "logits", None)
+            if isinstance(logits, torch.Tensor):
+                padding_loss = logits.sum() * 0.0
+                total_loss = (
+                    padding_loss
+                    if total_loss is None
+                    else total_loss + padding_loss
+                )
+                sync_contributes = True
+
         (
             close_start_nll,
             close_sequence_nll,
@@ -769,7 +822,9 @@ class Stage1SetContinuationTrainer(
         p_continue = (1.0 - p_close).clamp(min=0.0, max=1.0)
         if remaining_indices:
             anti_loss = -torch.log((1.0 - p_close).clamp_min(1e-7))
-            weighted_anti = anti_loss * float(cfg.structural_close.anti_close_weight)
+            weighted_anti = anti_loss * float(
+                cfg.structural_close.close_start_suppression_weight
+            )
             if total_loss is None:
                 total_loss = weighted_anti
             else:
@@ -792,9 +847,9 @@ class Stage1SetContinuationTrainer(
             ]
         else:
             weak_loss = close_sequence_nll * float(
-                cfg.structural_close.final_close_weight
+                cfg.structural_close.final_schema_close_weight
             )
-            if float(cfg.structural_close.final_close_weight) > 0.0:
+            if float(cfg.structural_close.final_schema_close_weight) > 0.0:
                 total_loss = weak_loss if total_loss is None else total_loss + weak_loss
                 objective_contributes = True
             metrics["loss/anti_close_start"] = 0.0
@@ -832,7 +887,7 @@ class Stage1SetContinuationTrainer(
             repeated_forward_tokens / max(single_sequence_tokens, 1.0)
         )
         metrics["mp/objective_contributing_samples"] = float(objective_contributes)
-        if not objective_contributes:
+        if not objective_contributes and not sync_contributes:
             total_loss = None
         return total_loss, metrics, last_outputs
 
@@ -893,6 +948,63 @@ class Stage1SetContinuationTrainer(
             }
             return total_loss, aggregate_outputs
         return total_loss
+
+    def evaluate(
+        self,
+        eval_dataset: Any = None,
+        ignore_keys: Any = None,
+        metric_key_prefix: str = "eval",
+    ) -> dict[str, float]:
+        """Run Stage-1 detection callbacks without HF teacher-forced prediction.
+
+        Set-continuation batches carry branch metadata for the MP objective, and
+        the ordinary HuggingFace prediction loop does not know how to forward
+        those examples. Evaluation for this trainer is therefore callback-owned:
+        in production that means Stage1DetectionEvalCallback performs rollout,
+        parsing, and detector metrics using the live model.
+        """
+
+        del eval_dataset, ignore_keys
+        start = time.perf_counter()
+        metrics: dict[str, float] = {}
+        callback_handler = getattr(self, "callback_handler", None)
+        if callback_handler is not None:
+            if hasattr(self.control, "should_evaluate"):
+                self.control.should_evaluate = False
+            call_event = getattr(callback_handler, "call_event", None)
+            if callable(call_event):
+                self.control = call_event(
+                    "on_evaluate",
+                    self.args,
+                    self.state,
+                    self.control,
+                    metrics=metrics,
+                )
+            else:
+                self.control = callback_handler.on_evaluate(
+                    self.args,
+                    self.state,
+                    self.control,
+                    metrics=metrics,
+                    model=getattr(self, "model", None),
+                )
+
+        try:
+            import torch.distributed as dist
+        except (ImportError, TypeError, ValueError):
+            dist = None  # type: ignore[assignment]
+        if dist is not None and dist.is_available() and dist.is_initialized():
+            rank = int(dist.get_rank())
+            payload: list[dict[str, float] | None] = [dict(metrics) if rank == 0 else None]
+            dist.broadcast_object_list(payload, src=0)
+            if isinstance(payload[0], dict):
+                metrics.update(payload[0])
+
+        metrics.setdefault(f"{metric_key_prefix}/runtime", time.perf_counter() - start)
+        log_fn = getattr(self, "log", None)
+        if callable(log_fn):
+            log_fn(metrics)
+        return metrics
 
 
 __all__ = ["Stage1SetContinuationTrainer"]

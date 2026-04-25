@@ -543,7 +543,7 @@ def _logz_estimator_for_set_continuation(sc_cfg: Any) -> str:
     if mode == "exact":
         return "exact"
     pem = getattr(sc_cfg, "positive_evidence_margin", None)
-    if str(getattr(pem, "mode", "") or "") == "replace_mp":
+    if str(getattr(pem, "objective", "") or "") == "threshold_loss":
         return "uniform_importance"
     return "sampled_raw"
 
@@ -2938,9 +2938,11 @@ def main():
             trainer=trainer,
             training_config=training_config,
         )
-    # Rollout-matching evaluators emit rollout/* metrics only.
-    # Guard against inherited defaults like eval_token_acc, which would crash
-    # best-checkpoint selection at evaluation time.
+        _set_train_arg(train_args, "minimal_checkpoint_artifacts", True)
+        setattr(trainer.args, "minimal_checkpoint_artifacts", True)
+    # Non-standard evaluators do not emit ordinary token-accuracy metrics.
+    # Guard against inherited defaults that would crash best-checkpoint
+    # selection after a successful callback/rollout evaluation.
     if (
         trainer_variant in {"stage2_rollout_aligned", "stage2_two_channel"}
         and eval_dataset is not None
@@ -2956,6 +2958,26 @@ def main():
             )
             train_args.training_args.metric_for_best_model = "rollout/f1"
             trainer.args.metric_for_best_model = "rollout/f1"
+            if getattr(train_args.training_args, "greater_is_better", None) is None:
+                train_args.training_args.greater_is_better = True
+                trainer.args.greater_is_better = True
+    if (
+        trainer_variant == "stage1_set_continuation"
+        and eval_dataset is not None
+        and getattr(train_args, "training_args", None) is not None
+    ):
+        metric_for_best_model = str(
+            getattr(train_args.training_args, "metric_for_best_model", "") or ""
+        ).strip()
+        if "token_acc" in metric_for_best_model:
+            replacement_metric = "eval_det_f1ish@0.50_f1_full_micro"
+            logger.warning(
+                "metric_for_best_model=%s is incompatible with stage1_set_continuation detection eval; overriding to %s.",
+                metric_for_best_model,
+                replacement_metric,
+            )
+            train_args.training_args.metric_for_best_model = replacement_metric
+            trainer.args.metric_for_best_model = replacement_metric
             if getattr(train_args.training_args, "greater_is_better", None) is None:
                 train_args.training_args.greater_is_better = True
                 trainer.args.greater_is_better = True

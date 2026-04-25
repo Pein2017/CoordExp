@@ -35,6 +35,11 @@ logger = logging.getLogger(__name__)
 COORDEXP_CHECKPOINT_STATE_NAME = "coordexp_checkpoint_state.pt"
 _COORDEXP_CHECKPOINT_SCHEMA_VERSION = 1
 _DEFAULT_CHECKPOINT_DDP_TIMEOUT_S = 300.0
+_MINIMAL_ARTIFACT_STATE_FILES = (
+    COORDEXP_CHECKPOINT_STATE_NAME,
+    TRAINER_STATE_NAME,
+    "training_args.bin",
+)
 
 
 def _callback_state_key(callback: Any) -> str:
@@ -132,6 +137,30 @@ def _write_coordexp_checkpoint_state(checkpoint_dir: str | Path, trainer: Any) -
     checkpoint_path.parent.mkdir(parents=True, exist_ok=True)
     torch.save(_build_coordexp_checkpoint_state(trainer), str(checkpoint_path))
     return str(checkpoint_path)
+
+
+def _is_restartable_checkpoint_mode(trainer: Any) -> bool:
+    return (
+        str(
+            getattr(getattr(trainer, "args", None), "checkpoint_mode", "artifact_only")
+            or "artifact_only"
+        )
+        == "restartable"
+    )
+
+
+def _uses_minimal_artifact_checkpoint(trainer: Any) -> bool:
+    return bool(
+        getattr(getattr(trainer, "args", None), "minimal_checkpoint_artifacts", False)
+    )
+
+
+def _prune_minimal_artifact_checkpoint(checkpoint_dir: str | Path) -> None:
+    checkpoint_path = Path(str(checkpoint_dir))
+    for name in _MINIMAL_ARTIFACT_STATE_FILES:
+        path = checkpoint_path / name
+        if path.exists():
+            path.unlink()
 
 
 def load_coordexp_checkpoint_state(checkpoint_dir: str | Path) -> dict[str, Any]:
@@ -354,8 +383,14 @@ class FinalCheckpointMixin:
             if getattr(self.args, "should_save", False):
                 self.state.save_to_json(os.path.join(checkpoint_dir, TRAINER_STATE_NAME))
 
-        if getattr(self.args, "should_save", False):
+        if getattr(self.args, "should_save", False) and _is_restartable_checkpoint_mode(
+            self
+        ):
             _write_coordexp_checkpoint_state(checkpoint_dir, self)
+        if getattr(self.args, "should_save", False) and _uses_minimal_artifact_checkpoint(
+            self
+        ):
+            _prune_minimal_artifact_checkpoint(checkpoint_dir)
 
     def _should_use_bounded_ddp_checkpoint_save(self, model: Any) -> bool:
         """Return True when the save path is plain DDP and safe to harden locally."""
@@ -516,6 +551,10 @@ class FinalCheckpointMixin:
             fn=_save_remaining_checkpoint_state,
             model=model,
         )
+        if getattr(trainer.args, "should_save", False) and _uses_minimal_artifact_checkpoint(
+            trainer
+        ):
+            _prune_minimal_artifact_checkpoint(output_dir)
         return output_dir
 
     # ------------------------------------------------------------------
