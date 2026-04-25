@@ -2502,11 +2502,23 @@ def main():
     # Setup trainer
     logger.info("Setting up trainer...")
     trainer_variant = getattr(train_args, "trainer_variant", None)
-    if trainer_variant in {"stage2_rollout_aligned", "stage2_two_channel"}:
-        # Keep raw fields (messages/assistant_payload) for rollout→parse→match construction.
+    if trainer_variant in {
+        "stage1_set_continuation",
+        "stage2_rollout_aligned",
+        "stage2_two_channel",
+    }:
+        # Keep raw fields for trainer-owned branch/rollout construction.
         if getattr(train_args, "training_args", None) is not None:
             train_args.training_args.remove_unused_columns = False
 
+    if trainer_variant == "stage1_set_continuation":
+        from .data_collators.stage1_set_continuation_collator import (
+            build_stage1_set_continuation_collator,
+        )
+
+        base_collator = None
+        data_collator = build_stage1_set_continuation_collator()
+    elif trainer_variant in {"stage2_rollout_aligned", "stage2_two_channel"}:
         # Eval rollout batching knob: rollout_matching.eval_decode_batch_size.
         # Rollout trainer variants use this value for eval dataloader batch size.
         _apply_rollout_decode_batch_size_override(
@@ -2542,7 +2554,10 @@ def main():
         raw_proxy = extra_cfg.get("proxy_supervision")
         if isinstance(raw_proxy, Mapping):
             proxy_supervision_cfg = dict(raw_proxy)
-    if trainer_variant in {"stage2_rollout_aligned", "stage2_two_channel"}:
+    if trainer_variant == "stage1_set_continuation":
+        # Set-continuation does branch encoding and masking inside the trainer.
+        pass
+    elif trainer_variant in {"stage2_rollout_aligned", "stage2_two_channel"}:
         # Rollout-matching does its own encoding and loss masking inside the trainer.
         data_collator = base_collator
     else:
