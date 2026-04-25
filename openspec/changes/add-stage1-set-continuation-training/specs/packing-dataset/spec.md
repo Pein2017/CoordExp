@@ -15,8 +15,9 @@ Additional normative behavior:
   or `dynamic`,
 - the failure MUST apply before train or eval packing can collapse multiple raw
   records into one sample,
-- `training.eval_packing` does not make set-continuation packing eligible in
-  v1.
+- `training.eval_packing=true` MUST also fail fast for this variant, even when
+  `training.packing=false`, so eval-time packing cannot silently become
+  eligible in v1.
 
 #### Scenario: Set-continuation rejects training packing before pack-plan build
 - **GIVEN** `custom.trainer_variant: stage1_set_continuation`

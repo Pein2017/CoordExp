@@ -10,6 +10,7 @@ from src.trainers.metrics.mixins import (
     CoordSoftCEW1LossMixin,
     GradAccumLossScaleMixin,
     InstabilityMonitorMixin,
+    SFTStructuralCloseLossMixin,
 )
 
 
@@ -22,6 +23,7 @@ def compose_trainer_class(
     bbox_geo_cfg: Any,
     bbox_size_aux_cfg: Any,
     coord_soft_ce_w1_cfg: Any,
+    sft_structural_close_cfg: Any = None,
 ) -> type:
     mixins: list[type] = []
     if trainer_variant not in {
@@ -42,6 +44,10 @@ def compose_trainer_class(
             mixins.append(BBoxGeoLossMixin)
         if coord_soft_ce_w1_cfg and getattr(coord_soft_ce_w1_cfg, "enabled", False):
             mixins.append(CoordSoftCEW1LossMixin)
+        if sft_structural_close_cfg and getattr(
+            sft_structural_close_cfg, "enabled", False
+        ):
+            mixins.append(SFTStructuralCloseLossMixin)
     if not mixins:
         return trainer_cls
     return type(

@@ -166,7 +166,10 @@ Recommended initial policies:
 - random-subset: sample size uniformly from valid intermediate sizes, then sample objects uniformly;
 - leave-one-out: sample one held-out object uniformly, `S = O - {o}`;
 - full-prefix: `S = O`, `R = empty`, no MP term, optional weak closure supervision only;
-- prefix order: randomize the order of `S` by default, with a `dataset` or `canonical` option for ablations.
+- prefix order: randomize the order of `S` by default, with a `dataset`
+  preserved-order option for ablations. A separate geometry-canonical ordering
+  mode is not exposed in v1 because the sampler receives object indices, not
+  decoded geometry.
 
 The prefix-order recommendation is random by default because this experiment is explicitly about escaping fixed-order teacher-forcing basins. A preserved-order ablation is still useful when isolating "subset state" from "order randomization".
 
@@ -246,7 +249,11 @@ Required implementation:
 - also log the teacher-forced probability of the final schema closure token inside the structural closure sequence;
 - do not include `<|im_end|>` or `<|end_of_text|>` in `P_close_start` or `logP_close_sequence`.
 
-The metric namespace must use structural-close naming. `loss/eod` should not be emitted by this trainer unless a future config explicitly supervises chat-template EOD/EOS tokens, which v1 does not.
+The metric namespace must use structural-close naming as the source of truth.
+For dashboard continuity, v1 may also emit compatibility aliases such as
+`loss/eod`, `loss/anti_stop`, and `stop/p_stop_*`; these aliases must be
+documented as CoordJSON structural-close aliases and must never include
+`<|im_end|>`, `<|end_of_text|>`, tokenizer EOS, or chat-template stop tokens.
 
 ### 7. Positive-Evidence Margin
 
@@ -315,8 +322,15 @@ Required policy:
 Set-continuation runs must preserve the existing training artifact family and add set-continuation-specific provenance:
 
 - `resolved_config.json` includes the fully defaulted `custom.stage1_set_continuation` block, objective mode, subset ratios, prefix order, candidate scoring mode/K, logZ estimator, structural-close weights, PEM mode/threshold, aux adapter modes, and coord-token-only validation status.
-- `effective_runtime.json` or `pipeline_manifest.json` records repeated-forward mode, branch isolation, prefix-gradient semantics, raw-sample collator path, packing rejection, encoded-cache policy, and candidate scoring mode.
-- `experiment_manifest.json` records `benchmark_group_id`, `control_group_id`, hypothesis, comparator, headline metric scope, eval view, and pointers to metrics/eval artifacts.
+- `effective_runtime.json` records repeated-forward mode, branch isolation,
+  prefix-gradient semantics, raw-sample collator path, packing rejection,
+  encoded-cache policy, and candidate scoring mode.
+- `experiment_manifest.json` records the bootstrap-time benchmark summary:
+  `benchmark_group_id`, `control_group_id`, comparator, configured eval scope,
+  eval view, benchmark-report notes, and pointers to the pre-train manifest
+  files. Post-train metric/eval artifacts remain produced by the existing
+  training and evaluation callbacks/reports rather than being known at
+  bootstrap time.
 - `run_metadata.json` and data-provenance sidecars remain present and include git dirty status and upstream dependency provenance.
 - a metric schema marker such as `stage1_set_continuation_metrics_version` is recorded so later metric-key changes cannot silently mix.
 
@@ -380,6 +394,7 @@ Minimum logs:
 - `aux/<name>/candidate_count`;
 - `aux/<name>/position_count`;
 - `aux/<name>/skipped_candidates`;
+- `aux/<name>/contributing_candidates`;
 - per-object coverage statistics if feasible without expensive bookkeeping.
 
 Responsibility is:

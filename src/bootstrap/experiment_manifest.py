@@ -66,6 +66,14 @@ def build_experiment_manifest_payload(
             "dataset_source_train_jsonl",
             "dataset_source_val_jsonl",
             "launcher",
+            "benchmark",
+            "benchmark_group_id",
+            "control_group_id",
+            "intended_variable",
+            "comparability_label",
+            "stage1_eval_plan",
+            "stage1_sft_structural_close",
+            "stage1_set_continuation",
         ):
             if key in effective_runtime:
                 runtime_summary[key] = copy.deepcopy(effective_runtime[key])

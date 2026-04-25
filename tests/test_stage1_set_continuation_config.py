@@ -102,6 +102,16 @@ def test_stage1_set_continuation_unknown_nested_key_reports_dotted_path() -> Non
     )
 
 
+def test_stage1_set_continuation_rejects_unimplemented_canonical_prefix_order() -> None:
+    payload = _stage1_set_continuation_payload()
+    payload["custom"]["stage1_set_continuation"]["subset_sampling"][
+        "prefix_order"
+    ] = "canonical"
+
+    with pytest.raises(ValueError, match="prefix_order"):
+        TrainingConfig.from_mapping(payload, PromptOverrides())
+
+
 @pytest.mark.parametrize(
     ("coord_tokens_patch", "error_text"),
     [
@@ -114,6 +124,23 @@ def test_stage1_set_continuation_requires_coord_token_contract(
 ) -> None:
     payload = _stage1_set_continuation_payload()
     payload["custom"]["coord_tokens"] = coord_tokens_patch
+
+    with pytest.raises(ValueError, match=error_text):
+        TrainingConfig.from_mapping(payload, PromptOverrides())
+
+
+@pytest.mark.parametrize(
+    ("training_patch", "error_text"),
+    [
+        ({"packing": True, "eval_packing": False}, "training\\.packing=false"),
+        ({"packing": False, "eval_packing": True}, "training\\.eval_packing=false"),
+    ],
+)
+def test_stage1_set_continuation_rejects_packing_flags(
+    training_patch: dict[str, bool], error_text: str
+) -> None:
+    payload = _stage1_set_continuation_payload()
+    payload["training"] = dict(training_patch)
 
     with pytest.raises(ValueError, match=error_text):
         TrainingConfig.from_mapping(payload, PromptOverrides())

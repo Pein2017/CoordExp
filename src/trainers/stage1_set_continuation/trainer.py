@@ -69,6 +69,29 @@ class Stage1SetContinuationTrainer(
         self._coord_token_ids = [int(token_id) for token_id in ids]
         return self._coord_token_ids
 
+    def _get_coord_id_map(
+        self,
+        *,
+        vocab_size: int,
+        device: torch.device,
+    ) -> torch.Tensor:
+        cache = getattr(self, "_coord_id_map_cache", None)
+        if not isinstance(cache, dict):
+            cache = {}
+            setattr(self, "_coord_id_map_cache", cache)
+        key = (str(device), int(vocab_size))
+        if key in cache:
+            return cache[key]
+        from src.trainers.losses.coord_soft_ce_w1 import build_coord_id_map
+
+        coord_id_map = build_coord_id_map(
+            vocab_size=int(vocab_size),
+            device=device,
+            coord_token_ids=self._get_coord_token_ids(),
+        )
+        cache[key] = coord_id_map
+        return coord_id_map
+
     def _seed_parts(
         self, meta: Mapping[str, Any], sample_offset: int
     ) -> tuple[Any, ...]:
@@ -171,7 +194,7 @@ class Stage1SetContinuationTrainer(
         model: Any,
         branch: EncodedSetContinuationBranch,
         coord_token_ids: torch.Tensor,
-    ) -> tuple[CandidateLogProbResult, Any]:
+    ) -> tuple[CandidateLogProbResult, Any, dict[str, Any]]:
         outputs, branch_inputs = self._forward_branch(model=model, branch=branch)
         logits = outputs.logits
         labels = branch_inputs["labels"].to(device=logits.device)
@@ -184,7 +207,193 @@ class Stage1SetContinuationTrainer(
             coord_label_mask=branch.coord_label_mask.to(device=logits.device),
             coord_token_ids=coord_token_ids.to(device=logits.device),
         )
-        return result, outputs
+        return result, outputs, branch_inputs
+
+    def _candidate_scoped_labels(
+        self,
+        *,
+        labels: torch.Tensor,
+        branch: EncodedSetContinuationBranch,
+    ) -> torch.Tensor:
+        candidate_mask = branch.candidate_entry_label_mask.to(device=labels.device)
+        if tuple(candidate_mask.shape) != tuple(labels.shape):
+            raise ValueError(
+                "candidate_entry_label_mask must align with branch labels for aux losses"
+            )
+        scoped = labels.clone()
+        scoped[~candidate_mask] = -100
+        return scoped
+
+    def _add_aux_metric_atom(
+        self,
+        accum: dict[str, dict[str, Any]],
+        *,
+        name: str,
+        loss: torch.Tensor | None,
+        position_count: int,
+        skipped: bool,
+    ) -> None:
+        state = accum.setdefault(
+            name,
+            {
+                "losses": [],
+                "candidate_count": 0.0,
+                "position_count": 0.0,
+                "skipped_candidates": 0.0,
+                "contributing_candidates": 0.0,
+            },
+        )
+        state["candidate_count"] = float(state["candidate_count"]) + 1.0
+        if skipped or not isinstance(loss, torch.Tensor):
+            state["skipped_candidates"] = float(state["skipped_candidates"]) + 1.0
+            return
+        state["losses"].append(loss)
+        state["position_count"] = float(state["position_count"]) + float(position_count)
+        state["contributing_candidates"] = (
+            float(state["contributing_candidates"]) + 1.0
+        )
+
+    def _compute_candidate_aux_atoms(
+        self,
+        *,
+        branch: EncodedSetContinuationBranch,
+        branch_inputs: Mapping[str, Any],
+        outputs: Any,
+        aux_accum: dict[str, dict[str, Any]],
+    ) -> None:
+        logits = getattr(outputs, "logits", None)
+        labels = branch_inputs.get("labels")
+        if not isinstance(logits, torch.Tensor) or not isinstance(labels, torch.Tensor):
+            raise ValueError("branch-local aux losses require logits and labels tensors")
+        labels = labels.to(device=logits.device)
+        candidate_labels = self._candidate_scoped_labels(labels=labels, branch=branch)
+        coord_token_ids = self._get_coord_token_ids()
+        coord_id_map = self._get_coord_id_map(
+            vocab_size=int(logits.shape[-1]),
+            device=logits.device,
+        )
+        tokenizer = getattr(getattr(self, "template", None), "tokenizer", None)
+        object_field_order = str(
+            getattr(self, "object_field_order", "desc_first") or "desc_first"
+        )
+        bbox_format = str(getattr(self, "bbox_format", "xyxy") or "xyxy")
+        coord_cfg = getattr(self, "coord_soft_ce_w1_cfg", None)
+        if coord_cfg is not None and bool(getattr(coord_cfg, "enabled", False)):
+            from src.trainers.losses.coord_soft_ce_w1 import (
+                compute_coord_soft_ce_w1_loss,
+            )
+            from src.trainers.teacher_forcing.stage1 import (
+                mask_stage1_coord_targets,
+            )
+
+            masked_labels = mask_stage1_coord_targets(candidate_labels, coord_token_ids)
+            result = compute_coord_soft_ce_w1_loss(
+                logits=logits,
+                labels=candidate_labels,
+                masked_labels=masked_labels,
+                coord_token_weights=None,
+                coord_token_ids=coord_token_ids,
+                coord_id_map=coord_id_map,
+                tokenizer=tokenizer,
+                token_types=None,
+                cfg=coord_cfg,
+                average_tokens_across_devices=False,
+                model_accepts_loss_kwargs=False,
+                accelerator_num_processes=None,
+                object_field_order=object_field_order,
+                bbox_format=bbox_format,
+            )
+            self._add_aux_metric_atom(
+                aux_accum,
+                name="coord_soft_ce_w1",
+                loss=getattr(result, "coord_loss", None),
+                position_count=int(getattr(result, "coord_tokens", 0) or 0)
+                if result is not None
+                else 0,
+                skipped=result is None,
+            )
+
+        bbox_geo_cfg = getattr(self, "bbox_geo_cfg", None)
+        if bbox_geo_cfg is not None and bool(getattr(bbox_geo_cfg, "enabled", False)):
+            from src.trainers.losses.bbox_geo import compute_stage1_bbox_geo_loss
+
+            decode_temperature = float(getattr(coord_cfg, "temperature", 1.0) or 1.0)
+            result = compute_stage1_bbox_geo_loss(
+                logits=logits,
+                labels=candidate_labels,
+                coord_token_ids=coord_token_ids,
+                coord_id_map=coord_id_map,
+                tokenizer=tokenizer,
+                cfg=bbox_geo_cfg,
+                decode_temperature=decode_temperature,
+                object_field_order=object_field_order,
+                bbox_format=bbox_format,
+            )
+            self._add_aux_metric_atom(
+                aux_accum,
+                name="bbox_geo",
+                loss=getattr(result, "total_loss", None),
+                position_count=int(getattr(result, "coord_slots", 0) or 0)
+                if result is not None
+                else 0,
+                skipped=result is None,
+            )
+
+        bbox_size_cfg = getattr(self, "bbox_size_aux_cfg", None)
+        if bbox_size_cfg is not None and bool(getattr(bbox_size_cfg, "enabled", False)):
+            from src.trainers.losses.bbox_size_aux import (
+                compute_stage1_bbox_size_aux_loss,
+            )
+
+            decode_temperature = float(getattr(coord_cfg, "temperature", 1.0) or 1.0)
+            result = compute_stage1_bbox_size_aux_loss(
+                logits=logits,
+                labels=candidate_labels,
+                coord_token_ids=coord_token_ids,
+                coord_id_map=coord_id_map,
+                tokenizer=tokenizer,
+                cfg=bbox_size_cfg,
+                decode_temperature=decode_temperature,
+                object_field_order=object_field_order,
+                bbox_format=bbox_format,
+            )
+            self._add_aux_metric_atom(
+                aux_accum,
+                name="bbox_size",
+                loss=getattr(result, "total_loss", None),
+                position_count=int(getattr(result, "coord_slots", 0) or 0)
+                if result is not None
+                else 0,
+                skipped=result is None,
+            )
+
+    def _aggregate_candidate_aux_atoms(
+        self,
+        aux_accum: dict[str, dict[str, Any]],
+    ) -> tuple[torch.Tensor | None, dict[str, Any]]:
+        total_aux_loss: torch.Tensor | None = None
+        metrics: dict[str, Any] = {}
+        for name, state in sorted(aux_accum.items()):
+            losses = state.get("losses", [])
+            if losses:
+                loss = torch.stack(list(losses)).mean()
+                total_aux_loss = loss if total_aux_loss is None else total_aux_loss + loss
+                metrics[f"loss/aux_{name}"] = float(loss.detach().item())
+            else:
+                metrics[f"loss/aux_{name}"] = 0.0
+            metrics[f"aux/{name}/candidate_count"] = float(
+                state.get("candidate_count", 0.0)
+            )
+            metrics[f"aux/{name}/position_count"] = float(
+                state.get("position_count", 0.0)
+            )
+            metrics[f"aux/{name}/skipped_candidates"] = float(
+                state.get("skipped_candidates", 0.0)
+            )
+            metrics[f"aux/{name}/contributing_candidates"] = float(
+                state.get("contributing_candidates", 0.0)
+            )
+        return total_aux_loss, metrics
 
     def _close_branch_stats(
         self,
@@ -374,6 +583,18 @@ class Stage1SetContinuationTrainer(
             "mp/samples_with_candidates": float(bool(candidate_indices)),
             "mp/samples_full_prefix": float(len(remaining_indices) == 0),
             "mp/branch_forwards_per_sample": float(len(candidate_indices) + 1),
+            "mp/selected_mode_empty_prefix": float(
+                sample.selected_mode == "empty_prefix"
+            ),
+            "mp/selected_mode_random_subset": float(
+                sample.selected_mode == "random_subset"
+            ),
+            "mp/selected_mode_leave_one_out": float(
+                sample.selected_mode == "leave_one_out"
+            ),
+            "mp/selected_mode_full_prefix": float(
+                sample.selected_mode == "full_prefix"
+            ),
             "mp/candidate_scoring_mode": metric_code(
                 sample.candidate_scoring_mode,
                 CANDIDATE_SCORING_MODE_CODES,
@@ -395,9 +616,22 @@ class Stage1SetContinuationTrainer(
                 metric_name="mp/prefix_gradient",
             ),
         }
+        for mode in (
+            "empty_prefix",
+            "random_subset",
+            "leave_one_out",
+            "full_prefix",
+        ):
+            metrics[f"mp/configured_ratio_{mode}"] = float(
+                sample.configured_mixture.get(mode, 0.0)
+            )
+            metrics[f"mp/resolved_valid_ratio_{mode}"] = float(
+                sample.resolved_valid_mixture.get(mode, 0.0)
+            )
         total_loss: torch.Tensor | None = None
         objective_contributes = False
         last_outputs: Any = None
+        aux_accum: dict[str, dict[str, Any]] = {}
 
         if candidate_indices:
             candidate_results: list[CandidateLogProbResult] = []
@@ -409,7 +643,7 @@ class Stage1SetContinuationTrainer(
                     prefix_indices=prefix_indices,
                     candidate_index=candidate_index,
                 )
-                result, outputs = self._score_candidate_branch(
+                result, outputs, branch_inputs = self._score_candidate_branch(
                     model=model,
                     branch=branch,
                     coord_token_ids=coord_token_ids,
@@ -418,6 +652,12 @@ class Stage1SetContinuationTrainer(
                 candidate_results.append(result)
                 candidate_lengths.append(int(result.tokens))
                 scores.append(result.score)
+                self._compute_candidate_aux_atoms(
+                    branch=branch,
+                    branch_inputs=branch_inputs,
+                    outputs=outputs,
+                    aux_accum=aux_accum,
+                )
 
             score_tensor = torch.stack(scores)
             raw_log_z = torch.logsumexp(score_tensor, dim=0)
@@ -483,6 +723,11 @@ class Stage1SetContinuationTrainer(
                 else 0.0
             )
             metrics["mp/loss_mp_denominator_samples"] = 1.0
+            aux_loss, aux_metrics = self._aggregate_candidate_aux_atoms(aux_accum)
+            metrics.update(aux_metrics)
+            if aux_loss is not None:
+                total_loss = total_loss + aux_loss
+                objective_contributes = True
         else:
             metrics.update(
                 {
@@ -530,13 +775,21 @@ class Stage1SetContinuationTrainer(
             else:
                 total_loss = total_loss + weighted_anti
             metrics["loss/anti_close_start"] = float(weighted_anti.detach().item())
+            metrics["loss/anti_stop"] = metrics["loss/anti_close_start"]
             metrics["loss/weak_schema_close"] = 0.0
+            metrics["loss/eod"] = 0.0
             metrics["stop/p_close_start_when_remaining_exists"] = float(
                 p_close.detach().item()
             )
             metrics["stop/p_continue_start_when_remaining_exists"] = float(
                 p_continue.detach().item()
             )
+            metrics["stop/p_stop_when_remaining_exists"] = metrics[
+                "stop/p_close_start_when_remaining_exists"
+            ]
+            metrics["stop/p_continue_when_remaining_exists"] = metrics[
+                "stop/p_continue_start_when_remaining_exists"
+            ]
         else:
             weak_loss = close_sequence_nll * float(
                 cfg.structural_close.final_close_weight
@@ -545,10 +798,15 @@ class Stage1SetContinuationTrainer(
                 total_loss = weak_loss if total_loss is None else total_loss + weak_loss
                 objective_contributes = True
             metrics["loss/anti_close_start"] = 0.0
+            metrics["loss/anti_stop"] = 0.0
             metrics["loss/weak_schema_close"] = float(weak_loss.detach().item())
+            metrics["loss/eod"] = metrics["loss/weak_schema_close"]
             metrics["stop/p_close_start_when_remaining_empty"] = float(
                 p_close.detach().item()
             )
+            metrics["stop/p_stop_when_remaining_empty"] = metrics[
+                "stop/p_close_start_when_remaining_empty"
+            ]
             metrics["stop/logp_close_sequence_when_remaining_empty"] = float(
                 (-close_sequence_nll).detach().item()
             )
@@ -563,9 +821,15 @@ class Stage1SetContinuationTrainer(
         metrics["mp/candidate_tokens_scored_mean"] = metrics[
             "mp/total_candidate_tokens_scored"
         ] / max(len(candidate_indices), 1)
+        repeated_forward_tokens = (
+            float(prefix_tokens) * float(len(candidate_indices))
+            + metrics["mp/total_candidate_tokens_scored"]
+        )
+        single_sequence_tokens = (
+            float(prefix_tokens) + metrics["mp/total_candidate_tokens_scored"]
+        )
         metrics["mp/repeated_forward_token_ratio_vs_baseline"] = float(
-            (metrics["mp/total_candidate_tokens_scored"] + len(prefix_indices))
-            / max(len(prefix_indices) + len(remaining_indices), 1)
+            repeated_forward_tokens / max(single_sequence_tokens, 1.0)
         )
         metrics["mp/objective_contributing_samples"] = float(objective_contributes)
         if not objective_contributes:

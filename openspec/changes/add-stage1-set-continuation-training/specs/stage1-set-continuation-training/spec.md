@@ -123,7 +123,8 @@ full_prefix = 0.05
 ```
 
 Normative behavior:
-- prefix order SHOULD default to random and expose dataset/canonical ablations,
+- prefix order SHOULD default to random and expose a `dataset` preserved-order
+  ablation,
 - sampler RNG MUST be a pure function of resolved seed, epoch, sample identity,
   rank, and documented microstep salt,
 - invalid mode selections for small object counts MUST renormalize over valid
@@ -218,8 +219,9 @@ Normative behavior:
   applies only when `R = empty` and its weight is non-zero,
 - `<|im_end|>`, `<|end_of_text|>`, EOS, chat-template stops, and object-entry
   close tokens are not part of `P_close_start` or `logP_close_sequence`,
-- this trainer MUST NOT emit `loss/eod` unless a future config explicitly
-  supervises chat-template EOD/EOS tokens.
+- compatibility aliases such as `loss/eod`, `loss/anti_stop`, and
+  `stop/p_stop_*` MAY be emitted for dashboards, but they MUST be documented as
+  structural-close aliases and MUST NOT include chat-template EOD/EOS tokens.
 
 #### Scenario: Remaining observed GT exists
 - **GIVEN** `R != empty`
@@ -322,7 +324,8 @@ Required metric families:
   `stop/logp_close_sequence_when_remaining_empty`,
   `stop/p_final_schema_token_teacher_forced`;
 - aux adapter counters: `aux/<name>/candidate_count`,
-  `aux/<name>/position_count`, `aux/<name>/skipped_candidates`.
+  `aux/<name>/position_count`, `aux/<name>/skipped_candidates`,
+  `aux/<name>/contributing_candidates`.
 
 Validity rules:
 - responsibility entropy over one scored candidate is `0.0`, and max/min
@@ -345,11 +348,12 @@ and add set-continuation-specific provenance.
 Normative behavior:
 - `resolved_config.json` records the full defaulted
   `custom.stage1_set_continuation` block,
-- `effective_runtime.json` or `pipeline_manifest.json` records repeated-forward
+- `effective_runtime.json` records repeated-forward
   semantics, branch isolation, prefix-gradient semantics, collator path,
   packing rejection, encoded-cache policy, and candidate scoring mode,
 - `experiment_manifest.json` records benchmark group identity, comparator,
-  hypothesis, metric scope, eval view, and artifact pointers,
+  configured metric scope, eval view, benchmark-report notes, and bootstrap
+  manifest-file pointers,
 - `run_metadata.json` and data-provenance sidecars remain present,
 - a set-continuation metric schema version is recorded.
 

@@ -15,10 +15,11 @@ Additional normative behavior:
 - branch-local bbox aux applies only to scored candidate-entry bbox state,
 - the adapter reduction MUST first produce a mean-like per-candidate atom, then
   uniformly average valid atoms over scored candidates,
-- `bbox_size_aux` remains dependent on available decoded bbox state from the
-  bbox geometry path,
-- setup or loss computation MUST fail fast if required decoded bbox state or
-  bbox grouping metadata is unavailable.
+- `bbox_size_aux` MAY reuse the canonical size helper directly from the
+  candidate-entry coord logits and labels rather than depending on ordinary
+  one-sequence bbox mixins,
+- setup or loss computation MUST fail fast if required branch-local bbox
+  grouping metadata is unavailable.
 
 #### Scenario: Branch-local size aux uses canonical helper
 - **GIVEN** `custom.trainer_variant: stage1_set_continuation`
@@ -27,9 +28,9 @@ Additional normative behavior:
 - **THEN** size aux execution routes through the branch-local adapter
 - **AND** that adapter reuses the canonical bbox size auxiliary helper.
 
-#### Scenario: Missing decoded bbox state fails fast
+#### Scenario: Missing branch-local bbox state fails fast
 - **GIVEN** `custom.trainer_variant: stage1_set_continuation`
 - **AND** bbox size aux is enabled
-- **AND** decoded bbox state is unavailable for candidate entries
+- **AND** candidate-entry bbox grouping metadata is unavailable
 - **WHEN** loss computation reaches the aux adapter
 - **THEN** training fails fast with actionable diagnostics.

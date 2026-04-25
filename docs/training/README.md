@@ -6,7 +6,7 @@ status: canonical
 domain: training
 summary: Router for Stage-1 and Stage-2 training documentation, metrics, and runbooks.
 tags: [training, stage1, stage2]
-updated: 2026-04-03
+updated: 2026-04-25
 ---
 
 # Training Docs
@@ -16,7 +16,7 @@ or metric interpretation.
 
 ## Read Order
 
-1. [STAGE1_OBJECTIVE.md](STAGE1_OBJECTIVE.md) for baseline Stage-1 behavior
+1. [STAGE1_OBJECTIVE.md](STAGE1_OBJECTIVE.md) for baseline Stage-1 behavior and the set-continuation MP experiment
 2. [../data/PACKING.md](../data/PACKING.md) for the current Stage-1 static-packing contract and defaults
 3. [STAGE2_RUNBOOK.md](STAGE2_RUNBOOK.md) for current Stage-2 workflows and launcher patterns
 4. [LVIS.md](LVIS.md) for LVIS-specific dataset, prompt, Stage-2, and evaluation semantics
@@ -47,6 +47,7 @@ or metric interpretation.
 - "Which page is runbook vs metrics vs historical design?"
 - "What should I read before touching Stage-1 or Stage-2 configs?"
 - "What is the current Stage-1 packing and `global_max_length` contract?"
+- "How do I run or compare Stage-1 set-continuation Groups A-F?"
 
 ## Code Handles
 
@@ -60,6 +61,8 @@ or metric interpretation.
 - `src/trainers/rollout_runtime/`
 - `src/trainers/rollout_matching/`
 - `src/trainers/teacher_forcing/`
+- `src/trainers/stage1_set_continuation/`
+- `configs/stage1/set_continuation/`
 - `src/launchers/stage2_vllm_server.py`
 - `configs/_shared/datasets/`
 - `configs/_shared/prompts/`

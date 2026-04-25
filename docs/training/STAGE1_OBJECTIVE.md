@@ -5,7 +5,7 @@ doc_type: reference
 status: canonical
 domain: training
 summary: Stage-1 objective surfaces and coord-token training behavior.
-updated: 2026-04-11
+updated: 2026-04-25
 ---
 
 # Coord Objective & Adapter
@@ -28,6 +28,12 @@ Scope note:
   - `custom.coord_soft_ce_w1.*`
   - `custom.bbox_geo.*`
   - `custom.bbox_size_aux.*`
+- For the set-continuation Stage-1 experiment, the active surface is:
+  - `custom.trainer_variant: stage1_set_continuation`
+  - `custom.stage1_set_continuation.*`
+  - top-level `benchmark.*`
+  - `configs/stage1/set_continuation/group_{a..f}_*.yaml`
+  - v1 rejects packing and uses repeated independent candidate forwards
 - Narrow V1 exception:
   - `custom.bbox_format: cxcy_logw_logh` or `custom.bbox_format: cxcywh`
     defines an experimental Stage-1-only profile
@@ -144,6 +150,147 @@ custom:
 - Stage-2 note:
   - `stage2_two_channel` and `stage2_rollout_aligned` still use provenance-aware metric families, but the active single-pass Stage-2 contract now routes Channel-A through `loss/text/*`, `loss/coord/*`, and `coord_diag/*`, while Channel-B uses `loss/B_rollout_text/*`, `loss/B_coord/*`, and `coord_diag/B/*`.
   - Historical iterative groups such as `loss/A1_*`, `loss/A2_*`, `coord_diag/A1/*`, and `coord_diag/A2/*` are no longer part of the active Stage-2 contract.
+
+## Stage-1 set-continuation objective
+
+`custom.trainer_variant: stage1_set_continuation` adds an off-by-default
+Stage-1 training paradigm for testing set-conditioned continuation instead of
+ordinary fixed-order next-object SFT.
+
+The object-level objective is:
+
+```text
+score(o) = log P(entry(o) | image, prompt, prefix)
+loss/mp = -logsumexp(score(o) for o in remaining_candidates)
+```
+
+Important semantics:
+
+- `entry(o)` is the full serialized object dictionary entry, including `desc`,
+  `bbox_2d`, and the object-entry structural terminator.
+- Candidate scoring is full-entry, not token-wise multi-positive mixing.
+- Non-coordinate candidate-entry labels use ordinary full-vocab logprob.
+- `<|coord_*|>` labels use coord-vocabulary-normalized logprob, so raw-text
+  integer coordinate training is out of scope for this v1 path.
+- The global detection-list close sequence is separate from object-entry end
+  tokens. V1 uses the CoordJSON schema close sequence `]}` and never treats
+  `<|im_end|>`, `<|end_of_text|>`, or tokenizer EOS as the stop target for this
+  objective.
+- V1 branch execution is naive repeated independent forward:
+  `prefix + candidate_A`, `prefix + candidate_B`, and so on. Candidates do not
+  attend to each other. Prefix gradients are non-detached but recomputed for
+  each branch.
+- V1 rejects `training.packing` and `training.eval_packing` because branch
+  selection and structural-close spans are sample-local.
+
+Subset-prefix sampling is configured under:
+
+```yaml
+custom:
+  trainer_variant: stage1_set_continuation
+  stage1_set_continuation:
+    subset_sampling:
+      empty_prefix_ratio: 0.30
+      random_subset_ratio: 0.50
+      leave_one_out_ratio: 0.20
+      full_prefix_ratio: 0.0
+      prefix_order: random
+    candidates:
+      mode: exact
+      max_candidates: null
+```
+
+The checked-in Group C/D/E profiles use the `30/50/20/0` mixture above to
+prioritize continuation states under sparse labels. Schema defaults remain
+`30/45/20/5`, so an explicit config is the source of truth for a benchmark run.
+A non-zero `full_prefix_ratio` remains supported for explicit weak-close
+ablations.
+
+Candidate modes:
+
+- `candidates.mode: exact` scores all observed remaining candidates.
+- `candidates.mode: uniform_subsample` scores at most `max_candidates`, which
+  must be positive when this mode is enabled.
+- PEM uses exact remaining logZ in exact mode and the uniform-importance
+  estimated remaining logZ in uniform-subsample mode.
+- The current implementation does not enforce a same-budget controller.
+  `same_budget_label` in the checked-in configs is an authored benchmark note;
+  realized budget is reported through `mp/repeated_forward_token_ratio_vs_baseline`.
+
+Structural-close controls:
+
+- `structural_close.anti_close_weight` adds
+  `loss/anti_close_start = -log(1 - P_close_start(prefix))` when observed GT
+  remains.
+- `structural_close.final_close_weight` adds weak teacher-forced close-sequence
+  loss only when no observed GT remains.
+- Object-entry close tokens remain supervised inside candidate entries.
+- Compatibility aliases `loss/anti_stop`, `loss/eod`, and `stop/p_stop_*` are
+  emitted for dashboards, but the authoritative v1 semantics are structural
+  close-start and CoordJSON close-sequence probabilities.
+
+PEM replacement mode is included in v1:
+
+```yaml
+positive_evidence_margin:
+  mode: replace_mp
+  threshold_space: full_entry_logZ
+  rho: 0.90
+  threshold_calibration: fixed_rho_0.90_no_external_evaluator_v1
+```
+
+When PEM is enabled, `loss/pem` is optimized and `loss/mp_diagnostic` records
+the MP loss without adding it to the total objective.
+
+Current parser contract: `mode=replace_mp` requires exactly one of `rho` or
+`log_rho`; `threshold_space` is fixed to `full_entry_logZ`; and
+`threshold_calibration` must be a non-empty provenance string. The checked-in
+Group E profile uses an authored fixed-ablation threshold, not an externally
+calibrated evaluator threshold.
+
+Branch-local auxiliary objectives are toggleable for `coord_soft_ce_w1`,
+`bbox_geo`, and `bbox_size_aux`, but they are not inherited through ordinary
+one-sequence Stage-1 mixins. When enabled, each scored candidate branch masks
+labels down to that candidate entry, computes the auxiliary atom from the same
+branch logits, and averages valid candidate atoms uniformly. Responsibility-
+weighted aux is intentionally not a v1 mode.
+
+### Ordinary SFT final-close control
+
+Group B is still ordinary one-sequence Stage-1 SFT, not the set-continuation
+trainer. It uses:
+
+```yaml
+custom:
+  sft_structural_close:
+    enabled: true
+    final_close_weight: 0.0
+```
+
+This adds per-token base-CE weights for the final global CoordJSON close
+sequence `]}` only. It does not mask object-entry close tokens and it does not
+target chat-template EOS tokens. Fractional weights are supported in `[0, 1]`.
+This path also rejects packing because the close-span mask is sequence-local.
+
+### Benchmark groups
+
+Canonical configs live under `configs/stage1/set_continuation/`:
+
+| group | file | comparator | intended variable | subset mix | structural close | PEM |
+| --- | --- | --- | --- | --- | --- | --- |
+| A | `group_a_sft.yaml` | none | ordinary fixed-order SFT baseline | n/a | ordinary SFT close | disabled |
+| B | `group_b_sft_weak_schema_close.yaml` | A | ordinary SFT with final global CoordJSON close masked | n/a | `custom.sft_structural_close.final_close_weight=0.0` | disabled |
+| C | `group_c_exact_mp.yaml` | A | exact full-entry MP | `30/50/20/0` | anti-close off, final close off | disabled |
+| D | `group_d_mp_anti_close.yaml` | C | exact MP plus anti-close pressure | `30/50/20/0` | `anti_close_weight=0.05`, final close off | disabled |
+| E | `group_e_pem_replace.yaml` | C | replacement PEM with fixed `rho=0.90` | `30/50/20/0` | anti-close off, final close off | `replace_mp`, fixed threshold |
+| F | `group_f_leave_one_out.yaml` | C | leave-one-out prefix emphasis | `10/15/75/0` | anti-close off, final close off | disabled |
+
+All checked-in A-F profiles are 2B, COCO80 desc-first, coord-token-only,
+`val200`/`f1ish_annotated`, and `training.packing: false` for comparable v1
+mechanism tests. They pin `coord_soft_ce_w1`, `bbox_geo`, and `bbox_size_aux`
+disabled so the first benchmark isolates the continuation objective. Their
+`custom.extra.benchmark_report.same_budget_label` values are comparison notes,
+not runtime-enforced budget constraints.
 
 ## Stage-1 non-canonical bbox V1 experiments
 

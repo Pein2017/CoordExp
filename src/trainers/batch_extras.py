@@ -14,6 +14,7 @@ TOKEN_TYPES_KEY = "token_types"
 INSTABILITY_META_JSON_KEY = "instability_meta_json"
 PROXY_DESC_TOKEN_WEIGHTS_KEY = "proxy_desc_token_weights"
 PROXY_COORD_TOKEN_WEIGHTS_KEY = "proxy_coord_token_weights"
+SFT_STRUCTURAL_CLOSE_TOKEN_WEIGHTS_KEY = "sft_structural_close_token_weights"
 
 BATCH_EXTRAS_KEYS: tuple[str, ...] = (
     DATASET_LABELS_KEY,
@@ -23,6 +24,7 @@ BATCH_EXTRAS_KEYS: tuple[str, ...] = (
     INSTABILITY_META_JSON_KEY,
     PROXY_DESC_TOKEN_WEIGHTS_KEY,
     PROXY_COORD_TOKEN_WEIGHTS_KEY,
+    SFT_STRUCTURAL_CLOSE_TOKEN_WEIGHTS_KEY,
 )
 
 
@@ -42,6 +44,7 @@ class BatchExtras:
     instability_meta_json: Any = None
     proxy_desc_token_weights: Any = None
     proxy_coord_token_weights: Any = None
+    sft_structural_close_token_weights: Any = None
 
 
 _STASH_ATTR = "_coordexp_batch_extras"
@@ -58,6 +61,9 @@ def pop_batch_extras(inputs: MutableMapping[str, Any]) -> BatchExtras:
         instability_meta_json=inputs.pop(INSTABILITY_META_JSON_KEY, None),
         proxy_desc_token_weights=inputs.pop(PROXY_DESC_TOKEN_WEIGHTS_KEY, None),
         proxy_coord_token_weights=inputs.pop(PROXY_COORD_TOKEN_WEIGHTS_KEY, None),
+        sft_structural_close_token_weights=inputs.pop(
+            SFT_STRUCTURAL_CLOSE_TOKEN_WEIGHTS_KEY, None
+        ),
     )
 
 

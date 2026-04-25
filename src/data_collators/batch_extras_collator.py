@@ -19,6 +19,7 @@ from src.data_collators.enrichers import (
     DatasetMetaEnricher,
     InstabilityMetaEnricher,
     ProxySupervisionEnricher,
+    SFTStructuralCloseEnricher,
     TokenTypesEnricher,
 )
 
@@ -29,6 +30,7 @@ def build_batch_extras_collator(
     token_type_cfg: Optional[TokenTypeMetricsConfig] = None,
     instability_monitor_cfg: Optional[Mapping[str, Any]] = None,
     proxy_supervision_cfg: Optional[Mapping[str, Any]] = None,
+    sft_structural_close_cfg: Any = None,
 ) -> Callable[[List[Dict[str, Any]]], Dict[str, Any]]:
     """Wrap the template collator to attach debug/diagnostics batch extras.
 
@@ -62,6 +64,15 @@ def build_batch_extras_collator(
             cfg=proxy_supervision_cfg,
         )
 
+    sft_structural_close_enricher = None
+    if sft_structural_close_cfg is not None and bool(
+        getattr(sft_structural_close_cfg, "enabled", False)
+    ):
+        sft_structural_close_enricher = SFTStructuralCloseEnricher(
+            template=template,
+            cfg=sft_structural_close_cfg,
+        )
+
     instab_enricher = None
     if instab_enabled:
         instab_enricher = InstabilityMetaEnricher(max_meta_samples=max_meta_samples)
@@ -89,6 +100,13 @@ def build_batch_extras_collator(
                 packed=meta.packed,
             )
 
+        if sft_structural_close_enricher is not None:
+            sft_structural_close_enricher(
+                collated=collated,
+                raw_batch=batch,
+                packed=meta.packed,
+            )
+
         return collated
 
     return _collate
@@ -102,6 +120,7 @@ def build_dataset_metrics_collator(
     token_type_cfg: Optional[TokenTypeMetricsConfig] = None,
     instability_monitor_cfg: Optional[Mapping[str, Any]] = None,
     proxy_supervision_cfg: Optional[Mapping[str, Any]] = None,
+    sft_structural_close_cfg: Any = None,
 ) -> Callable[[List[Dict[str, Any]]], Dict[str, Any]]:
     return build_batch_extras_collator(
         template,
@@ -109,6 +128,7 @@ def build_dataset_metrics_collator(
         token_type_cfg=token_type_cfg,
         instability_monitor_cfg=instability_monitor_cfg,
         proxy_supervision_cfg=proxy_supervision_cfg,
+        sft_structural_close_cfg=sft_structural_close_cfg,
     )
 
 

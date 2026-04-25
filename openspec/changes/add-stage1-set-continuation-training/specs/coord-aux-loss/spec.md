@@ -16,8 +16,9 @@ Additional normative behavior:
 - the adapter reduction MUST first produce a mean-like per-candidate atom, then
   uniformly average valid atoms over scored candidates,
 - responsibility-weighted coord aux is not a v1 mode,
-- branch-local metrics MUST remain in stable `coord_softce_w1/*` and
-  `coord_diag/*` namespaces and MAY add explicit branch counters.
+- branch-local metrics MUST be explicit set-continuation aux metrics, including
+  `loss/aux_coord_soft_ce_w1` and `aux/coord_soft_ce_w1/*` counters, rather
+  than silently reusing ordinary one-sequence metric meaning.
 
 #### Scenario: Branch-local coord aux is enabled
 - **GIVEN** `custom.trainer_variant: stage1_set_continuation`

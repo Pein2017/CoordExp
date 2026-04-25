@@ -9,7 +9,7 @@ from typing import Any, Mapping
 import pytest
 import torch
 
-from src.config.schema import Stage1SetContinuationConfig
+from src.config.schema import CoordSoftCEW1Config, Stage1SetContinuationConfig
 from src.data_collators.stage1_set_continuation_collator import (
     build_stage1_set_continuation_collator,
 )
@@ -33,6 +33,15 @@ OBJECT_B = {
         "<|coord_12|>",
         "<|coord_13|>",
         "<|coord_14|>",
+    ],
+}
+OBJECT_C = {
+    "desc": "bus",
+    "bbox_2d": [
+        "<|coord_21|>",
+        "<|coord_22|>",
+        "<|coord_23|>",
+        "<|coord_24|>",
     ],
 }
 
@@ -282,6 +291,12 @@ def test_trainer_exact_mp_scores_two_independent_branches_and_logs_metrics() -> 
     assert _latest_metric(trainer, "mp/num_prefix_objects") == pytest.approx(0.0)
     assert _latest_metric(trainer, "mp/num_remaining_objects") == pytest.approx(2.0)
     assert _latest_metric(trainer, "mp/num_candidates_scored") == pytest.approx(2.0)
+    assert _latest_metric(trainer, "mp/configured_ratio_empty_prefix") == pytest.approx(
+        1.0
+    )
+    assert _latest_metric(
+        trainer, "mp/resolved_valid_ratio_empty_prefix"
+    ) == pytest.approx(1.0)
     assert _latest_metric(trainer, "stop/p_close_start_when_remaining_exists") > 0.99
     assert _latest_metric(trainer, "stop/p_continue_start_when_remaining_exists") < 0.01
 
@@ -316,6 +331,33 @@ def test_trainer_anti_close_weight_contributes_when_remaining_exists() -> None:
     assert torch.isfinite(loss)
     assert _latest_metric(trainer, "loss/anti_close_start") > 1.0
     assert _latest_metric(trainer, "stop/p_close_start_when_remaining_exists") > 0.99
+
+
+def test_trainer_adds_branch_local_coord_aux_when_enabled() -> None:
+    trainer = _trainer(_cfg())
+    trainer.coord_soft_ce_w1_cfg = CoordSoftCEW1Config.from_mapping(
+        {
+            "enabled": True,
+            "ce_weight": 0.1,
+            "soft_ce_weight": 0.0,
+            "w1_weight": 0.0,
+            "gate_weight": 0.0,
+        }
+    )
+    model = _FakeModel()
+    trainer.model = model
+
+    loss = trainer.compute_loss(model, _batch(), return_outputs=False)
+
+    assert torch.isfinite(loss)
+    assert _latest_metric(trainer, "loss/aux_coord_soft_ce_w1") >= 0.0
+    assert _latest_metric(
+        trainer, "aux/coord_soft_ce_w1/candidate_count"
+    ) == pytest.approx(2.0)
+    assert _latest_metric(trainer, "aux/coord_soft_ce_w1/position_count") > 0.0
+    assert _latest_metric(
+        trainer, "aux/coord_soft_ce_w1/skipped_candidates"
+    ) == pytest.approx(0.0)
 
 
 def test_trainer_weak_schema_close_runs_for_full_prefix_samples() -> None:
@@ -387,6 +429,34 @@ def test_full_prefix_metric_only_sample_does_not_dilute_batch_objective() -> Non
     assert _latest_metric(
         mixed_trainer, "mp/loss_mp_denominator_samples"
     ) == pytest.approx(0.5)
+
+
+def test_repeated_forward_budget_ratio_uses_token_counts() -> None:
+    trainer = _trainer(_cfg(empty=0.0, leave_one_out=1.0))
+    trainer._sample_state = lambda **_: _forced_sample(
+        mode="leave_one_out",
+        prefix=(0,),
+        remaining=(1, 2),
+        candidates=(1, 2),
+    )
+    model = _FakeModel()
+    trainer.model = model
+
+    loss = trainer.compute_loss(
+        model,
+        _batch([OBJECT_A, OBJECT_B, OBJECT_C]),
+        return_outputs=False,
+    )
+
+    assert torch.isfinite(loss)
+    prefix_tokens = _latest_metric(trainer, "mp/prefix_tokens_mean")
+    candidate_tokens = _latest_metric(trainer, "mp/total_candidate_tokens_scored")
+    ratio = _latest_metric(trainer, "mp/repeated_forward_token_ratio_vs_baseline")
+    expected = (prefix_tokens * 2.0 + candidate_tokens) / (
+        prefix_tokens + candidate_tokens
+    )
+    assert ratio == pytest.approx(expected)
+    assert ratio > 1.0
 
 
 def test_return_outputs_uses_explicit_batch_aligned_aggregate_output() -> None:

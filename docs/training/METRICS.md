@@ -5,7 +5,7 @@ doc_type: reference
 status: canonical
 domain: training
 summary: Canonical training metric families for Stage-1 and the active Stage-2 single-pass contract.
-updated: 2026-04-03
+updated: 2026-04-25
 ---
 
 # Training Metrics and Losses
@@ -318,6 +318,130 @@ Canonical Channel-B duplicate-control counters remain additive:
 Use `docs/training/STAGE2_RUNBOOK.md` for the contract that produces these
 families and `docs/ARTIFACTS.md` for where the corresponding monitor dumps and
 run artifacts live.
+
+## Stage-1 Set-Continuation Metrics
+
+`custom.trainer_variant: stage1_set_continuation` emits a separate mechanism
+metric family. These keys are not expected from ordinary Stage-1 SFT, and
+ordinary metric-key parity tests assert that MP keys do not leak into the
+baseline trainer.
+
+Objective atoms:
+
+- `loss/mp`: optimized MP loss when PEM is disabled.
+- `loss/mp_diagnostic`: MP loss logged even when PEM replacement mode is the
+  optimized objective.
+- `loss/pem`: positive-evidence margin loss when
+  `positive_evidence_margin.mode=replace_mp`.
+- `loss/anti_close_start`: weighted anti-close objective when observed GT
+  remains.
+- `loss/anti_stop`: compatibility alias for `loss/anti_close_start`.
+- `loss/weak_schema_close`: weighted weak global CoordJSON close-sequence loss
+  for empty-remaining prefixes.
+- `loss/eod`: compatibility alias for weak structural-close loss in this v1
+  surface. It does not mean chat-template EOS.
+- `loss/aux_coord_soft_ce_w1`: branch-local coord auxiliary loss, averaged
+  uniformly over scored candidates with valid coord atoms.
+- `loss/aux_bbox_geo`: branch-local bbox geometry auxiliary loss, averaged
+  uniformly over scored candidates with valid bbox atoms.
+- `loss/aux_bbox_size`: branch-local bbox size auxiliary loss, averaged
+  uniformly over scored candidates with valid bbox atoms.
+
+Prefix and candidate state:
+
+- `mp/num_prefix_objects`
+- `mp/num_remaining_objects`
+- `mp/num_candidates_scored`
+- `mp/scored_candidate_fraction`
+- `mp/samples_with_candidates`
+- `mp/samples_full_prefix`
+- `mp/loss_mp_denominator_samples`
+- `mp/objective_contributing_samples`
+- `mp/selected_mode_empty_prefix`
+- `mp/selected_mode_random_subset`
+- `mp/selected_mode_leave_one_out`
+- `mp/selected_mode_full_prefix`
+- `mp/configured_ratio_<mode>`
+- `mp/resolved_valid_ratio_<mode>`
+
+Branch semantics and estimators use numeric codes in trainer metrics and
+string values in run artifacts:
+
+- `mp/candidate_scoring_mode`: `0=exact`, `1=uniform_subsample`.
+- `mp/logZ_estimator`: `0=exact`, `1=sampled_raw`, `2=uniform_importance`.
+- `mp/prefix_attach_mode`: `0=repeated_forward`.
+- `mp/branch_isolation`: `0=independent_forward`.
+- `mp/prefix_gradient`: `0=non_detached_recomputed_per_branch`.
+
+LogZ and responsibility diagnostics:
+
+- `mp/logZ_scored_raw`
+- `mp/logZ_remaining_exact`
+- `mp/logZ_remaining_est`
+- `mp/logZ_remaining`
+- `mp/responsibility_entropy`
+- `mp/responsibility_entropy_scored`
+- `mp/max_responsibility`
+- `mp/max_responsibility_scored`
+- `mp/min_responsibility`
+- `mp/min_responsibility_scored`
+- `mp/valid_length_corr_samples`
+- `mp/responsibility_vs_length_corr`
+
+Candidate full-entry logprob statistics:
+
+- `mp/candidate_entry_tokens_mean`
+- `mp/candidate_entry_tokens_min`
+- `mp/candidate_entry_tokens_max`
+- `mp/candidate_entry_tokens_std`
+- `mp/candidate_logprob_sum_mean`
+- `mp/candidate_logprob_sum_min`
+- `mp/candidate_logprob_sum_max`
+- `mp/candidate_logprob_sum_std`
+- `mp/candidate_logprob_per_token_mean`
+- `mp/candidate_logprob_per_token_min`
+- `mp/candidate_logprob_per_token_max`
+- `mp/candidate_logprob_per_token_std`
+- `mp/candidate_coord_token_fraction_mean`
+- `mp/candidate_coord_token_fraction_min`
+- `mp/candidate_coord_token_fraction_max`
+- `mp/candidate_coord_token_fraction_std`
+- `mp/candidate_logprob_per_coord_token_mean`
+- `mp/candidate_logprob_per_noncoord_token_mean`
+
+Stop/continue diagnostics:
+
+- `stop/p_close_start_when_remaining_exists`
+- `stop/p_continue_start_when_remaining_exists`
+- `stop/p_stop_when_remaining_exists`
+- `stop/p_continue_when_remaining_exists`
+- `stop/p_close_start_when_remaining_empty`
+- `stop/p_stop_when_remaining_empty`
+- `stop/logp_close_sequence_when_remaining_empty`
+- `stop/p_final_schema_token_teacher_forced`
+
+Budget diagnostics:
+
+- `mp/prefix_tokens_mean`
+- `mp/total_candidate_tokens_scored`
+- `mp/candidate_tokens_scored_mean`
+- `mp/repeated_forward_token_ratio_vs_baseline`
+
+Branch-local aux counters:
+
+- `aux/<name>/candidate_count`
+- `aux/<name>/position_count`
+- `aux/<name>/skipped_candidates`
+- `aux/<name>/contributing_candidates`
+
+Ordinary SFT Group B close-control metrics:
+
+- `sft_structural_close/final_close_weight`
+- `sft_structural_close/final_close_tokens`
+- `sft_structural_close/weighted_token_sum`
+- `loss/sft_structural_close_base_ce`
+- `loss/eod`, where `eod` means the final global CoordJSON close sequence `]}`,
+  not chat-template EOS.
 
 ## Training-Time Evaluation Families
 

@@ -1090,12 +1090,38 @@ class Stage1EvalDetectionConfig:
 
 
 @dataclass(frozen=True)
+class Stage1SFTStructuralCloseConfig:
+    enabled: bool = False
+    final_close_weight: float = 1.0
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.enabled, bool):
+            raise TypeError("custom.sft_structural_close.enabled must be a boolean")
+        weight = float(self.final_close_weight)
+        if not math.isfinite(weight) or weight < 0.0 or weight > 1.0:
+            raise ValueError(
+                "custom.sft_structural_close.final_close_weight must satisfy 0 <= weight <= 1"
+            )
+        object.__setattr__(self, "final_close_weight", weight)
+
+    @classmethod
+    def from_mapping(cls, payload: Any) -> "Stage1SFTStructuralCloseConfig":
+        if payload is None:
+            return cls()
+        return parse_dataclass_strict(
+            cls,
+            payload,
+            path="custom.sft_structural_close",
+        )
+
+
+@dataclass(frozen=True)
 class Stage1SetContinuationSubsetSamplingConfig:
     empty_prefix_ratio: float = 0.30
     random_subset_ratio: float = 0.45
     leave_one_out_ratio: float = 0.20
     full_prefix_ratio: float = 0.05
-    prefix_order: Literal["random", "dataset", "canonical"] = "random"
+    prefix_order: Literal["random", "dataset"] = "random"
 
     def __post_init__(self) -> None:
         ratios = {
@@ -1115,9 +1141,9 @@ class Stage1SetContinuationSubsetSamplingConfig:
             raise ValueError(
                 "custom.stage1_set_continuation.subset_sampling ratios must sum to 1.0"
             )
-        if self.prefix_order not in {"random", "dataset", "canonical"}:
+        if self.prefix_order not in {"random", "dataset"}:
             raise ValueError(
-                "custom.stage1_set_continuation.subset_sampling.prefix_order must be one of {'random', 'dataset', 'canonical'}"
+                "custom.stage1_set_continuation.subset_sampling.prefix_order must be one of {'random', 'dataset'}"
             )
 
 
@@ -1264,6 +1290,9 @@ class CustomConfig:
     coord_soft_ce_w1: CoordSoftCEW1Config = field(default_factory=CoordSoftCEW1Config)
     bbox_geo: BBoxGeoConfig = field(default_factory=BBoxGeoConfig)
     bbox_size_aux: BBoxSizeAuxConfig = field(default_factory=BBoxSizeAuxConfig)
+    sft_structural_close: Stage1SFTStructuralCloseConfig = field(
+        default_factory=Stage1SFTStructuralCloseConfig
+    )
     use_summary: bool = False
     system_prompt_summary: Optional[str] = None
     augmentation: Optional[Mapping[str, Any]] = None
@@ -1494,6 +1523,10 @@ class CustomConfig:
         bbox_geo = BBoxGeoConfig.from_mapping(bbox_geo_raw)
         bbox_size_aux_raw = data.pop("bbox_size_aux", None)
         bbox_size_aux = BBoxSizeAuxConfig.from_mapping(bbox_size_aux_raw)
+        sft_structural_close_raw = data.pop("sft_structural_close", None)
+        sft_structural_close = Stage1SFTStructuralCloseConfig.from_mapping(
+            sft_structural_close_raw
+        )
         eval_detection_raw = data.pop("eval_detection", None)
         eval_detection = Stage1EvalDetectionConfig.from_mapping(eval_detection_raw)
         stage1_set_continuation_raw = data.pop("stage1_set_continuation", None)
@@ -1529,6 +1562,7 @@ class CustomConfig:
             coord_soft_ce_w1=coord_soft_ce_w1,
             bbox_geo=bbox_geo,
             bbox_size_aux=bbox_size_aux,
+            sft_structural_close=sft_structural_close,
             use_summary=use_summary,
             system_prompt_summary=system_prompt_summary,
             augmentation=augmentation
@@ -2976,6 +3010,16 @@ class TrainingConfig:
                 raise ValueError(
                     "custom.stage1_set_continuation must be provided when custom.trainer_variant=stage1_set_continuation"
                 )
+            if bool(training.get("packing", False)):
+                raise ValueError(
+                    "custom.trainer_variant=stage1_set_continuation rejects dataset packing; "
+                    "set training.packing=false."
+                )
+            if bool(training.get("eval_packing", False)):
+                raise ValueError(
+                    "custom.trainer_variant=stage1_set_continuation rejects eval packing; "
+                    "set training.eval_packing=false."
+                )
             if not bool(getattr(custom.coord_tokens, "enabled", False)):
                 raise ValueError(
                     "custom.trainer_variant=stage1_set_continuation requires custom.coord_tokens.enabled=true"
@@ -2996,6 +3040,17 @@ class TrainingConfig:
                 raise ValueError(
                     "custom.trainer_variant=stage1_set_continuation treats training.encoded_sample_cache as ineligible; "
                     "set training.encoded_sample_cache.ineligible_policy=bypass or disable encoded_sample_cache."
+                )
+        if bool(getattr(custom.sft_structural_close, "enabled", False)):
+            if bool(training.get("packing", False)):
+                raise ValueError(
+                    "custom.sft_structural_close requires training.packing=false "
+                    "because final global-close token weights are sequence-local."
+                )
+            if bool(training.get("eval_packing", False)):
+                raise ValueError(
+                    "custom.sft_structural_close requires training.eval_packing=false "
+                    "because final global-close token weights are sequence-local."
                 )
 
         stage2_ab = None

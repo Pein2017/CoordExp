@@ -5,7 +5,7 @@ doc_type: reference
 status: canonical
 domain: data
 summary: Packing policy, defaults, and efficiency tradeoffs.
-updated: 2026-03-30
+updated: 2026-04-25
 ---
 
 # Packing Mode Guide (Default: 12k, eff_bs=12)
@@ -40,6 +40,22 @@ Stage-1 packing guardrails (current implementation):
 - `training.static_packing_cache.root_dir` is optional and only needed when you want to override the default dataset-local base root.
 - Stage-1 static packing uses one hard length cap: `global_max_length` / `template.max_length`.
 - Static packing probes each atomic sample at full length before building the pack plan. If any sample exceeds that hard cap, packing now fails fast instead of silently truncating or skipping it.
+- `custom.trainer_variant: stage1_set_continuation` rejects both
+  `training.packing: true` and `training.eval_packing: true` in v1. The trainer
+  samples set prefixes and branch candidates inside `compute_loss`, so pack-plan
+  construction would mix independent branch states and make structural-close
+  spans ambiguous.
+- `training.encoded_sample_cache` is also ineligible for
+  `custom.trainer_variant: stage1_set_continuation` because subset/candidate
+  branches are sampled at runtime. With
+  `training.encoded_sample_cache.ineligible_policy: error`, startup fails fast.
+  With `ineligible_policy: bypass`, train/eval continue uncached and run
+  artifacts record `status: bypassed`, `policy: bypass`, and
+  `reason: stage1_set_continuation_branch_sampling`.
+- `custom.sft_structural_close.enabled: true` also rejects packing. That
+  ordinary-SFT ablation attaches per-token weights to the final global CoordJSON
+  close sequence `]}` and therefore requires one un-packed assistant response
+  per row.
 
 ## Why this is the new default
 - Dramatically cuts padding waste (≈0% slack vs ~40–50% with padding).

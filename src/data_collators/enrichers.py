@@ -11,6 +11,7 @@ from src.config.schema import TokenTypeMetricsConfig
 from src.coord_tokens.codec import get_coord_token_ids
 from src.data_collators.token_types import TokenType, compute_token_types
 from src.trainers.rollout_matching.parsing import find_desc_value_token_positions_by_span
+from src.trainers.batch_extras import SFT_STRUCTURAL_CLOSE_TOKEN_WEIGHTS_KEY
 from src.utils.logger import get_logger
 
 logger = get_logger(__name__)
@@ -345,6 +346,196 @@ class TokenTypesEnricher:
 
         if token_type_list:
             collated[self.out_field] = torch.stack(token_type_list, dim=0)
+
+
+def _extract_message_text(message: Mapping[str, Any]) -> str | None:
+    content = message.get("content")
+    if isinstance(content, str):
+        return content
+    if isinstance(content, Sequence) and not isinstance(
+        content, (str, bytes, bytearray)
+    ):
+        texts = [
+            item.get("text")
+            for item in content
+            if isinstance(item, Mapping) and item.get("type") == "text"
+        ]
+        text = "\n".join(str(item) for item in texts if item is not None)
+        return text or None
+    return None
+
+
+def _replace_last_assistant_text(
+    messages: Sequence[Mapping[str, Any]], text: str
+) -> list[dict[str, Any]]:
+    out = [dict(message) for message in messages if isinstance(message, Mapping)]
+    assistant_indices = [
+        index for index, message in enumerate(out) if message.get("role") == "assistant"
+    ]
+    if not assistant_indices:
+        raise ValueError("sft_structural_close requires an assistant message")
+    assistant = out[assistant_indices[-1]]
+    content = assistant.get("content")
+    if isinstance(content, str):
+        assistant["content"] = text
+    elif isinstance(content, Sequence) and not isinstance(
+        content, (str, bytes, bytearray)
+    ):
+        replaced = False
+        new_content: list[Any] = []
+        for item in content:
+            if (
+                not replaced
+                and isinstance(item, Mapping)
+                and item.get("type") == "text"
+            ):
+                new_item = dict(item)
+                new_item["text"] = text
+                new_content.append(new_item)
+                replaced = True
+            else:
+                new_content.append(item)
+        if not replaced:
+            new_content.append({"type": "text", "text": text})
+        assistant["content"] = new_content
+    else:
+        assistant["content"] = [{"type": "text", "text": text}]
+    return out
+
+
+def _split_system_message(
+    messages: Sequence[Mapping[str, Any]],
+) -> tuple[list[dict[str, Any]], str | None]:
+    resolved = [dict(message) for message in messages if isinstance(message, Mapping)]
+    if resolved and resolved[0].get("role") == "system":
+        system = _extract_message_text(resolved.pop(0))
+        return resolved, system
+    return resolved, None
+
+
+class _TemporaryTemplateSystem:
+    def __init__(self, template: Any, system_prompt: str | None) -> None:
+        self.template = template
+        self.system_prompt = system_prompt
+        self.had_system = False
+        self.original_system = None
+
+    def __enter__(self):
+        self.had_system = hasattr(self.template, "system")
+        self.original_system = (
+            getattr(self.template, "system", None) if self.had_system else None
+        )
+        if self.system_prompt is not None:
+            setattr(self.template, "system", self.system_prompt)
+
+    def __exit__(self, exc_type, exc, tb):
+        if self.system_prompt is not None:
+            if self.had_system:
+                setattr(self.template, "system", self.original_system)
+            elif hasattr(self.template, "system"):
+                delattr(self.template, "system")
+        return False
+
+
+class SFTStructuralCloseEnricher:
+    """Attach base-CE weights for the final global CoordJSON close sequence."""
+
+    out_field = SFT_STRUCTURAL_CLOSE_TOKEN_WEIGHTS_KEY
+
+    def __init__(self, *, template: Any, cfg: Any):
+        self._template = template
+        self._cfg = cfg
+
+    def __call__(
+        self,
+        *,
+        collated: dict[str, Any],
+        raw_batch: Sequence[Any],
+        packed: bool,
+    ) -> None:
+        if self._cfg is None or not bool(getattr(self._cfg, "enabled", False)):
+            return
+
+        labels = collated.get("labels")
+        if labels is None or not isinstance(labels, torch.Tensor):
+            raise ValueError("custom.sft_structural_close requires collated labels")
+        if packed:
+            raise ValueError(
+                "custom.sft_structural_close requires non-packed batches; "
+                "set training.packing=false and training.eval_packing=false."
+            )
+
+        final_weight = float(getattr(self._cfg, "final_close_weight", 1.0))
+        weights = torch.ones(labels.shape, dtype=torch.float32, device=labels.device)
+        weights = torch.where(labels.ne(-100), weights, torch.zeros_like(weights))
+
+        for row_index, raw in enumerate(raw_batch):
+            if not isinstance(raw, Mapping):
+                raise ValueError(
+                    f"custom.sft_structural_close expected mapping row at index {row_index}"
+                )
+            start, end = self._final_close_token_span(raw, row_index=row_index)
+            seq_len = int(labels.shape[1])
+            start = max(0, min(int(start), seq_len))
+            end = max(start, min(int(end), seq_len))
+            if end <= start:
+                raise ValueError(
+                    f"custom.sft_structural_close resolved empty final-close span for row {row_index}"
+                )
+            weights[row_index, start:end] = final_weight
+
+        collated[self.out_field] = weights
+
+    def _final_close_token_span(
+        self, raw: Mapping[str, Any], *, row_index: int
+    ) -> tuple[int, int]:
+        messages_raw = raw.get("messages")
+        if not isinstance(messages_raw, Sequence) or isinstance(
+            messages_raw, (str, bytes, bytearray)
+        ):
+            raise ValueError(
+                f"custom.sft_structural_close requires messages for row {row_index}"
+            )
+        messages, system_prompt = _split_system_message(messages_raw)
+        assistant_messages = [
+            message for message in messages if message.get("role") == "assistant"
+        ]
+        if not assistant_messages:
+            raise ValueError(
+                f"custom.sft_structural_close requires assistant text for row {row_index}"
+            )
+        assistant_text = _extract_message_text(assistant_messages[-1])
+        if assistant_text is None:
+            raise ValueError(
+                f"custom.sft_structural_close requires textual assistant content for row {row_index}"
+            )
+        if not assistant_text.endswith("]}"):
+            raise ValueError(
+                "custom.sft_structural_close currently supports CoordJSON "
+                "assistant text ending in the global close sequence ']}'"
+            )
+        prefix_text = assistant_text[:-2]
+        return (
+            self._encoded_length(messages, system_prompt, prefix_text),
+            self._encoded_length(messages, system_prompt, assistant_text),
+        )
+
+    def _encoded_length(
+        self,
+        messages: Sequence[Mapping[str, Any]],
+        system_prompt: str | None,
+        assistant_text: str,
+    ) -> int:
+        if not hasattr(self._template, "encode"):
+            raise TypeError("custom.sft_structural_close requires template.encode")
+        rendered = {
+            "messages": _replace_last_assistant_text(messages, assistant_text),
+        }
+        with _TemporaryTemplateSystem(self._template, system_prompt):
+            encoded = self._template.encode(dict(rendered), return_length=True)
+        if not isinstance(encoded, Mapping) or "input_ids" not in encoded:
+            raise ValueError("template.encode output is missing input_ids")
+        return int(len(encoded["input_ids"]))
 
 
 @dataclass

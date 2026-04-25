@@ -5,7 +5,7 @@ doc_type: implementation-map
 status: canonical
 domain: repo
 summary: Task-to-file routing guide for common CoordExp changes.
-updated: 2026-03-30
+updated: 2026-04-25
 ---
 
 # Implementation Map
@@ -14,7 +14,7 @@ Purpose: route common research and engineering changes to the smallest useful se
 Authority: code-navigation guide for the current repo; for semantics and defaults, defer to `docs/PROJECT_CONTEXT.md`, runbooks, and `openspec/specs/`.
 Read this after: `docs/SYSTEM_OVERVIEW.md`
 Read this before: opening many source files blindly or doing broad repo-wide searches
-Primary code handles: `src/sft.py`, `src/bootstrap/`, `src/config/schema.py`, `src/datasets/`, `src/trainers/stage2_two_channel.py`, `src/trainers/stage2_two_channel/`, `src/trainers/stage2_rollout_aligned.py`, `src/trainers/rollout_aligned_targets.py`, `src/trainers/rollout_aligned_evaluator.py`, `src/trainers/rollout_runtime/`, `src/launchers/stage2_vllm_server.py`, `src/infer/pipeline.py`, `src/infer/engine.py`, `src/infer/backends.py`, `src/infer/artifacts.py`, `src/eval/detection.py`, `src/eval/orchestration.py`, `src/eval/artifacts.py`
+Primary code handles: `src/sft.py`, `src/bootstrap/`, `src/config/schema.py`, `src/datasets/`, `src/trainers/stage1_set_continuation/`, `src/trainers/stage2_two_channel.py`, `src/trainers/stage2_two_channel/`, `src/trainers/stage2_rollout_aligned.py`, `src/trainers/rollout_aligned_targets.py`, `src/trainers/rollout_aligned_evaluator.py`, `src/trainers/rollout_runtime/`, `src/launchers/stage2_vllm_server.py`, `src/infer/pipeline.py`, `src/infer/engine.py`, `src/infer/backends.py`, `src/infer/artifacts.py`, `src/eval/detection.py`, `src/eval/orchestration.py`, `src/eval/artifacts.py`
 Verification: use the targeted test files listed below before running broader suites
 
 ## 1. Data Contract, JSONL Rendering, Or Geometry
@@ -38,7 +38,7 @@ Run these tests first:
 - `tests/test_chat_template_regression.py`
 - `tests/test_prompt_variants.py`
 
-## 2. Stage-1 Baseline SFT Or Coord-Token Losses
+## 2. Stage-1 Baseline SFT, Set-Continuation, Or Coord-Token Losses
 
 Open these docs first:
 - [`docs/training/README.md`](training/README.md)
@@ -50,6 +50,7 @@ Open these configs first:
 - `configs/_shared/datasets/`
 - `configs/_shared/prompts/`
 - `configs/stage1/profiles/`
+- `configs/stage1/set_continuation/`
 - `configs/stage1/smoke/`
 
 Open these code files first:
@@ -57,9 +58,19 @@ Open these code files first:
 - `src/metrics/dataset_metrics.py`
 - `src/trainers/losses/coord_soft_ce_w1.py`
 - `src/trainers/metrics/mixins.py`
+- `src/trainers/stage1_set_continuation/`
 - `src/data_collators/batch_extras_collator.py`
+- `src/data_collators/stage1_set_continuation_collator.py`
 
 Run these tests first:
+- `tests/test_stage1_set_continuation_config.py`
+- `tests/test_stage1_set_continuation_cache_policy.py`
+- `tests/test_stage1_set_continuation_serialization.py`
+- `tests/test_stage1_set_continuation_sampler.py`
+- `tests/test_stage1_set_continuation_loss.py`
+- `tests/test_stage1_set_continuation_collator.py`
+- `tests/test_stage1_set_continuation_trainer_smoke.py`
+- `tests/test_stage1_set_continuation_benchmark_profiles.py`
 - `tests/test_coord_softce_w1_loss.py`
 - `tests/test_coord_soft_ce_w1_collective_guard.py`
 - `tests/test_stage1_metric_key_parity.py`

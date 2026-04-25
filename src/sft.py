@@ -496,6 +496,152 @@ def _build_data_source_provenance(
     }
 
 
+def _config_to_mapping(value: Any) -> dict[str, Any]:
+    if value is None:
+        return {}
+    if is_dataclass(value):
+        return dataclass_asdict_no_none(value)
+    if isinstance(value, Mapping):
+        return {
+            str(key): copy.deepcopy(item)
+            for key, item in value.items()
+            if item is not None
+        }
+    return {}
+
+
+def _stage1_eval_plan_payload(custom_config: Any) -> dict[str, Any]:
+    eval_cfg = getattr(custom_config, "eval_detection", None)
+    payload = _config_to_mapping(eval_cfg)
+    extra_cfg = getattr(custom_config, "extra", None)
+    report_cfg = (
+        extra_cfg.get("benchmark_report")
+        if isinstance(extra_cfg, Mapping)
+        else None
+    )
+    if isinstance(report_cfg, Mapping):
+        for key, value in report_cfg.items():
+            payload[str(key)] = copy.deepcopy(value)
+    return payload
+
+
+def _stage1_aux_settings_payload(custom_config: Any) -> dict[str, Any]:
+    return {
+        "coord_soft_ce_w1": _config_to_mapping(
+            getattr(custom_config, "coord_soft_ce_w1", None)
+        ),
+        "bbox_geo": _config_to_mapping(getattr(custom_config, "bbox_geo", None)),
+        "bbox_size_aux": _config_to_mapping(
+            getattr(custom_config, "bbox_size_aux", None)
+        ),
+    }
+
+
+def _logz_estimator_for_set_continuation(sc_cfg: Any) -> str:
+    candidates = getattr(sc_cfg, "candidates", None)
+    mode = str(getattr(candidates, "mode", "") or "")
+    if mode == "exact":
+        return "exact"
+    pem = getattr(sc_cfg, "positive_evidence_margin", None)
+    if str(getattr(pem, "mode", "") or "") == "replace_mp":
+        return "uniform_importance"
+    return "sampled_raw"
+
+
+def _build_benchmark_runtime_payload(
+    *, training_config: Any, trainer_variant: str | None
+) -> dict[str, Any]:
+    custom_config = getattr(training_config, "custom", None)
+    benchmark = _config_to_mapping(getattr(training_config, "benchmark", None))
+    payload: dict[str, Any] = {}
+    if benchmark:
+        payload["benchmark"] = benchmark
+        for source_key, target_key in (
+            ("group_id", "benchmark_group_id"),
+            ("control_group_id", "control_group_id"),
+            ("intended_variable", "intended_variable"),
+            ("comparability_label", "comparability_label"),
+        ):
+            if source_key in benchmark:
+                payload[target_key] = benchmark[source_key]
+
+    if custom_config is None:
+        return payload
+
+    eval_plan = _stage1_eval_plan_payload(custom_config)
+    if eval_plan:
+        payload["stage1_eval_plan"] = eval_plan
+
+    sft_close_cfg = getattr(custom_config, "sft_structural_close", None)
+    if sft_close_cfg is not None and bool(getattr(sft_close_cfg, "enabled", False)):
+        payload["stage1_sft_structural_close"] = {
+            **_config_to_mapping(sft_close_cfg),
+            "close_sequence": "]}",
+            "scope": "ordinary_sft_global_final_coordjson_close",
+        }
+
+    if not _is_stage1_set_continuation_variant(trainer_variant):
+        return payload
+
+    sc_cfg = getattr(custom_config, "stage1_set_continuation", None)
+    if sc_cfg is None:
+        return payload
+
+    candidates = getattr(sc_cfg, "candidates", None)
+    subset_sampling = getattr(sc_cfg, "subset_sampling", None)
+    pem_cfg = getattr(sc_cfg, "positive_evidence_margin", None)
+    candidate_mode = str(getattr(candidates, "mode", "") or "")
+    logz_estimator = _logz_estimator_for_set_continuation(sc_cfg)
+    payload["stage1_set_continuation"] = {
+        "candidate_scoring_mode": candidate_mode,
+        "candidate_max_candidates": getattr(candidates, "max_candidates", None),
+        "logZ_estimator": logz_estimator,
+        "collator_path": (
+            "src.data_collators.stage1_set_continuation_collator."
+            "build_stage1_set_continuation_collator"
+        ),
+        "remove_unused_columns": False,
+        "packing_policy": {
+            "training.packing": "rejected",
+            "training.eval_packing": "rejected",
+            "static_pack_plan": "not_built",
+            "reason": "runtime_subset_candidate_branch_sampling_requires_unpacked_rows",
+        },
+        "prefix_attach_mode": "repeated_forward",
+        "branch_isolation": "independent_forward",
+        "prefix_gradient": "non_detached_recomputed_per_branch",
+        "metric_schema_version": str(
+            getattr(sc_cfg, "metric_schema_version", "")
+            or "stage1_set_continuation_metrics_v1"
+        ),
+        "subset_sampling": _config_to_mapping(subset_sampling),
+        "structural_close": _config_to_mapping(
+            getattr(sc_cfg, "structural_close", None)
+        ),
+        "positive_evidence_margin": _config_to_mapping(pem_cfg),
+        "effective_coord_slot_scoring": "coord_token_vocab_full_entry",
+        "raw_text_integer_coordinates": "unsupported",
+        "realized_branch_token_budget": {
+            "source": "trainer_metrics",
+            "metric": "mp/repeated_forward_token_ratio_vs_baseline",
+            "v1_execution": "naive_repeated_forward_no_prefix_cache",
+        },
+        "realized_prefix_mode_coverage": {
+            "source": "trainer_metrics",
+            "metrics": [
+                "mp/selected_mode_empty_prefix",
+                "mp/selected_mode_random_subset",
+                "mp/selected_mode_leave_one_out",
+                "mp/selected_mode_full_prefix",
+            ],
+            "configured": _config_to_mapping(subset_sampling),
+        },
+        "realized_aux_settings": _stage1_aux_settings_payload(custom_config),
+        "eval_plan": eval_plan,
+    }
+    return payload
+
+
 def _build_effective_runtime_payload(
     *,
     training_config: Any,
@@ -543,7 +689,7 @@ def _build_effective_runtime_payload(
                     "reason": str(bypass_info.get("reason") or ""),
                 }
             )
-    return {
+    payload = {
         "trainer_variant": str(trainer_variant or ""),
         "dataset_seed": int(dataset_seed),
         "run_name": str(getattr(train_args, "run_name", "") or ""),
@@ -583,6 +729,13 @@ def _build_effective_runtime_payload(
         else "",
         "launcher": _collect_launcher_metadata_from_env(),
     }
+    payload.update(
+        _build_benchmark_runtime_payload(
+            training_config=training_config,
+            trainer_variant=trainer_variant,
+        )
+    )
+    return payload
 
 
 def _recompute_gas_for_packing(
@@ -2540,6 +2693,7 @@ def main():
     coord_soft_ce_w1_cfg = getattr(custom_config, "coord_soft_ce_w1", None)
     bbox_geo_cfg = getattr(custom_config, "bbox_geo", None)
     bbox_size_aux_cfg = getattr(custom_config, "bbox_size_aux", None)
+    sft_structural_close_cfg = getattr(custom_config, "sft_structural_close", None)
     instability_monitor_cfg = None
     loss_gradient_monitor_cfg = None
     proxy_supervision_cfg = None
@@ -2567,6 +2721,7 @@ def main():
             token_type_cfg=token_type_cfg,
             instability_monitor_cfg=instability_monitor_cfg,
             proxy_supervision_cfg=proxy_supervision_cfg,
+            sft_structural_close_cfg=sft_structural_close_cfg,
         )
 
     heartbeat_writer = None
@@ -2687,6 +2842,7 @@ def main():
         bbox_geo_cfg=bbox_geo_cfg,
         bbox_size_aux_cfg=bbox_size_aux_cfg,
         coord_soft_ce_w1_cfg=coord_soft_ce_w1_cfg,
+        sft_structural_close_cfg=sft_structural_close_cfg,
     )
 
     callbacks = build_trainer_callbacks(
@@ -2951,6 +3107,8 @@ def main():
         setattr(trainer, "bbox_geo_cfg", bbox_geo_cfg)
     if bbox_size_aux_cfg is not None:
         setattr(trainer, "bbox_size_aux_cfg", bbox_size_aux_cfg)
+    if sft_structural_close_cfg is not None:
+        setattr(trainer, "sft_structural_close_cfg", sft_structural_close_cfg)
     setattr(trainer, "bbox_format", str(custom_config.bbox_format))
     if token_type_cfg is not None:
         setattr(trainer, "token_type_metrics_cfg", token_type_cfg)

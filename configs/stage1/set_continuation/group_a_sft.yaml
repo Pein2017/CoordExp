@@ -1,0 +1,58 @@
+extends:
+  - ../_shared/coord_soft_ce_gate_2b.yaml
+  - ../../_shared/datasets/coco_1024_bbox_max60.yaml
+  - ../../_shared/prompts/coco80_desc_first.yaml
+
+model:
+  model: model_cache/models/Qwen/Qwen3-VL-2B-Instruct-coordexp
+
+training:
+  artifact_subdir: stage1_2b/set_continuation/group_a_sft
+  run_name: stage1-set-cont-group-a-sft-2b-coco1024-val200
+  packing: false
+  eval_packing: false
+  encoded_sample_cache:
+    enabled: false
+  num_train_epochs: 4
+  effective_batch_size: 128
+
+benchmark:
+  group_id: group_a_sft
+  control_group_id: null
+  intended_variable: ordinary fixed-order SFT baseline
+  comparability_label: accuracy-comparable
+
+custom:
+  val_sample_limit: 200
+  coord_soft_ce_w1:
+    enabled: false
+  bbox_geo:
+    enabled: false
+    smoothl1_weight: 0.0
+    ciou_weight: 0.0
+  bbox_size_aux:
+    enabled: false
+    log_wh_weight: 0.0
+    oversize_penalty_weight: 0.0
+    oversize_area_frac_threshold: null
+    oversize_log_w_threshold: null
+    oversize_log_h_threshold: null
+    eps: 1.0e-6
+  eval_detection:
+    enabled: true
+    metrics: f1ish
+    strict_parse: true
+    limit: 200
+    batch_size: 1
+    max_new_tokens: 1024
+    temperature: 0.0
+    top_p: 1.0
+    repetition_penalty: 1.0
+    f1ish_pred_scope: annotated
+  extra:
+    benchmark_report:
+      eval_scope: val200
+      eval_view: f1ish_annotated
+      prediction_surface: coord_token_xyxy
+      decoding_controls: greedy_temp0_top_p1_rep1
+      same_budget_label: one_teacher_forced_sequence_per_image
