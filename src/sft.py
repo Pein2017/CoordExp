@@ -609,6 +609,12 @@ def _build_benchmark_runtime_payload(
         },
         "prefix_attach_mode": "repeated_forward",
         "branch_isolation": "independent_forward",
+        "branch_attention_mask": {
+            "enabled": False,
+            "reason": (
+                "naive_repeated_independent_forwards_do_not_share_candidate_sequence"
+            ),
+        },
         "prefix_gradient": "non_detached_recomputed_per_branch",
         "metric_schema_version": str(
             getattr(sc_cfg, "metric_schema_version", "")
@@ -640,6 +646,30 @@ def _build_benchmark_runtime_payload(
         "eval_plan": eval_plan,
     }
     return payload
+
+
+def _deepspeed_runtime_payload(
+    *, training_config: Any, train_args: Any
+) -> dict[str, Any]:
+    ds_cfg = _config_to_mapping(getattr(training_config, "deepspeed", None))
+    train_args_deepspeed = getattr(train_args, "deepspeed", None)
+    if isinstance(train_args_deepspeed, Mapping):
+        serialized_train_args_deepspeed: Any = {
+            str(key): copy.deepcopy(value)
+            for key, value in train_args_deepspeed.items()
+        }
+    elif train_args_deepspeed is None or isinstance(
+        train_args_deepspeed, (str, int, float, bool)
+    ):
+        serialized_train_args_deepspeed = train_args_deepspeed
+    else:
+        serialized_train_args_deepspeed = str(train_args_deepspeed)
+
+    return {
+        "enabled": bool(ds_cfg.get("enabled", False)),
+        "config": copy.deepcopy(ds_cfg.get("config")),
+        "train_args_deepspeed": serialized_train_args_deepspeed,
+    }
 
 
 def _build_effective_runtime_payload(
@@ -714,6 +744,10 @@ def _build_effective_runtime_payload(
         "num_train_epochs": float(getattr(train_args, "num_train_epochs", 0.0) or 0.0),
         "dataloader_drop_last": bool(
             getattr(train_args, "dataloader_drop_last", False)
+        ),
+        "deepspeed": _deepspeed_runtime_payload(
+            training_config=training_config,
+            train_args=train_args,
         ),
         "global_max_length": getattr(training_config, "global_max_length", None),
         "template_max_length": getattr(train_args, "max_model_len", None),

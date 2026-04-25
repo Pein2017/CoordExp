@@ -58,6 +58,7 @@ def build_experiment_manifest_payload(
             "max_steps",
             "num_train_epochs",
             "dataloader_drop_last",
+            "deepspeed",
             "global_max_length",
             "template_max_length",
             "template_max_pixels",

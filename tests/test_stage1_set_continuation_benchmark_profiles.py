@@ -87,6 +87,9 @@ def test_group_a_is_ordinary_sft_baseline() -> None:
     assert cfg.custom.trainer_variant is None
     assert cfg.custom.stage1_set_continuation is None
     assert cfg.custom.sft_structural_close.enabled is False
+    assert cfg.deepspeed is not None
+    assert cfg.deepspeed.enabled is True
+    assert cfg.deepspeed.config == "zero2"
     assert cfg.benchmark.control_group_id is None
 
 
@@ -97,6 +100,9 @@ def test_group_b_is_ordinary_sft_with_weak_global_schema_close() -> None:
     assert cfg.custom.stage1_set_continuation is None
     assert cfg.custom.sft_structural_close.enabled is True
     assert cfg.custom.sft_structural_close.final_close_weight == pytest.approx(0.0)
+    assert cfg.deepspeed is not None
+    assert cfg.deepspeed.enabled is True
+    assert cfg.deepspeed.config == "zero2"
     assert cfg.benchmark.control_group_id == "group_a_sft"
 
 
@@ -191,6 +197,11 @@ def test_effective_runtime_records_benchmark_and_set_continuation_provenance() -
     assert runtime["control_group_id"] == "group_c_exact_mp"
     assert runtime["intended_variable"] == cfg.benchmark.intended_variable
     assert runtime["comparability_label"] == "accuracy-comparable"
+    assert runtime["deepspeed"] == {
+        "enabled": False,
+        "config": "zero2",
+        "train_args_deepspeed": None,
+    }
     sc_runtime = runtime["stage1_set_continuation"]
     assert sc_runtime["candidate_scoring_mode"] == "exact"
     assert sc_runtime["logZ_estimator"] == "exact"
@@ -206,6 +217,10 @@ def test_effective_runtime_records_benchmark_and_set_continuation_provenance() -
     }
     assert sc_runtime["prefix_attach_mode"] == "repeated_forward"
     assert sc_runtime["branch_isolation"] == "independent_forward"
+    assert sc_runtime["branch_attention_mask"] == {
+        "enabled": False,
+        "reason": "naive_repeated_independent_forwards_do_not_share_candidate_sequence",
+    }
     assert sc_runtime["prefix_gradient"] == "non_detached_recomputed_per_branch"
     assert sc_runtime["metric_schema_version"] == "stage1_set_continuation_metrics_v1"
     assert sc_runtime["positive_evidence_margin"]["mode"] == "replace_mp"
@@ -222,6 +237,11 @@ def test_effective_runtime_records_benchmark_and_set_continuation_provenance() -
 def test_experiment_manifest_mirrors_benchmark_runtime_summary(tmp_path: Path) -> None:
     effective_runtime = {
         "trainer_variant": "stage1_set_continuation",
+        "deepspeed": {
+            "enabled": False,
+            "config": "zero2",
+            "train_args_deepspeed": None,
+        },
         "benchmark": {"group_id": "group_c_exact_mp"},
         "benchmark_group_id": "group_c_exact_mp",
         "control_group_id": "group_a_sft",
@@ -254,6 +274,11 @@ def test_experiment_manifest_mirrors_benchmark_runtime_summary(tmp_path: Path) -
 
     payload = json.loads(out_path.read_text(encoding="utf-8"))
     summary = payload["runtime_summary"]
+    assert summary["deepspeed"] == {
+        "enabled": False,
+        "config": "zero2",
+        "train_args_deepspeed": None,
+    }
     assert summary["benchmark_group_id"] == "group_c_exact_mp"
     assert summary["control_group_id"] == "group_a_sft"
     assert summary["stage1_set_continuation"]["candidate_scoring_mode"] == "exact"
