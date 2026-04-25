@@ -25,6 +25,7 @@
 - Never run destructive cleanup commands unless explicitly asked.
 - Dirty changes from parallel work are expected; isolate your edits and do not revert unrelated work.
 - Prefer small, logically scoped commits during large refactors or incident response.
+- Do not add hidden agent memory stores, portable self-modification workflows, or any other agent-only persistence layer to this workspace.
 
 ## Navigation
 - Use `coordexp-codebase` for entrypoints and workflow pointers.
@@ -36,14 +37,6 @@
 - For any `*.py` file, Serena MCP is mandatory for exploration and editing.
 - For non-Python code, prefer Serena MCP when working in large files, doing cross-reference tracing, symbol-level edits, or nontrivial refactors. For plain-text or non-symbolic files such as Markdown, YAML, JSON, or exact line-based inspections, direct shell reads and `apply_patch` are usually the better fit.
 - For code work, use `rg`/`rtk` first to narrow candidate files or directories, then switch to Serena MCP when symbol-level understanding or editing is useful.
-
-## Self-Improving
-- Activate the `self-improving` skill when the user explicitly names it, asks to remember a reusable preference/correction/workflow, asks what has been learned, or wants repeated mistakes captured for future sessions.
-- Also activate it proactively when a session shows repeated mistakes, repeated rework, multi-turn debugging/relaunch loops, environment footguns, or a clearly reusable successful workflow that is likely to recur in this workspace.
-- It is acceptable to trigger the skill just to inspect existing repo-local memory, decide whether a reusable lesson exists, or briefly propose capturing that lesson for future sessions; do not wait for the user to say the exact skill name once the pattern is clear.
-- Keep memory writes conservative: prefer proposing or recording the smallest reusable correction/workflow lesson rather than writing broad behavioral rules from a single one-off request.
-- Keep mutable self-improving memory under `.self-improving/`; do not write workspace memory into `.codex/skills/self-improving/` or a machine-global home directory.
-- Treat `.self-improving/` as exported repo-local project state rather than private scratch; the files under it are intended to be shared/visible in this workspace when relevant.
 
 ## Model
 - Allocate subagent model capacity by subtask type instead of using one fixed default.
