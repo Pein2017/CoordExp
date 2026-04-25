@@ -59,3 +59,4 @@ custom:
       prediction_surface: coord_token_xyxy
       decoding_controls: greedy_temp0_top_p1_rep1
       same_budget_label: one_teacher_forced_sequence_per_image
+      sparse_label_caveat: annotated_view_may_count_unlabeled_true_positives_as_fp

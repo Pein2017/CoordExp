@@ -75,6 +75,10 @@ def test_benchmark_profiles_resolve_and_pin_common_contract(group_id: str) -> No
     assert report["eval_scope"] == "val200"
     assert report["eval_view"] == "f1ish_annotated"
     assert report["prediction_surface"] == "coord_token_xyxy"
+    assert (
+        report["sparse_label_caveat"]
+        == "annotated_view_may_count_unlabeled_true_positives_as_fp"
+    )
 
 
 def test_group_a_is_ordinary_sft_baseline() -> None:

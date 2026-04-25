@@ -4,8 +4,8 @@
 
 - [x] Convert all change-local specs to OpenSpec delta form with `ADDED` or `MODIFIED` requirements.
 - [x] Add modified deltas for packing, coord-token mode, coord aux, bbox aux, trainer metrics, and encoded-cache eligibility.
-- [ ] Run `openspec validate add-stage1-set-continuation-training --strict` once the OpenSpec CLI is available on `PATH`.
-- [ ] Add or update canonical docs routing so `progress/directions/full_idea_v5.md` is discoverable through progress routers.
+- [ ] Run `openspec validate add-stage1-set-continuation-training --strict` once the OpenSpec CLI is available on `PATH`. Blocked during smoke-prep check on 2026-04-25 because `openspec` was not found on `PATH`.
+- [x] Add or update canonical docs routing so `progress/directions/full_idea_v5.md` is discoverable through progress routers.
 
 ## 2. Strict Config and Setup Routing
 
@@ -81,7 +81,7 @@
 - [x] Add checked-in or generated benchmark profiles for Groups A-F with stable `benchmark.group_id` and `benchmark.control_group_id`.
 - [x] Add benchmark manifest validation that records intended variable, comparator, eval scope/view, sample count, checkpoint/base identity, inference decoding controls, and comparability label.
 - [x] Add benchmark manifest validation that records effective coord-slot scoring, aux objective settings, PEM threshold calibration provenance, realized prefix-mode coverage, and realized branch/token budget.
-- [ ] Add sparse-label FP caveat/report fields for proxy or partial-label eval views.
+- [x] Add sparse-label FP caveat/report fields for proxy or partial-label eval views.
 
 ## 8. Documentation
 
