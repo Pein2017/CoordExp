@@ -151,6 +151,10 @@ progress:
       title: Directions Index
       type: router
       status: canonical
+    - path: progress/directions/full_idea_v5.md
+      title: Full Idea v5
+      type: direction
+      status: active-reference
     - path: progress/directions/full_idea_v4.md
       title: Full Idea v4
       type: direction

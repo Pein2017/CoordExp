@@ -18,6 +18,7 @@ groups:
     - progress/README.md
   directions:
     - progress/directions/README.md
+    - progress/directions/full_idea_v5.md
     - progress/directions/full_idea_v4.md
     - progress/directions/full_idea_v3.md
     - progress/directions/stage2_clean_prefix_v2.md
@@ -92,6 +93,11 @@ notes:
     kind: router
     status: canonical
     summary: Router for historical research directions and Stage-2 design lineage.
+  - path: progress/directions/full_idea_v5.md
+    title: Full Idea v5
+    kind: direction
+    status: active-reference
+    summary: Current Stage-1 set-continuation direction note for subset-conditioned full-entry multi-positive supervision.
   - path: progress/directions/full_idea_v4.md
     title: Full Idea v4
     kind: direction

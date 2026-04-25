@@ -15,6 +15,7 @@ Use this folder when the main question is:
 
 - which historical design note best explains the current Stage-1 or Stage-2 line?
 - how did the repo move from clean-prefix v2 to the current pseudo-positive v4 direction?
+- what is the source idea for Stage-1 set-continuation / multi-positive training?
 - which older direction note is still worth reading versus only keeping for lineage?
 
 Prefer `docs/` and `openspec/specs/` for the current contract. Use
@@ -22,6 +23,9 @@ Prefer `docs/` and `openspec/specs/` for the current contract. Use
 
 ## Current Entry Point
 
+- [full_idea_v5.md](full_idea_v5.md)
+  - current Stage-1 set-continuation direction note
+  - source research note for subset-conditioned full-entry multi-positive supervision
 - [full_idea_v4.md](full_idea_v4.md)
   - current historical summary for the Stage-1 + Stage-2 direction
   - best first read when you want the present research story in one place
