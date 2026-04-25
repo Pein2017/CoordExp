@@ -87,6 +87,10 @@ def resolve_trainer_cls(train_args):
         from .trainers.stage2_two_channel import Stage2TwoChannelTrainer
 
         trainer_cls = Stage2TwoChannelTrainer
+    elif trainer_variant == "stage1_set_continuation":
+        from .trainers.stage1_set_continuation import Stage1SetContinuationTrainer
+
+        trainer_cls = Stage1SetContinuationTrainer
     elif trainer_variant == "stage2_rollout_aligned":
         from .trainers.stage2_rollout_aligned import Stage2RolloutAlignedTrainer
 
@@ -1058,6 +1062,14 @@ def _validate_stage1_static_packing_policy(
         return
     if _is_rollout_matching_variant(trainer_variant):
         return
+    if str(trainer_variant or "") == "stage1_set_continuation":
+        if packing_cfg.eval_packing:
+            raise ValueError(
+                "custom.trainer_variant=stage1_set_continuation rejects dataset packing; set training.packing=false and training.eval_packing=false."
+            )
+        raise ValueError(
+            "custom.trainer_variant=stage1_set_continuation rejects dataset packing; set training.packing=false."
+        )
 
     if packing_cfg.mode != "static":
         raise ValueError(

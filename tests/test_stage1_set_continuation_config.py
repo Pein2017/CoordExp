@@ -1,8 +1,16 @@
 from __future__ import annotations
 
+from types import SimpleNamespace
+
 import pytest
 
+from src.bootstrap.trainer_setup import compose_trainer_class
 from src.config.schema import PromptOverrides, TrainingConfig
+from src.sft import resolve_trainer_cls
+from src.trainers.metrics.mixins import (
+    CoordSoftCEW1LossMixin,
+    GradAccumLossScaleMixin,
+)
 
 
 def _base_training_payload() -> dict:
@@ -134,3 +142,34 @@ def test_stage1_set_continuation_positive_evidence_margin_requires_calibration_n
 
     with pytest.raises(ValueError, match="threshold_calibration"):
         TrainingConfig.from_mapping(payload, PromptOverrides())
+
+
+def test_resolve_trainer_cls_routes_stage1_set_continuation_variant() -> None:
+    trainer_cls = resolve_trainer_cls(
+        SimpleNamespace(trainer_variant="stage1_set_continuation")
+    )
+
+    assert trainer_cls is not None
+    assert any(
+        base.__name__ == "Stage1SetContinuationTrainer"
+        for base in trainer_cls.__mro__
+    )
+
+
+def test_compose_trainer_class_skips_ordinary_stage1_mixins_for_set_continuation() -> None:
+    class _BaseTrainer:
+        pass
+
+    trainer_cls = compose_trainer_class(
+        trainer_cls=_BaseTrainer,
+        trainer_variant="stage1_set_continuation",
+        instability_monitor_cfg={"enabled": True},
+        token_type_cfg=SimpleNamespace(enabled=True),
+        bbox_geo_cfg=SimpleNamespace(enabled=True),
+        bbox_size_aux_cfg=SimpleNamespace(enabled=True),
+        coord_soft_ce_w1_cfg=SimpleNamespace(enabled=True),
+    )
+
+    assert trainer_cls is _BaseTrainer
+    assert not issubclass(trainer_cls, CoordSoftCEW1LossMixin)
+    assert not issubclass(trainer_cls, GradAccumLossScaleMixin)

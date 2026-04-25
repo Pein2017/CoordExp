@@ -24,7 +24,11 @@ def compose_trainer_class(
     coord_soft_ce_w1_cfg: Any,
 ) -> type:
     mixins: list[type] = []
-    if trainer_variant not in {"stage2_rollout_aligned", "stage2_two_channel"}:
+    if trainer_variant not in {
+        "stage1_set_continuation",
+        "stage2_rollout_aligned",
+        "stage2_two_channel",
+    }:
         mixins.append(GradAccumLossScaleMixin)
         if isinstance(instability_monitor_cfg, Mapping) and bool(
             instability_monitor_cfg.get("enabled", False)

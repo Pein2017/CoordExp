@@ -241,6 +241,32 @@ def test_validate_stage1_static_packing_policy_allows_eval_packing() -> None:
     )
 
 
+def test_validate_stage1_static_packing_policy_rejects_set_continuation_train_packing() -> None:
+    with pytest.raises(
+        ValueError,
+        match="stage1_set_continuation.*training\\.packing=false",
+    ):
+        _validate_stage1_static_packing_policy(
+            packing_cfg=PackingRuntimeConfig(enabled=True, mode="static"),
+            trainer_variant="stage1_set_continuation",
+        )
+
+
+def test_validate_stage1_static_packing_policy_rejects_set_continuation_eval_packing() -> None:
+    with pytest.raises(
+        ValueError,
+        match="stage1_set_continuation.*training\\.eval_packing=false",
+    ):
+        _validate_stage1_static_packing_policy(
+            packing_cfg=PackingRuntimeConfig(
+                enabled=True,
+                mode="static",
+                eval_packing=True,
+            ),
+            trainer_variant="stage1_set_continuation",
+        )
+
+
 def test_validate_stage1_static_packing_policy_skips_rollout_matching_variants() -> None:
     _validate_stage1_static_packing_policy(
         packing_cfg=PackingRuntimeConfig(enabled=True, mode="dynamic"),
