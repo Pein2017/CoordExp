@@ -44,6 +44,24 @@ def _load_doc_keys() -> set[str]:
     return keys
 
 
+def _assert_no_set_continuation_metrics(keys: set[str]) -> None:
+    forbidden = {
+        "loss/mp",
+        "loss/mp_diagnostic",
+        "loss/pem",
+        "loss/anti_close_start",
+        "loss/weak_schema_close",
+    }
+    unexpected = sorted(
+        key
+        for key in keys
+        if key.startswith("mp/") or key.startswith("stop/") or key in forbidden
+    )
+    assert not unexpected, (
+        f"ordinary Stage-1 emitted set-continuation metrics: {unexpected}"
+    )
+
+
 class _DummyTokenizer:
     """Maps `<|coord_k|>` -> 100+k (full 1000-bin coord vocab in-range)."""
 
@@ -134,7 +152,9 @@ class _DummyTrainer(
         }
 
 
-def _make_toy_batch(*, bsz: int, with_token_types: bool, pack_num_samples: torch.Tensor):
+def _make_toy_batch(
+    *, bsz: int, with_token_types: bool, pack_num_samples: torch.Tensor
+):
     # Labels: [BOS, text(5), bbox_2d=[3,4,7,8], format(6)]
     labels = torch.tensor([[0, 5, 103, 104, 107, 108, 6]] * bsz, dtype=torch.long)
     vocab = 1200
@@ -157,15 +177,17 @@ def _make_toy_batch(*, bsz: int, with_token_types: bool, pack_num_samples: torch
     }
     if with_token_types:
         types = torch.tensor(
-            [[
-                TokenType.IGNORE,
-                TokenType.DESC,
-                TokenType.COORD,
-                TokenType.COORD,
-                TokenType.COORD,
-                TokenType.COORD,
-                TokenType.FORMAT,
-            ]]
+            [
+                [
+                    TokenType.IGNORE,
+                    TokenType.DESC,
+                    TokenType.COORD,
+                    TokenType.COORD,
+                    TokenType.COORD,
+                    TokenType.COORD,
+                    TokenType.FORMAT,
+                ]
+            ]
             * bsz,
             dtype=torch.long,
         )
@@ -216,7 +238,9 @@ def test_stage1_metric_keys_are_documented_and_aggregate_only(
         )
     else:
         inputs = _make_toy_batch(
-            bsz=2, with_token_types=with_token_types, pack_num_samples=torch.tensor([1, 1])
+            bsz=2,
+            with_token_types=with_token_types,
+            pack_num_samples=torch.tensor([1, 1]),
         )
 
     _ = trainer.compute_loss(
@@ -227,6 +251,7 @@ def test_stage1_metric_keys_are_documented_and_aggregate_only(
 
     # No per-dataset buckets in Stage-1 metrics.
     assert all("lvis" not in k and "coco" not in k for k in emitted_train)
+    _assert_no_set_continuation_metrics(emitted_train)
 
     # Parity check: emitted keys should be documented (feature-conditional keys are fine).
     missing = sorted(k for k in emitted_train if k not in doc_keys)
@@ -269,6 +294,7 @@ def test_stage1_metric_keys_are_documented_and_aggregate_only(
     )
     emitted_eval = set(trainer.custom_metrics["eval"].keys())
     assert emitted_eval == emitted_train
+    _assert_no_set_continuation_metrics(emitted_eval)
 
 
 def test_stage1_center_size_bbox_geo_keeps_metric_keys_stable() -> None:
