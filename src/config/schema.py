@@ -2984,6 +2984,19 @@ class TrainingConfig:
                 raise ValueError(
                     "custom.trainer_variant=stage1_set_continuation requires custom.coord_tokens.skip_bbox_norm=true"
                 )
+            encoded_sample_cache = training.get("encoded_sample_cache")
+            if (
+                isinstance(encoded_sample_cache, Mapping)
+                and bool(encoded_sample_cache.get("enabled", False))
+                and str(encoded_sample_cache.get("ineligible_policy") or "error")
+                .strip()
+                .lower()
+                != "bypass"
+            ):
+                raise ValueError(
+                    "custom.trainer_variant=stage1_set_continuation treats training.encoded_sample_cache as ineligible; "
+                    "set training.encoded_sample_cache.ineligible_policy=bypass or disable encoded_sample_cache."
+                )
 
         stage2_ab = None
         if stage2_ab_raw is not None:

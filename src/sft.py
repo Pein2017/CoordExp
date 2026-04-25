@@ -166,6 +166,10 @@ def _resolve_dense_prompt_identity(custom_config: Any) -> dict[str, Any]:
 
 logger = get_logger(__name__)
 
+STAGE1_SET_CONTINUATION_CACHE_BYPASS_REASON = (
+    "stage1_set_continuation_branch_sampling"
+)
+
 
 @dataclass(frozen=True)
 class PackingRuntimeConfig:
@@ -504,8 +508,41 @@ def _build_effective_runtime_payload(
     train_jsonl: str | None,
     val_jsonl: str | None,
     pipeline_manifest: Mapping[str, Any] | None,
+    train_encoded_sample_cache_info: Mapping[str, Any] | None = None,
+    eval_encoded_sample_cache_info: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     template_cfg = getattr(training_config, "template", {}) or {}
+    encoded_sample_cache_runtime = dataclass_asdict_no_none(encoded_sample_cache_cfg)
+    cache_infos = {
+        split: dict(info)
+        for split, info in (
+            ("train", train_encoded_sample_cache_info),
+            ("eval", eval_encoded_sample_cache_info),
+        )
+        if isinstance(info, Mapping)
+    }
+    if cache_infos:
+        encoded_sample_cache_runtime.update(cache_infos)
+        bypass_info = next(
+            (
+                info
+                for info in cache_infos.values()
+                if str(info.get("status") or "") == "bypassed"
+            ),
+            None,
+        )
+        if bypass_info is not None:
+            encoded_sample_cache_runtime.update(
+                {
+                    "enabled": True,
+                    "status": "bypassed",
+                    "policy": str(
+                        bypass_info.get("policy")
+                        or encoded_sample_cache_cfg.ineligible_policy
+                    ),
+                    "reason": str(bypass_info.get("reason") or ""),
+                }
+            )
     return {
         "trainer_variant": str(trainer_variant or ""),
         "dataset_seed": int(dataset_seed),
@@ -538,7 +575,7 @@ def _build_effective_runtime_payload(
         if isinstance(template_cfg, Mapping)
         else None,
         "packing": dataclass_asdict_no_none(packing_cfg),
-        "encoded_sample_cache": dataclass_asdict_no_none(encoded_sample_cache_cfg),
+        "encoded_sample_cache": encoded_sample_cache_runtime,
         "dataset_source_train_jsonl": _build_source_path_identity(train_jsonl),
         "dataset_source_val_jsonl": _build_source_path_identity(val_jsonl),
         "pipeline_manifest_checksum": str(pipeline_manifest.get("checksum", ""))
@@ -1053,6 +1090,10 @@ def _is_rollout_matching_variant(trainer_variant: str | None) -> bool:
     }
 
 
+def _is_stage1_set_continuation_variant(trainer_variant: str | None) -> bool:
+    return str(trainer_variant or "") == "stage1_set_continuation"
+
+
 def _validate_stage1_static_packing_policy(
     *,
     packing_cfg: PackingRuntimeConfig,
@@ -1062,7 +1103,7 @@ def _validate_stage1_static_packing_policy(
         return
     if _is_rollout_matching_variant(trainer_variant):
         return
-    if str(trainer_variant or "") == "stage1_set_continuation":
+    if _is_stage1_set_continuation_variant(trainer_variant):
         if packing_cfg.eval_packing:
             raise ValueError(
                 "custom.trainer_variant=stage1_set_continuation rejects dataset packing; set training.packing=false and training.eval_packing=false."
@@ -1686,6 +1727,7 @@ def main():
     )
     train_encoded_sample_cache_info: dict[str, Any] | None = None
     eval_encoded_sample_cache_info: dict[str, Any] | None = None
+    trainer_variant = getattr(train_args, "trainer_variant", None)
     train_encoded_sample_cache_request = _build_encoded_sample_cache_request(
         runtime_cfg=encoded_sample_cache_cfg,
         training_config=training_config,
@@ -1700,8 +1742,21 @@ def main():
         system_prompt_dense=system_prompt_dense,
         system_prompt_summary=system_prompt_summary,
     )
+    if (
+        _is_stage1_set_continuation_variant(trainer_variant)
+        and train_encoded_sample_cache_request is not None
+    ):
+        if encoded_sample_cache_cfg.ineligible_policy == "error":
+            raise ValueError(
+                "custom.trainer_variant=stage1_set_continuation treats training.encoded_sample_cache as ineligible; "
+                "set training.encoded_sample_cache.ineligible_policy=bypass or disable encoded_sample_cache."
+            )
+        train_encoded_sample_cache_info = _build_encoded_sample_cache_bypass_info(
+            train_encoded_sample_cache_request,
+            reason=STAGE1_SET_CONTINUATION_CACHE_BYPASS_REASON,
+        )
+        train_encoded_sample_cache_request = None
     dataset: Any
-    trainer_variant = getattr(train_args, "trainer_variant", None)
     _validate_bbox_format_contract(
         custom_config=custom_config,
         trainer_variant=trainer_variant,
@@ -2283,6 +2338,20 @@ def main():
         system_prompt_dense=system_prompt_dense,
         system_prompt_summary=system_prompt_summary,
     )
+    if (
+        _is_stage1_set_continuation_variant(trainer_variant)
+        and eval_encoded_sample_cache_request is not None
+    ):
+        if encoded_sample_cache_cfg.ineligible_policy == "error":
+            raise ValueError(
+                "custom.trainer_variant=stage1_set_continuation treats training.encoded_sample_cache as ineligible; "
+                "set training.encoded_sample_cache.ineligible_policy=bypass or disable encoded_sample_cache."
+            )
+        eval_encoded_sample_cache_info = _build_encoded_sample_cache_bypass_info(
+            eval_encoded_sample_cache_request,
+            reason=STAGE1_SET_CONTINUATION_CACHE_BYPASS_REASON,
+        )
+        eval_encoded_sample_cache_request = None
     if val_jsonl:
         logger.info(f"Loading validation dataset: {val_jsonl}")
         eval_sample_limit = None if val_sample_with_replacement else val_sample_limit
@@ -2949,6 +3018,8 @@ def main():
         train_jsonl=str(train_jsonl) if train_jsonl else None,
         val_jsonl=str(val_jsonl) if val_jsonl else None,
         pipeline_manifest=selected_pipeline_manifest,
+        train_encoded_sample_cache_info=train_encoded_sample_cache_info,
+        eval_encoded_sample_cache_info=eval_encoded_sample_cache_info,
     )
 
     # Start training

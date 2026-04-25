@@ -6,7 +6,9 @@ import pytest
 
 from src.config.schema import CoordTokensConfig
 from src.sft import (
+    STAGE1_SET_CONTINUATION_CACHE_BYPASS_REASON,
     _attach_encoded_sample_cache_run_metadata,
+    _build_encoded_sample_cache_bypass_info,
     _build_encoded_sample_cache_fingerprint,
     _parse_encoded_sample_cache_config,
 )
@@ -214,3 +216,24 @@ def test_attach_encoded_sample_cache_run_metadata_scopes_train_and_eval() -> Non
     assert isinstance(block, dict)
     assert block["train"]["status"] == "built"
     assert block["eval"]["status"] == "reused"
+
+
+def test_build_encoded_sample_cache_bypass_info_records_set_continuation_reason() -> None:
+    info = _build_encoded_sample_cache_bypass_info(
+        {
+            "ineligible_policy": "bypass",
+            "wait_timeout_s": 5,
+            "dataset_split": "train",
+            "dataset_jsonl": "train.jsonl",
+            "fingerprint": {"dataset_split": "train"},
+            "fingerprint_sha256": "abc123",
+            "root_dir": "/tmp/cache",
+            "cache_dir": "/tmp/cache/abc123",
+        },
+        reason=STAGE1_SET_CONTINUATION_CACHE_BYPASS_REASON,
+    )
+
+    assert info["enabled"] is True
+    assert info["status"] == "bypassed"
+    assert info["policy"] == "bypass"
+    assert info["reason"] == STAGE1_SET_CONTINUATION_CACHE_BYPASS_REASON
