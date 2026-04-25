@@ -1021,6 +1021,7 @@ class Stage1EvalDetectionConfig:
     semantic_batch_size: int = 64
     f1ish_iou_thrs: list[float] = field(default_factory=lambda: [0.3, 0.5])
     f1ish_pred_scope: str = "annotated"  # annotated | all
+    score_mode: str = "constant"  # constant | confidence_postop
     pred_score_source: str = "stage1_eval_constant"
     pred_score_version: int = 1
     constant_score: float = 1.0
@@ -1055,6 +1056,12 @@ class Stage1EvalDetectionConfig:
             raise ValueError(
                 "custom.eval_detection.f1ish_pred_scope must be one of {'annotated', 'all'}"
             )
+        score_mode = str(self.score_mode or "").strip().lower()
+        if score_mode not in {"constant", "confidence_postop"}:
+            raise ValueError(
+                "custom.eval_detection.score_mode must be one of {'constant', 'confidence_postop'}"
+            )
+        object.__setattr__(self, "score_mode", score_mode)
         if int(self.lvis_max_dets) <= 0:
             raise ValueError("custom.eval_detection.lvis_max_dets must be > 0")
         if int(self.semantic_batch_size) <= 0:

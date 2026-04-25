@@ -2872,6 +2872,7 @@ def main():
                 semantic_device=str(stage1_eval_cfg.semantic_device),
                 semantic_batch_size=int(stage1_eval_cfg.semantic_batch_size),
                 lvis_max_dets=int(stage1_eval_cfg.lvis_max_dets),
+                score_mode=str(getattr(stage1_eval_cfg, "score_mode", "constant")),
                 pred_score_source=str(stage1_eval_cfg.pred_score_source),
                 pred_score_version=int(stage1_eval_cfg.pred_score_version),
                 constant_score=float(stage1_eval_cfg.constant_score),
@@ -2888,8 +2889,9 @@ def main():
                 ),
             )
             logger.info(
-                "Stage-1 detection eval enabled: metrics=%s limit=%s prompt_variant=%s",
+                "Stage-1 detection eval enabled: metrics=%s score_mode=%s limit=%s prompt_variant=%s",
                 str(stage1_eval_cfg.metrics),
+                str(getattr(stage1_eval_cfg, "score_mode", "constant")),
                 callback_eval_limit,
                 prompt_variant,
             )

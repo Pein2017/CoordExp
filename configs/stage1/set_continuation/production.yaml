@@ -23,7 +23,7 @@ training:
   learning_rate: 5.0e-5
   vit_lr: 1.0e-5
   aligner_lr: 5.0e-5
-  metric_for_best_model: eval_det_f1ish@0.50_f1_full_micro
+  metric_for_best_model: eval_det_bbox_AP
   greater_is_better: true
   eval_steps: 100
   save_steps: 200
@@ -59,7 +59,7 @@ experiment:
     - "num_train_epochs=4"
     - "effective_batch_size=128"
     - "lr: llm=5e-5, vit=1e-5, aligner=5e-5, coord_offset=5e-5"
-    - "metric_for_best_model=eval_det_f1ish@0.50_f1_full_micro"
+    - "metric_for_best_model=eval_det_bbox_AP"
     - "val_sample_limit=200"
   tags:
     - stage1
@@ -109,7 +109,8 @@ custom:
       threshold_calibration: fixed_rho_0.90_no_external_evaluator_v1
   eval_detection:
     enabled: true
-    metrics: f1ish
+    metrics: both
+    score_mode: confidence_postop
     strict_parse: true
     limit: 200
     batch_size: 4
@@ -122,10 +123,11 @@ custom:
   extra:
     benchmark_report:
       eval_scope: val200
-      eval_view: f1ish_annotated
+      eval_view: coco_map_with_logprob_confidence_plus_f1ish_annotated
       dataset_choice: original_coco_coord_token_train_surface
       dataset_ablation_note: original_coco_first_lvis_proxy_followup
       prediction_surface: coord_token_xyxy
+      score_mode: confidence_postop_bbox_logprob_confidence_exp
       decoding_controls: greedy_temp0_top_p1_rep1p05
       same_budget_label: repeated_forward_correctness_v1
       sparse_label_caveat: annotated_view_may_count_unlabeled_true_positives_as_fp

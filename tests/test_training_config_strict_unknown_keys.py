@@ -250,6 +250,7 @@ def test_custom_eval_detection_lvis_metrics_are_accepted() -> None:
     payload["custom"]["eval_detection"] = {
         "enabled": True,
         "metrics": "lvis",
+        "score_mode": "confidence_postop",
         "lvis_max_dets": 300,
         "batch_size": 1,
         "max_new_tokens": 512,
@@ -260,6 +261,7 @@ def test_custom_eval_detection_lvis_metrics_are_accepted() -> None:
 
     assert cfg.custom.eval_detection.enabled is True
     assert cfg.custom.eval_detection.metrics == "lvis"
+    assert cfg.custom.eval_detection.score_mode == "confidence_postop"
     assert cfg.custom.eval_detection.lvis_max_dets == 300
     assert cfg.custom.eval_detection.distributed is True
     assert (

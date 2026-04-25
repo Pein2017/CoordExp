@@ -14,6 +14,7 @@ from transformers import (
 
 from src.common.semantic_desc import normalize_desc
 from src.eval.artifacts import with_constant_scores
+from src.eval.confidence_postop import ConfidencePostOpPaths, run_confidence_postop
 from src.eval.detection import EvalOptions, evaluate_and_save
 from src.infer.engine import GenerationConfig, InferenceConfig, InferenceEngine
 from src.utils import get_logger
@@ -245,7 +246,15 @@ def _maybe_backfill_lvis_metadata(
     gt_jsonl: Path,
     lvis_annotations_json: Optional[str],
 ) -> List[Dict[str, Any]]:
-    if str(metrics_mode).strip().lower() not in {"lvis", "both"}:
+    metrics_norm = str(metrics_mode).strip().lower()
+    wants_lvis_backfill = metrics_norm == "lvis" or (
+        metrics_norm == "both"
+        and (
+            lvis_annotations_json is not None
+            or "lvis" in str(gt_jsonl).replace("\\", "/").lower()
+        )
+    )
+    if not wants_lvis_backfill:
         return [dict(record) for record in records]
 
     rows = [dict(record) for record in records]
@@ -355,6 +364,7 @@ class Stage1DetectionEvalCallback(TrainerCallback):
         pred_score_source: str,
         pred_score_version: int,
         constant_score: float,
+        score_mode: str = "constant",
         batch_size: int,
         max_new_tokens: int,
         temperature: float,
@@ -390,6 +400,12 @@ class Stage1DetectionEvalCallback(TrainerCallback):
         self.pred_score_source = str(pred_score_source)
         self.pred_score_version = int(pred_score_version)
         self.constant_score = float(constant_score)
+        self.score_mode = str(score_mode or "constant").strip().lower()
+        if self.score_mode not in {"constant", "confidence_postop"}:
+            raise ValueError(
+                "Stage1DetectionEvalCallback score_mode must be one of "
+                "{'constant', 'confidence_postop'}"
+            )
         self.limit = int(limit) if limit is not None else None
         self.seed = int(seed) if seed is not None else None
         self.distributed = bool(distributed)
@@ -492,14 +508,32 @@ class Stage1DetectionEvalCallback(TrainerCallback):
         want_official = self.metrics_mode in {"coco", "lvis", "both"}
         pred_jsonl_path = base_jsonl_path
         if want_official:
-            scored_rows = with_constant_scores(
-                records=base_rows,
-                pred_score_source=self.pred_score_source,
-                pred_score_version=self.pred_score_version,
-                constant_score=self.constant_score,
-            )
             pred_jsonl_path = eval_dir / "gt_vs_pred_scored.jsonl"
-            _write_jsonl(pred_jsonl_path, scored_rows)
+            if self.score_mode == "confidence_postop":
+                trace_path = eval_dir / "pred_token_trace.jsonl"
+                if not trace_path.is_file():
+                    raise RuntimeError(
+                        "custom.eval_detection.score_mode=confidence_postop "
+                        f"requires token trace artifact at {trace_path}"
+                    )
+                run_confidence_postop(
+                    ConfidencePostOpPaths(
+                        gt_vs_pred_jsonl=base_jsonl_path,
+                        pred_token_trace_jsonl=trace_path,
+                        pred_confidence_jsonl=eval_dir / "pred_confidence.jsonl",
+                        gt_vs_pred_scored_jsonl=pred_jsonl_path,
+                        confidence_postop_summary_json=eval_dir
+                        / "confidence_postop_summary.json",
+                    )
+                )
+            else:
+                scored_rows = with_constant_scores(
+                    records=base_rows,
+                    pred_score_source=self.pred_score_source,
+                    pred_score_version=self.pred_score_version,
+                    constant_score=self.constant_score,
+                )
+                _write_jsonl(pred_jsonl_path, scored_rows)
 
         options = EvalOptions(
             metrics=self.eval_options.metrics,
@@ -528,7 +562,8 @@ class Stage1DetectionEvalCallback(TrainerCallback):
                 metrics[f"eval_det_{key}"] = value
 
         logger.info(
-            "Stage-1 detection eval finished at step=%s metrics=%s",
+            "Stage-1 detection eval finished at step=%s score_mode=%s metrics=%s",
             int(getattr(state, "global_step", 0) or 0),
+            self.score_mode if want_official else "not_required",
             det_metrics,
         )

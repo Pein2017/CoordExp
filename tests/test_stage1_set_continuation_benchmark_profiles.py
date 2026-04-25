@@ -65,9 +65,7 @@ def test_production_profile_resolves_and_pins_common_contract() -> None:
     assert cfg.training["learning_rate"] == pytest.approx(5.0e-5)
     assert cfg.training["vit_lr"] == pytest.approx(1.0e-5)
     assert cfg.training["aligner_lr"] == pytest.approx(5.0e-5)
-    assert cfg.training["metric_for_best_model"] == (
-        "eval_det_f1ish@0.50_f1_full_micro"
-    )
+    assert cfg.training["metric_for_best_model"] == "eval_det_bbox_AP"
     assert cfg.training["greater_is_better"] is True
     assert cfg.training.get("max_steps") is None
     assert cfg.custom.train_sample_limit is None
@@ -91,7 +89,8 @@ def test_production_profile_resolves_and_pins_common_contract() -> None:
     assert cfg.custom.bbox_geo.enabled is False
     assert cfg.custom.bbox_size_aux.enabled is False
     assert cfg.custom.eval_detection.enabled is True
-    assert cfg.custom.eval_detection.metrics == "f1ish"
+    assert cfg.custom.eval_detection.metrics == "both"
+    assert cfg.custom.eval_detection.score_mode == "confidence_postop"
     assert cfg.custom.eval_detection.limit == 200
     assert cfg.custom.eval_detection.max_new_tokens == 3084
     assert cfg.custom.eval_detection.distributed is True
@@ -102,10 +101,11 @@ def test_production_profile_resolves_and_pins_common_contract() -> None:
 
     report = cfg.custom.extra["benchmark_report"]
     assert report["eval_scope"] == "val200"
-    assert report["eval_view"] == "f1ish_annotated"
+    assert report["eval_view"] == "coco_map_with_logprob_confidence_plus_f1ish_annotated"
     assert report["dataset_choice"] == "original_coco_coord_token_train_surface"
     assert report["dataset_ablation_note"] == "original_coco_first_lvis_proxy_followup"
     assert report["prediction_surface"] == "coord_token_xyxy"
+    assert report["score_mode"] == "confidence_postop_bbox_logprob_confidence_exp"
     assert report["decoding_controls"] == "greedy_temp0_top_p1_rep1p05"
     assert report["same_budget_label"] == "repeated_forward_correctness_v1"
     assert (
