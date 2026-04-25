@@ -1,0 +1,109 @@
+extends:
+  - ../_shared/coord_soft_ce_gate_2b.yaml
+  - ../../_shared/datasets/coco_1024_bbox_max60.yaml
+  - ../../_shared/prompts/coco80_desc_first.yaml
+
+model:
+  model: output_remote/stage1_2b/coco_bbox_max60-hard_ce_soft_ce_w1_gate/epoch_4-from-base-2B/v0-20260227-050057/checkpoint-1332-merged-full
+
+training:
+  output_root: /data/CoordExp/output_remote/stage1_2b/set_continuation
+  logging_root: /data/CoordExp/output_remote/stage1_2b/set_continuation/tb
+  artifact_subdir: production_full_features
+  run_name: stage1-set-continuation-full-features-2b-sota1332-coco1024-val200
+  packing: false
+  eval_packing: false
+  encoded_sample_cache:
+    enabled: false
+  num_train_epochs: 4
+  effective_batch_size: 128
+
+deepspeed:
+  enabled: false
+
+benchmark:
+  group_id: stage1_set_continuation_full_features
+  control_group_id: stage1_sft_sota1332
+  intended_variable: subset-conditioned full-entry multi-positive continuation with anti-close and fixed-rho PEM
+  comparability_label: accuracy-comparable
+
+experiment:
+  title: Stage-1 set-continuation full-feature production
+  purpose: Continue training the SOTA coord-token Stage-1 SFT checkpoint with the new set-continuation objective.
+  hypothesis: Full-entry multi-positive supervision with subset prefixes, anti-close continuation pressure, and fixed-rho PEM improves continuation recall and reduces fixed-order competition.
+  baseline: output_remote/stage1_2b/coco_bbox_max60-hard_ce_soft_ce_w1_gate/epoch_4-from-base-2B/v0-20260227-050057/checkpoint-1332-merged-full
+  key_deviations:
+    - "trainer_variant: stage1_set_continuation"
+    - "objective: fixed-rho PEM replacement with full-entry MP diagnostic"
+    - "prefix sampling: empty/random/leave-one-out mixture with leave-one-out emphasis"
+    - "structural close: anti-close enabled when observed GT remains; weak final close disabled"
+    - "execution: repeated independent candidate forwards; no prefix cache; no branch attention mask"
+    - "coordinates: coord-token-only scoring; raw-text integer coordinates unsupported"
+  runtime_settings:
+    - "packing=false and eval_packing=false"
+    - "deepspeed.enabled=false because repeated independent candidate forwards are incompatible with ZeRO-2 reduction"
+    - "num_train_epochs=4"
+    - "effective_batch_size=128"
+    - "val_sample_limit=200"
+  tags:
+    - stage1
+    - set-continuation
+    - multi-positive
+    - pem
+    - anti-close
+    - coord-token
+
+custom:
+  trainer_variant: stage1_set_continuation
+  val_sample_limit: 200
+  coord_soft_ce_w1:
+    enabled: false
+  bbox_geo:
+    enabled: false
+    smoothl1_weight: 0.0
+    ciou_weight: 0.0
+  bbox_size_aux:
+    enabled: false
+    log_wh_weight: 0.0
+    oversize_penalty_weight: 0.0
+    oversize_area_frac_threshold: null
+    oversize_log_w_threshold: null
+    oversize_log_h_threshold: null
+    eps: 1.0e-6
+  stage1_set_continuation:
+    subset_sampling:
+      empty_prefix_ratio: 0.20
+      random_subset_ratio: 0.30
+      leave_one_out_ratio: 0.50
+      full_prefix_ratio: 0.0
+      prefix_order: random
+    candidates:
+      mode: exact
+      max_candidates: null
+    structural_close:
+      anti_close_weight: 0.05
+      final_close_weight: 0.0
+    positive_evidence_margin:
+      mode: replace_mp
+      threshold_space: full_entry_logZ
+      rho: 0.90
+      threshold_calibration: fixed_rho_0.90_no_external_evaluator_v1
+  eval_detection:
+    enabled: true
+    metrics: f1ish
+    strict_parse: true
+    limit: 200
+    batch_size: 1
+    max_new_tokens: 1024
+    temperature: 0.0
+    top_p: 1.0
+    repetition_penalty: 1.0
+    f1ish_pred_scope: annotated
+  extra:
+    benchmark_report:
+      eval_scope: val200
+      eval_view: f1ish_annotated
+      prediction_surface: coord_token_xyxy
+      decoding_controls: greedy_temp0_top_p1_rep1
+      same_budget_label: repeated_forward_correctness_v1
+      sparse_label_caveat: annotated_view_may_count_unlabeled_true_positives_as_fp

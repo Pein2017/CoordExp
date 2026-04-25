@@ -32,7 +32,7 @@ Scope note:
   - `custom.trainer_variant: stage1_set_continuation`
   - `custom.stage1_set_continuation.*`
   - top-level `benchmark.*`
-  - `configs/stage1/set_continuation/group_{a..f}_*.yaml`
+  - `configs/stage1/set_continuation/production.yaml`
   - v1 rejects packing and uses repeated independent candidate forwards
 - Narrow V1 exception:
   - `custom.bbox_format: cxcy_logw_logh` or `custom.bbox_format: cxcywh`
@@ -190,9 +190,9 @@ custom:
   trainer_variant: stage1_set_continuation
   stage1_set_continuation:
     subset_sampling:
-      empty_prefix_ratio: 0.30
-      random_subset_ratio: 0.50
-      leave_one_out_ratio: 0.20
+      empty_prefix_ratio: 0.20
+      random_subset_ratio: 0.30
+      leave_one_out_ratio: 0.50
       full_prefix_ratio: 0.0
       prefix_order: random
     candidates:
@@ -200,11 +200,11 @@ custom:
       max_candidates: null
 ```
 
-The checked-in Group C/D/E profiles use the `30/50/20/0` mixture above to
-prioritize continuation states under sparse labels. Schema defaults remain
-`30/45/20/5`, so an explicit config is the source of truth for a benchmark run.
-A non-zero `full_prefix_ratio` remains supported for explicit weak-close
-ablations.
+The checked-in production profile uses the `20/30/50/0` mixture above to keep
+first-object and arbitrary-prefix coverage while putting substantial pressure
+on nearly-complete prefixes. Schema defaults remain `30/45/20/5`, so the
+explicit production config is the source of truth for this run. A non-zero
+`full_prefix_ratio` remains supported for explicit weak-close ablations.
 
 Candidate modes:
 
@@ -214,8 +214,9 @@ Candidate modes:
 - PEM uses exact remaining logZ in exact mode and the uniform-importance
   estimated remaining logZ in uniform-subsample mode.
 - The current implementation does not enforce a same-budget controller.
-  `same_budget_label` in the checked-in configs is an authored benchmark note;
-  realized budget is reported through `mp/repeated_forward_token_ratio_vs_baseline`.
+  `same_budget_label` in the checked-in production config is an authored
+  benchmark note; realized budget is reported through
+  `mp/repeated_forward_token_ratio_vs_baseline`.
 
 Structural-close controls:
 
@@ -245,7 +246,7 @@ the MP loss without adding it to the total objective.
 Current parser contract: `mode=replace_mp` requires exactly one of `rho` or
 `log_rho`; `threshold_space` is fixed to `full_entry_logZ`; and
 `threshold_calibration` must be a non-empty provenance string. The checked-in
-Group E profile uses an authored fixed-ablation threshold, not an externally
+production profile uses an authored fixed threshold, not an externally
 calibrated evaluator threshold.
 
 Branch-local auxiliary objectives are toggleable for `coord_soft_ce_w1`,
@@ -257,8 +258,8 @@ weighted aux is intentionally not a v1 mode.
 
 ### Ordinary SFT final-close control
 
-Group B is still ordinary one-sequence Stage-1 SFT, not the set-continuation
-trainer. It uses:
+The ordinary one-sequence Stage-1 SFT path can still downweight final global
+CoordJSON close supervision with:
 
 ```yaml
 custom:
@@ -272,25 +273,31 @@ sequence `]}` only. It does not mask object-entry close tokens and it does not
 target chat-template EOS tokens. Fractional weights are supported in `[0, 1]`.
 This path also rejects packing because the close-span mask is sequence-local.
 
-### Benchmark groups
+### Production entry config
 
-Canonical configs live under `configs/stage1/set_continuation/`:
+The canonical entry config lives at:
 
-| group | file | comparator | intended variable | subset mix | structural close | PEM |
-| --- | --- | --- | --- | --- | --- | --- |
-| A | `group_a_sft.yaml` | none | ordinary fixed-order SFT baseline | n/a | ordinary SFT close | disabled |
-| B | `group_b_sft_weak_schema_close.yaml` | A | ordinary SFT with final global CoordJSON close masked | n/a | `custom.sft_structural_close.final_close_weight=0.0` | disabled |
-| C | `group_c_exact_mp.yaml` | A | exact full-entry MP | `30/50/20/0` | anti-close off, final close off | disabled |
-| D | `group_d_mp_anti_close.yaml` | C | exact MP plus anti-close pressure | `30/50/20/0` | `anti_close_weight=0.05`, final close off | disabled |
-| E | `group_e_pem_replace.yaml` | C | replacement PEM with fixed `rho=0.90` | `30/50/20/0` | anti-close off, final close off | `replace_mp`, fixed threshold |
-| F | `group_f_leave_one_out.yaml` | C | leave-one-out prefix emphasis | `10/15/75/0` | anti-close off, final close off | disabled |
+```text
+configs/stage1/set_continuation/production.yaml
+```
 
-All checked-in A-F profiles are 2B, COCO80 desc-first, coord-token-only,
-`val200`/`f1ish_annotated`, and `training.packing: false` for comparable v1
-mechanism tests. They pin `coord_soft_ce_w1`, `bbox_geo`, and `bbox_size_aux`
-disabled so the first benchmark isolates the continuation objective. Their
-`custom.extra.benchmark_report.same_budget_label` values are comparison notes,
-not runtime-enforced budget constraints.
+It is the all-feature production profile for continuing from the current SOTA
+coord-token Stage-1 SFT checkpoint:
+
+```text
+output_remote/stage1_2b/coco_bbox_max60-hard_ce_soft_ce_w1_gate/epoch_4-from-base-2B/v0-20260227-050057/checkpoint-1332-merged-full
+```
+
+The profile enables exact full-entry MP scoring, the `20/30/50/0`
+empty/random/leave-one-out/full prefix mixture, anti-close continuation
+pressure, final close supervision disabled, and fixed-rho PEM replacement with
+`rho=0.90`. It remains 2B, COCO80 desc-first, coord-token-only,
+`val200`/`f1ish_annotated`, and `training.packing: false`.
+
+The profile pins `coord_soft_ce_w1`, `bbox_geo`, and `bbox_size_aux` disabled
+so the first production run isolates the continuation objective. Its
+`custom.extra.benchmark_report.same_budget_label` value is a comparison note,
+not a runtime-enforced budget constraint.
 
 ## Stage-1 non-canonical bbox V1 experiments
 

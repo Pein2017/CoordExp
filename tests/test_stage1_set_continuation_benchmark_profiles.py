@@ -17,36 +17,50 @@ from src.sft import (
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 CONFIG_ROOT = REPO_ROOT / "configs" / "stage1" / "set_continuation"
-
-GROUP_CONFIGS = {
-    "group_a_sft": CONFIG_ROOT / "group_a_sft.yaml",
-    "group_b_sft_weak_schema_close": CONFIG_ROOT
-    / "group_b_sft_weak_schema_close.yaml",
-    "group_c_exact_mp": CONFIG_ROOT / "group_c_exact_mp.yaml",
-    "group_d_mp_anti_close": CONFIG_ROOT / "group_d_mp_anti_close.yaml",
-    "group_e_pem_replace": CONFIG_ROOT / "group_e_pem_replace.yaml",
-    "group_f_leave_one_out": CONFIG_ROOT / "group_f_leave_one_out.yaml",
-}
+PRODUCTION_CONFIG = CONFIG_ROOT / "production.yaml"
+SOTA_STAGE1_CHECKPOINT = (
+    "output_remote/stage1_2b/coco_bbox_max60-hard_ce_soft_ce_w1_gate/"
+    "epoch_4-from-base-2B/v0-20260227-050057/checkpoint-1332-merged-full"
+)
 
 
-def _load(group_id: str):
-    return ConfigLoader.load_materialized_training_config(str(GROUP_CONFIGS[group_id]))
+def _load_production_config():
+    return ConfigLoader.load_materialized_training_config(str(PRODUCTION_CONFIG))
 
 
-@pytest.mark.parametrize("group_id", sorted(GROUP_CONFIGS))
-def test_benchmark_profiles_resolve_and_pin_common_contract(group_id: str) -> None:
-    cfg = _load(group_id)
+def test_only_one_set_continuation_entry_config_is_checked_in() -> None:
+    yaml_files = sorted(path.name for path in CONFIG_ROOT.glob("*.yaml"))
 
-    assert cfg.benchmark.group_id == group_id
+    assert yaml_files == ["production.yaml"]
+
+
+def test_production_profile_resolves_and_pins_common_contract() -> None:
+    cfg = _load_production_config()
+
+    assert cfg.benchmark.group_id == "stage1_set_continuation_full_features"
+    assert cfg.benchmark.control_group_id == "stage1_sft_sota1332"
     assert cfg.benchmark.intended_variable
     assert cfg.benchmark.comparability_label == "accuracy-comparable"
+    assert cfg.model["model"] == SOTA_STAGE1_CHECKPOINT
+    assert cfg.training["output_root"] == (
+        "/data/CoordExp/output_remote/stage1_2b/set_continuation"
+    )
+    assert cfg.training["logging_root"] == (
+        "/data/CoordExp/output_remote/stage1_2b/set_continuation/tb"
+    )
+    assert cfg.training["artifact_subdir"] == "production_full_features"
+    assert (
+        cfg.training["run_name"]
+        == "stage1-set-continuation-full-features-2b-sota1332-coco1024-val200"
+    )
     assert cfg.training["packing"] is False
     assert cfg.training["eval_packing"] is False
     assert cfg.training["encoded_sample_cache"]["enabled"] is False
     assert cfg.training["seed"] == 17
     assert cfg.training["num_train_epochs"] == 4
     assert cfg.training["effective_batch_size"] == 128
-    assert str(cfg.model["model"]).endswith("Qwen3-VL-2B-Instruct-coordexp")
+    assert cfg.training.get("max_steps") is None
+    assert cfg.custom.train_sample_limit is None
     assert str(cfg.custom.train_jsonl).endswith(
         "public_data/coco/rescale_32_1024_bbox_max60/train.coord.jsonl"
     )
@@ -71,104 +85,48 @@ def test_benchmark_profiles_resolve_and_pin_common_contract(group_id: str) -> No
     assert cfg.custom.eval_detection.temperature == pytest.approx(0.0)
     assert cfg.custom.eval_detection.top_p == pytest.approx(1.0)
     assert cfg.custom.eval_detection.repetition_penalty == pytest.approx(1.0)
+    assert cfg.custom.eval_detection.f1ish_pred_scope == "annotated"
+
     report = cfg.custom.extra["benchmark_report"]
     assert report["eval_scope"] == "val200"
     assert report["eval_view"] == "f1ish_annotated"
     assert report["prediction_surface"] == "coord_token_xyxy"
+    assert report["decoding_controls"] == "greedy_temp0_top_p1_rep1"
+    assert report["same_budget_label"] == "repeated_forward_correctness_v1"
     assert (
         report["sparse_label_caveat"]
         == "annotated_view_may_count_unlabeled_true_positives_as_fp"
     )
 
 
-def test_group_a_is_ordinary_sft_baseline() -> None:
-    cfg = _load("group_a_sft")
-
-    assert cfg.custom.trainer_variant is None
-    assert cfg.custom.stage1_set_continuation is None
-    assert cfg.custom.sft_structural_close.enabled is False
-    assert cfg.deepspeed is not None
-    assert cfg.deepspeed.enabled is True
-    assert cfg.deepspeed.config == "zero2"
-    assert cfg.benchmark.control_group_id is None
-
-
-def test_group_b_is_ordinary_sft_with_weak_global_schema_close() -> None:
-    cfg = _load("group_b_sft_weak_schema_close")
-
-    assert cfg.custom.trainer_variant is None
-    assert cfg.custom.stage1_set_continuation is None
-    assert cfg.custom.sft_structural_close.enabled is True
-    assert cfg.custom.sft_structural_close.final_close_weight == pytest.approx(0.0)
-    assert cfg.deepspeed is not None
-    assert cfg.deepspeed.enabled is True
-    assert cfg.deepspeed.config == "zero2"
-    assert cfg.benchmark.control_group_id == "group_a_sft"
-
-
-@pytest.mark.parametrize(
-    ("group_id", "control_group_id"),
-    [
-        ("group_c_exact_mp", "group_a_sft"),
-        ("group_d_mp_anti_close", "group_c_exact_mp"),
-        ("group_e_pem_replace", "group_c_exact_mp"),
-        ("group_f_leave_one_out", "group_c_exact_mp"),
-    ],
-)
-def test_set_continuation_profiles_pin_variant_and_branch_semantics(
-    group_id: str, control_group_id: str
-) -> None:
-    cfg = _load(group_id)
+def test_production_profile_enables_all_set_continuation_features() -> None:
+    cfg = _load_production_config()
     sc = cfg.custom.stage1_set_continuation
+    pem = sc.positive_evidence_margin
 
     assert cfg.custom.trainer_variant == "stage1_set_continuation"
     assert sc is not None
-    assert cfg.benchmark.control_group_id == control_group_id
     assert sc.candidates.mode == "exact"
     assert sc.candidates.max_candidates is None
+    assert sc.subset_sampling.empty_prefix_ratio == pytest.approx(0.20)
+    assert sc.subset_sampling.random_subset_ratio == pytest.approx(0.30)
+    assert sc.subset_sampling.leave_one_out_ratio == pytest.approx(0.50)
+    assert sc.subset_sampling.full_prefix_ratio == pytest.approx(0.0)
     assert sc.subset_sampling.prefix_order == "random"
-    assert cfg.deepspeed is not None
-    assert cfg.deepspeed.enabled is False
-    assert (
-        sc.metric_schema_version == "stage1_set_continuation_metrics_v1"
-    )
-
-
-def test_group_c_and_d_use_initial_subset_mixture_and_d_adds_anti_close() -> None:
-    group_c = _load("group_c_exact_mp").custom.stage1_set_continuation
-    group_d = _load("group_d_mp_anti_close").custom.stage1_set_continuation
-
-    assert group_c.subset_sampling.empty_prefix_ratio == pytest.approx(0.30)
-    assert group_c.subset_sampling.random_subset_ratio == pytest.approx(0.50)
-    assert group_c.subset_sampling.leave_one_out_ratio == pytest.approx(0.20)
-    assert group_c.subset_sampling.full_prefix_ratio == pytest.approx(0.0)
-    assert group_c.structural_close.anti_close_weight == pytest.approx(0.0)
-    assert group_d.structural_close.anti_close_weight == pytest.approx(0.05)
-    assert group_d.structural_close.final_close_weight == pytest.approx(0.0)
-
-
-def test_group_e_uses_replacement_pem_with_fixed_rho_provenance() -> None:
-    cfg = _load("group_e_pem_replace").custom.stage1_set_continuation
-    pem = cfg.positive_evidence_margin
-
+    assert sc.structural_close.anti_close_weight == pytest.approx(0.05)
+    assert sc.structural_close.final_close_weight == pytest.approx(0.0)
     assert pem.mode == "replace_mp"
     assert pem.threshold_space == "full_entry_logZ"
     assert pem.rho == pytest.approx(0.90)
     assert pem.log_rho is None
     assert pem.threshold_calibration == "fixed_rho_0.90_no_external_evaluator_v1"
+    assert sc.metric_schema_version == "stage1_set_continuation_metrics_v1"
+    assert cfg.deepspeed is not None
+    assert cfg.deepspeed.enabled is False
 
 
-def test_group_f_emphasizes_leave_one_out_prefixes() -> None:
-    cfg = _load("group_f_leave_one_out").custom.stage1_set_continuation
-
-    assert cfg.subset_sampling.empty_prefix_ratio == pytest.approx(0.10)
-    assert cfg.subset_sampling.random_subset_ratio == pytest.approx(0.15)
-    assert cfg.subset_sampling.leave_one_out_ratio == pytest.approx(0.75)
-    assert cfg.subset_sampling.full_prefix_ratio == pytest.approx(0.0)
-
-
-def test_effective_runtime_records_benchmark_and_set_continuation_provenance() -> None:
-    cfg = _load("group_e_pem_replace")
+def test_effective_runtime_records_production_set_continuation_provenance() -> None:
+    cfg = _load_production_config()
 
     runtime = _build_effective_runtime_payload(
         training_config=cfg,
@@ -193,8 +151,8 @@ def test_effective_runtime_records_benchmark_and_set_continuation_provenance() -
         pipeline_manifest={"checksum": "abc123"},
     )
 
-    assert runtime["benchmark_group_id"] == "group_e_pem_replace"
-    assert runtime["control_group_id"] == "group_c_exact_mp"
+    assert runtime["benchmark_group_id"] == "stage1_set_continuation_full_features"
+    assert runtime["control_group_id"] == "stage1_sft_sota1332"
     assert runtime["intended_variable"] == cfg.benchmark.intended_variable
     assert runtime["comparability_label"] == "accuracy-comparable"
     assert runtime["deepspeed"] == {
@@ -223,18 +181,23 @@ def test_effective_runtime_records_benchmark_and_set_continuation_provenance() -
     }
     assert sc_runtime["prefix_gradient"] == "non_detached_recomputed_per_branch"
     assert sc_runtime["metric_schema_version"] == "stage1_set_continuation_metrics_v1"
-    assert sc_runtime["positive_evidence_margin"]["mode"] == "replace_mp"
-    assert (
-        sc_runtime["positive_evidence_margin"]["threshold_calibration"]
-        == "fixed_rho_0.90_no_external_evaluator_v1"
-    )
+    assert sc_runtime["positive_evidence_margin"] == {
+        "mode": "replace_mp",
+        "threshold_space": "full_entry_logZ",
+        "rho": 0.90,
+        "threshold_calibration": "fixed_rho_0.90_no_external_evaluator_v1",
+    }
     assert sc_runtime["effective_coord_slot_scoring"] == "coord_token_vocab_full_entry"
-    assert sc_runtime["realized_branch_token_budget"]["source"] == "trainer_metrics"
+    assert sc_runtime["raw_text_integer_coordinates"] == "unsupported"
+    assert (
+        sc_runtime["realized_branch_token_budget"]["v1_execution"]
+        == "naive_repeated_forward_no_prefix_cache"
+    )
     assert sc_runtime["realized_prefix_mode_coverage"]["source"] == "trainer_metrics"
     assert sc_runtime["realized_aux_settings"]["coord_soft_ce_w1"]["enabled"] is False
 
 
-def test_experiment_manifest_mirrors_benchmark_runtime_summary(tmp_path: Path) -> None:
+def test_experiment_manifest_mirrors_production_runtime_summary(tmp_path: Path) -> None:
     effective_runtime = {
         "trainer_variant": "stage1_set_continuation",
         "deepspeed": {
@@ -242,10 +205,10 @@ def test_experiment_manifest_mirrors_benchmark_runtime_summary(tmp_path: Path) -
             "config": "zero2",
             "train_args_deepspeed": None,
         },
-        "benchmark": {"group_id": "group_c_exact_mp"},
-        "benchmark_group_id": "group_c_exact_mp",
-        "control_group_id": "group_a_sft",
-        "intended_variable": "full-entry multi-positive objective",
+        "benchmark": {"group_id": "stage1_set_continuation_full_features"},
+        "benchmark_group_id": "stage1_set_continuation_full_features",
+        "control_group_id": "stage1_sft_sota1332",
+        "intended_variable": "full-entry MP plus anti-close and PEM",
         "comparability_label": "accuracy-comparable",
         "stage1_set_continuation": {
             "candidate_scoring_mode": "exact",
@@ -261,7 +224,7 @@ def test_experiment_manifest_mirrors_benchmark_runtime_summary(tmp_path: Path) -
 
     out_path = write_experiment_manifest_file(
         output_dir=tmp_path,
-        config_path="configs/stage1/set_continuation/group_c_exact_mp.yaml",
+        config_path="configs/stage1/set_continuation/production.yaml",
         base_config_path=None,
         run_name="unit",
         dataset_seed=17,
@@ -279,10 +242,10 @@ def test_experiment_manifest_mirrors_benchmark_runtime_summary(tmp_path: Path) -
         "config": "zero2",
         "train_args_deepspeed": None,
     }
-    assert summary["benchmark_group_id"] == "group_c_exact_mp"
-    assert summary["control_group_id"] == "group_a_sft"
+    assert summary["benchmark_group_id"] == "stage1_set_continuation_full_features"
+    assert summary["control_group_id"] == "stage1_sft_sota1332"
     assert summary["stage1_set_continuation"]["candidate_scoring_mode"] == "exact"
     assert summary["stage1_set_continuation"]["packing_policy"][
         "training.packing"
     ] == "rejected"
-    assert summary["benchmark"]["group_id"] == "group_c_exact_mp"
+    assert summary["benchmark"]["group_id"] == "stage1_set_continuation_full_features"

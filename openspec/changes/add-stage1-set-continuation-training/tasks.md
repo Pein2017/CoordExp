@@ -78,7 +78,7 @@
 - [x] Preserve ordinary Stage-1 metric parity and prove ordinary SFT does not emit set-continuation MP keys.
 - [x] Add artifact checks for `resolved_config.json`, `effective_runtime.json`, `experiment_manifest.json`, and existing run-manifest surfaces.
 - [x] Record set-continuation metric schema version in resolved config or run manifest.
-- [x] Add checked-in or generated benchmark profiles for Groups A-F with stable `benchmark.group_id` and `benchmark.control_group_id`.
+- [x] Add a single checked-in production profile with stable `benchmark.group_id` and `benchmark.control_group_id`.
 - [x] Add benchmark manifest validation that records intended variable, comparator, eval scope/view, sample count, checkpoint/base identity, inference decoding controls, and comparability label.
 - [x] Add benchmark manifest validation that records effective coord-slot scoring, aux objective settings, PEM threshold calibration provenance, realized prefix-mode coverage, and realized branch/token budget.
 - [x] Add sparse-label FP caveat/report fields for proxy or partial-label eval views.
@@ -92,7 +92,7 @@
 - [x] Update `docs/training/README.md` and `docs/IMPLEMENTATION_MAP.md` with the new trainer variant and setup-path fork.
 - [x] Document that v1 uses repeated independent forwards, not prefix sharing or branch masks.
 - [x] Document that v1 is coord-token-only and rejects raw-text integer coordinate training.
-- [x] Document benchmark Groups A-F and the required benchmark manifest/report fields.
+- [x] Document the production entry config and the required benchmark manifest/report fields.
 
 ## 9. Verification
 
@@ -107,5 +107,5 @@
 - [x] Add unit tests for MP logsumexp, PEM replacement-mode total loss, anti-close, and weak schema close.
 - [x] Add branch-local auxiliary adapter tests and missing-state failure tests.
 - [x] Add a tiny trainer smoke test with one image and at least two objects.
-- [x] Add config-resolution tests for Groups A-F and a controlled-diff benchmark matrix check.
+- [x] Add config-resolution tests for the production entry config and its all-feature contract.
 - [x] Run the focused pytest command listed in `docs/superpowers/plans/2026-04-25-stage1-set-continuation-training.md`.

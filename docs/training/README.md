@@ -47,7 +47,7 @@ or metric interpretation.
 - "Which page is runbook vs metrics vs historical design?"
 - "What should I read before touching Stage-1 or Stage-2 configs?"
 - "What is the current Stage-1 packing and `global_max_length` contract?"
-- "How do I run or compare Stage-1 set-continuation Groups A-F?"
+- "How do I run the Stage-1 set-continuation production config?"
 
 ## Code Handles
 

@@ -363,38 +363,30 @@ Normative behavior:
 - **THEN** the run artifacts include enough information to recover sampler,
   branch, PEM, structural-close, aux, and benchmark settings after training.
 
-### Requirement: Benchmark matrix profiles are config-addressable
-The change SHALL provide checked-in or generated config profiles with stable
-benchmark identities for Groups A-F.
-
-Required groups:
-- Group A: ordinary SFT baseline;
-- Group B: ordinary SFT with structural schema-close masked/downweighted;
-- Group C: one-prefix exact MP;
-- Group D: subset MP plus anti-close-start;
-- Group E: fixed-threshold PEM replacement-mode;
-- Group F: leave-one-out emphasis.
-
-These A-F labels are local to this OpenSpec change and SHALL be treated as the
-canonical benchmark glossary for this implementation, even where
-`progress/directions/full_idea_v5.md` used intermediate letter names
-differently.
+### Requirement: Production profile is config-addressable
+The change SHALL provide one checked-in production config profile with a stable
+benchmark identity for the all-feature set-continuation training run.
 
 Normative behavior:
-- documentation may explain groups but MUST NOT substitute for config identity,
+- documentation may explain earlier ablations but MUST NOT substitute for config
+  identity,
 - benchmark identity MUST live in a typed strict config surface, e.g.
   `benchmark.group_id`, `benchmark.control_group_id`,
   `benchmark.intended_variable`, and `benchmark.comparability_label`,
-- each group profile MUST resolve `benchmark.group_id`,
+- the production profile MUST resolve `benchmark.group_id`,
   `benchmark.control_group_id`, dataset, prompt variant, object field order,
   seed, resolution/preset, sample/optimizer-step budget, checkpoint identity,
   inference decoding controls, and eval plan,
-- each group profile MUST pin coord-token settings, effective coord-slot scoring
+- the production profile MUST pin coord-token settings, effective coord-slot scoring
   surface, and aux objective settings (`coord_soft_ce_w1`, `bbox_geo`,
-  `bbox_size_aux`) so group labels do not hide extra objective changes,
-- canonical A-F profiles MUST use `training.packing: false`; packed SFT may be
+  `bbox_size_aux`) so the launch identity does not hide extra objective changes,
+- the production profile MUST use `training.packing: false`; packed SFT may be
   a separately named throughput/control ablation but MUST NOT be silently mixed
-  into the A-F accuracy-comparable matrix,
+  into the set-continuation production run,
+- the production profile MUST enable exact full-entry candidate scoring,
+  anti-close-start continuation pressure, weak/disabled final close supervision,
+  fixed-threshold PEM replacement mode, and a mixed subset-prefix sampler with
+  leave-one-out coverage,
 - benchmark manifests MUST record the intended variable versus the comparator,
   comparability label, realized branch/token budget, realized prefix-mode
   coverage, and realized aux/coord-scoring settings,
@@ -402,9 +394,10 @@ Normative behavior:
   prediction volume, AP/AP50/AP75, precision/recall where available, and
   sparse-label caveats.
 
-#### Scenario: A-F configs resolve to a controlled matrix
-- **GIVEN** the benchmark profiles for Groups A-F
-- **WHEN** configs are resolved
-- **THEN** each profile has a stable group id
-- **AND** any difference from its comparator is recorded as an intended
-  benchmark variable.
+#### Scenario: Production config resolves to the all-feature contract
+- **GIVEN** the production set-continuation profile
+- **WHEN** the config is resolved
+- **THEN** it has a stable group id
+- **AND** its initial model is the authored Stage-1 SFT checkpoint
+- **AND** its enabled objective features are recorded as the intended benchmark
+  variable.
