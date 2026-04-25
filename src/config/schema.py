@@ -1090,6 +1090,167 @@ class Stage1EvalDetectionConfig:
 
 
 @dataclass(frozen=True)
+class Stage1SetContinuationSubsetSamplingConfig:
+    empty_prefix_ratio: float = 0.30
+    random_subset_ratio: float = 0.45
+    leave_one_out_ratio: float = 0.20
+    full_prefix_ratio: float = 0.05
+    prefix_order: Literal["random", "dataset", "canonical"] = "random"
+
+    def __post_init__(self) -> None:
+        ratios = {
+            "empty_prefix_ratio": float(self.empty_prefix_ratio),
+            "random_subset_ratio": float(self.random_subset_ratio),
+            "leave_one_out_ratio": float(self.leave_one_out_ratio),
+            "full_prefix_ratio": float(self.full_prefix_ratio),
+        }
+        for field_name, value in ratios.items():
+            if value < 0.0:
+                raise ValueError(
+                    f"custom.stage1_set_continuation.subset_sampling.{field_name} must be >= 0"
+                )
+            object.__setattr__(self, field_name, value)
+
+        if not math.isclose(sum(ratios.values()), 1.0, rel_tol=0.0, abs_tol=1e-9):
+            raise ValueError(
+                "custom.stage1_set_continuation.subset_sampling ratios must sum to 1.0"
+            )
+        if self.prefix_order not in {"random", "dataset", "canonical"}:
+            raise ValueError(
+                "custom.stage1_set_continuation.subset_sampling.prefix_order must be one of {'random', 'dataset', 'canonical'}"
+            )
+
+
+@dataclass(frozen=True)
+class Stage1SetContinuationCandidatesConfig:
+    mode: Literal["exact", "uniform_subsample"] = "exact"
+    max_candidates: Optional[int] = None
+
+    def __post_init__(self) -> None:
+        if self.mode not in {"exact", "uniform_subsample"}:
+            raise ValueError(
+                "custom.stage1_set_continuation.candidates.mode must be one of {'exact', 'uniform_subsample'}"
+            )
+        if self.max_candidates is None:
+            if self.mode == "uniform_subsample":
+                raise ValueError(
+                    "custom.stage1_set_continuation.candidates.max_candidates must be > 0 when mode=uniform_subsample"
+                )
+            return
+
+        max_candidates = int(self.max_candidates)
+        object.__setattr__(self, "max_candidates", max_candidates)
+        if max_candidates <= 0:
+            raise ValueError(
+                "custom.stage1_set_continuation.candidates.max_candidates must be > 0 when provided"
+            )
+        if self.mode == "exact":
+            raise ValueError(
+                "custom.stage1_set_continuation.candidates.mode=exact rejects positive max_candidates"
+            )
+
+
+@dataclass(frozen=True)
+class Stage1SetContinuationStructuralCloseConfig:
+    anti_close_weight: float = 0.0
+    final_close_weight: float = 0.0
+
+    def __post_init__(self) -> None:
+        anti_close_weight = float(self.anti_close_weight)
+        final_close_weight = float(self.final_close_weight)
+        object.__setattr__(self, "anti_close_weight", anti_close_weight)
+        object.__setattr__(self, "final_close_weight", final_close_weight)
+        if anti_close_weight < 0.0:
+            raise ValueError(
+                "custom.stage1_set_continuation.structural_close.anti_close_weight must be >= 0"
+            )
+        if final_close_weight < 0.0:
+            raise ValueError(
+                "custom.stage1_set_continuation.structural_close.final_close_weight must be >= 0"
+            )
+
+
+@dataclass(frozen=True)
+class Stage1SetContinuationPositiveEvidenceMarginConfig:
+    mode: Literal["disabled", "replace_mp"] = "disabled"
+    threshold_space: Literal["full_entry_logZ"] = "full_entry_logZ"
+    rho: Optional[float] = None
+    log_rho: Optional[float] = None
+    threshold_calibration: Optional[str] = None
+
+    def __post_init__(self) -> None:
+        if self.mode not in {"disabled", "replace_mp"}:
+            raise ValueError(
+                "custom.stage1_set_continuation.positive_evidence_margin.mode must be one of {'disabled', 'replace_mp'}"
+            )
+        if self.threshold_space != "full_entry_logZ":
+            raise ValueError(
+                "custom.stage1_set_continuation.positive_evidence_margin.threshold_space must be 'full_entry_logZ'"
+            )
+
+        rho = None if self.rho is None else float(self.rho)
+        log_rho = None if self.log_rho is None else float(self.log_rho)
+        object.__setattr__(self, "rho", rho)
+        object.__setattr__(self, "log_rho", log_rho)
+
+        threshold_calibration = self.threshold_calibration
+        if threshold_calibration is not None:
+            if not isinstance(threshold_calibration, str):
+                raise TypeError(
+                    "custom.stage1_set_continuation.positive_evidence_margin.threshold_calibration must be a string when provided"
+                )
+            threshold_calibration = threshold_calibration.strip()
+            if not threshold_calibration:
+                raise ValueError(
+                    "custom.stage1_set_continuation.positive_evidence_margin.threshold_calibration must be non-empty when provided"
+                )
+            object.__setattr__(
+                self, "threshold_calibration", threshold_calibration
+            )
+
+        if self.mode == "replace_mp":
+            if (rho is None) == (log_rho is None):
+                raise ValueError(
+                    "custom.stage1_set_continuation.positive_evidence_margin.replace_mp requires exactly one of rho/log_rho"
+                )
+            if rho is not None and not (0.0 < rho <= 1.0):
+                raise ValueError(
+                    "custom.stage1_set_continuation.positive_evidence_margin.rho must satisfy 0 < rho <= 1"
+                )
+            if threshold_calibration is None:
+                raise ValueError(
+                    "custom.stage1_set_continuation.positive_evidence_margin.threshold_calibration must be provided when mode=replace_mp"
+                )
+
+
+@dataclass(frozen=True)
+class Stage1SetContinuationConfig:
+    subset_sampling: Stage1SetContinuationSubsetSamplingConfig = field(
+        default_factory=Stage1SetContinuationSubsetSamplingConfig
+    )
+    candidates: Stage1SetContinuationCandidatesConfig = field(
+        default_factory=Stage1SetContinuationCandidatesConfig
+    )
+    structural_close: Stage1SetContinuationStructuralCloseConfig = field(
+        default_factory=Stage1SetContinuationStructuralCloseConfig
+    )
+    positive_evidence_margin: Stage1SetContinuationPositiveEvidenceMarginConfig = field(
+        default_factory=Stage1SetContinuationPositiveEvidenceMarginConfig
+    )
+    metric_schema_version: str = "stage1_set_continuation_metrics_v1"
+
+    @classmethod
+    def from_mapping(cls, payload: Any) -> "Stage1SetContinuationConfig":
+        if payload is None:
+            return cls()
+        return parse_dataclass_strict(
+            cls,
+            payload,
+            path="custom.stage1_set_continuation",
+        )
+
+
+@dataclass(frozen=True)
 class CustomConfig:
     train_jsonl: str
     user_prompt: str
@@ -1122,6 +1283,7 @@ class CustomConfig:
     eval_detection: Stage1EvalDetectionConfig = field(
         default_factory=Stage1EvalDetectionConfig
     )
+    stage1_set_continuation: Optional[Stage1SetContinuationConfig] = None
     output_variant: Literal["dense", "summary"] = "dense"
     visual_kd: VisualKDConfig = field(default_factory=VisualKDConfig.disabled)
     token_type_metrics: TokenTypeMetricsConfig = field(
@@ -1334,6 +1496,12 @@ class CustomConfig:
         bbox_size_aux = BBoxSizeAuxConfig.from_mapping(bbox_size_aux_raw)
         eval_detection_raw = data.pop("eval_detection", None)
         eval_detection = Stage1EvalDetectionConfig.from_mapping(eval_detection_raw)
+        stage1_set_continuation_raw = data.pop("stage1_set_continuation", None)
+        stage1_set_continuation = (
+            None
+            if stage1_set_continuation_raw is None
+            else Stage1SetContinuationConfig.from_mapping(stage1_set_continuation_raw)
+        )
 
         object_ordering = normalize_object_ordering(
             object_ordering_raw,
@@ -1384,6 +1552,7 @@ class CustomConfig:
             val_jsonl=str(val_jsonl) if val_jsonl is not None else None,
             offline_max_pixels=offline_max_pixels,
             eval_detection=eval_detection,
+            stage1_set_continuation=stage1_set_continuation,
             output_variant=prompts.output_variant,
             visual_kd=visual_kd,
             token_type_metrics=token_type_metrics,
@@ -1595,6 +1764,53 @@ class ExperimentConfig:
             runtime_settings=runtime_settings,
             comments=comments,
             tags=tags,
+        )
+
+
+@dataclass(frozen=True)
+class BenchmarkConfig:
+    group_id: Optional[str] = None
+    control_group_id: Optional[str] = None
+    intended_variable: Optional[str] = None
+    comparability_label: Optional[
+        Literal["accuracy-comparable", "throughput-comparable", "not-comparable"]
+    ] = None
+
+    def __post_init__(self) -> None:
+        if self.comparability_label is not None and self.comparability_label not in {
+            "accuracy-comparable",
+            "throughput-comparable",
+            "not-comparable",
+        }:
+            raise ValueError(
+                "benchmark.comparability_label must be one of {'accuracy-comparable', 'throughput-comparable', 'not-comparable'}"
+            )
+
+    @staticmethod
+    def _coerce_optional_text(value: Any, field_name: str) -> Optional[str]:
+        if value is None:
+            return None
+        if not isinstance(value, str):
+            raise TypeError(f"{field_name} must be a string when provided")
+        text = value.strip()
+        return text or None
+
+    @classmethod
+    def from_mapping(cls, payload: Optional[Mapping[str, Any]]) -> "BenchmarkConfig":
+        if payload is None:
+            return cls()
+        if not isinstance(payload, Mapping):
+            raise TypeError("benchmark section must be a mapping when provided")
+        parsed = parse_dataclass_strict(cls, payload, path="benchmark")
+        return cls(
+            group_id=cls._coerce_optional_text(parsed.group_id, "benchmark.group_id"),
+            control_group_id=cls._coerce_optional_text(
+                parsed.control_group_id, "benchmark.control_group_id"
+            ),
+            intended_variable=cls._coerce_optional_text(
+                parsed.intended_variable, "benchmark.intended_variable"
+            ),
+            comparability_label=parsed.comparability_label,
         )
 
 
@@ -2619,6 +2835,7 @@ class TrainingConfig:
     template: Mapping[str, Any]
     custom: CustomConfig
     experiment: ExperimentConfig = field(default_factory=ExperimentConfig)
+    benchmark: BenchmarkConfig = field(default_factory=BenchmarkConfig)
     debug: DebugConfig = field(default_factory=DebugConfig)
     model: Mapping[str, Any] = field(default_factory=dict)
     quantization: Mapping[str, Any] = field(default_factory=dict)
@@ -2718,6 +2935,7 @@ class TrainingConfig:
             isinstance(custom_raw, Mapping) and "bbox_size_aux" in custom_raw
         )
         experiment = ExperimentConfig.from_mapping(data.pop("experiment", None))
+        benchmark = BenchmarkConfig.from_mapping(data.pop("benchmark", None))
         debug = DebugConfig.from_mapping(data.pop("debug", None))
         deepspeed = DeepSpeedConfig.from_mapping(data.pop("deepspeed", None))
         global_max_length = data.pop("global_max_length", None)
@@ -2753,6 +2971,19 @@ class TrainingConfig:
             raise ValueError(
                 "custom.trainer_variant=rollout_matching_sft has been removed; use stage2_rollout_aligned"
             )
+        if trainer_variant == "stage1_set_continuation":
+            if custom.stage1_set_continuation is None:
+                raise ValueError(
+                    "custom.stage1_set_continuation must be provided when custom.trainer_variant=stage1_set_continuation"
+                )
+            if not bool(getattr(custom.coord_tokens, "enabled", False)):
+                raise ValueError(
+                    "custom.trainer_variant=stage1_set_continuation requires custom.coord_tokens.enabled=true"
+                )
+            if not bool(getattr(custom.coord_tokens, "skip_bbox_norm", False)):
+                raise ValueError(
+                    "custom.trainer_variant=stage1_set_continuation requires custom.coord_tokens.skip_bbox_norm=true"
+                )
 
         stage2_ab = None
         if stage2_ab_raw is not None:
@@ -2991,6 +3222,7 @@ class TrainingConfig:
             template=template,
             custom=custom,
             experiment=experiment,
+            benchmark=benchmark,
             debug=debug,
             model=model,
             quantization=quantization,

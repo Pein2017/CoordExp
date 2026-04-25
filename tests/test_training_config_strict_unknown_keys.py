@@ -114,6 +114,44 @@ def test_experiment_section_parses_and_serializes() -> None:
     assert cfg.experiment.to_mapping()["comments"] == ["Synthetic test payload."]
 
 
+def test_benchmark_section_parses_and_serializes() -> None:
+    payload = _base_training_payload()
+    payload["benchmark"] = {
+        "group_id": "stage1-set-continuation-a",
+        "control_group_id": "stage1-baseline",
+        "intended_variable": "candidate-set construction",
+        "comparability_label": "accuracy-comparable",
+    }
+
+    cfg = TrainingConfig.from_mapping(payload, PromptOverrides())
+
+    assert cfg.benchmark.group_id == "stage1-set-continuation-a"
+    assert cfg.benchmark.control_group_id == "stage1-baseline"
+    assert cfg.benchmark.intended_variable == "candidate-set construction"
+    assert cfg.benchmark.comparability_label == "accuracy-comparable"
+
+
+def test_benchmark_unknown_key_fails_fast() -> None:
+    payload = _base_training_payload()
+    payload["benchmark"] = {
+        "group_id": "stage1-set-continuation-a",
+        "unknown_key": True,
+    }
+
+    with pytest.raises(ValueError) as exc:
+        TrainingConfig.from_mapping(payload, PromptOverrides())
+
+    assert "benchmark.unknown_key" in str(exc.value)
+
+
+def test_benchmark_text_fields_reject_non_strings() -> None:
+    payload = _base_training_payload()
+    payload["benchmark"] = {"group_id": 0}
+
+    with pytest.raises(TypeError, match="benchmark.group_id"):
+        TrainingConfig.from_mapping(payload, PromptOverrides())
+
+
 @pytest.mark.parametrize(
     ("key", "bad_value"),
     [
