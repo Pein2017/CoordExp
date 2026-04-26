@@ -32,6 +32,23 @@ PREFIX_GRADIENT_CODES = {
     "non_detached_recomputed_per_branch": 0.0,
 }
 
+BRANCH_RUNTIME_MODE_CODES = {
+    "retained_graph": 0.0,
+    "checkpointed_exact": 1.0,
+    "smart_batched_exact": 2.0,
+}
+
+DDP_CANDIDATE_PADDING_POLICY_CODES = {
+    "max_count": 0.0,
+    "none": 1.0,
+}
+
+BRANCH_BATCH_SCHEDULER_CODES = {
+    "disabled": 0.0,
+    "constant_volume": 1.0,
+    "deterministic_fallback": 2.0,
+}
+
 
 def metric_code(value: str, mapping: Mapping[str, float], *, metric_name: str) -> float:
     key = str(value or "").strip()
@@ -80,7 +97,10 @@ def emit_stage1_set_continuation_metrics(
 
 __all__ = [
     "BRANCH_ISOLATION_CODES",
+    "BRANCH_BATCH_SCHEDULER_CODES",
+    "BRANCH_RUNTIME_MODE_CODES",
     "CANDIDATE_SCORING_MODE_CODES",
+    "DDP_CANDIDATE_PADDING_POLICY_CODES",
     "LOGZ_ESTIMATOR_CODES",
     "PREFIX_ATTACH_MODE_CODES",
     "PREFIX_GRADIENT_CODES",

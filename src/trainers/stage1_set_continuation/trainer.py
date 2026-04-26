@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import os
 import time
-from collections.abc import Mapping
-from typing import Any
+from collections.abc import Mapping, Sequence
+from typing import Any, cast
 
 import torch
 from swift.trainers import TrainerFactory
@@ -16,17 +16,30 @@ from src.trainers.teacher_forcing.forwards import (
     run_no_cache_forward,
 )
 
+from .branch_scorer import (
+    LogitsMode,
+    TensorBranchScoreInput,
+    crop_tensors_for_logits,
+    score_tensor_batch_retained,
+    score_branch_checkpointed_exact,
+    score_branch_retained_graph,
+    supervised_suffix_start,
+)
+from .branch_batcher import BranchBatchWorkItem, plan_smart_branch_batches
 from .branch_encoder import EncodedSetContinuationBranch, encode_set_continuation_branch
+from .budget import plan_candidate_execution
 from .losses import (
     CandidateLogProbResult,
-    compute_candidate_full_entry_logprob,
     compute_close_sequence_nll,
     compute_close_start_nll,
     compute_mp_pem_losses,
 )
 from .metrics import (
     BRANCH_ISOLATION_CODES,
+    BRANCH_BATCH_SCHEDULER_CODES,
+    BRANCH_RUNTIME_MODE_CODES,
     CANDIDATE_SCORING_MODE_CODES,
+    DDP_CANDIDATE_PADDING_POLICY_CODES,
     LOGZ_ESTIMATOR_CODES,
     PREFIX_ATTACH_MODE_CODES,
     PREFIX_GRADIENT_CODES,
@@ -162,6 +175,7 @@ class Stage1SetContinuationTrainer(
         *,
         model: Any,
         branch: EncodedSetContinuationBranch,
+        logits_to_keep: int | None = None,
     ) -> tuple[Any, dict[str, Any]]:
         branch_inputs = self._prepare_branch_inputs(model=model, branch=branch)
         ignored_keys = {
@@ -179,6 +193,8 @@ class Stage1SetContinuationTrainer(
             packing_enabled=False,
             where="stage1-set-continuation",
         )
+        if logits_to_keep is not None:
+            inputs_for_model["logits_to_keep"] = int(logits_to_keep)
         outputs = run_no_cache_forward(model=model, inputs_for_model=inputs_for_model)
         logits = getattr(outputs, "logits", None)
         if not isinstance(logits, torch.Tensor):
@@ -190,11 +206,18 @@ class Stage1SetContinuationTrainer(
             raise ValueError(
                 "encoded set-continuation branch requires input_ids tensor"
             )
-        assert_unsliced_logits(
-            logits=logits,
-            input_ids=input_ids,
-            where="stage1-set-continuation training",
-        )
+        if logits_to_keep is None:
+            assert_unsliced_logits(
+                logits=logits,
+                input_ids=input_ids,
+                where="stage1-set-continuation training",
+            )
+        elif int(logits.shape[1]) != int(logits_to_keep):
+            raise ValueError(
+                "stage1-set-continuation training: model returned logits with "
+                f"sequence length {int(logits.shape[1])}, expected logits_to_keep="
+                f"{int(logits_to_keep)}"
+            )
         return outputs, branch_inputs
 
     def _encode_branch(
@@ -219,19 +242,158 @@ class Stage1SetContinuationTrainer(
         branch: EncodedSetContinuationBranch,
         coord_token_ids: torch.Tensor,
     ) -> tuple[CandidateLogProbResult, Any, dict[str, Any]]:
-        outputs, branch_inputs = self._forward_branch(model=model, branch=branch)
-        logits = outputs.logits
-        labels = branch_inputs["labels"].to(device=logits.device)
-        result = compute_candidate_full_entry_logprob(
-            logits=logits,
-            labels=labels,
-            candidate_entry_label_mask=branch.candidate_entry_label_mask.to(
-                device=logits.device
+        train_forward = self._cfg().train_forward
+        runtime = train_forward.branch_runtime
+        logits_mode = cast(LogitsMode, str(train_forward.logits.mode))
+        if runtime.mode == "retained_graph":
+            bundle = score_branch_retained_graph(
+                trainer=self,
+                model=model,
+                branch=branch,
+                coord_token_ids=coord_token_ids,
+                logits_mode=logits_mode,
+            )
+            return bundle.logprob, bundle.outputs, bundle.branch_inputs
+        if runtime.mode == "checkpointed_exact":
+            bundle = score_branch_checkpointed_exact(
+                trainer=self,
+                model=model,
+                branch=branch,
+                coord_token_ids=coord_token_ids,
+                use_reentrant=runtime.checkpoint_use_reentrant,
+                preserve_rng_state=runtime.preserve_rng_state,
+                logits_mode=logits_mode,
+            )
+            return bundle.logprob, bundle.outputs, bundle.branch_inputs
+        if runtime.mode == "smart_batched_exact":
+            bundle = score_branch_retained_graph(
+                trainer=self,
+                model=model,
+                branch=branch,
+                coord_token_ids=coord_token_ids,
+                logits_mode=logits_mode,
+            )
+            return bundle.logprob, bundle.outputs, bundle.branch_inputs
+        raise ValueError(f"unsupported branch runtime mode: {runtime.mode}")
+
+    def _tensor_branch_score_input(
+        self,
+        *,
+        model: Any,
+        branch: EncodedSetContinuationBranch,
+    ) -> TensorBranchScoreInput:
+        branch_inputs = self._prepare_branch_inputs(model=model, branch=branch)
+        _core_model, inputs_for_model, _model_type = prepare_forward_inputs(
+            model=model,
+            inputs=branch_inputs,
+            ignored_keys=(
+                "labels",
+                "compute_loss_func",
+                "loss_scale",
+                "text_position_ids",
+                "channel",
+                "logits_to_keep",
             ),
-            coord_label_mask=branch.coord_label_mask.to(device=logits.device),
-            coord_token_ids=coord_token_ids.to(device=logits.device),
+            packing_enabled=False,
+            where="stage1-set-continuation-smart-batched",
         )
-        return result, outputs, branch_inputs
+        tensor_inputs = {
+            key: value
+            for key, value in inputs_for_model.items()
+            if isinstance(value, torch.Tensor)
+        }
+        return TensorBranchScoreInput(
+            model_inputs=tensor_inputs,
+            labels=branch_inputs["labels"],
+            candidate_entry_label_mask=branch.candidate_entry_label_mask,
+            coord_label_mask=branch.coord_label_mask,
+        )
+
+    def _score_candidate_branches_smart_batched(
+        self,
+        *,
+        model: Any,
+        branches: Sequence[EncodedSetContinuationBranch],
+        coord_token_ids: torch.Tensor,
+    ) -> tuple[list[CandidateLogProbResult], dict[str, float]]:
+        cfg = self._cfg()
+        train_forward = cfg.train_forward
+        logits_mode = cast(LogitsMode, str(train_forward.logits.mode))
+        batching = train_forward.branch_batching
+        if self._branch_aux_enabled():
+            raise ValueError(
+                "smart_batched_exact does not yet support branch-local aux losses; "
+                "use retained_graph or disable branch-local aux modules"
+            )
+        score_inputs = [
+            self._tensor_branch_score_input(model=model, branch=branch)
+            for branch in branches
+        ]
+        work_items: list[BranchBatchWorkItem] = []
+        for index, item in enumerate(score_inputs):
+            suffix_start = (
+                supervised_suffix_start(
+                    labels=item.labels,
+                    supervised_label_mask=item.candidate_entry_label_mask,
+                )
+                if logits_mode == "supervised_suffix"
+                else 0
+            )
+            sequence_length = int(item.labels.shape[-1])
+            work_items.append(
+                BranchBatchWorkItem(
+                    index=index,
+                    sequence_length=sequence_length,
+                    suffix_keep=max(1, sequence_length - suffix_start),
+                )
+            )
+        plan = plan_smart_branch_batches(
+            work_items,
+            max_branch_rows=(
+                batching.max_branch_rows if bool(batching.enabled) else len(work_items)
+            ),
+            max_branch_tokens=(
+                batching.max_branch_tokens if bool(batching.enabled) else None
+            ),
+            min_fill_ratio=float(batching.min_fill_ratio),
+        )
+        results: list[CandidateLogProbResult | None] = [None for _ in score_inputs]
+
+        def _no_cache_forward(**kwargs: torch.Tensor) -> Any:
+            return run_no_cache_forward(
+                model=model,
+                inputs_for_model=dict(kwargs),
+            )
+
+        for batch in plan.batches:
+            batch_inputs = [score_inputs[item.index] for item in batch.items]
+            batch_results = score_tensor_batch_retained(
+                model=model,
+                items=batch_inputs,
+                coord_token_ids=coord_token_ids,
+                logits_mode=logits_mode,
+                forward_fn=_no_cache_forward,
+            )
+            for item, result in zip(batch.items, batch_results, strict=True):
+                results[item.index] = result
+        resolved = [result for result in results if result is not None]
+        if len(resolved) != len(score_inputs):
+            raise ValueError("smart branch batching did not score every candidate")
+        metrics = {
+            "mp/smart_batched_branch_forwards": float(plan.batch_count),
+            "mp/branch_batch_count": float(plan.batch_count),
+            "mp/branch_batch_rows_mean": plan.rows_mean,
+            "mp/branch_batch_rows_max": plan.rows_max,
+            "mp/branch_batch_tokens_mean": plan.tokens_mean,
+            "mp/branch_batch_tokens_max": plan.tokens_max,
+            "mp/branch_batch_padding_fraction": float(plan.padding_fraction),
+            "mp/branch_batch_scheduler": metric_code(
+                plan.scheduler,
+                BRANCH_BATCH_SCHEDULER_CODES,
+                metric_name="mp/branch_batch_scheduler",
+            ),
+        }
+        return resolved, metrics
 
     def _candidate_scoped_labels(
         self,
@@ -273,8 +435,16 @@ class Stage1SetContinuationTrainer(
             return
         state["losses"].append(loss)
         state["position_count"] = float(state["position_count"]) + float(position_count)
-        state["contributing_candidates"] = (
-            float(state["contributing_candidates"]) + 1.0
+        state["contributing_candidates"] = float(state["contributing_candidates"]) + 1.0
+
+    def _branch_aux_enabled(self) -> bool:
+        return any(
+            bool(getattr(getattr(self, attr, None), "enabled", False))
+            for attr in (
+                "coord_soft_ce_w1_cfg",
+                "bbox_geo_cfg",
+                "bbox_size_aux_cfg",
+            )
         )
 
     def _compute_candidate_aux_atoms(
@@ -285,10 +455,14 @@ class Stage1SetContinuationTrainer(
         outputs: Any,
         aux_accum: dict[str, dict[str, Any]],
     ) -> None:
+        if not self._branch_aux_enabled():
+            return
         logits = getattr(outputs, "logits", None)
         labels = branch_inputs.get("labels")
         if not isinstance(logits, torch.Tensor) or not isinstance(labels, torch.Tensor):
-            raise ValueError("branch-local aux losses require logits and labels tensors")
+            raise ValueError(
+                "branch-local aux losses require logits and labels tensors"
+            )
         labels = labels.to(device=logits.device)
         candidate_labels = self._candidate_scoped_labels(labels=labels, branch=branch)
         coord_token_ids = self._get_coord_token_ids()
@@ -401,7 +575,9 @@ class Stage1SetContinuationTrainer(
             losses = state.get("losses", [])
             if losses:
                 loss = torch.stack(list(losses)).mean()
-                total_aux_loss = loss if total_aux_loss is None else total_aux_loss + loss
+                total_aux_loss = (
+                    loss if total_aux_loss is None else total_aux_loss + loss
+                )
                 metrics[f"loss/aux_{name}"] = float(loss.detach().item())
             else:
                 metrics[f"loss/aux_{name}"] = 0.0
@@ -433,12 +609,42 @@ class Stage1SetContinuationTrainer(
         )
         if not bool(branch.structural_close_start_mask.any().item()):
             raise ValueError("structural close-start mask is empty")
-        outputs, branch_inputs = self._forward_branch(model=model, branch=branch)
+        logits_mode = str(self._cfg().train_forward.logits.mode)
+        suffix_start = (
+            supervised_suffix_start(
+                labels=branch.labels,
+                supervised_label_mask=branch.structural_close_sequence_mask,
+            )
+            if logits_mode == "supervised_suffix"
+            else 0
+        )
+        logits_to_keep = (
+            max(1, int(branch.labels.shape[-1]) - int(suffix_start))
+            if logits_mode == "supervised_suffix"
+            else None
+        )
+        outputs, branch_inputs = self._forward_branch(
+            model=model,
+            branch=branch,
+            logits_to_keep=logits_to_keep,
+        )
         logits = outputs.logits
         labels = branch_inputs["labels"].to(device=logits.device)
         close_start_mask = branch.structural_close_start_mask.to(device=logits.device)
         close_sequence_mask = branch.structural_close_sequence_mask.to(
             device=logits.device
+        )
+        prefix_token_positions = close_start_mask.nonzero(as_tuple=False)
+        prefix_tokens = (
+            int(prefix_token_positions[:, 1].min().detach().cpu().item())
+            if int(prefix_token_positions.shape[0]) > 0
+            else 0
+        )
+        labels, close_start_mask, close_sequence_mask = crop_tensors_for_logits(
+            suffix_start=suffix_start,
+            labels=labels,
+            candidate_entry_label_mask=close_start_mask,
+            coord_label_mask=close_sequence_mask,
         )
         close_start_nll = compute_close_start_nll(
             logits=logits,
@@ -461,12 +667,6 @@ class Stage1SetContinuationTrainer(
             structural_close_sequence_mask=final_mask,
         )
         p_close_start = torch.exp(-close_start_nll).clamp(min=0.0, max=1.0)
-        prefix_token_positions = close_start_mask.nonzero(as_tuple=False)
-        prefix_tokens = (
-            int(prefix_token_positions[:, 1].min().detach().cpu().item())
-            if int(prefix_token_positions.shape[0]) > 0
-            else 0
-        )
         return (
             close_start_nll,
             close_sequence_nll,
@@ -598,15 +798,69 @@ class Stage1SetContinuationTrainer(
             raise ValueError(
                 "set-continuation sampler produced remaining objects but no candidates"
             )
+        execution_plan = plan_candidate_execution(
+            sample=sample,
+            cfg=cfg,
+            sample_seed_parts=(
+                *self._seed_parts(meta=meta, sample_offset=sample_offset),
+                "candidate_budget",
+            ),
+            prefix_tokens=0,
+            candidate_token_lengths=[],
+            memory_free_gib=None,
+            enabled_budget_kinds=("candidate",),
+        )
+        candidate_indices = tuple(
+            int(index) for index in execution_plan.selected_candidate_indices
+        )
+        runtime_mode = str(cfg.train_forward.branch_runtime.mode)
 
         metrics: dict[str, Any] = {
             "mp/num_prefix_objects": float(len(prefix_indices)),
             "mp/num_remaining_objects": float(len(remaining_indices)),
             "mp/num_candidates_scored": float(len(candidate_indices)),
-            "mp/scored_candidate_fraction": float(sample.scored_candidate_fraction),
+            "mp/scored_candidate_fraction": float(
+                len(candidate_indices)
+                / max(1, execution_plan.remaining_candidate_count)
+            ),
             "mp/samples_with_candidates": float(bool(candidate_indices)),
             "mp/samples_full_prefix": float(len(remaining_indices) == 0),
             "mp/branch_forwards_per_sample": float(len(candidate_indices) + 1),
+            "mp/branch_runtime_mode": metric_code(
+                runtime_mode,
+                BRANCH_RUNTIME_MODE_CODES,
+                metric_name="mp/branch_runtime_mode",
+            ),
+            "mp/retained_graph_branch_forwards": 0.0,
+            "mp/checkpointed_branch_forwards": 0.0,
+            "mp/smart_batched_branch_forwards": 0.0,
+            "mp/branch_batch_count": 0.0,
+            "mp/branch_batch_rows_mean": 0.0,
+            "mp/branch_batch_rows_max": 0.0,
+            "mp/branch_batch_tokens_mean": 0.0,
+            "mp/branch_batch_tokens_max": 0.0,
+            "mp/branch_batch_padding_fraction": 0.0,
+            "mp/branch_batch_scheduler": metric_code(
+                "disabled",
+                BRANCH_BATCH_SCHEDULER_CODES,
+                metric_name="mp/branch_batch_scheduler",
+            ),
+            "mp/objective_fidelity_exact_samples": float(
+                execution_plan.objective_fidelity == "exact"
+            ),
+            "mp/objective_fidelity_approx_samples": float(
+                execution_plan.objective_fidelity != "exact"
+            ),
+            "mp/fallback_applied_samples": float(execution_plan.fallback_applied),
+            "mp/fallback_reason_candidate_budget": float(
+                execution_plan.fallback_reason == "candidate_budget"
+            ),
+            "mp/fallback_reason_token_budget": float(
+                execution_plan.fallback_reason == "token_budget"
+            ),
+            "mp/fallback_reason_memory_budget": float(
+                execution_plan.fallback_reason == "memory_budget"
+            ),
             "mp/selected_mode_empty_prefix": float(
                 sample.selected_mode == "empty_prefix"
             ),
@@ -620,7 +874,7 @@ class Stage1SetContinuationTrainer(
                 sample.selected_mode == "full_prefix"
             ),
             "mp/candidate_scoring_mode": metric_code(
-                sample.candidate_scoring_mode,
+                execution_plan.authored_candidate_scoring_mode,
                 CANDIDATE_SCORING_MODE_CODES,
                 metric_name="mp/candidate_scoring_mode",
             ),
@@ -639,6 +893,8 @@ class Stage1SetContinuationTrainer(
                 PREFIX_GRADIENT_CODES,
                 metric_name="mp/prefix_gradient",
             ),
+            "mp/prefix_encoding_cache_hits": 0.0,
+            "mp/prefix_encoding_cache_misses": 0.0,
         }
         for mode in (
             "empty_prefix",
@@ -657,53 +913,90 @@ class Stage1SetContinuationTrainer(
         sync_contributes = False
         last_outputs: Any = None
         aux_accum: dict[str, dict[str, Any]] = {}
+        ddp_padding_policy = str(cfg.train_forward.ddp_sync.candidate_padding)
         max_candidate_forwards = self._ddp_max_int(len(candidate_indices), model)
-        padding_forwards = max(0, max_candidate_forwards - len(candidate_indices))
+        padding_forwards = (
+            max(0, max_candidate_forwards - len(candidate_indices))
+            if ddp_padding_policy == "max_count"
+            else 0
+        )
         metrics["mp/ddp_candidate_forward_sync_count"] = float(max_candidate_forwards)
+        metrics["mp/ddp_candidate_forward_local_count"] = float(len(candidate_indices))
+        metrics["mp/ddp_candidate_forward_max_count"] = float(max_candidate_forwards)
+        metrics["mp/ddp_candidate_padding_policy"] = metric_code(
+            ddp_padding_policy,
+            DDP_CANDIDATE_PADDING_POLICY_CODES,
+            metric_name="mp/ddp_candidate_padding_policy",
+        )
         metrics["mp/ddp_candidate_padding_forwards"] = float(padding_forwards)
+        metrics["mp/retained_graph_branch_forwards"] = float(
+            (len(candidate_indices) + padding_forwards)
+            if runtime_mode == "retained_graph"
+            else 0
+        )
+        metrics["mp/checkpointed_branch_forwards"] = float(
+            (len(candidate_indices) + padding_forwards)
+            if runtime_mode == "checkpointed_exact"
+            else 0
+        )
 
         if candidate_indices:
             candidate_results: list[CandidateLogProbResult] = []
             candidate_lengths: list[int] = []
             scores: list[torch.Tensor] = []
-            for candidate_index in candidate_indices:
-                branch = self._encode_branch(
-                    meta=meta,
-                    prefix_indices=prefix_indices,
-                    candidate_index=candidate_index,
+            if runtime_mode == "smart_batched_exact":
+                branches = [
+                    self._encode_branch(
+                        meta=meta,
+                        prefix_indices=prefix_indices,
+                        candidate_index=candidate_index,
+                    )
+                    for candidate_index in candidate_indices
+                ]
+                batch_results, batch_metrics = (
+                    self._score_candidate_branches_smart_batched(
+                        model=model,
+                        branches=branches,
+                        coord_token_ids=coord_token_ids,
+                    )
                 )
-                result, outputs, branch_inputs = self._score_candidate_branch(
-                    model=model,
-                    branch=branch,
-                    coord_token_ids=coord_token_ids,
-                )
-                last_outputs = outputs
-                candidate_results.append(result)
-                candidate_lengths.append(int(result.tokens))
-                scores.append(result.score)
-                self._compute_candidate_aux_atoms(
-                    branch=branch,
-                    branch_inputs=branch_inputs,
-                    outputs=outputs,
-                    aux_accum=aux_accum,
-                )
+                metrics.update(batch_metrics)
+                candidate_results.extend(batch_results)
+                candidate_lengths.extend(int(result.tokens) for result in batch_results)
+                scores.extend(result.score for result in batch_results)
+            else:
+                for candidate_index in candidate_indices:
+                    branch = self._encode_branch(
+                        meta=meta,
+                        prefix_indices=prefix_indices,
+                        candidate_index=candidate_index,
+                    )
+                    result, outputs, branch_inputs = self._score_candidate_branch(
+                        model=model,
+                        branch=branch,
+                        coord_token_ids=coord_token_ids,
+                    )
+                    last_outputs = outputs
+                    candidate_results.append(result)
+                    candidate_lengths.append(int(result.tokens))
+                    scores.append(result.score)
+                    self._compute_candidate_aux_atoms(
+                        branch=branch,
+                        branch_inputs=branch_inputs,
+                        outputs=outputs,
+                        aux_accum=aux_accum,
+                    )
 
             score_tensor = torch.stack(scores)
             raw_log_z = torch.logsumexp(score_tensor, dim=0)
-            estimator = "exact"
-            if sample.candidate_scoring_mode == "uniform_subsample":
-                estimator = (
-                    "uniform_importance"
-                    if cfg.positive_evidence_margin.objective == "threshold_loss"
-                    else "sampled_raw"
-                )
+            estimator = execution_plan.logz_estimator
             mp_result = compute_mp_pem_losses(
                 scores=score_tensor,
                 pem_mode=str(cfg.positive_evidence_margin.objective),
                 rho=cfg.positive_evidence_margin.rho,
                 log_rho=cfg.positive_evidence_margin.log_rho,
                 estimator=estimator,
-                remaining_count=len(remaining_indices),
+                remaining_count=execution_plan.remaining_candidate_count,
                 scored_count=len(candidate_indices),
                 candidate_lengths=score_tensor.new_tensor(candidate_lengths),
             )
@@ -724,7 +1017,7 @@ class Stage1SetContinuationTrainer(
             metrics["mp/logZ_remaining_est"] = float(
                 mp_result.log_z_remaining.detach().item()
             )
-            if sample.candidate_scoring_mode == "exact":
+            if execution_plan.objective_fidelity == "exact":
                 metrics["mp/logZ_remaining_exact"] = float(
                     mp_result.log_z_remaining.detach().item()
                 )
@@ -790,20 +1083,20 @@ class Stage1SetContinuationTrainer(
                 prefix_indices=prefix_indices,
                 candidate_index=None,
             )
-            padding_outputs, _padding_inputs = self._forward_branch(
-                model=model,
-                branch=padding_branch,
-            )
-            last_outputs = padding_outputs
-            logits = getattr(padding_outputs, "logits", None)
-            if isinstance(logits, torch.Tensor):
-                padding_loss = logits.sum() * 0.0
-                total_loss = (
-                    padding_loss
-                    if total_loss is None
-                    else total_loss + padding_loss
+            padding_result, padding_outputs, _padding_inputs = (
+                self._score_candidate_branch(
+                    model=model,
+                    branch=padding_branch,
+                    coord_token_ids=coord_token_ids,
                 )
-                sync_contributes = True
+            )
+            if padding_outputs is not None:
+                last_outputs = padding_outputs
+            padding_loss = padding_result.score * 0.0
+            total_loss = (
+                padding_loss if total_loss is None else total_loss + padding_loss
+            )
+            sync_contributes = True
 
         (
             close_start_nll,
@@ -995,7 +1288,9 @@ class Stage1SetContinuationTrainer(
             dist = None  # type: ignore[assignment]
         if dist is not None and dist.is_available() and dist.is_initialized():
             rank = int(dist.get_rank())
-            payload: list[dict[str, float] | None] = [dict(metrics) if rank == 0 else None]
+            payload: list[dict[str, float] | None] = [
+                dict(metrics) if rank == 0 else None
+            ]
             dist.broadcast_object_list(payload, src=0)
             if isinstance(payload[0], dict):
                 metrics.update(payload[0])
