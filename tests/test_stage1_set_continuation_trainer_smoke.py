@@ -154,6 +154,7 @@ class _FakeModel:
         self.calls.append(dict(kwargs))
         input_ids = kwargs["input_ids"]
         vocab_size = int(self.config.text_config.vocab_size)
+        logits_to_keep = int(kwargs.get("logits_to_keep") or 0)
         logits = torch.full(
             (input_ids.shape[0], input_ids.shape[1], vocab_size),
             -12.0,
@@ -165,6 +166,8 @@ class _FakeModel:
                 for pos in range(input_ids.shape[1] - 1):
                     logits[batch_idx, pos, int(next_ids[batch_idx, pos])] = 12.0
         logits[:, -1, 0] = 12.0
+        if logits_to_keep > 0:
+            logits = logits[:, -logits_to_keep:, :]
         return SimpleNamespace(logits=logits)
 
 
@@ -201,6 +204,7 @@ def _cfg(
     close_start_suppression_weight: float = 0.0,
     final_schema_close_weight: float = 0.0,
     pem: Mapping[str, Any] | None = None,
+    train_forward: Mapping[str, Any] | None = None,
 ) -> Stage1SetContinuationConfig:
     return Stage1SetContinuationConfig.from_mapping(
         {
@@ -217,6 +221,7 @@ def _cfg(
                 "final_schema_close_weight": final_schema_close_weight,
             },
             "positive_evidence_margin": dict(pem or {"objective": "disabled"}),
+            "train_forward": dict(train_forward or {}),
         }
     )
 
@@ -299,6 +304,31 @@ def test_trainer_exact_mp_scores_two_independent_branches_and_logs_metrics() -> 
     ) == pytest.approx(1.0)
     assert _latest_metric(trainer, "stop/p_close_start_when_remaining_exists") > 0.99
     assert _latest_metric(trainer, "stop/p_continue_start_when_remaining_exists") < 0.01
+
+
+def test_retained_graph_runtime_preserves_current_exact_branch_behavior() -> None:
+    cfg = _cfg()
+    trainer = _trainer(cfg)
+    model = _FakeModel()
+    trainer.model = model
+
+    loss = trainer.compute_loss(model, _batch(), return_outputs=False)
+
+    assert torch.isfinite(loss)
+    assert len(model.calls) == 3
+    assert _latest_metric(trainer, "mp/branch_runtime_mode") == pytest.approx(0.0)
+    assert _latest_metric(
+        trainer, "mp/retained_graph_branch_forwards"
+    ) == pytest.approx(2.0)
+    assert _latest_metric(trainer, "mp/checkpointed_branch_forwards") == pytest.approx(
+        0.0
+    )
+    assert _latest_metric(
+        trainer, "mp/objective_fidelity_exact_samples"
+    ) == pytest.approx(1.0)
+    assert _latest_metric(
+        trainer, "mp/objective_fidelity_approx_samples"
+    ) == pytest.approx(0.0)
 
 
 def test_trainer_evaluate_uses_callback_without_prediction_loop() -> None:
@@ -398,9 +428,7 @@ def test_trainer_adds_branch_local_coord_aux_when_enabled() -> None:
 
 
 def test_trainer_weak_schema_close_runs_for_full_prefix_samples() -> None:
-    trainer = _trainer(
-        _cfg(empty=0.0, full_prefix=1.0, final_schema_close_weight=0.25)
-    )
+    trainer = _trainer(_cfg(empty=0.0, full_prefix=1.0, final_schema_close_weight=0.25))
     model = _FakeModel()
     trainer.model = model
 
@@ -544,6 +572,211 @@ def test_trainer_pads_candidate_forwards_to_distributed_max_count() -> None:
 
     assert len(model.calls) == 5
     assert _latest_metric(trainer, "mp/num_candidates_scored") == pytest.approx(2.0)
+
+
+def test_checkpointed_exact_runtime_pads_candidate_forwards_through_selected_runtime() -> (
+    None
+):
+    trainer = _trainer(
+        _cfg(train_forward={"branch_runtime": {"mode": "checkpointed_exact"}})
+    )
+    trainer._ddp_max_int = lambda value, model: 4
+    model = _FakeModel()
+    trainer.model = model
+
+    loss = trainer.compute_loss(model, _batch(), return_outputs=False)
+
+    assert torch.isfinite(loss)
+    assert len(model.calls) == 5
+    assert _latest_metric(trainer, "mp/branch_runtime_mode") == pytest.approx(1.0)
+    assert _latest_metric(
+        trainer, "mp/retained_graph_branch_forwards"
+    ) == pytest.approx(0.0)
+    assert _latest_metric(trainer, "mp/checkpointed_branch_forwards") == pytest.approx(
+        4.0
+    )
+    assert _latest_metric(
+        trainer, "mp/ddp_candidate_padding_forwards"
+    ) == pytest.approx(2.0)
+
+
+def test_smart_batched_exact_runtime_batches_candidate_forwards() -> None:
+    trainer = _trainer(
+        _cfg(
+            train_forward={
+                "branch_runtime": {"mode": "smart_batched_exact"},
+                "branch_batching": {"enabled": True, "max_branch_rows": 8},
+                "logits": {"mode": "supervised_suffix"},
+                "ddp_sync": {"candidate_padding": "none"},
+            }
+        )
+    )
+    trainer._ddp_max_int = lambda value, model: 4
+    model = _FakeModel()
+    trainer.model = model
+
+    loss = trainer.compute_loss(model, _batch(), return_outputs=False)
+
+    assert torch.isfinite(loss)
+    assert len(model.calls) == 2  # one candidate batch plus close-start metric branch
+    assert model.calls[0]["input_ids"].shape[0] == 2
+    assert int(model.calls[0].get("logits_to_keep") or 0) > 0
+    assert _latest_metric(trainer, "mp/branch_runtime_mode") == pytest.approx(2.0)
+    assert _latest_metric(
+        trainer, "mp/retained_graph_branch_forwards"
+    ) == pytest.approx(0.0)
+    assert _latest_metric(trainer, "mp/checkpointed_branch_forwards") == pytest.approx(
+        0.0
+    )
+    assert _latest_metric(trainer, "mp/smart_batched_branch_forwards") == pytest.approx(
+        1.0
+    )
+    assert _latest_metric(trainer, "mp/branch_batch_count") == pytest.approx(1.0)
+    assert _latest_metric(trainer, "mp/branch_batch_rows_max") == pytest.approx(2.0)
+    assert _latest_metric(
+        trainer, "mp/ddp_candidate_padding_forwards"
+    ) == pytest.approx(0.0)
+
+
+def test_smart_batched_exact_matches_retained_graph_mp_and_logz_metrics() -> None:
+    retained_trainer = _trainer(
+        _cfg(
+            train_forward={
+                "logits": {"mode": "supervised_suffix"},
+                "ddp_sync": {"candidate_padding": "none"},
+            }
+        )
+    )
+    smart_trainer = _trainer(
+        _cfg(
+            train_forward={
+                "branch_runtime": {"mode": "smart_batched_exact"},
+                "branch_batching": {"enabled": True, "max_branch_rows": 8},
+                "logits": {"mode": "supervised_suffix"},
+                "ddp_sync": {"candidate_padding": "none"},
+            }
+        )
+    )
+    retained_model = _FakeModel()
+    smart_model = _FakeModel()
+    retained_trainer.model = retained_model
+    smart_trainer.model = smart_model
+
+    retained_loss = retained_trainer.compute_loss(
+        retained_model, _batch(), return_outputs=False
+    )
+    smart_loss = smart_trainer.compute_loss(smart_model, _batch(), return_outputs=False)
+
+    assert torch.allclose(retained_loss.detach(), smart_loss.detach(), atol=1e-6)
+    for key in (
+        "loss/mp",
+        "loss/mp_diagnostic",
+        "mp/logZ_scored_raw",
+        "mp/logZ_remaining_est",
+        "mp/responsibility_entropy_scored",
+    ):
+        assert _latest_metric(smart_trainer, key) == pytest.approx(
+            _latest_metric(retained_trainer, key),
+            abs=1e-6,
+        )
+    assert len(smart_model.calls) < len(retained_model.calls)
+
+
+def test_smart_batched_exact_runtime_rejects_branch_local_aux_without_schema() -> None:
+    trainer = _trainer(
+        _cfg(
+            train_forward={
+                "branch_runtime": {"mode": "smart_batched_exact"},
+                "branch_batching": {"enabled": True},
+            }
+        )
+    )
+    trainer.coord_soft_ce_w1_cfg = CoordSoftCEW1Config.from_mapping(
+        {
+            "enabled": True,
+            "ce_weight": 0.1,
+            "soft_ce_weight": 0.0,
+            "w1_weight": 0.0,
+            "gate_weight": 0.0,
+        }
+    )
+    model = _FakeModel()
+    trainer.model = model
+
+    with pytest.raises(ValueError, match="smart_batched_exact.*branch-local aux"):
+        trainer.compute_loss(model, _batch(), return_outputs=False)
+
+
+def test_supervised_suffix_runtime_scores_without_full_prefix_logits() -> None:
+    trainer = _trainer(
+        _cfg(
+            train_forward={
+                "logits": {"mode": "supervised_suffix"},
+                "ddp_sync": {"candidate_padding": "none"},
+            }
+        )
+    )
+    trainer._ddp_max_int = lambda value, model: 4
+    model = _FakeModel()
+    trainer.model = model
+
+    loss = trainer.compute_loss(model, _batch(), return_outputs=False)
+
+    assert torch.isfinite(loss)
+    assert len(model.calls) == 3
+    assert all(int(call.get("logits_to_keep") or 0) > 0 for call in model.calls)
+    assert _latest_metric(
+        trainer, "mp/ddp_candidate_padding_forwards"
+    ) == pytest.approx(0.0)
+    assert _latest_metric(
+        trainer, "mp/ddp_candidate_forward_local_count"
+    ) == pytest.approx(2.0)
+    assert _latest_metric(
+        trainer, "mp/ddp_candidate_forward_max_count"
+    ) == pytest.approx(4.0)
+    assert _latest_metric(trainer, "mp/ddp_candidate_padding_policy") == pytest.approx(
+        1.0
+    )
+
+
+def test_budget_fallback_scores_subset_and_reports_approximate_fidelity() -> None:
+    trainer = _trainer(
+        _cfg(
+            train_forward={
+                "budget_policy": {
+                    "enabled": True,
+                    "exact_until": {"max_candidates": 2},
+                    "fallback": {
+                        "mode": "approximate_uniform_subsample",
+                        "max_candidates": 1,
+                        "estimator": "uniform_importance",
+                    },
+                }
+            }
+        )
+    )
+    model = _FakeModel()
+    trainer.model = model
+
+    loss = trainer.compute_loss(
+        model,
+        _batch([OBJECT_A, OBJECT_B, OBJECT_C]),
+        return_outputs=False,
+    )
+
+    assert torch.isfinite(loss)
+    assert _latest_metric(trainer, "mp/num_remaining_objects") == pytest.approx(3.0)
+    assert _latest_metric(trainer, "mp/num_candidates_scored") == pytest.approx(1.0)
+    assert _latest_metric(
+        trainer, "mp/objective_fidelity_exact_samples"
+    ) == pytest.approx(0.0)
+    assert _latest_metric(
+        trainer, "mp/objective_fidelity_approx_samples"
+    ) == pytest.approx(1.0)
+    assert _latest_metric(trainer, "mp/fallback_applied_samples") == pytest.approx(1.0)
+    assert _latest_metric(
+        trainer, "mp/fallback_reason_candidate_budget"
+    ) == pytest.approx(1.0)
 
 
 def test_set_continuation_requires_raw_metadata_batch() -> None:
