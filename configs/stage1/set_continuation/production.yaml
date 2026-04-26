@@ -19,6 +19,8 @@ training:
   encoded_sample_cache:
     enabled: false
   num_train_epochs: 4
+  per_device_train_batch_size: 8
+  gradient_accumulation_steps: 2
   effective_batch_size: 128
   learning_rate: 5.0e-5
   vit_lr: 1.0e-5
@@ -27,8 +29,12 @@ training:
   greater_is_better: true
   eval_steps: 100
   save_steps: 200
+  logging_steps: 10
+  logging_first_step: true
   save_total_limit: 2
   save_delay_steps: 600
+  ddp_find_unused_parameters: false
+  ddp_broadcast_buffers: false
 
 deepspeed:
   enabled: false
@@ -50,12 +56,20 @@ experiment:
     - "dataset: original COCO coord-token train surface; LVIS-proxy is reserved for follow-up dataset ablation"
     - "prefix sampling: balanced empty/random/leave-one-out mixture"
     - "structural close: close-start suppression enabled when observed GT remains; weak final schema close disabled"
-    - "execution: repeated independent candidate forwards; no prefix cache; no branch attention mask"
+    - "execution: smart batched exact branch scoring with supervised suffix logits, no DDP padding forwards, and 8-candidate approximate fallback for over-budget samples"
+    - "prefix reuse: disabled in this bridge; GPU KV cache and branch attention mask disabled"
     - "coordinates: coord-token-only scoring; raw-text integer coordinates unsupported"
   runtime_settings:
     - "packing=false and eval_packing=false"
     - "checkpoint_mode=artifact_only; stage1_set_continuation prunes checkpoint state files and keeps adapter artifacts only"
     - "deepspeed.enabled=false because repeated independent candidate forwards are incompatible with ZeRO-2 reduction"
+    - "training.ddp_find_unused_parameters=false"
+    - "training.ddp_broadcast_buffers=false is required by no-padding DDP candidate synchronization"
+    - "microbatch scaling: per_device_train_batch_size=8 and gradient_accumulation_steps=2 preserve global effective_batch_size=128 while spending more GPU memory on useful local work"
+    - "train_forward.branch_runtime=smart_batched_exact; train_forward.logits.mode=supervised_suffix; train_forward.ddp_sync.candidate_padding=none"
+    - "branch_batching.strategy=ms_swift_constant_volume_buckets; max_branch_rows=8; smart batching is exact for selected candidates and does not enable prefix KV cache"
+    - "candidate budget exact_until.max_candidates=8 and fallback.max_candidates=8; cap-8 fallback is approximate and telemetry-required"
+    - "prefix logits are exact suffix-only scoring, not a detached-prefix or KV-cache approximation"
     - "num_train_epochs=4"
     - "effective_batch_size=128"
     - "lr: llm=5e-5, vit=1e-5, aligner=5e-5, coord_offset=5e-5"
@@ -107,6 +121,37 @@ custom:
       threshold_space: full_entry_logZ
       rho: 0.90
       threshold_calibration: fixed_rho_0.90_no_external_evaluator_v1
+    train_forward:
+      branch_runtime:
+        mode: smart_batched_exact
+      branch_batching:
+        enabled: true
+        strategy: ms_swift_constant_volume_buckets
+        max_branch_rows: 8
+        max_branch_tokens: null
+        min_fill_ratio: 0.70
+        padding_waste_warn_fraction: 0.40
+      logits:
+        mode: supervised_suffix
+      ddp_sync:
+        candidate_padding: none
+      budget_policy:
+        enabled: true
+        exact_until:
+          max_candidates: 8
+        fallback:
+          mode: approximate_uniform_subsample
+          max_candidates: 8
+          estimator: uniform_importance
+          require_telemetry: true
+      prefix_reuse:
+        encoding_cache: false
+        kv_cache:
+          mode: disabled
+      telemetry:
+        per_rank_memory: true
+        branch_budget: true
+        objective_fidelity: true
   eval_detection:
     enabled: true
     metrics: both
@@ -129,5 +174,7 @@ custom:
       prediction_surface: coord_token_xyxy
       score_mode: confidence_postop_bbox_logprob_confidence_exp
       decoding_controls: greedy_temp0_top_p1_rep1p05
-      same_budget_label: repeated_forward_correctness_v1
+      same_budget_label: smart_batched_exact_suffix_no_ddp_padding_cap8_v1
+      train_forward_budget: smart_batched_exact_suffix_no_ddp_padding_cap8_v1
+      objective_fidelity_note: exact suffix-logit scoring for samples with <=8 remaining candidates; approximate_uniform_subsample is explicit and telemetry-required for over-budget samples
       sparse_label_caveat: annotated_view_may_count_unlabeled_true_positives_as_fp

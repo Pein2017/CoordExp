@@ -137,9 +137,7 @@ def _resolve_dense_prompt_identity(custom_config: Any) -> dict[str, Any]:
     use_summary = bool(getattr(custom_config, "use_summary", False))
     coord_mode = _resolve_custom_coord_mode(custom_config)
     prompt_variant = resolve_dense_prompt_variant_key(
-        (
-            getattr(custom_config, "extra", {}) or {}
-        ).get("prompt_variant")
+        (getattr(custom_config, "extra", {}) or {}).get("prompt_variant")
         if isinstance(getattr(custom_config, "extra", {}) or {}, Mapping)
         else None
     )
@@ -147,7 +145,9 @@ def _resolve_dense_prompt_identity(custom_config: Any) -> dict[str, Any]:
         prompt_template_hash = None
     else:
         prompt_template_hash = get_template_prompt_hash(
-            ordering=str(getattr(custom_config, "object_ordering", "sorted") or "sorted"),
+            ordering=str(
+                getattr(custom_config, "object_ordering", "sorted") or "sorted"
+            ),
             coord_mode=coord_mode,
             prompt_variant=prompt_variant,
             object_field_order=str(
@@ -166,9 +166,7 @@ def _resolve_dense_prompt_identity(custom_config: Any) -> dict[str, Any]:
 
 logger = get_logger(__name__)
 
-STAGE1_SET_CONTINUATION_CACHE_BYPASS_REASON = (
-    "stage1_set_continuation_branch_sampling"
-)
+STAGE1_SET_CONTINUATION_CACHE_BYPASS_REASON = "stage1_set_continuation_branch_sampling"
 
 
 @dataclass(frozen=True)
@@ -515,9 +513,7 @@ def _stage1_eval_plan_payload(custom_config: Any) -> dict[str, Any]:
     payload = _config_to_mapping(eval_cfg)
     extra_cfg = getattr(custom_config, "extra", None)
     report_cfg = (
-        extra_cfg.get("benchmark_report")
-        if isinstance(extra_cfg, Mapping)
-        else None
+        extra_cfg.get("benchmark_report") if isinstance(extra_cfg, Mapping) else None
     )
     if isinstance(report_cfg, Mapping):
         for key, value in report_cfg.items():
@@ -590,12 +586,62 @@ def _build_benchmark_runtime_payload(
     candidates = getattr(sc_cfg, "candidates", None)
     subset_sampling = getattr(sc_cfg, "subset_sampling", None)
     pem_cfg = getattr(sc_cfg, "positive_evidence_margin", None)
+    train_forward = getattr(sc_cfg, "train_forward", None)
     candidate_mode = str(getattr(candidates, "mode", "") or "")
     logz_estimator = _logz_estimator_for_set_continuation(sc_cfg)
+    branch_runtime_mode = str(
+        getattr(getattr(train_forward, "branch_runtime", None), "mode", "")
+        or "retained_graph"
+    )
+    logits_mode = str(
+        getattr(getattr(train_forward, "logits", None), "mode", "") or "full"
+    )
+    ddp_candidate_padding = str(
+        getattr(getattr(train_forward, "ddp_sync", None), "candidate_padding", "")
+        or "max_count"
+    )
+    fallback_cfg = getattr(
+        getattr(getattr(train_forward, "budget_policy", None), "fallback", None),
+        "mode",
+        "disabled",
+    )
+    fallback_logz_estimator = None
+    if str(fallback_cfg) == "approximate_uniform_subsample":
+        fallback_logz_estimator = str(
+            getattr(
+                getattr(
+                    getattr(train_forward, "budget_policy", None), "fallback", None
+                ),
+                "estimator",
+                "uniform_importance",
+            )
+            or "uniform_importance"
+        )
+    if branch_runtime_mode == "smart_batched_exact":
+        branch_execution_label = "smart_batched_exact_no_prefix_cache"
+    elif branch_runtime_mode == "checkpointed_exact":
+        branch_execution_label = "checkpointed_exact_recompute_no_prefix_cache"
+    elif logits_mode == "supervised_suffix" and ddp_candidate_padding == "none":
+        branch_execution_label = (
+            "retained_graph_suffix_logits_no_ddp_padding_no_prefix_cache"
+        )
+    elif logits_mode == "supervised_suffix":
+        branch_execution_label = "retained_graph_suffix_logits_no_prefix_cache"
+    else:
+        branch_execution_label = "naive_repeated_forward_no_prefix_cache"
     payload["stage1_set_continuation"] = {
         "candidate_scoring_mode": candidate_mode,
         "candidate_max_candidates": getattr(candidates, "max_candidates", None),
         "logZ_estimator": logz_estimator,
+        "authored_logZ_estimator": logz_estimator,
+        "fallback_logZ_estimator": fallback_logz_estimator,
+        "runtime_logZ_estimator_metric": "mp/logZ_estimator",
+        "train_forward": _config_to_mapping(train_forward),
+        "objective_fidelity": {
+            "exact_metric": "mp/objective_fidelity_exact_samples",
+            "approx_metric": "mp/objective_fidelity_approx_samples",
+            "fallback_metric": "mp/fallback_applied_samples",
+        },
         "collator_path": (
             "src.data_collators.stage1_set_continuation_collator."
             "build_stage1_set_continuation_collator"
@@ -611,9 +657,7 @@ def _build_benchmark_runtime_payload(
         "branch_isolation": "independent_forward",
         "branch_attention_mask": {
             "enabled": False,
-            "reason": (
-                "naive_repeated_independent_forwards_do_not_share_candidate_sequence"
-            ),
+            "reason": ("independent_candidate_rows_do_not_share_candidate_sequence"),
         },
         "prefix_gradient": "non_detached_recomputed_per_branch",
         "metric_schema_version": str(
@@ -630,7 +674,7 @@ def _build_benchmark_runtime_payload(
         "realized_branch_token_budget": {
             "source": "trainer_metrics",
             "metric": "mp/repeated_forward_token_ratio_vs_baseline",
-            "v1_execution": "naive_repeated_forward_no_prefix_cache",
+            "v1_execution": branch_execution_label,
         },
         "realized_prefix_mode_coverage": {
             "source": "trainer_metrics",
@@ -1022,7 +1066,9 @@ def _validate_bbox_format_contract(
     trainer_variant: str | None,
 ) -> None:
     coord_mode = _resolve_custom_coord_mode(custom_config)
-    bbox_format = str(getattr(custom_config, "bbox_format", "xyxy") or "xyxy").strip().lower()
+    bbox_format = (
+        str(getattr(custom_config, "bbox_format", "xyxy") or "xyxy").strip().lower()
+    )
     variant = str(trainer_variant or "").strip()
     for path_attr in ("train_jsonl", "val_jsonl"):
         path_value = getattr(custom_config, path_attr, None)
@@ -1046,7 +1092,10 @@ def _validate_bbox_format_contract(
                     f"{path_attr}={path_text} is incompatible with custom.coord_tokens.enabled=false; "
                     "raw-text norm1000 runs require a *.norm.jsonl surface."
                 )
-    if variant in {"stage2_two_channel", "stage2_rollout_aligned"} and bbox_format != "xyxy":
+    if (
+        variant in {"stage2_two_channel", "stage2_rollout_aligned"}
+        and bbox_format != "xyxy"
+    ):
         raise ValueError(
             f"custom.bbox_format={bbox_format} is currently unsupported for stage-2 trainer variants. "
             "Stage-2 target construction still assumes canonical xyxy ordering; use custom.bbox_format=xyxy."
@@ -1738,9 +1787,7 @@ def main():
     # Auto-configure ROOT_IMAGE_DIR from the training JSONL path.
     train_jsonl = custom_config.train_jsonl or custom_config.extra.get("jsonl")
     if not train_jsonl:
-        raise ValueError(
-            "Config must specify 'custom.train_jsonl'/'custom.jsonl'"
-        )
+        raise ValueError("Config must specify 'custom.train_jsonl'/'custom.jsonl'")
 
     if os.environ.get("ROOT_IMAGE_DIR") in (None, ""):
         root_dir = os.path.abspath(os.path.dirname(str(train_jsonl)))

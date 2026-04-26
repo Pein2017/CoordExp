@@ -329,13 +329,17 @@ class CoordSoftCEW1Config:
         adjacent_repulsion_copy_margin = _parse_float(
             "adjacent_repulsion_copy_margin", cls.adjacent_repulsion_copy_margin
         )
-        adjacent_repulsion_filter_mode = str(
-            payload.get(
-                "adjacent_repulsion_filter_mode",
-                cls.adjacent_repulsion_filter_mode,
+        adjacent_repulsion_filter_mode = (
+            str(
+                payload.get(
+                    "adjacent_repulsion_filter_mode",
+                    cls.adjacent_repulsion_filter_mode,
+                )
+                or cls.adjacent_repulsion_filter_mode
             )
-            or cls.adjacent_repulsion_filter_mode
-        ).strip().lower()
+            .strip()
+            .lower()
+        )
 
         target_truncate_raw = payload.get("target_truncate", cls.target_truncate)
         target_truncate: Optional[int]
@@ -360,9 +364,7 @@ class CoordSoftCEW1Config:
         if text_gate_weight < 0:
             raise ValueError("coord_soft_ce_w1.text_gate_weight must be >= 0")
         if adjacent_repulsion_weight < 0:
-            raise ValueError(
-                "coord_soft_ce_w1.adjacent_repulsion_weight must be >= 0"
-            )
+            raise ValueError("coord_soft_ce_w1.adjacent_repulsion_weight must be >= 0")
         if adjacent_repulsion_margin_ratio < 0:
             raise ValueError(
                 "coord_soft_ce_w1.adjacent_repulsion_margin_ratio must be >= 0"
@@ -462,7 +464,10 @@ class BBoxGeoConfig:
         smoothl1_weight = _parse_float("smoothl1_weight", cls.smoothl1_weight)
         ciou_weight = _parse_float("ciou_weight", cls.ciou_weight)
         parameterization = (
-            str(data.pop("parameterization", cls.parameterization) or cls.parameterization)
+            str(
+                data.pop("parameterization", cls.parameterization)
+                or cls.parameterization
+            )
             .strip()
             .lower()
         )
@@ -1195,9 +1200,7 @@ class Stage1SetContinuationStructuralCloseConfig:
         object.__setattr__(
             self, "close_start_suppression_weight", close_start_suppression_weight
         )
-        object.__setattr__(
-            self, "final_schema_close_weight", final_schema_close_weight
-        )
+        object.__setattr__(self, "final_schema_close_weight", final_schema_close_weight)
         if close_start_suppression_weight < 0.0:
             raise ValueError(
                 "custom.stage1_set_continuation.structural_close.close_start_suppression_weight must be >= 0"
@@ -1250,9 +1253,7 @@ class Stage1SetContinuationPositiveEvidenceMarginConfig:
                 raise ValueError(
                     "custom.stage1_set_continuation.positive_evidence_margin.threshold_calibration must be non-empty when provided"
                 )
-            object.__setattr__(
-                self, "threshold_calibration", threshold_calibration
-            )
+            object.__setattr__(self, "threshold_calibration", threshold_calibration)
 
         if self.objective == "threshold_loss":
             if (rho is None) == (log_rho is None):
@@ -1330,6 +1331,264 @@ def _normalize_stage1_set_continuation_payload(payload: Any) -> Any:
 
 
 @dataclass(frozen=True)
+class Stage1SetContinuationBranchRuntimeConfig:
+    mode: Literal[
+        "retained_graph",
+        "checkpointed_exact",
+        "smart_batched_exact",
+    ] = "retained_graph"
+    checkpoint_use_reentrant: bool = False
+    preserve_rng_state: bool = True
+
+    def __post_init__(self) -> None:
+        if self.mode not in {
+            "retained_graph",
+            "checkpointed_exact",
+            "smart_batched_exact",
+        }:
+            raise ValueError(
+                "custom.stage1_set_continuation.train_forward.branch_runtime.mode "
+                "must be one of "
+                "{'retained_graph', 'checkpointed_exact', 'smart_batched_exact'}"
+            )
+        if not isinstance(self.checkpoint_use_reentrant, bool):
+            raise TypeError(
+                "custom.stage1_set_continuation.train_forward.branch_runtime."
+                "checkpoint_use_reentrant must be a boolean"
+            )
+        if not isinstance(self.preserve_rng_state, bool):
+            raise TypeError(
+                "custom.stage1_set_continuation.train_forward.branch_runtime."
+                "preserve_rng_state must be a boolean"
+            )
+
+
+@dataclass(frozen=True)
+class Stage1SetContinuationExactUntilConfig:
+    max_candidates: Optional[int] = None
+    max_branch_tokens_per_sample: Optional[int] = None
+    min_free_memory_gib: Optional[float] = None
+
+    def __post_init__(self) -> None:
+        for name in ("max_candidates", "max_branch_tokens_per_sample"):
+            value = getattr(self, name)
+            if value is None:
+                continue
+            parsed = int(value)
+            if parsed <= 0:
+                raise ValueError(
+                    "custom.stage1_set_continuation.train_forward.budget_policy."
+                    f"exact_until.{name} must be > 0"
+                )
+            object.__setattr__(self, name, parsed)
+        if self.min_free_memory_gib is not None:
+            parsed_memory = float(self.min_free_memory_gib)
+            if parsed_memory < 0:
+                raise ValueError(
+                    "custom.stage1_set_continuation.train_forward.budget_policy."
+                    "exact_until.min_free_memory_gib must be >= 0"
+                )
+            object.__setattr__(self, "min_free_memory_gib", parsed_memory)
+
+
+@dataclass(frozen=True)
+class Stage1SetContinuationFallbackConfig:
+    mode: Literal["disabled", "approximate_uniform_subsample"] = "disabled"
+    max_candidates: Optional[int] = None
+    estimator: Literal["uniform_importance"] = "uniform_importance"
+    require_telemetry: bool = True
+
+    def __post_init__(self) -> None:
+        if self.mode not in {"disabled", "approximate_uniform_subsample"}:
+            raise ValueError(
+                "custom.stage1_set_continuation.train_forward.budget_policy."
+                "fallback.mode must be one of {'disabled', 'approximate_uniform_subsample'}"
+            )
+        if self.estimator != "uniform_importance":
+            raise ValueError(
+                "custom.stage1_set_continuation.train_forward.budget_policy."
+                "fallback.estimator must be 'uniform_importance'"
+            )
+        if not isinstance(self.require_telemetry, bool):
+            raise TypeError(
+                "custom.stage1_set_continuation.train_forward.budget_policy."
+                "fallback.require_telemetry must be a boolean"
+            )
+        if self.mode == "approximate_uniform_subsample":
+            if self.max_candidates is None or int(self.max_candidates) <= 0:
+                raise ValueError(
+                    "custom.stage1_set_continuation.train_forward.budget_policy."
+                    "fallback.max_candidates must be > 0 when "
+                    "fallback.mode=approximate_uniform_subsample"
+                )
+            object.__setattr__(self, "max_candidates", int(self.max_candidates))
+        elif self.max_candidates is not None:
+            raise ValueError(
+                "custom.stage1_set_continuation.train_forward.budget_policy."
+                "fallback.max_candidates requires "
+                "fallback.mode=approximate_uniform_subsample"
+            )
+
+
+@dataclass(frozen=True)
+class Stage1SetContinuationBudgetPolicyConfig:
+    enabled: bool = False
+    exact_until: Stage1SetContinuationExactUntilConfig = field(
+        default_factory=Stage1SetContinuationExactUntilConfig
+    )
+    fallback: Stage1SetContinuationFallbackConfig = field(
+        default_factory=Stage1SetContinuationFallbackConfig
+    )
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.enabled, bool):
+            raise TypeError(
+                "custom.stage1_set_continuation.train_forward.budget_policy."
+                "enabled must be a boolean"
+            )
+
+
+@dataclass(frozen=True)
+class Stage1SetContinuationKVCacheConfig:
+    mode: Literal["disabled"] = "disabled"
+
+    def __post_init__(self) -> None:
+        if self.mode != "disabled":
+            raise ValueError(
+                "custom.stage1_set_continuation.train_forward.prefix_reuse."
+                "kv_cache.mode must be 'disabled' in the immediate bridge"
+            )
+
+
+@dataclass(frozen=True)
+class Stage1SetContinuationPrefixReuseConfig:
+    encoding_cache: bool = False
+    kv_cache: Stage1SetContinuationKVCacheConfig = field(
+        default_factory=Stage1SetContinuationKVCacheConfig
+    )
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.encoding_cache, bool):
+            raise TypeError(
+                "custom.stage1_set_continuation.train_forward.prefix_reuse."
+                "encoding_cache must be a boolean"
+            )
+
+
+@dataclass(frozen=True)
+class Stage1SetContinuationTelemetryConfig:
+    per_rank_memory: bool = True
+    branch_budget: bool = True
+    objective_fidelity: bool = True
+
+    def __post_init__(self) -> None:
+        for name in ("per_rank_memory", "branch_budget", "objective_fidelity"):
+            if not isinstance(getattr(self, name), bool):
+                raise TypeError(
+                    "custom.stage1_set_continuation.train_forward.telemetry."
+                    f"{name} must be a boolean"
+                )
+
+
+@dataclass(frozen=True)
+class Stage1SetContinuationLogitsConfig:
+    mode: Literal["full", "supervised_suffix"] = "full"
+
+    def __post_init__(self) -> None:
+        if self.mode not in {"full", "supervised_suffix"}:
+            raise ValueError(
+                "custom.stage1_set_continuation.train_forward.logits.mode "
+                "must be one of {'full', 'supervised_suffix'}"
+            )
+
+
+@dataclass(frozen=True)
+class Stage1SetContinuationDDPSyncConfig:
+    candidate_padding: Literal["max_count", "none"] = "max_count"
+
+    def __post_init__(self) -> None:
+        if self.candidate_padding not in {"max_count", "none"}:
+            raise ValueError(
+                "custom.stage1_set_continuation.train_forward.ddp_sync."
+                "candidate_padding must be one of {'max_count', 'none'}"
+            )
+
+
+@dataclass(frozen=True)
+class Stage1SetContinuationBranchBatchingConfig:
+    enabled: bool = False
+    strategy: Literal["ms_swift_constant_volume_buckets"] = (
+        "ms_swift_constant_volume_buckets"
+    )
+    max_branch_rows: Optional[int] = None
+    max_branch_tokens: Optional[int] = None
+    min_fill_ratio: float = 0.70
+    padding_waste_warn_fraction: float = 0.40
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.enabled, bool):
+            raise TypeError(
+                "custom.stage1_set_continuation.train_forward.branch_batching."
+                "enabled must be a boolean"
+            )
+        if self.strategy != "ms_swift_constant_volume_buckets":
+            raise ValueError(
+                "custom.stage1_set_continuation.train_forward.branch_batching."
+                "strategy must be 'ms_swift_constant_volume_buckets'"
+            )
+        for name in ("max_branch_rows", "max_branch_tokens"):
+            value = getattr(self, name)
+            if value is None:
+                continue
+            parsed = int(value)
+            if parsed <= 0:
+                raise ValueError(
+                    "custom.stage1_set_continuation.train_forward.branch_batching."
+                    f"{name} must be > 0"
+                )
+            object.__setattr__(self, name, parsed)
+        fill = float(self.min_fill_ratio)
+        if fill <= 0.0 or fill > 1.0:
+            raise ValueError(
+                "custom.stage1_set_continuation.train_forward.branch_batching."
+                "min_fill_ratio must be in (0, 1]"
+            )
+        object.__setattr__(self, "min_fill_ratio", fill)
+        warn = float(self.padding_waste_warn_fraction)
+        if warn < 0.0 or warn > 1.0:
+            raise ValueError(
+                "custom.stage1_set_continuation.train_forward.branch_batching."
+                "padding_waste_warn_fraction must be in [0, 1]"
+            )
+        object.__setattr__(self, "padding_waste_warn_fraction", warn)
+
+
+@dataclass(frozen=True)
+class Stage1SetContinuationTrainForwardConfig:
+    branch_runtime: Stage1SetContinuationBranchRuntimeConfig = field(
+        default_factory=Stage1SetContinuationBranchRuntimeConfig
+    )
+    budget_policy: Stage1SetContinuationBudgetPolicyConfig = field(
+        default_factory=Stage1SetContinuationBudgetPolicyConfig
+    )
+    prefix_reuse: Stage1SetContinuationPrefixReuseConfig = field(
+        default_factory=Stage1SetContinuationPrefixReuseConfig
+    )
+    telemetry: Stage1SetContinuationTelemetryConfig = field(
+        default_factory=Stage1SetContinuationTelemetryConfig
+    )
+    logits: Stage1SetContinuationLogitsConfig = field(
+        default_factory=Stage1SetContinuationLogitsConfig
+    )
+    ddp_sync: Stage1SetContinuationDDPSyncConfig = field(
+        default_factory=Stage1SetContinuationDDPSyncConfig
+    )
+    branch_batching: Stage1SetContinuationBranchBatchingConfig = field(
+        default_factory=Stage1SetContinuationBranchBatchingConfig
+    )
+
+
+@dataclass(frozen=True)
 class Stage1SetContinuationConfig:
     subset_sampling: Stage1SetContinuationSubsetSamplingConfig = field(
         default_factory=Stage1SetContinuationSubsetSamplingConfig
@@ -1342,6 +1601,9 @@ class Stage1SetContinuationConfig:
     )
     positive_evidence_margin: Stage1SetContinuationPositiveEvidenceMarginConfig = field(
         default_factory=Stage1SetContinuationPositiveEvidenceMarginConfig
+    )
+    train_forward: Stage1SetContinuationTrainForwardConfig = field(
+        default_factory=Stage1SetContinuationTrainForwardConfig
     )
     metric_schema_version: str = "stage1_set_continuation_metrics_v1"
 
@@ -3122,6 +3384,41 @@ class TrainingConfig:
                     "custom.trainer_variant=stage1_set_continuation treats training.encoded_sample_cache as ineligible; "
                     "set training.encoded_sample_cache.ineligible_policy=bypass or disable encoded_sample_cache."
                 )
+            train_forward = custom.stage1_set_continuation.train_forward
+            if (
+                train_forward.ddp_sync.candidate_padding == "none"
+                and training.get("ddp_broadcast_buffers") is not False
+            ):
+                raise ValueError(
+                    "custom.stage1_set_continuation.train_forward.ddp_sync."
+                    "candidate_padding=none requires "
+                    "training.ddp_broadcast_buffers=false so DDP ranks can run "
+                    "different local candidate-forward counts without forward "
+                    "buffer-broadcast collectives."
+                )
+            if train_forward.branch_runtime.mode in {
+                "checkpointed_exact",
+                "smart_batched_exact",
+            }:
+                runtime_mode = str(train_forward.branch_runtime.mode)
+                if bool(getattr(custom.coord_soft_ce_w1, "enabled", False)):
+                    raise ValueError(
+                        "custom.stage1_set_continuation.train_forward.branch_runtime."
+                        f"mode={runtime_mode} does not yet support branch-local "
+                        "coord_soft_ce_w1; use retained_graph or disable coord_soft_ce_w1"
+                    )
+                if bool(getattr(custom.bbox_geo, "enabled", False)):
+                    raise ValueError(
+                        "custom.stage1_set_continuation.train_forward.branch_runtime."
+                        f"mode={runtime_mode} does not yet support branch-local "
+                        "bbox_geo; use retained_graph or disable bbox_geo"
+                    )
+                if bool(getattr(custom.bbox_size_aux, "enabled", False)):
+                    raise ValueError(
+                        "custom.stage1_set_continuation.train_forward.branch_runtime."
+                        f"mode={runtime_mode} does not yet support branch-local "
+                        "bbox_size_aux; use retained_graph or disable bbox_size_aux"
+                    )
         if bool(getattr(custom.sft_structural_close, "enabled", False)):
             if bool(training.get("packing", False)):
                 raise ValueError(
@@ -3356,7 +3653,9 @@ class TrainingConfig:
                 raise ValueError(
                     f"custom.bbox_format={bbox_format_label} requires custom.coord_soft_ce_w1.adjacent_repulsion_weight = 0."
                 )
-            if custom_bbox_geo_present or bool(getattr(custom.bbox_geo, "enabled", False)):
+            if custom_bbox_geo_present or bool(
+                getattr(custom.bbox_geo, "enabled", False)
+            ):
                 raise ValueError(
                     f"custom.bbox_format={bbox_format_label} rejects custom.bbox_geo in V1."
                 )

@@ -52,10 +52,7 @@ def test_production_profile_resolves_and_pins_common_contract() -> None:
         cfg.training["artifact_subdir"]
         == "coco1024_sota1332_setcont_pem_close_suppress"
     )
-    assert (
-        cfg.training["run_name"]
-        == "setcont-coco1024-sota1332-pem-close-suppress"
-    )
+    assert cfg.training["run_name"] == "setcont-coco1024-sota1332-pem-close-suppress"
     assert cfg.training["packing"] is False
     assert cfg.training["eval_packing"] is False
     assert cfg.training["encoded_sample_cache"]["enabled"] is False
@@ -101,13 +98,22 @@ def test_production_profile_resolves_and_pins_common_contract() -> None:
 
     report = cfg.custom.extra["benchmark_report"]
     assert report["eval_scope"] == "val200"
-    assert report["eval_view"] == "coco_map_with_logprob_confidence_plus_f1ish_annotated"
+    assert (
+        report["eval_view"] == "coco_map_with_logprob_confidence_plus_f1ish_annotated"
+    )
     assert report["dataset_choice"] == "original_coco_coord_token_train_surface"
     assert report["dataset_ablation_note"] == "original_coco_first_lvis_proxy_followup"
     assert report["prediction_surface"] == "coord_token_xyxy"
     assert report["score_mode"] == "confidence_postop_bbox_logprob_confidence_exp"
     assert report["decoding_controls"] == "greedy_temp0_top_p1_rep1p05"
-    assert report["same_budget_label"] == "repeated_forward_correctness_v1"
+    assert (
+        report["same_budget_label"]
+        == "smart_batched_exact_suffix_no_ddp_padding_cap8_v1"
+    )
+    assert (
+        report["train_forward_budget"]
+        == "smart_batched_exact_suffix_no_ddp_padding_cap8_v1"
+    )
     assert (
         report["sparse_label_caveat"]
         == "annotated_view_may_count_unlabeled_true_positives_as_fp"
@@ -120,9 +126,27 @@ def test_production_profile_enables_all_set_continuation_features() -> None:
     pem = sc.positive_evidence_margin
 
     assert cfg.custom.trainer_variant == "stage1_set_continuation"
+    assert cfg.training["ddp_find_unused_parameters"] is False
+    assert cfg.training["ddp_broadcast_buffers"] is False
     assert sc is not None
     assert sc.candidates.mode == "exact"
     assert sc.candidates.max_candidates is None
+    assert sc.train_forward.branch_runtime.mode == "smart_batched_exact"
+    assert sc.train_forward.branch_batching.enabled is True
+    assert (
+        sc.train_forward.branch_batching.strategy == "ms_swift_constant_volume_buckets"
+    )
+    assert sc.train_forward.branch_batching.max_branch_rows == 8
+    assert sc.train_forward.logits.mode == "supervised_suffix"
+    assert sc.train_forward.ddp_sync.candidate_padding == "none"
+    assert sc.train_forward.budget_policy.enabled is True
+    assert sc.train_forward.budget_policy.exact_until.max_candidates == 8
+    assert (
+        sc.train_forward.budget_policy.fallback.mode == "approximate_uniform_subsample"
+    )
+    assert sc.train_forward.budget_policy.fallback.max_candidates == 8
+    assert sc.train_forward.prefix_reuse.encoding_cache is False
+    assert sc.train_forward.prefix_reuse.kv_cache.mode == "disabled"
     assert sc.subset_sampling.empty_prefix_ratio == pytest.approx(0.30)
     assert sc.subset_sampling.random_subset_ratio == pytest.approx(0.50)
     assert sc.subset_sampling.leave_one_out_ratio == pytest.approx(0.20)
@@ -176,8 +200,32 @@ def test_effective_runtime_records_production_set_continuation_provenance() -> N
         "train_args_deepspeed": None,
     }
     sc_runtime = runtime["stage1_set_continuation"]
+    assert (
+        sc_runtime["train_forward"]["branch_runtime"]["mode"] == "smart_batched_exact"
+    )
+    assert sc_runtime["train_forward"]["branch_batching"]["enabled"] is True
+    assert (
+        sc_runtime["train_forward"]["branch_batching"]["strategy"]
+        == "ms_swift_constant_volume_buckets"
+    )
+    assert sc_runtime["train_forward"]["logits"]["mode"] == "supervised_suffix"
+    assert sc_runtime["train_forward"]["ddp_sync"]["candidate_padding"] == "none"
+    assert sc_runtime["train_forward"]["budget_policy"]["enabled"] is True
+    assert (
+        sc_runtime["train_forward"]["budget_policy"]["fallback"]["mode"]
+        == "approximate_uniform_subsample"
+    )
+    assert sc_runtime["train_forward"]["prefix_reuse"]["kv_cache"]["mode"] == "disabled"
+    assert sc_runtime["objective_fidelity"] == {
+        "exact_metric": "mp/objective_fidelity_exact_samples",
+        "approx_metric": "mp/objective_fidelity_approx_samples",
+        "fallback_metric": "mp/fallback_applied_samples",
+    }
     assert sc_runtime["candidate_scoring_mode"] == "exact"
     assert sc_runtime["logZ_estimator"] == "exact"
+    assert sc_runtime["authored_logZ_estimator"] == "exact"
+    assert sc_runtime["fallback_logZ_estimator"] == "uniform_importance"
+    assert sc_runtime["runtime_logZ_estimator_metric"] == "mp/logZ_estimator"
     assert sc_runtime["collator_path"].endswith(
         "build_stage1_set_continuation_collator"
     )
@@ -192,7 +240,7 @@ def test_effective_runtime_records_production_set_continuation_provenance() -> N
     assert sc_runtime["branch_isolation"] == "independent_forward"
     assert sc_runtime["branch_attention_mask"] == {
         "enabled": False,
-        "reason": "naive_repeated_independent_forwards_do_not_share_candidate_sequence",
+        "reason": "independent_candidate_rows_do_not_share_candidate_sequence",
     }
     assert sc_runtime["prefix_gradient"] == "non_detached_recomputed_per_branch"
     assert sc_runtime["metric_schema_version"] == "stage1_set_continuation_metrics_v1"
@@ -206,7 +254,7 @@ def test_effective_runtime_records_production_set_continuation_provenance() -> N
     assert sc_runtime["raw_text_integer_coordinates"] == "unsupported"
     assert (
         sc_runtime["realized_branch_token_budget"]["v1_execution"]
-        == "naive_repeated_forward_no_prefix_cache"
+        == "smart_batched_exact_no_prefix_cache"
     )
     assert sc_runtime["realized_prefix_mode_coverage"]["source"] == "trainer_metrics"
     assert sc_runtime["realized_aux_settings"]["coord_soft_ce_w1"]["enabled"] is False
@@ -260,7 +308,8 @@ def test_experiment_manifest_mirrors_production_runtime_summary(tmp_path: Path) 
     assert summary["benchmark_group_id"] == "stage1_set_continuation_full_features"
     assert summary["control_group_id"] == "stage1_sft_sota1332"
     assert summary["stage1_set_continuation"]["candidate_scoring_mode"] == "exact"
-    assert summary["stage1_set_continuation"]["packing_policy"][
-        "training.packing"
-    ] == "rejected"
+    assert (
+        summary["stage1_set_continuation"]["packing_policy"]["training.packing"]
+        == "rejected"
+    )
     assert summary["benchmark"]["group_id"] == "stage1_set_continuation_full_features"
