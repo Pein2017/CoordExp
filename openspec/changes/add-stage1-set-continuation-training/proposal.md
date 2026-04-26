@@ -39,13 +39,41 @@ Add an off-by-default Stage-1 trainer variant for subset-conditioned set-continu
 - Add weak or masked structural-close supervision when no observed GT remains.
 - Support fixed-rho positive-evidence margin (PEM) in v1, configurable and disabled by default.
 - Support exact all-remaining candidate scoring and configurable candidate subsampling.
-- Implement the first version with repeated independent forwards, not prefix-cache branching.
+- Implement the first version with repeated independent branch semantics, but
+  refine the train-step forward runtime so production can trade more compute
+  time for lower peak memory pressure.
+- Add a config-first train-forward runtime policy with:
+  - a legacy retained-graph mode for parity/debugging;
+  - exact supervised-suffix logits so branch forwards do not materialize
+    full-prefix logits that are never supervised;
+  - an explicit DDP candidate-padding policy so production can avoid
+    zero-loss padding forwards while retaining the max-count policy as rollback;
+    no-padding DDP requires `training.ddp_broadcast_buffers=false`;
+  - a checkpoint/recompute exact mode as an optional memory fallback, not the
+    immediate production default;
+  - an automatic approximate fallback that uses explicit uniform subsampling
+    when candidate/token/memory budgets would be exceeded;
+  - disabled prefix reuse in the immediate bridge; CPU/tokenization prefix reuse,
+    GPU KV prefix caching, and branch attention masks remain follow-on runtime
+    modes.
+- Preserve existing verified behavior when `train_forward` is omitted:
+  retained-graph candidate scoring, fallback disabled, prefix encoding cache
+  disabled, GPU KV cache disabled, and branch attention masks disabled.
+- Record exact versus approximate objective fidelity, fallback reason,
+  branch-token budgets, and prefix-reuse mode in metrics and runtime artifacts.
 - Support only coord-token object coordinates (`<|coord_*|>`) in this trainer variant.
 - Reject raw-text integer coordinate training for this paradigm in v1.
 - Fail fast for dataset packing, including train/eval static packing, in the first version.
 - Keep coord and geometry auxiliary losses toggleable only through branch-local set-continuation adapters; do not reuse ordinary one-sequence SFT mixins blindly.
 
-The first implementation prioritizes correctness, branch-isolation clarity, metrics, and benchmark comparability over prefix-cache optimization.
+The first implementation prioritizes correctness, branch-isolation clarity,
+metrics, and benchmark comparability. The train-forward refinement keeps those
+semantics but makes the production path reduce wasted branch work: exact MP/PEM
+scores can request only the supervised suffix logits, DDP can skip candidate
+padding forwards, and over-budget samples can use an explicit cap-8
+uniform-importance fallback. Any approximate fallback must be visible in config,
+logs, and artifacts. Prefix KV/cache reuse is deliberately out of scope for this
+bridge.
 
 ## Capabilities
 
@@ -61,6 +89,10 @@ This change also modifies existing capabilities:
 - `bbox-size-aux-loss`: define branch-local bbox geometry/size adapter semantics.
 - `trainer-metrics-components`: classify new MP, structural-close, candidate, budget, and aux metrics.
 - `encoded-training-cache`: define cache bypass/eligibility for trainer-side branch construction.
+- `stage1-set-continuation-training`: refine the train-step forward runtime
+  contract for branch checkpointing, budgeted approximate fallback, prefix
+  encoding reuse, objective-fidelity labels, and future prefix-cache/branch-mask
+  compatibility.
 
 It will also require updates to existing documentation and metric surfaces:
 
@@ -82,6 +114,9 @@ Expected code touch points:
 - A subset sampler and candidate sampler.
 - A raw-sample-preserving collator path that exposes `assistant_payload.objects`, messages/image identity, sample ids, and metadata to the trainer.
 - A branch encoder that owns template state, multimodal/image alignment, branch tokenization, label masks, and structural-close spans.
+- A train-forward runtime layer that owns candidate budget decisions, branch
+  execution mode, exact/approx objective-fidelity labels, and prefix encoding
+  reuse.
 - Branch-local auxiliary loss adapters for compatible coord-token losses.
 - Metrics logging for MP, PEM, structural-close, candidate, auxiliary-loss, and budget diagnostics.
 - Benchmark configs for ordinary SFT, weak structural-close SFT, MP, MP plus close-start suppression, fixed-rho PEM threshold loss, and leave-one-out emphasis.
@@ -90,6 +125,10 @@ Expected code touch points:
 Correctness and reproducibility impact:
 
 - This changes Stage-1 loss semantics and therefore must be config-first and OpenSpec-governed.
+- Supervised-suffix logits are exact for the existing MP/PEM and structural-close
+  labels because they crop only unsupervised prefix logits. No-padding DDP is a
+  runtime synchronization policy. Automatic fallback to subsampled MP changes
+  estimator fidelity and must never be reported as exact.
 - It does not change the offline JSONL data contract.
 - It does not change image geometry, resizing, bbox surfaces, or inference artifact contracts.
 - It must record enough resolved config, effective runtime, experiment manifest, benchmark identity, and metric evidence to distinguish ordinary SFT, weak structural-close SFT, and MP variants.

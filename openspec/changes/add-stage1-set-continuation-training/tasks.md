@@ -83,7 +83,9 @@
 - [x] Add benchmark manifest validation that records effective coord-slot scoring, aux objective settings, PEM threshold calibration provenance, realized prefix-mode coverage, and realized branch/token budget.
 - [x] Add sparse-label FP caveat/report fields for proxy or partial-label eval views.
 - [x] Add distributed train-time detection eval generation so DDP ranks decode
-      eval shards while rank 0 merges/scales/logs final metrics.
+      eval shards while rank 0 merges/scales/logs final metrics. This is the
+      existing verified eval baseline and is not part of the train-forward
+      runtime stabilization work.
 
 ## 8. Documentation
 
@@ -111,3 +113,97 @@
 - [x] Add a tiny trainer smoke test with one image and at least two objects.
 - [x] Add config-resolution tests for the production entry config and its all-feature contract.
 - [x] Run the focused pytest command listed in `docs/superpowers/plans/2026-04-25-stage1-set-continuation-training.md`.
+
+## 10. Train-Step Forward Runtime Stabilization
+
+- [x] Refine the OpenSpec design for the production OOM class as a
+      train-forward runtime issue, scoped away from eval decoding.
+- [x] Add strict config schema for
+      `custom.stage1_set_continuation.train_forward`, including branch runtime,
+      checkpoint settings, budget policy, fallback policy, prefix reuse, and
+      telemetry toggles. Omitted `train_forward` must preserve retained-graph
+      scoring, disabled fallback, disabled prefix encoding cache, and disabled
+      GPU KV cache.
+- [x] Add strict config schema for exact suffix-logit scoring and DDP candidate
+      padding policy:
+      `train_forward.logits.mode={full,supervised_suffix}` and
+      `train_forward.ddp_sync.candidate_padding={max_count,none}`. Omitted
+      values must preserve full logits and max-count padding.
+- [ ] Extract train-forward planning seams:
+      sample/candidate execution plan, branch budget policy, branch scorer, MP
+      aggregator, and telemetry projection.
+- [x] Preserve retained-graph behavior as a legacy/debug branch runtime mode for
+      tiny-fixture parity tests.
+- [x] Implement `checkpointed_exact` branch scoring so exact MP trades more
+      recompute time for lower peak activation/logit retention while keeping the
+      outer HF Trainer loss/backward contract. The immediate bridge must reject
+      enabled branch-local aux losses unless all aux-bearing atoms are produced
+      by the same differentiable checkpointed branch computation.
+- [x] Prove `checkpointed_exact` loss and gradient parity against retained-graph
+      mode on deterministic tiny fixtures, including coord-token candidate
+      positions, DDP padding-branch behavior, and aux-disabled setup
+      validation.
+- [ ] Add deterministic budget-triggered approximate fallback to uniform
+      candidate subsampling when authored candidate/token/memory budgets would
+      be exceeded.
+- [ ] Prove fallback never reports exact fidelity: metrics and artifacts must
+      include remaining candidate count, scored candidate count, fallback reason,
+      logZ estimator, authored candidate scoring mode, and objective-fidelity
+      label. Authored `candidates.mode=uniform_subsample` must remain
+      approximate even when the budget policy does not fire.
+- [ ] Add exact in-sample prefix encoding cache and parity tests for `input_ids`,
+      labels, coord masks, image tensors, branch spans, and structural-close
+      spans.
+- [x] Keep GPU KV prefix caching disabled in the immediate bridge; document any
+      future detached KV cache as approximate and any future branch-mask runtime
+      as a separate exact-efficiency change.
+- [x] Implement exact supervised-suffix logits for candidate MP/PEM and
+      structural-close losses, including full-logit parity tests for mixed
+      coord/non-coord labels and close losses.
+- [x] Implement no-padding DDP candidate synchronization as a config-first
+      runtime policy while preserving max-count padding as a rollback mode and
+      logging local/max/policy/padding-forward telemetry.
+- [ ] Emit per-rank train-forward telemetry for memory, branch runtime mode,
+      branch token budgets, exact/approx sample counts, fallback reasons, and
+      prefix encoding cache hits/misses, with enough signal to distinguish
+      retained-graph savings from unchanged per-forward peak allocations such
+      as the coord-offset logits hook.
+- [x] Update production set-continuation config to prefer
+      smart-batched exact supervised-suffix logits, no DDP candidate padding,
+      `training.ddp_find_unused_parameters=false`,
+      `training.ddp_broadcast_buffers=false`, and authored cap-8 approximate
+      fallback thresholds.
+- [x] Add or update smoke coverage that exercises the production lifecycle with
+      the new train-forward runtime policy rather than a drifted mini-only path.
+
+## 11. Smart Candidate-Branch Batching Throughput Bridge
+
+- [x] Refine OpenSpec design/specs for `smart_batched_exact`: an exact
+      selected-candidate runtime that borrows ms-swift-style dynamic
+      constant-volume scheduling for runtime-built MP candidate branches while
+      keeping dataset-level packing and true padding-free Qwen3-VL branch
+      packing out of scope.
+- [x] Add strict config schema for
+      `custom.stage1_set_continuation.train_forward.branch_batching`, including
+      scheduler strategy, row/token caps, min-fill target, and padding-waste
+      warning threshold.
+- [x] Add scheduler/unit tests proving branch work items are length-bucketed,
+      grouped with a constant-volume policy when possible, and fall back to a
+      deterministic scheduler if `binpacking` is unavailable.
+- [x] Add batched candidate scorer parity tests proving
+      `smart_batched_exact` scores match retained-graph serial scoring for
+      mixed coord/non-coord candidate labels, heterogeneous suffix lengths, and
+      supervised-suffix logits.
+- [x] Implement `smart_batched_exact` candidate scoring as a batched padded-row
+      runtime for selected candidates only. Close-start and close-sequence losses
+      remain on the existing close branch path in the first bridge.
+- [x] Add trainer-level parity tests proving MP/PEM loss and logZ metrics match
+      retained-graph mode on deterministic tiny microbatches.
+- [x] Emit smart-branch-batching telemetry: scheduler code, branch-batch count,
+      rows mean/max, token volume mean/max, padding fraction, and smart-batched
+      branch-forward count.
+- [x] Update production config and benchmark runtime labels to
+      `smart_batched_exact_suffix_no_ddp_padding_cap8_v1`, with config-only
+      rollback to retained-graph supervised-suffix mode.
+- [x] Run targeted unit/config/runtime tests for the smart-batched bridge.
+- [ ] Run a real 2-GPU smoke before relaunching production.

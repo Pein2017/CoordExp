@@ -16,13 +16,25 @@ The new paradigm should be introduced as a new trainer variant rather than a mut
 - Add mechanism-level logs that explain whether MP changes continuation behavior.
 - Preserve the current lm-head-only, Qwen3-VL chat-template-compatible training surface.
 - Keep v1 simple enough to test and debug quickly.
+- Make the production train-step forward path OOM-preventive by trading more
+  compute time for lower peak activation/logit memory and fewer wasted branch
+  forwards.
+- Make exact versus approximate objective fidelity explicit in config, metrics,
+  and artifacts.
 
 ## Non-Goals
 
 - No RL, pseudo-labeling, detector head, external evaluator, or architecture change.
-- No prefix-cache sharing or branch attention mask in v1.
+- No train-time eval decoding redesign in this train-forward refinement.
+- No prefix-cache sharing, GPU KV prefix-cache sharing, or branch attention mask
+  in the immediate production bridge.
 - No runtime data augmentation that changes image geometry.
-- No packed-sequence implementation in v1.
+- No dataset-level packed-sequence implementation in v1 for
+  `stage1_set_continuation`.
+- No true padding-free Qwen3-VL branch-packing implementation in the immediate
+  throughput bridge. That larger framework-level work remains deferred until
+  per-segment logits, packed multimodal metadata, and prefix-sharing semantics
+  are designed together.
 - No blind reuse of ordinary one-sequence SFT loss mixins in v1.
 
 ## Decisions
@@ -106,8 +118,10 @@ Branch semantics:
 
 - each candidate branch has the same prefix;
 - candidates do not attend to each other;
-- prefix gradients are not detached, but they are recomputed once per branch;
-- no shared prefix cache is used;
+- prefix gradients are not detached;
+- model-side prefix computation is repeated or recomputed per branch depending
+  on the selected branch runtime;
+- no GPU KV prefix cache is used in the immediate bridge;
 - no branch attention mask is needed in v1.
 
 Instrumentation must make this explicit:
@@ -116,7 +130,283 @@ Instrumentation must make this explicit:
 - `mp/prefix_gradient = non_detached_recomputed_per_branch`;
 - `mp/branch_isolation = independent_forward`;
 - `mp/candidate_scoring_mode = exact | uniform_subsample`;
+- `mp/branch_runtime_mode = retained_graph | checkpointed_exact | smart_batched_exact`;
 - repeated-forward budget stats.
+
+### 2.0.1 Smart Branch Batching Bridge
+
+The immediate throughput bridge borrows the useful scheduler idea from
+ms-swift packing without enabling dataset-level packing or true padding-free
+branch packing. ms-swift's packing path groups tokenized rows with
+`binpacking.to_constant_volume(...)`, then relies on padding-free Qwen/VL
+metadata (`position_ids`, `text_position_ids`, `cu_seq_lens`) to preserve
+segment boundaries. For set-continuation MP, the analogous schedulable unit is
+not a raw dataset row but a runtime-built candidate branch.
+
+`smart_batched_exact` therefore groups candidate branches into length-aware
+padded branch batches:
+
+```text
+branch_work_item = encoded(prefix + candidate_entry)
+smart batch = length-bucketed, constant-volume group of branch_work_items
+```
+
+This mode is exact for selected candidates:
+
+- each row in a branch batch is still an independent `prefix + candidate`
+  sequence;
+- candidate rows do not attend to each other;
+- prefix gradients remain non-detached and recomputed per branch row;
+- the candidate score still uses the existing coord-aware full-entry scoring
+  function;
+- MP/PEM aggregation still happens per original sample after scores are
+  scattered back to sample/candidate order.
+
+The scheduler SHOULD follow ms-swift's dynamic packing spirit:
+
+- branch length is first-class scheduling metadata;
+- branches are bucketed by sequence length and supervised suffix length to
+  reduce padding and avoid excessive `logits_to_keep`;
+- groups are selected with a constant-volume target when `binpacking` is
+  available;
+- if `binpacking` is unavailable, the runtime MAY fall back to a deterministic
+  length-bucketed first-fit policy while recording the scheduler used;
+- underfilled batches, padding fraction, rows per branch batch, and token volume
+  are logged.
+
+This is intentionally not true padding-free branch packing. The future
+padding-free runtime must solve Qwen3-VL multimodal packed metadata and
+per-segment suffix-logit retention together. Until then,
+`training.packing=false` remains the production contract for
+`stage1_set_continuation`.
+
+### 2.1 Train-Forward Runtime Policy
+
+The production OOM showed that "one sample per device" is not the actual
+memory unit. A single set-continuation sample can expand into many candidate
+branch forwards before the MP log-sum-exp loss is returned to the outer Trainer.
+The train-forward runtime therefore needs its own policy layer rather than
+leaving branch expansion as inline trainer logic. This refinement targets the
+retained-graph branch-memory component of the failure. It does not by itself
+remove per-forward peak allocations such as the coord-offset logits-hook delta
+tensor.
+
+Introduce a config-first runtime policy under `custom.stage1_set_continuation`
+for the training forward pass only. This refinement does not change eval
+decoding.
+
+For backward compatibility, omitting `train_forward` must preserve the current
+verified runtime:
+
+```yaml
+train_forward:
+  branch_runtime:
+    mode: retained_graph
+    checkpoint_use_reentrant: false
+    preserve_rng_state: true
+  budget_policy:
+    enabled: false
+    fallback:
+      mode: disabled
+  prefix_reuse:
+    encoding_cache: false
+    kv_cache:
+      mode: disabled
+```
+
+Recommended shape:
+
+```yaml
+custom:
+  stage1_set_continuation:
+    train_forward:
+      branch_runtime:
+        mode: retained_graph       # retained_graph | checkpointed_exact | smart_batched_exact
+        checkpoint_use_reentrant: false
+        preserve_rng_state: true
+      branch_batching:
+        enabled: false
+        strategy: ms_swift_constant_volume_buckets
+        max_branch_rows: null
+        max_branch_tokens: null
+        min_fill_ratio: 0.70
+        padding_waste_warn_fraction: 0.40
+      logits:
+        mode: supervised_suffix    # full | supervised_suffix
+      ddp_sync:
+        candidate_padding: none    # max_count | none
+      budget_policy:
+        enabled: true
+        exact_until:
+          max_candidates: 8
+          max_branch_tokens_per_sample: null
+        fallback:
+          mode: approximate_uniform_subsample
+          max_candidates: 8
+          estimator: uniform_importance
+          require_telemetry: true
+      prefix_reuse:
+        encoding_cache: false
+        kv_cache:
+          mode: disabled
+      telemetry:
+        per_rank_memory: true
+        branch_budget: true
+        objective_fidelity: true
+```
+
+Runtime modes:
+
+- `retained_graph`: legacy/debug behavior. Candidate branch scores are computed
+  with grad enabled, retained until the sample loss is assembled, and backpropagated
+  by the outer Trainer. In the immediate production bridge, this remains the
+  branch runtime but is paired with exact supervised-suffix logits and no DDP
+  padding forwards.
+- `checkpointed_exact`: optional exact memory fallback for MP/PEM-only runs.
+  Branch differentiable atoms are wrapped in activation checkpointing so the
+  trainer still returns one exact differentiable scalar loss, while branch
+  internals are recomputed during backward instead of retained from forward.
+  This spends more time to reduce retained activation/logit graph pressure, but
+  it is not the immediate production default for the throughput bridge.
+- `smart_batched_exact`: exact selected-candidate throughput mode. Candidate
+  branches are materialized as work items, scheduled into ms-swift-inspired
+  length-aware padded branch batches, scored in batched forwards, and then
+  scattered back to per-sample MP/PEM aggregation. Close branches remain on the
+  proven close-loss path in the initial bridge. This mode does not detach prefix
+  gradients, does not use GPU KV cache, and does not enable dataset-level or
+  padding-free branch packing.
+
+Logit modes:
+
+- `full`: backward-compatible mode. Model forwards may return logits for the
+  whole branch sequence.
+- `supervised_suffix`: exact production mode. For each candidate or close branch,
+  compute the earliest supervised label position and pass `logits_to_keep` so
+  Qwen3-VL returns only logits from `first_supervised_label_pos - 1` onward.
+  Labels and masks are cropped to the same suffix before loss computation. This
+  changes neither MP/PEM nor close-loss semantics because prefix logits outside
+  the supervised masks do not contribute to the objective.
+
+DDP candidate synchronization modes:
+
+- `max_count`: backward-compatible mode. Ranks may execute zero-loss padding
+  candidate forwards up to the per-step max candidate count.
+- `none`: production throughput mode. Ranks execute local real candidates plus
+  the close branch only. The cross-rank max count is still logged for skew
+  diagnostics, but no padding forwards are executed. Under DDP this mode also
+  requires `training.ddp_broadcast_buffers=false`; otherwise ranks with different
+  candidate counts can desynchronize on forward-time buffer-broadcast
+  collectives.
+
+`checkpointed_exact` must preserve exact objective semantics:
+
+- `loss/mp` and `loss/pem`, when applicable, are computed from the same
+  branch scores and estimator semantics as retained-graph mode;
+- the same branch labels, coord masks, image tensors, position semantics, and
+  Qwen3-VL chat-template surface are used;
+- `use_cache` remains disabled for model forwards;
+- all gradient-bearing branch objective atoms must come from the same
+  checkpointed computation, or setup must reject `checkpointed_exact` for the
+  active objective configuration. The immediate bridge may reject
+  `checkpointed_exact` when branch-local aux losses are enabled rather than
+  silently detaching aux logits;
+- checkpoint RNG handling must be deterministic (`preserve_rng_state: true` or
+  equivalent) so dropout/stochastic layers do not silently turn exact MP into
+  an approximation;
+- if the implementation cannot preserve deterministic recompute for the active
+  model/config, setup must either reject `checkpointed_exact` or explicitly
+  downgrade through the configured approximate fallback and log that downgrade.
+- DDP synchronization and padding forwards must honor the selected branch
+  runtime. A rank that executes zero-loss padding branches in
+  `checkpointed_exact` mode must not fall back to retained full branch graphs.
+
+Manual branch-by-branch backward is a later option, not the first bridge. It
+requires overriding more of the HF Trainer/Accelerate training step and is more
+likely to interact with gradient accumulation, DDP synchronization, mixed
+precision, and DeepSpeed. The checkpointed exact mode keeps the outer Trainer
+contract intact: `compute_loss` still returns one scalar loss.
+
+### 2.2 Budgeted Approximate Fallback
+
+The production policy should not fail fast on long but scientifically valid
+samples when an authored approximation is allowed. Instead, the branch planner
+should decide before expensive branch scoring whether exact execution is within
+configured budgets. If not, it falls back to uniform candidate subsampling and
+records the fidelity change.
+
+Budget inputs may include:
+
+- `num_remaining_objects`;
+- predicted `num_candidates_scored`;
+- prefix token count;
+- candidate entry token counts;
+- total planned branch tokens for the sample;
+- per-rank CUDA memory telemetry, if available before branch execution.
+
+Fallback behavior:
+
+```text
+if exact plan is within budget:
+    objective_fidelity = exact
+    scored_candidates = all remaining candidates
+else:
+    objective_fidelity = approximate_uniform_subsample
+    scored_candidates = uniform subset of remaining candidates
+    logZ_estimator = uniform_importance
+```
+
+This policy changes estimator fidelity, so it must never be silent. Metrics and
+artifacts must record:
+
+- `mp/objective_fidelity_exact_samples`;
+- `mp/objective_fidelity_approx_samples`;
+- `mp/fallback_applied_samples`;
+- `mp/fallback_reason_candidate_budget`;
+- `mp/fallback_reason_token_budget`;
+- `mp/fallback_reason_memory_budget`;
+- `mp/num_remaining_objects`;
+- `mp/num_candidates_scored`;
+- `mp/scored_candidate_fraction`;
+- `mp/logZ_estimator`.
+
+For PEM, fallback mode must use the uniform-importance estimated remaining
+logZ, not raw sampled mass. Plain sampled MP may still optimize raw sampled
+mass when that is the authored estimator, but the estimator and fidelity labels
+must make the scope clear.
+
+### 2.3 Prefix Reuse Roadmap
+
+There are three distinct prefix-reuse layers. The OpenSpec must keep them
+separate because they have different correctness properties.
+
+1. Exact CPU/tokenization prefix cache.
+   - Cache the rendered/tokenized shared `image + prompt + sampled prefix`
+     branch stem within one sample.
+   - Append candidate-entry tokens/spans per branch.
+   - This is exact if tests prove identical `input_ids`, labels, coord masks,
+     image tensors, and span offsets compared with the uncached branch encoder.
+   - It reduces CPU/tokenization overhead but does not remove model-side prefix
+     recomputation.
+
+2. Detached GPU KV prefix cache.
+   - Run the prefix once with `use_cache=True` and reuse detached K/V for
+     candidate suffixes.
+   - This can improve throughput but changes gradient flow through the prefix.
+   - It must be a future approximate mode, labeled for example
+     `objective_fidelity = approximate_detached_prefix`.
+
+3. Exact shared-prefix branch attention.
+   - Compute the shared prefix once and evaluate candidate suffixes under a
+     branch-isolating attention mask where candidates attend to the prefix and
+     themselves, but not each other.
+   - This is the long-term exact efficiency target, but it needs careful
+     Qwen3-VL attention-mask, position-id, multimodal alignment, and
+     FlashAttention validation. It must not require editing upstream HF model
+     files.
+
+The immediate bridge leaves all three layers disabled and observable in the
+runtime payload. Layer 1 is still the next exact efficiency step; layers 2 and 3
+remain explicit future runtime modes.
 
 ### 3. Canonical Object Fragment Serialization
 
@@ -195,6 +485,8 @@ Candidate modes:
 
 - exact all-remaining scoring;
 - uniform subsampling with maximum `K`;
+- budget-triggered automatic fallback from exact planning to uniform
+  subsampling, when the configured train-forward policy allows approximation;
 - same-budget benchmark mode, if feasible after exact mode is working.
 
 For subsampling, v1 can optimize the sampled-candidate MP objective directly, but the scalar names must make the scope explicit:
@@ -205,9 +497,23 @@ mp/logZ_remaining_exact = logsumexp(score(o) for o in all remaining R)  # exact 
 mp/logZ_remaining_est = mp/logZ_scored_raw + log(|R| / |C|)             # uniform subsample estimator
 ```
 
-Plain sampled MP may use `mp/logZ_scored_raw` because the missing `log(|R| / |C|)` term is a gradient-constant for fixed `S,C`. PEM must use `mp/logZ_remaining_exact` in exact mode or `mp/logZ_remaining_est` in uniform-subsample mode. Raw sampled PEM is not the default Group E objective and must be a separately named ablation if ever supported.
+Plain sampled MP uses `mp/logZ_scored_raw` because the missing
+`log(|R| / |C|)` term is a gradient-constant for fixed `S,C` and because this
+preserves the current verified sampled-MP behavior. PEM must use
+`mp/logZ_remaining_exact` in exact mode or `mp/logZ_remaining_est` in
+uniform-subsample mode. Raw sampled PEM is not the default Group E objective and
+must be a separately named ablation if ever supported.
 
-Logs must state when `mp/num_candidates_scored < mp/num_remaining_objects`, and benchmark artifacts must record `candidate_scoring_mode` and `logZ_estimator`.
+Logs must state when `mp/num_candidates_scored < mp/num_remaining_objects`, and
+benchmark artifacts must record `candidate_scoring_mode`, the authored
+`logZ_estimator`, the fallback estimator when configured, and the runtime
+`mp/logZ_estimator` metric pointer.
+When subsampling is selected by automatic fallback rather than by an authored
+static candidate mode, logs and artifacts must additionally record
+`fallback_applied=true`, the fallback reason, and
+`objective_fidelity=approximate_uniform_subsample`. The budget policy sits on
+top of the authored candidate mode: authored `candidates.mode=uniform_subsample`
+is already approximate even if the train-forward budget does not fire.
 
 ### 6. Structural-Close Handling
 
@@ -322,9 +628,11 @@ Required policy:
 Set-continuation runs must preserve the existing training artifact family and add set-continuation-specific provenance:
 
 - `resolved_config.json` includes the fully defaulted `custom.stage1_set_continuation` block, objective mode, subset ratios, prefix order, candidate scoring mode/K, logZ estimator, structural-close weights, PEM mode/threshold, aux adapter modes, and coord-token-only validation status.
-- `effective_runtime.json` records repeated-forward mode, branch isolation,
-  prefix-gradient semantics, raw-sample collator path, packing rejection,
-  encoded-cache policy, and candidate scoring mode.
+- `effective_runtime.json` records repeated-forward semantics, branch runtime
+  mode, checkpoint settings, branch isolation, prefix-gradient semantics,
+  train-forward budget policy, prefix reuse mode, raw-sample collator path,
+  packing rejection, encoded-cache policy, candidate scoring mode, and exact
+  versus approximate objective-fidelity counters when available.
 - `experiment_manifest.json` records the bootstrap-time benchmark summary:
   `benchmark_group_id`, `control_group_id`, comparator, configured eval scope,
   eval view, benchmark-report notes, and pointers to the pre-train manifest
@@ -386,6 +694,17 @@ Minimum logs:
 - `mp/candidate_tokens_scored_mean`;
 - `mp/total_candidate_tokens_scored`;
 - `mp/repeated_forward_token_ratio_vs_baseline`;
+- `mp/branch_runtime_mode`;
+- `mp/objective_fidelity_exact_samples`;
+- `mp/objective_fidelity_approx_samples`;
+- `mp/fallback_applied_samples`;
+- `mp/fallback_reason_candidate_budget`;
+- `mp/fallback_reason_token_budget`;
+- `mp/fallback_reason_memory_budget`;
+- `mp/checkpointed_branch_forwards`;
+- `mp/retained_graph_branch_forwards`;
+- `mp/prefix_encoding_cache_hits`;
+- `mp/prefix_encoding_cache_misses`;
 - `stop/p_close_start_when_remaining_exists`;
 - `stop/p_continue_start_when_remaining_exists`;
 - `stop/p_close_start_when_remaining_empty`;
@@ -460,12 +779,13 @@ Each run or report must include a benchmark manifest or an `experiment_manifest.
 
 Benchmark reports must state eval scope and view explicitly: `val200`, `limit=200`, full-val, proxy view, sample count, prediction count totals/means, AP/AP50/AP75, recall/precision at relevant thresholds, and sparse-label caveats. COCO-real headline views and proxy-expanded analysis views must not be mixed silently.
 
-Train-time detection eval should use all learner ranks for generation when the
-run is launched under DDP. The existing inference engine already owns
-source-index modulo sharding and rank-0 shard merge; the Stage-1 callback should
-reuse that path, then keep final detection scoring and metric injection on rank
-0 only. This separates the expensive decode work from the comparatively small
-metric aggregation step without changing canonical eval artifacts.
+Train-time detection eval using all learner ranks for generation is an existing
+verified baseline for the broader Stage-1 set-continuation change, not part of
+this train-forward runtime refinement. The existing inference engine already
+owns source-index modulo sharding and rank-0 shard merge; the Stage-1 callback
+reuses that path, then keeps final detection scoring and metric injection on
+rank 0 only. Do not expand eval decoding work in the train-forward runtime
+stabilization slice.
 
 ## Architecture
 
@@ -477,12 +797,19 @@ offline JSONL
   -> Stage1SetContinuationTrainer
        -> subset sampler
        -> indexed canonical prefix/candidate fragment builder
-       -> candidate sampler
+       -> candidate planner
+       -> train-forward budget policy
        -> Stage1SetContinuationBranchEncoder
-       -> repeated independent branch forwards
+       -> prefix reuse disabled in the immediate bridge
+       -> branch scorer
+            -> retained-graph exact suffix-logit production mode
+            -> optional checkpoint/recompute exact mode
+            -> DDP max-count or no-padding candidate synchronization
        -> full-entry score aggregation
+            -> exact logsumexp
+            -> explicit uniform-importance fallback estimator
        -> MP / PEM / close-start-suppression / weak-schema-close losses
-       -> mechanism metrics
+       -> mechanism metrics and objective-fidelity telemetry
        -> run artifact and benchmark-manifest provenance
 ```
 
@@ -495,12 +822,29 @@ Suggested new modules:
 - `src/trainers/stage1_set_continuation/branch_encoder.py`
 - `src/trainers/stage1_set_continuation/losses.py`
 - `src/trainers/stage1_set_continuation/metrics.py`
+- `src/trainers/stage1_set_continuation/runtime.py`
+- `src/trainers/stage1_set_continuation/budget.py`
+- `src/trainers/stage1_set_continuation/branch_scorer.py`
 
 Keep names flexible during implementation, but keep the conceptual boundaries clear.
 
 ## Risks and Trade-Offs
 
 - Repeated forward is slower than prefix sharing, but much easier to validate.
+- Supervised-suffix logits reduce full-prefix logit materialization without
+  changing MP/PEM or close-loss semantics, but they rely on every supervised mask
+  being cropped in the same coordinate frame.
+- No-padding DDP improves throughput when ranks have uneven candidate counts,
+  but rank skew must remain observable through local/max candidate telemetry.
+- Checkpoint/recompute exact mode remains available for memory fallback, but it
+  is slower than retained-graph suffix-logit execution and is not the immediate
+  production default.
+- Automatic fallback makes production more robust, but it changes estimator
+  fidelity and therefore must be visible in every comparable run summary.
+- CPU/tokenization prefix reuse could improve throughput without changing
+  objective semantics, but it is deferred until branch-input parity tests are
+  explicit. GPU KV prefix caching is more powerful but must remain a separate
+  approximate/future mode unless exact gradient behavior is proven.
 - Tokenization inside the trainer is viable only behind an explicit branch encoder that owns template state and image alignment.
 - Canonical fragment slicing is safer than hand-rendering but requires careful tests around separators and closing tokens.
 - Weak structural-close supervision may produce more predictions and apparent sparse-label false positives.
@@ -516,10 +860,21 @@ Keep names flexible during implementation, but keep the conceptual boundaries cl
 4. Add indexed canonical object-entry/closure span tests before trainer integration.
 5. Add subset/candidate sampler tests, including deterministic RNG and small-object-count fallbacks.
 6. Add branch scoring, MP, PEM, structural-close, and aux-adapter loss tests with synthetic logits.
-7. Add trainer integration on a tiny fixture with no packing and one image.
-8. Add artifact/provenance, metrics, and metric-key tests.
-9. Add benchmark config profiles and manifest validation.
-10. Update Stage-1 objective, metrics, packing, encoded-cache, and training README docs.
+7. Extract train-forward planning, budget policy, branch scorer, and MP
+   aggregator seams while keeping retained-graph behavior as a parity mode.
+8. Add checkpoint/recompute exact branch scoring and prove tiny-fixture loss and
+   gradient parity against retained-graph mode.
+9. Add budget-triggered approximate fallback and tests proving fallback is
+   explicit, deterministic, and never reported as exact.
+10. Add exact suffix-logit scoring and no-padding DDP policy tests, then make the
+    production profile use suffix logits, no padding, and cap-8 fallback.
+11. Defer exact prefix encoding cache until branch-input parity tests cover
+    labels, coord masks, image tensors, and span offsets.
+12. Add trainer integration on a tiny fixture with no packing and one image.
+13. Add artifact/provenance, metrics, and metric-key tests, including
+    objective-fidelity and fallback counters.
+14. Add benchmark config profiles and manifest validation.
+15. Update Stage-1 objective, metrics, packing, encoded-cache, and training README docs.
 
 ## Resolved Choices
 
