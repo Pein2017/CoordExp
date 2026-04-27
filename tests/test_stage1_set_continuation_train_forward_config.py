@@ -102,6 +102,28 @@ def test_train_forward_accepts_checkpointed_exact_with_approx_fallback() -> None
     assert train_forward.ddp_sync.candidate_padding == "none"
 
 
+def test_train_forward_accepts_sampled_raw_fallback_estimator_for_mp_diagnostics() -> (
+    None
+):
+    payload = _payload()
+    payload["custom"]["stage1_set_continuation"]["train_forward"] = {
+        "budget_policy": {
+            "enabled": True,
+            "exact_until": {"max_candidates": 8},
+            "fallback": {
+                "mode": "approximate_uniform_subsample",
+                "max_candidates": 4,
+                "estimator": "sampled_raw",
+            },
+        },
+    }
+
+    cfg = TrainingConfig.from_mapping(payload, PromptOverrides())
+    train_forward = cfg.custom.stage1_set_continuation.train_forward
+
+    assert train_forward.budget_policy.fallback.estimator == "sampled_raw"
+
+
 def test_train_forward_accepts_smart_batched_exact_branch_runtime() -> None:
     payload = _payload()
     payload["training"]["ddp_broadcast_buffers"] = False

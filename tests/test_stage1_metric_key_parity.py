@@ -46,6 +46,7 @@ def _load_doc_keys() -> set[str]:
 
 def _assert_no_set_continuation_metrics(keys: set[str]) -> None:
     forbidden = {
+        "loss/candidate_balanced",
         "loss/mp",
         "loss/mp_diagnostic",
         "loss/pem",

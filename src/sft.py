@@ -586,6 +586,7 @@ def _build_benchmark_runtime_payload(
     candidates = getattr(sc_cfg, "candidates", None)
     subset_sampling = getattr(sc_cfg, "subset_sampling", None)
     pem_cfg = getattr(sc_cfg, "positive_evidence_margin", None)
+    pem_enabled = str(getattr(pem_cfg, "objective", "") or "") == "threshold_loss"
     train_forward = getattr(sc_cfg, "train_forward", None)
     candidate_mode = str(getattr(candidates, "mode", "") or "")
     logz_estimator = _logz_estimator_for_set_continuation(sc_cfg)
@@ -617,6 +618,8 @@ def _build_benchmark_runtime_payload(
             )
             or "uniform_importance"
         )
+        if not pem_enabled:
+            fallback_logz_estimator = "sampled_raw"
     if branch_runtime_mode == "smart_batched_exact":
         branch_execution_label = "smart_batched_exact_no_prefix_cache"
     elif branch_runtime_mode == "checkpointed_exact":

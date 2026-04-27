@@ -1268,6 +1268,10 @@ class Stage1SetContinuationPositiveEvidenceMarginConfig:
                 raise ValueError(
                     "custom.stage1_set_continuation.positive_evidence_margin.threshold_calibration must be provided when objective=threshold_loss"
                 )
+            if rho is not None:
+                raise ValueError(
+                    "custom.stage1_set_continuation.positive_evidence_margin.threshold_loss with threshold_space=full_entry_logZ requires calibrated log_rho; fixed rho is not valid for the full-entry logZ scale"
+                )
 
     @property
     def mode(self) -> str:
@@ -1395,7 +1399,7 @@ class Stage1SetContinuationExactUntilConfig:
 class Stage1SetContinuationFallbackConfig:
     mode: Literal["disabled", "approximate_uniform_subsample"] = "disabled"
     max_candidates: Optional[int] = None
-    estimator: Literal["uniform_importance"] = "uniform_importance"
+    estimator: Literal["uniform_importance", "sampled_raw"] = "uniform_importance"
     require_telemetry: bool = True
 
     def __post_init__(self) -> None:
@@ -1404,10 +1408,10 @@ class Stage1SetContinuationFallbackConfig:
                 "custom.stage1_set_continuation.train_forward.budget_policy."
                 "fallback.mode must be one of {'disabled', 'approximate_uniform_subsample'}"
             )
-        if self.estimator != "uniform_importance":
+        if self.estimator not in {"uniform_importance", "sampled_raw"}:
             raise ValueError(
                 "custom.stage1_set_continuation.train_forward.budget_policy."
-                "fallback.estimator must be 'uniform_importance'"
+                "fallback.estimator must be one of {'uniform_importance', 'sampled_raw'}"
             )
         if not isinstance(self.require_telemetry, bool):
             raise TypeError(

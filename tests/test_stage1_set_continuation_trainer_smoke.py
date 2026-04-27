@@ -8,7 +8,9 @@ from typing import Any, Mapping
 
 import pytest
 import torch
+from transformers.trainer_utils import SaveStrategy
 
+from src.callbacks.save_delay_callback import SaveDelayCallback
 from src.config.schema import CoordSoftCEW1Config, Stage1SetContinuationConfig
 from src.data_collators.stage1_set_continuation_collator import (
     build_stage1_set_continuation_collator,
@@ -368,6 +370,36 @@ def test_trainer_evaluate_uses_callback_without_prediction_loop() -> None:
     assert logged and logged[-1]["eval_det_f1ish/f1@0.5"] == pytest.approx(0.25)
 
 
+def test_trainer_applies_save_delay_guard_after_broadcasted_eval_metrics() -> None:
+    trainer = _trainer(_cfg())
+    trainer.args = SimpleNamespace(
+        seed=123,
+        process_index=1,
+        local_rank=1,
+        save_strategy=SaveStrategy.BEST,
+        metric_for_best_model="eval_det_bbox_AP",
+        greater_is_better=True,
+    )
+    trainer.state = SimpleNamespace(
+        global_step=100,
+        epoch=0.1,
+        best_metric=None,
+        best_model_checkpoint="checkpoint-previous",
+        best_global_step=None,
+    )
+    trainer.control = SimpleNamespace(should_save=True)
+    callback = SaveDelayCallback(save_delay_steps=600)
+    trainer.callback_handler = SimpleNamespace(callbacks=[callback])
+    metrics = {"eval_det_bbox_AP": 0.25}
+
+    trainer._apply_rank_symmetric_save_delay_best_metric_guard(metrics)
+
+    assert trainer.state.best_metric is not None
+    assert trainer.state.best_metric > metrics["eval_det_bbox_AP"]
+    assert trainer.state.best_model_checkpoint is None
+    assert trainer.state.best_global_step == 0
+
+
 def test_trainer_pem_threshold_loss_logs_pem_and_mp_diagnostic() -> None:
     trainer = _trainer(
         _cfg(
@@ -669,6 +701,7 @@ def test_smart_batched_exact_matches_retained_graph_mp_and_logz_metrics() -> Non
 
     assert torch.allclose(retained_loss.detach(), smart_loss.detach(), atol=1e-6)
     for key in (
+        "loss/candidate_balanced",
         "loss/mp",
         "loss/mp_diagnostic",
         "mp/logZ_scored_raw",

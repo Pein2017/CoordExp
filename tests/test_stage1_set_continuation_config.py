@@ -57,7 +57,7 @@ def _stage1_set_continuation_payload() -> dict:
                 "positive_evidence_margin": {
                     "objective": "threshold_loss",
                     "threshold_space": "full_entry_logZ",
-                    "rho": 0.75,
+                    "log_rho": -4.2,
                     "threshold_calibration": "calib-v1",
                 },
             },
@@ -79,18 +79,16 @@ def test_stage1_set_continuation_parses_successfully() -> None:
     assert stage1_cfg.subset_sampling.prefix_order == "random"
     assert stage1_cfg.candidates.mode == "uniform_subsample"
     assert stage1_cfg.candidates.max_candidates == 8
-    assert stage1_cfg.structural_close.close_start_suppression_weight == pytest.approx(0.1)
+    assert stage1_cfg.structural_close.close_start_suppression_weight == pytest.approx(
+        0.1
+    )
     assert stage1_cfg.structural_close.final_schema_close_weight == pytest.approx(0.2)
     assert stage1_cfg.positive_evidence_margin.objective == "threshold_loss"
-    assert (
-        stage1_cfg.positive_evidence_margin.threshold_space == "full_entry_logZ"
-    )
-    assert stage1_cfg.positive_evidence_margin.rho == pytest.approx(0.75)
-    assert stage1_cfg.positive_evidence_margin.log_rho is None
+    assert stage1_cfg.positive_evidence_margin.threshold_space == "full_entry_logZ"
+    assert stage1_cfg.positive_evidence_margin.rho is None
+    assert stage1_cfg.positive_evidence_margin.log_rho == pytest.approx(-4.2)
     assert stage1_cfg.positive_evidence_margin.threshold_calibration == "calib-v1"
-    assert (
-        stage1_cfg.metric_schema_version == "stage1_set_continuation_metrics_v1"
-    )
+    assert stage1_cfg.metric_schema_version == "stage1_set_continuation_metrics_v1"
 
 
 def test_stage1_set_continuation_accepts_legacy_close_and_pem_names() -> None:
@@ -103,17 +101,19 @@ def test_stage1_set_continuation_accepts_legacy_close_and_pem_names() -> None:
     stage1_payload["positive_evidence_margin"] = {
         "mode": "replace_mp",
         "threshold_space": "full_entry_logZ",
-        "rho": 0.8,
+        "log_rho": -3.0,
         "threshold_calibration": "legacy-calib",
     }
 
     cfg = TrainingConfig.from_mapping(payload, PromptOverrides())
 
     stage1_cfg = cfg.custom.stage1_set_continuation
-    assert stage1_cfg.structural_close.close_start_suppression_weight == pytest.approx(0.3)
+    assert stage1_cfg.structural_close.close_start_suppression_weight == pytest.approx(
+        0.3
+    )
     assert stage1_cfg.structural_close.final_schema_close_weight == pytest.approx(0.4)
     assert stage1_cfg.positive_evidence_margin.objective == "threshold_loss"
-    assert stage1_cfg.positive_evidence_margin.rho == pytest.approx(0.8)
+    assert stage1_cfg.positive_evidence_margin.log_rho == pytest.approx(-3.0)
 
 
 def test_stage1_set_continuation_unknown_nested_key_reports_dotted_path() -> None:
@@ -130,9 +130,9 @@ def test_stage1_set_continuation_unknown_nested_key_reports_dotted_path() -> Non
 
 def test_stage1_set_continuation_rejects_unimplemented_canonical_prefix_order() -> None:
     payload = _stage1_set_continuation_payload()
-    payload["custom"]["stage1_set_continuation"]["subset_sampling"][
-        "prefix_order"
-    ] = "canonical"
+    payload["custom"]["stage1_set_continuation"]["subset_sampling"]["prefix_order"] = (
+        "canonical"
+    )
 
     with pytest.raises(ValueError, match="prefix_order"):
         TrainingConfig.from_mapping(payload, PromptOverrides())
@@ -142,7 +142,10 @@ def test_stage1_set_continuation_rejects_unimplemented_canonical_prefix_order() 
     ("coord_tokens_patch", "error_text"),
     [
         ({"enabled": False, "skip_bbox_norm": True}, "custom.coord_tokens.enabled"),
-        ({"enabled": True, "skip_bbox_norm": False}, "custom.coord_tokens.skip_bbox_norm"),
+        (
+            {"enabled": True, "skip_bbox_norm": False},
+            "custom.coord_tokens.skip_bbox_norm",
+        ),
     ],
 )
 def test_stage1_set_continuation_requires_coord_token_contract(
@@ -172,7 +175,9 @@ def test_stage1_set_continuation_rejects_packing_flags(
         TrainingConfig.from_mapping(payload, PromptOverrides())
 
 
-def test_stage1_set_continuation_positive_evidence_margin_requires_exactly_one_threshold() -> None:
+def test_stage1_set_continuation_positive_evidence_margin_requires_exactly_one_threshold() -> (
+    None
+):
     payload = _stage1_set_continuation_payload()
     payload["custom"]["stage1_set_continuation"]["positive_evidence_margin"] = {
         "objective": "threshold_loss",
@@ -185,7 +190,9 @@ def test_stage1_set_continuation_positive_evidence_margin_requires_exactly_one_t
         TrainingConfig.from_mapping(payload, PromptOverrides())
 
 
-def test_stage1_set_continuation_positive_evidence_margin_requires_calibration_note() -> None:
+def test_stage1_set_continuation_positive_evidence_margin_requires_calibration_note() -> (
+    None
+):
     payload = _stage1_set_continuation_payload()
     payload["custom"]["stage1_set_continuation"]["positive_evidence_margin"] = {
         "objective": "threshold_loss",
@@ -197,6 +204,19 @@ def test_stage1_set_continuation_positive_evidence_margin_requires_calibration_n
         TrainingConfig.from_mapping(payload, PromptOverrides())
 
 
+def test_stage1_set_continuation_rejects_fixed_rho_full_entry_logz_threshold() -> None:
+    payload = _stage1_set_continuation_payload()
+    payload["custom"]["stage1_set_continuation"]["positive_evidence_margin"] = {
+        "objective": "threshold_loss",
+        "threshold_space": "full_entry_logZ",
+        "rho": 0.75,
+        "threshold_calibration": "fixed-rho-ablation",
+    }
+
+    with pytest.raises(ValueError, match="log_rho"):
+        TrainingConfig.from_mapping(payload, PromptOverrides())
+
+
 def test_resolve_trainer_cls_routes_stage1_set_continuation_variant() -> None:
     trainer_cls = resolve_trainer_cls(
         SimpleNamespace(trainer_variant="stage1_set_continuation")
@@ -204,8 +224,7 @@ def test_resolve_trainer_cls_routes_stage1_set_continuation_variant() -> None:
 
     assert trainer_cls is not None
     assert any(
-        base.__name__ == "Stage1SetContinuationTrainer"
-        for base in trainer_cls.__mro__
+        base.__name__ == "Stage1SetContinuationTrainer" for base in trainer_cls.__mro__
     )
 
 
@@ -225,7 +244,9 @@ def test_inject_stage1_set_continuation_trainer_config_sets_runtime_attrs() -> N
     assert trainer.object_ordering == str(cfg.custom.object_ordering)
 
 
-def test_compose_trainer_class_skips_ordinary_stage1_mixins_for_set_continuation() -> None:
+def test_compose_trainer_class_skips_ordinary_stage1_mixins_for_set_continuation() -> (
+    None
+):
     class _BaseTrainer:
         pass
 

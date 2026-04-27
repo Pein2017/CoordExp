@@ -52,7 +52,7 @@ class IndexedObjectList:
 
 @dataclass(frozen=True)
 class PrefixText:
-    """Append-ready prefix text for a chosen ordered subset of objects."""
+    """Prefix text for a chosen ordered subset of objects."""
 
     text: str
     object_spans: tuple[ObjectIndexSpan, ...]
@@ -60,10 +60,12 @@ class PrefixText:
 
 @dataclass(frozen=True)
 class CandidateEntryText:
-    """Candidate entry text followed by the global container close."""
+    """Candidate entry text followed by its correct continuation boundary."""
 
     text: str
     candidate_span: ObjectIndexSpan
+    post_candidate_span: StructuralSpan
+    continuation_mode: str
     global_close_start_span: StructuralSpan
     global_full_close_span: StructuralSpan
 
@@ -112,7 +114,9 @@ def _validate_indices(
         if index < 0 or index >= len(entry_texts_by_index):
             raise IndexError(f"Object index out of range: {index}")
         if index in seen:
-            raise ValueError(f"Duplicate object index in serialization request: {index}")
+            raise ValueError(
+                f"Duplicate object index in serialization request: {index}"
+            )
         seen.add(index)
         resolved.append(index)
     return tuple(resolved)
@@ -177,13 +181,37 @@ def build_prefix_text(
     return PrefixText(text=text, object_spans=tuple(object_spans))
 
 
+def build_close_prefix_text(
+    rendered: IndexedObjectList, selected_indices: Sequence[int]
+) -> PrefixText:
+    """Build a close-ready prefix from a chosen ordered subset of indices."""
+
+    indices = _validate_indices(rendered.entry_texts_by_index, selected_indices)
+    text = _OBJECTS_PREFIX
+    object_spans: list[ObjectIndexSpan] = []
+    for position, index in enumerate(indices):
+        if position > 0:
+            text += ", "
+        start = len(text)
+        text += rendered.entry_texts_by_index[index]
+        object_spans.append(
+            ObjectIndexSpan(object_index=index, start=start, end=len(text))
+        )
+    return PrefixText(text=text, object_spans=tuple(object_spans))
+
+
 def build_candidate_entry_text(
     rendered: IndexedObjectList,
     *,
     prefix_indices: Sequence[int],
     candidate_index: int,
 ) -> CandidateEntryText:
-    """Build the candidate entry and final global close for a given prefix."""
+    """Build one candidate entry and the boundary it should train next.
+
+    Non-terminal candidate branches must remain append-ready. Closing every
+    candidate branch turns one-step set scoring into an implicit one-object
+    decoder and collapses recall during greedy evaluation.
+    """
 
     prefix_index_set = set(
         _validate_indices(rendered.entry_texts_by_index, prefix_indices)
@@ -197,8 +225,25 @@ def build_candidate_entry_text(
         raise IndexError(f"Object index out of range: {candidate}")
 
     entry_text = rendered.entry_texts_by_index[candidate]
-    text = entry_text + _GLOBAL_CLOSE_TEXT
     entry_end = len(entry_text)
+    remaining_after_candidate = (
+        len(rendered.entry_texts_by_index) - len(prefix_index_set) - 1
+    )
+    if remaining_after_candidate > 0:
+        boundary_text = ", "
+        continuation_mode = "continue"
+        global_close_start_span = StructuralSpan(start=entry_end, end=entry_end)
+        global_full_close_span = StructuralSpan(start=entry_end, end=entry_end)
+    else:
+        boundary_text = _GLOBAL_CLOSE_TEXT
+        continuation_mode = "close"
+        global_close_start_span = StructuralSpan(
+            start=entry_end, end=entry_end + 1
+        )
+        global_full_close_span = StructuralSpan(
+            start=entry_end, end=entry_end + len(_GLOBAL_CLOSE_TEXT)
+        )
+    text = entry_text + boundary_text
     return CandidateEntryText(
         text=text,
         candidate_span=ObjectIndexSpan(
@@ -206,8 +251,10 @@ def build_candidate_entry_text(
             start=0,
             end=entry_end,
         ),
-        global_close_start_span=StructuralSpan(start=entry_end, end=entry_end + 1),
-        global_full_close_span=StructuralSpan(start=entry_end, end=len(text)),
+        post_candidate_span=StructuralSpan(start=entry_end, end=len(text)),
+        continuation_mode=continuation_mode,
+        global_close_start_span=global_close_start_span,
+        global_full_close_span=global_full_close_span,
     )
 
 
@@ -229,6 +276,7 @@ __all__ = [
     "PrefixText",
     "StructuralSpan",
     "build_candidate_entry_text",
+    "build_close_prefix_text",
     "build_global_close_text",
     "build_prefix_text",
     "render_indexed_object_list",

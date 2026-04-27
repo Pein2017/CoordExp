@@ -50,9 +50,11 @@ def test_production_profile_resolves_and_pins_common_contract() -> None:
     )
     assert (
         cfg.training["artifact_subdir"]
-        == "coco1024_sota1332_setcont_pem_close_suppress"
+        == "coco1024_sota1332_setcont_candbal_boundaryfix"
     )
-    assert cfg.training["run_name"] == "setcont-coco1024-sota1332-pem-close-suppress"
+    assert (
+        cfg.training["run_name"] == "setcont-coco1024-sota1332-candbal-boundaryfix"
+    )
     assert cfg.training["packing"] is False
     assert cfg.training["eval_packing"] is False
     assert cfg.training["encoded_sample_cache"]["enabled"] is False
@@ -118,6 +120,8 @@ def test_production_profile_resolves_and_pins_common_contract() -> None:
         report["sparse_label_caveat"]
         == "annotated_view_may_count_unlabeled_true_positives_as_fp"
     )
+    assert "candidate-balanced continuation CE" in report["objective_fidelity_note"]
+    assert "append-or-close boundary" in report["objective_fidelity_note"]
 
 
 def test_production_profile_enables_all_set_continuation_features() -> None:
@@ -145,20 +149,21 @@ def test_production_profile_enables_all_set_continuation_features() -> None:
         sc.train_forward.budget_policy.fallback.mode == "approximate_uniform_subsample"
     )
     assert sc.train_forward.budget_policy.fallback.max_candidates == 8
+    assert sc.train_forward.budget_policy.fallback.estimator == "sampled_raw"
     assert sc.train_forward.prefix_reuse.encoding_cache is False
     assert sc.train_forward.prefix_reuse.kv_cache.mode == "disabled"
     assert sc.subset_sampling.empty_prefix_ratio == pytest.approx(0.30)
-    assert sc.subset_sampling.random_subset_ratio == pytest.approx(0.50)
+    assert sc.subset_sampling.random_subset_ratio == pytest.approx(0.45)
     assert sc.subset_sampling.leave_one_out_ratio == pytest.approx(0.20)
-    assert sc.subset_sampling.full_prefix_ratio == pytest.approx(0.0)
+    assert sc.subset_sampling.full_prefix_ratio == pytest.approx(0.05)
     assert sc.subset_sampling.prefix_order == "random"
     assert sc.structural_close.close_start_suppression_weight == pytest.approx(0.05)
-    assert sc.structural_close.final_schema_close_weight == pytest.approx(0.0)
-    assert pem.objective == "threshold_loss"
+    assert sc.structural_close.final_schema_close_weight == pytest.approx(0.05)
+    assert pem.objective == "disabled"
     assert pem.threshold_space == "full_entry_logZ"
-    assert pem.rho == pytest.approx(0.90)
+    assert pem.rho is None
     assert pem.log_rho is None
-    assert pem.threshold_calibration == "fixed_rho_0.90_no_external_evaluator_v1"
+    assert pem.threshold_calibration is None
     assert sc.metric_schema_version == "stage1_set_continuation_metrics_v1"
     assert cfg.deepspeed is not None
     assert cfg.deepspeed.enabled is False
@@ -224,7 +229,7 @@ def test_effective_runtime_records_production_set_continuation_provenance() -> N
     assert sc_runtime["candidate_scoring_mode"] == "exact"
     assert sc_runtime["logZ_estimator"] == "exact"
     assert sc_runtime["authored_logZ_estimator"] == "exact"
-    assert sc_runtime["fallback_logZ_estimator"] == "uniform_importance"
+    assert sc_runtime["fallback_logZ_estimator"] == "sampled_raw"
     assert sc_runtime["runtime_logZ_estimator_metric"] == "mp/logZ_estimator"
     assert sc_runtime["collator_path"].endswith(
         "build_stage1_set_continuation_collator"
@@ -245,10 +250,8 @@ def test_effective_runtime_records_production_set_continuation_provenance() -> N
     assert sc_runtime["prefix_gradient"] == "non_detached_recomputed_per_branch"
     assert sc_runtime["metric_schema_version"] == "stage1_set_continuation_metrics_v1"
     assert sc_runtime["positive_evidence_margin"] == {
-        "objective": "threshold_loss",
+        "objective": "disabled",
         "threshold_space": "full_entry_logZ",
-        "rho": 0.90,
-        "threshold_calibration": "fixed_rho_0.90_no_external_evaluator_v1",
     }
     assert sc_runtime["effective_coord_slot_scoring"] == "coord_token_vocab_full_entry"
     assert sc_runtime["raw_text_integer_coordinates"] == "unsupported"

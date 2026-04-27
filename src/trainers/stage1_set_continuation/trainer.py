@@ -1037,10 +1037,13 @@ class Stage1SetContinuationTrainer(
                 metrics["mp/responsibility_vs_length_corr"] = float(
                     metrics["mp/responsibility_length_corr"]
                 )
+            metrics["loss/candidate_balanced"] = float(
+                mp_result.loss_candidate_balanced.detach().item()
+            )
             metrics["loss/mp_diagnostic"] = float(mp_result.loss_mp.detach().item())
             metrics["loss/pem"] = float(mp_result.loss_pem.detach().item())
             metrics["loss/mp"] = (
-                float(mp_result.loss_mp.detach().item())
+                float(mp_result.loss_candidate_balanced.detach().item())
                 if cfg.positive_evidence_margin.objective == "disabled"
                 else 0.0
             )
@@ -1054,6 +1057,7 @@ class Stage1SetContinuationTrainer(
             candidate_results = []
             metrics.update(
                 {
+                    "loss/candidate_balanced": 0.0,
                     "loss/mp": 0.0,
                     "loss/mp_diagnostic": 0.0,
                     "loss/pem": 0.0,
@@ -1067,6 +1071,8 @@ class Stage1SetContinuationTrainer(
                     ),
                     "mp/responsibility_entropy": 0.0,
                     "mp/responsibility_entropy_scored": 0.0,
+                    "mp/effective_candidate_count": 0.0,
+                    "mp/effective_candidate_fraction": 0.0,
                     "mp/max_responsibility": 0.0,
                     "mp/max_responsibility_scored": 0.0,
                     "mp/min_responsibility": 0.0,
@@ -1242,6 +1248,33 @@ class Stage1SetContinuationTrainer(
             return total_loss, aggregate_outputs
         return total_loss
 
+    def _apply_rank_symmetric_save_delay_best_metric_guard(
+        self, metrics: Mapping[str, Any]
+    ) -> None:
+        """Re-apply save-delay best-metric guard after rank-0 eval metrics are shared."""
+
+        if not metrics:
+            return
+        try:
+            from src.callbacks.save_delay_callback import SaveDelayCallback
+            from transformers.trainer_utils import SaveStrategy
+        except ImportError:
+            return
+
+        args = getattr(self, "args", None)
+        state = getattr(self, "state", None)
+        control = getattr(self, "control", None)
+        if args is None or state is None or control is None:
+            return
+        if getattr(args, "save_strategy", None) != SaveStrategy.BEST:
+            return
+
+        callback_handler = getattr(self, "callback_handler", None)
+        callbacks = getattr(callback_handler, "callbacks", ()) or ()
+        for callback in callbacks:
+            if isinstance(callback, SaveDelayCallback):
+                cast(Any, callback).on_evaluate(args, state, control, metrics=metrics)
+
     def evaluate(
         self,
         eval_dataset: Any = None,
@@ -1294,6 +1327,8 @@ class Stage1SetContinuationTrainer(
             dist.broadcast_object_list(payload, src=0)
             if isinstance(payload[0], dict):
                 metrics.update(payload[0])
+
+        self._apply_rank_symmetric_save_delay_best_metric_guard(metrics)
 
         metrics.setdefault(f"{metric_key_prefix}/runtime", time.perf_counter() - start)
         log_fn = getattr(self, "log", None)

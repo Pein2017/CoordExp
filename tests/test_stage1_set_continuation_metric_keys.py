@@ -41,6 +41,7 @@ def test_set_continuation_emits_train_forward_runtime_metric_keys() -> None:
 
     keys = set(trainer.custom_metrics["train"].keys())
     assert {
+        "loss/candidate_balanced",
         "mp/branch_runtime_mode",
         "mp/checkpointed_branch_forwards",
         "mp/retained_graph_branch_forwards",
@@ -58,6 +59,8 @@ def test_set_continuation_emits_train_forward_runtime_metric_keys() -> None:
         "mp/fallback_reason_candidate_budget",
         "mp/fallback_reason_token_budget",
         "mp/fallback_reason_memory_budget",
+        "mp/effective_candidate_count",
+        "mp/effective_candidate_fraction",
         "mp/prefix_encoding_cache_hits",
         "mp/prefix_encoding_cache_misses",
     }.issubset(keys)

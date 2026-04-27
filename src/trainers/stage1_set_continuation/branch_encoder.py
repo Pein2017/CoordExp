@@ -12,6 +12,7 @@ import torch
 from src.coord_tokens.codec import is_coord_token
 from src.trainers.stage1_set_continuation.serialization import (
     build_candidate_entry_text,
+    build_close_prefix_text,
     build_global_close_text,
     build_prefix_text,
     render_indexed_object_list,
@@ -55,7 +56,9 @@ def _assistant_objects(meta: Mapping[str, Any]) -> list[Mapping[str, Any]]:
     if not isinstance(objects, Sequence) or isinstance(
         objects, (str, bytes, bytearray)
     ):
-        raise ValueError("set-continuation metadata is missing assistant_payload.objects")
+        raise ValueError(
+            "set-continuation metadata is missing assistant_payload.objects"
+        )
     resolved: list[Mapping[str, Any]] = []
     for index, obj in enumerate(objects):
         if not isinstance(obj, Mapping):
@@ -88,7 +91,9 @@ def _messages_without_system(
         system_message = messages.pop(0)
         system_prompt = _message_text(system_message)
     if not any(message.get("role") == "assistant" for message in messages):
-        raise ValueError("set-continuation branch encoding requires an assistant message")
+        raise ValueError(
+            "set-continuation branch encoding requires an assistant message"
+        )
     return messages, system_prompt
 
 
@@ -114,12 +119,12 @@ def _with_assistant_text(
 ) -> list[dict[str, Any]]:
     out = [copy.deepcopy(dict(message)) for message in messages]
     assistant_indices = [
-        index
-        for index, message in enumerate(out)
-        if message.get("role") == "assistant"
+        index for index, message in enumerate(out) if message.get("role") == "assistant"
     ]
     if not assistant_indices:
-        raise ValueError("set-continuation branch encoding requires an assistant message")
+        raise ValueError(
+            "set-continuation branch encoding requires an assistant message"
+        )
     assistant = out[assistant_indices[-1]]
     content = assistant.get("content")
     if isinstance(content, str):
@@ -217,7 +222,29 @@ def _encoded_len(
     encoded = _encode(template, rendered, system_prompt)
     if "input_ids" not in encoded:
         raise ValueError("template.encode output is missing input_ids")
-    return int(_to_2d_long(encoded["input_ids"], key="input_ids").shape[-1])
+    input_ids = _to_2d_long(encoded["input_ids"], key="input_ids")
+    sequence = [int(value) for value in input_ids.reshape(-1).tolist()]
+
+    tokenizer = getattr(template, "tokenizer", None)
+    if tokenizer is None or not hasattr(tokenizer, "encode"):
+        return int(input_ids.shape[-1])
+
+    content_ids = [
+        int(value)
+        for value in tokenizer.encode(assistant_text, add_special_tokens=False)
+    ]
+    if not content_ids:
+        return int(input_ids.shape[-1])
+
+    content_len = len(content_ids)
+    for start in range(len(sequence) - content_len, -1, -1):
+        if sequence[start : start + content_len] == content_ids:
+            return start + content_len
+
+    raise ValueError(
+        "Unable to locate assistant content tokens inside encoded branch; "
+        "check chat-template/tokenizer compatibility for set-continuation spans"
+    )
 
 
 def _token_strings_for_labels(template: Any, labels: torch.Tensor) -> list[str | None]:
@@ -260,14 +287,16 @@ def encode_set_continuation_branch(
         assistant_objects,
         object_field_order=object_field_order,
     )
-    prefix = build_prefix_text(rendered_objects, prefix_indices)
     if candidate_index is None:
+        prefix = build_close_prefix_text(rendered_objects, prefix_indices)
         continuation = build_global_close_text()
         continuation_text = continuation.text
         candidate_start = candidate_end = len(prefix.text)
+        close_sequence_start = candidate_end
         close_start_text = prefix.text + continuation.text[:1]
         full_text = prefix.text + continuation.text
     else:
+        prefix = build_prefix_text(rendered_objects, prefix_indices)
         candidate = build_candidate_entry_text(
             rendered_objects,
             prefix_indices=prefix_indices,
@@ -279,9 +308,12 @@ def encode_set_continuation_branch(
             )
         continuation_text = candidate.text
         candidate_start = len(prefix.text)
-        candidate_end = candidate_start + candidate.candidate_span.end
+        close_sequence_start = candidate_start + candidate.candidate_span.end
+        candidate_end = candidate_start + candidate.post_candidate_span.end
         close_start_text = (
             prefix.text + candidate.text[: candidate.global_close_start_span.end]
+            if candidate.continuation_mode == "close"
+            else ""
         )
         full_text = prefix.text + candidate.text
 
@@ -317,20 +349,42 @@ def encode_set_continuation_branch(
         system_prompt=system_prompt,
         assistant_text=full_text[:candidate_end],
     )
-    close_start_token = _encoded_len(
+    close_sequence_start_token = _encoded_len(
         template=template,
         base_rendered=rendered,
         base_messages=base_messages,
         system_prompt=system_prompt,
-        assistant_text=close_start_text,
+        assistant_text=full_text[:close_sequence_start],
     )
+    close_sequence_end_token = _encoded_len(
+        template=template,
+        base_rendered=rendered,
+        base_messages=base_messages,
+        system_prompt=system_prompt,
+        assistant_text=full_text,
+    )
+    if close_start_text:
+        close_start_token = _encoded_len(
+            template=template,
+            base_rendered=rendered,
+            base_messages=base_messages,
+            system_prompt=system_prompt,
+            assistant_text=close_start_text,
+        )
+    else:
+        close_start_token = close_sequence_start_token
 
     candidate_mask = _span_mask(seq_len, candidate_start_token, candidate_end_token)
-    close_sequence_mask = _span_mask(seq_len, candidate_end_token, seq_len)
-    close_start_mask = _span_mask(seq_len, candidate_end_token, close_start_token)
-    if (
-        not bool(close_start_mask.any().item())
-        and bool(close_sequence_mask.any().item())
+    close_sequence_mask = (
+        _span_mask(seq_len, close_sequence_start_token, close_sequence_end_token)
+        if close_start_text
+        else torch.zeros((1, seq_len), dtype=torch.bool)
+    )
+    close_start_mask = _span_mask(
+        seq_len, close_sequence_start_token, close_start_token
+    )
+    if not bool(close_start_mask.any().item()) and bool(
+        close_sequence_mask.any().item()
     ):
         # Some tokenizers merge the first close character with the previous
         # token. Keep close-start supervision well-defined by using the first

@@ -32,6 +32,15 @@ OBJECT_B = {
         "<|coord_14|>",
     ],
 }
+OBJECT_C = {
+    "desc": "bird",
+    "bbox_2d": [
+        "<|coord_21|>",
+        "<|coord_22|>",
+        "<|coord_23|>",
+        "<|coord_24|>",
+    ],
+}
 
 
 class _FakeTokenizer:
@@ -60,7 +69,9 @@ class _FakeTemplate:
         self.system = "original-system"
         self.system_values_seen: list[str] = []
 
-    def encode(self, rendered: Mapping[str, Any], return_length: bool = True) -> dict[str, Any]:
+    def encode(
+        self, rendered: Mapping[str, Any], return_length: bool = True
+    ) -> dict[str, Any]:
         self.system_values_seen.append(str(getattr(self, "system", "")))
         messages = list(rendered["messages"])
         assistant = next(
@@ -182,6 +193,39 @@ def test_branch_encoder_builds_candidate_masks_and_restores_template_system() ->
     assert "system prompt" in template.system_values_seen
 
 
+def test_branch_encoder_scores_nonterminal_candidate_continue_boundary() -> None:
+    template = _FakeTemplate()
+    meta = build_stage1_set_continuation_collator()([_raw_sample()])[
+        "set_continuation_meta"
+    ][0]
+    meta["assistant_payload"]["objects"] = [OBJECT_A, OBJECT_B, OBJECT_C]
+
+    branch = encode_set_continuation_branch(
+        meta=meta,
+        template=template,
+        prefix_indices=[0],
+        candidate_index=1,
+        object_field_order="desc_first",
+    )
+    label_tokens = template.tokenizer.convert_ids_to_tokens(
+        [int(value) for value in branch.labels.reshape(-1).tolist()]
+    )
+    scored_tokens = [
+        token
+        for token, is_scored in zip(
+            label_tokens,
+            branch.candidate_entry_label_mask.reshape(-1).tolist(),
+            strict=True,
+        )
+        if is_scored
+    ]
+
+    assert branch.rendered_text.endswith(", ")
+    assert scored_tokens[-1] == ","
+    assert branch.structural_close_start_mask.sum().item() == 0
+    assert branch.structural_close_sequence_mask.sum().item() == 0
+
+
 def test_branch_encoder_falls_back_when_close_start_token_merges() -> None:
     template = _CloseStartMergeTemplate()
     meta = build_stage1_set_continuation_collator()([_raw_sample()])[
@@ -198,6 +242,29 @@ def test_branch_encoder_falls_back_when_close_start_token_merges() -> None:
 
     assert branch.structural_close_sequence_mask.sum().item() > 0
     assert branch.structural_close_start_mask.sum().item() == 1
+
+
+def test_branch_encoder_closes_partial_prefix_at_valid_object_boundary() -> None:
+    template = _FakeTemplate()
+    meta = build_stage1_set_continuation_collator()([_raw_sample()])[
+        "set_continuation_meta"
+    ][0]
+
+    branch = encode_set_continuation_branch(
+        meta=meta,
+        template=template,
+        prefix_indices=[0],
+        candidate_index=None,
+        object_field_order="desc_first",
+    )
+
+    assert '"desc": "cat"' in branch.rendered_text
+    assert '"desc": "dog"' not in branch.rendered_text
+    assert branch.rendered_text.endswith("]}")
+    assert ", ]}" not in branch.rendered_text
+    assert branch.prefix_text + branch.continuation_text == branch.rendered_text
+    assert branch.candidate_entry_label_mask.sum().item() == 0
+    assert branch.structural_close_start_mask.sum().item() >= 1
 
 
 def test_branch_encoder_rejects_missing_messages_with_actionable_error() -> None:

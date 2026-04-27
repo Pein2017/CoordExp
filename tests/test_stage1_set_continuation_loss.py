@@ -14,7 +14,9 @@ from src.trainers.stage1_set_continuation.losses import (
 )
 
 
-def test_candidate_score_uses_full_vocab_for_text_and_coord_vocab_for_coord_slots() -> None:
+def test_candidate_score_uses_full_vocab_for_text_and_coord_vocab_for_coord_slots() -> (
+    None
+):
     logits = torch.full((1, 4, 8), -10.0)
     labels = torch.tensor([[0, 2, 5, 6]], dtype=torch.long)
     candidate_mask = torch.tensor([[False, True, True, True]])
@@ -50,12 +52,17 @@ def test_mp_exact_logz_and_responsibility_metrics() -> None:
     result = compute_mp_pem_losses(scores=scores, pem_mode="disabled")
 
     log_z = torch.logsumexp(scores, dim=0)
+    candidate_balanced = -scores.mean()
     responsibilities = torch.softmax(scores, dim=0)
     entropy = -(responsibilities * responsibilities.log()).sum()
     assert torch.allclose(result.loss_mp, -log_z)
-    assert torch.allclose(result.total_objective, result.loss_mp)
+    assert torch.allclose(result.loss_candidate_balanced, candidate_balanced)
+    assert torch.allclose(result.total_objective, candidate_balanced)
     assert torch.allclose(result.log_z_remaining, log_z)
     assert result.log_z_estimator == "exact"
+    assert result.metrics["loss/candidate_balanced"] == pytest.approx(
+        float(candidate_balanced)
+    )
     assert result.metrics["mp/responsibility_entropy"] == pytest.approx(float(entropy))
     assert result.metrics["mp/max_responsibility"] == pytest.approx(
         float(responsibilities.max())
@@ -80,6 +87,33 @@ def test_uniform_importance_logz_adds_population_correction() -> None:
     assert torch.allclose(result.log_z_remaining, expected)
     assert result.log_z_estimator == "uniform_importance"
     assert result.metrics["mp/logZ_estimator"] == "uniform_importance"
+
+
+def test_candidate_balanced_objective_is_invariant_to_remaining_count_bonus() -> None:
+    single = compute_mp_pem_losses(
+        scores=torch.tensor([-2.0]),
+        pem_mode="disabled",
+    )
+    repeated = compute_mp_pem_losses(
+        scores=torch.tensor([-2.0, -2.0, -2.0]),
+        pem_mode="disabled",
+    )
+
+    assert torch.allclose(single.total_objective, torch.tensor(2.0))
+    assert torch.allclose(repeated.total_objective, torch.tensor(2.0))
+    assert repeated.loss_mp < single.loss_mp
+
+
+def test_candidate_balanced_objective_uses_per_candidate_token_normalization() -> None:
+    result = compute_mp_pem_losses(
+        scores=torch.tensor([-4.0, -10.0]),
+        pem_mode="disabled",
+        candidate_lengths=torch.tensor([2, 10]),
+    )
+
+    assert torch.allclose(result.loss_candidate_balanced, torch.tensor(1.5))
+    assert torch.allclose(result.total_objective, torch.tensor(1.5))
+    assert result.metrics["loss/candidate_balanced"] == pytest.approx(1.5)
 
 
 def test_uniform_importance_logz_rejects_invalid_counts() -> None:
