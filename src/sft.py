@@ -638,11 +638,9 @@ def _build_benchmark_runtime_payload(
         "logZ_estimator": logz_estimator,
         "authored_logZ_estimator": logz_estimator,
         "fallback_logZ_estimator": fallback_logz_estimator,
-        "runtime_logZ_estimator_metric": "mp/logZ_estimator",
         "train_forward": _config_to_mapping(train_forward),
         "objective_fidelity": {
             "exact_metric": "mp/objective_fidelity_exact_samples",
-            "approx_metric": "mp/objective_fidelity_approx_samples",
             "fallback_metric": "mp/fallback_applied_samples",
         },
         "collator_path": (
@@ -665,7 +663,7 @@ def _build_benchmark_runtime_payload(
         "prefix_gradient": "non_detached_recomputed_per_branch",
         "metric_schema_version": str(
             getattr(sc_cfg, "metric_schema_version", "")
-            or "stage1_set_continuation_metrics_v1"
+            or "stage1_set_continuation_metrics_v2"
         ),
         "subset_sampling": _config_to_mapping(subset_sampling),
         "structural_close": _config_to_mapping(
@@ -675,16 +673,13 @@ def _build_benchmark_runtime_payload(
         "effective_coord_slot_scoring": "coord_token_vocab_full_entry",
         "raw_text_integer_coordinates": "unsupported",
         "realized_branch_token_budget": {
-            "source": "trainer_metrics",
-            "metric": "mp/repeated_forward_token_ratio_vs_baseline",
+            "source": "effective_runtime",
             "v1_execution": branch_execution_label,
         },
         "realized_prefix_mode_coverage": {
-            "source": "trainer_metrics",
+            "source": "compact_v2_metrics",
             "metrics": [
                 "mp/selected_mode_empty_prefix",
-                "mp/selected_mode_random_subset",
-                "mp/selected_mode_leave_one_out",
                 "mp/selected_mode_full_prefix",
             ],
             "configured": _config_to_mapping(subset_sampling),

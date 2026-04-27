@@ -237,9 +237,7 @@ def build_candidate_entry_text(
     else:
         boundary_text = _GLOBAL_CLOSE_TEXT
         continuation_mode = "close"
-        global_close_start_span = StructuralSpan(
-            start=entry_end, end=entry_end + 1
-        )
+        global_close_start_span = StructuralSpan(start=entry_end, end=entry_end + 1)
         global_full_close_span = StructuralSpan(
             start=entry_end, end=entry_end + len(_GLOBAL_CLOSE_TEXT)
         )

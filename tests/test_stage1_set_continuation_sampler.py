@@ -207,6 +207,31 @@ def test_uniform_subsample_caps_at_remaining_count_and_reports_fraction() -> Non
     assert capped.scored_candidate_fraction == pytest.approx(1.0)
 
 
+def test_uniform_subsample_keeps_tail_positive_candidates() -> None:
+    subset_cfg = Stage1SetContinuationSubsetSamplingConfig(
+        empty_prefix_ratio=1.0,
+        random_subset_ratio=0.0,
+        leave_one_out_ratio=0.0,
+        full_prefix_ratio=0.0,
+        prefix_order="dataset",
+    )
+
+    selection = sample_subset_and_candidates(
+        object_count=5,
+        subset_sampling_cfg=subset_cfg,
+        candidates_cfg=Stage1SetContinuationCandidatesConfig(
+            mode="uniform_subsample",
+            max_candidates=2,
+            tail_positive_count=1,
+        ),
+        seed_parts=(17, 0, 9, 0, "micro0"),
+    )
+
+    assert len(selection.candidate_indices) == 2
+    assert 4 in selection.candidate_indices
+    assert set(selection.candidate_indices).issubset(selection.remaining_indices)
+
+
 def test_uniform_subsample_requires_positive_k() -> None:
     subset_cfg = Stage1SetContinuationSubsetSamplingConfig(
         empty_prefix_ratio=1.0,

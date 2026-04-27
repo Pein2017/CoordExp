@@ -249,7 +249,13 @@ def test_supervised_suffix_close_losses_match_full_logits() -> None:
     suffix_logits = model_suffix(
         input_ids=input_ids, logits_to_keep=logits_to_keep
     ).logits
-    cropped_labels, cropped_start_mask, cropped_sequence_mask = crop_tensors_for_logits(
+    (
+        cropped_labels,
+        cropped_start_mask,
+        cropped_sequence_mask,
+        _schema_open_mask,
+        _json_structural_mask,
+    ) = crop_tensors_for_logits(
         suffix_start=suffix_start,
         labels=labels,
         candidate_entry_label_mask=close_start_mask,

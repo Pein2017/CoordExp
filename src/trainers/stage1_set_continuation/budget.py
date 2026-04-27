@@ -12,7 +12,7 @@ from .runtime import (
     LogZEstimator,
     ObjectiveFidelity,
 )
-from .sampling import Stage1SetContinuationSample
+from .sampling import Stage1SetContinuationSample, select_tail_protected_candidates
 
 
 def _stable_rng(parts: Sequence[object]) -> random.Random:
@@ -170,11 +170,12 @@ def plan_candidate_execution(
     if len(exact_indices) <= limit:
         selected = exact_indices
     else:
-        shuffled = list(exact_indices)
-        _stable_rng(tuple(sample_seed_parts) + ("fallback", fallback_reason)).shuffle(
-            shuffled
+        selected = select_tail_protected_candidates(
+            candidate_indices=exact_indices,
+            limit=limit,
+            rng=_stable_rng(tuple(sample_seed_parts) + ("fallback", fallback_reason)),
+            tail_positive_count=int(getattr(cfg.candidates, "tail_positive_count", 1)),
         )
-        selected = tuple(shuffled[:limit])
 
     selected_all = set(selected) == set(remaining_indices) and len(selected) == len(
         remaining_indices

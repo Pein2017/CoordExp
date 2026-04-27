@@ -94,8 +94,7 @@ def _restore_repo_callback_state(
         callback = callbacks_by_key.get(str(key))
         if callback is None:
             raise ValueError(
-                "Restartable checkpoint callback state has no matching callback: "
-                f"{key}"
+                f"Restartable checkpoint callback state has no matching callback: {key}"
             )
         load_state_dict_fn = getattr(callback, "load_state_dict", None)
         if not callable(load_state_dict_fn):
@@ -125,7 +124,9 @@ def _build_coordexp_checkpoint_state(trainer: Any) -> dict[str, Any]:
             getattr(getattr(trainer, "args", None), "checkpoint_mode", "artifact_only")
             or "artifact_only"
         ),
-        "global_step": int(getattr(getattr(trainer, "state", None), "global_step", 0) or 0),
+        "global_step": int(
+            getattr(getattr(trainer, "state", None), "global_step", 0) or 0
+        ),
         "disabled_diagnostics": disabled_diagnostics,
         "callback_state": _collect_repo_callback_state(trainer),
         "trainer_runtime_state": dict(trainer_runtime_state or {}),
@@ -201,7 +202,9 @@ def _checkpoint_has_model_weights(checkpoint_dir: Path) -> bool:
 
 def _checkpoint_has_rng_state(checkpoint_dir: Path) -> bool:
     return any(
-        entry.is_file() and entry.name.startswith("rng_state") and entry.suffix == ".pth"
+        entry.is_file()
+        and entry.name.startswith("rng_state")
+        and entry.suffix == ".pth"
         for entry in checkpoint_dir.iterdir()
     )
 
@@ -261,7 +264,9 @@ def validate_restartable_checkpoint(checkpoint_dir: str | Path) -> dict[str, Any
             "Restartable checkpoint sidecar trainer_runtime_state must be a mapping, "
             f"got {type(trainer_runtime_state).__name__}"
         )
-    trainer_state = TrainerState.load_from_json(str(checkpoint_path / TRAINER_STATE_NAME))
+    trainer_state = TrainerState.load_from_json(
+        str(checkpoint_path / TRAINER_STATE_NAME)
+    )
     payload_step = payload.get("global_step")
     trainer_state_step = getattr(trainer_state, "global_step", None)
     if payload_step is not None and trainer_state_step is not None:
@@ -381,15 +386,17 @@ class FinalCheckpointMixin:
 
         if self._record_best_checkpoint_if_pending(checkpoint_dir):
             if getattr(self.args, "should_save", False):
-                self.state.save_to_json(os.path.join(checkpoint_dir, TRAINER_STATE_NAME))
+                self.state.save_to_json(
+                    os.path.join(checkpoint_dir, TRAINER_STATE_NAME)
+                )
 
         if getattr(self.args, "should_save", False) and _is_restartable_checkpoint_mode(
             self
         ):
             _write_coordexp_checkpoint_state(checkpoint_dir, self)
-        if getattr(self.args, "should_save", False) and _uses_minimal_artifact_checkpoint(
-            self
-        ):
+        if getattr(
+            self.args, "should_save", False
+        ) and _uses_minimal_artifact_checkpoint(self):
             _prune_minimal_artifact_checkpoint(checkpoint_dir)
 
     def _should_use_bounded_ddp_checkpoint_save(self, model: Any) -> bool:
@@ -406,7 +413,10 @@ class FinalCheckpointMixin:
             return False
         if bool(getattr(trainer, "is_fsdp_enabled", False)):
             return False
-        if getattr(getattr(trainer, "accelerator", None), "parallelism_config", None) is not None:
+        if (
+            getattr(getattr(trainer, "accelerator", None), "parallelism_config", None)
+            is not None
+        ):
             return False
 
         tp_size = getattr(getattr(trainer, "model", None), "_tp_size", 0)
@@ -446,19 +456,27 @@ class FinalCheckpointMixin:
         timeout_s = float(self._checkpoint_ddp_timeout_s())
         group = getattr(self, self._checkpoint_monitor_group_attr, None)
         if group is None:
-            monitor_group_timeout_s = max(float(timeout_s) * 2.0, float(timeout_s) + 30.0)
+            monitor_group_timeout_s = max(
+                float(timeout_s) * 2.0, float(timeout_s) + 30.0
+            )
             try:
                 group = dist.new_group(
                     backend="gloo",
                     timeout=timedelta(seconds=float(monitor_group_timeout_s)),
                 )
             except Exception as exc:
-                raise RuntimeError(
-                    "transformers checkpoint save monitored barrier requested but gloo "
-                    "group init failed; "
-                    f"phase={str(phase)} rank={int(ctx.rank)}/{int(ctx.world_size)} "
-                    f"timeout_s={float(timeout_s):.1f}."
-                ) from exc
+                logger.warning(
+                    "checkpoint save monitored barrier requested but gloo group init "
+                    "failed; falling back to the existing DDP process-group barrier. "
+                    "phase=%s rank=%s/%s timeout_s=%.1f error=%s",
+                    str(phase),
+                    int(ctx.rank),
+                    int(ctx.world_size),
+                    float(timeout_s),
+                    exc,
+                )
+                dist.barrier()
+                return
             setattr(self, self._checkpoint_monitor_group_attr, group)
 
         try:
@@ -536,9 +554,7 @@ class FinalCheckpointMixin:
                         trainer.state.stateful_callbacks[cb_name].append(cb_state)
                     else:
                         trainer.state.stateful_callbacks[cb_name] = cb_state
-                trainer.state.save_to_json(
-                    os.path.join(output_dir, TRAINER_STATE_NAME)
-                )
+                trainer.state.save_to_json(os.path.join(output_dir, TRAINER_STATE_NAME))
 
             if trainer.args.push_to_hub:
                 trainer._push_from_checkpoint(output_dir)
@@ -551,9 +567,9 @@ class FinalCheckpointMixin:
             fn=_save_remaining_checkpoint_state,
             model=model,
         )
-        if getattr(trainer.args, "should_save", False) and _uses_minimal_artifact_checkpoint(
-            trainer
-        ):
+        if getattr(
+            trainer.args, "should_save", False
+        ) and _uses_minimal_artifact_checkpoint(trainer):
             _prune_minimal_artifact_checkpoint(output_dir)
         return output_dir
 
@@ -620,20 +636,22 @@ class FinalCheckpointMixin:
 
         if self._final_checkpoint_exists(output_dir, global_step):
             if should_save_rank:
-                logger.debug("Final checkpoint already present for step %s", global_step)
+                logger.debug(
+                    "Final checkpoint already present for step %s", global_step
+                )
             return
 
         checkpoint_dir = self._format_checkpoint_dir(output_dir, global_step)
         if should_save_rank:
-            logger.info("No checkpoint found at %s; forcing a final save.", checkpoint_dir)
+            logger.info(
+                "No checkpoint found at %s; forcing a final save.", checkpoint_dir
+            )
 
         # Keep the forced checkpoint independent from Trainer-managed rotation so
         # save_total_limit continues to govern only the regular save cadence.
         original_limit = getattr(args, "save_total_limit", None)
         limit_suspended = (
-            should_save_rank
-            and isinstance(original_limit, int)
-            and original_limit > 0
+            should_save_rank and isinstance(original_limit, int) and original_limit > 0
         )
         if limit_suspended:
             setattr(args, "save_total_limit", None)

@@ -32,6 +32,8 @@ class TensorBranchScoreInput:
     labels: torch.Tensor
     candidate_entry_label_mask: torch.Tensor
     coord_label_mask: torch.Tensor
+    schema_open_label_mask: torch.Tensor | None = None
+    json_structural_label_mask: torch.Tensor | None = None
 
 
 def _validate_logits_mode(logits_mode: str) -> LogitsMode:
@@ -72,14 +74,34 @@ def crop_tensors_for_logits(
     labels: torch.Tensor,
     candidate_entry_label_mask: torch.Tensor,
     coord_label_mask: torch.Tensor,
-) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    schema_open_label_mask: torch.Tensor | None = None,
+    json_structural_label_mask: torch.Tensor | None = None,
+) -> tuple[
+    torch.Tensor,
+    torch.Tensor,
+    torch.Tensor,
+    torch.Tensor | None,
+    torch.Tensor | None,
+]:
     start = max(0, int(suffix_start))
     if start <= 0:
-        return labels, candidate_entry_label_mask, coord_label_mask
+        return (
+            labels,
+            candidate_entry_label_mask,
+            coord_label_mask,
+            schema_open_label_mask,
+            json_structural_label_mask,
+        )
     return (
         labels[:, start:],
         candidate_entry_label_mask[:, start:],
         coord_label_mask[:, start:],
+        schema_open_label_mask[:, start:]
+        if schema_open_label_mask is not None
+        else None,
+        json_structural_label_mask[:, start:]
+        if json_structural_label_mask is not None
+        else None,
     )
 
 
@@ -151,11 +173,23 @@ def score_branch_retained_graph(
         device=logits.device
     )
     coord_label_mask = branch.coord_label_mask.to(device=logits.device)
-    labels, candidate_entry_label_mask, coord_label_mask = crop_tensors_for_logits(
+    schema_open_label_mask = branch.schema_open_label_mask.to(device=logits.device)
+    json_structural_label_mask = branch.json_structural_label_mask.to(
+        device=logits.device
+    )
+    (
+        labels,
+        candidate_entry_label_mask,
+        coord_label_mask,
+        schema_open_label_mask,
+        json_structural_label_mask,
+    ) = crop_tensors_for_logits(
         suffix_start=suffix_start,
         labels=labels,
         candidate_entry_label_mask=candidate_entry_label_mask,
         coord_label_mask=coord_label_mask,
+        schema_open_label_mask=schema_open_label_mask,
+        json_structural_label_mask=json_structural_label_mask,
     )
     logprob = compute_candidate_full_entry_logprob(
         logits=logits,
@@ -163,6 +197,8 @@ def score_branch_retained_graph(
         candidate_entry_label_mask=candidate_entry_label_mask,
         coord_label_mask=coord_label_mask,
         coord_token_ids=coord_token_ids.to(device=logits.device),
+        schema_open_label_mask=schema_open_label_mask,
+        json_structural_label_mask=json_structural_label_mask,
     )
     return BranchScoreBundle(
         score=logprob.score,
@@ -179,13 +215,23 @@ def _result_from_logits(
     candidate_entry_label_mask: torch.Tensor,
     coord_label_mask: torch.Tensor,
     coord_token_ids: torch.Tensor,
+    schema_open_label_mask: torch.Tensor | None = None,
+    json_structural_label_mask: torch.Tensor | None = None,
     suffix_start: int = 0,
 ) -> CandidateLogProbResult:
-    labels, candidate_entry_label_mask, coord_label_mask = crop_tensors_for_logits(
+    (
+        labels,
+        candidate_entry_label_mask,
+        coord_label_mask,
+        schema_open_label_mask,
+        json_structural_label_mask,
+    ) = crop_tensors_for_logits(
         suffix_start=suffix_start,
         labels=labels,
         candidate_entry_label_mask=candidate_entry_label_mask,
         coord_label_mask=coord_label_mask,
+        schema_open_label_mask=schema_open_label_mask,
+        json_structural_label_mask=json_structural_label_mask,
     )
     return compute_candidate_full_entry_logprob(
         logits=logits,
@@ -193,6 +239,12 @@ def _result_from_logits(
         candidate_entry_label_mask=candidate_entry_label_mask.to(device=logits.device),
         coord_label_mask=coord_label_mask.to(device=logits.device),
         coord_token_ids=coord_token_ids.to(device=logits.device),
+        schema_open_label_mask=schema_open_label_mask.to(device=logits.device)
+        if schema_open_label_mask is not None
+        else None,
+        json_structural_label_mask=json_structural_label_mask.to(device=logits.device)
+        if json_structural_label_mask is not None
+        else None,
     )
 
 
@@ -200,12 +252,30 @@ def _token_counts(
     *,
     candidate_entry_label_mask: torch.Tensor,
     coord_label_mask: torch.Tensor,
-) -> tuple[int, int, int]:
+    schema_open_label_mask: torch.Tensor | None = None,
+    json_structural_label_mask: torch.Tensor | None = None,
+) -> tuple[int, int, int, int, int]:
     candidate_mask = candidate_entry_label_mask.bool()
     coord_mask = coord_label_mask.bool()
+    schema_mask = (
+        schema_open_label_mask.bool() & candidate_mask
+        if schema_open_label_mask is not None
+        else torch.zeros_like(candidate_mask)
+    )
+    json_structural_mask = (
+        json_structural_label_mask.bool() & candidate_mask
+        if json_structural_label_mask is not None
+        else torch.zeros_like(candidate_mask)
+    )
     tokens = int(candidate_mask.sum().item())
     coord_tokens = int((candidate_mask & coord_mask).sum().item())
-    return tokens, coord_tokens, tokens - coord_tokens
+    return (
+        tokens,
+        coord_tokens,
+        tokens - coord_tokens,
+        int(schema_mask.sum().item()),
+        int(json_structural_mask.sum().item()),
+    )
 
 
 def _pad_2d(
@@ -338,7 +408,7 @@ def _batch_labels_and_masks(
     items: Sequence[TensorBranchScoreInput],
     *,
     max_length: int,
-) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
     labels = torch.cat(
         [_pad_2d(item.labels, target_length=max_length, value=-100) for item in items],
         dim=0,
@@ -365,7 +435,37 @@ def _batch_labels_and_masks(
         ],
         dim=0,
     )
-    return labels, candidate_masks, coord_masks
+    schema_masks = torch.cat(
+        [
+            _pad_2d(
+                (
+                    item.schema_open_label_mask
+                    if item.schema_open_label_mask is not None
+                    else torch.zeros_like(item.candidate_entry_label_mask)
+                ).bool(),
+                target_length=max_length,
+                value=False,
+            )
+            for item in items
+        ],
+        dim=0,
+    )
+    json_structural_masks = torch.cat(
+        [
+            _pad_2d(
+                (
+                    item.json_structural_label_mask
+                    if item.json_structural_label_mask is not None
+                    else torch.zeros_like(item.candidate_entry_label_mask)
+                ).bool(),
+                target_length=max_length,
+                value=False,
+            )
+            for item in items
+        ],
+        dim=0,
+    )
+    return labels, candidate_masks, coord_masks, schema_masks, json_structural_masks
 
 
 def score_tensor_batch_retained(
@@ -390,9 +490,11 @@ def score_tensor_batch_retained(
     ]
     global_suffix_start = min(suffix_starts) if mode == "supervised_suffix" else 0
     batched_inputs = _batch_model_inputs(items, max_length=max_length)
-    labels, candidate_masks, coord_masks = _batch_labels_and_masks(
-        items,
-        max_length=max_length,
+    labels, candidate_masks, coord_masks, schema_masks, json_structural_masks = (
+        _batch_labels_and_masks(
+            items,
+            max_length=max_length,
+        )
     )
     if mode == "supervised_suffix":
         batched_inputs["logits_to_keep"] = _logits_to_keep_for_suffix(
@@ -423,6 +525,8 @@ def score_tensor_batch_retained(
             candidate_entry_label_mask=candidate_masks[row_index : row_index + 1],
             coord_label_mask=coord_masks[row_index : row_index + 1],
             coord_token_ids=coord_token_ids,
+            schema_open_label_mask=schema_masks[row_index : row_index + 1],
+            json_structural_label_mask=json_structural_masks[row_index : row_index + 1],
             suffix_start=global_suffix_start,
         )
         for row_index in range(len(items))
@@ -437,6 +541,8 @@ def score_tensor_retained(
     candidate_entry_label_mask: torch.Tensor,
     coord_label_mask: torch.Tensor,
     coord_token_ids: torch.Tensor,
+    schema_open_label_mask: torch.Tensor | None = None,
+    json_structural_label_mask: torch.Tensor | None = None,
     logits_mode: LogitsMode = "full",
 ) -> CandidateLogProbResult:
     suffix_start = _suffix_start_for_mode(
@@ -457,6 +563,8 @@ def score_tensor_retained(
         candidate_entry_label_mask=candidate_entry_label_mask,
         coord_label_mask=coord_label_mask,
         coord_token_ids=coord_token_ids,
+        schema_open_label_mask=schema_open_label_mask,
+        json_structural_label_mask=json_structural_label_mask,
         suffix_start=suffix_start,
     )
 
@@ -473,6 +581,8 @@ def score_tensor_checkpointed(
     preserve_rng_state: bool,
     forward_fn: Callable[..., Any] | None = None,
     logits_mode: LogitsMode = "full",
+    schema_open_label_mask: torch.Tensor | None = None,
+    json_structural_label_mask: torch.Tensor | None = None,
 ) -> CandidateLogProbResult:
     suffix_start = _suffix_start_for_mode(
         logits_mode=logits_mode,
@@ -499,7 +609,7 @@ def score_tensor_checkpointed(
 
     def _forward_scores(
         *flat_inputs: torch.Tensor,
-    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
         kwargs = dict(static_inputs)
         kwargs.update(dict(zip(tensor_input_names, flat_inputs, strict=True)))
         outputs = forward_fn(**kwargs) if forward_fn is not None else model(**kwargs)
@@ -517,12 +627,20 @@ def score_tensor_checkpointed(
             candidate_entry_label_mask=candidate_entry_label_mask,
             coord_label_mask=coord_label_mask,
             coord_token_ids=coord_token_ids,
+            schema_open_label_mask=schema_open_label_mask,
+            json_structural_label_mask=json_structural_label_mask,
             suffix_start=suffix_start,
         )
-        return result.score, result.coord_score, result.non_coord_score
+        return (
+            result.score,
+            result.coord_score,
+            result.non_coord_score,
+            result.schema_score,
+            result.json_structural_score,
+        )
 
-    score, coord_score, non_coord_score = cast(
-        tuple[torch.Tensor, torch.Tensor, torch.Tensor],
+    score, coord_score, non_coord_score, schema_score, json_structural_score = cast(
+        tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor],
         _torch_checkpoint(
             _forward_scores,
             *input_values,
@@ -530,17 +648,29 @@ def score_tensor_checkpointed(
             preserve_rng_state=preserve_rng_state,
         ),
     )
-    tokens, coord_tokens, non_coord_tokens = _token_counts(
+    (
+        tokens,
+        coord_tokens,
+        non_coord_tokens,
+        schema_tokens,
+        json_structural_tokens,
+    ) = _token_counts(
         candidate_entry_label_mask=candidate_entry_label_mask,
         coord_label_mask=coord_label_mask,
+        schema_open_label_mask=schema_open_label_mask,
+        json_structural_label_mask=json_structural_label_mask,
     )
     return CandidateLogProbResult(
         score=score,
         coord_score=coord_score,
         non_coord_score=non_coord_score,
+        schema_score=schema_score,
+        json_structural_score=json_structural_score,
         tokens=tokens,
         coord_tokens=coord_tokens,
         non_coord_tokens=non_coord_tokens,
+        schema_tokens=schema_tokens,
+        json_structural_tokens=json_structural_tokens,
     )
 
 
@@ -588,6 +718,8 @@ def score_branch_checkpointed_exact(
         candidate_entry_label_mask=branch.candidate_entry_label_mask,
         coord_label_mask=branch.coord_label_mask,
         coord_token_ids=coord_token_ids,
+        schema_open_label_mask=branch.schema_open_label_mask,
+        json_structural_label_mask=branch.json_structural_label_mask,
         use_reentrant=use_reentrant,
         preserve_rng_state=preserve_rng_state,
         forward_fn=_no_cache_forward,

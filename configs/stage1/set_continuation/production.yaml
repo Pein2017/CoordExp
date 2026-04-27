@@ -12,13 +12,13 @@ model:
 training:
   output_root: /data/CoordExp/output_remote/stage1_2b/set_continuation
   logging_root: /data/CoordExp/output_remote/stage1_2b/set_continuation/tb
-  artifact_subdir: coco1024_sota1332_setcont_candbal_boundaryfix
-  run_name: setcont-coco1024-sota1332-candbal-boundaryfix
+  artifact_subdir: coco1024_sota1332_setcont_candbal_schemafix
+  run_name: setcont-coco1024-sota1332-candbal-schemafix
   packing: false
   eval_packing: false
   encoded_sample_cache:
     enabled: false
-  num_train_epochs: 4
+  num_train_epochs: 1
   per_device_train_batch_size: 8
   gradient_accumulation_steps: 2
   effective_batch_size: 128
@@ -42,20 +42,22 @@ deepspeed:
 benchmark:
   group_id: stage1_set_continuation_full_features
   control_group_id: stage1_sft_sota1332
-  intended_variable: subset-conditioned candidate-balanced continuation with post-candidate boundary supervision, valid close-start suppression, and weak final-close supervision
+  intended_variable: subset-conditioned candidate-balanced continuation with schema-aware structural supervision, tail-positive candidate protection, valid close-start suppression, and annotation-completeness-weighted weak final-close supervision
   comparability_label: accuracy-comparable
 
 experiment:
-  title: Stage-1 set-continuation candidate-balanced boundary-fix production
+  title: Stage-1 set-continuation candidate-balanced schema-fix production
   purpose: Continue training the SOTA coord-token Stage-1 SFT checkpoint with the repaired set-continuation objective.
-  hypothesis: Candidate-balanced continuation supervision with explicit post-candidate append/close boundaries preserves multi-object recall without the mode-seeking pressure of full-entry logZ MP.
+  hypothesis: Schema-aware candidate-balanced continuation supervision matches eval-time free generation and preserves multi-object recall without the mode-seeking pressure of full-entry logZ MP.
   baseline: output_remote/stage1_2b/coco_bbox_max60-hard_ce_soft_ce_w1_gate/epoch_4-from-base-2B/v0-20260227-050057/checkpoint-1332-merged-full
   key_deviations:
     - "trainer_variant: stage1_set_continuation"
-    - "objective: per-candidate token-normalized continuation CE over object entry plus the correct post-candidate boundary; full-entry MP/logZ is diagnostic only"
+    - "objective: per-candidate token-normalized continuation CE over generated schema opener, object entry, and the correct post-candidate boundary; full-entry MP/logZ is diagnostic only"
     - "dataset: original COCO coord-token train surface; LVIS-proxy is reserved for follow-up dataset ablation"
-    - "prefix sampling: empty/random/leave-one-out/full mixture with small full-prefix final-close calibration"
-    - "structural close: close-start suppression uses a valid close-ready prefix; weak final schema close enabled at small weight"
+    - "prefix sampling: empty/random/leave-one-out/full mixture with small annotation-completeness-weighted full-prefix final-close calibration"
+    - "candidate subset selection: cap-8 fallback keeps late GT candidates to avoid dropping the final annotated object under crowded images"
+    - "structural JSON: schema/key/punctuation/boundary tokens receive an auxiliary CE term while desc text and coord values remain governed by the candidate objective"
+    - "structural close: close-start suppression uses a valid close-ready prefix; weak final schema close is downweighted by original-checkpoint FP-as-unlabeled completeness estimates"
     - "execution: smart batched exact branch scoring with supervised suffix logits, no DDP padding forwards, and 8-candidate approximate fallback for over-budget samples"
     - "prefix reuse: disabled in this bridge; GPU KV cache and branch attention mask disabled"
     - "coordinates: coord-token-only scoring; raw-text integer coordinates unsupported"
@@ -70,7 +72,7 @@ experiment:
     - "branch_batching.strategy=ms_swift_constant_volume_buckets; max_branch_rows=8; smart batching is exact for selected candidates and does not enable prefix KV cache"
     - "candidate budget exact_until.max_candidates=8 and fallback.max_candidates=8; cap-8 fallback optimizes the sampled candidate-balanced CE and logs approximate MP diagnostics"
     - "prefix logits are exact suffix-only scoring, not a detached-prefix or KV-cache approximation"
-    - "num_train_epochs=4"
+    - "num_train_epochs=1"
     - "effective_batch_size=128"
     - "lr: llm=5e-5, vit=1e-5, aligner=5e-5, coord_offset=5e-5"
     - "metric_for_best_model=eval_det_bbox_AP"
@@ -112,9 +114,21 @@ custom:
     candidates:
       mode: exact
       max_candidates: null
+      tail_positive_count: 1
     structural_close:
       close_start_suppression_weight: 0.05
       final_schema_close_weight: 0.05
+      json_structural_weight: 0.05
+      annotation_completeness_weight:
+        enabled: true
+        source: output/infer/coco1024_val200_compare_coordtoken_ckpt1332_20260423T080326Z/eval_coco_real/matches.jsonl; weight=monotone_gt/(gt+fp_loc)
+        by_max_gt:
+          1: 0.9500
+          3: 0.8306
+          6: 0.8306
+          10: 0.8306
+          20: 0.8068
+          1000000000: 0.7595
     positive_evidence_margin:
       objective: disabled
     train_forward:
@@ -159,7 +173,7 @@ custom:
     max_new_tokens: 3084
     temperature: 0.0
     top_p: 1.0
-    repetition_penalty: 1.05
+    repetition_penalty: 1.10
     f1ish_pred_scope: annotated
   extra:
     benchmark_report:
@@ -172,5 +186,5 @@ custom:
       decoding_controls: greedy_temp0_top_p1_rep1p05
       same_budget_label: smart_batched_exact_suffix_no_ddp_padding_cap8_v1
       train_forward_budget: smart_batched_exact_suffix_no_ddp_padding_cap8_v1
-      objective_fidelity_note: candidate-balanced continuation CE scores object entries plus the correct append-or-close boundary; samples with <=8 remaining candidates score all remaining candidates, while over-budget samples use telemetry-required uniform subsampling and keep MP/logZ as diagnostics
+      objective_fidelity_note: schema-aware candidate-balanced continuation CE scores the generated schema opener for empty-prefix branches, object entries, and the correct append-or-close boundary; samples with <=8 remaining candidates score all remaining candidates, while over-budget samples use telemetry-required uniform subsampling and keep MP/logZ as diagnostics
       sparse_label_caveat: annotated_view_may_count_unlabeled_true_positives_as_fp

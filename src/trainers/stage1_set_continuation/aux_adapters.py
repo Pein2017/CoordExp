@@ -67,7 +67,9 @@ def _normalize_weighting_mode(weighting_mode: str) -> str:
     if mode in {"uniform", "mean"}:
         return "uniform"
     if mode in {"responsibility", "responsibility_weighted", "mp"}:
-        raise ValueError("responsibility-weighted auxiliary losses are unavailable in v1")
+        raise ValueError(
+            "responsibility-weighted auxiliary losses are unavailable in v1"
+        )
     raise ValueError(f"unknown auxiliary weighting mode: {mode}")
 
 
@@ -86,10 +88,11 @@ def _coerce_loss_result(
         if not isinstance(loss, torch.Tensor):
             raise TypeError("aux helper mapping outputs must include a tensor 'loss'")
         metrics_raw = raw.get("metrics", {})
-        metrics = {
-            str(key): float(value)
-            for key, value in dict(metrics_raw).items()
-        } if isinstance(metrics_raw, Mapping) else {}
+        metrics = (
+            {str(key): float(value) for key, value in dict(metrics_raw).items()}
+            if isinstance(metrics_raw, Mapping)
+            else {}
+        )
         state_update = dict(default_state or {})
         extra_state = raw.get("state_update", {})
         if isinstance(extra_state, Mapping):
@@ -110,7 +113,9 @@ class CoordAuxAdapter:
         self.helper = helper
         self.weighting_mode = _normalize_weighting_mode(weighting_mode)
 
-    def compute_candidate(self, candidate: BranchCandidateAuxState) -> CandidateAuxResult:
+    def compute_candidate(
+        self, candidate: BranchCandidateAuxState
+    ) -> CandidateAuxResult:
         zero = _candidate_zero(candidate)
         if not self.enabled:
             return CandidateAuxResult.skipped(zero, reason="disabled")
@@ -119,9 +124,13 @@ class CoordAuxAdapter:
         if not isinstance(candidate.coord_logits, torch.Tensor):
             raise ValueError("coord aux adapter requires branch-local coord_logits")
         if not isinstance(candidate.coord_logits_full, torch.Tensor):
-            raise ValueError("coord aux adapter requires branch-local coord_logits_full")
+            raise ValueError(
+                "coord aux adapter requires branch-local coord_logits_full"
+            )
         if not isinstance(candidate.coord_target_bins, torch.Tensor):
-            raise ValueError("coord aux adapter requires branch-local coord_target_bins")
+            raise ValueError(
+                "coord aux adapter requires branch-local coord_target_bins"
+            )
         if not isinstance(candidate.coord_slot_mask, torch.Tensor):
             raise ValueError("coord aux adapter requires branch-local coord_slot_mask")
         raw = self.helper(
@@ -145,7 +154,9 @@ class BBoxGeoAuxAdapter:
         self.helper = helper
         self.weighting_mode = _normalize_weighting_mode(weighting_mode)
 
-    def compute_candidate(self, candidate: BranchCandidateAuxState) -> CandidateAuxResult:
+    def compute_candidate(
+        self, candidate: BranchCandidateAuxState
+    ) -> CandidateAuxResult:
         zero = _candidate_zero(candidate)
         if not self.enabled:
             return CandidateAuxResult.skipped(zero, reason="disabled")
@@ -159,7 +170,9 @@ class BBoxGeoAuxAdapter:
             target_boxes_xyxy=decoded.target_boxes_xyxy,
             box_weights=decoded.box_weights,
         )
-        return _coerce_loss_result(raw, default_state={"bbox_geo_decoded_state": decoded})
+        return _coerce_loss_result(
+            raw, default_state={"bbox_geo_decoded_state": decoded}
+        )
 
 
 class BBoxSizeAuxAdapter:
@@ -174,7 +187,9 @@ class BBoxSizeAuxAdapter:
         self.helper = helper
         self.weighting_mode = _normalize_weighting_mode(weighting_mode)
 
-    def compute_candidate(self, candidate: BranchCandidateAuxState) -> CandidateAuxResult:
+    def compute_candidate(
+        self, candidate: BranchCandidateAuxState
+    ) -> CandidateAuxResult:
         zero = _candidate_zero(candidate)
         if not self.enabled:
             return CandidateAuxResult.skipped(zero, reason="disabled")

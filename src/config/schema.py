@@ -1164,12 +1164,19 @@ class Stage1SetContinuationSubsetSamplingConfig:
 class Stage1SetContinuationCandidatesConfig:
     mode: Literal["exact", "uniform_subsample"] = "exact"
     max_candidates: Optional[int] = None
+    tail_positive_count: int = 1
 
     def __post_init__(self) -> None:
         if self.mode not in {"exact", "uniform_subsample"}:
             raise ValueError(
                 "custom.stage1_set_continuation.candidates.mode must be one of {'exact', 'uniform_subsample'}"
             )
+        tail_positive_count = int(self.tail_positive_count)
+        if tail_positive_count < 0:
+            raise ValueError(
+                "custom.stage1_set_continuation.candidates.tail_positive_count must be >= 0"
+            )
+        object.__setattr__(self, "tail_positive_count", tail_positive_count)
         if self.max_candidates is None:
             if self.mode == "uniform_subsample":
                 raise ValueError(
@@ -1189,18 +1196,75 @@ class Stage1SetContinuationCandidatesConfig:
             )
 
 
+def _empty_annotation_completeness_by_max_gt() -> dict[int, float]:
+    return {}
+
+
+@dataclass(frozen=True)
+class Stage1SetContinuationAnnotationCompletenessWeightConfig:
+    enabled: bool = False
+    source: str = ""
+    by_max_gt: Mapping[int, float] = field(
+        default_factory=_empty_annotation_completeness_by_max_gt
+    )
+    default_weight: float = 1.0
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.enabled, bool):
+            raise TypeError(
+                "custom.stage1_set_continuation.structural_close."
+                "annotation_completeness_weight.enabled must be a boolean"
+            )
+        default_weight = float(self.default_weight)
+        if default_weight < 0.0 or default_weight > 1.0:
+            raise ValueError(
+                "custom.stage1_set_continuation.structural_close."
+                "annotation_completeness_weight.default_weight must satisfy 0 <= weight <= 1"
+            )
+        object.__setattr__(self, "default_weight", default_weight)
+        object.__setattr__(self, "source", str(self.source or ""))
+
+        if not isinstance(self.by_max_gt, Mapping):
+            raise TypeError(
+                "custom.stage1_set_continuation.structural_close."
+                "annotation_completeness_weight.by_max_gt must be a mapping"
+            )
+        normalized: dict[int, float] = {}
+        for raw_key, raw_value in self.by_max_gt.items():
+            max_gt = int(raw_key)
+            weight = float(raw_value)
+            if max_gt <= 0:
+                raise ValueError(
+                    "custom.stage1_set_continuation.structural_close."
+                    "annotation_completeness_weight.by_max_gt keys must be > 0"
+                )
+            if weight < 0.0 or weight > 1.0:
+                raise ValueError(
+                    "custom.stage1_set_continuation.structural_close."
+                    "annotation_completeness_weight.by_max_gt values must satisfy 0 <= weight <= 1"
+                )
+            normalized[max_gt] = weight
+        object.__setattr__(self, "by_max_gt", dict(sorted(normalized.items())))
+
+
 @dataclass(frozen=True)
 class Stage1SetContinuationStructuralCloseConfig:
     close_start_suppression_weight: float = 0.0
     final_schema_close_weight: float = 0.0
+    json_structural_weight: float = 0.0
+    annotation_completeness_weight: Stage1SetContinuationAnnotationCompletenessWeightConfig = field(
+        default_factory=Stage1SetContinuationAnnotationCompletenessWeightConfig
+    )
 
     def __post_init__(self) -> None:
         close_start_suppression_weight = float(self.close_start_suppression_weight)
         final_schema_close_weight = float(self.final_schema_close_weight)
+        json_structural_weight = float(self.json_structural_weight)
         object.__setattr__(
             self, "close_start_suppression_weight", close_start_suppression_weight
         )
         object.__setattr__(self, "final_schema_close_weight", final_schema_close_weight)
+        object.__setattr__(self, "json_structural_weight", json_structural_weight)
         if close_start_suppression_weight < 0.0:
             raise ValueError(
                 "custom.stage1_set_continuation.structural_close.close_start_suppression_weight must be >= 0"
@@ -1208,6 +1272,10 @@ class Stage1SetContinuationStructuralCloseConfig:
         if final_schema_close_weight < 0.0:
             raise ValueError(
                 "custom.stage1_set_continuation.structural_close.final_schema_close_weight must be >= 0"
+            )
+        if json_structural_weight < 0.0:
+            raise ValueError(
+                "custom.stage1_set_continuation.structural_close.json_structural_weight must be >= 0"
             )
 
     @property
@@ -1609,7 +1677,7 @@ class Stage1SetContinuationConfig:
     train_forward: Stage1SetContinuationTrainForwardConfig = field(
         default_factory=Stage1SetContinuationTrainForwardConfig
     )
-    metric_schema_version: str = "stage1_set_continuation_metrics_v1"
+    metric_schema_version: str = "stage1_set_continuation_metrics_v2"
 
     @classmethod
     def from_mapping(cls, payload: Any) -> "Stage1SetContinuationConfig":

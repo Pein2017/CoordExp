@@ -120,6 +120,53 @@ def _write_jsonl(path: Path, rows: Sequence[Mapping[str, Any]]) -> None:
             fout.write(json.dumps(dict(row), ensure_ascii=False) + "\n")
 
 
+def _token_trace_start_form(tokens: Sequence[Any]) -> str:
+    token_text = "".join(str(token) for token in list(tokens)[:8]).replace("Ġ", " ")
+    compact = token_text.lstrip()
+    if compact.startswith('{"objects"') or compact.startswith('{"objects":'):
+        return "objects_wrapper"
+    if compact.startswith('{"desc"') or compact.startswith('{"desc":'):
+        return "bare_desc_entry"
+    first = str(tokens[0]) if tokens else ""
+    if first.startswith("<|coord_"):
+        return "coord_first"
+    return "other"
+
+
+def _eval_generation_hygiene_metrics(
+    *,
+    base_rows: Sequence[Mapping[str, Any]],
+    trace_path: Path,
+) -> dict[str, float]:
+    total = max(len(base_rows), 1)
+    empty_pred = sum(1 for row in base_rows if not row.get("pred"))
+    counts = {
+        "objects_wrapper": 0,
+        "bare_desc_entry": 0,
+        "coord_first": 0,
+    }
+    if trace_path.is_file():
+        with trace_path.open("r", encoding="utf-8") as handle:
+            for line in handle:
+                if not line.strip():
+                    continue
+                record = json.loads(line)
+                tokens = record.get("generated_token_text")
+                if isinstance(tokens, Sequence) and not isinstance(
+                    tokens, (str, bytes, bytearray)
+                ):
+                    form = _token_trace_start_form(tokens)
+                    if form in counts:
+                        counts[form] += 1
+    return {
+        "empty_pred": float(empty_pred),
+        "parse_valid_rate": float((total - empty_pred) / total),
+        "start_objects_wrapper_rate": float(counts["objects_wrapper"] / total),
+        "start_bare_desc_rate": float(counts["bare_desc_entry"] / total),
+        "start_coord_first_rate": float(counts["coord_first"] / total),
+    }
+
+
 def _image_key_variants(image_value: str) -> List[str]:
     pure = PurePosixPath(str(image_value).replace("\\", "/"))
     parts = [part for part in pure.parts if part not in {"", "."}]
@@ -558,6 +605,12 @@ class Stage1DetectionEvalCallback(TrainerCallback):
         det_metrics = dict(summary.get("metrics", {}))
 
         if metrics is not None:
+            trace_path = eval_dir / "pred_token_trace.jsonl"
+            for key, value in _eval_generation_hygiene_metrics(
+                base_rows=base_rows,
+                trace_path=trace_path,
+            ).items():
+                metrics[f"eval_det_{key}"] = value
             for key, value in det_metrics.items():
                 metrics[f"eval_det_{key}"] = value
 

@@ -49,10 +49,20 @@ def _stage1_set_continuation_payload() -> dict:
                 "candidates": {
                     "mode": "uniform_subsample",
                     "max_candidates": 8,
+                    "tail_positive_count": 1,
                 },
                 "structural_close": {
                     "close_start_suppression_weight": 0.1,
                     "final_schema_close_weight": 0.2,
+                    "json_structural_weight": 0.05,
+                    "annotation_completeness_weight": {
+                        "enabled": True,
+                        "source": "original_ckpt1332_val200_fp_as_unlabeled",
+                        "by_max_gt": {
+                            1: 0.9500,
+                            3: 0.8306,
+                        },
+                    },
                 },
                 "positive_evidence_margin": {
                     "objective": "threshold_loss",
@@ -79,16 +89,24 @@ def test_stage1_set_continuation_parses_successfully() -> None:
     assert stage1_cfg.subset_sampling.prefix_order == "random"
     assert stage1_cfg.candidates.mode == "uniform_subsample"
     assert stage1_cfg.candidates.max_candidates == 8
+    assert stage1_cfg.candidates.tail_positive_count == 1
     assert stage1_cfg.structural_close.close_start_suppression_weight == pytest.approx(
         0.1
     )
     assert stage1_cfg.structural_close.final_schema_close_weight == pytest.approx(0.2)
+    assert stage1_cfg.structural_close.json_structural_weight == pytest.approx(0.05)
+    completeness = stage1_cfg.structural_close.annotation_completeness_weight
+    assert completeness.enabled is True
+    assert completeness.source == "original_ckpt1332_val200_fp_as_unlabeled"
+    assert set(completeness.by_max_gt) == {1, 3}
+    assert completeness.by_max_gt[1] == pytest.approx(0.9500)
+    assert completeness.by_max_gt[3] == pytest.approx(0.8306)
     assert stage1_cfg.positive_evidence_margin.objective == "threshold_loss"
     assert stage1_cfg.positive_evidence_margin.threshold_space == "full_entry_logZ"
     assert stage1_cfg.positive_evidence_margin.rho is None
     assert stage1_cfg.positive_evidence_margin.log_rho == pytest.approx(-4.2)
     assert stage1_cfg.positive_evidence_margin.threshold_calibration == "calib-v1"
-    assert stage1_cfg.metric_schema_version == "stage1_set_continuation_metrics_v1"
+    assert stage1_cfg.metric_schema_version == "stage1_set_continuation_metrics_v2"
 
 
 def test_stage1_set_continuation_accepts_legacy_close_and_pem_names() -> None:

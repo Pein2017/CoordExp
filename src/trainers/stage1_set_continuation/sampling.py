@@ -61,10 +61,7 @@ def _resolve_valid_mixture(
         return {mode: float(value / total) for mode, value in filtered.items()}
 
     fallback = next(mode for mode in _MODE_ORDER if mode in allowed)
-    return {
-        mode: (1.0 if mode == fallback else 0.0)
-        for mode in _MODE_ORDER
-    }
+    return {mode: (1.0 if mode == fallback else 0.0) for mode in _MODE_ORDER}
 
 
 def _weighted_choice(rng: random.Random, mixture: Mapping[str, float]) -> str:
@@ -90,6 +87,33 @@ def _ordered_indices(
     if prefix_order == "random":
         rng.shuffle(indices)
     return indices
+
+
+def select_tail_protected_candidates(
+    *,
+    candidate_indices: tuple[int, ...],
+    limit: int,
+    rng: random.Random,
+    tail_positive_count: int = 1,
+) -> tuple[int, ...]:
+    """Subsample candidates while preserving late GT objects."""
+
+    if int(limit) <= 0:
+        raise ValueError("candidate limit must be > 0")
+    if len(candidate_indices) <= int(limit):
+        return candidate_indices
+
+    tail_count = max(
+        0,
+        min(int(tail_positive_count), int(limit), len(candidate_indices)),
+    )
+    protected = tuple(sorted(candidate_indices)[-tail_count:]) if tail_count else ()
+    protected_set = set(protected)
+    pool = [index for index in candidate_indices if index not in protected_set]
+    rng.shuffle(pool)
+    selected = set(pool[: int(limit) - len(protected)])
+    selected.update(protected)
+    return tuple(index for index in candidate_indices if index in selected)
 
 
 def _select_prefix_and_remaining(
@@ -142,9 +166,12 @@ def _candidate_selection(
     if remaining_count <= limit:
         return remaining_indices, mode, 1.0
 
-    sampled = list(remaining_indices)
-    rng.shuffle(sampled)
-    chosen = tuple(sampled[:limit])
+    chosen = select_tail_protected_candidates(
+        candidate_indices=remaining_indices,
+        limit=limit,
+        rng=rng,
+        tail_positive_count=int(getattr(candidates_cfg, "tail_positive_count", 1)),
+    )
     return chosen, mode, float(len(chosen) / remaining_count)
 
 
@@ -194,4 +221,5 @@ def sample_subset_and_candidates(
 __all__ = [
     "Stage1SetContinuationSample",
     "sample_subset_and_candidates",
+    "select_tail_protected_candidates",
 ]

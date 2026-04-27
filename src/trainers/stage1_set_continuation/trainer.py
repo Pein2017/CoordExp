@@ -307,6 +307,8 @@ class Stage1SetContinuationTrainer(
             labels=branch_inputs["labels"],
             candidate_entry_label_mask=branch.candidate_entry_label_mask,
             coord_label_mask=branch.coord_label_mask,
+            schema_open_label_mask=branch.schema_open_label_mask,
+            json_structural_label_mask=branch.json_structural_label_mask,
         )
 
     def _score_candidate_branches_smart_batched(
@@ -401,10 +403,10 @@ class Stage1SetContinuationTrainer(
         labels: torch.Tensor,
         branch: EncodedSetContinuationBranch,
     ) -> torch.Tensor:
-        candidate_mask = branch.candidate_entry_label_mask.to(device=labels.device)
+        candidate_mask = branch.candidate_object_label_mask.to(device=labels.device)
         if tuple(candidate_mask.shape) != tuple(labels.shape):
             raise ValueError(
-                "candidate_entry_label_mask must align with branch labels for aux losses"
+                "candidate_object_label_mask must align with branch labels for aux losses"
             )
         scoped = labels.clone()
         scoped[~candidate_mask] = -100
@@ -640,7 +642,13 @@ class Stage1SetContinuationTrainer(
             if int(prefix_token_positions.shape[0]) > 0
             else 0
         )
-        labels, close_start_mask, close_sequence_mask = crop_tensors_for_logits(
+        (
+            labels,
+            close_start_mask,
+            close_sequence_mask,
+            _schema_open_mask,
+            _json_structural_mask,
+        ) = crop_tensors_for_logits(
             suffix_start=suffix_start,
             labels=labels,
             candidate_entry_label_mask=close_start_mask,
@@ -692,6 +700,41 @@ class Stage1SetContinuationTrainer(
             f"{prefix}_max": float(values.max().detach().item()),
             f"{prefix}_std": float(std.detach().item()),
         }
+
+    @staticmethod
+    def _annotation_completeness_weight(*, object_count: int, cfg: Any) -> float:
+        if not bool(getattr(cfg, "enabled", False)):
+            return 1.0
+        by_max_gt_raw = getattr(cfg, "by_max_gt", {})
+        if isinstance(by_max_gt_raw, Mapping):
+            by_max_gt = cast(Mapping[Any, Any], by_max_gt_raw)
+            for max_gt, weight in sorted(
+                ((int(key), float(value)) for key, value in by_max_gt.items()),
+                key=lambda item: item[0],
+            ):
+                if int(object_count) <= max_gt:
+                    return float(weight)
+        return float(getattr(cfg, "default_weight", 1.0))
+
+    @staticmethod
+    def _json_structural_aux_loss(
+        *,
+        candidate_results: Sequence[CandidateLogProbResult],
+        weight: float,
+    ) -> torch.Tensor | None:
+        if not candidate_results or float(weight) <= 0.0:
+            return None
+        reference = candidate_results[0].score
+        total_tokens = sum(
+            int(result.json_structural_tokens) for result in candidate_results
+        )
+        if total_tokens <= 0:
+            return reference.new_zeros(())
+        total_score = sum(
+            (result.json_structural_score for result in candidate_results),
+            start=reference.new_zeros(()),
+        )
+        return (-total_score / max(total_tokens, 1)) * float(weight)
 
     @staticmethod
     def _score_metrics(
@@ -759,6 +802,30 @@ class Stage1SetContinuationTrainer(
             )
         else:
             metrics["mp/candidate_logprob_per_noncoord_token_mean"] = 0.0
+        schema_tokens = sum(int(result.schema_tokens) for result in candidate_results)
+        schema_score = sum(
+            (result.schema_score for result in candidate_results),
+            start=scores.new_zeros(()),
+        )
+        metrics["loss/schema_open"] = float(
+            (-schema_score / max(schema_tokens, 1)).detach().item()
+        )
+        metrics["mp/schema_open_tokens_scored_mean"] = float(
+            schema_tokens / max(len(candidate_results), 1)
+        )
+        json_structural_tokens = sum(
+            int(result.json_structural_tokens) for result in candidate_results
+        )
+        json_structural_score = sum(
+            (result.json_structural_score for result in candidate_results),
+            start=scores.new_zeros(()),
+        )
+        metrics["loss/json_structural_raw"] = float(
+            (-json_structural_score / max(json_structural_tokens, 1)).detach().item()
+        )
+        metrics["mp/json_structural_tokens_scored_mean"] = float(
+            json_structural_tokens / max(len(candidate_results), 1)
+        )
         return metrics
 
     def _sample_state(
@@ -896,6 +963,26 @@ class Stage1SetContinuationTrainer(
             "mp/prefix_encoding_cache_hits": 0.0,
             "mp/prefix_encoding_cache_misses": 0.0,
         }
+        object_count = len(prefix_indices) + len(remaining_indices)
+        completeness_weight = self._annotation_completeness_weight(
+            object_count=object_count,
+            cfg=cfg.structural_close.annotation_completeness_weight,
+        )
+        tail_count = max(0, int(getattr(cfg.candidates, "tail_positive_count", 1)))
+        tail_indices = (
+            tuple(sorted(remaining_indices)[-tail_count:])
+            if tail_count and remaining_indices
+            else ()
+        )
+        metrics["mp/annotation_completeness_weight_mean"] = float(completeness_weight)
+        metrics["mp/tail_positive_samples"] = float(
+            bool(tail_indices)
+            and bool(set(tail_indices).intersection(candidate_indices))
+        )
+        metrics["mp/final_gt_object_scored_samples"] = float(
+            bool(remaining_indices) and max(remaining_indices) in set(candidate_indices)
+        )
+        metrics["mp/final_close_weight_mean"] = 0.0
         for mode in (
             "empty_prefix",
             "random_subset",
@@ -1013,6 +1100,19 @@ class Stage1SetContinuationTrainer(
                     scores=score_tensor, candidate_results=candidate_results
                 )
             )
+            json_structural_loss = self._json_structural_aux_loss(
+                candidate_results=candidate_results,
+                weight=float(cfg.structural_close.json_structural_weight),
+            )
+            if json_structural_loss is not None:
+                metrics["loss/json_structural"] = float(
+                    json_structural_loss.detach().item()
+                )
+                if float(cfg.structural_close.json_structural_weight) > 0.0:
+                    total_loss = total_loss + json_structural_loss
+                    objective_contributes = True
+            else:
+                metrics["loss/json_structural"] = 0.0
             metrics["mp/logZ_scored_raw"] = float(raw_log_z.detach().item())
             metrics["mp/logZ_remaining_est"] = float(
                 mp_result.log_z_remaining.detach().item()
@@ -1061,6 +1161,8 @@ class Stage1SetContinuationTrainer(
                     "loss/mp": 0.0,
                     "loss/mp_diagnostic": 0.0,
                     "loss/pem": 0.0,
+                    "loss/schema_open": 0.0,
+                    "loss/json_structural": 0.0,
                     "mp/loss_mp_denominator_samples": 0.0,
                     "mp/logZ_scored_raw": 0.0,
                     "mp/logZ_remaining_est": 0.0,
@@ -1078,6 +1180,8 @@ class Stage1SetContinuationTrainer(
                     "mp/min_responsibility": 0.0,
                     "mp/min_responsibility_scored": 0.0,
                     "mp/valid_length_corr_samples": 0.0,
+                    "mp/schema_open_tokens_scored_mean": 0.0,
+                    "mp/json_structural_tokens_scored_mean": 0.0,
                 }
             )
 
@@ -1145,10 +1249,12 @@ class Stage1SetContinuationTrainer(
                 "stop/p_continue_start_when_remaining_exists"
             ]
         else:
-            weak_loss = close_sequence_nll * float(
+            final_close_weight = float(
                 cfg.structural_close.final_schema_close_weight
-            )
-            if float(cfg.structural_close.final_schema_close_weight) > 0.0:
+            ) * float(completeness_weight)
+            metrics["mp/final_close_weight_mean"] = float(final_close_weight)
+            weak_loss = close_sequence_nll * final_close_weight
+            if final_close_weight > 0.0:
                 total_loss = weak_loss if total_loss is None else total_loss + weak_loss
                 objective_contributes = True
             metrics["loss/anti_close_start"] = 0.0

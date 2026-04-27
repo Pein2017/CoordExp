@@ -6,7 +6,10 @@ from types import SimpleNamespace
 
 import torch
 
-from src.callbacks.stage1_detection_eval import Stage1DetectionEvalCallback
+from src.callbacks.stage1_detection_eval import (
+    Stage1DetectionEvalCallback,
+    _eval_generation_hygiene_metrics,
+)
 
 
 class _FakeModel(torch.nn.Module):
@@ -540,9 +543,7 @@ def test_stage1_detection_eval_can_score_map_with_confidence_postop(
     )
 
     eval_dir = tmp_path / "output" / "eval_detection" / "step_0000012"
-    assert captured["confidence_gt_vs_pred_jsonl"] == str(
-        eval_dir / "gt_vs_pred.jsonl"
-    )
+    assert captured["confidence_gt_vs_pred_jsonl"] == str(eval_dir / "gt_vs_pred.jsonl")
     assert captured["confidence_trace_jsonl"] == str(
         eval_dir / "pred_token_trace.jsonl"
     )
@@ -550,3 +551,44 @@ def test_stage1_detection_eval_can_score_map_with_confidence_postop(
     assert metrics["eval_det_bbox_AP"] == 0.44
     assert metrics["eval_det_bbox_AP50"] == 0.55
     assert metrics["eval_det_f1ish@0.50_f1_full_micro"] == 0.66
+
+
+def test_stage1_detection_eval_generation_hygiene_metrics(tmp_path: Path) -> None:
+    trace_path = tmp_path / "pred_token_trace.jsonl"
+    trace_path.write_text(
+        "\n".join(
+            json.dumps(row)
+            for row in [
+                {
+                    "line_idx": 0,
+                    "generated_token_text": ['{"', "objects", '":', ' [{"'],
+                },
+                {
+                    "line_idx": 1,
+                    "generated_token_text": ['{"', "desc", '":', ' "cat"'],
+                },
+                {
+                    "line_idx": 2,
+                    "generated_token_text": ["<|coord_1|>", "<|coord_2|>"],
+                },
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    rows = [
+        {"pred": [{"desc": "cat"}]},
+        {"pred": []},
+        {"pred": []},
+    ]
+
+    metrics = _eval_generation_hygiene_metrics(
+        base_rows=rows,
+        trace_path=trace_path,
+    )
+
+    assert metrics["empty_pred"] == 2.0
+    assert metrics["parse_valid_rate"] == 1.0 / 3.0
+    assert metrics["start_objects_wrapper_rate"] == 1.0 / 3.0
+    assert metrics["start_bare_desc_rate"] == 1.0 / 3.0
+    assert metrics["start_coord_first_rate"] == 1.0 / 3.0

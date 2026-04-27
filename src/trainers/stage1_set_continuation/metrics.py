@@ -7,7 +7,33 @@ from typing import Any
 from src.metrics.reporter import SwiftMetricReporter
 
 
-STAGE1_SET_CONTINUATION_METRIC_SCHEMA_VERSION = "stage1_set_continuation_metrics_v1"
+STAGE1_SET_CONTINUATION_METRIC_SCHEMA_VERSION = "stage1_set_continuation_metrics_v2"
+
+EMITTED_STAGE1_SET_CONTINUATION_METRICS = {
+    "loss/candidate_balanced",
+    "loss/schema_open",
+    "loss/json_structural",
+    "loss/anti_close_start",
+    "loss/weak_schema_close",
+    "mp/num_prefix_objects",
+    "mp/num_remaining_objects",
+    "mp/num_candidates_scored",
+    "mp/candidate_tokens_scored_mean",
+    "mp/schema_open_tokens_scored_mean",
+    "mp/json_structural_tokens_scored_mean",
+    "mp/annotation_completeness_weight_mean",
+    "mp/final_close_weight_mean",
+    "mp/tail_positive_samples",
+    "mp/final_gt_object_scored_samples",
+    "mp/objective_fidelity_exact_samples",
+    "mp/fallback_applied_samples",
+    "mp/selected_mode_empty_prefix",
+    "mp/selected_mode_full_prefix",
+    "mp/objective_contributing_samples",
+    "stop/p_close_start_when_remaining_exists",
+    "stop/p_continue_start_when_remaining_exists",
+    "stop/p_close_start_when_remaining_empty",
+}
 
 LOGZ_ESTIMATOR_CODES = {
     "exact": 0.0,
@@ -66,13 +92,16 @@ def numeric_metric_payload(metrics: Mapping[str, Any]) -> dict[str, float]:
 
     payload: dict[str, float] = {}
     for key, value in metrics.items():
+        metric_key = str(key)
+        if metric_key not in EMITTED_STAGE1_SET_CONTINUATION_METRICS:
+            continue
         if isinstance(value, bool):
-            payload[str(key)] = float(value)
+            payload[metric_key] = float(value)
             continue
         if isinstance(value, int | float):
             numeric = float(value)
             if math.isfinite(numeric):
-                payload[str(key)] = numeric
+                payload[metric_key] = numeric
     return payload
 
 
@@ -101,6 +130,7 @@ __all__ = [
     "BRANCH_RUNTIME_MODE_CODES",
     "CANDIDATE_SCORING_MODE_CODES",
     "DDP_CANDIDATE_PADDING_POLICY_CODES",
+    "EMITTED_STAGE1_SET_CONTINUATION_METRICS",
     "LOGZ_ESTIMATOR_CODES",
     "PREFIX_ATTACH_MODE_CODES",
     "PREFIX_GRADIENT_CODES",

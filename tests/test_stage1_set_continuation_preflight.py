@@ -216,13 +216,15 @@ def _real_template(monkeypatch: pytest.MonkeyPatch) -> Any:
     return template
 
 
-def _label_tokens(
-    template: _FakeTemplate, labels: torch.Tensor
-) -> list[str | None]:
+def _label_tokens(template: _FakeTemplate, labels: torch.Tensor) -> list[str | None]:
     flattened = [int(value) for value in labels.reshape(-1).tolist()]
     tokens: list[str | None] = []
     for value in flattened:
-        tokens.append(None if value == -100 else template.tokenizer.convert_ids_to_tokens([value])[0])
+        tokens.append(
+            None
+            if value == -100
+            else template.tokenizer.convert_ids_to_tokens([value])[0]
+        )
     return tokens
 
 
@@ -259,17 +261,29 @@ def test_preflight_serialization_truth_table_is_continuation_aware() -> None:
     assert nonterminal.continuation_mode == "continue"
     assert nonterminal.text.endswith(", ")
     assert nonterminal.post_candidate_span.end == len(nonterminal.text)
-    assert nonterminal.global_close_start_span.start == nonterminal.global_close_start_span.end
-    assert nonterminal.global_full_close_span.start == nonterminal.global_full_close_span.end
+    assert (
+        nonterminal.global_close_start_span.start
+        == nonterminal.global_close_start_span.end
+    )
+    assert (
+        nonterminal.global_full_close_span.start
+        == nonterminal.global_full_close_span.end
+    )
 
     assert terminal.continuation_mode == "close"
     assert terminal.text.endswith("]}")
-    assert terminal.text[
-        terminal.global_close_start_span.start : terminal.global_close_start_span.end
-    ] == "]"
-    assert terminal.text[
-        terminal.global_full_close_span.start : terminal.global_full_close_span.end
-    ] == "]}"
+    assert (
+        terminal.text[
+            terminal.global_close_start_span.start : terminal.global_close_start_span.end
+        ]
+        == "]"
+    )
+    assert (
+        terminal.text[
+            terminal.global_full_close_span.start : terminal.global_full_close_span.end
+        ]
+        == "]}"
+    )
 
 
 def test_preflight_token_masks_include_append_boundary_and_exclude_close() -> None:
@@ -350,6 +364,47 @@ def test_preflight_real_jsonl_and_template_score_continuation_boundary(
     assert branch.structural_close_sequence_mask.sum().item() == 0
 
 
+def test_preflight_real_jsonl_and_template_empty_prefix_scores_schema_open(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    template = _real_template(monkeypatch)
+    meta = _real_dataset_meta(monkeypatch)
+
+    branch = encode_set_continuation_branch(
+        meta=meta,
+        template=template,
+        prefix_indices=[],
+        candidate_index=0,
+        object_field_order="desc_first",
+    )
+    objective = _scored_tokens(
+        template,
+        branch.labels,
+        branch.objective_label_mask,
+    )
+    schema = _scored_tokens(
+        template,
+        branch.labels,
+        branch.schema_open_label_mask,
+    )
+    candidate_object = _scored_tokens(
+        template,
+        branch.labels,
+        branch.candidate_object_label_mask,
+    )
+    objective_text = "".join(objective).replace("Ġ", " ")
+    schema_text = "".join(schema).replace("Ġ", " ")
+    candidate_text = "".join(candidate_object).replace("Ġ", " ")
+
+    assert branch.prefix_text == '{"objects": ['
+    assert "<|im_end|>" not in objective
+    assert objective_text.startswith('{"objects": [{"desc"')
+    assert schema_text.startswith('{"objects": [')
+    assert '[{"' in schema_text or schema_text.endswith("[")
+    assert '{"desc"' in candidate_text[:16]
+    assert objective_text.endswith(", ")
+
+
 def test_preflight_real_jsonl_and_template_score_terminal_close_boundary(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -381,6 +436,89 @@ def test_preflight_real_jsonl_and_template_score_terminal_close_boundary(
     assert "".join(scored[-8:]).endswith("]}")
     assert "".join(close_sequence).endswith("]}")
     assert branch.structural_close_start_mask.sum().item() >= 1
+
+
+def test_preflight_real_jsonl_and_template_nonempty_prefix_does_not_rescore_schema(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    template = _real_template(monkeypatch)
+    meta = _real_dataset_meta(monkeypatch)
+
+    branch = encode_set_continuation_branch(
+        meta=meta,
+        template=template,
+        prefix_indices=[0],
+        candidate_index=1,
+        object_field_order="desc_first",
+    )
+    objective = _scored_tokens(
+        template,
+        branch.labels,
+        branch.objective_label_mask,
+    )
+    schema = _scored_tokens(
+        template,
+        branch.labels,
+        branch.schema_open_label_mask,
+    )
+    objective_text = "".join(objective).replace("Ġ", " ")
+
+    assert schema == []
+    assert not objective_text.startswith('{"objects"')
+    assert objective_text.startswith('{"desc"') or objective_text.startswith(' {"desc"')
+    assert objective_text.endswith(", ")
+
+
+def test_preflight_json_structural_mask_scores_schema_keys_and_boundaries_only() -> (
+    None
+):
+    template = _FakeTemplate()
+    branch = encode_set_continuation_branch(
+        meta=_meta(),
+        template=template,
+        prefix_indices=[],
+        candidate_index=0,
+        object_field_order="desc_first",
+    )
+
+    structural = _scored_tokens(
+        template,
+        branch.labels,
+        branch.json_structural_label_mask,
+    )
+
+    assert structural[0] == "{"
+    assert "desc" in structural
+    assert "objects" in structural
+    assert ":" in structural
+    assert "[" in structural
+    assert "bbox_2d" in structural
+    assert structural[-1] == ","
+    assert "alpha" not in structural
+    assert not any(token.startswith("<|coord_") for token in structural)
+
+
+def test_preflight_json_structural_mask_includes_terminal_close_but_not_payload() -> (
+    None
+):
+    template = _FakeTemplate()
+    branch = encode_set_continuation_branch(
+        meta=_meta(),
+        template=template,
+        prefix_indices=[0, 1],
+        candidate_index=2,
+        object_field_order="desc_first",
+    )
+
+    structural = _scored_tokens(
+        template,
+        branch.labels,
+        branch.json_structural_label_mask,
+    )
+
+    assert structural[-2:] == ["]", "}"]
+    assert "gamma" not in structural
+    assert not any(token.startswith("<|coord_") for token in structural)
 
 
 def test_preflight_shifted_loss_scores_exact_next_token_positions() -> None:
@@ -416,18 +554,14 @@ def test_preflight_shifted_loss_scores_exact_next_token_positions() -> None:
     no_boundary = compute_candidate_full_entry_logprob(
         logits=aligned_logits,
         labels=labels,
-        candidate_entry_label_mask=torch.tensor(
-            [[False, False, True, True, False]]
-        ),
+        candidate_entry_label_mask=torch.tensor([[False, False, True, True, False]]),
         coord_label_mask=coord_mask,
         coord_token_ids=coord_token_ids,
     )
     boundary_only = compute_candidate_full_entry_logprob(
         logits=aligned_logits,
         labels=labels,
-        candidate_entry_label_mask=torch.tensor(
-            [[False, False, False, False, True]]
-        ),
+        candidate_entry_label_mask=torch.tensor([[False, False, False, False, True]]),
         coord_label_mask=coord_mask,
         coord_token_ids=coord_token_ids,
     )
@@ -436,6 +570,32 @@ def test_preflight_shifted_loss_scores_exact_next_token_positions() -> None:
     assert torch.allclose(aligned.score, no_boundary.score + boundary_only.score)
     assert aligned.tokens == 3
     assert boundary_only.tokens == 1
+
+
+def test_preflight_candidate_logprob_reports_json_structural_score_separately() -> None:
+    labels = torch.tensor([[0, 1, 2, 3, 4]], dtype=torch.long)
+    candidate_mask = torch.tensor([[False, False, True, True, True]])
+    structural_mask = torch.tensor([[False, False, True, False, True]])
+    coord_mask = torch.zeros_like(candidate_mask)
+    coord_token_ids = torch.tensor([8, 9], dtype=torch.long)
+    logits = torch.full((1, 5, 10), -8.0)
+    logits[0, 1, 2] = 8.0
+    logits[0, 2, 3] = 8.0
+    logits[0, 3, 4] = 8.0
+
+    result = compute_candidate_full_entry_logprob(
+        logits=logits,
+        labels=labels,
+        candidate_entry_label_mask=candidate_mask,
+        coord_label_mask=coord_mask,
+        coord_token_ids=coord_token_ids,
+        json_structural_label_mask=structural_mask,
+    )
+
+    assert result.tokens == 3
+    assert result.json_structural_tokens == 2
+    assert result.json_structural_score < 0.0
+    assert result.json_structural_score > result.score
 
 
 def test_preflight_branch_runtime_equivalence_preserves_boundary_scores() -> None:
@@ -449,17 +609,13 @@ def test_preflight_branch_runtime_equivalence_preserves_boundary_scores() -> Non
     nonterminal = TensorBranchScoreInput(
         model_inputs={"input_ids": torch.tensor([[1, 2, 3, 4, comma_token]])},
         labels=torch.tensor([[1, 2, 3, 4, comma_token]]),
-        candidate_entry_label_mask=torch.tensor(
-            [[False, False, True, True, True]]
-        ),
+        candidate_entry_label_mask=torch.tensor([[False, False, True, True, True]]),
         coord_label_mask=torch.tensor([[False, False, False, False, False]]),
     )
     terminal = TensorBranchScoreInput(
         model_inputs={"input_ids": torch.tensor([[1, 2, 5, 6, close_token]])},
         labels=torch.tensor([[1, 2, 5, 6, close_token]]),
-        candidate_entry_label_mask=torch.tensor(
-            [[False, False, True, True, True]]
-        ),
+        candidate_entry_label_mask=torch.tensor([[False, False, True, True, True]]),
         coord_label_mask=torch.tensor([[False, False, False, False, False]]),
     )
 

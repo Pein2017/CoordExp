@@ -49,17 +49,14 @@ def test_production_profile_resolves_and_pins_common_contract() -> None:
         "/data/CoordExp/output_remote/stage1_2b/set_continuation/tb"
     )
     assert (
-        cfg.training["artifact_subdir"]
-        == "coco1024_sota1332_setcont_candbal_boundaryfix"
+        cfg.training["artifact_subdir"] == "coco1024_sota1332_setcont_candbal_schemafix"
     )
-    assert (
-        cfg.training["run_name"] == "setcont-coco1024-sota1332-candbal-boundaryfix"
-    )
+    assert cfg.training["run_name"] == "setcont-coco1024-sota1332-candbal-schemafix"
     assert cfg.training["packing"] is False
     assert cfg.training["eval_packing"] is False
     assert cfg.training["encoded_sample_cache"]["enabled"] is False
     assert cfg.training["seed"] == 17
-    assert cfg.training["num_train_epochs"] == 4
+    assert cfg.training["num_train_epochs"] == 1
     assert cfg.training["effective_batch_size"] == 128
     assert cfg.training["learning_rate"] == pytest.approx(5.0e-5)
     assert cfg.training["vit_lr"] == pytest.approx(1.0e-5)
@@ -95,7 +92,7 @@ def test_production_profile_resolves_and_pins_common_contract() -> None:
     assert cfg.custom.eval_detection.distributed is True
     assert cfg.custom.eval_detection.temperature == pytest.approx(0.0)
     assert cfg.custom.eval_detection.top_p == pytest.approx(1.0)
-    assert cfg.custom.eval_detection.repetition_penalty == pytest.approx(1.05)
+    assert cfg.custom.eval_detection.repetition_penalty == pytest.approx(1.10)
     assert cfg.custom.eval_detection.f1ish_pred_scope == "annotated"
 
     report = cfg.custom.extra["benchmark_report"]
@@ -120,7 +117,11 @@ def test_production_profile_resolves_and_pins_common_contract() -> None:
         report["sparse_label_caveat"]
         == "annotated_view_may_count_unlabeled_true_positives_as_fp"
     )
-    assert "candidate-balanced continuation CE" in report["objective_fidelity_note"]
+    assert (
+        "schema-aware candidate-balanced continuation CE"
+        in report["objective_fidelity_note"]
+    )
+    assert "generated schema opener" in report["objective_fidelity_note"]
     assert "append-or-close boundary" in report["objective_fidelity_note"]
 
 
@@ -157,14 +158,21 @@ def test_production_profile_enables_all_set_continuation_features() -> None:
     assert sc.subset_sampling.leave_one_out_ratio == pytest.approx(0.20)
     assert sc.subset_sampling.full_prefix_ratio == pytest.approx(0.05)
     assert sc.subset_sampling.prefix_order == "random"
+    assert sc.candidates.tail_positive_count == 1
     assert sc.structural_close.close_start_suppression_weight == pytest.approx(0.05)
     assert sc.structural_close.final_schema_close_weight == pytest.approx(0.05)
+    assert sc.structural_close.json_structural_weight == pytest.approx(0.05)
+    completeness = sc.structural_close.annotation_completeness_weight
+    assert completeness.enabled is True
+    assert completeness.by_max_gt[1] == pytest.approx(0.9500)
+    assert completeness.by_max_gt[20] == pytest.approx(0.8068)
+    assert completeness.by_max_gt[1000000000] == pytest.approx(0.7595)
     assert pem.objective == "disabled"
     assert pem.threshold_space == "full_entry_logZ"
     assert pem.rho is None
     assert pem.log_rho is None
     assert pem.threshold_calibration is None
-    assert sc.metric_schema_version == "stage1_set_continuation_metrics_v1"
+    assert sc.metric_schema_version == "stage1_set_continuation_metrics_v2"
     assert cfg.deepspeed is not None
     assert cfg.deepspeed.enabled is False
 
@@ -223,14 +231,13 @@ def test_effective_runtime_records_production_set_continuation_provenance() -> N
     assert sc_runtime["train_forward"]["prefix_reuse"]["kv_cache"]["mode"] == "disabled"
     assert sc_runtime["objective_fidelity"] == {
         "exact_metric": "mp/objective_fidelity_exact_samples",
-        "approx_metric": "mp/objective_fidelity_approx_samples",
         "fallback_metric": "mp/fallback_applied_samples",
     }
     assert sc_runtime["candidate_scoring_mode"] == "exact"
     assert sc_runtime["logZ_estimator"] == "exact"
     assert sc_runtime["authored_logZ_estimator"] == "exact"
     assert sc_runtime["fallback_logZ_estimator"] == "sampled_raw"
-    assert sc_runtime["runtime_logZ_estimator_metric"] == "mp/logZ_estimator"
+    assert "runtime_logZ_estimator_metric" not in sc_runtime
     assert sc_runtime["collator_path"].endswith(
         "build_stage1_set_continuation_collator"
     )
@@ -248,7 +255,7 @@ def test_effective_runtime_records_production_set_continuation_provenance() -> N
         "reason": "independent_candidate_rows_do_not_share_candidate_sequence",
     }
     assert sc_runtime["prefix_gradient"] == "non_detached_recomputed_per_branch"
-    assert sc_runtime["metric_schema_version"] == "stage1_set_continuation_metrics_v1"
+    assert sc_runtime["metric_schema_version"] == "stage1_set_continuation_metrics_v2"
     assert sc_runtime["positive_evidence_margin"] == {
         "objective": "disabled",
         "threshold_space": "full_entry_logZ",
@@ -259,7 +266,7 @@ def test_effective_runtime_records_production_set_continuation_provenance() -> N
         sc_runtime["realized_branch_token_budget"]["v1_execution"]
         == "smart_batched_exact_no_prefix_cache"
     )
-    assert sc_runtime["realized_prefix_mode_coverage"]["source"] == "trainer_metrics"
+    assert sc_runtime["realized_prefix_mode_coverage"]["source"] == "compact_v2_metrics"
     assert sc_runtime["realized_aux_settings"]["coord_soft_ce_w1"]["enabled"] is False
 
 
@@ -284,7 +291,7 @@ def test_experiment_manifest_mirrors_production_runtime_summary(tmp_path: Path) 
             "prefix_gradient": "non_detached_recomputed_per_branch",
             "collator_path": "src.data_collators.stage1_set_continuation_collator.build_stage1_set_continuation_collator",
             "packing_policy": {"training.packing": "rejected"},
-            "metric_schema_version": "stage1_set_continuation_metrics_v1",
+            "metric_schema_version": "stage1_set_continuation_metrics_v2",
         },
     }
 

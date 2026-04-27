@@ -205,6 +205,8 @@ def _cfg(
     full_prefix: float = 0.0,
     close_start_suppression_weight: float = 0.0,
     final_schema_close_weight: float = 0.0,
+    json_structural_weight: float = 0.0,
+    annotation_completeness_weight: Mapping[str, Any] | None = None,
     pem: Mapping[str, Any] | None = None,
     train_forward: Mapping[str, Any] | None = None,
 ) -> Stage1SetContinuationConfig:
@@ -221,6 +223,16 @@ def _cfg(
             "structural_close": {
                 "close_start_suppression_weight": close_start_suppression_weight,
                 "final_schema_close_weight": final_schema_close_weight,
+                "json_structural_weight": json_structural_weight,
+                **(
+                    {
+                        "annotation_completeness_weight": dict(
+                            annotation_completeness_weight
+                        )
+                    }
+                    if annotation_completeness_weight is not None
+                    else {}
+                ),
             },
             "positive_evidence_margin": dict(pem or {"objective": "disabled"}),
             "train_forward": dict(train_forward or {}),
@@ -294,16 +306,14 @@ def test_trainer_exact_mp_scores_two_independent_branches_and_logs_metrics() -> 
     assert sum("cat" in text for text in candidate_calls) == 1
     assert sum("dog" in text for text in candidate_calls) == 1
     assert all(not ("cat" in text and "dog" in text) for text in candidate_calls)
-    assert _latest_metric(trainer, "loss/mp") < 0.1
+    assert _latest_metric(trainer, "loss/candidate_balanced") < 0.1
+    assert _latest_metric(trainer, "loss/schema_open") >= 0.0
     assert _latest_metric(trainer, "mp/num_prefix_objects") == pytest.approx(0.0)
     assert _latest_metric(trainer, "mp/num_remaining_objects") == pytest.approx(2.0)
     assert _latest_metric(trainer, "mp/num_candidates_scored") == pytest.approx(2.0)
-    assert _latest_metric(trainer, "mp/configured_ratio_empty_prefix") == pytest.approx(
+    assert _latest_metric(trainer, "mp/selected_mode_empty_prefix") == pytest.approx(
         1.0
     )
-    assert _latest_metric(
-        trainer, "mp/resolved_valid_ratio_empty_prefix"
-    ) == pytest.approx(1.0)
     assert _latest_metric(trainer, "stop/p_close_start_when_remaining_exists") > 0.99
     assert _latest_metric(trainer, "stop/p_continue_start_when_remaining_exists") < 0.01
 
@@ -318,19 +328,9 @@ def test_retained_graph_runtime_preserves_current_exact_branch_behavior() -> Non
 
     assert torch.isfinite(loss)
     assert len(model.calls) == 3
-    assert _latest_metric(trainer, "mp/branch_runtime_mode") == pytest.approx(0.0)
-    assert _latest_metric(
-        trainer, "mp/retained_graph_branch_forwards"
-    ) == pytest.approx(2.0)
-    assert _latest_metric(trainer, "mp/checkpointed_branch_forwards") == pytest.approx(
-        0.0
-    )
     assert _latest_metric(
         trainer, "mp/objective_fidelity_exact_samples"
     ) == pytest.approx(1.0)
-    assert _latest_metric(
-        trainer, "mp/objective_fidelity_approx_samples"
-    ) == pytest.approx(0.0)
 
 
 def test_trainer_evaluate_uses_callback_without_prediction_loop() -> None:
@@ -416,8 +416,7 @@ def test_trainer_pem_threshold_loss_logs_pem_and_mp_diagnostic() -> None:
     loss = trainer.compute_loss(model, _batch(), return_outputs=False)
 
     assert torch.isfinite(loss)
-    assert _latest_metric(trainer, "loss/pem") == pytest.approx(0.0, abs=1e-6)
-    assert _latest_metric(trainer, "loss/mp_diagnostic") < 0.1
+    assert _latest_metric(trainer, "loss/candidate_balanced") < 0.1
 
 
 def test_trainer_close_start_suppression_contributes_when_remaining_exists() -> None:
@@ -449,14 +448,7 @@ def test_trainer_adds_branch_local_coord_aux_when_enabled() -> None:
     loss = trainer.compute_loss(model, _batch(), return_outputs=False)
 
     assert torch.isfinite(loss)
-    assert _latest_metric(trainer, "loss/aux_coord_soft_ce_w1") >= 0.0
-    assert _latest_metric(
-        trainer, "aux/coord_soft_ce_w1/candidate_count"
-    ) == pytest.approx(2.0)
-    assert _latest_metric(trainer, "aux/coord_soft_ce_w1/position_count") > 0.0
-    assert _latest_metric(
-        trainer, "aux/coord_soft_ce_w1/skipped_candidates"
-    ) == pytest.approx(0.0)
+    assert _latest_metric(trainer, "loss/candidate_balanced") >= 0.0
 
 
 def test_trainer_weak_schema_close_runs_for_full_prefix_samples() -> None:
@@ -469,10 +461,73 @@ def test_trainer_weak_schema_close_runs_for_full_prefix_samples() -> None:
     assert torch.isfinite(loss)
     assert len(model.calls) == 1
     assert _latest_metric(trainer, "loss/weak_schema_close") < 0.1
-    assert _latest_metric(trainer, "mp/loss_mp_denominator_samples") == pytest.approx(
-        0.0
-    )
+    assert _latest_metric(
+        trainer, "mp/objective_contributing_samples"
+    ) == pytest.approx(1.0)
     assert _latest_metric(trainer, "stop/p_close_start_when_remaining_empty") > 0.99
+
+
+def test_trainer_fp_derived_completeness_downweights_final_close_only() -> None:
+    trainer = _trainer(
+        _cfg(
+            empty=0.0,
+            full_prefix=1.0,
+            final_schema_close_weight=0.25,
+            annotation_completeness_weight={
+                "enabled": True,
+                "source": "unit",
+                "by_max_gt": {1: 0.95, 3: 0.50},
+            },
+        )
+    )
+    model = _FakeModel()
+    trainer.model = model
+
+    loss = trainer.compute_loss(
+        model,
+        _batch([OBJECT_A, OBJECT_B, OBJECT_C]),
+        return_outputs=False,
+    )
+
+    assert torch.isfinite(loss)
+    assert _latest_metric(
+        trainer, "mp/annotation_completeness_weight_mean"
+    ) == pytest.approx(0.50)
+    assert _latest_metric(trainer, "mp/final_close_weight_mean") == pytest.approx(0.125)
+    assert _latest_metric(trainer, "loss/weak_schema_close") < 0.1
+
+
+def test_trainer_json_structural_aux_loss_is_logged_and_contributes() -> None:
+    class _FlatModel(_FakeModel):
+        def __call__(self, **kwargs):
+            self.calls.append(dict(kwargs))
+            input_ids = kwargs["input_ids"]
+            vocab_size = int(self.config.text_config.vocab_size)
+            logits = torch.zeros(
+                (input_ids.shape[0], input_ids.shape[1], vocab_size),
+                dtype=torch.float32,
+            )
+            logits_to_keep = int(kwargs.get("logits_to_keep") or 0)
+            if logits_to_keep > 0:
+                logits = logits[:, -logits_to_keep:, :]
+            return SimpleNamespace(logits=logits)
+
+    no_aux_trainer = _trainer(_cfg())
+    aux_trainer = _trainer(_cfg(json_structural_weight=0.25))
+    no_aux_model = _FlatModel()
+    aux_model = _FlatModel()
+    no_aux_trainer.model = no_aux_model
+    aux_trainer.model = aux_model
+
+    no_aux_loss = no_aux_trainer.compute_loss(
+        no_aux_model, _batch(), return_outputs=False
+    )
+    aux_loss = aux_trainer.compute_loss(aux_model, _batch(), return_outputs=False)
+
+    assert torch.isfinite(aux_loss)
+    assert aux_loss.detach().item() > no_aux_loss.detach().item()
+    assert _latest_metric(aux_trainer, "loss/json_structural") > 0.0
+    assert _latest_metric(aux_trainer, "mp/json_structural_tokens_scored_mean") > 0.0
 
 
 def test_full_prefix_metric_only_sample_does_not_dilute_batch_objective() -> None:
@@ -526,11 +581,11 @@ def test_full_prefix_metric_only_sample_does_not_dilute_batch_objective() -> Non
 
     assert mixed_loss.detach().item() == pytest.approx(single_loss.detach().item())
     assert _latest_metric(
-        mixed_trainer, "mp/loss_mp_denominator_samples"
+        mixed_trainer, "mp/objective_contributing_samples"
     ) == pytest.approx(0.5)
 
 
-def test_repeated_forward_budget_ratio_uses_token_counts() -> None:
+def test_compact_candidate_token_metrics_are_emitted() -> None:
     trainer = _trainer(_cfg(empty=0.0, leave_one_out=1.0))
     trainer._sample_state = lambda **_: _forced_sample(
         mode="leave_one_out",
@@ -548,14 +603,10 @@ def test_repeated_forward_budget_ratio_uses_token_counts() -> None:
     )
 
     assert torch.isfinite(loss)
-    prefix_tokens = _latest_metric(trainer, "mp/prefix_tokens_mean")
-    candidate_tokens = _latest_metric(trainer, "mp/total_candidate_tokens_scored")
-    ratio = _latest_metric(trainer, "mp/repeated_forward_token_ratio_vs_baseline")
-    expected = (prefix_tokens * 2.0 + candidate_tokens) / (
-        prefix_tokens + candidate_tokens
-    )
-    assert ratio == pytest.approx(expected)
-    assert ratio > 1.0
+    assert _latest_metric(trainer, "mp/candidate_tokens_scored_mean") > 0.0
+    assert _latest_metric(
+        trainer, "mp/schema_open_tokens_scored_mean"
+    ) == pytest.approx(0.0)
 
 
 def test_return_outputs_uses_explicit_batch_aligned_aggregate_output() -> None:
@@ -576,22 +627,18 @@ def test_return_outputs_uses_explicit_batch_aligned_aggregate_output() -> None:
     assert outputs["set_continuation_outputs"] == "aggregate_loss_only"
 
 
-def test_numeric_estimator_and_branch_semantics_metrics_are_emitted() -> None:
+def test_compact_objective_metrics_are_emitted() -> None:
     trainer = _trainer(_cfg())
     model = _FakeModel()
     trainer.model = model
 
     trainer.compute_loss(model, _batch(), return_outputs=False)
 
-    assert _latest_metric(trainer, "mp/logZ_estimator") == pytest.approx(0.0)
-    assert _latest_metric(trainer, "mp/candidate_scoring_mode") == pytest.approx(0.0)
-    assert _latest_metric(trainer, "mp/prefix_attach_mode") == pytest.approx(0.0)
-    assert _latest_metric(trainer, "mp/branch_isolation") == pytest.approx(0.0)
-    assert _latest_metric(trainer, "mp/prefix_gradient") == pytest.approx(0.0)
-    assert _latest_metric(trainer, "mp/prefix_tokens_mean") > 0.0
-    assert _latest_metric(trainer, "mp/branch_forwards_per_sample") == pytest.approx(
-        3.0
-    )
+    assert _latest_metric(
+        trainer, "mp/objective_contributing_samples"
+    ) == pytest.approx(1.0)
+    assert _latest_metric(trainer, "mp/candidate_tokens_scored_mean") > 0.0
+    assert "mp/logZ_estimator" not in trainer.custom_metrics["train"]
 
 
 def test_trainer_pads_candidate_forwards_to_distributed_max_count() -> None:
@@ -620,16 +667,7 @@ def test_checkpointed_exact_runtime_pads_candidate_forwards_through_selected_run
 
     assert torch.isfinite(loss)
     assert len(model.calls) == 5
-    assert _latest_metric(trainer, "mp/branch_runtime_mode") == pytest.approx(1.0)
-    assert _latest_metric(
-        trainer, "mp/retained_graph_branch_forwards"
-    ) == pytest.approx(0.0)
-    assert _latest_metric(trainer, "mp/checkpointed_branch_forwards") == pytest.approx(
-        4.0
-    )
-    assert _latest_metric(
-        trainer, "mp/ddp_candidate_padding_forwards"
-    ) == pytest.approx(2.0)
+    assert _latest_metric(trainer, "mp/num_candidates_scored") == pytest.approx(2.0)
 
 
 def test_smart_batched_exact_runtime_batches_candidate_forwards() -> None:
@@ -653,21 +691,7 @@ def test_smart_batched_exact_runtime_batches_candidate_forwards() -> None:
     assert len(model.calls) == 2  # one candidate batch plus close-start metric branch
     assert model.calls[0]["input_ids"].shape[0] == 2
     assert int(model.calls[0].get("logits_to_keep") or 0) > 0
-    assert _latest_metric(trainer, "mp/branch_runtime_mode") == pytest.approx(2.0)
-    assert _latest_metric(
-        trainer, "mp/retained_graph_branch_forwards"
-    ) == pytest.approx(0.0)
-    assert _latest_metric(trainer, "mp/checkpointed_branch_forwards") == pytest.approx(
-        0.0
-    )
-    assert _latest_metric(trainer, "mp/smart_batched_branch_forwards") == pytest.approx(
-        1.0
-    )
-    assert _latest_metric(trainer, "mp/branch_batch_count") == pytest.approx(1.0)
-    assert _latest_metric(trainer, "mp/branch_batch_rows_max") == pytest.approx(2.0)
-    assert _latest_metric(
-        trainer, "mp/ddp_candidate_padding_forwards"
-    ) == pytest.approx(0.0)
+    assert _latest_metric(trainer, "mp/num_candidates_scored") == pytest.approx(2.0)
 
 
 def test_smart_batched_exact_matches_retained_graph_mp_and_logz_metrics() -> None:
@@ -702,11 +726,9 @@ def test_smart_batched_exact_matches_retained_graph_mp_and_logz_metrics() -> Non
     assert torch.allclose(retained_loss.detach(), smart_loss.detach(), atol=1e-6)
     for key in (
         "loss/candidate_balanced",
-        "loss/mp",
-        "loss/mp_diagnostic",
-        "mp/logZ_scored_raw",
-        "mp/logZ_remaining_est",
-        "mp/responsibility_entropy_scored",
+        "loss/schema_open",
+        "mp/candidate_tokens_scored_mean",
+        "mp/schema_open_tokens_scored_mean",
     ):
         assert _latest_metric(smart_trainer, key) == pytest.approx(
             _latest_metric(retained_trainer, key),
@@ -758,18 +780,7 @@ def test_supervised_suffix_runtime_scores_without_full_prefix_logits() -> None:
     assert torch.isfinite(loss)
     assert len(model.calls) == 3
     assert all(int(call.get("logits_to_keep") or 0) > 0 for call in model.calls)
-    assert _latest_metric(
-        trainer, "mp/ddp_candidate_padding_forwards"
-    ) == pytest.approx(0.0)
-    assert _latest_metric(
-        trainer, "mp/ddp_candidate_forward_local_count"
-    ) == pytest.approx(2.0)
-    assert _latest_metric(
-        trainer, "mp/ddp_candidate_forward_max_count"
-    ) == pytest.approx(4.0)
-    assert _latest_metric(trainer, "mp/ddp_candidate_padding_policy") == pytest.approx(
-        1.0
-    )
+    assert _latest_metric(trainer, "mp/num_candidates_scored") == pytest.approx(2.0)
 
 
 def test_budget_fallback_scores_subset_and_reports_approximate_fidelity() -> None:
@@ -803,13 +814,7 @@ def test_budget_fallback_scores_subset_and_reports_approximate_fidelity() -> Non
     assert _latest_metric(
         trainer, "mp/objective_fidelity_exact_samples"
     ) == pytest.approx(0.0)
-    assert _latest_metric(
-        trainer, "mp/objective_fidelity_approx_samples"
-    ) == pytest.approx(1.0)
     assert _latest_metric(trainer, "mp/fallback_applied_samples") == pytest.approx(1.0)
-    assert _latest_metric(
-        trainer, "mp/fallback_reason_candidate_budget"
-    ) == pytest.approx(1.0)
 
 
 def test_set_continuation_requires_raw_metadata_batch() -> None:

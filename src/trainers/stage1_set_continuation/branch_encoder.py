@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import copy
+import json
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any
@@ -36,7 +37,11 @@ _RAW_ONLY_KEYS = {
 class EncodedSetContinuationBranch:
     branch_inputs: dict[str, Any]
     labels: torch.Tensor
+    objective_label_mask: torch.Tensor
     candidate_entry_label_mask: torch.Tensor
+    candidate_object_label_mask: torch.Tensor
+    schema_open_label_mask: torch.Tensor
+    json_structural_label_mask: torch.Tensor
     coord_label_mask: torch.Tensor
     non_coord_label_mask: torch.Tensor
     structural_close_start_mask: torch.Tensor
@@ -247,6 +252,324 @@ def _encoded_len(
     )
 
 
+def _assistant_content_token_offsets(
+    *,
+    template: Any,
+    encoded_input_ids: torch.Tensor,
+    assistant_text: str,
+) -> list[tuple[int, int, int]]:
+    tokenizer = getattr(template, "tokenizer", None)
+    if tokenizer is None or not hasattr(tokenizer, "encode") or not callable(tokenizer):
+        return []
+    tokenized = tokenizer(
+        assistant_text,
+        add_special_tokens=False,
+        return_offsets_mapping=True,
+    )
+    if not isinstance(tokenized, Mapping):
+        return []
+    input_ids_raw = tokenized.get("input_ids")
+    offsets_raw = tokenized.get("offset_mapping")
+    if not isinstance(input_ids_raw, Sequence) or not isinstance(offsets_raw, Sequence):
+        return []
+    content_ids = [int(value) for value in input_ids_raw]
+    if not content_ids:
+        return []
+    offsets: list[tuple[int, int]] = []
+    for item in offsets_raw:
+        if (
+            isinstance(item, Sequence)
+            and not isinstance(item, (str, bytes, bytearray))
+            and len(item) == 2
+        ):
+            offsets.append((int(item[0]), int(item[1])))
+    if len(offsets) != len(content_ids):
+        return []
+
+    sequence = [int(value) for value in encoded_input_ids.reshape(-1).tolist()]
+    content_len = len(content_ids)
+    for start in range(len(sequence) - content_len, -1, -1):
+        if sequence[start : start + content_len] == content_ids:
+            return [
+                (start + offset, char_start, char_end)
+                for offset, (char_start, char_end) in enumerate(offsets)
+            ]
+    return []
+
+
+def _span_mask_from_offsets(
+    *,
+    seq_len: int,
+    offsets: Sequence[tuple[int, int, int]],
+    char_start: int,
+    char_end: int,
+) -> torch.Tensor:
+    mask = torch.zeros((1, seq_len), dtype=torch.bool)
+    if char_end <= char_start:
+        return mask
+    for token_index, token_start, token_end in offsets:
+        if token_end > char_start and token_start < char_end:
+            if 0 <= int(token_index) < seq_len:
+                mask[0, int(token_index)] = True
+    return mask
+
+
+def _span_mask_for_text(
+    *,
+    template: Any,
+    base_rendered: Mapping[str, Any],
+    base_messages: Sequence[Mapping[str, Any]],
+    system_prompt: str | None,
+    full_text: str,
+    input_ids: torch.Tensor,
+    char_start: int,
+    char_end: int,
+) -> torch.Tensor:
+    seq_len = int(input_ids.shape[-1])
+    offsets = _assistant_content_token_offsets(
+        template=template,
+        encoded_input_ids=input_ids,
+        assistant_text=full_text,
+    )
+    if offsets:
+        return _span_mask_from_offsets(
+            seq_len=seq_len,
+            offsets=offsets,
+            char_start=char_start,
+            char_end=char_end,
+        )
+    start_token = _encoded_len(
+        template=template,
+        base_rendered=base_rendered,
+        base_messages=base_messages,
+        system_prompt=system_prompt,
+        assistant_text=full_text[:char_start],
+    )
+    end_token = _encoded_len(
+        template=template,
+        base_rendered=base_rendered,
+        base_messages=base_messages,
+        system_prompt=system_prompt,
+        assistant_text=full_text[:char_end],
+    )
+    return _span_mask(seq_len, start_token, end_token)
+
+
+def _mark_char_span(
+    flags: list[bool],
+    *,
+    start: int,
+    end: int,
+    value: bool,
+) -> None:
+    lower = max(0, int(start))
+    upper = min(len(flags), int(end))
+    if upper <= lower:
+        return
+    for index in range(lower, upper):
+        flags[index] = bool(value)
+
+
+def _find_matching_array_close(text: str, *, start: int, end: int) -> int:
+    depth = 0
+    for offset in range(max(0, int(start)), min(len(text), int(end))):
+        char = text[offset]
+        if char == "[":
+            depth += 1
+        elif char == "]":
+            depth -= 1
+            if depth <= 0:
+                return offset
+    return min(len(text), int(end)) - 1
+
+
+def _iter_geometry_literals(value: Any) -> list[str]:
+    if isinstance(value, Sequence) and not isinstance(value, (str, bytes, bytearray)):
+        literals: list[str] = []
+        for item in value:
+            literals.extend(_iter_geometry_literals(item))
+        return literals
+    if isinstance(value, str):
+        return [
+            value if is_coord_token(value) else json.dumps(value, ensure_ascii=False)
+        ]
+    if isinstance(value, int) and not isinstance(value, bool):
+        return [json.dumps(int(value), ensure_ascii=False)]
+    if isinstance(value, float):
+        return [json.dumps(float(value), ensure_ascii=False)]
+    return []
+
+
+def _suppress_literal_all(
+    flags: list[bool],
+    *,
+    text: str,
+    literal: str,
+    start: int,
+    end: int,
+) -> None:
+    if not literal:
+        return
+    cursor = max(0, int(start))
+    upper = min(len(text), int(end))
+    while cursor < upper:
+        found = text.find(literal, cursor, upper)
+        if found < 0:
+            return
+        _mark_char_span(
+            flags,
+            start=found,
+            end=found + len(literal),
+            value=False,
+        )
+        cursor = found + max(1, len(literal))
+
+
+def _suppress_candidate_payload_literals(
+    flags: list[bool],
+    *,
+    text: str,
+    obj: Mapping[str, Any],
+    candidate_start: int,
+    candidate_end: int,
+) -> None:
+    desc_literal = json.dumps(str(obj.get("desc", "")), ensure_ascii=False)
+    desc_key = '"desc"'
+    desc_key_pos = text.find(desc_key, candidate_start, candidate_end)
+    desc_search_start = (
+        desc_key_pos + len(desc_key) if desc_key_pos >= 0 else candidate_start
+    )
+    desc_pos = text.find(desc_literal, desc_search_start, candidate_end)
+    if desc_pos >= 0:
+        _mark_char_span(
+            flags,
+            start=desc_pos,
+            end=desc_pos + len(desc_literal),
+            value=False,
+        )
+
+    geometry_key: str | None = None
+    geometry_value: Any = None
+    if "bbox_2d" in obj:
+        geometry_key = "bbox_2d"
+        geometry_value = obj["bbox_2d"]
+    elif "poly" in obj:
+        geometry_key = "poly"
+        geometry_value = obj["poly"]
+    if geometry_key is None:
+        return
+
+    key_literal = json.dumps(geometry_key, ensure_ascii=False)
+    key_pos = text.find(key_literal, candidate_start, candidate_end)
+    if key_pos < 0:
+        return
+    array_start = text.find("[", key_pos + len(key_literal), candidate_end)
+    if array_start < 0:
+        return
+    array_end = _find_matching_array_close(
+        text,
+        start=array_start,
+        end=candidate_end,
+    )
+    for literal in _iter_geometry_literals(geometry_value):
+        _suppress_literal_all(
+            flags,
+            text=text,
+            literal=literal,
+            start=array_start,
+            end=array_end + 1,
+        )
+
+
+def _contiguous_true_spans(flags: Sequence[bool]) -> list[tuple[int, int]]:
+    spans: list[tuple[int, int]] = []
+    start: int | None = None
+    for index, value in enumerate(flags):
+        if bool(value) and start is None:
+            start = index
+        elif not bool(value) and start is not None:
+            spans.append((start, index))
+            start = None
+    if start is not None:
+        spans.append((start, len(flags)))
+    return spans
+
+
+def _char_flags_mask_for_text(
+    *,
+    template: Any,
+    base_rendered: Mapping[str, Any],
+    base_messages: Sequence[Mapping[str, Any]],
+    system_prompt: str | None,
+    full_text: str,
+    input_ids: torch.Tensor,
+    flags: Sequence[bool],
+) -> torch.Tensor:
+    seq_len = int(input_ids.shape[-1])
+    mask = torch.zeros((1, seq_len), dtype=torch.bool)
+    offsets = _assistant_content_token_offsets(
+        template=template,
+        encoded_input_ids=input_ids,
+        assistant_text=full_text,
+    )
+    if offsets:
+        for token_index, token_start, token_end in offsets:
+            start = max(0, int(token_start))
+            end = min(len(flags), int(token_end))
+            if end > start and any(bool(value) for value in flags[start:end]):
+                if 0 <= int(token_index) < seq_len:
+                    mask[0, int(token_index)] = True
+        return mask
+
+    for start, end in _contiguous_true_spans(flags):
+        mask |= _span_mask_for_text(
+            template=template,
+            base_rendered=base_rendered,
+            base_messages=base_messages,
+            system_prompt=system_prompt,
+            full_text=full_text,
+            input_ids=input_ids,
+            char_start=start,
+            char_end=end,
+        )
+    return mask
+
+
+def _json_structural_mask_for_text(
+    *,
+    template: Any,
+    base_rendered: Mapping[str, Any],
+    base_messages: Sequence[Mapping[str, Any]],
+    system_prompt: str | None,
+    full_text: str,
+    input_ids: torch.Tensor,
+    objective_start: int,
+    objective_end: int,
+    candidate_object_start: int,
+    candidate_object_end: int,
+    candidate_object: Mapping[str, Any] | None,
+) -> torch.Tensor:
+    flags = [False for _ in full_text]
+    _mark_char_span(flags, start=objective_start, end=objective_end, value=True)
+    if candidate_object is not None:
+        _suppress_candidate_payload_literals(
+            flags,
+            text=full_text,
+            obj=candidate_object,
+            candidate_start=candidate_object_start,
+            candidate_end=candidate_object_end,
+        )
+    return _char_flags_mask_for_text(
+        template=template,
+        base_rendered=base_rendered,
+        base_messages=base_messages,
+        system_prompt=system_prompt,
+        full_text=full_text,
+        input_ids=input_ids,
+        flags=flags,
+    )
+
+
 def _token_strings_for_labels(template: Any, labels: torch.Tensor) -> list[str | None]:
     tokenizer = getattr(template, "tokenizer", None)
     if tokenizer is None or not hasattr(tokenizer, "convert_ids_to_tokens"):
@@ -288,14 +611,21 @@ def encode_set_continuation_branch(
         object_field_order=object_field_order,
     )
     if candidate_index is None:
+        candidate_object = None
         prefix = build_close_prefix_text(rendered_objects, prefix_indices)
         continuation = build_global_close_text()
         continuation_text = continuation.text
+        objective_start = objective_end = len(prefix.text)
         candidate_start = candidate_end = len(prefix.text)
+        candidate_object_start = candidate_object_end = len(prefix.text)
+        schema_open_start = schema_open_end = len(prefix.text)
         close_sequence_start = candidate_end
+        close_sequence_end = close_sequence_start + len(continuation.text)
+        close_start_char_end = close_sequence_start + 1
         close_start_text = prefix.text + continuation.text[:1]
         full_text = prefix.text + continuation.text
     else:
+        candidate_object = assistant_objects[int(candidate_index)]
         prefix = build_prefix_text(rendered_objects, prefix_indices)
         candidate = build_candidate_entry_text(
             rendered_objects,
@@ -307,9 +637,17 @@ def encode_set_continuation_branch(
                 "set-continuation candidate branch must contain coord-token geometry"
             )
         continuation_text = candidate.text
+        objective_start = 0 if not prefix_indices else len(prefix.text)
+        objective_end = len(prefix.text) + candidate.post_candidate_span.end
         candidate_start = len(prefix.text)
         close_sequence_start = candidate_start + candidate.candidate_span.end
+        close_sequence_end = candidate_start + candidate.global_full_close_span.end
+        close_start_char_end = candidate_start + candidate.global_close_start_span.end
         candidate_end = candidate_start + candidate.post_candidate_span.end
+        candidate_object_start = candidate_start + candidate.candidate_span.start
+        candidate_object_end = candidate_start + candidate.candidate_span.end
+        schema_open_start = 0
+        schema_open_end = len(prefix.text) if not prefix_indices else 0
         close_start_text = (
             prefix.text + candidate.text[: candidate.global_close_start_span.end]
             if candidate.continuation_mode == "close"
@@ -335,53 +673,72 @@ def encode_set_continuation_branch(
     labels = branch_inputs["labels"]
     seq_len = int(input_ids.shape[-1])
 
-    candidate_start_token = _encoded_len(
+    objective_mask = _span_mask_for_text(
         template=template,
         base_rendered=rendered,
         base_messages=base_messages,
         system_prompt=system_prompt,
-        assistant_text=full_text[:candidate_start],
+        full_text=full_text,
+        input_ids=input_ids,
+        char_start=objective_start,
+        char_end=objective_end,
     )
-    candidate_end_token = _encoded_len(
+    candidate_object_mask = _span_mask_for_text(
         template=template,
         base_rendered=rendered,
         base_messages=base_messages,
         system_prompt=system_prompt,
-        assistant_text=full_text[:candidate_end],
+        full_text=full_text,
+        input_ids=input_ids,
+        char_start=candidate_object_start,
+        char_end=candidate_object_end,
     )
-    close_sequence_start_token = _encoded_len(
+    schema_open_mask = _span_mask_for_text(
         template=template,
         base_rendered=rendered,
         base_messages=base_messages,
         system_prompt=system_prompt,
-        assistant_text=full_text[:close_sequence_start],
+        full_text=full_text,
+        input_ids=input_ids,
+        char_start=schema_open_start,
+        char_end=schema_open_end,
     )
-    close_sequence_end_token = _encoded_len(
+    json_structural_mask = _json_structural_mask_for_text(
         template=template,
         base_rendered=rendered,
         base_messages=base_messages,
         system_prompt=system_prompt,
-        assistant_text=full_text,
+        full_text=full_text,
+        input_ids=input_ids,
+        objective_start=objective_start,
+        objective_end=objective_end,
+        candidate_object_start=candidate_object_start,
+        candidate_object_end=candidate_object_end,
+        candidate_object=candidate_object,
     )
-    if close_start_text:
-        close_start_token = _encoded_len(
+    close_sequence_mask = (
+        _span_mask_for_text(
             template=template,
             base_rendered=rendered,
             base_messages=base_messages,
             system_prompt=system_prompt,
-            assistant_text=close_start_text,
+            full_text=full_text,
+            input_ids=input_ids,
+            char_start=close_sequence_start,
+            char_end=close_sequence_end,
         )
-    else:
-        close_start_token = close_sequence_start_token
-
-    candidate_mask = _span_mask(seq_len, candidate_start_token, candidate_end_token)
-    close_sequence_mask = (
-        _span_mask(seq_len, close_sequence_start_token, close_sequence_end_token)
         if close_start_text
         else torch.zeros((1, seq_len), dtype=torch.bool)
     )
-    close_start_mask = _span_mask(
-        seq_len, close_sequence_start_token, close_start_token
+    close_start_mask = _span_mask_for_text(
+        template=template,
+        base_rendered=rendered,
+        base_messages=base_messages,
+        system_prompt=system_prompt,
+        full_text=full_text,
+        input_ids=input_ids,
+        char_start=close_sequence_start,
+        char_end=close_start_char_end,
     )
     if not bool(close_start_mask.any().item()) and bool(
         close_sequence_mask.any().item()
@@ -392,21 +749,25 @@ def encode_set_continuation_branch(
         first_close = close_sequence_mask.nonzero(as_tuple=False)[0]
         close_start_mask[int(first_close[0]), int(first_close[1])] = True
 
-    coord_mask = torch.zeros_like(candidate_mask)
+    coord_mask = torch.zeros_like(objective_mask)
     token_strings = _token_strings_for_labels(template, labels)
     for index, token in enumerate(token_strings):
         if (
-            candidate_mask.reshape(-1)[index]
+            objective_mask.reshape(-1)[index]
             and token is not None
             and is_coord_token(token)
         ):
             coord_mask.reshape(-1)[index] = True
-    non_coord_mask = candidate_mask & ~coord_mask
+    non_coord_mask = objective_mask & ~coord_mask
 
     return EncodedSetContinuationBranch(
         branch_inputs=branch_inputs,
         labels=labels,
-        candidate_entry_label_mask=candidate_mask,
+        objective_label_mask=objective_mask,
+        candidate_entry_label_mask=objective_mask,
+        candidate_object_label_mask=candidate_object_mask,
+        schema_open_label_mask=schema_open_mask,
+        json_structural_label_mask=json_structural_mask,
         coord_label_mask=coord_mask,
         non_coord_label_mask=non_coord_mask,
         structural_close_start_mask=close_start_mask,

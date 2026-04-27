@@ -15,9 +15,13 @@ class CandidateLogProbResult:
     score: torch.Tensor
     coord_score: torch.Tensor
     non_coord_score: torch.Tensor
+    schema_score: torch.Tensor
+    json_structural_score: torch.Tensor
     tokens: int
     coord_tokens: int
     non_coord_tokens: int
+    schema_tokens: int
+    json_structural_tokens: int
 
 
 @dataclass(frozen=True)
@@ -94,6 +98,8 @@ def compute_candidate_full_entry_logprob(
     candidate_entry_label_mask: torch.Tensor,
     coord_label_mask: torch.Tensor,
     coord_token_ids: torch.Tensor,
+    schema_open_label_mask: torch.Tensor | None = None,
+    json_structural_label_mask: torch.Tensor | None = None,
 ) -> CandidateLogProbResult:
     """Score one full serialized candidate entry.
 
@@ -108,8 +114,22 @@ def compute_candidate_full_entry_logprob(
         candidate_entry_label_mask,
     )
     _, _, coord_mask = _shift_for_next_token(logits, labels, coord_label_mask)
+    if schema_open_label_mask is None:
+        schema_mask = torch.zeros_like(candidate_mask)
+    else:
+        _, _, schema_mask = _shift_for_next_token(
+            logits, labels, schema_open_label_mask
+        )
+    if json_structural_label_mask is None:
+        json_structural_mask = torch.zeros_like(candidate_mask)
+    else:
+        _, _, json_structural_mask = _shift_for_next_token(
+            logits, labels, json_structural_label_mask
+        )
     valid_mask = candidate_mask & shift_labels.ne(-100)
     coord_mask = coord_mask & valid_mask
+    schema_mask = schema_mask & valid_mask
+    json_structural_mask = json_structural_mask & valid_mask
     non_coord_mask = valid_mask & ~coord_mask
 
     zero = logits.new_zeros(())
@@ -129,13 +149,21 @@ def compute_candidate_full_entry_logprob(
         coord_score = zero
 
     score = coord_score + non_coord_score
+    schema_score = full_logprob[schema_mask].sum() if schema_mask.any() else zero
+    json_structural_score = (
+        full_logprob[json_structural_mask].sum() if json_structural_mask.any() else zero
+    )
     return CandidateLogProbResult(
         score=score,
         coord_score=coord_score,
         non_coord_score=non_coord_score,
+        schema_score=schema_score,
+        json_structural_score=json_structural_score,
         tokens=int(valid_mask.sum().item()),
         coord_tokens=int(coord_mask.sum().item()),
         non_coord_tokens=int(non_coord_mask.sum().item()),
+        schema_tokens=int(schema_mask.sum().item()),
+        json_structural_tokens=int(json_structural_mask.sum().item()),
     )
 
 

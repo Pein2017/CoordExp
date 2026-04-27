@@ -102,6 +102,35 @@ def test_candidate_budget_falls_back_to_uniform_subset() -> None:
     assert first.logz_estimator == "sampled_raw"
 
 
+def test_candidate_budget_fallback_keeps_tail_positive_candidate() -> None:
+    cfg = _cfg(
+        {
+            "budget_policy": {
+                "enabled": True,
+                "exact_until": {"max_candidates": 3},
+                "fallback": {
+                    "mode": "approximate_uniform_subsample",
+                    "max_candidates": 2,
+                    "estimator": "uniform_importance",
+                },
+            }
+        }
+    )
+
+    plan = plan_candidate_execution(
+        sample=_sample(5),
+        cfg=cfg,
+        sample_seed_parts=("unit", 0),
+        prefix_tokens=100,
+        candidate_token_lengths=[10, 10, 10, 10, 10],
+        memory_free_gib=None,
+    )
+
+    assert len(plan.selected_candidate_indices) == 2
+    assert 4 in plan.selected_candidate_indices
+    assert plan.objective_fidelity == "approximate_uniform_subsample"
+
+
 def test_token_budget_fallback_records_token_reason() -> None:
     cfg = _cfg(
         {
