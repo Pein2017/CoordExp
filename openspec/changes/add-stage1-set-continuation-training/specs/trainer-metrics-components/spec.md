@@ -29,40 +29,23 @@ Normative behavior:
   pressure, token volume, and padding waste so production runs can distinguish
   useful GPU utilization from padded waste.
 
-Required variant-specific families include:
-- `loss/mp`, `loss/mp_diagnostic`, `loss/pem`,
-  `loss/anti_close_start`, `loss/weak_schema_close`,
-- `mp/logZ_scored_raw`, `mp/logZ_remaining_exact`,
-  `mp/logZ_remaining_est`, `mp/logZ_estimator`,
-- `mp/candidate_entry_tokens_*`, `mp/candidate_logprob_sum_*`,
-  `mp/candidate_logprob_per_token_*`,
-- `mp/candidate_coord_token_fraction_*`,
-  `mp/candidate_logprob_per_coord_token_*`,
-  `mp/candidate_logprob_per_noncoord_token_*`,
-  `mp/valid_length_corr_samples`,
-- `mp/branch_forwards_per_sample`, `mp/total_candidate_tokens_scored`,
-  `mp/repeated_forward_token_ratio_vs_baseline`,
-- `mp/branch_runtime_mode`, `mp/checkpointed_branch_forwards`,
-  `mp/retained_graph_branch_forwards`,
-- `mp/smart_batched_branch_forwards`, `mp/branch_batch_count`,
-  `mp/branch_batch_rows_mean`, `mp/branch_batch_rows_max`,
-  `mp/branch_batch_tokens_mean`, `mp/branch_batch_tokens_max`,
-  `mp/branch_batch_padding_fraction`, `mp/branch_batch_scheduler`,
-- `mp/ddp_candidate_padding_policy`,
-  `mp/ddp_candidate_forward_local_count`,
-  `mp/ddp_candidate_forward_max_count`,
-  `mp/ddp_candidate_padding_forwards`,
-- `mp/objective_fidelity_exact_samples`,
-  `mp/objective_fidelity_approx_samples`, `mp/fallback_applied_samples`,
-  `mp/fallback_reason_candidate_budget`,
-  `mp/fallback_reason_token_budget`,
-  `mp/fallback_reason_memory_budget`,
-- `mp/prefix_encoding_cache_hits`, `mp/prefix_encoding_cache_misses`,
+Required variant-specific compact v2 families include:
+- `loss/candidate_balanced`, `loss/schema_open`,
+  `loss/json_structural`, `loss/anti_close_start`,
+  `loss/weak_schema_close`,
+- `mp/num_prefix_objects`, `mp/num_remaining_objects`,
+  `mp/num_candidates_scored`, `mp/candidate_tokens_scored_mean`,
+  `mp/schema_open_tokens_scored_mean`,
+  `mp/json_structural_tokens_scored_mean`,
+  `mp/annotation_completeness_weight_mean`,
+  `mp/final_close_weight_mean`, `mp/tail_positive_samples`,
+  `mp/final_gt_object_scored_samples`,
+- `mp/objective_fidelity_exact_samples`, `mp/fallback_applied_samples`,
+  `mp/objective_contributing_samples`,
+- `mp/selected_mode_empty_prefix`, `mp/selected_mode_full_prefix`,
 - `stop/p_close_start_when_remaining_exists`,
   `stop/p_continue_start_when_remaining_exists`,
-  `stop/p_close_start_when_remaining_empty`,
-  `stop/logp_close_sequence_when_remaining_empty`,
-  `stop/p_final_schema_token_teacher_forced`.
+  `stop/p_close_start_when_remaining_empty`.
 
 #### Scenario: Ordinary Stage-1 does not emit MP metrics
 - **GIVEN** ordinary Stage-1 SFT

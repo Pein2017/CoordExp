@@ -160,8 +160,9 @@ ordinary fixed-order next-object SFT.
 The object-level objective is:
 
 ```text
+schema_open = '{"objects": [' if prefix is empty else ''
 boundary(o) = ", " if observed objects remain after appending o else "]}"
-score(o) = log P(entry(o) + boundary(o) | image, prompt, prefix)
+score(o) = log P(schema_open + entry(o) + boundary(o) | image, prompt, prefix)
 candidate_ce(o) = -score(o) / max(candidate_continuation_tokens(o), 1)
 loss/candidate_balanced = mean(candidate_ce(o) for o in scored_candidates)
 loss/mp_diagnostic = -logsumexp(score(o) for o in scored_candidates)
@@ -174,6 +175,12 @@ Important semantics:
 - `boundary(o)` is part of the scored continuation. A non-terminal candidate is
   scored with its append boundary `, `; only a candidate that exhausts the
   observed remaining set is scored with the global CoordJSON close `]}`.
+- Empty-prefix branches score the generated schema opener `{"objects": [` as
+  part of the optimized objective. This keeps training aligned with eval-time
+  free generation, where the model must produce the wrapper before any object.
+- Span masks are computed by tokenizer offset overlap inside the fully rendered
+  chat-template assistant text. This preserves merged boundary tokens such as
+  opener/object tokens that cross a string-span boundary.
 - Candidate scoring is full-entry, not token-wise multi-positive mixing, but
   the optimized production objective averages per-candidate token-normalized
   continuation CE. This prevents the old MP/logZ objective from concentrating
@@ -231,7 +238,7 @@ Candidate modes:
 - The current implementation does not enforce a same-budget controller.
   `same_budget_label` in the checked-in production config is an authored
   benchmark note; realized budget is reported through
-  `mp/repeated_forward_token_ratio_vs_baseline`.
+  the compact v2 metric set documented in `docs/training/METRICS.md`.
 
 Structural-close controls:
 
@@ -256,9 +263,9 @@ positive_evidence_margin:
   objective: disabled
 ```
 
-When `objective: disabled`, `loss/mp` is a compatibility alias for the
-optimized candidate-balanced continuation loss and `loss/mp_diagnostic` records
-the old full-entry logZ MP loss without adding it to the total objective.
+When `objective: disabled`, the optimized production objective is
+`loss/candidate_balanced`; old MP/logZ quantities remain internal diagnostics
+and are not emitted in the compact v2 metric surface.
 
 Current parser contract: `objective=threshold_loss` requires `log_rho` and a
 non-empty `threshold_calibration` provenance string. Fixed probability-space
@@ -308,9 +315,13 @@ output_remote/stage1_2b/coco_bbox_max60-hard_ce_soft_ce_w1_gate/epoch_4-from-bas
 The profile enables exact selected-candidate scoring with candidate-balanced
 token-normalized continuation CE, the `30/45/20/5`
 empty/random/leave-one-out/full prefix mixture, valid close-ready prefix
-suppression when observed GT remains, small final schema close supervision, and
-MP/logZ diagnostics only. PEM threshold loss is disabled in production. It
-remains 2B, COCO80 desc-first, coord-token-only,
+suppression when observed GT remains, structural JSON auxiliary CE, tail-positive
+candidate protection under cap-8 fallback, small annotation-completeness-weighted
+final schema close supervision, and MP/logZ diagnostics only. The completeness
+weights are derived from the original checkpoint `val200` rollout by treating
+COCO-real localization FPs as likely unlabeled objects and using monotone
+`gt / (gt + fp_loc)` buckets by GT count. PEM threshold loss is disabled in
+production. It remains 2B, COCO80 desc-first, coord-token-only,
 `val200`/`f1ish_annotated`, and `training.packing: false`.
 
 Because this run continues from an already four-epoch fine-tuned SOTA

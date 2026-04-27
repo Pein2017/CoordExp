@@ -547,13 +547,23 @@ loss/anti_close_start = -log(1 - P_close_start(S))
 When `R == empty`, optionally apply weak structural-close supervision:
 
 ```text
-loss/weak_schema_close = final_schema_close_weight * (-logP_close_sequence(S))
+loss/weak_schema_close =
+  final_schema_close_weight
+  * annotation_completeness_weight(S)
+  * (-logP_close_sequence(S))
 ```
 
 Initial recommendation:
 
 - `close_start_suppression_weight` configurable, default off or small for safe ablation;
 - `final_schema_close_weight` configurable, default `0.0` for sparse-label experiments;
+- `annotation_completeness_weight(S)` may be estimated from an original
+  checkpoint rollout by treating localization FPs as likely unlabeled objects
+  and using monotone `gt / (gt + fp_loc)` buckets by GT count;
+- `json_structural_weight` adds structural CoordJSON CE over schema/key,
+  punctuation, object/list boundary, and post-candidate boundary tokens while
+  leaving desc payload text and coordinate values to the main candidate
+  objective;
 - object-entry terminators remain part of candidate-entry CE;
 - stop mass includes only the configured structural closure schema, not chat/EOS tokens and not object-close tokens.
 
@@ -654,77 +664,35 @@ Set-continuation runs must preserve the existing training artifact family and ad
 
 ### 9. Metrics
 
-Minimum logs:
+Minimum emitted logs use the compact v2 schema:
 
-- `loss/mp`;
-- `loss/pem`;
-- `loss/mp_diagnostic`;
+- `loss/candidate_balanced`;
+- `loss/schema_open`;
+- `loss/json_structural`;
 - `loss/anti_close_start`;
 - `loss/weak_schema_close`;
-- `loss/aux_coord_soft_ce_w1`;
-- `loss/aux_bbox_geo`;
-- `loss/aux_bbox_size`;
 - `mp/num_prefix_objects`;
 - `mp/num_remaining_objects`;
 - `mp/num_candidates_scored`;
-- `mp/scored_candidate_fraction`;
-- `mp/samples_with_candidates`;
-- `mp/samples_full_prefix`;
-- `mp/loss_mp_denominator_samples`;
-- `mp/candidate_scoring_mode`;
-- `mp/logZ_scored_raw`;
-- `mp/logZ_remaining_exact`;
-- `mp/logZ_remaining_est`;
-- `mp/logZ_estimator`;
-- `mp/responsibility_entropy_scored`;
-- `mp/max_responsibility_scored`;
-- `mp/min_responsibility_scored`;
-- `mp/candidate_logprob_sum_mean`;
-- `mp/candidate_logprob_sum_min`;
-- `mp/candidate_logprob_sum_max`;
-- `mp/candidate_logprob_sum_std`;
-- `mp/candidate_logprob_per_token_mean`;
-- `mp/candidate_logprob_per_token_min`;
-- `mp/candidate_logprob_per_token_max`;
-- `mp/candidate_logprob_per_token_std`;
-- `mp/candidate_coord_token_fraction_mean`;
-- `mp/candidate_coord_token_fraction_min`;
-- `mp/candidate_coord_token_fraction_max`;
-- `mp/candidate_coord_token_fraction_std`;
-- `mp/candidate_logprob_per_coord_token_mean`;
-- `mp/candidate_logprob_per_noncoord_token_mean`;
-- `mp/candidate_entry_tokens_mean`;
-- `mp/candidate_entry_tokens_min`;
-- `mp/candidate_entry_tokens_max`;
-- `mp/candidate_entry_tokens_std`;
-- `mp/responsibility_vs_length_corr`;
-- `mp/valid_length_corr_samples`;
-- `mp/branch_forwards_per_sample`;
-- `mp/prefix_tokens_mean`;
 - `mp/candidate_tokens_scored_mean`;
-- `mp/total_candidate_tokens_scored`;
-- `mp/repeated_forward_token_ratio_vs_baseline`;
-- `mp/branch_runtime_mode`;
+- `mp/schema_open_tokens_scored_mean`;
+- `mp/json_structural_tokens_scored_mean`;
+- `mp/annotation_completeness_weight_mean`;
+- `mp/final_close_weight_mean`;
+- `mp/tail_positive_samples`;
+- `mp/final_gt_object_scored_samples`;
 - `mp/objective_fidelity_exact_samples`;
-- `mp/objective_fidelity_approx_samples`;
 - `mp/fallback_applied_samples`;
-- `mp/fallback_reason_candidate_budget`;
-- `mp/fallback_reason_token_budget`;
-- `mp/fallback_reason_memory_budget`;
-- `mp/checkpointed_branch_forwards`;
-- `mp/retained_graph_branch_forwards`;
-- `mp/prefix_encoding_cache_hits`;
-- `mp/prefix_encoding_cache_misses`;
+- `mp/selected_mode_empty_prefix`;
+- `mp/selected_mode_full_prefix`;
+- `mp/objective_contributing_samples`;
 - `stop/p_close_start_when_remaining_exists`;
 - `stop/p_continue_start_when_remaining_exists`;
-- `stop/p_close_start_when_remaining_empty`;
-- `stop/logp_close_sequence_when_remaining_empty`;
-- `stop/p_final_schema_token_teacher_forced`;
-- `aux/<name>/candidate_count`;
-- `aux/<name>/position_count`;
-- `aux/<name>/skipped_candidates`;
-- `aux/<name>/contributing_candidates`;
-- per-object coverage statistics if feasible without expensive bookkeeping.
+- `stop/p_close_start_when_remaining_empty`.
+
+LogZ, responsibility, branch-runtime, DDP, prefix-cache, and aux counters may be
+computed internally or written to debug artifacts, but they are not production
+emitted metrics in schema v2.
 
 Responsibility is:
 

@@ -326,121 +326,61 @@ metric family. These keys are not expected from ordinary Stage-1 SFT, and
 ordinary metric-key parity tests assert that MP keys do not leak into the
 baseline trainer.
 
+Schema v2 is intentionally compact. The trainer may compute additional
+internal diagnostics, but emitted `custom_metrics` only include the following
+action-facing keys.
+
 Objective atoms:
 
 - `loss/candidate_balanced`: optimized per-candidate token-normalized
-  continuation CE for the repaired production profile. The scored continuation
-  includes the object entry plus the immediate post-candidate boundary: `, ` for
+  continuation CE. Empty-prefix branches score the generated schema opener
+  `{"objects": [` before the first candidate; all candidate branches score the
+  object entry plus the immediate post-candidate boundary: `, ` for
   non-terminal candidates and `]}` for terminal candidates.
-- `loss/mp`: compatibility alias for `loss/candidate_balanced` when PEM is
-  disabled. It is no longer the full-entry logZ MP objective in the repaired
-  production profile.
-- `loss/mp_diagnostic`: full-entry logZ MP loss logged as a diagnostic. It does
-  not contribute to the optimized total when PEM is disabled.
-- `loss/pem`: positive-evidence margin loss when
-  `positive_evidence_margin.objective=threshold_loss`.
+- `loss/schema_open`: mean NLL over schema-opener tokens scored by empty-prefix
+  branches. Non-empty-prefix branches contribute zero schema-open tokens.
+- `loss/json_structural`: weighted auxiliary CE over CoordJSON structural
+  tokens inside the scored continuation span. This includes schema/key,
+  punctuation, array/object boundary, and append/close boundary tokens, while
+  excluding description payload text and coordinate values.
 - `loss/anti_close_start`: weighted close-start suppression objective when
   observed GT remains.
-- `loss/anti_stop`: compatibility alias for `loss/anti_close_start`.
 - `loss/weak_schema_close`: weighted weak global CoordJSON close-sequence loss
-  for empty-remaining prefixes.
-- `loss/eod`: compatibility alias for weak structural-close loss in this v1
-  surface. It does not mean chat-template EOS.
-- `loss/aux_coord_soft_ce_w1`: branch-local coord auxiliary loss, averaged
-  uniformly over scored candidates with valid coord atoms.
-- `loss/aux_bbox_geo`: branch-local bbox geometry auxiliary loss, averaged
-  uniformly over scored candidates with valid bbox atoms.
-- `loss/aux_bbox_size`: branch-local bbox size auxiliary loss, averaged
-  uniformly over scored candidates with valid bbox atoms.
+  for empty-remaining prefixes, multiplied by the configured
+  annotation-completeness weight when enabled.
 
 Prefix and candidate state:
 
 - `mp/num_prefix_objects`
 - `mp/num_remaining_objects`
 - `mp/num_candidates_scored`
-- `mp/scored_candidate_fraction`
-- `mp/samples_with_candidates`
-- `mp/samples_full_prefix`
-- `mp/loss_mp_denominator_samples`
-- `mp/objective_contributing_samples`
+- `mp/candidate_tokens_scored_mean`
+- `mp/schema_open_tokens_scored_mean`
+- `mp/json_structural_tokens_scored_mean`
+- `mp/annotation_completeness_weight_mean`
+- `mp/final_close_weight_mean`
+- `mp/tail_positive_samples`
+- `mp/final_gt_object_scored_samples`
+- `mp/objective_fidelity_exact_samples`
+- `mp/fallback_applied_samples`
 - `mp/selected_mode_empty_prefix`
-- `mp/selected_mode_random_subset`
-- `mp/selected_mode_leave_one_out`
 - `mp/selected_mode_full_prefix`
-- `mp/configured_ratio_<mode>`
-- `mp/resolved_valid_ratio_<mode>`
-
-Branch semantics and estimators use numeric codes in trainer metrics and
-string values in run artifacts:
-
-- `mp/candidate_scoring_mode`: `0=exact`, `1=uniform_subsample`.
-- `mp/logZ_estimator`: `0=exact`, `1=sampled_raw`, `2=uniform_importance`.
-- `mp/prefix_attach_mode`: `0=repeated_forward`.
-- `mp/branch_isolation`: `0=independent_forward`.
-- `mp/prefix_gradient`: `0=non_detached_recomputed_per_branch`.
-
-LogZ and responsibility diagnostics:
-
-- `mp/logZ_scored_raw`
-- `mp/logZ_remaining_exact`
-- `mp/logZ_remaining_est`
-- `mp/logZ_remaining`
-- `mp/responsibility_entropy`
-- `mp/responsibility_entropy_scored`
-- `mp/effective_candidate_count`
-- `mp/effective_candidate_fraction`
-- `mp/max_responsibility`
-- `mp/max_responsibility_scored`
-- `mp/min_responsibility`
-- `mp/min_responsibility_scored`
-- `mp/valid_length_corr_samples`
-- `mp/responsibility_vs_length_corr`
-
-Candidate continuation logprob statistics:
-
-- `mp/candidate_entry_tokens_mean`
-- `mp/candidate_entry_tokens_min`
-- `mp/candidate_entry_tokens_max`
-- `mp/candidate_entry_tokens_std`
-- `mp/candidate_logprob_sum_mean`
-- `mp/candidate_logprob_sum_min`
-- `mp/candidate_logprob_sum_max`
-- `mp/candidate_logprob_sum_std`
-- `mp/candidate_logprob_per_token_mean`
-- `mp/candidate_logprob_per_token_min`
-- `mp/candidate_logprob_per_token_max`
-- `mp/candidate_logprob_per_token_std`
-- `mp/candidate_coord_token_fraction_mean`
-- `mp/candidate_coord_token_fraction_min`
-- `mp/candidate_coord_token_fraction_max`
-- `mp/candidate_coord_token_fraction_std`
-- `mp/candidate_logprob_per_coord_token_mean`
-- `mp/candidate_logprob_per_noncoord_token_mean`
+- `mp/objective_contributing_samples`
 
 Stop/continue diagnostics:
 
 - `stop/p_close_start_when_remaining_exists`
 - `stop/p_continue_start_when_remaining_exists`
-- `stop/p_stop_when_remaining_exists`
-- `stop/p_continue_when_remaining_exists`
 - `stop/p_close_start_when_remaining_empty`
-- `stop/p_stop_when_remaining_empty`
-- `stop/logp_close_sequence_when_remaining_empty`
-- `stop/p_final_schema_token_teacher_forced`
 
-Budget diagnostics:
+Evaluation hygiene metrics are emitted by the Stage-1 detection eval callback
+alongside AP/F1-style metrics:
 
-- `mp/prefix_tokens_mean`
-- `mp/total_candidate_tokens_scored`
-- `mp/candidate_tokens_scored_mean`
-- `mp/repeated_forward_token_ratio_vs_baseline`
-
-Branch-local aux counters:
-
-- `aux/<name>/candidate_count`
-- `aux/<name>/position_count`
-- `aux/<name>/skipped_candidates`
-- `aux/<name>/contributing_candidates`
+- `eval_det_empty_pred`
+- `eval_det_parse_valid_rate`
+- `eval_det_start_objects_wrapper_rate`
+- `eval_det_start_bare_desc_rate`
+- `eval_det_start_coord_first_rate`
 
 Ordinary SFT Group B close-control metrics:
 

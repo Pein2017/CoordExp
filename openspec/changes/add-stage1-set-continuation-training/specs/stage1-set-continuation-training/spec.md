@@ -73,9 +73,14 @@ the candidate-score contribution.
 - **WHEN** candidate scores are computed in exact mode
 - **THEN** each `score(o)` equals the intact candidate-continuation log
   probability under the coord-aware scoring rule
+- **AND** empty-prefix branches include the generated schema opener
+  `{"objects": [` before `entry(o)`,
 - **AND** the scored continuation includes `entry(o) + ", "` when observed
   objects remain after appending `o`, or `entry(o) + "]}"` when `o` exhausts
-  the observed remaining set
+  the observed remaining set,
+- **AND** token masks are selected by tokenizer offset-overlap on the full
+  chat-template assistant text so merged opener/object/boundary tokens are not
+  dropped,
 - **AND** the optimized disabled-PEM objective is candidate-balanced
   token-normalized continuation CE,
 - **AND** `loss/mp_diagnostic = -logsumexp(score(o) for o in R)`.
@@ -96,10 +101,12 @@ Normative behavior:
   not `sample["objects"]`,
 - fragment construction MUST be index-based and emit object-index span metadata,
 - content-based substring search MUST NOT be used to identify object spans,
-- candidate-entry labels SHALL include the object-entry delimiter and
-  terminator needed for append semantics,
-- candidate-entry labels SHALL exclude global schema closure, assistant suffix,
-  EOS, and chat-template stop tokens,
+- objective labels SHALL include the schema opener for empty-prefix branches,
+  the candidate object entry, and the correct append-or-close boundary,
+- candidate-object labels SHALL include only the object entry and its local
+  object-entry terminator,
+- objective labels SHALL exclude assistant suffix, EOS, and chat-template stop
+  tokens,
 - structural-close branches SHALL use a close-ready prefix without an append
   delimiter after the last selected object.
 
@@ -109,12 +116,13 @@ Normative behavior:
 - **THEN** the renderer identifies spans by object index
 - **AND** each duplicate entry remains separately selectable as a candidate.
 
-#### Scenario: Global closure is outside candidate-entry score
+#### Scenario: Boundary-aware objective masks are distinct from object-local masks
 - **GIVEN** a candidate object entry
-- **WHEN** labels are selected for `score(o)`
-- **THEN** object-entry terminator tokens are included
-- **AND** global schema-closure tokens are excluded from the candidate-entry
-  score.
+- **WHEN** labels are selected for the optimized objective
+- **THEN** the correct append-or-close boundary is included in the objective
+  mask,
+- **AND** only the object entry is included in the candidate-object auxiliary
+  mask.
 
 ### Requirement: Subset prefix sampling is deterministic and configurable
 The trainer SHALL support configurable subset-prefix sampling with empty-prefix,
@@ -484,8 +492,12 @@ Normative behavior:
   serialization,
 - `loss/anti_close_start = -log(1 - P_close_start(S))` applies only when
   `R != empty` and its weight is non-zero,
-- `loss/weak_schema_close = final_schema_close_weight * (-logP_close_sequence(S))`
+- `loss/weak_schema_close = final_schema_close_weight * annotation_completeness_weight(S) * (-logP_close_sequence(S))`
   applies only when `R = empty` and its weight is non-zero,
+- `loss/json_structural` applies only to scored CoordJSON schema/key,
+  punctuation, object/list boundary, and post-candidate boundary label
+  positions, and MUST NOT intentionally emphasize description payload text or
+  coordinate values,
 - `<|im_end|>`, `<|end_of_text|>`, EOS, chat-template stops, and object-entry
   close tokens are not part of `P_close_start` or `logP_close_sequence`,
 - non-terminal candidate branches MUST use an append boundary rather than a
@@ -570,58 +582,30 @@ Normative behavior:
 The trainer SHALL emit variant-specific mechanism metrics with canonical names
 and aggregation semantics.
 
-Required metric families:
-- losses: `loss/candidate_balanced`, `loss/mp`, `loss/mp_diagnostic`, `loss/pem`,
-  `loss/anti_close_start`, `loss/weak_schema_close`,
-  `loss/aux_coord_soft_ce_w1`, `loss/aux_bbox_geo`,
-  `loss/aux_bbox_size`;
+Required compact v2 metric families:
+- losses: `loss/candidate_balanced`, `loss/schema_open`,
+  `loss/json_structural`, `loss/anti_close_start`,
+  `loss/weak_schema_close`;
 - candidate counts and denominators: `mp/num_prefix_objects`,
   `mp/num_remaining_objects`, `mp/num_candidates_scored`,
-  `mp/scored_candidate_fraction`, `mp/samples_with_candidates`,
-  `mp/samples_full_prefix`, `mp/loss_mp_denominator_samples`;
-- logZ scope: `mp/logZ_scored_raw`, `mp/logZ_remaining_exact`,
-  `mp/logZ_remaining_est`, `mp/logZ_estimator`;
-- responsibility: `mp/responsibility_entropy_scored`,
-  `mp/effective_candidate_count`, `mp/effective_candidate_fraction`,
-  `mp/max_responsibility_scored`, `mp/min_responsibility_scored`;
-- length diagnostics: `mp/candidate_entry_tokens_*`,
-  `mp/candidate_logprob_sum_*`, `mp/candidate_logprob_per_token_*`,
-  `mp/candidate_coord_token_fraction_*`,
-  `mp/candidate_logprob_per_coord_token_*`,
-  `mp/candidate_logprob_per_noncoord_token_*`,
-  `mp/responsibility_vs_length_corr`, `mp/valid_length_corr_samples`;
-- budget: `mp/branch_forwards_per_sample`, `mp/prefix_tokens_mean`,
-  `mp/candidate_tokens_scored_mean`, `mp/total_candidate_tokens_scored`,
-  `mp/repeated_forward_token_ratio_vs_baseline`,
-  `mp/branch_runtime_mode`, `mp/checkpointed_branch_forwards`,
-  `mp/retained_graph_branch_forwards`,
-  `mp/ddp_candidate_padding_policy`,
-  `mp/ddp_candidate_forward_local_count`,
-  `mp/ddp_candidate_forward_max_count`,
-  `mp/ddp_candidate_padding_forwards`;
+  `mp/candidate_tokens_scored_mean`, `mp/schema_open_tokens_scored_mean`,
+  `mp/json_structural_tokens_scored_mean`,
+  `mp/annotation_completeness_weight_mean`,
+  `mp/final_close_weight_mean`, `mp/tail_positive_samples`,
+  `mp/final_gt_object_scored_samples`, `mp/objective_contributing_samples`;
 - objective fidelity and fallback: `mp/objective_fidelity_exact_samples`,
-  `mp/objective_fidelity_approx_samples`, `mp/fallback_applied_samples`,
-  `mp/fallback_reason_candidate_budget`,
-  `mp/fallback_reason_token_budget`,
-  `mp/fallback_reason_memory_budget`;
-- prefix reuse: `mp/prefix_encoding_cache_hits`,
-  `mp/prefix_encoding_cache_misses`;
+  `mp/fallback_applied_samples`;
+- prefix-mode coverage: `mp/selected_mode_empty_prefix`,
+  `mp/selected_mode_full_prefix`;
 - structural close: `stop/p_close_start_when_remaining_exists`,
   `stop/p_continue_start_when_remaining_exists`,
-  `stop/p_close_start_when_remaining_empty`,
-  `stop/logp_close_sequence_when_remaining_empty`,
-  `stop/p_final_schema_token_teacher_forced`;
-- aux adapter counters: `aux/<name>/candidate_count`,
-  `aux/<name>/position_count`, `aux/<name>/skipped_candidates`,
-  `aux/<name>/contributing_candidates`.
+  `stop/p_close_start_when_remaining_empty`.
 
 Validity rules:
-- responsibility entropy over one scored candidate is `0.0`, and max/min
-  responsibility are both `1.0`,
-- candidate standard-deviation metrics over one candidate emit `0.0`,
-- `mp/responsibility_vs_length_corr` is emitted only when at least two
-  candidates are scored and candidate lengths vary; otherwise the sample is
-  excluded from `mp/valid_length_corr_samples`.
+- compact metrics are finite scalars after grad-accum aggregation,
+- non-empty-prefix branches contribute zero schema-open tokens,
+- omitted logZ/responsibility/runtime counters are internal diagnostics, not
+  emitted production metrics.
 
 #### Scenario: Full-prefix sample has no MP denominator
 - **GIVEN** a full-prefix sample with `R = empty`
