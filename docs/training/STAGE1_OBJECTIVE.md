@@ -160,26 +160,39 @@ ordinary fixed-order next-object SFT.
 The object-level objective is:
 
 ```text
-score(o) = log P(entry(o) | image, prompt, prefix)
-loss/mp = -logsumexp(score(o) for o in remaining_candidates)
+boundary(o) = ", " if observed objects remain after appending o else "]}"
+score(o) = log P(entry(o) + boundary(o) | image, prompt, prefix)
+candidate_ce(o) = -score(o) / max(candidate_continuation_tokens(o), 1)
+loss/candidate_balanced = mean(candidate_ce(o) for o in scored_candidates)
+loss/mp_diagnostic = -logsumexp(score(o) for o in scored_candidates)
 ```
 
 Important semantics:
 
 - `entry(o)` is the full serialized object dictionary entry, including `desc`,
   `bbox_2d`, and the object-entry structural terminator.
-- Candidate scoring is full-entry, not token-wise multi-positive mixing.
+- `boundary(o)` is part of the scored continuation. A non-terminal candidate is
+  scored with its append boundary `, `; only a candidate that exhausts the
+  observed remaining set is scored with the global CoordJSON close `]}`.
+- Candidate scoring is full-entry, not token-wise multi-positive mixing, but
+  the optimized production objective averages per-candidate token-normalized
+  continuation CE. This prevents the old MP/logZ objective from concentrating
+  gradient on only the currently easiest remaining object.
 - Non-coordinate candidate-entry labels use ordinary full-vocab logprob.
 - `<|coord_*|>` labels use coord-vocabulary-normalized logprob, so raw-text
   integer coordinate training is out of scope for this v1 path.
 - The global detection-list close sequence is separate from object-entry end
-  tokens. V1 uses the CoordJSON schema close sequence `]}` and never treats
-  `<|im_end|>`, `<|end_of_text|>`, or tokenizer EOS as the stop target for this
-  objective.
-- V1 branch execution is naive repeated independent forward:
-  `prefix + candidate_A`, `prefix + candidate_B`, and so on. Candidates do not
-  attend to each other. Prefix gradients are non-detached but recomputed for
-  each branch.
+  tokens. V1 uses the CoordJSON schema close sequence `]}` only for terminal
+  continuations and never treats `<|im_end|>`, `<|end_of_text|>`, or tokenizer
+  EOS as the stop target for this objective.
+- Append-candidate branches use an append-ready prefix. Structural-close
+  branches use a close-ready prefix without a trailing comma, so a non-empty
+  partial prefix closes as `{"objects": [entry]}` rather than the invalid
+  `{"objects": [entry, ]}`.
+- V1 branch execution is repeated independent forward, or the equivalent
+  `smart_batched_exact` grouping of independent rows: `prefix + candidate_A`,
+  `prefix + candidate_B`, and so on. Candidates do not attend to each other.
+  Prefix gradients are non-detached but recomputed for each branch.
 - V1 rejects `training.packing` and `training.eval_packing` because branch
   selection and structural-close spans are sample-local.
 
@@ -191,29 +204,30 @@ custom:
   stage1_set_continuation:
     subset_sampling:
       empty_prefix_ratio: 0.30
-      random_subset_ratio: 0.50
+      random_subset_ratio: 0.45
       leave_one_out_ratio: 0.20
-      full_prefix_ratio: 0.0
+      full_prefix_ratio: 0.05
       prefix_order: random
     candidates:
       mode: exact
       max_candidates: null
 ```
 
-The checked-in production profile uses the `30/50/20/0` mixture above to keep
+The checked-in production profile uses the `30/45/20/5` mixture above to keep
 first-object and arbitrary-prefix coverage while still sampling
-nearly-complete leave-one-out prefixes. Schema defaults remain `30/45/20/5`,
-so the explicit production config is the source of truth for this run. A
-non-zero `full_prefix_ratio` remains supported for explicit weak-close
-ablations.
+nearly-complete leave-one-out prefixes and a small number of true final-close
+states. A non-zero `full_prefix_ratio` is part of the repaired production
+contract, not just an ablation, because close behavior otherwise receives only
+negative partial-prefix pressure.
 
 Candidate modes:
 
 - `candidates.mode: exact` scores all observed remaining candidates.
 - `candidates.mode: uniform_subsample` scores at most `max_candidates`, which
   must be positive when this mode is enabled.
-- PEM uses exact remaining logZ in exact mode and the uniform-importance
-  estimated remaining logZ in uniform-subsample mode.
+- The optimized candidate-balanced objective is exact for the selected
+  candidates. Over-budget fallback uses uniform candidate subsampling for that
+  objective and logs MP/logZ only as diagnostics.
 - The current implementation does not enforce a same-budget controller.
   `same_budget_label` in the checked-in production config is an authored
   benchmark note; realized budget is reported through
@@ -226,37 +240,38 @@ Structural-close controls:
   remains.
 - `structural_close.final_schema_close_weight` adds weak teacher-forced
   close-sequence loss only when no observed GT remains.
-- Object-entry close tokens remain supervised inside candidate entries.
+- Object-entry close tokens remain supervised inside candidate entries, and the
+  immediate post-candidate boundary is supervised by the candidate-continuation
+  mask. This is required to avoid converting every one-step candidate branch
+  into implicit “one object then close” training.
 - Compatibility aliases `loss/anti_stop`, `loss/eod`, and `stop/p_stop_*` are
   emitted for dashboards, but the authoritative v1 semantics are structural
   close-start and CoordJSON close-sequence probabilities.
 
-PEM threshold loss is included in v1:
+PEM threshold loss remains available for calibrated ablations, but the repaired
+production profile disables it:
 
 ```yaml
 positive_evidence_margin:
-  objective: threshold_loss
-  threshold_space: full_entry_logZ
-  rho: 0.90
-  threshold_calibration: fixed_rho_0.90_no_external_evaluator_v1
+  objective: disabled
 ```
 
-When `objective: threshold_loss`, `loss/pem` is optimized and
-`loss/mp_diagnostic` records the MP loss without adding it to the total
-objective.
+When `objective: disabled`, `loss/mp` is a compatibility alias for the
+optimized candidate-balanced continuation loss and `loss/mp_diagnostic` records
+the old full-entry logZ MP loss without adding it to the total objective.
 
-Current parser contract: `objective=threshold_loss` requires exactly one of
-`rho` or `log_rho`; `threshold_space` is fixed to `full_entry_logZ`; and
-`threshold_calibration` must be a non-empty provenance string. The checked-in
-production profile uses an authored fixed threshold, not an externally
-calibrated evaluator threshold.
+Current parser contract: `objective=threshold_loss` requires `log_rho` and a
+non-empty `threshold_calibration` provenance string. Fixed probability-space
+`rho` is rejected for `threshold_space: full_entry_logZ`, because full-entry
+logZ is not calibrated to a stable probability threshold across prefix
+cardinalities, candidate counts, and entry lengths.
 
 Branch-local auxiliary objectives are toggleable for `coord_soft_ce_w1`,
 `bbox_geo`, and `bbox_size_aux`, but they are not inherited through ordinary
 one-sequence Stage-1 mixins. When enabled, each scored candidate branch masks
-labels down to that candidate entry, computes the auxiliary atom from the same
-branch logits, and averages valid candidate atoms uniformly. Responsibility-
-weighted aux is intentionally not a v1 mode.
+labels down to that candidate continuation, computes the auxiliary atom from the
+same branch logits, and averages valid candidate atoms uniformly.
+Responsibility-weighted aux is intentionally not a v1 mode.
 
 ### Ordinary SFT final-close control
 
@@ -290,11 +305,12 @@ coord-token Stage-1 SFT checkpoint:
 output_remote/stage1_2b/coco_bbox_max60-hard_ce_soft_ce_w1_gate/epoch_4-from-base-2B/v0-20260227-050057/checkpoint-1332-merged-full
 ```
 
-The profile enables exact full-entry MP scoring, the `30/50/20/0`
-empty/random/leave-one-out/full prefix mixture, close-start suppression when
-observed GT remains, final schema close supervision disabled, and fixed-rho
-PEM threshold loss with `rho=0.90`. It remains 2B, COCO80 desc-first,
-coord-token-only,
+The profile enables exact selected-candidate scoring with candidate-balanced
+token-normalized continuation CE, the `30/45/20/5`
+empty/random/leave-one-out/full prefix mixture, valid close-ready prefix
+suppression when observed GT remains, small final schema close supervision, and
+MP/logZ diagnostics only. PEM threshold loss is disabled in production. It
+remains 2B, COCO80 desc-first, coord-token-only,
 `val200`/`f1ish_annotated`, and `training.packing: false`.
 
 Because this run continues from an already four-epoch fine-tuned SOTA

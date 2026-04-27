@@ -1,0 +1,30 @@
+extends:
+  - ../production.yaml
+  - ./common_prodlike.yaml
+
+training:
+  artifact_subdir: candbal_random_heavy
+  run_name: smoke-candbal-random-heavy
+
+benchmark:
+  group_id: stage1_set_continuation_smoke
+  intended_variable: repaired candidate-balanced continuation with more middle-cardinality random subsets
+
+experiment:
+  title: Stage-1 set-continuation smoke candbal random heavy
+  purpose: Procedural smoke for the random-heavy subset-selection variant on a tiny sample.
+  tags:
+    - stage1
+    - set-continuation
+    - smoke
+    - candidate-balanced
+    - random-heavy
+
+custom:
+  stage1_set_continuation:
+    subset_sampling:
+      empty_prefix_ratio: 0.20
+      random_subset_ratio: 0.55
+      leave_one_out_ratio: 0.20
+      full_prefix_ratio: 0.05
+      prefix_order: random

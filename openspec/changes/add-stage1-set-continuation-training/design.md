@@ -410,7 +410,11 @@ remain explicit future runtime modes.
 
 ### 3. Canonical Object Fragment Serialization
 
-Candidate entries must be scored at the full object-entry level. The fragment should include the full object dictionary entry and the object-entry terminator, while excluding global list closure and assistant-message suffixes.
+Candidate continuations must be scored at the full object-entry level plus the
+immediate boundary that follows the candidate. The fragment should include the
+full object dictionary entry, the object-entry terminator, and either the
+append boundary `, ` for a non-terminal candidate or the global list closure
+`]}` for a terminal candidate, while excluding chat-template assistant suffixes.
 
 The implementation should derive fragments from the same serialization contract used for full assistant targets. It must use index-based span instrumentation rather than content-based substring search, because duplicate or identical object entries are valid detection cases.
 
@@ -419,7 +423,10 @@ A safe approach is:
 1. Render the assistant payload for a selected object order using the canonical `dumps_coordjson` path.
 2. Emit object-index span metadata while rendering the `objects` array.
 3. Include the delimiter needed to append the entry to the current prefix.
-4. Exclude the global `]`, enclosing object/list closure beyond the candidate entry, EOS, and chat-template assistant suffix from the candidate score.
+4. Include the post-candidate boundary: `, ` if additional observed objects
+   remain after the candidate, or `]}` if the candidate exhausts the observed
+   remaining set.
+5. Exclude EOS and chat-template assistant suffixes from the candidate score.
 
 This avoids reconstructing a subtly different JSON spelling for candidate branches.
 
@@ -429,7 +436,10 @@ The prefix should be a syntactically valid partial assistant response:
 {"objects": [<serialized entries from S>
 ```
 
-If `S` is non-empty, candidate entries include the required comma separator before the object entry. If `S` is empty, the candidate entry starts as the first object entry.
+If `S` is non-empty, candidate entries include the required comma separator
+before the object entry. If `S` is empty, the candidate entry starts as the
+first object entry. If appending the candidate still leaves observed objects,
+the branch must remain append-ready rather than closing the CoordJSON object.
 
 Serialization tests must include duplicate identical object entries, same-description objects with different boxes, both supported object field orders, first/middle/last candidates, and exact delimiter/terminator boundaries.
 

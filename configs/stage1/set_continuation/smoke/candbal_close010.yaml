@@ -1,0 +1,33 @@
+extends:
+  - ../production.yaml
+  - ./common_prodlike.yaml
+
+training:
+  artifact_subdir: candbal_close010
+  run_name: smoke-candbal-close010
+
+benchmark:
+  group_id: stage1_set_continuation_smoke
+  intended_variable: repaired candidate-balanced continuation with stronger final-close calibration
+
+experiment:
+  title: Stage-1 set-continuation smoke candbal close010
+  purpose: Procedural smoke for the stronger final-close variant on a tiny sample.
+  tags:
+    - stage1
+    - set-continuation
+    - smoke
+    - candidate-balanced
+    - close010
+
+custom:
+  stage1_set_continuation:
+    subset_sampling:
+      empty_prefix_ratio: 0.25
+      random_subset_ratio: 0.45
+      leave_one_out_ratio: 0.20
+      full_prefix_ratio: 0.10
+      prefix_order: random
+    structural_close:
+      close_start_suppression_weight: 0.05
+      final_schema_close_weight: 0.10

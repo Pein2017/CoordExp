@@ -71,9 +71,14 @@ the candidate-score contribution.
 - **GIVEN** prefix subset `S`
 - **AND** remaining observed candidates `R = O - S`
 - **WHEN** candidate scores are computed in exact mode
-- **THEN** each `score(o)` equals the intact candidate-entry log probability
-  under the coord-aware scoring rule
-- **AND** `loss/mp = -logsumexp(score(o) for o in R)`.
+- **THEN** each `score(o)` equals the intact candidate-continuation log
+  probability under the coord-aware scoring rule
+- **AND** the scored continuation includes `entry(o) + ", "` when observed
+  objects remain after appending `o`, or `entry(o) + "]}"` when `o` exhausts
+  the observed remaining set
+- **AND** the optimized disabled-PEM objective is candidate-balanced
+  token-normalized continuation CE,
+- **AND** `loss/mp_diagnostic = -logsumexp(score(o) for o in R)`.
 
 #### Scenario: Coordinates are not token-wise mixed
 - **GIVEN** candidate entries with description and `<|coord_*|>` bbox tokens
@@ -94,7 +99,9 @@ Normative behavior:
 - candidate-entry labels SHALL include the object-entry delimiter and
   terminator needed for append semantics,
 - candidate-entry labels SHALL exclude global schema closure, assistant suffix,
-  EOS, and chat-template stop tokens.
+  EOS, and chat-template stop tokens,
+- structural-close branches SHALL use a close-ready prefix without an append
+  delimiter after the last selected object.
 
 #### Scenario: Duplicate identical entries remain addressable
 - **GIVEN** two serialized object entries with identical text
@@ -164,9 +171,11 @@ Normative behavior:
   count,
 - `mp/logZ_remaining_exact` MAY be emitted only when all remaining candidates
   were scored,
-- when PEM is disabled, sampled MP MUST optimize `loss/mp =
-  -mp/logZ_scored_raw`, preserving the current sampled-MP gradient and scalar
-  convention,
+- when PEM is disabled, the trainer MUST optimize candidate-balanced
+  token-normalized continuation CE over scored candidates and log the MP/logZ
+  objective only as `loss/mp_diagnostic`,
+- budget fallback estimator metadata MAY be `sampled_raw` for disabled-PEM
+  diagnostics and `uniform_importance` for PEM threshold-loss diagnostics,
 - sampled PEM MUST use `mp/logZ_remaining_est` rather than raw sampled logZ,
   unless a separately named raw-sampled PEM ablation is explicitly configured.
 
@@ -479,6 +488,9 @@ Normative behavior:
   applies only when `R = empty` and its weight is non-zero,
 - `<|im_end|>`, `<|end_of_text|>`, EOS, chat-template stops, and object-entry
   close tokens are not part of `P_close_start` or `logP_close_sequence`,
+- non-terminal candidate branches MUST use an append boundary rather than a
+  structural close, so the one-step candidate objective does not teach “emit one
+  object then close”,
 - compatibility aliases such as `loss/eod`, `loss/anti_stop`, and
   `stop/p_stop_*` MAY be emitted for dashboards, but they MUST be documented as
   structural-close aliases and MUST NOT include chat-template EOD/EOS tokens.
@@ -503,11 +515,11 @@ additive penalty on top of MP.
 Normative behavior:
 - `positive_evidence_margin.objective` MUST support `disabled` and
   `threshold_loss`,
-- when PEM is enabled, exactly one of `rho` or `log_rho` MUST be configured,
+- when PEM is enabled for `threshold_space=full_entry_logZ`, calibrated
+  `log_rho` MUST be configured and fixed `rho` MUST be rejected,
 - `positive_evidence_margin.threshold_space` MUST be recorded and v1 SHALL use
   `full_entry_logZ`,
-- PEM benchmark profiles MUST record threshold calibration provenance or an
-  explicit statement that the threshold is an authored fixed ablation value,
+- PEM benchmark profiles MUST record threshold calibration provenance,
 - PEM uses `logZ_remaining_exact` in exact mode and `logZ_remaining_est` in
   uniform-subsample mode,
 - when `objective=threshold_loss`, `loss/pem` is optimized and
@@ -518,7 +530,8 @@ Normative behavior:
 #### Scenario: PEM disabled
 - **GIVEN** `positive_evidence_margin.objective: disabled`
 - **WHEN** loss is computed for `R != empty`
-- **THEN** the trainer optimizes the standard MP objective.
+- **THEN** the trainer optimizes candidate-balanced token-normalized
+  continuation CE, including the correct post-candidate boundary.
 
 #### Scenario: PEM threshold-loss objective
 - **GIVEN** `positive_evidence_margin.objective: threshold_loss`
@@ -558,7 +571,7 @@ The trainer SHALL emit variant-specific mechanism metrics with canonical names
 and aggregation semantics.
 
 Required metric families:
-- losses: `loss/mp`, `loss/mp_diagnostic`, `loss/pem`,
+- losses: `loss/candidate_balanced`, `loss/mp`, `loss/mp_diagnostic`, `loss/pem`,
   `loss/anti_close_start`, `loss/weak_schema_close`,
   `loss/aux_coord_soft_ce_w1`, `loss/aux_bbox_geo`,
   `loss/aux_bbox_size`;
@@ -569,6 +582,7 @@ Required metric families:
 - logZ scope: `mp/logZ_scored_raw`, `mp/logZ_remaining_exact`,
   `mp/logZ_remaining_est`, `mp/logZ_estimator`;
 - responsibility: `mp/responsibility_entropy_scored`,
+  `mp/effective_candidate_count`, `mp/effective_candidate_fraction`,
   `mp/max_responsibility_scored`, `mp/min_responsibility_scored`;
 - length diagnostics: `mp/candidate_entry_tokens_*`,
   `mp/candidate_logprob_sum_*`, `mp/candidate_logprob_per_token_*`,

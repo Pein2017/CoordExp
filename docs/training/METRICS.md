@@ -328,9 +328,15 @@ baseline trainer.
 
 Objective atoms:
 
-- `loss/mp`: optimized MP loss when PEM is disabled.
-- `loss/mp_diagnostic`: MP loss logged even when the PEM threshold loss is the
-  optimized objective.
+- `loss/candidate_balanced`: optimized per-candidate token-normalized
+  continuation CE for the repaired production profile. The scored continuation
+  includes the object entry plus the immediate post-candidate boundary: `, ` for
+  non-terminal candidates and `]}` for terminal candidates.
+- `loss/mp`: compatibility alias for `loss/candidate_balanced` when PEM is
+  disabled. It is no longer the full-entry logZ MP objective in the repaired
+  production profile.
+- `loss/mp_diagnostic`: full-entry logZ MP loss logged as a diagnostic. It does
+  not contribute to the optimized total when PEM is disabled.
 - `loss/pem`: positive-evidence margin loss when
   `positive_evidence_margin.objective=threshold_loss`.
 - `loss/anti_close_start`: weighted close-start suppression objective when
@@ -381,6 +387,8 @@ LogZ and responsibility diagnostics:
 - `mp/logZ_remaining`
 - `mp/responsibility_entropy`
 - `mp/responsibility_entropy_scored`
+- `mp/effective_candidate_count`
+- `mp/effective_candidate_fraction`
 - `mp/max_responsibility`
 - `mp/max_responsibility_scored`
 - `mp/min_responsibility`
@@ -388,7 +396,7 @@ LogZ and responsibility diagnostics:
 - `mp/valid_length_corr_samples`
 - `mp/responsibility_vs_length_corr`
 
-Candidate full-entry logprob statistics:
+Candidate continuation logprob statistics:
 
 - `mp/candidate_entry_tokens_mean`
 - `mp/candidate_entry_tokens_min`

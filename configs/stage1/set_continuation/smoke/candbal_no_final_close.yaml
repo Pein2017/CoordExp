@@ -1,0 +1,33 @@
+extends:
+  - ../production.yaml
+  - ./common_prodlike.yaml
+
+training:
+  artifact_subdir: candbal_no_final_close
+  run_name: smoke-candbal-no-final-close
+
+benchmark:
+  group_id: stage1_set_continuation_smoke
+  intended_variable: repaired candidate-balanced continuation without positive final-close calibration
+
+experiment:
+  title: Stage-1 set-continuation smoke candbal no final close
+  purpose: Procedural smoke for candidate-balanced continuation without full-prefix close positives.
+  tags:
+    - stage1
+    - set-continuation
+    - smoke
+    - candidate-balanced
+    - no-final-close
+
+custom:
+  stage1_set_continuation:
+    subset_sampling:
+      empty_prefix_ratio: 0.30
+      random_subset_ratio: 0.50
+      leave_one_out_ratio: 0.20
+      full_prefix_ratio: 0.0
+      prefix_order: random
+    structural_close:
+      close_start_suppression_weight: 0.05
+      final_schema_close_weight: 0.0

@@ -1,0 +1,26 @@
+training:
+  output_root: /data/CoordExp/output_remote/stage1_2b/set_continuation_smoke
+  logging_root: /data/CoordExp/output_remote/stage1_2b/set_continuation_smoke/tb
+  max_steps: 4
+  per_device_train_batch_size: 8
+  gradient_accumulation_steps: 2
+  effective_batch_size: 64
+  per_device_eval_batch_size: 1
+  eval_steps: 2
+  save_steps: 1000
+  save_delay_steps: 1000
+  save_total_limit: 1
+  logging_steps: 1
+  logging_first_step: true
+
+data:
+  dataloader_num_workers: 0
+  dataloader_prefetch_factor: null
+  dataloader_persistent_workers: false
+
+custom:
+  train_sample_limit: 64
+  val_sample_limit: 8
+  eval_detection:
+    limit: 8
+    batch_size: 1
