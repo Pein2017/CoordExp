@@ -209,6 +209,10 @@ Important semantics:
   `smart_batched_exact` grouping of independent rows: `prefix + candidate_A`,
   `prefix + candidate_B`, and so on. Candidates do not attend to each other.
   Prefix gradients are non-detached but recomputed for each branch.
+- The checked-in production runtime should stay `smart_batched_exact`. A rough
+  8-GPU production-like probe on 2026-04-28 found it faster than the current
+  online/offline packed-varlen experiments; see
+  [`../../progress/benchmarks/2026-04-28_stage1_mp_branch_runtime_packing_probe.md`](../../progress/benchmarks/2026-04-28_stage1_mp_branch_runtime_packing_probe.md).
 - V1 rejects `training.packing` and `training.eval_packing` because branch
   selection and structural-close spans are sample-local.
 

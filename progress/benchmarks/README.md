@@ -6,7 +6,7 @@ status: canonical
 domain: research-history
 summary: Router for measured run comparisons, checkpoint selection notes, and evaluation sweeps.
 tags: [progress, benchmarks, evaluation]
-updated: 2026-04-23
+updated: 2026-04-28
 ---
 
 # Benchmarks Index
@@ -28,6 +28,7 @@ point is failure-mode interpretation rather than a final run-vs-run benchmark.
 ## Current Clusters
 
 - Stage-1 detection result reports
+  - [2026-04-28_stage1_mp_branch_runtime_packing_probe.md](2026-04-28_stage1_mp_branch_runtime_packing_probe.md)
   - [2026-04-23_stage1_raw_text_vs_coord_token_repetition_penalty_sweep.md](2026-04-23_stage1_raw_text_vs_coord_token_repetition_penalty_sweep.md)
   - [2026-02-26_stage1_coco80_4b_res_768_vs_1024.md](2026-02-26_stage1_coco80_4b_res_768_vs_1024.md)
   - [2026-02-26_stage1_coco80_temp0_compare.md](2026-02-26_stage1_coco80_temp0_compare.md)

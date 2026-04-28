@@ -1,5 +1,5 @@
 schema_version: 1
-updated: 2026-04-24
+updated: 2026-04-28
 
 entrypoints:
   human: progress/README.md
@@ -64,6 +64,7 @@ groups:
     - progress/audits/2026-02-25_stage2_channel_a_coord_loss.md
   benchmarks:
     - progress/benchmarks/README.md
+    - progress/benchmarks/2026-04-28_stage1_mp_branch_runtime_packing_probe.md
     - progress/benchmarks/2026-04-23_stage1_raw_text_vs_coord_token_repetition_penalty_sweep.md
     - progress/benchmarks/2026-04-21_mixed_objective_sota_checkpoint_probe.md
     - progress/benchmarks/2026-02-26_stage1_coco80_4b_res_768_vs_1024.md
@@ -148,6 +149,11 @@ notes:
     kind: router
     status: canonical
     summary: Router for measured comparisons, checkpoint selection notes, and evaluation sweeps.
+  - path: progress/benchmarks/2026-04-28_stage1_mp_branch_runtime_packing_probe.md
+    title: Stage-1 MP Branch Runtime Packing Probe
+    kind: benchmark-study
+    status: rough-evidence
+    summary: Rough 8-GPU production-like comparison showing smart_batched_exact remains the recommended Stage-1 MP branch runtime over current packed-varlen experiments.
   - path: progress/benchmarks/2026-04-23_stage1_raw_text_vs_coord_token_repetition_penalty_sweep.md
     title: Raw-Text vs Coord-Token Repetition-Penalty Sweep
     kind: benchmark-study

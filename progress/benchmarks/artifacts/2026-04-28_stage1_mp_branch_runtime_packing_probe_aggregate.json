@@ -1,0 +1,134 @@
+{
+  "generated_at": "2026-04-28T09:23:39.883033+00:00",
+  "output_root": "/data/CoordExp/output_remote/stage1_2b/set_continuation_prodlike_benchmark",
+  "runs": [
+    {
+      "artifact_dir": "/data/CoordExp/output_remote/stage1_2b/set_continuation_prodlike_benchmark/smart_batched_exact_8gpu/prodlike-smart-batched-exact-8gpu/v0-20260428-084922",
+      "branch_runtime_mode": "smart_batched_exact",
+      "completed_steps": 6,
+      "config_path": "temp/prodlike_smart_8gpu.yaml",
+      "global_max_length": 12000,
+      "gradient_accumulation_steps": 2,
+      "key": "smart_batched_exact",
+      "last_step_branch_pack_capacity_tokens": null,
+      "last_step_branch_pack_fill_ratio": null,
+      "last_step_branch_pack_total_tokens": null,
+      "last_step_cross_sample_fill_ratio": null,
+      "last_step_ddp_candidate_padding_forwards": null,
+      "logical_throughput": {
+        "estimate_method": "raw_samples = per_device_train_batch_size * gradient_accumulation_steps * visible_world_size * completed_optimizer_steps",
+        "logical_batch_note": "production baseline: 8 GPUs x per_device 8 x grad_accum 2 = 128 raw samples/update",
+        "logical_samples_per_second_est": 1.9281498071975722,
+        "logical_samples_per_update_est": 128,
+        "logical_samples_total_est": 768
+      },
+      "max_steps": 6,
+      "memory_gib_log": 44.7,
+      "optimizer_steps_per_second": 0.015,
+      "per_device_train_batch_size": 8,
+      "rank0_max_memory_allocated_gib": null,
+      "rank0_max_memory_reserved_gib": null,
+      "runtime_s": 398.3093,
+      "sample_packing_profile": {
+        "enabled": false
+      },
+      "status": "completed",
+      "summary_branch_pack_metrics": {},
+      "train_loss": 1.25293165,
+      "train_samples_per_second_reported": 1.928
+    },
+    {
+      "artifact_dir": "/data/CoordExp/output_remote/stage1_2b/set_continuation_prodlike_benchmark/online_rankmb_packed_8gpu/prodlike-online-rankmb-packed-8gpu/v0-20260428-085735",
+      "branch_runtime_mode": "packed_varlen_exact",
+      "completed_steps": 6,
+      "config_path": "temp/prodlike_online_rankmb_8gpu.yaml",
+      "global_max_length": 12000,
+      "gradient_accumulation_steps": 8,
+      "key": "online_rank_microbatch_packed",
+      "last_step_branch_pack_capacity_tokens": null,
+      "last_step_branch_pack_fill_ratio": null,
+      "last_step_branch_pack_total_tokens": null,
+      "last_step_cross_sample_fill_ratio": null,
+      "last_step_ddp_candidate_padding_forwards": null,
+      "logical_throughput": {
+        "estimate_method": "raw_samples = per_device_train_batch_size * gradient_accumulation_steps * visible_world_size * completed_optimizer_steps",
+        "logical_batch_note": "online cross-sample candidate packing: raw samples/update computed from effective_runtime per_device x grad_accum x visible_world_size",
+        "logical_samples_per_second_est": 1.8358518926485605,
+        "logical_samples_per_update_est": 128,
+        "logical_samples_total_est": 768
+      },
+      "max_steps": 6,
+      "memory_gib_log": 61.07,
+      "optimizer_steps_per_second": 0.014,
+      "per_device_train_batch_size": 2,
+      "rank0_max_memory_allocated_gib": null,
+      "rank0_max_memory_reserved_gib": null,
+      "runtime_s": 418.3344,
+      "sample_packing_profile": {
+        "enabled": false
+      },
+      "status": "completed",
+      "summary_branch_pack_metrics": {},
+      "train_loss": 1.53110546,
+      "train_samples_per_second_reported": 1.836
+    },
+    {
+      "artifact_dir": "/data/CoordExp/output_remote/stage1_2b/set_continuation_prodlike_benchmark/offline_sample_packed_8gpu/prodlike-offline-sample-packed-8gpu/v0-20260428-090607",
+      "branch_runtime_mode": "packed_varlen_exact",
+      "completed_steps": 6,
+      "config_path": "temp/prodlike_offline_packed_8gpu.yaml",
+      "global_max_length": 12000,
+      "gradient_accumulation_steps": 16,
+      "key": "offline_sample_packed",
+      "last_step_branch_pack_capacity_tokens": null,
+      "last_step_branch_pack_fill_ratio": null,
+      "last_step_branch_pack_total_tokens": null,
+      "last_step_cross_sample_fill_ratio": null,
+      "last_step_ddp_candidate_padding_forwards": null,
+      "logical_throughput": {
+        "estimate_method": "first completed_steps * gradient_accumulation_steps * visible_world_size aligned pack positions from sample-packing manifest",
+        "logical_batch_note": "offline sample-packed envelopes: physical packs/update computed from effective_runtime; logical raw samples/update estimated from the sample-packing manifest",
+        "logical_samples_per_second_est": 1.8360914105594957,
+        "logical_samples_per_update_est": 233.0,
+        "logical_samples_total_est": 1398,
+        "manifest_stats": {
+          "aligned_pack_count": 1424,
+          "capped_oversize_sample_count": 864,
+          "low_fill_pack_count": 1,
+          "max_fill_ratio": 1.0,
+          "mean_fill_ratio": 0.9810403485794882,
+          "min_fill_ratio": 0.6297857142857143,
+          "raw_pack_count": 1418,
+          "raw_sample_count": 2048,
+          "target_tokens_per_rank_forward": 14000
+        }
+      },
+      "max_steps": 6,
+      "memory_gib_log": 47.83,
+      "optimizer_steps_per_second": 0.008,
+      "per_device_train_batch_size": 1,
+      "rank0_max_memory_allocated_gib": null,
+      "rank0_max_memory_reserved_gib": null,
+      "runtime_s": 761.4,
+      "sample_packing_profile": {
+        "cache_root": "auto",
+        "enabled": true,
+        "logical_batch_unit": "mp_sample_pack_envelope",
+        "loss_normalization": "logical_sample_mean",
+        "min_fill_ratio": 0.8,
+        "mode": "offline_cached",
+        "physical_per_device_train_batch_size": 1,
+        "plan_policy": "best_fit_decreasing",
+        "target_tokens_per_rank_forward": 14000
+      },
+      "status": "completed",
+      "summary_branch_pack_metrics": {},
+      "train_loss": 1.46518826,
+      "train_samples_per_second_reported": 1.009
+    }
+  ],
+  "winners": {
+    "logical_samples_per_second_est": "smart_batched_exact",
+    "optimizer_steps_per_second": "smart_batched_exact"
+  }
+}

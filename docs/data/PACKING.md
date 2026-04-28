@@ -45,6 +45,12 @@ Stage-1 packing guardrails (current implementation):
   samples set prefixes and branch candidates inside `compute_loss`, so pack-plan
   construction would mix independent branch states and make structural-close
   spans ambiguous.
+- For Stage-1 MP set-continuation branch scoring, keep the production default
+  on `smart_batched_exact`. The packed-varlen branch-packing experiments showed
+  that dense offline sample envelopes are possible, but the current packed MP
+  scoring path did not beat smart batching in the rough 2026-04-28 8-GPU probe.
+  Treat packed-varlen branch execution as experimental until real-Qwen
+  same-batch parity and a faster packed scoring path are both demonstrated.
 - `training.encoded_sample_cache` is also ineligible for
   `custom.trainer_variant: stage1_set_continuation` because subset/candidate
   branches are sampled at runtime. With
