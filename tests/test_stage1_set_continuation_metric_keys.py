@@ -11,6 +11,11 @@ _HELPERS = runpy.run_path(
 
 def test_set_continuation_emits_train_forward_runtime_metric_keys() -> None:
     cfg = _HELPERS["_cfg"](
+        bidirectional_token_gate={
+            "enabled": True,
+            "coord_gate_weight": 0.5,
+            "text_gate_weight": 0.1,
+        },
         train_forward={
             "budget_policy": {
                 "enabled": True,
@@ -21,7 +26,7 @@ def test_set_continuation_emits_train_forward_runtime_metric_keys() -> None:
                     "estimator": "uniform_importance",
                 },
             }
-        }
+        },
     )
     trainer = _HELPERS["_trainer"](cfg)
     model = _HELPERS["_FakeModel"]()
@@ -42,10 +47,16 @@ def test_set_continuation_emits_train_forward_runtime_metric_keys() -> None:
     keys = set(trainer.custom_metrics["train"].keys())
     assert {
         "loss/candidate_balanced",
+        "loss/coord_gate",
         "loss/schema_open",
+        "loss/text_gate",
         "loss/json_structural",
         "loss/anti_close_start",
         "loss/weak_schema_close",
+        "gate/coord_slot_coord_mass_mean",
+        "gate/text_slot_coord_mass_mean",
+        "gate/coord_tokens_count",
+        "gate/text_tokens_count",
         "mp/num_prefix_objects",
         "mp/num_remaining_objects",
         "mp/num_candidates_scored",

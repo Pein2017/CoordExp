@@ -6,6 +6,7 @@ import pytest
 import torch
 
 from src.trainers.stage1_set_continuation.losses import (
+    compute_bidirectional_token_gate_loss,
     compute_candidate_full_entry_logprob,
     compute_close_sequence_nll,
     compute_close_start_nll,
@@ -44,6 +45,111 @@ def test_candidate_score_uses_full_vocab_for_text_and_coord_vocab_for_coord_slot
     assert torch.allclose(result.score, expected)
     assert result.coord_tokens == 1
     assert result.non_coord_tokens == 2
+
+
+def test_bidirectional_gate_uses_objective_mask_and_excludes_special_tokens() -> None:
+    logits = torch.tensor(
+        [
+            [
+                [0.0, 3.0, -1.0, -2.0, 0.5, 1.0],
+                [0.0, -1.0, 0.0, -2.0, 4.0, 1.0],
+                [0.0, -1.0, 2.0, -2.0, 0.5, 0.0],
+                [0.0, -1.0, -2.0, 3.0, 8.0, 8.0],
+                [0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+            ]
+        ],
+        dtype=torch.float32,
+    )
+    labels = torch.tensor([[0, 1, 4, 2, 3]], dtype=torch.long)
+    objective_mask = torch.tensor([[False, True, True, True, True]])
+    coord_mask = torch.tensor([[False, False, True, False, False]])
+    coord_token_ids = torch.tensor([4, 5], dtype=torch.long)
+    special_token_ids = torch.tensor([3, 4], dtype=torch.long)
+
+    result = compute_bidirectional_token_gate_loss(
+        logits=logits,
+        labels=labels,
+        objective_label_mask=objective_mask,
+        coord_label_mask=coord_mask,
+        coord_token_ids=coord_token_ids,
+        special_token_ids=special_token_ids,
+    )
+
+    prob = torch.softmax(logits[0, :4], dim=-1)
+    p_coord = prob[:, coord_token_ids].sum(dim=-1)
+    expected_coord = -torch.log(p_coord[1])
+    expected_text = (-torch.log1p(-p_coord[0]) - torch.log1p(-p_coord[2])) / 2.0
+    assert result.coord_tokens == 1
+    assert result.text_tokens == 2
+    assert torch.allclose(result.coord_loss, expected_coord)
+    assert torch.allclose(result.text_loss, expected_text)
+    assert torch.allclose(result.coord_mass_sum, p_coord[1])
+    assert torch.allclose(result.text_mass_sum, p_coord[0] + p_coord[2])
+
+
+def test_candidate_logprob_gate_uses_objective_mask_without_rescoring_prefix() -> None:
+    logits = torch.zeros((1, 6, 8), dtype=torch.float32)
+    labels = torch.tensor([[0, 1, 2, 6, 4, 3]], dtype=torch.long)
+    candidate_mask = torch.tensor([[False, False, False, True, True, False]])
+    objective_mask = torch.tensor([[False, True, True, True, True, True]])
+    coord_mask = torch.tensor([[False, False, False, False, True, False]])
+    coord_token_ids = torch.tensor([4, 5], dtype=torch.long)
+
+    result = compute_candidate_full_entry_logprob(
+        logits=logits,
+        labels=labels,
+        candidate_entry_label_mask=candidate_mask,
+        objective_label_mask=objective_mask,
+        coord_label_mask=coord_mask,
+        coord_token_ids=coord_token_ids,
+        bidirectional_gate_enabled=True,
+    )
+
+    assert result.tokens == 2
+    assert result.coord_tokens == 1
+    assert result.non_coord_tokens == 1
+    assert result.coord_gate_tokens == 1
+    assert result.text_gate_tokens == 4
+
+
+def test_bidirectional_gate_rejects_coord_slot_label_outside_coord_vocab() -> None:
+    logits = torch.zeros((1, 3, 8), dtype=torch.float32)
+    labels = torch.tensor([[0, 1, 2]], dtype=torch.long)
+    objective_mask = torch.tensor([[False, True, True]])
+    coord_mask = torch.tensor([[False, True, False]])
+
+    with pytest.raises(ValueError, match="coord-gate labels"):
+        compute_bidirectional_token_gate_loss(
+            logits=logits,
+            labels=labels,
+            objective_label_mask=objective_mask,
+            coord_label_mask=coord_mask,
+            coord_token_ids=torch.tensor([4, 5], dtype=torch.long),
+        )
+
+
+def test_bidirectional_gate_rejects_invalid_coord_vocab_scope() -> None:
+    logits = torch.zeros((1, 3, 8), dtype=torch.float32)
+    labels = torch.tensor([[0, 4, 2]], dtype=torch.long)
+    objective_mask = torch.tensor([[False, True, True]])
+    coord_mask = torch.tensor([[False, True, False]])
+
+    with pytest.raises(ValueError, match="unique"):
+        compute_bidirectional_token_gate_loss(
+            logits=logits,
+            labels=labels,
+            objective_label_mask=objective_mask,
+            coord_label_mask=coord_mask,
+            coord_token_ids=torch.tensor([4, 4], dtype=torch.long),
+        )
+    with pytest.raises(ValueError, match="within logits vocabulary"):
+        compute_bidirectional_token_gate_loss(
+            logits=logits,
+            labels=labels,
+            objective_label_mask=objective_mask,
+            coord_label_mask=coord_mask,
+            coord_token_ids=torch.tensor([4, 99], dtype=torch.long),
+        )
 
 
 def test_mp_exact_logz_and_responsibility_metrics() -> None:

@@ -207,6 +207,7 @@ def _cfg(
     final_schema_close_weight: float = 0.0,
     json_structural_weight: float = 0.0,
     annotation_completeness_weight: Mapping[str, Any] | None = None,
+    bidirectional_token_gate: Mapping[str, Any] | None = None,
     pem: Mapping[str, Any] | None = None,
     train_forward: Mapping[str, Any] | None = None,
 ) -> Stage1SetContinuationConfig:
@@ -234,6 +235,11 @@ def _cfg(
                     else {}
                 ),
             },
+            **(
+                {"bidirectional_token_gate": dict(bidirectional_token_gate)}
+                if bidirectional_token_gate is not None
+                else {}
+            ),
             "positive_evidence_margin": dict(pem or {"objective": "disabled"}),
             "train_forward": dict(train_forward or {}),
         }
@@ -528,6 +534,52 @@ def test_trainer_json_structural_aux_loss_is_logged_and_contributes() -> None:
     assert aux_loss.detach().item() > no_aux_loss.detach().item()
     assert _latest_metric(aux_trainer, "loss/json_structural") > 0.0
     assert _latest_metric(aux_trainer, "mp/json_structural_tokens_scored_mean") > 0.0
+
+
+def test_trainer_bidirectional_gate_logs_metrics_and_contributes() -> None:
+    class _FlatModel(_FakeModel):
+        def __call__(self, **kwargs):
+            self.calls.append(dict(kwargs))
+            input_ids = kwargs["input_ids"]
+            vocab_size = int(self.config.text_config.vocab_size)
+            logits = torch.zeros(
+                (input_ids.shape[0], input_ids.shape[1], vocab_size),
+                dtype=torch.float32,
+            )
+            logits_to_keep = int(kwargs.get("logits_to_keep") or 0)
+            if logits_to_keep > 0:
+                logits = logits[:, -logits_to_keep:, :]
+            return SimpleNamespace(logits=logits)
+
+    no_gate_trainer = _trainer(_cfg())
+    gate_trainer = _trainer(
+        _cfg(
+            bidirectional_token_gate={
+                "enabled": True,
+                "coord_gate_weight": 0.5,
+                "text_gate_weight": 0.1,
+                "temperature": 1.0,
+                "scope": "objective_tokens",
+            }
+        )
+    )
+    no_gate_model = _FlatModel()
+    gate_model = _FlatModel()
+    no_gate_trainer.model = no_gate_model
+    gate_trainer.model = gate_model
+
+    no_gate_loss = no_gate_trainer.compute_loss(
+        no_gate_model, _batch(), return_outputs=False
+    )
+    gate_loss = gate_trainer.compute_loss(gate_model, _batch(), return_outputs=False)
+
+    assert torch.isfinite(gate_loss)
+    assert gate_loss.detach().item() > no_gate_loss.detach().item()
+    assert _latest_metric(gate_trainer, "loss/coord_gate") > 0.0
+    assert _latest_metric(gate_trainer, "loss/text_gate") > 0.0
+    assert _latest_metric(gate_trainer, "gate/coord_tokens_count") > 0.0
+    assert _latest_metric(gate_trainer, "gate/text_tokens_count") > 0.0
+    assert _latest_metric(gate_trainer, "gate/text_slot_coord_mass_mean") > 0.0
 
 
 def test_full_prefix_metric_only_sample_does_not_dilute_batch_objective() -> None:

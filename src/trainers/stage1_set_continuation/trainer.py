@@ -106,6 +106,48 @@ class Stage1SetContinuationTrainer(
         cache[key] = coord_id_map
         return coord_id_map
 
+    def _special_token_ids_for_gate(self, *, device: torch.device) -> torch.Tensor:
+        cache = getattr(self, "_stage1_set_continuation_special_token_ids", None)
+        if not isinstance(cache, list):
+            tokenizer = getattr(getattr(self, "template", None), "tokenizer", None)
+            ids: set[int] = set()
+            raw_special_ids = getattr(tokenizer, "all_special_ids", None)
+            if isinstance(raw_special_ids, Sequence):
+                for token_id in cast(Sequence[Any], raw_special_ids):
+                    if isinstance(token_id, int) and token_id >= 0:
+                        ids.add(int(token_id))
+            for attr in (
+                "bos_token_id",
+                "eos_token_id",
+                "pad_token_id",
+                "unk_token_id",
+            ):
+                token_id = getattr(tokenizer, attr, None)
+                if isinstance(token_id, int) and token_id >= 0:
+                    ids.add(int(token_id))
+            convert = getattr(tokenizer, "convert_tokens_to_ids", None)
+            if callable(convert):
+                for token in ("<|im_end|>", "<|endoftext|>", "<|end_of_text|>"):
+                    token_id = convert(token)
+                    if isinstance(token_id, int) and token_id >= 0:
+                        ids.add(int(token_id))
+            cache = sorted(ids)
+            setattr(self, "_stage1_set_continuation_special_token_ids", cache)
+        return torch.tensor(cache, dtype=torch.long, device=device)
+
+    def _bidirectional_gate_kwargs(self, *, device: torch.device) -> dict[str, Any]:
+        gate_cfg = getattr(self._cfg(), "bidirectional_token_gate", None)
+        enabled = bool(gate_cfg is not None and getattr(gate_cfg, "enabled", False))
+        return {
+            "bidirectional_gate_enabled": enabled,
+            "bidirectional_gate_temperature": float(
+                getattr(gate_cfg, "temperature", 1.0) or 1.0
+            ),
+            "special_token_ids": (
+                self._special_token_ids_for_gate(device=device) if enabled else None
+            ),
+        }
+
     def _ddp_max_int(self, value: int, model: Any) -> int:
         if (
             not torch.distributed.is_available()
@@ -245,6 +287,7 @@ class Stage1SetContinuationTrainer(
         train_forward = self._cfg().train_forward
         runtime = train_forward.branch_runtime
         logits_mode = cast(LogitsMode, str(train_forward.logits.mode))
+        gate_kwargs = self._bidirectional_gate_kwargs(device=coord_token_ids.device)
         if runtime.mode == "retained_graph":
             bundle = score_branch_retained_graph(
                 trainer=self,
@@ -252,6 +295,7 @@ class Stage1SetContinuationTrainer(
                 branch=branch,
                 coord_token_ids=coord_token_ids,
                 logits_mode=logits_mode,
+                **gate_kwargs,
             )
             return bundle.logprob, bundle.outputs, bundle.branch_inputs
         if runtime.mode == "checkpointed_exact":
@@ -263,6 +307,7 @@ class Stage1SetContinuationTrainer(
                 use_reentrant=runtime.checkpoint_use_reentrant,
                 preserve_rng_state=runtime.preserve_rng_state,
                 logits_mode=logits_mode,
+                **gate_kwargs,
             )
             return bundle.logprob, bundle.outputs, bundle.branch_inputs
         if runtime.mode == "smart_batched_exact":
@@ -272,6 +317,7 @@ class Stage1SetContinuationTrainer(
                 branch=branch,
                 coord_token_ids=coord_token_ids,
                 logits_mode=logits_mode,
+                **gate_kwargs,
             )
             return bundle.logprob, bundle.outputs, bundle.branch_inputs
         raise ValueError(f"unsupported branch runtime mode: {runtime.mode}")
@@ -307,6 +353,7 @@ class Stage1SetContinuationTrainer(
             labels=branch_inputs["labels"],
             candidate_entry_label_mask=branch.candidate_entry_label_mask,
             coord_label_mask=branch.coord_label_mask,
+            objective_label_mask=branch.objective_label_mask,
             schema_open_label_mask=branch.schema_open_label_mask,
             json_structural_label_mask=branch.json_structural_label_mask,
         )
@@ -360,6 +407,7 @@ class Stage1SetContinuationTrainer(
             min_fill_ratio=float(batching.min_fill_ratio),
         )
         results: list[CandidateLogProbResult | None] = [None for _ in score_inputs]
+        gate_kwargs = self._bidirectional_gate_kwargs(device=coord_token_ids.device)
 
         def _no_cache_forward(**kwargs: torch.Tensor) -> Any:
             return run_no_cache_forward(
@@ -375,6 +423,7 @@ class Stage1SetContinuationTrainer(
                 coord_token_ids=coord_token_ids,
                 logits_mode=logits_mode,
                 forward_fn=_no_cache_forward,
+                **gate_kwargs,
             )
             for item, result in zip(batch.items, batch_results, strict=True):
                 results[item.index] = result
@@ -646,6 +695,7 @@ class Stage1SetContinuationTrainer(
             labels,
             close_start_mask,
             close_sequence_mask,
+            _objective_mask,
             _schema_open_mask,
             _json_structural_mask,
         ) = crop_tensors_for_logits(
@@ -735,6 +785,54 @@ class Stage1SetContinuationTrainer(
             start=reference.new_zeros(()),
         )
         return (-total_score / max(total_tokens, 1)) * float(weight)
+
+    @staticmethod
+    def _bidirectional_gate_aux_loss(
+        *,
+        candidate_results: Sequence[CandidateLogProbResult],
+        gate_cfg: Any,
+    ) -> tuple[torch.Tensor | None, dict[str, float]]:
+        if not candidate_results or not bool(getattr(gate_cfg, "enabled", False)):
+            return None, {}
+        reference = candidate_results[0].score
+        zero = reference.new_zeros(())
+        coord_tokens = sum(
+            int(result.coord_gate_tokens) for result in candidate_results
+        )
+        text_tokens = sum(int(result.text_gate_tokens) for result in candidate_results)
+        coord_nll_sum = sum(
+            (result.coord_gate_nll_sum for result in candidate_results),
+            start=zero,
+        )
+        text_nll_sum = sum(
+            (result.text_gate_nll_sum for result in candidate_results),
+            start=zero,
+        )
+        coord_mass_sum = sum(
+            (result.coord_gate_coord_mass_sum for result in candidate_results),
+            start=zero,
+        )
+        text_mass_sum = sum(
+            (result.text_gate_coord_mass_sum for result in candidate_results),
+            start=zero,
+        )
+        coord_loss = coord_nll_sum / max(coord_tokens, 1)
+        text_loss = text_nll_sum / max(text_tokens, 1)
+        total = coord_loss * float(getattr(gate_cfg, "coord_gate_weight", 0.0))
+        total = total + text_loss * float(getattr(gate_cfg, "text_gate_weight", 0.0))
+        metrics = {
+            "loss/coord_gate": float(coord_loss.detach().item()),
+            "loss/text_gate": float(text_loss.detach().item()),
+            "gate/coord_slot_coord_mass_mean": float(
+                (coord_mass_sum / max(coord_tokens, 1)).detach().item()
+            ),
+            "gate/text_slot_coord_mass_mean": float(
+                (text_mass_sum / max(text_tokens, 1)).detach().item()
+            ),
+            "gate/coord_tokens_count": float(coord_tokens),
+            "gate/text_tokens_count": float(text_tokens),
+        }
+        return total, metrics
 
     @staticmethod
     def _score_metrics(
@@ -1113,6 +1211,14 @@ class Stage1SetContinuationTrainer(
                     objective_contributes = True
             else:
                 metrics["loss/json_structural"] = 0.0
+            gate_loss, gate_metrics = self._bidirectional_gate_aux_loss(
+                candidate_results=candidate_results,
+                gate_cfg=cfg.bidirectional_token_gate,
+            )
+            metrics.update(gate_metrics)
+            if gate_loss is not None:
+                total_loss = total_loss + gate_loss
+                objective_contributes = True
             metrics["mp/logZ_scored_raw"] = float(raw_log_z.detach().item())
             metrics["mp/logZ_remaining_est"] = float(
                 mp_result.log_z_remaining.detach().item()

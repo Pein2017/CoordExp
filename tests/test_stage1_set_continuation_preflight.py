@@ -14,6 +14,7 @@ from src.data_collators.stage1_set_continuation_collator import (
     build_stage1_set_continuation_collator,
 )
 from src.config import ConfigLoader
+from src.coord_tokens.codec import get_coord_token_ids
 from src.datasets.builders.jsonlines import JSONLinesBuilder
 from src.trainers.stage1_set_continuation.branch_encoder import (
     encode_set_continuation_branch,
@@ -24,6 +25,7 @@ from src.trainers.stage1_set_continuation.branch_scorer import (
     score_tensor_retained,
 )
 from src.trainers.stage1_set_continuation.losses import (
+    compute_bidirectional_token_gate_loss,
     compute_candidate_full_entry_logprob,
     compute_mp_pem_losses,
 )
@@ -519,6 +521,143 @@ def test_preflight_json_structural_mask_includes_terminal_close_but_not_payload(
     assert structural[-2:] == ["]", "}"]
     assert "gamma" not in structural
     assert not any(token.startswith("<|coord_") for token in structural)
+
+
+def test_preflight_bidirectional_gate_masks_objective_coord_and_text_slots() -> None:
+    template = _FakeTemplate()
+    branch = encode_set_continuation_branch(
+        meta=_meta(),
+        template=template,
+        prefix_indices=[],
+        candidate_index=0,
+        object_field_order="desc_first",
+    )
+
+    objective_coord = _scored_tokens(
+        template,
+        branch.labels,
+        branch.objective_label_mask & branch.coord_label_mask,
+    )
+    objective_text = _scored_tokens(
+        template,
+        branch.labels,
+        branch.objective_label_mask & ~branch.coord_label_mask,
+    )
+
+    assert objective_coord
+    assert all(token.startswith("<|coord_") for token in objective_coord)
+    assert "objects" in objective_text
+    assert "desc" in objective_text
+    assert "alpha" in objective_text
+    assert "," in objective_text
+    assert not any(token.startswith("<|coord_") for token in objective_text)
+
+
+def test_preflight_bidirectional_gate_excludes_prefix_payload_for_nonempty_prefix() -> (
+    None
+):
+    template = _FakeTemplate()
+    branch = encode_set_continuation_branch(
+        meta=_meta(),
+        template=template,
+        prefix_indices=[0],
+        candidate_index=1,
+        object_field_order="desc_first",
+    )
+
+    objective_text = _scored_tokens(
+        template,
+        branch.labels,
+        branch.objective_label_mask & ~branch.coord_label_mask,
+    )
+    objective_coord = _scored_tokens(
+        template,
+        branch.labels,
+        branch.objective_label_mask & branch.coord_label_mask,
+    )
+
+    assert "beta" in objective_text
+    assert "alpha" not in objective_text
+    assert "<|coord_1|>" not in objective_coord
+    assert "<|coord_11|>" in objective_coord
+
+
+def test_preflight_real_jsonl_gate_vocab_scope_matches_tokenizer(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    template = _real_template(monkeypatch)
+    meta = _real_dataset_meta(monkeypatch)
+    branch = encode_set_continuation_branch(
+        meta=meta,
+        template=template,
+        prefix_indices=[],
+        candidate_index=0,
+        object_field_order="desc_first",
+    )
+    labels = branch.labels.reshape(-1)
+    objective = branch.objective_label_mask.reshape(-1).bool() & labels.ne(-100)
+    coord_mask = branch.coord_label_mask.reshape(-1).bool()
+    coord_ids = set(
+        int(token_id) for token_id in get_coord_token_ids(template.tokenizer)
+    )
+
+    objective_coord_ids = {
+        int(token_id)
+        for token_id in labels[objective & coord_mask].detach().cpu().tolist()
+    }
+    objective_text_ids = {
+        int(token_id)
+        for token_id in labels[objective & ~coord_mask].detach().cpu().tolist()
+    }
+    objective_text = _scored_tokens(
+        template,
+        branch.labels,
+        branch.objective_label_mask & ~branch.coord_label_mask,
+    )
+
+    assert objective_coord_ids
+    assert objective_coord_ids.issubset(coord_ids)
+    assert objective_text_ids.isdisjoint(coord_ids)
+    assert "<|im_end|>" not in objective_text
+
+
+def test_preflight_bidirectional_gate_shift_alignment_separates_logits_positions() -> (
+    None
+):
+    labels = torch.tensor([[0, 1, 4, 2]], dtype=torch.long)
+    objective_mask = torch.tensor([[False, True, True, True]])
+    coord_mask = torch.tensor([[False, False, True, False]])
+    coord_token_ids = torch.tensor([4, 5], dtype=torch.long)
+
+    aligned_logits = torch.full((1, 4, 6), -8.0)
+    aligned_logits[0, 0, 1] = 8.0
+    aligned_logits[0, 1, 4] = 8.0
+    aligned_logits[0, 2, 2] = 8.0
+    aligned_logits[0, 0, 4] = -8.0
+    aligned_logits[0, 2, 4] = -8.0
+
+    early_logits = torch.full((1, 4, 6), -8.0)
+    early_logits[0, 0, 4] = 8.0
+    early_logits[0, 1, 2] = 8.0
+    early_logits[0, 2, 4] = 8.0
+
+    aligned = compute_bidirectional_token_gate_loss(
+        logits=aligned_logits,
+        labels=labels,
+        objective_label_mask=objective_mask,
+        coord_label_mask=coord_mask,
+        coord_token_ids=coord_token_ids,
+    )
+    early = compute_bidirectional_token_gate_loss(
+        logits=early_logits,
+        labels=labels,
+        objective_label_mask=objective_mask,
+        coord_label_mask=coord_mask,
+        coord_token_ids=coord_token_ids,
+    )
+
+    assert aligned.coord_loss < early.coord_loss
+    assert aligned.text_loss < early.text_loss
 
 
 def test_preflight_shifted_loss_scores_exact_next_token_positions() -> None:

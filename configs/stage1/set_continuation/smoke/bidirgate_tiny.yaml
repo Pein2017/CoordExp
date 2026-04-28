@@ -1,0 +1,31 @@
+extends:
+  - ../production.yaml
+  - ./common_prodlike.yaml
+
+training:
+  artifact_subdir: bidirgate_tiny
+  run_name: smoke-bidirgate-tiny
+  max_steps: 2
+  eval_steps: 2
+  save_steps: 1000
+  save_delay_steps: 1000
+
+custom:
+  train_sample_limit: 8
+  val_sample_limit: 4
+  eval_detection:
+    limit: 4
+    batch_size: 1
+
+benchmark:
+  group_id: stage1_set_continuation_bidirgate_smoke
+  intended_variable: schema-aware candidate-balanced continuation with bidirectional token-gate procedural smoke
+
+experiment:
+  title: Stage-1 set-continuation bidirectional-gate tiny smoke
+  purpose: Procedural smoke for schema-aware empty-prefix scoring and bidirectional token-type gating on the real COCO JSONL surface and production tokenizer/chat template.
+  tags:
+    - stage1
+    - set-continuation
+    - smoke
+    - bidirgate

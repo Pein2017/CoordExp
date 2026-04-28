@@ -49,9 +49,13 @@ def test_production_profile_resolves_and_pins_common_contract() -> None:
         "/data/CoordExp/output_remote/stage1_2b/set_continuation/tb"
     )
     assert (
-        cfg.training["artifact_subdir"] == "coco1024_sota1332_setcont_candbal_schemafix"
+        cfg.training["artifact_subdir"]
+        == "coco1024_sota1332_setcont_candbal_bidirgate_warmup10"
     )
-    assert cfg.training["run_name"] == "setcont-coco1024-sota1332-candbal-schemafix"
+    assert (
+        cfg.training["run_name"]
+        == "setcont-coco1024-sota1332-candbal-bidirgate-warmup10"
+    )
     assert cfg.training["packing"] is False
     assert cfg.training["eval_packing"] is False
     assert cfg.training["encoded_sample_cache"]["enabled"] is False
@@ -104,14 +108,14 @@ def test_production_profile_resolves_and_pins_common_contract() -> None:
     assert report["dataset_ablation_note"] == "original_coco_first_lvis_proxy_followup"
     assert report["prediction_surface"] == "coord_token_xyxy"
     assert report["score_mode"] == "confidence_postop_bbox_logprob_confidence_exp"
-    assert report["decoding_controls"] == "greedy_temp0_top_p1_rep1p05"
+    assert report["decoding_controls"] == "greedy_temp0_top_p1_rep1p10"
     assert (
         report["same_budget_label"]
-        == "smart_batched_exact_suffix_no_ddp_padding_cap8_v1"
+        == "smart_batched_exact_suffix_no_ddp_padding_cap8_bidirgate_warmup10_v1"
     )
     assert (
         report["train_forward_budget"]
-        == "smart_batched_exact_suffix_no_ddp_padding_cap8_v1"
+        == "smart_batched_exact_suffix_no_ddp_padding_cap8_bidirgate_warmup10_v1"
     )
     assert (
         report["sparse_label_caveat"]
@@ -123,6 +127,7 @@ def test_production_profile_resolves_and_pins_common_contract() -> None:
     )
     assert "generated schema opener" in report["objective_fidelity_note"]
     assert "append-or-close boundary" in report["objective_fidelity_note"]
+    assert "bidirectional token gating" in report["objective_fidelity_note"]
 
 
 def test_production_profile_enables_all_set_continuation_features() -> None:
@@ -162,6 +167,11 @@ def test_production_profile_enables_all_set_continuation_features() -> None:
     assert sc.structural_close.close_start_suppression_weight == pytest.approx(0.05)
     assert sc.structural_close.final_schema_close_weight == pytest.approx(0.05)
     assert sc.structural_close.json_structural_weight == pytest.approx(0.05)
+    assert sc.bidirectional_token_gate.enabled is True
+    assert sc.bidirectional_token_gate.coord_gate_weight == pytest.approx(0.5)
+    assert sc.bidirectional_token_gate.text_gate_weight == pytest.approx(0.1)
+    assert sc.bidirectional_token_gate.temperature == pytest.approx(1.0)
+    assert sc.bidirectional_token_gate.scope == "objective_tokens"
     completeness = sc.structural_close.annotation_completeness_weight
     assert completeness.enabled is True
     assert completeness.by_max_gt[1] == pytest.approx(0.9500)
@@ -259,6 +269,13 @@ def test_effective_runtime_records_production_set_continuation_provenance() -> N
     assert sc_runtime["positive_evidence_margin"] == {
         "objective": "disabled",
         "threshold_space": "full_entry_logZ",
+    }
+    assert sc_runtime["bidirectional_token_gate"] == {
+        "enabled": True,
+        "coord_gate_weight": 0.5,
+        "text_gate_weight": 0.1,
+        "temperature": 1.0,
+        "scope": "objective_tokens",
     }
     assert sc_runtime["effective_coord_slot_scoring"] == "coord_token_vocab_full_entry"
     assert sc_runtime["raw_text_integer_coordinates"] == "unsupported"

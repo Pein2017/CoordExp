@@ -1288,6 +1288,45 @@ class Stage1SetContinuationStructuralCloseConfig:
 
 
 @dataclass(frozen=True)
+class Stage1SetContinuationBidirectionalTokenGateConfig:
+    enabled: bool = False
+    coord_gate_weight: float = 0.0
+    text_gate_weight: float = 0.0
+    temperature: float = 1.0
+    scope: str = "objective_tokens"
+
+    def __post_init__(self) -> None:
+        coord_gate_weight = float(self.coord_gate_weight)
+        text_gate_weight = float(self.text_gate_weight)
+        temperature = float(self.temperature)
+        scope = str(self.scope or "").strip()
+        object.__setattr__(self, "coord_gate_weight", coord_gate_weight)
+        object.__setattr__(self, "text_gate_weight", text_gate_weight)
+        object.__setattr__(self, "temperature", temperature)
+        object.__setattr__(self, "scope", scope)
+        if coord_gate_weight < 0.0:
+            raise ValueError(
+                "custom.stage1_set_continuation.bidirectional_token_gate.coord_gate_weight must be >= 0"
+            )
+        if text_gate_weight < 0.0:
+            raise ValueError(
+                "custom.stage1_set_continuation.bidirectional_token_gate.text_gate_weight must be >= 0"
+            )
+        if temperature <= 0.0:
+            raise ValueError(
+                "custom.stage1_set_continuation.bidirectional_token_gate.temperature must be > 0"
+            )
+        if scope != "objective_tokens":
+            raise ValueError(
+                "custom.stage1_set_continuation.bidirectional_token_gate.scope must be 'objective_tokens'"
+            )
+        if self.enabled and coord_gate_weight == 0.0 and text_gate_weight == 0.0:
+            raise ValueError(
+                "custom.stage1_set_continuation.bidirectional_token_gate is enabled but coord_gate_weight and text_gate_weight are both 0"
+            )
+
+
+@dataclass(frozen=True)
 class Stage1SetContinuationPositiveEvidenceMarginConfig:
     objective: Literal["disabled", "threshold_loss"] = "disabled"
     threshold_space: Literal["full_entry_logZ"] = "full_entry_logZ"
@@ -1670,6 +1709,9 @@ class Stage1SetContinuationConfig:
     )
     structural_close: Stage1SetContinuationStructuralCloseConfig = field(
         default_factory=Stage1SetContinuationStructuralCloseConfig
+    )
+    bidirectional_token_gate: Stage1SetContinuationBidirectionalTokenGateConfig = field(
+        default_factory=Stage1SetContinuationBidirectionalTokenGateConfig
     )
     positive_evidence_margin: Stage1SetContinuationPositiveEvidenceMarginConfig = field(
         default_factory=Stage1SetContinuationPositiveEvidenceMarginConfig
@@ -3473,6 +3515,17 @@ class TrainingConfig:
                 "smart_batched_exact",
             }:
                 runtime_mode = str(train_forward.branch_runtime.mode)
+                if (
+                    runtime_mode == "smart_batched_exact"
+                    and train_forward.ddp_sync.candidate_padding == "max_count"
+                ):
+                    raise ValueError(
+                        "custom.stage1_set_continuation.train_forward.branch_runtime."
+                        "mode=smart_batched_exact requires "
+                        "custom.stage1_set_continuation.train_forward.ddp_sync."
+                        "candidate_padding=none in v1; smart-batched max-count "
+                        "padding is not implemented"
+                    )
                 if bool(getattr(custom.coord_soft_ce_w1, "enabled", False)):
                     raise ValueError(
                         "custom.stage1_set_continuation.train_forward.branch_runtime."

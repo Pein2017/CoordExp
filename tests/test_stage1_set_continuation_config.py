@@ -64,6 +64,13 @@ def _stage1_set_continuation_payload() -> dict:
                         },
                     },
                 },
+                "bidirectional_token_gate": {
+                    "enabled": True,
+                    "coord_gate_weight": 0.5,
+                    "text_gate_weight": 0.1,
+                    "temperature": 1.0,
+                    "scope": "objective_tokens",
+                },
                 "positive_evidence_margin": {
                     "objective": "threshold_loss",
                     "threshold_space": "full_entry_logZ",
@@ -101,6 +108,12 @@ def test_stage1_set_continuation_parses_successfully() -> None:
     assert set(completeness.by_max_gt) == {1, 3}
     assert completeness.by_max_gt[1] == pytest.approx(0.9500)
     assert completeness.by_max_gt[3] == pytest.approx(0.8306)
+    gate = stage1_cfg.bidirectional_token_gate
+    assert gate.enabled is True
+    assert gate.coord_gate_weight == pytest.approx(0.5)
+    assert gate.text_gate_weight == pytest.approx(0.1)
+    assert gate.temperature == pytest.approx(1.0)
+    assert gate.scope == "objective_tokens"
     assert stage1_cfg.positive_evidence_margin.objective == "threshold_loss"
     assert stage1_cfg.positive_evidence_margin.threshold_space == "full_entry_logZ"
     assert stage1_cfg.positive_evidence_margin.rho is None
@@ -205,6 +218,53 @@ def test_stage1_set_continuation_positive_evidence_margin_requires_exactly_one_t
     }
 
     with pytest.raises(ValueError, match=r"exactly one of rho/log_rho"):
+        TrainingConfig.from_mapping(payload, PromptOverrides())
+
+
+@pytest.mark.parametrize(
+    ("gate_patch", "error_text"),
+    [
+        (
+            {"enabled": True, "coord_gate_weight": 0.0, "text_gate_weight": 0.0},
+            "both 0",
+        ),
+        (
+            {"enabled": True, "coord_gate_weight": -0.1, "text_gate_weight": 0.1},
+            "coord_gate_weight",
+        ),
+        (
+            {"enabled": True, "coord_gate_weight": 0.1, "text_gate_weight": -0.1},
+            "text_gate_weight",
+        ),
+        (
+            {
+                "enabled": True,
+                "coord_gate_weight": 0.1,
+                "text_gate_weight": 0.1,
+                "temperature": 0.0,
+            },
+            "temperature",
+        ),
+        (
+            {
+                "enabled": True,
+                "coord_gate_weight": 0.1,
+                "text_gate_weight": 0.1,
+                "scope": "candidate_tokens",
+            },
+            "scope",
+        ),
+    ],
+)
+def test_stage1_set_continuation_bidirectional_gate_validates_config(
+    gate_patch: dict[str, object], error_text: str
+) -> None:
+    payload = _stage1_set_continuation_payload()
+    payload["custom"]["stage1_set_continuation"]["bidirectional_token_gate"] = (
+        gate_patch
+    )
+
+    with pytest.raises(ValueError, match=error_text):
         TrainingConfig.from_mapping(payload, PromptOverrides())
 
 

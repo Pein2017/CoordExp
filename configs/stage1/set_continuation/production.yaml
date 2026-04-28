@@ -1,8 +1,8 @@
 extends:
   - ../_shared/coord_soft_ce_gate_2b.yaml
-  # Keep the first production run on the original COCO Stage-1 coord-token
-  # surface on purpose. LVIS-proxy should be tested next as a dataset-choice
-  # ablation rather than mixed into this objective-change run.
+  # Keep this bidirectional-gate production run on the original COCO Stage-1
+  # coord-token surface. LVIS-proxy remains a follow-up dataset-choice ablation
+  # rather than being mixed into this objective/optimizer-control run.
   - ../../_shared/datasets/coco_1024_bbox_max60.yaml
   - ../../_shared/prompts/coco80_desc_first.yaml
 
@@ -12,8 +12,8 @@ model:
 training:
   output_root: /data/CoordExp/output_remote/stage1_2b/set_continuation
   logging_root: /data/CoordExp/output_remote/stage1_2b/set_continuation/tb
-  artifact_subdir: coco1024_sota1332_setcont_candbal_schemafix
-  run_name: setcont-coco1024-sota1332-candbal-schemafix
+  artifact_subdir: coco1024_sota1332_setcont_candbal_bidirgate_warmup10
+  run_name: setcont-coco1024-sota1332-candbal-bidirgate-warmup10
   packing: false
   eval_packing: false
   encoded_sample_cache:
@@ -23,6 +23,7 @@ training:
   gradient_accumulation_steps: 2
   effective_batch_size: 128
   learning_rate: 5.0e-5
+  warmup_ratio: 0.1
   vit_lr: 1.0e-5
   aligner_lr: 5.0e-5
   metric_for_best_model: eval_det_bbox_AP
@@ -42,13 +43,13 @@ deepspeed:
 benchmark:
   group_id: stage1_set_continuation_full_features
   control_group_id: stage1_sft_sota1332
-  intended_variable: subset-conditioned candidate-balanced continuation with schema-aware structural supervision, tail-positive candidate protection, valid close-start suppression, and annotation-completeness-weighted weak final-close supervision
+  intended_variable: subset-conditioned candidate-balanced continuation with schema-aware structural supervision, bidirectional token-type gating, tail-positive candidate protection, valid close-start suppression, and annotation-completeness-weighted weak final-close supervision
   comparability_label: accuracy-comparable
 
 experiment:
-  title: Stage-1 set-continuation candidate-balanced schema-fix production
-  purpose: Continue training the SOTA coord-token Stage-1 SFT checkpoint with the repaired set-continuation objective.
-  hypothesis: Schema-aware candidate-balanced continuation supervision matches eval-time free generation and preserves multi-object recall without the mode-seeking pressure of full-entry logZ MP.
+  title: Stage-1 set-continuation candidate-balanced bidirectional-gate warmup10 production
+  purpose: Continue training the SOTA coord-token Stage-1 SFT checkpoint with the repaired set-continuation objective plus lightweight token-type gating and a gentler 10% warmup schedule.
+  hypothesis: Schema-aware candidate-balanced continuation supervision plus bidirectional token-type gating, trained with a 10% warmup, preserves strict JSON serialization and coord/text slot control without the early-step instability or mode-seeking pressure of full-entry logZ MP.
   baseline: output_remote/stage1_2b/coco_bbox_max60-hard_ce_soft_ce_w1_gate/epoch_4-from-base-2B/v0-20260227-050057/checkpoint-1332-merged-full
   key_deviations:
     - "trainer_variant: stage1_set_continuation"
@@ -57,6 +58,8 @@ experiment:
     - "prefix sampling: empty/random/leave-one-out/full mixture with small annotation-completeness-weighted full-prefix final-close calibration"
     - "candidate subset selection: cap-8 fallback keeps late GT candidates to avoid dropping the final annotated object under crowded images"
     - "structural JSON: schema/key/punctuation/boundary tokens receive an auxiliary CE term while desc text and coord values remain governed by the candidate objective"
+    - "bidirectional token gate: supervised objective coord slots penalize non-coordinate mass, and supervised objective schema/description/boundary slots penalize coordinate-token mass"
+    - "optimizer schedule: one epoch is preserved, with warmup_ratio=0.1 to reduce early update shock relative to the initial bidirgate production launch"
     - "structural close: close-start suppression uses a valid close-ready prefix; weak final schema close is downweighted by original-checkpoint FP-as-unlabeled completeness estimates"
     - "execution: smart batched exact branch scoring with supervised suffix logits, no DDP padding forwards, and 8-candidate approximate fallback for over-budget samples"
     - "prefix reuse: disabled in this bridge; GPU KV cache and branch attention mask disabled"
@@ -73,6 +76,7 @@ experiment:
     - "candidate budget exact_until.max_candidates=8 and fallback.max_candidates=8; cap-8 fallback optimizes the sampled candidate-balanced CE and logs approximate MP diagnostics"
     - "prefix logits are exact suffix-only scoring, not a detached-prefix or KV-cache approximation"
     - "num_train_epochs=1"
+    - "warmup_ratio=0.1"
     - "effective_batch_size=128"
     - "lr: llm=5e-5, vit=1e-5, aligner=5e-5, coord_offset=5e-5"
     - "metric_for_best_model=eval_det_bbox_AP"
@@ -129,6 +133,12 @@ custom:
           10: 0.8306
           20: 0.8068
           1000000000: 0.7595
+    bidirectional_token_gate:
+      enabled: true
+      coord_gate_weight: 0.5
+      text_gate_weight: 0.1
+      temperature: 1.0
+      scope: objective_tokens
     positive_evidence_margin:
       objective: disabled
     train_forward:
@@ -183,8 +193,8 @@ custom:
       dataset_ablation_note: original_coco_first_lvis_proxy_followup
       prediction_surface: coord_token_xyxy
       score_mode: confidence_postop_bbox_logprob_confidence_exp
-      decoding_controls: greedy_temp0_top_p1_rep1p05
-      same_budget_label: smart_batched_exact_suffix_no_ddp_padding_cap8_v1
-      train_forward_budget: smart_batched_exact_suffix_no_ddp_padding_cap8_v1
-      objective_fidelity_note: schema-aware candidate-balanced continuation CE scores the generated schema opener for empty-prefix branches, object entries, and the correct append-or-close boundary; samples with <=8 remaining candidates score all remaining candidates, while over-budget samples use telemetry-required uniform subsampling and keep MP/logZ as diagnostics
+      decoding_controls: greedy_temp0_top_p1_rep1p10
+      same_budget_label: smart_batched_exact_suffix_no_ddp_padding_cap8_bidirgate_warmup10_v1
+      train_forward_budget: smart_batched_exact_suffix_no_ddp_padding_cap8_bidirgate_warmup10_v1
+      objective_fidelity_note: schema-aware candidate-balanced continuation CE scores the generated schema opener for empty-prefix branches, object entries, and the correct append-or-close boundary; bidirectional token gating adds objective-token coord/text slot control; samples with <=8 remaining candidates score all remaining candidates, while over-budget samples use telemetry-required uniform subsampling and keep MP/logZ as diagnostics
       sparse_label_caveat: annotated_view_may_count_unlabeled_true_positives_as_fp

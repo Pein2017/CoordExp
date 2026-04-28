@@ -32,6 +32,7 @@ class TensorBranchScoreInput:
     labels: torch.Tensor
     candidate_entry_label_mask: torch.Tensor
     coord_label_mask: torch.Tensor
+    objective_label_mask: torch.Tensor | None = None
     schema_open_label_mask: torch.Tensor | None = None
     json_structural_label_mask: torch.Tensor | None = None
 
@@ -74,12 +75,14 @@ def crop_tensors_for_logits(
     labels: torch.Tensor,
     candidate_entry_label_mask: torch.Tensor,
     coord_label_mask: torch.Tensor,
+    objective_label_mask: torch.Tensor | None = None,
     schema_open_label_mask: torch.Tensor | None = None,
     json_structural_label_mask: torch.Tensor | None = None,
 ) -> tuple[
     torch.Tensor,
     torch.Tensor,
     torch.Tensor,
+    torch.Tensor | None,
     torch.Tensor | None,
     torch.Tensor | None,
 ]:
@@ -89,6 +92,7 @@ def crop_tensors_for_logits(
             labels,
             candidate_entry_label_mask,
             coord_label_mask,
+            objective_label_mask,
             schema_open_label_mask,
             json_structural_label_mask,
         )
@@ -96,6 +100,7 @@ def crop_tensors_for_logits(
         labels[:, start:],
         candidate_entry_label_mask[:, start:],
         coord_label_mask[:, start:],
+        objective_label_mask[:, start:] if objective_label_mask is not None else None,
         schema_open_label_mask[:, start:]
         if schema_open_label_mask is not None
         else None,
@@ -151,6 +156,9 @@ def score_branch_retained_graph(
     branch: EncodedSetContinuationBranch,
     coord_token_ids: torch.Tensor,
     logits_mode: LogitsMode = "full",
+    bidirectional_gate_enabled: bool = False,
+    bidirectional_gate_temperature: float = 1.0,
+    special_token_ids: torch.Tensor | None = None,
 ) -> BranchScoreBundle:
     suffix_start = _suffix_start_for_mode(
         logits_mode=logits_mode,
@@ -173,6 +181,7 @@ def score_branch_retained_graph(
         device=logits.device
     )
     coord_label_mask = branch.coord_label_mask.to(device=logits.device)
+    objective_label_mask = branch.objective_label_mask.to(device=logits.device)
     schema_open_label_mask = branch.schema_open_label_mask.to(device=logits.device)
     json_structural_label_mask = branch.json_structural_label_mask.to(
         device=logits.device
@@ -181,6 +190,7 @@ def score_branch_retained_graph(
         labels,
         candidate_entry_label_mask,
         coord_label_mask,
+        objective_label_mask,
         schema_open_label_mask,
         json_structural_label_mask,
     ) = crop_tensors_for_logits(
@@ -188,6 +198,7 @@ def score_branch_retained_graph(
         labels=labels,
         candidate_entry_label_mask=candidate_entry_label_mask,
         coord_label_mask=coord_label_mask,
+        objective_label_mask=objective_label_mask,
         schema_open_label_mask=schema_open_label_mask,
         json_structural_label_mask=json_structural_label_mask,
     )
@@ -197,8 +208,12 @@ def score_branch_retained_graph(
         candidate_entry_label_mask=candidate_entry_label_mask,
         coord_label_mask=coord_label_mask,
         coord_token_ids=coord_token_ids.to(device=logits.device),
+        objective_label_mask=objective_label_mask,
         schema_open_label_mask=schema_open_label_mask,
         json_structural_label_mask=json_structural_label_mask,
+        bidirectional_gate_enabled=bool(bidirectional_gate_enabled),
+        bidirectional_gate_temperature=float(bidirectional_gate_temperature),
+        special_token_ids=special_token_ids,
     )
     return BranchScoreBundle(
         score=logprob.score,
@@ -215,14 +230,19 @@ def _result_from_logits(
     candidate_entry_label_mask: torch.Tensor,
     coord_label_mask: torch.Tensor,
     coord_token_ids: torch.Tensor,
+    objective_label_mask: torch.Tensor | None = None,
     schema_open_label_mask: torch.Tensor | None = None,
     json_structural_label_mask: torch.Tensor | None = None,
     suffix_start: int = 0,
+    bidirectional_gate_enabled: bool = False,
+    bidirectional_gate_temperature: float = 1.0,
+    special_token_ids: torch.Tensor | None = None,
 ) -> CandidateLogProbResult:
     (
         labels,
         candidate_entry_label_mask,
         coord_label_mask,
+        objective_label_mask,
         schema_open_label_mask,
         json_structural_label_mask,
     ) = crop_tensors_for_logits(
@@ -230,6 +250,7 @@ def _result_from_logits(
         labels=labels,
         candidate_entry_label_mask=candidate_entry_label_mask,
         coord_label_mask=coord_label_mask,
+        objective_label_mask=objective_label_mask,
         schema_open_label_mask=schema_open_label_mask,
         json_structural_label_mask=json_structural_label_mask,
     )
@@ -239,11 +260,19 @@ def _result_from_logits(
         candidate_entry_label_mask=candidate_entry_label_mask.to(device=logits.device),
         coord_label_mask=coord_label_mask.to(device=logits.device),
         coord_token_ids=coord_token_ids.to(device=logits.device),
+        objective_label_mask=objective_label_mask.to(device=logits.device)
+        if objective_label_mask is not None
+        else None,
         schema_open_label_mask=schema_open_label_mask.to(device=logits.device)
         if schema_open_label_mask is not None
         else None,
         json_structural_label_mask=json_structural_label_mask.to(device=logits.device)
         if json_structural_label_mask is not None
+        else None,
+        bidirectional_gate_enabled=bool(bidirectional_gate_enabled),
+        bidirectional_gate_temperature=float(bidirectional_gate_temperature),
+        special_token_ids=special_token_ids.to(device=logits.device)
+        if special_token_ids is not None
         else None,
     )
 
@@ -408,7 +437,14 @@ def _batch_labels_and_masks(
     items: Sequence[TensorBranchScoreInput],
     *,
     max_length: int,
-) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+) -> tuple[
+    torch.Tensor,
+    torch.Tensor,
+    torch.Tensor,
+    torch.Tensor,
+    torch.Tensor,
+    torch.Tensor,
+]:
     labels = torch.cat(
         [_pad_2d(item.labels, target_length=max_length, value=-100) for item in items],
         dim=0,
@@ -428,6 +464,21 @@ def _batch_labels_and_masks(
         [
             _pad_2d(
                 item.coord_label_mask.bool(),
+                target_length=max_length,
+                value=False,
+            )
+            for item in items
+        ],
+        dim=0,
+    )
+    objective_masks = torch.cat(
+        [
+            _pad_2d(
+                (
+                    item.objective_label_mask
+                    if item.objective_label_mask is not None
+                    else item.candidate_entry_label_mask
+                ).bool(),
                 target_length=max_length,
                 value=False,
             )
@@ -465,7 +516,14 @@ def _batch_labels_and_masks(
         ],
         dim=0,
     )
-    return labels, candidate_masks, coord_masks, schema_masks, json_structural_masks
+    return (
+        labels,
+        candidate_masks,
+        coord_masks,
+        objective_masks,
+        schema_masks,
+        json_structural_masks,
+    )
 
 
 def score_tensor_batch_retained(
@@ -475,6 +533,9 @@ def score_tensor_batch_retained(
     coord_token_ids: torch.Tensor,
     logits_mode: LogitsMode = "full",
     forward_fn: Callable[..., Any] | None = None,
+    bidirectional_gate_enabled: bool = False,
+    bidirectional_gate_temperature: float = 1.0,
+    special_token_ids: torch.Tensor | None = None,
 ) -> list[CandidateLogProbResult]:
     if not items:
         return []
@@ -490,11 +551,16 @@ def score_tensor_batch_retained(
     ]
     global_suffix_start = min(suffix_starts) if mode == "supervised_suffix" else 0
     batched_inputs = _batch_model_inputs(items, max_length=max_length)
-    labels, candidate_masks, coord_masks, schema_masks, json_structural_masks = (
-        _batch_labels_and_masks(
-            items,
-            max_length=max_length,
-        )
+    (
+        labels,
+        candidate_masks,
+        coord_masks,
+        objective_masks,
+        schema_masks,
+        json_structural_masks,
+    ) = _batch_labels_and_masks(
+        items,
+        max_length=max_length,
     )
     if mode == "supervised_suffix":
         batched_inputs["logits_to_keep"] = _logits_to_keep_for_suffix(
@@ -525,9 +591,13 @@ def score_tensor_batch_retained(
             candidate_entry_label_mask=candidate_masks[row_index : row_index + 1],
             coord_label_mask=coord_masks[row_index : row_index + 1],
             coord_token_ids=coord_token_ids,
+            objective_label_mask=objective_masks[row_index : row_index + 1],
             schema_open_label_mask=schema_masks[row_index : row_index + 1],
             json_structural_label_mask=json_structural_masks[row_index : row_index + 1],
             suffix_start=global_suffix_start,
+            bidirectional_gate_enabled=bool(bidirectional_gate_enabled),
+            bidirectional_gate_temperature=float(bidirectional_gate_temperature),
+            special_token_ids=special_token_ids,
         )
         for row_index in range(len(items))
     ]
@@ -541,9 +611,13 @@ def score_tensor_retained(
     candidate_entry_label_mask: torch.Tensor,
     coord_label_mask: torch.Tensor,
     coord_token_ids: torch.Tensor,
+    objective_label_mask: torch.Tensor | None = None,
     schema_open_label_mask: torch.Tensor | None = None,
     json_structural_label_mask: torch.Tensor | None = None,
     logits_mode: LogitsMode = "full",
+    bidirectional_gate_enabled: bool = False,
+    bidirectional_gate_temperature: float = 1.0,
+    special_token_ids: torch.Tensor | None = None,
 ) -> CandidateLogProbResult:
     suffix_start = _suffix_start_for_mode(
         logits_mode=logits_mode,
@@ -563,9 +637,13 @@ def score_tensor_retained(
         candidate_entry_label_mask=candidate_entry_label_mask,
         coord_label_mask=coord_label_mask,
         coord_token_ids=coord_token_ids,
+        objective_label_mask=objective_label_mask,
         schema_open_label_mask=schema_open_label_mask,
         json_structural_label_mask=json_structural_label_mask,
         suffix_start=suffix_start,
+        bidirectional_gate_enabled=bool(bidirectional_gate_enabled),
+        bidirectional_gate_temperature=float(bidirectional_gate_temperature),
+        special_token_ids=special_token_ids,
     )
 
 
@@ -581,8 +659,12 @@ def score_tensor_checkpointed(
     preserve_rng_state: bool,
     forward_fn: Callable[..., Any] | None = None,
     logits_mode: LogitsMode = "full",
+    objective_label_mask: torch.Tensor | None = None,
     schema_open_label_mask: torch.Tensor | None = None,
     json_structural_label_mask: torch.Tensor | None = None,
+    bidirectional_gate_enabled: bool = False,
+    bidirectional_gate_temperature: float = 1.0,
+    special_token_ids: torch.Tensor | None = None,
 ) -> CandidateLogProbResult:
     suffix_start = _suffix_start_for_mode(
         logits_mode=logits_mode,
@@ -609,7 +691,21 @@ def score_tensor_checkpointed(
 
     def _forward_scores(
         *flat_inputs: torch.Tensor,
-    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+    ) -> tuple[
+        torch.Tensor,
+        torch.Tensor,
+        torch.Tensor,
+        torch.Tensor,
+        torch.Tensor,
+        torch.Tensor,
+        torch.Tensor,
+        torch.Tensor,
+        torch.Tensor,
+        torch.Tensor,
+        torch.Tensor,
+        torch.Tensor,
+        torch.Tensor,
+    ]:
         kwargs = dict(static_inputs)
         kwargs.update(dict(zip(tensor_input_names, flat_inputs, strict=True)))
         outputs = forward_fn(**kwargs) if forward_fn is not None else model(**kwargs)
@@ -627,9 +723,13 @@ def score_tensor_checkpointed(
             candidate_entry_label_mask=candidate_entry_label_mask,
             coord_label_mask=coord_label_mask,
             coord_token_ids=coord_token_ids,
+            objective_label_mask=objective_label_mask,
             schema_open_label_mask=schema_open_label_mask,
             json_structural_label_mask=json_structural_label_mask,
             suffix_start=suffix_start,
+            bidirectional_gate_enabled=bool(bidirectional_gate_enabled),
+            bidirectional_gate_temperature=float(bidirectional_gate_temperature),
+            special_token_ids=special_token_ids,
         )
         return (
             result.score,
@@ -637,10 +737,46 @@ def score_tensor_checkpointed(
             result.non_coord_score,
             result.schema_score,
             result.json_structural_score,
+            result.coord_gate_loss,
+            result.text_gate_loss,
+            result.coord_gate_nll_sum,
+            result.text_gate_nll_sum,
+            result.coord_gate_coord_mass_sum,
+            result.text_gate_coord_mass_sum,
+            result.score.new_tensor(float(result.coord_gate_tokens)),
+            result.score.new_tensor(float(result.text_gate_tokens)),
         )
 
-    score, coord_score, non_coord_score, schema_score, json_structural_score = cast(
-        tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor],
+    (
+        score,
+        coord_score,
+        non_coord_score,
+        schema_score,
+        json_structural_score,
+        coord_gate_loss,
+        text_gate_loss,
+        coord_gate_nll_sum,
+        text_gate_nll_sum,
+        coord_gate_mass_sum,
+        text_gate_mass_sum,
+        coord_gate_tokens_t,
+        text_gate_tokens_t,
+    ) = cast(
+        tuple[
+            torch.Tensor,
+            torch.Tensor,
+            torch.Tensor,
+            torch.Tensor,
+            torch.Tensor,
+            torch.Tensor,
+            torch.Tensor,
+            torch.Tensor,
+            torch.Tensor,
+            torch.Tensor,
+            torch.Tensor,
+            torch.Tensor,
+            torch.Tensor,
+        ],
         _torch_checkpoint(
             _forward_scores,
             *input_values,
@@ -666,11 +802,19 @@ def score_tensor_checkpointed(
         non_coord_score=non_coord_score,
         schema_score=schema_score,
         json_structural_score=json_structural_score,
+        coord_gate_loss=coord_gate_loss,
+        text_gate_loss=text_gate_loss,
+        coord_gate_nll_sum=coord_gate_nll_sum,
+        text_gate_nll_sum=text_gate_nll_sum,
+        coord_gate_coord_mass_sum=coord_gate_mass_sum,
+        text_gate_coord_mass_sum=text_gate_mass_sum,
         tokens=tokens,
         coord_tokens=coord_tokens,
         non_coord_tokens=non_coord_tokens,
         schema_tokens=schema_tokens,
         json_structural_tokens=json_structural_tokens,
+        coord_gate_tokens=int(coord_gate_tokens_t.detach().cpu().item()),
+        text_gate_tokens=int(text_gate_tokens_t.detach().cpu().item()),
     )
 
 
@@ -683,6 +827,9 @@ def score_branch_checkpointed_exact(
     use_reentrant: bool,
     preserve_rng_state: bool,
     logits_mode: LogitsMode = "full",
+    bidirectional_gate_enabled: bool = False,
+    bidirectional_gate_temperature: float = 1.0,
+    special_token_ids: torch.Tensor | None = None,
 ) -> BranchScoreBundle:
     branch_inputs = trainer._prepare_branch_inputs(model=model, branch=branch)
     _core_model, inputs_for_model, _model_type = prepare_forward_inputs(
@@ -718,12 +865,16 @@ def score_branch_checkpointed_exact(
         candidate_entry_label_mask=branch.candidate_entry_label_mask,
         coord_label_mask=branch.coord_label_mask,
         coord_token_ids=coord_token_ids,
+        objective_label_mask=branch.objective_label_mask,
         schema_open_label_mask=branch.schema_open_label_mask,
         json_structural_label_mask=branch.json_structural_label_mask,
         use_reentrant=use_reentrant,
         preserve_rng_state=preserve_rng_state,
         forward_fn=_no_cache_forward,
         logits_mode=logits_mode,
+        bidirectional_gate_enabled=bool(bidirectional_gate_enabled),
+        bidirectional_gate_temperature=float(bidirectional_gate_temperature),
+        special_token_ids=special_token_ids,
     )
     return BranchScoreBundle(
         score=logprob.score,

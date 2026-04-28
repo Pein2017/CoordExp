@@ -240,6 +240,17 @@ def test_ddp_no_padding_requires_broadcast_buffers_disabled() -> None:
     assert "training.ddp_broadcast_buffers=false" in message
 
 
+def test_smart_batched_exact_rejects_max_count_padding() -> None:
+    payload = _payload()
+    payload["custom"]["stage1_set_continuation"]["train_forward"] = {
+        "branch_runtime": {"mode": "smart_batched_exact"},
+        "branch_batching": {"enabled": True},
+    }
+
+    with pytest.raises(ValueError, match="candidate_padding=none"):
+        TrainingConfig.from_mapping(payload, PromptOverrides())
+
+
 def test_checkpointed_exact_rejects_branch_local_aux_in_initial_bridge() -> None:
     payload = _payload()
     payload["custom"]["coord_soft_ce_w1"] = {"enabled": True}
@@ -253,10 +264,12 @@ def test_checkpointed_exact_rejects_branch_local_aux_in_initial_bridge() -> None
 
 def test_smart_batched_exact_rejects_branch_local_aux_in_initial_bridge() -> None:
     payload = _payload()
+    payload["training"]["ddp_broadcast_buffers"] = False
     payload["custom"]["coord_soft_ce_w1"] = {"enabled": True}
     payload["custom"]["stage1_set_continuation"]["train_forward"] = {
         "branch_runtime": {"mode": "smart_batched_exact"},
         "branch_batching": {"enabled": True},
+        "ddp_sync": {"candidate_padding": "none"},
     }
 
     with pytest.raises(ValueError, match="smart_batched_exact.*coord_soft_ce_w1"):

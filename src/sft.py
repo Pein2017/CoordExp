@@ -669,6 +669,9 @@ def _build_benchmark_runtime_payload(
         "structural_close": _config_to_mapping(
             getattr(sc_cfg, "structural_close", None)
         ),
+        "bidirectional_token_gate": _config_to_mapping(
+            getattr(sc_cfg, "bidirectional_token_gate", None)
+        ),
         "positive_evidence_margin": _config_to_mapping(pem_cfg),
         "effective_coord_slot_scoring": "coord_token_vocab_full_entry",
         "raw_text_integer_coordinates": "unsupported",

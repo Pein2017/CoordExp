@@ -81,6 +81,65 @@ def test_checkpointed_exact_matches_retained_graph_gradient_on_tiny_branch() -> 
     assert model_b.calls >= 2
 
 
+def test_checkpointed_exact_matches_retained_graph_with_bidirectional_gate() -> None:
+    from src.trainers.stage1_set_continuation.branch_scorer import (
+        score_tensor_checkpointed,
+        score_tensor_retained,
+    )
+
+    torch.manual_seed(13)
+    model_a = _TinyBranchModel()
+    model_b = copy.deepcopy(model_a)
+    input_ids = torch.tensor([[1, 2, 10, 3, 11]], dtype=torch.long)
+    labels = input_ids.clone()
+    candidate_mask = torch.tensor([[False, False, True, True, True]])
+    objective_mask = torch.tensor([[False, True, True, True, True]])
+    coord_mask = torch.tensor([[False, False, True, False, True]])
+    coord_token_ids = torch.tensor([10, 11, 12], dtype=torch.long)
+
+    retained = score_tensor_retained(
+        model=model_a,
+        model_inputs={"input_ids": input_ids},
+        labels=labels,
+        candidate_entry_label_mask=candidate_mask,
+        objective_label_mask=objective_mask,
+        coord_label_mask=coord_mask,
+        coord_token_ids=coord_token_ids,
+        bidirectional_gate_enabled=True,
+    )
+    checkpointed = score_tensor_checkpointed(
+        model=model_b,
+        model_inputs={"input_ids": input_ids},
+        labels=labels,
+        candidate_entry_label_mask=candidate_mask,
+        objective_label_mask=objective_mask,
+        coord_label_mask=coord_mask,
+        coord_token_ids=coord_token_ids,
+        use_reentrant=False,
+        preserve_rng_state=True,
+        bidirectional_gate_enabled=True,
+    )
+
+    retained_objective = (
+        -retained.score + retained.coord_gate_loss + retained.text_gate_loss
+    )
+    checkpointed_objective = (
+        -checkpointed.score + checkpointed.coord_gate_loss + checkpointed.text_gate_loss
+    )
+    retained_objective.backward()
+    checkpointed_objective.backward()
+
+    assert torch.allclose(
+        retained_objective.detach(), checkpointed_objective.detach(), atol=1e-6
+    )
+    assert retained.coord_gate_tokens == checkpointed.coord_gate_tokens
+    assert retained.text_gate_tokens == checkpointed.text_gate_tokens
+    for param_a, param_b in zip(model_a.parameters(), model_b.parameters()):
+        assert param_a.grad is not None
+        assert param_b.grad is not None
+        assert torch.allclose(param_a.grad, param_b.grad, atol=1e-6)
+
+
 def test_supervised_suffix_candidate_score_matches_full_logits() -> None:
     from src.trainers.stage1_set_continuation.branch_scorer import (
         score_tensor_retained,
@@ -185,6 +244,7 @@ def test_smart_batched_suffix_candidate_scores_match_serial_retained_graph() -> 
             coord_label_mask=item.coord_label_mask,
             coord_token_ids=coord_token_ids,
             logits_mode="supervised_suffix",
+            bidirectional_gate_enabled=True,
         )
         for item in (branch_a, branch_b)
     ]
@@ -193,6 +253,7 @@ def test_smart_batched_suffix_candidate_scores_match_serial_retained_graph() -> 
         items=[branch_a, branch_b],
         coord_token_ids=coord_token_ids,
         logits_mode="supervised_suffix",
+        bidirectional_gate_enabled=True,
     )
 
     assert model_serial.calls == 2
@@ -209,6 +270,18 @@ def test_smart_batched_suffix_candidate_scores_match_serial_retained_graph() -> 
         )
         assert actual.tokens == expected.tokens
         assert actual.coord_tokens == expected.coord_tokens
+        assert actual.coord_gate_tokens == expected.coord_gate_tokens
+        assert actual.text_gate_tokens == expected.text_gate_tokens
+        assert torch.allclose(
+            actual.coord_gate_loss.detach(),
+            expected.coord_gate_loss.detach(),
+            atol=1e-6,
+        )
+        assert torch.allclose(
+            actual.text_gate_loss.detach(),
+            expected.text_gate_loss.detach(),
+            atol=1e-6,
+        )
 
 
 def test_supervised_suffix_close_losses_match_full_logits() -> None:
@@ -253,6 +326,7 @@ def test_supervised_suffix_close_losses_match_full_logits() -> None:
         cropped_labels,
         cropped_start_mask,
         cropped_sequence_mask,
+        _objective_mask,
         _schema_open_mask,
         _json_structural_mask,
     ) = crop_tensors_for_logits(

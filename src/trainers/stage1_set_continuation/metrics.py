@@ -11,10 +11,16 @@ STAGE1_SET_CONTINUATION_METRIC_SCHEMA_VERSION = "stage1_set_continuation_metrics
 
 EMITTED_STAGE1_SET_CONTINUATION_METRICS = {
     "loss/candidate_balanced",
+    "loss/coord_gate",
     "loss/schema_open",
+    "loss/text_gate",
     "loss/json_structural",
     "loss/anti_close_start",
     "loss/weak_schema_close",
+    "gate/coord_slot_coord_mass_mean",
+    "gate/text_slot_coord_mass_mean",
+    "gate/coord_tokens_count",
+    "gate/text_tokens_count",
     "mp/num_prefix_objects",
     "mp/num_remaining_objects",
     "mp/num_candidates_scored",
