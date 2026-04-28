@@ -56,7 +56,7 @@ rtk read docs/PROJECT_CONTEXT.md
 
 RTK is the default for commands that usually emit a lot of text, and for ordinary shell work where compact output is preferable:
 
-- `git status`, `git diff`, `git log`
+- `git status`, `git diff`, `git log`, and Git-hygiene discovery/verification commands
 - broad `rg`/`grep`, `find`, `ls`, `tree`
 - docs/prose reads with `rtk read`
 - `pytest`, `ruff`, `mypy`, `cargo`, `go test`
@@ -67,6 +67,25 @@ For test and lint commands, preserve any existing project-specific wrapper:
 
 - good: `rtk conda run -n ms python -m pytest tests/test_example.py`
 - risky: `rtk pytest tests/test_example.py` when the repo expects a non-default environment
+
+## Git-Hygiene Workflows
+
+When committing or pushing local changes, use RTK for the noisy inspection loop unless exact raw output is required:
+
+- good: `rtk git status --short --branch`
+- good: `rtk git diff --stat`
+- good: `rtk git diff --name-only`
+- good: `rtk git diff --check`
+- good: `rtk git diff --cached`
+- good: `rtk git log --oneline -n 5`
+
+Tiny exact context checks may stay raw if that is clearer:
+
+- acceptable raw: `git branch --show-current`
+- acceptable raw: `git remote -v`
+- acceptable raw: `git rev-parse --abbrev-ref --symbolic-full-name @{u}`
+
+Before choosing raw Git for a command that may emit many lines, run `rtk rewrite "<command>"`. If it maps cleanly, prefer the RTK form. This matters most in dirty CoordExp worktrees where `git status`, broad diffs, and logs can be much larger than expected.
 
 ## When To Skip RTK
 
@@ -90,6 +109,7 @@ Use the raw command instead when:
   4. If direct `rtk ...` is not a good fit, run the raw command instead of introducing wrapper indirection.
 - If you need exact output for debugging, say why you are bypassing RTK.
 - Do not claim the output is verbatim if RTK filtered it.
+- If you notice yourself running several raw Git discovery commands during a commit/push task, pause and switch to `rtk git ...` for the remaining noisy steps.
 - In ambiguous cases, prefer saving tokens unless there is a concrete downside to filtering.
 - Use `rtk gain`, `rtk gain --project`, and `rtk gain --history` to inspect actual savings instead of guessing about impact.
 - Use `rtk rewrite "<command>"` to see whether a raw command maps cleanly to an RTK equivalent.

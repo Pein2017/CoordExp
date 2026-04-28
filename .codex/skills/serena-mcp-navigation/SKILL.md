@@ -9,6 +9,13 @@ Navigate codebases with symbol-aware precision using Serena MCP tools. Superior 
 
 ## Core Workflows
 
+### Project Activation Preflight
+1. Run `get_current_config` before Serena symbol work when the active project may not match the current repo/worktree
+2. If the active project is wrong but the target is listed under available projects, run `activate_project` with the project name, for example `CoordExp`
+3. If the target is not listed, run `activate_project` with the absolute project/worktree path, for example `/data/CoordExp` or `/data/CoordExp/.worktrees/<name>`
+4. After activation, run `check_onboarding_performed` before symbol exploration or edits
+5. Only fall back to CLI-only code navigation if activation fails or Serena lacks the needed language/tool support; state that specific blocker
+
 ### Locate Symbol Definition
 1. Use CLI `rg` to narrow candidate files/dirs first (avoid Serena repo-wide search)
 2. Use `search_for_pattern` only with tight, scoped `relative_path` (never `"."` / repo root, and don’t leave it unset) if file location is still unknown
@@ -46,7 +53,7 @@ Navigate codebases with symbol-aware precision using Serena MCP tools. Superior 
 
 ## Navigation Strategy
 
-1. **Activate target project** - Serena MCP requires project activation for symbol access
+1. **Activate target project** - Serena MCP requires project activation for symbol access; switch projects with `activate_project` instead of falling back when Serena is pointed at another root
 2. **Start with symbol overview** - Use `get_symbols_overview` for structured file inventory
 3. **Find references early** - Use `find_referencing_symbols` to map relationships
 4. **Read selectively** - Use `find_symbol` with `include_body=True` for targeted method access
@@ -67,6 +74,8 @@ Choose the minimal editing approach:
 
 ## Best Practices
 
+- If Serena is pointed at a different project root, do not immediately fall back to shell reads. Use `get_current_config` to inspect active/available projects, then `activate_project` by project name or absolute directory path.
+- For disposable worktrees or nested repos, prefer activating the exact absolute directory you are editing so Serena indexes the same files as the shell.
 - Never set `"relative_path": "."` (or leave `relative_path` unset for a repo-wide scan) in Serena tools; use CLI `rg` to narrow scope first
 - Always specify the smallest viable `relative_path` (single file or tight subdir)
 - Use scoped searches to avoid overwhelming results
