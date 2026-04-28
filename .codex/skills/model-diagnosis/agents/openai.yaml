@@ -1,0 +1,4 @@
+interface:
+  display_name: "Model Diagnosis"
+  short_description: "Diagnose model behavior after training changes"
+  default_prompt: "Use $model-diagnosis to analyze a training innovation, identify model symptoms, diagnose root causes, and propose corrective strategies."
