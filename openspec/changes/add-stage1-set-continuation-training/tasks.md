@@ -206,4 +206,45 @@
       `smart_batched_exact_suffix_no_ddp_padding_cap8_v1`, with config-only
       rollback to retained-graph supervised-suffix mode.
 - [x] Run targeted unit/config/runtime tests for the smart-batched bridge.
-- [ ] Run a real 2-GPU smoke before relaunching production.
+- [x] Run a real 2-GPU smoke before relaunching production.
+
+## 12. Lightweight Bidirectional Token-Type Gate
+
+- [x] Extend the active OpenSpec design/specs with a Stage-1
+      set-continuation-native bidirectional token gate. The gate must be scoped
+      to `objective_label_mask`, not `candidate_object_label_mask`, and must not
+      re-enable ordinary one-sequence Stage-1 loss mixins.
+- [x] Add strict config schema for
+      `custom.stage1_set_continuation.bidirectional_token_gate`, including
+      `enabled`, `coord_gate_weight`, `text_gate_weight`, `temperature`, and
+      `scope=objective_tokens`.
+- [x] Add red unit tests for token-type assignment using synthetic and real
+      tokenizer/chat-template branches: coord labels map to coord gate,
+      schema/description/boundary labels map to text gate, prefix labels do not
+      contribute, and special stop tokens do not contribute.
+- [x] Add loss-mask alignment tests proving next-token shifted logits are used
+      for both gate terms and that supervised-suffix cropping preserves the same
+      loss as full logits.
+- [x] Add vocabulary-scope tests proving the coord vocabulary is exactly the
+      configured `<|coord_0|>` through `<|coord_999|>` id set and that out-of-vocab
+      or duplicate coord ids fail fast.
+- [x] Add gate-math tests proving high non-coord mass at coord slots increases
+      `loss/coord_gate`, and high coord mass at schema/description slots
+      increases `loss/text_gate`.
+- [x] Add runtime parity tests proving retained-graph serial scoring and
+      `smart_batched_exact` scoring produce the same candidate scores, gate
+      losses, token counts, and gradients on deterministic tiny fixtures.
+- [x] Emit compact gate metrics: `loss/coord_gate`, `loss/text_gate`,
+      `gate/coord_slot_coord_mass_mean`, `gate/text_slot_coord_mass_mean`,
+      `gate/coord_tokens_count`, and `gate/text_tokens_count`.
+- [x] Update metric-key parity tests so ordinary Stage-1 runs do not emit gate
+      keys, and set-continuation gate-enabled runs do emit the compact gate
+      keys.
+- [x] Update `docs/training/STAGE1_OBJECTIVE.md`,
+      `docs/training/METRICS.md`, and the super-power design/plan artifacts
+      with the mathematical definition, validation checklist, and smoke gate.
+- [x] Run a tiny real-data smoke with real tokenizer/chat template before any
+      production relaunch. Acceptance is procedural: parse-valid hygiene remains
+      healthy, gate losses are finite, coord-slot coord mass is high or moves in
+      the intended direction, text-slot coord mass is low or decreases, and no
+      special stop tokens contribute to the gate.

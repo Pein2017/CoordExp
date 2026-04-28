@@ -188,6 +188,15 @@ Important semantics:
 - Non-coordinate candidate-entry labels use ordinary full-vocab logprob.
 - `<|coord_*|>` labels use coord-vocabulary-normalized logprob, so raw-text
   integer coordinate training is out of scope for this v1 path.
+- Optional `bidirectional_token_gate` restores token-type pressure without
+  changing candidate identity. At supervised coord-token objective slots, it
+  penalizes probability mass outside the coord-token ids. At supervised
+  non-coord objective slots, including schema opener, keys, punctuation,
+  descriptions, and append/close boundaries, it penalizes coord-token
+  probability mass. Prefix-only labels and chat/template stop tokens such as
+  `<|im_end|>`, `<|end_of_text|>`, and tokenizer EOS are excluded. This gate is
+  native to `stage1_set_continuation` and is distinct from the ordinary
+  `custom.coord_soft_ce_w1` branch-local auxiliary path.
 - The global detection-list close sequence is separate from object-entry end
   tokens. V1 uses the CoordJSON schema close sequence `]}` only for terminal
   continuations and never treats `<|im_end|>`, `<|end_of_text|>`, or tokenizer
@@ -254,6 +263,34 @@ Structural-close controls:
 - Compatibility aliases `loss/anti_stop`, `loss/eod`, and `stop/p_stop_*` are
   emitted for dashboards, but the authoritative v1 semantics are structural
   close-start and CoordJSON close-sequence probabilities.
+
+Bidirectional token gate:
+
+```yaml
+stage1_set_continuation:
+  bidirectional_token_gate:
+    enabled: true
+    coord_gate_weight: 0.5
+    text_gate_weight: 0.1
+    temperature: 1.0
+    scope: objective_tokens
+```
+
+The gate uses the same next-token shift and supervised-suffix crop as the
+candidate objective:
+
+```text
+p_coord(t) = sum softmax(logits_full(t) / T)[coord_token_ids]
+loss/coord_gate = mean(-log(p_coord(t)) over objective coord slots)
+loss/text_gate = mean(-log(1 - p_coord(t)) over objective non-coord slots)
+```
+
+The mean is computed once per sample over all contributing scored objective
+branch tokens, then added with the same sample denominator policy as
+`loss/candidate_balanced`. Only `scope: objective_tokens` is valid in v1. The
+text gate is label-identity agnostic among non-coord labels: description
+tokens, keys, comma boundaries, and final `]}` boundaries with the same coord
+mass receive the same token-gate loss.
 
 PEM threshold loss remains available for calibrated ablations, but the repaired
 production profile disables it:

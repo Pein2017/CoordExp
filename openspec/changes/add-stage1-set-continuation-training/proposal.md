@@ -26,11 +26,14 @@ Add an off-by-default Stage-1 trainer variant for subset-conditioned set-continu
   and comparator metadata.
 - Sample an already-emitted object subset `S` per training example.
 - Score remaining observed objects `R = O - S` as full serialized object entries.
-- Optimize the full-entry multi-positive loss:
+- Score remaining observed objects as full continuations and optimize the
+  current production candidate-balanced objective:
 
   ```text
-  score(o) = log P(entry(o) | image, prompt, prefix)
-  loss/mp = -logsumexp(score(o) for o in candidates)
+  score(o) = log P(schema_open + entry(o) + boundary(o) | image, prompt, prefix)
+  candidate_ce(o) = -score(o) / max(candidate_continuation_tokens(o), 1)
+  loss/candidate_balanced = mean(candidate_ce(o) for o in scored_candidates)
+  loss/mp_diagnostic = -logsumexp(score(o) for o in scored_candidates)
   ```
 
 - Keep object-entry end tokens supervised as part of `entry(o)`.
@@ -61,6 +64,15 @@ Add an off-by-default Stage-1 trainer variant for subset-conditioned set-continu
   disabled, GPU KV cache disabled, and branch attention masks disabled.
 - Record exact versus approximate objective fidelity, fallback reason,
   branch-token budgets, and prefix-reuse mode in metrics and runtime artifacts.
+- Add lightweight bidirectional token-type gating for the set-continuation
+  objective:
+  - coord-label positions penalize full-vocabulary probability mass outside the
+    configured coord-token sub-vocabulary;
+  - supervised non-coord objective positions, including description text and
+    JSON structural/schema tokens, penalize probability mass inside the
+    coord-token sub-vocabulary;
+  - the gate is Stage-1 set-continuation-native and does not re-enable ordinary
+    one-sequence loss mixins.
 - Support only coord-token object coordinates (`<|coord_*|>`) in this trainer variant.
 - Reject raw-text integer coordinate training for this paradigm in v1.
 - Fail fast for dataset packing, including train/eval static packing, in the first version.
@@ -86,6 +98,8 @@ This change also modifies existing capabilities:
 - `packing-dataset`: carve out a v1 fail-fast exception for this Stage-1 trainer variant.
 - `coord-token-mode`: define repeated-forward coord-token scoring for set-continuation instead of ordinary single-forward SFT composition.
 - `coord-aux-loss`: define branch-local `coord_soft_ce_w1` adapter semantics.
+- `coord-aux-loss`: define the reusable low-level coord/text vocabulary gate
+  math used by Stage-1 set-continuation's native bidirectional token gate.
 - `bbox-size-aux-loss`: define branch-local bbox geometry/size adapter semantics.
 - `trainer-metrics-components`: classify new MP, structural-close, candidate, budget, and aux metrics.
 - `encoded-training-cache`: define cache bypass/eligibility for trainer-side branch construction.

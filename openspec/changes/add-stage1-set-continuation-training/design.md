@@ -103,6 +103,102 @@ score_coord(o) = sum log P_coord_vocab(coord_t) over coord-token candidate-entry
 
 This preserves object-entry scoring while respecting the existing coord-token contract that distributional coord supervision should not treat coord-token positions as ordinary full-vocab CE targets. `coord_soft_ce_w1` remains an auxiliary branch-local objective. Its hard CE term, if enabled, is separate from `score_coord` and must be logged under the coord auxiliary namespace.
 
+### 1.3 Lightweight Bidirectional Token-Type Gate
+
+Set-continuation candidate scoring uses coord-vocab normalization at coord
+slots. That is correct for ranking coordinate bins, but by itself it removes
+the full-vocabulary competition that exists during free generation. The
+production repair therefore adds a small native token-type gate to the
+set-continuation objective. The gate is not a stronger stop/close signal; it is
+a slot-type consistency signal.
+
+For each candidate branch, define masks in label-token coordinates before the
+standard next-token shift:
+
+```text
+coord_gate_label_mask =
+  objective_label_mask
+  AND coord_label_mask
+
+text_gate_label_mask =
+  objective_label_mask
+  AND NOT coord_label_mask
+  AND labels are supervised
+  AND label token is not EOS, <|im_end|>, <|end_of_text|>, or padding
+```
+
+After shifting into logits coordinates, compute full-vocabulary coord mass:
+
+```text
+p_coord(t) = sum softmax(logits_full(t) / T)[coord_token_ids]
+
+loss/coord_gate = mean(-log(p_coord(t)) over coord_gate positions)
+loss/text_gate = mean(-log(1 - p_coord(t)) over text_gate positions)
+```
+
+Reduction contract:
+
+- within one training sample, each gate loss is a token mean over all
+  contributing positions across scored objective branches;
+- the gate is then added once per objective-contributing sample, using the same
+  sample denominator policy as `loss/candidate_balanced`;
+- exact all-candidate scoring and cap-8 fallback therefore change only which
+  branch tokens are observed, not the scalar weight per sample;
+- the gate remains active when PEM threshold loss is enabled, even if the PEM
+  margin is already satisfied, because token-type control is orthogonal to
+  positive-evidence mass.
+
+The optimized sample loss includes:
+
+```text
+loss =
+  loss/candidate_balanced
+  + w_coord_gate * loss/coord_gate
+  + w_text_gate * loss/text_gate
+  + existing structural-close/json terms
+```
+
+Required properties:
+
+- the gate uses the exact same labels, masks, suffix crop, and logits tensor as
+  the candidate branch score;
+- at coord slots, `coord_vocab CE + w_coord * coord_gate` is a partial
+  restoration of full-vocabulary competition: `w_coord=0` is pure coord-vocab
+  scoring and `w_coord=1` equals ordinary full-vocab CE for that slot;
+- prefix-only labels never contribute;
+- the schema opener contributes to the text gate only for empty-prefix branches
+  where it is in `objective_label_mask`;
+- candidate append/close boundaries contribute to the text gate when they are
+  in `objective_label_mask`;
+- coord tokens contribute only to the coord gate;
+- `candidate_object_label_mask` remains available for candidate-local aux
+  losses but does not define the gate scope;
+- branch-local `coord_soft_ce_w1` remains a separate aux adapter and MUST NOT be
+  required just to enable bidirectional gating;
+- retained-graph, checkpointed-exact, and smart-batched-exact runtimes must
+  compute the same gate losses for the same branch tensors.
+- in v1, `smart_batched_exact` bidirectional-gate runs must use
+  `ddp_sync.candidate_padding=none`; `smart_batched_exact` plus
+  `candidate_padding=max_count` is rejected rather than mixing real smart-batch
+  candidate forwards with retained-graph padding branches.
+
+Recommended first production weights are intentionally conservative:
+
+```yaml
+custom:
+  stage1_set_continuation:
+    bidirectional_token_gate:
+      enabled: true
+      coord_gate_weight: 0.5
+      text_gate_weight: 0.1
+      temperature: 1.0
+      scope: objective_tokens
+```
+
+The gate must be validated by token-level and gradient-level tests before any
+production run. A passing mAP smoke is not sufficient evidence that the gate is
+mathematically aligned.
+
 ### 2. Repeated-Forward Candidate Scoring
 
 Approach A is the v1 implementation:
@@ -111,7 +207,8 @@ Approach A is the v1 implementation:
 for candidate in candidates:
     forward(image, prompt, prefix + candidate_entry)
     score(candidate) = full-entry score with coord-vocab scoring at coord slots
-loss/mp = -logZ_scored
+loss/candidate_balanced = mean(-score(candidate) / tokens(candidate))
+loss/mp_diagnostic = -logZ_scored
 ```
 
 Branch semantics:
@@ -583,18 +680,20 @@ documented as CoordJSON structural-close aliases and must never include
 
 ### 7. Positive-Evidence Margin
 
-Plain MP mode optimizes:
+PEM-disabled production mode optimizes candidate-balanced continuation CE and
+logs MP/logZ quantities as diagnostics:
 
 ```text
-loss/mp = -logZ_remaining_exact      # exact mode
-loss/mp = -logZ_scored_raw           # sampled mode
+loss/candidate_balanced = mean(-score(o) / tokens(o) for scored candidates)
+loss/mp_diagnostic = -logZ_remaining_exact      # exact diagnostic
+loss/mp_diagnostic = -logZ_scored_raw           # sampled diagnostic
 ```
 
 PEM is included in v1 behind config, disabled by default. The source-idea PEM experiment optimizes a threshold loss, not an additive penalty on top of MP:
 
 ```text
 loss/pem = max(0, log(rho) - logZ_remaining)
-total = loss/pem + structural_close + aux
+total = loss/pem + bidirectional_token_gate + structural_close + aux
 ```
 
 Config shape:
@@ -610,7 +709,14 @@ custom:
       threshold_calibration: null  # authored_fixed_ablation | calibration note/id
 ```
 
-When `objective: threshold_loss`, the trainer logs `loss/pem` as the optimized objective and logs `loss/mp_diagnostic = -logZ_*` without adding it to total loss. This preserves the intended margin behavior: observed GT mass must clear the configured threshold, but the model is not pushed to assign all probability mass to observed remaining GT after the margin is satisfied.
+When `objective: threshold_loss`, the trainer logs `loss/pem` as the optimized
+positive-evidence objective and logs `loss/mp_diagnostic = -logZ_*` without
+adding it to total loss. The bidirectional token gate, if enabled, is still
+optimized after the PEM margin is satisfied because it controls slot type, not
+observed-GT probability mass. This preserves the intended margin behavior:
+observed GT mass must clear the configured threshold, but the model is not
+pushed to assign all probability mass to observed remaining GT after the margin
+is satisfied.
 
 V1 must require exactly one threshold input when PEM is enabled: `rho` or `log_rho`. Numeric examples such as `rho: 0.90` may appear in benchmark profiles, but they should be treated as explicit experiment choices rather than silent defaults because full-entry sequence probabilities are length-sensitive.
 

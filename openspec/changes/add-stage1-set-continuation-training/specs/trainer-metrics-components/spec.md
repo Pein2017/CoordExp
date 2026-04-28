@@ -28,11 +28,13 @@ Normative behavior:
 - smart branch batching metrics MUST expose scheduler choice, branch-batch row
   pressure, token volume, and padding waste so production runs can distinguish
   useful GPU utilization from padded waste.
+- bidirectional gate token-count metrics MUST use `_count` suffixes so additive
+  aggregation semantics are explicit.
 
 Required variant-specific compact v2 families include:
 - `loss/candidate_balanced`, `loss/schema_open`,
   `loss/json_structural`, `loss/anti_close_start`,
-  `loss/weak_schema_close`,
+  `loss/weak_schema_close`, `loss/coord_gate`, `loss/text_gate`,
 - `mp/num_prefix_objects`, `mp/num_remaining_objects`,
   `mp/num_candidates_scored`, `mp/candidate_tokens_scored_mean`,
   `mp/schema_open_tokens_scored_mean`,
@@ -46,6 +48,8 @@ Required variant-specific compact v2 families include:
 - `stop/p_close_start_when_remaining_exists`,
   `stop/p_continue_start_when_remaining_exists`,
   `stop/p_close_start_when_remaining_empty`.
+- `gate/coord_slot_coord_mass_mean`, `gate/text_slot_coord_mass_mean`,
+  `gate/coord_tokens_count`, `gate/text_tokens_count`.
 
 #### Scenario: Ordinary Stage-1 does not emit MP metrics
 - **GIVEN** ordinary Stage-1 SFT
@@ -74,3 +78,10 @@ Required variant-specific compact v2 families include:
   token volume, padding fraction, and scheduler code
 - **AND** objective-fidelity metrics continue to report exact selected-candidate
   execution unless an explicit approximate fallback changes the candidate set.
+
+#### Scenario: Bidirectional gate metrics are compact and scoped
+- **GIVEN** bidirectional token gating is enabled for set-continuation training
+- **WHEN** metrics are reported
+- **THEN** logs include finite `loss/coord_gate` and `loss/text_gate` values
+- **AND** logs include coord/text gate token counts and coord-mass gauges
+- **AND** ordinary Stage-1 SFT does not emit those gate keys.

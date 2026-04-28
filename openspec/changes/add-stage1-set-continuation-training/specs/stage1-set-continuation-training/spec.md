@@ -585,7 +585,8 @@ and aggregation semantics.
 Required compact v2 metric families:
 - losses: `loss/candidate_balanced`, `loss/schema_open`,
   `loss/json_structural`, `loss/anti_close_start`,
-  `loss/weak_schema_close`;
+  `loss/weak_schema_close`, and, when bidirectional gating is enabled,
+  `loss/coord_gate`, `loss/text_gate`;
 - candidate counts and denominators: `mp/num_prefix_objects`,
   `mp/num_remaining_objects`, `mp/num_candidates_scored`,
   `mp/candidate_tokens_scored_mean`, `mp/schema_open_tokens_scored_mean`,
@@ -600,6 +601,9 @@ Required compact v2 metric families:
 - structural close: `stop/p_close_start_when_remaining_exists`,
   `stop/p_continue_start_when_remaining_exists`,
   `stop/p_close_start_when_remaining_empty`.
+- bidirectional token gate, when enabled:
+  `gate/coord_slot_coord_mass_mean`, `gate/text_slot_coord_mass_mean`,
+  `gate/coord_tokens_count`, `gate/text_tokens_count`.
 
 Validity rules:
 - compact metrics are finite scalars after grad-accum aggregation,
@@ -698,8 +702,11 @@ Normative behavior:
   `ddp_broadcast_buffers=false`, and authored cap-8 automatic approximate
   fallback for over-budget samples,
 - the production profile MUST enable close-start suppression, weak/disabled
-  final close supervision, fixed-threshold PEM threshold loss, and a mixed
-  subset-prefix sampler with leave-one-out coverage,
+  final close supervision, disabled PEM threshold loss for the current
+  candidate-balanced production run, and a mixed subset-prefix sampler with
+  leave-one-out coverage,
+- fixed-threshold PEM threshold loss remains supported for calibrated ablation
+  profiles and MUST NOT be silently enabled in the current production profile,
 - benchmark manifests MUST record the intended variable versus the comparator,
   comparability label, branch runtime mode, objective-fidelity counters,
   fallback reasons, realized branch/token budget, realized prefix-mode coverage,
@@ -715,3 +722,90 @@ Normative behavior:
 - **AND** its initial model is the authored Stage-1 SFT checkpoint
 - **AND** its enabled objective features are recorded as the intended benchmark
   variable.
+
+### Requirement: Bidirectional token-type gate is objective-span aligned
+The set-continuation trainer SHALL provide an optional lightweight
+bidirectional token-type gate that restores full-vocabulary slot competition
+without changing candidate identity or adding a stop-specific objective.
+
+Normative behavior:
+- the gate MUST be configured under
+  `custom.stage1_set_continuation.bidirectional_token_gate`,
+- the gate MUST be disabled by default unless a profile explicitly enables it,
+- the only v1 gate scope is `objective_tokens`,
+- coord-gate positions MUST be
+  `objective_label_mask AND coord_label_mask`,
+- text-gate positions MUST be supervised objective labels that are not coord
+  labels and are not EOS, `<|im_end|>`, `<|end_of_text|>`, padding, or another
+  tokenizer stop/special token,
+- the schema opener MUST contribute to the text gate for empty-prefix branches
+  when it is part of the optimized objective span,
+- append and final-close object boundaries MUST contribute to the text gate when
+  they are part of the optimized objective span,
+- prefix-only tokens MUST NOT contribute,
+- candidate-local auxiliary masks MUST NOT be used as the gate scope,
+- the same next-token shift and supervised-suffix crop used by the candidate
+  score MUST be used for gate losses,
+- retained-graph, checkpointed-exact, and smart-batched-exact runtime modes
+  MUST compute equivalent gate losses on equivalent branch tensors,
+- `smart_batched_exact` with bidirectional gating MUST use
+  `ddp_sync.candidate_padding=none` in v1; the unsafe `max_count` pairing MUST
+  fail fast unless a smart-batched padding path is separately implemented and
+  tested,
+- enabling the gate MUST NOT require enabling `custom.coord_soft_ce_w1`.
+
+Mathematical definition:
+
+```text
+p_coord(t) = sum softmax(logits_full(t) / T)[coord_token_ids]
+loss/coord_gate = mean(-log(p_coord(t)) over coord-gate positions)
+loss/text_gate = mean(-log(1 - p_coord(t)) over text-gate positions)
+```
+
+Reduction contract:
+- each gate loss is a token mean over all contributing scored objective-branch
+  positions for one sample,
+- gate losses are added once per objective-contributing sample with the same
+  sample denominator policy as `loss/candidate_balanced`,
+- gate losses remain active when `positive_evidence_margin.objective:
+  threshold_loss` is enabled, even when the PEM margin is already satisfied.
+
+#### Scenario: Coord slot rejects non-coordinate leakage
+- **GIVEN** a scored candidate branch with a supervised `<|coord_*|>` label
+- **WHEN** bidirectional token gating is enabled
+- **THEN** the corresponding shifted logits position contributes to
+  `loss/coord_gate`
+- **AND** increasing full-vocabulary probability mass outside the coord-token
+  ids increases the gate loss.
+
+#### Scenario: Schema and description slots reject coord-token leakage
+- **GIVEN** a scored candidate branch with supervised schema, punctuation,
+  boundary, or description labels
+- **WHEN** bidirectional token gating is enabled
+- **THEN** the corresponding shifted logits positions contribute to
+  `loss/text_gate`
+- **AND** increasing coord-token probability mass at those positions increases
+  the gate loss.
+
+#### Scenario: Prefix and stop tokens are excluded
+- **GIVEN** a non-empty-prefix branch and a chat-template stop token after the
+  assistant payload
+- **WHEN** bidirectional token gating masks are built
+- **THEN** already-generated prefix labels do not contribute
+- **AND** stop/special tokens do not contribute
+- **AND** only labels inside the optimized objective span contribute.
+
+#### Scenario: Gate owner is objective span, not candidate-local payload
+- **GIVEN** a branch where the objective span includes schema opener and
+  append-or-close boundary labels outside the candidate object-local payload
+- **WHEN** bidirectional token gating masks are built
+- **THEN** those objective-only non-coord labels contribute to the text gate
+- **AND** an implementation using `candidate_object_label_mask` would fail the
+  expected token assignment.
+
+#### Scenario: Text gate is neutral among non-coordinate labels
+- **GIVEN** supervised description, JSON-key, comma-boundary, and final-close
+  boundary rows with identical coord-vocab mass
+- **WHEN** bidirectional text-gate loss is computed
+- **THEN** every row receives the same text-gate loss
+- **AND** the gate does not preferentially reward or suppress closing tokens.

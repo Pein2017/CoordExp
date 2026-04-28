@@ -343,6 +343,13 @@ Objective atoms:
   tokens inside the scored continuation span. This includes schema/key,
   punctuation, array/object boundary, and append/close boundary tokens, while
   excluding description payload text and coordinate values.
+- `loss/coord_gate`: optional bidirectional token-gate loss over supervised
+  objective coord-token slots. It penalizes full-vocabulary probability mass
+  outside the configured coord-token ids.
+- `loss/text_gate`: optional bidirectional token-gate loss over supervised
+  objective non-coord slots, including schema, description, punctuation, and
+  append/close boundaries. It penalizes probability mass inside the coord-token
+  ids and excludes prefix-only and special stop tokens.
 - `loss/anti_close_start`: weighted close-start suppression objective when
   observed GT remains.
 - `loss/weak_schema_close`: weighted weak global CoordJSON close-sequence loss
@@ -366,6 +373,14 @@ Prefix and candidate state:
 - `mp/selected_mode_empty_prefix`
 - `mp/selected_mode_full_prefix`
 - `mp/objective_contributing_samples`
+
+Bidirectional token-gate diagnostics are emitted only when
+`custom.stage1_set_continuation.bidirectional_token_gate.enabled: true`:
+
+- `gate/coord_slot_coord_mass_mean`
+- `gate/text_slot_coord_mass_mean`
+- `gate/coord_tokens_count`
+- `gate/text_tokens_count`
 
 Stop/continue diagnostics:
 
