@@ -5,7 +5,7 @@ doc_type: reference
 status: canonical
 domain: training
 summary: Canonical training metric families for Stage-1 and the active Stage-2 single-pass contract.
-updated: 2026-04-25
+updated: 2026-04-29
 ---
 
 # Training Metrics and Losses
@@ -146,6 +146,75 @@ Interpretation note:
   - `coord_monitor/flip_coord_to_noncoord`
   - `coord_monitor/flip_desc_to_coord`
   - `coord_monitor/flip_format_to_coord`
+
+### Stage-1 Set-Continuation And ET-RMP-CE
+
+The compact Stage-1 set-continuation metric surface intentionally emits only
+stable operator-facing keys. Internal runtime counters such as exact branch
+batch scheduler details may exist in trainer-local dictionaries but are not part
+of the public compact schema.
+
+Candidate-balanced production keys:
+
+- `loss/candidate_balanced`
+- `loss/schema_open`
+- `loss/json_structural`
+- `loss/anti_close_start`
+- `loss/weak_schema_close`
+- `loss/coord_gate`
+- `loss/text_gate`
+- `gate/coord_slot_coord_mass_mean`
+- `gate/text_slot_coord_mass_mean`
+- `gate/coord_tokens_count`
+- `gate/text_tokens_count`
+- `mp/num_prefix_objects`
+- `mp/num_remaining_objects`
+- `mp/num_candidates_scored`
+- `mp/candidate_tokens_scored_mean`
+- `mp/schema_open_tokens_scored_mean`
+- `mp/json_structural_tokens_scored_mean`
+- `mp/annotation_completeness_weight_mean`
+- `mp/final_close_weight_mean`
+- `mp/tail_positive_samples`
+- `mp/final_gt_object_scored_samples`
+- `mp/objective_fidelity_exact_samples`
+- `mp/fallback_applied_samples`
+- `mp/selected_mode_empty_prefix`
+- `mp/selected_mode_random_subset`
+- `mp/selected_mode_leave_one_out`
+- `mp/selected_mode_full_prefix`
+- `mp/objective_contributing_samples`
+- `stop/p_close_start_when_remaining_exists`
+- `stop/p_continue_start_when_remaining_exists`
+- `stop/p_close_start_when_remaining_empty`
+
+ET-RMP-CE adds recursive full-suffix trie diagnostics:
+
+- `loss/rmp`
+- `loss/rmp_branch_ce`
+- `loss/rmp_unique_ce`
+- `loss/rmp_coord_branch_ce`
+- `loss/rmp_desc_text_branch_ce`
+- `loss/rmp_boundary_ce`
+- `loss/rmp_close_ce`
+- `loss/rmp_eos_ce`
+- `rmp/branch_nodes`
+- `rmp/branch_nodes_desc_text`
+- `rmp/branch_nodes_coord`
+- `rmp/branch_nodes_structural`
+- `rmp/branch_nodes_other`
+- `rmp/valid_children_mean`
+- `rmp/target_entropy_mean`
+- `rmp/valid_child_mass_mean`
+- `rmp/teacher_branch_top1_acc`
+- `rmp/valid_child_top1_acc`
+- `rmp/gt_count_ge7_samples`
+
+Rollout hygiene remains eval-side rather than trainer-loss-side: parse-valid
+rate, empty predictions, hit max tokens, object-after-close, extra top-level
+key, missing separator, and GT-count bucket behavior should be read from the
+Stage-1 detection-eval artifacts for the exact `val200`, proxy, or full-val
+scope being compared.
 
 ## Interpreting Key Stage-2 Families
 

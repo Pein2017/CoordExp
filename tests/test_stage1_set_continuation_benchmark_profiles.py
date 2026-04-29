@@ -18,6 +18,7 @@ from src.sft import (
 REPO_ROOT = Path(__file__).resolve().parents[1]
 CONFIG_ROOT = REPO_ROOT / "configs" / "stage1" / "set_continuation"
 PRODUCTION_CONFIG = CONFIG_ROOT / "production.yaml"
+RMP_CE_CONFIG = CONFIG_ROOT / "rmp_ce.yaml"
 SOTA_STAGE1_CHECKPOINT = (
     "output_remote/stage1_2b/coco_bbox_max60-hard_ce_soft_ce_w1_gate/"
     "epoch_4-from-base-2B/v0-20260227-050057/checkpoint-1332-merged-full"
@@ -28,10 +29,14 @@ def _load_production_config():
     return ConfigLoader.load_materialized_training_config(str(PRODUCTION_CONFIG))
 
 
+def _load_rmp_ce_config():
+    return ConfigLoader.load_materialized_training_config(str(RMP_CE_CONFIG))
+
+
 def test_only_one_set_continuation_entry_config_is_checked_in() -> None:
     yaml_files = sorted(path.name for path in CONFIG_ROOT.glob("*.yaml"))
 
-    assert yaml_files == ["production.yaml"]
+    assert yaml_files == ["production.yaml", "rmp_ce.yaml"]
 
 
 def test_production_profile_resolves_and_pins_common_contract() -> None:
@@ -187,6 +192,38 @@ def test_production_profile_enables_all_set_continuation_features() -> None:
     assert cfg.deepspeed.enabled is False
 
 
+def test_rmp_ce_profile_resolves_as_full_suffix_smart_batch_objective() -> None:
+    cfg = _load_rmp_ce_config()
+    sc = cfg.custom.stage1_set_continuation
+
+    assert cfg.custom.trainer_variant == "stage1_set_continuation"
+    assert cfg.training["artifact_subdir"] == "coco1024_sota1332_setcont_et_rmp_ce_v1"
+    assert cfg.training["run_name"] == "setcont-coco1024-sota1332-et-rmp-ce-v1"
+    assert cfg.training["packing"] is False
+    assert cfg.training["eval_packing"] is False
+    assert cfg.benchmark.group_id == "stage1_set_continuation_et_rmp_ce"
+    assert cfg.benchmark.control_group_id == "stage1_set_continuation_full_features"
+    assert sc is not None
+    assert sc.objective.mode == "entry_trie_rmp_ce"
+    assert sc.objective.suffix_order == "random"
+    assert sc.structural_close.close_start_suppression_weight == pytest.approx(0.0)
+    assert sc.structural_close.final_schema_close_weight == pytest.approx(0.0)
+    assert sc.structural_close.json_structural_weight == pytest.approx(0.0)
+    assert sc.structural_close.annotation_completeness_weight.enabled is False
+    assert sc.bidirectional_token_gate.enabled is False
+    assert sc.positive_evidence_margin.objective == "disabled"
+    assert sc.train_forward.branch_runtime.mode == "smart_batched_exact"
+    assert sc.train_forward.branch_batching.enabled is True
+    assert sc.train_forward.branch_batching.max_branch_rows == 8
+    assert sc.train_forward.logits.mode == "supervised_suffix"
+    assert sc.train_forward.ddp_sync.candidate_padding == "none"
+    assert sc.train_forward.budget_policy.enabled is False
+    assert (
+        cfg.custom.extra["benchmark_report"]["same_budget_label"]
+        == "smart_batched_exact_full_suffix_rows_no_ddp_padding_et_rmp_ce_v1"
+    )
+
+
 def test_effective_runtime_records_production_set_continuation_provenance() -> None:
     cfg = _load_production_config()
 
@@ -244,6 +281,10 @@ def test_effective_runtime_records_production_set_continuation_provenance() -> N
         "fallback_metric": "mp/fallback_applied_samples",
     }
     assert sc_runtime["candidate_scoring_mode"] == "exact"
+    assert sc_runtime["objective"] == {
+        "mode": "candidate_balanced",
+        "suffix_order": "random",
+    }
     assert sc_runtime["logZ_estimator"] == "exact"
     assert sc_runtime["authored_logZ_estimator"] == "exact"
     assert sc_runtime["fallback_logZ_estimator"] == "sampled_raw"
@@ -285,6 +326,42 @@ def test_effective_runtime_records_production_set_continuation_provenance() -> N
     )
     assert sc_runtime["realized_prefix_mode_coverage"]["source"] == "compact_v2_metrics"
     assert sc_runtime["realized_aux_settings"]["coord_soft_ce_w1"]["enabled"] is False
+
+
+def test_effective_runtime_records_rmp_ce_objective_surface() -> None:
+    cfg = _load_rmp_ce_config()
+
+    runtime = _build_effective_runtime_payload(
+        training_config=cfg,
+        train_args=SimpleNamespace(
+            output_dir="out",
+            logging_dir="logs",
+            run_name="unit",
+            seed=17,
+            per_device_train_batch_size=1,
+            per_device_eval_batch_size=1,
+            gradient_accumulation_steps=128,
+            max_steps=-1,
+            num_train_epochs=4,
+        ),
+        trainer_variant=cfg.custom.trainer_variant,
+        dataset_seed=17,
+        checkpoint_mode="artifact_only",
+        packing_cfg=PackingRuntimeConfig(enabled=False),
+        encoded_sample_cache_cfg=EncodedSampleCacheRuntimeConfig(enabled=False),
+        train_jsonl=cfg.custom.train_jsonl,
+        val_jsonl=cfg.custom.val_jsonl,
+        pipeline_manifest={"checksum": "abc123"},
+    )
+
+    sc_runtime = runtime["stage1_set_continuation"]
+    assert sc_runtime["objective"] == {
+        "mode": "entry_trie_rmp_ce",
+        "suffix_order": "random",
+    }
+    assert sc_runtime["effective_coord_slot_scoring"] == "full_vocab_recursive_suffix"
+    assert sc_runtime["raw_text_integer_coordinates"] == "serialized_surface_only"
+    assert sc_runtime["train_forward"]["budget_policy"]["enabled"] is False
 
 
 def test_experiment_manifest_mirrors_production_runtime_summary(tmp_path: Path) -> None:

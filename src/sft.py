@@ -588,6 +588,8 @@ def _build_benchmark_runtime_payload(
     pem_cfg = getattr(sc_cfg, "positive_evidence_margin", None)
     pem_enabled = str(getattr(pem_cfg, "objective", "") or "") == "threshold_loss"
     train_forward = getattr(sc_cfg, "train_forward", None)
+    objective_cfg = getattr(sc_cfg, "objective", None)
+    objective_mode = str(getattr(objective_cfg, "mode", "candidate_balanced") or "")
     candidate_mode = str(getattr(candidates, "mode", "") or "")
     logz_estimator = _logz_estimator_for_set_continuation(sc_cfg)
     branch_runtime_mode = str(
@@ -634,6 +636,7 @@ def _build_benchmark_runtime_payload(
         branch_execution_label = "naive_repeated_forward_no_prefix_cache"
     payload["stage1_set_continuation"] = {
         "candidate_scoring_mode": candidate_mode,
+        "objective": _config_to_mapping(objective_cfg),
         "candidate_max_candidates": getattr(candidates, "max_candidates", None),
         "logZ_estimator": logz_estimator,
         "authored_logZ_estimator": logz_estimator,
@@ -673,8 +676,16 @@ def _build_benchmark_runtime_payload(
             getattr(sc_cfg, "bidirectional_token_gate", None)
         ),
         "positive_evidence_margin": _config_to_mapping(pem_cfg),
-        "effective_coord_slot_scoring": "coord_token_vocab_full_entry",
-        "raw_text_integer_coordinates": "unsupported",
+        "effective_coord_slot_scoring": (
+            "full_vocab_recursive_suffix"
+            if objective_mode in {"full_suffix_ce", "entry_trie_rmp_ce"}
+            else "coord_token_vocab_full_entry"
+        ),
+        "raw_text_integer_coordinates": (
+            "serialized_surface_only"
+            if objective_mode in {"full_suffix_ce", "entry_trie_rmp_ce"}
+            else "unsupported"
+        ),
         "realized_branch_token_budget": {
             "source": "effective_runtime",
             "v1_execution": branch_execution_label,

@@ -1,0 +1,32 @@
+extends:
+  - ../rmp_ce.yaml
+  - ./common_prodlike.yaml
+
+training:
+  artifact_subdir: et_rmp_ce_tiny
+  run_name: smoke-et-rmp-ce-tiny
+  max_steps: 2
+  eval_steps: 2
+  save_steps: 1000
+  save_delay_steps: 1000
+
+custom:
+  train_sample_limit: 8
+  val_sample_limit: 4
+  eval_detection:
+    limit: 4
+    batch_size: 1
+
+benchmark:
+  group_id: stage1_set_continuation_et_rmp_ce_smoke
+  intended_variable: recursive full-suffix ET-RMP-CE procedural smoke
+  comparability_label: not-comparable
+
+experiment:
+  title: Stage-1 ET-RMP-CE tiny smoke
+  purpose: Procedural smoke for recursive full-suffix entry-trie RMP-CE on the real COCO JSONL surface and production tokenizer/chat template.
+  tags:
+    - stage1
+    - set-continuation
+    - smoke
+    - et-rmp-ce

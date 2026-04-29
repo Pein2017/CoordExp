@@ -5,7 +5,7 @@ doc_type: reference
 status: canonical
 domain: training
 summary: Stage-1 objective surfaces and coord-token training behavior.
-updated: 2026-04-25
+updated: 2026-04-29
 ---
 
 # Coord Objective & Adapter
@@ -216,6 +216,66 @@ Important semantics:
 - V1 rejects `training.packing` and `training.eval_packing` because branch
   selection and structural-close spans are sample-local.
 
+### Recursive full-suffix ET-RMP-CE objective
+
+`custom.stage1_set_continuation.objective.mode` selects the optimized
+set-continuation objective:
+
+- `candidate_balanced` keeps the current production one-step candidate-balanced
+  continuation CE and remains the default.
+- `full_suffix_ce` samples the same subset prefix but trains one complete
+  remaining-object suffix with ordinary hard-label CE only.
+- `entry_trie_rmp_ce` trains the same complete suffix, but object-entry tokens
+  use entry-trie multi-positive CE at every trie node with multiple valid next
+  tokens.
+
+For `entry_trie_rmp_ce`, each row is:
+
+```text
+prefix
+-> entry(tau_1)
+-> comma
+-> entry(tau_2)
+-> ...
+-> final ]}
+-> chat-template stop/EOS when labeled
+```
+
+At recursive state `k`, the logical trie spans the currently remaining
+serialized object dictionaries only. The trie excludes the inter-object comma,
+global `]}` close, schema opener, and EOS. For production tokenizer alignment,
+candidate entries are tokenized in the current autoregressive context, including
+the following boundary text only to recover the exact object-entry label tokens.
+If the current trie node has one child, the token uses ordinary hard CE. If it
+has multiple children, the target is object-uniform over child tokens:
+
+```text
+q(v) = number of active remaining objects under child token v
+       / number of active remaining objects at this trie node
+```
+
+The teacher-forced path still follows the sampled suffix object. Exact duplicate
+serialized entries remain multiplicity on the same path; the trie does not
+invent artificial divergence. After each emitted object, the remaining multiset
+is updated and the next entry builds a fresh trie from the new remaining set.
+
+Important implementation boundaries:
+
+- The main ET-RMP loss is full-vocabulary CE / soft CE, including coordinate
+  tokens. Coord-vocabulary-normalized candidate scores are not used for this
+  objective.
+- Schema opener tokens for empty-prefix rows, comma separators, final `]}`, and
+  labeled chat-template stop/EOS tokens are hard CE control-flow targets, never
+  entry-trie positives.
+- The encoder fails fast if context-tokenized object-entry tokens cannot align
+  with chat-template label spans.
+- The smart-batch runtime packs one full-suffix row per sample with the existing
+  padded-row `smart_batched_exact` scheduler. It does not enable packed-varlen
+  attention, prefix KV cache, or candidate sharing.
+- Candidate budget fallback, PEM, structural-close auxiliary weights,
+  bidirectional token gate, and branch-local aux objectives are incompatible
+  with full-suffix modes and must be disabled.
+
 Subset-prefix sampling is configured under:
 
 ```yaml
@@ -387,6 +447,18 @@ The profile pins `coord_soft_ce_w1`, `bbox_geo`, and `bbox_size_aux` disabled
 so the first production run isolates the continuation objective. Its
 `custom.extra.benchmark_report.same_budget_label` value is a comparison note,
 not a runtime-enforced budget constraint.
+
+The experimental ET-RMP-CE profile lives next to it:
+
+```text
+configs/stage1/set_continuation/rmp_ce.yaml
+```
+
+It extends the production checkpoint, dataset, eval, and smart-batch runtime,
+but switches `objective.mode` to `entry_trie_rmp_ce` and disables the
+candidate-only auxiliaries that would otherwise be inherited from production.
+Use it for the C/D/E recursive-suffix ablation family, not as a silent
+replacement for `production.yaml`.
 
 ## Stage-1 non-canonical bbox V1 experiments
 

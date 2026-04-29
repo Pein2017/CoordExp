@@ -210,6 +210,7 @@ def _cfg(
     bidirectional_token_gate: Mapping[str, Any] | None = None,
     pem: Mapping[str, Any] | None = None,
     train_forward: Mapping[str, Any] | None = None,
+    objective: Mapping[str, Any] | None = None,
 ) -> Stage1SetContinuationConfig:
     return Stage1SetContinuationConfig.from_mapping(
         {
@@ -242,6 +243,7 @@ def _cfg(
             ),
             "positive_evidence_margin": dict(pem or {"objective": "disabled"}),
             "train_forward": dict(train_forward or {}),
+            **({"objective": dict(objective)} if objective is not None else {}),
         }
     )
 
@@ -787,6 +789,44 @@ def test_smart_batched_exact_matches_retained_graph_mp_and_logz_metrics() -> Non
             abs=1e-6,
         )
     assert len(smart_model.calls) < len(retained_model.calls)
+
+
+def test_entry_trie_rmp_ce_uses_full_suffix_smart_batch_rows() -> None:
+    trainer = _trainer(
+        _cfg(
+            objective={"mode": "entry_trie_rmp_ce", "suffix_order": "dataset"},
+            train_forward={
+                "branch_runtime": {"mode": "smart_batched_exact"},
+                "branch_batching": {"enabled": True, "max_branch_rows": 8},
+                "logits": {"mode": "supervised_suffix"},
+                "ddp_sync": {"candidate_padding": "none"},
+            },
+        )
+    )
+    model = _FakeModel()
+    trainer.model = model
+
+    loss = trainer.compute_loss(
+        model,
+        _batch_many(
+            [
+                _raw_sample([OBJECT_A, OBJECT_B]),
+                _raw_sample([OBJECT_A, OBJECT_B]),
+            ]
+        ),
+        return_outputs=False,
+    )
+
+    assert torch.isfinite(loss)
+    assert len(model.calls) == 1
+    assert int(model.calls[0].get("logits_to_keep") or 0) > 0
+    assert _latest_metric(trainer, "mp/num_candidates_scored") == pytest.approx(0.0)
+    assert _latest_metric(
+        trainer, "mp/objective_contributing_samples"
+    ) == pytest.approx(1.0)
+    assert _latest_metric(trainer, "rmp/branch_nodes") > 0.0
+    assert _latest_metric(trainer, "loss/rmp") >= 0.0
+    assert _latest_metric(trainer, "loss/rmp_close_ce") >= 0.0
 
 
 def test_smart_batched_exact_runtime_rejects_branch_local_aux_without_schema() -> None:

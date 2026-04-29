@@ -28,6 +28,16 @@ from .branch_scorer import (
 from .branch_batcher import BranchBatchWorkItem, plan_smart_branch_batches
 from .branch_encoder import EncodedSetContinuationBranch, encode_set_continuation_branch
 from .budget import plan_candidate_execution
+from .full_suffix import (
+    EncodedFullSuffixBranch,
+    FullSuffixLossResult,
+    FullSuffixTensorInput,
+    encode_full_suffix_branch,
+    resolve_full_suffix_order,
+    score_full_suffix_batch_retained,
+    score_full_suffix_retained,
+    supervised_full_suffix_start,
+)
 from .losses import (
     CandidateLogProbResult,
     compute_close_sequence_nll,
@@ -445,6 +455,311 @@ class Stage1SetContinuationTrainer(
             ),
         }
         return resolved, metrics
+
+    def _encode_full_suffix_branch(
+        self,
+        *,
+        meta: Mapping[str, Any],
+        prefix_indices: Sequence[int],
+        suffix_indices: Sequence[int],
+    ) -> EncodedFullSuffixBranch:
+        template = getattr(self, "template", None)
+        if template is None:
+            raise ValueError("set-continuation trainer requires a template")
+        return encode_full_suffix_branch(
+            meta=meta,
+            template=template,
+            prefix_indices=prefix_indices,
+            suffix_indices=suffix_indices,
+            object_field_order=getattr(self, "object_field_order", "desc_first"),
+        )
+
+    def _tensor_full_suffix_score_input(
+        self,
+        *,
+        model: Any,
+        branch: EncodedFullSuffixBranch,
+    ) -> FullSuffixTensorInput:
+        branch_inputs = self._prepare_branch_inputs(model=model, branch=branch)
+        _core_model, inputs_for_model, _model_type = prepare_forward_inputs(
+            model=model,
+            inputs=branch_inputs,
+            ignored_keys=(
+                "labels",
+                "compute_loss_func",
+                "loss_scale",
+                "text_position_ids",
+                "channel",
+                "logits_to_keep",
+            ),
+            packing_enabled=False,
+            where="stage1-set-continuation-full-suffix",
+        )
+        tensor_inputs = {
+            key: value
+            for key, value in inputs_for_model.items()
+            if isinstance(value, torch.Tensor)
+        }
+        return FullSuffixTensorInput(
+            model_inputs=tensor_inputs,
+            labels=branch_inputs["labels"],
+            steps=branch.steps,
+        )
+
+    def _score_full_suffix_rows_smart_batched(
+        self,
+        *,
+        model: Any,
+        items: Sequence[FullSuffixTensorInput],
+        entry_trie_mp: bool,
+    ) -> tuple[list[FullSuffixLossResult], dict[str, float]]:
+        cfg = self._cfg()
+        train_forward = cfg.train_forward
+        logits_mode = cast(LogitsMode, str(train_forward.logits.mode))
+        batching = train_forward.branch_batching
+        work_items: list[BranchBatchWorkItem] = []
+        for index, item in enumerate(items):
+            suffix_start = (
+                supervised_full_suffix_start(item.labels, item.steps)
+                if logits_mode == "supervised_suffix"
+                else 0
+            )
+            sequence_length = int(item.labels.shape[-1])
+            work_items.append(
+                BranchBatchWorkItem(
+                    index=index,
+                    sequence_length=sequence_length,
+                    suffix_keep=max(1, sequence_length - suffix_start),
+                )
+            )
+        plan = plan_smart_branch_batches(
+            work_items,
+            max_branch_rows=(
+                batching.max_branch_rows if bool(batching.enabled) else len(work_items)
+            ),
+            max_branch_tokens=(
+                batching.max_branch_tokens if bool(batching.enabled) else None
+            ),
+            min_fill_ratio=float(batching.min_fill_ratio),
+        )
+        results: list[FullSuffixLossResult | None] = [None for _ in items]
+
+        def _no_cache_forward(**kwargs: torch.Tensor) -> Any:
+            return run_no_cache_forward(
+                model=model,
+                inputs_for_model=dict(kwargs),
+            )
+
+        for batch in plan.batches:
+            batch_inputs = [items[item.index] for item in batch.items]
+            batch_results = score_full_suffix_batch_retained(
+                model=model,
+                items=batch_inputs,
+                logits_mode=logits_mode,
+                entry_trie_mp=entry_trie_mp,
+                forward_fn=_no_cache_forward,
+            )
+            for item, result in zip(batch.items, batch_results, strict=True):
+                results[item.index] = result
+        resolved = [result for result in results if result is not None]
+        if len(resolved) != len(items):
+            raise ValueError("smart full-suffix batching did not score every row")
+        metrics = {
+            "mp/smart_batched_branch_forwards": float(plan.batch_count),
+            "mp/branch_batch_count": float(plan.batch_count),
+            "mp/branch_batch_rows_mean": plan.rows_mean,
+            "mp/branch_batch_rows_max": plan.rows_max,
+            "mp/branch_batch_tokens_mean": plan.tokens_mean,
+            "mp/branch_batch_tokens_max": plan.tokens_max,
+            "mp/branch_batch_padding_fraction": float(plan.padding_fraction),
+            "mp/branch_batch_scheduler": metric_code(
+                plan.scheduler,
+                BRANCH_BATCH_SCHEDULER_CODES,
+                metric_name="mp/branch_batch_scheduler",
+            ),
+        }
+        return resolved, metrics
+
+    def _process_full_suffix_batch(
+        self,
+        *,
+        model: Any,
+        meta_list: Sequence[Mapping[str, Any]],
+    ) -> tuple[torch.Tensor, dict[str, Any], Any]:
+        cfg = self._cfg()
+        objective_mode = str(cfg.objective.mode)
+        if objective_mode not in {"full_suffix_ce", "entry_trie_rmp_ce"}:
+            raise ValueError(
+                f"unsupported full-suffix objective mode: {objective_mode}"
+            )
+        entry_trie_mp = objective_mode == "entry_trie_rmp_ce"
+        runtime_mode = str(cfg.train_forward.branch_runtime.mode)
+        logits_mode = cast(LogitsMode, str(cfg.train_forward.logits.mode))
+        if self._branch_aux_enabled():
+            raise ValueError(
+                "full-suffix objectives do not support branch-local aux losses; "
+                "disable branch-local aux modules or use candidate_balanced"
+            )
+        if bool(getattr(cfg.bidirectional_token_gate, "enabled", False)):
+            raise ValueError(
+                "full-suffix objectives do not support bidirectional_token_gate; "
+                "set bidirectional_token_gate.enabled=false"
+            )
+        if (
+            str(getattr(cfg.positive_evidence_margin, "objective", "disabled"))
+            != "disabled"
+        ):
+            raise ValueError(
+                "full-suffix objectives do not support positive_evidence_margin; "
+                "set positive_evidence_margin.objective=disabled"
+            )
+        structural_close = cfg.structural_close
+        if any(
+            float(getattr(structural_close, name, 0.0)) != 0.0
+            for name in (
+                "close_start_suppression_weight",
+                "final_schema_close_weight",
+                "json_structural_weight",
+            )
+        ):
+            raise ValueError(
+                "full-suffix objectives supervise boundary/close tokens directly; "
+                "set structural_close auxiliary weights to 0.0"
+            )
+        if bool(getattr(cfg.train_forward.budget_policy, "enabled", False)):
+            raise ValueError(
+                "full-suffix objectives do not use candidate budget fallback; "
+                "set train_forward.budget_policy.enabled=false"
+            )
+        if str(cfg.train_forward.ddp_sync.candidate_padding) != "none":
+            raise ValueError(
+                "full-suffix objectives require "
+                "train_forward.ddp_sync.candidate_padding=none"
+            )
+
+        tensor_items: list[FullSuffixTensorInput] = []
+        sample_metrics: list[dict[str, Any]] = []
+        for sample_offset, meta in enumerate(meta_list):
+            sample = self._sample_state(meta=meta, sample_offset=sample_offset)
+            prefix_indices = tuple(int(index) for index in sample.prefix_indices)
+            remaining_indices = tuple(int(index) for index in sample.remaining_indices)
+            suffix_indices = resolve_full_suffix_order(
+                remaining_indices=remaining_indices,
+                suffix_order=str(cfg.objective.suffix_order),
+                seed_parts=(
+                    *self._seed_parts(meta=meta, sample_offset=sample_offset),
+                    "full_suffix_order",
+                ),
+            )
+            branch = self._encode_full_suffix_branch(
+                meta=meta,
+                prefix_indices=prefix_indices,
+                suffix_indices=suffix_indices,
+            )
+            tensor_items.append(
+                self._tensor_full_suffix_score_input(model=model, branch=branch)
+            )
+            object_count = len(prefix_indices) + len(remaining_indices)
+            metrics: dict[str, Any] = {
+                "mp/num_prefix_objects": float(len(prefix_indices)),
+                "mp/num_remaining_objects": float(len(remaining_indices)),
+                "mp/num_candidates_scored": 0.0,
+                "mp/scored_candidate_fraction": 0.0,
+                "mp/samples_with_candidates": 0.0,
+                "mp/samples_full_prefix": float(len(remaining_indices) == 0),
+                "mp/branch_forwards_per_sample": 1.0,
+                "mp/branch_runtime_mode": metric_code(
+                    runtime_mode,
+                    BRANCH_RUNTIME_MODE_CODES,
+                    metric_name="mp/branch_runtime_mode",
+                ),
+                "mp/retained_graph_branch_forwards": float(
+                    runtime_mode == "retained_graph"
+                ),
+                "mp/checkpointed_branch_forwards": 0.0,
+                "mp/smart_batched_branch_forwards": 0.0,
+                "mp/branch_batch_count": 0.0,
+                "mp/branch_batch_rows_mean": 0.0,
+                "mp/branch_batch_rows_max": 0.0,
+                "mp/branch_batch_tokens_mean": 0.0,
+                "mp/branch_batch_tokens_max": 0.0,
+                "mp/branch_batch_padding_fraction": 0.0,
+                "mp/branch_batch_scheduler": metric_code(
+                    "disabled",
+                    BRANCH_BATCH_SCHEDULER_CODES,
+                    metric_name="mp/branch_batch_scheduler",
+                ),
+                "mp/objective_fidelity_exact_samples": 1.0,
+                "mp/objective_fidelity_approx_samples": 0.0,
+                "mp/fallback_applied_samples": 0.0,
+                "mp/selected_mode_empty_prefix": float(
+                    sample.selected_mode == "empty_prefix"
+                ),
+                "mp/selected_mode_random_subset": float(
+                    sample.selected_mode == "random_subset"
+                ),
+                "mp/selected_mode_leave_one_out": float(
+                    sample.selected_mode == "leave_one_out"
+                ),
+                "mp/selected_mode_full_prefix": float(
+                    sample.selected_mode == "full_prefix"
+                ),
+                "mp/objective_contributing_samples": 1.0,
+                "mp/candidate_tokens_scored_mean": 0.0,
+                "mp/schema_open_tokens_scored_mean": 0.0,
+                "mp/json_structural_tokens_scored_mean": 0.0,
+                "mp/annotation_completeness_weight_mean": float(
+                    self._annotation_completeness_weight(
+                        object_count=object_count,
+                        cfg=cfg.structural_close.annotation_completeness_weight,
+                    )
+                ),
+                "mp/final_close_weight_mean": 0.0,
+                "mp/tail_positive_samples": 0.0,
+                "mp/final_gt_object_scored_samples": 0.0,
+                "rmp/gt_count_ge7_samples": float(object_count >= 7),
+            }
+            sample_metrics.append(metrics)
+
+        def _no_cache_forward(**kwargs: torch.Tensor) -> Any:
+            return run_no_cache_forward(
+                model=model,
+                inputs_for_model=dict(kwargs),
+            )
+
+        if runtime_mode == "smart_batched_exact":
+            results, batch_metrics = self._score_full_suffix_rows_smart_batched(
+                model=model,
+                items=tensor_items,
+                entry_trie_mp=entry_trie_mp,
+            )
+            for metrics in sample_metrics:
+                metrics.update(batch_metrics)
+        elif runtime_mode == "retained_graph":
+            results = [
+                score_full_suffix_retained(
+                    model=model,
+                    model_inputs=item.model_inputs,
+                    labels=item.labels,
+                    steps=item.steps,
+                    logits_mode=logits_mode,
+                    entry_trie_mp=entry_trie_mp,
+                    forward_fn=_no_cache_forward,
+                )
+                for item in tensor_items
+            ]
+        else:
+            raise ValueError(
+                "full-suffix objectives currently support retained_graph and "
+                "smart_batched_exact runtimes"
+            )
+
+        sample_losses: list[torch.Tensor] = []
+        for metrics, result in zip(sample_metrics, results, strict=True):
+            metrics.update(result.metrics)
+            sample_losses.append(result.loss)
+        total_loss = torch.stack(sample_losses).mean()
+        return total_loss, mean_numeric_metrics(sample_metrics), None
 
     def _candidate_scoped_labels(
         self,
@@ -1420,6 +1735,28 @@ class Stage1SetContinuationTrainer(
             )
         if not meta_list:
             raise ValueError("set_continuation_meta must contain at least one sample")
+
+        cfg = self._cfg()
+        objective_mode = str(cfg.objective.mode)
+        if objective_mode in {"full_suffix_ce", "entry_trie_rmp_ce"}:
+            typed_meta = []
+            for meta in meta_list:
+                if not isinstance(meta, Mapping):
+                    raise ValueError("set_continuation_meta entries must be mappings")
+                typed_meta.append(meta)
+            total_loss, metrics, last_outputs = self._process_full_suffix_batch(
+                model=model,
+                meta_list=typed_meta,
+            )
+            emit_stage1_set_continuation_metrics(self, metrics)
+            if return_outputs:
+                aggregate_outputs = {
+                    "loss": total_loss,
+                    "logits": total_loss.new_empty((len(meta_list), 0, 0)),
+                    "set_continuation_outputs": "aggregate_loss_only",
+                }
+                return total_loss, aggregate_outputs
+            return total_loss
 
         coord_token_ids = torch.tensor(self._get_coord_token_ids(), dtype=torch.long)
         sample_losses: list[torch.Tensor] = []

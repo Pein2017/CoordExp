@@ -118,8 +118,34 @@ def test_stage1_set_continuation_parses_successfully() -> None:
     assert stage1_cfg.positive_evidence_margin.threshold_space == "full_entry_logZ"
     assert stage1_cfg.positive_evidence_margin.rho is None
     assert stage1_cfg.positive_evidence_margin.log_rho == pytest.approx(-4.2)
+    assert stage1_cfg.objective.mode == "candidate_balanced"
+    assert stage1_cfg.objective.suffix_order == "random"
     assert stage1_cfg.positive_evidence_margin.threshold_calibration == "calib-v1"
     assert stage1_cfg.metric_schema_version == "stage1_set_continuation_metrics_v2"
+
+
+def test_stage1_set_continuation_parses_entry_trie_rmp_objective() -> None:
+    payload = _stage1_set_continuation_payload()
+    payload["custom"]["stage1_set_continuation"]["objective"] = {
+        "mode": "entry_trie_rmp_ce",
+        "suffix_order": "dataset",
+    }
+
+    cfg = TrainingConfig.from_mapping(payload, PromptOverrides())
+
+    objective = cfg.custom.stage1_set_continuation.objective
+    assert objective.mode == "entry_trie_rmp_ce"
+    assert objective.suffix_order == "dataset"
+
+
+def test_stage1_set_continuation_rejects_invalid_objective_mode() -> None:
+    payload = _stage1_set_continuation_payload()
+    payload["custom"]["stage1_set_continuation"]["objective"] = {
+        "mode": "chunk_logz",
+    }
+
+    with pytest.raises(ValueError, match="objective.mode"):
+        TrainingConfig.from_mapping(payload, PromptOverrides())
 
 
 def test_stage1_set_continuation_accepts_legacy_close_and_pem_names() -> None:
