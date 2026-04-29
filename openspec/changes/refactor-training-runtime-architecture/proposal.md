@@ -71,4 +71,3 @@ small, reviewable slices.
   - later recipe/run orchestration may add artifacts, but must not replace
     existing authoritative training/inference/evaluation artifacts without an
     explicit compatibility and migration plan.
-
