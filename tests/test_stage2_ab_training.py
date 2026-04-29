@@ -889,7 +889,7 @@ def test_channel_b_matching_uses_candidate_top_k_not_decode_top_k(monkeypatch):
     sample = {
         "messages": [],
         "assistant_payload": {
-            "objects": [{"bbox_2d": [0, 0, 0, 0], "desc": "x"}],
+            "objects": [{"bbox_2d": [0, 0, 1, 1], "desc": "x"}],
         },
     }
     with pytest.raises(_StopAfterMatch):
