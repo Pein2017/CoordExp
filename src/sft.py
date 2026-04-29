@@ -56,6 +56,10 @@ from .datasets import (
     build_static_packed_dataset,
 )
 from .trainers import with_final_checkpoint
+from .training_runtime import (
+    resolve_training_runtime_plan,
+    resolve_training_runtime_profile,
+)
 from .utils import (
     FileLoggingConfig,
     enable_output_dir_file_logging,
@@ -75,14 +79,8 @@ from .bootstrap.run_metadata import (
 
 def resolve_trainer_cls(train_args):
     trainer_variant = getattr(train_args, "trainer_variant", None)
-    if trainer_variant == "stage2_ab_training":
-        raise ValueError(
-            "custom.trainer_variant=stage2_ab_training has been removed; use stage2_two_channel"
-        )
-    if trainer_variant == "rollout_matching_sft":
-        raise ValueError(
-            "custom.trainer_variant=rollout_matching_sft has been removed; use stage2_rollout_aligned"
-        )
+    runtime_plan = resolve_training_runtime_plan(trainer_variant)
+    trainer_variant = runtime_plan.variant
     if trainer_variant == "stage2_two_channel":
         from .trainers.stage2_two_channel import Stage2TwoChannelTrainer
 
@@ -890,7 +888,8 @@ def _validate_static_packing_accumulation_windows(
     if (not packing_cfg.enabled) or packing_cfg.mode != "static":
         return
 
-    if str(trainer_variant or "") in {"stage2_two_channel", "stage2_rollout_aligned"}:
+    runtime_plan = resolve_training_runtime_plan(trainer_variant)
+    if runtime_plan.post_rollout_packing_owner is not None:
         return
 
     gas = max(1, int(gradient_accumulation_steps))
@@ -1070,7 +1069,6 @@ def _validate_bbox_format_contract(
     bbox_format = (
         str(getattr(custom_config, "bbox_format", "xyxy") or "xyxy").strip().lower()
     )
-    variant = str(trainer_variant or "").strip()
     for path_attr in ("train_jsonl", "val_jsonl"):
         path_value = getattr(custom_config, path_attr, None)
         if not path_value:
@@ -1093,10 +1091,8 @@ def _validate_bbox_format_contract(
                     f"{path_attr}={path_text} is incompatible with custom.coord_tokens.enabled=false; "
                     "raw-text norm1000 runs require a *.norm.jsonl surface."
                 )
-    if (
-        variant in {"stage2_two_channel", "stage2_rollout_aligned"}
-        and bbox_format != "xyxy"
-    ):
+    runtime_plan = resolve_training_runtime_plan(trainer_variant)
+    if runtime_plan.post_rollout_packing_owner is not None and bbox_format != "xyxy":
         raise ValueError(
             f"custom.bbox_format={bbox_format} is currently unsupported for stage-2 trainer variants. "
             "Stage-2 target construction still assumes canonical xyxy ordering; use custom.bbox_format=xyxy."
@@ -1321,14 +1317,13 @@ def _attach_encoded_sample_cache_run_metadata(
 
 
 def _is_rollout_matching_variant(trainer_variant: str | None) -> bool:
-    return str(trainer_variant or "") in {
-        "stage2_rollout_aligned",
-        "stage2_two_channel",
-    }
+    runtime_plan = resolve_training_runtime_plan(trainer_variant)
+    return runtime_plan.post_rollout_packing_owner is not None
 
 
 def _is_stage1_set_continuation_variant(trainer_variant: str | None) -> bool:
-    return str(trainer_variant or "") == "stage1_set_continuation"
+    runtime_plan = resolve_training_runtime_plan(trainer_variant)
+    return runtime_plan.collator_family == "stage1_set_continuation"
 
 
 def _inject_stage1_set_continuation_trainer_config(
@@ -1363,9 +1358,10 @@ def _validate_stage1_static_packing_policy(
 ) -> None:
     if not packing_cfg.enabled:
         return
-    if _is_rollout_matching_variant(trainer_variant):
+    runtime_plan = resolve_training_runtime_plan(trainer_variant)
+    if runtime_plan.post_rollout_packing_owner is not None:
         return
-    if _is_stage1_set_continuation_variant(trainer_variant):
+    if not runtime_plan.dataset_static_packing_allowed:
         if packing_cfg.eval_packing:
             raise ValueError(
                 "custom.trainer_variant=stage1_set_continuation rejects dataset packing; set training.packing=false and training.eval_packing=false."
@@ -1480,8 +1476,10 @@ def _apply_rollout_decode_batch_size_override(
     Returns the resolved eval decode batch size.
     """
 
-    trainer_variant = getattr(train_args, "trainer_variant", None)
-    if trainer_variant not in {"stage2_rollout_aligned", "stage2_two_channel"}:
+    runtime_profile = resolve_training_runtime_profile(
+        getattr(train_args, "trainer_variant", None)
+    )
+    if not runtime_profile.rollout_runtime_owned:
         return 1
 
     rollout_cfg_obj = getattr(training_config, "rollout_matching", None)
@@ -2762,23 +2760,20 @@ def main():
     # Setup trainer
     logger.info("Setting up trainer...")
     trainer_variant = getattr(train_args, "trainer_variant", None)
-    if trainer_variant in {
-        "stage1_set_continuation",
-        "stage2_rollout_aligned",
-        "stage2_two_channel",
-    }:
+    runtime_profile = resolve_training_runtime_profile(trainer_variant)
+    if runtime_profile.preserve_raw_sample_metadata:
         # Keep raw fields for trainer-owned branch/rollout construction.
         if getattr(train_args, "training_args", None) is not None:
             train_args.training_args.remove_unused_columns = False
 
-    if trainer_variant == "stage1_set_continuation":
+    if runtime_profile.collator_family == "stage1_set_continuation":
         from .data_collators.stage1_set_continuation_collator import (
             build_stage1_set_continuation_collator,
         )
 
         base_collator = None
         data_collator = build_stage1_set_continuation_collator()
-    elif trainer_variant in {"stage2_rollout_aligned", "stage2_two_channel"}:
+    elif runtime_profile.collator_family == "identity":
         # Eval rollout batching knob: rollout_matching.eval_decode_batch_size.
         # Rollout trainer variants use this value for eval dataloader batch size.
         _apply_rollout_decode_batch_size_override(
@@ -2815,10 +2810,10 @@ def main():
         raw_proxy = extra_cfg.get("proxy_supervision")
         if isinstance(raw_proxy, Mapping):
             proxy_supervision_cfg = dict(raw_proxy)
-    if trainer_variant == "stage1_set_continuation":
+    if runtime_profile.collator_family == "stage1_set_continuation":
         # Set-continuation does branch encoding and masking inside the trainer.
         pass
-    elif trainer_variant in {"stage2_rollout_aligned", "stage2_two_channel"}:
+    elif runtime_profile.collator_family == "identity":
         # Rollout-matching does its own encoding and loss masking inside the trainer.
         data_collator = base_collator
     else:
@@ -2854,7 +2849,7 @@ def main():
         logger.info("Train heartbeat enabled: %s", str(heartbeat_path))
 
     stage1_eval_detection_callback = None
-    if trainer_variant not in {"stage2_rollout_aligned", "stage2_two_channel"}:
+    if not runtime_profile.rollout_runtime_owned:
         stage1_eval_cfg = getattr(custom_config, "eval_detection", None)
         if stage1_eval_cfg is not None and bool(
             getattr(stage1_eval_cfg, "enabled", False)
@@ -2984,7 +2979,7 @@ def main():
         trainer_kwargs=trainer_kwargs,
         heartbeat_writer=heartbeat_writer,
     )
-    if trainer_variant == "stage1_set_continuation":
+    if runtime_profile.runtime_stage == "stage1_set_continuation":
         _inject_stage1_set_continuation_trainer_config(
             trainer=trainer,
             training_config=training_config,
@@ -2995,7 +2990,7 @@ def main():
     # Guard against inherited defaults that would crash best-checkpoint
     # selection after a successful callback/rollout evaluation.
     if (
-        trainer_variant in {"stage2_rollout_aligned", "stage2_two_channel"}
+        runtime_profile.rollout_runtime_owned
         and eval_dataset is not None
         and getattr(train_args, "training_args", None) is not None
     ):
@@ -3013,7 +3008,7 @@ def main():
                 train_args.training_args.greater_is_better = True
                 trainer.args.greater_is_better = True
     if (
-        trainer_variant == "stage1_set_continuation"
+        runtime_profile.runtime_stage == "stage1_set_continuation"
         and eval_dataset is not None
         and getattr(train_args, "training_args", None) is not None
     ):
@@ -3058,7 +3053,7 @@ def main():
             coord_soft_cfg=coord_soft_cfg,
         )
 
-    if trainer_variant in {"stage2_rollout_aligned", "stage2_two_channel"}:
+    if runtime_profile.rollout_runtime_owned:
         try:
             rollout_cfg_obj = getattr(training_config, "rollout_matching", None)
             if rollout_cfg_obj is None:
@@ -3075,11 +3070,12 @@ def main():
 
             rollout_cfg: dict[str, Any] = dict(rollout_cfg_raw)
 
-            if trainer_variant == "stage2_two_channel" and isinstance(
-                rollout_cfg.get("pipeline"), Mapping
+            if (
+                runtime_profile.required_pipeline_namespace == "stage2_ab.pipeline"
+                and isinstance(rollout_cfg.get("pipeline"), Mapping)
             ):
                 raise ValueError(
-                    "rollout_matching.pipeline is not allowed when custom.trainer_variant=stage2_two_channel. "
+                    f"rollout_matching.pipeline is not allowed when custom.trainer_variant={runtime_profile.variant}. "
                     "Use stage2_ab.pipeline instead."
                 )
 
@@ -3152,7 +3148,10 @@ def main():
             if callable(validate_hook):
                 validate_hook()
 
-            if trainer_variant == "stage2_rollout_aligned":
+            if (
+                runtime_profile.required_pipeline_namespace
+                == "rollout_matching.pipeline"
+            ):
                 rollout_manifest = _resolve_pipeline_manifest(
                     rollout_cfg,
                     default_objective=[
@@ -3200,7 +3199,7 @@ def main():
                 "This is required for rollout-matching/stage2-ab trainer variants."
             ) from exc
 
-    if trainer_variant == "stage2_two_channel":
+    if runtime_profile.required_pipeline_namespace == "stage2_ab.pipeline":
         stage2_ab_typed = getattr(training_config, "stage2_ab", None)
         if stage2_ab_typed is None:
             raise ValueError(

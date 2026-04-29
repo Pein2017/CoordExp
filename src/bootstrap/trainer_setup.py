@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Any, Mapping, Sequence
 
 from src.config import SaveDelayConfig
+from src.training_runtime import resolve_training_runtime_profile
 from src.trainers.metrics.mixins import (
     AggregateTokenTypeMetricsMixin,
     BBoxGeoLossMixin,
@@ -26,11 +27,8 @@ def compose_trainer_class(
     sft_structural_close_cfg: Any = None,
 ) -> type:
     mixins: list[type] = []
-    if trainer_variant not in {
-        "stage1_set_continuation",
-        "stage2_rollout_aligned",
-        "stage2_two_channel",
-    }:
+    runtime_profile = resolve_training_runtime_profile(trainer_variant)
+    if runtime_profile.ordinary_stage1_mixins_allowed:
         mixins.append(GradAccumLossScaleMixin)
         if isinstance(instability_monitor_cfg, Mapping) and bool(
             instability_monitor_cfg.get("enabled", False)
