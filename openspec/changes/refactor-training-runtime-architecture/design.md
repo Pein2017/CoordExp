@@ -81,6 +81,9 @@ Stage-1 set-continuation remains branch-owned:
 - dataset packing and eval packing remain rejected;
 - the set-continuation collator is selected;
 - ordinary one-sequence Stage-1 mixins are excluded;
+- `candidate_balanced`, `full_suffix_ce`, and `entry_trie_rmp_ce` remain
+  objective modes owned by the Stage-1 set-continuation trainer; the setup seam
+  must not reinterpret or collapse those objective choices;
 - the checked-in branch-scoring runtime stays on repeated independent forwards
   or their current `smart_batched_exact` grouping; packed-varlen branch
   execution remains experimental, not a replacement for the v1 production

@@ -35,6 +35,8 @@
 - [x] Refresh the change against current `main` Stage-1 set-continuation branch
       runtime docs and route pipeline-manifest required-namespace errors
       through the runtime profile.
+- [x] Merge updated `main` with ET-RMP-CE and preserve full-suffix objective
+      ownership under the Stage-1 set-continuation trainer.
 - [ ] Do not move math-bearing or artifact-bearing code without dedicated
       parity tests.
 - [ ] Introduce mission / recipe / run orchestration only after the training

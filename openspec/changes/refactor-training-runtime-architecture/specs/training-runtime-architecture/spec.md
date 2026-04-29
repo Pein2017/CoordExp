@@ -45,6 +45,9 @@ Normative behavior:
 - `stage1_set_continuation` MUST reject dataset train/eval packing;
 - `stage1_set_continuation` MUST select its metadata-preserving collator;
 - `stage1_set_continuation` MUST exclude ordinary one-sequence Stage-1 mixins;
+- Stage-1 set-continuation objective selection, including `candidate_balanced`,
+  `full_suffix_ce`, and `entry_trie_rmp_ce`, MUST remain trainer-owned and MUST
+  NOT be reinterpreted by setup routing;
 - Stage-1 set-continuation branch scoring MUST stay on the current repeated
   independent forward / `smart_batched_exact` production runtime unless a
   dedicated parity and performance gate promotes an alternate branch execution
@@ -57,6 +60,8 @@ Normative behavior:
 - **WHEN** setup resolves `custom.trainer_variant: stage1_set_continuation`
 - **THEN** dataset packing is not selected
 - **AND** raw metadata survives collation
+- **AND** `custom.stage1_set_continuation.objective.mode` remains owned by the
+  trainer implementation
 - **AND** branch execution remains independent-branch scoring rather than
   dataset-level static packing
 - **AND** branch-local objective code remains behaviorally unchanged.
