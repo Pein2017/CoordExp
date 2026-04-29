@@ -1,6 +1,5 @@
 import json
 import math
-from dataclasses import asdict
 import types
 from contextlib import nullcontext
 from typing import List, Sequence
@@ -9,7 +8,6 @@ import pytest
 import torch
 import torch.nn as nn
 
-from src.config.loader import ConfigLoader
 from src.trainers.stage2_rollout_aligned import (
     GTObject,
     _serialize_append_fragment,
@@ -99,6 +97,7 @@ class _DummyModel(nn.Module):
 
         x = self.embed(input_ids) if inputs_embeds is None else inputs_embeds
         return _DummyOut(self.lm_head(x))
+
 
 class _DummySlicedModel(_DummyModel):
     def forward(self, *args, **kwargs):
@@ -767,7 +766,9 @@ def test_channel_a_ce_uses_single_forward_logits():
         },
     )
 
-    assert float(loss_good.detach().cpu().item()) < float(loss_bad.detach().cpu().item())
+    assert float(loss_good.detach().cpu().item()) < float(
+        loss_bad.detach().cpu().item()
+    )
 
 
 def test_parse_rollout_fallback_prefix_brace_is_deterministic():
@@ -814,7 +815,9 @@ def test_channel_b_matching_uses_candidate_top_k_not_decode_top_k(monkeypatch):
                 if s.startswith("<|coord_", i):
                     j = s.find("|>", i)
                     if j >= 0:
-                        out.extend(super().encode(s[i : j + 2], add_special_tokens=False))
+                        out.extend(
+                            super().encode(s[i : j + 2], add_special_tokens=False)
+                        )
                         i = j + 2
                         continue
                 out.append(self._id_for(s[i]))
@@ -1022,9 +1025,7 @@ def test_channel_b_enabled_pseudo_positive_drops_invalid_anchor_sample(
 
     rollout_calls = 0
 
-    def _fake_rollout_many(
-        chunk, decode_override=None, request_index_offset=0
-    ):
+    def _fake_rollout_many(chunk, decode_override=None, request_index_offset=0):
         nonlocal rollout_calls
         rollout_calls += 1
         marker = 101 + rollout_calls
@@ -1091,7 +1092,10 @@ def test_channel_b_enabled_pseudo_positive_drops_invalid_anchor_sample(
     assert len(dump_paths) == 1
     dump_payload = json.loads(dump_paths[0].read_text())
     invalid_rollout = dump_payload["invalid_rollouts"][0]
-    assert invalid_rollout["response_text"] == '{"objects": [{"desc": "broken", "bbox_2d": [1, 2'
+    assert (
+        invalid_rollout["response_text"]
+        == '{"objects": [{"desc": "broken", "bbox_2d": [1, 2'
+    )
     assert invalid_rollout["prefix_text"] == '{"objects": ['
     assert invalid_rollout["response_text_char_len"] == len(
         invalid_rollout["response_text"]
@@ -1106,7 +1110,9 @@ def test_channel_b_enabled_pseudo_positive_drops_invalid_anchor_sample(
     assert invalid_rollout["response_text_tail"] == invalid_rollout["response_text"]
 
 
-def test_channel_b_closure_resolution_failure_falls_back_without_dropping_sample(monkeypatch):
+def test_channel_b_closure_resolution_failure_falls_back_without_dropping_sample(
+    monkeypatch,
+):
     t = Stage2ABTrainingTrainer.__new__(Stage2ABTrainingTrainer)
     cfg = {
         "maskiou_gate": 0.3,
@@ -1131,7 +1137,9 @@ def test_channel_b_closure_resolution_failure_falls_back_without_dropping_sample
                 if s.startswith("<|coord_", i):
                     j = s.find("|>", i)
                     if j >= 0:
-                        out.extend(super().encode(s[i : j + 2], add_special_tokens=False))
+                        out.extend(
+                            super().encode(s[i : j + 2], add_special_tokens=False)
+                        )
                         i = j + 2
                         continue
                 out.append(self._id_for(s[i]))
@@ -1195,7 +1203,9 @@ def test_channel_b_closure_resolution_failure_falls_back_without_dropping_sample
     )
     monkeypatch.setattr(
         "src.trainers.stage2_two_channel._stage2_ab_tail_closure_positions",
-        lambda **kwargs: (_ for _ in ()).throw(ValueError("synthetic closure ambiguity")),
+        lambda **kwargs: (_ for _ in ()).throw(
+            ValueError("synthetic closure ambiguity")
+        ),
     )
 
     sample = {
@@ -1210,7 +1220,9 @@ def test_channel_b_closure_resolution_failure_falls_back_without_dropping_sample
     assert len(segments) == 1
     meta = segments[0][1]
     assert meta["tail_closure_pos"] == []
-    assert batch_metrics["stage2_ab/channel_b/closure_supervision/N_drop"] == pytest.approx(1.0)
+    assert batch_metrics[
+        "stage2_ab/channel_b/closure_supervision/N_drop"
+    ] == pytest.approx(1.0)
     assert batch_metrics["stage2_ab/channel_b/invalid_rollout"] == pytest.approx(0.0)
 
 
@@ -1333,7 +1345,9 @@ def test_channel_b_suspicious_monitor_dump_buffers_full_eval_style_payload(
                 if s.startswith("<|coord_", i):
                     j = s.find("|>", i)
                     if j >= 0:
-                        out.extend(super().encode(s[i : j + 2], add_special_tokens=False))
+                        out.extend(
+                            super().encode(s[i : j + 2], add_special_tokens=False)
+                        )
                         i = j + 2
                         continue
                 out.append(self._id_for(s[i]))
@@ -1457,9 +1471,9 @@ def test_channel_b_suspicious_monitor_dump_buffers_full_eval_style_payload(
 
     segments, batch_metrics = t._prepare_batch_inputs_b([sample], _segments_only=True)
     assert len(segments) == 1
-    assert batch_metrics["stage2_ab/channel_b/dup/N_objects_suppressed"] == pytest.approx(
-        0.0
-    )
+    assert batch_metrics[
+        "stage2_ab/channel_b/dup/N_objects_suppressed"
+    ] == pytest.approx(0.0)
     assert batch_metrics["stage2_ab/channel_b/dup/N_clusters_exempt"] == pytest.approx(
         1.0
     )
@@ -1583,7 +1597,9 @@ def test_stage2_train_monitor_dump_uses_logged_step_not_preincrement_step() -> N
     assert captured["payload"]["samples"][0]["sample_id"] == "dup-heavy"
 
 
-def test_stage2_train_monitor_dump_every_channel_b_steps_ignores_global_step_aliasing() -> None:
+def test_stage2_train_monitor_dump_every_channel_b_steps_ignores_global_step_aliasing() -> (
+    None
+):
     t = Stage2ABTrainingTrainer.__new__(Stage2ABTrainingTrainer)
     cfg = {
         "decode_mode": "greedy",
@@ -1712,7 +1728,9 @@ def test_channel_b_fn_bbox_groups_anchor_to_clean_prefix_not_raw_prefix(monkeypa
                 if s.startswith("<|coord_", i):
                     j = s.find("|>", i)
                     if j >= 0:
-                        out.extend(super().encode(s[i : j + 2], add_special_tokens=False))
+                        out.extend(
+                            super().encode(s[i : j + 2], add_special_tokens=False)
+                        )
                         i = j + 2
                         continue
                 out.append(self._id_for(s[i]))
@@ -1836,7 +1854,9 @@ def test_channel_b_fn_bbox_groups_anchor_to_clean_prefix_not_raw_prefix(monkeypa
         coord_id_set=set(range(1000)),
         gt_objs=[fn_obj],
     )
-    expected_pos = [int(meta["prompt_len"] + meta["prefix_len"] + p) for p in rel_groups[0]]
+    expected_pos = [
+        int(meta["prompt_len"] + meta["prefix_len"] + p) for p in rel_groups[0]
+    ]
 
     assert int(meta["prefix_len"]) > 0
     assert int(meta["prefix_len"]) != int(len(fake_parse.prefix_token_ids))
@@ -1876,7 +1896,9 @@ def test_channel_b_dual_rollout_triage_emits_recovered_ground_truth_weight_multi
                 if s.startswith("<|coord_", i):
                     j = s.find("|>", i)
                     if j >= 0:
-                        out.extend(super().encode(s[i : j + 2], add_special_tokens=False))
+                        out.extend(
+                            super().encode(s[i : j + 2], add_special_tokens=False)
+                        )
                         i = j + 2
                         continue
                 out.append(self._id_for(s[i]))
@@ -2036,22 +2058,18 @@ def test_channel_b_dual_rollout_triage_emits_recovered_ground_truth_weight_multi
     assert set(float(x) for x in meta["tail_desc_weights"]) == {2.5}
     assert meta["duplicate_burst_unlikelihood_targets"] == []
 
-    assert batch_metrics["train/triage/dead_anchor_count"] == pytest.approx(
-        1.0
-    )
+    assert batch_metrics["train/triage/dead_anchor_count"] == pytest.approx(1.0)
     assert batch_metrics["train/triage/recovered_ground_truth_count"] == pytest.approx(
         1.0
     )
-    assert batch_metrics["train/triage/recovered_ground_truth_rate_den"] == pytest.approx(
-        1.0
-    )
+    assert batch_metrics[
+        "train/triage/recovered_ground_truth_rate_den"
+    ] == pytest.approx(1.0)
     assert batch_metrics["train/triage/recovered_ground_truth_rate"] == pytest.approx(
         1.0
     )
     assert batch_metrics["train/triage/dead_anchor_rate"] == pytest.approx(1.0)
-    assert batch_metrics["train/triage/explorer_only_dead_rate"] == pytest.approx(
-        0.0
-    )
+    assert batch_metrics["train/triage/explorer_only_dead_rate"] == pytest.approx(0.0)
     assert batch_metrics["rollout/anchor/pred_objects"] == pytest.approx(1.0)
     assert batch_metrics["rollout/anchor/valid_pred_objects"] == pytest.approx(1.0)
     assert batch_metrics["rollout/anchor/gen_new_tokens_mean"] == pytest.approx(1.0)
@@ -2094,7 +2112,9 @@ def test_channel_b_dual_rollout_chunking_is_policy_symmetric(monkeypatch) -> Non
                 if s.startswith("<|coord_", i):
                     j = s.find("|>", i)
                     if j >= 0:
-                        out.extend(super().encode(s[i : j + 2], add_special_tokens=False))
+                        out.extend(
+                            super().encode(s[i : j + 2], add_special_tokens=False)
+                        )
                         i = j + 2
                         continue
                 out.append(self._id_for(s[i]))
@@ -2149,7 +2169,11 @@ def test_channel_b_dual_rollout_chunking_is_policy_symmetric(monkeypatch) -> Non
                 float((decode_override or {}).get("temperature", 0.0) or 0.0),
             )
         )
-        marker = 101 if float((decode_override or {}).get("temperature", 0.0) or 0.0) <= 0.0 else 202
+        marker = (
+            101
+            if float((decode_override or {}).get("temperature", 0.0) or 0.0) <= 0.0
+            else 202
+        )
         return [([marker], "", "sampling", []) for _ in chunk]
 
     t._rollout_many = _fake_rollout_many
@@ -2254,7 +2278,9 @@ def test_channel_b_enabled_pseudo_positive_uses_k4_rollouts_and_keeps_zero_objec
                 if s.startswith("<|coord_", i):
                     j = s.find("|>", i)
                     if j >= 0:
-                        out.extend(super().encode(s[i : j + 2], add_special_tokens=False))
+                        out.extend(
+                            super().encode(s[i : j + 2], add_special_tokens=False)
+                        )
                         i = j + 2
                         continue
                 out.append(self._id_for(s[i]))
@@ -2302,9 +2328,7 @@ def test_channel_b_enabled_pseudo_positive_uses_k4_rollouts_and_keeps_zero_objec
 
     rollout_calls: list[dict[str, float]] = []
 
-    def _fake_rollout_many(
-        chunk, decode_override=None, request_index_offset=0
-    ):
+    def _fake_rollout_many(chunk, decode_override=None, request_index_offset=0):
         rollout_calls.append(
             {
                 "temperature": float(
@@ -2469,9 +2493,7 @@ def test_channel_b_enabled_pseudo_positive_aborts_on_invalid_explorer(
 
     rollout_calls = 0
 
-    def _fake_rollout_many(
-        chunk, decode_override=None, request_index_offset=0
-    ):
+    def _fake_rollout_many(chunk, decode_override=None, request_index_offset=0):
         nonlocal rollout_calls
         rollout_calls += 1
         marker = 101 + rollout_calls
@@ -2564,9 +2586,11 @@ def test_channel_b_triage_enabled_k2_remains_no_promotion_control() -> None:
         ]
     ]
 
-    accepted_clean, suppressed_duplicate_objects_by_boundary = _apply_test_duplicate_control(
-        parsed_bbox_objects_raw=anchor_objects,
-        duplicate_iou_threshold=0.9,
+    accepted_clean, suppressed_duplicate_objects_by_boundary = (
+        _apply_test_duplicate_control(
+            parsed_bbox_objects_raw=anchor_objects,
+            duplicate_iou_threshold=0.9,
+        )
     )
     triage = _build_channel_b_triage(
         accepted_objects_clean=accepted_clean,
@@ -2642,9 +2666,11 @@ def test_channel_b_triage_clusters_pseudo_positive_candidates_by_support_rate() 
         ],
     ]
 
-    accepted_clean, suppressed_duplicate_objects_by_boundary = _apply_test_duplicate_control(
-        parsed_bbox_objects_raw=anchor_objects,
-        duplicate_iou_threshold=0.9,
+    accepted_clean, suppressed_duplicate_objects_by_boundary = (
+        _apply_test_duplicate_control(
+            parsed_bbox_objects_raw=anchor_objects,
+            duplicate_iou_threshold=0.9,
+        )
     )
     triage = _build_channel_b_triage(
         accepted_objects_clean=accepted_clean,
@@ -2667,7 +2693,9 @@ def test_channel_b_triage_clusters_pseudo_positive_candidates_by_support_rate() 
     assert triage.dead_anchor_indices == []
 
 
-def test_channel_b_triage_lvis_policy_forces_verified_dead_and_only_shields_ambiguous() -> None:
+def test_channel_b_triage_lvis_policy_forces_verified_dead_and_only_shields_ambiguous() -> (
+    None
+):
     anchor_objects = [
         GTObject(
             index=0,
@@ -2696,9 +2724,11 @@ def test_channel_b_triage_lvis_policy_forces_verified_dead_and_only_shields_ambi
     ]
     explorer_objects_by_view = [list(anchor_objects)]
 
-    accepted_clean, suppressed_duplicate_objects_by_boundary = _apply_test_duplicate_control(
-        parsed_bbox_objects_raw=anchor_objects,
-        duplicate_iou_threshold=0.9,
+    accepted_clean, suppressed_duplicate_objects_by_boundary = (
+        _apply_test_duplicate_control(
+            parsed_bbox_objects_raw=anchor_objects,
+            duplicate_iou_threshold=0.9,
+        )
     )
     triage = _build_channel_b_triage(
         accepted_objects_clean=accepted_clean,
@@ -2726,7 +2756,9 @@ def test_channel_b_triage_lvis_policy_forces_verified_dead_and_only_shields_ambi
     assert triage.dead_anchor_indices == [0, 3]
 
 
-def test_channel_b_supervision_targets_make_pseudo_positive_coord_only_and_anchor_owned() -> None:
+def test_channel_b_supervision_targets_make_pseudo_positive_coord_only_and_anchor_owned() -> (
+    None
+):
     class _CoordLiteralTokenizer(_DummyTokenizer):
         def encode(self, text: str, add_special_tokens: bool = False):
             s = str(text)
@@ -2736,7 +2768,9 @@ def test_channel_b_supervision_targets_make_pseudo_positive_coord_only_and_ancho
                 if s.startswith("<|coord_", i):
                     j = s.find("|>", i)
                     if j >= 0:
-                        out.extend(super().encode(s[i : j + 2], add_special_tokens=False))
+                        out.extend(
+                            super().encode(s[i : j + 2], add_special_tokens=False)
+                        )
                         i = j + 2
                         continue
                 out.append(self._id_for(s[i]))
@@ -2771,9 +2805,11 @@ def test_channel_b_supervision_targets_make_pseudo_positive_coord_only_and_ancho
         ],
         [],
     ]
-    accepted_clean, suppressed_duplicate_objects_by_boundary = _apply_test_duplicate_control(
-        parsed_bbox_objects_raw=anchor_objects,
-        duplicate_iou_threshold=0.9,
+    accepted_clean, suppressed_duplicate_objects_by_boundary = (
+        _apply_test_duplicate_control(
+            parsed_bbox_objects_raw=anchor_objects,
+            duplicate_iou_threshold=0.9,
+        )
     )
     triage = _build_channel_b_triage(
         accepted_objects_clean=accepted_clean,
@@ -2812,7 +2848,9 @@ def test_channel_b_supervision_targets_make_pseudo_positive_coord_only_and_ancho
     assert targets.prefix_bins == [10, 20, 30, 40]
 
 
-def test_channel_b_supervision_targets_allow_partial_pseudo_positive_coord_for_shielded_anchor() -> None:
+def test_channel_b_supervision_targets_allow_partial_pseudo_positive_coord_for_shielded_anchor() -> (
+    None
+):
     class _CoordLiteralTokenizer(_DummyTokenizer):
         def encode(self, text: str, add_special_tokens: bool = False):
             s = str(text)
@@ -2822,7 +2860,9 @@ def test_channel_b_supervision_targets_allow_partial_pseudo_positive_coord_for_s
                 if s.startswith("<|coord_", i):
                     j = s.find("|>", i)
                     if j >= 0:
-                        out.extend(super().encode(s[i : j + 2], add_special_tokens=False))
+                        out.extend(
+                            super().encode(s[i : j + 2], add_special_tokens=False)
+                        )
                         i = j + 2
                         continue
                 out.append(self._id_for(s[i]))
@@ -2850,9 +2890,11 @@ def test_channel_b_supervision_targets_allow_partial_pseudo_positive_coord_for_s
         [],
         [],
     ]
-    accepted_clean, suppressed_duplicate_objects_by_boundary = _apply_test_duplicate_control(
-        parsed_bbox_objects_raw=anchor_objects,
-        duplicate_iou_threshold=0.9,
+    accepted_clean, suppressed_duplicate_objects_by_boundary = (
+        _apply_test_duplicate_control(
+            parsed_bbox_objects_raw=anchor_objects,
+            duplicate_iou_threshold=0.9,
+        )
     )
     triage = _build_channel_b_triage(
         accepted_objects_clean=accepted_clean,
@@ -2892,7 +2934,9 @@ def test_channel_b_supervision_targets_allow_partial_pseudo_positive_coord_for_s
     assert targets.prefix_bins == [10, 20, 30, 40]
 
 
-def test_channel_b_supervision_targets_skip_duplicate_burst_unlikelihood_for_non_duplicate_dead_anchor() -> None:
+def test_channel_b_supervision_targets_skip_duplicate_burst_unlikelihood_for_non_duplicate_dead_anchor() -> (
+    None
+):
     class _CoordLiteralTokenizer(_DummyTokenizer):
         def encode(self, text: str, add_special_tokens: bool = False):
             s = str(text)
@@ -2902,7 +2946,9 @@ def test_channel_b_supervision_targets_skip_duplicate_burst_unlikelihood_for_non
                 if s.startswith("<|coord_", i):
                     j = s.find("|>", i)
                     if j >= 0:
-                        out.extend(super().encode(s[i : j + 2], add_special_tokens=False))
+                        out.extend(
+                            super().encode(s[i : j + 2], add_special_tokens=False)
+                        )
                         i = j + 2
                         continue
                 out.append(self._id_for(s[i]))
@@ -2936,9 +2982,11 @@ def test_channel_b_supervision_targets_skip_duplicate_burst_unlikelihood_for_non
         [],
         [],
     ]
-    accepted_clean, suppressed_duplicate_objects_by_boundary = _apply_test_duplicate_control(
-        parsed_bbox_objects_raw=anchor_objects,
-        duplicate_iou_threshold=0.9,
+    accepted_clean, suppressed_duplicate_objects_by_boundary = (
+        _apply_test_duplicate_control(
+            parsed_bbox_objects_raw=anchor_objects,
+            duplicate_iou_threshold=0.9,
+        )
     )
     triage = _build_channel_b_triage(
         accepted_objects_clean=accepted_clean,
@@ -2973,7 +3021,9 @@ def test_channel_b_supervision_targets_skip_duplicate_burst_unlikelihood_for_non
     assert targets.duplicate_burst_unlikelihood_boundary_count == 0
 
 
-def test_channel_b_supervision_targets_keep_duplicate_burst_unlikelihood_when_duplicate_survivor_is_kept() -> None:
+def test_channel_b_supervision_targets_keep_duplicate_burst_unlikelihood_when_duplicate_survivor_is_kept() -> (
+    None
+):
     class _CoordLiteralTokenizer(_DummyTokenizer):
         def encode(self, text: str, add_special_tokens: bool = False):
             s = str(text)
@@ -2983,7 +3033,9 @@ def test_channel_b_supervision_targets_keep_duplicate_burst_unlikelihood_when_du
                 if s.startswith("<|coord_", i):
                     j = s.find("|>", i)
                     if j >= 0:
-                        out.extend(super().encode(s[i : j + 2], add_special_tokens=False))
+                        out.extend(
+                            super().encode(s[i : j + 2], add_special_tokens=False)
+                        )
                         i = j + 2
                         continue
                 out.append(self._id_for(s[i]))
@@ -3017,9 +3069,11 @@ def test_channel_b_supervision_targets_keep_duplicate_burst_unlikelihood_when_du
         [],
         [],
     ]
-    accepted_clean, suppressed_duplicate_objects_by_boundary = _apply_test_duplicate_control(
-        parsed_bbox_objects_raw=anchor_objects,
-        duplicate_iou_threshold=0.9,
+    accepted_clean, suppressed_duplicate_objects_by_boundary = (
+        _apply_test_duplicate_control(
+            parsed_bbox_objects_raw=anchor_objects,
+            duplicate_iou_threshold=0.9,
+        )
     )
     triage = _build_channel_b_triage(
         accepted_objects_clean=accepted_clean,
@@ -3054,7 +3108,9 @@ def test_channel_b_supervision_targets_keep_duplicate_burst_unlikelihood_when_du
     assert targets.duplicate_burst_unlikelihood_boundary_count == 1
 
 
-def test_channel_b_supervision_targets_keep_duplicate_burst_unlikelihood_when_all_cluster_members_die() -> None:
+def test_channel_b_supervision_targets_keep_duplicate_burst_unlikelihood_when_all_cluster_members_die() -> (
+    None
+):
     class _CoordLiteralTokenizer(_DummyTokenizer):
         def encode(self, text: str, add_special_tokens: bool = False):
             s = str(text)
@@ -3064,7 +3120,9 @@ def test_channel_b_supervision_targets_keep_duplicate_burst_unlikelihood_when_al
                 if s.startswith("<|coord_", i):
                     j = s.find("|>", i)
                     if j >= 0:
-                        out.extend(super().encode(s[i : j + 2], add_special_tokens=False))
+                        out.extend(
+                            super().encode(s[i : j + 2], add_special_tokens=False)
+                        )
                         i = j + 2
                         continue
                 out.append(self._id_for(s[i]))
@@ -3086,9 +3144,11 @@ def test_channel_b_supervision_targets_keep_duplicate_burst_unlikelihood_when_al
             desc="dup",
         ),
     ]
-    accepted_clean, suppressed_duplicate_objects_by_boundary = _apply_test_duplicate_control(
-        parsed_bbox_objects_raw=raw_anchor_objects,
-        duplicate_iou_threshold=0.9,
+    accepted_clean, suppressed_duplicate_objects_by_boundary = (
+        _apply_test_duplicate_control(
+            parsed_bbox_objects_raw=raw_anchor_objects,
+            duplicate_iou_threshold=0.9,
+        )
     )
     triage = _build_channel_b_triage(
         accepted_objects_clean=accepted_clean,
@@ -3125,7 +3185,9 @@ def test_channel_b_supervision_targets_keep_duplicate_burst_unlikelihood_when_al
     assert targets.duplicate_burst_unlikelihood_boundary_count == 1
 
 
-def test_channel_b_adjacent_repulsion_metadata_uses_clean_order_not_append_order() -> None:
+def test_channel_b_adjacent_repulsion_metadata_uses_clean_order_not_append_order() -> (
+    None
+):
     class _CoordLiteralTokenizer(_DummyTokenizer):
         def encode(self, text: str, add_special_tokens: bool = False):
             s = str(text)
@@ -3135,7 +3197,9 @@ def test_channel_b_adjacent_repulsion_metadata_uses_clean_order_not_append_order
                 if s.startswith("<|coord_", i):
                     j = s.find("|>", i)
                     if j >= 0:
-                        out.extend(super().encode(s[i : j + 2], add_special_tokens=False))
+                        out.extend(
+                            super().encode(s[i : j + 2], add_special_tokens=False)
+                        )
                         i = j + 2
                         continue
                 out.append(self._id_for(s[i]))
@@ -3188,9 +3252,11 @@ def test_channel_b_adjacent_repulsion_metadata_uses_clean_order_not_append_order
         ],
         [],
     ]
-    accepted_clean, suppressed_duplicate_objects_by_boundary = _apply_test_duplicate_control(
-        parsed_bbox_objects_raw=anchor_objects,
-        duplicate_iou_threshold=0.9,
+    accepted_clean, suppressed_duplicate_objects_by_boundary = (
+        _apply_test_duplicate_control(
+            parsed_bbox_objects_raw=anchor_objects,
+            duplicate_iou_threshold=0.9,
+        )
     )
     triage = _build_channel_b_triage(
         accepted_objects_clean=accepted_clean,
@@ -3241,11 +3307,18 @@ def test_channel_b_adjacent_repulsion_metadata_uses_clean_order_not_append_order
         [200, 210, 230, 240],
         [100, 110, 130, 140],
     ]
-    assert targets.prefix_bbox_groups[1]["adjacent_prev_gt_bins"] == [100, 110, 130, 140]
+    assert targets.prefix_bbox_groups[1]["adjacent_prev_gt_bins"] == [
+        100,
+        110,
+        130,
+        140,
+    ]
     assert targets.prefix_bbox_groups[1]["adjacent_same_desc_with_prev"] is True
 
 
-def test_channel_b_supervision_targets_sorted_insertion_reorders_final_sequence() -> None:
+def test_channel_b_supervision_targets_sorted_insertion_reorders_final_sequence() -> (
+    None
+):
     class _CoordLiteralTokenizer(_DummyTokenizer):
         def encode(self, text: str, add_special_tokens: bool = False):
             s = str(text)
@@ -3255,7 +3328,9 @@ def test_channel_b_supervision_targets_sorted_insertion_reorders_final_sequence(
                 if s.startswith("<|coord_", i):
                     j = s.find("|>", i)
                     if j >= 0:
-                        out.extend(super().encode(s[i : j + 2], add_special_tokens=False))
+                        out.extend(
+                            super().encode(s[i : j + 2], add_special_tokens=False)
+                        )
                         i = j + 2
                         continue
                 out.append(self._id_for(s[i]))
@@ -3334,15 +3409,18 @@ def test_channel_b_supervision_targets_sorted_insertion_reorders_final_sequence(
         insertion_order="sorted",
     )
 
-    assert tail_targets.clean_target_text.find('"desc": "anchor"') < tail_targets.clean_target_text.find(
-        '"desc": "fn"'
-    )
-    assert sorted_targets.clean_target_text.find('"desc": "fn"') < sorted_targets.clean_target_text.find(
+    assert tail_targets.clean_target_text.find(
         '"desc": "anchor"'
-    )
+    ) < tail_targets.clean_target_text.find('"desc": "fn"')
+    assert sorted_targets.clean_target_text.find(
+        '"desc": "fn"'
+    ) < sorted_targets.clean_target_text.find('"desc": "anchor"')
     assert len(tail_targets.fn_bbox_groups) == 1
     assert sorted_targets.fn_bbox_groups == []
-    assert any(group["gt_bins"] == [10, 20, 30, 40] for group in sorted_targets.prefix_bbox_groups)
+    assert any(
+        group["gt_bins"] == [10, 20, 30, 40]
+        for group in sorted_targets.prefix_bbox_groups
+    )
     assert sorted_targets.append_text == "]}"
     assert sorted_targets.tail_desc_pos == []
 
@@ -3387,8 +3465,12 @@ def test_channel_b_triage_posterior_nested_config_reaches_live_accessor_and_vllm
     t.stage2_ab_cfg["channel_b"]["triage_posterior"]["explorer_temperature"] = 0.55
     t.stage2_ab_cfg["channel_b"]["triage_posterior"]["explorer_top_p"] = 0.91
     t.stage2_ab_cfg["channel_b"]["triage_posterior"]["explorer_top_k"] = 7
-    t.stage2_ab_cfg["channel_b"]["triage_posterior"]["unlabeled_consistent_iou_threshold"] = 0.82
-    t.stage2_ab_cfg["channel_b"]["triage_posterior"]["recovered_ground_truth_weight_multiplier"] = 3.0
+    t.stage2_ab_cfg["channel_b"]["triage_posterior"][
+        "unlabeled_consistent_iou_threshold"
+    ] = 0.82
+    t.stage2_ab_cfg["channel_b"]["triage_posterior"][
+        "recovered_ground_truth_weight_multiplier"
+    ] = 3.0
 
     class _CoordLiteralTokenizer(_DummyTokenizer):
         def encode(self, text: str, add_special_tokens: bool = False):
@@ -3399,7 +3481,9 @@ def test_channel_b_triage_posterior_nested_config_reaches_live_accessor_and_vllm
                 if s.startswith("<|coord_", i):
                     j = s.find("|>", i)
                     if j >= 0:
-                        out.extend(super().encode(s[i : j + 2], add_special_tokens=False))
+                        out.extend(
+                            super().encode(s[i : j + 2], add_special_tokens=False)
+                        )
                         i = j + 2
                         continue
                 out.append(self._id_for(s[i]))
@@ -3522,12 +3606,12 @@ def test_channel_b_triage_posterior_nested_config_reaches_live_accessor_and_vllm
             _segments_only=True,
         )
 
-    assert t._ab_channel_b_get("triage_posterior.explorer_temperature", None) == pytest.approx(
-        0.55
-    )
-    assert t._ab_channel_b_get("triage_posterior.recovered_ground_truth_weight_multiplier", None) == pytest.approx(
-        3.0
-    )
+    assert t._ab_channel_b_get(
+        "triage_posterior.explorer_temperature", None
+    ) == pytest.approx(0.55)
+    assert t._ab_channel_b_get(
+        "triage_posterior.recovered_ground_truth_weight_multiplier", None
+    ) == pytest.approx(3.0)
     assert rollout_calls == [
         (2, 0.0, 0),
         (2, 0.55, 0),
@@ -3568,7 +3652,9 @@ def test_channel_b_anchor_only_gt_hit_projects_anchor_gt_backed(
                 if s.startswith("<|coord_", i):
                     j = s.find("|>", i)
                     if j >= 0:
-                        out.extend(super().encode(s[i : j + 2], add_special_tokens=False))
+                        out.extend(
+                            super().encode(s[i : j + 2], add_special_tokens=False)
+                        )
                         i = j + 2
                         continue
                 out.append(self._id_for(s[i]))
@@ -3614,7 +3700,16 @@ def test_channel_b_anchor_only_gt_hit_projects_anchor_gt_backed(
 
     t._hf_sampling_seed_context = lambda **kwargs: _NoSeedCtx()
     t._rollout_many = lambda chunk, decode_override=None: [
-        ([101 if float((decode_override or {}).get("temperature", 0.0) or 0.0) <= 0.0 else 202], "", "sampling", [])
+        (
+            [
+                101
+                if float((decode_override or {}).get("temperature", 0.0) or 0.0) <= 0.0
+                else 202
+            ],
+            "",
+            "sampling",
+            [],
+        )
         for _ in chunk
     ]
 
@@ -3689,9 +3784,7 @@ def test_channel_b_anchor_only_gt_hit_projects_anchor_gt_backed(
     assert meta["dead_anchor_indices"] == []
     assert meta["fn_object_weights"] == []
     assert meta["bbox_groups_prefix"]
-    assert batch_metrics["train/triage/gt_backed_count"] == pytest.approx(
-        1.0
-    )
+    assert batch_metrics["train/triage/gt_backed_count"] == pytest.approx(1.0)
 
 
 def test_channel_b_shielded_anchor_stays_neutral_context(monkeypatch) -> None:
@@ -3722,7 +3815,9 @@ def test_channel_b_shielded_anchor_stays_neutral_context(monkeypatch) -> None:
                 if s.startswith("<|coord_", i):
                     j = s.find("|>", i)
                     if j >= 0:
-                        out.extend(super().encode(s[i : j + 2], add_special_tokens=False))
+                        out.extend(
+                            super().encode(s[i : j + 2], add_special_tokens=False)
+                        )
                         i = j + 2
                         continue
                 out.append(self._id_for(s[i]))
@@ -3768,7 +3863,16 @@ def test_channel_b_shielded_anchor_stays_neutral_context(monkeypatch) -> None:
 
     t._hf_sampling_seed_context = lambda **kwargs: _NoSeedCtx()
     t._rollout_many = lambda chunk, decode_override=None: [
-        ([101 if float((decode_override or {}).get("temperature", 0.0) or 0.0) <= 0.0 else 202], "", "sampling", [])
+        (
+            [
+                101
+                if float((decode_override or {}).get("temperature", 0.0) or 0.0) <= 0.0
+                else 202
+            ],
+            "",
+            "sampling",
+            [],
+        )
         for _ in chunk
     ]
 
@@ -3858,7 +3962,9 @@ def test_channel_b_explorer_only_dead_emits_no_explore_branch(monkeypatch) -> No
                 if s.startswith("<|coord_", i):
                     j = s.find("|>", i)
                     if j >= 0:
-                        out.extend(super().encode(s[i : j + 2], add_special_tokens=False))
+                        out.extend(
+                            super().encode(s[i : j + 2], add_special_tokens=False)
+                        )
                         i = j + 2
                         continue
                 out.append(self._id_for(s[i]))
@@ -3904,7 +4010,16 @@ def test_channel_b_explorer_only_dead_emits_no_explore_branch(monkeypatch) -> No
 
     t._hf_sampling_seed_context = lambda **kwargs: _NoSeedCtx()
     t._rollout_many = lambda chunk, decode_override=None: [
-        ([101 if float((decode_override or {}).get("temperature", 0.0) or 0.0) <= 0.0 else 202], "", "sampling", [])
+        (
+            [
+                101
+                if float((decode_override or {}).get("temperature", 0.0) or 0.0) <= 0.0
+                else 202
+            ],
+            "",
+            "sampling",
+            [],
+        )
         for _ in chunk
     ]
 
@@ -3978,9 +4093,7 @@ def test_channel_b_explorer_only_dead_emits_no_explore_branch(monkeypatch) -> No
     assert meta["bbox_groups_prefix"] == []
     assert meta["bbox_groups_fn"] == []
     assert meta["duplicate_burst_unlikelihood_targets"] == []
-    assert batch_metrics["train/triage/explorer_only_dead_count"] == pytest.approx(
-        1.0
-    )
+    assert batch_metrics["train/triage/explorer_only_dead_count"] == pytest.approx(1.0)
 
 
 def test_channel_b_recovered_ground_truth_weight_multipliers_only_apply_to_recovered_tail_objects(
@@ -4014,7 +4127,9 @@ def test_channel_b_recovered_ground_truth_weight_multipliers_only_apply_to_recov
                 if s.startswith("<|coord_", i):
                     j = s.find("|>", i)
                     if j >= 0:
-                        out.extend(super().encode(s[i : j + 2], add_special_tokens=False))
+                        out.extend(
+                            super().encode(s[i : j + 2], add_special_tokens=False)
+                        )
                         i = j + 2
                         continue
                 out.append(self._id_for(s[i]))
@@ -4060,7 +4175,16 @@ def test_channel_b_recovered_ground_truth_weight_multipliers_only_apply_to_recov
 
     t._hf_sampling_seed_context = lambda **kwargs: _NoSeedCtx()
     t._rollout_many = lambda chunk, decode_override=None: [
-        ([101 if float((decode_override or {}).get("temperature", 0.0) or 0.0) <= 0.0 else 202], "", "sampling", [])
+        (
+            [
+                101
+                if float((decode_override or {}).get("temperature", 0.0) or 0.0) <= 0.0
+                else 202
+            ],
+            "",
+            "sampling",
+            [],
+        )
         for _ in chunk
     ]
 
@@ -4500,11 +4624,8 @@ def test_post_rollout_packing_selector_is_remainder_aware():
     assert smart_underfilled == 0
 
 
-
 def test_extract_gt_bboxonly_rejects_poly_geometry():
-    sample = {
-        "assistant_payload": {"objects": [{"desc": "x", "poly": [0, 1, 2, 3]}]}
-    }
+    sample = {"assistant_payload": {"objects": [{"desc": "x", "poly": [0, 1, 2, 3]}]}}
     with pytest.raises(ValueError, match="bbox-only v1"):
         _extract_gt_bboxonly(sample)
 
@@ -4527,9 +4648,7 @@ def test_extract_gt_bboxonly_rejects_other_geometry_key_even_with_bbox():
 
 def test_extract_gt_bboxonly_rejects_invalid_bbox_order():
     sample = {
-        "assistant_payload": {
-            "objects": [{"desc": "x", "bbox_2d": [10, 10, 0, 0]}]
-        },
+        "assistant_payload": {"objects": [{"desc": "x", "bbox_2d": [10, 10, 0, 0]}]},
     }
     with pytest.raises(ValueError, match="invalid bbox_2d"):
         _extract_gt_bboxonly(sample)
@@ -4647,7 +4766,6 @@ def test_compute_loss_raises_on_sliced_logits():
                 "text_position_ids": text_position_ids,
             },
         )
-
 
 
 def test_channel_b_includes_fn_geometry_loss():
@@ -4959,7 +5077,9 @@ def test_channel_b_bbox_group_weights_scale_bbox_size_aux_loss() -> None:
     )
 
 
-def test_channel_a_teacher_forcing_logits_drive_coord_losses_under_single_pass_names() -> None:
+def test_channel_a_teacher_forcing_logits_drive_coord_losses_under_single_pass_names() -> (
+    None
+):
     t = _make_min_trainer()
     t.stage2_pipeline_manifest = _make_stage2_pipeline_manifest(
         token_ce_enabled=False,
@@ -5207,9 +5327,7 @@ def test_matched_prefix_structure_positions_uses_parser_char_frame_for_span_chec
 
     key_pos = int(piece_text.find('"bbox_2d"'))
     desc_tok_idx = next(
-        i
-        for i, t in enumerate(prefix_token_ids)
-        if int(t) == int(tok._mismatch_id)
+        i for i, t in enumerate(prefix_token_ids) if int(t) == int(tok._mismatch_id)
     )
 
     assert key_pos >= 0 and key_pos in rel
@@ -5385,7 +5503,9 @@ def test_channel_b_fn_desc_default_on_and_can_be_disabled_via_pipeline() -> None
     )
 
 
-def test_stage2_pipeline_canonical_bbox_geo_weights_control_precomputed_geo_loss() -> None:
+def test_stage2_pipeline_canonical_bbox_geo_weights_control_precomputed_geo_loss() -> (
+    None
+):
     t = Stage2ABTrainingTrainer.__new__(Stage2ABTrainingTrainer)
     t.stage2_ab_cfg = {
         "schedule": {"b_ratio": 1.0},
@@ -5484,7 +5604,9 @@ def test_stage2_pipeline_default_parity_channel_b_desc_weighting_unpacked() -> N
     t.state = types.SimpleNamespace(global_step=0)
 
     model = _DummyAlwaysTokenModel(pred_id=1100)
-    input_ids = torch.tensor([[1100, 1101, 1101, 1101, 1101, 1101, 1101, 1101]], dtype=torch.long)
+    input_ids = torch.tensor(
+        [[1100, 1101, 1101, 1101, 1101, 1101, 1101, 1101]], dtype=torch.long
+    )
     meta = {
         "prompt_len": 0,
         "prefix_len": 4,
@@ -5557,7 +5679,26 @@ def test_stage2_pipeline_default_parity_channel_b_desc_weighting_packed() -> Non
 
     seg_len = 8
     input_ids = torch.tensor(
-        [[1100, 1101, 1101, 1101, 1101, 1101, 1101, 1101, 1100, 1101, 1101, 1101, 1101, 1101, 1101, 1101]],
+        [
+            [
+                1100,
+                1101,
+                1101,
+                1101,
+                1101,
+                1101,
+                1101,
+                1101,
+                1100,
+                1101,
+                1101,
+                1101,
+                1101,
+                1101,
+                1101,
+                1101,
+            ]
+        ],
         dtype=torch.long,
     )
     meta = [
@@ -5694,10 +5835,21 @@ def test_tail_closure_positions_prefer_turn_end_after_json_close():
 
 def test_channel_b_sequential_dedup_attaches_duplicates_to_clean_boundaries() -> None:
     raw = [
-        GTObject(index=0, geom_type="bbox_2d", points_norm1000=[10, 10, 20, 20], desc="cat"),
-        GTObject(index=1, geom_type="bbox_2d", points_norm1000=[10, 10, 20, 20], desc="cat"),
-        GTObject(index=2, geom_type="bbox_2d", points_norm1000=[100, 100, 150, 150], desc="dog"),
-        GTObject(index=3, geom_type="bbox_2d", points_norm1000=[10, 10, 20, 20], desc="cat"),
+        GTObject(
+            index=0, geom_type="bbox_2d", points_norm1000=[10, 10, 20, 20], desc="cat"
+        ),
+        GTObject(
+            index=1, geom_type="bbox_2d", points_norm1000=[10, 10, 20, 20], desc="cat"
+        ),
+        GTObject(
+            index=2,
+            geom_type="bbox_2d",
+            points_norm1000=[100, 100, 150, 150],
+            desc="dog",
+        ),
+        GTObject(
+            index=3, geom_type="bbox_2d", points_norm1000=[10, 10, 20, 20], desc="cat"
+        ),
     ]
 
     accepted, bursts = _apply_test_duplicate_control(
@@ -5717,10 +5869,22 @@ def test_channel_b_sequential_dedup_attaches_duplicates_to_clean_boundaries() ->
     assert diag["dup/raw/saturation_rate"] == pytest.approx(0.0)
 
 
-def test_channel_b_sequential_dedup_with_zero_center_radius_still_suppresses_iou_duplicates() -> None:
+def test_channel_b_sequential_dedup_with_zero_center_radius_still_suppresses_iou_duplicates() -> (
+    None
+):
     raw = [
-        GTObject(index=0, geom_type="bbox_2d", points_norm1000=[100, 100, 200, 200], desc="cat"),
-        GTObject(index=1, geom_type="bbox_2d", points_norm1000=[110, 110, 210, 210], desc="cat"),
+        GTObject(
+            index=0,
+            geom_type="bbox_2d",
+            points_norm1000=[100, 100, 200, 200],
+            desc="cat",
+        ),
+        GTObject(
+            index=1,
+            geom_type="bbox_2d",
+            points_norm1000=[110, 110, 210, 210],
+            desc="cat",
+        ),
     ]
 
     accepted, bursts = _apply_test_duplicate_control(
@@ -5733,16 +5897,26 @@ def test_channel_b_sequential_dedup_with_zero_center_radius_still_suppresses_iou
     assert [obj.index for obj in bursts[1]] == [1]
 
 
-def test_duplicate_burst_unlikelihood_targets_use_lcp_divergence_and_collapse_same_boundary_token() -> None:
+def test_duplicate_burst_unlikelihood_targets_use_lcp_divergence_and_collapse_same_boundary_token() -> (
+    None
+):
     tok = _DummyTokenizer()
     accepted_clean = [
-        GTObject(index=0, geom_type="bbox_2d", points_norm1000=[1, 1, 2, 2], desc="cat"),
-        GTObject(index=1, geom_type="bbox_2d", points_norm1000=[5, 5, 6, 6], desc="book"),
+        GTObject(
+            index=0, geom_type="bbox_2d", points_norm1000=[1, 1, 2, 2], desc="cat"
+        ),
+        GTObject(
+            index=1, geom_type="bbox_2d", points_norm1000=[5, 5, 6, 6], desc="book"
+        ),
     ]
     duplicate_bursts = {
         1: [
-            GTObject(index=2, geom_type="bbox_2d", points_norm1000=[1, 1, 2, 2], desc="book"),
-            GTObject(index=3, geom_type="bbox_2d", points_norm1000=[1, 1, 2, 2], desc="book"),
+            GTObject(
+                index=2, geom_type="bbox_2d", points_norm1000=[1, 1, 2, 2], desc="book"
+            ),
+            GTObject(
+                index=3, geom_type="bbox_2d", points_norm1000=[1, 1, 2, 2], desc="book"
+            ),
         ]
     }
 
@@ -5773,14 +5947,20 @@ def test_duplicate_burst_unlikelihood_targets_use_lcp_divergence_and_collapse_sa
     assert tok.decode([y_train_ids[target["rel_pos"]]]) == "5"
 
 
-def test_duplicate_burst_unlikelihood_targets_skip_when_no_safe_divergence_exists() -> None:
+def test_duplicate_burst_unlikelihood_targets_skip_when_no_safe_divergence_exists() -> (
+    None
+):
     tok = _DummyTokenizer()
     accepted_clean = [
-        GTObject(index=0, geom_type="bbox_2d", points_norm1000=[5, 5, 6, 6], desc="book"),
+        GTObject(
+            index=0, geom_type="bbox_2d", points_norm1000=[5, 5, 6, 6], desc="book"
+        ),
     ]
     duplicate_bursts = {
         0: [
-            GTObject(index=1, geom_type="bbox_2d", points_norm1000=[1, 1, 2, 2], desc="book"),
+            GTObject(
+                index=1, geom_type="bbox_2d", points_norm1000=[1, 1, 2, 2], desc="book"
+            ),
         ]
     }
 
@@ -5806,7 +5986,9 @@ def test_duplicate_burst_unlikelihood_targets_skip_when_no_safe_divergence_exist
     assert skipped == 1
 
 
-def test_duplicate_burst_unlikelihood_targets_resolve_boundary_crossing_tokenization() -> None:
+def test_duplicate_burst_unlikelihood_targets_resolve_boundary_crossing_tokenization() -> (
+    None
+):
     tok = _BoundaryMergingTokenizer()
     accepted_clean = [
         GTObject(
@@ -5854,7 +6036,9 @@ def test_duplicate_burst_unlikelihood_targets_resolve_boundary_crossing_tokeniza
     assert tok.decode([y_train_ids[target["rel_pos"]]]) == "5"
 
 
-def test_stage2_channel_b_duplicate_burst_unlikelihood_logs_weighted_objective_atom() -> None:
+def test_stage2_channel_b_duplicate_burst_unlikelihood_logs_weighted_objective_atom() -> (
+    None
+):
     t = _make_min_trainer()
     t.stage2_pipeline_manifest = _make_stage2_pipeline_manifest(
         token_ce_enabled=False,
@@ -5956,7 +6140,9 @@ def test_stage2_channel_a_rejects_deprecated_stop_signal_damping_config() -> Non
         )
 
 
-def test_stage2_channel_b_compute_loss_copies_triage_and_split_rollout_telemetry() -> None:
+def test_stage2_channel_b_compute_loss_copies_triage_and_split_rollout_telemetry() -> (
+    None
+):
     t = _make_min_trainer()
     t.stage2_pipeline_manifest = _make_stage2_pipeline_manifest(
         token_ce_enabled=False,
@@ -6083,9 +6269,15 @@ def test_pending_stage2_log_aggregates_strict_drop_metrics_and_reasons() -> None
 
     assert out["stage2_ab/channel_b/strict_drop/N_valid_pred"] == pytest.approx(7.0)
     assert out["stage2_ab/channel_b/strict_drop/N_drop_invalid"] == pytest.approx(5.0)
-    assert out["stage2_ab/channel_b/strict_drop/reason/order_violation"] == pytest.approx(3.0)
-    assert out["stage2_ab/channel_b/strict_drop/reason/wrong_arity"] == pytest.approx(1.0)
-    assert out["stage2_ab/channel_b/strict_drop/reason/missing_desc"] == pytest.approx(1.0)
+    assert out[
+        "stage2_ab/channel_b/strict_drop/reason/order_violation"
+    ] == pytest.approx(3.0)
+    assert out["stage2_ab/channel_b/strict_drop/reason/wrong_arity"] == pytest.approx(
+        1.0
+    )
+    assert out["stage2_ab/channel_b/strict_drop/reason/missing_desc"] == pytest.approx(
+        1.0
+    )
 
 
 def test_pending_stage2_log_omits_channel_b_keys_when_not_provided() -> None:
@@ -6107,7 +6299,9 @@ def test_pending_stage2_log_omits_channel_b_keys_when_not_provided() -> None:
     assert "stage2_ab/channel_b/strict_drop/N_drop_invalid" not in out
 
 
-def test_reduce_stage2_pending_metrics_global_recomputes_ratio_and_sums_invalid_rollout() -> None:
+def test_reduce_stage2_pending_metrics_global_recomputes_ratio_and_sums_invalid_rollout() -> (
+    None
+):
     class _FakeReduceOp:
         SUM = "sum"
         MAX = "max"
@@ -6182,11 +6376,15 @@ def test_reduce_stage2_pending_metrics_global_uses_weight_total_for_means() -> N
         }
     )
 
-    assert out["loss/coord/bbox_smoothl1"] == pytest.approx((10.0 * 1.0 + 20.0 * 3.0) / 4.0)
+    assert out["loss/coord/bbox_smoothl1"] == pytest.approx(
+        (10.0 * 1.0 + 20.0 * 3.0) / 4.0
+    )
     assert "stage2/_log_weight_total" not in out
 
 
-def test_reduce_stage2_pending_metrics_global_treats_train_optimization_losses_as_weighted_means() -> None:
+def test_reduce_stage2_pending_metrics_global_treats_train_optimization_losses_as_weighted_means() -> (
+    None
+):
     class _FakeReduceOp:
         SUM = "sum"
         MAX = "max"
@@ -6245,12 +6443,13 @@ def test_reduce_stage2_pending_metrics_global_strips_internal_underscore_keys() 
     assert all(not str(k).startswith("rollout/_") for k in out)
 
 
-
 def test_channel_b_step_budgeted_path_is_supported_under_ddp_mock(monkeypatch):
     # Stage2-AB standardizes Channel-B to a single step-budgeted pathway.
     # This should not be rejected just because torch.distributed is initialized.
     monkeypatch.setattr(torch.distributed, "is_available", lambda: True, raising=False)
-    monkeypatch.setattr(torch.distributed, "is_initialized", lambda: True, raising=False)
+    monkeypatch.setattr(
+        torch.distributed, "is_initialized", lambda: True, raising=False
+    )
     monkeypatch.setattr(torch.distributed, "get_world_size", lambda: 2, raising=False)
 
     t = Stage2ABTrainingTrainer.__new__(Stage2ABTrainingTrainer)
@@ -6344,7 +6543,9 @@ def _make_eval_ready_stage2_ab_trainer() -> Stage2ABTrainingTrainer:
     return trainer
 
 
-def test_stage2_two_channel_eval_emits_rollout_map_and_coco_contract(monkeypatch) -> None:
+def test_stage2_two_channel_eval_emits_rollout_map_and_coco_contract(
+    monkeypatch,
+) -> None:
     trainer = _make_eval_ready_stage2_ab_trainer()
 
     parse_obj = types.SimpleNamespace(
