@@ -1,0 +1,86 @@
+extends:
+  - production.yaml
+
+training:
+  artifact_subdir: coco1024_sota1332_setcont_et_rmp_ce_v1
+  run_name: setcont-coco1024-sota1332-et-rmp-ce-v1
+
+benchmark:
+  group_id: stage1_set_continuation_et_rmp_ce
+  control_group_id: stage1_set_continuation_full_features
+  intended_variable: recursive full-suffix Stage-1 set-continuation with entry-trie multi-positive CE at every object-entry divergence node
+  comparability_label: not-comparable
+
+experiment:
+  title: Stage-1 ET-RMP-CE recursive full-suffix objective
+  purpose: Test whether full remaining-suffix closure plus object-uniform entry-trie multi-positive CE preserves CoordJSON rollout structure while allowing all remaining objects as valid next-object choices.
+  hypothesis: Compared with one-step candidate-balanced continuation, a recursive full-suffix objective should train object, boundary, close, and EOS control flow in one teacher-forced rollout, while trie MP at every entry divergence avoids penalizing valid same-class or shared-prefix alternatives.
+  key_deviations:
+    - "trainer_variant: stage1_set_continuation"
+    - "objective: entry_trie_rmp_ce"
+    - "suffix: one full remaining-object permutation per sampled prefix"
+    - "entry supervision: full-vocabulary CE, with object-uniform soft targets at every branching trie node"
+    - "control flow: schema opener, comma separators, final ]}, and chat-template stop/EOS are hard CE, not candidate evidence"
+    - "smart batch: one full-suffix row per sample under smart_batched_exact; no packed-varlen attention or KV cache"
+    - "candidate budget, PEM, structural-close aux, and bidirectional token gate are disabled because the full-suffix objective owns these tokens directly"
+  runtime_settings:
+    - "packing=false and eval_packing=false inherited from production"
+    - "train_forward.branch_runtime=smart_batched_exact"
+    - "train_forward.logits.mode=supervised_suffix"
+    - "train_forward.ddp_sync.candidate_padding=none"
+    - "train_forward.budget_policy.enabled=false"
+  tags:
+    - stage1
+    - set-continuation
+    - et-rmp-ce
+    - full-suffix
+    - entry-trie
+
+custom:
+  stage1_set_continuation:
+    objective:
+      mode: entry_trie_rmp_ce
+      suffix_order: random
+    structural_close:
+      close_start_suppression_weight: 0.0
+      final_schema_close_weight: 0.0
+      json_structural_weight: 0.0
+      annotation_completeness_weight:
+        enabled: false
+    bidirectional_token_gate:
+      enabled: false
+      coord_gate_weight: 0.0
+      text_gate_weight: 0.0
+      temperature: 1.0
+      scope: objective_tokens
+    positive_evidence_margin:
+      objective: disabled
+    train_forward:
+      branch_runtime:
+        mode: smart_batched_exact
+      branch_batching:
+        enabled: true
+        strategy: ms_swift_constant_volume_buckets
+        max_branch_rows: 8
+        max_branch_tokens: null
+        min_fill_ratio: 0.70
+        padding_waste_warn_fraction: 0.40
+      logits:
+        mode: supervised_suffix
+      ddp_sync:
+        candidate_padding: none
+      budget_policy:
+        enabled: false
+      prefix_reuse:
+        encoding_cache: false
+        kv_cache:
+          mode: disabled
+      telemetry:
+        per_rank_memory: true
+        branch_budget: true
+        objective_fidelity: true
+  extra:
+    benchmark_report:
+      same_budget_label: smart_batched_exact_full_suffix_rows_no_ddp_padding_et_rmp_ce_v1
+      train_forward_budget: smart_batched_exact_full_suffix_rows_no_ddp_padding_et_rmp_ce_v1
+      objective_fidelity_note: ET-RMP-CE trains one recursive full-suffix row per sample; object-entry tokens use full-vocabulary CE with object-uniform soft targets at every trie divergence, while schema opener, comma, final close, and EOS remain hard CE control-flow targets.

@@ -1700,7 +1700,34 @@ class Stage1SetContinuationTrainForwardConfig:
 
 
 @dataclass(frozen=True)
+class Stage1SetContinuationObjectiveConfig:
+    mode: Literal["candidate_balanced", "full_suffix_ce", "entry_trie_rmp_ce"] = (
+        "candidate_balanced"
+    )
+    suffix_order: Literal["random", "dataset"] = "random"
+
+    def __post_init__(self) -> None:
+        if self.mode not in {
+            "candidate_balanced",
+            "full_suffix_ce",
+            "entry_trie_rmp_ce",
+        }:
+            raise ValueError(
+                "custom.stage1_set_continuation.objective.mode must be one of "
+                "{'candidate_balanced', 'full_suffix_ce', 'entry_trie_rmp_ce'}"
+            )
+        if self.suffix_order not in {"random", "dataset"}:
+            raise ValueError(
+                "custom.stage1_set_continuation.objective.suffix_order must be "
+                "one of {'random', 'dataset'}"
+            )
+
+
+@dataclass(frozen=True)
 class Stage1SetContinuationConfig:
+    objective: Stage1SetContinuationObjectiveConfig = field(
+        default_factory=Stage1SetContinuationObjectiveConfig
+    )
     subset_sampling: Stage1SetContinuationSubsetSamplingConfig = field(
         default_factory=Stage1SetContinuationSubsetSamplingConfig
     )
