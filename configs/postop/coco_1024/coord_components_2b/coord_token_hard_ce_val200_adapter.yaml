@@ -1,0 +1,9 @@
+artifacts:
+  run_dir: output/infer/coord_components_2b/coord_components_2b_coord_token_hard_ce_val200_adapter
+
+confidence:
+  fusion:
+    w_geom: 0.7
+    w_desc: 0.3
+  desc_span_policy: best_effort
+  empty_desc_policy: geom_only

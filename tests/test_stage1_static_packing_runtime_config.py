@@ -614,31 +614,24 @@ def test_resolve_static_packing_cache_dir_defaults_to_dataset_local_root(
 
 
 @pytest.mark.parametrize(
-    ("config_relpath", "expected_ordering"),
+    "config_relpath",
     [
-        (
-            "configs/stage1/ablation/2b_coord_ce_soft_ce_w1_gate_coco80_desc_first_sorted_order.yaml",
-            "sorted",
-        ),
-        (
-            "configs/stage1/ablation/2b_coord_ce_soft_ce_w1_gate_coco80_desc_first_random_order.yaml",
-            "random",
-        ),
+        "configs/stage1/ablation/coord_components_2b/coord_token_hard_ce.yaml",
+        "configs/stage1/ablation/coord_components_2b/ciou_hard_ce.yaml",
     ],
 )
-def test_stage1_ablation_profiles_pin_cache_parity_and_ordering(
+def test_stage1_coord_component_ablation_profiles_pin_cache_parity_and_ordering(
     config_relpath: str,
-    expected_ordering: str,
 ) -> None:
     repo_root = Path(__file__).resolve().parents[1]
     cfg = ConfigLoader.load_materialized_training_config(str(repo_root / config_relpath))
 
-    assert cfg.training["seed"] == 17
     assert cfg.training["encoded_sample_cache"]["enabled"] is False
-    assert cfg.custom.object_ordering == expected_ordering
-    assert expected_ordering in cfg.training["run_name"]
-    assert expected_ordering in cfg.training["output_dir"]
-    assert expected_ordering in cfg.training["logging_dir"]
+    assert cfg.training["seed"] == 17
+    assert cfg.custom.object_ordering == "sorted"
+    assert "coord_components" in cfg.training["run_name"]
+    assert "coord_components" in cfg.training["output_dir"]
+    assert "coord_components" in cfg.training["logging_dir"]
 
 
 def test_lvis_stage1_config_keeps_canonical_recipe_and_desc_first_sorted_contract() -> None:
@@ -1044,39 +1037,41 @@ def test_validate_static_packing_accumulation_windows_warns_on_remainder(
 
 
 @pytest.mark.parametrize(
-    ("config_name", "expected_ordering"),
+    "config_name",
     [
-        (
-            "2b_coord_ce_soft_ce_w1_gate_coco80_desc_first_sorted_order.yaml",
-            "sorted",
-        ),
-        (
-            "2b_coord_ce_soft_ce_w1_gate_coco80_desc_first_random_order.yaml",
-            "random",
-        ),
+        "coord_token_hard_ce.yaml",
+        "ciou_hard_ce.yaml",
     ],
 )
-def test_stage1_ablation_leaves_pin_ordering_cache_seed_and_paths(
+def test_stage1_coord_component_leaves_pin_ordering_cache_seed_and_paths(
     config_name: str,
-    expected_ordering: str,
 ) -> None:
     repo_root = Path(__file__).resolve().parents[1]
     cfg = ConfigLoader.load_materialized_training_config(
-        str(repo_root / "configs" / "stage1" / "ablation" / config_name)
+        str(
+            repo_root
+            / "configs"
+            / "stage1"
+            / "ablation"
+            / "coord_components_2b"
+            / config_name
+        )
     )
 
     training = cfg.training
     custom = cfg.custom
     template = cfg.template
 
-    assert custom.object_ordering == expected_ordering
+    assert custom.object_ordering == "sorted"
     assert training["encoded_sample_cache"]["enabled"] is False
     assert training["seed"] == 17
-    assert expected_ordering in str(training["run_name"])
-    assert expected_ordering in str(training["output_dir"])
-    assert expected_ordering in str(training["logging_dir"])
+    assert "coord_components" in str(training["run_name"])
+    assert "coord_components" in str(training["output_dir"])
+    assert "coord_components" in str(training["logging_dir"])
     assert template["max_pixels"] == 1048576
-    assert "rescale_32_1024_bbox_max60/train.coord.jsonl" in str(custom.train_jsonl)
+    assert "rescale_32_1024_bbox_max60_lvis_proxy/train.coord.jsonl" in str(
+        custom.train_jsonl
+    )
 
 
 def test_static_packing_avoids_thread_pool_for_unsafe_length_helper_in_distributed_runtime(

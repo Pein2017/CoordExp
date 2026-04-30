@@ -1,0 +1,23 @@
+extends: ./base.yaml
+
+model:
+  model: model_cache/models/Qwen/Qwen3-VL-2B-Instruct-coordexp
+
+training:
+  artifact_subdir: stage1_2b/ablation/coord_components/ciou_hard_ce
+  run_name: ablation_stage1_2b_coord_components_ciou_hard_ce
+
+custom:
+  coord_soft_ce_w1:
+    enabled: true
+    ce_weight: 1.0
+    soft_ce_weight: 0.0
+    w1_weight: 0.0
+    gate_weight: 1.0
+    text_gate_weight: 1.0
+    adjacent_repulsion_weight: 0.0
+  bbox_geo:
+    enabled: true
+    smoothl1_weight: 0.0
+    ciou_weight: 1.0
+    parameterization: xyxy

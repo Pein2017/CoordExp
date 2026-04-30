@@ -1,0 +1,32 @@
+run_dir: output/infer/coord_components_2b/coord_components_2b_soft_ce_only_val200_adapter
+
+artifacts:
+  scored_jsonl: output/infer/coord_components_2b/coord_components_2b_soft_ce_only_val200_adapter/gt_vs_pred_scored.jsonl
+  proxy_views_dir: output/infer/coord_components_2b/coord_components_2b_soft_ce_only_val200_adapter/proxy_eval_views
+  output_root: output/infer/coord_components_2b/coord_components_2b_soft_ce_only_val200_adapter
+  summary_json: output/infer/coord_components_2b/coord_components_2b_soft_ce_only_val200_adapter/proxy_eval_bundle_summary.json
+
+views:
+  - coco_real
+  - coco_real_strict
+  - coco_real_strict_plausible
+
+metadata_namespace: coordexp_proxy_supervision
+
+eval:
+  metrics: both
+  use_segm: false
+  strict_parse: false
+  lvis_max_dets: 300
+
+  overlay: false
+  overlay_k: 12
+  num_workers: 8
+
+  semantic_model: model_cache/all-MiniLM-L6-v2-local
+  semantic_threshold: 0.5
+  semantic_device: cuda:1
+  semantic_batch_size: 64
+
+  f1ish_iou_thrs: [0.3, 0.5]
+  f1ish_pred_scope: annotated

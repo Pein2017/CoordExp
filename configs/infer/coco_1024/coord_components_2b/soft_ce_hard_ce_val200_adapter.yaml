@@ -1,0 +1,37 @@
+# COCO 1024 LVIS-proxy validation inference for the Stage-1 2B coord-component
+# ablation. Loads the trained adapter checkpoint on top of the 2B CoordExp base.
+
+run:
+  name: coord_components_2b_soft_ce_hard_ce_val200_adapter
+  output_dir: output/infer/coord_components_2b
+
+stages:
+  infer: true
+  eval: false
+  vis: false
+
+infer:
+  gt_jsonl: public_data/coco/rescale_32_1024_bbox_max60_lvis_proxy/val.coord.jsonl
+  model_checkpoint: output/stage1_2b/ablation/coord_components/soft_ce_hard_ce/ablation_stage1_2b_coord_components_soft_ce_hard_ce/v0-20260424-072215/checkpoint-684
+
+  prompt_variant: coco_80
+  object_field_order: desc_first
+  object_ordering: sorted
+
+  mode: auto
+  pred_coord_mode: auto
+
+  backend:
+    type: hf
+
+  generation:
+    temperature: 0.0
+    top_p: 0.9
+    max_new_tokens: 3084
+    repetition_penalty: 1.05
+    batch_size: 4
+    seed: 42
+
+  device: cuda:2
+  limit: 200
+  detect_samples: 128

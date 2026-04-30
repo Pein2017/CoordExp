@@ -1,0 +1,107 @@
+extends: ../../sft_base.yaml
+
+# Fixed Stage-1 2B coord-token ablation base.
+# Leaves should vary only the coordinate-related loss block.
+
+global_max_length: 14000
+
+model:
+  model: model_cache/models/Qwen/Qwen3-VL-2B-Instruct-coordexp
+  attn_impl: flash_attention_2
+
+tuner:
+  train_type: lora
+  use_swift_lora: false
+  use_dora: true
+  freeze_llm: false
+  freeze_vit: false
+  freeze_aligner: false
+  target_modules: [all-linear]
+  target_regex: null
+  modules_to_save: []
+  lora_rank: 16
+  lora_alpha: 32
+  lora_dropout: 0.0
+  lora_bias: none
+
+training:
+  num_train_epochs: 4
+  per_device_train_batch_size: 1
+  per_device_eval_batch_size: 1
+  effective_batch_size: 128
+  optimizer: multimodal_coord_offset
+  learning_rate: 2.0e-4
+  vit_lr: 1.0e-4
+  aligner_lr: 4.0e-4
+  packing: true
+  packing_mode: static
+  packing_buffer: 512
+  packing_min_fill_ratio: 0.7
+  packing_drop_last: true
+  packing_length_precompute_workers: 8
+  eval_packing: true
+  eval_steps: 40
+  save_steps: 200
+  save_total_limit: 2
+  save_delay_steps: 800
+  encoded_sample_cache:
+    enabled: false
+
+template:
+  max_pixels: 1048576
+
+custom:
+  offline_max_pixels: 1048576
+  train_jsonl: public_data/coco/rescale_32_1024_bbox_max60_lvis_proxy/train.coord.jsonl
+  val_jsonl: public_data/coco/rescale_32_1024_bbox_max60_lvis_proxy/val.coord.jsonl
+  object_ordering: sorted
+  object_field_order: desc_first
+  extra:
+    prompt_variant: coco_80
+  val_sample_limit: 512
+  val_sample_with_replacement: false
+  dump_conversation_text: true
+  token_type_metrics:
+    enabled: true
+  coord_tokens:
+    enabled: true
+    skip_bbox_norm: true
+  coord_offset:
+    enabled: true
+    tie_head: true
+    ids: { start: 151670, end: 152669 }
+    embed_lr: 1.0e-4
+    head_lr: 1.0e-4
+    weight_decay: 0.0
+  coord_soft_ce_w1:
+    enabled: false
+    ce_weight: 0.0
+    soft_ce_weight: 0.0
+    w1_weight: 0.0
+    # Coord-token auxiliary losses mask coord targets from base full-vocab CE.
+    # Keep both gates on by default so coordinate slots stay in the coord-token
+    # sub-vocabulary while text/schema slots stay out of it.
+    gate_weight: 1.0
+    text_gate_weight: 1.0
+    temperature: 0.9
+    target_sigma: 1.5
+    target_truncate: 8
+    adjacent_repulsion_weight: 0.0
+    adjacent_repulsion_filter_mode: same_desc
+    adjacent_repulsion_margin_ratio: 0.05
+    adjacent_repulsion_copy_margin: 0.8
+  bbox_geo:
+    enabled: false
+    smoothl1_weight: 0.0
+    ciou_weight: 0.0
+    parameterization: xyxy
+    center_weight: 1.0
+    size_weight: 1.0
+  bbox_size_aux:
+    enabled: false
+    log_wh_weight: 0.0
+    oversize_penalty_weight: 0.0
+    oversize_area_frac_threshold: null
+    oversize_log_w_threshold: null
+    oversize_log_h_threshold: null
+    eps: 1.0e-6

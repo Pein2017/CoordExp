@@ -1,7 +1,7 @@
 extends:
-  - ../profiles/2b/coord_ce_soft_ce_gate.yaml
-  - ../../_shared/datasets/coco_1024_bbox_max60.yaml
-  - ../../_shared/prompts/coco80_desc_first.yaml
+  - ../../../profiles/2b/coord_ce_soft_ce_gate.yaml
+  - ../../../../_shared/datasets/coco_1024_bbox_max60.yaml
+  - ../../../../_shared/prompts/coco80_desc_first.yaml
 
 model:
   model: model_cache/models/Qwen/Qwen3-VL-4B-Instruct-coordexp

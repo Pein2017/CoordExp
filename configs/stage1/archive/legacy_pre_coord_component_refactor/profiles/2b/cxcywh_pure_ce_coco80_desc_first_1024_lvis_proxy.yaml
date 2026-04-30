@@ -1,6 +1,6 @@
 extends:
-  - ./coord_soft_ce_gate_coco80_desc_first.yaml
-  - ../../../_shared/datasets/coco_1024_bbox_max60_lvis_proxy.yaml
+  - ../../../../profiles/2b/coord_soft_ce_gate_coco80_desc_first.yaml
+  - ../../../../../_shared/datasets/coco_1024_bbox_max60_lvis_proxy.yaml
 
 global_max_length: 14000
 
