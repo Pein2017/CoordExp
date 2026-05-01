@@ -1,5 +1,5 @@
 schema_version: 1
-updated: 2026-04-28
+updated: 2026-05-01
 
 entrypoints:
   human: progress/README.md
@@ -26,6 +26,7 @@ groups:
   diagnostics:
     - progress/diagnostics/README.md
     - progress/diagnostics/artifacts/README.md
+    - progress/diagnostics/artifacts/et_rmp_continuation_diagnostics_2026-05-01/README.md
     - progress/diagnostics/2026-04-29_et_rmp_rp_continuation_bias_hypothesis.md
     - progress/diagnostics/2026-04-24_qwen3_vl_instance_binding_mechanism_findings.md
     - progress/diagnostics/2026-04-22_stage2_birth_first_channel_b_decision_study.md
@@ -116,10 +117,10 @@ notes:
     status: canonical-mechanism-summary
     summary: Canonical raw-text-only mechanism note for continuity, duplicate-burst attraction, and FN stop-pressure under the fixed checkpoint pair.
   - path: progress/diagnostics/2026-04-29_et_rmp_rp_continuation_bias_hypothesis.md
-    title: ET-RMP RP Continuation-Bias Hypothesis
+    title: ET-RMP Continuation Diagnostics Source
     kind: diagnostic-study
-    status: active-hypothesis
-    summary: Fixed representative sample bank and hypothesis frame for repetition-penalty, continuation-bias, and perceived-but-not-emitted behavior on the pre-support-mass-enhancement ET-RMP checkpoint.
+    status: canonical-cluster-entry
+    summary: Canonical source for pre-support-mass ET-RMP continuation diagnostics, including objective context, RP sweeps, representative sample bank, FN latent probes, length-bias read, and stop-control ablations.
   - path: progress/diagnostics/2026-04-20_coord_family_basin_and_recall_comparison.md
     title: Coordinate Family Basin and Recall Comparison
     kind: diagnostic-study

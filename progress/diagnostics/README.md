@@ -6,7 +6,7 @@ status: canonical
 domain: research-history
 summary: Router for failure investigations, mechanism studies, threshold sweeps, and operator notes that support diagnosis.
 tags: [progress, diagnostics, investigations]
-updated: 2026-04-24
+updated: 2026-05-01
 ---
 
 # Diagnostics Index
@@ -22,11 +22,12 @@ Prefer `progress/benchmarks/` when the output is mainly a measured run-vs-run or
 
 ## Current Clusters
 
-- Active ET-RMP repetition-penalty / continuation-bias sample bank
+- Canonical ET-RMP continuation / repetition-penalty / FN diagnostics
   - Start with
     [2026-04-29_et_rmp_rp_continuation_bias_hypothesis.md](2026-04-29_et_rmp_rp_continuation_bias_hypothesis.md)
-    for the pre-support-mass-enhancement `rp=1.10/1.15/1.18` representative
-    sample bank, continuation-bias hypothesis, and proposed probability probes.
+    for the pre-support-mass-enhancement ET-RMP objective context, `val200`
+    and core-6 RP sweeps, fixed representative sample bank, FN latent probes,
+    length/count close-pressure read, and hard stop-control ablation.
 - Closed Qwen3-VL coord-token instance-binding mechanism study
   - Start with
     [2026-04-24_qwen3_vl_instance_binding_mechanism_findings.md](2026-04-24_qwen3_vl_instance_binding_mechanism_findings.md)

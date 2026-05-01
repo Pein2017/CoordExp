@@ -1,295 +1,458 @@
 ---
-doc_id: progress.diagnostics.et_rmp_rp_continuation_bias_hypothesis
+doc_id: progress.diagnostics.et_rmp_continuation_diagnostics
 layer: progress
 doc_type: diagnostic-study
-status: active-hypothesis
+status: canonical-cluster-entry
 domain: stage1-et-rmp-ce
-summary: Representative sample bank and hypothesis frame for repetition-penalty, continuation-bias, and perceived-but-not-emitted behavior on the pre-support-mass-enhancement ET-RMP checkpoint.
-tags: [stage1, et-rmp-ce, repetition-penalty, continuation-bias, dense-detection, sample-bank]
-updated: 2026-04-29
+summary: Canonical progress-layer source for the pre-support-mass ET-RMP continuation diagnostics: objective contract, val200 behavior, RP sweeps, representative sample bank, FN latent probes, length/stop pressure, and stop-control ablations.
+tags: [stage1, et-rmp-ce, repetition-penalty, continuation-bias, dense-detection, sample-bank, fn-diagnostics, stop-pressure]
+updated: 2026-05-01
 ---
 
-# ET-RMP RP Continuation-Bias Hypothesis
+# ET-RMP Continuation Diagnostics Source
 
-This note freezes the current representative visual sample bank and records the
-working interpretation for the `rp=1.10/1.15/1.18` sweep on the old ET-RMP
-checkpoint, before support-mass enhancement.
+This is the canonical `progress/diagnostics/` entrypoint for the ET-RMP
+continuation behavior investigation started around the pre-support-mass
+enhancement Stage-1 set-continuation run.
 
-Do not treat these observations as evidence about the later support-mass
-enhanced checkpoint unless the same bank is rerun on that checkpoint.
+Use this note to answer:
 
-## Scope
+- what ET-RMP changed relative to old candidate-level MP;
+- what the first ET-RMP run appeared to fix;
+- where it under-generated;
+- how repetition penalty changed rollout behavior;
+- what the fixed representative sample bank contains;
+- what the FN probability probes showed;
+- whether stop/close pressure grows with length;
+- whether hard stop-control recovered hidden missed objects.
 
-- Checkpoint:
-  `output_remote/stage1_2b/set_continuation/coco1024_sota1332_setcont_et_rmp_ce_v1/setcont-coco1024-sota1332-et-rmp-ce-v1/v0-20260429-022918/checkpoint-300`
-- Eval slice: `val200`
-- Decode: greedy, `max_new_tokens=3084`
-- Compared knobs: `repetition_penalty in {1.10, 1.15, 1.18}`
-- Training state: pre-support-mass-enhancement ET-RMP checkpoint
-- Artifact bank:
-  [artifacts/et_rmp_rp_sample_bank_2026-04-29/](artifacts/et_rmp_rp_sample_bank_2026-04-29/)
-- Narrowed first-pass research subset:
-  [artifacts/et_rmp_rp_sample_bank_2026-04-29/research_subset.json](artifacts/et_rmp_rp_sample_bank_2026-04-29/research_subset.json)
+Do not use this note as the implementation source of truth. Current objective
+and config behavior belongs in:
 
-## Frozen Samples
+- [docs/training/STAGE1_ET_RMP_CE.md](../../docs/training/STAGE1_ET_RMP_CE.md)
+- [docs/training/STAGE1_OBJECTIVE.md](../../docs/training/STAGE1_OBJECTIVE.md)
+- [configs/stage1/set_continuation/production.yaml](../../configs/stage1/set_continuation/production.yaml)
 
-The bank contains the rendered comparison PNG and per-`rp` canonical JSONL for
-each case.
+## Scope Guard
 
-For manual relabeling and base-checkpoint ablations, use the `core_6` subset in
-`research_subset.json` as the default. Do not start from all 200 validation
-images. Add the two optional probes only if the first pass needs another
-positive-recovery or negative-reranking example.
+Most behavior conclusions here are about the old ET-RMP `v1` checkpoint before
+support-mass enhancement.
+
+Primary old ET-RMP checkpoint:
+
+```text
+output_remote/stage1_2b/set_continuation/coco1024_sota1332_setcont_et_rmp_ce_v1/setcont-coco1024-sota1332-et-rmp-ce-v1/v0-20260429-022918/checkpoint-300
+```
+
+Base comparison checkpoint used in later core-6 probes:
+
+```text
+output_remote/stage1_2b/coco_bbox_max60-hard_ce_soft_ce_w1_gate/epoch_4-from-base-2B/v0-20260227-050057/checkpoint-1332-merged-full
+```
+
+Current support-mass-enhanced production profile is a later config surface:
+
+```text
+configs/stage1/set_continuation/production.yaml
+```
+
+It sets `branch_support_weight: 2.0` and `branch_balance_weight: 1.0`. Do not
+generalize the old `v1` rollout behavior to that profile unless the same
+representative bank and probes are rerun.
+
+## Objective Contract
+
+ET-RMP means **Entry-Trie Recursive Multi-Positive CE**.
+
+The objective is still 100 percent teacher-forced over a complete continuation
+sequence:
+
+```text
+prefix -> entry(o1) -> comma -> entry(o2) -> ... -> final_close -> EOS
+```
+
+The difference from random-order full-suffix SFT is inside object entries:
+
+- Build a trie over the serialized object entries for all currently remaining
+  objects.
+- At every trie node with multiple valid next-token children, use a
+  multi-positive branch loss over the valid child tokens.
+- At every non-branch trie node, use ordinary hard-label CE.
+- Boundary comma, final close, and EOS remain ordinary hard-label CE.
+- Boundary/schema tokens are not part of the object-entry branch supervision.
+- The main probability space is full vocabulary, aligned with autoregressive
+  decode.
+
+This is different from previous candidate-level MP:
+
+| Aspect | Old candidate MP / candidate-balanced CE | ET-RMP |
+|---|---|---|
+| Unit | One candidate continuation chunk | Full remaining suffix |
+| Supervision shape | Scores selected candidate chunks | Teacher-forced full sequence |
+| Multi-positive location | Candidate score level | Entry-trie divergence tokens |
+| Boundary tokens | Can contaminate chunk scores | Hard CE, outside branch MP |
+| Decode alignment | Chunk score surrogate | Token-level autoregressive CE |
+| Rollout closure | Not guaranteed after one object | Trains recursive object/comma/close/EOS closure |
+
+Support-mass enhancement is a later extension of the ET-RMP branch loss:
+
+```text
+L_branch = branch_support_weight * L_valid_support
+         + branch_balance_weight * L_object_uniform_balance
+```
+
+`branch_support_weight=1.0` and `branch_balance_weight=1.0` recover the earlier
+object-uniform ET-RMP behavior. The current production experiment raises
+support mass with `2.0/1.0`; this note mostly studies the earlier `1.0/1.0`
+behavior.
+
+## Artifact Map
+
+Durable progress artifact copies:
+
+```text
+progress/diagnostics/artifacts/et_rmp_rp_sample_bank_2026-04-29/
+progress/diagnostics/artifacts/et_rmp_continuation_diagnostics_2026-05-01/
+```
+
+Important copied summaries:
+
+| Evidence | Progress copy |
+|---|---|
+| Fixed representative visual bank | [artifacts/et_rmp_rp_sample_bank_2026-04-29/README.md](artifacts/et_rmp_rp_sample_bank_2026-04-29/README.md) |
+| Core-6 deterministic RP/temp sweep | [artifacts/et_rmp_continuation_diagnostics_2026-05-01/core6_deterministic_sweep_summary.md](artifacts/et_rmp_continuation_diagnostics_2026-05-01/core6_deterministic_sweep_summary.md) |
+| Core-6 stochastic RP/temp/seed sweep | [artifacts/et_rmp_continuation_diagnostics_2026-05-01/core6_stochastic_sweep_summary.md](artifacts/et_rmp_continuation_diagnostics_2026-05-01/core6_stochastic_sweep_summary.md) |
+| Latent/FN continuation probe | [artifacts/et_rmp_continuation_diagnostics_2026-05-01/latent_probe_summary.md](artifacts/et_rmp_continuation_diagnostics_2026-05-01/latent_probe_summary.md) |
+| Boundary length-bias probe | [artifacts/et_rmp_continuation_diagnostics_2026-05-01/length_bias_summary.md](artifacts/et_rmp_continuation_diagnostics_2026-05-01/length_bias_summary.md) |
+| Strict stop-control rollout sweep | [artifacts/et_rmp_continuation_diagnostics_2026-05-01/stop_control_summary.md](artifacts/et_rmp_continuation_diagnostics_2026-05-01/stop_control_summary.md) |
+| Diagnostic stop-control salvage | [artifacts/et_rmp_continuation_diagnostics_2026-05-01/stop_control_salvage_summary.md](artifacts/et_rmp_continuation_diagnostics_2026-05-01/stop_control_salvage_summary.md) |
+
+Runtime artifact roots are still useful for raw predictions and traces:
+
+```text
+output_remote/stage1_2b/set_continuation/coco1024_sota1332_setcont_et_rmp_ce_v1/setcont-coco1024-sota1332-et-rmp-ce-v1/v0-20260429-022918/
+output_remote/infer/coco1024_val200_et_rmp_ce_step300_rp100
+output_remote/infer/coco1024_val200_et_rmp_ce_step300_rp105
+output_remote/infer/coco1024_val200_et_rmp_ce_step300_rp112
+output_remote/infer/coco1024_val200_et_rmp_ce_step300_rp115
+output_remote/infer/coco1024_val200_et_rmp_ce_step300_rp118
+output_remote/infer/core6_stopctrl_*
+```
+
+## First Training Read
+
+The old ET-RMP run was evaluated on `val200` callback snapshots at steps 100,
+200, and 300. These evals used strict JSON parsing, `max_new_tokens=3084`, and
+`repetition_penalty=1.10`.
+
+| step | bbox AP | AP50 | AR100 | TP@0.50 | FP@0.50 | FN@0.50 | pred total | invalid JSON | empty pred | hit max tokens | token mean |
+|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| 100 | 0.4102 | 0.5479 | 0.4590 | 791 | 164 | 653 | 999 | 0 | 0 | 0 | 238.8 |
+| 200 | 0.4107 | 0.5444 | 0.4599 | 758 | 118 | 686 | 908 | 0 | 0 | 0 | 203.8 |
+| 300 | 0.4205 | 0.5623 | 0.4690 | 795 | 164 | 649 | 992 | 0 | 0 | 0 | 239.5 |
+
+Observed training-side behavior:
+
+- JSON/format stability was restored compared with the old one-step
+  candidate-balanced objective symptoms.
+- Empty predictions and max-token truncation were gone in these callback evals.
+- The run still under-generated relative to the starting reference in
+  high-count scenes.
+- High-count buckets remained the main failure surface.
+
+The mechanism read after step 100 and step 300 was therefore:
+
+```text
+ET-RMP fixes rollout hygiene much better than old one-step MP,
+but it does not automatically preserve starting-checkpoint coverage.
+```
+
+## Val200 Repetition-Penalty Sweep
+
+The next question was whether decode-time repetition penalty could reveal
+objects that the model otherwise failed to emit. These are `val200` results for
+the old ET-RMP step-300 checkpoint.
+
+| rp | AP | AR100 | TP@0.50 | FP@0.50 | FN@0.50 | pred total | read |
+|---:|---:|---:|---:|---:|---:|---:|---|
+| 1.00 | 0.3839 | 0.4214 | 761 | 390 | 683 | 1163 | Too many FP/duplicates. |
+| 1.05 | 0.4060 | 0.4450 | 770 | 174 | 674 | 959 | Better precision, still under-recall. |
+| 1.10 | 0.4205 | 0.4690 | 795 | 164 | 649 | 992 | Strong default in callback eval. |
+| 1.12 | 0.4200 | 0.4709 | 792 | 159 | 652 | 996 | Similar AP, slightly lower FP. |
+| 1.15 | 0.4190 | 0.4744 | 803 | 166 | 641 | 1037 | Best FN count in this set. |
+| 1.18 | 0.4155 | 0.4742 | 801 | 170 | 643 | 1077 | Emits more, AP softens slightly. |
+
+Important observation:
+
+```text
+Higher rp was not monotonically more conservative.
+```
+
+From `rp=1.10` to `rp=1.18`, the model emitted more objects and had similar or
+better FN counts, even though AP softened after `1.15`. Because COCO labels are
+incomplete in dense scenes, mild FP increases were not treated as definitive
+quality loss without visual review.
+
+## Representative Sample Bank
+
+The fixed bank avoids re-reviewing all 200 validation images. Use `core_6` from
+`research_subset.json` as the default few-shot analysis set.
 
 | Tag | Image idx | Source image | Primary reason |
 |---|---:|---|---|
 | `benefit_121` | 121 | `images/val2017/000000012639.jpg` | `rp=1.18` gains TP and reduces FN. |
-| `benefit_010` | 10 | `images/val2017/000000001268.jpg` | `rp=1.18` recovers extra objects with only mild FP. |
+| `benefit_010` | 10 | `images/val2017/000000001268.jpg` | `rp=1.18` recovers extra objects with mild FP. |
 | `benefit_158` | 158 | `images/val2017/000000016010.jpg` | `rp=1.18` opens up a previously under-emitting sample. |
 | `hurt_025` | 25 | `images/val2017/000000002157.jpg` | `rp=1.18` sharply under-predicts versus `rp=1.10/1.15`. |
 | `hurt_061` | 61 | `images/val2017/000000006471.jpg` | `rp=1.18` loses high-quality matches. |
-| `hurt_178` | 178 | `images/val2017/000000017959.jpg` | dense kite/crowd case: `rp=1.18` shifts toward many tiny people while missing kite coverage. |
+| `hurt_178` | 178 | `images/val2017/000000017959.jpg` | Dense kite/crowd case: `rp=1.18` shifts toward many tiny people while missing kite coverage. |
 
-The attached kite/crowd review belongs to `hurt_178`. Its core ambiguity is
-important: visually, many `rp=1.18` person boxes may correspond to real dense
-crowd regions even when COCO annotations cannot fully adjudicate them.
+The kite/crowd review belongs to `hurt_178`. Many `rp=1.18` person boxes appear
+to lie over genuinely dense crowd regions, where COCO annotations may not be
+exhaustive. This is why later evaluation discussions separated confirmed FN
+objects from possibly-unlabeled FP objects.
 
-## Aggregate Sweep Context
+## Core-6 Base vs ET-RMP Sweeps
 
-On this checkpoint and slice:
+The `core_6` subset is not a benchmark replacement. It is a stress slice for
+manual and mechanism analysis.
 
-| rp | AP | AR100 | FN@0.50 | FP@0.50 | Pred total | Recall@0.50 | Duplicate guard suppressed |
-|---:|---:|---:|---:|---:|---:|---:|---:|
-| 1.10 | 0.4205 | 0.4690 | 661 | 176 | 992 | 0.5422 | 151 |
-| 1.15 | 0.4190 | 0.4744 | 652 | 177 | 1037 | 0.5485 | 150 |
-| 1.18 | 0.4155 | 0.4742 | 655 | 182 | 1077 | 0.5464 | 143 |
+Deterministic sweep highlights:
 
-The sweep does not show monotonic conservatism with higher `rp`. In the
-`1.10 -> 1.18` region, higher `rp` emits more objects and suppresses slightly
-fewer duplicate-guard candidates, while AP softens after `1.15`.
+| model | best shown cell | AP | TP@0.50 | FP@0.50 | FN@0.50 | pred |
+|---|---|---:|---:|---:|---:|---:|
+| base1332 | `rp=1.10,temp=0.2` | 0.4228 | 50 | 18 | 37 | 74 |
+| ET-RMP step300 | `rp=1.15,temp=0.2` | 0.4068 | 47 | 16 | 40 | 68 |
+| ET-RMP step300 | `rp=1.18,temp=0.5` | 0.3982 | 37 | 10 | 50 | 54 |
 
-## Rigorous Interpretation
+Stochastic sweep highlights:
 
-The observed behavior is consistent with a decode-time redistribution effect,
-not a simple global stop knob.
+| model | cell | AP | TP@0.50 | FP@0.50 | FN@0.50 | pred |
+|---|---|---:|---:|---:|---:|---:|
+| base1332 | `rp=1.05,temp=0.1,seed=29` | 0.4559 | 55 | 20 | 32 | 78 |
+| base1332 | `rp=1.05,temp=0.2,seed=29` | 0.4590 | 55 | 19 | 32 | 77 |
+| ET-RMP step300 | `rp=1.18,temp=0.35,seed=17` | 0.4399 | 42 | 12 | 45 | 59 |
+| ET-RMP step300 | `rp=1.15,temp=0.35,seed=17` | 0.4309 | 42 | 18 | 45 | 66 |
 
-Autoregressive detection assigns a probability to a serialized object list:
+Takeaway from the stress slice:
+
+- Base checkpoint remained stronger on raw TP/FN count for this small set.
+- ET-RMP step300 often had lower FP but also lower emission count.
+- The ET-RMP high-`rp` sweet spot on core-6 was not identical to val200.
+- This supports using core-6 for targeted mechanism checks, not global ranking.
+
+## Duplicate-Cluster Read
+
+The known Qwen3-VL detection symptom is same-desc duplicate burst or duplicate
+collapse. The RP sweeps did not show a simple monotonic duplicate-burst story:
+
+- `rp=1.00` on val200 had high FP and low AP.
+- `rp=1.10` to `1.18` reduced the worst FP pressure but did not simply reduce
+  emitted object count.
+- In the strict stop-control core-6 sweep, same-desc IoU>=0.85 duplicate
+  clusters were not catastrophic: max cluster size was 1 for base rows and 2 for
+  ET-RMP rows in the salvage summary.
+
+This does not eliminate duplicate collapse as a broader failure mode. It means
+the main old-ET-RMP diagnosis on these slices was conservative coverage and
+continuation, not uncontrolled duplicate burst.
+
+## FN / Latent-Emission Probes
+
+The fixed-bank FN probes asked whether missed GT objects have probability mass
+under controlled prefixes.
+
+Artifacts:
+
+- [latent_probe_summary.md](artifacts/et_rmp_continuation_diagnostics_2026-05-01/latent_probe_summary.md)
+- [latent_probe_summary.json](artifacts/et_rmp_continuation_diagnostics_2026-05-01/latent_probe_summary.json)
+
+Probe shape:
+
+- Compare `close_now` against `continue_with_fn`.
+- Score both base1332 and ET-RMP step300.
+- Use prefixes including empty, oracle-before-FN, oracle-late-all-except-FN,
+  oracle-matched-GT, and self-pred-all.
+- Mask the FN bbox region versus another GT bbox region and measure likelihood
+  drops for the FN continuation.
+
+Compact read:
+
+| scorer | representative mask effect | read |
+|---|---|---|
+| base1332 | FN-bbox masking usually lowers FN-continuation score; control masks are smaller or near zero. | Many FNs are visually conditioned, not pure hallucinated text. |
+| ET-RMP step300 | FN-bbox masking is often stronger than base, with high positive-drop rates. | ET-RMP still carries visual-conditioned mass for many missed FNs. |
+| both | Late-prefix close/continue margins become much smaller than empty-prefix margins. | Prefix state and boundary competition matter. |
+
+Important limitation:
 
 ```text
-P(y | x) = product_t P(y_t | x, y_<t)
+This proves latent visual-conditioned continuation mass for many FN entries.
+It does not prove that unconstrained autoregressive rollout will choose those
+entries without changing other dynamics.
 ```
 
-where each emitted object consumes many tokens:
+## Length / Stop-Pressure Probe
+
+The boundary probe directly measured whether closing becomes cheaper as the
+assistant prefix gets longer.
+
+Definition:
 
 ```text
-{"desc": d, "bbox_2d": [x1, y1, x2, y2]}
+close_adv = log p(close first token) - log p(continue first token)
 ```
 
-Stopping is just another continuation decision. At the boundary after object
-`k`, the model compares probability mass for:
+Positive `close_adv` means the model prefers close over the continuation first
+token at that boundary.
+
+Artifact:
+
+- [length_bias_summary.md](artifacts/et_rmp_continuation_diagnostics_2026-05-01/length_bias_summary.md)
+
+Linear trend excluding empty-prefix rows:
+
+| scorer | n | Pearson(length, close_adv) | slope / 100 tokens | mean close_adv |
+|---|---:|---:|---:|---:|
+| base1332 | 375 | 0.385 | 0.391 | 1.391 |
+| ET-RMP step300 | 375 | 0.379 | 0.221 | 1.009 |
+
+Best single-step split:
+
+| scorer | threshold token | left mean close_adv | right mean close_adv | jump |
+|---|---:|---:|---:|---:|
+| base1332 | 151 | 0.258 | 1.674 | 1.416 |
+| ET-RMP step300 | 197 | 0.458 | 1.229 | 0.772 |
+
+Object-count bins:
+
+| scorer | low-count behavior | high-count behavior |
+|---|---|---|
+| base1332 | `1-3` objects: mean close_adv `0.494`, `frac_continue=0.594` | `13-15` and above: `frac_continue=0.000`; `20+` mean close_adv `2.529` |
+| ET-RMP step300 | `1-3` objects: mean close_adv `0.688`, `frac_continue=0.219` | `4+` bins already have `frac_continue=0.000`; high-count close pressure remains positive |
+
+This supports a real length/count-related close-pressure signal. It does not
+tell us whether suppressing close at decode time is a good intervention.
+
+## Hard Stop-Control Ablation
+
+The next experiment controlled the stop signal during generation on core-6.
+
+Variants:
+
+- baseline;
+- suppress first structural close after an object boundary;
+- steer first array branch toward another object with bias `1.0`;
+- suppress all terminators after an object boundary.
+
+Strict eval result:
+
+| model | variant | TP@0.50 | FP@0.50 | FN@0.50 | parsed preds | recovered baseline FN | issue |
+|---|---|---:|---:|---:|---:|---:|---|
+| base1332 | baseline | 55 | 19 | 32 | 77 | 0 | healthy |
+| base1332 | stop-control variants | 0-9 | 0-11 | 78-87 | 0-20 | 0 | parse collapse or max tokens |
+| ET-RMP step300 | baseline | 42 | 12 | 45 | 59 | 0 | healthy |
+| ET-RMP step300 | stop-control variants | 0-21 | 0-7 | 66-87 | 0-31 | 0 | parse collapse or max tokens |
+
+Diagnostic salvage result:
+
+| model | variant | TP@0.50 | FP@0.50 | FN@0.50 | salvaged preds | recovered baseline FN | lost baseline TP |
+|---|---|---:|---:|---:|---:|---:|---:|
+| base1332 | suppress_first_close | 55 | 19 | 32 | 77 | 0 | 0 |
+| base1332 | steer_array_b1 | 55 | 19 | 32 | 77 | 0 | 0 |
+| base1332 | suppress_all_terminators | 55 | 22 | 32 | 80 | 0 | 0 |
+| ET-RMP step300 | suppress_first_close | 42 | 12 | 45 | 59 | 0 | 0 |
+| ET-RMP step300 | steer_array_b1 | 42 | 12 | 45 | 59 | 0 | 0 |
+| ET-RMP step300 | suppress_all_terminators | 40 | 12 | 47 | 57 | 2 | 4 |
+
+Only one cell recovered baseline FNs after salvage:
+
+- `ET-RMP step300 + suppress_all_terminators`;
+- recovered two `kite` GTs in `images/val2017/000000017959.jpg`;
+- lost four baseline TPs;
+- net TP/FN was worse.
+
+Interpretation:
 
 ```text
-continue_with_next_object  vs  close_array/EOS
+Hard stop-control is too blunt. It mostly breaks terminal syntax or leaves the
+same object set after repair. It is not a clean production fix for conservative
+emission.
 ```
 
-A model can therefore visually represent more possible objects than it emits if
-the boundary distribution, repeated-token dynamics, or self-generated prefix
-state pushes `close` above `continue` before all visually plausible instances
-are serialized.
+## Fair Evaluation Under Incomplete Annotation
 
-The `rp` sweep suggests the penalty can change more than output length. It can
-alter the local ranking among desc tokens and repeated coordinate tokens. This
-can prevent staying inside one repeated class/box basin, and in some cases it
-can make later or more diverse objects reachable. In the sample bank, `rp=1.18`
-sometimes improves coverage and class diversity without catastrophic duplicate
-burst, but it can also suppress or rerank useful repeated desc emissions such
-as kites in `idx=178`.
+For this line of work, official COCO-style metrics and manual review answer
+different questions.
 
-The current evidence supports a softer claim:
+Protocol to keep comparisons fair:
 
-```text
-The old ET-RMP checkpoint appears to carry latent visual alternatives that
-decode knobs can expose or hide, especially in dense scenes.
-```
+1. Keep strict evaluator metrics as the primary reproducible benchmark.
+2. Treat FN objects as confirmed missed objects because they are labeled GT.
+3. Treat FP objects as unresolved until manually adjudicated.
+4. For manually reviewed FP, assign one of:
+   - plausible unlabeled object;
+   - duplicate of a matched object;
+   - localization miss;
+   - wrong class;
+   - background/no object.
+5. Report both strict FP and human-adjudicated harmful FP.
+6. Keep visual review on the fixed bank first, not all `val200`.
+7. Never use salvage or manual relabeling to replace the official result; use it
+   to explain failure modes and design the next experiment.
 
-It does not yet prove the stronger claim:
+This is especially important for dense crowd scenes like `hurt_178`, where
+many visually plausible person instances may not be exhaustively labeled.
 
-```text
-The model reliably perceives all missed objects and only fails to emit them
-because of a continuation budget.
-```
+## What Is Established
 
-## Probabilistic Explanations
+Established by current artifacts:
 
-1. Boundary competition:
-   At each object boundary, `P(close | prefix)` competes with
-   `sum_o P(entry(o) | prefix)`. If `P(close)` rises with emitted count or
-   sequence length, the model can stop despite still assigning nontrivial mass
-   to plausible unseen objects.
+- ET-RMP trains full recursive suffixes and fixes the old malformed-output
+  failure surface much better than one-step candidate MP.
+- The old ET-RMP `v1` checkpoint still under-emits in high-count scenes.
+- Repetition penalty in the `1.10-1.18` band changes emission/ranking behavior;
+  it is not just a monotonic conservatism knob.
+- The fixed sample bank contains both `rp=1.18` benefit cases and hurt cases.
+- Many FN continuations have visual-conditioned likelihood: masking the FN
+  region lowers their score more than control masks.
+- Boundary close pressure increases with prefix length/object count.
+- Decode-time hard stop suppression is not a clean solution; it damaged grammar
+  or failed to recover useful FNs at scale.
 
-2. Chain probability decay:
-   Later objects require long token products. Even if the first token of an
-   object has reasonable probability, the full entry probability can be fragile:
+## What Remains Unproven
 
-   ```text
-   log P(entry) = sum_i log P(token_i | prefix, token_<i)
-   ```
+Not established yet:
 
-   Small per-token penalties compound across desc and bbox serialization.
+- The model reliably perceives every missed object.
+- FNs are mostly emission failures rather than perception/localization failures.
+- Higher `rp` is generally better.
+- Support-mass-enhanced ET-RMP has the same behavior as old `v1`.
+- Hard stop control is useful beyond diagnostic probing.
 
-3. Local basin allocation:
-   Repeated desc and nearby bbox tokens can create an attractor where probability
-   stays concentrated on a local same-class pattern. A repetition penalty can
-   flatten that basin and redistribute rank mass to other descs or coordinates.
+## Recommended Next Experiments
 
-4. Count prior:
-   If training examples frequently close after a certain object count, the
-   hidden state may encode a learned count/length prior. This prior can override
-   weak visual evidence for tiny or crowded objects.
+The next experiments should avoid hard decode-time stop suppression and instead
+measure the model distribution under controlled prefixes.
 
-5. Annotation incompleteness:
-   In dense regions, COCO labels may underspecify visible instances. Some
-   predicted FP under `rp=1.18` may be plausible true objects outside the GT
-   contract, so raw FP alone can overstate quality loss.
+1. Rerun the fixed bank on the support-mass-enhanced production checkpoint.
+2. For each confirmed FN in the bank, score:
+   - `close_now`;
+   - `continue_with_fn`;
+   - `continue_with_other_remaining_gt`;
+   - `continue_with_plausible_unlabeled_object` after manual review.
+3. Build count-prefix counterfactuals: same image and target FN, different
+   emitted-count prefixes.
+4. Record close rank, close probability, valid-continuation mass, and FN rank
+   after every object boundary.
+5. Use multi-sample union coverage only as a diagnostic, not as the official
+   benchmark.
+6. Keep strict parse/eval and diagnostic salvage separate in reports.
 
-## Neural-Dynamics Arguments
+## One-Line Current Read
 
-Structured detection generation mixes visual evidence with a strong language
-model prior over JSON, object order, count, class frequency, and termination.
-Teacher-forced training strengthens valid serialization but does not fully train
-self-generated long-prefix recovery. As prefixes get longer, the hidden state
-contains:
-
-- accumulated object tokens and repeated desc tokens;
-- a rough emitted-count signal;
-- residual visual context from the image;
-- local continuation history from the sampled order.
-
-If visual evidence for small objects is weak, the language/count prior can win
-at the boundary. If repeated-class evidence is strong, the model may keep
-emitting one class unless decode-time penalties perturb the ranking. This makes
-`rp` act partly like a local energy reshaper: it changes which continuations
-survive the next-token ranking, not merely how long the sequence is.
-
-## Alternative Explanations
-
-These can falsify or weaken the perceived-but-not-emitted hypothesis.
-
-1. Matching artifact:
-   Extra `rp=1.18` boxes may be scored as FP because their boxes are shifted,
-   too broad, or duplicated, not because GT is incomplete.
-
-2. Prompt/order artifact:
-   Different `rp` values may alter object order. Later matches can disappear
-   due to ordering drift rather than perception/continuation budget.
-
-3. Calibration artifact:
-   Higher `rp` may produce more low-quality boxes that visually look plausible
-   at thumbnail scale but fail localization under close inspection.
-
-4. Class reranking without perception:
-   A new desc may appear because repeated desc tokens are penalized, not because
-   the model has stronger visual evidence for that class.
-
-5. Old-checkpoint specificity:
-   The effect may be specific to the pre-support-mass-enhancement checkpoint.
-   If support-mass enhancement changes boundary mass or branch allocation, this
-   bank must be rerun before generalizing.
-
-## Experiments
-
-The strongest test is to compare visual alternatives under fixed image and
-prefix while measuring continuation probabilities, not just final rollouts.
-
-1. Boundary continuation probe:
-   For each sample-bank image, teacher-force the first `k` emitted objects from
-   a reference rollout and measure:
-
-   ```text
-   log P(close | prefix_k)
-   logsumexp_o log P(entry(o) | prefix_k)
-   ```
-
-   where `o` ranges over remaining GT objects and manually marked plausible
-   unlabeled candidates.
-
-2. Oracle-prefix continuation:
-   Give the model a clean prefix containing all matched objects and ask whether
-   it can emit the missed GT objects next. If missed objects become high
-   probability after an oracle prefix, the issue is prefix/state dynamics rather
-   than pure perception.
-
-3. Forced-desc and forced-box probes:
-   For a suspected missed object, force the desc token sequence and measure bbox
-   token likelihood. Then force the bbox prefix and measure desc likelihood.
-   This separates visual localization knowledge from class-token willingness.
-
-4. Multi-sample coverage union:
-   Decode each image many times using controlled stochastic settings and compute
-   union coverage over GT and human-plausible unlabeled instances. If union
-   recall is much higher than single greedy recall without large duplicate
-   burst, the model has latent coverage not exposed by one rollout.
-
-5. Count-prefix counterfactual:
-   Compare identical image evidence under prefixes with different emitted counts
-   but no overlap with the target object. If target continuation probability
-   falls mainly with count, the length/count prior is measurable.
-
-6. Repetition-penalty path analysis:
-   At each object boundary, record top desc tokens and close/EOS logits before
-   and after applying `rp`. This tests whether `rp` transfers mass across
-   classes, across instances of the same class, or mainly away from close.
-
-7. Support-mass-enhancement rerun:
-   Re-run the fixed sample bank on the support-mass-enhanced checkpoint with
-   identical decode settings and compare boundary mass, emitted count,
-   duplicate clusters, and subjective dense-region plausibility.
-
-## Metrics
-
-Use raw metrics plus diagnostics that preserve the model-output view.
-
-- emitted object count per image and per GT-count bucket;
-- unique desc count and desc entropy per rollout;
-- repeated-desc run length and same-desc duplicate cluster size;
-- boundary close rank and close probability after each object;
-- valid next-object mass at boundary;
-- target missed-object rank under oracle prefix;
-- union recall over repeated decodes;
-- duplicate burst severity: max same-desc near-duplicate cluster size;
-- dense-region FP review bucket: plausible unlabeled, box too broad, duplicate,
-  wrong class, background;
-- small/tiny-object recall by area bucket;
-- class-transfer matrix across `rp`: classes gained/lost as `rp` changes;
-- continuation survival curve: probability the rollout emits at least `k`
-  objects.
-
-## Visualization Protocol
-
-Each bank case should keep these views:
-
-- `rp=1.10/1.15/1.18` GT-vs-Pred panels with stable matching colors;
-- per-rp object order list with desc and bbox;
-- gained/lost object overlays between adjacent `rp` values;
-- dense-region zoom crops for cases like `idx=178`;
-- duplicate-cluster overlay with cluster IDs and sizes;
-- manual review labels for FP: plausible unlabeled, duplicate, localization
-  miss, class error, or background.
-
-For future checkpoint comparisons, use the same image indices, same eval slice,
-same renderer, same matching threshold, and same decode knobs. The point of the
-bank is to make behavior changes visible rather than to discover fresh examples
-each time.
-
-## Current Read
-
-The old ET-RMP checkpoint likely has a real continuation/ranking problem rather
-than a pure visual-perception problem. `rp=1.18` can reveal additional objects
-in several samples, and the aggregate sweep emits more objects as `rp` rises
-from `1.10` to `1.18`. But `idx=178`, `idx=25`, and `idx=61` show that higher
-`rp` is not uniformly better: it can rerank away from useful classes or lose
-good matches.
-
-The next decisive evidence is not another aggregate AP table. It is a
-prefix-conditioned probability study over this fixed bank, followed by the same
-bank on the support-mass-enhanced checkpoint.
+The old ET-RMP run restored SFT-like JSON closure but remained conservative in
+dense/high-count scenes; the evidence points to a real length/count-related
+boundary pressure plus latent visual-conditioned FN mass, while hard
+stop-token suppression is an ineffective patch rather than a mechanism-level
+solution.
