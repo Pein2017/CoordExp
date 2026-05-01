@@ -44,8 +44,14 @@ Normative behavior:
 - implementations MAY tokenize entries in their current autoregressive context
   to align with chat-template label spans, but boundary tokens SHALL remain hard
   CE control-flow labels rather than trie positives,
-- every trie node with multiple child tokens SHALL use object-uniform soft CE
-  over valid child tokens,
+- every trie node with multiple child tokens SHALL use an object-uniform
+  valid-balance target over valid child tokens,
+- branch nodes SHALL also include a full-vocabulary valid-support term
+  `-log(sum_{v in valid children} p_theta(v | context))`,
+- `branch_support_weight=1.0` and `branch_balance_weight=1.0` SHALL be
+  equivalent to the prior full-vocabulary object-uniform soft CE,
+- implementations MAY increase `branch_support_weight` relative to
+  `branch_balance_weight` for controlled ET-RMP support-mass experiments,
 - every trie node with exactly one child token SHALL use ordinary hard CE,
 - object-uniform probabilities SHALL be proportional to active object
   multiplicity under each child token,

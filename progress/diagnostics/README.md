@@ -22,6 +22,11 @@ Prefer `progress/benchmarks/` when the output is mainly a measured run-vs-run or
 
 ## Current Clusters
 
+- Active ET-RMP repetition-penalty / continuation-bias sample bank
+  - Start with
+    [2026-04-29_et_rmp_rp_continuation_bias_hypothesis.md](2026-04-29_et_rmp_rp_continuation_bias_hypothesis.md)
+    for the pre-support-mass-enhancement `rp=1.10/1.15/1.18` representative
+    sample bank, continuation-bias hypothesis, and proposed probability probes.
 - Closed Qwen3-VL coord-token instance-binding mechanism study
   - Start with
     [2026-04-24_qwen3_vl_instance_binding_mechanism_findings.md](2026-04-24_qwen3_vl_instance_binding_mechanism_findings.md)

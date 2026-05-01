@@ -1,5 +1,5 @@
 schema_version: 1
-updated: 2026-04-03
+updated: 2026-04-29
 
 entrypoints:
   human:
@@ -76,6 +76,10 @@ docs:
       title: Coord Objective & Adapter
       type: reference
       status: canonical
+    - path: docs/training/STAGE1_ET_RMP_CE.md
+      title: Stage-1 ET-RMP-CE Implementation Export
+      type: implementation-export
+      status: experimental
     - path: docs/training/STAGE2_DESIGN.md
       title: Stage-2 Design History
       type: design-note

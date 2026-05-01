@@ -1,0 +1,135 @@
+{
+  "schema_version": 1,
+  "created": "2026-04-29",
+  "purpose": "Small fixed research subset for ET-RMP repetition-penalty and continuation-bias analysis without reviewing all 200 val samples.",
+  "scope": {
+    "eval_slice": "val200",
+    "training_state": "pre-support-mass-enhancement ET-RMP checkpoint",
+    "et_rmp_checkpoint": "output_remote/stage1_2b/set_continuation/coco1024_sota1332_setcont_et_rmp_ce_v1/setcont-coco1024-sota1332-et-rmp-ce-v1/v0-20260429-022918/checkpoint-300",
+    "base_checkpoint_for_future_ablation": "output_remote/stage1_2b/coco_bbox_max60-hard_ce_soft_ce_w1_gate/epoch_4-from-base-2B/v0-20260227-050057/checkpoint-1332-merged-full",
+    "base_checkpoint_eval_status": "pending_on_this_subset"
+  },
+  "selection_policy": {
+    "default_review_set": "core_6",
+    "maximum_first_pass_set": "core_6_plus_optional_2",
+    "reason": "Cover confirmed GT-FN recovery, confirmed GT regression, dense annotation ambiguity, and continuation/count behavior with a small fixed bank.",
+    "do_not_use": "all_200_val_samples_for_manual_first_pass"
+  },
+  "runs": {
+    "rp110": {
+      "artifact": "output_remote/stage1_2b/set_continuation/coco1024_sota1332_setcont_et_rmp_ce_v1/setcont-coco1024-sota1332-et-rmp-ce-v1/v0-20260429-022918/eval_detection/step_0000300/gt_vs_pred_scored.jsonl"
+    },
+    "rp115": {
+      "artifact": "output_remote/infer/coco1024_val200_et_rmp_ce_step300_rp115/gt_vs_pred_scored.jsonl"
+    },
+    "rp118": {
+      "artifact": "output_remote/infer/coco1024_val200_et_rmp_ce_step300_rp118/gt_vs_pred_scored.jsonl"
+    }
+  },
+  "core_6": [
+    {
+      "idx": 121,
+      "tag": "benefit_121",
+      "file_name": "images/val2017/000000012639.jpg",
+      "category": "rp118_confirmed_gt_recovery",
+      "why_selected": "Largest observed rp118 TP gain over rp110 in the current sweep; tests whether higher rp exposes confirmed GT objects rather than only unlabeled extras.",
+      "stats_iou50": {
+        "rp110": {"gt": 15, "pred": 13, "tp": 6, "fp": 6, "fn": 9},
+        "rp115": {"gt": 15, "pred": 13, "tp": 6, "fp": 6, "fn": 9},
+        "rp118": {"gt": 15, "pred": 16, "tp": 9, "fp": 5, "fn": 6}
+      }
+    },
+    {
+      "idx": 10,
+      "tag": "benefit_010",
+      "file_name": "images/val2017/000000001268.jpg",
+      "category": "rp118_clean_opening",
+      "why_selected": "rp118 emits more objects and recovers additional confirmed GT with no IoU50 FP increase in per-image metrics.",
+      "stats_iou50": {
+        "rp110": {"gt": 11, "pred": 6, "tp": 6, "fp": 0, "fn": 5},
+        "rp115": {"gt": 11, "pred": 6, "tp": 6, "fp": 0, "fn": 5},
+        "rp118": {"gt": 11, "pred": 10, "tp": 8, "fp": 0, "fn": 3}
+      }
+    },
+    {
+      "idx": 158,
+      "tag": "benefit_158",
+      "file_name": "images/val2017/000000016010.jpg",
+      "category": "rp118_under_generation_recovery",
+      "why_selected": "Small image-level example where rp110 nearly stops too early and rp118 recovers part of the missing GT set.",
+      "stats_iou50": {
+        "rp110": {"gt": 5, "pred": 1, "tp": 1, "fp": 0, "fn": 4},
+        "rp115": {"gt": 5, "pred": 2, "tp": 2, "fp": 0, "fn": 3},
+        "rp118": {"gt": 5, "pred": 5, "tp": 3, "fp": 1, "fn": 2}
+      }
+    },
+    {
+      "idx": 25,
+      "tag": "hurt_025",
+      "file_name": "images/val2017/000000002157.jpg",
+      "category": "rp118_confirmed_gt_regression",
+      "why_selected": "Strongest observed rp118 TP loss; protects the study from only selecting cases where higher rp helps.",
+      "stats_iou50": {
+        "rp110": {"gt": 16, "pred": 11, "tp": 10, "fp": 0, "fn": 6},
+        "rp115": {"gt": 16, "pred": 12, "tp": 9, "fp": 1, "fn": 7},
+        "rp118": {"gt": 16, "pred": 7, "tp": 4, "fp": 0, "fn": 12}
+      }
+    },
+    {
+      "idx": 61,
+      "tag": "hurt_061",
+      "file_name": "images/val2017/000000006471.jpg",
+      "category": "rp118_good_match_loss",
+      "why_selected": "rp110/rp115 are clean and high-TP, while rp118 loses confirmed GT and adds FP; tests harmful reranking rather than general courage.",
+      "stats_iou50": {
+        "rp110": {"gt": 16, "pred": 12, "tp": 12, "fp": 0, "fn": 4},
+        "rp115": {"gt": 16, "pred": 12, "tp": 12, "fp": 0, "fn": 4},
+        "rp118": {"gt": 16, "pred": 11, "tp": 9, "fp": 2, "fn": 7}
+      }
+    },
+    {
+      "idx": 178,
+      "tag": "hurt_178",
+      "file_name": "images/val2017/000000017959.jpg",
+      "category": "dense_annotation_ambiguity_and_class_transfer",
+      "why_selected": "Dense kite/crowd scene where rp118 shifts toward many tiny person predictions while losing kite/GT coverage; core case for manual FP relabeling and class-transfer analysis.",
+      "stats_iou50": {
+        "rp110": {"gt": 24, "pred": 23, "tp": 5, "fp": 18, "fn": 19},
+        "rp115": {"gt": 24, "pred": 22, "tp": 6, "fp": 16, "fn": 18},
+        "rp118": {"gt": 24, "pred": 22, "tp": 3, "fp": 19, "fn": 21}
+      }
+    }
+  ],
+  "optional_2": [
+    {
+      "idx": 40,
+      "tag": "benefit_040",
+      "file_name": "images/val2017/000000003845.jpg",
+      "category": "monotonic_rp118_recovery_without_fp_increase",
+      "why_selected": "Additional non-rendered candidate where TP rises from rp110 to rp115 to rp118 with stable FP; useful if one more positive rp case is needed.",
+      "stats_iou50": {
+        "rp110": {"gt": 12, "pred": 7, "tp": 6, "fp": 1, "fn": 6},
+        "rp115": {"gt": 12, "pred": 9, "tp": 7, "fp": 1, "fn": 5},
+        "rp118": {"gt": 12, "pred": 11, "tp": 8, "fp": 1, "fn": 4}
+      }
+    },
+    {
+      "idx": 17,
+      "tag": "hurt_017",
+      "file_name": "images/val2017/000000001584.jpg",
+      "category": "rp118_more_predictions_but_worse_gt_recall",
+      "why_selected": "Additional non-rendered candidate where rp118 emits more objects but loses confirmed GT; useful to test whether extra emission is misallocated.",
+      "stats_iou50": {
+        "rp110": {"gt": 14, "pred": 9, "tp": 7, "fp": 2, "fn": 7},
+        "rp115": {"gt": 14, "pred": 9, "tp": 6, "fp": 2, "fn": 8},
+        "rp118": {"gt": 14, "pred": 11, "tp": 4, "fp": 3, "fn": 10}
+      }
+    }
+  ],
+  "manual_review_tasks": [
+    "For each core case, review original-GT FN objects that differ across rp settings.",
+    "For each core case, cluster unmatched predictions from the union of rp110/rp115/rp118 and label clusters as confirmed_positive, duplicate, localization_bad, wrong_class, background, or uncertain.",
+    "For idx=178, add dense-region labels for tiny person predictions and kite coverage separately.",
+    "After the base checkpoint is run on this subset, compare it against the same core_6 before expanding the bank."
+  ]
+}

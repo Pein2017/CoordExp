@@ -1447,6 +1447,7 @@ class Stage1SetContinuationBranchRuntimeConfig:
         "retained_graph",
         "checkpointed_exact",
         "smart_batched_exact",
+        "padding_free_packed",
     ] = "retained_graph"
     checkpoint_use_reentrant: bool = False
     preserve_rng_state: bool = True
@@ -1456,11 +1457,13 @@ class Stage1SetContinuationBranchRuntimeConfig:
             "retained_graph",
             "checkpointed_exact",
             "smart_batched_exact",
+            "padding_free_packed",
         }:
             raise ValueError(
                 "custom.stage1_set_continuation.train_forward.branch_runtime.mode "
                 "must be one of "
-                "{'retained_graph', 'checkpointed_exact', 'smart_batched_exact'}"
+                "{'retained_graph', 'checkpointed_exact', 'smart_batched_exact', "
+                "'padding_free_packed'}"
             )
         if not isinstance(self.checkpoint_use_reentrant, bool):
             raise TypeError(
@@ -1705,6 +1708,8 @@ class Stage1SetContinuationObjectiveConfig:
         "candidate_balanced"
     )
     suffix_order: Literal["random", "dataset"] = "random"
+    branch_support_weight: float = 1.0
+    branch_balance_weight: float = 1.0
 
     def __post_init__(self) -> None:
         if self.mode not in {
@@ -1720,6 +1725,21 @@ class Stage1SetContinuationObjectiveConfig:
             raise ValueError(
                 "custom.stage1_set_continuation.objective.suffix_order must be "
                 "one of {'random', 'dataset'}"
+            )
+        for field_name, raw_value in (
+            ("branch_support_weight", self.branch_support_weight),
+            ("branch_balance_weight", self.branch_balance_weight),
+        ):
+            value = float(raw_value)
+            if not math.isfinite(value) or value < 0.0:
+                raise ValueError(
+                    "custom.stage1_set_continuation.objective."
+                    f"{field_name} must be finite and non-negative"
+                )
+        if float(self.branch_support_weight) + float(self.branch_balance_weight) <= 0.0:
+            raise ValueError(
+                "custom.stage1_set_continuation.objective branch weights may not "
+                "both be zero"
             )
 
 
@@ -3540,18 +3560,27 @@ class TrainingConfig:
             if train_forward.branch_runtime.mode in {
                 "checkpointed_exact",
                 "smart_batched_exact",
+                "padding_free_packed",
             }:
                 runtime_mode = str(train_forward.branch_runtime.mode)
                 if (
-                    runtime_mode == "smart_batched_exact"
+                    runtime_mode in {"smart_batched_exact", "padding_free_packed"}
                     and train_forward.ddp_sync.candidate_padding == "max_count"
                 ):
                     raise ValueError(
                         "custom.stage1_set_continuation.train_forward.branch_runtime."
-                        "mode=smart_batched_exact requires "
+                        f"mode={runtime_mode} requires "
                         "custom.stage1_set_continuation.train_forward.ddp_sync."
-                        "candidate_padding=none in v1; smart-batched max-count "
-                        "padding is not implemented"
+                        "candidate_padding=none in v1; rank-padding is not implemented"
+                    )
+                if (
+                    runtime_mode == "padding_free_packed"
+                    and train_forward.logits.mode != "full"
+                ):
+                    raise ValueError(
+                        "custom.stage1_set_continuation.train_forward.branch_runtime."
+                        "mode=padding_free_packed requires "
+                        "custom.stage1_set_continuation.train_forward.logits.mode=full"
                     )
                 if bool(getattr(custom.coord_soft_ce_w1, "enabled", False)):
                     raise ValueError(

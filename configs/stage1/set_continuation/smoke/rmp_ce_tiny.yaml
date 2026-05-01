@@ -1,5 +1,5 @@
 extends:
-  - ../rmp_ce.yaml
+  - ../production.yaml
   - ./common_prodlike.yaml
 
 training:

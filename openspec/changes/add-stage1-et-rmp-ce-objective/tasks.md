@@ -32,7 +32,8 @@
 
 ## 5. Profile And Docs
 
-- [x] Add `configs/stage1/set_continuation/rmp_ce.yaml`.
+- [x] Fold the ET-RMP-CE experiment profile into
+      `configs/stage1/set_continuation/production.yaml`.
 - [x] Update Stage-1 objective docs.
 - [x] Update metrics docs.
 - [x] Run focused pytest and OpenSpec validation.

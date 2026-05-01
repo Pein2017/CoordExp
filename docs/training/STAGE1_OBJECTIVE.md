@@ -254,6 +254,24 @@ q(v) = number of active remaining objects under child token v
        / number of active remaining objects at this trie node
 ```
 
+The branch-node loss is implemented as an explicit full-vocabulary support /
+valid-set balance decomposition:
+
+```text
+P_valid = sum_{v in V} p_theta(v | context)
+L_valid_support = -log(P_valid)
+L_valid_balance = - sum_{v in V} q(v) * log(p_theta(v | context) / P_valid)
+L_branch = branch_support_weight * L_valid_support
+         + branch_balance_weight * L_valid_balance
+```
+
+The default `branch_support_weight=1.0` and `branch_balance_weight=1.0`
+reproduce the prior object-uniform soft CE exactly. The checked-in production
+profile sets `branch_support_weight=2.0` and `branch_balance_weight=1.0` to
+test whether increasing valid-child support mass raises
+`rmp/valid_child_mass_mean` without changing decoding or explicitly suppressing
+stop tokens.
+
 The teacher-forced path still follows the sampled suffix object. Exact duplicate
 serialized entries remain multiplicity on the same path; the trie does not
 invent artificial divergence. After each emitted object, the remaining multiset
@@ -261,9 +279,9 @@ is updated and the next entry builds a fresh trie from the new remaining set.
 
 Important implementation boundaries:
 
-- The main ET-RMP loss is full-vocabulary CE / soft CE, including coordinate
-  tokens. Coord-vocabulary-normalized candidate scores are not used for this
-  objective.
+- The main ET-RMP loss remains in the full-vocabulary probability space,
+  including coordinate tokens. Coord-vocabulary-normalized candidate scores are
+  not used for this objective.
 - Schema opener tokens for empty-prefix rows, comma separators, final `]}`, and
   labeled chat-template stop/EOS tokens are hard CE control-flow targets, never
   entry-trie positives.
@@ -448,17 +466,18 @@ so the first production run isolates the continuation objective. Its
 `custom.extra.benchmark_report.same_budget_label` value is a comparison note,
 not a runtime-enforced budget constraint.
 
-The experimental ET-RMP-CE profile lives next to it:
+The canonical Stage-1 set-continuation production profile is now ET-RMP-CE:
 
 ```text
-configs/stage1/set_continuation/rmp_ce.yaml
+configs/stage1/set_continuation/production.yaml
 ```
 
-It extends the production checkpoint, dataset, eval, and smart-batch runtime,
-but switches `objective.mode` to `entry_trie_rmp_ce` and disables the
-candidate-only auxiliaries that would otherwise be inherited from production.
-Use it for the C/D/E recursive-suffix ablation family, not as a silent
-replacement for `production.yaml`.
+It uses the production checkpoint, dataset, eval, and smart-batch runtime,
+sets `objective.mode` to `entry_trie_rmp_ce`, sets the branch support/balance
+weights to `2.0/1.0`, disables candidate-only auxiliaries, and scales local
+batch/branch-row capacity (`per_device_train_batch_size=32`,
+`max_branch_rows=32`, `max_branch_tokens=65536`) to improve GPU memory
+utilization without enabling packing.
 
 ## Stage-1 non-canonical bbox V1 experiments
 

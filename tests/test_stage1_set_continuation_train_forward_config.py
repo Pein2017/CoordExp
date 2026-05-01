@@ -155,6 +155,36 @@ def test_train_forward_accepts_smart_batched_exact_branch_runtime() -> None:
     )
 
 
+def test_train_forward_accepts_padding_free_packed_branch_runtime() -> None:
+    payload = _payload()
+    payload["training"]["ddp_broadcast_buffers"] = False
+    payload["custom"]["stage1_set_continuation"]["train_forward"] = {
+        "branch_runtime": {"mode": "padding_free_packed"},
+        "logits": {"mode": "full"},
+        "ddp_sync": {"candidate_padding": "none"},
+    }
+
+    cfg = TrainingConfig.from_mapping(payload, PromptOverrides())
+    train_forward = cfg.custom.stage1_set_continuation.train_forward
+
+    assert train_forward.branch_runtime.mode == "padding_free_packed"
+    assert train_forward.logits.mode == "full"
+    assert train_forward.ddp_sync.candidate_padding == "none"
+
+
+def test_padding_free_packed_rejects_supervised_suffix_logits() -> None:
+    payload = _payload()
+    payload["training"]["ddp_broadcast_buffers"] = False
+    payload["custom"]["stage1_set_continuation"]["train_forward"] = {
+        "branch_runtime": {"mode": "padding_free_packed"},
+        "logits": {"mode": "supervised_suffix"},
+        "ddp_sync": {"candidate_padding": "none"},
+    }
+
+    with pytest.raises(ValueError, match="padding_free_packed.*logits.mode=full"):
+        TrainingConfig.from_mapping(payload, PromptOverrides())
+
+
 def test_train_forward_rejects_invalid_branch_batching_caps() -> None:
     payload = _payload()
     payload["custom"]["stage1_set_continuation"]["train_forward"] = {

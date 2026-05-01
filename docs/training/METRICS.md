@@ -191,6 +191,9 @@ Candidate-balanced production keys:
 ET-RMP-CE adds recursive full-suffix trie diagnostics:
 
 - `loss/rmp`
+- `loss/rmp_branch_support`
+- `loss/rmp_branch_balance`
+- `loss/rmp_branch_total`
 - `loss/rmp_branch_ce`
 - `loss/rmp_unique_ce`
 - `loss/rmp_coord_branch_ce`
@@ -206,6 +209,14 @@ ET-RMP-CE adds recursive full-suffix trie diagnostics:
 - `rmp/valid_children_mean`
 - `rmp/target_entropy_mean`
 - `rmp/valid_child_mass_mean`
+- `rmp/valid_child_mass_min`
+- `rmp/valid_child_mass_p10`
+- `rmp/valid_child_mass_p50`
+- `rmp/valid_child_mass_p90`
+- `rmp/valid_child_mass_desc_text`
+- `rmp/valid_child_mass_coord`
+- `rmp/valid_child_mass_structural`
+- `rmp/valid_child_mass_other`
 - `rmp/teacher_branch_top1_acc`
 - `rmp/valid_child_top1_acc`
 - `rmp/gt_count_ge7_samples`

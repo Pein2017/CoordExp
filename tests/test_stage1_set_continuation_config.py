@@ -136,6 +136,38 @@ def test_stage1_set_continuation_parses_entry_trie_rmp_objective() -> None:
     objective = cfg.custom.stage1_set_continuation.objective
     assert objective.mode == "entry_trie_rmp_ce"
     assert objective.suffix_order == "dataset"
+    assert objective.branch_support_weight == pytest.approx(1.0)
+    assert objective.branch_balance_weight == pytest.approx(1.0)
+
+
+def test_stage1_set_continuation_parses_entry_trie_rmp_branch_weights() -> None:
+    payload = _stage1_set_continuation_payload()
+    payload["custom"]["stage1_set_continuation"]["objective"] = {
+        "mode": "entry_trie_rmp_ce",
+        "suffix_order": "random",
+        "branch_support_weight": 2.0,
+        "branch_balance_weight": 1.0,
+    }
+
+    cfg = TrainingConfig.from_mapping(payload, PromptOverrides())
+
+    objective = cfg.custom.stage1_set_continuation.objective
+    assert objective.mode == "entry_trie_rmp_ce"
+    assert objective.branch_support_weight == pytest.approx(2.0)
+    assert objective.branch_balance_weight == pytest.approx(1.0)
+
+
+def test_stage1_set_continuation_rejects_negative_entry_trie_rmp_branch_weights() -> (
+    None
+):
+    payload = _stage1_set_continuation_payload()
+    payload["custom"]["stage1_set_continuation"]["objective"] = {
+        "mode": "entry_trie_rmp_ce",
+        "branch_support_weight": -1.0,
+    }
+
+    with pytest.raises(ValueError, match="branch_support_weight"):
+        TrainingConfig.from_mapping(payload, PromptOverrides())
 
 
 def test_stage1_set_continuation_rejects_invalid_objective_mode() -> None:
