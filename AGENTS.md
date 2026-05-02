@@ -20,6 +20,16 @@
 - Explain decisions only when they affect correctness/reproducibility/eval validity/maintainability.
 - State assumptions when underspecified; choose the smallest viable change; do not invent metrics/results.
 - Fail fast on unexpected behavior, resolve root causes, and verify on the narrowest realistic surface first (targeted tests, caches, or artifacts before broad suites).
+- Use Linear as the overall research/process manager: phase boundaries,
+  production-training launches, blockers, cross-phase progress, and final
+  outcomes belong there.
+- Use repo-local super-power specs/plans for branch-specific implementation:
+  code surfaces, config contracts, tests, smoke commands, artifacts, and
+  merge-readiness evidence. Do not make super-power plans responsible for
+  future research gates that require later Linear-managed artifacts.
+- Use Notion for research memory, interpretation, decision logs, and claims;
+  keep executable truth and reproducibility evidence in the repo, configs, and
+  run artifacts.
 
 ## Repo Safety
 - Never run destructive cleanup commands unless explicitly asked.
