@@ -1,5 +1,13 @@
 # Design: Stage-1 Set-Continuation Training
 
+Status update, 2026-05-02: this design is superseded as a production objective
+by ET-RMP-CE. Candidate-balanced branch CE, candidate energy/logZ objectives,
+chunk-level MP, and PEM/margin candidate-energy losses are legacy compatibility
+surfaces only. Preserve prefix-conditioned sampling, but route production
+training through full-suffix teacher-forced token CE, entry-trie
+multi-positive token CE, support/balance reweighting, and hard CE for
+schema/control/separator/stop tokens.
+
 ## Context
 
 The existing Stage-1 path is ordinary teacher-forced SFT over a serialized assistant response. The dataset/rendering layer already carries object metadata through encoded examples, and Stage-1 loss mixins currently assume one forward pass over one full target sequence. That makes the current path clean for fixed-order SFT but awkward for an object-level multi-positive objective.

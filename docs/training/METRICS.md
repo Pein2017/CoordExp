@@ -149,12 +149,13 @@ Interpretation note:
 
 ### Stage-1 Set-Continuation And ET-RMP-CE
 
-The compact Stage-1 set-continuation metric surface intentionally emits only
-stable operator-facing keys. Internal runtime counters such as exact branch
-batch scheduler details may exist in trainer-local dictionaries but are not part
-of the public compact schema.
+The compact Stage-1 continuation metric surface intentionally emits only stable
+operator-facing keys. Internal runtime counters such as exact branch-batch
+scheduler details may exist in trainer-local dictionaries but are not part of
+the public compact schema.
 
-Candidate-balanced production keys:
+Candidate-balanced / candidate-energy metrics are now legacy compatibility
+metrics. They describe the retired one-step candidate-branch family:
 
 - `loss/candidate_balanced`
 - `loss/schema_open`
@@ -399,12 +400,12 @@ Use `docs/training/STAGE2_RUNBOOK.md` for the contract that produces these
 families and `docs/ARTIFACTS.md` for where the corresponding monitor dumps and
 run artifacts live.
 
-## Stage-1 Set-Continuation Metrics
+## Legacy Stage-1 Candidate-Branch Metrics
 
-`custom.trainer_variant: stage1_set_continuation` emits a separate mechanism
-metric family. These keys are not expected from ordinary Stage-1 SFT, and
-ordinary metric-key parity tests assert that MP keys do not leak into the
-baseline trainer.
+`custom.trainer_variant: stage1_set_continuation` historically emitted a
+candidate-branch mechanism metric family. These keys are not expected from
+ordinary Stage-1 SFT, and ordinary metric-key parity tests assert that MP keys
+do not leak into the baseline trainer.
 
 Schema v2 is intentionally compact. The trainer may compute additional
 internal diagnostics, but emitted `custom_metrics` only include the following
@@ -412,11 +413,12 @@ action-facing keys.
 
 Objective atoms:
 
-- `loss/candidate_balanced`: optimized per-candidate token-normalized
+- `loss/candidate_balanced`: legacy per-candidate token-normalized
   continuation CE. Empty-prefix branches score the generated schema opener
   `{"objects": [` before the first candidate; all candidate branches score the
   object entry plus the immediate post-candidate boundary: `, ` for
-  non-terminal candidates and `]}` for terminal candidates.
+  non-terminal candidates and `]}` for terminal candidates. This is not the
+  promoted production objective.
 - `loss/schema_open`: mean NLL over schema-opener tokens scored by empty-prefix
   branches. Non-empty-prefix branches contribute zero schema-open tokens.
 - `loss/json_structural`: weighted auxiliary CE over CoordJSON structural

@@ -1,5 +1,10 @@
 # Design: Stage-1 ET-RMP-CE Objective
 
+Status update, 2026-05-02: this design is now the promoted Stage-1
+prefix-conditioned continuation path. Candidate-balanced branch CE, energy/logZ
+candidate objectives, chunk-level MP, and PEM/margin candidate-energy losses
+are legacy compatibility surfaces, not production objectives.
+
 ## Objective Boundary
 
 ET-RMP-CE is added as an objective selector inside
@@ -7,11 +12,15 @@ ET-RMP-CE is added as an objective selector inside
 existing setup-path guardrails: raw metadata collation, coord-token-only
 validation, packing rejection, encoded-cache bypass, and benchmark metadata.
 
-The default remains `candidate_balanced`. The new experimental modes are:
+The promoted production mode is `entry_trie_rmp_ce`. The supported
+full-suffix modes are:
 
 - `full_suffix_ce`: recursive full suffix with ordinary hard CE everywhere;
 - `entry_trie_rmp_ce`: recursive full suffix with entry-trie multi-positive CE
   at all divergence nodes.
+
+`candidate_balanced` may remain parseable for older configs and tests, but it
+must not be treated as the production objective.
 
 ## Full-Suffix Rows
 

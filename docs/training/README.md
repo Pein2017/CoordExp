@@ -6,7 +6,7 @@ status: canonical
 domain: training
 summary: Router for Stage-1 and Stage-2 training documentation, metrics, and runbooks.
 tags: [training, stage1, stage2]
-updated: 2026-04-29
+updated: 2026-05-02
 ---
 
 # Training Docs
@@ -16,8 +16,8 @@ or metric interpretation.
 
 ## Read Order
 
-1. [STAGE1_OBJECTIVE.md](STAGE1_OBJECTIVE.md) for baseline Stage-1 behavior and the set-continuation MP experiment
-2. [STAGE1_ET_RMP_CE.md](STAGE1_ET_RMP_CE.md) for the factual ET-RMP-CE implementation, config, verification, and current artifact export
+1. [STAGE1_OBJECTIVE.md](STAGE1_OBJECTIVE.md) for baseline Stage-1 behavior, retired candidate-branch set-continuation objectives, and the active prefix-conditioned full-suffix objective boundary
+2. [STAGE1_ET_RMP_CE.md](STAGE1_ET_RMP_CE.md) for the promoted ET-RMP-CE implementation, support/balance reweighting, config, verification, and artifact export
 3. [../data/PACKING.md](../data/PACKING.md) for the current Stage-1 static-packing contract and defaults
 4. [STAGE2_RUNBOOK.md](STAGE2_RUNBOOK.md) for current Stage-2 workflows and launcher patterns
 5. [LVIS.md](LVIS.md) for LVIS-specific dataset, prompt, Stage-2, and evaluation semantics
@@ -30,9 +30,9 @@ or metric interpretation.
 ## Page Roles
 
 - [STAGE1_OBJECTIVE.md](STAGE1_OBJECTIVE.md)
-  - Stage-1 objective surfaces and coord-token training details
+  - Stage-1 objective surfaces, coord-token training details, and the retirement boundary for candidate-balanced / energy-style set-continuation
 - [STAGE1_ET_RMP_CE.md](STAGE1_ET_RMP_CE.md)
-  - Factual implementation export for the experimental ET-RMP-CE objective,
+  - Factual implementation export for the promoted ET-RMP-CE objective,
     including code paths, config, smart-batch runtime, tests, and recorded
     step-100/step-200 artifacts
 - [../data/PACKING.md](../data/PACKING.md)
@@ -52,7 +52,8 @@ or metric interpretation.
 - "Which page is runbook vs metrics vs historical design?"
 - "What should I read before touching Stage-1 or Stage-2 configs?"
 - "What is the current Stage-1 packing and `global_max_length` contract?"
-- "How do I run the Stage-1 set-continuation production config?"
+- "Which Stage-1 set-continuation objectives are retired versus promoted?"
+- "How do I run the Stage-1 ET-RMP-CE production config?"
 - "What exactly was implemented for ET-RMP-CE, and what artifacts exist so far?"
 
 ## Code Handles

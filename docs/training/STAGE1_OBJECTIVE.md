@@ -5,7 +5,7 @@ doc_type: reference
 status: canonical
 domain: training
 summary: Stage-1 objective surfaces and coord-token training behavior.
-updated: 2026-04-29
+updated: 2026-05-02
 ---
 
 # Coord Objective & Adapter
@@ -28,12 +28,19 @@ Scope note:
   - `custom.coord_soft_ce_w1.*`
   - `custom.bbox_geo.*`
   - `custom.bbox_size_aux.*`
-- For the set-continuation Stage-1 experiment, the active surface is:
+- For the prefix-conditioned Stage-1 continuation family, the active production
+  surface is now ET-RMP-CE rather than candidate-branch set-continuation:
   - `custom.trainer_variant: stage1_set_continuation`
   - `custom.stage1_set_continuation.*`
   - top-level `benchmark.*`
   - `configs/stage1/set_continuation/production.yaml`
-  - v1 rejects packing and uses repeated independent candidate forwards
+  - `objective.mode: entry_trie_rmp_ce`
+  - support/balance reweighted entry-trie multi-positive token CE
+  - full-suffix teacher-forced hard CE for schema, control, separator, close,
+    and stop/EOS tokens
+  - legacy candidate-branch objectives remain loadable only for historical
+    compatibility and diagnostics; they should not be used for new production
+    training.
 - Narrow V1 exception:
   - `custom.bbox_format: cxcy_logw_logh` or `custom.bbox_format: cxcywh`
     defines an experimental Stage-1-only profile
@@ -151,13 +158,35 @@ custom:
   - `stage2_two_channel` and `stage2_rollout_aligned` still use provenance-aware metric families, but the active single-pass Stage-2 contract now routes Channel-A through `loss/text/*`, `loss/coord/*`, and `coord_diag/*`, while Channel-B uses `loss/B_rollout_text/*`, `loss/B_coord/*`, and `coord_diag/B/*`.
   - Historical iterative groups such as `loss/A1_*`, `loss/A2_*`, `coord_diag/A1/*`, and `coord_diag/A2/*` are no longer part of the active Stage-2 contract.
 
-## Stage-1 set-continuation objective
+## Stage-1 prefix-conditioned full-suffix objective
 
-`custom.trainer_variant: stage1_set_continuation` adds an off-by-default
-Stage-1 training paradigm for testing set-conditioned continuation instead of
-ordinary fixed-order next-object SFT.
+`custom.trainer_variant: stage1_set_continuation` is the historical runtime
+namespace for prefix-conditioned continuation experiments. Its production role
+has narrowed: candidate-branch set-continuation is retired for new training,
+while the promoted path is full-suffix teacher-forced CE, especially
+`objective.mode: entry_trie_rmp_ce` (**ET-RMP-CE**) with support/balance
+reweighting.
 
-The object-level objective is:
+Retired / deprecated production objectives:
+
+- `candidate_balanced` one-step set-continuation as a production objective.
+- Energy or logZ candidate objectives over independent candidate branches.
+- Chunk-level MP objectives that score `prefix + one candidate + boundary`.
+- Candidate branch CE as the production objective.
+- PEM or margin losses tied to candidate energy ranking.
+
+Kept / promoted objectives:
+
+- `entry_trie_rmp_ce` / ET-RMP-CE.
+- `full_suffix_ce` as the teacher-forced full-suffix hard-CE baseline.
+- Prefix-conditioned sampling over empty, random, leave-one-out, and full
+  prefixes.
+- Entry-trie multi-positive token CE inside object entries.
+- Full-vocabulary support/balance reweighting at entry-trie branch nodes.
+- Hard CE for schema opener, control tokens, separators, final close, and
+  chat-template stop/EOS tokens.
+
+The legacy candidate-branch objective was:
 
 ```text
 schema_open = '{"objects": [' if prefix is empty else ''
@@ -168,7 +197,13 @@ loss/candidate_balanced = mean(candidate_ce(o) for o in scored_candidates)
 loss/mp_diagnostic = -logsumexp(score(o) for o in scored_candidates)
 ```
 
-Important semantics:
+That formulation is retained in docs as historical context because older
+artifacts, tests, and compatibility metrics may still refer to it. It should
+not be used as the current Stage-1 production objective: decoding evidence has
+shown the independent branch/chunk energy view to be unstable for the closed
+autoregressive generation process.
+
+Legacy candidate-branch semantics:
 
 - `entry(o)` is the full serialized object dictionary entry, including `desc`,
   `bbox_2d`, and the object-entry structural terminator.
@@ -181,10 +216,9 @@ Important semantics:
 - Span masks are computed by tokenizer offset overlap inside the fully rendered
   chat-template assistant text. This preserves merged boundary tokens such as
   opener/object tokens that cross a string-span boundary.
-- Candidate scoring is full-entry, not token-wise multi-positive mixing, but
-  the optimized production objective averages per-candidate token-normalized
-  continuation CE. This prevents the old MP/logZ objective from concentrating
-  gradient on only the currently easiest remaining object.
+- Candidate scoring is full-entry, not token-wise multi-positive mixing. This
+  is precisely why it is retired as the production objective: it can improve
+  branch-local evidence without training stable full-sequence decoding.
 - Non-coordinate candidate-entry labels use ordinary full-vocab logprob.
 - `<|coord_*|>` labels use coord-vocabulary-normalized logprob, so raw-text
   integer coordinate training is out of scope for this v1 path.
@@ -209,25 +243,26 @@ Important semantics:
   `smart_batched_exact` grouping of independent rows: `prefix + candidate_A`,
   `prefix + candidate_B`, and so on. Candidates do not attend to each other.
   Prefix gradients are non-detached but recomputed for each branch.
-- The checked-in production runtime should stay `smart_batched_exact`. A rough
-  8-GPU production-like probe on 2026-04-28 found it faster than the current
-  online/offline packed-varlen experiments; see
+- The historical branch runtime used `smart_batched_exact`. A rough 8-GPU
+  production-like probe on 2026-04-28 found it faster than the then-current
+  online/offline packed-varlen candidate-branch experiments; see
   [`../../progress/benchmarks/2026-04-28_stage1_mp_branch_runtime_packing_probe.md`](../../progress/benchmarks/2026-04-28_stage1_mp_branch_runtime_packing_probe.md).
 - V1 rejects `training.packing` and `training.eval_packing` because branch
   selection and structural-close spans are sample-local.
 
 ### Recursive full-suffix ET-RMP-CE objective
 
-`custom.stage1_set_continuation.objective.mode` selects the optimized
-set-continuation objective:
+`custom.stage1_set_continuation.objective.mode` selects the continuation
+objective:
 
-- `candidate_balanced` keeps the current production one-step candidate-balanced
-  continuation CE and remains the default.
+- `candidate_balanced` is a deprecated compatibility objective for older
+  candidate-branch experiments. It is not the recommended or production path.
 - `full_suffix_ce` samples the same subset prefix but trains one complete
-  remaining-object suffix with ordinary hard-label CE only.
+  remaining-object suffix with ordinary hard-label CE only. This is the
+  promoted teacher-forced baseline for prefix-conditioned continuation.
 - `entry_trie_rmp_ce` trains the same complete suffix, but object-entry tokens
   use entry-trie multi-positive CE at every trie node with multiple valid next
-  tokens.
+  tokens. This is the promoted ET-RMP-CE production objective.
 
 For `entry_trie_rmp_ce`, each row is:
 
@@ -318,20 +353,21 @@ states. A non-zero `full_prefix_ratio` is part of the repaired production
 contract, not just an ablation, because close behavior otherwise receives only
 negative partial-prefix pressure.
 
-Candidate modes:
+Legacy candidate modes:
 
 - `candidates.mode: exact` scores all observed remaining candidates.
 - `candidates.mode: uniform_subsample` scores at most `max_candidates`, which
   must be positive when this mode is enabled.
-- The optimized candidate-balanced objective is exact for the selected
-  candidates. Over-budget fallback uses uniform candidate subsampling for that
-  objective and logs MP/logZ only as diagnostics.
+- These modes belong to the retired candidate-branch objective family. They are
+  not part of the promoted full-suffix ET-RMP-CE probability space.
+- Over-budget candidate fallback and MP/logZ diagnostics remain historical /
+  compatibility surfaces only.
 - The current implementation does not enforce a same-budget controller.
   `same_budget_label` in the checked-in production config is an authored
   benchmark note; realized budget is reported through
   the compact v2 metric set documented in `docs/training/METRICS.md`.
 
-Structural-close controls:
+Legacy structural-close controls:
 
 - `structural_close.close_start_suppression_weight` adds
   `loss/anti_close_start = -log(1 - P_close_start(prefix))` when observed GT
@@ -345,6 +381,9 @@ Structural-close controls:
 - Compatibility aliases `loss/anti_stop`, `loss/eod`, and `stop/p_stop_*` are
   emitted for dashboards, but the authoritative v1 semantics are structural
   close-start and CoordJSON close-sequence probabilities.
+- These controls are deprecated for new production runs. In ET-RMP-CE, schema
+  opener, separators, final close, and stop/EOS tokens are owned directly by
+  hard teacher-forced CE.
 
 Bidirectional token gate:
 
@@ -374,17 +413,19 @@ text gate is label-identity agnostic among non-coord labels: description
 tokens, keys, comma boundaries, and final `]}` boundaries with the same coord
 mass receive the same token-gate loss.
 
-PEM threshold loss remains available for calibrated ablations, but the repaired
-production profile disables it:
+PEM threshold and margin-style candidate-energy losses are deprecated. They
+remain documented only so older configs and metrics are interpretable; new
+production training should keep them disabled:
 
 ```yaml
 positive_evidence_margin:
   objective: disabled
 ```
 
-When `objective: disabled`, the optimized production objective is
-`loss/candidate_balanced`; old MP/logZ quantities remain internal diagnostics
-and are not emitted in the compact v2 metric surface.
+When `positive_evidence_margin.objective: disabled` under the promoted
+production profile, the optimized objective is `loss/rmp` from ET-RMP-CE rather
+than `loss/candidate_balanced`. Old MP/logZ quantities remain internal or
+legacy diagnostics and are not part of the promoted objective contract.
 
 Current parser contract: `objective=threshold_loss` requires `log_rho` and a
 non-empty `threshold_calibration` provenance string. Fixed probability-space
@@ -392,12 +433,12 @@ non-empty `threshold_calibration` provenance string. Fixed probability-space
 logZ is not calibrated to a stable probability threshold across prefix
 cardinalities, candidate counts, and entry lengths.
 
-Branch-local auxiliary objectives are toggleable for `coord_soft_ce_w1`,
-`bbox_geo`, and `bbox_size_aux`, but they are not inherited through ordinary
-one-sequence Stage-1 mixins. When enabled, each scored candidate branch masks
-labels down to that candidate continuation, computes the auxiliary atom from the
-same branch logits, and averages valid candidate atoms uniformly.
-Responsibility-weighted aux is intentionally not a v1 mode.
+Branch-local auxiliary objectives for scored candidate branches are deprecated
+with the candidate-branch production path. If old configs enable
+`coord_soft_ce_w1`, `bbox_geo`, or `bbox_size_aux` inside candidate branches,
+treat that as historical ablation behavior rather than the promoted objective
+surface. ET-RMP-CE keeps the main objective in full-vocabulary token CE with
+entry-trie support/balance reweighting.
 
 ### Ordinary SFT final-close control
 
@@ -431,17 +472,18 @@ coord-token Stage-1 SFT checkpoint:
 output_remote/stage1_2b/coco_bbox_max60-hard_ce_soft_ce_w1_gate/epoch_4-from-base-2B/v0-20260227-050057/checkpoint-1332-merged-full
 ```
 
-The profile enables exact selected-candidate scoring with candidate-balanced
-token-normalized continuation CE, the `30/45/20/5`
-empty/random/leave-one-out/full prefix mixture, valid close-ready prefix
-suppression when observed GT remains, structural JSON auxiliary CE, tail-positive
-candidate protection under cap-8 fallback, small annotation-completeness-weighted
-final schema close supervision, and MP/logZ diagnostics only. The completeness
-weights are derived from the original checkpoint `val200` rollout by treating
-COCO-real localization FPs as likely unlabeled objects and using monotone
-`gt / (gt + fp_loc)` buckets by GT count. PEM threshold loss is disabled in
-production. It remains 2B, COCO80 desc-first, coord-token-only,
-`val200`/`f1ish_annotated`, and `training.packing: false`.
+The profile enables `entry_trie_rmp_ce` with support/balance reweighting:
+`branch_support_weight=2.0` and `branch_balance_weight=1.0`. It keeps the
+`30/45/20/5` empty/random/leave-one-out/full prefix mixture, trains one
+teacher-forced full remaining-object suffix per sampled prefix, applies
+entry-trie multi-positive token CE inside object entries, and applies hard CE
+to schema opener, comma separators, final `]}`, and labeled chat-template
+stop/EOS tokens. Candidate budget fallback, candidate branch CE, chunk-level
+MP/logZ objectives, structural-close auxiliary losses, annotation-completeness
+close calibration, bidirectional token gate, and PEM/margin candidate-energy
+losses are disabled for the promoted production profile. It remains 2B, COCO80
+desc-first, coord-token-only, `val200`/`f1ish_annotated`, and
+`training.packing: false`.
 
 Because this run continues from an already four-epoch fine-tuned SOTA
 checkpoint, the production config uses reduced continuation learning rates:
@@ -475,7 +517,7 @@ configs/stage1/set_continuation/production.yaml
 It uses the production checkpoint, dataset, eval, and smart-batch runtime,
 sets `objective.mode` to `entry_trie_rmp_ce`, sets the branch support/balance
 weights to `2.0/1.0`, disables candidate-only auxiliaries, and scales local
-batch/branch-row capacity (`per_device_train_batch_size=32`,
+batch/branch-row capacity (`per_device_train_batch_size=16`,
 `max_branch_rows=32`, `max_branch_tokens=65536`) to improve GPU memory
 utilization without enabling packing.
 

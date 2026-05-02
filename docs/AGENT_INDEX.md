@@ -6,7 +6,7 @@ status: canonical
 domain: repo
 summary: Agent-first retrieval guide for CoordExp documentation and research notes.
 tags: [agents, retrieval, docs]
-updated: 2026-04-29
+updated: 2026-05-02
 ---
 
 # Agent Index
@@ -53,7 +53,7 @@ Human support entrypoints:
 - Stage-1 training:
   - [docs/training/README.md](training/README.md)
   - [docs/training/STAGE1_OBJECTIVE.md](training/STAGE1_OBJECTIVE.md)
-  - [docs/training/STAGE1_ET_RMP_CE.md](training/STAGE1_ET_RMP_CE.md) for the implemented ET-RMP-CE objective export and recorded artifacts
+  - [docs/training/STAGE1_ET_RMP_CE.md](training/STAGE1_ET_RMP_CE.md) for the promoted ET-RMP-CE objective export and recorded artifacts
   - [docs/data/PACKING.md](data/PACKING.md)
 - Stage-2 training:
   - [docs/training/README.md](training/README.md)

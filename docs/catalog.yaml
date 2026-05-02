@@ -79,7 +79,7 @@ docs:
     - path: docs/training/STAGE1_ET_RMP_CE.md
       title: Stage-1 ET-RMP-CE Implementation Export
       type: implementation-export
-      status: experimental
+      status: canonical
     - path: docs/training/STAGE2_DESIGN.md
       title: Stage-2 Design History
       type: design-note

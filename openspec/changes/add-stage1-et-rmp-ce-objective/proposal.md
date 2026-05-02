@@ -1,5 +1,12 @@
 # Add Stage-1 ET-RMP-CE Objective
 
+Status update, 2026-05-02: candidate-balanced / energy-style
+set-continuation has been retired as a production training direction. This
+change should now be read as the promotion path for ET-RMP-CE: full-suffix
+teacher-forced token CE, prefix-conditioned sampling, entry-trie
+multi-positive token CE, support/balance reweighting, and hard CE for
+schema/control/separator/stop tokens.
+
 ## Why
 
 The current Stage-1 set-continuation objective scores independent one-entry
@@ -33,8 +40,9 @@ entries and applies object-uniform multi-positive CE at every branching trie
 node. Unique trie nodes, comma boundaries, global close, and EOS/chat-template
 end labels use ordinary full-vocabulary CE.
 
-The current candidate-balanced objective remains the default and keeps its
-existing production profile.
+Candidate-balanced one-step continuation, candidate energy/logZ objectives,
+chunk-level MP, candidate branch CE as production objective, and PEM/margin
+losses tied to candidate energy ranking are legacy compatibility surfaces only.
 
 ## Impact
 
@@ -44,5 +52,7 @@ existing production profile.
 - Adds a sibling full-suffix smart-batched row scorer. The row unit changes from
   `prefix + candidate + boundary` to `prefix + full_suffix + close/EOS`, but
   rows remain independent padded batch rows.
-- Does not change the offline JSONL data contract, image geometry, inference
-  artifacts, or default candidate-balanced profile.
+- Does not change the offline JSONL data contract, image geometry, or inference
+  artifacts.
+- Retires candidate-balanced production training in favor of the full-suffix
+  ET-RMP-CE objective family.
