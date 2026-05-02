@@ -1,5 +1,14 @@
 # Stage-1 Set-Continuation Bidirectional Token Gate Implementation Plan
 
+> Archived / superseded on 2026-05-02.
+> Historical provenance only for the pre-refactor Stage-1 set-continuation family.
+> Do not use this file as an execution source.
+> Active execution sources:
+> - `docs/superpowers/specs/2026-05-02-training-infra-template-mode-refactor-design.md`
+> - `docs/superpowers/plans/2026-05-02-training-infra-template-mode-refactor.md`
+
+## Historical Execution Notes
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Add a lightweight Stage-1 set-continuation-native bidirectional token gate that penalizes non-coordinate vocabulary mass at coord slots and coord-token mass at non-coord supervised objective slots.

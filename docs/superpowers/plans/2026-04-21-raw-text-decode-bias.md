@@ -248,7 +248,7 @@ class TeacherForcedScorer:
         ]
 ```
 
-- [ ] **Step 4: Re-run the scoring tests and keep the legacy continuation behavior green**
+- [ ] **Step 4: Re-run the scoring tests and keep the existing continuation scoring behavior green**
 
 Run:
 
