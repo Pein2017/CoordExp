@@ -134,47 +134,51 @@ After a smoke run:
 
 ## Worktree / Branch Smoke Runs
 
-When running smoke tests from a worktree or different branch, data paths in YAML configs may need dynamic adjustment.
+When running smoke tests from a worktree or different branch, keep authored YAML paths stable whenever possible. The preferred fix for missing ignored/heavy runtime roots is to add local worktree symlinks, not to rewrite config paths or create worktree-specific path overrides.
 
-### Path Resolution Strategy
+### Preferred Path Strategy: Symlink Heavy Roots
 
-1. **Use environment variables for base paths** in YAML configs:
+1. **Preserve the config path exactly.**
+   If the production or smoke config says:
+
    ```yaml
-   data:
-     train_jsonl: "${DATA_DIR}/train.coord.jsonl"
-     val_jsonl: "${DATA_DIR}/val.coord.jsonl"
+   custom:
+     train_jsonl: public_data/coco/rescale_32_1024_bbox_max60/train.coord.jsonl
+     val_jsonl: public_data/coco/rescale_32_1024_bbox_max60/val.coord.jsonl
+   model:
+     model: model_cache/models/Qwen/Qwen3-VL-2B-Instruct-coordexp
    ```
 
-2. **Set `DATA_DIR` in the launcher** (e.g., `scripts/train.sh`):
+   keep those paths unchanged.
+
+2. **Create missing local symlinks to shared roots.**
+   In isolated git worktrees, ignored data/model folders may not exist even though the main checkout has them. Add symlinks at the same relative locations expected by config:
+
    ```bash
-   DATA_DIR="${DATA_DIR:-.}"  # default to current dir
-   export DATA_DIR
+   # From the worktree root.
+   mkdir -p public_data/coco
+   test -e public_data/coco/rescale_32_1024_bbox_max60 || \
+     ln -s /data/CoordExp/public_data/coco/rescale_32_1024_bbox_max60 \
+       public_data/coco/rescale_32_1024_bbox_max60
+
+   test -e model_cache || \
+     ln -s /data/CoordExp/model_cache model_cache
    ```
 
-3. **Keep relative paths** within the worktree — avoid hardcoded absolute paths.
+   Adjust the symlink target only when the shared root on the current host differs. Do not stage these symlinks unless the user explicitly asks; they are runtime conveniences for ignored heavy assets.
 
-### Worktree-Specific Smoke Override
+3. **Verify the same paths the config will use.**
 
-Create a worktree smoke variant that only overrides data paths:
+   ```bash
+   test -f public_data/coco/rescale_32_1024_bbox_max60/train.coord.jsonl
+   test -f model_cache/models/Qwen/Qwen3-VL-2B-Instruct-coordexp/config.json
+   ```
 
-```yaml
-# configs/<area>/smoke/worktree_override.yaml
-extends: smoke/<entrypoint>.yaml
+This keeps dataset identity, static-packing fingerprints, model provenance, and run manifests aligned with the production config. It also avoids the common failure where copied JSONL slices under `temp/` make relative image paths resolve against the wrong directory.
 
-custom:
-  train_jsonl: "${WORKTREE_DATA_DIR}/train.coord.jsonl"
-  val_jsonl: "${WORKTREE_DATA_DIR}/val.coord.jsonl"
-```
+### When To Override Paths Instead
 
-Or use CLI override at launch:
-```bash
-bash scripts/train.sh config=configs/stage1/smoke/geometry_first_coco80.yaml custom.train_jsonl=${WORKTREE_DATA_DIR}/train.coord.jsonl
-```
-
-Set `WORKTREE_DATA_DIR` to point to the correct data location for the worktree:
-```bash
-export WORKTREE_DATA_DIR="/path/to/worktree/data"
-```
+Use environment variables or worktree-specific path overrides only when symlinks are impossible or when the experiment is explicitly testing a different dataset/model root. If you do override paths, record that in the run note and artifact interpretation because the resolved path identity changed.
 
 ## Runtime Guardrails (CoordExp defaults)
 
