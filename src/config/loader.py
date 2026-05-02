@@ -14,6 +14,10 @@ from src.common.object_field_order import (
     normalize_object_ordering,
 )
 from src.common.geometry.bbox_parameterization import normalize_bbox_format
+from src.common.detection_sequence import (
+    COORDJSON_FORMAT,
+    normalize_detection_sequence_format,
+)
 
 from .prompts import (
     SYSTEM_PROMPT_SUMMARY,
@@ -381,6 +385,7 @@ class ConfigLoader:
         bbox_format: str = "xyxy"
         prompt_variant: Optional[str] = None
         bbox_format: str = "xyxy"
+        detection_sequence_format = COORDJSON_FORMAT
 
         custom_section = config.get("custom")
         if custom_section is not None:
@@ -427,6 +432,14 @@ class ConfigLoader:
                 coord_tokens_cfg.get("enabled", True),
                 "custom.coord_tokens.enabled",
             )
+            detection_sequence_format = normalize_detection_sequence_format(
+                custom_section.get("detection_sequence_format", COORDJSON_FORMAT)
+            )
+            if detection_sequence_format != COORDJSON_FORMAT and not coord_tokens_enabled:
+                raise ValueError(
+                    "custom.detection_sequence_format="
+                    f"{detection_sequence_format} requires custom.coord_tokens.enabled=true"
+                )
 
             skip_bbox_norm = ConfigLoader._coerce_bool(
                 coord_tokens_cfg.get("skip_bbox_norm", True),
@@ -465,6 +478,7 @@ class ConfigLoader:
                 prompt_variant=prompt_variant,
                 object_field_order=object_field_order,
                 bbox_format=bbox_format,
+                detection_sequence_format=detection_sequence_format,
             )
             output_variant = "dense"
 

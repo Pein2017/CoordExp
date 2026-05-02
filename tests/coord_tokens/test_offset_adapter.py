@@ -1,8 +1,10 @@
 import torch
 import torch.nn as nn
+import pytest
 
 from src.coord_tokens.offset_adapter import install_coord_offset_adapter
-from src.config.schema import CoordOffsetConfig
+from src.coord_tokens.codec import get_coord_token_ids
+from src.config.schema import CoordOffsetConfig, TrainableTokenRowsConfig
 
 
 class TinyLM(nn.Module):
@@ -147,3 +149,120 @@ def test_coord_offset_config_parsing_on_off():
     assert cfg.head_lr == 2e-4
     assert cfg.weight_decay == 0.1
     assert cfg.dtype == "bf16"
+
+
+class _FakeTokenizer:
+    def __init__(self, token_to_id: dict[str, int]) -> None:
+        self.token_to_id = dict(token_to_id)
+
+    def convert_tokens_to_ids(self, token: str | list[str]) -> int | list[int]:
+        if isinstance(token, list):
+            return [self.token_to_id[item] for item in token]
+        return self.token_to_id[token]
+
+
+def test_trainable_token_rows_resolves_coord_range_and_sparse_compact_markers():
+    cfg = TrainableTokenRowsConfig.from_mapping(
+        {
+            "enabled": True,
+            "tie_head": True,
+            "groups": {
+                "coord": {
+                    "role": "coord_geometry",
+                    "start_token": "<|coord_0|>",
+                    "end_token": "<|coord_2|>",
+                    "expected_start": 151670,
+                    "expected_end": 151672,
+                },
+                "compact_markers": {
+                    "role": "structural_ce_only",
+                    "tokens": ["<|object_ref_start|>", "<|box_start|>"],
+                    "expected_ids": {
+                        "<|object_ref_start|>": 151646,
+                        "<|box_start|>": 151648,
+                    },
+                },
+            },
+        }
+    )
+
+    tokenizer = _FakeTokenizer(
+        {
+            "<|object_ref_start|>": 151646,
+            "<|box_start|>": 151648,
+            "<|coord_0|>": 151670,
+            "<|coord_2|>": 151672,
+        }
+    )
+
+    role_sets = cfg.resolve_role_sets(tokenizer)
+    assert role_sets.coord_geometry_ids == (151670, 151671, 151672)
+    assert role_sets.structural_ce_only_ids == (151646, 151648)
+    assert role_sets.trainable_row_ids == (
+        151670,
+        151671,
+        151672,
+        151646,
+        151648,
+    )
+    assert role_sets.coord_loss_ids == (151670, 151671, 151672)
+
+
+def test_trainable_token_rows_rejects_expected_id_mismatch():
+    cfg = TrainableTokenRowsConfig.from_mapping(
+        {
+            "enabled": True,
+            "groups": {
+                "compact_markers": {
+                    "role": "structural_ce_only",
+                    "tokens": ["<|object_ref_start|>"],
+                    "expected_ids": {"<|object_ref_start|>": 151646},
+                },
+            },
+        }
+    )
+
+    tokenizer = _FakeTokenizer({"<|object_ref_start|>": 42})
+
+    with pytest.raises(ValueError, match="expected id 151646"):
+        cfg.resolve_ids(tokenizer)
+
+
+def test_compact_markers_are_trainable_offsets_but_not_coord_loss_ids():
+    token_to_id = {
+        "<|object_ref_start|>": 151646,
+        "<|box_start|>": 151648,
+    }
+    token_to_id.update({f"<|coord_{idx}|>": 151670 + idx for idx in range(1000)})
+    tokenizer = _FakeTokenizer(token_to_id)
+    cfg = TrainableTokenRowsConfig.from_mapping(
+        {
+            "enabled": True,
+            "groups": {
+                "coord": {
+                    "role": "coord_geometry",
+                    "start_token": "<|coord_0|>",
+                    "end_token": "<|coord_999|>",
+                    "expected_start": 151670,
+                    "expected_end": 152669,
+                },
+                "compact_markers": {
+                    "role": "structural_ce_only",
+                    "tokens": ["<|object_ref_start|>", "<|box_start|>"],
+                    "expected_ids": {
+                        "<|object_ref_start|>": 151646,
+                        "<|box_start|>": 151648,
+                    },
+                },
+            },
+        }
+    )
+
+    role_sets = cfg.resolve_role_sets(tokenizer)
+    trainable_offset_ids = set(role_sets.trainable_row_ids)
+    coord_loss_ids = set(get_coord_token_ids(tokenizer, validate=True))
+
+    assert {151646, 151648}.issubset(trainable_offset_ids)
+    assert {151646, 151648}.isdisjoint(coord_loss_ids)
+    assert coord_loss_ids == set(range(151670, 152670))
+    assert set(role_sets.coord_loss_ids) == coord_loss_ids

@@ -124,6 +124,23 @@ def test_stage1_set_continuation_parses_successfully() -> None:
     assert stage1_cfg.metric_schema_version == "stage1_set_continuation_metrics_v2"
 
 
+def test_training_config_accepts_compact_detection_sequence_format() -> None:
+    payload = _base_training_payload()
+    payload["custom"].update(
+        {
+            "coord_tokens": {
+                "enabled": True,
+                "skip_bbox_norm": True,
+            },
+            "detection_sequence_format": "compact_full",
+        }
+    )
+
+    cfg = TrainingConfig.from_mapping(payload, PromptOverrides())
+
+    assert cfg.custom.detection_sequence_format == "compact_full"
+
+
 def test_stage1_set_continuation_parses_entry_trie_rmp_objective() -> None:
     payload = _stage1_set_continuation_payload()
     payload["custom"]["stage1_set_continuation"]["objective"] = {

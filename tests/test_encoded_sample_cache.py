@@ -68,6 +68,7 @@ def _dataset(
     tmp_path,
     dataset_name: str,
     object_ordering: str = "sorted",
+    detection_sequence_format: str = "coordjson",
     policy: str = "error",
 ) -> BaseCaptionDataset:
     return BaseCaptionDataset(
@@ -84,6 +85,7 @@ def _dataset(
         coord_tokens=CoordTokensConfig(enabled=True, skip_bbox_norm=True),
         object_ordering=object_ordering,  # type: ignore[arg-type]
         object_field_order="desc_first",
+        detection_sequence_format=detection_sequence_format,
         encoded_sample_cache=_cache_request(tmp_path, policy=policy),
     )
 
@@ -171,6 +173,24 @@ def test_encoded_sample_cache_rejects_ineligible_random_ordering_by_default(
             object_ordering="random",
             policy="error",
         )
+
+
+def test_detection_sequence_format_participates_in_static_packing_surfaces(
+    tmp_path,
+) -> None:
+    ds = _dataset(
+        template=_CountingTemplate(),
+        tmp_path=tmp_path,
+        dataset_name="train_a",
+        detection_sequence_format="compact_full",
+    )
+
+    info = ds._static_packing_precompute_info()
+
+    assert (
+        info["fingerprint_surfaces"]["detection_sequence_format"]
+        == "compact_full"
+    )
 
 
 def test_static_packing_reuses_cache_backed_dataset_after_full_length_probe(

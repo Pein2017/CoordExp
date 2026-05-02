@@ -10,6 +10,7 @@ from .schema import (
     VisualKDConfig,
     DeepSpeedConfig,
     SaveDelayConfig,
+    TrainableTokenRowsConfig,
 )
 from .prompts import SYSTEM_PROMPT, USER_PROMPT
 
@@ -23,6 +24,7 @@ __all__ = [
     "VisualKDConfig",
     "DeepSpeedConfig",
     "SaveDelayConfig",
+    "TrainableTokenRowsConfig",
     "SYSTEM_PROMPT",
     "USER_PROMPT",
 ]

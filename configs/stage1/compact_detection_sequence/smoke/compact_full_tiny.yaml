@@ -1,0 +1,48 @@
+extends:
+  - ../../profiles/2b/coord_ce_soft_ce_w1_gate_coco80_desc_first_random_order.yaml
+
+global_max_length: 12000
+
+training:
+  output_root: temp/compact_detection_sequence/output
+  logging_root: temp/compact_detection_sequence/tb
+  artifact_subdir: stage1/smoke/compact_full_tiny
+  run_name: smoke_2steps-stage1-2b-compact_full-native_qwen_markers
+  max_steps: 2
+  eval_strategy: "no"
+  save_strategy: "no"
+  save_last_epoch: false
+  logging_steps: 1
+  static_packing_cache:
+    root_dir: temp/compact_detection_sequence/static_packing_cache/compact_full_tiny
+  encoded_sample_cache:
+    enabled: false
+
+data:
+  dataloader_num_workers: 0
+  dataloader_prefetch_factor: null
+  dataloader_persistent_workers: false
+
+custom:
+  train_jsonl: public_data/coco/rescale_32_1024_bbox_max60/train.coord.jsonl
+  val_jsonl: public_data/coco/rescale_32_1024_bbox_max60/val.coord.jsonl
+  train_sample_limit: 384
+  val_sample_limit: 8
+  detection_sequence_format: compact_full
+  object_ordering: sorted
+  trainable_token_rows:
+    enabled: true
+    tie_head: true
+    groups:
+      coord_geometry:
+        role: coord_geometry
+        start_token: "<|coord_0|>"
+        end_token: "<|coord_999|>"
+        expected_start: 151670
+        expected_end: 152669
+      compact_structure:
+        role: structural_ce_only
+        tokens: ["<|object_ref_start|>", "<|box_start|>"]
+        expected_ids:
+          "<|object_ref_start|>": 151646
+          "<|box_start|>": 151648

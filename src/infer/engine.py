@@ -83,6 +83,10 @@ from src.common.object_field_order import (
     normalize_object_field_order,
     normalize_object_ordering,
 )
+from src.common.detection_sequence import (
+    COORDJSON_FORMAT,
+    normalize_detection_sequence_format,
+)
 from src.coord_tokens.offset_adapter import (
     install_coord_offset_adapter,
     reattach_coord_offset_hooks,
@@ -338,6 +342,7 @@ class InferenceConfig:
     mode: Literal["coord", "text", "auto"]
     prompt_variant: str = DEFAULT_PROMPT_VARIANT
     bbox_format: AllowedBBoxFormat = DEFAULT_BBOX_FORMAT
+    detection_sequence_format: str = COORDJSON_FORMAT
     object_field_order: ObjectFieldOrder = "desc_first"
     object_ordering: ObjectOrdering = "sorted"
     pred_coord_mode: Literal["auto", "norm1000", "pixel"] = "auto"
@@ -575,6 +580,10 @@ class InferenceEngine:
             cfg.bbox_format, path="infer.bbox_format"
         )
         self.cfg.bbox_format = self.bbox_format
+        self.detection_sequence_format = normalize_detection_sequence_format(
+            cfg.detection_sequence_format
+        )
+        self.cfg.detection_sequence_format = self.detection_sequence_format
         self.object_field_order = normalize_object_field_order(
             cfg.object_field_order,
             path="infer.object_field_order",
@@ -607,6 +616,7 @@ class InferenceEngine:
             prompt_variant=self.prompt_variant,
             object_field_order=self.object_field_order,
             bbox_format=self.bbox_format,
+            detection_sequence_format=self.detection_sequence_format,
         )
         self.prompt_template_hash = get_template_prompt_hash(
             ordering=self.object_ordering,
@@ -614,6 +624,7 @@ class InferenceEngine:
             prompt_variant=self.prompt_variant,
             object_field_order=self.object_field_order,
             bbox_format=self.bbox_format,
+            detection_sequence_format=self.detection_sequence_format,
         )
 
         # Shared parser/standardizer: always emit pixel-space points.

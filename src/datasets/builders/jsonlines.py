@@ -9,6 +9,11 @@ from src.common.geometry.bbox_parameterization import (
     DEFAULT_BBOX_FORMAT,
     normalize_bbox_format,
 )
+from src.common.detection_sequence import (
+    COORDJSON_FORMAT,
+    normalize_detection_sequence_format,
+    render_compact_detection_sequence,
+)
 from src.common.object_field_order import (
     ObjectFieldOrder,
     build_object_payload,
@@ -60,6 +65,7 @@ class JSONLinesBuilder(BaseBuilder):
         coord_tokens_enabled: bool = False,
         object_field_order: ObjectFieldOrder = "desc_first",
         bbox_format: AllowedBBoxFormat = DEFAULT_BBOX_FORMAT,
+        detection_sequence_format: str = COORDJSON_FORMAT,
         **kwargs,
     ) -> None:
         super().__init__(**kwargs)
@@ -70,6 +76,9 @@ class JSONLinesBuilder(BaseBuilder):
         self.coord_tokens_enabled = bool(coord_tokens_enabled)
         self.object_field_order = normalize_object_field_order(object_field_order)
         self.bbox_format = normalize_bbox_format(bbox_format, path="bbox_format")
+        self.detection_sequence_format = normalize_detection_sequence_format(
+            detection_sequence_format
+        )
 
     def _get_summary_text(self, record: ConversationRecord, record_index: int) -> str:
         """Extract and validate summary from record.
@@ -313,6 +322,11 @@ class JSONLinesBuilder(BaseBuilder):
         return points
 
     def _render_json_text(self, payload: Mapping[str, Any]) -> str:
+        if self.detection_sequence_format != COORDJSON_FORMAT:
+            return render_compact_detection_sequence(
+                payload,
+                detection_sequence_format=self.detection_sequence_format,
+            )
         text_payload = self._prepare_text_payload(payload)
         assistant_text = dumps_coordjson(text_payload)
         if self.mode == "dense":

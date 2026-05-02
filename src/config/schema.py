@@ -22,10 +22,20 @@ from src.common.object_field_order import (
     normalize_object_field_order,
     normalize_object_ordering,
 )
+from src.common.detection_sequence import (
+    COORDJSON_FORMAT,
+    normalize_detection_sequence_format,
+)
 from src.common.geometry.bbox_parameterization import (
     AllowedBBoxFormat,
     DEFAULT_BBOX_FORMAT,
     normalize_bbox_format,
+)
+from src.tokens.roles import (
+    TokenRole,
+    TokenRoleSets,
+    normalize_token_role,
+    unique_stable_ids,
 )
 from src.trainers.teacher_forcing.module_registry import (
     ALLOWED_DIAGNOSTIC_MODULES,
@@ -688,6 +698,250 @@ class CoordOffsetConfig:
             weight_decay=weight_decay,
             dtype=dtype,
         )
+
+
+@dataclass(frozen=True)
+class TrainableTokenRowGroupConfig:
+    role: TokenRole
+    start_token: Optional[str] = None
+    end_token: Optional[str] = None
+    tokens: tuple[str, ...] = ()
+    expected_start: Optional[int] = None
+    expected_end: Optional[int] = None
+    expected_ids: Mapping[str, int] = field(default_factory=dict)
+
+    @classmethod
+    def from_mapping(
+        cls, payload: Mapping[str, Any], *, path: str
+    ) -> "TrainableTokenRowGroupConfig":
+        if not isinstance(payload, Mapping):
+            raise TypeError(f"{path} must be a mapping")
+
+        role = normalize_token_role(payload.get("role"), path=f"{path}.role")
+        start_token_raw = payload.get("start_token")
+        end_token_raw = payload.get("end_token")
+        tokens_raw = payload.get("tokens")
+        has_range = start_token_raw is not None or end_token_raw is not None
+        has_tokens = tokens_raw is not None
+        if has_range == has_tokens:
+            raise ValueError(
+                f"{path} must provide exactly one of start_token/end_token or tokens"
+            )
+
+        start_token: Optional[str] = None
+        end_token: Optional[str] = None
+        tokens: tuple[str, ...] = ()
+        if has_range:
+            if not isinstance(start_token_raw, str) or not start_token_raw:
+                raise TypeError(f"{path}.start_token must be a non-empty string")
+            if not isinstance(end_token_raw, str) or not end_token_raw:
+                raise TypeError(f"{path}.end_token must be a non-empty string")
+            start_token = start_token_raw
+            end_token = end_token_raw
+        else:
+            if not isinstance(tokens_raw, Sequence) or isinstance(
+                tokens_raw, (str, bytes)
+            ):
+                raise TypeError(f"{path}.tokens must be a list of token strings")
+            parsed_tokens = tuple(str(token) for token in tokens_raw)
+            if not parsed_tokens or any(not token for token in parsed_tokens):
+                raise ValueError(
+                    f"{path}.tokens must contain at least one non-empty token"
+                )
+            tokens = parsed_tokens
+
+        def _parse_expected_int(key: str) -> Optional[int]:
+            raw = payload.get(key)
+            if raw is None:
+                return None
+            try:
+                return int(raw)
+            except (TypeError, ValueError) as exc:
+                raise ValueError(f"{path}.{key} must be an integer") from exc
+
+        expected_start = _parse_expected_int("expected_start")
+        expected_end = _parse_expected_int("expected_end")
+        if has_range and ((expected_start is None) != (expected_end is None)):
+            raise ValueError(
+                f"{path}.expected_start and {path}.expected_end must be provided together"
+            )
+        if (
+            has_range
+            and expected_start is not None
+            and expected_end is not None
+            and expected_end < expected_start
+        ):
+            raise ValueError(f"{path}.expected_end must be >= expected_start")
+
+        expected_ids_raw = payload.get("expected_ids", {})
+        if expected_ids_raw is None:
+            expected_ids: Mapping[str, int] = {}
+        elif not isinstance(expected_ids_raw, Mapping):
+            raise TypeError(f"{path}.expected_ids must be a mapping")
+        else:
+            expected_ids = {
+                str(token): int(token_id)
+                for token, token_id in expected_ids_raw.items()
+            }
+
+        return cls(
+            role=role,
+            start_token=start_token,
+            end_token=end_token,
+            tokens=tokens,
+            expected_start=expected_start,
+            expected_end=expected_end,
+            expected_ids=expected_ids,
+        )
+
+    def resolve_ids(self, tokenizer: Any, *, path: str) -> tuple[int, ...]:
+        if self.start_token is not None and self.end_token is not None:
+            start_id = int(tokenizer.convert_tokens_to_ids(self.start_token))
+            end_id = int(tokenizer.convert_tokens_to_ids(self.end_token))
+            if self.expected_start is not None and start_id != self.expected_start:
+                raise ValueError(
+                    f"{path}.start_token {self.start_token!r} resolved to id {start_id}, "
+                    f"expected id {self.expected_start}"
+                )
+            if self.expected_end is not None and end_id != self.expected_end:
+                raise ValueError(
+                    f"{path}.end_token {self.end_token!r} resolved to id {end_id}, "
+                    f"expected id {self.expected_end}"
+                )
+            if end_id < start_id:
+                raise ValueError(
+                    f"{path} resolved end id {end_id} before start id {start_id}"
+                )
+            return tuple(range(start_id, end_id + 1))
+
+        resolved: list[int] = []
+        for token in self.tokens:
+            token_id = int(tokenizer.convert_tokens_to_ids(token))
+            expected = self.expected_ids.get(token)
+            if expected is not None and token_id != expected:
+                raise ValueError(
+                    f"{path}.tokens token {token!r} resolved to id {token_id}, "
+                    f"expected id {expected}"
+                )
+            resolved.append(token_id)
+        return tuple(resolved)
+
+
+@dataclass(frozen=True)
+class TrainableTokenRowsConfig:
+    enabled: bool = False
+    tie_head: bool = True
+    groups: Mapping[str, TrainableTokenRowGroupConfig] = field(
+        default_factory=dict
+    )
+    embed_lr: Optional[float] = None
+    head_lr: Optional[float] = None
+    weight_decay: float = 0.0
+    dtype: Optional[str] = None
+
+    def __post_init__(self) -> None:
+        if self.weight_decay < 0:
+            raise ValueError("custom.trainable_token_rows.weight_decay must be >= 0")
+
+    @classmethod
+    def from_mapping(
+        cls, payload: Optional[Mapping[str, Any]]
+    ) -> "TrainableTokenRowsConfig":
+        if payload is None:
+            return cls()
+        if not isinstance(payload, Mapping):
+            raise TypeError(
+                "custom.trainable_token_rows section must be a mapping when provided"
+            )
+
+        enabled = bool(payload.get("enabled", False))
+        tie_head_raw = payload.get("tie_head", True)
+        if tie_head_raw is None:
+            tie_head = True
+        elif isinstance(tie_head_raw, bool):
+            tie_head = tie_head_raw
+        else:
+            raise TypeError(
+                "custom.trainable_token_rows.tie_head must be a boolean when provided"
+            )
+
+        groups_raw = payload.get("groups", {})
+        if not isinstance(groups_raw, Mapping):
+            raise TypeError(
+                "custom.trainable_token_rows.groups must be a mapping when provided"
+            )
+        groups = {
+            str(name): TrainableTokenRowGroupConfig.from_mapping(
+                group_payload,
+                path=f"custom.trainable_token_rows.groups.{name}",
+            )
+            for name, group_payload in groups_raw.items()
+        }
+        if enabled and not groups:
+            raise ValueError(
+                "custom.trainable_token_rows.enabled=true requires at least one group"
+            )
+
+        def _parse_lr(key: str) -> Optional[float]:
+            raw = payload.get(key)
+            if raw is None:
+                return None
+            try:
+                return float(raw)
+            except (TypeError, ValueError) as exc:
+                raise ValueError(
+                    f"custom.trainable_token_rows.{key} must be numeric"
+                ) from exc
+
+        weight_decay_raw = payload.get("weight_decay", 0.0)
+        try:
+            weight_decay = float(weight_decay_raw)
+        except (TypeError, ValueError) as exc:
+            raise ValueError(
+                "custom.trainable_token_rows.weight_decay must be numeric"
+            ) from exc
+        if weight_decay < 0:
+            raise ValueError("custom.trainable_token_rows.weight_decay must be >= 0")
+
+        dtype_raw = payload.get("dtype")
+
+        return cls(
+            enabled=enabled,
+            tie_head=tie_head,
+            groups=groups,
+            embed_lr=_parse_lr("embed_lr"),
+            head_lr=_parse_lr("head_lr"),
+            weight_decay=weight_decay,
+            dtype=str(dtype_raw) if dtype_raw is not None else None,
+        )
+
+    def resolve_role_sets(self, tokenizer: Any) -> TokenRoleSets:
+        coord_geometry: list[int] = []
+        structural_ce_only: list[int] = []
+        for name, group in self.groups.items():
+            ids = group.resolve_ids(
+                tokenizer, path=f"custom.trainable_token_rows.groups.{name}"
+            )
+            if group.role is TokenRole.COORD_GEOMETRY:
+                coord_geometry.extend(ids)
+            elif group.role is TokenRole.STRUCTURAL_CE_ONLY:
+                structural_ce_only.extend(ids)
+            else:  # pragma: no cover - enum exhaustiveness guard
+                raise ValueError(f"Unsupported token role: {group.role}")
+
+        coord_geometry_ids = unique_stable_ids(coord_geometry)
+        structural_ce_only_ids = unique_stable_ids(structural_ce_only)
+        return TokenRoleSets(
+            coord_geometry_ids=coord_geometry_ids,
+            structural_ce_only_ids=structural_ce_only_ids,
+            trainable_row_ids=unique_stable_ids(
+                (*coord_geometry_ids, *structural_ce_only_ids)
+            ),
+            coord_loss_ids=coord_geometry_ids,
+        )
+
+    def resolve_ids(self, tokenizer: Any) -> tuple[int, ...]:
+        return self.resolve_role_sets(tokenizer).trainable_row_ids
 
 
 @dataclass(frozen=True)
@@ -1789,8 +2043,12 @@ class CustomConfig:
     object_field_order: ObjectFieldOrder
     bbox_format: AllowedBBoxFormat = DEFAULT_BBOX_FORMAT
     object_ordering: ObjectOrdering = "sorted"
+    detection_sequence_format: str = COORDJSON_FORMAT
     coord_tokens: CoordTokensConfig = field(default_factory=CoordTokensConfig)
     coord_offset: CoordOffsetConfig = field(default_factory=CoordOffsetConfig)
+    trainable_token_rows: TrainableTokenRowsConfig = field(
+        default_factory=TrainableTokenRowsConfig
+    )
     coord_soft_ce_w1: CoordSoftCEW1Config = field(default_factory=CoordSoftCEW1Config)
     bbox_geo: BBoxGeoConfig = field(default_factory=BBoxGeoConfig)
     bbox_size_aux: BBoxSizeAuxConfig = field(default_factory=BBoxSizeAuxConfig)
@@ -1847,6 +2105,7 @@ class CustomConfig:
             )
         if self.json_format not in ALLOWED_JSON_FORMATS:
             raise ValueError("custom.json_format must be 'standard'")
+        normalize_detection_sequence_format(self.detection_sequence_format)
         normalize_bbox_format(self.bbox_format, path="custom.bbox_format")
         if self.offline_max_pixels is not None and int(self.offline_max_pixels) <= 0:
             raise ValueError("custom.offline_max_pixels must be > 0 when provided")
@@ -1989,6 +2248,9 @@ class CustomConfig:
             data.pop("bbox_format", DEFAULT_BBOX_FORMAT),
             path="custom.bbox_format",
         )
+        detection_sequence_format = normalize_detection_sequence_format(
+            data.pop("detection_sequence_format", COORDJSON_FORMAT)
+        )
 
         # `custom.extra` is the only intentional extension bucket.
         nested_extra_raw = data.pop("extra", None)
@@ -2016,8 +2278,17 @@ class CustomConfig:
             )
 
         coord_tokens = CoordTokensConfig.from_mapping(coord_tokens_raw)
+        if detection_sequence_format != COORDJSON_FORMAT and not coord_tokens.enabled:
+            raise ValueError(
+                "custom.detection_sequence_format="
+                f"{detection_sequence_format} requires custom.coord_tokens.enabled=true"
+            )
         coord_offset_raw = data.pop("coord_offset", None)
         coord_offset = CoordOffsetConfig.from_mapping(coord_offset_raw)
+        trainable_token_rows_raw = data.pop("trainable_token_rows", None)
+        trainable_token_rows = TrainableTokenRowsConfig.from_mapping(
+            trainable_token_rows_raw
+        )
         # Deprecated legacy knob: ignore to ease config refactors.
         # (Stage-2 AB contract refactor requires this to be non-fatal.)
         data.pop("coord_loss", None)
@@ -2061,8 +2332,10 @@ class CustomConfig:
             object_field_order=object_field_order,
             bbox_format=bbox_format,
             object_ordering=object_ordering,
+            detection_sequence_format=detection_sequence_format,
             coord_tokens=coord_tokens,
             coord_offset=coord_offset,
+            trainable_token_rows=trainable_token_rows,
             coord_soft_ce_w1=coord_soft_ce_w1,
             bbox_geo=bbox_geo,
             bbox_size_aux=bbox_size_aux,

@@ -31,8 +31,8 @@ from swift.trainers import TrainerFactory
 from swift.utils import get_dist_setting
 
 from .data_collators import build_dataset_metrics_collator
-from .coord_tokens.template_adapter import apply_coord_template_adapter
-from .coord_tokens.offset_adapter import (
+from .tokens.coord.template_adapter import apply_coord_template_adapter
+from .tokens.row_offsets import (
     install_coord_offset_adapter,
     reattach_coord_offset_hooks,
 )
@@ -44,6 +44,7 @@ from .bootstrap.trainer_setup import (
     instantiate_trainer,
 )
 from .config import ConfigLoader
+from .config.schema import CoordOffsetConfig
 from .config.prompts import (
     coord_mode_from_coord_tokens_enabled,
     get_template_prompt_hash,
@@ -153,6 +154,10 @@ def _resolve_dense_prompt_identity(custom_config: Any) -> dict[str, Any]:
                 or "desc_first"
             ),
             bbox_format=str(getattr(custom_config, "bbox_format", "xyxy") or "xyxy"),
+            detection_sequence_format=str(
+                getattr(custom_config, "detection_sequence_format", "coordjson")
+                or "coordjson"
+            ),
         )
     return {
         "prompt_variant": prompt_variant,
@@ -987,6 +992,7 @@ def _build_static_packing_fingerprint(
     packing_cfg: PackingRuntimeConfig,
     train_jsonl: str | None,
     dataset_split: str = "train",
+    train_sample_limit: int | None = None,
     eval_sample_limit: int | None = None,
     eval_sample_with_replacement: bool | None = None,
 ) -> dict[str, Any]:
@@ -1023,6 +1029,9 @@ def _build_static_packing_fingerprint(
         "custom_fusion_config": getattr(custom_config, "fusion_config", None),
         "custom_json_format": getattr(custom_config, "json_format", None),
         "custom_bbox_format": getattr(custom_config, "bbox_format", None),
+        "custom_detection_sequence_format": getattr(
+            custom_config, "detection_sequence_format", "coordjson"
+        ),
         "custom_object_ordering": getattr(custom_config, "object_ordering", None),
         "custom_object_field_order": getattr(custom_config, "object_field_order", None),
         "custom_prompt_variant": prompt_identity["prompt_variant"],
@@ -1038,6 +1047,9 @@ def _build_static_packing_fingerprint(
         ),
         "dataset_source_jsonl": _build_source_path_identity(train_jsonl),
         "dataset_source_train_jsonl": _build_source_path_identity(train_jsonl),
+        "train_sample_limit": int(train_sample_limit)
+        if split == "train" and train_sample_limit is not None
+        else None,
         "eval_sample_limit": int(eval_sample_limit)
         if split == "eval" and eval_sample_limit is not None
         else None,
@@ -1156,6 +1168,9 @@ def _build_encoded_sample_cache_fingerprint(
         "custom_emit_norm": getattr(custom_config, "emit_norm", None),
         "custom_json_format": getattr(custom_config, "json_format", None),
         "custom_bbox_format": getattr(custom_config, "bbox_format", None),
+        "custom_detection_sequence_format": getattr(
+            custom_config, "detection_sequence_format", "coordjson"
+        ),
         "custom_object_ordering": getattr(custom_config, "object_ordering", None),
         "custom_object_field_order": getattr(custom_config, "object_field_order", None),
         "custom_prompt_variant": prompt_identity["prompt_variant"],
@@ -1814,6 +1829,45 @@ def main():
         apply_coord_template_adapter(sft.template, coord_cfg)
 
     coord_offset_cfg = getattr(custom_config, "coord_offset", None)
+    trainable_rows_cfg = getattr(custom_config, "trainable_token_rows", None)
+    if trainable_rows_cfg and trainable_rows_cfg.enabled:
+        tokenizer = getattr(sft.template, "tokenizer", None)
+        if tokenizer is None:
+            raise ValueError(
+                "custom.trainable_token_rows.enabled=true requires the training template to expose a tokenizer"
+            )
+        token_role_sets = trainable_rows_cfg.resolve_role_sets(tokenizer)
+        trainable_row_ids = token_role_sets.trainable_row_ids
+        if not trainable_row_ids:
+            raise ValueError(
+                "custom.trainable_token_rows.enabled=true resolved no trainable token ids"
+            )
+        coord_offset_cfg = CoordOffsetConfig(
+            enabled=True,
+            tie_head=trainable_rows_cfg.tie_head,
+            ids=trainable_row_ids,
+            embed_lr=trainable_rows_cfg.embed_lr
+            if trainable_rows_cfg.embed_lr is not None
+            else getattr(coord_offset_cfg, "embed_lr", None),
+            head_lr=trainable_rows_cfg.head_lr
+            if trainable_rows_cfg.head_lr is not None
+            else getattr(coord_offset_cfg, "head_lr", None),
+            weight_decay=trainable_rows_cfg.weight_decay,
+            dtype=trainable_rows_cfg.dtype or getattr(coord_offset_cfg, "dtype", None),
+        )
+        setattr(train_args, "coord_offset_config", coord_offset_cfg)
+        setattr(train_args, "token_role_sets", token_role_sets)
+        inner_args = getattr(train_args, "training_args", None)
+        if inner_args is not None:
+            setattr(inner_args, "coord_offset_config", coord_offset_cfg)
+            setattr(inner_args, "token_role_sets", token_role_sets)
+        logger.info(
+            "Trainable token rows resolved: total=%s coord_geometry=%s structural_ce_only=%s coord_loss=%s",
+            len(trainable_row_ids),
+            len(token_role_sets.coord_geometry_ids),
+            len(token_role_sets.structural_ce_only_ids),
+            len(token_role_sets.coord_loss_ids),
+        )
     if coord_offset_cfg and coord_offset_cfg.enabled:
         adapter = install_coord_offset_adapter(
             sft.model,
@@ -2055,6 +2109,7 @@ def main():
         object_ordering=custom_config.object_ordering,
         object_field_order=custom_config.object_field_order,
         bbox_format=custom_config.bbox_format,
+        detection_sequence_format=custom_config.detection_sequence_format,
         encoded_sample_cache=train_encoded_sample_cache_request,
     )
     if train_encoded_sample_cache_request is not None:
@@ -2124,6 +2179,7 @@ def main():
             packing_cfg=packing_cfg,
             train_jsonl=str(train_jsonl) if train_jsonl else None,
             dataset_split="train",
+            train_sample_limit=_normalize_optional_sample_limit(train_sample_limit),
         )
         static_cache_dir = _resolve_static_packing_cache_dir(
             runtime_cfg=static_packing_cache_cfg,
@@ -2642,6 +2698,7 @@ def main():
             object_ordering=custom_config.object_ordering,
             object_field_order=custom_config.object_field_order,
             bbox_format=custom_config.bbox_format,
+            detection_sequence_format=custom_config.detection_sequence_format,
             encoded_sample_cache=eval_encoded_sample_cache_request,
         )
         base_eval_len = len(eval_dataset)
@@ -3148,6 +3205,9 @@ def main():
                     "object_ordering": str(custom_config.object_ordering),
                     "object_field_order": str(custom_config.object_field_order),
                     "bbox_format": str(custom_config.bbox_format),
+                    "detection_sequence_format": str(
+                        custom_config.detection_sequence_format
+                    ),
                 }
             )
             setattr(trainer, "rollout_matching_cfg", rollout_cfg)

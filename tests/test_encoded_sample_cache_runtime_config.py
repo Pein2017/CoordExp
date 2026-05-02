@@ -25,6 +25,7 @@ def _custom_config() -> SimpleNamespace:
         emit_norm="none",
         json_format="standard",
         bbox_format="xyxy",
+        detection_sequence_format="coordjson",
         object_ordering="sorted",
         object_field_order="desc_first",
         use_summary=False,
@@ -150,6 +151,52 @@ def test_encoded_sample_cache_fingerprint_tracks_bbox_format(tmp_path) -> None:
     assert cxcywh["custom_bbox_format"] == "cxcywh"
     assert xyxy != cxcy_logw_logh
     assert cxcy_logw_logh != cxcywh
+
+
+def test_encoded_sample_cache_fingerprint_tracks_detection_sequence_format(
+    tmp_path,
+) -> None:
+    train_jsonl = tmp_path / "train.jsonl"
+    train_jsonl.write_text('{"id": 1}\n', encoding="utf-8")
+
+    coordjson = _build_encoded_sample_cache_fingerprint(
+        training_config=SimpleNamespace(
+            global_max_length=1024,
+            template={"system": "sys", "truncation_strategy": "raise"},
+        ),
+        custom_config=_custom_config(),
+        template=_Template(max_length=128),
+        train_args=SimpleNamespace(max_model_len=512),
+        dataset_seed=7,
+        dataset_jsonl=str(train_jsonl),
+        dataset_split="train",
+        dataset_mode="dense",
+        sample_limit=64,
+        system_prompt_dense="sys",
+        system_prompt_summary=None,
+    )
+    compact = _build_encoded_sample_cache_fingerprint(
+        training_config=SimpleNamespace(
+            global_max_length=1024,
+            template={"system": "sys", "truncation_strategy": "raise"},
+        ),
+        custom_config=SimpleNamespace(
+            **{**_custom_config().__dict__, "detection_sequence_format": "compact_full"}
+        ),
+        template=_Template(max_length=128),
+        train_args=SimpleNamespace(max_model_len=512),
+        dataset_seed=7,
+        dataset_jsonl=str(train_jsonl),
+        dataset_split="train",
+        dataset_mode="dense",
+        sample_limit=64,
+        system_prompt_dense="sys",
+        system_prompt_summary=None,
+    )
+
+    assert coordjson["custom_detection_sequence_format"] == "coordjson"
+    assert compact["custom_detection_sequence_format"] == "compact_full"
+    assert coordjson != compact
 
 
 def test_encoded_sample_cache_fingerprint_tracks_prompt_variant_and_template_hash(
