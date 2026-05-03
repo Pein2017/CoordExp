@@ -128,14 +128,14 @@ Current shape:
 - Raw parse payloads use `objects`, inference artifacts use canonical `pred`, and evaluation still accepts legacy `predictions` in some places.
 
 Recommended representation:
-- A single `DetectionRecord` / `PredictionRecord` schema at ingest with canonical `pred`, plus explicit alias rejection or one-time migration.
+- Superseded by the Task 9 decision gate: implement a compatibility-preserving read adapter that keeps serialized record mappings stable while standardizing read access for `pred`, `predictions`, and `objects`. Alias rejection or one-time migration is deferred to a separate eval-artifact contract, not this type-schema refactor follow-up.
 
 Why it matters:
 - A legacy artifact can score in one path but be dropped or interpreted differently by confidence post-op or duplicate control.
 
 Suggested checks:
 - Same-row smoke test through evaluator, confidence post-op, and duplicate control.
-- Alias handling test that proves either canonicalization or rejection is consistent.
+- Alias handling test that proves read-adapter compatibility is consistent across `pred`, `predictions`, and `objects`.
 
 ### P1: Config Pipeline Module Specs Carry Open Mappings Inside A Strict Config Tree
 
@@ -374,9 +374,10 @@ Recommended representation:
    - Add explicit plan/fingerprint/manifest wrappers around existing `packed_caption.py` JSON payloads.
    - Preserve cache compatibility and checksums.
    - Extend packing cache tests with roundtrip validation.
-6. **Prediction/eval canonical record**
-   - Introduce canonical `DetectionRecord` / `PredictionRecord` at ingest.
-   - Decide whether legacy `predictions` is rejected or migrated once.
+6. **Prediction/eval canonical read adapter**
+   - Implement the Task 9 compatibility-preserving read adapter before metric changes.
+   - Preserve serialized artifact mappings while standardizing reads for `pred`, `predictions`, and `objects`.
+   - Defer alias rejection or one-time migration to a separate eval-artifact contract.
    - Add cross-path eval/confidence consistency tests.
 7. **Stage-2 prepared segment and runtime state**
    - Add `PreparedSegment` dataclass and convert executor/packing seams first.
