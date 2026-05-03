@@ -83,15 +83,16 @@ Current shape:
 - Nested `Dict[str, Any]` payloads for checkpoint/runtime state, pending logs, post-rollout segments, raw step buffers, and train-monitor candidates.
 
 Recommended representation:
-- A versioned `Stage2RuntimeState` dataclass tree with explicit serializers for pending train rollout logs, post-rollout buffers, raw step buffers, and train-monitor candidates.
+- Task 10 selected a compatibility-preserving `Stage2CheckpointRuntimeState` follow-up for checkpoint runtime payload serialization and restore. It must preserve existing serialized checkpoint keys and must not introduce a state-version field in this decision gate.
 
 Why it matters:
-- Resume compatibility and silent schema drift are both high-risk here. A typed state boundary gives migration points and fail-fast roundtrip tests.
+- Resume compatibility and silent schema drift are both high-risk here. A typed state boundary gives fail-fast roundtrip tests while keeping the current checkpoint artifact shape stable.
 
 Suggested checks:
-- Runtime-state serialize/restore roundtrip.
+- Trainer-hook checkpoint serialize/restore roundtrip that calls `Stage2ABTrainingTrainer._coordexp_checkpoint_runtime_state()` and `_coordexp_restore_checkpoint_runtime_state()`.
 - Legacy payload compatibility fixture.
-- Negative tests for malformed state versions and missing required state fields.
+- Negative tests for malformed pending-log payloads and missing required state fields.
+- Checkpoint schema versioning is deferred to a separate checkpoint compatibility contract before any new serialized key is introduced.
 
 ### P1: Stage-2 Prepared Segments And Executor Payloads Still Depend On Tuple/Dict Aliases
 
@@ -102,7 +103,7 @@ Evidence:
 
 Current shape:
 - `Stage2EncodedSample = Dict[str, Any]`
-- `Stage2PreparedSegment = tuple[...]`
+- `Stage2PreparedSegment = tuple[Stage2EncodedSample, Stage2RolloutMeta, int]`
 - `Stage2BatchMetrics = Dict[str, float]`
 
 Recommended representation:
@@ -147,7 +148,7 @@ Evidence:
 - `configs/stage2_two_channel/base.yaml:68`
 
 Current shape:
-- Ordered `tuple[Stage2PipelineModuleSpec, ...]`, but each module still carries `application` and `config` as open mappings.
+- Ordered tuple of `Stage2PipelineModuleSpec` values, but each module still carries `application` and `config` as open mappings.
 
 Recommended representation:
 - Per-module dataclasses or `TypedDict`s for known module configs and `Literal`/enum choices for application presets.
@@ -173,7 +174,7 @@ Recommended representation:
 - `PackPlan`, `PackingFingerprint`, `PackingManifest`, and `PackedBatch` dataclasses or `TypedDict`s.
 
 Why it matters:
-- Static packing artifacts are reproducibility truth and are already versioned/checksummed. Typed wrappers make plan compatibility explicit.
+- Static packing artifacts are reproducibility truth and already carry schema/checksum metadata. Typed wrappers make plan compatibility explicit.
 
 Suggested checks:
 - Existing `tests/test_packing_wrapper.py` plan-cache tests plus manifest roundtrip assertions.
@@ -301,7 +302,7 @@ Evidence:
 - `src/trainers/batch_extras.py:31`
 
 Current shape:
-- Generic batch dicts with string keys such as `set_continuation_meta`, `dataset_labels`, `dataset_segments`, `pack_num_samples`, and `instability_meta_json`.
+- Generic batch dicts with string keys including `set_continuation_meta`, `dataset_labels`, `dataset_segments`, `pack_num_samples`, and `instability_meta_json`.
 
 Recommended representation:
 - `Stage1SetContinuationSampleMeta` and `BatchExtras` field types, with a narrow `TrainerBatch` protocol for dict-like trainer input.
@@ -316,7 +317,7 @@ Status: resolved by the Task 7 compact detection classification gate.
 Evidence:
 - Post-merge inventory rows in `Post-Merge Inventory Classification`
 - Compact detection decision recorded in this audit
-- `rtk conda run -n ms python -m pytest ... -q`: `270 passed in 3.05s`
+- `rtk conda run -n ms python -m pytest compact detection contract profile -q`: `270 passed in 3.05s`
 - `src/config/loader.py`
 - `src/detection/data.py`
 - `src/detection/dataset.py`
@@ -392,7 +393,8 @@ Recommended representation:
    - Add cross-path eval/confidence consistency tests.
 7. **Stage-2 prepared segment and runtime state**
    - Add `PreparedSegment` dataclass and convert executor/packing seams first.
-   - Add a versioned `Stage2RuntimeState` serializer after segment contracts are explicit.
+   - Add the Task 10 `Stage2CheckpointRuntimeState` serializer for checkpoint runtime payloads after preserving the current serialized checkpoint keys.
+   - Defer checkpoint schema-version introduction to a separate checkpoint compatibility contract.
    - Add legacy state fixture and roundtrip tests before changing checkpoint payloads.
 8. **Stage-2 pipeline module config typing**
    - Add per-module config schemas for known objective/diagnostic modules.

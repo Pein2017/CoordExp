@@ -125,6 +125,98 @@ def test_stage2_checkpoint_runtime_state_rejects_malformed_pending_log():
 
     with pytest.raises(TypeError, match="stage2_pending_train_logs"):
         Stage2CheckpointRuntimeState.from_mapping(payload)
+
+
+def test_stage2_checkpoint_runtime_state_hooks_roundtrip(monkeypatch):
+    from src.trainers.stage2_rollout_aligned import RolloutMatchingSFTTrainer
+    from src.trainers.stage2_two_channel.runtime_state import (
+        Stage2CheckpointRuntimeState,
+    )
+
+    restored_base_payloads = []
+
+    monkeypatch.setattr(
+        RolloutMatchingSFTTrainer,
+        "_coordexp_checkpoint_runtime_state",
+        lambda self: {"base_runtime_state": "preserved"},
+    )
+
+    def _restore_base_runtime_state(self, payload):
+        restored_base_payloads.append(dict(payload))
+
+    monkeypatch.setattr(
+        RolloutMatchingSFTTrainer,
+        "_coordexp_restore_checkpoint_runtime_state",
+        _restore_base_runtime_state,
+    )
+
+    source = _make_min_trainer()
+    source._stage2_pending_train_logs = {
+        7: _PendingStage2Log(
+            n_micro=2,
+            weight_sum=4.0,
+            gradmon_weight_sum=3.0,
+            sums={"loss/token_ce": 1.25, "stage2/raw_rollouts": 2.0},
+        )
+    }
+    source._stage2_metric_snapshots = {
+        "loss/token_ce": 0.5,
+        "stage2_ab/b_ratio_realized": 1.0,
+    }
+    source._stage2_post_rollout_segments = {
+        "A": [({"input_ids": [1, 2]}, {"channel": "A"}, 2)],
+        "B": [({"input_ids": [3]}, {"channel": "B"}, 1)],
+    }
+    source._stage2_b_step_gs = 8
+    source._stage2_b_step_micro = 1
+    source._stage2_b_step_raw = [{"messages": [{"role": "user", "content": "b"}]}]
+    source._stage2_a_step_gs = 9
+    source._stage2_a_step_micro = 2
+    source._stage2_a_step_raw = [{"messages": [{"role": "user", "content": "a"}]}]
+    source._stage2_ab_realized_last_gs = 10
+    source._stage2_ab_realized_recent = [0, 1, 1]
+    source._stage2_train_monitor_pending_gs = 11
+    source._stage2_train_monitor_candidates = [
+        {"global_step": 11, "channel": "B", "image_id": "sample-1"}
+    ]
+    source._stage2_train_monitor_b_step_count = 3
+    source._stage2_train_monitor_dump_last_step = 12
+    source._stage2_train_monitor_dump_count = 4
+    source._stage2_train_monitor_dump_written_step = 13
+
+    payload = source._coordexp_checkpoint_runtime_state()
+    state_mapping = Stage2CheckpointRuntimeState.from_mapping(payload).to_mapping()
+
+    assert payload["base_runtime_state"] == "preserved"
+    assert state_mapping == {key: payload[key] for key in state_mapping}
+
+    target = _make_min_trainer()
+    target._coordexp_restore_checkpoint_runtime_state(payload)
+
+    assert restored_base_payloads == [payload]
+    assert target._stage2_pending_train_logs[7].n_micro == 2
+    assert target._stage2_pending_train_logs[7].sums[
+        "loss/token_ce"
+    ] == pytest.approx(1.25)
+    assert target._stage2_metric_snapshots == source._stage2_metric_snapshots
+    assert target._stage2_post_rollout_segments == source._stage2_post_rollout_segments
+    assert target._stage2_b_step_gs == 8
+    assert target._stage2_b_step_micro == 1
+    assert target._stage2_b_step_raw == source._stage2_b_step_raw
+    assert target._stage2_a_step_gs == 9
+    assert target._stage2_a_step_micro == 2
+    assert target._stage2_a_step_raw == source._stage2_a_step_raw
+    assert target._stage2_ab_realized_last_gs == 10
+    assert list(target._stage2_ab_realized_recent) == [0, 1, 1]
+    assert target._stage2_train_monitor_pending_gs == 11
+    assert (
+        target._stage2_train_monitor_candidates
+        == source._stage2_train_monitor_candidates
+    )
+    assert target._stage2_train_monitor_b_step_count == 3
+    assert target._stage2_train_monitor_dump_last_step == 12
+    assert target._stage2_train_monitor_dump_count == 4
+    assert target._stage2_train_monitor_dump_written_step == 13
 ```
 
 Run the focused red check before implementation:
@@ -133,7 +225,7 @@ Run the focused red check before implementation:
 rtk conda run -n ms python -m pytest tests/test_stage2_ab_training.py -q -k "stage2_checkpoint_runtime_state"
 ```
 
-Expected before implementation: both tests fail because `src.trainers.stage2_two_channel.runtime_state` does not exist.
+Expected before implementation: all selected runtime-state tests fail because `src.trainers.stage2_two_channel.runtime_state` does not exist.
 
 ## Step 2: Add The Runtime-State Module
 
@@ -327,13 +419,18 @@ In `src/trainers/stage2_two_channel.py`, add this import near the current Stage-
 from src.trainers.stage2_two_channel.runtime_state import Stage2CheckpointRuntimeState
 ```
 
-Replace the Stage-2-only body of `_coordexp_checkpoint_runtime_state()` with this call pattern:
+Replace the Stage-2-only body of `_coordexp_checkpoint_runtime_state()` with this call pattern. It intentionally avoids `asdict` because current `src/trainers/stage2_two_channel.py` imports `dataclass` and `field` from `dataclasses`, but not `asdict`.
 
 ```python
         stage2_runtime_state = Stage2CheckpointRuntimeState.from_mapping(
             {
                 "stage2_pending_train_logs": {
-                    int(step): asdict(pending)
+                    int(step): {
+                        "n_micro": int(pending.n_micro),
+                        "weight_sum": float(pending.weight_sum),
+                        "gradmon_weight_sum": float(pending.gradmon_weight_sum),
+                        "sums": dict(pending.sums),
+                    }
                     for step, pending in self._stage2_pending_train_logs.items()
                 },
                 "stage2_metric_snapshots": dict(self._stage2_metric_snapshots),
@@ -448,5 +545,6 @@ git diff --check exits 0.
 - `ModuleResult` and `PipelineResult` remain the canonical teacher-forcing result containers.
 - `Stage2PreparedSegment` remains unchanged in this follow-up.
 - The Stage-2 checkpoint payload keeps all existing key names.
+- `test_stage2_checkpoint_runtime_state_hooks_roundtrip()` calls both `Stage2ABTrainingTrainer._coordexp_checkpoint_runtime_state()` and `_coordexp_restore_checkpoint_runtime_state()`.
 - Dynamic metric maps remain mappings and no logging key is renamed.
 - Malformed pending-log payloads fail fast through `Stage2CheckpointRuntimeState.from_mapping()`.
