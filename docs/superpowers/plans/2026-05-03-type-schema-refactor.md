@@ -896,7 +896,7 @@ Observed 2026-05-03: `rtk conda run -n ms python -m pytest tests/test_encoded_sa
 
 ## Task 4: Type Encoded-Cache Run Metadata
 
-- [ ] **Step 1: Write failing run-metadata wrapper test**
+- [x] **Step 1: Write failing run-metadata wrapper test**
 
 Modify `tests/test_run_metadata_file.py`:
 
@@ -918,7 +918,7 @@ def test_encoded_sample_cache_run_metadata_omits_empty_splits() -> None:
     }
 ```
 
-- [ ] **Step 2: Run test and verify red**
+- [x] **Step 2: Run test and verify red**
 
 Run:
 
@@ -928,7 +928,12 @@ rtk conda run -n ms python -m pytest tests/test_run_metadata_file.py::test_encod
 
 Expected before implementation: FAIL because `EncodedSampleCacheRunMetadata` does not exist.
 
-- [ ] **Step 3: Implement wrapper in `src/bootstrap/run_metadata.py`**
+Observed red:
+
+- `rtk conda run -n ms python -m pytest tests/test_run_metadata_file.py::test_encoded_sample_cache_run_metadata_omits_empty_splits -q`
+- Result: failed during collection with `ImportError: cannot import name 'EncodedSampleCacheRunMetadata' from 'src.bootstrap.run_metadata'`.
+
+- [x] **Step 3: Implement wrapper in `src/bootstrap/run_metadata.py`**
 
 Add:
 
@@ -964,7 +969,7 @@ if encoded_sample_cache:
     meta["encoded_sample_cache"] = encoded_sample_cache
 ```
 
-- [ ] **Step 4: Run metadata tests**
+- [x] **Step 4: Run metadata tests**
 
 Run:
 
@@ -976,6 +981,20 @@ rtk conda run -n ms python -m pytest \
 ```
 
 Expected: PASS.
+
+Observed green:
+
+- `rtk conda run -n ms python -m pytest tests/test_run_metadata_file.py tests/test_encoded_sample_cache_runtime_config.py::test_attach_encoded_sample_cache_run_metadata_scopes_train_and_eval -q`
+- Result: `3 passed in 0.76s`.
+
+Additional bookkeeping:
+
+- Updated `docs/superpowers/specs/2026-05-03-type-schema-refactor-design.md`
+  to record the implemented run-metadata wrapper without changing the
+  serialized `encoded_sample_cache` artifact contract.
+- Updated `progress/audits/2026-05-03_type_schema_architecture_audit.md` to
+  remove run metadata from the remaining raw-boundary list and keep producer
+  dictionaries as the remaining encoded-cache seam.
 
 ## Task 5: Align Strict Config Schema, Runtime Config, Specs, And Docs
 

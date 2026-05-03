@@ -108,13 +108,17 @@ upstream note.
 - Changing encoded-cache `manifest.json` keys.
 - Changing `EncodedSampleCacheStore.info()` keys.
 - Rewriting `src/sft.py` cache request production.
-- Rewriting `src/bootstrap/run_metadata.py`.
 - Changing static-packing cache compatibility.
 - Changing inference/eval artifact schemas.
 - Refactoring Stage-2 trainer runtime state.
 
 These are still in scope for later tasks in the plan, but they are not complete
 in the current code state.
+
+Task 4 adds `src/bootstrap/run_metadata.py::EncodedSampleCacheRunMetadata` as
+a typed wrapper for train/eval encoded-cache run metadata. The serialized
+`encoded_sample_cache` block is unchanged and still omits splits whose cache
+info is `None`.
 
 ### Non-Goals
 
@@ -372,10 +376,15 @@ src/datasets/encoded_sample_cache.py
   -> manifest read/write
   -> EncodedSampleCacheManifest.from_mapping()
   -> EncodedSampleShard records
+
+src/bootstrap/run_metadata.py
+  EncodedSampleCacheRunMetadata(train=..., eval=...).to_mapping()
+  -> run_metadata.json encoded_sample_cache block
 ```
 
 Future tasks should move the producer side from raw dict construction toward the
-same canonical request object, then extend run metadata to a typed wrapper.
+same canonical request object. Run metadata now has a small typed wrapper, but
+its split payload values intentionally remain artifact-compatible mappings.
 
 ## Boundary Cases
 

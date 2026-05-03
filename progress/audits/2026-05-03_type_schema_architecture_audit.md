@@ -188,15 +188,19 @@ Resolved in the initial slice:
 
 Remaining shape ambiguity:
 - `src/sft.py` still produces encoded-cache request dictionaries directly.
-- `src/bootstrap/run_metadata.py` still records train/eval encoded-cache info through raw mappings.
+- `src/bootstrap/run_metadata.py` now owns train/eval encoded-cache run metadata
+  through `EncodedSampleCacheRunMetadata`, while preserving raw split payload
+  mappings for artifact compatibility.
 - `openspec/specs/encoded-training-cache/spec.md` has not yet been updated for the completed typed internals or current residency field coverage.
 - Cached sample payload records remain dictionaries and should be considered only after request/manifest/run-metadata boundaries are globally consistent.
 
 Recommended representation:
-- Extend the completed internal wrappers into the producer and run-metadata boundaries, then consider `EncodedSampleRecord` only if sample payload dictionaries become cross-module contracts rather than serialized cache internals.
+- Extend the completed internal wrappers into the remaining producer boundary,
+  then consider `EncodedSampleRecord` only if sample payload dictionaries become
+  cross-module contracts rather than serialized cache internals.
 
 Why it matters:
-- Cache reuse and cross-rank correctness depend on stable request and manifest comparisons. The first slice preserved artifact compatibility, but the producer and run-metadata seams still allow parallel dictionary shapes to drift.
+- Cache reuse and cross-rank correctness depend on stable request and manifest comparisons. The first slice preserved artifact compatibility, and the run-metadata wrapper now narrows one reporting seam; the producer seam still allows parallel dictionary shapes to drift.
 
 Suggested checks:
 - Producer roundtrip tests in `tests/test_encoded_sample_cache_runtime_config.py`.
