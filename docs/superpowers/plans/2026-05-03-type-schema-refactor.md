@@ -1315,7 +1315,7 @@ Observed 2026-05-03:
 Record exactly one of these outcomes in `progress/audits/2026-05-03_type_schema_architecture_audit.md`:
 
 ```markdown
-- Static packing decision: implement typed `StaticPackingPlan` / `StaticPackingManifest` in this branch because raw plans cross module boundaries.
+- Static packing decision: create/use the follow-up plan for typed `StaticPackingPlan` / `StaticPackingManifest`; no static-packing code is implemented by this branch.
 ```
 
 or:
@@ -1327,7 +1327,7 @@ or:
 Observed 2026-05-03:
 
 ```markdown
-- Static packing decision: implement typed `StaticPackingPlan` / `StaticPackingManifest` in this branch because raw plans cross module boundaries.
+- Static packing decision: create/use the follow-up plan for typed `StaticPackingPlan` / `StaticPackingManifest`; no static-packing code is implemented by this branch.
 ```
 
 - [x] **Step 3: Create a separate implementation plan if needed**
@@ -1690,7 +1690,9 @@ rg -n "encoded_sample_cache|EncodedSampleCache|predictions|PreparedSegment|runti
   --glob '!output/**' --glob '!temp/**' --glob '!.git/**'
 ```
 
-Result after Task 11 closure commit `4a52e8e`: `1,779` hits across `248` files. Top-level counts were `src` `843`, `tests` `175`, `scripts` `12`, `configs` `12`, `docs` `345`, `progress` `133`, and `openspec` `259`. Pattern counts were `encoded_sample_cache` `526`, `EncodedSampleCache` `136`, `predictions` `427`, `PreparedSegment` `21`, `runtime_state` `83`, and `dict[str, Any]` `696`.
+Result after removing ambiguous per-pattern closure counts: `1,778` hits across `248` files. Top-level counts were `src` `843`, `tests` `175`, `scripts` `12`, `configs` `12`, `docs` `345`, `progress` `132`, and `openspec` `259`.
+
+Per-pattern subcounts are intentionally omitted from the closure record because they require a separate counting convention from the exact combined `rg -n` line-hit scan. Quality-review verification found the direct line-hit count for `encoded_sample_cache` is `475`, while occurrence counting with `rg -o` gives `537`; the earlier recorded `encoded_sample_cache` subcount came from grepping the saved combined scan output and is not a valid repository line-hit count.
 
 Classification: encoded-cache hits are typed boundaries, serialized compatibility mappings, tests, configs, or current docs/specs; compact detection hits remain classified as no code refactor in this branch; prediction/eval, static packing, and Stage-2 runtime-state hits are owned by explicit follow-up plans; metric/logging and manifest maps remain intentionally dynamic where no stable contract wrapper was selected; analysis-script hits are local diagnostics; historical `progress/` and archived `openspec/changes/archive/` references were left unchanged.
 
@@ -1711,13 +1713,14 @@ Task 11 closure commit under review:
 4a52e8e docs(audit): close type schema refactor audit
 ```
 
-Post-review provenance correction note:
+Post-review provenance correction history:
 
 - `4a52e8e` is the Task 11 closure commit whose stale scan counts and pre-commit status/log were reviewed.
-- This docs-only follow-up records the corrected scan counts observed after `4a52e8e`.
-- The follow-up commit hash is recorded in the final task response because embedding a commit's own final hash inside that same commit would change the hash.
+- `b5cfd4c` is the first docs-only follow-up that refreshed the total scan counts but still carried an ambiguous per-pattern count and an unsatisfied-looking post-fix verification note.
+- This quality-review docs-only follow-up removes ambiguous per-pattern closure counts, keeps static packing as follow-up-only, and records the final status/log shape below.
+- The final response records this follow-up commit hash because embedding a commit's own final hash inside that same commit would change the hash.
 
-Observed before the post-review docs correction commit on 2026-05-03:
+Observed before this quality-review correction commit on 2026-05-03:
 
 ```bash
 git status --short --branch
@@ -1728,14 +1731,25 @@ Result:
 
 ```text
 ## codex/refactor-type-schema
-4a52e8e (HEAD -> codex/refactor-type-schema) docs(audit): close type schema refactor audit
+b5cfd4c (HEAD -> codex/refactor-type-schema) docs(audit): refresh final closure provenance
+4a52e8e docs(audit): close type schema refactor audit
 ffea19e docs(plan): tighten stage2 runtime follow-up tests
 c53327a docs(audit): record stage2 runtime state decision
 6f9af97 docs(audit): align prediction alias recommendation
-729e820 docs(audit): record prediction eval schema decision
 ```
 
-Post-fix verification requirement: after committing this provenance correction, rerun `git status --short --branch` and `git log --oneline --decorate -5`; status must be clean at the new `docs(audit): refresh final closure provenance` HEAD, followed by `4a52e8e`.
+Final post-fix status/log shape recorded for this quality-review correction:
+
+```text
+## codex/refactor-type-schema
+<new-hash> (HEAD -> codex/refactor-type-schema) docs(audit): clarify closure scan provenance
+b5cfd4c docs(audit): refresh final closure provenance
+4a52e8e docs(audit): close type schema refactor audit
+ffea19e docs(plan): tighten stage2 runtime follow-up tests
+c53327a docs(audit): record stage2 runtime state decision
+```
+
+The exact `<new-hash>` value is recorded in the final task response.
 
 Residual follow-up plans:
 

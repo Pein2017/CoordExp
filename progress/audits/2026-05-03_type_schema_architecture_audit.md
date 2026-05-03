@@ -61,7 +61,7 @@ This table is intentionally partial until Task 0 is executed against the merged 
 | stage2-runtime | `src/trainers/stage2_two_channel.py::Stage2ABTrainingTrainer._coordexp_checkpoint_runtime_state`, `_coordexp_restore_checkpoint_runtime_state`; `src/trainers/stage2_two_channel.py::_PendingStage2Log`; `src/trainers/stage2_two_channel/types.py::Stage2PreparedSegment`; `src/trainers/batch_extras.py::BatchExtras`; `src/trainers/teacher_forcing/contracts.py::ModuleResult`, `PipelineResult` | Stage-2 checkpoint runtime payload, pending train-log accumulator, post-rollout segment buffer, batch extras, and teacher-forcing result contracts | checkpoint runtime state is a wide `Dict[str, Any]`; `_PendingStage2Log`, `BatchExtras`, `ModuleResult`, and `PipelineResult` are typed dataclasses; `Stage2PreparedSegment` is still a tuple alias; metric maps are dynamic logging payloads | trainer/runtime checkpoint | medium-high for checkpoint resume compatibility; low for existing teacher-forcing results and batch extras | needs separate contract/spec before code change | `docs/superpowers/plans/2026-05-03-stage2-runtime-state-schema-refactor.md` |
 
 - Compact detection decision: no code refactor in this branch; merged compact detection contracts are already sufficiently typed or intentionally serialized, and remaining raw containers are local scratch or dynamic metrics.
-- Static packing decision: implement typed `StaticPackingPlan` / `StaticPackingManifest` in this branch because raw plans cross module boundaries.
+- Static packing decision: create/use the follow-up plan for typed `StaticPackingPlan` / `StaticPackingManifest`; no static-packing code is implemented by this branch.
 - Prediction/eval decision: implement a canonical read adapter before metric changes; the adapter will preserve serialized record mappings while standardizing read access for `pred`, `predictions`, and `objects`.
 - Stage-2 decision: create a dedicated follow-up plan for the first concrete runtime state object selected by the Task 10 inspection; do not reshape logging keys in this branch without a separate metric-contract spec.
 
@@ -183,7 +183,7 @@ Task 8 decision-gate update:
 
 - Domain concepts inspected: raw static pack plan, DDP-aligned plan, raw/aligned plan checksums, plan-cache fingerprint, plan-cache manifest payload, setup `INDEX.json`, per-split cache root, length cache, DDP padding fields, fill/stat counters, and SFT train/eval runtime logging fields.
 - Current representation: `src/datasets/wrappers/packed_caption.py` builds and aligns plans as `list[list[int]]`, persists plan-cache JSON as an ad hoc `dict[str, Any]`, validates setup `INDEX.json` through raw mappings, and constructs `StaticPackedCaptionDataset` with public raw list/checksum/alignment/stat attributes. `src/sft.py` consumes those dataset attributes for train/eval logging.
-- Decision: implement typed `StaticPackingPlan` / `StaticPackingManifest` in this branch because raw plans cross module boundaries.
+- Decision: create/use the follow-up plan for typed `StaticPackingPlan` / `StaticPackingManifest` because raw plans cross module boundaries. No static-packing code is implemented by this branch.
 - Follow-up plan: `docs/superpowers/plans/2026-05-03-static-packing-schema-refactor.md`.
 - Verification before follow-up planning: `rtk conda run -n ms python -m pytest tests/test_packing_wrapper.py tests/test_stage1_static_packing_runtime_config.py -q` passed with `78 passed, 10 warnings in 2.44s`; warnings were multiprocessing fork deprecation warnings from `tests/test_packing_wrapper.py`.
 
@@ -380,13 +380,13 @@ Closure status: complete for the encoded-cache typed-boundary slice and audit ro
   - Stage-2 checkpoint runtime-state follow-up is owned by `docs/superpowers/plans/2026-05-03-stage2-runtime-state-schema-refactor.md`.
 - Final affected-file scan:
   - Exact scan: `rg -n "encoded_sample_cache|EncodedSampleCache|predictions|PreparedSegment|runtime_state|dict\[str, Any\]" src tests scripts configs docs progress openspec --glob '!output/**' --glob '!temp/**' --glob '!.git/**'`.
-  - Result after Task 11 closure commit `4a52e8e`: `1,779` hits across `248` files.
-  - Pattern counts: `encoded_sample_cache` `526`, `EncodedSampleCache` `136`, `predictions` `427`, `PreparedSegment` `21`, `runtime_state` `83`, `dict[str, Any]` `696`.
-  - Top-level hit counts: `src` `843`, `tests` `175`, `scripts` `12`, `configs` `12`, `docs` `345`, `progress` `133`, `openspec` `259`.
+  - Result after removing ambiguous per-pattern closure counts: `1,778` hits across `248` files.
+  - Top-level hit counts: `src` `843`, `tests` `175`, `scripts` `12`, `configs` `12`, `docs` `345`, `progress` `132`, `openspec` `259`.
+  - Per-pattern subcounts are intentionally omitted from the closure record because they require a separate counting convention from the exact combined `rg -n` line-hit scan.
   - Classification: production encoded-cache hits are typed boundaries or compatibility-preserving serialized mappings; config hits are stable YAML keys; test hits are contract coverage; prediction/eval, static packing, and Stage-2 runtime-state hits are owned by the explicit follow-up plans above; metric/logging and manifest `dict[str, Any]` hits remain intentional dynamic payloads unless a future contract plan narrows them; analysis-script hits are local diagnostic row shapes; current docs/spec hits document the implemented slice or follow-up plans.
 - Rule-outs:
   - Historical `progress/` and archived `openspec/changes/archive/` references were left unchanged.
-  - The final scan included `170` hits across `61` archived OpenSpec files and `133` hits across `27` progress files; these are historical context, not Task 11 code-change targets.
+  - The final scan included `170` hits across `61` archived OpenSpec files and `132` hits across `27` progress files; these are historical context, not Task 11 code-change targets.
 
 ## Refactor Plan
 
