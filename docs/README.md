@@ -6,7 +6,7 @@ status: canonical
 domain: repo
 summary: Human-first router for the stable CoordExp documentation layer.
 tags: [entrypoint, docs]
-updated: 2026-03-22
+updated: 2026-05-03
 ---
 
 # Documentation Index
@@ -18,7 +18,7 @@ For AI-agent-first routing, use [AGENT_INDEX.md](AGENT_INDEX.md).
 
 ## Start Here
 
-1. [Project Context & Precedence](PROJECT_CONTEXT.md)
+1. [Project Context & Documentation Authority](PROJECT_CONTEXT.md)
 2. [System Overview](SYSTEM_OVERVIEW.md)
 3. [Implementation Map](IMPLEMENTATION_MAP.md)
 
@@ -37,8 +37,8 @@ For AI-agent-first routing, use [AGENT_INDEX.md](AGENT_INDEX.md).
 
 - [ARTIFACTS.md](ARTIFACTS.md): runtime artifacts, provenance, and logging surfaces
 - [AGENT_INDEX.md](AGENT_INDEX.md): fast-path retrieval guide for coding assistants
-- [catalog.yaml](catalog.yaml): machine-readable catalog for `docs/` and `progress/`
-- [`runtime-architecture-refactor-program/spec.md`](../openspec/specs/runtime-architecture-refactor-program/spec.md): normative runtime-structure and compatibility contract
+- [catalog.yaml](catalog.yaml): curated machine-readable catalog for `docs/` and important `progress/` routes
+- [`runtime-architecture-refactor-program/spec.md`](../openspec/specs/runtime-architecture-refactor-program/spec.md): stable runtime-structure and compatibility contract
 
 ## Research History
 
@@ -49,7 +49,10 @@ For AI-agent-first routing, use [AGENT_INDEX.md](AGENT_INDEX.md).
 
 Read current behavior in this order:
 
-1. `openspec/specs/` when exact semantics matter
-2. `docs/`
-3. `openspec/changes/<active-change>/`
-4. `progress/`
+1. `docs/PROJECT_CONTEXT.md`
+2. `docs/SYSTEM_OVERVIEW.md`
+3. `docs/IMPLEMENTATION_MAP.md`
+4. the relevant domain router under `docs/`
+5. `openspec/specs/` only for stable compatibility-sensitive contract semantics
+6. `openspec/changes/<active-change>/` only when explicitly in scope
+7. `progress/` for historical evidence, diagnostics, and benchmark context

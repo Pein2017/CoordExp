@@ -44,6 +44,7 @@ Open these docs first:
 - [`docs/training/README.md`](training/README.md)
 - [`docs/training/STAGE1_OBJECTIVE.md`](training/STAGE1_OBJECTIVE.md)
 - [`docs/data/PACKING.md`](data/PACKING.md)
+- [`configs/stage1/recursive_detection_ce_latest/prod/compact_full_support2.yaml`](../configs/stage1/recursive_detection_ce_latest/prod/compact_full_support2.yaml) when working on the compact recursive detection surface
 
 Open these configs first:
 - `configs/stage1/sft_base.yaml`
@@ -88,7 +89,7 @@ Open these docs first:
 - [`openspec/specs/runtime-architecture-refactor-program/spec.md`](../openspec/specs/runtime-architecture-refactor-program/spec.md)
 
 Historical context only:
-- [`docs/training/STAGE2_DESIGN.md`](training/STAGE2_DESIGN.md)
+- Historical context: use [`docs/training/STAGE2_RUNBOOK.md`](training/STAGE2_RUNBOOK.md) plus `progress/` notes when needed
 
 Open these configs first:
 - `configs/stage2_two_channel/base.yaml`
@@ -155,7 +156,7 @@ Open these docs first:
 - [`docs/eval/README.md`](eval/README.md)
 - [`docs/eval/CONTRACT.md`](eval/CONTRACT.md)
 - [`docs/eval/WORKFLOW.md`](eval/WORKFLOW.md)
-- [`docs/ARTIFACTS.md`](ARTIFACTS.md)
+- [`docs/ARTIFACTS.md`](ARTIFACTS.md), which owns the full artifact inventory
 - [`openspec/specs/inference-pipeline/spec.md`](../openspec/specs/inference-pipeline/spec.md)
 - [`openspec/specs/inference-engine/spec.md`](../openspec/specs/inference-engine/spec.md)
 - [`openspec/specs/detection-evaluator/spec.md`](../openspec/specs/detection-evaluator/spec.md)

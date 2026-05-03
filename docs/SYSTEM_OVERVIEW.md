@@ -138,7 +138,7 @@ Compatibility note:
 - `src/trainers/stage2_ab_training.py` is a compatibility wrapper.
 - `src/trainers/stage2_two_channel.py` remains the public two-channel trainer surface, with shared Stage-2 coordination in `src/trainers/stage2_coordination.py` and helper modules under `src/trainers/stage2_ab/` and `src/trainers/stage2_two_channel/`.
 - `src/trainers/stage2_rollout_aligned.py` remains the rollout-matching compatibility trainer surface and now imports `src/trainers/rollout_aligned_targets.py`, `src/trainers/rollout_aligned_evaluator.py`, and `src/trainers/rollout_runtime/`.
-- [`docs/training/STAGE2_DESIGN.md`](training/STAGE2_DESIGN.md) is historical context only; use the runbook and specs for current behavior.
+- Stage-2 historical rationale is summarized from the current runbook; use [`docs/training/STAGE2_RUNBOOK.md`](training/STAGE2_RUNBOOK.md) and stable specs for current behavior.
 
 ## 4. Inference, Confidence, And Evaluation
 
@@ -221,7 +221,7 @@ CoordExp writes paper-ready artifacts as part of normal execution.
   - [`docs/IMPLEMENTATION_MAP.md`](IMPLEMENTATION_MAP.md)
 - Change infer/eval artifacts:
   - [`docs/eval/README.md`](eval/README.md)
-  - [`docs/eval/WORKFLOW.md`](eval/WORKFLOW.md)
+  - [`docs/eval/WORKFLOW.md`](eval/WORKFLOW.md) for operational flow; [`docs/ARTIFACTS.md`](ARTIFACTS.md) owns the full artifact inventory
   - [`openspec/specs/inference-pipeline/spec.md`](../openspec/specs/inference-pipeline/spec.md)
   - [`openspec/specs/inference-engine/spec.md`](../openspec/specs/inference-engine/spec.md)
   - [`openspec/specs/detection-evaluator/spec.md`](../openspec/specs/detection-evaluator/spec.md)
