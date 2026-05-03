@@ -1568,7 +1568,7 @@ rtk conda run -n ms python -m pytest \
   -q
 ```
 
-Result: `432 passed, 4 warnings in 3.35s`. The warnings were the previously observed multiprocessing fork deprecation warnings from encoded-cache static-packing tests and do not affect this refactor.
+Result after the final complete-manifest hardening commits: `442 passed, 4 warnings in 3.77s`. The warnings were the previously observed multiprocessing fork deprecation warnings from encoded-cache static-packing tests and do not affect this refactor.
 
 - [x] **Step 3: Run compact detection contract verification**
 
@@ -1713,14 +1713,15 @@ Task 11 closure commit under review:
 4a52e8e docs(audit): close type schema refactor audit
 ```
 
-Post-review provenance correction history:
+Post-review and final-code-review correction history:
 
 - `4a52e8e` is the Task 11 closure commit whose stale scan counts and pre-commit status/log were reviewed.
 - `b5cfd4c` is the first docs-only follow-up that refreshed the total scan counts but still carried an ambiguous per-pattern count and an unsatisfied-looking post-fix verification note.
-- This quality-review docs-only follow-up removes ambiguous per-pattern closure counts, keeps static packing as follow-up-only, and records the final status/log shape below.
-- The final response records this follow-up commit hash because embedding a commit's own final hash inside that same commit would change the hash.
+- `134d630` is the docs-only follow-up that removed ambiguous per-pattern closure counts, kept static packing follow-up-only, and recorded the then-current status/log shape.
+- `e34c49f`, `08daba9`, and `00a5c70` are the final whole-branch-review code/test fixes that hardened complete-manifest shard inventory validation.
+- This closure refresh records verification at `00a5c70`; the final response records the hash of the docs-only closure refresh commit because embedding a commit's own final hash inside that same commit would change the hash.
 
-Observed before this quality-review correction commit on 2026-05-03:
+Observed before this closure refresh commit on 2026-05-03:
 
 ```bash
 git status --short --branch
@@ -1731,25 +1732,25 @@ Result:
 
 ```text
 ## codex/refactor-type-schema
-b5cfd4c (HEAD -> codex/refactor-type-schema) docs(audit): refresh final closure provenance
-4a52e8e docs(audit): close type schema refactor audit
-ffea19e docs(plan): tighten stage2 runtime follow-up tests
-c53327a docs(audit): record stage2 runtime state decision
-6f9af97 docs(audit): align prediction alias recommendation
+00a5c70 (HEAD -> codex/refactor-type-schema) fix(cache): reject empty shard tails
+08daba9 fix(cache): align encoded shard indexes
+e34c49f fix(cache): validate encoded shard inventory
+134d630 docs(audit): clarify closure scan provenance
+b5cfd4c docs(audit): refresh final closure provenance
 ```
 
-Final post-fix status/log shape recorded for this quality-review correction:
+Final post-refresh status/log shape for this docs-only closure refresh:
 
 ```text
 ## codex/refactor-type-schema
-<new-hash> (HEAD -> codex/refactor-type-schema) docs(audit): clarify closure scan provenance
-b5cfd4c docs(audit): refresh final closure provenance
-4a52e8e docs(audit): close type schema refactor audit
-ffea19e docs(plan): tighten stage2 runtime follow-up tests
-c53327a docs(audit): record stage2 runtime state decision
+final-docs-refresh (HEAD -> codex/refactor-type-schema) docs(audit): refresh final manifest closure
+00a5c70 fix(cache): reject empty shard tails
+08daba9 fix(cache): align encoded shard indexes
+e34c49f fix(cache): validate encoded shard inventory
+134d630 docs(audit): clarify closure scan provenance
 ```
 
-The exact `<new-hash>` value is recorded in the final task response.
+The exact closure refresh hash is recorded in the final task response.
 
 Residual follow-up plans:
 
@@ -1759,7 +1760,7 @@ Residual follow-up plans:
 
 Task 11 closure summary:
 
-- Implemented scope remains encoded-cache typed boundaries only: request, shard, manifest, producer/consumer normalization, and run-metadata wrapper boundaries.
+- Implemented scope remains encoded-cache typed boundaries only: request, shard, manifest, complete-manifest inventory validation, producer/consumer normalization, and run-metadata wrapper boundaries.
 - Verified serialized contracts remain unchanged for `training.encoded_sample_cache.*`, cache `manifest.json`, and `run_metadata.json["encoded_sample_cache"]`.
 - Decision gates created executable follow-up plans for static packing, prediction/eval alias access, and Stage-2 checkpoint runtime state.
 - Broad scans classified remaining hits instead of converting them into unscoped production refactors.

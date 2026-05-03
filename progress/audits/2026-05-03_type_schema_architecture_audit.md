@@ -225,6 +225,10 @@ Resolved in the initial slice:
 - Complete manifests now require explicit `fingerprint_sha256`, `num_samples`,
   `shard_size`, `payload_keys`, and `shards`; malformed complete manifests are
   rejected before cache reuse.
+- Final whole-branch review hardening added complete-manifest shard inventory
+  checks for safe shard file basenames, unique and aligned shard indexes,
+  contiguous ranges covering the sample interval, and exact observed shard
+  inventory length.
 - Existing JSON artifact keys and `EncodedSampleCacheStore.info()` keys are preserved.
 
 Rule-outs after the global regression gate:
@@ -369,6 +373,8 @@ Closure status: complete for the encoded-cache typed-boundary slice and audit ro
 
 - Implemented:
   - Encoded-sample cache request, shard, manifest, and run metadata typed boundaries.
+  - Complete-manifest shard inventory validation was hardened after final branch
+    review; serialized artifact keys remain unchanged.
 - Verified unchanged serialized contracts:
   - `training.encoded_sample_cache.*` YAML keys.
   - cache `manifest.json` keys.
