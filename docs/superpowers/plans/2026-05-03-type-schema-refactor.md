@@ -998,7 +998,7 @@ Additional bookkeeping:
 
 ## Task 5: Align Strict Config Schema, Runtime Config, Specs, And Docs
 
-- [ ] **Step 1: Strengthen strict-config test for residency bound**
+- [x] **Step 1: Strengthen strict-config test for residency bound**
 
 Modify `tests/test_training_config_strict_unknown_keys.py`:
 
@@ -1021,7 +1021,7 @@ def test_training_encoded_sample_cache_keys_are_allowed_and_normalized() -> None
     assert cache_cfg["max_resident_shards"] == 3
 ```
 
-- [ ] **Step 2: Run strict-config tests**
+- [x] **Step 2: Run strict-config tests**
 
 Run:
 
@@ -1036,7 +1036,7 @@ rtk conda run -n ms python -m pytest \
 
 Expected: PASS. If this fails, fix `src/config/schema.py` and `_parse_encoded_sample_cache_config()` so `max_resident_shards` remains a positive integer in both schema and runtime config.
 
-- [ ] **Step 3: Update current OpenSpec encoded-cache spec**
+- [x] **Step 3: Update current OpenSpec encoded-cache spec**
 
 Modify `openspec/specs/encoded-training-cache/spec.md` canonical v1 fields:
 
@@ -1054,7 +1054,7 @@ Add normative behavior:
   unless this specification is revised.
 ```
 
-- [ ] **Step 4: Update packing guide operator text**
+- [x] **Step 4: Update packing guide operator text**
 
 Modify `docs/data/PACKING.md` encoded-cache bullets to mention:
 
@@ -1064,7 +1064,7 @@ Modify `docs/data/PACKING.md` encoded-cache bullets to mention:
   repeated shard reloads dominate dataset fetch time.
 ```
 
-- [ ] **Step 5: Verify docs and YAML remain parseable**
+- [x] **Step 5: Verify docs and YAML remain parseable**
 
 Run:
 
@@ -1073,6 +1073,27 @@ conda run -n ms python -c "from pathlib import Path; import yaml; [yaml.safe_loa
 ```
 
 Expected: `YAML_OK`.
+
+Task 5 evidence (2026-05-03):
+
+- `tests/test_training_config_strict_unknown_keys.py::test_training_encoded_sample_cache_keys_are_allowed_and_normalized`
+  now asserts authored `max_resident_shards: 3` survives strict config
+  normalization.
+- `openspec/specs/encoded-training-cache/spec.md` now includes
+  `training.encoded_sample_cache.max_resident_shards: int` in canonical v1
+  fields, requires default `4`, requires values greater than zero, and records
+  the typed-internal/stable-serialized-artifact compatibility rule.
+- `docs/data/PACKING.md` now documents the operator meaning and default for
+  `training.encoded_sample_cache.max_resident_shards`.
+- `progress/audits/2026-05-03_type_schema_architecture_audit.md` and
+  `docs/superpowers/specs/2026-05-03-type-schema-refactor-design.md` now
+  reflect that strict config, runtime config, current spec, and operator docs
+  are aligned for the residency bound while preserving serialized v1 artifact
+  keys.
+- `rtk conda run -n ms python -m pytest tests/test_training_config_strict_unknown_keys.py::test_training_encoded_sample_cache_keys_are_allowed_and_normalized tests/test_training_config_strict_unknown_keys.py::test_training_encoded_sample_cache_unknown_nested_key_fails_fast tests/test_stage1_static_packing_runtime_config.py::test_parse_encoded_sample_cache_config_accepts_residency_bound tests/test_stage1_static_packing_runtime_config.py::test_parse_encoded_sample_cache_config_rejects_nonpositive_residency_bound -q`
+  passed with `4 passed in 0.79s`.
+- `conda run -n ms python -c "from pathlib import Path; import yaml; [yaml.safe_load(Path(p).read_text(encoding='utf-8')) for p in ('docs/catalog.yaml','progress/index.yaml')]; print('YAML_OK')"`
+  printed `YAML_OK`.
 
 ## Task 6: Global Encoded-Cache Regression Gate
 

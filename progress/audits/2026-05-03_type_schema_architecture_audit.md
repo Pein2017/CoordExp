@@ -191,7 +191,9 @@ Remaining shape ambiguity:
 - `src/bootstrap/run_metadata.py` now owns train/eval encoded-cache run metadata
   through `EncodedSampleCacheRunMetadata`, while preserving raw split payload
   mappings for artifact compatibility.
-- `openspec/specs/encoded-training-cache/spec.md` has not yet been updated for the completed typed internals or current residency field coverage.
+- `openspec/specs/encoded-training-cache/spec.md` now covers the current
+  residency field, positive-bound default, and typed-internal/stable-artifact
+  compatibility rule.
 - Cached sample payload records remain dictionaries and should be considered only after request/manifest/run-metadata boundaries are globally consistent.
 
 Recommended representation:

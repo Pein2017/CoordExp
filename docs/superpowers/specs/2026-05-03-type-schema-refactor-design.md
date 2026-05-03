@@ -280,7 +280,11 @@ manifest_path: Path
 - Rejects non-finite timeout values.
 - Resolves `root_dir` to an absolute `Path`.
 - Defaults `ineligible_policy` to `error`.
-- Defaults `max_resident_shards` to `4` and clamps it to at least `1`.
+- Defaults `max_resident_shards` to `4` and clamps direct request mappings to at
+  least `1`.
+- Authored YAML schema and SFT runtime parsing reject nonpositive
+  `training.encoded_sample_cache.max_resident_shards`; the request wrapper keeps
+  the defensive direct-request normalization for cache-store compatibility.
 - Defaults `dataset_split` to `train`.
 - Preserves `dataset_jsonl`.
 - Canonicalizes the fingerprint mapping by stable JSON representation.
@@ -491,8 +495,6 @@ Not completed:
 
 - Global encoded-cache producer/consumer canonicalization in `src/sft.py`,
   `src/datasets/dense_caption.py`, and `src/bootstrap/run_metadata.py`.
-- `openspec/specs/encoded-training-cache/spec.md` update for all current typed
-  internals and `max_resident_shards`.
 - Static packing typed artifact wrappers.
 - Compact detection runtime/artifact payload classification after the upstream
   merge.
