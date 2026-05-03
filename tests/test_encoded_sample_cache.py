@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import concurrent.futures
+import json
+from pathlib import Path
 from typing import Any, Dict
 
 import pytest
@@ -172,6 +174,113 @@ def test_encoded_sample_cache_rejects_ineligible_random_ordering_by_default(
             dataset_name="train_a",
             object_ordering="random",
             policy="error",
+        )
+
+
+def test_encoded_sample_cache_request_normalizes_typed_fields(tmp_path) -> None:
+    from src.datasets.encoded_sample_cache import EncodedSampleCacheRequest
+
+    request = EncodedSampleCacheRequest.from_mapping(_cache_request(tmp_path))
+
+    assert request.enabled is True
+    assert request.root_dir == (tmp_path / "encoded-cache").resolve()
+    assert request.ineligible_policy == "error"
+    assert request.wait_timeout_s == pytest.approx(5.0)
+    assert request.max_resident_shards == 4
+    assert request.dataset_split == "train"
+    assert request.dataset_jsonl == "train.jsonl"
+    assert request.fingerprint["cache_schema_version"] == 1
+
+
+def test_encoded_sample_cache_manifest_roundtrips_serialized_payload(tmp_path) -> None:
+    from src.datasets.encoded_sample_cache import EncodedSampleCacheManifest
+
+    ds = _dataset(
+        template=_CountingTemplate(),
+        tmp_path=tmp_path,
+        dataset_name="train_a",
+    )
+    info = ds.get_encoded_sample_cache_info()
+    assert info is not None
+
+    manifest_path = Path(str(info["manifest_path"]))
+    payload = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest = EncodedSampleCacheManifest.from_mapping(payload, path=manifest_path)
+
+    assert manifest.status == "complete"
+    assert manifest.fingerprint_sha256 == info["fingerprint_sha256"]
+    assert manifest.shard_count == int(info["shard_count"])
+    assert manifest.payload_keys == tuple(info["payload_keys"])
+    assert manifest.to_mapping() == payload
+
+
+@pytest.mark.parametrize(
+    ("mutation", "error_pattern"),
+    [
+        (lambda payload: payload.pop("shards"), "complete manifest missing shards"),
+        (
+            lambda payload: payload.update({"fingerprint_sha256": ""}),
+            "complete manifest fingerprint_sha256",
+        ),
+        (
+            lambda payload: payload.update({"shard_size": 0}),
+            "complete manifest shard_size",
+        ),
+        (
+            lambda payload: payload.update(
+                {"shards": [{**payload["shards"][0], "count": 999}]}
+            ),
+            "complete manifest shard count",
+        ),
+    ],
+)
+def test_encoded_sample_cache_manifest_rejects_malformed_complete_payloads(
+    tmp_path,
+    mutation,
+    error_pattern: str,
+) -> None:
+    from src.datasets.encoded_sample_cache import EncodedSampleCacheManifest
+
+    ds = _dataset(
+        template=_CountingTemplate(),
+        tmp_path=tmp_path,
+        dataset_name="train_a",
+    )
+    info = ds.get_encoded_sample_cache_info()
+    assert info is not None
+
+    manifest_path = Path(str(info["manifest_path"]))
+    payload = json.loads(manifest_path.read_text(encoding="utf-8"))
+    mutation(payload)
+
+    with pytest.raises((TypeError, ValueError), match=error_pattern):
+        EncodedSampleCacheManifest.from_mapping(payload, path=manifest_path)
+
+
+def test_encoded_sample_cache_rejects_corrupt_complete_manifest_before_reuse(
+    tmp_path,
+) -> None:
+    ds = _dataset(
+        template=_CountingTemplate(),
+        tmp_path=tmp_path,
+        dataset_name="train_a",
+    )
+    info = ds.get_encoded_sample_cache_info()
+    assert info is not None
+
+    manifest_path = Path(str(info["manifest_path"]))
+    payload = json.loads(manifest_path.read_text(encoding="utf-8"))
+    payload.pop("shards")
+    payload.pop("num_samples")
+    payload.pop("shard_size")
+    payload["fingerprint_sha256"] = ""
+    manifest_path.write_text(json.dumps(payload), encoding="utf-8")
+
+    with pytest.raises(ValueError, match="complete manifest"):
+        _dataset(
+            template=_CountingTemplate(),
+            tmp_path=tmp_path,
+            dataset_name="train_b",
         )
 
 

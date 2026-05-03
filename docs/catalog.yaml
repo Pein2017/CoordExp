@@ -1,5 +1,5 @@
 schema_version: 1
-updated: 2026-04-29
+updated: 2026-05-03
 
 entrypoints:
   human:
@@ -313,6 +313,10 @@ progress:
       title: Audits Index
       type: router
       status: canonical
+    - path: progress/audits/2026-05-03_type_schema_architecture_audit.md
+      title: Type-System And Schema-Boundary Audit
+      type: audit
+      status: active-audit
     - path: progress/audits/2026-01-22_stage1_softce_logging.md
       title: 'Stage-1 SoftCE (W1) Audit: Loss Dynamics, Logging Alignment, and Efficiency Notes (2026-01-22)'
       type: audit

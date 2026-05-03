@@ -6,7 +6,7 @@ status: canonical
 domain: research-history
 summary: Router for structured audit notes and decision-focused reviews.
 tags: [progress, audits, review]
-updated: 2026-04-23
+updated: 2026-05-03
 ---
 
 # Audits Index
@@ -22,6 +22,8 @@ decision record.
 
 ## Current Contents
 
+- [2026-05-03_type_schema_architecture_audit.md](2026-05-03_type_schema_architecture_audit.md)
+  - active type-system and schema-boundary audit for raw domain containers
 - [2026-01-22_stage1_softce_logging.md](2026-01-22_stage1_softce_logging.md)
   - historical audit of Stage-1 SoftCE logging, scaling, and efficiency
 - [2026-02-25_stage2_channel_a_coord_loss.md](2026-02-25_stage2_channel_a_coord_loss.md)
