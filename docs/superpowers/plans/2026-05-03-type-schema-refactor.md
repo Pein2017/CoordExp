@@ -1174,7 +1174,7 @@ gate finds a real encoded-cache inconsistency.
 
 Status: decision gate only. Do not implement compact-detection code changes from this task.
 
-- [ ] **Step 1: Inspect compact detection schema-bearing surfaces**
+- [x] **Step 1: Inspect compact detection schema-bearing surfaces**
 
 Run:
 
@@ -1186,7 +1186,9 @@ rg -n "dataclass|TypedDict|Enum|Protocol|Mapping\\[str, Any\\]|dict\\[str, Any\\
 
 Expected: audit report identifies compact-detection surfaces as one of: already typed dataclass/config object, serialized mapping, dynamic metric/logging map, local scratch container, or cross-boundary payload needing follow-up. The upstream production-launch plan is inspected as a baseline constraint document, not as a refactor target.
 
-- [ ] **Step 2: Add compact detection rows to the inventory table**
+Observed 2026-05-03: the required `rg` scan returned 4381 matching lines. Targeted exact reads then classified the relevant groups: `src/detection/data.py` uses frozen dataclasses after raw JSONL `Mapping[str, Any]` ingress; `src/config/schema.py` owns latest detection config dataclasses; `src/detection/template.py` / `tokenization.py` expose dataclass/protocol span contracts; `src/detection/objective.py` / `loss.py` expose dataclass/enumerated loss state; `src/detection/packing.py` exposes packing/fingerprint dataclasses while preserving static-packing fingerprint mappings; `src/detection/evaluation.py` uses a manifest dataclass and canonical parser payload mappings; `src/trainers/metrics/mixins.py` keeps recursive CE logging as a dynamic metric map; `src/sft.py` only assembles local runtime/provenance dictionaries and rejects latest recursive detection packing/encoded-cache use until sidecar fingerprints exist. The upstream launch plan was inspected as a baseline launch/provenance document only.
+
+- [x] **Step 2: Add compact detection rows to the inventory table**
 
 Modify `progress/audits/2026-05-03_type_schema_architecture_audit.md` under `Post-Merge Inventory Classification`. Add one row for each exact compact-detection group below, filling every table column with the concrete result from Step 1 and using decision labels from the Boundary Classification Rules section:
 
@@ -1199,7 +1201,9 @@ Modify `progress/audits/2026-05-03_type_schema_architecture_audit.md` under `Pos
 - `src/sft.py`: latest detection runtime orchestration, prompt shim, dataset selection, packing/cache rejection, and static-packing fingerprint interaction, boundary type `training orchestration/runtime support`.
 - `docs/superpowers/plans/2026-05-02-training-infra-template-mode-refactor.md`: recursive detection production-launch constraints, boundary type `launch/provenance document`.
 
-- [ ] **Step 3: Record the compact detection gate decision**
+Observed 2026-05-03: `progress/audits/2026-05-03_type_schema_architecture_audit.md` now contains one completed inventory row for each exact compact-detection group above, using the Boundary Classification Rules labels.
+
+- [x] **Step 3: Record the compact detection gate decision**
 
 Record exactly one of these outcomes in `progress/audits/2026-05-03_type_schema_architecture_audit.md`:
 
@@ -1221,7 +1225,9 @@ or:
 
 The third outcome is allowed only if the exact overlapping symbol is named in the decision and Tasks 3-6 are updated with exact tests and implementation steps for that symbol.
 
-- [ ] **Step 4: Run compact detection contract profile**
+Observed 2026-05-03: the audit records the first decision exactly: no code refactor in this branch. No Tasks 3-6 encoded-cache overlap was found, and no dedicated compact-detection follow-up plan is required by this gate.
+
+- [x] **Step 4: Run compact detection contract profile**
 
 Run:
 
@@ -1257,7 +1263,9 @@ rtk conda run -n ms python -m pytest \
 
 Expected: PASS, allowing only previously observed warnings. If it fails, diagnose the compact baseline before using the gate decision.
 
-- [ ] **Step 5: Verify upstream production-launch plan remains baseline-owned**
+Observed 2026-05-03: `rtk conda run -n ms python -m pytest ... -q` passed with `270 passed in 3.05s`.
+
+- [x] **Step 5: Verify upstream production-launch plan remains baseline-owned**
 
 Run:
 
@@ -1274,9 +1282,13 @@ with targeted fp32, `per_device_train_batch_size=16`,
 latest-schema mAP callback yet, and production launch still running at the time
 of the upstream note.
 
-- [ ] **Step 6: Create follow-up plan if needed**
+Observed 2026-05-03: `git diff -- docs/superpowers/plans/2026-05-02-training-infra-template-mode-refactor.md` was empty, so the upstream production-launch plan remained baseline-owned and untouched.
+
+- [x] **Step 6: Create follow-up plan if needed**
 
 If Step 3 selects a dedicated follow-up plan, create `docs/superpowers/plans/2026-05-03-compact-detection-schema-refactor.md` with exact target files, exact failing tests, implementation snippets, and verification commands. Do not implement compact-detection code in this umbrella plan.
+
+Observed 2026-05-03: not needed because the selected decision was no compact-detection code refactor in this branch.
 
 ## Task 8: Static Packing Schema Decision Gate
 
