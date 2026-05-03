@@ -426,7 +426,6 @@ Observed:
 Not yet implemented:
 
 - `src/sft.py` does not yet produce cache requests through `EncodedSampleCacheRequest`.
-- `src/bootstrap/run_metadata.py` does not yet expose a typed encoded-cache run-metadata wrapper.
 - `openspec/specs/encoded-training-cache/spec.md` has not yet been updated for this refactor.
 - Static packing, prediction/eval records, and Stage-2 runtime-state refactors remain planned follow-on slices.
 
