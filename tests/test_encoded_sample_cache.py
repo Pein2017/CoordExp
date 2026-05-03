@@ -314,6 +314,58 @@ def test_encoded_sample_cache_manifest_roundtrips_serialized_payload(tmp_path) -
             ),
             "complete manifest shard count",
         ),
+        (
+            lambda payload: payload.update(
+                {"shards": [{**payload["shards"][0], "file": "../outside.pt"}]}
+            ),
+            "complete manifest shard file",
+        ),
+        (
+            lambda payload: payload.update(
+                {"shards": [{**payload["shards"][0], "file": "/tmp/outside.pt"}]}
+            ),
+            "complete manifest shard file",
+        ),
+        (
+            lambda payload: payload.update(
+                {"shards": [{**payload["shards"][0], "file": "nested/shard.pt"}]}
+            ),
+            "complete manifest shard file",
+        ),
+        (
+            lambda payload: payload.update(
+                {"shards": [payload["shards"][0], {**payload["shards"][0]}]}
+            ),
+            "complete manifest duplicate shard",
+        ),
+        (
+            lambda payload: payload.update(
+                {
+                    "num_samples": 3,
+                    "shards": [
+                        {
+                            **payload["shards"][0],
+                            "shard_index": 0,
+                            "start": 0,
+                            "end": 2,
+                            "count": 2,
+                        },
+                        {
+                            **payload["shards"][0],
+                            "shard_index": 1,
+                            "start": 1,
+                            "end": 2,
+                            "count": 1,
+                        },
+                    ],
+                }
+            ),
+            "complete manifest shard range",
+        ),
+        (
+            lambda payload: payload.update({"num_samples": payload["num_samples"] + 1}),
+            "complete manifest shard count",
+        ),
     ],
 )
 def test_encoded_sample_cache_manifest_rejects_malformed_complete_payloads(

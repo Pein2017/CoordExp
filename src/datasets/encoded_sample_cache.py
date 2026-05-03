@@ -9,7 +9,7 @@ import os
 import threading
 import time
 from datetime import datetime, timezone
-from pathlib import Path
+from pathlib import Path, PurePosixPath, PureWindowsPath
 from typing import Any, Literal, Mapping
 
 import torch
@@ -23,6 +23,21 @@ _DEFAULT_ENCODED_SAMPLE_SHARD_SIZE = 512
 _DEFAULT_MAX_RESIDENT_SHARDS = 4
 
 EncodedSampleCacheManifestStatus = Literal["building", "complete", "error"]
+
+
+def _is_relative_basename(path: str) -> bool:
+    if path in {"", ".", ".."}:
+        return False
+    posix_path = PurePosixPath(path)
+    windows_path = PureWindowsPath(path)
+    return (
+        not posix_path.is_absolute()
+        and not windows_path.is_absolute()
+        and len(posix_path.parts) == 1
+        and len(windows_path.parts) == 1
+        and posix_path.name == path
+        and windows_path.name == path
+    )
 
 
 @dataclass(frozen=True)
@@ -251,6 +266,7 @@ class EncodedSampleCacheManifest:
                 f"Encoded sample cache shards payload must be a list{location}"
             )
         shards: list[EncodedSampleShard] = []
+        seen_shard_indexes: set[int] = set()
         for shard in raw_shards:
             if not isinstance(shard, Mapping):
                 raise TypeError(
@@ -258,10 +274,16 @@ class EncodedSampleCacheManifest:
                 )
             typed_shard = EncodedSampleShard.from_mapping(shard)
             if is_complete:
-                if not typed_shard.file:
+                if not _is_relative_basename(typed_shard.file):
                     raise ValueError(
                         "Encoded sample cache complete manifest shard file "
-                        f"is required{location}"
+                        f"must be a relative basename{location}: "
+                        f"{typed_shard.file!r}"
+                    )
+                if typed_shard.shard_index in seen_shard_indexes:
+                    raise ValueError(
+                        "Encoded sample cache complete manifest duplicate shard "
+                        f"index{location}: {typed_shard.shard_index}"
                     )
                 if typed_shard.start < 0 or typed_shard.end < typed_shard.start:
                     raise ValueError(
@@ -273,6 +295,7 @@ class EncodedSampleCacheManifest:
                         "Encoded sample cache complete manifest shard count "
                         f"mismatch{location}"
                     )
+                seen_shard_indexes.add(typed_shard.shard_index)
             shards.append(typed_shard)
         num_samples = (
             int(payload["num_samples"])
@@ -300,6 +323,23 @@ class EncodedSampleCacheManifest:
                     "Encoded sample cache complete manifest shards are required "
                     f"when num_samples is positive{location}"
                 )
+            total_shard_count = sum(shard.count for shard in shards)
+            if total_shard_count != num_samples:
+                raise ValueError(
+                    "Encoded sample cache complete manifest shard count "
+                    f"total mismatch{location}: expected={num_samples} "
+                    f"observed={total_shard_count}"
+                )
+            next_start = 0
+            for shard in sorted(shards, key=lambda item: item.start):
+                if shard.start != next_start:
+                    raise ValueError(
+                        "Encoded sample cache complete manifest shard range "
+                        "must be contiguous and non-overlapping"
+                        f"{location}: expected_start={next_start} "
+                        f"observed_start={shard.start}"
+                    )
+                next_start = shard.end
 
         return cls(
             version=int(payload.get("version") or -1),
