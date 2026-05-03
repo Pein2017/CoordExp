@@ -363,6 +363,31 @@ Recommended representation:
 - Rollout parsing/matching contracts are healthier than the trainer/runtime seams around them.
 - Confidence post-op is internally consistent today; targeted tests already cover the expected `pred_confidence.jsonl` and `gt_vs_pred_scored.jsonl` shapes.
 
+## Implementation Closure
+
+Closure status: complete for the encoded-cache typed-boundary slice and audit routing gates. This branch does not claim exhaustive repository-wide type cleanup.
+
+- Implemented:
+  - Encoded-sample cache request, shard, manifest, and run metadata typed boundaries.
+- Verified unchanged serialized contracts:
+  - `training.encoded_sample_cache.*` YAML keys.
+  - cache `manifest.json` keys.
+  - `run_metadata.json["encoded_sample_cache"]` train/eval split keys.
+- Decision-gate closure:
+  - Compact detection was classified as no code refactor in this branch. The compact detection baseline remains already typed where it carries domain contracts, intentionally serialized where it preserves YAML/artifact compatibility, or local/dynamic where it only assembles runtime scratch state or metrics.
+  - Static packing follow-up is owned by `docs/superpowers/plans/2026-05-03-static-packing-schema-refactor.md`.
+  - Prediction/eval adapter follow-up is owned by `docs/superpowers/plans/2026-05-03-prediction-eval-record-adapter.md`.
+  - Stage-2 checkpoint runtime-state follow-up is owned by `docs/superpowers/plans/2026-05-03-stage2-runtime-state-schema-refactor.md`.
+- Final affected-file scan:
+  - Exact scan: `rg -n "encoded_sample_cache|EncodedSampleCache|predictions|PreparedSegment|runtime_state|dict\[str, Any\]" src tests scripts configs docs progress openspec --glob '!output/**' --glob '!temp/**' --glob '!.git/**'`.
+  - Result: `1,768` hits across `248` files.
+  - Pattern counts: `encoded_sample_cache` `516`, `EncodedSampleCache` `132`, `predictions` `423`, `PreparedSegment` `17`, `runtime_state` `79`, `dict[str, Any]` `693`.
+  - Top-level hit counts: `src` `843`, `tests` `175`, `scripts` `12`, `configs` `12`, `docs` `339`, `progress` `128`, `openspec` `259`.
+  - Classification: production encoded-cache hits are typed boundaries or compatibility-preserving serialized mappings; config hits are stable YAML keys; test hits are contract coverage; prediction/eval, static packing, and Stage-2 runtime-state hits are owned by the explicit follow-up plans above; metric/logging and manifest `dict[str, Any]` hits remain intentional dynamic payloads unless a future contract plan narrows them; analysis-script hits are local diagnostic row shapes; current docs/spec hits document the implemented slice or follow-up plans.
+- Rule-outs:
+  - Historical `progress/` and archived `openspec/changes/archive/` references were left unchanged.
+  - The final scan included `170` hits across `61` archived OpenSpec files and `128` hits across `27` progress files; these are historical context, not Task 11 code-change targets.
+
 ## Refactor Plan
 
 1. **Encoded-sample cache request/manifest typed wrappers** (implemented first)

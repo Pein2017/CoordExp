@@ -1503,7 +1503,7 @@ Observed 2026-05-03: `rtk conda run -n ms python -m pytest tests/test_stage2_ab_
 
 ## Task 11: Final Audit Closure And Verification
 
-- [ ] **Step 1: Update audit report with implemented changes and rule-outs**
+- [x] **Step 1: Update audit report with implemented changes and rule-outs**
 
 Modify `progress/audits/2026-05-03_type_schema_architecture_audit.md` so it contains:
 
@@ -1520,7 +1520,9 @@ Modify `progress/audits/2026-05-03_type_schema_architecture_audit.md` so it cont
   - Historical `progress/` and archived `openspec/changes/archive/` references were left unchanged.
 ```
 
-- [ ] **Step 2: Run final targeted verification**
+Observed 2026-05-03: added `## Implementation Closure` to `progress/audits/2026-05-03_type_schema_architecture_audit.md`. The closure records the implemented encoded-sample cache request, shard, manifest, and run-metadata typed boundaries; unchanged serialized YAML, manifest, and run-metadata keys; compact detection no-code-refactor classification; explicit static packing, prediction/eval adapter, and Stage-2 checkpoint runtime-state follow-up plan paths; final affected-file scan counts/classification; and historical `progress/` / archived OpenSpec rule-outs.
+
+- [x] **Step 2: Run final targeted verification**
 
 Run:
 
@@ -1545,7 +1547,30 @@ rtk conda run -n ms python -m pytest \
 
 Expected: PASS, or a documented pre-existing skip/warning that does not affect this refactor.
 
-- [ ] **Step 3: Run compact detection contract verification**
+Observed 2026-05-03:
+
+```bash
+rtk conda run -n ms python -m pytest \
+  tests/test_encoded_sample_cache.py \
+  tests/test_encoded_sample_cache_runtime_config.py \
+  tests/test_run_metadata_file.py \
+  tests/test_training_config_strict_unknown_keys.py \
+  tests/test_stage1_static_packing_runtime_config.py \
+  tests/test_stage1_set_continuation_cache_policy.py \
+  tests/test_stage1_set_continuation_benchmark_profiles.py \
+  tests/test_detection_eval_ingestion_diagnostics.py \
+  tests/test_unified_infer_pipeline.py \
+  tests/test_confidence_postop.py \
+  tests/test_stage2_ab_training.py \
+  tests/test_stage2_two_channel_training.py \
+  tests/test_batch_extras_contract.py \
+  tests/test_teacher_forcing_token_ce.py \
+  -q
+```
+
+Result: `432 passed, 4 warnings in 3.35s`. The warnings were the previously observed multiprocessing fork deprecation warnings from encoded-cache static-packing tests and do not affect this refactor.
+
+- [x] **Step 3: Run compact detection contract verification**
 
 Run:
 
@@ -1581,7 +1606,41 @@ rtk conda run -n ms python -m pytest \
 
 Expected: PASS, allowing only previously observed warnings.
 
-- [ ] **Step 4: Run static checks**
+Observed 2026-05-03:
+
+```bash
+rtk conda run -n ms python -m pytest \
+  tests/test_latest_training_config_contract.py \
+  tests/test_detection_raw_schema_contract.py \
+  tests/test_detection_training_dataset.py \
+  tests/test_detection_normalization_contract.py \
+  tests/test_detection_template_registry.py \
+  tests/test_detection_stage1_json_pretty_template.py \
+  tests/test_detection_compact_full_template.py \
+  tests/test_detection_template_span_alignment.py \
+  tests/test_detection_template_parsing_eval.py \
+  tests/test_token_span_masks_from_templates.py \
+  tests/test_compact_et_rmp_span_contract.py \
+  tests/test_random_order_sft_contract.py \
+  tests/test_random_permutation_et_rmp_ce_contract.py \
+  tests/test_recursive_detection_ce_target_builder.py \
+  tests/test_sft_preparation_contract.py \
+  tests/test_batch_extras_contract.py \
+  tests/test_length_insensitive_loss_normalization.py \
+  tests/test_packing_cache_fingerprints.py \
+  tests/test_packing_template_contracts.py \
+  tests/test_recursive_detection_ce_loss_adapter.py \
+  tests/test_recursive_detection_ce_sft_wiring.py \
+  tests/test_recursive_detection_ce_trainer_mixin.py \
+  tests/test_recursive_detection_state_weighting.py \
+  tests/test_stage1_static_packing_runtime_config.py \
+  tests/test_training_runtime_profile.py \
+  -q
+```
+
+Result: `270 passed in 3.07s`.
+
+- [x] **Step 4: Run static checks**
 
 Run:
 
@@ -1597,7 +1656,21 @@ git diff --check
 
 Expected: both commands pass.
 
-- [ ] **Step 5: Final repository-wide affected-file check**
+Observed 2026-05-03:
+
+```bash
+conda run -n ms python -m py_compile \
+  src/datasets/encoded_sample_cache.py \
+  src/datasets/dense_caption.py \
+  src/sft.py \
+  src/bootstrap/run_metadata.py \
+  src/config/schema.py
+git diff --check
+```
+
+Result: both commands exited 0.
+
+- [x] **Step 5: Final repository-wide affected-file check**
 
 Run:
 
@@ -1609,7 +1682,19 @@ rg -n "encoded_sample_cache|EncodedSampleCache|predictions|PreparedSegment|runti
 
 Expected: remaining hits are either typed, serialized contract mappings, intentional metric/logging maps, or documented rule-outs in the audit.
 
-- [ ] **Step 6: Final status summary**
+Observed 2026-05-03:
+
+```bash
+rg -n "encoded_sample_cache|EncodedSampleCache|predictions|PreparedSegment|runtime_state|dict\[str, Any\]" \
+  src tests scripts configs docs progress openspec \
+  --glob '!output/**' --glob '!temp/**' --glob '!.git/**'
+```
+
+Result: `1,768` hits across `248` files. Top-level counts were `src` `843`, `tests` `175`, `scripts` `12`, `configs` `12`, `docs` `339`, `progress` `128`, and `openspec` `259`. Pattern counts were `encoded_sample_cache` `516`, `EncodedSampleCache` `132`, `predictions` `423`, `PreparedSegment` `17`, `runtime_state` `79`, and `dict[str, Any]` `693`.
+
+Classification: encoded-cache hits are typed boundaries, serialized compatibility mappings, tests, configs, or current docs/specs; compact detection hits remain classified as no code refactor in this branch; prediction/eval, static packing, and Stage-2 runtime-state hits are owned by explicit follow-up plans; metric/logging and manifest maps remain intentionally dynamic where no stable contract wrapper was selected; analysis-script hits are local diagnostics; historical `progress/` and archived `openspec/changes/archive/` references were left unchanged.
+
+- [x] **Step 6: Final status summary**
 
 Run:
 
@@ -1619,6 +1704,40 @@ git log --oneline --decorate -5
 ```
 
 Expected: branch contains logically scoped commits for the audit/plan and implemented refactor slices.
+
+Observed before Task 11 docs commit on 2026-05-03:
+
+```bash
+git status --short --branch
+git log --oneline --decorate -5
+```
+
+Result:
+
+```text
+## codex/refactor-type-schema
+ffea19e (HEAD -> codex/refactor-type-schema) docs(plan): tighten stage2 runtime follow-up tests
+c53327a docs(audit): record stage2 runtime state decision
+6f9af97 docs(audit): align prediction alias recommendation
+729e820 docs(audit): record prediction eval schema decision
+be5c96a docs(plan): make static packing follow-up executable
+```
+
+Final branch status after this Task 11 docs-only commit is expected to be clean on `codex/refactor-type-schema`.
+
+Residual follow-up plans:
+
+- Static packing typed plan/manifest wrapper: `docs/superpowers/plans/2026-05-03-static-packing-schema-refactor.md`.
+- Prediction/eval canonical read adapter: `docs/superpowers/plans/2026-05-03-prediction-eval-record-adapter.md`.
+- Stage-2 checkpoint runtime-state typed wrapper: `docs/superpowers/plans/2026-05-03-stage2-runtime-state-schema-refactor.md`.
+
+Task 11 closure summary:
+
+- Implemented scope remains encoded-cache typed boundaries only: request, shard, manifest, producer/consumer normalization, and run-metadata wrapper boundaries.
+- Verified serialized contracts remain unchanged for `training.encoded_sample_cache.*`, cache `manifest.json`, and `run_metadata.json["encoded_sample_cache"]`.
+- Decision gates created executable follow-up plans for static packing, prediction/eval alias access, and Stage-2 checkpoint runtime state.
+- Broad scans classified remaining hits instead of converting them into unscoped production refactors.
+- No full repository-wide type cleanup is claimed by this branch.
 
 ## Self-Review
 
