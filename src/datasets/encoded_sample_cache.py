@@ -330,16 +330,25 @@ class EncodedSampleCacheManifest:
                     f"total mismatch{location}: expected={num_samples} "
                     f"observed={total_shard_count}"
                 )
-            next_start = 0
-            for shard in sorted(shards, key=lambda item: item.start):
-                if shard.start != next_start:
+            for expected_index, shard in enumerate(
+                sorted(shards, key=lambda item: item.start)
+            ):
+                if shard.shard_index != expected_index:
+                    raise ValueError(
+                        "Encoded sample cache complete manifest shard index "
+                        f"must match range order{location}: "
+                        f"expected={expected_index} observed={shard.shard_index}"
+                    )
+                expected_start = expected_index * shard_size
+                expected_end = min(expected_start + shard_size, num_samples)
+                if shard.start != expected_start or shard.end != expected_end:
                     raise ValueError(
                         "Encoded sample cache complete manifest shard range "
-                        "must be contiguous and non-overlapping"
-                        f"{location}: expected_start={next_start} "
-                        f"observed_start={shard.start}"
+                        "must align with shard index and shard_size"
+                        f"{location}: index={expected_index} "
+                        f"expected=[{expected_start}, {expected_end}) "
+                        f"observed=[{shard.start}, {shard.end})"
                     )
-                next_start = shard.end
 
         return cls(
             version=int(payload.get("version") or -1),

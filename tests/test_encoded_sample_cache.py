@@ -366,6 +366,58 @@ def test_encoded_sample_cache_manifest_roundtrips_serialized_payload(tmp_path) -
             lambda payload: payload.update({"num_samples": payload["num_samples"] + 1}),
             "complete manifest shard count",
         ),
+        (
+            lambda payload: payload.update(
+                {
+                    "num_samples": 1024,
+                    "shard_size": 512,
+                    "shards": [
+                        {
+                            **payload["shards"][0],
+                            "shard_index": 0,
+                            "start": 0,
+                            "end": 512,
+                            "count": 512,
+                        },
+                        {
+                            **payload["shards"][0],
+                            "shard_index": 2,
+                            "file": "shard-00002.pt",
+                            "start": 512,
+                            "end": 1024,
+                            "count": 512,
+                        },
+                    ],
+                }
+            ),
+            "complete manifest shard index",
+        ),
+        (
+            lambda payload: payload.update(
+                {
+                    "num_samples": 1024,
+                    "shard_size": 512,
+                    "shards": [
+                        {
+                            **payload["shards"][0],
+                            "shard_index": 1,
+                            "file": "shard-00001.pt",
+                            "start": 0,
+                            "end": 512,
+                            "count": 512,
+                        },
+                        {
+                            **payload["shards"][0],
+                            "shard_index": 0,
+                            "start": 512,
+                            "end": 1024,
+                            "count": 512,
+                        },
+                    ],
+                }
+            ),
+            "complete manifest shard index",
+        ),
     ],
 )
 def test_encoded_sample_cache_manifest_rejects_malformed_complete_payloads(
