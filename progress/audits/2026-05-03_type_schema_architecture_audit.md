@@ -166,9 +166,11 @@ Why it matters:
 Suggested checks:
 - Existing `tests/test_packing_wrapper.py` plan-cache tests plus manifest roundtrip assertions.
 
-### P2: Encoded-Sample Cache Producer/Run-Metadata Canonicalization Remains Partial
+### P2: Encoded-Sample Cache Producer/Run-Metadata Canonicalization
 
-Status: partially resolved by the initial encoded-cache internal-typing slice.
+Status: resolved for request, manifest, run-metadata, strict-config, and
+operator/spec compatibility boundaries. Cached sample payload dictionaries
+remain serialized cache internals, not a current cross-module refactor target.
 
 Evidence:
 - `src/datasets/encoded_sample_cache.py:140`
@@ -186,7 +188,7 @@ Resolved in the initial slice:
   rejected before cache reuse.
 - Existing JSON artifact keys and `EncodedSampleCacheStore.info()` keys are preserved.
 
-Remaining shape ambiguity:
+Rule-outs after the global regression gate:
 - `src/sft.py` still assembles an intermediate local encoded-cache request
   payload dictionary, but the producer boundary already returns
   `EncodedSampleCacheRequest.from_mapping(payload).to_mapping()`.
@@ -196,20 +198,25 @@ Remaining shape ambiguity:
 - `openspec/specs/encoded-training-cache/spec.md` now covers the current
   residency field, positive-bound default, and typed-internal/stable-artifact
   compatibility rule.
-- Cached sample payload records remain dictionaries and should be considered only after request/manifest/run-metadata boundaries are globally consistent.
+- Cached sample payload records remain dictionaries because they are serialized
+  cache internals; consider `EncodedSampleRecord` only if those records become
+  a cross-module domain contract.
 
 Recommended representation:
-- Extend the completed internal wrappers into the remaining producer boundary,
-  then consider `EncodedSampleRecord` only if sample payload dictionaries become
-  cross-module contracts rather than serialized cache internals.
+- No additional encoded-cache code change is needed from this audit gate. Keep
+  the existing dataclass wrappers at runtime/provenance boundaries and stable
+  JSON/YAML mappings at artifact/config boundaries.
 
 Why it matters:
-- Cache reuse and cross-rank correctness depend on stable request and manifest comparisons. The first slice preserved artifact compatibility, and the run-metadata wrapper now narrows one reporting seam; the producer seam still allows parallel dictionary shapes to drift.
+- Cache reuse and cross-rank correctness depend on stable request and manifest
+  comparisons. The completed slice preserves artifact compatibility while
+  preventing drift at the producer, store, manifest, run-metadata, and strict
+  config seams.
 
 Suggested checks:
 - Producer roundtrip tests in `tests/test_encoded_sample_cache_runtime_config.py`.
 - Run-metadata wrapper tests in `tests/test_run_metadata_file.py`.
-- Global encoded-cache hit classification after Task 0.
+- Global encoded-cache hit classification after Task 6.
 
 ### P2: Stage-2 Rollout Meta Is A Wide TypedDict With Nested Raw Concepts
 
@@ -443,3 +450,38 @@ Acceptance evidence:
 - `tests/test_encoded_sample_cache.py` includes red-green coverage for typed request normalization, manifest serialization/parsing, and malformed complete-manifest rejection before cache reuse.
 - Existing encoded-cache reuse, bypass, shard-eviction, and concurrent-load behavior still passes.
 - No existing cache artifact key is renamed.
+
+## Global Encoded-Cache Regression Gate
+
+Status: accepted on 2026-05-03 for the global encoded-cache consistency slice.
+
+Regression evidence:
+
+- `rtk conda run -n ms python -m pytest tests/test_encoded_sample_cache.py tests/test_encoded_sample_cache_runtime_config.py tests/test_run_metadata_file.py tests/test_training_config_strict_unknown_keys.py tests/test_stage1_static_packing_runtime_config.py tests/test_stage1_set_continuation_cache_policy.py tests/test_stage1_set_continuation_benchmark_profiles.py -q`
+  passed with `179 passed, 4 warnings in 2.44s`.
+- The four warnings were the pre-existing multiprocessing fork deprecation
+  warnings from encoded-cache static-packing tests.
+
+Search evidence:
+
+- Repository-wide encoded-cache search returned `566` hits across `45` files.
+- Production code: `151` hits in `7` files; all are typed runtime boundaries or
+  compatibility-preserving serialized payload keys.
+- Tests: `120` hits in `10` files; all are coverage for encoded-cache,
+  strict-config, run-metadata, set-continuation, stage2 profile/config, or
+  recursive detection wiring behavior.
+- Configs: `7` hits in `7` files; intentionally serialized
+  `training.encoded_sample_cache` YAML keys.
+- Current docs/spec: `212` hits in `8` files; operator docs, current
+  super-power plan/spec material, and the stable encoded-cache OpenSpec
+  contract.
+- Progress historical references: `37` hits in `3` files.
+- Active OpenSpec changes: `3` hits in `3` files; historical/current planning
+  context only, with no code-contract drift.
+- Archived OpenSpec: `36` hits in `7` files.
+
+Conclusion:
+
+- No encoded-cache inconsistency was found that requires code changes. Remaining
+  non-historical hits are updated typed boundaries, stable serialized
+  JSON/YAML keys, tests, or current docs/spec references.

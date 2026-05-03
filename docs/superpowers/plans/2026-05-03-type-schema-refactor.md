@@ -1097,7 +1097,7 @@ Task 5 evidence (2026-05-03):
 
 ## Task 6: Global Encoded-Cache Regression Gate
 
-- [ ] **Step 1: Run all encoded-cache and adjacent config tests**
+- [x] **Step 1: Run all encoded-cache and adjacent config tests**
 
 Run:
 
@@ -1115,7 +1115,14 @@ rtk conda run -n ms python -m pytest \
 
 Expected: PASS, allowing only pre-existing multiprocessing fork deprecation warnings.
 
-- [ ] **Step 2: Re-run repository-wide encoded-cache search**
+Observed 2026-05-03 on `34ed54a`: passed with `179 passed, 4 warnings in
+2.44s`. The only warnings were the pre-existing multiprocessing fork
+deprecation warnings from
+`tests/test_encoded_sample_cache.py::test_static_packing_reuses_cache_backed_dataset_after_full_length_probe`
+and
+`tests/test_encoded_sample_cache.py::test_static_packing_prefers_cache_backed_length_helper_over_dataset_getitem`.
+
+- [x] **Step 2: Re-run repository-wide encoded-cache search**
 
 Run:
 
@@ -1127,34 +1134,41 @@ rg -n "encoded_sample_cache|EncodedSampleCache|setup_encoded_sample_cache_for_da
 
 Expected: every non-historical hit is either updated, intentionally left serialized as JSON/YAML, or documented in the audit rule-out table.
 
-- [ ] **Step 3: Commit encoded-cache global consistency slice**
+Observed 2026-05-03 on `34ed54a`: `566` hits across `45` files, classified as:
+
+- production code: `151` hits in `7` files; typed runtime boundaries or
+  compatibility-preserving serialized payload keys in `src/bootstrap`,
+  `src/config`, `src/datasets`, and `src/sft.py`.
+- tests: `120` hits in `10` files; encoded-cache contract, strict-config,
+  run-metadata, stage1 set-continuation, stage2 config/profile, and recursive
+  detection wiring coverage.
+- configs: `7` hits in `7` YAML files; intentionally serialized
+  `training.encoded_sample_cache` config keys.
+- current docs/spec: `212` hits in `8` files; operator docs, current
+  super-power plan/spec material, and stable encoded-cache OpenSpec contract.
+- progress historical references: `37` hits in `3` files.
+- active OpenSpec changes: `3` hits in `3` files; historical/current planning
+  context only, not code-contract drift.
+- archived OpenSpec: `36` hits in `7` files.
+
+No inconsistency was found that required code changes. The remaining
+non-historical hits are updated typed boundaries, compatibility-preserving
+serialized JSON/YAML keys, test coverage, or current docs/spec references.
+
+- [x] **Step 3: Commit encoded-cache global consistency slice**
 
 Run:
 
 ```bash
 git diff --check
 git add \
-  src/datasets/encoded_sample_cache.py \
-  src/sft.py \
-  src/bootstrap/run_metadata.py \
-  src/config/schema.py \
-  tests/test_encoded_sample_cache.py \
-  tests/test_encoded_sample_cache_runtime_config.py \
-  tests/test_run_metadata_file.py \
-  tests/test_training_config_strict_unknown_keys.py \
-  tests/test_stage1_static_packing_runtime_config.py \
-  openspec/specs/encoded-training-cache/spec.md \
-  docs/data/PACKING.md \
   progress/audits/2026-05-03_type_schema_architecture_audit.md \
-  progress/audits/README.md \
-  progress/index.yaml \
-  docs/catalog.yaml \
-  docs/superpowers/plans/2026-05-03-type-schema-refactor.md \
-  docs/superpowers/specs/2026-05-03-type-schema-refactor-design.md
-git commit -m "refactor: type encoded sample cache contracts"
+  docs/superpowers/plans/2026-05-03-type-schema-refactor.md
+git commit -m "docs(audit): record encoded cache regression gate"
 ```
 
-Expected: commit includes only global encoded-cache consistency work and audit/plan updates.
+Expected: commit includes only Task 6 plan/audit evidence updates unless the
+gate finds a real encoded-cache inconsistency.
 
 ## Task 7: Compact Detection Schema Classification Gate
 
