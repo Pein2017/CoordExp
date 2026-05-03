@@ -1292,7 +1292,7 @@ Observed 2026-05-03: not needed because the selected decision was no compact-det
 
 ## Task 8: Static Packing Schema Decision Gate
 
-- [ ] **Step 1: Inspect static-packing symbols**
+- [x] **Step 1: Inspect static-packing symbols**
 
 Run:
 
@@ -1304,7 +1304,13 @@ rg -n "Packed|packing_plan|pack_plan|static_packing|manifest|INDEX.json|raw_plan
 
 Expected: audit report lists the static-packing domain concepts and current representation.
 
-- [ ] **Step 2: Record the decision gate outcome**
+Observed 2026-05-03:
+
+- Required scan was run with `rtk rg -n "Packed|packing_plan|pack_plan|static_packing|manifest|INDEX.json|raw_plan|aligned_plan" ...`.
+- Static-packing domain concepts found: raw plan, DDP-aligned plan, plan checksums, fingerprinted plan cache, setup `INDEX.json`, length cache, `StaticPackedCaptionDataset`, train/eval static cache roots, and SFT logging/metadata consumption of plan fields.
+- Current representation is list-of-list plan payloads plus ad hoc JSON cache/index mappings in `src/datasets/wrappers/packed_caption.py`, exposed as dataset attributes and consumed by `src/sft.py`.
+
+- [x] **Step 2: Record the decision gate outcome**
 
 Record exactly one of these outcomes in `progress/audits/2026-05-03_type_schema_architecture_audit.md`:
 
@@ -1318,11 +1324,19 @@ or:
 - Static packing decision: defer; current raw containers are local scratch data or already guarded by tests, and the global encoded-cache contract is the only affected cache refactor in this branch.
 ```
 
-- [ ] **Step 3: Create a separate implementation plan if needed**
+Observed 2026-05-03:
+
+```markdown
+- Static packing decision: implement typed `StaticPackingPlan` / `StaticPackingManifest` in this branch because raw plans cross module boundaries.
+```
+
+- [x] **Step 3: Create a separate implementation plan if needed**
 
 If the decision is to implement static-packing typed wrappers, stop this plan at the decision gate and create a follow-up super-power plan that names exact files, exact test bodies, implementation snippets, and verification commands. Do not implement static-packing code from this decision gate.
 
-- [ ] **Step 4: Run existing tests when deferring or before writing the follow-up plan**
+Observed 2026-05-03: created follow-up plan `docs/superpowers/plans/2026-05-03-static-packing-schema-refactor.md`. No static-packing code, tests, or operator docs were modified by this decision gate.
+
+- [x] **Step 4: Run existing tests when deferring or before writing the follow-up plan**
 
 Run:
 
@@ -1334,6 +1348,8 @@ rtk conda run -n ms python -m pytest \
 ```
 
 Expected: PASS.
+
+Observed 2026-05-03: `78 passed, 10 warnings in 2.44s`. The warnings were multiprocessing fork deprecation warnings from `tests/test_packing_wrapper.py`.
 
 ## Task 9: Prediction And Evaluation Record Schema Decision Gate
 

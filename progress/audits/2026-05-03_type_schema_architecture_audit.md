@@ -56,8 +56,10 @@ This table is intentionally partial until Task 0 is executed against the merged 
 | compact-detection | `src/detection/evaluation.py` and `src/trainers/metrics/mixins.py` | detection metrics and evaluation summary payloads | `DetectionTemplateEvalManifest` dataclass owns parser/metric-surface manifest; strict parsers return canonical assistant payload mappings; trainer mixin logs dynamic recursive CE metric maps from typed loss results and typed batch sidecars | metrics/eval | low; metric maps are intentionally dynamic logging payloads with typed upstream state | dynamic metric/logging map | none |
 | compact-detection | `src/sft.py` | latest detection runtime orchestration, prompt shim, dataset selection, packing/cache rejection, and static-packing fingerprint interaction | orchestration glue consumes `LatestDetectionTrainingConfig`, constructs local runtime/provenance dictionaries, rejects latest recursive detection packing and encoded-sample cache until sidecar fingerprints exist, and passes typed detection datasets/sidecars to trainer setup | training orchestration/runtime support | low; raw containers are local runtime/provenance assembly or stable serialized metadata, with no encoded-cache contract overlap requiring Tasks 3-6 changes | local scratch container | none |
 | compact-detection | `docs/superpowers/plans/2026-05-02-training-infra-template-mode-refactor.md` | recursive detection production-launch constraints | baseline launch/provenance plan documenting constraints and observed smoke/production status; not a refactor target | launch/provenance document | low if left baseline-owned; medium only if unrelated refactor edits overwrite launch status | historical-only reference | none |
+| static-packing | `src/datasets/wrappers/packed_caption.py::_build_raw_pack_plan`, `_align_pack_plan_for_ddp`, `_read_plan_cache`, `_persist_plan_cache`, `StaticPackedCaptionDataset`; `src/sft.py` train/eval static-packing logging | static raw plan, DDP-aligned plan, plan checksums, fingerprinted plan cache, setup index, and train/eval runtime plan metadata | raw `list[list[int]]` plans plus ad hoc JSON payloads for plan cache and `INDEX.json`; `StaticPackedCaptionDataset` exposes list/checksum/alignment fields consumed by SFT | packing/artifact/runtime metadata | medium; cache artifacts are reproducibility truth and raw plan/checksum fields cross the wrapper/SFT boundary | cross-module domain object needing refactor | `docs/superpowers/plans/2026-05-03-static-packing-schema-refactor.md` |
 
 - Compact detection decision: no code refactor in this branch; merged compact detection contracts are already sufficiently typed or intentionally serialized, and remaining raw containers are local scratch or dynamic metrics.
+- Static packing decision: implement typed `StaticPackingPlan` / `StaticPackingManifest` in this branch because raw plans cross module boundaries.
 
 ## Post-Merge Priority Order
 
@@ -171,6 +173,14 @@ Why it matters:
 
 Suggested checks:
 - Existing `tests/test_packing_wrapper.py` plan-cache tests plus manifest roundtrip assertions.
+
+Task 8 decision-gate update:
+
+- Domain concepts inspected: raw static pack plan, DDP-aligned plan, raw/aligned plan checksums, plan-cache fingerprint, plan-cache manifest payload, setup `INDEX.json`, per-split cache root, length cache, DDP padding fields, fill/stat counters, and SFT train/eval runtime logging fields.
+- Current representation: `src/datasets/wrappers/packed_caption.py` builds and aligns plans as `list[list[int]]`, persists plan-cache JSON as an ad hoc `dict[str, Any]`, validates setup `INDEX.json` through raw mappings, and constructs `StaticPackedCaptionDataset` with public raw list/checksum/alignment/stat attributes. `src/sft.py` consumes those dataset attributes for train/eval logging.
+- Decision: implement typed `StaticPackingPlan` / `StaticPackingManifest` in this branch because raw plans cross module boundaries.
+- Follow-up plan: `docs/superpowers/plans/2026-05-03-static-packing-schema-refactor.md`.
+- Verification before follow-up planning: `rtk conda run -n ms python -m pytest tests/test_packing_wrapper.py tests/test_stage1_static_packing_runtime_config.py -q` passed with `78 passed, 10 warnings in 2.44s`; warnings were multiprocessing fork deprecation warnings from `tests/test_packing_wrapper.py`.
 
 ### P2: Encoded-Sample Cache Producer/Run-Metadata Canonicalization
 
