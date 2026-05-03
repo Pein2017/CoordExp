@@ -4,11 +4,11 @@ layer: docs
 doc_type: reference
 status: canonical
 domain: data
-summary: Packing policy, defaults, and efficiency tradeoffs.
-updated: 2026-05-02
+summary: Surface-specific packing policy, hard caps, cache behavior, and efficiency tradeoffs.
+updated: 2026-05-03
 ---
 
-# Packing Mode Guide (Default: 12k, eff_bs=12)
+# Packing Policy Matrix
 
 Note:
 - This guide applies to baseline SFT runs (stage_1 style) where training uses standard
@@ -27,7 +27,20 @@ Note:
     - This may select a shorter current pack than FIFO-greedy when it reduces the overall number of packs for the per-step pool.
 - Stage-2 runbook: [`../training/STAGE2_RUNBOOK.md`](../training/STAGE2_RUNBOOK.md).
 
-Stage-1 packing guardrails (current implementation):
+## Current Surface Matrix
+
+| Surface | Length cap | Effective batch | Packing support | Notes |
+|---|---:|---:|---|---|
+| Stage-1 baseline `configs/stage1/sft_base.yaml` | `12000` | `32` | static dataset packing | Uses `training.packing: true` and `training.eval_packing: true` where supported. |
+| Stage-1 shared 4B coord recipes | `12000` | `128` | static dataset packing | Match comparisons by samples/epochs and record exact config. |
+| Stage-1 set-continuation ET-RMP-CE | production-specific | `128` | disabled/rejected | Prefix-conditioned full-suffix rows are sampled at runtime; dataset packing would mix independent prefix/object states. |
+| Stage-1 compact recursive detection latest | `12000` | `128` | disabled | Packing remains disabled until sidecar target-position offset rewriting is implemented and validated. |
+| Stage-2 two-channel base | `12000` | `64` | post-rollout trainer packing | Rollout generation remains padded/unpacked; each post-rollout `Y_train` is atomic. |
+| Historical 12k packing probe | `12000` | `12` | historical probe | Useful as prior efficiency evidence, not the global default. |
+
+## Stage-1 Packing Guardrails
+
+Current implementation:
 - Stage-1 dataset-level packing requires `training.packing_mode: static` (default). `training.packing_mode: dynamic` is deprecated/unsupported and fails fast.
 - If you need multi-dataset mixing *and* Stage-1 static packing, materialize an offline merged JSONL first. Runtime fusion config authoring is temporarily disabled in the canonical training surface.
 - Static packing may forward `set_epoch` into the raw dataset only for length-invariant per-epoch changes such as `custom.object_ordering: random`; `raw_plan` and `aligned_plan` stay fixed across epochs for eligible datasets.
@@ -69,13 +82,13 @@ Stage-1 packing guardrails (current implementation):
   close sequence `]}` and therefore requires one un-packed assistant response
   per row.
 
-## Why this is the new default
+## Historical 12k Packing Probe
 - Dramatically cuts padding waste (≈0% slack vs ~40–50% with padding).
 - Keeps per-update scale close to padding: ~117 base samples/update vs 128 baseline.
 - Safer memory headroom on A100 80GB than 20k while still reducing micro-steps ~5×.
 - Covers >99.9% of LVIS samples without truncation (p99 text length ~11k).
 
-## Recommended training knobs
+## Historical Probe Knobs
 ```
 global_max_length: 12000
 per_device_train_batch_size: 1
@@ -108,7 +121,7 @@ conda run -n ms python scripts/analysis/token_length_analysis.py \
 - Outputs mean/median/p95/p99, histograms, and packing sims for 12k/16k/20k with world=4, per_device=1.
 - Adjust `--pack-lengths` to explore other caps; set `--per-device-train-batch` if changing per-device batch.
 
-## When to try 20k
+## When to Revisit 20k
 - If profiling shows higher tokens/sec end-to-end and memory is stable, you may raise `global_max_length` to 20000 while keeping `effective_batch_size: 12` and per_device=1.
 - Expect fewer opt steps (~688/epoch) but heavier attention; watch for OOM and step-time regression.
 

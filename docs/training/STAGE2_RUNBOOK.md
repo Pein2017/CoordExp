@@ -270,7 +270,7 @@ Rollout-aligned note:
 
 ## Historical Context
 
-Use [docs/training/STAGE2_DESIGN.md](STAGE2_DESIGN.md) and
-[progress/diagnostics/stage2_channel_a_self_context_iter_ablation_2026-03-20.md](../../progress/diagnostics/stage2_channel_a_self_context_iter_ablation_2026-03-20.md)
+Use the historical-context note in this runbook and
+[progress/diagnostics/2026-03-20_stage2_channel_a_self_context_iter_ablation.md](../../progress/diagnostics/2026-03-20_stage2_channel_a_self_context_iter_ablation.md)
 for the removed self-context iteration rationale. They are historical context,
 not active launch guidance.

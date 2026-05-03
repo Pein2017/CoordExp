@@ -5,7 +5,7 @@ doc_type: reference
 status: canonical
 domain: training
 summary: Stage-1 objective surfaces and coord-token training behavior.
-updated: 2026-05-02
+updated: 2026-05-03
 ---
 
 # Coord Objective & Adapter
@@ -33,7 +33,8 @@ Scope note:
   - `custom.trainer_variant: stage1_set_continuation`
   - `custom.stage1_set_continuation.*`
   - top-level `benchmark.*`
-  - `configs/stage1/set_continuation/production.yaml`
+  - `configs/stage1/set_continuation/production.yaml` for the legacy-compatible ET-RMP-CE continuation surface
+  - `configs/stage1/recursive_detection_ce_latest/prod/compact_full_support2.yaml` for the compact recursive detection latest-schema surface
   - `objective.mode: entry_trie_rmp_ce`
   - support/balance reweighted entry-trie multi-positive token CE
   - full-suffix teacher-forced hard CE for schema, control, separator, close,
@@ -50,38 +51,7 @@ Scope note:
     rollout/Stage-2 surfaces are intentionally out of scope and should be
     treated as invalid for that experiment
 
-## Current Mechanism Note
-
-Inference-only duplication studies on existing `merged` checkpoints now support
-a more specific rollout-risk framing than the earlier generic "attention drifts
-away from vision" explanation:
-
-- the strongest onset-local separator is the early coordinate escape behavior at
-  `x1` and `y1`
-- healthy same-desc continuations usually evacuate probability mass away from
-  the previous or local bbox neighborhood quickly
-- duplicated continuations often keep `x1` / `y1` diffuse, high-entropy, or
-  locally sticky long enough for rollout history to lock the model into a
-  repeated-object basin
-- late history overwrite still matters, but current control evidence suggests
-  it is better treated as a secondary amplifier than as the sole root cause
-
-Working interpretation:
-
-- `softCE`, `W1`, and expectation-decoded geometry can preserve smooth local
-  coordinate structure that looks acceptable under teacher forcing
-- during rollout, that same local smoothness can lower the escape barrier
-  between nearby same-desc instances
-- once the model fails to separate from the previous or local basin at
-  `coord_x1` / `coord_y1`, prior generated coord tokens and recent history can
-  make duplication self-reinforcing
-
-This does **not** yet prove that clean from-scratch pure CE fully solves the
-problem. The current CE-side references on disk remain continuation-style
-proxies unless a token-compatible pure-CE checkpoint is evaluated under the
-same onset-local protocol.
-
-## Current Mechanism Note
+## Current Mechanism Note (Interpretation, Not Stable Contract)
 
 Inference-only duplication studies on existing `merged` checkpoints now support
 a more specific rollout-risk framing than the earlier generic "attention drifts

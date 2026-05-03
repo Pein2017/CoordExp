@@ -110,18 +110,6 @@ Interpretation note:
 - `bbox_size_aux/mean_height`
 - `bbox_size_aux/mean_log_area`
 
-### BBox Geometry Aux
-
-- `loss/geo/bbox_geo`
-- `loss/geo/bbox_smoothl1`
-- `loss/geo/bbox_ciou`
-- `bbox_geo/loss_per_sample`
-- `bbox_geo/groups_total`
-- `bbox_geo/groups_per_sample`
-- `bbox_geo/coord_slots_total`
-- `bbox_geo/skipped_incomplete_rows`
-- `bbox_geo/skipped_incomplete_coord_slots`
-
 ### Token-Type Aggregates And Coord Monitors
 
 - shared token aggregates:
@@ -520,4 +508,4 @@ current contract surfaces.
 
 The deprecation rationale lives in:
 
-- `progress/diagnostics/stage2_channel_a_self_context_iter_ablation_2026-03-20.md`
+- `progress/diagnostics/2026-03-20_stage2_channel_a_self_context_iter_ablation.md`
