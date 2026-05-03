@@ -12,6 +12,10 @@ from src.detection.data import (
     normalize_detection_row,
     parse_raw_detection_row,
 )
+from src.detection.dataset import (
+    DetectionDatasetRuntimeConfig,
+    DetectionTrainingDataset,
+)
 from src.detection.loss import (
     RecursiveDetectionLossResult,
     RecursiveDetectionLossWeights,
@@ -74,6 +78,8 @@ __all__ = [
     "CompactFullTemplate",
     "CoordinateTokenBox",
     "DetectionSequenceTemplate",
+    "DetectionDatasetRuntimeConfig",
+    "DetectionTrainingDataset",
     "DetectionTrainingMode",
     "DetectionMetadata",
     "LossAtom",

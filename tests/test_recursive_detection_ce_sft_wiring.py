@@ -6,7 +6,12 @@ from types import SimpleNamespace
 
 import pytest
 
-from src.sft import _resolve_recursive_detection_ce_cfg
+from src.config.loader import ConfigLoader
+from src.config.schema import LatestDetectionTrainingConfig
+from src.sft import (
+    _assert_latest_detection_runtime_supported,
+    _resolve_recursive_detection_ce_cfg,
+)
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -79,3 +84,38 @@ def test_sft_live_bootstrap_attaches_recursive_ce_cfg_to_trainer() -> None:
         and call.args[1].value == "recursive_detection_ce_cfg"
         for call in setattr_calls
     )
+
+
+def test_sft_live_bootstrap_can_construct_latest_detection_dataset() -> None:
+    tree = ast.parse(SFT_PATH.read_text(encoding="utf-8"))
+    from_jsonl_calls = [
+        node
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Attribute)
+        and node.func.attr == "from_jsonl"
+        and isinstance(node.func.value, ast.Name)
+        and node.func.value.id == "DetectionTrainingDataset"
+    ]
+
+    assert from_jsonl_calls
+    assert any(
+        kw.arg == "swift_template"
+        for call in from_jsonl_calls
+        for kw in call.keywords
+    )
+
+
+def test_sft_rejects_latest_recursive_detection_packing_preflight_config() -> None:
+    config_path = (
+        REPO_ROOT
+        / "configs/stage1/recursive_detection_ce_latest/smoke/compact_full_packing_unsupported.yaml"
+    )
+    cfg = ConfigLoader.load_materialized_training_config(str(config_path))
+
+    assert isinstance(cfg, LatestDetectionTrainingConfig)
+    with pytest.raises(ValueError, match="packing=false"):
+        _assert_latest_detection_runtime_supported(
+            cfg,
+            encoded_sample_cache_cfg=SimpleNamespace(enabled=False),
+        )

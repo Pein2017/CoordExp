@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field, replace
 from enum import Enum
-from typing import Literal, Mapping, Sequence
+from typing import Any, Literal, Mapping, Sequence
 
 from src.detection.data import NormalizedDetectionSample, ObjectOrderingPlan
 from src.detection.template import DetectionSequenceTemplate, RenderedAssistantSequence
@@ -183,6 +183,9 @@ def prepare_detection_training_example(
     mode: DetectionTrainingMode,
     state_weighting: StateWeightingStrategy = "uniform_permutation",
     normalization: LossNormalizationStrategy = "semantic_image_bucket_balanced",
+    system_prompt: str | None = None,
+    user_content: str = "<image>",
+    messages: Sequence[Mapping[str, Any]] | None = None,
 ) -> PreparedDetectionExample:
     """Build a single prepared SFT example from a normalized detection sample."""
 
@@ -197,6 +200,9 @@ def prepare_detection_training_example(
     tokenized = tokenize_rendered_detection_conversation(
         rendered_assistant,
         tokenizer=tokenizer,
+        system_prompt=system_prompt,
+        user_content=user_content,
+        messages=messages,
     )
 
     # attaching recursive trie metadata only for recursive detection CE
