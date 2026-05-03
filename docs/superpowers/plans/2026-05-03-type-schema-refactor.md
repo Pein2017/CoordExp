@@ -1353,7 +1353,7 @@ Observed 2026-05-03: `78 passed, 10 warnings in 2.44s`. The warnings were multip
 
 ## Task 9: Prediction And Evaluation Record Schema Decision Gate
 
-- [ ] **Step 1: Inspect prediction ingestion aliases**
+- [x] **Step 1: Inspect prediction ingestion aliases**
 
 Run:
 
@@ -1365,7 +1365,13 @@ rg -n "\"pred\"|\"predictions\"|\"objects\"|gt_vs_pred|Prediction|Detection|metr
 
 Expected: audit report identifies all readers/writers of `pred`, `predictions`, and `objects`.
 
-- [ ] **Step 2: Record the adapter decision**
+Observed 2026-05-03:
+
+- Required scan was run exactly with `rg -n "\"pred\"|\"predictions\"|\"objects\"|gt_vs_pred|Prediction|Detection|metrics.json|scored" src/infer src/eval scripts tests --glob '!output/**' --glob '!temp/**'`.
+- Inspected representation groups: canonical inference writer in `src/infer/engine.py`, eval readers in `src/eval/detection.py`, confidence post-op in `src/eval/confidence_postop.py`, constant-score materialization in `src/eval/artifacts.py`, proxy GT filtering in `src/eval/proxy_views.py`, proxy bundle orchestration in `src/eval/proxy_eval_bundle.py`, focused eval/infer tests, and analysis scripts that use local scratch dictionaries.
+- Current representation classification: inference serialized artifacts intentionally use canonical `pred`; evaluator and duplicate-control paths accept `pred` then legacy `predictions`; confidence post-op and constant-score materialization read only `pred`; GT ingestion accepts `gt` or `objects`; `pred_confidence.jsonl` local `objects` and `metrics.json` metrics/counters are separate serialized/dynamic artifact surfaces; analysis-script `pred` and `objects` hits are local scratch or diagnostics.
+
+- [x] **Step 2: Record the adapter decision**
 
 Record one concrete decision in `progress/audits/2026-05-03_type_schema_architecture_audit.md`:
 
@@ -1379,11 +1385,21 @@ or:
 - Prediction/eval decision: defer code changes; current alias behavior remains documented as a risk until a dedicated eval-artifact contract plan owns migration or rejection semantics.
 ```
 
-- [ ] **Step 3: Create a separate implementation plan if needed**
+Observed 2026-05-03:
+
+```markdown
+- Prediction/eval decision: implement a canonical read adapter before metric changes; the adapter will preserve serialized record mappings while standardizing read access for `pred`, `predictions`, and `objects`.
+```
+
+Rationale: current alias behavior is not uniformly centralized. Eval and duplicate-control already accept legacy `predictions`, while confidence post-op and constant-score scoring read only canonical `pred`. A read adapter is the smallest follow-up before metric changes because it can preserve serialized artifact compatibility while making read semantics shared.
+
+- [x] **Step 3: Create a separate implementation plan if needed**
 
 If the decision is to implement a canonical prediction/eval adapter, stop this plan at the decision gate and create a follow-up super-power plan that names exact files, exact test bodies, implementation snippets, and verification commands. Do not implement eval adapter code from this decision gate.
 
-- [ ] **Step 4: Run eval/infer baseline tests**
+Observed 2026-05-03: created follow-up plan `docs/superpowers/plans/2026-05-03-prediction-eval-record-adapter.md`. This Task 9 gate did not implement adapter code, did not modify production Python code, and did not change metric semantics or artifact key names.
+
+- [x] **Step 4: Run eval/infer baseline tests**
 
 Run:
 
@@ -1397,6 +1413,8 @@ rtk conda run -n ms python -m pytest \
 ```
 
 Expected: PASS.
+
+Observed 2026-05-03: `rtk conda run -n ms python -m pytest tests/test_detection_eval_ingestion_diagnostics.py tests/test_unified_infer_pipeline.py tests/test_confidence_postop.py tests/test_proxy_eval_bundle.py -q` passed with `57 passed in 0.58s`.
 
 ## Task 10: Stage-2 And Teacher-Forcing Runtime State Decision Gate
 
