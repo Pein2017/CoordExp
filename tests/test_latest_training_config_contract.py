@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 import yaml
 
+from src.config.loader import ConfigLoader
 from src.config.schema import LatestDetectionTrainingConfig
 
 
@@ -410,3 +412,157 @@ def test_recursive_detection_ce_fixture_parses() -> None:
     assert cfg.objective.trie_balance_weight == 1.0
     assert cfg.objective.state_weighting == "uniform_permutation"
     assert cfg.objective.normalization == "semantic_image_bucket_balanced"
+
+
+def test_config_loader_materializes_latest_detection_config_without_custom(
+    tmp_path: Path,
+) -> None:
+    payload = _latest_payload()
+    payload["training"] = {
+        "run_name": "latest-loader",
+        "num_train_epochs": 1,
+        "output_root": str(tmp_path / "runs"),
+        "logging_root": str(tmp_path / "logs"),
+        "artifact_subdir": "latest-loader",
+    }
+    config_path = tmp_path / "latest.yaml"
+    config_path.write_text(yaml.safe_dump(payload), encoding="utf-8")
+
+    cfg = ConfigLoader.load_materialized_training_config(str(config_path))
+
+    assert isinstance(cfg, LatestDetectionTrainingConfig)
+    assert not hasattr(cfg, "custom")
+    assert cfg.data.train_jsonl.endswith("train.coord.jsonl")
+
+
+def test_config_loader_builds_train_arguments_from_latest_runtime_sections(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    payload = _latest_payload()
+    payload["training"] = {
+        "run_name": "latest-train-args",
+        "num_train_epochs": 1,
+        "per_device_train_batch_size": 2,
+        "effective_batch_size": 4,
+        "output_root": str(tmp_path / "runs"),
+        "logging_root": str(tmp_path / "logs"),
+        "artifact_subdir": "latest-train-args",
+    }
+    cfg = LatestDetectionTrainingConfig.from_mapping(payload)
+
+    captured: dict[str, object] = {}
+
+    class FakeTrainArguments:
+        def __init__(self, **kwargs: object) -> None:
+            captured.update(kwargs)
+            self.training_args = SimpleNamespace()
+            for key, value in kwargs.items():
+                setattr(self, key, value)
+
+    monkeypatch.setattr("src.config.loader.TrainArguments", FakeTrainArguments)
+    monkeypatch.setattr("src.config.loader.RLHFArguments", FakeTrainArguments)
+    monkeypatch.setattr("src.config.loader.get_dist_setting", lambda: (0, 0, 1, 1))
+
+    train_args = ConfigLoader.build_train_arguments(cfg)
+
+    assert isinstance(train_args, FakeTrainArguments)
+    assert captured["model"] == payload["model"]["model"]  # type: ignore[index]
+    assert "train_jsonl" not in captured
+    assert "val_jsonl" not in captured
+    assert "image_root" not in captured
+    assert captured["gradient_accumulation_steps"] == 2
+
+
+def test_latest_recursive_detection_launch_configs_parse_without_custom() -> None:
+    config_paths = [
+        REPO_ROOT
+        / "configs/stage1/recursive_detection_ce_latest/prod/compact_full_support2.yaml",
+        REPO_ROOT
+        / "configs/stage1/recursive_detection_ce_latest/smoke/compact_full_tiny.yaml",
+        REPO_ROOT
+        / "configs/stage1/recursive_detection_ce_latest/smoke/compact_full_prodlike_single_gpu.yaml",
+        REPO_ROOT
+        / "configs/stage1/recursive_detection_ce_latest/smoke/compact_full_ddp8_preflight.yaml",
+    ]
+
+    for config_path in config_paths:
+        cfg = ConfigLoader.load_materialized_training_config(str(config_path))
+        assert isinstance(cfg, LatestDetectionTrainingConfig)
+        assert not hasattr(cfg, "custom")
+        assert cfg.model["model"] == "model_cache/models/Qwen/Qwen3-VL-2B-Instruct-coordexp"
+        assert cfg.data.object_ordering == "random_permutation"
+        assert cfg.detection_template.id == "compact_full"
+        assert cfg.objective.variant == "random_permutation_et_rmp_ce"
+        assert cfg.objective.trie_support_weight == 2.0
+        assert cfg.objective.trie_balance_weight == 1.0
+        assert cfg.packing.static_packing is False
+        assert cfg.packing.padding_free_packed is False
+        assert cfg.training["packing"] is False
+
+
+def test_latest_recursive_detection_1p0_control_config_parses() -> None:
+    cfg = ConfigLoader.load_materialized_training_config(
+        str(
+            REPO_ROOT
+            / "configs/stage1/recursive_detection_ce_latest/smoke/compact_full_ddp8_et_rmp_1p0_1p0.yaml"
+        )
+    )
+
+    assert isinstance(cfg, LatestDetectionTrainingConfig)
+    assert cfg.objective.id == "recursive_detection_ce"
+    assert cfg.objective.variant == "random_permutation_et_rmp_ce"
+    assert cfg.objective.trie_support_weight == 1.0
+    assert cfg.objective.trie_balance_weight == 1.0
+    assert cfg.objective.state_weighting == "uniform_permutation"
+    assert cfg.objective.normalization == "semantic_image_bucket_balanced"
+    assert cfg.training["packing"] is False
+    assert cfg.packing.static_packing is False
+    assert cfg.packing.padding_free_packed is False
+
+
+def test_latest_compact_sft_smoke_configs_parse_with_hard_ce_objectives() -> None:
+    expected = {
+        "compact_full_sorted_sft.yaml": ("sorted", "sorted_sft", True),
+        "compact_full_random_sft.yaml": (
+            "random_permutation",
+            "random_order_sft",
+            False,
+        ),
+        "compact_full_random_sft_prompt_variant.yaml": (
+            "random_permutation",
+            "random_order_sft",
+            True,
+        ),
+    }
+
+    for file_name, (ordering, variant, prompt_variant) in expected.items():
+        cfg = ConfigLoader.load_materialized_training_config(
+            str(
+                REPO_ROOT
+                / "configs/stage1/recursive_detection_ce_latest/smoke"
+                / file_name
+            )
+        )
+        assert isinstance(cfg, LatestDetectionTrainingConfig)
+        assert cfg.objective.id == "sft"
+        assert cfg.objective.variant == variant
+        assert cfg.objective.trie_support_weight == 0.0
+        assert cfg.objective.trie_balance_weight == 0.0
+        assert cfg.objective.normalization == "token_mean"
+        assert cfg.data.object_ordering == ordering
+        assert cfg.prompt.prompt_variant_enabled is prompt_variant
+
+
+def test_latest_recursive_detection_packing_preflight_config_is_failfast_only() -> None:
+    config_path = (
+        REPO_ROOT
+        / "configs/stage1/recursive_detection_ce_latest/smoke/compact_full_packing_unsupported.yaml"
+    )
+
+    cfg = ConfigLoader.load_materialized_training_config(str(config_path))
+
+    assert isinstance(cfg, LatestDetectionTrainingConfig)
+    assert cfg.training["packing"] is True
+    assert cfg.packing.static_packing is True
+    assert cfg.packing.padding_free_packed is False

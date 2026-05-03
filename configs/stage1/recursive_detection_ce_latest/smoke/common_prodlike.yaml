@@ -1,0 +1,17 @@
+# Runtime-only overrides for production-like latest recursive CE smoke runs.
+# Do not override objective/template/checkpoint/optimizer knobs here.
+training:
+  output_root: temp/recursive_detection_ce_latest/output
+  logging_root: temp/recursive_detection_ce_latest/tb
+  save_strategy: "no"
+  save_last_epoch: false
+  eval_strategy: "no"
+  logging_steps: 1
+  logging_first_step: true
+  dataloader_num_workers: 0
+  dataloader_pin_memory: false
+  dataloader_persistent_workers: false
+  dataloader_prefetch_factor: null
+
+debug:
+  enabled: true
