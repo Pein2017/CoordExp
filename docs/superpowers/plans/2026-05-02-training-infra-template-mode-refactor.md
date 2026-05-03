@@ -626,8 +626,8 @@ Metrics to collect:
 - [ ] Gate 7 review after state weighting and normalization diagnostics pass.
 - [ ] Gate 8 review after packing and strict parsing contracts pass.
 - [ ] Gate 9 review before launching any full training ablation.
-- [ ] Gate 10 review after smoke/preflight runs pass and all critical fixes are landed.
-- [ ] Gate 11 review after production training is launched in `tmux` and early metrics are healthy.
+- [x] Gate 10 review after smoke/preflight runs pass and all critical fixes are landed.
+- [x] Gate 11 review after production training is launched in `tmux` and early metrics are healthy.
 
 Each gate review should include exact changed files, commands run, test output summary, any mathematical deviations, and unresolved risks.
 
@@ -770,6 +770,83 @@ Expected output:
 - [ ] Production launch report with tmux session name, command, config path, output directory, checkpoint/root path, GPU usage, early metrics, and current status.
 - [ ] Confirmation that early behavior is healthy, or a stop/diagnosis report if the run is halted.
 - [ ] No production run is marked successful until artifacts include resolved config, runtime manifests, logs, early metrics, and checkpoint/output paths.
+
+### Execution Report: 2026-05-03 Latest Compact ET-RMP-CE Launch
+
+Status: production training launched in `tmux` after latest-schema smoke/preflight passed.
+
+Implementation verification:
+
+- `rtk conda run -n ms python -m pytest ... -q`: `270 passed in 3.00s`.
+- `rtk conda run -n ms python -m ruff check ...`: `All checks passed!`.
+- Focused config/sft/dataset guard after launch-config edits: `55 passed in 0.94s`.
+- Latest launch configs parse as `LatestDetectionTrainingConfig` and reject public `custom`.
+
+Raw-data preflight:
+
+- Train full existence validation: `117247` valid samples, `848656` objects, `0` missing images, `0` invalid bboxes.
+- Train open/size spot-check: `256` images opened, `0` failures, `0` size mismatches.
+- Val full open/size validation: `4951` valid samples, `36273` objects, `0` open failures, `0` size mismatches.
+
+Smoke/preflight matrix:
+
+| Case | Config | GPUs | Status | Key evidence |
+| --- | --- | --- | --- | --- |
+| Tiny recursive CE | `configs/stage1/recursive_detection_ce_latest/smoke/compact_full_tiny.yaml` | `0` | Passed | 1 step, finite `loss/recursive_detection_ce=12.37675476`, peak `6.84 GiB`, manifests and conversation dump written. |
+| Sorted compact SFT | `configs/stage1/recursive_detection_ce_latest/smoke/compact_full_sorted_sft.yaml` | `0` | Passed | 2 steps, finite losses `11.38791847 -> 10.72068310`, peak `30.61 GiB`. |
+| Random compact SFT | `configs/stage1/recursive_detection_ce_latest/smoke/compact_full_random_sft.yaml` | `1` | Passed | 2 steps, finite losses `11.20322990 -> 10.79686737`, peak `27.31 GiB`. |
+| Random compact SFT with prompt variant | `configs/stage1/recursive_detection_ce_latest/smoke/compact_full_random_sft_prompt_variant.yaml` | `2` | Passed | 2 steps, finite losses `11.00712013 -> 10.67471600`, peak `30.61 GiB`. |
+| ET-RMP-CE `1.0/1.0` DDP control | `configs/stage1/recursive_detection_ce_latest/smoke/compact_full_ddp8_et_rmp_1p0_1p0.yaml` | `0-7` | Passed | 8 ranks, 2 train/eval steps, finite train/eval recursive CE, peak `52.60 GiB`, all rank heartbeats written. |
+| ET-RMP-CE `2.0/1.0` production-candidate DDP | `configs/stage1/recursive_detection_ce_latest/smoke/compact_full_ddp8_preflight.yaml` | `0-7` | Passed | 8 ranks, 4 train/eval steps, finite train/eval recursive CE, final train loss `11.40029716`, final eval loss `11.55665398`, peak `52.49 GiB`. |
+| Packing true | `configs/stage1/recursive_detection_ce_latest/smoke/compact_full_packing_unsupported.yaml` | CPU fail-fast | Rejected as intended | `ValueError: latest recursive detection sidecars currently require packing=false; packed target-position offset rewriting is not implemented yet`. |
+
+Preflight decisions:
+
+- Use direct `torchrun -m src.sft`, not `scripts/train.sh`, because `scripts/train.sh` CPU precheck still reads legacy `cfg.custom.*`.
+- Use `packing: false`; latest recursive sidecars do not yet support packed target-position offset rewriting.
+- Keep `training.encoded_sample_cache.enabled: false`; latest sidecar cache fingerprints are not implemented.
+- Do not enable bidirectional gating for this launch. It is not implemented as a latest-schema objective/loss adapter and was not validated.
+- Keep global training precision as `bf16`; recursive support/balance CE uses targeted `float32` logits/log-prob computations in the loss adapter.
+- Keep `per_device_train_batch_size: 16`, `gradient_accumulation_steps: 1`, `effective_batch_size: 128`. This gives stable 8-GPU throughput with exact global batch semantics; observed peak memory is about `52-56 GiB`, below the aspirational `60-70 GiB` target, but higher batch settings would change the requested effective batch size or require unvalidated accumulation/packing behavior.
+- In-training latest-schema evaluation currently reports loss/token metrics, not detection mAP. Detection mAP/decoding sanity should be run as a separate infer/eval gate after the first suitable checkpoint, because the legacy `Stage1DetectionEvalCallback` is not yet latest-schema-wired.
+
+Production launch:
+
+- Tmux session: `coordexp_recursive_ce_prod_20260503`.
+- Config: `configs/stage1/recursive_detection_ce_latest/prod/compact_full_support2.yaml`.
+- Output directory: `/data/CoordExp/output_remote/stage1_2b/recursive_detection_ce_latest/compact_full_et_rmp_ce_support2_bsz16_4epoch_v1/compact-full-et-rmp-ce-support2-bsz16-4epoch-v1/v0-20260503-072546`.
+- Launch log: `temp/production_launch_logs/compact_full_support2_8gpu_20260503.log`.
+- Command:
+
+```bash
+PYTHONPATH=. \
+OMP_NUM_THREADS=8 \
+TORCH_NCCL_ASYNC_ERROR_HANDLING=1 \
+PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True \
+COORDEXP_TRAIN_HEARTBEAT=1 \
+CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 \
+MASTER_ADDR=127.0.0.1 \
+MASTER_PORT=29512 \
+conda run -n ms torchrun \
+  --nproc_per_node=8 \
+  --master_addr=127.0.0.1 \
+  --master_port=29512 \
+  -m src.sft \
+  --config configs/stage1/recursive_detection_ce_latest/prod/compact_full_support2.yaml
+```
+
+Early production metrics:
+
+- Step 1: `loss/recursive_detection_ce=12.02326775`, `grad_norm=31.20716667`, `token_acc=0.33035127`, peak `51.01 GiB`.
+- Step 10: `loss/recursive_detection_ce=12.35000017`, `grad_norm=31.54546547`, `token_acc=0.33439698`, peak `51.01 GiB`, speed `0.101089 iter/s`.
+- All rank heartbeats were fresh at global step `14` shortly after launch.
+- `nvidia-smi` at early monitoring showed all eight GPUs at `100%` utilization and about `53-56 GiB / 80 GiB` used.
+
+Current status:
+
+- Production is running.
+- Early training behavior is healthy: no NaN/Inf, no OOM, no DDP hang, all ranks alive, manifests written, and recursive CE metrics are logging.
+- The run is not marked complete; continue monitoring first eval/checkpoint artifacts and run a separate latest-compatible detection infer/eval after the first checkpoint is available.
 
 ## Final Definition Of Done
 
