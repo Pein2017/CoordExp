@@ -56,6 +56,12 @@ from .datasets import (
     RandomSampleDataset,
     build_static_packed_dataset,
 )
+from .detection.packing import (
+    PackingProfile as DetectionPackingProfile,
+    StaticSftPackingFingerprintRequest,
+    build_stage1_static_sft_packing_fingerprint,
+    require_static_sft_packing_eligibility,
+)
 from .trainers import with_final_checkpoint
 from .training_runtime import (
     resolve_training_runtime_plan,
@@ -199,6 +205,63 @@ class EncodedSampleCacheRuntimeConfig:
 @dataclass(frozen=True)
 class StaticPackingCacheRuntimeConfig:
     root_dir: str | None = None
+
+
+@dataclass(frozen=True)
+class RecursiveDetectionCERuntimeConfig:
+    enabled: bool
+    trie_support_weight: float
+    trie_balance_weight: float
+
+
+def _resolve_recursive_detection_ce_cfg(
+    training_config: Any,
+) -> RecursiveDetectionCERuntimeConfig | None:
+    objective = getattr(training_config, "objective", None)
+    if objective is None:
+        return None
+    objective_id = (
+        str(objective.get("id"))
+        if isinstance(objective, Mapping) and objective.get("id") is not None
+        else str(getattr(objective, "id", "") or "")
+    )
+    if objective_id != "recursive_detection_ce":
+        return None
+    variant = (
+        str(objective.get("variant"))
+        if isinstance(objective, Mapping) and objective.get("variant") is not None
+        else str(getattr(objective, "variant", "") or "")
+    )
+    if variant != "random_permutation_et_rmp_ce":
+        raise ValueError(
+            "recursive_detection_ce runtime currently supports only "
+            "objective.variant=random_permutation_et_rmp_ce"
+        )
+
+    def _objective_float(field_name: str) -> float:
+        raw = (
+            objective.get(field_name)
+            if isinstance(objective, Mapping)
+            else getattr(objective, field_name, None)
+        )
+        if raw is None:
+            raise ValueError(f"objective.{field_name} is required")
+        value = float(raw)
+        if not math.isfinite(value) or value < 0.0:
+            raise ValueError(f"objective.{field_name} must be finite and >= 0")
+        return value
+
+    trie_support_weight = _objective_float("trie_support_weight")
+    trie_balance_weight = _objective_float("trie_balance_weight")
+    if trie_support_weight + trie_balance_weight <= 0.0:
+        raise ValueError(
+            "objective.trie_support_weight and objective.trie_balance_weight must sum to > 0"
+        )
+    return RecursiveDetectionCERuntimeConfig(
+        enabled=True,
+        trie_support_weight=trie_support_weight,
+        trie_balance_weight=trie_balance_weight,
+    )
 
 
 def _parse_packing_config(
@@ -982,6 +1045,58 @@ def _validate_stage2_step_budget_windows(
         )
 
 
+def _get_section_value(section: Any, key: str, default: Any = None) -> Any:
+    if isinstance(section, Mapping):
+        return section.get(key, default)
+    return getattr(section, key, default)
+
+
+def _resolve_object_ordering_fingerprint_value(
+    *,
+    training_config: Any,
+    custom_config: Any,
+) -> str:
+    data_cfg = getattr(training_config, "data", None)
+    ordering = _get_section_value(data_cfg, "object_ordering")
+    if ordering:
+        return str(ordering)
+    return str(getattr(custom_config, "object_ordering", "sorted") or "sorted")
+
+
+def _resolve_objective_fingerprint_fields(
+    *,
+    training_config: Any,
+) -> tuple[str | None, str | None, str | None]:
+    objective_cfg = getattr(training_config, "objective", None)
+    objective_variant = _get_section_value(objective_cfg, "variant")
+    state_weighting = _get_section_value(objective_cfg, "state_weighting")
+    normalization = _get_section_value(objective_cfg, "normalization")
+    return (
+        str(objective_variant) if objective_variant is not None else None,
+        str(state_weighting) if state_weighting is not None else None,
+        str(normalization) if normalization is not None else None,
+    )
+
+
+def _detection_packing_profile_from_runtime(
+    packing_cfg: PackingRuntimeConfig,
+) -> DetectionPackingProfile:
+    return DetectionPackingProfile(
+        mode="static" if packing_cfg.enabled else "disabled",
+        packing_length=int(packing_cfg.packing_length),
+        runtime_flags={
+            "allow_single_long": bool(packing_cfg.allow_single_long),
+            "drop_last": bool(packing_cfg.drop_last),
+            "eval_packing": bool(packing_cfg.eval_packing),
+            "length_cache_persist_every": packing_cfg.length_cache_persist_every,
+            "length_precompute_workers": int(packing_cfg.length_precompute_workers),
+            "min_fill_ratio": float(packing_cfg.min_fill_ratio),
+            "source_runtime_mode": str(packing_cfg.mode),
+            "wait_timeout_s": float(packing_cfg.wait_timeout_s),
+        },
+    )
+
+
 def _build_static_packing_fingerprint(
     *,
     training_config: Any,
@@ -1001,6 +1116,18 @@ def _build_static_packing_fingerprint(
     coord_tokens_payload = _coord_tokens_fingerprint_payload(custom_config)
     coord_mode = _resolve_custom_coord_mode(custom_config)
     prompt_identity = _resolve_dense_prompt_identity(custom_config)
+    trainer_variant = getattr(custom_config, "trainer_variant", None)
+    (
+        objective_variant,
+        state_weighting_policy,
+        normalization_policy,
+    ) = _resolve_objective_fingerprint_fields(
+        training_config=training_config,
+    )
+    object_ordering = _resolve_object_ordering_fingerprint_value(
+        training_config=training_config,
+        custom_config=custom_config,
+    )
 
     split = str(dataset_split or "train").strip().lower()
     if split not in {"train", "eval"}:
@@ -1008,7 +1135,7 @@ def _build_static_packing_fingerprint(
             f"dataset_split must be one of {{'train', 'eval'}}, got {dataset_split!r}"
         )
 
-    return {
+    runtime_fields = {
         "dataset_seed": int(dataset_seed),
         "dataset_split": split,
         "packing_mode": packing_cfg.mode,
@@ -1062,6 +1189,34 @@ def _build_static_packing_fingerprint(
         if isinstance(training_cfg, Mapping)
         else None,
     }
+    prompt_profile = (
+        f"variant={prompt_identity['prompt_variant']};"
+        f"template_hash={prompt_identity['prompt_template_hash']};"
+        f"use_summary={bool(getattr(custom_config, 'use_summary', False))}"
+    )
+    tokenizer_id = (
+        _resolve_model_checkpoint_path(training_config)
+        or str(getattr(train_args, "model", "") or "")
+        or "unknown_tokenizer"
+    )
+    return build_stage1_static_sft_packing_fingerprint(
+        StaticSftPackingFingerprintRequest(
+            detection_sequence_format=getattr(
+                custom_config,
+                "detection_sequence_format",
+                "coordjson",
+            ),
+            prompt_profile=prompt_profile,
+            tokenizer_id=tokenizer_id,
+            object_ordering=object_ordering,
+            objective_variant=objective_variant,
+            state_weighting_policy=state_weighting_policy,
+            normalization_policy=normalization_policy,
+            trainer_variant=str(trainer_variant) if trainer_variant is not None else None,
+            profile=_detection_packing_profile_from_runtime(packing_cfg),
+            runtime_fields=runtime_fields,
+        ),
+    )
 
 
 def _normalize_optional_sample_limit(sample_limit: Any) -> int | None:
@@ -1381,6 +1536,8 @@ def _validate_stage1_static_packing_policy(
     *,
     packing_cfg: PackingRuntimeConfig,
     trainer_variant: str | None,
+    training_config: Any | None = None,
+    custom_config: Any | None = None,
 ) -> None:
     if not packing_cfg.enabled:
         return
@@ -1401,6 +1558,23 @@ def _validate_stage1_static_packing_policy(
             "training.packing_mode=dynamic is deprecated and unsupported for Stage-1 dataset-level packing. "
             "Use training.packing_mode=static."
         )
+    if training_config is None or custom_config is None:
+        return
+
+    objective_variant, _, _ = _resolve_objective_fingerprint_fields(
+        training_config=training_config,
+    )
+    require_static_sft_packing_eligibility(
+        detection_sequence_format=getattr(
+            custom_config,
+            "detection_sequence_format",
+            "coordjson",
+        ),
+        object_ordering=str(getattr(custom_config, "object_ordering", "sorted") or "sorted"),
+        objective_variant=objective_variant,
+        trainer_variant=trainer_variant,
+        profile=_detection_packing_profile_from_runtime(packing_cfg),
+    )
 
 
 def _validate_attention_backend_for_packing(*, training_config: Any) -> None:
@@ -2051,6 +2225,19 @@ def main():
     train_encoded_sample_cache_info: dict[str, Any] | None = None
     eval_encoded_sample_cache_info: dict[str, Any] | None = None
     trainer_variant = getattr(train_args, "trainer_variant", None)
+    packing_cfg = _parse_packing_config(
+        training_config.training, sft.template, train_args
+    )
+    _validate_attention_backend_for_packing(training_config=training_config)
+    # Stage_2 rollout-matching supports post-rollout packing inside the trainer only.
+    # Do not apply dataset-level packing wrappers for this trainer variant.
+    is_rollout_matching_variant = _is_rollout_matching_variant(trainer_variant)
+    _validate_stage1_static_packing_policy(
+        packing_cfg=packing_cfg,
+        trainer_variant=trainer_variant,
+        training_config=training_config,
+        custom_config=custom_config,
+    )
     train_encoded_sample_cache_request = _build_encoded_sample_cache_request(
         runtime_cfg=encoded_sample_cache_cfg,
         training_config=training_config,
@@ -2114,22 +2301,11 @@ def main():
     )
     if train_encoded_sample_cache_request is not None:
         train_encoded_sample_cache_info = dataset.get_encoded_sample_cache_info()
-    packing_cfg = _parse_packing_config(
-        training_config.training, sft.template, train_args
-    )
-    _validate_attention_backend_for_packing(training_config=training_config)
     base_dataset_len = None
     try:
         base_dataset_len = len(dataset)
     except TypeError:
         base_dataset_len = None
-    # Stage_2 rollout-matching supports post-rollout packing inside the trainer only.
-    # Do not apply dataset-level packing wrappers for this trainer variant.
-    is_rollout_matching_variant = _is_rollout_matching_variant(trainer_variant)
-    _validate_stage1_static_packing_policy(
-        packing_cfg=packing_cfg,
-        trainer_variant=trainer_variant,
-    )
 
     if packing_cfg.enabled and not is_rollout_matching_variant:
         training_map = getattr(training_config, "training", {}) or {}
@@ -2829,8 +3005,14 @@ def main():
     logger.info("Setting up trainer...")
     trainer_variant = getattr(train_args, "trainer_variant", None)
     runtime_profile = resolve_training_runtime_profile(trainer_variant)
-    if runtime_profile.preserve_raw_sample_metadata:
+    recursive_detection_ce_cfg = _resolve_recursive_detection_ce_cfg(training_config)
+    if (
+        runtime_profile.preserve_raw_sample_metadata
+        or recursive_detection_ce_cfg is not None
+    ):
         # Keep raw fields for trainer-owned branch/rollout construction.
+        if recursive_detection_ce_cfg is not None:
+            setattr(train_args, "remove_unused_columns", False)
         if getattr(train_args, "training_args", None) is not None:
             train_args.training_args.remove_unused_columns = False
 
@@ -3016,6 +3198,7 @@ def main():
         bbox_size_aux_cfg=bbox_size_aux_cfg,
         coord_soft_ce_w1_cfg=coord_soft_ce_w1_cfg,
         sft_structural_close_cfg=sft_structural_close_cfg,
+        recursive_detection_ce_cfg=recursive_detection_ce_cfg,
     )
 
     callbacks = build_trainer_callbacks(
@@ -3316,6 +3499,8 @@ def main():
         setattr(trainer, "bbox_size_aux_cfg", bbox_size_aux_cfg)
     if sft_structural_close_cfg is not None:
         setattr(trainer, "sft_structural_close_cfg", sft_structural_close_cfg)
+    if recursive_detection_ce_cfg is not None:
+        setattr(trainer, "recursive_detection_ce_cfg", recursive_detection_ce_cfg)
     setattr(trainer, "bbox_format", str(custom_config.bbox_format))
     if token_type_cfg is not None:
         setattr(trainer, "token_type_metrics_cfg", token_type_cfg)

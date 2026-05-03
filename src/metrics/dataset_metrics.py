@@ -16,6 +16,7 @@ from src.trainers.metrics.mixins import (  # noqa: F401
     CoordSoftCEW1LossMixin,
     GradAccumLossScaleMixin,
     InstabilityMonitorMixin,
+    RecursiveDetectionCEMixin,
 )
 
 __all__ = [
@@ -25,4 +26,5 @@ __all__ = [
     "CoordSoftCEW1LossMixin",
     "GradAccumLossScaleMixin",
     "InstabilityMonitorMixin",
+    "RecursiveDetectionCEMixin",
 ]

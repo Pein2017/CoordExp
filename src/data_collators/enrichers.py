@@ -11,7 +11,10 @@ from src.config.schema import TokenTypeMetricsConfig
 from src.coord_tokens.codec import get_coord_token_ids
 from src.data_collators.token_types import TokenType, compute_token_types
 from src.trainers.rollout_matching.parsing import find_desc_value_token_positions_by_span
-from src.trainers.batch_extras import SFT_STRUCTURAL_CLOSE_TOKEN_WEIGHTS_KEY
+from src.trainers.batch_extras import (
+    RECURSIVE_DETECTION_TARGETS_KEY,
+    SFT_STRUCTURAL_CLOSE_TOKEN_WEIGHTS_KEY,
+)
 from src.utils.logger import get_logger
 
 logger = get_logger(__name__)
@@ -172,6 +175,46 @@ class InstabilityMetaEnricher:
                 }
             )
         return out
+
+
+class RecursiveDetectionTargetsEnricher:
+    """Attach recursive detection target sidecars for objective-owned trainer loss."""
+
+    out_field = RECURSIVE_DETECTION_TARGETS_KEY
+
+    def __call__(
+        self,
+        *,
+        collated: dict[str, Any],
+        raw_batch: Sequence[Any],
+        packed: bool,
+    ) -> None:
+        if packed:
+            has_packed_sidecar = any(
+                isinstance(sample, Mapping) and self.out_field in sample
+                for pack in raw_batch
+                for sample in (pack if isinstance(pack, (list, tuple)) else [pack])
+            )
+            if has_packed_sidecar:
+                raise ValueError(
+                    "recursive_detection_targets sidecars are incompatible with "
+                    "packing until target-position offsets are preserved"
+                )
+            return
+
+        present = [
+            isinstance(row, Mapping) and self.out_field in row for row in raw_batch
+        ]
+        if not any(present):
+            return
+        if not all(present):
+            raise ValueError(
+                "recursive_detection_targets sidecar must be present for every "
+                "sample in an unpacked recursive detection batch"
+            )
+        collated[self.out_field] = tuple(
+            row[self.out_field] for row in raw_batch if isinstance(row, Mapping)
+        )
 
 
 class TokenTypesEnricher:

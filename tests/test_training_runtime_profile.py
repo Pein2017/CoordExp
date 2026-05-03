@@ -18,6 +18,7 @@ from src.trainers.metrics.mixins import (
     CoordSoftCEW1LossMixin,
     GradAccumLossScaleMixin,
     InstabilityMonitorMixin,
+    RecursiveDetectionCEMixin,
     SFTStructuralCloseLossMixin,
 )
 
@@ -186,6 +187,7 @@ def _compose_for_variant(variant: str) -> type:
         bbox_size_aux_cfg=SimpleNamespace(enabled=True),
         coord_soft_ce_w1_cfg=SimpleNamespace(enabled=True),
         sft_structural_close_cfg=SimpleNamespace(enabled=True),
+        recursive_detection_ce_cfg=None,
     )
 
 
@@ -204,6 +206,57 @@ def test_compose_trainer_class_keeps_ordinary_stage1_mixins_for_default_variant(
     assert issubclass(trainer_cls, _BaseTrainer)
 
 
+def test_compose_trainer_class_adds_recursive_detection_ce_mixin_when_enabled() -> None:
+    trainer_cls = compose_trainer_class(
+        trainer_cls=_BaseTrainer,
+        trainer_variant="",
+        instability_monitor_cfg=None,
+        token_type_cfg=None,
+        bbox_geo_cfg=None,
+        bbox_size_aux_cfg=None,
+        coord_soft_ce_w1_cfg=None,
+        sft_structural_close_cfg=None,
+        recursive_detection_ce_cfg=SimpleNamespace(enabled=True),
+    )
+
+    assert issubclass(trainer_cls, RecursiveDetectionCEMixin)
+    assert issubclass(trainer_cls, GradAccumLossScaleMixin)
+    assert issubclass(trainer_cls, _BaseTrainer)
+
+
+@pytest.mark.parametrize(
+    ("field_name", "cfg_kwargs"),
+    [
+        ("bbox_size_aux", {"bbox_size_aux_cfg": SimpleNamespace(enabled=True)}),
+        ("bbox_geo", {"bbox_geo_cfg": SimpleNamespace(enabled=True)}),
+        ("coord_soft_ce_w1", {"coord_soft_ce_w1_cfg": SimpleNamespace(enabled=True)}),
+        (
+            "sft_structural_close",
+            {"sft_structural_close_cfg": SimpleNamespace(enabled=True)},
+        ),
+    ],
+)
+def test_compose_trainer_class_rejects_auxiliary_losses_with_recursive_ce(
+    field_name: str,
+    cfg_kwargs: dict[str, object],
+) -> None:
+    kwargs = {
+        "trainer_cls": _BaseTrainer,
+        "trainer_variant": "",
+        "instability_monitor_cfg": None,
+        "token_type_cfg": None,
+        "bbox_geo_cfg": None,
+        "bbox_size_aux_cfg": None,
+        "coord_soft_ce_w1_cfg": None,
+        "sft_structural_close_cfg": None,
+        "recursive_detection_ce_cfg": SimpleNamespace(enabled=True),
+    }
+    kwargs.update(cfg_kwargs)
+
+    with pytest.raises(ValueError, match=rf"recursive_detection_ce.*{field_name}"):
+        compose_trainer_class(**kwargs)
+
+
 @pytest.mark.parametrize(
     "variant",
     [
@@ -220,6 +273,7 @@ def test_compose_trainer_class_excludes_ordinary_stage1_mixins_via_profile(
     assert trainer_cls is _BaseTrainer
     assert not issubclass(trainer_cls, GradAccumLossScaleMixin)
     assert not issubclass(trainer_cls, CoordSoftCEW1LossMixin)
+    assert not issubclass(trainer_cls, RecursiveDetectionCEMixin)
 
 
 @pytest.mark.parametrize(
