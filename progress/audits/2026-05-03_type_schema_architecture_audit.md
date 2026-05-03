@@ -277,12 +277,14 @@ Recommended representation:
 Suggested checks:
 - Collator contract tests and stash/pop roundtrip tests.
 
-### P2: Compact Detection Baseline Needs Post-Merge Schema Classification
+### Resolved: Compact Detection Baseline Classified By Task 7
 
-Status: newly in scope after merging upstream through `1ed47b3`.
+Status: resolved by the Task 7 compact detection classification gate.
 
 Evidence:
-- `configs/stage1/recursive_detection_ce_latest/`
+- Post-merge inventory rows in `Post-Merge Inventory Classification`
+- Compact detection decision recorded in this audit
+- `rtk conda run -n ms python -m pytest ... -q`: `270 passed in 3.05s`
 - `src/config/loader.py`
 - `src/detection/data.py`
 - `src/detection/dataset.py`
@@ -295,22 +297,17 @@ Evidence:
 - `src/config/schema.py`
 - `src/sft.py`
 - `docs/superpowers/plans/2026-05-02-training-infra-template-mode-refactor.md`
-- `tests/test_detection_training_dataset.py`
+- `configs/stage1/recursive_detection_ce_latest/`
 
 Current shape:
-- The compact detection and latest recursive detection stack appears to include many intentional schema objects and contract tests, but it was merged after the first high-signal audit pass. It therefore has not yet been separated into already-typed contracts, serialized artifact mappings, trainer/runtime payloads, dynamic metric maps, dataset preparation payloads, config-loader payloads, and raw containers that deserve refactoring.
-- Batch extras and metric-flattening risk increased after the compact merge because `src/data_collators/batch_extras_collator.py`, `src/trainers/batch_extras.py`, and `src/trainers/metrics/mixins.py` are now part of the compact detection contract surface.
-- Dataset/config-loader risk is now in scope because `src/detection/dataset.py`, `src/config/loader.py`, and `configs/stage1/recursive_detection_ce_latest/` define the latest recursive detection training input contract.
-- Production orchestration risk is now in scope because `src/sft.py` owns latest detection runtime orchestration, prompt shims, dataset selection, packing/cache rejection, and static-packing fingerprint interaction.
-- The upstream launch plan records production constraints that must stay baseline-owned unless intentionally updated: direct `torchrun -m src.sft`, `packing: false`, `training.encoded_sample_cache.enabled: false`, no bidirectional gating, bf16 with targeted fp32, `per_device_train_batch_size=16`, `gradient_accumulation_steps=1`, `effective_batch_size=128`, no latest-schema mAP callback yet, and production launch still running at the time of that note.
+- Task 7 separated the compact detection surfaces into already-typed dataclass/config/protocol contracts, intentionally serialized YAML/artifact mappings, dynamic metric/logging maps, local scratch runtime/provenance containers, and the upstream launch/provenance document.
+- The selected gate decision is no compact-detection code refactor in this branch: merged compact detection contracts are already sufficiently typed or intentionally serialized, and remaining raw containers are local scratch or dynamic metrics.
+- `src/sft.py::_build_encoded_sample_cache_request` did not become a compact-detection overlap requiring Tasks 3-6 changes. Latest recursive detection still rejects encoded-sample cache use until sidecar cache fingerprints exist.
 
-Recommended representation:
-- Preserve existing compact detection dataclasses, config objects, and tests where they already express the contract. Promote only cross-module payloads, artifact records, loss/objective state, packing manifests, or metric summaries that remain ambiguous after Task 0 classification.
-
-Suggested checks:
-- Add compact detection, latest recursive detection dataset, config-loader, SFT orchestration, upstream launch-plan constraints, and launch-config modules to the global inventory table.
-- Run compact detection contract tests alongside encoded-cache tests after each overlapping refactor slice.
-- Avoid changing compact detection serialized JSON/YAML surfaces without a dedicated contract update.
+Remaining future-facing cautions:
+- Keep `docs/superpowers/plans/2026-05-02-training-infra-template-mode-refactor.md` baseline-owned unless launch-status docs are intentionally updated. Its production constraints remain: direct `torchrun -m src.sft`, `packing: false`, `training.encoded_sample_cache.enabled: false`, no bidirectional gating, bf16 with targeted fp32, `per_device_train_batch_size=16`, `gradient_accumulation_steps=1`, `effective_batch_size=128`, no latest-schema mAP callback yet, and production launch still running at the time of the upstream note.
+- Future compact-detection changes should continue to preserve serialized JSON/YAML surfaces or create a dedicated contract update before changing artifact/config keys.
+- Continue running the compact detection contract profile alongside any later encoded-cache or static-packing slice that touches shared SFT orchestration.
 
 ### P3: Analysis Scripts Have Repeated Ad Hoc Row Shapes
 
