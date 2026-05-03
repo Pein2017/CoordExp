@@ -617,7 +617,7 @@ Observed: `19 passed`, with four pre-existing multiprocessing fork deprecation w
 
 Status: blocking refresh before editing `src/sft.py`, `src/config/schema.py`, or tests that compact upstream changed.
 
-- [ ] **Step 1: Locate current merged encoded-cache and compact-detection overlaps**
+- [x] **Step 1: Locate current merged encoded-cache and compact-detection overlaps**
 
 Run:
 
@@ -628,7 +628,9 @@ rg -n "_build_encoded_sample_cache_request|_build_encoded_sample_cache_bypass_in
 
 Expected: the executor records current function signatures and any compact-detection config or training-profile assumptions that overlap with encoded-cache request production.
 
-- [ ] **Step 2: Use Serena for Python symbol inspection**
+Observed 2026-05-03 on `e7773e3`: `rtk rg -n ...` over the named files found the current encoded-cache producer signatures in `src/sft.py` (`_parse_encoded_sample_cache_config(training_cfg, train_args)`, `_build_encoded_sample_cache_request(..., dataset_mode, sample_limit=None, system_prompt_dense=None, system_prompt_summary=None)`, and `_build_encoded_sample_cache_bypass_info(request, *, reason)`) plus compact-detection overlap at `LatestDetectionTrainingConfig`, latest `packing`, `DetectionTrainingDataset.from_jsonl`, and SFT latest-detection dataset/cache wiring. No compact-detection hit changed the encoded-cache request parameter contract.
+
+- [x] **Step 2: Use Serena for Python symbol inspection**
 
 Inspect these current symbols before editing:
 
@@ -644,7 +646,9 @@ src/detection/dataset.py
 
 Expected: plan snippets in Task 3 are checked against current merged signatures. If any snippet no longer matches the current function signature, update this plan before writing tests or code.
 
-- [ ] **Step 3: Run pre-change overlap tests**
+Observed 2026-05-03: Serena was activated on `/data/CoordExp/.worktrees/refactor-type-schema` and inspected `src/sft.py::_build_encoded_sample_cache_request`, `src/sft.py::_build_encoded_sample_cache_bypass_info`, `src/sft.py::_parse_encoded_sample_cache_config`, `src/config/schema.py::TrainingConfig`, `src/config/schema.py::LatestDetectionTrainingConfig`, `src/config/loader.py::ConfigLoader/build_train_arguments`, `src/config/loader.py::ConfigLoader/_materialize_training_config`, `src/config/loader.py::ConfigLoader/_is_latest_detection_config_payload`, and `src/detection/dataset.py::DetectionTrainingDataset.from_jsonl` / `__getitem__`. Task 3 snippets still match the current merged function signatures and the current `EncodedSampleCacheRequest` shape, where `to_mapping()` does not yet preserve `fingerprint_sha256`, `cache_dir`, or `manifest_path`.
+
+- [x] **Step 3: Run pre-change overlap tests**
 
 Run:
 
@@ -659,7 +663,9 @@ rtk conda run -n ms python -m pytest \
 
 Expected: PASS before implementation. If this fails, diagnose the merged baseline before changing encoded-cache code.
 
-- [ ] **Step 4: Update the audit with refresh result**
+Observed 2026-05-03: `rtk conda run -n ms python -m pytest tests/test_encoded_sample_cache_runtime_config.py tests/test_latest_training_config_contract.py tests/test_detection_training_dataset.py tests/test_training_runtime_profile.py -q` passed with `76 passed in 0.97s`.
+
+- [x] **Step 4: Update the audit with refresh result**
 
 Modify `progress/audits/2026-05-03_type_schema_architecture_audit.md`:
 
@@ -668,6 +674,8 @@ Modify `progress/audits/2026-05-03_type_schema_architecture_audit.md`:
 ```
 
 If compact detection changes the cache request assumptions, replace the second sentence with the exact overlapping symbol and update Task 3 snippets before proceeding.
+
+Observed 2026-05-03: audit updated with the encoded-cache producer refresh bullet. Compact detection config surfaces do not change the intended encoded-cache request contract, so Task 3 snippets were left unchanged.
 
 ## Task 3: Canonicalize Encoded-Cache Request Producer And Consumer Boundaries
 

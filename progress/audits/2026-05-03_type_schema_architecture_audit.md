@@ -324,6 +324,7 @@ Recommended representation:
    - Treat local scratch dictionaries, dynamic metric maps, and historical-only references as explicit rule-outs.
 3. **Encoded-cache producer/run-metadata consistency**
    - Refresh `src/sft.py` and `src/config/schema.py` snippets against merged compact code before implementation.
+   - Encoded-cache producer refresh: current merged `src/sft.py` and `src/config/schema.py` signatures were inspected before implementation. Compact detection config surfaces do not change the intended encoded-cache request contract.
    - Extend request/run-metadata wrappers only after focused red tests are written.
    - Preserve `training.encoded_sample_cache.*`, `manifest.json`, and run-metadata keys.
 4. **Compact detection and latest recursive detection baseline classification**
