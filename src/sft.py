@@ -59,6 +59,7 @@ from .datasets import (
     RandomSampleDataset,
     build_static_packed_dataset,
 )
+from .datasets.encoded_sample_cache import EncodedSampleCacheRequest
 from .detection.packing import (
     PackingProfile as DetectionPackingProfile,
     StaticSftPackingFingerprintRequest,
@@ -1528,7 +1529,7 @@ def _build_encoded_sample_cache_request(
         ).encode("utf-8")
     ).hexdigest()
     cache_dir = Path(str(runtime_cfg.root_dir)) / fingerprint_sha256
-    return {
+    payload = {
         "enabled": True,
         "root_dir": str(runtime_cfg.root_dir),
         "ineligible_policy": runtime_cfg.ineligible_policy,
@@ -1539,7 +1540,9 @@ def _build_encoded_sample_cache_request(
         "fingerprint": fingerprint,
         "fingerprint_sha256": fingerprint_sha256,
         "cache_dir": str(cache_dir),
+        "manifest_path": str(cache_dir / "manifest.json"),
     }
+    return EncodedSampleCacheRequest.from_mapping(payload).to_mapping()
 
 
 def _resolve_static_packing_cache_dir(
@@ -1609,21 +1612,20 @@ def _build_encoded_sample_cache_bypass_info(
     *,
     reason: str,
 ) -> dict[str, Any]:
+    canonical = EncodedSampleCacheRequest.from_mapping(request)
     return {
         "enabled": True,
         "status": "bypassed",
         "reason": str(reason),
-        "policy": str(request.get("ineligible_policy") or "error"),
-        "wait_timeout_s": float(request.get("wait_timeout_s", 7200.0) or 0.0),
-        "dataset_split": str(request.get("dataset_split") or "train"),
-        "dataset_jsonl": request.get("dataset_jsonl"),
-        "fingerprint": dict(request.get("fingerprint") or {}),
-        "fingerprint_sha256": request.get("fingerprint_sha256"),
-        "root_dir": request.get("root_dir"),
-        "cache_dir": request.get("cache_dir"),
-        "manifest_path": str(
-            Path(str(request.get("cache_dir") or ".")) / "manifest.json"
-        ),
+        "policy": canonical.ineligible_policy,
+        "wait_timeout_s": canonical.wait_timeout_s,
+        "dataset_split": canonical.dataset_split,
+        "dataset_jsonl": canonical.dataset_jsonl,
+        "fingerprint": dict(canonical.fingerprint),
+        "fingerprint_sha256": canonical.fingerprint_sha256,
+        "root_dir": str(canonical.root_dir),
+        "cache_dir": str(canonical.cache_dir),
+        "manifest_path": str(canonical.manifest_path),
     }
 
 

@@ -265,6 +265,9 @@ max_resident_shards: int
 dataset_split: str
 dataset_jsonl: Any
 fingerprint: dict[str, Any]
+fingerprint_sha256: str
+cache_dir: Path
+manifest_path: Path
 ```
 
 `from_mapping()` behavior:
@@ -277,16 +280,23 @@ fingerprint: dict[str, Any]
 - Defaults `dataset_split` to `train`.
 - Preserves `dataset_jsonl`.
 - Canonicalizes the fingerprint mapping by stable JSON representation.
+- Canonicalizes `fingerprint_sha256` from the payload, or derives it from the
+  canonical fingerprint when omitted.
+- Canonicalizes `cache_dir` from the payload, or derives it as
+  `root_dir / fingerprint_sha256` when omitted.
+- Canonicalizes `manifest_path` from the payload, or derives it as
+  `cache_dir / "manifest.json"` when omitted.
 
 `to_mapping()` behavior:
 
-- Emits the same request keys currently consumed by the cache store.
-- Does not yet include producer-side derived fields such as
-  `fingerprint_sha256`, `cache_dir`, or `manifest_path`.
+- Emits the same request keys consumed by the cache store.
+- Includes producer-side derived fields: `fingerprint_sha256`, `cache_dir`, and
+  `manifest_path`.
 
-This is intentionally recorded as partial: future plan tasks should extend the
-request object to own those derived artifact paths and then route `src/sft.py`
-through the canonical producer boundary.
+`src/sft.py::_build_encoded_sample_cache_request()` routes producer payloads
+through `EncodedSampleCacheRequest.from_mapping(...).to_mapping()`, and bypass
+metadata is also emitted from the canonical request object. Dataset setup accepts
+either a mapping payload or an `EncodedSampleCacheRequest` instance.
 
 ### Current Manifest Contract
 

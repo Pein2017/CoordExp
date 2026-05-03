@@ -35,6 +35,9 @@ class EncodedSampleCacheRequest:
     dataset_split: str
     dataset_jsonl: Any
     fingerprint: dict[str, Any]
+    fingerprint_sha256: str
+    cache_dir: Path
+    manifest_path: Path
 
     @classmethod
     def from_mapping(cls, payload: Mapping[str, Any]) -> "EncodedSampleCacheRequest":
@@ -43,9 +46,18 @@ class EncodedSampleCacheRequest:
             raise ValueError(
                 f"encoded_sample_cache.wait_timeout_s must be finite, got {timeout_s!r}"
             )
+        fingerprint = _canonicalize_fingerprint(dict(payload.get("fingerprint") or {}))
+        fingerprint_sha256 = str(
+            payload.get("fingerprint_sha256") or _fingerprint_digest(fingerprint)
+        )
+        root_dir = Path(str(payload.get("root_dir") or ".")).resolve()
+        cache_dir = Path(str(payload.get("cache_dir") or (root_dir / fingerprint_sha256)))
+        manifest_path = Path(
+            str(payload.get("manifest_path") or (cache_dir / "manifest.json"))
+        )
         return cls(
             enabled=bool(payload.get("enabled", False)),
-            root_dir=Path(str(payload.get("root_dir") or ".")).resolve(),
+            root_dir=root_dir,
             ineligible_policy=str(payload.get("ineligible_policy") or "error"),
             wait_timeout_s=timeout_s,
             max_resident_shards=max(
@@ -59,9 +71,10 @@ class EncodedSampleCacheRequest:
             ),
             dataset_split=str(payload.get("dataset_split") or "train"),
             dataset_jsonl=payload.get("dataset_jsonl"),
-            fingerprint=_canonicalize_fingerprint(
-                dict(payload.get("fingerprint") or {})
-            ),
+            fingerprint=fingerprint,
+            fingerprint_sha256=fingerprint_sha256,
+            cache_dir=cache_dir,
+            manifest_path=manifest_path,
         )
 
     def to_mapping(self) -> dict[str, Any]:
@@ -74,7 +87,21 @@ class EncodedSampleCacheRequest:
             "dataset_split": self.dataset_split,
             "dataset_jsonl": self.dataset_jsonl,
             "fingerprint": dict(self.fingerprint),
+            "fingerprint_sha256": self.fingerprint_sha256,
+            "cache_dir": str(self.cache_dir),
+            "manifest_path": str(self.manifest_path),
         }
+
+
+EncodedSampleCacheRequestInput = Mapping[str, Any] | EncodedSampleCacheRequest
+
+
+def _coerce_cache_request(
+    request: EncodedSampleCacheRequestInput,
+) -> EncodedSampleCacheRequest:
+    if isinstance(request, EncodedSampleCacheRequest):
+        return request
+    return EncodedSampleCacheRequest.from_mapping(request)
 
 
 @dataclass(frozen=True)
@@ -419,26 +446,23 @@ def _load_torch(path: Path) -> Any:
 
 def _build_bypass_info(
     *,
-    request: Mapping[str, Any],
-    resolved_root: Path,
-    fingerprint: Mapping[str, Any],
+    request: EncodedSampleCacheRequestInput,
     reason: str,
 ) -> dict[str, Any]:
-    fingerprint_sha = _fingerprint_digest(fingerprint)
-    cache_dir = resolved_root / fingerprint_sha
+    cache_request = _coerce_cache_request(request)
     return {
         "enabled": True,
         "status": "bypassed",
         "reason": str(reason),
-        "policy": str(request.get("ineligible_policy") or "error"),
-        "wait_timeout_s": float(request.get("wait_timeout_s", 7200.0) or 0.0),
-        "dataset_split": str(request.get("dataset_split") or "train"),
-        "dataset_jsonl": request.get("dataset_jsonl"),
-        "fingerprint": dict(fingerprint),
-        "fingerprint_sha256": fingerprint_sha,
-        "root_dir": str(resolved_root),
-        "cache_dir": str(cache_dir),
-        "manifest_path": str(cache_dir / "manifest.json"),
+        "policy": cache_request.ineligible_policy,
+        "wait_timeout_s": cache_request.wait_timeout_s,
+        "dataset_split": cache_request.dataset_split,
+        "dataset_jsonl": cache_request.dataset_jsonl,
+        "fingerprint": dict(cache_request.fingerprint),
+        "fingerprint_sha256": cache_request.fingerprint_sha256,
+        "root_dir": str(cache_request.root_dir),
+        "cache_dir": str(cache_request.cache_dir),
+        "manifest_path": str(cache_request.manifest_path),
     }
 
 
@@ -473,16 +497,16 @@ class EncodedSampleCacheStore:
         self,
         dataset: Any,
         *,
-        request: Mapping[str, Any],
+        request: EncodedSampleCacheRequestInput,
     ) -> None:
-        cache_request = EncodedSampleCacheRequest.from_mapping(request)
+        cache_request = _coerce_cache_request(request)
         self._dataset = dataset
         self._request = cache_request.to_mapping()
         self._fingerprint = dict(cache_request.fingerprint)
-        self._fingerprint_sha = _fingerprint_digest(self._fingerprint)
+        self._fingerprint_sha = cache_request.fingerprint_sha256
         self._root_dir = cache_request.root_dir
-        self._cache_dir = self._root_dir / self._fingerprint_sha
-        self._manifest_path = self._cache_dir / "manifest.json"
+        self._cache_dir = cache_request.cache_dir
+        self._manifest_path = cache_request.manifest_path
         self._lock_path = self._cache_dir / "build.lock"
         self._wait_timeout_s = cache_request.wait_timeout_s
         self._max_resident_shards = cache_request.max_resident_shards
@@ -778,28 +802,21 @@ class EncodedSampleCacheStore:
 
 def setup_encoded_sample_cache_for_dataset(
     dataset: Any,
-    request: Mapping[str, Any] | None,
+    request: EncodedSampleCacheRequestInput | None,
 ) -> tuple[EncodedSampleCacheStore | None, dict[str, Any] | None]:
-    if not request or not bool(request.get("enabled", False)):
+    if request is None:
         return None, None
 
-    root_dir_raw = request.get("root_dir")
-    if root_dir_raw is None:
-        raise ValueError(
-            "Encoded sample cache request must include a resolved root_dir when enabled."
-        )
+    cache_request = _coerce_cache_request(request)
+    if not cache_request.enabled:
+        return None, None
 
-    cache_request = EncodedSampleCacheRequest.from_mapping(request)
-    fingerprint = dict(cache_request.fingerprint)
-    resolved_root = Path(str(root_dir_raw)).resolve()
     reason = _cache_ineligible_reason(dataset)
     policy = cache_request.ineligible_policy
     if reason is not None:
         if policy == "bypass":
             info = _build_bypass_info(
-                request=request,
-                resolved_root=resolved_root,
-                fingerprint=fingerprint,
+                request=cache_request,
                 reason=reason,
             )
             logger.warning(
@@ -813,5 +830,5 @@ def setup_encoded_sample_cache_for_dataset(
             return None, info
         raise ValueError(reason)
 
-    store = EncodedSampleCacheStore(dataset, request={**dict(request), "root_dir": str(resolved_root)})
+    store = EncodedSampleCacheStore(dataset, request=cache_request)
     return store, store.info()

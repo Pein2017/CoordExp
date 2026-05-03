@@ -679,7 +679,7 @@ Observed 2026-05-03: audit updated with the encoded-cache producer refresh bulle
 
 ## Task 3: Canonicalize Encoded-Cache Request Producer And Consumer Boundaries
 
-- [ ] **Step 1: Write failing producer roundtrip test**
+- [x] **Step 1: Write failing producer roundtrip test**
 
 Modify `tests/test_encoded_sample_cache_runtime_config.py`:
 
@@ -735,7 +735,9 @@ def test_build_encoded_sample_cache_request_returns_canonical_payload(tmp_path) 
     assert payload["manifest_path"] == str(Path(payload["cache_dir"]) / "manifest.json")
 ```
 
-- [ ] **Step 2: Run test and verify red**
+Observed 2026-05-03: added this test to `tests/test_encoded_sample_cache_runtime_config.py` with the canonical `EncodedSampleCacheRequest` roundtrip assertion and derived path checks.
+
+- [x] **Step 2: Run test and verify red**
 
 Run:
 
@@ -745,7 +747,9 @@ rtk conda run -n ms python -m pytest tests/test_encoded_sample_cache_runtime_con
 
 Expected before implementation: FAIL because `EncodedSampleCacheRequest.to_mapping()` does not preserve `fingerprint_sha256`, `cache_dir`, or `manifest_path`.
 
-- [ ] **Step 3: Extend `EncodedSampleCacheRequest` to own derived artifact paths**
+Observed 2026-05-03: `rtk conda run -n ms python -m pytest tests/test_encoded_sample_cache_runtime_config.py::test_build_encoded_sample_cache_request_returns_canonical_payload -q` failed as expected at `assert payload == request.to_mapping()` because the roundtrip dropped `fingerprint_sha256` and `cache_dir`.
+
+- [x] **Step 3: Extend `EncodedSampleCacheRequest` to own derived artifact paths**
 
 Modify `src/datasets/encoded_sample_cache.py`:
 
@@ -783,7 +787,9 @@ Update `to_mapping()` to include:
 "manifest_path": str(self.manifest_path),
 ```
 
-- [ ] **Step 4: Use the canonical request in `src/sft.py`**
+Observed 2026-05-03: `EncodedSampleCacheRequest` now canonicalizes and emits `fingerprint_sha256`, `cache_dir`, and `manifest_path`; `EncodedSampleCacheStore` reads those canonical fields from the request.
+
+- [x] **Step 4: Use the canonical request in `src/sft.py`**
 
 Modify `src/sft.py` imports:
 
@@ -810,7 +816,9 @@ payload = {
 return EncodedSampleCacheRequest.from_mapping(payload).to_mapping()
 ```
 
-- [ ] **Step 5: Use the canonical request in bypass metadata**
+Observed 2026-05-03: `_build_encoded_sample_cache_request()` now returns `EncodedSampleCacheRequest.from_mapping(payload).to_mapping()` with `manifest_path` included.
+
+- [x] **Step 5: Use the canonical request in bypass metadata**
 
 Modify `_build_encoded_sample_cache_bypass_info()` in `src/sft.py`:
 
@@ -832,7 +840,9 @@ return {
 }
 ```
 
-- [ ] **Step 6: Widen the dataset boundary type without forcing callers to import dataclasses**
+Observed 2026-05-03: `_build_encoded_sample_cache_bypass_info()` now builds bypass metadata from `EncodedSampleCacheRequest.from_mapping(request)`.
+
+- [x] **Step 6: Widen the dataset boundary type without forcing callers to import dataclasses**
 
 Modify `src/datasets/encoded_sample_cache.py`:
 
@@ -866,7 +876,9 @@ if not cache_request.enabled:
     return None, None
 ```
 
-- [ ] **Step 7: Run focused cache producer/consumer tests**
+Observed 2026-05-03: added `EncodedSampleCacheRequestInput` and `_coerce_cache_request()`; `setup_encoded_sample_cache_for_dataset()` now accepts mappings or `EncodedSampleCacheRequest`.
+
+- [x] **Step 7: Run focused cache producer/consumer tests**
 
 Run:
 
@@ -879,6 +891,8 @@ rtk conda run -n ms python -m pytest \
 ```
 
 Expected: PASS.
+
+Observed 2026-05-03: `rtk conda run -n ms python -m pytest tests/test_encoded_sample_cache.py tests/test_encoded_sample_cache_runtime_config.py tests/test_stage1_set_continuation_cache_policy.py -q` passed with `28 passed, 4 warnings` (warnings are multiprocessing fork deprecation warnings from existing static-packing cache tests).
 
 ## Task 4: Type Encoded-Cache Run Metadata
 
