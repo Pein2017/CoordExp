@@ -221,6 +221,23 @@ def test_encoded_sample_cache_request_allows_disabled_request_without_root_dir()
     assert info is None
 
 
+def test_encoded_sample_cache_setup_ignores_disabled_stale_derived_fields() -> None:
+    from src.datasets.encoded_sample_cache import setup_encoded_sample_cache_for_dataset
+
+    store, info = setup_encoded_sample_cache_for_dataset(
+        SimpleNamespace(object_ordering="random"),
+        {
+            "enabled": False,
+            "fingerprint": {"cache_schema_version": 1},
+            "cache_dir": "/tmp/stale",
+            "manifest_path": "/tmp/stale/old-manifest.json",
+        },
+    )
+
+    assert store is None
+    assert info is None
+
+
 def test_encoded_sample_cache_request_rejects_fingerprint_digest_mismatch(
     tmp_path,
 ) -> None:

@@ -845,6 +845,8 @@ def setup_encoded_sample_cache_for_dataset(
 ) -> tuple[EncodedSampleCacheStore | None, dict[str, Any] | None]:
     if request is None:
         return None, None
+    if isinstance(request, Mapping) and not bool(request.get("enabled", False)):
+        return None, None
 
     cache_request = _coerce_cache_request(request)
     if not cache_request.enabled:
