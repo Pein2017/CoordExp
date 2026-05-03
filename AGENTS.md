@@ -80,6 +80,8 @@
 ## Navigation
 - Use `coordexp-codebase` for entrypoints and workflow pointers.
 - Use `coordexp-research-context` for broad background, read-order, and historical Stage-2 context.
+- Treat `superpowers` as plugin-managed in this workspace: the active source of truth is the enabled `superpowers@openai-curated` plugin, not a repo-local vendored copy under `./.codex/skills/`.
+- For current `superpowers` provenance or upgrade checks, inspect [`/data/CoordExp/.codex/config.toml`](/data/CoordExp/.codex/config.toml) for `[plugins."superpowers@openai-curated"]`, then inspect the cached plugin manifest at `./.codex/plugins/cache/openai-curated/superpowers/*/.codex-plugin/plugin.json` for the current packaged version and upstream repository.
 - Prefer `rtk` for noisy shell workflows first: broad repo scans, multi-hit `rg`, `git`, logs, tests, long docs/prose reads, and other multi-line command output where compact summaries help.
 - Do not force `rtk` into exact-output workflows. Prefer raw commands for narrow line reads (for example `sed -n`, `nl -ba ... | sed -n`), machine-readable stdout, delicate quoting, or commands where `rtk` could obscure exact interpreter/environment binding.
 - When a command already depends on a project-specific environment wrapper, keep that wrapper under `rtk` instead of dropping it. In this repo, tests should prefer `rtk conda run -n ms python -m pytest ...` over bare `rtk pytest ...`.
