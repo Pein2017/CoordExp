@@ -8,7 +8,7 @@ entrypoints:
 recommended_read_order:
   - docs/PROJECT_CONTEXT.md
   - docs/SYSTEM_OVERVIEW.md
-  - docs/training/STAGE2_DESIGN.md
+  - the relevant current docs router under docs/
   - progress/README.md
   - progress/directions/README.md
   - the specific category router and note relevant to the question
