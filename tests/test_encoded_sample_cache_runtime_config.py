@@ -313,17 +313,20 @@ def test_attach_encoded_sample_cache_run_metadata_scopes_train_and_eval() -> Non
 
 
 def test_build_encoded_sample_cache_bypass_info_records_set_continuation_reason() -> None:
-    info = _build_encoded_sample_cache_bypass_info(
+    request = EncodedSampleCacheRequest.from_mapping(
         {
+            "enabled": True,
             "ineligible_policy": "bypass",
             "wait_timeout_s": 5,
             "dataset_split": "train",
             "dataset_jsonl": "train.jsonl",
             "fingerprint": {"dataset_split": "train"},
-            "fingerprint_sha256": "abc123",
             "root_dir": "/tmp/cache",
-            "cache_dir": "/tmp/cache/abc123",
-        },
+        }
+    ).to_mapping()
+
+    info = _build_encoded_sample_cache_bypass_info(
+        request,
         reason=STAGE1_SET_CONTINUATION_CACHE_BYPASS_REASON,
     )
 

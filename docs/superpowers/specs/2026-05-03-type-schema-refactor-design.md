@@ -280,12 +280,14 @@ manifest_path: Path
 - Defaults `dataset_split` to `train`.
 - Preserves `dataset_jsonl`.
 - Canonicalizes the fingerprint mapping by stable JSON representation.
-- Canonicalizes `fingerprint_sha256` from the payload, or derives it from the
-  canonical fingerprint when omitted.
-- Canonicalizes `cache_dir` from the payload, or derives it as
-  `root_dir / fingerprint_sha256` when omitted.
-- Canonicalizes `manifest_path` from the payload, or derives it as
-  `cache_dir / "manifest.json"` when omitted.
+- Rejects enabled requests without `root_dir`; disabled requests may still omit
+  it because setup returns no cache.
+- Derives `fingerprint_sha256` from the canonical fingerprint and rejects any
+  supplied value that does not match.
+- Derives `cache_dir` as `root_dir / fingerprint_sha256` and rejects any
+  supplied path that does not resolve to that path.
+- Derives `manifest_path` as `cache_dir / "manifest.json"` and rejects any
+  supplied path that does not resolve to that path.
 
 `to_mapping()` behavior:
 

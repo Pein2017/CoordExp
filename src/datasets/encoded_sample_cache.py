@@ -41,22 +41,61 @@ class EncodedSampleCacheRequest:
 
     @classmethod
     def from_mapping(cls, payload: Mapping[str, Any]) -> "EncodedSampleCacheRequest":
+        enabled = bool(payload.get("enabled", False))
+        if enabled and not payload.get("root_dir"):
+            raise ValueError(
+                "Encoded sample cache request must include a resolved root_dir when enabled."
+            )
         timeout_s = float(payload.get("wait_timeout_s", 7200.0) or 0.0)
         if not math.isfinite(timeout_s):
             raise ValueError(
                 f"encoded_sample_cache.wait_timeout_s must be finite, got {timeout_s!r}"
             )
         fingerprint = _canonicalize_fingerprint(dict(payload.get("fingerprint") or {}))
-        fingerprint_sha256 = str(
-            payload.get("fingerprint_sha256") or _fingerprint_digest(fingerprint)
-        )
+        expected_fingerprint_sha256 = _fingerprint_digest(fingerprint)
+        if (
+            "fingerprint_sha256" in payload
+            and payload.get("fingerprint_sha256") is not None
+        ):
+            fingerprint_sha256 = str(payload.get("fingerprint_sha256"))
+            if fingerprint_sha256 != expected_fingerprint_sha256:
+                raise ValueError(
+                    "Encoded sample cache request fingerprint_sha256 mismatch: "
+                    f"expected={expected_fingerprint_sha256} observed={fingerprint_sha256}"
+                )
+        else:
+            fingerprint_sha256 = expected_fingerprint_sha256
         root_dir = Path(str(payload.get("root_dir") or ".")).resolve()
-        cache_dir = Path(str(payload.get("cache_dir") or (root_dir / fingerprint_sha256)))
-        manifest_path = Path(
-            str(payload.get("manifest_path") or (cache_dir / "manifest.json"))
-        )
+        expected_cache_dir = root_dir / fingerprint_sha256
+        if "cache_dir" in payload and payload.get("cache_dir") is not None:
+            cache_dir = (
+                Path(str(payload.get("cache_dir")))
+                .expanduser()
+                .resolve(strict=False)
+            )
+            if cache_dir != expected_cache_dir:
+                raise ValueError(
+                    "Encoded sample cache request cache_dir mismatch: "
+                    f"expected={expected_cache_dir} observed={cache_dir}"
+                )
+        else:
+            cache_dir = expected_cache_dir
+        expected_manifest_path = cache_dir / "manifest.json"
+        if "manifest_path" in payload and payload.get("manifest_path") is not None:
+            manifest_path = (
+                Path(str(payload.get("manifest_path")))
+                .expanduser()
+                .resolve(strict=False)
+            )
+            if manifest_path != expected_manifest_path:
+                raise ValueError(
+                    "Encoded sample cache request manifest_path mismatch: "
+                    f"expected={expected_manifest_path} observed={manifest_path}"
+                )
+        else:
+            manifest_path = expected_manifest_path
         return cls(
-            enabled=bool(payload.get("enabled", False)),
+            enabled=enabled,
             root_dir=root_dir,
             ineligible_policy=str(payload.get("ineligible_policy") or "error"),
             wait_timeout_s=timeout_s,

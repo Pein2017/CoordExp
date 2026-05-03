@@ -3,6 +3,7 @@ from __future__ import annotations
 import concurrent.futures
 import json
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any, Dict
 
 import pytest
@@ -190,6 +191,70 @@ def test_encoded_sample_cache_request_normalizes_typed_fields(tmp_path) -> None:
     assert request.dataset_split == "train"
     assert request.dataset_jsonl == "train.jsonl"
     assert request.fingerprint["cache_schema_version"] == 1
+
+
+def test_encoded_sample_cache_setup_rejects_enabled_request_without_root_dir() -> None:
+    from src.datasets.encoded_sample_cache import setup_encoded_sample_cache_for_dataset
+
+    request = {
+        "enabled": True,
+        "ineligible_policy": "bypass",
+        "fingerprint": {"cache_schema_version": 1, "dataset": "toy"},
+    }
+
+    with pytest.raises(ValueError, match="root_dir"):
+        setup_encoded_sample_cache_for_dataset(
+            SimpleNamespace(object_ordering="random"),
+            request,
+        )
+
+
+def test_encoded_sample_cache_request_allows_disabled_request_without_root_dir() -> None:
+    from src.datasets.encoded_sample_cache import setup_encoded_sample_cache_for_dataset
+
+    store, info = setup_encoded_sample_cache_for_dataset(
+        SimpleNamespace(object_ordering="random"),
+        {"enabled": False, "fingerprint": {"cache_schema_version": 1}},
+    )
+
+    assert store is None
+    assert info is None
+
+
+def test_encoded_sample_cache_request_rejects_fingerprint_digest_mismatch(
+    tmp_path,
+) -> None:
+    from src.datasets.encoded_sample_cache import EncodedSampleCacheRequest
+
+    payload = _cache_request(tmp_path)
+    payload["fingerprint_sha256"] = "not-the-canonical-digest"
+
+    with pytest.raises(ValueError, match="fingerprint_sha256"):
+        EncodedSampleCacheRequest.from_mapping(payload)
+
+
+def test_encoded_sample_cache_request_rejects_cache_dir_mismatch(tmp_path) -> None:
+    from src.datasets.encoded_sample_cache import EncodedSampleCacheRequest
+
+    payload = EncodedSampleCacheRequest.from_mapping(
+        _cache_request(tmp_path)
+    ).to_mapping()
+    payload["cache_dir"] = str(tmp_path / "elsewhere")
+
+    with pytest.raises(ValueError, match="cache_dir"):
+        EncodedSampleCacheRequest.from_mapping(payload)
+
+
+def test_encoded_sample_cache_request_rejects_manifest_path_mismatch(tmp_path) -> None:
+    from src.datasets.encoded_sample_cache import EncodedSampleCacheRequest
+
+    payload = EncodedSampleCacheRequest.from_mapping(
+        _cache_request(tmp_path)
+    ).to_mapping()
+    payload["manifest_path"] = str(Path(payload["cache_dir"]) / "other.json")
+
+    with pytest.raises(ValueError, match="manifest_path"):
+        EncodedSampleCacheRequest.from_mapping(payload)
 
 
 def test_encoded_sample_cache_manifest_roundtrips_serialized_payload(tmp_path) -> None:
