@@ -224,7 +224,10 @@ def _require_coordinate_token(value: Any, *, path: str) -> str:
     match = _COORD_TOKEN_RE.fullmatch(token)
     if match is None:
         raise ValueError(f"{path} must be a compact-v1 coordinate token string")
-    coord_value = int(match.group(1))
+    coord_text = match.group(1)
+    coord_value = int(coord_text)
+    if str(coord_value) != coord_text:
+        raise ValueError(f"{path} coordinate token must use canonical integer text")
     if coord_value > 999:
         raise ValueError(f"{path} coordinate token must be in the 0..999 range")
     return token

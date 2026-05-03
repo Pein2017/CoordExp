@@ -118,3 +118,16 @@ def test_parse_raw_detection_row_rejects_non_coordinate_token_box_item() -> None
 
     with pytest.raises(ValueError, match=r"objects\[0\]\.bbox_2d\[2\].*coordinate token"):
         parse_raw_detection_row(row)
+
+
+def test_parse_raw_detection_row_rejects_leading_zero_coordinate_token() -> None:
+    row = _first_raw_row()
+    row["objects"][0]["bbox_2d"] = [
+        "<|coord_001|>",
+        "<|coord_2|>",
+        "<|coord_3|>",
+        "<|coord_4|>",
+    ]
+
+    with pytest.raises(ValueError, match=r"objects\[0\]\.bbox_2d\[0\].*canonical"):
+        parse_raw_detection_row(row)
