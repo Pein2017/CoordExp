@@ -342,6 +342,7 @@ def test_encoded_sample_cache_manifest_roundtrips_serialized_payload(tmp_path) -
             lambda payload: payload.update(
                 {
                     "num_samples": 3,
+                    "shard_size": 2,
                     "shards": [
                         {
                             **payload["shards"][0],
@@ -417,6 +418,58 @@ def test_encoded_sample_cache_manifest_roundtrips_serialized_payload(tmp_path) -
                 }
             ),
             "complete manifest shard index",
+        ),
+        (
+            lambda payload: payload.update(
+                {
+                    "num_samples": 1024,
+                    "shard_size": 512,
+                    "shards": [
+                        {
+                            **payload["shards"][0],
+                            "shard_index": 0,
+                            "start": 0,
+                            "end": 512,
+                            "count": 512,
+                        },
+                        {
+                            **payload["shards"][0],
+                            "shard_index": 1,
+                            "file": "shard-00001.pt",
+                            "start": 512,
+                            "end": 1024,
+                            "count": 512,
+                        },
+                        {
+                            **payload["shards"][0],
+                            "shard_index": 2,
+                            "file": "shard-00002.pt",
+                            "start": 1024,
+                            "end": 1024,
+                            "count": 0,
+                        },
+                    ],
+                }
+            ),
+            "complete manifest shard count",
+        ),
+        (
+            lambda payload: payload.update(
+                {
+                    "num_samples": 0,
+                    "shard_size": 512,
+                    "shards": [
+                        {
+                            **payload["shards"][0],
+                            "shard_index": 0,
+                            "start": 0,
+                            "end": 0,
+                            "count": 0,
+                        }
+                    ],
+                }
+            ),
+            "complete manifest shard count",
         ),
     ],
 )

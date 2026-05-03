@@ -323,6 +323,15 @@ class EncodedSampleCacheManifest:
                     "Encoded sample cache complete manifest shards are required "
                     f"when num_samples is positive{location}"
                 )
+            expected_shard_count = (
+                0 if num_samples == 0 else math.ceil(num_samples / shard_size)
+            )
+            if len(shards) != expected_shard_count:
+                raise ValueError(
+                    "Encoded sample cache complete manifest shard count "
+                    f"inventory mismatch{location}: "
+                    f"expected={expected_shard_count} observed={len(shards)}"
+                )
             total_shard_count = sum(shard.count for shard in shards)
             if total_shard_count != num_samples:
                 raise ValueError(
