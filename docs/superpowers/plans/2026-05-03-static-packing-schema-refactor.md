@@ -1,6 +1,6 @@
 # Static Packing Schema Refactor Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:test-driven-development for each code slice and verification-before-completion before claiming completion. Use Serena for Python symbol inspection/editing when available, and `rtk conda run -n ms python -m pytest ...` for noisy tests.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:test-driven-development for each code slice and verification-before-completion before claiming completion. Use Serena for Python symbol inspection/editing when available, and `rtk conda run -n ms python -m pytest tests/test_packing_wrapper.py -q` for noisy tests.
 
 **Goal:** Add typed `StaticPackingPlan` and `StaticPackingManifest` wrappers around the existing static-packing raw plan/cache contract while preserving all current JSON artifact keys, checksums, cache filenames, and public dataset attributes.
 
@@ -29,7 +29,7 @@ Do not modify:
 
 - upstream HF model files,
 - cache artifact key names,
-- static-packing filenames such as `lengths.json`, `plan_ws*_drop*.json`, or `INDEX.json`,
+- these static-packing filenames: `lengths.json`, `plan_ws*_drop*.json`, and `INDEX.json`,
 - SFT CLI/config surfaces.
 
 ## Existing Boundary Evidence
@@ -50,17 +50,45 @@ Add frozen dataclasses near the existing static-packing helpers in `src/datasets
 ```python
 @dataclass(frozen=True)
 class StaticPackingPlan:
-    raw_plan: tuple[tuple[int, ...], ...]
-    aligned_plan: tuple[tuple[int, ...], ...]
+    # Store as immutable row tuples at runtime. The annotation stays broad so
+    # the plan can avoid Python's verbose homogeneous tuple spelling.
+    raw_plan: Sequence[Sequence[int]]
+    aligned_plan: Sequence[Sequence[int]]
     raw_plan_checksum: str
     aligned_plan_checksum: str
     world_size: int
     dataloader_drop_last: bool
     pad_needed: int
-    repeated_pack_indices: tuple[int, ...]
+    repeated_pack_indices: Sequence[int]
     single_long: int
     skipped_long: int
     avg_fill: float
+
+    @staticmethod
+    def _normalize_plan_field(name: str, value: object) -> tuple:
+        if not isinstance(value, Sequence) or isinstance(value, (str, bytes)):
+            raise TypeError(f"Static packing field {name} must be a sequence of packs")
+        normalized_rows: list[tuple[int]] = []
+        for row_index, row in enumerate(value):
+            if not isinstance(row, Sequence) or isinstance(row, (str, bytes)):
+                raise TypeError(
+                    f"Static packing field {name}[{row_index}] must be a sequence of sample indices"
+                )
+            if len(row) <= 0:
+                raise ValueError(
+                    f"Static packing field {name}[{row_index}] must not be empty"
+                )
+            normalized_rows.append(tuple(int(item) for item in row))
+        if not normalized_rows:
+            raise ValueError(f"Static packing field {name} must contain at least one pack")
+        return tuple(normalized_rows)
+
+    @staticmethod
+    def _normalize_nonnegative_int(name: str, value: object) -> int:
+        normalized = int(value)
+        if normalized < 0:
+            raise ValueError(f"Static packing field {name} must be non-negative")
+        return normalized
 
     @classmethod
     def from_parts(
@@ -77,12 +105,83 @@ class StaticPackingPlan:
         avg_fill: float,
         raw_plan_checksum: str | None = None,
         aligned_plan_checksum: str | None = None,
-    ) -> "StaticPackingPlan": ...
+    ) -> "StaticPackingPlan":
+        normalized_raw = cls._normalize_plan_field("raw_plan", raw_plan)
+        normalized_aligned = cls._normalize_plan_field("aligned_plan", aligned_plan)
+        normalized_repeats = tuple(int(i) for i in repeated_pack_indices)
+        normalized_avg_fill = float(avg_fill)
+        if not math.isfinite(normalized_avg_fill):
+            raise ValueError("Static packing field avg_fill must be finite")
+        plan = cls(
+            raw_plan=normalized_raw,
+            aligned_plan=normalized_aligned,
+            raw_plan_checksum=str(
+                raw_plan_checksum or _stable_plan_checksum(normalized_raw)
+            ),
+            aligned_plan_checksum=str(
+                aligned_plan_checksum or _stable_plan_checksum(normalized_aligned)
+            ),
+            world_size=max(int(world_size), 1),
+            dataloader_drop_last=bool(dataloader_drop_last),
+            pad_needed=cls._normalize_nonnegative_int("pad_needed", pad_needed),
+            repeated_pack_indices=normalized_repeats,
+            single_long=cls._normalize_nonnegative_int("single_long", single_long),
+            skipped_long=cls._normalize_nonnegative_int("skipped_long", skipped_long),
+            avg_fill=normalized_avg_fill,
+        )
+        expected_raw = _stable_plan_checksum(plan.raw_plan)
+        expected_aligned = _stable_plan_checksum(plan.aligned_plan)
+        if plan.raw_plan_checksum != expected_raw:
+            raise ValueError("Static packing raw_plan_checksum does not match raw_plan")
+        if plan.aligned_plan_checksum != expected_aligned:
+            raise ValueError(
+                "Static packing aligned_plan_checksum does not match aligned_plan"
+            )
+        return plan
 
     @classmethod
-    def from_mapping(cls, payload: Mapping[str, Any]) -> "StaticPackingPlan": ...
+    def from_mapping(cls, payload: Mapping[str, Any]) -> "StaticPackingPlan":
+        raw_plan = payload.get("raw_plan")
+        aligned_plan = payload.get("aligned_plan")
+        if not isinstance(raw_plan, list):
+            raise TypeError("Static plan cache field raw_plan must be a list")
+        if not isinstance(aligned_plan, list):
+            raise TypeError("Static plan cache field aligned_plan must be a list")
+        repeated_pack_indices = payload.get("repeated_pack_indices") or []
+        if not isinstance(repeated_pack_indices, list):
+            raise TypeError(
+                "Static plan cache field repeated_pack_indices must be a list"
+            )
+        return cls.from_parts(
+            raw_plan=raw_plan,
+            aligned_plan=aligned_plan,
+            raw_plan_checksum=str(payload.get("raw_plan_checksum") or ""),
+            aligned_plan_checksum=str(payload.get("aligned_plan_checksum") or ""),
+            world_size=int(payload.get("world_size") or 1),
+            dataloader_drop_last=bool(payload.get("dataloader_drop_last", False)),
+            pad_needed=int(payload.get("pad_needed") or 0),
+            repeated_pack_indices=repeated_pack_indices,
+            single_long=int(payload.get("single_long") or 0),
+            skipped_long=int(payload.get("skipped_long") or 0),
+            avg_fill=float(payload.get("avg_fill") or 0.0),
+        )
 
-    def to_mapping(self, *, fingerprint: Mapping[str, Any]) -> dict[str, Any]: ...
+    def to_mapping(self, *, fingerprint: Mapping[str, Any]) -> dict[str, Any]:
+        return {
+            "version": _PLAN_CACHE_VERSION,
+            "fingerprint": dict(fingerprint),
+            "world_size": int(self.world_size),
+            "dataloader_drop_last": bool(self.dataloader_drop_last),
+            "raw_plan": [[int(i) for i in pack] for pack in self.raw_plan],
+            "aligned_plan": [[int(i) for i in pack] for pack in self.aligned_plan],
+            "raw_plan_checksum": str(self.raw_plan_checksum),
+            "aligned_plan_checksum": str(self.aligned_plan_checksum),
+            "pad_needed": int(self.pad_needed),
+            "repeated_pack_indices": [int(i) for i in self.repeated_pack_indices],
+            "single_long": int(self.single_long),
+            "skipped_long": int(self.skipped_long),
+            "avg_fill": float(self.avg_fill),
+        }
 ```
 
 ```python
@@ -101,9 +200,41 @@ class StaticPackingManifest:
         expected_fingerprint: Mapping[str, Any],
         world_size: int,
         dataloader_drop_last: bool,
-    ) -> "StaticPackingManifest": ...
+    ) -> "StaticPackingManifest":
+        version = payload.get("version")
+        if int(version or -1) != _PLAN_CACHE_VERSION:
+            raise ValueError(
+                f"Unsupported static plan cache version in {path}: {version!r}"
+            )
 
-    def to_mapping(self) -> dict[str, Any]: ...
+        observed_fingerprint = payload.get("fingerprint")
+        if not isinstance(observed_fingerprint, Mapping):
+            raise TypeError(f"Static plan cache fingerprint must be a mapping: {path}")
+        _validate_cache_fingerprint(
+            path=path,
+            expected=expected_fingerprint,
+            observed=observed_fingerprint,
+        )
+
+        if int(payload.get("world_size") or -1) != int(world_size):
+            raise ValueError(
+                f"Static plan cache world_size mismatch in {path}: "
+                f"expected={world_size} observed={payload.get('world_size')!r}"
+            )
+        if bool(payload.get("dataloader_drop_last", False)) != bool(dataloader_drop_last):
+            raise ValueError(
+                f"Static plan cache dataloader_drop_last mismatch in {path}."
+            )
+
+        plan = StaticPackingPlan.from_mapping(payload)
+        return cls(
+            version=_PLAN_CACHE_VERSION,
+            fingerprint=json.loads(_json_canonical_dumps(dict(observed_fingerprint))),
+            plan=plan,
+        )
+
+    def to_mapping(self) -> dict[str, Any]:
+        return self.plan.to_mapping(fingerprint=self.fingerprint)
 ```
 
 Implementation requirements:
@@ -185,7 +316,7 @@ Expected red: import fails because `StaticPackingManifest` does not exist.
 
 - [ ] **Step 3: Add production-cache roundtrip assertion**
 
-Extend an existing cache test such as `test_static_packing_deterministic_plan` or `test_static_packing_regenerates_stale_plan_cache_version` with a focused artifact parse:
+Extend the existing `test_static_packing_deterministic_plan` body with this focused artifact parse immediately after the current checksum equality assertions:
 
 ```python
 from src.datasets.wrappers.packed_caption import StaticPackingManifest
@@ -228,7 +359,7 @@ Route current `_read_plan_cache()` validation through `StaticPackingManifest.fro
 
 - [ ] **Step 6: Route plan persistence through typed wrappers**
 
-Change `_persist_plan_cache()` to build `StaticPackingPlan.from_parts(...)` and write `StaticPackingManifest(...).to_mapping()`.
+Change `_persist_plan_cache()` to build `StaticPackingPlan.from_parts(raw_plan=raw_plan, aligned_plan=aligned_plan, world_size=world_size, dataloader_drop_last=dataloader_drop_last, pad_needed=pad_needed, repeated_pack_indices=repeated_pack_indices, single_long=single_long, skipped_long=skipped_long, avg_fill=avg_fill)` and write `StaticPackingManifest(version=_PLAN_CACHE_VERSION, fingerprint=dict(fingerprint), plan=plan).to_mapping()`.
 
 Keep function signatures stable unless the implementation can narrow internally without changing callers.
 
@@ -237,7 +368,12 @@ Keep function signatures stable unless the implementation can narrow internally 
 At the `build_static_packed_dataset()` read path, replace local raw field extraction with:
 
 ```python
-plan_manifest = _read_plan_cache(...)
+plan_manifest = _read_plan_cache(
+    path=plan_cache_path,
+    fingerprint=canonical_fingerprint,
+    world_size=world_size,
+    dataloader_drop_last=bool(dataloader_drop_last),
+)
 plan = plan_manifest.plan
 ```
 
