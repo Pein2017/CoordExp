@@ -88,14 +88,6 @@
 - For non-Python code, prefer Serena MCP when working in large files, doing cross-reference tracing, symbol-level edits, or nontrivial refactors. For plain-text or non-symbolic files such as Markdown, YAML, JSON, or exact line-based inspections, direct shell reads and `apply_patch` are usually the better fit.
 - For code work, use `rg`/`rtk` first to narrow candidate files or directories, then switch to Serena MCP when symbol-level understanding or editing is useful.
 
-## Model
-- Allocate subagent model capacity by subtask type instead of using one fixed default.
-- Use `gpt-5.4-mini` for pure information collection only: repo scans, file discovery, fact extraction, or status gathering with little synthesis or judgment.
-- Use `gpt-5.4` with `medium` reasoning for bounded implementation, mechanical refactors, straightforward test updates, or execution tasks with clear acceptance criteria.
-- Use `gpt-5.4` with `high` reasoning for the default frontier tier: debugging, code review, audit, nontrivial planning, cross-file reasoning, tradeoff analysis, and ambiguous implementation work.
-- Use `gpt-5.4` with `xhigh` reasoning only for the hardest or highest-stakes work: deep audits, architecture/spec design, difficult root-cause analysis, research brainstorming, or any task where `high` is proving insufficient.
-- When uncertain, prefer `gpt-5.4` with `high` rather than under-allocating; downgrade to `mini` only when the task is collection-only, and upgrade to `xhigh` only when extra depth is likely to change the answer.
-
 ## Environment
 - Repo root: `.`
 - Use `conda run -n ms python ...` for tests.

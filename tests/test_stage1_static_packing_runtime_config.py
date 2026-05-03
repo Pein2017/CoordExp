@@ -854,8 +854,8 @@ def test_shared_dataset_and_prompt_facets_materialize_through_minimal_stage1_lea
     assert cfg.custom.object_ordering == "sorted"
     assert cfg.custom.object_field_order == "desc_first"
     assert cfg.custom.extra["prompt_variant"] == "coco_80"
-    assert cfg.template["max_pixels"] == 786432
-    assert cfg.custom.offline_max_pixels == 786432
+    assert cfg.template["max_pixels"] == 10485760
+    assert cfg.custom.offline_max_pixels == 10485760
     assert cfg.training["artifact_subdir"] == "stage1/test/coco768"
     assert cfg.training["output_dir"] == "./output/stage1/test/coco768"
     assert cfg.training["logging_dir"] == "./tb/stage1/test/coco768"

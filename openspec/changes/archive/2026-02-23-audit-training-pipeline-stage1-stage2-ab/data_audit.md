@@ -108,7 +108,7 @@ Edge-case policies (explicit):
 **No runtime resizing**
 - CoordExp forbids runtime resizing because it breaks grounding coordinates.
 - Enforcement is two-part:
-  1. Config hard cap: `configs/base.yaml` sets `template.max_pixels: 786432`.
+  1. Config hard cap: `configs/base.yaml` sets `template.max_pixels: 10485760`.
   2. Learner hard error: `src/datasets/dense_caption.py:_enforce_max_pixels` raises if
      `width*height > template.max_pixels` (no silent rescale).
 

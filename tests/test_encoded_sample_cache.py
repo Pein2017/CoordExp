@@ -11,7 +11,7 @@ from src.datasets.wrappers.packed_caption import build_static_packed_dataset
 
 
 class _CountingTemplate:
-    max_pixels = 786432
+    max_pixels = 10485760
     max_length = 64
     system = None
 

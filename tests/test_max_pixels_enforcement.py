@@ -27,7 +27,7 @@ class _NoEncodeDataset(BaseCaptionDataset):
 def _make_dataset(
     *,
     record: dict,
-    max_pixels: int = 786432,
+    max_pixels: int = 10485760,
     offline_max_pixels: int | None = None,
 ) -> _NoEncodeDataset:
     template = DummyTemplate(max_pixels=max_pixels)
@@ -69,7 +69,7 @@ def test_max_pixels_guard_prefers_offline_contract_when_set() -> None:
     ds = _make_dataset(
         record=_record(width=1200, height=900),
         max_pixels=7864320000,
-        offline_max_pixels=786432,
+        offline_max_pixels=10485760,
     )
     with pytest.raises(ValueError, match=r"custom\.offline_max_pixels"):
         _ = ds[0]

@@ -30,6 +30,6 @@ download:
 preset:
   name: rescale_32_768_bbox
   image_factor: 32
-  max_pixels: 786432         # 32*32*768
+  max_pixels: 10485760         # 32*32*768
   min_pixels: 4096           # 32*32*4
   num_workers: 8
