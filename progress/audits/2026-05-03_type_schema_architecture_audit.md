@@ -229,6 +229,9 @@ Resolved in the initial slice:
   checks for safe shard file basenames, unique and aligned shard indexes,
   contiguous ranges covering the sample interval, and exact observed shard
   inventory length.
+- Final cleanup also rejects malformed complete-manifest `payload_keys`,
+  `shards`, and shard metadata fields before legacy coercion can default
+  missing values.
 - Existing JSON artifact keys and `EncodedSampleCacheStore.info()` keys are preserved.
 
 Rule-outs after the global regression gate:
