@@ -1418,7 +1418,7 @@ Observed 2026-05-03: `rtk conda run -n ms python -m pytest tests/test_detection_
 
 ## Task 10: Stage-2 And Teacher-Forcing Runtime State Decision Gate
 
-- [ ] **Step 1: Inspect runtime state boundaries**
+- [x] **Step 1: Inspect runtime state boundaries**
 
 Run:
 
@@ -1430,7 +1430,15 @@ rg -n "PreparedSegment|prepared_segment|runtime_state|batch_extras|ModuleResult|
 
 Expected: audit report separates stable state/result objects from dynamic metric maps.
 
-- [ ] **Step 2: Protect existing typed contracts**
+Observed 2026-05-03:
+
+- Required scan was run exactly with `rg -n "PreparedSegment|prepared_segment|runtime_state|batch_extras|ModuleResult|PipelineResult|state: dict|dict\[str, Any\]|losses|metrics" src/trainers tests --glob '!output/**' --glob '!temp/**'`.
+- Inspected runtime-state concepts: `Stage2ABTrainingTrainer._coordexp_checkpoint_runtime_state()`, `_coordexp_restore_checkpoint_runtime_state()`, `_PendingStage2Log`, `_stage2_metric_snapshots`, `_stage2_post_rollout_segments`, `_stage2_b_step_raw`, `_stage2_a_step_raw`, `_stage2_train_monitor_candidates`, `_rollout_matching_batch_metrics`, `BatchExtras`, `ModuleResult`, `PipelineResult`, and `Stage2PreparedSegment`.
+- Stable state/result objects: `_PendingStage2Log` is already a dataclass accumulator; `BatchExtras` is already a dataclass for collator extras; `ModuleResult` and `PipelineResult` are already teacher-forcing result dataclasses.
+- Dynamic metrics classification: `ModuleResult.metrics`, `PipelineResult.metrics`, `_stage2_metric_snapshots`, `_rollout_matching_batch_metrics`, `Stage2BatchMetrics`, and the many `loss/*`, `stage2/*`, `rollout/*`, `gradmon/*`, and `packing/*` keys remain dynamic metric/logging maps.
+- Concrete runtime-state risk selected for follow-up: the Stage-2 checkpoint runtime-state payload serialized by `_coordexp_checkpoint_runtime_state()` and restored by `_coordexp_restore_checkpoint_runtime_state()`.
+
+- [x] **Step 2: Protect existing typed contracts**
 
 Confirm current typed teacher-forcing contracts before adding new types:
 
@@ -1441,7 +1449,13 @@ sed -n '1,180p' src/trainers/teacher_forcing/objective_pipeline.py
 
 Expected: `ModuleResult` and `PipelineResult` remain the canonical teacher-forcing result types; do not replace them with new overlapping containers.
 
-- [ ] **Step 3: Decide first Stage-2 state object**
+Observed 2026-05-03:
+
+- `src/trainers/teacher_forcing/contracts.py` still defines `ModuleResult(loss, metrics, state)` and `PipelineResult(total_loss, module_losses, metrics, state)` as frozen dataclasses.
+- `src/trainers/teacher_forcing/objective_pipeline.py::run_teacher_forcing_pipeline()` still returns `PipelineResult` and accumulates module losses, metrics, and state through those existing contracts.
+- Task 10 did not edit teacher-forcing Python code and did not add overlapping teacher-forcing result containers.
+
+- [x] **Step 3: Decide first Stage-2 state object**
 
 Record exactly one decision in `progress/audits/2026-05-03_type_schema_architecture_audit.md`:
 
@@ -1455,11 +1469,21 @@ or:
 - Stage-2 decision: defer code changes; current high-risk raw dictionaries are dynamic metric payloads, and the branch should avoid reshaping logging keys without a separate metric-contract spec.
 ```
 
-- [ ] **Step 4: Create a separate implementation plan if needed**
+Observed 2026-05-03:
+
+```markdown
+- Stage-2 decision: create a dedicated follow-up plan for the first concrete runtime state object selected by the Task 10 inspection; do not reshape logging keys in this branch without a separate metric-contract spec.
+```
+
+Selected first runtime-state object: `Stage2CheckpointRuntimeState`, scoped to `Stage2ABTrainingTrainer._coordexp_checkpoint_runtime_state()` and `_coordexp_restore_checkpoint_runtime_state()`.
+
+- [x] **Step 4: Create a separate implementation plan if needed**
 
 If the decision is to implement a Stage-2 runtime state object, stop this plan at the decision gate and create a follow-up super-power plan that names exact symbols, files, test bodies, implementation snippets, and verification commands. Do not implement Stage-2 runtime-state code from this decision gate.
 
-- [ ] **Step 5: Run Stage-2 focused tests**
+Observed 2026-05-03: created follow-up plan `docs/superpowers/plans/2026-05-03-stage2-runtime-state-schema-refactor.md`. The follow-up plan is limited to a future `Stage2CheckpointRuntimeState` typed wrapper around the existing checkpoint runtime payload. This Task 10 gate did not implement Stage-2 runtime-state code, did not change `Stage2PreparedSegment`, did not modify teacher-forcing result types, and did not reshape metric/logging keys.
+
+- [x] **Step 5: Run Stage-2 focused tests**
 
 Run:
 
@@ -1474,6 +1498,8 @@ rtk conda run -n ms python -m pytest \
 ```
 
 Expected: PASS.
+
+Observed 2026-05-03: `rtk conda run -n ms python -m pytest tests/test_stage2_ab_training.py tests/test_stage2_two_channel_training.py tests/test_batch_extras_contract.py tests/test_teacher_forcing_token_ce.py tests/test_stage1_set_continuation_branch_runtime.py -q` passed with `205 passed in 2.46s`.
 
 ## Task 11: Final Audit Closure And Verification
 
