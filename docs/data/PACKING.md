@@ -77,6 +77,9 @@ Current implementation:
   With `ineligible_policy: bypass`, train/eval continue uncached and run
   artifacts record `status: bypassed`, `policy: bypass`, and
   `reason: stage1_set_continuation_branch_sampling`.
+- `training.encoded_sample_cache.max_resident_shards` bounds the number of shard
+  files kept resident by the cache store. The default is `4`; raise it only when
+  repeated shard reloads dominate dataset fetch time.
 - `custom.sft_structural_close.enabled: true` also rejects packing. That
   ordinary-SFT ablation attaches per-token weights to the final global CoordJSON
   close sequence `]}` and therefore requires one un-packed assistant response

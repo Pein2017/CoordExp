@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections import OrderedDict
+from dataclasses import dataclass
 import hashlib
 import json
 import math
@@ -8,8 +9,8 @@ import os
 import threading
 import time
 from datetime import datetime, timezone
-from pathlib import Path
-from typing import Any, Mapping
+from pathlib import Path, PurePosixPath, PureWindowsPath
+from typing import Any, Literal, Mapping
 
 import torch
 
@@ -20,6 +21,451 @@ logger = get_logger(__name__)
 _ENCODED_SAMPLE_CACHE_VERSION = 1
 _DEFAULT_ENCODED_SAMPLE_SHARD_SIZE = 512
 _DEFAULT_MAX_RESIDENT_SHARDS = 4
+
+EncodedSampleCacheManifestStatus = Literal["building", "complete", "error"]
+
+
+def _is_relative_basename(path: str) -> bool:
+    if path in {"", ".", ".."}:
+        return False
+    posix_path = PurePosixPath(path)
+    windows_path = PureWindowsPath(path)
+    return (
+        not posix_path.is_absolute()
+        and not windows_path.is_absolute()
+        and len(posix_path.parts) == 1
+        and len(windows_path.parts) == 1
+        and posix_path.name == path
+        and windows_path.name == path
+    )
+
+
+@dataclass(frozen=True)
+class EncodedSampleCacheRequest:
+    enabled: bool
+    root_dir: Path
+    ineligible_policy: str
+    wait_timeout_s: float
+    max_resident_shards: int
+    dataset_split: str
+    dataset_jsonl: Any
+    fingerprint: dict[str, Any]
+    fingerprint_sha256: str
+    cache_dir: Path
+    manifest_path: Path
+
+    @classmethod
+    def from_mapping(cls, payload: Mapping[str, Any]) -> "EncodedSampleCacheRequest":
+        enabled = bool(payload.get("enabled", False))
+        if enabled and not payload.get("root_dir"):
+            raise ValueError(
+                "Encoded sample cache request must include a resolved root_dir when enabled."
+            )
+        timeout_s = float(payload.get("wait_timeout_s", 7200.0) or 0.0)
+        if not math.isfinite(timeout_s):
+            raise ValueError(
+                f"encoded_sample_cache.wait_timeout_s must be finite, got {timeout_s!r}"
+            )
+        fingerprint = _canonicalize_fingerprint(dict(payload.get("fingerprint") or {}))
+        expected_fingerprint_sha256 = _fingerprint_digest(fingerprint)
+        if (
+            "fingerprint_sha256" in payload
+            and payload.get("fingerprint_sha256") is not None
+        ):
+            fingerprint_sha256 = str(payload.get("fingerprint_sha256"))
+            if fingerprint_sha256 != expected_fingerprint_sha256:
+                raise ValueError(
+                    "Encoded sample cache request fingerprint_sha256 mismatch: "
+                    f"expected={expected_fingerprint_sha256} observed={fingerprint_sha256}"
+                )
+        else:
+            fingerprint_sha256 = expected_fingerprint_sha256
+        root_dir = Path(str(payload.get("root_dir") or ".")).resolve()
+        expected_cache_dir = root_dir / fingerprint_sha256
+        if "cache_dir" in payload and payload.get("cache_dir") is not None:
+            cache_dir = (
+                Path(str(payload.get("cache_dir")))
+                .expanduser()
+                .resolve(strict=False)
+            )
+            if cache_dir != expected_cache_dir:
+                raise ValueError(
+                    "Encoded sample cache request cache_dir mismatch: "
+                    f"expected={expected_cache_dir} observed={cache_dir}"
+                )
+        else:
+            cache_dir = expected_cache_dir
+        expected_manifest_path = cache_dir / "manifest.json"
+        if "manifest_path" in payload and payload.get("manifest_path") is not None:
+            manifest_path = (
+                Path(str(payload.get("manifest_path")))
+                .expanduser()
+                .resolve(strict=False)
+            )
+            if manifest_path != expected_manifest_path:
+                raise ValueError(
+                    "Encoded sample cache request manifest_path mismatch: "
+                    f"expected={expected_manifest_path} observed={manifest_path}"
+                )
+        else:
+            manifest_path = expected_manifest_path
+        return cls(
+            enabled=enabled,
+            root_dir=root_dir,
+            ineligible_policy=str(payload.get("ineligible_policy") or "error"),
+            wait_timeout_s=timeout_s,
+            max_resident_shards=max(
+                int(
+                    payload.get(
+                        "max_resident_shards", _DEFAULT_MAX_RESIDENT_SHARDS
+                    )
+                    or 1
+                ),
+                1,
+            ),
+            dataset_split=str(payload.get("dataset_split") or "train"),
+            dataset_jsonl=payload.get("dataset_jsonl"),
+            fingerprint=fingerprint,
+            fingerprint_sha256=fingerprint_sha256,
+            cache_dir=cache_dir,
+            manifest_path=manifest_path,
+        )
+
+    def to_mapping(self) -> dict[str, Any]:
+        return {
+            "enabled": self.enabled,
+            "root_dir": str(self.root_dir),
+            "ineligible_policy": self.ineligible_policy,
+            "wait_timeout_s": self.wait_timeout_s,
+            "max_resident_shards": self.max_resident_shards,
+            "dataset_split": self.dataset_split,
+            "dataset_jsonl": self.dataset_jsonl,
+            "fingerprint": dict(self.fingerprint),
+            "fingerprint_sha256": self.fingerprint_sha256,
+            "cache_dir": str(self.cache_dir),
+            "manifest_path": str(self.manifest_path),
+        }
+
+
+EncodedSampleCacheRequestInput = Mapping[str, Any] | EncodedSampleCacheRequest
+
+
+def _coerce_cache_request(
+    request: EncodedSampleCacheRequestInput,
+) -> EncodedSampleCacheRequest:
+    if isinstance(request, EncodedSampleCacheRequest):
+        return request
+    return EncodedSampleCacheRequest.from_mapping(request)
+
+
+@dataclass(frozen=True)
+class EncodedSampleShard:
+    shard_index: int
+    file: str
+    start: int
+    end: int
+    count: int
+
+    @classmethod
+    def from_mapping(cls, payload: Mapping[str, Any]) -> "EncodedSampleShard":
+        return cls(
+            shard_index=int(payload.get("shard_index") or 0),
+            file=str(payload.get("file") or ""),
+            start=int(payload.get("start") or 0),
+            end=int(payload.get("end") or 0),
+            count=int(payload.get("count") or 0),
+        )
+
+    def to_mapping(self) -> dict[str, Any]:
+        return {
+            "shard_index": self.shard_index,
+            "file": self.file,
+            "start": self.start,
+            "end": self.end,
+            "count": self.count,
+        }
+
+
+@dataclass(frozen=True)
+class EncodedSampleCacheManifest:
+    version: int
+    status: EncodedSampleCacheManifestStatus
+    fingerprint: dict[str, Any]
+    fingerprint_sha256: str
+    dataset_split: str
+    dataset_jsonl: Any
+    num_samples: int | None = None
+    shard_size: int | None = None
+    payload_keys: tuple[str, ...] = ()
+    shards: tuple[EncodedSampleShard, ...] = ()
+    build_started_at: str | None = None
+    build_completed_at: str | None = None
+    build_failed_at: str | None = None
+    error: str | None = None
+    path: Path | None = None
+
+    @classmethod
+    def from_mapping(
+        cls,
+        payload: Mapping[str, Any],
+        *,
+        path: Path | None = None,
+    ) -> "EncodedSampleCacheManifest":
+        status = str(payload.get("status") or "")
+        location = f": {path}" if path is not None else ""
+        if status not in {"building", "complete", "error"}:
+            raise ValueError(
+                "Invalid encoded sample cache manifest status"
+                f"{location}: {status!r}"
+            )
+        fingerprint = payload.get("fingerprint")
+        if not isinstance(fingerprint, Mapping):
+            raise TypeError(
+                f"Encoded sample cache fingerprint must be a mapping{location}"
+            )
+        canonical_fingerprint = _canonicalize_fingerprint(fingerprint)
+        is_complete = status == "complete"
+        if is_complete:
+            for key in (
+                "fingerprint_sha256",
+                "num_samples",
+                "shard_size",
+                "payload_keys",
+                "shards",
+            ):
+                if key not in payload:
+                    raise ValueError(
+                        "Encoded sample cache complete manifest missing "
+                        f"{key}{location}"
+                    )
+            observed_digest = str(payload.get("fingerprint_sha256") or "")
+            if not observed_digest:
+                raise ValueError(
+                    "Encoded sample cache complete manifest fingerprint_sha256 "
+                    f"is required{location}"
+                )
+            expected_digest = _fingerprint_digest(canonical_fingerprint)
+            if observed_digest != expected_digest:
+                raise ValueError(
+                    "Encoded sample cache complete manifest fingerprint_sha256 "
+                    f"mismatch{location}: expected={expected_digest} "
+                    f"observed={observed_digest}"
+                )
+        raw_payload_keys = payload.get("payload_keys")
+        if raw_payload_keys is None:
+            if is_complete:
+                raise ValueError(
+                    "Encoded sample cache complete manifest payload_keys "
+                    f"must be a list{location}"
+                )
+            raw_payload_keys = []
+        elif not is_complete and not raw_payload_keys:
+            raw_payload_keys = []
+        if not isinstance(raw_payload_keys, list):
+            if is_complete:
+                raise TypeError(
+                    "Encoded sample cache complete manifest payload_keys "
+                    f"must be a list{location}"
+                )
+            raise TypeError(
+                f"Encoded sample cache payload_keys must be a list{location}"
+            )
+        raw_shards = payload.get("shards")
+        if raw_shards is None:
+            if is_complete:
+                raise ValueError(
+                    "Encoded sample cache complete manifest shards "
+                    f"must be a list{location}"
+                )
+            raw_shards = []
+        elif not is_complete and not raw_shards:
+            raw_shards = []
+        if not isinstance(raw_shards, list):
+            if is_complete:
+                raise TypeError(
+                    "Encoded sample cache complete manifest shards "
+                    f"must be a list{location}"
+                )
+            raise TypeError(
+                f"Encoded sample cache shards payload must be a list{location}"
+            )
+        shards: list[EncodedSampleShard] = []
+        seen_shard_indexes: set[int] = set()
+        for shard in raw_shards:
+            if not isinstance(shard, Mapping):
+                raise TypeError(
+                    f"Encoded sample cache shard metadata must be a mapping{location}"
+                )
+            if is_complete:
+                required_shard_fields = (
+                    "shard_index",
+                    "file",
+                    "start",
+                    "end",
+                    "count",
+                )
+                missing_shard_fields = [
+                    field
+                    for field in required_shard_fields
+                    if field not in shard or shard[field] is None
+                ]
+                if missing_shard_fields:
+                    raise ValueError(
+                        "Encoded sample cache complete manifest shard metadata "
+                        f"missing {', '.join(missing_shard_fields)}{location}"
+                    )
+            typed_shard = EncodedSampleShard.from_mapping(shard)
+            if is_complete:
+                if not _is_relative_basename(typed_shard.file):
+                    raise ValueError(
+                        "Encoded sample cache complete manifest shard file "
+                        f"must be a relative basename{location}: "
+                        f"{typed_shard.file!r}"
+                    )
+                if typed_shard.shard_index in seen_shard_indexes:
+                    raise ValueError(
+                        "Encoded sample cache complete manifest duplicate shard "
+                        f"index{location}: {typed_shard.shard_index}"
+                    )
+                if typed_shard.start < 0 or typed_shard.end < typed_shard.start:
+                    raise ValueError(
+                        "Encoded sample cache complete manifest shard range "
+                        f"is invalid{location}"
+                    )
+                if typed_shard.count != typed_shard.end - typed_shard.start:
+                    raise ValueError(
+                        "Encoded sample cache complete manifest shard count "
+                        f"mismatch{location}"
+                    )
+                seen_shard_indexes.add(typed_shard.shard_index)
+            shards.append(typed_shard)
+        num_samples = (
+            int(payload["num_samples"])
+            if payload.get("num_samples") is not None
+            else None
+        )
+        shard_size = (
+            int(payload["shard_size"])
+            if payload.get("shard_size") is not None
+            else None
+        )
+        if is_complete:
+            if num_samples is None or num_samples < 0:
+                raise ValueError(
+                    "Encoded sample cache complete manifest num_samples "
+                    f"must be non-negative{location}"
+                )
+            if shard_size is None or shard_size <= 0:
+                raise ValueError(
+                    "Encoded sample cache complete manifest shard_size "
+                    f"must be positive{location}"
+                )
+            if num_samples > 0 and not shards:
+                raise ValueError(
+                    "Encoded sample cache complete manifest shards are required "
+                    f"when num_samples is positive{location}"
+                )
+            expected_shard_count = (
+                0 if num_samples == 0 else math.ceil(num_samples / shard_size)
+            )
+            if len(shards) != expected_shard_count:
+                raise ValueError(
+                    "Encoded sample cache complete manifest shard count "
+                    f"inventory mismatch{location}: "
+                    f"expected={expected_shard_count} observed={len(shards)}"
+                )
+            total_shard_count = sum(shard.count for shard in shards)
+            if total_shard_count != num_samples:
+                raise ValueError(
+                    "Encoded sample cache complete manifest shard count "
+                    f"total mismatch{location}: expected={num_samples} "
+                    f"observed={total_shard_count}"
+                )
+            for expected_index, shard in enumerate(
+                sorted(shards, key=lambda item: item.start)
+            ):
+                if shard.shard_index != expected_index:
+                    raise ValueError(
+                        "Encoded sample cache complete manifest shard index "
+                        f"must match range order{location}: "
+                        f"expected={expected_index} observed={shard.shard_index}"
+                    )
+                expected_start = expected_index * shard_size
+                expected_end = min(expected_start + shard_size, num_samples)
+                if shard.start != expected_start or shard.end != expected_end:
+                    raise ValueError(
+                        "Encoded sample cache complete manifest shard range "
+                        "must align with shard index and shard_size"
+                        f"{location}: index={expected_index} "
+                        f"expected=[{expected_start}, {expected_end}) "
+                        f"observed=[{shard.start}, {shard.end})"
+                    )
+
+        return cls(
+            version=int(payload.get("version") or -1),
+            status=status,  # type: ignore[arg-type]
+            fingerprint=canonical_fingerprint,
+            fingerprint_sha256=str(payload.get("fingerprint_sha256") or ""),
+            dataset_split=str(payload.get("dataset_split") or "train"),
+            dataset_jsonl=payload.get("dataset_jsonl"),
+            num_samples=num_samples,
+            shard_size=shard_size,
+            payload_keys=tuple(str(k) for k in raw_payload_keys),
+            shards=tuple(shards),
+            build_started_at=(
+                str(payload["build_started_at"])
+                if payload.get("build_started_at") is not None
+                else None
+            ),
+            build_completed_at=(
+                str(payload["build_completed_at"])
+                if payload.get("build_completed_at") is not None
+                else None
+            ),
+            build_failed_at=(
+                str(payload["build_failed_at"])
+                if payload.get("build_failed_at") is not None
+                else None
+            ),
+            error=str(payload["error"]) if payload.get("error") is not None else None,
+            path=path,
+        )
+
+    @property
+    def shard_count(self) -> int:
+        return len(self.shards)
+
+    def to_mapping(self) -> dict[str, Any]:
+        payload: dict[str, Any] = {
+            "version": self.version,
+            "status": self.status,
+            "fingerprint": dict(self.fingerprint),
+            "fingerprint_sha256": self.fingerprint_sha256,
+            "dataset_split": self.dataset_split,
+            "dataset_jsonl": self.dataset_jsonl,
+        }
+        if self.status == "complete":
+            payload.update(
+                {
+                    "num_samples": int(self.num_samples or 0),
+                    "shard_size": int(self.shard_size or 0),
+                    "payload_keys": list(self.payload_keys),
+                    "shards": [shard.to_mapping() for shard in self.shards],
+                    "build_started_at": self.build_started_at,
+                    "build_completed_at": self.build_completed_at,
+                }
+            )
+        elif self.status == "building":
+            payload["build_started_at"] = self.build_started_at
+        elif self.status == "error":
+            payload.update(
+                {
+                    "build_started_at": self.build_started_at,
+                    "build_failed_at": self.build_failed_at,
+                    "error": self.error,
+                }
+            )
+        return payload
 
 
 def _json_canonical_dumps(payload: Mapping[str, Any]) -> str:
@@ -139,26 +585,23 @@ def _load_torch(path: Path) -> Any:
 
 def _build_bypass_info(
     *,
-    request: Mapping[str, Any],
-    resolved_root: Path,
-    fingerprint: Mapping[str, Any],
+    request: EncodedSampleCacheRequestInput,
     reason: str,
 ) -> dict[str, Any]:
-    fingerprint_sha = _fingerprint_digest(fingerprint)
-    cache_dir = resolved_root / fingerprint_sha
+    cache_request = _coerce_cache_request(request)
     return {
         "enabled": True,
         "status": "bypassed",
         "reason": str(reason),
-        "policy": str(request.get("ineligible_policy") or "error"),
-        "wait_timeout_s": float(request.get("wait_timeout_s", 7200.0) or 0.0),
-        "dataset_split": str(request.get("dataset_split") or "train"),
-        "dataset_jsonl": request.get("dataset_jsonl"),
-        "fingerprint": dict(fingerprint),
-        "fingerprint_sha256": fingerprint_sha,
-        "root_dir": str(resolved_root),
-        "cache_dir": str(cache_dir),
-        "manifest_path": str(cache_dir / "manifest.json"),
+        "policy": cache_request.ineligible_policy,
+        "wait_timeout_s": cache_request.wait_timeout_s,
+        "dataset_split": cache_request.dataset_split,
+        "dataset_jsonl": cache_request.dataset_jsonl,
+        "fingerprint": dict(cache_request.fingerprint),
+        "fingerprint_sha256": cache_request.fingerprint_sha256,
+        "root_dir": str(cache_request.root_dir),
+        "cache_dir": str(cache_request.cache_dir),
+        "manifest_path": str(cache_request.manifest_path),
     }
 
 
@@ -193,26 +636,22 @@ class EncodedSampleCacheStore:
         self,
         dataset: Any,
         *,
-        request: Mapping[str, Any],
+        request: EncodedSampleCacheRequestInput,
     ) -> None:
+        cache_request = _coerce_cache_request(request)
         self._dataset = dataset
-        self._request = dict(request)
-        self._fingerprint = _canonicalize_fingerprint(
-            dict(request.get("fingerprint") or {})
-        )
-        self._fingerprint_sha = _fingerprint_digest(self._fingerprint)
-        self._root_dir = Path(str(request.get("root_dir") or ".")).resolve()
-        self._cache_dir = self._root_dir / self._fingerprint_sha
-        self._manifest_path = self._cache_dir / "manifest.json"
+        self._request = cache_request.to_mapping()
+        self._fingerprint = dict(cache_request.fingerprint)
+        self._fingerprint_sha = cache_request.fingerprint_sha256
+        self._root_dir = cache_request.root_dir
+        self._cache_dir = cache_request.cache_dir
+        self._manifest_path = cache_request.manifest_path
         self._lock_path = self._cache_dir / "build.lock"
-        self._wait_timeout_s = float(request.get("wait_timeout_s", 7200.0) or 0.0)
-        self._max_resident_shards = max(
-            int(request.get("max_resident_shards", _DEFAULT_MAX_RESIDENT_SHARDS) or 1),
-            1,
-        )
-        self._policy = str(request.get("ineligible_policy") or "error")
-        self._split = str(request.get("dataset_split") or "train")
-        self._dataset_jsonl = request.get("dataset_jsonl")
+        self._wait_timeout_s = cache_request.wait_timeout_s
+        self._max_resident_shards = cache_request.max_resident_shards
+        self._policy = cache_request.ineligible_policy
+        self._split = cache_request.dataset_split
+        self._dataset_jsonl = cache_request.dataset_jsonl
         self._status = "disabled"
         self._manifest: dict[str, Any] | None = None
         self._shards_by_index: dict[int, dict[str, Any]] = {}
@@ -428,13 +867,13 @@ class EncodedSampleCacheStore:
                     },
                 )
                 shards.append(
-                    {
-                        "shard_index": int(shard_idx),
-                        "file": file_name,
-                        "start": int(shard_start),
-                        "end": int(shard_end),
-                        "count": int(shard_end - shard_start),
-                    }
+                    EncodedSampleShard(
+                        shard_index=int(shard_idx),
+                        file=file_name,
+                        start=int(shard_start),
+                        end=int(shard_end),
+                        count=int(shard_end - shard_start),
+                    ).to_mapping()
                 )
         except Exception as exc:
             _write_json_atomic(
@@ -471,17 +910,16 @@ class EncodedSampleCacheStore:
         return manifest
 
     def _validate_manifest(self, manifest: Mapping[str, Any]) -> None:
-        version = int(manifest.get("version") or -1)
-        if version != _ENCODED_SAMPLE_CACHE_VERSION:
+        typed_manifest = EncodedSampleCacheManifest.from_mapping(
+            manifest,
+            path=self._manifest_path,
+        )
+        if typed_manifest.version != _ENCODED_SAMPLE_CACHE_VERSION:
             raise ValueError(
-                f"Unsupported encoded sample cache manifest version: {version!r}"
+                "Unsupported encoded sample cache manifest version: "
+                f"{typed_manifest.version!r}"
             )
-        observed_fingerprint = manifest.get("fingerprint")
-        if not isinstance(observed_fingerprint, Mapping):
-            raise TypeError(
-                f"Encoded sample cache fingerprint must be a mapping: {self._manifest_path}"
-            )
-        observed = _canonicalize_fingerprint(observed_fingerprint)
+        observed = dict(typed_manifest.fingerprint)
         if observed != self._fingerprint:
             raise ValueError(
                 "Encoded sample cache fingerprint mismatch at "
@@ -491,45 +929,35 @@ class EncodedSampleCacheStore:
 
     def _index_shards(self) -> None:
         manifest = self._manifest or {}
-        shards = manifest.get("shards") or []
+        typed_manifest = EncodedSampleCacheManifest.from_mapping(
+            manifest,
+            path=self._manifest_path,
+        )
         indexed: dict[int, dict[str, Any]] = {}
-        if not isinstance(shards, list):
-            raise TypeError(
-                f"Encoded sample cache shards payload must be a list: {self._manifest_path}"
-            )
-        for shard in shards:
-            if not isinstance(shard, dict):
-                raise TypeError(
-                    f"Encoded sample cache shard metadata must be a dict: {self._manifest_path}"
-                )
-            shard_index = int(shard.get("shard_index") or 0)
-            indexed[shard_index] = dict(shard)
+        for shard in typed_manifest.shards:
+            indexed[shard.shard_index] = shard.to_mapping()
         self._shards_by_index = indexed
 
 
 def setup_encoded_sample_cache_for_dataset(
     dataset: Any,
-    request: Mapping[str, Any] | None,
+    request: EncodedSampleCacheRequestInput | None,
 ) -> tuple[EncodedSampleCacheStore | None, dict[str, Any] | None]:
-    if not request or not bool(request.get("enabled", False)):
+    if request is None:
+        return None, None
+    if isinstance(request, Mapping) and not bool(request.get("enabled", False)):
         return None, None
 
-    root_dir_raw = request.get("root_dir")
-    if root_dir_raw is None:
-        raise ValueError(
-            "Encoded sample cache request must include a resolved root_dir when enabled."
-        )
+    cache_request = _coerce_cache_request(request)
+    if not cache_request.enabled:
+        return None, None
 
-    fingerprint = _canonicalize_fingerprint(dict(request.get("fingerprint") or {}))
-    resolved_root = Path(str(root_dir_raw)).resolve()
     reason = _cache_ineligible_reason(dataset)
-    policy = str(request.get("ineligible_policy") or "error")
+    policy = cache_request.ineligible_policy
     if reason is not None:
         if policy == "bypass":
             info = _build_bypass_info(
-                request=request,
-                resolved_root=resolved_root,
-                fingerprint=fingerprint,
+                request=cache_request,
                 reason=reason,
             )
             logger.warning(
@@ -543,5 +971,5 @@ def setup_encoded_sample_cache_for_dataset(
             return None, info
         raise ValueError(reason)
 
-    store = EncodedSampleCacheStore(dataset, request={**dict(request), "root_dir": str(resolved_root)})
+    store = EncodedSampleCacheStore(dataset, request=cache_request)
     return store, store.info()

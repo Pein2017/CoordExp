@@ -1,15 +1,18 @@
 from __future__ import annotations
 
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
 
 from src.config.schema import CoordTokensConfig
+from src.datasets.encoded_sample_cache import EncodedSampleCacheRequest
 from src.sft import (
     STAGE1_SET_CONTINUATION_CACHE_BYPASS_REASON,
     _attach_encoded_sample_cache_run_metadata,
     _build_encoded_sample_cache_bypass_info,
     _build_encoded_sample_cache_fingerprint,
+    _build_encoded_sample_cache_request,
     _parse_encoded_sample_cache_config,
 )
 
@@ -87,6 +90,50 @@ def test_encoded_sample_cache_fingerprint_tracks_dataset_identity(tmp_path) -> N
     source = fingerprint["dataset_source_jsonl"]
     assert isinstance(source, dict)
     assert source["raw_path"] == str(train_jsonl)
+
+
+def test_build_encoded_sample_cache_request_returns_canonical_payload(tmp_path) -> None:
+    train_jsonl = tmp_path / "train.jsonl"
+    train_jsonl.write_text('{"id": 1}\n', encoding="utf-8")
+    runtime_cfg = _parse_encoded_sample_cache_config(
+        {
+            "encoded_sample_cache": {
+                "enabled": True,
+                "root_dir": str(tmp_path / "cache"),
+                "ineligible_policy": "bypass",
+                "wait_timeout_s": 5,
+                "max_resident_shards": 2,
+            }
+        },
+        SimpleNamespace(output_dir=str(tmp_path / "out")),
+    )
+
+    payload = _build_encoded_sample_cache_request(
+        runtime_cfg=runtime_cfg,
+        training_config=SimpleNamespace(
+            global_max_length=1024,
+            template={"system": "sys", "truncation_strategy": "raise"},
+        ),
+        custom_config=_custom_config(),
+        template=_Template(max_length=128),
+        train_args=SimpleNamespace(max_model_len=512),
+        dataset_seed=7,
+        dataset_jsonl=str(train_jsonl),
+        dataset_split="train",
+        dataset_mode="dense",
+        sample_limit=64,
+        system_prompt_dense="sys",
+        system_prompt_summary=None,
+    )
+
+    assert payload is not None
+    request = EncodedSampleCacheRequest.from_mapping(payload)
+    assert payload == request.to_mapping()
+    assert payload["fingerprint_sha256"]
+    assert payload["cache_dir"] == str(
+        Path(payload["root_dir"]) / payload["fingerprint_sha256"]
+    )
+    assert payload["manifest_path"] == str(Path(payload["cache_dir"]) / "manifest.json")
 
 
 def test_encoded_sample_cache_fingerprint_tracks_bbox_format(tmp_path) -> None:
@@ -266,17 +313,20 @@ def test_attach_encoded_sample_cache_run_metadata_scopes_train_and_eval() -> Non
 
 
 def test_build_encoded_sample_cache_bypass_info_records_set_continuation_reason() -> None:
-    info = _build_encoded_sample_cache_bypass_info(
+    request = EncodedSampleCacheRequest.from_mapping(
         {
+            "enabled": True,
             "ineligible_policy": "bypass",
             "wait_timeout_s": 5,
             "dataset_split": "train",
             "dataset_jsonl": "train.jsonl",
             "fingerprint": {"dataset_split": "train"},
-            "fingerprint_sha256": "abc123",
             "root_dir": "/tmp/cache",
-            "cache_dir": "/tmp/cache/abc123",
-        },
+        }
+    ).to_mapping()
+
+    info = _build_encoded_sample_cache_bypass_info(
+        request,
         reason=STAGE1_SET_CONTINUATION_CACHE_BYPASS_REASON,
     )
 
