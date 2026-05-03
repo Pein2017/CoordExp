@@ -4,10 +4,10 @@
 
 **Goal:** Add typed `StaticPackingPlan` and `StaticPackingManifest` wrappers around the existing static-packing raw plan/cache contract while preserving all current JSON artifact keys, checksums, cache filenames, and public dataset attributes.
 
-**Decision Source:** Task 8 in `docs/superpowers/plans/2026-05-03-type-schema-refactor.md` selected:
+**Decision Source:** Task 8 in `docs/superpowers/plans/2026-05-03-type-schema-refactor.md` selected this as follow-up-only work:
 
 ```markdown
-- Static packing decision: implement typed `StaticPackingPlan` / `StaticPackingManifest` in this branch because raw plans cross module boundaries.
+- Static packing decision: follow-up implementation only for typed `StaticPackingPlan` / `StaticPackingManifest`; no static-packing code is implemented by the type-schema branch.
 ```
 
 **Scope Guard:** This plan owns the follow-up implementation only. The Task 8 decision gate did not modify static-packing code, tests, or operator docs.

@@ -252,16 +252,40 @@ class EncodedSampleCacheManifest:
                     f"observed={observed_digest}"
                 )
         raw_payload_keys = payload.get("payload_keys")
-        if raw_payload_keys is None or (not is_complete and not raw_payload_keys):
+        if raw_payload_keys is None:
+            if is_complete:
+                raise ValueError(
+                    "Encoded sample cache complete manifest payload_keys "
+                    f"must be a list{location}"
+                )
+            raw_payload_keys = []
+        elif not is_complete and not raw_payload_keys:
             raw_payload_keys = []
         if not isinstance(raw_payload_keys, list):
+            if is_complete:
+                raise TypeError(
+                    "Encoded sample cache complete manifest payload_keys "
+                    f"must be a list{location}"
+                )
             raise TypeError(
                 f"Encoded sample cache payload_keys must be a list{location}"
             )
         raw_shards = payload.get("shards")
-        if raw_shards is None or (not is_complete and not raw_shards):
+        if raw_shards is None:
+            if is_complete:
+                raise ValueError(
+                    "Encoded sample cache complete manifest shards "
+                    f"must be a list{location}"
+                )
+            raw_shards = []
+        elif not is_complete and not raw_shards:
             raw_shards = []
         if not isinstance(raw_shards, list):
+            if is_complete:
+                raise TypeError(
+                    "Encoded sample cache complete manifest shards "
+                    f"must be a list{location}"
+                )
             raise TypeError(
                 f"Encoded sample cache shards payload must be a list{location}"
             )
@@ -272,6 +296,24 @@ class EncodedSampleCacheManifest:
                 raise TypeError(
                     f"Encoded sample cache shard metadata must be a mapping{location}"
                 )
+            if is_complete:
+                required_shard_fields = (
+                    "shard_index",
+                    "file",
+                    "start",
+                    "end",
+                    "count",
+                )
+                missing_shard_fields = [
+                    field
+                    for field in required_shard_fields
+                    if field not in shard or shard[field] is None
+                ]
+                if missing_shard_fields:
+                    raise ValueError(
+                        "Encoded sample cache complete manifest shard metadata "
+                        f"missing {', '.join(missing_shard_fields)}{location}"
+                    )
             typed_shard = EncodedSampleShard.from_mapping(shard)
             if is_complete:
                 if not _is_relative_basename(typed_shard.file):

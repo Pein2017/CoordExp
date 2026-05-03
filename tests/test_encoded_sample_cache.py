@@ -301,6 +301,42 @@ def test_encoded_sample_cache_manifest_roundtrips_serialized_payload(tmp_path) -
     [
         (lambda payload: payload.pop("shards"), "complete manifest missing shards"),
         (
+            lambda payload: payload.update({"payload_keys": None}),
+            "complete manifest payload_keys",
+        ),
+        (
+            lambda payload: payload.update({"num_samples": 0, "shards": None}),
+            "complete manifest shards",
+        ),
+        (
+            lambda payload: payload.update(
+                {
+                    "shards": [
+                        {
+                            key: value
+                            for key, value in payload["shards"][0].items()
+                            if key != "shard_index"
+                        }
+                    ]
+                }
+            ),
+            "complete manifest.*shard_index",
+        ),
+        (
+            lambda payload: payload.update(
+                {
+                    "shards": [
+                        {
+                            key: value
+                            for key, value in payload["shards"][0].items()
+                            if key != "start"
+                        }
+                    ]
+                }
+            ),
+            "complete manifest.*start",
+        ),
+        (
             lambda payload: payload.update({"fingerprint_sha256": ""}),
             "complete manifest fingerprint_sha256",
         ),
