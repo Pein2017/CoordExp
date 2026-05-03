@@ -368,7 +368,8 @@ Current encoded-cache data flow after the completed slice:
 
 ```text
 src/sft.py
-  builds encoded_sample_cache request as a dict
+  assembles a local encoded_sample_cache payload
+  -> EncodedSampleCacheRequest.from_mapping(...).to_mapping()
   ->
 src/datasets/dense_caption.py
   passes request mapping into BaseCaptionDataset
@@ -386,9 +387,11 @@ src/bootstrap/run_metadata.py
   -> run_metadata.json encoded_sample_cache block
 ```
 
-Future tasks should move the producer side from raw dict construction toward the
-same canonical request object. Run metadata now has a small typed wrapper, but
-its split payload values intentionally remain artifact-compatible mappings.
+The `src/sft.py` producer still uses an intermediate local payload dictionary
+while assembling the request, but the producer boundary already normalizes that
+payload through `EncodedSampleCacheRequest.from_mapping(...).to_mapping()`.
+Run metadata now has a small typed wrapper, but its split payload values
+intentionally remain artifact-compatible mappings.
 
 ## Boundary Cases
 

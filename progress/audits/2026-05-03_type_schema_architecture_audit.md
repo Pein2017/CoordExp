@@ -187,7 +187,9 @@ Resolved in the initial slice:
 - Existing JSON artifact keys and `EncodedSampleCacheStore.info()` keys are preserved.
 
 Remaining shape ambiguity:
-- `src/sft.py` still produces encoded-cache request dictionaries directly.
+- `src/sft.py` still assembles an intermediate local encoded-cache request
+  payload dictionary, but the producer boundary already returns
+  `EncodedSampleCacheRequest.from_mapping(payload).to_mapping()`.
 - `src/bootstrap/run_metadata.py` now owns train/eval encoded-cache run metadata
   through `EncodedSampleCacheRunMetadata`, while preserving raw split payload
   mappings for artifact compatibility.
@@ -427,8 +429,9 @@ Observed:
 
 Not yet implemented:
 
-- `src/sft.py` does not yet produce cache requests through `EncodedSampleCacheRequest`.
-- `openspec/specs/encoded-training-cache/spec.md` has not yet been updated for this refactor.
+- `src/sft.py` still uses intermediate local dictionaries while assembling the
+  cache request payload; the boundary already normalizes through
+  `EncodedSampleCacheRequest`.
 - Static packing, prediction/eval records, and Stage-2 runtime-state refactors remain planned follow-on slices.
 
 ## Initial Implementation Acceptance
