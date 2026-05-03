@@ -1690,7 +1690,7 @@ rg -n "encoded_sample_cache|EncodedSampleCache|predictions|PreparedSegment|runti
   --glob '!output/**' --glob '!temp/**' --glob '!.git/**'
 ```
 
-Result: `1,768` hits across `248` files. Top-level counts were `src` `843`, `tests` `175`, `scripts` `12`, `configs` `12`, `docs` `339`, `progress` `128`, and `openspec` `259`. Pattern counts were `encoded_sample_cache` `516`, `EncodedSampleCache` `132`, `predictions` `423`, `PreparedSegment` `17`, `runtime_state` `79`, and `dict[str, Any]` `693`.
+Result after Task 11 closure commit `4a52e8e`: `1,779` hits across `248` files. Top-level counts were `src` `843`, `tests` `175`, `scripts` `12`, `configs` `12`, `docs` `345`, `progress` `133`, and `openspec` `259`. Pattern counts were `encoded_sample_cache` `526`, `EncodedSampleCache` `136`, `predictions` `427`, `PreparedSegment` `21`, `runtime_state` `83`, and `dict[str, Any]` `696`.
 
 Classification: encoded-cache hits are typed boundaries, serialized compatibility mappings, tests, configs, or current docs/specs; compact detection hits remain classified as no code refactor in this branch; prediction/eval, static packing, and Stage-2 runtime-state hits are owned by explicit follow-up plans; metric/logging and manifest maps remain intentionally dynamic where no stable contract wrapper was selected; analysis-script hits are local diagnostics; historical `progress/` and archived `openspec/changes/archive/` references were left unchanged.
 
@@ -1705,7 +1705,19 @@ git log --oneline --decorate -5
 
 Expected: branch contains logically scoped commits for the audit/plan and implemented refactor slices.
 
-Observed before Task 11 docs commit on 2026-05-03:
+Task 11 closure commit under review:
+
+```text
+4a52e8e docs(audit): close type schema refactor audit
+```
+
+Post-review provenance correction note:
+
+- `4a52e8e` is the Task 11 closure commit whose stale scan counts and pre-commit status/log were reviewed.
+- This docs-only follow-up records the corrected scan counts observed after `4a52e8e`.
+- The follow-up commit hash is recorded in the final task response because embedding a commit's own final hash inside that same commit would change the hash.
+
+Observed before the post-review docs correction commit on 2026-05-03:
 
 ```bash
 git status --short --branch
@@ -1716,14 +1728,14 @@ Result:
 
 ```text
 ## codex/refactor-type-schema
-ffea19e (HEAD -> codex/refactor-type-schema) docs(plan): tighten stage2 runtime follow-up tests
+4a52e8e (HEAD -> codex/refactor-type-schema) docs(audit): close type schema refactor audit
+ffea19e docs(plan): tighten stage2 runtime follow-up tests
 c53327a docs(audit): record stage2 runtime state decision
 6f9af97 docs(audit): align prediction alias recommendation
 729e820 docs(audit): record prediction eval schema decision
-be5c96a docs(plan): make static packing follow-up executable
 ```
 
-Final branch status after this Task 11 docs-only commit is expected to be clean on `codex/refactor-type-schema`.
+Post-fix verification requirement: after committing this provenance correction, rerun `git status --short --branch` and `git log --oneline --decorate -5`; status must be clean at the new `docs(audit): refresh final closure provenance` HEAD, followed by `4a52e8e`.
 
 Residual follow-up plans:
 
