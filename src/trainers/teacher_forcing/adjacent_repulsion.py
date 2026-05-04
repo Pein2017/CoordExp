@@ -53,8 +53,7 @@ def compute_adjacent_repulsion(
         raise ValueError("group_weights must align with coord_logits[:, 0]")
 
     device = coord_logits.device
-    dtype = coord_logits.dtype
-    z = coord_logits.new_tensor(0.0)
+    z = coord_logits.new_tensor(0.0, dtype=torch.float32)
 
     pair_mask = has_previous_mask.to(device=device, dtype=torch.bool)
     pair_count = int(pair_mask.sum().detach().item())
@@ -111,13 +110,13 @@ def compute_adjacent_repulsion(
     copy_scores = overlap.clamp(min=1e-12, max=1.0).prod(dim=-1).pow(0.25)
 
     copy_margin_f = float(copy_margin)
-    penalties = torch.relu(copy_scores - copy_margin_f).pow(2.0).to(dtype=dtype)
-    mask_f = applied_mask.to(device=device, dtype=dtype)
+    penalties = torch.relu(copy_scores - copy_margin_f).pow(2.0).to(dtype=torch.float32)
+    mask_f = applied_mask.to(device=device, dtype=torch.float32)
     masked_penalties = penalties * mask_f
 
     if group_weights is not None:
         weights = (
-            group_weights.to(device=device, dtype=dtype).clamp(min=0.0) * mask_f
+            group_weights.to(device=device, dtype=torch.float32).clamp(min=0.0) * mask_f
         )
         denom = weights.sum().clamp(min=1e-6)
         loss = masked_penalties.mul(weights).sum() / denom
@@ -125,7 +124,7 @@ def compute_adjacent_repulsion(
         denom = mask_f.sum().clamp(min=1.0)
         loss = masked_penalties.sum() / denom
 
-    copy_score_mean = copy_scores[applied_mask].mean().to(dtype=dtype)
+    copy_score_mean = copy_scores[applied_mask].mean().to(dtype=torch.float32)
     return AdjacentRepulsionResult(
         loss=loss,
         pair_count=pair_count,

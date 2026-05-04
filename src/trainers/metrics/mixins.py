@@ -1183,7 +1183,7 @@ class CoordSoftCEW1LossMixin:
             if isinstance(gradmon_metrics, Mapping) and gradmon_metrics:
                 reporter.update_many(gradmon_metrics)
 
-        return loss + result.coord_loss.to(dtype=loss.dtype)
+        return loss.float() + result.coord_loss.float()
 
     def _log_coord_softce_w1_metrics(
         self,
@@ -1517,7 +1517,7 @@ class BBoxGeoLossMixin:
             if isinstance(gradmon_metrics, Mapping) and gradmon_metrics:
                 reporter.update_many(gradmon_metrics)
 
-        loss = loss + result.total_loss.to(dtype=loss.dtype)
+        loss = loss.float() + result.total_loss.float()
         return (loss, outputs) if return_outputs else loss
 
     def _log_bbox_geo_metrics(
@@ -1737,7 +1737,7 @@ class BBoxSizeAuxLossMixin:
             if isinstance(gradmon_metrics, Mapping) and gradmon_metrics:
                 reporter.update_many(gradmon_metrics)
 
-        loss = loss + result.total_loss.to(dtype=loss.dtype)
+        loss = loss.float() + result.total_loss.float()
         return (loss, outputs) if return_outputs else loss
 
     def _log_bbox_size_aux_metrics(
