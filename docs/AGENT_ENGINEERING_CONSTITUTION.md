@@ -28,6 +28,8 @@ Default posture:
 - Make the codebase easy to route before making it clever.
 - Preserve executable truth in the repo.
 - Keep stable contracts strict and compatibility behavior explicit.
+- Avoid legacy support by default; preserve old configs, deprecated APIs, or
+  historical code paths only when a task explicitly requires it.
 - Prefer small, source-owned changes over broad entrypoint edits.
 - State uncertainty and scope instead of inventing certainty.
 - Treat benchmark claims as invalid unless scope, config, checkpoint, artifact
@@ -91,6 +93,18 @@ Decision rule:
   and keep it boring.
 - Diagnostic behavior is useful, but it must never masquerade as canonical
   evaluation.
+
+Legacy support default:
+
+- This is a personal research repo, not a public library.
+- Do not preserve backward compatibility for old configs, deprecated APIs, or
+  historical code paths unless the user, a current artifact contract, or an
+  active reproducibility requirement explicitly asks for it.
+- Prefer concise current code over compatibility layers for designs that have
+  clearly been superseded.
+- When removing legacy support, preserve reproducibility by keeping artifacts,
+  progress notes, docs, or commit history sufficient to understand old results.
+- Compatibility is opt-in; current design clarity is the default.
 
 ## 4. Schema, Type, And Container Design
 
