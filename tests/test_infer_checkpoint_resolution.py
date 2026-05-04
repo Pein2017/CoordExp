@@ -189,3 +189,56 @@ def test_compact_coord_token_adapter_accepts_exact_tied_rows(
         resolved,
         detection_sequence_format="compact_full",
     )
+
+
+@pytest.mark.parametrize(
+    "coord_ids",
+    [
+        [151646, 151648, *range(151670, 152669)],
+        [151646, 151648, *range(151670, 152670), 42],
+    ],
+)
+def test_compact_coord_token_adapter_rejects_missing_or_extra_rows(
+    tmp_path: Path,
+    coord_ids: list[int],
+) -> None:
+    adapter_dir = tmp_path / "adapter"
+    _write_adapter_checkpoint(
+        adapter_dir,
+        base_model_name_or_path="base-model",
+        modules_to_save=["coord_offset_adapter"],
+    )
+    _write_coord_offset_weights(
+        adapter_dir,
+        coord_ids=coord_ids,
+        tie_head=True,
+    )
+    resolved = resolve_inference_checkpoint(model_checkpoint=str(adapter_dir))
+
+    with pytest.raises(ValueError, match="exactly 1002 trainable"):
+        validate_compact_coord_token_adapter_contract(
+            resolved,
+            detection_sequence_format="compact_full",
+        )
+
+
+def test_compact_coord_token_adapter_guard_does_not_apply_to_non_compact_format(
+    tmp_path: Path,
+) -> None:
+    adapter_dir = tmp_path / "adapter"
+    _write_adapter_checkpoint(adapter_dir, base_model_name_or_path="base-model")
+    resolved = resolve_inference_checkpoint(model_checkpoint=str(adapter_dir))
+
+    validate_compact_coord_token_adapter_contract(
+        resolved,
+        detection_sequence_format="stage1_json_pretty",
+    )
+
+
+def test_compact_coord_token_adapter_allows_full_or_merged_checkpoint() -> None:
+    resolved = resolve_inference_checkpoint(model_checkpoint="merged-model")
+
+    validate_compact_coord_token_adapter_contract(
+        resolved,
+        detection_sequence_format="compact_full",
+    )

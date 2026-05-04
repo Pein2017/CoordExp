@@ -7,16 +7,77 @@ import re
 from dataclasses import dataclass, replace
 from typing import Any, Literal, Mapping, Protocol, runtime_checkable
 
-from src.common.detection_sequence import BOX_START_TOKEN, OBJECT_REF_START_TOKEN
+from src.common.detection_compact_rows import (
+    BOX_START_TOKEN,
+    COMPACT_ROW_COORD_TOKEN_RE,
+    OBJECT_REF_START_TOKEN,
+    parse_compact_row,
+    render_compact_row,
+)
 from src.detection.data import NormalizedDetectionObject, NormalizedDetectionSample
 from src.utils.assistant_json import dumps_coordjson
 
 
 TemplateId = Literal["stage1_json_pretty", "compact_full"]
+TokenRoleName = Literal[
+    "IGNORE",
+    "ASSISTANT",
+    "OBJECT_ENTRY",
+    "DESC",
+    "BBOX_START",
+    "COORD",
+    "SEPARATOR",
+    "TERMINAL",
+    "CONTROL",
+]
+# Terminal taxonomy contract for Task 4:
+# - `terminal_close` is the assistant-rendered terminal close owned by templates.
+# - `compact_full` has no rendered terminal bytes, so it emits a zero-length
+#   `terminal_close` provenance event at the assistant text boundary.
+# - `chat_stop_marker` is reserved for chat-template/tokenization-level terminal
+#   projection and is not emitted by template-only render paths in this slice.
+# - Current tokenization intentionally collapses Qwen chat stop markers and
+#   tokenizer EOS candidates into the existing terminal projection. Richer
+#   encoded-view terminal events are deferred to Task 6 or later.
+SpanKind = Literal[
+    "description_text",
+    "coordinate_slot",
+    "object_ref_marker",
+    "bbox_start_marker",
+    "bbox_field_binding",
+    "json_key",
+    "json_punctuation",
+    "object_separator",
+    "coordinate_separator",
+    "terminal_close",
+    "chat_stop_marker",
+    "assistant_container",
+    "object_entry_container",
+]
+MaskGroup = Literal[
+    "assistant",
+    "object_entry",
+    "desc",
+    "bbox",
+    "coord",
+    "schema",
+    "control",
+    "separator",
+    "terminal",
+    "ignore",
+]
+SpanProvenance = Literal[
+    "assistant_projection",
+    "object_entry_projection",
+    "rendered_leaf",
+    "rendered_control",
+    "terminal_projection",
+]
 
-_COORD_TOKEN_RE = re.compile(r"<\|coord_\d+\|>")
+_COORD_TOKEN_RE = COMPACT_ROW_COORD_TOKEN_RE
 _COMPACT_FORBIDDEN_DESC_SUBSTRINGS = (
     "\n",
+    "\r",
     "\t",
     OBJECT_REF_START_TOKEN,
     BOX_START_TOKEN,
@@ -24,6 +85,18 @@ _COMPACT_FORBIDDEN_DESC_SUBSTRINGS = (
     "<|im_start|>",
     "<|im_end|>",
 )
+_COORD_SLOT_NAMES = ("x1", "y1", "x2", "y2")
+_ROLE_PRIORITIES: Mapping[TokenRoleName, int] = {
+    "COORD": 100,
+    "DESC": 90,
+    "TERMINAL": 80,
+    "BBOX_START": 70,
+    "SEPARATOR": 60,
+    "CONTROL": 50,
+    "OBJECT_ENTRY": 20,
+    "ASSISTANT": 10,
+    "IGNORE": 0,
+}
 
 
 @dataclass(frozen=True)
@@ -51,6 +124,30 @@ class CharSpan:
 
     def text(self, source: str) -> str:
         return source[self.start : self.end]
+
+
+@dataclass(frozen=True)
+class RenderSpanEvent:
+    """Template-local semantic event before token-role projection.
+
+    `primary_role` intentionally uses uppercase role-name strings instead of
+    importing `TokenRole` from `src.detection.tokenization`; tokenization already
+    imports this module, so a runtime enum import here would create a cycle. The
+    values match `TokenRole.name` and are kept projection-ready for Task 6.
+    """
+
+    char_span: CharSpan
+    span_kind: SpanKind
+    primary_role: TokenRoleName | None
+    mask_groups: frozenset[MaskGroup]
+    classifying: bool
+    priority: int
+    object_instance_id: str | None = None
+    object_index: int | None = None
+    source_object_index: int | None = None
+    geometry_kind: str | None = None
+    slot_name: str | None = None
+    provenance: SpanProvenance | None = None
 
 
 @dataclass(frozen=True)
@@ -92,6 +189,7 @@ class RenderedAssistantSequence:
     stop_marker_spans: tuple[CharSpan, ...]
     structural_token_spans: tuple[CharSpan, ...]
     trie_eligible_spans: tuple[CharSpan, ...]
+    render_span_events: tuple[RenderSpanEvent, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -178,13 +276,20 @@ class Stage1JsonPrettyTemplate:
         )
 
         builder = _SpanTextBuilder()
+        event_builder = _RenderEventBuilder()
         structural_spans: list[CharSpan] = []
         separator_spans: list[CharSpan] = []
         entries: list[RenderedObjectEntry] = []
 
-        structural_spans.append(builder.append("{", "json_root_open"))
-        structural_spans.append(builder.append('"objects": ', "objects_key"))
-        structural_spans.append(builder.append("[", "json_array_open"))
+        json_root_open = builder.append("{", "json_root_open")
+        structural_spans.append(json_root_open)
+        event_builder.append(_json_punctuation_event(json_root_open))
+        objects_key_span = builder.append('"objects": ', "objects_key")
+        structural_spans.append(objects_key_span)
+        event_builder.append(_json_key_event(objects_key_span))
+        json_array_open = builder.append("[", "json_array_open")
+        structural_spans.append(json_array_open)
+        event_builder.append(_json_punctuation_event(json_array_open))
         for object_index, obj in enumerate(sample.objects):
             if object_index:
                 separator_span = builder.append(
@@ -193,32 +298,41 @@ class Stage1JsonPrettyTemplate:
                 )
                 separator_spans.append(separator_span)
                 structural_spans.append(separator_span)
+                event_builder.append_object_separator(
+                    separator_span,
+                    previous_entry=entries[-1],
+                )
                 entries[-1] = replace(entries[-1], separator_span=separator_span)
             entry = _append_stage1_json_entry(builder, obj, object_index)
             entries.append(entry)
             structural_spans.extend(entry.control_spans)
+            event_builder.extend(_stage1_json_entry_events(entry))
 
         terminal_start = len(builder)
-        structural_spans.append(builder.append("]", "json_array_close"))
-        structural_spans.append(builder.append("}", "json_root_close"))
+        json_array_close = builder.append("]", "json_array_close")
+        structural_spans.append(json_array_close)
+        event_builder.append(_json_punctuation_event(json_array_close))
+        json_root_close = builder.append("}", "json_root_close")
+        structural_spans.append(json_root_close)
+        event_builder.append(_json_punctuation_event(json_root_close))
         terminal_close_span = CharSpan(
             terminal_start,
             len(builder),
             "terminal_close",
         )
+        event_builder.append_terminal_close(terminal_close_span)
 
         text = builder.text
         _assert_stage1_json_fixture_parity(text, sample)
-        return RenderedAssistantSequence(
+        return _project_rendered_assistant_sequence(
             template_id=self.template_id,
             template_version=self.capabilities.version,
             text=text,
-            object_entries=tuple(entries),
-            separator_spans=tuple(separator_spans),
+            object_entries=entries,
+            separator_spans=separator_spans,
             terminal_close_span=terminal_close_span,
-            stop_marker_spans=(),
-            structural_token_spans=tuple(structural_spans),
-            trie_eligible_spans=tuple(entry.trie_eligible_span for entry in entries),
+            structural_token_spans=structural_spans,
+            event_builder=event_builder,
         )
 
     def parse_assistant(self, text: str) -> dict[str, Any]:
@@ -245,6 +359,14 @@ class Stage1JsonPrettyTemplate:
 
 
 class CompactFullTemplate:
+    """First-class strict compact training/eval template.
+
+    The common compact facade keeps compatibility behavior for generated text
+    repair, suffix stripping, and ``None`` diagnostics.  This template owns the
+    strict ``compact_full`` training target surface and intentionally does not
+    delegate parsing to the common compatibility parser.
+    """
+
     template_id: TemplateId = "compact_full"
     capabilities = TemplateCapabilities(
         template_id="compact_full",
@@ -290,6 +412,7 @@ class CompactFullTemplate:
         )
 
         builder = _SpanTextBuilder()
+        event_builder = _RenderEventBuilder()
         separator_spans: list[CharSpan] = []
         entries: list[RenderedObjectEntry] = []
         structural_spans: list[CharSpan] = []
@@ -302,22 +425,28 @@ class CompactFullTemplate:
                 )
                 separator_spans.append(separator_span)
                 structural_spans.append(separator_span)
+                event_builder.append_object_separator(
+                    separator_span,
+                    previous_entry=entries[-1],
+                )
                 entries[-1] = replace(entries[-1], separator_span=separator_span)
             entry = _append_compact_full_entry(builder, obj, object_index)
             entries.append(entry)
             structural_spans.extend(entry.control_spans)
+            event_builder.extend(_compact_full_entry_events(entry))
 
         terminal_close_span = CharSpan(len(builder), len(builder), "terminal_close")
-        return RenderedAssistantSequence(
+        event_builder.append_terminal_close(terminal_close_span)
+        text = builder.text
+        return _project_rendered_assistant_sequence(
             template_id=self.template_id,
             template_version=self.capabilities.version,
-            text=builder.text,
-            object_entries=tuple(entries),
-            separator_spans=tuple(separator_spans),
+            text=text,
+            object_entries=entries,
+            separator_spans=separator_spans,
             terminal_close_span=terminal_close_span,
-            stop_marker_spans=(),
-            structural_token_spans=tuple(structural_spans),
-            trie_eligible_spans=tuple(entry.trie_eligible_span for entry in entries),
+            structural_token_spans=structural_spans,
+            event_builder=event_builder,
         )
 
     def parse_assistant(self, text: str) -> dict[str, Any]:
@@ -333,9 +462,11 @@ class CompactFullTemplate:
 
     def render_entry(self, obj: NormalizedDetectionObject) -> str:
         _validate_compact_desc(obj.desc)
-        return (
-            f"{OBJECT_REF_START_TOKEN}{obj.desc}{BOX_START_TOKEN}"
-            f"{''.join(obj.bbox_2d.tokens)}"
+        return render_compact_row(
+            obj.desc,
+            obj.bbox_2d.tokens,
+            include_object_ref_marker=True,
+            include_bbox_start_marker=True,
         )
 
     def render_separator(self, before_index: int, after_index: int) -> str:
@@ -363,6 +494,75 @@ class _SpanTextBuilder:
         self._parts.append(value)
         self._length = span.end
         return span
+
+
+class _RenderEventBuilder:
+    """Collect render events before projecting compatibility fields."""
+
+    def __init__(self) -> None:
+        self._events: list[RenderSpanEvent] = []
+
+    def append(self, event: RenderSpanEvent) -> None:
+        self._events.append(event)
+
+    def extend(self, events: tuple[RenderSpanEvent, ...]) -> None:
+        self._events.extend(events)
+
+    def append_event(
+        self,
+        char_span: CharSpan,
+        *,
+        span_kind: SpanKind,
+        primary_role: TokenRoleName | None,
+        mask_groups: tuple[MaskGroup, ...],
+        classifying: bool,
+        object_entry: RenderedObjectEntry | None = None,
+        geometry_kind: str | None = None,
+        slot_name: str | None = None,
+        provenance: SpanProvenance | None = None,
+        priority: int | None = None,
+    ) -> None:
+        self.append(
+            _render_event(
+                char_span,
+                span_kind=span_kind,
+                primary_role=primary_role,
+                mask_groups=mask_groups,
+                classifying=classifying,
+                object_entry=object_entry,
+                geometry_kind=geometry_kind,
+                slot_name=slot_name,
+                provenance=provenance,
+                priority=priority,
+            )
+        )
+
+    def append_object_separator(
+        self,
+        separator_span: CharSpan,
+        *,
+        previous_entry: RenderedObjectEntry,
+    ) -> None:
+        # The separator span is sequence-level/interstitial, but its metadata
+        # follows the legacy compatibility projection that attaches it to the
+        # previous rendered object entry.
+        self.append_event(
+            separator_span,
+            span_kind="object_separator",
+            primary_role="SEPARATOR",
+            mask_groups=("separator", "control"),
+            classifying=True,
+            object_entry=previous_entry,
+            provenance="rendered_control",
+        )
+
+    def append_terminal_close(self, terminal_close_span: CharSpan) -> None:
+        self.append(_terminal_close_event(terminal_close_span))
+
+    def finalize(self, text: str) -> tuple[RenderSpanEvent, ...]:
+        return _finalize_render_span_events(
+            (_assistant_container_event(text), *self._events)
+        )
 
 
 def get_detection_template(template_id: TemplateId | str) -> DetectionSequenceTemplate:
@@ -452,6 +652,291 @@ def _append_compact_full_entry(
     )
 
 
+def _render_event(
+    char_span: CharSpan,
+    *,
+    span_kind: SpanKind,
+    primary_role: TokenRoleName | None,
+    mask_groups: tuple[MaskGroup, ...],
+    classifying: bool,
+    object_entry: RenderedObjectEntry | None = None,
+    geometry_kind: str | None = None,
+    slot_name: str | None = None,
+    provenance: SpanProvenance | None = None,
+    priority: int | None = None,
+) -> RenderSpanEvent:
+    resolved_priority = (
+        priority
+        if priority is not None
+        else (_ROLE_PRIORITIES[primary_role] if primary_role is not None else 0)
+    )
+    return RenderSpanEvent(
+        char_span=char_span,
+        span_kind=span_kind,
+        primary_role=primary_role,
+        mask_groups=frozenset(mask_groups),
+        classifying=classifying,
+        priority=resolved_priority,
+        object_instance_id=(
+            None if object_entry is None else object_entry.object_instance_id
+        ),
+        object_index=None if object_entry is None else object_entry.object_index,
+        source_object_index=(
+            None if object_entry is None else object_entry.source_object_index
+        ),
+        geometry_kind=geometry_kind,
+        slot_name=slot_name,
+        provenance=provenance,
+    )
+
+
+def _assistant_container_event(text: str) -> RenderSpanEvent:
+    return _render_event(
+        CharSpan(0, len(text), "assistant"),
+        span_kind="assistant_container",
+        primary_role=None,
+        mask_groups=("assistant",),
+        classifying=False,
+        provenance="assistant_projection",
+        priority=_ROLE_PRIORITIES["ASSISTANT"],
+    )
+
+
+def _object_entry_container_event(entry: RenderedObjectEntry) -> RenderSpanEvent:
+    return _render_event(
+        entry.entry_span,
+        span_kind="object_entry_container",
+        primary_role=None,
+        mask_groups=("object_entry",),
+        classifying=False,
+        object_entry=entry,
+        provenance="object_entry_projection",
+        priority=_ROLE_PRIORITIES["OBJECT_ENTRY"],
+    )
+
+
+def _terminal_close_event(span: CharSpan) -> RenderSpanEvent:
+    return _render_event(
+        span,
+        span_kind="terminal_close",
+        primary_role="TERMINAL",
+        mask_groups=("terminal",),
+        classifying=True,
+        provenance="terminal_projection",
+    )
+
+
+def _json_key_event(span: CharSpan, *, entry: RenderedObjectEntry | None = None) -> RenderSpanEvent:
+    return _render_event(
+        span,
+        span_kind="json_key",
+        primary_role="CONTROL",
+        mask_groups=("schema", "control"),
+        classifying=True,
+        object_entry=entry,
+        provenance="rendered_control",
+    )
+
+
+def _json_punctuation_event(
+    span: CharSpan, *, entry: RenderedObjectEntry | None = None
+) -> RenderSpanEvent:
+    return _render_event(
+        span,
+        span_kind="json_punctuation",
+        primary_role="CONTROL",
+        mask_groups=("schema", "control"),
+        classifying=True,
+        object_entry=entry,
+        provenance="rendered_control",
+    )
+
+
+def _stage1_json_entry_events(entry: RenderedObjectEntry) -> tuple[RenderSpanEvent, ...]:
+    events: list[RenderSpanEvent] = [_object_entry_container_event(entry)]
+
+    for control_span in entry.control_spans:
+        if control_span.label == "desc_key":
+            events.append(_json_key_event(control_span, entry=entry))
+        elif control_span.label == "bbox_start":
+            events.append(
+                _render_event(
+                    control_span,
+                    span_kind="bbox_field_binding",
+                    primary_role="BBOX_START",
+                    mask_groups=("schema", "control"),
+                    classifying=True,
+                    object_entry=entry,
+                    geometry_kind="bbox_2d",
+                    provenance="rendered_control",
+                )
+            )
+            events.append(_json_key_event(control_span, entry=entry))
+        elif control_span.label == "coordinate_separator":
+            events.append(
+                _render_event(
+                    control_span,
+                    span_kind="coordinate_separator",
+                    primary_role="SEPARATOR",
+                    mask_groups=("separator", "control"),
+                    classifying=True,
+                    object_entry=entry,
+                    geometry_kind="bbox_2d",
+                    provenance="rendered_control",
+                )
+            )
+        else:
+            events.append(_json_punctuation_event(control_span, entry=entry))
+
+    events.append(
+        _render_event(
+            entry.desc_span,
+            span_kind="description_text",
+            primary_role="DESC",
+            mask_groups=("desc",),
+            classifying=True,
+            object_entry=entry,
+            provenance="rendered_leaf",
+        )
+    )
+    events.append(
+        _json_punctuation_event(
+            CharSpan(entry.desc_span.start - 1, entry.desc_span.start, "desc_quote_open"),
+            entry=entry,
+        )
+    )
+    events.append(
+        _json_punctuation_event(
+            CharSpan(entry.desc_span.end, entry.desc_span.end + 1, "desc_quote_close"),
+            entry=entry,
+        )
+    )
+    events.extend(_coordinate_slot_events(entry))
+    return tuple(events)
+
+
+def _compact_full_entry_events(entry: RenderedObjectEntry) -> tuple[RenderSpanEvent, ...]:
+    events: list[RenderSpanEvent] = [_object_entry_container_event(entry)]
+    if entry.object_ref_start_span is not None:
+        events.append(
+            _render_event(
+                entry.object_ref_start_span,
+                span_kind="object_ref_marker",
+                primary_role="CONTROL",
+                mask_groups=("schema", "control"),
+                classifying=True,
+                object_entry=entry,
+                provenance="rendered_control",
+            )
+        )
+    events.append(
+        _render_event(
+            entry.desc_span,
+            span_kind="description_text",
+            primary_role="DESC",
+            mask_groups=("desc",),
+            classifying=True,
+            object_entry=entry,
+            provenance="rendered_leaf",
+        )
+    )
+    events.append(
+        _render_event(
+            entry.bbox_start_span,
+            span_kind="bbox_start_marker",
+            primary_role="BBOX_START",
+            mask_groups=("schema", "control"),
+            classifying=True,
+            object_entry=entry,
+            geometry_kind="bbox_2d",
+            provenance="rendered_control",
+        )
+    )
+    events.extend(_coordinate_slot_events(entry))
+    return tuple(events)
+
+
+def _coordinate_slot_events(entry: RenderedObjectEntry) -> tuple[RenderSpanEvent, ...]:
+    return tuple(
+        _render_event(
+            coord_span,
+            span_kind="coordinate_slot",
+            primary_role="COORD",
+            mask_groups=("coord",),
+            classifying=True,
+            object_entry=entry,
+            geometry_kind="bbox_2d",
+            slot_name=_COORD_SLOT_NAMES[coord_index],
+            provenance="rendered_leaf",
+        )
+        for coord_index, coord_span in enumerate(entry.coord_spans)
+    )
+
+
+
+
+def _project_rendered_assistant_sequence(
+    *,
+    template_id: TemplateId,
+    template_version: int,
+    text: str,
+    object_entries: tuple[RenderedObjectEntry, ...] | list[RenderedObjectEntry],
+    separator_spans: tuple[CharSpan, ...] | list[CharSpan],
+    terminal_close_span: CharSpan,
+    structural_token_spans: tuple[CharSpan, ...] | list[CharSpan],
+    event_builder: _RenderEventBuilder,
+) -> RenderedAssistantSequence:
+    entries = tuple(object_entries)
+    return RenderedAssistantSequence(
+        template_id=template_id,
+        template_version=template_version,
+        text=text,
+        object_entries=entries,
+        separator_spans=tuple(separator_spans),
+        terminal_close_span=terminal_close_span,
+        stop_marker_spans=(),
+        structural_token_spans=tuple(structural_token_spans),
+        trie_eligible_spans=tuple(entry.trie_eligible_span for entry in entries),
+        render_span_events=event_builder.finalize(text),
+    )
+
+def _finalize_render_span_events(
+    events: tuple[RenderSpanEvent, ...] | list[RenderSpanEvent],
+) -> tuple[RenderSpanEvent, ...]:
+    event_tuple = tuple(events)
+    _assert_no_equal_priority_classifying_overlaps(event_tuple)
+    return event_tuple
+
+
+def _assert_no_equal_priority_classifying_overlaps(
+    events: tuple[RenderSpanEvent, ...],
+) -> None:
+    for left_index, left in enumerate(events):
+        if not _participates_in_overlap_invariant(left):
+            continue
+        for right in events[left_index + 1 :]:
+            if not _participates_in_overlap_invariant(right):
+                continue
+            if left.priority != right.priority:
+                continue
+            if _char_spans_overlap(left.char_span, right.char_span):
+                raise ValueError(
+                    "render span events have equal-priority classifying overlap: "
+                    f"{left.span_kind}/{left.primary_role}@"
+                    f"{left.char_span.start}:{left.char_span.end} overlaps "
+                    f"{right.span_kind}/{right.primary_role}@"
+                    f"{right.char_span.start}:{right.char_span.end}"
+                )
+
+
+def _participates_in_overlap_invariant(event: RenderSpanEvent) -> bool:
+    return event.classifying and event.char_span.start < event.char_span.end
+
+
+def _char_spans_overlap(left: CharSpan, right: CharSpan) -> bool:
+    return left.start < right.end and right.start < left.end
+
+
 def _object_payload(obj: NormalizedDetectionObject) -> dict[str, Any]:
     return {
         "desc": obj.desc,
@@ -536,19 +1021,18 @@ def _validate_compact_desc(desc: str) -> None:
 
 
 def _parse_compact_full_row(row: str) -> dict[str, Any]:
-    if not row.startswith(OBJECT_REF_START_TOKEN):
+    parts = parse_compact_row(
+        row,
+        require_object_ref_marker=True,
+        require_bbox_start_marker=True,
+        bbox_marker_split="first",
+    )
+    if parts is None:
         raise ValueError("text is not strict compact_full")
-    body = row[len(OBJECT_REF_START_TOKEN) :]
-    if BOX_START_TOKEN not in body:
-        raise ValueError("text is not strict compact_full")
-
-    desc, coord_tail = body.split(BOX_START_TOKEN, maxsplit=1)
-    _validate_compact_desc(desc)
-    coords = _COORD_TOKEN_RE.findall(coord_tail)
-    if len(coords) != 4 or "".join(coords) != coord_tail:
-        raise ValueError("text is not strict compact_full")
+    _validate_compact_desc(parts.desc)
+    coords = list(parts.bbox_tokens)
     _validate_strict_coord_tokens(coords, context="strict compact_full bbox_2d")
-    return {"desc": desc, "bbox_2d": coords}
+    return {"desc": parts.desc, "bbox_2d": coords}
 
 
 def _loads_coordjson_with_bare_coord_tokens(text: str) -> dict[str, Any]:
@@ -651,11 +1135,16 @@ __all__ = [
     "CharSpan",
     "CompactFullTemplate",
     "DetectionSequenceTemplate",
+    "MaskGroup",
     "RenderedAssistantSequence",
     "RenderedConversation",
     "RenderedObjectEntry",
+    "RenderSpanEvent",
+    "SpanKind",
+    "SpanProvenance",
     "Stage1JsonPrettyTemplate",
     "TemplateCapabilities",
     "TemplateId",
+    "TokenRoleName",
     "get_detection_template",
 ]

@@ -1,14 +1,26 @@
-"""Detection sequence rendering/parsing for compact native-token variants."""
+"""Detection sequence rendering/parsing for compact native-token variants.
+
+This module is the lightweight compatibility facade used by inference and
+non-training callers.  Its parser intentionally strips generation suffixes and
+returns ``None`` for malformed compact rows instead of raising strict template
+errors.  Keep this behavior separate from ``src.detection.template`` training
+parsers unless a future shared low-level row helper can preserve both contracts
+without introducing an import cycle.
+"""
 
 from __future__ import annotations
 
-import re
 from typing import Any, Mapping, Sequence, cast
 
+from src.common.detection_compact_rows import (
+    BOX_START_TOKEN,
+    OBJECT_REF_START_TOKEN,
+    STRICT_COMPACT_ROW_COORD_TOKEN_RE,
+    parse_compact_row,
+    render_compact_row,
+)
 from src.utils.assistant_json import dumps_coordjson
 
-OBJECT_REF_START_TOKEN = "<|object_ref_start|>"
-BOX_START_TOKEN = "<|box_start|>"
 IM_END_TOKEN = "<|im_end|>"
 END_OF_TEXT_TOKEN = "<|endoftext|>"
 
@@ -28,7 +40,6 @@ ALLOWED_DETECTION_SEQUENCE_FORMATS = {
     COMPACT_MIN_FORMAT,
 }
 
-_COORD_TOKEN_RE = re.compile(r"<\|coord_(\d+)\|>")
 _FORBIDDEN_DESC_SUBSTRINGS = (
     "\n",
     "\r",
@@ -39,6 +50,16 @@ _FORBIDDEN_DESC_SUBSTRINGS = (
     "<|im_start|>",
     IM_END_TOKEN,
 )
+
+
+def _compact_marker_flags(fmt: DetectionSequenceFormat) -> tuple[bool, bool]:
+    if fmt == COMPACT_FULL_FORMAT:
+        return True, True
+    if fmt == COMPACT_NO_DESC_FORMAT:
+        return False, True
+    if fmt == COMPACT_NO_BBOX_FORMAT:
+        return True, False
+    return False, False
 
 
 def normalize_detection_sequence_format(value: Any) -> DetectionSequenceFormat:
@@ -73,26 +94,26 @@ def compact_pattern_for_detection_sequence_format(
 ) -> str:
     fmt = normalize_detection_sequence_format(detection_sequence_format)
     coord_tail = "<|coord_x1|><|coord_y1|><|coord_x2|><|coord_y2|>"
-    if fmt == COMPACT_FULL_FORMAT:
-        return f"{OBJECT_REF_START_TOKEN}{{desc}}{BOX_START_TOKEN}{coord_tail}"
-    if fmt == COMPACT_NO_DESC_FORMAT:
-        return f"{{desc}}{BOX_START_TOKEN}{coord_tail}"
-    if fmt == COMPACT_NO_BBOX_FORMAT:
-        return f"{OBJECT_REF_START_TOKEN}{{desc}}{coord_tail}"
-    if fmt == COMPACT_MIN_FORMAT:
-        return f"{{desc}}{coord_tail}"
-    raise ValueError("coordjson does not have a compact row pattern")
+    if fmt == COORDJSON_FORMAT:
+        raise ValueError("coordjson does not have a compact row pattern")
+    include_object_ref_marker, include_bbox_start_marker = _compact_marker_flags(fmt)
+    return render_compact_row(
+        "{desc}",
+        (coord_tail,),
+        include_object_ref_marker=include_object_ref_marker,
+        include_bbox_start_marker=include_bbox_start_marker,
+    )
 
 
 def _validate_desc(desc: Any) -> str:
     if not isinstance(desc, str):
         raise ValueError("object desc must be a string")
+    for forbidden in _FORBIDDEN_DESC_SUBSTRINGS:
+        if forbidden in desc:
+            raise ValueError(f"object desc contains forbidden marker {forbidden!r}")
     value = desc.strip()
     if not value:
         raise ValueError("object desc must be non-empty")
-    for forbidden in _FORBIDDEN_DESC_SUBSTRINGS:
-        if forbidden in value:
-            raise ValueError(f"object desc contains forbidden marker {forbidden!r}")
     return value
 
 
@@ -102,7 +123,7 @@ def _validate_bbox_tokens(value: Any) -> list[str]:
     tokens = [str(v) for v in value]
     if len(tokens) != 4:
         raise ValueError("object bbox_2d must contain exactly four coord tokens")
-    if not all(_COORD_TOKEN_RE.fullmatch(token) for token in tokens):
+    if not all(STRICT_COMPACT_ROW_COORD_TOKEN_RE.fullmatch(token) for token in tokens):
         raise ValueError("object bbox_2d must contain only <|coord_N|> tokens")
     return tokens
 
@@ -122,33 +143,33 @@ def render_compact_detection_sequence(
     if not isinstance(objects, Sequence) or isinstance(objects, (str, bytes)):
         raise ValueError("payload.objects must be a sequence")
 
+    include_object_ref_marker, include_bbox_start_marker = _compact_marker_flags(fmt)
     rows: list[str] = []
     for entry in objects:
         if not isinstance(entry, Mapping):
             raise ValueError("payload.objects entries must be mappings")
         desc = _validate_desc(entry.get("desc"))
         bbox_tokens = _validate_bbox_tokens(entry.get("bbox_2d"))
-        bbox_text = "".join(bbox_tokens)
-        if fmt == COMPACT_FULL_FORMAT:
-            rows.append(f"{OBJECT_REF_START_TOKEN}{desc}{BOX_START_TOKEN}{bbox_text}")
-        elif fmt == COMPACT_NO_DESC_FORMAT:
-            rows.append(f"{desc}{BOX_START_TOKEN}{bbox_text}")
-        elif fmt == COMPACT_NO_BBOX_FORMAT:
-            rows.append(f"{OBJECT_REF_START_TOKEN}{desc}{bbox_text}")
-        else:
-            rows.append(f"{desc}{bbox_text}")
+        rows.append(
+            render_compact_row(
+                desc,
+                bbox_tokens,
+                include_object_ref_marker=include_object_ref_marker,
+                include_bbox_start_marker=include_bbox_start_marker,
+            )
+        )
     return "\n".join(rows)
 
 
 def _strip_generation_suffix(text: str) -> str:
-    stripped = str(text).strip()
+    stripped = str(text)
     terminal_positions = [
         pos
         for token in (IM_END_TOKEN, END_OF_TEXT_TOKEN)
         if (pos := stripped.find(token)) >= 0
     ]
     if terminal_positions:
-        stripped = stripped[: min(terminal_positions)].rstrip()
+        stripped = stripped[: min(terminal_positions)]
     return stripped
 
 
@@ -165,44 +186,21 @@ def _auto_detect_format(text: str) -> DetectionSequenceFormat:
 
 
 def _parse_row(row: str, *, fmt: DetectionSequenceFormat) -> dict[str, Any] | None:
-    coord_matches = list(_COORD_TOKEN_RE.finditer(row))
-    if len(coord_matches) != 4:
+    require_object_ref_marker, require_bbox_start_marker = _compact_marker_flags(fmt)
+    parts = parse_compact_row(
+        row,
+        require_object_ref_marker=require_object_ref_marker,
+        require_bbox_start_marker=require_bbox_start_marker,
+        coord_token_re=STRICT_COMPACT_ROW_COORD_TOKEN_RE,
+    )
+    if parts is None:
         return None
-    first_coord = coord_matches[0]
-    if any(match.end() != next_match.start() for match, next_match in zip(coord_matches, coord_matches[1:])):
-        return None
-    if coord_matches[-1].end() != len(row):
-        return None
-
-    bbox_tokens = [match.group(0) for match in coord_matches]
-    prefix = row[: first_coord.start()]
-    if fmt == COMPACT_FULL_FORMAT:
-        if not prefix.startswith(OBJECT_REF_START_TOKEN):
-            return None
-        body = prefix[len(OBJECT_REF_START_TOKEN) :]
-        if BOX_START_TOKEN not in body:
-            return None
-        desc, trailing = body.rsplit(BOX_START_TOKEN, maxsplit=1)
-        if trailing:
-            return None
-    elif fmt == COMPACT_NO_DESC_FORMAT:
-        if BOX_START_TOKEN not in prefix:
-            return None
-        desc, trailing = prefix.rsplit(BOX_START_TOKEN, maxsplit=1)
-        if trailing:
-            return None
-    elif fmt == COMPACT_NO_BBOX_FORMAT:
-        if not prefix.startswith(OBJECT_REF_START_TOKEN):
-            return None
-        desc = prefix[len(OBJECT_REF_START_TOKEN) :]
-    else:
-        desc = prefix
 
     try:
-        desc = _validate_desc(desc)
+        desc = _validate_desc(parts.desc)
     except ValueError:
         return None
-    return {"desc": desc, "bbox_2d": bbox_tokens}
+    return {"desc": desc, "bbox_2d": list(parts.bbox_tokens)}
 
 
 def parse_compact_detection_sequence(
@@ -210,12 +208,19 @@ def parse_compact_detection_sequence(
     *,
     detection_sequence_format: str | None = None,
 ) -> dict[str, Any] | None:
-    """Parse compact generated text back into canonical prediction objects."""
+    """Parse compact generated text back into canonical prediction objects.
+
+    Compatibility contract: this helper accepts generated-text suffixes such as
+    chat stop markers and reports malformed rows as ``None``.  Strict training
+    template validity is owned by ``CompactFullTemplate.parse_assistant``.
+    """
 
     stripped = _strip_generation_suffix(text)
     if not stripped:
         return {"objects": []}
     if "<|coord_" not in stripped:
+        if stripped.isspace():
+            return {"objects": []}
         return None
 
     fmt = (
@@ -227,10 +232,9 @@ def parse_compact_detection_sequence(
         return None
 
     objects: list[dict[str, Any]] = []
-    for raw_row in stripped.splitlines():
-        row = raw_row.strip()
+    for row in stripped.split("\n"):
         if not row:
-            continue
+            return None
         parsed = _parse_row(row, fmt=fmt)
         if parsed is None:
             return None

@@ -8,6 +8,7 @@ from typing import Any, Mapping, Protocol, Sequence
 
 from src.detection.template import (
     CharSpan,
+    RenderSpanEvent,
     RenderedAssistantSequence,
     RenderedConversation,
     RenderedObjectEntry,
@@ -91,6 +92,40 @@ class TokenizedDetectionExample:
     separator_mask: tuple[bool, ...]
     terminal_mask: tuple[bool, ...]
     control_mask: tuple[bool, ...]
+    token_position_origin: str = "TokenizedDetectionExample.tokenized"
+
+    @property
+    def supervised_label_positions(self) -> tuple[int, ...]:
+        """Label indices whose teacher tokens have valid next-token predictors.
+
+        The label position stores the teacher token itself: ``labels[position]``.
+        Under causal next-token training, ``logits[position - 1]`` predicts that
+        teacher token, so position 0 is intentionally excluded from this view.
+        """
+        return tuple(
+            position
+            for position, label in enumerate(self.labels)
+            if position > 0 and int(label) != -100
+        )
+
+    @property
+    def next_token_prediction_positions(self) -> tuple[int, ...]:
+        """Logit indices that predict ``supervised_label_positions``."""
+        return tuple(
+            self.next_token_prediction_position_for(position)
+            for position in self.supervised_label_positions
+        )
+
+    def next_token_prediction_position_for(self, label_position: int) -> int:
+        """Return the logit index that predicts ``labels[label_position]``."""
+        label_position = int(label_position)
+        if label_position <= 0:
+            raise ValueError("label position 0 has no next-token prediction position")
+        if label_position >= len(self.labels):
+            raise IndexError("label position is outside labels")
+        if int(self.labels[label_position]) == -100:
+            raise ValueError("label position is not supervised")
+        return label_position - 1
 
 
 def align_char_span_to_token_span(
@@ -225,6 +260,9 @@ def tokenize_rendered_detection_conversation(
         separator_spans=separator_spans,
         terminal_span=terminal_span,
         stop_marker_spans=stop_marker_spans,
+        render_span_events=rendered_assistant.render_span_events,
+        offsets=offsets,
+        assistant_base_offset=assistant_char_span.start,
     )
     labels = tuple(
         token_id
@@ -272,6 +310,13 @@ class _MasksAndRoles:
     separator_mask: tuple[bool, ...]
     terminal_mask: tuple[bool, ...]
     control_mask: tuple[bool, ...]
+
+
+@dataclass(frozen=True)
+class _AlignedRenderSpanEvent:
+    event: RenderSpanEvent
+    token_span: TokenSpan
+    primary_role: TokenRole | None
 
 
 def _assistant_from_rendered(
@@ -545,6 +590,9 @@ def _build_masks_and_roles(
     separator_spans: Sequence[TokenSpan],
     terminal_span: TokenSpan | None,
     stop_marker_spans: Sequence[TokenSpan],
+    render_span_events: Sequence[RenderSpanEvent],
+    offsets: Sequence[tuple[int, int]],
+    assistant_base_offset: int,
 ) -> _MasksAndRoles:
     seq_len = len(input_ids)
     token_roles = [TokenRole.IGNORE for _ in range(seq_len)]
@@ -558,6 +606,103 @@ def _build_masks_and_roles(
     terminal_mask = [False for _ in range(seq_len)]
     control_mask = [False for _ in range(seq_len)]
 
+    if render_span_events:
+        aligned_events = _align_render_span_events(
+            render_span_events,
+            offsets=offsets,
+            assistant_base_offset=assistant_base_offset,
+        )
+        _project_render_span_events(
+            aligned_events,
+            token_roles=token_roles,
+            assistant_mask=assistant_mask,
+            object_entry_mask=object_entry_mask,
+            desc_mask=desc_mask,
+            bbox_start_mask=bbox_start_mask,
+            bbox_mask=bbox_mask,
+            coord_mask=coord_mask,
+            separator_mask=separator_mask,
+            terminal_mask=terminal_mask,
+            control_mask=control_mask,
+        )
+        _mark_container_projection_masks(
+            assistant_token_span,
+            object_entries,
+            assistant_mask=assistant_mask,
+            object_entry_mask=object_entry_mask,
+        )
+        _mark_object_projection_masks(
+            object_entries,
+            bbox_mask=bbox_mask,
+            bbox_start_mask=bbox_start_mask,
+        )
+        _apply_container_role_fallbacks(
+            token_roles,
+            assistant_mask=assistant_mask,
+            object_entry_mask=object_entry_mask,
+        )
+    else:
+        _mark_legacy_span_roles_and_masks(
+            assistant_token_span=assistant_token_span,
+            object_entries=object_entries,
+            structural_spans=structural_spans,
+            separator_spans=separator_spans,
+            token_roles=token_roles,
+            assistant_mask=assistant_mask,
+            object_entry_mask=object_entry_mask,
+            desc_mask=desc_mask,
+            bbox_start_mask=bbox_start_mask,
+            bbox_mask=bbox_mask,
+            coord_mask=coord_mask,
+            separator_mask=separator_mask,
+            control_mask=control_mask,
+        )
+
+    if terminal_span is not None:
+        _mark_span(
+            terminal_span,
+            mask=terminal_mask,
+            token_roles=token_roles,
+            role=TokenRole.TERMINAL,
+        )
+    for stop_marker_span in stop_marker_spans:
+        _mark_span(
+            stop_marker_span,
+            mask=terminal_mask,
+            token_roles=token_roles,
+            role=TokenRole.TERMINAL,
+        )
+
+    return _MasksAndRoles(
+        token_roles=tuple(token_roles),
+        assistant_mask=tuple(assistant_mask),
+        object_entry_mask=tuple(object_entry_mask),
+        desc_mask=tuple(desc_mask),
+        bbox_start_mask=tuple(bbox_start_mask),
+        bbox_mask=tuple(bbox_mask),
+        coord_mask=tuple(coord_mask),
+        separator_mask=tuple(separator_mask),
+        terminal_mask=tuple(terminal_mask),
+        control_mask=tuple(control_mask),
+    )
+
+
+def _mark_legacy_span_roles_and_masks(
+    *,
+    assistant_token_span: TokenSpan,
+    object_entries: Sequence[TokenizedObjectEntry],
+    structural_spans: Sequence[TokenSpan],
+    separator_spans: Sequence[TokenSpan],
+    token_roles: list[TokenRole],
+    assistant_mask: list[bool],
+    object_entry_mask: list[bool],
+    desc_mask: list[bool],
+    bbox_start_mask: list[bool],
+    bbox_mask: list[bool],
+    coord_mask: list[bool],
+    separator_mask: list[bool],
+    control_mask: list[bool],
+) -> None:
     _mark_span(
         assistant_token_span,
         mask=assistant_mask,
@@ -622,33 +767,202 @@ def _build_masks_and_roles(
             token_roles=token_roles,
             role=TokenRole.SEPARATOR,
         )
-    if terminal_span is not None:
-        _mark_span(
-            terminal_span,
-            mask=terminal_mask,
-            token_roles=token_roles,
-            role=TokenRole.TERMINAL,
+
+
+def _align_render_span_events(
+    render_span_events: Sequence[RenderSpanEvent],
+    *,
+    offsets: Sequence[tuple[int, int]],
+    assistant_base_offset: int,
+) -> tuple[_AlignedRenderSpanEvent, ...]:
+    aligned_events: list[_AlignedRenderSpanEvent] = []
+    for event in render_span_events:
+        primary_role = _token_role_from_render_role(event.primary_role)
+        if event.char_span.start == event.char_span.end:
+            continue
+        aligned_events.append(
+            _AlignedRenderSpanEvent(
+                event=event,
+                token_span=align_char_span_to_token_span(
+                    offsets,
+                    event.char_span,
+                    base_offset=assistant_base_offset,
+                ),
+                primary_role=primary_role,
+            )
         )
-    for stop_marker_span in stop_marker_spans:
-        _mark_span(
-            stop_marker_span,
-            mask=terminal_mask,
-            token_roles=token_roles,
-            role=TokenRole.TERMINAL,
+    return tuple(aligned_events)
+
+
+def _token_role_from_render_role(role_name: str | None) -> TokenRole | None:
+    if role_name is None:
+        return None
+    try:
+        return TokenRole[role_name]
+    except KeyError as exc:
+        raise ValueError(f"unknown render span primary role {role_name!r}") from exc
+
+
+def _project_render_span_events(
+    aligned_events: Sequence[_AlignedRenderSpanEvent],
+    *,
+    token_roles: list[TokenRole],
+    assistant_mask: list[bool],
+    object_entry_mask: list[bool],
+    desc_mask: list[bool],
+    bbox_start_mask: list[bool],
+    bbox_mask: list[bool],
+    coord_mask: list[bool],
+    separator_mask: list[bool],
+    terminal_mask: list[bool],
+    control_mask: list[bool],
+) -> None:
+    role_priorities: list[int | None] = [None for _ in token_roles]
+    classifying_priorities: list[set[int]] = [set() for _ in token_roles]
+    for aligned_event in aligned_events:
+        _mark_render_event_mask_groups(
+            aligned_event,
+            assistant_mask=assistant_mask,
+            object_entry_mask=object_entry_mask,
+            desc_mask=desc_mask,
+            bbox_start_mask=bbox_start_mask,
+            bbox_mask=bbox_mask,
+            coord_mask=coord_mask,
+            separator_mask=separator_mask,
+            terminal_mask=terminal_mask,
+            control_mask=control_mask,
+        )
+        if aligned_event.event.classifying:
+            _project_classifying_render_event(
+                aligned_event,
+                token_roles=token_roles,
+                role_priorities=role_priorities,
+                classifying_priorities=classifying_priorities,
+            )
+
+
+def _mark_render_event_mask_groups(
+    aligned_event: _AlignedRenderSpanEvent,
+    *,
+    assistant_mask: list[bool],
+    object_entry_mask: list[bool],
+    desc_mask: list[bool],
+    bbox_start_mask: list[bool],
+    bbox_mask: list[bool],
+    coord_mask: list[bool],
+    separator_mask: list[bool],
+    terminal_mask: list[bool],
+    control_mask: list[bool],
+) -> None:
+    for mask_group in aligned_event.event.mask_groups:
+        if mask_group == "assistant":
+            _mark_mask_only(aligned_event.token_span, assistant_mask)
+        elif mask_group == "object_entry":
+            _mark_mask_only(aligned_event.token_span, object_entry_mask)
+        elif mask_group in {"desc", "description"}:
+            _mark_mask_only(aligned_event.token_span, desc_mask)
+        elif mask_group == "bbox_start":
+            _mark_mask_only(aligned_event.token_span, bbox_start_mask)
+        elif mask_group in {"coord", "coordinate"}:
+            _mark_mask_only(aligned_event.token_span, coord_mask)
+        elif mask_group == "bbox":
+            _mark_mask_only(aligned_event.token_span, bbox_mask)
+        elif mask_group == "separator":
+            _mark_mask_only(aligned_event.token_span, separator_mask)
+        elif mask_group == "terminal":
+            _mark_mask_only(aligned_event.token_span, terminal_mask)
+        elif mask_group in {"control", "schema"}:
+            # Separator render events carry broad control provenance, but the
+            # tokenized view preserves the historical mask contract: separators
+            # belong to separator_mask and stay out of control_mask.
+            if aligned_event.primary_role is not TokenRole.SEPARATOR:
+                _mark_mask_only(aligned_event.token_span, control_mask)
+        elif mask_group == "ignore":
+            continue
+        else:
+            raise ValueError(
+                f"unknown render span mask group {mask_group!r} for "
+                f"{aligned_event.event.span_kind!r}"
+            )
+
+
+def _project_classifying_render_event(
+    aligned_event: _AlignedRenderSpanEvent,
+    *,
+    token_roles: list[TokenRole],
+    role_priorities: list[int | None],
+    classifying_priorities: list[set[int]],
+) -> None:
+    if aligned_event.primary_role is None:
+        raise ValueError(
+            f"classifying render span {aligned_event.event.span_kind!r} "
+            "is missing primary_role"
         )
 
-    return _MasksAndRoles(
-        token_roles=tuple(token_roles),
-        assistant_mask=tuple(assistant_mask),
-        object_entry_mask=tuple(object_entry_mask),
-        desc_mask=tuple(desc_mask),
-        bbox_start_mask=tuple(bbox_start_mask),
-        bbox_mask=tuple(bbox_mask),
-        coord_mask=tuple(coord_mask),
-        separator_mask=tuple(separator_mask),
-        terminal_mask=tuple(terminal_mask),
-        control_mask=tuple(control_mask),
-    )
+    for token_index in aligned_event.token_span.token_indices():
+        seen_priorities = classifying_priorities[token_index]
+        if aligned_event.event.priority in seen_priorities:
+            raise ValueError(
+                "render span events have equal-priority classifying token overlap: "
+                f"{aligned_event.event.span_kind}/{aligned_event.event.primary_role}@"
+                f"{aligned_event.token_span.start}:{aligned_event.token_span.end}"
+            )
+        seen_priorities.add(aligned_event.event.priority)
+
+        existing_priority = role_priorities[token_index]
+        if existing_priority is None or aligned_event.event.priority > existing_priority:
+            token_roles[token_index] = aligned_event.primary_role
+            role_priorities[token_index] = aligned_event.event.priority
+
+
+def _mark_object_projection_masks(
+    object_entries: Sequence[TokenizedObjectEntry],
+    *,
+    bbox_mask: list[bool],
+    bbox_start_mask: list[bool],
+) -> None:
+    # Compatibility overlay during the render-event migration: event mode owns
+    # primary role and mask projection, while public object spans still reinforce
+    # bbox/bbox-start masks so legacy downstream tokenized-view contracts remain
+    # stable if an event omits those migration-era mask groups.
+    for entry in object_entries:
+        _mark_mask_only(entry.bbox_span, bbox_mask)
+        _mark_mask_only(entry.bbox_start_span, bbox_start_mask)
+
+
+def _mark_container_projection_masks(
+    assistant_token_span: TokenSpan,
+    object_entries: Sequence[TokenizedObjectEntry],
+    *,
+    assistant_mask: list[bool],
+    object_entry_mask: list[bool],
+) -> None:
+    # Compatibility overlay during the render-event migration: public assistant
+    # and object-entry spans continue to reinforce container masks so legacy
+    # downstream tokenized-view contracts stay stable while events become the
+    # source of truth for primary roles and fine-grained masks.
+    _mark_mask_only(assistant_token_span, assistant_mask)
+    for entry in object_entries:
+        _mark_mask_only(entry.entry_span, object_entry_mask)
+
+
+def _apply_container_role_fallbacks(
+    token_roles: list[TokenRole],
+    *,
+    assistant_mask: Sequence[bool],
+    object_entry_mask: Sequence[bool],
+) -> None:
+    for token_index, is_object_entry_token in enumerate(object_entry_mask):
+        if is_object_entry_token and token_roles[token_index] is TokenRole.IGNORE:
+            token_roles[token_index] = TokenRole.OBJECT_ENTRY
+    for token_index, is_assistant_token in enumerate(assistant_mask):
+        if is_assistant_token and token_roles[token_index] is TokenRole.IGNORE:
+            token_roles[token_index] = TokenRole.ASSISTANT
+
+
+def _mark_mask_only(span: TokenSpan, mask: list[bool]) -> None:
+    for token_index in span.token_indices():
+        mask[token_index] = True
 
 
 def _mark_span(

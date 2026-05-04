@@ -26,6 +26,53 @@ from src.detection.template import TemplateId, get_detection_template
 
 DetectionObjectOrdering = Literal["sorted", "random_permutation"]
 
+REGISTERED_DETECTION_SIDECAR_KEYS: tuple[str, ...] = (
+    "recursive_detection_targets",
+    "detection_metadata",
+    "assistant_payload",
+    "sample_id",
+    "dataset",
+    "base_idx",
+)
+
+DETECTION_DROPPED_BEFORE_MODEL_KEYS: tuple[str, ...] = (
+    "messages",
+    "metadata",
+)
+
+DETECTION_MODEL_INPUT_KEYS: frozenset[str] = frozenset(
+    {
+        "input_ids",
+        "attention_mask",
+        "labels",
+        "position_ids",
+        "text_position_ids",
+        "token_type_ids",
+        "pixel_values",
+        "pixel_values_videos",
+        "image_grid_thw",
+        "video_grid_thw",
+        "second_per_grid_ts",
+        "cross_attention_mask",
+        "cache_position",
+        "past_key_values",
+        "use_cache",
+    }
+)
+
+TRAINER_BATCH_EXTRA_KEYS: frozenset[str] = frozenset(
+    {
+        "dataset_labels",
+        "dataset_segments",
+        "pack_num_samples",
+        "token_types",
+        "instability_meta_json",
+        "proxy_desc_token_weights",
+        "proxy_coord_token_weights",
+        "sft_structural_close_token_weights",
+    }
+)
+
 
 @dataclass(frozen=True)
 class DetectionDatasetRuntimeConfig:
@@ -342,7 +389,48 @@ def _make_sample_id(dataset_name: str, base_idx: int) -> int:
     return (namespace << 32) | (int(base_idx) & 0xFFFFFFFF)
 
 
+def strip_non_model_detection_sidecars(
+    batch: MutableMapping[str, Any],
+) -> MutableMapping[str, Any]:
+    """Strip registered detection sidecars from a model-input batch.
+
+    Latest detection samples carry sidecars for recursive CE and diagnostics.
+    Those sidecars may need to survive dataset collation and Trainer column
+    filtering, but they must not leak into ``model(**inputs)``.  This helper is
+    the narrow model-input boundary for latest detection batches: every
+    non-model detection sidecar must be registered here, and unknown leftovers
+    fail fast instead of being silently forwarded.
+    """
+
+    registered = set(REGISTERED_DETECTION_SIDECAR_KEYS)
+    dropped_before_model = set(DETECTION_DROPPED_BEFORE_MODEL_KEYS)
+    allowed = set(DETECTION_MODEL_INPUT_KEYS) | set(TRAINER_BATCH_EXTRA_KEYS)
+    unknown = sorted(
+        str(key)
+        for key in batch
+        if key not in registered | dropped_before_model | allowed
+    )
+    if unknown:
+        raise ValueError(
+            "Unregistered detection batch extras at model-input stripping boundary: "
+            f"{unknown}. Register intentional sidecars in "
+            "REGISTERED_DETECTION_SIDECAR_KEYS or add true model inputs to "
+            "DETECTION_MODEL_INPUT_KEYS."
+        )
+
+    for key in REGISTERED_DETECTION_SIDECAR_KEYS:
+        if key in batch:
+            batch.pop(key)
+    for key in DETECTION_DROPPED_BEFORE_MODEL_KEYS:
+        if key in batch:
+            batch.pop(key)
+    return batch
+
+
 __all__ = [
     "DetectionDatasetRuntimeConfig",
     "DetectionTrainingDataset",
+    "REGISTERED_DETECTION_SIDECAR_KEYS",
+    "DETECTION_DROPPED_BEFORE_MODEL_KEYS",
+    "strip_non_model_detection_sidecars",
 ]

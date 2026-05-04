@@ -1,8 +1,12 @@
 from __future__ import annotations
 
 import torch
+import pytest
 
-from src.infer.compact_grammar import build_compact_full_grammar_logits_processor
+from src.infer.compact_grammar import (
+    build_compact_full_grammar_logits_processor,
+    build_compact_grammar_logits_processor,
+)
 
 
 class _DummyTokenizer:
@@ -80,3 +84,38 @@ def test_compact_grammar_forces_object_start_or_stop_after_newline() -> None:
     assert torch.isneginf(processed[0, 7])
     assert processed[0, 4] == 0.0
     assert processed[0, 2] == 0.0
+
+
+def test_compact_grammar_wrapper_accepts_compact_full_only() -> None:
+    processor = build_compact_grammar_logits_processor(
+        tokenizer=_DummyTokenizer(),
+        prompt_lengths=[1],
+        detection_sequence_format="compact_full",
+    )
+
+    input_ids = torch.tensor([[80]], dtype=torch.long)
+    processed = processor(input_ids, _scores())
+
+    assert torch.isneginf(processed[0, 7])
+    assert processed[0, 4] == 0.0
+    assert processed[0, 2] == 0.0
+
+
+def test_compact_grammar_wrapper_rejects_non_compact_format() -> None:
+    with pytest.raises(ValueError, match="detection_sequence_format=compact_full"):
+        build_compact_grammar_logits_processor(
+            tokenizer=_DummyTokenizer(),
+            prompt_lengths=[1],
+            detection_sequence_format="stage1_json_pretty",
+        )
+
+
+def test_compact_grammar_requires_all_coord_tokens() -> None:
+    tokenizer = _DummyTokenizer()
+    del tokenizer._vocab["<|coord_999|>"]
+
+    with pytest.raises(ValueError, match="requires all 1000 coord tokens"):
+        build_compact_full_grammar_logits_processor(
+            tokenizer=tokenizer,
+            prompt_lengths=[1],
+        )

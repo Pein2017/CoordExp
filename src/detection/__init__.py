@@ -16,6 +16,13 @@ from src.detection.dataset import (
     DetectionDatasetRuntimeConfig,
     DetectionTrainingDataset,
 )
+from src.detection.ir import (
+    DetectionCoordinateSlot,
+    DetectionDocument,
+    DetectionGeometry,
+    DetectionObjectEntry,
+    detection_document_from_normalized_sample,
+)
 from src.detection.loss import (
     RecursiveDetectionLossResult,
     RecursiveDetectionLossWeights,
@@ -82,6 +89,10 @@ __all__ = [
     "DetectionTrainingDataset",
     "DetectionTrainingMode",
     "DetectionMetadata",
+    "DetectionCoordinateSlot",
+    "DetectionDocument",
+    "DetectionGeometry",
+    "DetectionObjectEntry",
     "LossAtom",
     "LossNormalizationDiagnostics",
     "LossNormalizationResult",
@@ -126,6 +137,7 @@ __all__ = [
     "build_packing_fingerprint",
     "build_static_sft_packing_fingerprint",
     "get_detection_template",
+    "detection_document_from_normalized_sample",
     "normalize_detection_row",
     "normalize_recursive_detection_token_losses",
     "parse_raw_detection_row",
