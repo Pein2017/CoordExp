@@ -12,6 +12,13 @@ from typing import Any
 import torch
 
 from src.data_collators.token_types import TokenType
+from src.metrics.events import (
+    FULL_VOCAB_COORD_TOKEN_ACC_IDENTITY,
+    FULL_VOCAB_COORD_TOKEN_ACC_TOP5_IDENTITY,
+    MetricIdentity,
+    flatten_metric_events,
+    ratio_event,
+)
 
 
 @dataclass(frozen=True)
@@ -174,23 +181,71 @@ def compute_token_type_acc(batch: NextTokenBatch) -> dict[str, float]:
         type_sel = batch.types_masked == type_id
         if not type_sel.any().item():
             continue
+        denominator = float(type_sel.sum().detach().item())
         with torch.no_grad():
-            acc = (
-                (batch.preds_masked[type_sel] == batch.labels_masked[type_sel])
-                .float()
-                .mean()
+            correct_top1 = batch.preds_masked[type_sel] == batch.labels_masked[type_sel]
+            acc = correct_top1.float().mean()
+        if name == "coord":
+            out.update(
+                flatten_metric_events(
+                    (
+                        _ratio_event_from_identity(
+                            FULL_VOCAB_COORD_TOKEN_ACC_IDENTITY,
+                            numerator=float(correct_top1.sum().detach().item()),
+                            denominator=denominator,
+                        ),
+                    )
+                )
             )
-        out[f"{name}_token_acc"] = float(acc.detach().item())
+        else:
+            out[f"{name}_token_acc"] = float(acc.detach().item())
 
         if batch.topk_indices is None:
             continue
         with torch.no_grad():
-            top5 = (
-                (batch.topk_indices[type_sel] == batch.labels_masked[type_sel].unsqueeze(-1))
-                .any(dim=-1)
-                .float()
-                .mean()
+            correct_top5 = (
+                batch.topk_indices[type_sel] == batch.labels_masked[type_sel].unsqueeze(-1)
             )
-        out[f"{name}_token_acc_top5"] = float(top5.detach().item())
+            correct_top5 = correct_top5.any(dim=-1)
+            top5 = correct_top5.float().mean()
+        if name == "coord":
+            out.update(
+                flatten_metric_events(
+                    (
+                        _ratio_event_from_identity(
+                            FULL_VOCAB_COORD_TOKEN_ACC_TOP5_IDENTITY,
+                            numerator=float(correct_top5.sum().detach().item()),
+                            denominator=denominator,
+                        ),
+                    )
+                )
+            )
+        else:
+            out[f"{name}_token_acc_top5"] = float(top5.detach().item())
 
     return out
+
+
+def _ratio_event_from_identity(
+    identity: MetricIdentity,
+    *,
+    numerator: float,
+    denominator: float,
+):
+    return ratio_event(
+        identity.key,
+        numerator,
+        denominator,
+        unit=identity.unit,
+        semantic_role=identity.semantic_role,
+        token_role=identity.token_role,
+        vocab_scope=identity.vocab_scope,
+        coordinate_surface=identity.coordinate_surface,
+        geometry_type=identity.geometry_type,
+        slot_name=identity.slot_name,
+        object_scope=identity.object_scope,
+        template_id=identity.template_id,
+        parser_mode=identity.parser_mode,
+        metric_surface=identity.metric_surface,
+        diagnostic_only=identity.diagnostic_only,
+    )

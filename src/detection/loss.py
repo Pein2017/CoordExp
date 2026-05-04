@@ -10,6 +10,7 @@ import torch
 import torch.nn.functional as F
 
 from src.detection.objective import RecursiveDetectionTargets, SemanticRole
+from src.metrics.events import MetricEvent, last_event, weighted_mean_event
 
 _OBJECT_ROLE_WEIGHTS = {
     SemanticRole.DESC_IDENTITY: 0.35,
@@ -39,6 +40,7 @@ class RecursiveDetectionLossResult:
     loss: torch.Tensor
     metrics: dict[str, float]
     per_position_losses: tuple[dict[int, torch.Tensor], ...]
+    metric_events: tuple[MetricEvent, ...] = ()
 
 
 def compute_recursive_detection_ce_batch_loss(
@@ -77,10 +79,28 @@ def compute_recursive_detection_ce_batch_loss(
         "batch_loss": float(loss.detach().item()),
         "batch_size": float(batch_size),
     }
+    metric_events = (
+        weighted_mean_event(
+            "detection_sequence/objective/recursive_detection_ce/loss_per_sample",
+            float(loss.detach().item()),
+            float(batch_size),
+            unit="sample",
+            semantic_role="recursive_detection_ce",
+            metric_surface="training_logits",
+        ),
+        last_event(
+            "detection_sequence/objective/recursive_detection_ce/batch_size",
+            float(batch_size),
+            unit="batch",
+            semantic_role="recursive_detection_ce",
+            metric_surface="training_logits",
+        ),
+    )
     return RecursiveDetectionLossResult(
         loss=loss,
         metrics=metrics,
         per_position_losses=tuple(per_position_losses),
+        metric_events=metric_events,
     )
 
 
