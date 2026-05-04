@@ -5,17 +5,21 @@ from pathlib import Path
 
 import pytest
 
-from src.infer.checkpoints import resolve_inference_checkpoint
+from src.infer.checkpoints import (
+    resolve_inference_checkpoint,
+    validate_compact_coord_token_adapter_contract,
+)
 
 
 def _write_adapter_checkpoint(
     path: Path,
     *,
     base_model_name_or_path: str | None = "base-model",
+    modules_to_save: list[str] | None = None,
 ) -> None:
     path.mkdir(parents=True, exist_ok=True)
     payload = {
-        "modules_to_save": [],
+        "modules_to_save": [] if modules_to_save is None else modules_to_save,
     }
     if base_model_name_or_path is not None:
         payload["base_model_name_or_path"] = base_model_name_or_path
@@ -23,6 +27,30 @@ def _write_adapter_checkpoint(
         json.dumps(payload, ensure_ascii=True),
         encoding="utf-8",
     )
+
+
+def _write_coord_offset_weights(
+    path: Path,
+    *,
+    coord_ids: list[int],
+    tie_head: bool = True,
+) -> None:
+    import torch
+    from safetensors.torch import save_file
+
+    payload = {
+        "base_model.model.coord_offset_adapter.coord_ids": torch.tensor(
+            coord_ids, dtype=torch.long
+        ),
+        "base_model.model.coord_offset_adapter.embed_offset": torch.zeros(
+            len(coord_ids), 4, dtype=torch.float32
+        ),
+    }
+    if not tie_head:
+        payload["base_model.model.coord_offset_adapter.head_offset"] = torch.zeros(
+            len(coord_ids), 4, dtype=torch.float32
+        )
+    save_file(payload, str(path / "adapter_model.safetensors"))
 
 
 def test_resolve_inference_checkpoint_keeps_full_model_inputs() -> None:
@@ -88,3 +116,76 @@ def test_resolve_inference_checkpoint_rejects_shorthand_without_base_model(
 
     with pytest.raises(ValueError, match="base_model_name_or_path"):
         resolve_inference_checkpoint(model_checkpoint=str(adapter_dir))
+
+
+def test_compact_coord_token_adapter_requires_saved_coord_offset(
+    tmp_path: Path,
+) -> None:
+    adapter_dir = tmp_path / "adapter"
+    _write_adapter_checkpoint(adapter_dir, base_model_name_or_path="base-model")
+    resolved = resolve_inference_checkpoint(model_checkpoint=str(adapter_dir))
+
+    with pytest.raises(ValueError, match="compact_full.*coord_offset_adapter"):
+        validate_compact_coord_token_adapter_contract(
+            resolved,
+            detection_sequence_format="compact_full",
+        )
+
+
+def test_compact_coord_token_adapter_guard_normalizes_format_alias(
+    tmp_path: Path,
+) -> None:
+    adapter_dir = tmp_path / "adapter"
+    _write_adapter_checkpoint(adapter_dir, base_model_name_or_path="base-model")
+    resolved = resolve_inference_checkpoint(model_checkpoint=str(adapter_dir))
+
+    with pytest.raises(ValueError, match="compact_full.*coord_offset_adapter"):
+        validate_compact_coord_token_adapter_contract(
+            resolved,
+            detection_sequence_format="compact-full",
+        )
+
+
+def test_compact_coord_token_adapter_rejects_partial_or_untied_rows(
+    tmp_path: Path,
+) -> None:
+    adapter_dir = tmp_path / "adapter"
+    _write_adapter_checkpoint(
+        adapter_dir,
+        base_model_name_or_path="base-model",
+        modules_to_save=["coord_offset_adapter"],
+    )
+    _write_coord_offset_weights(
+        adapter_dir,
+        coord_ids=[151646, 151648, *range(151670, 152669)],
+        tie_head=False,
+    )
+    resolved = resolve_inference_checkpoint(model_checkpoint=str(adapter_dir))
+
+    with pytest.raises(ValueError, match="tie_head=True|1002"):
+        validate_compact_coord_token_adapter_contract(
+            resolved,
+            detection_sequence_format="compact_full",
+        )
+
+
+def test_compact_coord_token_adapter_accepts_exact_tied_rows(
+    tmp_path: Path,
+) -> None:
+    adapter_dir = tmp_path / "adapter"
+    _write_adapter_checkpoint(
+        adapter_dir,
+        base_model_name_or_path="base-model",
+        modules_to_save=["coord_offset_adapter"],
+    )
+    _write_coord_offset_weights(
+        adapter_dir,
+        coord_ids=[151646, 151648, *range(151670, 152670)],
+        tie_head=True,
+    )
+    resolved = resolve_inference_checkpoint(model_checkpoint=str(adapter_dir))
+
+    validate_compact_coord_token_adapter_contract(
+        resolved,
+        detection_sequence_format="compact_full",
+    )

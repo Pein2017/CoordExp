@@ -114,6 +114,29 @@ def test_compact_parser_auto_detects_full_format_and_strips_im_end() -> None:
     }
 
 
+def test_compact_parser_truncates_terminal_suffix_after_im_end() -> None:
+    raw = (
+        f"{OBJECT_REF_START_TOKEN}cat{BOX_START_TOKEN}<|coord_1|><|coord_2|><|coord_3|><|coord_4|>"
+        "<|im_end|><|endoftext|><|endoftext|>"
+    )
+
+    parsed = parse_compact_detection_sequence(raw)
+
+    assert parsed == {
+        "objects": [
+            {
+                "desc": "cat",
+                "bbox_2d": [
+                    "<|coord_1|>",
+                    "<|coord_2|>",
+                    "<|coord_3|>",
+                    "<|coord_4|>",
+                ],
+            }
+        ]
+    }
+
+
 def test_compact_parser_rejects_wrong_coord_arity() -> None:
     raw = f"{OBJECT_REF_START_TOKEN}cat{BOX_START_TOKEN}<|coord_1|><|coord_2|><|coord_3|>"
 

@@ -10,6 +10,7 @@ from pathlib import Path
 import pytest
 from PIL import Image
 
+import src.infer.pipeline as infer_pipeline
 from src.infer.engine import detect_mode_from_gt
 from src.infer.pipeline import (
     load_resolved_config,
@@ -245,6 +246,85 @@ def test_run_pipeline_writes_resolved_config_with_root_breadcrumbs(
         resolved["artifacts"]["pred_token_trace_jsonl"]
         == str(artifacts.run_dir / "pred_token_trace.jsonl")
     )
+
+
+def test_run_pipeline_records_compact_detection_sequence_format(
+    tmp_path: Path, monkeypatch
+) -> None:
+    monkeypatch.delenv("ROOT_IMAGE_DIR", raising=False)
+
+    yaml_stub = types.SimpleNamespace(safe_load=lambda raw: json.loads(raw))
+    monkeypatch.setitem(sys.modules, "yaml", yaml_stub)
+
+    gt_jsonl = tmp_path / "data" / "gt.jsonl"
+    cfg = {
+        "run": {"name": "demo", "output_dir": str(tmp_path / "out")},
+        "stages": {"infer": False, "eval": False, "vis": False},
+        "infer": {
+            "gt_jsonl": str(gt_jsonl),
+            "detection_sequence_format": "compact_full",
+        },
+    }
+
+    config_path = tmp_path / "pipeline.json"
+    config_path.write_text(json.dumps(cfg, ensure_ascii=False), encoding="utf-8")
+
+    artifacts, _stages = resolve_artifacts(cfg)
+    artifacts.run_dir.mkdir(parents=True, exist_ok=True)
+    artifacts.gt_vs_pred_jsonl.write_text("", encoding="utf-8")
+
+    run_pipeline(config_path=config_path)
+
+    resolved = load_resolved_config(artifacts.run_dir / "resolved_config.json")
+    assert resolved["infer"]["detection_sequence_format"] == "compact_full"
+    assert (
+        resolved["cfg"]["infer"]["detection_sequence_format"]
+        == "compact_full"
+    )
+
+
+def test_distributed_nonzero_rank_skips_postprocess_eval_and_vis(
+    tmp_path: Path, monkeypatch
+) -> None:
+    monkeypatch.delenv("ROOT_IMAGE_DIR", raising=False)
+    monkeypatch.setenv("RANK", "1")
+    monkeypatch.setenv("LOCAL_RANK", "1")
+    monkeypatch.setenv("WORLD_SIZE", "8")
+
+    yaml_stub = types.SimpleNamespace(safe_load=lambda raw: json.loads(raw))
+    monkeypatch.setitem(sys.modules, "yaml", yaml_stub)
+
+    calls: list[str] = []
+
+    def _fake_infer_stage(*_args, **_kwargs) -> None:
+        calls.append("infer")
+
+    def _forbidden_stage(*_args, **_kwargs) -> None:
+        raise AssertionError("non-rank-0 must not run post-infer stages")
+
+    monkeypatch.setattr(infer_pipeline, "_run_infer_stage", _fake_infer_stage)
+    monkeypatch.setattr(infer_pipeline, "_maybe_run_confidence_postop", _forbidden_stage)
+    monkeypatch.setattr(infer_pipeline, "_run_eval_stage", _forbidden_stage)
+    monkeypatch.setattr(infer_pipeline, "_run_vis_stage", _forbidden_stage)
+
+    cfg = {
+        "run": {"name": "demo", "output_dir": str(tmp_path / "out")},
+        "stages": {"infer": True, "eval": True, "vis": True},
+        "infer": {
+            "gt_jsonl": str(tmp_path / "data" / "gt.jsonl"),
+            "model_checkpoint": "dummy-model",
+            "mode": "coord",
+            "pred_coord_mode": "auto",
+            "backend": {"type": "hf"},
+            "generation": {"batch_size": 8},
+        },
+    }
+    config_path = tmp_path / "pipeline.json"
+    config_path.write_text(json.dumps(cfg, ensure_ascii=False), encoding="utf-8")
+
+    run_pipeline(config_path=config_path)
+
+    assert calls == ["infer"]
 
 
 def test_run_pipeline_writes_manifest_pointer_for_non_default_artifact_layout(

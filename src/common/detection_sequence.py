@@ -10,6 +10,7 @@ from src.utils.assistant_json import dumps_coordjson
 OBJECT_REF_START_TOKEN = "<|object_ref_start|>"
 BOX_START_TOKEN = "<|box_start|>"
 IM_END_TOKEN = "<|im_end|>"
+END_OF_TEXT_TOKEN = "<|endoftext|>"
 
 DetectionSequenceFormat = str
 
@@ -141,8 +142,13 @@ def render_compact_detection_sequence(
 
 def _strip_generation_suffix(text: str) -> str:
     stripped = str(text).strip()
-    if stripped.endswith(IM_END_TOKEN):
-        stripped = stripped[: -len(IM_END_TOKEN)].rstrip()
+    terminal_positions = [
+        pos
+        for token in (IM_END_TOKEN, END_OF_TEXT_TOKEN)
+        if (pos := stripped.find(token)) >= 0
+    ]
+    if terminal_positions:
+        stripped = stripped[: min(terminal_positions)].rstrip()
     return stripped
 
 

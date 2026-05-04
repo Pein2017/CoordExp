@@ -104,6 +104,7 @@ from src.infer.checkpoints import (
     ResolvedInferenceCheckpoint,
     VLLM_ADAPTER_UNSUPPORTED_MESSAGE,
     resolve_inference_checkpoint,
+    validate_compact_coord_token_adapter_contract,
 )
 from src.utils import get_logger
 
@@ -170,6 +171,9 @@ class GenerationConfig:
     stop_pressure_min_new_tokens: int = 0
     stop_pressure_trigger_rule: Optional[str] = None
     stop_pressure_logit_bias: float = 0.0
+    compact_grammar_enabled: bool = False
+    compact_grammar_format: str = COORDJSON_FORMAT
+    compact_grammar_force_row_start: bool = True
 
     @property
     def stop_pressure_active(self) -> bool:
@@ -804,6 +808,10 @@ class InferenceEngine:
         coord_offset_spec = None
         if self.resolved_checkpoint.adapter_info is not None:
             coord_offset_spec = self.resolved_checkpoint.adapter_info.coord_offset_spec
+        validate_compact_coord_token_adapter_contract(
+            self.resolved_checkpoint,
+            detection_sequence_format=self.cfg.detection_sequence_format,
+        )
 
         # HF backend loads model+processor. For vLLM we support two modes:
         # - server: OpenAI-compatible HTTP server (default)
