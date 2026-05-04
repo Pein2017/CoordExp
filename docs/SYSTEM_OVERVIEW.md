@@ -5,7 +5,7 @@ doc_type: overview
 status: canonical
 domain: repo
 summary: End-to-end flow from data intake to training, inference, evaluation, and artifacts.
-updated: 2026-03-22
+updated: 2026-05-04
 ---
 
 # System Overview
@@ -14,8 +14,8 @@ Purpose: map the end-to-end CoordExp flow from data intake to training, inferenc
 Authority: explanatory system guide for the current codebase; if this page conflicts with a spec or runbook, defer to `docs/PROJECT_CONTEXT.md` and `openspec/specs/`.
 Read this after: `docs/PROJECT_CONTEXT.md`
 Read this before: domain runbooks under `docs/data/`, `docs/training/`, and `docs/eval/`
-Primary code handles: `src/config/loader.py`, `src/datasets/`, `src/sft.py`, `src/bootstrap/`, `src/trainers/stage2_two_channel.py`, `src/trainers/stage2_two_channel/`, `src/trainers/stage2_rollout_aligned.py`, `src/trainers/rollout_aligned_targets.py`, `src/trainers/rollout_aligned_evaluator.py`, `src/trainers/rollout_runtime/`, `src/launchers/stage2_vllm_server.py`, `src/infer/pipeline.py`, `src/infer/engine.py`, `src/infer/backends.py`, `src/infer/artifacts.py`, `src/eval/detection.py`, `src/eval/orchestration.py`, `src/eval/artifacts.py`
-Verification: `rg -n "stage2_two_channel|stage2_rollout_aligned|rollout_aligned_targets|rollout_aligned_evaluator|rollout_runtime|stage2_vllm_server|pipeline_manifest|run_metadata|backends|artifacts|orchestration" src scripts configs docs`
+Primary code handles: `src/config/loader.py`, `src/datasets/`, `src/sft.py`, `src/detection/runtime.py`, `src/detection/template.py`, `src/common/detection_sequence.py`, `src/common/detection_compact_rows.py`, `src/bootstrap/`, `src/trainers/metrics/`, `src/metrics/events.py`, `src/trainers/stage2_two_channel.py`, `src/trainers/stage2_two_channel/`, `src/trainers/stage2_rollout_aligned.py`, `src/trainers/rollout_aligned_targets.py`, `src/trainers/rollout_aligned_evaluator.py`, `src/trainers/rollout_runtime/`, `src/launchers/stage2_vllm_server.py`, `src/infer/pipeline.py`, `src/infer/engine.py`, `src/infer/backends.py`, `src/infer/artifacts.py`, `src/eval/detection.py`, `src/eval/detection_records.py`, `src/eval/detection_geometry.py`, `src/eval/detection_coco.py`, `src/eval/detection_lvis.py`, `src/eval/detection_duplicate_guard.py`, `src/eval/detection_f1ish.py`, `src/eval/detection_orchestrator.py`, `src/eval/orchestration.py`, `src/eval/artifacts.py`
+Verification: `rg -n "detection/runtime|detection_sequence|detection_compact_rows|MetricEvent|flatten_metric_events|detection_orchestrator|stage2_two_channel|stage2_rollout_aligned|pipeline_manifest|run_metadata|backends|artifacts|orchestration" src scripts configs docs`
 
 ## Flow At A Glance
 
@@ -64,22 +64,34 @@ Training and inference both pass through the same CoordExp-style multimodal form
   - `src/datasets/builders/jsonlines.py`
   - `src/config/prompts.py`
   - `src/config/loader.py`
+  - `src/detection/template.py`
+  - `src/common/detection_sequence.py`
+  - `src/common/detection_compact_rows.py`
 - What happens here:
   - JSONL rows are read,
   - image paths are resolved,
   - assistant targets are rendered as CoordJSON,
+  - compact detection sequence rows can be rendered or parsed through the strict template and common compatibility facade,
   - multimodal chat-template inputs are prepared for Qwen3-VL-compatible training/inference.
 
 This is the layer to inspect when:
-- a JSONL record renders incorrectly,
-- prompt variants drift between train and infer,
-- tokenization or coord-token boundaries look wrong.
+  - a JSONL record renders incorrectly,
+  - prompt variants drift between train and infer,
+  - tokenization or coord-token boundaries look wrong.
+
+Compact detection sequence ownership:
+- strict template behavior lives in `src/detection/template.py`;
+- the strict factory-visible template IDs are `stage1_json_pretty` and `compact_full`;
+- `src/common/detection_sequence.py` is the common compatibility facade;
+- `src/common/detection_compact_rows.py` owns stdlib-only compact row markers, rendering, and splitting;
+- `compact_no_desc`, `compact_no_bbox`, and `compact_min` remain helper/compatibility formats, not strict factory IDs.
 
 ## 3. Training Surfaces
 
 ### Shared Entry Point
 
 - Entry point: `src/sft.py`
+- Latest compact detection runtime policy: `src/detection/runtime.py`
 - Shared lower-level config base: `configs/base.yaml`
 - Typed config loading and validation:
   - `src/config/loader.py`
@@ -100,9 +112,36 @@ Use Stage-1 when you want teacher-forced baseline training without rollout-aware
   - [`docs/data/PACKING.md`](data/PACKING.md)
 - Main code handles:
   - `src/sft.py`
+  - `src/detection/runtime.py`
+  - `src/detection/template.py`
+  - `src/common/detection_sequence.py`
+  - `src/common/detection_compact_rows.py`
   - `src/metrics/dataset_metrics.py`
+  - `src/metrics/events.py`
   - `src/trainers/losses/coord_soft_ce_w1.py`
   - `src/trainers/metrics/mixins.py`
+  - `src/trainers/metrics/batch_contract.py`
+  - `src/trainers/metrics/structural_close.py`
+  - `src/trainers/metrics/recursive_detection.py`
+  - `src/trainers/metrics/aggregate_tokens.py`
+  - `src/trainers/metrics/coord_losses.py`
+  - `src/trainers/metrics/bbox_losses.py`
+
+### Stage-1 Compact Recursive Detection
+
+Use this surface when the run is explicitly latest-schema compact detection CE.
+
+- Current config route: `configs/stage1/recursive_detection_ce_latest/`
+- Runtime policy owner: `src/detection/runtime.py`
+- Template owner: `src/detection/template.py`
+- Compatibility sequence facade: `src/common/detection_sequence.py`
+- Row helper: `src/common/detection_compact_rows.py`
+
+Current source contract:
+- `src/detection/runtime.py` owns latest detection runtime support/preflight, recursive CE runtime config resolution, prompt/mode/custom shim resolution, and `build_latest_detection_dataset`.
+- `src/sft.py` delegates these policies and keeps backward-compatible private aliases.
+- packing/cache fail fast remains in force for latest compact recursive CE surfaces.
+- no new CLI flags or config schema keys are introduced by this extraction.
 
 ### Stage-2 Rollout-Aware Training
 
@@ -174,6 +213,13 @@ Primary scored artifact:
   - `scripts/evaluate_detection.py`
 - Main runtime code:
   - `src/eval/detection.py`
+  - `src/eval/detection_records.py`
+  - `src/eval/detection_geometry.py`
+  - `src/eval/detection_coco.py`
+  - `src/eval/detection_lvis.py`
+  - `src/eval/detection_duplicate_guard.py`
+  - `src/eval/detection_f1ish.py`
+  - `src/eval/detection_orchestrator.py`
   - `src/eval/orchestration.py`
   - `src/eval/artifacts.py`
 - Callback path for training-time offline eval:
@@ -182,6 +228,11 @@ Primary scored artifact:
 Important distinction:
 - offline evaluator logs `eval_det_*`,
 - trainer-native Stage-2 rollout evaluation logs `eval/detection/*, eval/parsing/*, eval/description/*, eval/config/*, eval/runtime/*`.
+
+Import compatibility note:
+- `src/eval/detection.py` is the import-compatible facade.
+- `src/eval/detection_orchestrator.py` owns the durable orchestration entrypoint for decomposed detection eval.
+- `SemanticDescEncoder` facade patch/import compatibility is preserved for existing callers.
 
 ## 5. Artifacts And Reproducibility
 

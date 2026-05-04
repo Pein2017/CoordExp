@@ -6,7 +6,7 @@ status: canonical
 domain: training
 summary: Router for Stage-1 and Stage-2 training documentation, metrics, and runbooks.
 tags: [training, stage1, stage2]
-updated: 2026-05-03
+updated: 2026-05-04
 ---
 
 # Training Docs
@@ -20,7 +20,7 @@ or metric interpretation.
 |---|---|---|---|---|
 | Stage-1 baseline SFT | Current baseline | `configs/stage1/sft_base.yaml` and shared Stage-1 profiles | Static packing where supported | Teacher-forced baseline without rollout-aware matching. |
 | Stage-1 set-continuation ET-RMP-CE | Current legacy-compatible continuation surface | `configs/stage1/set_continuation/production.yaml` | Packing and eval packing disabled/rejected | Uses full-suffix teacher-forced rows and ET-RMP branch supervision; recorded metrics must keep exact scope labels. |
-| Stage-1 compact recursive detection | Current compact-sequence branch surface | `configs/stage1/recursive_detection_ce_latest/prod/compact_full_support2.yaml` | Packing disabled until sidecar target-position offset rewriting is implemented and validated | Uses latest-schema compact detection template/objective; do not compare directly with older set-continuation evidence without naming the surface. |
+| Stage-1 compact recursive detection | Current compact-sequence branch surface | `configs/stage1/recursive_detection_ce_latest/prod/compact_full_support2.yaml`; runtime policy in `src/detection/runtime.py` | Packing/cache fail fast for latest compact recursive CE surfaces until sidecar target-position offset rewriting is implemented and validated | Uses latest-schema compact detection template/objective; do not compare directly with older set-continuation evidence without naming the surface. |
 | Stage-2 two-channel | Active Stage-2 operator path | `configs/stage2_two_channel/` | Post-rollout trainer packing when configured; rollout generation remains unpacked | YAML-first Channel-A plus clean-prefix Channel-B training. |
 | Stage-2 rollout-aligned | Supported compatibility variant | `custom.trainer_variant: stage2_rollout_aligned` with `rollout_matching.pipeline.*` | Compatibility path | Do not author `stage2_ab.pipeline.*` for this variant. |
 | Runtime fusion config | Dormant legacy surface | `configs/fusion/` examples only | Not part of supported training authoring | Merge JSONLs offline for multi-dataset training today. |
@@ -35,6 +35,33 @@ or metric interpretation.
 6. [`stage2-ab-training/spec.md`](../../openspec/specs/stage2-ab-training/spec.md) when exact `stage2_two_channel` stable contract semantics matter
 7. [`rollout-matching-sft/spec.md`](../../openspec/specs/rollout-matching-sft/spec.md) when working on the supported `stage2_rollout_aligned` variant
 8. [`runtime-architecture-refactor-program/spec.md`](../../openspec/specs/runtime-architecture-refactor-program/spec.md) when the question is about runtime ownership seams or compatibility-preserving refactors
+
+## Compact Detection Sequence Contracts
+
+These are source-owned contracts for the compact detection sequence work. They
+document implemented entrypoints and compatibility seams only; they do not imply
+that a benchmark, smoke, or validation run has completed.
+
+- Strict template owner: `src/detection/template.py`.
+- Factory-visible strict template IDs: `stage1_json_pretty` and `compact_full`.
+- Compatibility facade: `src/common/detection_sequence.py`.
+- Low-level stdlib-only row helper: `src/common/detection_compact_rows.py`.
+- Helper/compatibility formats stay helper-only: `compact_no_desc`, `compact_no_bbox`, and `compact_min`.
+- Compatible parsing returns `None` for malformed rows instead of raising through the common facade.
+- Generation suffix handling preserves desc control characters while keeping the existing suffix behavior.
+
+Latest compact recursive detection runtime policy is centralized in
+`src/detection/runtime.py`:
+
+- latest detection runtime support and preflight checks,
+- recursive CE runtime config resolution,
+- prompt/mode/custom shim resolution,
+- `build_latest_detection_dataset`,
+- packing/cache fail-fast policy for latest compact recursive CE surfaces.
+
+`src/sft.py` delegates these policies to `src/detection/runtime.py` and keeps
+backward-compatible private aliases for older imports. This extraction did not
+introduce new CLI flags or config schema keys.
 
 ## Page Roles
 
@@ -61,6 +88,10 @@ or metric interpretation.
 ## Code Handles
 
 - `src/sft.py`
+- `src/detection/runtime.py`
+- `src/detection/template.py`
+- `src/common/detection_sequence.py`
+- `src/common/detection_compact_rows.py`
 - `src/bootstrap/`
 - `src/trainers/stage1_set_continuation/`
 - `configs/stage1/set_continuation/`
