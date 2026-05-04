@@ -35,6 +35,25 @@ detection_template:
   bbox_format: xyxy
   strict_parse: true
 
+token_rows:
+  enabled: true
+  tie_head: true
+  groups:
+    coord_geometry:
+      role: coord_geometry
+      start_token: "<|coord_0|>"
+      end_token: "<|coord_999|>"
+      expected_start: 151670
+      expected_end: 152669
+    compact_structure:
+      role: structural_ce_only
+      tokens: ["<|object_ref_start|>", "<|box_start|>"]
+      expected_ids:
+        "<|object_ref_start|>": 151646
+        "<|box_start|>": 151648
+  embed_lr: 5.0e-5
+  weight_decay: 0.0
+
 objective:
   id: recursive_detection_ce
   variant: random_permutation_et_rmp_ce

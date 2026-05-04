@@ -37,6 +37,16 @@ from src.tokens.roles import (
     normalize_token_role,
     unique_stable_ids,
 )
+from src.tokens.qwen_native import (
+    BOX_START_TOKEN,
+    COORD_END_TOKEN,
+    COORD_START_TOKEN,
+    EXPECTED_BOX_START_ID,
+    EXPECTED_COORD_END_ID,
+    EXPECTED_COORD_START_ID,
+    EXPECTED_OBJECT_REF_START_ID,
+    OBJECT_REF_START_TOKEN,
+)
 from src.trainers.teacher_forcing.module_registry import (
     ALLOWED_DIAGNOSTIC_MODULES,
     ALLOWED_OBJECTIVE_MODULES,
@@ -845,14 +855,15 @@ class TrainableTokenRowsConfig:
 
     @classmethod
     def from_mapping(
-        cls, payload: Optional[Mapping[str, Any]]
+        cls,
+        payload: Optional[Mapping[str, Any]],
+        *,
+        path: str = "custom.trainable_token_rows",
     ) -> "TrainableTokenRowsConfig":
         if payload is None:
             return cls()
         if not isinstance(payload, Mapping):
-            raise TypeError(
-                "custom.trainable_token_rows section must be a mapping when provided"
-            )
+            raise TypeError(f"{path} section must be a mapping when provided")
 
         enabled = bool(payload.get("enabled", False))
         tie_head_raw = payload.get("tie_head", True)
@@ -861,26 +872,20 @@ class TrainableTokenRowsConfig:
         elif isinstance(tie_head_raw, bool):
             tie_head = tie_head_raw
         else:
-            raise TypeError(
-                "custom.trainable_token_rows.tie_head must be a boolean when provided"
-            )
+            raise TypeError(f"{path}.tie_head must be a boolean when provided")
 
         groups_raw = payload.get("groups", {})
         if not isinstance(groups_raw, Mapping):
-            raise TypeError(
-                "custom.trainable_token_rows.groups must be a mapping when provided"
-            )
+            raise TypeError(f"{path}.groups must be a mapping when provided")
         groups = {
             str(name): TrainableTokenRowGroupConfig.from_mapping(
                 group_payload,
-                path=f"custom.trainable_token_rows.groups.{name}",
+                path=f"{path}.groups.{name}",
             )
             for name, group_payload in groups_raw.items()
         }
         if enabled and not groups:
-            raise ValueError(
-                "custom.trainable_token_rows.enabled=true requires at least one group"
-            )
+            raise ValueError(f"{path}.enabled=true requires at least one group")
 
         def _parse_lr(key: str) -> Optional[float]:
             raw = payload.get(key)
@@ -889,19 +894,15 @@ class TrainableTokenRowsConfig:
             try:
                 return float(raw)
             except (TypeError, ValueError) as exc:
-                raise ValueError(
-                    f"custom.trainable_token_rows.{key} must be numeric"
-                ) from exc
+                raise ValueError(f"{path}.{key} must be numeric") from exc
 
         weight_decay_raw = payload.get("weight_decay", 0.0)
         try:
             weight_decay = float(weight_decay_raw)
         except (TypeError, ValueError) as exc:
-            raise ValueError(
-                "custom.trainable_token_rows.weight_decay must be numeric"
-            ) from exc
+            raise ValueError(f"{path}.weight_decay must be numeric") from exc
         if weight_decay < 0:
-            raise ValueError("custom.trainable_token_rows.weight_decay must be >= 0")
+            raise ValueError(f"{path}.weight_decay must be >= 0")
 
         dtype_raw = payload.get("dtype")
 
@@ -920,7 +921,7 @@ class TrainableTokenRowsConfig:
         structural_ce_only: list[int] = []
         for name, group in self.groups.items():
             ids = group.resolve_ids(
-                tokenizer, path=f"custom.trainable_token_rows.groups.{name}"
+                tokenizer, path=f"trainable_token_rows.groups.{name}"
             )
             if group.role is TokenRole.COORD_GEOMETRY:
                 coord_geometry.extend(ids)
@@ -3645,6 +3646,7 @@ _LATEST_DETECTION_REQUIRED_SECTIONS: set[str] = {
     "data",
     "prompt",
     "detection_template",
+    "token_rows",
     "objective",
     "packing",
     "evaluation",
@@ -3841,6 +3843,91 @@ def _latest_detection_validate_order_matches_objective(
             f"{required_order!r} for objective.variant={objective.variant!r}, "
             f"got {data.object_ordering!r}"
         )
+
+
+def _latest_detection_validate_token_rows(
+    detection_template: "DetectionTemplateConfig",
+    token_rows: TrainableTokenRowsConfig,
+) -> None:
+    if not token_rows.enabled:
+        raise ValueError(
+            "token_rows.enabled must be true for latest detection coord-token training; "
+            "otherwise coordinate special-token rows stay frozen and cannot be saved "
+            "in the adapter"
+        )
+    if not token_rows.tie_head:
+        raise ValueError(
+            "token_rows.tie_head must be true for the current tied-head "
+            "Qwen3-VL token-row adapter contract"
+        )
+    if detection_template.coordinate_surface == "coord_token":
+        has_coord_geometry = any(
+            group.role is TokenRole.COORD_GEOMETRY
+            for group in token_rows.groups.values()
+        )
+        if not has_coord_geometry:
+            raise ValueError(
+                "token_rows must include at least one group with "
+                "role=coord_geometry for coord-token detection"
+            )
+        coord_groups = [
+            group
+            for group in token_rows.groups.values()
+            if group.role is TokenRole.COORD_GEOMETRY
+        ]
+        structural_groups = [
+            group
+            for group in token_rows.groups.values()
+            if group.role is TokenRole.STRUCTURAL_CE_ONLY
+        ]
+        if len(token_rows.groups) != 2:
+            raise ValueError(
+                "token_rows for coord-token detection must contain exactly the "
+                "1002 allowed trainable rows: "
+                f"{OBJECT_REF_START_TOKEN}, {BOX_START_TOKEN}, and "
+                f"{COORD_START_TOKEN}..{COORD_END_TOKEN}; "
+                "extra natural-language rows are not allowed"
+            )
+        if len(coord_groups) != 1:
+            raise ValueError(
+                "token_rows must contain exactly one coord_geometry group for "
+                f"{COORD_START_TOKEN}..{COORD_END_TOKEN}"
+            )
+        coord_group = coord_groups[0]
+        if (
+            coord_group.start_token != COORD_START_TOKEN
+            or coord_group.end_token != COORD_END_TOKEN
+            or coord_group.tokens
+            or coord_group.expected_start != EXPECTED_COORD_START_ID
+            or coord_group.expected_end != EXPECTED_COORD_END_ID
+        ):
+            raise ValueError(
+                "token_rows coord_geometry must be exactly "
+                f"{COORD_START_TOKEN}..{COORD_END_TOKEN} with expected ids "
+                f"{EXPECTED_COORD_START_ID}..{EXPECTED_COORD_END_ID}"
+            )
+        if len(structural_groups) != 1:
+            raise ValueError(
+                "token_rows must include exactly the compact structural rows "
+                f"{OBJECT_REF_START_TOKEN} and {BOX_START_TOKEN}"
+            )
+        structural_group = structural_groups[0]
+        expected_structural_ids = {
+            OBJECT_REF_START_TOKEN: EXPECTED_OBJECT_REF_START_ID,
+            BOX_START_TOKEN: EXPECTED_BOX_START_ID,
+        }
+        if (
+            structural_group.start_token is not None
+            or structural_group.end_token is not None
+            or structural_group.tokens
+            != (OBJECT_REF_START_TOKEN, BOX_START_TOKEN)
+            or dict(structural_group.expected_ids) != expected_structural_ids
+        ):
+            raise ValueError(
+                "token_rows structural group must be exactly "
+                f"{OBJECT_REF_START_TOKEN} and {BOX_START_TOKEN} with expected "
+                f"ids {expected_structural_ids}"
+            )
 
 
 @dataclass(frozen=True)
@@ -4124,6 +4211,7 @@ class LatestDetectionTrainingConfig:
     data: DetectionDataConfig
     prompt: DetectionPromptConfig
     detection_template: DetectionTemplateConfig
+    token_rows: TrainableTokenRowsConfig
     objective: DetectionObjectiveConfig
     packing: DetectionPackingConfig
     evaluation: DetectionEvaluationConfig
@@ -4196,11 +4284,17 @@ class LatestDetectionTrainingConfig:
         data_config = DetectionDataConfig.from_mapping(payload["data"])
         objective = DetectionObjectiveConfig.from_mapping(payload["objective"])
         _latest_detection_validate_order_matches_objective(data_config, objective)
+        token_rows = TrainableTokenRowsConfig.from_mapping(
+            payload["token_rows"],
+            path="token_rows",
+        )
+        _latest_detection_validate_token_rows(detection_template, token_rows)
 
         return cls(
             data=data_config,
             prompt=DetectionPromptConfig.from_mapping(payload["prompt"]),
             detection_template=detection_template,
+            token_rows=token_rows,
             objective=objective,
             packing=DetectionPackingConfig.from_mapping(payload["packing"]),
             evaluation=evaluation,

@@ -42,6 +42,29 @@ def _latest_payload() -> dict[str, object]:
             "bbox_format": "xyxy",
             "strict_parse": True,
         },
+        "token_rows": {
+            "enabled": True,
+            "tie_head": True,
+            "groups": {
+                "coord_geometry": {
+                    "role": "coord_geometry",
+                    "start_token": "<|coord_0|>",
+                    "end_token": "<|coord_999|>",
+                    "expected_start": 151670,
+                    "expected_end": 152669,
+                },
+                "compact_structure": {
+                    "role": "structural_ce_only",
+                    "tokens": ["<|object_ref_start|>", "<|box_start|>"],
+                    "expected_ids": {
+                        "<|object_ref_start|>": 151646,
+                        "<|box_start|>": 151648,
+                    },
+                },
+            },
+            "embed_lr": 5.0e-5,
+            "weight_decay": 0.0,
+        },
         "objective": {
             "id": "recursive_detection_ce",
             "variant": "random_permutation_et_rmp_ce",
@@ -75,6 +98,14 @@ def test_latest_config_parses_and_exposes_typed_sections() -> None:
     assert cfg.data.object_ordering == "random_permutation"
     assert cfg.prompt.prompt_variant_enabled is True
     assert cfg.detection_template.id == "compact_full"
+    assert cfg.token_rows.enabled is True
+    assert cfg.token_rows.tie_head is True
+    assert cfg.token_rows.embed_lr == pytest.approx(5.0e-5)
+    assert cfg.token_rows.groups["coord_geometry"].role.value == "coord_geometry"
+    assert (
+        cfg.token_rows.groups["compact_structure"].expected_ids["<|box_start|>"]
+        == 151648
+    )
     assert cfg.objective.id == "recursive_detection_ce"
     assert cfg.objective.trie_support_weight == 2.0
     assert cfg.objective.trie_balance_weight == 1.0
@@ -211,6 +242,95 @@ def test_sft_objective_uses_neutral_defaults() -> None:
     assert cfg.objective.trie_balance_weight == 0.0
     assert cfg.objective.state_weighting == "none"
     assert cfg.objective.normalization == "token_mean"
+
+
+def test_latest_detection_requires_token_rows_section() -> None:
+    payload = _latest_payload()
+    payload.pop("token_rows")
+
+    with pytest.raises(ValueError, match="Missing latest detection config sections"):
+        LatestDetectionTrainingConfig.from_mapping(payload)
+
+
+def test_latest_detection_requires_coord_geometry_token_rows() -> None:
+    payload = _latest_payload()
+    payload["token_rows"] = {
+        "enabled": True,
+        "tie_head": True,
+        "groups": {
+            "compact_structure": {
+                "role": "structural_ce_only",
+                "tokens": ["<|object_ref_start|>", "<|box_start|>"],
+            }
+        },
+    }
+
+    with pytest.raises(ValueError, match="token_rows.*coord_geometry"):
+        LatestDetectionTrainingConfig.from_mapping(payload)
+
+
+def test_latest_detection_rejects_disabled_token_rows() -> None:
+    payload = _latest_payload()
+    payload["token_rows"] = {
+        **payload["token_rows"],  # type: ignore[arg-type]
+        "enabled": False,
+    }
+
+    with pytest.raises(ValueError, match="token_rows.enabled"):
+        LatestDetectionTrainingConfig.from_mapping(payload)
+
+
+def test_latest_detection_requires_tied_token_rows() -> None:
+    payload = _latest_payload()
+    payload["token_rows"] = {
+        **payload["token_rows"],  # type: ignore[arg-type]
+        "tie_head": False,
+    }
+
+    with pytest.raises(ValueError, match="token_rows.tie_head.*true"):
+        LatestDetectionTrainingConfig.from_mapping(payload)
+
+
+def test_latest_detection_requires_exact_compact_structural_rows() -> None:
+    payload = _latest_payload()
+    token_rows = dict(payload["token_rows"])  # type: ignore[arg-type]
+    groups = dict(token_rows["groups"])  # type: ignore[index]
+    groups.pop("compact_structure")
+    token_rows["groups"] = groups
+    payload["token_rows"] = token_rows
+
+    with pytest.raises(ValueError, match="object_ref_start.*box_start"):
+        LatestDetectionTrainingConfig.from_mapping(payload)
+
+
+def test_latest_detection_requires_exact_coord_row_range() -> None:
+    payload = _latest_payload()
+    token_rows = dict(payload["token_rows"])  # type: ignore[arg-type]
+    groups = dict(token_rows["groups"])  # type: ignore[index]
+    coord = dict(groups["coord_geometry"])  # type: ignore[index]
+    coord["end_token"] = "<|coord_998|>"
+    coord["expected_end"] = 152668
+    groups["coord_geometry"] = coord
+    token_rows["groups"] = groups
+    payload["token_rows"] = token_rows
+
+    with pytest.raises(ValueError, match="coord_0.*coord_999"):
+        LatestDetectionTrainingConfig.from_mapping(payload)
+
+
+def test_latest_detection_rejects_extra_trainable_token_rows() -> None:
+    payload = _latest_payload()
+    token_rows = dict(payload["token_rows"])  # type: ignore[arg-type]
+    groups = dict(token_rows["groups"])  # type: ignore[index]
+    groups["natural_language_leak"] = {
+        "role": "structural_ce_only",
+        "tokens": ["the"],
+    }
+    token_rows["groups"] = groups
+    payload["token_rows"] = token_rows
+
+    with pytest.raises(ValueError, match="exactly.*1002|natural-language"):
+        LatestDetectionTrainingConfig.from_mapping(payload)
 
 
 def test_random_order_sft_accepts_random_permutation_ordering() -> None:
@@ -493,12 +613,33 @@ def test_latest_recursive_detection_launch_configs_parse_without_custom() -> Non
         assert cfg.model["model"] == "model_cache/models/Qwen/Qwen3-VL-2B-Instruct-coordexp"
         assert cfg.data.object_ordering == "random_permutation"
         assert cfg.detection_template.id == "compact_full"
+        assert cfg.token_rows.enabled is True
+        assert cfg.token_rows.tie_head is True
+        assert "coord_geometry" in cfg.token_rows.groups
+        token_to_id = {
+            "<|object_ref_start|>": 151646,
+            "<|box_start|>": 151648,
+            **{f"<|coord_{idx}|>": 151670 + idx for idx in range(1000)},
+        }
+
+        class _FakeTokenizer:
+            def convert_tokens_to_ids(self, token: str) -> int:
+                return token_to_id[token]
+
+        role_sets = cfg.token_rows.resolve_role_sets(_FakeTokenizer())
+        assert set(role_sets.trainable_row_ids) == {
+            151646,
+            151648,
+            *range(151670, 152670),
+        }
+        assert len(role_sets.trainable_row_ids) == 1002
         assert cfg.objective.variant == "random_permutation_et_rmp_ce"
         assert cfg.objective.trie_support_weight == 2.0
         assert cfg.objective.trie_balance_weight == 1.0
         assert cfg.packing.static_packing is False
         assert cfg.packing.padding_free_packed is False
         assert cfg.training["packing"] is False
+        assert cfg.training["optimizer"] == "multimodal_coord_offset"
 
 
 def test_latest_recursive_detection_1p0_control_config_parses() -> None:

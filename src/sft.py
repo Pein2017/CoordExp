@@ -327,7 +327,7 @@ def _latest_detection_runtime_custom_shim(
         dump_conversation_text=False,
         dump_conversation_path=None,
         coord_offset=CoordOffsetConfig(enabled=False),
-        trainable_token_rows=None,
+        trainable_token_rows=training_config.token_rows,
     )
 
 
@@ -3257,11 +3257,11 @@ def main():
     if coord_offset_cfg and coord_offset_cfg.enabled:
         reattached = reattach_coord_offset_hooks(sft.model)
         if reattached is None:
-            logger.warning(
-                "coord_offset_adapter not found after prepare_model; hooks not reattached"
+            raise RuntimeError(
+                "coord_offset_adapter not found after prepare_model; hooks not reattached. "
+                "This would leave coordinate/token-row offsets unsaved or inactive."
             )
-        else:
-            logger.info("Reattached coord_offset hooks on wrapped model")
+        logger.info("Reattached coord_offset hooks on wrapped model")
     logger.info(f"Model after tuner: {type(sft.model).__name__}")
 
     # Setup trainer

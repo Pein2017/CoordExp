@@ -10,6 +10,7 @@ from src.config.loader import ConfigLoader
 from src.config.schema import LatestDetectionTrainingConfig
 from src.sft import (
     _assert_latest_detection_runtime_supported,
+    _latest_detection_runtime_custom_shim,
     _resolve_recursive_detection_ce_cfg,
 )
 
@@ -86,6 +87,29 @@ def test_sft_live_bootstrap_attaches_recursive_ce_cfg_to_trainer() -> None:
     )
 
 
+def test_sft_fails_fast_if_coord_offset_hooks_are_missing_after_peft_wrap() -> None:
+    tree = ast.parse(SFT_PATH.read_text(encoding="utf-8"))
+    raise_messages: list[str] = []
+    for ast_node in ast.walk(tree):
+        if not isinstance(ast_node, ast.Raise):
+            continue
+        exc = ast_node.exc
+        if not isinstance(exc, ast.Call):
+            continue
+        if not isinstance(exc.func, ast.Name) or exc.func.id != "RuntimeError":
+            continue
+        if not exc.args:
+            continue
+        message = exc.args[0]
+        if isinstance(message, ast.Constant) and isinstance(message.value, str):
+            raise_messages.append(message.value)
+
+    assert any(
+        "coord_offset_adapter not found after prepare_model" in message
+        for message in raise_messages
+    )
+
+
 def test_sft_live_bootstrap_can_construct_latest_detection_dataset() -> None:
     tree = ast.parse(SFT_PATH.read_text(encoding="utf-8"))
     from_jsonl_calls = [
@@ -104,6 +128,22 @@ def test_sft_live_bootstrap_can_construct_latest_detection_dataset() -> None:
         for call in from_jsonl_calls
         for kw in call.keywords
     )
+
+
+def test_latest_detection_runtime_shim_preserves_trainable_token_rows() -> None:
+    config_path = (
+        REPO_ROOT
+        / "configs/stage1/recursive_detection_ce_latest/prod/compact_full_support2.yaml"
+    )
+    cfg = ConfigLoader.load_materialized_training_config(str(config_path))
+
+    assert isinstance(cfg, LatestDetectionTrainingConfig)
+    custom_config = _latest_detection_runtime_custom_shim(cfg)
+
+    assert custom_config.trainable_token_rows is cfg.token_rows
+    assert custom_config.trainable_token_rows.enabled is True
+    assert "coord_geometry" in custom_config.trainable_token_rows.groups
+    assert getattr(custom_config.coord_offset, "enabled", None) is False
 
 
 def test_sft_rejects_latest_recursive_detection_packing_preflight_config() -> None:
