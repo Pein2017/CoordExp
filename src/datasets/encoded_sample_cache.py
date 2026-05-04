@@ -56,16 +56,51 @@ class EncodedSampleCacheRequest:
 
     @classmethod
     def from_mapping(cls, payload: Mapping[str, Any]) -> "EncodedSampleCacheRequest":
-        enabled = bool(payload.get("enabled", False))
+        enabled_raw = payload.get("enabled", False)
+        if not isinstance(enabled_raw, bool):
+            raise TypeError("encoded_sample_cache.enabled must be a boolean")
+        enabled = enabled_raw
         if enabled and not payload.get("root_dir"):
             raise ValueError(
                 "Encoded sample cache request must include a resolved root_dir when enabled."
             )
-        timeout_s = float(payload.get("wait_timeout_s", 7200.0) or 0.0)
+        timeout_raw = payload.get("wait_timeout_s", 7200.0)
+        if isinstance(timeout_raw, bool):
+            raise TypeError("encoded_sample_cache.wait_timeout_s must be numeric")
+        try:
+            timeout_s = float(timeout_raw)
+        except (TypeError, ValueError) as exc:
+            raise ValueError(
+                "encoded_sample_cache.wait_timeout_s must be numeric"
+            ) from exc
         if not math.isfinite(timeout_s):
             raise ValueError(
                 f"encoded_sample_cache.wait_timeout_s must be finite, got {timeout_s!r}"
             )
+        if timeout_s < 0:
+            raise ValueError(
+                "encoded_sample_cache.wait_timeout_s must be >= 0 "
+                "(set 0 to wait indefinitely)"
+            )
+        policy = str(payload.get("ineligible_policy") or "error").strip().lower()
+        if policy not in {"error", "bypass"}:
+            raise ValueError(
+                "encoded_sample_cache.ineligible_policy must be one of "
+                "{'error', 'bypass'}"
+            )
+        max_resident_raw = payload.get(
+            "max_resident_shards", _DEFAULT_MAX_RESIDENT_SHARDS
+        )
+        if isinstance(max_resident_raw, bool):
+            raise TypeError("encoded_sample_cache.max_resident_shards must be an integer")
+        try:
+            max_resident_shards = int(max_resident_raw)
+        except (TypeError, ValueError) as exc:
+            raise ValueError(
+                "encoded_sample_cache.max_resident_shards must be an integer"
+            ) from exc
+        if max_resident_shards <= 0:
+            raise ValueError("encoded_sample_cache.max_resident_shards must be > 0")
         fingerprint = _canonicalize_fingerprint(dict(payload.get("fingerprint") or {}))
         expected_fingerprint_sha256 = _fingerprint_digest(fingerprint)
         if (
@@ -112,17 +147,9 @@ class EncodedSampleCacheRequest:
         return cls(
             enabled=enabled,
             root_dir=root_dir,
-            ineligible_policy=str(payload.get("ineligible_policy") or "error"),
+            ineligible_policy=policy,
             wait_timeout_s=timeout_s,
-            max_resident_shards=max(
-                int(
-                    payload.get(
-                        "max_resident_shards", _DEFAULT_MAX_RESIDENT_SHARDS
-                    )
-                    or 1
-                ),
-                1,
-            ),
+            max_resident_shards=max_resident_shards,
             dataset_split=str(payload.get("dataset_split") or "train"),
             dataset_jsonl=payload.get("dataset_jsonl"),
             fingerprint=fingerprint,

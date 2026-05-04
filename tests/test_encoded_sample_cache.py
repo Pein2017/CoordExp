@@ -250,6 +250,33 @@ def test_encoded_sample_cache_request_rejects_fingerprint_digest_mismatch(
         EncodedSampleCacheRequest.from_mapping(payload)
 
 
+@pytest.mark.parametrize(
+    ("field", "value", "error_pattern"),
+    [
+        ("enabled", 1, "enabled"),
+        ("ineligible_policy", "skip", "ineligible_policy"),
+        ("wait_timeout_s", -1, "wait_timeout_s"),
+        ("wait_timeout_s", False, "wait_timeout_s"),
+        ("max_resident_shards", 0, "max_resident_shards"),
+        ("max_resident_shards", -1, "max_resident_shards"),
+        ("max_resident_shards", True, "max_resident_shards"),
+    ],
+)
+def test_encoded_sample_cache_request_rejects_invalid_runtime_fields(
+    tmp_path,
+    field: str,
+    value: Any,
+    error_pattern: str,
+) -> None:
+    from src.datasets.encoded_sample_cache import EncodedSampleCacheRequest
+
+    payload = _cache_request(tmp_path)
+    payload[field] = value
+
+    with pytest.raises((TypeError, ValueError), match=error_pattern):
+        EncodedSampleCacheRequest.from_mapping(payload)
+
+
 def test_encoded_sample_cache_request_rejects_cache_dir_mismatch(tmp_path) -> None:
     from src.datasets.encoded_sample_cache import EncodedSampleCacheRequest
 
