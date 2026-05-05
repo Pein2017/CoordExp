@@ -32,14 +32,14 @@ def test_collect_runtime_env_metadata_is_whitelisted(monkeypatch: pytest.MonkeyP
 
 
 def test_serialize_resolved_training_config_converts_paths_to_strings() -> None:
-    cfg = _TinyCfg(output_dir=Path("out"), template={"max_pixels": 786432})
+    cfg = _TinyCfg(output_dir=Path("out"), template={"max_pixels": 10485760})
     resolved = serialize_resolved_training_config(cfg)
     assert resolved["output_dir"] == "out"
-    assert resolved["template"]["max_pixels"] == 786432
+    assert resolved["template"]["max_pixels"] == 10485760
 
 
 def test_write_run_manifest_files_writes_required_json(tmp_path: Path) -> None:
-    cfg = _TinyCfg(output_dir=Path("out"), template={"max_pixels": 786432})
+    cfg = _TinyCfg(output_dir=Path("out"), template={"max_pixels": 10485760})
     written = write_run_manifest_files(
         output_dir=tmp_path,
         training_config=cfg,
@@ -68,7 +68,7 @@ def test_write_run_manifest_files_writes_required_json(tmp_path: Path) -> None:
     resolved = json.loads(resolved_path.read_text(encoding="utf-8"))
     assert resolved["schema_version"] == RUN_MANIFEST_SCHEMA_VERSION
     assert resolved["dataset_seed"] == 17
-    assert resolved["resolved"]["template"]["max_pixels"] == 786432
+    assert resolved["resolved"]["template"]["max_pixels"] == 10485760
 
     env = json.loads(env_path.read_text(encoding="utf-8"))
     assert env["schema_version"] == RUN_MANIFEST_SCHEMA_VERSION

@@ -12,7 +12,7 @@ from src.datasets.dense_caption import BaseCaptionDataset
 
 
 class _FakeTemplate:
-    max_pixels = 786432
+    max_pixels = 10485760
     system = None
 
     def encode(self, merged: Dict[str, Any], return_length: bool = True) -> Dict[str, Any]:

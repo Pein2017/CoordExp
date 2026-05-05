@@ -32,7 +32,7 @@ def _custom_config() -> SimpleNamespace:
         object_ordering="sorted",
         object_field_order="desc_first",
         use_summary=False,
-        offline_max_pixels=786432,
+        offline_max_pixels=10485760,
         coord_tokens=CoordTokensConfig(enabled=True, skip_bbox_norm=True),
     )
 

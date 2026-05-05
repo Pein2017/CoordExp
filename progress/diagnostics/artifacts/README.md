@@ -6,7 +6,7 @@ status: canonical
 domain: research-history
 summary: Router for copied artifact-side markdown preserved under progress for durable review.
 tags: [progress, diagnostics, artifacts]
-updated: 2026-04-23
+updated: 2026-05-01
 ---
 
 # Diagnostics Artifact Copies
@@ -22,7 +22,8 @@ evidence.
 ## Parent Notes
 
 - [../2026-04-29_et_rmp_rp_continuation_bias_hypothesis.md](../2026-04-29_et_rmp_rp_continuation_bias_hypothesis.md)
-  - parent note for `et_rmp_rp_sample_bank_2026-04-29/`
+  - parent note for `et_rmp_rp_sample_bank_2026-04-29/` and
+    `et_rmp_continuation_diagnostics_2026-05-01/`
 - [../2026-04-20_raw_text_coord_continuity_probe.md](../2026-04-20_raw_text_coord_continuity_probe.md)
   - parent note for `raw_text_coord_continuity_probe_2026-04-18/`
 - [../2026-04-20_coord_family_basin_and_recall_comparison.md](../2026-04-20_coord_family_basin_and_recall_comparison.md)
@@ -33,6 +34,9 @@ evidence.
 - `et_rmp_rp_sample_bank_2026-04-29/`
   - fixed `rp=1.10/1.15/1.18` representative visual bank for the old ET-RMP
     checkpoint before support-mass enhancement
+- `et_rmp_continuation_diagnostics_2026-05-01/`
+  - copied summary artifacts for core-6 RP/temp sweeps, FN latent probes,
+    length/count close-pressure analysis, and hard stop-control ablations
 - `raw_text_coord_continuity_probe_2026-04-18/`
   - `report.md`
   - `manual_review/human_findings.md`

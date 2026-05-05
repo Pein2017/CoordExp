@@ -35,7 +35,7 @@ def test_stage2_ab_packing_masks_and_coord_grads_smoke():
         processor,
         max_length=256,
         truncation_strategy="right",
-        max_pixels=786432,
+        max_pixels=10485760,
         padding_free=False,
     )
     template.set_mode("train")
