@@ -110,3 +110,4 @@ output/**/*.safetensors
 
 # Ignore generated/managed local Codex skill runtime artifacts
 text_editor.md
+.gitnexus
