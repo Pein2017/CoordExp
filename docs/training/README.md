@@ -6,7 +6,7 @@ status: canonical
 domain: training
 summary: Router for Stage-1 and Stage-2 training documentation, metrics, and runbooks.
 tags: [training, stage1, stage2]
-updated: 2026-05-04
+updated: 2026-05-05
 ---
 
 # Training Docs
@@ -20,7 +20,8 @@ or metric interpretation.
 |---|---|---|---|---|
 | Stage-1 baseline SFT | Current baseline | `configs/stage1/sft_base.yaml` and shared Stage-1 profiles | Static packing where supported | Teacher-forced baseline without rollout-aware matching. |
 | Stage-1 set-continuation ET-RMP-CE | Current legacy-compatible continuation surface | `configs/stage1/set_continuation/production.yaml` | Packing and eval packing disabled/rejected | Uses full-suffix teacher-forced rows and ET-RMP branch supervision; recorded metrics must keep exact scope labels. |
-| Stage-1 compact recursive detection | Current compact-sequence branch surface | `configs/stage1/recursive_detection_ce_latest/prod/compact_full_support2.yaml`; runtime policy in `src/detection/runtime.py` | Packing/cache fail fast for latest compact recursive CE surfaces until sidecar target-position offset rewriting is implemented and validated | Uses latest-schema compact detection template/objective; do not compare directly with older set-continuation evidence without naming the surface. |
+| Stage-1 compact recursive detection | Canonical latest compact detection | `configs/stage1/recursive_detection_ce_latest/prod/compact_full_support2.yaml`; runtime policy in `src/detection/runtime.py` | Packing/cache fail fast for latest compact recursive CE surfaces until sidecar target-position offset rewriting is implemented and validated | Uses `LatestDetectionTrainingConfig` top-level sections; separate from set-continuation ET-RMP-CE and legacy Stage-1 SFT. |
+| Stage-1 compact detection bridge | Legacy bridge only | `configs/stage1/compact_detection_sequence/smoke/compact_full_tiny.yaml` | Legacy SFT smoke surface; not a latest packing example | Uses legacy `TrainingConfig` plus `custom.detection_sequence_format`; do not use as a latest-schema example. |
 | Stage-2 two-channel | Active Stage-2 operator path | `configs/stage2_two_channel/` | Post-rollout trainer packing when configured; rollout generation remains unpacked | YAML-first Channel-A plus clean-prefix Channel-B training. |
 | Stage-2 rollout-aligned | Supported compatibility variant | `custom.trainer_variant: stage2_rollout_aligned` with `rollout_matching.pipeline.*` | Compatibility path | Do not author `stage2_ab.pipeline.*` for this variant. |
 | Runtime fusion config | Dormant legacy surface | `configs/fusion/` examples only | Not part of supported training authoring | Merge JSONLs offline for multi-dataset training today. |
@@ -42,6 +43,18 @@ These are source-owned contracts for the compact detection sequence work. They
 document implemented entrypoints and compatibility seams only; they do not imply
 that a benchmark, smoke, or validation run has completed.
 
+- Canonical latest compact detection lives under
+  `configs/stage1/recursive_detection_ce_latest/` and parses through
+  `LatestDetectionTrainingConfig`.
+- Latest authoring snippets live under `configs/_shared/latest_detection/` and
+  use top-level `data`, `prompt`, `detection_template`, `token_rows`,
+  `objective`, `packing`, `evaluation`, and `validation`. They are not consumed
+  by canonical launch configs until the relevant `extends` chains are migrated.
+- `configs/stage1/compact_detection_sequence/` is a legacy bridge around
+  `TrainingConfig` plus `custom.detection_sequence_format`.
+- Stage-1 set-continuation ET-RMP-CE is a separate continuation surface rooted
+  at `configs/stage1/set_continuation/production.yaml`; it is not latest
+  compact recursive detection.
 - Strict template owner: `src/detection/template.py`.
 - Factory-visible strict template IDs: `stage1_json_pretty` and `compact_full`.
 - Compatibility facade: `src/common/detection_sequence.py`.
@@ -88,6 +101,7 @@ introduce new CLI flags or config schema keys.
 ## Code Handles
 
 - `src/sft.py`
+- `src/config/schema.py::LatestDetectionTrainingConfig`
 - `src/detection/runtime.py`
 - `src/detection/template.py`
 - `src/common/detection_sequence.py`
@@ -97,6 +111,7 @@ introduce new CLI flags or config schema keys.
 - `configs/stage1/set_continuation/`
 - `configs/stage1/recursive_detection_ce_latest/`
 - `configs/stage1/compact_detection_sequence/`
+- `configs/_shared/latest_detection/` authoring snippets, not current launch inheritance
 - `src/trainers/stage2_two_channel.py`
 - `src/trainers/stage2_two_channel/`
 - `src/trainers/stage2_rollout_aligned.py`

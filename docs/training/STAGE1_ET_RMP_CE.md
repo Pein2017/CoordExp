@@ -6,7 +6,7 @@ status: canonical
 domain: training
 summary: Factual export of the promoted Stage-1 Entry-Trie Recursive Multi-Positive CE objective, config surface, verification files, and current run artifacts.
 tags: [training, stage1, set-continuation, et-rmp-ce, full-suffix]
-updated: 2026-05-02
+updated: 2026-05-05
 ---
 
 # Stage-1 ET-RMP-CE Implementation Export
@@ -24,6 +24,13 @@ implementation and artifact export only.
 - That checked-in profile targets the support-mass ET-RMP-CE experiment
   (`branch_support_weight: 2.0`, `branch_balance_weight: 1.0`,
   `artifact_subdir: ..._support2_bsz16_v1`).
+- Treat `configs/stage1/set_continuation/production.yaml` as the authoritative
+  current production batch profile. The checked-in contract is
+  `artifact_subdir:
+  coco1024_sota1332_setcont_et_rmp_ce_support2_bsz16_v1`,
+  `per_device_train_batch_size: 16`, `gradient_accumulation_steps: 1`, and
+  `effective_batch_size: 128`; older `support2_bsz32` or `32/256` notes are not
+  current production guidance.
 - The recorded step-100/step-200 artifacts below are from the earlier
   pre-support-mass ET-RMP `v1` run, before the checked-in profile was retargeted
   to `support2_bsz16_v1`.
@@ -207,7 +214,9 @@ custom:
 The production profile uses `per_device_train_batch_size: 16`,
 `gradient_accumulation_steps: 1`, and `effective_batch_size: 128`. Packing
 remains disabled because prefix-conditioned full-suffix rows own their metadata
-and suffix alignment.
+and suffix alignment. Keep these duplicated numbers synchronized with
+`configs/stage1/set_continuation/production.yaml`; that YAML is the source of
+truth when docs and historical notes disagree.
 
 The effective runtime for the recorded production run inherited this prefix
 mixture:

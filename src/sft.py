@@ -46,7 +46,7 @@ from .bootstrap.trainer_setup import (
 )
 from .config import ConfigLoader
 from .config.schema import CoordOffsetConfig
-from .config.schema import CoordTokensConfig, LatestDetectionTrainingConfig
+from .config.schema import CoordTokensConfig, DebugConfig, LatestDetectionTrainingConfig
 from .config.prompts import (
     coord_mode_from_coord_tokens_enabled,
     get_template_prompts,
@@ -531,6 +531,22 @@ def _config_to_mapping(value: Any) -> dict[str, Any]:
             if item is not None
         }
     return {}
+
+
+def _coerce_debug_config(debug_config: Any) -> DebugConfig:
+    if debug_config is None:
+        return DebugConfig()
+    if not isinstance(debug_config, DebugConfig):
+        raise TypeError(
+            "training config debug section must be DebugConfig; latest debug must parse through DebugConfig.from_mapping"
+        )
+    return debug_config
+
+
+def _debug_output_override(debug_config: DebugConfig) -> str | None:
+    if not debug_config.enabled or not debug_config.output_dir:
+        return None
+    return str(debug_config.output_dir)
 
 
 def _stage1_eval_plan_payload(custom_config: Any) -> dict[str, Any]:
@@ -1886,7 +1902,7 @@ def main():
         if latest_detection_config is not None
         else training_config.custom
     )
-    debug_config = getattr(training_config, "debug", None)
+    debug_config = _coerce_debug_config(getattr(training_config, "debug", None))
     # Keep directory targets aligned across ms-swift wrappers.
     run_name = getattr(train_args, "run_name", None)
     training_args = getattr(train_args, "training_args", None)
@@ -1898,17 +1914,15 @@ def main():
             setattr(training_args, attr_name, value)
 
     # Debug: collapse output_dir + logging_dir into a single folder for easy cleanup.
-    if debug_config is not None and getattr(debug_config, "enabled", False):
-        debug_output_dir = getattr(debug_config, "output_dir", None)
-        if debug_output_dir:
-            debug_output_dir_s = str(debug_output_dir)
-            logger.warning(
-                "Debug output override enabled: setting output_dir=logging_dir=%s",
-                debug_output_dir_s,
-            )
-            _set_train_dir_attr("output_dir", debug_output_dir_s)
-            _set_train_dir_attr("logging_dir", debug_output_dir_s)
-            debug_output_override_applied = True
+    debug_output_dir_s = _debug_output_override(debug_config)
+    if debug_output_dir_s is not None:
+        logger.warning(
+            "Debug output override enabled: setting output_dir=logging_dir=%s",
+            debug_output_dir_s,
+        )
+        _set_train_dir_attr("output_dir", debug_output_dir_s)
+        _set_train_dir_attr("logging_dir", debug_output_dir_s)
+        debug_output_override_applied = True
 
     if run_name and not debug_output_override_applied:
         _scope_logging_dir_under_run_name(train_args)
@@ -2106,14 +2120,7 @@ def main():
     # When debug.enabled=true, use debug.{train,val}_sample_limit (optional) and
     # ignore custom.* limits. Otherwise use custom.{train,val}_sample_limit with
     # no shared fallback (explicit is better than implicit).
-    debug_enabled = bool(
-        debug_config is not None
-        and (
-            bool(debug_config.get("enabled", False))
-            if isinstance(debug_config, Mapping)
-            else bool(getattr(debug_config, "enabled", False))
-        )
-    )
+    debug_enabled = bool(debug_config.enabled)
     heartbeat_env_raw = str(os.environ.get("COORDEXP_TRAIN_HEARTBEAT", "")).strip()
     heartbeat_env = heartbeat_env_raw.lower()
     heartbeat_enabled = debug_enabled or heartbeat_env in {
@@ -2138,12 +2145,8 @@ def main():
             heartbeat_env_raw,
         )
     if debug_enabled:
-        if isinstance(debug_config, Mapping):
-            train_sample_limit = debug_config.get("train_sample_limit")
-            val_sample_limit = debug_config.get("val_sample_limit")
-        else:
-            train_sample_limit = getattr(debug_config, "train_sample_limit", None)
-            val_sample_limit = getattr(debug_config, "val_sample_limit", None)
+        train_sample_limit = debug_config.train_sample_limit
+        val_sample_limit = debug_config.val_sample_limit
         sample_limit_ns = "debug"
         if train_sample_limit is None and val_sample_limit is None:
             logger.warning(

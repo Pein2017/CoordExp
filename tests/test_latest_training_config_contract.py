@@ -7,7 +7,7 @@ import pytest
 import yaml
 
 from src.config.loader import ConfigLoader
-from src.config.schema import LatestDetectionTrainingConfig
+from src.config.schema import DebugConfig, LatestDetectionTrainingConfig
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -89,6 +89,16 @@ def _latest_payload() -> dict[str, object]:
     }
 
 
+def _update_section(
+    payload: dict[str, object],
+    section: str,
+    **updates: object,
+) -> None:
+    current = payload[section]
+    assert isinstance(current, dict)
+    payload[section] = {**current, **updates}
+
+
 def test_latest_config_parses_and_exposes_typed_sections() -> None:
     cfg = LatestDetectionTrainingConfig.from_mapping(_latest_payload())
 
@@ -112,6 +122,8 @@ def test_latest_config_parses_and_exposes_typed_sections() -> None:
     assert cfg.packing.static_packing is False
     assert cfg.evaluation.expected_template == "compact_full"
     assert cfg.validation.fail_fast is True
+    assert isinstance(cfg.debug, DebugConfig)
+    assert cfg.debug.enabled is False
     assert cfg.to_mapping()["objective"]["trie_support_weight"] == 2.0
 
 
@@ -153,13 +165,70 @@ def test_obsolete_keys_fail_with_dotted_path(
     assert ".".join(path) in str(exc.value)
 
 
-def test_debug_section_does_not_use_global_obsolete_key_scan() -> None:
+def test_latest_debug_section_parses_through_debug_config() -> None:
     payload = _latest_payload()
-    payload["debug"] = {"pem": "debug-pass-through"}
+    payload["debug"] = {
+        "enabled": True,
+        "output_dir": "temp/latest-debug",
+        "train_sample_limit": 3,
+        "val_sample_limit": 4,
+    }
 
     cfg = LatestDetectionTrainingConfig.from_mapping(payload)
 
-    assert cfg.debug["pem"] == "debug-pass-through"
+    assert isinstance(cfg.debug, DebugConfig)
+    assert cfg.debug.enabled is True
+    assert cfg.debug.output_dir == "temp/latest-debug"
+    assert cfg.debug.train_sample_limit == 3
+    assert cfg.debug.val_sample_limit == 4
+
+
+def test_latest_debug_unknown_keys_fail_fast() -> None:
+    payload = _latest_payload()
+    payload["debug"] = {"pem": "debug-pass-through"}
+
+    with pytest.raises(ValueError, match=r"Unknown debug keys.*debug\.pem"):
+        LatestDetectionTrainingConfig.from_mapping(payload)
+
+
+def test_latest_static_packing_requires_training_packing_owner() -> None:
+    payload = _latest_payload()
+    _update_section(payload, "packing", static_packing=True)
+    _update_section(payload, "training", packing=False)
+
+    with pytest.raises(
+        ValueError,
+        match=r"packing\.static_packing=true.*training\.packing=true",
+    ):
+        LatestDetectionTrainingConfig.from_mapping(payload)
+
+
+def test_latest_recursive_detection_rejects_runtime_packing_without_static_owner() -> None:
+    payload = _latest_payload()
+    _update_section(payload, "training", packing=True)
+
+    with pytest.raises(
+        ValueError,
+        match=r"recursive_detection_ce.*training\.packing=false",
+    ):
+        LatestDetectionTrainingConfig.from_mapping(payload)
+
+
+def test_latest_recursive_detection_rejects_static_packing_when_adapter_matches() -> None:
+    payload = _latest_payload()
+    _update_section(payload, "packing", static_packing=True)
+    _update_section(payload, "training", packing=True)
+
+    with pytest.raises(ValueError, match=r"recursive_detection_ce.*static packing"):
+        LatestDetectionTrainingConfig.from_mapping(payload)
+
+
+def test_latest_recursive_detection_rejects_padding_free_packing() -> None:
+    payload = _latest_payload()
+    _update_section(payload, "packing", padding_free_packed=True)
+
+    with pytest.raises(ValueError, match=r"recursive_detection_ce.*padding_free_packed"):
+        LatestDetectionTrainingConfig.from_mapping(payload)
 
 
 @pytest.mark.parametrize(
@@ -698,12 +767,8 @@ def test_latest_compact_sft_smoke_configs_parse_with_hard_ce_objectives() -> Non
 def test_latest_recursive_detection_packing_preflight_config_is_failfast_only() -> None:
     config_path = (
         REPO_ROOT
-        / "configs/stage1/recursive_detection_ce_latest/smoke/compact_full_packing_unsupported.yaml"
+        / "configs/stage1/recursive_detection_ce_latest/negative/compact_full_static_packing_should_fail.yaml"
     )
 
-    cfg = ConfigLoader.load_materialized_training_config(str(config_path))
-
-    assert isinstance(cfg, LatestDetectionTrainingConfig)
-    assert cfg.training["packing"] is True
-    assert cfg.packing.static_packing is True
-    assert cfg.packing.padding_free_packed is False
+    with pytest.raises(ValueError, match=r"recursive_detection_ce.*static packing"):
+        ConfigLoader.load_materialized_training_config(str(config_path))

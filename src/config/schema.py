@@ -2290,9 +2290,11 @@ class CustomConfig:
         trainable_token_rows = TrainableTokenRowsConfig.from_mapping(
             trainable_token_rows_raw
         )
-        # Deprecated legacy knob: ignore to ease config refactors.
-        # (Stage-2 AB contract refactor requires this to be non-fatal.)
-        data.pop("coord_loss", None)
+        if "coord_loss" in data:
+            raise ValueError(
+                "custom.coord_loss is no longer supported; use custom.coord_soft_ce_w1 "
+                "for legacy Stage-1 SFT losses or latest objective.* for LatestDetectionTrainingConfig."
+            )
         coord_soft_ce_w1_raw = data.pop("coord_soft_ce_w1", None)
         coord_soft_ce_w1 = CoordSoftCEW1Config.from_mapping(coord_soft_ce_w1_raw)
         bbox_geo_raw = data.pop("bbox_geo", None)
@@ -3820,6 +3822,57 @@ def _latest_detection_validate_training_mapping(value: Any) -> dict[str, Any]:
     return data
 
 
+def _latest_detection_runtime_bool(
+    training: Mapping[str, Any],
+    key: str,
+) -> bool:
+    value = training.get(key, False)
+    if value in (None, ""):
+        return False
+    if not isinstance(value, bool):
+        raise TypeError(
+            f"training.{key} must be boolean when used with latest detection packing guardrails"
+        )
+    return value
+
+
+def _latest_detection_validate_packing_runtime_contract(
+    *,
+    objective: "DetectionObjectiveConfig",
+    packing: "DetectionPackingConfig",
+    training: Mapping[str, Any],
+) -> None:
+    training_packing = _latest_detection_runtime_bool(training, "packing")
+    training_eval_packing = _latest_detection_runtime_bool(training, "eval_packing")
+
+    if packing.static_packing and not training_packing:
+        raise ValueError(
+            "packing.static_packing=true requires training.packing=true for latest detection runtime materialization."
+        )
+
+    if objective.id != "recursive_detection_ce":
+        return
+
+    if packing.padding_free_packed:
+        raise ValueError(
+            "objective.id=recursive_detection_ce does not support packing.padding_free_packed=true "
+            "until sidecar offset rewriting is implemented."
+        )
+    if not packing.static_packing and training_packing:
+        raise ValueError(
+            "objective.id=recursive_detection_ce requires training.packing=false when packing.static_packing=false."
+        )
+    if packing.static_packing:
+        raise ValueError(
+            "objective.id=recursive_detection_ce does not support static packing yet; "
+            "set training.packing=false and packing.static_packing=false."
+        )
+    if training_eval_packing:
+        raise ValueError(
+            "objective.id=recursive_detection_ce requires training.eval_packing=false."
+        )
+
+
 def _latest_detection_validate_deepspeed_mapping(value: Any) -> dict[str, Any]:
     if value is None:
         return {}
@@ -4216,7 +4269,7 @@ class LatestDetectionTrainingConfig:
     packing: DetectionPackingConfig
     evaluation: DetectionEvaluationConfig
     validation: DetectionValidationConfig
-    debug: Mapping[str, Any] = field(default_factory=dict)
+    debug: DebugConfig = field(default_factory=DebugConfig)
     model: Mapping[str, Any] = field(default_factory=dict)
     template: Mapping[str, Any] = field(default_factory=dict)
     training: Mapping[str, Any] = field(default_factory=dict)
@@ -4289,6 +4342,13 @@ class LatestDetectionTrainingConfig:
             path="token_rows",
         )
         _latest_detection_validate_token_rows(detection_template, token_rows)
+        packing = DetectionPackingConfig.from_mapping(payload["packing"])
+        training = _latest_detection_validate_training_mapping(payload.get("training"))
+        _latest_detection_validate_packing_runtime_contract(
+            objective=objective,
+            packing=packing,
+            training=training,
+        )
 
         return cls(
             data=data_config,
@@ -4296,12 +4356,10 @@ class LatestDetectionTrainingConfig:
             detection_template=detection_template,
             token_rows=token_rows,
             objective=objective,
-            packing=DetectionPackingConfig.from_mapping(payload["packing"]),
+            packing=packing,
             evaluation=evaluation,
             validation=DetectionValidationConfig.from_mapping(payload["validation"]),
-            debug=_latest_detection_validate_runtime_mapping(
-                payload.get("debug"), path="debug"
-            ),
+            debug=DebugConfig.from_mapping(payload.get("debug")),
             model=_latest_detection_validate_framework_mapping(
                 payload.get("model"),
                 path="model",
@@ -4312,9 +4370,7 @@ class LatestDetectionTrainingConfig:
                 path="template",
                 allowed=_train_arguments_allowed_keys(),
             ),
-            training=_latest_detection_validate_training_mapping(
-                payload.get("training")
-            ),
+            training=training,
             deepspeed=_latest_detection_validate_deepspeed_mapping(
                 payload.get("deepspeed")
             ),

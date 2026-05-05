@@ -34,6 +34,16 @@ input JSONL + checkpoint
   -> metrics.json / metrics_guarded.json / per_image.json / per_image_guarded.json / optional overlays
 ```
 
+Official metric guardrail:
+
+- COCO/LVIS/both metric claims must consume `gt_vs_pred_scored.jsonl`.
+- The scored artifact must come from confidence post-op for compatible `xyxy`
+  coord-token or raw-text norm1000 surfaces, or from deterministic
+  constant-score compatibility scoring for explicitly supported non-canonical
+  bbox surfaces.
+- Raw `gt_vs_pred.jsonl` evaluation is a debug/F1-ish surface only. Do not
+  label raw-artifact metrics as COCO/LVIS benchmark results.
+
 ## YAML-First Commands
 
 Run inference:
@@ -83,6 +93,32 @@ Run evaluation:
 PYTHONPATH=. conda run -n ms python scripts/evaluate_detection.py \
   --config configs/eval/detection.yaml
 ```
+
+## Wrapper Classification
+
+Stable / reportable:
+
+- `scripts/run_infer.py --config ...`
+- `scripts/postop_confidence.py --config ...`
+- `scripts/evaluate_detection.py --config ...`
+- `scripts/evaluate_proxy_detection_bundle.py --config ...`
+
+Compatibility / debug:
+
+- `scripts/run_infer_eval.sh` is a legacy environment-variable wrapper for
+  quick inference plus debug evaluation. It defaults away from official-style
+  metrics and refuses COCO/LVIS/both metrics entirely because it cannot prove
+  scored-artifact provenance for the just-run inference output. Use the
+  YAML-first infer -> score -> eval flow for reportable COCO/LVIS/both metrics.
+- `scripts/run_vis.sh` is a manual/debug visualization wrapper for an explicit
+  artifact and image root. Prefer evaluator overlays or `vis_resources/`
+  artifacts tied to resolved config/scoring provenance for reportable evidence.
+
+Historical diagnostics:
+
+- `scripts/pipelines/run_rollout_stability_probe.sh` is a parser/rollout health
+  diagnostic that delegates to the legacy/debug `run_infer_eval.sh` wrapper.
+  Treat its outputs as local stability evidence, not benchmark claims.
 
 Duplicate-control guard note:
 
@@ -245,8 +281,11 @@ gt_vs_pred.jsonl
 
 Key points:
 
-- `scripts/run_vis.sh` and `vis_tools/vis_coordexp.py` materialize the canonical
-  sidecar before rendering.
+- Evaluator overlays and `vis_resources/gt_vs_pred.jsonl` are the stable
+  provenance-preserving visualization path.
+- `scripts/run_vis.sh` and `vis_tools/vis_coordexp.py` are manual/debug helpers
+  for explicitly supplied artifacts and image roots; they do not by themselves
+  recover YAML `resolved_config.path`, scoring semantics, or benchmark scope.
 - evaluator overlays reuse the same shared reviewer semantics instead of a
   second renderer-local box contract.
 - post-eval audit materialization may reuse `matches.jsonl` and `per_image.json`

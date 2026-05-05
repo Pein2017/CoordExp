@@ -1,6 +1,11 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# Legacy/debug convenience wrapper. This can run quick inference plus raw
+# F1-ish/debug evaluation, but it must not publish COCO/LVIS/both metrics from
+# raw gt_vs_pred.jsonl. For reportable metrics, use the YAML-first
+# run_infer.py -> score materialization -> evaluate_detection.py flow.
+
 if [[ $# -gt 0 ]]; then
   echo "[ERROR] scripts/run_infer_eval.sh accepts environment variables only (no positional args)." >&2
   echo "[ERROR] Example: ckpt=output/... gt_jsonl=public_data/... output_base_dir=output/infer/my_run bash scripts/run_infer_eval.sh" >&2
@@ -28,7 +33,7 @@ REPPEN="${reppen:-${REPPEN:-1.05}}"
 SEED="${seed:-${SEED:-}}"
 
 # Evaluation defaults
-EVAL_METRICS="${eval_metrics:-${EVAL_METRICS:-both}}"          # coco | f1ish | both
+EVAL_METRICS="${eval_metrics:-${EVAL_METRICS:-f1ish}}"          # f1ish by default; coco | lvis | both require scored guardrails
 STRICT_PARSE="${strict_parse:-${STRICT_PARSE:-0}}"             # 1 to enable --strict-parse
 USE_SEGM="${use_segm:-${USE_SEGM:-1}}"                     # 0 to disable segmentation metrics
 IOU_THRS="${iou_thrs:-${IOU_THRS:-}}"
@@ -42,6 +47,21 @@ SEMANTIC_MODEL="${semantic_model:-${SEMANTIC_MODEL:-sentence-transformers/all-Mi
 SEMANTIC_THRESHOLD="${semantic_threshold:-${SEMANTIC_THRESHOLD:-0.6}}"
 SEMANTIC_DEVICE="${semantic_device:-${SEMANTIC_DEVICE:-}}"            # auto|cpu|cuda[:N]
 SEMANTIC_BATCH_SIZE="${semantic_batch_size:-${SEMANTIC_BATCH_SIZE:-64}}"
+
+is_official_metric_request() {
+  local metrics_lc="${1,,}"
+  case ",${metrics_lc}," in
+    *,coco,*|*,lvis,*|*,both,*)
+      return 0
+      ;;
+  esac
+  case "$metrics_lc" in
+    coco|lvis|both)
+      return 0
+      ;;
+  esac
+  return 1
+}
 
 if [[ -z "$SEMANTIC_DEVICE" ]]; then
   # Prefer the same device as inference when it's a CUDA device; otherwise auto.
@@ -60,8 +80,17 @@ ensure_required "CKPT" "$CKPT"
 ensure_required "GT_JSONL" "$GT_JSONL"
 ensure_required "OUTPUT_BASE_DIR" "$OUTPUT_BASE_DIR"
 
+if is_official_metric_request "$EVAL_METRICS"; then
+  echo "[ERROR] Refusing to run $EVAL_METRICS metrics through legacy scripts/run_infer_eval.sh." >&2
+  echo "[ERROR] This wrapper writes fresh raw gt_vs_pred.jsonl and cannot prove scored-artifact provenance." >&2
+  echo "[ERROR] Use the YAML-first scripts/run_infer.py -> scripts/postop_confidence.py or constant-score materialization -> scripts/evaluate_detection.py flow." >&2
+  exit 2
+fi
+
 mkdir -p "$OUTPUT_BASE_DIR" "$EVAL_OUT_DIR"
 
+echo "[WARN] scripts/run_infer_eval.sh is a legacy/debug wrapper."
+echo "[WARN] Raw gt_vs_pred.jsonl evaluation is debug scope only; reportable COCO/LVIS/both metrics require a scored artifact."
 echo "Inference → Evaluation workflow"
 echo "  checkpoint:         $CKPT"
 echo "  GT JSONL:           $GT_JSONL"
@@ -69,9 +98,9 @@ echo "  OUTPUT_BASE_DIR:    $OUTPUT_BASE_DIR"
 echo "  MODE:               $MODE"
 echo "  PRED_COORD_MODE:    $PRED_COORD_MODE"
 echo "  DEVICE:             $DEVICE"
-echo "  LIMIT:              $LIMIT"
-echo "  EVAL_METRICS:       $EVAL_METRICS"
-echo "  Eval out dir:       $EVAL_OUT_DIR"
+  echo "  LIMIT:              $LIMIT"
+  echo "  EVAL_METRICS:       $EVAL_METRICS"
+  echo "  Eval out dir:       $EVAL_OUT_DIR"
 
 cd "$REPO_ROOT"
 
@@ -102,9 +131,12 @@ PYTHONPATH="$REPO_ROOT" "${CMD_INF[@]}"
 
 echo "Inference finished, predictions saved to $PRED_JSONL"
 
+PRED_FOR_EVAL="$PRED_JSONL"
+echo "[WARN] Evaluating raw artifact for debug/F1-ish scope only: $PRED_FOR_EVAL"
+
 CMD_EVAL=(
   "${COORDEXP_PYTHON[@]}" "$REPO_ROOT/scripts/evaluate_detection.py"
-  --pred_jsonl "$PRED_JSONL"
+  --pred_jsonl "$PRED_FOR_EVAL"
   --out_dir "$EVAL_OUT_DIR"
   --metrics "$EVAL_METRICS"
   --overlay-k "$OVERLAY_K"
@@ -137,3 +169,6 @@ echo
 PYTHONPATH="$REPO_ROOT" "${CMD_EVAL[@]}"
 
 echo "Finished evaluation — metrics saved in $EVAL_OUT_DIR"
+if ! is_official_metric_request "$EVAL_METRICS"; then
+  echo "[WARN] Metrics came from raw gt_vs_pred.jsonl debug scope; do not report them as COCO/LVIS benchmark metrics."
+fi

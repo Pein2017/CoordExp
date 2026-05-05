@@ -194,16 +194,11 @@ def test_sft_does_not_apply_recursive_sidecar_guard_to_other_latest_objectives()
 def test_sft_rejects_latest_recursive_detection_packing_preflight_config() -> None:
     config_path = (
         REPO_ROOT
-        / "configs/stage1/recursive_detection_ce_latest/smoke/compact_full_packing_unsupported.yaml"
+        / "configs/stage1/recursive_detection_ce_latest/negative/compact_full_static_packing_should_fail.yaml"
     )
-    cfg = ConfigLoader.load_materialized_training_config(str(config_path))
 
-    assert isinstance(cfg, LatestDetectionTrainingConfig)
-    with pytest.raises(ValueError, match="packing=false"):
-        _assert_latest_detection_runtime_supported(
-            cfg,
-            encoded_sample_cache_cfg=SimpleNamespace(enabled=False),
-        )
+    with pytest.raises(ValueError, match=r"recursive_detection_ce.*static packing"):
+        ConfigLoader.load_materialized_training_config(str(config_path))
 
 
 @pytest.mark.parametrize(

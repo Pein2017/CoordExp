@@ -1,6 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# Manual/debug renderer for an explicitly supplied artifact and image root.
+# For reportable evaluation provenance, prefer evaluator overlays or
+# vis_resources artifacts tied to resolved_config.json.
+
 if [[ $# -gt 0 ]]; then
   echo "[ERROR] scripts/run_vis.sh accepts environment variables only (no positional args)." >&2
   echo "[ERROR] Example: pred_jsonl=output/.../gt_vs_pred.jsonl save_dir=vis_out root_image_dir=public_data/... bash scripts/run_vis.sh" >&2
@@ -22,6 +26,8 @@ ensure_required "ROOT_IMAGE_DIR" "$ROOT_IMAGE_DIR"
 
 mkdir -p "$SAVE_DIR"
 
+echo "[WARN] scripts/run_vis.sh is a manual/debug visualization wrapper."
+echo "[WARN] It renders the explicit artifact and image root provided by env vars; it does not recover full pipeline scoring/config provenance."
 echo "Visualization workflow"
 echo "  predictions:      $PRED_JSONL"
 echo "  save dir:         $SAVE_DIR"

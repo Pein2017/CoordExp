@@ -1,3 +1,6 @@
+# Legacy bridge smoke: this file exercises legacy TrainingConfig + custom.detection_sequence_format.
+# Canonical latest compact detection lives under configs/stage1/recursive_detection_ce_latest/.
+# Do not use this file as a LatestDetectionTrainingConfig example.
 extends:
   - ../../profiles/2b/coord_ce_soft_ce_w1_gate_coco80_desc_first_random_order.yaml
 

@@ -5,7 +5,7 @@ doc_type: reference
 status: canonical
 domain: data
 summary: Surface-specific packing policy, hard caps, cache behavior, and efficiency tradeoffs.
-updated: 2026-05-03
+updated: 2026-05-05
 ---
 
 # Packing Policy Matrix
@@ -37,6 +37,28 @@ Note:
 | Stage-1 compact recursive detection latest | `12000` | `128` | disabled | Packing remains disabled until sidecar target-position offset rewriting is implemented and validated. |
 | Stage-2 two-channel base | `12000` | `64` | post-rollout trainer packing | Rollout generation remains padded/unpacked; each post-rollout `Y_train` is atomic. |
 | Historical 12k packing probe | `12000` | `12` | historical probe | Useful as prior efficiency evidence, not the global default. |
+
+## Latest Compact Recursive Detection Packing Owner
+
+Latest compact recursive detection uses top-level `packing` as the semantic
+authoring owner. The current runtime still consumes adapter fields under
+`training`, so latest configs must keep the semantic and runtime views aligned:
+
+```yaml
+training:
+  packing: false
+  eval_packing: false
+packing:
+  static_packing: false
+  padding_free_packed: false
+```
+
+Until recursive sidecar target-position offset rewriting is implemented and
+validated, `configs/stage1/recursive_detection_ce_latest/` must not enable
+dataset/static packing or padding-free packed runtime. Expected-failure packing
+examples belong under `configs/stage1/recursive_detection_ce_latest/negative/`
+or another explicit `contract_failures/` location, not under positive `smoke/`
+profiles.
 
 ## Stage-1 Packing Guardrails
 

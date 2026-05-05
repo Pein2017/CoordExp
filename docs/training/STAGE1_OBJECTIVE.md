@@ -5,7 +5,7 @@ doc_type: reference
 status: canonical
 domain: training
 summary: Stage-1 objective surfaces and coord-token training behavior.
-updated: 2026-05-03
+updated: 2026-05-05
 ---
 
 # Coord Objective & Adapter
@@ -28,6 +28,11 @@ Scope note:
   - `custom.coord_soft_ce_w1.*`
   - `custom.bbox_geo.*`
   - `custom.bbox_size_aux.*`
+- Raw-text norm1000 and bbox-geometry ablations remain legacy Stage-1 SFT
+  surfaces, not latest compact detection overlays. Materialization verification
+  should include:
+  - `configs/stage1/profiles/2b/raw_text_xyxy_pure_ce_coco80_desc_first_1024_lvis_proxy.yaml`
+  - `configs/stage1/profiles/2b/bbox_geo_center_size_coco80_desc_first_1024_lvis_proxy.yaml`
 - For the prefix-conditioned Stage-1 continuation family, the active production
   surface is now ET-RMP-CE rather than candidate-branch set-continuation:
   - `custom.trainer_variant: stage1_set_continuation`
@@ -455,6 +460,14 @@ losses are disabled for the promoted production profile. It remains 2B, COCO80
 desc-first, coord-token-only, `val200`/`f1ish_annotated`, and
 `training.packing: false`.
 
+The current set-continuation production batch identity is owned by
+`configs/stage1/set_continuation/production.yaml`. The checked-in production
+contract is `artifact_subdir:
+coco1024_sota1332_setcont_et_rmp_ce_support2_bsz16_v1`,
+`per_device_train_batch_size: 16`, `gradient_accumulation_steps: 1`, and
+`effective_batch_size: 128`. Do not treat older `support2_bsz32` or `32/256`
+notes as current production guidance.
+
 Because this run continues from an already four-epoch fine-tuned SOTA
 checkpoint, the production config uses reduced continuation learning rates:
 `learning_rate=5e-5`, `vit_lr=1e-5`, `aligner_lr=5e-5`, and coord-offset
@@ -488,6 +501,7 @@ It uses the production checkpoint, dataset, eval, and smart-batch runtime,
 sets `objective.mode` to `entry_trie_rmp_ce`, sets the branch support/balance
 weights to `2.0/1.0`, disables candidate-only auxiliaries, and scales local
 batch/branch-row capacity (`per_device_train_batch_size=16`,
+`gradient_accumulation_steps=1`, `effective_batch_size=128`,
 `max_branch_rows=32`, `max_branch_tokens=65536`) to improve GPU memory
 utilization without enabling packing.
 
@@ -540,6 +554,12 @@ Evaluation note:
 The minimal raw-text benchmark keeps canonical `xyxy` geometry and the shared
 norm1000 lattice, but removes coord-token rendering:
 
+Materialized legacy profile:
+
+```text
+configs/stage1/profiles/2b/raw_text_xyxy_pure_ce_coco80_desc_first_1024_lvis_proxy.yaml
+```
+
 - train from canonical `train.norm.jsonl` / `val.norm.jsonl`
 - set `custom.coord_tokens.enabled: false`
 - keep `custom.coord_tokens.skip_bbox_norm: true`
@@ -562,6 +582,14 @@ from constant-score compatibility artifacts.
 
 Stage-1 can also supervise decoded bbox geometry directly from the same
 teacher-forced coord logits, without switching to a Stage-2 trainer variant.
+This remains a legacy Stage-1 SFT surface, not a latest compact detection
+overlay.
+
+Materialized legacy profile:
+
+```text
+configs/stage1/profiles/2b/bbox_geo_center_size_coco80_desc_first_1024_lvis_proxy.yaml
+```
 
 ```yaml
 custom:
