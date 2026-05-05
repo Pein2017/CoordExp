@@ -10,7 +10,16 @@ import torch
 import torch.nn.functional as F
 
 from src.detection.objective import RecursiveDetectionTargets, SemanticRole
-from src.metrics.events import MetricEvent, last_event, weighted_mean_event
+from src.metrics.detection_sequence import (
+    coordinate_token_accuracy_event,
+    coordinate_token_cross_entropy_event,
+    description_token_accuracy_event,
+    description_token_cross_entropy_event,
+    object_entry_exact_match_event,
+    schema_token_accuracy_event,
+    schema_token_cross_entropy_event,
+)
+from src.metrics.events import MetricEvent, last_event, ratio_event, weighted_mean_event
 
 _OBJECT_ROLE_WEIGHTS = {
     SemanticRole.DESC_IDENTITY: 0.35,
@@ -27,6 +36,26 @@ _IMAGE_MIXTURE_WEIGHTS = {
     "boundary": 0.30,
     "schema": 0.10,
 }
+_SPAN_CATEGORY_TO_CANONICAL_SEGMENT = {
+    "schema": "schema",
+    "desc_text": "description",
+    "coord": "coordinate",
+    "object_control": "object_control",
+    "separator": "separator",
+    "stop": "stop",
+    "other": "other",
+}
+_SEMANTIC_ROLE_TO_SPAN_CATEGORY = {
+    SemanticRole.SCHEMA_CONTROL.value: "schema",
+    SemanticRole.DESC_IDENTITY.value: "desc_text",
+    SemanticRole.BBOX_COORD.value: "coord",
+    SemanticRole.ENTRY_TRIE_DECISION.value: "object_control",
+    SemanticRole.OBJECT_CONTROL.value: "object_control",
+    SemanticRole.SEPARATOR_CONTINUE.value: "separator",
+    SemanticRole.TERMINAL_STOP.value: "stop",
+    SemanticRole.CHAT_STOP.value: "stop",
+}
+_COMPACT_METRIC_SUMMARY_CHUNK_SIZE = 64
 
 
 @dataclass(frozen=True)
@@ -95,12 +124,252 @@ def compute_recursive_detection_ce_batch_loss(
             semantic_role="recursive_detection_ce",
             metric_surface="training_logits",
         ),
+    ) + _summarize_compact_recursive_detection_metric_events(
+        logits=batch_logits,
+        targets=targets,
     )
     return RecursiveDetectionLossResult(
         loss=loss,
         metrics=metrics,
         per_position_losses=tuple(per_position_losses),
         metric_events=metric_events,
+    )
+
+
+def _summarize_compact_recursive_detection_metric_events(
+    *,
+    logits: torch.Tensor,
+    targets: Sequence[RecursiveDetectionTargets],
+) -> tuple[MetricEvent, ...]:
+    """Summarize Phase-1 compact recursive-detection diagnostics from logits."""
+
+    category_stats = {
+        category: {
+            "total": 0.0,
+            "top1": 0.0,
+            "top5": 0.0,
+            "ce_sum": 0.0,
+        }
+        for category in _SPAN_CATEGORY_TO_CANONICAL_SEGMENT
+    }
+    object_token_correct: dict[str, list[bool]] = {}
+
+    token_batch_indices: list[int] = []
+    token_time_indices: list[int] = []
+    teacher_token_ids: list[int] = []
+    category_ids: list[int] = []
+    object_instance_ids: list[str | None] = []
+    category_to_id = {
+        category: index
+        for index, category in enumerate(_SPAN_CATEGORY_TO_CANONICAL_SEGMENT)
+    }
+
+    for batch_index, recursive_targets in enumerate(targets):
+        atom_by_id = {atom.atom_id: atom for atom in recursive_targets.loss_atoms}
+        atom_by_position: dict[int, object] = {}
+        for atom in recursive_targets.loss_atoms:
+            for position in atom.token_positions:
+                atom_by_position.setdefault(position, atom)
+
+        for target in recursive_targets.token_targets:
+            atom = None
+            if target.loss_atom_id is not None:
+                atom = atom_by_id.get(target.loss_atom_id)
+            if atom is None:
+                atom = atom_by_position.get(target.position)
+
+            role = target.semantic_role
+            if role is None and atom is not None:
+                role = getattr(atom, "semantic_role", None)
+            category = _span_category_for_semantic_role(role)
+
+            token_batch_indices.append(batch_index)
+            token_time_indices.append(int(target.position) - 1)
+            teacher_token_ids.append(int(target.teacher_token_id))
+            category_ids.append(category_to_id[category])
+            object_instance_ids.append(_object_instance_id_for_target(target, atom))
+
+    with torch.no_grad():
+        metric_logits = logits.detach()
+        if token_batch_indices:
+            device = metric_logits.device
+            batch_index_tensor = torch.tensor(
+                token_batch_indices,
+                device=device,
+                dtype=torch.long,
+            )
+            time_index_tensor = torch.tensor(
+                token_time_indices,
+                device=device,
+                dtype=torch.long,
+            )
+            teacher_id_tensor = torch.tensor(
+                teacher_token_ids,
+                device=device,
+                dtype=torch.long,
+            )
+            category_id_tensor = torch.tensor(
+                category_ids,
+                device=device,
+                dtype=torch.long,
+            )
+            for start in range(
+                0,
+                len(token_batch_indices),
+                _COMPACT_METRIC_SUMMARY_CHUNK_SIZE,
+            ):
+                end = min(
+                    start + _COMPACT_METRIC_SUMMARY_CHUNK_SIZE,
+                    len(token_batch_indices),
+                )
+                chunk_logits = metric_logits[
+                    batch_index_tensor[start:end],
+                    time_index_tensor[start:end],
+                ].float()
+                chunk_teacher_ids = teacher_id_tensor[start:end]
+                chunk_category_ids = category_id_tensor[start:end]
+                teacher_logits = chunk_logits.gather(
+                    1,
+                    chunk_teacher_ids.unsqueeze(1),
+                ).squeeze(1)
+                teacher_ce = torch.logsumexp(chunk_logits, dim=-1) - teacher_logits
+                top1_correct = chunk_logits.argmax(dim=-1).eq(chunk_teacher_ids)
+                top_k = min(5, int(chunk_logits.shape[-1]))
+                top5_correct = torch.topk(chunk_logits, k=top_k, dim=-1).indices.eq(
+                    chunk_teacher_ids.unsqueeze(1)
+                ).any(dim=-1)
+
+                for category, category_id in category_to_id.items():
+                    mask = chunk_category_ids.eq(category_id)
+                    total = float(mask.sum().item())
+                    if total == 0.0:
+                        continue
+                    stats = category_stats[category]
+                    stats["total"] += total
+                    stats["top1"] += float(top1_correct[mask].sum().item())
+                    stats["top5"] += float(top5_correct[mask].sum().item())
+                    stats["ce_sum"] += float(teacher_ce[mask].sum().item())
+
+                top1_correct_values = tuple(
+                    bool(value) for value in top1_correct.cpu().tolist()
+                )
+                for object_instance_id, is_top1 in zip(
+                    object_instance_ids[start:end],
+                    top1_correct_values,
+                    strict=True,
+                ):
+                    if object_instance_id is not None:
+                        object_token_correct.setdefault(object_instance_id, []).append(
+                            is_top1
+                        )
+
+    events: list[MetricEvent] = []
+    for category in _SPAN_CATEGORY_TO_CANONICAL_SEGMENT:
+        stats = category_stats[category]
+        total = stats["total"]
+        events.append(
+            _span_token_accuracy_event(
+                category,
+                stats["top1"],
+                total,
+                top_k=1,
+            )
+        )
+        events.append(
+            _span_token_accuracy_event(
+                category,
+                stats["top5"],
+                total,
+                top_k=5,
+            )
+        )
+        ce_value = stats["ce_sum"] / total if total > 0.0 else 0.0
+        events.append(_span_token_cross_entropy_event(category, ce_value, total))
+
+    object_total = float(len(object_token_correct))
+    object_correct = float(
+        sum(1 for token_results in object_token_correct.values() if all(token_results))
+    )
+    events.append(
+        object_entry_exact_match_event(
+            object_correct,
+            object_total,
+            object_scope="object_entry",
+            metric_surface="training_logits",
+        )
+    )
+    return tuple(events)
+
+
+def _span_category_for_semantic_role(role: object) -> str:
+    if isinstance(role, SemanticRole):
+        role_value = role.value
+    elif role is None:
+        role_value = None
+    else:
+        role_value = str(role)
+    if role_value is None:
+        return "other"
+    return _SEMANTIC_ROLE_TO_SPAN_CATEGORY.get(role_value, "other")
+
+
+def _object_instance_id_for_target(target: object, atom: object | None) -> str | None:
+    atom_object_id = getattr(atom, "object_instance_id", None) if atom is not None else None
+    if atom_object_id is not None:
+        return str(atom_object_id)
+    target_object_id = getattr(target, "object_instance_id", None)
+    if target_object_id is not None:
+        return str(target_object_id)
+    return None
+
+
+def _span_token_accuracy_event(
+    category: str,
+    correct: float,
+    total: float,
+    *,
+    top_k: int,
+) -> MetricEvent:
+    if category == "schema":
+        return schema_token_accuracy_event(correct, total, top_k=top_k)
+    if category == "desc_text":
+        return description_token_accuracy_event(correct, total, top_k=top_k)
+    if category == "coord":
+        return coordinate_token_accuracy_event(correct, total, top_k=top_k)
+    segment = _SPAN_CATEGORY_TO_CANONICAL_SEGMENT[category]
+    return ratio_event(
+        f"detection_sequence/{segment}/token_acc/full_vocab/top{top_k}",
+        correct,
+        total,
+        unit="token",
+        semantic_role=segment,
+        token_role=segment,
+        vocab_scope="full_vocab",
+        metric_surface="training_logits",
+    )
+
+
+def _span_token_cross_entropy_event(
+    category: str,
+    value: float,
+    total: float,
+) -> MetricEvent:
+    if category == "schema":
+        return schema_token_cross_entropy_event(value, total)
+    if category == "desc_text":
+        return description_token_cross_entropy_event(value, total)
+    if category == "coord":
+        return coordinate_token_cross_entropy_event(value, total)
+    segment = _SPAN_CATEGORY_TO_CANONICAL_SEGMENT[category]
+    return weighted_mean_event(
+        f"detection_sequence/{segment}/token_ce/full_vocab",
+        value,
+        total,
+        unit="token",
+        semantic_role=segment,
+        token_role=segment,
+        vocab_scope="full_vocab",
+        metric_surface="training_logits",
     )
 
 

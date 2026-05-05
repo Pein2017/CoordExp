@@ -27,16 +27,27 @@ Phase 2 and Phase 3 are documented for continuity only. They are not approved by
 
 Phase 1 uses additive namespacing.
 
-- Add new compact metrics under `compact/*`.
+- Add new compact recursive-detection metrics as canonical typed `MetricEvent`s under `detection_sequence/*`.
+- Optional `compact/*` flat keys are dashboard/compatibility aliases only; they must be emitted through the metric-event alias bridge, not direct scalar dictionaries.
 - Add new set-continuation branch diagnostics under `setcont/rmp/*`.
 - Preserve existing legacy set-continuation public keys, including existing bare `rmp/*`, `loss/rmp*`, `mp/*`, and `stop/*` keys.
+- Keep set-continuation Phase 1 metrics on the existing flat allow-list path (`EMITTED_STAGE1_SET_CONTINUATION_METRICS` plus `numeric_metric_payload`). Converting set-continuation ET-RMP metrics to `MetricEvent` is out of scope for Phase 1 unless separately approved.
 - Bump the set-continuation schema version to `stage1_set_continuation_metrics_v3` because new default public keys are added.
 - Treat v3 as additive. Do not remove or rename existing v2 keys in Phase 1.
 - Update producer tests, allow-list tests, config/provenance tests, benchmark profile tests, and docs in the same change so `numeric_metric_payload` cannot silently drop new metrics and runtime metadata cannot claim v2 while emitting v3 keys.
 
 ## Source metadata mapping contract
 
-Phase 1 uses existing source fields only. Do not infer grouping or categories from rendered token strings.
+Phase 1 uses existing loss-time source fields only. Do not infer grouping or categories from rendered token strings.
+
+The current compact sequence stack also has upstream semantic provenance:
+
+- Current Phase-1 loss-time metrics consume `RecursiveDetectionTargets.token_targets` and `RecursiveDetectionTargets.loss_atoms`, specifically the already-aligned `LossAtom` / `TokenTarget` surface.
+- The current render/tokenization path still renders `NormalizedDetectionSample`, records `RenderSpanEvent` values, and projects those render events into token roles and masks before recursive target construction.
+- Recursive target construction then builds aligned `TokenTarget` / `LossAtom` metadata from tokenized object-entry spans.
+- `DetectionDocument` / `DetectionObjectEntry` / `DetectionCoordinateSlot` are the canonical future upstream IR contract, not a Phase-1 loss-time dependency unless a separate implementation proves they are wired into the exact recursive-CE sidecar path.
+
+Render-event details such as `slot_name` remain upstream provenance and are not Phase-1 loss-time fields unless separately propagated and verified. Compact Phase 1 metrics consume the already-aligned `LossAtom` / `TokenTarget` surface. Future slot/object/render-role metrics should use the upstream IR/render-event layer rather than duplicating semantic derivation in the loss layer.
 
 ### Compact span categories
 
@@ -58,6 +69,8 @@ Mapping:
 | `CHAT_STOP` | `stop` |
 | missing or unknown | `other` |
 
+Public categories are grouping and alias labels. Canonical compact `MetricEvent` key segments follow the current helper identities where they exist: `desc_text` maps to canonical `description`, and `coord` maps to canonical `coordinate`. Phase 1 must not introduce new canonical `detection_sequence/desc_text/*` or `detection_sequence/coord/*` identities; optional `compact/span/desc_text/*` and `compact/span/coord/*` keys may exist only as registered aliases of the canonical identities.
+
 ### Compact object grouping
 
 Source field:
@@ -66,9 +79,9 @@ Source field:
 
 Rules:
 
-- Only supervised tokens with non-null `object_instance_id` contribute to `compact/object/*`.
-- `compact/object/object_count` is the number of distinct non-null `object_instance_id` groups with at least one supervised token.
-- If no non-null object ids are present, emit `compact/object/object_count = 0` and omit object exact rates.
+- Only supervised tokens with non-null `object_instance_id` contribute to canonical object-entry `MetricEvent`s and any optional `compact/object/*` aliases.
+- Object count, if surfaced, must be a canonical count/sum/last `MetricEvent` under `detection_sequence/object_entry/*`; `compact/object/object_count` may exist only as a registered alias of that canonical identity.
+- If no non-null object ids are present, emit the canonical object-count event with value `0` when the implementation intentionally publishes that count. Any `compact/object/object_count` flat key must come only from the alias bridge. Omit object exact rates.
 - Do not group by `loss_atom_id`, text adjacency, punctuation, serialized span boundaries, or `object_index` alone.
 
 ### ET-RMP-CE branch type buckets
@@ -89,7 +102,7 @@ Mapping:
 
 ## Phase 1 metric key list
 
-### Compact Stage-1 SFT keys
+### Compact Stage-1 SFT MetricEvent identities
 
 Required span categories:
 
@@ -101,28 +114,33 @@ Required span categories:
 - `stop`
 - `other`
 
-Required compact span key pattern:
+Required compact span event families:
 
-- `compact/span/<category>/token_count`
-- `compact/span/<category>/teacher_ce_mean`
-- `compact/span/<category>/top1_acc`
-- `compact/span/<category>/top5_acc`
-- `compact/span/<category>/teacher_p_mean`
-- `compact/span/<category>/teacher_margin_mean`
+- `detection_sequence/<semantic>/token_acc/<vocab_scope>/top1`
+- `detection_sequence/<semantic>/token_acc/<vocab_scope>/top5`
+- `detection_sequence/<semantic>/token_ce/<vocab_scope>`
+- optional teacher-probability, margin, or explicit count events only if represented as `MetricEvent`s
 
-Required compact object keys:
+In these canonical event families, `<semantic>` is the canonical `MetricEvent` segment, not necessarily the public category label. Required Phase 1 mapping is `schema -> schema`, `desc_text -> description`, `coord -> coordinate`, `object_control -> object_control`, `separator -> separator`, `stop -> stop`, and `other -> other`.
 
-- `compact/object/object_count`
-- `compact/object/all_token_top1_exact_rate`
-- `compact/object/desc_all_top1_rate`
-- `compact/object/coord_all_top1_rate`
-- `compact/object/desc_token_count`
-- `compact/object/coord_token_count`
+Required compact object event families:
 
-Keep existing compact recursive detection keys:
+- `detection_sequence/object_entry/exact_sequence_match/<object_scope>`
+- optional object-count or object-token denominator events only if represented as `MetricEvent`s
+
+Optional compact flat aliases:
+
+- `compact/span/<category>/*`, only when registered through `MetricAliasRegistry` or equivalent identity-checked alias registration.
+- `compact/object/*`, only when registered through `MetricAliasRegistry` or equivalent identity-checked alias registration.
+
+Keep existing compact recursive detection keys and canonical events:
 
 - `loss/recursive_detection_ce`
 - `recursive_detection_ce/batch_size`
+- `recursive_detection_ce/trie_support_weight`
+- `recursive_detection_ce/trie_balance_weight`
+- `detection_sequence/objective/recursive_detection_ce/loss_per_sample`
+- `detection_sequence/objective/recursive_detection_ce/batch_size`
 
 ### ET-RMP-CE set-continuation keys
 
@@ -188,8 +206,8 @@ For valid child set `V`, model distribution `p`, teacher child token `t`, normal
 - `balance_kl = sum_{v in V} q[v] * (log q[v] - log p_valid[v])`.
 - If implementation reuses an existing branch balance cross-entropy helper, compute `balance_kl = branch_balance_cross_entropy - target_entropy_for_step`; do not log cross-entropy as KL.
 - `teacher_path_child_prob = p[t]` over the full vocabulary.
-- `teacher_path_child_rank` is 1-based full-vocabulary rank of `t` by descending logits.
-- `positive_child_rank` is 1-based full-vocabulary rank of the highest-logit valid child in `V`; lower is better. Ties follow the implementation's deterministic descending-sort order and are pinned in a synthetic test.
+- `teacher_path_child_rank` is the competition rank of teacher child token `t` over the full vocabulary: `rank = 1 + count(scores > z[t])`. Ties share the same rank, and no full-vocabulary sort is required.
+- `positive_child_rank` is the competition rank of the highest-logit valid child in `V` over the full vocabulary. Let `target_score = max_{v in V} z[v]`; then `rank = 1 + count(scores > target_score)`. Ties share the same rank, and no full-vocabulary sort is required.
 - `valid_child_effective_count = exp(-sum_{v in V} p_valid[v] * log(clamp_min(p_valid[v], eps)))`.
 - If `valid_child_mass <= eps`, exclude the node from `valid_child_effective_count_mean` and count only nodes included in `effective_count_node_count`.
 - `top1_invalid_rate = mean(1[argmax(z) not in V])` over branch nodes.
@@ -222,13 +240,16 @@ Add synthetic tests that build small logits/targets/loss atoms and assert:
 
 - Each source semantic role maps to the exact public category in the mapping table.
 - Missing or unknown semantic roles route to `other`.
-- Span categories emit counts and teacher-forced metrics with hand-computed values.
+- Span categories emit `MetricEvent`s with hand-computed denominators and values.
 - Schema, description, coordinate, object-control, separator, stop, and other categories are independently counted.
 - Object exact metrics use non-null `object_instance_id`, not `loss_atom_id`, text adjacency, or `object_index` alone.
 - Object exact metrics distinguish token-level correctness from all-token object correctness.
-- No-object-id cases emit `compact/object/object_count = 0` and omit object exact rates.
-- Zero-denominator groups emit counts and omit mean/rate metrics.
+- No-object-id cases use zero-denominator event behavior and omit object exact rates from flattened logs.
+- Zero-denominator groups reduce to `None` and are omitted from flattened logs, with explicit count events only where the implementation intentionally publishes counts.
 - Existing `loss/recursive_detection_ce` and `recursive_detection_ce/batch_size` behavior remains intact.
+- Existing `recursive_detection_ce/trie_support_weight` and `recursive_detection_ce/trie_balance_weight` behavior remains intact.
+- Existing canonical recursive CE event keys remain intact.
+- Optional `compact/*` aliases, if implemented, are produced only by identity-checked alias registration.
 - Bare `batch_loss` and `batch_size` do not leak into public logging.
 
 Suggested test names:
@@ -237,7 +258,8 @@ Suggested test names:
 - `test_recursive_detection_metrics_split_schema_desc_coord_and_object_spans`
 - `test_recursive_detection_object_exact_metrics_use_object_instance_id`
 - `test_recursive_detection_object_exact_metrics_distinguish_token_from_entry_correctness`
-- `test_recursive_detection_metrics_zero_denominator_omit_means_and_emit_counts`
+- `test_recursive_detection_metric_events_zero_denominator_omits_flat_values`
+- `test_recursive_detection_metric_events_emit_aliases_only_by_identity`
 - `test_recursive_detection_ce_trainer_does_not_log_internal_metric_keys`
 
 Targeted command after implementation:
@@ -256,20 +278,28 @@ Expected outcome after implementation:
 Files likely touched:
 
 - `/data/CoordExp/.worktrees/compact-detection-sequence/src/detection/loss.py`
-- `/data/CoordExp/.worktrees/compact-detection-sequence/src/trainers/metrics/mixins.py`
+- `/data/CoordExp/.worktrees/compact-detection-sequence/src/trainers/metrics/recursive_detection.py`
+- `/data/CoordExp/.worktrees/compact-detection-sequence/src/metrics/events.py`
+- `/data/CoordExp/.worktrees/compact-detection-sequence/src/metrics/detection_sequence.py`
+
+`/data/CoordExp/.worktrees/compact-detection-sequence/src/trainers/metrics/mixins.py` is now a compatibility re-export facade. Current compact recursive-CE trainer logging and model-input stripping live in `RecursiveDetectionCEMixin.compute_loss` in `src/trainers/metrics/recursive_detection.py`; do not move that boundary unless necessary.
 
 Implementation notes:
 
 - Reuse logits already passed into `compute_recursive_detection_ce_batch_loss`.
 - Reuse existing target/loss atom metadata and the exact mapping contract above.
-- Add a small summarizer function with explicit public key emission.
+- Add a small summarizer function that emits typed `MetricEvent`s.
+- Flatten compact events through `flatten_metric_events`; do not create a parallel direct-scalar `compact/*` path.
+- Emit compatibility aliases only through identity-checked alias registration.
+- Call `strip_non_model_detection_sidecars` at the recursive CE model-input boundary; intentional sidecars must be registered in `REGISTERED_DETECTION_SIDECAR_KEYS`, and unknown extras should fail fast.
 - Do not dump arbitrary loss-result internals into trainer logs.
 - Keep all current recursive detection CE metrics backward-compatible.
 
 Done when:
 
 - Compact tests from Task 1 pass.
-- Public logged keys are exactly intentional `compact/*` plus existing compact recursive detection CE keys.
+- Public logged keys are exactly intentional canonical `MetricEvent` keys, registered aliases, and existing compact recursive detection CE keys.
+- Registered detection sidecars survive collation but are stripped before model forward.
 
 ## Task 3: Add ET-RMP-CE branch metric tests first
 
@@ -287,8 +317,8 @@ Test these conditions:
 - `balance_kl_*` is KL, not existing balance cross-entropy; include a case where target entropy makes those values differ.
 - `top1_invalid_rate` catches invalid top-1 logits.
 - `top1_valid_not_teacher_rate` treats a non-teacher but valid child as valid under multi-positive semantics.
-- `positive_child_rank_mean` uses 1-based full-vocabulary rank of the highest-logit valid child.
-- `teacher_path_child_rank_mean` uses 1-based full-vocabulary rank of the teacher child.
+- `positive_child_rank_mean` uses competition rank of the highest-logit valid child: `rank = 1 + count(scores > target_score)`, with ties sharing rank and no full-vocabulary sort required.
+- `teacher_path_child_rank_mean` uses competition rank of the teacher child: `rank = 1 + count(scores > target_score)`, with ties sharing rank and no full-vocabulary sort required.
 - `valid_child_effective_count_mean` uses entropy effective count over predicted conditional valid mass with `clamp_min`; include `[1.0, 0.0] -> 1` and `[0.5, 0.5] -> 2` cases.
 - `effective_count_node_count` excludes nodes where `valid_child_mass <= eps`.
 - `valid_child_mass_p10` follows the pinned quantile convention.
@@ -366,8 +396,10 @@ Implementation notes:
 - Update the `src/sft.py` runtime metadata fallback to `stage1_set_continuation_metrics_v3`.
 - Update config and benchmark profile tests that assert the schema version.
 - Add new `setcont/rmp/*` keys to `EMITTED_STAGE1_SET_CONTINUATION_METRICS`.
+- Keep set-continuation on the flat `numeric_metric_payload` allow-list path for Phase 1; do not convert ET-RMP set-continuation metrics to `MetricEvent` in this phase.
 - Retain all existing legacy emitted keys.
 - Document that v3 is additive and preserves v2 keys.
+- Update the compact recursive-detection CE metrics docs to list canonical typed events `detection_sequence/objective/recursive_detection_ce/loss_per_sample` and `detection_sequence/objective/recursive_detection_ce/batch_size`, separately from explicit legacy scalar logs `loss/recursive_detection_ce`, `recursive_detection_ce/batch_size`, `recursive_detection_ce/trie_support_weight`, and `recursive_detection_ce/trie_balance_weight`.
 - Document every new Phase 1 key with denominator and interpretation.
 - Document that teacher-forced branch diagnostics are not rollout parse metrics or mAP.
 
@@ -390,7 +422,9 @@ Add tests that assert:
 - Legacy set-continuation keys remain allow-listed.
 - Schema version is exactly `stage1_set_continuation_metrics_v3` everywhere it is surfaced.
 - Internal keys like `batch_loss` do not leak through public metric filtering.
-- Compact trainer logging uses explicit compact keys and does not dump raw loss-result internals.
+- Compact trainer logging uses canonical `MetricEvent` flattening, registered aliases, and explicit legacy mappings; it does not dump raw loss-result internals.
+- Compact metric aliases cannot be emitted unless their `MetricIdentity` matches the registered alias identity.
+- Registered detection sidecars are stripped before `model(**inputs)` and unknown detection extras fail fast at the stripping boundary.
 - Docs mention the public key families added in Phase 1.
 
 Targeted command after implementation:
@@ -408,7 +442,9 @@ Expected outcome after implementation:
 
 Status: Not approved in Phase 1.
 
-This task requires separate approval if coordinate slot identity is not already safely available in current metadata.
+This task requires separate approval if coordinate slot identity is not already safely available in the loss-time sidecar consumed by recursive CE. The upstream compact IR/render-event layer already exposes `DetectionCoordinateSlot.slot_name` and `RenderSpanEvent.slot_name`, but Phase 1 must not add new slot propagation work through dataset/collator/loss without separate approval.
+
+When approved, coordinate-slot metrics should use canonical typed `MetricEvent` identities such as `detection_sequence/coordinate/slot_acc/<geometry_type>/<coordinate_surface>/<slot>` first. Any `compact/coord_slot/<slot>/*` keys are optional dashboard aliases only and must be registered through the metric-event bridge with identity tests for slot, geometry type, coordinate surface, metric surface, and zero-denominator behavior.
 
 Potential files:
 
@@ -418,7 +454,7 @@ Potential files:
 
 Required before implementation:
 
-- Prove slot labels `x1`, `y1`, `x2`, `y2` survive all relevant dataset/collator/loss paths.
+- Prove slot labels `x1`, `y1`, `x2`, `y2` survive all relevant IR/render/tokenization/dataset/collator/loss paths.
 - Prove numeric token error is only computed on a valid coord-token surface.
 - Add tests for raw-text tokenization surfaces where numeric coord error must be omitted.
 
@@ -477,10 +513,12 @@ During coding:
 - Write tests first for each metric family.
 - Use existing logits only.
 - Preserve existing public keys.
-- Add only explicit public metrics.
+- Add compact metrics as typed `MetricEvent`s plus registered aliases only; do not add direct-scalar compact metric side channels.
+- Add set-continuation metrics as explicit flat allow-listed `setcont/rmp/*` keys only; do not migrate set-continuation to `MetricEvent` in Phase 1.
 - Keep count denominators visible.
 - Omit zero-denominator means/rates.
 - Preserve legacy zero-denominator behavior for legacy keys while applying the stricter v3 behavior to new `setcont/rmp/*` keys.
+- Use the registered detection sidecar stripping boundary before model forward.
 
 After coding, with user permission to run tests:
 

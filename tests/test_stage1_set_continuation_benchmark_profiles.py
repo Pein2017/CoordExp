@@ -183,7 +183,7 @@ def test_production_profile_enables_support_weighted_rmp_ce() -> None:
     assert pem.rho is None
     assert pem.log_rho is None
     assert pem.threshold_calibration is None
-    assert sc.metric_schema_version == "stage1_set_continuation_metrics_v2"
+    assert sc.metric_schema_version == "stage1_set_continuation_metrics_v3"
     assert cfg.deepspeed is not None
     assert cfg.deepspeed.enabled is False
 
@@ -296,7 +296,7 @@ def test_effective_runtime_records_production_set_continuation_provenance() -> N
         "reason": "independent_candidate_rows_do_not_share_candidate_sequence",
     }
     assert sc_runtime["prefix_gradient"] == "non_detached_recomputed_per_branch"
-    assert sc_runtime["metric_schema_version"] == "stage1_set_continuation_metrics_v2"
+    assert sc_runtime["metric_schema_version"] == "stage1_set_continuation_metrics_v3"
     assert sc_runtime["positive_evidence_margin"] == {
         "objective": "disabled",
         "threshold_space": "full_entry_logZ",
@@ -339,7 +339,7 @@ def test_experiment_manifest_mirrors_production_runtime_summary(tmp_path: Path) 
             "prefix_gradient": "non_detached_recomputed_per_branch",
             "collator_path": "src.data_collators.stage1_set_continuation_collator.build_stage1_set_continuation_collator",
             "packing_policy": {"training.packing": "rejected"},
-            "metric_schema_version": "stage1_set_continuation_metrics_v2",
+            "metric_schema_version": "stage1_set_continuation_metrics_v3",
         },
     }
 

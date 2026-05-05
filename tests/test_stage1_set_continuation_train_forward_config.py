@@ -1,8 +1,15 @@
 from __future__ import annotations
 
+from types import SimpleNamespace
+
 import pytest
 
 from src.config.schema import PromptOverrides, TrainingConfig
+from src.sft import (
+    EncodedSampleCacheRuntimeConfig,
+    PackingRuntimeConfig,
+    _build_effective_runtime_payload,
+)
 
 
 def _payload() -> dict:
@@ -170,6 +177,46 @@ def test_train_forward_accepts_padding_free_packed_branch_runtime() -> None:
     assert train_forward.branch_runtime.mode == "padding_free_packed"
     assert train_forward.logits.mode == "full"
     assert train_forward.ddp_sync.candidate_padding == "none"
+
+
+def test_effective_runtime_labels_padding_free_packed_branch_runtime() -> None:
+    payload = _payload()
+    payload["training"]["ddp_broadcast_buffers"] = False
+    payload["custom"]["stage1_set_continuation"]["train_forward"] = {
+        "branch_runtime": {"mode": "padding_free_packed"},
+        "logits": {"mode": "full"},
+        "ddp_sync": {"candidate_padding": "none"},
+    }
+    cfg = TrainingConfig.from_mapping(payload, PromptOverrides())
+
+    runtime = _build_effective_runtime_payload(
+        training_config=cfg,
+        train_args=SimpleNamespace(
+            output_dir="out",
+            logging_dir="logs",
+            run_name="unit",
+            seed=17,
+            per_device_train_batch_size=1,
+            per_device_eval_batch_size=1,
+            gradient_accumulation_steps=128,
+            max_steps=-1,
+            num_train_epochs=1,
+        ),
+        trainer_variant=cfg.custom.trainer_variant,
+        dataset_seed=17,
+        checkpoint_mode="artifact_only",
+        packing_cfg=PackingRuntimeConfig(enabled=False),
+        encoded_sample_cache_cfg=EncodedSampleCacheRuntimeConfig(enabled=False),
+        train_jsonl=cfg.custom.train_jsonl,
+        val_jsonl=cfg.custom.val_jsonl,
+        pipeline_manifest={"checksum": "abc123"},
+    )
+
+    branch_budget = runtime["stage1_set_continuation"]["realized_branch_token_budget"]
+    assert (
+        branch_budget["v1_execution"]
+        == "padding_free_packed_full_suffix_rows_no_padding_no_prefix_cache"
+    )
 
 
 def test_padding_free_packed_rejects_supervised_suffix_logits() -> None:

@@ -122,6 +122,13 @@ def test_recursive_detection_ce_mixin_owns_forward_and_strips_sidecar() -> None:
     assert trainer.custom_metrics["train"]["loss/recursive_detection_ce"].values[-1] == pytest.approx(
         expected.item()
     )
+    logged_keys = set(trainer.custom_metrics["train"].keys())
+    assert "batch_loss" not in logged_keys
+    assert "batch_size" not in logged_keys
+    assert not any(key.startswith("compact/") for key in logged_keys)
+    assert "detection_sequence/schema/token_acc/full_vocab/top1" in logged_keys
+    assert "detection_sequence/objective/recursive_detection_ce/loss_per_sample" in logged_keys
+    assert "detection_sequence/objective/recursive_detection_ce/batch_size" in logged_keys
 
 
 def test_recursive_detection_ce_mixin_uses_public_trie_weight_names() -> None:

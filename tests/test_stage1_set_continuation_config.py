@@ -121,7 +121,7 @@ def test_stage1_set_continuation_parses_successfully() -> None:
     assert stage1_cfg.objective.mode == "candidate_balanced"
     assert stage1_cfg.objective.suffix_order == "random"
     assert stage1_cfg.positive_evidence_margin.threshold_calibration == "calib-v1"
-    assert stage1_cfg.metric_schema_version == "stage1_set_continuation_metrics_v2"
+    assert stage1_cfg.metric_schema_version == "stage1_set_continuation_metrics_v3"
 
 
 def test_training_config_accepts_compact_detection_sequence_format() -> None:

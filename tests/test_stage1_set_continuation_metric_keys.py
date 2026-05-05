@@ -5,12 +5,47 @@ from pathlib import Path
 
 from src.trainers.stage1_set_continuation.metrics import (
     EMITTED_STAGE1_SET_CONTINUATION_METRICS,
+    STAGE1_SET_CONTINUATION_METRIC_SCHEMA_VERSION,
+    numeric_metric_payload,
 )
 
 
 _HELPERS = runpy.run_path(
     str(Path(__file__).with_name("test_stage1_set_continuation_trainer_smoke.py"))
 )
+
+PHASE1_SETCONT_RMP_V3_KEYS = {
+    "setcont/rmp/branch_node_count",
+    "setcont/rmp/valid_child_mass_mean",
+    "setcont/rmp/valid_child_mass_p10",
+    "setcont/rmp/invalid_child_mass_mean",
+    "setcont/rmp/valid_invalid_margin_mean",
+    "setcont/rmp/top1_invalid_rate",
+    "setcont/rmp/top1_valid_not_teacher_rate",
+    "setcont/rmp/positive_child_rank_mean",
+    "setcont/rmp/teacher_path_child_prob_mean",
+    "setcont/rmp/teacher_path_child_rank_mean",
+    "setcont/rmp/valid_child_effective_count_mean",
+    "setcont/rmp/effective_count_node_count",
+    "setcont/rmp/balance_node_count",
+    "setcont/rmp/balance_kl_mean",
+    "setcont/rmp/support_loss_desc_text_mean",
+    "setcont/rmp/support_loss_coord_mean",
+    "setcont/rmp/support_loss_structural_mean",
+    "setcont/rmp/support_loss_other_mean",
+    "setcont/rmp/balance_kl_desc_text_mean",
+    "setcont/rmp/balance_kl_coord_mean",
+    "setcont/rmp/balance_kl_structural_mean",
+    "setcont/rmp/balance_kl_other_mean",
+    "setcont/rmp/desc_text_branch_node_count",
+    "setcont/rmp/coord_branch_node_count",
+    "setcont/rmp/structural_branch_node_count",
+    "setcont/rmp/other_branch_node_count",
+    "setcont/rmp/desc_text_balance_node_count",
+    "setcont/rmp/coord_balance_node_count",
+    "setcont/rmp/structural_balance_node_count",
+    "setcont/rmp/other_balance_node_count",
+}
 
 
 def test_set_continuation_emits_train_forward_runtime_metric_keys() -> None:
@@ -126,3 +161,46 @@ def test_set_continuation_emits_compact_entry_trie_rmp_metric_keys() -> None:
         "rmp/valid_child_top1_acc",
         "rmp/gt_count_ge7_samples",
     }.issubset(EMITTED_STAGE1_SET_CONTINUATION_METRICS)
+
+
+def test_set_continuation_metric_schema_v3_allow_lists_phase1_rmp_keys() -> None:
+    assert (
+        STAGE1_SET_CONTINUATION_METRIC_SCHEMA_VERSION
+        == "stage1_set_continuation_metrics_v3"
+    )
+    assert PHASE1_SETCONT_RMP_V3_KEYS.issubset(
+        EMITTED_STAGE1_SET_CONTINUATION_METRICS
+    )
+
+
+def test_set_continuation_numeric_payload_preserves_v3_keys_without_internal_leaks() -> None:
+    source = {
+        key: float(index)
+        for index, key in enumerate(sorted(PHASE1_SETCONT_RMP_V3_KEYS), start=1)
+    }
+    source.update(
+        {
+            "loss/rmp": 0.25,
+            "rmp/valid_child_mass_mean": 0.75,
+            "mp/num_candidates_scored": 3,
+            "stop/p_close_start_when_remaining_exists": 0.1,
+            "batch_loss": 9.0,
+            "batch_size": 2,
+            "setcont/rmp/private_scratch": 1.0,
+            "setcont/rmp/non_numeric": "not-a-scalar",
+            "setcont/rmp/not_finite": float("nan"),
+        }
+    )
+
+    payload = numeric_metric_payload(source)
+
+    assert PHASE1_SETCONT_RMP_V3_KEYS.issubset(payload)
+    assert payload["loss/rmp"] == 0.25
+    assert payload["rmp/valid_child_mass_mean"] == 0.75
+    assert payload["mp/num_candidates_scored"] == 3.0
+    assert payload["stop/p_close_start_when_remaining_exists"] == 0.1
+    assert "batch_loss" not in payload
+    assert "batch_size" not in payload
+    assert "setcont/rmp/private_scratch" not in payload
+    assert "setcont/rmp/non_numeric" not in payload
+    assert "setcont/rmp/not_finite" not in payload

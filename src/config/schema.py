@@ -2021,7 +2021,7 @@ class Stage1SetContinuationConfig:
     train_forward: Stage1SetContinuationTrainForwardConfig = field(
         default_factory=Stage1SetContinuationTrainForwardConfig
     )
-    metric_schema_version: str = "stage1_set_continuation_metrics_v2"
+    metric_schema_version: str = "stage1_set_continuation_metrics_v3"
 
     @classmethod
     def from_mapping(cls, payload: Any) -> "Stage1SetContinuationConfig":

@@ -7,7 +7,7 @@ from typing import Any
 from src.metrics.reporter import SwiftMetricReporter
 
 
-STAGE1_SET_CONTINUATION_METRIC_SCHEMA_VERSION = "stage1_set_continuation_metrics_v2"
+STAGE1_SET_CONTINUATION_METRIC_SCHEMA_VERSION = "stage1_set_continuation_metrics_v3"
 
 EMITTED_STAGE1_SET_CONTINUATION_METRICS = {
     "loss/candidate_balanced",
@@ -70,6 +70,36 @@ EMITTED_STAGE1_SET_CONTINUATION_METRICS = {
     "rmp/teacher_branch_top1_acc",
     "rmp/valid_child_top1_acc",
     "rmp/gt_count_ge7_samples",
+    "setcont/rmp/branch_node_count",
+    "setcont/rmp/valid_child_mass_mean",
+    "setcont/rmp/valid_child_mass_p10",
+    "setcont/rmp/invalid_child_mass_mean",
+    "setcont/rmp/valid_invalid_margin_mean",
+    "setcont/rmp/top1_invalid_rate",
+    "setcont/rmp/top1_valid_not_teacher_rate",
+    "setcont/rmp/positive_child_rank_mean",
+    "setcont/rmp/teacher_path_child_prob_mean",
+    "setcont/rmp/teacher_path_child_rank_mean",
+    "setcont/rmp/valid_child_effective_count_mean",
+    "setcont/rmp/effective_count_node_count",
+    "setcont/rmp/balance_node_count",
+    "setcont/rmp/balance_kl_mean",
+    "setcont/rmp/support_loss_desc_text_mean",
+    "setcont/rmp/support_loss_coord_mean",
+    "setcont/rmp/support_loss_structural_mean",
+    "setcont/rmp/support_loss_other_mean",
+    "setcont/rmp/balance_kl_desc_text_mean",
+    "setcont/rmp/balance_kl_coord_mean",
+    "setcont/rmp/balance_kl_structural_mean",
+    "setcont/rmp/balance_kl_other_mean",
+    "setcont/rmp/desc_text_branch_node_count",
+    "setcont/rmp/coord_branch_node_count",
+    "setcont/rmp/structural_branch_node_count",
+    "setcont/rmp/other_branch_node_count",
+    "setcont/rmp/desc_text_balance_node_count",
+    "setcont/rmp/coord_balance_node_count",
+    "setcont/rmp/structural_balance_node_count",
+    "setcont/rmp/other_balance_node_count",
     "stop/p_close_start_when_remaining_exists",
     "stop/p_continue_start_when_remaining_exists",
     "stop/p_close_start_when_remaining_empty",

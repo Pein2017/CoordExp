@@ -5,6 +5,7 @@ import math
 import pytest
 import torch
 
+import src.detection.loss as loss_module
 from src.detection.loss import (
     RecursiveDetectionLossWeights,
     compute_recursive_detection_ce_batch_loss,
@@ -18,6 +19,7 @@ from src.detection.objective import (
     TrieBranchTarget,
 )
 from src.detection.tokenization import TokenRole
+from src.metrics.events import flatten_metric_events, reduce_metric_events
 
 
 def _state_weighting(profile_id: str = "uniform_permutation") -> StateWeightingDiagnostics:
@@ -35,16 +37,17 @@ def _hard_target(
     *,
     position: int,
     teacher_token_id: int,
-    semantic_role: SemanticRole = SemanticRole.OBJECT_CONTROL,
+    semantic_role: SemanticRole | str | None = SemanticRole.OBJECT_CONTROL,
     state_weight: float = 1.0,
     loss_atom_id: str | None = None,
+    object_instance_id: str | None = None,
 ) -> TokenTarget:
     return TokenTarget(
         position=position,
         teacher_token_id=teacher_token_id,
         kind="hard_ce",
         trie_branch_targets=(),
-        object_instance_id=None,
+        object_instance_id=object_instance_id,
         token_role=TokenRole.ASSISTANT,
         state_weight=state_weight,
         semantic_role=semantic_role,
@@ -219,6 +222,310 @@ def test_bfloat16_logits_are_upcast_for_stable_loss_computation() -> None:
     result.loss.backward()
     assert logits.grad is not None
     assert torch.isfinite(logits.grad).all()
+
+
+def test_recursive_detection_metrics_map_semantic_roles_to_public_span_categories() -> None:
+    roles_and_segments = (
+        (SemanticRole.SCHEMA_CONTROL, "schema"),
+        (SemanticRole.DESC_IDENTITY, "description"),
+        (SemanticRole.BBOX_COORD, "coordinate"),
+        (SemanticRole.ENTRY_TRIE_DECISION, "object_control"),
+        (SemanticRole.OBJECT_CONTROL, "object_control"),
+        (SemanticRole.SEPARATOR_CONTINUE, "separator"),
+        (SemanticRole.TERMINAL_STOP, "stop"),
+        (SemanticRole.CHAT_STOP, "stop"),
+        (None, "other"),
+        ("future_role", "other"),
+    )
+    logits = torch.tensor(
+        [
+            [4.0, 1.0, 0.0, -1.0, -2.0, -3.0],
+            [0.0, 5.0, 1.0, -1.0, -2.0, -3.0],
+            [0.0, 1.0, 6.0, -1.0, -2.0, -3.0],
+            [0.0, 1.0, 2.0, 7.0, -2.0, -3.0],
+            [0.0, 1.0, 2.0, -1.0, 8.0, -3.0],
+            [0.0, 1.0, 2.0, -1.0, -2.0, 9.0],
+            [10.0, 1.0, 2.0, -1.0, -2.0, -3.0],
+            [0.0, 11.0, 2.0, -1.0, -2.0, -3.0],
+            [0.0, 1.0, 12.0, -1.0, -2.0, -3.0],
+            [0.0, 1.0, 2.0, 13.0, -2.0, -3.0],
+        ],
+        dtype=torch.float32,
+    )
+    token_targets = tuple(
+        _hard_target(
+            position=index,
+            teacher_token_id=(index - 1) % logits.shape[-1],
+            semantic_role=role,
+            loss_atom_id=f"atom-{index}",
+        )
+        for index, (role, _) in enumerate(roles_and_segments, start=1)
+    )
+    targets = _targets(token_targets=token_targets)
+
+    result = compute_recursive_detection_ce_batch_loss(logits=logits, targets=(targets,))
+
+    denominators = {
+        event.key: event.denominator
+        for event in result.metric_events
+        if event.key.endswith("/token_ce/full_vocab")
+    }
+    assert denominators["detection_sequence/schema/token_ce/full_vocab"] == pytest.approx(1.0)
+    assert denominators["detection_sequence/description/token_ce/full_vocab"] == pytest.approx(1.0)
+    assert denominators["detection_sequence/coordinate/token_ce/full_vocab"] == pytest.approx(1.0)
+    assert denominators["detection_sequence/object_control/token_ce/full_vocab"] == pytest.approx(2.0)
+    assert denominators["detection_sequence/separator/token_ce/full_vocab"] == pytest.approx(1.0)
+    assert denominators["detection_sequence/stop/token_ce/full_vocab"] == pytest.approx(2.0)
+    assert denominators["detection_sequence/other/token_ce/full_vocab"] == pytest.approx(2.0)
+    assert all("/desc_text/" not in event.key for event in result.metric_events)
+    assert all("/coord/" not in event.key for event in result.metric_events)
+
+
+def test_recursive_detection_metrics_split_schema_desc_coord_and_object_spans() -> None:
+    logits = torch.tensor(
+        [
+            [0.0, 0.2, 5.0, -1.0, -2.0, -3.0, -4.0],
+            [6.0, 5.0, 4.0, 3.0, 2.0, 1.0, 0.0],
+            [6.0, 5.0, 4.0, 3.0, 2.5, 2.0, 1.0],
+            [0.0, 1.0, 2.0, 6.0, -1.0, -2.0, -3.0],
+        ],
+        dtype=torch.float32,
+    )
+    targets = _targets(
+        token_targets=(
+            _hard_target(
+                position=1,
+                teacher_token_id=2,
+                semantic_role=SemanticRole.SCHEMA_CONTROL,
+            ),
+            _hard_target(
+                position=2,
+                teacher_token_id=6,
+                semantic_role=SemanticRole.DESC_IDENTITY,
+            ),
+            _hard_target(
+                position=3,
+                teacher_token_id=4,
+                semantic_role=SemanticRole.BBOX_COORD,
+            ),
+            _hard_target(
+                position=4,
+                teacher_token_id=3,
+                semantic_role=SemanticRole.OBJECT_CONTROL,
+            ),
+        )
+    )
+
+    result = compute_recursive_detection_ce_batch_loss(logits=logits, targets=(targets,))
+    reduced = reduce_metric_events(result.metric_events)
+
+    assert reduced["detection_sequence/schema/token_acc/full_vocab/top1"] == pytest.approx(1.0)
+    assert reduced["detection_sequence/description/token_acc/full_vocab/top1"] == pytest.approx(0.0)
+    assert reduced["detection_sequence/description/token_acc/full_vocab/top5"] == pytest.approx(0.0)
+    assert reduced["detection_sequence/coordinate/token_acc/full_vocab/top1"] == pytest.approx(0.0)
+    assert reduced["detection_sequence/coordinate/token_acc/full_vocab/top5"] == pytest.approx(1.0)
+    assert reduced["detection_sequence/object_control/token_acc/full_vocab/top1"] == pytest.approx(1.0)
+    expected_description_ce = -torch.log_softmax(logits[1], dim=-1)[6]
+    assert reduced["detection_sequence/description/token_ce/full_vocab"] == pytest.approx(
+        expected_description_ce.item()
+    )
+
+
+def test_recursive_detection_object_exact_metrics_use_object_instance_id() -> None:
+    logits = torch.tensor(
+        [
+            [4.0, 1.0, 0.0],
+            [0.0, 4.0, 1.0],
+            [0.0, 1.0, 4.0],
+            [4.0, 1.0, 0.0],
+        ],
+        dtype=torch.float32,
+    )
+    token_targets = (
+        _hard_target(
+            position=1,
+            teacher_token_id=0,
+            semantic_role=SemanticRole.DESC_IDENTITY,
+            loss_atom_id="a-desc",
+        ),
+        _hard_target(
+            position=2,
+            teacher_token_id=1,
+            semantic_role=SemanticRole.BBOX_COORD,
+            loss_atom_id="a-box",
+        ),
+        _hard_target(
+            position=3,
+            teacher_token_id=2,
+            semantic_role=SemanticRole.DESC_IDENTITY,
+            loss_atom_id="b-desc",
+        ),
+        _hard_target(
+            position=4,
+            teacher_token_id=2,
+            semantic_role=SemanticRole.BBOX_COORD,
+            loss_atom_id="b-box",
+        ),
+    )
+    targets = _targets(
+        token_targets=token_targets,
+        loss_atoms=(
+            LossAtom(
+                atom_id="a-desc",
+                semantic_role=SemanticRole.DESC_IDENTITY,
+                token_positions=(1,),
+                object_instance_id="object-a",
+                object_index=0,
+            ),
+            LossAtom(
+                atom_id="a-box",
+                semantic_role=SemanticRole.BBOX_COORD,
+                token_positions=(2,),
+                object_instance_id="object-a",
+                object_index=0,
+            ),
+            LossAtom(
+                atom_id="b-desc",
+                semantic_role=SemanticRole.DESC_IDENTITY,
+                token_positions=(3,),
+                object_instance_id="object-b",
+                object_index=0,
+            ),
+            LossAtom(
+                atom_id="b-box",
+                semantic_role=SemanticRole.BBOX_COORD,
+                token_positions=(4,),
+                object_instance_id="object-b",
+                object_index=0,
+            ),
+        ),
+    )
+
+    result = compute_recursive_detection_ce_batch_loss(logits=logits, targets=(targets,))
+    reduced = reduce_metric_events(result.metric_events)
+
+    assert reduced["detection_sequence/object_entry/exact_sequence_match/object_entry"] == pytest.approx(0.5)
+
+
+def test_recursive_detection_object_exact_metrics_distinguish_token_from_entry_correctness() -> None:
+    logits = torch.tensor(
+        [
+            [4.0, 1.0, 0.0],
+            [0.0, 4.0, 1.0],
+            [0.0, 1.0, 4.0],
+            [4.0, 1.0, 0.0],
+        ],
+        dtype=torch.float32,
+    )
+    targets = _targets(
+        token_targets=(
+            _hard_target(
+                position=1,
+                teacher_token_id=0,
+                semantic_role=SemanticRole.DESC_IDENTITY,
+                object_instance_id="object-a",
+            ),
+            _hard_target(
+                position=2,
+                teacher_token_id=1,
+                semantic_role=SemanticRole.DESC_IDENTITY,
+                object_instance_id="object-a",
+            ),
+            _hard_target(
+                position=3,
+                teacher_token_id=2,
+                semantic_role=SemanticRole.DESC_IDENTITY,
+                object_instance_id="object-b",
+            ),
+            _hard_target(
+                position=4,
+                teacher_token_id=2,
+                semantic_role=SemanticRole.DESC_IDENTITY,
+                object_instance_id="object-b",
+            ),
+        )
+    )
+
+    result = compute_recursive_detection_ce_batch_loss(logits=logits, targets=(targets,))
+    reduced = reduce_metric_events(result.metric_events)
+
+    assert reduced["detection_sequence/description/token_acc/full_vocab/top1"] == pytest.approx(0.75)
+    assert reduced["detection_sequence/object_entry/exact_sequence_match/object_entry"] == pytest.approx(0.5)
+
+
+def test_recursive_detection_object_exact_metric_omits_flat_rate_when_no_object_ids() -> None:
+    logits = torch.tensor([[4.0, 1.0, 0.0]], dtype=torch.float32)
+    targets = _targets(
+        token_targets=(
+            _hard_target(
+                position=1,
+                teacher_token_id=0,
+                semantic_role=SemanticRole.SCHEMA_CONTROL,
+            ),
+        )
+    )
+
+    result = compute_recursive_detection_ce_batch_loss(logits=logits, targets=(targets,))
+    object_events = [
+        event
+        for event in result.metric_events
+        if event.key == "detection_sequence/object_entry/exact_sequence_match/object_entry"
+    ]
+    flat = flatten_metric_events(result.metric_events)
+
+    assert object_events
+    assert object_events[-1].denominator == pytest.approx(0.0)
+    assert "detection_sequence/object_entry/exact_sequence_match/object_entry" not in flat
+    assert not any(key.startswith("compact/") for key in flat)
+
+
+def test_recursive_detection_metric_summarization_runs_without_grad(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    grad_enabled_flags: list[bool] = []
+    input_requires_grad_flags: list[bool] = []
+    original_log_softmax = loss_module.F.log_softmax
+
+    def _recording_log_softmax(input_tensor: torch.Tensor, *args, **kwargs):
+        grad_enabled_flags.append(torch.is_grad_enabled())
+        input_requires_grad_flags.append(bool(input_tensor.requires_grad))
+        return original_log_softmax(input_tensor, *args, **kwargs)
+
+    monkeypatch.setattr(loss_module.F, "log_softmax", _recording_log_softmax)
+    logits = torch.tensor(
+        [
+            [4.0, 1.0, 0.0],
+            [0.0, 4.0, 1.0],
+        ],
+        dtype=torch.float32,
+        requires_grad=True,
+    )
+    targets = _targets(
+        token_targets=(
+            _hard_target(
+                position=1,
+                teacher_token_id=0,
+                semantic_role=SemanticRole.DESC_IDENTITY,
+                object_instance_id="object-a",
+            ),
+            _hard_target(
+                position=2,
+                teacher_token_id=1,
+                semantic_role=SemanticRole.BBOX_COORD,
+                object_instance_id="object-a",
+            ),
+        )
+    )
+
+    result = compute_recursive_detection_ce_batch_loss(logits=logits, targets=(targets,))
+
+    assert result.loss.requires_grad
+    assert any(input_requires_grad_flags)
+    assert grad_enabled_flags
+    assert all(flag is False for flag in grad_enabled_flags[2:])
+    for event in result.metric_events:
+        for value in (event.numerator, event.denominator, event.value):
+            assert not isinstance(value, torch.Tensor)
 
 
 @pytest.mark.parametrize(

@@ -651,6 +651,10 @@ def _build_benchmark_runtime_payload(
         branch_execution_label = "smart_batched_exact_no_prefix_cache"
     elif branch_runtime_mode == "checkpointed_exact":
         branch_execution_label = "checkpointed_exact_recompute_no_prefix_cache"
+    elif branch_runtime_mode == "padding_free_packed":
+        branch_execution_label = (
+            "padding_free_packed_full_suffix_rows_no_padding_no_prefix_cache"
+        )
     elif logits_mode == "supervised_suffix" and ddp_candidate_padding == "none":
         branch_execution_label = (
             "retained_graph_suffix_logits_no_ddp_padding_no_prefix_cache"
@@ -691,7 +695,7 @@ def _build_benchmark_runtime_payload(
         "prefix_gradient": "non_detached_recomputed_per_branch",
         "metric_schema_version": str(
             getattr(sc_cfg, "metric_schema_version", "")
-            or "stage1_set_continuation_metrics_v2"
+            or "stage1_set_continuation_metrics_v3"
         ),
         "subset_sampling": _config_to_mapping(subset_sampling),
         "structural_close": _config_to_mapping(

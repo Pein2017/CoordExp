@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import copy
+import math
 
 import pytest
 import torch
@@ -134,6 +135,48 @@ def _two_object_suffix_case() -> tuple[torch.Tensor, tuple[FullSuffixTargetStep,
     return labels, steps
 
 
+def _competition_rank(scores: torch.Tensor, target_score: torch.Tensor) -> float:
+    return float((scores > target_score).sum().item() + 1)
+
+
+def _expected_branch_metrics(
+    logits: torch.Tensor,
+    *,
+    valid_ids: tuple[int, ...],
+    target_probs: tuple[float, ...],
+    teacher_id: int,
+) -> dict[str, float]:
+    eps = 1e-12
+    log_probs = torch.log_softmax(logits.float(), dim=-1)
+    probs = torch.exp(log_probs)
+    valid_tensor = torch.tensor(valid_ids, dtype=torch.long)
+    q = torch.tensor(target_probs, dtype=torch.float32)
+    valid_probs = probs.index_select(dim=-1, index=valid_tensor)
+    valid_mass = float(valid_probs.sum().item())
+    invalid_mass = max(0.0, 1.0 - valid_mass)
+    p_valid = valid_probs / valid_mass
+    target_entropy = float(-(q * torch.log(q.clamp_min(eps))).sum().item())
+    balance_ce = float(-(q * torch.log(p_valid.clamp_min(eps))).sum().item())
+    effective_entropy = -(
+        p_valid * torch.log(p_valid.clamp_min(eps))
+    ).sum()
+    return {
+        "valid_mass": valid_mass,
+        "invalid_mass": invalid_mass,
+        "margin": math.log(valid_mass + eps) - math.log(invalid_mass + eps),
+        "support": float(-torch.logsumexp(log_probs.index_select(dim=-1, index=valid_tensor), dim=-1).item()),
+        "balance_ce": balance_ce,
+        "balance_kl": balance_ce - target_entropy,
+        "teacher_prob": float(probs[int(teacher_id)].item()),
+        "teacher_rank": _competition_rank(log_probs, log_probs[int(teacher_id)]),
+        "positive_rank": _competition_rank(
+            log_probs,
+            log_probs.index_select(dim=-1, index=valid_tensor).max(),
+        ),
+        "effective_count": float(torch.exp(effective_entropy).item()),
+    }
+
+
 def test_recursive_entry_steps_update_remaining_after_each_emitted_object() -> None:
     entries = {
         0: EntryTrieCandidate(
@@ -174,6 +217,252 @@ def test_recursive_entry_steps_update_remaining_after_each_emitted_object() -> N
     }
     assert not steps[4].is_branch
     assert steps[4].active_object_count == 1
+
+
+def test_full_suffix_branch_metrics_distinguish_support_mass_balance_and_ranks() -> None:
+    logits = torch.full((1, 6, 50), -4.0)
+    labels = torch.tensor([[0, 10, 20, 30, 41, 5]], dtype=torch.long)
+    branch_specs = (
+        {
+            "label_position": 1,
+            "teacher": 10,
+            "token_type": "text",
+            "targets": ((10, 0.25), (11, 0.75)),
+            "values": {9: 6.0, 10: 1.0, 11: 2.0},
+            "bucket": "desc_text",
+        },
+        {
+            "label_position": 2,
+            "teacher": 20,
+            "token_type": "coord",
+            "targets": ((20, 0.5), (21, 0.5)),
+            "values": {20: 3.0, 21: 5.0},
+            "bucket": "coord",
+        },
+        {
+            "label_position": 3,
+            "teacher": 30,
+            "token_type": "structural",
+            "targets": ((30, 0.5), (31, 0.5)),
+            "values": {30: 4.0, 31: 2.0},
+            "bucket": "structural",
+        },
+        {
+            "label_position": 4,
+            "teacher": 41,
+            "token_type": "unknown",
+            "targets": ((40, 0.5), (41, 0.5)),
+            "values": {40: 5.0, 41: 4.0},
+            "bucket": "other",
+        },
+    )
+    steps: list[FullSuffixTargetStep] = []
+    expected_by_bucket: dict[str, dict[str, float]] = {}
+    expected_values: list[dict[str, float]] = []
+    for spec in branch_specs:
+        logit_index = int(spec["label_position"]) - 1
+        for token_id, value in spec["values"].items():
+            logits[0, logit_index, int(token_id)] = float(value)
+        targets = tuple(spec["targets"])
+        steps.append(
+            FullSuffixTargetStep(
+                row_index=0,
+                label_position=int(spec["label_position"]),
+                teacher_token_id=int(spec["teacher"]),
+                token_type=str(spec["token_type"]),
+                phase="entry",
+                targets=targets,
+                active_object_count=2,
+            )
+        )
+        expected = _expected_branch_metrics(
+            logits[0, logit_index],
+            valid_ids=tuple(int(token_id) for token_id, _ in targets),
+            target_probs=tuple(float(probability) for _, probability in targets),
+            teacher_id=int(spec["teacher"]),
+        )
+        expected_values.append(expected)
+        expected_by_bucket[str(spec["bucket"])] = expected
+
+    result = compute_full_suffix_loss(
+        logits=logits,
+        labels=labels,
+        steps=tuple(steps),
+    )
+    metrics = result.metrics
+
+    assert metrics["setcont/rmp/branch_node_count"] == pytest.approx(4.0)
+    assert metrics["setcont/rmp/desc_text_branch_node_count"] == pytest.approx(1.0)
+    assert metrics["setcont/rmp/coord_branch_node_count"] == pytest.approx(1.0)
+    assert metrics["setcont/rmp/structural_branch_node_count"] == pytest.approx(1.0)
+    assert metrics["setcont/rmp/other_branch_node_count"] == pytest.approx(1.0)
+    assert metrics["setcont/rmp/balance_node_count"] == pytest.approx(4.0)
+    assert metrics["setcont/rmp/desc_text_balance_node_count"] == pytest.approx(1.0)
+    assert metrics["setcont/rmp/coord_balance_node_count"] == pytest.approx(1.0)
+    assert metrics["setcont/rmp/structural_balance_node_count"] == pytest.approx(1.0)
+    assert metrics["setcont/rmp/other_balance_node_count"] == pytest.approx(1.0)
+    assert metrics["setcont/rmp/valid_child_mass_mean"] == pytest.approx(
+        sum(value["valid_mass"] for value in expected_values) / 4
+    )
+    assert metrics["setcont/rmp/invalid_child_mass_mean"] == pytest.approx(
+        sum(value["invalid_mass"] for value in expected_values) / 4
+    )
+    assert metrics["setcont/rmp/valid_invalid_margin_mean"] == pytest.approx(
+        sum(value["margin"] for value in expected_values) / 4
+    )
+    assert metrics["setcont/rmp/valid_child_mass_p10"] == pytest.approx(
+        float(
+            torch.quantile(
+                torch.tensor([value["valid_mass"] for value in expected_values]),
+                0.10,
+            ).item()
+        )
+    )
+    assert metrics["setcont/rmp/top1_invalid_rate"] == pytest.approx(0.25)
+    assert metrics["setcont/rmp/top1_valid_not_teacher_rate"] == pytest.approx(0.5)
+    assert metrics["setcont/rmp/positive_child_rank_mean"] == pytest.approx(
+        sum(value["positive_rank"] for value in expected_values) / 4
+    )
+    assert metrics["setcont/rmp/teacher_path_child_prob_mean"] == pytest.approx(
+        sum(value["teacher_prob"] for value in expected_values) / 4
+    )
+    assert metrics["setcont/rmp/teacher_path_child_rank_mean"] == pytest.approx(
+        sum(value["teacher_rank"] for value in expected_values) / 4
+    )
+    assert metrics["setcont/rmp/valid_child_effective_count_mean"] == pytest.approx(
+        sum(value["effective_count"] for value in expected_values) / 4
+    )
+    assert metrics["setcont/rmp/effective_count_node_count"] == pytest.approx(4.0)
+    assert metrics["setcont/rmp/balance_kl_mean"] == pytest.approx(
+        sum(value["balance_kl"] for value in expected_values) / 4
+    )
+    for bucket, expected in expected_by_bucket.items():
+        assert metrics[f"setcont/rmp/support_loss_{bucket}_mean"] == pytest.approx(
+            expected["support"]
+        )
+        assert metrics[f"setcont/rmp/balance_kl_{bucket}_mean"] == pytest.approx(
+            expected["balance_kl"]
+        )
+    assert metrics["setcont/rmp/balance_kl_desc_text_mean"] != pytest.approx(
+        expected_by_bucket["desc_text"]["balance_ce"]
+    )
+    assert metrics["rmp/branch_nodes"] == pytest.approx(4.0)
+    assert "loss/rmp_branch_ce" in metrics
+
+
+def test_full_suffix_branch_metrics_effective_count_formula_and_denominator() -> None:
+    logits = torch.full((1, 4, 40), -20.0)
+    labels = torch.tensor([[0, 10, 20, 30]], dtype=torch.long)
+    steps = (
+        FullSuffixTargetStep(
+            row_index=0,
+            label_position=1,
+            teacher_token_id=10,
+            token_type="text",
+            phase="entry",
+            targets=((10, 0.5), (11, 0.5)),
+            active_object_count=2,
+        ),
+        FullSuffixTargetStep(
+            row_index=0,
+            label_position=2,
+            teacher_token_id=20,
+            token_type="coord",
+            phase="entry",
+            targets=((20, 0.5), (21, 0.5)),
+            active_object_count=2,
+        ),
+        FullSuffixTargetStep(
+            row_index=0,
+            label_position=3,
+            teacher_token_id=30,
+            token_type="structural",
+            phase="entry",
+            targets=((30, 0.5), (31, 0.5)),
+            active_object_count=2,
+        ),
+    )
+    logits[0, 0, 10] = 50.0
+    logits[0, 0, 11] = -100.0
+    logits[0, 1, 20] = 3.0
+    logits[0, 1, 21] = 3.0
+    logits[0, 2, 5] = 0.0
+    logits[0, 2, 30] = -1000.0
+    logits[0, 2, 31] = -1000.0
+
+    result = compute_full_suffix_loss(logits=logits, labels=labels, steps=steps)
+
+    assert result.metrics["setcont/rmp/branch_node_count"] == pytest.approx(3.0)
+    assert result.metrics["setcont/rmp/effective_count_node_count"] == pytest.approx(2.0)
+    assert result.metrics["setcont/rmp/valid_child_effective_count_mean"] == pytest.approx(
+        1.5,
+        abs=1e-5,
+    )
+
+
+def test_full_suffix_branch_rank_metrics_use_competition_rank_for_ties() -> None:
+    logits = torch.full((1, 2, 20), -5.0)
+    labels = torch.tensor([[0, 10]], dtype=torch.long)
+    steps = (
+        FullSuffixTargetStep(
+            row_index=0,
+            label_position=1,
+            teacher_token_id=10,
+            token_type="text",
+            phase="entry",
+            targets=((10, 0.5), (11, 0.5)),
+            active_object_count=2,
+        ),
+    )
+    logits[0, 0, 2] = 5.0
+    logits[0, 0, 3] = 4.0
+    logits[0, 0, 10] = 4.0
+    logits[0, 0, 11] = 4.0
+
+    result = compute_full_suffix_loss(logits=logits, labels=labels, steps=steps)
+
+    assert result.metrics["setcont/rmp/teacher_path_child_rank_mean"] == pytest.approx(
+        2.0
+    )
+    assert result.metrics["setcont/rmp/positive_child_rank_mean"] == pytest.approx(2.0)
+
+
+def test_full_suffix_branch_type_zero_denominator_omits_means_and_emits_counts() -> None:
+    logits = torch.zeros((1, 2, 16))
+    labels = torch.tensor([[0, 5]], dtype=torch.long)
+    steps = (
+        FullSuffixTargetStep(
+            row_index=0,
+            label_position=1,
+            teacher_token_id=5,
+            token_type="text",
+            phase="entry",
+            targets=((5, 1.0),),
+            active_object_count=1,
+        ),
+    )
+
+    result = compute_full_suffix_loss(logits=logits, labels=labels, steps=steps)
+
+    assert result.branch_tokens == 0
+    assert result.metrics["setcont/rmp/branch_node_count"] == pytest.approx(0.0)
+    assert result.metrics["setcont/rmp/effective_count_node_count"] == pytest.approx(0.0)
+    assert result.metrics["setcont/rmp/balance_node_count"] == pytest.approx(0.0)
+    for bucket in ("desc_text", "coord", "structural", "other"):
+        assert result.metrics[f"setcont/rmp/{bucket}_branch_node_count"] == pytest.approx(
+            0.0
+        )
+        assert result.metrics[f"setcont/rmp/{bucket}_balance_node_count"] == pytest.approx(
+            0.0
+        )
+        assert f"setcont/rmp/support_loss_{bucket}_mean" not in result.metrics
+        assert f"setcont/rmp/balance_kl_{bucket}_mean" not in result.metrics
+    assert "setcont/rmp/valid_child_mass_mean" not in result.metrics
+    assert "setcont/rmp/valid_child_mass_p10" not in result.metrics
+    assert "setcont/rmp/top1_invalid_rate" not in result.metrics
+    assert "setcont/rmp/valid_child_effective_count_mean" not in result.metrics
+    assert "setcont/rmp/balance_kl_mean" not in result.metrics
+    assert result.metrics["rmp/valid_child_mass_mean"] == pytest.approx(0.0)
 
 
 def test_full_suffix_loss_separates_branch_unique_boundary_close_and_eos_ce() -> None:

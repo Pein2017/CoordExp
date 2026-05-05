@@ -138,6 +138,18 @@ def _normalize_phase(value: str) -> str:
     raise ValueError(f"unsupported full-suffix target phase: {value!r}")
 
 
+_SETCONT_BRANCH_TYPES = ("desc_text", "coord", "structural", "other")
+
+
+def _setcont_branch_type(value: str) -> str:
+    normalized = _normalize_token_type(value)
+    if normalized == "text":
+        return "desc_text"
+    if normalized in {"coord", "structural"}:
+        return normalized
+    return "other"
+
+
 def _stable_seed_from_parts(seed_parts: tuple[Any, ...]) -> int:
     digest = hashlib.sha256(repr(tuple(seed_parts)).encode("utf-8")).digest()
     return int.from_bytes(digest[:8], byteorder="big", signed=False)
@@ -731,6 +743,27 @@ def _mean(total: torch.Tensor, count: int) -> torch.Tensor:
     return total / max(int(count), 1)
 
 
+def _competition_rank_for_token(
+    scores: torch.Tensor,
+    token_id: int,
+) -> torch.Tensor:
+    target_score = scores[int(token_id)]
+    return (scores > target_score).sum(dtype=torch.float32) + 1.0
+
+
+def _competition_rank_for_best_child(
+    scores: torch.Tensor,
+    valid_token_ids: torch.Tensor,
+) -> torch.Tensor:
+    valid_scores = scores.index_select(dim=-1, index=valid_token_ids)
+    best_valid_score = valid_scores.max()
+    return (scores > best_valid_score).sum(dtype=torch.float32) + 1.0
+
+
+def _clamp_tiny_negative_kl(value: torch.Tensor) -> torch.Tensor:
+    return torch.where(value > -1e-6, value.clamp_min(0.0), value)
+
+
 def compute_full_suffix_loss(
     *,
     logits: torch.Tensor,
@@ -790,6 +823,29 @@ def compute_full_suffix_loss(
         "other": zero,
     }
     branch_valid_mass_values: list[torch.Tensor] = []
+    setcont_eps = 1e-12
+    setcont_valid_mass_sum = zero
+    setcont_invalid_mass_sum = zero
+    setcont_margin_sum = zero
+    setcont_top1_invalid_sum = zero
+    setcont_top1_valid_not_teacher_sum = zero
+    setcont_positive_rank_sum = zero
+    setcont_teacher_prob_sum = zero
+    setcont_teacher_rank_sum = zero
+    setcont_effective_count_sum = zero
+    setcont_effective_count_nodes = zero
+    setcont_balance_kl_sum = zero
+    setcont_balance_nodes = 0
+    setcont_branch_type_counts = {branch_type: 0 for branch_type in _SETCONT_BRANCH_TYPES}
+    setcont_support_type_sums = {
+        branch_type: zero for branch_type in _SETCONT_BRANCH_TYPES
+    }
+    setcont_balance_type_counts = {
+        branch_type: 0 for branch_type in _SETCONT_BRANCH_TYPES
+    }
+    setcont_balance_type_sums = {
+        branch_type: zero for branch_type in _SETCONT_BRANCH_TYPES
+    }
 
     for raw_step in steps:
         step = _target_step_with_position(
@@ -840,6 +896,91 @@ def compute_full_suffix_loss(
             if top1 in valid_ids:
                 branch_valid_top1 += 1
             valid_child_total += len(valid_ids)
+            token_ids = torch.tensor(
+                [int(target.token_id) for target in step.normalized_targets],
+                dtype=torch.long,
+                device=log_probs.device,
+            )
+            target_probabilities = torch.tensor(
+                [float(target.probability) for target in step.normalized_targets],
+                dtype=torch.float32,
+                device=log_probs.device,
+            )
+            branch_probabilities = torch.exp(log_probs.detach().float())
+            valid_probabilities = branch_probabilities.index_select(
+                dim=-1,
+                index=token_ids,
+            )
+            valid_mass_value = step_loss.valid_mass.detach().float()
+            invalid_mass_value = (1.0 - valid_mass_value).clamp_min(0.0)
+            setcont_valid_mass_sum = setcont_valid_mass_sum + valid_mass_value
+            setcont_invalid_mass_sum = setcont_invalid_mass_sum + invalid_mass_value
+            setcont_margin_sum = setcont_margin_sum + torch.log(
+                valid_mass_value + setcont_eps
+            ) - torch.log(
+                invalid_mass_value + setcont_eps
+            )
+            setcont_top1_invalid_sum = setcont_top1_invalid_sum + logits.new_tensor(
+                0.0 if top1 in valid_ids else 1.0,
+                dtype=torch.float32,
+            )
+            setcont_top1_valid_not_teacher_sum = (
+                setcont_top1_valid_not_teacher_sum
+                + logits.new_tensor(
+                    (
+                        1.0
+                        if top1 in valid_ids and top1 != int(step.teacher_token_id)
+                        else 0.0
+                    ),
+                    dtype=torch.float32,
+                )
+            )
+            detached_scores = log_probs.detach().float()
+            setcont_positive_rank_sum = (
+                setcont_positive_rank_sum
+                + _competition_rank_for_best_child(detached_scores, token_ids)
+            )
+            teacher_id = int(step.teacher_token_id)
+            setcont_teacher_prob_sum = (
+                setcont_teacher_prob_sum + branch_probabilities[teacher_id]
+            )
+            setcont_teacher_rank_sum = (
+                setcont_teacher_rank_sum
+                + _competition_rank_for_token(detached_scores, teacher_id)
+            )
+            public_branch_type = _setcont_branch_type(step.token_type)
+            setcont_branch_type_counts[public_branch_type] += 1
+            setcont_support_type_sums[public_branch_type] = (
+                setcont_support_type_sums[public_branch_type]
+                + step_loss.support_loss.detach().float()
+            )
+            predicted_valid = valid_probabilities / valid_mass_value.clamp_min(
+                setcont_eps
+            )
+            valid_entropy = -(
+                predicted_valid * torch.log(predicted_valid.clamp_min(setcont_eps))
+            ).sum()
+            effective_count_mask = (valid_mass_value > setcont_eps).to(torch.float32)
+            setcont_effective_count_sum = (
+                setcont_effective_count_sum
+                + torch.exp(valid_entropy) * effective_count_mask
+            )
+            setcont_effective_count_nodes = (
+                setcont_effective_count_nodes + effective_count_mask
+            )
+            target_entropy_tensor = -(
+                target_probabilities
+                * torch.log(target_probabilities.clamp_min(setcont_eps))
+            ).sum()
+            balance_kl = _clamp_tiny_negative_kl(
+                step_loss.balance_loss.detach().float() - target_entropy_tensor
+            )
+            setcont_balance_kl_sum = setcont_balance_kl_sum + balance_kl
+            setcont_balance_nodes += 1
+            setcont_balance_type_counts[public_branch_type] += 1
+            setcont_balance_type_sums[public_branch_type] = (
+                setcont_balance_type_sums[public_branch_type] + balance_kl
+            )
             if branch_type == "coord":
                 coord_branch_count += 1
                 coord_branch_sum = coord_branch_sum + step_loss.ce_loss
@@ -931,9 +1072,81 @@ def compute_full_suffix_loss(
             _mean(text_branch_sum, text_branch_count).detach().item()
         ),
         "loss/rmp_boundary_ce": float(boundary_loss.detach().item()),
-        "loss/rmp_close_ce": float(close_loss.detach().item()),
-        "loss/rmp_eos_ce": float(eos_loss.detach().item()),
-    }
+          "loss/rmp_close_ce": float(close_loss.detach().item()),
+          "loss/rmp_eos_ce": float(eos_loss.detach().item()),
+      }
+    metrics["setcont/rmp/branch_node_count"] = float(branch_count)
+    setcont_effective_count_nodes_value = float(
+        setcont_effective_count_nodes.detach().item()
+    )
+    metrics["setcont/rmp/effective_count_node_count"] = (
+        setcont_effective_count_nodes_value
+    )
+    metrics["setcont/rmp/balance_node_count"] = float(setcont_balance_nodes)
+    for branch_type in _SETCONT_BRANCH_TYPES:
+        metrics[f"setcont/rmp/{branch_type}_branch_node_count"] = float(
+            setcont_branch_type_counts[branch_type]
+        )
+        metrics[f"setcont/rmp/{branch_type}_balance_node_count"] = float(
+            setcont_balance_type_counts[branch_type]
+        )
+    if branch_count > 0:
+        metrics.update(
+            {
+                "setcont/rmp/valid_child_mass_mean": float(
+                    (setcont_valid_mass_sum / branch_count).detach().item()
+                ),
+                "setcont/rmp/valid_child_mass_p10": valid_mass_p10,
+                "setcont/rmp/invalid_child_mass_mean": float(
+                    (setcont_invalid_mass_sum / branch_count).detach().item()
+                ),
+                "setcont/rmp/valid_invalid_margin_mean": float(
+                    (setcont_margin_sum / branch_count).detach().item()
+                ),
+                "setcont/rmp/top1_invalid_rate": float(
+                    (setcont_top1_invalid_sum / branch_count).detach().item()
+                ),
+                "setcont/rmp/top1_valid_not_teacher_rate": float(
+                    (
+                        setcont_top1_valid_not_teacher_sum / branch_count
+                    ).detach().item()
+                ),
+                "setcont/rmp/positive_child_rank_mean": float(
+                    (setcont_positive_rank_sum / branch_count).detach().item()
+                ),
+                "setcont/rmp/teacher_path_child_prob_mean": float(
+                    (setcont_teacher_prob_sum / branch_count).detach().item()
+                ),
+                "setcont/rmp/teacher_path_child_rank_mean": float(
+                    (setcont_teacher_rank_sum / branch_count).detach().item()
+                ),
+            }
+        )
+    if setcont_effective_count_nodes_value > 0:
+        metrics["setcont/rmp/valid_child_effective_count_mean"] = float(
+            (
+                setcont_effective_count_sum / setcont_effective_count_nodes
+            ).detach().item()
+        )
+    if setcont_balance_nodes > 0:
+        metrics["setcont/rmp/balance_kl_mean"] = float(
+            (setcont_balance_kl_sum / setcont_balance_nodes).detach().item()
+        )
+    for branch_type in _SETCONT_BRANCH_TYPES:
+        branch_type_count = setcont_branch_type_counts[branch_type]
+        if branch_type_count > 0:
+            metrics[f"setcont/rmp/support_loss_{branch_type}_mean"] = float(
+                (
+                    setcont_support_type_sums[branch_type] / branch_type_count
+                ).detach().item()
+            )
+        balance_type_count = setcont_balance_type_counts[branch_type]
+        if balance_type_count > 0:
+            metrics[f"setcont/rmp/balance_kl_{branch_type}_mean"] = float(
+                (
+                    setcont_balance_type_sums[branch_type] / balance_type_count
+                ).detach().item()
+            )
     return FullSuffixLossResult(
         loss=loss,
         branch_loss=branch_loss,

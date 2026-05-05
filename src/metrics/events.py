@@ -399,6 +399,11 @@ def flatten_metric_events(
     return flat
 
 
+def _require_non_empty_string(field_name: str, value: str) -> None:
+    if not isinstance(value, str) or not value:
+        raise ValueError(f"{field_name} must be a non-empty string")
+
+
 FULL_VOCAB_COORD_TOKEN_ACC_IDENTITY = MetricIdentity(
     key="coord_token_acc/full_vocab/top1",
     reducer="ratio",
@@ -451,11 +456,6 @@ def register_legacy_metric_aliases(
         FULL_VOCAB_COORD_TOKEN_ACC_TOP5_ALIASES,
     )
     return registry
-
-
-def _require_non_empty_string(field_name: str, value: str) -> None:
-    if not isinstance(value, str) or not value:
-        raise ValueError(f"{field_name} must be a non-empty string")
 
 
 def _as_float(field_name: str, value: MetricScalar) -> float:
