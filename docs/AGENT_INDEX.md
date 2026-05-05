@@ -6,7 +6,7 @@ status: canonical
 domain: repo
 summary: Agent-first retrieval guide for CoordExp documentation and research notes.
 tags: [agents, retrieval, docs]
-updated: 2026-04-29
+updated: 2026-05-02
 ---
 
 # Agent Index
@@ -28,7 +28,7 @@ Human support entrypoints:
 2. [SYSTEM_OVERVIEW.md](SYSTEM_OVERVIEW.md)
 3. [IMPLEMENTATION_MAP.md](IMPLEMENTATION_MAP.md)
 4. the relevant domain router
-5. relevant `openspec/specs/`
+5. relevant `openspec/specs/` only for stable contract semantics
    - use [`runtime-architecture-refactor-program/spec.md`](../openspec/specs/runtime-architecture-refactor-program/spec.md) for runtime structure, internal seams, and compatibility-preserving refactors
    - use [`stage2-ab-training/spec.md`](../openspec/specs/stage2-ab-training/spec.md) for active Stage-2 behavior and config contracts
 6. `progress/` only when current docs do not answer the historical or empirical question
@@ -52,8 +52,7 @@ Human support entrypoints:
   - [docs/data/PACKING.md](data/PACKING.md) for Stage-1 static-packing and hard-cap questions
 - Stage-1 training:
   - [docs/training/README.md](training/README.md)
-  - [docs/training/STAGE1_OBJECTIVE.md](training/STAGE1_OBJECTIVE.md)
-  - [docs/training/STAGE1_ET_RMP_CE.md](training/STAGE1_ET_RMP_CE.md) for the implemented ET-RMP-CE objective export and recorded artifacts
+  - [docs/training/STAGE1_OBJECTIVE.md](training/STAGE1_OBJECTIVE.md) for baseline Stage-1 behavior, ET-RMP-CE, compact recursive detection, and retired candidate-objective boundaries
   - [docs/data/PACKING.md](data/PACKING.md)
 - Stage-2 training:
   - [docs/training/README.md](training/README.md)
@@ -62,7 +61,7 @@ Human support entrypoints:
   - [`stage2-ab-training/spec.md`](../openspec/specs/stage2-ab-training/spec.md)
   - [`rollout-matching-sft/spec.md`](../openspec/specs/rollout-matching-sft/spec.md) for the supported `stage2_rollout_aligned` variant
   - [`runtime-architecture-refactor-program/spec.md`](../openspec/specs/runtime-architecture-refactor-program/spec.md)
-  - [docs/training/STAGE2_DESIGN.md](training/STAGE2_DESIGN.md) only for historical context
+  - [docs/training/STAGE2_RUNBOOK.md](training/STAGE2_RUNBOOK.md) for current behavior and historical-context pointers
 - Inference and evaluation:
   - [docs/eval/README.md](eval/README.md)
   - [docs/eval/CONTRACT.md](eval/CONTRACT.md)

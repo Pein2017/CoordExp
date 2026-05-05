@@ -22,10 +22,30 @@ from src.common.object_field_order import (
     normalize_object_field_order,
     normalize_object_ordering,
 )
+from src.common.detection_sequence import (
+    COORDJSON_FORMAT,
+    normalize_detection_sequence_format,
+)
 from src.common.geometry.bbox_parameterization import (
     AllowedBBoxFormat,
     DEFAULT_BBOX_FORMAT,
     normalize_bbox_format,
+)
+from src.tokens.roles import (
+    TokenRole,
+    TokenRoleSets,
+    normalize_token_role,
+    unique_stable_ids,
+)
+from src.tokens.qwen_native import (
+    BOX_START_TOKEN,
+    COORD_END_TOKEN,
+    COORD_START_TOKEN,
+    EXPECTED_BOX_START_ID,
+    EXPECTED_COORD_END_ID,
+    EXPECTED_COORD_START_ID,
+    EXPECTED_OBJECT_REF_START_ID,
+    OBJECT_REF_START_TOKEN,
 )
 from src.trainers.teacher_forcing.module_registry import (
     ALLOWED_DIAGNOSTIC_MODULES,
@@ -688,6 +708,241 @@ class CoordOffsetConfig:
             weight_decay=weight_decay,
             dtype=dtype,
         )
+
+
+@dataclass(frozen=True)
+class TrainableTokenRowGroupConfig:
+    role: TokenRole
+    start_token: Optional[str] = None
+    end_token: Optional[str] = None
+    tokens: tuple[str, ...] = ()
+    expected_start: Optional[int] = None
+    expected_end: Optional[int] = None
+    expected_ids: Mapping[str, int] = field(default_factory=dict)
+
+    @classmethod
+    def from_mapping(
+        cls, payload: Mapping[str, Any], *, path: str
+    ) -> "TrainableTokenRowGroupConfig":
+        if not isinstance(payload, Mapping):
+            raise TypeError(f"{path} must be a mapping")
+
+        role = normalize_token_role(payload.get("role"), path=f"{path}.role")
+        start_token_raw = payload.get("start_token")
+        end_token_raw = payload.get("end_token")
+        tokens_raw = payload.get("tokens")
+        has_range = start_token_raw is not None or end_token_raw is not None
+        has_tokens = tokens_raw is not None
+        if has_range == has_tokens:
+            raise ValueError(
+                f"{path} must provide exactly one of start_token/end_token or tokens"
+            )
+
+        start_token: Optional[str] = None
+        end_token: Optional[str] = None
+        tokens: tuple[str, ...] = ()
+        if has_range:
+            if not isinstance(start_token_raw, str) or not start_token_raw:
+                raise TypeError(f"{path}.start_token must be a non-empty string")
+            if not isinstance(end_token_raw, str) or not end_token_raw:
+                raise TypeError(f"{path}.end_token must be a non-empty string")
+            start_token = start_token_raw
+            end_token = end_token_raw
+        else:
+            if not isinstance(tokens_raw, Sequence) or isinstance(
+                tokens_raw, (str, bytes)
+            ):
+                raise TypeError(f"{path}.tokens must be a list of token strings")
+            parsed_tokens = tuple(str(token) for token in tokens_raw)
+            if not parsed_tokens or any(not token for token in parsed_tokens):
+                raise ValueError(
+                    f"{path}.tokens must contain at least one non-empty token"
+                )
+            tokens = parsed_tokens
+
+        def _parse_expected_int(key: str) -> Optional[int]:
+            raw = payload.get(key)
+            if raw is None:
+                return None
+            try:
+                return int(raw)
+            except (TypeError, ValueError) as exc:
+                raise ValueError(f"{path}.{key} must be an integer") from exc
+
+        expected_start = _parse_expected_int("expected_start")
+        expected_end = _parse_expected_int("expected_end")
+        if has_range and ((expected_start is None) != (expected_end is None)):
+            raise ValueError(
+                f"{path}.expected_start and {path}.expected_end must be provided together"
+            )
+        if (
+            has_range
+            and expected_start is not None
+            and expected_end is not None
+            and expected_end < expected_start
+        ):
+            raise ValueError(f"{path}.expected_end must be >= expected_start")
+
+        expected_ids_raw = payload.get("expected_ids", {})
+        if expected_ids_raw is None:
+            expected_ids: Mapping[str, int] = {}
+        elif not isinstance(expected_ids_raw, Mapping):
+            raise TypeError(f"{path}.expected_ids must be a mapping")
+        else:
+            expected_ids = {
+                str(token): int(token_id)
+                for token, token_id in expected_ids_raw.items()
+            }
+
+        return cls(
+            role=role,
+            start_token=start_token,
+            end_token=end_token,
+            tokens=tokens,
+            expected_start=expected_start,
+            expected_end=expected_end,
+            expected_ids=expected_ids,
+        )
+
+    def resolve_ids(self, tokenizer: Any, *, path: str) -> tuple[int, ...]:
+        if self.start_token is not None and self.end_token is not None:
+            start_id = int(tokenizer.convert_tokens_to_ids(self.start_token))
+            end_id = int(tokenizer.convert_tokens_to_ids(self.end_token))
+            if self.expected_start is not None and start_id != self.expected_start:
+                raise ValueError(
+                    f"{path}.start_token {self.start_token!r} resolved to id {start_id}, "
+                    f"expected id {self.expected_start}"
+                )
+            if self.expected_end is not None and end_id != self.expected_end:
+                raise ValueError(
+                    f"{path}.end_token {self.end_token!r} resolved to id {end_id}, "
+                    f"expected id {self.expected_end}"
+                )
+            if end_id < start_id:
+                raise ValueError(
+                    f"{path} resolved end id {end_id} before start id {start_id}"
+                )
+            return tuple(range(start_id, end_id + 1))
+
+        resolved: list[int] = []
+        for token in self.tokens:
+            token_id = int(tokenizer.convert_tokens_to_ids(token))
+            expected = self.expected_ids.get(token)
+            if expected is not None and token_id != expected:
+                raise ValueError(
+                    f"{path}.tokens token {token!r} resolved to id {token_id}, "
+                    f"expected id {expected}"
+                )
+            resolved.append(token_id)
+        return tuple(resolved)
+
+
+@dataclass(frozen=True)
+class TrainableTokenRowsConfig:
+    enabled: bool = False
+    tie_head: bool = True
+    groups: Mapping[str, TrainableTokenRowGroupConfig] = field(
+        default_factory=dict
+    )
+    embed_lr: Optional[float] = None
+    head_lr: Optional[float] = None
+    weight_decay: float = 0.0
+    dtype: Optional[str] = None
+
+    def __post_init__(self) -> None:
+        if self.weight_decay < 0:
+            raise ValueError("custom.trainable_token_rows.weight_decay must be >= 0")
+
+    @classmethod
+    def from_mapping(
+        cls,
+        payload: Optional[Mapping[str, Any]],
+        *,
+        path: str = "custom.trainable_token_rows",
+    ) -> "TrainableTokenRowsConfig":
+        if payload is None:
+            return cls()
+        if not isinstance(payload, Mapping):
+            raise TypeError(f"{path} section must be a mapping when provided")
+
+        enabled = bool(payload.get("enabled", False))
+        tie_head_raw = payload.get("tie_head", True)
+        if tie_head_raw is None:
+            tie_head = True
+        elif isinstance(tie_head_raw, bool):
+            tie_head = tie_head_raw
+        else:
+            raise TypeError(f"{path}.tie_head must be a boolean when provided")
+
+        groups_raw = payload.get("groups", {})
+        if not isinstance(groups_raw, Mapping):
+            raise TypeError(f"{path}.groups must be a mapping when provided")
+        groups = {
+            str(name): TrainableTokenRowGroupConfig.from_mapping(
+                group_payload,
+                path=f"{path}.groups.{name}",
+            )
+            for name, group_payload in groups_raw.items()
+        }
+        if enabled and not groups:
+            raise ValueError(f"{path}.enabled=true requires at least one group")
+
+        def _parse_lr(key: str) -> Optional[float]:
+            raw = payload.get(key)
+            if raw is None:
+                return None
+            try:
+                return float(raw)
+            except (TypeError, ValueError) as exc:
+                raise ValueError(f"{path}.{key} must be numeric") from exc
+
+        weight_decay_raw = payload.get("weight_decay", 0.0)
+        try:
+            weight_decay = float(weight_decay_raw)
+        except (TypeError, ValueError) as exc:
+            raise ValueError(f"{path}.weight_decay must be numeric") from exc
+        if weight_decay < 0:
+            raise ValueError(f"{path}.weight_decay must be >= 0")
+
+        dtype_raw = payload.get("dtype")
+
+        return cls(
+            enabled=enabled,
+            tie_head=tie_head,
+            groups=groups,
+            embed_lr=_parse_lr("embed_lr"),
+            head_lr=_parse_lr("head_lr"),
+            weight_decay=weight_decay,
+            dtype=str(dtype_raw) if dtype_raw is not None else None,
+        )
+
+    def resolve_role_sets(self, tokenizer: Any) -> TokenRoleSets:
+        coord_geometry: list[int] = []
+        structural_ce_only: list[int] = []
+        for name, group in self.groups.items():
+            ids = group.resolve_ids(
+                tokenizer, path=f"trainable_token_rows.groups.{name}"
+            )
+            if group.role is TokenRole.COORD_GEOMETRY:
+                coord_geometry.extend(ids)
+            elif group.role is TokenRole.STRUCTURAL_CE_ONLY:
+                structural_ce_only.extend(ids)
+            else:  # pragma: no cover - enum exhaustiveness guard
+                raise ValueError(f"Unsupported token role: {group.role}")
+
+        coord_geometry_ids = unique_stable_ids(coord_geometry)
+        structural_ce_only_ids = unique_stable_ids(structural_ce_only)
+        return TokenRoleSets(
+            coord_geometry_ids=coord_geometry_ids,
+            structural_ce_only_ids=structural_ce_only_ids,
+            trainable_row_ids=unique_stable_ids(
+                (*coord_geometry_ids, *structural_ce_only_ids)
+            ),
+            coord_loss_ids=coord_geometry_ids,
+        )
+
+    def resolve_ids(self, tokenizer: Any) -> tuple[int, ...]:
+        return self.resolve_role_sets(tokenizer).trainable_row_ids
 
 
 @dataclass(frozen=True)
@@ -1766,7 +2021,7 @@ class Stage1SetContinuationConfig:
     train_forward: Stage1SetContinuationTrainForwardConfig = field(
         default_factory=Stage1SetContinuationTrainForwardConfig
     )
-    metric_schema_version: str = "stage1_set_continuation_metrics_v2"
+    metric_schema_version: str = "stage1_set_continuation_metrics_v3"
 
     @classmethod
     def from_mapping(cls, payload: Any) -> "Stage1SetContinuationConfig":
@@ -1789,8 +2044,12 @@ class CustomConfig:
     object_field_order: ObjectFieldOrder
     bbox_format: AllowedBBoxFormat = DEFAULT_BBOX_FORMAT
     object_ordering: ObjectOrdering = "sorted"
+    detection_sequence_format: str = COORDJSON_FORMAT
     coord_tokens: CoordTokensConfig = field(default_factory=CoordTokensConfig)
     coord_offset: CoordOffsetConfig = field(default_factory=CoordOffsetConfig)
+    trainable_token_rows: TrainableTokenRowsConfig = field(
+        default_factory=TrainableTokenRowsConfig
+    )
     coord_soft_ce_w1: CoordSoftCEW1Config = field(default_factory=CoordSoftCEW1Config)
     bbox_geo: BBoxGeoConfig = field(default_factory=BBoxGeoConfig)
     bbox_size_aux: BBoxSizeAuxConfig = field(default_factory=BBoxSizeAuxConfig)
@@ -1847,6 +2106,7 @@ class CustomConfig:
             )
         if self.json_format not in ALLOWED_JSON_FORMATS:
             raise ValueError("custom.json_format must be 'standard'")
+        normalize_detection_sequence_format(self.detection_sequence_format)
         normalize_bbox_format(self.bbox_format, path="custom.bbox_format")
         if self.offline_max_pixels is not None and int(self.offline_max_pixels) <= 0:
             raise ValueError("custom.offline_max_pixels must be > 0 when provided")
@@ -1989,6 +2249,9 @@ class CustomConfig:
             data.pop("bbox_format", DEFAULT_BBOX_FORMAT),
             path="custom.bbox_format",
         )
+        detection_sequence_format = normalize_detection_sequence_format(
+            data.pop("detection_sequence_format", COORDJSON_FORMAT)
+        )
 
         # `custom.extra` is the only intentional extension bucket.
         nested_extra_raw = data.pop("extra", None)
@@ -2016,8 +2279,17 @@ class CustomConfig:
             )
 
         coord_tokens = CoordTokensConfig.from_mapping(coord_tokens_raw)
+        if detection_sequence_format != COORDJSON_FORMAT and not coord_tokens.enabled:
+            raise ValueError(
+                "custom.detection_sequence_format="
+                f"{detection_sequence_format} requires custom.coord_tokens.enabled=true"
+            )
         coord_offset_raw = data.pop("coord_offset", None)
         coord_offset = CoordOffsetConfig.from_mapping(coord_offset_raw)
+        trainable_token_rows_raw = data.pop("trainable_token_rows", None)
+        trainable_token_rows = TrainableTokenRowsConfig.from_mapping(
+            trainable_token_rows_raw
+        )
         # Deprecated legacy knob: ignore to ease config refactors.
         # (Stage-2 AB contract refactor requires this to be non-fatal.)
         data.pop("coord_loss", None)
@@ -2061,8 +2333,10 @@ class CustomConfig:
             object_field_order=object_field_order,
             bbox_format=bbox_format,
             object_ordering=object_ordering,
+            detection_sequence_format=detection_sequence_format,
             coord_tokens=coord_tokens,
             coord_offset=coord_offset,
+            trainable_token_rows=trainable_token_rows,
             coord_soft_ce_w1=coord_soft_ce_w1,
             bbox_geo=bbox_geo,
             bbox_size_aux=bbox_size_aux,
@@ -3366,6 +3640,704 @@ class Stage2ABConfig:
             pipeline=pipeline,
             channel_b=channel_b,
         )
+
+
+_LATEST_DETECTION_REQUIRED_SECTIONS: set[str] = {
+    "data",
+    "prompt",
+    "detection_template",
+    "token_rows",
+    "objective",
+    "packing",
+    "evaluation",
+    "validation",
+}
+
+_LATEST_DETECTION_RUNTIME_SECTIONS: set[str] = {
+    "model",
+    "template",
+    "training",
+    "deepspeed",
+    "rlhf",
+    "tuner",
+    "quantization",
+}
+
+_LATEST_DETECTION_OPTIONAL_SECTIONS: set[str] = {
+    "debug",
+    "global_max_length",
+}
+
+_LATEST_DETECTION_OBSOLETE_KEYS: set[str] = {
+    "trainer_variant",
+    "stage1_set_continuation",
+    "prefix_conditioning",
+    "legacy_candidate_branch",
+    "candidate_balanced",
+    "branch_support_weight",
+    "branch_balance_weight",
+    "support_weight",
+    "balance_weight",
+    "prefix_sampling",
+    "prefix_sampling_mode",
+    "prefix_sampling_count",
+    "prefix_sampling_prob",
+    "prefix_sample_count",
+    "prefix_min_objects",
+    "prefix_max_objects",
+    "suffix",
+    "suffix_row",
+    "suffix_rows",
+    "candidate_energy",
+    "branch_energy",
+    "branch_energy_weight",
+    "energy",
+    "energy_weight",
+    "logz",
+    "log_z",
+    "logz_weight",
+    "log_z_weight",
+    "margin",
+    "margin_weight",
+    "margin_ranking",
+    "positive_evidence_margin",
+    "pem",
+    "pem_weight",
+}
+
+_LATEST_DETECTION_STATE_WEIGHTINGS: set[str] = {
+    "none",
+    "legacy_row_mean_prefix_mixture_equivalence",
+    "uniform_permutation",
+}
+
+_LATEST_DETECTION_NORMALIZATIONS: set[str] = {
+    "token_mean",
+    "legacy_row_mean_equivalence",
+    "semantic_image_bucket_balanced",
+}
+
+_LATEST_DETECTION_OBSOLETE_SCAN_SECTIONS: set[str] = (
+    _LATEST_DETECTION_REQUIRED_SECTIONS - {"data", "prompt"}
+)
+
+
+def _latest_detection_join_path(parent: str, child: str) -> str:
+    if not parent:
+        return child
+    return f"{parent}.{child}"
+
+
+def _latest_detection_find_obsolete_keys(value: Any, *, path: str = "") -> list[str]:
+    found: list[str] = []
+    if isinstance(value, Mapping):
+        for raw_key, raw_value in value.items():
+            key = str(raw_key)
+            key_path = _latest_detection_join_path(path, key)
+            normalized = key.strip().lower().replace("-", "_")
+            if normalized in _LATEST_DETECTION_OBSOLETE_KEYS:
+                found.append(key_path)
+            found.extend(_latest_detection_find_obsolete_keys(raw_value, path=key_path))
+    elif isinstance(value, Sequence) and not isinstance(value, (str, bytes, bytearray)):
+        for index, item in enumerate(value):
+            found.extend(
+                _latest_detection_find_obsolete_keys(item, path=f"{path}[{index}]")
+            )
+    return found
+
+
+def _latest_detection_find_obsolete_keys_on_latest_surface(
+    payload: Mapping[str, Any],
+) -> list[str]:
+    found: list[str] = []
+    for raw_key in payload.keys():
+        key = str(raw_key)
+        normalized = key.strip().lower().replace("-", "_")
+        if normalized in _LATEST_DETECTION_OBSOLETE_KEYS:
+            found.append(key)
+
+    for section in sorted(_LATEST_DETECTION_OBSOLETE_SCAN_SECTIONS):
+        if section in payload:
+            found.extend(
+                _latest_detection_find_obsolete_keys(payload[section], path=section)
+            )
+    return found
+
+
+def _latest_detection_validate_choice(
+    value: str, *, path: str, allowed: set[str]
+) -> None:
+    if value not in allowed:
+        raise ValueError(
+            f"{path} must be one of {sorted(allowed)}, got {value!r}"
+        )
+
+
+def _latest_detection_validate_bool(value: bool, *, path: str) -> None:
+    if not isinstance(value, bool):
+        raise TypeError(f"{path} must be a boolean")
+
+
+def _latest_detection_validate_runtime_mapping(
+    value: Any, *, path: str
+) -> dict[str, Any]:
+    if value is None:
+        return {}
+    if not isinstance(value, Mapping):
+        raise TypeError(f"{path} must be a mapping")
+    return dict(value)
+
+
+def _latest_detection_validate_framework_mapping(
+    value: Any, *, path: str, allowed: set[str]
+) -> dict[str, Any]:
+    data = _latest_detection_validate_runtime_mapping(value, path=path)
+    _validate_section_keys_strict(path, data, allowed=allowed)
+    return data
+
+
+def _latest_detection_validate_training_mapping(value: Any) -> dict[str, Any]:
+    data = _latest_detection_validate_framework_mapping(
+        value,
+        path="training",
+        allowed=_training_allowed_keys(),
+    )
+    if "packing_length" in data:
+        raise ValueError(
+            "training.packing_length is deprecated and unsupported. "
+            "Remove it and set global_max_length/template.max_length instead."
+        )
+    if "encoded_sample_cache" in data:
+        encoded_sample_cache = EncodedSampleCacheConfig.from_mapping(
+            data.get("encoded_sample_cache")
+        )
+        data["encoded_sample_cache"] = encoded_sample_cache.to_mapping()
+    if "static_packing_cache" in data:
+        static_packing_cache = StaticPackingCacheConfig.from_mapping(
+            data.get("static_packing_cache")
+        )
+        data["static_packing_cache"] = static_packing_cache.to_mapping()
+    return data
+
+
+def _latest_detection_validate_deepspeed_mapping(value: Any) -> dict[str, Any]:
+    if value is None:
+        return {}
+    data = _latest_detection_validate_runtime_mapping(value, path="deepspeed")
+    DeepSpeedConfig.from_mapping(data)
+    return data
+
+
+def _latest_detection_validate_order_matches_objective(
+    data: DetectionDataConfig,
+    objective: DetectionObjectiveConfig,
+) -> None:
+    required_order = (
+        "sorted"
+        if objective.variant == "sorted_sft"
+        else "random_permutation"
+    )
+    if data.object_ordering != required_order:
+        raise ValueError(
+            "data.object_ordering must be "
+            f"{required_order!r} for objective.variant={objective.variant!r}, "
+            f"got {data.object_ordering!r}"
+        )
+
+
+def _latest_detection_validate_token_rows(
+    detection_template: "DetectionTemplateConfig",
+    token_rows: TrainableTokenRowsConfig,
+) -> None:
+    if not token_rows.enabled:
+        raise ValueError(
+            "token_rows.enabled must be true for latest detection coord-token training; "
+            "otherwise coordinate special-token rows stay frozen and cannot be saved "
+            "in the adapter"
+        )
+    if not token_rows.tie_head:
+        raise ValueError(
+            "token_rows.tie_head must be true for the current tied-head "
+            "Qwen3-VL token-row adapter contract"
+        )
+    if detection_template.coordinate_surface == "coord_token":
+        has_coord_geometry = any(
+            group.role is TokenRole.COORD_GEOMETRY
+            for group in token_rows.groups.values()
+        )
+        if not has_coord_geometry:
+            raise ValueError(
+                "token_rows must include at least one group with "
+                "role=coord_geometry for coord-token detection"
+            )
+        coord_groups = [
+            group
+            for group in token_rows.groups.values()
+            if group.role is TokenRole.COORD_GEOMETRY
+        ]
+        structural_groups = [
+            group
+            for group in token_rows.groups.values()
+            if group.role is TokenRole.STRUCTURAL_CE_ONLY
+        ]
+        if len(token_rows.groups) != 2:
+            raise ValueError(
+                "token_rows for coord-token detection must contain exactly the "
+                "1002 allowed trainable rows: "
+                f"{OBJECT_REF_START_TOKEN}, {BOX_START_TOKEN}, and "
+                f"{COORD_START_TOKEN}..{COORD_END_TOKEN}; "
+                "extra natural-language rows are not allowed"
+            )
+        if len(coord_groups) != 1:
+            raise ValueError(
+                "token_rows must contain exactly one coord_geometry group for "
+                f"{COORD_START_TOKEN}..{COORD_END_TOKEN}"
+            )
+        coord_group = coord_groups[0]
+        if (
+            coord_group.start_token != COORD_START_TOKEN
+            or coord_group.end_token != COORD_END_TOKEN
+            or coord_group.tokens
+            or coord_group.expected_start != EXPECTED_COORD_START_ID
+            or coord_group.expected_end != EXPECTED_COORD_END_ID
+        ):
+            raise ValueError(
+                "token_rows coord_geometry must be exactly "
+                f"{COORD_START_TOKEN}..{COORD_END_TOKEN} with expected ids "
+                f"{EXPECTED_COORD_START_ID}..{EXPECTED_COORD_END_ID}"
+            )
+        if len(structural_groups) != 1:
+            raise ValueError(
+                "token_rows must include exactly the compact structural rows "
+                f"{OBJECT_REF_START_TOKEN} and {BOX_START_TOKEN}"
+            )
+        structural_group = structural_groups[0]
+        expected_structural_ids = {
+            OBJECT_REF_START_TOKEN: EXPECTED_OBJECT_REF_START_ID,
+            BOX_START_TOKEN: EXPECTED_BOX_START_ID,
+        }
+        if (
+            structural_group.start_token is not None
+            or structural_group.end_token is not None
+            or structural_group.tokens
+            != (OBJECT_REF_START_TOKEN, BOX_START_TOKEN)
+            or dict(structural_group.expected_ids) != expected_structural_ids
+        ):
+            raise ValueError(
+                "token_rows structural group must be exactly "
+                f"{OBJECT_REF_START_TOKEN} and {BOX_START_TOKEN} with expected "
+                f"ids {expected_structural_ids}"
+            )
+
+
+@dataclass(frozen=True)
+class DetectionDataConfig:
+    train_jsonl: str
+    val_jsonl: str
+    image_root: str
+    max_objects: int = 60
+    object_ordering: Literal["sorted", "random_permutation"] = "sorted"
+
+    def __post_init__(self) -> None:
+        for field_name in ("train_jsonl", "val_jsonl", "image_root"):
+            if not isinstance(getattr(self, field_name), str):
+                raise TypeError(f"data.{field_name} must be a string")
+        if not isinstance(self.max_objects, int) or isinstance(self.max_objects, bool):
+            raise TypeError("data.max_objects must be an integer")
+        if self.max_objects <= 0:
+            raise ValueError("data.max_objects must be positive")
+        _latest_detection_validate_choice(
+            self.object_ordering,
+            path="data.object_ordering",
+            allowed={"sorted", "random_permutation"},
+        )
+
+    @classmethod
+    def from_mapping(cls, payload: Any) -> "DetectionDataConfig":
+        return parse_dataclass_strict(cls, payload, path="data")
+
+
+@dataclass(frozen=True)
+class DetectionPromptConfig:
+    system_variant: str
+    user_variant: str
+    include_template_summary: bool = True
+    prompt_variant_enabled: bool = False
+
+    def __post_init__(self) -> None:
+        for field_name in ("system_variant", "user_variant"):
+            if not isinstance(getattr(self, field_name), str):
+                raise TypeError(f"prompt.{field_name} must be a string")
+        _latest_detection_validate_bool(
+            self.include_template_summary,
+            path="prompt.include_template_summary",
+        )
+        _latest_detection_validate_bool(
+            self.prompt_variant_enabled,
+            path="prompt.prompt_variant_enabled",
+        )
+
+    @classmethod
+    def from_mapping(cls, payload: Any) -> "DetectionPromptConfig":
+        return parse_dataclass_strict(cls, payload, path="prompt")
+
+
+@dataclass(frozen=True)
+class DetectionTemplateConfig:
+    id: Literal["stage1_json_pretty", "compact_full"]
+    coordinate_surface: Literal["coord_token"]
+    bbox_format: Literal["xyxy"]
+    object_field_order: Optional[Literal["desc_first"]] = None
+    strict_parse: bool = True
+
+    def __post_init__(self) -> None:
+        _latest_detection_validate_choice(
+            self.id,
+            path="detection_template.id",
+            allowed={"stage1_json_pretty", "compact_full"},
+        )
+        _latest_detection_validate_choice(
+            self.coordinate_surface,
+            path="detection_template.coordinate_surface",
+            allowed={"coord_token"},
+        )
+        _latest_detection_validate_choice(
+            self.bbox_format,
+            path="detection_template.bbox_format",
+            allowed={"xyxy"},
+        )
+        if self.object_field_order is not None:
+            _latest_detection_validate_choice(
+                self.object_field_order,
+                path="detection_template.object_field_order",
+                allowed={"desc_first"},
+            )
+        _latest_detection_validate_bool(
+            self.strict_parse,
+            path="detection_template.strict_parse",
+        )
+        if self.id == "stage1_json_pretty" and self.object_field_order != "desc_first":
+            raise ValueError(
+                "detection_template.id=stage1_json_pretty requires "
+                "detection_template.object_field_order=desc_first"
+            )
+        if self.id == "compact_full" and self.object_field_order is not None:
+            raise ValueError(
+                "detection_template.object_field_order must be omitted for "
+                "detection_template.id=compact_full"
+            )
+
+    @classmethod
+    def from_mapping(cls, payload: Any) -> "DetectionTemplateConfig":
+        return parse_dataclass_strict(cls, payload, path="detection_template")
+
+
+@dataclass(frozen=True)
+class DetectionObjectiveConfig:
+    id: Literal["sft", "recursive_detection_ce"]
+    variant: Literal[
+        "sorted_sft",
+        "random_order_sft",
+        "random_permutation_et_rmp_ce",
+        "trie_disabled_full_suffix_ce",
+    ]
+    trie_support_weight: float = 0.0
+    trie_balance_weight: float = 0.0
+    state_weighting: str = "none"
+    normalization: str = "token_mean"
+
+    def __post_init__(self) -> None:
+        _latest_detection_validate_choice(
+            self.id,
+            path="objective.id",
+            allowed={"sft", "recursive_detection_ce"},
+        )
+        _latest_detection_validate_choice(
+            self.variant,
+            path="objective.variant",
+            allowed={
+                "sorted_sft",
+                "random_order_sft",
+                "random_permutation_et_rmp_ce",
+                "trie_disabled_full_suffix_ce",
+            },
+        )
+        for field_name in ("trie_support_weight", "trie_balance_weight"):
+            value = getattr(self, field_name)
+            if not isinstance(value, (int, float)) or isinstance(value, bool):
+                raise TypeError(f"objective.{field_name} must be numeric")
+            if not math.isfinite(float(value)):
+                raise ValueError(f"objective.{field_name} must be finite")
+            if float(value) < 0.0:
+                raise ValueError(f"objective.{field_name} must be >= 0")
+        if self.variant in {"sorted_sft", "random_order_sft"}:
+            if (
+                float(self.trie_support_weight) != 0.0
+                or float(self.trie_balance_weight) != 0.0
+            ):
+                raise ValueError(
+                    "SFT objective variants require objective.trie_support_weight=0 "
+                    "and objective.trie_balance_weight=0"
+                )
+            if self.state_weighting != "none":
+                raise ValueError(
+                    "SFT objective variants require objective.state_weighting=none"
+                )
+            if self.normalization != "token_mean":
+                raise ValueError(
+                    "SFT objective variants require objective.normalization=token_mean"
+                )
+        if self.variant == "trie_disabled_full_suffix_ce":
+            if (
+                float(self.trie_support_weight) != 0.0
+                or float(self.trie_balance_weight) != 0.0
+            ):
+                raise ValueError(
+                    "objective.variant=trie_disabled_full_suffix_ce requires "
+                    "objective.trie_support_weight=0 and objective.trie_balance_weight=0"
+                )
+            if self.state_weighting != "none":
+                raise ValueError(
+                    "objective.variant=trie_disabled_full_suffix_ce requires "
+                    "objective.state_weighting=none"
+                )
+            if self.normalization != "token_mean":
+                raise ValueError(
+                    "objective.variant=trie_disabled_full_suffix_ce requires "
+                    "objective.normalization=token_mean"
+                )
+        if self.variant == "random_permutation_et_rmp_ce":
+            total = float(self.trie_support_weight) + float(self.trie_balance_weight)
+            if total <= 0.0:
+                raise ValueError(
+                    "objective.trie_support_weight and objective.trie_balance_weight "
+                    "must sum to > 0 for random_permutation_et_rmp_ce"
+                )
+        if self.id == "sft" and self.variant not in {"sorted_sft", "random_order_sft"}:
+            raise ValueError("objective.id=sft requires an SFT objective.variant")
+        if self.id == "recursive_detection_ce" and self.variant in {
+            "sorted_sft",
+            "random_order_sft",
+        }:
+            raise ValueError(
+                "objective.id=recursive_detection_ce requires a recursive detection "
+                "objective.variant"
+            )
+        for field_name in ("state_weighting", "normalization"):
+            if not isinstance(getattr(self, field_name), str):
+                raise TypeError(f"objective.{field_name} must be a string")
+        _latest_detection_validate_choice(
+            self.state_weighting,
+            path="objective.state_weighting",
+            allowed=_LATEST_DETECTION_STATE_WEIGHTINGS,
+        )
+        _latest_detection_validate_choice(
+            self.normalization,
+            path="objective.normalization",
+            allowed=_LATEST_DETECTION_NORMALIZATIONS,
+        )
+
+    @classmethod
+    def from_mapping(cls, payload: Any) -> "DetectionObjectiveConfig":
+        return parse_dataclass_strict(cls, payload, path="objective")
+
+
+@dataclass(frozen=True)
+class DetectionPackingConfig:
+    static_packing: bool = False
+    padding_free_packed: bool = False
+
+    def __post_init__(self) -> None:
+        _latest_detection_validate_bool(
+            self.static_packing,
+            path="packing.static_packing",
+        )
+        _latest_detection_validate_bool(
+            self.padding_free_packed,
+            path="packing.padding_free_packed",
+        )
+
+    @classmethod
+    def from_mapping(cls, payload: Any) -> "DetectionPackingConfig":
+        return parse_dataclass_strict(cls, payload, path="packing")
+
+
+@dataclass(frozen=True)
+class DetectionEvaluationConfig:
+    expected_template: Literal["stage1_json_pretty", "compact_full"]
+    parser_mode: Literal["strict_expected", "diagnostic_salvage"] = "strict_expected"
+
+    def __post_init__(self) -> None:
+        _latest_detection_validate_choice(
+            self.expected_template,
+            path="evaluation.expected_template",
+            allowed={"stage1_json_pretty", "compact_full"},
+        )
+        _latest_detection_validate_choice(
+            self.parser_mode,
+            path="evaluation.parser_mode",
+            allowed={"strict_expected", "diagnostic_salvage"},
+        )
+
+    @classmethod
+    def from_mapping(cls, payload: Any) -> "DetectionEvaluationConfig":
+        return parse_dataclass_strict(cls, payload, path="evaluation")
+
+
+@dataclass(frozen=True)
+class DetectionValidationConfig:
+    validate_span_alignment: bool = True
+    validate_template_capabilities: bool = True
+    fail_fast: bool = True
+
+    def __post_init__(self) -> None:
+        for field_name in (
+            "validate_span_alignment",
+            "validate_template_capabilities",
+            "fail_fast",
+        ):
+            _latest_detection_validate_bool(
+                getattr(self, field_name),
+                path=f"validation.{field_name}",
+            )
+
+    @classmethod
+    def from_mapping(cls, payload: Any) -> "DetectionValidationConfig":
+        return parse_dataclass_strict(cls, payload, path="validation")
+
+
+@dataclass(frozen=True)
+class LatestDetectionTrainingConfig:
+    data: DetectionDataConfig
+    prompt: DetectionPromptConfig
+    detection_template: DetectionTemplateConfig
+    token_rows: TrainableTokenRowsConfig
+    objective: DetectionObjectiveConfig
+    packing: DetectionPackingConfig
+    evaluation: DetectionEvaluationConfig
+    validation: DetectionValidationConfig
+    debug: Mapping[str, Any] = field(default_factory=dict)
+    model: Mapping[str, Any] = field(default_factory=dict)
+    template: Mapping[str, Any] = field(default_factory=dict)
+    training: Mapping[str, Any] = field(default_factory=dict)
+    deepspeed: Mapping[str, Any] = field(default_factory=dict)
+    rlhf: Mapping[str, Any] = field(default_factory=dict)
+    tuner: Mapping[str, Any] = field(default_factory=dict)
+    quantization: Mapping[str, Any] = field(default_factory=dict)
+    global_max_length: Optional[int] = None
+
+    @classmethod
+    def from_mapping(cls, payload: Any) -> "LatestDetectionTrainingConfig":
+        if not isinstance(payload, Mapping):
+            raise TypeError("latest detection config payload must be a mapping")
+        if "custom" in payload:
+            raise ValueError("custom is obsolete for latest detection configs")
+
+        obsolete_paths = _latest_detection_find_obsolete_keys_on_latest_surface(payload)
+        if obsolete_paths:
+            rendered = sorted(obsolete_paths)
+            raise ValueError(f"Obsolete latest detection config keys: {rendered}")
+
+        known_top_level = (
+            _LATEST_DETECTION_REQUIRED_SECTIONS
+            | _LATEST_DETECTION_RUNTIME_SECTIONS
+            | _LATEST_DETECTION_OPTIONAL_SECTIONS
+        )
+        unknown_top_level = sorted(
+            str(k)
+            for k in payload.keys()
+            if not isinstance(k, str) or k not in known_top_level
+        )
+        if unknown_top_level:
+            raise ValueError(
+                f"Unknown latest detection config top-level keys: {unknown_top_level}"
+            )
+
+        missing_sections = sorted(
+            section
+            for section in _LATEST_DETECTION_REQUIRED_SECTIONS
+            if section not in payload
+        )
+        if missing_sections:
+            raise ValueError(
+                f"Missing latest detection config sections: {missing_sections}"
+            )
+
+        global_max_length = payload.get("global_max_length")
+        if global_max_length is not None:
+            if (
+                not isinstance(global_max_length, int)
+                or isinstance(global_max_length, bool)
+                or global_max_length <= 0
+            ):
+                raise ValueError("global_max_length must be a positive integer")
+
+        detection_template = DetectionTemplateConfig.from_mapping(
+            payload["detection_template"]
+        )
+        evaluation = DetectionEvaluationConfig.from_mapping(payload["evaluation"])
+        if evaluation.expected_template != detection_template.id:
+            raise ValueError(
+                "evaluation.expected_template must match detection_template.id "
+                f"({evaluation.expected_template!r} != {detection_template.id!r})"
+            )
+        data_config = DetectionDataConfig.from_mapping(payload["data"])
+        objective = DetectionObjectiveConfig.from_mapping(payload["objective"])
+        _latest_detection_validate_order_matches_objective(data_config, objective)
+        token_rows = TrainableTokenRowsConfig.from_mapping(
+            payload["token_rows"],
+            path="token_rows",
+        )
+        _latest_detection_validate_token_rows(detection_template, token_rows)
+
+        return cls(
+            data=data_config,
+            prompt=DetectionPromptConfig.from_mapping(payload["prompt"]),
+            detection_template=detection_template,
+            token_rows=token_rows,
+            objective=objective,
+            packing=DetectionPackingConfig.from_mapping(payload["packing"]),
+            evaluation=evaluation,
+            validation=DetectionValidationConfig.from_mapping(payload["validation"]),
+            debug=_latest_detection_validate_runtime_mapping(
+                payload.get("debug"), path="debug"
+            ),
+            model=_latest_detection_validate_framework_mapping(
+                payload.get("model"),
+                path="model",
+                allowed=_train_arguments_allowed_keys(),
+            ),
+            template=_latest_detection_validate_framework_mapping(
+                payload.get("template"),
+                path="template",
+                allowed=_train_arguments_allowed_keys(),
+            ),
+            training=_latest_detection_validate_training_mapping(
+                payload.get("training")
+            ),
+            deepspeed=_latest_detection_validate_deepspeed_mapping(
+                payload.get("deepspeed")
+            ),
+            rlhf=_latest_detection_validate_framework_mapping(
+                payload.get("rlhf"),
+                path="rlhf",
+                allowed=_rlhf_arguments_allowed_keys(),
+            ),
+            tuner=_latest_detection_validate_framework_mapping(
+                payload.get("tuner"),
+                path="tuner",
+                allowed=_train_arguments_allowed_keys(),
+            ),
+            quantization=_latest_detection_validate_framework_mapping(
+                payload.get("quantization"),
+                path="quantization",
+                allowed=_train_arguments_allowed_keys(),
+            ),
+            global_max_length=global_max_length,
+        )
+
+    def to_mapping(self) -> dict[str, Any]:
+        return dataclass_asdict_no_none(self)
 
 
 @dataclass(frozen=True)

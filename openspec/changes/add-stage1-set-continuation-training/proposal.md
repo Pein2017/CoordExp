@@ -1,5 +1,14 @@
 # Add Stage-1 Set-Continuation Training
 
+Status update, 2026-05-02: this proposal is retained for historical design
+context. Candidate-balanced set-continuation, candidate energy/logZ objectives,
+chunk-level MP, candidate branch CE as production objective, and PEM/margin
+losses tied to candidate energy ranking are retired for new production
+training. Current production continuation training should use ET-RMP-CE /
+full-suffix teacher-forced token CE with prefix-conditioned sampling,
+entry-trie multi-positive token CE, support/balance reweighting, and hard CE
+for schema/control/separator/stop tokens.
+
 ## Why
 
 Stage-1 detection SFT currently trains a single serialized object order as though the annotated next object were the only correct continuation. That is a poor fit for object detection as set prediction. When several ground-truth objects remain after a prefix, ordinary fixed-order SFT rewards one object and implicitly treats the other observed objects as negatives.

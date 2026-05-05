@@ -1,5 +1,12 @@
 # Stage-1 ET-RMP-CE Design
 
+> Archived / superseded on 2026-05-02.
+> Historical provenance only for the pre-refactor Stage-1 set-continuation family.
+> Do not use this file as an execution source.
+> Active execution sources:
+> - `docs/superpowers/specs/2026-05-02-training-infra-template-mode-refactor-design.md`
+> - `docs/superpowers/plans/2026-05-02-training-infra-template-mode-refactor.md`
+
 ## Problem
 
 The current Stage-1 set-continuation trainer is a candidate-branch objective.
@@ -38,7 +45,8 @@ abbreviated **ET-RMP-CE**.
 
 ## Non-Goals
 
-- Do not change the default candidate-balanced production profile.
+- Do not revive the candidate-balanced production profile; it is now a legacy
+  compatibility objective only.
 - Do not introduce RL, beam search, rollout replay, or grammar-constrained decoding.
 - Do not reuse coord-vocab-normalized logprob as the main probability space.
 - Do not implement true padding-free packed multimodal attention.
@@ -157,7 +165,7 @@ artifacts or callback metrics:
 
 A. Reference checkpoint only.
 
-B. Current candidate-balanced set-continuation objective.
+B. Retired legacy candidate-balanced set-continuation objective.
 
 C. Random subset prefix plus full remaining suffix CE, no trie MP:
 `objective.mode: full_suffix_ce`.

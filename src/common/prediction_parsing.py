@@ -13,6 +13,11 @@ from src.common.geometry.coord_utils import (
     ints_to_pixels_norm1000,
     pair_points,
 )
+from src.common.detection_sequence import (
+    BOX_START_TOKEN,
+    OBJECT_REF_START_TOKEN,
+    parse_compact_detection_sequence,
+)
 from src.utils.coordjson_transpiler import coordjson_to_strict_json_with_meta
 
 GEOM_KEYS = ("bbox_2d", "poly")
@@ -126,6 +131,13 @@ def load_prediction_dict(text: str) -> Dict[str, Any] | None:
             # Single-object dict at top-level: {"bbox_2d": ..., "desc": ...}
             if any(k in parsed for k in GEOM_KEYS) or "line" in parsed or "line_points" in parsed:
                 return {"objects": [parsed]}
+
+    if json_block is None and (
+        OBJECT_REF_START_TOKEN in text or BOX_START_TOKEN in text or "<|coord_" in text
+    ):
+        compact_payload = parse_compact_detection_sequence(text)
+        if compact_payload is not None:
+            return compact_payload
 
     best_payload: Dict[str, Any] | None = None
     best_count = -1

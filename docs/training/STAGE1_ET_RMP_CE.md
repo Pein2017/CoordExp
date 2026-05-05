@@ -2,37 +2,41 @@
 doc_id: docs.training.stage1_et_rmp_ce
 layer: docs
 doc_type: implementation-export
-status: experimental
+status: canonical
 domain: training
-summary: Factual export of the implemented Stage-1 Entry-Trie Recursive Multi-Positive CE objective, config surface, verification files, and current run artifacts.
+summary: Factual export of the promoted Stage-1 Entry-Trie Recursive Multi-Positive CE objective, config surface, verification files, and current run artifacts.
 tags: [training, stage1, set-continuation, et-rmp-ce, full-suffix]
-updated: 2026-04-29
+updated: 2026-05-02
 ---
 
 # Stage-1 ET-RMP-CE Implementation Export
 
-This page records the implemented Stage-1 **Entry-Trie Recursive
+This page records the implemented and promoted Stage-1 **Entry-Trie Recursive
 Multi-Positive CE** objective, abbreviated **ET-RMP-CE**. It is a factual
 implementation and artifact export only.
 
 ## Current Status
 
-- Branch/checkpoint state inspected from `/data/CoordExp` on `2026-04-29`.
-- The implementation is present in the repo root checkout on `main`.
+- Branch/checkpoint state inspected from `/data/CoordExp` on `2026-05-02`.
+- The implementation is present in the current training stack.
 - The current production profile is
   `configs/stage1/set_continuation/production.yaml`.
-- That checked-in profile currently targets the support-mass experiment
+- That checked-in profile targets the support-mass ET-RMP-CE experiment
   (`branch_support_weight: 2.0`, `branch_balance_weight: 1.0`,
-  `artifact_subdir: ..._support2_bsz32_v1`).
+  `artifact_subdir: ..._support2_bsz16_v1`).
 - The recorded step-100/step-200 artifacts below are from the earlier
   pre-support-mass ET-RMP `v1` run, before the checked-in profile was retargeted
-  to `support2_bsz32_v1`.
+  to `support2_bsz16_v1`.
 - The objective mode is
   `custom.stage1_set_continuation.objective.mode: entry_trie_rmp_ce`.
 - The companion full-suffix hard-CE mode is
   `custom.stage1_set_continuation.objective.mode: full_suffix_ce`.
 - The Stage-1 set-continuation trainer remains the runtime owner:
   `custom.trainer_variant: stage1_set_continuation`.
+- Candidate-balanced set-continuation, energy/logZ candidate objectives,
+  chunk-level MP, candidate branch CE as production objective, and PEM/margin
+  losses tied to candidate energy ranking are retired for new production
+  training. They remain historical compatibility surfaces only.
 
 ## Objective Contract
 
@@ -96,6 +100,8 @@ exact duplicate entries.
   - Defines `Stage1SetContinuationObjectiveConfig`.
   - Accepted objective modes are `candidate_balanced`, `full_suffix_ce`, and
     `entry_trie_rmp_ce`.
+  - `candidate_balanced` remains accepted for compatibility with older configs
+    and tests, but it is deprecated as a production objective.
   - Accepted suffix orders are `random` and `dataset`.
   - `branch_support_weight` and `branch_balance_weight` configure the
     entry-trie branch decomposition.
@@ -134,8 +140,9 @@ exact duplicate entries.
     `_process_full_suffix_batch(...)`.
   - Uses `_score_full_suffix_rows_smart_batched(...)` when
     `train_forward.branch_runtime.mode: smart_batched_exact`.
-  - Keeps the existing candidate-balanced path as the default for
-    `candidate_balanced`.
+  - Keeps the existing candidate-balanced code path only for legacy
+    compatibility when `objective.mode: candidate_balanced` is explicitly used
+    or inherited by an old config.
 
 - `src/trainers/stage1_set_continuation/metrics.py`
   - Adds compact ET-RMP metric keys while preserving the set-continuation metric
@@ -197,11 +204,10 @@ custom:
         enabled: false
 ```
 
-The production profile also scales local GPU memory use relative to the older
-candidate-balanced production profile by using `per_device_train_batch_size: 32`
-and `gradient_accumulation_steps: 1` (`effective_batch_size: 256`). Packing
-remains disabled because set-continuation rows own their metadata and suffix
-alignment.
+The production profile uses `per_device_train_batch_size: 16`,
+`gradient_accumulation_steps: 1`, and `effective_batch_size: 128`. Packing
+remains disabled because prefix-conditioned full-suffix rows own their metadata
+and suffix alignment.
 
 The effective runtime for the recorded production run inherited this prefix
 mixture:
@@ -284,10 +290,11 @@ Trainer-native ET-RMP metrics include:
 - `loss/rmp_eos_ce`
 - `rmp/gt_count_ge7_samples`
 
-Compatibility metrics from the set-continuation surface remain present. For
-ET-RMP, selected candidate scoring metrics such as `mp/num_candidates_scored`
-are emitted as `0.0` in the recorded run because this objective path does not
-score independent candidate chunks.
+Compatibility metrics from the retired candidate-branch set-continuation
+surface may remain present for old dashboards. For ET-RMP, selected candidate
+scoring metrics such as `mp/num_candidates_scored` are emitted as `0.0` in the
+recorded run because this objective path does not score independent candidate
+chunks.
 
 ## Verification Files
 
@@ -313,7 +320,7 @@ tests/test_stage1_set_continuation_*.py
 
 This section records the earlier pre-support-mass ET-RMP `v1` run. Treat it as
 the baseline artifact export for comparison, not as evidence from the current
-`support2_bsz32_v1` production config.
+`support2_bsz16_v1` production config.
 
 Run directory:
 

@@ -4,41 +4,47 @@ layer: docs
 doc_type: root-context
 status: canonical
 domain: repo
-summary: Defines documentation precedence, document roles, and the universal read order for CoordExp.
+summary: Defines documentation ownership, contract authority, and the universal read order for CoordExp.
 tags: [precedence, docs, agents]
-updated: 2026-03-22
+updated: 2026-05-03
 ---
 
-# Project Context & Precedence
+# Project Context & Documentation Authority
 
 This page defines how to interpret every Markdown file in the repository.
 
-## Precedence
+## Authority Model
 
-When two sources disagree, use this order:
+Use `docs/` as the current operator-facing truth for architecture, workflows,
+routing, artifact names, and recommended development practice.
 
-1. `openspec/specs/`
-2. `docs/`
-3. `openspec/changes/<active-change>/`
-4. `progress/`
+Use `openspec/specs/` only when a question needs a stable compatibility contract:
+training/eval behavior, config schemas, loss semantics, artifact names, or
+normative metric semantics. OpenSpec is not the default planning layer for
+ordinary implementation work.
 
-Interpretation:
+Use `openspec/changes/<active-change>/` only when an active change is explicitly
+in scope.
 
-- `openspec/specs/` is normative.
-- `docs/` is the stable operator-facing explanation layer.
-- `openspec/changes/` explains active deltas and implementation intent.
-- `progress/` stores dated evidence, diagnostics, benchmarks, and historical reasoning.
+Use `progress/` for dated evidence, diagnostics, benchmark reports, empirical
+failures, design derivations, and historical reasoning. Do not answer current
+behavior from `progress/` when `docs/` or a stable spec covers the contract.
 
 ## Layer Responsibilities
 
 - `docs/`
-  - stable interfaces, workflows, runbooks, and routing
+  - stable interfaces, workflows, runbooks, routing, architecture, and current status
   - concise, pointer-first, low-duplication
+- `openspec/specs/`
+  - stable compatibility contracts only
+  - use for exact semantics of supported training/eval/config/artifact surfaces
+- `openspec/changes/`
+  - active deltas and implementation intent only when explicitly in scope
 - `progress/`
-  - historical notes, experiments, audits, and diagnostics
+  - historical notes, experiments, audits, diagnostics, and benchmark evidence
   - evidence-first, dated, non-normative
 - `docs/catalog.yaml`
-  - machine-readable inventory for every Markdown document in `docs/` and `progress/`
+  - machine-readable curated inventory for `docs/` and important `progress/` routes
 - `docs/AGENT_INDEX.md`
   - fast-path retrieval instructions for AI agents
 
@@ -51,21 +57,25 @@ For most work:
 3. [docs/SYSTEM_OVERVIEW.md](SYSTEM_OVERVIEW.md)
 4. [docs/IMPLEMENTATION_MAP.md](IMPLEMENTATION_MAP.md)
 5. the relevant domain router under `docs/`
-6. relevant `openspec/specs/`
-   - use [`openspec/specs/runtime-architecture-refactor-program/spec.md`](../openspec/specs/runtime-architecture-refactor-program/spec.md) when the question is about runtime ownership, launchers, artifacts, or compatibility-preserving refactors
-7. `progress/` only if you need design history or empirical evidence
+6. relevant `openspec/specs/` only for stable contract semantics
+7. `openspec/changes/<active-change>/` only when explicitly in scope
+8. `progress/` only for design history, empirical evidence, diagnostics, or benchmarks
 
 ## Authoring Rules
 
 - Do not duplicate stable contracts across multiple router pages.
 - Put stable workflows in `docs/`.
-- Put dated evidence and investigations in `progress/`.
+- Put dated evidence, investigations, and audits in `progress/`.
 - Remove obsolete paths instead of preserving compatibility stubs.
 - Prefer one canonical page per question:
   - data contract -> `docs/data/CONTRACT.md`
-  - stage-2 runbook -> `docs/training/STAGE2_RUNBOOK.md`
-  - stage-2 design history -> `docs/training/STAGE2_DESIGN.md`
+  - data preparation -> `docs/data/PREPARATION.md`
+  - packing policy -> `docs/data/PACKING.md`
+  - Stage-1 objective/status -> `docs/training/STAGE1_OBJECTIVE.md`
+  - Stage-2 runbook -> `docs/training/STAGE2_RUNBOOK.md`
   - evaluation contract -> `docs/eval/CONTRACT.md`
+  - evaluation workflow -> `docs/eval/WORKFLOW.md`
+  - artifacts and provenance -> `docs/ARTIFACTS.md`
 
 ## Promotion Rule
 

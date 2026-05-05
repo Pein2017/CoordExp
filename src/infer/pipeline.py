@@ -21,6 +21,7 @@ from src.common.object_field_order import (
     normalize_object_field_order,
     normalize_object_ordering,
 )
+from src.common.detection_sequence import normalize_detection_sequence_format
 from src.config.prompts import (
     coord_mode_from_coord_tokens_enabled,
     get_template_prompt_hash,
@@ -40,6 +41,7 @@ from src.infer.artifacts import build_eval_artifact_paths
 from src.infer.checkpoints import (
     VLLM_ADAPTER_UNSUPPORTED_MESSAGE,
     resolve_inference_checkpoint,
+    validate_compact_coord_token_adapter_contract,
 )
 from src.utils import get_logger
 
@@ -193,7 +195,7 @@ def _detect_infer_distributed_env() -> Tuple[int, int, int, bool]:
 
 def _resolve_infer_prompt_controls(
     infer_cfg: Mapping[str, Any],
-) -> Tuple[str, str, ObjectFieldOrder, ObjectOrdering]:
+) -> Tuple[str, str, str, ObjectFieldOrder, ObjectOrdering]:
     prompt_variant_raw = infer_cfg.get("prompt_variant", None)
     if prompt_variant_raw is not None and not isinstance(prompt_variant_raw, str):
         raise ValueError("infer.prompt_variant must be a string when provided")
@@ -201,6 +203,9 @@ def _resolve_infer_prompt_controls(
     bbox_format = normalize_bbox_format(
         infer_cfg.get("bbox_format", "xyxy"),
         path="infer.bbox_format",
+    )
+    detection_sequence_format = normalize_detection_sequence_format(
+        infer_cfg.get("detection_sequence_format", "coordjson")
     )
 
     object_ordering = normalize_object_ordering(
@@ -214,7 +219,13 @@ def _resolve_infer_prompt_controls(
         path="infer.object_field_order",
     )
 
-    return prompt_variant, bbox_format, object_field_order, object_ordering
+    return (
+        prompt_variant,
+        bbox_format,
+        detection_sequence_format,
+        object_field_order,
+        object_ordering,
+    )
 
 
 def _resolve_infer_coord_mode(
@@ -619,16 +630,23 @@ def run_pipeline(
     (
         resolved_prompt_variant,
         resolved_bbox_format,
+        resolved_detection_sequence_format,
         resolved_object_field_order,
         resolved_object_ordering,
     ) = _resolve_infer_prompt_controls(infer_cfg)
     resolved_coord_mode = _resolve_infer_coord_mode(infer_cfg)
+    if resolved_checkpoint is not None:
+        validate_compact_coord_token_adapter_contract(
+            resolved_checkpoint,
+            detection_sequence_format=resolved_detection_sequence_format,
+        )
     resolved_prompt_hash = get_template_prompt_hash(
         ordering=resolved_object_ordering,
         coord_mode=resolved_coord_mode,
         prompt_variant=resolved_prompt_variant,
         object_field_order=resolved_object_field_order,
         bbox_format=resolved_bbox_format,
+        detection_sequence_format=resolved_detection_sequence_format,
     )
     artifacts, stages = resolve_artifacts(cfg)
 
@@ -690,6 +708,7 @@ def run_pipeline(
             "prompt_variant": resolved_prompt_variant,
             "coord_mode": resolved_coord_mode,
             "bbox_format": resolved_bbox_format,
+            "detection_sequence_format": resolved_detection_sequence_format,
             "object_field_order": resolved_object_field_order,
             "object_ordering": resolved_object_ordering,
             "prompt_template_hash": resolved_prompt_hash,
@@ -752,6 +771,10 @@ def run_pipeline(
         _run_infer_stage(cfg, artifacts, root_image_dir=root_image_dir)
     else:
         _load_or_raise_artifact(artifacts.gt_vs_pred_jsonl)
+
+    rank, _local_rank, _world_size, distributed_enabled = _detect_infer_distributed_env()
+    if distributed_enabled and int(rank) != 0:
+        return artifacts
 
     _maybe_run_confidence_postop(cfg, artifacts)
 
@@ -824,9 +847,13 @@ def _run_infer_stage(
     mode_raw = _require_choice(infer_cfg, "mode", {"coord", "text", "auto"})
     mode = cast(Literal["coord", "text", "auto"], mode_raw)
 
-    prompt_variant, bbox_format, object_field_order, object_ordering = (
-        _resolve_infer_prompt_controls(infer_cfg)
-    )
+    (
+        prompt_variant,
+        bbox_format,
+        detection_sequence_format,
+        object_field_order,
+        object_ordering,
+    ) = _resolve_infer_prompt_controls(infer_cfg)
 
     pred_coord_mode_raw = _require_choice(
         infer_cfg, "pred_coord_mode", {"auto", "norm1000", "pixel"}
@@ -840,6 +867,10 @@ def _run_infer_stage(
     backend_type = cast(Literal["hf", "vllm"], backend_type_raw)
     if resolved_checkpoint.resolved_adapter_checkpoint is not None and backend_type != "hf":
         raise ValueError(VLLM_ADAPTER_UNSUPPORTED_MESSAGE)
+    validate_compact_coord_token_adapter_contract(
+        resolved_checkpoint,
+        detection_sequence_format=detection_sequence_format,
+    )
 
     gen_cfg_map = _get_map(infer_cfg, "generation")
     if not gen_cfg_map:
@@ -866,6 +897,11 @@ def _run_infer_stage(
     seed_val = gen_cfg_map.get("seed", None)
     seed = int(seed_val) if seed_val is not None else None
     stop_pressure_cfg = _get_map(gen_cfg_map, "stop_pressure")
+    compact_grammar_cfg = _get_map(gen_cfg_map, "compact_grammar")
+    compact_grammar_enabled = _get_bool(compact_grammar_cfg, "enabled", False)
+    compact_grammar_force_row_start = _get_bool(
+        compact_grammar_cfg, "force_row_start", True
+    )
     stop_pressure_min_new_tokens_raw = stop_pressure_cfg.get("min_new_tokens", 0)
     if stop_pressure_min_new_tokens_raw is None:
         stop_pressure_min_new_tokens = 0
@@ -900,7 +936,21 @@ def _run_infer_stage(
         stop_pressure_min_new_tokens=stop_pressure_min_new_tokens,
         stop_pressure_trigger_rule=stop_pressure_trigger_rule,
         stop_pressure_logit_bias=stop_pressure_logit_bias,
+        compact_grammar_enabled=compact_grammar_enabled,
+        compact_grammar_format=detection_sequence_format,
+        compact_grammar_force_row_start=compact_grammar_force_row_start,
     )
+    if compact_grammar_enabled:
+        if backend_type != "hf":
+            raise ValueError(
+                "infer.generation.compact_grammar is only supported for "
+                "infer.backend.type=hf"
+            )
+        if detection_sequence_format != "compact_full":
+            raise ValueError(
+                "infer.generation.compact_grammar currently requires "
+                "infer.detection_sequence_format=compact_full"
+            )
     if stop_pressure_mode not in (
         None,
         STOP_PRESSURE_MODE_MIN_NEW_TOKENS_AFTER_OBJECT_OPEN,
@@ -1042,6 +1092,7 @@ def _run_infer_stage(
         mode=mode,
         prompt_variant=prompt_variant,
         bbox_format=bbox_format,
+        detection_sequence_format=detection_sequence_format,
         object_field_order=object_field_order,
         object_ordering=object_ordering,
         pred_coord_mode=pred_coord_mode,

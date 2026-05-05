@@ -1,0 +1,303 @@
+"""Latest-schema detection launch/runtime policy helpers."""
+
+from __future__ import annotations
+
+import math
+from dataclasses import dataclass
+from pathlib import Path
+from types import SimpleNamespace
+from typing import Any, Literal, Mapping, cast
+
+from src.config.prompts import get_template_prompts
+from src.config.schema import (
+    CoordOffsetConfig,
+    CoordTokensConfig,
+    LatestDetectionTrainingConfig,
+)
+from src.detection.dataset import DetectionTrainingDataset
+
+LatestDetectionRuntimeMode = Literal[
+    "sorted_sft",
+    "random_order_sft",
+    "random_permutation_et_rmp_ce",
+]
+
+
+@dataclass(frozen=True)
+class DetectionRuntimeSupport:
+    """Resolved latest-detection runtime support policy."""
+
+    recursive_sidecars_required: bool
+
+
+@dataclass(frozen=True)
+class RecursiveDetectionCERuntimeConfig:
+    enabled: bool
+    trie_support_weight: float
+    trie_balance_weight: float
+
+
+def is_latest_detection_config(training_config: Any) -> bool:
+    return isinstance(training_config, LatestDetectionTrainingConfig)
+
+
+def latest_detection_sequence_format(
+    training_config: LatestDetectionTrainingConfig,
+) -> str:
+    if training_config.detection_template.id == "compact_full":
+        return "compact_full"
+    if training_config.detection_template.id == "stage1_json_pretty":
+        return "coordjson"
+    raise ValueError(
+        f"Unsupported detection_template.id={training_config.detection_template.id!r}"
+    )
+
+
+def latest_detection_prompt_variant(
+    training_config: LatestDetectionTrainingConfig,
+) -> str | None:
+    return "coco_80" if training_config.prompt.prompt_variant_enabled else None
+
+
+def resolve_latest_detection_prompts(
+    training_config: LatestDetectionTrainingConfig,
+) -> tuple[str, str]:
+    if training_config.prompt.system_variant != "stage1_detection":
+        raise ValueError(
+            "latest detection runtime currently supports only "
+            "prompt.system_variant=stage1_detection"
+        )
+    if (
+        training_config.detection_template.id == "compact_full"
+        and training_config.prompt.user_variant != "compact_detection"
+    ):
+        raise ValueError(
+            "detection_template.id=compact_full requires "
+            "prompt.user_variant=compact_detection"
+        )
+    if (
+        training_config.detection_template.id == "stage1_json_pretty"
+        and training_config.prompt.user_variant != "stage1_detection"
+    ):
+        raise ValueError(
+            "detection_template.id=stage1_json_pretty requires "
+            "prompt.user_variant=stage1_detection"
+        )
+
+    object_field_order = training_config.detection_template.object_field_order
+    if object_field_order is None:
+        object_field_order = "desc_first"
+    ordering = (
+        "random"
+        if training_config.data.object_ordering == "random_permutation"
+        else "sorted"
+    )
+    return get_template_prompts(
+        ordering=ordering,
+        coord_mode="coord_tokens",
+        prompt_variant=latest_detection_prompt_variant(training_config),
+        object_field_order=str(object_field_order),
+        bbox_format=str(training_config.detection_template.bbox_format),
+        detection_sequence_format=latest_detection_sequence_format(training_config),
+    )
+
+
+def build_latest_detection_runtime_custom_shim(
+    training_config: LatestDetectionTrainingConfig,
+) -> SimpleNamespace:
+    _system_prompt, user_prompt = resolve_latest_detection_prompts(training_config)
+    object_field_order = training_config.detection_template.object_field_order
+    if object_field_order is None:
+        object_field_order = "desc_first"
+    object_ordering = (
+        "random"
+        if training_config.data.object_ordering == "random_permutation"
+        else "sorted"
+    )
+    prompt_variant = latest_detection_prompt_variant(training_config)
+    return SimpleNamespace(
+        extra={"prompt_variant": prompt_variant} if prompt_variant else {},
+        train_jsonl=training_config.data.train_jsonl,
+        val_jsonl=training_config.data.val_jsonl,
+        bypass_prob=0.0,
+        augmentation=False,
+        augmentation_curriculum=False,
+        train_sample_limit=None,
+        val_sample_limit=None,
+        val_sample_with_replacement=False,
+        use_summary=False,
+        system_prompt_summary=None,
+        user_prompt=user_prompt,
+        emit_norm="none",
+        json_format="standard",
+        coord_tokens=CoordTokensConfig(enabled=True, skip_bbox_norm=True),
+        offline_max_pixels=None,
+        object_ordering=object_ordering,
+        object_field_order=str(object_field_order),
+        bbox_format=str(training_config.detection_template.bbox_format),
+        detection_sequence_format=latest_detection_sequence_format(training_config),
+        eval_detection=None,
+        token_type_metrics=None,
+        coord_soft_ce_w1=None,
+        bbox_geo=None,
+        bbox_size_aux=None,
+        sft_structural_close=None,
+        dump_conversation_text=False,
+        dump_conversation_path=None,
+        coord_offset=CoordOffsetConfig(enabled=False),
+        trainable_token_rows=training_config.token_rows,
+    )
+
+
+def latest_detection_mode(
+    training_config: LatestDetectionTrainingConfig,
+) -> LatestDetectionRuntimeMode:
+    variant = training_config.objective.variant
+    if variant in {"sorted_sft", "random_order_sft", "random_permutation_et_rmp_ce"}:
+        return cast(LatestDetectionRuntimeMode, variant)
+    raise ValueError(
+        "latest detection runtime does not support "
+        f"objective.variant={variant!r}; use sorted_sft, random_order_sft, "
+        "or random_permutation_et_rmp_ce"
+    )
+
+
+def resolve_detection_runtime_support(
+    training_config: LatestDetectionTrainingConfig,
+) -> DetectionRuntimeSupport:
+    return DetectionRuntimeSupport(
+        recursive_sidecars_required=(
+            training_config.detection_template.id == "compact_full"
+            and training_config.objective.id == "recursive_detection_ce"
+        )
+    )
+
+
+def assert_latest_detection_runtime_supported(
+    training_config: LatestDetectionTrainingConfig,
+    *,
+    encoded_sample_cache_cfg: Any,
+) -> None:
+    support = resolve_detection_runtime_support(training_config)
+    if not support.recursive_sidecars_required:
+        return
+
+    if bool(training_config.training.get("packing", False)):
+        raise ValueError(
+            "latest recursive detection sidecars currently require "
+            "training.packing=false; "
+            "packed target-position offset rewriting is not implemented yet"
+        )
+    if training_config.packing.static_packing:
+        raise ValueError(
+            "latest recursive detection sidecars currently require "
+            "packing.static_packing=false; "
+            "packed target-position offset rewriting is not implemented yet"
+        )
+    if training_config.packing.padding_free_packed:
+        raise ValueError(
+            "latest recursive detection sidecars currently require "
+            "packing.padding_free_packed=false; "
+            "packed target-position offset rewriting is not implemented yet"
+        )
+    if encoded_sample_cache_cfg.enabled:
+        raise ValueError(
+            "latest recursive detection sidecars currently reject "
+            "training.encoded_sample_cache until sidecar cache fingerprints are implemented"
+        )
+
+
+def resolve_recursive_detection_ce_runtime_cfg(
+    training_config: Any,
+) -> RecursiveDetectionCERuntimeConfig | None:
+    objective = getattr(training_config, "objective", None)
+    if objective is None:
+        return None
+    objective_id = (
+        str(objective.get("id"))
+        if isinstance(objective, Mapping) and objective.get("id") is not None
+        else str(getattr(objective, "id", "") or "")
+    )
+    if objective_id != "recursive_detection_ce":
+        return None
+    variant = (
+        str(objective.get("variant"))
+        if isinstance(objective, Mapping) and objective.get("variant") is not None
+        else str(getattr(objective, "variant", "") or "")
+    )
+    if variant != "random_permutation_et_rmp_ce":
+        raise ValueError(
+            "recursive_detection_ce runtime currently supports only "
+            "objective.variant=random_permutation_et_rmp_ce"
+        )
+
+    def _objective_float(field_name: str) -> float:
+        raw = (
+            objective.get(field_name)
+            if isinstance(objective, Mapping)
+            else getattr(objective, field_name, None)
+        )
+        if raw is None:
+            raise ValueError(f"objective.{field_name} is required")
+        value = float(raw)
+        if not math.isfinite(value) or value < 0.0:
+            raise ValueError(f"objective.{field_name} must be finite and >= 0")
+        return value
+
+    trie_support_weight = _objective_float("trie_support_weight")
+    trie_balance_weight = _objective_float("trie_balance_weight")
+    if trie_support_weight + trie_balance_weight <= 0.0:
+        raise ValueError(
+            "objective.trie_support_weight and objective.trie_balance_weight must sum to > 0"
+        )
+    return RecursiveDetectionCERuntimeConfig(
+        enabled=True,
+        trie_support_weight=trie_support_weight,
+        trie_balance_weight=trie_balance_weight,
+    )
+
+
+def build_latest_detection_dataset(
+    jsonl_path: str | Path,
+    *,
+    swift_template: Any,
+    training_config: LatestDetectionTrainingConfig,
+    custom_config: Any,
+    system_prompt: str | None,
+    seed: int,
+    sample_limit: int | None,
+    dataset_name: str,
+) -> DetectionTrainingDataset:
+    return DetectionTrainingDataset.from_jsonl(
+        jsonl_path,
+        swift_template=swift_template,
+        image_root=training_config.data.image_root,
+        detection_template_id=training_config.detection_template.id,
+        mode=latest_detection_mode(training_config),
+        object_ordering=training_config.data.object_ordering,
+        user_prompt=custom_config.user_prompt,
+        system_prompt=system_prompt,
+        max_objects=training_config.data.max_objects,
+        seed=seed,
+        state_weighting=training_config.objective.state_weighting,
+        normalization=training_config.objective.normalization,
+        sample_limit=sample_limit,
+        dataset_name=dataset_name,
+    )
+
+
+__all__ = [
+    "DetectionRuntimeSupport",
+    "LatestDetectionRuntimeMode",
+    "RecursiveDetectionCERuntimeConfig",
+    "assert_latest_detection_runtime_supported",
+    "build_latest_detection_dataset",
+    "build_latest_detection_runtime_custom_shim",
+    "is_latest_detection_config",
+    "latest_detection_mode",
+    "latest_detection_prompt_variant",
+    "latest_detection_sequence_format",
+    "resolve_detection_runtime_support",
+    "resolve_latest_detection_prompts",
+    "resolve_recursive_detection_ce_runtime_cfg",
+]

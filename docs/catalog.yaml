@@ -1,5 +1,5 @@
 schema_version: 1
-updated: 2026-04-29
+updated: 2026-05-03
 
 entrypoints:
   human:
@@ -10,11 +10,11 @@ entrypoints:
     catalog: docs/catalog.yaml
     progress: progress/index.yaml
 
-precedence:
-  - openspec/specs/
-  - docs/
-  - openspec/changes/<active-change>/
-  - progress/
+authority:
+  current_truth: docs/
+  stable_contracts: openspec/specs/
+  active_deltas: openspec/changes/<active-change>/
+  historical_evidence: progress/
 
 docs:
   repo:
@@ -56,13 +56,9 @@ docs:
       type: workflow
       status: canonical
     - path: docs/data/PACKING.md
-      title: 'Packing Mode Guide (Default: 12k, eff_bs=12)'
+      title: Packing Policy Matrix
       type: reference
       status: canonical
-    - path: docs/data/FUSION.md
-      title: Fusion Dataset (Dormant Legacy Surface)
-      type: reference
-      status: historical
     - path: docs/data/VISUAL_GENOME.md
       title: Visual Genome (VG) -> CoordExp JSONL
       type: dataset-note
@@ -76,14 +72,6 @@ docs:
       title: Coord Objective & Adapter
       type: reference
       status: canonical
-    - path: docs/training/STAGE1_ET_RMP_CE.md
-      title: Stage-1 ET-RMP-CE Implementation Export
-      type: implementation-export
-      status: experimental
-    - path: docs/training/STAGE2_DESIGN.md
-      title: Stage-2 Design History
-      type: design-note
-      status: historical
     - path: docs/training/STAGE2_RUNBOOK.md
       title: Stage-2 Training Runbook
       type: runbook
@@ -313,6 +301,10 @@ progress:
       title: Audits Index
       type: router
       status: canonical
+    - path: progress/audits/2026-05-03_type_schema_architecture_audit.md
+      title: Type-System And Schema-Boundary Audit
+      type: audit
+      status: active-audit
     - path: progress/audits/2026-01-22_stage1_softce_logging.md
       title: 'Stage-1 SoftCE (W1) Audit: Loss Dynamics, Logging Alignment, and Efficiency Notes (2026-01-22)'
       type: audit

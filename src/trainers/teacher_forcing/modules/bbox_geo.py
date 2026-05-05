@@ -349,18 +349,19 @@ def run_bbox_geo_module(
     )
     n_groups_all = int(all_group_weights.numel())
     if n_groups_all > 0 and float(all_group_weights.sum().detach().cpu().item()) > 0.0:
-        denom = all_group_weights.sum().to(dtype=context.logits.dtype).clamp(min=1e-6)
+        group_weights_f = all_group_weights.to(dtype=torch.float32)
+        denom = group_weights_f.sum().clamp(min=1e-6)
         smoothl1 = (
-            all_smoothl1.to(dtype=context.logits.dtype)
-            * all_group_weights.to(dtype=context.logits.dtype)
+            all_smoothl1.to(dtype=torch.float32)
+            * group_weights_f
         ).sum() / denom
         ciou = (
-            all_ciou.to(dtype=context.logits.dtype)
-            * all_group_weights.to(dtype=context.logits.dtype)
+            all_ciou.to(dtype=torch.float32)
+            * group_weights_f
         ).sum() / denom
     else:
-        smoothl1 = context.logits.new_tensor(0.0)
-        ciou = context.logits.new_tensor(0.0)
+        smoothl1 = context.logits.new_tensor(0.0, dtype=torch.float32)
+        ciou = context.logits.new_tensor(0.0, dtype=torch.float32)
 
     bbox_smoothl1_contrib = float(bbox_smoothl1_w) * smoothl1
     bbox_ciou_contrib = float(bbox_ciou_w) * ciou
@@ -416,7 +417,7 @@ def run_bbox_geo_module(
             [dec_prefix.target_boxes_xyxy, dec_fn.target_boxes_xyxy],
             dim=0,
         ),
-        "bbox_group_weights": all_group_weights.to(dtype=context.logits.dtype),
+        "bbox_group_weights": all_group_weights.to(dtype=torch.float32),
         "coord_logits": coord_logits,
         "coord_logits_full": logits_full,
         "coord_target_bins": target_bins,

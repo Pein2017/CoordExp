@@ -1,5 +1,14 @@
 # Stage-1 ET-RMP-CE Implementation Plan
 
+> Archived / superseded on 2026-05-02.
+> Historical provenance only for the pre-refactor Stage-1 set-continuation family.
+> Do not use this file as an execution source.
+> Active execution sources:
+> - `docs/superpowers/specs/2026-05-02-training-infra-template-mode-refactor-design.md`
+> - `docs/superpowers/plans/2026-05-02-training-infra-template-mode-refactor.md`
+
+## Historical Execution Notes
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Add an off-by-default Stage-1 set-continuation objective mode, ET-RMP-CE, that trains one recursive full suffix with entry-trie multi-positive CE at every object-entry divergence node.
@@ -20,6 +29,7 @@
   - Add strict `Stage1SetContinuationObjectiveConfig` under `Stage1SetContinuationConfig`.
 - Modify: `src/trainers/stage1_set_continuation/trainer.py`
   - Branch `compute_loss` to the full-suffix batch path when `objective.mode` is `full_suffix_ce` or `entry_trie_rmp_ce`.
+  - Keep candidate-balanced execution only for legacy compatibility with old configs/tests.
 - Modify: `src/trainers/stage1_set_continuation/metrics.py`
   - Add compact emitted ET-RMP metric keys without removing candidate-balanced keys.
 - Modify: `configs/stage1/set_continuation/rmp_ce.yaml`
@@ -132,7 +142,8 @@ existing branch-batcher row scheduler.
 Modify `Stage1SetContinuationTrainer.compute_loss` so `objective.mode` in
 `full_suffix_ce` or `entry_trie_rmp_ce` builds all full-suffix rows for
 `meta_list` and scores them through the full-suffix batch path. Leave the
-current `_process_sample` candidate-balanced path as the default.
+current `_process_sample` candidate-balanced path available only for legacy
+compatibility.
 
 - [ ] **Step 3: Run full-suffix tests**
 
@@ -150,7 +161,8 @@ Expected: all full-suffix tests pass.
 
 Extend `tests/test_stage1_set_continuation_config.py` to parse
 `objective.mode: entry_trie_rmp_ce`, reject unknown modes, and keep omitted
-objective config at `candidate_balanced`.
+objective config behavior compatible while documenting that `candidate_balanced`
+is deprecated for production.
 
 - [ ] **Step 2: Add emitted metric keys**
 

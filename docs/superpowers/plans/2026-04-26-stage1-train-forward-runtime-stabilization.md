@@ -1,8 +1,17 @@
 # Stage-1 Train-Forward Runtime Stabilization Implementation Plan
 
+> Archived / superseded on 2026-05-02.
+> Historical provenance only for the pre-refactor Stage-1 set-continuation family.
+> Do not use this file as an execution source.
+> Active execution sources:
+> - `docs/superpowers/specs/2026-05-02-training-infra-template-mode-refactor-design.md`
+> - `docs/superpowers/plans/2026-05-02-training-infra-template-mode-refactor.md`
+
+## Historical Execution Notes
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Status update, 2026-04-26:** This plan began as a checkpoint/recompute memory bridge. The accepted immediate production-speed bridge is now exact supervised-suffix logits, no DDP candidate padding forwards, `ddp_find_unused_parameters=false`, `ddp_broadcast_buffers=false`, and cap-8 approximate fallback. Sections below that discuss `checkpointed_exact` remain useful as historical design notes and fallback implementation context, but production config/docs should follow the OpenSpec and YAML contract above.
+**Status update, 2026-04-26:** This plan began as a checkpoint/recompute memory bridge. It is now historical context only. The active 2026-05-02 greenfield recursive detection CE spec/plan listed above supersedes this production-speed bridge for new training-infrastructure work.
 
 **Goal:** Stabilize Stage-1 set-continuation training against long-sample CUDA OOM and severe throughput loss by adding a train-forward runtime that materializes only supervised suffix logits, avoids DDP padding forwards in production, preserves exact MP/PEM whenever all authored candidates are scored, and makes cap-8 approximate fallback explicit.
 
@@ -27,9 +36,9 @@ Implement only the train-step forward runtime:
 The implementation must preserve current behavior when `train_forward.logits.mode: full` and `train_forward.ddp_sync.candidate_padding: max_count`, and must make any approximate fallback visible through metrics and artifacts.
 When `custom.stage1_set_continuation.train_forward` is omitted, resolved config must preserve current verified behavior: retained-graph branch scoring, full logits, max-count DDP candidate padding, budget fallback disabled, prefix encoding cache disabled, GPU KV cache disabled, and branch attention masks disabled.
 
-## Source Contracts
+## Historical Source Contracts
 
-Use these files as the current source of truth:
+When this plan was active, these files were the source contracts:
 
 - `openspec/changes/add-stage1-set-continuation-training/proposal.md`
 - `openspec/changes/add-stage1-set-continuation-training/design.md`

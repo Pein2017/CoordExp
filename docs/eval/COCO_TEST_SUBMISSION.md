@@ -89,6 +89,11 @@ Expected artifact:
 
 - `<run_dir>/gt_vs_pred_scored.jsonl`
 
+Non-canonical bbox note:
+
+- this official runbook is written for the canonical `xyxy` confidence-backed path
+- for `cxcy_logw_logh` or `cxcywh`, use the compatibility-scoring rule in [CONTRACT.md](CONTRACT.md) and [WORKFLOW.md](WORKFLOW.md) instead of assuming confidence reconstruction
+
 ## 5. Export The Official Submission JSON
 
 Use the original-resolution source JSONL here, not the resized inference JSONL.

@@ -77,6 +77,15 @@ def _generation_meta(owner: Any, *, backend: str, batch_size: int) -> Dict[str, 
             "logit_bias": owner.gen_cfg.stop_pressure_logit_bias,
             "active": backend == "hf" and owner.gen_cfg.stop_pressure_active,
         },
+        "compact_grammar": {
+            "enabled": bool(getattr(owner.gen_cfg, "compact_grammar_enabled", False)),
+            "format": getattr(owner.gen_cfg, "compact_grammar_format", "coordjson"),
+            "force_row_start": bool(
+                getattr(owner.gen_cfg, "compact_grammar_force_row_start", True)
+            ),
+            "active": backend == "hf"
+            and bool(getattr(owner.gen_cfg, "compact_grammar_enabled", False)),
+        },
     }
 
 
@@ -101,6 +110,7 @@ def build_infer_resolved_meta(
         "pred_coord_mode": owner.cfg.pred_coord_mode,
         "prompt_variant": owner.prompt_variant,
         "bbox_format": owner.bbox_format,
+        "detection_sequence_format": owner.detection_sequence_format,
         "object_field_order": owner.object_field_order,
         "object_ordering": owner.object_ordering,
         "prompt_template_hash": owner.prompt_template_hash,
@@ -162,6 +172,7 @@ def build_infer_summary_payload(
             "pred_coord_mode": owner.cfg.pred_coord_mode,
             "prompt_variant": owner.prompt_variant,
             "bbox_format": owner.bbox_format,
+            "detection_sequence_format": owner.detection_sequence_format,
             "object_field_order": owner.object_field_order,
             "object_ordering": owner.object_ordering,
             "prompt_template_hash": owner.prompt_template_hash,

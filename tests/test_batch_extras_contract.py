@@ -2,14 +2,17 @@ from __future__ import annotations
 
 from collections import defaultdict
 
+import pytest
 import torch
 
 from src.metrics.dataset_metrics import GradAccumLossScaleMixin
+from src.data_collators.dataset_metrics import build_dataset_metrics_collator
 from src.trainers.batch_extras import (
     DATASET_LABELS_KEY,
     DATASET_SEGMENTS_KEY,
     INSTABILITY_META_JSON_KEY,
     PACK_NUM_SAMPLES_KEY,
+    RECURSIVE_DETECTION_TARGETS_KEY,
     TOKEN_TYPES_KEY,
     get_stashed_batch_extras,
 )
@@ -26,6 +29,7 @@ def test_batch_extras_are_stripped_before_model_forward_and_stashed() -> None:
             assert PACK_NUM_SAMPLES_KEY not in inputs
             assert TOKEN_TYPES_KEY not in inputs
             assert INSTABILITY_META_JSON_KEY not in inputs
+            assert RECURSIVE_DETECTION_TARGETS_KEY not in inputs
 
             loss = torch.tensor(1.0)
             outputs = object()
@@ -60,6 +64,7 @@ def test_batch_extras_are_stripped_before_model_forward_and_stashed() -> None:
         PACK_NUM_SAMPLES_KEY: torch.tensor([2, 1], dtype=torch.long),
         TOKEN_TYPES_KEY: torch.zeros((2, 4), dtype=torch.long),
         INSTABILITY_META_JSON_KEY: "[]",
+        RECURSIVE_DETECTION_TARGETS_KEY: ("target-a", "target-b"),
     }
 
     loss = trainer.compute_loss(model=None, inputs=inputs, return_outputs=False, num_items_in_batch=None)
@@ -71,3 +76,56 @@ def test_batch_extras_are_stripped_before_model_forward_and_stashed() -> None:
     assert isinstance(extras.pack_num_samples, torch.Tensor)
     assert isinstance(extras.token_types, torch.Tensor)
     assert extras.instability_meta_json == "[]"
+    assert extras.recursive_detection_targets == ("target-a", "target-b")
+
+
+class _DummyTemplate:
+    tokenizer = None
+    template_meta = None
+
+
+def _base_collator(batch):
+    bsz = len(batch)
+    labels = torch.ones((bsz, 4), dtype=torch.long)
+    return {
+        "input_ids": labels.clone(),
+        "labels": labels,
+        "attention_mask": torch.ones_like(labels),
+    }
+
+
+def test_recursive_detection_targets_are_collated_from_unpacked_samples() -> None:
+    collator = build_dataset_metrics_collator(_DummyTemplate(), _base_collator)
+
+    out = collator(
+        [
+            {"dataset": "coco", RECURSIVE_DETECTION_TARGETS_KEY: "target-a"},
+            {"dataset": "coco", RECURSIVE_DETECTION_TARGETS_KEY: "target-b"},
+        ]
+    )
+
+    assert out[RECURSIVE_DETECTION_TARGETS_KEY] == ("target-a", "target-b")
+
+
+def test_recursive_detection_targets_require_all_unpacked_samples_to_have_sidecar() -> None:
+    collator = build_dataset_metrics_collator(_DummyTemplate(), _base_collator)
+
+    with pytest.raises(ValueError, match="recursive_detection_targets"):
+        collator(
+            [
+                {"dataset": "coco", RECURSIVE_DETECTION_TARGETS_KEY: "target-a"},
+                {"dataset": "coco"},
+            ]
+        )
+
+
+def test_recursive_detection_targets_reject_packed_batches() -> None:
+    collator = build_dataset_metrics_collator(_DummyTemplate(), _base_collator)
+
+    with pytest.raises(ValueError, match="recursive_detection_targets.*packing"):
+        collator(
+            [
+                [{"dataset": "coco", RECURSIVE_DETECTION_TARGETS_KEY: "target-a"}],
+                [{"dataset": "coco", RECURSIVE_DETECTION_TARGETS_KEY: "target-b"}],
+            ]
+        )

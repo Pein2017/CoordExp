@@ -1,13 +1,14 @@
 ## MODIFIED Requirements
 
 ### Requirement: Stage-1 set-continuation supports recursive full-suffix objectives
-The trainer SHALL keep `candidate_balanced` as the default objective and expose
-off-by-default recursive full-suffix objective modes through
-`custom.stage1_set_continuation.objective`.
+The trainer SHALL expose recursive full-suffix objective modes through
+`custom.stage1_set_continuation.objective`, and production configs SHALL use
+the promoted ET-RMP-CE mode rather than candidate-branch objectives.
 
 Normative behavior:
-- `objective.mode=candidate_balanced` SHALL preserve the current production
-  candidate-balanced behavior,
+- `objective.mode=candidate_balanced` MAY remain available for legacy
+  compatibility with older configs/tests, but it SHALL NOT be used as the
+  production objective,
 - `objective.mode=full_suffix_ce` SHALL train one full remaining suffix with
   ordinary full-vocabulary CE,
 - `objective.mode=entry_trie_rmp_ce` SHALL train one full remaining suffix with
@@ -17,11 +18,19 @@ Normative behavior:
 - full-suffix modes SHALL train recursive closure through object entries,
   comma boundaries, global close, and EOS/chat-template end labels.
 
-#### Scenario: Default objective is unchanged
+#### Scenario: Production objective is ET-RMP-CE
 - **GIVEN** `custom.trainer_variant: stage1_set_continuation`
-- **AND** no objective mode is authored
+- **AND** `objective.mode=entry_trie_rmp_ce`
 - **WHEN** training computes the Stage-1 set-continuation loss
-- **THEN** the trainer uses the existing candidate-balanced objective.
+- **THEN** the trainer uses the recursive full-suffix ET-RMP-CE objective.
+
+#### Scenario: Legacy candidate-balanced objective is explicit
+- **GIVEN** `custom.trainer_variant: stage1_set_continuation`
+- **AND** `objective.mode=candidate_balanced`
+- **WHEN** training computes the Stage-1 set-continuation loss
+- **THEN** the trainer may use the legacy candidate-balanced objective for
+  compatibility
+- **AND** the run must not be documented as a production objective.
 
 #### Scenario: Full-suffix objective trains recursive closure
 - **GIVEN** a sampled prefix subset `S`

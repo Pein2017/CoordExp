@@ -150,6 +150,64 @@ def test_parse_prediction_ignores_extra_top_level_poly_field() -> None:
     ]
 
 
+def test_load_prediction_dict_accepts_compact_full_detection_sequence() -> None:
+    raw = (
+        "<|object_ref_start|>traffic light<|box_start|>"
+        "<|coord_10|><|coord_20|><|coord_30|><|coord_40|>\n"
+        "<|object_ref_start|>person<|box_start|>"
+        "<|coord_100|><|coord_200|><|coord_300|><|coord_400|><|im_end|>"
+    )
+
+    parsed = load_prediction_dict(raw)
+
+    assert parsed == {
+        "objects": [
+            {
+                "desc": "traffic light",
+                "bbox_2d": [
+                    "<|coord_10|>",
+                    "<|coord_20|>",
+                    "<|coord_30|>",
+                    "<|coord_40|>",
+                ],
+            },
+            {
+                "desc": "person",
+                "bbox_2d": [
+                    "<|coord_100|>",
+                    "<|coord_200|>",
+                    "<|coord_300|>",
+                    "<|coord_400|>",
+                ],
+            },
+        ]
+    }
+
+
+def test_parse_prediction_accepts_compact_min_detection_sequence() -> None:
+    raw = (
+        "traffic light<|coord_10|><|coord_20|><|coord_30|><|coord_40|>\n"
+        "person<|coord_100|><|coord_200|><|coord_300|><|coord_400|><|im_end|>"
+    )
+
+    parsed = parse_prediction(raw)
+
+    assert parsed == [
+        {
+            "desc": "traffic light",
+            "type": "bbox_2d",
+            "points": [10, 20, 30, 40],
+            "_had_tokens": True,
+        },
+        {
+            "desc": "person",
+            "type": "bbox_2d",
+            "points": [100, 200, 300, 400],
+            "_had_tokens": True,
+        },
+    ]
+
+
 def test_end_to_end_eval_from_inference_jsonl(tmp_path: Path):
     # Build tiny GT and pred JSONL mimicking inference output
     img_path = tmp_path / "img.png"

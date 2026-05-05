@@ -241,6 +241,46 @@ def test_validate_stage1_static_packing_policy_allows_eval_packing() -> None:
     )
 
 
+def test_validate_stage1_static_packing_policy_rejects_unsupported_detection_template() -> None:
+    with pytest.raises(ValueError, match="dataset-level static packing only supports"):
+        _validate_stage1_static_packing_policy(
+            packing_cfg=PackingRuntimeConfig(
+                enabled=True,
+                mode="static",
+                packing_length=128,
+            ),
+            trainer_variant=None,
+            training_config=SimpleNamespace(),
+            custom_config=SimpleNamespace(
+                detection_sequence_format="compact_no_desc",
+                object_ordering="sorted",
+            ),
+        )
+
+
+def test_validate_stage1_static_packing_policy_rejects_recursive_objective() -> None:
+    with pytest.raises(ValueError, match="trie target metadata preservation"):
+        _validate_stage1_static_packing_policy(
+            packing_cfg=PackingRuntimeConfig(
+                enabled=True,
+                mode="static",
+                packing_length=128,
+            ),
+            trainer_variant=None,
+            training_config=SimpleNamespace(
+                objective=SimpleNamespace(
+                    variant="random_permutation_et_rmp_ce",
+                    state_weighting="legacy_row_mean_prefix_mixture_equivalence",
+                    normalization="legacy_row_mean_equivalence",
+                )
+            ),
+            custom_config=SimpleNamespace(
+                detection_sequence_format="compact_full",
+                object_ordering="random",
+            ),
+        )
+
+
 def test_validate_stage1_static_packing_policy_rejects_set_continuation_train_packing() -> None:
     with pytest.raises(
         ValueError,
@@ -272,6 +312,15 @@ def test_validate_stage1_static_packing_policy_skips_rollout_matching_variants()
         packing_cfg=PackingRuntimeConfig(enabled=True, mode="dynamic"),
         trainer_variant="stage2_two_channel",
     )
+
+
+def test_main_validates_static_packing_before_dataset_materialization() -> None:
+    source = Path(sft_module.__file__).read_text(encoding="utf-8")
+    main_source = source[source.index("def main(") :]
+
+    dataset_position = main_source.index("dataset = BaseCaptionDataset.from_jsonl")
+    assert main_source.index("packing_cfg = _parse_packing_config") < dataset_position
+    assert main_source.index("_validate_stage1_static_packing_policy") < dataset_position
 
 
 def test_append_dataset_epoch_callback_registers_set_epoch_datasets() -> None:
@@ -322,11 +371,18 @@ def test_static_packing_fingerprint_includes_dataset_source_identity(
         dataset_seed=7,
         packing_cfg=packing_cfg,
         train_jsonl=str(train_jsonl),
+        train_sample_limit=32,
     )
 
     assert fingerprint["dataset_split"] == "train"
+    assert fingerprint["train_sample_limit"] == 32
     assert fingerprint["dataset_jsonl"] == str(train_jsonl)
     assert fingerprint["custom_train_jsonl"] == str(train_jsonl)
+    contract = fingerprint["detection_packing_contract"]
+    assert contract["schema_version"] == "detection_packing_fingerprint_v1"
+    assert contract["metadata"]["template_id"] == "stage1_json_pretty"
+    assert contract["metadata"]["objective_variant"] == "sorted_sft"
+    assert contract["metadata"]["normalization_policy"] == "token_mean"
     source = fingerprint["dataset_source_jsonl"]
     assert isinstance(source, dict)
     assert source["raw_path"] == str(train_jsonl)
@@ -502,6 +558,62 @@ def test_static_packing_fingerprint_tracks_bbox_parameterization() -> None:
     assert cxcywh["custom_bbox_format"] == "cxcywh"
     assert xyxy != cxcy_logw_logh
     assert cxcy_logw_logh != cxcywh
+
+
+def test_static_packing_fingerprint_tracks_detection_sequence_format() -> None:
+    packing_cfg = _parse_packing_config(
+        training_cfg={"packing": True, "packing_mode": "static"},
+        template=_Template(max_length=128),
+        train_args=SimpleNamespace(max_model_len=0),
+    )
+
+    training_cfg = SimpleNamespace(
+        global_max_length=1024,
+        template={"system": "sys", "truncation_strategy": "raise"},
+        training={"train_dataloader_shuffle": True},
+    )
+    common_custom = dict(
+        user_prompt="prompt",
+        emit_norm="none",
+        json_format="standard",
+        bbox_format="xyxy",
+        object_ordering="sorted",
+        object_field_order="desc_first",
+        use_summary=False,
+        system_prompt_dense=None,
+        system_prompt_summary=None,
+        offline_max_pixels=1048576,
+        coord_tokens={"enabled": True, "skip_bbox_norm": True},
+    )
+
+    coordjson = _build_static_packing_fingerprint(
+        training_config=training_cfg,
+        custom_config=SimpleNamespace(
+            **common_custom,
+            detection_sequence_format="coordjson",
+        ),
+        template=_Template(max_length=128),
+        train_args=SimpleNamespace(max_model_len=512),
+        dataset_seed=7,
+        packing_cfg=packing_cfg,
+        train_jsonl="train.jsonl",
+    )
+    compact = _build_static_packing_fingerprint(
+        training_config=training_cfg,
+        custom_config=SimpleNamespace(
+            **common_custom,
+            detection_sequence_format="compact_full",
+        ),
+        template=_Template(max_length=128),
+        train_args=SimpleNamespace(max_model_len=512),
+        dataset_seed=7,
+        packing_cfg=packing_cfg,
+        train_jsonl="train.jsonl",
+    )
+
+    assert coordjson["custom_detection_sequence_format"] == "coordjson"
+    assert compact["custom_detection_sequence_format"] == "compact_full"
+    assert coordjson != compact
 
 
 def test_static_packing_fingerprint_tracks_prompt_variant_and_template_hash() -> None:

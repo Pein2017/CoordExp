@@ -105,8 +105,19 @@ def create_multimodal_coord_offset_optimizer(args, model, dataset):
             for n, p in model.named_parameters()
             if p.requires_grad and "coord_offset_adapter" not in n
         ]
+        dedup_remaining = []
+        for name, param in remaining:
+            if id(param) in seen_params:
+                continue
+            dedup_remaining.append((name, param))
+            seen_params.add(id(param))
         optimizer_grouped_parameters.extend(
-            _split_decay(_dedup([p for _, p in remaining]), decay_parameters, args.learning_rate, args.weight_decay)
+            _split_decay(
+                dedup_remaining,
+                decay_parameters,
+                args.learning_rate,
+                args.weight_decay,
+            )
         )
 
     optimizer_cls, optimizer_kwargs = Trainer.get_optimizer_cls_and_kwargs(args, model)

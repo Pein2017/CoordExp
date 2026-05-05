@@ -28,7 +28,7 @@
 - [x] Branch trainer `compute_loss` to full-suffix batch scoring for
       `full_suffix_ce` and `entry_trie_rmp_ce`.
 - [x] Add compact emitted ET-RMP metrics.
-- [x] Preserve existing candidate-balanced default behavior and tests.
+- [x] Preserve legacy candidate-balanced behavior and tests for compatibility.
 
 ## 5. Profile And Docs
 

@@ -11,6 +11,7 @@ import re
 from dataclasses import asdict, dataclass, is_dataclass
 from pathlib import Path
 from multiprocessing import Manager
+from types import SimpleNamespace
 from typing import Any, Literal, Mapping, cast
 
 import torch
@@ -31,8 +32,8 @@ from swift.trainers import TrainerFactory
 from swift.utils import get_dist_setting
 
 from .data_collators import build_dataset_metrics_collator
-from .coord_tokens.template_adapter import apply_coord_template_adapter
-from .coord_tokens.offset_adapter import (
+from .tokens.coord.template_adapter import apply_coord_template_adapter
+from .tokens.row_offsets import (
     install_coord_offset_adapter,
     reattach_coord_offset_hooks,
 )
@@ -44,8 +45,11 @@ from .bootstrap.trainer_setup import (
     instantiate_trainer,
 )
 from .config import ConfigLoader
+from .config.schema import CoordOffsetConfig
+from .config.schema import CoordTokensConfig, LatestDetectionTrainingConfig
 from .config.prompts import (
     coord_mode_from_coord_tokens_enabled,
+    get_template_prompts,
     get_template_prompt_hash,
     resolve_dense_prompt_variant_key,
 )
@@ -54,6 +58,25 @@ from .datasets import (
     BaseCaptionDataset,
     RandomSampleDataset,
     build_static_packed_dataset,
+)
+from .datasets.encoded_sample_cache import EncodedSampleCacheRequest
+from .detection.packing import (
+    PackingProfile as DetectionPackingProfile,
+    StaticSftPackingFingerprintRequest,
+    build_stage1_static_sft_packing_fingerprint,
+    require_static_sft_packing_eligibility,
+)
+from .detection.runtime import (
+    RecursiveDetectionCERuntimeConfig,
+    assert_latest_detection_runtime_supported as _assert_latest_detection_runtime_supported,
+    build_latest_detection_dataset,
+    build_latest_detection_runtime_custom_shim as _latest_detection_runtime_custom_shim,
+    is_latest_detection_config as _is_latest_detection_config,
+    latest_detection_mode as _latest_detection_mode,
+    latest_detection_prompt_variant as _latest_detection_prompt_variant,
+    latest_detection_sequence_format as _latest_detection_sequence_format,
+    resolve_latest_detection_prompts as _resolve_latest_detection_prompts,
+    resolve_recursive_detection_ce_runtime_cfg as _resolve_recursive_detection_ce_cfg,
 )
 from .trainers import with_final_checkpoint
 from .training_runtime import (
@@ -153,6 +176,10 @@ def _resolve_dense_prompt_identity(custom_config: Any) -> dict[str, Any]:
                 or "desc_first"
             ),
             bbox_format=str(getattr(custom_config, "bbox_format", "xyxy") or "xyxy"),
+            detection_sequence_format=str(
+                getattr(custom_config, "detection_sequence_format", "coordjson")
+                or "coordjson"
+            ),
         )
     return {
         "prompt_variant": prompt_variant,
@@ -624,6 +651,10 @@ def _build_benchmark_runtime_payload(
         branch_execution_label = "smart_batched_exact_no_prefix_cache"
     elif branch_runtime_mode == "checkpointed_exact":
         branch_execution_label = "checkpointed_exact_recompute_no_prefix_cache"
+    elif branch_runtime_mode == "padding_free_packed":
+        branch_execution_label = (
+            "padding_free_packed_full_suffix_rows_no_padding_no_prefix_cache"
+        )
     elif logits_mode == "supervised_suffix" and ddp_candidate_padding == "none":
         branch_execution_label = (
             "retained_graph_suffix_logits_no_ddp_padding_no_prefix_cache"
@@ -664,7 +695,7 @@ def _build_benchmark_runtime_payload(
         "prefix_gradient": "non_detached_recomputed_per_branch",
         "metric_schema_version": str(
             getattr(sc_cfg, "metric_schema_version", "")
-            or "stage1_set_continuation_metrics_v2"
+            or "stage1_set_continuation_metrics_v3"
         ),
         "subset_sampling": _config_to_mapping(subset_sampling),
         "structural_close": _config_to_mapping(
@@ -977,6 +1008,58 @@ def _validate_stage2_step_budget_windows(
         )
 
 
+def _get_section_value(section: Any, key: str, default: Any = None) -> Any:
+    if isinstance(section, Mapping):
+        return section.get(key, default)
+    return getattr(section, key, default)
+
+
+def _resolve_object_ordering_fingerprint_value(
+    *,
+    training_config: Any,
+    custom_config: Any,
+) -> str:
+    data_cfg = getattr(training_config, "data", None)
+    ordering = _get_section_value(data_cfg, "object_ordering")
+    if ordering:
+        return str(ordering)
+    return str(getattr(custom_config, "object_ordering", "sorted") or "sorted")
+
+
+def _resolve_objective_fingerprint_fields(
+    *,
+    training_config: Any,
+) -> tuple[str | None, str | None, str | None]:
+    objective_cfg = getattr(training_config, "objective", None)
+    objective_variant = _get_section_value(objective_cfg, "variant")
+    state_weighting = _get_section_value(objective_cfg, "state_weighting")
+    normalization = _get_section_value(objective_cfg, "normalization")
+    return (
+        str(objective_variant) if objective_variant is not None else None,
+        str(state_weighting) if state_weighting is not None else None,
+        str(normalization) if normalization is not None else None,
+    )
+
+
+def _detection_packing_profile_from_runtime(
+    packing_cfg: PackingRuntimeConfig,
+) -> DetectionPackingProfile:
+    return DetectionPackingProfile(
+        mode="static" if packing_cfg.enabled else "disabled",
+        packing_length=int(packing_cfg.packing_length),
+        runtime_flags={
+            "allow_single_long": bool(packing_cfg.allow_single_long),
+            "drop_last": bool(packing_cfg.drop_last),
+            "eval_packing": bool(packing_cfg.eval_packing),
+            "length_cache_persist_every": packing_cfg.length_cache_persist_every,
+            "length_precompute_workers": int(packing_cfg.length_precompute_workers),
+            "min_fill_ratio": float(packing_cfg.min_fill_ratio),
+            "source_runtime_mode": str(packing_cfg.mode),
+            "wait_timeout_s": float(packing_cfg.wait_timeout_s),
+        },
+    )
+
+
 def _build_static_packing_fingerprint(
     *,
     training_config: Any,
@@ -987,6 +1070,7 @@ def _build_static_packing_fingerprint(
     packing_cfg: PackingRuntimeConfig,
     train_jsonl: str | None,
     dataset_split: str = "train",
+    train_sample_limit: int | None = None,
     eval_sample_limit: int | None = None,
     eval_sample_with_replacement: bool | None = None,
 ) -> dict[str, Any]:
@@ -995,6 +1079,18 @@ def _build_static_packing_fingerprint(
     coord_tokens_payload = _coord_tokens_fingerprint_payload(custom_config)
     coord_mode = _resolve_custom_coord_mode(custom_config)
     prompt_identity = _resolve_dense_prompt_identity(custom_config)
+    trainer_variant = getattr(custom_config, "trainer_variant", None)
+    (
+        objective_variant,
+        state_weighting_policy,
+        normalization_policy,
+    ) = _resolve_objective_fingerprint_fields(
+        training_config=training_config,
+    )
+    object_ordering = _resolve_object_ordering_fingerprint_value(
+        training_config=training_config,
+        custom_config=custom_config,
+    )
 
     split = str(dataset_split or "train").strip().lower()
     if split not in {"train", "eval"}:
@@ -1002,7 +1098,7 @@ def _build_static_packing_fingerprint(
             f"dataset_split must be one of {{'train', 'eval'}}, got {dataset_split!r}"
         )
 
-    return {
+    runtime_fields = {
         "dataset_seed": int(dataset_seed),
         "dataset_split": split,
         "packing_mode": packing_cfg.mode,
@@ -1023,6 +1119,9 @@ def _build_static_packing_fingerprint(
         "custom_fusion_config": getattr(custom_config, "fusion_config", None),
         "custom_json_format": getattr(custom_config, "json_format", None),
         "custom_bbox_format": getattr(custom_config, "bbox_format", None),
+        "custom_detection_sequence_format": getattr(
+            custom_config, "detection_sequence_format", "coordjson"
+        ),
         "custom_object_ordering": getattr(custom_config, "object_ordering", None),
         "custom_object_field_order": getattr(custom_config, "object_field_order", None),
         "custom_prompt_variant": prompt_identity["prompt_variant"],
@@ -1038,6 +1137,9 @@ def _build_static_packing_fingerprint(
         ),
         "dataset_source_jsonl": _build_source_path_identity(train_jsonl),
         "dataset_source_train_jsonl": _build_source_path_identity(train_jsonl),
+        "train_sample_limit": int(train_sample_limit)
+        if split == "train" and train_sample_limit is not None
+        else None,
         "eval_sample_limit": int(eval_sample_limit)
         if split == "eval" and eval_sample_limit is not None
         else None,
@@ -1050,6 +1152,34 @@ def _build_static_packing_fingerprint(
         if isinstance(training_cfg, Mapping)
         else None,
     }
+    prompt_profile = (
+        f"variant={prompt_identity['prompt_variant']};"
+        f"template_hash={prompt_identity['prompt_template_hash']};"
+        f"use_summary={bool(getattr(custom_config, 'use_summary', False))}"
+    )
+    tokenizer_id = (
+        _resolve_model_checkpoint_path(training_config)
+        or str(getattr(train_args, "model", "") or "")
+        or "unknown_tokenizer"
+    )
+    return build_stage1_static_sft_packing_fingerprint(
+        StaticSftPackingFingerprintRequest(
+            detection_sequence_format=getattr(
+                custom_config,
+                "detection_sequence_format",
+                "coordjson",
+            ),
+            prompt_profile=prompt_profile,
+            tokenizer_id=tokenizer_id,
+            object_ordering=object_ordering,
+            objective_variant=objective_variant,
+            state_weighting_policy=state_weighting_policy,
+            normalization_policy=normalization_policy,
+            trainer_variant=str(trainer_variant) if trainer_variant is not None else None,
+            profile=_detection_packing_profile_from_runtime(packing_cfg),
+            runtime_fields=runtime_fields,
+        ),
+    )
 
 
 def _normalize_optional_sample_limit(sample_limit: Any) -> int | None:
@@ -1156,6 +1286,9 @@ def _build_encoded_sample_cache_fingerprint(
         "custom_emit_norm": getattr(custom_config, "emit_norm", None),
         "custom_json_format": getattr(custom_config, "json_format", None),
         "custom_bbox_format": getattr(custom_config, "bbox_format", None),
+        "custom_detection_sequence_format": getattr(
+            custom_config, "detection_sequence_format", "coordjson"
+        ),
         "custom_object_ordering": getattr(custom_config, "object_ordering", None),
         "custom_object_field_order": getattr(custom_config, "object_field_order", None),
         "custom_prompt_variant": prompt_identity["prompt_variant"],
@@ -1206,7 +1339,7 @@ def _build_encoded_sample_cache_request(
         ).encode("utf-8")
     ).hexdigest()
     cache_dir = Path(str(runtime_cfg.root_dir)) / fingerprint_sha256
-    return {
+    payload = {
         "enabled": True,
         "root_dir": str(runtime_cfg.root_dir),
         "ineligible_policy": runtime_cfg.ineligible_policy,
@@ -1217,7 +1350,9 @@ def _build_encoded_sample_cache_request(
         "fingerprint": fingerprint,
         "fingerprint_sha256": fingerprint_sha256,
         "cache_dir": str(cache_dir),
+        "manifest_path": str(cache_dir / "manifest.json"),
     }
+    return EncodedSampleCacheRequest.from_mapping(payload).to_mapping()
 
 
 def _resolve_static_packing_cache_dir(
@@ -1287,21 +1422,20 @@ def _build_encoded_sample_cache_bypass_info(
     *,
     reason: str,
 ) -> dict[str, Any]:
+    canonical = EncodedSampleCacheRequest.from_mapping(request)
     return {
         "enabled": True,
         "status": "bypassed",
         "reason": str(reason),
-        "policy": str(request.get("ineligible_policy") or "error"),
-        "wait_timeout_s": float(request.get("wait_timeout_s", 7200.0) or 0.0),
-        "dataset_split": str(request.get("dataset_split") or "train"),
-        "dataset_jsonl": request.get("dataset_jsonl"),
-        "fingerprint": dict(request.get("fingerprint") or {}),
-        "fingerprint_sha256": request.get("fingerprint_sha256"),
-        "root_dir": request.get("root_dir"),
-        "cache_dir": request.get("cache_dir"),
-        "manifest_path": str(
-            Path(str(request.get("cache_dir") or ".")) / "manifest.json"
-        ),
+        "policy": canonical.ineligible_policy,
+        "wait_timeout_s": canonical.wait_timeout_s,
+        "dataset_split": canonical.dataset_split,
+        "dataset_jsonl": canonical.dataset_jsonl,
+        "fingerprint": dict(canonical.fingerprint),
+        "fingerprint_sha256": canonical.fingerprint_sha256,
+        "root_dir": str(canonical.root_dir),
+        "cache_dir": str(canonical.cache_dir),
+        "manifest_path": str(canonical.manifest_path),
     }
 
 
@@ -1366,6 +1500,8 @@ def _validate_stage1_static_packing_policy(
     *,
     packing_cfg: PackingRuntimeConfig,
     trainer_variant: str | None,
+    training_config: Any | None = None,
+    custom_config: Any | None = None,
 ) -> None:
     if not packing_cfg.enabled:
         return
@@ -1386,6 +1522,23 @@ def _validate_stage1_static_packing_policy(
             "training.packing_mode=dynamic is deprecated and unsupported for Stage-1 dataset-level packing. "
             "Use training.packing_mode=static."
         )
+    if training_config is None or custom_config is None:
+        return
+
+    objective_variant, _, _ = _resolve_objective_fingerprint_fields(
+        training_config=training_config,
+    )
+    require_static_sft_packing_eligibility(
+        detection_sequence_format=getattr(
+            custom_config,
+            "detection_sequence_format",
+            "coordjson",
+        ),
+        object_ordering=str(getattr(custom_config, "object_ordering", "sorted") or "sorted"),
+        objective_variant=objective_variant,
+        trainer_variant=trainer_variant,
+        profile=_detection_packing_profile_from_runtime(packing_cfg),
+    )
 
 
 def _validate_attention_backend_for_packing(*, training_config: Any) -> None:
@@ -1725,7 +1878,14 @@ def main():
     )
     # Ensure custom optimizer variant is available before trainer setup
     register_coord_offset_optimizer()
-    custom_config = training_config.custom
+    latest_detection_config = (
+        training_config if _is_latest_detection_config(training_config) else None
+    )
+    custom_config = (
+        _latest_detection_runtime_custom_shim(latest_detection_config)
+        if latest_detection_config is not None
+        else training_config.custom
+    )
     debug_config = getattr(training_config, "debug", None)
     # Keep directory targets aligned across ms-swift wrappers.
     run_name = getattr(train_args, "run_name", None)
@@ -1788,21 +1948,34 @@ def main():
         logger.debug(f"  rlhf={training_config.rlhf}")
         logger.debug(f"  deepspeed={training_config.deepspeed}")
         logger.debug(f"  debug={getattr(training_config, 'debug', None)}")
-        logger.debug(f"  prompts={training_config.prompts}")
-        logger.debug("Custom dataset config:")
-        for key, value in asdict(custom_config).items():
-            logger.debug(f"  {key}: {value}")
+        if latest_detection_config is None:
+            logger.debug(f"  prompts={training_config.prompts}")
+            logger.debug("Custom dataset config:")
+            for key, value in asdict(custom_config).items():
+                logger.debug(f"  {key}: {value}")
+        else:
+            logger.debug("Latest detection config:")
+            logger.debug(f"  detection_template={training_config.detection_template}")
+            logger.debug(f"  objective={training_config.objective}")
         logger.debug("=" * 70)
 
     # Auto-configure ROOT_IMAGE_DIR from the training JSONL path.
-    train_jsonl = custom_config.train_jsonl or custom_config.extra.get("jsonl")
+    train_jsonl = (
+        latest_detection_config.data.train_jsonl
+        if latest_detection_config is not None
+        else custom_config.train_jsonl or custom_config.extra.get("jsonl")
+    )
     if not train_jsonl:
         raise ValueError("Config must specify 'custom.train_jsonl'/'custom.jsonl'")
 
     if os.environ.get("ROOT_IMAGE_DIR") in (None, ""):
-        root_dir = os.path.abspath(os.path.dirname(str(train_jsonl)))
+        root_dir = (
+            os.path.abspath(str(latest_detection_config.data.image_root))
+            if latest_detection_config is not None
+            else os.path.abspath(os.path.dirname(str(train_jsonl)))
+        )
         os.environ["ROOT_IMAGE_DIR"] = root_dir
-        logger.info(f"Set ROOT_IMAGE_DIR={root_dir} (from custom.train_jsonl)")
+        logger.info(f"Set ROOT_IMAGE_DIR={root_dir}")
 
     # Initialize SwiftSft with TrainArguments object directly
     logger.info("Initializing ms-swift pipeline...")
@@ -1814,6 +1987,45 @@ def main():
         apply_coord_template_adapter(sft.template, coord_cfg)
 
     coord_offset_cfg = getattr(custom_config, "coord_offset", None)
+    trainable_rows_cfg = getattr(custom_config, "trainable_token_rows", None)
+    if trainable_rows_cfg and trainable_rows_cfg.enabled:
+        tokenizer = getattr(sft.template, "tokenizer", None)
+        if tokenizer is None:
+            raise ValueError(
+                "custom.trainable_token_rows.enabled=true requires the training template to expose a tokenizer"
+            )
+        token_role_sets = trainable_rows_cfg.resolve_role_sets(tokenizer)
+        trainable_row_ids = token_role_sets.trainable_row_ids
+        if not trainable_row_ids:
+            raise ValueError(
+                "custom.trainable_token_rows.enabled=true resolved no trainable token ids"
+            )
+        coord_offset_cfg = CoordOffsetConfig(
+            enabled=True,
+            tie_head=trainable_rows_cfg.tie_head,
+            ids=trainable_row_ids,
+            embed_lr=trainable_rows_cfg.embed_lr
+            if trainable_rows_cfg.embed_lr is not None
+            else getattr(coord_offset_cfg, "embed_lr", None),
+            head_lr=trainable_rows_cfg.head_lr
+            if trainable_rows_cfg.head_lr is not None
+            else getattr(coord_offset_cfg, "head_lr", None),
+            weight_decay=trainable_rows_cfg.weight_decay,
+            dtype=trainable_rows_cfg.dtype or getattr(coord_offset_cfg, "dtype", None),
+        )
+        setattr(train_args, "coord_offset_config", coord_offset_cfg)
+        setattr(train_args, "token_role_sets", token_role_sets)
+        inner_args = getattr(train_args, "training_args", None)
+        if inner_args is not None:
+            setattr(inner_args, "coord_offset_config", coord_offset_cfg)
+            setattr(inner_args, "token_role_sets", token_role_sets)
+        logger.info(
+            "Trainable token rows resolved: total=%s coord_geometry=%s structural_ce_only=%s coord_loss=%s",
+            len(trainable_row_ids),
+            len(token_role_sets.coord_geometry_ids),
+            len(token_role_sets.structural_ce_only_ids),
+            len(token_role_sets.coord_loss_ids),
+        )
     if coord_offset_cfg and coord_offset_cfg.enabled:
         adapter = install_coord_offset_adapter(
             sft.model,
@@ -1895,7 +2107,12 @@ def main():
     # ignore custom.* limits. Otherwise use custom.{train,val}_sample_limit with
     # no shared fallback (explicit is better than implicit).
     debug_enabled = bool(
-        debug_config is not None and getattr(debug_config, "enabled", False)
+        debug_config is not None
+        and (
+            bool(debug_config.get("enabled", False))
+            if isinstance(debug_config, Mapping)
+            else bool(getattr(debug_config, "enabled", False))
+        )
     )
     heartbeat_env_raw = str(os.environ.get("COORDEXP_TRAIN_HEARTBEAT", "")).strip()
     heartbeat_env = heartbeat_env_raw.lower()
@@ -1921,8 +2138,12 @@ def main():
             heartbeat_env_raw,
         )
     if debug_enabled:
-        train_sample_limit = getattr(debug_config, "train_sample_limit", None)
-        val_sample_limit = getattr(debug_config, "val_sample_limit", None)
+        if isinstance(debug_config, Mapping):
+            train_sample_limit = debug_config.get("train_sample_limit")
+            val_sample_limit = debug_config.get("val_sample_limit")
+        else:
+            train_sample_limit = getattr(debug_config, "train_sample_limit", None)
+            val_sample_limit = getattr(debug_config, "val_sample_limit", None)
         sample_limit_ns = "debug"
         if train_sample_limit is None and val_sample_limit is None:
             logger.warning(
@@ -1962,7 +2183,11 @@ def main():
 
     # Prepare system prompts for the selected mode
     # The system prompt is set on the template by ConfigLoader.resolve_prompts
-    system_prompt_dense = getattr(sft.template, "system", None)
+    system_prompt_dense = (
+        _resolve_latest_detection_prompts(latest_detection_config)[0]
+        if latest_detection_config is not None
+        else getattr(sft.template, "system", None)
+    )
     system_prompt_summary = custom_config.system_prompt_summary
 
     if use_summary:
@@ -1991,12 +2216,30 @@ def main():
     encoded_sample_cache_cfg = _parse_encoded_sample_cache_config(
         training_config.training, train_args
     )
+    if latest_detection_config is not None:
+        _assert_latest_detection_runtime_supported(
+            latest_detection_config,
+            encoded_sample_cache_cfg=encoded_sample_cache_cfg,
+        )
     static_packing_cache_cfg = _parse_static_packing_cache_config(
         training_config.training
     )
     train_encoded_sample_cache_info: dict[str, Any] | None = None
     eval_encoded_sample_cache_info: dict[str, Any] | None = None
     trainer_variant = getattr(train_args, "trainer_variant", None)
+    packing_cfg = _parse_packing_config(
+        training_config.training, sft.template, train_args
+    )
+    _validate_attention_backend_for_packing(training_config=training_config)
+    # Stage_2 rollout-matching supports post-rollout packing inside the trainer only.
+    # Do not apply dataset-level packing wrappers for this trainer variant.
+    is_rollout_matching_variant = _is_rollout_matching_variant(trainer_variant)
+    _validate_stage1_static_packing_policy(
+        packing_cfg=packing_cfg,
+        trainer_variant=trainer_variant,
+        training_config=training_config,
+        custom_config=custom_config,
+    )
     train_encoded_sample_cache_request = _build_encoded_sample_cache_request(
         runtime_cfg=encoded_sample_cache_cfg,
         training_config=training_config,
@@ -2036,45 +2279,51 @@ def main():
         custom_config.object_field_order,
     )
     logger.info(f"Loading training dataset: {train_jsonl}")
-    dataset = BaseCaptionDataset.from_jsonl(
-        train_jsonl,
-        template=sft.template,
-        user_prompt=custom_config.user_prompt,
-        emit_norm=custom_config.emit_norm,
-        json_format=custom_config.json_format,
-        augmenter=augmenter,
-        bypass_prob=bypass_prob,
-        curriculum_state=curriculum_state,
-        sample_limit=train_sample_limit,
-        use_summary=use_summary,
-        system_prompt_dense=system_prompt_dense,
-        system_prompt_summary=system_prompt_summary,
-        coord_tokens=custom_config.coord_tokens,
-        offline_max_pixels=custom_config.offline_max_pixels,
-        seed=dataset_seed,
-        object_ordering=custom_config.object_ordering,
-        object_field_order=custom_config.object_field_order,
-        bbox_format=custom_config.bbox_format,
-        encoded_sample_cache=train_encoded_sample_cache_request,
-    )
-    if train_encoded_sample_cache_request is not None:
-        train_encoded_sample_cache_info = dataset.get_encoded_sample_cache_info()
-    packing_cfg = _parse_packing_config(
-        training_config.training, sft.template, train_args
-    )
-    _validate_attention_backend_for_packing(training_config=training_config)
+    if latest_detection_config is not None:
+        if train_encoded_sample_cache_request is not None:
+            raise ValueError(
+                "latest detection dataset rejects encoded sample cache requests"
+            )
+        dataset = build_latest_detection_dataset(
+            train_jsonl,
+            swift_template=sft.template,
+            training_config=latest_detection_config,
+            custom_config=custom_config,
+            system_prompt=system_prompt_dense,
+            seed=dataset_seed,
+            sample_limit=_normalize_optional_sample_limit(train_sample_limit),
+            dataset_name="latest_detection_train",
+        )
+    else:
+        dataset = BaseCaptionDataset.from_jsonl(
+            train_jsonl,
+            template=sft.template,
+            user_prompt=custom_config.user_prompt,
+            emit_norm=custom_config.emit_norm,
+            json_format=custom_config.json_format,
+            augmenter=augmenter,
+            bypass_prob=bypass_prob,
+            curriculum_state=curriculum_state,
+            sample_limit=train_sample_limit,
+            use_summary=use_summary,
+            system_prompt_dense=system_prompt_dense,
+            system_prompt_summary=system_prompt_summary,
+            coord_tokens=custom_config.coord_tokens,
+            offline_max_pixels=custom_config.offline_max_pixels,
+            seed=dataset_seed,
+            object_ordering=custom_config.object_ordering,
+            object_field_order=custom_config.object_field_order,
+            bbox_format=custom_config.bbox_format,
+            detection_sequence_format=custom_config.detection_sequence_format,
+            encoded_sample_cache=train_encoded_sample_cache_request,
+        )
+        if train_encoded_sample_cache_request is not None:
+            train_encoded_sample_cache_info = dataset.get_encoded_sample_cache_info()
     base_dataset_len = None
     try:
         base_dataset_len = len(dataset)
     except TypeError:
         base_dataset_len = None
-    # Stage_2 rollout-matching supports post-rollout packing inside the trainer only.
-    # Do not apply dataset-level packing wrappers for this trainer variant.
-    is_rollout_matching_variant = _is_rollout_matching_variant(trainer_variant)
-    _validate_stage1_static_packing_policy(
-        packing_cfg=packing_cfg,
-        trainer_variant=trainer_variant,
-    )
 
     if packing_cfg.enabled and not is_rollout_matching_variant:
         training_map = getattr(training_config, "training", {}) or {}
@@ -2124,6 +2373,7 @@ def main():
             packing_cfg=packing_cfg,
             train_jsonl=str(train_jsonl) if train_jsonl else None,
             dataset_split="train",
+            train_sample_limit=_normalize_optional_sample_limit(train_sample_limit),
         )
         static_cache_dir = _resolve_static_packing_cache_dir(
             runtime_cfg=static_packing_cache_cfg,
@@ -2484,11 +2734,14 @@ def main():
     if dump_conv and dataset_nonempty:
         try:
             template = dataset.template
-            template.set_mode("pt")
-            try:
+            if latest_detection_config is not None:
                 sample_encoded = dataset[0]
-            finally:
-                template.set_mode("train")
+            else:
+                template.set_mode("pt")
+                try:
+                    sample_encoded = dataset[0]
+                finally:
+                    template.set_mode("train")
 
             input_ids = (
                 sample_encoded.get("input_ids")
@@ -2515,37 +2768,52 @@ def main():
 
             assistant_gt = None
             try:
-                record_clone = None
-                base_records = getattr(dataset, "base_records", None)
-                if isinstance(base_records, list) and base_records:
-                    record_clone = copy.deepcopy(base_records[0])
-                else:
-                    pools = getattr(dataset, "_record_pools", None)
-                    if isinstance(pools, dict):
-                        for pool in pools.values():
-                            if isinstance(pool, list) and pool:
-                                record_clone = copy.deepcopy(pool[0])
-                                break
-                if record_clone is None:
-                    raise ValueError(
-                        "No base record available for assistant GT extraction"
+                if latest_detection_config is not None:
+                    messages = sample_encoded.get("messages", [])
+                    assistant_turn = next(
+                        (
+                            turn
+                            for turn in messages
+                            if isinstance(turn, dict)
+                            and turn.get("role") == "assistant"
+                        ),
+                        None,
                     )
-                builder = dataset._create_builder(dataset.mode)
-                merged = builder.build_many([record_clone])
-                assistant_turn = next(
-                    (
-                        turn
-                        for turn in merged.get("messages", [])
-                        if turn.get("role") == "assistant"
-                    ),
-                    None,
-                )
+                else:
+                    record_clone = None
+                    base_records = getattr(dataset, "base_records", None)
+                    if isinstance(base_records, list) and base_records:
+                        record_clone = copy.deepcopy(base_records[0])
+                    else:
+                        pools = getattr(dataset, "_record_pools", None)
+                        if isinstance(pools, dict):
+                            for pool in pools.values():
+                                if isinstance(pool, list) and pool:
+                                    record_clone = copy.deepcopy(pool[0])
+                                    break
+                    if record_clone is None:
+                        raise ValueError(
+                            "No base record available for assistant GT extraction"
+                        )
+                    builder = dataset._create_builder(dataset.mode)
+                    merged = builder.build_many([record_clone])
+                    assistant_turn = next(
+                        (
+                            turn
+                            for turn in merged.get("messages", [])
+                            if turn.get("role") == "assistant"
+                        ),
+                        None,
+                    )
                 if assistant_turn:
                     contents = assistant_turn.get("content") or []
-                    for item in contents:
-                        if isinstance(item, dict) and item.get("type") == "text":
-                            assistant_gt = item.get("text")
-                            break
+                    if isinstance(contents, str):
+                        assistant_gt = contents
+                    else:
+                        for item in contents:
+                            if isinstance(item, dict) and item.get("type") == "text":
+                                assistant_gt = item.get("text")
+                                break
             except (
                 AttributeError,
                 IndexError,
@@ -2592,7 +2860,11 @@ def main():
 
     # Build validation dataset from a single JSONL.
     eval_dataset = None
-    val_jsonl = custom_config.val_jsonl
+    val_jsonl = (
+        latest_detection_config.data.val_jsonl
+        if latest_detection_config is not None
+        else custom_config.val_jsonl
+    )
     eval_encoded_sample_cache_request = _build_encoded_sample_cache_request(
         runtime_cfg=encoded_sample_cache_cfg,
         training_config=training_config,
@@ -2624,26 +2896,43 @@ def main():
     if val_jsonl:
         logger.info(f"Loading validation dataset: {val_jsonl}")
         eval_sample_limit = None if val_sample_with_replacement else val_sample_limit
-        eval_dataset = BaseCaptionDataset.from_jsonl(
-            val_jsonl,
-            template=sft.template,
-            user_prompt=custom_config.user_prompt,
-            emit_norm=custom_config.emit_norm,
-            json_format=custom_config.json_format,
-            augmenter=None,  # No augmentation for validation
-            bypass_prob=0.0,  # Explicit: no bypass for validation
-            sample_limit=eval_sample_limit,
-            use_summary=use_summary,
-            system_prompt_dense=system_prompt_dense,
-            system_prompt_summary=system_prompt_summary,
-            coord_tokens=custom_config.coord_tokens,
-            offline_max_pixels=custom_config.offline_max_pixels,
-            seed=dataset_seed,
-            object_ordering=custom_config.object_ordering,
-            object_field_order=custom_config.object_field_order,
-            bbox_format=custom_config.bbox_format,
-            encoded_sample_cache=eval_encoded_sample_cache_request,
-        )
+        if latest_detection_config is not None:
+            if eval_encoded_sample_cache_request is not None:
+                raise ValueError(
+                    "latest detection eval dataset rejects encoded sample cache requests"
+                )
+            eval_dataset = build_latest_detection_dataset(
+                val_jsonl,
+                swift_template=sft.template,
+                training_config=latest_detection_config,
+                custom_config=custom_config,
+                system_prompt=system_prompt_dense,
+                seed=dataset_seed + 11,
+                sample_limit=_normalize_optional_sample_limit(eval_sample_limit),
+                dataset_name="latest_detection_eval",
+            )
+        else:
+            eval_dataset = BaseCaptionDataset.from_jsonl(
+                val_jsonl,
+                template=sft.template,
+                user_prompt=custom_config.user_prompt,
+                emit_norm=custom_config.emit_norm,
+                json_format=custom_config.json_format,
+                augmenter=None,  # No augmentation for validation
+                bypass_prob=0.0,  # Explicit: no bypass for validation
+                sample_limit=eval_sample_limit,
+                use_summary=use_summary,
+                system_prompt_dense=system_prompt_dense,
+                system_prompt_summary=system_prompt_summary,
+                coord_tokens=custom_config.coord_tokens,
+                offline_max_pixels=custom_config.offline_max_pixels,
+                seed=dataset_seed,
+                object_ordering=custom_config.object_ordering,
+                object_field_order=custom_config.object_field_order,
+                bbox_format=custom_config.bbox_format,
+                detection_sequence_format=custom_config.detection_sequence_format,
+                encoded_sample_cache=eval_encoded_sample_cache_request,
+            )
         base_eval_len = len(eval_dataset)
         if eval_encoded_sample_cache_request is not None:
             eval_encoded_sample_cache_info = (
@@ -2761,19 +3050,25 @@ def main():
     if coord_offset_cfg and coord_offset_cfg.enabled:
         reattached = reattach_coord_offset_hooks(sft.model)
         if reattached is None:
-            logger.warning(
-                "coord_offset_adapter not found after prepare_model; hooks not reattached"
+            raise RuntimeError(
+                "coord_offset_adapter not found after prepare_model; hooks not reattached. "
+                "This would leave coordinate/token-row offsets unsaved or inactive."
             )
-        else:
-            logger.info("Reattached coord_offset hooks on wrapped model")
+        logger.info("Reattached coord_offset hooks on wrapped model")
     logger.info(f"Model after tuner: {type(sft.model).__name__}")
 
     # Setup trainer
     logger.info("Setting up trainer...")
     trainer_variant = getattr(train_args, "trainer_variant", None)
     runtime_profile = resolve_training_runtime_profile(trainer_variant)
-    if runtime_profile.preserve_raw_sample_metadata:
+    recursive_detection_ce_cfg = _resolve_recursive_detection_ce_cfg(training_config)
+    if (
+        runtime_profile.preserve_raw_sample_metadata
+        or recursive_detection_ce_cfg is not None
+    ):
         # Keep raw fields for trainer-owned branch/rollout construction.
+        if recursive_detection_ce_cfg is not None:
+            setattr(train_args, "remove_unused_columns", False)
         if getattr(train_args, "training_args", None) is not None:
             train_args.training_args.remove_unused_columns = False
 
@@ -2959,6 +3254,7 @@ def main():
         bbox_size_aux_cfg=bbox_size_aux_cfg,
         coord_soft_ce_w1_cfg=coord_soft_ce_w1_cfg,
         sft_structural_close_cfg=sft_structural_close_cfg,
+        recursive_detection_ce_cfg=recursive_detection_ce_cfg,
     )
 
     callbacks = build_trainer_callbacks(
@@ -3148,6 +3444,9 @@ def main():
                     "object_ordering": str(custom_config.object_ordering),
                     "object_field_order": str(custom_config.object_field_order),
                     "bbox_format": str(custom_config.bbox_format),
+                    "detection_sequence_format": str(
+                        custom_config.detection_sequence_format
+                    ),
                 }
             )
             setattr(trainer, "rollout_matching_cfg", rollout_cfg)
@@ -3256,6 +3555,8 @@ def main():
         setattr(trainer, "bbox_size_aux_cfg", bbox_size_aux_cfg)
     if sft_structural_close_cfg is not None:
         setattr(trainer, "sft_structural_close_cfg", sft_structural_close_cfg)
+    if recursive_detection_ce_cfg is not None:
+        setattr(trainer, "recursive_detection_ce_cfg", recursive_detection_ce_cfg)
     setattr(trainer, "bbox_format", str(custom_config.bbox_format))
     if token_type_cfg is not None:
         setattr(trainer, "token_type_metrics_cfg", token_type_cfg)

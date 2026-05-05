@@ -55,6 +55,19 @@ def test_prompt_template_hash_changes_when_bbox_format_changes() -> None:
     assert xyxy_hash != cxcy_logw_logh_hash
 
 
+def test_prompt_template_hash_changes_when_detection_sequence_format_changes() -> None:
+    coordjson_hash = get_template_prompt_hash(
+        prompt_variant="coco_80",
+        detection_sequence_format="coordjson",
+    )
+    compact_hash = get_template_prompt_hash(
+        prompt_variant="coco_80",
+        detection_sequence_format="compact_full",
+    )
+
+    assert coordjson_hash != compact_hash
+
+
 @pytest.mark.parametrize("object_ordering", ["sorted", "random"])
 def test_prompt_variant_cross_surface_parity_between_training_and_inference(
     object_ordering: str,
@@ -85,6 +98,41 @@ def test_prompt_variant_cross_surface_parity_between_training_and_inference(
 
     assert infer_system == train_prompts.system
     assert infer_user == train_prompts.user
+
+
+def test_compact_prompt_variant_cross_surface_parity_between_training_and_inference() -> None:
+    train_prompts = ConfigLoader.resolve_prompts(
+        {
+            "custom": {
+                "object_ordering": "sorted",
+                "object_field_order": "desc_first",
+                "coord_tokens": {"enabled": True},
+                "detection_sequence_format": "compact_full",
+                "extra": {"prompt_variant": "coco_80"},
+            }
+        }
+    )
+
+    inf_cfg = InferenceConfig(
+        gt_jsonl="dummy.jsonl",
+        model_checkpoint="dummy",
+        mode="coord",
+        prompt_variant="coco_80",
+        object_ordering="sorted",
+        detection_sequence_format="compact_full",
+    )
+    engine = InferenceEngine(inf_cfg, GenerationConfig())
+
+    messages = engine._build_messages(Image.new("RGB", (16, 16), color=(0, 0, 0)))
+    infer_system = messages[0]["content"][0]["text"]
+    infer_user = messages[1]["content"][0]["text"]
+
+    assert infer_system == train_prompts.system
+    assert infer_user == train_prompts.user
+    assert "<|object_ref_start|>{desc}<|box_start|>" in infer_system
+    assert "<|object_ref_start|>{desc}<|box_start|>" in infer_user
+    assert "CoordJSON" not in infer_system
+    assert "CoordJSON" not in infer_user
 
 
 @pytest.mark.parametrize("object_field_order", ["desc_first", "geometry_first"])
@@ -202,6 +250,23 @@ def test_training_prompt_resolution_supports_norm1000_raw_text() -> None:
     assert '"bbox_2d": [110, 310, 410, 705]' in prompts.user
 
 
+def test_training_prompt_resolution_rejects_compact_without_coord_tokens() -> None:
+    with pytest.raises(
+        ValueError,
+        match="custom.detection_sequence_format=compact_full requires custom.coord_tokens.enabled=true",
+    ):
+        ConfigLoader.resolve_prompts(
+            {
+                "custom": {
+                    "object_field_order": "desc_first",
+                    "coord_tokens": {"enabled": False},
+                    "detection_sequence_format": "compact_full",
+                    "extra": {"prompt_variant": "default"},
+                }
+            }
+        )
+
+
 def test_training_prompt_resolution_rejects_skip_bbox_norm_false() -> None:
     with pytest.raises(
         ValueError,
@@ -238,6 +303,28 @@ def test_coco_80_prompt_variant_has_compact_canonical_unique_list() -> None:
     assert parsed == list(COCO_80_CLASS_NAMES)
     assert len(parsed) == 80
     assert len(set(parsed)) == 80
+
+
+@pytest.mark.parametrize(
+    ("fmt", "expected_pattern"),
+    [
+        ("compact_full", "<|object_ref_start|>{desc}<|box_start|><|coord_x1|><|coord_y1|><|coord_x2|><|coord_y2|>"),
+        ("compact_no_desc", "{desc}<|box_start|><|coord_x1|><|coord_y1|><|coord_x2|><|coord_y2|>"),
+        ("compact_no_bbox", "<|object_ref_start|>{desc}<|coord_x1|><|coord_y1|><|coord_x2|><|coord_y2|>"),
+        ("compact_min", "{desc}<|coord_x1|><|coord_y1|><|coord_x2|><|coord_y2|>"),
+    ],
+)
+def test_coco_80_prompt_variant_renders_each_compact_format(
+    fmt: str, expected_pattern: str
+) -> None:
+    system_prompt, user_prompt = get_template_prompts(
+        prompt_variant="coco_80",
+        detection_sequence_format=fmt,
+    )
+
+    assert expected_pattern in system_prompt
+    assert expected_pattern in user_prompt
+    assert "JSON layout" not in system_prompt
 
 
 def test_summary_prompts_are_unaffected_by_prompt_variant() -> None:

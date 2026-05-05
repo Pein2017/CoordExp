@@ -209,7 +209,7 @@ class GKDTrainerWithMetrics(_MsSwiftGKDTrainer):
             teacher_outputs = self._run_teacher_forward(model_inputs, student_logits)
 
         if teacher_outputs is not None:
-            teacher_logits = teacher_outputs.logits.to(dtype)
+            teacher_logits = teacher_outputs.logits
             teacher_logits_next = teacher_logits[:, :-1, :]
             teacher_vocab_size = teacher_logits_next.shape[-1]
 
@@ -228,7 +228,7 @@ class GKDTrainerWithMetrics(_MsSwiftGKDTrainer):
                     ]  # (valid_count, vocab_size)
                     masked_teacher_logits = flat_teacher.unsqueeze(
                         0
-                    )  # (1, valid_count, vocab_size)
+                    ).float()  # (1, valid_count, vocab_size)
 
                     # Free memory: delete large intermediate tensors before JSD computation
                     # This frees ~1.16 GB per tensor (for seq_len=4096, vocab_size=151936)
@@ -243,14 +243,14 @@ class GKDTrainerWithMetrics(_MsSwiftGKDTrainer):
                         masked_student_logits
                         if model.training
                         else masked_student_logits.detach()
-                    )
+                    ).float()
                     llm_kd_loss = self.generalized_jsd_loss(
                         student_logits=student_for_kl,
                         teacher_logits=masked_teacher_logits,
                         beta=self.beta,
                     )
                 else:
-                    llm_kd_loss = student_logits.new_zeros(())
+                    llm_kd_loss = student_logits.new_zeros((), dtype=torch.float32)
                 weighted_llm_kd_loss = llm_kd_loss * self._llm_kd_weight
 
         ce_loss = outputs_student.loss
@@ -261,7 +261,7 @@ class GKDTrainerWithMetrics(_MsSwiftGKDTrainer):
             sft_weight = float(getattr(self.args, "sft_alpha", 0.0))
 
         total_loss = student_logits.new_zeros(
-            (), dtype=dtype, device=student_logits.device
+            (), dtype=torch.float32, device=student_logits.device
         )
 
         if weighted_llm_kd_loss is not None:

@@ -180,11 +180,12 @@ def run_token_ce_module(
     for start in range(0, n_rows, rows_per_chunk):
         end = min(start + rows_per_chunk, n_rows)
         ce_chunk = F.cross_entropy(
-            flat_logits[start:end],
+            flat_logits[start:end].float(),
             flat_labels[start:end],
             ignore_index=-100,
             reduction="none",
         )
+        ce_chunk = torch.nan_to_num(ce_chunk, nan=0.0, posinf=1e4, neginf=0.0)
         if ce_num_total is None:
             z = ce_chunk.new_tensor(0.0)
             ce_num_total = z

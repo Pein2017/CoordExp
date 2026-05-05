@@ -1,0 +1,76 @@
+# Latest-schema contract fixture for recursive detection CE.
+# This file is intentionally non-runnable: runtime paths use synthetic
+# schema-contract placeholders so nobody mistakes it for a launch config.
+model:
+  model: schema-contract://model-placeholder
+
+template:
+  truncation_strategy: raise
+
+training:
+  run_name: schema-contract-do-not-launch
+  artifact_subdir: schema-contract/not-a-training-run
+  num_train_epochs: 1
+  effective_batch_size: 1
+
+deepspeed:
+  enabled: false
+
+data:
+  train_jsonl: schema-contract://train.coord.jsonl
+  val_jsonl: schema-contract://val.coord.jsonl
+  image_root: schema-contract://image-root
+  max_objects: 60
+  object_ordering: random_permutation
+
+prompt:
+  system_variant: stage1_detection
+  user_variant: compact_detection
+  include_template_summary: true
+  prompt_variant_enabled: true
+
+detection_template:
+  id: compact_full
+  coordinate_surface: coord_token
+  bbox_format: xyxy
+  strict_parse: true
+
+token_rows:
+  enabled: true
+  tie_head: true
+  groups:
+    coord_geometry:
+      role: coord_geometry
+      start_token: "<|coord_0|>"
+      end_token: "<|coord_999|>"
+      expected_start: 151670
+      expected_end: 152669
+    compact_structure:
+      role: structural_ce_only
+      tokens: ["<|object_ref_start|>", "<|box_start|>"]
+      expected_ids:
+        "<|object_ref_start|>": 151646
+        "<|box_start|>": 151648
+  embed_lr: 5.0e-5
+  weight_decay: 0.0
+
+objective:
+  id: recursive_detection_ce
+  variant: random_permutation_et_rmp_ce
+  trie_support_weight: 2.0
+  trie_balance_weight: 1.0
+  state_weighting: uniform_permutation
+  normalization: semantic_image_bucket_balanced
+
+packing:
+  static_packing: false
+  padding_free_packed: false
+
+evaluation:
+  expected_template: compact_full
+  parser_mode: strict_expected
+
+validation:
+  validate_span_alignment: true
+  validate_template_capabilities: true
+  fail_fast: true

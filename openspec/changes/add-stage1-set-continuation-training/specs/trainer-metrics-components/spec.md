@@ -1,5 +1,9 @@
 ## ADDED Requirements
 
+Status update, 2026-05-02: candidate-branch MP/PEM metrics are retained as
+historical/legacy metric surfaces only. Production continuation metrics should
+be read through ET-RMP-CE full-suffix and entry-trie support/balance metrics.
+
 ### Requirement: Stage-1 set-continuation metrics are explicit and aggregation-safe
 The trainer metrics contract SHALL expose set-continuation mechanism diagnostics
 with explicit scope, count-vs-gauge naming, and variant-specific documentation.

@@ -19,6 +19,7 @@ from src.data_collators.enrichers import (
     DatasetMetaEnricher,
     InstabilityMetaEnricher,
     ProxySupervisionEnricher,
+    RecursiveDetectionTargetsEnricher,
     SFTStructuralCloseEnricher,
     TokenTypesEnricher,
 )
@@ -76,6 +77,7 @@ def build_batch_extras_collator(
     instab_enricher = None
     if instab_enabled:
         instab_enricher = InstabilityMetaEnricher(max_meta_samples=max_meta_samples)
+    recursive_detection_targets_enricher = RecursiveDetectionTargetsEnricher()
 
     def _collate(batch: List[Dict[str, Any]]) -> Dict[str, Any]:
         collated = collate_fn(batch)
@@ -84,6 +86,12 @@ def build_batch_extras_collator(
 
         if instab_enricher is not None:
             instab_enricher(batch=batch, collated=collated, packed=meta.packed)
+
+        recursive_detection_targets_enricher(
+            collated=collated,
+            raw_batch=batch,
+            packed=meta.packed,
+        )
 
         if token_type_enricher is not None:
             token_type_enricher(

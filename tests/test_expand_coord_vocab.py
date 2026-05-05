@@ -37,6 +37,11 @@ class _DummyTokenizer:
             added += 1
         return added
 
+    def convert_tokens_to_ids(self, token: str) -> int:
+        if token in self.additional_special_tokens:
+            return self._vocab_size - len(self.additional_special_tokens) + self.additional_special_tokens.index(token)
+        raise KeyError(token)
+
     def __len__(self) -> int:
         return self._vocab_size
 
@@ -139,6 +144,7 @@ def test_expand_coord_vocab_initializes_added_rows_deterministically(
                 dst=dst_dir,
                 num_bins=2,
                 no_wildcard=False,
+                compact_structural_tokens=False,
             ),
         )
 

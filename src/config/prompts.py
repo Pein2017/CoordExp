@@ -5,9 +5,15 @@ import json
 from typing import Literal, Optional, cast
 
 from src.common.geometry.bbox_parameterization import normalize_bbox_format
+from src.common.detection_sequence import (
+    COORDJSON_FORMAT,
+    compact_pattern_for_detection_sequence_format,
+    normalize_detection_sequence_format,
+)
 from src.common.object_field_order import normalize_object_field_order
 
 from .prompt_variants import (
+    COCO_80_CLASS_LIST_COMPACT,
     DEFAULT_PROMPT_VARIANT,
     available_prompt_variant_keys,
     resolve_prompt_variant,
@@ -310,9 +316,19 @@ def build_dense_system_prompt(
     prompt_variant: Optional[str] = None,
     object_field_order: str = "desc_first",
     bbox_format: str = "xyxy",
+    detection_sequence_format: str = COORDJSON_FORMAT,
 ) -> str:
     """Return system prompt for dense mode."""
     coord_mode_key = normalize_coord_mode(coord_mode)
+    detection_format = normalize_detection_sequence_format(detection_sequence_format)
+    if detection_format != COORDJSON_FORMAT:
+        pattern = compact_pattern_for_detection_sequence_format(detection_format)
+        return (
+            "You are a general-purpose object detection and grounding assistant. "
+            "Output one newline-delimited compact detection row per object with no extra text. "
+            f"Use this row pattern exactly: {pattern}. "
+            "Descriptions are raw class text; bbox coords are four coord tokens in x1 y1 x2 y2 order."
+        )
 
     ordering_key = "random" if str(ordering).lower() == "random" else "sorted"
     if coord_mode_key == "coord_tokens":
@@ -361,9 +377,25 @@ def build_dense_user_prompt(
     prompt_variant: Optional[str] = None,
     object_field_order: str = "desc_first",
     bbox_format: str = "xyxy",
+    detection_sequence_format: str = COORDJSON_FORMAT,
 ) -> str:
     """Return user prompt for dense mode."""
     coord_mode_key = normalize_coord_mode(coord_mode)
+    detection_format = normalize_detection_sequence_format(detection_sequence_format)
+    if detection_format != COORDJSON_FORMAT:
+        pattern = compact_pattern_for_detection_sequence_format(detection_format)
+        variant = resolve_prompt_variant(prompt_variant)
+        class_clause = ""
+        if variant.key == "coco_80":
+            class_clause = (
+                f" Restrict `desc` to this COCO-80 class list: {COCO_80_CLASS_LIST_COMPACT}."
+            )
+        return (
+            "Locate each clearly visible object instance in the image. "
+            f"Return compact rows using this exact pattern: {pattern}. "
+            "Use one row per object and separate rows with a single newline."
+            f"{class_clause}"
+        )
 
     ordering_key = "random" if str(ordering).lower() == "random" else "sorted"
     if coord_mode_key == "coord_tokens":
@@ -413,6 +445,7 @@ def get_template_prompts(
     prompt_variant: Optional[str] = None,
     object_field_order: str = "desc_first",
     bbox_format: str = "xyxy",
+    detection_sequence_format: str = COORDJSON_FORMAT,
 ) -> tuple[str, str]:
     """Return (system, user) prompts for dense mode with variant support."""
     return (
@@ -422,6 +455,7 @@ def get_template_prompts(
             prompt_variant=prompt_variant,
             object_field_order=object_field_order,
             bbox_format=bbox_format,
+            detection_sequence_format=detection_sequence_format,
         ),
         build_dense_user_prompt(
             ordering=ordering,
@@ -429,6 +463,7 @@ def get_template_prompts(
             prompt_variant=prompt_variant,
             object_field_order=object_field_order,
             bbox_format=bbox_format,
+            detection_sequence_format=detection_sequence_format,
         ),
     )
 
@@ -440,6 +475,7 @@ def get_template_prompt_hash(
     prompt_variant: Optional[str] = None,
     object_field_order: str = "desc_first",
     bbox_format: str = "xyxy",
+    detection_sequence_format: str = COORDJSON_FORMAT,
 ) -> str:
     system_prompt, user_prompt = get_template_prompts(
         ordering=ordering,
@@ -447,6 +483,7 @@ def get_template_prompt_hash(
         prompt_variant=prompt_variant,
         object_field_order=object_field_order,
         bbox_format=bbox_format,
+        detection_sequence_format=detection_sequence_format,
     )
     payload = {
         "ordering": ordering,
@@ -456,6 +493,9 @@ def get_template_prompt_hash(
             object_field_order, path="custom.object_field_order"
         ),
         "bbox_format": normalize_bbox_format(bbox_format, path="bbox_format"),
+        "detection_sequence_format": normalize_detection_sequence_format(
+            detection_sequence_format
+        ),
         "system_prompt": system_prompt,
         "user_prompt": user_prompt,
         "do_resize": False,

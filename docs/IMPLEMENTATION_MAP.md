@@ -5,7 +5,7 @@ doc_type: implementation-map
 status: canonical
 domain: repo
 summary: Task-to-file routing guide for common CoordExp changes.
-updated: 2026-04-25
+updated: 2026-05-04
 ---
 
 # Implementation Map
@@ -14,7 +14,7 @@ Purpose: route common research and engineering changes to the smallest useful se
 Authority: code-navigation guide for the current repo; for semantics and defaults, defer to `docs/PROJECT_CONTEXT.md`, runbooks, and `openspec/specs/`.
 Read this after: `docs/SYSTEM_OVERVIEW.md`
 Read this before: opening many source files blindly or doing broad repo-wide searches
-Primary code handles: `src/sft.py`, `src/bootstrap/`, `src/config/schema.py`, `src/datasets/`, `src/trainers/stage1_set_continuation/`, `src/trainers/stage2_two_channel.py`, `src/trainers/stage2_two_channel/`, `src/trainers/stage2_rollout_aligned.py`, `src/trainers/rollout_aligned_targets.py`, `src/trainers/rollout_aligned_evaluator.py`, `src/trainers/rollout_runtime/`, `src/launchers/stage2_vllm_server.py`, `src/infer/pipeline.py`, `src/infer/engine.py`, `src/infer/backends.py`, `src/infer/artifacts.py`, `src/eval/detection.py`, `src/eval/orchestration.py`, `src/eval/artifacts.py`
+Primary code handles: `src/sft.py`, `src/detection/runtime.py`, `src/detection/template.py`, `src/common/detection_sequence.py`, `src/common/detection_compact_rows.py`, `src/bootstrap/`, `src/config/schema.py`, `src/datasets/`, `src/trainers/metrics/`, `src/metrics/events.py`, `src/trainers/stage1_set_continuation/`, `src/trainers/stage2_two_channel.py`, `src/trainers/stage2_two_channel/`, `src/trainers/stage2_rollout_aligned.py`, `src/trainers/rollout_aligned_targets.py`, `src/trainers/rollout_aligned_evaluator.py`, `src/trainers/rollout_runtime/`, `src/launchers/stage2_vllm_server.py`, `src/infer/pipeline.py`, `src/infer/engine.py`, `src/infer/backends.py`, `src/infer/artifacts.py`, `src/eval/detection.py`, `src/eval/detection_orchestrator.py`, `src/eval/detection_records.py`, `src/eval/detection_geometry.py`, `src/eval/detection_coco.py`, `src/eval/detection_lvis.py`, `src/eval/detection_duplicate_guard.py`, `src/eval/detection_f1ish.py`, `src/eval/orchestration.py`, `src/eval/artifacts.py`
 Verification: use the targeted test files listed below before running broader suites
 
 ## 1. Data Contract, JSONL Rendering, Or Geometry
@@ -29,6 +29,9 @@ Open these code files first:
 - `src/datasets/dense_caption.py`
 - `src/datasets/builders/jsonlines.py`
 - `src/datasets/geometry.py`
+- `src/detection/template.py`
+- `src/common/detection_sequence.py`
+- `src/common/detection_compact_rows.py`
 - `src/config/schema.py`
 
 Run these tests first:
@@ -44,6 +47,7 @@ Open these docs first:
 - [`docs/training/README.md`](training/README.md)
 - [`docs/training/STAGE1_OBJECTIVE.md`](training/STAGE1_OBJECTIVE.md)
 - [`docs/data/PACKING.md`](data/PACKING.md)
+- [`configs/stage1/recursive_detection_ce_latest/prod/compact_full_support2.yaml`](../configs/stage1/recursive_detection_ce_latest/prod/compact_full_support2.yaml) when working on the compact recursive detection surface
 
 Open these configs first:
 - `configs/stage1/sft_base.yaml`
@@ -55,12 +59,37 @@ Open these configs first:
 
 Open these code files first:
 - `src/sft.py`
+- `src/detection/runtime.py`
+- `src/detection/template.py`
+- `src/common/detection_sequence.py`
+- `src/common/detection_compact_rows.py`
+- `src/metrics/events.py`
 - `src/metrics/dataset_metrics.py`
 - `src/trainers/losses/coord_soft_ce_w1.py`
 - `src/trainers/metrics/mixins.py`
+- `src/trainers/metrics/batch_contract.py`
+- `src/trainers/metrics/structural_close.py`
+- `src/trainers/metrics/recursive_detection.py`
+- `src/trainers/metrics/aggregate_tokens.py`
+- `src/trainers/metrics/coord_losses.py`
+- `src/trainers/metrics/bbox_losses.py`
 - `src/trainers/stage1_set_continuation/`
 - `src/data_collators/batch_extras_collator.py`
 - `src/data_collators/stage1_set_continuation_collator.py`
+
+Compact recursive detection ownership:
+- `src/detection/runtime.py` owns latest detection runtime support/preflight, recursive CE runtime config resolution, prompt/mode/custom shim resolution, and `build_latest_detection_dataset`.
+- `src/sft.py` delegates policy and keeps backward-compatible private aliases.
+- `src/detection/template.py` owns strict templates; only `stage1_json_pretty` and `compact_full` are factory-visible strict IDs.
+- `src/common/detection_sequence.py` is the compatibility facade; malformed helper-format rows return `None`.
+- `src/common/detection_compact_rows.py` is the stdlib-only low-level marker/render/split helper.
+- `compact_no_desc`, `compact_no_bbox`, and `compact_min` stay compatibility/helper formats.
+- latest compact recursive CE keeps packing/cache fail-fast policy and does not add CLI flags or config schema keys.
+
+Trainer metric ownership:
+- `src/trainers/metrics/mixins.py` is a compatibility re-export facade.
+- source-level edits should target `batch_contract.py`, `structural_close.py`, `recursive_detection.py`, `aggregate_tokens.py`, `coord_losses.py`, or `bbox_losses.py`.
+- metric event flattening and aliasing live in `src/metrics/events.py`.
 
 Run these tests first:
 - `tests/test_stage1_set_continuation_config.py`
@@ -88,7 +117,7 @@ Open these docs first:
 - [`openspec/specs/runtime-architecture-refactor-program/spec.md`](../openspec/specs/runtime-architecture-refactor-program/spec.md)
 
 Historical context only:
-- [`docs/training/STAGE2_DESIGN.md`](training/STAGE2_DESIGN.md)
+- Historical context: use [`docs/training/STAGE2_RUNBOOK.md`](training/STAGE2_RUNBOOK.md) plus `progress/` notes when needed
 
 Open these configs first:
 - `configs/stage2_two_channel/base.yaml`
@@ -155,7 +184,7 @@ Open these docs first:
 - [`docs/eval/README.md`](eval/README.md)
 - [`docs/eval/CONTRACT.md`](eval/CONTRACT.md)
 - [`docs/eval/WORKFLOW.md`](eval/WORKFLOW.md)
-- [`docs/ARTIFACTS.md`](ARTIFACTS.md)
+- [`docs/ARTIFACTS.md`](ARTIFACTS.md), which owns the full artifact inventory
 - [`openspec/specs/inference-pipeline/spec.md`](../openspec/specs/inference-pipeline/spec.md)
 - [`openspec/specs/inference-engine/spec.md`](../openspec/specs/inference-engine/spec.md)
 - [`openspec/specs/detection-evaluator/spec.md`](../openspec/specs/detection-evaluator/spec.md)
@@ -176,8 +205,20 @@ Open these code files first:
 - `scripts/postop_confidence.py`
 - `scripts/evaluate_detection.py`
 - `src/eval/detection.py`
+- `src/eval/detection_records.py`
+- `src/eval/detection_geometry.py`
+- `src/eval/detection_coco.py`
+- `src/eval/detection_lvis.py`
+- `src/eval/detection_duplicate_guard.py`
+- `src/eval/detection_f1ish.py`
+- `src/eval/detection_orchestrator.py`
 - `src/eval/orchestration.py`
 - `src/eval/artifacts.py`
+
+Detection eval ownership:
+- `src/eval/detection.py` is the import-compatible facade.
+- durable source edits should target the decomposed modules listed above.
+- `SemanticDescEncoder` facade patch/import compatibility is preserved for existing imports.
 - `src/callbacks/detection_eval.py`
 
 Run these tests first:
@@ -199,9 +240,19 @@ Open these code files first:
 - `src/bootstrap/pipeline_manifest.py`
 - `src/bootstrap/run_metadata.py`
 - `src/bootstrap/trainer_setup.py`
+- `src/metrics/events.py`
 - `src/metrics/reporter.py`
 - `src/metrics/payload_contract.py`
+- `src/trainers/metrics/batch_contract.py`
+- `src/trainers/metrics/aggregate_tokens.py`
+- `src/trainers/metrics/recursive_detection.py`
 - `src/callbacks/`
+
+Metric event contract:
+- `src/metrics/events.py` defines `MetricEvent` and `flatten_metric_events`.
+- aggregate coord token metrics publish canonical identities `coord_token_acc/full_vocab/top1` and `coord_token_acc/full_vocab/top5`.
+- legacy aliases remain `coord_token_acc` and `coord_token_acc_top5`.
+- the reserved-alias collision guard prevents new canonical identities from colliding with reserved legacy flat keys.
 
 Run these tests first:
 - `tests/test_experiment_manifest_file.py`
