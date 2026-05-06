@@ -813,7 +813,7 @@ def test_infer_build_messages_respects_random_ordering() -> None:
     )
 
     messages = engine._build_messages(Image.new("RGB", (16, 16), color=(0, 0, 0)))
-    system_text = messages[0]["content"][0]["text"]
+    system_text = str(messages[0]["content"])
     user_content = messages[1]["content"]
     user_text = next(
         item["text"]

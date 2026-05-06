@@ -3,6 +3,7 @@ from __future__ import annotations
 import pytest
 from PIL import Image
 
+from src.common.detection_chat import build_detection_chat_messages
 from src.config.loader import ConfigLoader
 from src.config.prompt_variants import (
     COCO_80_CLASS_LIST_COMPACT,
@@ -28,6 +29,23 @@ def _message_text(content: object) -> str:
     ]
     assert text_parts
     return "".join(text_parts)
+
+
+def test_detection_chat_builder_keeps_text_roles_swift_compatible() -> None:
+    messages = build_detection_chat_messages(
+        system_prompt="system prompt",
+        user_prompt="user prompt",
+        images=["/tmp/image.png"],
+        assistant_text="assistant response",
+    )
+
+    assert messages[0] == {"role": "system", "content": "system prompt"}
+    assert messages[1]["role"] == "user"
+    assert messages[1]["content"] == [
+        {"type": "image", "image": "/tmp/image.png"},
+        {"type": "text", "text": "user prompt"},
+    ]
+    assert messages[2] == {"role": "assistant", "content": "assistant response"}
 
 
 def test_prompt_variant_default_fallback_matches_explicit_default() -> None:

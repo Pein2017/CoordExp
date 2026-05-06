@@ -179,6 +179,8 @@ def _assistant_text(messages: Sequence[Mapping[str, Any]]) -> str:
     assistant_messages = [message for message in messages if message.get("role") == "assistant"]
     assert len(assistant_messages) == 1
     content = assistant_messages[0]["content"]
+    if isinstance(content, str):
+        return content
     assert isinstance(content, list)
     text_parts = [
         str(item["text"])

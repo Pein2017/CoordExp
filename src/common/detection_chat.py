@@ -28,12 +28,7 @@ def build_detection_chat_messages(
 
     messages: list[dict[str, Any]] = []
     if system_prompt is not None:
-        messages.append(
-            {
-                "role": "system",
-                "content": [{"type": "text", "text": str(system_prompt)}],
-            }
-        )
+        messages.append({"role": "system", "content": str(system_prompt)})
 
     user_content: list[dict[str, Any]] = []
     for image in images:
@@ -45,12 +40,7 @@ def build_detection_chat_messages(
     messages.append({"role": "user", "content": user_content})
 
     if assistant_text is not None:
-        messages.append(
-            {
-                "role": "assistant",
-                "content": [{"type": "text", "text": str(assistant_text)}],
-            }
-        )
+        messages.append({"role": "assistant", "content": str(assistant_text)})
 
     return messages
 
