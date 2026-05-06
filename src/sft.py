@@ -3664,10 +3664,22 @@ def main():
     per_device_batch = getattr(train_args, "per_device_train_batch_size", None)
     grad_accum_steps = getattr(train_args, "gradient_accumulation_steps", None)
     if isinstance(per_device_batch, int) and isinstance(grad_accum_steps, int):
-        logger.info(f"  Effective batch size: {per_device_batch * grad_accum_steps}")
+        _, _, runtime_world_size, _ = get_dist_setting()
+        runtime_world_size = max(int(runtime_world_size), 1)
+        per_rank_effective = per_device_batch * grad_accum_steps
+        global_effective = per_rank_effective * runtime_world_size
+        logger.info(
+            "  Batch shape: per_device=%s, grad_accum=%s, world_size=%s, "
+            "per_rank_effective=%s, global_effective=%s",
+            per_device_batch,
+            grad_accum_steps,
+            runtime_world_size,
+            per_rank_effective,
+            global_effective,
+        )
     else:
         logger.info(
-            "  Effective batch size: unavailable (missing batch or accumulation settings)"
+            "  Batch shape: unavailable (missing batch or accumulation settings)"
         )
     logger.info("=" * 70)
 
