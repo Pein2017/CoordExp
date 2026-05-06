@@ -68,6 +68,7 @@ from src.common.geometry.bbox_parameterization import (
     normalize_bbox_format,
 )
 from src.common.coord_standardizer import CoordinateStandardizer
+from src.common.detection_chat import build_detection_chat_messages
 from src.common.geometry import flatten_points, has_coord_tokens
 from src.infer.artifacts import (
     build_infer_resolved_meta,
@@ -965,16 +966,11 @@ class InferenceEngine:
         return resolved
 
     def _build_messages(self, image: Image.Image) -> List[Dict[str, Any]]:
-        return [
-            {"role": "system", "content": [{"type": "text", "text": self.system_prompt}]},
-            {
-                "role": "user",
-                "content": [
-                    {"type": "text", "text": self.user_prompt},
-                    {"type": "image", "image": image},
-                ],
-            },
-        ]
+        return build_detection_chat_messages(
+            system_prompt=self.system_prompt,
+            user_prompt=self.user_prompt,
+            images=[image],
+        )
 
     def _generate(self, image: Image.Image) -> str:
         backend = str(self.cfg.backend_type).strip().lower()
@@ -1202,19 +1198,12 @@ class InferenceEngine:
             image.save(buf, format="PNG")
             b64 = base64.b64encode(buf.getvalue()).decode("ascii")
             msg_batch.append(
-                [
-                    {"role": "system", "content": self.system_prompt},
-                    {
-                        "role": "user",
-                        "content": [
-                            {"type": "text", "text": self.user_prompt},
-                            {
-                                "type": "image_url",
-                                "image_url": {"url": f"data:image/png;base64,{b64}"},
-                            },
-                        ],
-                    },
-                ]
+                build_detection_chat_messages(
+                    system_prompt=self.system_prompt,
+                    user_prompt=self.user_prompt,
+                    images=[{"url": f"data:image/png;base64,{b64}"}],
+                    image_content_type="image_url",
+                )
             )
 
         sp = self._vllm_sampling_params()

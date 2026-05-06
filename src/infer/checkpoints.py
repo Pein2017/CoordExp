@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal, Optional
 
+from src.common.model_paths import normalize_coordexp_base_model_path
 from src.tokens.qwen_native import (
     EXPECTED_BOX_START_ID,
     EXPECTED_COORD_END_ID,
@@ -129,6 +130,9 @@ def load_adapter_checkpoint_info(adapter_checkpoint: str) -> AdapterCheckpointIn
         base_model_name_or_path: Optional[str] = None
     elif isinstance(base_raw, str):
         base_model_name_or_path = base_raw.strip() or None
+        base_model_name_or_path = normalize_coordexp_base_model_path(
+            base_model_name_or_path
+        )
     else:
         raise ValueError(
             f"{cfg_path}: base_model_name_or_path must be a string when present."

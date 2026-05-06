@@ -54,6 +54,7 @@ from .config.prompts import (
     resolve_dense_prompt_variant_key,
 )
 from .config.strict_dataclass import dataclass_asdict_no_none
+from .common.model_paths import normalize_coordexp_base_model_path
 from .datasets import (
     BaseCaptionDataset,
     RandomSampleDataset,
@@ -1892,6 +1893,14 @@ def main():
     train_args, training_config = ConfigLoader.load_training_config(
         args.config, args.base_config
     )
+    normalized_model_path = normalize_coordexp_base_model_path(
+        str(getattr(train_args, "model", "") or "")
+    )
+    if normalized_model_path:
+        setattr(train_args, "model", normalized_model_path)
+        training_args = getattr(train_args, "training_args", None)
+        if training_args is not None:
+            setattr(training_args, "model", normalized_model_path)
     # Ensure custom optimizer variant is available before trainer setup
     register_coord_offset_optimizer()
     latest_detection_config = (

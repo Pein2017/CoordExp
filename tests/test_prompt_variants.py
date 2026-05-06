@@ -17,6 +17,19 @@ from src.config.prompts import (
 from src.infer.engine import GenerationConfig, InferenceConfig, InferenceEngine
 
 
+def _message_text(content: object) -> str:
+    if isinstance(content, str):
+        return content
+    assert isinstance(content, list)
+    text_parts = [
+        str(item.get("text", ""))
+        for item in content
+        if isinstance(item, dict) and item.get("type") == "text"
+    ]
+    assert text_parts
+    return "".join(text_parts)
+
+
 def test_prompt_variant_default_fallback_matches_explicit_default() -> None:
     system_implicit, user_implicit = get_template_prompts()
     system_explicit, user_explicit = get_template_prompts(prompt_variant="default")
@@ -93,8 +106,8 @@ def test_prompt_variant_cross_surface_parity_between_training_and_inference(
     engine = InferenceEngine(inf_cfg, GenerationConfig())
 
     messages = engine._build_messages(Image.new("RGB", (16, 16), color=(0, 0, 0)))
-    infer_system = messages[0]["content"][0]["text"]
-    infer_user = messages[1]["content"][0]["text"]
+    infer_system = _message_text(messages[0]["content"])
+    infer_user = _message_text(messages[1]["content"])
 
     assert infer_system == train_prompts.system
     assert infer_user == train_prompts.user
@@ -124,11 +137,12 @@ def test_compact_prompt_variant_cross_surface_parity_between_training_and_infere
     engine = InferenceEngine(inf_cfg, GenerationConfig())
 
     messages = engine._build_messages(Image.new("RGB", (16, 16), color=(0, 0, 0)))
-    infer_system = messages[0]["content"][0]["text"]
-    infer_user = messages[1]["content"][0]["text"]
+    infer_system = _message_text(messages[0]["content"])
+    infer_user = _message_text(messages[1]["content"])
 
     assert infer_system == train_prompts.system
     assert infer_user == train_prompts.user
+    assert [item["type"] for item in messages[1]["content"]] == ["image", "text"]
     assert "<|object_ref_start|>{desc}<|box_start|>" in infer_system
     assert "<|object_ref_start|>{desc}<|box_start|>" in infer_user
     assert "CoordJSON" not in infer_system
@@ -163,8 +177,8 @@ def test_prompt_variant_cross_surface_parity_for_cxcy_logw_logh(
     engine = InferenceEngine(inf_cfg, GenerationConfig())
 
     messages = engine._build_messages(Image.new("RGB", (16, 16), color=(0, 0, 0)))
-    infer_system = messages[0]["content"][0]["text"]
-    infer_user = messages[1]["content"][0]["text"]
+    infer_system = _message_text(messages[0]["content"])
+    infer_user = _message_text(messages[1]["content"])
 
     assert infer_system == train_prompts.system
     assert infer_user == train_prompts.user

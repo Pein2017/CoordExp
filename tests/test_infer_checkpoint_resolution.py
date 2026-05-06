@@ -5,6 +5,7 @@ from pathlib import Path
 
 import pytest
 
+from src.common.model_paths import canonical_coordexp_repo_root
 from src.infer.checkpoints import (
     resolve_inference_checkpoint,
     validate_compact_coord_token_adapter_contract,
@@ -91,6 +92,26 @@ def test_resolve_inference_checkpoint_supports_adapter_shorthand(
     assert resolved.resolved_base_model_checkpoint == "base-from-config"
     assert resolved.resolved_adapter_checkpoint == str(adapter_dir)
     assert resolved.adapter_info is not None
+
+
+def test_resolve_inference_checkpoint_normalizes_worktree_coordexp_base_path(
+    tmp_path: Path,
+) -> None:
+    adapter_dir = tmp_path / "adapter"
+    _write_adapter_checkpoint(
+        adapter_dir,
+        base_model_name_or_path=(
+            "/data/CoordExp/.worktrees/compact-detection-sequence/"
+            "model_cache/models/Qwen/Qwen3-VL-2B-Instruct-coordexp"
+        ),
+    )
+
+    resolved = resolve_inference_checkpoint(model_checkpoint=str(adapter_dir))
+
+    assert resolved.resolved_base_model_checkpoint == str(
+        canonical_coordexp_repo_root()
+        / "model_cache/models/Qwen/Qwen3-VL-2B-Instruct-coordexp"
+    )
 
 
 def test_resolve_inference_checkpoint_rejects_explicit_adapter_on_shorthand(

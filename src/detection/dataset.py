@@ -9,6 +9,7 @@ from typing import Any, Literal, Mapping, MutableMapping, Sequence
 
 from torch.utils.data import Dataset
 
+from src.common.detection_chat import build_detection_chat_messages
 from src.common.io import load_jsonl_with_diagnostics
 from src.detection.data import (
     ObjectOrderingPlan,
@@ -242,19 +243,11 @@ class DetectionTrainingDataset(Dataset):
         *,
         assistant_text: str,
     ) -> tuple[dict[str, Any], ...]:
-        user_content: list[dict[str, Any]] = [
-            {"type": "image", "image": self._resolve_image(image)} for image in images
-        ]
-        user_content.append({"type": "text", "text": self.config.user_prompt})
-        messages: list[dict[str, Any]] = []
-        if self.config.system_prompt is not None:
-            messages.append({"role": "system", "content": self.config.system_prompt})
-        messages.append({"role": "user", "content": user_content})
-        messages.append(
-            {
-                "role": "assistant",
-                "content": [{"type": "text", "text": assistant_text}],
-            }
+        messages = build_detection_chat_messages(
+            system_prompt=self.config.system_prompt,
+            user_prompt=self.config.user_prompt,
+            images=[self._resolve_image(image) for image in images],
+            assistant_text=assistant_text,
         )
         return tuple(messages)
 

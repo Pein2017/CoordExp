@@ -814,10 +814,16 @@ def test_infer_build_messages_respects_random_ordering() -> None:
 
     messages = engine._build_messages(Image.new("RGB", (16, 16), color=(0, 0, 0)))
     system_text = messages[0]["content"][0]["text"]
-    user_text = messages[1]["content"][0]["text"]
+    user_content = messages[1]["content"]
+    user_text = next(
+        item["text"]
+        for item in user_content
+        if isinstance(item, dict) and item.get("type") == "text"
+    )
 
     assert "any ordering is acceptable" in system_text
     assert "any ordering is acceptable" in user_text
+    assert [item["type"] for item in user_content] == ["image", "text"]
 
 
 def test_generate_vllm_server_preserves_coord_special_tokens_in_response_payload(
