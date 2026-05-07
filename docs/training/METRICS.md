@@ -5,7 +5,7 @@ doc_type: reference
 status: canonical
 domain: training
 summary: Canonical training metric families for Stage-1 and the active Stage-2 single-pass contract.
-updated: 2026-05-04
+updated: 2026-05-07
 ---
 
 # Training Metrics and Losses
@@ -158,6 +158,26 @@ Canonical recursive CE objective `MetricEvent` keys:
 
 - `detection_sequence/objective/recursive_detection_ce/loss_per_sample`
 - `detection_sequence/objective/recursive_detection_ce/batch_size`
+
+Diagnostic-only recursive CE objective keys expose internal multi-positive and
+EOS forces without changing the loss tensor:
+
+- `recursive_detection_ce/trie_valid_mass`
+- `recursive_detection_ce/support_loss`
+- `recursive_detection_ce/balance_loss`
+- `recursive_detection_ce/trie_valid_children`
+- `recursive_detection_ce/type_gate_loss`
+- `recursive_detection_ce/type_gate_allowed_tokens`
+- `recursive_detection_ce/type_gate_weight`
+- `recursive_detection_ce/eos_unweighted_ce`
+- `recursive_detection_ce/eos_weighted_loss`
+- `recursive_detection_ce/eos_trust_weight`
+
+`support_loss` and `balance_loss` are unweighted branch-local components.
+`type_gate_loss` is the weighted allowed-type-mass contribution.
+`eos_weighted_loss` equals `eos_unweighted_ce * eos_trust_weight` at stop
+targets, so it is the right key for checking whether censored EOS supervision
+is actually being softened.
 
 Canonical compact recursive-detection Phase-1 semantic `MetricEvent` keys:
 

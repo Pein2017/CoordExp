@@ -249,6 +249,68 @@ def test_type_gate_allowed_mass_is_added_to_position_loss() -> None:
     assert gated.loss.item() == pytest.approx(base.loss.item() * 1.5)
 
 
+def test_recursive_detection_metric_events_expose_objective_diagnostics() -> None:
+    logits = torch.tensor(
+        [
+            [2.0, -2.0, 1.0, 0.0],
+            [0.1, 3.0, -1.0, 0.0],
+        ],
+        dtype=torch.float32,
+    )
+    branch_target = replace(
+        _branch_target(
+            position=1,
+            teacher_token_id=0,
+            branches=((0, 1), (2, 1)),
+        ),
+        type_gate_token_ids=(0, 2),
+        type_gate_weight=0.25,
+    )
+    eos_target = _hard_target(
+        position=2,
+        teacher_token_id=1,
+        semantic_role=SemanticRole.CHAT_STOP,
+        loss_weight=0.25,
+    )
+    targets = _targets(token_targets=(branch_target, eos_target))
+
+    result = compute_recursive_detection_ce_batch_loss(
+        logits=logits,
+        targets=(targets,),
+        weights=RecursiveDetectionLossWeights(support_weight=2.0, balance_weight=1.0),
+    )
+    reduced = reduce_metric_events(result.metric_events)
+
+    log_probs = torch.log_softmax(logits[0], dim=-1)
+    valid_log_probs = log_probs[torch.tensor([0, 2])]
+    log_valid_mass = torch.logsumexp(valid_log_probs, dim=-1)
+    expected_support = -log_valid_mass
+    expected_balance = -((valid_log_probs - log_valid_mass) * 0.5).sum()
+    expected_type_gate = 0.25 * (-log_valid_mass)
+    eos_ce = -torch.log_softmax(logits[1], dim=-1)[1]
+
+    assert reduced["recursive_detection_ce/trie_valid_mass"] == pytest.approx(
+        torch.exp(log_valid_mass).item()
+    )
+    assert reduced["recursive_detection_ce/support_loss"] == pytest.approx(
+        expected_support.item()
+    )
+    assert reduced["recursive_detection_ce/balance_loss"] == pytest.approx(
+        expected_balance.item()
+    )
+    assert reduced["recursive_detection_ce/trie_valid_children"] == pytest.approx(2.0)
+    assert reduced["recursive_detection_ce/type_gate_loss"] == pytest.approx(
+        expected_type_gate.item()
+    )
+    assert reduced["recursive_detection_ce/eos_unweighted_ce"] == pytest.approx(
+        eos_ce.item()
+    )
+    assert reduced["recursive_detection_ce/eos_weighted_loss"] == pytest.approx(
+        0.25 * eos_ce.item()
+    )
+    assert reduced["recursive_detection_ce/eos_trust_weight"] == pytest.approx(0.25)
+
+
 def test_bfloat16_logits_are_upcast_for_stable_loss_computation() -> None:
     logits = torch.tensor(
         [[0.25, -0.75, 1.5], [1.25, -3.0, 0.0]],

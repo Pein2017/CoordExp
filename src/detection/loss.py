@@ -196,6 +196,9 @@ def compute_recursive_detection_ce_batch_loss(
             semantic_role="recursive_detection_ce",
             metric_surface="training_logits",
         ),
+    ) + _recursive_objective_diagnostic_events(
+        logits=batch_logits,
+        targets=targets,
     ) + _summarize_compact_recursive_detection_metric_events(
         logits=batch_logits,
         targets=targets,
@@ -206,6 +209,162 @@ def compute_recursive_detection_ce_batch_loss(
         per_position_losses=tuple(per_position_losses),
         metric_events=metric_events,
     )
+
+
+def _recursive_objective_diagnostic_events(
+    *,
+    logits: torch.Tensor,
+    targets: Sequence[RecursiveDetectionTargets],
+) -> tuple[MetricEvent, ...]:
+    """Summarize objective-internal diagnostics without affecting gradients."""
+
+    def _event(
+        key: str,
+        value: torch.Tensor | float,
+        weight: float = 1.0,
+    ) -> MetricEvent:
+        value_float = float(torch.as_tensor(value).detach().cpu().item())
+        return weighted_mean_event(
+            key,
+            value_float,
+            float(weight),
+            unit="token",
+            semantic_role="recursive_detection_ce",
+            metric_surface="training_logits",
+            diagnostic_only=True,
+        )
+
+    events: list[MetricEvent] = []
+    with torch.no_grad():
+        metric_logits = logits.detach()
+        _, time_steps, vocab_size = metric_logits.shape
+        for batch_index, recursive_targets in enumerate(targets):
+            atom_by_id = {atom.atom_id: atom for atom in recursive_targets.loss_atoms}
+            atom_by_position: dict[int, object] = {}
+            for atom in recursive_targets.loss_atoms:
+                for position in atom.token_positions:
+                    atom_by_position.setdefault(position, atom)
+
+            for target in recursive_targets.token_targets:
+                if target.position <= 0 or target.position > time_steps:
+                    continue
+                step_log_probs = F.log_softmax(
+                    metric_logits[batch_index, target.position - 1].float(),
+                    dim=-1,
+                )
+
+                if target.kind == "trie_multi_positive":
+                    child_token_ids = tuple(
+                        int(branch_target.token_id)
+                        for branch_target in target.trie_branch_targets
+                    )
+                    if child_token_ids:
+                        child_ids = torch.tensor(
+                            child_token_ids,
+                            device=metric_logits.device,
+                            dtype=torch.long,
+                        )
+                        valid_log_probs = step_log_probs.index_select(
+                            dim=-1,
+                            index=child_ids,
+                        )
+                        log_valid_mass = torch.logsumexp(valid_log_probs, dim=-1)
+                        child_weights = torch.tensor(
+                            [
+                                float(branch_target.multiplicity)
+                                for branch_target in target.trie_branch_targets
+                            ],
+                            device=metric_logits.device,
+                            dtype=torch.float32,
+                        )
+                        q = child_weights / child_weights.sum().clamp_min(1e-12)
+                        support_loss = -log_valid_mass
+                        balance_loss = -(
+                            q * (valid_log_probs - log_valid_mass.unsqueeze(-1))
+                        ).sum(dim=-1)
+                        events.append(
+                            _event(
+                                "recursive_detection_ce/trie_valid_mass",
+                                torch.exp(log_valid_mass),
+                            )
+                        )
+                        events.append(
+                            _event("recursive_detection_ce/support_loss", support_loss)
+                        )
+                        events.append(
+                            _event("recursive_detection_ce/balance_loss", balance_loss)
+                        )
+                        events.append(
+                            _event(
+                                "recursive_detection_ce/trie_valid_children",
+                                float(len(child_token_ids)),
+                            )
+                        )
+
+                if target.type_gate_token_ids and float(target.type_gate_weight) > 0.0:
+                    unique_type_gate_ids = tuple(
+                        dict.fromkeys(
+                            int(token_id) for token_id in target.type_gate_token_ids
+                        )
+                    )
+                    type_gate_ids = torch.tensor(
+                        unique_type_gate_ids,
+                        device=metric_logits.device,
+                        dtype=torch.long,
+                    )
+                    if int(type_gate_ids.numel()) > 0:
+                        invalid_type_gate_id = torch.any(type_gate_ids < 0) or torch.any(
+                            type_gate_ids >= vocab_size
+                        )
+                        if invalid_type_gate_id:
+                            continue
+                        type_gate_loss = -torch.logsumexp(
+                            step_log_probs.index_select(dim=-1, index=type_gate_ids),
+                            dim=-1,
+                        ) * float(target.type_gate_weight)
+                        events.append(
+                            _event(
+                                "recursive_detection_ce/type_gate_loss",
+                                type_gate_loss,
+                            )
+                        )
+                        events.append(
+                            _event(
+                                "recursive_detection_ce/type_gate_allowed_tokens",
+                                float(type_gate_ids.numel()),
+                            )
+                        )
+                        events.append(
+                            _event(
+                                "recursive_detection_ce/type_gate_weight",
+                                float(target.type_gate_weight),
+                            )
+                        )
+
+                atom = None
+                if target.loss_atom_id is not None:
+                    atom = atom_by_id.get(target.loss_atom_id)
+                if atom is None:
+                    atom = atom_by_position.get(target.position)
+                role = target.semantic_role
+                if role is None and atom is not None:
+                    role = getattr(atom, "semantic_role", None)
+                if _span_category_for_semantic_role(role) == "stop":
+                    unweighted_ce = -step_log_probs[int(target.teacher_token_id)]
+                    trust_weight = float(_target_loss_weight(target))
+                    events.append(
+                        _event("recursive_detection_ce/eos_unweighted_ce", unweighted_ce)
+                    )
+                    events.append(
+                        _event(
+                            "recursive_detection_ce/eos_weighted_loss",
+                            unweighted_ce * trust_weight,
+                        )
+                    )
+                    events.append(
+                        _event("recursive_detection_ce/eos_trust_weight", trust_weight)
+                    )
+    return tuple(events)
 
 
 def _summarize_compact_recursive_detection_metric_events(
