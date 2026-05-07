@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import copy
+from pathlib import Path
 
 import pytest
 
+from src.config.loader import ConfigLoader
 from src.config.schema import LatestDetectionTrainingConfig
 
 
@@ -182,6 +184,49 @@ def test_prefix_rollin_schema_accepts_compact_full_empirical_eos_ablation() -> N
     assert as_mapping["experiment"]["surface"] == "ablation"
     reparsed = LatestDetectionTrainingConfig.from_mapping(as_mapping)
     assert reparsed.objective.target.balance_weight == pytest.approx(2.0)
+
+
+def test_prefix_rollin_e1_ablation_config_materializes_from_repo_path() -> None:
+    repo_root = Path(__file__).resolve().parents[1]
+    cfg_path = (
+        repo_root
+        / "configs/stage1/recursive_detection_ce_latest/ablation/compact_full_prefix_rollin_balance2.yaml"
+    )
+
+    cfg = ConfigLoader.load_materialized_training_config(str(cfg_path))
+
+    assert isinstance(cfg, LatestDetectionTrainingConfig)
+    assert cfg.experiment is not None
+    assert cfg.experiment.surface == "ablation"
+    assert cfg.experiment.ablation_id == "E1"
+    assert cfg.experiment.claim_scope == "none"
+    assert cfg.detection_template.id == "compact_full"
+    assert cfg.objective.variant == "prefix_rollin_et_rmp_ce"
+    assert cfg.objective.rollin.k_distribution.min_k == 0
+    assert cfg.objective.rollin.k_distribution.max_k == "object_count"
+    assert cfg.objective.target.support_weight == pytest.approx(1.0)
+    assert cfg.objective.target.balance_weight == pytest.approx(2.0)
+    assert cfg.objective.type_gate.weights.struct == pytest.approx(2.0)
+    assert cfg.objective.type_gate.weights.coord == pytest.approx(1.0)
+    assert cfg.objective.type_gate.weights.desc == pytest.approx(0.2)
+    assert cfg.objective.type_gate.weights.eos == pytest.approx(0.5)
+    assert cfg.objective.eos.eos_token == "<|im_end|>"
+    assert (
+        cfg.objective.eos.eos_trust_weight.source
+        == "empirical_unlabeled_poisson_v0"
+    )
+    eos_trust = cfg.objective.eos.eos_trust_weight
+    assert eos_trust.expected_unlabeled_count.intercept == pytest.approx(-0.35)
+    assert eos_trust.expected_unlabeled_count.slope == pytest.approx(0.43)
+    assert eos_trust.trust_mapping.penalty_per_missing == pytest.approx(1.0)
+    assert eos_trust.trust_mapping.temperature == pytest.approx(1.0)
+    assert eos_trust.trust_mapping.min_weight == pytest.approx(0.0)
+    assert eos_trust.trust_mapping.max_weight == pytest.approx(1.0)
+    assert cfg.training["packing"] is False
+    assert cfg.training["eval_packing"] is False
+    assert cfg.training["encoded_sample_cache"]["enabled"] is False
+    assert cfg.packing.static_packing is False
+    assert cfg.packing.padding_free_packed is False
 
 
 def test_prefix_rollin_production_accepts_calibrated_formula_ref_with_artifact() -> None:
