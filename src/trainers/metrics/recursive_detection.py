@@ -28,6 +28,12 @@ class RecursiveDetectionCEMixin:
         from src.detection.dataset import strip_non_model_detection_sidecars
         extras = maybe_pop_and_stash_batch_extras(self, inputs)
         strip_non_model_detection_sidecars(inputs)
+        if "logits_to_keep" in inputs:
+            raise ValueError(
+                "recursive_detection_ce requires full sequence logits; "
+                "logits_to_keep is unsupported because recursive sidecar target "
+                "positions are absolute encoded-token positions"
+            )
         recursive_targets = getattr(extras, "recursive_detection_targets", None)
         if recursive_targets is None:
             raise ValueError(
@@ -40,6 +46,13 @@ class RecursiveDetectionCEMixin:
         if logits is None or not isinstance(logits, torch.Tensor):
             raise RuntimeError(
                 "recursive_detection_ce is enabled, but model outputs do not contain logits."
+            )
+        input_ids = inputs.get("input_ids")
+        if isinstance(input_ids, torch.Tensor) and logits.shape[:2] != input_ids.shape[:2]:
+            raise RuntimeError(
+                "recursive_detection_ce requires full unsliced logits with the same "
+                f"[batch, time] shape as input_ids; got logits={tuple(logits.shape[:2])} "
+                f"input_ids={tuple(input_ids.shape[:2])}"
             )
 
         cfg = getattr(self, "recursive_detection_ce_cfg", None)

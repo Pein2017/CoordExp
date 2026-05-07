@@ -193,6 +193,7 @@ def run_prefix_rollin_teacher_forced_probe(
     training_config = ConfigLoader.load_materialized_training_config(str(config_path))
     if not isinstance(training_config, LatestDetectionTrainingConfig):
         raise TypeError("prefix rollin probe requires LatestDetectionTrainingConfig")
+    processor_kwargs: dict[str, Any] = {"do_resize": False}
 
     scorer = TeacherForcedScorer(
         checkpoint_path=checkpoint_path,
@@ -223,6 +224,12 @@ def run_prefix_rollin_teacher_forced_probe(
                 record_idx=record_idx,
             ),
         )
+        if len(normalized.images) != 1:
+            raise ValueError(
+                "prefix_rollin_teacher_forced_probe currently supports single-image "
+                f"records only; got {len(normalized.images)} images for "
+                f"record_idx={record_idx}"
+            )
         image_path = image_root / normalized.images[0]
         image = Image.open(image_path).convert("RGB")
         resolved_k_values = _resolve_k_values(k_values, object_count=len(normalized.objects))
@@ -252,6 +259,7 @@ def run_prefix_rollin_teacher_forced_probe(
                 images=[image],
                 return_tensors="pt",
                 padding=False,
+                **processor_kwargs,
             )
             model_inputs = {
                 key: value.to(device) if isinstance(value, torch.Tensor) else value
@@ -282,6 +290,9 @@ def run_prefix_rollin_teacher_forced_probe(
                         "record_idx": record_idx,
                         "image_id": normalized.image_id,
                         "file_name": normalized.file_name,
+                        "processor_kwargs": processor_kwargs,
+                        "processor_input_ids_len": int(input_ids.shape[-1]),
+                        "image_grid_thw": _tensor_to_list(model_inputs.get("image_grid_thw")),
                         **row,
                     }
                 )
@@ -299,6 +310,9 @@ def run_prefix_rollin_teacher_forced_probe(
         "split": split,
         "limit": int(limit),
         "per_case_jsonl": str(per_case_path),
+        "dataset_jsonl": str(dataset_jsonl),
+        "image_root": str(image_root),
+        "processor_kwargs": processor_kwargs,
     }
     summary_path.write_text(
         json.dumps(summary, ensure_ascii=False, indent=2) + "\n",
@@ -491,6 +505,12 @@ def _finite(value: object) -> bool:
         return math.isfinite(float(value))
     except (TypeError, ValueError):
         return False
+
+
+def _tensor_to_list(value: object) -> Any:
+    if isinstance(value, torch.Tensor):
+        return value.detach().cpu().tolist()
+    return value
 
 
 def _iter_jsonl(path: Path) -> Iterable[dict[str, Any]]:

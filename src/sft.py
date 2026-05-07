@@ -529,6 +529,33 @@ def _config_to_mapping(value: Any) -> dict[str, Any]:
     return {}
 
 
+def _resolve_authored_experiment_payload(training_config: Any) -> dict[str, Any] | None:
+    """Return authored experiment metadata for run manifests, if configured."""
+
+    to_mapping = getattr(training_config, "to_mapping", None)
+    if callable(to_mapping):
+        mapped = to_mapping()
+        if isinstance(mapped, Mapping):
+            experiment = mapped.get("experiment")
+            if isinstance(experiment, Mapping):
+                return dict(experiment)
+
+    experiment_cfg = getattr(training_config, "experiment", None)
+    if experiment_cfg is None:
+        return None
+    to_mapping = getattr(experiment_cfg, "to_mapping", None)
+    if callable(to_mapping):
+        mapped = to_mapping()
+        if isinstance(mapped, Mapping):
+            return dict(mapped)
+    if is_dataclass(experiment_cfg):
+        mapped = dataclass_asdict_no_none(experiment_cfg)
+        return dict(mapped) if isinstance(mapped, Mapping) else None
+    if isinstance(experiment_cfg, Mapping):
+        return dict(experiment_cfg)
+    return None
+
+
 def _coerce_debug_config(debug_config: Any) -> DebugConfig:
     if debug_config is None:
         return DebugConfig()
@@ -3511,12 +3538,7 @@ def main():
         )
         logger.info("Wrote run metadata: %s", str(out_path))
 
-        experiment_cfg = getattr(training_config, "experiment", None)
-        authored_experiment = None
-        if experiment_cfg is not None:
-            to_mapping = getattr(experiment_cfg, "to_mapping", None)
-            if callable(to_mapping):
-                authored_experiment = to_mapping()
+        authored_experiment = _resolve_authored_experiment_payload(training_config)
 
         experiment_manifest_path = write_experiment_manifest_file(
             output_dir=Path(str(out_dir)),

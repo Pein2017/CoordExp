@@ -251,6 +251,27 @@ def test_prefix_rollin_production_accepts_calibrated_formula_ref_with_artifact()
     )
 
 
+@pytest.mark.parametrize("claim_scope", ["paper", "production"])
+def test_prefix_rollin_ablation_rejects_evidence_bearing_claim_scope(
+    claim_scope: str,
+) -> None:
+    payload = _prefix_rollin_payload()
+    _set_path(payload, ("experiment", "surface"), "ablation")
+    _set_path(payload, ("experiment", "claim_scope"), claim_scope)
+
+    with pytest.raises(ValueError, match=r"experiment\.claim_scope"):
+        _parse(payload)
+
+
+def test_latest_smoke_surface_rejects_production_claim_scope() -> None:
+    payload = _prefix_rollin_payload()
+    _set_path(payload, ("experiment", "surface"), "smoke")
+    _set_path(payload, ("experiment", "claim_scope"), "production")
+
+    with pytest.raises(ValueError, match=r"experiment\.claim_scope"):
+        _parse(payload)
+
+
 def test_existing_random_permutation_latest_schema_still_accepts_flat_trie_weights() -> None:
     payload = _prefix_rollin_payload()
     payload.pop("experiment")

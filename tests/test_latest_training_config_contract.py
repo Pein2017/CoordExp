@@ -231,6 +231,30 @@ def test_latest_recursive_detection_rejects_padding_free_packing() -> None:
         LatestDetectionTrainingConfig.from_mapping(payload)
 
 
+def test_latest_recursive_detection_rejects_use_logits_to_keep() -> None:
+    payload = _latest_payload()
+    _update_section(payload, "training", use_logits_to_keep=True)
+
+    with pytest.raises(ValueError, match=r"recursive_detection_ce.*use_logits_to_keep"):
+        LatestDetectionTrainingConfig.from_mapping(payload)
+
+
+def test_latest_recursive_detection_rejects_training_loss_scale() -> None:
+    payload = _latest_payload()
+    _update_section(payload, "training", loss_scale="default")
+
+    with pytest.raises(ValueError, match=r"recursive_detection_ce.*loss_scale"):
+        LatestDetectionTrainingConfig.from_mapping(payload)
+
+
+def test_latest_recursive_detection_rejects_training_left_padding() -> None:
+    payload = _latest_payload()
+    _update_section(payload, "training", padding_side="left")
+
+    with pytest.raises(ValueError, match=r"recursive_detection_ce.*padding_side='right'"):
+        LatestDetectionTrainingConfig.from_mapping(payload)
+
+
 @pytest.mark.parametrize(
     ("path", "value", "match"),
     [

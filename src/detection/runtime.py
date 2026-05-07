@@ -192,6 +192,20 @@ def assert_latest_detection_runtime_supported(
     if not support.recursive_sidecars_required:
         return
 
+    configured_padding_side = training_config.training.get("padding_side")
+    if configured_padding_side not in (None, "", "right"):
+        raise ValueError(
+            "latest recursive detection sidecars require training.padding_side='right' "
+            "until sidecar offset rewriting is implemented"
+        )
+    if tokenizer is not None:
+        padding_side = getattr(tokenizer, "padding_side", "right")
+        if padding_side not in (None, "right"):
+            raise ValueError(
+                "latest recursive detection sidecars require tokenizer.padding_side='right' "
+                "until sidecar offset rewriting is implemented"
+            )
+
     if training_config.objective.variant == "prefix_rollin_et_rmp_ce":
         if tokenizer is None:
             raise ValueError(
@@ -199,18 +213,30 @@ def assert_latest_detection_runtime_supported(
                 "stop-contract validation"
             )
         resolve_compact_training_stop_contract(tokenizer)
-        padding_side = getattr(tokenizer, "padding_side", "right")
-        if padding_side not in (None, "right"):
-            raise ValueError(
-                "prefix_rollin_et_rmp_ce requires tokenizer.padding_side='right' "
-                "until sidecar offset rewriting is implemented"
-            )
 
     if bool(training_config.training.get("packing", False)):
         raise ValueError(
             "latest recursive detection sidecars currently require "
             "training.packing=false; "
             "packed target-position offset rewriting is not implemented yet"
+        )
+    if bool(training_config.training.get("eval_packing", False)):
+        raise ValueError(
+            "latest recursive detection sidecars currently require "
+            "training.eval_packing=false; "
+            "packed target-position offset rewriting is not implemented yet"
+        )
+    if bool(training_config.training.get("use_logits_to_keep", False)):
+        raise ValueError(
+            "latest recursive detection sidecars require "
+            "training.use_logits_to_keep=false because full logits are required"
+        )
+    if "loss_scale" in training_config.training and training_config.training.get(
+        "loss_scale"
+    ) not in (None, ""):
+        raise ValueError(
+            "latest recursive detection sidecars do not support training.loss_scale; "
+            "recursive_detection_ce owns the token loss and metric scale"
         )
     if training_config.packing.static_packing:
         raise ValueError(

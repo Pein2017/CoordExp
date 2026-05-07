@@ -3232,6 +3232,22 @@ def _latest_detection_validate_packing_runtime_contract(
         raise ValueError(
             "objective.id=recursive_detection_ce requires training.eval_packing=false."
         )
+    if bool(training.get("use_logits_to_keep", False)):
+        raise ValueError(
+            "objective.id=recursive_detection_ce requires training.use_logits_to_keep=false "
+            "because recursive sidecar target positions require full sequence logits."
+        )
+    if "loss_scale" in training and training.get("loss_scale") not in (None, ""):
+        raise ValueError(
+            "objective.id=recursive_detection_ce does not support training.loss_scale; "
+            "recursive_detection_ce owns the token loss and metric scale."
+        )
+    padding_side = training.get("padding_side")
+    if padding_side not in (None, "", "right"):
+        raise ValueError(
+            "objective.id=recursive_detection_ce requires training.padding_side='right' "
+            "until sidecar offset rewriting is implemented."
+        )
 
 
 def _latest_detection_validate_deepspeed_mapping(value: Any) -> dict[str, Any]:
@@ -3823,6 +3839,20 @@ class LatestDetectionExperimentConfig:
                 self.claim_scope,
                 path="experiment.claim_scope",
                 allowed={"none", "smoke", "paper", "production"},
+            )
+        allowed_claim_scopes = {
+            "ablation": {None, "none"},
+            "smoke": {None, "none", "smoke"},
+            "production": {None, "paper", "production"},
+        }[self.surface]
+        if self.claim_scope not in allowed_claim_scopes:
+            allowed_s = ", ".join(
+                str(value)
+                for value in sorted(v for v in allowed_claim_scopes if v is not None)
+            )
+            raise ValueError(
+                f"experiment.claim_scope={self.claim_scope!r} is not allowed for "
+                f"experiment.surface={self.surface!r}; allowed: {allowed_s}"
             )
         for field_name in ("ablation_id",):
             value = getattr(self, field_name)

@@ -207,3 +207,47 @@ def test_recursive_detection_ce_mixin_requires_sidecar_when_enabled() -> None:
                 "labels": torch.tensor([[1]], dtype=torch.long),
             },
         )
+
+
+def test_recursive_detection_ce_mixin_rejects_logits_to_keep_before_forward() -> None:
+    trainer = _Trainer(
+        SimpleNamespace(
+            enabled=True,
+            trie_support_weight=1.0,
+            trie_balance_weight=1.0,
+        )
+    )
+    model = _DummyModel(torch.zeros((1, 1, 2), dtype=torch.float32))
+
+    with pytest.raises(ValueError, match="logits_to_keep.*unsupported"):
+        trainer.compute_loss(
+            model,
+            {
+                "input_ids": torch.tensor([[4]], dtype=torch.long),
+                "labels": torch.tensor([[1]], dtype=torch.long),
+                "logits_to_keep": 1,
+                RECURSIVE_DETECTION_TARGETS_KEY: (_targets(),),
+            },
+        )
+    assert model.forward_inputs is None
+
+
+def test_recursive_detection_ce_mixin_requires_full_time_logits() -> None:
+    trainer = _Trainer(
+        SimpleNamespace(
+            enabled=True,
+            trie_support_weight=1.0,
+            trie_balance_weight=1.0,
+        )
+    )
+    model = _DummyModel(torch.zeros((1, 1, 2), dtype=torch.float32))
+
+    with pytest.raises(RuntimeError, match="full unsliced logits"):
+        trainer.compute_loss(
+            model,
+            {
+                "input_ids": torch.tensor([[4, 5]], dtype=torch.long),
+                "labels": torch.tensor([[1, 1]], dtype=torch.long),
+                RECURSIVE_DETECTION_TARGETS_KEY: (_targets(),),
+            },
+        )

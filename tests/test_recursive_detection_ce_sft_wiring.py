@@ -273,6 +273,50 @@ def test_sft_rejects_latest_recursive_detection_encoded_sample_cache() -> None:
         )
 
 
+def test_sft_runtime_preflight_rejects_latest_recursive_detection_eval_packing() -> None:
+    cfg = _prod_latest_detection_config()
+    cfg = replace(cfg, training={**dict(cfg.training), "eval_packing": True})
+
+    with pytest.raises(ValueError, match="training\\.eval_packing=false"):
+        _assert_latest_detection_runtime_supported(
+            cfg,
+            encoded_sample_cache_cfg=SimpleNamespace(enabled=False),
+        )
+
+
+def test_sft_runtime_preflight_rejects_latest_recursive_detection_use_logits_to_keep() -> None:
+    cfg = _prod_latest_detection_config()
+    cfg = replace(cfg, training={**dict(cfg.training), "use_logits_to_keep": True})
+
+    with pytest.raises(ValueError, match="use_logits_to_keep=false"):
+        _assert_latest_detection_runtime_supported(
+            cfg,
+            encoded_sample_cache_cfg=SimpleNamespace(enabled=False),
+        )
+
+
+def test_sft_runtime_preflight_rejects_latest_recursive_detection_loss_scale() -> None:
+    cfg = _prod_latest_detection_config()
+    cfg = replace(cfg, training={**dict(cfg.training), "loss_scale": "default"})
+
+    with pytest.raises(ValueError, match="training\\.loss_scale"):
+        _assert_latest_detection_runtime_supported(
+            cfg,
+            encoded_sample_cache_cfg=SimpleNamespace(enabled=False),
+        )
+
+
+def test_sft_runtime_preflight_rejects_left_padding_for_all_recursive_sidecars() -> None:
+    cfg = _prod_latest_detection_config()
+
+    with pytest.raises(ValueError, match="tokenizer\\.padding_side='right'"):
+        _assert_latest_detection_runtime_supported(
+            cfg,
+            encoded_sample_cache_cfg=SimpleNamespace(enabled=False),
+            tokenizer=SimpleNamespace(padding_side="left"),
+        )
+
+
 def test_recursive_detection_sidecars_survive_collation_but_not_model_forward() -> None:
     target_sidecar = {"token_targets": (), "loss_atoms": ()}
     sample = {
