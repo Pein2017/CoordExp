@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from contextlib import nullcontext
 from dataclasses import dataclass
 import math
 from typing import Mapping, Sequence
@@ -72,6 +73,30 @@ class RecursiveDetectionLossResult:
     metric_events: tuple[MetricEvent, ...] = ()
 
 
+def _loss_precision_context(tensor: torch.Tensor):
+    if tensor.device.type in {"cpu", "cuda"}:
+        return torch.autocast(device_type=tensor.device.type, enabled=False)
+    return nullcontext()
+
+
+def _loss_float(tensor: torch.Tensor) -> torch.Tensor:
+    return tensor.to(dtype=torch.float32)
+
+
+def _log_softmax_loss(logits: torch.Tensor, *, dim: int) -> torch.Tensor:
+    with _loss_precision_context(logits):
+        return F.log_softmax(_loss_float(logits), dim=dim)
+
+
+def _logsumexp_loss(values: torch.Tensor, *, dim: int) -> torch.Tensor:
+    with _loss_precision_context(values):
+        return torch.logsumexp(_loss_float(values), dim=dim)
+
+
+def _stack_loss_values(values: Sequence[torch.Tensor]) -> torch.Tensor:
+    return torch.stack([_loss_float(value) for value in values])
+
+
 def support_balance_loss(
     logits: torch.Tensor,
     positive_token_ids: torch.Tensor,
@@ -92,10 +117,12 @@ def support_balance_loss(
         raise ValueError("q must be a 1D tensor aligned with positive_token_ids")
     if not torch.isfinite(q).all() or torch.any(q < 0):
         raise ValueError("q must contain finite non-negative weights")
-    q_sum = q.sum()
+    with _loss_precision_context(logits):
+        q_sum = q.sum()
     if float(q_sum.detach().cpu().item()) <= 0.0:
         raise ValueError("q must have positive total mass")
-    q = q / q_sum.clamp_min(1e-12)
+    with _loss_precision_context(logits):
+        q = q / q_sum.clamp_min(1e-12)
     for name, value in (
         ("support_weight", support_weight),
         ("balance_weight", balance_weight),
@@ -104,11 +131,12 @@ def support_balance_loss(
         if not math.isfinite(value) or value < 0.0:
             raise ValueError(f"{name} must be finite and >= 0")
 
-    log_probs = F.log_softmax(logits.float(), dim=-1)
+    log_probs = _log_softmax_loss(logits, dim=-1)
     valid_log_probs = log_probs.index_select(dim=-1, index=positive_token_ids)
-    log_valid_mass = torch.logsumexp(valid_log_probs, dim=-1)
+    log_valid_mass = _logsumexp_loss(valid_log_probs, dim=-1)
     support = -log_valid_mass
-    balance = -(q * (valid_log_probs - log_valid_mass.unsqueeze(-1))).sum(dim=-1)
+    with _loss_precision_context(valid_log_probs):
+        balance = -(q * (valid_log_probs - log_valid_mass.unsqueeze(-1))).sum(dim=-1)
     return float(support_weight) * support + float(balance_weight) * balance
 
 
@@ -140,8 +168,8 @@ def _apply_type_gate_loss(
         device=step_log_probs.device,
         dtype=torch.long,
     )
-    type_loss = -torch.logsumexp(step_log_probs.index_select(0, type_ids), dim=0)
-    return position_loss + type_gate_weight * type_loss
+    type_loss = -_logsumexp_loss(step_log_probs.index_select(0, type_ids), dim=0)
+    return _loss_float(position_loss) + type_gate_weight * type_loss
 
 
 def compute_recursive_detection_ce_batch_loss(
@@ -175,7 +203,11 @@ def compute_recursive_detection_ce_batch_loss(
         sample_losses.append(sample_loss)
         per_position_losses.append(sample_position_losses)
 
-    loss = torch.stack(sample_losses).mean() if sample_losses else batch_logits.sum() * 0.0
+    loss = (
+        _stack_loss_values(sample_losses).mean()
+        if sample_losses
+        else _loss_float(batch_logits).sum() * 0.0
+    )
     metrics = {
         "batch_loss": float(loss.detach().item()),
         "batch_size": float(batch_size),
@@ -248,8 +280,8 @@ def _recursive_objective_diagnostic_events(
             for target in recursive_targets.token_targets:
                 if target.position <= 0 or target.position > time_steps:
                     continue
-                step_log_probs = F.log_softmax(
-                    metric_logits[batch_index, target.position - 1].float(),
+                step_log_probs = _log_softmax_loss(
+                    metric_logits[batch_index, target.position - 1],
                     dim=-1,
                 )
 
@@ -268,7 +300,7 @@ def _recursive_objective_diagnostic_events(
                             dim=-1,
                             index=child_ids,
                         )
-                        log_valid_mass = torch.logsumexp(valid_log_probs, dim=-1)
+                        log_valid_mass = _logsumexp_loss(valid_log_probs, dim=-1)
                         child_weights = torch.tensor(
                             [
                                 float(branch_target.multiplicity)
@@ -279,9 +311,10 @@ def _recursive_objective_diagnostic_events(
                         )
                         q = child_weights / child_weights.sum().clamp_min(1e-12)
                         support_loss = -log_valid_mass
-                        balance_loss = -(
-                            q * (valid_log_probs - log_valid_mass.unsqueeze(-1))
-                        ).sum(dim=-1)
+                        with _loss_precision_context(valid_log_probs):
+                            balance_loss = -(
+                                q * (valid_log_probs - log_valid_mass.unsqueeze(-1))
+                            ).sum(dim=-1)
                         events.append(
                             _event(
                                 "recursive_detection_ce/trie_valid_mass",
@@ -318,7 +351,7 @@ def _recursive_objective_diagnostic_events(
                         )
                         if invalid_type_gate_id:
                             continue
-                        type_gate_loss = -torch.logsumexp(
+                        type_gate_loss = -_logsumexp_loss(
                             step_log_probs.index_select(dim=-1, index=type_gate_ids),
                             dim=-1,
                         ) * float(target.type_gate_weight)
@@ -453,17 +486,17 @@ def _summarize_compact_recursive_detection_metric_events(
                     start + _COMPACT_METRIC_SUMMARY_CHUNK_SIZE,
                     len(token_batch_indices),
                 )
-                chunk_logits = metric_logits[
+                chunk_logits = _loss_float(metric_logits[
                     batch_index_tensor[start:end],
                     time_index_tensor[start:end],
-                ].float()
+                ])
                 chunk_teacher_ids = teacher_id_tensor[start:end]
                 chunk_category_ids = category_id_tensor[start:end]
                 teacher_logits = chunk_logits.gather(
                     1,
                     chunk_teacher_ids.unsqueeze(1),
                 ).squeeze(1)
-                teacher_ce = torch.logsumexp(chunk_logits, dim=-1) - teacher_logits
+                teacher_ce = _logsumexp_loss(chunk_logits, dim=-1) - teacher_logits
                 top1_correct = chunk_logits.argmax(dim=-1).eq(chunk_teacher_ids)
                 top_k = min(5, int(chunk_logits.shape[-1]))
                 top5_correct = torch.topk(chunk_logits, k=top_k, dim=-1).indices.eq(
@@ -638,7 +671,7 @@ def _compute_sample_loss(
             vocab_size=vocab_size,
             label="teacher token id",
         )
-        step_log_probs = F.log_softmax(logits[target.position - 1].float(), dim=-1)
+        step_log_probs = _log_softmax_loss(logits[target.position - 1], dim=-1)
         if target.kind == "hard_ce":
             position_loss = -step_log_probs[target.teacher_token_id]
             per_position_losses[target.position] = _apply_type_gate_loss(
@@ -731,7 +764,7 @@ def _normalize_sample_loss(
             device=device,
             dtype=torch.float32,
         )
-        return torch.stack(weighted_losses).sum() / denominator
+        return _stack_loss_values(weighted_losses).sum() / denominator
 
     if recursive_targets.normalization != "semantic_image_bucket_balanced":
         raise ValueError(
@@ -743,7 +776,7 @@ def _normalize_sample_loss(
         target.position: target for target in recursive_targets.token_targets
     }
     atom_losses = {
-        atom.atom_id: torch.stack(
+        atom.atom_id: _stack_loss_values(
             [
                 per_position_losses[position]
                 * _target_loss_weight(target_by_position[position])
@@ -771,7 +804,7 @@ def _normalize_sample_loss(
             )
             for atoms in object_atoms.values()
         ]
-        component_losses["objects"] = torch.stack(object_losses).mean()
+        component_losses["objects"] = _stack_loss_values(object_losses).mean()
         component_weights["objects"] = _IMAGE_MIXTURE_WEIGHTS["objects"]
 
     separator_losses = [
@@ -788,10 +821,10 @@ def _normalize_sample_loss(
         boundary_terms: list[torch.Tensor] = []
         boundary_weights: list[float] = []
         if separator_losses:
-            boundary_terms.append(torch.stack(separator_losses).mean())
+            boundary_terms.append(_stack_loss_values(separator_losses).mean())
             boundary_weights.append(_BOUNDARY_ROLE_WEIGHTS["separator_continue"])
         if stop_losses:
-            boundary_terms.append(torch.stack(stop_losses).mean())
+            boundary_terms.append(_stack_loss_values(stop_losses).mean())
             boundary_weights.append(_BOUNDARY_ROLE_WEIGHTS["terminal_stop"])
         component_losses["boundary"] = _weighted_tensor_mean(boundary_terms, boundary_weights)
         component_weights["boundary"] = _IMAGE_MIXTURE_WEIGHTS["boundary"]
@@ -802,7 +835,7 @@ def _normalize_sample_loss(
         if atom.semantic_role is SemanticRole.SCHEMA_CONTROL
     ]
     if schema_losses:
-        component_losses["schema"] = torch.stack(schema_losses).mean()
+        component_losses["schema"] = _stack_loss_values(schema_losses).mean()
         component_weights["schema"] = _IMAGE_MIXTURE_WEIGHTS["schema"]
 
     if not component_losses:
@@ -820,7 +853,7 @@ def _weighted_tensor_mean(values: Sequence[torch.Tensor], weights: Sequence[floa
     numerator: torch.Tensor | None = None
     denominator = 0.0
     for value, weight in zip(values, weights, strict=True):
-        weighted = value * float(weight)
+        weighted = _loss_float(value) * float(weight)
         numerator = weighted if numerator is None else numerator + weighted
         denominator += float(weight)
     if numerator is None:

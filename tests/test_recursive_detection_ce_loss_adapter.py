@@ -333,6 +333,71 @@ def test_bfloat16_logits_are_upcast_for_stable_loss_computation() -> None:
     assert torch.isfinite(logits.grad).all()
 
 
+def test_support_balance_loss_uses_fp32_math_under_bfloat16_autocast() -> None:
+    logits = torch.tensor(
+        [0.25, -1.5, 2.0, -0.75],
+        dtype=torch.bfloat16,
+        requires_grad=True,
+    )
+    positive_ids = torch.tensor([0, 2], dtype=torch.long)
+    q = torch.tensor([1.0, 3.0], dtype=torch.bfloat16)
+
+    with torch.autocast(device_type="cpu", dtype=torch.bfloat16):
+        actual = loss_module.support_balance_loss(
+            logits,
+            positive_ids,
+            q,
+            support_weight=1.5,
+            balance_weight=0.5,
+        )
+    reference = loss_module.support_balance_loss(
+        logits.detach().float(),
+        positive_ids,
+        q.float(),
+        support_weight=1.5,
+        balance_weight=0.5,
+    )
+
+    assert actual.dtype == torch.float32
+    assert actual.item() == pytest.approx(reference.item())
+    actual.backward()
+    assert logits.grad is not None
+    assert torch.isfinite(logits.grad).all()
+
+
+def test_bfloat16_autocast_keeps_recursive_loss_positions_fp32() -> None:
+    logits = torch.tensor(
+        [[0.25, -0.75, 1.5, -2.0], [1.25, -3.0, 0.0, 0.5]],
+        dtype=torch.bfloat16,
+        requires_grad=True,
+    )
+    branch_target = replace(
+        _branch_target(position=1, teacher_token_id=2, branches=((0, 1), (2, 1))),
+        type_gate_token_ids=(0, 2),
+        type_gate_weight=0.5,
+    )
+    targets = _targets(
+        token_targets=(
+            branch_target,
+            _hard_target(position=2, teacher_token_id=3),
+        )
+    )
+
+    with torch.autocast(device_type="cpu", dtype=torch.bfloat16):
+        result = compute_recursive_detection_ce_batch_loss(
+            logits=logits,
+            targets=(targets,),
+        )
+
+    assert result.loss.dtype == torch.float32
+    assert torch.isfinite(result.loss)
+    assert result.per_position_losses[0][1].dtype == torch.float32
+    assert result.per_position_losses[0][2].dtype == torch.float32
+    result.loss.backward()
+    assert logits.grad is not None
+    assert torch.isfinite(logits.grad).all()
+
+
 def test_recursive_detection_metrics_map_semantic_roles_to_public_span_categories() -> None:
     roles_and_segments = (
         (SemanticRole.SCHEMA_CONTROL, "schema"),
