@@ -7,7 +7,13 @@ import pytest
 import torch
 
 from src.common.detection_sequence import BOX_START_TOKEN, OBJECT_REF_START_TOKEN
-from src.detection.data import CoordinateTokenBox, NormalizedDetectionObject
+from src.detection.data import (
+    CoordinateTokenBox,
+    DetectionMetadata,
+    NormalizedDetectionObject,
+    NormalizedDetectionSample,
+    ObjectOrderingPlan,
+)
 from src.detection.loss import (
     RecursiveDetectionLossWeights,
     compute_recursive_detection_ce_batch_loss,
@@ -161,6 +167,35 @@ def _example(*, k: int, eos_trust_weight: float = 1.0):
         tokenizer=SpecialTokenAwareTokenizer(),
         eos_trust_weight=eos_trust_weight,
     )
+
+
+def test_normalized_sample_rollin_order_mismatch_fails_closed_until_explicit_builder_exists() -> None:
+    objects = _objects()
+    sample = NormalizedDetectionSample(
+        images=("unit.jpg",),
+        objects=objects,
+        width=100,
+        height=100,
+        image_id=1,
+        file_name="unit.jpg",
+        metadata=DetectionMetadata(source="unit", split="train"),
+        object_ordering=ObjectOrderingPlan.random_permutation(
+            seed=1,
+            seed_source="unit",
+        ).with_realized((0, 1)),
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="rollin_order.*normalized_sample.*explicit emitted/suffix builder",
+    ):
+        build_compact_prefix_rollin_example(
+            objects=objects,
+            rollin_order=tuple(reversed(objects)),
+            k=1,
+            tokenizer=SpecialTokenAwareTokenizer(),
+            normalized_sample=sample,
+        )
 
 
 def _token_text_by_id(example) -> dict[int, str]:

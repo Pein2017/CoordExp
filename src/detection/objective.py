@@ -341,6 +341,13 @@ def build_compact_prefix_rollin_example(
     rollin_ids = tuple(obj.object_instance_id for obj in rollin_order)
     if len(rollin_ids) != len(source_objects) or set(rollin_ids) != set(source_by_id):
         raise ValueError("rollin_order must contain each object exactly once")
+    if normalized_sample is not None:
+        normalized_order_ids = tuple(obj.object_instance_id for obj in source_objects)
+        if rollin_ids != normalized_order_ids:
+            raise ValueError(
+                "rollin_order must match normalized_sample.objects order until "
+                "explicit emitted/suffix builder support is implemented"
+            )
     ordered_objects = tuple(source_by_id[object_id] for object_id in rollin_ids)
 
     rollin_state = make_prefix_rollin_state(
