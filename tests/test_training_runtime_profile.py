@@ -90,27 +90,6 @@ def test_default_profile_derives_generic_stage1_policy_from_plan() -> None:
     assert profile.manifest_family == "stage1"
 
 
-def test_stage1_set_continuation_profile_derives_branch_policy_from_plan() -> None:
-    profile_mod = _profile_module()
-
-    profile = profile_mod.resolve_training_runtime_profile("stage1_set_continuation")
-
-    assert profile.variant == "stage1_set_continuation"
-    assert profile.runtime_stage == "stage1_set_continuation"
-    assert profile.rollout_runtime_owner is None
-    assert profile.rollout_runtime_owned is False
-    assert profile.explicit_pipeline_required is False
-    assert profile.required_pipeline_namespace is None
-    assert profile.ordinary_stage1_mixins_allowed is False
-    assert profile.ordinary_stage1_mixins_excluded is True
-    assert profile.dataset_static_packing_allowed is False
-    assert profile.dataset_static_packing_owner is None
-    assert profile.post_rollout_packing_owner is None
-    assert profile.encoded_cache_policy == "raw_metadata_preserved_no_static_cache"
-    assert profile.collator_family == "stage1_set_continuation"
-    assert profile.manifest_family == "stage1_set_continuation"
-
-
 @pytest.mark.parametrize(
     ("variant", "pipeline_namespace", "manifest_family"),
     [
@@ -148,6 +127,7 @@ def test_stage2_profiles_derive_rollout_policy_from_plan(
     [
         ("stage2_ab_training", "stage2_two_channel"),
         ("rollout_matching_sft", "stage2_rollout_aligned"),
+        ("stage1_set_continuation", "prefix_rollin_et_rmp_ce"),
     ],
 )
 def test_profile_removed_variants_fail_fast_with_replacement_guidance(
@@ -260,7 +240,6 @@ def test_compose_trainer_class_rejects_auxiliary_losses_with_recursive_ce(
 @pytest.mark.parametrize(
     "variant",
     [
-        "stage1_set_continuation",
         "stage2_two_channel",
         "stage2_rollout_aligned",
     ],
@@ -281,6 +260,7 @@ def test_compose_trainer_class_excludes_ordinary_stage1_mixins_via_profile(
     [
         ("stage2_ab_training", "stage2_two_channel"),
         ("rollout_matching_sft", "stage2_rollout_aligned"),
+        ("stage1_set_continuation", "prefix_rollin_et_rmp_ce"),
     ],
 )
 def test_compose_trainer_class_removed_variants_fail_through_profile(

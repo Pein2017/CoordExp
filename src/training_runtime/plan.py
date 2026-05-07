@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Final, Literal, TypeAlias
 
-CollatorFamily: TypeAlias = Literal["default", "stage1_set_continuation", "identity"]
+CollatorFamily: TypeAlias = Literal["default", "identity"]
 PackingOwner: TypeAlias = Literal["dataset", "trainer"]
 PipelineNamespace: TypeAlias = Literal[
     "stage2_ab.pipeline", "rollout_matching.pipeline"
@@ -28,6 +28,7 @@ class TrainingRuntimePlan:
 _REMOVED_VARIANT_REPLACEMENTS: Final[dict[str, str]] = {
     "stage2_ab_training": "stage2_two_channel",
     "rollout_matching_sft": "stage2_rollout_aligned",
+    "stage1_set_continuation": "prefix_rollin_et_rmp_ce",
 }
 
 
@@ -39,19 +40,6 @@ def resolve_training_runtime_plan(trainer_variant: str | None) -> TrainingRuntim
     if replacement is not None:
         raise ValueError(
             f"custom.trainer_variant={variant} has been removed; use {replacement}"
-        )
-
-    if variant == "stage1_set_continuation":
-        return TrainingRuntimePlan(
-            variant=variant,
-            preserve_raw_sample_metadata=True,
-            dataset_static_packing_allowed=False,
-            dataset_static_packing_owner=None,
-            post_rollout_packing_owner=None,
-            collator_family="stage1_set_continuation",
-            ordinary_stage1_mixins_allowed=False,
-            required_pipeline_namespace=None,
-            requires_top_level_rollout_matching=False,
         )
 
     if variant == "stage2_two_channel":

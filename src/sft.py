@@ -109,10 +109,6 @@ def resolve_trainer_cls(train_args):
         from .trainers.stage2_two_channel import Stage2TwoChannelTrainer
 
         trainer_cls = Stage2TwoChannelTrainer
-    elif trainer_variant == "stage1_set_continuation":
-        from .trainers.stage1_set_continuation import Stage1SetContinuationTrainer
-
-        trainer_cls = Stage1SetContinuationTrainer
     elif trainer_variant == "stage2_rollout_aligned":
         from .trainers.stage2_rollout_aligned import Stage2RolloutAlignedTrainer
 
@@ -192,7 +188,6 @@ def _resolve_dense_prompt_identity(custom_config: Any) -> dict[str, Any]:
 
 logger = get_logger(__name__)
 
-STAGE1_SET_CONTINUATION_CACHE_BYPASS_REASON = "stage1_set_continuation_branch_sampling"
 
 
 @dataclass(frozen=True)
@@ -575,17 +570,6 @@ def _stage1_aux_settings_payload(custom_config: Any) -> dict[str, Any]:
     }
 
 
-def _logz_estimator_for_set_continuation(sc_cfg: Any) -> str:
-    candidates = getattr(sc_cfg, "candidates", None)
-    mode = str(getattr(candidates, "mode", "") or "")
-    if mode == "exact":
-        return "exact"
-    pem = getattr(sc_cfg, "positive_evidence_margin", None)
-    if str(getattr(pem, "objective", "") or "") == "threshold_loss":
-        return "uniform_importance"
-    return "sampled_raw"
-
-
 def _build_benchmark_runtime_payload(
     *, training_config: Any, trainer_variant: str | None
 ) -> dict[str, Any]:
@@ -618,135 +602,6 @@ def _build_benchmark_runtime_payload(
             "scope": "ordinary_sft_global_final_coordjson_close",
         }
 
-    if not _is_stage1_set_continuation_variant(trainer_variant):
-        return payload
-
-    sc_cfg = getattr(custom_config, "stage1_set_continuation", None)
-    if sc_cfg is None:
-        return payload
-
-    candidates = getattr(sc_cfg, "candidates", None)
-    subset_sampling = getattr(sc_cfg, "subset_sampling", None)
-    pem_cfg = getattr(sc_cfg, "positive_evidence_margin", None)
-    pem_enabled = str(getattr(pem_cfg, "objective", "") or "") == "threshold_loss"
-    train_forward = getattr(sc_cfg, "train_forward", None)
-    objective_cfg = getattr(sc_cfg, "objective", None)
-    objective_mode = str(getattr(objective_cfg, "mode", "candidate_balanced") or "")
-    candidate_mode = str(getattr(candidates, "mode", "") or "")
-    logz_estimator = _logz_estimator_for_set_continuation(sc_cfg)
-    branch_runtime_mode = str(
-        getattr(getattr(train_forward, "branch_runtime", None), "mode", "")
-        or "retained_graph"
-    )
-    logits_mode = str(
-        getattr(getattr(train_forward, "logits", None), "mode", "") or "full"
-    )
-    ddp_candidate_padding = str(
-        getattr(getattr(train_forward, "ddp_sync", None), "candidate_padding", "")
-        or "max_count"
-    )
-    fallback_cfg = getattr(
-        getattr(getattr(train_forward, "budget_policy", None), "fallback", None),
-        "mode",
-        "disabled",
-    )
-    fallback_logz_estimator = None
-    if str(fallback_cfg) == "approximate_uniform_subsample":
-        fallback_logz_estimator = str(
-            getattr(
-                getattr(
-                    getattr(train_forward, "budget_policy", None), "fallback", None
-                ),
-                "estimator",
-                "uniform_importance",
-            )
-            or "uniform_importance"
-        )
-        if not pem_enabled:
-            fallback_logz_estimator = "sampled_raw"
-    if branch_runtime_mode == "smart_batched_exact":
-        branch_execution_label = "smart_batched_exact_no_prefix_cache"
-    elif branch_runtime_mode == "checkpointed_exact":
-        branch_execution_label = "checkpointed_exact_recompute_no_prefix_cache"
-    elif branch_runtime_mode == "padding_free_packed":
-        branch_execution_label = (
-            "padding_free_packed_full_suffix_rows_no_padding_no_prefix_cache"
-        )
-    elif logits_mode == "supervised_suffix" and ddp_candidate_padding == "none":
-        branch_execution_label = (
-            "retained_graph_suffix_logits_no_ddp_padding_no_prefix_cache"
-        )
-    elif logits_mode == "supervised_suffix":
-        branch_execution_label = "retained_graph_suffix_logits_no_prefix_cache"
-    else:
-        branch_execution_label = "naive_repeated_forward_no_prefix_cache"
-    payload["stage1_set_continuation"] = {
-        "candidate_scoring_mode": candidate_mode,
-        "objective": _config_to_mapping(objective_cfg),
-        "candidate_max_candidates": getattr(candidates, "max_candidates", None),
-        "logZ_estimator": logz_estimator,
-        "authored_logZ_estimator": logz_estimator,
-        "fallback_logZ_estimator": fallback_logz_estimator,
-        "train_forward": _config_to_mapping(train_forward),
-        "objective_fidelity": {
-            "exact_metric": "mp/objective_fidelity_exact_samples",
-            "fallback_metric": "mp/fallback_applied_samples",
-        },
-        "collator_path": (
-            "src.data_collators.stage1_set_continuation_collator."
-            "build_stage1_set_continuation_collator"
-        ),
-        "remove_unused_columns": False,
-        "packing_policy": {
-            "training.packing": "rejected",
-            "training.eval_packing": "rejected",
-            "static_pack_plan": "not_built",
-            "reason": "runtime_subset_candidate_branch_sampling_requires_unpacked_rows",
-        },
-        "prefix_attach_mode": "repeated_forward",
-        "branch_isolation": "independent_forward",
-        "branch_attention_mask": {
-            "enabled": False,
-            "reason": ("independent_candidate_rows_do_not_share_candidate_sequence"),
-        },
-        "prefix_gradient": "non_detached_recomputed_per_branch",
-        "metric_schema_version": str(
-            getattr(sc_cfg, "metric_schema_version", "")
-            or "stage1_set_continuation_metrics_v3"
-        ),
-        "subset_sampling": _config_to_mapping(subset_sampling),
-        "structural_close": _config_to_mapping(
-            getattr(sc_cfg, "structural_close", None)
-        ),
-        "bidirectional_token_gate": _config_to_mapping(
-            getattr(sc_cfg, "bidirectional_token_gate", None)
-        ),
-        "positive_evidence_margin": _config_to_mapping(pem_cfg),
-        "effective_coord_slot_scoring": (
-            "full_vocab_recursive_suffix"
-            if objective_mode in {"full_suffix_ce", "entry_trie_rmp_ce"}
-            else "coord_token_vocab_full_entry"
-        ),
-        "raw_text_integer_coordinates": (
-            "serialized_surface_only"
-            if objective_mode in {"full_suffix_ce", "entry_trie_rmp_ce"}
-            else "unsupported"
-        ),
-        "realized_branch_token_budget": {
-            "source": "effective_runtime",
-            "v1_execution": branch_execution_label,
-        },
-        "realized_prefix_mode_coverage": {
-            "source": "compact_v2_metrics",
-            "metrics": [
-                "mp/selected_mode_empty_prefix",
-                "mp/selected_mode_full_prefix",
-            ],
-            "configured": _config_to_mapping(subset_sampling),
-        },
-        "realized_aux_settings": _stage1_aux_settings_payload(custom_config),
-        "eval_plan": eval_plan,
-    }
     return payload
 
 
@@ -1483,36 +1338,6 @@ def _is_rollout_matching_variant(trainer_variant: str | None) -> bool:
     return runtime_plan.post_rollout_packing_owner is not None
 
 
-def _is_stage1_set_continuation_variant(trainer_variant: str | None) -> bool:
-    runtime_plan = resolve_training_runtime_plan(trainer_variant)
-    return runtime_plan.collator_family == "stage1_set_continuation"
-
-
-def _inject_stage1_set_continuation_trainer_config(
-    *,
-    trainer: Any,
-    training_config: Any,
-) -> None:
-    custom_config = getattr(training_config, "custom", None)
-    sc_cfg = getattr(custom_config, "stage1_set_continuation", None)
-    if sc_cfg is None:
-        raise ValueError(
-            "training_config.custom.stage1_set_continuation is required for "
-            "custom.trainer_variant=stage1_set_continuation"
-        )
-    setattr(trainer, "stage1_set_continuation_cfg", sc_cfg)
-    setattr(
-        trainer,
-        "object_field_order",
-        str(getattr(custom_config, "object_field_order", "desc_first") or "desc_first"),
-    )
-    setattr(
-        trainer,
-        "object_ordering",
-        str(getattr(custom_config, "object_ordering", "sorted") or "sorted"),
-    )
-
-
 def _validate_stage1_static_packing_policy(
     *,
     packing_cfg: PackingRuntimeConfig,
@@ -1528,10 +1353,10 @@ def _validate_stage1_static_packing_policy(
     if not runtime_plan.dataset_static_packing_allowed:
         if packing_cfg.eval_packing:
             raise ValueError(
-                "custom.trainer_variant=stage1_set_continuation rejects dataset packing; set training.packing=false and training.eval_packing=false."
+                "selected trainer variant rejects dataset-level packing; set training.packing=false and training.eval_packing=false."
             )
         raise ValueError(
-            "custom.trainer_variant=stage1_set_continuation rejects dataset packing; set training.packing=false."
+            "selected trainer variant rejects dataset-level packing; set training.packing=false."
         )
 
     if packing_cfg.mode != "static":
@@ -2266,20 +2091,6 @@ def main():
         system_prompt_dense=system_prompt_dense,
         system_prompt_summary=system_prompt_summary,
     )
-    if (
-        _is_stage1_set_continuation_variant(trainer_variant)
-        and train_encoded_sample_cache_request is not None
-    ):
-        if encoded_sample_cache_cfg.ineligible_policy == "error":
-            raise ValueError(
-                "custom.trainer_variant=stage1_set_continuation treats training.encoded_sample_cache as ineligible; "
-                "set training.encoded_sample_cache.ineligible_policy=bypass or disable encoded_sample_cache."
-            )
-        train_encoded_sample_cache_info = _build_encoded_sample_cache_bypass_info(
-            train_encoded_sample_cache_request,
-            reason=STAGE1_SET_CONTINUATION_CACHE_BYPASS_REASON,
-        )
-        train_encoded_sample_cache_request = None
     dataset: Any
     _validate_bbox_format_contract(
         custom_config=custom_config,
@@ -2891,20 +2702,6 @@ def main():
         system_prompt_dense=system_prompt_dense,
         system_prompt_summary=system_prompt_summary,
     )
-    if (
-        _is_stage1_set_continuation_variant(trainer_variant)
-        and eval_encoded_sample_cache_request is not None
-    ):
-        if encoded_sample_cache_cfg.ineligible_policy == "error":
-            raise ValueError(
-                "custom.trainer_variant=stage1_set_continuation treats training.encoded_sample_cache as ineligible; "
-                "set training.encoded_sample_cache.ineligible_policy=bypass or disable encoded_sample_cache."
-            )
-        eval_encoded_sample_cache_info = _build_encoded_sample_cache_bypass_info(
-            eval_encoded_sample_cache_request,
-            reason=STAGE1_SET_CONTINUATION_CACHE_BYPASS_REASON,
-        )
-        eval_encoded_sample_cache_request = None
     if val_jsonl:
         logger.info(f"Loading validation dataset: {val_jsonl}")
         eval_sample_limit = None if val_sample_with_replacement else val_sample_limit
@@ -3084,14 +2881,7 @@ def main():
         if getattr(train_args, "training_args", None) is not None:
             train_args.training_args.remove_unused_columns = False
 
-    if runtime_profile.collator_family == "stage1_set_continuation":
-        from .data_collators.stage1_set_continuation_collator import (
-            build_stage1_set_continuation_collator,
-        )
-
-        base_collator = None
-        data_collator = build_stage1_set_continuation_collator()
-    elif runtime_profile.collator_family == "identity":
+    if runtime_profile.collator_family == "identity":
         # Eval rollout batching knob: rollout_matching.eval_decode_batch_size.
         # Rollout trainer variants use this value for eval dataloader batch size.
         _apply_rollout_decode_batch_size_override(
@@ -3128,10 +2918,7 @@ def main():
         raw_proxy = extra_cfg.get("proxy_supervision")
         if isinstance(raw_proxy, Mapping):
             proxy_supervision_cfg = dict(raw_proxy)
-    if runtime_profile.collator_family == "stage1_set_continuation":
-        # Set-continuation does branch encoding and masking inside the trainer.
-        pass
-    elif runtime_profile.collator_family == "identity":
+    if runtime_profile.collator_family == "identity":
         # Rollout-matching does its own encoding and loss masking inside the trainer.
         data_collator = base_collator
     else:
@@ -3298,13 +3085,6 @@ def main():
         trainer_kwargs=trainer_kwargs,
         heartbeat_writer=heartbeat_writer,
     )
-    if runtime_profile.runtime_stage == "stage1_set_continuation":
-        _inject_stage1_set_continuation_trainer_config(
-            trainer=trainer,
-            training_config=training_config,
-        )
-        _set_train_arg(train_args, "minimal_checkpoint_artifacts", True)
-        setattr(trainer.args, "minimal_checkpoint_artifacts", True)
     # Non-standard evaluators do not emit ordinary token-accuracy metrics.
     # Guard against inherited defaults that would crash best-checkpoint
     # selection after a successful callback/rollout evaluation.
@@ -3323,26 +3103,6 @@ def main():
             )
             train_args.training_args.metric_for_best_model = "rollout/f1"
             trainer.args.metric_for_best_model = "rollout/f1"
-            if getattr(train_args.training_args, "greater_is_better", None) is None:
-                train_args.training_args.greater_is_better = True
-                trainer.args.greater_is_better = True
-    if (
-        runtime_profile.runtime_stage == "stage1_set_continuation"
-        and eval_dataset is not None
-        and getattr(train_args, "training_args", None) is not None
-    ):
-        metric_for_best_model = str(
-            getattr(train_args.training_args, "metric_for_best_model", "") or ""
-        ).strip()
-        if "token_acc" in metric_for_best_model:
-            replacement_metric = "eval_det_f1ish@0.50_f1_full_micro"
-            logger.warning(
-                "metric_for_best_model=%s is incompatible with stage1_set_continuation detection eval; overriding to %s.",
-                metric_for_best_model,
-                replacement_metric,
-            )
-            train_args.training_args.metric_for_best_model = replacement_metric
-            trainer.args.metric_for_best_model = replacement_metric
             if getattr(train_args.training_args, "greater_is_better", None) is None:
                 train_args.training_args.greater_is_better = True
                 trainer.args.greater_is_better = True

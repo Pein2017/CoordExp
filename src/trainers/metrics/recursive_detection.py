@@ -65,8 +65,8 @@ class RecursiveDetectionCEMixin:
                 "recursive_detection_ce_cfg trie weights must sum to > 0"
             )
         weights = RecursiveDetectionLossWeights(
-            branch_support_weight=float(trie_support_weight),
-            branch_balance_weight=float(trie_balance_weight),
+            support_weight=float(trie_support_weight),
+            balance_weight=float(trie_balance_weight),
         )
         loss_result = compute_recursive_detection_ce_batch_loss(
             logits=logits,
@@ -88,10 +88,10 @@ class RecursiveDetectionCEMixin:
                         loss_result.metrics.get("batch_size", 0.0)
                     ),
                     "recursive_detection_ce/trie_support_weight": float(
-                        weights.branch_support_weight
+                        weights.support_weight
                     ),
                     "recursive_detection_ce/trie_balance_weight": float(
-                        weights.branch_balance_weight
+                        weights.balance_weight
                     ),
                 }
             )

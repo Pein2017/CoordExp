@@ -60,8 +60,8 @@ _COMPACT_METRIC_SUMMARY_CHUNK_SIZE = 64
 
 @dataclass(frozen=True)
 class RecursiveDetectionLossWeights:
-    branch_support_weight: float = 1.0
-    branch_balance_weight: float = 1.0
+    support_weight: float = 1.0
+    balance_weight: float = 1.0
 
 
 @dataclass(frozen=True)
@@ -452,8 +452,8 @@ def _compute_sample_loss(
         support_loss = -valid_log_mass
         balance_loss = -(q * (child_log_probs - valid_log_mass)).sum()
         per_position_losses[target.position] = (
-            float(weights.branch_support_weight) * support_loss
-            + float(weights.branch_balance_weight) * balance_loss
+            float(weights.support_weight) * support_loss
+            + float(weights.balance_weight) * balance_loss
         )
 
     sample_loss = _normalize_sample_loss(

@@ -19,7 +19,6 @@ EncodedCachePolicy: TypeAlias = Literal[
 ]
 ManifestFamily: TypeAlias = Literal[
     "stage1",
-    "stage1_set_continuation",
     "stage2_ab",
     "rollout_matching",
 ]
@@ -28,7 +27,7 @@ PackingPolicy: TypeAlias = Literal[
     "packing_disabled",
     "trainer_post_rollout_packing",
 ]
-RuntimeStage: TypeAlias = Literal["stage1", "stage1_set_continuation", "stage2"]
+RuntimeStage: TypeAlias = Literal["stage1", "stage2"]
 
 
 @dataclass(frozen=True, slots=True)
@@ -95,8 +94,6 @@ def _derive_runtime_stage(plan: TrainingRuntimePlan) -> RuntimeStage:
         or plan.requires_top_level_rollout_matching
     ):
         return "stage2"
-    if plan.collator_family != "default":
-        return plan.collator_family
     return "stage1"
 
 
@@ -126,8 +123,6 @@ def _derive_manifest_family(
         if plan.required_pipeline_namespace == "stage2_ab.pipeline":
             return "stage2_ab"
         return "rollout_matching"
-    if runtime_stage == "stage1_set_continuation":
-        return "stage1_set_continuation"
     return "stage1"
 
 

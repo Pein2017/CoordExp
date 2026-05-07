@@ -52,7 +52,7 @@ Human support entrypoints:
   - [docs/data/PACKING.md](data/PACKING.md) for Stage-1 static-packing and hard-cap questions
 - Stage-1 training:
   - [docs/training/README.md](training/README.md)
-  - [docs/training/STAGE1_OBJECTIVE.md](training/STAGE1_OBJECTIVE.md) for baseline Stage-1 behavior, ET-RMP-CE, compact recursive detection, and retired candidate-objective boundaries
+  - [docs/training/STAGE1_OBJECTIVE.md](training/STAGE1_OBJECTIVE.md) for baseline Stage-1 behavior, compact recursive detection, and retired candidate-objective boundaries
   - [docs/data/PACKING.md](data/PACKING.md)
   - Latest compact detection route: `configs/stage1/recursive_detection_ce_latest/prod/compact_full_support2.yaml`, `src/config/schema.py::LatestDetectionTrainingConfig`, and `src/detection/runtime.py`
   - Latest compact detection authoring snippets, not yet consumed by canonical launch configs: `configs/_shared/latest_detection/`

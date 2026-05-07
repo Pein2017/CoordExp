@@ -121,8 +121,6 @@ def resolve_static_sft_training_mode(
 ) -> DetectionTrainingMode:
     if objective_variant:
         return _validate_detection_training_mode(str(objective_variant))
-    if str(trainer_variant or "") == "stage1_set_continuation":
-        return "random_permutation_et_rmp_ce"
     if str(object_ordering or "sorted") in {"random", "random_permutation"}:
         return "random_order_sft"
     return "sorted_sft"

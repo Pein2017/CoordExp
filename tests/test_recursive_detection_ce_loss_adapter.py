@@ -171,8 +171,8 @@ def test_support_reweight_changes_only_branch_loss_when_valid_mass_is_low() -> N
         logits=logits,
         targets=(targets,),
         weights=RecursiveDetectionLossWeights(
-            branch_support_weight=2.0,
-            branch_balance_weight=1.0,
+            support_weight=2.0,
+            balance_weight=1.0,
         ),
     )
 

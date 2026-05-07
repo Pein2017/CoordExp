@@ -30,10 +30,6 @@ config_surfaces:
       config: configs/stage1/compact_detection_sequence/smoke/compact_full_tiny.yaml
       parser: src/config/schema.py::TrainingConfig
       notes: "Legacy TrainingConfig plus custom.detection_sequence_format bridge; do not use as a latest-schema example."
-    - id: stage1_set_continuation_et_rmp_ce
-      status: current-continuation
-      config: configs/stage1/set_continuation/production.yaml
-      notes: "Separate from latest compact detection; production batch identity is owned by production.yaml."
 
 docs:
   repo:
