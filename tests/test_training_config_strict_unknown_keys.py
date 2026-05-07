@@ -529,6 +529,7 @@ def test_training_encoded_sample_cache_keys_are_allowed_and_normalized() -> None
         "encoded_sample_cache": {
             "enabled": True,
             "wait_timeout_s": 42,
+            "max_resident_shards": 3,
         }
     }
 
@@ -537,6 +538,7 @@ def test_training_encoded_sample_cache_keys_are_allowed_and_normalized() -> None
     assert cache_cfg["enabled"] is True
     assert cache_cfg["ineligible_policy"] == "error"
     assert cache_cfg["wait_timeout_s"] == 42
+    assert cache_cfg["max_resident_shards"] == 3
 
 
 def test_training_encoded_sample_cache_unknown_nested_key_fails_fast() -> None:

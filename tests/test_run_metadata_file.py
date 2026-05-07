@@ -5,7 +5,10 @@ from pathlib import Path
 
 import pytest
 
-from src.bootstrap.run_metadata import write_run_metadata_file
+from src.bootstrap.run_metadata import (
+    EncodedSampleCacheRunMetadata,
+    write_run_metadata_file,
+)
 
 
 def test_write_run_metadata_file_writes_expected_fields(
@@ -38,3 +41,14 @@ def test_write_run_metadata_file_writes_expected_fields(
     assert payload["encoded_sample_cache"]["train"]["status"] == "ready"
     assert payload["encoded_sample_cache"]["eval"]["status"] == "disabled"
     assert isinstance(payload["upstream"], dict)
+
+
+def test_encoded_sample_cache_run_metadata_omits_empty_splits() -> None:
+    metadata = EncodedSampleCacheRunMetadata(
+        train={"status": "ready", "root_dir": "/tmp/train"},
+        eval=None,
+    )
+
+    assert metadata.to_mapping() == {
+        "train": {"status": "ready", "root_dir": "/tmp/train"}
+    }

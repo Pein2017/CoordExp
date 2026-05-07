@@ -1,5 +1,5 @@
 schema_version: 1
-updated: 2026-04-03
+updated: 2026-05-05
 
 entrypoints:
   human:
@@ -10,11 +10,30 @@ entrypoints:
     catalog: docs/catalog.yaml
     progress: progress/index.yaml
 
-precedence:
-  - openspec/specs/
-  - docs/
-  - openspec/changes/<active-change>/
-  - progress/
+authority:
+  current_truth: docs/
+  stable_contracts: openspec/specs/
+  active_deltas: openspec/changes/<active-change>/
+  historical_evidence: progress/
+
+config_surfaces:
+  training:
+    - id: stage1_latest_compact_detection
+      status: canonical
+      config: configs/stage1/recursive_detection_ce_latest/prod/compact_full_support2.yaml
+      authoring_snippets: configs/_shared/latest_detection/
+      parser: src/config/schema.py::LatestDetectionTrainingConfig
+      runtime: src/detection/runtime.py
+      notes: "Latest compact detection uses top-level data, prompt, detection_template, token_rows, objective, packing, evaluation, and validation sections. Snippets under configs/_shared/latest_detection are not consumed by canonical launch configs until extends chains are migrated."
+    - id: stage1_legacy_compact_bridge
+      status: legacy-bridge
+      config: configs/stage1/compact_detection_sequence/smoke/compact_full_tiny.yaml
+      parser: src/config/schema.py::TrainingConfig
+      notes: "Legacy TrainingConfig plus custom.detection_sequence_format bridge; do not use as a latest-schema example."
+    - id: stage1_set_continuation_et_rmp_ce
+      status: current-continuation
+      config: configs/stage1/set_continuation/production.yaml
+      notes: "Separate from latest compact detection; production batch identity is owned by production.yaml."
 
 docs:
   repo:
@@ -56,13 +75,9 @@ docs:
       type: workflow
       status: canonical
     - path: docs/data/PACKING.md
-      title: 'Packing Mode Guide (Default: 12k, eff_bs=12)'
+      title: Packing Policy Matrix
       type: reference
       status: canonical
-    - path: docs/data/FUSION.md
-      title: Fusion Dataset (Dormant Legacy Surface)
-      type: reference
-      status: historical
     - path: docs/data/VISUAL_GENOME.md
       title: Visual Genome (VG) -> CoordExp JSONL
       type: dataset-note
@@ -76,10 +91,6 @@ docs:
       title: Coord Objective & Adapter
       type: reference
       status: canonical
-    - path: docs/training/STAGE2_DESIGN.md
-      title: Stage-2 Design History
-      type: design-note
-      status: historical
     - path: docs/training/STAGE2_RUNBOOK.md
       title: Stage-2 Training Runbook
       type: runbook
@@ -309,6 +320,10 @@ progress:
       title: Audits Index
       type: router
       status: canonical
+    - path: progress/audits/2026-05-03_type_schema_architecture_audit.md
+      title: Type-System And Schema-Boundary Audit
+      type: audit
+      status: active-audit
     - path: progress/audits/2026-01-22_stage1_softce_logging.md
       title: 'Stage-1 SoftCE (W1) Audit: Loss Dynamics, Logging Alignment, and Efficiency Notes (2026-01-22)'
       type: audit

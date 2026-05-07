@@ -3,7 +3,7 @@
 import logging
 import math
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Set
+from typing import Any, Dict, List, Mapping, Optional, Set
 
 import yaml
 from swift.llm.argument import RLHFArguments, TrainArguments
@@ -14,6 +14,10 @@ from src.common.object_field_order import (
     normalize_object_ordering,
 )
 from src.common.geometry.bbox_parameterization import normalize_bbox_format
+from src.common.detection_sequence import (
+    COORDJSON_FORMAT,
+    normalize_detection_sequence_format,
+)
 
 from .prompts import (
     SYSTEM_PROMPT_SUMMARY,
@@ -21,7 +25,12 @@ from .prompts import (
     coord_mode_from_coord_tokens_enabled,
     get_template_prompts,
 )
-from .schema import PromptOverrides, SaveDelayConfig, TrainingConfig
+from .schema import (
+    LatestDetectionTrainingConfig,
+    PromptOverrides,
+    SaveDelayConfig,
+    TrainingConfig,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -381,6 +390,7 @@ class ConfigLoader:
         bbox_format: str = "xyxy"
         prompt_variant: Optional[str] = None
         bbox_format: str = "xyxy"
+        detection_sequence_format = COORDJSON_FORMAT
 
         custom_section = config.get("custom")
         if custom_section is not None:
@@ -427,6 +437,14 @@ class ConfigLoader:
                 coord_tokens_cfg.get("enabled", True),
                 "custom.coord_tokens.enabled",
             )
+            detection_sequence_format = normalize_detection_sequence_format(
+                custom_section.get("detection_sequence_format", COORDJSON_FORMAT)
+            )
+            if detection_sequence_format != COORDJSON_FORMAT and not coord_tokens_enabled:
+                raise ValueError(
+                    "custom.detection_sequence_format="
+                    f"{detection_sequence_format} requires custom.coord_tokens.enabled=true"
+                )
 
             skip_bbox_norm = ConfigLoader._coerce_bool(
                 coord_tokens_cfg.get("skip_bbox_norm", True),
@@ -465,6 +483,7 @@ class ConfigLoader:
                 prompt_variant=prompt_variant,
                 object_field_order=object_field_order,
                 bbox_format=bbox_format,
+                detection_sequence_format=detection_sequence_format,
             )
             output_variant = "dense"
 
@@ -478,7 +497,7 @@ class ConfigLoader:
         )
 
     @staticmethod
-    def build_train_arguments(config: TrainingConfig) -> TrainArguments:
+    def build_train_arguments(config: TrainingConfig | LatestDetectionTrainingConfig) -> TrainArguments:
         """Directly instantiate TrainArguments from config.
 
         TrainArguments is a unified dataclass that inherits from:
@@ -499,9 +518,14 @@ class ConfigLoader:
         Returns:
             Fully initialized TrainArguments object
         """
+        is_latest_detection = isinstance(config, LatestDetectionTrainingConfig)
         model_section = dict(config.model)
         quant_section = dict(config.quantization)
-        data_section = dict(config.data)
+        data_section = (
+            {"dataset": ["dummy"], "val_dataset": ["dummy"]}
+            if is_latest_detection
+            else dict(config.data)
+        )
         template_section = dict(config.template)
         tuner_section = dict(config.tuner)
         training_section = dict(config.training)
@@ -561,6 +585,8 @@ class ConfigLoader:
         #
         # Stage2-AB standardizes step semantics around a true (exact) global effective batch.
         is_stage2_ab = bool(
+            not is_latest_detection
+            and
             str(getattr(getattr(config, "custom", None), "trainer_variant", "") or "")
             == "stage2_two_channel"
         )
@@ -657,13 +683,20 @@ class ConfigLoader:
             model_section.setdefault("max_model_len", config.global_max_length)
             template_section.setdefault("max_length", config.global_max_length)
 
-        if "system" not in template_section and config.prompts.system:
+        if (
+            not is_latest_detection
+            and "system" not in template_section
+            and config.prompts.system
+        ):
             template_section["system"] = config.prompts.system
 
         teacher_model_path = rlhf_section_original.get("teacher_model")
         rlhf_type = rlhf_section_original.get("rlhf_type")
         llm_kd_active = rlhf_type == "gkd" and llm_kd_weight > 0
-        kd_requested = llm_kd_active or config.custom.visual_kd.enabled
+        visual_kd_enabled = (
+            False if is_latest_detection else bool(config.custom.visual_kd.enabled)
+        )
+        kd_requested = llm_kd_active or visual_kd_enabled
         if kd_requested and not teacher_model_path:
             raise ValueError(
                 "rlhf.teacher_model must be provided when llm KD or visual KD is enabled. "
@@ -693,7 +726,11 @@ class ConfigLoader:
             if section:
                 args_dict.update(section)
 
-        if config.deepspeed and config.deepspeed.enabled:
+        if is_latest_detection:
+            deepspeed_section = config.deepspeed
+            if deepspeed_section and bool(deepspeed_section.get("enabled", False)):
+                args_dict["deepspeed"] = deepspeed_section.get("config")
+        elif config.deepspeed and config.deepspeed.enabled:
             args_dict["deepspeed"] = config.deepspeed.config
 
         save_delay_config = SaveDelayConfig.from_raw(
@@ -710,7 +747,7 @@ class ConfigLoader:
                 "Unable to attach save_last_epoch to TrainArguments; ensure ms-swift exposes this attribute."
             ) from exc
 
-        if config.custom.trainer_variant:
+        if not is_latest_detection and config.custom.trainer_variant:
             try:
                 setattr(train_args, "trainer_variant", config.custom.trainer_variant)
             except (AttributeError, TypeError) as exc:  # pragma: no cover - explicit failure
@@ -724,12 +761,13 @@ class ConfigLoader:
         if save_delay_config.epochs is not None:
             setattr(train_args, "save_delay_epochs", save_delay_config.epochs)
 
-        try:
-            setattr(train_args, "visual_kd_config", config.custom.visual_kd)
-        except (AttributeError, TypeError) as exc:  # pragma: no cover
-            raise RuntimeError(
-                "Unable to attach visual_kd_config to TrainArguments; ensure ms-swift exposes this attribute."
-            ) from exc
+        if not is_latest_detection:
+            try:
+                setattr(train_args, "visual_kd_config", config.custom.visual_kd)
+            except (AttributeError, TypeError) as exc:  # pragma: no cover
+                raise RuntimeError(
+                    "Unable to attach visual_kd_config to TrainArguments; ensure ms-swift exposes this attribute."
+                ) from exc
 
         try:
             setattr(train_args, "llm_kd_weight", llm_kd_weight)
@@ -738,12 +776,15 @@ class ConfigLoader:
                 "Unable to attach llm_kd_weight to TrainArguments; ensure ms-swift exposes this attribute."
             ) from exc
 
-        try:
-            setattr(train_args, "coord_offset_config", config.custom.coord_offset)
-        except (AttributeError, TypeError) as exc:  # pragma: no cover
-            raise RuntimeError(
-                "Unable to attach coord_offset_config to TrainArguments; ensure ms-swift exposes this attribute."
-            ) from exc
+        if is_latest_detection:
+            setattr(train_args, "latest_detection_config", config)
+        else:
+            try:
+                setattr(train_args, "coord_offset_config", config.custom.coord_offset)
+            except (AttributeError, TypeError) as exc:  # pragma: no cover
+                raise RuntimeError(
+                    "Unable to attach coord_offset_config to TrainArguments; ensure ms-swift exposes this attribute."
+                ) from exc
 
         inner_args = getattr(train_args, "training_args", None)
         if inner_args is None:
@@ -751,12 +792,13 @@ class ConfigLoader:
                 "TrainArguments missing nested training_args; ms-swift interface may have changed."
             )
 
-        try:
-            setattr(inner_args, "visual_kd_config", config.custom.visual_kd)
-        except (AttributeError, TypeError) as exc:  # pragma: no cover
-            raise RuntimeError(
-                "Unable to attach visual_kd_config to inner training arguments; ensure ms-swift exposes this attribute."
-            ) from exc
+        if not is_latest_detection:
+            try:
+                setattr(inner_args, "visual_kd_config", config.custom.visual_kd)
+            except (AttributeError, TypeError) as exc:  # pragma: no cover
+                raise RuntimeError(
+                    "Unable to attach visual_kd_config to inner training arguments; ensure ms-swift exposes this attribute."
+                ) from exc
 
         try:
             setattr(inner_args, "llm_kd_weight", llm_kd_weight)
@@ -765,19 +807,24 @@ class ConfigLoader:
                 "Unable to attach llm_kd_weight to inner training arguments; ensure ms-swift exposes this attribute."
             ) from exc
 
-        try:
-            setattr(inner_args, "coord_offset_config", config.custom.coord_offset)
-        except (AttributeError, TypeError) as exc:  # pragma: no cover
-            raise RuntimeError(
-                "Unable to attach coord_offset_config to inner training arguments; ensure ms-swift exposes this attribute."
-            ) from exc
+        if is_latest_detection:
+            setattr(inner_args, "latest_detection_config", config)
+        else:
+            try:
+                setattr(inner_args, "coord_offset_config", config.custom.coord_offset)
+            except (AttributeError, TypeError) as exc:  # pragma: no cover
+                raise RuntimeError(
+                    "Unable to attach coord_offset_config to inner training arguments; ensure ms-swift exposes this attribute."
+                ) from exc
 
         return train_args
 
     @staticmethod
     def _materialize_training_config(
         raw_config: Dict[str, Any], prompts: PromptOverrides
-    ) -> TrainingConfig:
+    ) -> TrainingConfig | LatestDetectionTrainingConfig:
+        if ConfigLoader._is_latest_detection_config_payload(raw_config):
+            return LatestDetectionTrainingConfig.from_mapping(raw_config)
         try:
             return TrainingConfig.from_mapping(raw_config, prompts)
         except TypeError as exc:
@@ -786,9 +833,22 @@ class ConfigLoader:
             ) from exc
 
     @staticmethod
+    def _is_latest_detection_config_payload(raw_config: Mapping[str, Any]) -> bool:
+        latest_markers = {
+            "data",
+            "prompt",
+            "detection_template",
+            "objective",
+            "packing",
+            "evaluation",
+            "validation",
+        }
+        return latest_markers.issubset(set(raw_config.keys()))
+
+    @staticmethod
     def load_materialized_training_config(
         config_path: str, base_config_path: Optional[str] = None
-    ) -> TrainingConfig:
+    ) -> TrainingConfig | LatestDetectionTrainingConfig:
         """Load + materialize a TrainingConfig without constructing ms-swift TrainArguments.
 
         This is intentionally side-effect free (no hub downloads / model probing) and is
@@ -803,13 +863,17 @@ class ConfigLoader:
             config = ConfigLoader.merge_configs(base_config, config)
 
         config = ConfigLoader._materialize_training_artifact_paths(config)
-        prompts = ConfigLoader.resolve_prompts(config)
+        prompts = (
+            PromptOverrides()
+            if ConfigLoader._is_latest_detection_config_payload(config)
+            else ConfigLoader.resolve_prompts(config)
+        )
         return ConfigLoader._materialize_training_config(config, prompts)
 
     @staticmethod
     def load_training_config(
         config_path: str, base_config_path: Optional[str] = None
-    ) -> tuple[TrainArguments, TrainingConfig]:
+    ) -> tuple[TrainArguments, TrainingConfig | LatestDetectionTrainingConfig]:
         ConfigLoader._validate_stage2_leaf_contract(config_path)
         config = ConfigLoader.load_yaml_with_extends(config_path)
 
@@ -818,7 +882,11 @@ class ConfigLoader:
             config = ConfigLoader.merge_configs(base_config, config)
 
         config = ConfigLoader._materialize_training_artifact_paths(config)
-        prompts = ConfigLoader.resolve_prompts(config)
+        prompts = (
+            PromptOverrides()
+            if ConfigLoader._is_latest_detection_config_payload(config)
+            else ConfigLoader.resolve_prompts(config)
+        )
         materialized = ConfigLoader._materialize_training_config(config, prompts)
         train_args = ConfigLoader.build_train_arguments(materialized)
 

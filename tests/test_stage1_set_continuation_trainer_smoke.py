@@ -825,8 +825,59 @@ def test_entry_trie_rmp_ce_uses_full_suffix_smart_batch_rows() -> None:
         trainer, "mp/objective_contributing_samples"
     ) == pytest.approx(1.0)
     assert _latest_metric(trainer, "rmp/branch_nodes") > 0.0
+    assert _latest_metric(trainer, "rmp/valid_child_mass_mean") >= 0.0
+    assert _latest_metric(trainer, "rmp/valid_child_mass_p50") >= 0.0
     assert _latest_metric(trainer, "loss/rmp") >= 0.0
+    assert _latest_metric(trainer, "loss/rmp_branch_support") >= 0.0
+    assert _latest_metric(trainer, "loss/rmp_branch_balance") >= 0.0
+    assert _latest_metric(trainer, "loss/rmp_branch_total") >= 0.0
     assert _latest_metric(trainer, "loss/rmp_close_ce") >= 0.0
+
+
+def test_entry_trie_rmp_ce_padding_free_packed_uses_single_concat_forward() -> None:
+    trainer = _trainer(
+        _cfg(
+            objective={"mode": "entry_trie_rmp_ce", "suffix_order": "dataset"},
+            train_forward={
+                "branch_runtime": {"mode": "padding_free_packed"},
+                "logits": {"mode": "full"},
+                "ddp_sync": {"candidate_padding": "none"},
+            },
+        )
+    )
+    model = _FakeModel()
+    trainer.model = model
+
+    loss = trainer.compute_loss(
+        model,
+        _batch_many(
+            [
+                _raw_sample([OBJECT_A, OBJECT_B]),
+                _raw_sample([OBJECT_A, OBJECT_B]),
+            ]
+        ),
+        return_outputs=False,
+    )
+
+    assert torch.isfinite(loss)
+    assert len(model.calls) == 1
+    call = model.calls[0]
+    assert call["input_ids"].shape[0] == 1
+    assert "attention_mask" not in call
+    assert "logits_to_keep" not in call
+    assert call["cu_seq_lens_q"].tolist()[0] == 0
+    assert call["cu_seq_lens_q"].tolist() == call["cu_seq_lens_k"].tolist()
+    assert call["cu_seq_lens_q"].tolist()[-1] == call["input_ids"].shape[-1]
+    assert call["pack_num_samples"].tolist() == [2]
+    assert _latest_metric(trainer, "mp/padding_free_pack_forwards") == pytest.approx(
+        1.0
+    )
+    assert _latest_metric(trainer, "mp/padding_free_pack_rows_mean") == pytest.approx(
+        2.0
+    )
+    assert _latest_metric(trainer, "mp/num_candidates_scored") == pytest.approx(0.0)
+    assert _latest_metric(trainer, "rmp/branch_nodes") > 0.0
+    assert _latest_metric(trainer, "loss/rmp") >= 0.0
 
 
 def test_smart_batched_exact_runtime_rejects_branch_local_aux_without_schema() -> None:

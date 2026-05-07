@@ -1,0 +1,79 @@
+# Compact-full Random-Permutation ET-RMP-CE checkpoint-3664 val200 infer/eval.
+#
+# Scope:
+# - dataset: COCO rescale_32_1024_bbox_max60 val.coord.jsonl
+# - slice: first 200 records (`val200`, via infer.limit)
+# - checkpoint: adapter shorthand checkpoint-3664 from the tokenrows_v2 4-epoch support-2 run
+# - template surface: compact_full coord-token detection rows
+# - chat parity: shared image-before-text detection chat builder
+# - launch shape: 4 GPUs via scripts/run_infer.py --gpus 4
+# - comparison knob: generation.repetition_penalty = 1.10
+# - max token ablation: generation.max_new_tokens = 3084
+
+run:
+  name: compact_full_support2_tokenrows_v2_ckpt3664_val200_bsz8_temp0_rep1p10_max3084_chatfix_4gpu
+  output_dir: /data/CoordExp/output_remote/infer/recursive_detection_ce_latest
+
+stages:
+  infer: true
+  eval: true
+  vis: false
+
+infer:
+  gt_jsonl: public_data/coco/rescale_32_1024_bbox_max60/val.coord.jsonl
+  model_checkpoint: /data/CoordExp/output_remote/stage1_2b/recursive_detection_ce_latest/compact_full_et_rmp_ce_support2_bsz16_4epoch_tokenrows_v2/compact-full-et-rmp-ce-support2-bsz16-4epoch-tokenrows-v2/v0-20260504-071356/checkpoint-3664
+
+  prompt_variant: coco_80
+  detection_sequence_format: compact_full
+  bbox_format: xyxy
+  object_field_order: desc_first
+  object_ordering: random
+
+  mode: coord
+  pred_coord_mode: auto
+
+  backend:
+    type: hf
+    attn_implementation: flash_attention_2
+
+  generation:
+    temperature: 0.0
+    top_p: 0.9
+    max_new_tokens: 3084
+    repetition_penalty: 1.10
+    batch_size: 8
+    seed: 42
+    compact_grammar:
+      enabled: true
+      force_row_start: true
+
+  device: cuda:0
+  limit: 200
+  detect_samples: 128
+
+confidence:
+  fusion_w_geom: 1.0
+  fusion_w_desc: 0.0
+  desc_span_policy: best_effort
+  empty_desc_policy: geom_only
+
+eval:
+  metrics: both
+  strict_parse: false
+  use_segm: false
+  lvis_max_dets: 300
+
+  overlay: false
+  overlay_k: 12
+  num_workers: 8
+
+  semantic_model: model_cache/all-MiniLM-L6-v2-local
+  semantic_threshold: 0.5
+  semantic_device: cuda:0
+  semantic_batch_size: 64
+
+  f1ish_iou_thrs: [0.3, 0.5]
+  f1ish_pred_scope: annotated
+
+  duplicate_control:
+    enabled: true

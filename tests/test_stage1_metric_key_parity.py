@@ -18,6 +18,9 @@ from src.metrics.dataset_metrics import (
     CoordSoftCEW1LossMixin,
     GradAccumLossScaleMixin,
 )
+from src.trainers.stage1_set_continuation.metrics import (
+    EMITTED_STAGE1_SET_CONTINUATION_METRICS,
+)
 
 
 class _DummyMetric:
@@ -296,6 +299,54 @@ def test_stage1_metric_keys_are_documented_and_aggregate_only(
     emitted_eval = set(trainer.custom_metrics["eval"].keys())
     assert emitted_eval == emitted_train
     _assert_no_set_continuation_metrics(emitted_eval)
+
+
+def test_stage1_set_continuation_public_metric_allow_list_is_documented() -> None:
+    doc_keys = _load_doc_keys()
+
+    missing_docs = sorted(EMITTED_STAGE1_SET_CONTINUATION_METRICS - doc_keys)
+
+    assert not missing_docs, (
+        "Stage-1 set-continuation public metric keys missing from "
+        f"docs/training/METRICS.md: {missing_docs}"
+    )
+    assert "batch_loss" not in EMITTED_STAGE1_SET_CONTINUATION_METRICS
+    assert "batch_size" not in EMITTED_STAGE1_SET_CONTINUATION_METRICS
+
+
+def test_compact_recursive_detection_phase1_metric_events_are_documented() -> None:
+    doc_keys = _load_doc_keys()
+    expected_keys = {
+        "detection_sequence/schema/token_acc/full_vocab/top1",
+        "detection_sequence/schema/token_acc/full_vocab/top5",
+        "detection_sequence/schema/token_ce/full_vocab",
+        "detection_sequence/description/token_acc/full_vocab/top1",
+        "detection_sequence/description/token_acc/full_vocab/top5",
+        "detection_sequence/description/token_ce/full_vocab",
+        "detection_sequence/coordinate/token_acc/full_vocab/top1",
+        "detection_sequence/coordinate/token_acc/full_vocab/top5",
+        "detection_sequence/coordinate/token_ce/full_vocab",
+        "detection_sequence/object_control/token_acc/full_vocab/top1",
+        "detection_sequence/object_control/token_acc/full_vocab/top5",
+        "detection_sequence/object_control/token_ce/full_vocab",
+        "detection_sequence/separator/token_acc/full_vocab/top1",
+        "detection_sequence/separator/token_acc/full_vocab/top5",
+        "detection_sequence/separator/token_ce/full_vocab",
+        "detection_sequence/stop/token_acc/full_vocab/top1",
+        "detection_sequence/stop/token_acc/full_vocab/top5",
+        "detection_sequence/stop/token_ce/full_vocab",
+        "detection_sequence/other/token_acc/full_vocab/top1",
+        "detection_sequence/other/token_acc/full_vocab/top5",
+        "detection_sequence/other/token_ce/full_vocab",
+        "detection_sequence/object_entry/exact_sequence_match/object_entry",
+    }
+
+    missing_docs = sorted(expected_keys - doc_keys)
+
+    assert not missing_docs, (
+        "Compact recursive-detection Phase-1 MetricEvent keys missing from "
+        f"docs/training/METRICS.md: {missing_docs}"
+    )
 
 
 def test_stage1_center_size_bbox_geo_keeps_metric_keys_stable() -> None:

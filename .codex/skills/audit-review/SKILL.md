@@ -1,110 +1,111 @@
 ---
 name: audit-review
-description: Use when producing a read-only CoordExp audit of code, configs, specs, artifacts, docs, progress notes, or OpenSpec changes for correctness, reproducibility, pipeline, and eval-validity risks.
+description: "Use when producing a read-only CoordExp audit of code, configs, specs, artifacts, docs, progress notes, or OpenSpec changes for correctness, reproducibility, pipeline, and eval-validity risks."
 ---
 
 # Audit Review
 
-## Overview
+Produce read-only audits that help another implementer change CoordExp safely. Optimize for correctness, reproducibility, pipeline integrity, and eval validity over style commentary.
 
-Produce an audit report that helps an implementer safely change/refine CoordExp without guessing.
-Optimize for correctness, reproducibility, and contract/pipeline integrity rather than style refactors.
+## Authority Model
 
-Use the repo's source-of-truth order: `openspec/specs/` -> `docs/` -> `openspec/changes/<active-change>/` -> `progress/`.
-Use `progress/` for evidence, diagnostics, benchmark scope, and history; do not answer current-behavior questions from it when docs/specs cover the contract.
+Use current repo truth in this order:
 
-## Output Contract (What You Deliver)
+1. `docs/PROJECT_CONTEXT.md`
+2. `docs/SYSTEM_OVERVIEW.md`
+3. `docs/IMPLEMENTATION_MAP.md`
+4. relevant domain docs under `docs/`
+5. `openspec/specs/` only for stable compatibility-sensitive contracts
+6. `openspec/changes/<active-change>/` only when explicitly in scope
+7. `progress/` only for history, diagnostics, benchmark evidence, or empirical failures
 
-- Severity-ranked findings (`P0`/`P1`/`P2`) with concrete evidence handles (`path:line`, config keys, exact commands, or tool output).
-- “Confirmed OK / ruled out” notes to prevent backtracking.
-- Verification steps: exact commands/tests to reproduce or validate each claim.
-- Open questions: smallest set of clarifications required to remove ambiguity.
-- Suggested next actions for an implementer (do not implement changes yourself).
+Use `docs/AGENT_INDEX.md` and `docs/catalog.yaml` for routing. Treat `progress/audits/` and other temporary notes as removable evidence, not durable codebase references.
 
-Use `references/report-template.md` if you want a ready-made skeleton.
+## Output Contract
 
-## Guardrails (Read-Only Audit)
+Lead with findings, ordered by severity:
 
-- Do not modify production code/configs/specs. No `apply_patch` against `src/`, `configs/`, `openspec/`, etc.
-- Prefer read-only exploration: `rg`, `find`, `git diff`, `sed`, `python -m pytest`, `python -m py_compile`.
-- If you must write a temporary test or probe:
-- Default: write under `/tmp/` so the repo stays clean.
-- If you need it under `temp/` for sharing, ask the user first and keep artifacts minimal.
-- Always check and report `git status --porcelain` at the start; if the worktree is dirty and it matters, ask before proceeding.
-- For Python code exploration: Serena MCP is mandatory (symbol-aware navigation; provide `relative_path` constraints).
-- Never invent results. If a claim cannot be verified, label it as a hypothesis and keep it out of severity-ranked findings.
-- Do not conflate benchmark scopes. Report `val200`, `limit=200`, first-200, proxy view, full-val, raw-text vs coord-token, checkpoint ids, and launch shape when they affect the claim.
+- `P0`: likely invalidates correctness, reproducibility, or evaluation claims.
+- `P1`: substantial risk to supported workflows, artifacts, metrics, or config contracts.
+- `P2`: maintainability, clarity, or missing-coverage risks that could become failures.
 
-## Workflow (Breadth Pass -> Depth Pass -> Report)
+Each finding needs:
 
-### Step 0: Clarify The Ask (Smallest Unblocking Questions)
+- evidence handle: file path, symbol, config key, artifact path, command output summary, or doc/spec line reference
+- impact: why it matters for correctness, reproducibility, eval validity, or maintainability
+- fix direction: what an implementer should change
+- verification: the smallest realistic command, artifact check, or targeted test that would prove the fix
 
-- If scope is ambiguous, ask 1–3 questions max:
-- What exact artifact(s) are we auditing: path(s) or concept?
-- Is the goal: “spec/design review only” or “implementation vs spec audit”?
-- Any constraints: time budget, no-network, specific configs/datasets, must-pass tests?
+Also include:
 
-Assume the deliverable is a report for a separate implementer unless the user explicitly asks you to change code.
+- confirmed OK / ruled out checks that prevent backtracking
+- open questions only when they block a reliable conclusion
+- suggested next actions for an implementer
 
-### Step 1: Snapshot + Map The Surface Area (Breadth Pass)
+Use `references/report-template.md` when a skeleton is helpful.
 
-- Safety snapshot:
-- Run `git status --porcelain` and note any dirty files.
-- If auditing a change/PR, capture `git diff --name-only` (or change directory file listing) to bound the search.
-- Identify entrypoints and contracts:
-  - Docs/specs: `docs/AGENT_INDEX.md`, `docs/catalog.yaml`, `docs/PROJECT_CONTEXT.md`, `docs/SYSTEM_OVERVIEW.md`, `docs/IMPLEMENTATION_MAP.md`, relevant `openspec/specs/`, relevant domain docs.
-  - Progress: `progress/index.yaml`, `progress/README.md`, and the matching category router when you need empirical evidence.
-  - Code: likely entrypoints (`src/bootstrap/`, `src/config/loader.py`, `src/datasets/geometry.py`, `src/trainers/`, `src/infer/`, `src/eval/`, `public_data/`).
-  - Tests: locate tests adjacent to the target area and any policy scans.
-- Grep for relevant context (fast, wide net):
-- Use `rg` to find: config keys, CLI flags, spec terms, artifact filenames, error messages.
-- Use `references/grep-seeds.md` when you need good starting patterns.
-- Build a short “context index”:
-- Key files with 1-line reason each.
-- Key symbols to inspect (class/function names) with file paths.
+## Read-Only Guardrails
 
-### Step 2: Inspect The Highest-Risk Flows (Depth Pass)
+- Do not modify production code, configs, docs, specs, or artifacts during an audit.
+- Do not invent results. Label unverified ideas as hypotheses and keep them out of severity-ranked findings.
+- Do not treat benchmark scopes as interchangeable. Always label `tiny`, `val200`, `limit=200`, first-200, full-val, proxy view, raw-text, coord-token, bbox format, checkpoint id, and launch shape when relevant.
+- Do not use `progress/` as current behavior when `docs/` or stable specs cover the contract.
+- Use Git inspection only when the audit scope depends on dirty state, a PR/change diff, or the user asks for it; otherwise do not run Git by reflex.
+- For Python code exploration, narrow first with `rg` or `rtk grep`, then use Serena symbol tools.
+- If a temporary probe is unavoidable, prefer `/tmp/`. Ask before writing under repo `temp/`.
 
-Pick 3–5 top risk areas based on impact and likelihood, then deep-dive with evidence:
+## Audit Workflow
 
-- Pipeline and process flow:
-  - Trace data flow: input -> transforms -> packing -> training/infer/eval -> artifacts.
-  - Verify invariant-sensitive steps (geometry, ordering, normalization).
-  - Route geometry checks through `src/datasets/geometry.py`, not ad hoc bbox math.
-- Configuration and contracts:
-  - Check strict parsing / unknown-key behavior (fail-fast vs silently ignored).
-  - Check backward-compat surfaces (stable CLI contracts, deprecated keys policy).
-  - Check that stable workflows stay YAML-first instead of adding CLI flags.
-- Artifacts and eval validity:
-  - Verify training manifests: `resolved_config.json`, `runtime_env.json`, `effective_runtime.json`, `pipeline_manifest.json`, `experiment_manifest.json`, `run_metadata.json`.
-  - Verify infer/eval artifacts: `summary.json`, `resolved_config.json`, `resolved_config.path`, `gt_vs_pred.jsonl`, `gt_vs_pred_scored.jsonl`, `metrics.json`, and guarded companions when enabled.
-  - For current infer behavior inspect `src/infer/pipeline.py::run_pipeline`; for current eval behavior inspect `src/eval/detection.py::evaluate_and_save`.
-- Determinism and reproducibility:
-  - Look for ordering-dependent behavior, random seeds, multiprocess I/O, filesystem-dependent nondeterminism.
-- Silent failure policy:
-  - Ensure unexpected exceptions are not swallowed in core paths; best-effort behavior should be narrow and justified.
+### 1. Bound The Surface
 
-### Step 3: Validate Or Falsify With Targeted Tests (Optional, But High Value)
+Identify the smallest relevant set of:
 
-- Prefer running existing targeted tests first.
-- If a hypothesis needs a minimal repro, write a temporary test:
-- Put it in `/tmp/` and run it with `PYTHONPATH=.` so the repo stays unchanged.
-- Keep it tiny and single-purpose; delete it afterwards (or ask before deleting if the user wants to keep it).
-- When tests are too expensive to run, provide a verification plan with expected artifacts and failure signals.
+- docs: `docs/AGENT_INDEX.md`, `docs/catalog.yaml`, `docs/PROJECT_CONTEXT.md`, `docs/SYSTEM_OVERVIEW.md`, `docs/IMPLEMENTATION_MAP.md`, domain docs
+- stable specs: only exact `openspec/specs/` contracts needed by the question
+- progress: only matching benchmark, diagnostic, exploration, direction, pretrain, or audit evidence
+- code: likely `src/config/`, `src/datasets/`, `src/detection/`, `src/trainers/`, `src/infer/`, `src/eval/`, `src/bootstrap/`, `src/common/`
+- configs: the concrete YAML profiles under review
+- tests/artifacts: targeted surfaces from `docs/IMPLEMENTATION_MAP.md` or artifact manifests
 
-### Step 4: Write The Audit Report
+### 2. Trace High-Risk Flows
 
-- Lead with findings (ranked). Each finding must include:
-- Evidence handle (`path:line`, config key, or command output summary).
-- Why it matters (correctness/repro/eval validity/maintainability).
-- Suggested fix direction (for implementer) and how to verify.
-- Add “confirmed OK / ruled out” checks that reduce backtracking.
-- End with open questions (only what’s truly needed).
+Prioritize 3-5 flows with the highest impact:
 
-## Resources (optional)
+- Data contract and geometry: JSONL schema, `bbox_2d` xor `poly`, ordering, pixel/norm1000/token transitions, image-root resolution.
+- Training: config schema, `src/sft.py`, `src/training_runtime/plan.py`, trainer variant, collator family, packing owner, cache eligibility, manifests.
+- Stage-1 compact detection: `LatestDetectionTrainingConfig`, `DetectionTrainingDataset`, recursive detection objective, sidecar/packing policy.
+- Stage-2: `stage2_ab.pipeline` vs `rollout_matching.pipeline`, rollout runtime, teacher-forcing modules, duplicate-control losses, metric keys.
+- Infer/eval: `src/infer/pipeline.py::run_pipeline`, `resolved_config.json`, `resolved_config.path`, confidence post-op compatibility, `src/eval/detection.py::evaluate_and_save`, guarded metrics.
+- Artifacts/provenance: `summary.json`, `metrics.json`, `run_metadata.json`, `pipeline_manifest.json`, `experiment_manifest.json`, `effective_runtime.json`, durable copied summaries.
 
-Open these only when helpful (progressive disclosure):
+### 3. Look For Failure Classes
 
-- `references/report-template.md`: audit report skeleton (P0/P1/P2 + evidence + verification).
-- `references/grep-seeds.md`: high-signal `rg` starting points for broad context discovery.
-- `references/pipeline-checklist.md`: checklist for pipeline/process correctness and reproducibility risks.
+Check for:
+
+- silent fallback where fail-fast is expected
+- geometry drop/reorder/renormalization without contract support
+- stale config keys accepted as no-ops
+- artifact names or metric keys that drift from docs/specs
+- benchmark claims missing scope labels
+- confidence/eval paths applied to incompatible bbox formats
+- temporary audit/progress notes being used as durable docs
+- broad runtime fusion assumptions on paths that should use offline-prepared JSONL
+
+### 4. Validate Only When In Scope
+
+When validation is allowed or requested:
+
+- prefer existing targeted tests from `docs/IMPLEMENTATION_MAP.md`
+- use `rtk conda run -n ms python -m pytest ...` for noisy test output in this repo
+- prefer artifact and manifest checks over broad reruns
+- for long or sharded runs, check merged summaries/manifests rather than log lines
+
+If validation is not allowed or too expensive, provide exact verification steps and expected failure signals.
+
+## Resources
+
+Open only when helpful:
+
+- `references/report-template.md`: audit report skeleton
+- `references/grep-seeds.md`: high-signal `rg` starting points
+- `references/pipeline-checklist.md`: end-to-end correctness and reproducibility checklist

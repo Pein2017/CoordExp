@@ -1,0 +1,39 @@
+prompt:
+  system_variant: stage1_detection
+  user_variant: compact_detection
+  include_template_summary: true
+  prompt_variant_enabled: true
+
+detection_template:
+  id: compact_full
+  coordinate_surface: coord_token
+  bbox_format: xyxy
+  strict_parse: true
+
+token_rows:
+  enabled: true
+  tie_head: true
+  groups:
+    coord_geometry:
+      role: coord_geometry
+      start_token: "<|coord_0|>"
+      end_token: "<|coord_999|>"
+      expected_start: 151670
+      expected_end: 152669
+    compact_structure:
+      role: structural_ce_only
+      tokens: ["<|object_ref_start|>", "<|box_start|>"]
+      expected_ids:
+        "<|object_ref_start|>": 151646
+        "<|box_start|>": 151648
+  embed_lr: 5.0e-5
+  weight_decay: 0.0
+
+evaluation:
+  expected_template: compact_full
+  parser_mode: strict_expected
+
+validation:
+  validate_span_alignment: true
+  validate_template_capabilities: true
+  fail_fast: true

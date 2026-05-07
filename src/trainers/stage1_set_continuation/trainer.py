@@ -34,6 +34,7 @@ from .full_suffix import (
     FullSuffixTensorInput,
     encode_full_suffix_branch,
     resolve_full_suffix_order,
+    score_full_suffix_batch_padding_free_packed,
     score_full_suffix_batch_retained,
     score_full_suffix_retained,
     supervised_full_suffix_start,
@@ -512,6 +513,8 @@ class Stage1SetContinuationTrainer(
         model: Any,
         items: Sequence[FullSuffixTensorInput],
         entry_trie_mp: bool,
+        branch_support_weight: float,
+        branch_balance_weight: float,
     ) -> tuple[list[FullSuffixLossResult], dict[str, float]]:
         cfg = self._cfg()
         train_forward = cfg.train_forward
@@ -557,6 +560,8 @@ class Stage1SetContinuationTrainer(
                 items=batch_inputs,
                 logits_mode=logits_mode,
                 entry_trie_mp=entry_trie_mp,
+                branch_support_weight=float(branch_support_weight),
+                branch_balance_weight=float(branch_balance_weight),
                 forward_fn=_no_cache_forward,
             )
             for item, result in zip(batch.items, batch_results, strict=True):
@@ -593,6 +598,8 @@ class Stage1SetContinuationTrainer(
                 f"unsupported full-suffix objective mode: {objective_mode}"
             )
         entry_trie_mp = objective_mode == "entry_trie_rmp_ce"
+        branch_support_weight = float(cfg.objective.branch_support_weight)
+        branch_balance_weight = float(cfg.objective.branch_balance_weight)
         runtime_mode = str(cfg.train_forward.branch_runtime.mode)
         logits_mode = cast(LogitsMode, str(cfg.train_forward.logits.mode))
         if self._branch_aux_enabled():
@@ -678,6 +685,8 @@ class Stage1SetContinuationTrainer(
                 ),
                 "mp/checkpointed_branch_forwards": 0.0,
                 "mp/smart_batched_branch_forwards": 0.0,
+                "mp/padding_free_pack_forwards": 0.0,
+                "mp/padding_free_pack_rows_mean": 0.0,
                 "mp/branch_batch_count": 0.0,
                 "mp/branch_batch_rows_mean": 0.0,
                 "mp/branch_batch_rows_max": 0.0,
@@ -732,7 +741,25 @@ class Stage1SetContinuationTrainer(
                 model=model,
                 items=tensor_items,
                 entry_trie_mp=entry_trie_mp,
+                branch_support_weight=branch_support_weight,
+                branch_balance_weight=branch_balance_weight,
             )
+            for metrics in sample_metrics:
+                metrics.update(batch_metrics)
+        elif runtime_mode == "padding_free_packed":
+            results = score_full_suffix_batch_padding_free_packed(
+                model=model,
+                items=tensor_items,
+                logits_mode=logits_mode,
+                entry_trie_mp=entry_trie_mp,
+                branch_support_weight=branch_support_weight,
+                branch_balance_weight=branch_balance_weight,
+                forward_fn=_no_cache_forward,
+            )
+            batch_metrics = {
+                "mp/padding_free_pack_forwards": 1.0,
+                "mp/padding_free_pack_rows_mean": float(len(tensor_items)),
+            }
             for metrics in sample_metrics:
                 metrics.update(batch_metrics)
         elif runtime_mode == "retained_graph":
@@ -744,14 +771,16 @@ class Stage1SetContinuationTrainer(
                     steps=item.steps,
                     logits_mode=logits_mode,
                     entry_trie_mp=entry_trie_mp,
+                    branch_support_weight=branch_support_weight,
+                    branch_balance_weight=branch_balance_weight,
                     forward_fn=_no_cache_forward,
                 )
                 for item in tensor_items
             ]
         else:
             raise ValueError(
-                "full-suffix objectives currently support retained_graph and "
-                "smart_batched_exact runtimes"
+                "full-suffix objectives currently support retained_graph, "
+                "smart_batched_exact, and padding_free_packed runtimes"
             )
 
         sample_losses: list[torch.Tensor] = []

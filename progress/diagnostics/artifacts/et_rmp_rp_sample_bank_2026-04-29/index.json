@@ -1,0 +1,182 @@
+[
+  {
+    "idx": 121,
+    "tag": "benefit_121",
+    "note": "rp118 gains TP and reduces FN",
+    "file_name": "images/val2017/000000012639.jpg",
+    "composite": "/data/CoordExp/progress/diagnostics/artifacts/et_rmp_rp_sample_bank_2026-04-29/benefit_121/benefit_121_comparison.png",
+    "stats": {
+      "rp110": {
+        "gt": 15,
+        "pred": 13,
+        "tp": 6,
+        "fn": 9,
+        "fp": 7
+      },
+      "rp115": {
+        "gt": 15,
+        "pred": 13,
+        "tp": 6,
+        "fn": 9,
+        "fp": 7
+      },
+      "rp118": {
+        "gt": 15,
+        "pred": 16,
+        "tp": 9,
+        "fn": 6,
+        "fp": 7
+      }
+    }
+  },
+  {
+    "idx": 10,
+    "tag": "benefit_010",
+    "note": "rp118 recovers extra objects cleanly",
+    "file_name": "images/val2017/000000001268.jpg",
+    "composite": "/data/CoordExp/progress/diagnostics/artifacts/et_rmp_rp_sample_bank_2026-04-29/benefit_010/benefit_010_comparison.png",
+    "stats": {
+      "rp110": {
+        "gt": 11,
+        "pred": 6,
+        "tp": 6,
+        "fn": 5,
+        "fp": 0
+      },
+      "rp115": {
+        "gt": 11,
+        "pred": 6,
+        "tp": 6,
+        "fn": 5,
+        "fp": 0
+      },
+      "rp118": {
+        "gt": 11,
+        "pred": 10,
+        "tp": 8,
+        "fn": 3,
+        "fp": 2
+      }
+    }
+  },
+  {
+    "idx": 158,
+    "tag": "benefit_158",
+    "note": "rp118 opens up and finds more objects",
+    "file_name": "images/val2017/000000016010.jpg",
+    "composite": "/data/CoordExp/progress/diagnostics/artifacts/et_rmp_rp_sample_bank_2026-04-29/benefit_158/benefit_158_comparison.png",
+    "stats": {
+      "rp110": {
+        "gt": 5,
+        "pred": 1,
+        "tp": 1,
+        "fn": 4,
+        "fp": 0
+      },
+      "rp115": {
+        "gt": 5,
+        "pred": 2,
+        "tp": 2,
+        "fn": 3,
+        "fp": 0
+      },
+      "rp118": {
+        "gt": 5,
+        "pred": 5,
+        "tp": 3,
+        "fn": 2,
+        "fp": 2
+      }
+    }
+  },
+  {
+    "idx": 25,
+    "tag": "hurt_025",
+    "note": "rp118 sharply under-predicts versus rp110/rp115",
+    "file_name": "images/val2017/000000002157.jpg",
+    "composite": "/data/CoordExp/progress/diagnostics/artifacts/et_rmp_rp_sample_bank_2026-04-29/hurt_025/hurt_025_comparison.png",
+    "stats": {
+      "rp110": {
+        "gt": 16,
+        "pred": 11,
+        "tp": 11,
+        "fn": 5,
+        "fp": 0
+      },
+      "rp115": {
+        "gt": 16,
+        "pred": 12,
+        "tp": 11,
+        "fn": 5,
+        "fp": 1
+      },
+      "rp118": {
+        "gt": 16,
+        "pred": 7,
+        "tp": 7,
+        "fn": 9,
+        "fp": 0
+      }
+    }
+  },
+  {
+    "idx": 178,
+    "tag": "hurt_178",
+    "note": "rp118 adds FP and loses TP in crowded scene",
+    "file_name": "images/val2017/000000017959.jpg",
+    "composite": "/data/CoordExp/progress/diagnostics/artifacts/et_rmp_rp_sample_bank_2026-04-29/hurt_178/hurt_178_comparison.png",
+    "stats": {
+      "rp110": {
+        "gt": 24,
+        "pred": 23,
+        "tp": 5,
+        "fn": 19,
+        "fp": 18
+      },
+      "rp115": {
+        "gt": 24,
+        "pred": 22,
+        "tp": 6,
+        "fn": 18,
+        "fp": 16
+      },
+      "rp118": {
+        "gt": 24,
+        "pred": 22,
+        "tp": 3,
+        "fn": 21,
+        "fp": 19
+      }
+    }
+  },
+  {
+    "idx": 61,
+    "tag": "hurt_061",
+    "note": "rp118 loses high-quality matches",
+    "file_name": "images/val2017/000000006471.jpg",
+    "composite": "/data/CoordExp/progress/diagnostics/artifacts/et_rmp_rp_sample_bank_2026-04-29/hurt_061/hurt_061_comparison.png",
+    "stats": {
+      "rp110": {
+        "gt": 16,
+        "pred": 12,
+        "tp": 12,
+        "fn": 4,
+        "fp": 0
+      },
+      "rp115": {
+        "gt": 16,
+        "pred": 12,
+        "tp": 12,
+        "fn": 4,
+        "fp": 0
+      },
+      "rp118": {
+        "gt": 16,
+        "pred": 11,
+        "tp": 9,
+        "fn": 7,
+        "fp": 2
+      }
+    }
+  }
+]

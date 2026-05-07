@@ -6,9 +6,24 @@ import json
 import os
 import subprocess
 import sys
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Mapping
+
+
+@dataclass(frozen=True)
+class EncodedSampleCacheRunMetadata:
+    train: Mapping[str, Any] | None = None
+    eval: Mapping[str, Any] | None = None
+
+    def to_mapping(self) -> dict[str, Any]:
+        payload: dict[str, Any] = {}
+        if self.train is not None:
+            payload["train"] = copy.deepcopy(dict(self.train))
+        if self.eval is not None:
+            payload["eval"] = copy.deepcopy(dict(self.eval))
+        return payload
 
 
 def attach_encoded_sample_cache_run_metadata(
@@ -17,11 +32,10 @@ def attach_encoded_sample_cache_run_metadata(
     train_cache_info: Mapping[str, Any] | None,
     eval_cache_info: Mapping[str, Any] | None,
 ) -> None:
-    encoded_sample_cache: dict[str, Any] = {}
-    if train_cache_info is not None:
-        encoded_sample_cache["train"] = copy.deepcopy(dict(train_cache_info))
-    if eval_cache_info is not None:
-        encoded_sample_cache["eval"] = copy.deepcopy(dict(eval_cache_info))
+    encoded_sample_cache = EncodedSampleCacheRunMetadata(
+        train=train_cache_info,
+        eval=eval_cache_info,
+    ).to_mapping()
     if encoded_sample_cache:
         meta["encoded_sample_cache"] = encoded_sample_cache
 

@@ -57,7 +57,7 @@ def run_teacher_forcing_pipeline(
     obj_specs = _coerce_specs(objective_specs)
     diag_specs = _coerce_specs(diagnostics_specs)
 
-    total = context.logits.new_tensor(0.0)
+    total = context.logits.new_tensor(0.0, dtype=torch.float32)
     module_losses: dict[str, torch.Tensor] = {}
     metrics: dict[str, float] = {}
     state: dict[str, Any] = dict(initial_state or {})

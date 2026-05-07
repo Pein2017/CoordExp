@@ -126,18 +126,29 @@ if not config_path:
 
 cfg = ConfigLoader.load_materialized_training_config(config_path)
 
-train_jsonl_raw = getattr(cfg.custom, "train_jsonl", None)
-val_jsonl_raw = getattr(cfg.custom, "val_jsonl", None)
+custom = getattr(cfg, "custom", None)
+data = getattr(cfg, "data", None)
+train_jsonl_raw = getattr(custom, "train_jsonl", None)
+val_jsonl_raw = getattr(custom, "val_jsonl", None)
+if train_jsonl_raw is None and data is not None:
+    train_jsonl_raw = getattr(data, "train_jsonl", None)
+if val_jsonl_raw is None and data is not None:
+    val_jsonl_raw = getattr(data, "val_jsonl", None)
 if not isinstance(train_jsonl_raw, str) or not train_jsonl_raw.strip():
-    die("custom.train_jsonl must be set for CPU JSONL validation")
+    die("custom.train_jsonl or data.train_jsonl must be set for CPU JSONL validation")
 if not isinstance(val_jsonl_raw, str) or not val_jsonl_raw.strip():
-    die("custom.val_jsonl must be set for CPU JSONL validation")
+    die("custom.val_jsonl or data.val_jsonl must be set for CPU JSONL validation")
 
 train_jsonl = _resolve_path_for_config(train_jsonl_raw.strip(), config_path)
 val_jsonl = _resolve_path_for_config(val_jsonl_raw.strip(), config_path)
 
-offline_max_pixels_raw = getattr(cfg.custom, "offline_max_pixels", None)
-BBOX_FORMAT = getattr(cfg.custom, "bbox_format", "xyxy")
+offline_max_pixels_raw = getattr(custom, "offline_max_pixels", None)
+detection_template = getattr(cfg, "detection_template", None)
+BBOX_FORMAT = getattr(custom, "bbox_format", None)
+if BBOX_FORMAT is None and detection_template is not None:
+    BBOX_FORMAT = getattr(detection_template, "bbox_format", None)
+if BBOX_FORMAT is None:
+    BBOX_FORMAT = "xyxy"
 max_pixels_source = "custom.offline_max_pixels"
 if offline_max_pixels_raw is None:
     max_pixels_raw = cfg.template.get("max_pixels")

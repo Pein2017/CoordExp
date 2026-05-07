@@ -94,7 +94,7 @@ def test_build_swift_rollout_cmd_contains_required_flags(tmp_path: Path) -> None
         vllm_max_model_len=4096,
         vllm_enable_lora=False,
         template="qwen3_vl",
-        template_max_pixels=786432,
+        template_max_pixels=10485760,
         template_max_length=2048,
         truncation_strategy="delete",
     )
@@ -107,7 +107,7 @@ def test_build_swift_rollout_cmd_contains_required_flags(tmp_path: Path) -> None
     assert "--port" in cmd
     assert "8000" in cmd
     assert "--max_pixels" in cmd
-    assert "786432" in cmd
+    assert "10485760" in cmd
 
 
 def test_build_swift_rollout_cmd_serializes_vllm_engine_kwargs(tmp_path: Path) -> None:
@@ -125,7 +125,7 @@ def test_build_swift_rollout_cmd_serializes_vllm_engine_kwargs(tmp_path: Path) -
         vllm_max_model_len=4096,
         vllm_enable_lora=False,
         template="qwen3_vl",
-        template_max_pixels=786432,
+        template_max_pixels=10485760,
         template_max_length=2048,
         truncation_strategy="delete",
         vllm_engine_kwargs={"mm_processor_kwargs": {"do_resize": False}},
@@ -340,8 +340,8 @@ def test_main_uses_server_dp_for_readiness_without_prechecking_group_port(
             "root_image_dir_resolved": str(tmp_path),
             "train_jsonl_resolved": str(tmp_path / "train.jsonl"),
             "val_jsonl_resolved": str(tmp_path / "val.jsonl"),
-            "offline_max_pixels": 786432,
-            "template_max_pixels": 786432,
+            "offline_max_pixels": 10485760,
+            "template_max_pixels": 10485760,
             "vllm_tensor_parallel_size": 2,
             "server_torch_dtype": "bfloat16",
             "vllm_enforce_eager": True,
@@ -424,8 +424,8 @@ def test_main_fails_fast_on_stale_local_vllm_processes(
             "root_image_dir_resolved": str(tmp_path),
             "train_jsonl_resolved": str(tmp_path / "train.jsonl"),
             "val_jsonl_resolved": str(tmp_path / "val.jsonl"),
-            "offline_max_pixels": 786432,
-            "template_max_pixels": 786432,
+            "offline_max_pixels": 10485760,
+            "template_max_pixels": 10485760,
             "vllm_tensor_parallel_size": 2,
             "server_torch_dtype": "bfloat16",
             "vllm_enforce_eager": True,

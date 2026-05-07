@@ -1,0 +1,24 @@
+# Production ablation config for the latest-schema compact detection pipeline.
+#
+# Ablation axis:
+# - Keep the compact_full coord-token sequence representation.
+# - Keep random object permutation, prompt variant, token-row training, batch shape,
+#   optimizer, and 4-epoch schedule from compact_full_support2.yaml.
+# - Replace Random-Permutation ET-RMP-CE with ordinary teacher-forced hard-CE SFT.
+#
+# This isolates the effect of trie multi-positive/support-reweighted CE from the
+# compact-full random-order data/template surface.
+extends:
+  - ./compact_full_support2.yaml
+
+training:
+  artifact_subdir: compact_full_random_sft_bsz16_4epoch_tokenrows_v2
+  run_name: compact-full-random-sft-bsz16-4epoch-tokenrows-v2
+
+objective:
+  id: sft
+  variant: random_order_sft
+  trie_support_weight: 0.0
+  trie_balance_weight: 0.0
+  state_weighting: none
+  normalization: token_mean

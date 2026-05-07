@@ -34,6 +34,16 @@ input JSONL + checkpoint
   -> metrics.json / metrics_guarded.json / per_image.json / per_image_guarded.json / optional overlays
 ```
 
+Official metric guardrail:
+
+- COCO/LVIS/both metric claims must consume `gt_vs_pred_scored.jsonl`.
+- The scored artifact must come from confidence post-op for compatible `xyxy`
+  coord-token or raw-text norm1000 surfaces, or from deterministic
+  constant-score compatibility scoring for explicitly supported non-canonical
+  bbox surfaces.
+- Raw `gt_vs_pred.jsonl` evaluation is a debug/F1-ish surface only. Do not
+  label raw-artifact metrics as COCO/LVIS benchmark results.
+
 ## YAML-First Commands
 
 Run inference:
@@ -83,6 +93,32 @@ Run evaluation:
 PYTHONPATH=. conda run -n ms python scripts/evaluate_detection.py \
   --config configs/eval/detection.yaml
 ```
+
+## Wrapper Classification
+
+Stable / reportable:
+
+- `scripts/run_infer.py --config ...`
+- `scripts/postop_confidence.py --config ...`
+- `scripts/evaluate_detection.py --config ...`
+- `scripts/evaluate_proxy_detection_bundle.py --config ...`
+
+Compatibility / debug:
+
+- `scripts/run_infer_eval.sh` is a legacy environment-variable wrapper for
+  quick inference plus debug evaluation. It defaults away from official-style
+  metrics and refuses COCO/LVIS/both metrics entirely because it cannot prove
+  scored-artifact provenance for the just-run inference output. Use the
+  YAML-first infer -> score -> eval flow for reportable COCO/LVIS/both metrics.
+- `scripts/run_vis.sh` is a manual/debug visualization wrapper for an explicit
+  artifact and image root. Prefer evaluator overlays or `vis_resources/`
+  artifacts tied to resolved config/scoring provenance for reportable evidence.
+
+Historical diagnostics:
+
+- `scripts/pipelines/run_rollout_stability_probe.sh` is a parser/rollout health
+  diagnostic that delegates to the legacy/debug `run_infer_eval.sh` wrapper.
+  Treat its outputs as local stability evidence, not benchmark claims.
 
 Duplicate-control guard note:
 
@@ -245,8 +281,11 @@ gt_vs_pred.jsonl
 
 Key points:
 
-- `scripts/run_vis.sh` and `vis_tools/vis_coordexp.py` materialize the canonical
-  sidecar before rendering.
+- Evaluator overlays and `vis_resources/gt_vs_pred.jsonl` are the stable
+  provenance-preserving visualization path.
+- `scripts/run_vis.sh` and `vis_tools/vis_coordexp.py` are manual/debug helpers
+  for explicitly supplied artifacts and image roots; they do not by themselves
+  recover YAML `resolved_config.path`, scoring semantics, or benchmark scope.
 - evaluator overlays reuse the same shared reviewer semantics instead of a
   second renderer-local box contract.
 - post-eval audit materialization may reuse `matches.jsonl` and `per_image.json`
@@ -272,71 +311,16 @@ Recommended validation checks for Oracle-K:
 
 ## Official COCO Test-Dev Submission Flow
 
-Use this path when you need a ready-to-upload COCO detection JSON for the
-official test-dev server.
+Use [COCO_TEST_SUBMISSION.md](COCO_TEST_SUBMISSION.md) as the canonical detailed runbook for official COCO test-dev evaluation.
 
-```text
-COCO test-dev JSONL
-  -> inference
-  -> gt_vs_pred.jsonl
-  -> confidence post-op
-  -> gt_vs_pred_scored.jsonl
-  -> official submission export
-  -> coco_submission.json
-```
+This workflow page keeps only the contract boundary:
 
-Prepare the original-resolution source test-dev JSONL:
+- run inference on the offline 1024-budget test-dev JSONL
+- score canonical `xyxy` outputs through confidence post-op, or follow the constant-score compatibility rule for non-canonical bbox surfaces
+- export predictions back to original COCO test-dev resolution before upload
+- record official server scores in `progress/benchmarks/` with exact checkpoint, config, artifact root, and score surface
 
-```bash
-./public_data/run.sh coco download -- --include-test
-./public_data/run.sh coco convert -- --include-test --test-split test-dev
-```
-
-Build the 1024-budget resized inference input:
-
-```bash
-PYTHONPATH=. conda run -n ms python public_data/scripts/rescale_jsonl.py \
-  --input-jsonl public_data/coco/raw/test-dev.jsonl \
-  --output-jsonl public_data/coco/rescale_32_1024_bbox/test-dev.jsonl \
-  --output-images public_data/coco/rescale_32_1024_bbox \
-  --image-factor 32 \
-  --max-pixels $((32*32*1024)) \
-  --min-pixels $((32*32*4)) \
-  --relative-images
-```
-
-Run inference and confidence post-op:
-
-```bash
-PYTHONPATH=. conda run -n ms python scripts/run_infer.py \
-  --config configs/infer/ablation/coco80_testdev_desc_first.yaml
-
-PYTHONPATH=. conda run -n ms python scripts/postop_confidence.py \
-  --config configs/postop/confidence.yaml
-```
-
-Export the official submission JSON:
-
-```bash
-PYTHONPATH=. conda run -n ms python scripts/export_coco_submission.py \
-  --config configs/eval/coco_submission.yaml
-```
-
-Expected export artifacts:
-
-- `coco_submission.json`
-- `submission_summary.json`
-- optional `semantic_desc_report.json` when semantic label mapping was needed
-
-Current caveat:
-
-- The shared public-data preset pipeline still manages `train` / `val` splits only.
-- The recommended official-submission flow therefore uses:
-  - original-resolution source JSONL under `public_data/coco/raw/`
-  - resized inference JSONL under `public_data/coco/rescale_32_1024_bbox/`
-- `scripts/export_coco_submission.py` projects detections back to the original
-  COCO test-dev resolution before writing `coco_submission.json`.
-
+Do not duplicate the official command sequence here; keep download, resize, inference, scoring, export, and upload details in [COCO_TEST_SUBMISSION.md](COCO_TEST_SUBMISSION.md).\n
 ## Validation Checklist
 
 - The run directory contains the expected artifacts for the requested stages.

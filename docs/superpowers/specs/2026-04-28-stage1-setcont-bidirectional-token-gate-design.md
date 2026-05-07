@@ -1,5 +1,12 @@
 # Stage-1 Set-Continuation Bidirectional Token Gate Design
 
+> Archived / superseded on 2026-05-02.
+> Historical provenance only for the pre-refactor Stage-1 set-continuation family.
+> Do not use this file as an execution source.
+> Active execution sources:
+> - `docs/superpowers/specs/2026-05-02-training-infra-template-mode-refactor-design.md`
+> - `docs/superpowers/plans/2026-05-02-training-infra-template-mode-refactor.md`
+
 ## Problem
 
 The Stage-1 set-continuation objective currently scores coord-token labels under

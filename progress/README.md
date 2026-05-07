@@ -55,7 +55,7 @@ category map.
 
 1. [docs/PROJECT_CONTEXT.md](../docs/PROJECT_CONTEXT.md)
 2. [docs/SYSTEM_OVERVIEW.md](../docs/SYSTEM_OVERVIEW.md)
-3. [docs/training/STAGE2_DESIGN.md](../docs/training/STAGE2_DESIGN.md)
+3. the relevant current docs router under `docs/`
 4. [progress/index.yaml](index.yaml)
 5. the category router that matches your question
 6. the specific historical note you need

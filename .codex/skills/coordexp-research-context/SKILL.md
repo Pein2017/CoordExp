@@ -1,83 +1,138 @@
 ---
 name: coordexp-research-context
-description: Use when CoordExp work needs broad research context, design history, empirical evidence, benchmark provenance, diagnostics, or a current-vs-historical read before implementation or audit.
+description: "Use when CoordExp work needs broad research context, design history, empirical evidence, benchmark provenance, diagnostics, or a current-vs-historical read before implementation or audit."
 ---
 
 # CoordExp Research Context
 
-Use this skill to build a compact context pack from the current docs/spec layer plus the historical `progress/` layer.
+Use this skill to build a compact context pack. It should connect current behavior to historical evidence without turning progress notes into contract truth.
 
-## Primary Entry Points
+## Authority Model
 
-1. `docs/AGENT_INDEX.md`
-2. `docs/catalog.yaml`
-3. `progress/index.yaml`
-4. `docs/PROJECT_CONTEXT.md`
-5. `openspec/specs/runtime-architecture-refactor-program/spec.md` for current runtime decomposition questions
-6. `openspec/specs/rollout-matching-sft/spec.md` when the question is about the supported rollout-aligned Stage-2 variant
-7. `progress/README.md`, then the matching category router under `progress/`
-
-## Read Order
-
-Start here:
+Current behavior comes from the repo docs spine:
 
 1. `docs/PROJECT_CONTEXT.md`
 2. `docs/SYSTEM_OVERVIEW.md`
 3. `docs/IMPLEMENTATION_MAP.md`
-4. the relevant domain router under `docs/`
-5. relevant `openspec/specs/*.md`
-6. `openspec/specs/runtime-architecture-refactor-program/spec.md` when the question is about module ownership, launchers, artifacts, or runtime seams
-7. `progress/index.yaml`
-8. `progress/README.md`
-9. the category router that matches the question
-10. the specific historical notes you need
+4. relevant domain docs under `docs/`
+5. `openspec/specs/` only for stable compatibility-sensitive contracts
+6. `openspec/changes/<active-change>/` only when explicitly in scope
+7. `progress/` only for historical evidence, diagnostics, benchmark reports, or design derivation
 
-## Precedence
+Routing helpers:
 
-When two sources disagree, use:
+- `docs/AGENT_INDEX.md` and `docs/catalog.yaml` for current routes
+- `progress/index.yaml` and `progress/README.md` for history/evidence routes
+- `docs/ARTIFACTS.md` for artifact and provenance questions
 
-1. `openspec/specs/`
-2. `docs/`
-3. `openspec/changes/<active-change>/`
-4. `progress/`
+If current docs and progress disagree, answer current behavior from `docs/` and use `progress/` to explain how the project got there.
 
-## What To Produce
+## When To Use
 
-Build a short context pack with:
+Use this for:
 
-- current authoritative docs/specs
-- current architecture/runtime seams (for example `src/bootstrap/`, `src/config/loader.py::ConfigLoader`, `src/datasets/geometry.py::{geometry_from_dict,transform_geometry}`, `src/trainers/stage2_coordination.py`, `src/trainers/stage2_two_channel.py::Stage2ABTrainingTrainer`, `src/trainers/stage2_rollout_aligned.py::RolloutMatchingSFTTrainer`, `src/trainers/{rollout_aligned_targets.py,rollout_aligned_evaluator.py}`, `src/trainers/rollout_runtime/`, `src/infer/pipeline.py::run_pipeline`, `src/infer/engine.py::InferenceEngine.infer`, `src/infer/artifacts.py`, `src/eval/detection.py::evaluate_and_save`, `src/eval/artifacts.py`)
-- relevant implementation files or configs
-- the exact historical notes that matter, with scope labels such as `val200`, `limit=200`, full-val, raw-text, coord-token, checkpoint ids, and GPU launch shape when relevant
-- a small set of grep seeds for narrowing
+- current-vs-historical reads before a nontrivial change
+- benchmark provenance, score comparisons, and checkpoint interpretation
+- mechanism diagnosis and failure-history lookup
+- research design lineage, abandoned directions, and why a guardrail exists
+- preparing an audit or implementation context pack
 
-## Progress Usage
+Do not use it as a substitute for `coordexp-codebase` when the task is just finding current code entrypoints.
 
-Use `progress/` for:
+## Context Pack Contract
 
-- historical design directions
-- diagnostics and audits
-- benchmark evidence
-- pretraining background
+Produce a short pack with:
 
-Do not use it as the primary source for current behavior.
+- Current answer: what is true now and which docs/specs make it authoritative.
+- Code/config handles: exact files, symbols, configs, and artifact names likely to matter.
+- Evidence: only the progress notes, benchmark summaries, manifests, or artifacts needed for the question.
+- Scope labels: `tiny`, `val200`, `limit=200`, first-200, full-val, proxy view, raw-text, coord-token, bbox format, checkpoint id, launch shape.
+- Risks and open questions: only the smallest set that blocks safe action.
+- Search seeds: 2-5 targeted `rg` patterns when another agent needs to continue.
 
-Route progress notes by question type:
+Keep it concise. Link to long notes instead of restating them.
 
-- `progress/diagnostics/` for root-cause analysis, mechanism studies, threshold sweeps, failure interpretation, and operator notes.
-- `progress/benchmarks/` for measured run comparisons, checkpoint selection notes, scoreboards, and evaluation sweeps.
-- `progress/explorations/` for architecture and implementation-planning history.
-- `progress/directions/` for historical research direction and Stage-2 lineage.
-- `progress/pretrain/` for Stage-1 foundation history.
+## Progress Routing
 
-## Research Workflow Patterns
+Use `progress/` by evidence type:
 
-- Keep one canonical note per cluster. Use supporting notes and copied artifact-side markdown only as evidence beneath the parent note.
-- For benchmark claims, report the exact scope and surface. Do not compare `val200`, `limit=200`, proxy views, and full-val as if they were the same result.
-- Prefer durable summary artifacts such as `summary.json`, `proxy_eval_bundle_summary.json`, `metrics.json`, `timing_summary.json`, manifests, and copied progress artifacts over stale runtime paths.
-- When a run is repaired or rerun, identify the valid cell and keep the failed first attempt as provenance, not as the result.
-- For shard/fanout recovery, rerun only missing or failed shards when possible, then verify merged summaries/manifests rather than trusting a log line.
-- After extracting durable results from `temp/` or transient worktrees, clean up scratch when asked or when it is clearly no longer needed, while preserving stable artifact roots and provenance-bearing outputs.
+- `progress/benchmarks/`: measured run comparisons, checkpoint selection, scoreboards, evaluation sweeps.
+- `progress/diagnostics/`: root-cause analysis, mechanism studies, threshold sweeps, failure interpretation, operator notes.
+- `progress/explorations/`: architecture and implementation-planning history.
+- `progress/directions/`: historical research directions and Stage-2 lineage.
+- `progress/pretrain/`: Stage-1 foundation and pretraining history.
+- `progress/audits/`: temporary or removable audit evidence. Use only as supporting history; do not promote it into a durable codebase reference unless the user explicitly asks.
+
+Prefer one canonical note per cluster. Treat copied artifact-side markdown and superseded notes as provenance beneath a parent note.
+
+## High-Signal Code Handles
+
+General runtime:
+
+- `src/sft.py`
+- `src/training_runtime/plan.py::resolve_training_runtime_plan`
+- `src/bootstrap/experiment_manifest.py`
+- `src/bootstrap/pipeline_manifest.py`
+- `src/bootstrap/run_metadata.py`
+- `src/bootstrap/trainer_setup.py`
+- `src/config/loader.py`
+- `src/config/schema.py`
+
+Data and geometry:
+
+- `src/datasets/geometry.py`
+- `src/datasets/dense_caption.py`
+- `src/datasets/builders/jsonlines.py`
+- `src/datasets/encoded_sample_cache.py`
+- `src/detection/dataset.py::DetectionTrainingDataset`
+- `src/detection/packing.py`
+
+Stage-1 compact/latest detection:
+
+- `src/config/schema.py::LatestDetectionTrainingConfig`
+- `src/config/schema.py::DetectionObjectiveConfig`
+- `src/sft.py::_resolve_recursive_detection_ce_cfg`
+- `src/sft.py::_assert_latest_detection_runtime_supported`
+- `configs/stage1/recursive_detection_ce_latest/prod/compact_full_support2.yaml`
+- `configs/stage1/recursive_detection_ce_latest/smoke/`
+
+Stage-1 set-continuation:
+
+- `src/trainers/stage1_set_continuation/`
+- `src/data_collators/stage1_set_continuation_collator.py`
+- `configs/stage1/set_continuation/production.yaml`
+
+Stage-2:
+
+- `src/trainers/stage2_coordination.py`
+- `src/trainers/stage2_two_channel.py`
+- `src/trainers/stage2_two_channel/`
+- `src/trainers/stage2_ab/`
+- `src/trainers/stage2_rollout_aligned.py`
+- `src/trainers/rollout_matching/`
+- `src/trainers/rollout_runtime/`
+- `src/trainers/teacher_forcing/`
+- `src/launchers/stage2_vllm_server.py`
+
+Infer/eval:
+
+- `src/infer/pipeline.py::run_pipeline`
+- `src/infer/engine.py::InferenceEngine.infer`
+- `src/infer/backends.py`
+- `src/infer/artifacts.py`
+- `src/eval/detection.py::evaluate_and_save`
+- `src/eval/confidence_postop.py`
+- `src/eval/bbox_confidence.py`
+- `src/eval/proxy_eval_bundle.py`
+- `src/eval/artifacts.py`
+
+## Benchmark and Evidence Rules
+
+- Never compare `val200`, `limit=200`, proxy, first-200, and full-val as if they are the same scope.
+- Report raw-text vs coord-token and bbox serialization when it affects interpretation.
+- Preserve failed or repaired runs as provenance, not as the headline result.
+- Prefer durable summaries and manifests over transient logs: `summary.json`, `metrics.json`, `proxy_eval_bundle_summary.json`, `timing_summary.json`, `resolved_config.json`, `run_metadata.json`, `pipeline_manifest.json`.
+- For shard/fanout recovery, identify missing or failed shards and merged summaries instead of trusting a single success line.
 
 ## Helpful Reference
 

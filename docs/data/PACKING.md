@@ -4,11 +4,11 @@ layer: docs
 doc_type: reference
 status: canonical
 domain: data
-summary: Packing policy, defaults, and efficiency tradeoffs.
-updated: 2026-04-25
+summary: Surface-specific packing policy, hard caps, cache behavior, and efficiency tradeoffs.
+updated: 2026-05-05
 ---
 
-# Packing Mode Guide (Default: 12k, eff_bs=12)
+# Packing Policy Matrix
 
 Note:
 - This guide applies to baseline SFT runs (stage_1 style) where training uses standard
@@ -27,7 +27,42 @@ Note:
     - This may select a shorter current pack than FIFO-greedy when it reduces the overall number of packs for the per-step pool.
 - Stage-2 runbook: [`../training/STAGE2_RUNBOOK.md`](../training/STAGE2_RUNBOOK.md).
 
-Stage-1 packing guardrails (current implementation):
+## Current Surface Matrix
+
+| Surface | Length cap | Effective batch | Packing support | Notes |
+|---|---:|---:|---|---|
+| Stage-1 baseline `configs/stage1/sft_base.yaml` | `12000` | `32` | static dataset packing | Uses `training.packing: true` and `training.eval_packing: true` where supported. |
+| Stage-1 shared 4B coord recipes | `12000` | `128` | static dataset packing | Match comparisons by samples/epochs and record exact config. |
+| Stage-1 set-continuation ET-RMP-CE | production-specific | `128` | disabled/rejected | Prefix-conditioned full-suffix rows are sampled at runtime; dataset packing would mix independent prefix/object states. |
+| Stage-1 compact recursive detection latest | `12000` | `128` | disabled | Packing remains disabled until sidecar target-position offset rewriting is implemented and validated. |
+| Stage-2 two-channel base | `12000` | `64` | post-rollout trainer packing | Rollout generation remains padded/unpacked; each post-rollout `Y_train` is atomic. |
+| Historical 12k packing probe | `12000` | `12` | historical probe | Useful as prior efficiency evidence, not the global default. |
+
+## Latest Compact Recursive Detection Packing Owner
+
+Latest compact recursive detection uses top-level `packing` as the semantic
+authoring owner. The current runtime still consumes adapter fields under
+`training`, so latest configs must keep the semantic and runtime views aligned:
+
+```yaml
+training:
+  packing: false
+  eval_packing: false
+packing:
+  static_packing: false
+  padding_free_packed: false
+```
+
+Until recursive sidecar target-position offset rewriting is implemented and
+validated, `configs/stage1/recursive_detection_ce_latest/` must not enable
+dataset/static packing or padding-free packed runtime. Expected-failure packing
+examples belong under `configs/stage1/recursive_detection_ce_latest/negative/`
+or another explicit `contract_failures/` location, not under positive `smoke/`
+profiles.
+
+## Stage-1 Packing Guardrails
+
+Current implementation:
 - Stage-1 dataset-level packing requires `training.packing_mode: static` (default). `training.packing_mode: dynamic` is deprecated/unsupported and fails fast.
 - If you need multi-dataset mixing *and* Stage-1 static packing, materialize an offline merged JSONL first. Runtime fusion config authoring is temporarily disabled in the canonical training surface.
 - Static packing may forward `set_epoch` into the raw dataset only for length-invariant per-epoch changes such as `custom.object_ordering: random`; `raw_plan` and `aligned_plan` stay fixed across epochs for eligible datasets.
@@ -42,34 +77,43 @@ Stage-1 packing guardrails (current implementation):
 - Static packing probes each atomic sample at full length before building the pack plan. If any sample exceeds that hard cap, packing now fails fast instead of silently truncating or skipping it.
 - `custom.trainer_variant: stage1_set_continuation` rejects both
   `training.packing: true` and `training.eval_packing: true` in v1. The trainer
-  samples set prefixes and branch candidates inside `compute_loss`, so pack-plan
-  construction would mix independent branch states and make structural-close
-  spans ambiguous.
-- For Stage-1 MP set-continuation branch scoring, keep the production default
-  on `smart_batched_exact`. The packed-varlen branch-packing experiments showed
-  that dense offline sample envelopes are possible, but the current packed MP
-  scoring path did not beat smart batching in the rough 2026-04-28 8-GPU probe.
-  Treat packed-varlen branch execution as experimental until real-Qwen
-  same-batch parity and a faster packed scoring path are both demonstrated.
+  samples prefixes and constructs objective-specific rows inside
+  `compute_loss`, so dataset-level pack-plan construction would mix independent
+  prefix/object states and make token spans ambiguous.
+- Candidate-balanced set-continuation branch scoring, energy/logZ candidate
+  objectives, chunk-level MP, and candidate-branch CE are retired as production
+  objectives. Do not treat branch-packing work for those objectives as a
+  production packing direction.
+- For the promoted Stage-1 ET-RMP-CE path, keep the production runtime on
+  `smart_batched_exact` full-suffix rows. The packed-varlen branch-packing
+  experiments showed that dense offline sample envelopes are possible, but the
+  candidate-branch packed MP scoring path did not beat smart batching in the
+  rough 2026-04-28 8-GPU probe. Any future padding-free packed runtime must
+  preserve ET-RMP semantics: one prefix-conditioned full suffix per row,
+  entry-trie support/balance targets, and hard CE for schema/control/separator
+  and stop tokens.
 - `training.encoded_sample_cache` is also ineligible for
   `custom.trainer_variant: stage1_set_continuation` because subset/candidate
-  branches are sampled at runtime. With
+  branches or full-suffix rows are sampled at runtime. With
   `training.encoded_sample_cache.ineligible_policy: error`, startup fails fast.
   With `ineligible_policy: bypass`, train/eval continue uncached and run
   artifacts record `status: bypassed`, `policy: bypass`, and
   `reason: stage1_set_continuation_branch_sampling`.
+- `training.encoded_sample_cache.max_resident_shards` bounds the number of shard
+  files kept resident by the cache store. The default is `4`; raise it only when
+  repeated shard reloads dominate dataset fetch time.
 - `custom.sft_structural_close.enabled: true` also rejects packing. That
   ordinary-SFT ablation attaches per-token weights to the final global CoordJSON
   close sequence `]}` and therefore requires one un-packed assistant response
   per row.
 
-## Why this is the new default
+## Historical 12k Packing Probe
 - Dramatically cuts padding waste (≈0% slack vs ~40–50% with padding).
 - Keeps per-update scale close to padding: ~117 base samples/update vs 128 baseline.
 - Safer memory headroom on A100 80GB than 20k while still reducing micro-steps ~5×.
 - Covers >99.9% of LVIS samples without truncation (p99 text length ~11k).
 
-## Recommended training knobs
+## Historical Probe Knobs
 ```
 global_max_length: 12000
 per_device_train_batch_size: 1
@@ -102,7 +146,7 @@ conda run -n ms python scripts/analysis/token_length_analysis.py \
 - Outputs mean/median/p95/p99, histograms, and packing sims for 12k/16k/20k with world=4, per_device=1.
 - Adjust `--pack-lengths` to explore other caps; set `--per-device-train-batch` if changing per-device batch.
 
-## When to try 20k
+## When to Revisit 20k
 - If profiling shows higher tokens/sec end-to-end and memory is stable, you may raise `global_max_length` to 20000 while keeping `effective_batch_size: 12` and per_device=1.
 - Expect fewer opt steps (~688/epoch) but heavier attention; watch for OOM and step-time regression.
 

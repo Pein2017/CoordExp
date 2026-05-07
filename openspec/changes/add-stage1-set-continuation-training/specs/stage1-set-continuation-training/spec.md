@@ -1,5 +1,14 @@
 ## ADDED Requirements
 
+Status update, 2026-05-02: this specification records the retired
+candidate-branch set-continuation surface. Candidate-balanced set-continuation,
+candidate energy/logZ objectives, chunk-level MP, candidate branch CE as a
+production objective, and PEM/margin losses tied to candidate energy ranking
+are legacy-only. Current production continuation training should use
+ET-RMP-CE / full-suffix teacher-forced token CE, prefix-conditioned sampling,
+entry-trie multi-positive token CE, support/balance reweighting, and hard CE
+for schema/control/separator/stop tokens.
+
 ### Requirement: Stage-1 set-continuation is an opt-in setup-path variant
 The system SHALL expose subset-conditioned set-continuation training through an
 explicit Stage-1 trainer variant, `custom.trainer_variant:
@@ -701,12 +710,12 @@ Normative behavior:
   no-padding DDP candidate synchronization, `ddp_find_unused_parameters=false`,
   `ddp_broadcast_buffers=false`, and authored cap-8 automatic approximate
   fallback for over-budget samples,
-- the production profile MUST enable close-start suppression, weak/disabled
-  final close supervision, disabled PEM threshold loss for the current
-  candidate-balanced production run, and a mixed subset-prefix sampler with
-  leave-one-out coverage,
-- fixed-threshold PEM threshold loss remains supported for calibrated ablation
-  profiles and MUST NOT be silently enabled in the current production profile,
+- the historical candidate-branch production profile enabled close-start
+  suppression, weak/disabled final close supervision, disabled PEM threshold
+  loss, and a mixed subset-prefix sampler with leave-one-out coverage,
+- fixed-threshold PEM threshold loss remains documented for historical
+  calibrated ablation profiles, but MUST NOT be used for new production
+  continuation training,
 - benchmark manifests MUST record the intended variable versus the comparator,
   comparability label, branch runtime mode, objective-fidelity counters,
   fallback reasons, realized branch/token budget, realized prefix-mode coverage,

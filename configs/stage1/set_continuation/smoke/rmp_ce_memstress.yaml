@@ -1,0 +1,40 @@
+extends:
+  - ../production.yaml
+  - ./common_prodlike.yaml
+
+training:
+  artifact_subdir: et_rmp_ce_memstress
+  run_name: smoke-et-rmp-ce-memstress
+  max_steps: 4
+  eval_steps: 4
+  save_steps: 1000
+  save_delay_steps: 1000
+  per_device_train_batch_size: 32
+  gradient_accumulation_steps: 1
+  effective_batch_size: 256
+
+custom:
+  train_sample_limit: 1024
+  val_sample_limit: 64
+  eval_detection:
+    limit: 64
+    batch_size: 4
+
+benchmark:
+  group_id: stage1_set_continuation_et_rmp_ce_memstress_smoke
+  intended_variable: recursive full-suffix ET-RMP-CE memory-stress smoke with larger per-rank train and eval batches
+  comparability_label: not-comparable
+
+experiment:
+  title: Stage-1 ET-RMP-CE memory-stress smoke
+  purpose: Stress the support-weighted recursive full-suffix ET-RMP-CE path on all 8 GPUs with enough samples and batch volume to expose memory, DDP, and eval-artifact issues before production runs.
+  key_deviations:
+    - "smoke runtime only: per_device_train_batch_size=32, gradient_accumulation_steps=1, effective_batch_size=256"
+    - "smoke runtime only: train_sample_limit=1024, val_sample_limit=64, eval_detection.limit=64, eval_detection.batch_size=4"
+    - "objective, tokenizer, geometry, packing=false, and greedy eval decoding remain inherited from production.yaml"
+  tags:
+    - stage1
+    - set-continuation
+    - smoke
+    - memstress
+    - et-rmp-ce

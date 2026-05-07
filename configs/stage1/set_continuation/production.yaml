@@ -1,26 +1,26 @@
 extends:
   - ../_shared/coord_soft_ce_gate_2b.yaml
-  # Keep this bidirectional-gate production run on the original COCO Stage-1
+  # Keep this support-reweighted ET-RMP-CE run on the original COCO Stage-1
   # coord-token surface. LVIS-proxy remains a follow-up dataset-choice ablation
   # rather than being mixed into this objective/optimizer-control run.
   - ../../_shared/datasets/coco_1024_bbox_max60.yaml
   - ../../_shared/prompts/coco80_desc_first.yaml
 
 model:
-  model: output_remote/stage1_2b/coco_bbox_max60-hard_ce_soft_ce_w1_gate/epoch_4-from-base-2B/v0-20260227-050057/checkpoint-1332-merged-full
+  model: &sota_stage1_checkpoint output_remote/stage1_2b/coco_bbox_max60-hard_ce_soft_ce_w1_gate/epoch_4-from-base-2B/v0-20260227-050057/checkpoint-1332-merged-full
 
 training:
   output_root: /data/CoordExp/output_remote/stage1_2b/set_continuation
   logging_root: /data/CoordExp/output_remote/stage1_2b/set_continuation/tb
-  artifact_subdir: coco1024_sota1332_setcont_candbal_bidirgate_warmup10
-  run_name: setcont-coco1024-sota1332-candbal-bidirgate-warmup10
+  artifact_subdir: coco1024_sota1332_setcont_et_rmp_ce_support2_bsz16_v1
+  run_name: setcont-coco1024-sota1332-et-rmp-ce-support2-bsz16-v1
   packing: false
   eval_packing: false
   encoded_sample_cache:
     enabled: false
   num_train_epochs: 1
-  per_device_train_batch_size: 8
-  gradient_accumulation_steps: 2
+  per_device_train_batch_size: 16
+  gradient_accumulation_steps: 1
   effective_batch_size: 128
   learning_rate: 5.0e-5
   warmup_ratio: 0.1
@@ -41,52 +41,53 @@ deepspeed:
   enabled: false
 
 benchmark:
-  group_id: stage1_set_continuation_full_features
-  control_group_id: stage1_sft_sota1332
-  intended_variable: subset-conditioned candidate-balanced continuation with schema-aware structural supervision, bidirectional token-type gating, tail-positive candidate protection, valid close-start suppression, and annotation-completeness-weighted weak final-close supervision
-  comparability_label: accuracy-comparable
+  group_id: stage1_set_continuation_et_rmp_ce_support2_bsz16
+  control_group_id: stage1_set_continuation_full_features
+  intended_variable: recursive full-suffix Stage-1 set-continuation with support-weighted entry-trie CE, no explicit stop-token suppression, and 2x local batch/branch-row memory scaling
+  comparability_label: not-comparable
 
 experiment:
-  title: Stage-1 set-continuation candidate-balanced bidirectional-gate warmup10 production
-  purpose: Continue training the SOTA coord-token Stage-1 SFT checkpoint with the repaired set-continuation objective plus lightweight token-type gating and a gentler 10% warmup schedule.
-  hypothesis: Schema-aware candidate-balanced continuation supervision plus bidirectional token-type gating, trained with a 10% warmup, preserves strict JSON serialization and coord/text slot control without the early-step instability or mode-seeking pressure of full-entry logZ MP.
-  baseline: output_remote/stage1_2b/coco_bbox_max60-hard_ce_soft_ce_w1_gate/epoch_4-from-base-2B/v0-20260227-050057/checkpoint-1332-merged-full
+  title: Stage-1 ET-RMP-CE support-weighted continuation production
+  purpose: Test whether branch-support reweighting can make the model more willing to continue long object sequences by concentrating probability mass on valid visible remaining-object branches, without explicit stop-token suppression or decode changes.
+  hypothesis: Increasing valid-support pressure at entry-trie branch nodes should raise rmp/valid_child_mass_mean and improve prediction count or recall for high-GT-count images while preserving parse-valid CoordJSON under greedy temp0/top_p1/repetition_penalty1.10 decoding.
+  baseline: *sota_stage1_checkpoint
   key_deviations:
     - "trainer_variant: stage1_set_continuation"
-    - "objective: per-candidate token-normalized continuation CE over generated schema opener, object entry, and the correct post-candidate boundary; full-entry MP/logZ is diagnostic only"
+    - "objective: entry_trie_rmp_ce"
+    - "branch objective: valid-support weight 2.0 plus valid-balance weight 1.0 at entry-trie branch nodes"
+    - "goal: increase probability of continuing long visible-object sequences without stop-token suppression, decode changes, sampling, RL, replay, freezing, or architecture changes"
+    - "suffix: one recursive full remaining-object permutation per sampled prefix"
+    - "entry supervision: full-vocabulary valid-support loss plus object-uniform valid-balance loss at every branching trie node"
+    - "control flow: schema opener, comma separators, final ]}, and chat-template stop/EOS are hard CE, not explicit stop-token suppression"
+    - "candidate budget, PEM, structural-close auxiliary losses, annotation-completeness close calibration, and bidirectional token gate are disabled because the full-suffix objective owns these tokens directly"
+    - "memory scaling: per_device_train_batch_size increases from 8 to 16 and smart full-suffix branch batches allow up to 32 rows with a 65536 padded-token guard"
     - "dataset: original COCO coord-token train surface; LVIS-proxy is reserved for follow-up dataset ablation"
-    - "prefix sampling: empty/random/leave-one-out/full mixture with small annotation-completeness-weighted full-prefix final-close calibration"
-    - "candidate subset selection: cap-8 fallback keeps late GT candidates to avoid dropping the final annotated object under crowded images"
-    - "structural JSON: schema/key/punctuation/boundary tokens receive an auxiliary CE term while desc text and coord values remain governed by the candidate objective"
-    - "bidirectional token gate: supervised objective coord slots penalize non-coordinate mass, and supervised objective schema/description/boundary slots penalize coordinate-token mass"
-    - "optimizer schedule: one epoch is preserved, with warmup_ratio=0.1 to reduce early update shock relative to the initial bidirgate production launch"
-    - "structural close: close-start suppression uses a valid close-ready prefix; weak final schema close is downweighted by original-checkpoint FP-as-unlabeled completeness estimates"
-    - "execution: smart batched exact branch scoring with supervised suffix logits, no DDP padding forwards, and 8-candidate approximate fallback for over-budget samples"
-    - "prefix reuse: disabled in this bridge; GPU KV cache and branch attention mask disabled"
     - "coordinates: coord-token-only scoring; raw-text integer coordinates unsupported"
   runtime_settings:
     - "packing=false and eval_packing=false"
     - "checkpoint_mode=artifact_only; stage1_set_continuation prunes checkpoint state files and keeps adapter artifacts only"
-    - "deepspeed.enabled=false because repeated independent candidate forwards are incompatible with ZeRO-2 reduction"
+    - "deepspeed.enabled=false because repeated independent full-suffix forwards are incompatible with ZeRO-2 reduction"
     - "training.ddp_find_unused_parameters=false"
-    - "training.ddp_broadcast_buffers=false is required by no-padding DDP candidate synchronization"
-    - "microbatch scaling: per_device_train_batch_size=8 and gradient_accumulation_steps=2 preserve global effective_batch_size=128 while spending more GPU memory on useful local work"
+    - "training.ddp_broadcast_buffers=false is required by no-padding DDP synchronization"
+    - "microbatch scaling: per_device_train_batch_size=16 and gradient_accumulation_steps=1 target approximately 2x local batch memory versus the previous production microbatch"
+    - "effective_batch_size=128; this preserves the global update batch while preserving one epoch"
     - "train_forward.branch_runtime=smart_batched_exact; train_forward.logits.mode=supervised_suffix; train_forward.ddp_sync.candidate_padding=none"
-    - "branch_batching.strategy=ms_swift_constant_volume_buckets; max_branch_rows=8; smart batching is exact for selected candidates and does not enable prefix KV cache"
-    - "candidate budget exact_until.max_candidates=8 and fallback.max_candidates=8; cap-8 fallback optimizes the sampled candidate-balanced CE and logs approximate MP diagnostics"
+    - "branch_batching.strategy=ms_swift_constant_volume_buckets; max_branch_rows=32; max_branch_tokens=65536; no prefix KV cache"
+    - "train_forward.budget_policy.enabled=false"
     - "prefix logits are exact suffix-only scoring, not a detached-prefix or KV-cache approximation"
     - "num_train_epochs=1"
     - "warmup_ratio=0.1"
-    - "effective_batch_size=128"
     - "lr: llm=5e-5, vit=1e-5, aligner=5e-5, coord_offset=5e-5"
     - "metric_for_best_model=eval_det_bbox_AP"
     - "val_sample_limit=200"
   tags:
     - stage1
     - set-continuation
-    - candidate-balanced
-    - close-start-suppression
-    - coord-token
+    - et-rmp-ce
+    - full-suffix
+    - entry-trie
+    - branch-support
+    - no-stop-suppression
 
 custom:
   trainer_variant: stage1_set_continuation
@@ -109,6 +110,11 @@ custom:
     oversize_log_h_threshold: null
     eps: 1.0e-6
   stage1_set_continuation:
+    objective:
+      mode: entry_trie_rmp_ce
+      suffix_order: random
+      branch_support_weight: 2.0
+      branch_balance_weight: 1.0
     subset_sampling:
       empty_prefix_ratio: 0.30
       random_subset_ratio: 0.45
@@ -120,23 +126,15 @@ custom:
       max_candidates: null
       tail_positive_count: 1
     structural_close:
-      close_start_suppression_weight: 0.05
-      final_schema_close_weight: 0.05
-      json_structural_weight: 0.05
+      close_start_suppression_weight: 0.0
+      final_schema_close_weight: 0.0
+      json_structural_weight: 0.0
       annotation_completeness_weight:
-        enabled: true
-        source: output/infer/coco1024_val200_compare_coordtoken_ckpt1332_20260423T080326Z/eval_coco_real/matches.jsonl; weight=monotone_gt/(gt+fp_loc)
-        by_max_gt:
-          1: 0.9500
-          3: 0.8306
-          6: 0.8306
-          10: 0.8306
-          20: 0.8068
-          1000000000: 0.7595
+        enabled: false
     bidirectional_token_gate:
-      enabled: true
-      coord_gate_weight: 0.5
-      text_gate_weight: 0.1
+      enabled: false
+      coord_gate_weight: 0.0
+      text_gate_weight: 0.0
       temperature: 1.0
       scope: objective_tokens
     positive_evidence_margin:
@@ -147,8 +145,8 @@ custom:
       branch_batching:
         enabled: true
         strategy: ms_swift_constant_volume_buckets
-        max_branch_rows: 8
-        max_branch_tokens: null
+        max_branch_rows: 32
+        max_branch_tokens: 65536
         min_fill_ratio: 0.70
         padding_waste_warn_fraction: 0.40
       logits:
@@ -156,14 +154,7 @@ custom:
       ddp_sync:
         candidate_padding: none
       budget_policy:
-        enabled: true
-        exact_until:
-          max_candidates: 8
-        fallback:
-          mode: approximate_uniform_subsample
-          max_candidates: 8
-          estimator: sampled_raw
-          require_telemetry: true
+        enabled: false
       prefix_reuse:
         encoding_cache: false
         kv_cache:
@@ -194,7 +185,7 @@ custom:
       prediction_surface: coord_token_xyxy
       score_mode: confidence_postop_bbox_logprob_confidence_exp
       decoding_controls: greedy_temp0_top_p1_rep1p10
-      same_budget_label: smart_batched_exact_suffix_no_ddp_padding_cap8_bidirgate_warmup10_v1
-      train_forward_budget: smart_batched_exact_suffix_no_ddp_padding_cap8_bidirgate_warmup10_v1
-      objective_fidelity_note: schema-aware candidate-balanced continuation CE scores the generated schema opener for empty-prefix branches, object entries, and the correct append-or-close boundary; bidirectional token gating adds objective-token coord/text slot control; samples with <=8 remaining candidates score all remaining candidates, while over-budget samples use telemetry-required uniform subsampling and keep MP/logZ as diagnostics
+      same_budget_label: &support_weighted_budget_label smart_batched_exact_full_suffix_rows_no_ddp_padding_et_rmp_ce_support2_bsz16_v1
+      train_forward_budget: *support_weighted_budget_label
+      objective_fidelity_note: ET-RMP-CE trains one recursive full-suffix row per sample; object-entry branch tokens use full-vocabulary valid-support loss with weight 2.0 plus object-uniform valid-balance loss with weight 1.0 at every trie divergence, while schema opener, comma, final close, and EOS remain hard CE control-flow targets without explicit stop-token suppression.
       sparse_label_caveat: annotated_view_may_count_unlabeled_true_positives_as_fp

@@ -17,11 +17,17 @@ Normative behavior:
   - `training.encoded_sample_cache.root_dir: str | null`
   - `training.encoded_sample_cache.ineligible_policy: \"error\" | \"bypass\"`
   - `training.encoded_sample_cache.wait_timeout_s: int`
+  - `training.encoded_sample_cache.max_resident_shards: int`
 - When `training.encoded_sample_cache.root_dir` is omitted, the cache root MUST
   default to `<training.output_dir>/cache/encoded_samples`.
 - `training.encoded_sample_cache.ineligible_policy` MUST default to `error`.
 - `training.encoded_sample_cache.wait_timeout_s` MUST default to `7200`, and
   `0` MUST mean wait indefinitely.
+- `training.encoded_sample_cache.max_resident_shards` MUST default to `4` and
+  MUST be greater than zero.
+- Runtime request, manifest, and run-metadata internals SHOULD use typed
+  representations, but serialized artifact keys MUST stay compatible with v1
+  unless this specification is revised.
 
 #### Scenario: Omitted root_dir uses the run-scoped default cache root
 - **GIVEN** encoded-sample caching is enabled

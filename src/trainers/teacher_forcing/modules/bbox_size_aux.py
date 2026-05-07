@@ -41,7 +41,7 @@ def run_bbox_size_aux_module(
     target_boxes = state.get("bbox_target_boxes_xyxy")
     box_weights = state.get("bbox_group_weights")
     if not isinstance(pred_boxes, torch.Tensor) or int(pred_boxes.numel()) == 0:
-        z = context.logits.new_tensor(0.0)
+        z = context.logits.new_tensor(0.0, dtype=torch.float32)
         metrics = {
             "loss/bbox_log_wh": 0.0,
             "loss/bbox_oversize": 0.0,
@@ -72,10 +72,10 @@ def run_bbox_size_aux_module(
         "bbox_size_aux/mean_height": float(result.stats.mean_height.detach().cpu().item()),
         "bbox_size_aux/mean_log_area": float(result.stats.mean_log_area.detach().cpu().item()),
     }
-    module_loss = result.total_loss.to(dtype=context.logits.dtype)
+    module_loss = result.total_loss.to(dtype=torch.float32)
     state_out = {
         "bbox_size_aux": module_loss,
-        "bbox_log_wh_contrib": result.log_wh_contrib.to(dtype=context.logits.dtype),
-        "bbox_oversize_contrib": result.oversize_contrib.to(dtype=context.logits.dtype),
+        "bbox_log_wh_contrib": result.log_wh_contrib.to(dtype=torch.float32),
+        "bbox_oversize_contrib": result.oversize_contrib.to(dtype=torch.float32),
     }
     return ModuleResult(loss=module_loss, metrics=metrics, state=state_out)

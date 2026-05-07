@@ -69,7 +69,7 @@ def run_coord_reg_module(
     adjacent_same_desc_prev_mask = state.get("adjacent_same_desc_prev_mask")
 
     if not isinstance(coord_logits, torch.Tensor) or int(coord_logits.numel()) == 0:
-        z = context.logits.new_tensor(0.0)
+        z = context.logits.new_tensor(0.0, dtype=torch.float32)
         metrics = {
             "loss/coord_reg": 0.0,
             "loss/coord_token_ce": 0.0,
@@ -99,7 +99,7 @@ def run_coord_reg_module(
             )
         coord_slot_weights = coord_slot_weights_raw.to(
             device=context.logits.device,
-            dtype=context.logits.dtype,
+            dtype=torch.float32,
         )
 
     soft_ce_weight = _coerce_float(
@@ -150,25 +150,26 @@ def run_coord_reg_module(
         ),
     )
 
-    coord_ce = context.logits.new_tensor(0.0)
-    coord_soft_ce = context.logits.new_tensor(0.0)
-    coord_w1 = context.logits.new_tensor(0.0)
-    adjacent_repulsion = context.logits.new_tensor(0.0)
-    coord_gate = context.logits.new_tensor(0.0)
-    text_gate = context.logits.new_tensor(0.0)
+    coord_ce = context.logits.new_tensor(0.0, dtype=torch.float32)
+    coord_soft_ce = context.logits.new_tensor(0.0, dtype=torch.float32)
+    coord_w1 = context.logits.new_tensor(0.0, dtype=torch.float32)
+    adjacent_repulsion = context.logits.new_tensor(0.0, dtype=torch.float32)
+    coord_gate = context.logits.new_tensor(0.0, dtype=torch.float32)
+    text_gate = context.logits.new_tensor(0.0, dtype=torch.float32)
     adjacent_pair_count = 0
     adjacent_applied_count = 0
-    adjacent_copy_score_mean = context.logits.new_tensor(0.0)
+    adjacent_copy_score_mean = context.logits.new_tensor(0.0, dtype=torch.float32)
 
     def _weighted_mean(values: torch.Tensor) -> torch.Tensor:
         if int(values.numel()) == 0:
-            return context.logits.new_tensor(0.0)
+            return context.logits.new_tensor(0.0, dtype=torch.float32)
         if coord_slot_weights is None:
-            return values.mean().to(dtype=context.logits.dtype)
-        denom = coord_slot_weights.sum().to(dtype=context.logits.dtype).clamp(min=1e-6)
+            return values.float().mean()
+        weights_f = coord_slot_weights.to(dtype=torch.float32)
+        denom = weights_f.sum().clamp(min=1e-6)
         return (
-            values.to(dtype=context.logits.dtype)
-            * coord_slot_weights.to(dtype=context.logits.dtype)
+            values.to(dtype=torch.float32)
+            * weights_f
         ).sum() / denom
 
     if weights["coord_ce_weight"] != 0.0:
@@ -276,7 +277,7 @@ def run_coord_reg_module(
                         gate_per_token = torch.nan_to_num(
                             gate_per_token, nan=0.0, posinf=1e4, neginf=0.0
                         )
-                        text_gate = gate_per_token.mean().to(dtype=context.logits.dtype)
+                        text_gate = gate_per_token.float().mean()
 
     adjacent_repulsion_weight = max(
         0.0,
@@ -306,7 +307,7 @@ def run_coord_reg_module(
         adjacent_result = compute_adjacent_repulsion_loss(
             coord_logits_groups=coord_logits_groups.to(
                 device=context.logits.device,
-                dtype=context.logits.dtype,
+                dtype=torch.float32,
             ),
             prev_target_bins=adjacent_prev_target_bins.to(
                 device=context.logits.device,
@@ -342,12 +343,12 @@ def run_coord_reg_module(
                 else None
             ),
         )
-        adjacent_repulsion = adjacent_result.loss.to(dtype=context.logits.dtype)
+        adjacent_repulsion = adjacent_result.loss.to(dtype=torch.float32)
         adjacent_pair_count = int(adjacent_result.pair_count)
         adjacent_applied_count = int(adjacent_result.applied_count)
         adjacent_copy_score_mean = adjacent_result.copy_score_mean.to(
-            dtype=context.logits.dtype
-        ) if isinstance(adjacent_result.copy_score_mean, torch.Tensor) else context.logits.new_tensor(0.0)
+            dtype=torch.float32
+        ) if isinstance(adjacent_result.copy_score_mean, torch.Tensor) else context.logits.new_tensor(0.0, dtype=torch.float32)
 
     coord_token_ce_contrib = weights["coord_ce_weight"] * coord_ce
     coord_soft_ce_contrib = weights["coord_soft_ce_weight"] * coord_soft_ce

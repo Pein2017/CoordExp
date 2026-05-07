@@ -1,5 +1,5 @@
 schema_version: 1
-updated: 2026-04-28
+updated: 2026-05-07
 
 entrypoints:
   human: progress/README.md
@@ -8,7 +8,7 @@ entrypoints:
 recommended_read_order:
   - docs/PROJECT_CONTEXT.md
   - docs/SYSTEM_OVERVIEW.md
-  - docs/training/STAGE2_DESIGN.md
+  - the relevant current docs router under docs/
   - progress/README.md
   - progress/directions/README.md
   - the specific category router and note relevant to the question
@@ -26,6 +26,8 @@ groups:
   diagnostics:
     - progress/diagnostics/README.md
     - progress/diagnostics/artifacts/README.md
+    - progress/diagnostics/artifacts/et_rmp_continuation_diagnostics_2026-05-01/README.md
+    - progress/diagnostics/2026-04-29_et_rmp_rp_continuation_bias_hypothesis.md
     - progress/diagnostics/2026-04-24_qwen3_vl_instance_binding_mechanism_findings.md
     - progress/diagnostics/2026-04-22_stage2_birth_first_channel_b_decision_study.md
     - progress/diagnostics/2026-04-21_raw_text_coordinate_mechanism_findings.md
@@ -60,10 +62,12 @@ groups:
     - progress/diagnostics/2026-03-11_visualization_tools_index.md
   audits:
     - progress/audits/README.md
+    - progress/audits/2026-05-03_type_schema_architecture_audit.md
     - progress/audits/2026-01-22_stage1_softce_logging.md
     - progress/audits/2026-02-25_stage2_channel_a_coord_loss.md
   benchmarks:
     - progress/benchmarks/README.md
+    - progress/benchmarks/2026-05-07_compact_full_rp110_top3_union_unlabeled_prior.md
     - progress/benchmarks/2026-04-28_stage1_mp_branch_runtime_packing_probe.md
     - progress/benchmarks/2026-04-23_stage1_raw_text_vs_coord_token_repetition_penalty_sweep.md
     - progress/benchmarks/2026-04-21_mixed_objective_sota_checkpoint_probe.md
@@ -114,6 +118,11 @@ notes:
     kind: diagnostic-study
     status: canonical-mechanism-summary
     summary: Canonical raw-text-only mechanism note for continuity, duplicate-burst attraction, and FN stop-pressure under the fixed checkpoint pair.
+  - path: progress/diagnostics/2026-04-29_et_rmp_rp_continuation_bias_hypothesis.md
+    title: ET-RMP Continuation Diagnostics Source
+    kind: diagnostic-study
+    status: canonical-cluster-entry
+    summary: Canonical source for pre-support-mass ET-RMP continuation diagnostics, including objective context, RP sweeps, representative sample bank, FN latent probes, length-bias read, and stop-control ablations.
   - path: progress/diagnostics/2026-04-20_coord_family_basin_and_recall_comparison.md
     title: Coordinate Family Basin and Recall Comparison
     kind: diagnostic-study
@@ -149,6 +158,11 @@ notes:
     kind: router
     status: canonical
     summary: Router for measured comparisons, checkpoint selection notes, and evaluation sweeps.
+  - path: progress/benchmarks/2026-05-07_compact_full_rp110_top3_union_unlabeled_prior.md
+    title: Compact-Full RP1.10 Top-3 Rollout Union and Unlabeled-Object Prior
+    kind: benchmark-study
+    status: completed-benchmark
+    summary: Val200 compact-full rp=1.10 top-3 checkpoint ranking plus bbox-only bootstrap-union estimate of unlabeled positives relative to GT count.
   - path: progress/benchmarks/2026-04-28_stage1_mp_branch_runtime_packing_probe.md
     title: Stage-1 MP Branch Runtime Packing Probe
     kind: benchmark-study

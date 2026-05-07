@@ -68,6 +68,7 @@ from src.common.geometry.bbox_parameterization import (
     normalize_bbox_format,
 )
 from src.common.coord_standardizer import CoordinateStandardizer
+from src.common.detection_chat import build_detection_chat_messages
 from src.common.geometry import flatten_points, has_coord_tokens
 from src.infer.artifacts import (
     build_infer_resolved_meta,
@@ -82,6 +83,10 @@ from src.common.object_field_order import (
     ObjectOrdering,
     normalize_object_field_order,
     normalize_object_ordering,
+)
+from src.common.detection_sequence import (
+    COORDJSON_FORMAT,
+    normalize_detection_sequence_format,
 )
 from src.coord_tokens.offset_adapter import (
     install_coord_offset_adapter,
@@ -100,6 +105,7 @@ from src.infer.checkpoints import (
     ResolvedInferenceCheckpoint,
     VLLM_ADAPTER_UNSUPPORTED_MESSAGE,
     resolve_inference_checkpoint,
+    validate_compact_coord_token_adapter_contract,
 )
 from src.utils import get_logger
 
@@ -166,6 +172,9 @@ class GenerationConfig:
     stop_pressure_min_new_tokens: int = 0
     stop_pressure_trigger_rule: Optional[str] = None
     stop_pressure_logit_bias: float = 0.0
+    compact_grammar_enabled: bool = False
+    compact_grammar_format: str = COORDJSON_FORMAT
+    compact_grammar_force_row_start: bool = True
 
     @property
     def stop_pressure_active(self) -> bool:
@@ -338,6 +347,7 @@ class InferenceConfig:
     mode: Literal["coord", "text", "auto"]
     prompt_variant: str = DEFAULT_PROMPT_VARIANT
     bbox_format: AllowedBBoxFormat = DEFAULT_BBOX_FORMAT
+    detection_sequence_format: str = COORDJSON_FORMAT
     object_field_order: ObjectFieldOrder = "desc_first"
     object_ordering: ObjectOrdering = "sorted"
     pred_coord_mode: Literal["auto", "norm1000", "pixel"] = "auto"
@@ -575,6 +585,10 @@ class InferenceEngine:
             cfg.bbox_format, path="infer.bbox_format"
         )
         self.cfg.bbox_format = self.bbox_format
+        self.detection_sequence_format = normalize_detection_sequence_format(
+            cfg.detection_sequence_format
+        )
+        self.cfg.detection_sequence_format = self.detection_sequence_format
         self.object_field_order = normalize_object_field_order(
             cfg.object_field_order,
             path="infer.object_field_order",
@@ -607,6 +621,7 @@ class InferenceEngine:
             prompt_variant=self.prompt_variant,
             object_field_order=self.object_field_order,
             bbox_format=self.bbox_format,
+            detection_sequence_format=self.detection_sequence_format,
         )
         self.prompt_template_hash = get_template_prompt_hash(
             ordering=self.object_ordering,
@@ -614,6 +629,7 @@ class InferenceEngine:
             prompt_variant=self.prompt_variant,
             object_field_order=self.object_field_order,
             bbox_format=self.bbox_format,
+            detection_sequence_format=self.detection_sequence_format,
         )
 
         # Shared parser/standardizer: always emit pixel-space points.
@@ -793,6 +809,10 @@ class InferenceEngine:
         coord_offset_spec = None
         if self.resolved_checkpoint.adapter_info is not None:
             coord_offset_spec = self.resolved_checkpoint.adapter_info.coord_offset_spec
+        validate_compact_coord_token_adapter_contract(
+            self.resolved_checkpoint,
+            detection_sequence_format=self.cfg.detection_sequence_format,
+        )
 
         # HF backend loads model+processor. For vLLM we support two modes:
         # - server: OpenAI-compatible HTTP server (default)
@@ -946,16 +966,11 @@ class InferenceEngine:
         return resolved
 
     def _build_messages(self, image: Image.Image) -> List[Dict[str, Any]]:
-        return [
-            {"role": "system", "content": [{"type": "text", "text": self.system_prompt}]},
-            {
-                "role": "user",
-                "content": [
-                    {"type": "text", "text": self.user_prompt},
-                    {"type": "image", "image": image},
-                ],
-            },
-        ]
+        return build_detection_chat_messages(
+            system_prompt=self.system_prompt,
+            user_prompt=self.user_prompt,
+            images=[image],
+        )
 
     def _generate(self, image: Image.Image) -> str:
         backend = str(self.cfg.backend_type).strip().lower()
@@ -1183,19 +1198,12 @@ class InferenceEngine:
             image.save(buf, format="PNG")
             b64 = base64.b64encode(buf.getvalue()).decode("ascii")
             msg_batch.append(
-                [
-                    {"role": "system", "content": self.system_prompt},
-                    {
-                        "role": "user",
-                        "content": [
-                            {"type": "text", "text": self.user_prompt},
-                            {
-                                "type": "image_url",
-                                "image_url": {"url": f"data:image/png;base64,{b64}"},
-                            },
-                        ],
-                    },
-                ]
+                build_detection_chat_messages(
+                    system_prompt=self.system_prompt,
+                    user_prompt=self.user_prompt,
+                    images=[{"url": f"data:image/png;base64,{b64}"}],
+                    image_content_type="image_url",
+                )
             )
 
         sp = self._vllm_sampling_params()

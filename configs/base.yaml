@@ -13,7 +13,7 @@ template:
   # Hard cap: CoordExp forbids any runtime image resizing because it breaks
   # grounding coordinates. Images must be pre-rescaled offline and JSONL
   # width/height must match the rescaled images.
-  max_pixels: 786432  # 768*32*32
+  max_pixels: 10485760  # 768*32*32
   # NOTE: RLHF defaults to loss_scale='last_round' which should be correct for single-round conversations
   # Keeping default (last_round) - need to debug why it unmasks 50% of tokens
   

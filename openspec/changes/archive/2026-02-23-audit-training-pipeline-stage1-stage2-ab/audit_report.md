@@ -64,7 +64,7 @@ Policy:
 - Oversize inputs must hard-error on the learner.
 
 Evidence:
-- Hard cap configured: `configs/base.yaml:16` sets `template.max_pixels: 786432` (`768*32*32`).
+- Hard cap configured: `configs/base.yaml:16` sets `template.max_pixels: 10485760` (`768*32*32`).
 - Learner hard-error check based on JSONL dimensions: `src/datasets/dense_caption.py:263` (`BaseCaptionDataset._enforce_max_pixels`).
 
 Verification:

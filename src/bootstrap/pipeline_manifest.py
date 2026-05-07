@@ -5,6 +5,8 @@ import json
 import math
 from typing import Any, Mapping, Sequence
 
+from src.training_runtime import resolve_training_runtime_profile
+
 
 def build_pipeline_manifest(
     cfg: Mapping[str, Any] | None,
@@ -22,12 +24,16 @@ def build_pipeline_manifest(
     if not isinstance(coord_soft_cfg, Mapping):
         coord_soft_cfg = {}
 
+    runtime_profile = resolve_training_runtime_profile(trainer_variant)
+
     pipeline_raw = cfg.get("pipeline", None)
     if not isinstance(pipeline_raw, Mapping):
-        variant = str(trainer_variant or "")
-        if variant in {"stage2_two_channel", "stage2_rollout_aligned"}:
+        if runtime_profile.explicit_pipeline_required:
+            required_namespace = (
+                runtime_profile.required_pipeline_namespace or "pipeline"
+            )
             raise ValueError(
-                f"{variant} requires an explicit pipeline config; missing {variant}.*.pipeline."
+                f"{runtime_profile.variant} requires an explicit pipeline config; missing {required_namespace}."
             )
         pipeline_raw = {}
 
@@ -103,10 +109,9 @@ def build_pipeline_manifest(
         }
 
     def _default_module_config(name: str) -> dict[str, Any]:
-        variant = str(trainer_variant or "")
         coord_soft_defaults = _coord_soft_defaults()
 
-        if variant == "stage2_two_channel":
+        if runtime_profile.manifest_family == "stage2_ab":
             desc_w = _finite_float(cfg.get("desc_ce_weight", 1.0), 1.0)
 
             if name == "token_ce":
@@ -150,7 +155,9 @@ def build_pipeline_manifest(
                         ),
                         0.0,
                     ),
-                    "text_gate_weight": _finite_float(cfg.get("text_gate_weight", 0.0), 0.0),
+                    "text_gate_weight": _finite_float(
+                        cfg.get("text_gate_weight", 0.0), 0.0
+                    ),
                     "soft_ce_weight": _finite_float(
                         coord_soft_defaults.get("soft_ce_weight", 0.0),
                         0.0,
@@ -170,7 +177,7 @@ def build_pipeline_manifest(
                     "target_truncate": coord_soft_defaults.get("target_truncate", None),
                 }
 
-        if variant == "stage2_rollout_aligned":
+        if runtime_profile.manifest_family == "rollout_matching":
             if name == "token_ce":
                 return {
                     "rollout_fn_desc_weight": 1.0,
@@ -227,8 +234,7 @@ def build_pipeline_manifest(
     def _resolve(path: str, defaults: list[str]) -> list[dict[str, Any]]:
         raw = pipeline_raw.get(path, None)
         if not isinstance(raw, Sequence) or isinstance(raw, (str, bytes)):
-            variant = str(trainer_variant or "")
-            if variant in {"stage2_two_channel", "stage2_rollout_aligned"}:
+            if runtime_profile.explicit_pipeline_required:
                 raise TypeError(f"pipeline.{path} must be a list of module specs")
             raw = None
 
@@ -269,7 +275,7 @@ def build_pipeline_manifest(
     objective = _resolve("objective", default_objective)
     diagnostics = _resolve("diagnostics", default_diagnostics)
 
-    extra: dict[str, Any] = {"variant": str(trainer_variant or "")}
+    extra: dict[str, Any] = {"variant": runtime_profile.variant}
 
     payload = _normalize_json_value(
         {"objective": objective, "diagnostics": diagnostics, "extra": extra}

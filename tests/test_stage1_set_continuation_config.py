@@ -121,7 +121,24 @@ def test_stage1_set_continuation_parses_successfully() -> None:
     assert stage1_cfg.objective.mode == "candidate_balanced"
     assert stage1_cfg.objective.suffix_order == "random"
     assert stage1_cfg.positive_evidence_margin.threshold_calibration == "calib-v1"
-    assert stage1_cfg.metric_schema_version == "stage1_set_continuation_metrics_v2"
+    assert stage1_cfg.metric_schema_version == "stage1_set_continuation_metrics_v3"
+
+
+def test_training_config_accepts_compact_detection_sequence_format() -> None:
+    payload = _base_training_payload()
+    payload["custom"].update(
+        {
+            "coord_tokens": {
+                "enabled": True,
+                "skip_bbox_norm": True,
+            },
+            "detection_sequence_format": "compact_full",
+        }
+    )
+
+    cfg = TrainingConfig.from_mapping(payload, PromptOverrides())
+
+    assert cfg.custom.detection_sequence_format == "compact_full"
 
 
 def test_stage1_set_continuation_parses_entry_trie_rmp_objective() -> None:
@@ -136,6 +153,38 @@ def test_stage1_set_continuation_parses_entry_trie_rmp_objective() -> None:
     objective = cfg.custom.stage1_set_continuation.objective
     assert objective.mode == "entry_trie_rmp_ce"
     assert objective.suffix_order == "dataset"
+    assert objective.branch_support_weight == pytest.approx(1.0)
+    assert objective.branch_balance_weight == pytest.approx(1.0)
+
+
+def test_stage1_set_continuation_parses_entry_trie_rmp_branch_weights() -> None:
+    payload = _stage1_set_continuation_payload()
+    payload["custom"]["stage1_set_continuation"]["objective"] = {
+        "mode": "entry_trie_rmp_ce",
+        "suffix_order": "random",
+        "branch_support_weight": 2.0,
+        "branch_balance_weight": 1.0,
+    }
+
+    cfg = TrainingConfig.from_mapping(payload, PromptOverrides())
+
+    objective = cfg.custom.stage1_set_continuation.objective
+    assert objective.mode == "entry_trie_rmp_ce"
+    assert objective.branch_support_weight == pytest.approx(2.0)
+    assert objective.branch_balance_weight == pytest.approx(1.0)
+
+
+def test_stage1_set_continuation_rejects_negative_entry_trie_rmp_branch_weights() -> (
+    None
+):
+    payload = _stage1_set_continuation_payload()
+    payload["custom"]["stage1_set_continuation"]["objective"] = {
+        "mode": "entry_trie_rmp_ce",
+        "branch_support_weight": -1.0,
+    }
+
+    with pytest.raises(ValueError, match="branch_support_weight"):
+        TrainingConfig.from_mapping(payload, PromptOverrides())
 
 
 def test_stage1_set_continuation_rejects_invalid_objective_mode() -> None:

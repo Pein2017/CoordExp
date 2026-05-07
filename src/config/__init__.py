@@ -10,6 +10,15 @@ from .schema import (
     VisualKDConfig,
     DeepSpeedConfig,
     SaveDelayConfig,
+    TrainableTokenRowsConfig,
+    LatestDetectionTrainingConfig,
+    DetectionDataConfig,
+    DetectionPromptConfig,
+    DetectionTemplateConfig,
+    DetectionObjectiveConfig,
+    DetectionPackingConfig,
+    DetectionEvaluationConfig,
+    DetectionValidationConfig,
 )
 from .prompts import SYSTEM_PROMPT, USER_PROMPT
 
@@ -23,6 +32,15 @@ __all__ = [
     "VisualKDConfig",
     "DeepSpeedConfig",
     "SaveDelayConfig",
+    "TrainableTokenRowsConfig",
+    "LatestDetectionTrainingConfig",
+    "DetectionDataConfig",
+    "DetectionPromptConfig",
+    "DetectionTemplateConfig",
+    "DetectionObjectiveConfig",
+    "DetectionPackingConfig",
+    "DetectionEvaluationConfig",
+    "DetectionValidationConfig",
     "SYSTEM_PROMPT",
     "USER_PROMPT",
 ]

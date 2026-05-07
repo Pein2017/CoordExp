@@ -28,11 +28,12 @@
 - [x] Branch trainer `compute_loss` to full-suffix batch scoring for
       `full_suffix_ce` and `entry_trie_rmp_ce`.
 - [x] Add compact emitted ET-RMP metrics.
-- [x] Preserve existing candidate-balanced default behavior and tests.
+- [x] Preserve legacy candidate-balanced behavior and tests for compatibility.
 
 ## 5. Profile And Docs
 
-- [x] Add `configs/stage1/set_continuation/rmp_ce.yaml`.
+- [x] Fold the ET-RMP-CE experiment profile into
+      `configs/stage1/set_continuation/production.yaml`.
 - [x] Update Stage-1 objective docs.
 - [x] Update metrics docs.
 - [x] Run focused pytest and OpenSpec validation.

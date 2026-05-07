@@ -22,6 +22,10 @@ from src.common.geometry.bbox_parameterization import (
     cxcywh_norm1000_to_xyxy_norm1000,
     normalize_bbox_format,
 )
+from src.common.detection_sequence import (
+    COORDJSON_FORMAT,
+    normalize_detection_sequence_format,
+)
 from src.common.object_field_order import (
     ObjectFieldOrder,
     normalize_object_field_order,
@@ -192,6 +196,7 @@ class BaseCaptionDataset(Dataset):
         object_ordering: Literal["sorted", "random"] = "sorted",
         object_field_order: ObjectFieldOrder = "desc_first",
         bbox_format: AllowedBBoxFormat = DEFAULT_BBOX_FORMAT,
+        detection_sequence_format: str = COORDJSON_FORMAT,
         encoded_sample_cache: Optional[Mapping[str, Any]] = None,
     ):
         self.use_summary = bool(use_summary)
@@ -215,6 +220,9 @@ class BaseCaptionDataset(Dataset):
         self.object_field_order = normalize_object_field_order(object_field_order)
         self.bbox_format = normalize_bbox_format(
             bbox_format, path="custom.bbox_format"
+        )
+        self.detection_sequence_format = normalize_detection_sequence_format(
+            detection_sequence_format
         )
 
         if self.use_summary:
@@ -400,6 +408,7 @@ class BaseCaptionDataset(Dataset):
             coord_tokens_enabled=self.coord_tokens.enabled,
             object_field_order=self.object_field_order,
             bbox_format=self.bbox_format,
+            detection_sequence_format=self.detection_sequence_format,
         )
 
 
@@ -779,6 +788,7 @@ class BaseCaptionDataset(Dataset):
                 "object_ordering": self.object_ordering,
                 "object_field_order": self.object_field_order,
                 "bbox_format": self.bbox_format,
+                "detection_sequence_format": self.detection_sequence_format,
                 "coord_tokens_enabled": bool(self.coord_tokens.enabled),
                 "offline_max_pixels": self.offline_max_pixels,
                 "system_prompt": self._current_system_prompt(),

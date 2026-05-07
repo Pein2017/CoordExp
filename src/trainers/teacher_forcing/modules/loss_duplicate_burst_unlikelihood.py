@@ -99,7 +99,13 @@ def run_loss_duplicate_burst_unlikelihood_module(
                 )
 
             pred_row = int(token_pos - 1)
-            log_probs = F.log_softmax(logits_ce[b, pred_row, :], dim=-1)
+            logits_row = torch.nan_to_num(
+                logits_ce[b, pred_row, :].float(),
+                nan=0.0,
+                posinf=1e4,
+                neginf=-1e4,
+            ).clamp(min=-1e4, max=1e4)
+            log_probs = F.log_softmax(logits_row, dim=-1)
             bad_log_prob = log_probs[int(bad_token_id)]
             bad_prob = bad_log_prob.exp()
             term = -torch.log((1.0 - bad_prob).clamp(min=1e-6))
@@ -110,7 +116,7 @@ def run_loss_duplicate_burst_unlikelihood_module(
     if terms:
         loss = torch.stack(terms).mean()
     else:
-        loss = logits_ce.new_tensor(0.0)
+        loss = logits_ce.new_tensor(0.0, dtype=torch.float32)
 
     metrics = {
         "train/optimization/loss_duplicate_burst_unlikelihood": float(

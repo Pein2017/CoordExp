@@ -70,21 +70,46 @@ def generate_hf_batch(
     else:
         prompt_lengths = [int(model_inputs["input_ids"].shape[1]) for _ in images]
 
+    do_sample = owner.gen_cfg.temperature > 0
     gen_kwargs = dict(
         max_new_tokens=owner.gen_cfg.max_new_tokens,
-        do_sample=owner.gen_cfg.temperature > 0,
-        temperature=max(1e-4, owner.gen_cfg.temperature),
-        top_p=owner.gen_cfg.top_p,
+        do_sample=do_sample,
         use_cache=True,
     )
+    if do_sample:
+        gen_kwargs["temperature"] = max(1e-4, owner.gen_cfg.temperature)
+        gen_kwargs["top_p"] = owner.gen_cfg.top_p
     if owner.gen_cfg.repetition_penalty is not None:
         gen_kwargs["repetition_penalty"] = owner.gen_cfg.repetition_penalty
-    logits_processor = owner.gen_cfg.build_hf_stop_pressure_logits_processor(
+
+    logits_processors: list[object] = []
+    stop_pressure_processor = owner.gen_cfg.build_hf_stop_pressure_logits_processor(
         tokenizer=owner.processor.tokenizer,
         prompt_lengths=prompt_lengths,
     )
-    if logits_processor is not None:
-        gen_kwargs["logits_processor"] = logits_processor
+    if stop_pressure_processor is not None:
+        logits_processors.append(stop_pressure_processor)
+    if bool(getattr(owner.gen_cfg, "compact_grammar_enabled", False)):
+        from transformers import LogitsProcessorList
+
+        from src.infer.compact_grammar import build_compact_grammar_logits_processor
+
+        logits_processors.append(
+            build_compact_grammar_logits_processor(
+                tokenizer=owner.processor.tokenizer,
+                prompt_lengths=prompt_lengths,
+                detection_sequence_format=owner.gen_cfg.compact_grammar_format,
+                force_row_start=owner.gen_cfg.compact_grammar_force_row_start,
+            )
+        )
+        gen_kwargs["logits_processor"] = LogitsProcessorList(logits_processors)
+    elif logits_processors:
+        if len(logits_processors) == 1:
+            gen_kwargs["logits_processor"] = logits_processors[0]
+        else:
+            from transformers import LogitsProcessorList
+
+            gen_kwargs["logits_processor"] = LogitsProcessorList(logits_processors)
     owner.gen_cfg.apply_hf_stop_pressure(gen_kwargs)
 
     with torch.inference_mode():

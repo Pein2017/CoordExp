@@ -2,10 +2,11 @@ from __future__ import annotations
 
 import copy
 import hashlib
+import math
 import random
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, cast
 
 import torch
 
@@ -20,6 +21,7 @@ from src.trainers.stage1_set_continuation.branch_encoder import (
     _with_assistant_text,
 )
 from src.trainers.stage1_set_continuation.branch_scorer import (
+    TensorBranchScoreInput,
     _batch_model_inputs,
     _pad_2d,
 )
@@ -89,6 +91,9 @@ class EncodedFullSuffixBranch:
 class FullSuffixLossResult:
     loss: torch.Tensor
     branch_loss: torch.Tensor
+    branch_ce_loss: torch.Tensor
+    branch_support_loss: torch.Tensor
+    branch_balance_loss: torch.Tensor
     unique_loss: torch.Tensor
     boundary_loss: torch.Tensor
     close_loss: torch.Tensor
@@ -101,8 +106,18 @@ class FullSuffixLossResult:
     metrics: dict[str, float]
 
 
+@dataclass(frozen=True)
+class _StepLossResult:
+    loss: torch.Tensor
+    ce_loss: torch.Tensor
+    support_loss: torch.Tensor
+    balance_loss: torch.Tensor
+    valid_mass: torch.Tensor
+    is_branch: bool
+
+
 def _zero(logits: torch.Tensor) -> torch.Tensor:
-    return logits.new_zeros(())
+    return logits.new_zeros((), dtype=torch.float32)
 
 
 def _normalize_token_type(value: str) -> str:
@@ -121,6 +136,18 @@ def _normalize_phase(value: str) -> str:
     if normalized in {"entry", "boundary", "close", "eos"}:
         return normalized
     raise ValueError(f"unsupported full-suffix target phase: {value!r}")
+
+
+_SETCONT_BRANCH_TYPES = ("desc_text", "coord", "structural", "other")
+
+
+def _setcont_branch_type(value: str) -> str:
+    normalized = _normalize_token_type(value)
+    if normalized == "text":
+        return "desc_text"
+    if normalized in {"coord", "structural"}:
+        return normalized
+    return "other"
 
 
 def _stable_seed_from_parts(seed_parts: tuple[Any, ...]) -> int:
@@ -158,7 +185,8 @@ def _tokenize_text(tokenizer: Any, text: str) -> tuple[int, ...]:
     if callable(tokenizer):
         tokenized = tokenizer(str(text), add_special_tokens=False)
         if isinstance(tokenized, Mapping) and "input_ids" in tokenized:
-            return tuple(int(token) for token in tokenized["input_ids"])
+            input_ids = cast(Sequence[Any], tokenized["input_ids"])
+            return tuple(int(token) for token in input_ids)
     raise TypeError("entry-trie full-suffix encoding requires a text tokenizer")
 
 
@@ -304,11 +332,13 @@ def _label_positions_for_span(
             char_start=char_start,
             char_end=char_end,
         )
-    positions = [
-        int(index)
-        for index in mask.reshape(-1).nonzero(as_tuple=False).reshape(-1).tolist()
-        if int(index) > 0 and int(labels.reshape(-1)[int(index)].item()) != -100
-    ]
+    mask_indices = mask.reshape(-1).nonzero(as_tuple=False).reshape(-1)
+    label_values = labels.reshape(-1)
+    positions: list[int] = []
+    for index_tensor in mask_indices:
+        index = int(index_tensor.item())
+        if index > 0 and int(label_values[index].item()) != -100:
+            positions.append(index)
     return tuple(positions)
 
 
@@ -652,7 +682,10 @@ def _step_nll(
     log_probs: torch.Tensor,
     step: FullSuffixTargetStep,
     entry_trie_mp: bool,
-) -> tuple[torch.Tensor, torch.Tensor, bool]:
+    branch_support_weight: float = 1.0,
+    branch_balance_weight: float = 1.0,
+) -> _StepLossResult:
+    log_probs = log_probs.float()
     targets = step.normalized_targets
     if not targets:
         raise ValueError("full-suffix target step requires at least one target")
@@ -664,12 +697,27 @@ def _step_nll(
         )
         probabilities = torch.tensor(
             [float(target.probability) for target in targets],
-            dtype=log_probs.dtype,
+            dtype=torch.float32,
             device=log_probs.device,
         )
-        nll = -(probabilities * log_probs.index_select(dim=-1, index=token_ids)).sum()
-        valid_mass = torch.exp(log_probs.index_select(dim=-1, index=token_ids)).sum()
-        return nll, valid_mass, True
+        valid_log_probs = log_probs.index_select(dim=-1, index=token_ids).float()
+        log_valid_mass = torch.logsumexp(valid_log_probs, dim=-1)
+        support_loss = -log_valid_mass
+        balance_loss = -(probabilities * (valid_log_probs - log_valid_mass)).sum()
+        ce_loss = -(probabilities * valid_log_probs).sum()
+        loss = (
+            float(branch_support_weight) * support_loss
+            + float(branch_balance_weight) * balance_loss
+        )
+        valid_mass = torch.exp(log_valid_mass)
+        return _StepLossResult(
+            loss=loss,
+            ce_loss=ce_loss,
+            support_loss=support_loss,
+            balance_loss=balance_loss,
+            valid_mass=valid_mass,
+            is_branch=True,
+        )
 
     teacher_id = torch.tensor(
         int(step.teacher_token_id),
@@ -680,11 +728,40 @@ def _step_nll(
     valid_mass = torch.exp(
         log_probs.index_select(dim=-1, index=teacher_id.view(1))
     ).sum()
-    return nll, valid_mass, False
+    zero = nll.new_zeros(())
+    return _StepLossResult(
+        loss=nll,
+        ce_loss=nll,
+        support_loss=zero,
+        balance_loss=zero,
+        valid_mass=valid_mass,
+        is_branch=False,
+    )
 
 
 def _mean(total: torch.Tensor, count: int) -> torch.Tensor:
     return total / max(int(count), 1)
+
+
+def _competition_rank_for_token(
+    scores: torch.Tensor,
+    token_id: int,
+) -> torch.Tensor:
+    target_score = scores[int(token_id)]
+    return (scores > target_score).sum(dtype=torch.float32) + 1.0
+
+
+def _competition_rank_for_best_child(
+    scores: torch.Tensor,
+    valid_token_ids: torch.Tensor,
+) -> torch.Tensor:
+    valid_scores = scores.index_select(dim=-1, index=valid_token_ids)
+    best_valid_score = valid_scores.max()
+    return (scores > best_valid_score).sum(dtype=torch.float32) + 1.0
+
+
+def _clamp_tiny_negative_kl(value: torch.Tensor) -> torch.Tensor:
+    return torch.where(value > -1e-6, value.clamp_min(0.0), value)
 
 
 def compute_full_suffix_loss(
@@ -693,14 +770,33 @@ def compute_full_suffix_loss(
     labels: torch.Tensor,
     steps: Sequence[FullSuffixTargetStep],
     entry_trie_mp: bool = True,
+    branch_support_weight: float = 1.0,
+    branch_balance_weight: float = 1.0,
 ) -> FullSuffixLossResult:
     if logits.ndim != 3 or labels.ndim != 2:
         raise ValueError("full-suffix logits must be rank-3 and labels rank-2")
     if int(logits.shape[0]) != int(labels.shape[0]):
         raise ValueError("full-suffix logits and labels batch dimensions differ")
+    if (
+        not math.isfinite(float(branch_support_weight))
+        or float(branch_support_weight) < 0.0
+    ):
+        raise ValueError("branch_support_weight must be a finite non-negative value")
+    if (
+        not math.isfinite(float(branch_balance_weight))
+        or float(branch_balance_weight) < 0.0
+    ):
+        raise ValueError("branch_balance_weight must be a finite non-negative value")
+    if float(branch_support_weight) + float(branch_balance_weight) <= 0.0:
+        raise ValueError(
+            "branch_support_weight and branch_balance_weight may not both be zero"
+        )
 
     zero = _zero(logits)
     branch_sum = zero
+    branch_ce_sum = zero
+    branch_support_sum = zero
+    branch_balance_sum = zero
     unique_sum = zero
     boundary_sum = zero
     close_sum = zero
@@ -720,6 +816,36 @@ def compute_full_suffix_loss(
     branch_valid_top1 = 0
     valid_child_total = 0
     branch_type_counts = {"text": 0, "coord": 0, "structural": 0, "other": 0}
+    branch_mass_type_sums = {
+        "text": zero,
+        "coord": zero,
+        "structural": zero,
+        "other": zero,
+    }
+    branch_valid_mass_values: list[torch.Tensor] = []
+    setcont_eps = 1e-12
+    setcont_valid_mass_sum = zero
+    setcont_invalid_mass_sum = zero
+    setcont_margin_sum = zero
+    setcont_top1_invalid_sum = zero
+    setcont_top1_valid_not_teacher_sum = zero
+    setcont_positive_rank_sum = zero
+    setcont_teacher_prob_sum = zero
+    setcont_teacher_rank_sum = zero
+    setcont_effective_count_sum = zero
+    setcont_effective_count_nodes = zero
+    setcont_balance_kl_sum = zero
+    setcont_balance_nodes = 0
+    setcont_branch_type_counts = {branch_type: 0 for branch_type in _SETCONT_BRANCH_TYPES}
+    setcont_support_type_sums = {
+        branch_type: zero for branch_type in _SETCONT_BRANCH_TYPES
+    }
+    setcont_balance_type_counts = {
+        branch_type: 0 for branch_type in _SETCONT_BRANCH_TYPES
+    }
+    setcont_balance_type_sums = {
+        branch_type: zero for branch_type in _SETCONT_BRANCH_TYPES
+    }
 
     for raw_step in steps:
         step = _target_step_with_position(
@@ -732,19 +858,29 @@ def compute_full_suffix_loss(
         log_probs = torch.log_softmax(
             logits[int(step.row_index), logit_index].float(),
             dim=-1,
-        ).to(dtype=logits.dtype)
-        nll, valid_mass, is_branch = _step_nll(
+        )
+        step_loss = _step_nll(
             log_probs=log_probs,
             step=step,
             entry_trie_mp=entry_trie_mp,
+            branch_support_weight=float(branch_support_weight),
+            branch_balance_weight=float(branch_balance_weight),
         )
+        nll = step_loss.loss
 
-        if is_branch:
+        if step_loss.is_branch:
             branch_count += 1
-            branch_sum = branch_sum + nll
-            branch_valid_mass_sum = branch_valid_mass_sum + valid_mass
+            branch_sum = branch_sum + step_loss.loss
+            branch_ce_sum = branch_ce_sum + step_loss.ce_loss
+            branch_support_sum = branch_support_sum + step_loss.support_loss
+            branch_balance_sum = branch_balance_sum + step_loss.balance_loss
+            branch_valid_mass_sum = branch_valid_mass_sum + step_loss.valid_mass
+            branch_valid_mass_values.append(step_loss.valid_mass.detach().float())
             branch_type = _normalize_token_type(step.token_type)
             branch_type_counts[branch_type] += 1
+            branch_mass_type_sums[branch_type] = (
+                branch_mass_type_sums[branch_type] + step_loss.valid_mass
+            )
             entropy = -sum(
                 target.probability
                 * torch.log(
@@ -760,12 +896,97 @@ def compute_full_suffix_loss(
             if top1 in valid_ids:
                 branch_valid_top1 += 1
             valid_child_total += len(valid_ids)
+            token_ids = torch.tensor(
+                [int(target.token_id) for target in step.normalized_targets],
+                dtype=torch.long,
+                device=log_probs.device,
+            )
+            target_probabilities = torch.tensor(
+                [float(target.probability) for target in step.normalized_targets],
+                dtype=torch.float32,
+                device=log_probs.device,
+            )
+            branch_probabilities = torch.exp(log_probs.detach().float())
+            valid_probabilities = branch_probabilities.index_select(
+                dim=-1,
+                index=token_ids,
+            )
+            valid_mass_value = step_loss.valid_mass.detach().float()
+            invalid_mass_value = (1.0 - valid_mass_value).clamp_min(0.0)
+            setcont_valid_mass_sum = setcont_valid_mass_sum + valid_mass_value
+            setcont_invalid_mass_sum = setcont_invalid_mass_sum + invalid_mass_value
+            setcont_margin_sum = setcont_margin_sum + torch.log(
+                valid_mass_value + setcont_eps
+            ) - torch.log(
+                invalid_mass_value + setcont_eps
+            )
+            setcont_top1_invalid_sum = setcont_top1_invalid_sum + logits.new_tensor(
+                0.0 if top1 in valid_ids else 1.0,
+                dtype=torch.float32,
+            )
+            setcont_top1_valid_not_teacher_sum = (
+                setcont_top1_valid_not_teacher_sum
+                + logits.new_tensor(
+                    (
+                        1.0
+                        if top1 in valid_ids and top1 != int(step.teacher_token_id)
+                        else 0.0
+                    ),
+                    dtype=torch.float32,
+                )
+            )
+            detached_scores = log_probs.detach().float()
+            setcont_positive_rank_sum = (
+                setcont_positive_rank_sum
+                + _competition_rank_for_best_child(detached_scores, token_ids)
+            )
+            teacher_id = int(step.teacher_token_id)
+            setcont_teacher_prob_sum = (
+                setcont_teacher_prob_sum + branch_probabilities[teacher_id]
+            )
+            setcont_teacher_rank_sum = (
+                setcont_teacher_rank_sum
+                + _competition_rank_for_token(detached_scores, teacher_id)
+            )
+            public_branch_type = _setcont_branch_type(step.token_type)
+            setcont_branch_type_counts[public_branch_type] += 1
+            setcont_support_type_sums[public_branch_type] = (
+                setcont_support_type_sums[public_branch_type]
+                + step_loss.support_loss.detach().float()
+            )
+            predicted_valid = valid_probabilities / valid_mass_value.clamp_min(
+                setcont_eps
+            )
+            valid_entropy = -(
+                predicted_valid * torch.log(predicted_valid.clamp_min(setcont_eps))
+            ).sum()
+            effective_count_mask = (valid_mass_value > setcont_eps).to(torch.float32)
+            setcont_effective_count_sum = (
+                setcont_effective_count_sum
+                + torch.exp(valid_entropy) * effective_count_mask
+            )
+            setcont_effective_count_nodes = (
+                setcont_effective_count_nodes + effective_count_mask
+            )
+            target_entropy_tensor = -(
+                target_probabilities
+                * torch.log(target_probabilities.clamp_min(setcont_eps))
+            ).sum()
+            balance_kl = _clamp_tiny_negative_kl(
+                step_loss.balance_loss.detach().float() - target_entropy_tensor
+            )
+            setcont_balance_kl_sum = setcont_balance_kl_sum + balance_kl
+            setcont_balance_nodes += 1
+            setcont_balance_type_counts[public_branch_type] += 1
+            setcont_balance_type_sums[public_branch_type] = (
+                setcont_balance_type_sums[public_branch_type] + balance_kl
+            )
             if branch_type == "coord":
                 coord_branch_count += 1
-                coord_branch_sum = coord_branch_sum + nll
+                coord_branch_sum = coord_branch_sum + step_loss.ce_loss
             if branch_type == "text":
                 text_branch_count += 1
-                text_branch_sum = text_branch_sum + nll
+                text_branch_sum = text_branch_sum + step_loss.ce_loss
             continue
 
         phase = _normalize_phase(step.phase)
@@ -783,6 +1004,9 @@ def compute_full_suffix_loss(
             eos_sum = eos_sum + nll
 
     branch_loss = _mean(branch_sum, branch_count)
+    branch_ce_loss = _mean(branch_ce_sum, branch_count)
+    branch_support_loss = _mean(branch_support_sum, branch_count)
+    branch_balance_loss = _mean(branch_balance_sum, branch_count)
     unique_loss = _mean(unique_sum, unique_count)
     boundary_loss = _mean(boundary_sum, boundary_count)
     close_loss = _mean(close_sum, close_count)
@@ -793,6 +1017,25 @@ def compute_full_suffix_loss(
     loss = (branch_sum + unique_sum + boundary_sum + close_sum + eos_sum) / max(
         total_tokens, 1
     )
+
+    if branch_valid_mass_values:
+        valid_mass_tensor = torch.stack(branch_valid_mass_values)
+        valid_mass_min = float(valid_mass_tensor.min().item())
+        valid_mass_p10 = float(torch.quantile(valid_mass_tensor, 0.10).item())
+        valid_mass_p50 = float(torch.quantile(valid_mass_tensor, 0.50).item())
+        valid_mass_p90 = float(torch.quantile(valid_mass_tensor, 0.90).item())
+    else:
+        valid_mass_min = 0.0
+        valid_mass_p10 = 0.0
+        valid_mass_p50 = 0.0
+        valid_mass_p90 = 0.0
+
+    def _mass_by_type(branch_type: str) -> float:
+        count = branch_type_counts[branch_type]
+        if count <= 0:
+            return 0.0
+        return float((branch_mass_type_sums[branch_type] / count).detach().item())
+
     metrics = {
         "rmp/branch_nodes": float(branch_count),
         "rmp/branch_nodes_desc_text": float(branch_type_counts["text"]),
@@ -804,12 +1047,23 @@ def compute_full_suffix_loss(
         "rmp/valid_child_mass_mean": float(
             (branch_valid_mass_sum / max(branch_count, 1)).detach().item()
         ),
+        "rmp/valid_child_mass_min": valid_mass_min,
+        "rmp/valid_child_mass_p10": valid_mass_p10,
+        "rmp/valid_child_mass_p50": valid_mass_p50,
+        "rmp/valid_child_mass_p90": valid_mass_p90,
+        "rmp/valid_child_mass_desc_text": _mass_by_type("text"),
+        "rmp/valid_child_mass_coord": _mass_by_type("coord"),
+        "rmp/valid_child_mass_structural": _mass_by_type("structural"),
+        "rmp/valid_child_mass_other": _mass_by_type("other"),
         "rmp/teacher_branch_top1_acc": float(
             branch_teacher_top1 / max(branch_count, 1)
         ),
         "rmp/valid_child_top1_acc": float(branch_valid_top1 / max(branch_count, 1)),
         "loss/rmp": float(loss.detach().item()),
-        "loss/rmp_branch_ce": float(branch_loss.detach().item()),
+        "loss/rmp_branch_support": float(branch_support_loss.detach().item()),
+        "loss/rmp_branch_balance": float(branch_balance_loss.detach().item()),
+        "loss/rmp_branch_total": float(branch_loss.detach().item()),
+        "loss/rmp_branch_ce": float(branch_ce_loss.detach().item()),
         "loss/rmp_unique_ce": float(unique_loss.detach().item()),
         "loss/rmp_coord_branch_ce": float(
             _mean(coord_branch_sum, coord_branch_count).detach().item()
@@ -818,12 +1072,87 @@ def compute_full_suffix_loss(
             _mean(text_branch_sum, text_branch_count).detach().item()
         ),
         "loss/rmp_boundary_ce": float(boundary_loss.detach().item()),
-        "loss/rmp_close_ce": float(close_loss.detach().item()),
-        "loss/rmp_eos_ce": float(eos_loss.detach().item()),
-    }
+          "loss/rmp_close_ce": float(close_loss.detach().item()),
+          "loss/rmp_eos_ce": float(eos_loss.detach().item()),
+      }
+    metrics["setcont/rmp/branch_node_count"] = float(branch_count)
+    setcont_effective_count_nodes_value = float(
+        setcont_effective_count_nodes.detach().item()
+    )
+    metrics["setcont/rmp/effective_count_node_count"] = (
+        setcont_effective_count_nodes_value
+    )
+    metrics["setcont/rmp/balance_node_count"] = float(setcont_balance_nodes)
+    for branch_type in _SETCONT_BRANCH_TYPES:
+        metrics[f"setcont/rmp/{branch_type}_branch_node_count"] = float(
+            setcont_branch_type_counts[branch_type]
+        )
+        metrics[f"setcont/rmp/{branch_type}_balance_node_count"] = float(
+            setcont_balance_type_counts[branch_type]
+        )
+    if branch_count > 0:
+        metrics.update(
+            {
+                "setcont/rmp/valid_child_mass_mean": float(
+                    (setcont_valid_mass_sum / branch_count).detach().item()
+                ),
+                "setcont/rmp/valid_child_mass_p10": valid_mass_p10,
+                "setcont/rmp/invalid_child_mass_mean": float(
+                    (setcont_invalid_mass_sum / branch_count).detach().item()
+                ),
+                "setcont/rmp/valid_invalid_margin_mean": float(
+                    (setcont_margin_sum / branch_count).detach().item()
+                ),
+                "setcont/rmp/top1_invalid_rate": float(
+                    (setcont_top1_invalid_sum / branch_count).detach().item()
+                ),
+                "setcont/rmp/top1_valid_not_teacher_rate": float(
+                    (
+                        setcont_top1_valid_not_teacher_sum / branch_count
+                    ).detach().item()
+                ),
+                "setcont/rmp/positive_child_rank_mean": float(
+                    (setcont_positive_rank_sum / branch_count).detach().item()
+                ),
+                "setcont/rmp/teacher_path_child_prob_mean": float(
+                    (setcont_teacher_prob_sum / branch_count).detach().item()
+                ),
+                "setcont/rmp/teacher_path_child_rank_mean": float(
+                    (setcont_teacher_rank_sum / branch_count).detach().item()
+                ),
+            }
+        )
+    if setcont_effective_count_nodes_value > 0:
+        metrics["setcont/rmp/valid_child_effective_count_mean"] = float(
+            (
+                setcont_effective_count_sum / setcont_effective_count_nodes
+            ).detach().item()
+        )
+    if setcont_balance_nodes > 0:
+        metrics["setcont/rmp/balance_kl_mean"] = float(
+            (setcont_balance_kl_sum / setcont_balance_nodes).detach().item()
+        )
+    for branch_type in _SETCONT_BRANCH_TYPES:
+        branch_type_count = setcont_branch_type_counts[branch_type]
+        if branch_type_count > 0:
+            metrics[f"setcont/rmp/support_loss_{branch_type}_mean"] = float(
+                (
+                    setcont_support_type_sums[branch_type] / branch_type_count
+                ).detach().item()
+            )
+        balance_type_count = setcont_balance_type_counts[branch_type]
+        if balance_type_count > 0:
+            metrics[f"setcont/rmp/balance_kl_{branch_type}_mean"] = float(
+                (
+                    setcont_balance_type_sums[branch_type] / balance_type_count
+                ).detach().item()
+            )
     return FullSuffixLossResult(
         loss=loss,
         branch_loss=branch_loss,
+        branch_ce_loss=branch_ce_loss,
+        branch_support_loss=branch_support_loss,
+        branch_balance_loss=branch_balance_loss,
         unique_loss=unique_loss,
         boundary_loss=boundary_loss,
         close_loss=close_loss,
@@ -899,6 +1228,222 @@ def _mask_from_steps(
     return mask
 
 
+def _validate_retained_logits_shape(
+    *,
+    logits: torch.Tensor,
+    cropped_labels: torch.Tensor,
+    logits_mode: str,
+    logits_to_keep: int | None,
+    context: str,
+) -> None:
+    expected_batch = int(cropped_labels.shape[0])
+    expected_length = int(cropped_labels.shape[-1])
+    actual_shape = tuple(int(dim) for dim in logits.shape)
+    actual_batch = int(logits.shape[0]) if logits.ndim >= 1 else None
+    actual_length = int(logits.shape[1]) if logits.ndim >= 2 else None
+    if (
+        logits.ndim != 3
+        or actual_batch != expected_batch
+        or actual_length != expected_length
+    ):
+        raise ValueError(
+            "full-suffix retained scorer received misaligned logits before shifted "
+            f"loss computation ({context}; logits_mode={logits_mode}; "
+            f"logits_to_keep={logits_to_keep}; expected rank-3 logits with "
+            f"batch={expected_batch} and sequence length={expected_length}; "
+            f"actual shape={actual_shape}, actual batch={actual_batch}, "
+            f"actual sequence length={actual_length})."
+        )
+
+
+_PADDING_FREE_METADATA_KEYS = {
+    "attention_mask",
+    "cu_seq_lens_q",
+    "cu_seq_lens_k",
+    "logits_to_keep",
+    "max_length_q",
+    "max_length_k",
+    "pack_num_samples",
+    "position_ids",
+    "text_position_ids",
+}
+
+
+def _pack_full_suffix_model_inputs_padding_free(
+    items: Sequence[FullSuffixTensorInput],
+) -> tuple[dict[str, Any], torch.Tensor, tuple[int, ...]]:
+    if not items:
+        raise ValueError("padding-free full-suffix packing requires at least one row")
+    keys = set(items[0].model_inputs.keys())
+    for item in items[1:]:
+        if set(item.model_inputs.keys()) != keys:
+            raise ValueError(
+                "padding-free full-suffix packing requires rows to expose the "
+                "same model input keys"
+            )
+    if "input_ids" not in keys:
+        raise ValueError("padding-free full-suffix packing requires input_ids")
+
+    lengths = tuple(int(item.labels.shape[-1]) for item in items)
+    offsets: list[int] = []
+    cursor = 0
+    for length in lengths:
+        offsets.append(cursor)
+        cursor += int(length)
+    total_length = int(cursor)
+    max_length = max(lengths)
+
+    packed: dict[str, Any] = {}
+    cat_dim0_keys = {
+        "image_grid_thw",
+        "video_grid_thw",
+        "pixel_values",
+        "pixel_values_videos",
+        "second_per_grid_ts",
+    }
+    for key in sorted(keys):
+        if key in _PADDING_FREE_METADATA_KEYS:
+            continue
+        values = [item.model_inputs[key] for item in items]
+        if not all(isinstance(value, torch.Tensor) for value in values):
+            packed[key] = values[0]
+            continue
+        tensors = cast(list[torch.Tensor], values)
+        first = tensors[0]
+        if (
+            first.ndim == 2
+            and int(first.shape[0]) == 1
+            and all(
+                tensor.ndim == 2
+                and int(tensor.shape[0]) == 1
+                and int(tensor.shape[1]) == length
+                for tensor, length in zip(tensors, lengths, strict=True)
+            )
+        ):
+            packed[key] = torch.cat(tensors, dim=1)
+            continue
+        if (
+            key == "inputs_embeds"
+            and first.ndim == 3
+            and int(first.shape[0]) == 1
+            and all(
+                tensor.ndim == 3
+                and int(tensor.shape[0]) == 1
+                and int(tensor.shape[1]) == length
+                for tensor, length in zip(tensors, lengths, strict=True)
+            )
+        ):
+            packed[key] = torch.cat(tensors, dim=1)
+            continue
+        if key in cat_dim0_keys:
+            packed[key] = torch.cat(tensors, dim=0)
+            continue
+        if all(tuple(tensor.shape) == tuple(first.shape) for tensor in tensors):
+            packed[key] = (
+                torch.cat(tensors, dim=0) if int(first.shape[0]) == 1 else first
+            )
+            continue
+        raise ValueError(
+            "padding-free full-suffix packing does not know how to pack model "
+            f"input {key!r} with shapes {[tuple(tensor.shape) for tensor in tensors]}"
+        )
+
+    labels = torch.cat([item.labels for item in items], dim=1)
+    input_ids = cast(torch.Tensor, packed["input_ids"])
+    device = input_ids.device
+    text_position_ids = torch.cat(
+        [
+            torch.arange(int(length), dtype=torch.long, device=device)
+            for length in lengths
+        ],
+        dim=0,
+    ).unsqueeze(0)
+    packed["text_position_ids"] = text_position_ids
+    packed["position_ids"] = text_position_ids.unsqueeze(0).expand(3, -1, -1).clone()
+    cu_seq_lens = torch.tensor(
+        [0, *[offset + length for offset, length in zip(offsets, lengths, strict=True)]],
+        dtype=torch.int32,
+        device=device,
+    )
+    packed["cu_seq_lens_q"] = cu_seq_lens
+    packed["cu_seq_lens_k"] = cu_seq_lens.clone()
+    packed["max_length_q"] = int(max_length)
+    packed["max_length_k"] = int(max_length)
+    packed["pack_num_samples"] = torch.tensor(
+        [len(items)],
+        dtype=torch.long,
+        device=device,
+    )
+    if int(input_ids.shape[0]) != 1 or int(input_ids.shape[-1]) != total_length:
+        raise ValueError(
+            "padding-free full-suffix packing produced invalid input_ids shape "
+            f"{tuple(input_ids.shape)} for total length {total_length}"
+        )
+    return packed, labels, tuple(offsets)
+
+
+def score_full_suffix_batch_padding_free_packed(
+    *,
+    model: Any,
+    items: Sequence[FullSuffixTensorInput | Mapping[str, Any]],
+    logits_mode: str = "full",
+    entry_trie_mp: bool = True,
+    branch_support_weight: float = 1.0,
+    branch_balance_weight: float = 1.0,
+    forward_fn: Any | None = None,
+) -> list[FullSuffixLossResult]:
+    if str(logits_mode) != "full":
+        raise ValueError(
+            "padding-free packed full-suffix scoring currently requires "
+            "logits_mode='full'; a single logits_to_keep crop cannot represent "
+            "multiple packed suffix windows"
+        )
+    resolved = [_coerce_item(item) for item in items]
+    if not resolved:
+        return []
+    packed_inputs, packed_labels, offsets = _pack_full_suffix_model_inputs_padding_free(
+        resolved
+    )
+    outputs = (
+        forward_fn(**packed_inputs)
+        if forward_fn is not None
+        else model(**packed_inputs)
+    )
+    logits = outputs.logits
+    if (
+        logits.ndim != 3
+        or int(logits.shape[0]) != 1
+        or int(logits.shape[1]) != int(packed_labels.shape[-1])
+    ):
+        raise ValueError(
+            "padding-free packed full-suffix scorer received misaligned logits "
+            f"(expected shape [1, {int(packed_labels.shape[-1])}, vocab], "
+            f"actual shape={tuple(int(dim) for dim in logits.shape)})"
+        )
+    packed_labels = packed_labels.to(device=logits.device)
+    results: list[FullSuffixLossResult] = []
+    for item, offset in zip(resolved, offsets, strict=True):
+        row_steps = tuple(
+            _target_step_with_position(
+                source=step,
+                row_index=0,
+                label_position=int(step.label_position) + int(offset),
+            )
+            for step in item.steps
+        )
+        results.append(
+            compute_full_suffix_loss(
+                logits=logits,
+                labels=packed_labels,
+                steps=row_steps,
+                entry_trie_mp=entry_trie_mp,
+                branch_support_weight=float(branch_support_weight),
+                branch_balance_weight=float(branch_balance_weight),
+            )
+        )
+    return results
+
+
 def score_full_suffix_retained(
     *,
     model: Any,
@@ -907,23 +1452,36 @@ def score_full_suffix_retained(
     steps: Sequence[FullSuffixTargetStep],
     logits_mode: str = "full",
     entry_trie_mp: bool = True,
+    branch_support_weight: float = 1.0,
+    branch_balance_weight: float = 1.0,
     forward_fn: Any | None = None,
 ) -> FullSuffixLossResult:
     mode = str(logits_mode)
     suffix_start = (
         _supervised_suffix_start(labels, steps) if mode == "supervised_suffix" else 0
     )
-    inputs = dict(model_inputs)
+    inputs: dict[str, Any] = dict(model_inputs)
+    logits_to_keep: int | None = None
     if mode == "supervised_suffix":
-        inputs["logits_to_keep"] = max(1, int(labels.shape[-1]) - int(suffix_start))
+        logits_to_keep = max(1, int(labels.shape[-1]) - int(suffix_start))
+        inputs["logits_to_keep"] = logits_to_keep
     outputs = forward_fn(**inputs) if forward_fn is not None else model(**inputs)
     cropped_labels = labels[:, suffix_start:]
+    _validate_retained_logits_shape(
+        logits=outputs.logits,
+        cropped_labels=cropped_labels,
+        logits_mode=mode,
+        logits_to_keep=logits_to_keep,
+        context="serial",
+    )
     shifted_steps = _shift_steps(steps, row_index=0, label_offset=suffix_start)
     return compute_full_suffix_loss(
         logits=outputs.logits,
         labels=cropped_labels.to(device=outputs.logits.device),
         steps=shifted_steps,
         entry_trie_mp=entry_trie_mp,
+        branch_support_weight=float(branch_support_weight),
+        branch_balance_weight=float(branch_balance_weight),
     )
 
 
@@ -933,6 +1491,8 @@ def score_full_suffix_batch_retained(
     items: Sequence[FullSuffixTensorInput | Mapping[str, Any]],
     logits_mode: str = "full",
     entry_trie_mp: bool = True,
+    branch_support_weight: float = 1.0,
+    branch_balance_weight: float = 1.0,
     forward_fn: Any | None = None,
 ) -> list[FullSuffixLossResult]:
     resolved = [_coerce_item(item) for item in items]
@@ -954,8 +1514,12 @@ def score_full_suffix_batch_retained(
             self.model_inputs = item.model_inputs
             self.labels = item.labels
 
-    batched_inputs = _batch_model_inputs(
+    compat_items = cast(
+        Sequence[TensorBranchScoreInput],
         [_CompatItem(item) for item in resolved],
+    )
+    batched_inputs = _batch_model_inputs(
+        compat_items,
         max_length=max_length,
     )
     labels = torch.cat(
@@ -965,14 +1529,23 @@ def score_full_suffix_batch_retained(
         ],
         dim=0,
     )
+    logits_to_keep: int | None = None
     if str(logits_mode) == "supervised_suffix":
-        batched_inputs["logits_to_keep"] = max(1, max_length - int(global_suffix_start))
+        logits_to_keep = max(1, max_length - int(global_suffix_start))
+        batched_inputs["logits_to_keep"] = logits_to_keep
     outputs = (
         forward_fn(**batched_inputs)
         if forward_fn is not None
         else model(**batched_inputs)
     )
     cropped_labels = labels[:, global_suffix_start:]
+    _validate_retained_logits_shape(
+        logits=outputs.logits,
+        cropped_labels=cropped_labels,
+        logits_mode=str(logits_mode),
+        logits_to_keep=logits_to_keep,
+        context="batched",
+    )
     results: list[FullSuffixLossResult] = []
     for row_index, item in enumerate(resolved):
         row_steps = tuple(
@@ -989,6 +1562,8 @@ def score_full_suffix_batch_retained(
                 labels=cropped_labels.to(device=outputs.logits.device),
                 steps=row_steps,
                 entry_trie_mp=entry_trie_mp,
+                branch_support_weight=float(branch_support_weight),
+                branch_balance_weight=float(branch_balance_weight),
             )
         )
     return results
@@ -1003,6 +1578,7 @@ __all__ = [
     "compute_full_suffix_loss",
     "encode_full_suffix_branch",
     "resolve_full_suffix_order",
+    "score_full_suffix_batch_padding_free_packed",
     "score_full_suffix_batch_retained",
     "score_full_suffix_retained",
     "supervised_full_suffix_start",

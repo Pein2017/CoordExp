@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 import concurrent.futures
+import json
+from pathlib import Path
+from types import SimpleNamespace
 from typing import Any, Dict
 
 import pytest
@@ -11,7 +14,7 @@ from src.datasets.wrappers.packed_caption import build_static_packed_dataset
 
 
 class _CountingTemplate:
-    max_pixels = 786432
+    max_pixels = 10485760
     max_length = 64
     system = None
 
@@ -68,6 +71,7 @@ def _dataset(
     tmp_path,
     dataset_name: str,
     object_ordering: str = "sorted",
+    detection_sequence_format: str = "coordjson",
     policy: str = "error",
 ) -> BaseCaptionDataset:
     return BaseCaptionDataset(
@@ -84,6 +88,7 @@ def _dataset(
         coord_tokens=CoordTokensConfig(enabled=True, skip_bbox_norm=True),
         object_ordering=object_ordering,  # type: ignore[arg-type]
         object_field_order="desc_first",
+        detection_sequence_format=detection_sequence_format,
         encoded_sample_cache=_cache_request(tmp_path, policy=policy),
     )
 
@@ -171,6 +176,432 @@ def test_encoded_sample_cache_rejects_ineligible_random_ordering_by_default(
             object_ordering="random",
             policy="error",
         )
+
+
+def test_encoded_sample_cache_request_normalizes_typed_fields(tmp_path) -> None:
+    from src.datasets.encoded_sample_cache import EncodedSampleCacheRequest
+
+    request = EncodedSampleCacheRequest.from_mapping(_cache_request(tmp_path))
+
+    assert request.enabled is True
+    assert request.root_dir == (tmp_path / "encoded-cache").resolve()
+    assert request.ineligible_policy == "error"
+    assert request.wait_timeout_s == pytest.approx(5.0)
+    assert request.max_resident_shards == 4
+    assert request.dataset_split == "train"
+    assert request.dataset_jsonl == "train.jsonl"
+    assert request.fingerprint["cache_schema_version"] == 1
+
+
+def test_encoded_sample_cache_setup_rejects_enabled_request_without_root_dir() -> None:
+    from src.datasets.encoded_sample_cache import setup_encoded_sample_cache_for_dataset
+
+    request = {
+        "enabled": True,
+        "ineligible_policy": "bypass",
+        "fingerprint": {"cache_schema_version": 1, "dataset": "toy"},
+    }
+
+    with pytest.raises(ValueError, match="root_dir"):
+        setup_encoded_sample_cache_for_dataset(
+            SimpleNamespace(object_ordering="random"),
+            request,
+        )
+
+
+def test_encoded_sample_cache_request_allows_disabled_request_without_root_dir() -> None:
+    from src.datasets.encoded_sample_cache import setup_encoded_sample_cache_for_dataset
+
+    store, info = setup_encoded_sample_cache_for_dataset(
+        SimpleNamespace(object_ordering="random"),
+        {"enabled": False, "fingerprint": {"cache_schema_version": 1}},
+    )
+
+    assert store is None
+    assert info is None
+
+
+def test_encoded_sample_cache_setup_ignores_disabled_stale_derived_fields() -> None:
+    from src.datasets.encoded_sample_cache import setup_encoded_sample_cache_for_dataset
+
+    store, info = setup_encoded_sample_cache_for_dataset(
+        SimpleNamespace(object_ordering="random"),
+        {
+            "enabled": False,
+            "fingerprint": {"cache_schema_version": 1},
+            "cache_dir": "/tmp/stale",
+            "manifest_path": "/tmp/stale/old-manifest.json",
+        },
+    )
+
+    assert store is None
+    assert info is None
+
+
+def test_encoded_sample_cache_request_rejects_fingerprint_digest_mismatch(
+    tmp_path,
+) -> None:
+    from src.datasets.encoded_sample_cache import EncodedSampleCacheRequest
+
+    payload = _cache_request(tmp_path)
+    payload["fingerprint_sha256"] = "not-the-canonical-digest"
+
+    with pytest.raises(ValueError, match="fingerprint_sha256"):
+        EncodedSampleCacheRequest.from_mapping(payload)
+
+
+@pytest.mark.parametrize(
+    ("field", "value", "error_pattern"),
+    [
+        ("enabled", 1, "enabled"),
+        ("ineligible_policy", "skip", "ineligible_policy"),
+        ("wait_timeout_s", -1, "wait_timeout_s"),
+        ("wait_timeout_s", False, "wait_timeout_s"),
+        ("max_resident_shards", 0, "max_resident_shards"),
+        ("max_resident_shards", -1, "max_resident_shards"),
+        ("max_resident_shards", True, "max_resident_shards"),
+    ],
+)
+def test_encoded_sample_cache_request_rejects_invalid_runtime_fields(
+    tmp_path,
+    field: str,
+    value: Any,
+    error_pattern: str,
+) -> None:
+    from src.datasets.encoded_sample_cache import EncodedSampleCacheRequest
+
+    payload = _cache_request(tmp_path)
+    payload[field] = value
+
+    with pytest.raises((TypeError, ValueError), match=error_pattern):
+        EncodedSampleCacheRequest.from_mapping(payload)
+
+
+def test_encoded_sample_cache_request_rejects_cache_dir_mismatch(tmp_path) -> None:
+    from src.datasets.encoded_sample_cache import EncodedSampleCacheRequest
+
+    payload = EncodedSampleCacheRequest.from_mapping(
+        _cache_request(tmp_path)
+    ).to_mapping()
+    payload["cache_dir"] = str(tmp_path / "elsewhere")
+
+    with pytest.raises(ValueError, match="cache_dir"):
+        EncodedSampleCacheRequest.from_mapping(payload)
+
+
+def test_encoded_sample_cache_request_rejects_manifest_path_mismatch(tmp_path) -> None:
+    from src.datasets.encoded_sample_cache import EncodedSampleCacheRequest
+
+    payload = EncodedSampleCacheRequest.from_mapping(
+        _cache_request(tmp_path)
+    ).to_mapping()
+    payload["manifest_path"] = str(Path(payload["cache_dir"]) / "other.json")
+
+    with pytest.raises(ValueError, match="manifest_path"):
+        EncodedSampleCacheRequest.from_mapping(payload)
+
+
+def test_encoded_sample_cache_manifest_roundtrips_serialized_payload(tmp_path) -> None:
+    from src.datasets.encoded_sample_cache import EncodedSampleCacheManifest
+
+    ds = _dataset(
+        template=_CountingTemplate(),
+        tmp_path=tmp_path,
+        dataset_name="train_a",
+    )
+    info = ds.get_encoded_sample_cache_info()
+    assert info is not None
+
+    manifest_path = Path(str(info["manifest_path"]))
+    payload = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest = EncodedSampleCacheManifest.from_mapping(payload, path=manifest_path)
+
+    assert manifest.status == "complete"
+    assert manifest.fingerprint_sha256 == info["fingerprint_sha256"]
+    assert manifest.shard_count == int(info["shard_count"])
+    assert manifest.payload_keys == tuple(info["payload_keys"])
+    assert manifest.to_mapping() == payload
+
+
+@pytest.mark.parametrize(
+    ("mutation", "error_pattern"),
+    [
+        (lambda payload: payload.pop("shards"), "complete manifest missing shards"),
+        (
+            lambda payload: payload.update({"payload_keys": None}),
+            "complete manifest payload_keys",
+        ),
+        (
+            lambda payload: payload.update({"num_samples": 0, "shards": None}),
+            "complete manifest shards",
+        ),
+        (
+            lambda payload: payload.update(
+                {
+                    "shards": [
+                        {
+                            key: value
+                            for key, value in payload["shards"][0].items()
+                            if key != "shard_index"
+                        }
+                    ]
+                }
+            ),
+            "complete manifest.*shard_index",
+        ),
+        (
+            lambda payload: payload.update(
+                {
+                    "shards": [
+                        {
+                            key: value
+                            for key, value in payload["shards"][0].items()
+                            if key != "start"
+                        }
+                    ]
+                }
+            ),
+            "complete manifest.*start",
+        ),
+        (
+            lambda payload: payload.update({"fingerprint_sha256": ""}),
+            "complete manifest fingerprint_sha256",
+        ),
+        (
+            lambda payload: payload.update({"shard_size": 0}),
+            "complete manifest shard_size",
+        ),
+        (
+            lambda payload: payload.update(
+                {"shards": [{**payload["shards"][0], "count": 999}]}
+            ),
+            "complete manifest shard count",
+        ),
+        (
+            lambda payload: payload.update(
+                {"shards": [{**payload["shards"][0], "file": "../outside.pt"}]}
+            ),
+            "complete manifest shard file",
+        ),
+        (
+            lambda payload: payload.update(
+                {"shards": [{**payload["shards"][0], "file": "/tmp/outside.pt"}]}
+            ),
+            "complete manifest shard file",
+        ),
+        (
+            lambda payload: payload.update(
+                {"shards": [{**payload["shards"][0], "file": "nested/shard.pt"}]}
+            ),
+            "complete manifest shard file",
+        ),
+        (
+            lambda payload: payload.update(
+                {"shards": [payload["shards"][0], {**payload["shards"][0]}]}
+            ),
+            "complete manifest duplicate shard",
+        ),
+        (
+            lambda payload: payload.update(
+                {
+                    "num_samples": 3,
+                    "shard_size": 2,
+                    "shards": [
+                        {
+                            **payload["shards"][0],
+                            "shard_index": 0,
+                            "start": 0,
+                            "end": 2,
+                            "count": 2,
+                        },
+                        {
+                            **payload["shards"][0],
+                            "shard_index": 1,
+                            "start": 1,
+                            "end": 2,
+                            "count": 1,
+                        },
+                    ],
+                }
+            ),
+            "complete manifest shard range",
+        ),
+        (
+            lambda payload: payload.update({"num_samples": payload["num_samples"] + 1}),
+            "complete manifest shard count",
+        ),
+        (
+            lambda payload: payload.update(
+                {
+                    "num_samples": 1024,
+                    "shard_size": 512,
+                    "shards": [
+                        {
+                            **payload["shards"][0],
+                            "shard_index": 0,
+                            "start": 0,
+                            "end": 512,
+                            "count": 512,
+                        },
+                        {
+                            **payload["shards"][0],
+                            "shard_index": 2,
+                            "file": "shard-00002.pt",
+                            "start": 512,
+                            "end": 1024,
+                            "count": 512,
+                        },
+                    ],
+                }
+            ),
+            "complete manifest shard index",
+        ),
+        (
+            lambda payload: payload.update(
+                {
+                    "num_samples": 1024,
+                    "shard_size": 512,
+                    "shards": [
+                        {
+                            **payload["shards"][0],
+                            "shard_index": 1,
+                            "file": "shard-00001.pt",
+                            "start": 0,
+                            "end": 512,
+                            "count": 512,
+                        },
+                        {
+                            **payload["shards"][0],
+                            "shard_index": 0,
+                            "start": 512,
+                            "end": 1024,
+                            "count": 512,
+                        },
+                    ],
+                }
+            ),
+            "complete manifest shard index",
+        ),
+        (
+            lambda payload: payload.update(
+                {
+                    "num_samples": 1024,
+                    "shard_size": 512,
+                    "shards": [
+                        {
+                            **payload["shards"][0],
+                            "shard_index": 0,
+                            "start": 0,
+                            "end": 512,
+                            "count": 512,
+                        },
+                        {
+                            **payload["shards"][0],
+                            "shard_index": 1,
+                            "file": "shard-00001.pt",
+                            "start": 512,
+                            "end": 1024,
+                            "count": 512,
+                        },
+                        {
+                            **payload["shards"][0],
+                            "shard_index": 2,
+                            "file": "shard-00002.pt",
+                            "start": 1024,
+                            "end": 1024,
+                            "count": 0,
+                        },
+                    ],
+                }
+            ),
+            "complete manifest shard count",
+        ),
+        (
+            lambda payload: payload.update(
+                {
+                    "num_samples": 0,
+                    "shard_size": 512,
+                    "shards": [
+                        {
+                            **payload["shards"][0],
+                            "shard_index": 0,
+                            "start": 0,
+                            "end": 0,
+                            "count": 0,
+                        }
+                    ],
+                }
+            ),
+            "complete manifest shard count",
+        ),
+    ],
+)
+def test_encoded_sample_cache_manifest_rejects_malformed_complete_payloads(
+    tmp_path,
+    mutation,
+    error_pattern: str,
+) -> None:
+    from src.datasets.encoded_sample_cache import EncodedSampleCacheManifest
+
+    ds = _dataset(
+        template=_CountingTemplate(),
+        tmp_path=tmp_path,
+        dataset_name="train_a",
+    )
+    info = ds.get_encoded_sample_cache_info()
+    assert info is not None
+
+    manifest_path = Path(str(info["manifest_path"]))
+    payload = json.loads(manifest_path.read_text(encoding="utf-8"))
+    mutation(payload)
+
+    with pytest.raises((TypeError, ValueError), match=error_pattern):
+        EncodedSampleCacheManifest.from_mapping(payload, path=manifest_path)
+
+
+def test_encoded_sample_cache_rejects_corrupt_complete_manifest_before_reuse(
+    tmp_path,
+) -> None:
+    ds = _dataset(
+        template=_CountingTemplate(),
+        tmp_path=tmp_path,
+        dataset_name="train_a",
+    )
+    info = ds.get_encoded_sample_cache_info()
+    assert info is not None
+
+    manifest_path = Path(str(info["manifest_path"]))
+    payload = json.loads(manifest_path.read_text(encoding="utf-8"))
+    payload.pop("shards")
+    payload.pop("num_samples")
+    payload.pop("shard_size")
+    payload["fingerprint_sha256"] = ""
+    manifest_path.write_text(json.dumps(payload), encoding="utf-8")
+
+    with pytest.raises(ValueError, match="complete manifest"):
+        _dataset(
+            template=_CountingTemplate(),
+            tmp_path=tmp_path,
+            dataset_name="train_b",
+        )
+
+
+def test_detection_sequence_format_participates_in_static_packing_surfaces(
+    tmp_path,
+) -> None:
+    ds = _dataset(
+        template=_CountingTemplate(),
+        tmp_path=tmp_path,
+        dataset_name="train_a",
+        detection_sequence_format="compact_full",
+    )
+
+    info = ds._static_packing_precompute_info()
+
+    assert (
+        info["fingerprint_surfaces"]["detection_sequence_format"]
+        == "compact_full"
+    )
 
 
 def test_static_packing_reuses_cache_backed_dataset_after_full_length_probe(

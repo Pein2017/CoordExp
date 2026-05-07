@@ -1,0 +1,15 @@
+extends:
+  - ./compact_full_ddp8_preflight.yaml
+
+training:
+  artifact_subdir: compact_full_ddp8_et_rmp_1p0_1p0
+  run_name: smoke-compact-full-et-rmp-ce-ddp8-1p0-1p0
+  max_steps: 2
+
+objective:
+  id: recursive_detection_ce
+  variant: random_permutation_et_rmp_ce
+  trie_support_weight: 1.0
+  trie_balance_weight: 1.0
+  state_weighting: uniform_permutation
+  normalization: semantic_image_bucket_balanced

@@ -59,7 +59,9 @@ class MultiPositiveLossResult:
 
 def _zero_like_scores(scores: torch.Tensor) -> torch.Tensor:
     return (
-        scores.new_zeros(()) if isinstance(scores, torch.Tensor) else torch.tensor(0.0)
+        scores.new_zeros((), dtype=torch.float32)
+        if isinstance(scores, torch.Tensor)
+        else torch.tensor(0.0, dtype=torch.float32)
     )
 
 
@@ -84,7 +86,7 @@ def _shift_for_next_token(
 
 def _gather_logprob(logits: torch.Tensor, labels: torch.Tensor) -> torch.Tensor:
     safe_labels = labels.clamp_min(0)
-    log_probs = F.log_softmax(logits, dim=-1)
+    log_probs = F.log_softmax(logits.float(), dim=-1)
     return log_probs.gather(dim=-1, index=safe_labels.unsqueeze(-1)).squeeze(-1)
 
 
@@ -102,7 +104,7 @@ def _gather_coord_logprob(
         raise ValueError("coord-labeled positions must use ids from coord_token_ids")
     local_labels = matches.float().argmax(dim=-1).long()
     return (
-        F.log_softmax(coord_logits, dim=-1)
+        F.log_softmax(coord_logits.float(), dim=-1)
         .gather(
             dim=-1,
             index=local_labels.unsqueeze(-1),
@@ -375,13 +377,14 @@ def _estimate_log_z(
     remaining_count: int,
     scored_count: int,
 ) -> torch.Tensor:
-    log_z = torch.logsumexp(scores, dim=0)
+    scores_f = scores.float()
+    log_z = torch.logsumexp(scores_f, dim=0)
     if estimator == "exact" or estimator == "sampled_raw":
         return log_z
     if estimator == "uniform_importance":
         if remaining_count <= 0 or scored_count <= 0:
             raise ValueError("uniform_importance logZ requires positive counts")
-        return log_z + scores.new_tensor(
+        return log_z + scores_f.new_tensor(
             math.log(float(remaining_count) / scored_count)
         )
     raise ValueError(
@@ -396,6 +399,7 @@ def summarize_candidate_scores(
 ) -> dict[str, Any]:
     if scores.ndim != 1:
         raise ValueError("scores must be rank-1")
+    scores_f = scores.float()
     if int(scores.numel()) == 0:
         return {
             "mp/responsibility_entropy": 0.0,
@@ -407,10 +411,10 @@ def summarize_candidate_scores(
             "mp/candidate_score_std": 0.0,
             "mp/responsibility_length_corr_valid": 0,
         }
-    responsibilities = torch.softmax(scores, dim=0)
+    responsibilities = torch.softmax(scores_f, dim=0)
     entropy = -(responsibilities * torch.log(responsibilities.clamp_min(1e-30))).sum()
     std = (
-        scores.std(unbiased=False) if int(scores.numel()) > 1 else scores.new_zeros(())
+        scores_f.std(unbiased=False) if int(scores.numel()) > 1 else scores_f.new_zeros(())
     )
     out: dict[str, Any] = {
         "mp/responsibility_entropy": float(entropy.detach().item()),
@@ -420,12 +424,12 @@ def summarize_candidate_scores(
         ),
         "mp/max_responsibility": float(responsibilities.max().detach().item()),
         "mp/min_responsibility": float(responsibilities.min().detach().item()),
-        "mp/candidate_score_mean": float(scores.mean().detach().item()),
+        "mp/candidate_score_mean": float(scores_f.mean().detach().item()),
         "mp/candidate_score_std": float(std.detach().item()),
         "mp/responsibility_length_corr_valid": 0,
     }
     if candidate_lengths is not None and int(scores.numel()) >= 2:
-        lengths = candidate_lengths.to(device=scores.device, dtype=scores.dtype)
+        lengths = candidate_lengths.to(device=scores.device, dtype=torch.float32)
         if (
             lengths.numel() == scores.numel()
             and float(lengths.std(unbiased=False)) > 0.0
@@ -445,12 +449,13 @@ def _candidate_balanced_loss(
     scores: torch.Tensor,
     candidate_lengths: torch.Tensor | None,
 ) -> torch.Tensor:
+    scores_f = scores.float()
     if candidate_lengths is None:
-        return -scores.mean()
-    lengths = candidate_lengths.to(device=scores.device, dtype=scores.dtype).reshape(-1)
+        return -scores_f.mean()
+    lengths = candidate_lengths.to(device=scores.device, dtype=torch.float32).reshape(-1)
     if int(lengths.numel()) != int(scores.numel()):
         raise ValueError("candidate_lengths must have one entry per score")
-    token_normalized_scores = scores / lengths.clamp_min(1.0)
+    token_normalized_scores = scores_f / lengths.clamp_min(1.0)
     return -token_normalized_scores.mean()
 
 
@@ -467,6 +472,7 @@ def compute_mp_pem_losses(
 ) -> MultiPositiveLossResult:
     if scores.ndim != 1:
         raise ValueError("scores must be rank-1")
+    scores = scores.float()
     pem_mode = _normalize_pem_objective(str(pem_mode))
     if pem_mode not in {"disabled", "threshold_loss"}:
         raise ValueError("pem_mode must be one of {'disabled', 'threshold_loss'}")
@@ -513,7 +519,7 @@ def compute_mp_pem_losses(
             rho=rho,
             log_rho=log_rho,
             device=scores.device,
-            dtype=scores.dtype,
+            dtype=torch.float32,
         )
         loss_pem = torch.clamp(threshold - log_z, min=0.0)
         total = loss_pem

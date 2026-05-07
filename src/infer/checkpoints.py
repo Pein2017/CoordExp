@@ -5,11 +5,25 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal, Optional
 
+from src.common.model_paths import normalize_coordexp_base_model_path
+from src.tokens.qwen_native import (
+    EXPECTED_BOX_START_ID,
+    EXPECTED_COORD_END_ID,
+    EXPECTED_COORD_START_ID,
+    EXPECTED_OBJECT_REF_START_ID,
+)
+
 VLLM_ADAPTER_UNSUPPORTED_MESSAGE = (
     "Adapter-based inference is supported only with infer.backend.type=hf in "
     "this repo. Current Stage-1 adapters include DoRA + "
     "coord_offset_adapter, which vLLM does not support natively; use a "
     "merged checkpoint for vLLM."
+)
+
+COMPACT_COORD_TOKEN_REQUIRED_ROW_IDS: tuple[int, ...] = (
+    EXPECTED_OBJECT_REF_START_ID,
+    EXPECTED_BOX_START_ID,
+    *range(EXPECTED_COORD_START_ID, EXPECTED_COORD_END_ID + 1),
 )
 
 
@@ -116,6 +130,9 @@ def load_adapter_checkpoint_info(adapter_checkpoint: str) -> AdapterCheckpointIn
         base_model_name_or_path: Optional[str] = None
     elif isinstance(base_raw, str):
         base_model_name_or_path = base_raw.strip() or None
+        base_model_name_or_path = normalize_coordexp_base_model_path(
+            base_model_name_or_path
+        )
     else:
         raise ValueError(
             f"{cfg_path}: base_model_name_or_path must be a string when present."
@@ -187,3 +204,49 @@ def resolve_inference_checkpoint(
         resolved_adapter_checkpoint=None,
         adapter_info=None,
     )
+
+
+def validate_compact_coord_token_adapter_contract(
+    resolved_checkpoint: ResolvedInferenceCheckpoint,
+    *,
+    detection_sequence_format: str,
+) -> None:
+    """Fail fast when compact adapter inference would drop token-row offsets."""
+
+    normalized_format = (
+        str(detection_sequence_format).strip().lower().replace("-", "_").replace(" ", "_")
+    )
+    if normalized_format != "compact_full":
+        return
+    if resolved_checkpoint.resolved_adapter_checkpoint is None:
+        # Full/merged checkpoints may already have offsets injected into weights.
+        return
+
+    adapter_info = resolved_checkpoint.adapter_info
+    coord_spec = adapter_info.coord_offset_spec if adapter_info is not None else None
+    if coord_spec is None:
+        raise ValueError(
+            "compact_full adapter inference requires adapter_config.json "
+            "modules_to_save to include coord_offset_adapter and "
+            "adapter_model.safetensors to contain coord_offset_adapter weights. "
+            "This checkpoint would otherwise run with coordinate/token-row offsets inactive."
+        )
+    if not coord_spec.tie_head:
+        raise ValueError(
+            "compact_full adapter inference requires tied-head "
+            "coord_offset_adapter checkpoints (tie_head=True; no head_offset tensor)."
+        )
+
+    actual = tuple(int(token_id) for token_id in coord_spec.coord_ids)
+    actual_set = set(actual)
+    required_set = set(COMPACT_COORD_TOKEN_REQUIRED_ROW_IDS)
+    missing = sorted(required_set - actual_set)
+    extra = sorted(actual_set - required_set)
+    if len(actual) != len(required_set) or missing or extra:
+        raise ValueError(
+            "compact_full coord_offset_adapter must contain exactly 1002 trainable "
+            "token rows: <|object_ref_start|>, <|box_start|>, and "
+            "<|coord_0|>..<|coord_999|>. "
+            f"got={len(actual)} unique={len(actual_set)} "
+            f"missing={missing[:8]} extra={extra[:8]}"
+        )

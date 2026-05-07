@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Any, Mapping, Sequence
 
 from src.config import SaveDelayConfig
+from src.training_runtime import resolve_training_runtime_profile
 from src.trainers.metrics.mixins import (
     AggregateTokenTypeMetricsMixin,
     BBoxGeoLossMixin,
@@ -10,6 +11,7 @@ from src.trainers.metrics.mixins import (
     CoordSoftCEW1LossMixin,
     GradAccumLossScaleMixin,
     InstabilityMonitorMixin,
+    RecursiveDetectionCEMixin,
     SFTStructuralCloseLossMixin,
 )
 
@@ -24,27 +26,56 @@ def compose_trainer_class(
     bbox_size_aux_cfg: Any,
     coord_soft_ce_w1_cfg: Any,
     sft_structural_close_cfg: Any = None,
+    recursive_detection_ce_cfg: Any = None,
 ) -> type:
     mixins: list[type] = []
-    if trainer_variant not in {
-        "stage1_set_continuation",
-        "stage2_rollout_aligned",
-        "stage2_two_channel",
-    }:
+    runtime_profile = resolve_training_runtime_profile(trainer_variant)
+    if runtime_profile.ordinary_stage1_mixins_allowed:
+        recursive_ce_enabled = bool(
+            recursive_detection_ce_cfg
+            and getattr(recursive_detection_ce_cfg, "enabled", False)
+        )
         mixins.append(GradAccumLossScaleMixin)
+        if recursive_ce_enabled:
+            incompatible = []
+            for name, cfg in (
+                ("bbox_size_aux", bbox_size_aux_cfg),
+                ("bbox_geo", bbox_geo_cfg),
+                ("coord_soft_ce_w1", coord_soft_ce_w1_cfg),
+                ("sft_structural_close", sft_structural_close_cfg),
+            ):
+                if cfg and getattr(cfg, "enabled", False):
+                    incompatible.append(name)
+            if incompatible:
+                joined = ", ".join(sorted(incompatible))
+                raise ValueError(
+                    "recursive_detection_ce currently owns the teacher-forced token "
+                    "loss and does not support auxiliary loss mixins in the same "
+                    f"trainer composition: {joined}"
+                )
         if isinstance(instability_monitor_cfg, Mapping) and bool(
             instability_monitor_cfg.get("enabled", False)
         ):
             mixins.append(InstabilityMonitorMixin)
         if token_type_cfg and getattr(token_type_cfg, "enabled", False):
             mixins.append(AggregateTokenTypeMetricsMixin)
-        if bbox_size_aux_cfg and getattr(bbox_size_aux_cfg, "enabled", False):
+        if recursive_ce_enabled:
+            mixins.append(RecursiveDetectionCEMixin)
+        elif bbox_size_aux_cfg and getattr(bbox_size_aux_cfg, "enabled", False):
             mixins.append(BBoxSizeAuxLossMixin)
-        if bbox_geo_cfg and getattr(bbox_geo_cfg, "enabled", False):
+        if (
+            not recursive_ce_enabled
+            and bbox_geo_cfg
+            and getattr(bbox_geo_cfg, "enabled", False)
+        ):
             mixins.append(BBoxGeoLossMixin)
-        if coord_soft_ce_w1_cfg and getattr(coord_soft_ce_w1_cfg, "enabled", False):
+        if (
+            not recursive_ce_enabled
+            and coord_soft_ce_w1_cfg
+            and getattr(coord_soft_ce_w1_cfg, "enabled", False)
+        ):
             mixins.append(CoordSoftCEW1LossMixin)
-        if sft_structural_close_cfg and getattr(
+        if not recursive_ce_enabled and sft_structural_close_cfg and getattr(
             sft_structural_close_cfg, "enabled", False
         ):
             mixins.append(SFTStructuralCloseLossMixin)

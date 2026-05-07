@@ -6,7 +6,7 @@ CoordExp extends Qwen3-VL with coordinate-specialized tokens, expectation-based 
 - **Better geometry**: Softmax-on-coordinate-subvocab + expectation gives continuous boxes and smooth gradients (L1/GIoU) without extra detection heads.
 - **Order-invariant**: Hungarian/OT matching supervises object sets, not sequences, reducing wasted supervision.
 - **Practical training**: Stays in the standard SFT pipeline (ms-swift), no heavy RL; compatible with native chat templates.
-- **Dataset focus**: Defaults to single-source JSONL training; multi-dataset fusion via `custom.fusion_config` is supported but less common (see `docs/data/FUSION_DATASET.md` for packing limitations).
+- **Dataset focus**: Defaults to single-source JSONL training; multi-dataset training uses offline-merged JSONL; runtime `custom.fusion_config` is dormant in the supported training surface.
 
 ## Repo layout
 - `src/` – training stack (datasets, callbacks, config loader, SFT entry `sft.py`; optional fusion dataset support)
@@ -34,7 +34,7 @@ CoordExp extends Qwen3-VL with coordinate-specialized tokens, expectation-based 
      --base_config configs/base.yaml
    ```
    - Set `custom.train_jsonl` / `custom.val_jsonl` in the YAMLs to your datasets (single-source).
-   - Or set `custom.fusion_config` to a fusion YAML/JSON to train/eval on multiple datasets (see `docs/data/FUSION_DATASET.md` for current packing limitations).
+   - Or merge prepared JSONLs offline and point `custom.train_jsonl` / `custom.val_jsonl` at the merged artifacts; runtime `custom.fusion_config` is dormant in the supported training surface.
 
 ### Data prep: LVIS end-to-end (raw → resized JSONL → coord tokens → tiny)
 - After `public_data/scripts/download_lvis.py`, run:
