@@ -72,6 +72,46 @@ class RecursiveDetectionLossResult:
     metric_events: tuple[MetricEvent, ...] = ()
 
 
+def support_balance_loss(
+    logits: torch.Tensor,
+    positive_token_ids: torch.Tensor,
+    q: torch.Tensor,
+    *,
+    support_weight: float,
+    balance_weight: float,
+) -> torch.Tensor:
+    """Sparse local multi-positive support/balance loss for one logit row or batch."""
+
+    positive_token_ids = positive_token_ids.to(device=logits.device, dtype=torch.long)
+    q = q.to(device=logits.device, dtype=torch.float32)
+    if positive_token_ids.ndim != 1 or positive_token_ids.numel() == 0:
+        raise ValueError("positive_token_ids must be a non-empty 1D tensor")
+    if positive_token_ids.unique().numel() != positive_token_ids.numel():
+        raise ValueError("positive_token_ids must contain unique vocabulary token ids")
+    if q.ndim != 1 or q.numel() != positive_token_ids.numel():
+        raise ValueError("q must be a 1D tensor aligned with positive_token_ids")
+    if not torch.isfinite(q).all() or torch.any(q < 0):
+        raise ValueError("q must contain finite non-negative weights")
+    q_sum = q.sum()
+    if float(q_sum.detach().cpu().item()) <= 0.0:
+        raise ValueError("q must have positive total mass")
+    q = q / q_sum.clamp_min(1e-12)
+    for name, value in (
+        ("support_weight", support_weight),
+        ("balance_weight", balance_weight),
+    ):
+        value = float(value)
+        if not math.isfinite(value) or value < 0.0:
+            raise ValueError(f"{name} must be finite and >= 0")
+
+    log_probs = F.log_softmax(logits.float(), dim=-1)
+    valid_log_probs = log_probs.index_select(dim=-1, index=positive_token_ids)
+    log_valid_mass = torch.logsumexp(valid_log_probs, dim=-1)
+    support = -log_valid_mass
+    balance = -(q * (valid_log_probs - log_valid_mass.unsqueeze(-1))).sum(dim=-1)
+    return float(support_weight) * support + float(balance_weight) * balance
+
+
 def compute_recursive_detection_ce_batch_loss(
     *,
     logits: torch.Tensor,
@@ -444,16 +484,14 @@ def _compute_sample_loss(
                 f"got teacher token {target.teacher_token_id} with children {child_token_ids}"
             )
 
-        child_ids = torch.tensor(child_token_ids, device=step_log_probs.device, dtype=torch.long)
-        q = torch.tensor(child_weights, device=step_log_probs.device, dtype=torch.float32)
-        q = q / q.sum().clamp_min(1e-12)
-        child_log_probs = step_log_probs.index_select(0, child_ids)
-        valid_log_mass = torch.logsumexp(child_log_probs, dim=0)
-        support_loss = -valid_log_mass
-        balance_loss = -(q * (child_log_probs - valid_log_mass)).sum()
-        per_position_losses[target.position] = (
-            float(weights.support_weight) * support_loss
-            + float(weights.balance_weight) * balance_loss
+        child_ids = torch.tensor(child_token_ids, device=logits.device, dtype=torch.long)
+        q = torch.tensor(child_weights, device=logits.device, dtype=torch.float32)
+        per_position_losses[target.position] = support_balance_loss(
+            logits[target.position - 1],
+            child_ids,
+            q,
+            support_weight=float(weights.support_weight),
+            balance_weight=float(weights.balance_weight),
         )
 
     sample_loss = _normalize_sample_loss(
