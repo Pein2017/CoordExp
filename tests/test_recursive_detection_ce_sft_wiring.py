@@ -321,6 +321,29 @@ def test_recursive_detection_sidecars_survive_collation_but_not_model_forward() 
         assert key not in model_inputs
 
 
+def test_recursive_detection_model_boundary_preserves_attention_kwargs_but_drops_trainer_loss_func() -> None:
+    batch = {
+        "input_ids": [[1, 2, 3]],
+        "attention_mask": [[1, 1, 1]],
+        "labels": [[-100, 2, 3]],
+        "recursive_detection_targets": {"token_targets": (), "loss_atoms": ()},
+        "compute_loss_func": object(),
+        "cu_seq_lens_q": object(),
+        "cu_seq_lens_k": object(),
+        "max_length_q": 3,
+        "max_length_k": 3,
+    }
+
+    model_inputs = strip_non_model_detection_sidecars(batch)
+
+    assert "recursive_detection_targets" not in model_inputs
+    assert "compute_loss_func" not in model_inputs
+    assert "cu_seq_lens_q" in model_inputs
+    assert "cu_seq_lens_k" in model_inputs
+    assert "max_length_q" in model_inputs
+    assert "max_length_k" in model_inputs
+
+
 def test_recursive_detection_sidecar_stripping_rejects_unknown_extras() -> None:
     batch = {
         "input_ids": [[1, 2, 3]],

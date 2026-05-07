@@ -61,11 +61,17 @@ DETECTION_MODEL_INPUT_KEYS: frozenset[str] = frozenset(
         "cache_position",
         "past_key_values",
         "use_cache",
+        "logits_to_keep",
+        "cu_seq_lens_q",
+        "cu_seq_lens_k",
+        "max_length_q",
+        "max_length_k",
     }
 )
 
 TRAINER_BATCH_EXTRA_KEYS: frozenset[str] = frozenset(
     {
+        "compute_loss_func",
         "dataset_labels",
         "dataset_segments",
         "pack_num_samples",
@@ -508,6 +514,7 @@ def strip_non_model_detection_sidecars(
 
     registered = set(REGISTERED_DETECTION_SIDECAR_KEYS)
     dropped_before_model = set(DETECTION_DROPPED_BEFORE_MODEL_KEYS)
+    trainer_extras = set(TRAINER_BATCH_EXTRA_KEYS)
     allowed = set(DETECTION_MODEL_INPUT_KEYS) | set(TRAINER_BATCH_EXTRA_KEYS)
     unknown = sorted(
         str(key)
@@ -526,6 +533,9 @@ def strip_non_model_detection_sidecars(
         if key in batch:
             batch.pop(key)
     for key in DETECTION_DROPPED_BEFORE_MODEL_KEYS:
+        if key in batch:
+            batch.pop(key)
+    for key in trainer_extras:
         if key in batch:
             batch.pop(key)
     return batch
