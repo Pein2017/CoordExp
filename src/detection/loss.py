@@ -479,8 +479,12 @@ def _normalize_sample_loss(
         weighted_losses: list[torch.Tensor] = []
         state_weight_sum = 0.0
         for target in recursive_targets.token_targets:
-            weighted_losses.append(per_position_losses[target.position] * float(target.state_weight))
-            state_weight_sum += float(target.state_weight)
+            state_weight = float(target.state_weight)
+            loss_weight = _target_loss_weight(target)
+            weighted_losses.append(
+                per_position_losses[target.position] * state_weight * loss_weight
+            )
+            state_weight_sum += state_weight
         denominator = torch.tensor(
             max(state_weight_sum, 1e-12),
             device=device,
@@ -494,9 +498,16 @@ def _normalize_sample_loss(
             f"{recursive_targets.normalization!r}"
         )
 
+    target_by_position = {
+        target.position: target for target in recursive_targets.token_targets
+    }
     atom_losses = {
         atom.atom_id: torch.stack(
-            [per_position_losses[position] for position in atom.token_positions]
+            [
+                per_position_losses[position]
+                * _target_loss_weight(target_by_position[position])
+                for position in atom.token_positions
+            ]
         ).mean()
         for atom in recursive_targets.loss_atoms
     }
@@ -574,3 +585,10 @@ def _weighted_tensor_mean(values: Sequence[torch.Tensor], weights: Sequence[floa
     if numerator is None:
         raise ValueError("weighted tensor mean requires at least one value")
     return numerator / max(denominator, 1e-12)
+
+
+def _target_loss_weight(target: object) -> float:
+    weight = float(getattr(target, "loss_weight", 1.0))
+    if not math.isfinite(weight) or weight < 0.0:
+        raise ValueError("TokenTarget.loss_weight must be a non-negative finite float")
+    return weight

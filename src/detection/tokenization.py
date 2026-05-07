@@ -183,7 +183,12 @@ def tokenize_rendered_detection_conversation(
     system_prompt: str | None = None,
     user_content: str = "<image>",
     messages: Sequence[Mapping[str, Any]] | None = None,
+    assistant_stop_markers: Sequence[str] | None = None,
 ) -> TokenizedDetectionExample:
+    stop_markers = _assistant_stop_marker_candidates(
+        tokenizer,
+        assistant_stop_markers=assistant_stop_markers,
+    )
     rendered_assistant = _assistant_from_rendered(rendered)
     chat_messages = _build_messages(
         rendered_assistant,
@@ -196,11 +201,12 @@ def tokenize_rendered_detection_conversation(
     assistant_char_span = _find_assistant_char_span(
         chat_text,
         rendered_assistant.text,
+        assistant_stop_markers=stop_markers,
     )
     assistant_stop_char_span = _find_assistant_stop_char_span(
         chat_text,
         assistant_char_span,
-        tokenizer=tokenizer,
+        assistant_stop_markers=stop_markers,
     )
 
     encoded = tokenizer(
@@ -353,7 +359,10 @@ def _build_messages(
     if not assistant_message_indices:
         chat_messages.append({"role": "assistant", "content": rendered_assistant.text})
     elif len(assistant_message_indices) == 1:
-        assistant_message = chat_messages[assistant_message_indices[0]]
+        assistant_message_index = assistant_message_indices[0]
+        if assistant_message_index != len(chat_messages) - 1:
+            raise ValueError("assistant response must be the final chat message")
+        assistant_message = chat_messages[assistant_message_index]
         assistant_text = _extract_text_content(
             assistant_message.get("content"),
             require_text_only=True,
@@ -439,7 +448,12 @@ def _chat_content_to_fallback_text(content: Any) -> str:
     return "".join(parts)
 
 
-def _find_assistant_char_span(chat_text: str, assistant_text: str) -> CharSpan:
+def _find_assistant_char_span(
+    chat_text: str,
+    assistant_text: str,
+    *,
+    assistant_stop_markers: Sequence[str],
+) -> CharSpan:
     if not assistant_text:
         raise ValueError("rendered assistant text must be non-empty")
 
@@ -448,7 +462,15 @@ def _find_assistant_char_span(chat_text: str, assistant_text: str) -> CharSpan:
         raise ValueError("rendered assistant text was not found after chat-template rendering")
     duplicate_start = chat_text.find(assistant_text, assistant_start + 1)
     if duplicate_start >= 0:
-        raise ValueError("rendered assistant text appears more than once in chat text")
+        stop_bounded_starts = _assistant_text_starts_bounded_by_stop_marker(
+            chat_text,
+            assistant_text,
+            assistant_stop_markers=assistant_stop_markers,
+        )
+        if stop_bounded_starts:
+            assistant_start = stop_bounded_starts[-1]
+        else:
+            raise ValueError("rendered assistant text appears more than once in chat text")
 
     return CharSpan(
         assistant_start,
@@ -457,14 +479,41 @@ def _find_assistant_char_span(chat_text: str, assistant_text: str) -> CharSpan:
     )
 
 
+def _assistant_text_starts_bounded_by_stop_marker(
+    chat_text: str,
+    assistant_text: str,
+    *,
+    assistant_stop_markers: Sequence[str],
+) -> tuple[int, ...]:
+    starts: list[int] = []
+    search_start = 0
+    while True:
+        candidate_start = chat_text.find(assistant_text, search_start)
+        if candidate_start < 0:
+            break
+        candidate_end = candidate_start + len(assistant_text)
+        if any(
+            chat_text.startswith(marker, candidate_end)
+            for marker in assistant_stop_markers
+        ):
+            starts.append(candidate_start)
+        search_start = candidate_start + 1
+
+    if starts:
+        return tuple(starts)
+    if assistant_stop_markers:
+        raise ValueError("rendered assistant text appears more than once in chat text")
+    return ()
+
+
 def _find_assistant_stop_char_span(
     chat_text: str,
     assistant_char_span: CharSpan,
     *,
-    tokenizer: TokenizerWithOffsets,
+    assistant_stop_markers: Sequence[str],
 ) -> CharSpan | None:
     stop_start = assistant_char_span.end
-    for marker in _assistant_stop_marker_candidates(tokenizer):
+    for marker in assistant_stop_markers:
         if chat_text.startswith(marker, stop_start):
             return CharSpan(stop_start, stop_start + len(marker), "assistant_stop")
     return None
@@ -472,7 +521,15 @@ def _find_assistant_stop_char_span(
 
 def _assistant_stop_marker_candidates(
     tokenizer: TokenizerWithOffsets,
+    *,
+    assistant_stop_markers: Sequence[str] | None = None,
 ) -> tuple[str, ...]:
+    if assistant_stop_markers is not None:
+        markers = list(assistant_stop_markers)
+        if not markers or any(not isinstance(marker, str) or not marker for marker in markers):
+            raise ValueError("assistant_stop_markers must contain non-empty strings")
+        return tuple(dict.fromkeys(markers))
+
     markers = [_QWEN_CHAT_TEMPLATE_STOP_MARKER]
     eos_token = getattr(tokenizer, "eos_token", None)
     if isinstance(eos_token, str) and eos_token and eos_token not in markers:

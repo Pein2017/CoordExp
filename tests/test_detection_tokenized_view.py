@@ -51,7 +51,7 @@ class SnapshotTokenizer:
             r'"bbox_2d": \[|'
             r"\],|"
             r"[A-Za-z0-9_]+|"
-            r"\s+|"
+            r"\s|"
             r".",
             re.DOTALL,
         )
@@ -559,9 +559,65 @@ def test_separator_control_group_preserves_legacy_non_control_mask() -> None:
     )
     separator_pos = tokenized.assistant_token_span.start
 
+    assert tokenized.assistant_char_span.text(tokenized.chat_text) == "\n"
     assert tokenized.token_roles[separator_pos] is TokenRole.SEPARATOR
     assert tokenized.separator_mask[separator_pos]
     assert not tokenized.control_mask[separator_pos]
+
+
+def test_duplicate_payload_selects_final_assistant_stop_bounded_occurrence() -> None:
+    rendered = _manual_rendered(
+        "\n",
+        render_span_events=(
+            _render_event(
+                0,
+                1,
+                "assistant",
+                primary_role=None,
+                mask_groups=("assistant",),
+                classifying=False,
+                priority=0,
+            ),
+        ),
+    )
+
+    tokenized = tokenize_rendered_detection_conversation(
+        rendered,
+        tokenizer=SnapshotTokenizer(),
+        user_content="\n",
+    )
+    assistant_header_start = tokenized.chat_text.rfind("<|im_start|>assistant\n")
+
+    assert assistant_header_start >= 0
+    assert tokenized.assistant_char_span.start > assistant_header_start
+    assert tokenized.assistant_char_span.text(tokenized.chat_text) == "\n"
+
+
+def test_messages_with_non_final_assistant_response_are_rejected() -> None:
+    rendered = _manual_rendered(
+        "cat",
+        render_span_events=(
+            _render_event(
+                0,
+                3,
+                "assistant",
+                primary_role=None,
+                mask_groups=("assistant",),
+                classifying=False,
+                priority=0,
+            ),
+        ),
+    )
+
+    with pytest.raises(ValueError, match="assistant response must be the final"):
+        tokenize_rendered_detection_conversation(
+            rendered,
+            tokenizer=SnapshotTokenizer(),
+            messages=(
+                {"role": "assistant", "content": "cat"},
+                {"role": "user", "content": "cat"},
+            ),
+        )
 
 
 def test_equal_priority_overlap_is_tracked_below_winning_priority() -> None:

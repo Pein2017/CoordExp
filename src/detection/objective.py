@@ -4,10 +4,25 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field, replace
 from enum import Enum
+import math
 from typing import Any, Literal, Mapping, Sequence
 
-from src.detection.data import NormalizedDetectionSample, ObjectOrderingPlan
-from src.detection.template import DetectionSequenceTemplate, RenderedAssistantSequence
+from src.detection.data import (
+    DetectionMetadata,
+    NormalizedDetectionObject,
+    NormalizedDetectionSample,
+    ObjectOrderingPlan,
+)
+from src.detection.rollin import ObjectInstanceId, RollinState, make_prefix_rollin_state
+from src.detection.template import (
+    CompactFullTemplate,
+    DetectionSequenceTemplate,
+    RenderedAssistantSequence,
+)
+from src.detection.tokenizer_contract import (
+    CompactTrainingStopContract,
+    resolve_compact_training_stop_contract,
+)
 from src.detection.tokenization import (
     TokenRole,
     TokenizedDetectionExample,
@@ -132,6 +147,7 @@ class TokenTarget:
     state_exposure: float = 1.0
     semantic_role: SemanticRole = SemanticRole.OBJECT_CONTROL
     loss_atom_id: str | None = None
+    loss_weight: float = 1.0
 
     @property
     def valid_token_ids(self) -> tuple[int, ...]:
@@ -173,6 +189,53 @@ class PreparedDetectionExample:
     @property
     def realized_source_object_indices(self) -> tuple[int, ...]:
         return self.object_ordering.realized_source_object_indices
+
+
+@dataclass(frozen=True)
+class PrefixRollinDebugSpan:
+    token_positions: tuple[int, ...]
+
+
+@dataclass(frozen=True)
+class PreparedPrefixRollinExample:
+    mode: Literal["prefix_rollin_et_rmp_ce"]
+    normalized_sample: NormalizedDetectionSample
+    rollin_state: RollinState
+    rendered_assistant: RenderedAssistantSequence
+    tokenized: TokenizedDetectionExample
+    input_ids: tuple[int, ...]
+    labels: tuple[int, ...]
+    assistant_mask: tuple[bool, ...]
+    recursive_detection_targets: RecursiveDetectionTargets
+    debug_spans: Mapping[str, PrefixRollinDebugSpan]
+    stop_contract: CompactTrainingStopContract
+    eos_trust_weight: float = 1.0
+
+    @property
+    def chat_text(self) -> str:
+        return self.tokenized.chat_text
+
+    @property
+    def assistant_char_span(self):
+        return self.tokenized.assistant_char_span
+
+    @property
+    def assistant_stop_token_span(self):
+        span = self.tokenized.assistant_stop_token_span
+        if span is None:
+            raise ValueError("prefix_rollin_et_rmp_ce requires assistant <|im_end|> span")
+        return span
+
+    @property
+    def assistant_stop_char_span(self):
+        char_span = self.assistant_stop_token_span.char_span
+        if char_span is None:
+            raise ValueError("prefix_rollin_et_rmp_ce requires assistant stop char span")
+        return char_span
+
+    @property
+    def assistant_stop_token_text(self) -> str:
+        return self.assistant_stop_char_span.text(self.chat_text)
 
 
 def prepare_detection_training_example(
@@ -227,6 +290,238 @@ def prepare_detection_training_example(
         labels=tokenized.labels,
         assistant_mask=tokenized.assistant_mask,
         recursive_detection_targets=recursive_detection_targets,
+    )
+
+
+def build_compact_prefix_rollin_example(
+    *,
+    objects: Sequence[NormalizedDetectionObject],
+    rollin_order: Sequence[NormalizedDetectionObject],
+    k: int,
+    tokenizer: TokenizerWithOffsets,
+    eos_trust_weight: float = 1.0,
+    system_prompt: str | None = None,
+    user_content: str = "<image>",
+    messages: Sequence[Mapping[str, Any]] | None = None,
+) -> PreparedPrefixRollinExample:
+    """Build one compact_full prefix-rollin example for tests and materialization."""
+
+    eos_loss_weight = _validate_prefix_rollin_eos_trust_weight(eos_trust_weight)
+    source_objects = tuple(objects)
+    source_by_id = {obj.object_instance_id: obj for obj in source_objects}
+    if len(source_by_id) != len(source_objects):
+        raise ValueError("objects must have unique object_instance_id values")
+    rollin_ids = tuple(obj.object_instance_id for obj in rollin_order)
+    if len(rollin_ids) != len(source_objects) or set(rollin_ids) != set(source_by_id):
+        raise ValueError("rollin_order must contain each object exactly once")
+    ordered_objects = tuple(source_by_id[object_id] for object_id in rollin_ids)
+
+    rollin_state = make_prefix_rollin_state(
+        tuple(ObjectInstanceId(obj.object_instance_id) for obj in source_objects),
+        permutation=tuple(ObjectInstanceId(obj.object_instance_id) for obj in ordered_objects),
+        k=k,
+    )
+    stop_contract = resolve_compact_training_stop_contract(tokenizer)
+    sample = _build_prefix_rollin_sample(ordered_objects)
+
+    rendered_assistant = CompactFullTemplate().render_assistant(sample)
+    tokenized = tokenize_rendered_detection_conversation(
+        rendered_assistant,
+        tokenizer=tokenizer,
+        system_prompt=system_prompt,
+        user_content=user_content,
+        messages=messages,
+        assistant_stop_markers=(stop_contract.training_eos_token_text,),
+    )
+    _validate_compact_prefix_rollin_stop(tokenized, stop_contract=stop_contract)
+
+    (
+        prefix_positions,
+        suffix_positions,
+        suffix_entry_positions,
+    ) = _prefix_rollin_payload_positions(
+        tokenized,
+        k=int(k),
+    )
+    eos_positions = tuple(tokenized.assistant_stop_token_span.token_indices())
+    active_positions = set(suffix_positions) | set(eos_positions)
+    labels = tuple(
+        token_id if position in active_positions else -100
+        for position, token_id in enumerate(tokenized.input_ids)
+    )
+    masked_tokenized = replace(tokenized, labels=labels)
+
+    full_targets = build_recursive_detection_targets(
+        sample,
+        tokenized=tokenized,
+        state_weighting="uniform_permutation",
+        normalization="semantic_image_bucket_balanced",
+    )
+    filtered_targets = tuple(
+        target for target in full_targets.token_targets if target.position in active_positions
+    )
+    filtered_targets = _apply_prefix_rollin_eos_trust_weight(
+        filtered_targets,
+        eos_positions=eos_positions,
+        eos_trust_weight=eos_loss_weight,
+    )
+    loss_atoms = _build_loss_atoms(
+        tokenized=masked_tokenized,
+        token_targets=filtered_targets,
+    )
+    recursive_detection_targets = RecursiveDetectionTargets(
+        token_targets=_assign_loss_atoms(
+            token_targets=filtered_targets,
+            loss_atoms=loss_atoms,
+        ),
+        state_weighting=full_targets.state_weighting,
+        normalization=full_targets.normalization,
+        loss_atoms=loss_atoms,
+        state_weighting_diagnostics=_prefix_rollin_state_weighting_diagnostics(
+            tokenized=masked_tokenized,
+            k=int(k),
+            active_target_count=len(filtered_targets),
+        ),
+    )
+
+    debug_spans = {
+        "rollin_prefix": PrefixRollinDebugSpan(prefix_positions),
+        "supervised_suffix": PrefixRollinDebugSpan(suffix_positions),
+        "supervised_suffix_entries": PrefixRollinDebugSpan(suffix_entry_positions),
+        "semantic_eos": PrefixRollinDebugSpan(eos_positions),
+    }
+    return PreparedPrefixRollinExample(
+        mode="prefix_rollin_et_rmp_ce",
+        normalized_sample=sample,
+        rollin_state=rollin_state,
+        rendered_assistant=rendered_assistant,
+        tokenized=masked_tokenized,
+        input_ids=masked_tokenized.input_ids,
+        labels=labels,
+        assistant_mask=masked_tokenized.assistant_mask,
+        recursive_detection_targets=recursive_detection_targets,
+        debug_spans=debug_spans,
+        stop_contract=stop_contract,
+        eos_trust_weight=eos_loss_weight,
+    )
+
+
+def _build_prefix_rollin_sample(
+    ordered_objects: Sequence[NormalizedDetectionObject],
+) -> NormalizedDetectionSample:
+    ordered = tuple(ordered_objects)
+    return NormalizedDetectionSample(
+        images=("image.jpg",),
+        objects=ordered,
+        width=1,
+        height=1,
+        image_id=0,
+        file_name="image.jpg",
+        metadata=DetectionMetadata(source="unit", split="prefix_rollin"),
+        object_ordering=ObjectOrderingPlan.random_permutation(
+            seed=0,
+            seed_source="prefix_rollin_unit",
+        ).with_realized(tuple(obj.source_object_index for obj in ordered)),
+    )
+
+
+def _validate_compact_prefix_rollin_stop(
+    tokenized: TokenizedDetectionExample,
+    *,
+    stop_contract: CompactTrainingStopContract,
+) -> None:
+    span = tokenized.assistant_stop_token_span
+    if span is None:
+        raise ValueError("prefix_rollin_et_rmp_ce requires assistant <|im_end|> span")
+    stop_ids = tuple(tokenized.input_ids[span.start : span.end])
+    if stop_ids != (stop_contract.im_end_token_id,):
+        raise ValueError(
+            "prefix_rollin_et_rmp_ce requires semantic_eos to be the single "
+            "<|im_end|> token"
+        )
+
+
+def _prefix_rollin_payload_positions(
+    tokenized: TokenizedDetectionExample,
+    *,
+    k: int,
+) -> tuple[tuple[int, ...], tuple[int, ...], tuple[int, ...]]:
+    if k < 0 or k > len(tokenized.object_entries):
+        raise ValueError(f"k must satisfy 0 <= k <= {len(tokenized.object_entries)}")
+
+    prefix_positions: list[int] = []
+    suffix_positions: list[int] = []
+    suffix_entry_positions: list[int] = []
+    object_count = len(tokenized.object_entries)
+    for entry_index, entry in enumerate(tokenized.object_entries):
+        if entry_index < k:
+            prefix_positions.extend(entry.entry_span.token_indices())
+        else:
+            entry_positions = tuple(entry.entry_span.token_indices())
+            suffix_positions.extend(entry_positions)
+            suffix_entry_positions.extend(entry_positions)
+        if entry.separator_span is not None:
+            separator_destination = prefix_positions
+            if entry_index >= k - 1 and entry_index < object_count - 1:
+                separator_destination = suffix_positions
+            separator_destination.extend(entry.separator_span.token_indices())
+    return tuple(prefix_positions), tuple(suffix_positions), tuple(suffix_entry_positions)
+
+
+def _prefix_rollin_state_weighting_diagnostics(
+    *,
+    tokenized: TokenizedDetectionExample,
+    k: int,
+    active_target_count: int,
+) -> StateWeightingDiagnostics:
+    object_count = len(tokenized.object_entries)
+    probabilities = tuple(
+        1.0 if prefix_length == k else 0.0
+        for prefix_length in range(object_count + 1)
+    )
+    counts = tuple(
+        active_target_count if prefix_length == k else 0
+        for prefix_length in range(object_count + 1)
+    )
+    entry_exposures = tuple(
+        0.0 if entry_index < k else 1.0 for entry_index in range(object_count)
+    )
+    separator_exposures = tuple(
+        1.0 if separator_index >= k - 1 else 0.0
+        for separator_index in range(max(object_count - 1, 0))
+    )
+    return StateWeightingDiagnostics(
+        profile_id="uniform_permutation",
+        prefix_length_probabilities=probabilities,
+        supervised_token_counts_by_prefix_length=counts,
+        entry_exposures=entry_exposures,
+        separator_exposures=separator_exposures,
+        terminal_exposure=1.0,
+    )
+
+
+def _validate_prefix_rollin_eos_trust_weight(value: float) -> float:
+    weight = float(value)
+    if isinstance(value, bool) or not math.isfinite(weight) or weight < 0.0:
+        raise ValueError("eos_trust_weight must be a non-negative finite float")
+    return weight
+
+
+def _apply_prefix_rollin_eos_trust_weight(
+    token_targets: tuple[TokenTarget, ...],
+    *,
+    eos_positions: Sequence[int],
+    eos_trust_weight: float,
+) -> tuple[TokenTarget, ...]:
+    eos_position_set = set(int(position) for position in eos_positions)
+    return tuple(
+        replace(
+            target,
+            loss_weight=float(eos_trust_weight),
+        )
+        if target.position in eos_position_set
+        else target
+        for target in token_targets
     )
 
 
@@ -625,7 +920,9 @@ def _build_loss_atoms(
             for position in coord_span.token_indices()
             if position in target_by_position and position not in trie_positions
         }
-        object_control_positions = entry_positions - trie_positions - desc_positions - coord_positions
+        object_control_positions = (
+            entry_positions - trie_positions - desc_positions - coord_positions
+        )
 
         add_atom(
             atom_id=f"object:{entry.object_index}:entry_trie_decision",
@@ -907,7 +1204,9 @@ def normalize_recursive_detection_token_losses(
             target.state_weight for target in recursive_targets.token_targets
         )
         normalized_loss = sum(
-            target.state_weight * position_losses[target.position]
+            target.state_weight
+            * _target_loss_weight(target)
+            * position_losses[target.position]
             for target in recursive_targets.token_targets
         ) / max(state_weight_sum, 1e-12)
         diagnostics = replace(
@@ -921,8 +1220,15 @@ def normalize_recursive_detection_token_losses(
             diagnostics=diagnostics,
         )
 
+    target_by_position = {
+        target.position: target for target in recursive_targets.token_targets
+    }
     atom_losses = {
-        atom.atom_id: sum(position_losses[position] for position in atom.token_positions)
+        atom.atom_id: sum(
+            position_losses[position]
+            * _target_loss_weight(target_by_position[position])
+            for position in atom.token_positions
+        )
         / max(len(atom.token_positions), 1)
         for atom in recursive_targets.loss_atoms
     }
@@ -997,6 +1303,13 @@ def _lookup_loss(
     if position >= len(per_token_losses):
         raise IndexError(f"missing per-token loss for position {position}")
     return float(per_token_losses[position])
+
+
+def _target_loss_weight(target: TokenTarget) -> float:
+    weight = float(target.loss_weight)
+    if not math.isfinite(weight) or weight < 0.0:
+        raise ValueError("TokenTarget.loss_weight must be a non-negative finite float")
+    return weight
 
 
 def _normalization_diagnostics_base(

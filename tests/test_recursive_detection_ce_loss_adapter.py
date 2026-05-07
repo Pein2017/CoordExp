@@ -17,6 +17,7 @@ from src.detection.objective import (
     StateWeightingDiagnostics,
     TokenTarget,
     TrieBranchTarget,
+    normalize_recursive_detection_token_losses,
 )
 from src.detection.tokenization import TokenRole
 from src.metrics.events import flatten_metric_events, reduce_metric_events
@@ -39,6 +40,7 @@ def _hard_target(
     teacher_token_id: int,
     semantic_role: SemanticRole | str | None = SemanticRole.OBJECT_CONTROL,
     state_weight: float = 1.0,
+    loss_weight: float = 1.0,
     loss_atom_id: str | None = None,
     object_instance_id: str | None = None,
 ) -> TokenTarget:
@@ -50,6 +52,7 @@ def _hard_target(
         object_instance_id=object_instance_id,
         token_role=TokenRole.ASSISTANT,
         state_weight=state_weight,
+        loss_weight=loss_weight,
         semantic_role=semantic_role,
         loss_atom_id=loss_atom_id,
     )
@@ -135,6 +138,27 @@ def test_hard_singleton_ce_matches_standard_log_softmax() -> None:
     assert result.loss.item() == pytest.approx(expected.item())
     assert result.per_position_losses[0][1].item() == pytest.approx(expected_first.item())
     assert result.per_position_losses[0][2].item() == pytest.approx(expected_second.item())
+
+
+def test_legacy_normalization_loss_weight_does_not_change_state_denominator() -> None:
+    logits = torch.zeros((2, 2), dtype=torch.float32)
+    targets = _targets(
+        token_targets=(
+            _hard_target(position=1, teacher_token_id=0, loss_weight=1.0),
+            _hard_target(position=2, teacher_token_id=0, loss_weight=0.0),
+        )
+    )
+
+    result = compute_recursive_detection_ce_batch_loss(logits=logits, targets=(targets,))
+    scalar = normalize_recursive_detection_token_losses(
+        targets,
+        {1: 1.0, 2: 100.0},
+    )
+
+    expected = -torch.log_softmax(logits[0], dim=-1)[0] / 2.0
+    assert result.loss.item() == pytest.approx(expected.item())
+    assert scalar.normalized_loss == pytest.approx(0.5)
+    assert scalar.diagnostics.state_weight_sum == pytest.approx(2.0)
 
 
 def test_trie_branch_with_unit_weights_matches_object_uniform_soft_ce() -> None:
