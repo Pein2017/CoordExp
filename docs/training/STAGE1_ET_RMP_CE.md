@@ -26,7 +26,10 @@ Current Stage-1 objective routing lives in:
 - `src/detection/objective.py`
 - `src/detection/loss.py`
 
-The next compact-only prefix roll-in multi-positive objective is tracked by the
-repo-local super-power plan/spec under `docs/superpowers/`. It must be
-implemented through the latest compact detection stack rather than by reviving
-this retired continuation implementation.
+Do not use this page as the route for `prefix_rollin_et_rmp_ce`. The current
+compact-only ablation route is documented in `STAGE1_OBJECTIVE.md` and
+`docs/catalog.yaml`, with config
+`configs/stage1/recursive_detection_ce_latest/ablation/compact_full_prefix_rollin_balance2.yaml`.
+It must stay in the latest compact detection stack rather than reviving this
+retired continuation implementation. Old `branch_support_weight`,
+`branch_balance_weight`, and `stage1_set_continuation` paths remain retired.

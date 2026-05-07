@@ -5,7 +5,7 @@ doc_type: implementation-map
 status: canonical
 domain: repo
 summary: Task-to-file routing guide for common CoordExp changes.
-updated: 2026-05-04
+updated: 2026-05-07
 ---
 
 # Implementation Map
@@ -47,7 +47,8 @@ Open these docs first:
 - [`docs/training/README.md`](training/README.md)
 - [`docs/training/STAGE1_OBJECTIVE.md`](training/STAGE1_OBJECTIVE.md)
 - [`docs/data/PACKING.md`](data/PACKING.md)
-- [`configs/stage1/recursive_detection_ce_latest/prod/compact_full_support2.yaml`](../configs/stage1/recursive_detection_ce_latest/prod/compact_full_support2.yaml) when working on the compact recursive detection surface
+- [`configs/stage1/recursive_detection_ce_latest/prod/compact_full_support2.yaml`](../configs/stage1/recursive_detection_ce_latest/prod/compact_full_support2.yaml) for the compact recursive detection production baseline/comparator
+- [`configs/stage1/recursive_detection_ce_latest/ablation/compact_full_prefix_rollin_balance2.yaml`](../configs/stage1/recursive_detection_ce_latest/ablation/compact_full_prefix_rollin_balance2.yaml) for the compact-full prefix-rollin E1 ablation route
 
 Open these configs first:
 - `configs/stage1/sft_base.yaml`
@@ -55,6 +56,8 @@ Open these configs first:
 - `configs/_shared/prompts/`
 - `configs/stage1/profiles/`
 - `configs/stage1/smoke/`
+- `configs/stage1/recursive_detection_ce_latest/prod/`
+- `configs/stage1/recursive_detection_ce_latest/ablation/`
 
 Open these code files first:
 - `src/sft.py`
@@ -76,12 +79,13 @@ Open these code files first:
 
 Compact recursive detection ownership:
 - `src/detection/runtime.py` owns latest detection runtime support/preflight, recursive CE runtime config resolution, prompt/mode/custom shim resolution, and `build_latest_detection_dataset`.
+- `src/detection/objective.py`, `src/detection/rollin.py`, `src/detection/dataset.py`, `src/detection/token_types.py`, and `src/detection/loss.py` own the `prefix_rollin_et_rmp_ce` roll-in state, objectized sparse targets, compact type gates, EOS trust weight, and loss-sidecar behavior.
 - `src/sft.py` delegates policy and keeps backward-compatible private aliases.
 - `src/detection/template.py` owns strict templates; only `stage1_json_pretty` and `compact_full` are factory-visible strict IDs.
 - `src/common/detection_sequence.py` is the compatibility facade; malformed helper-format rows return `None`.
 - `src/common/detection_compact_rows.py` is the stdlib-only low-level marker/render/split helper.
 - `compact_no_desc`, `compact_no_bbox`, and `compact_min` stay compatibility/helper formats.
-- latest compact recursive CE keeps packing/cache fail-fast policy and does not add CLI flags or config schema keys.
+- latest compact recursive CE keeps packing/cache fail-fast policy and remains config-first. Prefix-rollin adds objectized latest-detection objective subkeys (`objective.rollin`, `objective.target`, `objective.type_gate`, `objective.eos`) but no CLI flags.
 
 Trainer metric ownership:
 - `src/trainers/metrics/mixins.py` is a compatibility re-export facade.
@@ -94,6 +98,12 @@ Run these tests first:
 - `tests/test_stage1_metric_key_parity.py`
 - `tests/test_stage1_registry_masks.py`
 - `tests/test_stage1_static_packing_runtime_config.py`
+- `tests/test_prefix_rollin_schema.py`
+- `tests/test_prefix_rollin_sampler.py`
+- `tests/test_prefix_rollin_dataset_alignment.py`
+- `tests/test_compact_type_gate.py`
+- `tests/test_recursive_detection_ce_loss_adapter.py`
+- `tests/test_recursive_detection_ce_sft_wiring.py`
 
 ## 3. Stage-2 Two-Channel Or Rollout-Aligned Training, Matching, Triage, Or Duplicate UL
 

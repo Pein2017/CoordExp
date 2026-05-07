@@ -5,7 +5,7 @@ doc_type: reference
 status: canonical
 domain: training
 summary: Stage-1 objective surfaces and coord-token training behavior.
-updated: 2026-05-05
+updated: 2026-05-07
 ---
 
 # Coord Objective & Adapter
@@ -33,7 +33,7 @@ Scope note:
   should include:
   - `configs/stage1/profiles/2b/raw_text_xyxy_pure_ce_coco80_desc_first_1024_lvis_proxy.yaml`
   - `configs/stage1/profiles/2b/bbox_geo_center_size_coco80_desc_first_1024_lvis_proxy.yaml`
-- Compact prefix roll-in multi-positive training is planned as a latest compact detection variant, not as a legacy custom trainer surface. Until that implementation lands, use the checked-in latest compact recursive detection configs for compact Stage-1 work.
+- Compact prefix roll-in multi-positive training now lives as the latest-detection `prefix_rollin_et_rmp_ce` ablation surface, not as a legacy custom trainer surface. The first checked-in route is `configs/stage1/recursive_detection_ce_latest/ablation/compact_full_prefix_rollin_balance2.yaml`; treat it as E1 ablation/smoke validation, not production.
 - Narrow V1 exception:
   - `custom.bbox_format: cxcy_logw_logh` or `custom.bbox_format: cxcywh`
     defines an experimental Stage-1-only profile
@@ -120,9 +120,16 @@ custom:
   - `stage2_two_channel` and `stage2_rollout_aligned` still use provenance-aware metric families, but the active single-pass Stage-2 contract now routes Channel-A through `loss/text/*`, `loss/coord/*`, and `coord_diag/*`, while Channel-B uses `loss/B_rollout_text/*`, `loss/B_coord/*`, and `coord_diag/B/*`.
   - Historical iterative groups such as `loss/A1_*`, `loss/A2_*`, `coord_diag/A1/*`, and `coord_diag/A2/*` are no longer part of the active Stage-2 contract.
 
-## Stage-1 compact recursive detection and prefix roll-in direction
+## Stage-1 compact recursive detection and prefix roll-in
 
-The active compact Stage-1 owner is the latest detection stack under `src/detection/`. The current checked-in compact recursive CE configs remain the runnable compact Stage-1 route while the new prefix roll-in multi-positive variant is implemented.
+The active compact Stage-1 owner is the latest detection stack under `src/detection/`. There are now two distinct latest-schema routes:
+
+- `configs/stage1/recursive_detection_ce_latest/prod/compact_full_support2.yaml` remains the random-permutation ET-RMP-CE production baseline/comparator.
+- `configs/stage1/recursive_detection_ce_latest/ablation/compact_full_prefix_rollin_balance2.yaml` is the E1 `prefix_rollin_et_rmp_ce` ablation route for Prefix-Closed Multi-Target SFT.
+
+`prefix_rollin_et_rmp_ce` is compact-full only. It requires `detection_template.id: compact_full`, masks roll-in prefix labels, samples `K` uniformly over `[0, object_count]`, keeps `suffix_order: same_sampled_permutation` for V1, and expresses support/balance weights under `objective.target`, not obsolete flat trie-weight aliases.
+
+EOS supervision for this variant targets the Qwen chat-template assistant stop marker `<|im_end|>` only. Text-level terminators such as `<|endoftext|>` or `<|end_of_text|>` must not be used as training EOS for this surface. The initial `empirical_unlabeled_poisson_v0` EOS prior is smoke/ablation-only: production configs must use `objective.eos.eos_trust_weight.source: calibrated_formula_ref` with a versioned calibration artifact and validation evidence.
 
 Retired continuation code, config, and runtime paths should not be used for new training. Historical evidence remains in git history, archived progress notes, and run artifacts.
 

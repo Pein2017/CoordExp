@@ -1,5 +1,5 @@
 schema_version: 1
-updated: 2026-05-05
+updated: 2026-05-07
 
 entrypoints:
   human:
@@ -18,13 +18,20 @@ authority:
 
 config_surfaces:
   training:
-    - id: stage1_latest_compact_detection
-      status: canonical
+    - id: stage1_latest_compact_detection_random_permutation_et_rmp_ce
+      status: canonical-production-baseline
       config: configs/stage1/recursive_detection_ce_latest/prod/compact_full_support2.yaml
       authoring_snippets: configs/_shared/latest_detection/
       parser: src/config/schema.py::LatestDetectionTrainingConfig
       runtime: src/detection/runtime.py
-      notes: "Latest compact detection uses top-level data, prompt, detection_template, token_rows, objective, packing, evaluation, and validation sections. Snippets under configs/_shared/latest_detection are not consumed by canonical launch configs until extends chains are migrated."
+      notes: "Latest compact detection production baseline using random_permutation_et_rmp_ce with flat trie weights. Keep as comparator/baseline; do not use it as the prefix-rollin config surface."
+    - id: stage1_latest_compact_detection_prefix_rollin_et_rmp_ce_ablation
+      status: ablation
+      config: configs/stage1/recursive_detection_ce_latest/ablation/compact_full_prefix_rollin_balance2.yaml
+      authoring_snippets: configs/_shared/latest_detection/
+      parser: src/config/schema.py::LatestDetectionTrainingConfig
+      runtime: src/detection/runtime.py
+      notes: "Compact-full-only prefix_rollin_et_rmp_ce E1 ablation. EOS supervision targets the Qwen chat-template <|im_end|> marker; empirical_unlabeled_poisson_v0 is smoke/ablation-only, and production requires calibrated_formula_ref plus a versioned calibration artifact. Packing/cache remain disabled until recursive sidecar offsets are supported."
     - id: stage1_legacy_compact_bridge
       status: legacy-bridge
       config: configs/stage1/compact_detection_sequence/smoke/compact_full_tiny.yaml
