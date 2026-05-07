@@ -91,6 +91,7 @@ class DetectionDatasetRuntimeConfig:
     state_weighting: str
     normalization: str
     eos_trust_weight_config: Any | None = None
+    type_gate_config: Any | None = None
 
 
 class DetectionTrainingDataset(Dataset):
@@ -140,6 +141,7 @@ class DetectionTrainingDataset(Dataset):
         state_weighting: str,
         normalization: str,
         eos_trust_weight_config: Any | None = None,
+        type_gate_config: Any | None = None,
         sample_limit: int | None = None,
         dataset_name: str | None = None,
     ) -> "DetectionTrainingDataset":
@@ -164,6 +166,7 @@ class DetectionTrainingDataset(Dataset):
                 state_weighting=str(state_weighting),
                 normalization=str(normalization),
                 eos_trust_weight_config=eos_trust_weight_config,
+                type_gate_config=type_gate_config,
             ),
             dataset_name=dataset_name or path.stem,
         )
@@ -209,6 +212,7 @@ class DetectionTrainingDataset(Dataset):
                 tokenizer=self.tokenizer,
                 eos_trust_weight=eos_trust_weight,
                 normalized_sample=normalized,
+                type_gate_config=self.config.type_gate_config,
                 messages=messages,
             )
         else:

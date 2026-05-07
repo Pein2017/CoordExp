@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import replace
 import math
 
 import pytest
@@ -224,6 +225,28 @@ def test_duplicate_child_counts_define_balance_distribution_from_multiplicity() 
     expected = -(2.0 / 3.0) * log_probs[1] - (1.0 / 3.0) * log_probs[3]
 
     assert result.loss.item() == pytest.approx(expected.item())
+
+
+def test_type_gate_allowed_mass_is_added_to_position_loss() -> None:
+    logits = torch.tensor([[-5.0, 5.0]], dtype=torch.float32)
+    base_target = _hard_target(position=1, teacher_token_id=0)
+    gated_target = replace(
+        base_target,
+        type_gate_token_ids=(0,),
+        type_gate_weight=0.5,
+    )
+
+    base = compute_recursive_detection_ce_batch_loss(
+        logits=logits,
+        targets=(_targets(token_targets=(base_target,)),),
+    )
+    gated = compute_recursive_detection_ce_batch_loss(
+        logits=logits,
+        targets=(_targets(token_targets=(gated_target,)),),
+    )
+
+    assert gated.loss.item() > base.loss.item()
+    assert gated.loss.item() == pytest.approx(base.loss.item() * 1.5)
 
 
 def test_bfloat16_logits_are_upcast_for_stable_loss_computation() -> None:

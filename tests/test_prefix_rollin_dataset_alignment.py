@@ -377,6 +377,30 @@ def test_eos_trust_weight_scales_k_equals_n_stop_loss_without_dropping_target() 
     assert zero_weight.recursive_detection_targets.token_targets[0].loss_weight == 0.0
 
 
+def test_prefix_rollin_type_gate_sidecar_covers_positive_tokens() -> None:
+    objects = _objects()
+    example = build_compact_prefix_rollin_example(
+        objects=objects,
+        rollin_order=objects,
+        k=0,
+        tokenizer=SpecialTokenAwareTokenizer(),
+        type_gate_config={
+            "enabled": True,
+            "weights": {"struct": 2.0, "coord": 1.0, "desc": 0.2, "eos": 0.5},
+        },
+    )
+
+    assert example.recursive_detection_targets.token_targets
+    assert all(
+        target.type_gate_token_ids
+        for target in example.recursive_detection_targets.token_targets
+    )
+    for target in example.recursive_detection_targets.token_targets:
+        positives = target.valid_token_ids or (target.teacher_token_id,)
+        assert set(positives).issubset(set(target.type_gate_token_ids))
+        assert target.type_gate_weight >= 0.0
+
+
 def test_rendered_payload_excludes_manual_eos_and_chat_template_supplies_stop() -> None:
     example = _example(k=0)
 

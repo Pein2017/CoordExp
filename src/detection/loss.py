@@ -112,6 +112,38 @@ def support_balance_loss(
     return float(support_weight) * support + float(balance_weight) * balance
 
 
+def _apply_type_gate_loss(
+    position_loss: torch.Tensor,
+    *,
+    step_log_probs: torch.Tensor,
+    target: object,
+    vocab_size: int,
+) -> torch.Tensor:
+    type_gate_token_ids = tuple(int(token_id) for token_id in getattr(target, "type_gate_token_ids", ()))
+    if not type_gate_token_ids:
+        return position_loss
+    type_gate_weight = float(getattr(target, "type_gate_weight", 0.0))
+    if not math.isfinite(type_gate_weight) or type_gate_weight < 0.0:
+        raise ValueError("TokenTarget.type_gate_weight must be finite and >= 0")
+    if type_gate_weight == 0.0:
+        return position_loss
+    if len(set(type_gate_token_ids)) != len(type_gate_token_ids):
+        raise ValueError("TokenTarget.type_gate_token_ids must be unique")
+    for token_id in type_gate_token_ids:
+        _validate_token_id(
+            token_id=token_id,
+            vocab_size=vocab_size,
+            label="type-gate token id",
+        )
+    type_ids = torch.tensor(
+        type_gate_token_ids,
+        device=step_log_probs.device,
+        dtype=torch.long,
+    )
+    type_loss = -torch.logsumexp(step_log_probs.index_select(0, type_ids), dim=0)
+    return position_loss + type_gate_weight * type_loss
+
+
 def compute_recursive_detection_ce_batch_loss(
     *,
     logits: torch.Tensor,
@@ -449,7 +481,13 @@ def _compute_sample_loss(
         )
         step_log_probs = F.log_softmax(logits[target.position - 1].float(), dim=-1)
         if target.kind == "hard_ce":
-            per_position_losses[target.position] = -step_log_probs[target.teacher_token_id]
+            position_loss = -step_log_probs[target.teacher_token_id]
+            per_position_losses[target.position] = _apply_type_gate_loss(
+                position_loss,
+                step_log_probs=step_log_probs,
+                target=target,
+                vocab_size=vocab_size,
+            )
             continue
 
         if not target.trie_branch_targets:
@@ -486,12 +524,18 @@ def _compute_sample_loss(
 
         child_ids = torch.tensor(child_token_ids, device=logits.device, dtype=torch.long)
         q = torch.tensor(child_weights, device=logits.device, dtype=torch.float32)
-        per_position_losses[target.position] = support_balance_loss(
+        position_loss = support_balance_loss(
             logits[target.position - 1],
             child_ids,
             q,
             support_weight=float(weights.support_weight),
             balance_weight=float(weights.balance_weight),
+        )
+        per_position_losses[target.position] = _apply_type_gate_loss(
+            position_loss,
+            step_log_probs=step_log_probs,
+            target=target,
+            vocab_size=vocab_size,
         )
 
     sample_loss = _normalize_sample_loss(

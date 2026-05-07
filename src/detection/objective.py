@@ -19,6 +19,10 @@ from src.detection.template import (
     DetectionSequenceTemplate,
     RenderedAssistantSequence,
 )
+from src.detection.token_types import (
+    allowed_type_token_ids_for_target,
+    build_compact_token_type_groups,
+)
 from src.detection.tokenizer_contract import (
     CompactTrainingStopContract,
     resolve_compact_training_stop_contract,
@@ -149,6 +153,8 @@ class TokenTarget:
     semantic_role: SemanticRole = SemanticRole.OBJECT_CONTROL
     loss_atom_id: str | None = None
     loss_weight: float = 1.0
+    type_gate_token_ids: tuple[int, ...] = ()
+    type_gate_weight: float = 0.0
 
     @property
     def valid_token_ids(self) -> tuple[int, ...]:
@@ -318,6 +324,7 @@ def build_compact_prefix_rollin_example(
     tokenizer: TokenizerWithOffsets,
     eos_trust_weight: float = 1.0,
     normalized_sample: NormalizedDetectionSample | None = None,
+    type_gate_config: Any | None = None,
     system_prompt: str | None = None,
     user_content: str = "<image>",
     messages: Sequence[Mapping[str, Any]] | None = None,
@@ -384,6 +391,11 @@ def build_compact_prefix_rollin_example(
         filtered_targets,
         eos_positions=eos_positions,
         eos_trust_weight=eos_loss_weight,
+    )
+    filtered_targets = _apply_prefix_rollin_type_gate(
+        filtered_targets,
+        tokenizer=tokenizer,
+        type_gate_config=type_gate_config,
     )
     loss_atoms = _build_loss_atoms(
         tokenized=masked_tokenized,
@@ -612,6 +624,53 @@ def compute_eos_trust_weight(gt_count: int, cfg: Any) -> float:
             "runtime implementation"
         )
     raise ValueError(f"unsupported EOS trust weight source {source!r}")
+
+
+def _apply_prefix_rollin_type_gate(
+    token_targets: Sequence[TokenTarget],
+    *,
+    tokenizer: TokenizerWithOffsets,
+    type_gate_config: Any | None,
+) -> tuple[TokenTarget, ...]:
+    if not bool(_cfg_value(type_gate_config, "enabled", False)):
+        return tuple(token_targets)
+    groups = build_compact_token_type_groups(tokenizer)
+    weights_cfg = _cfg_value(type_gate_config, "weights")
+
+    def _weight(name: str) -> float:
+        value = _cfg_value(weights_cfg, name, 0.0)
+        weight = float(value)
+        if not math.isfinite(weight) or weight < 0.0:
+            raise ValueError(f"type_gate.weights.{name} must be finite and >= 0")
+        return weight
+
+    weights_by_group = {
+        "struct": _weight("struct"),
+        "coord": _weight("coord"),
+        "desc": _weight("desc"),
+        "eos": _weight("eos"),
+    }
+
+    out: list[TokenTarget] = []
+    for target in token_targets:
+        allowed_ids = allowed_type_token_ids_for_target(target, groups)
+        group_weights: list[float] = []
+        if any(token_id in groups.struct for token_id in allowed_ids):
+            group_weights.append(weights_by_group["struct"])
+        if any(token_id in groups.coord for token_id in allowed_ids):
+            group_weights.append(weights_by_group["coord"])
+        if any(token_id in groups.desc for token_id in allowed_ids):
+            group_weights.append(weights_by_group["desc"])
+        if any(token_id in groups.eos for token_id in allowed_ids):
+            group_weights.append(weights_by_group["eos"])
+        out.append(
+            replace(
+                target,
+                type_gate_token_ids=tuple(sorted(allowed_ids)),
+                type_gate_weight=max(group_weights) if group_weights else 0.0,
+            )
+        )
+    return tuple(out)
 
 
 def _validate_prefix_rollin_eos_trust_weight(value: float) -> float:
