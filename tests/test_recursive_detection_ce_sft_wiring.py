@@ -17,6 +17,7 @@ from src.detection.dataset import (
 )
 from src.sft import (
     _assert_latest_detection_runtime_supported,
+    _latest_detection_mode,
     _latest_detection_runtime_custom_shim,
     _resolve_recursive_detection_ce_cfg,
 )
@@ -53,6 +54,40 @@ def test_sft_resolves_recursive_detection_ce_runtime_cfg_from_latest_objective()
     assert cfg.enabled is True
     assert cfg.trie_support_weight == pytest.approx(2.0)
     assert cfg.trie_balance_weight == pytest.approx(1.0)
+
+
+def test_sft_resolves_prefix_rollin_runtime_cfg_from_objectized_target() -> None:
+    cfg = _resolve_recursive_detection_ce_cfg(
+        SimpleNamespace(
+            objective=SimpleNamespace(
+                id="recursive_detection_ce",
+                variant="prefix_rollin_et_rmp_ce",
+                trie_support_weight=None,
+                trie_balance_weight=None,
+                target=SimpleNamespace(
+                    support_weight=1.0,
+                    balance_weight=2.0,
+                ),
+            )
+        )
+    )
+
+    assert cfg is not None
+    assert cfg.enabled is True
+    assert cfg.variant == "prefix_rollin_et_rmp_ce"
+    assert cfg.trie_support_weight == pytest.approx(1.0)
+    assert cfg.trie_balance_weight == pytest.approx(2.0)
+
+
+def test_latest_detection_mode_accepts_prefix_rollin_variant() -> None:
+    assert (
+        _latest_detection_mode(
+            SimpleNamespace(
+                objective=SimpleNamespace(variant="prefix_rollin_et_rmp_ce")
+            )
+        )
+        == "prefix_rollin_et_rmp_ce"
+    )
 
 
 def test_sft_rejects_unsupported_recursive_detection_ce_variant() -> None:

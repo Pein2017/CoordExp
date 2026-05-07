@@ -14,10 +14,41 @@ _SPECIAL_TOKEN_RE = re.compile(r"<\|[^|]+\|>")
 
 
 class FakeTokenizer:
-    eos_token = "<|im_end|>"
+    eos_token = "<|endoftext|>"
+    unk_token_id = 0
 
     def __init__(self) -> None:
-        self._token_to_id: dict[str, int] = {}
+        self._token_to_id: dict[str, int] = {
+            "<|im_start|>": 1,
+            "<|im_end|>": 2,
+            "<|endoftext|>": 3,
+            "<|object_ref_start|>": 4,
+            "<|box_start|>": 5,
+        }
+        self.eos_token_id = self._token_to_id[self.eos_token]
+
+    def convert_tokens_to_ids(self, token: str) -> int:
+        return self._token_to_id.get(token, self.unk_token_id)
+
+    def get_vocab(self) -> dict[str, int]:
+        return dict(self._token_to_id)
+
+    def get_added_vocab(self) -> dict[str, int]:
+        return {}
+
+    @property
+    def special_tokens_map(self) -> dict[str, str]:
+        return {"im_start": "<|im_start|>", "im_end": "<|im_end|>"}
+
+    def encode(self, text: str, *, add_special_tokens: bool) -> list[int]:
+        assert add_special_tokens is False
+        return list(
+            self(
+                text,
+                return_offsets_mapping=True,
+                add_special_tokens=False,
+            )["input_ids"]
+        )
 
     def apply_chat_template(
         self,
@@ -25,13 +56,21 @@ class FakeTokenizer:
         *,
         tokenize: bool,
         add_generation_prompt: bool,
-    ) -> str:
-        assert tokenize is False
+    ) -> str | list[int]:
         assert add_generation_prompt is False
-        return "".join(
+        rendered = "".join(
             f"<|im_start|>{message['role']}\n"
             f"{self._content_text(message['content'])}<|im_end|>\n"
             for message in messages
+        )
+        if not tokenize:
+            return rendered
+        return list(
+            self(
+                rendered,
+                return_offsets_mapping=True,
+                add_special_tokens=False,
+            )["input_ids"]
         )
 
     def __call__(
@@ -342,3 +381,72 @@ def test_latest_detection_dataset_sft_mode_does_not_attach_recursive_sidecar(
     assert "recursive_detection_targets" not in sample
     assert sample["detection_metadata"]["template_id"] == "stage1_json_pretty"
     assert sample["detection_metadata"]["realized_source_object_indices"] == [0, 1, 2]
+
+
+def test_prefix_rollin_dataset_masks_prefix_and_keeps_weighted_im_end_target(
+    tmp_path: Path,
+) -> None:
+    jsonl_path = tmp_path / "train.coord.jsonl"
+    _write_jsonl(jsonl_path, [_raw_row()])
+    dataset = DetectionTrainingDataset.from_jsonl(
+        jsonl_path,
+        swift_template=FakeSwiftTemplate(),
+        image_root=tmp_path / "image-root",
+        detection_template_id="compact_full",
+        mode="prefix_rollin_et_rmp_ce",
+        object_ordering="random_permutation",
+        user_prompt="Detect every object.",
+        system_prompt="You are a detector.",
+        max_objects=60,
+        seed=123,
+        state_weighting="uniform_permutation",
+        normalization="semantic_image_bucket_balanced",
+        eos_trust_weight_config={
+            "source": "empirical_unlabeled_poisson_v0",
+            "expected_unlabeled_count": {
+                "intercept": -0.35,
+                "slope": 0.43,
+                "floor": 0.0,
+            },
+            "trust_mapping": {
+                "type": "log_linear_missing_count_penalty",
+                "penalty_per_missing": 1.0,
+                "temperature": 1.0,
+                "min_weight": 0.0,
+                "max_weight": 1.0,
+            },
+        },
+    )
+    dataset.set_epoch(3)
+
+    sample = dataset[0]
+
+    assert sample["detection_metadata"]["mode"] == "prefix_rollin_et_rmp_ce"
+    assert sample["detection_metadata"]["rollin_k"] == 1
+    assert sample["detection_metadata"]["rollin_prefix_token_count"] > 0
+    assert sample["detection_metadata"]["supervised_suffix_token_count"] > 0
+    assert "recursive_detection_targets" in sample
+    supervised_positions = tuple(
+        index for index, label in enumerate(sample["labels"]) if label != -100
+    )
+    assert supervised_positions
+    target_positions = tuple(
+        target.position for target in sample["recursive_detection_targets"].token_targets
+    )
+    assert target_positions == supervised_positions
+    assert len(supervised_positions) < (
+        sample["detection_metadata"]["rollin_prefix_token_count"]
+        + sample["detection_metadata"]["supervised_suffix_token_count"]
+        + sample["detection_metadata"]["semantic_eos_token_count"]
+    )
+    im_end_id = dataset.tokenizer.convert_tokens_to_ids("<|im_end|>")
+    eos_targets = [
+        target
+        for target in sample["recursive_detection_targets"].token_targets
+        if target.teacher_token_id == im_end_id
+    ]
+    assert eos_targets
+    assert eos_targets[-1].loss_weight == pytest.approx(
+        sample["detection_metadata"]["eos_trust_weight"]
+    )
+    assert 0.0 <= sample["detection_metadata"]["eos_trust_weight"] <= 1.0

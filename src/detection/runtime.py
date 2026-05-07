@@ -15,11 +15,13 @@ from src.config.schema import (
     LatestDetectionTrainingConfig,
 )
 from src.detection.dataset import DetectionTrainingDataset
+from src.detection.tokenizer_contract import resolve_compact_training_stop_contract
 
 LatestDetectionRuntimeMode = Literal[
     "sorted_sft",
     "random_order_sft",
     "random_permutation_et_rmp_ce",
+    "prefix_rollin_et_rmp_ce",
 ]
 
 
@@ -35,6 +37,7 @@ class RecursiveDetectionCERuntimeConfig:
     enabled: bool
     trie_support_weight: float
     trie_balance_weight: float
+    variant: str = "random_permutation_et_rmp_ce"
 
 
 def is_latest_detection_config(training_config: Any) -> bool:
@@ -153,12 +156,18 @@ def latest_detection_mode(
     training_config: LatestDetectionTrainingConfig,
 ) -> LatestDetectionRuntimeMode:
     variant = training_config.objective.variant
-    if variant in {"sorted_sft", "random_order_sft", "random_permutation_et_rmp_ce"}:
+    supported = {
+        "sorted_sft",
+        "random_order_sft",
+        "random_permutation_et_rmp_ce",
+        "prefix_rollin_et_rmp_ce",
+    }
+    if variant in supported:
         return cast(LatestDetectionRuntimeMode, variant)
     raise ValueError(
         "latest detection runtime does not support "
         f"objective.variant={variant!r}; use sorted_sft, random_order_sft, "
-        "or random_permutation_et_rmp_ce"
+        "random_permutation_et_rmp_ce, or prefix_rollin_et_rmp_ce"
     )
 
 
@@ -177,10 +186,25 @@ def assert_latest_detection_runtime_supported(
     training_config: LatestDetectionTrainingConfig,
     *,
     encoded_sample_cache_cfg: Any,
+    tokenizer: object | None = None,
 ) -> None:
     support = resolve_detection_runtime_support(training_config)
     if not support.recursive_sidecars_required:
         return
+
+    if training_config.objective.variant == "prefix_rollin_et_rmp_ce":
+        if tokenizer is None:
+            raise ValueError(
+                "prefix_rollin_et_rmp_ce requires tokenizer context for <|im_end|> "
+                "stop-contract validation"
+            )
+        resolve_compact_training_stop_contract(tokenizer)
+        padding_side = getattr(tokenizer, "padding_side", "right")
+        if padding_side not in (None, "right"):
+            raise ValueError(
+                "prefix_rollin_et_rmp_ce requires tokenizer.padding_side='right' "
+                "until sidecar offset rewriting is implemented"
+            )
 
     if bool(training_config.training.get("packing", False)):
         raise ValueError(
@@ -225,18 +249,14 @@ def resolve_recursive_detection_ce_runtime_cfg(
         if isinstance(objective, Mapping) and objective.get("variant") is not None
         else str(getattr(objective, "variant", "") or "")
     )
-    if variant != "random_permutation_et_rmp_ce":
-        raise ValueError(
-            "recursive_detection_ce runtime currently supports only "
-            "objective.variant=random_permutation_et_rmp_ce"
-        )
+
+    def _field(container: Any, field_name: str) -> Any:
+        if isinstance(container, Mapping):
+            return container.get(field_name)
+        return getattr(container, field_name, None)
 
     def _objective_float(field_name: str) -> float:
-        raw = (
-            objective.get(field_name)
-            if isinstance(objective, Mapping)
-            else getattr(objective, field_name, None)
-        )
+        raw = _field(objective, field_name)
         if raw is None:
             raise ValueError(f"objective.{field_name} is required")
         value = float(raw)
@@ -244,16 +264,43 @@ def resolve_recursive_detection_ce_runtime_cfg(
             raise ValueError(f"objective.{field_name} must be finite and >= 0")
         return value
 
-    trie_support_weight = _objective_float("trie_support_weight")
-    trie_balance_weight = _objective_float("trie_balance_weight")
+    if variant == "random_permutation_et_rmp_ce":
+        trie_support_weight = _objective_float("trie_support_weight")
+        trie_balance_weight = _objective_float("trie_balance_weight")
+    elif variant == "prefix_rollin_et_rmp_ce":
+        target = _field(objective, "target")
+        if target is None:
+            raise ValueError(
+                "objective.target is required for "
+                "objective.variant=prefix_rollin_et_rmp_ce"
+            )
+        trie_support_weight = float(_field(target, "support_weight"))
+        trie_balance_weight = float(_field(target, "balance_weight"))
+        for field_name, value in (
+            ("support_weight", trie_support_weight),
+            ("balance_weight", trie_balance_weight),
+        ):
+            if not math.isfinite(value) or value <= 0.0:
+                raise ValueError(
+                    f"objective.target.{field_name} must be finite and > 0 "
+                    "for prefix_rollin_et_rmp_ce"
+                )
+    else:
+        raise ValueError(
+            "recursive_detection_ce runtime currently supports only "
+            "objective.variant=random_permutation_et_rmp_ce or "
+            "prefix_rollin_et_rmp_ce"
+        )
+
     if trie_support_weight + trie_balance_weight <= 0.0:
         raise ValueError(
-            "objective.trie_support_weight and objective.trie_balance_weight must sum to > 0"
+            "recursive_detection_ce support and balance weights must sum to > 0"
         )
     return RecursiveDetectionCERuntimeConfig(
         enabled=True,
         trie_support_weight=trie_support_weight,
         trie_balance_weight=trie_balance_weight,
+        variant=variant,
     )
 
 
@@ -268,6 +315,12 @@ def build_latest_detection_dataset(
     sample_limit: int | None,
     dataset_name: str,
 ) -> DetectionTrainingDataset:
+    eos_trust_weight_config = None
+    if training_config.objective.variant == "prefix_rollin_et_rmp_ce":
+        eos_cfg = training_config.objective.eos
+        if eos_cfg is None:
+            raise ValueError("prefix_rollin_et_rmp_ce requires objective.eos")
+        eos_trust_weight_config = eos_cfg.eos_trust_weight
     return DetectionTrainingDataset.from_jsonl(
         jsonl_path,
         swift_template=swift_template,
@@ -281,6 +334,7 @@ def build_latest_detection_dataset(
         seed=seed,
         state_weighting=training_config.objective.state_weighting,
         normalization=training_config.objective.normalization,
+        eos_trust_weight_config=eos_trust_weight_config,
         sample_limit=sample_limit,
         dataset_name=dataset_name,
     )

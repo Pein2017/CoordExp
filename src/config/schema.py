@@ -3290,6 +3290,11 @@ def _latest_detection_validate_prefix_rollin_contract(
             "for experiment.surface=production; use calibrated_formula_ref "
             "with calibration_artifact_ref"
         )
+    if experiment.surface in {"smoke", "ablation"} and source == "calibrated_formula_ref":
+        raise ValueError(
+            "objective.eos.eos_trust_weight.source=calibrated_formula_ref is "
+            f"reserved for experiment.surface=production, got {experiment.surface}"
+        )
 
 
 def _latest_detection_validate_token_rows(
@@ -3658,10 +3663,19 @@ class LogLinearMissingCountPenaltyConfig:
             raise ValueError(
                 "objective.eos.eos_trust_weight.trust_mapping.temperature must be > 0"
             )
-        if float(self.min_weight) < 0.0 or float(self.max_weight) < float(self.min_weight):
+        if float(self.penalty_per_missing) < 0.0:
+            raise ValueError(
+                "objective.eos.eos_trust_weight.trust_mapping.penalty_per_missing "
+                "must be >= 0"
+            )
+        if (
+            float(self.min_weight) < 0.0
+            or float(self.max_weight) < float(self.min_weight)
+            or float(self.max_weight) > 1.0
+        ):
             raise ValueError(
                 "objective.eos.eos_trust_weight.trust_mapping weights must satisfy "
-                "0 <= min_weight <= max_weight"
+                "0 <= min_weight <= max_weight <= 1"
             )
 
 
@@ -3677,6 +3691,7 @@ class EosTrustWeightConfig:
     expected_unlabeled_count: Optional[ExpectedUnlabeledCountConfig] = None
     trust_mapping: Optional[LogLinearMissingCountPenaltyConfig] = None
     calibration_artifact_ref: Optional[str] = None
+    value: Optional[float] = None
 
     def __post_init__(self) -> None:
         _latest_detection_validate_choice(
@@ -3696,6 +3711,11 @@ class EosTrustWeightConfig:
                 "and unimplemented"
             )
         if self.source == "empirical_unlabeled_poisson_v0":
+            if self.value is not None:
+                raise ValueError(
+                    "objective.eos.eos_trust_weight.source=empirical_unlabeled_poisson_v0 "
+                    "does not accept value"
+                )
             if self.expected_unlabeled_count is None or self.trust_mapping is None:
                 raise ValueError(
                     "objective.eos.eos_trust_weight.source=empirical_unlabeled_poisson_v0 "
@@ -3707,6 +3727,11 @@ class EosTrustWeightConfig:
                     "does not accept calibration_artifact_ref"
                 )
         if self.source == "calibrated_formula_ref":
+            if self.value is not None:
+                raise ValueError(
+                    "objective.eos.eos_trust_weight.source=calibrated_formula_ref "
+                    "does not accept value"
+                )
             if self.expected_unlabeled_count is not None or self.trust_mapping is not None:
                 raise ValueError(
                     "objective.eos.eos_trust_weight.source=calibrated_formula_ref "
@@ -3741,6 +3766,28 @@ class EosTrustWeightConfig:
                     "does not accept expected_unlabeled_count, trust_mapping, "
                     "or calibration_artifact_ref"
                 )
+        if self.source == "constant_ablation":
+            if self.value is None:
+                raise ValueError(
+                    "objective.eos.eos_trust_weight.source=constant_ablation "
+                    "requires value"
+                )
+            if (
+                not isinstance(self.value, (int, float))
+                or isinstance(self.value, bool)
+                or not math.isfinite(float(self.value))
+                or float(self.value) < 0.0
+                or float(self.value) > 1.0
+            ):
+                raise ValueError(
+                    "objective.eos.eos_trust_weight.source=constant_ablation "
+                    "requires value in [0, 1]"
+                )
+        if self.source == "disabled_ablation" and self.value is not None:
+            raise ValueError(
+                "objective.eos.eos_trust_weight.source=disabled_ablation "
+                "does not accept value"
+            )
 
 
 @dataclass(frozen=True)

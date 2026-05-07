@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import copy
+import random
 from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any, Literal, Mapping, MutableMapping, Sequence
@@ -21,6 +22,8 @@ from src.detection.objective import (
     LossNormalizationStrategy,
     RecursiveDetectionTargets,
     StateWeightingStrategy,
+    build_compact_prefix_rollin_example,
+    compute_eos_trust_weight,
     prepare_detection_training_example,
 )
 from src.detection.template import TemplateId, get_detection_template
@@ -87,6 +90,7 @@ class DetectionDatasetRuntimeConfig:
     seed: int
     state_weighting: str
     normalization: str
+    eos_trust_weight_config: Any | None = None
 
 
 class DetectionTrainingDataset(Dataset):
@@ -135,6 +139,7 @@ class DetectionTrainingDataset(Dataset):
         seed: int,
         state_weighting: str,
         normalization: str,
+        eos_trust_weight_config: Any | None = None,
         sample_limit: int | None = None,
         dataset_name: str | None = None,
     ) -> "DetectionTrainingDataset":
@@ -158,6 +163,7 @@ class DetectionTrainingDataset(Dataset):
                 seed=int(seed),
                 state_weighting=str(state_weighting),
                 normalization=str(normalization),
+                eos_trust_weight_config=eos_trust_weight_config,
             ),
             dataset_name=dataset_name or path.stem,
         )
@@ -182,15 +188,40 @@ class DetectionTrainingDataset(Dataset):
         detection_template = get_detection_template(self.config.detection_template_id)
         rendered_assistant = detection_template.render_assistant(normalized)
         messages = self._messages(raw.images, assistant_text=rendered_assistant.text)
-        prepared = prepare_detection_training_example(
-            normalized,
-            template=detection_template,
-            tokenizer=self.tokenizer,
-            mode=self.config.mode,
-            state_weighting=self._state_weighting_for_prepare(),
-            normalization=self._normalization_for_prepare(),
-            messages=messages,
-        )
+
+        if self.config.mode == "prefix_rollin_et_rmp_ce":
+            if self.config.detection_template_id != "compact_full":
+                raise ValueError("prefix_rollin_et_rmp_ce requires compact_full template")
+            if self.config.eos_trust_weight_config is None:
+                raise ValueError(
+                    "prefix_rollin_et_rmp_ce requires eos_trust_weight_config"
+                )
+            k_rng = random.Random(_mix_seed(self.config.seed, self._epoch, base_idx))
+            k = k_rng.randint(0, len(normalized.objects))
+            eos_trust_weight = compute_eos_trust_weight(
+                len(normalized.objects),
+                self.config.eos_trust_weight_config,
+            )
+            prepared = build_compact_prefix_rollin_example(
+                objects=normalized.objects,
+                rollin_order=normalized.objects,
+                k=k,
+                tokenizer=self.tokenizer,
+                eos_trust_weight=eos_trust_weight,
+                normalized_sample=normalized,
+                messages=messages,
+            )
+        else:
+            prepared = prepare_detection_training_example(
+                normalized,
+                template=detection_template,
+                tokenizer=self.tokenizer,
+                mode=self.config.mode,
+                state_weighting=self._state_weighting_for_prepare(),
+                normalization=self._normalization_for_prepare(),
+                messages=messages,
+            )
+
         encoded = self._encode_messages(messages)
         recursive_detection_targets = self._align_prepared_targets_to_encoded(
             encoded,
@@ -199,15 +230,9 @@ class DetectionTrainingDataset(Dataset):
 
         encoded["messages"] = copy.deepcopy(messages)
         encoded["assistant_payload"] = detection_template.parse_assistant(
-            rendered_assistant.text
+            prepared.rendered_assistant.text
         )
-        encoded["metadata"] = {
-            "source": raw.metadata.source,
-            "split": raw.metadata.split,
-            "image_id": raw.image_id,
-            "file_name": raw.file_name,
-        }
-        encoded["detection_metadata"] = {
+        detection_metadata = {
             "dataset": self.dataset_name,
             "base_idx": base_idx,
             "template_id": prepared.template_id,
@@ -221,6 +246,35 @@ class DetectionTrainingDataset(Dataset):
             ),
             "object_count": len(normalized.objects),
         }
+        if self.config.mode == "prefix_rollin_et_rmp_ce":
+            detection_metadata.update(
+                {
+                    "rollin_k": int(prepared.rollin_state.k),
+                    "rollin_emitted_object_instance_ids": list(
+                        prepared.rollin_state.emitted
+                    ),
+                    "rollin_remaining_object_instance_ids": list(
+                        prepared.rollin_state.remaining
+                    ),
+                    "rollin_prefix_token_count": len(
+                        prepared.debug_spans["rollin_prefix"].token_positions
+                    ),
+                    "supervised_suffix_token_count": len(
+                        prepared.debug_spans["supervised_suffix"].token_positions
+                    ),
+                    "semantic_eos_token_count": len(
+                        prepared.debug_spans["semantic_eos"].token_positions
+                    ),
+                    "eos_trust_weight": float(prepared.eos_trust_weight),
+                }
+            )
+        encoded["metadata"] = {
+            "source": raw.metadata.source,
+            "split": raw.metadata.split,
+            "image_id": raw.image_id,
+            "file_name": raw.file_name,
+        }
+        encoded["detection_metadata"] = detection_metadata
         encoded["sample_id"] = _make_sample_id(self.dataset_name, base_idx)
         encoded["dataset"] = self.dataset_name
         encoded["base_idx"] = base_idx
@@ -274,7 +328,7 @@ class DetectionTrainingDataset(Dataset):
 
     def _align_prepared_targets_to_encoded(
         self,
-        encoded: Mapping[str, Any],
+        encoded: MutableMapping[str, Any],
         prepared: Any,
     ) -> RecursiveDetectionTargets | None:
         encoded_input_ids = _as_int_tuple(encoded.get("input_ids"), path="encoded.input_ids")
@@ -288,30 +342,83 @@ class DetectionTrainingDataset(Dataset):
         encoded_positions = tuple(
             index for index, label in enumerate(encoded_labels) if int(label) != -100
         )
-        if len(prepared_positions) != len(encoded_positions):
-            raise ValueError("encoded labels do not supervise the same target count")
-
-        prepared_supervised_ids = tuple(
-            int(prepared.input_ids[index]) for index in prepared_positions
-        )
-        encoded_supervised_ids = tuple(
-            int(encoded_input_ids[index]) for index in encoded_positions
-        )
-        if prepared_supervised_ids != encoded_supervised_ids:
-            raise ValueError(
-                "encoded supervised token ids do not match sidecar tokenization"
+        prefix_rollin_mode = getattr(prepared, "mode", None) == "prefix_rollin_et_rmp_ce"
+        if prefix_rollin_mode:
+            prepared_assistant_positions = [
+                index
+                for index, active in enumerate(prepared.assistant_mask)
+                if bool(active)
+            ]
+            stop_span = getattr(prepared, "assistant_stop_token_span", None)
+            if stop_span is not None:
+                for position in stop_span.token_indices():
+                    if position not in prepared_assistant_positions:
+                        prepared_assistant_positions.append(int(position))
+            prepared_alignment_positions = tuple(sorted(prepared_assistant_positions))
+            if len(prepared_alignment_positions) != len(encoded_positions):
+                raise ValueError(
+                    "encoded labels do not align with prefix_rollin_et_rmp_ce "
+                    "assistant payload and <|im_end|> stop span"
+                )
+            if prepared_alignment_positions:
+                position_delta = int(encoded_positions[0]) - int(
+                    prepared_alignment_positions[0]
+                )
+            else:
+                position_delta = 0
+            expected_encoded_positions = tuple(
+                int(position) + position_delta
+                for position in prepared_alignment_positions
             )
-        if not prepared_positions:
-            return None
-
-        position_delta = int(encoded_positions[0]) - int(prepared_positions[0])
-        expected_encoded_positions = tuple(
-            int(position) + position_delta for position in prepared_positions
-        )
-        if expected_encoded_positions != encoded_positions:
-            raise ValueError(
-                "encoded supervised positions are not a constant shift of sidecar positions"
+            if expected_encoded_positions != encoded_positions:
+                raise ValueError(
+                    "encoded assistant positions are not a constant shift of "
+                    "prefix-rollin sidecar positions"
+                )
+            prepared_supervised_ids = tuple(
+                int(prepared.input_ids[index]) for index in prepared_alignment_positions
             )
+            encoded_supervised_ids = tuple(
+                int(encoded_input_ids[index]) for index in encoded_positions
+            )
+            if prepared_supervised_ids != encoded_supervised_ids:
+                raise ValueError(
+                    "encoded assistant token ids do not match prefix-rollin sidecar "
+                    "tokenization"
+                )
+            active_encoded_positions = {
+                int(position) + position_delta for position in prepared_positions
+            }
+            encoded_labels = tuple(
+                int(token_id) if index in active_encoded_positions else -100
+                for index, token_id in enumerate(encoded_input_ids)
+            )
+            encoded["labels"] = list(encoded_labels)
+        else:
+            if len(prepared_positions) != len(encoded_positions):
+                raise ValueError("encoded labels do not supervise the same target count")
+
+            prepared_supervised_ids = tuple(
+                int(prepared.input_ids[index]) for index in prepared_positions
+            )
+            encoded_supervised_ids = tuple(
+                int(encoded_input_ids[index]) for index in encoded_positions
+            )
+            if prepared_supervised_ids != encoded_supervised_ids:
+                raise ValueError(
+                    "encoded supervised token ids do not match sidecar tokenization"
+                )
+            if not prepared_positions:
+                return None
+
+            position_delta = int(encoded_positions[0]) - int(prepared_positions[0])
+            expected_encoded_positions = tuple(
+                int(position) + position_delta for position in prepared_positions
+            )
+            if expected_encoded_positions != encoded_positions:
+                raise ValueError(
+                    "encoded supervised positions are not a constant shift of sidecar positions"
+                )
 
         targets = prepared.recursive_detection_targets
         if targets is None:

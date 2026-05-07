@@ -2057,6 +2057,7 @@ def main():
         _assert_latest_detection_runtime_supported(
             latest_detection_config,
             encoded_sample_cache_cfg=encoded_sample_cache_cfg,
+            tokenizer=getattr(sft.template, "tokenizer", None),
         )
     static_packing_cache_cfg = _parse_static_packing_cache_config(
         training_config.training

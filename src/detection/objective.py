@@ -35,6 +35,7 @@ DetectionTrainingMode = Literal[
     "sorted_sft",
     "random_order_sft",
     "random_permutation_et_rmp_ce",
+    "prefix_rollin_et_rmp_ce",
 ]
 TrieTargetKind = Literal["hard_ce", "trie_multi_positive"]
 StateWeightingStrategy = Literal[
@@ -212,6 +213,22 @@ class PreparedPrefixRollinExample:
     eos_trust_weight: float = 1.0
 
     @property
+    def object_ordering(self) -> ObjectOrderingPlan:
+        return self.normalized_sample.object_ordering
+
+    @property
+    def template_id(self) -> str:
+        return self.rendered_assistant.template_id
+
+    @property
+    def template_version(self) -> int:
+        return self.rendered_assistant.template_version
+
+    @property
+    def realized_source_object_indices(self) -> tuple[int, ...]:
+        return self.object_ordering.realized_source_object_indices
+
+    @property
     def chat_text(self) -> str:
         return self.tokenized.chat_text
 
@@ -300,6 +317,7 @@ def build_compact_prefix_rollin_example(
     k: int,
     tokenizer: TokenizerWithOffsets,
     eos_trust_weight: float = 1.0,
+    normalized_sample: NormalizedDetectionSample | None = None,
     system_prompt: str | None = None,
     user_content: str = "<image>",
     messages: Sequence[Mapping[str, Any]] | None = None,
@@ -307,7 +325,9 @@ def build_compact_prefix_rollin_example(
     """Build one compact_full prefix-rollin example for tests and materialization."""
 
     eos_loss_weight = _validate_prefix_rollin_eos_trust_weight(eos_trust_weight)
-    source_objects = tuple(objects)
+    source_objects = tuple(normalized_sample.objects if normalized_sample is not None else objects)
+    if normalized_sample is not None and tuple(objects) != source_objects:
+        raise ValueError("objects must match normalized_sample.objects when provided")
     source_by_id = {obj.object_instance_id: obj for obj in source_objects}
     if len(source_by_id) != len(source_objects):
         raise ValueError("objects must have unique object_instance_id values")
@@ -322,7 +342,7 @@ def build_compact_prefix_rollin_example(
         k=k,
     )
     stop_contract = resolve_compact_training_stop_contract(tokenizer)
-    sample = _build_prefix_rollin_sample(ordered_objects)
+    sample = normalized_sample if normalized_sample is not None else _build_prefix_rollin_sample(ordered_objects)
 
     rendered_assistant = CompactFullTemplate().render_assistant(sample)
     tokenized = tokenize_rendered_detection_conversation(
@@ -498,6 +518,100 @@ def _prefix_rollin_state_weighting_diagnostics(
         separator_exposures=separator_exposures,
         terminal_exposure=1.0,
     )
+
+
+def _cfg_value(cfg: Any, field_name: str, default: Any = None) -> Any:
+    if cfg is None:
+        return default
+    if isinstance(cfg, Mapping):
+        return cfg.get(field_name, default)
+    return getattr(cfg, field_name, default)
+
+
+def expected_unlabeled_count(
+    gt_count: int,
+    *,
+    intercept: float = -0.35,
+    slope: float = 0.43,
+    floor: float = 0.0,
+) -> float:
+    if type(gt_count) is not int or gt_count < 0:
+        raise ValueError("gt_count must be a non-negative integer")
+    raw = float(intercept) + float(slope) * float(gt_count)
+    return max(float(floor), raw)
+
+
+def eos_trust_weight_from_expected_unlabeled_count(
+    expected_count: float,
+    *,
+    penalty_per_missing: float = 1.0,
+    temperature: float = 1.0,
+    min_weight: float = 0.0,
+    max_weight: float = 1.0,
+) -> float:
+    if not math.isfinite(float(expected_count)):
+        raise ValueError("expected unlabeled count must be finite")
+    if not math.isfinite(float(penalty_per_missing)) or float(penalty_per_missing) < 0.0:
+        raise ValueError("EOS prior penalty_per_missing must be finite and non-negative")
+    if not math.isfinite(float(temperature)) or float(temperature) <= 0.0:
+        raise ValueError("EOS prior temperature must be finite and positive")
+    if (
+        not math.isfinite(float(min_weight))
+        or not math.isfinite(float(max_weight))
+        or float(min_weight) < 0.0
+        or float(max_weight) < float(min_weight)
+        or float(max_weight) > 1.0
+    ):
+        raise ValueError("EOS prior clamp must satisfy 0 <= min_weight <= max_weight <= 1")
+    raw = math.exp(
+        -float(penalty_per_missing)
+        * max(0.0, float(expected_count))
+        / float(temperature)
+    )
+    return min(max(raw, float(min_weight)), float(max_weight))
+
+
+def compute_eos_trust_weight(gt_count: int, cfg: Any) -> float:
+    source = str(_cfg_value(cfg, "source", "") or "")
+    if source == "disabled_ablation":
+        return 0.0
+    if source == "constant_ablation":
+        value = _cfg_value(cfg, "value")
+        if value is None:
+            raise ValueError("constant_ablation EOS trust weight requires value")
+        result = float(value)
+        if not math.isfinite(result) or result < 0.0 or result > 1.0:
+            raise ValueError("constant_ablation EOS trust weight value must be in [0, 1]")
+        return result
+    if source == "empirical_unlabeled_poisson_v0":
+        expected_cfg = _cfg_value(cfg, "expected_unlabeled_count")
+        mapping_cfg = _cfg_value(cfg, "trust_mapping")
+        if expected_cfg is None or mapping_cfg is None:
+            raise ValueError(
+                "empirical_unlabeled_poisson_v0 requires expected_unlabeled_count "
+                "and trust_mapping"
+            )
+        expected = expected_unlabeled_count(
+            gt_count,
+            intercept=float(_cfg_value(expected_cfg, "intercept", -0.35)),
+            slope=float(_cfg_value(expected_cfg, "slope", 0.43)),
+            floor=float(_cfg_value(expected_cfg, "floor", 0.0)),
+        )
+        return eos_trust_weight_from_expected_unlabeled_count(
+            expected,
+            penalty_per_missing=float(
+                _cfg_value(mapping_cfg, "penalty_per_missing", 1.0)
+            ),
+            temperature=float(_cfg_value(mapping_cfg, "temperature", 1.0)),
+            min_weight=float(_cfg_value(mapping_cfg, "min_weight", 0.0)),
+            max_weight=float(_cfg_value(mapping_cfg, "max_weight", 1.0)),
+        )
+    if source == "calibrated_formula_ref":
+        raise ValueError(
+            "calibrated_formula_ref EOS trust weights require a calibrated formula "
+            "runtime implementation"
+        )
+    raise ValueError(f"unsupported EOS trust weight source {source!r}")
 
 
 def _validate_prefix_rollin_eos_trust_weight(value: float) -> float:
