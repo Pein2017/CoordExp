@@ -28,6 +28,7 @@ point is failure-mode interpretation rather than a final run-vs-run benchmark.
 ## Current Clusters
 
 - Stage-1 detection result reports
+  - [2026-05-07_stage1_2b_coord_component_rp110_ablation.md](2026-05-07_stage1_2b_coord_component_rp110_ablation.md)
   - [2026-05-07_compact_full_rp110_top3_union_unlabeled_prior.md](2026-05-07_compact_full_rp110_top3_union_unlabeled_prior.md)
   - [2026-04-28_stage1_mp_branch_runtime_packing_probe.md](2026-04-28_stage1_mp_branch_runtime_packing_probe.md)
   - [2026-04-23_stage1_raw_text_vs_coord_token_repetition_penalty_sweep.md](2026-04-23_stage1_raw_text_vs_coord_token_repetition_penalty_sweep.md)

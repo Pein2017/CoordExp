@@ -67,6 +67,7 @@ groups:
     - progress/audits/2026-02-25_stage2_channel_a_coord_loss.md
   benchmarks:
     - progress/benchmarks/README.md
+    - progress/benchmarks/2026-05-07_stage1_2b_coord_component_rp110_ablation.md
     - progress/benchmarks/2026-05-07_compact_full_rp110_top3_union_unlabeled_prior.md
     - progress/benchmarks/2026-04-28_stage1_mp_branch_runtime_packing_probe.md
     - progress/benchmarks/2026-04-23_stage1_raw_text_vs_coord_token_repetition_penalty_sweep.md
@@ -148,6 +149,11 @@ notes:
     kind: diagnostic-study
     status: canonical-cluster-entry
     summary: Canonical synthesis for the small-object duplication offline cluster, unifying the protocol, broad harness, and crowded deep-dive.
+  - path: progress/benchmarks/2026-05-07_stage1_2b_coord_component_rp110_ablation.md
+    title: Stage-1 2B Coord-Component RP1.10 Ablation Benchmark
+    kind: benchmark
+    status: completed-benchmark
+    summary: Canonical val200 record for the Stage-1 2B coord-token loss-component ablation, including the hard-CE rp=1.10 rescue and updated ranking.
   - path: progress/diagnostics/2026-04-13_duplication_collapse_final_analysis.md
     title: Duplication Collapse Final Analysis
     kind: diagnostic-study
