@@ -254,6 +254,12 @@ def _write_jsonl(path: Path, rows: Sequence[Mapping[str, Any]]) -> None:
     )
 
 
+def _ensure_image_root(tmp_path: Path) -> None:
+    image_path = tmp_path / "image-root/images/train2017/example.jpg"
+    image_path.parent.mkdir(parents=True, exist_ok=True)
+    image_path.write_bytes(b"unit-test-image-placeholder")
+
+
 def _raw_row() -> dict[str, Any]:
     return {
         "images": ["images/train2017/example.jpg"],
@@ -350,6 +356,7 @@ def test_prefix_rollin_ablation_launch_smoke_covers_config_dataset_loss_and_mani
     val_jsonl = tmp_path / "data" / "val.coord.jsonl"
     _write_jsonl(train_jsonl, [_raw_row()])
     _write_jsonl(val_jsonl, [{**_raw_row(), "metadata": {"source": "unit", "split": "val"}}])
+    _ensure_image_root(tmp_path)
     cfg = replace(
         cfg,
         data=DetectionDataConfig(
@@ -368,7 +375,6 @@ def test_prefix_rollin_ablation_launch_smoke_covers_config_dataset_loss_and_mani
             "num_train_epochs": 1,
             "max_steps": 1,
             "per_device_train_batch_size": 1,
-            "gradient_accumulation_steps": 1,
             "effective_batch_size": 1,
             "per_device_eval_batch_size": 1,
             "eval_strategy": "no",
@@ -386,6 +392,9 @@ def test_prefix_rollin_ablation_launch_smoke_covers_config_dataset_loss_and_mani
     assert cfg.objective.rollin.k_distribution.max_k == "object_count"
     assert cfg.objective.target.support_weight == pytest.approx(1.0)
     assert cfg.objective.target.balance_weight == pytest.approx(2.0)
+    assert cfg.objective.boundary.separator_continue_weight == pytest.approx(0.5)
+    assert cfg.objective.boundary.eos_stop_weight == pytest.approx(0.5)
+    assert cfg.objective.boundary.component_weight == pytest.approx(0.3)
     assert cfg.objective.eos.eos_token == "<|im_end|>"
     assert cfg.training["packing"] is False
     assert cfg.training["eval_packing"] is False
@@ -446,6 +455,9 @@ def test_prefix_rollin_ablation_launch_smoke_covers_config_dataset_loss_and_mani
     assert recursive_cfg.variant == "prefix_rollin_et_rmp_ce"
     assert recursive_cfg.trie_support_weight == pytest.approx(1.0)
     assert recursive_cfg.trie_balance_weight == pytest.approx(2.0)
+    assert recursive_cfg.separator_continue_weight == pytest.approx(0.5)
+    assert recursive_cfg.eos_stop_weight == pytest.approx(0.5)
+    assert recursive_cfg.boundary_component_weight == pytest.approx(0.3)
 
     targets = sample["recursive_detection_targets"]
     logits = _build_logits_for_targets(input_ids=sample["input_ids"], target_payload=targets)
@@ -468,11 +480,21 @@ def test_prefix_rollin_ablation_launch_smoke_covers_config_dataset_loss_and_mani
     assert model.forward_inputs is not None
     assert RECURSIVE_DETECTION_TARGETS_KEY not in model.forward_inputs
     assert "detection_metadata" not in model.forward_inputs
+    assert "labels" not in model.forward_inputs
     metrics = _metric_values(trainer)
     assert metrics["loss/recursive_detection_ce"][-1] == pytest.approx(loss.item())
     assert metrics["recursive_detection_ce/batch_size"][-1] == pytest.approx(1.0)
     assert metrics["recursive_detection_ce/trie_support_weight"][-1] == pytest.approx(1.0)
     assert metrics["recursive_detection_ce/trie_balance_weight"][-1] == pytest.approx(2.0)
+    assert metrics[
+        "recursive_detection_ce/boundary/separator_continue_weight"
+    ][-1] == pytest.approx(0.5)
+    assert metrics["recursive_detection_ce/boundary/eos_stop_weight"][-1] == pytest.approx(
+        0.5
+    )
+    assert metrics["recursive_detection_ce/boundary/component_weight"][-1] == pytest.approx(
+        0.3
+    )
     assert "recursive_detection_ce/type_gate_loss" in metrics
     assert "recursive_detection_ce/eos_trust_weight" in metrics
     assert "detection_sequence/objective/recursive_detection_ce/loss_per_sample" in metrics
@@ -573,6 +595,38 @@ def test_prefix_rollin_ablation_launch_smoke_covers_config_dataset_loss_and_mani
     effective = json.loads((output_dir / "effective_runtime.json").read_text("utf-8"))
     assert effective["runtime"]["checkpoint_mode"] == "artifact_only"
     assert effective["runtime"]["max_steps"] == 1
+    assert effective["runtime"]["effective_batch_size"] == 1
+    assert effective["runtime"]["effective_batch_size_source"] == (
+        "training.effective_batch_size"
+    )
+    assert effective["runtime"]["actual_global_effective_batch_size"] == 1
+    assert effective["runtime"]["effective_batch_rounding"] == "exact"
+    assert effective["runtime"]["world_size"] == 1
+    assert effective["runtime"]["latest_detection_objective"] == {
+        "id": "recursive_detection_ce",
+        "variant": "prefix_rollin_et_rmp_ce",
+        "state_weighting": "uniform_permutation",
+        "normalization": "semantic_image_bucket_balanced",
+        "template_id": "compact_full",
+        "coordinate_surface": "coord_token",
+        "bbox_format": "xyxy",
+        "target_type": "entry_trie_support_balance",
+        "support_weight": 1.0,
+        "balance_weight": 2.0,
+        "boundary_type": "compact_full_append_boundary",
+        "separator_continue_weight": 0.5,
+        "eos_stop_weight": 0.5,
+        "boundary_component_weight": 0.3,
+        "rollin_source": "ground_truth",
+        "rollin_k_distribution": "uniform_inclusive",
+        "eos_token": "<|im_end|>",
+        "eos_trust_weight_source": "empirical_unlabeled_poisson_v0",
+        "type_gate_mode": "allowed_type_mass",
+    }
+    assert effective["runtime"]["model_source"]["raw_path"].endswith(
+        "Qwen3-VL-2B-Instruct-coordexp"
+    )
+    assert effective["runtime"]["token_rows"]["expected_trainable_row_count"] == 1002
     assert effective["runtime"]["packing"]["enabled"] is False
     assert effective["runtime"]["encoded_sample_cache"]["enabled"] is False
     assert effective["runtime"]["dataset_source_train_jsonl"]["raw_path"] == str(
@@ -590,6 +644,15 @@ def test_prefix_rollin_ablation_launch_smoke_covers_config_dataset_loss_and_mani
         (output_dir / "experiment_manifest.json").read_text("utf-8")
     )
     assert experiment_manifest["experiment"]["authored"]["surface"] == "ablation"
+    assert (
+        experiment_manifest["runtime_summary"]["latest_detection_objective"]["variant"]
+        == "prefix_rollin_et_rmp_ce"
+    )
+    assert experiment_manifest["runtime_summary"]["effective_batch_size"] == 1
+    assert (
+        experiment_manifest["runtime_summary"]["actual_global_effective_batch_size"]
+        == 1
+    )
     assert experiment_manifest["artifacts"]["resolved_config"] == "resolved_config.json"
     assert experiment_manifest["artifacts"]["effective_runtime"] == "effective_runtime.json"
     assert "pipeline_manifest" not in experiment_manifest["artifacts"]

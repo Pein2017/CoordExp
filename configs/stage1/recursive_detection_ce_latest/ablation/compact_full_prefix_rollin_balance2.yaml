@@ -20,7 +20,6 @@ training:
   run_name: compact-full-prefix-rollin-et-rmp-ce-balance2-e1
   num_train_epochs: 4
   per_device_train_batch_size: 16
-  gradient_accumulation_steps: 1
   effective_batch_size: 128
   per_device_eval_batch_size: 1
   learning_rate: 5.0e-5
@@ -101,6 +100,8 @@ token_rows:
 objective:
   id: recursive_detection_ce
   variant: prefix_rollin_et_rmp_ce
+  state_weighting: uniform_permutation
+  normalization: semantic_image_bucket_balanced
   rollin:
     enabled: true
     source: ground_truth
@@ -118,6 +119,11 @@ objective:
     control_tokens: hard_ce
     support_weight: 1.0
     balance_weight: 2.0
+  boundary:
+    type: compact_full_append_boundary
+    separator_continue_weight: 0.5
+    eos_stop_weight: 0.5
+    component_weight: 0.3
   type_gate:
     enabled: true
     mode: allowed_type_mass
