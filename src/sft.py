@@ -67,6 +67,12 @@ from .detection.packing import (
     build_stage1_static_sft_packing_fingerprint,
     require_static_sft_packing_eligibility,
 )
+from .detection.dataset import DetectionTrainingDataset
+from .detection.length_bucketing import (
+    LatestDetectionLengthBucketingConfig,
+    LatestDetectionLengthGroupedTrainerMixin,
+    disabled_length_bucketing_provenance,
+)
 from .detection.runtime import (
     RecursiveDetectionCERuntimeConfig,
     assert_latest_detection_runtime_supported as _assert_latest_detection_runtime_supported,
@@ -225,7 +231,7 @@ def _parse_packing_config(
     cfg = training_cfg or {}
     enabled = bool(cfg.get("packing", False))
     if not enabled:
-        return PackingRuntimeConfig(enabled=False)
+        return PackingRuntimeConfig(enabled=False, eval_packing=False)
 
     mode_raw = cfg.get("packing_mode", "static")
     mode = str(mode_raw or "static").strip().lower()
@@ -656,6 +662,81 @@ def _deepspeed_runtime_payload(
     }
 
 
+def _train_args_bool(train_args: Any, field_name: str, default: bool = False) -> bool:
+    value = getattr(train_args, field_name, None)
+    if value is None and getattr(train_args, "training_args", None) is not None:
+        value = getattr(train_args.training_args, field_name, None)
+    if value is None:
+        return bool(default)
+    return bool(value)
+
+
+def _train_args_str(train_args: Any, field_name: str, default: str = "") -> str:
+    value = getattr(train_args, field_name, None)
+    if value is None and getattr(train_args, "training_args", None) is not None:
+        value = getattr(train_args.training_args, field_name, None)
+    if value is None:
+        return str(default)
+    return str(value)
+
+
+def _latest_detection_length_bucketing_runtime_payload(
+    *,
+    training_config: Any,
+    train_args: Any,
+    packing_cfg: PackingRuntimeConfig,
+) -> dict[str, Any]:
+    group_by_length = _train_args_bool(train_args, "group_by_length", False)
+    length_column_name = _train_args_str(train_args, "length_column_name", "length")
+
+    length_bucketing = disabled_length_bucketing_provenance(
+        reason="training.group_by_length is false"
+    ).to_dict()
+    if group_by_length:
+        if bool(packing_cfg.enabled):
+            length_bucketing = disabled_length_bucketing_provenance(
+                reason="packing is enabled"
+            ).to_dict()
+        elif isinstance(training_config, LatestDetectionTrainingConfig):
+            length_bucketing = {
+                "enabled": True,
+                "mode": "row_atomic_length_bucketing",
+                "length_source": "DetectionTrainingDataset.encoded_length_for_row",
+                "cache_policy": "run_local_only",
+                "sampler_class": "LatestDetectionLengthGroupedSampler",
+                "seed": int(getattr(train_args, "seed", 0) or 0),
+            }
+        else:
+            length_bucketing = disabled_length_bucketing_provenance(
+                reason="not a latest detection config"
+            ).to_dict()
+
+    return {
+        "group_by_length": bool(group_by_length),
+        "length_column_name": length_column_name,
+        "length_bucketing": length_bucketing,
+    }
+
+
+def _build_latest_detection_length_bucketing_config(
+    *,
+    dataset: Any,
+    train_args: Any,
+    packing_cfg: PackingRuntimeConfig,
+) -> LatestDetectionLengthBucketingConfig:
+    if not _train_args_bool(train_args, "group_by_length", False):
+        return LatestDetectionLengthBucketingConfig(enabled=False)
+    if bool(packing_cfg.enabled):
+        return LatestDetectionLengthBucketingConfig(enabled=False)
+    if not isinstance(dataset, DetectionTrainingDataset):
+        return LatestDetectionLengthBucketingConfig(enabled=False)
+    return LatestDetectionLengthBucketingConfig(
+        enabled=True,
+        seed=int(getattr(train_args, "seed", 0) or 0),
+        cache_policy="run_local_only",
+    )
+
+
 def _build_effective_runtime_payload(
     *,
     training_config: Any,
@@ -754,6 +835,8 @@ def _build_effective_runtime_payload(
         "per_device_eval_batch_size": int(
             getattr(train_args, "per_device_eval_batch_size", 1) or 1
         ),
+        "eval_strategy": str(getattr(train_args, "eval_strategy", "") or ""),
+        "eval_steps": int(getattr(train_args, "eval_steps", 0) or 0),
         "gradient_accumulation_steps": gradient_accumulation_steps,
         "world_size": runtime_world_size,
         "effective_batch_size": requested_effective_batch_size,
@@ -777,6 +860,11 @@ def _build_effective_runtime_payload(
         if isinstance(template_cfg, Mapping)
         else None,
         "packing": dataclass_asdict_no_none(packing_cfg),
+        "dataloader": _latest_detection_length_bucketing_runtime_payload(
+            training_config=training_config,
+            train_args=train_args,
+            packing_cfg=packing_cfg,
+        ),
         "encoded_sample_cache": encoded_sample_cache_runtime,
         "dataset_source_train_jsonl": _build_source_path_identity(train_jsonl),
         "dataset_source_val_jsonl": _build_source_path_identity(val_jsonl),
@@ -3222,6 +3310,22 @@ def main():
         sft_structural_close_cfg=sft_structural_close_cfg,
         recursive_detection_ce_cfg=recursive_detection_ce_cfg,
     )
+    length_bucketing_cfg = _build_latest_detection_length_bucketing_config(
+        dataset=dataset,
+        train_args=train_args,
+        packing_cfg=packing_cfg,
+    )
+    if length_bucketing_cfg.enabled:
+        trainer_cls = type(
+            f"{trainer_cls.__name__}WithLatestDetectionLengthBucketing",
+            (LatestDetectionLengthGroupedTrainerMixin, trainer_cls),
+            {},
+        )
+        logger.info(
+            "Latest detection row-atomic length bucketing enabled: cache_policy=%s seed=%s",
+            length_bucketing_cfg.cache_policy,
+            length_bucketing_cfg.seed,
+        )
 
     callbacks = build_trainer_callbacks(
         base_callbacks=sft.callbacks.copy() if sft.callbacks else [],
@@ -3252,6 +3356,8 @@ def main():
         trainer_kwargs=trainer_kwargs,
         heartbeat_writer=heartbeat_writer,
     )
+    if length_bucketing_cfg.enabled:
+        setattr(trainer, "latest_detection_length_bucketing", length_bucketing_cfg)
     # Non-standard evaluators do not emit ordinary token-accuracy metrics.
     # Guard against inherited defaults that would crash best-checkpoint
     # selection after a successful callback/rollout evaluation.
