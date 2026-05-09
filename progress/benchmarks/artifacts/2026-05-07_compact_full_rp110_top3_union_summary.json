@@ -1,0 +1,110 @@
+{
+  "schema_version": 1,
+  "date": "2026-05-07",
+  "scope": {
+    "dataset": "public_data/coco/rescale_32_1024_bbox_max60/val.coord.jsonl",
+    "slice": "val200 first 200",
+    "sequence_format": "compact_full",
+    "bbox_format": "xyxy",
+    "prompt_variant": "coco_80",
+    "repetition_penalty": 1.1,
+    "temperature": 0.0,
+    "max_new_tokens": 3084,
+    "primary_metric": "eval/metrics.json metrics.bbox_AP"
+  },
+  "top3_rp110_runs": [
+    {
+      "rank": 1,
+      "label": "ET-RMP support2 tokenrows_v2 checkpoint-3664",
+      "run_dir": "/data/CoordExp/output_remote/infer/recursive_detection_ce_latest/compact_full_support2_tokenrows_v2_ckpt3664_val200_bsz8_temp0_rep1p10_max3084_chatfix_4gpu",
+      "checkpoint": "/data/CoordExp/output_remote/stage1_2b/recursive_detection_ce_latest/compact_full_et_rmp_ce_support2_bsz16_4epoch_tokenrows_v2/compact-full-et-rmp-ce-support2-bsz16-4epoch-tokenrows-v2/v0-20260504-071356/checkpoint-3664",
+      "bbox_AP": 0.424694772440111,
+      "bbox_AP50": 0.575151409326631,
+      "bbox_AP75": 0.4477439197238153,
+      "bbox_AR100": 0.47201718466015763,
+      "f1ish_0p50_f1_full_micro": 0.6137524557956778,
+      "guarded_bbox_AP": 0.4116054794926665,
+      "confidence_total_pred_objects": 1140,
+      "confidence_kept_pred_objects": 1140
+    },
+    {
+      "rank": 2,
+      "label": "random SFT bsz1 accum16 checkpoint-3664",
+      "run_dir": "/data/CoordExp/output_remote/infer/recursive_detection_ce_latest/compact_full_random_sft_bsz1_accum16_ckpt3664_val200_bsz4_temp0_rep1p10_max3084_chatfix_8gpu",
+      "checkpoint": "/data/CoordExp/output_remote/stage1_2b/recursive_detection_ce_latest/compact_full_random_sft_bsz1_accum16_4epoch_tokenrows_v4_chatfix_max12k/compact-full-random-sft-bsz1-accum16-4epoch-tokenrows-v4-chatfix-max12k/v0-20260506-021259/checkpoint-3664",
+      "bbox_AP": 0.3991841484225846,
+      "bbox_AP50": 0.5576523447115678,
+      "bbox_AP75": 0.413959428867758,
+      "bbox_AR100": 0.47139884450701025,
+      "f1ish_0p50_f1_full_micro": 0.4433277498604132,
+      "guarded_bbox_AP": 0.38272078861526115,
+      "confidence_total_pred_objects": 2261,
+      "confidence_kept_pred_objects": 2261
+    },
+    {
+      "rank": 3,
+      "label": "random SFT checkpoint-2200",
+      "run_dir": "/data/CoordExp/output_remote/infer/recursive_detection_ce_latest/compact_full_random_sft_ckpt2200_val200_bsz4_temp0_rep1p10_max3084_chatfix_4gpu",
+      "checkpoint": "/data/CoordExp/output_remote/stage1_2b/recursive_detection_ce_latest/compact_full_random_sft_bsz16_4epoch_tokenrows_v2/compact-full-random-sft-bsz16-4epoch-tokenrows-v2/v0-20260505-044157/checkpoint-2200",
+      "bbox_AP": 0.37015423150473,
+      "bbox_AP50": 0.5088208908074968,
+      "bbox_AP75": 0.3914855510600799,
+      "bbox_AR100": 0.4273400640677668,
+      "f1ish_0p50_f1_full_micro": 0.42570792236716515,
+      "guarded_bbox_AP": 0.3576226125900038,
+      "confidence_total_pred_objects": 1880,
+      "confidence_kept_pred_objects": 1880
+    }
+  ],
+  "bbox_only_union_definition": {
+    "prediction_surface": "gt_vs_pred_scored_guarded.jsonl",
+    "deduplication": "Predictions from the top-3 rollouts are the same object when their bboxes overlap with IoU >= 0.50. Class/desc text is ignored for deduplication.",
+    "gt_subtraction": "Unique prediction-union clusters are greedily matched to GT boxes with IoU >= 0.50. Class/desc text is ignored for this subtraction.",
+    "unlabeled_count": "unique_prediction_union_count - matched_gt_cluster_count",
+    "heavy_burst_filter": "Drop a single run-image contribution when its guarded pred_count > max(20, 2 * gt_count). This removed 4 run-image contributions."
+  },
+  "bbox_only_union_burst_filtered": {
+    "n_images": 200,
+    "total_gt": 1444,
+    "total_unique_union_pred": 1374,
+    "total_matched_gt_clusters": 825,
+    "total_unlabeled_union": 549,
+    "unlabeled_over_gt_ratio": 0.3801939058171745,
+    "mean_unlabeled_union_per_image": 2.745,
+    "linear_intercept": -0.3535175522383347,
+    "linear_slope": 0.42915755571168074,
+    "linear_r2": 0.5625387092061187,
+    "origin_slope": 0.4043287937743191,
+    "origin_r2": 0.558825514398278,
+    "pearson": 0.7500258056934567,
+    "recommended_relation": "U_union ~= max(0, -0.35 + 0.43 * G), or U_union ~= 0.40 * G as a simpler through-origin prior",
+    "effective_count_prior": "G + U_union ~= 1.38 to 1.40 * G"
+  },
+  "bbox_only_union_unfiltered": {
+    "n_images": 200,
+    "total_gt": 1444,
+    "total_unique_union_pred": 1509,
+    "total_matched_gt_clusters": 825,
+    "total_unlabeled_union": 684,
+    "unlabeled_over_gt_ratio": 0.47368421052631576,
+    "linear_intercept": 0.1581221039004097,
+    "linear_slope": 0.45178364211905686,
+    "origin_slope": 0.4628891050583658,
+    "note": "This is kept as a sensitivity bound, but it is inflated by heavy burst/collapse run-image contributions."
+  },
+  "superseded_intermediate_estimates": {
+    "median_per_run_fp_proxy": {
+      "total_unlabeled_proxy": 229,
+      "unlabeled_over_gt_ratio": 0.15858725761772854,
+      "reason_superseded": "This used the median per-run false-positive count after duplicate control. It was useful as a conservative diagnostic but does not implement bootstrap union of unique objects across rollouts."
+    },
+    "same_desc_union": {
+      "reason_superseded": "The final requested definition uses bbox overlap only. Description/class text should not determine object identity for this union."
+    }
+  },
+  "derived_artifacts": {
+    "bbox_only_union_per_image_artifact": "/data/CoordExp/progress/benchmarks/artifacts/2026-05-07_compact_full_rp110_top3_bbox_union_per_image.json",
+    "bbox_only_union_temp_artifact": "/data/CoordExp/temp/val200_top3_bbox_only_union_then_gt_subtract_rp110.json",
+    "repo_summary_artifact": "/data/CoordExp/progress/benchmarks/artifacts/2026-05-07_compact_full_rp110_top3_union_summary.json"
+  }
+}
