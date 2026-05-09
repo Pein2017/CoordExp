@@ -127,6 +127,7 @@ class DetectionTrainingDataset(Dataset):
         if self.tokenizer is None:
             raise ValueError("swift_template must expose tokenizer for span alignment")
         self.config = config
+        self._image_root = Path(config.image_root).expanduser().resolve(strict=False)
         self.dataset_name = str(dataset_name)
         self._epoch = 0
 
@@ -317,9 +318,21 @@ class DetectionTrainingDataset(Dataset):
 
     def _resolve_image(self, image: str) -> str:
         image_path = Path(str(image))
-        if image_path.is_absolute():
-            return str(image_path)
-        return str((Path(self.config.image_root) / image_path).resolve(strict=False))
+        candidate = image_path if image_path.is_absolute() else self._image_root / image_path
+        try:
+            resolved = candidate.expanduser().resolve(strict=True)
+        except FileNotFoundError as exc:
+            raise FileNotFoundError(
+                f"image path does not exist under image_root: {candidate}"
+            ) from exc
+        try:
+            resolved.relative_to(self._image_root)
+        except ValueError as exc:
+            raise ValueError(
+                f"image path resolves outside image_root: {resolved} "
+                f"(image_root={self._image_root})"
+            ) from exc
+        return str(resolved)
 
     def _encode_messages(
         self, messages: Sequence[Mapping[str, Any]]

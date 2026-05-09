@@ -219,14 +219,24 @@ def tokenize_rendered_detection_conversation(
     if len(input_ids) != len(offsets):
         raise ValueError("input_ids and offset_mapping must have the same length")
 
-    assistant_token_span = align_char_span_to_token_span(
-        offsets,
-        assistant_char_span,
-    )
     assistant_stop_token_span = _align_optional_chat_span(
         assistant_stop_char_span,
         offsets=offsets,
     )
+    if assistant_char_span.start == assistant_char_span.end:
+        if assistant_stop_token_span is None:
+            raise ValueError("empty assistant payload requires a chat-template stop marker")
+        assistant_token_span = TokenSpan(
+            start=assistant_stop_token_span.start,
+            end=assistant_stop_token_span.start,
+            label=assistant_char_span.label,
+            char_span=assistant_char_span,
+        )
+    else:
+        assistant_token_span = align_char_span_to_token_span(
+            offsets,
+            assistant_char_span,
+        )
     object_entries = tuple(
         _align_object_entry(
             entry,
@@ -455,7 +465,10 @@ def _find_assistant_char_span(
     assistant_stop_markers: Sequence[str],
 ) -> CharSpan:
     if not assistant_text:
-        raise ValueError("rendered assistant text must be non-empty")
+        return _find_empty_assistant_char_span(
+            chat_text,
+            assistant_stop_markers=assistant_stop_markers,
+        )
 
     assistant_start = chat_text.find(assistant_text)
     if assistant_start < 0:
@@ -477,6 +490,30 @@ def _find_assistant_char_span(
         assistant_start + len(assistant_text),
         "assistant",
     )
+
+
+def _find_empty_assistant_char_span(
+    chat_text: str,
+    *,
+    assistant_stop_markers: Sequence[str],
+) -> CharSpan:
+    header = "<|im_start|>assistant\n"
+    starts: list[int] = []
+    cursor = 0
+    while True:
+        header_start = chat_text.find(header, cursor)
+        if header_start < 0:
+            break
+        content_start = header_start + len(header)
+        if any(chat_text.startswith(marker, content_start) for marker in assistant_stop_markers):
+            starts.append(content_start)
+        cursor = content_start + 1
+    if not starts:
+        raise ValueError(
+            "empty rendered assistant text was not found before an assistant stop marker"
+        )
+    content_start = starts[-1]
+    return CharSpan(content_start, content_start, "assistant")
 
 
 def _assistant_text_starts_bounded_by_stop_marker(

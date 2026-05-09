@@ -1498,7 +1498,9 @@ def test_stage2_ab_enforces_divisibility(monkeypatch: pytest.MonkeyPatch):
         ConfigLoader.build_train_arguments(cfg)
 
 
-def test_stage2_ab_rejects_conflicting_gradient_accumulation(monkeypatch: pytest.MonkeyPatch):
+def test_stage2_ab_rejects_authored_gradient_accumulation_with_effective_batch(
+    monkeypatch: pytest.MonkeyPatch,
+):
     _patch_loader_runtime(monkeypatch, world_size=2)
     cfg = _make_stage2_training_config(
         {
@@ -1508,7 +1510,7 @@ def test_stage2_ab_rejects_conflicting_gradient_accumulation(monkeypatch: pytest
         }
     )
 
-    with pytest.raises(ValueError, match=r"must not conflict"):
+    with pytest.raises(ValueError, match=r"derived from training\.effective_batch_size"):
         ConfigLoader.build_train_arguments(cfg)
 
 

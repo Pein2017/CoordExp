@@ -124,3 +124,27 @@ def test_normalization_rejects_unknown_ordering_strategy() -> None:
 
     with pytest.raises(ValueError, match="object_ordering.strategy"):
         normalize_detection_row(raw, object_ordering=plan)
+
+
+def test_sorted_normalization_rejects_source_order_that_is_not_geometry_sorted() -> None:
+    row = _first_raw_row()
+    row["objects"] = row["objects"][:2]
+    row["objects"][0]["bbox_2d"] = [
+        "<|coord_500|>",
+        "<|coord_500|>",
+        "<|coord_600|>",
+        "<|coord_600|>",
+    ]
+    row["objects"][1]["bbox_2d"] = [
+        "<|coord_100|>",
+        "<|coord_100|>",
+        "<|coord_200|>",
+        "<|coord_200|>",
+    ]
+    raw = parse_raw_detection_row(row)
+
+    with pytest.raises(ValueError, match="sorted object_ordering"):
+        normalize_detection_row(
+            raw,
+            object_ordering=ObjectOrderingPlan.sorted(seed_source="unit:unsorted"),
+        )

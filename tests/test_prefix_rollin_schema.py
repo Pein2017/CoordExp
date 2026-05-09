@@ -64,6 +64,8 @@ def _prefix_rollin_payload() -> dict[str, object]:
         "objective": {
             "id": "recursive_detection_ce",
             "variant": "prefix_rollin_et_rmp_ce",
+            "state_weighting": "uniform_permutation",
+            "normalization": "semantic_image_bucket_balanced",
             "rollin": {
                 "enabled": True,
                 "source": "ground_truth",
@@ -83,6 +85,12 @@ def _prefix_rollin_payload() -> dict[str, object]:
                 "control_tokens": "hard_ce",
                 "support_weight": 1.0,
                 "balance_weight": 2.0,
+            },
+            "boundary": {
+                "type": "compact_full_append_boundary",
+                "separator_continue_weight": 2.0,
+                "eos_stop_weight": 0.5,
+                "component_weight": 0.3,
             },
             "type_gate": {
                 "enabled": True,
@@ -157,10 +165,15 @@ def test_prefix_rollin_schema_accepts_compact_full_empirical_eos_ablation() -> N
     cfg = _parse(_prefix_rollin_payload())
 
     assert cfg.objective.variant == "prefix_rollin_et_rmp_ce"
+    assert cfg.objective.state_weighting == "uniform_permutation"
+    assert cfg.objective.normalization == "semantic_image_bucket_balanced"
     assert cfg.objective.rollin.enabled is True
     assert cfg.objective.rollin.k_distribution.max_k == "object_count"
     assert cfg.objective.target.support_weight == pytest.approx(1.0)
     assert cfg.objective.target.balance_weight == pytest.approx(2.0)
+    assert cfg.objective.boundary.separator_continue_weight == pytest.approx(2.0)
+    assert cfg.objective.boundary.eos_stop_weight == pytest.approx(0.5)
+    assert cfg.objective.boundary.component_weight == pytest.approx(0.3)
     assert cfg.objective.type_gate.weights.struct == pytest.approx(2.0)
     assert cfg.objective.eos.eos_token == "<|im_end|>"
     assert (
@@ -171,6 +184,8 @@ def test_prefix_rollin_schema_accepts_compact_full_empirical_eos_ablation() -> N
 
     as_mapping = cfg.to_mapping()
     assert as_mapping["objective"]["variant"] == "prefix_rollin_et_rmp_ce"
+    assert as_mapping["objective"]["state_weighting"] == "uniform_permutation"
+    assert as_mapping["objective"]["normalization"] == "semantic_image_bucket_balanced"
     for flat_alias in (
         "branch_support_weight",
         "branch_balance_weight",
@@ -181,9 +196,13 @@ def test_prefix_rollin_schema_accepts_compact_full_empirical_eos_ablation() -> N
     ):
         assert flat_alias not in as_mapping["objective"]
     assert as_mapping["objective"]["target"]["support_weight"] == pytest.approx(1.0)
+    assert as_mapping["objective"]["boundary"]["separator_continue_weight"] == pytest.approx(
+        2.0
+    )
     assert as_mapping["experiment"]["surface"] == "ablation"
     reparsed = LatestDetectionTrainingConfig.from_mapping(as_mapping)
     assert reparsed.objective.target.balance_weight == pytest.approx(2.0)
+    assert reparsed.objective.boundary.eos_stop_weight == pytest.approx(0.5)
 
 
 def test_prefix_rollin_e1_ablation_config_materializes_from_repo_path() -> None:
@@ -202,10 +221,15 @@ def test_prefix_rollin_e1_ablation_config_materializes_from_repo_path() -> None:
     assert cfg.experiment.claim_scope == "none"
     assert cfg.detection_template.id == "compact_full"
     assert cfg.objective.variant == "prefix_rollin_et_rmp_ce"
+    assert cfg.objective.state_weighting == "uniform_permutation"
+    assert cfg.objective.normalization == "semantic_image_bucket_balanced"
     assert cfg.objective.rollin.k_distribution.min_k == 0
     assert cfg.objective.rollin.k_distribution.max_k == "object_count"
     assert cfg.objective.target.support_weight == pytest.approx(1.0)
     assert cfg.objective.target.balance_weight == pytest.approx(2.0)
+    assert cfg.objective.boundary.separator_continue_weight == pytest.approx(0.5)
+    assert cfg.objective.boundary.eos_stop_weight == pytest.approx(0.5)
+    assert cfg.objective.boundary.component_weight == pytest.approx(0.3)
     assert cfg.objective.type_gate.weights.struct == pytest.approx(2.0)
     assert cfg.objective.type_gate.weights.coord == pytest.approx(1.0)
     assert cfg.objective.type_gate.weights.desc == pytest.approx(0.2)
@@ -227,6 +251,57 @@ def test_prefix_rollin_e1_ablation_config_materializes_from_repo_path() -> None:
     assert cfg.training["encoded_sample_cache"]["enabled"] is False
     assert cfg.packing.static_packing is False
     assert cfg.packing.padding_free_packed is False
+
+
+def test_prefix_rollin_separator2_ablation_overrides_only_boundary_weights() -> None:
+    repo_root = Path(__file__).resolve().parents[1]
+    cfg_path = (
+        repo_root
+        / "configs/stage1/recursive_detection_ce_latest/ablation/compact_full_prefix_rollin_separator2.yaml"
+    )
+
+    cfg = ConfigLoader.load_materialized_training_config(str(cfg_path))
+
+    assert isinstance(cfg, LatestDetectionTrainingConfig)
+    assert cfg.experiment is not None
+    assert cfg.experiment.surface == "ablation"
+    assert cfg.experiment.ablation_id == "E2-separator2"
+    assert cfg.objective.variant == "prefix_rollin_et_rmp_ce"
+    assert cfg.objective.target.support_weight == pytest.approx(1.0)
+    assert cfg.objective.target.balance_weight == pytest.approx(2.0)
+    assert cfg.objective.boundary.separator_continue_weight == pytest.approx(2.0)
+    assert cfg.objective.boundary.eos_stop_weight == pytest.approx(0.5)
+    assert cfg.objective.boundary.component_weight == pytest.approx(0.3)
+
+
+def test_prefix_rollin_requires_objectized_boundary_section() -> None:
+    payload = _prefix_rollin_payload()
+    _delete_path(payload, ("objective", "boundary"))
+
+    with pytest.raises(ValueError, match=r"objective\.variant=prefix_rollin_et_rmp_ce.*boundary"):
+        _parse(payload)
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("separator_continue_weight", 0.0),
+        ("separator_continue_weight", -1.0),
+        ("eos_stop_weight", 0.0),
+        ("component_weight", 0.0),
+        ("component_weight", "0.3"),
+    ],
+)
+def test_prefix_rollin_boundary_weights_must_be_positive_numbers(
+    field: str,
+    value: object,
+) -> None:
+    payload = _prefix_rollin_payload()
+    _set_path(payload, ("objective", "boundary", field), value)
+
+    error_type = TypeError if isinstance(value, str) else ValueError
+    with pytest.raises(error_type, match=fr"objective\.boundary\.{field}"):
+        _parse(payload)
 
 
 def test_prefix_rollin_production_accepts_calibrated_formula_ref_with_artifact() -> None:
@@ -291,6 +366,49 @@ def test_existing_random_permutation_latest_schema_still_accepts_flat_trie_weigh
     assert cfg.experiment is None
 
 
+@pytest.mark.parametrize(
+    "objective",
+    [
+        {
+            "id": "recursive_detection_ce",
+            "variant": "random_permutation_et_rmp_ce",
+            "trie_support_weight": 2.0,
+            "trie_balance_weight": 1.0,
+            "state_weighting": "legacy_row_mean_prefix_mixture_equivalence",
+            "normalization": "legacy_row_mean_equivalence",
+        },
+        {
+            "id": "sft",
+            "variant": "sorted_sft",
+            "state_weighting": "none",
+            "normalization": "token_mean",
+        },
+    ],
+)
+def test_non_prefix_variants_reject_objectized_boundary_section(
+    objective: dict[str, object],
+) -> None:
+    payload = _prefix_rollin_payload()
+    payload.pop("experiment")
+    objective = dict(objective)
+    objective["boundary"] = {
+        "type": "compact_full_append_boundary",
+        "separator_continue_weight": 2.0,
+        "eos_stop_weight": 0.5,
+        "component_weight": 0.3,
+    }
+    payload["objective"] = objective
+
+    with pytest.raises(
+        ValueError,
+        match=(
+            "objectized objective sections are only supported for "
+            "objective.variant=prefix_rollin_et_rmp_ce"
+        ),
+    ):
+        _parse(payload)
+
+
 def test_prefix_rollin_rejects_non_compact_full_template() -> None:
     payload = _prefix_rollin_payload()
     _set_path(payload, ("detection_template", "id"), "stage1_json_pretty")
@@ -342,6 +460,24 @@ def test_prefix_rollin_rejects_non_qwen_chat_eos_token() -> None:
     _set_path(payload, ("objective", "eos", "eos_token"), "<|endoftext|>")
 
     with pytest.raises(ValueError, match=r"objective\.eos\.eos_token.*<\\|im_end\\|>"):
+        _parse(payload)
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("state_weighting", "none"),
+        ("normalization", "token_mean"),
+    ],
+)
+def test_prefix_rollin_requires_config_truthful_weighting_and_normalization(
+    field: str,
+    value: str,
+) -> None:
+    payload = _prefix_rollin_payload()
+    _set_path(payload, ("objective", field), value)
+
+    with pytest.raises(ValueError, match=fr"objective\.{field}.*prefix_rollin_et_rmp_ce"):
         _parse(payload)
 
 

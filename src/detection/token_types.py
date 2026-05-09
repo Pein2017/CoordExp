@@ -105,7 +105,12 @@ def allowed_type_token_ids_for_target(
 
     allowed: set[int] = set()
     for token_id in positive_token_ids:
-        allowed.update(_group_for_token_id(token_id, groups))
+        group = _group_for_token_id(token_id, groups)
+        if not group:
+            raise ValueError(
+                f"positive token id {token_id} does not belong to any compact token type"
+            )
+        allowed.update(group)
     if not allowed:
         raise ValueError("positive token ids do not belong to any compact token type")
     return frozenset(allowed)

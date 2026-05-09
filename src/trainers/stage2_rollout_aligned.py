@@ -55,6 +55,7 @@ from src.common.prediction_parsing import (
     extract_special_tokens,
     load_prediction_dict,
 )
+from src.common.qwen_generation import resolve_qwen_chat_generation_token_ids
 from src.config.prompts import (
     build_dense_system_prompt,
     build_dense_user_prompt,
@@ -4386,6 +4387,9 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
         else:
             gen_cfg.num_beams = 1
             gen_cfg.num_return_sequences = 1
+        qwen_generation_ids = resolve_qwen_chat_generation_token_ids(tok)
+        gen_cfg.eos_token_id = qwen_generation_ids.eos_token_id
+        gen_cfg.pad_token_id = qwen_generation_ids.pad_token_id
 
         out: List[Tuple[List[int], str, str, List[int]]] = []
         mb = int(self._decode_batch_size(context=self._current_rollout_context()))
@@ -4585,6 +4589,9 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
             gen_cfg.num_return_sequences = max(
                 1, int(self._cfg("num_return_sequences", gen_cfg.num_beams))
             )
+        qwen_generation_ids = resolve_qwen_chat_generation_token_ids(tok)
+        gen_cfg.eos_token_id = qwen_generation_ids.eos_token_id
+        gen_cfg.pad_token_id = qwen_generation_ids.pad_token_id
 
         try:
             from transformers.generation.logits_process import (

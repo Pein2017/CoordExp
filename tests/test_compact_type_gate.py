@@ -129,3 +129,13 @@ def test_positive_tokens_are_subset_of_expanded_allowed_types() -> None:
     allowed = allowed_type_token_ids_for_target(target, groups)
 
     assert set(target.positive_token_ids).issubset(allowed)
+
+
+def test_type_gate_rejects_unclassified_positive_token_even_with_valid_sibling() -> None:
+    tokenizer = TypeGateTokenizer()
+    groups = build_compact_token_type_groups(tokenizer)
+    desc_id = tokenizer.convert_tokens_to_ids("cat")
+    target = SimpleNamespace(positive_token_ids=(desc_id, tokenizer.pad_token_id))
+
+    with pytest.raises(ValueError, match="positive token id .*compact token type"):
+        allowed_type_token_ids_for_target(target, groups)

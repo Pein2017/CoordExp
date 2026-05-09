@@ -12,7 +12,7 @@ from dataclasses import asdict, dataclass, is_dataclass
 from pathlib import Path
 from multiprocessing import Manager
 from types import SimpleNamespace
-from typing import Any, Literal, Mapping, cast
+from typing import Any, Literal, Mapping, Sequence, cast
 
 import torch
 
@@ -703,6 +703,41 @@ def _build_effective_runtime_payload(
                     "reason": str(bypass_info.get("reason") or ""),
                 }
             )
+    training_section = getattr(training_config, "training", {}) or {}
+    effective_batch_size = (
+        training_section.get("effective_batch_size")
+        if isinstance(training_section, Mapping)
+        else None
+    )
+    model_section = getattr(training_config, "model", {}) or {}
+    model_path = (
+        model_section.get("model")
+        if isinstance(model_section, Mapping)
+        else _get_section_value(model_section, "model")
+    )
+    per_device_train_batch_size = int(
+        getattr(train_args, "per_device_train_batch_size", 1) or 1
+    )
+    gradient_accumulation_steps = int(
+        getattr(train_args, "gradient_accumulation_steps", 1) or 1
+    )
+    try:
+        _, _, runtime_world_size, _ = get_dist_setting()
+    except Exception:  # pragma: no cover - defensive for non-Swift unit harnesses.
+        runtime_world_size = 1
+    runtime_world_size = max(int(runtime_world_size), 1)
+    actual_global_effective_batch_size = (
+        per_device_train_batch_size * gradient_accumulation_steps * runtime_world_size
+    )
+    requested_effective_batch_size = (
+        int(effective_batch_size) if effective_batch_size is not None else None
+    )
+    effective_batch_rounding = (
+        "exact"
+        if requested_effective_batch_size is None
+        or requested_effective_batch_size == actual_global_effective_batch_size
+        else "ceil"
+    )
     payload = {
         "trainer_variant": str(trainer_variant or ""),
         "dataset_seed": int(dataset_seed),
@@ -715,15 +750,18 @@ def _build_effective_runtime_payload(
         "save_strategy": str(getattr(train_args, "save_strategy", "") or ""),
         "save_last_epoch": bool(getattr(train_args, "save_last_epoch", True)),
         "seed": int(getattr(train_args, "seed", 0) or 0),
-        "per_device_train_batch_size": int(
-            getattr(train_args, "per_device_train_batch_size", 1) or 1
-        ),
+        "per_device_train_batch_size": per_device_train_batch_size,
         "per_device_eval_batch_size": int(
             getattr(train_args, "per_device_eval_batch_size", 1) or 1
         ),
-        "gradient_accumulation_steps": int(
-            getattr(train_args, "gradient_accumulation_steps", 1) or 1
-        ),
+        "gradient_accumulation_steps": gradient_accumulation_steps,
+        "world_size": runtime_world_size,
+        "effective_batch_size": requested_effective_batch_size,
+        "effective_batch_size_source": "training.effective_batch_size"
+        if effective_batch_size is not None
+        else "derived_from_train_args",
+        "actual_global_effective_batch_size": actual_global_effective_batch_size,
+        "effective_batch_rounding": effective_batch_rounding,
         "max_steps": int(getattr(train_args, "max_steps", -1) or -1),
         "num_train_epochs": float(getattr(train_args, "num_train_epochs", 0.0) or 0.0),
         "dataloader_drop_last": bool(
@@ -742,6 +780,11 @@ def _build_effective_runtime_payload(
         "encoded_sample_cache": encoded_sample_cache_runtime,
         "dataset_source_train_jsonl": _build_source_path_identity(train_jsonl),
         "dataset_source_val_jsonl": _build_source_path_identity(val_jsonl),
+        "model_source": _build_source_path_identity(model_path),
+        "latest_detection_objective": _latest_detection_objective_runtime_payload(
+            training_config
+        ),
+        "token_rows": _latest_detection_token_rows_runtime_payload(training_config),
         "pipeline_manifest_checksum": str(pipeline_manifest.get("checksum", ""))
         if isinstance(pipeline_manifest, Mapping)
         else "",
@@ -754,6 +797,102 @@ def _build_effective_runtime_payload(
         )
     )
     return payload
+
+
+def _latest_detection_objective_runtime_payload(training_config: Any) -> dict[str, Any] | None:
+    objective_cfg = getattr(training_config, "objective", None)
+    if objective_cfg is None:
+        return None
+    template_cfg = getattr(training_config, "detection_template", None)
+    target_cfg = _get_section_value(objective_cfg, "target")
+    boundary_cfg = _get_section_value(objective_cfg, "boundary")
+    rollin_cfg = _get_section_value(objective_cfg, "rollin")
+    eos_cfg = _get_section_value(objective_cfg, "eos")
+    eos_trust_cfg = _get_section_value(eos_cfg, "eos_trust_weight")
+    type_gate_cfg = _get_section_value(objective_cfg, "type_gate")
+    k_distribution = _get_section_value(rollin_cfg, "k_distribution")
+    payload: dict[str, Any] = {
+        "id": _get_section_value(objective_cfg, "id"),
+        "variant": _get_section_value(objective_cfg, "variant"),
+        "state_weighting": _get_section_value(objective_cfg, "state_weighting"),
+        "normalization": _get_section_value(objective_cfg, "normalization"),
+        "template_id": _get_section_value(template_cfg, "id"),
+        "coordinate_surface": _get_section_value(template_cfg, "coordinate_surface"),
+        "bbox_format": _get_section_value(template_cfg, "bbox_format"),
+    }
+    if target_cfg is not None:
+        payload.update(
+            {
+                "target_type": _get_section_value(target_cfg, "type"),
+                "support_weight": _get_section_value(target_cfg, "support_weight"),
+                "balance_weight": _get_section_value(target_cfg, "balance_weight"),
+            }
+        )
+    if boundary_cfg is not None:
+        payload.update(
+            {
+                "boundary_type": _get_section_value(boundary_cfg, "type"),
+                "separator_continue_weight": _get_section_value(
+                    boundary_cfg, "separator_continue_weight"
+                ),
+                "eos_stop_weight": _get_section_value(boundary_cfg, "eos_stop_weight"),
+                "boundary_component_weight": _get_section_value(
+                    boundary_cfg, "component_weight"
+                ),
+            }
+        )
+    if rollin_cfg is not None:
+        payload.update(
+            {
+                "rollin_source": _get_section_value(rollin_cfg, "source"),
+                "rollin_k_distribution": _get_section_value(k_distribution, "type"),
+            }
+        )
+    if eos_cfg is not None:
+        payload.update(
+            {
+                "eos_token": _get_section_value(eos_cfg, "eos_token"),
+                "eos_trust_weight_source": _get_section_value(eos_trust_cfg, "source"),
+            }
+        )
+    if type_gate_cfg is not None:
+        payload["type_gate_mode"] = _get_section_value(type_gate_cfg, "mode")
+    return payload
+
+
+def _latest_detection_token_rows_runtime_payload(training_config: Any) -> dict[str, Any] | None:
+    token_rows_cfg = getattr(training_config, "token_rows", None)
+    if token_rows_cfg is None or not bool(_get_section_value(token_rows_cfg, "enabled", False)):
+        return None
+    groups = _get_section_value(token_rows_cfg, "groups", {}) or {}
+    if not isinstance(groups, Mapping):
+        return None
+    group_payload: dict[str, Any] = {}
+    expected_count = 0
+    for group_name, group_cfg in groups.items():
+        tokens = _get_section_value(group_cfg, "tokens")
+        start = _get_section_value(group_cfg, "expected_start")
+        end = _get_section_value(group_cfg, "expected_end")
+        expected_ids = _get_section_value(group_cfg, "expected_ids")
+        if isinstance(start, int) and isinstance(end, int):
+            count = int(end) - int(start) + 1
+        elif isinstance(tokens, Sequence) and not isinstance(tokens, (str, bytes)):
+            count = len(tuple(tokens))
+        elif isinstance(expected_ids, Mapping):
+            count = len(expected_ids)
+        else:
+            count = 0
+        expected_count += max(0, int(count))
+        group_payload[str(group_name)] = {
+            "role": _get_section_value(group_cfg, "role"),
+            "expected_row_count": max(0, int(count)),
+        }
+    return {
+        "enabled": True,
+        "tie_head": bool(_get_section_value(token_rows_cfg, "tie_head", True)),
+        "expected_trainable_row_count": int(expected_count),
+        "groups": group_payload,
+    }
 
 
 def _recompute_gas_for_packing(

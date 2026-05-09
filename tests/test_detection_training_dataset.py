@@ -273,6 +273,7 @@ def _raw_row() -> dict[str, Any]:
 def _dataset(tmp_path: Path, *, swift_template: Any | None = None) -> DetectionTrainingDataset:
     jsonl_path = tmp_path / "train.coord.jsonl"
     _write_jsonl(jsonl_path, [_raw_row()])
+    _ensure_image(tmp_path)
     return DetectionTrainingDataset.from_jsonl(
         jsonl_path,
         swift_template=swift_template or FakeSwiftTemplate(),
@@ -287,6 +288,13 @@ def _dataset(tmp_path: Path, *, swift_template: Any | None = None) -> DetectionT
         state_weighting="uniform_permutation",
         normalization="semantic_image_bucket_balanced",
     )
+
+
+def _ensure_image(tmp_path: Path) -> Path:
+    image_path = tmp_path / "image-root/images/train2017/example.jpg"
+    image_path.parent.mkdir(parents=True, exist_ok=True)
+    image_path.write_bytes(b"unit-test-image-placeholder")
+    return image_path
 
 
 def test_latest_detection_dataset_returns_encoded_sample_with_recursive_sidecar(
@@ -361,6 +369,7 @@ def test_latest_detection_dataset_sft_mode_does_not_attach_recursive_sidecar(
 ) -> None:
     jsonl_path = tmp_path / "train.coord.jsonl"
     _write_jsonl(jsonl_path, [_raw_row()])
+    _ensure_image(tmp_path)
     dataset = DetectionTrainingDataset.from_jsonl(
         jsonl_path,
         swift_template=FakeSwiftTemplate(),
@@ -388,6 +397,7 @@ def test_prefix_rollin_dataset_masks_prefix_and_keeps_weighted_im_end_target(
 ) -> None:
     jsonl_path = tmp_path / "train.coord.jsonl"
     _write_jsonl(jsonl_path, [_raw_row()])
+    _ensure_image(tmp_path)
     dataset = DetectionTrainingDataset.from_jsonl(
         jsonl_path,
         swift_template=FakeSwiftTemplate(),
@@ -450,3 +460,54 @@ def test_prefix_rollin_dataset_masks_prefix_and_keeps_weighted_im_end_target(
         sample["detection_metadata"]["eos_trust_weight"]
     )
     assert 0.0 <= sample["detection_metadata"]["eos_trust_weight"] <= 1.0
+
+
+def test_latest_detection_dataset_rejects_missing_image_path(tmp_path: Path) -> None:
+    jsonl_path = tmp_path / "train.coord.jsonl"
+    _write_jsonl(jsonl_path, [_raw_row()])
+    dataset = DetectionTrainingDataset.from_jsonl(
+        jsonl_path,
+        swift_template=FakeSwiftTemplate(),
+        image_root=tmp_path / "image-root",
+        detection_template_id="compact_full",
+        mode="random_permutation_et_rmp_ce",
+        object_ordering="random_permutation",
+        user_prompt="Detect every object.",
+        system_prompt="You are a detector.",
+        max_objects=60,
+        seed=123,
+        state_weighting="uniform_permutation",
+        normalization="semantic_image_bucket_balanced",
+    )
+
+    with pytest.raises(FileNotFoundError, match="image path does not exist"):
+        dataset[0]
+
+
+def test_latest_detection_dataset_rejects_absolute_image_outside_root(
+    tmp_path: Path,
+) -> None:
+    jsonl_path = tmp_path / "train.coord.jsonl"
+    row = _raw_row()
+    outside = tmp_path / "outside.jpg"
+    outside.write_bytes(b"outside")
+    row["images"] = [str(outside)]
+    _write_jsonl(jsonl_path, [row])
+    (tmp_path / "image-root").mkdir(parents=True)
+    dataset = DetectionTrainingDataset.from_jsonl(
+        jsonl_path,
+        swift_template=FakeSwiftTemplate(),
+        image_root=tmp_path / "image-root",
+        detection_template_id="compact_full",
+        mode="random_permutation_et_rmp_ce",
+        object_ordering="random_permutation",
+        user_prompt="Detect every object.",
+        system_prompt="You are a detector.",
+        max_objects=60,
+        seed=123,
+        state_weighting="uniform_permutation",
+        normalization="semantic_image_bucket_balanced",
+    )
+
+    with pytest.raises(ValueError, match="outside image_root"):
+        dataset[0]

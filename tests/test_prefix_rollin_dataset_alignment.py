@@ -372,6 +372,28 @@ def test_k_equals_n_masks_all_objects_and_only_trains_weighted_im_end() -> None:
     assert example.recursive_detection_targets.token_targets[0].loss_weight == 0.25
 
 
+def test_zero_object_prefix_rollin_builds_eos_only_guard_example() -> None:
+    example = build_compact_prefix_rollin_example(
+        objects=(),
+        rollin_order=(),
+        k=0,
+        tokenizer=SpecialTokenAwareTokenizer(),
+        eos_trust_weight=0.25,
+    )
+    active_positions = tuple(
+        position for position, label in enumerate(example.labels) if label != -100
+    )
+
+    assert example.rendered_assistant.text == ""
+    assert example.debug_spans["rollin_prefix"].token_positions == ()
+    assert example.debug_spans["supervised_suffix"].token_positions == ()
+    assert active_positions == tuple(example.assistant_stop_token_span.token_indices())
+    assert len(example.recursive_detection_targets.token_targets) == 1
+    target = example.recursive_detection_targets.token_targets[0]
+    assert target.teacher_token_id == example.stop_contract.im_end_token_id
+    assert target.loss_weight == pytest.approx(0.25)
+
+
 def test_k_less_than_n_weights_im_end_after_suffix_completion() -> None:
     example = _example(k=1, eos_trust_weight=0.25)
     eos_positions = set(example.assistant_stop_token_span.token_indices())

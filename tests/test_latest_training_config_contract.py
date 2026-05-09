@@ -687,6 +687,41 @@ def test_config_loader_builds_train_arguments_from_latest_runtime_sections(
     assert captured["gradient_accumulation_steps"] == 2
 
 
+def test_config_loader_rejects_authored_gradient_accumulation_when_effective_batch_is_set(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    payload = _latest_payload()
+    payload["training"] = {
+        "run_name": "latest-train-args",
+        "num_train_epochs": 1,
+        "per_device_train_batch_size": 2,
+        "effective_batch_size": 4,
+        "gradient_accumulation_steps": 2,
+    }
+    cfg = LatestDetectionTrainingConfig.from_mapping(payload)
+
+    monkeypatch.setattr("src.config.loader.get_dist_setting", lambda: (0, 0, 1, 1))
+
+    with pytest.raises(
+        ValueError,
+        match=r"training\.gradient_accumulation_steps.*effective_batch_size",
+    ):
+        ConfigLoader.build_train_arguments(cfg)
+
+
+def test_effective_batch_config_names_do_not_bake_derived_accumulation() -> None:
+    cfg_path = (
+        REPO_ROOT
+        / "configs/stage1/recursive_detection_ce_latest/prod/compact_full_random_sft_chatfix_max12k_bsz1.yaml"
+    )
+    cfg = ConfigLoader.load_materialized_training_config(str(cfg_path))
+
+    assert cfg.training.get("effective_batch_size") == 128
+    assert "gradient_accumulation_steps" not in cfg.training
+    assert "accum" not in str(cfg.training.get("artifact_subdir", ""))
+    assert "accum" not in str(cfg.training.get("run_name", ""))
+
+
 def test_latest_recursive_detection_launch_configs_parse_without_custom() -> None:
     config_paths = [
         REPO_ROOT
@@ -753,6 +788,43 @@ def test_latest_recursive_detection_1p0_control_config_parses() -> None:
     assert cfg.training["packing"] is False
     assert cfg.packing.static_packing is False
     assert cfg.packing.padding_free_packed is False
+
+
+def test_latest_recursive_detection_adapter_smoke_configs_parse() -> None:
+    expected = {
+        "compact_full_prefix_rollin_adapter_tiny.yaml": "prefix_rollin_et_rmp_ce",
+        "compact_full_prefix_rollin_separator2_adapter_tiny.yaml": "prefix_rollin_et_rmp_ce",
+        "compact_full_random_sft_adapter_tiny.yaml": "random_order_sft",
+    }
+
+    for file_name, objective_variant in expected.items():
+        cfg = ConfigLoader.load_materialized_training_config(
+            str(
+                REPO_ROOT
+                / "configs/stage1/recursive_detection_ce_latest/smoke"
+                / file_name
+            )
+        )
+
+        assert isinstance(cfg, LatestDetectionTrainingConfig)
+        assert (
+            cfg.model["model"]
+            == "model_cache_remote/model_cache/models/Qwen/Qwen3-VL-2B-Instruct-coordexp"
+        )
+        assert cfg.model["adapters"] == [
+            "output_remote/stage1_2b/recursive_detection_ce_latest/compact_full_et_rmp_ce_support2_bsz16_4epoch_tokenrows_v2/compact-full-et-rmp-ce-support2-bsz16-4epoch-tokenrows-v2/v0-20260504-071356/checkpoint-3664"
+        ]
+        assert cfg.training["max_steps"] == 1
+        assert cfg.training["per_device_train_batch_size"] == 1
+        assert cfg.training["effective_batch_size"] == 1
+        assert "gradient_accumulation_steps" not in cfg.training
+        assert cfg.objective.variant == objective_variant
+        if file_name == "compact_full_prefix_rollin_separator2_adapter_tiny.yaml":
+            assert cfg.objective.boundary.separator_continue_weight == pytest.approx(2.0)
+            assert cfg.objective.boundary.eos_stop_weight == pytest.approx(0.5)
+        assert cfg.detection_template.id == "compact_full"
+        assert cfg.packing.static_packing is False
+        assert cfg.packing.padding_free_packed is False
 
 
 def test_latest_compact_sft_smoke_configs_parse_with_hard_ce_objectives() -> None:

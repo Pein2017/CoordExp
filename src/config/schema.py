@@ -3593,6 +3593,33 @@ class EntryTrieSupportBalanceConfig:
 
 
 @dataclass(frozen=True)
+class AppendBoundaryConfig:
+    type: Literal["compact_full_append_boundary"]
+    separator_continue_weight: float
+    eos_stop_weight: float
+    component_weight: float
+
+    def __post_init__(self) -> None:
+        _latest_detection_validate_choice(
+            self.type,
+            path="objective.boundary.type",
+            allowed={"compact_full_append_boundary"},
+        )
+        for field_name in (
+            "separator_continue_weight",
+            "eos_stop_weight",
+            "component_weight",
+        ):
+            value = getattr(self, field_name)
+            if not isinstance(value, (int, float)) or isinstance(value, bool):
+                raise TypeError(f"objective.boundary.{field_name} must be numeric")
+            if not math.isfinite(float(value)):
+                raise ValueError(f"objective.boundary.{field_name} must be finite")
+            if float(value) <= 0.0:
+                raise ValueError(f"objective.boundary.{field_name} must be > 0")
+
+
+@dataclass(frozen=True)
 class CompactTypeGateWeights:
     struct: float
     coord: float
@@ -3899,6 +3926,7 @@ class DetectionObjectiveConfig:
     normalization: str = "token_mean"
     rollin: Optional[PrefixRollinConfig] = None
     target: Optional[EntryTrieSupportBalanceConfig] = None
+    boundary: Optional[AppendBoundaryConfig] = None
     type_gate: Optional[CompactTypeGateConfig] = None
     eos: Optional[EosPriorConfig] = None
 
@@ -3983,9 +4011,19 @@ class DetectionObjectiveConfig:
                 )
             object.__setattr__(self, "trie_support_weight", None)
             object.__setattr__(self, "trie_balance_weight", None)
+            if self.state_weighting != "uniform_permutation":
+                raise ValueError(
+                    "objective.state_weighting must be uniform_permutation for "
+                    "prefix_rollin_et_rmp_ce"
+                )
+            if self.normalization != "semantic_image_bucket_balanced":
+                raise ValueError(
+                    "objective.normalization must be semantic_image_bucket_balanced "
+                    "for prefix_rollin_et_rmp_ce"
+                )
             missing = [
                 name
-                for name in ("rollin", "target", "type_gate", "eos")
+                for name in ("rollin", "target", "boundary", "type_gate", "eos")
                 if getattr(self, name) is None
             ]
             if missing:
@@ -3996,7 +4034,7 @@ class DetectionObjectiveConfig:
         else:
             unexpected = [
                 name
-                for name in ("rollin", "target", "type_gate", "eos")
+                for name in ("rollin", "target", "boundary", "type_gate", "eos")
                 if getattr(self, name) is not None
             ]
             if unexpected:

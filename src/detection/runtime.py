@@ -38,6 +38,9 @@ class RecursiveDetectionCERuntimeConfig:
     trie_support_weight: float
     trie_balance_weight: float
     variant: str = "random_permutation_et_rmp_ce"
+    separator_continue_weight: float = 0.50
+    eos_stop_weight: float = 0.50
+    boundary_component_weight: float = 0.30
 
 
 def is_latest_detection_config(training_config: Any) -> bool:
@@ -293,6 +296,9 @@ def resolve_recursive_detection_ce_runtime_cfg(
     if variant == "random_permutation_et_rmp_ce":
         trie_support_weight = _objective_float("trie_support_weight")
         trie_balance_weight = _objective_float("trie_balance_weight")
+        separator_continue_weight = 0.50
+        eos_stop_weight = 0.50
+        boundary_component_weight = 0.30
     elif variant == "prefix_rollin_et_rmp_ce":
         target = _field(objective, "target")
         if target is None:
@@ -311,6 +317,25 @@ def resolve_recursive_detection_ce_runtime_cfg(
                     f"objective.target.{field_name} must be finite and > 0 "
                     "for prefix_rollin_et_rmp_ce"
                 )
+        boundary = _field(objective, "boundary")
+        if boundary is None:
+            raise ValueError(
+                "objective.boundary is required for "
+                "objective.variant=prefix_rollin_et_rmp_ce"
+            )
+        separator_continue_weight = float(_field(boundary, "separator_continue_weight"))
+        eos_stop_weight = float(_field(boundary, "eos_stop_weight"))
+        boundary_component_weight = float(_field(boundary, "component_weight"))
+        for field_name, value in (
+            ("separator_continue_weight", separator_continue_weight),
+            ("eos_stop_weight", eos_stop_weight),
+            ("component_weight", boundary_component_weight),
+        ):
+            if not math.isfinite(value) or value <= 0.0:
+                raise ValueError(
+                    f"objective.boundary.{field_name} must be finite and > 0 "
+                    "for prefix_rollin_et_rmp_ce"
+                )
     else:
         raise ValueError(
             "recursive_detection_ce runtime currently supports only "
@@ -327,6 +352,9 @@ def resolve_recursive_detection_ce_runtime_cfg(
         trie_support_weight=trie_support_weight,
         trie_balance_weight=trie_balance_weight,
         variant=variant,
+        separator_continue_weight=separator_continue_weight,
+        eos_stop_weight=eos_stop_weight,
+        boundary_component_weight=boundary_component_weight,
     )
 
 
