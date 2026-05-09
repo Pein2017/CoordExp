@@ -126,10 +126,163 @@ The active compact Stage-1 owner is the latest detection stack under `src/detect
 
 - `configs/stage1/recursive_detection_ce_latest/prod/compact_full_support2.yaml` remains the random-permutation ET-RMP-CE production baseline/comparator.
 - `configs/stage1/recursive_detection_ce_latest/ablation/compact_full_prefix_rollin_balance2.yaml` is the E1 `prefix_rollin_et_rmp_ce` ablation route for Prefix-Closed Multi-Target SFT.
+- `configs/stage1/recursive_detection_ce_latest/ablation/compact_full_prefix_rollin_separator2.yaml` is the E2 separator-continue ablation. It keeps E1 support/balance/type-gate/EOS settings and changes only the append-boundary weights so the `\n` continuation token gets more pressure before `<|object_ref_start|>` can be emitted.
 
-`prefix_rollin_et_rmp_ce` is compact-full only. It requires `detection_template.id: compact_full`, masks roll-in prefix labels, samples `K` uniformly over `[0, object_count]`, keeps `suffix_order: same_sampled_permutation` for V1, and expresses support/balance weights under `objective.target`, not obsolete flat trie-weight aliases.
+`prefix_rollin_et_rmp_ce` is compact-full only. It requires `detection_template.id: compact_full`, masks roll-in prefix labels, samples `K` uniformly over `[0, object_count]`, keeps `suffix_order: same_sampled_permutation` for V1, and expresses support/balance weights under `objective.target`, append-boundary weights under `objective.boundary`, and not obsolete flat trie-weight aliases.
 
 EOS supervision for this variant targets the Qwen chat-template assistant stop marker `<|im_end|>` only. Text-level terminators such as `<|endoftext|>` or `<|end_of_text|>` must not be used as training EOS for this surface. The initial `empirical_unlabeled_poisson_v0` EOS prior is smoke/ablation-only: production configs must use `objective.eos.eos_trust_weight.source: calibrated_formula_ref` with a versioned calibration artifact and validation evidence.
+
+Generation-time HF/Qwen surfaces use the global chat-token contract
+`eos_token_id=id("<|im_end|>")` and `pad_token_id=id("<|endoftext|>")`.
+This is a decode/runtime contract; it does not change the training target rule
+above, where only `<|im_end|>` is the semantic EOS target. HF processor calls
+for inference/rollout paths must preserve training-time geometry with
+`do_resize=false`. vLLM local/server inference must also stop on
+`"<|im_end|>"` only; do not add `<|endoftext|>` as a generation stop token.
+Local vLLM launch kwargs should carry `mm_processor_kwargs: {do_resize: false}`
+when the installed vLLM API supports it, and inference artifacts must record the
+Qwen chat generation contract.
+
+For `prefix_rollin_et_rmp_ce`, `objective.state_weighting` and
+`objective.normalization` are authored config truth, not hidden runtime
+substitutions. They must be `uniform_permutation` and
+`semantic_image_bucket_balanced`, respectively. `training.effective_batch_size`
+is likewise the source of truth for optimizer-step budget; YAML must not also
+author `training.gradient_accumulation_steps`.
+
+The append-boundary loss is also authored config truth. `objective.boundary`
+must use `type: compact_full_append_boundary` and explicitly set
+`separator_continue_weight`, `eos_stop_weight`, and `component_weight`. E1 keeps
+the historical `0.5 / 0.5 / 0.3` boundary mix. E2 raises
+`separator_continue_weight` to `2.0` while leaving `eos_stop_weight=0.5` and
+`component_weight=0.3`, targeting the diagnosed failure where free decode stops
+at `<|im_end|>` before emitting the required separator newline.
+
+Compact-full token-row training uses 1002 trainable rows through the persisted
+`coord_offset_adapter` module name: the 1000 coord rows plus
+`<|object_ref_start|>` and `<|box_start|>`. Treat the persisted module name as
+historical; the current contract is token-row adaptation, not coord-only
+adaptation.
+
+For `prefix_rollin_et_rmp_ce` smoke and ablation monitoring, use
+`loss/recursive_detection_ce` as the comparable objective-loss scalar. The
+top-level trainer `loss` may be scaled by gradient accumulation and is therefore
+not directly comparable across different `training.effective_batch_size`
+settings.
+
+Required training-health diagnostics for this surface include:
+
+- `recursive_detection_ce/target_mix/targets_per_sample`: how many supervised
+  local next-token targets contributed to the logged optimizer step.
+- `recursive_detection_ce/target_mix/eos_fraction` and
+  `recursive_detection_ce/target_mix/non_eos_fraction`: whether a log row is
+  dominated by easy `<|im_end|>` supervision or contains real continuation
+  states.
+- `recursive_detection_ce/target_mix/trie_multi_positive_fraction`: whether
+  local multi-target object-entry supervision was actually present.
+- `recursive_detection_ce/target_mix/coord_fraction`,
+  `recursive_detection_ce/target_mix/desc_fraction`, and
+  `recursive_detection_ce/target_mix/object_control_fraction`: schema/content
+  composition for interpreting token accuracy and CE shifts.
+- `recursive_detection_ce/target_mix/positive_children_per_trie_target`: the
+  average branching factor for multi-positive entry targets.
+- `recursive_detection_ce/trie_valid_mass`,
+  `recursive_detection_ce/support_loss`, and
+  `recursive_detection_ce/balance_loss`: support-vs-balance behavior for valid
+  next-object entries. Healthy support should not collapse while balance remains
+  nonzero enough to discourage one object from taking all probability mass.
+- `recursive_detection_ce/entry/continue_minus_eos_margin`: the local
+  continuation margin, computed as valid next-object log-mass minus the
+  `<|im_end|>` logit. Positive values mean the model prefers continuing over
+  stopping after a separator has already been supplied.
+- `recursive_detection_ce/free_boundary/continue_minus_eos_margin` and
+  `recursive_detection_ce/free_boundary/continue_mass`: the append-boundary
+  signal for object separators, computed at the token where autoregressive
+  decode must choose `\n` over `<|im_end|>` before the next object can start.
+  This is the more direct early-stop health signal for non-empty prefixes.
+- `recursive_detection_ce/boundary/separator_continue_weight`,
+  `recursive_detection_ce/boundary/eos_stop_weight`, and
+  `recursive_detection_ce/boundary/component_weight`: the runtime loss weights
+  actually used by the trainer. These should match the materialized
+  `objective.boundary` block so separator ablations are config-truthful.
+- `recursive_detection_ce/entry/valid_child_entropy` and
+  `recursive_detection_ce/entry/valid_child_kl_to_uniform`: whether valid
+  children remain reasonably balanced or collapse to one easy object. The KL is
+  `KL(Uniform(valid_children) || p_valid)`, so lower is more uniform.
+- `detection_sequence/coordinate/token_acc/full_vocab/top1` and
+  `detection_sequence/coordinate/token_ce/full_vocab`: coordinate-token
+  learning pressure, which is often the hard part even when description/schema
+  tokens look saturated.
+- `recursive_detection_ce/eos_trust_weight`,
+  `recursive_detection_ce/eos_unweighted_ce`, and
+  `recursive_detection_ce/eos_weighted_loss`: whether the censored-EOS policy is
+  weakening stop supervision as intended.
+- `recursive_detection_ce/type_gate_loss`,
+  `recursive_detection_ce/type_gate_allowed_mass`,
+  `recursive_detection_ce/type_gate_allowed_tokens`, and
+  `recursive_detection_ce/type_gate_weight`: schema/type safety pressure for
+  keeping generated compact detections parseable.
+
+Do not interpret a low aggregate loss or high `token_acc` as a healthy
+multi-positive trend unless `target_mix/non_eos_fraction` and
+`target_mix/trie_multi_positive_fraction` show that continuation and
+multi-target positions were present in the logged rows. For tiny smoke runs,
+prefer `effective_batch_size >= 4` when checking trend shape so uniformly sampled
+`K in [0, N]` does not produce many EOS-only optimizer steps.
+
+Use the forced-prefix continue-vs-EOS probe before changing EOS or balance
+hyperparameters based on decode under-generation alone:
+
+```bash
+conda run -n ms python -m src.analysis.prefix_rollin_teacher_forced_diagnostic \
+  --config configs/stage1/recursive_detection_ce_latest/smoke/compact_full_prefix_rollin_adapter_tiny.yaml \
+  --checkpoint output_remote/stage1_2b/recursive_detection_ce_latest/compact_full_et_rmp_ce_support2_bsz16_4epoch_tokenrows_v2/compact-full-et-rmp-ce-support2-bsz16-4epoch-tokenrows-v2/v0-20260504-071356/checkpoint-3664 \
+  --split val \
+  --limit 8 \
+  --k-values every \
+  --output-dir temp/prefix_rollin_forced_prefix_probe_limit8
+```
+
+The artifact is diagnostic-only and does not call `generate()`. Its
+`per_case.jsonl` rows expose `prefix_k`, `prefix_mode`, `gt_count`,
+`remaining_gt_count`, `continue_logsumexp`, `valid_mass`,
+`continue_minus_eos_margin`, and `<|im_end|>` logits/log-probabilities.
+
+Interpret the two continuation boundaries separately:
+
+- `*_entry_after_separator` scores `<|object_ref_start|>` vs `<|im_end|>` after
+  a separator newline has already been forced. This boundary can look extremely
+  healthy while free decode still stops early.
+- `*_free_boundary` scores the actual next token after the current object
+  prefix: `\n` vs `<|im_end|>` for non-empty prefixes, or
+  `<|object_ref_start|>` vs `<|im_end|>` for `K=0`. This is the boundary that
+  explains early stopping in ordinary autoregressive decode.
+
+To replay a free-decode artifact as the forced prefix, add the generated-prefix
+mode:
+
+```bash
+conda run -n ms python -m src.analysis.prefix_rollin_teacher_forced_diagnostic \
+  --config configs/stage1/recursive_detection_ce_latest/smoke/compact_full_prefix_rollin_adapter_tiny.yaml \
+  --checkpoint output_remote/stage1_2b/recursive_detection_ce_latest/compact_full_et_rmp_ce_support2_bsz16_4epoch_tokenrows_v2/compact-full-et-rmp-ce-support2-bsz16-4epoch-tokenrows-v2/v0-20260504-071356/checkpoint-3664 \
+  --split val \
+  --limit 8 \
+  --prefix-modes generated_prefix \
+  --decode-artifact temp/infer/recursive_detection_ce_latest/smoke_compact_full_support2_tokenrows_v2_ckpt3664_hf_limit8/gt_vs_pred.jsonl \
+  --trace-artifact temp/infer/recursive_detection_ce_latest/smoke_compact_full_support2_tokenrows_v2_ckpt3664_hf_limit8/pred_token_trace.jsonl \
+  --output-dir temp/prefix_rollin_generated_prefix_probe_limit8
+```
+
+If `entry_after_separator` is positive but `free_boundary` is negative, the
+model knows how to start the next object after a newline but prefers
+`<|im_end|>` over appending that newline. Treat this as a separator/append
+continuation failure, not as evidence that the object-entry trie target itself
+collapsed.
+
+Current schema enforces production EOS source/reference shape. The stronger
+content-level check that a calibration artifact is `production_approved` with a
+full validation probe remains an artifact/registry gate until a concrete
+validator is introduced.
 
 Retired continuation code, config, and runtime paths should not be used for new training. Historical evidence remains in git history, archived progress notes, and run artifacts.
 

@@ -56,6 +56,7 @@ Human support entrypoints:
   - [docs/data/PACKING.md](data/PACKING.md)
   - Latest compact detection production baseline/comparator: `configs/stage1/recursive_detection_ce_latest/prod/compact_full_support2.yaml`, `src/config/schema.py::LatestDetectionTrainingConfig`, and `src/detection/runtime.py`
   - Prefix-rollin E1 ablation route: `configs/stage1/recursive_detection_ce_latest/ablation/compact_full_prefix_rollin_balance2.yaml`; compact_full only, `<|im_end|>` only, empirical EOS prior only for smoke/ablation, production requires `calibrated_formula_ref` with a versioned artifact.
+  - Prefix-rollin E2 separator diagnostic route: `configs/stage1/recursive_detection_ce_latest/ablation/compact_full_prefix_rollin_separator2.yaml`; same as E1 except `objective.boundary.separator_continue_weight=2.0` to test the diagnosed `\n` vs `<|im_end|>` free-boundary failure.
   - Latest compact detection authoring snippets, not yet consumed by canonical launch configs: `configs/_shared/latest_detection/`
   - Legacy compact bridge example only: `configs/stage1/compact_detection_sequence/smoke/compact_full_tiny.yaml`
 - Stage-2 training:

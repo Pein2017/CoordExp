@@ -37,6 +37,39 @@ Note:
 | Stage-2 two-channel base | `12000` | `64` | post-rollout trainer packing | Rollout generation remains padded/unpacked; each post-rollout `Y_train` is atomic. |
 | Historical 12k packing probe | `12000` | `12` | historical probe | Useful as prior efficiency evidence, not the global default. |
 
+## Effective Batch Source Of Truth
+
+`training.effective_batch_size` is the primary optimizer-step budget when it is
+present. `training.gradient_accumulation_steps` is derived from it and must not
+be authored in YAML at the same time.
+
+Runtime manifests record both the requested value and the realized optimizer-step
+batch:
+
+- `effective_batch_size`: requested/source value from YAML when authored.
+- `actual_global_effective_batch_size`: `per_device_train_batch_size *
+  gradient_accumulation_steps * world_size` after derivation.
+- `effective_batch_rounding`: `exact` when the realized value matches the
+  request, otherwise `ceil`.
+
+Two execution regimes use the same source-of-truth rule:
+
+- Packed / padding-free future runtime:
+  `per_device_train_batch_size` is forced to `1`. The effective batch counts
+  long packed sequence units per optimizer step. `global_max_length` /
+  `template.max_length` is the pack cap for each packed unit, and the runtime
+  derives gradient accumulation from `effective_batch_size` and `world_size`.
+- Non-packed padded runtime:
+  `per_device_train_batch_size` may be greater than `1`, padding follows the
+  active tokenizer/template policy, and `global_max_length` is the per-sample
+  hard cap. The optimizer-step sample budget is still
+  `effective_batch_size`, with gradient accumulation derived from
+  `effective_batch_size / (per_device_train_batch_size * world_size)`.
+
+Latest compact recursive detection currently uses the non-packed padded regime.
+Packing and padding-free packed runtime remain disabled until recursive sidecar
+target-position rewriting is implemented and validated.
+
 ## Latest Compact Recursive Detection Packing Owner
 
 Latest compact recursive detection uses top-level `packing` as the semantic
@@ -75,6 +108,11 @@ Current implementation:
 - Stage-1 static packing uses one hard length cap: `global_max_length` / `template.max_length`.
 - Static packing probes each atomic sample at full length before building the pack plan. If any sample exceeds that hard cap, packing now fails fast instead of silently truncating or skipping it.
 - Latest compact recursive detection surfaces keep packing and encoded-sample cache fail-fast until sidecar target-position rewriting is explicitly implemented and validated.
+- Compact-full token-row runs train 1002 rows through the persisted
+  `coord_offset_adapter` module name: 1000 coord rows plus the two compact
+  structural rows `<|object_ref_start|>` and `<|box_start|>`. The module name is
+  historical; the current contract is token-row adaptation, not coord-only
+  adaptation.
 - `training.encoded_sample_cache.max_resident_shards` bounds the number of shard
   files kept resident by the cache store. The default is `4`; raise it only when
   repeated shard reloads dominate dataset fetch time.

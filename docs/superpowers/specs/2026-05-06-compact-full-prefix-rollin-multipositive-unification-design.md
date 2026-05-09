@@ -1,12 +1,73 @@
 # Compact-Full Prefix Roll-in Multi-Positive Unification Design
 
 Date: 2026-05-06
+Updated: 2026-05-07
 
-Status: design/spec only. This document does not authorize code implementation by itself.
+Status: implementation authorized and in progress. The 2026-05-07 hardening
+addendum below is part of the implementation contract.
 
 Owner surface: latest compact detection stack under `src/detection/*`.
 
 Primary variant: `prefix_rollin_et_rmp_ce`.
+
+## 2026-05-07 Hardening Addendum
+
+The user approved the post-audit P1/P2 fixes on 2026-05-07. These constraints
+are binding for the current implementation:
+
+- `prefix_rollin_et_rmp_ce` remains `compact_full` only; no compatibility path
+  is required for legacy set-continuation configs or old `custom.*` objective
+  knobs.
+- Latest recursive CE sidecars must be validated against the collated batch
+  before model forward. For every target, `input_ids[b, position]`,
+  `labels[b, position]`, `attention_mask[b, position]`, and
+  `attention_mask[b, position - 1]` must agree with the sidecar teacher token
+  and causal predictor row.
+- Recursive CE owns the token loss. `labels` must not be passed into the
+  Qwen/HF forward path for this objective; labels may remain available locally
+  for metrics.
+- EOS trust weight scales only the main EOS CE term. It must not scale the
+  independent type-gate loss, because type-gate is the schema/malformed-output
+  guardrail.
+- Target positions for full-sequence logits must satisfy
+  `0 < position < sequence_length`. A target at the final sequence index is an
+  off-by-one causal-label error.
+- The global Qwen HF generation contract is:
+  `eos_token_id = id("<|im_end|>")` and
+  `pad_token_id = id("<|endoftext|>")`.
+  This applies beyond the `prefix_rollin_et_rmp_ce` training variant. Training
+  EOS targets still use only `<|im_end|>`.
+- HF processor calls used by inference/rollout paths must set `do_resize=false`
+  whenever the processor supports it, preserving the dataset-time geometry
+  contract.
+- vLLM local/server inference must stop on `"<|im_end|>"` only. Do not add
+  `<|endoftext|>` or tokenizer-default EOS as a second stop token for
+  compact-full decode. Local vLLM should pass multimodal processor
+  `do_resize=false` when supported.
+- `training.effective_batch_size` is the source of truth. When it is present,
+  `training.gradient_accumulation_steps` is derived and must not be authored in
+  YAML.
+- Runtime artifacts must record both requested `effective_batch_size` and
+  realized `actual_global_effective_batch_size`, plus the Qwen generation
+  eos/pad/stop/geometry contract.
+- Packing/padding-free future mode means `per_device_train_batch_size=1`; the
+  effective batch then counts packed long-sequence units under the global max
+  length. Non-packed padded mode may use `per_device_train_batch_size>1`, but
+  the optimizer-step sample budget still comes from `effective_batch_size`.
+- Compact-full trainable token rows are 1002 rows: 1000 coord rows plus
+  `<|object_ref_start|>` and `<|box_start|>`. The persisted module name may
+  remain `coord_offset_adapter`, but docs and manifests should describe the
+  actual token-row scope.
+- Raw coord-token GT boxes must be validated as non-inverted `xyxy`. Image
+  paths must resolve inside `data.image_root`; missing or escaped image paths
+  are hard failures.
+- Zero-object / EOS-only examples are supported as a safety guard, even though
+  the current training data is expected to contain detectable objects.
+- Production EOS calibration is currently enforced at config shape level
+  (`source: calibrated_formula_ref` plus a versioned artifact reference). The
+  stronger content-level gate (`production_approved`, validation scope, probe
+  refs, and formula class) remains an artifact/registry validation requirement
+  unless and until a concrete validator is implemented.
 
 ## Purpose
 
@@ -386,6 +447,8 @@ detection_template:
 objective:
   id: recursive_detection_ce
   variant: prefix_rollin_et_rmp_ce
+  state_weighting: uniform_permutation
+  normalization: semantic_image_bucket_balanced
 
   rollin:
     enabled: true
@@ -409,25 +472,6 @@ objective:
   type_gate:
     enabled: true
     mode: allowed_type_mass
-    groups:
-      struct:
-        tokens:
-          - <|object_ref_start|>
-          - <|box_start|>
-      coord:
-        range:
-          start: <|coord_0|>
-          end: <|coord_999|>
-      desc:
-        complement_of:
-          - struct
-          - coord
-          - eos
-          - text_level_terminators
-          - tokenizer_special_control
-      eos:
-        tokens:
-          - <|im_end|>
     weights:
       struct: 2.0
       coord: 1.0
@@ -467,9 +511,26 @@ objective:
         - disabled_ablation
 ```
 
+The `struct`, `coord`, `desc`, and `eos` type groups are derived runtime groups,
+not YAML-authored pass-through knobs. The YAML only authors the mode and per-type
+weights. Runtime derives membership from the active tokenizer and compact
+template:
+
+- `struct`: compact structural rows such as `<|object_ref_start|>`,
+  `<|box_start|>`, and row separators.
+- `coord`: `<|coord_0|>` through `<|coord_999|>`.
+- `eos`: `<|im_end|>` only.
+- `desc`: non-control text tokens after excluding struct, coord, eos,
+  tokenizer special control tokens, padding, image sentinels, and text-level
+  terminators such as `<|endoftext|>` / `<|end_of_text|>`.
+
 Strict schema requirements:
 
 - Reject this variant unless `detection_template.id == compact_full`.
+- Require `objective.state_weighting == uniform_permutation` and
+  `objective.normalization == semantic_image_bucket_balanced` for this variant;
+  runtime must not silently substitute these values while YAML says something
+  else.
 - Reject old `custom.stage1_set_continuation` knobs for this variant.
 - Require `objective.rollin.suffix_order == same_sampled_permutation` for v1; independent suffix resampling is a separate future ablation.
 - Allow `objective.target.support_weight` and `objective.target.balance_weight` as the canonical new paths, but keep obsolete-key scanning path-aware so it rejects `objective.support_weight`, `objective.balance_weight`, `objective.trie_support_weight`, `objective.trie_balance_weight`, `branch_support_weight`, `branch_balance_weight`, and every `custom.*` legacy path.
@@ -710,6 +771,13 @@ Every ablation row must also carry an executable registry record:
 - `target_policy`, `support_weight`, `balance_weight`, `type_gate_policy`, `eos_policy`, and `eos_trust_weight.source`
 - `train_scope`, `eval_scope`, `dataset_jsonl`, `image_root`, `checkpoint_init`, `seed`, and `replicate_id`
 - `launch_shape`: world size, GPU count/model, per-device batch, gradient accumulation, effective batch, max length, and max pixels
+- `run_manifest_refs`: pointers to `resolved_config.json`,
+  `effective_runtime.json`, `experiment_manifest.json`, `run_metadata.json`,
+  `runtime_env.json`, train/eval data provenance, and nullable
+  `pipeline_manifest.json`
+- `pipeline_manifest_status`: `present`, `not_applicable`, or
+  `missing_unexpected`; Stage-1 latest compact detection should normally use
+  `not_applicable` rather than fabricating an empty pipeline manifest
 - `compute_normalization`: optimizer-step budget, seen-image count, supervised suffix token count, assistant token count, masked prefix token count, forward count, backward count, wall-clock time, and GPU hours
 - `required_metric_keys`, `required_artifact_families`, and `artifact_root`
 - `interpretation_status`: `hypothesis`, `running`, `result`, `interpretation`, or `stable_contract`

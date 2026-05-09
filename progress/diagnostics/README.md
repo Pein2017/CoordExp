@@ -6,7 +6,7 @@ status: canonical
 domain: research-history
 summary: Router for failure investigations, mechanism studies, threshold sweeps, and operator notes that support diagnosis.
 tags: [progress, diagnostics, investigations]
-updated: 2026-05-01
+updated: 2026-05-08
 ---
 
 # Diagnostics Index
@@ -22,6 +22,15 @@ Prefer `progress/benchmarks/` when the output is mainly a measured run-vs-run or
 
 ## Current Clusters
 
+- Compact-full coord-confidence / stop-gate diagnostics
+  - Start with
+    [2026-05-08_compact_full_coord_confidence_stop_gate_diagnostics.md](2026-05-08_compact_full_coord_confidence_stop_gate_diagnostics.md)
+    for the current root-cause read on low training loss but conservative
+    compact-full decode, `coord_mean_logprob` as a plausible-object versus
+    invalid/duplicate-tail separator, `rp=1.10` as the main decode surface,
+    the HF batched compact-grammar prompt-offset bug under decoder-only left
+    padding, the fixed val200 prompt-offset comparison, and the fixed-artifact
+    coord-confidence / counterfactual boundary probe plan.
 - Canonical ET-RMP continuation / repetition-penalty / FN diagnostics
   - Start with
     [2026-04-29_et_rmp_rp_continuation_bias_hypothesis.md](2026-04-29_et_rmp_rp_continuation_bias_hypothesis.md)

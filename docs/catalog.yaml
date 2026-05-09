@@ -32,6 +32,12 @@ config_surfaces:
       parser: src/config/schema.py::LatestDetectionTrainingConfig
       runtime: src/detection/runtime.py
       notes: "Compact-full-only prefix_rollin_et_rmp_ce E1 ablation. EOS supervision targets the Qwen chat-template <|im_end|> marker; empirical_unlabeled_poisson_v0 is smoke/ablation-only, and production requires calibrated_formula_ref plus a versioned calibration artifact. Packing/cache remain disabled until recursive sidecar offsets are supported."
+    - id: stage1_latest_compact_detection_prefix_rollin_separator2_ablation
+      status: diagnostic-ablation
+      config: configs/stage1/recursive_detection_ce_latest/ablation/compact_full_prefix_rollin_separator2.yaml
+      parser: src/config/schema.py::LatestDetectionTrainingConfig
+      runtime: src/detection/runtime.py
+      notes: "E2 separator-continue ablation for prefix_rollin_et_rmp_ce. It keeps E1 target/type-gate/EOS settings and raises objective.boundary.separator_continue_weight to 2.0 to diagnose generated-prefix newline-vs-im_end early stopping."
     - id: stage1_legacy_compact_bridge
       status: legacy-bridge
       config: configs/stage1/compact_detection_sequence/smoke/compact_full_tiny.yaml

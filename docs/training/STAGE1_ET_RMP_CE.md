@@ -31,5 +31,6 @@ compact-only ablation route is documented in `STAGE1_OBJECTIVE.md` and
 `docs/catalog.yaml`, with config
 `configs/stage1/recursive_detection_ce_latest/ablation/compact_full_prefix_rollin_balance2.yaml`.
 It must stay in the latest compact detection stack rather than reviving this
-retired continuation implementation. Old `branch_support_weight`,
-`branch_balance_weight`, and `stage1_set_continuation` paths remain retired.
+retired continuation implementation. Old branch-balance/support knobs and the
+retired continuation trainer path must remain absent from active configs,
+runtime routing, tests, and docs recommendations.

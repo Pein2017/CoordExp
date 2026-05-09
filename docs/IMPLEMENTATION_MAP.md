@@ -49,6 +49,7 @@ Open these docs first:
 - [`docs/data/PACKING.md`](data/PACKING.md)
 - [`configs/stage1/recursive_detection_ce_latest/prod/compact_full_support2.yaml`](../configs/stage1/recursive_detection_ce_latest/prod/compact_full_support2.yaml) for the compact recursive detection production baseline/comparator
 - [`configs/stage1/recursive_detection_ce_latest/ablation/compact_full_prefix_rollin_balance2.yaml`](../configs/stage1/recursive_detection_ce_latest/ablation/compact_full_prefix_rollin_balance2.yaml) for the compact-full prefix-rollin E1 ablation route
+- [`configs/stage1/recursive_detection_ce_latest/ablation/compact_full_prefix_rollin_separator2.yaml`](../configs/stage1/recursive_detection_ce_latest/ablation/compact_full_prefix_rollin_separator2.yaml) for the E2 separator-continue diagnostic ablation
 
 Open these configs first:
 - `configs/stage1/sft_base.yaml`
