@@ -9,6 +9,8 @@ training:
   per_device_eval_batch_size: 8
   effective_batch_size: 128
   eval_steps: 600
+  group_by_length: true
+  length_column_name: length
 
 experiment:
   surface: ablation

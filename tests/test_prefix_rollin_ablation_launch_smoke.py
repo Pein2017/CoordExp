@@ -11,7 +11,10 @@ from typing import Any, Mapping, Sequence
 import pytest
 import torch
 
-from src.bootstrap.experiment_manifest import write_experiment_manifest_file
+from src.bootstrap.experiment_manifest import (
+    build_experiment_manifest_payload,
+    write_experiment_manifest_file,
+)
 from src.bootstrap.run_metadata import (
     build_run_metadata_payload,
     write_run_metadata_file_from_payload,
@@ -29,6 +32,7 @@ from src.sft import (
     EncodedSampleCacheRuntimeConfig,
     PackingRuntimeConfig,
     _build_effective_runtime_payload,
+    _parse_packing_config,
 )
 from src.trainers.batch_extras import RECURSIVE_DETECTION_TARGETS_KEY
 from src.trainers.metrics.mixins import RecursiveDetectionCEMixin
@@ -656,3 +660,107 @@ def test_prefix_rollin_ablation_launch_smoke_covers_config_dataset_loss_and_mani
     assert experiment_manifest["artifacts"]["resolved_config"] == "resolved_config.json"
     assert experiment_manifest["artifacts"]["effective_runtime"] == "effective_runtime.json"
     assert "pipeline_manifest" not in experiment_manifest["artifacts"]
+
+
+def test_prefix_rollin_bsz8_configs_record_eval_and_disabled_packing_runtime() -> None:
+    repo_root = Path(__file__).resolve().parents[1]
+    config_paths = (
+        repo_root
+        / "configs/stage1/recursive_detection_ce_latest/ablation/"
+        "compact_full_prefix_rollin_balance2_a3_bsz8_ebs128.yaml",
+        repo_root
+        / "configs/stage1/recursive_detection_ce_latest/ablation/"
+        "compact_full_prefix_rollin_balance2_a4_eos_bsz8_ebs128.yaml",
+    )
+
+    for cfg_path in config_paths:
+        cfg = ConfigLoader.load_materialized_training_config(str(cfg_path))
+        assert isinstance(cfg, LatestDetectionTrainingConfig)
+        assert cfg.training["per_device_train_batch_size"] == 8
+        assert cfg.training["per_device_eval_batch_size"] == 8
+        assert cfg.training["effective_batch_size"] == 128
+        assert cfg.training["eval_steps"] == 600
+        assert cfg.training["group_by_length"] is True
+        assert cfg.training["length_column_name"] == "length"
+        assert cfg.training["packing"] is False
+        assert cfg.training["eval_packing"] is False
+        assert cfg.packing.static_packing is False
+        assert cfg.packing.padding_free_packed is False
+
+        train_args = SimpleNamespace(
+            run_name=cfg.training["run_name"],
+            output_dir=str(repo_root / "temp" / "unit" / cfg.training["run_name"]),
+            logging_dir=str(repo_root / "temp" / "unit" / "tb" / cfg.training["run_name"]),
+            save_only_model=False,
+            save_strategy="no",
+            save_last_epoch=True,
+            seed=123,
+            per_device_train_batch_size=cfg.training["per_device_train_batch_size"],
+            per_device_eval_batch_size=cfg.training["per_device_eval_batch_size"],
+            gradient_accumulation_steps=4,
+            eval_strategy=cfg.training["eval_strategy"],
+            eval_steps=cfg.training["eval_steps"],
+            group_by_length=cfg.training["group_by_length"],
+            length_column_name=cfg.training["length_column_name"],
+            max_steps=cfg.training.get("max_steps", -1),
+            num_train_epochs=cfg.training.get("num_train_epochs", 1.0),
+            dataloader_drop_last=cfg.training.get("dataloader_drop_last", False),
+            deepspeed=None,
+            resume_from_checkpoint=None,
+            max_model_len=cfg.template.get("max_length", 0),
+        )
+        packing_cfg = _parse_packing_config(
+            cfg.training,
+            template=SimpleNamespace(max_length=cfg.template.get("max_length", 0)),
+            train_args=train_args,
+        )
+        effective_runtime = _build_effective_runtime_payload(
+            training_config=cfg,
+            train_args=train_args,
+            trainer_variant=None,
+            dataset_seed=123,
+            checkpoint_mode="artifact_only",
+            packing_cfg=packing_cfg,
+            encoded_sample_cache_cfg=EncodedSampleCacheRuntimeConfig(enabled=False),
+            train_jsonl=cfg.data.train_jsonl,
+            val_jsonl=cfg.data.val_jsonl,
+            pipeline_manifest=None,
+        )
+
+        assert effective_runtime["eval_strategy"] == str(
+            getattr(train_args, "eval_strategy", "") or ""
+        )
+        assert effective_runtime["eval_steps"] == 600
+        assert effective_runtime["per_device_eval_batch_size"] == 8
+        assert effective_runtime["packing"]["enabled"] is False
+        assert effective_runtime["packing"]["eval_packing"] is False
+        assert effective_runtime["dataloader"]["group_by_length"] is True
+        assert effective_runtime["dataloader"]["length_column_name"] == "length"
+        length_bucketing = effective_runtime["dataloader"]["length_bucketing"]
+        assert length_bucketing["enabled"] is True
+        assert length_bucketing["mode"] == "row_atomic_length_bucketing"
+        assert (
+            length_bucketing["length_source"]
+            == "DetectionTrainingDataset.encoded_length_for_row"
+        )
+        assert length_bucketing["cache_policy"] == "run_local_only"
+
+        experiment_manifest = build_experiment_manifest_payload(
+            output_dir=str(Path(train_args.output_dir)),
+            config_path=str(cfg_path),
+            base_config_path=None,
+            run_name=str(train_args.run_name),
+            dataset_seed=123,
+            experiment=cfg.to_mapping()["experiment"],
+            effective_runtime=effective_runtime,
+            pipeline_manifest=None,
+            run_metadata={},
+            manifest_files={},
+        )
+        runtime_summary = experiment_manifest["runtime_summary"]
+        assert runtime_summary["eval_strategy"] == effective_runtime["eval_strategy"]
+        assert runtime_summary["eval_steps"] == 600
+        assert runtime_summary["per_device_eval_batch_size"] == 8
+        assert runtime_summary["packing"]["enabled"] is False
+        assert runtime_summary["packing"]["eval_packing"] is False
+        assert runtime_summary["dataloader"]["length_bucketing"]["enabled"] is True

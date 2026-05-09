@@ -181,11 +181,69 @@ class DetectionTrainingDataset(Dataset):
     def __len__(self) -> int:
         return len(self.rows)
 
+    def _base_index(self, index: int) -> int:
+        """Validated row index for map-style dataset access."""
+
+        base_idx = int(index)
+        if base_idx < 0 or base_idx >= len(self.rows):
+            raise IndexError(
+                f"DetectionTrainingDataset index {index!r} is out of range "
+                f"for dataset of size {len(self.rows)}"
+            )
+        return base_idx
+
     def set_epoch(self, epoch: int) -> None:
         self._epoch = int(epoch)
 
+    def encoded_length_for_row(
+        self,
+        index: int,
+        *,
+        forced_rollin_k: int | None = None,
+        epoch: int | None = None,
+    ) -> int:
+        """Return the exact encoded input length for one base row.
+
+        The method follows the same message-rendering and Swift-template encode
+        path as ``__getitem__`` but intentionally does not construct recursive
+        CE sidecars. For ``prefix_rollin_et_rmp_ce``, ``forced_rollin_k`` is
+        validated to make the K-invariance contract explicit; K changes labels
+        and targets, not the full teacher-forced input sequence.
+        """
+
+        base_idx = self._base_index(index)
+        raw = parse_raw_detection_row(self.rows[base_idx])
+        if len(raw.objects) > self.config.max_objects:
+            raise ValueError(
+                f"row {base_idx} has {len(raw.objects)} objects, exceeding "
+                f"data.max_objects={self.config.max_objects}"
+            )
+
+        ordering_plan = self._ordering_plan(base_idx=base_idx, epoch=epoch)
+        normalized = normalize_detection_row(raw, object_ordering=ordering_plan)
+        if forced_rollin_k is not None:
+            if self.config.mode != "prefix_rollin_et_rmp_ce":
+                raise ValueError(
+                    "forced_rollin_k is only valid for prefix_rollin_et_rmp_ce"
+                )
+            k = int(forced_rollin_k)
+            if k < 0 or k > len(normalized.objects):
+                raise ValueError(
+                    "forced_rollin_k must be in [0, object_count], "
+                    f"got {forced_rollin_k!r} for object_count={len(normalized.objects)}"
+                )
+
+        detection_template = get_detection_template(self.config.detection_template_id)
+        rendered_assistant = detection_template.render_assistant(normalized)
+        messages = self._messages(raw.images, assistant_text=rendered_assistant.text)
+        encoded = self._encode_messages(messages)
+        length = encoded.get("length")
+        if length is not None:
+            return int(length)
+        return len(_as_int_tuple(encoded.get("input_ids"), path="encoded.input_ids"))
+
     def __getitem__(self, index: int) -> dict[str, Any]:
-        base_idx = int(index) % len(self.rows)
+        base_idx = self._base_index(index)
         raw = parse_raw_detection_row(self.rows[base_idx])
         if len(raw.objects) > self.config.max_objects:
             raise ValueError(
@@ -293,13 +351,16 @@ class DetectionTrainingDataset(Dataset):
             encoded["recursive_detection_targets"] = recursive_detection_targets
         return dict(encoded)
 
-    def _ordering_plan(self, *, base_idx: int) -> ObjectOrderingPlan:
+    def _ordering_plan(
+        self, *, base_idx: int, epoch: int | None = None
+    ) -> ObjectOrderingPlan:
+        resolved_epoch = self._epoch if epoch is None else int(epoch)
         if self.config.object_ordering == "sorted":
             return ObjectOrderingPlan.sorted(seed_source="latest_detection_dataset")
-        seed = _mix_seed(self.config.seed, self._epoch, base_idx)
+        seed = _mix_seed(self.config.seed, resolved_epoch, base_idx)
         return ObjectOrderingPlan.random_permutation(
             seed=seed,
-            seed_source=f"latest_detection_dataset:seed={self.config.seed}:epoch={self._epoch}:base_idx={base_idx}",
+            seed_source=f"latest_detection_dataset:seed={self.config.seed}:epoch={resolved_epoch}:base_idx={base_idx}",
         )
 
     def _messages(
