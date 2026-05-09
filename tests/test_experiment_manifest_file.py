@@ -4,6 +4,9 @@ import json
 from pathlib import Path
 
 from src.bootstrap.experiment_manifest import write_experiment_manifest_file
+from src.config.loader import ConfigLoader
+from src.config.schema import LatestDetectionTrainingConfig
+from src.sft import _resolve_authored_experiment_payload
 
 
 def test_write_experiment_manifest_file_captures_soft_and_hard_context(
@@ -81,3 +84,18 @@ def test_write_experiment_manifest_file_marks_missing_authored_experiment(
 
     payload = json.loads(out_path.read_text(encoding="utf-8"))
     assert payload["experiment"]["authored"] is None
+
+
+def test_latest_detection_authored_experiment_preserves_claim_scope() -> None:
+    cfg = ConfigLoader.load_materialized_training_config(
+        "configs/stage1/recursive_detection_ce_latest/ablation/compact_full_prefix_rollin_balance2.yaml"
+    )
+    assert isinstance(cfg, LatestDetectionTrainingConfig)
+
+    authored = _resolve_authored_experiment_payload(cfg)
+
+    assert authored == {
+        "surface": "ablation",
+        "ablation_id": "E1",
+        "claim_scope": "none",
+    }

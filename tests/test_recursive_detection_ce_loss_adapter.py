@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import replace
 import math
 
 import pytest
@@ -17,6 +18,7 @@ from src.detection.objective import (
     StateWeightingDiagnostics,
     TokenTarget,
     TrieBranchTarget,
+    normalize_recursive_detection_token_losses,
 )
 from src.detection.tokenization import TokenRole
 from src.metrics.events import flatten_metric_events, reduce_metric_events
@@ -39,6 +41,7 @@ def _hard_target(
     teacher_token_id: int,
     semantic_role: SemanticRole | str | None = SemanticRole.OBJECT_CONTROL,
     state_weight: float = 1.0,
+    loss_weight: float = 1.0,
     loss_atom_id: str | None = None,
     object_instance_id: str | None = None,
 ) -> TokenTarget:
@@ -50,6 +53,7 @@ def _hard_target(
         object_instance_id=object_instance_id,
         token_role=TokenRole.ASSISTANT,
         state_weight=state_weight,
+        loss_weight=loss_weight,
         semantic_role=semantic_role,
         loss_atom_id=loss_atom_id,
     )
@@ -137,6 +141,27 @@ def test_hard_singleton_ce_matches_standard_log_softmax() -> None:
     assert result.per_position_losses[0][2].item() == pytest.approx(expected_second.item())
 
 
+def test_legacy_normalization_loss_weight_does_not_change_state_denominator() -> None:
+    logits = torch.zeros((2, 2), dtype=torch.float32)
+    targets = _targets(
+        token_targets=(
+            _hard_target(position=1, teacher_token_id=0, loss_weight=1.0),
+            _hard_target(position=2, teacher_token_id=0, loss_weight=0.0),
+        )
+    )
+
+    result = compute_recursive_detection_ce_batch_loss(logits=logits, targets=(targets,))
+    scalar = normalize_recursive_detection_token_losses(
+        targets,
+        {1: 1.0, 2: 100.0},
+    )
+
+    expected = -torch.log_softmax(logits[0], dim=-1)[0] / 2.0
+    assert result.loss.item() == pytest.approx(expected.item())
+    assert scalar.normalized_loss == pytest.approx(0.5)
+    assert scalar.diagnostics.state_weight_sum == pytest.approx(2.0)
+
+
 def test_trie_branch_with_unit_weights_matches_object_uniform_soft_ce() -> None:
     logits = torch.tensor([[2.5, -0.1, 1.0, 0.0]], dtype=torch.float32)
     targets = _targets(
@@ -171,8 +196,8 @@ def test_support_reweight_changes_only_branch_loss_when_valid_mass_is_low() -> N
         logits=logits,
         targets=(targets,),
         weights=RecursiveDetectionLossWeights(
-            branch_support_weight=2.0,
-            branch_balance_weight=1.0,
+            support_weight=2.0,
+            balance_weight=1.0,
         ),
     )
 
@@ -202,6 +227,330 @@ def test_duplicate_child_counts_define_balance_distribution_from_multiplicity() 
     assert result.loss.item() == pytest.approx(expected.item())
 
 
+def test_type_gate_allowed_mass_is_added_to_position_loss() -> None:
+    logits = torch.tensor([[-5.0, 5.0]], dtype=torch.float32)
+    base_target = _hard_target(position=1, teacher_token_id=0)
+    gated_target = replace(
+        base_target,
+        type_gate_token_ids=(0,),
+        type_gate_weight=0.5,
+    )
+
+    base = compute_recursive_detection_ce_batch_loss(
+        logits=logits,
+        targets=(_targets(token_targets=(base_target,)),),
+    )
+    gated = compute_recursive_detection_ce_batch_loss(
+        logits=logits,
+        targets=(_targets(token_targets=(gated_target,)),),
+    )
+
+    assert gated.loss.item() > base.loss.item()
+    assert gated.loss.item() == pytest.approx(base.loss.item() * 1.5)
+
+
+def test_eos_loss_weight_scales_main_ce_but_not_type_gate() -> None:
+    logits = torch.zeros((1, 2), dtype=torch.float32)
+    gated_eos_target = replace(
+        _hard_target(
+            position=1,
+            teacher_token_id=0,
+            semantic_role=SemanticRole.CHAT_STOP,
+            loss_weight=0.25,
+        ),
+        type_gate_token_ids=(0,),
+        type_gate_weight=0.5,
+    )
+
+    result = compute_recursive_detection_ce_batch_loss(
+        logits=logits,
+        targets=(_targets(token_targets=(gated_eos_target,)),),
+    )
+
+    ce = -torch.log_softmax(logits[0], dim=-1)[0]
+    expected = 0.25 * ce + 0.5 * ce
+    assert result.loss.item() == pytest.approx(expected.item())
+
+
+def test_recursive_detection_loss_rejects_target_at_time_dimension_boundary() -> None:
+    logits = torch.zeros((1, 2, 3), dtype=torch.float32)
+    targets = _targets(
+        token_targets=(
+            _hard_target(position=2, teacher_token_id=0),
+        )
+    )
+
+    with pytest.raises(ValueError, match=r"TokenTarget\.position.*< logits_time_dim"):
+        compute_recursive_detection_ce_batch_loss(logits=logits, targets=(targets,))
+
+
+def test_recursive_detection_metric_events_expose_objective_diagnostics() -> None:
+    logits = torch.tensor(
+        [
+            [2.0, -2.0, 1.0, 0.0],
+            [0.1, 3.0, -1.0, 0.0],
+        ],
+        dtype=torch.float32,
+    )
+    branch_target = replace(
+        _branch_target(
+            position=1,
+            teacher_token_id=0,
+            branches=((0, 1), (2, 1)),
+        ),
+        type_gate_token_ids=(0, 2),
+        type_gate_weight=0.25,
+    )
+    eos_target = _hard_target(
+        position=2,
+        teacher_token_id=1,
+        semantic_role=SemanticRole.CHAT_STOP,
+        loss_weight=0.25,
+    )
+    targets = _targets(token_targets=(branch_target, eos_target))
+
+    result = compute_recursive_detection_ce_batch_loss(
+        logits=logits,
+        targets=(targets,),
+        weights=RecursiveDetectionLossWeights(support_weight=2.0, balance_weight=1.0),
+    )
+    reduced = reduce_metric_events(result.metric_events)
+
+    log_probs = torch.log_softmax(logits[0], dim=-1)
+    valid_log_probs = log_probs[torch.tensor([0, 2])]
+    log_valid_mass = torch.logsumexp(valid_log_probs, dim=-1)
+    expected_support = -log_valid_mass
+    expected_balance = -((valid_log_probs - log_valid_mass) * 0.5).sum()
+    expected_type_gate = 0.25 * (-log_valid_mass)
+    eos_ce = -torch.log_softmax(logits[1], dim=-1)[1]
+
+    assert reduced["recursive_detection_ce/trie_valid_mass"] == pytest.approx(
+        torch.exp(log_valid_mass).item()
+    )
+    assert reduced["recursive_detection_ce/support_loss"] == pytest.approx(
+        expected_support.item()
+    )
+    assert reduced["recursive_detection_ce/balance_loss"] == pytest.approx(
+        expected_balance.item()
+    )
+    assert reduced["recursive_detection_ce/trie_valid_children"] == pytest.approx(2.0)
+    assert reduced["recursive_detection_ce/type_gate_loss"] == pytest.approx(
+        expected_type_gate.item()
+    )
+    assert reduced["recursive_detection_ce/eos_unweighted_ce"] == pytest.approx(
+        eos_ce.item()
+    )
+    assert reduced["recursive_detection_ce/eos_weighted_loss"] == pytest.approx(
+        0.25 * eos_ce.item()
+    )
+    assert reduced["recursive_detection_ce/eos_trust_weight"] == pytest.approx(0.25)
+
+
+def test_recursive_detection_target_mix_metrics_expose_batch_composition() -> None:
+    logits = torch.zeros((4, 6), dtype=torch.float32)
+    targets = _targets(
+        token_targets=(
+            _branch_target(
+                position=1,
+                teacher_token_id=0,
+                branches=((0, 1), (2, 1)),
+            ),
+            _hard_target(
+                position=2,
+                teacher_token_id=1,
+                semantic_role=SemanticRole.CHAT_STOP,
+                loss_weight=0.25,
+            ),
+            _hard_target(
+                position=3,
+                teacher_token_id=3,
+                semantic_role=SemanticRole.BBOX_COORD,
+                state_weight=2.0,
+            ),
+            _hard_target(
+                position=4,
+                teacher_token_id=4,
+                semantic_role=SemanticRole.DESC_IDENTITY,
+            ),
+        )
+    )
+
+    result = compute_recursive_detection_ce_batch_loss(logits=logits, targets=(targets,))
+    flat = flatten_metric_events(result.metric_events)
+
+    assert flat["recursive_detection_ce/target_mix/targets_per_sample"] == pytest.approx(4.0)
+    assert flat["recursive_detection_ce/target_mix/hard_ce_fraction"] == pytest.approx(0.75)
+    assert flat["recursive_detection_ce/target_mix/trie_multi_positive_fraction"] == pytest.approx(
+        0.25
+    )
+    assert flat["recursive_detection_ce/target_mix/eos_fraction"] == pytest.approx(0.25)
+    assert flat["recursive_detection_ce/target_mix/non_eos_fraction"] == pytest.approx(0.75)
+    assert flat["recursive_detection_ce/target_mix/object_control_fraction"] == pytest.approx(
+        0.25
+    )
+    assert flat["recursive_detection_ce/target_mix/coord_fraction"] == pytest.approx(0.25)
+    assert flat["recursive_detection_ce/target_mix/desc_fraction"] == pytest.approx(0.25)
+    assert flat[
+        "recursive_detection_ce/target_mix/positive_children_per_trie_target"
+    ] == pytest.approx(2.0)
+    assert flat["recursive_detection_ce/target_mix/effective_loss_weight_mean"] == pytest.approx(
+        0.8125
+    )
+    assert flat["recursive_detection_ce/target_mix/state_weight_mean"] == pytest.approx(1.25)
+
+
+def test_recursive_detection_entry_and_type_gate_probability_metrics() -> None:
+    logits = torch.tensor(
+        [
+            [2.0, -3.0, 0.0, 1.0, -1.0],
+            [-1.0, 3.0, 0.5, -0.5, 1.0],
+            [-1.0, 0.0, 0.5, -0.5, 2.0],
+        ],
+        dtype=torch.float32,
+    )
+    branch_target = replace(
+        _branch_target(
+            position=1,
+            teacher_token_id=0,
+            branches=((0, 1), (2, 1)),
+        ),
+        type_gate_token_ids=(0, 2),
+        type_gate_weight=0.5,
+    )
+    eos_target = _hard_target(
+        position=3,
+        teacher_token_id=4,
+        semantic_role=SemanticRole.CHAT_STOP,
+    )
+    separator_target = _hard_target(
+        position=2,
+        teacher_token_id=1,
+        semantic_role=SemanticRole.SEPARATOR_CONTINUE,
+    )
+    targets = _targets(token_targets=(branch_target, separator_target, eos_target))
+
+    result = compute_recursive_detection_ce_batch_loss(logits=logits, targets=(targets,))
+    reduced = reduce_metric_events(result.metric_events)
+
+    branch_log_probs = torch.log_softmax(logits[0], dim=-1)
+    valid_log_probs = branch_log_probs[torch.tensor([0, 2])]
+    log_valid_mass = torch.logsumexp(valid_log_probs, dim=-1)
+    valid_child_log_probs = valid_log_probs - log_valid_mass
+    valid_child_probs = torch.exp(valid_child_log_probs)
+    expected_entropy = -(valid_child_probs * valid_child_log_probs).sum()
+    expected_uniform_kl = (-math.log(2.0) - valid_child_log_probs).mean()
+    expected_continue_minus_eos = log_valid_mass - branch_log_probs[4]
+    expected_allowed_mass = torch.exp(log_valid_mass)
+    separator_log_probs = torch.log_softmax(logits[1], dim=-1)
+    expected_separator_margin = separator_log_probs[1] - separator_log_probs[4]
+    expected_separator_mass = torch.exp(separator_log_probs[1])
+
+    assert reduced[
+        "recursive_detection_ce/entry/continue_minus_eos_margin"
+    ] == pytest.approx(expected_continue_minus_eos.item())
+    assert reduced["recursive_detection_ce/entry/valid_child_entropy"] == pytest.approx(
+        expected_entropy.item()
+    )
+    assert reduced[
+        "recursive_detection_ce/entry/valid_child_kl_to_uniform"
+    ] == pytest.approx(expected_uniform_kl.item())
+    assert reduced["recursive_detection_ce/type_gate_allowed_mass"] == pytest.approx(
+        expected_allowed_mass.item()
+    )
+    assert reduced[
+        "recursive_detection_ce/free_boundary/continue_minus_eos_margin"
+    ] == pytest.approx(expected_separator_margin.item())
+    assert reduced["recursive_detection_ce/free_boundary/continue_mass"] == pytest.approx(
+        expected_separator_mass.item()
+    )
+
+
+def test_recursive_detection_boundary_weights_prioritize_separator_continue() -> None:
+    logits = torch.tensor(
+        [
+            [-2.0, 1.0, 3.0],
+            [-2.0, 0.5, 2.0],
+        ],
+        dtype=torch.float32,
+    )
+    separator_target = _hard_target(
+        position=1,
+        teacher_token_id=1,
+        semantic_role=SemanticRole.SEPARATOR_CONTINUE,
+    )
+    eos_target = _hard_target(
+        position=2,
+        teacher_token_id=2,
+        semantic_role=SemanticRole.CHAT_STOP,
+    )
+    targets = _targets(
+        token_targets=(separator_target, eos_target),
+        normalization="semantic_image_bucket_balanced",
+    )
+
+    result = compute_recursive_detection_ce_batch_loss(
+        logits=logits,
+        targets=(targets,),
+        weights=RecursiveDetectionLossWeights(
+            support_weight=1.0,
+            balance_weight=1.0,
+            separator_continue_weight=2.0,
+            eos_stop_weight=0.5,
+            boundary_component_weight=0.3,
+        ),
+    )
+
+    log_probs = torch.log_softmax(logits, dim=-1)
+    separator_ce = -log_probs[0, 1]
+    eos_ce = -log_probs[1, 2]
+    expected = (2.0 * separator_ce + 0.5 * eos_ce) / 2.5
+
+    assert result.loss.item() == pytest.approx(expected.item())
+
+
+def test_recursive_detection_boundary_component_weight_balances_schema_bucket() -> None:
+    logits = torch.tensor(
+        [
+            [-2.0, 1.0, 3.0],
+            [3.0, 1.0, -2.0],
+        ],
+        dtype=torch.float32,
+    )
+    separator_target = _hard_target(
+        position=1,
+        teacher_token_id=1,
+        semantic_role=SemanticRole.SEPARATOR_CONTINUE,
+    )
+    schema_target = _hard_target(
+        position=2,
+        teacher_token_id=0,
+        semantic_role=SemanticRole.SCHEMA_CONTROL,
+    )
+    targets = _targets(
+        token_targets=(separator_target, schema_target),
+        normalization="semantic_image_bucket_balanced",
+    )
+
+    result = compute_recursive_detection_ce_batch_loss(
+        logits=logits,
+        targets=(targets,),
+        weights=RecursiveDetectionLossWeights(
+            support_weight=1.0,
+            balance_weight=1.0,
+            separator_continue_weight=2.0,
+            eos_stop_weight=0.5,
+            boundary_component_weight=0.9,
+        ),
+    )
+
+    log_probs = torch.log_softmax(logits, dim=-1)
+    separator_ce = -log_probs[0, 1]
+    schema_ce = -log_probs[1, 0]
+    expected = (0.9 * separator_ce + 0.1 * schema_ce) / 1.0
+
+    assert result.loss.item() == pytest.approx(expected.item())
+
+
 def test_bfloat16_logits_are_upcast_for_stable_loss_computation() -> None:
     logits = torch.tensor(
         [[0.25, -0.75, 1.5], [1.25, -3.0, 0.0]],
@@ -219,6 +568,71 @@ def test_bfloat16_logits_are_upcast_for_stable_loss_computation() -> None:
 
     assert torch.isfinite(result.loss)
     assert result.loss.dtype == torch.float32
+    result.loss.backward()
+    assert logits.grad is not None
+    assert torch.isfinite(logits.grad).all()
+
+
+def test_support_balance_loss_uses_fp32_math_under_bfloat16_autocast() -> None:
+    logits = torch.tensor(
+        [0.25, -1.5, 2.0, -0.75],
+        dtype=torch.bfloat16,
+        requires_grad=True,
+    )
+    positive_ids = torch.tensor([0, 2], dtype=torch.long)
+    q = torch.tensor([1.0, 3.0], dtype=torch.bfloat16)
+
+    with torch.autocast(device_type="cpu", dtype=torch.bfloat16):
+        actual = loss_module.support_balance_loss(
+            logits,
+            positive_ids,
+            q,
+            support_weight=1.5,
+            balance_weight=0.5,
+        )
+    reference = loss_module.support_balance_loss(
+        logits.detach().float(),
+        positive_ids,
+        q.float(),
+        support_weight=1.5,
+        balance_weight=0.5,
+    )
+
+    assert actual.dtype == torch.float32
+    assert actual.item() == pytest.approx(reference.item())
+    actual.backward()
+    assert logits.grad is not None
+    assert torch.isfinite(logits.grad).all()
+
+
+def test_bfloat16_autocast_keeps_recursive_loss_positions_fp32() -> None:
+    logits = torch.tensor(
+        [[0.25, -0.75, 1.5, -2.0], [1.25, -3.0, 0.0, 0.5]],
+        dtype=torch.bfloat16,
+        requires_grad=True,
+    )
+    branch_target = replace(
+        _branch_target(position=1, teacher_token_id=2, branches=((0, 1), (2, 1))),
+        type_gate_token_ids=(0, 2),
+        type_gate_weight=0.5,
+    )
+    targets = _targets(
+        token_targets=(
+            branch_target,
+            _hard_target(position=2, teacher_token_id=3),
+        )
+    )
+
+    with torch.autocast(device_type="cpu", dtype=torch.bfloat16):
+        result = compute_recursive_detection_ce_batch_loss(
+            logits=logits,
+            targets=(targets,),
+        )
+
+    assert result.loss.dtype == torch.float32
+    assert torch.isfinite(result.loss)
+    assert result.per_position_losses[0][1].dtype == torch.float32
+    assert result.per_position_losses[0][2].dtype == torch.float32
     result.loss.backward()
     assert logits.grad is not None
     assert torch.isfinite(logits.grad).all()

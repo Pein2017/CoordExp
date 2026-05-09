@@ -99,21 +99,6 @@ def test_default_empty_and_unknown_variants_keep_generic_stage1_policy() -> None
         assert plan.requires_top_level_rollout_matching is False
 
 
-def test_stage1_set_continuation_policy_preserves_branch_owned_metadata() -> None:
-    plan_mod = _plan_module()
-
-    plan = plan_mod.resolve_training_runtime_plan("stage1_set_continuation")
-
-    assert plan.preserve_raw_sample_metadata is True
-    assert plan.dataset_static_packing_allowed is False
-    assert plan.dataset_static_packing_owner is None
-    assert plan.post_rollout_packing_owner is None
-    assert plan.collator_family == "stage1_set_continuation"
-    assert plan.ordinary_stage1_mixins_allowed is False
-    assert plan.required_pipeline_namespace is None
-    assert plan.requires_top_level_rollout_matching is False
-
-
 @pytest.mark.parametrize(
     ("variant", "pipeline_namespace"),
     [
@@ -144,6 +129,7 @@ def test_stage2_variants_share_rollout_setup_policy(
     [
         ("stage2_ab_training", "stage2_two_channel"),
         ("rollout_matching_sft", "stage2_rollout_aligned"),
+        ("stage1_set_continuation", "prefix_rollin_et_rmp_ce"),
     ],
 )
 def test_removed_variants_fail_fast_with_replacement_guidance(
@@ -172,7 +158,7 @@ def test_training_runtime_plan_is_frozen() -> None:
 def test_resolved_plans_use_known_policy_vocabularies() -> None:
     plan_mod = _plan_module()
 
-    collator_families = {"default", "stage1_set_continuation", "identity"}
+    collator_families = {"default", "identity"}
     packing_owners = {"dataset", "trainer", None}
     pipeline_namespaces = {"stage2_ab.pipeline", "rollout_matching.pipeline", None}
 
@@ -180,7 +166,6 @@ def test_resolved_plans_use_known_policy_vocabularies() -> None:
         None,
         "",
         "legacy_custom_trainer",
-        "stage1_set_continuation",
         "stage2_two_channel",
         "stage2_rollout_aligned",
     ):

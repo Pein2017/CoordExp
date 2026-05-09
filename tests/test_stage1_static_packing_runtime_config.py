@@ -259,52 +259,33 @@ def test_validate_stage1_static_packing_policy_rejects_unsupported_detection_tem
 
 
 def test_validate_stage1_static_packing_policy_rejects_recursive_objective() -> None:
-    with pytest.raises(ValueError, match="trie target metadata preservation"):
-        _validate_stage1_static_packing_policy(
-            packing_cfg=PackingRuntimeConfig(
-                enabled=True,
-                mode="static",
-                packing_length=128,
-            ),
-            trainer_variant=None,
-            training_config=SimpleNamespace(
-                objective=SimpleNamespace(
-                    variant="random_permutation_et_rmp_ce",
-                    state_weighting="legacy_row_mean_prefix_mixture_equivalence",
-                    normalization="legacy_row_mean_equivalence",
-                )
-            ),
-            custom_config=SimpleNamespace(
-                detection_sequence_format="compact_full",
-                object_ordering="random",
-            ),
-        )
-
-
-def test_validate_stage1_static_packing_policy_rejects_set_continuation_train_packing() -> None:
-    with pytest.raises(
-        ValueError,
-        match="stage1_set_continuation.*training\\.packing=false",
+    for objective_variant in (
+        "random_permutation_et_rmp_ce",
+        "prefix_rollin_et_rmp_ce",
     ):
-        _validate_stage1_static_packing_policy(
-            packing_cfg=PackingRuntimeConfig(enabled=True, mode="static"),
-            trainer_variant="stage1_set_continuation",
-        )
-
-
-def test_validate_stage1_static_packing_policy_rejects_set_continuation_eval_packing() -> None:
-    with pytest.raises(
-        ValueError,
-        match="stage1_set_continuation.*training\\.eval_packing=false",
-    ):
-        _validate_stage1_static_packing_policy(
-            packing_cfg=PackingRuntimeConfig(
-                enabled=True,
-                mode="static",
-                eval_packing=True,
-            ),
-            trainer_variant="stage1_set_continuation",
-        )
+        with pytest.raises(
+            ValueError,
+            match="trie target metadata preservation|target-position offsets",
+        ):
+            _validate_stage1_static_packing_policy(
+                packing_cfg=PackingRuntimeConfig(
+                    enabled=True,
+                    mode="static",
+                    packing_length=128,
+                ),
+                trainer_variant=None,
+                training_config=SimpleNamespace(
+                    objective=SimpleNamespace(
+                        variant=objective_variant,
+                        state_weighting="legacy_row_mean_prefix_mixture_equivalence",
+                        normalization="legacy_row_mean_equivalence",
+                    )
+                ),
+                custom_config=SimpleNamespace(
+                    detection_sequence_format="compact_full",
+                    object_ordering="random",
+                ),
+            )
 
 
 def test_validate_stage1_static_packing_policy_skips_rollout_matching_variants() -> None:

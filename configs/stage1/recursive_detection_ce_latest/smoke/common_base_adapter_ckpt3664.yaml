@@ -1,0 +1,8 @@
+# Runtime-only model initializer for adapter-resume smoke runs.
+#
+# This keeps the production training surface intact while starting the smoke from
+# the existing compact-full support2 adapter instead of a pure base model.
+model:
+  model: model_cache_remote/model_cache/models/Qwen/Qwen3-VL-2B-Instruct-coordexp
+  adapters:
+    - output_remote/stage1_2b/recursive_detection_ce_latest/compact_full_et_rmp_ce_support2_bsz16_4epoch_tokenrows_v2/compact-full-et-rmp-ce-support2-bsz16-4epoch-tokenrows-v2/v0-20260504-071356/checkpoint-3664

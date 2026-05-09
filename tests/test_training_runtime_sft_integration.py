@@ -10,7 +10,6 @@ from src.sft import (
     _build_pipeline_manifest,
     _apply_rollout_decode_batch_size_override,
     _is_rollout_matching_variant,
-    _is_stage1_set_continuation_variant,
     _validate_static_packing_accumulation_windows,
     _validate_stage1_static_packing_policy,
     resolve_trainer_cls,
@@ -26,6 +25,7 @@ from src.training_runtime import (
     [
         ("stage2_ab_training", "stage2_two_channel"),
         ("rollout_matching_sft", "stage2_rollout_aligned"),
+        ("stage1_set_continuation", "prefix_rollin_et_rmp_ce"),
     ],
 )
 def test_resolve_trainer_cls_removed_variants_fail_through_runtime_plan(
@@ -45,7 +45,6 @@ def test_resolve_trainer_cls_removed_variants_fail_through_runtime_plan(
     [
         None,
         "",
-        "stage1_set_continuation",
         "stage2_two_channel",
         "stage2_rollout_aligned",
     ],
@@ -56,9 +55,11 @@ def test_sft_variant_helpers_agree_with_runtime_plan(variant: str | None) -> Non
     assert _is_rollout_matching_variant(variant) is (
         plan.post_rollout_packing_owner is not None
     )
-    assert _is_stage1_set_continuation_variant(variant) is (
-        plan.collator_family == "stage1_set_continuation"
-    )
+
+
+def test_sft_rejects_removed_stage1_set_continuation_variant() -> None:
+    with pytest.raises(ValueError, match=r"stage1_set_continuation.*removed"):
+        resolve_training_runtime_plan("stage1_set_continuation")
 
 
 def test_validate_stage1_static_packing_policy_rejects_stage1_dynamic_mode() -> None:
@@ -69,28 +70,6 @@ def test_validate_stage1_static_packing_policy_rejects_stage1_dynamic_mode() -> 
         _validate_stage1_static_packing_policy(
             packing_cfg=PackingRuntimeConfig(enabled=True, mode="dynamic"),
             trainer_variant=None,
-        )
-
-
-@pytest.mark.parametrize(
-    ("eval_packing", "message"),
-    [
-        (False, "training\\.packing=false"),
-        (True, "training\\.eval_packing=false"),
-    ],
-)
-def test_validate_stage1_static_packing_policy_preserves_set_continuation_errors(
-    eval_packing: bool,
-    message: str,
-) -> None:
-    with pytest.raises(ValueError, match=message):
-        _validate_stage1_static_packing_policy(
-            packing_cfg=PackingRuntimeConfig(
-                enabled=True,
-                mode="static",
-                eval_packing=eval_packing,
-            ),
-            trainer_variant="stage1_set_continuation",
         )
 
 
@@ -163,7 +142,7 @@ def test_pipeline_manifest_missing_pipeline_error_uses_runtime_namespace(
         )
 
 
-@pytest.mark.parametrize("variant", [None, "", "stage1_set_continuation"])
+@pytest.mark.parametrize("variant", [None, ""])
 def test_rollout_decode_batch_size_override_skips_non_rollout_profiles(
     variant: str | None,
 ) -> None:

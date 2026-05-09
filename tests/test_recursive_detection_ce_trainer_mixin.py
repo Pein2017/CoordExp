@@ -93,7 +93,7 @@ def _targets() -> RecursiveDetectionTargets:
 
 
 def test_recursive_detection_ce_mixin_owns_forward_and_strips_sidecar() -> None:
-    logits = torch.tensor([[[0.0, 2.0]]], dtype=torch.float32, requires_grad=True)
+    logits = torch.tensor([[[0.0, 2.0], [0.0, 0.0]]], dtype=torch.float32, requires_grad=True)
     model = _DummyModel(logits)
     trainer = _Trainer(
         SimpleNamespace(
@@ -106,8 +106,9 @@ def test_recursive_detection_ce_mixin_owns_forward_and_strips_sidecar() -> None:
     loss, outputs = trainer.compute_loss(
         model,
         {
-            "input_ids": torch.tensor([[4]], dtype=torch.long),
-            "labels": torch.tensor([[1]], dtype=torch.long),
+            "input_ids": torch.tensor([[4, 1]], dtype=torch.long),
+            "labels": torch.tensor([[-100, 1]], dtype=torch.long),
+            "attention_mask": torch.tensor([[1, 1]], dtype=torch.long),
             RECURSIVE_DETECTION_TARGETS_KEY: (_targets(),),
         },
         return_outputs=True,
@@ -118,7 +119,7 @@ def test_recursive_detection_ce_mixin_owns_forward_and_strips_sidecar() -> None:
     assert outputs.logits is logits
     assert model.forward_inputs is not None
     assert RECURSIVE_DETECTION_TARGETS_KEY not in model.forward_inputs
-    assert "labels" in model.forward_inputs
+    assert "labels" not in model.forward_inputs
     assert trainer.custom_metrics["train"]["loss/recursive_detection_ce"].values[-1] == pytest.approx(
         expected.item()
     )
@@ -132,7 +133,7 @@ def test_recursive_detection_ce_mixin_owns_forward_and_strips_sidecar() -> None:
 
 
 def test_recursive_detection_ce_mixin_uses_public_trie_weight_names() -> None:
-    logits = torch.tensor([[[-3.0, 4.0, -2.5]]], dtype=torch.float32)
+    logits = torch.tensor([[[-3.0, 4.0, -2.5], [0.0, 0.0, 0.0]]], dtype=torch.float32)
     model = _DummyModel(logits)
     trainer = _Trainer(
         SimpleNamespace(
@@ -172,8 +173,9 @@ def test_recursive_detection_ce_mixin_uses_public_trie_weight_names() -> None:
     loss = trainer.compute_loss(
         model,
         {
-            "input_ids": torch.tensor([[4]], dtype=torch.long),
-            "labels": torch.tensor([[0]], dtype=torch.long),
+            "input_ids": torch.tensor([[4, 0]], dtype=torch.long),
+            "labels": torch.tensor([[-100, 0]], dtype=torch.long),
+            "attention_mask": torch.tensor([[1, 1]], dtype=torch.long),
             RECURSIVE_DETECTION_TARGETS_KEY: (branch_targets,),
         },
     )
@@ -189,6 +191,90 @@ def test_recursive_detection_ce_mixin_uses_public_trie_weight_names() -> None:
     assert trainer.custom_metrics["train"]["recursive_detection_ce/trie_support_weight"].values[-1] == pytest.approx(2.0)
 
 
+def test_recursive_detection_ce_mixin_uses_public_boundary_weight_names() -> None:
+    logits = torch.tensor(
+        [[[-2.0, 1.0, 3.0], [-2.0, 0.5, 2.0], [0.0, 0.0, 0.0]]],
+        dtype=torch.float32,
+    )
+    model = _DummyModel(logits)
+    trainer = _Trainer(
+        SimpleNamespace(
+            enabled=True,
+            trie_support_weight=1.0,
+            trie_balance_weight=1.0,
+            separator_continue_weight=2.0,
+            eos_stop_weight=0.5,
+            boundary_component_weight=0.3,
+        )
+    )
+    targets = RecursiveDetectionTargets(
+        token_targets=(
+            TokenTarget(
+                position=1,
+                teacher_token_id=1,
+                kind="hard_ce",
+                trie_branch_targets=(),
+                object_instance_id=None,
+                token_role=TokenRole.ASSISTANT,
+                semantic_role=SemanticRole.SEPARATOR_CONTINUE,
+                loss_atom_id="separator",
+            ),
+            TokenTarget(
+                position=2,
+                teacher_token_id=2,
+                kind="hard_ce",
+                trie_branch_targets=(),
+                object_instance_id=None,
+                token_role=TokenRole.ASSISTANT,
+                semantic_role=SemanticRole.CHAT_STOP,
+                loss_atom_id="eos",
+            ),
+        ),
+        state_weighting="uniform_permutation",
+        normalization="semantic_image_bucket_balanced",
+        loss_atoms=(
+            LossAtom(
+                atom_id="separator",
+                semantic_role=SemanticRole.SEPARATOR_CONTINUE,
+                token_positions=(1,),
+            ),
+            LossAtom(
+                atom_id="eos",
+                semantic_role=SemanticRole.CHAT_STOP,
+                token_positions=(2,),
+            ),
+        ),
+        state_weighting_diagnostics=_state_weighting(),
+    )
+
+    loss = trainer.compute_loss(
+        model,
+        {
+            "input_ids": torch.tensor([[0, 1, 2]], dtype=torch.long),
+            "labels": torch.tensor([[-100, 1, 2]], dtype=torch.long),
+            "attention_mask": torch.tensor([[1, 1, 1]], dtype=torch.long),
+            RECURSIVE_DETECTION_TARGETS_KEY: (targets,),
+        },
+    )
+
+    log_probs = torch.log_softmax(logits[0, :2].float(), dim=-1)
+    separator_ce = -log_probs[0, 1]
+    eos_ce = -log_probs[1, 2]
+    expected = (2.0 * separator_ce + 0.5 * eos_ce) / 2.5
+    metrics = trainer.custom_metrics["train"]
+
+    assert loss.item() == pytest.approx(expected.item())
+    assert metrics[
+        "recursive_detection_ce/boundary/separator_continue_weight"
+    ].values[-1] == pytest.approx(2.0)
+    assert metrics["recursive_detection_ce/boundary/eos_stop_weight"].values[-1] == pytest.approx(
+        0.5
+    )
+    assert metrics[
+        "recursive_detection_ce/boundary/component_weight"
+    ].values[-1] == pytest.approx(0.3)
+
+
 def test_recursive_detection_ce_mixin_requires_sidecar_when_enabled() -> None:
     trainer = _Trainer(
         SimpleNamespace(
@@ -197,7 +283,7 @@ def test_recursive_detection_ce_mixin_requires_sidecar_when_enabled() -> None:
             trie_balance_weight=1.0,
         )
     )
-    model = _DummyModel(torch.zeros((1, 1, 2), dtype=torch.float32))
+    model = _DummyModel(torch.zeros((1, 2, 2), dtype=torch.float32))
 
     with pytest.raises(ValueError, match="recursive_detection_targets"):
         trainer.compute_loss(
@@ -207,3 +293,117 @@ def test_recursive_detection_ce_mixin_requires_sidecar_when_enabled() -> None:
                 "labels": torch.tensor([[1]], dtype=torch.long),
             },
         )
+
+
+def test_recursive_detection_ce_mixin_rejects_logits_to_keep_before_forward() -> None:
+    trainer = _Trainer(
+        SimpleNamespace(
+            enabled=True,
+            trie_support_weight=1.0,
+            trie_balance_weight=1.0,
+        )
+    )
+    model = _DummyModel(torch.zeros((1, 2, 2), dtype=torch.float32))
+
+    with pytest.raises(ValueError, match="logits_to_keep.*unsupported"):
+        trainer.compute_loss(
+            model,
+            {
+                "input_ids": torch.tensor([[4]], dtype=torch.long),
+                "labels": torch.tensor([[1]], dtype=torch.long),
+                "logits_to_keep": 1,
+                RECURSIVE_DETECTION_TARGETS_KEY: (_targets(),),
+            },
+        )
+    assert model.forward_inputs is None
+
+
+def test_recursive_detection_ce_mixin_requires_full_time_logits() -> None:
+    trainer = _Trainer(
+        SimpleNamespace(
+            enabled=True,
+            trie_support_weight=1.0,
+            trie_balance_weight=1.0,
+        )
+    )
+    model = _DummyModel(torch.zeros((1, 1, 2), dtype=torch.float32))
+
+    with pytest.raises(RuntimeError, match="full unsliced logits"):
+        trainer.compute_loss(
+            model,
+            {
+                "input_ids": torch.tensor([[4, 1]], dtype=torch.long),
+                "labels": torch.tensor([[-100, 1]], dtype=torch.long),
+                "attention_mask": torch.tensor([[1, 1]], dtype=torch.long),
+                RECURSIVE_DETECTION_TARGETS_KEY: (_targets(),),
+            },
+        )
+
+
+def test_recursive_detection_ce_mixin_rejects_sidecar_label_mismatch_before_forward() -> None:
+    trainer = _Trainer(
+        SimpleNamespace(
+            enabled=True,
+            trie_support_weight=1.0,
+            trie_balance_weight=1.0,
+        )
+    )
+    model = _DummyModel(torch.zeros((1, 2, 2), dtype=torch.float32))
+
+    with pytest.raises(ValueError, match="labels.*teacher_token_id"):
+        trainer.compute_loss(
+            model,
+            {
+                "input_ids": torch.tensor([[4, 1]], dtype=torch.long),
+                "labels": torch.tensor([[-100, 0]], dtype=torch.long),
+                "attention_mask": torch.tensor([[1, 1]], dtype=torch.long),
+                RECURSIVE_DETECTION_TARGETS_KEY: (_targets(),),
+            },
+        )
+    assert model.forward_inputs is None
+
+
+def test_recursive_detection_ce_mixin_rejects_sidecar_input_id_mismatch_before_forward() -> None:
+    trainer = _Trainer(
+        SimpleNamespace(
+            enabled=True,
+            trie_support_weight=1.0,
+            trie_balance_weight=1.0,
+        )
+    )
+    model = _DummyModel(torch.zeros((1, 2, 2), dtype=torch.float32))
+
+    with pytest.raises(ValueError, match="input_ids.*teacher_token_id"):
+        trainer.compute_loss(
+            model,
+            {
+                "input_ids": torch.tensor([[4, 0]], dtype=torch.long),
+                "labels": torch.tensor([[-100, 1]], dtype=torch.long),
+                "attention_mask": torch.tensor([[1, 1]], dtype=torch.long),
+                RECURSIVE_DETECTION_TARGETS_KEY: (_targets(),),
+            },
+        )
+    assert model.forward_inputs is None
+
+
+def test_recursive_detection_ce_mixin_rejects_sidecar_padding_position_before_forward() -> None:
+    trainer = _Trainer(
+        SimpleNamespace(
+            enabled=True,
+            trie_support_weight=1.0,
+            trie_balance_weight=1.0,
+        )
+    )
+    model = _DummyModel(torch.zeros((1, 2, 2), dtype=torch.float32))
+
+    with pytest.raises(ValueError, match="attention_mask"):
+        trainer.compute_loss(
+            model,
+            {
+                "input_ids": torch.tensor([[4, 1]], dtype=torch.long),
+                "labels": torch.tensor([[-100, 1]], dtype=torch.long),
+                "attention_mask": torch.tensor([[1, 0]], dtype=torch.long),
+                RECURSIVE_DETECTION_TARGETS_KEY: (_targets(),),
+            },
+        )
+    assert model.forward_inputs is None

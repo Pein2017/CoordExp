@@ -6,7 +6,7 @@ status: canonical
 domain: repo
 summary: Agent-first retrieval guide for CoordExp documentation and research notes.
 tags: [agents, retrieval, docs]
-updated: 2026-05-05
+updated: 2026-05-07
 ---
 
 # Agent Index
@@ -52,9 +52,11 @@ Human support entrypoints:
   - [docs/data/PACKING.md](data/PACKING.md) for Stage-1 static-packing and hard-cap questions
 - Stage-1 training:
   - [docs/training/README.md](training/README.md)
-  - [docs/training/STAGE1_OBJECTIVE.md](training/STAGE1_OBJECTIVE.md) for baseline Stage-1 behavior, ET-RMP-CE, compact recursive detection, and retired candidate-objective boundaries
+  - [docs/training/STAGE1_OBJECTIVE.md](training/STAGE1_OBJECTIVE.md) for baseline Stage-1 behavior, compact recursive detection, prefix-rollin ablation boundaries, and retired candidate-objective boundaries
   - [docs/data/PACKING.md](data/PACKING.md)
-  - Latest compact detection route: `configs/stage1/recursive_detection_ce_latest/prod/compact_full_support2.yaml`, `src/config/schema.py::LatestDetectionTrainingConfig`, and `src/detection/runtime.py`
+  - Latest compact detection production baseline/comparator: `configs/stage1/recursive_detection_ce_latest/prod/compact_full_support2.yaml`, `src/config/schema.py::LatestDetectionTrainingConfig`, and `src/detection/runtime.py`
+  - Prefix-rollin E1 ablation route: `configs/stage1/recursive_detection_ce_latest/ablation/compact_full_prefix_rollin_balance2.yaml`; compact_full only, `<|im_end|>` only, empirical EOS prior only for smoke/ablation, production requires `calibrated_formula_ref` with a versioned artifact.
+  - Prefix-rollin E2 separator diagnostic route: `configs/stage1/recursive_detection_ce_latest/ablation/compact_full_prefix_rollin_separator2.yaml`; same as E1 except `objective.boundary.separator_continue_weight=2.0` to test the diagnosed `\n` vs `<|im_end|>` free-boundary failure.
   - Latest compact detection authoring snippets, not yet consumed by canonical launch configs: `configs/_shared/latest_detection/`
   - Legacy compact bridge example only: `configs/stage1/compact_detection_sequence/smoke/compact_full_tiny.yaml`
 - Stage-2 training:

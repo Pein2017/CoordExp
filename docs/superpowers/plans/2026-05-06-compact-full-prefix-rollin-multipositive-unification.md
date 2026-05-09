@@ -14,7 +14,59 @@ Date: 2026-05-06
 
 Spec: `docs/superpowers/specs/2026-05-06-compact-full-prefix-rollin-multipositive-unification-design.md`
 
-Status: implementation plan only. Do not implement code from this plan unless the user explicitly starts the implementation phase.
+Status: implementation authorized by the user on 2026-05-07 and in progress.
+
+## 2026-05-07 Audit Hardening Scope
+
+The following post-audit items are part of this implementation pass:
+
+- [x] Make `prefix_rollin_et_rmp_ce` config-truthful: require
+  `objective.state_weighting: uniform_permutation` and
+  `objective.normalization: semantic_image_bucket_balanced`.
+- [x] Treat `training.effective_batch_size` as the source of truth and reject
+  authored `training.gradient_accumulation_steps` whenever effective batch is
+  present.
+- [x] Add strict recursive CE sidecar/collated-batch validation before model
+  forward.
+- [x] Remove `labels` from the recursive CE model forward path while keeping
+  labels available for local metrics.
+- [x] Keep EOS trust on the main CE term only; do not scale type-gate loss with
+  EOS trust.
+- [x] Set global HF/Qwen generation ids to
+  `eos_token_id=<|im_end|>` and `pad_token_id=<|endoftext|>`.
+- [x] Set HF processor inference calls to `do_resize=false`.
+- [x] Align vLLM inference with the same decode contract: stop on
+  `<|im_end|>` only and pass local multimodal processor `do_resize=false`.
+- [x] Add image-root and coord-token `xyxy` safety guards.
+- [x] Record latest-detection objective identity, effective batch source,
+  actual global effective batch, model path identity, Qwen generation contract,
+  and compact-full token-row count in run artifacts.
+- [x] Add target-mix diagnostics for tiny/smoke trend interpretation:
+  `target_mix/eos_fraction`, `target_mix/non_eos_fraction`,
+  `target_mix/trie_multi_positive_fraction`, role fractions, and
+  `target_mix/positive_children_per_trie_target`.
+- [x] Add entry/type-gate probability diagnostics:
+  `entry/continue_minus_eos_margin`, `entry/valid_child_entropy`,
+  `entry/valid_child_kl_to_uniform`, `type_gate_allowed_mass`, plus the
+  separator append-boundary metrics
+  `free_boundary/continue_minus_eos_margin` and `free_boundary/continue_mass`.
+- [x] Add config-truthful append-boundary ablation weights under
+  `objective.boundary` and introduce E2
+  `compact_full_prefix_rollin_separator2.yaml`, which raises only
+  `separator_continue_weight` to target the generated-prefix `\n` vs
+  `<|im_end|>` failure.
+- [x] Add the forced-prefix continue-vs-EOS probe surface:
+  `src.analysis.prefix_rollin_teacher_forced_diagnostic` writes
+  `forced_prefix_continue_vs_eos_v0` rows with `prefix_k`, `prefix_mode`,
+  `gt_count`, `remaining_gt_count`, `continue_logsumexp`, `valid_mass`, and
+  `continue_minus_eos_margin`; `--k-values every` scans the full `K=0..N`
+  forced-prefix curve without changing autoregressive decoding. The probe now
+  separates `*_free_boundary` (`\n` or first object token vs `<|im_end|>`) from
+  `*_entry_after_separator` (`<|object_ref_start|>` vs `<|im_end|>` after a
+  forced newline), and can replay free-decode artifacts via
+  `--prefix-modes generated_prefix --decode-artifact ... --trace-artifact ...`.
+- [ ] Add the future content-level EOS calibration artifact validator once the
+  calibrated formula file schema is finalized by the user.
 
 ## Hard Guardrails
 
@@ -28,6 +80,9 @@ Status: implementation plan only. Do not implement code from this plan unless th
 | EOS | Treat `<|im_end|>` as the only EOS token in this variant. |
 | Tokenizer stop contract | Resolve `<|im_end|>` from the active Qwen/Qwen3-VL tokenizer and never construct training targets with `<|endoftext|>` or `<|end_of_text|>`. |
 | EOS formula | Implement `empirical_unlabeled_poisson_v0` as the default E1 ablation prior with log-linear missing-count penalty, while keeping production calibrated formulas artifact-backed. |
+| HF generation stop/pad | All HF Qwen generation surfaces use `eos_token_id=id("<|im_end|>")` and `pad_token_id=id("<|endoftext|>")`; training EOS targets remain `<|im_end|>` only. |
+| vLLM generation stop | vLLM local/server inference stops on `"<|im_end|>"` only; `<|endoftext|>` remains pad/text metadata, not a stop target. |
+| Batch source of truth | `training.effective_batch_size` owns optimizer-step budget; `gradient_accumulation_steps` is derived and must not be YAML-authored when effective batch is set. |
 | Packing/cache | Keep latest recursive sidecar training packing/cache disabled unless a separate offset-rewrite design exists. |
 | Python navigation | Use Serena MCP for Python symbol exploration and edits after narrowing files with `rg` or `rtk`. |
 | Tests | Prefer `rtk conda run -n ms python -m pytest ...` for targeted test commands. |
@@ -2058,11 +2113,24 @@ prediction_parse_contract
 stop_token_contract
 artifact_root
 source_run_artifacts
+run_manifest_refs.resolved_config_json
+run_manifest_refs.effective_runtime_json
+run_manifest_refs.experiment_manifest_json
+run_manifest_refs.run_metadata_json
+run_manifest_refs.runtime_env_json
+run_manifest_refs.train_data_provenance_json
+run_manifest_refs.eval_data_provenance_json
+run_manifest_refs.pipeline_manifest_json
+pipeline_manifest_status
 source_prediction_artifact
 source_metrics_json
 source_resolved_config_json
-source_pipeline_manifest_json
 ```
+
+For Stage-1 latest compact detection runs, `pipeline_manifest_status` is usually
+`not_applicable` and `run_manifest_refs.pipeline_manifest_json` should be null.
+Do not fabricate an empty `pipeline_manifest.json` to satisfy a research
+diagnostic schema.
 
 For teacher-forced or forced-prefix scoring artifacts that do not free-decode, still include explicit null/not-applicable provenance:
 
@@ -2256,7 +2324,8 @@ A0/B0/C0/D0/E0:
     objective/contributing_sample_count
     eval metrics with explicit eval_surface
   required_artifact_families:
-    resolved_config/run_metadata/experiment_manifest/pipeline_manifest
+    resolved_config/effective_runtime/run_metadata/experiment_manifest
+    pipeline_manifest_status present with `present` or `not_applicable`
     eval metrics.json/per_image.json/source gt_vs_pred family
     ablation_registry row
 

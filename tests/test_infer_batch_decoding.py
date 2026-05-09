@@ -4,6 +4,7 @@ import types
 from pathlib import Path
 
 from PIL import Image
+import torch
 
 import src.infer.engine as infer_engine
 
@@ -13,11 +14,26 @@ from src.infer.engine import (
     InferenceConfig,
     InferenceEngine,
 )
+from src.infer.backends import generate_hf_batch
 
 
 def _write_img(path: Path, *, size: int = 32) -> None:
     img = Image.new("RGB", (size, size), color=(128, 128, 128))
     img.save(path)
+
+
+class _QwenSpecialTokenMixin:
+    unk_token_id = -1
+
+    def convert_tokens_to_ids(self, token: str) -> int:
+        return {
+            "<|endoftext|>": 0,
+            "<|im_end|>": 1,
+        }.get(token, self.unk_token_id)
+
+    def encode(self, text: str, *, add_special_tokens: bool = False) -> list[int]:
+        token_id = self.convert_tokens_to_ids(text)
+        return [] if token_id == self.unk_token_id else [token_id]
 
 
 def _write_adapter_checkpoint(
@@ -231,6 +247,114 @@ def test_infer_writes_pred_token_trace_sidecar(tmp_path, monkeypatch):
     ]
 
 
+def test_hf_batch_compact_grammar_uses_padded_prompt_offset(monkeypatch):
+    captured: dict[str, list[int]] = {}
+
+    class _DummyTokenizer(_QwenSpecialTokenMixin):
+        padding_side = "left"
+        pad_token_id = 0
+        eos_token_id = 1
+
+        def batch_decode(self, token_ids, **_kwargs):
+            return [self.decode(ids, **_kwargs) for ids in token_ids]
+
+        def decode(self, token_ids, **_kwargs):
+            ids = [int(value) for value in token_ids]
+            return "".join("<|im_end|>" if value == 1 else "x" for value in ids)
+
+    class _DummyProcessor:
+        def __init__(self) -> None:
+            self.tokenizer = _DummyTokenizer()
+
+        def apply_chat_template(self, _message, *, add_generation_prompt, tokenize):
+            assert add_generation_prompt is True
+            assert tokenize is False
+            return "prompt"
+
+        def __call__(self, **_kwargs):
+            return {
+                "input_ids": torch.tensor(
+                    [
+                        [0, 0, 10, 11],
+                        [20, 21, 22, 23],
+                    ],
+                    dtype=torch.long,
+                ),
+                "attention_mask": torch.tensor(
+                    [
+                        [0, 0, 1, 1],
+                        [1, 1, 1, 1],
+                    ],
+                    dtype=torch.long,
+                ),
+            }
+
+    class _DummyGenerateOutput:
+        def __init__(self) -> None:
+            self.sequences = torch.tensor(
+                [
+                    [0, 0, 10, 11, 1],
+                    [20, 21, 22, 23, 1],
+                ],
+                dtype=torch.long,
+            )
+            self.scores = [torch.zeros((2, 32), dtype=torch.float32)]
+
+    class _DummyModel:
+        def generate(self, **_kwargs):
+            return _DummyGenerateOutput()
+
+    def _fake_build_compact_grammar_logits_processor(
+        *, tokenizer, prompt_lengths, detection_sequence_format, force_row_start
+    ):
+        captured["prompt_lengths"] = list(prompt_lengths)
+        assert detection_sequence_format == "compact_full"
+        assert force_row_start is True
+
+        def _processor(input_ids, scores):
+            return scores
+
+        return _processor
+
+    import src.infer.compact_grammar as compact_grammar
+
+    monkeypatch.setattr(
+        compact_grammar,
+        "build_compact_grammar_logits_processor",
+        _fake_build_compact_grammar_logits_processor,
+    )
+
+    owner = types.SimpleNamespace(
+        model=_DummyModel(),
+        processor=_DummyProcessor(),
+        cfg=types.SimpleNamespace(device="cpu"),
+        gen_cfg=GenerationConfig(
+            temperature=0.0,
+            top_p=1.0,
+            max_new_tokens=1,
+            repetition_penalty=1.0,
+            batch_size=2,
+            seed=123,
+            compact_grammar_enabled=True,
+            compact_grammar_format="compact_full",
+            compact_grammar_force_row_start=True,
+        ),
+        _build_messages=lambda _img: [{"role": "user", "content": "prompt"}],
+    )
+
+    results = generate_hf_batch(
+        owner=owner,
+        images=[
+            Image.new("RGB", (8, 8), color=(0, 0, 0)),
+            Image.new("RGB", (8, 8), color=(0, 0, 0)),
+        ],
+        result_factory=GenerationResult,
+    )
+
+    assert captured["prompt_lengths"] == [4, 4]
+    assert [result.text for result in results] == ["<|im_end|>", "<|im_end|>"]
+
+
 def test_hf_attention_backend_fallback_is_recorded_in_summary(tmp_path, monkeypatch):
     monkeypatch.delenv("ROOT_IMAGE_DIR", raising=False)
 
@@ -291,7 +415,7 @@ def test_hf_attention_backend_fallback_is_recorded_in_summary(tmp_path, monkeypa
             return _DummyModel()
         raise RuntimeError(f"unexpected attn_implementation={attn_implementation}")
 
-    class _DummyTokenizer:
+    class _DummyTokenizer(_QwenSpecialTokenMixin):
         padding_side = "right"
         pad_token_id = None
         eos_token_id = 1
@@ -404,7 +528,7 @@ def test_hf_adapter_checkpoint_loads_via_swift_shorthand_and_records_resolved_ba
             self.eval_called = True
             return self
 
-    class _DummyTokenizer:
+    class _DummyTokenizer(_QwenSpecialTokenMixin):
         padding_side = "right"
         pad_token_id = None
         eos_token_id = 1
@@ -515,7 +639,7 @@ def test_hf_coord_offset_adapter_is_preinstalled_before_swift_reload(
             self.eval_called = True
             return self
 
-    class _DummyTokenizer:
+    class _DummyTokenizer(_QwenSpecialTokenMixin):
         padding_side = "right"
         pad_token_id = None
         eos_token_id = 1
@@ -889,6 +1013,131 @@ def test_generate_vllm_server_preserves_coord_special_tokens_in_response_payload
     assert payload["skip_special_tokens"] is False
     assert payload["spaces_between_special_tokens"] is False
     assert payload["stream"] is False
+    assert payload["stop"] == ["<|im_end|>"]
+
+
+def test_vllm_local_contract_sets_im_end_stop_and_disables_resize(
+    monkeypatch,
+) -> None:
+    captured: dict[str, object] = {}
+
+    class _FakeLLM:
+        def __init__(self, **kwargs):
+            captured["llm_kwargs"] = kwargs
+
+    class _FakeSamplingParams:
+        def __init__(self, **kwargs):
+            captured["sampling_kwargs"] = kwargs
+
+    fake_vllm = types.SimpleNamespace(LLM=_FakeLLM, SamplingParams=_FakeSamplingParams)
+    monkeypatch.setitem(sys.modules, "vllm", fake_vllm)
+
+    engine = InferenceEngine(
+        InferenceConfig(
+            gt_jsonl="dummy.jsonl",
+            model_checkpoint="dummy-checkpoint",
+            mode="text",
+            prompt_variant="coco_80",
+            object_field_order="desc_first",
+            object_ordering="sorted",
+            pred_coord_mode="auto",
+            device="cpu",
+            limit=0,
+            backend_type="vllm",
+            backend={
+                "mode": "local",
+                "model": "dummy-vllm-model",
+                "server_options": {
+                    "vllm_tensor_parallel_size": 1,
+                    "vllm_max_model_len": 4096,
+                },
+            },
+            detect_samples=1,
+        ),
+        GenerationConfig(
+            temperature=0.0,
+            top_p=0.9,
+            max_new_tokens=32,
+            repetition_penalty=1.05,
+            batch_size=1,
+            seed=42,
+        ),
+    )
+
+    engine._load_vllm_local()
+    engine._vllm_sampling_params()
+
+    llm_kwargs = captured["llm_kwargs"]
+    sampling_kwargs = captured["sampling_kwargs"]
+    assert isinstance(llm_kwargs, dict)
+    assert isinstance(sampling_kwargs, dict)
+    assert llm_kwargs["mm_processor_kwargs"] == {"do_resize": False}
+    assert sampling_kwargs["stop"] == ["<|im_end|>"]
+    assert "stop_token_ids" not in sampling_kwargs
+
+
+def test_hf_load_model_sets_missing_pad_to_endoftext_not_im_end(monkeypatch) -> None:
+    class _FakeTokenizer:
+        eos_token_id = 1
+        pad_token_id = None
+        unk_token_id = -1
+
+        def convert_tokens_to_ids(self, token: str) -> int:
+            return {
+                "<|im_end|>": 1,
+                "<|endoftext|>": 0,
+            }.get(token, self.unk_token_id)
+
+        def encode(self, text: str, *, add_special_tokens: bool = False) -> list[int]:
+            token_id = self.convert_tokens_to_ids(text)
+            return [] if token_id == self.unk_token_id else [token_id]
+
+    class _FakeProcessor:
+        def __init__(self) -> None:
+            self.tokenizer = _FakeTokenizer()
+
+    class _FakeModel:
+        def to(self, _device):
+            return self
+
+        def eval(self):
+            return self
+
+    processor = _FakeProcessor()
+
+    monkeypatch.setattr(
+        infer_engine.Qwen3VLForConditionalGeneration,
+        "from_pretrained",
+        lambda *args, **kwargs: _FakeModel(),
+    )
+    monkeypatch.setattr(
+        infer_engine.AutoProcessor,
+        "from_pretrained",
+        lambda *args, **kwargs: processor,
+    )
+
+    engine = InferenceEngine(
+        InferenceConfig(
+            gt_jsonl="dummy.jsonl",
+            model_checkpoint="dummy-checkpoint",
+            mode="text",
+            prompt_variant="coco_80",
+            object_field_order="desc_first",
+            object_ordering="sorted",
+            pred_coord_mode="auto",
+            device="cpu",
+            limit=0,
+            backend_type="hf",
+            detect_samples=1,
+        ),
+        GenerationConfig(max_new_tokens=1),
+    )
+
+    engine.load_model()
+
+    assert processor.tokenizer.padding_side == "left"
+    assert processor.tokenizer.pad_token_id == 0
+    assert processor.tokenizer.pad_token_id != processor.tokenizer.eos_token_id
 
 
 def test_infer_distributed_merge_preserves_order_and_trace(tmp_path, monkeypatch):

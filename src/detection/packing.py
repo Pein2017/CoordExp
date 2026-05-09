@@ -121,8 +121,6 @@ def resolve_static_sft_training_mode(
 ) -> DetectionTrainingMode:
     if objective_variant:
         return _validate_detection_training_mode(str(objective_variant))
-    if str(trainer_variant or "") == "stage1_set_continuation":
-        return "random_permutation_et_rmp_ce"
     if str(object_ordering or "sorted") in {"random", "random_permutation"}:
         return "random_order_sft"
     return "sorted_sft"
@@ -134,6 +132,7 @@ def _validate_detection_training_mode(value: str) -> DetectionTrainingMode:
         "random_order_sft",
         "random_permutation_et_rmp_ce",
         "trie_disabled_full_suffix_ce",
+        "prefix_rollin_et_rmp_ce",
     }:
         raise ValueError(f"Unsupported detection training mode: {value!r}")
     return cast(DetectionTrainingMode, value)
@@ -411,15 +410,19 @@ def assess_packing_eligibility(
             experimental=True,
         )
 
-    if training_mode == "random_permutation_et_rmp_ce":
+    recursive_sidecar_modes = {
+        "random_permutation_et_rmp_ce",
+        "prefix_rollin_et_rmp_ce",
+    }
+    if training_mode in recursive_sidecar_modes:
         return PackingEligibility(
             eligible=False,
             mode=profile.mode,
             training_mode=training_mode,
             template_id=template_id,
             reason=(
-                "random_permutation_et_rmp_ce packing is unsupported until trie "
-                "target metadata preservation is implemented"
+                f"{training_mode} packing is unsupported until trie target "
+                "metadata preservation and target-position offsets are implemented"
             ),
             requires_trie_metadata_preservation=True,
         )

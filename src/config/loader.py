@@ -598,6 +598,13 @@ class ConfigLoader:
             )
 
         if effective_batch_size is not None:
+            user_gas_raw = training_section.get("gradient_accumulation_steps", None)
+            if user_gas_raw is not None:
+                raise ValueError(
+                    "training.gradient_accumulation_steps is derived from "
+                    "training.effective_batch_size and must not be authored when "
+                    "effective_batch_size is set"
+                )
             try:
                 effective_batch_size = int(effective_batch_size)
             except (TypeError, ValueError) as exc:
@@ -639,8 +646,6 @@ class ConfigLoader:
                     f"Got effective_batch_size={effective_batch_size}."
                 )
 
-            user_gas_raw = training_section.get("gradient_accumulation_steps", None)
-
             if is_stage2_ab:
                 gradient_accumulation_steps = max(
                     1, int(effective_batch_size // denominator)
@@ -649,26 +654,6 @@ class ConfigLoader:
                 gradient_accumulation_steps = max(
                     1, math.ceil(effective_batch_size / denominator)
                 )
-
-            # Stage2-AB standardizes on effective_batch_size as the source of truth.
-            if is_stage2_ab and user_gas_raw is not None:
-                try:
-                    user_gas = int(user_gas_raw)
-                except (TypeError, ValueError) as exc:
-                    raise ValueError(
-                        "training.gradient_accumulation_steps must be an integer when provided"
-                    ) from exc
-                if user_gas <= 0:
-                    raise ValueError(
-                        f"training.gradient_accumulation_steps must be > 0, got {user_gas_raw!r}"
-                    )
-                if int(user_gas) != int(gradient_accumulation_steps):
-                    raise ValueError(
-                        "For stage2_two_channel, training.gradient_accumulation_steps is derived from "
-                        "training.effective_batch_size and must not conflict. "
-                        f"Got gradient_accumulation_steps={user_gas} but expected {gradient_accumulation_steps} "
-                        f"(effective_batch_size={effective_batch_size}, per_device_train_batch_size={per_device_train_batch_size}, world_size={world_size})."
-                    )
 
             training_section["gradient_accumulation_steps"] = gradient_accumulation_steps
 

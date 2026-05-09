@@ -8,7 +8,6 @@ import pytest
 from src.config.schema import CoordTokensConfig
 from src.datasets.encoded_sample_cache import EncodedSampleCacheRequest
 from src.sft import (
-    STAGE1_SET_CONTINUATION_CACHE_BYPASS_REASON,
     _attach_encoded_sample_cache_run_metadata,
     _build_encoded_sample_cache_bypass_info,
     _build_encoded_sample_cache_fingerprint,
@@ -312,7 +311,7 @@ def test_attach_encoded_sample_cache_run_metadata_scopes_train_and_eval() -> Non
     assert block["eval"]["status"] == "reused"
 
 
-def test_build_encoded_sample_cache_bypass_info_records_set_continuation_reason() -> None:
+def test_build_encoded_sample_cache_bypass_info_records_reason() -> None:
     request = EncodedSampleCacheRequest.from_mapping(
         {
             "enabled": True,
@@ -327,10 +326,10 @@ def test_build_encoded_sample_cache_bypass_info_records_set_continuation_reason(
 
     info = _build_encoded_sample_cache_bypass_info(
         request,
-        reason=STAGE1_SET_CONTINUATION_CACHE_BYPASS_REASON,
+        reason="unit_test_ineligible_surface",
     )
 
     assert info["enabled"] is True
     assert info["status"] == "bypassed"
     assert info["policy"] == "bypass"
-    assert info["reason"] == STAGE1_SET_CONTINUATION_CACHE_BYPASS_REASON
+    assert info["reason"] == "unit_test_ineligible_surface"

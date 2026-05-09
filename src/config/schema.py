@@ -1384,658 +1384,6 @@ class Stage1SFTStructuralCloseConfig:
 
 
 @dataclass(frozen=True)
-class Stage1SetContinuationSubsetSamplingConfig:
-    empty_prefix_ratio: float = 0.30
-    random_subset_ratio: float = 0.45
-    leave_one_out_ratio: float = 0.20
-    full_prefix_ratio: float = 0.05
-    prefix_order: Literal["random", "dataset"] = "random"
-
-    def __post_init__(self) -> None:
-        ratios = {
-            "empty_prefix_ratio": float(self.empty_prefix_ratio),
-            "random_subset_ratio": float(self.random_subset_ratio),
-            "leave_one_out_ratio": float(self.leave_one_out_ratio),
-            "full_prefix_ratio": float(self.full_prefix_ratio),
-        }
-        for field_name, value in ratios.items():
-            if value < 0.0:
-                raise ValueError(
-                    f"custom.stage1_set_continuation.subset_sampling.{field_name} must be >= 0"
-                )
-            object.__setattr__(self, field_name, value)
-
-        if not math.isclose(sum(ratios.values()), 1.0, rel_tol=0.0, abs_tol=1e-9):
-            raise ValueError(
-                "custom.stage1_set_continuation.subset_sampling ratios must sum to 1.0"
-            )
-        if self.prefix_order not in {"random", "dataset"}:
-            raise ValueError(
-                "custom.stage1_set_continuation.subset_sampling.prefix_order must be one of {'random', 'dataset'}"
-            )
-
-
-@dataclass(frozen=True)
-class Stage1SetContinuationCandidatesConfig:
-    mode: Literal["exact", "uniform_subsample"] = "exact"
-    max_candidates: Optional[int] = None
-    tail_positive_count: int = 1
-
-    def __post_init__(self) -> None:
-        if self.mode not in {"exact", "uniform_subsample"}:
-            raise ValueError(
-                "custom.stage1_set_continuation.candidates.mode must be one of {'exact', 'uniform_subsample'}"
-            )
-        tail_positive_count = int(self.tail_positive_count)
-        if tail_positive_count < 0:
-            raise ValueError(
-                "custom.stage1_set_continuation.candidates.tail_positive_count must be >= 0"
-            )
-        object.__setattr__(self, "tail_positive_count", tail_positive_count)
-        if self.max_candidates is None:
-            if self.mode == "uniform_subsample":
-                raise ValueError(
-                    "custom.stage1_set_continuation.candidates.max_candidates must be > 0 when mode=uniform_subsample"
-                )
-            return
-
-        max_candidates = int(self.max_candidates)
-        object.__setattr__(self, "max_candidates", max_candidates)
-        if max_candidates <= 0:
-            raise ValueError(
-                "custom.stage1_set_continuation.candidates.max_candidates must be > 0 when provided"
-            )
-        if self.mode == "exact":
-            raise ValueError(
-                "custom.stage1_set_continuation.candidates.mode=exact rejects positive max_candidates"
-            )
-
-
-def _empty_annotation_completeness_by_max_gt() -> dict[int, float]:
-    return {}
-
-
-@dataclass(frozen=True)
-class Stage1SetContinuationAnnotationCompletenessWeightConfig:
-    enabled: bool = False
-    source: str = ""
-    by_max_gt: Mapping[int, float] = field(
-        default_factory=_empty_annotation_completeness_by_max_gt
-    )
-    default_weight: float = 1.0
-
-    def __post_init__(self) -> None:
-        if not isinstance(self.enabled, bool):
-            raise TypeError(
-                "custom.stage1_set_continuation.structural_close."
-                "annotation_completeness_weight.enabled must be a boolean"
-            )
-        default_weight = float(self.default_weight)
-        if default_weight < 0.0 or default_weight > 1.0:
-            raise ValueError(
-                "custom.stage1_set_continuation.structural_close."
-                "annotation_completeness_weight.default_weight must satisfy 0 <= weight <= 1"
-            )
-        object.__setattr__(self, "default_weight", default_weight)
-        object.__setattr__(self, "source", str(self.source or ""))
-
-        if not isinstance(self.by_max_gt, Mapping):
-            raise TypeError(
-                "custom.stage1_set_continuation.structural_close."
-                "annotation_completeness_weight.by_max_gt must be a mapping"
-            )
-        normalized: dict[int, float] = {}
-        for raw_key, raw_value in self.by_max_gt.items():
-            max_gt = int(raw_key)
-            weight = float(raw_value)
-            if max_gt <= 0:
-                raise ValueError(
-                    "custom.stage1_set_continuation.structural_close."
-                    "annotation_completeness_weight.by_max_gt keys must be > 0"
-                )
-            if weight < 0.0 or weight > 1.0:
-                raise ValueError(
-                    "custom.stage1_set_continuation.structural_close."
-                    "annotation_completeness_weight.by_max_gt values must satisfy 0 <= weight <= 1"
-                )
-            normalized[max_gt] = weight
-        object.__setattr__(self, "by_max_gt", dict(sorted(normalized.items())))
-
-
-@dataclass(frozen=True)
-class Stage1SetContinuationStructuralCloseConfig:
-    close_start_suppression_weight: float = 0.0
-    final_schema_close_weight: float = 0.0
-    json_structural_weight: float = 0.0
-    annotation_completeness_weight: Stage1SetContinuationAnnotationCompletenessWeightConfig = field(
-        default_factory=Stage1SetContinuationAnnotationCompletenessWeightConfig
-    )
-
-    def __post_init__(self) -> None:
-        close_start_suppression_weight = float(self.close_start_suppression_weight)
-        final_schema_close_weight = float(self.final_schema_close_weight)
-        json_structural_weight = float(self.json_structural_weight)
-        object.__setattr__(
-            self, "close_start_suppression_weight", close_start_suppression_weight
-        )
-        object.__setattr__(self, "final_schema_close_weight", final_schema_close_weight)
-        object.__setattr__(self, "json_structural_weight", json_structural_weight)
-        if close_start_suppression_weight < 0.0:
-            raise ValueError(
-                "custom.stage1_set_continuation.structural_close.close_start_suppression_weight must be >= 0"
-            )
-        if final_schema_close_weight < 0.0:
-            raise ValueError(
-                "custom.stage1_set_continuation.structural_close.final_schema_close_weight must be >= 0"
-            )
-        if json_structural_weight < 0.0:
-            raise ValueError(
-                "custom.stage1_set_continuation.structural_close.json_structural_weight must be >= 0"
-            )
-
-    @property
-    def anti_close_weight(self) -> float:
-        return self.close_start_suppression_weight
-
-    @property
-    def final_close_weight(self) -> float:
-        return self.final_schema_close_weight
-
-
-@dataclass(frozen=True)
-class Stage1SetContinuationBidirectionalTokenGateConfig:
-    enabled: bool = False
-    coord_gate_weight: float = 0.0
-    text_gate_weight: float = 0.0
-    temperature: float = 1.0
-    scope: str = "objective_tokens"
-
-    def __post_init__(self) -> None:
-        coord_gate_weight = float(self.coord_gate_weight)
-        text_gate_weight = float(self.text_gate_weight)
-        temperature = float(self.temperature)
-        scope = str(self.scope or "").strip()
-        object.__setattr__(self, "coord_gate_weight", coord_gate_weight)
-        object.__setattr__(self, "text_gate_weight", text_gate_weight)
-        object.__setattr__(self, "temperature", temperature)
-        object.__setattr__(self, "scope", scope)
-        if coord_gate_weight < 0.0:
-            raise ValueError(
-                "custom.stage1_set_continuation.bidirectional_token_gate.coord_gate_weight must be >= 0"
-            )
-        if text_gate_weight < 0.0:
-            raise ValueError(
-                "custom.stage1_set_continuation.bidirectional_token_gate.text_gate_weight must be >= 0"
-            )
-        if temperature <= 0.0:
-            raise ValueError(
-                "custom.stage1_set_continuation.bidirectional_token_gate.temperature must be > 0"
-            )
-        if scope != "objective_tokens":
-            raise ValueError(
-                "custom.stage1_set_continuation.bidirectional_token_gate.scope must be 'objective_tokens'"
-            )
-        if self.enabled and coord_gate_weight == 0.0 and text_gate_weight == 0.0:
-            raise ValueError(
-                "custom.stage1_set_continuation.bidirectional_token_gate is enabled but coord_gate_weight and text_gate_weight are both 0"
-            )
-
-
-@dataclass(frozen=True)
-class Stage1SetContinuationPositiveEvidenceMarginConfig:
-    objective: Literal["disabled", "threshold_loss"] = "disabled"
-    threshold_space: Literal["full_entry_logZ"] = "full_entry_logZ"
-    rho: Optional[float] = None
-    log_rho: Optional[float] = None
-    threshold_calibration: Optional[str] = None
-
-    def __post_init__(self) -> None:
-        if self.objective not in {"disabled", "threshold_loss"}:
-            raise ValueError(
-                "custom.stage1_set_continuation.positive_evidence_margin.objective must be one of {'disabled', 'threshold_loss'}"
-            )
-        if self.threshold_space != "full_entry_logZ":
-            raise ValueError(
-                "custom.stage1_set_continuation.positive_evidence_margin.threshold_space must be 'full_entry_logZ'"
-            )
-
-        rho = None if self.rho is None else float(self.rho)
-        log_rho = None if self.log_rho is None else float(self.log_rho)
-        object.__setattr__(self, "rho", rho)
-        object.__setattr__(self, "log_rho", log_rho)
-
-        threshold_calibration = self.threshold_calibration
-        if threshold_calibration is not None:
-            if not isinstance(threshold_calibration, str):
-                raise TypeError(
-                    "custom.stage1_set_continuation.positive_evidence_margin.threshold_calibration must be a string when provided"
-                )
-            threshold_calibration = threshold_calibration.strip()
-            if not threshold_calibration:
-                raise ValueError(
-                    "custom.stage1_set_continuation.positive_evidence_margin.threshold_calibration must be non-empty when provided"
-                )
-            object.__setattr__(self, "threshold_calibration", threshold_calibration)
-
-        if self.objective == "threshold_loss":
-            if (rho is None) == (log_rho is None):
-                raise ValueError(
-                    "custom.stage1_set_continuation.positive_evidence_margin.threshold_loss requires exactly one of rho/log_rho"
-                )
-            if rho is not None and not (0.0 < rho <= 1.0):
-                raise ValueError(
-                    "custom.stage1_set_continuation.positive_evidence_margin.rho must satisfy 0 < rho <= 1"
-                )
-            if threshold_calibration is None:
-                raise ValueError(
-                    "custom.stage1_set_continuation.positive_evidence_margin.threshold_calibration must be provided when objective=threshold_loss"
-                )
-            if rho is not None:
-                raise ValueError(
-                    "custom.stage1_set_continuation.positive_evidence_margin.threshold_loss with threshold_space=full_entry_logZ requires calibrated log_rho; fixed rho is not valid for the full-entry logZ scale"
-                )
-
-    @property
-    def mode(self) -> str:
-        if self.objective == "threshold_loss":
-            return "replace_mp"
-        return self.objective
-
-
-def _apply_legacy_stage1_alias(
-    raw: dict[Any, Any],
-    *,
-    old_key: str,
-    new_key: str,
-    path: str,
-    value_map: Mapping[Any, Any] | None = None,
-) -> None:
-    if old_key not in raw:
-        return
-    if new_key in raw:
-        raise ValueError(
-            f"{path} must not set both legacy '{old_key}' and canonical '{new_key}'"
-        )
-    value = raw.pop(old_key)
-    if value_map is not None:
-        value = value_map.get(value, value)
-    raw[new_key] = value
-
-
-def _normalize_stage1_set_continuation_payload(payload: Any) -> Any:
-    if not isinstance(payload, Mapping):
-        return payload
-    raw: dict[Any, Any] = dict(payload)
-    structural_close = raw.get("structural_close")
-    if isinstance(structural_close, Mapping):
-        close_raw: dict[Any, Any] = dict(structural_close)
-        _apply_legacy_stage1_alias(
-            close_raw,
-            old_key="anti_close_weight",
-            new_key="close_start_suppression_weight",
-            path="custom.stage1_set_continuation.structural_close",
-        )
-        _apply_legacy_stage1_alias(
-            close_raw,
-            old_key="final_close_weight",
-            new_key="final_schema_close_weight",
-            path="custom.stage1_set_continuation.structural_close",
-        )
-        raw["structural_close"] = close_raw
-    positive_evidence_margin = raw.get("positive_evidence_margin")
-    if isinstance(positive_evidence_margin, Mapping):
-        pem_raw: dict[Any, Any] = dict(positive_evidence_margin)
-        _apply_legacy_stage1_alias(
-            pem_raw,
-            old_key="mode",
-            new_key="objective",
-            path="custom.stage1_set_continuation.positive_evidence_margin",
-            value_map={"replace_mp": "threshold_loss"},
-        )
-        raw["positive_evidence_margin"] = pem_raw
-    return raw
-
-
-@dataclass(frozen=True)
-class Stage1SetContinuationBranchRuntimeConfig:
-    mode: Literal[
-        "retained_graph",
-        "checkpointed_exact",
-        "smart_batched_exact",
-        "padding_free_packed",
-    ] = "retained_graph"
-    checkpoint_use_reentrant: bool = False
-    preserve_rng_state: bool = True
-
-    def __post_init__(self) -> None:
-        if self.mode not in {
-            "retained_graph",
-            "checkpointed_exact",
-            "smart_batched_exact",
-            "padding_free_packed",
-        }:
-            raise ValueError(
-                "custom.stage1_set_continuation.train_forward.branch_runtime.mode "
-                "must be one of "
-                "{'retained_graph', 'checkpointed_exact', 'smart_batched_exact', "
-                "'padding_free_packed'}"
-            )
-        if not isinstance(self.checkpoint_use_reentrant, bool):
-            raise TypeError(
-                "custom.stage1_set_continuation.train_forward.branch_runtime."
-                "checkpoint_use_reentrant must be a boolean"
-            )
-        if not isinstance(self.preserve_rng_state, bool):
-            raise TypeError(
-                "custom.stage1_set_continuation.train_forward.branch_runtime."
-                "preserve_rng_state must be a boolean"
-            )
-
-
-@dataclass(frozen=True)
-class Stage1SetContinuationExactUntilConfig:
-    max_candidates: Optional[int] = None
-    max_branch_tokens_per_sample: Optional[int] = None
-    min_free_memory_gib: Optional[float] = None
-
-    def __post_init__(self) -> None:
-        for name in ("max_candidates", "max_branch_tokens_per_sample"):
-            value = getattr(self, name)
-            if value is None:
-                continue
-            parsed = int(value)
-            if parsed <= 0:
-                raise ValueError(
-                    "custom.stage1_set_continuation.train_forward.budget_policy."
-                    f"exact_until.{name} must be > 0"
-                )
-            object.__setattr__(self, name, parsed)
-        if self.min_free_memory_gib is not None:
-            parsed_memory = float(self.min_free_memory_gib)
-            if parsed_memory < 0:
-                raise ValueError(
-                    "custom.stage1_set_continuation.train_forward.budget_policy."
-                    "exact_until.min_free_memory_gib must be >= 0"
-                )
-            object.__setattr__(self, "min_free_memory_gib", parsed_memory)
-
-
-@dataclass(frozen=True)
-class Stage1SetContinuationFallbackConfig:
-    mode: Literal["disabled", "approximate_uniform_subsample"] = "disabled"
-    max_candidates: Optional[int] = None
-    estimator: Literal["uniform_importance", "sampled_raw"] = "uniform_importance"
-    require_telemetry: bool = True
-
-    def __post_init__(self) -> None:
-        if self.mode not in {"disabled", "approximate_uniform_subsample"}:
-            raise ValueError(
-                "custom.stage1_set_continuation.train_forward.budget_policy."
-                "fallback.mode must be one of {'disabled', 'approximate_uniform_subsample'}"
-            )
-        if self.estimator not in {"uniform_importance", "sampled_raw"}:
-            raise ValueError(
-                "custom.stage1_set_continuation.train_forward.budget_policy."
-                "fallback.estimator must be one of {'uniform_importance', 'sampled_raw'}"
-            )
-        if not isinstance(self.require_telemetry, bool):
-            raise TypeError(
-                "custom.stage1_set_continuation.train_forward.budget_policy."
-                "fallback.require_telemetry must be a boolean"
-            )
-        if self.mode == "approximate_uniform_subsample":
-            if self.max_candidates is None or int(self.max_candidates) <= 0:
-                raise ValueError(
-                    "custom.stage1_set_continuation.train_forward.budget_policy."
-                    "fallback.max_candidates must be > 0 when "
-                    "fallback.mode=approximate_uniform_subsample"
-                )
-            object.__setattr__(self, "max_candidates", int(self.max_candidates))
-        elif self.max_candidates is not None:
-            raise ValueError(
-                "custom.stage1_set_continuation.train_forward.budget_policy."
-                "fallback.max_candidates requires "
-                "fallback.mode=approximate_uniform_subsample"
-            )
-
-
-@dataclass(frozen=True)
-class Stage1SetContinuationBudgetPolicyConfig:
-    enabled: bool = False
-    exact_until: Stage1SetContinuationExactUntilConfig = field(
-        default_factory=Stage1SetContinuationExactUntilConfig
-    )
-    fallback: Stage1SetContinuationFallbackConfig = field(
-        default_factory=Stage1SetContinuationFallbackConfig
-    )
-
-    def __post_init__(self) -> None:
-        if not isinstance(self.enabled, bool):
-            raise TypeError(
-                "custom.stage1_set_continuation.train_forward.budget_policy."
-                "enabled must be a boolean"
-            )
-
-
-@dataclass(frozen=True)
-class Stage1SetContinuationKVCacheConfig:
-    mode: Literal["disabled"] = "disabled"
-
-    def __post_init__(self) -> None:
-        if self.mode != "disabled":
-            raise ValueError(
-                "custom.stage1_set_continuation.train_forward.prefix_reuse."
-                "kv_cache.mode must be 'disabled' in the immediate bridge"
-            )
-
-
-@dataclass(frozen=True)
-class Stage1SetContinuationPrefixReuseConfig:
-    encoding_cache: bool = False
-    kv_cache: Stage1SetContinuationKVCacheConfig = field(
-        default_factory=Stage1SetContinuationKVCacheConfig
-    )
-
-    def __post_init__(self) -> None:
-        if not isinstance(self.encoding_cache, bool):
-            raise TypeError(
-                "custom.stage1_set_continuation.train_forward.prefix_reuse."
-                "encoding_cache must be a boolean"
-            )
-
-
-@dataclass(frozen=True)
-class Stage1SetContinuationTelemetryConfig:
-    per_rank_memory: bool = True
-    branch_budget: bool = True
-    objective_fidelity: bool = True
-
-    def __post_init__(self) -> None:
-        for name in ("per_rank_memory", "branch_budget", "objective_fidelity"):
-            if not isinstance(getattr(self, name), bool):
-                raise TypeError(
-                    "custom.stage1_set_continuation.train_forward.telemetry."
-                    f"{name} must be a boolean"
-                )
-
-
-@dataclass(frozen=True)
-class Stage1SetContinuationLogitsConfig:
-    mode: Literal["full", "supervised_suffix"] = "full"
-
-    def __post_init__(self) -> None:
-        if self.mode not in {"full", "supervised_suffix"}:
-            raise ValueError(
-                "custom.stage1_set_continuation.train_forward.logits.mode "
-                "must be one of {'full', 'supervised_suffix'}"
-            )
-
-
-@dataclass(frozen=True)
-class Stage1SetContinuationDDPSyncConfig:
-    candidate_padding: Literal["max_count", "none"] = "max_count"
-
-    def __post_init__(self) -> None:
-        if self.candidate_padding not in {"max_count", "none"}:
-            raise ValueError(
-                "custom.stage1_set_continuation.train_forward.ddp_sync."
-                "candidate_padding must be one of {'max_count', 'none'}"
-            )
-
-
-@dataclass(frozen=True)
-class Stage1SetContinuationBranchBatchingConfig:
-    enabled: bool = False
-    strategy: Literal["ms_swift_constant_volume_buckets"] = (
-        "ms_swift_constant_volume_buckets"
-    )
-    max_branch_rows: Optional[int] = None
-    max_branch_tokens: Optional[int] = None
-    min_fill_ratio: float = 0.70
-    padding_waste_warn_fraction: float = 0.40
-
-    def __post_init__(self) -> None:
-        if not isinstance(self.enabled, bool):
-            raise TypeError(
-                "custom.stage1_set_continuation.train_forward.branch_batching."
-                "enabled must be a boolean"
-            )
-        if self.strategy != "ms_swift_constant_volume_buckets":
-            raise ValueError(
-                "custom.stage1_set_continuation.train_forward.branch_batching."
-                "strategy must be 'ms_swift_constant_volume_buckets'"
-            )
-        for name in ("max_branch_rows", "max_branch_tokens"):
-            value = getattr(self, name)
-            if value is None:
-                continue
-            parsed = int(value)
-            if parsed <= 0:
-                raise ValueError(
-                    "custom.stage1_set_continuation.train_forward.branch_batching."
-                    f"{name} must be > 0"
-                )
-            object.__setattr__(self, name, parsed)
-        fill = float(self.min_fill_ratio)
-        if fill <= 0.0 or fill > 1.0:
-            raise ValueError(
-                "custom.stage1_set_continuation.train_forward.branch_batching."
-                "min_fill_ratio must be in (0, 1]"
-            )
-        object.__setattr__(self, "min_fill_ratio", fill)
-        warn = float(self.padding_waste_warn_fraction)
-        if warn < 0.0 or warn > 1.0:
-            raise ValueError(
-                "custom.stage1_set_continuation.train_forward.branch_batching."
-                "padding_waste_warn_fraction must be in [0, 1]"
-            )
-        object.__setattr__(self, "padding_waste_warn_fraction", warn)
-
-
-@dataclass(frozen=True)
-class Stage1SetContinuationTrainForwardConfig:
-    branch_runtime: Stage1SetContinuationBranchRuntimeConfig = field(
-        default_factory=Stage1SetContinuationBranchRuntimeConfig
-    )
-    budget_policy: Stage1SetContinuationBudgetPolicyConfig = field(
-        default_factory=Stage1SetContinuationBudgetPolicyConfig
-    )
-    prefix_reuse: Stage1SetContinuationPrefixReuseConfig = field(
-        default_factory=Stage1SetContinuationPrefixReuseConfig
-    )
-    telemetry: Stage1SetContinuationTelemetryConfig = field(
-        default_factory=Stage1SetContinuationTelemetryConfig
-    )
-    logits: Stage1SetContinuationLogitsConfig = field(
-        default_factory=Stage1SetContinuationLogitsConfig
-    )
-    ddp_sync: Stage1SetContinuationDDPSyncConfig = field(
-        default_factory=Stage1SetContinuationDDPSyncConfig
-    )
-    branch_batching: Stage1SetContinuationBranchBatchingConfig = field(
-        default_factory=Stage1SetContinuationBranchBatchingConfig
-    )
-
-
-@dataclass(frozen=True)
-class Stage1SetContinuationObjectiveConfig:
-    mode: Literal["candidate_balanced", "full_suffix_ce", "entry_trie_rmp_ce"] = (
-        "candidate_balanced"
-    )
-    suffix_order: Literal["random", "dataset"] = "random"
-    branch_support_weight: float = 1.0
-    branch_balance_weight: float = 1.0
-
-    def __post_init__(self) -> None:
-        if self.mode not in {
-            "candidate_balanced",
-            "full_suffix_ce",
-            "entry_trie_rmp_ce",
-        }:
-            raise ValueError(
-                "custom.stage1_set_continuation.objective.mode must be one of "
-                "{'candidate_balanced', 'full_suffix_ce', 'entry_trie_rmp_ce'}"
-            )
-        if self.suffix_order not in {"random", "dataset"}:
-            raise ValueError(
-                "custom.stage1_set_continuation.objective.suffix_order must be "
-                "one of {'random', 'dataset'}"
-            )
-        for field_name, raw_value in (
-            ("branch_support_weight", self.branch_support_weight),
-            ("branch_balance_weight", self.branch_balance_weight),
-        ):
-            value = float(raw_value)
-            if not math.isfinite(value) or value < 0.0:
-                raise ValueError(
-                    "custom.stage1_set_continuation.objective."
-                    f"{field_name} must be finite and non-negative"
-                )
-        if float(self.branch_support_weight) + float(self.branch_balance_weight) <= 0.0:
-            raise ValueError(
-                "custom.stage1_set_continuation.objective branch weights may not "
-                "both be zero"
-            )
-
-
-@dataclass(frozen=True)
-class Stage1SetContinuationConfig:
-    objective: Stage1SetContinuationObjectiveConfig = field(
-        default_factory=Stage1SetContinuationObjectiveConfig
-    )
-    subset_sampling: Stage1SetContinuationSubsetSamplingConfig = field(
-        default_factory=Stage1SetContinuationSubsetSamplingConfig
-    )
-    candidates: Stage1SetContinuationCandidatesConfig = field(
-        default_factory=Stage1SetContinuationCandidatesConfig
-    )
-    structural_close: Stage1SetContinuationStructuralCloseConfig = field(
-        default_factory=Stage1SetContinuationStructuralCloseConfig
-    )
-    bidirectional_token_gate: Stage1SetContinuationBidirectionalTokenGateConfig = field(
-        default_factory=Stage1SetContinuationBidirectionalTokenGateConfig
-    )
-    positive_evidence_margin: Stage1SetContinuationPositiveEvidenceMarginConfig = field(
-        default_factory=Stage1SetContinuationPositiveEvidenceMarginConfig
-    )
-    train_forward: Stage1SetContinuationTrainForwardConfig = field(
-        default_factory=Stage1SetContinuationTrainForwardConfig
-    )
-    metric_schema_version: str = "stage1_set_continuation_metrics_v3"
-
-    @classmethod
-    def from_mapping(cls, payload: Any) -> "Stage1SetContinuationConfig":
-        if payload is None:
-            return cls()
-        payload = _normalize_stage1_set_continuation_payload(payload)
-        return parse_dataclass_strict(
-            cls,
-            payload,
-            path="custom.stage1_set_continuation",
-        )
-
-
-@dataclass(frozen=True)
 class CustomConfig:
     train_jsonl: str
     user_prompt: str
@@ -2075,7 +1423,6 @@ class CustomConfig:
     eval_detection: Stage1EvalDetectionConfig = field(
         default_factory=Stage1EvalDetectionConfig
     )
-    stage1_set_continuation: Optional[Stage1SetContinuationConfig] = None
     output_variant: Literal["dense", "summary"] = "dense"
     visual_kd: VisualKDConfig = field(default_factory=VisualKDConfig.disabled)
     token_type_metrics: TokenTypeMetricsConfig = field(
@@ -2185,6 +1532,11 @@ class CustomConfig:
         augmentation_curriculum = data.pop("augmentation_curriculum", None)
         bypass_prob = float(data.pop("bypass_prob", 0.0))
         trainer_variant = data.pop("trainer_variant", None)
+        if str(trainer_variant or "") == "stage1_set_continuation":
+            raise ValueError(
+                "custom.trainer_variant=stage1_set_continuation has been removed; "
+                "use prefix_rollin_et_rmp_ce under the latest compact detection schema"
+            )
         train_sample_limit = data.pop("train_sample_limit", None)
         val_sample_limit = data.pop("val_sample_limit", None)
         eval_monitor_dump_raw = data.pop("eval_monitor_dump", None)
@@ -2307,12 +1659,11 @@ class CustomConfig:
         )
         eval_detection_raw = data.pop("eval_detection", None)
         eval_detection = Stage1EvalDetectionConfig.from_mapping(eval_detection_raw)
-        stage1_set_continuation_raw = data.pop("stage1_set_continuation", None)
-        stage1_set_continuation = (
-            None
-            if stage1_set_continuation_raw is None
-            else Stage1SetContinuationConfig.from_mapping(stage1_set_continuation_raw)
-        )
+        if "stage1_set_continuation" in data:
+            raise ValueError(
+                "custom.stage1_set_continuation has been removed; "
+                "use prefix_rollin_et_rmp_ce under the latest compact detection schema"
+            )
 
         object_ordering = normalize_object_ordering(
             object_ordering_raw,
@@ -2366,7 +1717,6 @@ class CustomConfig:
             val_jsonl=str(val_jsonl) if val_jsonl is not None else None,
             offline_max_pixels=offline_max_pixels,
             eval_detection=eval_detection,
-            stage1_set_continuation=stage1_set_continuation,
             output_variant=prompts.output_variant,
             visual_kd=visual_kd,
             token_type_metrics=token_type_metrics,
@@ -3667,6 +3017,7 @@ _LATEST_DETECTION_RUNTIME_SECTIONS: set[str] = {
 
 _LATEST_DETECTION_OPTIONAL_SECTIONS: set[str] = {
     "debug",
+    "experiment",
     "global_max_length",
 }
 
@@ -3737,7 +3088,17 @@ def _latest_detection_find_obsolete_keys(value: Any, *, path: str = "") -> list[
             key = str(raw_key)
             key_path = _latest_detection_join_path(path, key)
             normalized = key.strip().lower().replace("-", "_")
-            if normalized in _LATEST_DETECTION_OBSOLETE_KEYS:
+            # `target.support_weight` and `target.balance_weight` are the
+            # canonical objectized paths for prefix-rollin; only the flat
+            # objective-level aliases remain obsolete.
+            if (
+                normalized in _LATEST_DETECTION_OBSOLETE_KEYS
+                and key_path
+                not in {
+                    "objective.target.support_weight",
+                    "objective.target.balance_weight",
+                }
+            ):
                 found.append(key_path)
             found.extend(_latest_detection_find_obsolete_keys(raw_value, path=key_path))
     elif isinstance(value, Sequence) and not isinstance(value, (str, bytes, bytearray)):
@@ -3871,6 +3232,22 @@ def _latest_detection_validate_packing_runtime_contract(
         raise ValueError(
             "objective.id=recursive_detection_ce requires training.eval_packing=false."
         )
+    if bool(training.get("use_logits_to_keep", False)):
+        raise ValueError(
+            "objective.id=recursive_detection_ce requires training.use_logits_to_keep=false "
+            "because recursive sidecar target positions require full sequence logits."
+        )
+    if "loss_scale" in training and training.get("loss_scale") not in (None, ""):
+        raise ValueError(
+            "objective.id=recursive_detection_ce does not support training.loss_scale; "
+            "recursive_detection_ce owns the token loss and metric scale."
+        )
+    padding_side = training.get("padding_side")
+    if padding_side not in (None, "", "right"):
+        raise ValueError(
+            "objective.id=recursive_detection_ce requires training.padding_side='right' "
+            "until sidecar offset rewriting is implemented."
+        )
 
 
 def _latest_detection_validate_deepspeed_mapping(value: Any) -> dict[str, Any]:
@@ -3895,6 +3272,44 @@ def _latest_detection_validate_order_matches_objective(
             "data.object_ordering must be "
             f"{required_order!r} for objective.variant={objective.variant!r}, "
             f"got {data.object_ordering!r}"
+        )
+
+
+def _latest_detection_validate_prefix_rollin_contract(
+    *,
+    detection_template: "DetectionTemplateConfig",
+    objective: "DetectionObjectiveConfig",
+    experiment: "LatestDetectionExperimentConfig | None",
+) -> None:
+    if objective.variant != "prefix_rollin_et_rmp_ce":
+        return
+
+    if detection_template.id != "compact_full":
+        raise ValueError(
+            "objective.variant=prefix_rollin_et_rmp_ce requires "
+            "detection_template.id=compact_full"
+        )
+    if experiment is None:
+        raise ValueError(
+            "experiment.surface is required for "
+            "objective.variant=prefix_rollin_et_rmp_ce"
+        )
+    eos = objective.eos
+    if eos is None:
+        raise ValueError(
+            "objective.variant=prefix_rollin_et_rmp_ce requires objective.eos"
+        )
+    source = eos.eos_trust_weight.source
+    if experiment.surface == "production" and source != "calibrated_formula_ref":
+        raise ValueError(
+            f"objective.eos.eos_trust_weight.source={source} is not allowed "
+            "for experiment.surface=production; use calibrated_formula_ref "
+            "with calibration_artifact_ref"
+        )
+    if experiment.surface in {"smoke", "ablation"} and source == "calibrated_formula_ref":
+        raise ValueError(
+            "objective.eos.eos_trust_weight.source=calibrated_formula_ref is "
+            f"reserved for experiment.surface=production, got {experiment.surface}"
         )
 
 
@@ -4086,6 +3501,416 @@ class DetectionTemplateConfig:
 
 
 @dataclass(frozen=True)
+class UniformInclusiveKConfig:
+    type: Literal["uniform_inclusive"]
+    min_k: int
+    max_k: Literal["object_count"]
+
+    def __post_init__(self) -> None:
+        if (
+            self.type != "uniform_inclusive"
+            or type(self.min_k) is not int
+            or self.min_k != 0
+            or self.max_k != "object_count"
+        ):
+            raise ValueError(
+                "objective.rollin.k_distribution must be exactly "
+                "uniform_inclusive over 0..object_count"
+            )
+
+
+@dataclass(frozen=True)
+class PrefixRollinConfig:
+    enabled: bool
+    source: Literal["ground_truth"]
+    prefix_loss: Literal["masked"]
+    suffix_order: Literal["same_sampled_permutation"]
+    k_distribution: UniformInclusiveKConfig
+
+    def __post_init__(self) -> None:
+        _latest_detection_validate_bool(self.enabled, path="objective.rollin.enabled")
+        _latest_detection_validate_choice(
+            self.source,
+            path="objective.rollin.source",
+            allowed={"ground_truth"},
+        )
+        _latest_detection_validate_choice(
+            self.prefix_loss,
+            path="objective.rollin.prefix_loss",
+            allowed={"masked"},
+        )
+        _latest_detection_validate_choice(
+            self.suffix_order,
+            path="objective.rollin.suffix_order",
+            allowed={"same_sampled_permutation"},
+        )
+
+
+@dataclass(frozen=True)
+class EntryTrieSupportBalanceConfig:
+    type: Literal["entry_trie_support_balance"]
+    trie_scope: Literal["object_entry"]
+    q_weighting: Literal["object_multiplicity_uniform"]
+    singleton: Literal["hard_ce"]
+    control_tokens: Literal["hard_ce"]
+    support_weight: float
+    balance_weight: float
+
+    def __post_init__(self) -> None:
+        _latest_detection_validate_choice(
+            self.type,
+            path="objective.target.type",
+            allowed={"entry_trie_support_balance"},
+        )
+        _latest_detection_validate_choice(
+            self.trie_scope,
+            path="objective.target.trie_scope",
+            allowed={"object_entry"},
+        )
+        _latest_detection_validate_choice(
+            self.q_weighting,
+            path="objective.target.q_weighting",
+            allowed={"object_multiplicity_uniform"},
+        )
+        _latest_detection_validate_choice(
+            self.singleton,
+            path="objective.target.singleton",
+            allowed={"hard_ce"},
+        )
+        _latest_detection_validate_choice(
+            self.control_tokens,
+            path="objective.target.control_tokens",
+            allowed={"hard_ce"},
+        )
+        for field_name in ("support_weight", "balance_weight"):
+            value = getattr(self, field_name)
+            if not isinstance(value, (int, float)) or isinstance(value, bool):
+                raise TypeError(f"objective.target.{field_name} must be numeric")
+            if not math.isfinite(float(value)):
+                raise ValueError(f"objective.target.{field_name} must be finite")
+            if float(value) <= 0.0:
+                raise ValueError(f"objective.target.{field_name} must be > 0")
+
+
+@dataclass(frozen=True)
+class AppendBoundaryConfig:
+    type: Literal["compact_full_append_boundary"]
+    separator_continue_weight: float
+    eos_stop_weight: float
+    component_weight: float
+
+    def __post_init__(self) -> None:
+        _latest_detection_validate_choice(
+            self.type,
+            path="objective.boundary.type",
+            allowed={"compact_full_append_boundary"},
+        )
+        for field_name in (
+            "separator_continue_weight",
+            "eos_stop_weight",
+            "component_weight",
+        ):
+            value = getattr(self, field_name)
+            if not isinstance(value, (int, float)) or isinstance(value, bool):
+                raise TypeError(f"objective.boundary.{field_name} must be numeric")
+            if not math.isfinite(float(value)):
+                raise ValueError(f"objective.boundary.{field_name} must be finite")
+            if float(value) <= 0.0:
+                raise ValueError(f"objective.boundary.{field_name} must be > 0")
+
+
+@dataclass(frozen=True)
+class CompactTypeGateWeights:
+    struct: float
+    coord: float
+    desc: float
+    eos: float
+
+    def __post_init__(self) -> None:
+        for field_name in ("struct", "coord", "desc", "eos"):
+            value = getattr(self, field_name)
+            if not isinstance(value, (int, float)) or isinstance(value, bool):
+                raise TypeError(f"objective.type_gate.weights.{field_name} must be numeric")
+            if not math.isfinite(float(value)):
+                raise ValueError(f"objective.type_gate.weights.{field_name} must be finite")
+            if float(value) < 0.0:
+                raise ValueError(f"objective.type_gate.weights.{field_name} must be >= 0")
+
+
+@dataclass(frozen=True)
+class CompactTypeGateConfig:
+    enabled: bool
+    mode: Literal["allowed_type_mass"]
+    weights: CompactTypeGateWeights
+
+    def __post_init__(self) -> None:
+        _latest_detection_validate_bool(self.enabled, path="objective.type_gate.enabled")
+        _latest_detection_validate_choice(
+            self.mode,
+            path="objective.type_gate.mode",
+            allowed={"allowed_type_mass"},
+        )
+
+
+@dataclass(frozen=True)
+class ExpectedUnlabeledCountConfig:
+    intercept: float
+    slope: float
+    floor: float
+
+    def __post_init__(self) -> None:
+        for field_name in ("intercept", "slope", "floor"):
+            value = getattr(self, field_name)
+            if not isinstance(value, (int, float)) or isinstance(value, bool):
+                raise TypeError(
+                    "objective.eos.eos_trust_weight.expected_unlabeled_count."
+                    f"{field_name} must be numeric"
+                )
+            if not math.isfinite(float(value)):
+                raise ValueError(
+                    "objective.eos.eos_trust_weight.expected_unlabeled_count."
+                    f"{field_name} must be finite"
+                )
+
+
+@dataclass(frozen=True)
+class LogLinearMissingCountPenaltyConfig:
+    type: Literal["log_linear_missing_count_penalty"]
+    penalty_per_missing: float
+    temperature: float
+    min_weight: float
+    max_weight: float
+
+    def __post_init__(self) -> None:
+        _latest_detection_validate_choice(
+            self.type,
+            path="objective.eos.eos_trust_weight.trust_mapping.type",
+            allowed={"log_linear_missing_count_penalty"},
+        )
+        for field_name in (
+            "penalty_per_missing",
+            "temperature",
+            "min_weight",
+            "max_weight",
+        ):
+            value = getattr(self, field_name)
+            if not isinstance(value, (int, float)) or isinstance(value, bool):
+                raise TypeError(
+                    f"objective.eos.eos_trust_weight.trust_mapping.{field_name} must be numeric"
+                )
+            if not math.isfinite(float(value)):
+                raise ValueError(
+                    f"objective.eos.eos_trust_weight.trust_mapping.{field_name} must be finite"
+                )
+        if float(self.temperature) <= 0.0:
+            raise ValueError(
+                "objective.eos.eos_trust_weight.trust_mapping.temperature must be > 0"
+            )
+        if float(self.penalty_per_missing) < 0.0:
+            raise ValueError(
+                "objective.eos.eos_trust_weight.trust_mapping.penalty_per_missing "
+                "must be >= 0"
+            )
+        if (
+            float(self.min_weight) < 0.0
+            or float(self.max_weight) < float(self.min_weight)
+            or float(self.max_weight) > 1.0
+        ):
+            raise ValueError(
+                "objective.eos.eos_trust_weight.trust_mapping weights must satisfy "
+                "0 <= min_weight <= max_weight <= 1"
+            )
+
+
+@dataclass(frozen=True)
+class EosTrustWeightConfig:
+    source: Literal[
+        "empirical_unlabeled_poisson_v0",
+        "calibrated_formula_ref",
+        "constant_ablation",
+        "disabled_ablation",
+        "deferred_user_formula",
+    ]
+    expected_unlabeled_count: Optional[ExpectedUnlabeledCountConfig] = None
+    trust_mapping: Optional[LogLinearMissingCountPenaltyConfig] = None
+    calibration_artifact_ref: Optional[str] = None
+    value: Optional[float] = None
+
+    def __post_init__(self) -> None:
+        _latest_detection_validate_choice(
+            self.source,
+            path="objective.eos.eos_trust_weight.source",
+            allowed={
+                "empirical_unlabeled_poisson_v0",
+                "calibrated_formula_ref",
+                "constant_ablation",
+                "disabled_ablation",
+                "deferred_user_formula",
+            },
+        )
+        if self.source == "deferred_user_formula":
+            raise ValueError(
+                "objective.eos.eos_trust_weight.source=deferred_user_formula is stale "
+                "and unimplemented"
+            )
+        if self.source == "empirical_unlabeled_poisson_v0":
+            if self.value is not None:
+                raise ValueError(
+                    "objective.eos.eos_trust_weight.source=empirical_unlabeled_poisson_v0 "
+                    "does not accept value"
+                )
+            if self.expected_unlabeled_count is None or self.trust_mapping is None:
+                raise ValueError(
+                    "objective.eos.eos_trust_weight.source=empirical_unlabeled_poisson_v0 "
+                    "requires expected_unlabeled_count and trust_mapping"
+                )
+            if self.calibration_artifact_ref is not None:
+                raise ValueError(
+                    "objective.eos.eos_trust_weight.source=empirical_unlabeled_poisson_v0 "
+                    "does not accept calibration_artifact_ref"
+                )
+        if self.source == "calibrated_formula_ref":
+            if self.value is not None:
+                raise ValueError(
+                    "objective.eos.eos_trust_weight.source=calibrated_formula_ref "
+                    "does not accept value"
+                )
+            if self.expected_unlabeled_count is not None or self.trust_mapping is not None:
+                raise ValueError(
+                    "objective.eos.eos_trust_weight.source=calibrated_formula_ref "
+                    "does not accept expected_unlabeled_count or trust_mapping"
+                )
+            if self.calibration_artifact_ref in (None, ""):
+                raise ValueError(
+                    "objective.eos.eos_trust_weight.source=calibrated_formula_ref "
+                    "requires calibration_artifact_ref"
+                )
+            if not isinstance(self.calibration_artifact_ref, str):
+                raise TypeError(
+                    "objective.eos.eos_trust_weight.calibration_artifact_ref must be a string"
+                )
+            ref = self.calibration_artifact_ref.strip()
+            if not ref:
+                raise ValueError(
+                    "objective.eos.eos_trust_weight.calibration_artifact_ref must be non-empty"
+                )
+            if ".v" not in Path(ref).name:
+                raise ValueError(
+                    "objective.eos.eos_trust_weight.calibration_artifact_ref must be versioned"
+                )
+        if self.source in {"constant_ablation", "disabled_ablation"}:
+            if (
+                self.expected_unlabeled_count is not None
+                or self.trust_mapping is not None
+                or self.calibration_artifact_ref is not None
+            ):
+                raise ValueError(
+                    f"objective.eos.eos_trust_weight.source={self.source} "
+                    "does not accept expected_unlabeled_count, trust_mapping, "
+                    "or calibration_artifact_ref"
+                )
+        if self.source == "constant_ablation":
+            if self.value is None:
+                raise ValueError(
+                    "objective.eos.eos_trust_weight.source=constant_ablation "
+                    "requires value"
+                )
+            if (
+                not isinstance(self.value, (int, float))
+                or isinstance(self.value, bool)
+                or not math.isfinite(float(self.value))
+                or float(self.value) < 0.0
+                or float(self.value) > 1.0
+            ):
+                raise ValueError(
+                    "objective.eos.eos_trust_weight.source=constant_ablation "
+                    "requires value in [0, 1]"
+                )
+        if self.source == "disabled_ablation" and self.value is not None:
+            raise ValueError(
+                "objective.eos.eos_trust_weight.source=disabled_ablation "
+                "does not accept value"
+            )
+
+
+@dataclass(frozen=True)
+class EosPriorConfig:
+    eos_token: Literal["<|im_end|>"]
+    policy: Literal["missing_label_prior_weighted_ce"]
+    eos_trust_weight: EosTrustWeightConfig
+
+    def __post_init__(self) -> None:
+        if self.eos_token != "<|im_end|>":
+            raise ValueError("objective.eos.eos_token must be <|im_end|>")
+        _latest_detection_validate_choice(
+            self.policy,
+            path="objective.eos.policy",
+            allowed={"missing_label_prior_weighted_ce"},
+        )
+
+
+@dataclass(frozen=True)
+class LatestDetectionExperimentConfig:
+    surface: Literal["smoke", "ablation", "production"]
+    ablation_id: Optional[str] = None
+    claim_scope: Optional[Literal["none", "smoke", "paper", "production"]] = None
+
+    def __post_init__(self) -> None:
+        _latest_detection_validate_choice(
+            self.surface,
+            path="experiment.surface",
+            allowed={"smoke", "ablation", "production"},
+        )
+        if self.claim_scope is not None:
+            _latest_detection_validate_choice(
+                self.claim_scope,
+                path="experiment.claim_scope",
+                allowed={"none", "smoke", "paper", "production"},
+            )
+        allowed_claim_scopes = {
+            "ablation": {None, "none"},
+            "smoke": {None, "none", "smoke"},
+            "production": {None, "paper", "production"},
+        }[self.surface]
+        if self.claim_scope not in allowed_claim_scopes:
+            allowed_s = ", ".join(
+                str(value)
+                for value in sorted(v for v in allowed_claim_scopes if v is not None)
+            )
+            raise ValueError(
+                f"experiment.claim_scope={self.claim_scope!r} is not allowed for "
+                f"experiment.surface={self.surface!r}; allowed: {allowed_s}"
+            )
+        for field_name in ("ablation_id",):
+            value = getattr(self, field_name)
+            if value is not None and not isinstance(value, str):
+                raise TypeError(f"experiment.{field_name} must be a string when provided")
+
+    @classmethod
+    def from_mapping(
+        cls,
+        payload: Optional[Mapping[str, Any]],
+        *,
+        required_for_variant: Optional[str] = None,
+    ) -> Optional["LatestDetectionExperimentConfig"]:
+        if payload is None:
+            if required_for_variant is not None:
+                raise ValueError(
+                    "experiment.surface is required for "
+                    f"objective.variant={required_for_variant}"
+                )
+            return None
+        if not isinstance(payload, Mapping):
+            raise TypeError("experiment section must be a mapping when provided")
+        if "surface" not in payload and required_for_variant is not None:
+            raise ValueError(
+                "experiment.surface is required for "
+                f"objective.variant={required_for_variant}"
+            )
+        return parse_dataclass_strict(cls, payload, path="experiment")
+
+
+@dataclass(frozen=True)
 class DetectionObjectiveConfig:
     id: Literal["sft", "recursive_detection_ce"]
     variant: Literal[
@@ -4093,11 +3918,17 @@ class DetectionObjectiveConfig:
         "random_order_sft",
         "random_permutation_et_rmp_ce",
         "trie_disabled_full_suffix_ce",
+        "prefix_rollin_et_rmp_ce",
     ]
     trie_support_weight: float = 0.0
     trie_balance_weight: float = 0.0
     state_weighting: str = "none"
     normalization: str = "token_mean"
+    rollin: Optional[PrefixRollinConfig] = None
+    target: Optional[EntryTrieSupportBalanceConfig] = None
+    boundary: Optional[AppendBoundaryConfig] = None
+    type_gate: Optional[CompactTypeGateConfig] = None
+    eos: Optional[EosPriorConfig] = None
 
     def __post_init__(self) -> None:
         _latest_detection_validate_choice(
@@ -4113,6 +3944,7 @@ class DetectionObjectiveConfig:
                 "random_order_sft",
                 "random_permutation_et_rmp_ce",
                 "trie_disabled_full_suffix_ce",
+                "prefix_rollin_et_rmp_ce",
             },
         )
         for field_name in ("trie_support_weight", "trie_balance_weight"):
@@ -4166,6 +3998,51 @@ class DetectionObjectiveConfig:
                     "objective.trie_support_weight and objective.trie_balance_weight "
                     "must sum to > 0 for random_permutation_et_rmp_ce"
                 )
+        if self.variant == "prefix_rollin_et_rmp_ce":
+            if float(self.trie_support_weight) != 0.0:
+                raise ValueError(
+                    "objective.trie_support_weight is an obsolete flat weight alias "
+                    "for prefix_rollin_et_rmp_ce; use objective.target.support_weight"
+                )
+            if float(self.trie_balance_weight) != 0.0:
+                raise ValueError(
+                    "objective.trie_balance_weight is an obsolete flat weight alias "
+                    "for prefix_rollin_et_rmp_ce; use objective.target.balance_weight"
+                )
+            object.__setattr__(self, "trie_support_weight", None)
+            object.__setattr__(self, "trie_balance_weight", None)
+            if self.state_weighting != "uniform_permutation":
+                raise ValueError(
+                    "objective.state_weighting must be uniform_permutation for "
+                    "prefix_rollin_et_rmp_ce"
+                )
+            if self.normalization != "semantic_image_bucket_balanced":
+                raise ValueError(
+                    "objective.normalization must be semantic_image_bucket_balanced "
+                    "for prefix_rollin_et_rmp_ce"
+                )
+            missing = [
+                name
+                for name in ("rollin", "target", "boundary", "type_gate", "eos")
+                if getattr(self, name) is None
+            ]
+            if missing:
+                raise ValueError(
+                    "objective.variant=prefix_rollin_et_rmp_ce requires "
+                    f"objectized objective sections: {missing}"
+                )
+        else:
+            unexpected = [
+                name
+                for name in ("rollin", "target", "boundary", "type_gate", "eos")
+                if getattr(self, name) is not None
+            ]
+            if unexpected:
+                raise ValueError(
+                    "objectized objective sections are only supported for "
+                    "objective.variant=prefix_rollin_et_rmp_ce: "
+                    f"{unexpected}"
+                )
         if self.id == "sft" and self.variant not in {"sorted_sft", "random_order_sft"}:
             raise ValueError("objective.id=sft requires an SFT objective.variant")
         if self.id == "recursive_detection_ce" and self.variant in {
@@ -4192,6 +4069,24 @@ class DetectionObjectiveConfig:
 
     @classmethod
     def from_mapping(cls, payload: Any) -> "DetectionObjectiveConfig":
+        if isinstance(payload, Mapping) and payload.get("variant") == "prefix_rollin_et_rmp_ce":
+            forbidden = [
+                f"objective.{key}"
+                for key in (
+                    "branch_support_weight",
+                    "branch_balance_weight",
+                    "support_weight",
+                    "balance_weight",
+                    "trie_support_weight",
+                    "trie_balance_weight",
+                )
+                if key in payload
+            ]
+            if forbidden:
+                raise ValueError(
+                    "prefix_rollin_et_rmp_ce rejects obsolete flat objective weight "
+                    f"aliases: {forbidden}"
+                )
         return parse_dataclass_strict(cls, payload, path="objective")
 
 
@@ -4269,6 +4164,7 @@ class LatestDetectionTrainingConfig:
     packing: DetectionPackingConfig
     evaluation: DetectionEvaluationConfig
     validation: DetectionValidationConfig
+    experiment: Optional[LatestDetectionExperimentConfig] = None
     debug: DebugConfig = field(default_factory=DebugConfig)
     model: Mapping[str, Any] = field(default_factory=dict)
     template: Mapping[str, Any] = field(default_factory=dict)
@@ -4284,6 +4180,16 @@ class LatestDetectionTrainingConfig:
         if not isinstance(payload, Mapping):
             raise TypeError("latest detection config payload must be a mapping")
         if "custom" in payload:
+            custom_raw = payload.get("custom")
+            if isinstance(custom_raw, Mapping) and (
+                "stage1_set_continuation" in custom_raw
+                or custom_raw.get("trainer_variant") == "stage1_set_continuation"
+            ):
+                raise ValueError(
+                    "custom is obsolete for latest detection configs; "
+                    "custom.trainer_variant=stage1_set_continuation and "
+                    "custom.stage1_set_continuation have been removed"
+                )
             raise ValueError("custom is obsolete for latest detection configs")
 
         obsolete_paths = _latest_detection_find_obsolete_keys_on_latest_surface(payload)
@@ -4337,6 +4243,17 @@ class LatestDetectionTrainingConfig:
         data_config = DetectionDataConfig.from_mapping(payload["data"])
         objective = DetectionObjectiveConfig.from_mapping(payload["objective"])
         _latest_detection_validate_order_matches_objective(data_config, objective)
+        experiment = LatestDetectionExperimentConfig.from_mapping(
+            payload.get("experiment"),
+            required_for_variant="prefix_rollin_et_rmp_ce"
+            if objective.variant == "prefix_rollin_et_rmp_ce"
+            else None,
+        )
+        _latest_detection_validate_prefix_rollin_contract(
+            detection_template=detection_template,
+            objective=objective,
+            experiment=experiment,
+        )
         token_rows = TrainableTokenRowsConfig.from_mapping(
             payload["token_rows"],
             path="token_rows",
@@ -4359,6 +4276,7 @@ class LatestDetectionTrainingConfig:
             packing=packing,
             evaluation=evaluation,
             validation=DetectionValidationConfig.from_mapping(payload["validation"]),
+            experiment=experiment,
             debug=DebugConfig.from_mapping(payload.get("debug")),
             model=_latest_detection_validate_framework_mapping(
                 payload.get("model"),
@@ -4393,7 +4311,20 @@ class LatestDetectionTrainingConfig:
         )
 
     def to_mapping(self) -> dict[str, Any]:
-        return dataclass_asdict_no_none(self)
+        payload = dataclass_asdict_no_none(self)
+        for section in _LATEST_DETECTION_RUNTIME_SECTIONS:
+            if payload.get(section) == {}:
+                payload.pop(section, None)
+        token_groups = payload.get("token_rows", {}).get("groups", {})
+        if isinstance(token_groups, dict):
+            for group in token_groups.values():
+                if not isinstance(group, dict):
+                    continue
+                if group.get("tokens") in ((), []):
+                    group.pop("tokens", None)
+                if group.get("expected_ids") == {}:
+                    group.pop("expected_ids", None)
+        return payload
 
 
 @dataclass(frozen=True)
@@ -4537,97 +4468,6 @@ class TrainingConfig:
             raise ValueError(
                 "custom.trainer_variant=rollout_matching_sft has been removed; use stage2_rollout_aligned"
             )
-        if trainer_variant == "stage1_set_continuation":
-            if custom.stage1_set_continuation is None:
-                raise ValueError(
-                    "custom.stage1_set_continuation must be provided when custom.trainer_variant=stage1_set_continuation"
-                )
-            if bool(training.get("packing", False)):
-                raise ValueError(
-                    "custom.trainer_variant=stage1_set_continuation rejects dataset packing; "
-                    "set training.packing=false."
-                )
-            if bool(training.get("eval_packing", False)):
-                raise ValueError(
-                    "custom.trainer_variant=stage1_set_continuation rejects eval packing; "
-                    "set training.eval_packing=false."
-                )
-            if not bool(getattr(custom.coord_tokens, "enabled", False)):
-                raise ValueError(
-                    "custom.trainer_variant=stage1_set_continuation requires custom.coord_tokens.enabled=true"
-                )
-            if not bool(getattr(custom.coord_tokens, "skip_bbox_norm", False)):
-                raise ValueError(
-                    "custom.trainer_variant=stage1_set_continuation requires custom.coord_tokens.skip_bbox_norm=true"
-                )
-            encoded_sample_cache = training.get("encoded_sample_cache")
-            if (
-                isinstance(encoded_sample_cache, Mapping)
-                and bool(encoded_sample_cache.get("enabled", False))
-                and str(encoded_sample_cache.get("ineligible_policy") or "error")
-                .strip()
-                .lower()
-                != "bypass"
-            ):
-                raise ValueError(
-                    "custom.trainer_variant=stage1_set_continuation treats training.encoded_sample_cache as ineligible; "
-                    "set training.encoded_sample_cache.ineligible_policy=bypass or disable encoded_sample_cache."
-                )
-            train_forward = custom.stage1_set_continuation.train_forward
-            if (
-                train_forward.ddp_sync.candidate_padding == "none"
-                and training.get("ddp_broadcast_buffers") is not False
-            ):
-                raise ValueError(
-                    "custom.stage1_set_continuation.train_forward.ddp_sync."
-                    "candidate_padding=none requires "
-                    "training.ddp_broadcast_buffers=false so DDP ranks can run "
-                    "different local candidate-forward counts without forward "
-                    "buffer-broadcast collectives."
-                )
-            if train_forward.branch_runtime.mode in {
-                "checkpointed_exact",
-                "smart_batched_exact",
-                "padding_free_packed",
-            }:
-                runtime_mode = str(train_forward.branch_runtime.mode)
-                if (
-                    runtime_mode in {"smart_batched_exact", "padding_free_packed"}
-                    and train_forward.ddp_sync.candidate_padding == "max_count"
-                ):
-                    raise ValueError(
-                        "custom.stage1_set_continuation.train_forward.branch_runtime."
-                        f"mode={runtime_mode} requires "
-                        "custom.stage1_set_continuation.train_forward.ddp_sync."
-                        "candidate_padding=none in v1; rank-padding is not implemented"
-                    )
-                if (
-                    runtime_mode == "padding_free_packed"
-                    and train_forward.logits.mode != "full"
-                ):
-                    raise ValueError(
-                        "custom.stage1_set_continuation.train_forward.branch_runtime."
-                        "mode=padding_free_packed requires "
-                        "custom.stage1_set_continuation.train_forward.logits.mode=full"
-                    )
-                if bool(getattr(custom.coord_soft_ce_w1, "enabled", False)):
-                    raise ValueError(
-                        "custom.stage1_set_continuation.train_forward.branch_runtime."
-                        f"mode={runtime_mode} does not yet support branch-local "
-                        "coord_soft_ce_w1; use retained_graph or disable coord_soft_ce_w1"
-                    )
-                if bool(getattr(custom.bbox_geo, "enabled", False)):
-                    raise ValueError(
-                        "custom.stage1_set_continuation.train_forward.branch_runtime."
-                        f"mode={runtime_mode} does not yet support branch-local "
-                        "bbox_geo; use retained_graph or disable bbox_geo"
-                    )
-                if bool(getattr(custom.bbox_size_aux, "enabled", False)):
-                    raise ValueError(
-                        "custom.stage1_set_continuation.train_forward.branch_runtime."
-                        f"mode={runtime_mode} does not yet support branch-local "
-                        "bbox_size_aux; use retained_graph or disable bbox_size_aux"
-                    )
         if bool(getattr(custom.sft_structural_close, "enabled", False)):
             if bool(training.get("packing", False)):
                 raise ValueError(

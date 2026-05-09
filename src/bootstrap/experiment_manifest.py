@@ -55,6 +55,11 @@ def build_experiment_manifest_payload(
             "per_device_train_batch_size",
             "per_device_eval_batch_size",
             "gradient_accumulation_steps",
+            "world_size",
+            "effective_batch_size",
+            "effective_batch_size_source",
+            "actual_global_effective_batch_size",
+            "effective_batch_rounding",
             "max_steps",
             "num_train_epochs",
             "dataloader_drop_last",
@@ -64,6 +69,9 @@ def build_experiment_manifest_payload(
             "template_max_pixels",
             "packing",
             "encoded_sample_cache",
+            "model_source",
+            "latest_detection_objective",
+            "token_rows",
             "dataset_source_train_jsonl",
             "dataset_source_val_jsonl",
             "launcher",
@@ -74,7 +82,6 @@ def build_experiment_manifest_payload(
             "comparability_label",
             "stage1_eval_plan",
             "stage1_sft_structural_close",
-            "stage1_set_continuation",
         ):
             if key in effective_runtime:
                 runtime_summary[key] = copy.deepcopy(effective_runtime[key])

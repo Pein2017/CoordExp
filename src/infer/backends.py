@@ -6,6 +6,11 @@ from typing import Any, Callable, List
 import torch
 from PIL import Image
 
+from src.common.qwen_generation import (
+    apply_qwen_chat_generation_token_ids,
+    call_processor_with_qwen_geometry,
+)
+
 
 def generate_batch(
     *,
@@ -52,7 +57,8 @@ def generate_hf_batch(
         for message in messages
     ]
 
-    model_inputs = owner.processor(
+    model_inputs = call_processor_with_qwen_geometry(
+        owner.processor,
         text=prompt_texts,
         images=images,
         return_tensors="pt",
@@ -61,14 +67,11 @@ def generate_hf_batch(
     model_inputs = {
         key: value.to(owner.cfg.device) for key, value in model_inputs.items()
     }
-    attention_mask = model_inputs.get("attention_mask")
-    if isinstance(attention_mask, torch.Tensor) and attention_mask.ndim == 2:
-        prompt_lengths = [
-            int(value)
-            for value in attention_mask.sum(dim=1).detach().cpu().tolist()
-        ]
-    else:
-        prompt_lengths = [int(model_inputs["input_ids"].shape[1]) for _ in images]
+    # Logits processors slice ``input_ids[:, prompt_offset:]`` to inspect only
+    # generated history.  With decoder-only left padding, the correct offset is
+    # the padded prompt width, not each sample's unpadded attention length.
+    prompt_padded_len = int(model_inputs["input_ids"].shape[1])
+    prompt_lengths = [prompt_padded_len for _ in images]
 
     do_sample = owner.gen_cfg.temperature > 0
     gen_kwargs = dict(
@@ -81,6 +84,10 @@ def generate_hf_batch(
         gen_kwargs["top_p"] = owner.gen_cfg.top_p
     if owner.gen_cfg.repetition_penalty is not None:
         gen_kwargs["repetition_penalty"] = owner.gen_cfg.repetition_penalty
+    apply_qwen_chat_generation_token_ids(
+        gen_kwargs,
+        tokenizer=owner.processor.tokenizer,
+    )
 
     logits_processors: list[object] = []
     stop_pressure_processor = owner.gen_cfg.build_hf_stop_pressure_logits_processor(
@@ -133,7 +140,6 @@ def generate_hf_batch(
     else:
         gen_ids = gen_outputs.sequences
         scores = list(getattr(gen_outputs, "scores", ()) or ())
-    prompt_padded_len = int(model_inputs["input_ids"].shape[1])
     gen_token_ids = gen_ids[:, prompt_padded_len:]
 
     trace_len = min(int(gen_token_ids.shape[1]), int(len(scores)))

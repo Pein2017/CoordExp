@@ -17,6 +17,7 @@ from src.detection.dataset import (
 )
 from src.sft import (
     _assert_latest_detection_runtime_supported,
+    _latest_detection_mode,
     _latest_detection_runtime_custom_shim,
     _resolve_recursive_detection_ce_cfg,
 )
@@ -53,6 +54,40 @@ def test_sft_resolves_recursive_detection_ce_runtime_cfg_from_latest_objective()
     assert cfg.enabled is True
     assert cfg.trie_support_weight == pytest.approx(2.0)
     assert cfg.trie_balance_weight == pytest.approx(1.0)
+
+
+def test_sft_resolves_prefix_rollin_runtime_cfg_from_objectized_target() -> None:
+    cfg = _resolve_recursive_detection_ce_cfg(
+        SimpleNamespace(
+            objective=SimpleNamespace(
+                id="recursive_detection_ce",
+                variant="prefix_rollin_et_rmp_ce",
+                trie_support_weight=None,
+                trie_balance_weight=None,
+                target=SimpleNamespace(
+                    support_weight=1.0,
+                    balance_weight=2.0,
+                ),
+            )
+        )
+    )
+
+    assert cfg is not None
+    assert cfg.enabled is True
+    assert cfg.variant == "prefix_rollin_et_rmp_ce"
+    assert cfg.trie_support_weight == pytest.approx(1.0)
+    assert cfg.trie_balance_weight == pytest.approx(2.0)
+
+
+def test_latest_detection_mode_accepts_prefix_rollin_variant() -> None:
+    assert (
+        _latest_detection_mode(
+            SimpleNamespace(
+                objective=SimpleNamespace(variant="prefix_rollin_et_rmp_ce")
+            )
+        )
+        == "prefix_rollin_et_rmp_ce"
+    )
 
 
 def test_sft_rejects_unsupported_recursive_detection_ce_variant() -> None:
@@ -238,6 +273,50 @@ def test_sft_rejects_latest_recursive_detection_encoded_sample_cache() -> None:
         )
 
 
+def test_sft_runtime_preflight_rejects_latest_recursive_detection_eval_packing() -> None:
+    cfg = _prod_latest_detection_config()
+    cfg = replace(cfg, training={**dict(cfg.training), "eval_packing": True})
+
+    with pytest.raises(ValueError, match="training\\.eval_packing=false"):
+        _assert_latest_detection_runtime_supported(
+            cfg,
+            encoded_sample_cache_cfg=SimpleNamespace(enabled=False),
+        )
+
+
+def test_sft_runtime_preflight_rejects_latest_recursive_detection_use_logits_to_keep() -> None:
+    cfg = _prod_latest_detection_config()
+    cfg = replace(cfg, training={**dict(cfg.training), "use_logits_to_keep": True})
+
+    with pytest.raises(ValueError, match="use_logits_to_keep=false"):
+        _assert_latest_detection_runtime_supported(
+            cfg,
+            encoded_sample_cache_cfg=SimpleNamespace(enabled=False),
+        )
+
+
+def test_sft_runtime_preflight_rejects_latest_recursive_detection_loss_scale() -> None:
+    cfg = _prod_latest_detection_config()
+    cfg = replace(cfg, training={**dict(cfg.training), "loss_scale": "default"})
+
+    with pytest.raises(ValueError, match="training\\.loss_scale"):
+        _assert_latest_detection_runtime_supported(
+            cfg,
+            encoded_sample_cache_cfg=SimpleNamespace(enabled=False),
+        )
+
+
+def test_sft_runtime_preflight_rejects_left_padding_for_all_recursive_sidecars() -> None:
+    cfg = _prod_latest_detection_config()
+
+    with pytest.raises(ValueError, match="tokenizer\\.padding_side='right'"):
+        _assert_latest_detection_runtime_supported(
+            cfg,
+            encoded_sample_cache_cfg=SimpleNamespace(enabled=False),
+            tokenizer=SimpleNamespace(padding_side="left"),
+        )
+
+
 def test_recursive_detection_sidecars_survive_collation_but_not_model_forward() -> None:
     target_sidecar = {"token_targets": (), "loss_atoms": ()}
     sample = {
@@ -284,6 +363,29 @@ def test_recursive_detection_sidecars_survive_collation_but_not_model_forward() 
         assert key not in model_inputs
     for key in DETECTION_DROPPED_BEFORE_MODEL_KEYS:
         assert key not in model_inputs
+
+
+def test_recursive_detection_model_boundary_preserves_attention_kwargs_but_drops_trainer_loss_func() -> None:
+    batch = {
+        "input_ids": [[1, 2, 3]],
+        "attention_mask": [[1, 1, 1]],
+        "labels": [[-100, 2, 3]],
+        "recursive_detection_targets": {"token_targets": (), "loss_atoms": ()},
+        "compute_loss_func": object(),
+        "cu_seq_lens_q": object(),
+        "cu_seq_lens_k": object(),
+        "max_length_q": 3,
+        "max_length_k": 3,
+    }
+
+    model_inputs = strip_non_model_detection_sidecars(batch)
+
+    assert "recursive_detection_targets" not in model_inputs
+    assert "compute_loss_func" not in model_inputs
+    assert "cu_seq_lens_q" in model_inputs
+    assert "cu_seq_lens_k" in model_inputs
+    assert "max_length_q" in model_inputs
+    assert "max_length_k" in model_inputs
 
 
 def test_recursive_detection_sidecar_stripping_rejects_unknown_extras() -> None:

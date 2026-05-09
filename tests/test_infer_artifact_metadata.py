@@ -59,6 +59,10 @@ def _owner() -> SimpleNamespace:
         prompt_template_hash="0" * 64,
         attn_implementation_requested=None,
         attn_implementation_selected=None,
+        qwen_generation_token_ids=SimpleNamespace(
+            eos_token_id=151645,
+            pad_token_id=151643,
+        ),
     )
 
 
@@ -88,10 +92,26 @@ def test_infer_artifacts_record_compact_grammar_decode_provenance() -> None:
         "force_row_start": True,
         "active": True,
     }
+    assert resolved["generation"]["qwen_chat_generation"] == {
+        "eos_token": "<|im_end|>",
+        "eos_token_id": 151645,
+        "pad_token": "<|endoftext|>",
+        "pad_token_id": 151643,
+        "stop_tokens": ["<|im_end|>"],
+        "processor_do_resize": False,
+    }
     assert summary["infer"]["detection_sequence_format"] == "compact_full"
     assert summary["generation"]["compact_grammar"] == {
         "enabled": True,
         "format": "compact_full",
         "force_row_start": True,
         "active": True,
+    }
+    assert summary["generation"]["qwen_chat_generation"] == {
+        "eos_token": "<|im_end|>",
+        "eos_token_id": 151645,
+        "pad_token": "<|endoftext|>",
+        "pad_token_id": 151643,
+        "stop_tokens": ["<|im_end|>"],
+        "processor_do_resize": False,
     }

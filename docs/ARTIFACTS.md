@@ -181,9 +181,26 @@ artifacts into `training.output_dir` before training starts:
   - Executed runtime payload after bootstrap / launcher mutation.
   - Use this instead of only `resolved_config.json` when debugging the true
     launched topology or runtime knobs.
+  - Latest compact detection runs also record:
+    - `latest_detection_objective`: objective id/variant, template id,
+      coordinate surface, bbox format, state weighting, normalization,
+      support/balance weights, append-boundary type and weights, roll-in
+      source, type-gate mode, EOS token, and EOS trust-weight source.
+    - `effective_batch_size` and `effective_batch_size_source`, because
+      `gradient_accumulation_steps` is derived when effective batch is authored.
+    - `actual_global_effective_batch_size`, `world_size`, and
+      `effective_batch_rounding`, because non-divisible launch shapes can require
+      ceil-derived accumulation; the actual global value is the run-time truth.
+    - `model_source`: best-effort path identity for the base model/cache path.
+    - `token_rows.expected_trainable_row_count`; compact-full token-row runs
+      should report `1002` rows (1000 coord rows plus
+      `<|object_ref_start|>` and `<|box_start|>`).
 - `pipeline_manifest.json`
   - First-class pipeline identity / manifest artifact assembled from
     `src/bootstrap/pipeline_manifest.py`.
+  - Stage-1 latest compact detection runs may not have a pipeline manifest; do
+    not fabricate one. Treat absence as not applicable unless the runtime
+    explicitly writes a real pipeline manifest.
 - `experiment_manifest.json`
   - Primary run-level overview artifact for retrospective analysis.
   - Combines:
@@ -193,6 +210,17 @@ artifacts into `training.output_dir` before training starts:
     - provenance summary,
     - pointers to the authoritative artifact files.
   - emitted via `src/bootstrap/experiment_manifest.py`
+  - The runtime summary mirrors the latest compact detection identity fields
+    from `effective_runtime.json` so an experiment manifest can identify the
+    exact objective surface without reopening the full resolved config.
+- Inference summaries and resolved metadata include
+  `generation.qwen_chat_generation`:
+  - `eos_token: "<|im_end|>"` and `pad_token: "<|endoftext|>"`;
+  - resolved token ids when a tokenizer is available;
+  - `stop_tokens: ["<|im_end|>"]`;
+  - `processor_do_resize: false`.
+  This applies to HF and vLLM metadata so eval artifacts can prove the decode
+  contract did not drift from training.
 - `train_data_provenance.json`
   - Stable train-split source identity and optional digests for supported
     local inputs.

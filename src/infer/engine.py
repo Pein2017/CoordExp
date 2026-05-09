@@ -70,6 +70,12 @@ from src.common.geometry.bbox_parameterization import (
 from src.common.coord_standardizer import CoordinateStandardizer
 from src.common.detection_chat import build_detection_chat_messages
 from src.common.geometry import flatten_points, has_coord_tokens
+from src.common.qwen_generation import (
+    apply_qwen_chat_generation_token_ids,
+    call_processor_with_qwen_geometry,
+    qwen_processor_call_kwargs,
+    resolve_qwen_chat_generation_token_ids,
+)
 from src.infer.artifacts import (
     build_infer_resolved_meta,
     build_infer_summary_payload,
@@ -86,6 +92,7 @@ from src.common.object_field_order import (
 )
 from src.common.detection_sequence import (
     COORDJSON_FORMAT,
+    IM_END_TOKEN,
     normalize_detection_sequence_format,
 )
 from src.coord_tokens.offset_adapter import (
@@ -717,6 +724,7 @@ class InferenceEngine:
             trust_remote_code=True,
             allowed_local_media_path=str(allowed_local_media_path or ""),
             seed=int(self.gen_cfg.seed) if self.gen_cfg.seed is not None else None,
+            mm_processor_kwargs=qwen_processor_call_kwargs(),
             **kwargs,
         )
 
@@ -734,6 +742,7 @@ class InferenceEngine:
             max_tokens=int(self.gen_cfg.max_new_tokens),
             repetition_penalty=float(self.gen_cfg.repetition_penalty or 1.0),
             seed=int(self.gen_cfg.seed) if self.gen_cfg.seed is not None else None,
+            stop=[IM_END_TOKEN],
         )
 
     def _seed(self) -> None:
@@ -936,12 +945,10 @@ class InferenceEngine:
             try:
                 setattr(tokenizer, "padding_side", "left")
                 if getattr(tokenizer, "pad_token_id", None) is None:
-                    eos_token_id = getattr(tokenizer, "eos_token_id", None)
-                    if eos_token_id is None:
-                        raise ValueError(
-                            "tokenizer.eos_token_id is required when tokenizer.pad_token_id is unset"
-                        )
-                    setattr(tokenizer, "pad_token_id", eos_token_id)
+                    qwen_generation_ids = resolve_qwen_chat_generation_token_ids(
+                        tokenizer
+                    )
+                    setattr(tokenizer, "pad_token_id", qwen_generation_ids.pad_token_id)
             except (AttributeError, TypeError, ValueError) as exc:
                 raise RuntimeError(
                     "Failed to configure tokenizer left-padding for inference."
@@ -1006,18 +1013,18 @@ class InferenceEngine:
         prompt_text = self.processor.apply_chat_template(
             messages, add_generation_prompt=True, tokenize=False
         )
-        model_inputs = self.processor(
-            text=prompt_text, images=[image], return_tensors="pt"
+        model_inputs = call_processor_with_qwen_geometry(
+            self.processor,
+            text=prompt_text,
+            images=[image],
+            return_tensors="pt",
         )
         model_inputs = {k: v.to(self.cfg.device) for k, v in model_inputs.items()}
-        attention_mask = model_inputs.get("attention_mask")
-        if isinstance(attention_mask, torch.Tensor) and attention_mask.ndim == 2:
-            prompt_lengths = [
-                int(value)
-                for value in attention_mask.sum(dim=1).detach().cpu().tolist()
-            ]
-        else:
-            prompt_lengths = [int(model_inputs["input_ids"].shape[1])]
+        # Stop-pressure processors slice ``input_ids[:, prompt_offset:]`` to
+        # inspect generated history.  Use the padded prompt width so this
+        # private HF path stays aligned with decoder-only left padding.
+        prompt_len = int(model_inputs["input_ids"].shape[1])
+        prompt_lengths = [prompt_len]
 
         gen_kwargs = dict(
             max_new_tokens=self.gen_cfg.max_new_tokens,
@@ -1028,6 +1035,10 @@ class InferenceEngine:
         )
         if self.gen_cfg.repetition_penalty is not None:
             gen_kwargs["repetition_penalty"] = self.gen_cfg.repetition_penalty
+        apply_qwen_chat_generation_token_ids(
+            gen_kwargs,
+            tokenizer=self.processor.tokenizer,
+        )
         logits_processor = self.gen_cfg.build_hf_stop_pressure_logits_processor(
             tokenizer=self.processor.tokenizer,
             prompt_lengths=prompt_lengths,
@@ -1046,7 +1057,6 @@ class InferenceEngine:
         with torch.inference_mode():
             gen_ids = self.model.generate(**model_inputs, **gen_kwargs)
 
-        prompt_len = model_inputs["input_ids"].shape[1]
         gen_only = gen_ids[:, prompt_len:]
         raw_text = self.processor.tokenizer.batch_decode(
             gen_only, skip_special_tokens=False, clean_up_tokenization_spaces=False
@@ -1136,6 +1146,7 @@ class InferenceEngine:
             "top_p": float(self.gen_cfg.top_p),
             "max_tokens": int(self.gen_cfg.max_new_tokens),
             "stream": False,
+            "stop": [IM_END_TOKEN],
             "skip_special_tokens": False,
             "spaces_between_special_tokens": False,
         }

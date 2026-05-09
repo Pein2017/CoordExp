@@ -5,7 +5,7 @@ doc_type: reference
 status: canonical
 domain: training
 summary: Stage-1 objective surfaces and coord-token training behavior.
-updated: 2026-05-05
+updated: 2026-05-07
 ---
 
 # Coord Objective & Adapter
@@ -33,20 +33,7 @@ Scope note:
   should include:
   - `configs/stage1/profiles/2b/raw_text_xyxy_pure_ce_coco80_desc_first_1024_lvis_proxy.yaml`
   - `configs/stage1/profiles/2b/bbox_geo_center_size_coco80_desc_first_1024_lvis_proxy.yaml`
-- For the prefix-conditioned Stage-1 continuation family, the active production
-  surface is now ET-RMP-CE rather than candidate-branch set-continuation:
-  - `custom.trainer_variant: stage1_set_continuation`
-  - `custom.stage1_set_continuation.*`
-  - top-level `benchmark.*`
-  - `configs/stage1/set_continuation/production.yaml` for the legacy-compatible ET-RMP-CE continuation surface
-  - `configs/stage1/recursive_detection_ce_latest/prod/compact_full_support2.yaml` for the compact recursive detection latest-schema surface
-  - `objective.mode: entry_trie_rmp_ce`
-  - support/balance reweighted entry-trie multi-positive token CE
-  - full-suffix teacher-forced hard CE for schema, control, separator, close,
-    and stop/EOS tokens
-  - legacy candidate-branch objectives remain loadable only for historical
-    compatibility and diagnostics; they should not be used for new production
-    training.
+- Compact prefix roll-in multi-positive training now lives as the latest-detection `prefix_rollin_et_rmp_ce` ablation surface, not as a legacy custom trainer surface. The first checked-in route is `configs/stage1/recursive_detection_ce_latest/ablation/compact_full_prefix_rollin_balance2.yaml`; treat it as E1 ablation/smoke validation, not production.
 - Narrow V1 exception:
   - `custom.bbox_format: cxcy_logw_logh` or `custom.bbox_format: cxcywh`
     defines an experimental Stage-1-only profile
@@ -133,377 +120,171 @@ custom:
   - `stage2_two_channel` and `stage2_rollout_aligned` still use provenance-aware metric families, but the active single-pass Stage-2 contract now routes Channel-A through `loss/text/*`, `loss/coord/*`, and `coord_diag/*`, while Channel-B uses `loss/B_rollout_text/*`, `loss/B_coord/*`, and `coord_diag/B/*`.
   - Historical iterative groups such as `loss/A1_*`, `loss/A2_*`, `coord_diag/A1/*`, and `coord_diag/A2/*` are no longer part of the active Stage-2 contract.
 
-## Stage-1 prefix-conditioned full-suffix objective
+## Stage-1 compact recursive detection and prefix roll-in
 
-`custom.trainer_variant: stage1_set_continuation` is the historical runtime
-namespace for prefix-conditioned continuation experiments. Its production role
-has narrowed: candidate-branch set-continuation is retired for new training,
-while the promoted path is full-suffix teacher-forced CE, especially
-`objective.mode: entry_trie_rmp_ce` (**ET-RMP-CE**) with support/balance
-reweighting.
+The active compact Stage-1 owner is the latest detection stack under `src/detection/`. There are now two distinct latest-schema routes:
 
-Retired / deprecated production objectives:
+- `configs/stage1/recursive_detection_ce_latest/prod/compact_full_support2.yaml` remains the random-permutation ET-RMP-CE production baseline/comparator.
+- `configs/stage1/recursive_detection_ce_latest/ablation/compact_full_prefix_rollin_balance2.yaml` is the E1 `prefix_rollin_et_rmp_ce` ablation route for Prefix-Closed Multi-Target SFT.
+- `configs/stage1/recursive_detection_ce_latest/ablation/compact_full_prefix_rollin_separator2.yaml` is the E2 separator-continue ablation. It keeps E1 support/balance/type-gate/EOS settings and changes only the append-boundary weights so the `\n` continuation token gets more pressure before `<|object_ref_start|>` can be emitted.
 
-- `candidate_balanced` one-step set-continuation as a production objective.
-- Energy or logZ candidate objectives over independent candidate branches.
-- Chunk-level MP objectives that score `prefix + one candidate + boundary`.
-- Candidate branch CE as the production objective.
-- PEM or margin losses tied to candidate energy ranking.
+`prefix_rollin_et_rmp_ce` is compact-full only. It requires `detection_template.id: compact_full`, masks roll-in prefix labels, samples `K` uniformly over `[0, object_count]`, keeps `suffix_order: same_sampled_permutation` for V1, and expresses support/balance weights under `objective.target`, append-boundary weights under `objective.boundary`, and not obsolete flat trie-weight aliases.
 
-Kept / promoted objectives:
+EOS supervision for this variant targets the Qwen chat-template assistant stop marker `<|im_end|>` only. Text-level terminators such as `<|endoftext|>` or `<|end_of_text|>` must not be used as training EOS for this surface. The initial `empirical_unlabeled_poisson_v0` EOS prior is smoke/ablation-only: production configs must use `objective.eos.eos_trust_weight.source: calibrated_formula_ref` with a versioned calibration artifact and validation evidence.
 
-- `entry_trie_rmp_ce` / ET-RMP-CE.
-- `full_suffix_ce` as the teacher-forced full-suffix hard-CE baseline.
-- Prefix-conditioned sampling over empty, random, leave-one-out, and full
-  prefixes.
-- Entry-trie multi-positive token CE inside object entries.
-- Full-vocabulary support/balance reweighting at entry-trie branch nodes.
-- Hard CE for schema opener, control tokens, separators, final close, and
-  chat-template stop/EOS tokens.
+Generation-time HF/Qwen surfaces use the global chat-token contract
+`eos_token_id=id("<|im_end|>")` and `pad_token_id=id("<|endoftext|>")`.
+This is a decode/runtime contract; it does not change the training target rule
+above, where only `<|im_end|>` is the semantic EOS target. HF processor calls
+for inference/rollout paths must preserve training-time geometry with
+`do_resize=false`. vLLM local/server inference must also stop on
+`"<|im_end|>"` only; do not add `<|endoftext|>` as a generation stop token.
+Local vLLM launch kwargs should carry `mm_processor_kwargs: {do_resize: false}`
+when the installed vLLM API supports it, and inference artifacts must record the
+Qwen chat generation contract.
 
-The legacy candidate-branch objective was:
+For `prefix_rollin_et_rmp_ce`, `objective.state_weighting` and
+`objective.normalization` are authored config truth, not hidden runtime
+substitutions. They must be `uniform_permutation` and
+`semantic_image_bucket_balanced`, respectively. `training.effective_batch_size`
+is likewise the source of truth for optimizer-step budget; YAML must not also
+author `training.gradient_accumulation_steps`.
 
-```text
-schema_open = '{"objects": [' if prefix is empty else ''
-boundary(o) = ", " if observed objects remain after appending o else "]}"
-score(o) = log P(schema_open + entry(o) + boundary(o) | image, prompt, prefix)
-candidate_ce(o) = -score(o) / max(candidate_continuation_tokens(o), 1)
-loss/candidate_balanced = mean(candidate_ce(o) for o in scored_candidates)
-loss/mp_diagnostic = -logsumexp(score(o) for o in scored_candidates)
+The append-boundary loss is also authored config truth. `objective.boundary`
+must use `type: compact_full_append_boundary` and explicitly set
+`separator_continue_weight`, `eos_stop_weight`, and `component_weight`. E1 keeps
+the historical `0.5 / 0.5 / 0.3` boundary mix. E2 raises
+`separator_continue_weight` to `2.0` while leaving `eos_stop_weight=0.5` and
+`component_weight=0.3`, targeting the diagnosed failure where free decode stops
+at `<|im_end|>` before emitting the required separator newline.
+
+Compact-full token-row training uses 1002 trainable rows through the persisted
+`coord_offset_adapter` module name: the 1000 coord rows plus
+`<|object_ref_start|>` and `<|box_start|>`. Treat the persisted module name as
+historical; the current contract is token-row adaptation, not coord-only
+adaptation.
+
+For `prefix_rollin_et_rmp_ce` smoke and ablation monitoring, use
+`loss/recursive_detection_ce` as the comparable objective-loss scalar. The
+top-level trainer `loss` may be scaled by gradient accumulation and is therefore
+not directly comparable across different `training.effective_batch_size`
+settings.
+
+Required training-health diagnostics for this surface include:
+
+- `recursive_detection_ce/target_mix/targets_per_sample`: how many supervised
+  local next-token targets contributed to the logged optimizer step.
+- `recursive_detection_ce/target_mix/eos_fraction` and
+  `recursive_detection_ce/target_mix/non_eos_fraction`: whether a log row is
+  dominated by easy `<|im_end|>` supervision or contains real continuation
+  states.
+- `recursive_detection_ce/target_mix/trie_multi_positive_fraction`: whether
+  local multi-target object-entry supervision was actually present.
+- `recursive_detection_ce/target_mix/coord_fraction`,
+  `recursive_detection_ce/target_mix/desc_fraction`, and
+  `recursive_detection_ce/target_mix/object_control_fraction`: schema/content
+  composition for interpreting token accuracy and CE shifts.
+- `recursive_detection_ce/target_mix/positive_children_per_trie_target`: the
+  average branching factor for multi-positive entry targets.
+- `recursive_detection_ce/trie_valid_mass`,
+  `recursive_detection_ce/support_loss`, and
+  `recursive_detection_ce/balance_loss`: support-vs-balance behavior for valid
+  next-object entries. Healthy support should not collapse while balance remains
+  nonzero enough to discourage one object from taking all probability mass.
+- `recursive_detection_ce/entry/continue_minus_eos_margin`: the local
+  continuation margin, computed as valid next-object log-mass minus the
+  `<|im_end|>` logit. Positive values mean the model prefers continuing over
+  stopping after a separator has already been supplied.
+- `recursive_detection_ce/free_boundary/continue_minus_eos_margin` and
+  `recursive_detection_ce/free_boundary/continue_mass`: the append-boundary
+  signal for object separators, computed at the token where autoregressive
+  decode must choose `\n` over `<|im_end|>` before the next object can start.
+  This is the more direct early-stop health signal for non-empty prefixes.
+- `recursive_detection_ce/boundary/separator_continue_weight`,
+  `recursive_detection_ce/boundary/eos_stop_weight`, and
+  `recursive_detection_ce/boundary/component_weight`: the runtime loss weights
+  actually used by the trainer. These should match the materialized
+  `objective.boundary` block so separator ablations are config-truthful.
+- `recursive_detection_ce/entry/valid_child_entropy` and
+  `recursive_detection_ce/entry/valid_child_kl_to_uniform`: whether valid
+  children remain reasonably balanced or collapse to one easy object. The KL is
+  `KL(Uniform(valid_children) || p_valid)`, so lower is more uniform.
+- `detection_sequence/coordinate/token_acc/full_vocab/top1` and
+  `detection_sequence/coordinate/token_ce/full_vocab`: coordinate-token
+  learning pressure, which is often the hard part even when description/schema
+  tokens look saturated.
+- `recursive_detection_ce/eos_trust_weight`,
+  `recursive_detection_ce/eos_unweighted_ce`, and
+  `recursive_detection_ce/eos_weighted_loss`: whether the censored-EOS policy is
+  weakening stop supervision as intended.
+- `recursive_detection_ce/type_gate_loss`,
+  `recursive_detection_ce/type_gate_allowed_mass`,
+  `recursive_detection_ce/type_gate_allowed_tokens`, and
+  `recursive_detection_ce/type_gate_weight`: schema/type safety pressure for
+  keeping generated compact detections parseable.
+
+Do not interpret a low aggregate loss or high `token_acc` as a healthy
+multi-positive trend unless `target_mix/non_eos_fraction` and
+`target_mix/trie_multi_positive_fraction` show that continuation and
+multi-target positions were present in the logged rows. For tiny smoke runs,
+prefer `effective_batch_size >= 4` when checking trend shape so uniformly sampled
+`K in [0, N]` does not produce many EOS-only optimizer steps.
+
+Use the forced-prefix continue-vs-EOS probe before changing EOS or balance
+hyperparameters based on decode under-generation alone:
+
+```bash
+conda run -n ms python -m src.analysis.prefix_rollin_teacher_forced_diagnostic \
+  --config configs/stage1/recursive_detection_ce_latest/smoke/compact_full_prefix_rollin_adapter_tiny.yaml \
+  --checkpoint output_remote/stage1_2b/recursive_detection_ce_latest/compact_full_et_rmp_ce_support2_bsz16_4epoch_tokenrows_v2/compact-full-et-rmp-ce-support2-bsz16-4epoch-tokenrows-v2/v0-20260504-071356/checkpoint-3664 \
+  --split val \
+  --limit 8 \
+  --k-values every \
+  --output-dir temp/prefix_rollin_forced_prefix_probe_limit8
 ```
 
-That formulation is retained in docs as historical context because older
-artifacts, tests, and compatibility metrics may still refer to it. It should
-not be used as the current Stage-1 production objective: decoding evidence has
-shown the independent branch/chunk energy view to be unstable for the closed
-autoregressive generation process.
+The artifact is diagnostic-only and does not call `generate()`. Its
+`per_case.jsonl` rows expose `prefix_k`, `prefix_mode`, `gt_count`,
+`remaining_gt_count`, `continue_logsumexp`, `valid_mass`,
+`continue_minus_eos_margin`, and `<|im_end|>` logits/log-probabilities.
 
-Legacy candidate-branch semantics:
+Interpret the two continuation boundaries separately:
 
-- `entry(o)` is the full serialized object dictionary entry, including `desc`,
-  `bbox_2d`, and the object-entry structural terminator.
-- `boundary(o)` is part of the scored continuation. A non-terminal candidate is
-  scored with its append boundary `, `; only a candidate that exhausts the
-  observed remaining set is scored with the global CoordJSON close `]}`.
-- Empty-prefix branches score the generated schema opener `{"objects": [` as
-  part of the optimized objective. This keeps training aligned with eval-time
-  free generation, where the model must produce the wrapper before any object.
-- Span masks are computed by tokenizer offset overlap inside the fully rendered
-  chat-template assistant text. This preserves merged boundary tokens such as
-  opener/object tokens that cross a string-span boundary.
-- Candidate scoring is full-entry, not token-wise multi-positive mixing. This
-  is precisely why it is retired as the production objective: it can improve
-  branch-local evidence without training stable full-sequence decoding.
-- Non-coordinate candidate-entry labels use ordinary full-vocab logprob.
-- `<|coord_*|>` labels use coord-vocabulary-normalized logprob, so raw-text
-  integer coordinate training is out of scope for this v1 path.
-- Optional `bidirectional_token_gate` restores token-type pressure without
-  changing candidate identity. At supervised coord-token objective slots, it
-  penalizes probability mass outside the coord-token ids. At supervised
-  non-coord objective slots, including schema opener, keys, punctuation,
-  descriptions, and append/close boundaries, it penalizes coord-token
-  probability mass. Prefix-only labels and chat/template stop tokens such as
-  `<|im_end|>`, `<|end_of_text|>`, and tokenizer EOS are excluded. This gate is
-  native to `stage1_set_continuation` and is distinct from the ordinary
-  `custom.coord_soft_ce_w1` branch-local auxiliary path.
-- The global detection-list close sequence is separate from object-entry end
-  tokens. V1 uses the CoordJSON schema close sequence `]}` only for terminal
-  continuations and never treats `<|im_end|>`, `<|end_of_text|>`, or tokenizer
-  EOS as the stop target for this objective.
-- Append-candidate branches use an append-ready prefix. Structural-close
-  branches use a close-ready prefix without a trailing comma, so a non-empty
-  partial prefix closes as `{"objects": [entry]}` rather than the invalid
-  `{"objects": [entry, ]}`.
-- V1 branch execution is repeated independent forward, or the equivalent
-  `smart_batched_exact` grouping of independent rows: `prefix + candidate_A`,
-  `prefix + candidate_B`, and so on. Candidates do not attend to each other.
-  Prefix gradients are non-detached but recomputed for each branch.
-- The historical branch runtime used `smart_batched_exact`. A rough 8-GPU
-  production-like probe on 2026-04-28 found it faster than the then-current
-  online/offline packed-varlen candidate-branch experiments; see
-  [`../../progress/benchmarks/2026-04-28_stage1_mp_branch_runtime_packing_probe.md`](../../progress/benchmarks/2026-04-28_stage1_mp_branch_runtime_packing_probe.md).
-- V1 rejects `training.packing` and `training.eval_packing` because branch
-  selection and structural-close spans are sample-local.
+- `*_entry_after_separator` scores `<|object_ref_start|>` vs `<|im_end|>` after
+  a separator newline has already been forced. This boundary can look extremely
+  healthy while free decode still stops early.
+- `*_free_boundary` scores the actual next token after the current object
+  prefix: `\n` vs `<|im_end|>` for non-empty prefixes, or
+  `<|object_ref_start|>` vs `<|im_end|>` for `K=0`. This is the boundary that
+  explains early stopping in ordinary autoregressive decode.
 
-### Recursive full-suffix ET-RMP-CE objective
+To replay a free-decode artifact as the forced prefix, add the generated-prefix
+mode:
 
-`custom.stage1_set_continuation.objective.mode` selects the continuation
-objective:
-
-- `candidate_balanced` is a deprecated compatibility objective for older
-  candidate-branch experiments. It is not the recommended or production path.
-- `full_suffix_ce` samples the same subset prefix but trains one complete
-  remaining-object suffix with ordinary hard-label CE only. This is the
-  promoted teacher-forced baseline for prefix-conditioned continuation.
-- `entry_trie_rmp_ce` trains the same complete suffix, but object-entry tokens
-  use entry-trie multi-positive CE at every trie node with multiple valid next
-  tokens. This is the promoted ET-RMP-CE production objective.
-
-For `entry_trie_rmp_ce`, each row is:
-
-```text
-prefix
--> entry(tau_1)
--> comma
--> entry(tau_2)
--> ...
--> final ]}
--> chat-template stop/EOS when labeled
+```bash
+conda run -n ms python -m src.analysis.prefix_rollin_teacher_forced_diagnostic \
+  --config configs/stage1/recursive_detection_ce_latest/smoke/compact_full_prefix_rollin_adapter_tiny.yaml \
+  --checkpoint output_remote/stage1_2b/recursive_detection_ce_latest/compact_full_et_rmp_ce_support2_bsz16_4epoch_tokenrows_v2/compact-full-et-rmp-ce-support2-bsz16-4epoch-tokenrows-v2/v0-20260504-071356/checkpoint-3664 \
+  --split val \
+  --limit 8 \
+  --prefix-modes generated_prefix \
+  --decode-artifact temp/infer/recursive_detection_ce_latest/smoke_compact_full_support2_tokenrows_v2_ckpt3664_hf_limit8/gt_vs_pred.jsonl \
+  --trace-artifact temp/infer/recursive_detection_ce_latest/smoke_compact_full_support2_tokenrows_v2_ckpt3664_hf_limit8/pred_token_trace.jsonl \
+  --output-dir temp/prefix_rollin_generated_prefix_probe_limit8
 ```
 
-At recursive state `k`, the logical trie spans the currently remaining
-serialized object dictionaries only. The trie excludes the inter-object comma,
-global `]}` close, schema opener, and EOS. For production tokenizer alignment,
-candidate entries are tokenized in the current autoregressive context, including
-the following boundary text only to recover the exact object-entry label tokens.
-If the current trie node has one child, the token uses ordinary hard CE. If it
-has multiple children, the target is object-uniform over child tokens:
+If `entry_after_separator` is positive but `free_boundary` is negative, the
+model knows how to start the next object after a newline but prefers
+`<|im_end|>` over appending that newline. Treat this as a separator/append
+continuation failure, not as evidence that the object-entry trie target itself
+collapsed.
 
-```text
-q(v) = number of active remaining objects under child token v
-       / number of active remaining objects at this trie node
-```
+Current schema enforces production EOS source/reference shape. The stronger
+content-level check that a calibration artifact is `production_approved` with a
+full validation probe remains an artifact/registry gate until a concrete
+validator is introduced.
 
-The branch-node loss is implemented as an explicit full-vocabulary support /
-valid-set balance decomposition:
-
-```text
-P_valid = sum_{v in V} p_theta(v | context)
-L_valid_support = -log(P_valid)
-L_valid_balance = - sum_{v in V} q(v) * log(p_theta(v | context) / P_valid)
-L_branch = branch_support_weight * L_valid_support
-         + branch_balance_weight * L_valid_balance
-```
-
-The default `branch_support_weight=1.0` and `branch_balance_weight=1.0`
-reproduce the prior object-uniform soft CE exactly. The checked-in production
-profile sets `branch_support_weight=2.0` and `branch_balance_weight=1.0` to
-test whether increasing valid-child support mass raises
-`rmp/valid_child_mass_mean` without changing decoding or explicitly suppressing
-stop tokens.
-
-The teacher-forced path still follows the sampled suffix object. Exact duplicate
-serialized entries remain multiplicity on the same path; the trie does not
-invent artificial divergence. After each emitted object, the remaining multiset
-is updated and the next entry builds a fresh trie from the new remaining set.
-
-Important implementation boundaries:
-
-- The main ET-RMP loss remains in the full-vocabulary probability space,
-  including coordinate tokens. Coord-vocabulary-normalized candidate scores are
-  not used for this objective.
-- Schema opener tokens for empty-prefix rows, comma separators, final `]}`, and
-  labeled chat-template stop/EOS tokens are hard CE control-flow targets, never
-  entry-trie positives.
-- The encoder fails fast if context-tokenized object-entry tokens cannot align
-  with chat-template label spans.
-- The smart-batch runtime packs one full-suffix row per sample with the existing
-  padded-row `smart_batched_exact` scheduler. It does not enable packed-varlen
-  attention, prefix KV cache, or candidate sharing.
-- Candidate budget fallback, PEM, structural-close auxiliary weights,
-  bidirectional token gate, and branch-local aux objectives are incompatible
-  with full-suffix modes and must be disabled.
-
-Subset-prefix sampling is configured under:
-
-```yaml
-custom:
-  trainer_variant: stage1_set_continuation
-  stage1_set_continuation:
-    subset_sampling:
-      empty_prefix_ratio: 0.30
-      random_subset_ratio: 0.45
-      leave_one_out_ratio: 0.20
-      full_prefix_ratio: 0.05
-      prefix_order: random
-    candidates:
-      mode: exact
-      max_candidates: null
-```
-
-The checked-in production profile uses the `30/45/20/5` mixture above to keep
-first-object and arbitrary-prefix coverage while still sampling
-nearly-complete leave-one-out prefixes and a small number of true final-close
-states. A non-zero `full_prefix_ratio` is part of the repaired production
-contract, not just an ablation, because close behavior otherwise receives only
-negative partial-prefix pressure.
-
-Legacy candidate modes:
-
-- `candidates.mode: exact` scores all observed remaining candidates.
-- `candidates.mode: uniform_subsample` scores at most `max_candidates`, which
-  must be positive when this mode is enabled.
-- These modes belong to the retired candidate-branch objective family. They are
-  not part of the promoted full-suffix ET-RMP-CE probability space.
-- Over-budget candidate fallback and MP/logZ diagnostics remain historical /
-  compatibility surfaces only.
-- The current implementation does not enforce a same-budget controller.
-  `same_budget_label` in the checked-in production config is an authored
-  benchmark note; realized budget is reported through
-  the compact v2 metric set documented in `docs/training/METRICS.md`.
-
-Legacy structural-close controls:
-
-- `structural_close.close_start_suppression_weight` adds
-  `loss/anti_close_start = -log(1 - P_close_start(prefix))` when observed GT
-  remains.
-- `structural_close.final_schema_close_weight` adds weak teacher-forced
-  close-sequence loss only when no observed GT remains.
-- Object-entry close tokens remain supervised inside candidate entries, and the
-  immediate post-candidate boundary is supervised by the candidate-continuation
-  mask. This is required to avoid converting every one-step candidate branch
-  into implicit “one object then close” training.
-- Compatibility aliases `loss/anti_stop`, `loss/eod`, and `stop/p_stop_*` are
-  emitted for dashboards, but the authoritative v1 semantics are structural
-  close-start and CoordJSON close-sequence probabilities.
-- These controls are deprecated for new production runs. In ET-RMP-CE, schema
-  opener, separators, final close, and stop/EOS tokens are owned directly by
-  hard teacher-forced CE.
-
-Bidirectional token gate:
-
-```yaml
-stage1_set_continuation:
-  bidirectional_token_gate:
-    enabled: true
-    coord_gate_weight: 0.5
-    text_gate_weight: 0.1
-    temperature: 1.0
-    scope: objective_tokens
-```
-
-The gate uses the same next-token shift and supervised-suffix crop as the
-candidate objective:
-
-```text
-p_coord(t) = sum softmax(logits_full(t) / T)[coord_token_ids]
-loss/coord_gate = mean(-log(p_coord(t)) over objective coord slots)
-loss/text_gate = mean(-log(1 - p_coord(t)) over objective non-coord slots)
-```
-
-The mean is computed once per sample over all contributing scored objective
-branch tokens, then added with the same sample denominator policy as
-`loss/candidate_balanced`. Only `scope: objective_tokens` is valid in v1. The
-text gate is label-identity agnostic among non-coord labels: description
-tokens, keys, comma boundaries, and final `]}` boundaries with the same coord
-mass receive the same token-gate loss.
-
-PEM threshold and margin-style candidate-energy losses are deprecated. They
-remain documented only so older configs and metrics are interpretable; new
-production training should keep them disabled:
-
-```yaml
-positive_evidence_margin:
-  objective: disabled
-```
-
-When `positive_evidence_margin.objective: disabled` under the promoted
-production profile, the optimized objective is `loss/rmp` from ET-RMP-CE rather
-than `loss/candidate_balanced`. Old MP/logZ quantities remain internal or
-legacy diagnostics and are not part of the promoted objective contract.
-
-Current parser contract: `objective=threshold_loss` requires `log_rho` and a
-non-empty `threshold_calibration` provenance string. Fixed probability-space
-`rho` is rejected for `threshold_space: full_entry_logZ`, because full-entry
-logZ is not calibrated to a stable probability threshold across prefix
-cardinalities, candidate counts, and entry lengths.
-
-Branch-local auxiliary objectives for scored candidate branches are deprecated
-with the candidate-branch production path. If old configs enable
-`coord_soft_ce_w1`, `bbox_geo`, or `bbox_size_aux` inside candidate branches,
-treat that as historical ablation behavior rather than the promoted objective
-surface. ET-RMP-CE keeps the main objective in full-vocabulary token CE with
-entry-trie support/balance reweighting.
-
-### Ordinary SFT final-close control
-
-The ordinary one-sequence Stage-1 SFT path can still downweight final global
-CoordJSON close supervision with:
-
-```yaml
-custom:
-  sft_structural_close:
-    enabled: true
-    final_close_weight: 0.0
-```
-
-This adds per-token base-CE weights for the final global CoordJSON close
-sequence `]}` only. It does not mask object-entry close tokens and it does not
-target chat-template EOS tokens. Fractional weights are supported in `[0, 1]`.
-This path also rejects packing because the close-span mask is sequence-local.
-
-### Production entry config
-
-The canonical entry config lives at:
-
-```text
-configs/stage1/set_continuation/production.yaml
-```
-
-It is the all-feature production profile for continuing from the current SOTA
-coord-token Stage-1 SFT checkpoint:
-
-```text
-output_remote/stage1_2b/coco_bbox_max60-hard_ce_soft_ce_w1_gate/epoch_4-from-base-2B/v0-20260227-050057/checkpoint-1332-merged-full
-```
-
-The profile enables `entry_trie_rmp_ce` with support/balance reweighting:
-`branch_support_weight=2.0` and `branch_balance_weight=1.0`. It keeps the
-`30/45/20/5` empty/random/leave-one-out/full prefix mixture, trains one
-teacher-forced full remaining-object suffix per sampled prefix, applies
-entry-trie multi-positive token CE inside object entries, and applies hard CE
-to schema opener, comma separators, final `]}`, and labeled chat-template
-stop/EOS tokens. Candidate budget fallback, candidate branch CE, chunk-level
-MP/logZ objectives, structural-close auxiliary losses, annotation-completeness
-close calibration, bidirectional token gate, and PEM/margin candidate-energy
-losses are disabled for the promoted production profile. It remains 2B, COCO80
-desc-first, coord-token-only, `val200`/`f1ish_annotated`, and
-`training.packing: false`.
-
-The current set-continuation production batch identity is owned by
-`configs/stage1/set_continuation/production.yaml`. The checked-in production
-contract is `artifact_subdir:
-coco1024_sota1332_setcont_et_rmp_ce_support2_bsz16_v1`,
-`per_device_train_batch_size: 16`, `gradient_accumulation_steps: 1`, and
-`effective_batch_size: 128`. Do not treat older `support2_bsz32` or `32/256`
-notes as current production guidance.
-
-Because this run continues from an already four-epoch fine-tuned SOTA
-checkpoint, the production config uses reduced continuation learning rates:
-`learning_rate=5e-5`, `vit_lr=1e-5`, `aligner_lr=5e-5`, and coord-offset
-`embed_lr=head_lr=5e-5`.
-
-The production entry intentionally keeps the original COCO Stage-1 coord-token
-training surface first. LVIS-proxy should be evaluated as a follow-up
-dataset-choice ablation, not silently mixed into the first objective-change
-run.
-
-Train-time detection evaluation is distributed by default through
-`custom.eval_detection.distributed: true`. Under DDP, every rank reuses its live
-training model replica to decode a deterministic shard of the eval JSONL, rank 0
-merges the shard artifacts back into the canonical `gt_vs_pred.jsonl`, and only
-rank 0 runs final detection scoring/log injection. This keeps val200 generation
-from occupying only GPU 0 while preserving rank-0-owned metric semantics and the
-existing `eval_detection/step_<N>/` artifact layout.
-
-The profile pins `coord_soft_ce_w1`, `bbox_geo`, and `bbox_size_aux` disabled
-so the first production run isolates the continuation objective. Its
-`custom.extra.benchmark_report.same_budget_label` value is a comparison note,
-not a runtime-enforced budget constraint.
-
-The canonical Stage-1 set-continuation production profile is now ET-RMP-CE:
-
-```text
-configs/stage1/set_continuation/production.yaml
-```
-
-It uses the production checkpoint, dataset, eval, and smart-batch runtime,
-sets `objective.mode` to `entry_trie_rmp_ce`, sets the branch support/balance
-weights to `2.0/1.0`, disables candidate-only auxiliaries, and scales local
-batch/branch-row capacity (`per_device_train_batch_size=16`,
-`gradient_accumulation_steps=1`, `effective_batch_size=128`,
-`max_branch_rows=32`, `max_branch_tokens=65536`) to improve GPU memory
-utilization without enabling packing.
+Retired continuation code, config, and runtime paths should not be used for new training. Historical evidence remains in git history, archived progress notes, and run artifacts.
 
 ## Stage-1 non-canonical bbox V1 experiments
 

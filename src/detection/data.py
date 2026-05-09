@@ -216,6 +216,12 @@ def _parse_coordinate_token_box(value: Any, *, path: str) -> CoordinateTokenBox:
         _require_coordinate_token(token, path=f"{path}[{idx}]")
         for idx, token in enumerate(values)
     )
+    x1, y1, x2, y2 = (_coordinate_token_value(token) for token in tokens)
+    if x1 > x2 or y1 > y2:
+        raise ValueError(
+            f"{path} must be a non-inverted xyxy coordinate-token box; "
+            f"got x1={x1}, y1={y1}, x2={x2}, y2={y2}"
+        )
     return CoordinateTokenBox(*tokens)
 
 
@@ -233,11 +239,31 @@ def _require_coordinate_token(value: Any, *, path: str) -> str:
     return token
 
 
+def _coordinate_token_value(token: str) -> int:
+    match = _COORD_TOKEN_RE.fullmatch(token)
+    if match is None:
+        raise ValueError(f"expected coordinate token, got {token!r}")
+    return int(match.group(1))
+
+
 def _realize_object_order(
     raw: RawDetectionRow, *, object_ordering: ObjectOrderingPlan
 ) -> tuple[int, ...]:
     indices = list(range(len(raw.objects)))
     if object_ordering.strategy == "sorted":
+        geometry_keys = tuple(
+            (
+                _coordinate_token_value(obj.bbox_2d.y1),
+                _coordinate_token_value(obj.bbox_2d.x1),
+                obj.source_object_index,
+            )
+            for obj in raw.objects
+        )
+        if geometry_keys != tuple(sorted(geometry_keys)):
+            raise ValueError(
+                "sorted object_ordering requires source objects to be sorted by "
+                "(y1, x1, source_object_index)"
+            )
         return tuple(indices)
     if object_ordering.strategy == "random_permutation":
         if object_ordering.seed is None:

@@ -1604,9 +1604,23 @@ def test_rollout_many_hf_training_rollout_does_not_force_optimizer_offload(
             self._training = True
             return self
 
+    class _DummyQwenTokenizer:
+        pad_token_id = 0
+        unk_token_id = -1
+
+        def convert_tokens_to_ids(self, token: str) -> int:
+            return {
+                "<|endoftext|>": self.pad_token_id,
+                "<|im_end|>": 1,
+            }.get(token, self.unk_token_id)
+
+        def encode(self, text: str, *, add_special_tokens: bool = False) -> list[int]:
+            token_id = self.convert_tokens_to_ids(text)
+            return [] if token_id == self.unk_token_id else [token_id]
+
     class _DummyTemplate:
         def __init__(self) -> None:
-            self.tokenizer = types.SimpleNamespace(pad_token_id=0)
+            self.tokenizer = _DummyQwenTokenizer()
 
         def generate_context(self):
             return nullcontext()

@@ -18,10 +18,6 @@ from src.metrics.dataset_metrics import (
     CoordSoftCEW1LossMixin,
     GradAccumLossScaleMixin,
 )
-from src.trainers.stage1_set_continuation.metrics import (
-    EMITTED_STAGE1_SET_CONTINUATION_METRICS,
-)
-
 
 class _DummyMetric:
     def __init__(self) -> None:
@@ -47,7 +43,7 @@ def _load_doc_keys() -> set[str]:
     return keys
 
 
-def _assert_no_set_continuation_metrics(keys: set[str]) -> None:
+def _assert_no_retired_continuation_metrics(keys: set[str]) -> None:
     forbidden = {
         "loss/candidate_balanced",
         "loss/mp",
@@ -62,7 +58,7 @@ def _assert_no_set_continuation_metrics(keys: set[str]) -> None:
         if key.startswith("mp/") or key.startswith("stop/") or key in forbidden
     )
     assert not unexpected, (
-        f"ordinary Stage-1 emitted set-continuation metrics: {unexpected}"
+        f"ordinary Stage-1 emitted retired continuation metrics: {unexpected}"
     )
 
 
@@ -255,7 +251,7 @@ def test_stage1_metric_keys_are_documented_and_aggregate_only(
 
     # No per-dataset buckets in Stage-1 metrics.
     assert all("lvis" not in k and "coco" not in k for k in emitted_train)
-    _assert_no_set_continuation_metrics(emitted_train)
+    _assert_no_retired_continuation_metrics(emitted_train)
 
     # Parity check: emitted keys should be documented (feature-conditional keys are fine).
     missing = sorted(k for k in emitted_train if k not in doc_keys)
@@ -298,20 +294,7 @@ def test_stage1_metric_keys_are_documented_and_aggregate_only(
     )
     emitted_eval = set(trainer.custom_metrics["eval"].keys())
     assert emitted_eval == emitted_train
-    _assert_no_set_continuation_metrics(emitted_eval)
-
-
-def test_stage1_set_continuation_public_metric_allow_list_is_documented() -> None:
-    doc_keys = _load_doc_keys()
-
-    missing_docs = sorted(EMITTED_STAGE1_SET_CONTINUATION_METRICS - doc_keys)
-
-    assert not missing_docs, (
-        "Stage-1 set-continuation public metric keys missing from "
-        f"docs/training/METRICS.md: {missing_docs}"
-    )
-    assert "batch_loss" not in EMITTED_STAGE1_SET_CONTINUATION_METRICS
-    assert "batch_size" not in EMITTED_STAGE1_SET_CONTINUATION_METRICS
+    _assert_no_retired_continuation_metrics(emitted_eval)
 
 
 def test_compact_recursive_detection_phase1_metric_events_are_documented() -> None:
