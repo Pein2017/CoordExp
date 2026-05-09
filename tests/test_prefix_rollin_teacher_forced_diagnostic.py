@@ -5,13 +5,18 @@ import re
 import pytest
 import torch
 
-from src.detection.data import ObjectOrderingPlan, normalize_detection_row
-from src.detection.objective import build_compact_prefix_rollin_example
 from src.analysis.prefix_rollin_teacher_forced_diagnostic import (
+    GeneratedPrefixCase,
+    _generated_prefix_case_for_record,
+    _normalize_prefix_modes,
+    _resolve_k_values,
+    _score_forced_prefix_boundary_logits,
     compute_prefix_rollin_position_delta,
     score_prefix_rollin_logits,
     summarize_prefix_rollin_probe_rows,
 )
+from src.detection.data import ObjectOrderingPlan, normalize_detection_row
+from src.detection.objective import build_compact_prefix_rollin_example
 
 _SPECIAL_TOKEN_RE = re.compile(r"<\|[^|]+\|>")
 
@@ -216,15 +221,29 @@ def test_branch_probe_uses_next_token_shift_and_valid_mass_margin() -> None:
         log_probs[torch.tensor(branch_target.valid_token_ids)],
         dim=-1,
     )
+    expected_continue_logsumexp = torch.logsumexp(
+        logits[0, prediction_row, torch.tensor(branch_target.valid_token_ids)],
+        dim=-1,
+    )
     expected_margin = expected_valid_mass - log_probs[eos_id]
     expected_logit_margin = (
         logits[0, prediction_row, list(branch_target.valid_token_ids)].max()
         - logits[0, prediction_row, eos_id]
     )
+    assert row["diagnostic"] == "forced_prefix_continue_vs_eos_v0"
+    assert row["prefix_mode"] == "gt_prefix_entry_after_separator"
+    assert row["prefix_k"] == 0
+    assert row["gt_count"] == 3
+    assert row["remaining_gt_count"] == 3
     assert row["target_position"] == branch_target.position
     assert row["processor_position"] == branch_target.position
+    assert row["continue_logsumexp"] == pytest.approx(
+        expected_continue_logsumexp.item()
+    )
+    assert row["valid_mass"] == pytest.approx(expected_valid_mass.exp().item())
     assert row["valid_logprob_mass"] == pytest.approx(expected_valid_mass.item())
     assert row["eos_logprob"] == pytest.approx(log_probs[eos_id].item())
+    assert row["continue_minus_eos_margin"] == pytest.approx(expected_margin.item())
     assert row["margin_valid_mass_minus_eos_logprob"] == pytest.approx(
         expected_margin.item()
     )
@@ -261,6 +280,31 @@ def test_singleton_remaining_object_is_still_reported_as_valid_next_branch() -> 
     assert row["valid_token_ids"] == list(target.valid_token_ids)
 
 
+def test_gt_prefix_reports_separator_boundary_before_next_object() -> None:
+    example = _example(k=1, object_count=3)
+    eos_id = example.stop_contract.im_end_token_id
+    vocab_size = max(eos_id, *example.input_ids) + 1
+    logits = torch.zeros((1, len(example.input_ids), vocab_size), dtype=torch.float32)
+
+    rows = score_prefix_rollin_logits(
+        logits=logits,
+        example=example,
+        tokenizer=FakeTokenizer(),
+        processor_input_ids=example.input_ids,
+    )
+    boundary_row = next(
+        row
+        for row in rows
+        if row["prefix_mode"] == "gt_prefix_free_boundary"
+    )
+
+    assert boundary_row["boundary_kind"] == "separator_before_next_object"
+    assert boundary_row["teacher_token_id"] == example.input_ids[
+        boundary_row["target_position"]
+    ]
+    assert boundary_row["valid_token_ids"] == [boundary_row["teacher_token_id"]]
+
+
 def test_full_prefix_state_reports_only_im_end() -> None:
     example = _example(k=3, object_count=3)
     eos_target = next(
@@ -283,6 +327,9 @@ def test_full_prefix_state_reports_only_im_end() -> None:
     eos_row = _eos_row(rows)
     assert eos_row["valid_next_object_branch_present"] is False
     assert eos_row["teacher_token_id"] == example.stop_contract.im_end_token_id
+    assert eos_row["prefix_k"] == 3
+    assert eos_row["remaining_gt_count"] == 0
+    assert eos_row["continue_minus_eos_margin"] is None
 
 
 def test_processor_padding_rebase_preserves_target_identity() -> None:
@@ -345,17 +392,26 @@ def test_summarize_prefix_rollin_probe_rows_reports_margin_health() -> None:
     rows = [
         {
             "branch_kind": "valid_next_object",
+            "prefix_mode": "gt_prefix",
             "rollin_k": 0,
+            "prefix_k": 0,
+            "continue_minus_eos_margin": 2.0,
             "margin_valid_mass_minus_eos_logprob": 2.0,
+            "valid_mass": 0.80,
         },
         {
             "branch_kind": "valid_next_object",
+            "prefix_mode": "generated_prefix_free_boundary",
             "rollin_k": 1,
+            "prefix_k": 1,
+            "continue_minus_eos_margin": -1.0,
             "margin_valid_mass_minus_eos_logprob": -1.0,
+            "valid_mass": 0.25,
         },
         {
             "branch_kind": "semantic_eos",
             "rollin_k": 2,
+            "prefix_k": 2,
             "eos_logprob": -0.2,
         },
     ]
@@ -367,4 +423,124 @@ def test_summarize_prefix_rollin_probe_rows_reports_margin_health() -> None:
     assert summary["semantic_eos_row_count"] == 1
     assert summary["valid_margin_mean"] == pytest.approx(0.5)
     assert summary["valid_margin_le_zero_rate"] == pytest.approx(0.5)
+    assert summary["continue_margin_mean"] == pytest.approx(0.5)
+    assert summary["continue_margin_le_zero_rate"] == pytest.approx(0.5)
+    assert summary["valid_mass_mean"] == pytest.approx(0.525)
+    assert summary["continue_margin_by_prefix_k"]["0"][
+        "continue_margin_mean"
+    ] == pytest.approx(2.0)
+    assert summary["continue_margin_by_prefix_k"]["1"][
+        "continue_margin_le_zero_rate"
+    ] == pytest.approx(1.0)
+    assert summary["continue_margin_by_prefix_mode"]["gt_prefix"][
+        "continue_margin_mean"
+    ] == pytest.approx(2.0)
+    assert summary["continue_margin_by_prefix_mode"][
+        "generated_prefix_free_boundary"
+    ]["continue_margin_mean"] == pytest.approx(-1.0)
     assert summary["rollin_k_values"] == [0, 1, 2]
+    assert summary["prefix_k_values"] == [0, 1, 2]
+
+
+def test_resolve_k_values_every_scores_full_prefix_curve() -> None:
+    assert _resolve_k_values(["every"], object_count=3) == [0, 1, 2, 3]
+    assert _resolve_k_values(["0", "every", "all"], object_count=2) == [0, 1, 2]
+
+
+def test_generated_prefix_case_prefers_exact_trace_tokens_without_im_end() -> None:
+    decode_rows = {
+        0: {
+            "raw_ends_with_im_end": True,
+            "raw_output_json": {
+                "objects": [
+                    {
+                        "desc": "cat",
+                        "bbox_2d": [
+                            "<|coord_1|>",
+                            "<|coord_2|>",
+                            "<|coord_3|>",
+                            "<|coord_4|>",
+                        ],
+                    }
+                ]
+            },
+        }
+    }
+    trace_rows = {
+        0: {
+            "generated_token_text": [
+                "<|object_ref_start|>",
+                "cat",
+                "<|box_start|>",
+                "<|coord_1|>",
+                "<|coord_2|>",
+                "<|coord_3|>",
+                "<|coord_4|>",
+                "<|im_end|>",
+                "ignored",
+            ]
+        }
+    }
+
+    case = _generated_prefix_case_for_record(
+        record_idx=0,
+        decode_rows=decode_rows,
+        trace_rows=trace_rows,
+    )
+
+    assert case == GeneratedPrefixCase(
+        prefix_text=(
+            "<|object_ref_start|>cat<|box_start|>"
+            "<|coord_1|><|coord_2|><|coord_3|><|coord_4|>"
+        ),
+        pred_count=1,
+        prefix_text_source="pred_token_trace.generated_token_text",
+        raw_ends_with_im_end=True,
+    )
+
+
+def test_generated_prefix_boundary_scores_object_ref_continue_vs_eos() -> None:
+    tokenizer = FakeTokenizer()
+    object_ref_id = tokenizer.convert_tokens_to_ids("<|object_ref_start|>")
+    eos_id = tokenizer.convert_tokens_to_ids("<|im_end|>")
+    processor_ids = [99, object_ref_id, 100]
+    logits = torch.zeros((1, len(processor_ids), 101), dtype=torch.float32)
+    logits[0, 0, object_ref_id] = 6.0
+    logits[0, 0, eos_id] = 2.0
+
+    row = _score_forced_prefix_boundary_logits(
+        logits=logits,
+        tokenizer=tokenizer,
+        processor_input_ids=processor_ids,
+        target_position=1,
+        teacher_token_id=object_ref_id,
+        valid_token_ids=(object_ref_id,),
+        eos_token_id=eos_id,
+        branch_kind="valid_next_object",
+        top_k=3,
+        metadata={
+            "diagnostic": "forced_prefix_continue_vs_eos_v0",
+            "probe_family": "generated_prefix_teacher_forced",
+            "prefix_mode": "generated_prefix_count_depth",
+            "prefix_k": 2,
+            "gt_count": 4,
+            "remaining_gt_count": 2,
+        },
+    )
+
+    assert row["prefix_mode"] == "generated_prefix_count_depth"
+    assert row["teacher_token_text"] == "<|object_ref_start|>"
+    assert row["valid_token_ids"] == [object_ref_id]
+    assert row["eos_token_id"] == eos_id
+    assert row["continue_logsumexp"] == pytest.approx(6.0)
+    assert row["continue_minus_eos_margin"] == pytest.approx(4.0)
+    expected_valid_mass = torch.softmax(logits[0, 0], dim=-1)[object_ref_id]
+    assert row["valid_mass"] == pytest.approx(expected_valid_mass.item())
+
+
+def test_normalize_prefix_modes_accepts_both_alias() -> None:
+    assert _normalize_prefix_modes(["both"]) == {"gt_prefix", "generated_prefix"}
+    assert _normalize_prefix_modes(["self", "clean"]) == {
+        "generated_prefix",
+        "gt_prefix",
+    }
