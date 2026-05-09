@@ -65,6 +65,8 @@ When the audit has multiple independent surfaces and subagents are available, us
 
 If fixes are requested, use test-first changes for behavior-affecting patches. Patch only the smallest owner surface that can enforce the contract.
 
+When an audit finds no blocking implementation mismatch but the innovation changes training signal, hand off to `model-diagnosis` for a tiny-dataset pre-diagnosis probe before launching expensive training. The audit proves the contract is wired plausibly; the tiny probe checks whether the resulting metrics and model behavior move in the intended direction.
+
 ## Core Method: Contract Triangulation
 
 For every innovation, triangulate these layers:
@@ -148,7 +150,8 @@ Before proposing fixes, run narrow probes when allowed:
 - one collated batch,
 - tiny logits loss calculation,
 - JSONL/image scan,
-- artifact manifest check.
+- artifact manifest check,
+- tiny-dataset trend probe when the contract is wired but model behavior remains unproven.
 
 Label each probe with scope.
 
@@ -246,6 +249,7 @@ Before a serious training run, require:
 - all P1 fixed or explicitly accepted by the user,
 - P2 tracked or documented,
 - targeted tests passing,
+- a tiny-dataset pre-diagnosis probe showing healthy objective-specific metrics when the innovation changes the training signal,
 - at least one production-like smoke run,
 - resolved config and artifacts prove the actual objective identity,
 - train/decode/eval parity checked for tokenizer, image processing, EOS/pad, and parser.
