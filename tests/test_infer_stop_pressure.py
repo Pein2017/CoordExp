@@ -49,6 +49,27 @@ def _minimal_artifacts(tmp_path: Path) -> infer_pipeline.ResolvedArtifacts:
     )
 
 
+class _QwenSpecialTokenMixin:
+    unk_token_id = -1
+
+    def convert_tokens_to_ids(self, token: str) -> int:
+        text_to_id = {
+            text: token_id
+            for token_id, text in getattr(self, "_id_to_text", {}).items()
+        }
+        if token in text_to_id:
+            return int(text_to_id[token])
+        if token == "<|im_end|>":
+            return 98
+        if token == "<|endoftext|>":
+            return 99
+        return self.unk_token_id
+
+    def encode(self, text: str, *, add_special_tokens: bool = False) -> list[int]:
+        token_id = self.convert_tokens_to_ids(text)
+        return [] if token_id == self.unk_token_id else [token_id]
+
+
 def test_generation_config_carries_stop_pressure_fields():
     cfg = GenerationConfig(
         stop_pressure_mode="min_new_tokens_after_object_open",
@@ -725,7 +746,7 @@ def test_generate_hf_batch_sets_min_new_tokens_for_targeted_stop_pressure():
     image = Image.new("RGB", (8, 8), color=(0, 0, 0))
     captured_kwargs: dict[str, object] = {}
 
-    class _DummyTokenizer:
+    class _DummyTokenizer(_QwenSpecialTokenMixin):
         def decode(self, _token_ids, **_kwargs) -> str:
             return '{"objects": []}'
 
@@ -787,7 +808,7 @@ def test_generate_hf_batch_suppresses_terminating_tokens_at_object_boundary():
     image = Image.new("RGB", (8, 8), color=(0, 0, 0))
     captured_kwargs: dict[str, object] = {}
 
-    class _DummyTokenizer:
+    class _DummyTokenizer(_QwenSpecialTokenMixin):
         eos_token_id = 99
         _id_to_text = {
             11: "<prompt_a>",
@@ -878,7 +899,7 @@ def test_generate_hf_batch_special_only_mode_suppresses_only_special_terminators
     image = Image.new("RGB", (8, 8), color=(0, 0, 0))
     captured_kwargs: dict[str, object] = {}
 
-    class _DummyTokenizer:
+    class _DummyTokenizer(_QwenSpecialTokenMixin):
         eos_token_id = 99
         _id_to_text = {
             11: "<prompt_a>",
@@ -969,7 +990,7 @@ def test_generate_hf_batch_first_structural_closure_mode_is_local_to_fresh_bound
     image = Image.new("RGB", (8, 8), color=(0, 0, 0))
     captured_kwargs: dict[str, object] = {}
 
-    class _DummyTokenizer:
+    class _DummyTokenizer(_QwenSpecialTokenMixin):
         eos_token_id = 99
         _id_to_text = {
             11: "<prompt_a>",
@@ -1072,7 +1093,7 @@ def test_generate_hf_batch_array_branch_continuation_steering_is_local_and_posit
     image = Image.new("RGB", (8, 8), color=(0, 0, 0))
     captured_kwargs: dict[str, object] = {}
 
-    class _DummyTokenizer:
+    class _DummyTokenizer(_QwenSpecialTokenMixin):
         eos_token_id = 99
         _id_to_text = {
             11: "<prompt_a>",
@@ -1188,7 +1209,7 @@ def test_generate_hf_batch_bbox_tail_closure_steering_targets_fused_close_tokens
     image = Image.new("RGB", (8, 8), color=(0, 0, 0))
     captured_kwargs: dict[str, object] = {}
 
-    class _DummyTokenizer:
+    class _DummyTokenizer(_QwenSpecialTokenMixin):
         eos_token_id = 99
         _id_to_text = {
             11: "<prompt_a>",
@@ -1295,7 +1316,7 @@ def test_generate_hf_batch_bbox_tail_then_object_open_steering_targets_followup_
     image = Image.new("RGB", (8, 8), color=(0, 0, 0))
     captured_kwargs: dict[str, object] = {}
 
-    class _DummyTokenizer:
+    class _DummyTokenizer(_QwenSpecialTokenMixin):
         eos_token_id = 99
         _id_to_text = {
             11: "<prompt_a>",
@@ -1417,7 +1438,7 @@ def test_generate_hf_batch_bbox_tail_then_object_open_once_turns_off_after_next_
     image = Image.new("RGB", (8, 8), color=(0, 0, 0))
     captured_kwargs: dict[str, object] = {}
 
-    class _DummyTokenizer:
+    class _DummyTokenizer(_QwenSpecialTokenMixin):
         eos_token_id = 99
         _id_to_text = {
             11: "<prompt_a>",
@@ -1550,7 +1571,7 @@ def test_generate_hf_batch_bbox_tail_then_object_open_once_turns_off_after_next_
 def test_generate_hf_batch_does_not_suppress_bbox_closing_bracket_inside_object():
     image = Image.new("RGB", (8, 8), color=(0, 0, 0))
 
-    class _DummyTokenizer:
+    class _DummyTokenizer(_QwenSpecialTokenMixin):
         eos_token_id = 99
         _id_to_text = {
             11: "<prompt_a>",
