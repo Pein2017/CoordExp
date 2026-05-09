@@ -49,7 +49,7 @@ class CompactFullGrammarIds:
     box_start_id: int
     coord_ids: tuple[int, ...]
     newline_ids: tuple[int, ...]
-    terminal_ids: tuple[int, ...]
+    eos_ids: tuple[int, ...]
 
 
 class CompactFullGrammarLogitsProcessor(LogitsProcessor):
@@ -60,9 +60,9 @@ class CompactFullGrammarLogitsProcessor(LogitsProcessor):
 
     ``<|object_ref_start|>{desc}<|box_start|>{coord}{coord}{coord}{coord}``
 
-    After a bbox is complete it permits either a newline separator or a terminal
-    token. At a fresh row boundary it permits a new object row or a terminal
-    token. This is a decode-time grammar constraint, not a scoring/eval parser
+    After a bbox is complete it permits either a newline separator or the chat
+    EOS token. At a fresh row boundary it permits a new object row or the chat
+    EOS token. This is a decode-time grammar constraint, not a scoring/eval parser
     relaxation.
     """
 
@@ -78,11 +78,9 @@ class CompactFullGrammarLogitsProcessor(LogitsProcessor):
         self.force_row_start = bool(force_row_start)
         self.coord_id_set = set(int(v) for v in ids.coord_ids)
         self.newline_id_set = set(int(v) for v in ids.newline_ids)
-        self.terminal_id_set = set(int(v) for v in ids.terminal_ids)
-        self.row_start_allowed = tuple(
-            dict.fromkeys((ids.object_start_id, *ids.terminal_ids))
-        )
-        self.after_bbox_allowed = tuple(dict.fromkeys((*ids.newline_ids, *ids.terminal_ids)))
+        self.eos_id_set = set(int(v) for v in ids.eos_ids)
+        self.row_start_allowed = tuple(dict.fromkeys((ids.object_start_id, *ids.eos_ids)))
+        self.after_bbox_allowed = tuple(dict.fromkeys((*ids.newline_ids, *ids.eos_ids)))
 
     def _generated_ids(self, input_ids: torch.LongTensor, row_idx: int) -> list[int]:
         prompt_len = self.prompt_lengths[min(row_idx, len(self.prompt_lengths) - 1)]
@@ -94,7 +92,7 @@ class CompactFullGrammarLogitsProcessor(LogitsProcessor):
         if not generated:
             return self.row_start_allowed if self.force_row_start else None
         last = int(generated[-1])
-        if last in self.terminal_id_set:
+        if last in self.eos_id_set:
             return None
         if last in self.newline_id_set:
             return self.row_start_allowed if self.force_row_start else None
@@ -107,7 +105,7 @@ class CompactFullGrammarLogitsProcessor(LogitsProcessor):
             return None
 
         tail = [int(v) for v in generated[last_box_idx + 1 :]]
-        if any(v in self.newline_id_set or v in self.terminal_id_set for v in tail):
+        if any(v in self.newline_id_set or v in self.eos_id_set for v in tail):
             return None
         if not all(v in self.coord_id_set for v in tail):
             return None
@@ -157,7 +155,7 @@ def build_compact_full_grammar_logits_processor(
         missing.append(OBJECT_REF_START_TOKEN)
     if box_start_id is None:
         missing.append(BOX_START_TOKEN)
-    if im_end_id is None and getattr(tokenizer, "eos_token_id", None) is None:
+    if im_end_id is None:
         missing.append(IM_END_TOKEN)
     if newline_id is None:
         missing.append("\\n")
@@ -183,19 +181,12 @@ def build_compact_full_grammar_logits_processor(
             f"missing {len(missing_coord_tokens)} starting with {preview}"
         )
 
-    terminal_ids = []
-    if im_end_id is not None:
-        terminal_ids.append(int(im_end_id))
-    eos_token_id = getattr(tokenizer, "eos_token_id", None)
-    if isinstance(eos_token_id, int) and eos_token_id >= 0:
-        terminal_ids.append(int(eos_token_id))
-
     ids = CompactFullGrammarIds(
         object_start_id=int(object_start_id),
         box_start_id=int(box_start_id),
         coord_ids=tuple(dict.fromkeys(coord_ids)),
         newline_ids=(int(newline_id),),
-        terminal_ids=tuple(dict.fromkeys(terminal_ids)),
+        eos_ids=(int(im_end_id),),
     )
     return CompactFullGrammarLogitsProcessor(
         ids=ids,
@@ -211,7 +202,13 @@ def build_compact_grammar_logits_processor(
     detection_sequence_format: str,
     force_row_start: bool = True,
 ) -> LogitsProcessor:
-    fmt = normalize_detection_sequence_format(detection_sequence_format)
+    try:
+        fmt = normalize_detection_sequence_format(detection_sequence_format)
+    except ValueError as exc:
+        raise ValueError(
+            "compact grammar decoding currently supports only "
+            "detection_sequence_format=compact_full"
+        ) from exc
     if fmt != COMPACT_FULL_FORMAT:
         raise ValueError(
             "compact grammar decoding currently supports only "

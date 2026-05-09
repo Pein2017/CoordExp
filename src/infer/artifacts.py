@@ -4,6 +4,9 @@ import json
 from pathlib import Path
 from typing import Any, Dict, Optional
 
+from src.common.detection_sequence import END_OF_TEXT_TOKEN, IM_END_TOKEN
+from src.common.qwen_generation import resolve_qwen_chat_generation_token_ids
+
 
 def _checkpoint_meta(owner: Any) -> Dict[str, Any]:
     return {
@@ -86,6 +89,32 @@ def _generation_meta(owner: Any, *, backend: str, batch_size: int) -> Dict[str, 
             "active": backend == "hf"
             and bool(getattr(owner.gen_cfg, "compact_grammar_enabled", False)),
         },
+        "qwen_chat_generation": _qwen_chat_generation_meta(owner),
+    }
+
+
+def _qwen_chat_generation_meta(owner: Any) -> Dict[str, Any]:
+    token_ids = getattr(owner, "qwen_generation_token_ids", None)
+    if token_ids is None:
+        tokenizer = getattr(owner, "tokenizer", None)
+        processor = getattr(owner, "processor", None)
+        if tokenizer is None and processor is not None:
+            tokenizer = getattr(processor, "tokenizer", None)
+        if tokenizer is not None:
+            try:
+                token_ids = resolve_qwen_chat_generation_token_ids(tokenizer)
+            except ValueError:
+                token_ids = None
+
+    eos_token_id = getattr(token_ids, "eos_token_id", None)
+    pad_token_id = getattr(token_ids, "pad_token_id", None)
+    return {
+        "eos_token": IM_END_TOKEN,
+        "eos_token_id": eos_token_id,
+        "pad_token": END_OF_TEXT_TOKEN,
+        "pad_token_id": pad_token_id,
+        "stop_tokens": [IM_END_TOKEN],
+        "processor_do_resize": False,
     }
 
 
@@ -110,7 +139,7 @@ def build_infer_resolved_meta(
         "pred_coord_mode": owner.cfg.pred_coord_mode,
         "prompt_variant": owner.prompt_variant,
         "bbox_format": owner.bbox_format,
-        "detection_sequence_format": owner.detection_sequence_format,
+        "detection_sequence_format": getattr(owner, "detection_sequence_format", "coordjson"),
         "object_field_order": owner.object_field_order,
         "object_ordering": owner.object_ordering,
         "prompt_template_hash": owner.prompt_template_hash,
@@ -172,7 +201,7 @@ def build_infer_summary_payload(
             "pred_coord_mode": owner.cfg.pred_coord_mode,
             "prompt_variant": owner.prompt_variant,
             "bbox_format": owner.bbox_format,
-            "detection_sequence_format": owner.detection_sequence_format,
+            "detection_sequence_format": getattr(owner, "detection_sequence_format", "coordjson"),
             "object_field_order": owner.object_field_order,
             "object_ordering": owner.object_ordering,
             "prompt_template_hash": owner.prompt_template_hash,

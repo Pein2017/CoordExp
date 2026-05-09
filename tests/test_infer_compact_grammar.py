@@ -86,6 +86,36 @@ def test_compact_grammar_forces_object_start_or_stop_after_newline() -> None:
     assert processed[0, 2] == 0.0
 
 
+def test_compact_grammar_im_end_eos_excludes_text_eos() -> None:
+    tokenizer = _DummyTokenizer()
+    tokenizer.eos_token_id = 99
+    processor = build_compact_full_grammar_logits_processor(
+        tokenizer=tokenizer,
+        prompt_lengths=[1],
+    )
+    input_ids = torch.tensor(
+        [[80, 4, 6, 5, 100, 101, 102, 103, 3]],
+        dtype=torch.long,
+    )
+
+    processed = processor(input_ids, _scores())
+
+    assert processed[0, 2] == 0.0
+    assert torch.isneginf(processed[0, 99])
+
+
+def test_compact_grammar_requires_im_end_even_when_tokenizer_eos_exists() -> None:
+    tokenizer = _DummyTokenizer()
+    tokenizer.eos_token_id = 99
+    del tokenizer._vocab["<|im_end|>"]
+
+    with pytest.raises(ValueError, match=r"<\|im_end\|>"):
+        build_compact_full_grammar_logits_processor(
+            tokenizer=tokenizer,
+            prompt_lengths=[1],
+        )
+
+
 def test_compact_grammar_wrapper_accepts_compact_full_only() -> None:
     processor = build_compact_grammar_logits_processor(
         tokenizer=_DummyTokenizer(),
@@ -95,6 +125,28 @@ def test_compact_grammar_wrapper_accepts_compact_full_only() -> None:
 
     input_ids = torch.tensor([[80]], dtype=torch.long)
     processed = processor(input_ids, _scores())
+
+    assert torch.isneginf(processed[0, 7])
+    assert processed[0, 4] == 0.0
+    assert processed[0, 2] == 0.0
+
+
+def test_compact_grammar_prompt_length_is_absolute_offset_under_left_padding() -> None:
+    input_ids = torch.tensor([[0, 0, 80, 81]], dtype=torch.long)
+
+    wrong_unpadded_length_processor = build_compact_full_grammar_logits_processor(
+        tokenizer=_DummyTokenizer(),
+        prompt_lengths=[2],
+    )
+    wrong_processed = wrong_unpadded_length_processor(input_ids, _scores())
+
+    assert wrong_processed[0, 7] == 100.0
+
+    correct_padded_offset_processor = build_compact_full_grammar_logits_processor(
+        tokenizer=_DummyTokenizer(),
+        prompt_lengths=[4],
+    )
+    processed = correct_padded_offset_processor(input_ids, _scores())
 
     assert torch.isneginf(processed[0, 7])
     assert processed[0, 4] == 0.0
