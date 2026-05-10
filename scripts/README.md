@@ -5,6 +5,16 @@ wrappers and historical diagnostics. Treat YAML-first entrypoints as the
 reportable path; shell wrappers that take only environment variables are
 manual/debug.
 
+## Python CLI Note
+
+Run repo Python CLIs through the project environment:
+
+```bash
+conda run -n ms python ...
+```
+
+Do not assume bare `python` has the required dependencies in this checkout.
+
 ## Stable entrypoints
 
 - Training (YAML-first): `scripts/train.sh` (wraps `python -m src.sft --config ...`).
@@ -13,6 +23,7 @@ manual/debug.
 - Confidence scoring / score materialization (YAML-first): `scripts/postop_confidence.py`.
 - Offline detection evaluation (YAML-first): `scripts/evaluate_detection.py`.
 - One-run proxy bundle evaluation (YAML-first): `scripts/evaluate_proxy_detection_bundle.py`.
+- Large asset sync / cross-node restore planning (YAML-first policy): `scripts/large_asset_sync.py`.
 - Export helper (merge LoRA + coord offsets): `scripts/merge_coord.sh`.
 
 ## Compatibility / debug wrappers

@@ -1,0 +1,9 @@
+**/*.tmp
+**/*.part
+**/*.lock
+**/.DS_Store
+**/tmp/**
+**/cache/**
+**/*.uploading
+**/*.downloading
+**/wandb/latest-run/**

@@ -1,0 +1,9 @@
+{
+  "schema_version": 1,
+  "remote_root": "/CoordExp",
+  "managed_root": "public_data",
+  "relative_root": "public_data",
+  "hash_policy": "full",
+  "generated_at_utc": "",
+  "files": []
+}

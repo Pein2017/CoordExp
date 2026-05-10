@@ -5,7 +5,7 @@ doc_type: artifacts-reference
 status: canonical
 domain: repo
 summary: Runtime artifacts, logging controls, and provenance surfaces.
-updated: 2026-04-03
+updated: 2026-05-09
 ---
 
 # Artifacts & Provenance
@@ -23,6 +23,36 @@ If you are looking for metric-key meaning, start here:
 If you are looking for the end-to-end system flow rather than artifact behavior,
 start with:
 - `docs/SYSTEM_OVERVIEW.md`
+
+---
+
+## Large Asset Sync Artifacts
+
+The large-asset sync workflow writes `git`-tracked desired-state manifests
+under `manifests/large_assets/` and disposable operator reports under
+`temp/large_asset_sync/`.
+
+- `manifests/large_assets/public_data.manifest.json`
+- `manifests/large_assets/model_cache.manifest.json`
+- `manifests/large_assets/output.manifest.json`
+  - desired-state file inventories keyed by repo-relative path
+- `manifests/large_assets/policy.yaml`
+  - managed-root contract, canonical remote root, report directory, and hash
+    policy surface
+- `manifests/large_assets/ignore.txt`
+  - transient-file exclusions for broad `output/**` management
+- `temp/large_asset_sync/local_scan*.json`
+- `temp/large_asset_sync/remote_scan*.json`
+- `temp/large_asset_sync/*publish*.json`
+- `temp/large_asset_sync/*align*.json`
+  - disposable operator reports; these do not enter `git`
+
+Manifest rule:
+
+- `scan-local` and `scan-remote` are report-only
+- `publish --execute` is the only workflow that updates tracked manifest state
+- local report files under `temp/large_asset_sync/` are reproducibility-supporting
+  scratch artifacts, not durable repo truth
 
 ---
 
