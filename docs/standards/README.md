@@ -6,7 +6,7 @@ status: canonical
 domain: standards
 summary: Router for repo conventions, code style, upstream policy, and porting notes.
 tags: [standards, policy]
-updated: 2026-05-09
+updated: 2026-03-09
 ---
 
 # Standards
@@ -23,5 +23,3 @@ Use this folder for stable repo policy and engineering conventions.
   - upstream dependencies and boundary rules
 - [PORTING.md](PORTING.md)
   - porting notes and compatibility guidance
-- [LARGE_ASSET_SYNC.md](LARGE_ASSET_SYNC.md)
-  - repo-relative Baidu Netdisk backup and cross-node restore workflow
