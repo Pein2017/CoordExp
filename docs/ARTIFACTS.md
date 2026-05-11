@@ -24,6 +24,27 @@ If you are looking for the end-to-end system flow rather than artifact behavior,
 start with:
 - `docs/SYSTEM_OVERVIEW.md`
 
+If you are looking for non-code asset ownership and Baidu Netdisk backup rules,
+start with:
+- `docs/standards/OUTPUT_SYNC_AND_DATA_PROVENANCE.md`
+
+---
+
+## Non-Code Asset Ownership
+
+CoordExp separates large non-code assets by whether they are recoverable,
+reproducible, or experiment-specific:
+
+- `model_cache/` is local pretrained cache state and is prepared per machine.
+- raw `public_data/` is fetched from dataset sources or local mirrors per
+  machine.
+- processed `public_data/` directories are documented through git-tracked
+  provenance manifests under `manifests/public_data_provenance/`.
+- `output/` is the Baidu Netdisk sync surface and maps to `/CoordExp/output/`.
+
+This keeps full raw-data hashing and generic large-asset sync out of the
+routine backup path.
+
 ---
 
 ## Inference, Confidence, And Evaluation Artifacts

@@ -10,6 +10,7 @@
 !configs/
 !docs/
 !scripts/
+!manifests/
 !openspec/
 !vis_tools/
 !tests/
@@ -23,6 +24,7 @@
 !configs/**
 !docs/**/*
 !scripts/**
+!manifests/**
 !openspec/**
 !vis_tools/**
 !tests/**

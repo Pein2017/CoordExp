@@ -23,3 +23,5 @@ Use this folder for stable repo policy and engineering conventions.
   - upstream dependencies and boundary rules
 - [PORTING.md](PORTING.md)
   - porting notes and compatibility guidance
+- [OUTPUT_SYNC_AND_DATA_PROVENANCE.md](OUTPUT_SYNC_AND_DATA_PROVENANCE.md)
+  - Baidu Netdisk ownership for `output/` and git provenance for processed `public_data/`

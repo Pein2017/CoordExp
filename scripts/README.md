@@ -31,6 +31,17 @@ manual/debug.
 
 - `scripts/_lib/backbone.sh`: shared bash helpers (repo root resolution, `ensure_required`, python runner).
 
+## External transfer helpers
+
+Baidu Netdisk upload/download helpers live in the repo-local Codex skill:
+
+- `.codex/skills/baidupcsgo-upload/scripts/upload_dir.sh`
+- `.codex/skills/baidupcsgo-upload/scripts/download_dir.sh`
+
+Use them for `output/` backups under `/CoordExp/output/`. Do not use Baidu
+Netdisk as the default sync surface for `model_cache/`, raw `public_data/`, or
+processed `public_data/` contents.
+
 ## Utilities (organized)
 
 - Analysis helpers: `scripts/analysis/`
