@@ -1,0 +1,3 @@
+display_name: BaiduDisk Union Sync
+short_description: Sync large asset folders through Baidu Netdisk without auto-deletes or overwrites.
+default_prompt: Use this skill to configure or run an append-only union sync between local large-asset folders and Baidu Netdisk, preserving additions from multiple machines while reporting conflicts and leaving deletes manual.
