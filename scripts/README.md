@@ -45,7 +45,7 @@ processed `public_data/` contents.
 ## Utilities (organized)
 
 - Analysis helpers: `scripts/analysis/`
-- Tooling helpers: `scripts/tools/` (incl. `scripts/tools/workspace_gc.sh`)
+- Tooling helpers: `scripts/tools/`
 - Small pipelines / workflow wrappers and diagnostics: `scripts/pipelines/`
   - tmux queue manager for sequential training jobs: `scripts/pipelines/train_task_manager.sh`
     (Python core: `scripts/pipelines/train_task_manager.py`)

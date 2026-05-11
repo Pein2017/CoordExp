@@ -47,8 +47,8 @@ echo "[workspace_gc] also pruning Python caches under repo (excluding .git and .
 if [[ "$DO_IT" != "1" ]]; then
   echo
   echo "Dry-run only."
-  echo "To delete: DO_IT=1 bash scripts/tools/workspace_gc.sh"
-  echo "To also purge model cache: DO_IT=1 PURGE_MODEL_CACHE=1 bash scripts/tools/workspace_gc.sh"
+  echo "To delete: DO_IT=1 bash ops/workspace/workspace_gc.sh"
+  echo "To also purge model cache: DO_IT=1 PURGE_MODEL_CACHE=1 bash ops/workspace/workspace_gc.sh"
   exit 0
 fi
 

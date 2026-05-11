@@ -9,6 +9,7 @@
 !src/
 !configs/
 !docs/
+!ops/
 !scripts/
 !manifests/
 !openspec/
@@ -23,6 +24,7 @@
 !src/**
 !configs/**
 !docs/**/*
+!ops/**
 !scripts/**
 !manifests/**
 !openspec/**
