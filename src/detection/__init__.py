@@ -12,6 +12,14 @@ from src.detection.data import (
     normalize_detection_row,
     parse_raw_detection_row,
 )
+from src.detection.coord_soft_targets import (
+    CoordSlotName,
+    CoordSoftCELoss,
+    CoordSoftTargetCandidate,
+    CoordSoftTargetRuntimeConfig,
+    build_iou_gibbs_coord_target,
+    full_vocab_coord_support_balance_ce,
+)
 from src.detection.dataset import (
     DetectionDatasetRuntimeConfig,
     DetectionTrainingDataset,
@@ -84,6 +92,10 @@ __all__ = [
     "CharSpan",
     "CompactFullTemplate",
     "CoordinateTokenBox",
+    "CoordSlotName",
+    "CoordSoftCELoss",
+    "CoordSoftTargetCandidate",
+    "CoordSoftTargetRuntimeConfig",
     "DetectionSequenceTemplate",
     "DetectionDatasetRuntimeConfig",
     "DetectionTrainingDataset",
@@ -133,9 +145,11 @@ __all__ = [
     "align_char_span_to_token_span",
     "assess_packing_eligibility",
     "build_recursive_detection_targets",
+    "build_iou_gibbs_coord_target",
     "compute_recursive_detection_ce_batch_loss",
     "build_packing_fingerprint",
     "build_static_sft_packing_fingerprint",
+    "full_vocab_coord_support_balance_ce",
     "get_detection_template",
     "detection_document_from_normalized_sample",
     "normalize_detection_row",
