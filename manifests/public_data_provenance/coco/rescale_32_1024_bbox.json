@@ -1,0 +1,51 @@
+{
+  "schema_version": 1,
+  "relative_path": "public_data/coco/rescale_32_1024_bbox",
+  "producer_script": "public_data/run.sh",
+  "working_dir": ".",
+  "command": "./public_data/run.sh coco rescale --preset rescale_32_1024_bbox -- --max-pixels 1048576 --min-pixels 4096 --image-factor 32 --num-workers 1",
+  "inputs": [
+    {
+      "kind": "raw_dataset",
+      "path": "public_data/coco/raw",
+      "notes": "COCO 2017 raw images and converted raw train/val JSONL prepared locally before rescale."
+    }
+  ],
+  "key_params": {
+    "dataset": "coco",
+    "image_factor": 32,
+    "max_pixels": 1048576,
+    "max_pixels_units": 1024,
+    "min_pixels": 4096,
+    "bbox_format": "xyxy",
+    "max_objects": null,
+    "splits": [
+      "train",
+      "val"
+    ],
+    "routine_sync_policy": "regenerate_from_raw_plus_manifest_not_baidu_directory_sync"
+  },
+  "checksums": {
+    "scope": "jsonl_training_samples_only",
+    "algorithm": "sha256",
+    "aggregate_sha256": "7dcdfbb0ac5abcc5dd96ebc6a0af6fea11ecaa672473c587c64e875fb29117f1",
+    "aggregate_source": "sorted path sha256 size_bytes records lines",
+    "files": [
+      {
+        "path": "public_data/coco/rescale_32_1024_bbox/train.jsonl",
+        "sha256": "bd0c269248ffde043ca03b5b6a9d5324f4694c6444e071a5ce6e6303fac5c619",
+        "size_bytes": 129182864,
+        "records": 117266
+      },
+      {
+        "path": "public_data/coco/rescale_32_1024_bbox/val.jsonl",
+        "sha256": "4e9e9d38ea5df5c129de412129f32df34ea21f9da1b71c0504f8ab15e2d1a97f",
+        "size_bytes": 5479797,
+        "records": 4952
+      }
+    ]
+  },
+  "code_ref": null,
+  "generated_at_utc": null,
+  "notes": "Full-object COCO 1024 xyxy rescale root. This manifest is the cross-node regeneration contract; do not routine-sync this processed directory through Baidu Netdisk."
+}

@@ -1,0 +1,118 @@
+{
+  "schema_version": 1,
+  "relative_path": "public_data/coco/rescale_32_1024_bbox_max60_lvis_proxy",
+  "producer_script": "scripts/analysis/export_coco_lvis_proxy_jsonl.py",
+  "working_dir": ".",
+  "command": "Run scripts/analysis/export_coco_lvis_proxy_jsonl.py for train and val with --base-jsonl public_data/coco/rescale_32_1024_bbox_max60/<split>.coord.jsonl, --projection-dir temp/coco_lvis_projection_<split>, --determined-mapping-csv openspec/changes/add-lvis-coco-proxy-supervision/artifacts/determined_proxy_mappings_val2017.csv, --raw-coco-annotation public_data/coco/raw/annotations/instances_<split>.json, --output-jsonl public_data/coco/rescale_32_1024_bbox_max60_lvis_proxy/<split>.coord.jsonl, and --summary-json public_data/coco/rescale_32_1024_bbox_max60_lvis_proxy/<split>.proxy_summary.json; materialize matching norm1000 JSONL sidecars from the augmented coord JSONL before training.",
+  "inputs": [
+    {
+      "kind": "processed_dataset_manifest",
+      "path": "manifests/public_data_provenance/coco/rescale_32_1024_bbox_max60.json",
+      "notes": "COCO 1024 max60 coord-token/norm1000 base branch."
+    },
+    {
+      "kind": "projection_artifact",
+      "path": "temp/coco_lvis_projection_train2017",
+      "notes": "Recovered LVIS-to-COCO80 projection rows for COCO train2017; regenerate locally from raw COCO/LVIS annotations when missing."
+    },
+    {
+      "kind": "projection_artifact",
+      "path": "temp/coco_lvis_projection_val2017",
+      "notes": "Recovered LVIS-to-COCO80 projection rows for COCO val2017; regenerate locally from raw COCO/LVIS annotations when missing."
+    },
+    {
+      "kind": "mapping_artifact",
+      "path": "openspec/changes/add-lvis-coco-proxy-supervision/artifacts/determined_proxy_mappings_val2017.csv",
+      "notes": "Versioned semantic proxy mapping used by the exporter."
+    },
+    {
+      "kind": "raw_dataset",
+      "path": "public_data/coco/raw/annotations",
+      "notes": "COCO instances JSON files used for original image dimensions during proxy coordinate normalization."
+    },
+    {
+      "kind": "raw_dataset",
+      "path": "public_data/lvis/raw/annotations",
+      "notes": "LVIS annotations used to regenerate projection artifacts."
+    }
+  ],
+  "key_params": {
+    "dataset": "coco",
+    "image_factor": 32,
+    "max_pixels": 1048576,
+    "max_pixels_units": 1024,
+    "bbox_format": "xyxy",
+    "max_objects": 60,
+    "lvis_proxy": true,
+    "include_plausible": true,
+    "metadata_namespace": "coordexp_proxy_supervision",
+    "strict_desc_ce_weight": 1.0,
+    "strict_coord_weight": 1.0,
+    "plausible_desc_ce_weight": 0.25,
+    "plausible_coord_weight": 0.0,
+    "observed_summary_counts": {
+      "train": {
+        "record_count": 117247,
+        "record_count_with_added_proxies": 24667,
+        "accepted_proxy_counts": {
+          "plausible": 53648,
+          "strict": 33556
+        },
+        "skipped_proxy_counts": {
+          "unselected_mapping": 18037
+        }
+      },
+      "val": {
+        "record_count": 4951,
+        "record_count_with_added_proxies": 1131,
+        "accepted_proxy_counts": {
+          "plausible": 2989,
+          "strict": 1219
+        },
+        "skipped_proxy_counts": {
+          "unselected_mapping": 454
+        }
+      }
+    },
+    "splits": [
+      "train",
+      "val"
+    ],
+    "routine_sync_policy": "regenerate_from_raw_plus_manifest_not_baidu_directory_sync"
+  },
+  "checksums": {
+    "scope": "jsonl_training_samples_only",
+    "algorithm": "sha256",
+    "aggregate_sha256": "25ae8d63afbcbf8497100659fc48b6a6af68b46a7613529a84543efb2f0363dc",
+    "aggregate_source": "sorted path sha256 size_bytes records lines",
+    "files": [
+      {
+        "path": "public_data/coco/rescale_32_1024_bbox_max60_lvis_proxy/train.coord.jsonl",
+        "sha256": "f94420eb79c22990863c66f09c06e245274ad21627ee038d61b340246e75351d",
+        "size_bytes": 346633660,
+        "records": 117247
+      },
+      {
+        "path": "public_data/coco/rescale_32_1024_bbox_max60_lvis_proxy/train.norm.jsonl",
+        "sha256": "d380374f8bcbd1a50c8bc369efae02d720a54fe334c5ba6c7e8633453fbd9235",
+        "size_bytes": 301721020,
+        "records": 117247
+      },
+      {
+        "path": "public_data/coco/rescale_32_1024_bbox_max60_lvis_proxy/val.coord.jsonl",
+        "sha256": "923f2c3403b08ba590468bab684e46d332374f1654a529561528e71bd8874a75",
+        "size_bytes": 15091973,
+        "records": 4951
+      },
+      {
+        "path": "public_data/coco/rescale_32_1024_bbox_max60_lvis_proxy/val.norm.jsonl",
+        "sha256": "f14541de944fb21fb12083055846f4a7d730e58391301c46b5658844d14defef",
+        "size_bytes": 13149029,
+        "records": 4951
+      }
+    ]
+  },
+  "code_ref": null,
+  "generated_at_utc": null,
+  "notes": "COCO 1024 max60 LVIS-proxy branch used by current Stage-1/Stage-2 configs. The observed counts are copied from the local train/val proxy_summary JSON sidecars and are included as lightweight consistency sentinels, not as a disk-level checksum."
+}

@@ -11,6 +11,7 @@
     "command",
     "inputs",
     "key_params",
+    "checksums",
     "code_ref",
     "generated_at_utc",
     "notes"
@@ -59,6 +60,55 @@
     },
     "key_params": {
       "type": "object"
+    },
+    "checksums": {
+      "type": ["object", "null"],
+      "additionalProperties": false,
+      "required": ["scope", "algorithm", "aggregate_sha256", "aggregate_source", "files"],
+      "properties": {
+        "scope": {
+          "type": "string",
+          "const": "jsonl_training_samples_only"
+        },
+        "algorithm": {
+          "type": "string",
+          "const": "sha256"
+        },
+        "aggregate_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "aggregate_source": {
+          "type": "string",
+          "minLength": 1
+        },
+        "files": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["path", "sha256", "size_bytes", "records"],
+            "properties": {
+              "path": {
+                "type": "string",
+                "pattern": "^public_data/.*\\.jsonl$"
+              },
+              "sha256": {
+                "type": "string",
+                "pattern": "^[0-9a-f]{64}$"
+              },
+              "size_bytes": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "records": {
+                "type": "integer",
+                "minimum": 0
+              }
+            }
+          }
+        }
+      }
     },
     "code_ref": {
       "type": ["string", "null"]

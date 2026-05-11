@@ -1,0 +1,84 @@
+{
+  "schema_version": 1,
+  "relative_path": "public_data/coco/rescale_32_1024_bbox_max60",
+  "producer_script": "public_data/run.sh",
+  "working_dir": ".",
+  "command": "PUBLIC_DATA_MAX_OBJECTS=60 ./public_data/run.sh coco coord --preset rescale_32_1024_bbox -- --num-workers 1",
+  "inputs": [
+    {
+      "kind": "processed_dataset_manifest",
+      "path": "manifests/public_data_provenance/coco/rescale_32_1024_bbox.json",
+      "notes": "Regenerate the full-object COCO 1024 rescale root before deriving the max-object-filtered coordinate-token branch."
+    },
+    {
+      "kind": "processed_dataset",
+      "path": "public_data/coco/rescale_32_1024_bbox",
+      "notes": "Base train/val JSONL and image tree used to derive the max60 branch. Images are materialized as hardlinks by the public-data pipeline."
+    }
+  ],
+  "key_params": {
+    "dataset": "coco",
+    "image_factor": 32,
+    "max_pixels": 1048576,
+    "max_pixels_units": 1024,
+    "min_pixels": 4096,
+    "bbox_format": "xyxy",
+    "max_objects": 60,
+    "coord_token_keys": [
+      "bbox_2d",
+      "poly"
+    ],
+    "splits": [
+      "train",
+      "val"
+    ],
+    "routine_sync_policy": "regenerate_from_raw_plus_manifest_not_baidu_directory_sync"
+  },
+  "checksums": {
+    "scope": "jsonl_training_samples_only",
+    "algorithm": "sha256",
+    "aggregate_sha256": "b8ca3c5805857c6d9a83e14709820aa1d554a6e0bf6145c3c81894115e27e5ff",
+    "aggregate_source": "sorted path sha256 size_bytes records lines",
+    "files": [
+      {
+        "path": "public_data/coco/rescale_32_1024_bbox_max60/train.coord.jsonl",
+        "sha256": "649fb8c1bf28da65762700ec9b29b9d3419da04d4c2aa330c4ee5085d2b90a6b",
+        "size_bytes": 169492296,
+        "records": 117247
+      },
+      {
+        "path": "public_data/coco/rescale_32_1024_bbox_max60/train.jsonl",
+        "sha256": "13dcdf2053e76fe1ebf4848d8fda0afd8946e7b98b6309c6943d7ac8e50b52ad",
+        "size_bytes": 129019910,
+        "records": 117247
+      },
+      {
+        "path": "public_data/coco/rescale_32_1024_bbox_max60/train.norm.jsonl",
+        "sha256": "1ac5a14eceacd409b44e5d3e8dff3629c6f45d294599e2a342b80b901d9fa103",
+        "size_bytes": 128756808,
+        "records": 117247
+      },
+      {
+        "path": "public_data/coco/rescale_32_1024_bbox_max60/val.coord.jsonl",
+        "sha256": "18a3cad3b7ad847ecf39949fe751d963008dbb7707f796c742c3fa23ae3c8e8b",
+        "size_bytes": 7201583,
+        "records": 4951
+      },
+      {
+        "path": "public_data/coco/rescale_32_1024_bbox_max60/val.jsonl",
+        "sha256": "19486e72864268e7488cc39401c76d2b880f7f6f8701038222edcf7e3e01814e",
+        "size_bytes": 5471981,
+        "records": 4951
+      },
+      {
+        "path": "public_data/coco/rescale_32_1024_bbox_max60/val.norm.jsonl",
+        "sha256": "03cfadf43b2c486ba9daac2e15309e4863614a48204f33996e441bb56e023d4e",
+        "size_bytes": 5460479,
+        "records": 4951
+      }
+    ]
+  },
+  "code_ref": null,
+  "generated_at_utc": null,
+  "notes": "COCO 1024 xyxy coord-token/norm1000 branch with images containing more than 60 objects filtered out. Two active training processes may read this dataset; this manifest records provenance only and does not require rewriting the data."
+}
