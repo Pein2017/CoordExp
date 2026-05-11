@@ -47,12 +47,16 @@
 !.self-improving/
 !.self-improving/**
 
-# Codex skills (track these, keep other .codex/* ignored)
+# Codex skills and curated memories (track these, keep other .codex/* ignored)
 !.codex/
 !.codex/skills/
 !.codex/skills/**
+!.codex/memories/
+!.codex/memories/**
 # Ignore downloaded/installed skill system runtime artifacts
 .codex/skills/.system/
+# Keep nested memory-git metadata local if a standalone memory repo exists.
+.codex/memories/.git/
 
 # Ignore common Python cache folders
 **/__pycache__/**
