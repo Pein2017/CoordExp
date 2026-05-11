@@ -52,7 +52,9 @@
 !.codex/skills/
 !.codex/skills/**
 !.codex/memories/
-!.codex/memories/**
+!.codex/memories/**/
+!.codex/memories/*.md
+!.codex/memories/**/*.md
 # Ignore downloaded/installed skill system runtime artifacts
 .codex/skills/.system/
 # Keep nested memory-git metadata local if a standalone memory repo exists.
