@@ -6,7 +6,7 @@ status: canonical
 domain: eval
 summary: YAML-first runbook for inference, confidence post-processing, evaluation, and visualization.
 tags: [eval, infer, runbook]
-updated: 2026-04-03
+updated: 2026-05-05
 ---
 
 # Evaluation Workflow

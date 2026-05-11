@@ -1,5 +1,5 @@
 schema_version: 1
-updated: 2026-05-07
+updated: 2026-05-11
 
 entrypoints:
   human:
@@ -152,6 +152,10 @@ docs:
       status: canonical
     - path: docs/standards/PORTING.md
       title: Porting notes between Qwen3-VL and CoordExp
+      type: standard
+      status: canonical
+    - path: docs/standards/OUTPUT_SYNC_AND_DATA_PROVENANCE.md
+      title: Output Sync And Data Provenance
       type: standard
       status: canonical
   notes:

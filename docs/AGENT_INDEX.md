@@ -6,7 +6,7 @@ status: canonical
 domain: repo
 summary: Agent-first retrieval guide for CoordExp documentation and research notes.
 tags: [agents, retrieval, docs]
-updated: 2026-05-07
+updated: 2026-05-09
 ---
 
 # Agent Index

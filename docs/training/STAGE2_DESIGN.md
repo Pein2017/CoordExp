@@ -5,7 +5,7 @@ doc_type: design-note
 status: historical
 domain: training
 summary: Historical design note for the active single-pass Channel-A plus clean-prefix Channel-B Stage-2 contract.
-updated: 2026-04-03
+updated: 2026-05-03
 ---
 
 # Stage-2 Design History

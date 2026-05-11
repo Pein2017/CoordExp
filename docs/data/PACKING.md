@@ -5,7 +5,7 @@ doc_type: reference
 status: canonical
 domain: data
 summary: Surface-specific packing policy, hard caps, cache behavior, and efficiency tradeoffs.
-updated: 2026-05-05
+updated: 2026-05-09
 ---
 
 # Packing Policy Matrix

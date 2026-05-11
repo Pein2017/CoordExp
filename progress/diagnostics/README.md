@@ -6,7 +6,7 @@ status: canonical
 domain: research-history
 summary: Router for failure investigations, mechanism studies, threshold sweeps, and operator notes that support diagnosis.
 tags: [progress, diagnostics, investigations]
-updated: 2026-05-08
+updated: 2026-05-09
 ---
 
 # Diagnostics Index

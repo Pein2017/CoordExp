@@ -5,7 +5,7 @@ doc_type: historical-note
 status: superseded
 domain: training
 summary: Superseded Stage-1 continuation objective note. Active implementation now lives in latest compact detection planning and code.
-updated: 2026-05-07
+updated: 2026-05-09
 ---
 
 # Superseded Stage-1 Continuation Objective

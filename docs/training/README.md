@@ -6,7 +6,7 @@ status: canonical
 domain: training
 summary: Router for Stage-1 and Stage-2 training documentation, metrics, and runbooks.
 tags: [training, stage1, stage2]
-updated: 2026-05-07
+updated: 2026-05-09
 ---
 
 # Training Docs
@@ -97,7 +97,7 @@ latest-detection objective subkeys, but no new CLI flags.
 - "Which Stage-1 surface should I run or compare?"
 - "What should I read before touching Stage-1 or Stage-2 configs?"
 - "What is the current Stage-1 packing and `global_max_length` contract?"
-- - "How do I distinguish compact recursive detection and baseline SFT evidence?"
+- "How do I distinguish compact recursive detection and baseline SFT evidence?"
 
 ## Code Handles
 

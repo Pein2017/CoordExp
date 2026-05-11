@@ -5,7 +5,7 @@ doc_type: artifacts-reference
 status: canonical
 domain: repo
 summary: Runtime artifacts, logging controls, and provenance surfaces.
-updated: 2026-04-03
+updated: 2026-05-11
 ---
 
 # Artifacts & Provenance

@@ -4,9 +4,9 @@ layer: docs
 doc_type: router
 status: canonical
 domain: standards
-summary: Router for repo conventions, code style, upstream policy, and porting notes.
+summary: Router for repo conventions, code style, upstream policy, porting notes, and asset provenance standards.
 tags: [standards, policy]
-updated: 2026-03-09
+updated: 2026-05-11
 ---
 
 # Standards

@@ -5,7 +5,7 @@ doc_type: runbook
 status: canonical
 domain: training
 summary: YAML-first runbook for active Stage-2 training, including direct learner runs and vLLM server-mode launches.
-updated: 2026-04-03
+updated: 2026-05-03
 ---
 
 # Stage-2 Training Runbook

@@ -5,7 +5,7 @@ doc_type: reference
 status: canonical
 domain: training
 summary: Stage-1 objective surfaces and coord-token training behavior.
-updated: 2026-05-07
+updated: 2026-05-09
 ---
 
 # Coord Objective & Adapter

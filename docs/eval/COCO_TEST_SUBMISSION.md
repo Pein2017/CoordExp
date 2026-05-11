@@ -6,7 +6,7 @@ status: canonical
 domain: eval
 summary: End-to-end runbook for 1024-budget COCO test-dev inference, submission export, and official scoring.
 tags: [eval, coco, test-dev, submission]
-updated: 2026-03-10
+updated: 2026-05-03
 ---
 
 # COCO Test-Dev Submission

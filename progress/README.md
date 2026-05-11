@@ -6,7 +6,7 @@ status: canonical
 domain: research-history
 summary: Human router for historical directions, diagnostics, audits, benchmarks, explorations, and pretraining history.
 tags: [progress, history, research]
-updated: 2026-04-23
+updated: 2026-05-03
 ---
 
 # Progress Index
