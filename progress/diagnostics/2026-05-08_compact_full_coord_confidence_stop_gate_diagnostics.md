@@ -4,9 +4,9 @@ layer: progress
 doc_type: diagnostic-study
 status: active-reference
 domain: stage1-compact-full-prefix-rollin
-summary: Root-cause diagnostic for compact-full prefix-rollin / multiple-positive training, focused on low training loss but conservative free decode, coord_mean_logprob confidence separation, repetition-penalty stability, and the 2026-05-08 HF batch prompt-offset bug that caused compact-grammar state drift under left padding.
+summary: Root-cause diagnostic for compact-full prefix-rollin / multiple-positive training, focused on low training loss but conservative free decode, coord_mean_logprob confidence separation, repetition-penalty stability, the 2026-05-08 HF batch prompt-offset bug that caused compact-grammar state drift under left padding, and the 2026-05-12 A3/A4 follow-up showing less predictable prefix-rollin behavior.
 tags: [stage1, compact-full, prefix-rollin, et-rmp-ce, coord-confidence, stop-gate, eos, repetition-penalty, val200, diagnostics, prompt-offset, left-padding]
-updated: 2026-05-08
+updated: 2026-05-12
 ---
 
 # Compact-Full Coord-Confidence And Stop-Gate Diagnostics
@@ -22,6 +22,8 @@ Use this note when the question is:
   invalid or duplicate continuation tail;
 - how `repetition_penalty` changes compact-full rollout stability;
 - why batched HF compact-grammar decode can differ from single-sample replay;
+- how the later A3/A4 prefix-rollin checkpoints changed continuation behavior
+  without yet giving a reliable production diagnostic;
 - what counterfactual boundary probe should be run next.
 
 Do not use this as a full validation result. The evidence here is diagnostic:
@@ -76,6 +78,15 @@ A useful shorthand:
 The model often knows how to write an object row, but it is too conservative
 about opening the next row. If pushed too hard, it can enter a low-confidence
 duplicate or invalid tail.
+```
+
+The A3/A4 follow-up keeps this shorthand but adds an important caution:
+
+```text
+Weakening EOS can open more recall, but it also makes the model's rollout basin
+less predictable. A4 improves over A3 on the aggregate val200 surface, yet it
+adds more invalid/border/collapse events and manual review does not support a
+clean "A4 is simply better" conclusion.
 ```
 
 ## Scope Guard
@@ -161,6 +172,16 @@ Small-fire checkpoint roots used in the `val32` smoke comparison:
 temp/recursive_detection_ce_latest/output/compact_full_prefix_rollin_separator1p0_adapter_probe20_effbs8/smoke-compact-full-prefix-rollin-separator1p0-adapter-probe20-effbs8/v0-20260508-063344/checkpoint-20
 temp/recursive_detection_ce_latest/output/compact_full_prefix_rollin_separator1p25_adapter_probe20_effbs8/smoke-compact-full-prefix-rollin-separator1p25-adapter-probe20-effbs8/v0-20260508-063344/checkpoint-20
 temp/recursive_detection_ce_latest/output/compact_full_prefix_rollin_separator1p5_adapter_probe20_effbs8/smoke-compact-full-prefix-rollin-separator1p5-adapter-probe20-effbs8/v0-20260508-063344/checkpoint-20
+```
+
+A3/A4 follow-up artifacts:
+
+```text
+temp/a4_rp110_tf_probe_and_manual_review_20260512/tf_probe_high_ge10_32_summary/summary.md
+temp/a4_rp110_tf_probe_and_manual_review_20260512/manual_audit_a4_vs_a3_image20_v2_pixelgt/manual_audit_a4_vs_a3_image20_v2_pixelgt.csv
+temp/a4_rp110_tf_probe_and_manual_review_20260512/manual_audit_a4_vs_a3_image20_v2_pixelgt/manifest_no_gt.json
+output_remote/infer/recursive_detection_ce_latest/compact_full_prefix_rollin_balance2_a3_ckpt3664_val200_bsz8_temp0_rp1p10_max3084_chatfix_4gpu
+output_remote/infer/recursive_detection_ce_latest/compact_full_prefix_rollin_balance2_a4_eos_ckpt3664_val200_bsz8_temp0_rp1p10_max3084_chatfix_4gpu
 ```
 
 Baseline adapter checkpoint used for comparison:
@@ -937,16 +958,98 @@ Do not overread this as "late objects are hallucinations." Later object index
 mixes several effects: smaller objects, dense scenes, annotation incompleteness,
 self-generated prefix drift, and tail risk.
 
+## A3/A4 Prefix-Rollin Follow-Up (2026-05-12)
+
+The later production-scale A3/A4 checkpoints were evaluated on the same
+first-200 COCO `compact_full`, `rp=1.10`, `temperature=0.0`,
+`max_new_tokens=3084` surface used for the compact-full follow-up dashboard.
+
+Run definitions:
+
+| ID | Objective | Intended mechanism |
+|---|---|---|
+| A3 | prefix-rollin support+balance | add prefix-closed coverage while keeping EOS supervision fully trusted |
+| A4 | A3 + EOS-trust prior | reduce EOS force according to the empirical missing-label prior |
+
+Aggregate result:
+
+| Run | AP | AP50 | F1@0.50 | Recall | Precision | Pred | Invalid or bad-geom | Suppressed | Guard AP | Guard F1@0.50 |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| A3 prefix-rollin | `0.3980` | `0.5444` | `0.5597` | `0.4917` | `0.6496` | `1162` | `11` | `301` | `0.3854` | `0.5485` |
+| A4 EOS-trust | `0.4001` | `0.5502` | `0.5612` | `0.5173` | `0.6133` | `1300` | `72` | `401` | `0.3915` | `0.5638` |
+
+Training-side snapshot:
+
+| Run | Final ckpt | Trainer best ckpt | Final eval CE | Coord top1 | Type mass | EOS trust |
+|---|---:|---:|---:|---:|---:|---:|
+| A3 | `3664` | `3664` | `1.5964` | `0.1315` | `0.9705` | `1.0000` |
+| A4 | `3664` | `3600` | `1.5710` | `0.1318` | `0.9727` | `0.3113` |
+
+Read:
+
+- A4 improves A3 on aggregate AP, AP50, recall, and guarded F1.
+- A4 also increases invalid/border/collapse events (`11 -> 72`) and duplicate
+  suppression burden (`301 -> 401`).
+- A3 is cleaner but more conservative; A4 opens recall but is more chaotic.
+- Neither A3 nor A4 beats the older A2/support+balance row on the same
+  compact-full `rp=1.10` leaderboard.
+
+### Boundary Probe
+
+The A3/A4 teacher-forced probe used 32 high-density first-val200 images with
+`GT_count >= 10`, GT prefixes `K=0,1,3,5,10,N`, and generated-prefix boundary
+states from each run's own `rp=1.10` rollout.
+
+| Run | Generated-boundary n | Generated sep-minus-EOS mean | Generated sep <= 0 | Generated entry mean | GT sep mean | GT sep <= 0 | True-end EOS prob |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| A2 support+balance | `27` | `-1.306` | `1.000` | `15.162` | `8.525` | `0.056` | `0.880` |
+| A3 prefix-rollin | `22` | `-1.000` | `1.000` | `15.099` | `7.087` | `0.048` | `0.858` |
+| A4 EOS-trust | `18` | `-0.667` | `1.000` | `16.066` | `7.387` | `0.032` | `0.692` |
+
+Read:
+
+- A4 weakens EOS relative to A3, but generated free-boundary states still prefer
+  EOS in every sampled generated-prefix case.
+- Object-entry confidence after forced continuation remains high. The model is
+  not primarily failing to emit `<|object_ref_start|>` once the row is opened.
+- The gap is still autoregressive state quality: the model behaves much better
+  under GT prefixes than under its own generated prefixes.
+
+### Manual Review Read
+
+The 20-image A4-vs-A3 review should be read qualitatively only. The earlier
+GT-green overlay had a pixel-vs-norm1000 coordinate rendering bug; use the v2
+pixel-GT/no-GT overlays.
+
+Reviewer synthesis:
+
+- A4 adds many plausible unlabeled positives, especially in dense scenes.
+- A4 also produces frequent top-left/border coordinate collapse and duplicate
+  bursts. These are often purple/red overlay events.
+- Magenta duplicate-guard candidates are mixed: many are true duplicates, but
+  some are visually plausible separate dense objects.
+- A3 is often tighter and cleaner; A4 is often higher recall. The two effects
+  are entangled at the image level.
+
+Current conclusion:
+
+```text
+A3/A4 are useful research probes, but not a reliable solved version of the
+multiple-positive/prefix-rollin line. The next reliable gate must distinguish
+valid continuation from duplicate/collapse tail before A4-like EOS weakening can
+be promoted.
+```
+
 ## Root-Cause Ranking
 
 | rank | hypothesis | evidence strength | current read |
 |---:|---|---|---|
 | 1 | HF batched compact-grammar prompt-offset bug under left padding | very strong | confirmed implementation root cause for much of the pre-fix conservative stopping |
-| 2 | Duplicate/tail control after restored continuation | strong | fixed val200 emits many more useful objects, but also more duplicate/low-confidence tail |
-| 3 | Free-boundary EOS/continue calibration is still too conservative after the offset fix | open | must be remeasured on fixed val200 artifacts |
+| 2 | Duplicate/tail control after restored continuation | strong | fixed val200 and A4 emit more useful objects, but also more duplicate/low-confidence or border-collapse tail |
+| 3 | Free-boundary EOS/continue calibration is still too conservative after the offset fix | strong but incomplete | A4 weakens EOS, yet generated-prefix boundary probes still prefer EOS; blunt weakening is not enough |
 | 4 | Annotation incompleteness / eval FP contamination | strong for "FP != hallucination", moderate for confirmed unlabeled | critical to interpretation |
-| 5 | Local teacher-forced objective vs global free-decode stop mismatch | strong as a general mechanism | still relevant after implementation fixes |
-| 6 | Rollout exposure mismatch | moderate to strong | especially visible in `rp=1.00` duplicate tail |
+| 5 | Local teacher-forced objective vs global free-decode stop mismatch | strong as a general mechanism | still relevant after implementation fixes and A3/A4 |
+| 6 | Rollout exposure mismatch | strong | A3/A4 boundary probe shows GT-prefix continuation is healthy while generated-prefix continuation remains weak |
 | 7 | Coord confidence can gate failure modes | very strong for duplicate/invalid tail filtering, weak as universal TP-vs-FP classifier | useful diagnostic ruler |
 | 8 | True perception failure | present but not primary in these artifacts | likely concentrated in small, dense, late objects |
 
@@ -1054,6 +1157,10 @@ Recommended near-term priorities:
 5. Only after the counterfactual probe confirms useful hidden objects, consider
    a decode-side experiment: `force continue unless next object confidence is
    low`, guarded by geometry and duplicate checks.
+6. For A3/A4 specifically, add a collapse-aware acceptance gate before drawing
+   conclusions from more EOS weakening: border-touch flags, top-left basin
+   flags, self-duplicate IoU, large scene-support box flags, and coord/object
+   confidence should be logged together.
 
 ## Open Questions
 
@@ -1066,3 +1173,8 @@ Recommended near-term priorities:
 - How stable is the `-3.4` coord cutoff across checkpoints, count buckets, and
   object sizes?
 - Should future confidence thresholds be size/count-aware rather than global?
+- Can A4's useful continuation rows be separated from its purple/top-left
+  collapse rows using only logits, geometry, duplicate overlap, and prefix-state
+  features available at decode time?
+- Is A3/A4 instability caused mostly by EOS trust, by prefix-rollin generated
+  state exposure, or by coordinate basin attraction in dense scenes?
