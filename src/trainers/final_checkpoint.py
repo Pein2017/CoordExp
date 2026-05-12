@@ -231,7 +231,8 @@ def validate_restartable_checkpoint(checkpoint_dir: str | Path) -> dict[str, Any
         missing.append(COORDEXP_CHECKPOINT_STATE_NAME)
     if missing:
         raise ValueError(
-            "Restartable checkpoint is incomplete. Missing required artifacts: "
+            "Restartable checkpoint is incomplete for checkpoint_mode='restartable'. "
+            "Missing required artifacts: "
             + ", ".join(missing)
             + f" in {checkpoint_path}"
         )

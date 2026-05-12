@@ -36,7 +36,12 @@ def resolve_stage2_ab_ddp_phase_config(
     *,
     ddp_world_size: int,
 ) -> Stage2DDPPhaseConfig:
-    ddp_phase_timeout_raw = owner._ab_channel_b_get("ddp_phase_timeout_s", None)
+    channel_b_get = getattr(owner, "_ab_channel_b_get", None)
+    ddp_phase_timeout_raw = (
+        channel_b_get("ddp_phase_timeout_s", None)
+        if callable(channel_b_get)
+        else None
+    )
     if ddp_phase_timeout_raw is None:
         ddp_phase_monitor_enabled = True
         ddp_phase_timeout_s = 120.0

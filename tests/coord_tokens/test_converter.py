@@ -1,15 +1,18 @@
-import sys
+import importlib.util
 from pathlib import Path
 
 import pytest
 
 ROOT = Path(__file__).resolve().parents[2]
-# `public_data/scripts` is a Python package named `scripts`; add `public_data/` to sys.path.
-PUBLIC_DATA = ROOT / "public_data"
-if str(PUBLIC_DATA) not in sys.path:
-    sys.path.insert(0, str(PUBLIC_DATA))
-
-from scripts.convert_to_coord_tokens import convert_list  # noqa: E402
+CONVERTER_PATH = ROOT / "public_data/scripts/convert_to_coord_tokens.py"
+_converter_spec = importlib.util.spec_from_file_location(
+    "public_data_convert_to_coord_tokens",
+    CONVERTER_PATH,
+)
+assert _converter_spec is not None and _converter_spec.loader is not None
+_converter = importlib.util.module_from_spec(_converter_spec)
+_converter_spec.loader.exec_module(_converter)
+convert_list = _converter.convert_list
 
 
 def test_convert_list_rounds_like_ms_swift():

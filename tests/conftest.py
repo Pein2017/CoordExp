@@ -40,6 +40,10 @@ _purge_modules("swift")
 # Ensure we use this repo's src package even if another is already imported
 _purge_modules("src")
 
+# Ensure tests that import repo-local script entrypoints do not resolve to an
+# unrelated editable dependency named `scripts`.
+_purge_modules("scripts")
+
 # Proactively import ms-swift to avoid later tests accidentally shadowing the
 # `swift` package with a non-package module.
 try:
@@ -62,3 +66,5 @@ try:
     import swift.llm.argument  # noqa: F401
 except Exception:  # pragma: no cover - environment guard
     pass
+
+_purge_modules("scripts")

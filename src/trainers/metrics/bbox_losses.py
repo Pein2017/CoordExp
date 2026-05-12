@@ -2,6 +2,8 @@ from typing import Any, Mapping
 
 import torch
 
+from src.coord_tokens.codec import get_coord_token_ids
+
 
 class BBoxGeoLossMixin:
     """Stage-1 bbox-geometry aux loss host.
