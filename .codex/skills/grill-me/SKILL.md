@@ -12,7 +12,7 @@ Use this as a focused clarification loop, not as a planning bureaucracy.
 - Ask one question at a time and include your recommended answer.
 - If repo context can answer the question, inspect the repo or artifacts first instead of asking.
 - Distinguish hypothesis, implementation plan, experiment result, interpretation, and stable contract.
-- Keep Notion, Linear, super-power plans, OpenSpec, docs, and repo artifacts in their existing ownership lanes.
+- Keep super-power plans, OpenSpec, docs, progress notes, and repo artifacts in their existing ownership lanes.
 - Do not create or update management artifacts unless the user asks or the decision clearly belongs there.
 
 ## Question Style

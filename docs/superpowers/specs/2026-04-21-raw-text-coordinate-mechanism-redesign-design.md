@@ -37,8 +37,8 @@ surfaces, but not as evidence.
 - The study should maximize mechanism insight rather than minimize runtime.
 - Eight GPUs are available, with one inference-heavy task per GPU and parallel
   execution encouraged.
-- Human review must minimize effort and use a UI-friendly Notion surface rather
-  than raw markdown or JSONL inspection.
+- Human review must minimize effort and use a UI-friendly artifact-backed
+  surface rather than raw markdown or JSONL inspection.
 - Human review budget is fixed to:
   - `15` FP / extra-prediction cases
   - `5` FN-mechanism cases
@@ -116,7 +116,7 @@ The study must keep three objects distinct:
    - one frozen object-level table with stable ids
 2. **derived branch bundles**
    - duplicate-burst, FN, heatmap, perturbation, and representation subsets
-3. **Notion review projection**
+3. **Review projection**
    - user-facing audit queue derived from local artifacts, never the authority
 
 The case bank must not be a continuously mutating shared object. Earlier
@@ -338,10 +338,10 @@ The five FN reviews should optimize for contrast:
 - `1` base-only anchor case for true incapacity or invalid-geometry-like
   failure
 
-### Notion-first review surface
+### Review-first surface
 
-Notion should be the primary review interface with one row per case, not one
-row per panel.
+The review surface should be the primary review interface with one row per
+case, not one row per panel.
 
 Required fields:
 
@@ -524,5 +524,5 @@ The study succeeds if it produces:
    duplicate-burst onset
 3. an FN mechanism breakdown that distinguishes decode selection, continuation
    blocking, stop pressure, and ambiguity
-4. a low-effort Notion review surface that calibrates the interpretation of
+4. a low-effort review surface that calibrates the interpretation of
    extra predictions and selected FN cases

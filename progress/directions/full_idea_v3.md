@@ -606,7 +606,7 @@ R = { g in G : g missed by anchor, hit by explore }
 ```
 
 These recovered GT objects should receive special treatment.
-Here, “hit” and “miss” inherit the **existing Stage-2 Channel-B matching contract** rather than a stricter new notion of full-match.
+Here, “hit” and “miss” inherit the **existing Stage-2 Channel-B matching contract** rather than a stricter new full-match definition.
 
 ### 10.1 Minimal version
 

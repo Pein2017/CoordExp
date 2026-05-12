@@ -1,8 +1,8 @@
 # Compact Detection Sequence Phase 1 Training-Infra Plan
 
-> **Management boundary:** Linear owns the overall research lifecycle and
-> cross-phase progress. This super-power plan owns only the code implementation,
-> tests, and smoke verification for the current branch.
+> **Management boundary:** This repo-local super-power plan owns the code
+> implementation, tests, and smoke verification for the current branch. The
+> broader research lifecycle stays in repo docs and progress notes.
 
 ## Goal
 
@@ -34,7 +34,7 @@ Implement and verify:
 
 ## Explicitly Deferred To Phase 2
 
-Linear should track these as later gates after production checkpoints exist:
+Phase 2 should track these as later gates after production checkpoints exist:
 
 - production training completion and checkpoint selection,
 - inference config matrix,
@@ -42,7 +42,7 @@ Linear should track these as later gates after production checkpoints exist:
 - confidence post-op scoring policy,
 - `val200` metrics,
 - final benchmark note under `progress/benchmarks/`,
-- Notion research interpretation and conclusion.
+- final research interpretation and conclusion in repo docs and progress notes.
 
 Phase 1 may contain parser helpers if they are low-risk and off by default, but
 Phase 1 does not claim inference/eval readiness or measured AP behavior.
@@ -210,8 +210,8 @@ train_data_provenance.json
 
 - [x] Update this plan/spec after Phase 1 scope refinement.
 - [x] Update `AGENTS.md` so the repo-level work routine says:
-      Linear owns overall research/process state; super-power owns
-      branch-specific implementation and smoke verification.
+      repo-local super-power plans own branch-specific implementation and
+      smoke verification.
 - [ ] Reconcile this branch with current `main`.
 - [ ] Re-run targeted tests after reconciliation.
 - [ ] Re-run `git diff --check`.
@@ -220,13 +220,13 @@ train_data_provenance.json
 - [ ] Merge to `main` or open a PR.
 - [ ] Only clean/free the worktree after the branch is safely merged or pushed.
 
-## Linear-Owned Follow-Up
+## Phase 2 Follow-Up
 
-After merge, Linear should track:
+After merge, track these as later gates in repo docs or the next plan:
 
 - launch compact-full production training from `main`,
 - decide whether to train baseline E and compact A/B/C/D variants in the same
   production wave or in staged waves,
 - monitor production artifacts and checkpoint health,
-- create Phase 2 implementation issue for inference/eval/`val200`,
-- create final research memo task after measured results exist.
+- create a Phase 2 implementation task for inference/eval/`val200`,
+- write the final research memo after measured results exist.

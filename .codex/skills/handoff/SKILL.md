@@ -24,4 +24,4 @@ Include only portable, actionable state:
 - which skills or repo docs the next agent should use;
 - verification that still needs to run.
 
-Do not duplicate large artifacts, PRDs, plans, metrics, or docs. Link exact paths instead. Keep Notion and Linear references short and navigational; repo files and artifacts remain executable truth.
+Do not duplicate large artifacts, PRDs, plans, metrics, or docs. Link exact paths instead. Keep references short and navigational; repo files, docs, and artifacts remain executable truth.

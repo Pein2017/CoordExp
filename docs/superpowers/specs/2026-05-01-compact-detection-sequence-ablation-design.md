@@ -13,10 +13,10 @@ evaluation contracts, but it spends many supervised tokens on JSON keys,
 quotes, brackets, and repeated structure. The next ablation asks whether a
 more Pixel2Seq-like compact object-row sequence improves Stage-1 SFT and later
 eval-time rollout behavior without entering Stage-2 rollout/objective work.
-This design is the Phase 1 training-infrastructure slice only. Linear owns the
-larger research lifecycle; this repo-local super-power spec owns the code
-implementation and smoke verification needed before merging training
-infrastructure to `main`.
+This design is the Phase 1 training-infrastructure slice only. The broader
+research lifecycle stays in repo docs and progress notes; this repo-local
+super-power spec owns the code implementation and smoke verification needed
+before merging training infrastructure to `main`.
 
 ## Phase 1 Scope
 
@@ -120,7 +120,7 @@ Do not mix this flat contract with a second nested
 `custom.detection_sequence.*` schema during the pilot.
 
 Phase 2 may add or refine `infer.detection_sequence_format` once production
-checkpoints exist and inference/eval is the active Linear phase.
+checkpoints exist and inference/eval is the active follow-up phase.
 
 Token handling is a separate role contract, not part of the renderer/parser
 contract. The compact renderer emits native Qwen marker strings; the training
@@ -302,31 +302,31 @@ Phase 1 does not claim inference/eval readiness or any measured mAP/AP result.
 
 ## Phase 2 Handoff
 
-Linear tracks Phase 2 after production checkpoints exist. Phase 2 should own:
+The repo-local follow-up phase owns:
 
 - production checkpoint selection,
 - inference/eval config creation,
 - compact parse diagnostics in inference artifacts,
 - confidence post-op scoring policy,
 - `val200` benchmark execution,
-- final research interpretation in Notion and checked-in `progress/benchmarks/`.
+- final research interpretation in repo docs and checked-in
+  `progress/benchmarks/`.
 
 ## Workflow Pilot
 
 For this research-management pilot:
 
-- Notion has a global `CoordExp` root, a canonical `Research Units` database,
-  and `Experiments & Evidence` as the renamed/optimized migration surface for
-  `progress/`.
+- `docs/` and `progress/` are the durable repo-local research record.
 - The `Compact Detection Sequence Ablation` Research Unit is the canonical
   research-memory record. The standalone `Compact Detection Sequence Pilot`
-  page is a supporting brief.
-- Linear owns cross-phase execution state: Phase 1 training-infra merge,
-  production training launch, Phase 2 inference/eval, `val200`, and final memo.
+  note is a supporting brief.
+- Repo-local notes and progress records own cross-phase execution state:
+  Phase 1 training-infra merge, production training launch, Phase 2
+  inference/eval, `val200`, and final memo.
 - Repo-local super-power specs/plans hold branch-specific implementation and
   verification details. They should not try to manage the whole research
-  lifecycle, and Linear should not mirror file-level checklists.
+  lifecycle.
 - OpenSpec remains available for stable behavior or config-contract changes,
   but this pilot should not abruptly remove OpenSpec from the workflow.
-- Final measured results still belong in `progress/benchmarks/`; Notion links
-  them, but does not replace repo evidence.
+- Final measured results still belong in `progress/benchmarks/`; checked-in
+  notes link them, but do not replace repo evidence.

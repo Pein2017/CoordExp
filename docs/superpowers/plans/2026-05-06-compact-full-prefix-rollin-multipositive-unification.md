@@ -2414,12 +2414,14 @@ implementation test pass
   -> scope labels are complete
   -> run artifacts and manifests are complete
   -> progress note only if the result is useful evidence
-  -> Notion claim/decision only with metric scope and artifact links
+  -> checked-in claim/decision note only with metric scope and artifact links
   -> docs update only when behavior becomes stable current guidance
   -> OpenSpec only for compatibility-sensitive stable contracts
 ```
 
-Linear should track only coarse workstream/gate state. This super-power plan owns file-level implementation details and verification commands.
+The next repo-local tracking surface should keep only coarse workstream/gate
+state. This super-power plan owns file-level implementation details and
+verification commands.
 
 ## Task 14: Documentation Cleanup After Tests Pass
 

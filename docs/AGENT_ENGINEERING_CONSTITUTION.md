@@ -392,8 +392,8 @@ Decision rule:
 
 - Put durable current behavior in docs.
 - Put detailed execution checklists in super-power plans.
-- Put coarse progress and blockers in Linear when needed.
-- Put research interpretation and durable decisions in Notion when appropriate.
+- Put coarse progress and blockers in `progress/` when needed.
+- Put research interpretation and durable decisions in `docs/` when appropriate.
 - Keep executable truth in the repo.
 
 ## 13. Future-Agent Workflow Checklist

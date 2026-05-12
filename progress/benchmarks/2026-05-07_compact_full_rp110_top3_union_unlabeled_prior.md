@@ -19,7 +19,6 @@ The main outputs are:
 - a corrected bootstrap-union estimate of unique unlabeled objects
 - an A3/A4 prefix-rollin follow-up that should be treated as unstable
   diagnostic evidence rather than a replacement for the original top-3 prior
-- a Notion-import recommendation for research memory
 
 This is a `progress/benchmarks/` note because it is measured evidence with a
 fixed dated scope. It is not a stable current workflow contract.
@@ -356,31 +355,10 @@ extra plausible objects ~= 0.4 * COCO GT annotations
 
 This should be treated as a research prior, not as a dataset truth claim.
 
-## Notion Import Recommendation
+## Repo Artifacts
 
-This result is suitable for Notion, but it should be imported as research
-memory, not as an executable contract.
-
-Recommended Notion placement:
-
-- Research Unit:
-  `Compact-full rp1.10 bootstrap-union unlabeled-object prior`
-- Claims Ledger entry:
-  `On val200 top-3 rp=1.10 compact-full rollouts, bbox-only prediction union suggests U ~= 0.38 to 0.40 * GT after burst filtering.`
-- optional Decision Log:
-  only if we decide to use the `0.4 * GT` prior in a training objective,
-  dataset expansion rule, or evaluation correction.
-
-Recommended claim status:
-
-- `Supported` for the scoped empirical claim:
-  `val200`, top-3 `rp=1.10` compact-full rollouts, bbox-only IoU `0.50`,
-  guarded prediction surface, burst-filtered.
-- `Untested` for any generalization claim to full-val, other checkpoints,
-  other prompts, other RP settings, or true unlabeled object count.
-
-Do not paste the full per-image JSON into Notion. Link the repo note and exact
-artifact paths instead:
+Keep this result in repo-linked evidence rather than a separate management
+surface.
 
 - this note:
   [2026-05-07_compact_full_rp110_top3_union_unlabeled_prior.md](/data/CoordExp/progress/benchmarks/2026-05-07_compact_full_rp110_top3_union_unlabeled_prior.md)
