@@ -12,9 +12,9 @@ from src.detection.coord_soft_targets import (
 )
 
 
-def _cfg() -> CoordSoftTargetRuntimeConfig:
+def _cfg(target_distribution: str = "iou_gibbs_v0") -> CoordSoftTargetRuntimeConfig:
     return CoordSoftTargetRuntimeConfig(
-        target_distribution="iou_gibbs_v0",
+        target_distribution=target_distribution,
         tau=0.0090909091,
         coord_token_start=10,
         coord_token_end=1009,
@@ -31,6 +31,27 @@ def test_iou_gibbs_target_is_normalized_and_peaks_at_gt_coord() -> None:
     peak_index = int(target.probs.argmax().item())
     assert int(target.token_ids[peak_index].item()) == 110
     assert target.entropy.item() > 0.0
+
+
+def test_ciou_gibbs_target_is_normalized_and_peaks_at_gt_coord() -> None:
+    candidate = CoordSoftTargetCandidate("box", "x2", (100, 100, 250, 130), 1.0)
+
+    target = build_iou_gibbs_coord_target((candidate,), _cfg("ciou_gibbs_v0"))
+
+    assert target.probs.sum().item() == pytest.approx(1.0)
+    peak_index = int(target.probs.argmax().item())
+    assert int(target.token_ids[peak_index].item()) == 260
+    assert target.entropy.item() > 0.0
+
+
+def test_ciou_gibbs_sharpens_relative_to_iou_for_same_tau() -> None:
+    candidate = CoordSoftTargetCandidate("box", "x2", (100, 100, 250, 130), 1.0)
+
+    iou_target = build_iou_gibbs_coord_target((candidate,), _cfg("iou_gibbs_v0"))
+    ciou_target = build_iou_gibbs_coord_target((candidate,), _cfg("ciou_gibbs_v0"))
+
+    assert ciou_target.peak_prob.item() > iou_target.peak_prob.item()
+    assert ciou_target.entropy.item() < iou_target.entropy.item()
 
 
 def test_boundary_invalid_candidates_get_zero_mass() -> None:

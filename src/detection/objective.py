@@ -34,6 +34,7 @@ from src.detection.tokenization import (
     TokenizerWithOffsets,
     tokenize_rendered_detection_conversation,
 )
+from src.tokens.coord.codec import token_to_int
 
 DetectionTrainingMode = Literal[
     "sorted_sft",
@@ -42,6 +43,7 @@ DetectionTrainingMode = Literal[
     "prefix_rollin_et_rmp_ce",
 ]
 TrieTargetKind = Literal["hard_ce", "trie_multi_positive"]
+CoordSlotName = Literal["x1", "y1", "x2", "y2"]
 StateWeightingStrategy = Literal[
     "legacy_row_mean_prefix_mixture_equivalence",
     "uniform_permutation",
@@ -141,6 +143,14 @@ class TrieBranchTarget:
 
 
 @dataclass(frozen=True)
+class CoordSoftTargetSpec:
+    object_instance_id: str
+    slot_name: CoordSlotName
+    bbox_xyxy: tuple[int, int, int, int]
+    probability: float
+
+
+@dataclass(frozen=True)
 class TokenTarget:
     position: int
     teacher_token_id: int
@@ -155,6 +165,7 @@ class TokenTarget:
     loss_weight: float = 1.0
     type_gate_token_ids: tuple[int, ...] = ()
     type_gate_weight: float = 0.0
+    coord_soft_targets: tuple[CoordSoftTargetSpec, ...] = ()
 
     @property
     def valid_token_ids(self) -> tuple[int, ...]:
@@ -804,12 +815,14 @@ class _TrieObjectInstance:
     object_index: int
     source_object_index: int
     token_ids: tuple[int, ...]
+    bbox_xyxy: tuple[int, int, int, int]
 
 
 @dataclass
 class _EntryTrieNode:
     terminal_count: int = 0
     children: dict[int, "_EntryTrieNode"] = field(default_factory=dict)
+    descendant_instances: list[_TrieObjectInstance] = field(default_factory=list)
     _cached_descendant_count: int | None = None
 
     def descendant_count(self) -> int:
@@ -845,6 +858,13 @@ def build_recursive_detection_targets(
     token_targets: list[TokenTarget] = []
     cursor = tokenized.assistant_token_span.start
     for entry in tokenized.object_entries:
+        entry_coord_soft_targets = _single_object_coord_soft_targets_by_position(
+            entry,
+            object_instance=_find_object_instance(
+                remaining_instances,
+                object_instance_id=entry.object_instance_id,
+            ),
+        )
         _append_hard_ce_targets(
             token_targets,
             tokenized=tokenized,
@@ -858,6 +878,7 @@ def build_recursive_detection_targets(
             start=entry.entry_span.start,
             end=entry.trie_eligible_span.start,
             object_instance_id=entry.object_instance_id,
+            coord_soft_targets_by_position=entry_coord_soft_targets,
         )
         _append_recursive_entry_targets(
             token_targets,
@@ -871,6 +892,7 @@ def build_recursive_detection_targets(
             start=entry.trie_eligible_span.end,
             end=entry.entry_span.end,
             object_instance_id=entry.object_instance_id,
+            coord_soft_targets_by_position=entry_coord_soft_targets,
         )
         _remove_object_instance(
             remaining_instances,
@@ -1242,6 +1264,7 @@ def _build_trie_object_instances(
                 object_index=entry.object_index,
                 source_object_index=entry.source_object_index,
                 token_ids=token_ids,
+                bbox_xyxy=_bbox_xyxy_from_object(obj),
             )
         )
     return tuple(instances)
@@ -1290,6 +1313,7 @@ def _append_recursive_entry_targets(
     node = trie_root
     for offset, teacher_token_id in enumerate(teacher_token_ids):
         position = entry.trie_eligible_span.start + offset
+        coord_slot_name = _coord_slot_name_for_position(entry, position)
         if teacher_token_id not in node.children:
             raise ValueError(
                 f"teacher token {teacher_token_id} at position {position} is not a "
@@ -1325,6 +1349,14 @@ def _append_recursive_entry_targets(
                 trie_branch_targets=trie_branch_targets,
                 object_instance_id=entry.object_instance_id,
                 token_role=tokenized.token_roles[position],
+                coord_soft_targets=(
+                    _coord_soft_targets_for_instances(
+                        node.descendant_instances,
+                        slot_name=coord_slot_name,
+                    )
+                    if coord_slot_name is not None
+                    else ()
+                ),
             )
         )
         node = node.children[teacher_token_id]
@@ -1343,7 +1375,10 @@ def _append_hard_ce_targets(
     start: int,
     end: int,
     object_instance_id: str | None,
+    coord_soft_targets_by_position: Mapping[int, tuple[CoordSoftTargetSpec, ...]]
+    | None = None,
 ) -> None:
+    coord_soft_targets_by_position = coord_soft_targets_by_position or {}
     for position in range(start, end):
         if tokenized.labels[position] == -100:
             continue
@@ -1362,6 +1397,7 @@ def _append_hard_ce_targets(
                 ),
                 object_instance_id=object_instance_id,
                 token_role=tokenized.token_roles[position],
+                coord_soft_targets=coord_soft_targets_by_position.get(position, ()),
             )
         )
 
@@ -1661,14 +1697,78 @@ def _gt_count_bucket(object_count: int) -> str:
     return "11+"
 
 
+def _single_object_coord_soft_targets_by_position(
+    entry: TokenizedObjectEntry,
+    *,
+    object_instance: _TrieObjectInstance,
+) -> dict[int, tuple[CoordSoftTargetSpec, ...]]:
+    by_position: dict[int, tuple[CoordSoftTargetSpec, ...]] = {}
+    for slot_name, coord_span in zip(
+        ("x1", "y1", "x2", "y2"),
+        entry.coord_spans,
+        strict=True,
+    ):
+        spec = CoordSoftTargetSpec(
+            object_instance_id=object_instance.object_instance_id,
+            slot_name=slot_name,
+            bbox_xyxy=object_instance.bbox_xyxy,
+            probability=1.0,
+        )
+        for position in coord_span.token_indices():
+            by_position[position] = (spec,)
+    return by_position
+
+
+def _coord_soft_targets_for_instances(
+    instances: Sequence[_TrieObjectInstance],
+    *,
+    slot_name: CoordSlotName,
+) -> tuple[CoordSoftTargetSpec, ...]:
+    if not instances:
+        return ()
+    probability = 1.0 / float(len(instances))
+    return tuple(
+        CoordSoftTargetSpec(
+            object_instance_id=instance.object_instance_id,
+            slot_name=slot_name,
+            bbox_xyxy=instance.bbox_xyxy,
+            probability=probability,
+        )
+        for instance in instances
+    )
+
+
+def _coord_slot_name_for_position(
+    entry: TokenizedObjectEntry,
+    position: int,
+) -> CoordSlotName | None:
+    for slot_name, coord_span in zip(
+        ("x1", "y1", "x2", "y2"),
+        entry.coord_spans,
+        strict=True,
+    ):
+        if coord_span.start <= position < coord_span.end:
+            return slot_name
+    return None
+
+
+def _bbox_xyxy_from_object(
+    obj: NormalizedDetectionObject,
+) -> tuple[int, int, int, int]:
+    x1, y1, x2, y2 = (token_to_int(token) for token in obj.bbox_2d.tokens)
+    return (x1, y1, x2, y2)
+
+
 def _build_entry_trie(
     remaining_instances: list[_TrieObjectInstance],
 ) -> _EntryTrieNode:
     root = _EntryTrieNode()
     for instance in remaining_instances:
         node = root
+        node.descendant_instances.append(instance)
         for token_id in instance.token_ids:
             node = node.children.setdefault(token_id, _EntryTrieNode())
+            node.descendant_instances.append(instance)
         node.terminal_count += 1
     return root
 

@@ -8,7 +8,9 @@ import torch
 import torch.nn.functional as F
 
 CoordSlotName = Literal["x1", "y1", "x2", "y2"]
+CoordSoftTargetDistributionName = Literal["iou_gibbs_v0", "ciou_gibbs_v0"]
 _COORD_SLOT_NAMES: tuple[str, ...] = ("x1", "y1", "x2", "y2")
+_COORD_TARGET_DISTRIBUTIONS: tuple[str, ...] = ("iou_gibbs_v0", "ciou_gibbs_v0")
 
 
 @dataclass(frozen=True)
@@ -39,7 +41,7 @@ class CoordSoftTargetCandidate:
 
 @dataclass(frozen=True)
 class CoordSoftTargetRuntimeConfig:
-    target_distribution: Literal["iou_gibbs_v0"]
+    target_distribution: CoordSoftTargetDistributionName
     tau: float
     coord_token_start: int
     coord_token_end: int
@@ -49,8 +51,10 @@ class CoordSoftTargetRuntimeConfig:
     apply_to_multi_positive: Literal["support_mixture"] = "support_mixture"
 
     def __post_init__(self) -> None:
-        if self.target_distribution != "iou_gibbs_v0":
-            raise ValueError("coord soft target_distribution must be iou_gibbs_v0")
+        if self.target_distribution not in _COORD_TARGET_DISTRIBUTIONS:
+            raise ValueError(
+                "coord soft target_distribution must be iou_gibbs_v0 or ciou_gibbs_v0"
+            )
         if not math.isfinite(float(self.tau)) or float(self.tau) <= 0.0:
             raise ValueError("coord soft target tau must be finite and > 0")
         if not isinstance(self.coord_token_start, int) or not isinstance(
@@ -79,6 +83,8 @@ class CoordSoftTargetDistribution:
     perplexity: torch.Tensor
     effective_support_size: torch.Tensor
     std: torch.Tensor
+    candidate_count: torch.Tensor
+    support_bin_count: torch.Tensor
     valid_candidate_count: torch.Tensor
 
 
@@ -96,6 +102,8 @@ class CoordSoftCELoss:
     perplexity: torch.Tensor
     effective_support_size: torch.Tensor
     target_std: torch.Tensor
+    candidate_count: torch.Tensor
+    support_bin_count: torch.Tensor
     valid_candidate_count: torch.Tensor
     support_mixture: bool
 
@@ -126,11 +134,12 @@ def build_iou_gibbs_coord_target(
     for candidate in candidates:
         valid_mask = _valid_replaced_slot_mask(candidate.bbox_xyxy, slot_name, bins)
         support_mask |= valid_mask
-        log_weights = _candidate_iou_gibbs_log_weights(
+        log_weights = _candidate_gibbs_log_weights(
             candidate.bbox_xyxy,
             slot_name,
             bins,
             valid_mask,
+            target_distribution=cfg.target_distribution,
             tau=float(cfg.tau),
         )
         weight = float(candidate.probability)
@@ -163,6 +172,9 @@ def build_iou_gibbs_coord_target(
         dtype=torch.long,
     )
 
+    candidate_count = torch.tensor(float(len(candidates)), dtype=torch.float32)
+    support_bin_count = support_mask.sum().to(dtype=torch.float32)
+
     return CoordSoftTargetDistribution(
         token_ids=token_ids.to(device=target_device),
         probs=probs.to(device=target_device),
@@ -172,8 +184,9 @@ def build_iou_gibbs_coord_target(
         perplexity=perplexity.to(device=target_device),
         effective_support_size=effective_support_size.to(device=target_device),
         std=std.to(device=target_device),
-        valid_candidate_count=support_mask.sum()
-        .to(device=target_device, dtype=torch.float32),
+        candidate_count=candidate_count.to(device=target_device),
+        support_bin_count=support_bin_count.to(device=target_device),
+        valid_candidate_count=support_bin_count.to(device=target_device),
     )
 
 
@@ -241,22 +254,32 @@ def full_vocab_coord_support_balance_ce(
         perplexity=dist.perplexity,
         effective_support_size=dist.effective_support_size,
         target_std=dist.std,
+        candidate_count=dist.candidate_count,
+        support_bin_count=dist.support_bin_count,
         valid_candidate_count=dist.valid_candidate_count,
         support_mixture=len(candidates) > 1,
     )
 
 
-def _candidate_iou_gibbs_log_weights(
+def _candidate_gibbs_log_weights(
     bbox_xyxy: tuple[int, int, int, int],
     slot_name: CoordSlotName,
     bins: torch.Tensor,
     valid_mask: torch.Tensor,
     *,
+    target_distribution: CoordSoftTargetDistributionName,
     tau: float,
 ) -> torch.Tensor:
     log_scores = torch.full_like(bins, -torch.inf, dtype=torch.float64)
-    iou = _replaced_slot_iou(bbox_xyxy, slot_name, bins)
-    log_scores[valid_mask] = -(1.0 - iou[valid_mask]) / float(tau)
+    if target_distribution == "iou_gibbs_v0":
+        score = _replaced_slot_iou(bbox_xyxy, slot_name, bins)
+    elif target_distribution == "ciou_gibbs_v0":
+        score = _replaced_slot_ciou(bbox_xyxy, slot_name, bins)
+    else:
+        raise ValueError(
+            "coord soft target_distribution must be iou_gibbs_v0 or ciou_gibbs_v0"
+        )
+    log_scores[valid_mask] = -(1.0 - score[valid_mask]) / float(tau)
     normalizer = torch.logsumexp(log_scores[valid_mask], dim=0)
     if not torch.isfinite(normalizer):
         raise ValueError("coord soft target candidate has no finite valid scores")
@@ -285,14 +308,8 @@ def _replaced_slot_iou(
     slot_name: CoordSlotName,
     bins: torch.Tensor,
 ) -> torch.Tensor:
+    cx1, cy1, cx2, cy2 = _replaced_slot_coords(bbox_xyxy, slot_name, bins)
     x1, y1, x2, y2 = (float(value) for value in bbox_xyxy)
-    coords = (
-        bins if slot_name == "x1" else torch.full_like(bins, x1),
-        bins if slot_name == "y1" else torch.full_like(bins, y1),
-        bins if slot_name == "x2" else torch.full_like(bins, x2),
-        bins if slot_name == "y2" else torch.full_like(bins, y2),
-    )
-    cx1, cy1, cx2, cy2 = coords
     base_x1 = bins.new_tensor(x1)
     base_y1 = bins.new_tensor(y1)
     base_x2 = bins.new_tensor(x2)
@@ -308,3 +325,52 @@ def _replaced_slot_iou(
     cand_area = (cx2 - cx1).clamp_min(0.0) * (cy2 - cy1).clamp_min(0.0)
     union = base_area + cand_area - inter
     return torch.where(union > 0.0, inter / union, torch.zeros_like(union))
+
+
+def _replaced_slot_ciou(
+    bbox_xyxy: tuple[int, int, int, int],
+    slot_name: CoordSlotName,
+    bins: torch.Tensor,
+) -> torch.Tensor:
+    cx1, cy1, cx2, cy2 = _replaced_slot_coords(bbox_xyxy, slot_name, bins)
+    x1, y1, x2, y2 = (float(value) for value in bbox_xyxy)
+    base_x1 = bins.new_tensor(x1)
+    base_y1 = bins.new_tensor(y1)
+    base_x2 = bins.new_tensor(x2)
+    base_y2 = bins.new_tensor(y2)
+
+    iou = _replaced_slot_iou(bbox_xyxy, slot_name, bins)
+    cand_center_x = (cx1 + cx2) * 0.5
+    cand_center_y = (cy1 + cy2) * 0.5
+    base_center_x = (base_x1 + base_x2) * 0.5
+    base_center_y = (base_y1 + base_y2) * 0.5
+    center_distance_sq = torch.square(cand_center_x - base_center_x) + torch.square(
+        cand_center_y - base_center_y
+    )
+    enclosing_w = torch.maximum(cx2, base_x2) - torch.minimum(cx1, base_x1)
+    enclosing_h = torch.maximum(cy2, base_y2) - torch.minimum(cy1, base_y1)
+    enclosing_diag_sq = torch.square(enclosing_w) + torch.square(enclosing_h)
+    center_penalty = center_distance_sq / enclosing_diag_sq.clamp_min(1e-12)
+
+    cand_w = (cx2 - cx1).clamp_min(1e-12)
+    cand_h = (cy2 - cy1).clamp_min(1e-12)
+    base_w = base_x2 - base_x1
+    base_h = base_y2 - base_y1
+    aspect_delta = torch.atan(base_w / base_h) - torch.atan(cand_w / cand_h)
+    v = (4.0 / (math.pi**2)) * torch.square(aspect_delta)
+    alpha = v / (1.0 - iou + v).clamp_min(1e-12)
+    return iou - center_penalty - alpha * v
+
+
+def _replaced_slot_coords(
+    bbox_xyxy: tuple[int, int, int, int],
+    slot_name: CoordSlotName,
+    bins: torch.Tensor,
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+    x1, y1, x2, y2 = (float(value) for value in bbox_xyxy)
+    return (
+        bins if slot_name == "x1" else torch.full_like(bins, x1),
+        bins if slot_name == "y1" else torch.full_like(bins, y1),
+        bins if slot_name == "x2" else torch.full_like(bins, x2),
+        bins if slot_name == "y2" else torch.full_like(bins, y2),
+    )

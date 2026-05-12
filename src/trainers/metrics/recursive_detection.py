@@ -99,6 +99,7 @@ class RecursiveDetectionCEMixin:
             separator_continue_weight=float(separator_continue_weight),
             eos_stop_weight=float(eos_stop_weight),
             boundary_component_weight=float(boundary_component_weight),
+            coord_soft_ce=getattr(cfg, "coord_soft_ce", None),
         )
         loss_result = compute_recursive_detection_ce_batch_loss(
             logits=logits,
@@ -134,8 +135,25 @@ class RecursiveDetectionCEMixin:
                     "recursive_detection_ce/boundary/component_weight": float(
                         weights.boundary_component_weight
                     ),
+                    "recursive_detection_ce/coord_soft_ce/config_enabled": float(
+                        1.0 if weights.coord_soft_ce is not None else 0.0
+                    ),
                 }
             )
+            if weights.coord_soft_ce is not None:
+                reporter.update_many(
+                    {
+                        "recursive_detection_ce/coord_soft_ce/tau": float(
+                            weights.coord_soft_ce.tau
+                        ),
+                        "recursive_detection_ce/coord_soft_ce/coord_token_start": float(
+                            weights.coord_soft_ce.coord_token_start
+                        ),
+                        "recursive_detection_ce/coord_soft_ce/coord_token_end": float(
+                            weights.coord_soft_ce.coord_token_end
+                        ),
+                    }
+                )
             reporter.update_many(metric_event_logs)
 
         best_effort(

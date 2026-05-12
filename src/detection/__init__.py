@@ -15,6 +15,7 @@ from src.detection.data import (
 from src.detection.coord_soft_targets import (
     CoordSlotName,
     CoordSoftCELoss,
+    CoordSoftTargetDistributionName,
     CoordSoftTargetCandidate,
     CoordSoftTargetRuntimeConfig,
     build_iou_gibbs_coord_target,
@@ -49,6 +50,7 @@ from src.detection.template import (
     get_detection_template,
 )
 from src.detection.objective import (
+    CoordSoftTargetSpec,
     DetectionTrainingMode,
     LossAtom,
     LossNormalizationDiagnostics,
@@ -95,7 +97,9 @@ __all__ = [
     "CoordSlotName",
     "CoordSoftCELoss",
     "CoordSoftTargetCandidate",
+    "CoordSoftTargetDistributionName",
     "CoordSoftTargetRuntimeConfig",
+    "CoordSoftTargetSpec",
     "DetectionSequenceTemplate",
     "DetectionDatasetRuntimeConfig",
     "DetectionTrainingDataset",

@@ -3911,6 +3911,57 @@ class LatestDetectionExperimentConfig:
 
 
 @dataclass(frozen=True)
+class CoordSoftCEConfig:
+    enabled: bool
+    target_distribution: Literal["iou_gibbs_v0", "ciou_gibbs_v0"]
+    tau: float
+    tau_source: Literal["train_one_token_iou_median_v0"]
+    weighting: Literal["preserve_recursive_support_balance"] = (
+        "preserve_recursive_support_balance"
+    )
+    replace_coord_hard_ce: bool = True
+    apply_to_multi_positive: Literal["support_mixture"] = "support_mixture"
+
+    def __post_init__(self) -> None:
+        _latest_detection_validate_bool(
+            self.enabled,
+            path="objective.coord_soft_ce.enabled",
+        )
+        _latest_detection_validate_choice(
+            self.target_distribution,
+            path="objective.coord_soft_ce.target_distribution",
+            allowed={"iou_gibbs_v0", "ciou_gibbs_v0"},
+        )
+        if not isinstance(self.tau, (int, float)) or isinstance(self.tau, bool):
+            raise TypeError("objective.coord_soft_ce.tau must be numeric")
+        if not math.isfinite(float(self.tau)) or float(self.tau) <= 0.0:
+            raise ValueError("objective.coord_soft_ce.tau must be finite and > 0")
+        _latest_detection_validate_choice(
+            self.tau_source,
+            path="objective.coord_soft_ce.tau_source",
+            allowed={"train_one_token_iou_median_v0"},
+        )
+        _latest_detection_validate_choice(
+            self.weighting,
+            path="objective.coord_soft_ce.weighting",
+            allowed={"preserve_recursive_support_balance"},
+        )
+        _latest_detection_validate_bool(
+            self.replace_coord_hard_ce,
+            path="objective.coord_soft_ce.replace_coord_hard_ce",
+        )
+        if not self.replace_coord_hard_ce:
+            raise ValueError(
+                "objective.coord_soft_ce.replace_coord_hard_ce=false is unsupported"
+            )
+        _latest_detection_validate_choice(
+            self.apply_to_multi_positive,
+            path="objective.coord_soft_ce.apply_to_multi_positive",
+            allowed={"support_mixture"},
+        )
+
+
+@dataclass(frozen=True)
 class DetectionObjectiveConfig:
     id: Literal["sft", "recursive_detection_ce"]
     variant: Literal[
@@ -3929,6 +3980,7 @@ class DetectionObjectiveConfig:
     boundary: Optional[AppendBoundaryConfig] = None
     type_gate: Optional[CompactTypeGateConfig] = None
     eos: Optional[EosPriorConfig] = None
+    coord_soft_ce: Optional[CoordSoftCEConfig] = None
 
     def __post_init__(self) -> None:
         _latest_detection_validate_choice(
@@ -4053,6 +4105,15 @@ class DetectionObjectiveConfig:
                 "objective.id=recursive_detection_ce requires a recursive detection "
                 "objective.variant"
             )
+        if self.coord_soft_ce is not None:
+            if self.id != "recursive_detection_ce" or self.variant not in {
+                "random_permutation_et_rmp_ce",
+                "prefix_rollin_et_rmp_ce",
+            }:
+                raise ValueError(
+                    "objective.coord_soft_ce is only supported for latest "
+                    "recursive_detection_ce ET-RMP variants"
+                )
         for field_name in ("state_weighting", "normalization"):
             if not isinstance(getattr(self, field_name), str):
                 raise TypeError(f"objective.{field_name} must be a string")
@@ -4069,7 +4130,28 @@ class DetectionObjectiveConfig:
 
     @classmethod
     def from_mapping(cls, payload: Any) -> "DetectionObjectiveConfig":
-        if isinstance(payload, Mapping) and payload.get("variant") == "prefix_rollin_et_rmp_ce":
+        if isinstance(payload, Mapping):
+            raw_coord_soft_ce = payload.get("coord_soft_ce")
+            if raw_coord_soft_ce is not None:
+                if not isinstance(raw_coord_soft_ce, Mapping):
+                    raise TypeError("objective.coord_soft_ce must be a mapping")
+                for deprecated_key in (
+                    "sigma",
+                    "truncate",
+                    "target_sigma",
+                    "target_truncate",
+                    "window",
+                    "radius",
+                ):
+                    if deprecated_key in raw_coord_soft_ce:
+                        raise ValueError(
+                            f"objective.coord_soft_ce.{deprecated_key} is deprecated; "
+                            "use iou_gibbs_v0 or ciou_gibbs_v0"
+                        )
+        if (
+            isinstance(payload, Mapping)
+            and payload.get("variant") == "prefix_rollin_et_rmp_ce"
+        ):
             forbidden = [
                 f"objective.{key}"
                 for key in (
