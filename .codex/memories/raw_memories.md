@@ -1113,89 +1113,85 @@ References:
 - final status: `main...origin/main` with no uncommitted changes
 
 ## Thread `019ddeea-4a92-70e3-82a7-4e4cc7cdc6e9`
-updated_at: 2026-05-09T08:12:45+00:00
+updated_at: 2026-05-11T15:13:16+00:00
 cwd: /data/home/xiaoyan/AIteam/data/CoordExp
 rollout_path: /data/home/xiaoyan/AIteam/data/CoordExp/.codex/sessions/2026/04/30/rollout-2026-04-30T15-03-09-019ddeea-4a92-70e3-82a7-4e4cc7cdc6e9.jsonl
-rollout_summary_file: 2026-04-30T15-03-09-RhOh-coordexp_pull_main_https_remote_and_cleanup_codex_stage1_bra.md
+rollout_summary_file: 2026-04-30T15-03-09-RhOh-coordexp_main_sync_https_remote_cleanup.md
 
 ---
-description: Pulled CoordExp remote main to local using HTTPS/proxy-friendly transport after SSH DNS failure, then deleted the local codex/stage1-* branch and confirmed there were no extra worktrees. Highest-value takeaway: for this container, GitHub SSH is unreliable while HTTPS works; use `--ff-only` when main is only behind and clean, and clean up finished `codex/stage1-*` branches/worktrees after sync.
-task: synchronize_main_and_cleanup_codex_stage1_branches
-task_group: CoordExp git workflow
+description: Synced local main to remote main via fast-forward, switched origin from SSH to HTTPS so Git could use proxy settings, and deleted stale codex/stage1-* local branch/worktree artifacts.
+task: git pull origin main; switch remote from ssh to https; delete local codex/stage1-* branches and worktrees
+task_group: CoordExp git hygiene / remote sync / branch cleanup
 task_outcome: success
 cwd: /data/home/xiaoyan/AIteam/data/CoordExp
-keywords: git pull, ff-only, HTTPS remote, SSH DNS failure, proxy, git remote set-url, git ls-remote, branch cleanup, git worktree list, codex/stage1-*
+keywords: git pull --ff-only, fast-forward, HTTPS remote, SSH DNS failure, proxy, git remote set-url, branch cleanup, worktree list, codex/stage1-*, origin/main, 750834dc31b4b314d9035a5723582905518549eb
 ---
 
-### Task 1: Pull remote `main` to local `main`
+### Task 1: Pull remote main and verify connectivity
 
-task: pull latest origin/main into local main with conflict handling if needed
-task_group: git sync / main branch
+task: synchronize local main with origin/main; diagnose GitHub connectivity; switch origin remote from SSH to HTTPS for proxy-friendly access
+task_group: git sync / network transport
 task_outcome: success
 
 Preference signals:
-- when the user said “我的远端有有了很多新的更新，请将其pull到本地并合并冲突（如果有的话）” and asked to check GitHub connectivity, they wanted connectivity/transport checked before relying on a pull
-- when the user said “理论上，有冲突后需要以远端最新的架构为主”, they want remote latest architecture to win if conflicts appear
+- when the user said remote main had many new commits and asked to pull them in, that suggests the default should be to sync the branch first before starting new development, rather than leaving the checkout behind
+- when the user said SSH could not inherit their proxy and asked to switch to HTTP, that suggests future Git network operations in this repo should prefer HTTPS when proxy support matters
 
 Reusable knowledge:
-- In this container, `git pull --ff-only origin main` cleanly fast-forwarded local `main` when the branch was only behind and had no local divergence.
-- `git status --short --branch` showed the branch clean before pulling.
-- HTTPS access to GitHub worked; SSH remote access failed in this environment due DNS resolution.
+- `ssh -T git@github.com` failed in this environment with `Could not resolve hostname github.com: Temporary failure in name resolution`, while `curl -I https://github.com` returned `200 OK`; HTTPS worked even when SSH did not
+- changing the repo remote URL with `git remote set-url origin https://github.com/Pein2017/CoordExp.git` made `git ls-remote` / `git fetch` work through the HTTPS transport
+- `git pull --ff-only origin main` fast-forwarded local `main` cleanly to remote when the branch was only behind and had no local divergence
+- final synced commit for this stage was `750834dc31b4b314d9035a5723582905518549eb`
 
 Failures and how to do differently:
-- SSH-based GitHub access failed with `Could not resolve hostname github.com: Temporary failure in name resolution`; use HTTPS remotes when proxy support is required.
-- No manual merge conflict handling was needed because the pull was a fast-forward; do not assume a merge will be required just because remote advanced.
+- SSH-based remote access was blocked by DNS resolution in this container; do not keep retrying SSH when the user says a proxy is required and HTTPS works
+- when the branch is only behind and not diverged, prefer `--ff-only` to avoid unnecessary merge commits
 
 References:
-- `git remote set-url origin https://github.com/Pein2017/CoordExp.git`
-- `git pull --ff-only origin main`
-- `git ls-remote --heads origin main` → confirmed remote reachable over HTTPS
-- `ssh -T git@github.com` → `ssh: Could not resolve hostname github.com: Temporary failure in name resolution`
-- final sync result: `git rev-list --left-right --count main...origin/main` → `0 0`
-- final commit after sync: `750834dc31b4b314d9035a5723582905518549eb`
+- `git remote -v` after the switch: `origin https://github.com/Pein2017/CoordExp.git (fetch/push)`
+- `git ls-remote --heads origin main` after the switch returned `750834db... refs/heads/main`
+- `git pull --ff-only origin main` output included `Updating b22adbb..750834d` and a fast-forward to `750834d`
+- `git rev-list --left-right --count main...origin/main` returned `0 0`
+- `git rev-parse HEAD|main|origin/main` all returned `750834dc31b4b314d9035a5723582905518549eb`
 
-### Task 2: Switch origin from SSH to HTTPS for proxy-friendly GitHub access
+### Task 2: Delete stale local codex/stage1 branches and worktrees
 
-task: change Git remote transport from SSH to HTTPS
-task_group: git remote configuration
-
+task: remove local `codex/stage1-*` branches and local worktrees if present
+task_group: git cleanup
 task_outcome: success
 
 Preference signals:
-- the user said “请切换成通过`http`的方式。因为目前我需要使用 proxy 代理才能访问网络，而`ssh`无法继承我的代理” -> prefer HTTPS remote URLs in proxy-dependent environments
+- when the user asked to delete `codex/stage1-*` local branches and worktrees, that indicates a preference for cleaning up stale feature branches after synchronization rather than leaving them around
 
 Reusable knowledge:
-- `origin` was changed from `git@github.com:Pein2017/CoordExp.git` to `https://github.com/Pein2017/CoordExp.git` for both fetch and push.
-- After the change, `git ls-remote --heads origin main` succeeded, proving HTTPS connectivity.
+- `git branch --list 'codex/stage1-*'` found only `codex/stage1-coord-component-gate-ablation` before deletion
+- `git worktree list --porcelain` showed only the primary worktree at `/data/home/xiaoyan/AIteam/data/CoordExp` and no additional worktree entries to delete
+- `git branch -D codex/stage1-coord-component-gate-ablation` succeeded and removed the branch
 
 Failures and how to do differently:
-- SSH transport does not inherit proxy settings here; do not default back to SSH in this environment.
+- none; there were no extra worktrees to remove
 
 References:
-- `git remote -v` before: SSH URL for both fetch/push
-- `git remote -v` after: HTTPS URL for both fetch/push
-- `git ls-remote --heads origin main` returned `b22adbbc1473ff4b20b264427ba04e38e758a1e9 refs/heads/main`
+- before deletion: `codex/stage1-coord-component-gate-ablation`
+- deletion confirmation: `Deleted branch codex/stage1-coord-component-gate-ablation (was de62e26).`
+- worktree output: `worktree /data/home/xiaoyan/AIteam/data/CoordExp` / `branch refs/heads/main`
 
-### Task 3: Delete local `codex/stage1-*` branches and remove local worktrees if any
-task: remove finished codex/stage1 branches and any extra worktrees
-task_group: git cleanup / branch hygiene
+### Task 3: Preserve exact version alignment
+
+task: verify that local main, origin/main, and HEAD all match the requested commit SHA
+task_group: git verification
 task_outcome: success
 
 Preference signals:
-- the user asked “请帮我删除本地分支codex/stage1-*，并删除其本地.worktrees(如有）” -> after completion, clean up local feature branches and associated worktree clutter
+- when the user asked for the exact version `750834dc31b4b314d9035a5723582905518549eb`, that suggests future sync tasks should confirm the full SHA rather than only a short hash or generic “up to date” status
 
 Reusable knowledge:
-- Only one matching local branch existed: `codex/stage1-coord-component-gate-ablation`.
-- `git worktree list --porcelain` showed only the main worktree at `/data/home/xiaoyan/AIteam/data/CoordExp`; there were no extra worktrees to remove.
-- The branch was deleted locally with `git branch -D codex/stage1-coord-component-gate-ablation`.
-
-Failures and how to do differently:
-- There were no extra `.worktrees`/secondary worktree entries in this rollout, so cleanup beyond branch deletion was a no-op.
+- `git rev-parse HEAD`, `git rev-parse main`, and `git rev-parse origin/main` all matched `750834dc31b4b314d9035a5723582905518549eb` after the final pull
+- `git status --short --branch` showed `## main...origin/main`, with no ahead/behind markers and no unstaged changes
 
 References:
-- `git branch --list 'codex/stage1-*'` → `codex/stage1-coord-component-gate-ablation`
-- `git worktree list --porcelain` → only `worktree /data/home/xiaoyan/AIteam/data/CoordExp`, `branch refs/heads/main`
-- `Deleted branch codex/stage1-coord-component-gate-ablation (was de62e26).`
+- `HEAD/main/origin-main = 750834dc31b4b314d9035a5723582905518549eb`
+- `git status --short --branch` → `## main...origin/main`
 
 ## Thread `019e0bd4-0b6d-78e1-939f-6e9eb0905b56`
 updated_at: 2026-05-09T10:23:59+00:00
@@ -1277,4 +1273,313 @@ References:
 - useful analyzer entrypoints already present in repo:
   - `scripts/analysis/measure_gt_max_new_tokens.py`
   - `scripts/analysis/analyze_token_lengths.py`
+
+## Thread `019e0c58-1fab-7f13-8040-0e1415a975fc`
+updated_at: 2026-05-11T07:35:30+00:00
+cwd: /data/home/xiaoyan/AIteam/data/CoordExp
+rollout_path: /data/home/xiaoyan/AIteam/data/CoordExp/.codex/sessions/2026/05/09/rollout-2026-05-09T10-46-02-019e0c58-1fab-7f13-8040-0e1415a975fc.jsonl
+rollout_summary_file: 2026-05-09T10-46-02-AU32-coordexp_baidupcsgo_output_sync_github_pat_and_outputs_merge.md
+
+---
+description: CoordExp rollout covering BaiduPCS-Go verification, HTTPS GitHub PAT push/pull setup, checkpoint download verification from `/CoordExp/outputs`, and safe merge/move of `output` into `outputs` with tmux-based full-output sync work in progress. Highest-value takeaway: the user wants relative paths preserved, prefers tmux for long Netdisk transfers, uses HTTPS GitHub remote with PAT credential helper, and the canonical Netdisk tree for outputs is `/CoordExp/outputs`.
+task: BaiduPCS-Go remote verification, GitHub HTTPS PAT auth, checkpoint download, output/outputs merge, tmux full outputs download
+task_group: CoordExp / BaiduPCS-Go + git workflow
+task_outcome: partial
+cwd: /data/home/xiaoyan/AIteam/data/CoordExp
+keywords: BaiduPCS-Go, BaiduPCS-Go download_dir.sh, BaiduPCS-Go upload_dir.sh, tmux, GitHub PAT, credential.helper store, git push 403, proxy 9090, /CoordExp/outputs, outputs/stage1_2b, checkpoint-3664, rsync, relative path
+---
+
+### Task 1: BaiduPCS-Go remote verification and large-asset workflow discovery
+
+task: Verify remote Netdisk contents for CoordExp and determine correct BaiduPCS-Go workflow/paths for large assets
+task_group: CoordExp / Baidu Netdisk workflow
+task_outcome: success
+
+Preference signals:
+- when the user said they have two A100 nodes that do not interconnect and asked how to sync large files via Baidu Netdisk, they implicitly wanted a repo-specific, durable sync convention rather than ad hoc one-off uploads -> future runs should default to establishing a stable path contract and not assume node-to-node transfer.
+- when the user said “我不可能两台机都从网盘再下拉一次吧？” -> future sync/verification should prefer manifests, metadata, and targeted checks instead of repeated full downloads.
+- when the user said “一切都要保持相对路径才行。” -> future Netdisk workflows should preserve repo-relative paths exactly.
+
+Reusable knowledge:
+- BaiduPCS-Go sees the real Netdisk root `/`, not a `/apps/bypy` sandbox.
+- In this repo, `BaiduPCS-Go` and login cache already existed locally: `./baidupcsgo/BaiduPCS-Go-v4.0.1-linux-amd64/BaiduPCS-Go` plus `~/.config/BaiduPCS-Go/pcs_config.json` and `pcs_uploading.json`.
+- The canonical Netdisk trees observed during verification were `/CoordExp/public_data`, `/CoordExp/model_cache`, and `/CoordExp/output`; later the user’s actual artifact tree for download was under `/CoordExp/outputs`.
+- The repo contains a dedicated BaiduPCS-Go skill: `.codex/skills/baidupcsgo-upload/SKILL.md` and helper scripts `scripts/upload_dir.sh`, `scripts/download_dir.sh`.
+
+Failures and how to do differently:
+- A generic all-asset manifest sync design was later judged too heavy and rolled back. For similar future work, narrow the sync surface early and only widen it after operational burden is proven acceptable.
+- The remote path naming was easy to misread (`output`, `outputs`, `output_remote`). Future agents should always `ls` the exact remote root before assuming hierarchy.
+
+References:
+- `BaiduPCS-Go ls /` showed `/CoordExp/`, `/model_cache/`, `/output/`, etc.
+- `BaiduPCS-Go ls /CoordExp` showed `model_cache/`, `output/`, `public_data/`.
+- The user asked to confirm whether `CoordExp` already existed on Netdisk and whether it contained public data/model cache/output.
+
+### Task 2: HTTPS GitHub authentication and PAT push setup
+
+task: Configure HTTPS GitHub push/pull using personal access token for `https://github.com/Pein2017/CoordExp.git`
+task_group: CoordExp / git remote auth
+task_outcome: success
+
+Preference signals:
+- when the user said “请确保当前codebase和`https://github.com/Pein2017/CoordExp.git`是连接起来的” -> future agents should treat the HTTPS remote as the expected default connection and verify it explicitly.
+- when the user said “请配置`Push 默认使用 GitHub personal access token`” -> future agents should default to storing a GitHub PAT for HTTPS push in this environment.
+- when the user provided `github_personal_token.txt` and asked to retry push, then reset/retried again, it indicates they wanted a pragmatic credential workflow rather than a remote URL migration to SSH.
+
+Reusable knowledge:
+- The repo’s `origin` is HTTPS: `https://github.com/Pein2017/CoordExp.git`.
+- `git ls-remote origin -h refs/heads/main` succeeded once proxy and credentials were available, confirming read connectivity.
+- `git push origin main` initially failed with `fatal: could not read Username for 'https://github.com': No such device or address`.
+- After writing the token into `git credential approve` with `git config --global credential.helper store`, push first failed with 403 until the PAT scope was corrected, then succeeded.
+- The environment uses proxy variables pointing to `http://127.0.0.1:9090` for GitHub access.
+
+Failures and how to do differently:
+- SSH was not the best fallback here because the node’s network/DNS path for `ssh git@github.com` did not work cleanly and the repo remote was already HTTPS. For future similar work, fix HTTPS PAT auth before trying SSH migration.
+- A 403 from GitHub means the token was accepted but not authorized for repo write access; future agents should distinguish this from missing credentials.
+
+References:
+- Success push: `To https://github.com/Pein2017/CoordExp.git 10ac5e8..4dbc9e4 main -> main`
+- Credential helper used: `store`
+- Local credentials file: `~/.git-credentials` with masked GitHub HTTPS entry
+- The user’s token file name: `github_personal_token.txt`
+
+### Task 3: Checkpoint existence verification and download
+
+task: Verify and download `/CoordExp/outputs/.../checkpoint-3664` from Baidu Netdisk
+task_group: CoordExp / Netdisk artifact recovery
+task_outcome: success
+
+Preference signals:
+- when the user asked “帮我查看百度网盘中，是否有…这一组 checkpoint 路径？” -> future agents should verify exact remote artifact paths before claiming sync completion.
+- when the user asked whether the file could be downloaded into this environment -> future agents should perform a real download probe, not just remote listing.
+- the user later insisted on preserving relative paths and moving the checkpoint into repo-local `outputs` -> future behavior should keep repo-relative structure intact.
+
+Reusable knowledge:
+- The user-provided path `/CoordExp/output_remote/...` did not exist.
+- The actual remote path was `/CoordExp/outputs/stage1_2b/recursive_detection_ce_latest/compact_full_et_rmp_ce_support2_bsz16_4epoch_tokenrows_v2/compact-full-et-rmp-ce-support2-bsz16-4epoch-tokenrows-v2/v0-20260504-071356/checkpoint-3664`.
+- That directory existed and contained `adapter_config.json`, `adapter_model.safetensors`, `optimizer.pt`, `trainer_state.json`, `README.md`, `scheduler.pt`, `training_args.bin`, and `rng_state_*.pth` files.
+- The full checkpoint downloaded successfully to `temp/baidupcs_download_probe/.../checkpoint-3664` and then was moved into `./outputs/stage1_2b/.../checkpoint-3664`.
+- Remote and local sizes were about `112.24 MB` / `113M` after download.
+
+Failures and how to do differently:
+- The initial remote path guess was wrong; future work should always discover the actual remote layout by `ls` before issuing a download.
+- A first full-download tmux launch accidentally used concurrency `1`; the assistant killed and relaunched it with the intended settings.
+
+References:
+- Remote `ls` output for checkpoint: `checkpoint-3664` under `/CoordExp/outputs/.../v0-20260504-071356`
+- Local moved path: `/data/home/xiaoyan/AIteam/data/CoordExp/outputs/stage1_2b/recursive_detection_ce_latest/compact_full_et_rmp_ce_support2_bsz16_4epoch_tokenrows_v2/compact-full-et-rmp-ce-support2-bsz16-4epoch-tokenrows-v2/v0-20260504-071356/checkpoint-3664`
+- The user specifically wanted the move to keep relative paths and to avoid renaming collisions.
+
+### Task 4: Merge `output/` into `outputs/` after the user corrected the typo
+
+task: Move repo-local `output` content into `outputs` while preserving relative paths
+task_group: CoordExp / local artifact tree cleanup
+task_outcome: success
+
+Preference signals:
+- when the user corrected “output” to “outputs” and said they had typed it wrong -> future agents should not normalize singular/plural directory names without checking with the user.
+- the user wanted the move done safely and with preserved relative paths -> future moves should use merge semantics, not blind renames.
+
+Reusable knowledge:
+- `output/` and `outputs/` both existed, and the top-level directory names overlapped (`analysis`, `bench`, `infer`, `stage1_2b`), so a naive `mv output/* outputs/` would have been unsafe.
+- The move was completed with a directory-merge approach that preserved deeper relative paths and left `outputs/` as the canonical directory.
+- After the move, `output/` was gone and `outputs/` contained the combined content.
+
+References:
+- `OUTPUT_GONE` after the move
+- `outputs/` now contains `analysis/`, `bench/`, `infer/`, `stage1_2b/`, plus the checkpoint path under `outputs/stage1_2b/.../checkpoint-3664`
+
+### Task 5: Full `outputs/` download to staging with tmux and 16-way concurrency
+
+task: Start a long-running tmux download of `/CoordExp/outputs` and merge non-conflicting files into local `outputs/`
+task_group: CoordExp / long Netdisk mirror sync
+task_outcome: partial
+
+Preference signals:
+- when the user asked for a full download and explicitly said “请启动tmux和16 个进程来执行这个漫长的下拉环节” -> future long transfers should default to detached tmux plus the requested concurrency setting.
+- when the user said they wanted any collisions reported rather than silently overridden -> future merges should generate conflict reports and avoid overwriting.
+
+Reusable knowledge:
+- `tmux` and `rsync` are installed (`/usr/bin/tmux`, `/usr/bin/rsync`).
+- The remote full tree is `/CoordExp/outputs`.
+- The local destination is `./outputs`.
+- Top-level overlapping directories already present in both trees include `analysis`, `bench`, `infer`, and `stage1_2b`.
+- A helper script was staged at `temp/baidupcs_outputs_full_sync.sh` to download into staging and merge non-conflicting files.
+- The first tmux launch started with concurrency `1` instead of `16`; it was killed and relaunched.
+- The corrected tmux session `baidupcs_outputs_full_20260511T073445Z` started with BaiduPCS-Go reporting `当前下载最大并发量为: 16`.
+
+Failures and how to do differently:
+- The first download session used the wrong concurrency setting and had to be killed. Future runs should validate the BaiduPCS-Go startup line immediately.
+- Because the user’s remote tree and local tree already overlap at the top level, future merge logic must remain non-destructive and report file-level conflicts before any overwrite.
+- This task was still in progress at the end of the rollout excerpt, so the final merge completion should be revalidated rather than assumed.
+
+References:
+- tmux session: `baidupcs_outputs_full_20260511T073445Z`
+- log file: `temp/baidupcs_outputs_full_20260511T073445Z.log`
+- staging dir: `temp/baidupcs_outputs_full_download_20260511T073445Z`
+- helper script: `temp/baidupcs_outputs_full_sync.sh`
+- confirmed startup line: `[0] 提示: 当前下载最大并发量为: 16, 下载缓存为: 65536`
+- top-level remote dirs under `/CoordExp/outputs`: `analysis/`, `bench/`, `eval/`, `infer/`, `oracle_k/`, `stage1_2b/`
+
+### Task 6: Final remote bookkeeping and default credential behavior
+
+task: Keep HTTPS as the default GitHub transport with stored PAT on this node
+task_group: CoordExp / git hygiene and transport defaults
+task_outcome: success
+
+Preference signals:
+- the user asked that push default to GitHub PAT, and later that the repo should be pulled and pushed again after another node pushed changes -> future agents should keep the credential helper persistent and not require manual reentry each time.
+
+Reusable knowledge:
+- `git config --global credential.helper store` is the configured default on this machine.
+- `~/.git-credentials` now contains a masked GitHub HTTPS PAT entry.
+- After the PAT fix, `git pull --ff-only origin main` succeeded and fast-forwarded local `main` from `4dbc9e4` to `da59e7c`.
+
+References:
+- `git pull --ff-only origin main` succeeded after the PAT was stored.
+- The repo remained on HTTPS remote and the push/pull flow worked once the PAT scope matched the repo write permissions.
+
+## Thread `019e14d7-1616-7f22-b569-1b8c546adaf7`
+updated_at: 2026-05-11T02:28:07+00:00
+cwd: /data/home/xiaoyan/AIteam/data/CoordExp
+rollout_path: /data/home/xiaoyan/AIteam/data/CoordExp/.codex/sessions/2026/05/11/rollout-2026-05-11T02-21-40-019e14d7-1616-7f22-b569-1b8c546adaf7.jsonl
+rollout_summary_file: 2026-05-11T02-21-40-QBtd-coordexp_track_codex_memories_in_git.md
+
+---
+description: Track `.codex/memories` in the main CoordExp git repo so multiple identical environments can sync shared memory files, while keeping `.codex` runtime state and the nested memory repo metadata out of version control.
+task: track `.codex/memories` as shared git-tracked memory in CoordExp
+task_group: CoordExp repo-local Codex configuration and git hygiene
+task_outcome: success
+cwd: /data/home/xiaoyan/AIteam/data/CoordExp
+keywords: .codex/memories, gitignore allowlist, nested git repo, allowlist-based .gitignore, codex memory sync, temp backup, secrets hygiene, origin/main ahead
+---
+
+### Task 1: Track `.codex/memories` in git without pulling in runtime state
+
+task: bring `.codex/memories` under main repo tracking so memories persist across multiple CoordExp environments
+task_group: CoordExp repo-local Codex configuration and git hygiene
+task_outcome: success
+
+Preference signals:
+- The user said they have "多个相同的环境的 `CoordExp`" and want them to sync "成像‘一个环境’那样" -> treat `.codex/memories` as shared portable state, not machine-local scratch.
+- The user said "随后我再新的环境里，则可以保留memories" -> future setups should preserve memory files across fresh environments instead of discarding them.
+- The user accepted the implementation with "好的，你的建议很好，请帮我执行" -> once a safe repo-local plan is established, proceed to implement it directly.
+
+Reusable knowledge:
+- This repo’s `.gitignore` is allowlist-based (`*` at top); to track a new top-level folder you must add explicit allowlist entries.
+- `.codex/skills/` was already allowlisted, and the same pattern worked for `.codex/memories/`.
+- The main repo should keep `.codex` runtime/state ignored: `.codex/auth.json`, `.codex/config.toml`, `.codex/history.jsonl`, `.codex/sessions/`, `.codex/log/`, `.codex/cache/`, `.codex/plugins/`, `.codex/session_index.jsonl`, etc.
+- `.codex/memories` originally contained its own nested `.git/`; to make the directory behave like normal tracked files in the main repo, the nested git metadata was moved aside to a timestamped backup under `temp/`.
+- The final commit included only the memory markdown files and `.gitignore`, and the repo remained clean with `.codex` runtime artifacts still ignored.
+
+Failures and how to do differently:
+- A few early inspection commands were interrupted; after interruption, rerun the narrow verification commands rather than relying on partial output.
+- Do not stage nested repo metadata by accident. If `.codex/memories/.git/` exists, back it up or remove it before adding `.codex/memories` to the main repo.
+- The assistant did not push automatically; if the user wants other environments to obtain the tracked memories immediately, a separate explicit `git push` is still required.
+
+References:
+- `.gitignore` diff: added `!.codex/memories/`, `!.codex/memories/**`, and `.codex/memories/.git/` under the Codex allowlist section.
+- Backup path: `temp/codex-memory-git-backup/memories.git.20260511T022611Z`.
+- Commit: `4dbc9e4 chore(codex): track memories`.
+- Final verification: `git status -sb` showed `## main...origin/main [ahead 4]`; `git rev-list --left-right --count origin/main...HEAD` returned `0 4`.
+- `git check-ignore -v .codex/auth.json .codex/config.toml .codex/sessions .codex/memories/.git/config` confirmed those local/runtime paths remained ignored, while `.codex/memories/MEMORY.md` was tracked.
+
+## Thread `019e15f3-2c93-79e1-b7e0-b19ea2a57d47`
+updated_at: 2026-05-11T11:52:15+00:00
+cwd: /data/home/xiaoyan/AIteam/data/CoordExp
+rollout_path: /data/home/xiaoyan/AIteam/data/CoordExp/.codex/sessions/2026/05/11/rollout-2026-05-11T07-31-58-019e15f3-2c93-79e1-b7e0-b19ea2a57d47.jsonl
+rollout_summary_file: 2026-05-11T07-31-58-FzHp-coordexp_public_data_provenance_rebuild_and_memories_refresh.md
+
+---
+description: Rebuilt and verified canonical COCO/LVIS processed public_data provenance, cleaned redundant 768 public_data roots, then fast-forward synced and committed a large .codex/memories refresh to origin/main. Key takeaway: train LVIS-proxy reproduction only matched the Git manifest when run with explicit COCO train + LVIS train annotations; default projection behavior was too broad.
+task: public_data provenance rebuild; public_data cleanup; git sync and memory refresh commit
+task_group: CoordExp / public_data + git hygiene
+ task_outcome: success
+cwd: /data/home/xiaoyan/AIteam/data/CoordExp
+keywords: public_data, provenance, checksum, COCO, LVIS, tmux, pytest, git pull --ff-only, git push, refresh memories, lvis-proxy, train-only projection, raw_memories
+---
+
+### Task 1: Rebuild and verify canonical public_data provenance
+
+task: verify and, if needed, regenerate public_data/coco/rescale_32_1024_bbox, public_data/coco/rescale_32_1024_bbox_max60, and public_data/coco/rescale_32_1024_bbox_max60_lvis_proxy from local raw COCO/LVIS data and Git-tracked provenance manifests
+task_group: public_data provenance
+task_outcome: success
+
+Preference signals:
+- user said “请放在`tmux`执行，并启用多进程来加速处理,8/16个 workers” -> future long rebuilds should be detached in tmux and use parallelism where supported
+- user said raw data across environments should be identical and same processing should reproduce the same result -> future similar tasks should attempt exact regeneration from raw/projection paths before assuming drift
+- user required checksum mismatch to stop rather than overwrite manifests -> future rebuilds should not mutate manifests to fit local outputs
+
+Reusable knowledge:
+- The provenance test entrypoint is `conda run -n ms python -m pytest tests/test_public_data_provenance_manifests.py -q`
+- The LVIS-proxy train split only matched the manifest when `run_coco_lvis_missing_objects.py` was invoked with explicit train-only annotations: `--coco-annotation public_data/coco/raw/annotations/instances_train2017.json --lvis-annotation public_data/lvis/raw/annotations/lvis_v1_train.json --coco-image-split train2017`
+- Default projection behavior was too broad for train and initially caused oversized `train.coord.jsonl` / `train.norm.jsonl`; val matched the manifest earlier
+- The canonical LVIS-proxy materialization contains only `train.coord.jsonl`, `train.norm.jsonl`, `train.proxy_summary.json`, `val.coord.jsonl`, `val.norm.jsonl`, `val.proxy_summary.json`
+- Verified canonical aggregate SHA256 values:
+  - `rescale_32_1024_bbox.json` -> `7dcdfbb0ac5abcc5dd96ebc6a0af6fea11ecaa672473c587c64e875fb29117f1`
+  - `rescale_32_1024_bbox_max60.json` -> `b8ca3c5805857c6d9a83e14709820aa1d554a6e0bf6145c3c81894115e27e5ff`
+  - `rescale_32_1024_bbox_max60_lvis_proxy.json` -> `25ae8d63afbcbf8497100659fc48b6a6af68b46a7613529a84543efb2f0363dc`
+
+Failures and how to do differently:
+- The first rebuild attempt matched val but not train; the useful diagnostic was comparing `record_count_with_added_proxies` against the manifest’s observed counts. If train looks inflated, check whether the projection script is implicitly reading both LVIS train and val annotations.
+- A checksum mismatch on materialized JSONL should be treated as a hard stop unless the user explicitly wants the canonical dataset redefined.
+
+References:
+- `git pull --ff-only` advanced the repo to `82d5b26e62b57471c70282eca0db8e4875b74766` before provenance work
+- `python -m json.tool manifests/public_data_provenance/schema.json` and the three manifest JSONs parsed successfully
+- successful final test run: `6 passed in 1.66s`
+- explicit train-only projection command that fixed the mismatch:
+  `conda run -n ms python scripts/analysis/run_coco_lvis_missing_objects.py --output-dir temp/coco_lvis_projection_train2017 --coco-annotation public_data/coco/raw/annotations/instances_train2017.json --lvis-annotation public_data/lvis/raw/annotations/lvis_v1_train.json --coco-image-split train2017`
+
+### Task 2: Clean public_data for training readiness
+
+task: remove redundant processed public_data roots before training
+task_group: public_data cleanup
+task_outcome: success
+
+Preference signals:
+- user said “请确保`public_data`是没有冗余的，我将准备开启训练了” -> future cleanup should focus only on clearly redundant training-facing public_data, not unrelated temp/history assets
+- user said “请将其删除，已经不需要了” after the 768 roots were identified -> future cleanup should directly remove the confirmed redundant paths once approved
+
+Reusable knowledge:
+- The only obvious redundant `public_data/coco` roots for this training setup were `public_data/coco/rescale_32_768_bbox` and `public_data/coco/rescale_32_768_bbox_max60`
+- After deletion, the remaining top-level `public_data/coco` directories were `raw`, `rescale_32_1024_bbox`, `rescale_32_1024_bbox_max60`, and `rescale_32_1024_bbox_max60_lvis_proxy`
+- Provenance validation still passed after deleting the 768 roots
+
+Failures and how to do differently:
+- Large `rm -rf` on big data roots can look silent for a long time; if the process is still alive, waiting is often normal
+- Do not assume a “no redundancy” request authorizes deleting historical temp/backups unless the user explicitly broadens scope
+
+References:
+- deleted paths: `public_data/coco/rescale_32_768_bbox`, `public_data/coco/rescale_32_768_bbox_max60`
+- post-cleanup check: `find public_data/coco -maxdepth 1 -type d -name 'rescale_32_768_bbox*'` returned nothing
+- cleanup-size snapshot: raw ~39G, rescale_32_1024_bbox ~17G, max60 ~429M, LVIS-proxy ~665M
+
+### Task 3: Git sync and memory refresh commit
+
+task: fast-forward sync local main to origin/main, then commit and push a batch of .codex/memories changes as “refresh memories”
+task_group: git hygiene
+task_outcome: success
+
+Preference signals:
+- user said “请进行`git sync`，我的远端`main`有了一些修改” -> future syncs should start with upstream divergence checks and fast-forward if possible
+- user said “帮我`commit and sync`它们，作为`refresh memories`” -> future large memory-only change piles should be grouped into one logical memory-refresh commit and pushed
+
+Reusable knowledge:
+- Remote is HTTPS: `origin https://github.com/Pein2017/CoordExp.git`
+- `github_personal_token.txt` is ignored by `.gitignore` and was confirmed untracked
+- Before pulling, local dirty paths and remote-changed paths had zero overlap, so no stash was needed
+- Final commit hash: `99b8995 refresh memories`
+- Final repo alignment: `HEAD == origin/main == 99b899550071542ce84fa47654633204687b432b`
+
+Failures and how to do differently:
+- `git diff --check` caught a trailing-whitespace issue in `.codex/memories/raw_memories.md`; future memory-refresh commits should run diff-check before staging to catch this early
+- The `.codex/memories` tree was large, so path-scoped staging (`git add .codex/memories`) was the safe way to keep the commit logically contained
+
+References:
+- remote divergence check showed `83e5d33 refresh memories`, `0efac28 chore(ops): isolate system tooling`, `ac0e0d8 chore(codex): add baidudisk union sync skill` on origin/main before the final memory refresh commit
+- fast-forward sync: `git pull --ff-only` moved `82d5b26..83e5d33`
+- commit command: `git commit -m "refresh memories"`
+- push result: `To https://github.com/Pein2017/CoordExp.git   83e5d33..99b8995  main -> main`
+- final clean status after push: `## main...origin/main`
 
