@@ -1,0 +1,24 @@
+# A5 ablation config: A2/support2 ET-RMP with geometry-aware IoU-Gibbs coord SoftCE.
+# The base model, data, compact-full template, token rows, optimizer, schedule,
+# and support/balance coefficients are inherited from compact_full_support2.yaml.
+extends:
+  - ./compact_full_support2.yaml
+
+training:
+  artifact_subdir: compact_full_et_rmp_iou_gibbs_softce_a5_support2_bsz16_4gpu_4epoch_tokenrows_v2
+  run_name: compact-full-et-rmp-iou-gibbs-softce-a5-support2-bsz16-4gpu-4epoch-tokenrows-v2
+
+objective:
+  coord_soft_ce:
+    enabled: true
+    target_distribution: iou_gibbs_v0
+    tau: 0.0090909091
+    tau_source: train_one_token_iou_median_v0
+    weighting: preserve_recursive_support_balance
+    replace_coord_hard_ce: true
+    apply_to_multi_positive: support_mixture
+
+experiment:
+  surface: ablation
+  ablation_id: A5-iou-gibbs-softce-support2
+  claim_scope: none

@@ -6,7 +6,7 @@ status: canonical
 domain: training
 summary: Router for Stage-1 and Stage-2 training documentation, metrics, and runbooks.
 tags: [training, stage1, stage2]
-updated: 2026-05-09
+updated: 2026-05-11
 ---
 
 # Training Docs
@@ -20,6 +20,7 @@ or metric interpretation.
 |---|---|---|---|---|
 | Stage-1 baseline SFT | Current baseline | `configs/stage1/sft_base.yaml` and shared Stage-1 profiles | Static packing where supported | Teacher-forced baseline without rollout-aware matching. |
 | Stage-1 compact recursive detection | Production baseline/comparator | `configs/stage1/recursive_detection_ce_latest/prod/compact_full_support2.yaml`; runtime policy in `src/detection/runtime.py` | Packing/cache fail fast for latest compact recursive CE surfaces until sidecar target-position offset rewriting is implemented and validated | Uses `LatestDetectionTrainingConfig` top-level sections with `random_permutation_et_rmp_ce`; legacy Stage-1 SFT remains a separate baseline surface. |
+| Stage-1 compact recursive detection geometry-aware softCE | A5/A6 ablation candidates | `configs/stage1/recursive_detection_ce_latest/prod/compact_full_support2_iou_gibbs_softce_a5.yaml`; `configs/stage1/recursive_detection_ce_latest/prod/compact_full_support2_ciou_gibbs_softce_a6.yaml` | Same as latest compact recursive CE | Both extend the A2/support2 comparator, keep compact-full/data/model/optimizer/schedule unchanged, and replace coordinate hard CE with `objective.coord_soft_ce`; production intent is two concurrent 4-GPU jobs, one for A5 and one for A6, after tiny/DDP4 smoke and risk audit. |
 | Stage-1 compact prefix roll-in ET-RMP-CE | E1 ablation/smoke route | `configs/stage1/recursive_detection_ce_latest/ablation/compact_full_prefix_rollin_balance2.yaml` | Packing/cache disabled; recursive sidecar offset rewriting is not implemented | Compact-full only. EOS supervision uses `<|im_end|>`; `empirical_unlabeled_poisson_v0` is smoke/ablation-only, and production requires `calibrated_formula_ref` with a versioned artifact. |
 | Stage-1 compact prefix roll-in separator-continue ablation | E2 diagnostic ablation | `configs/stage1/recursive_detection_ce_latest/ablation/compact_full_prefix_rollin_separator2.yaml` | Same as E1 | Raises only `objective.boundary.separator_continue_weight` to test whether stronger newline continuation pressure fixes generated-prefix early EOS. |
 | Stage-1 compact detection bridge | Legacy bridge only | `configs/stage1/compact_detection_sequence/smoke/compact_full_tiny.yaml` | Legacy SFT smoke surface; not a latest packing example | Uses legacy `TrainingConfig` plus `custom.detection_sequence_format`; do not use as a latest-schema example. |
@@ -52,6 +53,7 @@ that a benchmark, smoke, or validation run has completed.
   `objective`, `packing`, `evaluation`, and `validation`. They are not consumed
   by canonical launch configs until the relevant `extends` chains are migrated.
 - `configs/stage1/recursive_detection_ce_latest/prod/compact_full_support2.yaml` remains the random-permutation ET-RMP-CE production baseline/comparator.
+- `configs/stage1/recursive_detection_ce_latest/prod/compact_full_support2_iou_gibbs_softce_a5.yaml` and `configs/stage1/recursive_detection_ce_latest/prod/compact_full_support2_ciou_gibbs_softce_a6.yaml` are unlaunched geometry-aware coordinate softCE ablation candidates that preserve the A2/support2 setup except for `objective.coord_soft_ce` and run identity.
 - `configs/stage1/recursive_detection_ce_latest/ablation/compact_full_prefix_rollin_balance2.yaml` is the first `prefix_rollin_et_rmp_ce` ablation route; do not describe it as production-ready while it uses the empirical EOS prior.
 - `configs/stage1/recursive_detection_ce_latest/ablation/compact_full_prefix_rollin_separator2.yaml` is the focused E2 diagnostic ablation for the separator/free-boundary failure mode; compare it against E1 before adding a new margin loss.
 - `configs/stage1/compact_detection_sequence/` is a legacy bridge around

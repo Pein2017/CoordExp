@@ -8,6 +8,7 @@ import yaml
 
 from src.config.loader import ConfigLoader
 from src.config.schema import DebugConfig, LatestDetectionTrainingConfig
+from src.detection.runtime import resolve_recursive_detection_ce_runtime_cfg
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -304,6 +305,118 @@ def test_latest_trie_weight_names_are_accepted() -> None:
 
     assert cfg.objective.trie_support_weight == 0.5
     assert cfg.objective.trie_balance_weight == 0.25
+
+
+def test_latest_random_permutation_accepts_iou_gibbs_coord_softce() -> None:
+    payload = _latest_payload()
+    payload["objective"] = {
+        "id": "recursive_detection_ce",
+        "variant": "random_permutation_et_rmp_ce",
+        "trie_support_weight": 2.0,
+        "trie_balance_weight": 1.0,
+        "state_weighting": "uniform_permutation",
+        "normalization": "semantic_image_bucket_balanced",
+        "coord_soft_ce": {
+            "enabled": True,
+            "target_distribution": "iou_gibbs_v0",
+            "tau": 0.0090909091,
+            "tau_source": "train_one_token_iou_median_v0",
+            "weighting": "preserve_recursive_support_balance",
+            "replace_coord_hard_ce": True,
+            "apply_to_multi_positive": "support_mixture",
+        },
+    }
+
+    cfg = LatestDetectionTrainingConfig.from_mapping(payload)
+
+    assert cfg.objective.coord_soft_ce is not None
+    assert cfg.objective.coord_soft_ce.enabled is True
+    assert cfg.objective.coord_soft_ce.tau == pytest.approx(0.0090909091)
+    assert cfg.objective.coord_soft_ce.target_distribution == "iou_gibbs_v0"
+    assert cfg.objective.coord_soft_ce.weighting == "preserve_recursive_support_balance"
+
+
+def test_latest_random_permutation_accepts_ciou_gibbs_coord_softce() -> None:
+    payload = _latest_payload()
+    payload["objective"] = {
+        "id": "recursive_detection_ce",
+        "variant": "random_permutation_et_rmp_ce",
+        "trie_support_weight": 2.0,
+        "trie_balance_weight": 1.0,
+        "state_weighting": "uniform_permutation",
+        "normalization": "semantic_image_bucket_balanced",
+        "coord_soft_ce": {
+            "enabled": True,
+            "target_distribution": "ciou_gibbs_v0",
+            "tau": 0.0090909091,
+            "tau_source": "train_one_token_iou_median_v0",
+            "weighting": "preserve_recursive_support_balance",
+            "replace_coord_hard_ce": True,
+            "apply_to_multi_positive": "support_mixture",
+        },
+    }
+
+    cfg = LatestDetectionTrainingConfig.from_mapping(payload)
+
+    assert cfg.objective.coord_soft_ce is not None
+    assert cfg.objective.coord_soft_ce.enabled is True
+    assert cfg.objective.coord_soft_ce.target_distribution == "ciou_gibbs_v0"
+
+
+def test_recursive_detection_runtime_resolves_coord_softce_token_range() -> None:
+    payload = _latest_payload()
+    payload["objective"] = {
+        **payload["objective"],  # type: ignore[dict-item]
+        "coord_soft_ce": {
+            "enabled": True,
+            "target_distribution": "ciou_gibbs_v0",
+            "tau": 0.0090909091,
+            "tau_source": "train_one_token_iou_median_v0",
+            "weighting": "preserve_recursive_support_balance",
+            "replace_coord_hard_ce": True,
+            "apply_to_multi_positive": "support_mixture",
+        },
+    }
+    cfg = LatestDetectionTrainingConfig.from_mapping(payload)
+
+    runtime_cfg = resolve_recursive_detection_ce_runtime_cfg(cfg)
+
+    assert runtime_cfg is not None
+    assert runtime_cfg.coord_soft_ce is not None
+    assert runtime_cfg.coord_soft_ce.target_distribution == "ciou_gibbs_v0"
+    assert runtime_cfg.coord_soft_ce.coord_token_start == 151670
+    assert runtime_cfg.coord_soft_ce.coord_token_end == 152669
+
+
+@pytest.mark.parametrize(
+    "deprecated_key",
+    ["sigma", "truncate", "target_sigma", "target_truncate", "window", "radius"],
+)
+def test_coord_softce_rejects_fixed_gaussian_knobs(deprecated_key: str) -> None:
+    payload = _latest_payload()
+    payload["objective"]["coord_soft_ce"] = {
+        "enabled": True,
+        "target_distribution": "iou_gibbs_v0",
+        "tau": 0.0090909091,
+        "tau_source": "train_one_token_iou_median_v0",
+        deprecated_key: 2.0,
+    }
+
+    with pytest.raises(ValueError, match=rf"objective\.coord_soft_ce\.{deprecated_key}"):
+        LatestDetectionTrainingConfig.from_mapping(payload)
+
+
+def test_coord_softce_requires_positive_data_derived_tau() -> None:
+    payload = _latest_payload()
+    payload["objective"]["coord_soft_ce"] = {
+        "enabled": True,
+        "target_distribution": "iou_gibbs_v0",
+        "tau": 0.0,
+        "tau_source": "train_one_token_iou_median_v0",
+    }
+
+    with pytest.raises(ValueError, match=r"objective\.coord_soft_ce\.tau.*> 0"):
+        LatestDetectionTrainingConfig.from_mapping(payload)
 
 
 def test_et_rmp_weights_must_be_non_negative_and_nonzero() -> None:
@@ -727,11 +840,23 @@ def test_latest_recursive_detection_launch_configs_parse_without_custom() -> Non
         REPO_ROOT
         / "configs/stage1/recursive_detection_ce_latest/prod/compact_full_support2.yaml",
         REPO_ROOT
+        / "configs/stage1/recursive_detection_ce_latest/prod/compact_full_support2_iou_gibbs_softce_a5.yaml",
+        REPO_ROOT
+        / "configs/stage1/recursive_detection_ce_latest/prod/compact_full_support2_ciou_gibbs_softce_a6.yaml",
+        REPO_ROOT
         / "configs/stage1/recursive_detection_ce_latest/smoke/compact_full_tiny.yaml",
         REPO_ROOT
         / "configs/stage1/recursive_detection_ce_latest/smoke/compact_full_prodlike_single_gpu.yaml",
         REPO_ROOT
         / "configs/stage1/recursive_detection_ce_latest/smoke/compact_full_ddp8_preflight.yaml",
+        REPO_ROOT
+        / "configs/stage1/recursive_detection_ce_latest/smoke/compact_full_support2_iou_gibbs_softce_a5_tiny.yaml",
+        REPO_ROOT
+        / "configs/stage1/recursive_detection_ce_latest/smoke/compact_full_support2_ciou_gibbs_softce_a6_tiny.yaml",
+        REPO_ROOT
+        / "configs/stage1/recursive_detection_ce_latest/smoke/compact_full_support2_iou_gibbs_softce_a5_ddp4_preflight.yaml",
+        REPO_ROOT
+        / "configs/stage1/recursive_detection_ce_latest/smoke/compact_full_support2_ciou_gibbs_softce_a6_ddp4_preflight.yaml",
     ]
 
     for config_path in config_paths:
@@ -764,6 +889,12 @@ def test_latest_recursive_detection_launch_configs_parse_without_custom() -> Non
         assert cfg.objective.variant == "random_permutation_et_rmp_ce"
         assert cfg.objective.trie_support_weight == 2.0
         assert cfg.objective.trie_balance_weight == 1.0
+        if "iou_gibbs_softce_a5" in config_path.name:
+            assert cfg.objective.coord_soft_ce is not None
+            assert cfg.objective.coord_soft_ce.target_distribution == "iou_gibbs_v0"
+        if "ciou_gibbs_softce_a6" in config_path.name:
+            assert cfg.objective.coord_soft_ce is not None
+            assert cfg.objective.coord_soft_ce.target_distribution == "ciou_gibbs_v0"
         assert cfg.packing.static_packing is False
         assert cfg.packing.padding_free_packed is False
         assert cfg.training["packing"] is False

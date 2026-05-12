@@ -25,6 +25,20 @@ config_surfaces:
       parser: src/config/schema.py::LatestDetectionTrainingConfig
       runtime: src/detection/runtime.py
       notes: "Latest compact detection production baseline using random_permutation_et_rmp_ce with flat trie weights. Keep as comparator/baseline; do not use it as the prefix-rollin config surface."
+    - id: stage1_latest_compact_detection_iou_gibbs_coord_softce_a5
+      status: ablation-candidate
+      config: configs/stage1/recursive_detection_ce_latest/prod/compact_full_support2_iou_gibbs_softce_a5.yaml
+      authoring_snippets: configs/_shared/latest_detection/
+      parser: src/config/schema.py::LatestDetectionTrainingConfig
+      runtime: src/detection/runtime.py
+      notes: "A5 production-scale ablation candidate: A2/support2 plus iou_gibbs_v0 coordinate soft targets preserving recursive support/balance coefficients. Claim scope remains none until measured; launch preparation uses one 4-GPU slice."
+    - id: stage1_latest_compact_detection_ciou_gibbs_coord_softce_a6
+      status: ablation-candidate
+      config: configs/stage1/recursive_detection_ce_latest/prod/compact_full_support2_ciou_gibbs_softce_a6.yaml
+      authoring_snippets: configs/_shared/latest_detection/
+      parser: src/config/schema.py::LatestDetectionTrainingConfig
+      runtime: src/detection/runtime.py
+      notes: "A6 production-scale ablation candidate: A2/support2 plus ciou_gibbs_v0 coordinate soft targets preserving recursive support/balance coefficients; intended to run beside A5 on a separate 4-GPU slice."
     - id: stage1_latest_compact_detection_prefix_rollin_et_rmp_ce_ablation
       status: ablation
       config: configs/stage1/recursive_detection_ce_latest/ablation/compact_full_prefix_rollin_balance2.yaml
