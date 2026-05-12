@@ -1,3 +1,112 @@
+# Task Group: CoordExp public_data cleanup, provenance manifests, and cross-node regeneration contracts
+
+scope: Cleanup and provenance work for `public_data`, especially when the user wants disk-saving deletion, Git-tracked processed-data manifests, JSONL-only checksums, or a pull-first handoff for another environment.
+applies_to: cwd=/data/CoordExp; reuse_rule=safe for this checkouts `public_data` cleanup/provenance workflow, but re-check active training roots and currently materialized dataset variants before deleting data or expanding manifest coverage.
+
+## Task 1: Clean up `public_data` and preserve only the requested dataset groups
+
+### rollout_summary_files
+
+- rollout_summaries/2026-05-11T06-50-47-82L9-public_data_provenance_jsonl_checksums_and_manifest_handoff.md (cwd=/data/CoordExp, rollout_path=/data/CoordExp/.codex/sessions/2026/05/11/rollout-2026-05-11T06-50-47-019e15cd-7907-76b0-902a-83af0aaee1f3.jsonl, updated_at=2026-05-11T07:31:08+00:00, thread_id=019e15cd-7907-76b0-902a-83af0aaee1f3, keep-set cleanup plus active-root guardrails)
+
+### keywords
+
+- public_data, cleanup, 保留, 完全删掉, VG raw, active training root, rescale_32_1024_bbox_max60, du -sh, git ls-files
+
+## Task 2: Add Git-tracked provenance manifests for the current COCO1024 processed datasets
+
+### rollout_summary_files
+
+- rollout_summaries/2026-05-11T06-50-47-82L9-public_data_provenance_jsonl_checksums_and_manifest_handoff.md (cwd=/data/CoordExp, rollout_path=/data/CoordExp/.codex/sessions/2026/05/11/rollout-2026-05-11T06-50-47-019e15cd-7907-76b0-902a-83af0aaee1f3.jsonl, updated_at=2026-05-11T07:31:08+00:00, thread_id=019e15cd-7907-76b0-902a-83af0aaee1f3, canonical manifest/test contract)
+
+### keywords
+
+- manifests/public_data_provenance, processed public_data, regeneration contract, schema.json, README.md, tests/test_public_data_provenance_manifests.py, materialized variants only
+
+## Task 3: Add JSONL-only checksums and keep nonexistent variants out of the active provenance set
+
+### rollout_summary_files
+
+- rollout_summaries/2026-05-11T06-50-47-82L9-public_data_provenance_jsonl_checksums_and_manifest_handoff.md (cwd=/data/CoordExp, rollout_path=/data/CoordExp/.codex/sessions/2026/05/11/rollout-2026-05-11T06-50-47-019e15cd-7907-76b0-902a-83af0aaee1f3.jsonl, updated_at=2026-05-11T07:31:08+00:00, thread_id=019e15cd-7907-76b0-902a-83af0aaee1f3, cheap cross-node sample-file alignment)
+
+### keywords
+
+- checksums, jsonl_training_samples_only, sha256, aggregate_sha256, size_bytes, records, rescale_32_1024_bbox_lvis_proxy, cheap alignment
+
+## Task 4: Commit, push, and prepare a pull-first cross-environment handoff
+
+### rollout_summary_files
+
+- rollout_summaries/2026-05-11T06-50-47-82L9-public_data_provenance_jsonl_checksums_and_manifest_handoff.md (cwd=/data/CoordExp, rollout_path=/data/CoordExp/.codex/sessions/2026/05/11/rollout-2026-05-11T06-50-47-019e15cd-7907-76b0-902a-83af0aaee1f3.jsonl, updated_at=2026-05-11T07:31:08+00:00, thread_id=019e15cd-7907-76b0-902a-83af0aaee1f3, commit/push plus another-agent handoff)
+
+### keywords
+
+- commit and push, main, origin, git pull --ff-only, other environment, regenerate from raw, no Baidu Netdisk, handoff prompt
+
+## User preferences
+
+- when the user said “把暂时不需要的数据给完全删掉以节省磁盘”, they wanted destructive cleanup rather than a report-only audit -> future cleanup tasks should actually remove unneeded `public_data` trees after mapping the keep-set [Task 1]
+- when the user corrected “`VG`raw也可以保留”, treat `public_data/vg/raw` as a keep candidate in similar cleanup runs unless the user says otherwise [Task 1]
+- when the user said `coco,1024,60` was being used by two training processes and “你先不用动这一个数据集的源数据”, active-use data roots are no-touch unless the user explicitly approves rewriting or regeneration [Task 1][Task 2]
+- when the user asked for a separate `public_data*` record so cross-node exports from raw are identical, they were asking for manifest-driven reproducibility rather than disk mirroring -> treat Git-tracked provenance manifests as the source of truth for processed `public_data` [Task 2]
+- when the user asked “file_hashes, checksums可以是对整个文件夹做吗？我想要对`*.jsonl`(训练样本）做hash或者 checksums 层面的对齐，因为比较‘便宜’”, default to per-JSONL checksums for model-facing sample alignment rather than whole-tree hashing [Task 3]
+- when the user said “如果本身就还没有生产这个数据集，则不用追踪/记录它了，将其删除即可”, do not track unmaterialized dataset variants as current canonical artifacts [Task 2][Task 3]
+- when the user explicitly said “请commit and push这些 changes” and described another environment that would “先`pull`再执行校验”, finish the workflow with a push plus a pull-first verification/regeneration handoff instead of stopping at local edits [Task 4]
+
+## Reusable knowledge
+
+- The durable keep-set from this cleanup was: `public_data/coco/raw`, `public_data/lvis/raw`, `public_data/vg/raw`, `public_data/coco/rescale_32_1024_bbox`, `public_data/coco/rescale_32_1024_bbox_max60`, and `public_data/coco/rescale_32_1024_bbox_max60_lvis_proxy`; old 768 variants, VG-Ref, derived VG data, `public_data/output`, and `__pycache__` were removable in that run [Task 1]
+- `du -sh` plus `find` and `git ls-files` was enough to distinguish raw inputs, active processed roots, disposable derived trees, and Git-tracked vs local-only surfaces before deletion [Task 1]
+- The canonical provenance layout is `manifests/public_data_provenance/<dataset>/<processed-dir>.json`, mirroring the `public_data` tree. The contract was enforced by `tests/test_public_data_provenance_manifests.py` and documented in `schema.json` / `README.md` under the same directory [Task 2]
+- The validated current manifest set covered only the three materialized COCO1024 processed roots: `public_data/coco/rescale_32_1024_bbox`, `public_data/coco/rescale_32_1024_bbox_max60`, and `public_data/coco/rescale_32_1024_bbox_max60_lvis_proxy` [Task 2][Task 3]
+- The accepted checksum scope is intentionally narrow: `scope = jsonl_training_samples_only`, algorithm `sha256`, entries only for repo-relative `public_data/**/*.jsonl`, plus an `aggregate_sha256` built from sorted `path sha256 size_bytes records` lines for cheap cross-node equality checks [Task 3]
+- The project-level policy this implemented is: raw `public_data` is not Baidu-sync territory; processed `public_data` should be reproducible from Git-tracked manifests and verified with targeted tests, then regenerated from raw when missing [Task 2][Task 4]
+- The validated handoff flow was `git pull --ff-only` -> inspect the three canonical manifests -> run `conda run -n ms python -m pytest tests/test_public_data_provenance_manifests.py -q` -> regenerate only missing processed datasets from raw COCO/LVIS -> rerun the test [Task 4]
+
+## Failures and how to do differently
+
+- The first cleanup pass was too aggressive around active or ambiguous roots. Before deleting large `public_data` trees, check whether the user has called out active training use and treat that as a stop signal [Task 1]
+- A nonexistent requested variant such as `public_data/coco/rescale_32_1024_bbox_lvis_proxy` should be marked absent and removed from tracking, not carried as a speculative current artifact [Task 1][Task 2][Task 3]
+- The first provenance draft assumed metadata-only manifests and rejected checksums. In similar cross-node reproducibility work, do not assume hashing is out of scope; ask whether cheap model-facing JSONL hashes are wanted [Task 2][Task 3]
+- Do not extend checksum tracking to raw images, caches, or whole `public_data` trees when the user explicitly asked for the cheaper `*.jsonl` alignment layer [Task 3]
+- Keep the staged set narrow. The successful commit only staged provenance/test files and left unrelated churn out of the change set [Task 4]
+
+# Task Group: CoordExp portable skill packaging for Baidu append-only union sync
+
+scope: Packaging a reusable, self-contained Baidu Netdisk sync workflow as a Codex skill rather than repo code. Use when the user wants cross-machine large-asset sync semantics, portable skill delivery, or commit hygiene around `.codex/skills`.
+applies_to: cwd=/data/CoordExp; reuse_rule=safe for this checkouts portable-skill workflow and the union-sync semantics, but re-check local tool availability and remote path policy before running the sync commands in another environment.
+
+## Task 1: Package a generic Baidu Disk union-sync skill
+
+### rollout_summary_files
+
+- rollout_summaries/2026-05-11T02-41-25-LODS-baidudisk_union_sync_skill_packaging.md (cwd=/data/CoordExp, rollout_path=/data/CoordExp/.codex/sessions/2026/05/11/rollout-2026-05-11T02-41-25-019e14e9-2b24-7420-a7ca-c711472368f8.jsonl, updated_at=2026-05-11T07:59:00+00:00, thread_id=019e14e9-2b24-7420-a7ca-c711472368f8, generic append-only sync skill bundle)
+
+### keywords
+
+- BaiduPCS-Go, baidudisk-union-sync, append-only union sync, manual delete, no overwrite, manifests, tmux, config-template.json, semantics.md
+
+## User preferences
+
+- when the user said the original sync idea was “好像好复杂” and asked to “打包成一个 skills，所有的scripts和 references都打包在skills下，而不是本地的codebase”, move the operational logic into a self-contained skill bundle instead of ordinary repo code [Task 1]
+- when the user said they would “通过 skills 的方式同步到另一个环境” and wanted it “可泛化、通用”, keep the solution environment-agnostic and portable across checkouts [Task 1]
+- when the user said another environments Codex agent should also “领悟到精髓并执行”, encode the workflow semantics and safety policy in `SKILL.md` / references rather than relying on prior chat context [Task 1]
+- when the user said “请只 commit and sync 你的修改而忽略其他的 dirty changes”, stage and commit only the new skill bundle and ignore unrelated worktree noise [Task 1]
+
+## Reusable knowledge
+
+- The durable abstraction for this workflow is append-only union sync, not mirror sync: upload new local files, pull missing remote files, stop on conflicts, and keep deletes/overwrites manual [Task 1]
+- A fully self-contained skill bundle can live under `.codex/skills/baidudisk-union-sync/` with `SKILL.md` for behavior, `scripts/` for the executable workflow, `references/` for policy/config, and `agents/openai.yaml` for metadata [Task 1]
+- The implemented command surface was `doctor`, `scan`, `status`, `push`, `pull`, and `sync`. The safety defaults were conservative: upload with skip-existing semantics, pull via staging plus `rsync --ignore-existing`, reject unsafe filenames by default, and stop on conflicts [Task 1]
+- Validation was two-layered: `conda run -n ms python .codex/skills/.system/skill-creator/scripts/quick_validate.py .codex/skills/baidudisk-union-sync` returned `Skill is valid!`, and a small local `scan` smoke test successfully wrote a manifest [Task 1]
+- This packaging pattern is reusable for future cross-environment large-asset workflows: keep the operational logic inside the portable skill and avoid repo-wide code integration unless the user explicitly asks for it [Task 1]
+
+## Failures and how to do differently
+
+- The broader union-sync concept was intentionally not implemented in normal repo code after the user redirected the task toward a portable skill. Future similar asks should stay inside the skill package unless the user explicitly asks for codebase integration [Task 1]
+- Validation briefly generated `__pycache__` under the skill directory. Clean bytecode artifacts before the final commit on future skill-packaging runs [Task 1]
+- Unrelated dirty state existed elsewhere in the worktree, including memory-file deletions. Preserve that separation and stage only the requested skill bundle when the user says to ignore other dirt [Task 1]
+
 # Task Group: CoordExp repo-local Codex configuration, cleanup, and operator defaults
 
 scope: Current repo-local agent setup, cleanup requests for unsuitable tooling, Serena/Codex launch behavior, and local memory/config migration. Use when the task touches `.codex`, Serena MCP, Codex launch flags, or repo-local cleanup of abandoned tooling.
