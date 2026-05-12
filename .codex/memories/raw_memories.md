@@ -796,74 +796,6 @@ References:
 - cleanup target roots documented in the final report: `research/duplication_collapse_pure_ce/`, `research/duplication_followup/`, `research/duplication_collapse_control_compare/`, and related study roots
 - remaining runtime artifacts were intentionally left in their stable research directories rather than relocated
 
-## Thread `019d7d22-1cea-7390-bfb6-553252319047`
-updated_at: 2026-04-11T15:39:19+00:00
-cwd: /data/CoordExp
-rollout_path: /data/CoordExp/.codex/sessions/2026/04/11/rollout-2026-04-11T15-21-20-019d7d22-1cea-7390-bfb6-553252319047.jsonl
-rollout_summary_file: 2026-04-11T15-21-20-k3Ft-codex_agents_delete_ignore_and_baidupcsgo_tmux_download.md
-
----
-description: User explicitly wanted `.codex/AGENTS.md` and `.codex/skills/AGENTS.md` deleted rather than merely ignored, and wanted Git to stop surfacing them; also documented BaiduPCS-Go download behavior where the user prefers tmux-first syncs and wants account-prefixed staging explained.
-task: remove .codex/AGENTS.md symlink and .codex/skills/AGENTS.md file; document baidupcsgo download staging/tmux behavior
-task_group: repo-maintenance + baidupcsgo-upload
-task_outcome: success
-cwd: /data/CoordExp
-keywords: .codex/AGENTS.md, .codex/skills/AGENTS.md, symlink, gitignore, git status, git check-ignore, BaiduPCS-Go, tmux, account-prefixed save directory, baidu_net_cookie.txt
----
-
-### Task 1: Remove `.codex/AGENTS.md` and `.codex/skills/AGENTS.md`, and stop them from being tracked/recreated
-
-task: delete .codex/AGENTS.md symlink and .codex/skills/AGENTS.md file; ensure Git no longer reports them
-task_group: repo-maintenance
-task_outcome: success
-
-Preference signals:
-- when the user said, "Help me completely remove them and stop `git tracking` them anymore. Remove the symlink." -> they wanted the actual filesystem objects deleted, not just hidden from Git.
-- when the user clarified, "Not just add into the `git ignore`. Delete that index. They should not be traced and created" -> future agents should treat ignore-only fixes as insufficient for this request and should remove the files/symlink directly.
-
-Reusable knowledge:
-- `.codex/AGENTS.md` was a symlink to `skills/AGENTS.md`; `.codex/skills/AGENTS.md` was a plain 0-byte file.
-- `git log -- .codex/AGENTS.md .codex/skills/AGENTS.md` returned no commits, and `git status --short` initially showed both as untracked.
-- After deletion, `test ! -e .codex/AGENTS.md && test ! -e .codex/skills/AGENTS.md` succeeded, and `git status` showed nothing for those paths.
-
-Failures and how to do differently:
-- The initial attempt to add explicit `.gitignore` entries was the wrong interpretation of the user’s request; the user wanted deletion, not masking.
-- The repo’s broad allowlist in `.gitignore` means path-specific ignore rules can be easy to misread as a fix; only use them if the user wants persistent hiding rather than removal.
-
-References:
-- `ls -ld .codex/AGENTS.md .codex/skills/AGENTS.md` showed `.codex/AGENTS.md -> skills/AGENTS.md` and `.codex/skills/AGENTS.md` as a 0-byte file.
-- `git status --short -- .codex/AGENTS.md .codex/skills/AGENTS.md` initially returned `?? .codex/AGENTS.md` and `?? .codex/skills/AGENTS.md`.
-- `ls` later failed for both paths, confirming deletion.
-
-### Task 2: BaiduPCS-Go download of the 4B pure-CE checkpoint with tmux and staging merge
-task: log in with `baidu_net_cookie.txt`, verify `/output/stage1/coco_bbox_max60-coco80-desc_first-pure_ce/ckpt-1932_merged`, and download it locally
-task_group: baidupcsgo-upload
-task_outcome: success
-
-Preference signals:
-- when the user said, "use the key `baidu_net_cookie.txt`" -> future BaiduPCS-Go workflows should prefer the saved cookie file over prompting for credentials.
-- when the user said, "Download to local same path, launch in a tmux session" -> launch long downloads detached in tmux by default.
-- when the user asked, "Are you downloading in parallel?" -> explicitly report parallelism settings and whether multiple files/threads are active.
-- when the user asked if the download could be done "directly without the `prefix`" and then said to "keep it as it is" but update the skill to mention the feature -> treat the account-prefixed save directory as expected BaiduPCS-Go staging behavior and document it.
-- when the user asked to "prefer using the tmux session for sync by default" -> tmux should be the default launch mode for sync jobs, not only for especially large ones.
-
-Reusable knowledge:
-- Remote login/root verification via `baidupcsgo/login_with_cookie_and_probe.sh baidu_net_cookie.txt <REMOTE_PATH> <BAIDUPCS_BIN>` succeeded.
-- The remote 4B pure-CE checkpoint existed at `/output/stage1/coco_bbox_max60-coco80-desc_first-pure_ce/ckpt-1932_merged` and contained 4 shards (`model-00001-of-00004.safetensors` … `model-00004-of-00004.safetensors`) plus tokenizer/config files, total size about `16.55GB`.
-- The downloader script `.codex/skills/baidupcsgo-upload/scripts/download_dir.sh` uses `--fullpath` and defaults to `--mode locate -p 4 -l 2 --retry 8 --ow --mtime`.
-- BaiduPCS-Go downloads may land in an account-prefixed staging directory such as `1592545883_Pien1722/output/...` under the local parent; this is normal for the current login and should be merged into the intended repo `output/` tree afterward if a clean path is desired.
-- The live tmux session used for the transfer was `baidupcs_pure_ce_dl`.
-
-Failures and how to do differently:
-- The first foreground run revealed the account-prefixed staging path; future agents should explain this before the user has to ask whether the prefix can be avoided.
-- For long-running syncs, start inside tmux immediately and avoid foreground execution that can be interrupted.
-
-References:
-- `BaiduPCS-Go login --cookies="$COOKIE"` with `COOKIE` from `baidu_net_cookie.txt`.
-- Remote listing showed `model.safetensors.index.json`, `tokenizer.json`, `tokenizer_config.json`, `vocab.json`, `merges.txt`, and four safetensor shards.
-- `tmux new-session -d -s baidupcs_pure_ce_dl 'bash /data/CoordExp/temp/baidupcs_download_pure_ce.sh'` created the detached transfer session.
-- Skill updates were made in `.codex/skills/baidupcsgo-upload/SKILL.md` to prefer tmux and to note the account-prefixed staging directory behavior.
-
 ## Thread `019d81a5-843c-7932-85fc-86eef6b6719c`
 updated_at: 2026-04-15T08:25:30+00:00
 cwd: /data/CoordExp
@@ -7214,89 +7146,95 @@ References:
 - `onnxruntime-node@1.25.1` package contents included bundled CPU binaries and a `postinstall` script; `script/install.js` documents `--onnxruntime-node-install=skip` / `ONNXRUNTIME_NODE_INSTALL=skip`.
 
 ## Thread `019dfb71-6e68-7a82-97e5-a294d7920e48`
-updated_at: 2026-05-08T15:45:36+00:00
+updated_at: 2026-05-11T13:35:06+00:00
 cwd: /data/CoordExp
 rollout_path: /data/CoordExp/.codex/sessions/2026/05/06/rollout-2026-05-06T04-00-08-019dfb71-6e68-7a82-97e5-a294d7920e48.jsonl
-rollout_summary_file: 2026-05-06T04-00-08-LbXa-stage1_prefix_rollin_et_rmp_ce_bsz8_relaunch_and_stop_slow_p.md
+rollout_summary_file: 2026-05-06T04-00-08-LbXa-stage1_prefix_rollin_a1_a4_ablations_and_batch_size_relaunch.md
 
 ---
-description: Stage-1 prefix-rollin ET-RMP-CE experiment where the user corrected the batch shape after low GPU utilization; bsz1 probes were stopped, then bsz8 A3/A4 configs were launched and verified. Highest-value takeaway: in this repo, `effective_batch_size` is the source-of-truth contract, `grad_accum` is derived from it, `packing=false / padding_free_packed=false` means this path is padding/collate-based (not packed), and `conda run --no-capture-output` is needed for live tmux/log monitoring.
-task: audit-and-launch-stage1-prefix-rollin-et-rmp-ce-ablation
-task_group: /data/CoordExp stage1_set_continuation / recursive_detection_ce_latest
-task_outcome: success
+description: User ran Stage-1 prefix-roll-in / ET-RMP-CE ablations, interrupted a too-slow bsz1 launch, then standardized on bsz8 with effective_batch_size=128. A3 = prefix-roll-in + support/balance with eos_trust_weight=1.0; A4 = same plus empirical EOS trust prior. Live launches required conda run --no-capture-output for usable logs.
+task: Stage-1 recursive detection CE ablation launch and explanation
+ task_group: /data/CoordExp
+ task_outcome: success
 cwd: /data/CoordExp
-keywords: stage1_set_continuation, entry_trie_rmp_ce, prefix_rollin, eos_trust_weight, effective_batch_size, gradient_accumulation_steps, packing=false, padding_free_packed=false, conda run --no-capture-output, tmux, train_heartbeat, logging.jsonl, bsz1, bsz8, world_size=4
+keywords: stage1_set_continuation, entry_trie_rmp_ce, prefix_rollin, support_loss, balance_loss, eos_trust_weight, conda run --no-capture-output, tmux, torchrun, effective_batch_size, gradient_accumulation_steps, batch size 8, aborted launch, A1 A2 A3 A4
 ---
 
-### Task 1: Audit and launch prefix-rollin ET-RMP-CE
+### Task 1: Prefix-closed ET-RMP-CE audit / design framing
 
-task: read-only audit plus launch of Stage-1 prefix-rollin ET-RMP-CE ablations (A3/A4)
-task_group: stage1_set_continuation / recursive_detection_ce_latest
-task_outcome: success
-
-Preference signals:
-- the user said "请启动多个子代理来探索和分析和交流和头脑风暴，不一定要严格按照上述的要求" -> for this family, start with investigation/adaptation and use parallel exploration when useful
-- after seeing low GPU utilization, the user said "可能对于非传统`sft`是无法使用 packing，而需要使用 padding 的，所以`per_batch_size`应该>1" -> when throughput is poor, prefer revisiting batch shape rather than assuming packing is available
-- the user then said "batch size=8好了，稳一点" -> future runs in this family should bias toward `per_device_train_batch_size=8` over `1` when using padding/collate runtime
-- the user said "终止目前的训练，太久了" -> stop slow probes decisively instead of letting them continue as background benchmarks
-
-Reusable knowledge:
-- `effective_batch_size` is the loader source-of-truth; `gradient_accumulation_steps` is derived from `ceil(effective_batch_size / (per_device_train_batch_size × world_size))`
-- `packing=false` / `padding_free_packed=false` means this path is padding/collate-based, not packed
-- on 4 GPUs, `per_device_train_batch_size=8` with `effective_batch_size=128` yields `grad_accum=4`
-- live launch output requires `conda run --no-capture-output`; plain `conda run` buffered stdout and made tmux/logs appear empty early on
-- the ET-RMP-CE training surface logs useful first-step diagnostics including `trie_support_weight`, `trie_balance_weight`, `trie_valid_mass`, `target_mix/trie_multi_positive_fraction`, and `eos_weighted_loss`
-
-Failures and how to do differently:
-- `bsz1` probes produced very low utilization and slow steps; stop them and relaunch with a larger per-device batch
-- the first launch hid logs because `conda run` buffered stdout; use `--no-capture-output` from the start when live monitoring matters
-- keep aborted probe artifacts separate from the real launch artifacts so provenance is readable
-
-References:
-- A3/A4 config files created in the worktree:
-  - `configs/stage1/recursive_detection_ce_latest/ablation/compact_full_prefix_rollin_balance2_a3_bsz8_ebs128.yaml`
-  - `configs/stage1/recursive_detection_ce_latest/ablation/compact_full_prefix_rollin_balance2_a4_eos_bsz8_ebs128.yaml`
-- Aborted probe session names:
-  - `coordexp_a3_prefix_rollin_bsz1_ebs128_4gpu`
-  - `coordexp_a4_prefix_rollin_eos_bsz1_ebs128_4gpu`
-- Live session names after restart:
-  - `coordexp_a3_prefix_rollin_bsz8_ebs128_4gpu`
-  - `coordexp_a4_prefix_rollin_eos_bsz8_ebs128_4gpu`
-- First-step bsz8 metrics:
-  - A3: `loss=58.67657089`, `loss/recursive_detection_ce=14.66914177`, `recursive_detection_ce/eos_trust_weight=1.0`, `accum/grad_steps=4.0`
-  - A4: `loss=56.70932007`, `loss/recursive_detection_ce=14.17733002`, `recursive_detection_ce/eos_trust_weight=0.37089857`, `recursive_detection_ce/eos_weighted_loss=1.13879347`, `accum/grad_steps=4.0`
-- launch logs:
-  - `/data/CoordExp/.worktrees/compact-prefix-rollin-et-rmp-ce/temp/training_launch_logs/a3_prefix_rollin_balance2_bsz8_ebs128_4gpu_20260508_153930.log`
-  - `/data/CoordExp/.worktrees/compact-prefix-rollin-et-rmp-ce/temp/training_launch_logs/a4_prefix_rollin_balance2_eos_bsz8_ebs128_4gpu_20260508_153930.log`
-
-### Task 2: Stop the too-slow probes and relaunch a healthier batch shape
-
-task: terminate the initial bsz1 A3/A4 runs, then relaunch with bsz8 while keeping effective batch 128
-task_group: stage1_set_continuation / runtime control
-
-task_outcome: success
+task: read-only audit of Stage-1 recursive detection CE / ET-RMP-CE against prefix-closed multi-target SFT
+ task_group: /data/CoordExp Stage-1 set-continuation
+ task_outcome: uncertain
 
 Preference signals:
-- the user said "终止目前的训练，太久了" -> if the run is taking too long, stop it explicitly
-- the user said "算了，用batch size=8好了，稳一点" -> favor bsz8 as the safer, more usable padded runtime shape
+- User asked for a system-level audit of data/template/loss/eval behavior and wanted the agent to be able to design and proceed with clarification only if needed -> future similar asks should start with structured code audit and patch/test plan, not immediate rewrite.
+- User explicitly requested multi-agent exploration/brainstorming -> parallel decomposition is preferred for broad code audits.
 
 Reusable knowledge:
-- the aborted bsz1 runs were not worth salvaging; stopping them freed the GPUs and reduced confusion
-- the new bsz8 runs wrote heartbeats, manifests, and `logging.jsonl` quickly enough to confirm they were real launches
-- live monitoring should check the output root for `train_heartbeat.rank{0..3}.jsonl`, `resolved_config.json`, `run_metadata.json`, `experiment_manifest.json`, and `logging.jsonl`
+- Active code surface is `src/trainers/stage1_set_continuation/` with `sampling.py`, `entry_trie.py`, `full_suffix.py`, `losses.py`, `trainer.py`, `branch_encoder.py`.
+- `docs/training/STAGE1_OBJECTIVE.md` is the current behavior reference for this family.
+- The implementation already has subset sampling modes and entry-trie target construction; future audits should verify behavior, not assume only random shuffle.
 
 Failures and how to do differently:
-- do not keep a too-small batch running just because it technically matches the global batch contract; throughput and user patience matter
-- when a launch is being changed, create distinct wrapper YAMLs so the aborted probe and the replacement launch remain easy to distinguish
+- This thread was displaced by live training orchestration before the audit report was written.
+- `conda run` buffered stdout during long jobs; use `--no-capture-output` for live monitoring.
 
 References:
-- `conda run --no-capture-output -n ms torchrun --nproc_per_node=4 --master_addr=127.0.0.1 --master_port=29531 -m src.sft --config ...a3_bsz8...`
-- `conda run --no-capture-output -n ms torchrun --nproc_per_node=4 --master_addr=127.0.0.1 --master_port=29532 -m src.sft --config ...a4_bsz8...`
-- runtime confirmation from the bsz8 run:
-  - `Batch shape: per_device=8, grad_accum=4, world_size=4, per_rank_effective=32, global_effective=128`
-  - `first_batch_collate` with `feature_count=8`
-  - `recursive_detection_ce/batch_size: 8.0`
-  - `memory(GiB)` around `30.97` on step 1
+- `src/trainers/stage1_set_continuation/sampling.py::_select_prefix_and_remaining` -> subset modes `empty_prefix`, `full_prefix`, `leave_one_out`, `random_subset`
+- `src/trainers/stage1_set_continuation/entry_trie.py::build_entry_trie_target_steps` -> object-uniform child probabilities at trie nodes
+- `src/trainers/stage1_set_continuation/full_suffix.py::compute_full_suffix_loss` -> support/balance + hard CE
+
+### Task 2: A3/A4 long-run launch, stop, and batch-size retune
+
+task: launch Stage-1 recursive detection CE ablations A3/A4, stop a too-slow run, then relaunch with batch size 8
+ task_group: /data/CoordExp Stage-1 set-continuation
+ task_outcome: success
+
+Preference signals:
+- User said `per_batch_size should >1` / `batch size` should be closer to previous settings after seeing low GPU utilization with `bsz1` -> in similar cases, prefer a larger microbatch and avoid tiny underfilled runs.
+- User explicitly said `终止目前的训练，太久了` -> stop slow runs promptly when they are clearly too slow.
+- User later said `算了，用batch size=8好了，稳一点` -> batch size 8 is an acceptable conservative default for this setup.
+
+Reusable knowledge:
+- For this repo, `effective_batch_size` is the source of truth; the loader derives `gradient_accumulation_steps` from `effective_batch_size / (per_device_train_batch_size * world_size)`.
+- `conda run --no-capture-output` is needed for live tmux/log streaming; without it, training output is obscured.
+- `packing=false / padding_free_packed=false` means the run is using padding/collate, not packed runtime.
+- On 4 GPUs, `per_device=8, effective_batch=128` yields `grad_accum=4` and around `30-31 GiB` per GPU at the first step, which was stable.
+- The initial `bsz1` version was too conservative and was stopped before it was useful.
+
+Failures and how to do differently:
+- The first `bsz1` launch underutilized the GPUs and was terminated.
+- The initial `conda run` launch buffered output and made logs appear empty; relaunching with `--no-capture-output` fixed observability.
+- Reusing a busy rendezvous port caused startup friction; ensure ports are free before relaunching distributed jobs.
+
+References:
+- Stopped sessions: `coordexp_a3_prefix_rollin_bsz1_ebs128_4gpu`, `coordexp_a4_prefix_rollin_eos_bsz1_ebs128_4gpu`
+- Final active sessions: `coordexp_a3_prefix_rollin_bsz8_ebs128_4gpu`, `coordexp_a4_prefix_rollin_eos_bsz8_ebs128_4gpu`
+- Final run roots: `.../compact_full_prefix_rollin_et_rmp_ce_balance2_a3_bsz8_ebs128/v0-20260508-154050` and `...a4_eos_bsz8_ebs128/v0-20260508-154050`
+- First-step metrics for A3 bsz8: `loss/recursive_detection_ce=14.66914177`, `accum/grad_steps=4.0`, `memory(GiB)=30.97`
+- First-step metrics for A4 bsz8: `loss/recursive_detection_ce=14.17733002`, `accum/grad_steps=4.0`, `memory(GiB)=30.97`, `recursive_detection_ce/eos_trust_weight≈0.37089857`
+- Run manifest paths written: `effective_runtime.json`, `resolved_config.json`, `run_metadata.json`, `experiment_manifest.json`, `logging.jsonl`
+
+### Task 3: A1/A2/A3/A4 meaning explanation
+
+task: explain the four-ablation ladder for prefix-closed multi-target SFT / ET-RMP-CE
+ task_group: /data/CoordExp Stage-1 set-continuation
+ task_outcome: success
+
+Preference signals:
+- User asked for a compact explanation of `A1,A2,A3,A4` and wanted the four experiments distinguished by what each adds.
+
+Reusable knowledge:
+- A1 = multi-positive support only
+- A2 = support + balance
+- A3 = prefix-roll-in + support + balance
+- A4 = A3 + EOS trust / censored EOS prior
+- The ladder is best understood as attribution: local objective shape -> valid-set collapse control -> prefix-closed coverage -> EOS conservatism / incomplete-label handling.
+
+References:
+- A3 first-step log: `recursive_detection_ce/eos_trust_weight = 1.0`
+- A4 first-step log: `recursive_detection_ce/eos_trust_weight ≈ 0.37089857`, `recursive_detection_ce/eos_weighted_loss ≈ 1.13879347`
+- User wording to preserve: `A1,A2,A3,A4这四组实验分别的含义`
 
 ## Thread `019e007a-4507-7881-8b73-d0ea97b17886`
 updated_at: 2026-05-07T03:32:02+00:00
@@ -7457,4 +7395,151 @@ References:
 - [1] Final prompt included explicit commands: `./public_data/run.sh coco download`, `./public_data/run.sh coco convert`, `./public_data/run.sh coco rescale --preset rescale_32_1024_bbox -- --image-factor 32 --max-pixels $((32*32*1024))`, `PUBLIC_DATA_MAX_OBJECTS=60 ./public_data/run.sh coco coord --preset rescale_32_1024_bbox`, and `./public_data/run.sh coco validate --preset rescale_32_1024_bbox_max60`.
 - [2] The prompt named the expected output tree: `public_data/coco/rescale_32_1024_bbox_max60/{train.jsonl,train.norm.jsonl,train.coord.jsonl,val.jsonl,val.norm.jsonl,val.coord.jsonl,pipeline_manifest.json,train.filter_stats.json,val.filter_stats.json}`.
 - [3] The prompt captured the compact-full contract details and the 1002-row token-row expectations for the other node to verify before generating data.
+
+## Thread `019e15fe-e740-7050-b8b7-acdef94a4d9e`
+updated_at: 2026-05-11T11:48:35+00:00
+cwd: /data/CoordExp
+rollout_path: /data/CoordExp/.codex/sessions/2026/05/11/rollout-2026-05-11T07-44-47-019e15fe-e740-7050-b8b7-acdef94a4d9e.jsonl
+rollout_summary_file: 2026-05-11T07-44-47-2Ul8-codex_memories_delete_investigation_ops_separation_and_push.md
+
+---
+description: Investigated why tracked `.codex/memories/rollout_summaries/*.md` showed many deletions, concluded Codex memory refresh/materialization was the likely cause, then added a markdown-only memory auto-commit watcher/helper and separated system/agent tooling into a tracked `ops/` folder before committing and pushing to `main`.
+task: investigate `.codex/memories` delete spikes; add auto-commit for memory refresh; move IT/system scripts out of `scripts/`
+task_group: CoordExp repo-local Codex configuration, cleanup, and operator defaults
+task_outcome: success
+cwd: /data/CoordExp
+keywords: .codex/memories, rollout_summaries, delete, codex agent, memory refresh, watcher, systemd user service, ops folder, scripts vs ops, git push, safe.directory
+---
+
+### Task 1: Investigate `.codex/memories` delete spikes
+
+task: diagnose why tracked `.codex/memories/rollout_summaries/*.md` showed many deletes in git status/diff
+
+task_group: repo-local memory/state forensics
+task_outcome: success
+
+Preference signals:
+- when the user asked in Chinese “帮我查看一下我本地的 `.codex/memories` 为何又有很多 `delete`，是哪个操作要让其 delete 掉的？” -> they want the actual trigger identified from evidence, not a generic guess
+- when the user repeated the same ask for `git changes` “为何又有很多 `delete`，是哪个操作要让其 delete 掉的？” -> they want file-system/git forensics grounded in current diff/state
+
+Reusable knowledge:
+- The observed deletes were 16 tracked markdown files under `.codex/memories/rollout_summaries/`; `git diff --summary` showed `16 files changed, 1536 deletions(-)`.
+- `.codex/memories` contains its own nested `.git`, so the memory area behaves like a separate local repo/state surface.
+- The outer repo’s ignore rules allow `.codex/memories/**/*.md` to be tracked but keep `.codex/memories/.git/` local.
+
+Failures and how to do differently:
+- Direct `git -C .codex/memories ...` hit dubious-ownership / safe.directory issues; use filesystem evidence and, if needed, explicit safe.directory handling for the nested repo.
+- Broad archive/log scans were noisy; the useful signal came from current diff, file timestamps, and git history on the specific summary files.
+
+References:
+- `git status --short .codex/memories` -> 16 `D` entries under `rollout_summaries/*.md`
+- `git diff --summary -- .codex/memories` -> `16 files changed, 1536 deletions(-)`
+- `find .codex/memories -maxdepth 3 -type f` / `ls -la .codex/memories/.git` -> nested memory repo and rewrite timestamps around `2026-05-11 07:42 UTC`
+- `git log --name-status -- .codex/memories/...` -> prior `A` history for the deleted files
+
+### Task 2: Explain agent-managed memory refresh and keep markdown-only memory tracking
+
+task: answer whether Codex itself was effectively deleting memory files and whether the user can keep `.codex/memories` while accepting Codex changes
+
+task_group: repo-local agent-state workflow
+
+task_outcome: success
+
+Preference signals:
+- when the user asked “所以大概率是 `codex agent` 自行删除的，对吗？” -> they want a direct causal answer, but phrased carefully around agent/runtime behavior
+- when the user said they want to “尽可能保留 `.codex/memories/` 下的一切内容，而接收 `codex agent` 自动的变更” -> they prefer a multi-environment setup where Codex-managed memory changes are accepted rather than blocked
+- when the user asked whether they are already tracking only `**/*.md` and ignoring other files -> they want a markdown-only memory policy, not full runtime-state tracking
+
+Reusable knowledge:
+- The effective behavior is best described as agent/runtime memory refresh/materialization/prune, not a human-intended `git rm`.
+- The repo currently uses a markdown-focused allowlist for `.codex/memories` and ignores nested runtime metadata.
+- A good working rule here is to accept Codex updates to markdown memory content while keeping volatile scratch/runtime files out of git.
+
+Failures and how to do differently:
+- Do not broaden the policy to “track everything under `.codex/memories`”; that would import nested git state and scratch artifacts.
+- Treat tracked markdown memory and untracked runtime metadata as separate classes of state.
+
+References:
+- `.gitignore` allowlist lines for `.codex/memories/**/*.md` plus `.codex/memories/.git/` ignore rule
+- User wording: “尽可能保留 `.codex/memories/` 下的一切内容，而接收 `codex agent` 自动的变更。”
+
+### Task 3: Add automatic memory refresh commit helper and watcher
+
+task: implement a helper/watch flow that auto-commits Codex memory markdown changes with message `refresh memories`
+
+task_group: repo-local agent-state automation
+
+task_outcome: success
+
+Preference signals:
+- when the user asked for a “hook” that automatically commits memory refresh/materialization changes so they do not mix into normal codebase development -> they want memory refresh isolation into its own commits
+- when the user asked for a hook that auto-captures `.codex/memoires` changes and commits them with a message like `refresh memories` -> they want a watcher-like automation with that exact commit intent/message
+
+Reusable knowledge:
+- Git does not natively offer a “working tree diff appeared” hook; a practical implementation is a watcher/service plus a commit helper.
+- The implemented safety policy is: stage only `.codex/memories/**/*.md`, skip if unrelated staged changes exist, and skip during merge/rebase/cherry-pick/revert states.
+- The helper supports dry-run without mutating the real index by using a temporary index file.
+
+Failures and how to do differently:
+- The initial dry-run path used the real index; this was corrected so dry-run does not pollute staging state.
+- The first version lived under `scripts/tools/`, but the user later asked for a stronger folder separation, so the files were moved into `ops/codex/`.
+
+References:
+- `ops/codex/commit_codex_memories.sh`
+- `ops/codex/watch_codex_memories.sh`
+- `ops/codex/install_codex_memory_watcher.sh`
+- Dry-run evidence: `cached_before=0 cached_after=0` and the 16 markdown deletions under `.codex/memories/rollout_summaries/*.md`
+
+### Task 4: Separate CoordExp pipeline scripts from system/IT scripts
+
+task: move IT/system/agent-runtime helpers out of `scripts/` into a tracked top-level `ops/` directory
+
+task_group: repo organization / tooling boundary
+
+task_outcome: success
+
+Preference signals:
+- when the user said `scripts` should be for training, inference, or CoordExp-direct tools, and that another folder should hold IT/system scripts/tools -> they want a durable structural boundary in the repo
+
+Reusable knowledge:
+- The repo root uses an allowlist `.gitignore`; new tracked top-level folders must be explicitly allowed.
+- `ops/` now holds system/agent-runtime helpers; `scripts/` remains focused on CoordExp pipeline tooling.
+- `workspace_gc.sh` was moved from `scripts/tools/` to `ops/workspace/`, and a new `ops/codex/` subfolder houses memory automation.
+
+Failures and how to do differently:
+- After moving files, `ops/` was initially still ignored because the allowlist did not include it; adding `!ops/` and `!ops/**` fixed that.
+- `git diff --check` caught a trailing blank line in `ops/codex/README.md`; remove such whitespace before commit.
+
+References:
+- `.gitignore` additions: `!ops/` and `!ops/**`
+- `ops/README.md`, `ops/codex/README.md`, `ops/workspace/README.md`
+- `scripts/README.md` updated to remove `workspace_gc.sh` from `scripts/tools/`
+- Rename evidence: `scripts/tools/workspace_gc.sh -> ops/workspace/workspace_gc.sh`
+
+### Task 5: Commit and push current codebase changes
+
+task: commit the ops/tooling separation and memory refresh changes, then push the current branch
+
+task_group: git hygiene / repo sync
+
+task_outcome: success
+
+Preference signals:
+- when the user said “好的，将当前codebase commit and push” -> they want the current state recorded and pushed, not just discussed
+- they did not ask to create a branch, so the current branch was used
+
+Reusable knowledge:
+- The branch was `main`, and the remote was `origin https://github.com/Pein2017/CoordExp.git`.
+- The final state after pushing was clean: `## main...origin/main`.
+- The work was split into two logical commits: one for `ops/` isolation, one for memory refresh deletion.
+
+Failures and how to do differently:
+- The repo’s allowlist-based `.gitignore` means forgetting to whitelist a new top-level directory will silently keep it untracked.
+- Keep staging narrow: system tooling and memory refresh should remain separate commits.
+
+References:
+- Commit `0efac28 chore(ops): isolate system tooling`
+- Commit `83e5d33 refresh memories`
+- Push result: `ac0e0d8..83e5d33  main -> main`
+- Final status: `## main...origin/main`
 
