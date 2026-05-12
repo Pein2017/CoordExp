@@ -87,6 +87,38 @@ PYTHONPATH=. conda run -n ms python scripts/evaluate_proxy_detection_bundle.py \
   --config <bundle_eval_config.yaml>
 ```
 
+## Reusable Helpers
+
+For repeated recursive-detection infer/eval sweeps, use the bundled helper instead of hand-writing near-duplicate temp configs, launchers, status checks, or comparison tables:
+
+```bash
+HELPER=/data/CoordExp/.codex/skills/coordexp-infer-eval-workflow/scripts/coordexp_infer_eval.py
+```
+
+Prepare one standard compact-full recursive detection run:
+
+```bash
+python "$HELPER" prepare-recursive \
+  --repo-root /data/CoordExp/.worktrees/recursive-detection-bucketing-packing \
+  --checkpoint <checkpoint-or-adapter-path> \
+  --run-tag <a3-or-a4_eos-or-other-short-label> \
+  --rp <repetition-penalty> \
+  --gpus <cuda-visible-devices> \
+  --master-port <free-port>
+```
+
+This writes a YAML config and a tmux-safe launcher under `temp/infer/recursive_detection_ce_latest/`, prints the output directory, log path, and exact tmux command, and does not launch unless `--launch` is passed. Use `--dry-run` before writing, and use `--force` only when intentionally reusing an existing output directory.
+
+Summarize completed or partial runs:
+
+```bash
+python "$HELPER" summarize \
+  /data/CoordExp/output_remote/infer/recursive_detection_ce_latest/<run-dir> \
+  --format markdown
+```
+
+For RP sweeps, pass multiple run directories or use `--glob '/data/CoordExp/output_remote/infer/recursive_detection_ce_latest/*rp1p15*'`. The summary table reads only artifacts and reports raw/guarded AP, AP50, AP75, F1-ish, prediction counts, degenerate geometry counters, and duplicate-control suppression counts.
+
 ## COCO + LVIS Proxy Workflow
 
 For COCO runs trained with LVIS proxy supervision:
