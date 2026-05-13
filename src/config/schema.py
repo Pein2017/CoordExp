@@ -166,13 +166,33 @@ _TRAINING_INTERNAL_KEYS: set[str] = {
     "packing_length_precompute_workers",
     "encoded_sample_cache",
     "static_packing_cache",
-    "checkpoint_mode",
+    "save_model_only",
 }
 
 
 @lru_cache(maxsize=1)
 def _training_allowed_keys() -> set[str]:
     return set(_train_arguments_allowed_keys()) | set(_TRAINING_INTERNAL_KEYS)
+
+
+def _validate_training_checkpoint_keys(data: Mapping[str, Any]) -> None:
+    if "save_only_model" in data:
+        raise ValueError(
+            "training.save_only_model is an upstream/internal knob and is unsupported "
+            "in CoordExp YAML. Use training.save_model_only=true for restartable "
+            "checkpoints or false for inference-only checkpoints."
+        )
+    if "checkpoint_mode" in data:
+        raise ValueError(
+            "training.checkpoint_mode is deprecated and unsupported in CoordExp YAML. "
+            "Use training.save_model_only=true for restartable checkpoints or false "
+            "for inference-only checkpoints."
+        )
+    if "save_model_only" in data and not isinstance(data.get("save_model_only"), bool):
+        raise ValueError(
+            "training.save_model_only must be a boolean true/false value, "
+            f"got {data.get('save_model_only')!r}"
+        )
 
 
 @lru_cache(maxsize=1)
@@ -3160,11 +3180,9 @@ def _latest_detection_validate_framework_mapping(
 
 
 def _latest_detection_validate_training_mapping(value: Any) -> dict[str, Any]:
-    data = _latest_detection_validate_framework_mapping(
-        value,
-        path="training",
-        allowed=_training_allowed_keys(),
-    )
+    data = _latest_detection_validate_runtime_mapping(value, path="training")
+    _validate_training_checkpoint_keys(data)
+    _validate_section_keys_strict("training", data, allowed=_training_allowed_keys())
     if "packing_length" in data:
         raise ValueError(
             "training.packing_length is deprecated and unsupported. "
@@ -4482,6 +4500,7 @@ class TrainingConfig:
                 "training.packing_length is deprecated and unsupported. "
                 "Remove it and set global_max_length/template.max_length instead."
             )
+        _validate_training_checkpoint_keys(training)
         _validate_section_keys_strict(
             "training", training, allowed=_training_allowed_keys()
         )

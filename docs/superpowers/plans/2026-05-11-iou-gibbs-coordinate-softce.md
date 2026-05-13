@@ -1988,8 +1988,8 @@ Production launch state on 2026-05-11:
     failed, 21 warnings in 229.24s`.
   - Continued residual triage fixed three narrow non-A5 regressions without
     changing A5/A6 semantics:
-    restartable checkpoint preflight now includes
-    `checkpoint_mode='restartable'` in incomplete-checkpoint errors;
+    restartable checkpoint preflight now references the public
+    `save_model_only=true` setting in incomplete-checkpoint errors;
     coord-only loss-gradient monitoring no longer includes `text_gate`; and
     Stage-2 AB DDP phase config defaults cleanly for minimal executor mixins
     without `_ab_channel_b_get`.

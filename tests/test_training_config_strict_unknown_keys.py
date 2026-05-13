@@ -79,6 +79,38 @@ def test_training_internal_packing_keys_are_allowed():
     assert cfg.training["artifact_subdir"] == "stage1/example"
 
 
+def test_training_save_only_model_is_rejected_in_favor_of_public_save_model_only():
+    payload = _base_training_payload()
+    payload["training"] = {"save_only_model": True}
+
+    with pytest.raises(ValueError) as exc:
+        TrainingConfig.from_mapping(payload, PromptOverrides())
+
+    assert "training.save_only_model" in str(exc.value)
+    assert "training.save_model_only" in str(exc.value)
+
+
+def test_training_checkpoint_mode_is_rejected_in_favor_of_public_save_model_only():
+    payload = _base_training_payload()
+    payload["training"] = {"checkpoint_mode": "restartable"}
+
+    with pytest.raises(ValueError) as exc:
+        TrainingConfig.from_mapping(payload, PromptOverrides())
+
+    assert "training.checkpoint_mode" in str(exc.value)
+    assert "training.save_model_only" in str(exc.value)
+
+
+def test_training_save_model_only_requires_boolean():
+    payload = _base_training_payload()
+    payload["training"] = {"save_model_only": None}
+
+    with pytest.raises(ValueError) as exc:
+        TrainingConfig.from_mapping(payload, PromptOverrides())
+
+    assert "training.save_model_only must be a boolean" in str(exc.value)
+
+
 def test_experiment_unknown_key_fails_fast() -> None:
     payload = _base_training_payload()
     payload["experiment"] = {

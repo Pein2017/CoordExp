@@ -774,6 +774,7 @@ def test_config_loader_builds_train_arguments_from_latest_runtime_sections(
         "output_root": str(tmp_path / "runs"),
         "logging_root": str(tmp_path / "logs"),
         "artifact_subdir": "latest-train-args",
+        "save_model_only": True,
     }
     cfg = LatestDetectionTrainingConfig.from_mapping(payload)
 
@@ -797,7 +798,49 @@ def test_config_loader_builds_train_arguments_from_latest_runtime_sections(
     assert "train_jsonl" not in captured
     assert "val_jsonl" not in captured
     assert "image_root" not in captured
+    assert "save_model_only" not in captured
     assert captured["gradient_accumulation_steps"] == 2
+
+
+def test_latest_detection_rejects_upstream_save_only_model_knob() -> None:
+    payload = _latest_payload()
+    payload["training"] = {
+        "run_name": "latest-save-only-model-rejected",
+        "save_only_model": True,
+    }
+
+    with pytest.raises(ValueError) as exc:
+        LatestDetectionTrainingConfig.from_mapping(payload)
+
+    assert "training.save_only_model" in str(exc.value)
+    assert "training.save_model_only" in str(exc.value)
+
+
+def test_latest_detection_rejects_deprecated_checkpoint_mode_knob() -> None:
+    payload = _latest_payload()
+    payload["training"] = {
+        "run_name": "latest-checkpoint-mode-rejected",
+        "checkpoint_mode": "restartable",
+    }
+
+    with pytest.raises(ValueError) as exc:
+        LatestDetectionTrainingConfig.from_mapping(payload)
+
+    assert "training.checkpoint_mode" in str(exc.value)
+    assert "training.save_model_only" in str(exc.value)
+
+
+def test_latest_detection_save_model_only_requires_boolean() -> None:
+    payload = _latest_payload()
+    payload["training"] = {
+        "run_name": "latest-save-model-only-null-rejected",
+        "save_model_only": None,
+    }
+
+    with pytest.raises(ValueError) as exc:
+        LatestDetectionTrainingConfig.from_mapping(payload)
+
+    assert "training.save_model_only must be a boolean" in str(exc.value)
 
 
 def test_config_loader_rejects_authored_gradient_accumulation_when_effective_batch_is_set(

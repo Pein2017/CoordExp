@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import timedelta
+import json
 import logging
 import os
 import weakref
@@ -33,13 +34,42 @@ if TYPE_CHECKING:  # pragma: no cover
 logger = logging.getLogger(__name__)
 
 COORDEXP_CHECKPOINT_STATE_NAME = "coordexp_checkpoint_state.pt"
-_COORDEXP_CHECKPOINT_SCHEMA_VERSION = 1
+COORDEXP_CHECKPOINT_COMPLETE_NAME = "coordexp_checkpoint_complete.json"
+_COORDEXP_CHECKPOINT_SCHEMA_VERSION = 2
+_COORDEXP_LEGACY_CHECKPOINT_SCHEMA_VERSIONS = {1}
 _DEFAULT_CHECKPOINT_DDP_TIMEOUT_S = 300.0
 _MINIMAL_ARTIFACT_STATE_FILES = (
     COORDEXP_CHECKPOINT_STATE_NAME,
+    COORDEXP_CHECKPOINT_COMPLETE_NAME,
     TRAINER_STATE_NAME,
     "training_args.bin",
 )
+_TOKENIZER_ARTIFACT_NAMES = {
+    "added_tokens.json",
+    "chat_template.jinja",
+    "chat_template.json",
+    "image_processor_config.json",
+    "merges.txt",
+    "preprocessor_config.json",
+    "processor_config.json",
+    "special_tokens_map.json",
+    "tokenizer.json",
+    "tokenizer_config.json",
+    "video_preprocessor_config.json",
+    "vocab.json",
+}
+_ADAPTER_WEIGHT_NAMES = {
+    "adapter_model.safetensors",
+    "adapter_model.safetensors.index.json",
+    "adapter_model.bin",
+    "adapter_model.bin.index.json",
+}
+_FULL_MODEL_WEIGHT_NAMES = {
+    "model.safetensors",
+    "model.safetensors.index.json",
+    "pytorch_model.bin",
+    "pytorch_model.bin.index.json",
+}
 
 
 def _callback_state_key(callback: Any) -> str:
@@ -105,7 +135,222 @@ def _restore_repo_callback_state(
         load_state_dict_fn(dict(payload) if isinstance(payload, Mapping) else payload)
 
 
-def _build_coordexp_checkpoint_state(trainer: Any) -> dict[str, Any]:
+def _safe_getattr(obj: Any, name: str, default: Any = None) -> Any:
+    try:
+        return getattr(obj, name, default)
+    except Exception:
+        return default
+
+
+def _iter_tokenizer_save_candidates(trainer: Any) -> list[tuple[str, Any]]:
+    template = _safe_getattr(trainer, "template")
+    data_collator = _safe_getattr(trainer, "data_collator")
+    raw_candidates = [
+        ("trainer.processing_class", _safe_getattr(trainer, "processing_class")),
+        ("trainer.tokenizer", _safe_getattr(trainer, "tokenizer")),
+        ("trainer.template.processor", _safe_getattr(template, "processor")),
+        ("trainer.template.tokenizer", _safe_getattr(template, "tokenizer")),
+        ("trainer.data_collator.tokenizer", _safe_getattr(data_collator, "tokenizer")),
+    ]
+
+    candidates: list[tuple[str, Any]] = []
+    seen: set[int] = set()
+    for source, candidate in raw_candidates:
+        if candidate is None:
+            continue
+        if id(candidate) in seen:
+            continue
+        seen.add(id(candidate))
+        if callable(getattr(candidate, "save_pretrained", None)):
+            candidates.append((source, candidate))
+    return candidates
+
+
+def _collect_file_inventory(
+    checkpoint_dir: Path, names: set[str]
+) -> dict[str, dict[str, int]]:
+    inventory: dict[str, dict[str, int]] = {}
+    for name in sorted(names):
+        path = checkpoint_dir / name
+        if not path.is_file():
+            continue
+        inventory[name] = {"size": int(path.stat().st_size)}
+    return inventory
+
+
+def _checkpoint_has_adapter_weights(checkpoint_dir: Path) -> bool:
+    return any((checkpoint_dir / name).is_file() for name in _ADAPTER_WEIGHT_NAMES)
+
+
+def _checkpoint_has_full_model_weights(checkpoint_dir: Path) -> bool:
+    return any((checkpoint_dir / name).is_file() for name in _FULL_MODEL_WEIGHT_NAMES)
+
+
+def _checkpoint_has_tokenizer_artifacts(checkpoint_dir: Path) -> bool:
+    return bool(_collect_file_inventory(checkpoint_dir, _TOKENIZER_ARTIFACT_NAMES))
+
+
+def _collect_rng_state_files(checkpoint_dir: Path) -> dict[str, dict[str, int]]:
+    inventory: dict[str, dict[str, int]] = {}
+    if not checkpoint_dir.is_dir():
+        return inventory
+    for entry in sorted(checkpoint_dir.iterdir(), key=lambda p: p.name):
+        if (
+            entry.is_file()
+            and entry.name.startswith("rng_state")
+            and entry.suffix == ".pth"
+        ):
+            inventory[entry.name] = {"size": int(entry.stat().st_size)}
+    return inventory
+
+
+def _trainer_world_size(trainer: Any) -> int:
+    args = getattr(trainer, "args", None)
+    raw_world_size = getattr(args, "world_size", None)
+    if raw_world_size is None:
+        raw_world_size = getattr(getattr(args, "training_args", None), "world_size", 1)
+    try:
+        return max(int(raw_world_size or 1), 1)
+    except (TypeError, ValueError):
+        return 1
+
+
+def _expected_rng_state_files(world_size: int) -> set[str]:
+    if int(world_size) > 1:
+        return {f"rng_state_{idx}.pth" for idx in range(int(world_size))}
+    return {"rng_state.pth"}
+
+
+def _save_restartable_tokenizer_artifacts(
+    checkpoint_dir: Path, trainer: Any
+) -> dict[str, Any]:
+    candidates = _iter_tokenizer_save_candidates(trainer)
+    if not candidates:
+        raise RuntimeError(
+            "Restartable checkpoints require tokenizer or processor artifacts, "
+            f"but no save_pretrained-capable tokenizer/processor was attached to the trainer for {checkpoint_dir}"
+        )
+
+    last_error: Exception | None = None
+    for source, candidate in candidates:
+        before = set(_collect_file_inventory(checkpoint_dir, _TOKENIZER_ARTIFACT_NAMES))
+        try:
+            candidate.save_pretrained(str(checkpoint_dir))
+        except Exception as exc:  # pragma: no cover - exercised through integration paths
+            last_error = exc
+            logger.warning(
+                "Failed to save tokenizer artifacts from %s into restartable checkpoint %s: %s",
+                source,
+                checkpoint_dir,
+                exc,
+            )
+            continue
+        inventory = _collect_file_inventory(checkpoint_dir, _TOKENIZER_ARTIFACT_NAMES)
+        if inventory:
+            return {
+                "required": True,
+                "saved": True,
+                "source": source,
+                "class": f"{type(candidate).__module__}.{type(candidate).__qualname__}",
+                "files": inventory,
+                "new_files": sorted(set(inventory) - before),
+            }
+
+    if last_error is not None:
+        raise RuntimeError(
+            "Unable to save tokenizer artifacts for restartable checkpoint "
+            f"{checkpoint_dir}; last error: {last_error}"
+        ) from last_error
+    raise RuntimeError(
+        "Tokenizer/processor save_pretrained completed but produced no recognized "
+        f"tokenizer artifacts in restartable checkpoint {checkpoint_dir}"
+    )
+
+
+def _load_adapter_config(checkpoint_dir: Path) -> dict[str, Any] | None:
+    config_path = checkpoint_dir / "adapter_config.json"
+    if not config_path.is_file():
+        return None
+    with config_path.open("r", encoding="utf-8") as f:
+        payload = json.load(f)
+    if not isinstance(payload, Mapping):
+        raise ValueError(
+            f"adapter_config.json must contain a mapping, got {type(payload).__name__}"
+        )
+    return dict(payload)
+
+
+def _build_model_artifact_manifest(checkpoint_dir: Path) -> dict[str, Any]:
+    adapter_config = _load_adapter_config(checkpoint_dir)
+    modules_to_save = (
+        adapter_config.get("modules_to_save") if isinstance(adapter_config, Mapping) else None
+    )
+    return {
+        "full_model_weights": _collect_file_inventory(
+            checkpoint_dir, _FULL_MODEL_WEIGHT_NAMES
+        ),
+        "adapter_weights": _collect_file_inventory(checkpoint_dir, _ADAPTER_WEIGHT_NAMES),
+        "adapter_config": bool(adapter_config),
+        "adapter_base_model_name_or_path": (
+            adapter_config.get("base_model_name_or_path")
+            if isinstance(adapter_config, Mapping)
+            else None
+        ),
+        "adapter_modules_to_save": (
+            sorted(str(item) for item in modules_to_save)
+            if isinstance(modules_to_save, list)
+            else []
+        ),
+        "token_embedding_policy": (
+            "external_base_model_plus_coord_offset_adapter"
+            if isinstance(modules_to_save, list)
+            and "coord_offset_adapter" in {str(item) for item in modules_to_save}
+            else "checkpoint_model_weights"
+        ),
+    }
+
+
+def _build_checkpoint_artifact_manifest(
+    checkpoint_dir: Path,
+    *,
+    trainer: Any,
+    tokenizer_artifacts: Mapping[str, Any],
+) -> dict[str, Any]:
+    return {
+        "model": _build_model_artifact_manifest(checkpoint_dir),
+        "tokenizer": dict(tokenizer_artifacts),
+        "trainer_state": {
+            "optimizer.pt": (checkpoint_dir / "optimizer.pt").is_file(),
+            "scheduler.pt": (checkpoint_dir / "scheduler.pt").is_file(),
+            TRAINER_STATE_NAME: (checkpoint_dir / TRAINER_STATE_NAME).is_file(),
+            "training_args.bin": (checkpoint_dir / "training_args.bin").is_file(),
+            "world_size": _trainer_world_size(trainer),
+            "rng_state_files": _collect_rng_state_files(checkpoint_dir),
+            "rng_state": _checkpoint_has_rng_state(checkpoint_dir),
+        },
+    }
+
+
+def _atomic_torch_save(payload: Mapping[str, Any], path: Path) -> None:
+    tmp_path = path.with_name(f".{path.name}.tmp")
+    torch.save(dict(payload), str(tmp_path))
+    os.replace(str(tmp_path), str(path))
+
+
+def _atomic_json_dump(payload: Mapping[str, Any], path: Path) -> None:
+    tmp_path = path.with_name(f".{path.name}.tmp")
+    tmp_path.write_text(
+        json.dumps(dict(payload), indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    os.replace(str(tmp_path), str(path))
+
+
+def _build_coordexp_checkpoint_state(
+    trainer: Any,
+    *,
+    artifacts: Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
     disabled = getattr(trainer, _DISABLED_DIAGNOSTICS_ATTR, None)
     disabled_diagnostics = (
         sorted(str(name) for name in disabled) if isinstance(disabled, set) else []
@@ -130,14 +375,32 @@ def _build_coordexp_checkpoint_state(trainer: Any) -> dict[str, Any]:
         "disabled_diagnostics": disabled_diagnostics,
         "callback_state": _collect_repo_callback_state(trainer),
         "trainer_runtime_state": dict(trainer_runtime_state or {}),
+        "artifacts": dict(artifacts or {}),
     }
 
 
 def _write_coordexp_checkpoint_state(checkpoint_dir: str | Path, trainer: Any) -> str:
-    checkpoint_path = Path(str(checkpoint_dir)) / COORDEXP_CHECKPOINT_STATE_NAME
-    checkpoint_path.parent.mkdir(parents=True, exist_ok=True)
-    torch.save(_build_coordexp_checkpoint_state(trainer), str(checkpoint_path))
-    return str(checkpoint_path)
+    checkpoint_path = Path(str(checkpoint_dir))
+    checkpoint_path.mkdir(parents=True, exist_ok=True)
+    tokenizer_artifacts = _save_restartable_tokenizer_artifacts(checkpoint_path, trainer)
+    artifacts = _build_checkpoint_artifact_manifest(
+        checkpoint_path,
+        trainer=trainer,
+        tokenizer_artifacts=tokenizer_artifacts,
+    )
+    payload = _build_coordexp_checkpoint_state(trainer, artifacts=artifacts)
+    sidecar_path = checkpoint_path / COORDEXP_CHECKPOINT_STATE_NAME
+    _atomic_torch_save(payload, sidecar_path)
+    _atomic_json_dump(
+        {
+            "schema_version": _COORDEXP_CHECKPOINT_SCHEMA_VERSION,
+            "checkpoint_mode": payload["checkpoint_mode"],
+            "global_step": payload["global_step"],
+            "sidecar": COORDEXP_CHECKPOINT_STATE_NAME,
+        },
+        checkpoint_path / COORDEXP_CHECKPOINT_COMPLETE_NAME,
+    )
+    return str(sidecar_path)
 
 
 def _is_restartable_checkpoint_mode(trainer: Any) -> bool:
@@ -151,6 +414,8 @@ def _is_restartable_checkpoint_mode(trainer: Any) -> bool:
 
 
 def _uses_minimal_artifact_checkpoint(trainer: Any) -> bool:
+    if _is_restartable_checkpoint_mode(trainer):
+        return False
     return bool(
         getattr(getattr(trainer, "args", None), "minimal_checkpoint_artifacts", False)
     )
@@ -182,16 +447,7 @@ def load_coordexp_checkpoint_state(checkpoint_dir: str | Path) -> dict[str, Any]
 def _checkpoint_has_model_weights(checkpoint_dir: Path) -> bool:
     if not checkpoint_dir.is_dir():
         return False
-    accepted_names = {
-        "model.safetensors",
-        "model.safetensors.index.json",
-        "pytorch_model.bin",
-        "pytorch_model.bin.index.json",
-        "adapter_model.safetensors",
-        "adapter_model.safetensors.index.json",
-        "adapter_model.bin",
-        "adapter_model.bin.index.json",
-    }
+    accepted_names = _FULL_MODEL_WEIGHT_NAMES | _ADAPTER_WEIGHT_NAMES
     for entry in checkpoint_dir.iterdir():
         if not entry.is_file():
             continue
@@ -201,12 +457,184 @@ def _checkpoint_has_model_weights(checkpoint_dir: Path) -> bool:
 
 
 def _checkpoint_has_rng_state(checkpoint_dir: Path) -> bool:
-    return any(
-        entry.is_file()
-        and entry.name.startswith("rng_state")
-        and entry.suffix == ".pth"
-        for entry in checkpoint_dir.iterdir()
+    return bool(_collect_rng_state_files(checkpoint_dir))
+
+
+def _adapter_state_keys(checkpoint_dir: Path) -> set[str]:
+    safe_weights = checkpoint_dir / "adapter_model.safetensors"
+    if safe_weights.is_file():
+        try:
+            from safetensors import safe_open
+        except ImportError as exc:  # pragma: no cover
+            raise RuntimeError(
+                "Validating adapter_model.safetensors requires safetensors"
+            ) from exc
+        with safe_open(str(safe_weights), framework="pt", device="cpu") as handle:
+            return {str(key) for key in handle.keys()}
+
+    bin_weights = checkpoint_dir / "adapter_model.bin"
+    if bin_weights.is_file():
+        payload = torch.load(str(bin_weights), map_location="cpu")
+        if not isinstance(payload, Mapping):
+            raise ValueError(
+                "adapter_model.bin must deserialize to a mapping, "
+                f"got {type(payload).__name__}"
+            )
+        return {str(key) for key in payload.keys()}
+
+    return set()
+
+
+def _validate_adapter_checkpoint(checkpoint_dir: Path) -> None:
+    if not _checkpoint_has_adapter_weights(checkpoint_dir):
+        return
+    adapter_config = _load_adapter_config(checkpoint_dir)
+    if adapter_config is None:
+        raise ValueError(
+            "Restartable PEFT checkpoint is incomplete: adapter weights exist "
+            "but adapter_config.json is missing"
+        )
+
+    modules_to_save_raw = adapter_config.get("modules_to_save") or []
+    modules_to_save = (
+        {str(item) for item in modules_to_save_raw}
+        if isinstance(modules_to_save_raw, list)
+        else set()
     )
+    if "coord_offset_adapter" not in modules_to_save:
+        return
+
+    keys = _adapter_state_keys(checkpoint_dir)
+    if not keys:
+        raise ValueError(
+            "coord_offset_adapter is declared in adapter_config.json, but no "
+            "unsharded adapter_model.safetensors/bin payload was found for validation"
+        )
+    has_coord_ids = any(key.endswith("coord_offset_adapter.coord_ids") for key in keys)
+    has_embed_offset = any(
+        key.endswith("coord_offset_adapter.embed_offset") for key in keys
+    )
+    if not has_coord_ids or not has_embed_offset:
+        raise ValueError(
+            "coord_offset_adapter is declared in adapter_config.json, but adapter "
+            "weights are missing coord_ids/embed_offset tensors"
+        )
+
+
+def _validate_schema2_artifacts(checkpoint_dir: Path, payload: Mapping[str, Any]) -> None:
+    marker_path = checkpoint_dir / COORDEXP_CHECKPOINT_COMPLETE_NAME
+    if not marker_path.is_file():
+        raise ValueError(
+            "Restartable checkpoint is incomplete for save_model_only=true. "
+            f"Missing required artifacts: {COORDEXP_CHECKPOINT_COMPLETE_NAME} "
+            f"in {checkpoint_dir}"
+        )
+    try:
+        marker_payload = json.loads(marker_path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        raise ValueError(
+            f"Restartable checkpoint completion marker is invalid JSON: {marker_path}"
+        ) from exc
+    if not isinstance(marker_payload, Mapping):
+        raise ValueError(
+            "Restartable checkpoint completion marker must contain a mapping, "
+            f"got {type(marker_payload).__name__}"
+        )
+    for key in ("schema_version", "checkpoint_mode", "global_step"):
+        if marker_payload.get(key) != payload.get(key):
+            raise ValueError(
+                "Restartable checkpoint completion marker does not match sidecar: "
+                f"{key} marker={marker_payload.get(key)!r} sidecar={payload.get(key)!r}"
+            )
+    if marker_payload.get("sidecar") != COORDEXP_CHECKPOINT_STATE_NAME:
+        raise ValueError(
+            "Restartable checkpoint completion marker references an unexpected sidecar: "
+            f"{marker_payload.get('sidecar')!r}"
+        )
+
+    artifacts = payload.get("artifacts")
+    if artifacts is not None and not isinstance(artifacts, Mapping):
+        raise ValueError(
+            "Restartable checkpoint sidecar artifacts must be a mapping, "
+            f"got {type(artifacts).__name__}"
+        )
+    if not _checkpoint_has_tokenizer_artifacts(checkpoint_dir):
+        raise ValueError(
+            "Restartable checkpoint is incomplete for save_model_only=true. "
+            f"Missing tokenizer artifacts in {checkpoint_dir}"
+        )
+    tokenizer_artifacts = (
+        artifacts.get("tokenizer") if isinstance(artifacts, Mapping) else None
+    )
+    if not isinstance(tokenizer_artifacts, Mapping):
+        raise ValueError(
+            "Restartable checkpoint sidecar artifacts.tokenizer must be a mapping"
+        )
+    tokenizer_files = tokenizer_artifacts.get("files")
+    if not isinstance(tokenizer_files, Mapping) or not tokenizer_files:
+        raise ValueError(
+            "Restartable checkpoint sidecar artifacts.tokenizer.files must list saved tokenizer files"
+        )
+    missing_tokenizer_files: list[str] = []
+    size_mismatch_tokenizer_files: list[str] = []
+    for name, metadata in tokenizer_files.items():
+        path = checkpoint_dir / str(name)
+        if not path.is_file():
+            missing_tokenizer_files.append(str(name))
+            continue
+        if isinstance(metadata, Mapping) and "size" in metadata:
+            try:
+                expected_size = int(metadata["size"])
+            except (TypeError, ValueError):
+                expected_size = None
+            if expected_size is not None and int(path.stat().st_size) != expected_size:
+                size_mismatch_tokenizer_files.append(str(name))
+    if missing_tokenizer_files:
+        raise ValueError(
+            "Restartable checkpoint is incomplete for save_model_only=true. "
+            "Missing tokenizer artifacts: "
+            + ", ".join(sorted(missing_tokenizer_files))
+            + f" in {checkpoint_dir}"
+        )
+    if size_mismatch_tokenizer_files:
+        raise ValueError(
+            "Restartable checkpoint tokenizer artifact size mismatch: "
+            + ", ".join(sorted(size_mismatch_tokenizer_files))
+            + f" in {checkpoint_dir}"
+        )
+
+    trainer_state_artifacts = (
+        artifacts.get("trainer_state") if isinstance(artifacts, Mapping) else None
+    )
+    if not isinstance(trainer_state_artifacts, Mapping):
+        raise ValueError(
+            "Restartable checkpoint sidecar artifacts.trainer_state must be a mapping"
+        )
+    raw_world_size = trainer_state_artifacts.get("world_size", 1)
+    try:
+        world_size = max(int(raw_world_size or 1), 1)
+    except (TypeError, ValueError):
+        raise ValueError(
+            "Restartable checkpoint sidecar trainer_state.world_size must be an integer, "
+            f"got {raw_world_size!r}"
+        ) from None
+    existing_rng_files = set(_collect_rng_state_files(checkpoint_dir))
+    if world_size <= 1:
+        missing_rng_files = (
+            []
+            if existing_rng_files & {"rng_state.pth", "rng_state_0.pth"}
+            else ["rng_state.pth"]
+        )
+    else:
+        expected_rng_files = _expected_rng_state_files(world_size)
+        missing_rng_files = sorted(expected_rng_files - existing_rng_files)
+    if missing_rng_files:
+        raise ValueError(
+            "Restartable checkpoint is incomplete for save_model_only=true. "
+            "Missing required RNG state files: "
+            + ", ".join(missing_rng_files)
+            + f" in {checkpoint_dir}"
+        )
 
 
 def validate_restartable_checkpoint(checkpoint_dir: str | Path) -> dict[str, Any]:
@@ -219,19 +647,25 @@ def validate_restartable_checkpoint(checkpoint_dir: str | Path) -> dict[str, Any
     missing: list[str] = []
     if not _checkpoint_has_model_weights(checkpoint_path):
         missing.append("model weights")
+    if _checkpoint_has_adapter_weights(checkpoint_path) and not (
+        checkpoint_path / "adapter_config.json"
+    ).is_file():
+        missing.append("adapter_config.json")
     if not (checkpoint_path / "optimizer.pt").is_file():
         missing.append("optimizer.pt")
     if not (checkpoint_path / "scheduler.pt").is_file():
         missing.append("scheduler.pt")
     if not (checkpoint_path / TRAINER_STATE_NAME).is_file():
         missing.append(TRAINER_STATE_NAME)
+    if not (checkpoint_path / "training_args.bin").is_file():
+        missing.append("training_args.bin")
     if not _checkpoint_has_rng_state(checkpoint_path):
         missing.append("rng_state*.pth")
     if not (checkpoint_path / COORDEXP_CHECKPOINT_STATE_NAME).is_file():
         missing.append(COORDEXP_CHECKPOINT_STATE_NAME)
     if missing:
         raise ValueError(
-            "Restartable checkpoint is incomplete for checkpoint_mode='restartable'. "
+            "Restartable checkpoint is incomplete for save_model_only=true. "
             "Missing required artifacts: "
             + ", ".join(missing)
             + f" in {checkpoint_path}"
@@ -239,18 +673,27 @@ def validate_restartable_checkpoint(checkpoint_dir: str | Path) -> dict[str, Any
 
     payload = load_coordexp_checkpoint_state(checkpoint_path)
     schema_version = payload.get("schema_version")
-    if int(schema_version or 0) != int(_COORDEXP_CHECKPOINT_SCHEMA_VERSION):
+    schema_version_int = int(schema_version or 0)
+    if schema_version_int not in (
+        {_COORDEXP_CHECKPOINT_SCHEMA_VERSION}
+        | _COORDEXP_LEGACY_CHECKPOINT_SCHEMA_VERSIONS
+    ):
         raise ValueError(
             "Restartable checkpoint sidecar schema_version is incompatible. "
-            f"Expected {_COORDEXP_CHECKPOINT_SCHEMA_VERSION}, got {schema_version!r}"
+            f"Expected one of "
+            f"{sorted({_COORDEXP_CHECKPOINT_SCHEMA_VERSION} | _COORDEXP_LEGACY_CHECKPOINT_SCHEMA_VERSIONS)}, "
+            f"got {schema_version!r}"
         )
     checkpoint_mode = str(payload.get("checkpoint_mode") or "").strip().lower()
     if checkpoint_mode != "restartable":
         raise ValueError(
             "Restartable checkpoint sidecar is incompatible: expected "
-            "checkpoint_mode='restartable' "
+            "save_model_only=true "
             f"but found {checkpoint_mode!r}"
         )
+    if schema_version_int >= 2:
+        _validate_schema2_artifacts(checkpoint_path, payload)
+    _validate_adapter_checkpoint(checkpoint_path)
     callback_state = payload.get("callback_state")
     if callback_state is not None and not isinstance(callback_state, Mapping):
         raise ValueError(

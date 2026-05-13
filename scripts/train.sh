@@ -112,9 +112,8 @@ _config_slug="$(basename "${CONFIG_PATH}")"
 _config_slug="${_config_slug%.yaml}"
 _config_slug="${_config_slug//[^A-Za-z0-9_.-]/_}"
 _launch_ts="$(date -u +%Y%m%dT%H%M%SZ)"
-TRAIN_LOG_FILE_RAW="${
-  train_log_file:-${TRAIN_LOG_FILE:-${TRAIN_LOG_DIR}/${_config_slug}-${_launch_ts}.log}
-}"
+TRAIN_LOG_FILE_DEFAULT="${TRAIN_LOG_DIR}/${_config_slug}-${_launch_ts}.log"
+TRAIN_LOG_FILE_RAW="${train_log_file:-${TRAIN_LOG_FILE:-${TRAIN_LOG_FILE_DEFAULT}}}"
 if [[ "${TRAIN_LOG_FILE_RAW}" = /* ]]; then
   TRAIN_LOG_FILE="${TRAIN_LOG_FILE_RAW}"
 else

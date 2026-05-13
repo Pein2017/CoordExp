@@ -26,6 +26,7 @@ def test_write_experiment_manifest_file_captures_soft_and_hard_context(
         effective_runtime={
             "trainer_variant": "stage2_two_channel",
             "checkpoint_mode": "artifact_only",
+            "save_model_only": False,
             "gradient_accumulation_steps": 4,
             "packing": {"enabled": True},
             "launcher": {"COORDEXP_STAGE2_LAUNCHER": "scripts/train_stage2.sh"},
@@ -57,6 +58,7 @@ def test_write_experiment_manifest_file_captures_soft_and_hard_context(
         "Validate the center-size smoke path."
     )
     assert payload["runtime_summary"]["trainer_variant"] == "stage2_two_channel"
+    assert payload["runtime_summary"]["save_model_only"] is False
     assert payload["runtime_summary"]["pipeline"]["objective"] == [
         "token_ce",
         "bbox_geo",

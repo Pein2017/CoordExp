@@ -5,6 +5,7 @@ extends:
   - ./compact_full_support2.yaml
 
 training:
+  save_model_only: true
   artifact_subdir: compact_full_et_rmp_iou_gibbs_softce_a5_support2_bsz16_4gpu_4epoch_tokenrows_v2
   run_name: compact-full-et-rmp-iou-gibbs-softce-a5-support2-bsz16-4gpu-4epoch-tokenrows-v2
 

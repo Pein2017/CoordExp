@@ -1,6 +1,7 @@
 import os
 import json
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 import src.trainers.final_checkpoint as final_checkpoint_mod
@@ -10,8 +11,10 @@ import torch.nn.functional as F
 from transformers import Trainer, TrainingArguments
 
 from src.callbacks.save_delay_callback import SaveDelayCallback
+from src.sft import _apply_checkpoint_mode, _parse_checkpoint_mode
 from src.trainers import with_final_checkpoint
 from src.trainers.final_checkpoint import (
+    COORDEXP_CHECKPOINT_COMPLETE_NAME,
     COORDEXP_CHECKPOINT_STATE_NAME,
     load_coordexp_checkpoint_state,
     prepare_restartable_checkpoint_resume,
@@ -47,6 +50,20 @@ class _TinyModel(nn.Module):
         return {"loss": loss, "logits": logits}
 
 
+class _TinyTokenizer:
+    def save_pretrained(self, output_dir: str) -> tuple[str, str]:
+        path = Path(output_dir)
+        tokenizer_config = path / "tokenizer_config.json"
+        tokenizer_json = path / "tokenizer.json"
+        tokenizer_config.write_text('{"model_max_length": 128}\n', encoding="utf-8")
+        tokenizer_json.write_text('{"version": "1.0"}\n', encoding="utf-8")
+        return (str(tokenizer_config), str(tokenizer_json))
+
+
+def _attach_tiny_tokenizer(trainer) -> None:
+    setattr(trainer, "processing_class", _TinyTokenizer())
+
+
 def _collect_checkpoint_files(checkpoint_dir: Path) -> set[str]:
     out: set[str] = set()
     for root, _dirs, files in os.walk(str(checkpoint_dir)):
@@ -54,6 +71,38 @@ def _collect_checkpoint_files(checkpoint_dir: Path) -> set[str]:
             rel = os.path.relpath(os.path.join(root, name), str(checkpoint_dir))
             out.add(rel)
     return out
+
+
+def test_public_save_model_only_boolean_controls_checkpoint_policy() -> None:
+    restartable_args = SimpleNamespace(save_only_model=True)
+    restartable_mode = _parse_checkpoint_mode({"save_model_only": True})
+    _apply_checkpoint_mode(restartable_args, checkpoint_mode=restartable_mode)
+
+    assert restartable_mode == "restartable"
+    assert restartable_args.save_model_only is True
+    assert restartable_args.save_only_model is False
+    assert restartable_args.minimal_checkpoint_artifacts is False
+
+    artifact_args = SimpleNamespace(save_only_model=False)
+    artifact_mode = _parse_checkpoint_mode({"save_model_only": False})
+    _apply_checkpoint_mode(artifact_args, checkpoint_mode=artifact_mode)
+
+    assert artifact_mode == "artifact_only"
+    assert artifact_args.save_model_only is False
+    assert artifact_args.save_only_model is True
+    assert artifact_args.minimal_checkpoint_artifacts is False
+
+
+def test_public_save_model_only_rejects_conflicting_legacy_mode() -> None:
+    with pytest.raises(ValueError, match="save_model_only conflicts"):
+        _parse_checkpoint_mode(
+            {"save_model_only": True, "checkpoint_mode": "artifact_only"}
+        )
+
+
+def test_public_save_model_only_rejects_null_value() -> None:
+    with pytest.raises(ValueError, match="training.save_model_only must be a boolean"):
+        _parse_checkpoint_mode({"save_model_only": None})
 
 
 def test_hf_trainer_save_only_model_skips_optimizer_state(tmp_path: Path) -> None:
@@ -134,6 +183,7 @@ def test_restartable_checkpoint_writes_repo_sidecar_and_validates(
         train_dataset=_TinyDataset(),
         callbacks=[save_delay],
     )
+    _attach_tiny_tokenizer(trainer)
 
     trainer.create_optimizer_and_scheduler(num_training_steps=1)
     trainer.state.global_step = 1
@@ -148,13 +198,145 @@ def test_restartable_checkpoint_writes_repo_sidecar_and_validates(
     ckpt = out_dir / "checkpoint-1"
     files = _collect_checkpoint_files(ckpt)
     assert COORDEXP_CHECKPOINT_STATE_NAME in files
+    assert COORDEXP_CHECKPOINT_COMPLETE_NAME in files
 
     payload = validate_restartable_checkpoint(ckpt)
+    assert payload["schema_version"] == 2
     assert payload["checkpoint_mode"] == "restartable"
     assert payload["global_step"] == 1
     assert payload["disabled_diagnostics"] == ["coord_diag"]
+    assert payload["artifacts"]["trainer_state"]["optimizer.pt"] is True
+    assert payload["artifacts"]["trainer_state"]["scheduler.pt"] is True
+    assert payload["artifacts"]["trainer_state"]["rng_state"] is True
     callback_payload = load_coordexp_checkpoint_state(ckpt)["callback_state"]
     assert any(key.endswith("SaveDelayCallback") for key in callback_payload)
+
+
+def test_restartable_checkpoint_saves_tokenizer_artifacts_and_complete_marker(
+    tmp_path: Path,
+) -> None:
+    out_dir = tmp_path / "out"
+    trainer_cls = with_final_checkpoint(Trainer)
+    args = TrainingArguments(
+        output_dir=str(out_dir),
+        per_device_train_batch_size=2,
+        save_strategy="steps",
+        save_steps=1,
+        logging_steps=1,
+        report_to=[],
+        save_only_model=False,
+        save_safetensors=True,
+        use_cpu=True,
+        remove_unused_columns=False,
+    )
+    setattr(args, "checkpoint_mode", "restartable")
+    setattr(args, "max_epochs", None)
+
+    trainer = trainer_cls(
+        model=_TinyModel(),
+        args=args,
+        train_dataset=_TinyDataset(),
+    )
+    try:
+        trainer.callback_handler.callbacks = []
+    except Exception:
+        pass
+    _attach_tiny_tokenizer(trainer)
+
+    trainer.create_optimizer_and_scheduler(num_training_steps=1)
+    trainer.state.global_step = 1
+    try:
+        trainer._save_checkpoint(trainer.model, trial=None)  # type: ignore[misc]
+    except TypeError:
+        trainer._save_checkpoint(trainer.model, trial=None, metrics=None)  # type: ignore[misc,call-arg]
+
+    ckpt = out_dir / "checkpoint-1"
+    payload = validate_restartable_checkpoint(ckpt)
+    assert (ckpt / COORDEXP_CHECKPOINT_COMPLETE_NAME).is_file()
+    assert (ckpt / "tokenizer_config.json").is_file()
+    assert (ckpt / "tokenizer.json").is_file()
+    assert payload["artifacts"]["tokenizer"]["required"] is True
+    assert payload["artifacts"]["tokenizer"]["saved"] is True
+    assert "tokenizer_config.json" in payload["artifacts"]["tokenizer"]["files"]
+
+    (ckpt / "tokenizer.json").unlink()
+    with pytest.raises(ValueError, match="Missing tokenizer artifacts"):
+        validate_restartable_checkpoint(ckpt)
+    _TinyTokenizer().save_pretrained(str(ckpt))
+
+    (ckpt / "training_args.bin").unlink()
+    with pytest.raises(ValueError, match="training_args.bin"):
+        validate_restartable_checkpoint(ckpt)
+    torch.save(args, ckpt / "training_args.bin")
+
+    marker = json.loads((ckpt / COORDEXP_CHECKPOINT_COMPLETE_NAME).read_text("utf-8"))
+    marker["global_step"] = 0
+    (ckpt / COORDEXP_CHECKPOINT_COMPLETE_NAME).write_text(
+        json.dumps(marker) + "\n", encoding="utf-8"
+    )
+    with pytest.raises(ValueError, match="completion marker does not match"):
+        validate_restartable_checkpoint(ckpt)
+    marker["global_step"] = 1
+    (ckpt / COORDEXP_CHECKPOINT_COMPLETE_NAME).write_text(
+        json.dumps(marker) + "\n", encoding="utf-8"
+    )
+
+    (ckpt / COORDEXP_CHECKPOINT_COMPLETE_NAME).unlink()
+    with pytest.raises(ValueError, match="save_model_only=true"):
+        validate_restartable_checkpoint(ckpt)
+
+
+def test_restartable_checkpoint_preflight_rejects_missing_ddp_rng_state(
+    tmp_path: Path,
+) -> None:
+    out_dir = tmp_path / "out"
+    trainer_cls = with_final_checkpoint(Trainer)
+    args = TrainingArguments(
+        output_dir=str(out_dir),
+        per_device_train_batch_size=2,
+        save_strategy="steps",
+        save_steps=1,
+        logging_steps=1,
+        report_to=[],
+        save_only_model=False,
+        save_safetensors=True,
+        use_cpu=True,
+        remove_unused_columns=False,
+    )
+    setattr(args, "checkpoint_mode", "restartable")
+    setattr(args, "max_epochs", None)
+
+    trainer = trainer_cls(
+        model=_TinyModel(),
+        args=args,
+        train_dataset=_TinyDataset(),
+    )
+    try:
+        trainer.callback_handler.callbacks = []
+    except Exception:
+        pass
+    _attach_tiny_tokenizer(trainer)
+
+    trainer.create_optimizer_and_scheduler(num_training_steps=1)
+    trainer.state.global_step = 1
+    try:
+        trainer._save_checkpoint(trainer.model, trial=None)  # type: ignore[misc]
+    except TypeError:
+        trainer._save_checkpoint(trainer.model, trial=None, metrics=None)  # type: ignore[misc,call-arg]
+
+    ckpt = out_dir / "checkpoint-1"
+    payload = load_coordexp_checkpoint_state(ckpt)
+    payload["artifacts"]["trainer_state"]["world_size"] = 4
+    torch.save(payload, ckpt / COORDEXP_CHECKPOINT_STATE_NAME)
+
+    rng_payload = next(ckpt.glob("rng_state*.pth")).read_bytes()
+    for path in ckpt.glob("rng_state*.pth"):
+        path.unlink()
+    for rank in (0, 1, 3):
+        (ckpt / f"rng_state_{rank}.pth").write_bytes(rng_payload)
+
+    with pytest.raises(ValueError, match="rng_state_2.pth"):
+        validate_restartable_checkpoint(ckpt)
 
 
 def test_step_save_strategy_records_best_checkpoint_state(tmp_path: Path) -> None:
@@ -350,7 +532,7 @@ def test_restartable_checkpoint_preflight_rejects_artifact_only_sidecar(
         trainer._save_checkpoint(trainer.model, trial=None, metrics=None)  # type: ignore[misc,call-arg]
 
     ckpt = out_dir / "checkpoint-1"
-    with pytest.raises(ValueError, match="checkpoint_mode='restartable'"):
+    with pytest.raises(ValueError, match="save_model_only=true"):
         validate_restartable_checkpoint(ckpt)
 
 
@@ -380,6 +562,7 @@ def test_prepare_restartable_checkpoint_resume_restores_callback_and_health_stat
         train_dataset=_TinyDataset(),
         callbacks=[SaveDelayCallback(save_delay_steps=2)],
     )
+    _attach_tiny_tokenizer(trainer)
     trainer.create_optimizer_and_scheduler(num_training_steps=1)
     trainer.state.global_step = 1
     save_delay = next(
@@ -452,6 +635,7 @@ def test_prepare_restartable_checkpoint_resume_rejects_missing_callback(
         train_dataset=_TinyDataset(),
         callbacks=[SaveDelayCallback(save_delay_steps=2)],
     )
+    _attach_tiny_tokenizer(trainer)
     trainer.create_optimizer_and_scheduler(num_training_steps=1)
     trainer.state.global_step = 1
 
@@ -549,6 +733,7 @@ def test_restartable_resume_preserves_global_step_schedule_continuity(
         args=args,
         train_dataset=_TinyDataset(),
     )
+    _attach_tiny_tokenizer(trainer)
     trainer.train()
 
     ckpt = out_dir / "checkpoint-1"
@@ -580,7 +765,7 @@ def test_restartable_resume_preserves_global_step_schedule_continuity(
     assert getattr(resumed.lr_scheduler, "last_epoch", 0) >= 1
 
 
-def test_audited_configs_enable_save_only_model() -> None:
+def test_default_configs_use_public_inference_only_checkpoint_policy() -> None:
     from src.config.loader import ConfigLoader
 
     audited = [
@@ -591,11 +776,26 @@ def test_audited_configs_enable_save_only_model() -> None:
     for path in audited:
         training_config = ConfigLoader.load_materialized_training_config(path, None)
         training_map = getattr(training_config, "training", None)
-        val = training_map.get("save_only_model") if isinstance(training_map, dict) else None
-        assert bool(val) is True, (
-            f"{path} must set training.save_only_model=true via YAML inheritance "
-            f"(got {val!r})"
-        )
+        assert isinstance(training_map, dict)
+        assert training_map.get("save_model_only") is False
+        assert "save_only_model" not in training_map
+
+
+def test_a5_a6_configs_use_restartable_public_checkpoint_policy() -> None:
+    from src.config.loader import ConfigLoader
+
+    audited = [
+        "configs/stage1/recursive_detection_ce_latest/prod/compact_full_support2_iou_gibbs_softce_a5.yaml",
+        "configs/stage1/recursive_detection_ce_latest/prod/compact_full_support2_ciou_gibbs_softce_a6.yaml",
+    ]
+
+    for path in audited:
+        training_config = ConfigLoader.load_materialized_training_config(path, None)
+        training_map = getattr(training_config, "training", None)
+        assert isinstance(training_map, dict)
+        assert training_map.get("save_model_only") is True
+        assert "save_only_model" not in training_map
+        assert "checkpoint_mode" not in training_map
 
 
 def test_best_save_strategy_records_best_checkpoint_state(tmp_path: Path) -> None:

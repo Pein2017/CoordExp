@@ -416,15 +416,60 @@ def _set_train_arg(train_args: Any, field: str, value: Any) -> None:
         setattr(nested, field, value)
 
 
+def _coerce_training_bool(value: Any, field_name: str) -> bool:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, int) and value in {0, 1}:
+        return bool(value)
+    if isinstance(value, str):
+        lowered = value.strip().lower()
+        if lowered in {"true", "1", "yes", "y", "on"}:
+            return True
+        if lowered in {"false", "0", "no", "n", "off"}:
+            return False
+    raise ValueError(f"{field_name} must be a boolean, got {value!r}")
+
+
 def _parse_checkpoint_mode(
     training_cfg: Any,
 ) -> Literal["artifact_only", "restartable"]:
     cfg = training_cfg or {}
-    mode_raw = cfg.get("checkpoint_mode", "artifact_only")
+    if "save_only_model" in cfg:
+        logger.warning(
+            "training.save_only_model is an upstream/internal knob and is ignored by "
+            "CoordExp configs. Use training.save_model_only=true for restartable "
+            "checkpoints or false for inference-only checkpoints."
+        )
+    if "save_model_only" in cfg:
+        save_model_only_raw = cfg.get("save_model_only")
+        save_model_only = _coerce_training_bool(
+            save_model_only_raw, "training.save_model_only"
+        )
+        requested_mode = "restartable" if save_model_only else "artifact_only"
+        legacy_mode_raw = cfg.get("checkpoint_mode")
+        if legacy_mode_raw is not None:
+            legacy_mode = str(legacy_mode_raw or "artifact_only").strip().lower()
+            if legacy_mode not in {"artifact_only", "restartable"}:
+                raise ValueError(
+                    "training.checkpoint_mode must be one of {'artifact_only', 'restartable'}"
+                )
+            if legacy_mode != requested_mode:
+                raise ValueError(
+                    "training.save_model_only conflicts with deprecated "
+                    "training.checkpoint_mode; keep only save_model_only=true/false."
+                )
+        return cast(Literal["artifact_only", "restartable"], requested_mode)
+
+    mode_raw = cfg.get("checkpoint_mode")
     mode = str(mode_raw or "artifact_only").strip().lower()
     if mode not in {"artifact_only", "restartable"}:
         raise ValueError(
             "training.checkpoint_mode must be one of {'artifact_only', 'restartable'}"
+        )
+    if mode_raw is not None:
+        logger.warning(
+            "training.checkpoint_mode is deprecated. Use training.save_model_only=true "
+            "for restartable checkpoints or false for inference-only checkpoints."
         )
     return cast(Literal["artifact_only", "restartable"], mode)
 
@@ -435,12 +480,19 @@ def _apply_checkpoint_mode(
     checkpoint_mode: Literal["artifact_only", "restartable"],
 ) -> None:
     _set_train_arg(train_args, "checkpoint_mode", str(checkpoint_mode))
+    _set_train_arg(train_args, "save_model_only", checkpoint_mode == "restartable")
+    _set_train_arg(train_args, "minimal_checkpoint_artifacts", False)
     if checkpoint_mode != "restartable":
+        # Public CoordExp knob:
+        #   save_model_only=false -> inference-only checkpoints.
+        # HF/ms-swift knob:
+        #   save_only_model=true -> model artifacts only, no optimizer/RNG resume state.
+        _set_train_arg(train_args, "save_only_model", True)
         return
 
     if bool(getattr(train_args, "save_only_model", False)):
         logger.info(
-            "checkpoint_mode=restartable: forcing save_only_model=false so optimizer, scheduler, RNG, and trainer state are persisted."
+            "save_model_only=true: forcing upstream save_only_model=false so optimizer, scheduler, RNG, and trainer state are persisted."
         )
     _set_train_arg(train_args, "save_only_model", False)
 
@@ -827,7 +879,11 @@ def _build_effective_runtime_payload(
         "logging_dir": str(getattr(train_args, "logging_dir", "") or ""),
         "checkpoint_mode": str(checkpoint_mode),
         "resume_from_checkpoint": _resolve_resume_from_checkpoint(train_args),
+        "save_model_only": bool(
+            getattr(train_args, "save_model_only", checkpoint_mode == "restartable")
+        ),
         "save_only_model": bool(getattr(train_args, "save_only_model", False)),
+        "hf_save_only_model": bool(getattr(train_args, "save_only_model", False)),
         "save_strategy": str(getattr(train_args, "save_strategy", "") or ""),
         "save_last_epoch": bool(getattr(train_args, "save_last_epoch", True)),
         "seed": int(getattr(train_args, "seed", 0) or 0),
