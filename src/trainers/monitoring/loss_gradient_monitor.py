@@ -48,7 +48,6 @@ _COORD_TERM_STATE_KEYS = {
     "coord_ehuber": "coord_ehuber_contrib",
     "coord_entropy": "coord_entropy_contrib",
     "coord_gate": "coord_gate_contrib",
-    "text_gate": "text_gate_contrib",
 }
 
 

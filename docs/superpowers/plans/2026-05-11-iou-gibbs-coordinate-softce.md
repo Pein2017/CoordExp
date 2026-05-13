@@ -2,9 +2,9 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Add an A5 production-scale ablation candidate that replaces hard coordinate CE with data-calibrated IoU-Gibbs coordinate soft targets while preserving the A2 compact-full training setup and recursive support/balance coefficients.
+**Goal:** Add A5/A6 production-scale ablation candidates that replace hard coordinate CE with data-calibrated continuous coordinate soft targets while preserving the A2 compact-full training setup and recursive support/balance coefficients.
 
-**Architecture:** Latest recursive detection owns the feature. `objective.coord_soft_ce` selects a continuous geometry-aware target distribution, recursive target building attaches bbox/slot metadata, and the recursive CE loss replaces coordinate positions with full-vocab dense-support soft-target CE using the A2 support/balance coefficients. The old fixed Gaussian `sigma`/`truncate` shape is deprecated for latest recursive detection and must not be used by A5.
+**Architecture:** Latest recursive detection owns the feature. `objective.coord_soft_ce` selects a continuous geometry-aware target distribution, recursive target building attaches bbox/slot metadata, and the recursive CE loss replaces coordinate positions with full-vocab dense-support soft-target CE using the A2 support/balance coefficients. A5 uses `iou_gibbs_v0`; A6 uses the same support/balance machinery with `ciou_gibbs_v0` as the geometry energy. The old fixed Gaussian `sigma`/`truncate` shape is deprecated for latest recursive detection and must not be used by A5/A6.
 
 **Tech Stack:** Python dataclasses, PyTorch tensor losses, strict latest-schema YAML configs, compact-full detection sidecars, pytest under `conda run -n ms`.
 
@@ -14,7 +14,7 @@ Date: 2026-05-11
 
 Spec: `docs/superpowers/specs/2026-05-11-iou-gibbs-coordinate-softce-design.md`
 
-Status: refined implementation plan after first audit pass. Implementation has not started.
+Status: implemented, smoke-preflighted, and production-launched after user approval. Core helper, schema/runtime wiring, compact-full trie-coordinate replacement, A5/A6 configs, calibration artifacts, related unit/config tests, tiny smokes, DDP4 preflights, and post-launch smoke/regression checks have passed. Remaining work is nonintrusive production monitoring and final measured-result analysis when the runs finish.
 
 ## Hard Guardrails
 
@@ -23,21 +23,23 @@ Status: refined implementation plan after first audit pass. Implementation has n
 | Training comparison | A5 must extend A2/support2 and keep model, data, optimizer, epoch count, LoRA, batch semantics, prompt, template, token rows, cache/packing, eval cadence, and non-coordinate recursive behavior unchanged. |
 | Template | Use `compact_full`, `coord_token`, `xyxy`, same dataset config. |
 | Loss owner | Recursive CE owns this loss. Do not use `custom.coord_soft_ce_w1` or `CoordSoftCEW1LossMixin`. |
-| Target family | Use `iou_gibbs_v0` with `tau=0.0090909091`, derived from train one-token IoU median. |
+| Target family | Use `iou_gibbs_v0` for A5 and `ciou_gibbs_v0` for A6. Both start with `tau=0.0090909091`, derived from train one-token IoU median, unless a separate calibration artifact proves a different CIoU tau. |
 | Weighting | Preserve A2 recursive support/balance coefficients for coordinate positions: support `2.0`, balance `1.0`. The support set itself becomes the dense geometry-valid coordinate-token set. |
 | No extra objectives | Do not add W1, SmoothL1, decoded CIoU, or optimized hard coordinate CE in A5. |
 | Deprecated Gaussian | Latest `objective.coord_soft_ce` must reject fixed Gaussian knobs such as `sigma`, `truncate`, `target_sigma`, and `target_truncate`. |
 | Invalid candidate boxes | Candidate coord bins that violate `x1 < x2` or `y1 < y2` get zero target mass. Do not canonicalize by swapping edges. |
 | Numerical failures | Do not sanitize optimized loss with `nan_to_num`; raise on non-finite loss or invalid targets. |
 | Python navigation | Use Serena MCP for Python symbol exploration and edits after narrowing with `rg`. |
-| Repo safety | Do not launch production training from this implementation plan. Do not revert unrelated dirty work. |
+| Repo safety | Do not launch production training from this implementation plan. Do not revert unrelated dirty work. Smoke/preflight runs are allowed only after implementation and risk audit gates. |
+| GPU split | Final production intent is two concurrent 4-GPU experiments: A5 on one 4-GPU slice and A6 on the other, not one 8-GPU experiment. |
 
 ## Planned File Map
 
 | Path | Role |
 |---|---|
 | `scripts/analysis/compute_iou_gibbs_coord_stats.py` | Reproduce tau calibration and no-training target-shape audit over JSONL. |
-| `progress/diagnostics/coord_softce_iou_gibbs_tau_v0.md` | Checked summary artifact from the calibration/audit script. |
+| `progress/diagnostics/coord_softce_iou_gibbs_tau_v0.md` | Checked A5 IoU-Gibbs summary artifact from the calibration/audit script. |
+| `progress/diagnostics/coord_softce_ciou_gibbs_tau_v0.md` | Checked A6 CIoU-Gibbs target-shape audit artifact using the same train JSONL and tau source. |
 | `src/config/schema.py` | Add strict `CoordSoftCEConfig` under latest `objective.coord_soft_ce`; reject old Gaussian knobs in the new surface. |
 | `src/detection/coord_soft_targets.py` | New focused owner for coordinate candidate dataclasses, IoU-Gibbs target distribution, and full-vocab support/balance soft-target CE. |
 | `src/detection/objective.py` | Add coordinate slot metadata to recursive token targets and build singleton/support-mixture bbox candidates with same-slot validation. |
@@ -48,16 +50,19 @@ Status: refined implementation plan after first audit pass. Implementation has n
 | `src/tokens/coord/soft_ce_w1.py` | Add legacy/deprecated module note only; do not route latest recursive detection through it. |
 | `src/trainers/losses/coord_soft_ce_w1.py` | Add legacy/deprecated module note only; do not change old runtime behavior unless tests prove compatibility. |
 | `configs/stage1/recursive_detection_ce_latest/prod/compact_full_support2_iou_gibbs_softce_a5.yaml` | A5 production-scale ablation candidate extending A2/support2. |
-| `configs/stage1/recursive_detection_ce_latest/smoke/compact_full_support2_iou_gibbs_softce_a5_tiny.yaml` | One-step tiny smoke config for trainer plumbing. |
-| `configs/stage1/recursive_detection_ce_latest/smoke/compact_full_support2_iou_gibbs_softce_a5_ddp8_preflight.yaml` | Short 8-GPU preflight config before production launch. |
+| `configs/stage1/recursive_detection_ce_latest/prod/compact_full_support2_ciou_gibbs_softce_a6.yaml` | A6 production-scale ablation candidate extending A2/support2. |
+| `configs/stage1/recursive_detection_ce_latest/smoke/compact_full_support2_iou_gibbs_softce_a5_tiny.yaml` | One-step A5 tiny smoke config for trainer plumbing. |
+| `configs/stage1/recursive_detection_ce_latest/smoke/compact_full_support2_ciou_gibbs_softce_a6_tiny.yaml` | One-step A6 tiny smoke config for trainer plumbing. |
+| `configs/stage1/recursive_detection_ce_latest/smoke/compact_full_support2_iou_gibbs_softce_a5_ddp4_preflight.yaml` | Short 4-GPU A5 preflight config before production launch. |
+| `configs/stage1/recursive_detection_ce_latest/smoke/compact_full_support2_ciou_gibbs_softce_a6_ddp4_preflight.yaml` | Short 4-GPU A6 preflight config before production launch. |
 | `tests/test_iou_gibbs_coord_softce.py` | Unit tests for target distribution and support/balance soft-target CE math. |
 | `tests/test_iou_gibbs_coord_stats.py` | Tiny-fixture tests for tau calibration and target-shape audit math. |
 | `tests/test_recursive_detection_ce_loss_adapter.py` | Recursive CE tests for coordinate replacement, metrics, and fail-fast behavior. |
 | `tests/test_latest_training_config_contract.py` | Schema/runtime/config tests for `objective.coord_soft_ce`, A5 inheritance, and deprecated knob rejection. |
-| `tests/test_prefix_rollin_dataset_alignment.py` or a nearby recursive-target test file | Target metadata tests over real compact-full recursive targets. |
+| `tests/test_recursive_detection_ce_target_builder.py` | Target metadata tests over real compact-full recursive targets, including trie-coordinate softCE replacement. |
 | `docs/training/STAGE1_OBJECTIVE.md` | Document A5 as an implemented or planned ablation surface after tests pass. |
 | `docs/training/README.md` | Route readers to the A5 config and smoke/preflight gates. |
-| `docs/catalog.yaml` | Register the A5 config using the existing `config_surfaces.training` shape. |
+| `docs/catalog.yaml` | Register the A5/A6 configs using the existing `config_surfaces.training` shape. |
 
 ## Target API Shape
 
@@ -68,7 +73,7 @@ Use this public shape unless code inspection reveals a better local owner name.
 @dataclass(frozen=True)
 class CoordSoftCEConfig:
     enabled: bool
-    target_distribution: Literal["iou_gibbs_v0"]
+    target_distribution: Literal["iou_gibbs_v0", "ciou_gibbs_v0"]
     tau: float
     tau_source: Literal["train_one_token_iou_median_v0"]
     weighting: Literal["preserve_recursive_support_balance"] = (
@@ -94,7 +99,7 @@ class CoordSoftTargetCandidate:
 # src/detection/coord_soft_targets.py
 @dataclass(frozen=True)
 class CoordSoftTargetRuntimeConfig:
-    target_distribution: Literal["iou_gibbs_v0"]
+    target_distribution: Literal["iou_gibbs_v0", "ciou_gibbs_v0"]
     tau: float
     coord_token_start: int
     coord_token_end: int
@@ -261,7 +266,7 @@ p75
 p90
 p95
 p99
-target entropy/perplexity/peak_prob/std, valid_candidate_count, and effective_support_size by min-side decile, area decile, slot, boundary flag, min_side<=32, and min_side<=50
+target entropy/perplexity/peak_prob/std, candidate_count, support_bin_count, and effective_support_size by min-side decile, area decile, slot, boundary flag, min_side<=32, and min_side<=50
 ```
 
 Use structured JSON inside the markdown artifact or write a sibling `.json`.
@@ -341,6 +346,33 @@ def test_latest_random_permutation_accepts_iou_gibbs_coord_softce() -> None:
 ```
 
 ```python
+def test_latest_random_permutation_accepts_ciou_gibbs_coord_softce() -> None:
+    payload = _latest_payload()
+    payload["objective"] = {
+        "id": "recursive_detection_ce",
+        "variant": "random_permutation_et_rmp_ce",
+        "trie_support_weight": 2.0,
+        "trie_balance_weight": 1.0,
+        "state_weighting": "uniform_permutation",
+        "normalization": "semantic_image_bucket_balanced",
+        "coord_soft_ce": {
+            "enabled": True,
+            "target_distribution": "ciou_gibbs_v0",
+            "tau": 0.0090909091,
+            "tau_source": "train_one_token_iou_median_v0",
+            "weighting": "preserve_recursive_support_balance",
+            "replace_coord_hard_ce": True,
+            "apply_to_multi_positive": "support_mixture",
+        },
+    }
+
+    cfg = LatestDetectionTrainingConfig.from_mapping(payload)
+
+    assert cfg.objective.coord_soft_ce is not None
+    assert cfg.objective.coord_soft_ce.target_distribution == "ciou_gibbs_v0"
+```
+
+```python
 @pytest.mark.parametrize(
     "deprecated_key",
     ["sigma", "truncate", "target_sigma", "target_truncate", "window", "radius"],
@@ -378,7 +410,7 @@ def test_coord_softce_requires_positive_data_derived_tau() -> None:
 Run:
 
 ```bash
-conda run -n ms python -m pytest tests/test_latest_training_config_contract.py::test_latest_random_permutation_accepts_iou_gibbs_coord_softce tests/test_latest_training_config_contract.py::test_coord_softce_rejects_fixed_gaussian_knobs tests/test_latest_training_config_contract.py::test_coord_softce_requires_positive_data_derived_tau -q
+conda run -n ms python -m pytest tests/test_latest_training_config_contract.py::test_latest_random_permutation_accepts_iou_gibbs_coord_softce tests/test_latest_training_config_contract.py::test_latest_random_permutation_accepts_ciou_gibbs_coord_softce tests/test_latest_training_config_contract.py::test_coord_softce_rejects_fixed_gaussian_knobs tests/test_latest_training_config_contract.py::test_coord_softce_requires_positive_data_derived_tau -q
 ```
 
 Expected: FAIL because `coord_soft_ce` is not yet a known latest objective field.
@@ -391,7 +423,7 @@ Add `CoordSoftCEConfig` before `DetectionObjectiveConfig` in `src/config/schema.
 @dataclass(frozen=True)
 class CoordSoftCEConfig:
     enabled: bool
-    target_distribution: Literal["iou_gibbs_v0"]
+    target_distribution: Literal["iou_gibbs_v0", "ciou_gibbs_v0"]
     tau: float
     tau_source: Literal["train_one_token_iou_median_v0"]
     weighting: Literal["preserve_recursive_support_balance"] = (
@@ -405,7 +437,7 @@ class CoordSoftCEConfig:
         _latest_detection_validate_choice(
             self.target_distribution,
             path="objective.coord_soft_ce.target_distribution",
-            allowed={"iou_gibbs_v0"},
+            allowed={"iou_gibbs_v0", "ciou_gibbs_v0"},
         )
         if not isinstance(self.tau, (int, float)) or isinstance(self.tau, bool):
             raise TypeError("objective.coord_soft_ce.tau must be numeric")
@@ -443,7 +475,7 @@ update the unexpected-key check so fixed Gaussian keys produce explicit errors:
 ```python
 for deprecated_key in ("sigma", "truncate", "target_sigma", "target_truncate", "window", "radius"):
     if deprecated_key in raw_coord_soft_ce:
-        raise ValueError(f"objective.coord_soft_ce.{deprecated_key} is deprecated; use iou_gibbs_v0")
+        raise ValueError(f"objective.coord_soft_ce.{deprecated_key} is deprecated; use iou_gibbs_v0 or ciou_gibbs_v0")
 ```
 
 - [ ] **Step 4: Add legacy/deprecated notes without behavior changes**
@@ -454,7 +486,7 @@ add a short note:
 
 ```python
 # Legacy fixed Gaussian coordinate softCE/W1 surface. Latest recursive
-# detection uses objective.coord_soft_ce with iou_gibbs_v0 instead.
+# detection uses objective.coord_soft_ce with continuous Gibbs targets instead.
 ```
 
 Do not add runtime warnings unless the existing tests are updated to expect
@@ -465,7 +497,7 @@ them; warnings may destabilize old supported surfaces.
 Run:
 
 ```bash
-conda run -n ms python -m pytest tests/test_latest_training_config_contract.py::test_latest_random_permutation_accepts_iou_gibbs_coord_softce tests/test_latest_training_config_contract.py::test_coord_softce_rejects_fixed_gaussian_knobs tests/test_latest_training_config_contract.py::test_coord_softce_requires_positive_data_derived_tau -q
+conda run -n ms python -m pytest tests/test_latest_training_config_contract.py::test_latest_random_permutation_accepts_iou_gibbs_coord_softce tests/test_latest_training_config_contract.py::test_latest_random_permutation_accepts_ciou_gibbs_coord_softce tests/test_latest_training_config_contract.py::test_coord_softce_rejects_fixed_gaussian_knobs tests/test_latest_training_config_contract.py::test_coord_softce_requires_positive_data_derived_tau -q
 ```
 
 Expected: PASS.
@@ -678,7 +710,7 @@ Add runtime/result dataclasses:
 ```python
 @dataclass(frozen=True)
 class CoordSoftTargetRuntimeConfig:
-    target_distribution: Literal["iou_gibbs_v0"]
+    target_distribution: Literal["iou_gibbs_v0", "ciou_gibbs_v0"]
     tau: float
     coord_token_start: int
     coord_token_end: int
@@ -698,7 +730,8 @@ class CoordSoftTargetDistribution:
     perplexity: torch.Tensor
     effective_support_size: torch.Tensor
     std: torch.Tensor
-    valid_candidate_count: torch.Tensor
+    candidate_count: torch.Tensor
+    support_bin_count: torch.Tensor
 
 
 @dataclass(frozen=True)
@@ -715,7 +748,8 @@ class CoordSoftCELoss:
     perplexity: torch.Tensor
     effective_support_size: torch.Tensor
     target_std: torch.Tensor
-    valid_candidate_count: torch.Tensor
+    candidate_count: torch.Tensor
+    support_bin_count: torch.Tensor
     support_mixture: bool
 ```
 
@@ -770,7 +804,8 @@ def full_vocab_coord_support_balance_ce(
         perplexity=dist.perplexity,
         effective_support_size=dist.effective_support_size,
         target_std=dist.std,
-        valid_candidate_count=dist.valid_candidate_count,
+        candidate_count=dist.candidate_count,
+        support_bin_count=dist.support_bin_count,
         support_mixture=len(candidates) > 1,
     )
 ```
@@ -1159,13 +1194,12 @@ detection_sequence/objective/recursive_detection_ce/coord_soft_ce/kl_like
 detection_sequence/objective/recursive_detection_ce/coord_soft_ce/peak_prob
 detection_sequence/objective/recursive_detection_ce/coord_soft_ce/perplexity
 detection_sequence/objective/recursive_detection_ce/coord_soft_ce/effective_support_size
-detection_sequence/objective/recursive_detection_ce/coord_soft_ce/valid_candidate_count
+detection_sequence/objective/recursive_detection_ce/coord_soft_ce/candidate_count
+detection_sequence/objective/recursive_detection_ce/coord_soft_ce/support_bin_count
 detection_sequence/objective/recursive_detection_ce/coord_soft_ce/target_std
 detection_sequence/objective/recursive_detection_ce/coord_soft_ce/enabled
 detection_sequence/objective/recursive_detection_ce/coord_soft_ce/tau
-detection_sequence/objective/recursive_detection_ce/coord_soft_ce/token_count
-detection_sequence/objective/recursive_detection_ce/coord_soft_ce/support_mixture_fraction
-detection_sequence/objective/recursive_detection_ce/coord_soft_ce/missing_geometry_count
+detection_sequence/objective/recursive_detection_ce/coord_soft_ce/support_mixture
 ```
 
 Add assertions in tests that `RecursiveDetectionLossResult.metric_events`
@@ -1333,13 +1367,16 @@ git commit -m "feat: route coord softce through recursive runtime"
 
 Expected: commit succeeds with runtime and trainer wiring staged.
 
-## Task 7: A5 Configs And Fairness Contract
+## Task 7: A5/A6 Configs And Fairness Contract
 
 **Files:**
 
 - Create: `configs/stage1/recursive_detection_ce_latest/prod/compact_full_support2_iou_gibbs_softce_a5.yaml`
+- Create: `configs/stage1/recursive_detection_ce_latest/prod/compact_full_support2_ciou_gibbs_softce_a6.yaml`
 - Create: `configs/stage1/recursive_detection_ce_latest/smoke/compact_full_support2_iou_gibbs_softce_a5_tiny.yaml`
-- Create: `configs/stage1/recursive_detection_ce_latest/smoke/compact_full_support2_iou_gibbs_softce_a5_ddp8_preflight.yaml`
+- Create: `configs/stage1/recursive_detection_ce_latest/smoke/compact_full_support2_ciou_gibbs_softce_a6_tiny.yaml`
+- Create: `configs/stage1/recursive_detection_ce_latest/smoke/compact_full_support2_iou_gibbs_softce_a5_ddp4_preflight.yaml`
+- Create: `configs/stage1/recursive_detection_ce_latest/smoke/compact_full_support2_ciou_gibbs_softce_a6_ddp4_preflight.yaml`
 - Test: `tests/test_latest_training_config_contract.py`
 
 - [ ] **Step 1: Add failing deep inheritance test**
@@ -1347,7 +1384,7 @@ Expected: commit succeeds with runtime and trainer wiring staged.
 Add:
 
 ```python
-def _drop_allowed_a5_deltas(mapping: dict[str, object]) -> dict[str, object]:
+def _drop_allowed_continuous_softce_deltas(mapping: dict[str, object]) -> dict[str, object]:
     clone = copy.deepcopy(mapping)
     clone.get("training", {}).pop("artifact_subdir", None)
     clone.get("training", {}).pop("run_name", None)
@@ -1367,7 +1404,7 @@ def test_a5_iou_gibbs_config_extends_support2_without_training_drift() -> None:
     base_cfg = LatestDetectionTrainingConfig.from_mapping(base)
     a5_cfg = LatestDetectionTrainingConfig.from_mapping(a5)
 
-    assert _drop_allowed_a5_deltas(a5) == _drop_allowed_a5_deltas(base)
+    assert _drop_allowed_continuous_softce_deltas(a5) == _drop_allowed_continuous_softce_deltas(base)
     assert base_cfg.objective.trie_support_weight == a5_cfg.objective.trie_support_weight == 2.0
     assert base_cfg.objective.trie_balance_weight == a5_cfg.objective.trie_balance_weight == 1.0
     assert getattr(base_cfg.objective, "coord_soft_ce", None) is None
@@ -1375,6 +1412,27 @@ def test_a5_iou_gibbs_config_extends_support2_without_training_drift() -> None:
     assert a5_cfg.objective.coord_soft_ce.target_distribution == "iou_gibbs_v0"
     assert a5_cfg.experiment.surface == "ablation"
     assert a5_cfg.experiment.claim_scope == "none"
+
+
+def test_a6_ciou_gibbs_config_extends_support2_without_training_drift() -> None:
+    base_path = REPO_ROOT / "configs/stage1/recursive_detection_ce_latest/prod/compact_full_support2.yaml"
+    a6_path = (
+        REPO_ROOT
+        / "configs/stage1/recursive_detection_ce_latest/prod/compact_full_support2_ciou_gibbs_softce_a6.yaml"
+    )
+    base = ConfigLoader.load_yaml_with_extends(base_path)
+    a6 = ConfigLoader.load_yaml_with_extends(a6_path)
+    base_cfg = LatestDetectionTrainingConfig.from_mapping(base)
+    a6_cfg = LatestDetectionTrainingConfig.from_mapping(a6)
+
+    assert _drop_allowed_continuous_softce_deltas(a6) == _drop_allowed_continuous_softce_deltas(base)
+    assert base_cfg.objective.trie_support_weight == a6_cfg.objective.trie_support_weight == 2.0
+    assert base_cfg.objective.trie_balance_weight == a6_cfg.objective.trie_balance_weight == 1.0
+    assert getattr(base_cfg.objective, "coord_soft_ce", None) is None
+    assert a6_cfg.objective.coord_soft_ce is not None
+    assert a6_cfg.objective.coord_soft_ce.target_distribution == "ciou_gibbs_v0"
+    assert a6_cfg.experiment.surface == "ablation"
+    assert a6_cfg.experiment.claim_scope == "none"
 ```
 
 If `LatestDetectionTrainingConfig` exposes `experiment` differently, assert the
@@ -1385,10 +1443,10 @@ same values on the resolved mapping.
 Run:
 
 ```bash
-conda run -n ms python -m pytest tests/test_latest_training_config_contract.py::test_a5_iou_gibbs_config_extends_support2_without_training_drift -q
+conda run -n ms python -m pytest tests/test_latest_training_config_contract.py::test_a5_iou_gibbs_config_extends_support2_without_training_drift tests/test_latest_training_config_contract.py::test_a6_ciou_gibbs_config_extends_support2_without_training_drift -q
 ```
 
-Expected: FAIL because A5 config does not exist.
+Expected: FAIL because A5/A6 configs do not exist.
 
 - [ ] **Step 3: Create A5 YAML**
 
@@ -1428,7 +1486,45 @@ experiment:
   claim_scope: none
 ```
 
-- [ ] **Step 4: Create tiny smoke config**
+- [ ] **Step 4: Create A6 YAML**
+
+Create `configs/stage1/recursive_detection_ce_latest/prod/compact_full_support2_ciou_gibbs_softce_a6.yaml`:
+
+```yaml
+# A6 production-scale ablation candidate: A2 support+balance ET-RMP with
+# CIoU-Gibbs coordinate soft targets. This extends the A2 support2 launch config
+# and changes only run identity, objective.coord_soft_ce, and non-claiming
+# experiment metadata.
+extends:
+  - ./compact_full_support2.yaml
+
+training:
+  artifact_subdir: compact_full_et_rmp_ce_support2_a6_ciou_gibbs_v0_tau00909_softce_preserve_sb_bsz16_4epoch_tokenrows_v2
+  run_name: compact-full-et-rmp-ce-support2-a6-ciou-gibbs-v0-tau00909-softce-preserve-sb-bsz16-4epoch-tokenrows-v2
+
+objective:
+  id: recursive_detection_ce
+  variant: random_permutation_et_rmp_ce
+  trie_support_weight: 2.0
+  trie_balance_weight: 1.0
+  state_weighting: uniform_permutation
+  normalization: semantic_image_bucket_balanced
+  coord_soft_ce:
+    enabled: true
+    target_distribution: ciou_gibbs_v0
+    tau: 0.0090909091
+    tau_source: train_one_token_iou_median_v0
+    weighting: preserve_recursive_support_balance
+    replace_coord_hard_ce: true
+    apply_to_multi_positive: support_mixture
+
+experiment:
+  surface: ablation
+  ablation_id: A6-ciou-gibbs-softce-support2
+  claim_scope: none
+```
+
+- [ ] **Step 5: Create tiny smoke configs**
 
 Create `configs/stage1/recursive_detection_ce_latest/smoke/compact_full_support2_iou_gibbs_softce_a5_tiny.yaml`:
 
@@ -1455,16 +1551,29 @@ experiment:
   claim_scope: none
 ```
 
-- [ ] **Step 5: Create 8-GPU preflight config**
-
-Create `configs/stage1/recursive_detection_ce_latest/smoke/compact_full_support2_iou_gibbs_softce_a5_ddp8_preflight.yaml` by mirroring the existing
-`configs/stage1/recursive_detection_ce_latest/smoke/compact_full_ddp8_preflight.yaml`
-shape, but extend A5 instead of A2 and keep:
+Create `configs/stage1/recursive_detection_ce_latest/smoke/compact_full_support2_ciou_gibbs_softce_a6_tiny.yaml` with the same runtime overrides but extending
+`../prod/compact_full_support2_ciou_gibbs_softce_a6.yaml`, using:
 
 ```yaml
 training:
-  artifact_subdir: smoke_compact_full_support2_iou_gibbs_softce_a5_ddp8_preflight
-  run_name: smoke-compact-full-support2-a5-iou-gibbs-softce-ddp8-preflight
+  artifact_subdir: smoke_compact_full_support2_ciou_gibbs_softce_a6_tiny
+  run_name: smoke-compact-full-support2-a6-ciou-gibbs-softce-tiny
+
+experiment:
+  surface: smoke
+  ablation_id: A6-ciou-gibbs-softce-support2
+  claim_scope: none
+```
+
+- [ ] **Step 6: Create 4-GPU preflight configs**
+
+Create `configs/stage1/recursive_detection_ce_latest/smoke/compact_full_support2_iou_gibbs_softce_a5_ddp4_preflight.yaml` by mirroring the existing
+latest recursive detection DDP preflight shape, but extend A5 instead of A2 and keep:
+
+```yaml
+training:
+  artifact_subdir: smoke_compact_full_support2_iou_gibbs_softce_a5_ddp4_preflight
+  run_name: smoke-compact-full-support2-a5-iou-gibbs-softce-ddp4-preflight
   max_steps: 4
   eval_steps: 1
 
@@ -1479,13 +1588,16 @@ experiment:
   claim_scope: none
 ```
 
-- [ ] **Step 6: Run config tests and parse check**
+Create `configs/stage1/recursive_detection_ce_latest/smoke/compact_full_support2_ciou_gibbs_softce_a6_ddp4_preflight.yaml` analogously for A6, using A6 run/artifact names and `ablation_id: A6-ciou-gibbs-softce-support2`.
+
+- [ ] **Step 7: Run config tests and parse check**
 
 Run:
 
 ```bash
-conda run -n ms python -m pytest tests/test_latest_training_config_contract.py::test_a5_iou_gibbs_config_extends_support2_without_training_drift -q
+conda run -n ms python -m pytest tests/test_latest_training_config_contract.py::test_a5_iou_gibbs_config_extends_support2_without_training_drift tests/test_latest_training_config_contract.py::test_a6_ciou_gibbs_config_extends_support2_without_training_drift -q
 conda run -n ms python -c "from pathlib import Path; from src.config.loader import ConfigLoader; from src.config.schema import LatestDetectionTrainingConfig; path=Path('configs/stage1/recursive_detection_ce_latest/prod/compact_full_support2_iou_gibbs_softce_a5.yaml'); cfg=LatestDetectionTrainingConfig.from_mapping(ConfigLoader.load_yaml_with_extends(path)); print(cfg.training.run_name); print(cfg.model['model']); print(cfg.objective.coord_soft_ce.target_distribution); print(cfg.objective.coord_soft_ce.tau)"
+conda run -n ms python -c "from pathlib import Path; from src.config.loader import ConfigLoader; from src.config.schema import LatestDetectionTrainingConfig; path=Path('configs/stage1/recursive_detection_ce_latest/prod/compact_full_support2_ciou_gibbs_softce_a6.yaml'); cfg=LatestDetectionTrainingConfig.from_mapping(ConfigLoader.load_yaml_with_extends(path)); print(cfg.training.run_name); print(cfg.model['model']); print(cfg.objective.coord_soft_ce.target_distribution); print(cfg.objective.coord_soft_ce.tau)"
 ```
 
 Expected output includes:
@@ -1495,15 +1607,19 @@ compact-full-et-rmp-ce-support2-a5-iou-gibbs-v0-tau00909-softce-preserve-sb-bsz1
 model_cache/models/Qwen/Qwen3-VL-2B-Instruct-coordexp
 iou_gibbs_v0
 0.0090909091
+compact-full-et-rmp-ce-support2-a6-ciou-gibbs-v0-tau00909-softce-preserve-sb-bsz16-4epoch-tokenrows-v2
+model_cache/models/Qwen/Qwen3-VL-2B-Instruct-coordexp
+ciou_gibbs_v0
+0.0090909091
 ```
 
-- [ ] **Step 7: Commit A5 configs**
+- [ ] **Step 8: Commit A5/A6 configs**
 
 Run:
 
 ```bash
-git add configs/stage1/recursive_detection_ce_latest/prod/compact_full_support2_iou_gibbs_softce_a5.yaml configs/stage1/recursive_detection_ce_latest/smoke/compact_full_support2_iou_gibbs_softce_a5_tiny.yaml configs/stage1/recursive_detection_ce_latest/smoke/compact_full_support2_iou_gibbs_softce_a5_ddp8_preflight.yaml tests/test_latest_training_config_contract.py
-git commit -m "config: add a5 iou gibbs coord softce configs"
+git add configs/stage1/recursive_detection_ce_latest/prod/compact_full_support2_iou_gibbs_softce_a5.yaml configs/stage1/recursive_detection_ce_latest/prod/compact_full_support2_ciou_gibbs_softce_a6.yaml configs/stage1/recursive_detection_ce_latest/smoke/compact_full_support2_iou_gibbs_softce_a5_tiny.yaml configs/stage1/recursive_detection_ce_latest/smoke/compact_full_support2_ciou_gibbs_softce_a6_tiny.yaml configs/stage1/recursive_detection_ce_latest/smoke/compact_full_support2_iou_gibbs_softce_a5_ddp4_preflight.yaml configs/stage1/recursive_detection_ce_latest/smoke/compact_full_support2_ciou_gibbs_softce_a6_ddp4_preflight.yaml tests/test_latest_training_config_contract.py
+git commit -m "config: add a5 a6 continuous coord softce configs"
 ```
 
 Expected: commit succeeds with config and config test files staged.
@@ -1545,8 +1661,22 @@ The temperature is the median one-coordinate-token IoU loss measured on
 `public_data/coco/rescale_32_1024_bbox_max60/train.coord.jsonl`. Fixed Gaussian
 `sigma`/`truncate` coordinate softCE is deprecated for latest recursive
 detection. Non-coordinate recursive CE behavior is unchanged. This candidate
-requires the tau calibration artifact, target-shape audit, tiny smoke, and DDP8
+requires the tau calibration artifact, target-shape audit, tiny smoke, and DDP4
 preflight before production launch; it carries no AP claim yet.
+```
+
+Add an A6 candidate entry:
+
+```markdown
+### A6 Candidate: CIoU-Gibbs Coordinate SoftCE
+
+`A6` is an unlaunched production-scale ablation candidate paired with A5. It
+keeps the same A2 `compact_full` support+balance ET-RMP setup and uses the same
+dense-support coordinate softCE machinery, but changes the coordinate energy
+from `1 - IoU` to `1 - CIoU` via `ciou_gibbs_v0`. It shares the same initial
+data-derived `tau=0.0090909091` unless a later calibration artifact justifies a
+separate CIoU-specific value. This candidate requires the same risk audit,
+tiny smoke, and DDP4 preflight gates as A5; it carries no AP claim yet.
 ```
 
 - [ ] **Step 2: Update training README route**
@@ -1556,8 +1686,12 @@ Add:
 ```markdown
 - A5 IoU-Gibbs coordinate softCE production-scale ablation candidate:
   `configs/stage1/recursive_detection_ce_latest/prod/compact_full_support2_iou_gibbs_softce_a5.yaml`
-  (requires tau calibration artifact, target-shape audit, tiny smoke, and DDP8
+  (requires tau calibration artifact, target-shape audit, tiny smoke, and DDP4
   preflight before production launch).
+- A6 CIoU-Gibbs coordinate softCE production-scale ablation candidate:
+  `configs/stage1/recursive_detection_ce_latest/prod/compact_full_support2_ciou_gibbs_softce_a6.yaml`
+  (paired with A5 for 4-GPU/4-GPU production comparison after smoke and risk
+  audit gates).
 ```
 
 - [ ] **Step 3: Update catalog with existing shape**
@@ -1572,6 +1706,13 @@ Register under `config_surfaces.training`:
       parser: src/config/schema.py::LatestDetectionTrainingConfig
       runtime: src/detection/runtime.py
       notes: "A5 production-scale ablation candidate: A2 support2 plus iou_gibbs_v0 coordinate soft targets preserving recursive support/balance coefficients; claim_scope remains none until measured."
+    - id: stage1_latest_compact_detection_ciou_gibbs_coord_softce_a6
+      status: implemented-unlaunched-ablation
+      config: configs/stage1/recursive_detection_ce_latest/prod/compact_full_support2_ciou_gibbs_softce_a6.yaml
+      authoring_snippets: configs/_shared/latest_detection/
+      parser: src/config/schema.py::LatestDetectionTrainingConfig
+      runtime: src/detection/runtime.py
+      notes: "A6 production-scale ablation candidate: A2 support2 plus ciou_gibbs_v0 coordinate soft targets preserving recursive support/balance coefficients; intended to run beside A5 on a separate 4-GPU slice."
 ```
 
 - [ ] **Step 4: Verify docs mention exact config**
@@ -1580,7 +1721,7 @@ Run:
 
 ```bash
 conda run -n ms python -c "import yaml; yaml.safe_load(open('docs/catalog.yaml'))"
-rg -n "stage1_latest_compact_detection_iou_gibbs_coord_softce_a5|compact_full_support2_iou_gibbs_softce_a5|A5.*IoU-Gibbs|iou_gibbs_v0" docs configs/stage1/recursive_detection_ce_latest
+rg -n "stage1_latest_compact_detection_iou_gibbs_coord_softce_a5|stage1_latest_compact_detection_ciou_gibbs_coord_softce_a6|compact_full_support2_iou_gibbs_softce_a5|compact_full_support2_ciou_gibbs_softce_a6|A5.*IoU-Gibbs|A6.*CIoU-Gibbs|iou_gibbs_v0|ciou_gibbs_v0" docs configs/stage1/recursive_detection_ce_latest
 ```
 
 Expected: hits in docs, catalog, prod config, and smoke configs.
@@ -1591,7 +1732,7 @@ Run:
 
 ```bash
 git add docs/training/STAGE1_OBJECTIVE.md docs/training/README.md docs/catalog.yaml
-git commit -m "docs: register a5 iou gibbs coord softce"
+git commit -m "docs: register a5 a6 continuous coord softce"
 ```
 
 Expected: commit succeeds with docs/catalog staged.
@@ -1601,7 +1742,7 @@ Expected: commit succeeds with docs/catalog staged.
 **Files:**
 
 - Read: all modified files
-- No new files
+- Runtime-only symlinks, not staged: `model_cache`, `public_data`
 
 - [ ] **Step 1: Run targeted unit tests**
 
@@ -1619,59 +1760,260 @@ conda run -n ms python -m pytest \
 
 Expected: PASS.
 
-- [ ] **Step 2: Run parse smoke without heredocs**
+- [ ] **Step 2: Create ignored worktree symlinks for heavy roots**
+
+Use the `full-pipeline-smoke` skill path strategy: preserve authored config
+paths and add local symlinks when ignored data/model roots are absent in the
+worktree.
+
+Run from the worktree root:
+
+```bash
+test -e model_cache || ln -s /data/home/xiaoyan/AIteam/data/CoordExp/model_cache model_cache
+mkdir -p public_data/coco
+test -e public_data/coco/rescale_32_1024_bbox_max60 || ln -s /data/home/xiaoyan/AIteam/data/CoordExp/public_data/coco/rescale_32_1024_bbox_max60 public_data/coco/rescale_32_1024_bbox_max60
+test -f public_data/coco/rescale_32_1024_bbox_max60/train.coord.jsonl
+test -f model_cache/models/Qwen/Qwen3-VL-2B-Instruct-coordexp/config.json
+```
+
+Expected: all `test` commands pass. Do not stage the symlinks.
+
+- [ ] **Step 3: Run model-innovation risk audit before smoke**
+
+Use `model-innovation-risk-audit` over A5/A6 before smoke launch. Required
+audit surfaces:
+
+```text
+config schema -> A5/A6 materialized configs -> target metadata -> helper math
+-> recursive loss -> trainer metrics -> smoke configs -> artifact contracts
+```
+
+Launch-gate rule:
+
+- all P0 findings fixed;
+- all P1 findings fixed or explicitly accepted by the user;
+- P2 findings either fixed or tracked in this plan/final report.
+
+- [ ] **Step 4: Run parse smoke without heredocs**
 
 Run:
 
 ```bash
-conda run -n ms python -c "from pathlib import Path; from src.config.loader import ConfigLoader; from src.config.schema import LatestDetectionTrainingConfig; paths=['configs/stage1/recursive_detection_ce_latest/prod/compact_full_support2.yaml','configs/stage1/recursive_detection_ce_latest/prod/compact_full_support2_iou_gibbs_softce_a5.yaml']; [print(path, LatestDetectionTrainingConfig.from_mapping(ConfigLoader.load_yaml_with_extends(Path(path))).objective.variant, bool(getattr(LatestDetectionTrainingConfig.from_mapping(ConfigLoader.load_yaml_with_extends(Path(path))).objective, 'coord_soft_ce', None))) for path in paths]"
+conda run -n ms python -c "from pathlib import Path; from src.config.loader import ConfigLoader; from src.config.schema import LatestDetectionTrainingConfig; paths=['configs/stage1/recursive_detection_ce_latest/prod/compact_full_support2.yaml','configs/stage1/recursive_detection_ce_latest/prod/compact_full_support2_iou_gibbs_softce_a5.yaml','configs/stage1/recursive_detection_ce_latest/prod/compact_full_support2_ciou_gibbs_softce_a6.yaml']; [print(path, LatestDetectionTrainingConfig.from_mapping(ConfigLoader.load_yaml_with_extends(Path(path))).objective.variant, getattr(getattr(LatestDetectionTrainingConfig.from_mapping(ConfigLoader.load_yaml_with_extends(Path(path))).objective, 'coord_soft_ce', None), 'target_distribution', None)) for path in paths]"
 ```
 
 Expected:
 
 ```text
-configs/stage1/recursive_detection_ce_latest/prod/compact_full_support2.yaml random_permutation_et_rmp_ce False
-configs/stage1/recursive_detection_ce_latest/prod/compact_full_support2_iou_gibbs_softce_a5.yaml random_permutation_et_rmp_ce True
+configs/stage1/recursive_detection_ce_latest/prod/compact_full_support2.yaml random_permutation_et_rmp_ce None
+configs/stage1/recursive_detection_ce_latest/prod/compact_full_support2_iou_gibbs_softce_a5.yaml random_permutation_et_rmp_ce iou_gibbs_v0
+configs/stage1/recursive_detection_ce_latest/prod/compact_full_support2_ciou_gibbs_softce_a6.yaml random_permutation_et_rmp_ce ciou_gibbs_v0
 ```
 
-- [ ] **Step 3: Run tiny trainer smoke before any production launch**
+- [x] **Step 5: Run tiny trainer smokes for A5 and A6**
 
 Run:
 
 ```bash
 PYTHONPATH=. conda run -n ms python -m src.sft --config configs/stage1/recursive_detection_ce_latest/smoke/compact_full_support2_iou_gibbs_softce_a5_tiny.yaml
+PYTHONPATH=. conda run -n ms python -m src.sft --config configs/stage1/recursive_detection_ce_latest/smoke/compact_full_support2_ciou_gibbs_softce_a6_tiny.yaml
 ```
 
-Expected:
+Expected for both:
 
 - finite `loss/recursive_detection_ce`;
 - nonzero `recursive_detection_ce/coord_soft_ce/enabled`;
-- nonzero coordinate soft target token count;
+- nonzero coordinate soft-target diagnostic coverage;
 - finite support, balance, weighted, entropy, peak, and KL-like diagnostics;
-- `missing_geometry_count == 0`;
+- no missing-geometry fail-fast errors;
 - normal run metadata and manifest files.
 
-- [ ] **Step 4: Run 8-GPU DDP preflight before production launch**
+- [x] **Step 6: Run 4-GPU DDP preflights for A5 and A6**
 
-Use direct `torchrun -m src.sft` for this latest recursive detection surface:
+Use direct `torchrun -m src.sft` for this latest recursive detection surface.
+The production plan is 4 GPUs for A5 and 4 GPUs for A6, not one 8-GPU job.
+For preflight, run each config on a 4-GPU slice:
 
 ```bash
-PYTHONPATH=. OMP_NUM_THREADS=8 TORCH_NCCL_ASYNC_ERROR_HANDLING=1 PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True COORDEXP_TRAIN_HEARTBEAT=1 CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 conda run -n ms torchrun --nproc_per_node=8 -m src.sft --config configs/stage1/recursive_detection_ce_latest/smoke/compact_full_support2_iou_gibbs_softce_a5_ddp8_preflight.yaml
+PYTHONPATH=. OMP_NUM_THREADS=8 TORCH_NCCL_ASYNC_ERROR_HANDLING=1 PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True COORDEXP_TRAIN_HEARTBEAT=1 CUDA_VISIBLE_DEVICES=0,1,2,3 conda run -n ms torchrun --master_port=29605 --nproc_per_node=4 -m src.sft --config configs/stage1/recursive_detection_ce_latest/smoke/compact_full_support2_iou_gibbs_softce_a5_ddp4_preflight.yaml
+PYTHONPATH=. OMP_NUM_THREADS=8 TORCH_NCCL_ASYNC_ERROR_HANDLING=1 PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True COORDEXP_TRAIN_HEARTBEAT=1 CUDA_VISIBLE_DEVICES=4,5,6,7 conda run -n ms torchrun --master_port=29606 --nproc_per_node=4 -m src.sft --config configs/stage1/recursive_detection_ce_latest/smoke/compact_full_support2_ciou_gibbs_softce_a6_ddp4_preflight.yaml
 ```
 
-Expected:
+Expected for both:
 
 - all ranks enter and exit;
 - finite recursive CE loss;
 - coordinate softCE diagnostics present on rank-aggregated metrics;
-- `support_mixture_fraction` is present;
+- `support_mixture` is present;
 - no missing geometry;
 - eval step completes;
 - rank heartbeats are present;
 - manifests, resolved config, and output root are recorded in the preflight
   report.
 
-- [ ] **Step 5: Inspect git diff**
+- [x] **Step 7: Record smoke/risk-audit evidence**
+
+In the final implementation report, include:
+
+- symlink targets used for `model_cache` and `public_data`;
+- model-innovation-risk-audit findings and disposition;
+- model-diagnosis launch gate summary from tiny/DDP4 trends: objective-active
+  composition metrics, finite loss trend, no malformed-output or artifact
+  contradiction visible in the smoke scope, and named residual risks;
+- A5/A6 tiny smoke output roots and key metrics;
+- A5/A6 DDP4 preflight output roots and key metrics;
+- confirmation that final production launch should use two 4-GPU jobs:
+  A5 on one GPU slice, A6 on another.
+
+Smoke/model-diagnosis evidence recorded on 2026-05-11:
+
+- symlinks:
+  - `model_cache -> /data/home/xiaoyan/AIteam/data/CoordExp/model_cache`
+  - `public_data/coco/rescale_32_1024_bbox_max60 -> /data/home/xiaoyan/AIteam/data/CoordExp/public_data/coco/rescale_32_1024_bbox_max60`
+  - `public_data/coco/rescale_32_1024_bbox -> /data/home/xiaoyan/AIteam/data/CoordExp/public_data/coco/rescale_32_1024_bbox`
+  - `public_data/coco/rescale_32_1024_bbox_max60_lvis_proxy -> /data/home/xiaoyan/AIteam/data/CoordExp/public_data/coco/rescale_32_1024_bbox_max60_lvis_proxy`
+- A5 tiny:
+  `temp/recursive_detection_ce_latest/output/compact_full_iou_gibbs_softce_a5_tiny/smoke-compact-full-iou-gibbs-softce-a5-tiny/v0-20260511-171218`
+  - `loss/recursive_detection_ce=19.93226814`
+  - `recursive_detection_ce/coord_soft_ce/enabled=1.0`
+  - `weighted_loss=34.11478995`, `support_loss=12.87118289`, `balance_loss=8.37242417`
+  - `candidate_count=1.44444444`, `support_bin_count=609.05555556`, `support_mixture=0.16666667`
+- A6 tiny:
+  `temp/recursive_detection_ce_latest/output/compact_full_ciou_gibbs_softce_a6_tiny/smoke-compact-full-ciou-gibbs-softce-a6-tiny/v0-20260511-171258`
+  - `loss/recursive_detection_ce=19.93226814`
+  - `recursive_detection_ce/coord_soft_ce/enabled=1.0`
+  - `weighted_loss=34.11479011`, `support_loss=12.87118289`, `balance_loss=8.37242433`
+  - `candidate_count=1.44444444`, `support_bin_count=609.05555556`, `support_mixture=0.16666667`
+- A5 DDP4 preflight:
+  `temp/recursive_detection_ce_latest/output/compact_full_iou_gibbs_softce_a5_ddp4_preflight/smoke-compact-full-iou-gibbs-softce-a5-ddp4-preflight/v0-20260511-171459`
+  - final train `loss/recursive_detection_ce=16.06588364`
+  - final eval `eval_loss/recursive_detection_ce=16.40919495`
+  - train/eval `coord_soft_ce/enabled=1.0`
+  - final train `weighted_loss=31.80255890`, `candidate_count=1.53905976`, `support_bin_count=644.43377686`, `support_mixture=0.13986725`
+  - final eval `weighted_loss=31.23566628`, `support_mixture=0.09474511`
+- A6 DDP4 preflight:
+  `temp/recursive_detection_ce_latest/output/compact_full_ciou_gibbs_softce_a6_ddp4_preflight/smoke-compact-full-ciou-gibbs-softce-a6-ddp4-preflight/v0-20260511-171440`
+  - final train `loss/recursive_detection_ce=16.05656433`
+  - final eval `eval_loss/recursive_detection_ce=16.38127518`
+  - train/eval `coord_soft_ce/enabled=1.0`
+  - final train `weighted_loss=31.78451538`, `candidate_count=1.53905976`, `support_bin_count=644.43377686`, `support_mixture=0.13986725`
+  - final eval `weighted_loss=31.18028831`, `support_mixture=0.09474511`
+- A2 pure-CE prodlike anchor:
+  `temp/recursive_detection_ce_latest/output/compact_full_prodlike_single_gpu/smoke-compact-full-et-rmp-ce-prodlike-single-gpu/v0-20260511-172309`
+  - `loss/recursive_detection_ce=12.28367639`
+  - `recursive_detection_ce/coord_soft_ce/config_enabled=0.0`
+  - `recursive_detection_ce/support_loss=8.24677403`
+  - `coord_fraction=0.39652534`, `trie_multi_positive_fraction=0.16280275`
+- artifact note: latest recursive CE wrote `resolved_config.json`,
+  `runtime_env.json`, `effective_runtime.json`, data provenance,
+  `experiment_manifest.json`, `run_metadata.json`, heartbeat, and
+  `logging.jsonl`; it did not emit `pipeline_manifest.json` on these smokes.
+  Treat that as a P2 artifact-contract gap, not a softCE loss blocker.
+- launch-node filesystem note: A5/A6 inherit the existing production
+  `output_root: /data/CoordExp/output_remote/stage1_2b/recursive_detection_ce_latest`
+  convention from A2/A3/A4. On this smoke node `/data/CoordExp` is absent,
+  while the smoke overlay writes under `temp/`. Before production launch,
+  confirm the launch node has this output root or create the standard
+  `/data/CoordExp` mapping there; do not change A5/A6 YAML paths unless the
+  production filesystem convention has changed for all latest recursive CE
+  runs.
+- broader pre-launch tests on 2026-05-11:
+  - fixed an adjacent legacy bbox-loss import regression:
+    `src/trainers/metrics/bbox_losses.py` now imports
+    `get_coord_token_ids` for its tokenizer fallback path.
+  - `conda run -n ms python -m pytest tests/test_iou_gibbs_coord_stats.py tests/test_iou_gibbs_coord_softce.py tests/test_latest_training_config_contract.py tests/test_training_config_strict_unknown_keys.py tests/test_legacy_config_contract.py tests/test_recursive_detection_ce_loss_adapter.py tests/test_recursive_detection_ce_target_builder.py tests/test_coord_softce_w1_loss.py tests/test_coord_soft_ce_w1_collective_guard.py tests/coord_tokens/test_soft_ce_w1.py tests/test_bbox_size_aux_loss.py tests/test_bbox_format_switch.py -q`
+    passed: `265 passed in 2.40s`.
+  - `conda run -n ms python -m pytest tests/test_stage2_ab_config_contract.py tests/test_stage2_ab_profile_leaf_contract.py tests/test_training_runtime_profile.py tests/test_stage1_metric_key_parity.py -q`
+    passed: `139 passed in 8.20s`.
+  - `py_compile` passed for the touched analysis, detection, schema, recursive
+    metrics, legacy coord-softCE, and bbox-loss Python modules.
+
+Production launch shape after user approval:
+
+```bash
+PYTHONPATH=. OMP_NUM_THREADS=8 TORCH_NCCL_ASYNC_ERROR_HANDLING=1 PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True COORDEXP_TRAIN_HEARTBEAT=1 CUDA_VISIBLE_DEVICES=0,1,2,3 conda run -n ms torchrun --master_port=29605 --nproc_per_node=4 -m src.sft --config configs/stage1/recursive_detection_ce_latest/prod/compact_full_support2_iou_gibbs_softce_a5.yaml
+PYTHONPATH=. OMP_NUM_THREADS=8 TORCH_NCCL_ASYNC_ERROR_HANDLING=1 PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True COORDEXP_TRAIN_HEARTBEAT=1 CUDA_VISIBLE_DEVICES=4,5,6,7 conda run -n ms torchrun --master_port=29606 --nproc_per_node=4 -m src.sft --config configs/stage1/recursive_detection_ce_latest/prod/compact_full_support2_ciou_gibbs_softce_a6.yaml
+```
+
+Production launch state on 2026-05-11:
+
+- Created launch-node mapping:
+  `/data/CoordExp -> /data/home/xiaoyan/AIteam/data/CoordExp`.
+- Started tmux sessions:
+  - `coordexp_a5_iou_gibbs_prod`, GPUs `0,1,2,3`, port `29605`,
+    log `temp/prod_launch/a5_iou_gibbs_prod_20260511_173916.log`.
+  - `coordexp_a6_ciou_gibbs_prod`, GPUs `4,5,6,7`, port `29606`,
+    log `temp/prod_launch/a6_ciou_gibbs_prod_20260511_173916.log`.
+- Run roots:
+  - A5:
+    `/data/CoordExp/output_remote/stage1_2b/recursive_detection_ce_latest/compact_full_et_rmp_iou_gibbs_softce_a5_support2_bsz16_4gpu_4epoch_tokenrows_v2/compact-full-et-rmp-iou-gibbs-softce-a5-support2-bsz16-4gpu-4epoch-tokenrows-v2/v0-20260511-173957`
+  - A6:
+    `/data/CoordExp/output_remote/stage1_2b/recursive_detection_ce_latest/compact_full_et_rmp_ciou_gibbs_softce_a6_support2_bsz16_4gpu_4epoch_tokenrows_v2/compact-full-et-rmp-ciou-gibbs-softce-a6-support2-bsz16-4gpu-4epoch-tokenrows-v2/v0-20260511-173957`
+- First-step gate passed for both A5 and A6:
+  `first_step_end` and `global_step/max_steps = 1/3664` were recorded,
+  artifacts were written, and `coord_soft_ce/enabled=1.0` appeared in
+  `logging.jsonl` for both runs.
+- Continued verification after launch:
+  - An expanded non-GPU regression sweep over coord-token modules, recursive
+    CE wiring, manifests, encoded-cache runtime config, Stage-1 static-packing
+    config, runtime integration, token metrics, tokenizer canaries, and dataset
+    runtime contracts passed: `236 passed, 1 skipped in 3.83s`.
+  - The non-failing remainder of `tests/test_training_config_hierarchy_contract.py`
+    passed: `2 passed, 2 deselected in 0.45s`.
+  - The two deselected hierarchy-contract failures are pre-existing A3/A4
+    wrapper authoring checks, not A5/A6 softCE failures:
+    `test_stage1_canonical_profiles_load_under_current_hierarchy` and
+    `test_canonical_non_smoke_leaves_author_raw_run_identity_fields`.
+    They point at Stage-1 non-smoke wrapper configs that inherit run identity
+    fields instead of authoring them directly. Because A3/A4 bsz8 jobs were
+    already running on another node, those configs were not changed during the
+    A5/A6 launch.
+  - Fixed compact detection suffix stripping so strict compact parsing trims
+    whitespace left before terminal chat tokens; targeted parser contract test
+    passed.
+  - Fixed repo-local `scripts` package isolation for full-suite collection:
+    added package markers for `scripts/` and `scripts/analysis/`, hardened
+    `tests/conftest.py` against external editable `scripts` packages, and
+    changed the public-data converter test to import its helper by explicit
+    file location. Combined regression passed:
+    `tests/coord_tokens/test_converter.py tests/test_manual_audit_reviewer.py`
+    -> `7 passed`.
+  - Public-data provenance manifests passed after adding the worktree symlinks:
+    `tests/test_public_data_provenance_manifests.py` -> `6 passed in 1.65s`.
+  - Full hidden-GPU suite command:
+    `CUDA_VISIBLE_DEVICES= conda run -n ms python -m pytest tests -q -k 'not stage1_canonical_profiles_load_under_current_hierarchy and not canonical_non_smoke_leaves_author_raw_run_identity_fields'`.
+    Initial post-launch result: `2090 passed, 8 skipped, 2 deselected, 16
+    failed, 21 warnings in 229.80s`. After targeted residual fixes, the fresh
+    whole-suite rerun produced `2095 passed, 8 skipped, 2 deselected, 11
+    failed, 21 warnings in 229.24s`.
+  - Continued residual triage fixed three narrow non-A5 regressions without
+    changing A5/A6 semantics:
+    restartable checkpoint preflight now references the public
+    `save_model_only=true` setting in incomplete-checkpoint errors;
+    coord-only loss-gradient monitoring no longer includes `text_gate`; and
+    Stage-2 AB DDP phase config defaults cleanly for minimal executor mixins
+    without `_ab_channel_b_get`.
+  - Verified targeted fixes:
+    `tests/test_checkpoint_weight_only_policy.py::test_restartable_checkpoint_preflight_rejects_artifact_only_sidecar`
+    -> `1 passed`;
+    `tests/test_loss_gradient_monitor.py::test_build_stage2_coord_monitor_terms_from_pipeline_excludes_text_terms`
+    -> `1 passed`;
+    `tests/test_stage2_ab_channel_a_pack_count_skew_barrier.py::test_stage2_ab_channel_a_calls_barrier_on_final_pack`
+    -> `1 passed`.
+  - Re-running the residual file group after those fixes reduced it to
+    `11 failed, 54 passed, 1 warning in 8.12s`. Remaining failures are:
+    raw coordjson parse inventory, duplication-collapse bootstrap requiring
+    an old missing checkpoint path, max-pixels expectation mismatch, blanket
+    exception policy inventory, Stage-2 prompt-alignment source-string check,
+    and Stage-2 post-rollout bin-packing expectation drift.
+  - `py_compile` passed for `src/trainers/final_checkpoint.py`,
+    `src/trainers/monitoring/loss_gradient_monitor.py`, and
+    `src/trainers/stage2_coordination.py`.
+  - Live heartbeats after this sweep reached A5 `global_step=84` at
+    `2026-05-11T18:19:43Z` and A6 `global_step=81` at
+    `2026-05-11T18:19:18Z`; both tmux sessions remained present.
+
+- [x] **Step 8: Inspect git diff**
 
 Run:
 
@@ -1680,7 +2022,10 @@ git diff --stat
 git status --short
 ```
 
-Expected: only intended files changed. If commits were made task-by-task, working tree may still contain unrelated user changes and no unstaged implementation files.
+Observed on 2026-05-11: `git diff --stat` showed only intended code, config,
+test, doc, and diagnostic surfaces for the A5/A6 coordinate-softCE change.
+Runtime symlinks for `model_cache` and the shared COCO data root remain ignored
+and unstaged.
 
 ## Rollback Plan
 

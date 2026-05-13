@@ -10,6 +10,11 @@ from typing import Mapping, Sequence
 import torch
 import torch.nn.functional as F
 
+from src.detection.coord_soft_targets import (
+    CoordSoftTargetCandidate,
+    CoordSoftTargetRuntimeConfig,
+    full_vocab_coord_support_balance_ce,
+)
 from src.detection.objective import RecursiveDetectionTargets, SemanticRole
 from src.metrics.detection_sequence import (
     coordinate_token_accuracy_event,
@@ -75,6 +80,7 @@ class RecursiveDetectionLossWeights:
     separator_continue_weight: float = 0.50
     eos_stop_weight: float = 0.50
     boundary_component_weight: float = 0.30
+    coord_soft_ce: CoordSoftTargetRuntimeConfig | None = None
 
     def __post_init__(self) -> None:
         for field_name in (
@@ -283,6 +289,7 @@ def compute_recursive_detection_ce_batch_loss(
     ) + _recursive_objective_diagnostic_events(
         logits=batch_logits,
         targets=targets,
+        weights=weights,
     ) + _recursive_target_mix_events(
         targets=targets,
     ) + _summarize_compact_recursive_detection_metric_events(
@@ -301,6 +308,7 @@ def _recursive_objective_diagnostic_events(
     *,
     logits: torch.Tensor,
     targets: Sequence[RecursiveDetectionTargets],
+    weights: RecursiveDetectionLossWeights,
 ) -> tuple[MetricEvent, ...]:
     """Summarize objective-internal diagnostics without affecting gradients."""
 
@@ -356,6 +364,58 @@ def _recursive_objective_diagnostic_events(
                     metric_logits[batch_index, target.position - 1],
                     dim=-1,
                 )
+                span_category = _span_category_for_semantic_role(
+                    _role_for_target(target)
+                )
+                if weights.coord_soft_ce is not None and _coord_soft_ce_applies(target):
+                    if target.kind == "trie_multi_positive":
+                        _validate_trie_multi_positive_target(
+                            target,
+                            vocab_size=vocab_size,
+                        )
+                    candidates = _coord_soft_target_candidates(target)
+                    coord_result = full_vocab_coord_support_balance_ce(
+                        metric_logits[batch_index, target.position - 1],
+                        candidates,
+                        weights.coord_soft_ce,
+                        support_weight=float(weights.support_weight),
+                        balance_weight=float(weights.balance_weight),
+                    )
+                    for metric_name, metric_value in (
+                        ("weighted_loss", coord_result.weighted_loss),
+                        ("support_loss", coord_result.support_loss),
+                        ("support_mass", coord_result.support_mass),
+                        ("outside_support_mass", coord_result.outside_support_mass),
+                        ("balance_loss", coord_result.balance_loss),
+                        ("pure_soft_ce_equiv", coord_result.pure_soft_ce_equiv),
+                        ("target_entropy", coord_result.target_entropy),
+                        ("kl_like", coord_result.kl_like),
+                        ("target_peak_prob", coord_result.peak_prob),
+                        ("target_perplexity", coord_result.perplexity),
+                        (
+                            "target_effective_support_size",
+                            coord_result.effective_support_size,
+                        ),
+                        ("target_std", coord_result.target_std),
+                        ("candidate_count", coord_result.candidate_count),
+                        ("support_bin_count", coord_result.support_bin_count),
+                    ):
+                        events.append(
+                            _event(
+                                f"recursive_detection_ce/coord_soft_ce/{metric_name}",
+                                metric_value,
+                            )
+                        )
+                    events.append(
+                        _event("recursive_detection_ce/coord_soft_ce/enabled", 1.0)
+                    )
+                    events.append(
+                        _event(
+                            "recursive_detection_ce/coord_soft_ce/support_mixture",
+                            1.0 if coord_result.support_mixture else 0.0,
+                        )
+                    )
+                    continue
 
                 if target.kind == "trie_multi_positive":
                     child_token_ids = tuple(
@@ -481,8 +541,6 @@ def _recursive_objective_diagnostic_events(
                             )
                         )
 
-                role = _role_for_target(target)
-                span_category = _span_category_for_semantic_role(role)
                 if (
                     span_category == "separator"
                     and eos_token_id is not None
@@ -909,6 +967,26 @@ def _compute_sample_loss(
             label="teacher token id",
         )
         step_log_probs = _log_softmax_loss(logits[target.position - 1], dim=-1)
+        if weights.coord_soft_ce is not None and _coord_soft_ce_applies(target):
+            if target.kind == "trie_multi_positive":
+                _validate_trie_multi_positive_target(target, vocab_size=vocab_size)
+            coord_result = full_vocab_coord_support_balance_ce(
+                logits[target.position - 1],
+                _coord_soft_target_candidates(target),
+                weights.coord_soft_ce,
+                support_weight=float(weights.support_weight),
+                balance_weight=float(weights.balance_weight),
+            )
+            position_loss = coord_result.weighted_loss
+            per_position_main_losses[target.position] = _loss_float(position_loss)
+            per_position_losses[target.position] = _apply_type_gate_loss(
+                position_loss,
+                step_log_probs=step_log_probs,
+                target=target,
+                vocab_size=vocab_size,
+            )
+            continue
+
         if target.kind == "hard_ce":
             position_loss = -step_log_probs[target.teacher_token_id]
             per_position_main_losses[target.position] = _loss_float(position_loss)
@@ -920,37 +998,10 @@ def _compute_sample_loss(
             )
             continue
 
-        if not target.trie_branch_targets:
-            raise ValueError(
-                f"trie_multi_positive target at position {target.position} needs children"
-            )
-        child_token_ids: list[int] = []
-        child_weights: list[float] = []
-        for branch_target in target.trie_branch_targets:
-            _validate_token_id(
-                token_id=branch_target.token_id,
-                vocab_size=vocab_size,
-                label="branch child token id",
-            )
-            if int(branch_target.multiplicity) <= 0:
-                raise ValueError(
-                    "trie branch child multiplicity must be positive; "
-                    f"got {branch_target.multiplicity} at position {target.position}"
-                )
-            if not math.isfinite(float(branch_target.probability)) or float(
-                branch_target.probability
-            ) <= 0.0:
-                raise ValueError(
-                    "trie branch child probability must be positive and finite; "
-                    f"got {branch_target.probability!r} at position {target.position}"
-                )
-            child_token_ids.append(int(branch_target.token_id))
-            child_weights.append(float(branch_target.multiplicity))
-        if target.teacher_token_id not in child_token_ids:
-            raise ValueError(
-                "trie_multi_positive teacher token must be one of the valid child tokens; "
-                f"got teacher token {target.teacher_token_id} with children {child_token_ids}"
-            )
+        child_token_ids, child_weights = _validate_trie_multi_positive_target(
+            target,
+            vocab_size=vocab_size,
+        )
 
         child_ids = torch.tensor(child_token_ids, device=logits.device, dtype=torch.long)
         q = torch.tensor(child_weights, device=logits.device, dtype=torch.float32)
@@ -977,6 +1028,91 @@ def _compute_sample_loss(
         device=logits.device,
     )
     return sample_loss, per_position_losses
+
+
+def _coord_soft_target_candidates(
+    target: object,
+) -> tuple[CoordSoftTargetCandidate, ...]:
+    specs = tuple(getattr(target, "coord_soft_targets", ()) or ())
+    if not specs:
+        raise ValueError(
+            "coord_soft_ce is enabled for a coordinate TokenTarget, but "
+            "TokenTarget.coord_soft_targets is empty"
+        )
+    return tuple(
+        CoordSoftTargetCandidate(
+            object_instance_id=str(getattr(spec, "object_instance_id")),
+            slot_name=getattr(spec, "slot_name"),
+            bbox_xyxy=tuple(int(value) for value in getattr(spec, "bbox_xyxy")),
+            probability=float(getattr(spec, "probability")),
+        )
+        for spec in specs
+    )
+
+
+def _coord_soft_ce_applies(target: object) -> bool:
+    specs = tuple(getattr(target, "coord_soft_targets", ()) or ())
+    token_role = _target_token_role_value(target)
+    if specs:
+        if token_role != "coord":
+            raise ValueError(
+                "TokenTarget.coord_soft_targets may only be attached to coord token "
+                f"targets; got token_role={token_role!r} at position "
+                f"{getattr(target, 'position', '?')}"
+            )
+        return True
+    if token_role == "coord":
+        raise ValueError(
+            "coord_soft_ce is enabled for a coordinate TokenTarget, but "
+            "TokenTarget.coord_soft_targets is empty"
+        )
+    return False
+
+
+def _target_token_role_value(target: object) -> str | None:
+    role = getattr(target, "token_role", None)
+    if role is None:
+        return None
+    return str(getattr(role, "value", role))
+
+
+def _validate_trie_multi_positive_target(
+    target: object,
+    *,
+    vocab_size: int,
+) -> tuple[list[int], list[float]]:
+    if not getattr(target, "trie_branch_targets", ()):
+        raise ValueError(
+            f"trie_multi_positive target at position {target.position} needs children"
+        )
+    child_token_ids: list[int] = []
+    child_weights: list[float] = []
+    for branch_target in target.trie_branch_targets:
+        _validate_token_id(
+            token_id=branch_target.token_id,
+            vocab_size=vocab_size,
+            label="branch child token id",
+        )
+        if int(branch_target.multiplicity) <= 0:
+            raise ValueError(
+                "trie branch child multiplicity must be positive; "
+                f"got {branch_target.multiplicity} at position {target.position}"
+            )
+        if not math.isfinite(float(branch_target.probability)) or float(
+            branch_target.probability
+        ) <= 0.0:
+            raise ValueError(
+                "trie branch child probability must be positive and finite; "
+                f"got {branch_target.probability!r} at position {target.position}"
+            )
+        child_token_ids.append(int(branch_target.token_id))
+        child_weights.append(float(branch_target.multiplicity))
+    if target.teacher_token_id not in child_token_ids:
+        raise ValueError(
+            "trie_multi_positive teacher token must be one of the valid child tokens; "
+            f"got teacher token {target.teacher_token_id} with children {child_token_ids}"
+        )
+    return child_token_ids, child_weights
 
 
 def _validate_token_id(*, token_id: int, vocab_size: int, label: str) -> None:

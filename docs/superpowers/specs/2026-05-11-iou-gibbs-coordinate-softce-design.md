@@ -2,7 +2,7 @@
 
 Date: 2026-05-11
 
-Status: refined proposal after first audit pass. Implementation has not started.
+Status: implemented and smoke-preflighted in the A5/A6 worktree; production launch remains pending final review and user approval.
 
 Owner surface: latest compact recursive detection stack under `src/detection/*`.
 
@@ -397,12 +397,14 @@ the train JSONL and report:
 This audit is not a tau tuning loop. It is a safety check that the target family
 is not unintentionally hard-label-like for an unacceptable slice.
 
-## Why Not CIoU First
+## A5 And A6 Geometry Energies
 
-CIoU-Gibbs is a valid follow-up ablation because the repo already has CIoU
-geometry machinery. It is not the recommended first A5 target.
+`A5` remains the primary first softCE replacement and uses plain IoU-Gibbs.
+`A6` is the paired CIoU-Gibbs sibling requested for the same implementation
+round so the two 4-GPU production slices can compare IoU-only localization
+energy against center/aspect-aware localization energy.
 
-For the first softCE replacement, plain IoU-Gibbs is cleaner because:
+Plain IoU-Gibbs is the cleaner primary target because:
 
 - it is directly aligned with COCO localization semantics;
 - it is easier to explain as maximum-entropy mass ordered by one-coordinate box
@@ -411,8 +413,10 @@ For the first softCE replacement, plain IoU-Gibbs is cleaner because:
 - it provides the scale adaptation needed for this ablation without adding a
   second geometry objective.
 
-If A5 improves or gives useful diagnostics, a later A6 can compare
-`ciou_gibbs_v0` against `iou_gibbs_v0`.
+CIoU-Gibbs remains useful as `A6` because it tests whether adding center and
+aspect-ratio penalties sharpens the target distribution in a beneficial way.
+Both candidates share the same initial data-derived `tau_data` unless a later
+calibration artifact justifies a CIoU-specific value.
 
 ## Config Surface
 
@@ -483,10 +487,11 @@ Required finite diagnostics:
 | `peak_prob` | mean target peak mass |
 | `perplexity` | mean `exp(entropy)` |
 | `effective_support_size` | inverse participation ratio or documented equivalent over `q` |
-| `valid_candidate_count` | number of geometry-valid coordinate candidates |
+| `candidate_count` | number of active object candidates mixed at that coordinate position |
+| `support_bin_count` | number of geometry-valid coordinate-token bins with nonzero target support |
 | `target_std` | mean coordinate-bin target std |
-| `support_mixture_fraction` | fraction using multi-object mixture |
-| `missing_geometry_count` | must remain zero for active objective |
+| `support_mixture` | mean indicator for positions using a multi-object soft-target mixture |
+| missing geometry | fail-fast error instead of a permissive metric when `coord_soft_ce` is enabled |
 
 The standard hard-teacher coord-token CE/accuracy summary can remain as a
 diagnostic, but it must not be confused with the optimized coordinate loss.
@@ -512,7 +517,8 @@ audit proves there are no remaining supported references.
 ## Non-Goals
 
 - Do not add W1 to the first A5 objective.
-- Do not add decoded bbox CIoU or SmoothL1 to the first A5 objective.
+- Do not add decoded bbox CIoU or SmoothL1 to the A5/A6 objectives; A6 uses
+  CIoU only as the coordinate-target energy.
 - Do not use legacy `custom.coord_soft_ce_w1` or the legacy coord-softCE mixin.
 - Do not expose fixed Gaussian `sigma`/`truncate` knobs in latest recursive
   detection.
@@ -526,10 +532,10 @@ audit proves there are no remaining supported references.
 
 - The tau calibration script/artifact reproduces `train_one_token_iou_median_v0`.
 - The target-shape audit is available before a production-scale launch.
-- The A5 YAML parses under the latest strict schema.
-- The A5 YAML extends A2/support2 and differs only in run identity,
+- The A5/A6 YAMLs parse under the latest strict schema.
+- The A5/A6 YAMLs extend A2/support2 and differ only in run identity,
   `objective.coord_soft_ce`, and non-claiming experiment metadata.
-- The A5 config metadata uses `surface: ablation` and `claim_scope: none`.
+- The A5/A6 config metadata uses `surface: ablation` and `claim_scope: none`.
 - Coordinate softCE is computed through recursive CE, not through legacy trainer
   mixins.
 - Coordinate targets use full-vocab softmax probabilities over coord token IDs.

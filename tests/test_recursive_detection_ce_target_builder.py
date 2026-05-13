@@ -4,8 +4,14 @@ from dataclasses import replace
 import re
 
 import pytest
+import torch
 
 from src.common.detection_sequence import BOX_START_TOKEN, OBJECT_REF_START_TOKEN
+from src.detection.coord_soft_targets import (
+    CoordSoftTargetCandidate,
+    CoordSoftTargetRuntimeConfig,
+    full_vocab_coord_support_balance_ce,
+)
 from src.detection.data import (
     CoordinateTokenBox,
     DetectionMetadata,
@@ -13,9 +19,14 @@ from src.detection.data import (
     NormalizedDetectionSample,
     ObjectOrderingPlan,
 )
+from src.detection.loss import (
+    RecursiveDetectionLossWeights,
+    compute_recursive_detection_ce_batch_loss,
+)
 from src.detection.objective import prepare_detection_training_example
 from src.detection.template import CompactFullTemplate, Stage1JsonPrettyTemplate
 from src.detection.tokenization import TokenRole
+from src.metrics.events import reduce_metric_events
 
 _SPECIAL_TOKEN_RE = re.compile(r"<\|[^|]+\|>")
 
@@ -230,6 +241,112 @@ def test_compact_same_desc_diverges_at_first_coordinate_token() -> None:
         "<|coord_100|>",
     )
     assert first_coord_target.child_multiplicities == (1, 1)
+    assert tuple(
+        (spec.object_instance_id, spec.slot_name, spec.bbox_xyxy)
+        for spec in first_coord_target.coord_soft_targets
+    ) == (
+        ("img-9:ann-601:src-7", "x1", (10, 20, 30, 40)),
+        ("img-9:ann-602:src-3", "x1", (100, 200, 300, 400)),
+    )
+    assert tuple(
+        spec.probability for spec in first_coord_target.coord_soft_targets
+    ) == pytest.approx((0.5, 0.5))
+
+
+def test_compact_trie_coordinate_soft_ce_uses_coord_metadata_not_semantic_atom() -> None:
+    tokenizer = SpecialTokenAwareTokenizer()
+    sample = _sample(
+        _object(
+            normalized_index=0,
+            source_index=7,
+            instance_id="img-9:ann-701:src-7",
+            desc="car",
+            coords=("<|coord_10|>", "<|coord_20|>", "<|coord_30|>", "<|coord_40|>"),
+        ),
+        _object(
+            normalized_index=1,
+            source_index=3,
+            instance_id="img-9:ann-702:src-3",
+            desc="car",
+            coords=("<|coord_100|>", "<|coord_200|>", "<|coord_300|>", "<|coord_400|>"),
+        ),
+    )
+    prepared = prepare_detection_training_example(
+        sample,
+        template=CompactFullTemplate(),
+        tokenizer=tokenizer,
+        mode="random_permutation_et_rmp_ce",
+    )
+    assert prepared.recursive_detection_targets is not None
+    first_entry = prepared.tokenized.object_entries[0]
+    first_coord_target = _target_map(prepared)[first_entry.coord_spans[0].start]
+    assert first_coord_target.kind == "trie_multi_positive"
+    assert first_coord_target.token_role is TokenRole.COORD
+    assert first_coord_target.semantic_role.value == "entry_trie_decision"
+
+    cfg = CoordSoftTargetRuntimeConfig(
+        target_distribution="iou_gibbs_v0",
+        tau=0.0090909091,
+        coord_token_start=10,
+        coord_token_end=1009,
+    )
+    logits = torch.zeros(
+        (
+            max(
+                target.position
+                for target in prepared.recursive_detection_targets.token_targets
+            )
+            + 1,
+            1020,
+        ),
+        dtype=torch.float32,
+    )
+    candidates = tuple(
+        CoordSoftTargetCandidate(
+            object_instance_id=spec.object_instance_id,
+            slot_name=spec.slot_name,
+            bbox_xyxy=spec.bbox_xyxy,
+            probability=spec.probability,
+        )
+        for spec in first_coord_target.coord_soft_targets
+    )
+    manual = full_vocab_coord_support_balance_ce(
+        logits[first_coord_target.position - 1],
+        candidates,
+        cfg,
+        support_weight=2.0,
+        balance_weight=1.0,
+    )
+    focused_targets = replace(
+        prepared.recursive_detection_targets,
+        token_targets=(first_coord_target,),
+        loss_atoms=tuple(
+            atom
+            for atom in prepared.recursive_detection_targets.loss_atoms
+            if first_coord_target.position in atom.token_positions
+        ),
+    )
+
+    result = compute_recursive_detection_ce_batch_loss(
+        logits=logits,
+        targets=(focused_targets,),
+        weights=RecursiveDetectionLossWeights(
+            support_weight=2.0,
+            balance_weight=1.0,
+            coord_soft_ce=cfg,
+        ),
+    )
+    reduced = reduce_metric_events(result.metric_events)
+
+    assert result.per_position_losses[0][first_coord_target.position].item() == (
+        pytest.approx(manual.weighted_loss.item())
+    )
+    assert reduced["recursive_detection_ce/coord_soft_ce/support_mixture"] == (
+        pytest.approx(1.0)
+    )
+    assert reduced["recursive_detection_ce/coord_soft_ce/candidate_count"] == (
+        pytest.approx(2.0)
+    )
 
 
 def test_desc_prefix_collision_allows_box_start_as_trie_child() -> None:

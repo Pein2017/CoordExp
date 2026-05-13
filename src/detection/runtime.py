@@ -15,6 +15,7 @@ from src.config.schema import (
     LatestDetectionTrainingConfig,
 )
 from src.detection.dataset import DetectionTrainingDataset
+from src.detection.coord_soft_targets import CoordSoftTargetRuntimeConfig
 from src.detection.tokenizer_contract import resolve_compact_training_stop_contract
 
 LatestDetectionRuntimeMode = Literal[
@@ -41,6 +42,7 @@ class RecursiveDetectionCERuntimeConfig:
     separator_continue_weight: float = 0.50
     eos_stop_weight: float = 0.50
     boundary_component_weight: float = 0.30
+    coord_soft_ce: CoordSoftTargetRuntimeConfig | None = None
 
 
 def is_latest_detection_config(training_config: Any) -> bool:
@@ -347,6 +349,11 @@ def resolve_recursive_detection_ce_runtime_cfg(
         raise ValueError(
             "recursive_detection_ce support and balance weights must sum to > 0"
         )
+    coord_soft_ce = _resolve_coord_soft_ce_runtime_config(
+        training_config=training_config,
+        objective=objective,
+        field_getter=_field,
+    )
     return RecursiveDetectionCERuntimeConfig(
         enabled=True,
         trie_support_weight=trie_support_weight,
@@ -355,6 +362,44 @@ def resolve_recursive_detection_ce_runtime_cfg(
         separator_continue_weight=separator_continue_weight,
         eos_stop_weight=eos_stop_weight,
         boundary_component_weight=boundary_component_weight,
+        coord_soft_ce=coord_soft_ce,
+    )
+
+
+def _resolve_coord_soft_ce_runtime_config(
+    *,
+    training_config: LatestDetectionTrainingConfig,
+    objective: Any,
+    field_getter: Any,
+) -> CoordSoftTargetRuntimeConfig | None:
+    raw_cfg = field_getter(objective, "coord_soft_ce")
+    if raw_cfg is None or not bool(field_getter(raw_cfg, "enabled")):
+        return None
+    if field_getter(raw_cfg, "replace_coord_hard_ce") is not True:
+        raise ValueError("objective.coord_soft_ce.replace_coord_hard_ce must be true")
+
+    coord_group = None
+    for group in training_config.token_rows.groups.values():
+        role = getattr(group.role, "value", group.role)
+        if str(role) == "coord_geometry":
+            coord_group = group
+            break
+    if coord_group is None:
+        raise ValueError(
+            "objective.coord_soft_ce requires a token_rows coord_geometry group"
+        )
+    if coord_group.expected_start is None or coord_group.expected_end is None:
+        raise ValueError(
+            "objective.coord_soft_ce requires token_rows coord_geometry expected_start/end"
+        )
+
+    return CoordSoftTargetRuntimeConfig(
+        target_distribution=str(field_getter(raw_cfg, "target_distribution")),
+        tau=float(field_getter(raw_cfg, "tau")),
+        coord_token_start=int(coord_group.expected_start),
+        coord_token_end=int(coord_group.expected_end),
+        weighting=str(field_getter(raw_cfg, "weighting")),
+        apply_to_multi_positive=str(field_getter(raw_cfg, "apply_to_multi_positive")),
     )
 
 

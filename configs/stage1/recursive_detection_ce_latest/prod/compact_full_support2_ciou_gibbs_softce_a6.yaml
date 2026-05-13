@@ -1,0 +1,24 @@
+# A6 ablation config: A2/support2 ET-RMP with CIoU-Gibbs coord SoftCE.
+# This is the paired 4-GPU sibling to A5; only the coord target distribution differs.
+extends:
+  - ./compact_full_support2.yaml
+
+training:
+  save_model_only: true
+  artifact_subdir: compact_full_et_rmp_ciou_gibbs_softce_a6_support2_bsz16_4gpu_4epoch_tokenrows_v2
+  run_name: compact-full-et-rmp-ciou-gibbs-softce-a6-support2-bsz16-4gpu-4epoch-tokenrows-v2
+
+objective:
+  coord_soft_ce:
+    enabled: true
+    target_distribution: ciou_gibbs_v0
+    tau: 0.0090909091
+    tau_source: train_one_token_iou_median_v0
+    weighting: preserve_recursive_support_balance
+    replace_coord_hard_ce: true
+    apply_to_multi_positive: support_mixture
+
+experiment:
+  surface: ablation
+  ablation_id: A6-ciou-gibbs-softce-support2
+  claim_scope: none

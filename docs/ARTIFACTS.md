@@ -311,10 +311,12 @@ Notes:
   bare `.` root entry.
 - If `training.output_dir` is not set, training fails fast because these
   artifacts are required for reproducibility.
-- `training.checkpoint_mode: restartable` is the explicit opt-in mode for
-  restart fidelity. It requires optimizer, scheduler, RNG, trainer state, and
-  repo-owned runtime-sidecar artifacts in each checkpoint; `artifact_only`
-  remains the compatibility-preserving default.
+- `training.save_model_only: true` is the public opt-in for restartable
+  checkpoints. Each saved checkpoint must include model/adapter artifacts,
+  tokenizer files, optimizer, scheduler, RNG, trainer state, and repo-owned
+  runtime sidecars. `training.save_model_only: false` keeps inference-only
+  artifacts and accepts that an interrupted run may need to restart from the
+  base checkpoint.
 
 ---
 

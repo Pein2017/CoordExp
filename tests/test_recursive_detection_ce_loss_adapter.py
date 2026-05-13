@@ -7,11 +7,17 @@ import pytest
 import torch
 
 import src.detection.loss as loss_module
+from src.detection.coord_soft_targets import (
+    CoordSoftTargetCandidate,
+    CoordSoftTargetRuntimeConfig,
+    full_vocab_coord_support_balance_ce,
+)
 from src.detection.loss import (
     RecursiveDetectionLossWeights,
     compute_recursive_detection_ce_batch_loss,
 )
 from src.detection.objective import (
+    CoordSoftTargetSpec,
     LossAtom,
     RecursiveDetectionTargets,
     SemanticRole,
@@ -44,6 +50,8 @@ def _hard_target(
     loss_weight: float = 1.0,
     loss_atom_id: str | None = None,
     object_instance_id: str | None = None,
+    token_role: TokenRole = TokenRole.ASSISTANT,
+    coord_soft_targets: tuple[CoordSoftTargetSpec, ...] = (),
 ) -> TokenTarget:
     return TokenTarget(
         position=position,
@@ -51,11 +59,12 @@ def _hard_target(
         kind="hard_ce",
         trie_branch_targets=(),
         object_instance_id=object_instance_id,
-        token_role=TokenRole.ASSISTANT,
+        token_role=token_role,
         state_weight=state_weight,
         loss_weight=loss_weight,
         semantic_role=semantic_role,
         loss_atom_id=loss_atom_id,
+        coord_soft_targets=coord_soft_targets,
     )
 
 
@@ -139,6 +148,205 @@ def test_hard_singleton_ce_matches_standard_log_softmax() -> None:
     assert result.loss.item() == pytest.approx(expected.item())
     assert result.per_position_losses[0][1].item() == pytest.approx(expected_first.item())
     assert result.per_position_losses[0][2].item() == pytest.approx(expected_second.item())
+
+
+def test_coord_soft_ce_replaces_hard_coordinate_ce_and_emits_diagnostics() -> None:
+    cfg = CoordSoftTargetRuntimeConfig(
+        target_distribution="iou_gibbs_v0",
+        tau=0.0090909091,
+        coord_token_start=10,
+        coord_token_end=1009,
+    )
+    target = _hard_target(
+        position=1,
+        teacher_token_id=110,
+        semantic_role=SemanticRole.BBOX_COORD,
+        token_role=TokenRole.COORD,
+        object_instance_id="obj-0",
+        coord_soft_targets=(
+            CoordSoftTargetSpec(
+                object_instance_id="obj-0",
+                slot_name="x1",
+                bbox_xyxy=(100, 100, 200, 200),
+                probability=1.0,
+            ),
+        ),
+    )
+    targets = _targets(token_targets=(target,))
+    logits = torch.zeros((2, 1020), dtype=torch.float32)
+
+    baseline = compute_recursive_detection_ce_batch_loss(
+        logits=logits,
+        targets=(targets,),
+    )
+    softened = compute_recursive_detection_ce_batch_loss(
+        logits=logits,
+        targets=(targets,),
+        weights=RecursiveDetectionLossWeights(
+            support_weight=2.0,
+            balance_weight=1.0,
+            coord_soft_ce=cfg,
+        ),
+    )
+    manual = full_vocab_coord_support_balance_ce(
+        logits[0],
+        (
+            CoordSoftTargetCandidate(
+                object_instance_id="obj-0",
+                slot_name="x1",
+                bbox_xyxy=(100, 100, 200, 200),
+                probability=1.0,
+            ),
+        ),
+        cfg,
+        support_weight=2.0,
+        balance_weight=1.0,
+    )
+    reduced = reduce_metric_events(softened.metric_events)
+
+    assert softened.per_position_losses[0][1].item() == pytest.approx(
+        manual.weighted_loss.item()
+    )
+    assert softened.loss.item() == pytest.approx(manual.weighted_loss.item())
+    assert softened.loss.item() != pytest.approx(baseline.loss.item())
+    assert reduced["recursive_detection_ce/coord_soft_ce/enabled"] == pytest.approx(1.0)
+    assert reduced["recursive_detection_ce/coord_soft_ce/weighted_loss"] == pytest.approx(
+        manual.weighted_loss.item()
+    )
+    assert reduced["recursive_detection_ce/coord_soft_ce/candidate_count"] == pytest.approx(
+        1.0
+    )
+    assert reduced[
+        "recursive_detection_ce/coord_soft_ce/support_bin_count"
+    ] == pytest.approx(200.0)
+
+
+def test_coord_soft_ce_replaces_sparse_trie_entry_decision_coordinate_target() -> None:
+    cfg = CoordSoftTargetRuntimeConfig(
+        target_distribution="ciou_gibbs_v0",
+        tau=0.0090909091,
+        coord_token_start=10,
+        coord_token_end=1009,
+    )
+    target = _branch_target(
+        position=1,
+        teacher_token_id=110,
+        branches=((110, 1), (210, 1)),
+        semantic_role=SemanticRole.ENTRY_TRIE_DECISION,
+    )
+    target = replace(
+        target,
+        token_role=TokenRole.COORD,
+        coord_soft_targets=(
+            CoordSoftTargetSpec(
+                object_instance_id="obj-0",
+                slot_name="x1",
+                bbox_xyxy=(100, 100, 200, 200),
+                probability=0.5,
+            ),
+            CoordSoftTargetSpec(
+                object_instance_id="obj-1",
+                slot_name="x1",
+                bbox_xyxy=(200, 100, 300, 200),
+                probability=0.5,
+            ),
+        ),
+    )
+    logits = torch.zeros((2, 1020), dtype=torch.float32)
+
+    result = compute_recursive_detection_ce_batch_loss(
+        logits=logits,
+        targets=(_targets(token_targets=(target,)),),
+        weights=RecursiveDetectionLossWeights(
+            support_weight=2.0,
+            balance_weight=1.0,
+            coord_soft_ce=cfg,
+        ),
+    )
+    manual = full_vocab_coord_support_balance_ce(
+        logits[0],
+        (
+            CoordSoftTargetCandidate("obj-0", "x1", (100, 100, 200, 200), 0.5),
+            CoordSoftTargetCandidate("obj-1", "x1", (200, 100, 300, 200), 0.5),
+        ),
+        cfg,
+        support_weight=2.0,
+        balance_weight=1.0,
+    )
+    reduced = reduce_metric_events(result.metric_events)
+
+    assert result.per_position_losses[0][1].item() == pytest.approx(
+        manual.weighted_loss.item()
+    )
+    assert reduced["recursive_detection_ce/coord_soft_ce/support_mixture"] == pytest.approx(
+        1.0
+    )
+    assert reduced["recursive_detection_ce/coord_soft_ce/candidate_count"] == pytest.approx(
+        2.0
+    )
+    assert "recursive_detection_ce/support_loss" not in reduced
+
+
+def test_coord_soft_ce_validates_trie_metadata_before_replacement() -> None:
+    cfg = CoordSoftTargetRuntimeConfig(
+        target_distribution="iou_gibbs_v0",
+        tau=0.0090909091,
+        coord_token_start=10,
+        coord_token_end=1009,
+    )
+    target = _branch_target(
+        position=1,
+        teacher_token_id=111,
+        branches=((110, 1), (210, 1)),
+        semantic_role=SemanticRole.ENTRY_TRIE_DECISION,
+    )
+    target = replace(
+        target,
+        token_role=TokenRole.COORD,
+        coord_soft_targets=(
+            CoordSoftTargetSpec(
+                object_instance_id="obj-0",
+                slot_name="x1",
+                bbox_xyxy=(100, 100, 200, 200),
+                probability=0.5,
+            ),
+            CoordSoftTargetSpec(
+                object_instance_id="obj-1",
+                slot_name="x1",
+                bbox_xyxy=(200, 100, 300, 200),
+                probability=0.5,
+            ),
+        ),
+    )
+
+    with pytest.raises(ValueError, match="teacher token must be one of"):
+        compute_recursive_detection_ce_batch_loss(
+            logits=torch.zeros((2, 1020), dtype=torch.float32),
+            targets=(_targets(token_targets=(target,)),),
+            weights=RecursiveDetectionLossWeights(coord_soft_ce=cfg),
+        )
+
+
+def test_coord_soft_ce_enabled_fails_fast_without_coordinate_metadata() -> None:
+    cfg = CoordSoftTargetRuntimeConfig(
+        target_distribution="iou_gibbs_v0",
+        tau=0.0090909091,
+        coord_token_start=10,
+        coord_token_end=1009,
+    )
+    target = _hard_target(
+        position=1,
+        teacher_token_id=110,
+        semantic_role=SemanticRole.BBOX_COORD,
+        token_role=TokenRole.COORD,
+    )
+
+    with pytest.raises(ValueError, match="coord_soft_targets is empty"):
+        compute_recursive_detection_ce_batch_loss(
+            logits=torch.zeros((2, 1020), dtype=torch.float32),
+            targets=(_targets(token_targets=(target,)),),
+            weights=RecursiveDetectionLossWeights(coord_soft_ce=cfg),
+        )
 
 
 def test_legacy_normalization_loss_weight_does_not_change_state_denominator() -> None:

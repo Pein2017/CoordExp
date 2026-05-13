@@ -98,6 +98,36 @@ if [[ ! -f "${CONFIG_PATH}" ]]; then
   exit 1
 fi
 
+# Force a durable launcher log from inside the entrypoint itself. This keeps
+# stdout/stderr evidence even if the outer tmux pane or shell redirection is lost.
+TRAIN_LOG_DIR_RAW="${train_log_dir:-${TRAIN_LOG_DIR:-${REPO_DIR}/temp/train_logs}}"
+if [[ "${TRAIN_LOG_DIR_RAW}" = /* ]]; then
+  TRAIN_LOG_DIR="${TRAIN_LOG_DIR_RAW}"
+else
+  TRAIN_LOG_DIR="${REPO_DIR}/${TRAIN_LOG_DIR_RAW}"
+fi
+mkdir -p "${TRAIN_LOG_DIR}"
+
+_config_slug="$(basename "${CONFIG_PATH}")"
+_config_slug="${_config_slug%.yaml}"
+_config_slug="${_config_slug//[^A-Za-z0-9_.-]/_}"
+_launch_ts="$(date -u +%Y%m%dT%H%M%SZ)"
+TRAIN_LOG_FILE_DEFAULT="${TRAIN_LOG_DIR}/${_config_slug}-${_launch_ts}.log"
+TRAIN_LOG_FILE_RAW="${train_log_file:-${TRAIN_LOG_FILE:-${TRAIN_LOG_FILE_DEFAULT}}}"
+if [[ "${TRAIN_LOG_FILE_RAW}" = /* ]]; then
+  TRAIN_LOG_FILE="${TRAIN_LOG_FILE_RAW}"
+else
+  TRAIN_LOG_FILE="${REPO_DIR}/${TRAIN_LOG_FILE_RAW}"
+fi
+mkdir -p "$(dirname "${TRAIN_LOG_FILE}")"
+touch "${TRAIN_LOG_FILE}"
+export TRAIN_LOG_FILE
+
+echo "[INFO] Redirecting launcher stdout/stderr to: ${TRAIN_LOG_FILE}"
+exec > >(stdbuf -oL -eL tee -a "${TRAIN_LOG_FILE}") 2>&1
+echo "[INFO] Launcher log active: ${TRAIN_LOG_FILE}"
+echo "[INFO] Log started at UTC: ${_launch_ts}"
+
 # ============================================================================
 # CPU-Only Data Guards (Hard Errors)
 # ============================================================================

@@ -38,7 +38,7 @@ training:
   save_safetensors: true
   save_total_limit: 2
   save_last_epoch: true
-  save_only_model: true
+  save_model_only: false
   logging_steps: 10
   logging_first_step: true
   lr_scheduler_kwargs:

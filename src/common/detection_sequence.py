@@ -170,6 +170,7 @@ def _strip_generation_suffix(text: str) -> str:
     ]
     if terminal_positions:
         stripped = stripped[: min(terminal_positions)]
+        stripped = stripped.rstrip()
     return stripped
 
 

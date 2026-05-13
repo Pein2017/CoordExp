@@ -577,6 +577,9 @@ class ConfigLoader:
             "logging_root",
             "artifact_subdir",
             "static_packing_cache",
+            "save_model_only",
+            "save_only_model",
+            "checkpoint_mode",
         }
         for key in _packing_keys:
             training_section.pop(key, None)

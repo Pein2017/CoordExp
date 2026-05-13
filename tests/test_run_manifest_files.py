@@ -46,7 +46,12 @@ def test_write_run_manifest_files_writes_required_json(tmp_path: Path) -> None:
         config_path="configs/unit.yaml",
         base_config_path="configs/base.yaml",
         dataset_seed=17,
-        effective_runtime={"checkpoint_mode": "restartable", "save_only_model": False},
+        effective_runtime={
+            "checkpoint_mode": "restartable",
+            "save_model_only": True,
+            "save_only_model": False,
+            "hf_save_only_model": False,
+        },
         pipeline_manifest={"checksum": "abc123", "objective": [{"name": "token_ce"}]},
         train_data_provenance={"dataset_jsonl": "train.jsonl"},
         eval_data_provenance={"dataset_jsonl": "val.jsonl"},
@@ -76,7 +81,9 @@ def test_write_run_manifest_files_writes_required_json(tmp_path: Path) -> None:
 
     effective_runtime = json.loads(effective_runtime_path.read_text(encoding="utf-8"))
     assert effective_runtime["runtime"]["checkpoint_mode"] == "restartable"
+    assert effective_runtime["runtime"]["save_model_only"] is True
     assert effective_runtime["runtime"]["save_only_model"] is False
+    assert effective_runtime["runtime"]["hf_save_only_model"] is False
 
     pipeline_manifest = json.loads(pipeline_manifest_path.read_text(encoding="utf-8"))
     assert pipeline_manifest["pipeline"]["checksum"] == "abc123"

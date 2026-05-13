@@ -46,7 +46,7 @@ training:
   save_steps: 40
   save_total_limit: 2
   save_last_epoch: true
-  save_only_model: true
+  save_model_only: false
   metric_for_best_model: eval_token_acc
   greater_is_better: true
   save_delay_steps: 100  # Prevent checkpoint saves during first 100 steps (warmup protection)

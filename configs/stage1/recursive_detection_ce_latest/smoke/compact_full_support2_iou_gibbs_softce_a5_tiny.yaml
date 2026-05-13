@@ -1,0 +1,21 @@
+extends:
+  - ../prod/compact_full_support2_iou_gibbs_softce_a5.yaml
+  - ./common_prodlike.yaml
+
+training:
+  artifact_subdir: compact_full_iou_gibbs_softce_a5_tiny
+  run_name: smoke-compact-full-iou-gibbs-softce-a5-tiny
+  max_steps: 1
+  per_device_train_batch_size: 1
+  effective_batch_size: 1
+  per_device_eval_batch_size: 1
+
+debug:
+  enabled: true
+  train_sample_limit: 24
+  val_sample_limit: 8
+
+experiment:
+  surface: smoke
+  ablation_id: A5-iou-gibbs-softce-support2
+  claim_scope: smoke

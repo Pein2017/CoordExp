@@ -166,13 +166,33 @@ _TRAINING_INTERNAL_KEYS: set[str] = {
     "packing_length_precompute_workers",
     "encoded_sample_cache",
     "static_packing_cache",
-    "checkpoint_mode",
+    "save_model_only",
 }
 
 
 @lru_cache(maxsize=1)
 def _training_allowed_keys() -> set[str]:
     return set(_train_arguments_allowed_keys()) | set(_TRAINING_INTERNAL_KEYS)
+
+
+def _validate_training_checkpoint_keys(data: Mapping[str, Any]) -> None:
+    if "save_only_model" in data:
+        raise ValueError(
+            "training.save_only_model is an upstream/internal knob and is unsupported "
+            "in CoordExp YAML. Use training.save_model_only=true for restartable "
+            "checkpoints or false for inference-only checkpoints."
+        )
+    if "checkpoint_mode" in data:
+        raise ValueError(
+            "training.checkpoint_mode is deprecated and unsupported in CoordExp YAML. "
+            "Use training.save_model_only=true for restartable checkpoints or false "
+            "for inference-only checkpoints."
+        )
+    if "save_model_only" in data and not isinstance(data.get("save_model_only"), bool):
+        raise ValueError(
+            "training.save_model_only must be a boolean true/false value, "
+            f"got {data.get('save_model_only')!r}"
+        )
 
 
 @lru_cache(maxsize=1)
@@ -3160,11 +3180,9 @@ def _latest_detection_validate_framework_mapping(
 
 
 def _latest_detection_validate_training_mapping(value: Any) -> dict[str, Any]:
-    data = _latest_detection_validate_framework_mapping(
-        value,
-        path="training",
-        allowed=_training_allowed_keys(),
-    )
+    data = _latest_detection_validate_runtime_mapping(value, path="training")
+    _validate_training_checkpoint_keys(data)
+    _validate_section_keys_strict("training", data, allowed=_training_allowed_keys())
     if "packing_length" in data:
         raise ValueError(
             "training.packing_length is deprecated and unsupported. "
@@ -3911,6 +3929,57 @@ class LatestDetectionExperimentConfig:
 
 
 @dataclass(frozen=True)
+class CoordSoftCEConfig:
+    enabled: bool
+    target_distribution: Literal["iou_gibbs_v0", "ciou_gibbs_v0"]
+    tau: float
+    tau_source: Literal["train_one_token_iou_median_v0"]
+    weighting: Literal["preserve_recursive_support_balance"] = (
+        "preserve_recursive_support_balance"
+    )
+    replace_coord_hard_ce: bool = True
+    apply_to_multi_positive: Literal["support_mixture"] = "support_mixture"
+
+    def __post_init__(self) -> None:
+        _latest_detection_validate_bool(
+            self.enabled,
+            path="objective.coord_soft_ce.enabled",
+        )
+        _latest_detection_validate_choice(
+            self.target_distribution,
+            path="objective.coord_soft_ce.target_distribution",
+            allowed={"iou_gibbs_v0", "ciou_gibbs_v0"},
+        )
+        if not isinstance(self.tau, (int, float)) or isinstance(self.tau, bool):
+            raise TypeError("objective.coord_soft_ce.tau must be numeric")
+        if not math.isfinite(float(self.tau)) or float(self.tau) <= 0.0:
+            raise ValueError("objective.coord_soft_ce.tau must be finite and > 0")
+        _latest_detection_validate_choice(
+            self.tau_source,
+            path="objective.coord_soft_ce.tau_source",
+            allowed={"train_one_token_iou_median_v0"},
+        )
+        _latest_detection_validate_choice(
+            self.weighting,
+            path="objective.coord_soft_ce.weighting",
+            allowed={"preserve_recursive_support_balance"},
+        )
+        _latest_detection_validate_bool(
+            self.replace_coord_hard_ce,
+            path="objective.coord_soft_ce.replace_coord_hard_ce",
+        )
+        if not self.replace_coord_hard_ce:
+            raise ValueError(
+                "objective.coord_soft_ce.replace_coord_hard_ce=false is unsupported"
+            )
+        _latest_detection_validate_choice(
+            self.apply_to_multi_positive,
+            path="objective.coord_soft_ce.apply_to_multi_positive",
+            allowed={"support_mixture"},
+        )
+
+
+@dataclass(frozen=True)
 class DetectionObjectiveConfig:
     id: Literal["sft", "recursive_detection_ce"]
     variant: Literal[
@@ -3929,6 +3998,7 @@ class DetectionObjectiveConfig:
     boundary: Optional[AppendBoundaryConfig] = None
     type_gate: Optional[CompactTypeGateConfig] = None
     eos: Optional[EosPriorConfig] = None
+    coord_soft_ce: Optional[CoordSoftCEConfig] = None
 
     def __post_init__(self) -> None:
         _latest_detection_validate_choice(
@@ -4053,6 +4123,15 @@ class DetectionObjectiveConfig:
                 "objective.id=recursive_detection_ce requires a recursive detection "
                 "objective.variant"
             )
+        if self.coord_soft_ce is not None:
+            if self.id != "recursive_detection_ce" or self.variant not in {
+                "random_permutation_et_rmp_ce",
+                "prefix_rollin_et_rmp_ce",
+            }:
+                raise ValueError(
+                    "objective.coord_soft_ce is only supported for latest "
+                    "recursive_detection_ce ET-RMP variants"
+                )
         for field_name in ("state_weighting", "normalization"):
             if not isinstance(getattr(self, field_name), str):
                 raise TypeError(f"objective.{field_name} must be a string")
@@ -4069,7 +4148,28 @@ class DetectionObjectiveConfig:
 
     @classmethod
     def from_mapping(cls, payload: Any) -> "DetectionObjectiveConfig":
-        if isinstance(payload, Mapping) and payload.get("variant") == "prefix_rollin_et_rmp_ce":
+        if isinstance(payload, Mapping):
+            raw_coord_soft_ce = payload.get("coord_soft_ce")
+            if raw_coord_soft_ce is not None:
+                if not isinstance(raw_coord_soft_ce, Mapping):
+                    raise TypeError("objective.coord_soft_ce must be a mapping")
+                for deprecated_key in (
+                    "sigma",
+                    "truncate",
+                    "target_sigma",
+                    "target_truncate",
+                    "window",
+                    "radius",
+                ):
+                    if deprecated_key in raw_coord_soft_ce:
+                        raise ValueError(
+                            f"objective.coord_soft_ce.{deprecated_key} is deprecated; "
+                            "use iou_gibbs_v0 or ciou_gibbs_v0"
+                        )
+        if (
+            isinstance(payload, Mapping)
+            and payload.get("variant") == "prefix_rollin_et_rmp_ce"
+        ):
             forbidden = [
                 f"objective.{key}"
                 for key in (
@@ -4400,6 +4500,7 @@ class TrainingConfig:
                 "training.packing_length is deprecated and unsupported. "
                 "Remove it and set global_max_length/template.max_length instead."
             )
+        _validate_training_checkpoint_keys(training)
         _validate_section_keys_strict(
             "training", training, allowed=_training_allowed_keys()
         )

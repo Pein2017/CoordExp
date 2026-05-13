@@ -254,13 +254,13 @@ What to expect:
   that a run used `parameterization: center_size` lives in `resolved_config.json`
   rather than a new artifact family
 
-Checkpoint-mode note:
+Checkpoint restart note:
 
-- `training.checkpoint_mode: artifact_only` remains the default and preserves the
-  existing lightweight artifact posture.
-- `training.checkpoint_mode: restartable` is an explicit opt-in that requires
-  optimizer, scheduler, RNG, trainer-state, and repo-owned runtime-sidecar
-  artifacts so resume preflight can fail fast on incomplete checkpoints.
+- `training.save_model_only: true` writes restartable checkpoints with
+  optimizer, scheduler, RNG, trainer-state, tokenizer, and repo-owned runtime
+  sidecars so resume preflight can fail fast on incomplete checkpoints.
+- `training.save_model_only: false` writes inference-only artifacts and accepts
+  that interruption may require restarting from the base checkpoint.
 
 Rollout-aligned note:
 

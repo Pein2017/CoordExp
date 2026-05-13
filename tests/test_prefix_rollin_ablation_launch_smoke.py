@@ -31,6 +31,7 @@ from src.detection.runtime import (
 from src.sft import (
     EncodedSampleCacheRuntimeConfig,
     PackingRuntimeConfig,
+    _apply_checkpoint_mode,
     _build_effective_runtime_payload,
     _parse_packing_config,
 )
@@ -526,6 +527,7 @@ def test_prefix_rollin_ablation_launch_smoke_covers_config_dataset_loss_and_mani
         deepspeed=None,
         resume_from_checkpoint=None,
     )
+    _apply_checkpoint_mode(train_args, checkpoint_mode="artifact_only")
     packing_cfg = PackingRuntimeConfig(enabled=False, eval_packing=False)
     effective_runtime = _build_effective_runtime_payload(
         training_config=cfg,
@@ -598,6 +600,8 @@ def test_prefix_rollin_ablation_launch_smoke_covers_config_dataset_loss_and_mani
 
     effective = json.loads((output_dir / "effective_runtime.json").read_text("utf-8"))
     assert effective["runtime"]["checkpoint_mode"] == "artifact_only"
+    assert effective["runtime"]["save_model_only"] is False
+    assert effective["runtime"]["hf_save_only_model"] is True
     assert effective["runtime"]["max_steps"] == 1
     assert effective["runtime"]["effective_batch_size"] == 1
     assert effective["runtime"]["effective_batch_size_source"] == (
@@ -709,6 +713,7 @@ def test_prefix_rollin_bsz8_configs_record_eval_and_disabled_packing_runtime() -
             resume_from_checkpoint=None,
             max_model_len=cfg.template.get("max_length", 0),
         )
+        _apply_checkpoint_mode(train_args, checkpoint_mode="artifact_only")
         packing_cfg = _parse_packing_config(
             cfg.training,
             template=SimpleNamespace(max_length=cfg.template.get("max_length", 0)),
