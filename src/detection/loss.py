@@ -13,6 +13,7 @@ import torch.nn.functional as F
 from src.detection.coord_soft_targets import (
     CoordSoftTargetCandidate,
     CoordSoftTargetRuntimeConfig,
+    full_vocab_coord_soft_ce,
     full_vocab_coord_support_balance_ce,
 )
 from src.detection.objective import RecursiveDetectionTargets, SemanticRole
@@ -42,6 +43,7 @@ _IMAGE_MIXTURE_WEIGHTS = {
     "boundary": 0.30,
     "schema": 0.10,
 }
+_COORD_SLOT_INDEX = {"x1": 0, "y1": 1, "x2": 2, "y2": 3}
 _SPAN_CATEGORY_TO_CANONICAL_SEGMENT = {
     "schema": "schema",
     "desc_text": "description",
@@ -367,20 +369,42 @@ def _recursive_objective_diagnostic_events(
                 span_category = _span_category_for_semantic_role(
                     _role_for_target(target)
                 )
-                if weights.coord_soft_ce is not None and _coord_soft_ce_applies(target):
-                    if target.kind == "trie_multi_positive":
-                        _validate_trie_multi_positive_target(
+                if weights.coord_soft_ce is not None and _coord_soft_ce_applies(
+                    target, weights.coord_soft_ce
+                ):
+                    if _coord_soft_target_distribution_name(
+                        weights.coord_soft_ce
+                    ) == "instance_trie_gaussian":
+                        (
+                            candidates,
+                            current_slot,
+                            teacher_prefix_values,
+                        ) = _instance_trie_gaussian_candidates(
                             target,
-                            vocab_size=vocab_size,
+                            weights.coord_soft_ce,
                         )
-                    candidates = _coord_soft_target_candidates(target)
-                    coord_result = full_vocab_coord_support_balance_ce(
-                        metric_logits[batch_index, target.position - 1],
-                        candidates,
-                        weights.coord_soft_ce,
-                        support_weight=float(weights.support_weight),
-                        balance_weight=float(weights.balance_weight),
-                    )
+                        coord_result = full_vocab_coord_soft_ce(
+                            metric_logits[batch_index, target.position - 1],
+                            candidates,
+                            weights.coord_soft_ce,
+                            current_slot=current_slot,
+                            teacher_prefix_values=teacher_prefix_values,
+                        )
+                    else:
+                        if target.kind == "trie_multi_positive":
+                            _validate_trie_multi_positive_target(
+                                target,
+                                vocab_size=vocab_size,
+                            )
+                        candidates = _coord_soft_target_candidates(target)
+                        current_slot = None
+                        coord_result = full_vocab_coord_support_balance_ce(
+                            metric_logits[batch_index, target.position - 1],
+                            candidates,
+                            weights.coord_soft_ce,
+                            support_weight=float(weights.support_weight),
+                            balance_weight=float(weights.balance_weight),
+                        )
                     for metric_name, metric_value in (
                         ("weighted_loss", coord_result.weighted_loss),
                         ("support_loss", coord_result.support_loss),
@@ -406,6 +430,26 @@ def _recursive_objective_diagnostic_events(
                                 metric_value,
                             )
                         )
+                    if current_slot is not None:
+                        for metric_name, metric_value in (
+                            ("posterior_entropy", coord_result.posterior_entropy),
+                            ("posterior_top1", coord_result.posterior_top1),
+                            (
+                                "effective_candidate_count",
+                                coord_result.effective_candidate_count,
+                            ),
+                            ("target_entropy", coord_result.target_entropy),
+                            ("target_peak_prob", coord_result.peak_prob),
+                        ):
+                            if metric_value is None:
+                                continue
+                            events.append(
+                                _event(
+                                    "recursive_detection_ce/coord_soft_ce/"
+                                    f"{current_slot}/{metric_name}",
+                                    metric_value,
+                                )
+                            )
                     events.append(
                         _event("recursive_detection_ce/coord_soft_ce/enabled", 1.0)
                     )
@@ -967,16 +1011,34 @@ def _compute_sample_loss(
             label="teacher token id",
         )
         step_log_probs = _log_softmax_loss(logits[target.position - 1], dim=-1)
-        if weights.coord_soft_ce is not None and _coord_soft_ce_applies(target):
-            if target.kind == "trie_multi_positive":
-                _validate_trie_multi_positive_target(target, vocab_size=vocab_size)
-            coord_result = full_vocab_coord_support_balance_ce(
-                logits[target.position - 1],
-                _coord_soft_target_candidates(target),
-                weights.coord_soft_ce,
-                support_weight=float(weights.support_weight),
-                balance_weight=float(weights.balance_weight),
-            )
+        if weights.coord_soft_ce is not None and _coord_soft_ce_applies(
+            target, weights.coord_soft_ce
+        ):
+            if _coord_soft_target_distribution_name(
+                weights.coord_soft_ce
+            ) == "instance_trie_gaussian":
+                (
+                    coord_candidates,
+                    current_slot,
+                    teacher_prefix_values,
+                ) = _instance_trie_gaussian_candidates(target, weights.coord_soft_ce)
+                coord_result = full_vocab_coord_soft_ce(
+                    logits[target.position - 1],
+                    coord_candidates,
+                    weights.coord_soft_ce,
+                    current_slot=current_slot,
+                    teacher_prefix_values=teacher_prefix_values,
+                )
+            else:
+                if target.kind == "trie_multi_positive":
+                    _validate_trie_multi_positive_target(target, vocab_size=vocab_size)
+                coord_result = full_vocab_coord_support_balance_ce(
+                    logits[target.position - 1],
+                    _coord_soft_target_candidates(target),
+                    weights.coord_soft_ce,
+                    support_weight=float(weights.support_weight),
+                    balance_weight=float(weights.balance_weight),
+                )
             position_loss = coord_result.weighted_loss
             per_position_main_losses[target.position] = _loss_float(position_loss)
             per_position_losses[target.position] = _apply_type_gate_loss(
@@ -1050,7 +1112,27 @@ def _coord_soft_target_candidates(
     )
 
 
-def _coord_soft_ce_applies(target: object) -> bool:
+def _coord_soft_target_distribution_name(
+    cfg: CoordSoftTargetRuntimeConfig,
+) -> str:
+    return str(getattr(cfg, "target_distribution", ""))
+
+
+def _coord_soft_ce_applies(
+    target: object,
+    cfg: CoordSoftTargetRuntimeConfig,
+) -> bool:
+    if _coord_soft_target_distribution_name(cfg) == "instance_trie_gaussian":
+        token_role = _target_token_role_value(target)
+        specs = tuple(getattr(target, "coord_instance_candidates", ()) or ())
+        if specs and token_role != "coord":
+            raise ValueError(
+                "TokenTarget.coord_instance_candidates may only be attached to "
+                "coord token targets; got token_role="
+                f"{token_role!r} at position {getattr(target, 'position', '?')}"
+            )
+        return token_role == "coord"
+
     specs = tuple(getattr(target, "coord_soft_targets", ()) or ())
     token_role = _target_token_role_value(target)
     if specs:
@@ -1067,6 +1149,150 @@ def _coord_soft_ce_applies(target: object) -> bool:
             "TokenTarget.coord_soft_targets is empty"
         )
     return False
+
+
+def _instance_trie_gaussian_candidates(
+    target: object,
+    cfg: CoordSoftTargetRuntimeConfig,
+) -> tuple[tuple[CoordSoftTargetCandidate, ...], str, dict[str, int]]:
+    specs = tuple(getattr(target, "coord_instance_candidates", ()) or ())
+    if not specs:
+        raise ValueError(
+            "instance_trie_gaussian coordinate TokenTarget.coord_instance_candidates "
+            "is empty"
+        )
+
+    slot_name = getattr(target, "coord_slot_name", None)
+    if slot_name is None:
+        raise ValueError(
+            "TokenTarget.coord_slot_name is required for instance_trie_gaussian"
+        )
+    slot_name = str(getattr(slot_name, "value", slot_name))
+    if slot_name not in _COORD_SLOT_INDEX:
+        raise ValueError(
+            f"TokenTarget.coord_slot_name unsupported for instance_trie_gaussian: "
+            f"{slot_name!r}"
+        )
+
+    teacher_object_id = getattr(target, "object_instance_id", None)
+    if not isinstance(teacher_object_id, str) or not teacher_object_id:
+        raise ValueError(
+            "TokenTarget.object_instance_id is required for instance_trie_gaussian "
+            "coordinate targets"
+        )
+
+    teacher_token_id = int(getattr(target, "teacher_token_id"))
+    coord_token_start = int(cfg.coord_token_start)
+    coord_token_end = int(cfg.coord_token_end)
+    if teacher_token_id < coord_token_start or teacher_token_id > coord_token_end:
+        raise ValueError(
+            "instance_trie_gaussian teacher token id is outside the resolved "
+            f"coord token range [{coord_token_start}, {coord_token_end}]"
+        )
+
+    coord_value_min = 0
+    coord_value_max = int(cfg.coord_bins) - 1
+    candidates: list[CoordSoftTargetCandidate] = []
+    teacher_bboxes: list[tuple[int, int, int, int]] = []
+    object_id_counts: dict[str, int] = {}
+    for spec in specs:
+        object_id = getattr(spec, "object_instance_id", None)
+        if not isinstance(object_id, str) or not object_id:
+            raise ValueError(
+                "CoordInstanceCandidateSpec candidate object_instance_id must be "
+                "a non-empty string"
+            )
+        object_id_counts[object_id] = object_id_counts.get(object_id, 0) + 1
+
+        bbox = getattr(spec, "bbox_xyxy", None)
+        if not isinstance(bbox, tuple) or len(bbox) != 4:
+            raise ValueError(
+                "CoordInstanceCandidateSpec candidate bbox must be a "
+                "four-integer xyxy tuple"
+            )
+        if not all(
+            isinstance(value, int) and not isinstance(value, bool) for value in bbox
+        ):
+            raise ValueError(
+                "CoordInstanceCandidateSpec candidate bbox has non-integer "
+                "coordinates"
+            )
+        bbox_xyxy = tuple(int(value) for value in bbox)
+        if not all(coord_value_min <= value <= coord_value_max for value in bbox_xyxy):
+            raise ValueError(
+                "CoordInstanceCandidateSpec candidate bbox coordinate outside "
+                "resolved value domain "
+                f"[{coord_value_min}, {coord_value_max}]"
+            )
+        x1, y1, x2, y2 = bbox_xyxy
+        if not (x1 < x2 and y1 < y2):
+            raise ValueError(
+                "CoordInstanceCandidateSpec candidate bbox violates x1<x2/y1<y2"
+            )
+
+        if object_id == teacher_object_id:
+            teacher_bboxes.append(bbox_xyxy)
+        candidates.append(
+            CoordSoftTargetCandidate(
+                object_instance_id=object_id,
+                slot_name=slot_name,  # type: ignore[arg-type]
+                bbox_xyxy=bbox_xyxy,
+                probability=1.0,
+            )
+        )
+
+    duplicate_object_ids = tuple(
+        object_id for object_id, count in object_id_counts.items() if count > 1
+    )
+    if duplicate_object_ids and any(
+        object_id != teacher_object_id for object_id in duplicate_object_ids
+    ):
+        raise ValueError(
+            "TokenTarget.coord_instance_candidates object_instance_id values "
+            f"must be unique; duplicate ids: {duplicate_object_ids}"
+        )
+    if not teacher_bboxes:
+        raise ValueError(
+            "instance_trie_gaussian teacher object_instance_id is absent from "
+            "coord_instance_candidates"
+        )
+    if len(teacher_bboxes) > 1:
+        raise ValueError(
+            "instance_trie_gaussian teacher object_instance_id appears more than "
+            "once in coord_instance_candidates"
+        )
+
+    teacher_bbox = teacher_bboxes[0]
+    teacher_coord_value = teacher_token_id - coord_token_start
+    expected_coord_value = teacher_bbox[_COORD_SLOT_INDEX[slot_name]]
+    if teacher_coord_value != expected_coord_value:
+        raise ValueError(
+            "instance_trie_gaussian teacher token id does not match teacher "
+            f"candidate bbox {slot_name}: token value {teacher_coord_value}, "
+            f"bbox value {expected_coord_value}"
+        )
+
+    return (
+        tuple(candidates),
+        slot_name,
+        _teacher_prefix_values_for_slot(slot_name, teacher_bbox),
+    )
+
+
+def _teacher_prefix_values_for_slot(
+    slot_name: str,
+    teacher_bbox: tuple[int, int, int, int],
+) -> dict[str, int]:
+    x1, y1, x2, _y2 = teacher_bbox
+    if slot_name == "x1":
+        return {}
+    if slot_name == "y1":
+        return {"x1": x1}
+    if slot_name == "x2":
+        return {"x1": x1, "y1": y1}
+    if slot_name == "y2":
+        return {"x1": x1, "y1": y1, "x2": x2}
+    raise ValueError(f"unsupported coordinate slot {slot_name!r}")
 
 
 def _target_token_role_value(target: object) -> str | None:

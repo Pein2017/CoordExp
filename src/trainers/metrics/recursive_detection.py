@@ -141,19 +141,26 @@ class RecursiveDetectionCEMixin:
                 }
             )
             if weights.coord_soft_ce is not None:
-                reporter.update_many(
-                    {
-                        "recursive_detection_ce/coord_soft_ce/tau": float(
-                            weights.coord_soft_ce.tau
-                        ),
-                        "recursive_detection_ce/coord_soft_ce/coord_token_start": float(
-                            weights.coord_soft_ce.coord_token_start
-                        ),
-                        "recursive_detection_ce/coord_soft_ce/coord_token_end": float(
-                            weights.coord_soft_ce.coord_token_end
-                        ),
-                    }
-                )
+                coord_soft_ce_updates = {
+                    "recursive_detection_ce/coord_soft_ce/is_instance_trie_gaussian": float(
+                        1.0
+                        if weights.coord_soft_ce.target_distribution
+                        == "instance_trie_gaussian"
+                        else 0.0
+                    ),
+                    "recursive_detection_ce/coord_soft_ce/coord_token_start": float(
+                        weights.coord_soft_ce.coord_token_start
+                    ),
+                    "recursive_detection_ce/coord_soft_ce/coord_token_end": float(
+                        weights.coord_soft_ce.coord_token_end
+                    ),
+                }
+                tau = getattr(weights.coord_soft_ce, "tau", None)
+                if tau is not None:
+                    coord_soft_ce_updates["recursive_detection_ce/coord_soft_ce/tau"] = (
+                        float(tau)
+                    )
+                reporter.update_many(coord_soft_ce_updates)
             reporter.update_many(metric_event_logs)
 
         best_effort(

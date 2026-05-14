@@ -151,6 +151,14 @@ class CoordSoftTargetSpec:
 
 
 @dataclass(frozen=True)
+class CoordInstanceCandidateSpec:
+    object_instance_id: str
+    bbox_xyxy: tuple[int, int, int, int]
+    branch_key: str | None = None
+    source_record_id: str | None = None
+
+
+@dataclass(frozen=True)
 class TokenTarget:
     position: int
     teacher_token_id: int
@@ -166,6 +174,8 @@ class TokenTarget:
     type_gate_token_ids: tuple[int, ...] = ()
     type_gate_weight: float = 0.0
     coord_soft_targets: tuple[CoordSoftTargetSpec, ...] = ()
+    coord_instance_candidates: tuple[CoordInstanceCandidateSpec, ...] = ()
+    coord_slot_name: CoordSlotName | None = None
 
     @property
     def valid_token_ids(self) -> tuple[int, ...]:
@@ -1311,6 +1321,8 @@ def _append_recursive_entry_targets(
         )
 
     node = trie_root
+    coord_block_candidate_instances: tuple[_TrieObjectInstance, ...] | None = None
+    coord_block_candidates: tuple[CoordInstanceCandidateSpec, ...] = ()
     for offset, teacher_token_id in enumerate(teacher_token_ids):
         position = entry.trie_eligible_span.start + offset
         coord_slot_name = _coord_slot_name_for_position(entry, position)
@@ -1341,6 +1353,11 @@ def _append_recursive_entry_targets(
             if len(trie_branch_targets) > 1
             else "hard_ce"
         )
+        if coord_slot_name is not None and coord_block_candidate_instances is None:
+            coord_block_candidate_instances = tuple(node.descendant_instances)
+            coord_block_candidates = _coord_instance_candidates_for_instances(
+                coord_block_candidate_instances
+            )
         token_targets.append(
             TokenTarget(
                 position=position,
@@ -1357,6 +1374,10 @@ def _append_recursive_entry_targets(
                     if coord_slot_name is not None
                     else ()
                 ),
+                coord_instance_candidates=(
+                    coord_block_candidates if coord_slot_name is not None else ()
+                ),
+                coord_slot_name=coord_slot_name,
             )
         )
         node = node.children[teacher_token_id]
@@ -1733,6 +1754,18 @@ def _coord_soft_targets_for_instances(
             slot_name=slot_name,
             bbox_xyxy=instance.bbox_xyxy,
             probability=probability,
+        )
+        for instance in instances
+    )
+
+
+def _coord_instance_candidates_for_instances(
+    instances: Sequence[_TrieObjectInstance],
+) -> tuple[CoordInstanceCandidateSpec, ...]:
+    return tuple(
+        CoordInstanceCandidateSpec(
+            object_instance_id=instance.object_instance_id,
+            bbox_xyxy=instance.bbox_xyxy,
         )
         for instance in instances
     )

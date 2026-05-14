@@ -375,15 +375,16 @@ def _resolve_coord_soft_ce_runtime_config(
     raw_cfg = field_getter(objective, "coord_soft_ce")
     if raw_cfg is None or not bool(field_getter(raw_cfg, "enabled")):
         return None
-    if field_getter(raw_cfg, "replace_coord_hard_ce") is not True:
-        raise ValueError("objective.coord_soft_ce.replace_coord_hard_ce must be true")
 
     coord_group = None
-    for group in training_config.token_rows.groups.values():
-        role = getattr(group.role, "value", group.role)
-        if str(role) == "coord_geometry":
-            coord_group = group
-            break
+    groups = getattr(training_config.token_rows, "groups", {})
+    coord_group = groups.get("coord_geometry") if isinstance(groups, Mapping) else None
+    if coord_group is None:
+        for group in training_config.token_rows.groups.values():
+            role = getattr(group.role, "value", group.role)
+            if str(role) == "coord_geometry":
+                coord_group = group
+                break
     if coord_group is None:
         raise ValueError(
             "objective.coord_soft_ce requires a token_rows coord_geometry group"
@@ -393,8 +394,18 @@ def _resolve_coord_soft_ce_runtime_config(
             "objective.coord_soft_ce requires token_rows coord_geometry expected_start/end"
         )
 
+    target_distribution = str(field_getter(raw_cfg, "target_distribution"))
+    if target_distribution == "instance_trie_gaussian":
+        return CoordSoftTargetRuntimeConfig(
+            target_distribution="instance_trie_gaussian",
+            coord_token_start=int(coord_group.expected_start),
+            coord_token_end=int(coord_group.expected_end),
+        )
+
+    if field_getter(raw_cfg, "replace_coord_hard_ce") is not True:
+        raise ValueError("objective.coord_soft_ce.replace_coord_hard_ce must be true")
     return CoordSoftTargetRuntimeConfig(
-        target_distribution=str(field_getter(raw_cfg, "target_distribution")),
+        target_distribution=target_distribution,
         tau=float(field_getter(raw_cfg, "tau")),
         coord_token_start=int(coord_group.expected_start),
         coord_token_end=int(coord_group.expected_end),

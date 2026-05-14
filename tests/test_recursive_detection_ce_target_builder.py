@@ -153,6 +153,27 @@ def _token_texts(tokenizer: SpecialTokenAwareTokenizer, token_ids: tuple[int, ..
     return tuple(tokenizer.token_text(token_id) for token_id in token_ids)
 
 
+def _entry_coord_targets(prepared, object_instance_id: str) -> tuple[object, object, object, object]:
+    targets = _target_map(prepared)
+    entry = next(
+        item
+        for item in prepared.tokenized.object_entries
+        if item.object_instance_id == object_instance_id
+    )
+    return tuple(targets[span.start] for span in entry.coord_spans)
+
+
+def _coord_candidate_ids(target) -> tuple[str, ...]:
+    return tuple(spec.object_instance_id for spec in target.coord_instance_candidates)
+
+
+def _coord_candidate_tuples(target) -> tuple[tuple[str, tuple[int, int, int, int]], ...]:
+    return tuple(
+        (spec.object_instance_id, spec.bbox_xyxy)
+        for spec in target.coord_instance_candidates
+    )
+
+
 def test_compact_shared_object_ref_is_hard_ce_and_first_desc_divergence_is_multi_positive() -> None:
     tokenizer = SpecialTokenAwareTokenizer()
     sample = _sample(
@@ -251,6 +272,265 @@ def test_compact_same_desc_diverges_at_first_coordinate_token() -> None:
     assert tuple(
         spec.probability for spec in first_coord_target.coord_soft_targets
     ) == pytest.approx((0.5, 0.5))
+
+
+def test_coord_instance_candidates_use_same_desc_semantic_branch_only() -> None:
+    tokenizer = SpecialTokenAwareTokenizer()
+    car_a = _object(
+        normalized_index=0,
+        source_index=7,
+        instance_id="img-9:ann-611:src-7",
+        desc="car",
+        coords=("<|coord_10|>", "<|coord_20|>", "<|coord_30|>", "<|coord_40|>"),
+    )
+    car_b = _object(
+        normalized_index=1,
+        source_index=3,
+        instance_id="img-9:ann-612:src-3",
+        desc="car",
+        coords=("<|coord_100|>", "<|coord_200|>", "<|coord_300|>", "<|coord_400|>"),
+    )
+    dog_c = _object(
+        normalized_index=2,
+        source_index=5,
+        instance_id="img-9:ann-613:src-5",
+        desc="dog",
+        coords=("<|coord_110|>", "<|coord_210|>", "<|coord_310|>", "<|coord_410|>"),
+    )
+    sample = _sample(car_a, car_b, dog_c)
+
+    prepared = prepare_detection_training_example(
+        sample,
+        template=CompactFullTemplate(),
+        tokenizer=tokenizer,
+        mode="random_permutation_et_rmp_ce",
+    )
+
+    car_entry_ids = [
+        entry.object_instance_id
+        for entry in prepared.tokenized.object_entries
+        if entry.object_instance_id in {car_a.object_instance_id, car_b.object_instance_id}
+    ]
+    assert car_entry_ids
+    first_car_targets = _entry_coord_targets(prepared, car_entry_ids[0])
+
+    for target in first_car_targets:
+        assert _coord_candidate_ids(target) == (
+            car_a.object_instance_id,
+            car_b.object_instance_id,
+        )
+        assert target.coord_slot_name in {"x1", "y1", "x2", "y2"}
+
+
+def test_coord_instance_candidates_exclude_already_emitted_same_desc_instances() -> None:
+    tokenizer = SpecialTokenAwareTokenizer()
+    car_a = _object(
+        normalized_index=0,
+        source_index=7,
+        instance_id="img-9:ann-621:src-7",
+        desc="car",
+        coords=("<|coord_10|>", "<|coord_20|>", "<|coord_30|>", "<|coord_40|>"),
+    )
+    car_b = _object(
+        normalized_index=1,
+        source_index=3,
+        instance_id="img-9:ann-622:src-3",
+        desc="car",
+        coords=("<|coord_100|>", "<|coord_200|>", "<|coord_300|>", "<|coord_400|>"),
+    )
+    sample = _sample(car_a, car_b)
+
+    prepared = prepare_detection_training_example(
+        sample,
+        template=CompactFullTemplate(),
+        tokenizer=tokenizer,
+        mode="random_permutation_et_rmp_ce",
+    )
+
+    car_entry_ids = [
+        entry.object_instance_id
+        for entry in prepared.tokenized.object_entries
+        if entry.object_instance_id in {car_a.object_instance_id, car_b.object_instance_id}
+    ]
+    assert len(car_entry_ids) == 2
+    second_x1_target = _entry_coord_targets(prepared, car_entry_ids[1])[0]
+
+    assert _coord_candidate_ids(second_x1_target) == (car_entry_ids[1],)
+
+
+def test_coord_instance_candidates_carry_same_semantic_branch_across_coord_block() -> None:
+    tokenizer = SpecialTokenAwareTokenizer()
+    car_a = _object(
+        normalized_index=0,
+        source_index=7,
+        instance_id="img-9:ann-631:src-7",
+        desc="car",
+        coords=(
+            "<|coord_100|>",
+            "<|coord_100|>",
+            "<|coord_200|>",
+            "<|coord_200|>",
+        ),
+    )
+    car_b = _object(
+        normalized_index=1,
+        source_index=3,
+        instance_id="img-9:ann-632:src-3",
+        desc="car",
+        coords=(
+            "<|coord_103|>",
+            "<|coord_101|>",
+            "<|coord_350|>",
+            "<|coord_260|>",
+        ),
+    )
+    sample = _sample(car_a, car_b)
+
+    prepared = prepare_detection_training_example(
+        sample,
+        template=CompactFullTemplate(),
+        tokenizer=tokenizer,
+        mode="random_permutation_et_rmp_ce",
+    )
+
+    first_entry = prepared.tokenized.object_entries[0]
+    coord_targets = _entry_coord_targets(prepared, first_entry.object_instance_id)
+    expected = (
+        (car_a.object_instance_id, (100, 100, 200, 200)),
+        (car_b.object_instance_id, (103, 101, 350, 260)),
+    )
+
+    for target in coord_targets:
+        assert _coord_candidate_tuples(target) == expected
+
+
+def test_coord_instance_candidates_include_teacher_once_for_every_candidate_coord_target() -> None:
+    tokenizer = SpecialTokenAwareTokenizer()
+    sample = _sample(
+        _object(
+            normalized_index=0,
+            source_index=7,
+            instance_id="img-9:ann-641:src-7",
+            desc="car",
+            coords=("<|coord_10|>", "<|coord_20|>", "<|coord_30|>", "<|coord_40|>"),
+        ),
+        _object(
+            normalized_index=1,
+            source_index=3,
+            instance_id="img-9:ann-642:src-3",
+            desc="car",
+            coords=("<|coord_100|>", "<|coord_200|>", "<|coord_300|>", "<|coord_400|>"),
+        ),
+        _object(
+            normalized_index=2,
+            source_index=5,
+            instance_id="img-9:ann-643:src-5",
+            desc="dog",
+            coords=("<|coord_110|>", "<|coord_210|>", "<|coord_310|>", "<|coord_410|>"),
+        ),
+    )
+
+    prepared = prepare_detection_training_example(
+        sample,
+        template=CompactFullTemplate(),
+        tokenizer=tokenizer,
+        mode="random_permutation_et_rmp_ce",
+    )
+
+    assert prepared.recursive_detection_targets is not None
+    candidate_coord_targets = [
+        target
+        for target in prepared.recursive_detection_targets.token_targets
+        if target.coord_instance_candidates
+    ]
+    assert candidate_coord_targets
+    for target in candidate_coord_targets:
+        assert target.coord_slot_name in {"x1", "y1", "x2", "y2"}
+        assert _coord_candidate_ids(target).count(target.object_instance_id) == 1
+
+
+def test_coord_instance_candidates_do_not_leak_across_prepared_examples() -> None:
+    tokenizer = SpecialTokenAwareTokenizer()
+    first_prepared = prepare_detection_training_example(
+        _sample(
+            _object(
+                normalized_index=0,
+                source_index=7,
+                instance_id="img-9:ann-651:src-7",
+                desc="car",
+                coords=(
+                    "<|coord_10|>",
+                    "<|coord_20|>",
+                    "<|coord_30|>",
+                    "<|coord_40|>",
+                ),
+            ),
+            _object(
+                normalized_index=1,
+                source_index=3,
+                instance_id="img-9:ann-652:src-3",
+                desc="car",
+                coords=(
+                    "<|coord_100|>",
+                    "<|coord_200|>",
+                    "<|coord_300|>",
+                    "<|coord_400|>",
+                ),
+            ),
+        ),
+        template=CompactFullTemplate(),
+        tokenizer=tokenizer,
+        mode="random_permutation_et_rmp_ce",
+    )
+    second_prepared = prepare_detection_training_example(
+        _sample(
+            _object(
+                normalized_index=0,
+                source_index=7,
+                instance_id="img-9:ann-651:src-7",
+                desc="car",
+                coords=(
+                    "<|coord_15|>",
+                    "<|coord_25|>",
+                    "<|coord_35|>",
+                    "<|coord_45|>",
+                ),
+            ),
+            _object(
+                normalized_index=1,
+                source_index=3,
+                instance_id="img-9:ann-652:src-3",
+                desc="car",
+                coords=(
+                    "<|coord_105|>",
+                    "<|coord_205|>",
+                    "<|coord_305|>",
+                    "<|coord_405|>",
+                ),
+            ),
+        ),
+        template=CompactFullTemplate(),
+        tokenizer=tokenizer,
+        mode="random_permutation_et_rmp_ce",
+    )
+
+    first_x1 = _entry_coord_targets(
+        first_prepared,
+        first_prepared.tokenized.object_entries[0].object_instance_id,
+    )[0]
+    second_x1 = _entry_coord_targets(
+        second_prepared,
+        second_prepared.tokenized.object_entries[0].object_instance_id,
+    )[0]
+
+    assert _coord_candidate_tuples(first_x1) == (
+        ("img-9:ann-651:src-7", (10, 20, 30, 40)),
+        ("img-9:ann-652:src-3", (100, 200, 300, 400)),
+    )
+    assert _coord_candidate_tuples(second_x1) == (
+        ("img-9:ann-651:src-7", (15, 25, 35, 45)),
+        ("img-9:ann-652:src-3", (105, 205, 305, 405)),
+    )
 
 
 def test_compact_trie_coordinate_soft_ce_uses_coord_metadata_not_semantic_atom() -> None:
