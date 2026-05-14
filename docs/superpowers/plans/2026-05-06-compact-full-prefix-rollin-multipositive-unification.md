@@ -2396,6 +2396,14 @@ same_seen_image_sensitivity_artifact_root
 
 First-pass comparisons may hold optimizer steps fixed, but every claim must also report `seen_image_count` and `supervised_suffix_token_count`. If `supervised_suffix_token_count` differs by more than 5% from the selected baseline, objective-superiority claims require a same-supervised-token sensitivity run. If `seen_image_count` differs by more than 5%, data-exposure claims require a same-seen-image sensitivity run. If GPU hours differ by more than 10%, efficiency claims must report both fixed-step and fixed-compute views. The ablation registry must set `sensitivity_required=true` whenever these thresholds are exceeded and no corresponding artifact root exists.
 
+2026-05-14 correction: this rule applies directly to the A2-vs-A3/A4
+retrospective. A2 supervises the full compact-full sequence, while prefix-rollin
+with `K ~ Uniform[0,N]` supervises about half the object entries per image
+exposure. Therefore A3/A4 are mechanism probes against A2 unless paired with a
+same-supervised-token sensitivity run. The clean EOS ablation is A2+EOS-loosen;
+the fair prefix-rollin ablation is supervised-token-matched A3 or an A2/A3
+mixture.
+
 - [ ] **Step 3: Validate registry rows are linkable**
 
 Each row must point to an existing config path, define `sample_scope` with canonical labels only (`tiny`, `val200`, `limit=200`, `first-200`, `full-val`, `proxy`, `test-dev`), and list the exact required artifact families for the row. Registry validation tests must reject E4 rows without calibration artifacts and reject any row whose required metric/artifact gates are missing.

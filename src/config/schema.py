@@ -861,9 +861,7 @@ class TrainableTokenRowGroupConfig:
 class TrainableTokenRowsConfig:
     enabled: bool = False
     tie_head: bool = True
-    groups: Mapping[str, TrainableTokenRowGroupConfig] = field(
-        default_factory=dict
-    )
+    groups: Mapping[str, TrainableTokenRowGroupConfig] = field(default_factory=dict)
     embed_lr: Optional[float] = None
     head_lr: Optional[float] = None
     weight_decay: float = 0.0
@@ -3111,14 +3109,10 @@ def _latest_detection_find_obsolete_keys(value: Any, *, path: str = "") -> list[
             # `target.support_weight` and `target.balance_weight` are the
             # canonical objectized paths for prefix-rollin; only the flat
             # objective-level aliases remain obsolete.
-            if (
-                normalized in _LATEST_DETECTION_OBSOLETE_KEYS
-                and key_path
-                not in {
-                    "objective.target.support_weight",
-                    "objective.target.balance_weight",
-                }
-            ):
+            if normalized in _LATEST_DETECTION_OBSOLETE_KEYS and key_path not in {
+                "objective.target.support_weight",
+                "objective.target.balance_weight",
+            }:
                 found.append(key_path)
             found.extend(_latest_detection_find_obsolete_keys(raw_value, path=key_path))
     elif isinstance(value, Sequence) and not isinstance(value, (str, bytes, bytearray)):
@@ -3151,9 +3145,7 @@ def _latest_detection_validate_choice(
     value: str, *, path: str, allowed: set[str]
 ) -> None:
     if value not in allowed:
-        raise ValueError(
-            f"{path} must be one of {sorted(allowed)}, got {value!r}"
-        )
+        raise ValueError(f"{path} must be one of {sorted(allowed)}, got {value!r}")
 
 
 def _latest_detection_validate_bool(value: bool, *, path: str) -> None:
@@ -3281,9 +3273,7 @@ def _latest_detection_validate_order_matches_objective(
     objective: DetectionObjectiveConfig,
 ) -> None:
     required_order = (
-        "sorted"
-        if objective.variant == "sorted_sft"
-        else "random_permutation"
+        "sorted" if objective.variant == "sorted_sft" else "random_permutation"
     )
     if data.object_ordering != required_order:
         raise ValueError(
@@ -3299,18 +3289,22 @@ def _latest_detection_validate_prefix_rollin_contract(
     objective: "DetectionObjectiveConfig",
     experiment: "LatestDetectionExperimentConfig | None",
 ) -> None:
-    if objective.variant != "prefix_rollin_et_rmp_ce":
+    if objective.variant != "prefix_rollin_et_rmp_ce" and objective.eos is None:
         return
 
-    if detection_template.id != "compact_full":
+    if (
+        objective.variant == "prefix_rollin_et_rmp_ce"
+        and detection_template.id != "compact_full"
+    ):
         raise ValueError(
             "objective.variant=prefix_rollin_et_rmp_ce requires "
             "detection_template.id=compact_full"
         )
+    if objective.eos is not None and detection_template.id != "compact_full":
+        raise ValueError("objective.eos requires detection_template.id=compact_full")
     if experiment is None:
         raise ValueError(
-            "experiment.surface is required for "
-            "objective.variant=prefix_rollin_et_rmp_ce"
+            f"experiment.surface is required for objective.variant={objective.variant}"
         )
     eos = objective.eos
     if eos is None:
@@ -3324,7 +3318,10 @@ def _latest_detection_validate_prefix_rollin_contract(
             "for experiment.surface=production; use calibrated_formula_ref "
             "with calibration_artifact_ref"
         )
-    if experiment.surface in {"smoke", "ablation"} and source == "calibrated_formula_ref":
+    if (
+        experiment.surface in {"smoke", "ablation"}
+        and source == "calibrated_formula_ref"
+    ):
         raise ValueError(
             "objective.eos.eos_trust_weight.source=calibrated_formula_ref is "
             f"reserved for experiment.surface=production, got {experiment.surface}"
@@ -3405,8 +3402,7 @@ def _latest_detection_validate_token_rows(
         if (
             structural_group.start_token is not None
             or structural_group.end_token is not None
-            or structural_group.tokens
-            != (OBJECT_REF_START_TOKEN, BOX_START_TOKEN)
+            or structural_group.tokens != (OBJECT_REF_START_TOKEN, BOX_START_TOKEN)
             or dict(structural_group.expected_ids) != expected_structural_ids
         ):
             raise ValueError(
@@ -3648,11 +3644,17 @@ class CompactTypeGateWeights:
         for field_name in ("struct", "coord", "desc", "eos"):
             value = getattr(self, field_name)
             if not isinstance(value, (int, float)) or isinstance(value, bool):
-                raise TypeError(f"objective.type_gate.weights.{field_name} must be numeric")
+                raise TypeError(
+                    f"objective.type_gate.weights.{field_name} must be numeric"
+                )
             if not math.isfinite(float(value)):
-                raise ValueError(f"objective.type_gate.weights.{field_name} must be finite")
+                raise ValueError(
+                    f"objective.type_gate.weights.{field_name} must be finite"
+                )
             if float(value) < 0.0:
-                raise ValueError(f"objective.type_gate.weights.{field_name} must be >= 0")
+                raise ValueError(
+                    f"objective.type_gate.weights.{field_name} must be >= 0"
+                )
 
 
 @dataclass(frozen=True)
@@ -3662,7 +3664,9 @@ class CompactTypeGateConfig:
     weights: CompactTypeGateWeights
 
     def __post_init__(self) -> None:
-        _latest_detection_validate_bool(self.enabled, path="objective.type_gate.enabled")
+        _latest_detection_validate_bool(
+            self.enabled, path="objective.type_gate.enabled"
+        )
         _latest_detection_validate_choice(
             self.mode,
             path="objective.type_gate.mode",
@@ -3793,7 +3797,10 @@ class EosTrustWeightConfig:
                     "objective.eos.eos_trust_weight.source=calibrated_formula_ref "
                     "does not accept value"
                 )
-            if self.expected_unlabeled_count is not None or self.trust_mapping is not None:
+            if (
+                self.expected_unlabeled_count is not None
+                or self.trust_mapping is not None
+            ):
                 raise ValueError(
                     "objective.eos.eos_trust_weight.source=calibrated_formula_ref "
                     "does not accept expected_unlabeled_count or trust_mapping"
@@ -3902,7 +3909,9 @@ class LatestDetectionExperimentConfig:
         for field_name in ("ablation_id",):
             value = getattr(self, field_name)
             if value is not None and not isinstance(value, str):
-                raise TypeError(f"experiment.{field_name} must be a string when provided")
+                raise TypeError(
+                    f"experiment.{field_name} must be a string when provided"
+                )
 
     @classmethod
     def from_mapping(
@@ -4104,13 +4113,16 @@ class DetectionObjectiveConfig:
         else:
             unexpected = [
                 name
-                for name in ("rollin", "target", "boundary", "type_gate", "eos")
+                for name in ("rollin", "target", "boundary", "type_gate")
                 if getattr(self, name) is not None
             ]
+            if self.eos is not None and self.variant != "random_permutation_et_rmp_ce":
+                unexpected.append("eos")
             if unexpected:
                 raise ValueError(
                     "objectized objective sections are only supported for "
-                    "objective.variant=prefix_rollin_et_rmp_ce: "
+                    "objective.variant=prefix_rollin_et_rmp_ce, except "
+                    "objective.eos on random_permutation_et_rmp_ce: "
                     f"{unexpected}"
                 )
         if self.id == "sft" and self.variant not in {"sorted_sft", "random_order_sft"}:
@@ -4343,11 +4355,15 @@ class LatestDetectionTrainingConfig:
         data_config = DetectionDataConfig.from_mapping(payload["data"])
         objective = DetectionObjectiveConfig.from_mapping(payload["objective"])
         _latest_detection_validate_order_matches_objective(data_config, objective)
+        if objective.variant == "prefix_rollin_et_rmp_ce":
+            required_experiment_variant = "prefix_rollin_et_rmp_ce"
+        elif objective.eos is not None:
+            required_experiment_variant = "random_permutation_et_rmp_ce"
+        else:
+            required_experiment_variant = None
         experiment = LatestDetectionExperimentConfig.from_mapping(
             payload.get("experiment"),
-            required_for_variant="prefix_rollin_et_rmp_ce"
-            if objective.variant == "prefix_rollin_et_rmp_ce"
-            else None,
+            required_for_variant=required_experiment_variant,
         )
         _latest_detection_validate_prefix_rollin_contract(
             detection_template=detection_template,

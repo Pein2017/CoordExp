@@ -125,7 +125,12 @@ notes:
     title: Compact-Full Coord-Confidence And Stop-Gate Diagnostics
     kind: diagnostic-study
     status: active-reference
-    summary: Root-cause diagnostic for compact-full prefix-rollin training where low loss coexists with conservative decode, covering the HF batched compact-grammar prompt-offset bug, fixed val200 comparison, coord_mean_logprob separation, and A3/A4 follow-up instability.
+    summary: Root-cause diagnostic for compact-full prefix-rollin training where low loss coexists with conservative decode, covering the HF batched compact-grammar prompt-offset bug, fixed val200 comparison, coord_mean_logprob separation, and A3/A4 follow-up instability with mechanism-probe caveats.
+  - path: progress/diagnostics/2026-05-14_a2_eos_loosen_ablation.md
+    title: A2 EOS-Loosen Clean Ablation
+    kind: ablation-tracking-note
+    status: running
+    summary: Tracking note for A2E, the clean A2+EOS-loosen ablation that isolates missing-label-aware EOS trust weighting without prefix-rollin or reduced supervised-token density; exact DDP8 smoke passed and 8-GPU production is running.
   - path: progress/diagnostics/2026-04-29_et_rmp_rp_continuation_bias_hypothesis.md
     title: ET-RMP Continuation Diagnostics Source
     kind: diagnostic-study
@@ -180,7 +185,7 @@ notes:
     title: Compact-Full RP1.10 Top-3 Rollout Union and Unlabeled-Object Prior
     kind: benchmark-study
     status: completed-benchmark
-    summary: Val200 compact-full rp=1.10 top-3 checkpoint ranking plus bbox-only bootstrap-union estimate of unlabeled positives relative to GT count, with A3/A4 prefix-rollin follow-up results and caveats.
+    summary: Val200 compact-full rp=1.10 top-3 checkpoint ranking plus bbox-only bootstrap-union estimate of unlabeled positives relative to GT count, with A3/A4 prefix-rollin follow-up results now caveated as mechanism probes rather than fair A2 challengers.
   - path: progress/benchmarks/2026-04-28_stage1_mp_branch_runtime_packing_probe.md
     title: Stage-1 MP Branch Runtime Packing Probe
     kind: benchmark-study

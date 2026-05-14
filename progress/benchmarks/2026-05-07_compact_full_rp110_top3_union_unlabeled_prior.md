@@ -18,7 +18,8 @@ The main outputs are:
 - the original `val200` compact-full `rp=1.10` top-3 checkpoint comparison
 - a corrected bootstrap-union estimate of unique unlabeled objects
 - an A3/A4 prefix-rollin follow-up that should be treated as unstable
-  diagnostic evidence rather than a replacement for the original top-3 prior
+  diagnostic/mechanism evidence rather than a fair replacement test for A2 or
+  the original top-3 prior
 
 This is a `progress/benchmarks/` note because it is measured evidence with a
 fixed dated scope. It is not a stable current workflow contract.
@@ -57,7 +58,9 @@ primary AP headline.
 This table is the original 2026-05-07 top-3 set used for the bootstrap-union
 unlabeled-object prior. The 2026-05-12 A3/A4 follow-up below is intentionally
 kept separate because those checkpoints show more unstable duplicate/collapse
-behavior and should not be folded into the prior without another gate.
+behavior and because prefix-rollin changes active supervised-token density and
+the objective surface. They should not be folded into the prior without another
+gate.
 
 | Rank | Run | AP | AP50 | AP75 | AR100 | F1@0.50 full micro | Guarded AP |
 |---:|---|---:|---:|---:|---:|---:|---:|
@@ -81,9 +84,9 @@ The ablation labels used in the current discussion are:
 | ID | Objective | Short read |
 |---|---|---|
 | A0 | random SFT hard CE | random-order one-hot baseline |
-| A2 | multi-positive support+balance | older support/balance row; still best compact-full AP here |
-| A3 | prefix-rollin support+balance | prefix-closed rollout objective without EOS-trust prior |
-| A4 | A3 + EOS-trust prior | calibrated weak-EOS objective using the missing-label prior |
+| A2 | multi-positive support+balance | trusted compact-full anchor; still best compact-full AP here |
+| A3 | prefix-rollin support+balance | prefix-rollin mechanism probe without EOS-trust prior |
+| A4 | A3 + EOS-trust prior | EOS loosened only inside the prefix-rollin surface; not A2+EOS loosen |
 
 No equally scoped A1/support-only `val200` artifact was found in the existing
 progress docs at the time of this update. Therefore this note records A3/A4
@@ -95,8 +98,8 @@ against the available A0/A2 comparators and does not invent an A1 result.
 |---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|
 | A0 random SFT | `0.3992` | `0.5577` | `0.4433` | `0.5499` | `0.3714` | `2261` | `~647-652` | `1148` | `0.3827` | `0.5479` | High recall pressure, but heavy duplicate/bad-geometry burden. |
 | A2 support+balance | `0.4247` | `0.5752` | `0.6138` | `0.5409` | `0.7094` | `1140` | `0` | `232` | `0.4116` | `0.6004` | Best compact-full AP and cleanest precision/validity tradeoff so far. |
-| A3 prefix-rollin | `0.3980` | `0.5444` | `0.5597` | `0.4917` | `0.6496` | `1162` | `11` | `301` | `0.3854` | `0.5485` | Cleaner than A4, but lower AP/F1 than A2 and below random-SFT AP. |
-| A4 EOS-trust | `0.4001` | `0.5502` | `0.5612` | `0.5173` | `0.6133` | `1300` | `72` | `401` | `0.3915` | `0.5638` | Opens recall relative to A3, but also opens more duplicate/collapse tail. |
+| A3 prefix-rollin | `0.3980` | `0.5444` | `0.5597` | `0.4917` | `0.6496` | `1162` | `11` | `301` | `0.3854` | `0.5485` | Cleaner than A4; mechanism-probe row, not fair A2 challenger. |
+| A4 EOS-trust | `0.4001` | `0.5502` | `0.5612` | `0.5173` | `0.6133` | `1300` | `72` | `401` | `0.3915` | `0.5638` | Opens recall relative to A3, but also opens more duplicate/collapse tail; clean EOS question requires A2+EOS-loosen. |
 
 A0's invalid/bad-geometry counter is approximate here because the scorer and
 artifact-entry counters use slightly different event accounting. The only
@@ -113,7 +116,9 @@ Training-side metrics do not fully predict free-rollout reliability:
 A4's final training surface is slightly better than A3's, and the EOS-trust
 prior does reduce terminal pressure in teacher-forced probes, but its free
 rollout is less predictable. It has higher recall and guarded F1 than A3, while
-also increasing invalid/border/collapse events.
+also increasing invalid/border/collapse events. This is A4-vs-A3 evidence only:
+it does not isolate whether EOS loosening helps the stable A2 baseline because
+A3/A4 also use prefix-rollin and reduced active object-token supervision.
 
 ### Teacher-Forced Boundary Probe
 
@@ -197,7 +202,9 @@ The original prior remains based on the previously selected top-3 `rp=1.10`
 compact-full rollout surfaces. A3/A4 are valuable diagnostic evidence about
 prefix-rollin and EOS trust, but their duplicate/collapse behavior makes them a
 poor source for a cleaner unlabeled-object prior without an additional
-confidence and duplicate-risk gate.
+confidence and duplicate-risk gate. The clean EOS ablation is A2+EOS-loosen;
+the fair prefix-rollin ablation is supervised-token-matched A3 or an A2/A3
+mixture.
 
 ## Top-3 Artifact Paths
 
