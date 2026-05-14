@@ -21,7 +21,7 @@ Parent diagnostic note:
 ## Scope
 
 - Checkpoint:
-  `output_remote/stage1_2b/set_continuation/coco1024_sota1332_setcont_et_rmp_ce_v1/setcont-coco1024-sota1332-et-rmp-ce-v1/v0-20260429-022918/checkpoint-300`
+  `outputs/stage1_2b/set_continuation/coco1024_sota1332_setcont_et_rmp_ce_v1/setcont-coco1024-sota1332-et-rmp-ce-v1/v0-20260429-022918/checkpoint-300`
 - Eval slice: `val200`
 - Decode: greedy, `max_new_tokens=3084`
 - Compared settings: `rp=1.10`, `rp=1.15`, `rp=1.18`

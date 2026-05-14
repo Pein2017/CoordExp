@@ -46,7 +46,7 @@ REQUIRED_POSITION_ROLES: tuple[str, ...] = (
     "post_y1",
 )
 
-_HEAVY_RELATIVE_ROOTS = ("output_remote", "output", "public_data")
+_HEAVY_RELATIVE_ROOTS = ("outputs", "output", "public_data")
 _COORD_TOKEN_PREFIX = "<|coord_"
 _COORD_TOKEN_SUFFIX = "|>"
 _SLOT_TO_INDEX = {"x1": 0, "y1": 1, "x2": 2, "y2": 3}
@@ -275,7 +275,7 @@ def resolve_runtime_paths(
 
     Worktrees contain tracked source/config skeletons, not the heavyweight
     checkpoint, prepared COCO data, or durable output roots. Relative paths
-    beginning with output/output_remote/public_data are therefore anchored to
+    beginning with output/outputs/public_data are therefore anchored to
     the shared root, not the worktree root.
     """
 

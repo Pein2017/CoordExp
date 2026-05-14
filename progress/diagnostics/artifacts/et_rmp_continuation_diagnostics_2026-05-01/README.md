@@ -15,7 +15,7 @@ Parent note:
 
 - [../../2026-04-29_et_rmp_rp_continuation_bias_hypothesis.md](../../2026-04-29_et_rmp_rp_continuation_bias_hypothesis.md)
 
-These files are copied summaries from `temp/` and `output_remote/`-adjacent
+These files are copied summaries from `temp/` and `outputs/`-adjacent
 diagnostic runs. The parent note is the canonical source. These artifacts are
 kept so the parent note remains auditable if scratch directories are cleaned.
 

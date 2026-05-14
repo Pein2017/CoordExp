@@ -47,7 +47,7 @@ def test_resolve_runtime_paths_prefers_shared_root_for_heavy_artifacts(
     repo_root = tmp_path / "repo" / ".worktrees" / "binding"
     shared_root = tmp_path / "repo"
     repo_root.mkdir(parents=True)
-    checkpoint = shared_root / "output_remote" / "ckpt"
+    checkpoint = shared_root / "outputs" / "ckpt"
     dataset = shared_root / "public_data" / "coco" / "val.coord.jsonl"
     artifact_root = shared_root / "output" / "analysis" / "study"
     checkpoint.mkdir(parents=True)
@@ -57,7 +57,7 @@ def test_resolve_runtime_paths_prefers_shared_root_for_heavy_artifacts(
 
     resolved = resolve_runtime_paths(
         RuntimePathConfig(
-            checkpoint="output_remote/ckpt",
+            checkpoint="outputs/ckpt",
             dataset_jsonls=("public_data/coco/val.coord.jsonl",),
             artifact_root="output/analysis/study",
         ),
@@ -76,13 +76,13 @@ def test_resolve_runtime_paths_rejects_worktree_checkpoint_shadow(
     repo_root = tmp_path / "repo" / ".worktrees" / "binding"
     shared_root = tmp_path / "repo"
     repo_root.mkdir(parents=True)
-    shadow = repo_root / "output_remote" / "ckpt"
+    shadow = repo_root / "outputs" / "ckpt"
     shadow.mkdir(parents=True)
 
     with pytest.raises(ValueError, match="worktree-local checkpoint"):
         resolve_runtime_paths(
             RuntimePathConfig(
-                checkpoint="output_remote/ckpt",
+                checkpoint="outputs/ckpt",
                 dataset_jsonls=(),
                 artifact_root=str(shared_root / "output" / "analysis" / "study"),
             ),

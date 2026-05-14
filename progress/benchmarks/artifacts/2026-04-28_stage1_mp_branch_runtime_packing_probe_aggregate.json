@@ -1,9 +1,9 @@
 {
   "generated_at": "2026-04-28T09:23:39.883033+00:00",
-  "output_root": "/data/CoordExp/output_remote/stage1_2b/set_continuation_prodlike_benchmark",
+  "output_root": "/data/CoordExp/outputs/stage1_2b/set_continuation_prodlike_benchmark",
   "runs": [
     {
-      "artifact_dir": "/data/CoordExp/output_remote/stage1_2b/set_continuation_prodlike_benchmark/smart_batched_exact_8gpu/prodlike-smart-batched-exact-8gpu/v0-20260428-084922",
+      "artifact_dir": "/data/CoordExp/outputs/stage1_2b/set_continuation_prodlike_benchmark/smart_batched_exact_8gpu/prodlike-smart-batched-exact-8gpu/v0-20260428-084922",
       "branch_runtime_mode": "smart_batched_exact",
       "completed_steps": 6,
       "config_path": "temp/prodlike_smart_8gpu.yaml",
@@ -38,7 +38,7 @@
       "train_samples_per_second_reported": 1.928
     },
     {
-      "artifact_dir": "/data/CoordExp/output_remote/stage1_2b/set_continuation_prodlike_benchmark/online_rankmb_packed_8gpu/prodlike-online-rankmb-packed-8gpu/v0-20260428-085735",
+      "artifact_dir": "/data/CoordExp/outputs/stage1_2b/set_continuation_prodlike_benchmark/online_rankmb_packed_8gpu/prodlike-online-rankmb-packed-8gpu/v0-20260428-085735",
       "branch_runtime_mode": "packed_varlen_exact",
       "completed_steps": 6,
       "config_path": "temp/prodlike_online_rankmb_8gpu.yaml",
@@ -73,7 +73,7 @@
       "train_samples_per_second_reported": 1.836
     },
     {
-      "artifact_dir": "/data/CoordExp/output_remote/stage1_2b/set_continuation_prodlike_benchmark/offline_sample_packed_8gpu/prodlike-offline-sample-packed-8gpu/v0-20260428-090607",
+      "artifact_dir": "/data/CoordExp/outputs/stage1_2b/set_continuation_prodlike_benchmark/offline_sample_packed_8gpu/prodlike-offline-sample-packed-8gpu/v0-20260428-090607",
       "branch_runtime_mode": "packed_varlen_exact",
       "completed_steps": 6,
       "config_path": "temp/prodlike_offline_packed_8gpu.yaml",

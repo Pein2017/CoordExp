@@ -14,8 +14,8 @@ template:
   max_pixels: 1048576
 
 training:
-  output_root: /data/CoordExp/output_remote/stage1_2b/recursive_detection_ce_latest
-  logging_root: /data/CoordExp/output_remote/stage1_2b/recursive_detection_ce_latest/tb
+  output_root: /data/CoordExp/outputs/stage1_2b/recursive_detection_ce_latest
+  logging_root: /data/CoordExp/outputs/stage1_2b/recursive_detection_ce_latest/tb
   artifact_subdir: compact_full_prefix_rollin_et_rmp_ce_balance2_e1
   run_name: compact-full-prefix-rollin-et-rmp-ce-balance2-e1
   num_train_epochs: 4

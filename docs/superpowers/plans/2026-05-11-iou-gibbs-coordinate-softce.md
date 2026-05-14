@@ -1910,7 +1910,7 @@ Smoke/model-diagnosis evidence recorded on 2026-05-11:
   `logging.jsonl`; it did not emit `pipeline_manifest.json` on these smokes.
   Treat that as a P2 artifact-contract gap, not a softCE loss blocker.
 - launch-node filesystem note: A5/A6 inherit the existing production
-  `output_root: /data/CoordExp/output_remote/stage1_2b/recursive_detection_ce_latest`
+  `output_root: /data/CoordExp/outputs/stage1_2b/recursive_detection_ce_latest`
   convention from A2/A3/A4. On this smoke node `/data/CoordExp` is absent,
   while the smoke overlay writes under `temp/`. Before production launch,
   confirm the launch node has this output root or create the standard
@@ -1946,9 +1946,9 @@ Production launch state on 2026-05-11:
     log `temp/prod_launch/a6_ciou_gibbs_prod_20260511_173916.log`.
 - Run roots:
   - A5:
-    `/data/CoordExp/output_remote/stage1_2b/recursive_detection_ce_latest/compact_full_et_rmp_iou_gibbs_softce_a5_support2_bsz16_4gpu_4epoch_tokenrows_v2/compact-full-et-rmp-iou-gibbs-softce-a5-support2-bsz16-4gpu-4epoch-tokenrows-v2/v0-20260511-173957`
+    `/data/CoordExp/outputs/stage1_2b/recursive_detection_ce_latest/compact_full_et_rmp_iou_gibbs_softce_a5_support2_bsz16_4gpu_4epoch_tokenrows_v2/compact-full-et-rmp-iou-gibbs-softce-a5-support2-bsz16-4gpu-4epoch-tokenrows-v2/v0-20260511-173957`
   - A6:
-    `/data/CoordExp/output_remote/stage1_2b/recursive_detection_ce_latest/compact_full_et_rmp_ciou_gibbs_softce_a6_support2_bsz16_4gpu_4epoch_tokenrows_v2/compact-full-et-rmp-ciou-gibbs-softce-a6-support2-bsz16-4gpu-4epoch-tokenrows-v2/v0-20260511-173957`
+    `/data/CoordExp/outputs/stage1_2b/recursive_detection_ce_latest/compact_full_et_rmp_ciou_gibbs_softce_a6_support2_bsz16_4gpu_4epoch_tokenrows_v2/compact-full-et-rmp-ciou-gibbs-softce-a6-support2-bsz16-4gpu-4epoch-tokenrows-v2/v0-20260511-173957`
 - First-step gate passed for both A5 and A6:
   `first_step_end` and `global_step/max_steps = 1/3664` were recorded,
   artifacts were written, and `coord_soft_ce/enabled=1.0` appeared in

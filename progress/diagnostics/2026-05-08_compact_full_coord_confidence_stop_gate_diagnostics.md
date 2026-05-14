@@ -99,17 +99,17 @@ The main surfaces in this note are:
 /data/CoordExp/.worktrees/compact-prefix-rollin-et-rmp-ce/temp/
 ```
 
-2. Existing `val200` selected-token trace artifacts under `output_remote`:
+2. Existing `val200` selected-token trace artifacts under `outputs`:
 
 ```text
-/data/CoordExp/output_remote/infer/recursive_detection_ce_latest/compact_full_support2_tokenrows_v2_ckpt3664_val200_bsz8_temp0_rep1p10_compact_grammar
-/data/CoordExp/output_remote/infer/recursive_detection_ce_latest/compact_full_support2_tokenrows_v2_ckpt3664_val200_bsz8_temp0_rep1p00_compact_grammar
+/data/CoordExp/outputs/infer/recursive_detection_ce_latest/compact_full_support2_tokenrows_v2_ckpt3664_val200_bsz8_temp0_rep1p10_compact_grammar
+/data/CoordExp/outputs/infer/recursive_detection_ce_latest/compact_full_support2_tokenrows_v2_ckpt3664_val200_bsz8_temp0_rep1p00_compact_grammar
 ```
 
-3. Fixed `val200` prompt-offset artifact under `output_remote`:
+3. Fixed `val200` prompt-offset artifact under `outputs`:
 
 ```text
-/data/CoordExp/output_remote/infer/recursive_detection_ce_latest/compact_full_support2_tokenrows_v2_ckpt3664_val200_bsz8_temp0_rep1p10_prompt_offset_fix_8gpu
+/data/CoordExp/outputs/infer/recursive_detection_ce_latest/compact_full_support2_tokenrows_v2_ckpt3664_val200_bsz8_temp0_rep1p10_prompt_offset_fix_8gpu
 ```
 
 Important limitations:
@@ -148,8 +148,8 @@ temp/logprob_confidence_probe/val200_coord_confidence/ckpt3664_rp1p10_val200_pro
 Val200 source roots:
 
 ```text
-output_remote/infer/recursive_detection_ce_latest/compact_full_support2_tokenrows_v2_ckpt3664_val200_bsz8_temp0_rep1p10_compact_grammar
-output_remote/infer/recursive_detection_ce_latest/compact_full_support2_tokenrows_v2_ckpt3664_val200_bsz8_temp0_rep1p00_compact_grammar
+outputs/infer/recursive_detection_ce_latest/compact_full_support2_tokenrows_v2_ckpt3664_val200_bsz8_temp0_rep1p10_compact_grammar
+outputs/infer/recursive_detection_ce_latest/compact_full_support2_tokenrows_v2_ckpt3664_val200_bsz8_temp0_rep1p00_compact_grammar
 ```
 
 Prompt-offset fix smoke outputs:
@@ -163,7 +163,7 @@ Durable fixed val200 config launched after the smoke:
 
 ```text
 configs/infer/recursive_detection_ce_latest/compact_full_support2_tokenrows_v2_ckpt3664_val200_bsz8_rep1p10_prompt_offset_fix.yaml
-output_remote/infer/recursive_detection_ce_latest/compact_full_support2_tokenrows_v2_ckpt3664_val200_bsz8_temp0_rep1p10_prompt_offset_fix_8gpu
+outputs/infer/recursive_detection_ce_latest/compact_full_support2_tokenrows_v2_ckpt3664_val200_bsz8_temp0_rep1p10_prompt_offset_fix_8gpu
 ```
 
 Small-fire checkpoint roots used in the `val32` smoke comparison:
@@ -180,14 +180,14 @@ A3/A4 follow-up artifacts:
 temp/a4_rp110_tf_probe_and_manual_review_20260512/tf_probe_high_ge10_32_summary/summary.md
 temp/a4_rp110_tf_probe_and_manual_review_20260512/manual_audit_a4_vs_a3_image20_v2_pixelgt/manual_audit_a4_vs_a3_image20_v2_pixelgt.csv
 temp/a4_rp110_tf_probe_and_manual_review_20260512/manual_audit_a4_vs_a3_image20_v2_pixelgt/manifest_no_gt.json
-output_remote/infer/recursive_detection_ce_latest/compact_full_prefix_rollin_balance2_a3_ckpt3664_val200_bsz8_temp0_rp1p10_max3084_chatfix_4gpu
-output_remote/infer/recursive_detection_ce_latest/compact_full_prefix_rollin_balance2_a4_eos_ckpt3664_val200_bsz8_temp0_rp1p10_max3084_chatfix_4gpu
+outputs/infer/recursive_detection_ce_latest/compact_full_prefix_rollin_balance2_a3_ckpt3664_val200_bsz8_temp0_rp1p10_max3084_chatfix_4gpu
+outputs/infer/recursive_detection_ce_latest/compact_full_prefix_rollin_balance2_a4_eos_ckpt3664_val200_bsz8_temp0_rp1p10_max3084_chatfix_4gpu
 ```
 
 Baseline adapter checkpoint used for comparison:
 
 ```text
-output_remote/stage1_2b/recursive_detection_ce_latest/compact_full_et_rmp_ce_support2_bsz16_4epoch_tokenrows_v2/compact-full-et-rmp-ce-support2-bsz16-4epoch-tokenrows-v2/v0-20260504-071356/checkpoint-3664
+outputs/stage1_2b/recursive_detection_ce_latest/compact_full_et_rmp_ce_support2_bsz16_4epoch_tokenrows_v2/compact-full-et-rmp-ce-support2-bsz16-4epoch-tokenrows-v2/v0-20260504-071356/checkpoint-3664
 ```
 
 ## Decode Contract Observed
@@ -351,7 +351,7 @@ rerun on first-200 val records with eight GPUs:
 
 ```text
 config = configs/infer/recursive_detection_ce_latest/compact_full_support2_tokenrows_v2_ckpt3664_val200_bsz8_rep1p10_prompt_offset_fix.yaml
-artifact = output_remote/infer/recursive_detection_ce_latest/compact_full_support2_tokenrows_v2_ckpt3664_val200_bsz8_temp0_rep1p10_prompt_offset_fix_8gpu
+artifact = outputs/infer/recursive_detection_ce_latest/compact_full_support2_tokenrows_v2_ckpt3664_val200_bsz8_temp0_rep1p10_prompt_offset_fix_8gpu
 checkpoint = checkpoint-3664
 decode = HF compact_full, temperature 0.0, rp=1.10, batch_size=8
 scope = first 200 COCO val records

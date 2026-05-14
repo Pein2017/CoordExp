@@ -10,7 +10,7 @@
 
 run:
   name: compact_full_support2_tokenrows_v2_ckpt3664_val200_bsz8_temp0_rep1p00_compact_grammar
-  output_dir: /data/CoordExp/output_remote/infer/recursive_detection_ce_latest
+  output_dir: /data/CoordExp/outputs/infer/recursive_detection_ce_latest
 
 stages:
   infer: true
@@ -19,7 +19,7 @@ stages:
 
 infer:
   gt_jsonl: public_data/coco/rescale_32_1024_bbox_max60/val.coord.jsonl
-  model_checkpoint: /data/CoordExp/output_remote/stage1_2b/recursive_detection_ce_latest/compact_full_et_rmp_ce_support2_bsz16_4epoch_tokenrows_v2/compact-full-et-rmp-ce-support2-bsz16-4epoch-tokenrows-v2/v0-20260504-071356/checkpoint-3664
+  model_checkpoint: /data/CoordExp/outputs/stage1_2b/recursive_detection_ce_latest/compact_full_et_rmp_ce_support2_bsz16_4epoch_tokenrows_v2/compact-full-et-rmp-ce-support2-bsz16-4epoch-tokenrows-v2/v0-20260504-071356/checkpoint-3664
 
   prompt_variant: coco_80
   detection_sequence_format: compact_full

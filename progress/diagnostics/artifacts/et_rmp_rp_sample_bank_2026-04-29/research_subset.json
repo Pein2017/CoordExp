@@ -5,8 +5,8 @@
   "scope": {
     "eval_slice": "val200",
     "training_state": "pre-support-mass-enhancement ET-RMP checkpoint",
-    "et_rmp_checkpoint": "output_remote/stage1_2b/set_continuation/coco1024_sota1332_setcont_et_rmp_ce_v1/setcont-coco1024-sota1332-et-rmp-ce-v1/v0-20260429-022918/checkpoint-300",
-    "base_checkpoint_for_future_ablation": "output_remote/stage1_2b/coco_bbox_max60-hard_ce_soft_ce_w1_gate/epoch_4-from-base-2B/v0-20260227-050057/checkpoint-1332-merged-full",
+    "et_rmp_checkpoint": "outputs/stage1_2b/set_continuation/coco1024_sota1332_setcont_et_rmp_ce_v1/setcont-coco1024-sota1332-et-rmp-ce-v1/v0-20260429-022918/checkpoint-300",
+    "base_checkpoint_for_future_ablation": "outputs/stage1_2b/coco_bbox_max60-hard_ce_soft_ce_w1_gate/epoch_4-from-base-2B/v0-20260227-050057/checkpoint-1332-merged-full",
     "base_checkpoint_eval_status": "pending_on_this_subset"
   },
   "selection_policy": {
@@ -17,13 +17,13 @@
   },
   "runs": {
     "rp110": {
-      "artifact": "output_remote/stage1_2b/set_continuation/coco1024_sota1332_setcont_et_rmp_ce_v1/setcont-coco1024-sota1332-et-rmp-ce-v1/v0-20260429-022918/eval_detection/step_0000300/gt_vs_pred_scored.jsonl"
+      "artifact": "outputs/stage1_2b/set_continuation/coco1024_sota1332_setcont_et_rmp_ce_v1/setcont-coco1024-sota1332-et-rmp-ce-v1/v0-20260429-022918/eval_detection/step_0000300/gt_vs_pred_scored.jsonl"
     },
     "rp115": {
-      "artifact": "output_remote/infer/coco1024_val200_et_rmp_ce_step300_rp115/gt_vs_pred_scored.jsonl"
+      "artifact": "outputs/infer/coco1024_val200_et_rmp_ce_step300_rp115/gt_vs_pred_scored.jsonl"
     },
     "rp118": {
-      "artifact": "output_remote/infer/coco1024_val200_et_rmp_ce_step300_rp118/gt_vs_pred_scored.jsonl"
+      "artifact": "outputs/infer/coco1024_val200_et_rmp_ce_step300_rp118/gt_vs_pred_scored.jsonl"
     }
   },
   "core_6": [
