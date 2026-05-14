@@ -1,0 +1,66 @@
+{
+  "created_at": "2026-05-12T16:36:44.147350+00:00",
+  "config": "/data/home/xiaoyan/AIteam/data/CoordExp/.worktrees/a5-iou-gibbs-softce/configs/stage1/recursive_detection_ce_latest/prod/compact_full_support2_iou_gibbs_softce_a5.yaml",
+  "base_config": "",
+  "run_name": "compact-full-et-rmp-iou-gibbs-softce-a5-support2-bsz16-4gpu-4epoch-tokenrows-v2",
+  "output_dir": "/data/CoordExp/outputs/stage1_2b/recursive_detection_ce_latest/compact_full_et_rmp_iou_gibbs_softce_a5_support2_bsz16_4gpu_4epoch_tokenrows_v2/compact-full-et-rmp-iou-gibbs-softce-a5-support2-bsz16-4gpu-4epoch-tokenrows-v2/v0-20260512-163533",
+  "git_sha": "b7d0d1597624284234594d5982dfcc3165e4fb7f",
+  "git_branch": "a5-iou-gibbs-softce",
+  "git_dirty": true,
+  "git_status_porcelain": [
+    "M configs/base.yaml",
+    " M configs/stage1/recursive_detection_ce_latest/prod/compact_full_support2_ciou_gibbs_softce_a6.yaml",
+    " M configs/stage1/recursive_detection_ce_latest/prod/compact_full_support2_iou_gibbs_softce_a5.yaml",
+    " M configs/stage2_two_channel/base.yaml",
+    " M docs/ARTIFACTS.md",
+    " M docs/superpowers/plans/2026-05-11-iou-gibbs-coordinate-softce.md",
+    " M docs/training/STAGE2_RUNBOOK.md",
+    " M scripts/train.sh",
+    " M src/bootstrap/experiment_manifest.py",
+    " M src/config/loader.py",
+    " M src/config/schema.py",
+    " M src/sft.py",
+    " M src/trainers/final_checkpoint.py",
+    " M tests/test_checkpoint_weight_only_policy.py",
+    " M tests/test_experiment_manifest_file.py",
+    " M tests/test_latest_training_config_contract.py",
+    " M tests/test_prefix_rollin_ablation_launch_smoke.py",
+    " M tests/test_run_manifest_files.py",
+    " M tests/test_training_config_strict_unknown_keys.py"
+  ],
+  "dataset_seed": 42,
+  "upstream": {
+    "python": "3.12.11 | packaged by conda-forge | (main, Jun  4 2025, 14:45:31) [GCC 13.3.0]",
+    "conda_env": "base",
+    "transformers": {
+      "version": "4.57.1",
+      "file": "/root/miniconda3/envs/ms/lib/python3.12/site-packages/transformers/__init__.py"
+    },
+    "torch": {
+      "version": "2.8.0+cu128",
+      "file": "/root/miniconda3/envs/ms/lib/python3.12/site-packages/torch/__init__.py"
+    },
+    "vllm": {
+      "version": "0.11.0",
+      "file": "/root/miniconda3/envs/ms/lib/python3.12/site-packages/vllm/__init__.py"
+    },
+    "swift": {
+      "version": "3.10.0.dev0",
+      "file": "/data/home/xiaoyan/AIteam/data/ms-swift/swift/__init__.py"
+    },
+    "ms_swift": {
+      "repo_root": "/data/home/xiaoyan/AIteam/data/ms-swift",
+      "sha": "7ac629a7678b59dfa6ae2de04da90bd80fa1a7b4",
+      "branch": "main",
+      "dirty": false,
+      "status_porcelain": []
+    }
+  },
+  "run_manifest_files": {
+    "resolved_config": "resolved_config.json",
+    "runtime_env": "runtime_env.json",
+    "effective_runtime": "effective_runtime.json",
+    "train_data_provenance": "train_data_provenance.json",
+    "eval_data_provenance": "eval_data_provenance.json"
+  }
+}

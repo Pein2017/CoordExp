@@ -18,7 +18,7 @@ a production recommendation to adopt packed-varlen branch execution.
 ## Scope
 
 - Model: Qwen3-VL-2B coord-token checkpoint
-  `/data/CoordExp/output_remote/stage1_2b/coco_bbox_max60-hard_ce_soft_ce_w1_gate/epoch_4-from-base-2B/v0-20260227-050057/checkpoint-1332-merged-full`
+  `/data/CoordExp/outputs/stage1_2b/coco_bbox_max60-hard_ce_soft_ce_w1_gate/epoch_4-from-base-2B/v0-20260227-050057/checkpoint-1332-merged-full`
 - Data: COCO coord-token train surface
   `/data/CoordExp/public_data/coco/rescale_32_1024_bbox_max60/train.coord.jsonl`
 - GPUs: 8
@@ -73,11 +73,11 @@ adoption.
 - Aggregate JSON:
   [`artifacts/2026-04-28_stage1_mp_branch_runtime_packing_probe_aggregate.json`](artifacts/2026-04-28_stage1_mp_branch_runtime_packing_probe_aggregate.json)
 - Smart artifact:
-  `/data/CoordExp/output_remote/stage1_2b/set_continuation_prodlike_benchmark/smart_batched_exact_8gpu/prodlike-smart-batched-exact-8gpu/v0-20260428-084922`
+  `/data/CoordExp/outputs/stage1_2b/set_continuation_prodlike_benchmark/smart_batched_exact_8gpu/prodlike-smart-batched-exact-8gpu/v0-20260428-084922`
 - Online rank-microbatch packed artifact:
-  `/data/CoordExp/output_remote/stage1_2b/set_continuation_prodlike_benchmark/online_rankmb_packed_8gpu/prodlike-online-rankmb-packed-8gpu/v0-20260428-085735`
+  `/data/CoordExp/outputs/stage1_2b/set_continuation_prodlike_benchmark/online_rankmb_packed_8gpu/prodlike-online-rankmb-packed-8gpu/v0-20260428-085735`
 - Offline sample-packed artifact:
-  `/data/CoordExp/output_remote/stage1_2b/set_continuation_prodlike_benchmark/offline_sample_packed_8gpu/prodlike-offline-sample-packed-8gpu/v0-20260428-090607`
+  `/data/CoordExp/outputs/stage1_2b/set_continuation_prodlike_benchmark/offline_sample_packed_8gpu/prodlike-offline-sample-packed-8gpu/v0-20260428-090607`
 
 ## Recommendation
 

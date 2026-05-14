@@ -211,23 +211,23 @@ mixture.
 Rank 1:
 
 - run:
-  [/data/CoordExp/output_remote/infer/recursive_detection_ce_latest/compact_full_support2_tokenrows_v2_ckpt3664_val200_bsz8_temp0_rep1p10_max3084_chatfix_4gpu](/data/CoordExp/output_remote/infer/recursive_detection_ce_latest/compact_full_support2_tokenrows_v2_ckpt3664_val200_bsz8_temp0_rep1p10_max3084_chatfix_4gpu)
+  [/data/CoordExp/outputs/infer/recursive_detection_ce_latest/compact_full_support2_tokenrows_v2_ckpt3664_val200_bsz8_temp0_rep1p10_max3084_chatfix_4gpu](/data/CoordExp/outputs/infer/recursive_detection_ce_latest/compact_full_support2_tokenrows_v2_ckpt3664_val200_bsz8_temp0_rep1p10_max3084_chatfix_4gpu)
 - checkpoint:
-  `/data/CoordExp/output_remote/stage1_2b/recursive_detection_ce_latest/compact_full_et_rmp_ce_support2_bsz16_4epoch_tokenrows_v2/compact-full-et-rmp-ce-support2-bsz16-4epoch-tokenrows-v2/v0-20260504-071356/checkpoint-3664`
+  `/data/CoordExp/outputs/stage1_2b/recursive_detection_ce_latest/compact_full_et_rmp_ce_support2_bsz16_4epoch_tokenrows_v2/compact-full-et-rmp-ce-support2-bsz16-4epoch-tokenrows-v2/v0-20260504-071356/checkpoint-3664`
 
 Rank 2:
 
 - run:
-  [/data/CoordExp/output_remote/infer/recursive_detection_ce_latest/compact_full_random_sft_bsz1_accum16_ckpt3664_val200_bsz4_temp0_rep1p10_max3084_chatfix_8gpu](/data/CoordExp/output_remote/infer/recursive_detection_ce_latest/compact_full_random_sft_bsz1_accum16_ckpt3664_val200_bsz4_temp0_rep1p10_max3084_chatfix_8gpu)
+  [/data/CoordExp/outputs/infer/recursive_detection_ce_latest/compact_full_random_sft_bsz1_accum16_ckpt3664_val200_bsz4_temp0_rep1p10_max3084_chatfix_8gpu](/data/CoordExp/outputs/infer/recursive_detection_ce_latest/compact_full_random_sft_bsz1_accum16_ckpt3664_val200_bsz4_temp0_rep1p10_max3084_chatfix_8gpu)
 - checkpoint:
-  `/data/CoordExp/output_remote/stage1_2b/recursive_detection_ce_latest/compact_full_random_sft_bsz1_accum16_4epoch_tokenrows_v4_chatfix_max12k/compact-full-random-sft-bsz1-accum16-4epoch-tokenrows-v4-chatfix-max12k/v0-20260506-021259/checkpoint-3664`
+  `/data/CoordExp/outputs/stage1_2b/recursive_detection_ce_latest/compact_full_random_sft_bsz1_accum16_4epoch_tokenrows_v4_chatfix_max12k/compact-full-random-sft-bsz1-accum16-4epoch-tokenrows-v4-chatfix-max12k/v0-20260506-021259/checkpoint-3664`
 
 Rank 3:
 
 - run:
-  [/data/CoordExp/output_remote/infer/recursive_detection_ce_latest/compact_full_random_sft_ckpt2200_val200_bsz4_temp0_rep1p10_max3084_chatfix_4gpu](/data/CoordExp/output_remote/infer/recursive_detection_ce_latest/compact_full_random_sft_ckpt2200_val200_bsz4_temp0_rep1p10_max3084_chatfix_4gpu)
+  [/data/CoordExp/outputs/infer/recursive_detection_ce_latest/compact_full_random_sft_ckpt2200_val200_bsz4_temp0_rep1p10_max3084_chatfix_4gpu](/data/CoordExp/outputs/infer/recursive_detection_ce_latest/compact_full_random_sft_ckpt2200_val200_bsz4_temp0_rep1p10_max3084_chatfix_4gpu)
 - checkpoint:
-  `/data/CoordExp/output_remote/stage1_2b/recursive_detection_ce_latest/compact_full_random_sft_bsz16_4epoch_tokenrows_v2/compact-full-random-sft-bsz16-4epoch-tokenrows-v2/v0-20260505-044157/checkpoint-2200`
+  `/data/CoordExp/outputs/stage1_2b/recursive_detection_ce_latest/compact_full_random_sft_bsz16_4epoch_tokenrows_v2/compact-full-random-sft-bsz16-4epoch-tokenrows-v2/v0-20260505-044157/checkpoint-2200`
 
 Compact machine-readable summary:
 

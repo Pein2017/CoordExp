@@ -12,4 +12,4 @@ defaults:
 
 families:
   - alias: mixed_objective_sota_adapter
-    checkpoint_path: /data/CoordExp/output_remote/stage1_2b/coco_bbox_max60-hard_ce_soft_ce_w1_gate/epoch_4-from-base-2B/v0-20260227-050057/checkpoint-1332
+    checkpoint_path: /data/CoordExp/outputs/stage1_2b/coco_bbox_max60-hard_ce_soft_ce_w1_gate/epoch_4-from-base-2B/v0-20260227-050057/checkpoint-1332

@@ -1,0 +1,118 @@
+{
+  "schema_version": 1,
+  "runtime": {
+    "trainer_variant": "",
+    "dataset_seed": 42,
+    "run_name": "compact-full-et-rmp-iou-gibbs-softce-a5-support2-bsz16-4gpu-4epoch-tokenrows-v2",
+    "output_dir": "/data/CoordExp/outputs/stage1_2b/recursive_detection_ce_latest/compact_full_et_rmp_iou_gibbs_softce_a5_support2_bsz16_4gpu_4epoch_tokenrows_v2/compact-full-et-rmp-iou-gibbs-softce-a5-support2-bsz16-4gpu-4epoch-tokenrows-v2/v0-20260512-163533",
+    "logging_dir": "/data/CoordExp/outputs/stage1_2b/recursive_detection_ce_latest/tb/compact_full_et_rmp_iou_gibbs_softce_a5_support2_bsz16_4gpu_4epoch_tokenrows_v2/compact-full-et-rmp-iou-gibbs-softce-a5-support2-bsz16-4gpu-4epoch-tokenrows-v2",
+    "checkpoint_mode": "restartable",
+    "resume_from_checkpoint": null,
+    "save_model_only": true,
+    "save_only_model": false,
+    "hf_save_only_model": false,
+    "save_strategy": "steps",
+    "save_last_epoch": true,
+    "seed": 42,
+    "per_device_train_batch_size": 16,
+    "per_device_eval_batch_size": 1,
+    "eval_strategy": "steps",
+    "eval_steps": 100,
+    "gradient_accumulation_steps": 2,
+    "world_size": 4,
+    "effective_batch_size": 128,
+    "effective_batch_size_source": "training.effective_batch_size",
+    "actual_global_effective_batch_size": 128,
+    "effective_batch_rounding": "exact",
+    "max_steps": -1,
+    "num_train_epochs": 4.0,
+    "dataloader_drop_last": false,
+    "deepspeed": {
+      "enabled": false,
+      "config": null,
+      "train_args_deepspeed": null
+    },
+    "global_max_length": null,
+    "template_max_length": null,
+    "template_max_pixels": 1048576,
+    "packing": {
+      "enabled": false,
+      "mode": "static",
+      "packing_length": 0,
+      "buffer_size": 512,
+      "min_fill_ratio": 0.65,
+      "drop_last": true,
+      "allow_single_long": true,
+      "eval_packing": false,
+      "wait_timeout_s": 7200.0,
+      "length_precompute_workers": 8
+    },
+    "dataloader": {
+      "group_by_length": false,
+      "length_column_name": "length",
+      "length_bucketing": {
+        "enabled": false,
+        "mode": "none",
+        "length_source": "none",
+        "cache_policy": "none",
+        "sampler_class": "none",
+        "disabled_reason": "training.group_by_length is false"
+      }
+    },
+    "encoded_sample_cache": {
+      "enabled": false,
+      "ineligible_policy": "error",
+      "wait_timeout_s": 7200.0,
+      "max_resident_shards": 4
+    },
+    "dataset_source_train_jsonl": {
+      "raw_path": "public_data/coco/rescale_32_1024_bbox_max60/train.coord.jsonl",
+      "resolved_path": "/data/home/xiaoyan/AIteam/data/CoordExp/public_data/coco/rescale_32_1024_bbox_max60/train.coord.jsonl",
+      "exists": true,
+      "size_bytes": 169492296,
+      "mtime_ns": 1778321096983215107,
+      "sha256_skipped_reason": "file_too_large"
+    },
+    "dataset_source_val_jsonl": {
+      "raw_path": "public_data/coco/rescale_32_1024_bbox_max60/val.coord.jsonl",
+      "resolved_path": "/data/home/xiaoyan/AIteam/data/CoordExp/public_data/coco/rescale_32_1024_bbox_max60/val.coord.jsonl",
+      "exists": true,
+      "size_bytes": 7201583,
+      "mtime_ns": 1778321097163214555,
+      "sha256": "18a3cad3b7ad847ecf39949fe751d963008dbb7707f796c742c3fa23ae3c8e8b"
+    },
+    "model_source": {
+      "raw_path": "model_cache/models/Qwen/Qwen3-VL-2B-Instruct-coordexp",
+      "resolved_path": "/data/home/xiaoyan/AIteam/data/CoordExp/model_cache/models/Qwen/Qwen3-VL-2B-Instruct-coordexp",
+      "exists": true,
+      "size_bytes": 4096,
+      "mtime_ns": 1772168371620929300
+    },
+    "latest_detection_objective": {
+      "id": "recursive_detection_ce",
+      "variant": "random_permutation_et_rmp_ce",
+      "state_weighting": "uniform_permutation",
+      "normalization": "semantic_image_bucket_balanced",
+      "template_id": "compact_full",
+      "coordinate_surface": "coord_token",
+      "bbox_format": "xyxy"
+    },
+    "token_rows": {
+      "enabled": true,
+      "tie_head": true,
+      "expected_trainable_row_count": 1002,
+      "groups": {
+        "coord_geometry": {
+          "role": "coord_geometry",
+          "expected_row_count": 1000
+        },
+        "compact_structure": {
+          "role": "structural_ce_only",
+          "expected_row_count": 2
+        }
+      }
+    },
+    "pipeline_manifest_checksum": "",
+    "launcher": {}
+  }
+}

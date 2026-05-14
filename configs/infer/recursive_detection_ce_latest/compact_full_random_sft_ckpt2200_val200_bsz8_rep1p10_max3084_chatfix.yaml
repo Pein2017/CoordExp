@@ -12,7 +12,7 @@
 
 run:
   name: compact_full_random_sft_ckpt2200_val200_bsz8_temp0_rep1p10_max3084_chatfix_4gpu
-  output_dir: /data/CoordExp/output_remote/infer/recursive_detection_ce_latest
+  output_dir: /data/CoordExp/outputs/infer/recursive_detection_ce_latest
 
 stages:
   infer: true
@@ -21,7 +21,7 @@ stages:
 
 infer:
   gt_jsonl: public_data/coco/rescale_32_1024_bbox_max60/val.coord.jsonl
-  model_checkpoint: /data/CoordExp/output_remote/stage1_2b/recursive_detection_ce_latest/compact_full_random_sft_bsz16_4epoch_tokenrows_v2/compact-full-random-sft-bsz16-4epoch-tokenrows-v2/v0-20260505-044157/checkpoint-2200
+  model_checkpoint: /data/CoordExp/outputs/stage1_2b/recursive_detection_ce_latest/compact_full_random_sft_bsz16_4epoch_tokenrows_v2/compact-full-random-sft-bsz16-4epoch-tokenrows-v2/v0-20260505-044157/checkpoint-2200
 
   prompt_variant: coco_80
   detection_sequence_format: compact_full

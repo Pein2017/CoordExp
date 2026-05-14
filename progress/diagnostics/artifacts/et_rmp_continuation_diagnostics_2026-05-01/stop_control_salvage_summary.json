@@ -6,8 +6,8 @@
       "variant": "baseline",
       "rp": 1.05,
       "temperature": 0.2,
-      "pred_path": "/data/CoordExp/output_remote/infer/core6_stopctrl_base1332_baseline_rp105_t02_s29/salvage_stop_control/gt_vs_pred_salvaged.jsonl",
-      "eval_dir": "/data/CoordExp/output_remote/infer/core6_stopctrl_base1332_baseline_rp105_t02_s29/salvage_stop_control/eval_detection",
+      "pred_path": "/data/CoordExp/outputs/infer/core6_stopctrl_base1332_baseline_rp105_t02_s29/salvage_stop_control/gt_vs_pred_salvaged.jsonl",
+      "eval_dir": "/data/CoordExp/outputs/infer/core6_stopctrl_base1332_baseline_rp105_t02_s29/salvage_stop_control/eval_detection",
       "repair_counts": {
         "strict": 6
       },
@@ -32,8 +32,8 @@
       "variant": "suppress_first_close",
       "rp": 1.05,
       "temperature": 0.2,
-      "pred_path": "/data/CoordExp/output_remote/infer/core6_stopctrl_base1332_suppress_first_close_rp105_t02_s29/salvage_stop_control/gt_vs_pred_salvaged.jsonl",
-      "eval_dir": "/data/CoordExp/output_remote/infer/core6_stopctrl_base1332_suppress_first_close_rp105_t02_s29/salvage_stop_control/eval_detection",
+      "pred_path": "/data/CoordExp/outputs/infer/core6_stopctrl_base1332_suppress_first_close_rp105_t02_s29/salvage_stop_control/gt_vs_pred_salvaged.jsonl",
+      "eval_dir": "/data/CoordExp/outputs/infer/core6_stopctrl_base1332_suppress_first_close_rp105_t02_s29/salvage_stop_control/eval_detection",
       "repair_counts": {
         "remove_stray_quote_before_close": 5,
         "strict": 1
@@ -59,8 +59,8 @@
       "variant": "steer_array_b1",
       "rp": 1.05,
       "temperature": 0.2,
-      "pred_path": "/data/CoordExp/output_remote/infer/core6_stopctrl_base1332_steer_array_b1_rp105_t02_s29/salvage_stop_control/gt_vs_pred_salvaged.jsonl",
-      "eval_dir": "/data/CoordExp/output_remote/infer/core6_stopctrl_base1332_steer_array_b1_rp105_t02_s29/salvage_stop_control/eval_detection",
+      "pred_path": "/data/CoordExp/outputs/infer/core6_stopctrl_base1332_steer_array_b1_rp105_t02_s29/salvage_stop_control/gt_vs_pred_salvaged.jsonl",
+      "eval_dir": "/data/CoordExp/outputs/infer/core6_stopctrl_base1332_steer_array_b1_rp105_t02_s29/salvage_stop_control/eval_detection",
       "repair_counts": {
         "remove_stray_quote_before_close": 6
       },
@@ -85,8 +85,8 @@
       "variant": "suppress_all_terminators",
       "rp": 1.05,
       "temperature": 0.2,
-      "pred_path": "/data/CoordExp/output_remote/infer/core6_stopctrl_base1332_suppress_all_terminators_rp105_t02_s29/salvage_stop_control/gt_vs_pred_salvaged.jsonl",
-      "eval_dir": "/data/CoordExp/output_remote/infer/core6_stopctrl_base1332_suppress_all_terminators_rp105_t02_s29/salvage_stop_control/eval_detection",
+      "pred_path": "/data/CoordExp/outputs/infer/core6_stopctrl_base1332_suppress_all_terminators_rp105_t02_s29/salvage_stop_control/gt_vs_pred_salvaged.jsonl",
+      "eval_dir": "/data/CoordExp/outputs/infer/core6_stopctrl_base1332_suppress_all_terminators_rp105_t02_s29/salvage_stop_control/eval_detection",
       "repair_counts": {
         "extract_complete_entries": 5,
         "strict": 1
@@ -112,8 +112,8 @@
       "variant": "baseline",
       "rp": 1.18,
       "temperature": 0.35,
-      "pred_path": "/data/CoordExp/output_remote/infer/core6_stopctrl_et_rmp_step300_baseline_rp118_t035_s17/salvage_stop_control/gt_vs_pred_salvaged.jsonl",
-      "eval_dir": "/data/CoordExp/output_remote/infer/core6_stopctrl_et_rmp_step300_baseline_rp118_t035_s17/salvage_stop_control/eval_detection",
+      "pred_path": "/data/CoordExp/outputs/infer/core6_stopctrl_et_rmp_step300_baseline_rp118_t035_s17/salvage_stop_control/gt_vs_pred_salvaged.jsonl",
+      "eval_dir": "/data/CoordExp/outputs/infer/core6_stopctrl_et_rmp_step300_baseline_rp118_t035_s17/salvage_stop_control/eval_detection",
       "repair_counts": {
         "strict": 6
       },
@@ -138,8 +138,8 @@
       "variant": "suppress_first_close",
       "rp": 1.18,
       "temperature": 0.35,
-      "pred_path": "/data/CoordExp/output_remote/infer/core6_stopctrl_et_rmp_step300_suppress_first_close_rp118_t035_s17/salvage_stop_control/gt_vs_pred_salvaged.jsonl",
-      "eval_dir": "/data/CoordExp/output_remote/infer/core6_stopctrl_et_rmp_step300_suppress_first_close_rp118_t035_s17/salvage_stop_control/eval_detection",
+      "pred_path": "/data/CoordExp/outputs/infer/core6_stopctrl_et_rmp_step300_suppress_first_close_rp118_t035_s17/salvage_stop_control/gt_vs_pred_salvaged.jsonl",
+      "eval_dir": "/data/CoordExp/outputs/infer/core6_stopctrl_et_rmp_step300_suppress_first_close_rp118_t035_s17/salvage_stop_control/eval_detection",
       "repair_counts": {
         "extract_complete_entries": 1,
         "remove_stray_quote_before_close": 3,
@@ -166,8 +166,8 @@
       "variant": "steer_array_b1",
       "rp": 1.18,
       "temperature": 0.35,
-      "pred_path": "/data/CoordExp/output_remote/infer/core6_stopctrl_et_rmp_step300_steer_array_b1_rp118_t035_s17/salvage_stop_control/gt_vs_pred_salvaged.jsonl",
-      "eval_dir": "/data/CoordExp/output_remote/infer/core6_stopctrl_et_rmp_step300_steer_array_b1_rp118_t035_s17/salvage_stop_control/eval_detection",
+      "pred_path": "/data/CoordExp/outputs/infer/core6_stopctrl_et_rmp_step300_steer_array_b1_rp118_t035_s17/salvage_stop_control/gt_vs_pred_salvaged.jsonl",
+      "eval_dir": "/data/CoordExp/outputs/infer/core6_stopctrl_et_rmp_step300_steer_array_b1_rp118_t035_s17/salvage_stop_control/eval_detection",
       "repair_counts": {
         "extract_complete_entries": 1,
         "remove_stray_quote_before_close": 5
@@ -193,8 +193,8 @@
       "variant": "suppress_all_terminators",
       "rp": 1.18,
       "temperature": 0.35,
-      "pred_path": "/data/CoordExp/output_remote/infer/core6_stopctrl_et_rmp_step300_suppress_all_terminators_rp118_t035_s17/salvage_stop_control/gt_vs_pred_salvaged.jsonl",
-      "eval_dir": "/data/CoordExp/output_remote/infer/core6_stopctrl_et_rmp_step300_suppress_all_terminators_rp118_t035_s17/salvage_stop_control/eval_detection",
+      "pred_path": "/data/CoordExp/outputs/infer/core6_stopctrl_et_rmp_step300_suppress_all_terminators_rp118_t035_s17/salvage_stop_control/gt_vs_pred_salvaged.jsonl",
+      "eval_dir": "/data/CoordExp/outputs/infer/core6_stopctrl_et_rmp_step300_suppress_all_terminators_rp118_t035_s17/salvage_stop_control/eval_detection",
       "repair_counts": {
         "extract_complete_entries": 3,
         "strict": 3

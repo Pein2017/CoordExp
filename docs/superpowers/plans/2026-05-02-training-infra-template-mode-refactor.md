@@ -814,7 +814,7 @@ Production launch:
 
 - Tmux session: `coordexp_recursive_ce_prod_20260503`.
 - Config: `configs/stage1/recursive_detection_ce_latest/prod/compact_full_support2.yaml`.
-- Output directory: `/data/CoordExp/output_remote/stage1_2b/recursive_detection_ce_latest/compact_full_et_rmp_ce_support2_bsz16_4epoch_v1/compact-full-et-rmp-ce-support2-bsz16-4epoch-v1/v0-20260503-072546`.
+- Output directory: `/data/CoordExp/outputs/stage1_2b/recursive_detection_ce_latest/compact_full_et_rmp_ce_support2_bsz16_4epoch_v1/compact-full-et-rmp-ce-support2-bsz16-4epoch-v1/v0-20260503-072546`.
 - Launch log: `temp/production_launch_logs/compact_full_support2_8gpu_20260503.log`.
 - Command:
 

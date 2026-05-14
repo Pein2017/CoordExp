@@ -16,7 +16,7 @@ Status as of the first-pass GPU loop:
 
 - Worktree: `/data/CoordExp/.worktrees/qwen3-vl-instance-binding`
 - Artifact root: `/data/CoordExp/output/analysis/qwen3-vl-instance-binding-mechanism-20260424`
-- Fixed checkpoint: `/data/CoordExp/output_remote/stage1_2b/coco_bbox_max60-hard_ce_soft_ce_w1_gate/epoch_4-from-base-2B/v0-20260227-050057/checkpoint-1332-merged-full`
+- Fixed checkpoint: `/data/CoordExp/outputs/stage1_2b/coco_bbox_max60-hard_ce_soft_ce_w1_gate/epoch_4-from-base-2B/v0-20260227-050057/checkpoint-1332-merged-full`
 - Curated subset: `64` cases, with `56` priority same-desc cases and `8` sparse controls
 - Rollout execution: 8 tmux shards, batch size `8`, all `64` rows merged
 - Donor patching execution: 8 tmux shards, `56` donor-eligible repeated-object cases and `224` span rows merged
@@ -86,7 +86,7 @@ through worktree-relative paths.
 
 The fixed checkpoint is:
 
-`/data/CoordExp/output_remote/stage1_2b/coco_bbox_max60-hard_ce_soft_ce_w1_gate/epoch_4-from-base-2B/v0-20260227-050057/checkpoint-1332-merged-full`
+`/data/CoordExp/outputs/stage1_2b/coco_bbox_max60-hard_ce_soft_ce_w1_gate/epoch_4-from-base-2B/v0-20260227-050057/checkpoint-1332-merged-full`
 
 The primary dataset is:
 
@@ -199,7 +199,7 @@ Verified:
 
 ```bash
 git worktree list
-test -f /data/CoordExp/output_remote/stage1_2b/coco_bbox_max60-hard_ce_soft_ce_w1_gate/epoch_4-from-base-2B/v0-20260227-050057/checkpoint-1332-merged-full/coord_tokens.json
+test -f /data/CoordExp/outputs/stage1_2b/coco_bbox_max60-hard_ce_soft_ce_w1_gate/epoch_4-from-base-2B/v0-20260227-050057/checkpoint-1332-merged-full/coord_tokens.json
 test -f /data/CoordExp/public_data/coco/rescale_32_1024_bbox_max60/val.coord.jsonl
 ```
 
@@ -313,7 +313,7 @@ run:
     - report
 
 model:
-  checkpoint: /data/CoordExp/output_remote/stage1_2b/coco_bbox_max60-hard_ce_soft_ce_w1_gate/epoch_4-from-base-2B/v0-20260227-050057/checkpoint-1332-merged-full
+  checkpoint: /data/CoordExp/outputs/stage1_2b/coco_bbox_max60-hard_ce_soft_ce_w1_gate/epoch_4-from-base-2B/v0-20260227-050057/checkpoint-1332-merged-full
   expected_surface: coord_tokens
   device: cuda
   dtype: bfloat16

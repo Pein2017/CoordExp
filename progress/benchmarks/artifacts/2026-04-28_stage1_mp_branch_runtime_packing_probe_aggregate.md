@@ -1,15 +1,15 @@
 # Stage-1 MP Production-Like Packing Benchmark
 
 - Generated: `2026-04-28T09:23:39.883033+00:00`
-- Output root: `/data/CoordExp/output_remote/stage1_2b/set_continuation_prodlike_benchmark`
+- Output root: `/data/CoordExp/outputs/stage1_2b/set_continuation_prodlike_benchmark`
 - Winner by optimizer steps/s: `smart_batched_exact`
 - Winner by estimated logical samples/s: `smart_batched_exact`
 
 | run | status | steps | runtime_s | opt steps/s | est logical samples/s | mem reserved GiB | fill ratio | padding forwards | artifact |
 | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- |
-| smart_batched_exact | completed | 6/6 | 398.309 | 0.015 | 1.928 | n/a | n/a | n/a | `/data/CoordExp/output_remote/stage1_2b/set_continuation_prodlike_benchmark/smart_batched_exact_8gpu/prodlike-smart-batched-exact-8gpu/v0-20260428-084922` |
-| online_rank_microbatch_packed | completed | 6/6 | 418.334 | 0.014 | 1.836 | n/a | n/a | n/a | `/data/CoordExp/output_remote/stage1_2b/set_continuation_prodlike_benchmark/online_rankmb_packed_8gpu/prodlike-online-rankmb-packed-8gpu/v0-20260428-085735` |
-| offline_sample_packed | completed | 6/6 | 761.400 | 0.008 | 1.836 | n/a | n/a | n/a | `/data/CoordExp/output_remote/stage1_2b/set_continuation_prodlike_benchmark/offline_sample_packed_8gpu/prodlike-offline-sample-packed-8gpu/v0-20260428-090607` |
+| smart_batched_exact | completed | 6/6 | 398.309 | 0.015 | 1.928 | n/a | n/a | n/a | `/data/CoordExp/outputs/stage1_2b/set_continuation_prodlike_benchmark/smart_batched_exact_8gpu/prodlike-smart-batched-exact-8gpu/v0-20260428-084922` |
+| online_rank_microbatch_packed | completed | 6/6 | 418.334 | 0.014 | 1.836 | n/a | n/a | n/a | `/data/CoordExp/outputs/stage1_2b/set_continuation_prodlike_benchmark/online_rankmb_packed_8gpu/prodlike-online-rankmb-packed-8gpu/v0-20260428-085735` |
+| offline_sample_packed | completed | 6/6 | 761.400 | 0.008 | 1.836 | n/a | n/a | n/a | `/data/CoordExp/outputs/stage1_2b/set_continuation_prodlike_benchmark/offline_sample_packed_8gpu/prodlike-offline-sample-packed-8gpu/v0-20260428-090607` |
 
 ## Notes
 

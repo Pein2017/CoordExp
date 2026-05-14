@@ -239,7 +239,7 @@ hyperparameters based on decode under-generation alone:
 ```bash
 conda run -n ms python -m src.analysis.prefix_rollin_teacher_forced_diagnostic \
   --config configs/stage1/recursive_detection_ce_latest/smoke/compact_full_prefix_rollin_adapter_tiny.yaml \
-  --checkpoint output_remote/stage1_2b/recursive_detection_ce_latest/compact_full_et_rmp_ce_support2_bsz16_4epoch_tokenrows_v2/compact-full-et-rmp-ce-support2-bsz16-4epoch-tokenrows-v2/v0-20260504-071356/checkpoint-3664 \
+  --checkpoint outputs/stage1_2b/recursive_detection_ce_latest/compact_full_et_rmp_ce_support2_bsz16_4epoch_tokenrows_v2/compact-full-et-rmp-ce-support2-bsz16-4epoch-tokenrows-v2/v0-20260504-071356/checkpoint-3664 \
   --split val \
   --limit 8 \
   --k-values every \
@@ -267,7 +267,7 @@ mode:
 ```bash
 conda run -n ms python -m src.analysis.prefix_rollin_teacher_forced_diagnostic \
   --config configs/stage1/recursive_detection_ce_latest/smoke/compact_full_prefix_rollin_adapter_tiny.yaml \
-  --checkpoint output_remote/stage1_2b/recursive_detection_ce_latest/compact_full_et_rmp_ce_support2_bsz16_4epoch_tokenrows_v2/compact-full-et-rmp-ce-support2-bsz16-4epoch-tokenrows-v2/v0-20260504-071356/checkpoint-3664 \
+  --checkpoint outputs/stage1_2b/recursive_detection_ce_latest/compact_full_et_rmp_ce_support2_bsz16_4epoch_tokenrows_v2/compact-full-et-rmp-ce-support2-bsz16-4epoch-tokenrows-v2/v0-20260504-071356/checkpoint-3664 \
   --split val \
   --limit 8 \
   --prefix-modes generated_prefix \

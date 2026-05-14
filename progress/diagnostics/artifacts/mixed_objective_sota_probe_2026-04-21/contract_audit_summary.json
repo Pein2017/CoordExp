@@ -15,8 +15,8 @@
   "families": [
     {
       "alias": "mixed_objective_sota_adapter",
-      "checkpoint_path": "/data/CoordExp/output_remote/stage1_2b/coco_bbox_max60-hard_ce_soft_ce_w1_gate/epoch_4-from-base-2B/v0-20260227-050057/checkpoint-1332",
-      "resolved_checkpoint_path": "/data/CoordExp/output_remote/stage1_2b/coco_bbox_max60-hard_ce_soft_ce_w1_gate/epoch_4-from-base-2B/v0-20260227-050057/checkpoint-1332",
+      "checkpoint_path": "/data/CoordExp/outputs/stage1_2b/coco_bbox_max60-hard_ce_soft_ce_w1_gate/epoch_4-from-base-2B/v0-20260227-050057/checkpoint-1332",
+      "resolved_checkpoint_path": "/data/CoordExp/outputs/stage1_2b/coco_bbox_max60-hard_ce_soft_ce_w1_gate/epoch_4-from-base-2B/v0-20260227-050057/checkpoint-1332",
       "checkpoint_hint": "adapter",
       "checkpoint_exists": true,
       "checkpoint_type": "adapter",
@@ -29,7 +29,7 @@
       "eval_compatibility_path": "confidence_postop",
       "is_headline_2b_family": false,
       "resolved_base_model_checkpoint": "/data/CoordExp/model_cache_remote/model_cache/models/Qwen/Qwen3-VL-2B-Instruct-coordexp",
-      "resolved_adapter_checkpoint": "/data/CoordExp/output_remote/stage1_2b/coco_bbox_max60-hard_ce_soft_ce_w1_gate/epoch_4-from-base-2B/v0-20260227-050057/checkpoint-1332",
+      "resolved_adapter_checkpoint": "/data/CoordExp/outputs/stage1_2b/coco_bbox_max60-hard_ce_soft_ce_w1_gate/epoch_4-from-base-2B/v0-20260227-050057/checkpoint-1332",
       "adapter_base_model_name_or_path": "/data/CoordExp/model_cache_remote/model_cache/models/Qwen/Qwen3-VL-2B-Instruct-coordexp",
       "adapter_modules_to_save": [
         "coord_offset_adapter"

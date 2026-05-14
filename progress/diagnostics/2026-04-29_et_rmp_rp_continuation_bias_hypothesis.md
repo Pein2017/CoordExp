@@ -41,13 +41,13 @@ support-mass enhancement.
 Primary old ET-RMP checkpoint:
 
 ```text
-output_remote/stage1_2b/set_continuation/coco1024_sota1332_setcont_et_rmp_ce_v1/setcont-coco1024-sota1332-et-rmp-ce-v1/v0-20260429-022918/checkpoint-300
+outputs/stage1_2b/set_continuation/coco1024_sota1332_setcont_et_rmp_ce_v1/setcont-coco1024-sota1332-et-rmp-ce-v1/v0-20260429-022918/checkpoint-300
 ```
 
 Base comparison checkpoint used in later core-6 probes:
 
 ```text
-output_remote/stage1_2b/coco_bbox_max60-hard_ce_soft_ce_w1_gate/epoch_4-from-base-2B/v0-20260227-050057/checkpoint-1332-merged-full
+outputs/stage1_2b/coco_bbox_max60-hard_ce_soft_ce_w1_gate/epoch_4-from-base-2B/v0-20260227-050057/checkpoint-1332-merged-full
 ```
 
 Current support-mass-enhanced production profile is a later config surface:
@@ -130,13 +130,13 @@ Important copied summaries:
 Runtime artifact roots are still useful for raw predictions and traces:
 
 ```text
-output_remote/stage1_2b/set_continuation/coco1024_sota1332_setcont_et_rmp_ce_v1/setcont-coco1024-sota1332-et-rmp-ce-v1/v0-20260429-022918/
-output_remote/infer/coco1024_val200_et_rmp_ce_step300_rp100
-output_remote/infer/coco1024_val200_et_rmp_ce_step300_rp105
-output_remote/infer/coco1024_val200_et_rmp_ce_step300_rp112
-output_remote/infer/coco1024_val200_et_rmp_ce_step300_rp115
-output_remote/infer/coco1024_val200_et_rmp_ce_step300_rp118
-output_remote/infer/core6_stopctrl_*
+outputs/stage1_2b/set_continuation/coco1024_sota1332_setcont_et_rmp_ce_v1/setcont-coco1024-sota1332-et-rmp-ce-v1/v0-20260429-022918/
+outputs/infer/coco1024_val200_et_rmp_ce_step300_rp100
+outputs/infer/coco1024_val200_et_rmp_ce_step300_rp105
+outputs/infer/coco1024_val200_et_rmp_ce_step300_rp112
+outputs/infer/coco1024_val200_et_rmp_ce_step300_rp115
+outputs/infer/coco1024_val200_et_rmp_ce_step300_rp118
+outputs/infer/core6_stopctrl_*
 ```
 
 ## First Training Read

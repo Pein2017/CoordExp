@@ -1,0 +1,11 @@
+{
+  "total_samples": 200,
+  "total_pred_objects": 1296,
+  "kept_pred_objects": 1296,
+  "dropped_pred_objects": 0,
+  "kept_fraction": 1.0,
+  "dropped_by_reason": {},
+  "pred_score_source": "confidence_postop",
+  "pred_score_version": 2,
+  "confidence_method": "bbox_logprob_confidence_exp"
+}
