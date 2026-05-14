@@ -5,7 +5,7 @@ doc_type: reference
 status: canonical
 domain: training
 summary: Stage-1 objective surfaces and coord-token training behavior.
-updated: 2026-05-11
+updated: 2026-05-14
 ---
 
 # Coord Objective & Adapter
@@ -34,7 +34,7 @@ Scope note:
   - `configs/stage1/profiles/2b/raw_text_xyxy_pure_ce_coco80_desc_first_1024_lvis_proxy.yaml`
   - `configs/stage1/profiles/2b/bbox_geo_center_size_coco80_desc_first_1024_lvis_proxy.yaml`
 - Compact prefix roll-in multi-positive training now lives as the latest-detection `prefix_rollin_et_rmp_ce` ablation surface, not as a legacy custom trainer surface. The first checked-in route is `configs/stage1/recursive_detection_ce_latest/ablation/compact_full_prefix_rollin_balance2.yaml`; treat it as E1 ablation/smoke validation, not production.
-- Geometry-aware coordinate softCE for latest compact recursive detection is scoped to the A5/A6 ablation candidates under `configs/stage1/recursive_detection_ce_latest/prod/`. It uses `objective.coord_soft_ce` and does not route through legacy `custom.coord_soft_ce_w1.*`.
+- Geometry-aware coordinate SoftCE for latest compact recursive detection is scoped to the historical A5-iou-gibbs/A6-ciou-gibbs provenance configs and the active feature-branch `A5-instance-trie-gaussian` successor under `configs/stage1/recursive_detection_ce_latest/prod/`. It uses `objective.coord_soft_ce` and does not route through legacy `custom.coord_soft_ce_w1.*`.
 - Narrow V1 exception:
   - `custom.bbox_format: cxcy_logw_logh` or `custom.bbox_format: cxcywh`
     defines an experimental Stage-1-only profile
@@ -126,15 +126,9 @@ custom:
 The active compact Stage-1 owner is the latest detection stack under `src/detection/`. There are now two distinct latest-schema routes:
 
 - `configs/stage1/recursive_detection_ce_latest/prod/compact_full_support2.yaml` remains the random-permutation ET-RMP-CE production baseline/comparator.
-- `configs/stage1/recursive_detection_ce_latest/prod/compact_full_support2_iou_gibbs_softce_a5.yaml` is the historical A5-iou-gibbs candidate: A2/support2 plus `iou_gibbs_v0` coordinate soft targets with `tau=0.0090909091` from the train one-token IoU-loss median.
-- `configs/stage1/recursive_detection_ce_latest/prod/compact_full_support2_ciou_gibbs_softce_a6.yaml` is the historical paired A6-ciou-gibbs candidate: same setup as A5 but with `ciou_gibbs_v0`; production preparation assumed a separate 4-GPU slice for A5 and A6 rather than one 8-GPU run.
-- Draft successor proposal after the A5/A6 negative result:
-  [`INSTANCE_TRIE_GAUSSIAN_SOFTCE_DRAFT.md`](INSTANCE_TRIE_GAUSSIAN_SOFTCE_DRAFT.md).
-  It proposes schema/description/coordinate loss separation and an
-  `instance_trie_gaussian` coordinate target. It is planning-only until an
-  approved implementation lands. Use the suffixed label
-  `A5-instance-trie-gaussian` to avoid confusion with historical
-  A5-iou-gibbs/A6-ciou-gibbs runs.
+- `configs/stage1/recursive_detection_ce_latest/prod/compact_full_support2_iou_gibbs_softce_a5.yaml` is historical A5-iou-gibbs negative-result/superseded provenance: A2/support2 plus `iou_gibbs_v0` coordinate soft targets with `tau=0.0090909091` from the train one-token IoU-loss median.
+- `configs/stage1/recursive_detection_ce_latest/prod/compact_full_support2_ciou_gibbs_softce_a6.yaml` is historical paired A6-ciou-gibbs negative-result/superseded provenance: same setup as historical A5 but with `ciou_gibbs_v0`; production preparation assumed a separate 4-GPU slice for A5 and A6 rather than one 8-GPU run.
+- `configs/stage1/recursive_detection_ce_latest/prod/compact_full_support2_instance_trie_gaussian_softce_a5.yaml` is the active feature-branch successor config with ablation label `A5-instance-trie-gaussian`; see [`INSTANCE_TRIE_GAUSSIAN_SOFTCE_DRAFT.md`](INSTANCE_TRIE_GAUSSIAN_SOFTCE_DRAFT.md). It keeps schema/control tokens on hard CE, uses ET-RMP support+balance for description and entry-choice ambiguity, and applies coordinate pure SoftCE over active-branch remaining-instance Gaussian mixtures. This successor is implemented on branch `codex/instance-trie-gaussian-softce`, but it is not production-validated, merged, stable, or current production behavior until focused tests, target-shape audit, smoke workflow, diagnosis/audit review, branch acceptance, and production approval complete.
 - `configs/stage1/recursive_detection_ce_latest/ablation/compact_full_prefix_rollin_balance2.yaml` is the E1 `prefix_rollin_et_rmp_ce` ablation route for Prefix-Closed Multi-Target SFT.
 - `configs/stage1/recursive_detection_ce_latest/ablation/compact_full_prefix_rollin_separator2.yaml` is the E2 separator-continue ablation. It keeps E1 support/balance/type-gate/EOS settings and changes only the append-boundary weights so the `\n` continuation token gets more pressure before `<|object_ref_start|>` can be emitted.
 

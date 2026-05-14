@@ -6,14 +6,19 @@
 
 **Architecture:** Latest recursive detection remains the owner. Schema/control tokens use hard CE, description/entry-choice ambiguity uses existing ET-RMP support/balance, and coordinate tokens use pure softCE against a Gaussian mixture over active semantic-branch remaining candidate instances. The initial objective uses one teacher-forced forward pass: each coordinate slot computes a soft posterior over those candidates from previous teacher-forced coordinates, using unnormalized Gaussian mismatch energy for prefix compatibility, then mixes normalized bbox-size-aware Gaussian peaks for the current slot. This is a one-pass posterior-predictive training objective, not a duplicated latent-branch forward pass.
 
-**Tech Stack:** Python dataclasses, PyTorch dense coordinate-token CE, strict latest-schema YAML configs, compact-full recursive detection sidecars, pytest under `conda run -n ms`, and Superpowers subagent-driven implementation after approval.
+**Tech Stack:** Python dataclasses, PyTorch dense coordinate-token CE, strict latest-schema YAML configs, compact-full recursive detection sidecars, pytest under `conda run -n ms`, and Superpowers subagent-driven implementation in the isolated worktree.
 
 ---
 
 Date: 2026-05-14
 
-Status: planning only. Do not implement this plan or launch training until the
-user explicitly approves implementation.
+Status: implementation and smoke/preflight verification completed on the isolated worktree
+`/data/home/xiaoyan/AIteam/data/CoordExp/.worktrees/instance-trie-gaussian-softce`
+on branch `codex/instance-trie-gaussian-softce`. The objective is implemented
+and has passed the focused test suite, no-training target-shape audit, tiny
+smoke, and 8-GPU DDP preflight. It is not merged, stable, or current
+production behavior yet; real production launch remains gated by explicit user
+approval.
 
 Design note: `docs/training/INSTANCE_TRIE_GAUSSIAN_SOFTCE_DRAFT.md`
 
@@ -28,7 +33,7 @@ worktree: /data/home/xiaoyan/AIteam/data/CoordExp/.worktrees/instance-trie-gauss
 
 | Guardrail | Requirement |
 |---|---|
-| No implementation yet | This plan is documentation only until user approval. |
+| Implementation status | Implementation is active only on branch `codex/instance-trie-gaussian-softce` in the isolated worktree; it is not merged, stable, or production-launched. |
 | Training comparison | New config must extend `compact_full_support2.yaml` and keep model, data, optimizer, batch semantics, prompt, template, token rows, cache/packing, and non-coordinate behavior unchanged. |
 | Template | Use `compact_full`, `coord_token`, `xyxy`, and the same dataset config as the previous A2/A5/A6 surface. |
 | Initial scope | The first implementation and configs target the compact-full support2 latest recursive detection surface. Prefix-rollin support needs explicit tests before use. |
@@ -54,7 +59,7 @@ worktree: /data/home/xiaoyan/AIteam/data/CoordExp/.worktrees/instance-trie-gauss
 | Path | Role |
 |---|---|
 | `docs/training/INSTANCE_TRIE_GAUSSIAN_SOFTCE_DRAFT.md` | Draft design and formula. |
-| `docs/training/STAGE1_OBJECTIVE.md` | Contains a planning-only pointer to the draft; update that note only after approval if the draft becomes active behavior. |
+| `docs/training/STAGE1_OBJECTIVE.md` | Contains current provenance for the active implementation draft, historical A5/A6 negative-result configs, and production-validation gates. |
 | `src/config/schema.py` | Add strict schema acceptance for `target_distribution: instance_trie_gaussian`; reject obsolete tau/sigma/truncation knobs for this target. |
 | `src/detection/coord_soft_targets.py` | Add Gaussian target builder, soft posterior weighting from teacher prefix, posterior diagnostics, and pure coordinate softCE helper. Keep old IoU/CIoU-Gibbs helpers for negative-result provenance unless explicitly removed later. |
 | `src/detection/objective.py` | Audit existing sidecars. If `coord_soft_targets` is exact-prefix filtered, add candidate-only `coord_instance_candidates` for the active semantic-branch candidate group and keep legacy exact-prefix metadata intact. |
@@ -64,7 +69,7 @@ worktree: /data/home/xiaoyan/AIteam/data/CoordExp/.worktrees/instance-trie-gauss
 | `src/trainers/metrics/recursive_detection.py` | Log target distribution and coordinate diagnostics without assuming `tau` exists. |
 | `configs/stage1/recursive_detection_ce_latest/prod/compact_full_support2_instance_trie_gaussian_softce_a5.yaml` | Production-style `A5-instance-trie-gaussian` ablation config, launch only after approval and smoke gates. |
 | `configs/stage1/recursive_detection_ce_latest/smoke/compact_full_support2_instance_trie_gaussian_softce_a5_tiny.yaml` | Tiny smoke config. |
-| `configs/stage1/recursive_detection_ce_latest/smoke/compact_full_support2_instance_trie_gaussian_softce_a5_ddp4_preflight.yaml` | 4-GPU preflight config. |
+| `configs/stage1/recursive_detection_ce_latest/smoke/compact_full_support2_instance_trie_gaussian_softce_a5_ddp8_preflight.yaml` | 8-GPU preflight config. |
 | `tests/test_instance_trie_gaussian_coord_softce.py` | Unit tests for target math, uniform priors, soft posterior weighting, union-box non-reward, and pure softCE weighting. |
 | `tests/test_recursive_detection_ce_target_builder.py` | Sidecar invariants: semantic-branch candidate ownership, no all-image candidates, and near-shared coordinate ambiguity carry-forward. |
 | `tests/test_recursive_detection_ce_loss_adapter.py` | End-to-end loss replacement and metric checks. |
@@ -113,7 +118,7 @@ pipeline rewrites.
 | Fair-comparison config diff | New smoke/prod configs must be diffed against `compact_full_support2.yaml` with a strict whitelist so the ablation changes only the coordinate objective and run identity. |
 | No broad rewrite | Do not split or rewrite unrelated recursive detection, inference, eval, or trainer infrastructure unless a targeted invariant cannot be enforced otherwise. |
 
-## Task 0: Approval Gate
+## Task 0: Approval Gate (Satisfied For Branch Implementation)
 
 **Files:**
 
@@ -136,12 +141,11 @@ metric flag: recursive_detection_ce/coord_soft_ce/is_instance_trie_gaussian
 Historical `A5-iou-gibbs` and `A6-ciou-gibbs` remain named historical
 negative-result paths, not current recommended objectives.
 
-- [ ] **Step 2: Wait for explicit user approval**
+- [ ] **Step 2: Record explicit user approval**
 
-Do not edit Python, YAML runtime configs, or training docs beyond draft planning
-until the user explicitly approves implementation.
-
-Expected: user says to implement.
+Implementation has started on the feature branch/worktree. Keep production
+launches gated on target-shape audit, smoke workflow, diagnosis/audit review,
+and a fresh explicit user approval.
 
 - [ ] **Step 3: Confirm worktree**
 
@@ -964,7 +968,7 @@ Expected: pass.
 - Modify: `src/trainers/metrics/recursive_detection.py`
 - Create: `configs/stage1/recursive_detection_ce_latest/prod/compact_full_support2_instance_trie_gaussian_softce_a5.yaml`
 - Create: `configs/stage1/recursive_detection_ce_latest/smoke/compact_full_support2_instance_trie_gaussian_softce_a5_tiny.yaml`
-- Create: `configs/stage1/recursive_detection_ce_latest/smoke/compact_full_support2_instance_trie_gaussian_softce_a5_ddp4_preflight.yaml`
+- Create: `configs/stage1/recursive_detection_ce_latest/smoke/compact_full_support2_instance_trie_gaussian_softce_a5_ddp8_preflight.yaml`
 
 - [ ] **Step 1: Add schema tests**
 
@@ -1118,7 +1122,7 @@ Smoke-only whitelist additions:
 /eval/max_samples
 ```
 
-DDP4-preflight-only whitelist additions:
+DDP8-preflight-only whitelist additions:
 
 ```text
 /distributed
@@ -1133,7 +1137,7 @@ optimizer, schedule, and effective batch semantics.
 
 Create a structured config-diff test in
 `tests/test_instance_trie_gaussian_config_diff.py` that resolves the base,
-prod, tiny, and DDP4 preflight configs, computes JSON-pointer-like changed
+prod, tiny, and DDP8 preflight configs, computes JSON-pointer-like changed
 paths, and fails if any changed path is not in the appropriate whitelist.
 
 - [ ] **Step 5: Run config tests**
@@ -1146,19 +1150,20 @@ conda run -n ms python -m pytest -q tests/test_latest_training_config_contract.p
 
 Expected: pass.
 
-## Task 5: Documentation Update After Implementation
+## Task 5: Documentation Update After Implementation Start
 
 **Files:**
 
+- Modify: `docs/training/INSTANCE_TRIE_GAUSSIAN_SOFTCE_DRAFT.md`
 - Modify: `docs/training/STAGE1_OBJECTIVE.md`
-- Modify: `docs/training/README.md`
-- Optional modify: `docs/catalog.yaml`
+- Modify: `docs/superpowers/plans/2026-05-14-instance-trie-gaussian-softce.md`
 
-- [ ] **Step 1: Update training docs only after tests pass**
+- [ ] **Step 1: Update training docs after branch implementation starts**
 
-Revise the existing planning-only note for `instance_trie_gaussian` if the
-implementation becomes active behavior. Keep the note as draft/planning if the
-feature remains unmerged.
+Revise the existing `instance_trie_gaussian` provenance note to say the
+objective is implemented on the feature branch/worktree but remains an
+implementation draft until target-shape audit, smoke workflow,
+diagnosis/audit review, merge acceptance, and production approval complete.
 
 - [ ] **Step 2: Preserve negative-result provenance**
 
@@ -1271,9 +1276,9 @@ Expected changed files are limited to the planned surfaces:
 ```text
 docs/training/INSTANCE_TRIE_GAUSSIAN_SOFTCE_DRAFT.md
 docs/training/STAGE1_OBJECTIVE.md
-docs/training/README.md
-docs/catalog.yaml
 docs/superpowers/plans/2026-05-14-instance-trie-gaussian-softce.md
+progress/audits/2026-05-14-instance-trie-gaussian-post-implementation-audit.md
+progress/audits/README.md
 src/config/schema.py
 src/detection/coord_soft_targets.py
 src/detection/objective.py
@@ -1283,7 +1288,7 @@ src/detection/__init__.py
 src/trainers/metrics/recursive_detection.py
 configs/stage1/recursive_detection_ce_latest/prod/compact_full_support2_instance_trie_gaussian_softce_a5.yaml
 configs/stage1/recursive_detection_ce_latest/smoke/compact_full_support2_instance_trie_gaussian_softce_a5_tiny.yaml
-configs/stage1/recursive_detection_ce_latest/smoke/compact_full_support2_instance_trie_gaussian_softce_a5_ddp4_preflight.yaml
+configs/stage1/recursive_detection_ce_latest/smoke/compact_full_support2_instance_trie_gaussian_softce_a5_ddp8_preflight.yaml
 scripts/diagnostics/audit_instance_trie_gaussian_targets.py
 tests/test_instance_trie_gaussian_coord_softce.py
 tests/test_instance_trie_gaussian_config_diff.py
@@ -1304,7 +1309,7 @@ justification and a targeted test.
 - Create: `scripts/diagnostics/audit_instance_trie_gaussian_targets.py`
 - Create: `tests/test_instance_trie_gaussian_target_shape_audit.py`
 
-- [ ] **Step 1: Add executable audit runner and artifact schema test**
+- [x] **Step 1: Add executable audit runner and artifact schema test**
 
 Create a checked-in no-training audit command:
 
@@ -1356,7 +1361,7 @@ component_mass_by_candidate_id
 Add `tests/test_instance_trie_gaussian_target_shape_audit.py` to validate the
 artifact schema and synthetic pass/fail gates.
 
-- [ ] **Step 2: Build synthetic target-shape fixtures**
+- [x] **Step 2: Build synthetic target-shape fixtures**
 
 Before training, run a no-optimization audit that constructs target
 distributions for synthetic cases:
@@ -1383,7 +1388,7 @@ union_coordinate_probability_ratio
 component_mass_by_candidate_id
 ```
 
-- [ ] **Step 3: Build fixed real-sample target-shape probe**
+- [x] **Step 3: Build fixed real-sample target-shape probe**
 
 Use a small fixed real subset with repeated desc objects. Include `record_idx=27`
 from the old negative-result diagnosis if that record is still present in the
@@ -1393,7 +1398,7 @@ the audit artifact.
 Expected: the target-shape audit demonstrates multi-peak x1 behavior where
 appropriate and sharpening on later slots without requiring any model training.
 
-- [ ] **Step 4: Run the audit command**
+- [x] **Step 4: Run the audit command**
 
 Run:
 
@@ -1413,7 +1418,7 @@ conda run -n ms python -m pytest -q tests/test_instance_trie_gaussian_target_sha
 Expected: the artifact exists, records fixture/sample ids, includes all required
 keys, and passes synthetic gates.
 
-- [ ] **Step 5: Gate tiny training on target-shape audit**
+- [x] **Step 5: Gate tiny training on target-shape audit**
 
 Do not run tiny training until the target-shape audit passes these qualitative
 checks:
@@ -1430,7 +1435,7 @@ missing sidecar fixture raises a hard error
 
 **Files:** no code files expected unless smoke reveals a bug.
 
-- [ ] **Step 1: Use full-pipeline-smoke**
+- [x] **Step 1: Use full-pipeline-smoke**
 
 After user approval and after the no-training target-shape audit passes, run the
 tiny smoke config under the existing smoke workflow. Confirm at least:
@@ -1445,10 +1450,29 @@ schema/desc/coord group metrics are not collapsed into one misleading scalar
 inference/eval path is unchanged and uses no oracle candidate constraint
 ```
 
-- [ ] **Step 2: Run model-innovation risk audit on smoke behavior**
+Completed evidence:
+
+```text
+tiny run:
+  temp/recursive_detection_ce_latest/output/compact_full_instance_trie_gaussian_softce_a5_tiny/smoke-compact-full-instance_trie_gaussian_softce_a5-tiny/v0-20260514-121444
+
+launcher log:
+  temp/instance_trie_gaussian/train_logs/compact_full_support2_instance_trie_gaussian_softce_a5_tiny-20260514T121300Z.log
+
+key tiny metrics:
+  train_loss = 12.67943001
+  coord_soft_ce/is_instance_trie_gaussian = 1.0
+  coord_soft_ce/balance_loss = 0.0
+  x1/effective_candidate_count = 2.77777767
+  y1/effective_candidate_count = 1.11110139
+  x2/effective_candidate_count = 1.0
+  y2/effective_candidate_count = 1.0
+```
+
+- [x] **Step 2: Run model-innovation risk audit on smoke behavior**
 
 After tiny smoke finishes, use `model-innovation-risk-audit` again to inspect
-model training behavior before any DDP4 preflight or production launch.
+model training behavior before any DDP8 preflight or production launch.
 
 Audit at least:
 
@@ -1468,7 +1492,7 @@ tiny inference/eval artifacts if generated by the smoke workflow
 
 Expected: no P0/P1 findings. Any warning that suggests diffuse targets,
 immediate exact-prefix collapse, missing coordinate metrics, changed eval
-surface, or suspicious coord loss contribution blocks DDP4 preflight until
+surface, or suspicious coord loss contribution blocks DDP8 preflight until
 resolved or explicitly waived by the user.
 
 Append this behavior audit to the post-implementation audit note or create a
@@ -1478,12 +1502,74 @@ separate note:
 progress/audits/2026-05-14-instance-trie-gaussian-smoke-behavior-audit.md
 ```
 
-- [ ] **Step 3: Run DDP4 preflight only after tiny smoke and behavior audit pass**
+Completed evidence:
 
-Use the DDP4 preflight config. Do not launch production training in this plan
+```text
+audit note:
+  progress/audits/2026-05-14-instance-trie-gaussian-smoke-behavior-audit.md
+
+target-shape audit:
+  temp/instance_trie_gaussian/target_shape_audit.json
+
+target-shape counters:
+  candidate_leak_count = 0
+  nonfinite_target_count = 0
+  teacher_candidate_missing_count = 0
+
+focused tests:
+  174 passed in 7.73s
+```
+
+- [x] **Step 3: Run DDP8 preflight only after tiny smoke and behavior audit pass**
+
+Use the DDP8 preflight config
+`configs/stage1/recursive_detection_ce_latest/smoke/compact_full_support2_instance_trie_gaussian_softce_a5_ddp8_preflight.yaml`.
+Do not launch production training in this plan
 without a fresh user instruction.
 
 Expected: startup healthy, no non-finite loss, no sidecar alignment error.
+
+Completed evidence:
+
+```text
+DDP8 run:
+  temp/recursive_detection_ce_latest/output/compact_full_instance_trie_gaussian_softce_a5_ddp8_preflight/smoke-compact-full-instance_trie_gaussian_softce_a5-ddp8-preflight/v0-20260514-122519
+
+launcher log:
+  temp/instance_trie_gaussian/train_logs/compact_full_support2_instance_trie_gaussian_softce_a5_ddp8_preflight-20260514T122339Z.log
+
+resolved batch shape:
+  per_device_train_batch_size = 16
+  world_size = 8
+  global_effective = 128
+  max_steps = 4
+
+train loss series:
+  11.4318, 11.7557, 11.0908, 10.4684
+
+eval loss series:
+  11.9755, 11.4867, 10.9156, 10.6649
+
+coord weighted-loss series:
+  train = 21.6260, 21.4509, 20.7999, 20.0667
+  eval = 21.9242, 21.0397, 20.0072, 19.5494
+
+coordinate objective flags:
+  coord_soft_ce/is_instance_trie_gaussian = 1.0
+  coord_soft_ce/balance_loss = 0.0
+
+posterior behavior:
+  x1/effective_candidate_count ~= 2.92-3.44
+  y1/effective_candidate_count ~= 1.07-1.11
+  x2/effective_candidate_count ~= 1.01
+  y2/effective_candidate_count ~= 1.00
+
+resource/runtime:
+  max memory reported by trainer = 60.61 GiB
+  A100 80GB GPUs free after run
+  no non-finite metrics in logging.jsonl or train_heartbeat.rank0.jsonl
+  no launcher errors, Traceback, RuntimeError, or CUDA OOM in the DDP8 log
+```
 
 ## Self-Review
 

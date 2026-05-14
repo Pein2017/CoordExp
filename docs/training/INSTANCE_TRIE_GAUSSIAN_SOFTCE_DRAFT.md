@@ -1,19 +1,21 @@
 ---
 doc_id: docs.training.instance-trie-gaussian-softce-draft
 layer: docs
-doc_type: draft-proposal
-status: draft
+doc_type: implementation-draft
+status: active-implementation-draft
 domain: training
-summary: Draft proposal for instance-aware multi-positive Gaussian coordinate softCE in compact recursive detection.
+summary: Active implementation draft for instance-aware multi-positive Gaussian coordinate SoftCE in compact recursive detection.
 updated: 2026-05-14
 ---
 
 # Instance-Trie Gaussian SoftCE Draft
 
-Status: initial draft proposal only. This document records the intended loss
-contract for a future implementation on branch
-`codex/instance-trie-gaussian-softce`. It is not current runtime behavior until
-the implementation plan is approved and merged.
+Status: active implementation draft. The objective is implemented on feature
+branch `codex/instance-trie-gaussian-softce` in isolated worktree
+`/data/home/xiaoyan/AIteam/data/CoordExp/.worktrees/instance-trie-gaussian-softce`,
+but it is not merged, stable, or current production behavior. Treat this as
+feature-branch provenance until focused tests, target-shape audit, smoke
+workflow, diagnosis/audit review, and branch acceptance complete.
 
 Naming convention: this draft uses the human-facing objective name
 `Instance-Trie Gaussian SoftCE`, the config `target_distribution`
@@ -270,9 +272,12 @@ untruncated Gaussian tails, this should be read as avoiding a high-probability
 union basin, not as assigning mathematically zero probability to every
 recombination coordinate.
 
-## Draft Config Surface
+## Feature-Branch Config Surface
 
-The production-facing config should avoid exposing low-level smoothing knobs:
+The feature-branch successor config is
+`configs/stage1/recursive_detection_ce_latest/prod/compact_full_support2_instance_trie_gaussian_softce_a5.yaml`
+with ablation label `A5-instance-trie-gaussian`. It should avoid exposing
+low-level smoothing knobs:
 
 ```yaml
 objective:
@@ -296,8 +301,8 @@ currently 1000 bins corresponding to `<|coord_0|>` through `<|coord_999|>`.
 Do not assume a 1001-bin inclusive `[0,1000]` value domain.
 
 The old IoU/CIoU-Gibbs configs should remain as negative-result provenance, but
-should not be presented as the recommended A5 direction after this proposal is
-implemented.
+should not be presented as the recommended A5 direction for the active
+feature-branch implementation draft.
 
 ## Implementation Infrastructure Boundaries
 
