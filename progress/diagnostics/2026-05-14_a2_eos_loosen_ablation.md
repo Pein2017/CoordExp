@@ -2,9 +2,9 @@
 doc_id: progress.diagnostics.a2-eos-loosen-ablation-2026-05-14
 layer: progress
 doc_type: ablation-tracking-note
-status: Running
+status: Concluded
 domain: compact-detection
-summary: Tracking note for the clean A2+EOS-loosen ablation that isolates EOS trust weighting on the stable compact-full support2 ET-RMP-CE baseline.
+summary: Negative result for the clean A2+EOS-loosen ablation; EOS loosening alone increased bursty duplicate emission and did not improve valid-object recall on the stable compact-full support2 ET-RMP-CE baseline.
 ---
 
 # A2 EOS-Loosen Clean Ablation
@@ -38,6 +38,85 @@ stability, the useful part of A4 may be EOS/missing-label calibration rather
 than prefix-rollin. If A2E increases duplicate or collapse behavior, EOS
 loosening needs objectness or duplicate gating. If A2E does not help, A4's
 behavior is not explained by EOS loosening alone.
+
+## 2026-05-15 Rollout Evaluation Conclusion
+
+Status: `Concluded`.
+
+A2E is a negative ablation under the matched val200 greedy `rp=1.10` rollout
+surface. Training completed cleanly, but free rollout shows that simply pushing
+the EOS/continuation signal does not reveal more valid objects. Instead, it
+increases concentrated duplicate bursts, empty predictions, and degenerate boxes.
+
+Evaluation surfaces:
+
+```text
+checkpoint:
+/data/CoordExp/output_remote/stage1_2b/recursive_detection_ce_latest/compact_full_support2_eos_loosen/compact-full-support2-eos-loosen-a2e/v0-20260514-062803/checkpoint-3664
+
+cap1024 run:
+/data/CoordExp/output_remote/infer/recursive_detection_ce_latest/compact_full_support2_eos_loosen_a2e_greedy_cap1024_rp110_ckpt3664_val200_bsz8_temp0_rp1p10_max1024_chatfix_8gpu
+
+cap3084 run:
+/data/CoordExp/output_remote/infer/recursive_detection_ce_latest/compact_full_support2_eos_loosen_a2e_greedy_cap3084_rp110_ckpt3664_val200_bsz8_temp0_rp1p10_max3084_chatfix_8gpu
+```
+
+Matched comparison against the existing A2 anchor artifacts:
+
+| run | raw AP | raw AP50 | raw AP75 | raw F1@0.50 | guarded AP | guarded AP50 | guarded F1@0.50 | pred | degenerate | duplicate suppressed |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| A2 baseline cap1024/rp1.10 | 0.4184 | 0.5654 | 0.4385 | 0.6122 | 0.4045 | 0.5470 | 0.6070 | 1151 | 2 | 246 |
+| A2E cap1024/rp1.10 | 0.3213 | 0.4106 | 0.3392 | 0.3258 | 0.3101 | 0.3945 | 0.3851 | 1285 | 45 | 695 |
+| A2 baseline cap3084/rp1.10 | 0.4184 | 0.5654 | 0.4385 | 0.6122 | 0.4045 | 0.5470 | 0.6070 | 1151 | 2 | 246 |
+| A2E cap3084/rp1.10 | 0.3270 | 0.4145 | 0.3493 | 0.3295 | 0.3159 | 0.4006 | 0.4021 | 1373 | 51 | 794 |
+
+Parser/eval health signals:
+
+```text
+A2 cap1024: errors_total=1, empty_pred=0, eval degenerate=2
+A2E cap1024: errors_total=107, empty_pred=52, eval degenerate=45
+A2E cap3084: errors_total=1367, empty_pred=53, eval degenerate=51
+```
+
+Duplicate-burst profile:
+
+```text
+A2 baseline cap1024:
+  affected records = 63
+  duplicate-suppressed predictions = 246
+  worst inspected/suppressed example = 30 / 24
+
+A2E cap1024:
+  affected records = 29
+  duplicate-suppressed predictions = 695
+  worst inspected/suppressed examples:
+    000000016010.jpg = 128 / 123
+    000000007511.jpg = 127 / 119
+    000000013348.jpg = 127 / 117
+    000000005001.jpg = 101 / 96
+
+A2E cap3084:
+  affected records = 28
+  duplicate-suppressed predictions = 794
+  worst inspected/suppressed examples:
+    000000017899.jpg = 256 / 238
+    000000011197.jpg = 158 / 128
+    000000017959.jpg = 117 / 110
+    000000013659.jpg = 117 / 96
+```
+
+Interpretation:
+
+- EOS loosen alone is not a valid-object recall solution.
+- The objective increases emission pressure, but the added mass is mostly
+  unstable: empty outputs on many images and severe repeated-object bursts on a
+  smaller set of images.
+- Longer generation budget does not rescue the behavior. Cap3084 slightly
+  improves raw AP over cap1024 (`0.3213 -> 0.3270`) but worsens prediction
+  count, duplicate suppression, degenerate boxes, and invalid-geometry counters.
+- A2 remains the trusted anchor. A2E should not be promoted as a replacement.
+- Any future EOS/continuation relaxation should be paired with explicit
+  objectness, duplicate, or termination gating.
 
 ## Configs
 
