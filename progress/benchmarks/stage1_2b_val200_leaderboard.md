@@ -48,9 +48,9 @@ Important caveat:
 | 4 | `compact_full_et_rmp_support2_ckpt3664` | `0.4247` | `0.5752` | `0.4477` | `0.6138` | `compact_full` | Different compact-full sequence format. |
 | 5 | `center_parameterization` | `0.4221` | `0.6007` | n/a | `0.6108` | `coord_family_diagnostic` | Strong center-parameterization family row. |
 | 6 | `mixed_objective_sota_ckpt1332` | `0.4137` | `0.5910` | `0.4203` | `0.6926` | `mixed_objective_probe` | Adapter-runtime probe with `max_new_tokens=1024`. |
-| 7 | `compact_full_prefix_rollin_a4_eos_ckpt3664` | `0.4001` | `0.5502` | n/a | `0.5612` | `compact_full_prefix_rollin_followup` | A4 follow-up: EOS-trust prior improves A3 AP/F1 but has more invalid/collapse risk. |
+| 7 | `compact_full_prefix_rollin_a4_eos_ckpt3664` | `0.4001` | `0.5502` | n/a | `0.5612` | `compact_full_prefix_rollin_followup` | A4 follow-up: EOS-trust prior improves A3 AP/F1 inside prefix-rollin, but this is not a fair A2 EOS ablation and has more invalid/collapse risk. |
 | 8 | `compact_full_random_sft_bsz1_accum16_ckpt3664` | `0.3992` | `0.5577` | `0.4140` | `0.4433` | `compact_full` | Different compact-full sequence format. |
-| 9 | `compact_full_prefix_rollin_a3_ckpt3664` | `0.3980` | `0.5444` | n/a | `0.5597` | `compact_full_prefix_rollin_followup` | A3 follow-up: cleaner than A4 but below A2 and random-SFT AP. |
+| 9 | `compact_full_prefix_rollin_a3_ckpt3664` | `0.3980` | `0.5444` | n/a | `0.5597` | `compact_full_prefix_rollin_followup` | A3 follow-up: prefix-rollin mechanism probe; not a fair objective-superiority comparison against A2. |
 | 10 | `coord_component_hard_ce_rp110` | `0.3901` | `0.5042` | `0.3954` | `0.5582` | `coord_component_ablation` | Current clean coord-component ablation winner. |
 | 11 | `historical_ce_softce_mixed_2b_768` | `0.3896` | `0.5628` | `0.3905` | `0.6569` | `historical_res_sweep` | Historical 768-res merged-model result. |
 | 12 | `historical_ce_softce_mixed_2b_1024` | `0.3879` | `0.5599` | `0.3963` | `0.6444` | `historical_res_sweep` | Historical 1024-res merged-model result. |
@@ -64,7 +64,7 @@ in the CSV.
 |---|---|---:|---|
 | `coord_token_rp_sweep` | `coord_token_ckpt1332_rp105_sweep` | `0.4584` | Same old mixed-objective coord-token checkpoint across RP settings. |
 | `compact_full` | `compact_full_et_rmp_support2_ckpt3664` | `0.4247` | Compact-full recursive-detection sequence format. |
-| `compact_full_prefix_rollin_followup` | `compact_full_prefix_rollin_a4_eos_ckpt3664` | `0.4001` | A3/A4 prefix-rollin follow-up; useful as a behavior study, not yet a more reliable replacement for A2. |
+| `compact_full_prefix_rollin_followup` | `compact_full_prefix_rollin_a4_eos_ckpt3664` | `0.4001` | A3/A4 prefix-rollin follow-up; useful as a mechanism study, not a fair replacement test for A2 because supervised-token density and objective surface differ. |
 | `coord_family_diagnostic` | `center_parameterization` | `0.4221` | Cross-family diagnostic comparison across coordinate parameterizations. |
 | `mixed_objective_probe` | `mixed_objective_sota_ckpt1332` | `0.4137` | Focused adapter-runtime probe of the strong mixed-objective checkpoint. |
 | `coord_component_ablation` | `coord_component_hard_ce_rp110` | `0.3901` | Clean 2B CoordExp coordinate-loss component ablation. |
@@ -80,8 +80,12 @@ The progress layer currently says three things at once:
 2. Within the newly cleaned coord-component ablation surface, the current best
    row is `hard_ce_only + rp=1.10`.
 3. Within compact-full recursive detection, the older A2/support+balance row is
-   still the best AP row. A3/A4 prefix-rollin follow-ups did not beat A2 on this
-   `val200` surface; A4 improved over A3, but its rollout behavior is less
+   still the trusted anchor and best AP row. A3/A4 prefix-rollin follow-ups did
+   not beat A2 on this `val200` surface, but that metric fact must not be read
+   as a fair causal competition: prefix-rollin changes state distribution,
+   masks prefix labels, supervises roughly half the object entries per image
+   exposure, and changes the support/balance/boundary/type-gate surface. A4
+   improved over A3 inside prefix-rollin, but its rollout behavior is less
    predictable and carries more duplicate/collapse risk.
 
 These are not contradictory. They answer different questions:
@@ -91,7 +95,9 @@ These are not contradictory. They answer different questions:
 - the new coord-component matrix intentionally isolates simpler loss choices,
   where `hard_ce_only + rp=1.10` is the clean current winner.
 - the compact-full prefix-rollin A3/A4 follow-up is evidence about continuation
-  behavior, not a new compact-full group winner.
+  behavior, not a new compact-full group winner. The clean EOS question now
+  belongs to A2+EOS-loosen, while fair prefix-rollin requires a
+  supervised-token-matched A3 or A2/A3 mixture.
 
 ## Rows Not Treated As Primary Leaderboard Entries
 

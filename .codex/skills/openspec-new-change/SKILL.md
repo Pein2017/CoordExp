@@ -1,74 +1,29 @@
 ---
 name: openspec-new-change
-description: Start a new OpenSpec change using the experimental artifact workflow. Use when the user wants to create a new feature, fix, or modification with a structured step-by-step approach.
-license: MIT
-compatibility: Requires openspec CLI.
-metadata:
-  author: openspec
-  version: "1.0"
-  generatedBy: "1.1.1"
+description: Use when the user explicitly wants to start an OpenSpec change for a stable, compatibility-sensitive CoordExp contract.
 ---
 
-Start a new change using the experimental artifact-driven approach.
+# OpenSpec New Change
 
-**Input**: The user's request should include a change name (kebab-case) OR a description of what they want to build.
+Requires `openspec` CLI.
 
-**Steps**
+OpenSpec is downgraded governance in CoordExp. Use it for stable contracts such as config schemas, training/eval behavior, loss semantics, artifact names, or normative metric semantics. Do not start OpenSpec for ordinary experiment planning, branch checklists, or implementation management; use repo-local plans/docs instead.
 
-1. **If no clear input provided, ask what they want to build**
+## Flow
 
-   Use the **AskUserQuestion tool** (open-ended, no preset options) to ask:
-   > "What change do you want to work on? Describe what you want to build or fix."
-
-   From their description, derive a kebab-case name (e.g., "add user authentication" → `add-user-auth`).
-
-   **IMPORTANT**: Do NOT proceed without understanding what the user wants to build.
-
-2. **Determine the workflow schema**
-
-   Use the default schema (omit `--schema`) unless the user explicitly requests a different workflow.
-
-   **Use a different schema only if the user mentions:**
-   - A specific schema name → use `--schema <name>`
-   - "show workflows" or "what workflows" → run `openspec schemas --json` and let them choose
-
-   **Otherwise**: Omit `--schema` to use the default.
-
-3. **Create the change directory**
+1. Confirm the requested scope is OpenSpec-worthy; otherwise say which repo-local surface should own it.
+2. Derive or accept a kebab-case change name.
+3. Use the default schema unless the user explicitly names another one.
+4. Run:
    ```bash
    openspec new change "<name>"
-   ```
-   Add `--schema <name>` only if the user requested a specific workflow.
-   This creates a scaffolded change at `openspec/changes/<name>/` with the selected schema.
-
-4. **Show the artifact status**
-   ```bash
    openspec status --change "<name>"
+   openspec instructions <first-ready-artifact> --change "<name>"
    ```
-   This shows which artifacts need to be created and which are ready (dependencies satisfied).
+5. Stop after showing the first artifact instructions. Do not write proposal/spec/design/tasks until the user asks to continue or fast-forward.
 
-5. **Get instructions for the first artifact**
-   The first artifact depends on the schema (e.g., `proposal` for spec-driven).
-   Check the status output to find the first artifact with status "ready".
-   ```bash
-   openspec instructions <first-artifact-id> --change "<name>"
-   ```
-   This outputs the template and context for creating the first artifact.
+## Guardrails
 
-6. **STOP and wait for user direction**
-
-**Output**
-
-After completing the steps, summarize:
-- Change name and location
-- Schema/workflow being used and its artifact sequence
-- Current status (0/N artifacts complete)
-- The template for the first artifact
-- Prompt: "Ready to create the first artifact? Just describe what this change is about and I'll draft it, or ask me to continue."
-
-**Guardrails**
-- Do NOT create any artifacts yet - just show the instructions
-- Do NOT advance beyond showing the first artifact template
-- If the name is invalid (not kebab-case), ask for a valid name
-- If a change with that name already exists, suggest continuing that change instead
-- Pass --schema if using a non-default workflow
+- Do not create future research gates that require later benchmark evidence.
+- Keep docs/progress/repo artifacts as the source of truth for evidence and interpretation.
+- If a change already exists, route to `openspec-continue-change`.

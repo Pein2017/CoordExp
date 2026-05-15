@@ -24,7 +24,13 @@ config_surfaces:
       authoring_snippets: configs/_shared/latest_detection/
       parser: src/config/schema.py::LatestDetectionTrainingConfig
       runtime: src/detection/runtime.py
-      notes: "Latest compact detection production baseline using random_permutation_et_rmp_ce with flat trie weights. Keep as comparator/baseline; do not use it as the prefix-rollin config surface."
+      notes: "Latest compact detection trusted anchor using random_permutation_et_rmp_ce with flat trie weights. Keep as comparator/baseline; do not use it as the prefix-rollin config surface."
+    - id: stage1_latest_compact_detection_a2_eos_loosen_ablation
+      status: running-ablation
+      config: configs/stage1/recursive_detection_ce_latest/prod/compact_full_support2_eos_loosen.yaml
+      parser: src/config/schema.py::LatestDetectionTrainingConfig
+      runtime: src/detection/runtime.py
+      notes: "A2E clean EOS ablation: A2/support2 plus objective.eos trust weighting, no prefix-rollin, no prefix masking, and no reduced supervised-token density."
     - id: stage1_latest_compact_detection_iou_gibbs_coord_softce_a5
       status: ablation-candidate
       config: configs/stage1/recursive_detection_ce_latest/prod/compact_full_support2_iou_gibbs_softce_a5.yaml
@@ -45,7 +51,7 @@ config_surfaces:
       authoring_snippets: configs/_shared/latest_detection/
       parser: src/config/schema.py::LatestDetectionTrainingConfig
       runtime: src/detection/runtime.py
-      notes: "Compact-full-only prefix_rollin_et_rmp_ce E1 ablation. EOS supervision targets the Qwen chat-template <|im_end|> marker; empirical_unlabeled_poisson_v0 is smoke/ablation-only, and production requires calibrated_formula_ref plus a versioned calibration artifact. Packing/cache remain disabled until recursive sidecar offsets are supported."
+      notes: "Compact-full-only prefix_rollin_et_rmp_ce E1/A3/A4 mechanism surface. EOS supervision targets the Qwen chat-template <|im_end|> marker; empirical_unlabeled_poisson_v0 is smoke/ablation-only, and production requires calibrated_formula_ref plus a versioned calibration artifact. Treat A3/A4 as mechanism probes rather than fair A2 challengers unless supervised-token density is matched."
     - id: stage1_latest_compact_detection_prefix_rollin_separator2_ablation
       status: diagnostic-ablation
       config: configs/stage1/recursive_detection_ce_latest/ablation/compact_full_prefix_rollin_separator2.yaml

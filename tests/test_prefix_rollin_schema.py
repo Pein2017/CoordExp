@@ -11,9 +11,7 @@ from src.config.schema import LatestDetectionTrainingConfig
 
 def _prefix_rollin_payload() -> dict[str, object]:
     return {
-        "model": {
-            "model": "model_cache/models/Qwen/Qwen3-VL-2B-Instruct-coordexp"
-        },
+        "model": {"model": "model_cache/models/Qwen/Qwen3-VL-2B-Instruct-coordexp"},
         "template": {"truncation_strategy": "raise"},
         "training": {
             "run_name": "test-prefix-rollin",
@@ -139,6 +137,28 @@ def _prefix_rollin_payload() -> dict[str, object]:
     }
 
 
+def _random_permutation_eos_payload() -> dict[str, object]:
+    payload = copy.deepcopy(_prefix_rollin_payload())
+    prefix_objective = payload["objective"]
+    assert isinstance(prefix_objective, dict)
+    eos = copy.deepcopy(prefix_objective["eos"])
+    payload["objective"] = {
+        "id": "recursive_detection_ce",
+        "variant": "random_permutation_et_rmp_ce",
+        "trie_support_weight": 2.0,
+        "trie_balance_weight": 1.0,
+        "state_weighting": "uniform_permutation",
+        "normalization": "semantic_image_bucket_balanced",
+        "eos": eos,
+    }
+    payload["experiment"] = {
+        "surface": "ablation",
+        "ablation_id": "A2E",
+        "claim_scope": "none",
+    }
+    return payload
+
+
 def _parse(payload: dict[str, object]) -> LatestDetectionTrainingConfig:
     return LatestDetectionTrainingConfig.from_mapping(payload)
 
@@ -176,10 +196,7 @@ def test_prefix_rollin_schema_accepts_compact_full_empirical_eos_ablation() -> N
     assert cfg.objective.boundary.component_weight == pytest.approx(0.3)
     assert cfg.objective.type_gate.weights.struct == pytest.approx(2.0)
     assert cfg.objective.eos.eos_token == "<|im_end|>"
-    assert (
-        cfg.objective.eos.eos_trust_weight.source
-        == "empirical_unlabeled_poisson_v0"
-    )
+    assert cfg.objective.eos.eos_trust_weight.source == "empirical_unlabeled_poisson_v0"
     assert cfg.experiment.surface == "ablation"
 
     as_mapping = cfg.to_mapping()
@@ -196,9 +213,9 @@ def test_prefix_rollin_schema_accepts_compact_full_empirical_eos_ablation() -> N
     ):
         assert flat_alias not in as_mapping["objective"]
     assert as_mapping["objective"]["target"]["support_weight"] == pytest.approx(1.0)
-    assert as_mapping["objective"]["boundary"]["separator_continue_weight"] == pytest.approx(
-        2.0
-    )
+    assert as_mapping["objective"]["boundary"][
+        "separator_continue_weight"
+    ] == pytest.approx(2.0)
     assert as_mapping["experiment"]["surface"] == "ablation"
     reparsed = LatestDetectionTrainingConfig.from_mapping(as_mapping)
     assert reparsed.objective.target.balance_weight == pytest.approx(2.0)
@@ -235,10 +252,7 @@ def test_prefix_rollin_e1_ablation_config_materializes_from_repo_path() -> None:
     assert cfg.objective.type_gate.weights.desc == pytest.approx(0.2)
     assert cfg.objective.type_gate.weights.eos == pytest.approx(0.5)
     assert cfg.objective.eos.eos_token == "<|im_end|>"
-    assert (
-        cfg.objective.eos.eos_trust_weight.source
-        == "empirical_unlabeled_poisson_v0"
-    )
+    assert cfg.objective.eos.eos_trust_weight.source == "empirical_unlabeled_poisson_v0"
     eos_trust = cfg.objective.eos.eos_trust_weight
     assert eos_trust.expected_unlabeled_count.intercept == pytest.approx(-0.35)
     assert eos_trust.expected_unlabeled_count.slope == pytest.approx(0.43)
@@ -278,7 +292,9 @@ def test_prefix_rollin_requires_objectized_boundary_section() -> None:
     payload = _prefix_rollin_payload()
     _delete_path(payload, ("objective", "boundary"))
 
-    with pytest.raises(ValueError, match=r"objective\.variant=prefix_rollin_et_rmp_ce.*boundary"):
+    with pytest.raises(
+        ValueError, match=r"objective\.variant=prefix_rollin_et_rmp_ce.*boundary"
+    ):
         _parse(payload)
 
 
@@ -300,11 +316,13 @@ def test_prefix_rollin_boundary_weights_must_be_positive_numbers(
     _set_path(payload, ("objective", "boundary", field), value)
 
     error_type = TypeError if isinstance(value, str) else ValueError
-    with pytest.raises(error_type, match=fr"objective\.boundary\.{field}"):
+    with pytest.raises(error_type, match=rf"objective\.boundary\.{field}"):
         _parse(payload)
 
 
-def test_prefix_rollin_production_accepts_calibrated_formula_ref_with_artifact() -> None:
+def test_prefix_rollin_production_accepts_calibrated_formula_ref_with_artifact() -> (
+    None
+):
     payload = _prefix_rollin_payload()
     _set_path(
         payload,
@@ -347,7 +365,9 @@ def test_latest_smoke_surface_rejects_production_claim_scope() -> None:
         _parse(payload)
 
 
-def test_existing_random_permutation_latest_schema_still_accepts_flat_trie_weights() -> None:
+def test_existing_random_permutation_latest_schema_still_accepts_flat_trie_weights() -> (
+    None
+):
     payload = _prefix_rollin_payload()
     payload.pop("experiment")
     payload["objective"] = {
@@ -364,6 +384,80 @@ def test_existing_random_permutation_latest_schema_still_accepts_flat_trie_weigh
     assert cfg.objective.variant == "random_permutation_et_rmp_ce"
     assert cfg.objective.trie_support_weight == pytest.approx(2.0)
     assert cfg.experiment is None
+
+
+def test_random_permutation_schema_accepts_eos_ablation_without_prefix_rollin() -> None:
+    cfg = _parse(_random_permutation_eos_payload())
+
+    assert cfg.objective.variant == "random_permutation_et_rmp_ce"
+    assert cfg.objective.trie_support_weight == pytest.approx(2.0)
+    assert cfg.objective.trie_balance_weight == pytest.approx(1.0)
+    assert cfg.objective.rollin is None
+    assert cfg.objective.target is None
+    assert cfg.objective.boundary is None
+    assert cfg.objective.type_gate is None
+    assert cfg.objective.eos is not None
+    assert cfg.objective.eos.eos_token == "<|im_end|>"
+    assert cfg.objective.eos.eos_trust_weight.source == "empirical_unlabeled_poisson_v0"
+    assert cfg.experiment is not None
+    assert cfg.experiment.ablation_id == "A2E"
+
+    as_mapping = cfg.to_mapping()
+    assert as_mapping["objective"]["variant"] == "random_permutation_et_rmp_ce"
+    assert as_mapping["objective"]["trie_support_weight"] == pytest.approx(2.0)
+    assert "eos" in as_mapping["objective"]
+    for prefix_only_section in ("rollin", "target", "boundary", "type_gate"):
+        assert prefix_only_section not in as_mapping["objective"]
+    reparsed = LatestDetectionTrainingConfig.from_mapping(as_mapping)
+    assert reparsed.objective.variant == "random_permutation_et_rmp_ce"
+    assert reparsed.objective.eos is not None
+
+
+def test_random_permutation_eos_ablation_requires_experiment_surface() -> None:
+    payload = _random_permutation_eos_payload()
+    payload.pop("experiment")
+
+    with pytest.raises(
+        ValueError,
+        match=r"experiment\.surface is required.*random_permutation_et_rmp_ce",
+    ):
+        _parse(payload)
+
+
+def test_random_permutation_eos_ablation_configs_materialize_from_repo_paths() -> None:
+    repo_root = Path(__file__).resolve().parents[1]
+    prod_path = (
+        repo_root
+        / "configs/stage1/recursive_detection_ce_latest/prod/compact_full_support2_eos_loosen.yaml"
+    )
+    smoke_path = (
+        repo_root
+        / "configs/stage1/recursive_detection_ce_latest/smoke/compact_full_support2_eos_loosen_ddp8_preflight.yaml"
+    )
+
+    prod_cfg = ConfigLoader.load_materialized_training_config(str(prod_path))
+    smoke_cfg = ConfigLoader.load_materialized_training_config(str(smoke_path))
+
+    for cfg in (prod_cfg, smoke_cfg):
+        assert isinstance(cfg, LatestDetectionTrainingConfig)
+        assert cfg.objective.variant == "random_permutation_et_rmp_ce"
+        assert cfg.objective.trie_support_weight == pytest.approx(2.0)
+        assert cfg.objective.trie_balance_weight == pytest.approx(1.0)
+        assert cfg.objective.rollin is None
+        assert cfg.objective.target is None
+        assert cfg.objective.boundary is None
+        assert cfg.objective.type_gate is None
+        assert cfg.objective.eos is not None
+        assert (
+            cfg.objective.eos.eos_trust_weight.source
+            == "empirical_unlabeled_poisson_v0"
+        )
+    assert prod_cfg.experiment is not None
+    assert prod_cfg.experiment.surface == "ablation"
+    assert prod_cfg.experiment.ablation_id == "A2E-support2-eos-loosen"
+    assert smoke_cfg.experiment is not None
+    assert smoke_cfg.experiment.surface == "smoke"
+    assert smoke_cfg.training["max_steps"] == 4
 
 
 @pytest.mark.parametrize(
@@ -477,7 +571,9 @@ def test_prefix_rollin_requires_config_truthful_weighting_and_normalization(
     payload = _prefix_rollin_payload()
     _set_path(payload, ("objective", field), value)
 
-    with pytest.raises(ValueError, match=fr"objective\.{field}.*prefix_rollin_et_rmp_ce"):
+    with pytest.raises(
+        ValueError, match=rf"objective\.{field}.*prefix_rollin_et_rmp_ce"
+    ):
         _parse(payload)
 
 
@@ -604,7 +700,7 @@ def test_prefix_rollin_target_weights_must_be_positive(field: str) -> None:
     payload = _prefix_rollin_payload()
     _set_path(payload, ("objective", "target", field), 0.0)
 
-    with pytest.raises(ValueError, match=fr"objective\.target\.{field}.*> 0"):
+    with pytest.raises(ValueError, match=rf"objective\.target\.{field}.*> 0"):
         _parse(payload)
 
 

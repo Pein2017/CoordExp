@@ -8,6 +8,7 @@ from typing import Any, Mapping, Sequence
 import pytest
 
 from src.detection.dataset import DetectionTrainingDataset
+from src.detection.objective import compute_eos_trust_weight
 
 
 _SPECIAL_TOKEN_RE = re.compile(r"<\|[^|]+\|>")
@@ -93,7 +94,9 @@ class FakeTokenizer:
             else:
                 token_text = text[cursor]
                 token_end = cursor + 1
-            token_id = self._token_to_id.setdefault(token_text, len(self._token_to_id) + 1)
+            token_id = self._token_to_id.setdefault(
+                token_text, len(self._token_to_id) + 1
+            )
             input_ids.append(token_id)
             offsets.append((cursor, token_end))
             cursor = token_end
@@ -215,7 +218,9 @@ class ImageExpandingSwiftTemplate(FakeSwiftTemplate):
 
 
 def _assistant_text(messages: Sequence[Mapping[str, Any]]) -> str:
-    assistant_messages = [message for message in messages if message.get("role") == "assistant"]
+    assistant_messages = [
+        message for message in messages if message.get("role") == "assistant"
+    ]
     assert len(assistant_messages) == 1
     content = assistant_messages[0]["content"]
     if isinstance(content, str):
@@ -241,21 +246,36 @@ def _raw_row() -> dict[str, Any]:
         "images": ["images/train2017/example.jpg"],
         "objects": [
             {
-                "bbox_2d": ["<|coord_10|>", "<|coord_20|>", "<|coord_30|>", "<|coord_40|>"],
+                "bbox_2d": [
+                    "<|coord_10|>",
+                    "<|coord_20|>",
+                    "<|coord_30|>",
+                    "<|coord_40|>",
+                ],
                 "desc": "cat",
                 "category_id": 17,
                 "category_name": "cat",
                 "coco_ann_id": 101,
             },
             {
-                "bbox_2d": ["<|coord_50|>", "<|coord_60|>", "<|coord_70|>", "<|coord_80|>"],
+                "bbox_2d": [
+                    "<|coord_50|>",
+                    "<|coord_60|>",
+                    "<|coord_70|>",
+                    "<|coord_80|>",
+                ],
                 "desc": "dog",
                 "category_id": 18,
                 "category_name": "dog",
                 "coco_ann_id": 102,
             },
             {
-                "bbox_2d": ["<|coord_90|>", "<|coord_100|>", "<|coord_110|>", "<|coord_120|>"],
+                "bbox_2d": [
+                    "<|coord_90|>",
+                    "<|coord_100|>",
+                    "<|coord_110|>",
+                    "<|coord_120|>",
+                ],
                 "desc": "bus",
                 "category_id": 6,
                 "category_name": "bus",
@@ -270,7 +290,12 @@ def _raw_row() -> dict[str, Any]:
     }
 
 
-def _dataset(tmp_path: Path, *, swift_template: Any | None = None) -> DetectionTrainingDataset:
+def _dataset(
+    tmp_path: Path,
+    *,
+    swift_template: Any | None = None,
+    eos_trust_weight_config: Mapping[str, Any] | None = None,
+) -> DetectionTrainingDataset:
     jsonl_path = tmp_path / "train.coord.jsonl"
     _write_jsonl(jsonl_path, [_raw_row()])
     _ensure_image(tmp_path)
@@ -287,6 +312,7 @@ def _dataset(tmp_path: Path, *, swift_template: Any | None = None) -> DetectionT
         seed=123,
         state_weighting="uniform_permutation",
         normalization="semantic_image_bucket_balanced",
+        eos_trust_weight_config=eos_trust_weight_config,
     )
 
 
@@ -318,13 +344,45 @@ def test_latest_detection_dataset_returns_encoded_sample_with_recursive_sidecar(
         index for index, label in enumerate(sample["labels"]) if label != -100
     )
     target_positions = tuple(
-        target.position for target in sample["recursive_detection_targets"].token_targets
+        target.position
+        for target in sample["recursive_detection_targets"].token_targets
     )
     assert target_positions == supervised_positions
     assert all(
         sample["labels"][target.position] == target.teacher_token_id
         for target in sample["recursive_detection_targets"].token_targets
     )
+
+
+def test_latest_detection_dataset_applies_eos_trust_without_prefix_rollin(
+    tmp_path: Path,
+) -> None:
+    eos_trust_weight_config = {"source": "constant_ablation", "value": 0.25}
+    dataset = _dataset(tmp_path, eos_trust_weight_config=eos_trust_weight_config)
+
+    sample = dataset[0]
+
+    assert sample["detection_metadata"]["mode"] == "random_permutation_et_rmp_ce"
+    assert "rollin_k" not in sample["detection_metadata"]
+    assert sample["detection_metadata"]["eos_trust_weight"] == pytest.approx(
+        compute_eos_trust_weight(3, eos_trust_weight_config)
+    )
+
+    supervised_positions = tuple(
+        index for index, label in enumerate(sample["labels"]) if label != -100
+    )
+    targets = sample["recursive_detection_targets"].token_targets
+    target_positions = tuple(target.position for target in targets)
+    assert target_positions == supervised_positions
+
+    im_end_id = dataset.tokenizer.convert_tokens_to_ids("<|im_end|>")
+    eos_targets = [target for target in targets if target.teacher_token_id == im_end_id]
+    non_eos_targets = [
+        target for target in targets if target.teacher_token_id != im_end_id
+    ]
+    assert eos_targets
+    assert all(target.loss_weight == pytest.approx(0.25) for target in eos_targets)
+    assert all(target.loss_weight == pytest.approx(1.0) for target in non_eos_targets)
 
 
 def test_latest_detection_dataset_random_order_is_epoch_deterministic(
@@ -338,7 +396,9 @@ def test_latest_detection_dataset_random_order_is_epoch_deterministic(
     observed = set()
     for epoch in range(8):
         dataset.set_epoch(epoch)
-        observed.add(tuple(dataset[0]["detection_metadata"]["realized_source_object_indices"]))
+        observed.add(
+            tuple(dataset[0]["detection_metadata"]["realized_source_object_indices"])
+        )
 
     assert epoch0_a == epoch0_b
     assert all(sorted(order) == [0, 1, 2] for order in observed)
@@ -441,7 +501,8 @@ def test_prefix_rollin_dataset_masks_prefix_and_keeps_weighted_im_end_target(
     )
     assert supervised_positions
     target_positions = tuple(
-        target.position for target in sample["recursive_detection_targets"].token_targets
+        target.position
+        for target in sample["recursive_detection_targets"].token_targets
     )
     assert target_positions == supervised_positions
     assert len(supervised_positions) < (
