@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from dataclasses import FrozenInstanceError
 from pathlib import Path
 
@@ -8,11 +9,30 @@ import pytest
 from public_data.view_contracts import (
     ImageStoreMetadata,
     ViewMetadata,
+    load_image_store_metadata,
     load_view_metadata,
     resolve_image_path,
     resolve_view_image_root,
+    write_image_store_metadata,
     write_view_metadata,
 )
+
+
+def _valid_image_store_metadata(**overrides: object) -> dict[str, object]:
+    metadata: dict[str, object] = {
+        "schema_version": 1,
+        "kind": "image_store",
+        "dataset": "coco",
+        "image_store": "res-1024",
+        "image_path_semantics": "image_store_relative",
+        "max_pixels": 1048576,
+        "visual_token_budget": 1024,
+        "image_factor": 28,
+        "image_root": "public_data/coco/images/res-1024",
+        "splits": ["train", "val"],
+    }
+    metadata.update(overrides)
+    return metadata
 
 
 def _valid_view_metadata(**overrides: object) -> dict[str, object]:
@@ -20,7 +40,7 @@ def _valid_view_metadata(**overrides: object) -> dict[str, object]:
         "schema_version": 1,
         "kind": "annotation_view",
         "dataset": "coco",
-        "view": "coco80/len-12000",
+        "view": "coco80/full",
         "image_store": "public_data/coco/images/res-1024",
         "path_anchor": "repo_root",
         "image_path_semantics": "image_store_relative",
@@ -30,7 +50,52 @@ def _valid_view_metadata(**overrides: object) -> dict[str, object]:
         "coordinate_chart": "xyxy",
         "assistant_coordinate_rendering": "qwen_coord_tokens",
         "primary_jsonl": {"train": "train.jsonl", "val": "val.jsonl"},
+        "summary": {"records": 2, "rendered_object_count": 3},
     }
+    metadata.update(overrides)
+    return metadata
+
+
+def _valid_len_view_metadata(**overrides: object) -> dict[str, object]:
+    metadata = _valid_view_metadata(
+        view="coco80/len-12000",
+        sample_policy={"type": "length_budget", "max_total_tokens": 12000},
+        length_budget_scope={"rendered_families": ["objects"]},
+        length_budget_template_id="compact-detection-v1",
+        length_stats={
+            "train": {
+                "filename": "train.length_stats.json",
+                "sha256": "a" * 64,
+            },
+            "val": {
+                "filename": "val.length_stats.json",
+                "sha256": "b" * 64,
+            },
+        },
+    )
+    metadata.update(overrides)
+    return metadata
+
+
+def _valid_proxy_view_metadata(**overrides: object) -> dict[str, object]:
+    metadata = _valid_len_view_metadata(
+        view="coco80-lvis-proxy/len-12000",
+        annotation_policy="all_proxy",
+        parent_view="coco80/len-12000",
+        proxy_policy={
+            "source_artifacts": [
+                {
+                    "kind": "lvis_proxy_jsonl",
+                    "path": "public_data/coco/rescale_32_1024_bbox_max60_lvis_proxy/train.coord.jsonl",
+                }
+            ]
+        },
+        summary={
+            "records": 2,
+            "rendered_object_count": 3,
+            "object_supervision_count": 3,
+        },
+    )
     metadata.update(overrides)
     return metadata
 
@@ -64,6 +129,7 @@ def test_resolve_image_path_is_image_store_relative(tmp_path: Path) -> None:
             "rendered_families": ["objects"],
             "excluded_sidecars": ["metadata.supervision.support_objects"],
         },
+        length_budget_template_id="compact-detection-v1",
         summary={"records": 1, "rendered_object_count": 1, "support_sidecar_count": 0},
     )
 
@@ -116,10 +182,158 @@ def test_write_and_load_view_metadata_round_trips_valid_metadata(tmp_path: Path)
     assert metadata_path.exists()
     loaded = load_view_metadata(metadata_path)
     assert loaded.dataset == "coco"
-    assert loaded.view == "coco80/len-12000"
+    assert loaded.view == "coco80/full"
     assert loaded.image_store == "public_data/coco/images/res-1024"
     assert loaded.path_anchor == "repo_root"
     assert loaded.coordinate_range == (0, 999)
+
+
+def test_write_and_load_image_store_metadata_round_trips(tmp_path: Path) -> None:
+    metadata_path = tmp_path / "images" / "res-1024" / "meta.json"
+
+    write_image_store_metadata(metadata_path, _valid_image_store_metadata())
+
+    loaded = load_image_store_metadata(metadata_path)
+    assert loaded.kind == "image_store"
+    assert loaded.image_store == "res-1024"
+    assert loaded.splits == ("train", "val")
+
+
+@pytest.mark.parametrize(
+    "required_field",
+    [
+        "schema_version",
+        "kind",
+        "dataset",
+        "image_store",
+        "image_path_semantics",
+        "max_pixels",
+        "visual_token_budget",
+        "image_factor",
+        "image_root",
+        "splits",
+    ],
+)
+def test_load_image_store_metadata_rejects_missing_required_fields(
+    tmp_path: Path,
+    required_field: str,
+) -> None:
+    metadata_path = tmp_path / "meta.json"
+    metadata = _valid_image_store_metadata()
+    metadata.pop(required_field)
+    metadata_path.write_text(json.dumps(metadata), encoding="utf-8")
+
+    with pytest.raises(ValueError, match=rf"image store metadata .*{required_field}"):
+        load_image_store_metadata(metadata_path)
+
+
+def test_load_image_store_metadata_rejects_wrong_splits_shape(
+    tmp_path: Path,
+) -> None:
+    metadata_path = tmp_path / "meta.json"
+    metadata = _valid_image_store_metadata(splits={"train": "train2017"})
+    metadata_path.write_text(json.dumps(metadata), encoding="utf-8")
+
+    with pytest.raises(ValueError, match=r"splits"):
+        load_image_store_metadata(metadata_path)
+
+
+def test_load_view_metadata_rejects_unknown_field(tmp_path: Path) -> None:
+    metadata_path = tmp_path / "metadata.json"
+    metadata = _valid_view_metadata(unexpected_contract="nope")
+    metadata_path.write_text(json.dumps(metadata), encoding="utf-8")
+
+    with pytest.raises(ValueError, match=r"view metadata .*unexpected_contract"):
+        load_view_metadata(metadata_path)
+
+
+def test_load_view_metadata_rejects_bad_coordinate_range_shape(
+    tmp_path: Path,
+) -> None:
+    metadata_path = tmp_path / "metadata.json"
+    metadata = _valid_view_metadata(coordinate_range=[0, 500, 999])
+    metadata_path.write_text(json.dumps(metadata), encoding="utf-8")
+
+    with pytest.raises(ValueError, match=r"coordinate_range.*two integers"):
+        load_view_metadata(metadata_path)
+
+
+def test_base_annotation_view_requires_summary(tmp_path: Path) -> None:
+    metadata_path = tmp_path / "metadata.json"
+    metadata = _valid_view_metadata()
+    metadata.pop("summary")
+    metadata_path.write_text(json.dumps(metadata), encoding="utf-8")
+
+    with pytest.raises(ValueError, match=r"summary"):
+        load_view_metadata(metadata_path)
+
+
+def test_length_budget_view_requires_len_contract_fields(tmp_path: Path) -> None:
+    metadata_path = tmp_path / "metadata.json"
+    metadata = _valid_len_view_metadata(length_budget_template_id=None)
+    metadata_path.write_text(json.dumps(metadata), encoding="utf-8")
+
+    with pytest.raises(ValueError, match=r"length_budget_template_id"):
+        load_view_metadata(metadata_path)
+
+
+def test_length_budget_view_validates_optional_length_stats(tmp_path: Path) -> None:
+    metadata_path = tmp_path / "metadata.json"
+    metadata = _valid_len_view_metadata(
+        length_stats={"train": {"filename": "train.length_stats.json"}}
+    )
+    metadata_path.write_text(json.dumps(metadata), encoding="utf-8")
+
+    with pytest.raises(ValueError, match=r"length_stats.train.sha256"):
+        load_view_metadata(metadata_path)
+
+
+def test_max_objects_view_accepts_legacy_cap_key(tmp_path: Path) -> None:
+    metadata_path = tmp_path / "metadata.json"
+    metadata = _valid_view_metadata(
+        view="coco80/max-60",
+        sample_policy={"type": "max_objects_legacy", "max_objects_per_image": 60},
+    )
+    metadata_path.write_text(json.dumps(metadata), encoding="utf-8")
+
+    loaded = load_view_metadata(metadata_path)
+
+    assert loaded.sample_policy == {
+        "type": "max_objects_legacy",
+        "max_objects_per_image": 60,
+    }
+
+
+def test_max_objects_view_requires_legacy_cap(tmp_path: Path) -> None:
+    metadata_path = tmp_path / "metadata.json"
+    metadata = _valid_view_metadata(
+        view="coco80/max-60",
+        sample_policy={"type": "max_objects_legacy"},
+    )
+    metadata_path.write_text(json.dumps(metadata), encoding="utf-8")
+
+    with pytest.raises(ValueError, match=r"max_objects"):
+        load_view_metadata(metadata_path)
+
+
+def test_proxy_view_requires_source_artifacts(tmp_path: Path) -> None:
+    metadata_path = tmp_path / "metadata.json"
+    metadata = _valid_proxy_view_metadata(proxy_policy={"source_artifacts": []})
+    metadata_path.write_text(json.dumps(metadata), encoding="utf-8")
+
+    with pytest.raises(ValueError, match=r"proxy_policy.source_artifacts"):
+        load_view_metadata(metadata_path)
+
+
+def test_proxy_view_requires_supervision_summary(tmp_path: Path) -> None:
+    metadata_path = tmp_path / "metadata.json"
+    metadata = _valid_proxy_view_metadata(
+        summary={"records": 2, "rendered_object_count": 3}
+    )
+    metadata_path.write_text(json.dumps(metadata), encoding="utf-8")
+
+    with pytest.raises(ValueError, match=r"summary.*object_supervision_count"):
+        load_view_metadata(metadata_path)
 
 
 def test_image_store_metadata_is_frozen_public_contract() -> None:
@@ -147,6 +361,20 @@ def test_rejects_escaped_image_path(tmp_path: Path) -> None:
 
     with pytest.raises(ValueError, match="outside image_root"):
         resolve_image_path("../raw/images/leak.jpg", image_root=image_store)
+
+
+def test_rejects_symlink_escape_image_path(tmp_path: Path) -> None:
+    image_store = tmp_path / "store"
+    image_store.mkdir()
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (outside / "leak.jpg").write_bytes(b"fake")
+    images = image_store / "images"
+    images.mkdir()
+    (images / "outside").symlink_to(outside, target_is_directory=True)
+
+    with pytest.raises(ValueError, match="outside image_root"):
+        resolve_image_path("images/outside/leak.jpg", image_root=image_store)
 
 
 def test_rejects_bare_images_image_path(tmp_path: Path) -> None:
