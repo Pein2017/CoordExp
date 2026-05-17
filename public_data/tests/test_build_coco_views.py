@@ -364,6 +364,37 @@ def test_copy_adoption_leaves_legacy_source_image_tree_intact(tmp_path: Path) ->
     assert (config.target_image_dir / "train2017" / "000000000001.jpg").is_file()
 
 
+def test_reflink_adoption_uses_reflink_and_leaves_source_intact(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source_root = tmp_path / "public_data" / "coco" / "rescale_32_1024_bbox"
+    source_image = source_root / "images" / "train2017" / "000000000001.jpg"
+    _write_image(source_image)
+    config = _config(tmp_path, source_preset=source_root, image_store_mode="reflink")
+    reflink_calls: list[list[str]] = []
+
+    def fake_run(command: list[str], check: bool) -> None:
+        reflink_calls.append(command)
+        assert check is True
+        Path(command[3]).write_bytes(Path(command[2]).read_bytes())
+
+    monkeypatch.setattr(build_coco_views.subprocess, "run", fake_run)
+
+    ImageStoreAdopter(config).prepare()
+
+    assert reflink_calls == [
+        [
+            "cp",
+            "--reflink=always",
+            str(source_image),
+            str(config.target_image_dir / "train2017" / "000000000001.jpg"),
+        ]
+    ]
+    assert source_image.is_file()
+    assert (config.target_image_dir / "train2017" / "000000000001.jpg").is_file()
+
+
 def test_cli_rejects_phase1_move_image_store_mode() -> None:
     with pytest.raises(SystemExit):
         parse_args(["--image-store-mode", "move"])
