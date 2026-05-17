@@ -9,6 +9,12 @@ from src.detection.data import CoordinateTokenBox, parse_raw_detection_row
 
 
 DATASET = Path("public_data/coco/rescale_32_1024_bbox_max60/val.coord.jsonl")
+MANIFEST = Path(
+    "manifests/public_data_provenance/coco/rescale_32_1024_bbox_max60.json"
+)
+LEGACY_MAX60_PATH = "public_data/coco/rescale_32_1024_bbox_max60"
+VAL_COORD_PATH = f"{LEGACY_MAX60_PATH}/val.coord.jsonl"
+TRAIN_COORD_PATH = f"{LEGACY_MAX60_PATH}/train.coord.jsonl"
 
 
 def _legacy_coord_token_row() -> dict:
@@ -43,8 +49,15 @@ def _first_raw_row() -> dict:
         return json.loads(handle.readline())
 
 
-def test_parse_raw_detection_row_preserves_source_schema_and_geometry_tokens() -> None:
-    raw = parse_raw_detection_row(_first_raw_row())
+def _manifest_file_by_path(manifest: dict, path: str) -> dict:
+    for entry in manifest["checksums"]["files"]:
+        if entry["path"] == path:
+            return entry
+    raise AssertionError(f"manifest is missing checksum entry for {path}")
+
+
+def test_parse_raw_detection_row_preserves_legacy_coord_token_schema_and_geometry() -> None:
+    raw = parse_raw_detection_row(_legacy_coord_token_row())
 
     assert raw.file_name == "images/val2017/000000000139.jpg"
     assert raw.images == ("images/val2017/000000000139.jpg",)
@@ -77,9 +90,28 @@ def test_parse_raw_detection_row_preserves_source_schema_and_geometry_tokens() -
     assert first.object_id is None
 
 
-def test_source_of_truth_val_coord_jsonl_matches_known_schema_counts() -> None:
+def test_legacy_max60_manifest_records_public_data_provenance() -> None:
+    manifest = json.loads(MANIFEST.read_text(encoding="utf-8"))
+
+    assert manifest["relative_path"] == LEGACY_MAX60_PATH
+    assert manifest["key_params"]["max_objects"] == 60
+
+    val_coord = _manifest_file_by_path(manifest, VAL_COORD_PATH)
+    assert val_coord["path"] == VAL_COORD_PATH
+    assert val_coord["records"] == 4_951
+
+    train_coord = _manifest_file_by_path(manifest, TRAIN_COORD_PATH)
+    assert train_coord["path"] == TRAIN_COORD_PATH
+    assert train_coord["records"] == 117_247
+
+
+def test_materialized_legacy_max60_val_coord_jsonl_matches_known_schema_counts() -> None:
     if not DATASET.exists():
-        pytest.skip(f"{DATASET} is not materialized in this worktree")
+        pytest.skip(
+            f"{DATASET} is not materialized in this worktree; this test only "
+            "verifies local materialized public_data, while the manifest sentinel "
+            "remains the default provenance check"
+        )
 
     rows = 0
     object_count = 0

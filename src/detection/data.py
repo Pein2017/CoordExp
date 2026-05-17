@@ -14,7 +14,6 @@ _RAW_REQUIRED_OBJECT_KEYS = frozenset(
     {"bbox_2d", "category_id", "category_name", "coco_ann_id", "desc"}
 )
 _RAW_OPTIONAL_OBJECT_KEYS = frozenset({"object_id"})
-_RAW_OBJECT_KEYS = _RAW_REQUIRED_OBJECT_KEYS | _RAW_OPTIONAL_OBJECT_KEYS
 _RAW_METADATA_KEYS = frozenset({"source", "split"})
 _COORD_TOKEN_RE = re.compile(r"<\|coord_(\d{1,3})\|>")
 
@@ -141,7 +140,7 @@ class NormalizedDetectionSample:
 
 
 def parse_raw_detection_row(row: Mapping[str, Any]) -> RawDetectionRow:
-    """Parse a source COCO coord-token JSONL row into frozen typed containers."""
+    """Parse legacy coord-token or canonical norm1000 rows into typed containers."""
 
     _validate_key_set(row, expected=_RAW_TOP_LEVEL_KEYS, label="top-level")
     metadata_raw = _require_mapping(row["metadata"], path="metadata")
@@ -266,13 +265,6 @@ def _parse_coordinate_box(value: Any, *, path: str) -> CoordinateTokenBox:
     raise ValueError(
         f"{path} must contain either four norm1000 integers or four coordinate-token strings"
     )
-
-
-def _parse_coordinate_token_box(value: Any, *, path: str) -> CoordinateTokenBox:
-    box = _parse_coordinate_box(value, path=path)
-    if _is_norm1000_integer_box(box):
-        raise ValueError(f"{path} must contain four coordinate-token strings")
-    return box
 
 
 def _require_coordinate_token(value: Any, *, path: str) -> str:
