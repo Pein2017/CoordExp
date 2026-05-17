@@ -550,6 +550,7 @@ def _validate_proxy_view_metadata(meta: ViewMetadata) -> None:
         raise ValueError(
             "proxy_policy.source_artifacts must be a non-empty list for proxy views"
         )
+    _validate_proxy_source_artifacts(source_artifacts)
 
     summary = _require_mapping(meta.summary, field="summary")
     supervision_fields = (
@@ -562,6 +563,19 @@ def _validate_proxy_view_metadata(meta: ViewMetadata) -> None:
             "summary must include object_supervision_count, "
             "rendered_proxy_candidate_count, or support_sidecar_count for proxy views"
         )
+    for field in supervision_fields:
+        if field in summary:
+            _require_non_negative_int(summary[field], field=f"summary.{field}")
+
+
+def _validate_proxy_source_artifacts(source_artifacts: Sequence[Any]) -> None:
+    """Validate proxy source artifact references."""
+
+    for index, source_artifact in enumerate(source_artifacts):
+        field = f"proxy_policy.source_artifacts[{index}]"
+        source_mapping = _require_mapping(source_artifact, field=field)
+        _require_non_empty_string(source_mapping.get("kind"), field=f"{field}.kind")
+        _require_non_empty_string(source_mapping.get("path"), field=f"{field}.path")
 
 
 def _validate_mapping_of_strings(
@@ -604,6 +618,13 @@ def _require_positive_int(value: Any, *, field: str) -> None:
 
     if type(value) is not int or value <= 0:
         raise ValueError(f"{field} must be a positive integer")
+
+
+def _require_non_negative_int(value: Any, *, field: str) -> None:
+    """Require a non-negative integer value."""
+
+    if type(value) is not int or value < 0:
+        raise ValueError(f"{field} must be a non-negative integer")
 
 
 def _view_suffix_startswith(view: str, *, prefix: str) -> bool:

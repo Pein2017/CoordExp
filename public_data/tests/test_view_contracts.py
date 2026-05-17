@@ -325,6 +325,46 @@ def test_proxy_view_requires_source_artifacts(tmp_path: Path) -> None:
         load_view_metadata(metadata_path)
 
 
+@pytest.mark.parametrize(
+    ("source_artifact", "expected_error"),
+    [
+        (None, r"proxy_policy.source_artifacts\[0\] must be a mapping"),
+        ({}, r"proxy_policy.source_artifacts\[0\].kind"),
+        (
+            {"kind": "lvis_proxy_jsonl"},
+            r"proxy_policy.source_artifacts\[0\].path",
+        ),
+        (
+            {
+                "kind": "",
+                "path": "public_data/coco/rescale_32_1024_bbox_max60_lvis_proxy/train.coord.jsonl",
+            },
+            r"proxy_policy.source_artifacts\[0\].kind",
+        ),
+        (
+            {
+                "kind": "lvis_proxy_jsonl",
+                "path": "",
+            },
+            r"proxy_policy.source_artifacts\[0\].path",
+        ),
+    ],
+)
+def test_proxy_view_rejects_malformed_source_artifacts(
+    tmp_path: Path,
+    source_artifact: object,
+    expected_error: str,
+) -> None:
+    metadata_path = tmp_path / "metadata.json"
+    metadata = _valid_proxy_view_metadata(
+        proxy_policy={"source_artifacts": [source_artifact]}
+    )
+    metadata_path.write_text(json.dumps(metadata), encoding="utf-8")
+
+    with pytest.raises(ValueError, match=expected_error):
+        load_view_metadata(metadata_path)
+
+
 def test_proxy_view_requires_supervision_summary(tmp_path: Path) -> None:
     metadata_path = tmp_path / "metadata.json"
     metadata = _valid_proxy_view_metadata(
@@ -333,6 +373,35 @@ def test_proxy_view_requires_supervision_summary(tmp_path: Path) -> None:
     metadata_path.write_text(json.dumps(metadata), encoding="utf-8")
 
     with pytest.raises(ValueError, match=r"summary.*object_supervision_count"):
+        load_view_metadata(metadata_path)
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("object_supervision_count", None),
+        ("object_supervision_count", True),
+        ("object_supervision_count", -1),
+        ("rendered_proxy_candidate_count", None),
+        ("rendered_proxy_candidate_count", False),
+        ("rendered_proxy_candidate_count", -1),
+        ("support_sidecar_count", None),
+        ("support_sidecar_count", True),
+        ("support_sidecar_count", -1),
+    ],
+)
+def test_proxy_view_requires_non_negative_integer_supervision_summary_values(
+    tmp_path: Path,
+    field: str,
+    value: object,
+) -> None:
+    metadata_path = tmp_path / "metadata.json"
+    metadata = _valid_proxy_view_metadata(
+        summary={"records": 2, "rendered_object_count": 3, field: value}
+    )
+    metadata_path.write_text(json.dumps(metadata), encoding="utf-8")
+
+    with pytest.raises(ValueError, match=rf"summary\.{field}"):
         load_view_metadata(metadata_path)
 
 
