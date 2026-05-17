@@ -3970,6 +3970,9 @@ Post-review spec reconciliation:
   tests/test_stage2_ab_training.py -p no:cacheprovider` reported 242 passed.
 - Gate-2 config parse still resolves to compact-full/unconstrained with
   `max_steps=16`, `eval_steps=16`, and `rollout_template_family=compact_full`.
+- Subagent spec re-review found no remaining P0/P1/P2 blockers for the prior
+  Stage-2 compact-full readiness issues. The implementation slice was committed
+  as `c84f9094 Refine compact-full Stage-2 readiness`.
 
 ## Continue The Grill-Me Loop
 

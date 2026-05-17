@@ -14,10 +14,12 @@ Date: 2026-05-15
 
 Spec: `docs/superpowers/specs/2026-05-15-unified-training-infrastructure-architecture-design.md`
 
-Status: implementation in progress. Cleanup/refactor core work has landed in
-this branch, compact-full Stage-2 Gate 1/Gate 2 evidence was added on
-2026-05-17, and the remaining work is final spec reconciliation, verification,
-subagent review, and scoped commit hygiene.
+Status: current implementation/review slice complete and committed as
+`c84f9094` on 2026-05-17. Cleanup/refactor core work has landed in this branch,
+compact-full Stage-2 Gate 1/Gate 2 evidence was added, final spec
+reconciliation passed subagent review, focused verification passed, and scoped
+commit hygiene is complete. Unchecked roadmap tasks below remain future staged
+refactor work unless explicitly selected for the next implementation slice.
 
 ## Execution Policy
 
