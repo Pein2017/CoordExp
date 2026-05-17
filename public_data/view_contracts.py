@@ -152,7 +152,7 @@ def safe_relative_image_ref(path: str) -> Path:
     if ".." in image_ref.parts:
         raise ValueError(f"image_ref resolves outside image_root: {path}")
 
-    if not image_ref.parts or image_ref.parts[0] != "images":
+    if len(image_ref.parts) <= 1 or image_ref.parts[0] != "images":
         raise ValueError(f"image_ref must start with images/: {path}")
 
     return image_ref
