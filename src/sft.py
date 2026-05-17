@@ -1792,6 +1792,25 @@ def _resolve_root_image_dir_for_training(
     return os.path.abspath(os.path.dirname(str(train_jsonl)))
 
 
+def _require_root_image_dir_matches_latest_detection(
+    root_image_dir: str | Path,
+    *,
+    resolved_image_root: str | Path,
+) -> Path:
+    """Validate an existing ROOT_IMAGE_DIR against latest-detection metadata."""
+
+    existing_root_dir = Path(root_image_dir).expanduser().resolve(strict=False)
+    resolved_root_dir = Path(resolved_image_root).expanduser().resolve(strict=False)
+    if existing_root_dir != resolved_root_dir:
+        raise ValueError(
+            "ROOT_IMAGE_DIR does not match latest detection image root: "
+            f"ROOT_IMAGE_DIR={existing_root_dir}, "
+            f"resolved_image_root={resolved_root_dir}"
+        )
+
+    return existing_root_dir
+
+
 def _collect_dependency_provenance() -> dict[str, Any]:
     return _collect_dependency_provenance_impl()
 
@@ -2155,12 +2174,10 @@ def main():
         os.environ["ROOT_IMAGE_DIR"] = root_dir
         logger.info(f"Set ROOT_IMAGE_DIR={root_dir}")
     elif latest_detection_config is not None:
-        existing_root_dir = os.path.abspath(str(root_image_dir))
-        if existing_root_dir != root_dir:
-            raise ValueError(
-                "ROOT_IMAGE_DIR does not match latest detection image root: "
-                f"ROOT_IMAGE_DIR={existing_root_dir}, resolved_image_root={root_dir}"
-            )
+        _require_root_image_dir_matches_latest_detection(
+            root_image_dir,
+            resolved_image_root=root_dir,
+        )
 
     # Initialize SwiftSft with TrainArguments object directly
     logger.info("Initializing ms-swift pipeline...")

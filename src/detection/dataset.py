@@ -9,7 +9,11 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any, Literal, Mapping, MutableMapping, Sequence
 
-from public_data.view_contracts import load_view_metadata, resolve_view_image_root
+from public_data.view_contracts import (
+    load_view_metadata,
+    resolve_view_image_root,
+    resolve_view_repo_root,
+)
 from torch.utils.data import Dataset
 
 from src.common.detection_chat import build_detection_chat_messages
@@ -104,11 +108,21 @@ def resolve_detection_jsonl_image_root(
     meta_path = path.parent / "meta.json"
     if meta_path.exists():
         metadata = load_view_metadata(meta_path)
-        metadata_image_root = resolve_view_image_root(metadata, path.parent)
+        metadata_repo_root = (
+            None
+            if Path(metadata.image_store).is_absolute()
+            else resolve_view_repo_root(metadata, path.parent)
+        )
+        metadata_image_root = resolve_view_image_root(
+            metadata,
+            path.parent,
+            repo_root=metadata_repo_root,
+        )
         explicit_image_root = _resolve_explicit_image_root(
             image_root,
             metadata_image_root=metadata_image_root,
             metadata_image_store=metadata.image_store,
+            metadata_repo_root=metadata_repo_root,
         )
         if (
             explicit_image_root is not None
@@ -127,6 +141,7 @@ def resolve_detection_jsonl_image_root(
         image_root,
         metadata_image_root=None,
         metadata_image_store=None,
+        metadata_repo_root=None,
     )
     if explicit_image_root is not None:
         return explicit_image_root
@@ -142,6 +157,7 @@ def _resolve_explicit_image_root(
     *,
     metadata_image_root: Path | None,
     metadata_image_store: str | None,
+    metadata_repo_root: Path | None,
 ) -> Path | None:
     """Resolve an explicit image root without CWD dependence when metadata exists."""
 
@@ -152,7 +168,11 @@ def _resolve_explicit_image_root(
     if explicit_path.is_absolute():
         return explicit_path.resolve(strict=False)
 
-    if metadata_image_root is None or metadata_image_store is None:
+    if (
+        metadata_image_root is None
+        or metadata_image_store is None
+        or metadata_repo_root is None
+    ):
         return explicit_path.resolve(strict=False)
 
     metadata_image_store_path = Path(metadata_image_store)
@@ -162,8 +182,7 @@ def _resolve_explicit_image_root(
     if explicit_path == metadata_image_store_path:
         return metadata_image_root
 
-    repo_root = metadata_image_root.parents[len(metadata_image_store_path.parts) - 1]
-    return (repo_root / explicit_path).resolve(strict=False)
+    return (metadata_repo_root / explicit_path).resolve(strict=False)
 
 
 @dataclass(frozen=True)

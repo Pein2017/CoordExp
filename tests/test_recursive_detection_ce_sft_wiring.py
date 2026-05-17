@@ -27,6 +27,7 @@ from src.sft import (
 REPO_ROOT = Path(__file__).resolve().parents[1]
 SFT_PATH = REPO_ROOT / "src" / "sft.py"
 RUNTIME_PATH = REPO_ROOT / "src" / "detection" / "runtime.py"
+MAX_OBJECTS_COMPAT_WARNING = "data.max_objects is compatibility-only"
 
 
 def _prod_latest_detection_config() -> LatestDetectionTrainingConfig:
@@ -34,7 +35,8 @@ def _prod_latest_detection_config() -> LatestDetectionTrainingConfig:
         REPO_ROOT
         / "configs/stage1/recursive_detection_ce_latest/prod/compact_full_support2.yaml"
     )
-    cfg = ConfigLoader.load_materialized_training_config(str(config_path))
+    with pytest.warns(UserWarning, match=MAX_OBJECTS_COMPAT_WARNING):
+        cfg = ConfigLoader.load_materialized_training_config(str(config_path))
     assert isinstance(cfg, LatestDetectionTrainingConfig)
     return cfg
 
@@ -253,8 +255,12 @@ def test_sft_rejects_latest_recursive_detection_packing_preflight_config() -> No
         / "configs/stage1/recursive_detection_ce_latest/negative/compact_full_static_packing_should_fail.yaml"
     )
 
-    with pytest.raises(ValueError, match=r"recursive_detection_ce.*static packing"):
-        ConfigLoader.load_materialized_training_config(str(config_path))
+    with pytest.warns(UserWarning, match=MAX_OBJECTS_COMPAT_WARNING):
+        with pytest.raises(
+            ValueError,
+            match=r"recursive_detection_ce.*static packing",
+        ):
+            ConfigLoader.load_materialized_training_config(str(config_path))
 
 
 @pytest.mark.parametrize(

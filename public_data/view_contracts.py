@@ -143,9 +143,11 @@ def resolve_view_image_root(
     if image_store.is_absolute():
         return image_store.resolve()
 
-    resolved_repo_root = (
-        repo_root if repo_root is not None else _infer_repo_root(view_root)
-    ).resolve()
+    resolved_repo_root = resolve_view_repo_root(
+        meta,
+        view_root,
+        repo_root=repo_root,
+    )
     resolved_image_root = (resolved_repo_root / image_store).resolve()
 
     try:
@@ -156,6 +158,30 @@ def resolve_view_image_root(
         ) from exc
 
     return resolved_image_root
+
+
+def resolve_view_repo_root(
+    meta: ViewMetadata,
+    view_root: Path,
+    repo_root: Path | None = None,
+) -> Path:
+    """Resolve the repo-root path anchor used by a view metadata record.
+
+    :param meta: View metadata containing the image store reference.
+    :param view_root: Root directory for the view artifact.
+    :param repo_root: Explicit repository root for repo-root-anchored views.
+    :returns: Absolute repository root path.
+    """
+
+    _validate_view_metadata(meta)
+
+    image_store = _validate_view_image_store(meta)
+    if image_store.is_absolute():
+        raise ValueError("absolute image_store does not use a repo_root path_anchor")
+
+    return (
+        repo_root if repo_root is not None else _infer_repo_root(view_root)
+    ).resolve()
 
 
 def resolve_image_path(image_ref: str, image_root: Path) -> Path:

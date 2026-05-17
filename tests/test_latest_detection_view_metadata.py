@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 from typing import Any, Mapping, Sequence
 
@@ -21,7 +22,10 @@ from src.detection.objective import (
     prepare_detection_training_example,
 )
 from src.detection.template import get_detection_template
-from src.sft import _resolve_root_image_dir_for_training
+from src.sft import (
+    _require_root_image_dir_matches_latest_detection,
+    _resolve_root_image_dir_for_training,
+)
 from test_detection_training_dataset import FakeSwiftTemplate
 
 
@@ -162,6 +166,65 @@ def _write_latest_compact_view(tmp_path: Path) -> tuple[Path, Path]:
     return jsonl_path, image_root
 
 
+def _write_symlinked_latest_compact_view(tmp_path: Path) -> tuple[Path, Path, str]:
+    repo_root = tmp_path
+    real_image_root = repo_root / "public_data/coco/shared/res-1024"
+    image_path = real_image_root / "images/val2017/000000000139.jpg"
+    image_path.parent.mkdir(parents=True, exist_ok=True)
+    image_path.write_bytes(b"unit-test-image-placeholder")
+
+    metadata_image_store = repo_root / "public_data/coco/images/res-1024"
+    metadata_image_store.parent.mkdir(parents=True, exist_ok=True)
+    metadata_image_store.symlink_to(real_image_root, target_is_directory=True)
+
+    explicit_image_store = repo_root / "public_data/coco/images-alias/res-1024"
+    explicit_image_store.parent.mkdir(parents=True, exist_ok=True)
+    explicit_image_store.symlink_to(real_image_root, target_is_directory=True)
+    explicit_relative = "public_data/coco/images-alias/res-1024"
+
+    view_root = repo_root / "public_data/coco/views/coco80/len-12000"
+    view_root.mkdir(parents=True, exist_ok=True)
+    (view_root / "meta.json").write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "kind": "annotation_view",
+                "dataset": "coco",
+                "view": "coco80/len-12000",
+                "image_store": "public_data/coco/images/res-1024",
+                "path_anchor": "repo_root",
+                "image_path_semantics": "image_store_relative",
+                "coordinate_space": "norm1000",
+                "coordinate_storage": "integer",
+                "coordinate_range": [0, 999],
+                "coordinate_chart": "xyxy",
+                "assistant_coordinate_rendering": "qwen_coord_tokens",
+                "primary_jsonl": {"val": "val.jsonl"},
+                "sample_policy": {
+                    "type": "length_budget",
+                    "max_total_tokens": 12000,
+                },
+                "length_budget_scope": {"rendered_families": ["assistant"]},
+                "length_budget_template_id": "compact_full",
+                "summary": {},
+            },
+            ensure_ascii=False,
+            indent=2,
+            sort_keys=True,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    row = _canonical_all_proxy_row()
+    row["images"] = ["images/val2017/000000000139.jpg"]
+    row["file_name"] = "000000000139.jpg"
+    jsonl_path = view_root / "val.jsonl"
+    _write_jsonl(jsonl_path, [row])
+
+    return jsonl_path, real_image_root, explicit_relative
+
+
 def _load_latest_compact_view_dataset(
     jsonl_path: Path,
     *,
@@ -265,20 +328,21 @@ def test_dataset_exposes_rendered_span_sources_without_model_input_leak(
     jsonl_path = tmp_path / "val.coord.jsonl"
     _write_jsonl(jsonl_path, [_canonical_all_proxy_row()])
     _ensure_image(tmp_path)
-    dataset = DetectionTrainingDataset.from_jsonl(
-        jsonl_path,
-        swift_template=FakeSwiftTemplate(),
-        image_root=tmp_path / "image-root",
-        detection_template_id="compact_full",
-        mode="sorted_sft",
-        object_ordering="sorted",
-        user_prompt="Detect every object.",
-        system_prompt="You are a detector.",
-        max_objects=60,
-        seed=123,
-        state_weighting="none",
-        normalization="token_mean",
-    )
+    with pytest.warns(UserWarning, match="data.max_objects is compatibility-only"):
+        dataset = DetectionTrainingDataset.from_jsonl(
+            jsonl_path,
+            swift_template=FakeSwiftTemplate(),
+            image_root=tmp_path / "image-root",
+            detection_template_id="compact_full",
+            mode="sorted_sft",
+            object_ordering="sorted",
+            user_prompt="Detect every object.",
+            system_prompt="You are a detector.",
+            max_objects=60,
+            seed=123,
+            state_weighting="none",
+            normalization="token_mean",
+        )
 
     sample = dataset[0]
 
@@ -343,6 +407,21 @@ def test_dataset_accepts_explicit_image_root_matching_view_metadata(
     assert dataset._image_root == image_root.resolve()
 
 
+def test_dataset_accepts_explicit_relative_image_root_matching_symlinked_metadata(
+    tmp_path: Path,
+) -> None:
+    jsonl_path, real_image_root, explicit_relative = _write_symlinked_latest_compact_view(
+        tmp_path
+    )
+
+    dataset = _load_latest_compact_view_dataset(
+        jsonl_path,
+        image_root=explicit_relative,
+    )
+
+    assert dataset._image_root == real_image_root.resolve()
+
+
 def test_dataset_rejects_explicit_image_root_mismatching_view_metadata(
     tmp_path: Path,
 ) -> None:
@@ -375,6 +454,32 @@ def test_sft_root_image_dir_uses_latest_compact_view_metadata_not_cwd(
     assert resolved == str(image_root.resolve())
     assert not resolved.endswith("/None")
     assert Path(resolved) != Path.cwd().resolve()
+
+
+def test_sft_accepts_preexisting_root_image_dir_resolving_to_metadata_root(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    jsonl_path, image_root, explicit_relative = _write_symlinked_latest_compact_view(
+        tmp_path
+    )
+    latest_detection_config = type(
+        "LatestDetectionConfig",
+        (),
+        {"data": type("DataConfig", (), {"image_root": None})()},
+    )()
+    resolved = _resolve_root_image_dir_for_training(
+        latest_detection_config=latest_detection_config,
+        train_jsonl=jsonl_path,
+    )
+
+    monkeypatch.setenv("ROOT_IMAGE_DIR", str(tmp_path / explicit_relative))
+    accepted = _require_root_image_dir_matches_latest_detection(
+        os.environ["ROOT_IMAGE_DIR"],
+        resolved_image_root=resolved,
+    )
+
+    assert accepted == image_root.resolve()
 
 
 def test_proxy_candidate_bbox_coords_do_not_receive_recursive_bbox_supervision() -> None:
