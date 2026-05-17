@@ -14,7 +14,11 @@ from src.common.detection_compact_rows import (
     parse_compact_row,
     render_compact_row,
 )
-from src.detection.data import NormalizedDetectionObject, NormalizedDetectionSample
+from src.detection.data import (
+    CoordinateTokenBox,
+    NormalizedDetectionObject,
+    NormalizedDetectionSample,
+)
 from src.utils.assistant_json import dumps_coordjson
 
 
@@ -464,7 +468,7 @@ class CompactFullTemplate:
         _validate_compact_desc(obj.desc)
         return render_compact_row(
             obj.desc,
-            obj.bbox_2d.tokens,
+            _render_bbox_coord_tokens(obj.bbox_2d),
             include_object_ref_marker=True,
             include_bbox_start_marker=True,
         )
@@ -593,7 +597,7 @@ def _append_stage1_json_entry(
     structural_spans.append(bbox_start_span)
 
     coordinate_spans: list[CharSpan] = []
-    for coord_index, token in enumerate(obj.bbox_2d.tokens):
+    for coord_index, token in enumerate(_render_bbox_coord_tokens(obj.bbox_2d)):
         if coord_index:
             structural_spans.append(builder.append(", ", "coordinate_separator"))
         coordinate_spans.append(builder.append(token, f"coord_{coord_index}"))
@@ -632,7 +636,7 @@ def _append_compact_full_entry(
 
     coordinate_spans = tuple(
         builder.append(token, f"coord_{coord_index}")
-        for coord_index, token in enumerate(obj.bbox_2d.tokens)
+        for coord_index, token in enumerate(_render_bbox_coord_tokens(obj.bbox_2d))
     )
     entry_span = CharSpan(entry_start, len(builder), "object_entry")
     bbox_span = CharSpan(bbox_start_span.end, len(builder), "bbox")
@@ -940,7 +944,7 @@ def _char_spans_overlap(left: CharSpan, right: CharSpan) -> bool:
 def _object_payload(obj: NormalizedDetectionObject) -> dict[str, Any]:
     return {
         "desc": obj.desc,
-        "bbox_2d": list(obj.bbox_2d.tokens),
+        "bbox_2d": list(_render_bbox_coord_tokens(obj.bbox_2d)),
     }
 
 
@@ -982,11 +986,17 @@ def _validate_common_surface(
 
 
 def _validate_bbox_tokens(obj: NormalizedDetectionObject) -> None:
-    for token in obj.bbox_2d.tokens:
+    for token in _render_bbox_coord_tokens(obj.bbox_2d):
         if not _is_strict_coord_token(token):
             raise ValueError(
                 f"object {obj.object_instance_id} must use coord-token bbox_2d values"
             )
+
+
+def _render_bbox_coord_tokens(bbox_2d: CoordinateTokenBox) -> tuple[str, str, str, str]:
+    """Return the coord-token render surface for legacy and norm1000 boxes."""
+
+    return bbox_2d.tokens
 
 
 def _is_strict_coord_token(token: object) -> bool:

@@ -10,9 +10,11 @@ from typing import Any, Literal, Mapping, Sequence
 _RAW_TOP_LEVEL_KEYS = frozenset(
     {"file_name", "height", "image_id", "images", "metadata", "objects", "width"}
 )
-_RAW_OBJECT_KEYS = frozenset(
+_RAW_REQUIRED_OBJECT_KEYS = frozenset(
     {"bbox_2d", "category_id", "category_name", "coco_ann_id", "desc"}
 )
+_RAW_OPTIONAL_OBJECT_KEYS = frozenset({"object_id"})
+_RAW_OBJECT_KEYS = _RAW_REQUIRED_OBJECT_KEYS | _RAW_OPTIONAL_OBJECT_KEYS
 _RAW_METADATA_KEYS = frozenset({"source", "split"})
 _COORD_TOKEN_RE = re.compile(r"<\|coord_(\d{1,3})\|>")
 
@@ -21,14 +23,24 @@ ObjectOrderingStrategy = Literal["sorted", "random_permutation"]
 
 @dataclass(frozen=True)
 class CoordinateTokenBox:
-    x1: str
-    y1: str
-    x2: str
-    y2: str
+    x1: str | int
+    y1: str | int
+    x2: str | int
+    y2: str | int
 
     @property
     def tokens(self) -> tuple[str, str, str, str]:
-        return (self.x1, self.y1, self.x2, self.y2)
+        return tuple(
+            _coordinate_component_token(component)
+            for component in (self.x1, self.y1, self.x2, self.y2)
+        )
+
+    @property
+    def values(self) -> tuple[int, int, int, int]:
+        return tuple(
+            _coordinate_component_value(component)
+            for component in (self.x1, self.y1, self.x2, self.y2)
+        )
 
 
 @dataclass(frozen=True)
@@ -45,6 +57,7 @@ class RawDetectionObject:
     category_id: int
     category_name: str
     coco_ann_id: int
+    object_id: str | None = None
 
 
 @dataclass(frozen=True)
@@ -68,6 +81,7 @@ class NormalizedDetectionObject:
     category_id: int
     category_name: str
     coco_ann_id: int
+    object_id: str | None = None
 
 
 @dataclass(frozen=True)
@@ -179,6 +193,7 @@ def normalize_detection_row(
                 category_id=source.category_id,
                 category_name=source.category_name,
                 coco_ann_id=source.coco_ann_id,
+                object_id=source.object_id,
             )
         )
 
@@ -197,32 +212,67 @@ def normalize_detection_row(
 def _parse_raw_object(obj: Any, *, index: int) -> RawDetectionObject:
     path = f"objects[{index}]"
     obj_raw = _require_mapping(obj, path=path)
-    _validate_key_set(obj_raw, expected=_RAW_OBJECT_KEYS, label=path, key_name="object")
+    _validate_key_set(
+        obj_raw,
+        expected=_RAW_REQUIRED_OBJECT_KEYS,
+        optional=_RAW_OPTIONAL_OBJECT_KEYS,
+        label=path,
+        key_name="object",
+    )
+    bbox_2d = _parse_coordinate_box(obj_raw["bbox_2d"], path=f"{path}.bbox_2d")
+    object_id = (
+        _require_str(obj_raw["object_id"], path=f"{path}.object_id")
+        if "object_id" in obj_raw
+        else None
+    )
+    if _is_norm1000_integer_box(bbox_2d) and object_id is None:
+        raise ValueError(f"{path}.object_id is required for norm1000 integer bbox_2d rows")
+
     return RawDetectionObject(
         source_object_index=index,
         desc=_require_str(obj_raw["desc"], path=f"{path}.desc"),
-        bbox_2d=_parse_coordinate_token_box(obj_raw["bbox_2d"], path=f"{path}.bbox_2d"),
+        bbox_2d=bbox_2d,
         category_id=_require_int(obj_raw["category_id"], path=f"{path}.category_id"),
         category_name=_require_str(obj_raw["category_name"], path=f"{path}.category_name"),
         coco_ann_id=_require_int(obj_raw["coco_ann_id"], path=f"{path}.coco_ann_id"),
+        object_id=object_id,
+    )
+
+
+def _parse_coordinate_box(value: Any, *, path: str) -> CoordinateTokenBox:
+    values = _require_sequence(value, path=path)
+    if len(values) != 4:
+        raise ValueError(
+            f"{path} must contain exactly four coordinate-token strings "
+            "or norm1000 integers"
+        )
+    if _all_norm1000_integer_components(values):
+        coords = tuple(
+            _require_norm1000_integer_coord(coord, path=f"{path}[{idx}]")
+            for idx, coord in enumerate(values)
+        )
+        _validate_non_inverted_xyxy(coords, path=path, format_label="norm1000 integer")
+        return CoordinateTokenBox(*coords)
+    if all(isinstance(component, str) for component in values):
+        tokens = tuple(
+            _require_coordinate_token(token, path=f"{path}[{idx}]")
+            for idx, token in enumerate(values)
+        )
+        coords = tuple(_coordinate_token_value(token) for token in tokens)
+        _validate_non_inverted_xyxy(
+            coords, path=path, format_label="coordinate-token"
+        )
+        return CoordinateTokenBox(*tokens)
+    raise ValueError(
+        f"{path} must contain either four norm1000 integers or four coordinate-token strings"
     )
 
 
 def _parse_coordinate_token_box(value: Any, *, path: str) -> CoordinateTokenBox:
-    values = _require_sequence(value, path=path)
-    if len(values) != 4:
-        raise ValueError(f"{path} must contain exactly four coordinate-token strings")
-    tokens = tuple(
-        _require_coordinate_token(token, path=f"{path}[{idx}]")
-        for idx, token in enumerate(values)
-    )
-    x1, y1, x2, y2 = (_coordinate_token_value(token) for token in tokens)
-    if x1 > x2 or y1 > y2:
-        raise ValueError(
-            f"{path} must be a non-inverted xyxy coordinate-token box; "
-            f"got x1={x1}, y1={y1}, x2={x2}, y2={y2}"
-        )
-    return CoordinateTokenBox(*tokens)
+    box = _parse_coordinate_box(value, path=path)
+    if _is_norm1000_integer_box(box):
+        raise ValueError(f"{path} must contain four coordinate-token strings")
+    return box
 
 
 def _require_coordinate_token(value: Any, *, path: str) -> str:
@@ -246,6 +296,53 @@ def _coordinate_token_value(token: str) -> int:
     return int(match.group(1))
 
 
+def _coordinate_component_token(value: str | int) -> str:
+    if isinstance(value, str):
+        return value
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise ValueError(f"coordinate value must be a string token or integer, got {value!r}")
+    if value < 0 or value > 999:
+        raise ValueError(f"coordinate integer must be in the 0..999 range, got {value}")
+    return f"<|coord_{value}|>"
+
+
+def _coordinate_component_value(value: str | int) -> int:
+    if isinstance(value, str):
+        return _coordinate_token_value(value)
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise ValueError(f"coordinate value must be a string token or integer, got {value!r}")
+    return value
+
+
+def _all_norm1000_integer_components(values: Sequence[Any]) -> bool:
+    return all(isinstance(value, int) and not isinstance(value, bool) for value in values)
+
+
+def _require_norm1000_integer_coord(value: Any, *, path: str) -> int:
+    coord = _require_int(value, path=path)
+    if coord < 0 or coord > 999:
+        raise ValueError(f"{path} norm1000 coordinate must be in the 0..999 range")
+    return coord
+
+
+def _validate_non_inverted_xyxy(
+    coords: tuple[int, int, int, int], *, path: str, format_label: str
+) -> None:
+    x1, y1, x2, y2 = coords
+    if x1 > x2 or y1 > y2:
+        raise ValueError(
+            f"{path} must be a non-inverted xyxy {format_label} box; "
+            f"got x1={x1}, y1={y1}, x2={x2}, y2={y2}"
+        )
+
+
+def _is_norm1000_integer_box(box: CoordinateTokenBox) -> bool:
+    return all(
+        isinstance(component, int) and not isinstance(component, bool)
+        for component in (box.x1, box.y1, box.x2, box.y2)
+    )
+
+
 def _realize_object_order(
     raw: RawDetectionRow, *, object_ordering: ObjectOrderingPlan
 ) -> tuple[int, ...]:
@@ -253,8 +350,8 @@ def _realize_object_order(
     if object_ordering.strategy == "sorted":
         geometry_keys = tuple(
             (
-                _coordinate_token_value(obj.bbox_2d.y1),
-                _coordinate_token_value(obj.bbox_2d.x1),
+                obj.bbox_2d.values[1],
+                obj.bbox_2d.values[0],
                 obj.source_object_index,
             )
             for obj in raw.objects
@@ -289,12 +386,13 @@ def _validate_key_set(
     mapping: Mapping[str, Any],
     *,
     expected: frozenset[str],
+    optional: frozenset[str] = frozenset(),
     label: str,
     key_name: str = "top-level",
 ) -> None:
     keys = set(mapping.keys())
     missing = sorted(expected - keys)
-    extra = sorted(keys - expected)
+    extra = sorted(keys - expected - optional)
     if missing:
         raise ValueError(f"{label} missing {key_name} keys: {', '.join(missing)}")
     if extra:
