@@ -926,7 +926,7 @@ def build_recursive_detection_targets(
             end=entry.trie_eligible_span.start,
             object_instance_id=entry.object_instance_id,
             coord_soft_targets_by_position=entry_coord_soft_targets,
-            zero_loss_positions=entry_coord_positions
+            excluded_positions=entry_coord_positions
             if not hard_bbox_supervision
             else (),
         )
@@ -935,7 +935,7 @@ def build_recursive_detection_targets(
             tokenized=tokenized,
             entry=entry,
             remaining_instances=remaining_instances,
-            zero_loss_positions=entry_coord_positions
+            excluded_positions=entry_coord_positions
             if not hard_bbox_supervision
             else (),
         )
@@ -946,7 +946,7 @@ def build_recursive_detection_targets(
             end=entry.entry_span.end,
             object_instance_id=entry.object_instance_id,
             coord_soft_targets_by_position=entry_coord_soft_targets,
-            zero_loss_positions=entry_coord_positions
+            excluded_positions=entry_coord_positions
             if not hard_bbox_supervision
             else (),
         )
@@ -1360,7 +1360,7 @@ def _append_recursive_entry_targets(
     tokenized: TokenizedDetectionExample,
     entry: TokenizedObjectEntry,
     remaining_instances: list[_TrieObjectInstance],
-    zero_loss_positions: set[int] | frozenset[int] | tuple[int, ...] = (),
+    excluded_positions: set[int] | frozenset[int] | tuple[int, ...] = (),
 ) -> None:
     trie_root = _build_entry_trie(remaining_instances)
     teacher_instance = _find_object_instance(
@@ -1407,29 +1407,29 @@ def _append_recursive_entry_targets(
         kind: TrieTargetKind = (
             "trie_multi_positive" if len(trie_branch_targets) > 1 else "hard_ce"
         )
-        token_targets.append(
-            TokenTarget(
-                position=position,
-                teacher_token_id=teacher_token_id,
-                kind=kind,
-                trie_branch_targets=trie_branch_targets,
-                object_instance_id=entry.object_instance_id,
-                token_role=tokenized.token_roles[position],
-                coord_soft_targets=(
-                    _coord_soft_targets_for_instances(
-                        tuple(
-                            instance
-                            for instance in node.descendant_instances
-                            if instance.hard_bbox_supervision
-                        ),
-                        slot_name=coord_slot_name,
-                    )
-                    if coord_slot_name is not None
-                    else ()
-                ),
-                loss_weight=0.0 if position in zero_loss_positions else 1.0,
+        if position not in excluded_positions:
+            token_targets.append(
+                TokenTarget(
+                    position=position,
+                    teacher_token_id=teacher_token_id,
+                    kind=kind,
+                    trie_branch_targets=trie_branch_targets,
+                    object_instance_id=entry.object_instance_id,
+                    token_role=tokenized.token_roles[position],
+                    coord_soft_targets=(
+                        _coord_soft_targets_for_instances(
+                            tuple(
+                                instance
+                                for instance in node.descendant_instances
+                                if instance.hard_bbox_supervision
+                            ),
+                            slot_name=coord_slot_name,
+                        )
+                        if coord_slot_name is not None
+                        else ()
+                    ),
+                )
             )
-        )
         node = node.children[teacher_token_id]
 
     if node.terminal_count <= 0:
@@ -1448,11 +1448,13 @@ def _append_hard_ce_targets(
     object_instance_id: str | None,
     coord_soft_targets_by_position: Mapping[int, tuple[CoordSoftTargetSpec, ...]]
     | None = None,
-    zero_loss_positions: set[int] | frozenset[int] | tuple[int, ...] = (),
+    excluded_positions: set[int] | frozenset[int] | tuple[int, ...] = (),
 ) -> None:
     coord_soft_targets_by_position = coord_soft_targets_by_position or {}
     for position in range(start, end):
         if tokenized.labels[position] == -100:
+            continue
+        if position in excluded_positions:
             continue
         teacher_token_id = tokenized.input_ids[position]
         token_targets.append(
@@ -1470,7 +1472,6 @@ def _append_hard_ce_targets(
                 object_instance_id=object_instance_id,
                 token_role=tokenized.token_roles[position],
                 coord_soft_targets=coord_soft_targets_by_position.get(position, ()),
-                loss_weight=0.0 if position in zero_loss_positions else 1.0,
             )
         )
 

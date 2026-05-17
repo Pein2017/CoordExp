@@ -153,14 +153,14 @@ class RenderSpanEvent:
     supervision_key: str | None = None
     span_family: str | None = None
     field_name: str | None = None
+    geometry_kind: str | None = None
+    slot_name: str | None = None
+    provenance: SpanProvenance | None = None
     source_role: str | None = None
     relation_snapshot: Mapping[str, Any] | None = None
     coordinate_weight: float | None = None
     regression_weight: float | None = None
     hard_bbox_supervision: bool | None = None
-    geometry_kind: str | None = None
-    slot_name: str | None = None
-    provenance: SpanProvenance | None = None
 
 
 @dataclass(frozen=True)

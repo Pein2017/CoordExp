@@ -15,7 +15,11 @@ from src.detection.dataset import (
     DetectionTrainingDataset,
     strip_non_model_detection_sidecars,
 )
-from src.detection.objective import SemanticRole, prepare_detection_training_example
+from src.detection.objective import (
+    SemanticRole,
+    normalize_recursive_detection_token_losses,
+    prepare_detection_training_example,
+)
 from src.detection.template import get_detection_template
 from test_detection_training_dataset import FakeSwiftTemplate
 
@@ -272,15 +276,19 @@ def test_proxy_candidate_bbox_coords_do_not_receive_recursive_bbox_supervision()
         for position in coord_span.token_indices()
         if position in targets_by_position
     ]
-    proxy_coord_targets = [
-        targets_by_position[position]
+    proxy_coord_positions = {
+        position
         for coord_span in proxy_entry.coord_spans
         for position in coord_span.token_indices()
+    }
+    proxy_coord_targets = [
+        targets_by_position[position]
+        for position in sorted(proxy_coord_positions)
         if position in targets_by_position
     ]
 
     assert real_coord_targets
-    assert proxy_coord_targets
+    assert not proxy_coord_targets
     assert all(
         target.loss_weight == pytest.approx(1.0) and target.coord_soft_targets
         for target in real_coord_targets
@@ -289,9 +297,47 @@ def test_proxy_candidate_bbox_coords_do_not_receive_recursive_bbox_supervision()
         target.semantic_role is SemanticRole.BBOX_COORD
         for target in real_coord_targets
     )
+    assert proxy_coord_positions.isdisjoint(targets_by_position)
     assert all(
-        target.semantic_role is not SemanticRole.BBOX_COORD
-        and target.loss_weight == pytest.approx(0.0)
-        and not target.coord_soft_targets
-        for target in proxy_coord_targets
+        not (
+            target.semantic_role is SemanticRole.OBJECT_CONTROL
+            and target.position in proxy_coord_positions
+        )
+        for target in prepared.recursive_detection_targets.token_targets
+    )
+
+    uniform_losses = {
+        target.position: 1.0
+        for target in prepared.recursive_detection_targets.token_targets
+    }
+    normalized = normalize_recursive_detection_token_losses(
+        prepared.recursive_detection_targets,
+        uniform_losses,
+    )
+
+    assert normalized.normalized_loss == pytest.approx(1.0)
+    assert normalized.diagnostics.component_losses["objects"] == pytest.approx(1.0)
+    assert normalized.diagnostics.semantic_role_token_counts[
+        SemanticRole.OBJECT_CONTROL
+    ] == sum(
+        1
+        for target in prepared.recursive_detection_targets.token_targets
+        if target.semantic_role is SemanticRole.OBJECT_CONTROL
+        and target.position not in proxy_coord_positions
+    )
+    assert all(
+        position not in proxy_coord_positions
+        for atom in prepared.recursive_detection_targets.loss_atoms
+        for position in atom.token_positions
+    )
+    assert normalized.diagnostics.state_weight_sum == pytest.approx(
+        sum(
+            target.state_weight
+            for target in prepared.recursive_detection_targets.token_targets
+            if target.position not in proxy_coord_positions
+        )
+    )
+    assert all(
+        target.loss_weight == pytest.approx(1.0)
+        for target in prepared.recursive_detection_targets.token_targets
     )
