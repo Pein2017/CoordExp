@@ -32,6 +32,7 @@ DetectionObjectOrdering = Literal["sorted", "random_permutation"]
 
 REGISTERED_DETECTION_SIDECAR_KEYS: tuple[str, ...] = (
     "recursive_detection_targets",
+    "rendered_span_sources",
     "detection_metadata",
     "assistant_payload",
     "sample_id",
@@ -357,6 +358,9 @@ class DetectionTrainingDataset(Dataset):
             "file_name": raw.file_name,
         }
         encoded["detection_metadata"] = detection_metadata
+        encoded["rendered_span_sources"] = _rendered_span_sources(
+            prepared.rendered_assistant.render_span_events
+        )
         encoded["sample_id"] = _make_sample_id(self.dataset_name, base_idx)
         encoded["dataset"] = self.dataset_name
         encoded["base_idx"] = base_idx
@@ -592,6 +596,48 @@ def _make_sample_id(dataset_name: str, base_idx: int) -> int:
 
     namespace = zlib.crc32(str(dataset_name).encode("utf-8")) & 0xFFFF
     return (namespace << 32) | (int(base_idx) & 0xFFFFFFFF)
+
+
+def _rendered_span_sources(render_span_events: Sequence[Any]) -> list[dict[str, Any]]:
+    sources: list[dict[str, Any]] = []
+    for event in render_span_events:
+        if getattr(event, "object_instance_id", None) is None:
+            continue
+        if getattr(event, "span_family", None) is None:
+            continue
+        sources.append(
+            {
+                "char_span": {
+                    "start": int(event.char_span.start),
+                    "end": int(event.char_span.end),
+                    "label": str(event.char_span.label),
+                },
+                "event_kind": str(event.span_kind),
+                "object_id": getattr(event, "object_id", None),
+                "object_instance_id": str(event.object_instance_id),
+                "supervision_key": getattr(event, "supervision_key", None),
+                "span_family": getattr(event, "span_family", None),
+                "field_name": getattr(event, "field_name", None),
+                "source_role": getattr(event, "source_role", None),
+                "relation_snapshot": _json_safe_sidecar_value(
+                    getattr(event, "relation_snapshot", None)
+                ),
+                "coordinate_weight": getattr(event, "coordinate_weight", None),
+                "regression_weight": getattr(event, "regression_weight", None),
+                "hard_bbox_supervision": getattr(event, "hard_bbox_supervision", None),
+            }
+        )
+    return sources
+
+
+def _json_safe_sidecar_value(value: Any) -> Any:
+    if isinstance(value, Mapping):
+        return {str(key): _json_safe_sidecar_value(item) for key, item in value.items()}
+    if isinstance(value, Sequence) and not isinstance(value, (str, bytes, bytearray)):
+        return [_json_safe_sidecar_value(item) for item in value]
+    if value is None or isinstance(value, (str, int, float, bool)):
+        return value
+    return str(value)
 
 
 def strip_non_model_detection_sidecars(

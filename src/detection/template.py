@@ -149,6 +149,15 @@ class RenderSpanEvent:
     object_instance_id: str | None = None
     object_index: int | None = None
     source_object_index: int | None = None
+    object_id: str | None = None
+    supervision_key: str | None = None
+    span_family: str | None = None
+    field_name: str | None = None
+    source_role: str | None = None
+    relation_snapshot: Mapping[str, Any] | None = None
+    coordinate_weight: float | None = None
+    regression_weight: float | None = None
+    hard_bbox_supervision: bool | None = None
     geometry_kind: str | None = None
     slot_name: str | None = None
     provenance: SpanProvenance | None = None
@@ -168,6 +177,12 @@ class RenderedObjectEntry:
     separator_span: CharSpan | None
     control_spans: tuple[CharSpan, ...]
     trie_eligible_span: CharSpan
+    object_id: str | None = None
+    source_role: str | None = None
+    relation_snapshot: Mapping[str, Any] | None = None
+    coordinate_weight: float | None = None
+    regression_weight: float | None = None
+    hard_bbox_supervision: bool | None = None
 
     @property
     def bbox_opener_span(self) -> CharSpan:
@@ -521,6 +536,8 @@ class _RenderEventBuilder:
         mask_groups: tuple[MaskGroup, ...],
         classifying: bool,
         object_entry: RenderedObjectEntry | None = None,
+        span_family: str | None = None,
+        field_name: str | None = None,
         geometry_kind: str | None = None,
         slot_name: str | None = None,
         provenance: SpanProvenance | None = None,
@@ -534,6 +551,8 @@ class _RenderEventBuilder:
                 mask_groups=mask_groups,
                 classifying=classifying,
                 object_entry=object_entry,
+                span_family=span_family,
+                field_name=field_name,
                 geometry_kind=geometry_kind,
                 slot_name=slot_name,
                 provenance=provenance,
@@ -623,6 +642,15 @@ def _append_stage1_json_entry(
         separator_span=None,
         control_spans=tuple(structural_spans),
         trie_eligible_span=entry_span,
+        object_id=obj.object_id,
+        source_role=obj.source_role,
+        relation_snapshot=obj.relation_snapshot,
+        coordinate_weight=_metadata_weight(obj.relation_snapshot, "coordinate_weight"),
+        regression_weight=_metadata_weight(obj.relation_snapshot, "regression_weight"),
+        hard_bbox_supervision=_hard_bbox_supervision(
+            source_role=obj.source_role,
+            relation_snapshot=obj.relation_snapshot,
+        ),
     )
 
 
@@ -653,7 +681,46 @@ def _append_compact_full_entry(
         separator_span=None,
         control_spans=(object_ref_span, bbox_start_span),
         trie_eligible_span=entry_span,
+        object_id=obj.object_id,
+        source_role=obj.source_role,
+        relation_snapshot=obj.relation_snapshot,
+        coordinate_weight=_metadata_weight(obj.relation_snapshot, "coordinate_weight"),
+        regression_weight=_metadata_weight(obj.relation_snapshot, "regression_weight"),
+        hard_bbox_supervision=_hard_bbox_supervision(
+            source_role=obj.source_role,
+            relation_snapshot=obj.relation_snapshot,
+        ),
     )
+
+
+def _metadata_weight(
+    relation_snapshot: Mapping[str, Any] | None,
+    key: str,
+) -> float | None:
+    if relation_snapshot is None or key not in relation_snapshot:
+        return None
+    value = relation_snapshot[key]
+    if value is None:
+        return None
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise ValueError(f"relation snapshot {key} must be numeric when present")
+    return float(value)
+
+
+def _hard_bbox_supervision(
+    *,
+    source_role: str | None,
+    relation_snapshot: Mapping[str, Any] | None,
+) -> bool | None:
+    coordinate_weight = _metadata_weight(relation_snapshot, "coordinate_weight")
+    regression_weight = _metadata_weight(relation_snapshot, "regression_weight")
+    if source_role == "proxy_candidate":
+        return False
+    if coordinate_weight == 0.0 or regression_weight == 0.0:
+        return False
+    if coordinate_weight is None and regression_weight is None:
+        return None
+    return True
 
 
 def _render_event(
@@ -664,6 +731,8 @@ def _render_event(
     mask_groups: tuple[MaskGroup, ...],
     classifying: bool,
     object_entry: RenderedObjectEntry | None = None,
+    span_family: str | None = None,
+    field_name: str | None = None,
     geometry_kind: str | None = None,
     slot_name: str | None = None,
     provenance: SpanProvenance | None = None,
@@ -687,6 +756,23 @@ def _render_event(
         object_index=None if object_entry is None else object_entry.object_index,
         source_object_index=(
             None if object_entry is None else object_entry.source_object_index
+        ),
+        object_id=None if object_entry is None else object_entry.object_id,
+        supervision_key=None if object_entry is None else object_entry.object_id,
+        span_family=span_family,
+        field_name=field_name,
+        source_role=None if object_entry is None else object_entry.source_role,
+        relation_snapshot=(
+            None if object_entry is None else object_entry.relation_snapshot
+        ),
+        coordinate_weight=(
+            None if object_entry is None else object_entry.coordinate_weight
+        ),
+        regression_weight=(
+            None if object_entry is None else object_entry.regression_weight
+        ),
+        hard_bbox_supervision=(
+            None if object_entry is None else object_entry.hard_bbox_supervision
         ),
         geometry_kind=geometry_kind,
         slot_name=slot_name,
@@ -771,6 +857,8 @@ def _stage1_json_entry_events(entry: RenderedObjectEntry) -> tuple[RenderSpanEve
                     mask_groups=("schema", "control"),
                     classifying=True,
                     object_entry=entry,
+                    span_family="geometry",
+                    field_name="bbox_2d",
                     geometry_kind="bbox_2d",
                     provenance="rendered_control",
                 )
@@ -800,6 +888,8 @@ def _stage1_json_entry_events(entry: RenderedObjectEntry) -> tuple[RenderSpanEve
             mask_groups=("desc",),
             classifying=True,
             object_entry=entry,
+            span_family="description",
+            field_name="desc",
             provenance="rendered_leaf",
         )
     )
@@ -841,6 +931,8 @@ def _compact_full_entry_events(entry: RenderedObjectEntry) -> tuple[RenderSpanEv
             mask_groups=("desc",),
             classifying=True,
             object_entry=entry,
+            span_family="description",
+            field_name="desc",
             provenance="rendered_leaf",
         )
     )
@@ -852,6 +944,8 @@ def _compact_full_entry_events(entry: RenderedObjectEntry) -> tuple[RenderSpanEv
             mask_groups=("schema", "control"),
             classifying=True,
             object_entry=entry,
+            span_family="geometry",
+            field_name="bbox_2d",
             geometry_kind="bbox_2d",
             provenance="rendered_control",
         )
@@ -869,6 +963,8 @@ def _coordinate_slot_events(entry: RenderedObjectEntry) -> tuple[RenderSpanEvent
             mask_groups=("coord",),
             classifying=True,
             object_entry=entry,
+            span_family="geometry",
+            field_name="bbox_2d",
             geometry_kind="bbox_2d",
             slot_name=_COORD_SLOT_NAMES[coord_index],
             provenance="rendered_leaf",

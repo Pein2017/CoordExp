@@ -15,6 +15,7 @@ _RAW_REQUIRED_OBJECT_KEYS = frozenset(
 )
 _RAW_OPTIONAL_OBJECT_KEYS = frozenset({"object_id"})
 _RAW_METADATA_KEYS = frozenset({"source", "split"})
+_RAW_OPTIONAL_METADATA_KEYS = frozenset({"supervision"})
 _COORD_TOKEN_RE = re.compile(r"<\|coord_(\d{1,3})\|>")
 
 ObjectOrderingStrategy = Literal["sorted", "random_permutation"]
@@ -46,6 +47,7 @@ class CoordinateTokenBox:
 class DetectionMetadata:
     source: str
     split: str
+    supervision: Mapping[str, Any] | None = None
 
 
 @dataclass(frozen=True)
@@ -81,6 +83,8 @@ class NormalizedDetectionObject:
     category_name: str
     coco_ann_id: int
     object_id: str | None = None
+    source_role: str | None = None
+    relation_snapshot: Mapping[str, Any] | None = None
 
 
 @dataclass(frozen=True)
@@ -144,7 +148,13 @@ def parse_raw_detection_row(row: Mapping[str, Any]) -> RawDetectionRow:
 
     _validate_key_set(row, expected=_RAW_TOP_LEVEL_KEYS, label="top-level")
     metadata_raw = _require_mapping(row["metadata"], path="metadata")
-    _validate_key_set(metadata_raw, expected=_RAW_METADATA_KEYS, label="metadata")
+    _validate_key_set(
+        metadata_raw,
+        expected=_RAW_METADATA_KEYS,
+        optional=_RAW_OPTIONAL_METADATA_KEYS,
+        label="metadata",
+    )
+    supervision = _parse_optional_supervision(metadata_raw)
 
     objects_raw = _require_sequence(row["objects"], path="objects")
     if not objects_raw:
@@ -169,6 +179,7 @@ def parse_raw_detection_row(row: Mapping[str, Any]) -> RawDetectionRow:
         metadata=DetectionMetadata(
             source=_require_str(metadata_raw["source"], path="metadata.source"),
             split=_require_str(metadata_raw["split"], path="metadata.split"),
+            supervision=supervision,
         ),
     )
 
@@ -182,6 +193,7 @@ def normalize_detection_row(
     normalized_objects: list[NormalizedDetectionObject] = []
     for normalized_index, source_index in enumerate(source_indices):
         source = raw.objects[source_index]
+        relation_snapshot = _relation_snapshot_for_object(raw.metadata, source.object_id)
         normalized_objects.append(
             NormalizedDetectionObject(
                 normalized_object_index=normalized_index,
@@ -193,6 +205,8 @@ def normalize_detection_row(
                 category_name=source.category_name,
                 coco_ann_id=source.coco_ann_id,
                 object_id=source.object_id,
+                source_role=_source_role_from_snapshot(relation_snapshot),
+                relation_snapshot=relation_snapshot,
             )
         )
 
@@ -236,6 +250,85 @@ def _parse_raw_object(obj: Any, *, index: int) -> RawDetectionObject:
         coco_ann_id=_require_int(obj_raw["coco_ann_id"], path=f"{path}.coco_ann_id"),
         object_id=object_id,
     )
+
+
+def _parse_optional_supervision(
+    metadata_raw: Mapping[str, Any],
+) -> Mapping[str, Any] | None:
+    if "supervision" not in metadata_raw:
+        return None
+
+    supervision_raw = _require_mapping(
+        metadata_raw["supervision"],
+        path="metadata.supervision",
+    )
+    if "object_supervision" in supervision_raw:
+        object_supervision = _require_mapping(
+            supervision_raw["object_supervision"],
+            path="metadata.supervision.object_supervision",
+        )
+        for object_id, snapshot in object_supervision.items():
+            if not isinstance(object_id, str) or not object_id:
+                raise ValueError(
+                    "metadata.supervision.object_supervision keys must be non-empty strings"
+                )
+            _require_mapping(
+                snapshot,
+                path=f"metadata.supervision.object_supervision[{object_id!r}]",
+            )
+    if "support_objects" in supervision_raw:
+        _require_sequence(
+            supervision_raw["support_objects"],
+            path="metadata.supervision.support_objects",
+        )
+
+    return _copy_json_safe_metadata(supervision_raw, path="metadata.supervision")
+
+
+def _relation_snapshot_for_object(
+    metadata: DetectionMetadata, object_id: str | None
+) -> Mapping[str, Any] | None:
+    if object_id is None or metadata.supervision is None:
+        return None
+    object_supervision = metadata.supervision.get("object_supervision")
+    if not isinstance(object_supervision, Mapping):
+        return None
+    snapshot = object_supervision.get(object_id)
+    if not isinstance(snapshot, Mapping):
+        return None
+    return _copy_json_safe_metadata(
+        snapshot,
+        path=f"metadata.supervision.object_supervision[{object_id!r}]",
+    )
+
+
+def _source_role_from_snapshot(snapshot: Mapping[str, Any] | None) -> str | None:
+    if snapshot is None or "source_role" not in snapshot:
+        return None
+    source_role = snapshot["source_role"]
+    if source_role is None:
+        return None
+    if not isinstance(source_role, str):
+        raise ValueError("metadata supervision source_role must be a string when present")
+    return source_role
+
+
+def _copy_json_safe_metadata(value: Any, *, path: str) -> Any:
+    if isinstance(value, Mapping):
+        copied: dict[str, Any] = {}
+        for key, item in value.items():
+            if not isinstance(key, str) or not key:
+                raise ValueError(f"{path} keys must be non-empty strings")
+            copied[key] = _copy_json_safe_metadata(item, path=f"{path}.{key}")
+        return copied
+    if isinstance(value, Sequence) and not isinstance(value, (str, bytes, bytearray)):
+        return [
+            _copy_json_safe_metadata(item, path=f"{path}[{index}]")
+            for index, item in enumerate(value)
+        ]
+    if value is None or isinstance(value, (str, int, float, bool)):
+        return value
+    raise ValueError(f"{path} must contain JSON-safe metadata values")
 
 
 def _parse_coordinate_box(value: Any, *, path: str) -> CoordinateTokenBox:
