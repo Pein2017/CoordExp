@@ -53,6 +53,13 @@ class Stage2ChannelBMeta(Stage2RolloutMetaBase):
     stage2_channel: Literal["B"]
     stage2_invalid_rollout: int
     rollout_seed_base: int
+    rollout_template_family: str
+    rollout_parser_id: str
+    rollout_append_policy_id: str
+    rollout_context: str
+    rollout_fallback_reason: str | None
+    rollout_fallback_loss_weight: float
+    rollout_counts_as_valid_rollout: bool
     drop_invalid_total: int
     valid_explorer_count: int
     prefix_struct_pos: List[int]

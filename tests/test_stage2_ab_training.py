@@ -13,24 +13,31 @@ from src.trainers.stage2_rollout_aligned import (
     _serialize_append_fragment,
     parse_rollout_for_matching,
 )
+from src.common.detection_sequence import (
+    BOX_START_TOKEN,
+    OBJECT_REF_START_TOKEN,
+)
+from src.training.stage2.rollout_codec import Stage2RolloutTemplateMismatchError
 from src.trainers.stage2_two_channel import (
     Stage2ABTrainingTrainer,
     _PendingStage2Log,
-    _apply_channel_b_duplicate_control,
     _bbox_groups_from_token_ids,
-    _build_canonical_prefix_text_data,
-    _build_channel_b_supervision_targets,
-    _build_channel_b_triage,
     _bbox_smoothl1_ciou_loss,
-    _build_canonical_prefix_data,
-    _build_duplicate_control_divergence_diagnostics,
     _build_teacher_forced_payload,
-    _compute_duplicate_diagnostics,
     _expectation_decode_coords,
     _extract_gt_bboxonly,
     _matched_prefix_structure_positions,
-    _sequential_dedup_bbox_objects,
     _stage2_ab_tail_closure_positions,
+)
+from src.trainers.stage2_two_channel.target_builder import (
+    _apply_channel_b_duplicate_control,
+    _build_canonical_prefix_data,
+    _build_canonical_prefix_text_data,
+    _build_channel_b_supervision_targets,
+    _build_channel_b_triage,
+    _build_duplicate_control_divergence_diagnostics,
+    _compute_duplicate_diagnostics,
+    _sequential_dedup_bbox_objects,
 )
 
 
@@ -340,6 +347,23 @@ class _DummyTokenizer:
         return ids[0] if scalar else ids
 
 
+class _CoordLiteralTokenizer(_DummyTokenizer):
+    def encode(self, text: str, add_special_tokens: bool = False):
+        s = str(text)
+        out: list[int] = []
+        i = 0
+        while i < len(s):
+            if s.startswith("<|coord_", i):
+                j = s.find("|>", i)
+                if j >= 0:
+                    out.extend(super().encode(s[i : j + 2], add_special_tokens=False))
+                    i = j + 2
+                    continue
+            out.append(self._id_for(s[i]))
+            i += 1
+        return out
+
+
 class _PieceFrameMismatchTokenizer(_DummyTokenizer):
     """Tokenizer stub where per-token decode and full decode have different lengths."""
 
@@ -590,6 +614,129 @@ def _make_min_trainer():
     return t
 
 
+def _make_compact_channel_b_trainer(
+    *,
+    rollout_text: str,
+    rollout_texts_by_call: list[str] | None = None,
+    fallback_loss_weight: float = 1.0,
+    pseudo_positive_enabled: bool = False,
+    num_rollouts: int = 2,
+) -> Stage2ABTrainingTrainer:
+    t = Stage2ABTrainingTrainer.__new__(Stage2ABTrainingTrainer)
+    t.stage2_ab_cfg = {
+        "channel_b": {
+            "rollout_template_family": "compact_full",
+            "fallback_loss_weight": float(fallback_loss_weight),
+            "pseudo_positive": {"enabled": bool(pseudo_positive_enabled)},
+            "triage_posterior": {"num_rollouts": int(num_rollouts)},
+        }
+    }
+    t.rollout_matching_cfg = {"detection_sequence_format": "compact_full"}
+    t._stage2_pending_train_logs = {}
+    t._rm_pending_train_logs = {}
+    t.state = types.SimpleNamespace(global_step=0)
+
+    cfg = {
+        "maskiou_gate": 0.3,
+        "candidate_top_k": 5,
+        "maskiou_resolution": 64,
+        "fp_cost": 1.0,
+        "fn_cost": 1.0,
+        "decode_mode": "sampling",
+        "max_new_tokens": 64,
+        "num_beams": 1,
+        "repetition_penalty": 1.0,
+    }
+    t._cfg = lambda key, default=None: cfg.get(key, default)
+
+    tok = _CoordLiteralTokenizer()
+
+    class _FakeTemplate:
+        tokenizer = tok
+
+        def encode(self, data, return_length=True):
+            content = data["messages"][-1]["content"]
+            assistant_ids = (
+                [int(x) for x in content]
+                if isinstance(content, list)
+                else [int(x) for x in tok.encode(str(content), add_special_tokens=False)]
+            )
+            return {
+                "input_ids": list(assistant_ids),
+                "labels": list(assistant_ids),
+                "length": len(assistant_ids),
+            }
+
+    t.template = _FakeTemplate()
+    t._template_train_mode = lambda: nullcontext()
+    t._extract_encoded_len = lambda encoded: int(len(encoded["input_ids"]))
+    t._get_coord_token_ids = lambda: list(range(1000))
+    t._coord_id_map = lambda: {i: i for i in range(1000)}
+    t._packing_enabled = lambda: False
+    t._packing_drop_last = lambda: True
+    t._packing_buffer_cap = lambda: 1
+    t._packing_length = lambda: 128
+    t._derive_rollout_seed_base = lambda *, global_step: 0
+    t._rollout_backend = lambda: "hf"
+    t._prepare_samples_for_rollout = lambda samples, rollout_backend: list(samples)
+    t._rollout_decode_batch_size_per_rank = lambda: 1
+    t._dist_info = lambda: (0, 1, None)
+    t._object_field_order = lambda: "desc_first"
+    t._stage2_train_monitor_step_allowed = lambda global_step: False
+
+    class _NoSeedCtx:
+        def __enter__(self):
+            return False
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+    t._hf_sampling_seed_context = lambda **kwargs: _NoSeedCtx()
+
+    def _decode_request(decode_override=None):
+        override = dict(decode_override or {})
+        return types.SimpleNamespace(
+            decode_mode=str(override.get("decode_mode", "sampling")),
+            temperature=float(override.get("temperature", 0.7)),
+            top_p=float(override.get("top_p", 1.0)),
+            top_k=int(override.get("top_k", -1)),
+            repetition_penalty=1.0,
+            max_new_tokens=64,
+            num_beams=1,
+        )
+
+    t._resolve_rollout_decode_request = _decode_request
+
+    rollout_calls = 0
+
+    def _rollout_many(chunk, decode_override=None, request_index_offset=0):
+        nonlocal rollout_calls
+        mode = str((decode_override or {}).get("decode_mode", "sampling"))
+        text = (
+            str(rollout_texts_by_call[int(rollout_calls)])
+            if rollout_texts_by_call is not None
+            and int(rollout_calls) < len(rollout_texts_by_call)
+            else str(rollout_text)
+        )
+        rollout_calls += 1
+        ids = tok.encode(text, add_special_tokens=False)
+        return [(list(ids), text, mode, []) for _ in chunk]
+
+    t._rollout_many = _rollout_many
+    return t
+
+
+def _single_bbox_sample() -> dict:
+    return {
+        "messages": [],
+        "assistant_payload": {
+            "objects": [
+                {"bbox_2d": [10, 20, 30, 40], "desc": "cat"},
+            ],
+        },
+    }
+
+
 def test_channel_a_runs_single_forward_and_enforces_qwen_posids():
     trainer = _make_min_trainer()
     model = _DummyModel()
@@ -769,6 +916,173 @@ def test_parse_rollout_fallback_prefix_brace_is_deterministic():
     assert p1.prefix_text == p2.prefix_text == '{"objects": ['
     assert p1.valid_objects == []
     assert p1.invalid_rollout is True
+
+
+def test_channel_b_compact_full_rollout_template_uses_compact_parser_and_targets(
+    monkeypatch,
+) -> None:
+    row = (
+        f"{OBJECT_REF_START_TOKEN}cat{BOX_START_TOKEN}"
+        "<|coord_10|><|coord_20|><|coord_30|><|coord_40|>"
+    )
+    t = _make_compact_channel_b_trainer(rollout_text=row)
+    parser_called = False
+
+    def _fail_if_legacy_parser_called(**kwargs):
+        nonlocal parser_called
+        parser_called = True
+        raise AssertionError("legacy CoordJSON parser must not run for compact_full")
+
+    monkeypatch.setattr(
+        "src.trainers.stage2_two_channel.parse_rollout_for_matching",
+        _fail_if_legacy_parser_called,
+    )
+
+    segments, metrics = t._prepare_batch_inputs_b(
+        [_single_bbox_sample()],
+        _segments_only=True,
+    )
+
+    assert parser_called is False
+    assert len(segments) == 1
+    _encoded, meta, _length = segments[0]
+    assert meta["rollout_template_family"] == "compact_full"
+    assert meta["rollout_parser_id"] == "compact_full"
+    assert meta["rollout_context"] == "rollout_valid_with_fn_append"
+    assert meta["rollout_counts_as_valid_rollout"] is True
+    assert meta["fn_count"] == 0
+    assert metrics["rollout/template_family_compact_full"] == pytest.approx(1.0)
+    assert metrics["rollout/invalid_fallback_gt_fn_count"] == pytest.approx(0.0)
+    assert metrics["rollout/fallback_loss_share"] == pytest.approx(0.0)
+
+
+@pytest.mark.parametrize(
+    ("rollout_text", "expected_invalid_count", "expected_empty_rate", "reason"),
+    [
+        ("not compact output", 2.0, 0.0, "malformed_compact_full"),
+        ("", 0.0, 1.0, "empty_valid_object_set"),
+        (
+            f"{OBJECT_REF_START_TOKEN}cat{BOX_START_TOKEN}"
+            "<|coord_30|><|coord_20|><|coord_10|><|coord_40|>",
+            0.0,
+            1.0,
+            "empty_valid_object_set",
+        ),
+    ],
+)
+def test_channel_b_compact_full_invalid_or_empty_rollout_falls_back_with_metrics(
+    monkeypatch,
+    rollout_text: str,
+    expected_invalid_count: float,
+    expected_empty_rate: float,
+    reason: str,
+) -> None:
+    t = _make_compact_channel_b_trainer(
+        rollout_text=rollout_text,
+        fallback_loss_weight=0.25,
+        pseudo_positive_enabled=True,
+    )
+    monkeypatch.setattr(
+        "src.trainers.stage2_two_channel.parse_rollout_for_matching",
+        lambda **kwargs: pytest.fail("legacy CoordJSON parser must not run"),
+    )
+
+    segments, metrics = t._prepare_batch_inputs_b(
+        [_single_bbox_sample()],
+        _segments_only=True,
+    )
+
+    assert len(segments) == 1
+    _encoded, meta, _length = segments[0]
+    assert meta["rollout_context"] == "fallback_gt_fn_append_only"
+    assert meta["rollout_fallback_reason"] == reason
+    assert meta["rollout_fallback_loss_weight"] == pytest.approx(0.25)
+    assert meta["rollout_counts_as_valid_rollout"] is False
+    assert meta["fn_count"] == 1
+    assert meta["prefix_len"] == 0
+    assert meta["tail_closure_pos"] == []
+    assert meta["stop_rel_pos"] is None
+    assert meta["bbox_groups_fn"][0]["gt_bins"] == [10, 20, 30, 40]
+    assert meta["bbox_groups_fn"][0]["weight"] == pytest.approx(0.25)
+    assert metrics["rollout/invalid_fallback_gt_fn_count"] == pytest.approx(
+        expected_invalid_count
+    )
+    assert metrics["rollout/invalid_fallback_gt_fn_rate"] == pytest.approx(
+        expected_invalid_count / 2.0
+    )
+    assert metrics["rollout/empty_valid_object_rate"] == pytest.approx(
+        expected_empty_rate
+    )
+    assert metrics["rollout/fallback_loss_share"] == pytest.approx(1.0)
+
+
+def test_channel_b_compact_full_template_mismatch_raises_before_legacy_parser(
+    monkeypatch,
+) -> None:
+    t = _make_compact_channel_b_trainer(rollout_text='{"objects": []}')
+    parser_called = False
+
+    def _fail_if_legacy_parser_called(**kwargs):
+        nonlocal parser_called
+        parser_called = True
+        raise AssertionError("legacy CoordJSON parser must not run for compact_full")
+
+    monkeypatch.setattr(
+        "src.trainers.stage2_two_channel.parse_rollout_for_matching",
+        _fail_if_legacy_parser_called,
+    )
+
+    with pytest.raises(Stage2RolloutTemplateMismatchError, match="compact_full"):
+        t._prepare_batch_inputs_b([_single_bbox_sample()], _segments_only=True)
+
+    assert parser_called is False
+
+
+def test_channel_b_compact_full_invalid_explorer_rollouts_do_not_dilute_posterior(
+    monkeypatch,
+) -> None:
+    anchor_text = (
+        f"{OBJECT_REF_START_TOKEN}cat{BOX_START_TOKEN}"
+        "<|coord_100|><|coord_100|><|coord_200|><|coord_200|>"
+    )
+    valid_explorer_text = (
+        f"{OBJECT_REF_START_TOKEN}cat{BOX_START_TOKEN}"
+        "<|coord_101|><|coord_101|><|coord_201|><|coord_201|>"
+    )
+    invalid_explorer_text = "not compact output"
+    t = _make_compact_channel_b_trainer(
+        rollout_text=anchor_text,
+        rollout_texts_by_call=[
+            anchor_text,
+            valid_explorer_text,
+            invalid_explorer_text,
+            invalid_explorer_text,
+        ],
+        pseudo_positive_enabled=True,
+        num_rollouts=4,
+    )
+    monkeypatch.setattr(
+        "src.trainers.stage2_two_channel.parse_rollout_for_matching",
+        lambda **kwargs: pytest.fail("legacy CoordJSON parser must not run"),
+    )
+
+    segments, metrics = t._prepare_batch_inputs_b(
+        [_single_bbox_sample()],
+        _segments_only=True,
+    )
+
+    assert len(segments) == 1
+    _encoded, meta, _length = segments[0]
+    assert meta["valid_explorer_count"] == 1
+    assert meta["anchor_support_counts"] == [1]
+    assert meta["anchor_support_rates"] == pytest.approx([1.0])
+    assert meta["shielded_anchor_indices"] == [0]
+    assert meta["pseudo_positive_anchor_indices"] == []
+    assert metrics["stage2/raw_rollouts"] == pytest.approx(4.0)
+    assert metrics["rollout/invalid_fallback_gt_fn_count"] == pytest.approx(2.0)
+    assert metrics["rollout/invalid_fallback_gt_fn_rate"] == pytest.approx(0.5)
+    assert metrics["rollout/fallback_gt_fn_append_only_count"] == pytest.approx(2.0)
+    assert metrics["rollout/explorer/valid_pred_objects"] == pytest.approx(1.0 / 3.0)
 
 
 def test_channel_b_matching_uses_candidate_top_k_not_decode_top_k(monkeypatch):
@@ -1210,6 +1524,12 @@ def test_channel_b_closure_resolution_failure_falls_back_without_dropping_sample
         "stage2_ab/channel_b/closure_supervision/N_drop"
     ] == pytest.approx(1.0)
     assert batch_metrics["stage2_ab/channel_b/invalid_rollout"] == pytest.approx(0.0)
+    assert batch_metrics["rollout/template_family_coordjson"] == pytest.approx(1.0)
+    assert batch_metrics["rollout/template_family_compact_full"] == pytest.approx(0.0)
+    assert batch_metrics["rollout/parser_coordjson_legacy"] == pytest.approx(1.0)
+    assert batch_metrics["rollout/decode_policy_legacy_coordjson"] == pytest.approx(1.0)
+    assert batch_metrics["rollout/parser_template_mismatch_rate"] == pytest.approx(0.0)
+    assert batch_metrics["rollout/fallback_loss_weight"] == pytest.approx(1.0)
 
 
 def test_channel_b_duplicate_iou_threshold_zero_propagates_to_dedup(monkeypatch):
@@ -1282,7 +1602,7 @@ def test_channel_b_duplicate_iou_threshold_zero_propagates_to_dedup(monkeypatch)
         raise _StopAfterDedup("stop after dedup threshold capture")
 
     monkeypatch.setattr(
-        "src.trainers.stage2_two_channel._apply_channel_b_duplicate_control",
+        "src.trainers.stage2_two_channel.target_builder._apply_channel_b_duplicate_control",
         _fake_duplicate_control,
     )
 

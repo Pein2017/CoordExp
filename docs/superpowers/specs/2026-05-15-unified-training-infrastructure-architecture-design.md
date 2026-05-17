@@ -116,6 +116,14 @@ reopens them:
   loss.
 - Assignment, duplicate filtering, false-negative insertion, and object
   ordering are separate Stage-2 components.
+- Stage-2 rollout I/O is a first-class template-aware boundary. A
+  compact-full checkpoint must not be routed through CoordJSON prompts,
+  CoordJSON parsers, or CoordJSON false-negative append logic. The rollout
+  prompt builder, decode policy, parser, append policy, supervision planner, and
+  artifact writer must all agree on the resolved rollout template.
+- Compact-full Stage-2 training rollouts use unconstrained decoding by default.
+  Grammar-constrained compact decoding is diagnostic/control-only unless a
+  future decision explicitly changes the research question.
 - `MetricEvent` and `DiagnosticEvent` are separate streams coordinated by one
   observability service.
 - Historical evidence is preserved, but old notes that promoted failed
@@ -158,6 +166,7 @@ reopens them:
 | Config | Components receive typed runtime plans, not raw YAML dictionaries. |
 | Diagnostics | Diagnostic artifact emission is bounded by profile and routed through `ObservabilityService`. |
 | Stage-2 pairing | Greedy IoU assignment is the canonical future default; Hungarian is migration-only until replacement smoke passes. |
+| Stage-2 rollout I/O | `compact_full` Stage-2 rollouts require a compact-full prompt/decode/parser/FN-append path. CoordJSON rollout parsing is legacy-only for CoordJSON surfaces. |
 | Duplicate handling | Duplicate filtering happens before positive target realization and before forward pass. |
 | Object ordering | Stage-1 and Stage-2 use shared `ObjectOrderingStrategy` with explicit provenance for nontrivial ordering. |
 
@@ -410,11 +419,16 @@ global denominator.
 
 ## Stage-2 Target Flow
 
-Stage-2 uses clean object-level planning before span conversion. The future
-canonical path is:
+Stage-2 uses template-aware rollout I/O and clean object-level planning before
+span conversion. The future canonical path is:
 
 ```text
-RolloutViews
+Stage2RolloutTemplatePolicy
+  -> Stage2RolloutPromptBuilder
+  -> DecodePolicy
+  -> Stage2RolloutParser
+  -> Stage2RolloutAppendPolicy
+  -> RolloutViews
   -> DuplicateFilter
   -> DuplicateFilterResult
   -> accepted survivors
@@ -426,6 +440,60 @@ RolloutViews
   -> EncodedDetectionView
   -> Stage2CompactSpanAdapter
 ```
+
+`Stage2RolloutTemplatePolicy` resolves the rollout sequence family for the
+stage-2 surface. It is not inferred from a checkpoint path or from legacy
+`custom.json_format` defaults. It must be recorded in the resolved config and
+run artifacts.
+
+Stage-2 rollout migration is dual-surface and explicit:
+
+- `compact_full` is canonical for A2-style compact-full checkpoints and new
+  Stage-2 work.
+- `coordjson` is kept as an explicit legacy surface until compact-full Stage-2
+  smoke parity is established.
+- implicit fallback between the two surfaces is forbidden. A compact-full
+  checkpoint or config must fail validation if it would otherwise be routed
+  through CoordJSON rollout prompting, parsing, or false-negative append logic.
+
+Initial rollout template families:
+
+- `compact_full`: canonical target for A2-style compact-full checkpoints and
+  future Stage-2 training. It uses compact-full prompting, unconstrained
+  rollout decoding by default, strict compact-full parsing, compact-full
+  false-negative append logic, compact-full artifact serialization, and
+  `CompactFullTemplateCodec` for supervision conversion. Compact grammar
+  decoding may be used only as an explicitly labeled diagnostic/control probe,
+  not as the default training rollout path or readiness proof.
+- `coordjson`: legacy compatibility surface. It may keep the current
+  CoordJSON prompt/parser/append behavior only for checkpoints and configs that
+  explicitly select CoordJSON.
+
+The 2026-05-17 A2 smoke exposed this as a blocking boundary: the same
+`checkpoint-3664` produced valid compact-full infer/eval outputs under the
+compact-full infer pipeline, but the Stage-2 tiny smoke produced zero valid
+predicted rollout objects because the training rollout path was still
+CoordJSON-shaped. Therefore, a successful Stage-2 launch is not sufficient
+evidence of compact-full Stage-2 readiness. Compact-full Stage-2 readiness
+requires a rollout I/O smoke that proves valid generated compact-full objects
+before assignment, duplicate filtering, and false-negative insertion are
+interpreted as model-quality signals.
+
+Malformed or empty model rollouts are training signals, not samples to discard.
+For compact-full Stage-2, the default invalid/empty rollout policy is
+`fallback_gt_fn_append_only`: ignore invalid predicted objects, construct a
+clean compact-full Channel-B target from GT/FN append-only supervision, and
+record the fallback reason. This fallback uses the same default Channel-B loss
+weight as valid-rollout supervision (`fallback_loss_weight=1.0`) because empty
+or malformed rollouts are correction-worthy model failures, not lower-priority
+samples. Fallback spans must carry explicit provenance such as
+`rollout_context=fallback_gt_fn_append_only`, and metrics must report fallback
+loss share and fallback rate separately. If fallback samples exceed 30-40% of
+Channel-B samples over a monitoring window, the run should be flagged as
+rollout-distribution unhealthy. This fallback does not count as a valid rollout
+and must not hide the model failure in metrics or artifacts. It is different
+from a configuration/template mismatch, where a compact-full config is wired to
+a CoordJSON parser or appender; that remains a hard validation failure.
 
 Target direction is duplicate filtering before greedy-IoU assignment. Assignment
 must operate on accepted survivors, not the raw predicted object list, so target
@@ -738,7 +806,24 @@ Level 4: objective math validation
 Level 5: bridge/model-forward validation
 Level 6: integrated tiny training smoke
 Level 7: Stage-2 rollout-planning smoke
+Level 7A: Stage-2 compact-full rollout I/O smoke with an A2 checkpoint
+Level 7B: Stage-2 eval artifact preservation
 ```
+
+Stage-2 compact-full rollout I/O uses two acceptance gates:
+
+- Gate 1, launch/I/O wiring: tiny scope of 2-4 samples, unconstrained greedy
+  decoding, compact-full parser path only, no CoordJSON fallback, preserved raw
+  output artifacts, and at least one valid predicted compact-full object.
+- Gate 2, readiness before real Stage-2 training: small scope of 16-32 samples,
+  unconstrained greedy decoding, `sample_valid_pred_rate >= 0.75` as the
+  initial threshold, zero parser-template mismatches, explicit reporting of
+  parse truncation, empty-valid-object cases, and GT/FN fallback counts, and
+  raw rollout plus parsed object artifacts available for manual inspection.
+
+Gate 1 proves the template/codec/runtime seam is wired. Gate 2 proves the A2
+rollout distribution is stable enough to drive Stage-2 learning. A Gate-1 pass
+must not be presented as full Stage-2 readiness.
 
 The first golden fixture is a compact-full multimodal Stage-1 example with
 three objects, mixed descriptions, nearby non-duplicate boxes, boundary
@@ -772,6 +857,14 @@ The design is successfully implemented when:
   training, while JSON remains an explicit baseline;
 - Stage-2 uses assignment, duplicate filtering, and false-negative insertion as
   separate components;
+- Stage-2 rollout I/O is template-aware, and compact-full checkpoints are never
+  evaluated through CoordJSON prompts/parsers/appenders;
+- A2 compact-full Stage-2 smoke passes both rollout I/O gates before
+  rollout-quality or training-readiness claims are made;
+- malformed or empty compact-full rollouts fall back to GT/FN append-only
+  Channel-B supervision by default with the same initial loss weight as normal
+  Channel-B correction, while remaining visible as invalid/empty rollout
+  diagnostics rather than valid rollout evidence;
 - `progress/index.yaml`, relevant progress READMEs, and `docs/catalog.yaml` no
   longer route removed mechanisms as active current guidance;
 - packing and encoded cache remain disabled until their contracts are complete;
@@ -788,6 +881,10 @@ The design is successfully implemented when:
   silently relying on them. Absence tests should catch this intentionally.
 - Stage-2/Hungarian code cannot be fully removed until the greedy-IoU path has
   a smoke-tested replacement.
+- Stage-2 compact-full training can appear launch-healthy while producing no
+  valid raw rollout objects if the rollout prompt/parser surface remains
+  CoordJSON. The implementation must gate compact-full Stage-2 readiness on a
+  compact-full rollout I/O smoke, not only on process exit or loss logging.
 - YAML inheritance can still hide list replacement pitfalls until objective
   authoring moves to keyed profiles.
 - Packing and cache are high-risk because they rewrite position-sensitive span

@@ -3620,6 +3620,81 @@ Superpowers spec makes this explicit to avoid off-by-one ambiguity:
 - implementation plans should not store already-shifted logit rows in
   `SupervisionSpan` under the ambiguous name `prediction_positions`.
 
+## Stage-2 Rollout Template Boundary Addendum
+
+Decision date: 2026-05-17
+
+The A2 random ET-RMP-CE compact-full checkpoint smoke exposed a Stage-2
+architecture gap that must be treated as a blocking design adjustment:
+
+- The A2 compact-full adapter at `checkpoint-3600` and `checkpoint-3664` can be
+  loaded into Stage-2 through the Qwen3-VL base model plus `model.adapters`.
+- The Stage-2 tiny launch can complete one training step and write normal
+  artifacts, but the current Stage-2 rollout path is still CoordJSON-shaped.
+  It uses CoordJSON rollout prompting/parsing/false-negative append behavior
+  rather than the compact-full sequence surface used to train A2.
+- The same `checkpoint-3664` produces valid compact-full infer/eval outputs
+  through the compact-full infer pipeline with compact grammar decoding.
+
+Resolved decision:
+
+- Stage-2 rollout I/O must become a first-class template-aware boundary.
+- `compact_full` Stage-2 rollouts require compact-full prompt construction,
+  unconstrained default rollout decoding, compact-full parsing,
+  compact-full false-negative append serialization, compact-full supervision
+  conversion, and template-aware artifacts.
+- CoordJSON rollout parsing/appending remains legacy-only for explicit
+  CoordJSON surfaces. It must not be selected implicitly for compact-full
+  checkpoints through legacy `custom.json_format` defaults.
+- Compact-full Stage-2 readiness cannot be claimed from process exit, loss
+  logging, or `invalid_rollout=0` alone. It requires a real-backend A2 smoke
+  that proves at least one valid generated compact-full predicted object
+  before assignment, duplicate-filter, and false-negative metrics are
+  interpreted as model-quality signals.
+- Migration is dual-surface and explicit: `compact_full` is canonical for
+  A2-style checkpoints and new Stage-2 work, while `coordjson` remains runnable
+  only as an explicit legacy surface. Implicit fallback or mixed surface
+  selection is forbidden.
+- Compact-full Stage-2 training must face the model's unconstrained rollout
+  distribution by default. Do not hide force-continuation, duplicate-burst, or
+  special-basin failures behind grammar-constrained decoding. Compact grammar
+  decoding may be kept only as a labeled diagnostic/control comparison.
+- Malformed or empty compact-full rollouts should not be dropped from Channel-B
+  training by default. They fall back to GT/FN append-only supervision because
+  an empty rollout can mean the model failed to recognize image objects and
+  should receive a correction signal. The fallback remains visible through
+  invalid/empty rollout metrics and raw artifacts, and it does not count as
+  valid-rollout evidence.
+- GT/FN fallback supervision uses the same initial loss weight as normal
+  Channel-B correction (`fallback_loss_weight=1.0`). It must carry explicit
+  provenance such as `rollout_context=fallback_gt_fn_append_only` and separate
+  metrics such as `loss/B_fallback/*`, `rollout/fallback_loss_share`, and
+  `rollout/invalid_fallback_gt_fn_rate`. If fallback exceeds roughly 30-40% of
+  Channel-B samples over a monitoring window, the run should warn that the
+  rollout distribution is unhealthy.
+- A2 compact-full Stage-2 rollout I/O acceptance uses two gates:
+  - Gate 1, launch/I/O wiring: 2-4 samples, unconstrained greedy decoding,
+    compact-full parser only, no CoordJSON fallback, raw output artifacts
+    preserved, and at least one valid predicted compact-full object.
+  - Gate 2, rollout readiness: 16-32 samples, unconstrained greedy decoding,
+    `sample_valid_pred_rate >= 0.75`, parser-template mismatch rate equal to
+    zero, parse truncation, empty-valid-object, and GT/FN fallback cases
+    reported explicitly, and raw rollouts plus parsed objects materialized for
+    manual inspection.
+
+Implementation consequence:
+
+- Add a `Stage2RolloutTemplatePolicy` / rollout codec seam before Stage-2
+  assignment and duplicate filtering.
+- Add compact-full `fallback_gt_fn_append_only` behavior for malformed or empty
+  model rollouts, while hard-failing configuration-level template/parser
+  mismatches.
+- Reuse the current compact-full infer/eval path as the parity reference,
+  especially strict compact-full parsing and artifact serialization. Compact
+  grammar decode is not the training default.
+- Record the resolved rollout template, parser, decode policy, and append policy
+  in resolved config and artifacts.
+
 ## Continue The Grill-Me Loop
 
 Next decisions still worth asking when the context resumes:

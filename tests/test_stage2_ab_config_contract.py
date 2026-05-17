@@ -177,6 +177,68 @@ def test_stage2_ab_channel_b_timeout_keys_are_supported() -> None:
     assert cfg.triage_posterior == Stage2ABChannelBTriagePosteriorConfig()
 
 
+def test_stage2_ab_channel_b_rollout_template_defaults_to_explicit_legacy() -> None:
+    cfg = Stage2ABChannelBConfig.from_mapping({})
+
+    assert cfg.rollout_template_family == "coordjson"
+    assert cfg.rollout_decode_policy == "legacy_coordjson"
+    assert cfg.invalid_rollout_policy == "abort"
+    assert cfg.fallback_loss_weight == pytest.approx(1.0)
+
+
+def test_stage2_ab_channel_b_compact_full_derives_runtime_policy_defaults() -> None:
+    cfg = Stage2ABChannelBConfig.from_mapping({"rollout_template_family": "compact-full"})
+
+    assert cfg.rollout_template_family == "compact_full"
+    assert cfg.rollout_decode_policy == "unconstrained"
+    assert cfg.invalid_rollout_policy == "fallback_gt_fn_append_only"
+    assert cfg.fallback_loss_weight == pytest.approx(1.0)
+
+
+@pytest.mark.parametrize(
+    "payload, expected_msg",
+    [
+        (
+            {"rollout_template_family": "compact_full", "rollout_decode_policy": "legacy_coordjson"},
+            r"stage2_ab\.channel_b\.rollout_decode_policy.*compact_full",
+        ),
+        (
+            {"rollout_template_family": "coordjson", "rollout_decode_policy": "unconstrained"},
+            r"stage2_ab\.channel_b\.rollout_decode_policy.*coordjson",
+        ),
+        (
+            {"rollout_template_family": "coordjson", "rollout_decode_policy": "compact_grammar"},
+            r"stage2_ab\.channel_b\.rollout_decode_policy.*coordjson",
+        ),
+        (
+            {"rollout_template_family": "coordjson", "invalid_rollout_policy": "fallback_gt_fn_append_only"},
+            r"fallback_gt_fn_append_only.*coordjson",
+        ),
+        (
+            {"rollout_template_family": "compact_full", "invalid_rollout_policy": "abort"},
+            r"invalid_rollout_policy for compact_full",
+        ),
+        (
+            {"rollout_template_family": "compact_full", "invalid_rollout_policy": "dump_and_continue"},
+            r"invalid_rollout_policy for compact_full",
+        ),
+        (
+            {"rollout_template_family": "compact_full", "fallback_loss_weight": -0.1},
+            r"stage2_ab\.channel_b\.fallback_loss_weight must be >= 0",
+        ),
+        (
+            {"rollout_template_family": "compact_full", "fallback_loss_weight": float("inf")},
+            r"stage2_ab\.channel_b\.fallback_loss_weight must be finite",
+        ),
+    ],
+)
+def test_stage2_ab_channel_b_rollout_template_invalid_values_fail_fast(
+    payload: dict, expected_msg: str
+) -> None:
+    with pytest.raises((ValueError, TypeError), match=expected_msg):
+        Stage2ABChannelBConfig.from_mapping(payload)
+
+
 def test_stage2_ab_channel_b_pseudo_positive_keys_are_supported() -> None:
     cfg = Stage2ABChannelBConfig.from_mapping(
         {

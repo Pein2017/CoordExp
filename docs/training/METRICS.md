@@ -406,6 +406,23 @@ Failure telemetry:
 - with `stage2_ab.channel_b.invalid_rollout_policy=dump_and_continue`, the
   trainer logs `stage2_ab/channel_b/invalid_rollout_sample_dropped` and
   `stage2_ab/channel_b/invalid_rollout_sample_dropped_rate`
+- compact-full uses a different invalid/empty policy:
+  `fallback_gt_fn_append_only`. Malformed compact output, empty compact output,
+  or compact rows whose bboxes are dropped before any valid survivor remain
+  trainable as GT/FN-only correction targets. These fallback samples do not
+  count as valid rollouts for readiness gates.
+- compact-full fallback diagnostics:
+  - `rollout/invalid_fallback_gt_fn_count`
+  - `rollout/invalid_fallback_gt_fn_rate`
+  - `rollout/empty_valid_object_rate`
+  - `rollout/fallback_loss_share`
+  - `rollout/fallback_dominance_warning`
+  - `rollout/fallback_gt_fn_append_only_count`
+  - `rollout/fallback_loss_weight`
+- compact-full explorer rollouts that enter fallback are included in raw
+  rollout/fallback metrics but excluded from posterior-support denominators,
+  including `valid_explorer_count`, support rates, recovered-GT rates, and
+  pseudo-positive selection.
 - treat those aborts as failure telemetry / run outcome, not as a step-level
   rolling metric
 

@@ -71,6 +71,20 @@ _module_obj = sys.modules.get(__name__)
 if isinstance(_module_obj, ModuleType) and not isinstance(_module_obj, _Stage2ModuleProxy):
     _module_obj.__class__ = _Stage2ModuleProxy
 
+_BLOCKED_IMPL_EXPORTS = {
+    "_apply_channel_b_duplicate_control",
+    "_bbox_iou_norm1000_xyxy",
+    "_build_canonical_prefix_data",
+    "_build_canonical_prefix_text_data",
+    "_build_channel_b_meta_entry",
+    "_build_channel_b_supervision_targets",
+    "_build_channel_b_triage",
+    "_channel_b_targets",
+    "_compute_duplicate_diagnostics",
+    "_build_duplicate_control_divergence_diagnostics",
+    "_sequential_dedup_bbox_objects",
+}
+
 for _name in (
     "Stage2ABTrainingTrainer",
     "Stage2TwoChannelTrainer",
@@ -89,11 +103,13 @@ for _name in (
 
 
 def __getattr__(name: str) -> Any:
+    if name in _BLOCKED_IMPL_EXPORTS:
+        raise AttributeError(name)
     return getattr(_IMPL, name)
 
 
 def __dir__() -> list[str]:
-    return sorted(set(globals().keys()) | set(dir(_IMPL)))
+    return sorted((set(globals().keys()) | set(dir(_IMPL))) - _BLOCKED_IMPL_EXPORTS)
 
 
 __all__ = [
@@ -103,9 +119,3 @@ __all__ = [
     "Stage2TwoChannelTrainer",
     "_PendingStage2Log",
 ]
-
-from .target_builder import (
-    _apply_channel_b_duplicate_control,
-    _build_duplicate_control_divergence_diagnostics,
-    _compute_duplicate_diagnostics,
-)

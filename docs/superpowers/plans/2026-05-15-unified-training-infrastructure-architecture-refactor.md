@@ -77,6 +77,35 @@ implementation starts:
 - Reconcile the `SupervisionPlan` / `TargetPlan` vocabulary before public module
   names and tests are created.
 
+The 2026-05-17 A2 Stage-2 launch smoke added one more binding refinement:
+
+- Treat Stage-2 rollout I/O as a template-aware boundary. The A2 random
+  ET-RMP-CE compact-full checkpoint loaded and trained for one tiny Stage-2 step
+  through `model.adapters`, but the current Stage-2 rollout path still used
+  CoordJSON-shaped prompting/parsing/false-negative append behavior and produced
+  zero valid predicted rollout objects. The same checkpoint produced valid
+  compact-full infer/eval outputs through the compact-full infer pipeline.
+- Do not claim compact-full Stage-2 readiness from process exit, loss logging,
+  or `invalid_rollout=0` alone. Compact-full Stage-2 readiness requires a
+  rollout I/O smoke that proves valid generated compact-full objects before
+  assignment, duplicate filtering, and false-negative insertion are interpreted
+  as model-quality signals.
+- The approved migration shape is dual-surface and explicit: `compact_full` is
+  canonical for A2-style checkpoints and new Stage-2 work, while `coordjson`
+  remains runnable only as an explicit legacy surface. Implicit fallback or
+  mixed prompt/parser/appender selection between surfaces is forbidden.
+- The approved compact-full Stage-2 decode policy is unconstrained by default.
+  Do not hide rollout-format failures behind grammar-constrained decoding in
+  the training path. Compact grammar decoding may be retained only as an
+  explicitly labeled diagnostic/control probe.
+- The approved invalid/empty rollout policy is GT/FN append-only fallback, not
+  sample dropping. A malformed or empty compact-full rollout should construct
+  clean Channel-B supervision from GT/FN append-only targets, while metrics and
+  artifacts still record the rollout failure. Fallback supervision uses the same
+  initial loss weight as normal Channel-B correction and must carry separate
+  provenance plus dominance diagnostics. Configuration-level template mismatches
+  remain hard failures.
+
 ## Hard Guardrails
 
 | Guardrail | Requirement |
@@ -89,6 +118,8 @@ implementation starts:
 | No packing yet | Compact-full packing remains disabled until `PackingSegmentMap` exists. |
 | No encoded cache yet | Cache remains disabled until `EncodedSampleFingerprint` exists. |
 | No Stage-2 hard delete yet | Keep old runnable Stage-2/Hungarian path until greedy-IoU replacement smoke exists. |
+| Template-aware Stage-2 rollout | Compact-full checkpoints must use compact-full rollout prompts, unconstrained default decoding, parsers, false-negative appenders, supervision conversion, and artifacts. CoordJSON rollout parsing is legacy-only for explicit CoordJSON surfaces. |
+| Invalid compact-full rollouts | Malformed or empty model rollouts fall back to same-weight GT/FN append-only Channel-B supervision by default and remain visible in metrics/artifacts. Config/parser surface mismatches fail fast. |
 | Diagnostics preserved | Keep duplicate diagnostics and EOS/continue probes, but not training hacks. |
 | OpenSpec preconditions | If a stable spec requires a removed mechanism or current Stage-2 default, update/supersede the spec before code removal or default flips. |
 | Current-owner migration | New modules must wrap, migrate, or retire existing owners explicitly; no parallel owner drift. |
@@ -132,6 +163,9 @@ New or heavily refactored owners:
 | `src/training/observability/events.py` | `DiagnosticEvent` and observability-local event helpers only if they import/reuse canonical `MetricEvent`. |
 | `src/training/observability/service.py` | `ObservabilityService`, sinks, bounded diagnostics. |
 | `src/training/stage2/assignment.py` | `AssignmentStrategy`, `GreedyIoUAssignment`, migration `LegacyHungarianAssignment`. |
+| `src/training/stage2/rollout_codec.py` | `Stage2RolloutTemplatePolicy`, rollout parser/appender interfaces, compact-full and legacy CoordJSON implementations. |
+| `src/training/stage2/rollout_prompting.py` | Template-aware Stage-2 rollout prompt construction and decode-policy wiring. |
+| `src/training/stage2/rollout_artifacts.py` | Template-aware rollout artifact serialization for raw outputs and parsed objects. |
 | `src/training/stage2/duplicate_filter.py` | Deterministic duplicate filtering and diagnostics. |
 | `src/training/stage2/planners.py` | Channel-A and Channel-B supervision planners. |
 | `src/training/ordering.py` | Shared `ObjectOrderingStrategy`. |
@@ -154,7 +188,10 @@ Existing owners to modify during migration:
 | `src/detection/*` | Reuse or migrate current compact recursive CE pieces into the new owners without preserving old rejected surfaces. |
 | `src/trainers/*` | Remove rejected objectives and route new losses through the bridge/runner. |
 | `src/trainers/rollout_matching/matching.py` | Current Hungarian/matching owner; wrap behind assignment strategy before replacing. |
+| `src/trainers/rollout_matching/parsing.py` | Current CoordJSON rollout parser/appender owner; wrap as legacy `coordjson` rollout codec and add compact-full parity before compact checkpoints use Stage-2. |
 | `src/trainers/stage2_two_channel/target_builder.py` | Current Stage-2 target-building owner; bridge or retire through new planners with parity tests. |
+| `src/infer/compact_grammar.py` | Current compact-full decode guard owner; reuse only for optional Stage-2 diagnostic/control probes, not the default compact-full training rollout path. |
+| `src/infer/pipeline.py` and `src/infer/backends.py` | Current compact-full infer/eval evidence path; use as parity reference for Stage-2 compact-full rollout I/O. |
 | `configs/**` | Remove rejected knobs and add strict surface configs. |
 | `docs/training/**` | Update current guidance after implementation. |
 | `progress/index.yaml` | Demote historical evidence statuses after cleanup. |
@@ -1106,10 +1143,16 @@ Expected: pass.
 **Files:**
 
 - Create: `src/training/stage2/assignment.py`
+- Create: `src/training/stage2/rollout_codec.py`
+- Create: `src/training/stage2/rollout_prompting.py`
+- Create: `src/training/stage2/rollout_artifacts.py`
 - Create: `src/training/stage2/duplicate_filter.py`
 - Create: `src/training/stage2/planners.py`
 - Create: `src/training/ordering.py`
 - Create: `tests/test_stage2_assignment_greedy_iou.py`
+- Create: `tests/test_stage2_rollout_template_policy.py`
+- Create: `tests/test_stage2_compact_full_rollout_io.py`
+- Create: `tests/test_stage2_coordjson_rollout_legacy.py`
 - Create: `tests/test_stage2_duplicate_filter.py`
 - Create: `tests/test_stage2_supervision_planning_smoke.py`
 - Create: `tests/test_object_ordering_strategy.py`
@@ -1131,12 +1174,98 @@ parallel synthetic-only path:
 
 ```text
 src/trainers/rollout_matching/matching.py -> AssignmentStrategy adapter
+src/trainers/rollout_matching/parsing.py -> legacy CoordJSON rollout codec adapter
 src/trainers/stage2_two_channel/target_builder.py -> Stage2 supervision planner migration seam
+src/infer/compact_grammar.py -> optional compact-full diagnostic/control decode guard
+src/infer/pipeline.py / src/infer/backends.py -> compact-full infer parity reference
 src/trainers/rollout_aligned_targets.py -> legacy compatibility adapter if still live
 ```
 
 Expected: old executable trainers and new planning tests cannot silently
 diverge.
+
+- [x] **Step 0C: Add template-aware Stage-2 rollout I/O tests**
+
+Add tests that prove Stage-2 rollout I/O cannot silently mix template families.
+The tests must cover:
+
+```text
+compact_full prompt -> unconstrained compact_full decode policy -> compact_full parser -> compact_full append policy
+coordjson prompt -> CoordJSON parser -> CoordJSON append policy
+compact_full output rejected by CoordJSON-only parser path
+CoordJSON output rejected by compact_full-only parser path
+resolved rollout template recorded in diagnostics/artifacts
+```
+
+Expected: A compact-full checkpoint or config cannot be launched through the
+legacy CoordJSON parser/appender without an explicit legacy compatibility
+selection. `custom.json_format: standard` must not decide the rollout parser
+for compact-full Stage-2. The accepted migration model is dual-surface:
+`compact_full` canonical, `coordjson` explicit legacy, no implicit fallback.
+
+- [x] **Step 0D: Implement `Stage2RolloutTemplatePolicy` and rollout codecs**
+
+Implement a small policy object that resolves the rollout sequence family for
+Stage-2 before rollout generation. Initial families:
+
+```text
+compact_full
+coordjson
+```
+
+Expected: `compact_full` uses compact-full prompt construction, unconstrained
+default rollout decoding, strict compact-full parsing, compact-full
+false-negative append serialization, and compact-full artifact serialization.
+Compact grammar decoding is allowed only as a labeled diagnostic/control probe.
+`coordjson` wraps the current `src/trainers/rollout_matching/parsing.py`
+behavior as an explicit legacy surface.
+
+- [x] **Step 0E: Implement invalid/empty rollout fallback policy**
+
+For compact-full Stage-2, implement the default policy:
+
+```text
+invalid_rollout_policy: fallback_gt_fn_append_only
+```
+
+Expected behavior:
+
+```text
+malformed model output -> no predicted survivors -> clean GT/FN append-only Channel-B target
+empty valid object set -> clean GT/FN append-only Channel-B target
+valid predicted objects -> normal duplicate filtering, assignment, and FN insertion
+config/template parser mismatch -> hard validation failure, not fallback
+fallback_loss_weight -> 1.0 by default, same as normal Channel-B correction
+fallback provenance -> rollout_context=fallback_gt_fn_append_only
+```
+
+Expected metrics/artifacts:
+
+```text
+loss/B_fallback/*
+rollout/invalid_fallback_gt_fn_count
+rollout/invalid_fallback_gt_fn_rate
+rollout/fallback_loss_share
+rollout/fallback_dominance_warning
+rollout/empty_valid_object_rate
+rollout/parse_truncated_rate
+rollout/parser_template_mismatch_rate
+raw invalid rollout artifacts with fallback reason
+```
+
+Expected: fallback samples remain trainable correction signals, but they do not
+count as valid rollouts and cannot make Gate 1 or Gate 2 pass. A monitoring
+window with fallback samples above roughly 30-40% of Channel-B samples should
+flag rollout-distribution health as degraded. `fallback_loss_weight` may exist
+as an explicit ablation knob later, but the default is not weakened without
+evidence.
+
+Implementation note: the live Stage-2 compact-full path now uses the
+template-aware codec and compact target builder directly. Malformed compact
+output, empty compact output, and compact rows whose bboxes are dropped before
+any valid survivor all route to `fallback_gt_fn_append_only`; compact explorer
+fallback views remain in raw fallback metrics but are excluded from posterior
+support denominators.
 
 - [ ] **Step 1: Test greedy IoU assignment**
 
@@ -1185,7 +1314,7 @@ supervision planners, and shared object ordering.
 Run:
 
 ```bash
-conda run -n ms python -m pytest tests/test_stage2_assignment_greedy_iou.py tests/test_stage2_duplicate_filter.py tests/test_stage2_supervision_planning_smoke.py tests/test_object_ordering_strategy.py tests/test_stage2_two_channel_training.py tests/test_stage2_rollout_aligned.py -q
+conda run -n ms python -m pytest tests/test_stage2_rollout_template_policy.py tests/test_stage2_compact_full_rollout_io.py tests/test_stage2_coordjson_rollout_legacy.py tests/test_stage2_assignment_greedy_iou.py tests/test_stage2_duplicate_filter.py tests/test_stage2_supervision_planning_smoke.py tests/test_object_ordering_strategy.py tests/test_stage2_two_channel_training.py tests/test_stage2_rollout_aligned.py -q
 ```
 
 Expected: pass.
@@ -1224,7 +1353,58 @@ changing the default runnable Stage-2 path.
 Expected: greedy-IoU planning smoke passes and writes diagnostics, while the
 legacy runnable path remains intact.
 
-- [ ] **Step 3: Re-check Stage-2 eval artifact materialization**
+- [ ] **Step 3: Add A2 compact-full rollout I/O smoke**
+
+Use the A2 random ET-RMP-CE compact-full adapter at `checkpoint-3664` as the
+first real compact-full Stage-2 rollout I/O proof. Launch with the Qwen3-VL
+base model and the adapter under `model.adapters`, not as a full model
+checkpoint.
+
+Required proof:
+
+```text
+Stage-2 launch exits successfully
+resolved rollout template is compact_full
+raw generated rollout contains at least one valid compact-full predicted object
+raw output ends with <|im_end|> or another explicit compact-full stop contract
+parser is compact_full, not CoordJSON
+decode policy is unconstrained, not grammar-constrained
+invalid/empty rollouts fall back to GT/FN append-only supervision but do not pass this gate
+false-negative append policy serializes compact_full entries when needed
+metrics distinguish launch health from valid-rollout health
+```
+
+Expected: this smoke is Gate 1 for compact-full Stage-2 rollout I/O wiring.
+Use a tiny 2-4 sample scope. It must prove at least one valid predicted
+compact-full object, no CoordJSON fallback, and preserved raw output artifacts.
+If it fails with `valid_pred_objects_total=0` or a parser-template mismatch, do
+not interpret assignment/duplicate/filter metrics as model quality. Gate 1
+alone is not enough to claim training readiness.
+
+- [ ] **Step 3B: Add A2 compact-full rollout readiness smoke**
+
+After Gate 1 passes, run a small 16-32 sample readiness smoke with the same
+unconstrained compact-full rollout path.
+
+Required proof:
+
+```text
+sample_valid_pred_rate >= 0.75
+parser_template_mismatch_rate = 0
+parse_truncated_rate reported explicitly
+empty_valid_object_rate reported explicitly
+invalid_fallback_gt_fn_rate reported explicitly
+raw rollouts and parsed objects materialized for manual inspection
+compact grammar probes, if any, are diagnostic/control-only
+fallback_loss_share reported separately
+fallback dominance warning emitted if fallback exceeds 30-40% of Channel-B samples
+```
+
+Expected: Gate 2 is the minimum evidence required before real compact-full
+Stage-2 training can treat rollout-quality, assignment, duplicate-filter, and
+false-negative metrics as model-behavior signals.
+
+- [ ] **Step 4: Re-check Stage-2 eval artifact materialization**
 
 Run a unit writer test, artifact replay, or tiny eval-step smoke that proves
 `rollout_matching.eval_detection.materialize_artifacts: true` is still
@@ -1234,7 +1414,7 @@ Expected: `gt_vs_pred.jsonl`, `gt_vs_pred_scored.jsonl`, `infer_summary.json`,
 `metrics.json`, `per_image.json`, `raw_rollouts.jsonl`, and
 `pred_token_trace.jsonl` when trace metadata is available.
 
-- [ ] **Step 4: Block `src/sft.py` default flips until both paths pass**
+- [ ] **Step 5: Block `src/sft.py` default flips until both paths pass**
 
 Do not change `src/sft.py` routing/defaults or config discovery until the
 legacy Stage-2 path and new shadow path both pass.
@@ -1562,12 +1742,59 @@ new bridge and objective runner.
 Run:
 
 ```bash
-conda run -n ms python -m pytest tests/test_stage2_assignment_greedy_iou.py tests/test_stage2_duplicate_filter.py tests/test_stage2_supervision_planning_smoke.py tests/test_stage2_two_channel_training.py tests/test_stage2_rollout_aligned.py -q
+conda run -n ms python -m pytest tests/test_stage2_rollout_template_policy.py tests/test_stage2_compact_full_rollout_io.py tests/test_stage2_coordjson_rollout_legacy.py tests/test_stage2_assignment_greedy_iou.py tests/test_stage2_duplicate_filter.py tests/test_stage2_supervision_planning_smoke.py tests/test_stage2_two_channel_training.py tests/test_stage2_rollout_aligned.py -q
 ```
 
 Expected: synthetic rollout predictions produce assignment results, duplicate
 filter results, false-negative insertion, final object ordering, and Channel-B
-supervision diagnostics.
+supervision diagnostics. Template-family mismatches fail before assignment.
+
+### Level 7A: Stage-2 Compact-Full Rollout I/O Smoke
+
+Run a tiny real-backend Stage-2 smoke with the A2 random ET-RMP-CE compact-full
+adapter at `checkpoint-3664`, loaded through `model.adapters` over the Qwen3-VL
+base model.
+
+Expected:
+
+```text
+process exits 0
+resolved rollout template is compact_full
+compact-full parser path is used
+raw generated rollout contains at least one valid predicted object
+raw generated rollout uses compact-full special tokens
+CoordJSON parser/appender path is not used
+default decode policy is unconstrained
+invalid/empty rollout fallback policy is GT/FN append-only
+false-negative append policy remains template-consistent
+artifacts/logs distinguish valid-rollout health from launch health
+```
+
+If this smoke exits successfully but records `valid_pred_objects_total=0`,
+`parse_truncated_rate=1.0`, or a parser-template mismatch, compact-full
+Stage-2 readiness is not proven. Treat that as a rollout I/O failure, not a
+greedy-IoU or duplicate-filter result.
+
+Gate split:
+
+```text
+Gate 1 launch/I/O wiring:
+  scope: 2-4 samples
+  threshold: at least one valid predicted compact-full object
+  required: no CoordJSON fallback, raw output artifacts preserved
+  fallback: invalid/empty rollouts use GT/FN append-only supervision but do not pass the gate
+
+Gate 2 rollout readiness:
+  scope: 16-32 samples
+  threshold: sample_valid_pred_rate >= 0.75
+  required: parser_template_mismatch_rate = 0
+  required: parse_truncated_rate, empty_valid_object_rate, and invalid_fallback_gt_fn_rate reported
+  required: fallback_loss_share and fallback dominance warning reported
+  required: raw rollouts and parsed objects available for manual inspection
+```
+
+Gate 1 proves wiring. Gate 2 is the minimum readiness evidence before real
+compact-full Stage-2 training launch.
 
 ### Level 7B: Stage-2 Eval Artifact Preservation
 
@@ -1596,6 +1823,22 @@ Before any production training launch, verify:
 - runner-owned loss mode strips hidden loss inputs and ignores `outputs.loss`;
 - metrics include objective denominators and weighted losses;
 - diagnostics are bounded under the selected profile;
+- Stage-2 compact-full runs record the resolved rollout template, rollout
+  parser, decode policy, and append policy in resolved config/artifacts;
+- Stage-2 compact-full default decode policy is unconstrained; compact grammar
+  probes are labeled diagnostic/control and cannot satisfy readiness alone;
+- Stage-2 compact-full invalid/empty rollout policy is
+  `fallback_gt_fn_append_only`; fallback rates are logged and fallback samples
+  do not count as valid-rollout evidence;
+- Stage-2 fallback supervision uses `fallback_loss_weight=1.0` by default,
+  carries `rollout_context=fallback_gt_fn_append_only` provenance, logs
+  `loss/B_fallback/*` and `rollout/fallback_loss_share`, and warns when
+  fallback exceeds roughly 30-40% of Channel-B samples over a monitoring
+  window;
+- compact-full Stage-2 readiness has both real-backend A2 rollout gates:
+  Gate 1 at 2-4 samples with at least one valid predicted compact-full object,
+  and Gate 2 at 16-32 samples with `sample_valid_pred_rate >= 0.75` and zero
+  parser-template mismatches;
 - Stage-2 runs identify assignment strategy and duplicate-filter strategy in
   artifacts;
 - Stage-2 runs identify object-ordering policy in resolved config/artifacts,
@@ -1622,6 +1865,7 @@ Before any production training launch, verify:
 | Parallel owner drift | Wrap/migrate current owners before introducing replacement modules. |
 | Diagnostics pollute training loop | Route all structured payloads through bounded `ObservabilityService` profiles. |
 | Stage-2 loses runnable baseline too early | Keep old Hungarian path until greedy-IoU replacement passes smoke. |
+| Stage-2 launch hides rollout-template mismatch | Gate compact-full Stage-2 on a template-aware A2 rollout I/O smoke with valid predicted objects, not only process exit or scalar losses. |
 | Packing/cache silently corrupts spans | Keep both disabled until segment map and fingerprint contracts are implemented and tested. |
 
 ## Completion Definition
@@ -1642,6 +1886,8 @@ The refactor is complete when:
   resolve through typed runtime plans;
 - one compact-full Stage-1 golden thread and one Stage-2 rollout-planning
   golden thread are stable;
+- one compact-full Stage-2 rollout I/O smoke with the A2 checkpoint proves
+  valid generated compact-full objects through the compact-full parser path;
 - production-run gate checks pass for the first real training launch.
 
 Plan complete and saved for review. Recommended execution mode after approval:

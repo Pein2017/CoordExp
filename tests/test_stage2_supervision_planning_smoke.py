@@ -17,9 +17,11 @@ from src.trainers.rollout_matching.contracts import GTObject
 from src.trainers.stage2_rollout_aligned import _serialize_append_fragment
 from src.trainers.stage2_two_channel import (
     _bbox_groups_from_token_ids,
+    _matched_prefix_structure_positions,
+)
+from src.trainers.stage2_two_channel.target_builder import (
     _build_channel_b_supervision_targets,
     _build_channel_b_triage,
-    _matched_prefix_structure_positions,
 )
 
 

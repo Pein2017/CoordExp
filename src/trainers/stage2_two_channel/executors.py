@@ -11,8 +11,6 @@ from __future__ import annotations
 
 import contextlib
 import logging
-import queue
-import threading
 import time
 from typing import Any, Dict, List, Literal, Mapping, Sequence, Tuple
 
@@ -25,18 +23,11 @@ from ..stage2_coordination import (
     resolve_stage2_prepare_barrier_timeout,
 )
 from .coordination import (
-    accumulate_channel_b_producer_item,
     accumulate_step_mode_microbatches,
-    consume_channel_b_queue_item,
-    finalize_channel_b_pipeline_step,
-    prepare_channel_b_pipeline_pack_step,
     resolve_channel_b_timeouts,
     run_channel_b_nonpipeline_learning_loop,
     run_channel_b_pipeline_learning_loop,
-    run_channel_b_train_one_pack,
     run_stage2_ab_ddp_monitored_barrier,
-    run_channel_b_pipeline_producer,
-    split_rollout_metrics,
 )
 
 logger = logging.getLogger(__name__)
@@ -359,7 +350,6 @@ class Stage2ABChannelExecutorsMixin:
                         "_loss_gradient_monitor_sync_gradients",
                         bool(sync_gradients),
                     )
-                    t_compute0 = time.perf_counter()
                     try:
                         with loss_ctx:
                             with self._stage2_ab_disable_average_tokens_across_devices_for_packed_step(
@@ -381,21 +371,17 @@ class Stage2ABChannelExecutorsMixin:
                                 "_loss_gradient_monitor_sync_gradients",
                                 prev_gradmon_sync,
                             )
-                    t_compute_s = float(time.perf_counter() - t_compute0)
                     if not isinstance(loss, torch.Tensor):
                         raise TypeError("compute_loss must return a torch.Tensor")
 
                     loss_scaled = loss * float(weight)
 
                     acc = getattr(self, "accelerator", None)
-                    t_backward0 = time.perf_counter()
                     if acc is not None and hasattr(acc, "backward"):
                         acc.backward(loss_scaled)
                     else:
                         loss_scaled.backward()
-                    t_backward_s = float(time.perf_counter() - t_backward0)
 
-                loss_value = float(loss.detach().float().cpu().item())
                 return loss.detach() * float(weight)
 
             t_segments0 = time.perf_counter()

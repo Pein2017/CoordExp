@@ -56,6 +56,9 @@ from src.trainers.teacher_forcing.module_registry import (
     OBJECTIVE_OPTIONAL_CONFIG_KEYS,
     validate_bbox_geo_config_values,
 )
+from src.training.stage2.rollout_codec import (
+    resolve_stage2_rollout_template_policy,
+)
 
 from .eval_monitor_dump_schema import EvalMonitorDumpConfig
 from .rollout_matching_schema import RolloutMatchingConfig
@@ -2307,6 +2310,9 @@ class Stage2ABChannelBConfig:
     )
     producer_wait_timeout_s: Optional[float] = None
     ddp_phase_timeout_s: Optional[float] = None
+    rollout_template_family: str = "coordjson"
+    rollout_decode_policy: str = "legacy_coordjson"
+    fallback_loss_weight: float = 1.0
     invalid_rollout_policy: str = "abort"
     insertion_order: str = "tail_append"
     pseudo_positive: Stage2ABChannelBPseudoPositiveConfig = field(
@@ -2406,16 +2412,24 @@ class Stage2ABChannelBConfig:
             data.pop("duplicate_control", None)
         )
 
-        invalid_rollout_policy_raw = data.pop(
-            "invalid_rollout_policy",
-            cls.invalid_rollout_policy,
+        rollout_template_family_raw = data.pop(
+            "rollout_template_family", cls.rollout_template_family
         )
-        invalid_rollout_policy = str(invalid_rollout_policy_raw).strip().lower()
-        if invalid_rollout_policy not in {"abort", "dump_and_continue"}:
-            raise ValueError(
-                "stage2_ab.channel_b.invalid_rollout_policy must be one of "
-                "{'abort', 'dump_and_continue'}"
-            )
+        rollout_decode_policy_raw = data.pop("rollout_decode_policy", None)
+        invalid_rollout_policy_raw = data.pop("invalid_rollout_policy", None)
+        fallback_loss_weight_raw = data.pop(
+            "fallback_loss_weight", cls.fallback_loss_weight
+        )
+        rollout_template_policy = resolve_stage2_rollout_template_policy(
+            rollout_template_family_raw,
+            rollout_decode_policy=rollout_decode_policy_raw,
+            invalid_rollout_policy=invalid_rollout_policy_raw,
+            fallback_loss_weight=fallback_loss_weight_raw,
+        )
+        rollout_template_family = rollout_template_policy.template_family
+        rollout_decode_policy = rollout_template_policy.decode_policy
+        invalid_rollout_policy = rollout_template_policy.invalid_rollout_policy
+        fallback_loss_weight = float(rollout_template_policy.fallback_loss_weight)
 
         insertion_order_raw = data.pop(
             "insertion_order",
@@ -2489,6 +2503,9 @@ class Stage2ABChannelBConfig:
             duplicate_control=duplicate_control,
             producer_wait_timeout_s=producer_wait_timeout_s,
             ddp_phase_timeout_s=ddp_phase_timeout_s,
+            rollout_template_family=rollout_template_family,
+            rollout_decode_policy=rollout_decode_policy,
+            fallback_loss_weight=fallback_loss_weight,
             invalid_rollout_policy=invalid_rollout_policy,
             insertion_order=insertion_order,
             pseudo_positive=pseudo_positive,

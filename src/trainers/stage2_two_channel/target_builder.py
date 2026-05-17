@@ -9,7 +9,17 @@ from src.common.duplicate_control import (
     apply_duplicate_policy,
     validate_duplicate_control_config,
 )
+from src.common.detection_sequence import (
+    BOX_START_TOKEN,
+    COMPACT_FULL_FORMAT,
+    OBJECT_REF_START_TOKEN,
+    render_compact_detection_sequence,
+)
 from src.common.object_field_order import build_object_payload
+from src.training.stage2.rollout_codec import (
+    FALLBACK_GT_FN_APPEND_ONLY,
+    Stage2RolloutTemplatePolicy,
+)
 from src.utils.assistant_json import dumps_coordjson
 
 from ..rollout_matching.contracts import GTObject, MatchResult
@@ -92,6 +102,198 @@ class _ChannelBSupervisionTargets:
     duplicate_control_first_divergence_diagnostics: List[Stage2DuplicateControlDivergenceDiagnostic]
     duplicate_control_first_divergence_boundary_count: int
     duplicate_control_first_divergence_skipped_no_divergence: int
+    rollout_template_family: str
+    rollout_parser_id: str
+    rollout_append_policy_id: str
+    rollout_context: str
+    rollout_fallback_reason: str | None
+    rollout_fallback_loss_weight: float
+    rollout_counts_as_valid_rollout: bool
+
+
+def _compact_coord_tokens(values: Sequence[object]) -> List[str]:
+    if isinstance(values, (str, bytes)) or not isinstance(values, Sequence):
+        raise ValueError("compact-full Channel-B bbox requires four coord bins")
+    if len(values) != 4:
+        raise ValueError("compact-full Channel-B bbox requires four coord bins")
+
+    coords: List[str] = []
+    for raw in values:
+        if isinstance(raw, bool):
+            raise ValueError("compact-full Channel-B bbox bins must not be bools")
+        try:
+            value = int(raw)
+        except (TypeError, ValueError) as exc:
+            raise ValueError("compact-full Channel-B bbox bins must be integers") from exc
+        if value < 0 or value > 999:
+            raise ValueError("compact-full Channel-B bbox bins must be in [0, 999]")
+        coords.append(f"<|coord_{int(value)}|>")
+    return coords
+
+
+def _compact_payload_from_gt_object(obj: GTObject) -> Dict[str, object]:
+    if str(obj.geom_type) != "bbox_2d":
+        raise ValueError(
+            f"compact-full Channel-B only supports bbox_2d objects; got {obj.geom_type!r}"
+        )
+    return {
+        "desc": str(obj.desc),
+        "bbox_2d": _compact_coord_tokens(obj.points_norm1000),
+    }
+
+
+def _render_compact_objects(objects: Sequence[GTObject]) -> str:
+    return render_compact_detection_sequence(
+        {"objects": [_compact_payload_from_gt_object(obj) for obj in objects]},
+        detection_sequence_format=COMPACT_FULL_FORMAT,
+    )
+
+
+def _compact_object_and_desc_spans(
+    text: str,
+) -> List[Tuple[Tuple[int, int], Tuple[int, int]]]:
+    spans: List[Tuple[Tuple[int, int], Tuple[int, int]]] = []
+    cursor = 0
+    for row in str(text).split("\n"):
+        row_start = int(cursor)
+        row_end = int(row_start + len(row))
+        cursor = int(row_end + 1)
+        if not row:
+            continue
+
+        box_pos = row.find(BOX_START_TOKEN)
+        if not row.startswith(OBJECT_REF_START_TOKEN) or box_pos < len(
+            OBJECT_REF_START_TOKEN
+        ):
+            raise ValueError("compact-full Channel-B target row lost grammar markers")
+
+        desc_start = int(row_start + len(OBJECT_REF_START_TOKEN))
+        desc_end = int(row_start + box_pos)
+        spans.append(((row_start, row_end), (desc_start, desc_end)))
+    return spans
+
+
+def _build_compact_prefix_text_data(
+    *, objects: Sequence[GTObject]
+) -> Tuple[str, List[str], List[Tuple[int, int]]]:
+    prefix_text = ""
+    boundary_prefix_texts: List[str] = [""]
+    object_value_spans: List[Tuple[int, int]] = []
+
+    for obj in objects:
+        row_text = _render_compact_objects([obj])
+        if prefix_text:
+            prefix_text = prefix_text + "\n"
+        start = int(len(prefix_text))
+        prefix_text = prefix_text + str(row_text)
+        object_value_spans.append((start, int(len(prefix_text))))
+        boundary_prefix_texts.append(str(prefix_text))
+
+    return prefix_text, boundary_prefix_texts, object_value_spans
+
+
+def _build_compact_prefix_data(
+    *,
+    tokenizer: Any,
+    objects: Sequence[GTObject],
+) -> _CanonicalPrefixData:
+    prefix_text, boundary_prefix_texts, object_value_spans = (
+        _build_compact_prefix_text_data(objects=objects)
+    )
+    prefix_token_ids = [
+        int(t) for t in tokenizer.encode(prefix_text, add_special_tokens=False)
+    ]
+    return _CanonicalPrefixData(
+        prefix_text=str(prefix_text),
+        prefix_token_ids=prefix_token_ids,
+        boundary_prefix_texts=[str(t) for t in boundary_prefix_texts],
+        object_value_spans=[tuple(span) for span in object_value_spans],
+    )
+
+
+def _token_indices_overlapping_char_span(
+    *,
+    token_spans: Sequence[Tuple[int, int]],
+    char_start: int,
+    char_end: int,
+) -> List[int]:
+    out: List[int] = []
+    for idx, (start, end) in enumerate(token_spans):
+        if int(end) <= int(char_start) or int(start) >= int(char_end):
+            continue
+        out.append(int(idx))
+    return out
+
+
+def _compact_prefix_structure_positions(
+    *,
+    tokenizer: Any,
+    prefix_token_ids: Sequence[int],
+    prefix_text: str,
+    matched_object_indices: Sequence[int],
+) -> List[int]:
+    if not prefix_token_ids or not matched_object_indices:
+        return []
+
+    token_spans = _token_piece_char_spans(
+        tokenizer=tokenizer,
+        token_ids=prefix_token_ids,
+    )
+    object_spans = _compact_object_and_desc_spans(prefix_text)
+
+    supervised: set[int] = set()
+    for raw_idx in matched_object_indices:
+        idx = int(raw_idx)
+        if idx < 0 or idx >= len(object_spans):
+            continue
+        object_span, desc_span = object_spans[idx]
+        entry_tokens = _token_indices_overlapping_char_span(
+            token_spans=token_spans,
+            char_start=int(object_span[0]),
+            char_end=int(object_span[1]),
+        )
+        desc_tokens = set(
+            _token_indices_overlapping_char_span(
+                token_spans=token_spans,
+                char_start=int(desc_span[0]),
+                char_end=int(desc_span[1]),
+            )
+        )
+        supervised.update(int(token) for token in entry_tokens if token not in desc_tokens)
+
+    return sorted(int(p) for p in supervised)
+
+
+def _compact_desc_tail_positions_and_weights(
+    *,
+    tokenizer: Any,
+    token_ids: Sequence[int],
+    tail_text: str,
+    object_weights: Sequence[float],
+) -> Tuple[List[int], List[float]]:
+    if not token_ids or not tail_text:
+        return [], []
+
+    token_spans = _token_piece_char_spans(tokenizer=tokenizer, token_ids=token_ids)
+    object_spans = _compact_object_and_desc_spans(tail_text)
+
+    positions: List[int] = []
+    weights: List[float] = []
+    for obj_idx, (_object_span, desc_span) in enumerate(object_spans):
+        weight = (
+            float(object_weights[int(obj_idx)])
+            if int(obj_idx) < len(object_weights)
+            else 1.0
+        )
+        desc_tokens = _token_indices_overlapping_char_span(
+            token_spans=token_spans,
+            char_start=int(desc_span[0]),
+            char_end=int(desc_span[1]),
+        )
+        positions.extend(int(pos) for pos in desc_tokens)
+        weights.extend(float(weight) for _ in desc_tokens)
+
+    return positions, weights
 
 
 def _normalize_channel_b_insertion_order(insertion_order: str) -> str:
@@ -656,8 +858,58 @@ def _build_channel_b_supervision_targets(
     bbox_groups_from_token_ids_fn: Any,
     matched_prefix_structure_positions_fn: Any,
     serialize_append_fragment_fn: Any,
+    rollout_template_policy: Stage2RolloutTemplatePolicy | None = None,
+    parse: Any | None = None,
 ) -> _ChannelBSupervisionTargets:
     insertion_order_resolved = _normalize_channel_b_insertion_order(insertion_order)
+    rollout_template_family = (
+        str(rollout_template_policy.template_family)
+        if rollout_template_policy is not None
+        else "coordjson"
+    )
+    rollout_parser_id = (
+        str(rollout_template_policy.parser_id)
+        if rollout_template_policy is not None
+        else "coordjson_legacy"
+    )
+    rollout_append_policy_id = (
+        str(rollout_template_policy.append_policy_id)
+        if rollout_template_policy is not None
+        else "coordjson_legacy_fn_append"
+    )
+    is_compact_full = rollout_template_family == "compact_full"
+    compact_fallback_applies = bool(
+        is_compact_full
+        and parse is not None
+        and (
+            bool(getattr(parse, "invalid_rollout", False))
+            or bool(getattr(parse, "empty_valid_object_set", False))
+        )
+    )
+    rollout_fallback_loss_weight = (
+        float(rollout_template_policy.fallback_loss_weight)
+        if compact_fallback_applies and rollout_template_policy is not None
+        else 0.0
+    )
+    rollout_fallback_reason = (
+        str(getattr(parse, "fallback_reason", "") or "")
+        if compact_fallback_applies
+        else None
+    )
+    rollout_context = (
+        FALLBACK_GT_FN_APPEND_ONLY
+        if compact_fallback_applies
+        else (
+            "rollout_valid_with_fn_append"
+            if is_compact_full
+            else "legacy_coordjson_append"
+        )
+    )
+    rollout_counts_as_valid_rollout = not bool(
+        getattr(parse, "invalid_rollout", False)
+        or getattr(parse, "empty_valid_object_set", False)
+    )
+
     prefix_bbox_groups: List[Dict[str, Any]] = []
     fn_bbox_groups: List[Dict[str, Any]] = []
     prefix_pos: List[int] = []
@@ -669,10 +921,17 @@ def _build_channel_b_supervision_targets(
         if int(idx) not in set(triage.pseudo_positive_cluster_demoted_indices)
     ]
 
-    clean_prefix = _build_canonical_prefix_data(
-        tokenizer=tokenizer,
-        objects=triage.kept_anchor_objects,
-        object_field_order=object_field_order,
+    clean_prefix = (
+        _build_compact_prefix_data(
+            tokenizer=tokenizer,
+            objects=triage.kept_anchor_objects,
+        )
+        if is_compact_full
+        else _build_canonical_prefix_data(
+            tokenizer=tokenizer,
+            objects=triage.kept_anchor_objects,
+            object_field_order=object_field_order,
+        )
     )
     prefix_len_raw_local = int(len(clean_prefix.prefix_token_ids))
 
@@ -773,17 +1032,25 @@ def _build_channel_b_supervision_targets(
                 prefix_pos.append(int(local_idx))
                 prefix_bins.append(int(tbin))
 
-    matched_prefix_objects = [
-        _ValueSpanObject(value_span=clean_prefix.object_value_spans[int(i)])
-        for i in matched_clean_indices
-        if 0 <= int(i) < len(clean_prefix.object_value_spans)
-    ]
-    prefix_struct_pos = matched_prefix_structure_positions_fn(
-        tokenizer=tokenizer,
-        prefix_token_ids=clean_prefix.prefix_token_ids,
-        prefix_text=clean_prefix.prefix_text,
-        matched_pred_objects=matched_prefix_objects,
-    )
+    if is_compact_full:
+        prefix_struct_pos = _compact_prefix_structure_positions(
+            tokenizer=tokenizer,
+            prefix_token_ids=clean_prefix.prefix_token_ids,
+            prefix_text=clean_prefix.prefix_text,
+            matched_object_indices=matched_clean_indices,
+        )
+    else:
+        matched_prefix_objects = [
+            _ValueSpanObject(value_span=clean_prefix.object_value_spans[int(i)])
+            for i in matched_clean_indices
+            if 0 <= int(i) < len(clean_prefix.object_value_spans)
+        ]
+        prefix_struct_pos = matched_prefix_structure_positions_fn(
+            tokenizer=tokenizer,
+            prefix_token_ids=clean_prefix.prefix_token_ids,
+            prefix_text=clean_prefix.prefix_text,
+            matched_pred_objects=matched_prefix_objects,
+        )
 
     fn_gt_indices_final = [
         i for i in range(len(gts)) if i not in matched_gt_for_supervision
@@ -795,6 +1062,11 @@ def _build_channel_b_supervision_targets(
         else 1.0
         for gt_i in fn_gt_indices_final
     ]
+    if compact_fallback_applies:
+        fn_object_weights = [
+            float(weight) * float(rollout_fallback_loss_weight)
+            for weight in fn_object_weights
+        ]
     fn_count_for_meta = int(len(fn_objs))
     if insertion_order_resolved == "sorted":
         prefix_bbox_groups = []
@@ -824,10 +1096,17 @@ def _build_channel_b_supervision_targets(
             key=lambda entry: _gt_object_topleft_anchor(entry["obj"]),
         )
         sorted_objects = [entry["obj"] for entry in sorted_entries]
-        clean_prefix = _build_canonical_prefix_data(
-            tokenizer=tokenizer,
-            objects=sorted_objects,
-            object_field_order=object_field_order,
+        clean_prefix = (
+            _build_compact_prefix_data(
+                tokenizer=tokenizer,
+                objects=sorted_objects,
+            )
+            if is_compact_full
+            else _build_canonical_prefix_data(
+                tokenizer=tokenizer,
+                objects=sorted_objects,
+                object_field_order=object_field_order,
+            )
         )
         prefix_len_raw_local = int(len(clean_prefix.prefix_token_ids))
         prefix_coord_positions_all = [
@@ -962,79 +1241,117 @@ def _build_channel_b_supervision_targets(
                 }
             )
 
-        matched_prefix_objects = [
-            _ValueSpanObject(value_span=clean_prefix.object_value_spans[int(i)])
-            for i in remapped_matched_sorted_indices
-            if 0 <= int(i) < len(clean_prefix.object_value_spans)
-        ]
-        prefix_struct_pos = matched_prefix_structure_positions_fn(
-            tokenizer=tokenizer,
-            prefix_token_ids=clean_prefix.prefix_token_ids,
-            prefix_text=clean_prefix.prefix_text,
-            matched_pred_objects=matched_prefix_objects,
-        )
-        append_text = "]}"
-        append_ids = [
-            int(t) for t in tokenizer.encode(append_text, add_special_tokens=False)
-        ]
-        tail_desc_pos = []
-        tail_desc_weights = []
-        y_train_ids = list(clean_prefix.prefix_token_ids) + list(append_ids)
-        clean_target_text = str(clean_prefix.prefix_text) + str(append_text)
-        sorted_duplicate_bursts = _sorted_duplicate_bursts_by_boundary(
-            sorted_objects=sorted_objects,
-            suppressed_duplicate_objects_by_boundary=(
-                triage.suppressed_duplicate_objects_by_boundary
-            ),
-        )
-        (
-            duplicate_control_first_divergence_diagnostics,
-            duplicate_control_first_divergence_boundary_count,
-            duplicate_control_first_divergence_skipped_no_divergence,
-        ) = _build_duplicate_control_divergence_diagnostics(
-            tokenizer=tokenizer,
-            y_train_ids=y_train_ids,
-            clean_target_text=clean_target_text,
-            accepted_objects_clean=sorted_objects,
-            fn_objects=[],
-            suppressed_duplicate_objects_by_boundary=sorted_duplicate_bursts,
-            boundary_prefix_texts=clean_prefix.boundary_prefix_texts,
-            object_field_order=object_field_order,
-        )
+        if is_compact_full:
+            prefix_struct_pos = _compact_prefix_structure_positions(
+                tokenizer=tokenizer,
+                prefix_token_ids=clean_prefix.prefix_token_ids,
+                prefix_text=clean_prefix.prefix_text,
+                matched_object_indices=remapped_matched_sorted_indices,
+            )
+            append_text = ""
+            append_ids = []
+            tail_desc_pos = []
+            tail_desc_weights = []
+            y_train_ids = list(clean_prefix.prefix_token_ids)
+            clean_target_text = str(clean_prefix.prefix_text)
+            duplicate_control_first_divergence_diagnostics = []
+            duplicate_control_first_divergence_boundary_count = 0
+            duplicate_control_first_divergence_skipped_no_divergence = 0
+        else:
+            matched_prefix_objects = [
+                _ValueSpanObject(value_span=clean_prefix.object_value_spans[int(i)])
+                for i in remapped_matched_sorted_indices
+                if 0 <= int(i) < len(clean_prefix.object_value_spans)
+            ]
+            prefix_struct_pos = matched_prefix_structure_positions_fn(
+                tokenizer=tokenizer,
+                prefix_token_ids=clean_prefix.prefix_token_ids,
+                prefix_text=clean_prefix.prefix_text,
+                matched_pred_objects=matched_prefix_objects,
+            )
+            append_text = "]}"
+            append_ids = [
+                int(t) for t in tokenizer.encode(append_text, add_special_tokens=False)
+            ]
+            tail_desc_pos = []
+            tail_desc_weights = []
+            y_train_ids = list(clean_prefix.prefix_token_ids) + list(append_ids)
+            clean_target_text = str(clean_prefix.prefix_text) + str(append_text)
+            sorted_duplicate_bursts = _sorted_duplicate_bursts_by_boundary(
+                sorted_objects=sorted_objects,
+                suppressed_duplicate_objects_by_boundary=(
+                    triage.suppressed_duplicate_objects_by_boundary
+                ),
+            )
+            (
+                duplicate_control_first_divergence_diagnostics,
+                duplicate_control_first_divergence_boundary_count,
+                duplicate_control_first_divergence_skipped_no_divergence,
+            ) = _build_duplicate_control_divergence_diagnostics(
+                tokenizer=tokenizer,
+                y_train_ids=y_train_ids,
+                clean_target_text=clean_target_text,
+                accepted_objects_clean=sorted_objects,
+                fn_objects=[],
+                suppressed_duplicate_objects_by_boundary=sorted_duplicate_bursts,
+                boundary_prefix_texts=clean_prefix.boundary_prefix_texts,
+                object_field_order=object_field_order,
+            )
     else:
-        append_text = serialize_append_fragment_fn(
-            fn_objects=fn_objs,
-            prefix_text=clean_prefix.prefix_text,
-            object_field_order=object_field_order,
-        )
+        if is_compact_full:
+            append_body = _render_compact_objects(fn_objs) if fn_objs else ""
+            append_text = (
+                ("\n" + append_body)
+                if clean_prefix.prefix_text and append_body
+                else append_body
+            )
+        else:
+            append_text = serialize_append_fragment_fn(
+                fn_objects=fn_objs,
+                prefix_text=clean_prefix.prefix_text,
+                object_field_order=object_field_order,
+            )
         append_ids = [
             int(t) for t in tokenizer.encode(append_text, add_special_tokens=False)
         ]
 
-        tail_desc_pos, tail_desc_weights = _desc_tail_positions_and_weights(
-            tokenizer=tokenizer,
-            token_ids=append_ids,
-            object_weights=fn_object_weights,
-        )
+        if is_compact_full:
+            tail_desc_pos, tail_desc_weights = _compact_desc_tail_positions_and_weights(
+                tokenizer=tokenizer,
+                token_ids=append_ids,
+                tail_text=str(append_text),
+                object_weights=fn_object_weights,
+            )
+        else:
+            tail_desc_pos, tail_desc_weights = _desc_tail_positions_and_weights(
+                tokenizer=tokenizer,
+                token_ids=append_ids,
+                object_weights=fn_object_weights,
+            )
 
         y_train_ids = list(clean_prefix.prefix_token_ids) + list(append_ids)
         clean_target_text = str(clean_prefix.prefix_text) + str(append_text)
-        (
-            duplicate_control_first_divergence_diagnostics,
-            duplicate_control_first_divergence_boundary_count,
-            duplicate_control_first_divergence_skipped_no_divergence,
-        ) = _build_duplicate_control_divergence_diagnostics(
-            tokenizer=tokenizer,
-            y_train_ids=y_train_ids,
-            clean_target_text=clean_target_text,
-            accepted_objects_clean=triage.kept_anchor_objects,
-            fn_objects=fn_objs,
-            suppressed_duplicate_objects_by_boundary=(
-                triage.suppressed_duplicate_objects_by_boundary
-            ),
-            boundary_prefix_texts=clean_prefix.boundary_prefix_texts,
-            object_field_order=object_field_order,
-        )
+        if is_compact_full:
+            duplicate_control_first_divergence_diagnostics = []
+            duplicate_control_first_divergence_boundary_count = 0
+            duplicate_control_first_divergence_skipped_no_divergence = 0
+        else:
+            (
+                duplicate_control_first_divergence_diagnostics,
+                duplicate_control_first_divergence_boundary_count,
+                duplicate_control_first_divergence_skipped_no_divergence,
+            ) = _build_duplicate_control_divergence_diagnostics(
+                tokenizer=tokenizer,
+                y_train_ids=y_train_ids,
+                clean_target_text=clean_target_text,
+                accepted_objects_clean=triage.kept_anchor_objects,
+                fn_objects=fn_objs,
+                suppressed_duplicate_objects_by_boundary=(
+                    triage.suppressed_duplicate_objects_by_boundary
+                ),
+                boundary_prefix_texts=clean_prefix.boundary_prefix_texts,
+                object_field_order=object_field_order,
+            )
 
         rel_groups = bbox_groups_from_token_ids_fn(
             token_ids=append_ids, coord_id_set=coord_id_set, gt_objs=fn_objs
@@ -1081,6 +1398,13 @@ def _build_channel_b_supervision_targets(
         duplicate_control_first_divergence_skipped_no_divergence=int(
             duplicate_control_first_divergence_skipped_no_divergence
         ),
+        rollout_template_family=str(rollout_template_family),
+        rollout_parser_id=str(rollout_parser_id),
+        rollout_append_policy_id=str(rollout_append_policy_id),
+        rollout_context=str(rollout_context),
+        rollout_fallback_reason=rollout_fallback_reason,
+        rollout_fallback_loss_weight=float(rollout_fallback_loss_weight),
+        rollout_counts_as_valid_rollout=bool(rollout_counts_as_valid_rollout),
     )
 
 
@@ -1138,6 +1462,13 @@ def _build_channel_b_meta_entry(
     duplicate_control_first_divergence_diagnostics: Sequence[Stage2DuplicateControlDivergenceDiagnostic],
     duplicate_control_first_divergence_boundary_count: int,
     duplicate_control_first_divergence_skipped_no_divergence: int,
+    rollout_template_family: str,
+    rollout_parser_id: str,
+    rollout_append_policy_id: str,
+    rollout_context: str,
+    rollout_fallback_reason: str | None,
+    rollout_fallback_loss_weight: float,
+    rollout_counts_as_valid_rollout: bool,
     stage2_tail_closure_positions_fn: Any,
     stage2_semantic_stop_branch_metadata_fn: Any,
 ) -> Tuple[Stage2ChannelBMeta, int]:
@@ -1198,6 +1529,13 @@ def _build_channel_b_meta_entry(
         "stage2_channel": "B",
         "stage2_invalid_rollout": int(invalid_rollout),
         "rollout_seed_base": int(seed_base),
+        "rollout_template_family": str(rollout_template_family),
+        "rollout_parser_id": str(rollout_parser_id),
+        "rollout_append_policy_id": str(rollout_append_policy_id),
+        "rollout_context": str(rollout_context),
+        "rollout_fallback_reason": rollout_fallback_reason,
+        "rollout_fallback_loss_weight": float(rollout_fallback_loss_weight),
+        "rollout_counts_as_valid_rollout": bool(rollout_counts_as_valid_rollout),
         "prompt_len": int(prompt_len),
         "prompt_ids": prompt_ids_local,
         "rollout_len": int(len(parse.response_token_ids)),

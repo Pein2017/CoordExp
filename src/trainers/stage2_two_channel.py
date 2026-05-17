@@ -5,7 +5,7 @@ import os
 import time
 import logging
 from collections import deque
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
 from typing import Any, ClassVar, Deque, Dict, List, Literal, Mapping, MutableMapping, Optional, Sequence, Tuple
 
 import torch
@@ -15,6 +15,11 @@ from swift.trainers.rlhf_trainer.utils import replace_assistant_response_with_id
 
 from src.common.lvis_semantics import extract_lvis_image_policy
 from src.common.object_field_order import build_object_payload
+from src.training.stage2.rollout_codec import (
+    FALLBACK_GT_FN_APPEND_ONLY,
+    Stage2RolloutTemplatePolicy,
+    resolve_stage2_rollout_template_policy,
+)
 from src.utils.assistant_json import dumps_coordjson
 
 from .stage2_rollout_aligned import RolloutMatchingSFTTrainer
@@ -49,21 +54,10 @@ from .stage2_two_channel.objective_runner import (
     build_stage2_core_loss_logs,
     run_stage2_objective_pipelines,
 )
-from .stage2_two_channel.target_builder import (
-    _build_channel_b_meta_entry,
-    _build_channel_b_triage,
-    _build_channel_b_supervision_targets,
-    _bbox_iou_norm1000_xyxy,
-    _apply_channel_b_duplicate_control,
-    _compute_duplicate_diagnostics,
-    _sequential_dedup_bbox_objects,
-    _build_canonical_prefix_data,
-    _build_canonical_prefix_text_data,
-)
+from .stage2_two_channel import target_builder as _channel_b_targets
 from .stage2_two_channel.types import (
     Stage2BatchMetrics,
     Stage2ChannelAMeta,
-    Stage2ChannelBMeta,
     Stage2PreparedSegment,
     Stage2RolloutMeta,
 )
@@ -695,6 +689,26 @@ def _stage2_ab_semantic_stop_branch_metadata(
         assistant_span_ids=assistant_span_ids,
         prefix_len=int(prefix_len),
     )
+
+
+def _stage2_compact_tail_closure_positions(
+    *,
+    tokenizer: Any,
+    assistant_span_ids: Sequence[int],
+    prefix_len: int,
+) -> List[int]:
+    _ = tokenizer, assistant_span_ids, prefix_len
+    return []
+
+
+def _stage2_compact_semantic_stop_branch_metadata(
+    *,
+    tokenizer: Any,
+    assistant_span_ids: Sequence[int],
+    prefix_len: int,
+) -> Dict[str, Any]:
+    _ = tokenizer, assistant_span_ids, prefix_len
+    raise ValueError("compact-full Channel-B targets do not use JSON semantic stops")
 
 
 def _bbox_groups_from_token_ids(
@@ -1813,6 +1827,7 @@ class Stage2ABTrainingTrainer(
     ) -> Any:
         timing_enabled = _stage2_batch_timing_enabled()
         t0 = time.perf_counter() if timing_enabled else 0.0
+        rollout_template_policy = self._resolve_stage2_rollout_template_policy()
         template = self.template
         tok = template.tokenizer
 
@@ -1857,16 +1872,17 @@ class Stage2ABTrainingTrainer(
             self._ab_channel_b_get("pseudo_positive.enabled", False)
         )
         invalid_rollout_policy = str(
-            self._ab_channel_b_get(
-                "invalid_rollout_policy",
-                "abort",
-            )
-            or "abort"
+            rollout_template_policy.invalid_rollout_policy
         ).strip().lower()
-        if invalid_rollout_policy not in {"abort", "dump_and_continue"}:
+        allowed_invalid_policies = (
+            {FALLBACK_GT_FN_APPEND_ONLY}
+            if rollout_template_policy.template_family == "compact_full"
+            else {"abort", "dump_and_continue"}
+        )
+        if invalid_rollout_policy not in allowed_invalid_policies:
             raise ValueError(
                 "stage2_ab.channel_b.invalid_rollout_policy "
-                "must be one of {'abort', 'dump_and_continue'}"
+                f"must be one of {sorted(allowed_invalid_policies)!r}"
             )
         num_rollouts_default = 4 if pseudo_positive_enabled else 2
         num_rollouts = int(
@@ -1945,6 +1961,7 @@ class Stage2ABTrainingTrainer(
                 explorer_top_k=explorer_top_k,
                 pseudo_positive_enabled=pseudo_positive_enabled,
                 invalid_rollout_policy=invalid_rollout_policy,
+                rollout_template_policy=rollout_template_policy,
                 num_rollouts=num_rollouts,
                 explorer_view_count=explorer_view_count,
                 packing_enabled=packing_enabled,
@@ -1982,7 +1999,21 @@ class Stage2ABTrainingTrainer(
                         f"inputs={len(inputs)} segments_only={bool(_segments_only)} "
                         f"num_rollouts={int(num_rollouts)} max_new_tokens={int(max_new_tokens)} "
                         f"backend={backend}"
-                    )
+                )
+
+    def _resolve_stage2_rollout_template_policy(self) -> Stage2RolloutTemplatePolicy:
+        return resolve_stage2_rollout_template_policy(
+            self._ab_channel_b_get("rollout_template_family", "coordjson"),
+            rollout_decode_policy=self._ab_channel_b_get(
+                "rollout_decode_policy",
+                None,
+            ),
+            invalid_rollout_policy=self._ab_channel_b_get(
+                "invalid_rollout_policy",
+                None,
+            ),
+            fallback_loss_weight=self._ab_channel_b_get("fallback_loss_weight", 1.0),
+        )
 
     def _prepare_batch_inputs_b_impl(
         self,
@@ -2008,6 +2039,7 @@ class Stage2ABTrainingTrainer(
         explorer_top_k: int,
         pseudo_positive_enabled: bool,
         invalid_rollout_policy: str,
+        rollout_template_policy: Stage2RolloutTemplatePolicy,
         num_rollouts: int,
         explorer_view_count: int,
         packing_enabled: bool,
@@ -2194,6 +2226,10 @@ class Stage2ABTrainingTrainer(
         drop_bbox_invalid_total = 0
         invalid_rollout_total = 0
         parse_truncated_total = 0
+        invalid_fallback_gt_fn_total = 0
+        empty_valid_object_total = 0
+        compact_fallback_view_total = 0
+        compact_anchor_fallback_total = 0
         closure_supervision_drop_total = 0
         prompt_tok_mismatch_total = 0
 
@@ -2274,7 +2310,8 @@ class Stage2ABTrainingTrainer(
                 source_label="anchor",
                 parse_rollout_for_matching_fn=parse_rollout_for_matching,
                 points_from_coord_tokens_fn=points_from_coord_tokens,
-                duplicate_diagnostics_fn=_compute_duplicate_diagnostics,
+                duplicate_diagnostics_fn=_channel_b_targets._compute_duplicate_diagnostics,
+                rollout_template_policy=rollout_template_policy,
             )
             explorer_rollouts = [
                 explorer_rollout_results[int(sample_index)]
@@ -2292,7 +2329,8 @@ class Stage2ABTrainingTrainer(
                     source_label="explorer",
                     parse_rollout_for_matching_fn=parse_rollout_for_matching,
                     points_from_coord_tokens_fn=points_from_coord_tokens,
-                    duplicate_diagnostics_fn=_compute_duplicate_diagnostics,
+                    duplicate_diagnostics_fn=_channel_b_targets._compute_duplicate_diagnostics,
+                    rollout_template_policy=rollout_template_policy,
                 )
                 for explorer_rollout in explorer_rollouts
             ]
@@ -2303,6 +2341,25 @@ class Stage2ABTrainingTrainer(
             parse_truncated_total += int(1 if bool(parse.truncated) else 0) + sum(
                 int(explorer_view_item["parse_truncated"])
                 for explorer_view_item in explorer_views
+            )
+            rollout_views_for_metrics = [anchor_view] + list(explorer_views)
+            invalid_fallback_gt_fn_total += sum(
+                int(
+                    int(view_item.get("compact_fallback_applies", 0)) != 0
+                    and bool(getattr(view_item.get("parse"), "invalid_rollout", False))
+                )
+                for view_item in rollout_views_for_metrics
+            )
+            empty_valid_object_total += sum(
+                int(bool(getattr(view_item.get("parse"), "empty_valid_object_set", False)))
+                for view_item in rollout_views_for_metrics
+            )
+            compact_fallback_view_total += sum(
+                int(view_item.get("compact_fallback_applies", 0) or 0)
+                for view_item in rollout_views_for_metrics
+            )
+            compact_anchor_fallback_total += int(
+                anchor_view.get("compact_fallback_applies", 0) or 0
             )
             invalid_rollout_views: List[tuple[str, Mapping[str, Any], Optional[int]]] = []
             if int(invalid_rollout) != 0:
@@ -2320,7 +2377,11 @@ class Stage2ABTrainingTrainer(
                 )
                 for explorer_ordinal in invalid_explorer_ordinals
             )
-            if invalid_rollout_views and bool(pseudo_positive_enabled):
+            if (
+                invalid_rollout_views
+                and bool(pseudo_positive_enabled)
+                and rollout_template_policy.template_family == "coordjson"
+            ):
                 rank, world_size, _ = self._dist_info()
                 invalid_rollout_details = [
                     _build_channel_b_invalid_explorer_detail(
@@ -2433,11 +2494,18 @@ class Stage2ABTrainingTrainer(
             prompt_ids = list(anchor_view["prompt_ids"])
             decode_mode = str(anchor_view["decode_mode"])
 
-            duplicate_control = _apply_channel_b_duplicate_control(
+            triage_explorer_views = [
+                explorer_view_item
+                for explorer_view_item in explorer_views
+                if int(explorer_view_item.get("rollout_counts_as_valid_rollout", 1))
+                != 0
+            ]
+
+            duplicate_control = _channel_b_targets._apply_channel_b_duplicate_control(
                 anchor_objects_raw=parsed_bbox_objects_raw,
                 explorer_objects_raw_by_view=[
                     list(explorer_view_item["parsed_bbox_objects_raw"])
-                    for explorer_view_item in explorer_views
+                    for explorer_view_item in triage_explorer_views
                 ],
                 duplicate_iou_threshold=float(duplicate_iou_threshold),
                 center_radius_scale=float(center_radius_scale),
@@ -2550,7 +2618,7 @@ class Stage2ABTrainingTrainer(
             }
             explorer_objects_raw_by_view = [
                 list(explorer_view_item["parsed_bbox_objects_raw"])
-                for explorer_view_item in explorer_views
+                for explorer_view_item in triage_explorer_views
             ]
             explorer_match_by_pred_by_view = []
             for explorer_objects_raw in explorer_objects_raw_by_view:
@@ -2628,7 +2696,7 @@ class Stage2ABTrainingTrainer(
                 sample=sample,
                 accepted_objects_clean=accepted_objects_clean,
             )
-            triage = _build_channel_b_triage(
+            triage = _channel_b_targets._build_channel_b_triage(
                 accepted_objects_clean=accepted_objects_clean,
                 suppressed_duplicate_objects_by_boundary=(
                     suppressed_duplicate_objects_by_boundary
@@ -2741,12 +2809,10 @@ class Stage2ABTrainingTrainer(
                 )
             )
 
-            kept_anchor_objects = list(triage.kept_anchor_objects)
-            kept_anchor_new_index_by_old = dict(triage.kept_anchor_new_index_by_old)
             suppressed_duplicate_objects_by_boundary = dict(
                 triage.suppressed_duplicate_objects_by_boundary
             )
-            supervision_targets = _build_channel_b_supervision_targets(
+            supervision_targets = _channel_b_targets._build_channel_b_supervision_targets(
                 tokenizer=tok,
                 prompt_ids=prompt_ids,
                 coord_id_set=coord_id_set,
@@ -2767,6 +2833,8 @@ class Stage2ABTrainingTrainer(
                 bbox_groups_from_token_ids_fn=_bbox_groups_from_token_ids,
                 matched_prefix_structure_positions_fn=_matched_prefix_structure_positions,
                 serialize_append_fragment_fn=serialize_append_fragment,
+                rollout_template_policy=rollout_template_policy,
+                parse=parse,
             )
             clean_prefix = supervision_targets.clean_prefix
             prefix_len_raw_local = int(supervision_targets.prefix_len_raw_local)
@@ -2778,8 +2846,6 @@ class Stage2ABTrainingTrainer(
             matched_for_supervision_total += int(
                 len(supervision_targets.matched_gt_indices)
             )
-            fn_gt_indices_final = list(supervision_targets.fn_gt_indices_final)
-            fn_objs = list(supervision_targets.fn_objs)
             fn_object_weights = list(supervision_targets.fn_object_weights)
             fn_count_for_meta = int(supervision_targets.fn_count_for_meta)
             append_text = str(supervision_targets.append_text)
@@ -2832,7 +2898,7 @@ class Stage2ABTrainingTrainer(
                             "pred_i": int(pred_i),
                             "gt_i": int(gt_i),
                             "bbox_iou_norm1000": float(
-                                _bbox_iou_norm1000_xyxy(
+                                _channel_b_targets._bbox_iou_norm1000_xyxy(
                                     accepted_objects_clean[pred_i].points_norm1000,
                                     gts[gt_i].points_norm1000,
                                 )
@@ -3198,7 +3264,7 @@ class Stage2ABTrainingTrainer(
                     continue
 
             invalid_rollout_total += int(invalid_rollout)
-            meta_entry, closure_drop_count = _build_channel_b_meta_entry(
+            meta_entry, closure_drop_count = _channel_b_targets._build_channel_b_meta_entry(
                 tokenizer=tok,
                 enc_ids_list=enc_ids_list,
                 prompt_len=int(prompt_len),
@@ -3261,8 +3327,33 @@ class Stage2ABTrainingTrainer(
                 duplicate_control_first_divergence_skipped_no_divergence=int(
                     duplicate_control_first_divergence_skipped_no_divergence
                 ),
-                stage2_tail_closure_positions_fn=_stage2_ab_tail_closure_positions,
-                stage2_semantic_stop_branch_metadata_fn=_stage2_ab_semantic_stop_branch_metadata,
+                rollout_template_family=str(
+                    supervision_targets.rollout_template_family
+                ),
+                rollout_parser_id=str(supervision_targets.rollout_parser_id),
+                rollout_append_policy_id=str(
+                    supervision_targets.rollout_append_policy_id
+                ),
+                rollout_context=str(supervision_targets.rollout_context),
+                rollout_fallback_reason=(
+                    supervision_targets.rollout_fallback_reason
+                ),
+                rollout_fallback_loss_weight=float(
+                    supervision_targets.rollout_fallback_loss_weight
+                ),
+                rollout_counts_as_valid_rollout=bool(
+                    supervision_targets.rollout_counts_as_valid_rollout
+                ),
+                stage2_tail_closure_positions_fn=(
+                    _stage2_compact_tail_closure_positions
+                    if rollout_template_policy.template_family == "compact_full"
+                    else _stage2_ab_tail_closure_positions
+                ),
+                stage2_semantic_stop_branch_metadata_fn=(
+                    _stage2_compact_semantic_stop_branch_metadata
+                    if rollout_template_policy.template_family == "compact_full"
+                    else _stage2_ab_semantic_stop_branch_metadata
+                ),
             )
             closure_supervision_drop_total += int(closure_drop_count)
 
@@ -3273,12 +3364,18 @@ class Stage2ABTrainingTrainer(
 
         from swift.llm import to_device
 
+        raw_rollout_count = int(len(anchor_rollout_results) + explorer_view_count_total)
+        anchor_rollout_count = int(len(anchor_rollout_results))
+        fallback_loss_share = (
+            float(compact_anchor_fallback_total) / float(anchor_rollout_count)
+            if anchor_rollout_count > 0
+            else 0.0
+        )
+
         batch_metrics: Stage2BatchMetrics = {
             "stage2/channel_a": float(0.0),
             "stage2/channel_b": float(1.0),
-            "stage2/raw_rollouts": float(
-                len(anchor_rollout_results) + explorer_view_count_total
-            ),
+            "stage2/raw_rollouts": float(raw_rollout_count),
             "stage2/invalid_rollout": float(invalid_rollout_total),
             "stage2_ab/channel_b/invalid_rollout": float(invalid_rollout_total),
             "stage2_ab/channel_b/closure_supervision/N_drop": float(
@@ -3307,6 +3404,56 @@ class Stage2ABTrainingTrainer(
             "rollout/seed_base": float(seed_base),
             "rollout/backend_hf": float(1.0 if backend == "hf" else 0.0),
             "rollout/backend_vllm": float(1.0 if backend == "vllm" else 0.0),
+            "rollout/template_family_coordjson": float(
+                1.0 if rollout_template_policy.template_family == "coordjson" else 0.0
+            ),
+            "rollout/template_family_compact_full": float(
+                1.0
+                if rollout_template_policy.template_family == "compact_full"
+                else 0.0
+            ),
+            "rollout/parser_coordjson_legacy": float(
+                1.0 if rollout_template_policy.parser_id == "coordjson_legacy" else 0.0
+            ),
+            "rollout/decode_policy_legacy_coordjson": float(
+                1.0
+                if rollout_template_policy.decode_policy == "legacy_coordjson"
+                else 0.0
+            ),
+            "rollout/decode_policy_unconstrained": float(
+                1.0
+                if rollout_template_policy.decode_policy == "unconstrained"
+                else 0.0
+            ),
+            "rollout/decode_policy_compact_grammar": float(
+                1.0
+                if rollout_template_policy.decode_policy == "compact_grammar"
+                else 0.0
+            ),
+            "rollout/parser_template_mismatch_rate": float(0.0),
+            "rollout/invalid_fallback_gt_fn_count": float(
+                invalid_fallback_gt_fn_total
+            ),
+            "rollout/invalid_fallback_gt_fn_rate": float(
+                float(invalid_fallback_gt_fn_total) / float(raw_rollout_count)
+                if raw_rollout_count > 0
+                else 0.0
+            ),
+            "rollout/empty_valid_object_rate": float(
+                float(empty_valid_object_total) / float(raw_rollout_count)
+                if raw_rollout_count > 0
+                else 0.0
+            ),
+            "rollout/fallback_loss_share": float(fallback_loss_share),
+            "rollout/fallback_dominance_warning": float(
+                1.0 if fallback_loss_share > 0.35 else 0.0
+            ),
+            "rollout/fallback_gt_fn_append_only_count": float(
+                compact_fallback_view_total
+            ),
+            "rollout/fallback_loss_weight": float(
+                rollout_template_policy.fallback_loss_weight
+            ),
             "rollout/decode_mode_greedy": float(
                 1.0 if anchor_decode_request.decode_mode == "greedy" else 0.0
             ),

@@ -117,6 +117,27 @@ Current internal ownership seams:
   - `1` anchor + `3` explorers
   - enabled `K=2` remains the explicit no-promotion control
 - Enabled failure semantics:
+  - `stage2_ab.channel_b.rollout_template_family: coordjson` is the explicit
+    legacy rollout surface. It uses the legacy CoordJSON parser and records
+    rollout template/decode/parser provenance in Channel-B batch metrics.
+  - `stage2_ab.channel_b.rollout_template_family: compact_full` is the new
+    canonical target surface for compact-full checkpoints. It uses the
+    compact-full parser and compact-full Channel-B target renderer, with default
+    `rollout_decode_policy: unconstrained`. It must not flow through the legacy
+    CoordJSON parser or CoordJSON FN appender.
+  - compact-full invalid, malformed, or empty-valid-object rollout policy
+    resolves to `fallback_gt_fn_append_only` with `fallback_loss_weight: 1.0`.
+    The fallback constructs a compact-full GT/FN-only correction target, records
+    `rollout_context: fallback_gt_fn_append_only`, and does not count as a valid
+    rollout for readiness gates. Parser/template mismatches remain hard
+    failures, not fallback cases.
+  - compact-full explorer rollouts that enter fallback remain visible in raw
+    rollout/fallback metrics, but they are excluded from posterior-support
+    denominators used for support rates, recovered-GT rates, and pseudo-positive
+    selection.
+  - compact-full Channel-B targets do not use CoordJSON tail-closure or
+    semantic-stop supervision. Stop/closure metrics should be interpreted as
+    CoordJSON-specific unless explicitly documented otherwise.
   - malformed anchor preparation drops that sample from Channel-B training
   - malformed explorer rollouts that remain invalid after salvage parsing abort the step by default only when pseudo-positive mode is enabled
   - outside pseudo-positive mode, malformed rollouts fall back to the existing empty-prefix / FN-only handling instead of taking the invalid-rollout abort path
