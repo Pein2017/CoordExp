@@ -75,8 +75,8 @@ def test_stage2_pseudo_positive_prod_profile_materializes_default_k4_contract() 
     )
 
     prod_objective = {m.name: m for m in prod_cfg.stage2_ab.pipeline.objective}
+    assert list(prod_objective) == ["token_ce", "bbox_geo", "bbox_size_aux", "coord_reg"]
     assert prod_objective["token_ce"].config["rollout_fn_desc_weight"] == pytest.approx(1.5)
-    assert prod_objective["loss_duplicate_burst_unlikelihood"].weight == pytest.approx(2.0)
 
 
 def test_lvis_stage2_entry_config_uses_federated_prompt_and_sorted_desc_first_contract() -> None:
@@ -188,14 +188,6 @@ def test_stage2_ab_leaf_contract_allows_multi_hop_when_fields_resolve(
                         },
                     },
                     {
-                        "name": "loss_duplicate_burst_unlikelihood",
-                        "enabled": True,
-                        "weight": 1.0,
-                        "channels": ["B"],
-                        "application": {"preset": "rollout_only"},
-                        "config": {},
-                    },
-                    {
                         "name": "bbox_geo",
                         "enabled": True,
                         "weight": 0.0,
@@ -236,10 +228,6 @@ def test_stage2_ab_leaf_contract_allows_multi_hop_when_fields_resolve(
                             "temperature": 1.0,
                             "target_sigma": 2.0,
                             "target_truncate": None,
-                            "adjacent_repulsion_weight": 0.0,
-                            "adjacent_repulsion_filter_mode": "same_desc",
-                            "adjacent_repulsion_margin_ratio": 0.05,
-                            "adjacent_repulsion_copy_margin": 0.8,
                         },
                     },
                 ],

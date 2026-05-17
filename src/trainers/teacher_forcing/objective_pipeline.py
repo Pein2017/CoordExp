@@ -12,7 +12,6 @@ from .modules import (
     run_bbox_geo_module,
     run_coord_diag_module,
     run_coord_reg_module,
-    run_loss_duplicate_burst_unlikelihood_module,
     run_token_ce_module,
 )
 
@@ -64,9 +63,6 @@ def run_teacher_forcing_pipeline(
 
     objective_registry = {
         "token_ce": lambda spec: run_token_ce_module(context=context, spec=spec),
-        "loss_duplicate_burst_unlikelihood": lambda spec: run_loss_duplicate_burst_unlikelihood_module(
-            context=context, spec=spec
-        ),
         "bbox_geo": lambda spec: run_bbox_geo_module(context=context, spec=spec),
         "bbox_size_aux": lambda spec: run_bbox_size_aux_module(
             context=context,

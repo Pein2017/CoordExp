@@ -36,6 +36,10 @@ class MetricIdentity:
     template_id: str | None = None
     parser_mode: str | None = None
     metric_surface: str | None = None
+    stage: str | None = None
+    channel: str | None = None
+    objective_id: str | None = None
+    provenance: str | None = None
     diagnostic_only: bool = False
 
     def __post_init__(self) -> None:
@@ -62,6 +66,10 @@ class MetricEvent:
     template_id: str | None = None
     parser_mode: str | None = None
     metric_surface: str | None = None
+    stage: str | None = None
+    channel: str | None = None
+    objective_id: str | None = None
+    provenance: str | None = None
     diagnostic_only: bool = False
     aliases: tuple[str, ...] = ()
 
@@ -103,6 +111,10 @@ class MetricEvent:
             template_id=self.template_id,
             parser_mode=self.parser_mode,
             metric_surface=self.metric_surface,
+            stage=self.stage,
+            channel=self.channel,
+            objective_id=self.objective_id,
+            provenance=self.provenance,
             diagnostic_only=self.diagnostic_only,
         )
 
@@ -160,6 +172,10 @@ def ratio_event(
     template_id: str | None = None,
     parser_mode: str | None = None,
     metric_surface: str | None = None,
+    stage: str | None = None,
+    channel: str | None = None,
+    objective_id: str | None = None,
+    provenance: str | None = None,
     diagnostic_only: bool = False,
 ) -> MetricEvent:
     return MetricEvent(
@@ -179,6 +195,10 @@ def ratio_event(
         template_id=template_id,
         parser_mode=parser_mode,
         metric_surface=metric_surface,
+        stage=stage,
+        channel=channel,
+        objective_id=objective_id,
+        provenance=provenance,
         diagnostic_only=diagnostic_only,
         aliases=tuple(aliases),
     )
@@ -201,6 +221,10 @@ def weighted_mean_event(
     template_id: str | None = None,
     parser_mode: str | None = None,
     metric_surface: str | None = None,
+    stage: str | None = None,
+    channel: str | None = None,
+    objective_id: str | None = None,
+    provenance: str | None = None,
     diagnostic_only: bool = False,
 ) -> MetricEvent:
     value_float = _as_float("value", value)
@@ -222,6 +246,10 @@ def weighted_mean_event(
         template_id=template_id,
         parser_mode=parser_mode,
         metric_surface=metric_surface,
+        stage=stage,
+        channel=channel,
+        objective_id=objective_id,
+        provenance=provenance,
         diagnostic_only=diagnostic_only,
         aliases=tuple(aliases),
     )
@@ -243,6 +271,10 @@ def sum_event(
     template_id: str | None = None,
     parser_mode: str | None = None,
     metric_surface: str | None = None,
+    stage: str | None = None,
+    channel: str | None = None,
+    objective_id: str | None = None,
+    provenance: str | None = None,
     diagnostic_only: bool = False,
 ) -> MetricEvent:
     value_float = _as_float("value", value)
@@ -263,6 +295,10 @@ def sum_event(
         template_id=template_id,
         parser_mode=parser_mode,
         metric_surface=metric_surface,
+        stage=stage,
+        channel=channel,
+        objective_id=objective_id,
+        provenance=provenance,
         diagnostic_only=diagnostic_only,
         aliases=tuple(aliases),
     )
@@ -284,6 +320,10 @@ def last_event(
     template_id: str | None = None,
     parser_mode: str | None = None,
     metric_surface: str | None = None,
+    stage: str | None = None,
+    channel: str | None = None,
+    objective_id: str | None = None,
+    provenance: str | None = None,
     diagnostic_only: bool = False,
 ) -> MetricEvent:
     return MetricEvent(
@@ -303,6 +343,10 @@ def last_event(
         template_id=template_id,
         parser_mode=parser_mode,
         metric_surface=metric_surface,
+        stage=stage,
+        channel=channel,
+        objective_id=objective_id,
+        provenance=provenance,
         diagnostic_only=diagnostic_only,
         aliases=tuple(aliases),
     )

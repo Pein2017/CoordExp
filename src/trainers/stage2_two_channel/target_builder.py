@@ -9,14 +9,13 @@ from src.common.duplicate_control import (
     apply_duplicate_policy,
     validate_duplicate_control_config,
 )
-from src.common.semantic_desc import normalize_desc
 from src.common.object_field_order import build_object_payload
 from src.utils.assistant_json import dumps_coordjson
 
 from ..rollout_matching.contracts import GTObject, MatchResult
 from ..rollout_matching.matching import associate_one_to_one_max_iou
 from ..rollout_matching.parsing import decode_pieces, find_desc_value_char_spans
-from .types import Stage2ChannelBMeta, Stage2DuplicateBurstUnlikelihoodTarget
+from .types import Stage2ChannelBMeta, Stage2DuplicateControlDivergenceDiagnostic
 
 
 @dataclass(frozen=True)
@@ -90,9 +89,9 @@ class _ChannelBSupervisionTargets:
     tail_desc_weights: List[float]
     y_train_ids: List[int]
     clean_target_text: str
-    duplicate_burst_unlikelihood_targets: List[Stage2DuplicateBurstUnlikelihoodTarget]
-    duplicate_burst_unlikelihood_boundary_count: int
-    duplicate_burst_unlikelihood_skipped_no_divergence: int
+    duplicate_control_first_divergence_diagnostics: List[Stage2DuplicateControlDivergenceDiagnostic]
+    duplicate_control_first_divergence_boundary_count: int
+    duplicate_control_first_divergence_skipped_no_divergence: int
 
 
 def _normalize_channel_b_insertion_order(insertion_order: str) -> str:
@@ -188,38 +187,8 @@ def _shift_bbox_groups_with_weights(
             "gt_bins": gb_i,
             "weight": float(weight_i),
         }
-        prev_bins = g.get("adjacent_prev_gt_bins")
-        if isinstance(prev_bins, Sequence) and len(prev_bins) == 4:
-            try:
-                shifted["adjacent_prev_gt_bins"] = [int(v) for v in prev_bins]
-            except (TypeError, ValueError):
-                pass
-        same_desc = g.get("adjacent_same_desc_with_prev", None)
-        if same_desc is not None:
-            shifted["adjacent_same_desc_with_prev"] = bool(same_desc)
         out.append(shifted)
     return out
-
-
-def _adjacent_repulsion_meta_for_objects(
-    objects: Sequence[GTObject],
-) -> Tuple[List[Optional[List[int]]], List[bool]]:
-    prev_bins_by_index: List[Optional[List[int]]] = []
-    same_desc_prev_by_index: List[bool] = []
-    norm_descs = [normalize_desc(str(obj.desc)) for obj in objects]
-
-    for obj_idx, obj in enumerate(objects):
-        if int(obj_idx) <= 0:
-            prev_bins_by_index.append(None)
-            same_desc_prev_by_index.append(False)
-            continue
-        prev_obj = objects[int(obj_idx) - 1]
-        prev_bins_by_index.append([int(v) for v in prev_obj.points_norm1000])
-        same_desc_prev_by_index.append(
-            bool(norm_descs[int(obj_idx)] == norm_descs[int(obj_idx) - 1])
-        )
-
-    return prev_bins_by_index, same_desc_prev_by_index
 
 
 def _bbox_iou_norm1000_xyxy(box_a: Sequence[int], box_b: Sequence[int]) -> float:
@@ -597,10 +566,11 @@ def _build_channel_b_triage(
         kept_anchor_count += 1
 
     # Duplicate-control suppression is discovered on the pre-triage accepted-anchor
-    # surface, but duplicate UL is realized against the post-triage clean prefix.
-    # Remap each pre-triage suppression boundary onto the number of kept anchors
-    # that survive before it so duplicate UL still activates when earlier anchors
-    # or the whole duplicate-cluster survivor die during triage.
+    # surface, but diagnostic first-divergence metadata is recorded against the
+    # post-triage clean prefix. Remap each pre-triage suppression boundary onto
+    # the number of kept anchors that survive before it so diagnostics remain
+    # aligned when earlier anchors or the whole duplicate-cluster survivor die
+    # during triage.
     kept_prefix_count_by_old_boundary: List[int] = [0]
     kept_prefix_count = 0
     for anchor_i in range(len(accepted_objects_clean)):
@@ -705,9 +675,6 @@ def _build_channel_b_supervision_targets(
         object_field_order=object_field_order,
     )
     prefix_len_raw_local = int(len(clean_prefix.prefix_token_ids))
-    prefix_adjacent_prev_bins_by_index, prefix_adjacent_same_desc_by_index = (
-        _adjacent_repulsion_meta_for_objects(list(triage.kept_anchor_objects))
-    )
 
     prefix_coord_positions_all = [
         int(i)
@@ -748,18 +715,6 @@ def _build_channel_b_supervision_targets(
             {
                 "pos": [int(len(prompt_ids) + int(p)) for p in coord_group],
                 "gt_bins": gt_bins,
-                **(
-                    {
-                        "adjacent_prev_gt_bins": list(
-                            prefix_adjacent_prev_bins_by_index[int(kept_pred_i)] or []
-                        ),
-                        "adjacent_same_desc_with_prev": bool(
-                            prefix_adjacent_same_desc_by_index[int(kept_pred_i)]
-                        ),
-                    }
-                    if prefix_adjacent_prev_bins_by_index[int(kept_pred_i)] is not None
-                    else {}
-                ),
             }
         )
         for local_idx, tbin in zip(coord_group, gt_bins):
@@ -783,18 +738,6 @@ def _build_channel_b_supervision_targets(
                 "pos": [int(len(prompt_ids) + int(p)) for p in coord_group],
                 "gt_bins": gt_bins,
                 "weight": float(pseudo_positive_coord_weight),
-                **(
-                    {
-                        "adjacent_prev_gt_bins": list(
-                            prefix_adjacent_prev_bins_by_index[int(kept_pred_i)] or []
-                        ),
-                        "adjacent_same_desc_with_prev": bool(
-                            prefix_adjacent_same_desc_by_index[int(kept_pred_i)]
-                        ),
-                    }
-                    if prefix_adjacent_prev_bins_by_index[int(kept_pred_i)] is not None
-                    else {}
-                ),
             }
         )
         for local_idx, tbin in zip(coord_group, gt_bins):
@@ -824,18 +767,6 @@ def _build_channel_b_supervision_targets(
                     "pos": [int(len(prompt_ids) + int(p)) for p in coord_group],
                     "gt_bins": gt_bins,
                     "weight": float(partial_weight),
-                    **(
-                        {
-                            "adjacent_prev_gt_bins": list(
-                                prefix_adjacent_prev_bins_by_index[int(kept_pred_i)] or []
-                            ),
-                            "adjacent_same_desc_with_prev": bool(
-                                prefix_adjacent_same_desc_by_index[int(kept_pred_i)]
-                            ),
-                        }
-                        if prefix_adjacent_prev_bins_by_index[int(kept_pred_i)] is not None
-                        else {}
-                    ),
                 }
             )
             for local_idx, tbin in zip(coord_group, gt_bins):
@@ -899,9 +830,6 @@ def _build_channel_b_supervision_targets(
             object_field_order=object_field_order,
         )
         prefix_len_raw_local = int(len(clean_prefix.prefix_token_ids))
-        prefix_adjacent_prev_bins_by_index, prefix_adjacent_same_desc_by_index = (
-            _adjacent_repulsion_meta_for_objects(sorted_objects)
-        )
         prefix_coord_positions_all = [
             int(i)
             for i, tok_id in enumerate(clean_prefix.prefix_token_ids)
@@ -951,18 +879,6 @@ def _build_channel_b_supervision_targets(
                 {
                     "pos": [int(len(prompt_ids) + int(p)) for p in coord_group],
                     "gt_bins": gt_bins,
-                    **(
-                        {
-                            "adjacent_prev_gt_bins": list(
-                                prefix_adjacent_prev_bins_by_index[int(sorted_idx)] or []
-                            ),
-                            "adjacent_same_desc_with_prev": bool(
-                                prefix_adjacent_same_desc_by_index[int(sorted_idx)]
-                            ),
-                        }
-                        if prefix_adjacent_prev_bins_by_index[int(sorted_idx)] is not None
-                        else {}
-                    ),
                 }
             )
             for local_idx, tbin in zip(coord_group, gt_bins):
@@ -989,18 +905,6 @@ def _build_channel_b_supervision_targets(
                     "pos": [int(len(prompt_ids) + int(p)) for p in coord_group],
                     "gt_bins": gt_bins,
                     "weight": float(pseudo_positive_coord_weight),
-                    **(
-                        {
-                            "adjacent_prev_gt_bins": list(
-                                prefix_adjacent_prev_bins_by_index[int(sorted_idx)] or []
-                            ),
-                            "adjacent_same_desc_with_prev": bool(
-                                prefix_adjacent_same_desc_by_index[int(sorted_idx)]
-                            ),
-                        }
-                        if prefix_adjacent_prev_bins_by_index[int(sorted_idx)] is not None
-                        else {}
-                    ),
                 }
             )
             for local_idx, tbin in zip(coord_group, gt_bins):
@@ -1033,18 +937,6 @@ def _build_channel_b_supervision_targets(
                         "pos": [int(len(prompt_ids) + int(p)) for p in coord_group],
                         "gt_bins": gt_bins,
                         "weight": float(partial_weight),
-                        **(
-                            {
-                                "adjacent_prev_gt_bins": list(
-                                    prefix_adjacent_prev_bins_by_index[int(sorted_idx)] or []
-                                ),
-                                "adjacent_same_desc_with_prev": bool(
-                                    prefix_adjacent_same_desc_by_index[int(sorted_idx)]
-                                ),
-                            }
-                            if prefix_adjacent_prev_bins_by_index[int(sorted_idx)] is not None
-                            else {}
-                        ),
                     },
                 )
                 for local_idx, tbin in zip(coord_group, gt_bins):
@@ -1067,18 +959,6 @@ def _build_channel_b_supervision_targets(
                     "pos": [int(len(prompt_ids) + int(p)) for p in coord_group],
                     "gt_bins": list(obj.points_norm1000),
                     "weight": float(obj_weight),
-                    **(
-                        {
-                            "adjacent_prev_gt_bins": list(
-                                prefix_adjacent_prev_bins_by_index[int(sorted_idx)] or []
-                            ),
-                            "adjacent_same_desc_with_prev": bool(
-                                prefix_adjacent_same_desc_by_index[int(sorted_idx)]
-                            ),
-                        }
-                        if prefix_adjacent_prev_bins_by_index[int(sorted_idx)] is not None
-                        else {}
-                    ),
                 }
             )
 
@@ -1108,10 +988,10 @@ def _build_channel_b_supervision_targets(
             ),
         )
         (
-            duplicate_burst_unlikelihood_targets,
-            duplicate_burst_unlikelihood_boundary_count,
-            duplicate_burst_unlikelihood_skipped_no_divergence,
-        ) = _build_duplicate_burst_unlikelihood_targets(
+            duplicate_control_first_divergence_diagnostics,
+            duplicate_control_first_divergence_boundary_count,
+            duplicate_control_first_divergence_skipped_no_divergence,
+        ) = _build_duplicate_control_divergence_diagnostics(
             tokenizer=tokenizer,
             y_train_ids=y_train_ids,
             clean_target_text=clean_target_text,
@@ -1122,12 +1002,6 @@ def _build_channel_b_supervision_targets(
             object_field_order=object_field_order,
         )
     else:
-        full_adjacent_prev_bins_by_index, full_adjacent_same_desc_by_index = (
-            _adjacent_repulsion_meta_for_objects(
-                list(triage.kept_anchor_objects) + list(fn_objs)
-            )
-        )
-
         append_text = serialize_append_fragment_fn(
             fn_objects=fn_objs,
             prefix_text=clean_prefix.prefix_text,
@@ -1146,10 +1020,10 @@ def _build_channel_b_supervision_targets(
         y_train_ids = list(clean_prefix.prefix_token_ids) + list(append_ids)
         clean_target_text = str(clean_prefix.prefix_text) + str(append_text)
         (
-            duplicate_burst_unlikelihood_targets,
-            duplicate_burst_unlikelihood_boundary_count,
-            duplicate_burst_unlikelihood_skipped_no_divergence,
-        ) = _build_duplicate_burst_unlikelihood_targets(
+            duplicate_control_first_divergence_diagnostics,
+            duplicate_control_first_divergence_boundary_count,
+            duplicate_control_first_divergence_skipped_no_divergence,
+        ) = _build_duplicate_control_divergence_diagnostics(
             tokenizer=tokenizer,
             y_train_ids=y_train_ids,
             clean_target_text=clean_target_text,
@@ -1165,11 +1039,9 @@ def _build_channel_b_supervision_targets(
         rel_groups = bbox_groups_from_token_ids_fn(
             token_ids=append_ids, coord_id_set=coord_id_set, gt_objs=fn_objs
         )
-        prefix_object_count = int(len(triage.kept_anchor_objects))
         for fn_idx, (obj, rel_pos, obj_weight) in enumerate(
             zip(fn_objs, rel_groups, fn_object_weights)
         ):
-            full_idx = int(prefix_object_count + fn_idx)
             fn_bbox_groups.append(
                 {
                     "pos": [
@@ -1178,18 +1050,6 @@ def _build_channel_b_supervision_targets(
                     ],
                     "gt_bins": list(obj.points_norm1000),
                     "weight": float(obj_weight),
-                    **(
-                        {
-                            "adjacent_prev_gt_bins": list(
-                                full_adjacent_prev_bins_by_index[int(full_idx)] or []
-                            ),
-                            "adjacent_same_desc_with_prev": bool(
-                                full_adjacent_same_desc_by_index[int(full_idx)]
-                            ),
-                        }
-                        if full_adjacent_prev_bins_by_index[int(full_idx)] is not None
-                        else {}
-                    ),
                 }
             )
 
@@ -1212,14 +1072,14 @@ def _build_channel_b_supervision_targets(
         tail_desc_weights=[float(w) for w in tail_desc_weights],
         y_train_ids=[int(t) for t in y_train_ids],
         clean_target_text=str(clean_target_text),
-        duplicate_burst_unlikelihood_targets=list(
-            duplicate_burst_unlikelihood_targets
+        duplicate_control_first_divergence_diagnostics=list(
+            duplicate_control_first_divergence_diagnostics
         ),
-        duplicate_burst_unlikelihood_boundary_count=int(
-            duplicate_burst_unlikelihood_boundary_count
+        duplicate_control_first_divergence_boundary_count=int(
+            duplicate_control_first_divergence_boundary_count
         ),
-        duplicate_burst_unlikelihood_skipped_no_divergence=int(
-            duplicate_burst_unlikelihood_skipped_no_divergence
+        duplicate_control_first_divergence_skipped_no_divergence=int(
+            duplicate_control_first_divergence_skipped_no_divergence
         ),
     )
 
@@ -1275,9 +1135,9 @@ def _build_channel_b_meta_entry(
     recovered_gt_indices: Sequence[int],
     recovered_gt_support_counts: Sequence[int],
     recovered_gt_support_rates: Sequence[float],
-    duplicate_burst_unlikelihood_targets: Sequence[Stage2DuplicateBurstUnlikelihoodTarget],
-    duplicate_burst_unlikelihood_boundary_count: int,
-    duplicate_burst_unlikelihood_skipped_no_divergence: int,
+    duplicate_control_first_divergence_diagnostics: Sequence[Stage2DuplicateControlDivergenceDiagnostic],
+    duplicate_control_first_divergence_boundary_count: int,
+    duplicate_control_first_divergence_skipped_no_divergence: int,
     stage2_tail_closure_positions_fn: Any,
     stage2_semantic_stop_branch_metadata_fn: Any,
 ) -> Tuple[Stage2ChannelBMeta, int]:
@@ -1429,19 +1289,19 @@ def _build_channel_b_meta_entry(
         "recovered_gt_support_rates": [
             float(v) for v in recovered_gt_support_rates
         ],
-        "duplicate_burst_unlikelihood_targets": [
+        "duplicate_control_first_divergence_diagnostics": [
             {
                 "boundary": int(item["boundary"]),
-                "rel_pos": int(item["rel_pos"]),
-                "token_id": int(item["token_id"]),
+                "clean_rel_pos": int(item["clean_rel_pos"]),
+                "duplicate_token_id": int(item["duplicate_token_id"]),
             }
-            for item in duplicate_burst_unlikelihood_targets
+            for item in duplicate_control_first_divergence_diagnostics
         ],
-        "duplicate_burst_unlikelihood_boundary_count": int(
-            duplicate_burst_unlikelihood_boundary_count
+        "duplicate_control_first_divergence_boundary_count": int(
+            duplicate_control_first_divergence_boundary_count
         ),
-        "duplicate_burst_unlikelihood_skipped_no_divergence": int(
-            duplicate_burst_unlikelihood_skipped_no_divergence
+        "duplicate_control_first_divergence_skipped_no_divergence": int(
+            duplicate_control_first_divergence_skipped_no_divergence
         ),
     }
     return meta_entry, int(closure_supervision_drop_count)
@@ -1570,7 +1430,7 @@ def _first_safe_token_index_from_char_cut(
     return int(len(token_ids))
 
 
-def _build_duplicate_burst_unlikelihood_targets(
+def _build_duplicate_control_divergence_diagnostics(
     *,
     tokenizer: Any,
     y_train_ids: Sequence[int],
@@ -1582,11 +1442,11 @@ def _build_duplicate_burst_unlikelihood_targets(
     ] = None,
     boundary_prefix_texts: Sequence[str],
     object_field_order: str,
-) -> Tuple[List[Stage2DuplicateBurstUnlikelihoodTarget], int, int]:
+) -> Tuple[List[Stage2DuplicateControlDivergenceDiagnostic], int, int]:
     if suppressed_duplicate_objects_by_boundary is None:
         suppressed_duplicate_objects_by_boundary = {}
-    targets_by_boundary_token: dict[
-        tuple[int, int], Stage2DuplicateBurstUnlikelihoodTarget
+    diagnostics_by_boundary_token: dict[
+        tuple[int, int], Stage2DuplicateControlDivergenceDiagnostic
     ] = {}
     skipped_no_divergence = 0
 
@@ -1660,30 +1520,34 @@ def _build_duplicate_burst_unlikelihood_targets(
                 continue
 
             rel_pos = int(clean_pos)
-            bad_token_id = int(duplicate_target_ids[duplicate_pos])
-            candidate: Stage2DuplicateBurstUnlikelihoodTarget = {
+            duplicate_token_id = int(duplicate_target_ids[duplicate_pos])
+            candidate: Stage2DuplicateControlDivergenceDiagnostic = {
                 "boundary": int(boundary_i),
-                "rel_pos": int(rel_pos),
-                "token_id": int(bad_token_id),
+                "clean_rel_pos": int(rel_pos),
+                "duplicate_token_id": int(duplicate_token_id),
             }
-            key = (int(boundary_i), int(bad_token_id))
-            existing = targets_by_boundary_token.get(key)
-            if existing is None or int(candidate["rel_pos"]) < int(existing["rel_pos"]):
-                targets_by_boundary_token[key] = candidate
+            key = (int(boundary_i), int(duplicate_token_id))
+            existing = diagnostics_by_boundary_token.get(key)
+            if existing is None or int(candidate["clean_rel_pos"]) < int(
+                existing["clean_rel_pos"]
+            ):
+                diagnostics_by_boundary_token[key] = candidate
 
-    targets = sorted(
-        targets_by_boundary_token.values(),
+    diagnostics = sorted(
+        diagnostics_by_boundary_token.values(),
         key=lambda item: (
             int(item["boundary"]),
-            int(item["rel_pos"]),
-            int(item["token_id"]),
+            int(item["clean_rel_pos"]),
+            int(item["duplicate_token_id"]),
         ),
     )
-    duplicate_burst_unlikelihood_boundary_count = len(
-        {int(item["boundary"]) for item in targets}
+    duplicate_control_first_divergence_boundary_count = len(
+        {int(item["boundary"]) for item in diagnostics}
     )
-    return targets, int(duplicate_burst_unlikelihood_boundary_count), int(
-        skipped_no_divergence
+    return (
+        diagnostics,
+        int(duplicate_control_first_divergence_boundary_count),
+        int(skipped_no_divergence),
     )
 
 
@@ -1732,6 +1596,6 @@ __all__ = [
     "_apply_channel_b_duplicate_control",
     "_compute_duplicate_diagnostics",
     "_build_canonical_prefix_data",
-    "_build_duplicate_burst_unlikelihood_targets",
+    "_build_duplicate_control_divergence_diagnostics",
     "_desc_tail_positions_and_weights",
 ]

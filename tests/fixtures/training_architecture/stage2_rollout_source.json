@@ -1,0 +1,111 @@
+{
+  "sample_id": "stage2-golden-rollout",
+  "surface_config": {
+    "run": {
+      "id": "stage2-golden-rollout",
+      "scope": "tiny",
+      "seed": 12
+    },
+    "surface": {
+      "id": "stage2_two_channel",
+      "version": "golden-v1",
+      "description": "Golden Stage-2 rollout planning fixture."
+    },
+    "data": {
+      "dataset_id": "fixture:stage2-rollout",
+      "train_jsonl": "fixture://stage2_rollout_train.jsonl",
+      "validation_jsonl": "fixture://stage2_rollout_val.jsonl"
+    },
+    "template": {
+      "id": "compact_full",
+      "object_format": "coord_token_xyxy"
+    },
+    "supervision": {
+      "mode": "two_channel",
+      "channels": {
+        "a": {
+          "source": "ground_truth",
+          "objective_scope": "teacher_forcing"
+        },
+        "b": {
+          "source": "rollout",
+          "objective_scope": "rollout_plus_false_negative",
+          "planner": "greedy_iou_shadow"
+        }
+      },
+      "assignment": "greedy_iou",
+      "duplicate_filter": "deterministic_duplicate_filter"
+    },
+    "objectives": {
+      "token_ce": {
+        "enabled": true,
+        "weight": 1.0
+      },
+      "coord_soft_ce": {
+        "enabled": false,
+        "weight": 0.0
+      }
+    },
+    "observability": {
+      "level": "fixture"
+    },
+    "artifacts": {
+      "output_root": "output/test-fixtures/training_architecture/stage2"
+    },
+    "runtime": {
+      "trainer": "fixture",
+      "trainer_variant": "stage2_two_channel",
+      "precision": "float32"
+    }
+  },
+  "assignment_iou_threshold": 0.5,
+  "duplicate_iou_threshold": 0.5,
+  "predicted_objects": [
+    {
+      "object_id": "pred-dog-survivor",
+      "description": "dog",
+      "bbox": [100, 100, 200, 200],
+      "provenance": "rollout_accepted",
+      "confidence": 0.72,
+      "evidence_count": 2,
+      "explorer_support": 1,
+      "fixture_role": "matched_prediction"
+    },
+    {
+      "object_id": "pred-dog-lower-evidence",
+      "description": "dog",
+      "bbox": [102, 102, 198, 198],
+      "provenance": "rollout_accepted",
+      "confidence": 0.95,
+      "evidence_count": 1,
+      "explorer_support": 0,
+      "fixture_role": "lower_quality_duplicate"
+    },
+    {
+      "object_id": "pred-dog-nearby-duplicate",
+      "description": "dog",
+      "bbox": [95, 95, 205, 205],
+      "provenance": "rollout_accepted",
+      "confidence": 0.44,
+      "evidence_count": 0,
+      "explorer_support": 0,
+      "fixture_role": "duplicate_prediction"
+    }
+  ],
+  "ground_truth_objects": [
+    {
+      "object_id": "gt-dog",
+      "description": "dog",
+      "bbox": [101, 101, 201, 201],
+      "provenance": "ground_truth",
+      "fixture_role": "matched_ground_truth"
+    },
+    {
+      "object_id": "gt-cat",
+      "description": "cat",
+      "bbox": [700, 700, 760, 780],
+      "provenance": "ground_truth",
+      "fixture_role": "missing_ground_truth"
+    }
+  ]
+}

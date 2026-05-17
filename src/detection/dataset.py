@@ -23,7 +23,6 @@ from src.detection.objective import (
     RecursiveDetectionTargets,
     StateWeightingStrategy,
     build_compact_prefix_rollin_example,
-    compute_eos_trust_weight,
     prepare_detection_training_example,
 )
 from src.detection.template import TemplateId, get_detection_template
@@ -96,7 +95,6 @@ class DetectionDatasetRuntimeConfig:
     seed: int
     state_weighting: str
     normalization: str
-    eos_trust_weight_config: Any | None = None
     type_gate_config: Any | None = None
 
 
@@ -147,7 +145,6 @@ class DetectionTrainingDataset(Dataset):
         seed: int,
         state_weighting: str,
         normalization: str,
-        eos_trust_weight_config: Any | None = None,
         type_gate_config: Any | None = None,
         sample_limit: int | None = None,
         dataset_name: str | None = None,
@@ -172,7 +169,6 @@ class DetectionTrainingDataset(Dataset):
                 seed=int(seed),
                 state_weighting=str(state_weighting),
                 normalization=str(normalization),
-                eos_trust_weight_config=eos_trust_weight_config,
                 type_gate_config=type_gate_config,
             ),
             dataset_name=dataset_name or path.stem,
@@ -256,36 +252,18 @@ class DetectionTrainingDataset(Dataset):
         detection_template = get_detection_template(self.config.detection_template_id)
         rendered_assistant = detection_template.render_assistant(normalized)
         messages = self._messages(raw.images, assistant_text=rendered_assistant.text)
-        eos_trust_weight = (
-            compute_eos_trust_weight(
-                len(normalized.objects),
-                self.config.eos_trust_weight_config,
-            )
-            if self.config.eos_trust_weight_config is not None
-            else None
-        )
-
         if self.config.mode == "prefix_rollin_et_rmp_ce":
             if self.config.detection_template_id != "compact_full":
                 raise ValueError(
                     "prefix_rollin_et_rmp_ce requires compact_full template"
                 )
-            if self.config.eos_trust_weight_config is None:
-                raise ValueError(
-                    "prefix_rollin_et_rmp_ce requires eos_trust_weight_config"
-                )
             k_rng = random.Random(_mix_seed(self.config.seed, self._epoch, base_idx))
             k = k_rng.randint(0, len(normalized.objects))
-            if eos_trust_weight is None:
-                raise ValueError(
-                    "prefix_rollin_et_rmp_ce requires computed eos_trust_weight"
-                )
             prepared = build_compact_prefix_rollin_example(
                 objects=normalized.objects,
                 rollin_order=normalized.objects,
                 k=k,
                 tokenizer=self.tokenizer,
-                eos_trust_weight=eos_trust_weight,
                 normalized_sample=normalized,
                 type_gate_config=self.config.type_gate_config,
                 messages=messages,
@@ -298,7 +276,6 @@ class DetectionTrainingDataset(Dataset):
                 mode=self.config.mode,
                 state_weighting=self._state_weighting_for_prepare(),
                 normalization=self._normalization_for_prepare(),
-                eos_trust_weight=eos_trust_weight,
                 messages=messages,
             )
 
@@ -345,11 +322,8 @@ class DetectionTrainingDataset(Dataset):
                     "semantic_eos_token_count": len(
                         prepared.debug_spans["semantic_eos"].token_positions
                     ),
-                    "eos_trust_weight": float(prepared.eos_trust_weight),
                 }
             )
-        elif eos_trust_weight is not None:
-            detection_metadata["eos_trust_weight"] = float(eos_trust_weight)
         encoded["metadata"] = {
             "source": raw.metadata.source,
             "split": raw.metadata.split,

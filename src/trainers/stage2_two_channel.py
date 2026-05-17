@@ -2212,8 +2212,8 @@ class Stage2ABTrainingTrainer(
         dup_cluster_exempt_total = 0
         dup_cluster_suppressed_total = 0
         dup_objects_suppressed_total = 0
-        dup_ul_boundaries_total = 0
-        dup_duplicate_burst_unlikelihood_skipped_no_divergence_total = 0
+        dup_first_divergence_boundaries_total = 0
+        dup_first_divergence_skipped_no_divergence_total = 0
         dup_metric_samples = 0
         triage_anchor_gt_backed_total = 0
         triage_shielded_anchor_total = 0
@@ -2787,18 +2787,20 @@ class Stage2ABTrainingTrainer(
             tail_desc_weights = list(supervision_targets.tail_desc_weights)
             y_train_ids = list(supervision_targets.y_train_ids)
             clean_target_text = str(supervision_targets.clean_target_text)
-            duplicate_burst_unlikelihood_targets = list(
-                supervision_targets.duplicate_burst_unlikelihood_targets
+            duplicate_control_first_divergence_diagnostics = list(
+                supervision_targets.duplicate_control_first_divergence_diagnostics
             )
-            duplicate_burst_unlikelihood_boundary_count = int(
-                supervision_targets.duplicate_burst_unlikelihood_boundary_count
+            duplicate_control_first_divergence_boundary_count = int(
+                supervision_targets.duplicate_control_first_divergence_boundary_count
             )
-            duplicate_burst_unlikelihood_skipped_no_divergence = int(
-                supervision_targets.duplicate_burst_unlikelihood_skipped_no_divergence
+            duplicate_control_first_divergence_skipped_no_divergence = int(
+                supervision_targets.duplicate_control_first_divergence_skipped_no_divergence
             )
-            dup_ul_boundaries_total += int(duplicate_burst_unlikelihood_boundary_count)
-            dup_duplicate_burst_unlikelihood_skipped_no_divergence_total += int(
-                duplicate_burst_unlikelihood_skipped_no_divergence
+            dup_first_divergence_boundaries_total += int(
+                duplicate_control_first_divergence_boundary_count
+            )
+            dup_first_divergence_skipped_no_divergence_total += int(
+                duplicate_control_first_divergence_skipped_no_divergence
             )
 
             if track_monitor_candidates and (
@@ -3068,11 +3070,11 @@ class Stage2ABTrainingTrainer(
                             "precision": float(prec_local),
                             "recall": float(rec_local),
                             "f1": float(f1_local),
-                            "duplicate_burst_unlikelihood_boundary_count": int(
-                                duplicate_burst_unlikelihood_boundary_count
+                            "duplicate_control_first_divergence_boundary_count": int(
+                                duplicate_control_first_divergence_boundary_count
                             ),
-                            "duplicate_burst_unlikelihood_skipped_no_divergence": int(
-                                duplicate_burst_unlikelihood_skipped_no_divergence
+                            "duplicate_control_first_divergence_skipped_no_divergence": int(
+                                duplicate_control_first_divergence_skipped_no_divergence
                             ),
                         },
                     },
@@ -3252,12 +3254,12 @@ class Stage2ABTrainingTrainer(
                 recovered_gt_indices=recovered_gt_indices,
                 recovered_gt_support_counts=recovered_gt_support_counts,
                 recovered_gt_support_rates=recovered_gt_support_rates,
-                duplicate_burst_unlikelihood_targets=duplicate_burst_unlikelihood_targets,
-                duplicate_burst_unlikelihood_boundary_count=int(
-                    duplicate_burst_unlikelihood_boundary_count
+                duplicate_control_first_divergence_diagnostics=duplicate_control_first_divergence_diagnostics,
+                duplicate_control_first_divergence_boundary_count=int(
+                    duplicate_control_first_divergence_boundary_count
                 ),
-                duplicate_burst_unlikelihood_skipped_no_divergence=int(
-                    duplicate_burst_unlikelihood_skipped_no_divergence
+                duplicate_control_first_divergence_skipped_no_divergence=int(
+                    duplicate_control_first_divergence_skipped_no_divergence
                 ),
                 stage2_tail_closure_positions_fn=_stage2_ab_tail_closure_positions,
                 stage2_semantic_stop_branch_metadata_fn=_stage2_ab_semantic_stop_branch_metadata,
@@ -3437,11 +3439,11 @@ class Stage2ABTrainingTrainer(
             "stage2_ab/channel_b/dup/N_objects_suppressed": float(
                 dup_objects_suppressed_total
             ),
-            "stage2_ab/channel_b/dup/N_ul_boundaries": float(
-                dup_ul_boundaries_total
+            "stage2_ab/channel_b/dup/N_duplicate_control_first_divergence_boundaries": float(
+                dup_first_divergence_boundaries_total
             ),
-            "stage2_ab/channel_b/dup/N_duplicate_burst_unlikelihood_skipped_no_divergence": float(
-                dup_duplicate_burst_unlikelihood_skipped_no_divergence_total
+            "stage2_ab/channel_b/dup/N_duplicate_control_first_divergence_skipped_no_divergence": float(
+                dup_first_divergence_skipped_no_divergence_total
             ),
             "train/triage/gt_backed_count": float(
                 triage_anchor_gt_backed_total
@@ -3722,12 +3724,6 @@ class Stage2ABTrainingTrainer(
             channel_name=channel,
             default=0.0,
         )
-        duplicate_burst_unlikelihood_module_w = _module_weight(
-            objective_specs,
-            name="loss_duplicate_burst_unlikelihood",
-            channel_name=channel,
-            default=0.0,
-        )
         coord_reg_module_w = _module_weight(
             objective_specs,
             name="coord_reg",
@@ -3873,12 +3869,6 @@ class Stage2ABTrainingTrainer(
         coord_w1_w = _cfg_float(
             coord_cfg,
             keys=("w1_weight",),
-            default=0.0,
-            min_value=0.0,
-        )
-        adjacent_repulsion_w = _cfg_float(
-            coord_cfg,
-            keys=("adjacent_repulsion_weight",),
             default=0.0,
             min_value=0.0,
         )
@@ -4044,9 +4034,6 @@ class Stage2ABTrainingTrainer(
                 bbox_geo_module_w=float(bbox_geo_module_w),
                 bbox_size_aux_module_w=float(bbox_size_aux_module_w),
                 coord_reg_module_w=float(coord_reg_module_w),
-                duplicate_burst_unlikelihood_module_w=float(
-                    duplicate_burst_unlikelihood_module_w
-                ),
                 run_a_text=bool(run_a_text),
                 run_a_bbox_geo=bool(run_a_bbox_geo),
                 run_a_bbox_size_aux=bool(run_a_bbox_size_aux),
@@ -4060,7 +4047,6 @@ class Stage2ABTrainingTrainer(
                 coord_ce_w=float(coord_ce_w),
                 coord_soft_ce_w=float(coord_soft_ce_w),
                 coord_w1_w=float(coord_w1_w),
-                adjacent_repulsion_w=float(adjacent_repulsion_w),
                 coord_gate_w=float(coord_gate_w),
                 text_gate_w=float(text_gate_w),
             )
@@ -4140,7 +4126,6 @@ class Stage2ABTrainingTrainer(
                         key.startswith("stage2_ab/")
                         or key.startswith("dup/")
                         or key.startswith("train/triage/")
-                        or key.startswith("diag/duplicate_burst/")
                         or key.startswith("rollout/anchor/")
                         or key.startswith("rollout/explorer/")
                         or key

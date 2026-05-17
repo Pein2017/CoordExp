@@ -55,8 +55,6 @@ from src.trainers.teacher_forcing.module_registry import (
     OBJECTIVE_CONFIG_ALLOWLIST,
     OBJECTIVE_OPTIONAL_CONFIG_KEYS,
     validate_bbox_geo_config_values,
-    normalize_token_ce_stop_signal_damping_config,
-    validate_adjacent_repulsion_config_values,
 )
 
 from .eval_monitor_dump_schema import EvalMonitorDumpConfig
@@ -309,10 +307,6 @@ class CoordSoftCEW1Config:
     temperature: float = 1.0
     target_sigma: float = 2.0
     target_truncate: Optional[int] = None
-    adjacent_repulsion_weight: float = 0.0
-    adjacent_repulsion_filter_mode: str = "same_desc"
-    adjacent_repulsion_margin_ratio: float = 0.05
-    adjacent_repulsion_copy_margin: float = 0.8
 
     @classmethod
     def from_mapping(
@@ -333,10 +327,6 @@ class CoordSoftCEW1Config:
             "temperature",
             "target_sigma",
             "target_truncate",
-            "adjacent_repulsion_weight",
-            "adjacent_repulsion_filter_mode",
-            "adjacent_repulsion_margin_ratio",
-            "adjacent_repulsion_copy_margin",
         }
         unknown = sorted(str(k) for k in payload.keys() if str(k) not in allowed_keys)
         if unknown:
@@ -360,26 +350,6 @@ class CoordSoftCEW1Config:
         text_gate_weight = _parse_float("text_gate_weight", cls.text_gate_weight)
         temperature = _parse_float("temperature", cls.temperature)
         target_sigma = _parse_float("target_sigma", cls.target_sigma)
-        adjacent_repulsion_weight = _parse_float(
-            "adjacent_repulsion_weight", cls.adjacent_repulsion_weight
-        )
-        adjacent_repulsion_margin_ratio = _parse_float(
-            "adjacent_repulsion_margin_ratio", cls.adjacent_repulsion_margin_ratio
-        )
-        adjacent_repulsion_copy_margin = _parse_float(
-            "adjacent_repulsion_copy_margin", cls.adjacent_repulsion_copy_margin
-        )
-        adjacent_repulsion_filter_mode = (
-            str(
-                payload.get(
-                    "adjacent_repulsion_filter_mode",
-                    cls.adjacent_repulsion_filter_mode,
-                )
-                or cls.adjacent_repulsion_filter_mode
-            )
-            .strip()
-            .lower()
-        )
 
         target_truncate_raw = payload.get("target_truncate", cls.target_truncate)
         target_truncate: Optional[int]
@@ -403,20 +373,6 @@ class CoordSoftCEW1Config:
             raise ValueError("coord_soft_ce_w1.gate_weight must be >= 0")
         if text_gate_weight < 0:
             raise ValueError("coord_soft_ce_w1.text_gate_weight must be >= 0")
-        if adjacent_repulsion_weight < 0:
-            raise ValueError("coord_soft_ce_w1.adjacent_repulsion_weight must be >= 0")
-        if adjacent_repulsion_margin_ratio < 0:
-            raise ValueError(
-                "coord_soft_ce_w1.adjacent_repulsion_margin_ratio must be >= 0"
-            )
-        if not 0.0 <= adjacent_repulsion_copy_margin <= 1.0:
-            raise ValueError(
-                "coord_soft_ce_w1.adjacent_repulsion_copy_margin must be within [0, 1]"
-            )
-        if adjacent_repulsion_filter_mode not in {"same_desc", "global"}:
-            raise ValueError(
-                "coord_soft_ce_w1.adjacent_repulsion_filter_mode must be one of ['global', 'same_desc']"
-            )
         if (
             enabled
             and ce_weight == 0
@@ -424,10 +380,9 @@ class CoordSoftCEW1Config:
             and w1_weight == 0
             and gate_weight == 0
             and text_gate_weight == 0
-            and adjacent_repulsion_weight == 0
         ):
             raise ValueError(
-                "coord_soft_ce_w1 is enabled but ce_weight, soft_ce_weight, w1_weight, gate_weight, text_gate_weight, and adjacent_repulsion_weight are all 0"
+                "coord_soft_ce_w1 is enabled but ce_weight, soft_ce_weight, w1_weight, gate_weight, and text_gate_weight are all 0"
             )
         if temperature <= 0:
             raise ValueError("coord_soft_ce_w1.temperature must be > 0")
@@ -446,10 +401,6 @@ class CoordSoftCEW1Config:
             temperature=temperature,
             target_sigma=target_sigma,
             target_truncate=target_truncate,
-            adjacent_repulsion_weight=adjacent_repulsion_weight,
-            adjacent_repulsion_filter_mode=adjacent_repulsion_filter_mode,
-            adjacent_repulsion_margin_ratio=adjacent_repulsion_margin_ratio,
-            adjacent_repulsion_copy_margin=adjacent_repulsion_copy_margin,
         )
 
 
@@ -2701,7 +2652,6 @@ class Stage2PipelineConfig:
 
         canonical_objective_order = [
             "token_ce",
-            "loss_duplicate_burst_unlikelihood",
             "bbox_geo",
             "bbox_size_aux",
             "coord_reg",
@@ -2766,14 +2716,6 @@ class Stage2PipelineConfig:
                     "is not part of the canonical clean-prefix Channel-B contract."
                     % int(idx)
                 )
-            if str(spec.name) == "token_ce" and "stop_signal_damping" in spec.config:
-                normalize_token_ce_stop_signal_damping_config(
-                    spec.config.get("stop_signal_damping"),
-                    path=(
-                        "stage2_ab.pipeline.objective"
-                        f"[{idx}].config.stop_signal_damping"
-                    ),
-                )
             if str(spec.name) == "token_ce" and "struct_ce_weight" in spec.config:
                 raise ValueError(
                     "stage2_ab.pipeline.objective"
@@ -2806,12 +2748,6 @@ class Stage2PipelineConfig:
                     spec.config.setdefault("parameterization", "xyxy")
                     spec.config.setdefault("center_weight", 1.0)
                     spec.config.setdefault("size_weight", 1.0)
-            if str(spec.name) == "coord_reg":
-                validate_adjacent_repulsion_config_values(
-                    spec.config,
-                    path=f"stage2_ab.pipeline.objective[{idx}].config",
-                )
-
         for idx, spec in enumerate(diagnostics_specs):
             allowed_cfg = DIAGNOSTIC_CONFIG_ALLOWLIST.get(str(spec.name), set())
             unknown_cfg = set(spec.config.keys()) - allowed_cfg
@@ -2823,22 +2759,6 @@ class Stage2PipelineConfig:
                 )
 
         specs_by_name = {spec.name: spec for spec in objective_specs}
-        loss_duplicate_burst_unlikelihood = specs_by_name.get(
-            "loss_duplicate_burst_unlikelihood"
-        )
-        if loss_duplicate_burst_unlikelihood is None:
-            raise ValueError(
-                "stage2_ab.pipeline.objective requires loss_duplicate_burst_unlikelihood in the canonical "
-                "clean-prefix Channel-B contract."
-            )
-        if tuple(str(ch) for ch in loss_duplicate_burst_unlikelihood.channels) != (
-            "B",
-        ):
-            raise ValueError(
-                "stage2_ab.pipeline.objective loss_duplicate_burst_unlikelihood must declare channels ['B'] "
-                f"for the canonical clean-prefix Channel-B contract; got {list(loss_duplicate_burst_unlikelihood.channels)!r}"
-            )
-
         bbox_geo = specs_by_name.get("bbox_geo")
         bbox_size_aux = specs_by_name.get("bbox_size_aux")
         coord_reg = specs_by_name.get("coord_reg")
@@ -3289,7 +3209,7 @@ def _latest_detection_validate_prefix_rollin_contract(
     objective: "DetectionObjectiveConfig",
     experiment: "LatestDetectionExperimentConfig | None",
 ) -> None:
-    if objective.variant != "prefix_rollin_et_rmp_ce" and objective.eos is None:
+    if objective.variant != "prefix_rollin_et_rmp_ce":
         return
 
     if (
@@ -3300,31 +3220,9 @@ def _latest_detection_validate_prefix_rollin_contract(
             "objective.variant=prefix_rollin_et_rmp_ce requires "
             "detection_template.id=compact_full"
         )
-    if objective.eos is not None and detection_template.id != "compact_full":
-        raise ValueError("objective.eos requires detection_template.id=compact_full")
     if experiment is None:
         raise ValueError(
             f"experiment.surface is required for objective.variant={objective.variant}"
-        )
-    eos = objective.eos
-    if eos is None:
-        raise ValueError(
-            "objective.variant=prefix_rollin_et_rmp_ce requires objective.eos"
-        )
-    source = eos.eos_trust_weight.source
-    if experiment.surface == "production" and source != "calibrated_formula_ref":
-        raise ValueError(
-            f"objective.eos.eos_trust_weight.source={source} is not allowed "
-            "for experiment.surface=production; use calibrated_formula_ref "
-            "with calibration_artifact_ref"
-        )
-    if (
-        experiment.surface in {"smoke", "ablation"}
-        and source == "calibrated_formula_ref"
-    ):
-        raise ValueError(
-            "objective.eos.eos_trust_weight.source=calibrated_formula_ref is "
-            f"reserved for experiment.surface=production, got {experiment.surface}"
         )
 
 
@@ -3607,33 +3505,6 @@ class EntryTrieSupportBalanceConfig:
 
 
 @dataclass(frozen=True)
-class AppendBoundaryConfig:
-    type: Literal["compact_full_append_boundary"]
-    separator_continue_weight: float
-    eos_stop_weight: float
-    component_weight: float
-
-    def __post_init__(self) -> None:
-        _latest_detection_validate_choice(
-            self.type,
-            path="objective.boundary.type",
-            allowed={"compact_full_append_boundary"},
-        )
-        for field_name in (
-            "separator_continue_weight",
-            "eos_stop_weight",
-            "component_weight",
-        ):
-            value = getattr(self, field_name)
-            if not isinstance(value, (int, float)) or isinstance(value, bool):
-                raise TypeError(f"objective.boundary.{field_name} must be numeric")
-            if not math.isfinite(float(value)):
-                raise ValueError(f"objective.boundary.{field_name} must be finite")
-            if float(value) <= 0.0:
-                raise ValueError(f"objective.boundary.{field_name} must be > 0")
-
-
-@dataclass(frozen=True)
 class CompactTypeGateWeights:
     struct: float
     coord: float
@@ -3671,206 +3542,6 @@ class CompactTypeGateConfig:
             self.mode,
             path="objective.type_gate.mode",
             allowed={"allowed_type_mass"},
-        )
-
-
-@dataclass(frozen=True)
-class ExpectedUnlabeledCountConfig:
-    intercept: float
-    slope: float
-    floor: float
-
-    def __post_init__(self) -> None:
-        for field_name in ("intercept", "slope", "floor"):
-            value = getattr(self, field_name)
-            if not isinstance(value, (int, float)) or isinstance(value, bool):
-                raise TypeError(
-                    "objective.eos.eos_trust_weight.expected_unlabeled_count."
-                    f"{field_name} must be numeric"
-                )
-            if not math.isfinite(float(value)):
-                raise ValueError(
-                    "objective.eos.eos_trust_weight.expected_unlabeled_count."
-                    f"{field_name} must be finite"
-                )
-
-
-@dataclass(frozen=True)
-class LogLinearMissingCountPenaltyConfig:
-    type: Literal["log_linear_missing_count_penalty"]
-    penalty_per_missing: float
-    temperature: float
-    min_weight: float
-    max_weight: float
-
-    def __post_init__(self) -> None:
-        _latest_detection_validate_choice(
-            self.type,
-            path="objective.eos.eos_trust_weight.trust_mapping.type",
-            allowed={"log_linear_missing_count_penalty"},
-        )
-        for field_name in (
-            "penalty_per_missing",
-            "temperature",
-            "min_weight",
-            "max_weight",
-        ):
-            value = getattr(self, field_name)
-            if not isinstance(value, (int, float)) or isinstance(value, bool):
-                raise TypeError(
-                    f"objective.eos.eos_trust_weight.trust_mapping.{field_name} must be numeric"
-                )
-            if not math.isfinite(float(value)):
-                raise ValueError(
-                    f"objective.eos.eos_trust_weight.trust_mapping.{field_name} must be finite"
-                )
-        if float(self.temperature) <= 0.0:
-            raise ValueError(
-                "objective.eos.eos_trust_weight.trust_mapping.temperature must be > 0"
-            )
-        if float(self.penalty_per_missing) < 0.0:
-            raise ValueError(
-                "objective.eos.eos_trust_weight.trust_mapping.penalty_per_missing "
-                "must be >= 0"
-            )
-        if (
-            float(self.min_weight) < 0.0
-            or float(self.max_weight) < float(self.min_weight)
-            or float(self.max_weight) > 1.0
-        ):
-            raise ValueError(
-                "objective.eos.eos_trust_weight.trust_mapping weights must satisfy "
-                "0 <= min_weight <= max_weight <= 1"
-            )
-
-
-@dataclass(frozen=True)
-class EosTrustWeightConfig:
-    source: Literal[
-        "empirical_unlabeled_poisson_v0",
-        "calibrated_formula_ref",
-        "constant_ablation",
-        "disabled_ablation",
-        "deferred_user_formula",
-    ]
-    expected_unlabeled_count: Optional[ExpectedUnlabeledCountConfig] = None
-    trust_mapping: Optional[LogLinearMissingCountPenaltyConfig] = None
-    calibration_artifact_ref: Optional[str] = None
-    value: Optional[float] = None
-
-    def __post_init__(self) -> None:
-        _latest_detection_validate_choice(
-            self.source,
-            path="objective.eos.eos_trust_weight.source",
-            allowed={
-                "empirical_unlabeled_poisson_v0",
-                "calibrated_formula_ref",
-                "constant_ablation",
-                "disabled_ablation",
-                "deferred_user_formula",
-            },
-        )
-        if self.source == "deferred_user_formula":
-            raise ValueError(
-                "objective.eos.eos_trust_weight.source=deferred_user_formula is stale "
-                "and unimplemented"
-            )
-        if self.source == "empirical_unlabeled_poisson_v0":
-            if self.value is not None:
-                raise ValueError(
-                    "objective.eos.eos_trust_weight.source=empirical_unlabeled_poisson_v0 "
-                    "does not accept value"
-                )
-            if self.expected_unlabeled_count is None or self.trust_mapping is None:
-                raise ValueError(
-                    "objective.eos.eos_trust_weight.source=empirical_unlabeled_poisson_v0 "
-                    "requires expected_unlabeled_count and trust_mapping"
-                )
-            if self.calibration_artifact_ref is not None:
-                raise ValueError(
-                    "objective.eos.eos_trust_weight.source=empirical_unlabeled_poisson_v0 "
-                    "does not accept calibration_artifact_ref"
-                )
-        if self.source == "calibrated_formula_ref":
-            if self.value is not None:
-                raise ValueError(
-                    "objective.eos.eos_trust_weight.source=calibrated_formula_ref "
-                    "does not accept value"
-                )
-            if (
-                self.expected_unlabeled_count is not None
-                or self.trust_mapping is not None
-            ):
-                raise ValueError(
-                    "objective.eos.eos_trust_weight.source=calibrated_formula_ref "
-                    "does not accept expected_unlabeled_count or trust_mapping"
-                )
-            if self.calibration_artifact_ref in (None, ""):
-                raise ValueError(
-                    "objective.eos.eos_trust_weight.source=calibrated_formula_ref "
-                    "requires calibration_artifact_ref"
-                )
-            if not isinstance(self.calibration_artifact_ref, str):
-                raise TypeError(
-                    "objective.eos.eos_trust_weight.calibration_artifact_ref must be a string"
-                )
-            ref = self.calibration_artifact_ref.strip()
-            if not ref:
-                raise ValueError(
-                    "objective.eos.eos_trust_weight.calibration_artifact_ref must be non-empty"
-                )
-            if ".v" not in Path(ref).name:
-                raise ValueError(
-                    "objective.eos.eos_trust_weight.calibration_artifact_ref must be versioned"
-                )
-        if self.source in {"constant_ablation", "disabled_ablation"}:
-            if (
-                self.expected_unlabeled_count is not None
-                or self.trust_mapping is not None
-                or self.calibration_artifact_ref is not None
-            ):
-                raise ValueError(
-                    f"objective.eos.eos_trust_weight.source={self.source} "
-                    "does not accept expected_unlabeled_count, trust_mapping, "
-                    "or calibration_artifact_ref"
-                )
-        if self.source == "constant_ablation":
-            if self.value is None:
-                raise ValueError(
-                    "objective.eos.eos_trust_weight.source=constant_ablation "
-                    "requires value"
-                )
-            if (
-                not isinstance(self.value, (int, float))
-                or isinstance(self.value, bool)
-                or not math.isfinite(float(self.value))
-                or float(self.value) < 0.0
-                or float(self.value) > 1.0
-            ):
-                raise ValueError(
-                    "objective.eos.eos_trust_weight.source=constant_ablation "
-                    "requires value in [0, 1]"
-                )
-        if self.source == "disabled_ablation" and self.value is not None:
-            raise ValueError(
-                "objective.eos.eos_trust_weight.source=disabled_ablation "
-                "does not accept value"
-            )
-
-
-@dataclass(frozen=True)
-class EosPriorConfig:
-    eos_token: Literal["<|im_end|>"]
-    policy: Literal["missing_label_prior_weighted_ce"]
-    eos_trust_weight: EosTrustWeightConfig
-
-    def __post_init__(self) -> None:
-        if self.eos_token != "<|im_end|>":
-            raise ValueError("objective.eos.eos_token must be <|im_end|>")
-        _latest_detection_validate_choice(
-            self.policy,
-            path="objective.eos.policy",
-            allowed={"missing_label_prior_weighted_ce"},
         )
 
 
@@ -4004,9 +3675,7 @@ class DetectionObjectiveConfig:
     normalization: str = "token_mean"
     rollin: Optional[PrefixRollinConfig] = None
     target: Optional[EntryTrieSupportBalanceConfig] = None
-    boundary: Optional[AppendBoundaryConfig] = None
     type_gate: Optional[CompactTypeGateConfig] = None
-    eos: Optional[EosPriorConfig] = None
     coord_soft_ce: Optional[CoordSoftCEConfig] = None
 
     def __post_init__(self) -> None:
@@ -4102,7 +3771,7 @@ class DetectionObjectiveConfig:
                 )
             missing = [
                 name
-                for name in ("rollin", "target", "boundary", "type_gate", "eos")
+                for name in ("rollin", "target", "type_gate")
                 if getattr(self, name) is None
             ]
             if missing:
@@ -4113,16 +3782,13 @@ class DetectionObjectiveConfig:
         else:
             unexpected = [
                 name
-                for name in ("rollin", "target", "boundary", "type_gate")
+                for name in ("rollin", "target", "type_gate")
                 if getattr(self, name) is not None
             ]
-            if self.eos is not None and self.variant != "random_permutation_et_rmp_ce":
-                unexpected.append("eos")
             if unexpected:
                 raise ValueError(
                     "objectized objective sections are only supported for "
-                    "objective.variant=prefix_rollin_et_rmp_ce, except "
-                    "objective.eos on random_permutation_et_rmp_ce: "
+                    "objective.variant=prefix_rollin_et_rmp_ce: "
                     f"{unexpected}"
                 )
         if self.id == "sft" and self.variant not in {"sorted_sft", "random_order_sft"}:
@@ -4357,8 +4023,6 @@ class LatestDetectionTrainingConfig:
         _latest_detection_validate_order_matches_objective(data_config, objective)
         if objective.variant == "prefix_rollin_et_rmp_ce":
             required_experiment_variant = "prefix_rollin_et_rmp_ce"
-        elif objective.eos is not None:
-            required_experiment_variant = "random_permutation_et_rmp_ce"
         else:
             required_experiment_variant = None
         experiment = LatestDetectionExperimentConfig.from_mapping(
@@ -4814,10 +4478,6 @@ class TrainingConfig:
             if getattr(coord_cfg, "target_truncate", None) is not None:
                 raise ValueError(
                     f"custom.bbox_format={bbox_format_label} requires custom.coord_soft_ce_w1.target_truncate = null."
-                )
-            if float(getattr(coord_cfg, "adjacent_repulsion_weight", 0.0)) != 0.0:
-                raise ValueError(
-                    f"custom.bbox_format={bbox_format_label} requires custom.coord_soft_ce_w1.adjacent_repulsion_weight = 0."
                 )
             if custom_bbox_geo_present or bool(
                 getattr(custom.bbox_geo, "enabled", False)

@@ -72,15 +72,9 @@ class RecursiveDetectionCEMixin:
             )
         trie_support_weight = getattr(cfg, "trie_support_weight", None)
         trie_balance_weight = getattr(cfg, "trie_balance_weight", None)
-        separator_continue_weight = getattr(cfg, "separator_continue_weight", 0.50)
-        eos_stop_weight = getattr(cfg, "eos_stop_weight", 0.50)
-        boundary_component_weight = getattr(cfg, "boundary_component_weight", 0.30)
         for field_name, raw_value in (
             ("trie_support_weight", trie_support_weight),
             ("trie_balance_weight", trie_balance_weight),
-            ("separator_continue_weight", separator_continue_weight),
-            ("eos_stop_weight", eos_stop_weight),
-            ("boundary_component_weight", boundary_component_weight),
         ):
             if raw_value is None:
                 raise ValueError(f"recursive_detection_ce_cfg.{field_name} is required")
@@ -96,9 +90,6 @@ class RecursiveDetectionCEMixin:
         weights = RecursiveDetectionLossWeights(
             support_weight=float(trie_support_weight),
             balance_weight=float(trie_balance_weight),
-            separator_continue_weight=float(separator_continue_weight),
-            eos_stop_weight=float(eos_stop_weight),
-            boundary_component_weight=float(boundary_component_weight),
             coord_soft_ce=getattr(cfg, "coord_soft_ce", None),
         )
         loss_result = compute_recursive_detection_ce_batch_loss(
@@ -125,15 +116,6 @@ class RecursiveDetectionCEMixin:
                     ),
                     "recursive_detection_ce/trie_balance_weight": float(
                         weights.balance_weight
-                    ),
-                    "recursive_detection_ce/boundary/separator_continue_weight": float(
-                        weights.separator_continue_weight
-                    ),
-                    "recursive_detection_ce/boundary/eos_stop_weight": float(
-                        weights.eos_stop_weight
-                    ),
-                    "recursive_detection_ce/boundary/component_weight": float(
-                        weights.boundary_component_weight
                     ),
                     "recursive_detection_ce/coord_soft_ce/config_enabled": float(
                         1.0 if weights.coord_soft_ce is not None else 0.0

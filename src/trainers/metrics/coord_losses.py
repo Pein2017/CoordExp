@@ -441,13 +441,6 @@ class CoordSoftCEW1LossMixin:
                 "coord_softce_w1/text_gate",
                 float(loss_text_gate.detach().cpu().item()),
             )
-        loss_adjacent = getattr(result, "adjacent_repulsion_contrib", None)
-        if isinstance(loss_adjacent, torch.Tensor):
-            reporter.update(
-                "coord_softce_w1/adjacent_repulsion",
-                float(loss_adjacent.detach().cpu().item()),
-            )
-
         coord_tokens = int(getattr(result, "coord_tokens", 0) or 0)
 
         # Stable tags across loss modes (pure CE vs softCE+W1+gate).
@@ -466,26 +459,7 @@ class CoordSoftCEW1LossMixin:
                 "coord_diag/text_gate",
                 float(loss_text_gate.detach().cpu().item()),
             )
-        if isinstance(loss_adjacent, torch.Tensor):
-            reporter.update(
-                "coord_diag/adjacent_repulsion",
-                float(loss_adjacent.detach().cpu().item()),
-            )
         reporter.update("coord_diag/coord_tokens", float(coord_tokens))
-        reporter.update(
-            "coord_diag/adjacent_repulsion_pair_count",
-            float(int(getattr(result, "adjacent_repulsion_pair_count", 0) or 0)),
-        )
-        reporter.update(
-            "coord_diag/adjacent_repulsion_applied_count",
-            float(int(getattr(result, "adjacent_repulsion_applied_count", 0) or 0)),
-        )
-        copy_score_mean = getattr(result, "adjacent_repulsion_copy_score_mean", None)
-        if isinstance(copy_score_mean, torch.Tensor):
-            reporter.update(
-                "coord_diag/adjacent_repulsion_copy_score_mean",
-                float(copy_score_mean.detach().cpu().item()),
-            )
 
         gate_mass_mean = getattr(result, "gate_mass_mean", None)
         if isinstance(gate_mass_mean, torch.Tensor):

@@ -296,7 +296,6 @@ def stage2_snapshot_metric_key(metric_key: str) -> str | None:
         or key.startswith("stage2_ab/channel_b/")
         or key.startswith("dup/")
         or key.startswith("train/triage/")
-        or key.startswith("diag/duplicate_burst/")
         or key.startswith("rollout/")
         or key.startswith("time/rollout_")
         or key

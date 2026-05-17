@@ -7,10 +7,6 @@ import torch.nn.functional as F
 
 from src.coord_tokens.soft_ce_w1 import coord_soft_ce_w1
 from src.trainers.losses.coord_soft_ce_w1 import coord_vocab_gate_loss
-from src.trainers.teacher_forcing.adjacent_repulsion import (
-    compute_adjacent_repulsion_loss,
-    normalize_adjacent_repulsion_filter_mode,
-)
 
 from ..contracts import ModuleResult, PipelineModuleSpec, TeacherForcingContext
 
@@ -63,10 +59,6 @@ def run_coord_reg_module(
     coord_logits_full = state.get("coord_logits_full")
     target_bins = state.get("coord_target_bins")
     coord_slot_weights_raw = state.get("coord_slot_weights")
-    coord_logits_groups = state.get("coord_logits_groups")
-    adjacent_prev_target_bins = state.get("adjacent_prev_target_bins")
-    adjacent_has_prev_mask = state.get("adjacent_has_prev_mask")
-    adjacent_same_desc_prev_mask = state.get("adjacent_same_desc_prev_mask")
 
     if not isinstance(coord_logits, torch.Tensor) or int(coord_logits.numel()) == 0:
         z = context.logits.new_tensor(0.0, dtype=torch.float32)
@@ -75,17 +67,13 @@ def run_coord_reg_module(
             "loss/coord_token_ce": 0.0,
             "loss/coord_soft_ce": 0.0,
             "loss/coord_w1": 0.0,
-            "loss/adjacent_repulsion": 0.0,
             "loss/coord_gate": 0.0,
             "loss/text_gate": 0.0,
-            "coord_diag/adjacent_repulsion_pair_count": 0.0,
-            "coord_diag/adjacent_repulsion_applied_count": 0.0,
-            "coord_diag/adjacent_repulsion_copy_score_mean": 0.0,
         }
         return ModuleResult(
             loss=z,
             metrics=metrics,
-            state={"coord_reg": z, "adjacent_repulsion_contrib": z},
+            state={"coord_reg": z},
         )
 
     if not isinstance(coord_logits_full, torch.Tensor) or not isinstance(target_bins, torch.Tensor):
@@ -153,12 +141,8 @@ def run_coord_reg_module(
     coord_ce = context.logits.new_tensor(0.0, dtype=torch.float32)
     coord_soft_ce = context.logits.new_tensor(0.0, dtype=torch.float32)
     coord_w1 = context.logits.new_tensor(0.0, dtype=torch.float32)
-    adjacent_repulsion = context.logits.new_tensor(0.0, dtype=torch.float32)
     coord_gate = context.logits.new_tensor(0.0, dtype=torch.float32)
     text_gate = context.logits.new_tensor(0.0, dtype=torch.float32)
-    adjacent_pair_count = 0
-    adjacent_applied_count = 0
-    adjacent_copy_score_mean = context.logits.new_tensor(0.0, dtype=torch.float32)
 
     def _weighted_mean(values: torch.Tensor) -> torch.Tensor:
         if int(values.numel()) == 0:
@@ -279,81 +263,9 @@ def run_coord_reg_module(
                         )
                         text_gate = gate_per_token.float().mean()
 
-    adjacent_repulsion_weight = max(
-        0.0,
-        _coerce_float(cfg.get("adjacent_repulsion_weight", 0.0), 0.0),
-    )
-    if (
-        context.registry_context == "rollout"
-        and adjacent_repulsion_weight != 0.0
-    ):
-        if not isinstance(coord_logits_groups, torch.Tensor):
-            raise ValueError(
-                "coord_reg adjacent repulsion requires bbox_geo state: coord_logits_groups"
-            )
-        if not isinstance(adjacent_prev_target_bins, torch.Tensor):
-            raise ValueError(
-                "coord_reg adjacent repulsion requires bbox_geo state: adjacent_prev_target_bins"
-            )
-        if not isinstance(adjacent_has_prev_mask, torch.Tensor):
-            raise ValueError(
-                "coord_reg adjacent repulsion requires bbox_geo state: adjacent_has_prev_mask"
-            )
-        if not isinstance(adjacent_same_desc_prev_mask, torch.Tensor):
-            raise ValueError(
-                "coord_reg adjacent repulsion requires bbox_geo state: adjacent_same_desc_prev_mask"
-            )
-        group_weights = state.get("bbox_group_weights")
-        adjacent_result = compute_adjacent_repulsion_loss(
-            coord_logits_groups=coord_logits_groups.to(
-                device=context.logits.device,
-                dtype=torch.float32,
-            ),
-            prev_target_bins=adjacent_prev_target_bins.to(
-                device=context.logits.device,
-                dtype=torch.long,
-            ),
-            has_prev_mask=adjacent_has_prev_mask.to(
-                device=context.logits.device,
-                dtype=torch.bool,
-            ),
-            same_desc_prev_mask=adjacent_same_desc_prev_mask.to(
-                device=context.logits.device,
-                dtype=torch.bool,
-            ),
-            margin_ratio=max(
-                0.0,
-                _coerce_float(
-                    cfg.get("adjacent_repulsion_margin_ratio", 0.05),
-                    0.05,
-                ),
-            ),
-            copy_margin=_coerce_float(
-                cfg.get("adjacent_repulsion_copy_margin", 0.8),
-                0.8,
-            ),
-            filter_mode=normalize_adjacent_repulsion_filter_mode(
-                cfg.get("adjacent_repulsion_filter_mode", "same_desc"),
-                path="coord_reg.config.adjacent_repulsion_filter_mode",
-            ),
-            temperature=float(temperature),
-            group_weights=(
-                group_weights
-                if isinstance(group_weights, torch.Tensor)
-                else None
-            ),
-        )
-        adjacent_repulsion = adjacent_result.loss.to(dtype=torch.float32)
-        adjacent_pair_count = int(adjacent_result.pair_count)
-        adjacent_applied_count = int(adjacent_result.applied_count)
-        adjacent_copy_score_mean = adjacent_result.copy_score_mean.to(
-            dtype=torch.float32
-        ) if isinstance(adjacent_result.copy_score_mean, torch.Tensor) else context.logits.new_tensor(0.0, dtype=torch.float32)
-
     coord_token_ce_contrib = weights["coord_ce_weight"] * coord_ce
     coord_soft_ce_contrib = weights["coord_soft_ce_weight"] * coord_soft_ce
     coord_w1_contrib = weights["coord_w1_weight"] * coord_w1
-    adjacent_repulsion_contrib = adjacent_repulsion_weight * adjacent_repulsion
     coord_gate_contrib = weights["coord_gate_weight"] * coord_gate
     text_gate_contrib = weights["text_gate_weight"] * text_gate
 
@@ -361,7 +273,6 @@ def run_coord_reg_module(
         coord_token_ce_contrib
         + coord_soft_ce_contrib
         + coord_w1_contrib
-        + adjacent_repulsion_contrib
         + coord_gate_contrib
         + text_gate_contrib
     )
@@ -371,16 +282,8 @@ def run_coord_reg_module(
         "loss/coord_token_ce": float(coord_ce.detach().cpu().item()),
         "loss/coord_soft_ce": float(coord_soft_ce.detach().cpu().item()),
         "loss/coord_w1": float(coord_w1.detach().cpu().item()),
-        "loss/adjacent_repulsion": float(adjacent_repulsion.detach().cpu().item()),
         "loss/coord_gate": float(coord_gate.detach().cpu().item()),
         "loss/text_gate": float(text_gate.detach().cpu().item()),
-        "coord_diag/adjacent_repulsion_pair_count": float(adjacent_pair_count),
-        "coord_diag/adjacent_repulsion_applied_count": float(
-            adjacent_applied_count
-        ),
-        "coord_diag/adjacent_repulsion_copy_score_mean": float(
-            adjacent_copy_score_mean.detach().cpu().item()
-        ),
     }
 
     state = {
@@ -388,7 +291,6 @@ def run_coord_reg_module(
         "coord_token_ce_contrib": coord_token_ce_contrib,
         "coord_soft_ce_contrib": coord_soft_ce_contrib,
         "coord_w1_contrib": coord_w1_contrib,
-        "adjacent_repulsion_contrib": adjacent_repulsion_contrib,
         "coord_gate_contrib": coord_gate_contrib,
         "text_gate_contrib": text_gate_contrib,
     }

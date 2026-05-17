@@ -6,7 +6,6 @@ import torch
 import torch.nn.functional as F
 
 from ..contracts import ModuleResult, PipelineModuleSpec, TeacherForcingContext
-from ..module_registry import normalize_token_ce_stop_signal_damping_config
 from ..token_types import build_token_type_masks, iter_segment_views
 
 
@@ -28,12 +27,6 @@ def run_token_ce_module(
     coord_id_set = context.coord_id_set
 
     cfg = spec.config if isinstance(spec.config, Mapping) else {}
-    if "stop_signal_damping" in cfg:
-        normalize_token_ce_stop_signal_damping_config(
-            cfg.get("stop_signal_damping"),
-            path="token_ce.config.stop_signal_damping",
-        )
-
     desc_ce_weight = max(
         0.0,
         _coerce_float(

@@ -125,7 +125,7 @@ def semantic_stop_branch_metadata(
 
     Returns tail-local metadata for the first terminal semantic stop token `']}'`,
     the later closure-tail markers, and the exact stop/continue token ids used to
-    form the branch-local damping calculation.
+    describe the semantic closure boundary.
     """
 
     prefix_len_i = max(0, int(prefix_len))

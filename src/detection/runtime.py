@@ -39,9 +39,6 @@ class RecursiveDetectionCERuntimeConfig:
     trie_support_weight: float
     trie_balance_weight: float
     variant: str = "random_permutation_et_rmp_ce"
-    separator_continue_weight: float = 0.50
-    eos_stop_weight: float = 0.50
-    boundary_component_weight: float = 0.30
     coord_soft_ce: CoordSoftTargetRuntimeConfig | None = None
 
 
@@ -298,9 +295,6 @@ def resolve_recursive_detection_ce_runtime_cfg(
     if variant == "random_permutation_et_rmp_ce":
         trie_support_weight = _objective_float("trie_support_weight")
         trie_balance_weight = _objective_float("trie_balance_weight")
-        separator_continue_weight = 0.50
-        eos_stop_weight = 0.50
-        boundary_component_weight = 0.30
     elif variant == "prefix_rollin_et_rmp_ce":
         target = _field(objective, "target")
         if target is None:
@@ -317,25 +311,6 @@ def resolve_recursive_detection_ce_runtime_cfg(
             if not math.isfinite(value) or value <= 0.0:
                 raise ValueError(
                     f"objective.target.{field_name} must be finite and > 0 "
-                    "for prefix_rollin_et_rmp_ce"
-                )
-        boundary = _field(objective, "boundary")
-        if boundary is None:
-            raise ValueError(
-                "objective.boundary is required for "
-                "objective.variant=prefix_rollin_et_rmp_ce"
-            )
-        separator_continue_weight = float(_field(boundary, "separator_continue_weight"))
-        eos_stop_weight = float(_field(boundary, "eos_stop_weight"))
-        boundary_component_weight = float(_field(boundary, "component_weight"))
-        for field_name, value in (
-            ("separator_continue_weight", separator_continue_weight),
-            ("eos_stop_weight", eos_stop_weight),
-            ("component_weight", boundary_component_weight),
-        ):
-            if not math.isfinite(value) or value <= 0.0:
-                raise ValueError(
-                    f"objective.boundary.{field_name} must be finite and > 0 "
                     "for prefix_rollin_et_rmp_ce"
                 )
     else:
@@ -359,9 +334,6 @@ def resolve_recursive_detection_ce_runtime_cfg(
         trie_support_weight=trie_support_weight,
         trie_balance_weight=trie_balance_weight,
         variant=variant,
-        separator_continue_weight=separator_continue_weight,
-        eos_stop_weight=eos_stop_weight,
-        boundary_component_weight=boundary_component_weight,
         coord_soft_ce=coord_soft_ce,
     )
 
@@ -414,14 +386,8 @@ def build_latest_detection_dataset(
     sample_limit: int | None,
     dataset_name: str,
 ) -> DetectionTrainingDataset:
-    eos_trust_weight_config = None
     type_gate_config = None
-    if training_config.objective.eos is not None:
-        eos_trust_weight_config = training_config.objective.eos.eos_trust_weight
     if training_config.objective.variant == "prefix_rollin_et_rmp_ce":
-        eos_cfg = training_config.objective.eos
-        if eos_cfg is None:
-            raise ValueError("prefix_rollin_et_rmp_ce requires objective.eos")
         type_gate_config = training_config.objective.type_gate
     return DetectionTrainingDataset.from_jsonl(
         jsonl_path,
@@ -436,7 +402,6 @@ def build_latest_detection_dataset(
         seed=seed,
         state_weighting=training_config.objective.state_weighting,
         normalization=training_config.objective.normalization,
-        eos_trust_weight_config=eos_trust_weight_config,
         type_gate_config=type_gate_config,
         sample_limit=sample_limit,
         dataset_name=dataset_name,

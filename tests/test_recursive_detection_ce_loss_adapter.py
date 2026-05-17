@@ -548,10 +548,6 @@ def test_recursive_detection_metric_events_expose_objective_diagnostics() -> Non
     assert reduced["recursive_detection_ce/eos_unweighted_ce"] == pytest.approx(
         eos_ce.item()
     )
-    assert reduced["recursive_detection_ce/eos_weighted_loss"] == pytest.approx(
-        0.25 * eos_ce.item()
-    )
-    assert reduced["recursive_detection_ce/eos_trust_weight"] == pytest.approx(0.25)
 
 
 def test_recursive_detection_target_mix_metrics_expose_batch_composition() -> None:
@@ -647,15 +643,8 @@ def test_recursive_detection_entry_and_type_gate_probability_metrics() -> None:
     valid_child_probs = torch.exp(valid_child_log_probs)
     expected_entropy = -(valid_child_probs * valid_child_log_probs).sum()
     expected_uniform_kl = (-math.log(2.0) - valid_child_log_probs).mean()
-    expected_continue_minus_eos = log_valid_mass - branch_log_probs[4]
     expected_allowed_mass = torch.exp(log_valid_mass)
-    separator_log_probs = torch.log_softmax(logits[1], dim=-1)
-    expected_separator_margin = separator_log_probs[1] - separator_log_probs[4]
-    expected_separator_mass = torch.exp(separator_log_probs[1])
 
-    assert reduced[
-        "recursive_detection_ce/entry/continue_minus_eos_margin"
-    ] == pytest.approx(expected_continue_minus_eos.item())
     assert reduced["recursive_detection_ce/entry/valid_child_entropy"] == pytest.approx(
         expected_entropy.item()
     )
@@ -665,15 +654,9 @@ def test_recursive_detection_entry_and_type_gate_probability_metrics() -> None:
     assert reduced["recursive_detection_ce/type_gate_allowed_mass"] == pytest.approx(
         expected_allowed_mass.item()
     )
-    assert reduced[
-        "recursive_detection_ce/free_boundary/continue_minus_eos_margin"
-    ] == pytest.approx(expected_separator_margin.item())
-    assert reduced["recursive_detection_ce/free_boundary/continue_mass"] == pytest.approx(
-        expected_separator_mass.item()
-    )
 
 
-def test_recursive_detection_boundary_weights_prioritize_separator_continue() -> None:
+def test_recursive_detection_boundary_bucket_averages_separator_and_stop() -> None:
     logits = torch.tensor(
         [
             [-2.0, 1.0, 3.0],
@@ -702,21 +685,18 @@ def test_recursive_detection_boundary_weights_prioritize_separator_continue() ->
         weights=RecursiveDetectionLossWeights(
             support_weight=1.0,
             balance_weight=1.0,
-            separator_continue_weight=2.0,
-            eos_stop_weight=0.5,
-            boundary_component_weight=0.3,
         ),
     )
 
     log_probs = torch.log_softmax(logits, dim=-1)
     separator_ce = -log_probs[0, 1]
     eos_ce = -log_probs[1, 2]
-    expected = (2.0 * separator_ce + 0.5 * eos_ce) / 2.5
+    expected = (separator_ce + eos_ce) / 2.0
 
     assert result.loss.item() == pytest.approx(expected.item())
 
 
-def test_recursive_detection_boundary_component_weight_balances_schema_bucket() -> None:
+def test_recursive_detection_boundary_tokens_use_ordinary_ce_weight_with_schema() -> None:
     logits = torch.tensor(
         [
             [-2.0, 1.0, 3.0],
@@ -745,16 +725,13 @@ def test_recursive_detection_boundary_component_weight_balances_schema_bucket() 
         weights=RecursiveDetectionLossWeights(
             support_weight=1.0,
             balance_weight=1.0,
-            separator_continue_weight=2.0,
-            eos_stop_weight=0.5,
-            boundary_component_weight=0.9,
         ),
     )
 
     log_probs = torch.log_softmax(logits, dim=-1)
     separator_ce = -log_probs[0, 1]
     schema_ce = -log_probs[1, 0]
-    expected = (0.9 * separator_ce + 0.1 * schema_ce) / 1.0
+    expected = (separator_ce + 0.1 * schema_ce) / 1.1
 
     assert result.loss.item() == pytest.approx(expected.item())
 
@@ -1379,10 +1356,9 @@ def test_semantic_image_bucket_balanced_normalization_is_length_insensitive() ->
     object0 = (0.35 * 3.0 + 0.45 * 10.0) / (0.35 + 0.45)
     object1 = (0.35 * 1.0 + 0.45 * 7.0) / (0.35 + 0.45)
     object_component = (object0 + object1) / 2.0
-    boundary_component = (0.5 * 5.0 + 0.5 * 9.0) / (0.5 + 0.5)
     schema_component = 11.0
     expected = (
-        1.0 * object_component + 0.3 * boundary_component + 0.1 * schema_component
-    ) / (1.0 + 0.3 + 0.1)
+        1.0 * object_component + 5.0 + 9.0 + 0.1 * schema_component
+    ) / (1.0 + 1.0 + 1.0 + 0.1)
 
     assert result.loss.item() == pytest.approx(expected)

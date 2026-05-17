@@ -397,10 +397,6 @@ def test_prefix_rollin_ablation_launch_smoke_covers_config_dataset_loss_and_mani
     assert cfg.objective.rollin.k_distribution.max_k == "object_count"
     assert cfg.objective.target.support_weight == pytest.approx(1.0)
     assert cfg.objective.target.balance_weight == pytest.approx(2.0)
-    assert cfg.objective.boundary.separator_continue_weight == pytest.approx(0.5)
-    assert cfg.objective.boundary.eos_stop_weight == pytest.approx(0.5)
-    assert cfg.objective.boundary.component_weight == pytest.approx(0.3)
-    assert cfg.objective.eos.eos_token == "<|im_end|>"
     assert cfg.training["packing"] is False
     assert cfg.training["eval_packing"] is False
     assert cfg.training["encoded_sample_cache"]["enabled"] is False
@@ -450,9 +446,7 @@ def test_prefix_rollin_ablation_launch_smoke_covers_config_dataset_loss_and_mani
         if target.teacher_token_id == im_end_id
     ]
     assert eos_targets
-    assert eos_targets[-1].loss_weight == pytest.approx(
-        sample["detection_metadata"]["eos_trust_weight"]
-    )
+    assert eos_targets[-1].loss_weight == pytest.approx(1.0)
 
     recursive_cfg = resolve_recursive_detection_ce_runtime_cfg(cfg)
     assert recursive_cfg is not None
@@ -460,9 +454,6 @@ def test_prefix_rollin_ablation_launch_smoke_covers_config_dataset_loss_and_mani
     assert recursive_cfg.variant == "prefix_rollin_et_rmp_ce"
     assert recursive_cfg.trie_support_weight == pytest.approx(1.0)
     assert recursive_cfg.trie_balance_weight == pytest.approx(2.0)
-    assert recursive_cfg.separator_continue_weight == pytest.approx(0.5)
-    assert recursive_cfg.eos_stop_weight == pytest.approx(0.5)
-    assert recursive_cfg.boundary_component_weight == pytest.approx(0.3)
 
     targets = sample["recursive_detection_targets"]
     logits = _build_logits_for_targets(input_ids=sample["input_ids"], target_payload=targets)
@@ -491,17 +482,7 @@ def test_prefix_rollin_ablation_launch_smoke_covers_config_dataset_loss_and_mani
     assert metrics["recursive_detection_ce/batch_size"][-1] == pytest.approx(1.0)
     assert metrics["recursive_detection_ce/trie_support_weight"][-1] == pytest.approx(1.0)
     assert metrics["recursive_detection_ce/trie_balance_weight"][-1] == pytest.approx(2.0)
-    assert metrics[
-        "recursive_detection_ce/boundary/separator_continue_weight"
-    ][-1] == pytest.approx(0.5)
-    assert metrics["recursive_detection_ce/boundary/eos_stop_weight"][-1] == pytest.approx(
-        0.5
-    )
-    assert metrics["recursive_detection_ce/boundary/component_weight"][-1] == pytest.approx(
-        0.3
-    )
     assert "recursive_detection_ce/type_gate_loss" in metrics
-    assert "recursive_detection_ce/eos_trust_weight" in metrics
     assert "detection_sequence/objective/recursive_detection_ce/loss_per_sample" in metrics
     assert "detection_sequence/objective/recursive_detection_ce/batch_size" in metrics
     assert "batch_loss" not in metrics
@@ -621,14 +602,8 @@ def test_prefix_rollin_ablation_launch_smoke_covers_config_dataset_loss_and_mani
         "target_type": "entry_trie_support_balance",
         "support_weight": 1.0,
         "balance_weight": 2.0,
-        "boundary_type": "compact_full_append_boundary",
-        "separator_continue_weight": 0.5,
-        "eos_stop_weight": 0.5,
-        "boundary_component_weight": 0.3,
         "rollin_source": "ground_truth",
         "rollin_k_distribution": "uniform_inclusive",
-        "eos_token": "<|im_end|>",
-        "eos_trust_weight_source": "empirical_unlabeled_poisson_v0",
         "type_gate_mode": "allowed_type_mass",
     }
     assert effective["runtime"]["model_source"]["raw_path"].endswith(
@@ -672,9 +647,6 @@ def test_prefix_rollin_bsz8_configs_record_eval_and_disabled_packing_runtime() -
         repo_root
         / "configs/stage1/recursive_detection_ce_latest/ablation/"
         "compact_full_prefix_rollin_balance2_a3_bsz8_ebs128.yaml",
-        repo_root
-        / "configs/stage1/recursive_detection_ce_latest/ablation/"
-        "compact_full_prefix_rollin_balance2_a4_eos_bsz8_ebs128.yaml",
     )
 
     for cfg_path in config_paths:

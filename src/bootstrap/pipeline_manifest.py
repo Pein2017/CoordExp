@@ -121,9 +121,6 @@ def build_pipeline_manifest(
                     "rollout_global_prefix_struct_ce_weight": 1.0,
                 }
 
-            if name == "loss_duplicate_burst_unlikelihood":
-                return {}
-
             if name == "bbox_geo":
                 return {
                     "smoothl1_weight": _finite_float(

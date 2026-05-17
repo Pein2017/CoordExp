@@ -53,8 +53,6 @@ def _make_stage2_training_config(training_section: dict) -> TrainingConfig:
 def _canonical_stage2_pipeline(
     *,
     token_ce_cfg: dict | None = None,
-    duplicate_burst_unlikelihood_cfg: dict | None = None,
-    duplicate_burst_unlikelihood_channels: list[str] | None = None,
     bbox_geo_cfg: dict | None = None,
     bbox_size_aux_cfg: dict | None = None,
     coord_reg_cfg: dict | None = None,
@@ -65,10 +63,6 @@ def _canonical_stage2_pipeline(
             "rollout_fn_desc_weight": 1.0,
             "rollout_global_prefix_struct_ce_weight": 1.0,
         }
-    if duplicate_burst_unlikelihood_cfg is None:
-        duplicate_burst_unlikelihood_cfg = {}
-    if duplicate_burst_unlikelihood_channels is None:
-        duplicate_burst_unlikelihood_channels = ["B"]
     if bbox_geo_cfg is None:
         bbox_geo_cfg = {
             "smoothl1_weight": 0.0,
@@ -93,10 +87,6 @@ def _canonical_stage2_pipeline(
             "temperature": 1.0,
             "target_sigma": 2.0,
             "target_truncate": None,
-            "adjacent_repulsion_weight": 0.0,
-            "adjacent_repulsion_filter_mode": "same_desc",
-            "adjacent_repulsion_margin_ratio": 0.05,
-            "adjacent_repulsion_copy_margin": 0.8,
         }
     return {
         "objective": [
@@ -107,14 +97,6 @@ def _canonical_stage2_pipeline(
                 "channels": ["A", "B"],
                 "application": {"preset": "anchor_text_only"},
                 "config": dict(token_ce_cfg),
-            },
-            {
-                "name": "loss_duplicate_burst_unlikelihood",
-                "enabled": True,
-                "weight": 1.0,
-                "channels": list(duplicate_burst_unlikelihood_channels),
-                "application": {"preset": "rollout_only"},
-                "config": dict(duplicate_burst_unlikelihood_cfg),
             },
             {
                 "name": "bbox_geo",
@@ -607,7 +589,7 @@ def test_stage2_pipeline_rejects_token_ce_legacy_invalid_multiplier() -> None:
         TrainingConfig.from_mapping(raw, prompts)
 
 
-def test_stage2_pipeline_requires_loss_duplicate_burst_unlikelihood_in_canonical_order() -> None:
+def test_stage2_pipeline_uses_canonical_objective_without_duplicate_burst_unlikelihood() -> None:
     raw = {
         "template": {"template": "qwen3_vl"},
         "custom": {
@@ -627,23 +609,32 @@ def test_stage2_pipeline_requires_loss_duplicate_burst_unlikelihood_in_canonical
         },
         "stage2_ab": {
             "schedule": {"b_ratio": 1.0},
-            "pipeline": {
-                "objective": _canonical_stage2_pipeline()["objective"][:1],
-                "diagnostics": [],
-            },
+            "pipeline": _canonical_stage2_pipeline(),
             "channel_b": {},
         },
     }
 
     prompts = ConfigLoader.resolve_prompts(raw)
-    with pytest.raises(
-        ValueError,
-        match=r"canonical module order",
-    ):
-        TrainingConfig.from_mapping(raw, prompts)
+    parsed = TrainingConfig.from_mapping(raw, prompts)
+
+    assert [
+        module.name for module in parsed.stage2_ab.pipeline.objective
+    ] == ["token_ce", "bbox_geo", "bbox_size_aux", "coord_reg"]
 
 
-def test_stage2_pipeline_requires_duplicate_burst_unlikelihood_channels_b_only() -> None:
+def test_stage2_pipeline_rejects_removed_duplicate_burst_unlikelihood_objective() -> None:
+    pipeline = _canonical_stage2_pipeline()
+    pipeline["objective"].insert(
+        1,
+        {
+            "name": "loss_duplicate_burst_unlikelihood",
+            "enabled": True,
+            "weight": 1.0,
+            "channels": ["B"],
+            "application": {"preset": "rollout_only"},
+            "config": {},
+        },
+    )
     raw = {
         "template": {"template": "qwen3_vl"},
         "custom": {
@@ -663,7 +654,7 @@ def test_stage2_pipeline_requires_duplicate_burst_unlikelihood_channels_b_only()
         },
         "stage2_ab": {
             "schedule": {"b_ratio": 1.0},
-            "pipeline": _canonical_stage2_pipeline(duplicate_burst_unlikelihood_channels=["A", "B"]),
+            "pipeline": pipeline,
             "channel_b": {},
         },
     }
@@ -671,42 +662,7 @@ def test_stage2_pipeline_requires_duplicate_burst_unlikelihood_channels_b_only()
     prompts = ConfigLoader.resolve_prompts(raw)
     with pytest.raises(
         ValueError,
-        match=r"loss_duplicate_burst_unlikelihood must declare channels \['B'\]",
-    ):
-        TrainingConfig.from_mapping(raw, prompts)
-
-
-def test_stage2_pipeline_requires_empty_loss_duplicate_burst_unlikelihood_config() -> None:
-    raw = {
-        "template": {"template": "qwen3_vl"},
-        "custom": {
-            "train_jsonl": "toy/train.jsonl",
-            "val_jsonl": "toy/val.jsonl",
-            "user_prompt": "{bbox}",
-            "emit_norm": "none",
-            "json_format": "standard",
-            "object_field_order": "desc_first",
-            "trainer_variant": "stage2_two_channel",
-        },
-        "training": {"per_device_train_batch_size": 1, "effective_batch_size": 1},
-        "rollout_matching": {
-            "rollout_backend": "hf",
-            "channel_b_decode_batch_size": 1,
-            "eval_decode_batch_size": 1,
-        },
-        "stage2_ab": {
-            "schedule": {"b_ratio": 1.0},
-            "pipeline": _canonical_stage2_pipeline(
-                duplicate_burst_unlikelihood_cfg={"unknown_weight": 1.0}
-            ),
-            "channel_b": {},
-        },
-    }
-
-    prompts = ConfigLoader.resolve_prompts(raw)
-    with pytest.raises(
-        ValueError,
-        match=r"Unknown stage2_ab\.pipeline\.objective\[1\]\.config keys",
+        match=r"loss_duplicate_burst_unlikelihood",
     ):
         TrainingConfig.from_mapping(raw, prompts)
 
@@ -796,10 +752,6 @@ def test_stage2_pipeline_rejects_unknown_module_config_keys() -> None:
         "temperature": 1.0,
         "target_sigma": 2.0,
         "target_truncate": None,
-        "adjacent_repulsion_weight": 0.0,
-        "adjacent_repulsion_filter_mode": "same_desc",
-        "adjacent_repulsion_margin_ratio": 0.05,
-        "adjacent_repulsion_copy_margin": 0.8,
     }
     raw = {
         "template": {"template": "qwen3_vl"},
@@ -830,7 +782,7 @@ def test_stage2_pipeline_rejects_unknown_module_config_keys() -> None:
     prompts = ConfigLoader.resolve_prompts(raw)
     with pytest.raises(
         ValueError,
-        match=r"Unknown stage2_ab\.pipeline\.objective\[4\]\.config keys.*unknown_weight",
+        match=r"Unknown stage2_ab\.pipeline\.objective\[3\]\.config keys.*unknown_weight",
     ):
         TrainingConfig.from_mapping(raw, prompts)
 
@@ -870,7 +822,7 @@ def test_stage2_pipeline_accepts_bbox_geo_center_size_keys() -> None:
 
     prompts = ConfigLoader.resolve_prompts(raw)
     cfg = TrainingConfig.from_mapping(raw, prompts)
-    bbox_geo_cfg = cfg.stage2_ab.pipeline.objective[2].config
+    bbox_geo_cfg = cfg.stage2_ab.pipeline.objective[1].config
     assert bbox_geo_cfg["parameterization"] == "center_size"
     assert float(bbox_geo_cfg["center_weight"]) == pytest.approx(1.0)
     assert float(bbox_geo_cfg["size_weight"]) == pytest.approx(0.25)
@@ -913,99 +865,7 @@ def test_stage2_pipeline_rejects_bbox_geo_invalid_parameterization(
     prompts = ConfigLoader.resolve_prompts(raw)
     with pytest.raises(
         ValueError,
-        match=r"stage2_ab\.pipeline\.objective\[2\]\.config\.parameterization must be one of \['center_size', 'xyxy'\]",
-    ):
-        TrainingConfig.from_mapping(raw, prompts)
-
-
-def test_stage2_pipeline_accepts_optional_adjacent_repulsion_coord_reg_keys() -> None:
-    raw = {
-        "template": {"template": "qwen3_vl"},
-        "custom": {
-            "train_jsonl": "toy/train.jsonl",
-            "val_jsonl": "toy/val.jsonl",
-            "user_prompt": "{bbox}",
-            "emit_norm": "none",
-            "json_format": "standard",
-            "object_field_order": "desc_first",
-            "trainer_variant": "stage2_two_channel",
-        },
-        "training": {"per_device_train_batch_size": 1, "effective_batch_size": 1},
-        "rollout_matching": {
-            "rollout_backend": "hf",
-            "channel_b_decode_batch_size": 1,
-            "eval_decode_batch_size": 1,
-        },
-        "stage2_ab": {
-            "schedule": {"b_ratio": 1.0},
-            "pipeline": _canonical_stage2_pipeline(
-                coord_reg_cfg={
-                    "coord_ce_weight": 0.0,
-                    "coord_gate_weight": 0.0,
-                    "text_gate_weight": 0.0,
-                    "soft_ce_weight": 0.0,
-                    "w1_weight": 0.0,
-                    "temperature": 1.0,
-                    "target_sigma": 2.0,
-                    "target_truncate": None,
-                    "adjacent_repulsion_weight": 0.05,
-                    "adjacent_repulsion_filter_mode": "same_desc",
-                    "adjacent_repulsion_margin_ratio": 0.05,
-                    "adjacent_repulsion_copy_margin": 0.8,
-                }
-            ),
-            "channel_b": {},
-        },
-    }
-
-    prompts = ConfigLoader.resolve_prompts(raw)
-    cfg = TrainingConfig.from_mapping(raw, prompts)
-    coord_reg_cfg = cfg.stage2_ab.pipeline.objective[4].config
-    assert coord_reg_cfg["adjacent_repulsion_weight"] == pytest.approx(0.05)
-    assert coord_reg_cfg["adjacent_repulsion_filter_mode"] == "same_desc"
-
-
-def test_stage2_pipeline_rejects_invalid_adjacent_repulsion_filter_mode() -> None:
-    raw = {
-        "template": {"template": "qwen3_vl"},
-        "custom": {
-            "train_jsonl": "toy/train.jsonl",
-            "val_jsonl": "toy/val.jsonl",
-            "user_prompt": "{bbox}",
-            "emit_norm": "none",
-            "json_format": "standard",
-            "object_field_order": "desc_first",
-            "trainer_variant": "stage2_two_channel",
-        },
-        "training": {"per_device_train_batch_size": 1, "effective_batch_size": 1},
-        "rollout_matching": {
-            "rollout_backend": "hf",
-            "channel_b_decode_batch_size": 1,
-            "eval_decode_batch_size": 1,
-        },
-        "stage2_ab": {
-            "schedule": {"b_ratio": 1.0},
-            "pipeline": _canonical_stage2_pipeline(
-                coord_reg_cfg={
-                    "coord_ce_weight": 0.0,
-                    "coord_gate_weight": 0.0,
-                    "text_gate_weight": 0.0,
-                    "soft_ce_weight": 0.0,
-                    "w1_weight": 0.0,
-                    "temperature": 1.0,
-                    "target_sigma": 2.0,
-                    "target_truncate": None,
-                    "adjacent_repulsion_filter_mode": "unsupported",
-                }
-            ),
-            "channel_b": {},
-        },
-    }
-
-    prompts = ConfigLoader.resolve_prompts(raw)
-    with pytest.raises(
-        ValueError,
-        match=r"stage2_ab\.pipeline\.objective\[4\]\.config\.adjacent_repulsion_filter_mode",
+        match=r"stage2_ab\.pipeline\.objective\[1\]\.config\.parameterization must be one of \['center_size', 'xyxy'\]",
     ):
         TrainingConfig.from_mapping(raw, prompts)
 
@@ -1042,50 +902,7 @@ def test_stage2_pipeline_rejects_removed_coord_reg_keys(removed_key: str) -> Non
     prompts = ConfigLoader.resolve_prompts(raw)
     with pytest.raises(
         ValueError,
-        match=rf"Unknown stage2_ab\.pipeline\.objective\[4\]\.config keys.*{removed_key}",
-    ):
-        TrainingConfig.from_mapping(raw, prompts)
-
-
-def test_stage2_pipeline_rejects_deprecated_stop_signal_damping() -> None:
-    raw = {
-        "template": {"template": "qwen3_vl"},
-        "custom": {
-            "train_jsonl": "toy/train.jsonl",
-            "val_jsonl": "toy/val.jsonl",
-            "user_prompt": "{bbox}",
-            "emit_norm": "none",
-            "json_format": "standard",
-            "object_field_order": "desc_first",
-            "trainer_variant": "stage2_two_channel",
-        },
-        "training": {"per_device_train_batch_size": 1, "effective_batch_size": 1},
-        "rollout_matching": {
-            "rollout_backend": "hf",
-            "channel_b_decode_batch_size": 1,
-            "eval_decode_batch_size": 1,
-        },
-        "stage2_ab": {
-            "schedule": {"b_ratio": 1.0},
-            "pipeline": _canonical_stage2_pipeline(
-                token_ce_cfg={
-                    "desc_ce_weight": 1.0,
-                    "rollout_fn_desc_weight": 1.0,
-                    "rollout_global_prefix_struct_ce_weight": 1.0,
-                    "stop_signal_damping": {"enabled": False},
-                }
-            ),
-            "channel_b": {},
-        },
-    }
-
-    prompts = ConfigLoader.resolve_prompts(raw)
-    with pytest.raises(
-        ValueError,
-        match=(
-            r"stage2_ab\.pipeline\.objective\[0\]\.config\.stop_signal_damping "
-            r"is deprecated and unsupported"
-        ),
+        match=rf"Unknown stage2_ab\.pipeline\.objective\[3\]\.config keys.*{removed_key}",
     ):
         TrainingConfig.from_mapping(raw, prompts)
 
@@ -1220,10 +1037,6 @@ def test_rollout_pipeline_rejects_unknown_module_config_keys() -> None:
         "temperature": 1.0,
         "target_sigma": 2.0,
         "target_truncate": None,
-        "adjacent_repulsion_weight": 0.0,
-        "adjacent_repulsion_filter_mode": "same_desc",
-        "adjacent_repulsion_margin_ratio": 0.05,
-        "adjacent_repulsion_copy_margin": 0.8,
     }
     raw = {
         "template": {"template": "qwen3_vl"},
@@ -1378,55 +1191,6 @@ def test_rollout_pipeline_rejects_removed_coord_reg_keys(removed_key: str) -> No
     with pytest.raises(
         ValueError,
         match=rf"Unknown rollout_matching\.pipeline\.objective\[1\]\.config keys.*{removed_key}",
-    ):
-        TrainingConfig.from_mapping(raw, prompts)
-
-
-def test_rollout_pipeline_rejects_deprecated_stop_signal_damping() -> None:
-    raw = {
-        "template": {"template": "qwen3_vl"},
-        "custom": {
-            "train_jsonl": "toy/train.jsonl",
-            "val_jsonl": "toy/val.jsonl",
-            "user_prompt": "{bbox}",
-            "emit_norm": "none",
-            "json_format": "standard",
-            "object_field_order": "desc_first",
-            "trainer_variant": "stage2_rollout_aligned",
-        },
-        "training": {"per_device_train_batch_size": 1, "effective_batch_size": 1},
-        "rollout_matching": {
-            "rollout_backend": "hf",
-            "channel_b_decode_batch_size": 1,
-            "eval_decode_batch_size": 1,
-            "pipeline": {
-                "objective": [
-                    {
-                        "name": "token_ce",
-                        "enabled": True,
-                        "weight": 1.0,
-                        "channels": ["A", "B"],
-                        "application": {"preset": "anchor_text_only"},
-                        "config": {
-                            "desc_ce_weight": 1.0,
-                            "rollout_fn_desc_weight": 1.0,
-                            "rollout_global_prefix_struct_ce_weight": 1.0,
-                            "stop_signal_damping": {"enabled": True},
-                        },
-                    }
-                ],
-                "diagnostics": [],
-            },
-        },
-    }
-
-    prompts = ConfigLoader.resolve_prompts(raw)
-    with pytest.raises(
-        ValueError,
-        match=(
-            r"rollout_matching\.pipeline\.objective\[0\]\.config\.stop_signal_damping "
-            r"is deprecated and unsupported"
-        ),
     ):
         TrainingConfig.from_mapping(raw, prompts)
 
@@ -1702,10 +1466,6 @@ def test_stage2_build_pipeline_manifest_requires_explicit_pipeline():
         "temperature": 0.9,
         "target_sigma": 1.7,
         "target_truncate": 8,
-        "adjacent_repulsion_weight": 0.0,
-        "adjacent_repulsion_filter_mode": "same_desc",
-        "adjacent_repulsion_margin_ratio": 0.05,
-        "adjacent_repulsion_copy_margin": 0.8,
     }
 
     with pytest.raises(ValueError, match=r"requires an explicit pipeline config"):
@@ -1713,7 +1473,6 @@ def test_stage2_build_pipeline_manifest_requires_explicit_pipeline():
             cfg,
             default_objective=[
                 "token_ce",
-                "loss_duplicate_burst_unlikelihood",
                 "bbox_geo",
                 "bbox_size_aux",
                 "coord_reg",
@@ -1741,13 +1500,6 @@ def test_pipeline_manifest_respects_authored_sequence_and_empty_diagnostics():
                     "channels": ("A", "B"),
                     "config": {},
                 },
-                {
-                    "name": "loss_duplicate_burst_unlikelihood",
-                    "enabled": True,
-                    "weight": 1.0,
-                    "channels": ("B",),
-                    "config": {},
-                },
             ),
             "diagnostics": (),
         }
@@ -1757,7 +1509,6 @@ def test_pipeline_manifest_respects_authored_sequence_and_empty_diagnostics():
         cfg,
         default_objective=[
             "token_ce",
-            "loss_duplicate_burst_unlikelihood",
             "bbox_geo",
             "bbox_size_aux",
             "coord_reg",
@@ -1770,7 +1521,7 @@ def test_pipeline_manifest_respects_authored_sequence_and_empty_diagnostics():
         coord_soft_cfg=None,
     )
 
-    assert [m["name"] for m in manifest["objective"]] == ["token_ce", "loss_duplicate_burst_unlikelihood"]
+    assert [m["name"] for m in manifest["objective"]] == ["token_ce"]
     assert manifest["diagnostics"] == []
 
 

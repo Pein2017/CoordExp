@@ -25,8 +25,6 @@ from src.trainers.teacher_forcing.module_registry import (
     OBJECTIVE_CONFIG_ALLOWLIST,
     OBJECTIVE_OPTIONAL_CONFIG_KEYS,
     validate_bbox_geo_config_values,
-    normalize_token_ce_stop_signal_damping_config,
-    validate_adjacent_repulsion_config_values,
 )
 
 
@@ -555,11 +553,6 @@ class RolloutMatchingConfig:
                                 f"must be one of {sorted(str(x) for x in allowed_presets)}; got {preset!r}"
                             )
 
-                        if name == "token_ce" and "stop_signal_damping" in spec.config:
-                            normalize_token_ce_stop_signal_damping_config(
-                                spec.config.get("stop_signal_damping"),
-                                path=f"{path}[{idx}].config.stop_signal_damping",
-                            )
                         if name == "token_ce" and "struct_ce_weight" in spec.config:
                             raise ValueError(
                                 f"{path}[{idx}].config.struct_ce_weight is deprecated and unsupported. "
@@ -589,12 +582,6 @@ class RolloutMatchingConfig:
                             spec.config.setdefault("parameterization", "xyxy")
                             spec.config.setdefault("center_weight", 1.0)
                             spec.config.setdefault("size_weight", 1.0)
-                    if name == "coord_reg":
-                        validate_adjacent_repulsion_config_values(
-                            spec.config,
-                            path=f"{path}[{idx}].config",
-                        )
-
             _validate_specs(
                 self.pipeline.objective,
                 allowed_names=ALLOWED_OBJECTIVE_MODULES,

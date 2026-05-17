@@ -1,0 +1,285 @@
+{
+  "sample_id": "stage1-golden-compact",
+  "surface": {
+    "surface_id": "stage1_compact_trie_ce",
+    "pipeline_id": "stage1_compact_trie_ce",
+    "lifecycle": "shadow",
+    "enabled_objectives": [
+      "trie_ce",
+      "coord_soft_ce"
+    ]
+  },
+  "supervision_plan": {
+    "stage": "stage1",
+    "channel": "primary",
+    "template_id": "compact_full",
+    "object_ids": [
+      "stage1-golden-compact:ann-100:src-2",
+      "stage1-golden-compact:ann-101:src-4",
+      "stage1-golden-compact:ann-102:src-7"
+    ],
+    "descriptions": [
+      "traffic light",
+      "red car",
+      "person"
+    ]
+  },
+  "encoding": {
+    "template_id": "compact_full",
+    "template_version": 1,
+    "rendered_assistant_text": "<|object_ref_start|>traffic light<|box_start|><|coord_0|><|coord_1|><|coord_20|><|coord_30|>\n<|object_ref_start|>red car<|box_start|><|coord_22|><|coord_31|><|coord_80|><|coord_90|>\n<|object_ref_start|>person<|box_start|><|coord_900|><|coord_910|><|coord_998|><|coord_999|>",
+    "object_entries": [
+      {
+        "object_instance_id": "stage1-golden-compact:ann-100:src-2",
+        "object_index": 0,
+        "source_object_index": 2
+      },
+      {
+        "object_instance_id": "stage1-golden-compact:ann-101:src-4",
+        "object_index": 1,
+        "source_object_index": 4
+      },
+      {
+        "object_instance_id": "stage1-golden-compact:ann-102:src-7",
+        "object_index": 2,
+        "source_object_index": 7
+      }
+    ],
+    "coordinate_slots": [
+      {
+        "object_index": 0,
+        "slot_name": "x1",
+        "token_text": "<|coord_0|>",
+        "label_positions": [
+          24
+        ]
+      },
+      {
+        "object_index": 0,
+        "slot_name": "y1",
+        "token_text": "<|coord_1|>",
+        "label_positions": [
+          25
+        ]
+      },
+      {
+        "object_index": 0,
+        "slot_name": "x2",
+        "token_text": "<|coord_20|>",
+        "label_positions": [
+          26
+        ]
+      },
+      {
+        "object_index": 0,
+        "slot_name": "y2",
+        "token_text": "<|coord_30|>",
+        "label_positions": [
+          27
+        ]
+      },
+      {
+        "object_index": 1,
+        "slot_name": "x1",
+        "token_text": "<|coord_22|>",
+        "label_positions": [
+          34
+        ]
+      },
+      {
+        "object_index": 1,
+        "slot_name": "y1",
+        "token_text": "<|coord_31|>",
+        "label_positions": [
+          35
+        ]
+      },
+      {
+        "object_index": 1,
+        "slot_name": "x2",
+        "token_text": "<|coord_80|>",
+        "label_positions": [
+          36
+        ]
+      },
+      {
+        "object_index": 1,
+        "slot_name": "y2",
+        "token_text": "<|coord_90|>",
+        "label_positions": [
+          37
+        ]
+      },
+      {
+        "object_index": 2,
+        "slot_name": "x1",
+        "token_text": "<|coord_900|>",
+        "label_positions": [
+          42
+        ]
+      },
+      {
+        "object_index": 2,
+        "slot_name": "y1",
+        "token_text": "<|coord_910|>",
+        "label_positions": [
+          43
+        ]
+      },
+      {
+        "object_index": 2,
+        "slot_name": "x2",
+        "token_text": "<|coord_998|>",
+        "label_positions": [
+          44
+        ]
+      },
+      {
+        "object_index": 2,
+        "slot_name": "y2",
+        "token_text": "<|coord_999|>",
+        "label_positions": [
+          45
+        ]
+      }
+    ]
+  },
+  "projection": {
+    "schema_positions": [
+      19,
+      23,
+      28,
+      29,
+      33,
+      38,
+      39,
+      41
+    ],
+    "description_positions": [
+      20,
+      21,
+      22,
+      30,
+      31,
+      32,
+      40
+    ],
+    "coordinate_positions": [
+      24,
+      25,
+      26,
+      27,
+      34,
+      35,
+      36,
+      37,
+      42,
+      43,
+      44,
+      45
+    ],
+    "stop_positions": [
+      46
+    ],
+    "object_count": 3
+  },
+  "selected_targets": {
+    "trie": {
+      "label_position": 20,
+      "label_token_id": 11,
+      "label_token_text": "traffic",
+      "target_token_ids": [
+        11,
+        19,
+        25
+      ],
+      "target_token_texts": [
+        "traffic",
+        "red",
+        "person"
+      ],
+      "target_token_weights": [
+        0.6,
+        0.25,
+        0.15
+      ]
+    },
+    "coordinate": {
+      "label_position": 24,
+      "label_token_id": 15,
+      "label_token_text": "<|coord_0|>",
+      "target_token_ids": [
+        15,
+        16
+      ],
+      "target_token_texts": [
+        "<|coord_0|>",
+        "<|coord_1|>"
+      ],
+      "target_token_weights": [
+        0.8,
+        0.2
+      ]
+    }
+  },
+  "spans": [
+    {
+      "role": "free_text",
+      "label_positions": [
+        20
+      ],
+      "distribution": {
+        "kind": "multi_positive_token",
+        "token_ids": [
+          11,
+          19,
+          25
+        ],
+        "token_weights": [
+          0.6,
+          0.25,
+          0.15
+        ]
+      },
+      "provenance": "stage1_compact_fixture_builder"
+    },
+    {
+      "role": "coordinate",
+      "label_positions": [
+        24
+      ],
+      "distribution": {
+        "kind": "coordinate_soft_token",
+        "token_weights": [
+          {
+            "token_id": 15,
+            "weight": 0.8
+          },
+          {
+            "token_id": 16,
+            "weight": 0.2
+          }
+        ],
+        "target_family": "iou_gibbs_v0",
+        "loss_mode": "full_vocab_ce"
+      },
+      "provenance": "stage1_compact_fixture_builder"
+    }
+  ],
+  "mapper": [
+    {
+      "label_position": 20,
+      "row_index": 19
+    },
+    {
+      "label_position": 24,
+      "row_index": 23
+    }
+  ],
+  "diagnostics": {
+    "object_count": 3,
+    "coordinate_slot_count": 12,
+    "span_count": 2,
+    "label_position_count": 28
+  }
+}

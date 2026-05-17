@@ -191,7 +191,7 @@ def test_recursive_detection_ce_mixin_uses_public_trie_weight_names() -> None:
     assert trainer.custom_metrics["train"]["recursive_detection_ce/trie_support_weight"].values[-1] == pytest.approx(2.0)
 
 
-def test_recursive_detection_ce_mixin_uses_public_boundary_weight_names() -> None:
+def test_recursive_detection_ce_mixin_supervises_boundary_tokens_as_ordinary_ce() -> None:
     logits = torch.tensor(
         [[[-2.0, 1.0, 3.0], [-2.0, 0.5, 2.0], [0.0, 0.0, 0.0]]],
         dtype=torch.float32,
@@ -202,9 +202,6 @@ def test_recursive_detection_ce_mixin_uses_public_boundary_weight_names() -> Non
             enabled=True,
             trie_support_weight=1.0,
             trie_balance_weight=1.0,
-            separator_continue_weight=2.0,
-            eos_stop_weight=0.5,
-            boundary_component_weight=0.3,
         )
     )
     targets = RecursiveDetectionTargets(
@@ -260,19 +257,8 @@ def test_recursive_detection_ce_mixin_uses_public_boundary_weight_names() -> Non
     log_probs = torch.log_softmax(logits[0, :2].float(), dim=-1)
     separator_ce = -log_probs[0, 1]
     eos_ce = -log_probs[1, 2]
-    expected = (2.0 * separator_ce + 0.5 * eos_ce) / 2.5
-    metrics = trainer.custom_metrics["train"]
-
+    expected = (separator_ce + eos_ce) / 2.0
     assert loss.item() == pytest.approx(expected.item())
-    assert metrics[
-        "recursive_detection_ce/boundary/separator_continue_weight"
-    ].values[-1] == pytest.approx(2.0)
-    assert metrics["recursive_detection_ce/boundary/eos_stop_weight"].values[-1] == pytest.approx(
-        0.5
-    )
-    assert metrics[
-        "recursive_detection_ce/boundary/component_weight"
-    ].values[-1] == pytest.approx(0.3)
 
 
 def test_recursive_detection_ce_mixin_requires_sidecar_when_enabled() -> None:

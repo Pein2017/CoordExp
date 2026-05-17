@@ -949,10 +949,7 @@ def _latest_detection_objective_runtime_payload(training_config: Any) -> dict[st
         return None
     template_cfg = getattr(training_config, "detection_template", None)
     target_cfg = _get_section_value(objective_cfg, "target")
-    boundary_cfg = _get_section_value(objective_cfg, "boundary")
     rollin_cfg = _get_section_value(objective_cfg, "rollin")
-    eos_cfg = _get_section_value(objective_cfg, "eos")
-    eos_trust_cfg = _get_section_value(eos_cfg, "eos_trust_weight")
     type_gate_cfg = _get_section_value(objective_cfg, "type_gate")
     k_distribution = _get_section_value(rollin_cfg, "k_distribution")
     payload: dict[str, Any] = {
@@ -972,31 +969,11 @@ def _latest_detection_objective_runtime_payload(training_config: Any) -> dict[st
                 "balance_weight": _get_section_value(target_cfg, "balance_weight"),
             }
         )
-    if boundary_cfg is not None:
-        payload.update(
-            {
-                "boundary_type": _get_section_value(boundary_cfg, "type"),
-                "separator_continue_weight": _get_section_value(
-                    boundary_cfg, "separator_continue_weight"
-                ),
-                "eos_stop_weight": _get_section_value(boundary_cfg, "eos_stop_weight"),
-                "boundary_component_weight": _get_section_value(
-                    boundary_cfg, "component_weight"
-                ),
-            }
-        )
     if rollin_cfg is not None:
         payload.update(
             {
                 "rollin_source": _get_section_value(rollin_cfg, "source"),
                 "rollin_k_distribution": _get_section_value(k_distribution, "type"),
-            }
-        )
-    if eos_cfg is not None:
-        payload.update(
-            {
-                "eos_token": _get_section_value(eos_cfg, "eos_token"),
-                "eos_trust_weight_source": _get_section_value(eos_trust_cfg, "source"),
             }
         )
     if type_gate_cfg is not None:
@@ -3628,7 +3605,6 @@ def main():
             stage2_ab_cfg,
             default_objective=[
                 "token_ce",
-                "loss_duplicate_burst_unlikelihood",
                 "bbox_geo",
                 "bbox_size_aux",
                 "coord_reg",

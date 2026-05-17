@@ -148,7 +148,7 @@ def test_stage2_pending_log_aggregates_duplicate_metrics_with_mean_and_sum_seman
             "dup/raw/desc_entropy": 0.4,
             "dup/raw/near_iou90_pairs_same_desc_count": 3.0,
             "stage2_ab/channel_b/dup/N_clusters_total": 4.0,
-            "stage2_ab/channel_b/dup/N_ul_boundaries": 1.0,
+            "stage2_ab/channel_b/dup/N_duplicate_control_first_divergence_boundaries": 1.0,
             "stage2/_log_weight": 1.0,
         }
     )
@@ -160,7 +160,7 @@ def test_stage2_pending_log_aggregates_duplicate_metrics_with_mean_and_sum_seman
             "dup/raw/desc_entropy": 1.2,
             "dup/raw/near_iou90_pairs_same_desc_count": 5.0,
             "stage2_ab/channel_b/dup/N_clusters_total": 7.0,
-            "stage2_ab/channel_b/dup/N_ul_boundaries": 2.0,
+            "stage2_ab/channel_b/dup/N_duplicate_control_first_divergence_boundaries": 2.0,
             "stage2/_log_weight": 3.0,
         }
     )
@@ -175,7 +175,9 @@ def test_stage2_pending_log_aggregates_duplicate_metrics_with_mean_and_sum_seman
     assert out["dup/raw/desc_entropy"] == pytest.approx((0.4 * 1.0 + 1.2 * 3.0) / 4.0)
     assert out["dup/raw/near_iou90_pairs_same_desc_count"] == pytest.approx(8.0)
     assert out["stage2_ab/channel_b/dup/N_clusters_total"] == pytest.approx(11.0)
-    assert out["stage2_ab/channel_b/dup/N_ul_boundaries"] == pytest.approx(3.0)
+    assert out[
+        "stage2_ab/channel_b/dup/N_duplicate_control_first_divergence_boundaries"
+    ] == pytest.approx(3.0)
 
 def test_stage2_metric_snapshots_carry_forward_channel_specific_keys() -> None:
     snapshots: dict[str, float] = {}

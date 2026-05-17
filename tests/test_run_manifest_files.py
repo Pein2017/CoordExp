@@ -95,3 +95,28 @@ def test_write_run_manifest_files_writes_required_json(tmp_path: Path) -> None:
     eval_provenance = json.loads(eval_provenance_path.read_text(encoding="utf-8"))
     assert eval_provenance["split"] == "eval"
     assert eval_provenance["provenance"]["dataset_jsonl"] == "val.jsonl"
+
+
+def test_write_run_manifest_files_tracks_source_config_copies(tmp_path: Path) -> None:
+    config_path = tmp_path / "unit.yaml"
+    base_config_path = tmp_path / "base.yaml"
+    config_path.write_text("training:\n  output_dir: out\n", encoding="utf-8")
+    base_config_path.write_text("seed: 17\n", encoding="utf-8")
+    cfg = _TinyCfg(output_dir=Path("out"), template={"max_pixels": 10485760})
+
+    written = write_run_manifest_files(
+        output_dir=tmp_path / "run",
+        training_config=cfg,
+        config_path=str(config_path),
+        base_config_path=str(base_config_path),
+        dataset_seed=17,
+    )
+
+    assert written["config_source"] == "config_source.yaml"
+    assert written["base_config_source"] == "base_config_source.yaml"
+    assert (tmp_path / "run" / "config_source.yaml").read_text(
+        encoding="utf-8"
+    ) == config_path.read_text(encoding="utf-8")
+    assert (tmp_path / "run" / "base_config_source.yaml").read_text(
+        encoding="utf-8"
+    ) == base_config_path.read_text(encoding="utf-8")

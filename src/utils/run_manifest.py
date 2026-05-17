@@ -211,9 +211,11 @@ def write_run_manifest_files(
     try:
         cfg_src = Path(str(config_path))
         if cfg_src.is_file():
-            (out_dir / "config_source.yaml").write_text(
+            config_source_path = out_dir / "config_source.yaml"
+            config_source_path.write_text(
                 cfg_src.read_text(encoding="utf-8"), encoding="utf-8"
             )
+            written["config_source"] = str(config_source_path.name)
     except Exception as exc:
         logger.warning("Failed to persist config_source.yaml: %r", exc)
 
@@ -221,9 +223,11 @@ def write_run_manifest_files(
         try:
             base_src = Path(str(base_config_path))
             if base_src.is_file():
-                (out_dir / "base_config_source.yaml").write_text(
+                base_config_source_path = out_dir / "base_config_source.yaml"
+                base_config_source_path.write_text(
                     base_src.read_text(encoding="utf-8"), encoding="utf-8"
                 )
+                written["base_config_source"] = str(base_config_source_path.name)
         except Exception as exc:
             logger.warning("Failed to persist base_config_source.yaml: %r", exc)
 

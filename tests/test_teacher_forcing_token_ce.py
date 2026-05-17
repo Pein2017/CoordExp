@@ -80,47 +80,6 @@ def test_token_ce_chunked_matches_dense_reference() -> None:
     assert logits.grad is not None
 
 
-def test_token_ce_rejects_deprecated_stop_signal_damping_config() -> None:
-    vocab = 16
-    input_ids = torch.tensor([[1, 2, 3, 4]], dtype=torch.long)
-    logits = torch.randn(1, input_ids.shape[1], vocab, dtype=torch.float32)
-
-    context = TeacherForcingContext(
-        channel="A",
-        registry_context="gt",
-        input_ids=input_ids,
-        logits=logits,
-        logits_ce=logits,
-        meta=[
-            {
-                "prompt_len": 1,
-                "prefix_len": 0,
-                "train_len": 3,
-                "tail_ignore_pos": [],
-                "tail_desc_pos": [],
-                "tail_closure_pos": [2],
-                "prefix_struct_pos": [],
-                "drop_invalid_total": 0,
-            }
-        ],
-        coord_token_ids=[],
-        temperature=1.0,
-    )
-    spec = PipelineModuleSpec(
-        name="token_ce",
-        enabled=True,
-        weight=1.0,
-        channels=("A", "B"),
-        config={"stop_signal_damping": {"enabled": False}},
-    )
-
-    with pytest.raises(
-        ValueError,
-        match=r"token_ce\.config\.stop_signal_damping is deprecated and unsupported",
-    ):
-        run_token_ce_module(context=context, spec=spec)
-
-
 def test_token_ce_global_prefix_struct_ce_supervises_channel_b_prefix_tokens() -> None:
     vocab = 32
     input_ids = torch.tensor([[7, 11, 12, 13, 14]], dtype=torch.long)

@@ -32,13 +32,6 @@ stage2_ab:
           desc_ce_weight: 1.0
           rollout_fn_desc_weight: 1.0
           rollout_global_prefix_struct_ce_weight: 1.0
-      - name: loss_duplicate_burst_unlikelihood
-        enabled: true
-        weight: 1.0
-        channels: [B]
-        application:
-          preset: rollout_only
-        config: {}
       - name: bbox_geo
         enabled: true
         weight: 1.0
@@ -76,10 +69,6 @@ stage2_ab:
           temperature: 1.0
           target_sigma: 2.0
           target_truncate: 8
-          adjacent_repulsion_weight: 0.0
-          adjacent_repulsion_filter_mode: same_desc
-          adjacent_repulsion_margin_ratio: 0.05
-          adjacent_repulsion_copy_margin: 0.8
     diagnostics:
       - name: coord_diag
         enabled: true

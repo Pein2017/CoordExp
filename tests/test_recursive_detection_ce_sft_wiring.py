@@ -68,11 +68,6 @@ def test_sft_resolves_prefix_rollin_runtime_cfg_from_objectized_target() -> None
                     support_weight=1.0,
                     balance_weight=2.0,
                 ),
-                boundary=SimpleNamespace(
-                    separator_continue_weight=0.5,
-                    eos_stop_weight=0.5,
-                    component_weight=0.3,
-                ),
             )
         )
     )

@@ -63,13 +63,8 @@ _OBJECT_ROLE_WEIGHTS = {
     "entry_trie_decision": 0.15,
     "object_control": 0.05,
 }
-_BOUNDARY_ROLE_WEIGHTS = {
-    "separator_continue": 0.50,
-    "terminal_stop": 0.50,
-}
 _IMAGE_MIXTURE_WEIGHTS = {
     "objects": 1.00,
-    "boundary": 0.30,
     "schema": 0.10,
 }
 _STATE_WEIGHTING_STRATEGIES = {
@@ -125,7 +120,7 @@ class LossNormalizationDiagnostics:
     boundary_fraction: float
     effective_weighted_trie_contribution: float
     component_losses: dict[str, float]
-    component_weights: dict[str, float]
+    bucket_weights: dict[str, float]
 
 
 @dataclass(frozen=True)
@@ -227,7 +222,6 @@ class PreparedPrefixRollinExample:
     recursive_detection_targets: RecursiveDetectionTargets
     debug_spans: Mapping[str, PrefixRollinDebugSpan]
     stop_contract: CompactTrainingStopContract
-    eos_trust_weight: float = 1.0
 
     @property
     def object_ordering(self) -> ObjectOrderingPlan:
@@ -284,7 +278,6 @@ def prepare_detection_training_example(
     mode: DetectionTrainingMode,
     state_weighting: StateWeightingStrategy = "uniform_permutation",
     normalization: LossNormalizationStrategy = "semantic_image_bucket_balanced",
-    eos_trust_weight: float | None = None,
     system_prompt: str | None = None,
     user_content: str = "<image>",
     messages: Sequence[Mapping[str, Any]] | None = None,
@@ -316,22 +309,6 @@ def prepare_detection_training_example(
             state_weighting=state_weighting,
             normalization=normalization,
         )
-        if eos_trust_weight is not None:
-            eos_loss_weight = _validate_eos_trust_weight(eos_trust_weight)
-            if tokenized.assistant_stop_token_span is None:
-                raise ValueError(
-                    "random_permutation_et_rmp_ce EOS trust requires assistant "
-                    "<|im_end|> span"
-                )
-            eos_positions = tuple(tokenized.assistant_stop_token_span.token_indices())
-            recursive_detection_targets = replace(
-                recursive_detection_targets,
-                token_targets=_apply_eos_trust_weight(
-                    recursive_detection_targets.token_targets,
-                    eos_positions=eos_positions,
-                    eos_trust_weight=eos_loss_weight,
-                ),
-            )
 
     return PreparedDetectionExample(
         mode=mode,
@@ -354,7 +331,6 @@ def build_compact_prefix_rollin_example(
     rollin_order: Sequence[NormalizedDetectionObject],
     k: int,
     tokenizer: TokenizerWithOffsets,
-    eos_trust_weight: float = 1.0,
     normalized_sample: NormalizedDetectionSample | None = None,
     type_gate_config: Any | None = None,
     system_prompt: str | None = None,
@@ -363,7 +339,6 @@ def build_compact_prefix_rollin_example(
 ) -> PreparedPrefixRollinExample:
     """Build one compact_full prefix-rollin example for tests and materialization."""
 
-    eos_loss_weight = _validate_eos_trust_weight(eos_trust_weight)
     source_objects = tuple(
         normalized_sample.objects if normalized_sample is not None else objects
     )
@@ -436,11 +411,6 @@ def build_compact_prefix_rollin_example(
         for target in full_targets.token_targets
         if target.position in active_positions
     )
-    filtered_targets = _apply_eos_trust_weight(
-        filtered_targets,
-        eos_positions=eos_positions,
-        eos_trust_weight=eos_loss_weight,
-    )
     filtered_targets = _apply_prefix_rollin_type_gate(
         filtered_targets,
         tokenizer=tokenizer,
@@ -483,7 +453,6 @@ def build_compact_prefix_rollin_example(
         recursive_detection_targets=recursive_detection_targets,
         debug_spans=debug_spans,
         stop_contract=stop_contract,
-        eos_trust_weight=eos_loss_weight,
     )
 
 
@@ -592,101 +561,6 @@ def _cfg_value(cfg: Any, field_name: str, default: Any = None) -> Any:
     return getattr(cfg, field_name, default)
 
 
-def expected_unlabeled_count(
-    gt_count: int,
-    *,
-    intercept: float = -0.35,
-    slope: float = 0.43,
-    floor: float = 0.0,
-) -> float:
-    if type(gt_count) is not int or gt_count < 0:
-        raise ValueError("gt_count must be a non-negative integer")
-    raw = float(intercept) + float(slope) * float(gt_count)
-    return max(float(floor), raw)
-
-
-def eos_trust_weight_from_expected_unlabeled_count(
-    expected_count: float,
-    *,
-    penalty_per_missing: float = 1.0,
-    temperature: float = 1.0,
-    min_weight: float = 0.0,
-    max_weight: float = 1.0,
-) -> float:
-    if not math.isfinite(float(expected_count)):
-        raise ValueError("expected unlabeled count must be finite")
-    if (
-        not math.isfinite(float(penalty_per_missing))
-        or float(penalty_per_missing) < 0.0
-    ):
-        raise ValueError(
-            "EOS prior penalty_per_missing must be finite and non-negative"
-        )
-    if not math.isfinite(float(temperature)) or float(temperature) <= 0.0:
-        raise ValueError("EOS prior temperature must be finite and positive")
-    if (
-        not math.isfinite(float(min_weight))
-        or not math.isfinite(float(max_weight))
-        or float(min_weight) < 0.0
-        or float(max_weight) < float(min_weight)
-        or float(max_weight) > 1.0
-    ):
-        raise ValueError(
-            "EOS prior clamp must satisfy 0 <= min_weight <= max_weight <= 1"
-        )
-    raw = math.exp(
-        -float(penalty_per_missing)
-        * max(0.0, float(expected_count))
-        / float(temperature)
-    )
-    return min(max(raw, float(min_weight)), float(max_weight))
-
-
-def compute_eos_trust_weight(gt_count: int, cfg: Any) -> float:
-    source = str(_cfg_value(cfg, "source", "") or "")
-    if source == "disabled_ablation":
-        return 0.0
-    if source == "constant_ablation":
-        value = _cfg_value(cfg, "value")
-        if value is None:
-            raise ValueError("constant_ablation EOS trust weight requires value")
-        result = float(value)
-        if not math.isfinite(result) or result < 0.0 or result > 1.0:
-            raise ValueError(
-                "constant_ablation EOS trust weight value must be in [0, 1]"
-            )
-        return result
-    if source == "empirical_unlabeled_poisson_v0":
-        expected_cfg = _cfg_value(cfg, "expected_unlabeled_count")
-        mapping_cfg = _cfg_value(cfg, "trust_mapping")
-        if expected_cfg is None or mapping_cfg is None:
-            raise ValueError(
-                "empirical_unlabeled_poisson_v0 requires expected_unlabeled_count "
-                "and trust_mapping"
-            )
-        expected = expected_unlabeled_count(
-            gt_count,
-            intercept=float(_cfg_value(expected_cfg, "intercept", -0.35)),
-            slope=float(_cfg_value(expected_cfg, "slope", 0.43)),
-            floor=float(_cfg_value(expected_cfg, "floor", 0.0)),
-        )
-        return eos_trust_weight_from_expected_unlabeled_count(
-            expected,
-            penalty_per_missing=float(
-                _cfg_value(mapping_cfg, "penalty_per_missing", 1.0)
-            ),
-            temperature=float(_cfg_value(mapping_cfg, "temperature", 1.0)),
-            min_weight=float(_cfg_value(mapping_cfg, "min_weight", 0.0)),
-            max_weight=float(_cfg_value(mapping_cfg, "max_weight", 1.0)),
-        )
-    if source == "calibrated_formula_ref":
-        raise ValueError(
-            "calibrated_formula_ref EOS trust weights require a calibrated formula "
-            "runtime implementation"
-        )
-    raise ValueError(f"unsupported EOS trust weight source {source!r}")
-
-
 def _apply_prefix_rollin_type_gate(
     token_targets: Sequence[TokenTarget],
     *,
@@ -732,31 +606,6 @@ def _apply_prefix_rollin_type_gate(
             )
         )
     return tuple(out)
-
-
-def _validate_eos_trust_weight(value: float) -> float:
-    weight = float(value)
-    if isinstance(value, bool) or not math.isfinite(weight) or weight < 0.0:
-        raise ValueError("eos_trust_weight must be a non-negative finite float")
-    return weight
-
-
-def _apply_eos_trust_weight(
-    token_targets: tuple[TokenTarget, ...],
-    *,
-    eos_positions: Sequence[int],
-    eos_trust_weight: float,
-) -> tuple[TokenTarget, ...]:
-    eos_position_set = set(int(position) for position in eos_positions)
-    return tuple(
-        replace(
-            target,
-            loss_weight=float(eos_trust_weight),
-        )
-        if target.position in eos_position_set
-        else target
-        for target in token_targets
-    )
 
 
 def _prepare_sample_for_mode(
@@ -1501,27 +1350,28 @@ def normalize_recursive_detection_token_losses(
         atom_losses=atom_losses,
     )
     component_losses: dict[str, float] = {}
-    component_weights: dict[str, float] = {}
+    bucket_weights: dict[str, float] = {}
+    loss_terms: list[float] = []
+    loss_weights: list[float] = []
 
     if object_losses:
-        component_losses["objects"] = float(
-            sum(object_losses.values()) / len(object_losses)
-        )
-        component_weights["objects"] = _IMAGE_MIXTURE_WEIGHTS["objects"]
+        object_component = float(sum(object_losses.values()) / len(object_losses))
+        component_losses["objects"] = object_component
+        bucket_weights["objects"] = _IMAGE_MIXTURE_WEIGHTS["objects"]
+        loss_terms.append(object_component)
+        loss_weights.append(_IMAGE_MIXTURE_WEIGHTS["objects"])
 
-    boundary_losses = _semantic_boundary_losses(
+    ordinary_boundary_losses = _ordinary_boundary_losses(
         recursive_targets=recursive_targets,
         atom_losses=atom_losses,
     )
-    if boundary_losses:
+    if ordinary_boundary_losses:
         component_losses["boundary"] = float(
-            _weighted_mean(
-                list(boundary_losses.values()),
-                list(boundary_losses.keys()),
-                _BOUNDARY_ROLE_WEIGHTS,
-            )
+            sum(ordinary_boundary_losses) / len(ordinary_boundary_losses)
         )
-        component_weights["boundary"] = _IMAGE_MIXTURE_WEIGHTS["boundary"]
+        bucket_weights["boundary_tokens"] = 1.0
+        loss_terms.extend(ordinary_boundary_losses)
+        loss_weights.extend(1.0 for _ in ordinary_boundary_losses)
 
     schema_losses = [
         atom_losses[atom.atom_id]
@@ -1529,13 +1379,13 @@ def normalize_recursive_detection_token_losses(
         if atom.semantic_role is SemanticRole.SCHEMA_CONTROL
     ]
     if schema_losses:
-        component_losses["schema"] = float(sum(schema_losses) / len(schema_losses))
-        component_weights["schema"] = _IMAGE_MIXTURE_WEIGHTS["schema"]
+        schema_component = float(sum(schema_losses) / len(schema_losses))
+        component_losses["schema"] = schema_component
+        bucket_weights["schema"] = _IMAGE_MIXTURE_WEIGHTS["schema"]
+        loss_terms.append(schema_component)
+        loss_weights.append(_IMAGE_MIXTURE_WEIGHTS["schema"])
 
-    normalized_loss = _renormalized_component_mean(
-        component_losses=component_losses,
-        component_weights=component_weights,
-    )
+    normalized_loss = _weighted_float_mean(loss_terms, loss_weights)
     diagnostics = replace(
         diagnostics,
         profile_id="semantic_image_bucket_balanced",
@@ -1543,7 +1393,7 @@ def normalize_recursive_detection_token_losses(
             sum(target.state_weight for target in recursive_targets.token_targets)
         ),
         component_losses=component_losses,
-        component_weights=component_weights,
+        bucket_weights=bucket_weights,
         effective_weighted_trie_contribution=float(
             _effective_weighted_trie_contribution(
                 recursive_targets=recursive_targets,
@@ -1636,7 +1486,7 @@ def _normalization_diagnostics_base(
         boundary_fraction=float(boundary_targets / total_targets),
         effective_weighted_trie_contribution=0.0,
         component_losses={},
-        component_weights={},
+        bucket_weights={},
     )
 
 
@@ -1661,32 +1511,21 @@ def _semantic_object_losses(
     return object_losses
 
 
-def _semantic_boundary_losses(
+def _ordinary_boundary_losses(
     *,
     recursive_targets: RecursiveDetectionTargets,
     atom_losses: Mapping[str, float],
-) -> dict[str, float]:
-    boundary_losses: dict[str, float] = {}
-
-    separator_losses = [
+) -> list[float]:
+    return [
         atom_losses[atom.atom_id]
         for atom in recursive_targets.loss_atoms
-        if atom.semantic_role is SemanticRole.SEPARATOR_CONTINUE
+        if atom.semantic_role
+        in {
+            SemanticRole.SEPARATOR_CONTINUE,
+            SemanticRole.TERMINAL_STOP,
+            SemanticRole.CHAT_STOP,
+        }
     ]
-    if separator_losses:
-        boundary_losses["separator_continue"] = float(
-            sum(separator_losses) / len(separator_losses)
-        )
-
-    stop_losses = [
-        atom_losses[atom.atom_id]
-        for atom in recursive_targets.loss_atoms
-        if atom.semantic_role in {SemanticRole.TERMINAL_STOP, SemanticRole.CHAT_STOP}
-    ]
-    if stop_losses:
-        boundary_losses["terminal_stop"] = float(sum(stop_losses) / len(stop_losses))
-
-    return boundary_losses
 
 
 def _weighted_mean(
@@ -1703,16 +1542,12 @@ def _weighted_mean(
     return numerator / max(denominator, 1e-12)
 
 
-def _renormalized_component_mean(
-    *,
-    component_losses: Mapping[str, float],
-    component_weights: Mapping[str, float],
-) -> float:
+def _weighted_float_mean(values: Sequence[float], weights: Sequence[float]) -> float:
     numerator = 0.0
     denominator = 0.0
-    for component_name, component_loss in component_losses.items():
-        weight = float(component_weights[component_name])
-        numerator += weight * float(component_loss)
+    for value, weight in zip(values, weights, strict=True):
+        weight = float(weight)
+        numerator += weight * float(value)
         denominator += weight
     return numerator / max(denominator, 1e-12)
 

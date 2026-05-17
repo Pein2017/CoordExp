@@ -14,6 +14,7 @@ import pytest
 import torch
 
 from src.config.prompts import build_dense_system_prompt, build_dense_user_prompt
+from src.config.rollout_matching_schema import RolloutEvalDetectionConfig
 from src.trainers.rollout_matching.matching import associate_one_to_one_max_iou
 from src.trainers.rollout_aligned_evaluator import finalize_rollout_aligned_evaluation
 from src.trainers.stage2_rollout_aligned import (
@@ -35,6 +36,10 @@ from src.utils.metric_key_lookup import metric_name_matches_key, stage2_eval_met
 def test_stage2_two_channel_reuses_rollout_aligned_eval_contract() -> None:
     assert Stage2ABTrainingTrainer.evaluate is RolloutMatchingSFTTrainer.evaluate
     assert Stage2ABTrainingTrainer.prediction_step is RolloutMatchingSFTTrainer.prediction_step
+
+
+def test_eval_detection_materialization_is_default_on() -> None:
+    assert RolloutEvalDetectionConfig().materialize_artifacts is True
 
 
 def test_rollout_trainer_checkpoint_runtime_state_round_trip() -> None:
@@ -1848,7 +1853,6 @@ def test_evaluate_emits_coco_map_metrics_when_eval_detection_enabled(
         "object_ordering": "sorted",
         "eval_detection": {
             "enabled": True,
-            "materialize_artifacts": True,
             "metrics": "coco",
             "score_mode": "constant",
             "constant_score": 1.0,
@@ -1936,6 +1940,7 @@ def test_evaluate_emits_coco_map_metrics_when_eval_detection_enabled(
     materialized_pred_rows: list[dict[str, object]] = []
 
     def _fake_evaluate_and_save(pred_jsonl, *, options):
+        assert Path(pred_jsonl).name == "gt_vs_pred_scored.jsonl"
         rows = [
             json.loads(line)
             for line in Path(pred_jsonl).read_text(encoding="utf-8").splitlines()
@@ -1970,6 +1975,15 @@ def test_evaluate_emits_coco_map_metrics_when_eval_detection_enabled(
     assert all(not k.startswith("eval/detection/segm_") for k in metrics)
 
     eval_dir = tmp_path / "eval_detection" / "step_0000011"
+    expected_files = {
+        "gt_vs_pred.jsonl",
+        "gt_vs_pred_scored.jsonl",
+        "infer_summary.json",
+        "metrics.json",
+        "per_image.json",
+        "raw_rollouts.jsonl",
+    }
+    assert expected_files <= {path.name for path in eval_dir.iterdir()}
     base_rows = [
         json.loads(line)
         for line in (eval_dir / "gt_vs_pred.jsonl").read_text(encoding="utf-8").splitlines()
@@ -1984,6 +1998,7 @@ def test_evaluate_emits_coco_map_metrics_when_eval_detection_enabled(
         (eval_dir / "infer_summary.json").read_text(encoding="utf-8")
     )
     assert materialized_pred_rows[0]["pred"][0]["score"] == pytest.approx(1.0)
+    assert materialized_pred_rows[0]["pred_score_source"] == "eval_rollout_constant"
     assert base_rows[0]["image"] == "img.jpg"
     assert base_rows[0]["mode"] == "text"
     assert base_rows[0]["coord_mode"] == "pixel"
@@ -2138,7 +2153,9 @@ def test_evaluate_emits_coco_map_metrics_with_confidence_postop(
         "src.trainers.stage2_rollout_aligned._compute_eval_detection_coco_metrics",
         _fake_coco,
     )
+
     def _fake_evaluate_and_save(pred_jsonl, *, options):
+        assert Path(pred_jsonl).name == "gt_vs_pred_scored.jsonl"
         rows = [
             json.loads(line)
             for line in Path(pred_jsonl).read_text(encoding="utf-8").splitlines()
@@ -2167,6 +2184,16 @@ def test_evaluate_emits_coco_map_metrics_with_confidence_postop(
     assert metrics["eval/runtime/coco_eval_ok"] == pytest.approx(1.0)
     assert metrics["eval/config/prompt_variant_is_coco_80"] == pytest.approx(1.0)
     eval_dir = tmp_path / "eval_detection" / "step_0000011"
+    expected_files = {
+        "gt_vs_pred.jsonl",
+        "gt_vs_pred_scored.jsonl",
+        "infer_summary.json",
+        "metrics.json",
+        "per_image.json",
+        "pred_token_trace.jsonl",
+        "raw_rollouts.jsonl",
+    }
+    assert expected_files <= {path.name for path in eval_dir.iterdir()}
     trace_rows = [
         json.loads(line)
         for line in (eval_dir / "pred_token_trace.jsonl").read_text(encoding="utf-8").splitlines()

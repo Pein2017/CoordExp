@@ -769,7 +769,7 @@ def test_lvis_stage1_config_keeps_canonical_recipe_and_desc_first_sorted_contrac
     assert cfg.training["optimizer"] == "multimodal_coord_offset"
     assert (
         cfg.training["run_name"]
-        == "epoch_4-hard_ce_soft_ce_w1_ciou_bbox_size-adjrep_global-2b"
+        == "epoch_4-hard_ce_soft_ce_w1_ciou_bbox_size-2b"
     )
     assert cfg.custom.train_jsonl == "public_data/lvis/rescale_32_1024_bbox_max60/train.coord.jsonl"
     assert cfg.custom.val_jsonl == "public_data/lvis/rescale_32_1024_bbox_max60/val.coord.jsonl"
@@ -794,9 +794,9 @@ def test_lvis_stage1_config_keeps_canonical_recipe_and_desc_first_sorted_contrac
     assert cfg.custom.bbox_geo.size_weight == pytest.approx(1.0)
     assert cfg.custom.bbox_size_aux.enabled is True
     assert cfg.custom.bbox_size_aux.log_wh_weight == pytest.approx(0.05)
-    assert cfg.training["artifact_subdir"] == "stage1/lvis_bbox_max60_1024_adjacent_repulsion_global"
-    assert cfg.training["output_dir"] == "./output/stage1/lvis_bbox_max60_1024_adjacent_repulsion_global"
-    assert cfg.training["logging_dir"] == "./tb/stage1/lvis_bbox_max60_1024_adjacent_repulsion_global"
+    assert cfg.training["artifact_subdir"] == "stage1/lvis_bbox_max60_1024_coord_softce_w1"
+    assert cfg.training["output_dir"] == "./output/stage1/lvis_bbox_max60_1024_coord_softce_w1"
+    assert cfg.training["logging_dir"] == "./tb/stage1/lvis_bbox_max60_1024_coord_softce_w1"
 
 
 def test_lvis_stage1_smoke_config_only_overrides_runtime_limits() -> None:
@@ -824,11 +824,11 @@ def test_lvis_stage1_smoke_config_only_overrides_runtime_limits() -> None:
     assert cfg.custom.val_sample_limit == 8
     assert (
         cfg.training["run_name"]
-        == "smoke_2steps-stage1-lvis_bbox_max60_1024-hard_ce_soft_ce_w1_ciou_bbox_size-adjrep_global0p01"
+        == "smoke_2steps-stage1-lvis_bbox_max60_1024-hard_ce_soft_ce_w1_ciou_bbox_size"
     )
-    assert cfg.training["artifact_subdir"] == "stage1/smoke/lvis_bbox_max60_1024_adjacent_repulsion_global"
-    assert cfg.training["output_dir"] == "./output/stage1/smoke/lvis_bbox_max60_1024_adjacent_repulsion_global"
-    assert cfg.training["logging_dir"] == "./tb/stage1/smoke/lvis_bbox_max60_1024_adjacent_repulsion_global"
+    assert cfg.training["artifact_subdir"] == "stage1/smoke/lvis_bbox_max60_1024_coord_softce_w1"
+    assert cfg.training["output_dir"] == "./output/stage1/smoke/lvis_bbox_max60_1024_coord_softce_w1"
+    assert cfg.training["logging_dir"] == "./tb/stage1/smoke/lvis_bbox_max60_1024_coord_softce_w1"
 
 
 def test_lvis_stage2_config_keeps_same_data_contract_with_stage2_prompt() -> None:

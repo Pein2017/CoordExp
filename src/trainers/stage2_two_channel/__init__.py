@@ -106,6 +106,6 @@ __all__ = [
 
 from .target_builder import (
     _apply_channel_b_duplicate_control,
-    _build_duplicate_burst_unlikelihood_targets,
+    _build_duplicate_control_divergence_diagnostics,
     _compute_duplicate_diagnostics,
 )

@@ -967,7 +967,6 @@ def test_latest_recursive_detection_1p0_control_config_parses() -> None:
 def test_latest_recursive_detection_adapter_smoke_configs_parse() -> None:
     expected = {
         "compact_full_prefix_rollin_adapter_tiny.yaml": "prefix_rollin_et_rmp_ce",
-        "compact_full_prefix_rollin_separator2_adapter_tiny.yaml": "prefix_rollin_et_rmp_ce",
         "compact_full_random_sft_adapter_tiny.yaml": "random_order_sft",
     }
 
@@ -993,9 +992,6 @@ def test_latest_recursive_detection_adapter_smoke_configs_parse() -> None:
         assert cfg.training["effective_batch_size"] == 1
         assert "gradient_accumulation_steps" not in cfg.training
         assert cfg.objective.variant == objective_variant
-        if file_name == "compact_full_prefix_rollin_separator2_adapter_tiny.yaml":
-            assert cfg.objective.boundary.separator_continue_weight == pytest.approx(2.0)
-            assert cfg.objective.boundary.eos_stop_weight == pytest.approx(0.5)
         assert cfg.detection_template.id == "compact_full"
         assert cfg.packing.static_packing is False
         assert cfg.packing.padding_free_packed is False

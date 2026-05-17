@@ -780,8 +780,12 @@ def _build_case_row(
             "precision": float(stats.get("precision", 0.0) or 0.0),
             "recall": float(stats.get("recall", 0.0) or 0.0),
             "f1": float(stats.get("f1", 0.0) or 0.0),
-            "duplicate_burst_unlikelihood_boundary_count": int(
-                stats.get("duplicate_burst_unlikelihood_boundary_count", 0) or 0
+            "duplicate_control_first_divergence_boundary_count": int(
+                stats.get(
+                    "duplicate_control_first_divergence_boundary_count",
+                    stats.get("duplicate_burst_unlikelihood_boundary_count", 0),
+                )
+                or 0
             ),
         },
         "triage": {

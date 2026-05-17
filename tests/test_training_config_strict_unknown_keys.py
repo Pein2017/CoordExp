@@ -728,6 +728,7 @@ def test_rollout_eval_detection_defaults_to_enabled_coco_when_omitted():
     assert cfg.rollout_matching is not None
     assert cfg.rollout_matching.eval_detection is not None
     assert cfg.rollout_matching.eval_detection.enabled is True
+    assert cfg.rollout_matching.eval_detection.materialize_artifacts is True
     assert cfg.rollout_matching.eval_detection.metrics == "coco"
 
 
@@ -1143,19 +1144,6 @@ def _pipeline_token_ce_spec(
     }
 
 
-def _pipeline_loss_duplicate_burst_unlikelihood_spec(
-    *, channels: list[str] | None = None, config: dict | None = None
-) -> dict:
-    return {
-        "name": "loss_duplicate_burst_unlikelihood",
-        "enabled": True,
-        "weight": 1.0,
-        "channels": list(channels) if channels is not None else ["B"],
-        "application": {"preset": "rollout_only"},
-        "config": dict(config or {}),
-    }
-
-
 def _pipeline_bbox_geo_spec(*, config: dict | None = None) -> dict:
     bbox_geo_cfg = {
         "smoothl1_weight": 0.0,
@@ -1204,10 +1192,6 @@ def _pipeline_coord_reg_spec(*, config: dict | None = None) -> dict:
         "temperature": 1.0,
         "target_sigma": 2.0,
         "target_truncate": None,
-        "adjacent_repulsion_weight": 0.0,
-        "adjacent_repulsion_filter_mode": "same_desc",
-        "adjacent_repulsion_margin_ratio": 0.05,
-        "adjacent_repulsion_copy_margin": 0.8,
     }
     if isinstance(config, dict):
         coord_reg_cfg.update(dict(config))
@@ -1224,7 +1208,6 @@ def _pipeline_coord_reg_spec(*, config: dict | None = None) -> dict:
 def _canonical_stage2_two_channel_objective() -> list[dict]:
     return [
         _pipeline_token_ce_spec(),
-        _pipeline_loss_duplicate_burst_unlikelihood_spec(),
         _pipeline_bbox_geo_spec(),
         _pipeline_bbox_size_aux_spec(),
         _pipeline_coord_reg_spec(),
@@ -1280,8 +1263,15 @@ def test_stage2_pipeline_canonical_channels_scope_parses():
     cfg = TrainingConfig.from_mapping(payload, PromptOverrides())
     assert cfg.stage2_ab is not None
     assert cfg.stage2_ab.pipeline is not None
-    assert cfg.stage2_ab.pipeline.objective[0].channels == ("A", "B")
-    assert cfg.stage2_ab.pipeline.objective[1].channels == ("B",)
+    channels_by_name = {
+        str(spec.name): spec.channels for spec in cfg.stage2_ab.pipeline.objective
+    }
+    assert channels_by_name == {
+        "token_ce": ("A", "B"),
+        "bbox_geo": ("A", "B"),
+        "bbox_size_aux": ("A", "B"),
+        "coord_reg": ("A", "B"),
+    }
     assert cfg.stage2_ab.channel_b.insertion_order == "tail_append"
 
 
@@ -1331,7 +1321,6 @@ def test_stage2_pipeline_bbox_geo_unknown_alias_fails_fast() -> None:
     payload["stage2_ab"]["pipeline"] = {
         "objective": [
             _pipeline_token_ce_spec(),
-            _pipeline_loss_duplicate_burst_unlikelihood_spec(),
             _pipeline_bbox_geo_spec(config={"center_wt": 1.0}),
             _pipeline_bbox_size_aux_spec(),
             _pipeline_coord_reg_spec(),
@@ -1340,7 +1329,7 @@ def test_stage2_pipeline_bbox_geo_unknown_alias_fails_fast() -> None:
 
     with pytest.raises(
         ValueError,
-        match=r"Unknown stage2_ab\.pipeline\.objective\[2\]\.config keys.*center_wt",
+        match=r"Unknown stage2_ab\.pipeline\.objective\[1\]\.config keys.*center_wt",
     ):
         TrainingConfig.from_mapping(payload, PromptOverrides())
 
@@ -1350,7 +1339,6 @@ def test_stage2_pipeline_bbox_geo_rejects_zero_center_and_size_weights() -> None
     payload["stage2_ab"]["pipeline"] = {
         "objective": [
             _pipeline_token_ce_spec(),
-            _pipeline_loss_duplicate_burst_unlikelihood_spec(),
             _pipeline_bbox_geo_spec(
                 config={
                     "smoothl1_weight": 0.5,
@@ -1367,7 +1355,7 @@ def test_stage2_pipeline_bbox_geo_rejects_zero_center_and_size_weights() -> None
 
     with pytest.raises(
         ValueError,
-        match=r"stage2_ab\.pipeline\.objective\[2\]\.config\.parameterization=center_size requires center_weight > 0 or size_weight > 0",
+        match=r"stage2_ab\.pipeline\.objective\[1\]\.config\.parameterization=center_size requires center_weight > 0 or size_weight > 0",
     ):
         TrainingConfig.from_mapping(payload, PromptOverrides())
 
@@ -1396,7 +1384,6 @@ def test_stage2_pipeline_module_config_unknown_key_fails_fast():
     payload["stage2_ab"]["pipeline"] = {
         "objective": [
             _pipeline_token_ce_spec(config={"unknown_knob": 1.0}),
-            _pipeline_loss_duplicate_burst_unlikelihood_spec(),
             _pipeline_bbox_geo_spec(),
             _pipeline_bbox_size_aux_spec(),
             _pipeline_coord_reg_spec(),
@@ -1414,7 +1401,6 @@ def test_stage2_pipeline_legacy_matched_prefix_struct_knob_fails_fast():
             _pipeline_token_ce_spec(
                 config={"rollout_matched_prefix_struct_weight": 1.0}
             ),
-            _pipeline_loss_duplicate_burst_unlikelihood_spec(),
             _pipeline_bbox_geo_spec(),
             _pipeline_bbox_size_aux_spec(),
             _pipeline_coord_reg_spec(),

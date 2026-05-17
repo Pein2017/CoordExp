@@ -158,14 +158,13 @@ def _objects() -> tuple[NormalizedDetectionObject, NormalizedDetectionObject]:
     )
 
 
-def _example(*, k: int, eos_trust_weight: float = 1.0):
+def _example(*, k: int):
     objects = _objects()
     return build_compact_prefix_rollin_example(
         objects=objects,
         rollin_order=objects,
         k=k,
         tokenizer=SpecialTokenAwareTokenizer(),
-        eos_trust_weight=eos_trust_weight,
     )
 
 
@@ -354,8 +353,8 @@ def test_shifted_target_consumes_previous_logit_after_prefix_rewrite() -> None:
     assert loss.loss.item() < 1e-4
 
 
-def test_k_equals_n_masks_all_objects_and_only_trains_weighted_im_end() -> None:
-    example = _example(k=2, eos_trust_weight=0.25)
+def test_k_equals_n_masks_all_objects_and_only_trains_im_end() -> None:
+    example = _example(k=2)
     object_positions = example.debug_spans["rollin_prefix"].token_positions
     active_positions = tuple(
         position for position, label in enumerate(example.labels) if label != -100
@@ -369,7 +368,7 @@ def test_k_equals_n_masks_all_objects_and_only_trains_weighted_im_end() -> None:
     assert example.input_ids[eos_pos] == example.stop_contract.im_end_token_id
     assert example.labels[eos_pos] == example.stop_contract.im_end_token_id
     assert example.recursive_detection_targets.token_targets[0].position == eos_pos
-    assert example.recursive_detection_targets.token_targets[0].loss_weight == 0.25
+    assert example.recursive_detection_targets.token_targets[0].loss_weight == 1.0
 
 
 def test_zero_object_prefix_rollin_builds_eos_only_guard_example() -> None:
@@ -378,7 +377,6 @@ def test_zero_object_prefix_rollin_builds_eos_only_guard_example() -> None:
         rollin_order=(),
         k=0,
         tokenizer=SpecialTokenAwareTokenizer(),
-        eos_trust_weight=0.25,
     )
     active_positions = tuple(
         position for position, label in enumerate(example.labels) if label != -100
@@ -391,11 +389,11 @@ def test_zero_object_prefix_rollin_builds_eos_only_guard_example() -> None:
     assert len(example.recursive_detection_targets.token_targets) == 1
     target = example.recursive_detection_targets.token_targets[0]
     assert target.teacher_token_id == example.stop_contract.im_end_token_id
-    assert target.loss_weight == pytest.approx(0.25)
+    assert target.loss_weight == pytest.approx(1.0)
 
 
-def test_k_less_than_n_weights_im_end_after_suffix_completion() -> None:
-    example = _example(k=1, eos_trust_weight=0.25)
+def test_k_less_than_n_trains_im_end_after_suffix_completion() -> None:
+    example = _example(k=1)
     eos_positions = set(example.assistant_stop_token_span.token_indices())
     eos_targets = [
         target
@@ -405,33 +403,23 @@ def test_k_less_than_n_weights_im_end_after_suffix_completion() -> None:
 
     assert len(eos_targets) == 1
     assert eos_targets[0].teacher_token_id == example.stop_contract.im_end_token_id
-    assert eos_targets[0].loss_weight == pytest.approx(0.25)
+    assert eos_targets[0].loss_weight == pytest.approx(1.0)
 
 
-def test_eos_trust_weight_scales_k_equals_n_stop_loss_without_dropping_target() -> None:
-    full_weight = _example(k=2, eos_trust_weight=1.0)
-    low_weight = _example(k=2, eos_trust_weight=0.25)
-    zero_weight = _example(k=2, eos_trust_weight=0.0)
-    vocab_size = max(max(example.input_ids) for example in (full_weight, low_weight)) + 1
+def test_k_equals_n_stop_loss_uses_ordinary_ce_without_dropping_target() -> None:
+    example = _example(k=2)
+    vocab_size = max(example.input_ids) + 1
 
-    def loss_value(example) -> float:
-        logits = torch.zeros((1, len(example.input_ids), vocab_size))
-        result = compute_recursive_detection_ce_batch_loss(
-            logits=logits,
-            targets=[example.recursive_detection_targets],
-        )
-        assert torch.isfinite(result.loss)
-        assert len(example.recursive_detection_targets.token_targets) == 1
-        return float(result.loss.item())
+    logits = torch.zeros((1, len(example.input_ids), vocab_size))
+    result = compute_recursive_detection_ce_batch_loss(
+        logits=logits,
+        targets=[example.recursive_detection_targets],
+    )
 
-    full_loss = loss_value(full_weight)
-    low_loss = loss_value(low_weight)
-    zero_loss = loss_value(zero_weight)
-
-    assert full_loss > 0.0
-    assert low_loss == pytest.approx(0.25 * full_loss)
-    assert zero_loss == pytest.approx(0.0)
-    assert zero_weight.recursive_detection_targets.token_targets[0].loss_weight == 0.0
+    assert torch.isfinite(result.loss)
+    assert result.loss.item() > 0.0
+    assert len(example.recursive_detection_targets.token_targets) == 1
+    assert example.recursive_detection_targets.token_targets[0].loss_weight == 1.0
 
 
 def test_prefix_rollin_type_gate_sidecar_covers_positive_tokens() -> None:

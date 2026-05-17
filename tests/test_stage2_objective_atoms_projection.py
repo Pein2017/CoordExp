@@ -24,13 +24,6 @@ def test_project_stage2_objective_atoms_is_strictly_additive() -> None:
             "config": {},
         },
         {
-            "name": "loss_duplicate_burst_unlikelihood",
-            "enabled": True,
-            "weight": 0.25,
-            "channels": ["B"],
-            "config": {},
-        },
-        {
             "name": "bbox_geo",
             "enabled": True,
             "weight": 2.0,
@@ -56,7 +49,6 @@ def test_project_stage2_objective_atoms_is_strictly_additive() -> None:
     state = {
         "token_ce_struct_contrib": _t(0.3),
         "token_ce_desc_contrib": _t(0.2),
-        "loss_duplicate_burst_unlikelihood_contrib": _t(0.4),
         "bbox_smoothl1_contrib": _t(0.4),
         "bbox_ciou_contrib": _t(0.1),
         "bbox_log_wh_contrib": _t(0.3),
@@ -72,21 +64,18 @@ def test_project_stage2_objective_atoms_is_strictly_additive() -> None:
     }
 
     token_loss = _t(0.3 + 0.2)
-    duplicate_burst_unlikelihood_loss = _t(0.4)
     bbox_loss = _t(0.4 + 0.1)
     bbox_size_aux_loss = _t(0.3 + 0.0)
     coord_loss = _t(0.05 + 0.01 - 0.02)
 
     module_losses = {
         "token_ce": 1.0 * token_loss,
-        "loss_duplicate_burst_unlikelihood": 0.25 * duplicate_burst_unlikelihood_loss,
         "bbox_geo": 2.0 * bbox_loss,
         "bbox_size_aux": 0.25 * bbox_size_aux_loss,
         "coord_reg": 0.5 * coord_loss,
     }
     total_loss = (
         module_losses["token_ce"]
-        + module_losses["loss_duplicate_burst_unlikelihood"]
         + module_losses["bbox_geo"]
         + module_losses["bbox_size_aux"]
         + module_losses["coord_reg"]
@@ -111,7 +100,6 @@ def test_project_stage2_objective_atoms_is_strictly_additive() -> None:
 
     assert atoms["loss/B_rollout_text/struct_ce"] == pytest.approx(0.3)
     assert atoms["loss/B_rollout_text/desc_ce"] == pytest.approx(0.2)
-    assert atoms["loss/B_rollout_text/loss_duplicate_burst_unlikelihood"] == pytest.approx(0.25 * 0.4)
     assert atoms["loss/B_coord/bbox_smoothl1"] == pytest.approx(2.0 * 0.4)
     assert atoms["loss/B_coord/bbox_ciou"] == pytest.approx(2.0 * 0.1)
     assert atoms["loss/B_coord/bbox_log_wh"] == pytest.approx(0.25 * 0.3)
@@ -120,69 +108,6 @@ def test_project_stage2_objective_atoms_is_strictly_additive() -> None:
     assert atoms["loss/B_coord/coord_entropy"] == pytest.approx(0.5 * -0.02)
 
     assert sum(atoms.values()) == pytest.approx(float(total_loss.detach().cpu().item()))
-
-
-def test_project_stage2_objective_atoms_emits_duplicate_burst_unlikelihood_text_atom() -> None:
-    objective_specs = [
-        {
-            "name": "loss_duplicate_burst_unlikelihood",
-            "enabled": True,
-            "weight": 1.5,
-            "channels": ["B"],
-            "config": {},
-        },
-    ]
-
-    pipeline_result = PipelineResult(
-        total_loss=_t(0.3),
-        module_losses={"loss_duplicate_burst_unlikelihood": _t(0.3)},
-        metrics={},
-        state={"loss_duplicate_burst_unlikelihood_contrib": _t(0.2)},
-    )
-
-    atoms = project_stage2_objective_atoms(
-        pipeline_result=pipeline_result,
-        objective_specs=objective_specs,
-        text_provenance="B_rollout_text",
-        coord_provenance=None,
-        emit_text=True,
-        emit_coord=False,
-        require_additive=False,
-    )
-
-    assert set(atoms.keys()) == {"loss/B_rollout_text/loss_duplicate_burst_unlikelihood"}
-    assert atoms["loss/B_rollout_text/loss_duplicate_burst_unlikelihood"] == pytest.approx(0.3)
-
-
-def test_project_stage2_objective_atoms_emits_adjacent_repulsion_coord_atom() -> None:
-    objective_specs = [
-        {
-            "name": "coord_reg",
-            "enabled": True,
-            "weight": 2.0,
-            "channels": ["B"],
-            "config": {},
-        },
-    ]
-
-    pipeline_result = PipelineResult(
-        total_loss=_t(0.1),
-        module_losses={"coord_reg": _t(0.1)},
-        metrics={},
-        state={"adjacent_repulsion_contrib": _t(0.05)},
-    )
-
-    atoms = project_stage2_objective_atoms(
-        pipeline_result=pipeline_result,
-        objective_specs=objective_specs,
-        text_provenance=None,
-        coord_provenance="B_coord",
-        emit_text=False,
-        emit_coord=True,
-        require_additive=False,
-    )
-
-    assert atoms == {"loss/B_coord/adjacent_repulsion": pytest.approx(0.1)}
 
 
 def test_project_stage2_objective_atoms_allows_disabling_coord_emission() -> None:

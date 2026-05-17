@@ -5,14 +5,12 @@ class Stage2BBoxGroup(TypedDict):
     pos: List[int]
     gt_bins: List[int]
     weight: NotRequired[float]
-    adjacent_prev_gt_bins: NotRequired[List[int]]
-    adjacent_same_desc_with_prev: NotRequired[bool]
 
 
-class Stage2DuplicateBurstUnlikelihoodTarget(TypedDict):
+class Stage2DuplicateControlDivergenceDiagnostic(TypedDict):
     boundary: int
-    rel_pos: int
-    token_id: int
+    clean_rel_pos: int
+    duplicate_token_id: int
 
 
 class Stage2RolloutMetaBase(TypedDict):
@@ -83,9 +81,9 @@ class Stage2ChannelBMeta(Stage2RolloutMetaBase):
     recovered_gt_indices: List[int]
     recovered_gt_support_counts: List[int]
     recovered_gt_support_rates: List[float]
-    duplicate_burst_unlikelihood_targets: List[Stage2DuplicateBurstUnlikelihoodTarget]
-    duplicate_burst_unlikelihood_boundary_count: int
-    duplicate_burst_unlikelihood_skipped_no_divergence: int
+    duplicate_control_first_divergence_diagnostics: List[Stage2DuplicateControlDivergenceDiagnostic]
+    duplicate_control_first_divergence_boundary_count: int
+    duplicate_control_first_divergence_skipped_no_divergence: int
 
 
 Stage2RolloutMeta: TypeAlias = Stage2ChannelAMeta | Stage2ChannelBMeta
@@ -96,7 +94,7 @@ Stage2BatchMetrics: TypeAlias = Dict[str, float]
 
 __all__ = [
     "Stage2BBoxGroup",
-    "Stage2DuplicateBurstUnlikelihoodTarget",
+    "Stage2DuplicateControlDivergenceDiagnostic",
     "Stage2RolloutMetaBase",
     "Stage2ChannelAMeta",
     "Stage2ChannelBMeta",

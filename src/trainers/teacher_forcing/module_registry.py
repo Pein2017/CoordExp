@@ -56,19 +56,6 @@ OBJECTIVE_MODULE_CATALOG: Final[dict[str, ObjectiveModuleDefinition]] = {
         ),
         emission_group="text",
     ),
-    "loss_duplicate_burst_unlikelihood": ObjectiveModuleDefinition(
-        family="rollout",
-        semantic_role="duplicate_burst_unlikelihood",
-        config_keys=frozenset(),
-        application_presets=frozenset({"rollout_only"}),
-        projected_atoms=(
-            ObjectiveLossAtomDefinition(
-                atom_name="loss_duplicate_burst_unlikelihood",
-                state_key="loss_duplicate_burst_unlikelihood_contrib",
-            ),
-        ),
-        emission_group="text",
-    ),
     "bbox_geo": ObjectiveModuleDefinition(
         family="bbox",
         semantic_role="geometry",
@@ -136,10 +123,6 @@ OBJECTIVE_MODULE_CATALOG: Final[dict[str, ObjectiveModuleDefinition]] = {
                 "temperature",
                 "target_sigma",
                 "target_truncate",
-                "adjacent_repulsion_weight",
-                "adjacent_repulsion_filter_mode",
-                "adjacent_repulsion_margin_ratio",
-                "adjacent_repulsion_copy_margin",
             }
         ),
         application_presets=frozenset({"anchor_only"}),
@@ -155,11 +138,6 @@ OBJECTIVE_MODULE_CATALOG: Final[dict[str, ObjectiveModuleDefinition]] = {
             ObjectiveLossAtomDefinition(
                 atom_name="coord_w1",
                 state_key="coord_w1_contrib",
-            ),
-            ObjectiveLossAtomDefinition(
-                atom_name="adjacent_repulsion",
-                state_key="adjacent_repulsion_contrib",
-                required_state=False,
             ),
             ObjectiveLossAtomDefinition(
                 atom_name="coord_el1",
@@ -184,14 +162,6 @@ OBJECTIVE_MODULE_CATALOG: Final[dict[str, ObjectiveModuleDefinition]] = {
                 atom_name="text_gate",
                 state_key="text_gate_contrib",
             ),
-        ),
-        optional_config_keys=frozenset(
-            {
-                "adjacent_repulsion_weight",
-                "adjacent_repulsion_filter_mode",
-                "adjacent_repulsion_margin_ratio",
-                "adjacent_repulsion_copy_margin",
-            }
         ),
         emission_group="coord",
     ),
@@ -239,18 +209,6 @@ def objective_modules_for_family(family: str) -> tuple[str, ...]:
     )
 
 
-def normalize_token_ce_stop_signal_damping_config(
-    value: Any,
-    *,
-    path: str,
-) -> dict[str, Any]:
-    raise ValueError(
-        f"{path} is deprecated and unsupported. Remove token_ce.config.stop_signal_damping; "
-        "the adaptive stop-signal-damping experiment was dropped because it is toxic for "
-        "rollout and causes duplicate-heavy dense-scene proposals."
-    )
-
-
 def validate_bbox_geo_config_values(
     config: Mapping[str, Any],
     *,
@@ -284,46 +242,3 @@ def validate_bbox_geo_config_values(
         raise ValueError(
             f"{path}.parameterization=center_size requires center_weight > 0 or size_weight > 0"
         )
-
-
-def validate_adjacent_repulsion_config_values(
-    config: Mapping[str, Any],
-    *,
-    path: str,
-) -> None:
-    if "adjacent_repulsion_weight" in config:
-        try:
-            weight = float(config.get("adjacent_repulsion_weight"))
-        except (TypeError, ValueError) as exc:
-            raise ValueError(f"{path}.adjacent_repulsion_weight must be numeric") from exc
-        if weight < 0.0:
-            raise ValueError(f"{path}.adjacent_repulsion_weight must be >= 0")
-
-    if "adjacent_repulsion_margin_ratio" in config:
-        try:
-            margin_ratio = float(config.get("adjacent_repulsion_margin_ratio"))
-        except (TypeError, ValueError) as exc:
-            raise ValueError(
-                f"{path}.adjacent_repulsion_margin_ratio must be numeric"
-            ) from exc
-        if margin_ratio < 0.0:
-            raise ValueError(f"{path}.adjacent_repulsion_margin_ratio must be >= 0")
-
-    if "adjacent_repulsion_copy_margin" in config:
-        try:
-            copy_margin = float(config.get("adjacent_repulsion_copy_margin"))
-        except (TypeError, ValueError) as exc:
-            raise ValueError(
-                f"{path}.adjacent_repulsion_copy_margin must be numeric"
-            ) from exc
-        if copy_margin < 0.0 or copy_margin > 1.0:
-            raise ValueError(
-                f"{path}.adjacent_repulsion_copy_margin must be within [0, 1]"
-            )
-
-    if "adjacent_repulsion_filter_mode" in config:
-        mode = str(config.get("adjacent_repulsion_filter_mode") or "").strip().lower()
-        if mode not in {"same_desc", "global"}:
-            raise ValueError(
-                f"{path}.adjacent_repulsion_filter_mode must be one of ['global', 'same_desc']"
-            )

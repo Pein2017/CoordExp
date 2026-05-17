@@ -154,7 +154,6 @@ def build_stage2_core_loss_logs(
     bbox_geo_module_w: float,
     bbox_size_aux_module_w: float,
     coord_reg_module_w: float,
-    duplicate_burst_unlikelihood_module_w: float,
     run_a_text: bool,
     run_a_bbox_geo: bool,
     run_a_bbox_size_aux: bool,
@@ -168,7 +167,6 @@ def build_stage2_core_loss_logs(
     coord_ce_w: float,
     coord_soft_ce_w: float,
     coord_w1_w: float,
-    adjacent_repulsion_w: float,
     coord_gate_w: float,
     text_gate_w: float,
 ) -> Dict[str, float]:
@@ -250,41 +248,6 @@ def build_stage2_core_loss_logs(
                     float(token_ce_module_w) * float(token_desc)
                 )
 
-        if float(duplicate_burst_unlikelihood_module_w) != 0.0:
-            duplicate_burst_loss = float(
-                pipeline_metrics_ctx.get(
-                    "train/optimization/loss_duplicate_burst_unlikelihood", 0.0
-                )
-                or 0.0
-            )
-            duplicate_burst_num_terms = float(
-                pipeline_metrics_ctx.get(
-                    "train/triage/duplicate_burst_unlikelihood_target_count", 0.0
-                )
-                or 0.0
-            )
-            duplicate_burst_num_boundaries = float(
-                pipeline_metrics_ctx.get(
-                    "train/triage/duplicate_burst_unlikelihood_boundary_count", 0.0
-                )
-                or 0.0
-            )
-            stage2_logs["train/optimization/loss_duplicate_burst_unlikelihood"] = float(
-                duplicate_burst_loss
-            )
-            stage2_logs["loss/B_rollout_text/duplicate_burst_unlikelihood"] = float(
-                duplicate_burst_loss
-            )
-            stage2_logs["diag/duplicate_burst/num_terms"] = float(
-                duplicate_burst_num_terms
-            )
-            stage2_logs["diag/duplicate_burst/num_ul_boundaries"] = float(
-                duplicate_burst_num_boundaries
-            )
-            stage2_logs["diag/duplicate_burst/loss_per_term"] = float(
-                duplicate_burst_loss if duplicate_burst_num_terms > 0.0 else 0.0
-            )
-
         if float(bbox_geo_module_w) != 0.0:
             smoothl1 = float(
                 pipeline_metrics_ctx.get("loss/bbox_smoothl1", 0.0) or 0.0
@@ -325,11 +288,6 @@ def build_stage2_core_loss_logs(
             _emit_b("coord_token_ce", coord_ce_w, "loss/coord_token_ce")
             _emit_b("coord_soft_ce", coord_soft_ce_w, "loss/coord_soft_ce")
             _emit_b("coord_w1", coord_w1_w, "loss/coord_w1")
-            _emit_b(
-                "adjacent_repulsion",
-                adjacent_repulsion_w,
-                "loss/adjacent_repulsion",
-            )
             _emit_b("coord_gate", coord_gate_w, "loss/coord_gate")
             _emit_b("text_gate", text_gate_w, "loss/text_gate")
 

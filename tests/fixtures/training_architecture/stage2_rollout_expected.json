@@ -1,0 +1,99 @@
+{
+  "sample_id": "stage2-golden-rollout",
+  "surface": {
+    "surface_id": "stage2_two_channel",
+    "pipeline_id": "stage2_two_channel",
+    "lifecycle": "shadow"
+  },
+  "duplicate_decisions": [
+    {
+      "object_id": "pred-dog-survivor",
+      "input_index": 0,
+      "action": "kept",
+      "reason": "survivor",
+      "survivor_id": "pred-dog-survivor"
+    },
+    {
+      "object_id": "pred-dog-lower-evidence",
+      "input_index": 1,
+      "action": "suppressed",
+      "reason": "lower_duplicate_priority",
+      "survivor_id": "pred-dog-survivor"
+    },
+    {
+      "object_id": "pred-dog-nearby-duplicate",
+      "input_index": 2,
+      "action": "suppressed",
+      "reason": "lower_duplicate_priority",
+      "survivor_id": "pred-dog-survivor"
+    }
+  ],
+  "assignment": {
+    "pairs": [
+      {
+        "prediction_index": 0,
+        "ground_truth_index": 0,
+        "prediction_id": "pred-dog-survivor",
+        "ground_truth_id": "gt-dog",
+        "iou": 0.960977,
+        "reason": "matched"
+      }
+    ],
+    "unmatched_predictions": [],
+    "unmatched_ground_truth": [
+      {
+        "index": 1,
+        "object_id": "gt-cat",
+        "reason": "below_threshold",
+        "best_iou": 0.0
+      }
+    ],
+    "metadata": {
+      "assignment_strategy": "greedy_iou",
+      "iou_threshold": 0.5
+    }
+  },
+  "plan": {
+    "stage": "stage2",
+    "channel": "channel_b",
+    "provenance": "stage2_greedy_iou_shadow_planner",
+    "object_ids": [
+      "pred-dog-survivor",
+      "gt-cat"
+    ],
+    "descriptions": [
+      "dog",
+      "cat"
+    ],
+    "source_roles": [
+      "accepted_rollout",
+      "false_negative"
+    ],
+    "source_indices": [
+      0,
+      1
+    ],
+    "metadata": {
+      "assignment_strategy": "greedy_iou",
+      "duplicate_filter": "deterministic_duplicate_filter",
+      "duplicate_suppressed_count": 2,
+      "object_ordering": "legacy_tail_append",
+      "accepted_rollout_count": 3,
+      "false_negative_count": 1,
+      "object_count": 2,
+      "matched_prediction_count": 1,
+      "matched_ground_truth_count": 1,
+      "unmatched_prediction_count": 0,
+      "unmatched_ground_truth_count": 1,
+      "post_duplicate_prediction_count": 1
+    }
+  },
+  "diagnostics": {
+    "predicted_count": 3,
+    "ground_truth_count": 2,
+    "final_object_count": 2,
+    "suppressed_duplicate_count": 2,
+    "false_negative_count": 1,
+    "post_duplicate_prediction_count": 1
+  }
+}
