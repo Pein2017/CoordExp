@@ -15,6 +15,7 @@ from src.detection.dataset import (
     DetectionTrainingDataset,
     strip_non_model_detection_sidecars,
 )
+from src.detection.objective import SemanticRole, prepare_detection_training_example
 from src.detection.template import get_detection_template
 from test_detection_training_dataset import FakeSwiftTemplate
 
@@ -235,3 +236,62 @@ def test_dataset_exposes_rendered_span_sources_without_model_input_leak(
     strip_candidate.pop("length", None)
     model_inputs = strip_non_model_detection_sidecars(strip_candidate)
     assert "rendered_span_sources" not in model_inputs
+
+
+def test_proxy_candidate_bbox_coords_do_not_receive_recursive_bbox_supervision() -> None:
+    raw = parse_raw_detection_row(_canonical_all_proxy_row())
+    sample = normalize_detection_row(
+        raw,
+        object_ordering=ObjectOrderingPlan.random_permutation(
+            seed=17,
+            seed_source="unit-test",
+        ),
+    )
+
+    prepared = prepare_detection_training_example(
+        sample,
+        template=get_detection_template("compact_full"),
+        tokenizer=FakeSwiftTemplate().tokenizer,
+        mode="random_permutation_et_rmp_ce",
+    )
+
+    assert prepared.recursive_detection_targets is not None
+    targets_by_position = {
+        target.position: target
+        for target in prepared.recursive_detection_targets.token_targets
+    }
+    entries_by_object_id = {
+        entry.object_id: entry for entry in prepared.tokenized.object_entries
+    }
+    real_entry = entries_by_object_id["coco:ann:real-1"]
+    proxy_entry = entries_by_object_id["lvis:ann:proxy-2"]
+
+    real_coord_targets = [
+        targets_by_position[position]
+        for coord_span in real_entry.coord_spans
+        for position in coord_span.token_indices()
+        if position in targets_by_position
+    ]
+    proxy_coord_targets = [
+        targets_by_position[position]
+        for coord_span in proxy_entry.coord_spans
+        for position in coord_span.token_indices()
+        if position in targets_by_position
+    ]
+
+    assert real_coord_targets
+    assert proxy_coord_targets
+    assert all(
+        target.loss_weight == pytest.approx(1.0) and target.coord_soft_targets
+        for target in real_coord_targets
+    )
+    assert any(
+        target.semantic_role is SemanticRole.BBOX_COORD
+        for target in real_coord_targets
+    )
+    assert all(
+        target.semantic_role is not SemanticRole.BBOX_COORD
+        and target.loss_weight == pytest.approx(0.0)
+        and not target.coord_soft_targets
+        for target in proxy_coord_targets
+    )
