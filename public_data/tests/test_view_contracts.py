@@ -61,3 +61,45 @@ def test_rejects_escaped_image_path(tmp_path: Path) -> None:
 
     with pytest.raises(ValueError, match="outside image_root"):
         resolve_image_path("../raw/images/leak.jpg", image_root=image_store)
+
+
+def test_rejects_absolute_image_store_with_absolute_anchor(tmp_path: Path) -> None:
+    meta = ViewMetadata(
+        schema_version=1,
+        kind="annotation_view",
+        dataset="coco",
+        view="coco80/len-12000",
+        image_store=str(tmp_path / "public_data" / "coco" / "images" / "res-1024"),
+        path_anchor="absolute",
+        image_path_semantics="image_store_relative",
+        coordinate_space="norm1000",
+        coordinate_storage="integer",
+        coordinate_range=(0, 999),
+        coordinate_chart="xyxy",
+        assistant_coordinate_rendering="qwen_coord_tokens",
+        primary_jsonl={"train": "train.jsonl", "val": "val.jsonl"},
+    )
+
+    with pytest.raises(ValueError, match="absolute image_store requires test/debug"):
+        resolve_view_image_root(meta, view_root=tmp_path)
+
+
+def test_rejects_relative_image_store_without_repo_root_anchor(tmp_path: Path) -> None:
+    meta = ViewMetadata(
+        schema_version=1,
+        kind="annotation_view",
+        dataset="coco",
+        view="coco80/len-12000",
+        image_store="public_data/coco/images/res-1024",
+        path_anchor="debug_absolute",
+        image_path_semantics="image_store_relative",
+        coordinate_space="norm1000",
+        coordinate_storage="integer",
+        coordinate_range=(0, 999),
+        coordinate_chart="xyxy",
+        assistant_coordinate_rendering="qwen_coord_tokens",
+        primary_jsonl={"train": "train.jsonl", "val": "val.jsonl"},
+    )
+
+    with pytest.raises(ValueError, match="relative image_store requires repo_root"):
+        resolve_view_image_root(meta, view_root=tmp_path)

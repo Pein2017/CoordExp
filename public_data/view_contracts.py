@@ -47,7 +47,7 @@ class ViewMetadata:
     summary: Mapping[str, Any] | None = None
 
 
-_ABSOLUTE_PATH_ANCHORS = frozenset({"absolute", "test_absolute", "debug_absolute"})
+_ABSOLUTE_PATH_ANCHORS = frozenset({"test_absolute", "debug_absolute"})
 
 
 def load_view_metadata(path: Path) -> ViewMetadata:
@@ -174,8 +174,11 @@ def _validate_view_metadata(meta: ViewMetadata) -> None:
         raise ValueError("coordinate_range must be (0, 999)")
 
     image_store = Path(meta.image_store)
-    if image_store.is_absolute() and meta.path_anchor not in _ABSOLUTE_PATH_ANCHORS:
-        raise ValueError("absolute image_store requires test/debug absolute path_anchor")
+    if image_store.is_absolute():
+        if meta.path_anchor not in _ABSOLUTE_PATH_ANCHORS:
+            raise ValueError("absolute image_store requires test/debug absolute path_anchor")
+    elif meta.path_anchor != "repo_root":
+        raise ValueError("relative image_store requires repo_root path_anchor")
 
 
 def _infer_repo_root(view_root: Path) -> Path:
