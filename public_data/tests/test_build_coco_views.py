@@ -6,6 +6,7 @@ from typing import Any, Mapping
 
 import pytest
 
+import public_data.scripts.build_coco_views as build_coco_views
 from public_data.scripts.build_coco_length_budget_artifacts import (
     TokenBudgetBreakdown,
     _model_facing_objects,
@@ -19,6 +20,7 @@ from public_data.scripts.build_coco_views import (
     Norm1000ViewWriter,
     ViewManifestPayloadBuilder,
     ViewStatsWriter,
+    main,
     parse_args,
 )
 from public_data.view_contracts import load_image_store_metadata, load_view_metadata
@@ -249,6 +251,119 @@ def test_dry_run_report_records_counts_and_does_not_write_artifacts(
     assert "No files were copied" in report["rollback_notes"]
 
 
+def test_cli_dry_run_default_views_plans_without_materialized_artifacts(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    source_root = tmp_path / "public_data" / "coco" / "rescale_32_1024_bbox"
+    legacy_root = tmp_path / "public_data" / "coco" / "rescale_32_1024_bbox_max60"
+    proxy_root = (
+        tmp_path / "public_data" / "coco" / "rescale_32_1024_bbox_lvis_proxy_len12000"
+    )
+    image_store_root = tmp_path / "public_data" / "coco" / "images" / "res-1024"
+    views_root = tmp_path / "public_data" / "coco" / "views"
+    report_path = tmp_path / "dry-run-report.json"
+    source_image = source_root / "images" / "train2017" / "000000000001.jpg"
+    _write_image(source_image)
+    _write_jsonl(source_root / "train.jsonl", [_raw_row(image_id=1)])
+    _write_jsonl(legacy_root / "train.norm.jsonl", [_norm_row(image_id=1)])
+    _write_jsonl(proxy_root / "train.norm.jsonl", [_norm_row(image_id=1)])
+
+    def fail_if_estimator_loads(*_args: Any, **_kwargs: Any) -> Any:
+        raise AssertionError("dry-run should not load the real length estimator")
+
+    monkeypatch.setattr(
+        build_coco_views.CompactFullTokenBudgetEstimator,
+        "from_config",
+        fail_if_estimator_loads,
+    )
+
+    main(
+        [
+            "--source-preset",
+            str(source_root),
+            "--image-store-root",
+            str(image_store_root),
+            "--views-root",
+            str(views_root),
+            "--legacy-max-objects-source",
+            str(legacy_root),
+            "--proxy-source",
+            str(proxy_root),
+            "--splits",
+            "train",
+            "--image-store-mode",
+            "copy",
+            "--dry-run",
+            "--dry-run-report",
+            str(report_path),
+        ]
+    )
+
+    report = json.loads(report_path.read_text())
+    summary = json.loads(capsys.readouterr().out)
+    assert not image_store_root.exists()
+    assert not views_root.exists()
+    assert source_image.is_file()
+    assert set(summary) == {
+        "image_store",
+        "coco80/full",
+        "coco80/len-12000",
+        "coco80/max-60",
+        "coco80-lvis-proxy/len-12000",
+    }
+    assert summary["coco80/len-12000"]["dry_run"] is True
+    assert report["source_image_count"] == 1
+    assert report["target_image_count"] == 0
+    assert report["estimated_copy_bytes"] == 4
+    assert report["sample_resolution_checks"][0]["old_exists"] is True
+    assert report["sample_resolution_checks"][0]["new_ref"] == (
+        "images/train2017/000000000001.jpg"
+    )
+    assert str(views_root / "coco80" / "full") in report["planned_outputs"]["views"]
+    assert "No files were copied" in report["rollback_notes"]
+
+
+def test_parse_args_requires_image_store_mode() -> None:
+    with pytest.raises(SystemExit):
+        parse_args([])
+
+
+def test_reuse_existing_accepts_non_empty_canonical_store_without_copying(
+    tmp_path: Path,
+) -> None:
+    source_root = tmp_path / "public_data" / "coco" / "rescale_32_1024_bbox"
+    source_image = source_root / "images" / "train2017" / "source-only.jpg"
+    _write_image(source_image)
+    config = _config(
+        tmp_path,
+        source_preset=source_root,
+        image_store_mode="reuse-existing",
+    )
+    existing_target = config.target_image_dir / "train2017" / "existing.jpg"
+    _write_image(existing_target)
+
+    summary = ImageStoreAdopter(config).prepare()
+
+    assert summary["target_image_count"] == 1
+    assert existing_target.is_file()
+    assert not (config.target_image_dir / "train2017" / "source-only.jpg").exists()
+    assert source_image.is_file()
+
+
+def test_copy_adoption_leaves_legacy_source_image_tree_intact(tmp_path: Path) -> None:
+    source_root = tmp_path / "public_data" / "coco" / "rescale_32_1024_bbox"
+    source_image = source_root / "images" / "train2017" / "000000000001.jpg"
+    _write_image(source_image)
+    config = _config(tmp_path, source_preset=source_root, image_store_mode="copy")
+
+    ImageStoreAdopter(config).prepare()
+
+    assert source_image.is_file()
+    assert (config.target_image_dir / "train2017" / "000000000001.jpg").is_file()
+
+
 def test_cli_rejects_phase1_move_image_store_mode() -> None:
     with pytest.raises(SystemExit):
         parse_args(["--image-store-mode", "move"])
@@ -339,6 +454,20 @@ def _norm_row(
             for index in range(object_count)
         ],
     }
+
+
+def _raw_row(*, image_id: int, object_count: int = 1) -> dict[str, Any]:
+    row = _norm_row(image_id=image_id, object_count=object_count)
+    row["width"] = 100
+    row["height"] = 50
+    row["objects"] = [
+        {
+            **obj,
+            "bbox_2d": [10, 5, 20, 25],
+        }
+        for obj in row["objects"]
+    ]
+    return row
 
 
 def _write_jsonl(path: Path, rows: list[dict[str, Any]]) -> None:

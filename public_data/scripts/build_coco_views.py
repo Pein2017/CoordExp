@@ -634,6 +634,59 @@ class AllProxyResearchViewBuilder:
         return summary, stats_ref
 
 
+class DryRunViewPlanner:
+    """Planner for annotation views that are not materialized in dry-run mode."""
+
+    def __init__(self, config: CocoViewFactoryConfig) -> None:
+        self._config = config
+
+    def plan_view(
+        self,
+        *,
+        source_root: Path,
+        view_name: str,
+        source_suffix: str = ".jsonl",
+        parent_view: str | None = None,
+        sample_policy: Mapping[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """Return a dry-run summary for a view from source JSONL files.
+
+        :param source_root: Existing source root used for planning.
+        :param view_name: Logical view that would be materialized.
+        :param source_suffix: Per-split source file suffix to validate.
+        :param parent_view: Optional logical parent that would be consumed in a real run.
+        :param sample_policy: Optional sample policy planned for the view.
+        :returns: Dry-run planning summary without writing artifacts.
+        """
+
+        # validating source rows and accumulating summary counters
+        summary = _empty_summary()
+        source_jsonl: dict[str, str] = {}
+        planned_primary_jsonl: dict[str, str] = {}
+        for split in self._config.splits:
+            split_source = source_root / f"{split}{source_suffix}"
+            if not split_source.is_file():
+                raise FileNotFoundError(
+                    f"dry-run source JSONL does not exist: {split_source}"
+                )
+            source_jsonl[split] = str(split_source)
+            planned_primary_jsonl[split] = f"{split}.jsonl"
+            _merge_summary(summary, _summarize_source_jsonl(split_source))
+
+        # describing the non-materialized outputs
+        return {
+            **summary,
+            "dry_run": True,
+            "materialization": "skipped",
+            "source_root": str(source_root),
+            "source_jsonl": source_jsonl,
+            "planned_view_root": str(self._config.view_root(view_name)),
+            "planned_primary_jsonl": planned_primary_jsonl,
+            "parent_view": parent_view,
+            "sample_policy": dict(sample_policy) if sample_policy is not None else None,
+        }
+
+
 class ViewStatsWriter:
     """Writer for split-level length stats."""
 
@@ -957,10 +1010,11 @@ def main(argv: Sequence[str] | None = None) -> None:
     writer = Norm1000ViewWriter(config=config)
     stats_writer = ViewStatsWriter()
     manifest_builder = ViewManifestPayloadBuilder(config)
+    dry_run_planner = DryRunViewPlanner(config)
 
     # loading real estimator only when requested views need it
     estimator: LengthEstimator | None = None
-    if any("len-" in view for view in config.views):
+    if not config.dry_run and any("len-" in view for view in config.views):
         assert config.config_path is not None
         assert config.model_path is not None
         estimator = CompactFullTokenBudgetEstimator.from_config(
@@ -978,6 +1032,15 @@ def main(argv: Sequence[str] | None = None) -> None:
                 sample_policy=None,
             )
         elif view == "coco80/len-12000":
+            if config.dry_run:
+                summary[view] = dry_run_planner.plan_view(
+                    source_root=config.source_preset,
+                    view_name=view,
+                    source_suffix=".jsonl",
+                    parent_view="coco80/full",
+                    sample_policy=_length_budget_sample_policy(config.max_total_tokens),
+                )
+                continue
             if estimator is None:
                 raise RuntimeError("length estimator was not initialized")
             summary[view] = LengthBudgetViewBuilder(
@@ -996,6 +1059,20 @@ def main(argv: Sequence[str] | None = None) -> None:
                 writer=writer,
             ).build(view_name=view, max_objects=60)
         elif view == "coco80-lvis-proxy/len-12000":
+            if config.dry_run:
+                if config.proxy_source is None:
+                    raise ValueError("proxy_source is required for all-proxy views")
+                summary[view] = dry_run_planner.plan_view(
+                    source_root=config.proxy_source,
+                    view_name=view,
+                    source_suffix=_source_suffix_for_root(config.proxy_source),
+                    parent_view="coco80/full",
+                    sample_policy={
+                        **_length_budget_sample_policy(config.max_total_tokens),
+                        "applied_after_annotation_policy": True,
+                    },
+                )
+                continue
             if estimator is None:
                 raise RuntimeError("length estimator was not initialized")
             summary[view] = AllProxyResearchViewBuilder(
