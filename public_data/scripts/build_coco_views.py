@@ -7,6 +7,7 @@ import argparse
 import copy
 import hashlib
 import json
+import os
 import shutil
 import subprocess
 from dataclasses import dataclass
@@ -53,7 +54,9 @@ DEFAULT_VIEWS = (
     "coco80/max-60",
     "coco80-lvis-proxy/len-12000",
 )
-SUPPORTED_IMAGE_STORE_MODES = frozenset({"copy", "reflink", "reuse-existing"})
+SUPPORTED_IMAGE_STORE_MODES = frozenset(
+    {"copy", "hardlink", "reflink", "reuse-existing"}
+)
 PHASE1_REJECTED_IMAGE_STORE_MODE = "move"
 IMAGE_SUFFIXES = frozenset({".jpg", ".jpeg", ".png", ".webp", ".bmp"})
 
@@ -165,7 +168,7 @@ class ImageStoreAdopter:
             return report
 
         # adopting files according to the explicit mode
-        if self._config.image_store_mode in {"copy", "reflink"}:
+        if self._config.image_store_mode in {"copy", "hardlink", "reflink"}:
             self._copy_image_tree()
             target_images = _list_image_files(self._config.target_image_dir)
         elif self._config.image_store_mode == "reuse-existing":
@@ -204,7 +207,7 @@ class ImageStoreAdopter:
         )
 
     def _copy_image_tree(self) -> None:
-        """Copy or reflink the source image tree into the canonical store."""
+        """Adopt the source image tree into the canonical store."""
 
         if not self._config.source_image_dir.is_dir():
             raise FileNotFoundError(
@@ -228,6 +231,10 @@ class ImageStoreAdopter:
                 check=True,
             )
             shutil.copystat(source, destination)
+            return destination
+
+        if self._config.image_store_mode == "hardlink":
+            os.link(source, destination)
             return destination
 
         return shutil.copy2(source, destination)
@@ -967,7 +974,7 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         choices=sorted(SUPPORTED_IMAGE_STORE_MODES | {PHASE1_REJECTED_IMAGE_STORE_MODE}),
         help=(
             "Explicit image-store adoption mode. Phase 1 rejects move; use copy, "
-            "reflink, or reuse-existing."
+            "hardlink, reflink, or reuse-existing."
         ),
     )
     parser.add_argument("--reuse-existing-image-store", action="store_true")

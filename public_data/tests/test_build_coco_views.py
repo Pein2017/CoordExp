@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 from typing import Any, Mapping
 
@@ -227,6 +228,18 @@ def test_image_store_rejects_non_empty_target_without_reuse(tmp_path: Path) -> N
         ImageStoreAdopter(config).prepare()
 
 
+def test_hardlink_image_store_rejects_non_empty_target_without_reuse(
+    tmp_path: Path,
+) -> None:
+    source_root = tmp_path / "public_data" / "coco" / "rescale_32_1024_bbox"
+    _write_image(source_root / "images" / "train2017" / "000000000001.jpg")
+    config = _config(tmp_path, source_preset=source_root, image_store_mode="hardlink")
+    _write_image(config.image_store_root / "images" / "train2017" / "existing.jpg")
+
+    with pytest.raises(FileExistsError, match="reuse-existing"):
+        ImageStoreAdopter(config).prepare()
+
+
 def test_dry_run_report_records_counts_and_does_not_write_artifacts(
     tmp_path: Path,
 ) -> None:
@@ -364,6 +377,27 @@ def test_copy_adoption_leaves_legacy_source_image_tree_intact(tmp_path: Path) ->
     assert (config.target_image_dir / "train2017" / "000000000001.jpg").is_file()
 
 
+def test_hardlink_adoption_links_target_and_leaves_source_intact(tmp_path: Path) -> None:
+    source_root = tmp_path / "public_data" / "coco" / "rescale_32_1024_bbox"
+    source_image = source_root / "images" / "train2017" / "000000000001.jpg"
+    _write_image(source_image)
+    _skip_if_hardlinks_are_unsupported(tmp_path)
+    config = _config(tmp_path, source_preset=source_root, image_store_mode="hardlink")
+
+    ImageStoreAdopter(config).prepare()
+
+    target_image = config.target_image_dir / "train2017" / "000000000001.jpg"
+    source_stat = source_image.stat()
+    target_stat = target_image.stat()
+    assert source_image.is_file()
+    assert target_image.is_file()
+    assert (source_stat.st_dev, source_stat.st_ino) == (
+        target_stat.st_dev,
+        target_stat.st_ino,
+    )
+    assert source_stat.st_nlink >= 2
+
+
 def test_reflink_adoption_uses_reflink_and_leaves_source_intact(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -398,6 +432,12 @@ def test_reflink_adoption_uses_reflink_and_leaves_source_intact(
 def test_cli_rejects_phase1_move_image_store_mode() -> None:
     with pytest.raises(SystemExit):
         parse_args(["--image-store-mode", "move"])
+
+
+def test_cli_accepts_phase1_hardlink_image_store_mode() -> None:
+    args = parse_args(["--image-store-mode", "hardlink"])
+
+    assert args.image_store_mode == "hardlink"
 
 
 def test_compact_full_estimator_model_view_renders_norm1000_ints_as_coord_tokens() -> None:
@@ -519,3 +559,13 @@ def _read_jsonl(path: Path) -> list[dict[str, Any]]:
 def _write_image(path: Path) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_bytes(b"fake")
+
+
+def _skip_if_hardlinks_are_unsupported(tmp_path: Path) -> None:
+    source = tmp_path / "hardlink-probe-source"
+    target = tmp_path / "hardlink-probe-target"
+    source.write_bytes(b"probe")
+    try:
+        os.link(source, target)
+    except OSError as exc:
+        pytest.skip(f"hardlinks are unsupported in tmp_path: {exc}")
