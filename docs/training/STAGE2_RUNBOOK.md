@@ -69,7 +69,7 @@ Current internal ownership seams:
 - Channel-B final object sequencing is controlled by:
   - `stage2_ab.channel_b.insertion_order: tail_append | sorted`
   - default `tail_append` preserves the historical clean-prefix plus FN-tail path
-  - `sorted` applies a final top-left sort over the retained anchor objects plus FN objects before final teacher-forced serialization
+  - `sorted` applies a final top-left sort over the retained anchor objects plus FN objects before final teacher-forced serialization, and compact-full FN descriptions remain explicitly tagged for `rollout_fn_desc_weight`
 - Channel-B duplicate control is configured only through:
   - `stage2_ab.channel_b.duplicate_control.iou_threshold`
   - `stage2_ab.channel_b.duplicate_control.center_radius_scale`

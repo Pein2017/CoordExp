@@ -33,11 +33,18 @@ def test_artifact_contract_docs_freeze_rank0_and_stage2_eval_surfaces() -> None:
     assert "not yet written by all rank-0 manifests" not in artifacts
 
     for policy_surface in (
+        "stage2_policy_provenance.schema_version",
+        "stage2_policy_provenance.trainer_variant",
         "stage2_policy_provenance.assignment_strategy",
         "stage2_policy_provenance.duplicate_filter_strategy",
         "stage2_policy_provenance.object_ordering_policy",
         "stage2_policy_provenance.assignment_iou_threshold_effective",
         "stage2_policy_provenance.object_ordering_strategy_id",
+        "stage2_policy_provenance.rollout_template_family",
+        "stage2_policy_provenance.rollout_decode_policy",
+        "stage2_policy_provenance.invalid_rollout_policy",
+        "legacy_hungarian_mask_iou",
+        "legacy_tail_append",
         "src/trainers/rollout_matching/matching.py::hungarian_match_maskiou",
         "src/trainers/stage2_two_channel/target_builder.py::_apply_channel_b_duplicate_control",
         "stage2_ab.channel_b.insertion_order",

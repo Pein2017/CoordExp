@@ -239,11 +239,19 @@ def build_pipeline_manifest(
             return []
 
         out: list[dict[str, Any]] = []
-        for spec in raw:
+        for idx, spec in enumerate(raw):
             if not isinstance(spec, Mapping):
+                if runtime_profile.explicit_pipeline_required:
+                    raise TypeError(
+                        f"pipeline.{path}[{idx}] must be a mapping module spec"
+                    )
                 continue
             name = str(spec.get("name", "") or "").strip()
             if not name:
+                if runtime_profile.explicit_pipeline_required:
+                    raise ValueError(
+                        f"pipeline.{path}[{idx}].name must be non-empty"
+                    )
                 continue
             authored_cfg_raw = spec.get("config", {})
             authored_cfg = (

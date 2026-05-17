@@ -1753,13 +1753,13 @@ This task should be split into reviewable slices during execution:
 
 Each slice should receive a main-session review before the next slice starts.
 
-- [ ] **Step 1: Add static Stage-1 source and expected snapshots**
+- [x] **Step 1: Add static Stage-1 source and expected snapshots**
 
 Snapshot only small semantic fields plus token ids where alignment matters.
 
 Expected: fixture is human-reviewable and not a giant tensor archive.
 
-- [ ] **Step 2: Add static Stage-2 rollout source and expected snapshots**
+- [x] **Step 2: Add static Stage-2 rollout source and expected snapshots**
 
 Include matched prediction, duplicate prediction, lower-quality duplicate, and
 missing GT.
@@ -1767,24 +1767,30 @@ missing GT.
 Expected: snapshot proves assignment, duplicate drop reasons, false-negative
 insertion, and final object ordering.
 
-- [ ] **Step 3: Implement builders through real code**
+- [x] **Step 3: Implement builders through real code**
 
 Builders should construct typed objects through the actual architecture rather
 than hand-writing all internals.
 
-- [ ] **Step 4: Add tiny integrated forward/backward smoke**
+- [x] **Step 4: Add tiny integrated forward/backward smoke**
 
 Use the smallest practical model/backend surface or a fake model where full
 Qwen3-VL is too expensive for unit tests. If using a fake model, keep a
 separate real-backend smoke command documented before production training.
 
-- [ ] **Step 5: Run tests**
+- [x] **Step 5: Run tests**
 
 Run:
 
 ```bash
 conda run -n ms python -m pytest tests/test_training_architecture_golden_thread.py tests/test_training_architecture_tiny_smoke.py -q
 ```
+
+2026-05-17 reconciliation: Task 12 is implemented through
+`tests/fixtures/training_architecture/`, the builder helpers in
+`tests/helpers/training_architecture_fixture_builder.py`, golden-thread
+assertions in `tests/test_training_architecture_golden_thread.py`, and the
+integrated tiny smoke in `tests/test_training_architecture_tiny_smoke.py`.
 
 Expected: pass.
 

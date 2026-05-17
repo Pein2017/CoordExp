@@ -1639,6 +1639,51 @@ def test_stage2_build_pipeline_manifest_requires_explicit_pipeline():
         )
 
 
+@pytest.mark.parametrize(
+    ("pipeline_section", "exc_type", "match"),
+    [
+        (
+            {"objective": ["not-a-mapping"], "diagnostics": []},
+            TypeError,
+            r"pipeline\.objective\[0\] must be a mapping module spec",
+        ),
+        (
+            {"objective": [{"name": ""}], "diagnostics": []},
+            ValueError,
+            r"pipeline\.objective\[0\]\.name must be non-empty",
+        ),
+        (
+            {"objective": [{"name": "token_ce"}], "diagnostics": [{}]},
+            ValueError,
+            r"pipeline\.diagnostics\[0\]\.name must be non-empty",
+        ),
+    ],
+)
+def test_stage2_build_pipeline_manifest_rejects_malformed_explicit_modules(
+    pipeline_section,
+    exc_type,
+    match,
+) -> None:
+    from src.sft import _build_pipeline_manifest
+
+    with pytest.raises(exc_type, match=match):
+        _build_pipeline_manifest(
+            {"pipeline": pipeline_section},
+            default_objective=[
+                "token_ce",
+                "bbox_geo",
+                "bbox_size_aux",
+                "coord_reg",
+            ],
+            default_diagnostics=["coord_diag"],
+            trainer_variant="stage2_two_channel",
+            config_path="configs/stage2_two_channel/smoke/ab_mixed_pipeline_explicit.yaml",
+            run_name="smoke_ab_mixed_pipeline_explicit",
+            seed=17,
+            coord_soft_cfg=None,
+        )
+
+
 def test_pipeline_manifest_respects_authored_sequence_and_empty_diagnostics():
     from src.sft import _build_pipeline_manifest
 

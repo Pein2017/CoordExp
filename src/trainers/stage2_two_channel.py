@@ -3049,6 +3049,8 @@ class Stage2ABTrainingTrainer(
             prefix_pos = list(supervision_targets.prefix_pos)
             prefix_bins = list(supervision_targets.prefix_bins)
             prefix_struct_pos = list(supervision_targets.prefix_struct_pos)
+            prefix_desc_pos = list(supervision_targets.prefix_desc_pos)
+            prefix_desc_weights = list(supervision_targets.prefix_desc_weights)
             matched_for_supervision_total += int(
                 len(supervision_targets.matched_gt_indices)
             )
@@ -3493,6 +3495,8 @@ class Stage2ABTrainingTrainer(
                 prefix_pos=prefix_pos,
                 prefix_bins=prefix_bins,
                 prefix_struct_pos=prefix_struct_pos,
+                prefix_desc_pos=prefix_desc_pos,
+                prefix_desc_weights=prefix_desc_weights,
                 prefix_bbox_groups=prefix_bbox_groups,
                 fn_bbox_groups=fn_bbox_groups,
                 tail_desc_pos=tail_desc_pos,

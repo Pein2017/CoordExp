@@ -127,3 +127,58 @@ def test_token_ce_global_prefix_struct_ce_supervises_channel_b_prefix_tokens() -
     assert float(weights_masked[0, 3].item()) == pytest.approx(1.0)
     assert out.metrics["loss/struct_ce"] > 0.0
     assert float(out.loss.detach().cpu().item()) > 0.0
+
+
+def test_token_ce_prefix_desc_pos_uses_fn_desc_weight_without_struct_ce() -> None:
+    vocab = 32
+    input_ids = torch.tensor([[7, 11, 12, 13, 14]], dtype=torch.long)
+    logits = torch.zeros(1, input_ids.shape[1], vocab, dtype=torch.float32)
+    logits[:, :, 0] = 5.0
+
+    context = TeacherForcingContext(
+        channel="B",
+        registry_context="rollout",
+        input_ids=input_ids,
+        logits=logits,
+        logits_ce=logits,
+        meta=[
+            {
+                "prompt_len": 1,
+                "prefix_len": 3,
+                "train_len": 3,
+                "tail_ignore_pos": [],
+                "tail_desc_pos": [],
+                "tail_closure_pos": [],
+                "prefix_struct_pos": [],
+                "prefix_desc_pos": [1],
+                "prefix_desc_weights": [2.0],
+                "drop_invalid_total": 0,
+            }
+        ],
+        coord_token_ids=[],
+        temperature=1.0,
+    )
+    spec = PipelineModuleSpec(
+        name="token_ce",
+        enabled=True,
+        weight=1.0,
+        channels=("A", "B"),
+        config={
+            "rollout_fn_desc_weight": 1.5,
+            "rollout_global_prefix_struct_ce_weight": 0.0,
+        },
+    )
+
+    out = run_token_ce_module(context=context, spec=spec)
+
+    labels_masked = out.state["labels_masked"]
+    weights_masked = out.state["weights_masked"]
+    token_type_masks = out.state["token_type_masks"]
+    assert int(labels_masked[0, 1].item()) == -100
+    assert int(labels_masked[0, 2].item()) == 12
+    assert int(labels_masked[0, 3].item()) == -100
+    assert float(weights_masked[0, 2].item()) == pytest.approx(3.0)
+    assert bool(token_type_masks["desc"][0, 2].item()) is True
+    assert bool(token_type_masks["struct"][0, 2].item()) is False
+    assert out.metrics["loss/struct_ce"] == pytest.approx(0.0)
+    assert out.metrics["loss/desc_ce"] > 0.0

@@ -88,6 +88,8 @@ class _ChannelBSupervisionTargets:
     prefix_pos: List[int]
     prefix_bins: List[int]
     prefix_struct_pos: List[int]
+    prefix_desc_pos: List[int]
+    prefix_desc_weights: List[float]
     matched_gt_indices: List[int]
     fn_gt_indices_final: List[int]
     fn_objs: List[GTObject]
@@ -285,6 +287,39 @@ def _compact_desc_tail_positions_and_weights(
             if int(obj_idx) < len(object_weights)
             else 1.0
         )
+        desc_tokens = _token_indices_overlapping_char_span(
+            token_spans=token_spans,
+            char_start=int(desc_span[0]),
+            char_end=int(desc_span[1]),
+        )
+        positions.extend(int(pos) for pos in desc_tokens)
+        weights.extend(float(weight) for _ in desc_tokens)
+
+    return positions, weights
+
+
+def _compact_desc_prefix_positions_and_weights(
+    *,
+    tokenizer: Any,
+    prefix_token_ids: Sequence[int],
+    prefix_text: str,
+    object_weights_by_index: Mapping[int, float],
+) -> Tuple[List[int], List[float]]:
+    if not prefix_token_ids or not prefix_text or not object_weights_by_index:
+        return [], []
+
+    token_spans = _token_piece_char_spans(
+        tokenizer=tokenizer,
+        token_ids=prefix_token_ids,
+    )
+    object_spans = _compact_object_and_desc_spans(prefix_text)
+
+    positions: List[int] = []
+    weights: List[float] = []
+    for obj_idx, (_object_span, desc_span) in enumerate(object_spans):
+        if int(obj_idx) not in object_weights_by_index:
+            continue
+        weight = float(object_weights_by_index[int(obj_idx)])
         desc_tokens = _token_indices_overlapping_char_span(
             token_spans=token_spans,
             char_start=int(desc_span[0]),
@@ -1068,6 +1103,8 @@ def _build_channel_b_supervision_targets(
             for weight in fn_object_weights
         ]
     fn_count_for_meta = int(len(fn_objs))
+    prefix_desc_pos: List[int] = []
+    prefix_desc_weights: List[float] = []
     if insertion_order_resolved == "sorted":
         prefix_bbox_groups = []
         fn_bbox_groups = []
@@ -1248,6 +1285,19 @@ def _build_channel_b_supervision_targets(
                 prefix_text=clean_prefix.prefix_text,
                 matched_object_indices=remapped_matched_sorted_indices,
             )
+            prefix_desc_weight_by_sorted_idx = {
+                int(sorted_idx): float(fn_object_weights[int(fn_idx)])
+                for fn_idx, sorted_idx in fn_idx_to_sorted_idx.items()
+                if 0 <= int(fn_idx) < len(fn_object_weights)
+            }
+            prefix_desc_pos, prefix_desc_weights = (
+                _compact_desc_prefix_positions_and_weights(
+                    tokenizer=tokenizer,
+                    prefix_token_ids=clean_prefix.prefix_token_ids,
+                    prefix_text=clean_prefix.prefix_text,
+                    object_weights_by_index=prefix_desc_weight_by_sorted_idx,
+                )
+            )
             append_text = ""
             append_ids = []
             tail_desc_pos = []
@@ -1378,6 +1428,8 @@ def _build_channel_b_supervision_targets(
         prefix_pos=prefix_pos,
         prefix_bins=prefix_bins,
         prefix_struct_pos=[int(p) for p in prefix_struct_pos],
+        prefix_desc_pos=[int(p) for p in prefix_desc_pos],
+        prefix_desc_weights=[float(w) for w in prefix_desc_weights],
         matched_gt_indices=sorted(int(idx) for idx in matched_gt_for_supervision),
         fn_gt_indices_final=[int(idx) for idx in fn_gt_indices_final],
         fn_objs=fn_objs,
@@ -1430,6 +1482,8 @@ def _build_channel_b_meta_entry(
     prefix_pos: Sequence[int],
     prefix_bins: Sequence[int],
     prefix_struct_pos: Sequence[int],
+    prefix_desc_pos: Sequence[int],
+    prefix_desc_weights: Sequence[float],
     prefix_bbox_groups: Sequence[Mapping[str, Any]],
     fn_bbox_groups: Sequence[Mapping[str, Any]],
     tail_desc_pos: Sequence[int],
@@ -1494,6 +1548,9 @@ def _build_channel_b_meta_entry(
 
     tail_desc_pos_eff: List[int] = []
     tail_desc_weights_eff: List[float] = []
+    prefix_desc_pos_eff: List[int] = []
+    prefix_desc_weights_eff: List[float] = []
+    prefix_cap = max(0, int(prefix_len_eff))
     tail_cap = max(0, int(train_len_eff) - int(prefix_len_eff))
     tail_ignore_pos_eff: List[int] = []
     assistant_span_ids = list(enc_ids_list[int(prompt_len) : int(prompt_len) + int(train_len_eff)])
@@ -1526,6 +1583,16 @@ def _build_channel_b_meta_entry(
         if 0 <= rel_i < tail_cap:
             tail_desc_pos_eff.append(rel_i)
             tail_desc_weights_eff.append(weight_f)
+
+    for rel, weight in zip(prefix_desc_pos, prefix_desc_weights):
+        try:
+            rel_i = int(rel)
+            weight_f = float(weight)
+        except (TypeError, ValueError):
+            continue
+        if 0 <= rel_i < prefix_cap:
+            prefix_desc_pos_eff.append(rel_i)
+            prefix_desc_weights_eff.append(weight_f)
 
     meta_entry: Stage2ChannelBMeta = {
         "stage2_channel": "B",
@@ -1560,6 +1627,8 @@ def _build_channel_b_meta_entry(
         "prefix_coord_pos": [int(p) for p in prefix_pos],
         "prefix_coord_target_bins": [int(b) for b in prefix_bins],
         "prefix_struct_pos": [int(p) for p in prefix_struct_pos],
+        "prefix_desc_pos": [int(p) for p in prefix_desc_pos_eff],
+        "prefix_desc_weights": [float(w) for w in prefix_desc_weights_eff],
         "tail_closure_pos": [int(p) for p in tail_closure_pos_eff],
         "tail_ignore_pos": tail_ignore_pos_eff,
         "tail_desc_pos": [int(p) for p in tail_desc_pos_eff],

@@ -17,7 +17,10 @@ from src.common.detection_sequence import (
     BOX_START_TOKEN,
     OBJECT_REF_START_TOKEN,
 )
-from src.training.stage2.rollout_codec import Stage2RolloutTemplateMismatchError
+from src.training.stage2.rollout_codec import (
+    Stage2RolloutTemplateMismatchError,
+    resolve_stage2_rollout_template_policy,
+)
 from src.training.stage2.assignment import GreedyIoUAssignment
 from src.trainers.stage2_two_channel import (
     Stage2ABTrainingTrainer,
@@ -999,6 +1002,38 @@ def test_channel_b_compact_full_rollout_template_uses_compact_parser_and_targets
     assert metrics["rollout/template_family_compact_full"] == pytest.approx(1.0)
     assert metrics["rollout/invalid_fallback_gt_fn_count"] == pytest.approx(0.0)
     assert metrics["rollout/fallback_loss_share"] == pytest.approx(0.0)
+
+
+def test_channel_b_compact_full_sorted_fn_desc_reaches_prefix_meta(
+    monkeypatch,
+) -> None:
+    t = _make_compact_channel_b_trainer(
+        rollout_text="",
+        fallback_loss_weight=0.25,
+        num_rollouts=1,
+    )
+    t.stage2_ab_cfg["channel_b"]["insertion_order"] = "sorted"
+    monkeypatch.setattr(
+        "src.trainers.stage2_two_channel.parse_rollout_for_matching",
+        lambda **kwargs: pytest.fail("legacy CoordJSON parser must not run"),
+    )
+
+    segments, _metrics = t._prepare_batch_inputs_b(
+        [_single_bbox_sample()],
+        _segments_only=True,
+    )
+
+    assert len(segments) == 1
+    _encoded, meta, _length = segments[0]
+    assert meta["rollout_template_family"] == "compact_full"
+    assert meta["rollout_context"] == "fallback_gt_fn_append_only"
+    assert meta["prefix_len"] > 0
+    assert meta["bbox_groups_fn"] == []
+    assert meta["prefix_desc_pos"]
+    assert [float(w) for w in meta["prefix_desc_weights"]] == [
+        pytest.approx(0.25)
+    ] * len(meta["prefix_desc_pos"])
+    assert meta["tail_desc_pos"] == []
 
 
 @pytest.mark.parametrize(
@@ -3650,6 +3685,87 @@ def test_channel_b_supervision_targets_sorted_insertion_reorders_final_sequence(
     )
     assert sorted_targets.append_text == "]}"
     assert sorted_targets.tail_desc_pos == []
+
+
+def test_channel_b_compact_full_sorted_insertion_marks_fn_prefix_desc_positions() -> (
+    None
+):
+    tok = _CoordLiteralTokenizer()
+    anchor_objects = [
+        GTObject(
+            index=0,
+            geom_type="bbox_2d",
+            points_norm1000=[400, 500, 450, 560],
+            desc="anchor",
+        )
+    ]
+    accepted_clean, duplicate_bursts_by_boundary = _sequential_dedup_bbox_objects(
+        parsed_bbox_objects_raw=anchor_objects,
+        duplicate_iou_threshold=0.9,
+    )
+    triage = _build_channel_b_triage(
+        accepted_objects_clean=accepted_clean,
+        duplicate_bursts_by_boundary=duplicate_bursts_by_boundary,
+        explorer_accepted_objects_clean_by_view=[[], [], []],
+        anchor_match_by_pred={0: 0},
+        explorer_match_by_pred_by_view=[{}, {}, {}],
+        unlabeled_consistent_iou_threshold=0.9,
+        duplicate_iou_threshold=0.9,
+        pseudo_positive_enabled=False,
+    )
+    gts = [
+        GTObject(
+            index=0,
+            geom_type="bbox_2d",
+            points_norm1000=[400, 500, 450, 560],
+            desc="matched",
+        ),
+        GTObject(
+            index=1,
+            geom_type="bbox_2d",
+            points_norm1000=[10, 20, 30, 40],
+            desc="fn",
+        ),
+    ]
+
+    sorted_targets = _build_channel_b_supervision_targets(
+        tokenizer=tok,
+        prompt_ids=[],
+        coord_id_set=set(range(1000)),
+        gts=gts,
+        match=types.SimpleNamespace(matched_pairs=[(0, 0)]),
+        triage=triage,
+        recovered_ground_truth_weight_multiplier=2.0,
+        pseudo_positive_enabled=False,
+        pseudo_positive_coord_weight=0.4,
+        duplicate_iou_threshold=0.9,
+        object_field_order="desc_first",
+        bbox_groups_from_token_ids_fn=_bbox_groups_from_token_ids,
+        matched_prefix_structure_positions_fn=_matched_prefix_structure_positions,
+        serialize_append_fragment_fn=_serialize_append_fragment,
+        insertion_order="sorted",
+        rollout_template_policy=resolve_stage2_rollout_template_policy("compact_full"),
+    )
+
+    assert sorted_targets.clean_target_text.find(
+        f"{OBJECT_REF_START_TOKEN}fn"
+    ) < sorted_targets.clean_target_text.find(f"{OBJECT_REF_START_TOKEN}anchor")
+    assert sorted_targets.append_text == ""
+    assert sorted_targets.fn_bbox_groups == []
+    assert sorted_targets.tail_desc_pos == []
+    assert sorted_targets.prefix_desc_pos
+    assert [float(w) for w in sorted_targets.prefix_desc_weights] == [
+        pytest.approx(1.0)
+    ] * len(sorted_targets.prefix_desc_pos)
+    desc_ids = [
+        sorted_targets.clean_prefix.prefix_token_ids[int(p)]
+        for p in sorted_targets.prefix_desc_pos
+    ]
+    assert tok.decode(desc_ids) == "fn"
+    assert any(
+        group["gt_bins"] == [10, 20, 30, 40]
+        for group in sorted_targets.prefix_bbox_groups
+    )
 
 
 def test_channel_b_triage_posterior_nested_config_reaches_live_accessor_and_vllm_offsets(

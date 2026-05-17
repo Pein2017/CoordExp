@@ -195,7 +195,10 @@ Training artifact policy is clean-write / tolerant-read:
 - Readers may tolerate historical flat metric keys, older diagnostic payloads,
   or migration-only Stage-2 policy metadata when explicitly documented.
 - Tolerant reads do not authorize new writers to emit removed training
-  mechanisms or legacy policy names.
+  mechanisms or undocumented legacy policy names. Explicitly documented Stage-2
+  migration identifiers such as `legacy_hungarian_mask_iou` and
+  `legacy_tail_append` remain valid manifest values only while their
+  compatibility adapters are the active default.
 
 Resolved config artifacts are the primary bridge between configs, metrics, and
 runtime behavior:
@@ -381,8 +384,11 @@ manifest family:
 - `experiment_manifest.json` at top-level `stage2_policy_provenance` and under
   `runtime_summary.stage2_policy_provenance`
 
-The block contains these exact policy identifiers and thresholds:
+The block contains these exact policy identifiers, thresholds, and rollout
+surface fields:
 
+- `stage2_policy_provenance.schema_version`
+- `stage2_policy_provenance.trainer_variant`
 - `stage2_policy_provenance.assignment_strategy`
 - `stage2_policy_provenance.assignment_iou_threshold`
 - `stage2_policy_provenance.assignment_iou_threshold_effective`
@@ -393,6 +399,9 @@ The block contains these exact policy identifiers and thresholds:
 - `stage2_policy_provenance.object_ordering_policy`
 - `stage2_policy_provenance.object_ordering_strategy_id`
 - `stage2_policy_provenance.sample_object_ordering`
+- `stage2_policy_provenance.rollout_template_family`
+- `stage2_policy_provenance.rollout_decode_policy`
+- `stage2_policy_provenance.invalid_rollout_policy`
 
 | Policy surface | Current owner / location | Current artifact visibility | Compatibility decision |
 | --- | --- | --- | --- |

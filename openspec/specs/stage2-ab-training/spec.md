@@ -617,6 +617,7 @@ Normative behavior:
 - `stage2_ab.channel_b.insertion_order` MUST be typed and accept exactly `tail_append` or `sorted`.
 - `stage2_ab.channel_b.insertion_order: tail_append` MUST remain the default and preserve the historical clean-prefix plus FN-tail target construction.
 - `stage2_ab.channel_b.insertion_order: sorted` MUST build the final teacher-forced object sequence by top-left sorting the retained accepted-clean objects together with FN objects using the same `(minY, minX)` ordering contract as stage-1 sorted ordering.
+- For compact-full `sorted`, FN description spans now live in the final prefix and MUST be emitted as explicit prefix description metadata so they receive the same configurable FN-desc CE weight as FN-tail spans.
 - All modes MUST keep every GT object present in the final teacher-forced target.
 
 #### Scenario: Channel-B teacher-forced target uses the clean accepted prefix
@@ -799,7 +800,7 @@ Channel-B:
   - the positive teacher-forced prefix MUST be canonical serialization of `accepted_objects_clean`,
   - matched clean prefix objects MUST receive structure-only CE,
   - generic unmatched clean extras MAY remain in the clean prefix as context but MUST remain neutral,
-  - FN objects MUST be appended to the clean target and receive structure+desc CE.
+  - FN objects MUST be injected by the active insertion policy and receive structure+desc CE.
 - **FP-neutral geometry**:
   - geometry losses MUST be computed for matched clean prefix objects and FN-injected objects,
   - generic unmatched clean extras MUST NOT receive geometric gradients.
@@ -818,7 +819,7 @@ Channel-B:
 Configurable desc supervision (both channels):
 - Desc CE weights MUST be expressed via the declared pipeline module configs:
   - Channel-A: `stage2_ab.pipeline.objective[name=token_ce].config.desc_ce_weight`
-  - Channel-B (FN tail): `stage2_ab.pipeline.objective[name=token_ce].config.rollout_fn_desc_weight`
+  - Channel-B (FN-injected tail or sorted prefix): `stage2_ab.pipeline.objective[name=token_ce].config.rollout_fn_desc_weight`
 
 Bbox geometry losses (both channels) are computed from coord distributions:
 - The trainer MUST decode coordinates from coord-token distributions via CoordExp expectation decoding (not argmax):

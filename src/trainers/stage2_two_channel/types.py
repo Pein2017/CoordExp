@@ -63,6 +63,8 @@ class Stage2ChannelBMeta(Stage2RolloutMetaBase):
     drop_invalid_total: int
     valid_explorer_count: int
     prefix_struct_pos: List[int]
+    prefix_desc_pos: NotRequired[List[int]]
+    prefix_desc_weights: NotRequired[List[float]]
     tail_desc_weights: List[float]
     fn_object_weights: List[float]
     anchor_decode_mode: str
