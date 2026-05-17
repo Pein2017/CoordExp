@@ -19,6 +19,13 @@ from src.datasets.preprocessors.resize import SmartResizeParams
 from .structural import run_structural_preflight
 from .types import PipelineState
 
+CANONICAL_COCO_VIEW_FACTORY_PATH = "public_data/scripts/build_coco_views.py"
+LEGACY_SHARED_PRESET_STAGE_SCOPE = (
+    "Unified runner stages remain shared/legacy preset preprocessing for COCO, "
+    "LVIS, VG, and VG-Ref in Phase 1. Canonical COCO norm1000 views are planned "
+    f"for the dedicated factory at {CANONICAL_COCO_VIEW_FACTORY_PATH}."
+)
+
 
 class PipelineStage(ABC):
     name: str
