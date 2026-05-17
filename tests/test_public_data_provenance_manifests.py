@@ -26,12 +26,16 @@ REQUESTED_COCO1024_TRAINING_VARIANTS = {
     "public_data/coco/rescale_32_1024_bbox",
     "public_data/coco/rescale_32_1024_bbox_max60",
     "public_data/coco/rescale_32_1024_bbox_max60_lvis_proxy",
+    "public_data/coco/rescale_32_1024_bbox_len12000",
+    "public_data/coco/rescale_32_1024_bbox_lvis_proxy_len12000",
 }
 
 MATERIALIZED_COCO1024_VARIANTS = {
     "public_data/coco/rescale_32_1024_bbox",
     "public_data/coco/rescale_32_1024_bbox_max60",
     "public_data/coco/rescale_32_1024_bbox_max60_lvis_proxy",
+    "public_data/coco/rescale_32_1024_bbox_len12000",
+    "public_data/coco/rescale_32_1024_bbox_lvis_proxy_len12000",
 }
 
 

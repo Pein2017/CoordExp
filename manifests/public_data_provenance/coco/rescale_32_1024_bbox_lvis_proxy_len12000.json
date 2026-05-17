@@ -1,0 +1,85 @@
+{
+  "checksums": {
+    "aggregate_sha256": "50c9290fe987fed2e9251d235dbe898276ef854865ebb87f38ffc5f4c40c3a47",
+    "algorithm": "sha256",
+    "files": [
+      {
+        "path": "public_data/coco/rescale_32_1024_bbox_lvis_proxy_len12000/train.coord.jsonl",
+        "records": 117266,
+        "sha256": "cc43d9725a5fc7d26c63d4fe124782aff30bf3e2358b186a72cf40f76f3e3d5b",
+        "size_bytes": 346344956
+      },
+      {
+        "path": "public_data/coco/rescale_32_1024_bbox_lvis_proxy_len12000/train.norm.jsonl",
+        "records": 117266,
+        "sha256": "2c189f04b66fad051a5965018952479af32aa0c176c0144dd5c338dda72a73d6",
+        "size_bytes": 301367372
+      },
+      {
+        "path": "public_data/coco/rescale_32_1024_bbox_lvis_proxy_len12000/val.coord.jsonl",
+        "records": 4952,
+        "sha256": "f88f2251bcd0c88ee15bc09b5a10f3356fb5efff1396a80d7f1cfad4ec3efb93",
+        "size_bytes": 15082190
+      },
+      {
+        "path": "public_data/coco/rescale_32_1024_bbox_lvis_proxy_len12000/val.norm.jsonl",
+        "records": 4952,
+        "sha256": "930af524169aee2be56f1b3238b9e28779501f61e346d47f5e0957575ff3682c",
+        "size_bytes": 13136126
+      }
+    ],
+    "scope": "jsonl_training_samples_only"
+  },
+  "code_ref": {
+    "git_commit": "82eb100ae186ee084339e4e9cd4b821623581f50",
+    "git_dirty_allowed": true
+  },
+  "command": "PYTHONPATH=. conda run -n ms python public_data/scripts/build_coco_length_budget_artifacts.py --config configs/stage1/recursive_detection_ce_latest/prod/compact_full_support2.yaml --model-path model_cache/models/Qwen/Qwen3-VL-2B-Instruct-coordexp --source-preset public_data/coco/rescale_32_1024_bbox --coco-output public_data/coco/rescale_32_1024_bbox_len12000 --proxy-output public_data/coco/rescale_32_1024_bbox_lvis_proxy_len12000 --projection-root temp/coco_lvis_projection_length_budget --mapping-csv openspec/changes/add-lvis-coco-proxy-supervision/artifacts/determined_proxy_mappings_val2017.csv --max-total-tokens 12000 --splits train val --force --build-lvis-proxy",
+  "generated_at_utc": "2026-05-17T07:44:11Z",
+  "inputs": [
+    {
+      "kind": "processed_base",
+      "notes": "Length-filtered COCO coord-token base branch.",
+      "path": "public_data/coco/rescale_32_1024_bbox_len12000"
+    },
+    {
+      "kind": "semantic_mapping",
+      "notes": "Versioned LVIS-to-COCO proxy mapping decisions.",
+      "path": "openspec/changes/add-lvis-coco-proxy-supervision/artifacts/determined_proxy_mappings_val2017.csv"
+    },
+    {
+      "kind": "raw_annotations",
+      "notes": "COCO instance annotations used for original image dimensions.",
+      "path": "public_data/coco/raw/annotations"
+    },
+    {
+      "kind": "raw_annotations",
+      "notes": "LVIS instance annotations used to build projection artifacts.",
+      "path": "public_data/lvis/raw/annotations"
+    }
+  ],
+  "key_params": {
+    "image_factor": 32,
+    "image_storage_policy": "share_same_resolution_image_root",
+    "lvis_proxy": true,
+    "max_objects": null,
+    "max_pixels": 1048576,
+    "max_total_tokens": 12000,
+    "routine_sync_policy": "regenerate_from_raw_plus_manifest",
+    "shared_image_root": "public_data/coco/rescale_32_1024_bbox/images",
+    "template": "compact_full",
+    "token_budget_components": [
+      "image_patch_tokens_post_merge",
+      "system_prompt_tokens",
+      "user_chat_tokens",
+      "assistant_compact_full_detection_tokens"
+    ],
+    "tokenizer": "model_cache/models/Qwen/Qwen3-VL-2B-Instruct-coordexp",
+    "training_config": "configs/stage1/recursive_detection_ce_latest/prod/compact_full_support2.yaml"
+  },
+  "notes": "COCO 1024 LVIS-proxy compact-full dataset filtered by final total 12k token budget after proxy augmentation.",
+  "producer_script": "public_data/scripts/build_coco_length_budget_artifacts.py",
+  "relative_path": "public_data/coco/rescale_32_1024_bbox_lvis_proxy_len12000",
+  "schema_version": 1,
+  "working_dir": "."
+}

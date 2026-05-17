@@ -21,6 +21,11 @@ checksum block. The checksum scope is intentionally narrow: hash the
 model-facing `*.jsonl` files and an aggregate over those file records, but do
 not hash raw images, resized images, caches, or whole `public_data/` trees.
 
+Derived artifacts at the same image resolution should share the canonical
+processed image root instead of copying or relinking images. For example, COCO
+1024 length-budget variants keep only JSONL/meta files and write relative image
+paths that point back to `public_data/coco/rescale_32_1024_bbox/images/`.
+
 Minimal example:
 
 ```json
