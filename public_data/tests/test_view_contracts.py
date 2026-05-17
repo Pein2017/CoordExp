@@ -94,6 +94,20 @@ def test_infers_repo_root_from_innermost_public_data_component(tmp_path: Path) -
     ).resolve()
 
 
+def test_rejects_repo_root_image_store_with_parent_component(tmp_path: Path) -> None:
+    repo_root = tmp_path / "checkout"
+    view_root = repo_root / "public_data" / "coco" / "views" / "coco80" / "len-12000"
+    meta = ViewMetadata(
+        **_valid_view_metadata(
+            image_store="../outside/images",
+            path_anchor="repo_root",
+        )
+    )
+
+    with pytest.raises(ValueError, match=r"image_store must not contain \.\."):
+        resolve_view_image_root(meta, view_root=view_root, repo_root=repo_root)
+
+
 def test_write_and_load_view_metadata_round_trips_valid_metadata(tmp_path: Path) -> None:
     metadata_path = tmp_path / "nested" / "view" / "metadata.json"
 

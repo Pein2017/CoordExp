@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any, Mapping
 
 
@@ -105,17 +105,23 @@ def resolve_view_image_root(
 
     _validate_view_metadata(meta)
 
-    image_store = Path(meta.image_store)
+    image_store = _validate_view_image_store(meta)
     if image_store.is_absolute():
-        if meta.path_anchor not in _ABSOLUTE_PATH_ANCHORS:
-            raise ValueError("absolute image_store requires test/debug absolute path_anchor")
         return image_store.resolve()
 
-    if meta.path_anchor != "repo_root":
-        raise ValueError(f"unsupported path_anchor: {meta.path_anchor}")
+    resolved_repo_root = (
+        repo_root if repo_root is not None else _infer_repo_root(view_root)
+    ).resolve()
+    resolved_image_root = (resolved_repo_root / image_store).resolve()
 
-    resolved_repo_root = repo_root if repo_root is not None else _infer_repo_root(view_root)
-    return (resolved_repo_root / image_store).resolve()
+    try:
+        resolved_image_root.relative_to(resolved_repo_root)
+    except ValueError as exc:
+        raise ValueError(
+            f"image_store resolves outside repo_root: {meta.image_store}"
+        ) from exc
+
+    return resolved_image_root
 
 
 def resolve_image_path(image_ref: str, image_root: Path) -> Path:
@@ -173,12 +179,41 @@ def _validate_view_metadata(meta: ViewMetadata) -> None:
     if tuple(meta.coordinate_range) != (0, 999):
         raise ValueError("coordinate_range must be (0, 999)")
 
-    image_store = Path(meta.image_store)
+    _validate_view_image_store(meta)
+
+
+def _validate_view_image_store(meta: ViewMetadata) -> Path:
+    """Validate and return the image store path reference."""
+
+    raw_image_store = meta.image_store
+    if raw_image_store == "":
+        raise ValueError("image_store must not be empty")
+
+    image_store = Path(raw_image_store)
     if image_store.is_absolute():
         if meta.path_anchor not in _ABSOLUTE_PATH_ANCHORS:
             raise ValueError("absolute image_store requires test/debug absolute path_anchor")
-    elif meta.path_anchor != "repo_root":
+
+        return image_store
+
+    if meta.path_anchor != "repo_root":
         raise ValueError("relative image_store requires repo_root path_anchor")
+
+    posix_image_store = PurePosixPath(raw_image_store)
+    if "\\" in raw_image_store:
+        raise ValueError(
+            f"image_store must be a POSIX-style relative path: {raw_image_store}"
+        )
+
+    if not posix_image_store.parts:
+        raise ValueError("image_store must not be empty")
+
+    if ".." in posix_image_store.parts:
+        raise ValueError(
+            f"image_store must not contain .. components: {raw_image_store}"
+        )
+
+    return image_store
 
 
 def _infer_repo_root(view_root: Path) -> Path:
