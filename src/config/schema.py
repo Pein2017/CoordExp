@@ -23,6 +23,7 @@ from src.common.object_field_order import (
     normalize_object_ordering,
 )
 from src.common.detection_sequence import (
+    COMPACT_FULL_FORMAT,
     COORDJSON_FORMAT,
     normalize_detection_sequence_format,
 )
@@ -2949,6 +2950,40 @@ class Stage2ABConfig:
         )
 
 
+def _validate_stage2_ab_rollout_surface_alignment(
+    *,
+    custom: CustomConfig,
+    stage2_ab: Stage2ABConfig | None,
+) -> None:
+    if stage2_ab is None or custom.trainer_variant != "stage2_two_channel":
+        return
+
+    detection_sequence_format = normalize_detection_sequence_format(
+        custom.detection_sequence_format
+    )
+    rollout_template_family = str(stage2_ab.channel_b.rollout_template_family)
+
+    if detection_sequence_format == COORDJSON_FORMAT:
+        expected_rollout_template_family = "coordjson"
+    elif detection_sequence_format == COMPACT_FULL_FORMAT:
+        expected_rollout_template_family = COMPACT_FULL_FORMAT
+    else:
+        raise ValueError(
+            "custom.trainer_variant=stage2_two_channel supports "
+            "custom.detection_sequence_format values {'coordjson', 'compact_full'}; "
+            f"got {detection_sequence_format!r}."
+        )
+
+    if rollout_template_family != expected_rollout_template_family:
+        raise ValueError(
+            "custom.trainer_variant=stage2_two_channel requires aligned prompt and "
+            "rollout parser surfaces: "
+            f"custom.detection_sequence_format={detection_sequence_format} requires "
+            "stage2_ab.channel_b.rollout_template_family="
+            f"{expected_rollout_template_family}; got {rollout_template_family!r}."
+        )
+
+
 _LATEST_DETECTION_REQUIRED_SECTIONS: set[str] = {
     "data",
     "prompt",
@@ -4285,6 +4320,10 @@ class TrainingConfig:
             raise ValueError(
                 "stage2_ab section must be provided when custom.trainer_variant=stage2_two_channel"
             )
+        _validate_stage2_ab_rollout_surface_alignment(
+            custom=custom,
+            stage2_ab=stage2_ab,
+        )
 
         rollout_matching = None
         if rollout_matching_raw is not None:

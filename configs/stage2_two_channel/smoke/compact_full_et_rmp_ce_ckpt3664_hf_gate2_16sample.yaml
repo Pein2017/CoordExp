@@ -1,0 +1,31 @@
+# Compact-full Stage-2 Gate-2 readiness smoke for the A2/support2 ET-RMP-CE checkpoint.
+#
+# Scope:
+# - checkpoint: compact-full ET-RMP-CE support2 tokenrows_v2 checkpoint-3664
+# - template surface: compact_full coord-token rows
+# - rollout decode: HF, unconstrained, no compact grammar
+# - sample surface: 16 Channel-B train rollouts plus 16 eval rollouts
+#
+# Gate-2 purpose:
+# - prove compact-full rollout readiness beyond the tiny Gate-1 I/O check
+# - keep the same production-like checkpoint/template/decode contracts
+# - materialize raw rollout artifacts for manual inspection
+
+extends: compact_full_et_rmp_ce_ckpt3664_hf_1step.yaml
+
+training:
+  run_name: smoke_gate2_16sample-compact_full-et_rmp_ce_ckpt3664-hf-unconstrained
+  artifact_subdir: stage2_ab/smoke/compact_full_et_rmp_ce_ckpt3664_hf_gate2_16sample
+  max_steps: 16
+  eval_steps: 16
+  save_strategy: "no"
+
+custom:
+  train_sample_limit: 16
+  val_sample_limit: 16
+
+rollout_matching:
+  train_monitor_dump:
+    max_samples: 16
+  eval_monitor_dump:
+    max_samples: 16

@@ -85,6 +85,7 @@ from .detection.runtime import (
     resolve_latest_detection_prompts as _resolve_latest_detection_prompts,
     resolve_recursive_detection_ce_runtime_cfg as _resolve_recursive_detection_ce_cfg,
 )
+from .infer.checkpoints import load_adapter_checkpoint_info
 from .trainers import with_final_checkpoint
 from .training_runtime import (
     resolve_training_runtime_plan,
@@ -155,6 +156,76 @@ def _resolve_custom_coord_mode(custom_config: Any) -> str:
         else:
             enabled = bool(getattr(coord_tokens_cfg, "enabled", True))
     return coord_mode_from_coord_tokens_enabled(enabled)
+
+
+def _adapter_checkpoint_paths_from_train_args(train_args: Any) -> list[str]:
+    adapters_raw = getattr(train_args, "adapters", None)
+    if adapters_raw is None:
+        return []
+    if isinstance(adapters_raw, (str, Path)):
+        adapters_iter = [adapters_raw]
+    else:
+        try:
+            adapters_iter = list(adapters_raw)
+        except TypeError:
+            return []
+
+    paths: list[str] = []
+    for raw in adapters_iter:
+        path_text = str(raw or "").strip()
+        if not path_text:
+            continue
+        paths.append(path_text)
+    return paths
+
+
+def _resolve_adapter_coord_offset_config(train_args: Any) -> CoordOffsetConfig | None:
+    """Resolve saved coord-offset adapter metadata from loaded adapter checkpoints."""
+
+    resolved_specs: list[tuple[str, tuple[int, ...], bool]] = []
+    for adapter_path in _adapter_checkpoint_paths_from_train_args(train_args):
+        adapter_dir = Path(adapter_path).expanduser()
+        if not adapter_dir.is_dir() or not (adapter_dir / "adapter_config.json").is_file():
+            continue
+
+        adapter_info = load_adapter_checkpoint_info(str(adapter_dir))
+        coord_spec = adapter_info.coord_offset_spec
+        if coord_spec is None:
+            continue
+        resolved_specs.append(
+            (
+                str(adapter_dir),
+                tuple(int(token_id) for token_id in coord_spec.coord_ids),
+                bool(coord_spec.tie_head),
+            )
+        )
+
+    if not resolved_specs:
+        return None
+
+    first_path, first_ids, first_tie_head = resolved_specs[0]
+    for adapter_path, coord_ids, tie_head in resolved_specs[1:]:
+        if coord_ids != first_ids or tie_head != first_tie_head:
+            raise ValueError(
+                "Loaded adapter checkpoints declare incompatible coord_offset_adapter specs: "
+                f"{first_path} ids={len(first_ids)} tie_head={first_tie_head}; "
+                f"{adapter_path} ids={len(coord_ids)} tie_head={tie_head}."
+            )
+
+    return CoordOffsetConfig(
+        enabled=True,
+        tie_head=first_tie_head,
+        ids=first_ids,
+    )
+
+
+def _attach_coord_offset_config_to_train_args(
+    train_args: Any, coord_offset_cfg: CoordOffsetConfig
+) -> None:
+    setattr(train_args, "coord_offset_config", coord_offset_cfg)
+    inner_args = getattr(train_args, "training_args", None)
+    if inner_args is not None:
+        setattr(inner_args, "coord_offset_config", coord_offset_cfg)
 
 
 def _resolve_dense_prompt_identity(custom_config: Any) -> dict[str, Any]:
@@ -2148,11 +2219,10 @@ def main():
             weight_decay=trainable_rows_cfg.weight_decay,
             dtype=trainable_rows_cfg.dtype or getattr(coord_offset_cfg, "dtype", None),
         )
-        setattr(train_args, "coord_offset_config", coord_offset_cfg)
+        _attach_coord_offset_config_to_train_args(train_args, coord_offset_cfg)
         setattr(train_args, "token_role_sets", token_role_sets)
         inner_args = getattr(train_args, "training_args", None)
         if inner_args is not None:
-            setattr(inner_args, "coord_offset_config", coord_offset_cfg)
             setattr(inner_args, "token_role_sets", token_role_sets)
         logger.info(
             "Trainable token rows resolved: total=%s coord_geometry=%s structural_ce_only=%s coord_loss=%s",
@@ -2161,6 +2231,16 @@ def main():
             len(token_role_sets.structural_ce_only_ids),
             len(token_role_sets.coord_loss_ids),
         )
+    elif not bool(getattr(coord_offset_cfg, "enabled", False)):
+        adapter_coord_offset_cfg = _resolve_adapter_coord_offset_config(train_args)
+        if adapter_coord_offset_cfg is not None:
+            coord_offset_cfg = adapter_coord_offset_cfg
+            _attach_coord_offset_config_to_train_args(train_args, coord_offset_cfg)
+            logger.info(
+                "Coord-offset adapter auto-enabled from loaded adapter checkpoint: ids=%s tie_head=%s",
+                len(coord_offset_cfg.ids),
+                coord_offset_cfg.tie_head,
+            )
     if coord_offset_cfg and coord_offset_cfg.enabled:
         adapter = install_coord_offset_adapter(
             sft.model,

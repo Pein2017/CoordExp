@@ -3667,11 +3667,14 @@ Resolved decision:
   valid-rollout evidence.
 - GT/FN fallback supervision uses the same initial loss weight as normal
   Channel-B correction (`fallback_loss_weight=1.0`). It must carry explicit
-  provenance such as `rollout_context=fallback_gt_fn_append_only` and separate
-  metrics such as `loss/B_fallback/*`, `rollout/fallback_loss_share`, and
-  `rollout/invalid_fallback_gt_fn_rate`. If fallback exceeds roughly 30-40% of
-  Channel-B samples over a monitoring window, the run should warn that the
-  rollout distribution is unhealthy.
+  provenance such as `rollout_context=fallback_gt_fn_append_only` and
+  rollout-level metrics such as `rollout/fallback_loss_share`,
+  `rollout/invalid_fallback_gt_fn_rate`, and fallback dominance warnings. The
+  current contract deliberately does not require `loss/B_fallback/*`; add that
+  only if the objective runner can report true per-context loss denominators
+  under packing or mixed fallback/non-fallback segments. If fallback exceeds
+  roughly 30-40% of Channel-B samples over a monitoring window, the run should
+  warn that the rollout distribution is unhealthy.
 - A2 compact-full Stage-2 rollout I/O acceptance uses two gates:
   - Gate 1, launch/I/O wiring: 2-4 samples, unconstrained greedy decoding,
     compact-full parser only, no CoordJSON fallback, raw output artifacts
@@ -3778,6 +3781,195 @@ Interpretation:
 - Do not promote this to production Stage-2 training as a quality-preserving
   trajectory until a future checkpoint or objective change passes Gate 1 and
   then the 16-32 sample Gate 2 readiness smoke.
+
+## 2026-05-17 Stage-2 Compact-Full Coord-Offset Autoload Fix
+
+Finding:
+
+- The post-prompt-fix Stage-2 failure was not enough evidence that the A2
+  checkpoint could not emit valid compact-full coordinate rows. Standalone HF
+  infer succeeded because it explicitly preinstalled `coord_offset_adapter` from
+  the adapter checkpoint metadata before loading the adapter, then reattached
+  hooks after Swift wrapping.
+- The Stage-2 training bootstrap loaded the same checkpoint through
+  `model.adapters`, but only installed `coord_offset_adapter` when the active
+  config explicitly enabled `custom.coord_offset` or `custom.trainable_token_rows`.
+  The smoke config had neither, so the structural compact tokens loaded but the
+  coordinate-row offset behavior was absent during rollout generation.
+
+Fix:
+
+- `src/sft.py` now detects local adapter checkpoints whose `adapter_config.json`
+  declares `coord_offset_adapter`, resolves the saved row ids and tied-head
+  contract from `adapter_model.safetensors`, and auto-enables the runtime
+  `CoordOffsetConfig` before ms-swift/PEFT loads the adapter.
+- The existing post-PEFT hook reattach guard remains active. If the adapter is
+  declared but missing after `prepare_model`, the run still fails fast.
+- HF rollout generation also forces `generation_config.use_cache=True` for
+  parity with standalone infer.
+
+Verification:
+
+```text
+conda run -n ms python -m pytest \
+  tests/test_recursive_detection_ce_sft_wiring.py::test_sft_auto_enables_coord_offset_for_adapter_checkpoint \
+  tests/test_recursive_detection_ce_sft_wiring.py::test_sft_fails_fast_if_coord_offset_hooks_are_missing_after_peft_wrap \
+  tests/test_rollout_matching_decoding_cfg.py::test_apply_rollout_decoding_to_generation_config_greedy_disables_sampling \
+  tests/test_rollout_matching_decoding_cfg.py::test_apply_rollout_decoding_to_generation_config_sampling_respects_top_p_and_top_k \
+  tests/test_stage2_rollout_aligned.py::test_rollout_many_rebuilds_compact_full_prompt_from_coordjson_source \
+  tests/test_stage2_rollout_aligned.py::test_prepare_samples_for_rollout_vllm_uses_compact_full_system_prompt -q
+```
+
+Result: 6 passed.
+
+Real Gate-1 smoke:
+
+```text
+config=configs/stage2_two_channel/smoke/compact_full_et_rmp_ce_ckpt3664_hf_1step.yaml
+log=temp/train_logs/compact_full_stage2_smoke_coordoffset_autoload/compact_full_et_rmp_ce_ckpt3664_hf_1step-20260517T122949Z.log
+artifact=output/stage2_ab/smoke/compact_full_et_rmp_ce_ckpt3664_hf_1step/smoke_1step-compact_full-et_rmp_ce_ckpt3664-hf-unconstrained/v7-20260517-123117
+```
+
+Outcome:
+
+- Launch exited successfully and bootstrap logs show
+  `Coord-offset adapter auto-enabled from loaded adapter checkpoint: ids=1002
+  tie_head=True` plus `Reattached coord_offset hooks on wrapped model`.
+- Training rollout produced valid compact-full predictions:
+  `rollout/valid_pred_objects_total=1.0`, `rollout/sample_valid_pred_rate=1.0`,
+  `stage2/invalid_rollout=0.0`.
+- Eval rollout parsed valid compact-full predictions for both eval samples:
+  `eval/parsing/sample_valid_pred_rate=1.0`,
+  `eval/detection/pred_objects=17.0`,
+  `eval/runtime/coco_counter_empty_pred=0.0`,
+  `eval/runtime/trace_fallback_count=0.0`.
+- Raw rollout examples include valid coordinate rows, e.g.
+  `<|object_ref_start|>bear<|box_start|><|coord_0|><|coord_105|><|coord_999|><|coord_989|>`.
+- Tiny-scope COCO eval reported `eval/detection/mAP=0.40421542`; artifact
+  `metrics.json` recorded `bbox_AP=0.4042154215421541` and `empty_pred=0`.
+
+Interpretation:
+
+- Gate 1 now passes as a real-backend compact-full Stage-2 launch/I/O proof.
+- The earlier “coordinate-slot basin” interpretation was incomplete: the
+  immediate root cause was Stage-2 adapter-load parity, not inherent checkpoint
+  inability.
+- This still does not prove real Stage-2 readiness. Gate 2 must run at 16-32
+  samples and check valid-rollout rate, parser/template mismatch, truncation,
+  empty-valid-object rate, fallback rate, and materialized raw artifacts.
+
+## 2026-05-17 Stage-2 Compact-Full Gate-2 Readiness Smoke
+
+Metric-routing fix:
+
+- Stage2-AB now routes compact-full rollout template/decode/fallback diagnostics
+  directly from Channel-B batch metrics into the optimizer-step training log.
+- This must not be derived from the base rollout-aligned slim meta: compact-full
+  fallback counts cover anchor and explorer rollout views, while slim segment
+  meta only sees the final prepared training segment and can undercount.
+
+Verification:
+
+```text
+conda run -n ms python -m py_compile \
+  src/trainers/stage2_two_channel.py \
+  tests/test_stage2_ab_training.py
+
+conda run -n ms python -m pytest \
+  tests/test_stage2_ab_training.py::test_channel_b_direct_batch_metric_filter_keeps_compact_fallback_metrics \
+  tests/test_stage2_ab_training.py::test_channel_b_direct_batch_metric_filter_rejects_unscoped_rollout_metric \
+  tests/test_stage2_ab_training.py::test_pending_stage2_log_aggregates_compact_fallback_metrics \
+  tests/test_stage2_ab_training.py::test_pending_stage2_log_aggregates_closure_and_invalid_rollout_metrics -q
+
+conda run -n ms python -m pytest \
+  tests/test_stage2_ab_training.py::test_channel_b_compact_full_rollout_template_uses_compact_parser_and_targets \
+  tests/test_stage2_ab_training.py::test_channel_b_compact_full_invalid_or_empty_rollout_falls_back_with_metrics \
+  tests/test_stage2_ab_training.py::test_channel_b_compact_full_invalid_explorer_rollouts_do_not_dilute_posterior -q
+```
+
+Result:
+
+- py_compile passed.
+- direct metric-routing and pending aggregation slice: 13 passed.
+- compact-full Channel-B parser/fallback/support slice: 5 passed.
+
+Real Gate-2 smoke:
+
+```text
+config=configs/stage2_two_channel/smoke/compact_full_et_rmp_ce_ckpt3664_hf_gate2_16sample.yaml
+log=temp/train_logs/compact_full_stage2_smoke_gate2_16sample/compact_full_et_rmp_ce_ckpt3664_hf_gate2_16sample-20260517T141301Z.log
+artifact=output/stage2_ab/smoke/compact_full_et_rmp_ce_ckpt3664_hf_gate2_16sample/smoke_gate2_16sample-compact_full-et_rmp_ce_ckpt3664-hf-unconstrained/v0-20260517-141430
+```
+
+Outcome:
+
+- Launch exited successfully.
+- The smoke ran 16 Channel-B train steps plus one 16-sample HF eval.
+- Training logs now expose the required compact-full policy and fallback
+  diagnostics: `rollout/template_family_compact_full=1.0`,
+  `rollout/decode_policy_unconstrained=1.0`,
+  `rollout/parser_template_mismatch_rate=0.0`,
+  `rollout/invalid_fallback_gt_fn_count=0.0`,
+  `rollout/empty_valid_object_rate=0.0`,
+  `rollout/fallback_loss_share=0.0`,
+  `rollout/fallback_dominance_warning=0.0`,
+  `rollout/fallback_gt_fn_append_only_count=0.0`, and
+  `stage2/invalid_rollout=0.0` on every train step.
+- Aggregate fallback/invalid counters across 16 train steps were zero.
+- Eval logs reported `eval/parsing/sample_valid_pred_rate=1.0`,
+  `eval/parsing/parse_truncated_rate=0.0`,
+  `eval/parsing/parse_dropped_invalid=1.0`,
+  `eval/detection/pred_objects=178.0`,
+  `eval/detection/gt_objects_total=111.0`,
+  `eval/detection/matched=62.0`,
+  `eval/runtime/trace_fallback_count=0.0`,
+  `eval/runtime/vllm_decode_error_count=0.0`, and
+  `eval/detection/mAP=0.38548444`.
+- Required eval artifacts were present under `eval_detection/step_0000016/`:
+  `gt_vs_pred.jsonl`, `gt_vs_pred_scored.jsonl`, `infer_summary.json`,
+  `metrics.json`, `per_image.json`, `raw_rollouts.jsonl`, and
+  `pred_token_trace.jsonl`.
+- Artifact check found 16 raw `gt_vs_pred` rows, 178 raw serialized
+  predictions, 111 GT objects, and zero empty raw prediction rows. After
+  confidence scoring / evaluator filtering, `gt_vs_pred_scored.jsonl` had one
+  empty scored row, matching `metrics.json` counters `empty_pred=1`,
+  `unknown_dropped=1`, and `semantic_unmapped=1`. `metrics.json` recorded
+  `bbox_AP=0.38548444402505044`.
+
+Interpretation:
+
+- Gate 2 now passes for compact-full Stage-2 launch/readiness with the A2
+  checkpoint under unconstrained HF decoding.
+- The current stop-contract evidence is `eval/parsing/parse_truncated_rate=0.0`,
+  valid compact-full parsed rows, and no active forced-continuation or EOS
+  suppression path. The smoke artifacts do not yet preserve a raw stop token or
+  `finish_reason`; add that only if stop provenance becomes a release gate.
+- The remaining eval anomaly is one dropped/unmapped semantic item. Treat it as
+  quality telemetry to monitor in larger runs, not as a template/parser launch
+  blocker.
+- Gate 1 and Gate 2 were launched from the implementation worktree before this
+  evidence commit, so their `run_metadata.json` records `git_dirty=true`.
+  Treat these as scoped implementation-smoke artifacts. Rerun the canonical
+  Gate-2 config after commit if clean-git provenance is required for release or
+  comparison tables.
+
+Post-review spec reconciliation:
+
+- Mixed Stage-2 prompt/parser surfaces are now a schema error for
+  `stage2_two_channel`. `custom.detection_sequence_format=compact_full`
+  requires `stage2_ab.channel_b.rollout_template_family=compact_full`, while
+  CoordJSON requires the legacy CoordJSON rollout family.
+- The accepted fallback metric contract is rollout-level provenance,
+  `rollout/fallback_loss_share`, invalid/empty/fallback rates, and fallback
+  dominance warnings. `loss/B_fallback/*` is future optional telemetry only
+  after the objective runner can report real per-context denominators.
+- Focused reconciliation verification passed:
+  `conda run -n ms python -m pytest tests/test_stage2_ab_config_contract.py
+  tests/test_recursive_detection_ce_sft_wiring.py
+  tests/test_rollout_matching_decoding_cfg.py
+  tests/test_stage2_ab_training.py -p no:cacheprovider` reported 242 passed.
+- Gate-2 config parse still resolves to compact-full/unconstrained with
+  `max_steps=16`, `eval_steps=16`, and `rollout_template_family=compact_full`.
 
 ## Continue The Grill-Me Loop
 

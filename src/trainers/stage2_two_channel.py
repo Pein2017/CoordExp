@@ -134,6 +134,60 @@ def _stage2_debug_text_window(
     return value[: int(limit)] + "...<truncated>"
 
 
+_STAGE2_CHANNEL_B_DIRECT_BATCH_METRIC_KEYS = frozenset(
+    {
+        "rollout/backend_hf",
+        "rollout/backend_vllm",
+        "rollout/decode_mode_greedy",
+        "rollout/decode_mode_beam",
+        "rollout/decode_policy_legacy_coordjson",
+        "rollout/decode_policy_unconstrained",
+        "rollout/decode_policy_compact_grammar",
+        "rollout/do_sample",
+        "rollout/fallback_dominance_warning",
+        "rollout/fallback_gt_fn_append_only_count",
+        "rollout/fallback_loss_share",
+        "rollout/fallback_loss_weight",
+        "rollout/hf_seeded_global",
+        "rollout/invalid_fallback_gt_fn_count",
+        "rollout/invalid_fallback_gt_fn_rate",
+        "rollout/empty_valid_object_rate",
+        "rollout/matched_for_supervision_count",
+        "rollout/matched_for_supervision_over_valid_pred",
+        "rollout/parser_coordjson_legacy",
+        "rollout/parser_template_mismatch_rate",
+        "rollout/seed_base",
+        "rollout/template_family_coordjson",
+        "rollout/template_family_compact_full",
+        "rollout/valid_pred_objects_total",
+    }
+)
+
+
+def _is_stage2_channel_b_direct_batch_metric_key(key: str) -> bool:
+    """Return whether a Channel-B batch metric must reach the step log.
+
+    Stage2-AB emits richer rollout telemetry than the base rollout-aligned
+    trainer can derive from slim per-segment meta. In particular, compact-full
+    fallback diagnostics count anchor and explorer views, not only the final
+    prepared segment, so they must be routed directly from Channel-B preparation.
+    """
+
+    key = str(key)
+    if key.startswith(
+        (
+            "stage2_ab/",
+            "dup/",
+            "train/triage/",
+            "rollout/anchor/",
+            "rollout/explorer/",
+        )
+    ):
+        return True
+
+    return key in _STAGE2_CHANNEL_B_DIRECT_BATCH_METRIC_KEYS
+
+
 def _build_channel_b_invalid_explorer_detail(
     *,
     view_label: str,
@@ -4269,19 +4323,7 @@ class Stage2ABTrainingTrainer(
 
                 for k, v in batch_metrics.items():
                     key = str(k)
-                    if (
-                        key.startswith("stage2_ab/")
-                        or key.startswith("dup/")
-                        or key.startswith("train/triage/")
-                        or key.startswith("rollout/anchor/")
-                        or key.startswith("rollout/explorer/")
-                        or key
-                        in {
-                            "rollout/matched_for_supervision_count",
-                            "rollout/matched_for_supervision_over_valid_pred",
-                            "rollout/valid_pred_objects_total",
-                        }
-                    ):
+                    if _is_stage2_channel_b_direct_batch_metric_key(key):
                         stage2_logs[key] = float(v or 0.0)
 
             if isinstance(batch_metrics, Mapping):

@@ -22,8 +22,14 @@ class _FakeTrainArguments:
         self.training_args = types.SimpleNamespace()
 
 
-def _make_stage2_training_config(training_section: dict) -> TrainingConfig:
-    raw = {
+def _make_stage2_training_payload(training_section: dict | None = None) -> dict:
+    if training_section is None:
+        training_section = {
+            "per_device_train_batch_size": 1,
+            "effective_batch_size": 1,
+        }
+
+    return {
         "template": {"template": "qwen3_vl"},
         "custom": {
             "train_jsonl": "toy/train.jsonl",
@@ -46,6 +52,10 @@ def _make_stage2_training_config(training_section: dict) -> TrainingConfig:
             "channel_b": {},
         },
     }
+
+
+def _make_stage2_training_config(training_section: dict) -> TrainingConfig:
+    raw = _make_stage2_training_payload(training_section)
     prompts = ConfigLoader.resolve_prompts(raw)
     return TrainingConfig.from_mapping(raw, prompts)
 
@@ -237,6 +247,43 @@ def test_stage2_ab_channel_b_rollout_template_invalid_values_fail_fast(
 ) -> None:
     with pytest.raises((ValueError, TypeError), match=expected_msg):
         Stage2ABChannelBConfig.from_mapping(payload)
+
+
+def test_stage2_ab_rejects_compact_full_detection_with_default_coordjson_rollout_surface() -> None:
+    raw = _make_stage2_training_payload()
+    raw["custom"]["detection_sequence_format"] = "compact_full"
+
+    prompts = ConfigLoader.resolve_prompts(raw)
+    with pytest.raises(
+        ValueError,
+        match=r"detection_sequence_format=compact_full.*rollout_template_family=compact_full",
+    ):
+        TrainingConfig.from_mapping(raw, prompts)
+
+
+def test_stage2_ab_rejects_coordjson_detection_with_compact_full_rollout_surface() -> None:
+    raw = _make_stage2_training_payload()
+    raw["stage2_ab"]["channel_b"] = {"rollout_template_family": "compact_full"}
+
+    prompts = ConfigLoader.resolve_prompts(raw)
+    with pytest.raises(
+        ValueError,
+        match=r"detection_sequence_format=coordjson.*rollout_template_family=coordjson",
+    ):
+        TrainingConfig.from_mapping(raw, prompts)
+
+
+def test_stage2_ab_accepts_compact_full_detection_with_compact_full_rollout_surface() -> None:
+    raw = _make_stage2_training_payload()
+    raw["custom"]["detection_sequence_format"] = "compact_full"
+    raw["stage2_ab"]["channel_b"] = {"rollout_template_family": "compact_full"}
+
+    prompts = ConfigLoader.resolve_prompts(raw)
+    cfg = TrainingConfig.from_mapping(raw, prompts)
+
+    assert cfg.custom.detection_sequence_format == "compact_full"
+    assert cfg.stage2_ab is not None
+    assert cfg.stage2_ab.channel_b.rollout_template_family == "compact_full"
 
 
 def test_stage2_ab_channel_b_pseudo_positive_keys_are_supported() -> None:
@@ -1733,6 +1780,35 @@ def test_stage2_compact_full_a2_smoke_config_pins_unconstrained_fallback_policy(
     assert cfg.custom.train_sample_limit == 4
     assert cfg.custom.val_sample_limit == 2
     assert "checkpoint-3664" in str(cfg.model["adapters"][0])
+
+
+def test_stage2_compact_full_a2_gate2_smoke_config_keeps_compact_surface() -> None:
+    repo_root = Path(__file__).resolve().parents[1]
+    cfg = ConfigLoader.load_materialized_training_config(
+        str(
+            repo_root
+            / "configs"
+            / "stage2_two_channel"
+            / "smoke"
+            / "compact_full_et_rmp_ce_ckpt3664_hf_gate2_16sample.yaml"
+        )
+    )
+
+    assert cfg.custom.trainer_variant == "stage2_two_channel"
+    assert cfg.custom.detection_sequence_format == "compact_full"
+
+    assert cfg.stage2_ab is not None
+    assert cfg.stage2_ab.channel_b.rollout_template_family == "compact_full"
+    assert cfg.stage2_ab.channel_b.rollout_decode_policy == "unconstrained"
+    assert (
+        cfg.stage2_ab.channel_b.invalid_rollout_policy
+        == "fallback_gt_fn_append_only"
+    )
+
+    assert cfg.training["max_steps"] == 16
+    assert cfg.training["eval_steps"] == 16
+    assert cfg.custom.train_sample_limit == 16
+    assert cfg.custom.val_sample_limit == 16
 
 
 def test_stage2_leaf_contract_rejects_live_tree_profile_without_extends() -> None:

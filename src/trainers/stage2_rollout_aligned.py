@@ -1969,6 +1969,7 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
         gen_cfg.top_p = float(top_p) if do_sample else 1.0
         gen_cfg.top_k = int(top_k) if (do_sample and int(top_k) != -1) else 0
         gen_cfg.repetition_penalty = float(repetition_penalty)
+        gen_cfg.use_cache = True
 
     @staticmethod
     def _rollout_vllm_request_config_kwargs(

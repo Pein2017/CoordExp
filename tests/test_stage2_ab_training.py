@@ -26,6 +26,7 @@ from src.trainers.stage2_two_channel import (
     _build_teacher_forced_payload,
     _expectation_decode_coords,
     _extract_gt_bboxonly,
+    _is_stage2_channel_b_direct_batch_metric_key,
     _matched_prefix_structure_positions,
     _stage2_ab_tail_closure_positions,
 )
@@ -6370,6 +6371,63 @@ def test_pending_stage2_log_aggregates_closure_and_invalid_rollout_metrics() -> 
     assert out["rollout/parse_truncated_rate"] == pytest.approx(0.5)
     assert "rollout/_parse_truncated_num" not in out
     assert "rollout/_parse_truncated_den" not in out
+
+
+@pytest.mark.parametrize(
+    "metric_key",
+    [
+        "rollout/template_family_compact_full",
+        "rollout/decode_policy_unconstrained",
+        "rollout/parser_template_mismatch_rate",
+        "rollout/invalid_fallback_gt_fn_count",
+        "rollout/invalid_fallback_gt_fn_rate",
+        "rollout/empty_valid_object_rate",
+        "rollout/fallback_loss_share",
+        "rollout/fallback_dominance_warning",
+        "rollout/fallback_gt_fn_append_only_count",
+        "rollout/fallback_loss_weight",
+    ],
+)
+def test_channel_b_direct_batch_metric_filter_keeps_compact_fallback_metrics(
+    metric_key: str,
+) -> None:
+    assert _is_stage2_channel_b_direct_batch_metric_key(metric_key) is True
+
+
+def test_channel_b_direct_batch_metric_filter_rejects_unscoped_rollout_metric() -> None:
+    assert _is_stage2_channel_b_direct_batch_metric_key("rollout/debug_blob") is False
+
+
+def test_pending_stage2_log_aggregates_compact_fallback_metrics() -> None:
+    pending = _PendingStage2Log()
+    pending.add(
+        {
+            "stage2/_log_weight": 2.0,
+            "rollout/invalid_fallback_gt_fn_count": 1.0,
+            "rollout/fallback_gt_fn_append_only_count": 1.0,
+            "rollout/fallback_loss_share": 0.5,
+            "rollout/empty_valid_object_rate": 0.0,
+            "rollout/fallback_loss_weight": 1.0,
+        }
+    )
+    pending.add(
+        {
+            "stage2/_log_weight": 1.0,
+            "rollout/invalid_fallback_gt_fn_count": 2.0,
+            "rollout/fallback_gt_fn_append_only_count": 2.0,
+            "rollout/fallback_loss_share": 1.0,
+            "rollout/empty_valid_object_rate": 0.5,
+            "rollout/fallback_loss_weight": 0.25,
+        }
+    )
+
+    out = pending.finalize()
+
+    assert out["rollout/invalid_fallback_gt_fn_count"] == pytest.approx(3.0)
+    assert out["rollout/fallback_gt_fn_append_only_count"] == pytest.approx(3.0)
+    assert out["rollout/fallback_loss_share"] == pytest.approx(2.0 / 3.0)
+    assert out["rollout/empty_valid_object_rate"] == pytest.approx(1.0 / 6.0)
+    assert out["rollout/fallback_loss_weight"] == pytest.approx(0.75)
 
 
 def test_pending_stage2_log_aggregates_strict_drop_metrics_and_reasons() -> None:

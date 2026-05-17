@@ -169,6 +169,7 @@ def test_apply_rollout_decoding_to_generation_config_greedy_disables_sampling():
     assert gen_cfg.top_p == 1.0
     assert gen_cfg.top_k == 0
     assert gen_cfg.repetition_penalty == 1.05
+    assert gen_cfg.use_cache is True
 
 
 def test_apply_rollout_decoding_to_generation_config_sampling_respects_top_p_and_top_k():
@@ -184,6 +185,7 @@ def test_apply_rollout_decoding_to_generation_config_sampling_respects_top_p_and
     assert gen_cfg0.temperature == 0.01
     assert gen_cfg0.top_p == 0.9
     assert gen_cfg0.top_k == 0
+    assert gen_cfg0.use_cache is True
 
     gen_cfg1 = SimpleNamespace()
     RolloutMatchingSFTTrainer._apply_rollout_decoding_to_generation_config(
@@ -197,6 +199,7 @@ def test_apply_rollout_decoding_to_generation_config_sampling_respects_top_p_and
     assert gen_cfg1.temperature == 0.01
     assert gen_cfg1.top_p == 0.95
     assert gen_cfg1.top_k == 50
+    assert gen_cfg1.use_cache is True
 
 
 def test_rollout_vllm_request_config_kwargs_propagates_decoding_knobs():

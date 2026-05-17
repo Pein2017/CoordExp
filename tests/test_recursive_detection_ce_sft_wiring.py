@@ -7,6 +7,7 @@ from types import SimpleNamespace
 
 import pytest
 
+import src.sft as sft_module
 from src.config.loader import ConfigLoader
 from src.config.schema import LatestDetectionTrainingConfig
 from src.data_collators.batch_extras_collator import build_batch_extras_collator
@@ -17,6 +18,7 @@ from src.detection.dataset import (
 )
 from src.sft import (
     _assert_latest_detection_runtime_supported,
+    _resolve_adapter_coord_offset_config,
     _latest_detection_mode,
     _latest_detection_runtime_custom_shim,
     _resolve_recursive_detection_ce_cfg,
@@ -161,6 +163,35 @@ def test_sft_fails_fast_if_coord_offset_hooks_are_missing_after_peft_wrap() -> N
         "coord_offset_adapter not found after prepare_model" in message
         for message in raise_messages
     )
+
+
+def test_sft_auto_enables_coord_offset_for_adapter_checkpoint(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    adapter_dir = tmp_path / "adapter"
+    adapter_dir.mkdir()
+    (adapter_dir / "adapter_config.json").write_text("{}", encoding="utf-8")
+
+    def _fake_load_adapter_checkpoint_info(adapter_path: str):
+        assert adapter_path == str(adapter_dir)
+        return SimpleNamespace(
+            coord_offset_spec=SimpleNamespace(coord_ids=(151646, 151648), tie_head=True)
+        )
+
+    monkeypatch.setattr(
+        sft_module,
+        "load_adapter_checkpoint_info",
+        _fake_load_adapter_checkpoint_info,
+    )
+
+    coord_offset_cfg = _resolve_adapter_coord_offset_config(
+        SimpleNamespace(adapters=[str(adapter_dir)])
+    )
+
+    assert coord_offset_cfg is not None
+    assert coord_offset_cfg.enabled is True
+    assert coord_offset_cfg.ids == (151646, 151648)
+    assert coord_offset_cfg.tie_head is True
 
 
 def test_latest_detection_runtime_constructs_dataset_and_sft_delegates() -> None:
