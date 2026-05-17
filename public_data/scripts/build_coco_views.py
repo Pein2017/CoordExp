@@ -46,6 +46,9 @@ DEFAULT_MODEL = Path("model_cache/models/Qwen/Qwen3-VL-2B-Instruct-coordexp")
 DEFAULT_SOURCE_PRESET = Path("public_data/coco/rescale_32_1024_bbox")
 DEFAULT_IMAGE_STORE_ROOT = Path("public_data/coco/images/res-1024")
 DEFAULT_VIEWS_ROOT = Path("public_data/coco/views")
+DEFAULT_LEGACY_LENGTH_BUDGET_SOURCE = Path(
+    "public_data/coco/rescale_32_1024_bbox_len12000"
+)
 DEFAULT_LEGACY_MAX_OBJECTS_SOURCE = Path("public_data/coco/rescale_32_1024_bbox_max60")
 DEFAULT_PROXY_SOURCE = Path("public_data/coco/rescale_32_1024_bbox_lvis_proxy_len12000")
 DEFAULT_VIEWS = (
@@ -69,6 +72,7 @@ class CocoViewFactoryConfig:
     :param source_preset: Existing COCO 1024 pixel-space source preset root.
     :param image_store_root: Canonical shared image-store root.
     :param views_root: Canonical COCO views root.
+    :param legacy_length_budget_source: Historical length-budget source root.
     :param legacy_max_objects_source: Historical max-60 source root.
     :param proxy_source: Existing all-proxy source root for the research view.
     :param splits: Dataset splits to build.
@@ -86,6 +90,7 @@ class CocoViewFactoryConfig:
     source_preset: Path
     image_store_root: Path
     views_root: Path
+    legacy_length_budget_source: Path | None
     legacy_max_objects_source: Path | None
     proxy_source: Path | None
     splits: tuple[str, ...]
@@ -718,6 +723,511 @@ class ViewStatsWriter:
         return {"filename": filename, "sha256": _sha256_bytes(payload.encode("utf-8"))}
 
 
+@dataclass(frozen=True)
+class SourceComparisonSource:
+    """Source artifact selected for deterministic view comparison.
+
+    :param root: Source artifact root used for split JSONL reads.
+    :param suffix: Per-split source suffix.
+    :param mode: Comparison mode controlling expected membership deltas.
+    :param notes: Deterministic notes explaining intentional source selection.
+    """
+
+    root: Path
+    suffix: str
+    mode: str
+    notes: tuple[str, ...] = ()
+
+
+@dataclass
+class SourceComparisonRow:
+    """Compact comparable source or generated row descriptor."""
+
+    image_id: Any
+    image_refs: tuple[str, ...]
+    object_count: int
+    proxy_object_count: int
+
+
+class SourceComparisonWriter:
+    """Writer for deterministic source-membership comparison artifacts."""
+
+    def __init__(self, config: CocoViewFactoryConfig) -> None:
+        self._config = config
+
+    def write_for_view(self, view_name: str) -> Mapping[str, str]:
+        """Write and attach ``source_comparison.json`` for ``view_name``.
+
+        :raises ValueError: If unexpected membership, image, or object drift exists.
+        :returns: Metadata reference for the written comparison artifact.
+        """
+
+        # resolving comparison roots and target files
+        source = self._source_for_view(view_name)
+        view_root = self._config.view_root(view_name)
+        comparison_path = view_root / "source_comparison.json"
+
+        # comparing every configured split
+        split_payloads: dict[str, Any] = {}
+        unexpected_deltas: list[dict[str, Any]] = []
+        expected_deltas: list[dict[str, Any]] = [
+            {
+                "type": "coordinate_storage_changed",
+                "detail": "generated view stores norm1000 integer coordinates",
+            },
+            {
+                "type": "image_refs_rebased",
+                "detail": "image references are compared after normalization to images/...",
+            },
+        ]
+        for note in source.notes:
+            expected_deltas.append({"type": "source_selection_note", "detail": note})
+
+        for split in self._config.splits:
+            split_payload = self._compare_split(
+                split=split,
+                source=source,
+                view_root=view_root,
+            )
+            split_payloads[split] = split_payload
+            unexpected_deltas.extend(split_payload["unexpected_deltas"])
+            expected_deltas.extend(split_payload["expected_intentional_deltas"])
+
+        # writing deterministic payload before failing on drift
+        payload = {
+            "schema_version": 1,
+            "kind": "source_comparison",
+            "dataset": "coco",
+            "view": view_name,
+            "generated_view_path": _safe_artifact_reference_path(
+                view_root,
+                repo_root=self._config.repo_root,
+            ),
+            "source_artifact_path": _safe_artifact_reference_path(
+                source.root,
+                repo_root=self._config.repo_root,
+            ),
+            "source_suffix": source.suffix,
+            "source_mode": source.mode,
+            "comparison_policy": {
+                "identity_key": "image_id",
+                "checks": [
+                    "row_counts",
+                    "image_ids",
+                    "image_refs_normalized_to_images_prefix",
+                    "object_counts",
+                    (
+                        "length_budget_inclusion_exclusion_counts_and_membership_"
+                        "when_available"
+                    ),
+                    "lvis_proxy_object_counts_when_applicable",
+                ],
+                "allowed_intentional_deltas": [
+                    "coordinate_storage_changed",
+                    "image_refs_rebased",
+                    "verified_length_budget_membership_filter_when_no_legacy_source",
+                ],
+            },
+            "code_version": _code_version(self._config.repo_root),
+            "splits": split_payloads,
+            "expected_intentional_deltas": _dedupe_dicts(expected_deltas),
+            "unexpected_deltas": unexpected_deltas,
+        }
+        ref = self._write_payload(comparison_path, payload)
+
+        if unexpected_deltas:
+            raise ValueError(
+                "unexpected source comparison deltas for "
+                f"{view_name}: {json.dumps(unexpected_deltas, sort_keys=True)}"
+            )
+
+        self._attach_to_metadata(view_root=view_root, ref=ref)
+        return ref
+
+    def _source_for_view(self, view_name: str) -> SourceComparisonSource:
+        """Return the deterministic comparison source for one view."""
+
+        if view_name == "coco80/full":
+            return SourceComparisonSource(
+                root=self._config.source_preset,
+                suffix=".jsonl",
+                mode="exact_membership",
+            )
+
+        if view_name == "coco80/len-12000":
+            legacy_root = self._config.legacy_length_budget_source
+            if legacy_root is not None and legacy_root.exists():
+                return SourceComparisonSource(
+                    root=legacy_root,
+                    suffix=_source_suffix_for_root(legacy_root),
+                    mode="exact_membership",
+                )
+            return SourceComparisonSource(
+                root=self._config.source_preset,
+                suffix=".jsonl",
+                mode="length_budget_subset",
+                notes=(
+                    "legacy length-budget source unavailable; comparing generated "
+                    "view membership as a length-budget subset of source_preset",
+                ),
+            )
+
+        if view_name == "coco80/max-60":
+            if self._config.legacy_max_objects_source is None:
+                raise ValueError("legacy_max_objects_source is required for max-* views")
+            return SourceComparisonSource(
+                root=self._config.legacy_max_objects_source,
+                suffix=_source_suffix_for_root(self._config.legacy_max_objects_source),
+                mode="exact_membership",
+            )
+
+        if view_name == "coco80-lvis-proxy/len-12000":
+            if self._config.proxy_source is None:
+                raise ValueError("proxy_source is required for all-proxy views")
+            return SourceComparisonSource(
+                root=self._config.proxy_source,
+                suffix=_source_suffix_for_root(self._config.proxy_source),
+                mode="exact_membership",
+            )
+
+        raise ValueError(f"unsupported Phase 1 view: {view_name}")
+
+    def _compare_split(
+        self,
+        *,
+        split: str,
+        source: SourceComparisonSource,
+        view_root: Path,
+    ) -> dict[str, Any]:
+        """Compare one split and return a deterministic payload."""
+
+        # loading comparable row descriptors
+        source_jsonl = source.root / f"{split}{source.suffix}"
+        generated_jsonl = view_root / f"{split}.jsonl"
+        if not source_jsonl.is_file():
+            raise FileNotFoundError(f"comparison source JSONL does not exist: {source_jsonl}")
+        if not generated_jsonl.is_file():
+            raise FileNotFoundError(
+                f"comparison generated JSONL does not exist: {generated_jsonl}"
+            )
+
+        source_rows = self._load_rows(source_jsonl)
+        generated_rows = self._load_rows(generated_jsonl)
+        source_by_id, source_duplicates = _rows_by_image_id(source_rows)
+        generated_by_id, generated_duplicates = _rows_by_image_id(generated_rows)
+
+        # checking deterministic membership and per-row invariants
+        source_ids = set(source_by_id)
+        generated_ids = set(generated_by_id)
+        missing_ids = sorted(source_ids - generated_ids, key=str)
+        extra_ids = sorted(generated_ids - source_ids, key=str)
+        unexpected_deltas: list[dict[str, Any]] = []
+        expected_deltas: list[dict[str, Any]] = []
+
+        if source_duplicates:
+            unexpected_deltas.append(
+                {
+                    "type": "duplicate_source_image_ids",
+                    "split": split,
+                    "image_ids": source_duplicates,
+                }
+            )
+        if generated_duplicates:
+            unexpected_deltas.append(
+                {
+                    "type": "duplicate_generated_image_ids",
+                    "split": split,
+                    "image_ids": generated_duplicates,
+                }
+            )
+
+        length_stats = _load_length_stats(view_root, split)
+        if source.mode == "length_budget_subset":
+            expected_deltas.append(
+                {
+                    "type": "length_budget_membership_filter",
+                    "split": split,
+                    "excluded_from_generated_count": len(missing_ids),
+                }
+            )
+            if extra_ids:
+                unexpected_deltas.append(
+                    {
+                        "type": "generated_image_ids_not_in_source",
+                        "split": split,
+                        "image_ids": extra_ids,
+                    }
+                )
+            self._compare_length_stats(
+                split=split,
+                source_count=len(source_rows),
+                generated_count=len(generated_rows),
+                excluded_count=len(missing_ids),
+                generated_ids=generated_ids,
+                missing_ids=set(missing_ids),
+                length_stats=length_stats,
+                unexpected_deltas=unexpected_deltas,
+            )
+        else:
+            if len(source_rows) != len(generated_rows):
+                unexpected_deltas.append(
+                    {
+                        "type": "row_count_mismatch",
+                        "split": split,
+                        "source": len(source_rows),
+                        "generated": len(generated_rows),
+                    }
+                )
+            if missing_ids:
+                unexpected_deltas.append(
+                    {
+                        "type": "missing_generated_image_ids",
+                        "split": split,
+                        "image_ids": missing_ids,
+                    }
+                )
+            if extra_ids:
+                unexpected_deltas.append(
+                    {
+                        "type": "extra_generated_image_ids",
+                        "split": split,
+                        "image_ids": extra_ids,
+                    }
+                )
+
+        for image_id in sorted(source_ids & generated_ids, key=str):
+            source_row = source_by_id[image_id]
+            generated_row = generated_by_id[image_id]
+            if source_row.image_refs != generated_row.image_refs:
+                unexpected_deltas.append(
+                    {
+                        "type": "image_refs_mismatch",
+                        "split": split,
+                        "image_id": image_id,
+                        "source": list(source_row.image_refs),
+                        "generated": list(generated_row.image_refs),
+                    }
+                )
+            if source_row.object_count != generated_row.object_count:
+                unexpected_deltas.append(
+                    {
+                        "type": "object_count_mismatch",
+                        "split": split,
+                        "image_id": image_id,
+                        "source": source_row.object_count,
+                        "generated": generated_row.object_count,
+                    }
+                )
+            if source_row.proxy_object_count != generated_row.proxy_object_count:
+                unexpected_deltas.append(
+                    {
+                        "type": "proxy_object_count_mismatch",
+                        "split": split,
+                        "image_id": image_id,
+                        "source": source_row.proxy_object_count,
+                        "generated": generated_row.proxy_object_count,
+                    }
+                )
+
+        return {
+            "source_jsonl": _safe_artifact_reference_path(
+                source_jsonl,
+                repo_root=self._config.repo_root,
+            ),
+            "generated_jsonl": _safe_artifact_reference_path(
+                generated_jsonl,
+                repo_root=self._config.repo_root,
+            ),
+            "source_records": len(source_rows),
+            "generated_records": len(generated_rows),
+            "source_object_count": sum(row.object_count for row in source_rows),
+            "generated_object_count": sum(row.object_count for row in generated_rows),
+            "source_proxy_object_count": sum(
+                row.proxy_object_count for row in source_rows
+            ),
+            "generated_proxy_object_count": sum(
+                row.proxy_object_count for row in generated_rows
+            ),
+            "matching_image_id_count": len(source_ids & generated_ids),
+            "missing_from_generated_count": len(missing_ids),
+            "extra_in_generated_count": len(extra_ids),
+            "length_stats": length_stats,
+            "expected_intentional_deltas": expected_deltas,
+            "unexpected_deltas": unexpected_deltas,
+        }
+
+    def _load_rows(self, path: Path) -> list[SourceComparisonRow]:
+        """Load comparable descriptors from a JSONL file."""
+
+        rows: list[SourceComparisonRow] = []
+        with path.open("r", encoding="utf-8") as handle:
+            for line in handle:
+                stripped = line.strip()
+                if not stripped:
+                    continue
+                record = json.loads(stripped)
+                rows.append(self._row_descriptor(record))
+        return rows
+
+    def _row_descriptor(self, record: Mapping[str, Any]) -> SourceComparisonRow:
+        """Return the comparison descriptor for one record."""
+
+        objects = [obj for obj in record.get("objects") or [] if isinstance(obj, Mapping)]
+        image_refs = _normalize_image_refs(
+            _record_image_refs(record),
+            source_image_dir=self._config.source_image_dir,
+        )
+        supervision = record.get("metadata", {}).get("supervision", {})
+        object_supervision = (
+            supervision.get("object_supervision", {})
+            if isinstance(supervision, Mapping)
+            else {}
+        )
+        proxy_candidate_ids = {
+            str(obj.get("object_id", index))
+            for index, obj in enumerate(objects)
+            if _has_lvis_proxy_evidence(obj)
+        }
+        if isinstance(object_supervision, Mapping):
+            proxy_candidate_ids.update(
+                str(object_id)
+                for object_id, snapshot in object_supervision.items()
+                if _supervision_marks_lvis_proxy_candidate(snapshot)
+            )
+
+        return SourceComparisonRow(
+            image_id=record.get("image_id"),
+            image_refs=tuple(image_refs),
+            object_count=len(objects),
+            proxy_object_count=len(proxy_candidate_ids),
+        )
+
+    def _compare_length_stats(
+        self,
+        *,
+        split: str,
+        source_count: int,
+        generated_count: int,
+        excluded_count: int,
+        generated_ids: set[Any],
+        missing_ids: set[Any],
+        length_stats: Mapping[str, Any] | None,
+        unexpected_deltas: list[dict[str, Any]],
+    ) -> None:
+        """Check length-stat inclusion/exclusion counts when available."""
+
+        if length_stats is None:
+            unexpected_deltas.append(
+                {
+                    "type": "length_budget_subset_membership_unverifiable",
+                    "split": split,
+                    "detail": (
+                        "legacy length-budget source is unavailable and "
+                        "generated membership cannot be verified without "
+                        "split length stats"
+                    ),
+                }
+            )
+            return
+
+        stats_seen = int(length_stats.get("records_seen", -1))
+        stats_written = int(length_stats.get("records_written", -1))
+        stats_dropped = int(length_stats.get("records_dropped", -1))
+        if stats_seen != source_count:
+            unexpected_deltas.append(
+                {
+                    "type": "length_stats_records_seen_mismatch",
+                    "split": split,
+                    "stats": stats_seen,
+                    "source": source_count,
+                }
+            )
+        if stats_written != generated_count:
+            unexpected_deltas.append(
+                {
+                    "type": "length_stats_records_written_mismatch",
+                    "split": split,
+                    "stats": stats_written,
+                    "generated": generated_count,
+                }
+            )
+        if stats_dropped != excluded_count:
+            unexpected_deltas.append(
+                {
+                    "type": "length_stats_records_dropped_mismatch",
+                    "split": split,
+                    "stats": stats_dropped,
+                    "excluded": excluded_count,
+                }
+            )
+
+        kept_ids = _optional_image_id_set(length_stats, field="kept_image_ids")
+        if kept_ids is None:
+            unexpected_deltas.append(
+                {
+                    "type": "length_budget_subset_membership_unverifiable",
+                    "split": split,
+                    "detail": (
+                        "legacy length-budget source is unavailable and "
+                        "length stats do not contain kept_image_ids"
+                    ),
+                }
+            )
+        elif kept_ids != generated_ids:
+            unexpected_deltas.append(
+                {
+                    "type": "length_budget_kept_image_ids_mismatch",
+                    "split": split,
+                    "stats_only": _sample_sorted_ids(kept_ids - generated_ids),
+                    "generated_only": _sample_sorted_ids(generated_ids - kept_ids),
+                }
+            )
+
+        dropped_ids = _optional_image_id_set(length_stats, field="dropped_image_ids")
+        if dropped_ids is not None and dropped_ids != missing_ids:
+            unexpected_deltas.append(
+                {
+                    "type": "length_budget_dropped_image_ids_mismatch",
+                    "split": split,
+                    "stats_only": _sample_sorted_ids(dropped_ids - missing_ids),
+                    "source_missing_only": _sample_sorted_ids(missing_ids - dropped_ids),
+                }
+            )
+
+    def _write_payload(
+        self,
+        comparison_path: Path,
+        payload: Mapping[str, Any],
+    ) -> Mapping[str, str]:
+        """Write the deterministic comparison JSON and return its metadata ref."""
+
+        comparison_path.parent.mkdir(parents=True, exist_ok=True)
+        serialized = json.dumps(payload, indent=2, sort_keys=True) + "\n"
+        comparison_path.write_text(serialized, encoding="utf-8")
+        return {
+            "filename": comparison_path.name,
+            "sha256": _sha256_bytes(serialized.encode("utf-8")),
+        }
+
+    def _attach_to_metadata(
+        self,
+        *,
+        view_root: Path,
+        ref: Mapping[str, str],
+    ) -> None:
+        """Attach the comparison reference under ``summary`` in view metadata."""
+
+        meta_path = view_root / "meta.json"
+        if not meta_path.is_file():
+            raise FileNotFoundError(f"view metadata does not exist: {meta_path}")
+        metadata = json.loads(meta_path.read_text(encoding="utf-8"))
+        summary = metadata.setdefault("summary", {})
+        if not isinstance(summary, dict):
+            raise ValueError(f"view metadata summary is not an object: {meta_path}")
+        summary["source_comparison"] = dict(ref)
+        write_view_metadata(meta_path, metadata)
+
+
 class ViewManifestPayloadBuilder:
     """Builder for image-store and annotation-view metadata payloads."""
 
@@ -815,6 +1325,8 @@ class SplitLengthStats:
     max_total_tokens_seen: int = 0
     max_total_tokens_written: int = 0
     lengths_written: list[int] | None = None
+    kept_image_ids: list[Any] | None = None
+    dropped_image_ids: list[Any] | None = None
     length_over_budget_examples: list[dict[str, Any]] | None = None
 
     def __post_init__(self) -> None:
@@ -822,6 +1334,10 @@ class SplitLengthStats:
 
         if self.lengths_written is None:
             self.lengths_written = []
+        if self.kept_image_ids is None:
+            self.kept_image_ids = []
+        if self.dropped_image_ids is None:
+            self.dropped_image_ids = []
         if self.length_over_budget_examples is None:
             self.length_over_budget_examples = []
 
@@ -854,6 +1370,8 @@ class SplitLengthStats:
         )
         assert self.lengths_written is not None
         self.lengths_written.append(int(breakdown.total_tokens))
+        assert self.kept_image_ids is not None
+        self.kept_image_ids.append(record.get("image_id"))
 
     def drop(
         self,
@@ -863,6 +1381,8 @@ class SplitLengthStats:
         """Record one over-budget sample."""
 
         self.records_dropped += 1
+        assert self.dropped_image_ids is not None
+        self.dropped_image_ids.append(record.get("image_id"))
         assert self.length_over_budget_examples is not None
         if len(self.length_over_budget_examples) < 20:
             self.length_over_budget_examples.append(
@@ -878,6 +1398,8 @@ class SplitLengthStats:
         """Return a JSON-serializable stats payload."""
 
         assert self.lengths_written is not None
+        assert self.kept_image_ids is not None
+        assert self.dropped_image_ids is not None
         assert self.length_over_budget_examples is not None
         return {
             "split": self.split,
@@ -891,6 +1413,8 @@ class SplitLengthStats:
             "max_total_tokens_seen": self.max_total_tokens_seen,
             "max_total_tokens_written": self.max_total_tokens_written,
             "lengths_written": _summarize_ints(self.lengths_written),
+            "kept_image_ids": self.kept_image_ids,
+            "dropped_image_ids": self.dropped_image_ids,
             "length_over_budget_examples": self.length_over_budget_examples,
         }
 
@@ -960,6 +1484,11 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--image-store-root", type=Path, default=DEFAULT_IMAGE_STORE_ROOT)
     parser.add_argument("--views-root", type=Path, default=DEFAULT_VIEWS_ROOT)
     parser.add_argument(
+        "--legacy-length-budget-source",
+        type=Path,
+        default=DEFAULT_LEGACY_LENGTH_BUDGET_SOURCE,
+    )
+    parser.add_argument(
         "--legacy-max-objects-source",
         type=Path,
         default=DEFAULT_LEGACY_MAX_OBJECTS_SOURCE,
@@ -970,19 +1499,33 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--max-total-tokens", type=int, default=12000)
     parser.add_argument(
         "--image-store-mode",
-        required=True,
+        default=None,
         choices=sorted(SUPPORTED_IMAGE_STORE_MODES | {PHASE1_REJECTED_IMAGE_STORE_MODE}),
         help=(
             "Explicit image-store adoption mode. Phase 1 rejects move; use copy, "
-            "hardlink, reflink, or reuse-existing."
+            "hardlink, reflink, or reuse-existing. Required unless "
+            "--comparison-only is set."
         ),
     )
     parser.add_argument("--reuse-existing-image-store", action="store_true")
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--dry-run-report", type=Path)
+    parser.add_argument(
+        "--comparison-only",
+        action="store_true",
+        help=(
+            "Write source_comparison.json and patch existing view metadata without "
+            "rebuilding image or annotation artifacts."
+        ),
+    )
     args = parser.parse_args(argv)
     if args.image_store_mode == PHASE1_REJECTED_IMAGE_STORE_MODE:
         parser.error("--image-store-mode move is unavailable in Phase 1")
+    if args.image_store_mode is None:
+        if args.comparison_only:
+            args.image_store_mode = "reuse-existing"
+        else:
+            parser.error("--image-store-mode is required unless --comparison-only is set")
     return args
 
 
@@ -995,6 +1538,9 @@ def main(argv: Sequence[str] | None = None) -> None:
         source_preset=_resolve_repo_path(args.source_preset),
         image_store_root=_resolve_repo_path(args.image_store_root),
         views_root=_resolve_repo_path(args.views_root),
+        legacy_length_budget_source=_resolve_repo_path(args.legacy_length_budget_source)
+        if args.legacy_length_budget_source is not None
+        else None,
         legacy_max_objects_source=_resolve_repo_path(args.legacy_max_objects_source)
         if args.legacy_max_objects_source is not None
         else None,
@@ -1012,12 +1558,23 @@ def main(argv: Sequence[str] | None = None) -> None:
         model_path=_resolve_repo_path(args.model_path),
     )
 
+    # optionally attaching comparison artifacts to already materialized views
+    if bool(args.comparison_only):
+        comparison_writer = SourceComparisonWriter(config)
+        summary = {
+            view: {"source_comparison": dict(comparison_writer.write_for_view(view))}
+            for view in config.views
+        }
+        print(json.dumps(summary, indent=2, sort_keys=True))
+        return
+
     # preparing image store before annotation views
     summary: dict[str, Any] = {"image_store": ImageStoreAdopter(config).prepare()}
     writer = Norm1000ViewWriter(config=config)
     stats_writer = ViewStatsWriter()
     manifest_builder = ViewManifestPayloadBuilder(config)
     dry_run_planner = DryRunViewPlanner(config)
+    comparison_writer = SourceComparisonWriter(config)
 
     # loading real estimator only when requested views need it
     estimator: LengthEstimator | None = None
@@ -1091,6 +1648,11 @@ def main(argv: Sequence[str] | None = None) -> None:
         else:
             raise ValueError(f"unsupported Phase 1 view: {view}")
 
+        if not config.dry_run:
+            summary[view]["source_comparison"] = dict(
+                comparison_writer.write_for_view(view)
+            )
+
     print(json.dumps(summary, indent=2, sort_keys=True))
 
 
@@ -1118,6 +1680,18 @@ def _normalize_image_refs(
     if not refs:
         raise ValueError("record must include at least one image reference")
     return refs
+
+
+def _record_image_refs(record: Mapping[str, Any]) -> Iterable[Any]:
+    """Return image refs from ``images`` with ``file_name`` as a legacy fallback."""
+
+    images = record.get("images") or ()
+    if images:
+        return images
+    file_name = record.get("file_name")
+    if file_name is None or file_name == "":
+        return ()
+    return (file_name,)
 
 
 def _image_ref_from_absolute_path(path: Path) -> str:
@@ -1235,6 +1809,89 @@ def _source_suffix_for_root(source_root: Path) -> str:
     raise FileNotFoundError(
         f"source root does not contain *.norm.jsonl or *.coord.jsonl: {source_root}"
     )
+
+
+def _rows_by_image_id(
+    rows: Sequence[SourceComparisonRow],
+) -> tuple[dict[Any, SourceComparisonRow], list[Any]]:
+    """Return rows keyed by image id plus any duplicate keys."""
+
+    by_id: dict[Any, SourceComparisonRow] = {}
+    duplicates: list[Any] = []
+    for row in rows:
+        if row.image_id in by_id:
+            duplicates.append(row.image_id)
+            continue
+        by_id[row.image_id] = row
+    return by_id, sorted(duplicates, key=str)
+
+
+def _load_length_stats(view_root: Path, split: str) -> Mapping[str, Any] | None:
+    """Load split length stats when present."""
+
+    stats_path = view_root / f"{split}.length_stats.json"
+    if not stats_path.is_file():
+        return None
+    return json.loads(stats_path.read_text(encoding="utf-8"))
+
+
+def _optional_image_id_set(
+    length_stats: Mapping[str, Any],
+    *,
+    field: str,
+) -> set[Any] | None:
+    """Return an optional image-id set from split length stats."""
+
+    if field not in length_stats:
+        return None
+
+    values = length_stats[field]
+    if not isinstance(values, Sequence) or isinstance(values, (str, bytes)):
+        raise ValueError(f"length_stats.{field} must be a list when present")
+
+    return set(values)
+
+
+def _sample_sorted_ids(values: Iterable[Any], *, limit: int = 20) -> list[Any]:
+    """Return a bounded deterministic sample of image ids."""
+
+    return sorted(values, key=str)[:limit]
+
+
+def _code_version(repo_root: Path) -> Mapping[str, Any]:
+    """Return cheap deterministic code-version metadata."""
+
+    git_head: str | None = None
+    try:
+        result = subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            cwd=repo_root,
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        git_head = result.stdout.strip() or None
+    except (OSError, subprocess.CalledProcessError):
+        git_head = None
+
+    return {
+        "script": "public_data/scripts/build_coco_views.py",
+        "git_head": git_head,
+    }
+
+
+def _dedupe_dicts(items: Sequence[Mapping[str, Any]]) -> list[dict[str, Any]]:
+    """Return dictionaries with deterministic duplicate removal."""
+
+    seen: set[str] = set()
+    deduped: list[dict[str, Any]] = []
+    for item in items:
+        key = json.dumps(item, sort_keys=True)
+        if key in seen:
+            continue
+        seen.add(key)
+        deduped.append(dict(item))
+    return deduped
 
 
 def _length_budget_sample_policy(max_total_tokens: int) -> dict[str, Any]:

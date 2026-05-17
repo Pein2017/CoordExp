@@ -19,6 +19,7 @@ from public_data.scripts.build_coco_views import (
     LegacyMaxObjectsViewBuilder,
     LengthBudgetViewBuilder,
     Norm1000ViewWriter,
+    SourceComparisonWriter,
     ViewManifestPayloadBuilder,
     ViewStatsWriter,
     main,
@@ -280,6 +281,183 @@ def test_coco80_lvis_proxy_len12000_infers_proxy_supervision_from_lvis_evidence(
     assert summary["rendered_proxy_candidate_count"] == 1
 
 
+def test_source_comparison_records_expected_length_budget_subset(
+    tmp_path: Path,
+) -> None:
+    source_root = tmp_path / "public_data" / "coco" / "rescale_32_1024_bbox"
+    config = _config(
+        tmp_path,
+        source_preset=source_root,
+        legacy_length_budget_source=tmp_path / "missing_len12000",
+        splits=("train",),
+    )
+    view_root = config.view_root("coco80/len-12000")
+    _write_jsonl(
+        source_root / "train.jsonl",
+        [_norm_row(image_id=1), _norm_row(image_id=2)],
+    )
+    _write_jsonl(view_root / "train.jsonl", [_norm_row(image_id=1)])
+    _write_json(
+        view_root / "train.length_stats.json",
+        {
+            "records_seen": 2,
+            "records_written": 1,
+            "records_dropped": 1,
+            "kept_image_ids": [1],
+            "dropped_image_ids": [2],
+        },
+    )
+    _write_json(
+        view_root / "meta.json",
+        ViewManifestPayloadBuilder(config).build_view_metadata(
+            view_name="coco80/len-12000",
+            primary_jsonl={"train": "train.jsonl"},
+            summary={"records": 1},
+            sample_policy={"type": "length_budget", "max_total_tokens": 12000},
+            length_budget_scope={"rendered_families": ["objects"]},
+            length_budget_template_id="compact-detection-v1",
+            length_stats={
+                "train": {
+                    "filename": "train.length_stats.json",
+                    "sha256": "0" * 64,
+                }
+            },
+        ),
+    )
+
+    ref = SourceComparisonWriter(config).write_for_view("coco80/len-12000")
+
+    comparison = json.loads((view_root / "source_comparison.json").read_text())
+    meta = load_view_metadata(view_root / "meta.json")
+    assert ref["filename"] == "source_comparison.json"
+    assert comparison["source_mode"] == "length_budget_subset"
+    assert comparison["unexpected_deltas"] == []
+    assert comparison["splits"]["train"]["missing_from_generated_count"] == 1
+    assert meta.summary["source_comparison"] == ref
+
+
+def test_source_comparison_fails_on_unverifiable_length_budget_subset(
+    tmp_path: Path,
+) -> None:
+    source_root = tmp_path / "public_data" / "coco" / "rescale_32_1024_bbox"
+    config = _config(
+        tmp_path,
+        source_preset=source_root,
+        legacy_length_budget_source=tmp_path / "missing_len12000",
+        splits=("train",),
+    )
+    view_root = config.view_root("coco80/len-12000")
+    _write_jsonl(
+        source_root / "train.jsonl",
+        [_norm_row(image_id=1), _norm_row(image_id=2), _norm_row(image_id=3)],
+    )
+    _write_jsonl(
+        view_root / "train.jsonl",
+        [_norm_row(image_id=1), _norm_row(image_id=2)],
+    )
+    _write_json(
+        view_root / "train.length_stats.json",
+        {
+            "records_seen": 3,
+            "records_written": 2,
+            "records_dropped": 1,
+            "kept_image_ids": [1, 3],
+            "dropped_image_ids": [2],
+        },
+    )
+    _write_json(
+        view_root / "meta.json",
+        ViewManifestPayloadBuilder(config).build_view_metadata(
+            view_name="coco80/len-12000",
+            primary_jsonl={"train": "train.jsonl"},
+            summary={"records": 2},
+            sample_policy={"type": "length_budget", "max_total_tokens": 12000},
+            length_budget_scope={"rendered_families": ["objects"]},
+            length_budget_template_id="compact-detection-v1",
+            length_stats={
+                "train": {
+                    "filename": "train.length_stats.json",
+                    "sha256": "0" * 64,
+                }
+            },
+        ),
+    )
+
+    with pytest.raises(ValueError, match="length_budget_kept_image_ids_mismatch"):
+        SourceComparisonWriter(config).write_for_view("coco80/len-12000")
+
+    comparison = json.loads((view_root / "source_comparison.json").read_text())
+    assert comparison["unexpected_deltas"][0]["type"] == (
+        "length_budget_kept_image_ids_mismatch"
+    )
+
+
+def test_length_budget_build_writes_membership_ids_for_fallback_comparison(
+    tmp_path: Path,
+) -> None:
+    config = _config(
+        tmp_path,
+        legacy_length_budget_source=tmp_path / "missing_len12000",
+        splits=("train",),
+    )
+    full_root = config.view_root("coco80/full")
+    source_rows = [
+        _norm_row(image_id=1, fake_total_tokens=11999),
+        _norm_row(image_id=2, fake_total_tokens=12001),
+    ]
+    _write_jsonl(config.source_preset / "train.jsonl", source_rows)
+    _write_jsonl(
+        full_root / "train.jsonl",
+        source_rows,
+    )
+
+    builder = LengthBudgetViewBuilder(
+        config=config,
+        estimator=FakeEstimator(),
+        stats_writer=ViewStatsWriter(),
+        manifest_builder=ViewManifestPayloadBuilder(config),
+    )
+    builder.build(
+        source_view_root=full_root,
+        view_name="coco80/len-12000",
+        max_total_tokens=12000,
+    )
+
+    view_root = config.view_root("coco80/len-12000")
+    stats = json.loads((view_root / "train.length_stats.json").read_text())
+    ref = SourceComparisonWriter(config).write_for_view("coco80/len-12000")
+
+    comparison = json.loads((view_root / "source_comparison.json").read_text())
+    assert stats["kept_image_ids"] == [1]
+    assert stats["dropped_image_ids"] == [2]
+    assert ref["filename"] == "source_comparison.json"
+    assert comparison["unexpected_deltas"] == []
+
+
+def test_source_comparison_fails_on_object_count_drift(tmp_path: Path) -> None:
+    source_root = tmp_path / "public_data" / "coco" / "rescale_32_1024_bbox"
+    config = _config(tmp_path, source_preset=source_root, splits=("train",))
+    view_root = config.view_root("coco80/full")
+    _write_jsonl(source_root / "train.jsonl", [_norm_row(image_id=1, object_count=2)])
+    _write_jsonl(view_root / "train.jsonl", [_norm_row(image_id=1, object_count=1)])
+    _write_json(
+        view_root / "meta.json",
+        ViewManifestPayloadBuilder(config).build_view_metadata(
+            view_name="coco80/full",
+            primary_jsonl={"train": "train.jsonl"},
+            summary={"records": 1},
+        ),
+    )
+
+    with pytest.raises(ValueError, match="object_count_mismatch"):
+        SourceComparisonWriter(config).write_for_view("coco80/full")
+
+    comparison = json.loads((view_root / "source_comparison.json").read_text())
+    meta = load_view_metadata(view_root / "meta.json")
+    assert comparison["unexpected_deltas"][0]["type"] == "object_count_mismatch"
+    assert "source_comparison" not in meta.summary
+
+
 def test_image_store_rejects_non_empty_target_without_reuse(tmp_path: Path) -> None:
     source_root = tmp_path / "public_data" / "coco" / "rescale_32_1024_bbox"
     _write_image(source_root / "images" / "train2017" / "000000000001.jpg")
@@ -403,6 +581,55 @@ def test_cli_dry_run_default_views_plans_without_materialized_artifacts(
 def test_parse_args_requires_image_store_mode() -> None:
     with pytest.raises(SystemExit):
         parse_args([])
+
+
+def test_comparison_only_does_not_require_image_store_mode(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    source_root = tmp_path / "public_data" / "coco" / "rescale_32_1024_bbox"
+    views_root = tmp_path / "public_data" / "coco" / "views"
+    image_store_root = tmp_path / "public_data" / "coco" / "images" / "res-1024"
+    config = _config(
+        tmp_path,
+        source_preset=source_root,
+        splits=("train",),
+        image_store_mode="reuse-existing",
+    )
+    view_root = views_root / "coco80" / "full"
+    _write_jsonl(source_root / "train.jsonl", [_norm_row(image_id=1)])
+    _write_jsonl(view_root / "train.jsonl", [_norm_row(image_id=1)])
+    _write_json(
+        view_root / "meta.json",
+        ViewManifestPayloadBuilder(config).build_view_metadata(
+            view_name="coco80/full",
+            primary_jsonl={"train": "train.jsonl"},
+            summary={"records": 1},
+        ),
+    )
+
+    main(
+        [
+            "--comparison-only",
+            "--source-preset",
+            str(source_root),
+            "--views-root",
+            str(views_root),
+            "--image-store-root",
+            str(image_store_root),
+            "--splits",
+            "train",
+            "--views",
+            "coco80/full",
+        ]
+    )
+
+    summary = json.loads(capsys.readouterr().out)
+    meta = load_view_metadata(view_root / "meta.json")
+    assert summary["coco80/full"]["source_comparison"]["filename"] == (
+        "source_comparison.json"
+    )
+    assert meta.summary["source_comparison"]["filename"] == "source_comparison.json"
 
 
 def test_reuse_existing_accepts_non_empty_canonical_store_without_copying(
@@ -532,6 +759,7 @@ def _config(
     tmp_path: Path,
     *,
     source_preset: Path | None = None,
+    legacy_length_budget_source: Path | None = None,
     legacy_max_objects_source: Path | None = None,
     proxy_source: Path | None = None,
     splits: tuple[str, ...] = ("train",),
@@ -546,6 +774,8 @@ def _config(
         or repo_root / "public_data" / "coco" / "rescale_32_1024_bbox",
         image_store_root=repo_root / "public_data" / "coco" / "images" / "res-1024",
         views_root=repo_root / "public_data" / "coco" / "views",
+        legacy_length_budget_source=legacy_length_budget_source
+        or repo_root / "public_data" / "coco" / "rescale_32_1024_bbox_len12000",
         legacy_max_objects_source=legacy_max_objects_source,
         proxy_source=proxy_source,
         splits=splits,
@@ -608,6 +838,11 @@ def _write_jsonl(path: Path, rows: list[dict[str, Any]]) -> None:
     with path.open("w", encoding="utf-8") as handle:
         for row in rows:
             handle.write(json.dumps(row, sort_keys=True) + "\n")
+
+
+def _write_json(path: Path, payload: Mapping[str, Any]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n")
 
 
 def _read_jsonl(path: Path) -> list[dict[str, Any]]:
