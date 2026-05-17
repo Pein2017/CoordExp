@@ -253,6 +253,35 @@ def _raw_row(*, image_name: str = "example.jpg") -> dict[str, Any]:
     }
 
 
+def _norm1000_row_with_object_count(
+    object_count: int,
+    *,
+    image_name: str = "crowded.jpg",
+) -> dict[str, Any]:
+    objects: list[dict[str, Any]] = []
+    for index in range(int(object_count)):
+        coord = index % 900
+        objects.append(
+            {
+                "object_id": f"unit:ann:{index}",
+                "bbox_2d": [coord, coord, coord + 10, coord + 20],
+                "desc": f"unit object {index}",
+                "category_id": 1,
+                "category_name": "object",
+                "coco_ann_id": index,
+            }
+        )
+    return {
+        "images": [f"images/train2017/{image_name}"],
+        "objects": objects,
+        "width": 640,
+        "height": 480,
+        "image_id": 61,
+        "file_name": f"images/train2017/{image_name}",
+        "metadata": {"source": "unit", "split": "train"},
+    }
+
+
 def _make_dataset(
     tmp_path: Path,
     rows: Sequence[Mapping[str, Any]],
@@ -299,6 +328,16 @@ def _make_dataset(
         },
         dataset_name="latest_detection_train",
     )
+
+
+def test_encoded_length_for_latest_compact_norm1000_row_ignores_legacy_max_objects(
+    tmp_path: Path,
+) -> None:
+    with pytest.warns(UserWarning, match="data.max_objects is compatibility-only"):
+        dataset = _make_dataset(tmp_path, [_norm1000_row_with_object_count(61)])
+
+    assert dataset.encoded_length_for_row(0) > 0
+    assert dataset[0]["detection_metadata"]["object_count"] == 61
 
 
 def _padding_waste(indices: Sequence[int], lengths: Sequence[int], *, batch_size: int) -> int:

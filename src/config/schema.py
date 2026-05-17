@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field, fields
 from functools import lru_cache
 import math
+import warnings
 from pathlib import Path
 from typing import (
     Any,
@@ -3416,18 +3417,26 @@ def _latest_detection_validate_token_rows(
 class DetectionDataConfig:
     train_jsonl: str
     val_jsonl: str
-    image_root: str
-    max_objects: int = 60
+    image_root: str | None = None
+    max_objects: int | None = None
     object_ordering: Literal["sorted", "random_permutation"] = "sorted"
 
     def __post_init__(self) -> None:
-        for field_name in ("train_jsonl", "val_jsonl", "image_root"):
+        for field_name in ("train_jsonl", "val_jsonl"):
             if not isinstance(getattr(self, field_name), str):
                 raise TypeError(f"data.{field_name} must be a string")
-        if not isinstance(self.max_objects, int) or isinstance(self.max_objects, bool):
-            raise TypeError("data.max_objects must be an integer")
-        if self.max_objects <= 0:
-            raise ValueError("data.max_objects must be positive")
+        if self.image_root is not None and not isinstance(self.image_root, str):
+            raise TypeError("data.image_root must be a string when provided")
+        if self.max_objects is not None:
+            if not isinstance(self.max_objects, int) or isinstance(self.max_objects, bool):
+                raise TypeError("data.max_objects must be an integer when provided")
+            warnings.warn(
+                "data.max_objects is compatibility-only for latest compact "
+                "datasets and is ignored at training runtime; generate a "
+                "filtered JSONL view such as a legacy max-60 view instead.",
+                UserWarning,
+                stacklevel=2,
+            )
         _latest_detection_validate_choice(
             self.object_ordering,
             path="data.object_ordering",

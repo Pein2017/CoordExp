@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import copy
 import random
+import warnings
 from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any, Literal, Mapping, MutableMapping, Sequence
@@ -87,16 +88,16 @@ TRAINER_BATCH_EXTRA_KEYS: frozenset[str] = frozenset(
 
 @dataclass(frozen=True)
 class DetectionDatasetRuntimeConfig:
-    image_root: str
+    image_root: str | None
     detection_template_id: TemplateId
     mode: DetectionTrainingMode
     object_ordering: DetectionObjectOrdering
     user_prompt: str
     system_prompt: str | None
-    max_objects: int
     seed: int
     state_weighting: str
     normalization: str
+    max_objects: int | None = None
     eos_trust_weight_config: Any | None = None
     type_gate_config: Any | None = None
 
@@ -119,8 +120,19 @@ class DetectionTrainingDataset(Dataset):
     ) -> None:
         if not rows:
             raise ValueError("DetectionTrainingDataset requires at least one row")
-        if config.max_objects <= 0:
-            raise ValueError("max_objects must be positive")
+        if config.image_root is None:
+            raise ValueError(
+                "DetectionTrainingDataset requires explicit image_root until "
+                "view metadata image-root resolution is implemented"
+            )
+        if config.max_objects is not None:
+            warnings.warn(
+                "data.max_objects is compatibility-only for latest compact "
+                "datasets and is ignored at training runtime; generate a "
+                "filtered JSONL view such as a legacy max-60 view instead.",
+                UserWarning,
+                stacklevel=2,
+            )
         self.rows = tuple(copy.deepcopy(dict(row)) for row in rows)
         self.swift_template = swift_template
         self.template = swift_template
@@ -138,16 +150,16 @@ class DetectionTrainingDataset(Dataset):
         jsonl_path: str | Path,
         *,
         swift_template: Any,
-        image_root: str | Path,
+        image_root: str | Path | None,
         detection_template_id: TemplateId,
         mode: DetectionTrainingMode,
         object_ordering: DetectionObjectOrdering,
         user_prompt: str,
         system_prompt: str | None,
-        max_objects: int,
         seed: int,
         state_weighting: str,
         normalization: str,
+        max_objects: int | None = None,
         eos_trust_weight_config: Any | None = None,
         type_gate_config: Any | None = None,
         sample_limit: int | None = None,
@@ -163,13 +175,13 @@ class DetectionTrainingDataset(Dataset):
             rows,
             swift_template=swift_template,
             config=DetectionDatasetRuntimeConfig(
-                image_root=str(image_root),
+                image_root=None if image_root is None else str(image_root),
                 detection_template_id=detection_template_id,
                 mode=mode,
                 object_ordering=object_ordering,
                 user_prompt=user_prompt,
                 system_prompt=system_prompt,
-                max_objects=int(max_objects),
+                max_objects=None if max_objects is None else int(max_objects),
                 seed=int(seed),
                 state_weighting=str(state_weighting),
                 normalization=str(normalization),
@@ -214,11 +226,6 @@ class DetectionTrainingDataset(Dataset):
 
         base_idx = self._base_index(index)
         raw = parse_raw_detection_row(self.rows[base_idx])
-        if len(raw.objects) > self.config.max_objects:
-            raise ValueError(
-                f"row {base_idx} has {len(raw.objects)} objects, exceeding "
-                f"data.max_objects={self.config.max_objects}"
-            )
 
         ordering_plan = self._ordering_plan(base_idx=base_idx, epoch=epoch)
         normalized = normalize_detection_row(raw, object_ordering=ordering_plan)
@@ -246,11 +253,6 @@ class DetectionTrainingDataset(Dataset):
     def __getitem__(self, index: int) -> dict[str, Any]:
         base_idx = self._base_index(index)
         raw = parse_raw_detection_row(self.rows[base_idx])
-        if len(raw.objects) > self.config.max_objects:
-            raise ValueError(
-                f"row {base_idx} has {len(raw.objects)} objects, exceeding "
-                f"data.max_objects={self.config.max_objects}"
-            )
 
         ordering_plan = self._ordering_plan(base_idx=base_idx)
         normalized = normalize_detection_row(raw, object_ordering=ordering_plan)
