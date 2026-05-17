@@ -238,12 +238,66 @@ def test_load_image_store_metadata_rejects_wrong_splits_shape(
         load_image_store_metadata(metadata_path)
 
 
+@pytest.mark.parametrize("schema_version", ["1", True, 2])
+def test_load_image_store_metadata_rejects_wrong_schema_version(
+    tmp_path: Path,
+    schema_version: object,
+) -> None:
+    metadata_path = tmp_path / "meta.json"
+    metadata = _valid_image_store_metadata(schema_version=schema_version)
+    metadata_path.write_text(json.dumps(metadata), encoding="utf-8")
+
+    with pytest.raises(ValueError, match=r"schema_version.*integer 1"):
+        load_image_store_metadata(metadata_path)
+
+
 def test_load_view_metadata_rejects_unknown_field(tmp_path: Path) -> None:
     metadata_path = tmp_path / "metadata.json"
     metadata = _valid_view_metadata(unexpected_contract="nope")
     metadata_path.write_text(json.dumps(metadata), encoding="utf-8")
 
     with pytest.raises(ValueError, match=r"view metadata .*unexpected_contract"):
+        load_view_metadata(metadata_path)
+
+
+@pytest.mark.parametrize("schema_version", ["1", False, 2])
+def test_load_view_metadata_rejects_wrong_schema_version(
+    tmp_path: Path,
+    schema_version: object,
+) -> None:
+    metadata_path = tmp_path / "metadata.json"
+    metadata = _valid_view_metadata(schema_version=schema_version)
+    metadata_path.write_text(json.dumps(metadata), encoding="utf-8")
+
+    with pytest.raises(ValueError, match=r"schema_version.*integer 1"):
+        load_view_metadata(metadata_path)
+
+
+@pytest.mark.parametrize("coordinate_chart", ["", "cxcywh"])
+def test_load_view_metadata_rejects_unsupported_coordinate_chart(
+    tmp_path: Path,
+    coordinate_chart: object,
+) -> None:
+    metadata_path = tmp_path / "metadata.json"
+    metadata = _valid_view_metadata(coordinate_chart=coordinate_chart)
+    metadata_path.write_text(json.dumps(metadata), encoding="utf-8")
+
+    with pytest.raises(ValueError, match=r"coordinate_chart.*xyxy"):
+        load_view_metadata(metadata_path)
+
+
+@pytest.mark.parametrize("assistant_coordinate_rendering", ["", "plain_numbers"])
+def test_load_view_metadata_rejects_unsupported_assistant_coordinate_rendering(
+    tmp_path: Path,
+    assistant_coordinate_rendering: object,
+) -> None:
+    metadata_path = tmp_path / "metadata.json"
+    metadata = _valid_view_metadata(
+        assistant_coordinate_rendering=assistant_coordinate_rendering
+    )
+    metadata_path.write_text(json.dumps(metadata), encoding="utf-8")
+
+    with pytest.raises(ValueError, match=r"assistant_coordinate_rendering.*qwen"):
         load_view_metadata(metadata_path)
 
 
@@ -325,6 +379,15 @@ def test_proxy_view_requires_source_artifacts(tmp_path: Path) -> None:
         load_view_metadata(metadata_path)
 
 
+def test_proxy_view_requires_all_proxy_annotation_policy(tmp_path: Path) -> None:
+    metadata_path = tmp_path / "metadata.json"
+    metadata = _valid_proxy_view_metadata(annotation_policy="mixed_proxy")
+    metadata_path.write_text(json.dumps(metadata), encoding="utf-8")
+
+    with pytest.raises(ValueError, match=r"annotation_policy.*all_proxy"):
+        load_view_metadata(metadata_path)
+
+
 @pytest.mark.parametrize(
     ("source_artifact", "expected_error"),
     [
@@ -347,6 +410,27 @@ def test_proxy_view_requires_source_artifacts(tmp_path: Path) -> None:
                 "path": "",
             },
             r"proxy_policy.source_artifacts\[0\].path",
+        ),
+        (
+            {
+                "kind": "lvis_proxy_jsonl",
+                "path": "/tmp/proxy/train.coord.jsonl",
+            },
+            r"proxy_policy.source_artifacts\[0\].path.*relative",
+        ),
+        (
+            {
+                "kind": "lvis_proxy_jsonl",
+                "path": "public_data/../proxy/train.coord.jsonl",
+            },
+            r"proxy_policy.source_artifacts\[0\].path.*\.\.",
+        ),
+        (
+            {
+                "kind": "lvis_proxy_jsonl",
+                "path": r"public_data\proxy\train.coord.jsonl",
+            },
+            r"proxy_policy.source_artifacts\[0\].path.*POSIX",
         ),
     ],
 )

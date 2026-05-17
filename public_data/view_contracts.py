@@ -8,6 +8,16 @@ from pathlib import Path, PurePosixPath
 from typing import Any, Mapping
 
 
+SCHEMA_VERSION_V1 = 1
+IMAGE_PATH_SEMANTICS_IMAGE_STORE_RELATIVE = "image_store_relative"
+COORDINATE_SPACE_NORM1000 = "norm1000"
+COORDINATE_STORAGE_INTEGER = "integer"
+COORDINATE_RANGE_NORM1000 = (0, 999)
+COORDINATE_CHART_XYXY = "xyxy"
+ASSISTANT_COORDINATE_RENDERING_QWEN_COORD_TOKENS = "qwen_coord_tokens"
+PROXY_ANNOTATION_POLICY_ALL_PROXY = "all_proxy"
+
+
 @dataclass(frozen=True)
 class ImageStoreMetadata:
     """Metadata describing a reusable image store."""
@@ -191,23 +201,44 @@ def safe_relative_image_ref(path: str) -> Path:
 def _validate_view_metadata(meta: ViewMetadata) -> None:
     """Validate the annotation-view metadata contract."""
 
+    if (
+        type(meta.schema_version) is not int
+        or meta.schema_version != SCHEMA_VERSION_V1
+    ):
+        raise ValueError(f"schema_version must be integer {SCHEMA_VERSION_V1}")
+
     if meta.kind != "annotation_view":
         raise ValueError("kind must be annotation_view")
 
     _require_non_empty_string(meta.dataset, field="dataset")
     _require_non_empty_string(meta.view, field="view")
 
-    if meta.image_path_semantics != "image_store_relative":
-        raise ValueError("image_path_semantics must be image_store_relative")
+    if meta.image_path_semantics != IMAGE_PATH_SEMANTICS_IMAGE_STORE_RELATIVE:
+        raise ValueError(
+            "image_path_semantics must be "
+            f"{IMAGE_PATH_SEMANTICS_IMAGE_STORE_RELATIVE}"
+        )
 
-    if meta.coordinate_space != "norm1000":
-        raise ValueError("coordinate_space must be norm1000")
+    if meta.coordinate_space != COORDINATE_SPACE_NORM1000:
+        raise ValueError(f"coordinate_space must be {COORDINATE_SPACE_NORM1000}")
 
-    if meta.coordinate_storage != "integer":
-        raise ValueError("coordinate_storage must be integer")
+    if meta.coordinate_storage != COORDINATE_STORAGE_INTEGER:
+        raise ValueError(f"coordinate_storage must be {COORDINATE_STORAGE_INTEGER}")
 
-    if tuple(meta.coordinate_range) != (0, 999):
-        raise ValueError("coordinate_range must be (0, 999)")
+    if tuple(meta.coordinate_range) != COORDINATE_RANGE_NORM1000:
+        raise ValueError(f"coordinate_range must be {COORDINATE_RANGE_NORM1000}")
+
+    if meta.coordinate_chart != COORDINATE_CHART_XYXY:
+        raise ValueError(f"coordinate_chart must be {COORDINATE_CHART_XYXY}")
+
+    if (
+        meta.assistant_coordinate_rendering
+        != ASSISTANT_COORDINATE_RENDERING_QWEN_COORD_TOKENS
+    ):
+        raise ValueError(
+            "assistant_coordinate_rendering must be "
+            f"{ASSISTANT_COORDINATE_RENDERING_QWEN_COORD_TOKENS}"
+        )
 
     _validate_view_image_store(meta)
     _validate_mapping_of_strings(
@@ -416,6 +447,12 @@ def _normalize_string_sequence(
 def _validate_image_store_metadata(meta: ImageStoreMetadata) -> None:
     """Validate the image-store metadata contract."""
 
+    if (
+        type(meta.schema_version) is not int
+        or meta.schema_version != SCHEMA_VERSION_V1
+    ):
+        raise ValueError(f"schema_version must be integer {SCHEMA_VERSION_V1}")
+
     if meta.kind != "image_store":
         raise ValueError("kind must be image_store")
 
@@ -423,8 +460,11 @@ def _validate_image_store_metadata(meta: ImageStoreMetadata) -> None:
     _require_non_empty_string(meta.image_store, field="image_store")
     _require_non_empty_string(meta.image_root, field="image_root")
 
-    if meta.image_path_semantics != "image_store_relative":
-        raise ValueError("image_path_semantics must be image_store_relative")
+    if meta.image_path_semantics != IMAGE_PATH_SEMANTICS_IMAGE_STORE_RELATIVE:
+        raise ValueError(
+            "image_path_semantics must be "
+            f"{IMAGE_PATH_SEMANTICS_IMAGE_STORE_RELATIVE}"
+        )
 
     _require_positive_int(meta.max_pixels, field="max_pixels")
     _require_positive_int(meta.visual_token_budget, field="visual_token_budget")
@@ -537,7 +577,11 @@ def _validate_proxy_view_metadata(meta: ViewMetadata) -> None:
     if not _is_proxy_view(meta):
         return
 
-    _require_non_empty_string(meta.annotation_policy, field="annotation_policy")
+    if meta.annotation_policy != PROXY_ANNOTATION_POLICY_ALL_PROXY:
+        raise ValueError(
+            f"annotation_policy must be {PROXY_ANNOTATION_POLICY_ALL_PROXY} "
+            "for proxy views"
+        )
     _require_non_empty_string(meta.parent_view, field="parent_view")
 
     proxy_policy = _require_mapping(meta.proxy_policy, field="proxy_policy")
@@ -575,7 +619,28 @@ def _validate_proxy_source_artifacts(source_artifacts: Sequence[Any]) -> None:
         field = f"proxy_policy.source_artifacts[{index}]"
         source_mapping = _require_mapping(source_artifact, field=field)
         _require_non_empty_string(source_mapping.get("kind"), field=f"{field}.kind")
-        _require_non_empty_string(source_mapping.get("path"), field=f"{field}.path")
+        _validate_safe_artifact_path(
+            source_mapping.get("path"),
+            field=f"{field}.path",
+        )
+
+
+def _validate_safe_artifact_path(value: Any, *, field: str) -> None:
+    """Validate a safe repo-relative POSIX artifact path."""
+
+    _require_non_empty_string(value, field=field)
+    if "\\" in value:
+        raise ValueError(f"{field} must be a POSIX-style relative artifact path")
+
+    path = PurePosixPath(value)
+    if path.is_absolute():
+        raise ValueError(f"{field} must be relative")
+
+    if not path.parts:
+        raise ValueError(f"{field} must not be empty")
+
+    if ".." in path.parts:
+        raise ValueError(f"{field} must not contain .. components")
 
 
 def _validate_mapping_of_strings(
