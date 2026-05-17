@@ -318,6 +318,10 @@ Interpretation note:
 
 Channel-B keeps rollout-specific provenance:
 
+- assignment policy:
+  - `stage2_ab/channel_b/assignment/strategy_greedy_iou_count`
+  - `stage2_ab/channel_b/assignment/strategy_legacy_hungarian_mask_iou_count`
+  - `stage2_ab/channel_b/assignment/iou_threshold`
 - rollout-text atoms:
   - `loss/B_rollout_text/struct_ce`
   - `loss/B_rollout_text/desc_ce`

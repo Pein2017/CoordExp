@@ -3974,6 +3974,33 @@ Post-review spec reconciliation:
   Stage-2 compact-full readiness issues. The implementation slice was committed
   as `c84f9094 Refine compact-full Stage-2 readiness`.
 
+## 2026-05-17 Stage-2 Assignment Strategy Seam
+
+Decision:
+
+- Do not replace live Stage2-AB Hungarian/mask-IoU behavior in the same slice as
+  the abstraction migration. This would mix assignment semantics with the
+  compact-full readiness work and make training-trajectory changes hard to
+  attribute.
+- Route live Stage2-AB assignment through a reusable strategy seam first.
+  `stage2_ab.channel_b.assignment.strategy=legacy_hungarian_mask_iou` preserves
+  the historical matcher as the compatibility default, while
+  `stage2_ab.channel_b.assignment.strategy=greedy_iou` is the opt-in forward
+  path.
+- Expose assignment provenance through resolved config, Channel-B rollout meta,
+  and batch metrics under `stage2_ab/channel_b/assignment/*`.
+
+Verification:
+
+- `conda run -n ms python -m pytest tests/test_stage2_ab_config_contract.py
+  tests/test_stage2_ab_training.py tests/test_stage2_assignment_greedy_iou.py
+  tests/test_stage2_supervision_planning_smoke.py
+  tests/test_stage2_duplicate_filter.py tests/test_artifact_contract_docs.py
+  -p no:cacheprovider` passed: 253 tests.
+- Gate-2 config parse still resolves to the compatibility assignment default
+  `legacy_hungarian_mask_iou`, with `compact_full` rollout template and
+  `unconstrained` decode policy.
+
 ## Continue The Grill-Me Loop
 
 Next decisions still worth asking when the context resumes:

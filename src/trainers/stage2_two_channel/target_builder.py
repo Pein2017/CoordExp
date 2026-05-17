@@ -1462,6 +1462,8 @@ def _build_channel_b_meta_entry(
     duplicate_control_first_divergence_diagnostics: Sequence[Stage2DuplicateControlDivergenceDiagnostic],
     duplicate_control_first_divergence_boundary_count: int,
     duplicate_control_first_divergence_skipped_no_divergence: int,
+    assignment_strategy: str,
+    assignment_iou_threshold: float,
     rollout_template_family: str,
     rollout_parser_id: str,
     rollout_append_policy_id: str,
@@ -1641,6 +1643,8 @@ def _build_channel_b_meta_entry(
         "duplicate_control_first_divergence_skipped_no_divergence": int(
             duplicate_control_first_divergence_skipped_no_divergence
         ),
+        "assignment_strategy": str(assignment_strategy),
+        "assignment_iou_threshold": float(assignment_iou_threshold),
     }
     return meta_entry, int(closure_supervision_drop_count)
 

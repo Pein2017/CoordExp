@@ -5,7 +5,7 @@ from abc import ABC, abstractmethod
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from types import MappingProxyType
-from typing import TypeAlias, cast
+from typing import Any, Callable, TypeAlias, cast
 
 from src.training.ordering import ObjectBBox
 
@@ -379,6 +379,7 @@ class LegacyHungarianMaskIoUAssignment(AssignmentStrategy):
         mask_resolution: int,
         fp_cost: float = 1.0,
         fn_cost: float = 1.0,
+        matcher: Callable[..., Any] | None = None,
     ) -> None:
         """Initialize the live Hungarian/maskIoU adapter."""
 
@@ -387,6 +388,7 @@ class LegacyHungarianMaskIoUAssignment(AssignmentStrategy):
         self.mask_resolution = int(mask_resolution)
         self.fp_cost = float(fp_cost)
         self.fn_cost = float(fn_cost)
+        self._matcher = matcher
         if self.top_k <= 0:
             raise ValueError("top_k must be > 0")
         if self.mask_resolution <= 0:
@@ -401,11 +403,15 @@ class LegacyHungarianMaskIoUAssignment(AssignmentStrategy):
     ) -> AssignmentResult:
         """Return assignment by delegating to the live Hungarian matcher."""
 
-        from src.trainers.rollout_matching.matching import hungarian_match_maskiou
+        matcher = self._matcher
+        if matcher is None:
+            from src.trainers.rollout_matching.matching import hungarian_match_maskiou
+
+            matcher = hungarian_match_maskiou
 
         predictions_tuple = tuple(predictions)
         ground_truth_tuple = tuple(ground_truth)
-        match = hungarian_match_maskiou(
+        match = matcher(
             preds=[
                 self._to_legacy_gt_object(
                     assignment_object=prediction,

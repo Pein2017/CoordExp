@@ -21,6 +21,11 @@ reconciliation passed subagent review, focused verification passed, and scoped
 commit hygiene is complete. Unchecked roadmap tasks below remain future staged
 refactor work unless explicitly selected for the next implementation slice.
 
+Follow-up Stage-2 assignment slice in progress: live Stage2-AB assignment now
+has a config-first strategy seam under `stage2_ab.channel_b.assignment`, with
+the legacy Hungarian/mask-IoU matcher preserved as the default compatibility
+adapter and `greedy_iou` available as the reusable opt-in target strategy.
+
 ## Execution Policy
 
 This is a staged architecture refactor. Do not try to implement all tasks in one

@@ -2305,7 +2305,64 @@ class Stage2ABChannelBDuplicateControlConfig:
 
 
 @dataclass(frozen=True)
+class Stage2ABChannelBAssignmentConfig:
+    strategy: str = "legacy_hungarian_mask_iou"
+    iou_threshold: Optional[float] = None
+
+    @classmethod
+    def from_mapping(cls, payload: Any) -> "Stage2ABChannelBAssignmentConfig":
+        if payload is None:
+            return cls()
+        if not isinstance(payload, Mapping):
+            raise TypeError("stage2_ab.channel_b.assignment must be a mapping when provided")
+
+        data: MutableMapping[str, Any] = dict(payload)
+        strategy_raw = data.pop("strategy", cls.strategy)
+        strategy = str(strategy_raw).strip().lower().replace("-", "_")
+        if strategy not in {"legacy_hungarian_mask_iou", "greedy_iou"}:
+            raise ValueError(
+                "stage2_ab.channel_b.assignment.strategy must be one of "
+                "{'legacy_hungarian_mask_iou', 'greedy_iou'}"
+            )
+
+        iou_threshold_raw = data.pop("iou_threshold", None)
+        iou_threshold: Optional[float] = None
+        if iou_threshold_raw is not None:
+            try:
+                iou_threshold = float(iou_threshold_raw)
+            except (TypeError, ValueError) as exc:
+                raise TypeError(
+                    "stage2_ab.channel_b.assignment.iou_threshold must be a float/int when set"
+                ) from exc
+            if not math.isfinite(iou_threshold):
+                raise ValueError(
+                    "stage2_ab.channel_b.assignment.iou_threshold must be finite"
+                )
+            if iou_threshold < 0.0 or iou_threshold > 1.0:
+                raise ValueError(
+                    "stage2_ab.channel_b.assignment.iou_threshold must be in [0, 1]"
+                )
+
+        if data:
+            unknown = [
+                f"stage2_ab.channel_b.assignment.{str(k)}"
+                for k in sorted(data.keys(), key=lambda x: str(x))
+            ]
+            raise ValueError(
+                f"Unknown stage2_ab.channel_b.assignment keys: {unknown}"
+            )
+
+        return cls(
+            strategy=strategy,
+            iou_threshold=iou_threshold,
+        )
+
+
+@dataclass(frozen=True)
 class Stage2ABChannelBConfig:
+    assignment: Stage2ABChannelBAssignmentConfig = field(
+        default_factory=Stage2ABChannelBAssignmentConfig
+    )
     duplicate_control: Stage2ABChannelBDuplicateControlConfig = field(
         default_factory=Stage2ABChannelBDuplicateControlConfig
     )
@@ -2409,6 +2466,9 @@ class Stage2ABChannelBConfig:
                 "Use stage2_ab.channel_b.duplicate_control.center_radius_scale instead."
             )
 
+        assignment = Stage2ABChannelBAssignmentConfig.from_mapping(
+            data.pop("assignment", None)
+        )
         duplicate_control = Stage2ABChannelBDuplicateControlConfig.from_mapping(
             data.pop("duplicate_control", None)
         )
@@ -2501,6 +2561,7 @@ class Stage2ABChannelBConfig:
             )
 
         return cls(
+            assignment=assignment,
             duplicate_control=duplicate_control,
             producer_wait_timeout_s=producer_wait_timeout_s,
             ddp_phase_timeout_s=ddp_phase_timeout_s,

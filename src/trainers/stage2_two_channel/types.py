@@ -91,6 +91,8 @@ class Stage2ChannelBMeta(Stage2RolloutMetaBase):
     duplicate_control_first_divergence_diagnostics: List[Stage2DuplicateControlDivergenceDiagnostic]
     duplicate_control_first_divergence_boundary_count: int
     duplicate_control_first_divergence_skipped_no_divergence: int
+    assignment_strategy: str
+    assignment_iou_threshold: float
 
 
 Stage2RolloutMeta: TypeAlias = Stage2ChannelAMeta | Stage2ChannelBMeta

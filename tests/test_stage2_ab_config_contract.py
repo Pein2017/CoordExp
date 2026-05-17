@@ -8,6 +8,7 @@ import pytest
 
 from src.config.loader import ConfigLoader
 from src.config.schema import (
+    Stage2ABChannelBAssignmentConfig,
     Stage2ABChannelBConfig,
     Stage2ABChannelBDuplicateControlConfig,
     Stage2ABChannelBPseudoPositiveConfig,
@@ -194,6 +195,49 @@ def test_stage2_ab_channel_b_rollout_template_defaults_to_explicit_legacy() -> N
     assert cfg.rollout_decode_policy == "legacy_coordjson"
     assert cfg.invalid_rollout_policy == "abort"
     assert cfg.fallback_loss_weight == pytest.approx(1.0)
+
+
+def test_stage2_ab_channel_b_assignment_defaults_to_legacy_adapter() -> None:
+    cfg = Stage2ABChannelBConfig.from_mapping({})
+
+    assert cfg.assignment == Stage2ABChannelBAssignmentConfig(
+        strategy="legacy_hungarian_mask_iou",
+        iou_threshold=None,
+    )
+
+
+def test_stage2_ab_channel_b_assignment_accepts_greedy_iou() -> None:
+    cfg = Stage2ABChannelBConfig.from_mapping(
+        {"assignment": {"strategy": "greedy-iou", "iou_threshold": 0.55}}
+    )
+
+    assert cfg.assignment.strategy == "greedy_iou"
+    assert cfg.assignment.iou_threshold == pytest.approx(0.55)
+
+
+@pytest.mark.parametrize(
+    "payload, expected_msg",
+    [
+        (
+            {"strategy": "oops"},
+            r"stage2_ab\.channel_b\.assignment\.strategy must be one of",
+        ),
+        (
+            {"strategy": "greedy_iou", "iou_threshold": 1.5},
+            r"stage2_ab\.channel_b\.assignment\.iou_threshold must be in \[0, 1\]",
+        ),
+        (
+            {"unexpected": True},
+            r"Unknown stage2_ab\.channel_b\.assignment keys",
+        ),
+    ],
+)
+def test_stage2_ab_channel_b_assignment_invalid_values_fail_fast(
+    payload: dict,
+    expected_msg: str,
+) -> None:
+    with pytest.raises((TypeError, ValueError), match=expected_msg):
+        Stage2ABChannelBAssignmentConfig.from_mapping(payload)
 
 
 def test_stage2_ab_channel_b_compact_full_derives_runtime_policy_defaults() -> None:

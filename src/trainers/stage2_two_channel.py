@@ -20,6 +20,13 @@ from src.training.stage2.rollout_codec import (
     Stage2RolloutTemplatePolicy,
     resolve_stage2_rollout_template_policy,
 )
+from src.training.stage2.assignment import (
+    AssignmentObject,
+    AssignmentResult,
+    AssignmentStrategy,
+    GreedyIoUAssignment,
+    LegacyHungarianMaskIoUAssignment,
+)
 from src.utils.assistant_json import dumps_coordjson
 
 from .stage2_rollout_aligned import RolloutMatchingSFTTrainer
@@ -164,6 +171,18 @@ _STAGE2_CHANNEL_B_DIRECT_BATCH_METRIC_KEYS = frozenset(
 )
 
 
+@dataclass(frozen=True)
+class _Stage2ChannelBAssignmentMatch:
+    matched_pairs: Tuple[Tuple[int, int], ...]
+    fp_pred_indices: Tuple[int, ...]
+    fn_gt_indices: Tuple[int, ...]
+    gating_rejections: int
+    matched_maskiou_sum: float
+    matched_maskiou_count: int
+    strategy_id: str
+    iou_threshold: float
+
+
 def _is_stage2_channel_b_direct_batch_metric_key(key: str) -> bool:
     """Return whether a Channel-B batch metric must reach the step log.
 
@@ -186,6 +205,94 @@ def _is_stage2_channel_b_direct_batch_metric_key(key: str) -> bool:
         return True
 
     return key in _STAGE2_CHANNEL_B_DIRECT_BATCH_METRIC_KEYS
+
+
+def _stage2_assignment_object_from_gt_object(
+    obj: GTObject,
+    *,
+    role: str,
+    position: int,
+) -> AssignmentObject:
+    """Return the reusable assignment object for a rollout-matching object."""
+
+    return AssignmentObject(
+        object_id=f"{role}:{int(position)}:{int(obj.index)}",
+        bbox=tuple(float(value) for value in obj.points_norm1000),
+        description=str(obj.desc),
+        metadata={
+            "source_index": int(position),
+            "object_index": int(obj.index),
+        },
+    )
+
+
+def _stage2_assignment_result_to_match(
+    result: AssignmentResult,
+) -> _Stage2ChannelBAssignmentMatch:
+    """Return the trainer-local compatibility view for an assignment result."""
+
+    metadata = dict(result.metadata)
+    matched_pairs = tuple(
+        (int(pair.prediction_index), int(pair.ground_truth_index))
+        for pair in result.pairs
+    )
+    fp_pred_indices = tuple(int(item.index) for item in result.unmatched_predictions)
+    fn_gt_indices = tuple(int(item.index) for item in result.unmatched_ground_truth)
+
+    matched_iou_sum_raw = metadata.get(
+        "matched_maskiou_sum",
+        sum(float(pair.iou) for pair in result.pairs),
+    )
+    matched_iou_count_raw = metadata.get(
+        "matched_maskiou_count",
+        len(result.pairs),
+    )
+    gating_rejections_raw = metadata.get("gating_rejections", 0)
+    iou_threshold_raw = metadata.get(
+        "iou_threshold",
+        metadata.get("gate_threshold", 0.0),
+    )
+
+    return _Stage2ChannelBAssignmentMatch(
+        matched_pairs=matched_pairs,
+        fp_pred_indices=fp_pred_indices,
+        fn_gt_indices=fn_gt_indices,
+        gating_rejections=int(gating_rejections_raw or 0),
+        matched_maskiou_sum=float(matched_iou_sum_raw or 0.0),
+        matched_maskiou_count=int(matched_iou_count_raw or 0),
+        strategy_id=str(metadata.get("assignment_strategy", "") or ""),
+        iou_threshold=float(iou_threshold_raw or 0.0),
+    )
+
+
+def _assign_stage2_channel_b_objects(
+    *,
+    strategy: AssignmentStrategy,
+    preds: Sequence[GTObject],
+    gts: Sequence[GTObject],
+) -> _Stage2ChannelBAssignmentMatch:
+    """Assign Channel-B prediction objects to GT through the strategy seam."""
+
+    result = strategy.assign(
+        predictions=tuple(
+            _stage2_assignment_object_from_gt_object(
+                obj=pred,
+                role="pred",
+                position=pred_i,
+            )
+            for pred_i, pred in enumerate(preds)
+        ),
+        ground_truth=tuple(
+            _stage2_assignment_object_from_gt_object(
+                obj=gt,
+                role="gt",
+                position=gt_i,
+            )
+            for gt_i, gt in enumerate(gts)
+        ),
+    )
+
+    return _stage2_assignment_result_to_match(result)
 
 
 def _build_channel_b_invalid_explorer_detail(
@@ -1991,6 +2098,13 @@ class Stage2ABTrainingTrainer(
         num_beams = int(anchor_decode_request.num_beams)
         repetition_penalty = float(anchor_decode_request.repetition_penalty)
         do_sample = bool(float(explorer_decode_request.temperature) > 0.0)
+        assignment_strategy = self._resolve_stage2_channel_b_assignment_strategy(
+            gate_thr=gate_thr,
+            match_top_k=match_top_k,
+            mask_res=mask_res,
+            fp_cost=fp_cost,
+            fn_cost=fn_cost,
+        )
 
         try:
             return self._prepare_batch_inputs_b_impl(
@@ -2006,6 +2120,7 @@ class Stage2ABTrainingTrainer(
                 mask_res=mask_res,
                 fp_cost=fp_cost,
                 fn_cost=fn_cost,
+                assignment_strategy=assignment_strategy,
                 duplicate_iou_threshold=duplicate_iou_threshold,
                 center_radius_scale=center_radius_scale,
                 unlabeled_consistent_iou_threshold=unlabeled_consistent_iou_threshold,
@@ -2069,6 +2184,50 @@ class Stage2ABTrainingTrainer(
             fallback_loss_weight=self._ab_channel_b_get("fallback_loss_weight", 1.0),
         )
 
+    def _resolve_stage2_channel_b_assignment_strategy(
+        self,
+        *,
+        gate_thr: float,
+        match_top_k: int,
+        mask_res: int,
+        fp_cost: float,
+        fn_cost: float,
+    ) -> AssignmentStrategy:
+        assignment_strategy = str(
+            self._ab_channel_b_get(
+                "assignment.strategy",
+                "legacy_hungarian_mask_iou",
+            )
+        ).strip().lower().replace("-", "_")
+        assignment_iou_threshold_raw = self._ab_channel_b_get(
+            "assignment.iou_threshold",
+            None,
+        )
+        assignment_iou_threshold = (
+            float(gate_thr)
+            if assignment_iou_threshold_raw is None
+            else float(assignment_iou_threshold_raw)
+        )
+
+        if assignment_strategy == "legacy_hungarian_mask_iou":
+            return LegacyHungarianMaskIoUAssignment(
+                top_k=int(match_top_k),
+                gate_threshold=float(assignment_iou_threshold),
+                mask_resolution=int(mask_res),
+                fp_cost=float(fp_cost),
+                fn_cost=float(fn_cost),
+                matcher=hungarian_match_maskiou,
+            )
+        if assignment_strategy == "greedy_iou":
+            return GreedyIoUAssignment(
+                iou_threshold=float(assignment_iou_threshold),
+            )
+
+        raise ValueError(
+            "stage2_ab.channel_b.assignment.strategy must be one of "
+            "{'legacy_hungarian_mask_iou', 'greedy_iou'}"
+        )
+
     def _prepare_batch_inputs_b_impl(
         self,
         *,
@@ -2084,6 +2243,7 @@ class Stage2ABTrainingTrainer(
         mask_res: int,
         fp_cost: float,
         fn_cost: float,
+        assignment_strategy: AssignmentStrategy,
         duplicate_iou_threshold: float,
         center_radius_scale: float,
         unlabeled_consistent_iou_threshold: float,
@@ -2597,14 +2757,10 @@ class Stage2ABTrainingTrainer(
                 )
                 or 0.0
             )
-            match = hungarian_match_maskiou(
+            match = _assign_stage2_channel_b_objects(
+                strategy=assignment_strategy,
                 preds=accepted_objects_clean,
                 gts=gts,
-                top_k=match_top_k,
-                gate_threshold=gate_thr,
-                mask_resolution=mask_res,
-                fp_cost=fp_cost,
-                fn_cost=fn_cost,
             )
 
             dup_max_desc_count = float(
@@ -2676,14 +2832,10 @@ class Stage2ABTrainingTrainer(
             ]
             explorer_match_by_pred_by_view = []
             for explorer_objects_raw in explorer_objects_raw_by_view:
-                explorer_match = hungarian_match_maskiou(
+                explorer_match = _assign_stage2_channel_b_objects(
+                    strategy=assignment_strategy,
                     preds=explorer_objects_raw,
                     gts=gts,
-                    top_k=match_top_k,
-                    gate_threshold=gate_thr,
-                    mask_resolution=mask_res,
-                    fp_cost=fp_cost,
-                    fn_cost=fn_cost,
                 )
                 explorer_match_by_pred_by_view.append(
                     {
@@ -3381,6 +3533,8 @@ class Stage2ABTrainingTrainer(
                 duplicate_control_first_divergence_skipped_no_divergence=int(
                     duplicate_control_first_divergence_skipped_no_divergence
                 ),
+                assignment_strategy=str(match.strategy_id),
+                assignment_iou_threshold=float(match.iou_threshold),
                 rollout_template_family=str(
                     supervision_targets.rollout_template_family
                 ),
@@ -3425,6 +3579,16 @@ class Stage2ABTrainingTrainer(
             if anchor_rollout_count > 0
             else 0.0
         )
+        assignment_strategy_id = str(
+            getattr(assignment_strategy, "strategy_id", "") or ""
+        )
+        assignment_iou_threshold = float(
+            getattr(
+                assignment_strategy,
+                "iou_threshold",
+                getattr(assignment_strategy, "gate_threshold", gate_thr),
+            )
+        )
 
         batch_metrics: Stage2BatchMetrics = {
             "stage2/channel_a": float(0.0),
@@ -3452,6 +3616,19 @@ class Stage2ABTrainingTrainer(
             ),
             "stage2_ab/channel_b/_prompt_tok_mismatch_num": float(prompt_tok_mismatch_total),
             "stage2_ab/channel_b/_prompt_tok_mismatch_den": float(len(anchor_rollout_results)),
+            "stage2_ab/channel_b/assignment/strategy_greedy_iou_count": float(
+                len(anchor_rollout_results)
+                if assignment_strategy_id == "greedy_iou"
+                else 0.0
+            ),
+            "stage2_ab/channel_b/assignment/strategy_legacy_hungarian_mask_iou_count": float(
+                len(anchor_rollout_results)
+                if assignment_strategy_id == "legacy_hungarian_mask_iou"
+                else 0.0
+            ),
+            "stage2_ab/channel_b/assignment/iou_threshold": float(
+                assignment_iou_threshold
+            ),
             "stage2/drop_poly": float(drop_poly_total),
             "stage2/drop_unknown": float(drop_unknown_total),
             "stage2/drop_bbox_invalid": float(drop_bbox_invalid_total),

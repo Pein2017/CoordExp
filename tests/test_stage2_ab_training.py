@@ -18,9 +18,11 @@ from src.common.detection_sequence import (
     OBJECT_REF_START_TOKEN,
 )
 from src.training.stage2.rollout_codec import Stage2RolloutTemplateMismatchError
+from src.training.stage2.assignment import GreedyIoUAssignment
 from src.trainers.stage2_two_channel import (
     Stage2ABTrainingTrainer,
     _PendingStage2Log,
+    _assign_stage2_channel_b_objects,
     _bbox_groups_from_token_ids,
     _bbox_smoothl1_ciou_loss,
     _build_teacher_forced_payload,
@@ -56,6 +58,48 @@ def _apply_test_duplicate_control(
         list(result.kept_anchor_objects),
         dict(result.suppressed_duplicate_objects_by_boundary),
     )
+
+
+def test_channel_b_assignment_helper_supports_greedy_iou_provenance() -> None:
+    match = _assign_stage2_channel_b_objects(
+        strategy=GreedyIoUAssignment(iou_threshold=0.5),
+        preds=(
+            GTObject(
+                index=7,
+                geom_type="bbox_2d",
+                points_norm1000=[0, 0, 100, 100],
+                desc="matched pred",
+            ),
+            GTObject(
+                index=8,
+                geom_type="bbox_2d",
+                points_norm1000=[800, 800, 900, 900],
+                desc="false positive",
+            ),
+        ),
+        gts=(
+            GTObject(
+                index=3,
+                geom_type="bbox_2d",
+                points_norm1000=[0, 0, 100, 100],
+                desc="matched gt",
+            ),
+            GTObject(
+                index=4,
+                geom_type="bbox_2d",
+                points_norm1000=[300, 300, 400, 400],
+                desc="false negative",
+            ),
+        ),
+    )
+
+    assert match.strategy_id == "greedy_iou"
+    assert match.iou_threshold == pytest.approx(0.5)
+    assert match.matched_pairs == ((0, 0),)
+    assert match.fp_pred_indices == (1,)
+    assert match.fn_gt_indices == (1,)
+    assert match.gating_rejections == 0
+    assert match.matched_maskiou_count == 1
 
 
 class _DummyOut:
@@ -1086,7 +1130,7 @@ def test_channel_b_compact_full_invalid_explorer_rollouts_do_not_dilute_posterio
     assert metrics["rollout/explorer/valid_pred_objects"] == pytest.approx(1.0 / 3.0)
 
 
-def test_channel_b_matching_uses_candidate_top_k_not_decode_top_k(monkeypatch):
+def test_channel_b_matching_uses_candidate_top_k_and_assignment_threshold(monkeypatch):
     t = Stage2ABTrainingTrainer.__new__(Stage2ABTrainingTrainer)
     t.stage2_ab_cfg = {}
     t._stage2_pending_train_logs = {}
@@ -1105,7 +1149,12 @@ def test_channel_b_matching_uses_candidate_top_k_not_decode_top_k(monkeypatch):
         "repetition_penalty": 1.0,
     }
     t._cfg = lambda key, default=None: cfg.get(key, default)
-    t._ab_channel_b_get = lambda key, default=None: default
+    def _channel_b_get(key, default=None):
+        if key == "assignment.iou_threshold":
+            return 0.75
+        return default
+
+    t._ab_channel_b_get = _channel_b_get
 
     class _CoordLiteralTokenizer(_DummyTokenizer):
         def encode(self, text: str, add_special_tokens: bool = False):
@@ -1181,8 +1230,9 @@ def test_channel_b_matching_uses_candidate_top_k_not_decode_top_k(monkeypatch):
     class _StopAfterMatch(RuntimeError):
         pass
 
-    def _fake_match(*, preds, gts, top_k, **kwargs):
+    def _fake_match(*, preds, gts, top_k, gate_threshold, **kwargs):
         captured["top_k"] = int(top_k)
+        captured["gate_threshold"] = float(gate_threshold)
         raise _StopAfterMatch("stop once matcher receives top_k")
 
     monkeypatch.setattr(
@@ -1200,6 +1250,7 @@ def test_channel_b_matching_uses_candidate_top_k_not_decode_top_k(monkeypatch):
         t._prepare_batch_inputs_b([sample], _segments_only=True)
 
     assert captured["top_k"] == 7
+    assert captured["gate_threshold"] == pytest.approx(0.75)
 
 
 def test_channel_b_invalid_rollout_keeps_sample_via_empty_prefix_fallback(monkeypatch):
