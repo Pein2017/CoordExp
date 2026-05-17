@@ -1,0 +1,361 @@
+from __future__ import annotations
+
+import json
+from pathlib import Path
+from typing import Any, Mapping
+
+import pytest
+
+from public_data.scripts.build_coco_length_budget_artifacts import (
+    TokenBudgetBreakdown,
+    _model_facing_objects,
+)
+from public_data.scripts.build_coco_views import (
+    AllProxyResearchViewBuilder,
+    CocoViewFactoryConfig,
+    ImageStoreAdopter,
+    LegacyMaxObjectsViewBuilder,
+    LengthBudgetViewBuilder,
+    Norm1000ViewWriter,
+    ViewManifestPayloadBuilder,
+    ViewStatsWriter,
+    parse_args,
+)
+from public_data.view_contracts import load_image_store_metadata, load_view_metadata
+
+
+class FakeEstimator:
+    """Estimator returning deterministic budgets from the row metadata."""
+
+    def measure(self, record: Mapping[str, Any]) -> TokenBudgetBreakdown:
+        total_tokens = int(record.get("metadata", {}).get("fake_total_tokens", 0))
+        return TokenBudgetBreakdown(
+            total_tokens=total_tokens,
+            text_tokens_without_image_placeholders=total_tokens,
+            image_patch_tokens=0,
+            image_placeholders=1,
+            assistant_tokens=len(record.get("objects") or []),
+            object_count=len(record.get("objects") or []),
+        )
+
+
+def test_coco80_full_writes_norm1000_integer_boxes_and_image_store_refs(
+    tmp_path: Path,
+) -> None:
+    source_root = tmp_path / "public_data" / "coco" / "rescale_32_1024_bbox"
+    _write_image(source_root / "images" / "train2017" / "000000000001.jpg")
+    _write_jsonl(
+        source_root / "train.jsonl",
+        [
+            {
+                "image_id": 1,
+                "file_name": "train2017/000000000001.jpg",
+                "width": 100,
+                "height": 50,
+                "images": ["images/train2017/000000000001.jpg"],
+                "metadata": {"source": "coco", "split": "train"},
+                "objects": [
+                    {
+                        "desc": "cat",
+                        "bbox_2d": [10, 5, 20, 25],
+                    }
+                ],
+            }
+        ],
+    )
+    config = _config(tmp_path, source_preset=source_root, splits=("train",))
+    ImageStoreAdopter(config).prepare()
+
+    writer = Norm1000ViewWriter(config=config)
+    summary = writer.write_view(
+        source_root=source_root,
+        view_name="coco80/full",
+        view_root=config.view_root("coco80/full"),
+        sample_policy=None,
+    )
+
+    row = _read_jsonl(config.view_root("coco80/full") / "train.jsonl")[0]
+    meta = load_view_metadata(config.view_root("coco80/full") / "meta.json")
+    image_meta = load_image_store_metadata(config.image_store_root / "meta.json")
+    assert summary["records"] == 1
+    assert row["images"] == ["images/train2017/000000000001.jpg"]
+    assert row["objects"][0]["bbox_2d"] == [100, 101, 202, 510]
+    assert all(isinstance(coord, int) for coord in row["objects"][0]["bbox_2d"])
+    assert row["objects"][0]["object_id"] == "1:0"
+    assert meta.view == "coco80/full"
+    assert meta.primary_jsonl == {"train": "train.jsonl"}
+    assert image_meta.image_root == "public_data/coco/images/res-1024"
+
+
+def test_coco80_len12000_drops_over_budget_row_with_fake_estimator(
+    tmp_path: Path,
+) -> None:
+    config = _config(tmp_path, splits=("train",))
+    full_root = config.view_root("coco80/full")
+    _write_jsonl(
+        full_root / "train.jsonl",
+        [
+            _norm_row(image_id=1, fake_total_tokens=11999),
+            _norm_row(image_id=2, fake_total_tokens=12001),
+        ],
+    )
+
+    builder = LengthBudgetViewBuilder(
+        config=config,
+        estimator=FakeEstimator(),
+        stats_writer=ViewStatsWriter(),
+        manifest_builder=ViewManifestPayloadBuilder(config),
+    )
+    summary = builder.build(
+        source_view_root=full_root,
+        view_name="coco80/len-12000",
+        max_total_tokens=12000,
+    )
+
+    rows = _read_jsonl(config.view_root("coco80/len-12000") / "train.jsonl")
+    stats = json.loads(
+        (config.view_root("coco80/len-12000") / "train.length_stats.json").read_text()
+    )
+    meta = load_view_metadata(config.view_root("coco80/len-12000") / "meta.json")
+    assert [row["image_id"] for row in rows] == [1]
+    assert summary["records"] == 1
+    assert stats["records_seen"] == 2
+    assert stats["records_dropped"] == 1
+    assert stats["length_over_budget_examples"][0]["image_id"] == 2
+    assert meta.sample_policy == {
+        "type": "length_budget",
+        "max_total_tokens": 12000,
+        "budget_includes": [
+            "image_patch_tokens",
+            "system_prompt_tokens",
+            "user_prompt_tokens",
+            "assistant_response_tokens",
+        ],
+    }
+
+
+def test_coco80_max60_preserves_historical_membership_from_norm1000_source(
+    tmp_path: Path,
+) -> None:
+    legacy_root = tmp_path / "public_data" / "coco" / "rescale_32_1024_bbox_max60"
+    _write_jsonl(
+        legacy_root / "train.norm.jsonl",
+        [
+            _norm_row(image_id=10, object_count=60),
+            _norm_row(image_id=11, object_count=1),
+        ],
+    )
+    config = _config(tmp_path, legacy_max_objects_source=legacy_root, splits=("train",))
+
+    builder = LegacyMaxObjectsViewBuilder(
+        config=config,
+        writer=Norm1000ViewWriter(config=config),
+    )
+    summary = builder.build(view_name="coco80/max-60", max_objects=60)
+
+    rows = _read_jsonl(config.view_root("coco80/max-60") / "train.jsonl")
+    meta = load_view_metadata(config.view_root("coco80/max-60") / "meta.json")
+    assert [row["image_id"] for row in rows] == [10, 11]
+    assert [len(row["objects"]) for row in rows] == [60, 1]
+    assert summary["records"] == 2
+    assert meta.sample_policy == {
+        "type": "max_objects_legacy",
+        "max_objects": 60,
+        "membership_source": str(legacy_root),
+    }
+
+
+def test_coco80_lvis_proxy_len12000_records_object_supervision_by_object_id(
+    tmp_path: Path,
+) -> None:
+    proxy_root = tmp_path / "public_data" / "coco" / "rescale_32_1024_bbox_lvis_proxy"
+    _write_jsonl(
+        proxy_root / "train.norm.jsonl",
+        [
+            _norm_row(
+                image_id=20,
+                fake_total_tokens=12000,
+                objects=[
+                    {
+                        "object_id": "coco:20:0",
+                        "desc": "dog",
+                        "bbox_2d": [10, 10, 100, 100],
+                        "source_role": "coco_ground_truth",
+                    },
+                    {
+                        "object_id": "lvis:20:1",
+                        "desc": "leash",
+                        "bbox_2d": [20, 20, 110, 110],
+                        "source_role": "lvis_proxy_candidate",
+                        "coordinate_weight": 0.0,
+                        "regression_weight": 0.0,
+                    },
+                ],
+            )
+        ],
+    )
+    config = _config(tmp_path, proxy_source=proxy_root, splits=("train",))
+
+    builder = AllProxyResearchViewBuilder(
+        config=config,
+        estimator=FakeEstimator(),
+        stats_writer=ViewStatsWriter(),
+        manifest_builder=ViewManifestPayloadBuilder(config),
+    )
+    summary = builder.build(view_name="coco80-lvis-proxy/len-12000", max_total_tokens=12000)
+
+    row = _read_jsonl(config.view_root("coco80-lvis-proxy/len-12000") / "train.jsonl")[0]
+    object_supervision = row["metadata"]["supervision"]["object_supervision"]
+    meta = load_view_metadata(config.view_root("coco80-lvis-proxy/len-12000") / "meta.json")
+    assert set(object_supervision) == {"coco:20:0", "lvis:20:1"}
+    assert object_supervision["lvis:20:1"]["source_role"] == "lvis_proxy_candidate"
+    assert object_supervision["lvis:20:1"]["coordinate_weight"] == 0.0
+    assert summary["object_supervision_count"] == 2
+    assert meta.annotation_policy == "all_proxy"
+    assert meta.parent_view == "coco80/full"
+
+
+def test_image_store_rejects_non_empty_target_without_reuse(tmp_path: Path) -> None:
+    source_root = tmp_path / "public_data" / "coco" / "rescale_32_1024_bbox"
+    _write_image(source_root / "images" / "train2017" / "000000000001.jpg")
+    config = _config(tmp_path, source_preset=source_root, image_store_mode="copy")
+    _write_image(config.image_store_root / "images" / "train2017" / "existing.jpg")
+
+    with pytest.raises(FileExistsError, match="reuse-existing"):
+        ImageStoreAdopter(config).prepare()
+
+
+def test_dry_run_report_records_counts_and_does_not_write_artifacts(
+    tmp_path: Path,
+) -> None:
+    source_root = tmp_path / "public_data" / "coco" / "rescale_32_1024_bbox"
+    _write_image(source_root / "images" / "train2017" / "000000000001.jpg")
+    report_path = tmp_path / "report.json"
+    config = _config(
+        tmp_path,
+        source_preset=source_root,
+        image_store_mode="copy",
+        dry_run=True,
+        dry_run_report=report_path,
+    )
+
+    ImageStoreAdopter(config).prepare()
+
+    report = json.loads(report_path.read_text())
+    assert not config.image_store_root.exists()
+    assert report["source_image_count"] == 1
+    assert report["target_image_count"] == 0
+    assert report["sample_resolution_checks"][0]["new_ref"].startswith("images/")
+    assert "No files were copied" in report["rollback_notes"]
+
+
+def test_cli_rejects_phase1_move_image_store_mode() -> None:
+    with pytest.raises(SystemExit):
+        parse_args(["--image-store-mode", "move"])
+
+
+def test_compact_full_estimator_model_view_renders_norm1000_ints_as_coord_tokens() -> None:
+    model_objects = _model_facing_objects(
+        {
+            "objects": [
+                {
+                    "object_id": "1:0",
+                    "desc": "cat",
+                    "bbox_2d": [1, 2, 3, 4],
+                }
+            ]
+        }
+    )
+
+    assert model_objects == [
+        {
+            "desc": "cat",
+            "bbox_2d": [
+                "<|coord_1|>",
+                "<|coord_2|>",
+                "<|coord_3|>",
+                "<|coord_4|>",
+            ],
+        }
+    ]
+
+
+def _config(
+    tmp_path: Path,
+    *,
+    source_preset: Path | None = None,
+    legacy_max_objects_source: Path | None = None,
+    proxy_source: Path | None = None,
+    splits: tuple[str, ...] = ("train",),
+    image_store_mode: str = "copy",
+    dry_run: bool = False,
+    dry_run_report: Path | None = None,
+) -> CocoViewFactoryConfig:
+    repo_root = tmp_path
+    return CocoViewFactoryConfig(
+        repo_root=repo_root,
+        source_preset=source_preset
+        or repo_root / "public_data" / "coco" / "rescale_32_1024_bbox",
+        image_store_root=repo_root / "public_data" / "coco" / "images" / "res-1024",
+        views_root=repo_root / "public_data" / "coco" / "views",
+        legacy_max_objects_source=legacy_max_objects_source,
+        proxy_source=proxy_source,
+        splits=splits,
+        views=("coco80/full",),
+        max_total_tokens=12000,
+        image_store_mode=image_store_mode,
+        reuse_existing_image_store=image_store_mode == "reuse-existing",
+        dry_run=dry_run,
+        dry_run_report=dry_run_report,
+    )
+
+
+def _norm_row(
+    *,
+    image_id: int,
+    fake_total_tokens: int = 0,
+    object_count: int = 1,
+    objects: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
+    return {
+        "image_id": image_id,
+        "file_name": f"train2017/{image_id:012d}.jpg",
+        "width": 1024,
+        "height": 1024,
+        "images": [f"images/train2017/{image_id:012d}.jpg"],
+        "metadata": {
+            "source": "coco",
+            "split": "train",
+            "fake_total_tokens": fake_total_tokens,
+        },
+        "objects": objects
+        if objects is not None
+        else [
+            {
+                "object_id": f"{image_id}:{index}",
+                "desc": f"object {index}",
+                "bbox_2d": [index, index + 1, index + 2, index + 3],
+            }
+            for index in range(object_count)
+        ],
+    }
+
+
+def _write_jsonl(path: Path, rows: list[dict[str, Any]]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w", encoding="utf-8") as handle:
+        for row in rows:
+            handle.write(json.dumps(row, sort_keys=True) + "\n")
+
+
+def _read_jsonl(path: Path) -> list[dict[str, Any]]:
+    return [
+        json.loads(line)
+        for line in path.read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
+
+
+def _write_image(path: Path) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(b"fake")

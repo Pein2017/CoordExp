@@ -45,7 +45,7 @@ from src.common.detection_chat import build_detection_chat_messages
 from src.common.detection_sequence import render_compact_detection_sequence
 from src.config.loader import ConfigLoader
 from src.config.schema import LatestDetectionTrainingConfig
-from src.coord_tokens.codec import token_to_int
+from src.coord_tokens.codec import int_to_token, token_to_int
 from src.detection.runtime import resolve_latest_detection_prompts
 
 
@@ -775,7 +775,12 @@ def _raw_lvis_annotation(split: str) -> Path:
 
 
 def _model_facing_objects(record: Mapping[str, Any]) -> list[dict[str, Any]]:
-    """Return compact renderer object view, dropping non-model metadata keys."""
+    """Return compact renderer object view, dropping non-model metadata keys.
+
+    The legacy builder measured coord-token JSONLs. Canonical Phase 1 views store
+    norm1000 integer boxes, so normalize either surface to Qwen coord-token text
+    before rendering and tokenization.
+    """
 
     objects = record.get("objects") or []
     model_objects: list[dict[str, Any]] = []
@@ -785,10 +790,25 @@ def _model_facing_objects(record: Mapping[str, Any]) -> list[dict[str, Any]]:
         model_objects.append(
             {
                 "desc": obj.get("desc"),
-                "bbox_2d": obj.get("bbox_2d"),
+                "bbox_2d": _model_facing_bbox(obj.get("bbox_2d")),
             }
         )
     return model_objects
+
+
+def _model_facing_bbox(value: Any) -> Any:
+    """Return a coord-token bbox for compact assistant rendering."""
+
+    if not isinstance(value, Sequence) or isinstance(value, (str, bytes)):
+        return value
+
+    tokens: list[str] = []
+    for component in value:
+        if isinstance(component, str):
+            tokens.append(component)
+        else:
+            tokens.append(int_to_token(int(component)))
+    return tokens
 
 
 def _coord_record_to_norm(record: Mapping[str, Any]) -> dict[str, Any]:
