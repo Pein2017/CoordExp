@@ -11,7 +11,7 @@ import os
 import shutil
 import subprocess
 from dataclasses import dataclass
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from statistics import mean, median
 from typing import Any, Iterable, Mapping, Sequence
 
@@ -574,7 +574,7 @@ class AllProxyResearchViewBuilder:
                     "source_artifacts": [
                         {
                             "kind": "legacy_all_proxy_jsonl",
-                            "path": _repo_relative_or_abs(
+                            "path": _safe_artifact_reference_path(
                                 self._config.proxy_source,
                                 repo_root=self._config.repo_root,
                             ),
@@ -1156,24 +1156,72 @@ def _ensure_object_ids(record: dict[str, Any]) -> None:
 def _object_supervision_snapshot(obj: Mapping[str, Any]) -> dict[str, Any]:
     """Return the supervision sidecar snapshot for one rendered object."""
 
-    source_role = obj.get("source_role") or obj.get("role") or obj.get("source")
+    source_role = obj.get("source_role") or obj.get("role")
     if not isinstance(source_role, str) or source_role == "":
-        source_role = "lvis_proxy_candidate" if obj.get("is_proxy") else "coco_ground_truth"
+        source_role = (
+            "lvis_proxy_candidate"
+            if _has_lvis_proxy_evidence(obj)
+            else "coco_ground_truth"
+        )
 
     snapshot: dict[str, Any] = {"source_role": source_role}
     for key in (
         "relation",
         "source",
+        "proxy_source",
         "category_id",
+        "category_name",
+        "lvis_ann_id",
         "lvis_category_id",
+        "lvis_category_name",
         "coco_category_id",
+        "coco_category_name",
         "coordinate_weight",
         "regression_weight",
         "hard_bbox_supervision",
     ):
         if key in obj:
             snapshot[key] = copy.deepcopy(obj[key])
+
+    # defaulting direct bbox supervision off for inferred proxy candidates
+    if source_role == "lvis_proxy_candidate":
+        snapshot.setdefault("coordinate_weight", 0.0)
+        snapshot.setdefault("regression_weight", 0.0)
+        snapshot.setdefault("hard_bbox_supervision", False)
     return snapshot
+
+
+def _has_lvis_proxy_evidence(obj: Mapping[str, Any]) -> bool:
+    """Return whether an object carries robust LVIS proxy evidence."""
+
+    # honoring established proxy markers
+    if obj.get("is_proxy") is True:
+        return True
+    if obj.get("source_role") == "lvis_proxy_candidate":
+        return True
+    if obj.get("role") == "lvis_proxy_candidate":
+        return True
+
+    # detecting real-source LVIS proxy fields
+    if obj.get("proxy_source") == "lvis":
+        return True
+    if obj.get("source") == "lvis":
+        return True
+    for key in ("lvis_ann_id", "lvis_category_id", "lvis_category_name"):
+        value = obj.get(key)
+        if value is not None and value != "":
+            return True
+    return False
+
+
+def _supervision_marks_lvis_proxy_candidate(snapshot: Any) -> bool:
+    """Return whether a supervision snapshot marks an LVIS proxy candidate."""
+
+    if not isinstance(snapshot, Mapping):
+        return False
+    if snapshot.get("source_role") == "lvis_proxy_candidate":
+        return True
+    return _has_lvis_proxy_evidence(snapshot)
 
 
 def _source_suffix_for_root(source_root: Path) -> str:
@@ -1248,12 +1296,19 @@ def _observe_written_row(summary: dict[str, int], row: Mapping[str, Any]) -> Non
     )
     if isinstance(object_supervision, Mapping):
         summary["object_supervision_count"] += len(object_supervision)
-    summary["rendered_proxy_candidate_count"] += sum(
-        1
+    proxy_candidate_ids = {
+        str(obj.get("object_id"))
         for obj in objects
-        if obj.get("source_role") == "lvis_proxy_candidate"
-        or obj.get("is_proxy") is True
-    )
+        if isinstance(obj.get("object_id"), str) and _has_lvis_proxy_evidence(obj)
+    }
+    if isinstance(object_supervision, Mapping):
+        proxy_candidate_ids.update(
+            str(object_id)
+            for object_id, snapshot in object_supervision.items()
+            if isinstance(object_id, str)
+            and _supervision_marks_lvis_proxy_candidate(snapshot)
+        )
+    summary["rendered_proxy_candidate_count"] += len(proxy_candidate_ids)
 
 
 def _summarize_source_jsonl(source_jsonl: Path) -> dict[str, int]:
@@ -1320,6 +1375,21 @@ def _repo_relative_or_abs(path: Path, *, repo_root: Path) -> str:
         return resolved_path.relative_to(resolved_root).as_posix()
     except ValueError:
         return str(path)
+
+
+def _safe_artifact_reference_path(path: Path, *, repo_root: Path) -> str:
+    """Return a safe logical artifact path for provenance metadata."""
+
+    relative_or_abs = _repo_relative_or_abs(path, repo_root=repo_root)
+    if not PurePosixPath(relative_or_abs).is_absolute():
+        return relative_or_abs
+
+    parts = path.parts
+    if "public_data" in parts:
+        public_data_index = parts.index("public_data")
+        return Path(*parts[public_data_index:]).as_posix()
+
+    return relative_or_abs
 
 
 def _resolve_repo_path(path: Path) -> Path:

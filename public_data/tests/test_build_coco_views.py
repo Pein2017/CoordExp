@@ -218,6 +218,68 @@ def test_coco80_lvis_proxy_len12000_records_object_supervision_by_object_id(
     assert meta.parent_view == "coco80/full"
 
 
+def test_coco80_lvis_proxy_len12000_infers_proxy_supervision_from_lvis_evidence(
+    tmp_path: Path,
+) -> None:
+    proxy_root = tmp_path / "public_data" / "coco" / "rescale_32_1024_bbox_lvis_proxy"
+    _write_jsonl(
+        proxy_root / "train.norm.jsonl",
+        [
+            _norm_row(
+                image_id=21,
+                fake_total_tokens=12000,
+                objects=[
+                    {
+                        "object_id": "coco:21:0",
+                        "desc": "dog",
+                        "bbox_2d": [10, 10, 100, 100],
+                    },
+                    {
+                        "object_id": "lvis:21:1",
+                        "desc": "muzzle",
+                        "bbox_2d": [20, 20, 110, 110],
+                        "source": "lvis",
+                        "proxy_source": "lvis",
+                        "lvis_ann_id": 987,
+                        "lvis_category_id": 4321,
+                        "lvis_category_name": "muzzle",
+                        "coco_category_id": 18,
+                    },
+                ],
+            )
+        ],
+    )
+    config = _config(tmp_path, proxy_source=proxy_root, splits=("train",))
+
+    builder = AllProxyResearchViewBuilder(
+        config=config,
+        estimator=FakeEstimator(),
+        stats_writer=ViewStatsWriter(),
+        manifest_builder=ViewManifestPayloadBuilder(config),
+    )
+    summary = builder.build(view_name="coco80-lvis-proxy/len-12000", max_total_tokens=12000)
+
+    row = _read_jsonl(config.view_root("coco80-lvis-proxy/len-12000") / "train.jsonl")[0]
+    lvis_object = row["objects"][1]
+    object_supervision = row["metadata"]["supervision"]["object_supervision"]
+    lvis_supervision = object_supervision["lvis:21:1"]
+    assert lvis_supervision["source_role"] == "lvis_proxy_candidate"
+    assert lvis_supervision["coordinate_weight"] == 0.0
+    assert lvis_supervision["regression_weight"] == 0.0
+    assert lvis_supervision["hard_bbox_supervision"] is False
+    assert lvis_supervision["source"] == "lvis"
+    assert lvis_supervision["proxy_source"] == "lvis"
+    assert lvis_supervision["lvis_ann_id"] == 987
+    assert lvis_supervision["lvis_category_id"] == 4321
+    assert lvis_supervision["lvis_category_name"] == "muzzle"
+    assert lvis_supervision["coco_category_id"] == 18
+    assert "coordinate_weight" not in lvis_object
+    assert "regression_weight" not in lvis_object
+    assert "hard_bbox_supervision" not in lvis_object
+    assert summary["object_supervision_count"] == 2
+    assert summary["rendered_proxy_candidate_count"] == 1
+
+
 def test_image_store_rejects_non_empty_target_without_reuse(tmp_path: Path) -> None:
     source_root = tmp_path / "public_data" / "coco" / "rescale_32_1024_bbox"
     _write_image(source_root / "images" / "train2017" / "000000000001.jpg")
