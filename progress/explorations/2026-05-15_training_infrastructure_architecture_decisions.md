@@ -4000,6 +4000,12 @@ Verification:
 - Gate-2 config parse still resolves to the compatibility assignment default
   `legacy_hungarian_mask_iou`, with `compact_full` rollout template and
   `unconstrained` decode policy.
+- Subagent review found one P1 before commit: `assignment.iou_threshold` was
+  accepted but ignored by the legacy default. The fix passes the configured
+  threshold into both legacy and greedy strategies, preserving `maskiou_gate`
+  only when the assignment threshold is omitted. Follow-up review found no
+  remaining blockers. The slice was committed as
+  `1117da83 Add Stage-2 assignment strategy seam`.
 
 ## Continue The Grill-Me Loop
 
