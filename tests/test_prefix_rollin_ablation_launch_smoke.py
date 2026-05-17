@@ -678,7 +678,8 @@ def test_prefix_rollin_bsz8_configs_record_eval_and_disabled_packing_runtime() -
     )
 
     for cfg_path in config_paths:
-        cfg = ConfigLoader.load_materialized_training_config(str(cfg_path))
+        with pytest.warns(UserWarning, match="data.max_objects is compatibility-only"):
+            cfg = ConfigLoader.load_materialized_training_config(str(cfg_path))
         assert isinstance(cfg, LatestDetectionTrainingConfig)
         assert cfg.training["per_device_train_batch_size"] == 8
         assert cfg.training["per_device_eval_batch_size"] == 8

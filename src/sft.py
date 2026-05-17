@@ -1772,6 +1772,23 @@ def _resolve_dataset_seed(*, training_config: Any, train_args: Any) -> int:
     return seed
 
 
+def _resolve_root_image_dir_for_training(
+    *,
+    latest_detection_config: Any | None,
+    train_jsonl: Any,
+) -> str:
+    if latest_detection_config is not None:
+        image_root = latest_detection_config.data.image_root
+        if image_root is None:
+            raise ValueError(
+                "DetectionTrainingDataset requires explicit image_root until "
+                "view metadata image-root resolution is implemented"
+            )
+        return os.path.abspath(str(image_root))
+
+    return os.path.abspath(os.path.dirname(str(train_jsonl)))
+
+
 def _collect_dependency_provenance() -> dict[str, Any]:
     return _collect_dependency_provenance_impl()
 
@@ -2127,10 +2144,9 @@ def main():
         raise ValueError("Config must specify 'custom.train_jsonl'/'custom.jsonl'")
 
     if os.environ.get("ROOT_IMAGE_DIR") in (None, ""):
-        root_dir = (
-            os.path.abspath(str(latest_detection_config.data.image_root))
-            if latest_detection_config is not None
-            else os.path.abspath(os.path.dirname(str(train_jsonl)))
+        root_dir = _resolve_root_image_dir_for_training(
+            latest_detection_config=latest_detection_config,
+            train_jsonl=train_jsonl,
         )
         os.environ["ROOT_IMAGE_DIR"] = root_dir
         logger.info(f"Set ROOT_IMAGE_DIR={root_dir}")

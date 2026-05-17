@@ -287,6 +287,7 @@ def _make_dataset(
     rows: Sequence[Mapping[str, Any]],
     *,
     spy: bool = False,
+    max_objects: int | None = None,
 ) -> DetectionTrainingDataset:
     jsonl_path = tmp_path / "train.coord.jsonl"
     _write_jsonl(jsonl_path, rows)
@@ -307,7 +308,7 @@ def _make_dataset(
         object_ordering="random_permutation",
         user_prompt="Detect every object.",
         system_prompt="You are a detector.",
-        max_objects=60,
+        max_objects=max_objects,
         seed=123,
         state_weighting="uniform_permutation",
         normalization="semantic_image_bucket_balanced",
@@ -334,7 +335,11 @@ def test_encoded_length_for_latest_compact_norm1000_row_ignores_legacy_max_objec
     tmp_path: Path,
 ) -> None:
     with pytest.warns(UserWarning, match="data.max_objects is compatibility-only"):
-        dataset = _make_dataset(tmp_path, [_norm1000_row_with_object_count(61)])
+        dataset = _make_dataset(
+            tmp_path,
+            [_norm1000_row_with_object_count(61)],
+            max_objects=60,
+        )
 
     assert dataset.encoded_length_for_row(0) > 0
     assert dataset[0]["detection_metadata"]["object_count"] == 61

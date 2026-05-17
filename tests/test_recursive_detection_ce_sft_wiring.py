@@ -20,6 +20,7 @@ from src.sft import (
     _latest_detection_mode,
     _latest_detection_runtime_custom_shim,
     _resolve_recursive_detection_ce_cfg,
+    _resolve_root_image_dir_for_training,
 )
 
 
@@ -197,6 +198,22 @@ def test_latest_detection_runtime_constructs_dataset_and_sft_delegates() -> None
     ]
 
     assert build_dataset_calls
+
+
+def test_sft_root_image_dir_autoconfig_rejects_latest_detection_without_image_root() -> None:
+    latest_detection_config = SimpleNamespace(data=SimpleNamespace(image_root=None))
+
+    with pytest.raises(
+        ValueError,
+        match=(
+            "DetectionTrainingDataset requires explicit image_root until "
+            "view metadata image-root resolution is implemented"
+        ),
+    ):
+        _resolve_root_image_dir_for_training(
+            latest_detection_config=latest_detection_config,
+            train_jsonl=Path("train.coord.jsonl"),
+        )
 
 
 def test_latest_detection_runtime_shim_preserves_trainable_token_rows() -> None:
