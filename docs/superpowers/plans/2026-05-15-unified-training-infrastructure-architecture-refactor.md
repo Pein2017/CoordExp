@@ -1401,6 +1401,25 @@ alone is not enough to claim training readiness.
   claim training-trajectory preservation from this smoke; run Gate 2 only after
   a Gate 1 smoke produces valid compact-full predictions.
 
+2026-05-17 prompt/parser fix attempt:
+
+- Fixed the Stage-2 rollout boundary so `custom.detection_sequence_format:
+  compact_full` rebuilds rollout prompts as compact-full even when source JSONL
+  messages contain legacy CoordJSON prompts.
+- Fixed eval-step rollout parsing so compact-full eval rollouts use the
+  compact-full parser rather than the legacy CoordJSON parser.
+- Reran the same smoke. It exited successfully at
+  `output/stage2_ab/smoke/compact_full_et_rmp_ce_ckpt3664_hf_1step/smoke_1step-compact_full-et_rmp_ce_ckpt3664-hf-unconstrained/v5-20260517-105439`.
+- Decoded eval prompt tokens now contain the compact-full user prompt and no
+  CoordJSON instruction.
+- Gate 1 still did not pass: `rollout/valid_pred_objects_total=0.0`,
+  `eval/parsing/sample_valid_pred_rate=0.0`, and all four observed
+  post-`<|box_start|>` sites selected non-coordinate tokens.
+- Interpretation: the implementation prompt/parser mismatch is fixed, but the
+  current checkpoint still has an unconstrained coordinate-slot failure basin.
+  This remains a model/objective readiness blocker, not a reason to hide the
+  basin with default constrained decoding.
+
 - [ ] **Step 3B: Add A2 compact-full rollout readiness smoke**
 
 After Gate 1 passes, run a small 16-32 sample readiness smoke with the same

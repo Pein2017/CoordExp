@@ -7,7 +7,7 @@ from src.trainers.stage2_two_channel import Stage2ABTrainingTrainer
 
 
 def test_stage2_ab_enforces_prompt_tokenization_alignment() -> None:
-    src = inspect.getsource(Stage2ABTrainingTrainer._prepare_batch_inputs_b)
+    src = inspect.getsource(Stage2ABTrainingTrainer._prepare_batch_inputs_b_impl)
     assert "prompt tokenization mismatch" in src
 
 

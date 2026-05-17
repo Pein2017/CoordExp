@@ -3732,6 +3732,53 @@ Interpretation:
   or run a Gate-1 variant that demonstrates at least one valid predicted object
   before any production Stage-2 compact-full training claim.
 
+## 2026-05-17 Stage-2 Compact-Full Prompt/Parser Fix
+
+Finding:
+
+- The first compact-full Stage-2 smoke had two implementation mismatches that
+  made the readiness evidence weaker than intended:
+  - rollout prompts could preserve CoordJSON user instructions from the source
+    JSONL when no explicit prompt-variant override was passed;
+  - eval-step rollout parsing still used the legacy CoordJSON parser.
+
+Fix:
+
+- Stage-2 rollout sample preparation now rebuilds prompts from
+  `rollout_matching_cfg.detection_sequence_format`, so compact-full rollouts get
+  compact-full user/system text even when the underlying JSONL is legacy
+  CoordJSON.
+- Stage-2 eval resolves the rollout template policy and parses compact-full
+  responses with `CompactFullRolloutCodec`.
+
+Post-fix smoke:
+
+```text
+config=configs/stage2_two_channel/smoke/compact_full_et_rmp_ce_ckpt3664_hf_1step.yaml
+log=temp/train_logs/compact_full_stage2_smoke_after_promptfix/compact_full_et_rmp_ce_ckpt3664_hf_1step-20260517T105312Z.log
+artifact=output/stage2_ab/smoke/compact_full_et_rmp_ce_ckpt3664_hf_1step/smoke_1step-compact_full-et_rmp_ce_ckpt3664-hf-unconstrained/v5-20260517-105439
+```
+
+Outcome:
+
+- The decoded eval prompt now contains compact-full instructions and no CoordJSON
+  instruction.
+- The smoke still produced no valid predictions under unconstrained greedy
+  decode: `rollout/valid_pred_objects_total=0.0`,
+  `eval/parsing/sample_valid_pred_rate=0.0`, and
+  `eval/runtime/coco_counter_empty_pred=2.0`.
+- Artifact check: all four observed post-`<|box_start|>` positions selected
+  non-coordinate tokens (`<|object_ref_start|>` or text), so the immediate
+  failure is a coordinate-slot token-distribution basin.
+
+Interpretation:
+
+- The prompt/parser mismatch is fixed, but compact-full Stage-2 readiness is
+  still blocked by the model/objective behavior under unconstrained decode.
+- Do not promote this to production Stage-2 training as a quality-preserving
+  trajectory until a future checkpoint or objective change passes Gate 1 and
+  then the 16-32 sample Gate 2 readiness smoke.
+
 ## Continue The Grill-Me Loop
 
 Next decisions still worth asking when the context resumes:

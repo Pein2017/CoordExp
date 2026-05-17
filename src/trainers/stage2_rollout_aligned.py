@@ -20,7 +20,7 @@ import threading
 import time
 from contextlib import contextmanager, nullcontext
 from copy import deepcopy
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, replace
 from pathlib import Path
 from typing import (
     Any,
@@ -50,6 +50,10 @@ from src.common.object_field_order import (
     normalize_object_field_order,
     normalize_object_ordering,
 )
+from src.common.detection_sequence import (
+    COORDJSON_FORMAT,
+    normalize_detection_sequence_format,
+)
 from src.common.geometry import bbox_from_points, flatten_points, normalize_bbox_format
 from src.common.prediction_parsing import (
     extract_special_tokens,
@@ -60,6 +64,10 @@ from src.config.prompts import (
     build_dense_system_prompt,
     build_dense_user_prompt,
     resolve_dense_prompt_variant_key,
+)
+from src.training.stage2.rollout_codec import (
+    CompactFullRolloutCodec,
+    resolve_stage2_rollout_template_policy,
 )
 from src.coord_tokens.codec import (
     get_coord_token_ids,
@@ -1429,6 +1437,19 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
         if not key:
             return None
         return resolve_dense_prompt_variant_key(key)
+
+    def _detection_sequence_format(self) -> str:
+        return normalize_detection_sequence_format(
+            self._cfg("detection_sequence_format", COORDJSON_FORMAT)
+        )
+
+    def _eval_rollout_template_policy(self):
+        resolver = getattr(self, "_resolve_stage2_rollout_template_policy", None)
+        if callable(resolver):
+            return resolver()
+        return resolve_stage2_rollout_template_policy(
+            self._detection_sequence_format()
+        )
 
     def _eval_detection_cfg(self) -> Mapping[str, Any]:
         default_cfg: Dict[str, Any] = {
@@ -4901,6 +4922,7 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
 
         - Strip any trailing assistant turns (rollouts must end at a user message).
         - Optionally override the last user prompt (prompt_variant_override).
+        - Rebuild non-CoordJSON rollout prompts from the active template format.
         - For vLLM, ensure a resolved system prompt message is present.
 
         Returns a list that may contain shallow-copied sample dicts when message
@@ -4915,8 +4937,17 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
 
         user_prompt_override: str | None = None
         system_prompt_override: str | None = None
-        if prompt_variant_override is not None:
-            variant_key = resolve_dense_prompt_variant_key(prompt_variant_override)
+        detection_sequence_format = self._detection_sequence_format()
+        should_rebuild_prompt = bool(
+            prompt_variant_override is not None
+            or detection_sequence_format != COORDJSON_FORMAT
+        )
+        if should_rebuild_prompt:
+            variant_key = (
+                resolve_dense_prompt_variant_key(prompt_variant_override)
+                if prompt_variant_override is not None
+                else self._training_prompt_variant()
+            )
             ordering = self._object_ordering()
             object_field_order = self._object_field_order()
             user_prompt_override = build_dense_user_prompt(
@@ -4924,12 +4955,14 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
                 coord_mode="coord_tokens",
                 prompt_variant=variant_key,
                 object_field_order=object_field_order,
+                detection_sequence_format=detection_sequence_format,
             )
             system_prompt_override = build_dense_system_prompt(
                 ordering=ordering,
                 coord_mode="coord_tokens",
                 prompt_variant=variant_key,
                 object_field_order=object_field_order,
+                detection_sequence_format=detection_sequence_format,
             )
 
         # vLLM backends receive raw OpenAI-style messages; ensure the resolved
@@ -4955,6 +4988,7 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
                             coord_mode="coord_tokens",
                             prompt_variant=self._training_prompt_variant(),
                             object_field_order=self._object_field_order(),
+                            detection_sequence_format=detection_sequence_format,
                         )
                     except (TypeError, ValueError):
                         system_prompt = None
@@ -7003,6 +7037,7 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
         fp_cost = float(self._cfg("fp_cost", 1.0))
         fn_cost = float(self._cfg("fn_cost", 1.0))
         object_field_order = self._object_field_order()
+        eval_rollout_template_policy = self._eval_rollout_template_policy()
 
         eval_prompt_variant = self._eval_prompt_variant()
         eval_detection_cfg = self._eval_detection_cfg()
@@ -7294,47 +7329,111 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
                         generated_token_text = None
                     n_samples += 1.0
 
-                    parse = parse_rollout_for_matching(
-                        tokenizer=tok,
-                        response_token_ids=resp_ids,
-                        object_field_order=object_field_order,
-                    )
+                    pred_meta: List[Any] = []
+                    preds: List[GTObject] = []
+                    pred_objs_dump: List[Dict[str, Any]] = []
+
+                    # Pred objects (valid only) -> norm1000 geometry.
+                    if eval_rollout_template_policy.template_family == "compact_full":
+                        response_text = str(raw_resp_text or "")
+                        if not response_text:
+                            response_text = tok.decode(
+                                [int(t) for t in resp_ids],
+                                skip_special_tokens=False,
+                                clean_up_tokenization_spaces=False,
+                            )
+                        parse = CompactFullRolloutCodec(
+                            eval_rollout_template_policy
+                        ).parse(response_text)
+                        geometry_drop_count = 0
+                        for pobj in list(parse.valid_objects):
+                            if pobj.geom_type != "bbox_2d" or pobj.bbox_norm1000 is None:
+                                geometry_drop_count += 1
+                                continue
+                            try:
+                                pts = [int(x) for x in pobj.bbox_norm1000]
+                            except (TypeError, ValueError):
+                                geometry_drop_count += 1
+                                continue
+                            if len(pts) != 4 or pts[2] <= pts[0] or pts[3] <= pts[1]:
+                                geometry_drop_count += 1
+                                continue
+                            pred = GTObject(
+                                index=int(pobj.index),
+                                geom_type="bbox_2d",
+                                points_norm1000=pts,
+                                desc=str(pobj.desc),
+                            )
+                            pred_meta.append(pred)
+                            preds.append(pred)
+                            pred_objs_dump.append(
+                                {
+                                    "key": str(pobj.object_id),
+                                    "index": int(pobj.index),
+                                    "geom_type": "bbox_2d",
+                                    "points_norm1000": list(pts),
+                                    "desc": str(pobj.desc),
+                                }
+                            )
+                        if geometry_drop_count:
+                            drop_reasons = dict(parse.dropped_invalid_by_reason)
+                            drop_reasons["bbox_invalid"] = int(
+                                drop_reasons.get("bbox_invalid", 0)
+                            ) + int(geometry_drop_count)
+                            parse = replace(
+                                parse,
+                                dropped_invalid=(
+                                    int(parse.dropped_invalid)
+                                    + int(geometry_drop_count)
+                                ),
+                                dropped_invalid_by_reason=drop_reasons,
+                                empty_valid_object_set=not preds,
+                                fallback_reason=(
+                                    "empty_valid_object_set" if not preds else None
+                                ),
+                            )
+                        parse = replace(
+                            parse,
+                            response_token_ids=tuple(int(t) for t in resp_ids),
+                        )
+                    else:
+                        parse = parse_rollout_for_matching(
+                            tokenizer=tok,
+                            response_token_ids=resp_ids,
+                            object_field_order=object_field_order,
+                        )
+                        coord_id_to_bin = self._coord_id_map()
+                        parsed_pred_meta = list(parse.valid_objects)
+                        for pobj in parsed_pred_meta:
+                            pts = _points_from_coord_tokens(
+                                response_token_ids=parse.response_token_ids,
+                                coord_token_indices=pobj.coord_token_indices,
+                                coord_id_to_bin=coord_id_to_bin,
+                            )
+                            if pts is None:
+                                continue
+                            pred_meta.append(pobj)
+                            preds.append(
+                                GTObject(
+                                    index=int(pobj.index),
+                                    geom_type=pobj.geom_type,
+                                    points_norm1000=pts,
+                                    desc="",
+                                )
+                            )
+                            pred_objs_dump.append(
+                                {
+                                    "key": str(getattr(pobj, "key", "") or ""),
+                                    "index": int(pobj.index),
+                                    "geom_type": str(pobj.geom_type),
+                                    "points_norm1000": list(pts),
+                                    "desc": str(getattr(pobj, "desc", "") or ""),
+                                }
+                            )
+
                     dropped_invalid_total += float(parse.dropped_invalid)
                     dropped_ambiguous_total += float(parse.dropped_ambiguous)
                     trunc_samples += 1.0 if bool(parse.truncated) else 0.0
-
-                    # Pred objects (valid only) -> norm1000 geometry.
-                    coord_id_to_bin = self._coord_id_map()
-                    parsed_pred_meta = list(parse.valid_objects)
-                    pred_meta: List[ParsedPredObject] = []
-                    preds: List[GTObject] = []
-                    pred_objs_dump: List[Dict[str, Any]] = []
-                    for pobj in parsed_pred_meta:
-                        pts = _points_from_coord_tokens(
-                            response_token_ids=parse.response_token_ids,
-                            coord_token_indices=pobj.coord_token_indices,
-                            coord_id_to_bin=coord_id_to_bin,
-                        )
-                        if pts is None:
-                            continue
-                        pred_meta.append(pobj)
-                        preds.append(
-                            GTObject(
-                                index=int(pobj.index),
-                                geom_type=pobj.geom_type,
-                                points_norm1000=pts,
-                                desc="",
-                            )
-                        )
-                        pred_objs_dump.append(
-                            {
-                                "key": str(getattr(pobj, "key", "") or ""),
-                                "index": int(pobj.index),
-                                "geom_type": str(pobj.geom_type),
-                                "points_norm1000": list(pts),
-                                "desc": str(getattr(pobj, "desc", "") or ""),
-                            }
-                        )
 
                     gts = _extract_gt_objects(sample)
                     eval_error_codes: List[str] = []

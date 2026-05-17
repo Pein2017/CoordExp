@@ -1484,6 +1484,62 @@ def test_rollout_many_overrides_last_user_prompt_for_eval_variant() -> None:
     assert user_content[-1]["text"] == expected_prompt
 
 
+def test_rollout_many_rebuilds_compact_full_prompt_from_coordjson_source() -> None:
+    trainer = object.__new__(RolloutMatchingSFTTrainer)
+    trainer.rollout_matching_cfg = {
+        "rollout_backend": "hf",
+        "object_ordering": "random",
+        "prompt_variant": "coco_80",
+        "detection_sequence_format": "compact_full",
+    }
+    trainer.object_field_order = "desc_first"
+
+    captured: dict[str, object] = {}
+
+    def _fake_rollout_many_hf(samples):
+        captured["samples"] = samples
+        return [([], "{}", "greedy", []) for _ in samples]
+
+    trainer._rollout_many_hf = _fake_rollout_many_hf
+
+    sample = {
+        "messages": [
+            {
+                "role": "user",
+                "content": [
+                    {"type": "image", "image": "img.jpg"},
+                    {"type": "text", "text": 'Detect and return CoordJSON {"objects": [...]}.'},
+                ],
+            },
+            {
+                "role": "assistant",
+                "content": [{"type": "text", "text": '{"objects": []}'}],
+            },
+        ]
+    }
+
+    _ = trainer._rollout_many([sample])
+
+    used_samples = captured.get("samples")
+    assert isinstance(used_samples, list) and len(used_samples) == 1
+    used_messages = used_samples[0]["messages"]
+    assert isinstance(used_messages, list)
+    assert len(used_messages) == 1
+    user_content = used_messages[0]["content"]
+    assert isinstance(user_content, list)
+    prompt_text = user_content[-1]["text"]
+    expected_prompt = build_dense_user_prompt(
+        ordering="random",
+        coord_mode="coord_tokens",
+        prompt_variant="coco_80",
+        object_field_order="desc_first",
+        detection_sequence_format="compact_full",
+    )
+    assert prompt_text == expected_prompt
+    assert "CoordJSON" not in prompt_text
+    assert "<|object_ref_start|>" in prompt_text
+
+
 def test_prepare_samples_for_rollout_vllm_fallback_uses_random_ordering_system_prompt() -> None:
     trainer = object.__new__(RolloutMatchingSFTTrainer)
     trainer.rollout_matching_cfg = {
@@ -1516,6 +1572,44 @@ def test_prepare_samples_for_rollout_vllm_fallback_uses_random_ordering_system_p
         prompt_variant="coco_80",
         object_field_order="geometry_first",
     )
+
+
+def test_prepare_samples_for_rollout_vllm_uses_compact_full_system_prompt() -> None:
+    trainer = object.__new__(RolloutMatchingSFTTrainer)
+    trainer.rollout_matching_cfg = {
+        "rollout_backend": "vllm",
+        "object_ordering": "random",
+        "prompt_variant": "coco_80",
+        "detection_sequence_format": "compact_full",
+    }
+    trainer.object_field_order = "desc_first"
+    trainer.template = types.SimpleNamespace(system="")
+    trainer._cfg = lambda key, default=None: trainer.rollout_matching_cfg.get(key, default)
+
+    sample = {
+        "messages": [
+            {
+                "role": "user",
+                "content": [{"type": "text", "text": "old CoordJSON prompt"}],
+            }
+        ]
+    }
+
+    prepared = trainer._prepare_samples_for_rollout([sample], rollout_backend="vllm")
+
+    assert len(prepared) == 1
+    messages = prepared[0]["messages"]
+    assert isinstance(messages, list)
+    assert messages[0]["role"] == "system"
+    assert messages[0]["content"] == build_dense_system_prompt(
+        ordering="random",
+        coord_mode="coord_tokens",
+        prompt_variant="coco_80",
+        object_field_order="desc_first",
+        detection_sequence_format="compact_full",
+    )
+    assert "CoordJSON" not in messages[0]["content"]
+    assert "<|object_ref_start|>" in messages[0]["content"]
 
 
 def test_resolve_rollout_decode_request_applies_per_call_overrides() -> None:
