@@ -12,6 +12,11 @@ from src.sft import _resolve_authored_experiment_payload
 def test_write_experiment_manifest_file_captures_soft_and_hard_context(
     tmp_path: Path,
 ) -> None:
+    stage2_policy = {
+        "assignment_strategy": "greedy_iou",
+        "duplicate_filter_strategy": "legacy_channel_b_duplicate_control",
+        "object_ordering_policy": "sorted",
+    }
     out_path = write_experiment_manifest_file(
         output_dir=tmp_path,
         config_path="configs/stage2_two_channel/smoke/a_only_center_size_2steps.yaml",
@@ -48,6 +53,7 @@ def test_write_experiment_manifest_file_captures_soft_and_hard_context(
             "effective_runtime": "effective_runtime.json",
             "pipeline_manifest": "pipeline_manifest.json",
         },
+        stage2_policy_provenance=stage2_policy,
     )
 
     payload = json.loads(out_path.read_text(encoding="utf-8"))
@@ -63,6 +69,8 @@ def test_write_experiment_manifest_file_captures_soft_and_hard_context(
         "token_ce",
         "bbox_geo",
     ]
+    assert payload["runtime_summary"]["stage2_policy_provenance"] == stage2_policy
+    assert payload["stage2_policy_provenance"] == stage2_policy
     assert payload["provenance_summary"]["git_sha"] == "deadbeef"
     assert payload["artifacts"]["run_metadata"] == "run_metadata.json"
     assert payload["artifacts"]["resolved_config"] == "resolved_config.json"

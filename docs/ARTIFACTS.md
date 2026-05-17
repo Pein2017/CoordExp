@@ -366,28 +366,47 @@ No Stage-2 executable-path migration, resolver default flip, or observability
 rewrite should pass review unless it preserves these artifacts or deliberately
 migrates them with explicit docs and tests.
 
-### Stage-2 Policy Provenance Migration Target
+### Stage-2 Policy Provenance
 
-Stage-2 assignment, duplicate filtering, and object ordering need first-class
+Stage-2 assignment, duplicate filtering, and object ordering have first-class
 policy provenance as the architecture moves from legacy trainer internals to
-the reusable `src/training/stage2/` planning stack. Current runs may expose
-these policies through `resolved_config.json`, eval-step rollout diagnostics,
-or planner metadata; the `stage2_policy_provenance.*` fields are migration
-targets and are not yet written by all rank-0 manifests.
+the reusable `src/training/stage2/` planning stack. Rank-0 Stage-2 two-channel
+runs write the same `stage2_policy_provenance` block into the executable
+manifest family:
+
+- `effective_runtime.json` at top-level `stage2_policy_provenance` and under
+  `runtime.stage2_policy_provenance`
+- `pipeline_manifest.json` at top-level `stage2_policy_provenance`
+- `run_metadata.json` at top-level `stage2_policy_provenance`
+- `experiment_manifest.json` at top-level `stage2_policy_provenance` and under
+  `runtime_summary.stage2_policy_provenance`
+
+The block contains these exact policy identifiers and thresholds:
+
+- `stage2_policy_provenance.assignment_strategy`
+- `stage2_policy_provenance.assignment_iou_threshold`
+- `stage2_policy_provenance.assignment_iou_threshold_effective`
+- `stage2_policy_provenance.assignment_iou_threshold_source`
+- `stage2_policy_provenance.duplicate_filter_strategy`
+- `stage2_policy_provenance.duplicate_iou_threshold`
+- `stage2_policy_provenance.duplicate_center_radius_scale`
+- `stage2_policy_provenance.object_ordering_policy`
+- `stage2_policy_provenance.object_ordering_strategy_id`
+- `stage2_policy_provenance.sample_object_ordering`
 
 | Policy surface | Current owner / location | Current artifact visibility | Compatibility decision |
 | --- | --- | --- | --- |
-| `stage2_policy_provenance.assignment_strategy` | Target direction: `src/training/stage2/assignment.py::GreedyIoUAssignment` through `src/training/stage2/planners.py::Stage2GreedyIoUShadowPlanner`; migration-only legacy reader: `src/trainers/rollout_matching/matching.py::hungarian_match_maskiou` behind the `LegacyHungarianMaskIoUAssignment` adapter | Partial visibility through `resolved_config.json` at `stage2_ab.channel_b.assignment.{strategy,iou_threshold}`, Channel-B rollout meta (`assignment_strategy`, `assignment_iou_threshold`), and batch metrics under `stage2_ab/channel_b/assignment/*`. Blocking migration gap: rank-0 manifests do not yet always write a first-class `stage2_policy_provenance.assignment_strategy` field. | Preserve artifact visibility while migrating to `greedy_iou` over the post-duplicate survivor set. Hungarian is compatibility/migration-only until the remaining adapters and historical comparisons are removed; it is not the target architecture for new Stage-2 planning. |
-| `stage2_policy_provenance.duplicate_filter_strategy` | `src/training/stage2/duplicate_filter.py::DuplicateFilter`; live compatibility owner `src/config/schema.py::Stage2ABChannelBDuplicateControlConfig`; `src/trainers/stage2_two_channel/target_builder.py::_apply_channel_b_duplicate_control` | Partial visibility through `resolved_config.json` at `stage2_ab.channel_b.duplicate_control.{iou_threshold,center_radius_scale}`; Blocking migration gap: no explicit strategy id is written to every rank-0 manifest. | Duplicate filtering must run before assignment and target realization. Preserve thresholds and diagnostic counters, or add an explicit replacement field plus tests before changing filtering order or semantics. |
-| `stage2_policy_provenance.object_ordering_policy` | `src/training/ordering.py`; `src/sft.py` injection into rollout configs; `src/trainers/stage2_two_channel/target_builder.py` for `stage2_ab.channel_b.insertion_order` | Partial visibility through `resolved_config.json` at `custom.object_ordering` and `stage2_ab.channel_b.insertion_order`; Stage-2 eval summaries also record rollout object ordering when materialized. | Preserve Channel-B final-target insertion ordering: default `tail_append` keeps retained accepted rollout objects first and appends false-negative GT objects; `sorted` applies final top-left ordering over retained accepted objects plus inserted false negatives. |
+| `stage2_policy_provenance.assignment_strategy` | Target direction: `src/training/stage2/assignment.py::GreedyIoUAssignment` through `src/training/stage2/planners.py::Stage2GreedyIoUShadowPlanner`; migration-only legacy reader: `src/trainers/rollout_matching/matching.py::hungarian_match_maskiou` behind the `LegacyHungarianMaskIoUAssignment` adapter | First-class manifest fields: `stage2_policy_provenance.{assignment_strategy,assignment_iou_threshold,assignment_iou_threshold_effective,assignment_iou_threshold_source}`. Corroborating non-manifest telemetry: `resolved_config.json` at `stage2_ab.channel_b.assignment.{strategy,iou_threshold}`, Channel-B rollout meta (`assignment_strategy`, `assignment_iou_threshold`), and batch metrics under `stage2_ab/channel_b/assignment/*`. | Preserve artifact visibility while migrating to `greedy_iou` over the post-duplicate survivor set. Hungarian is compatibility/migration-only until the remaining adapters and historical comparisons are removed; it is not the target architecture for new Stage-2 planning. |
+| `stage2_policy_provenance.duplicate_filter_strategy` | `src/training/stage2/duplicate_filter.py::DuplicateFilter`; live compatibility owner `src/config/schema.py::Stage2ABChannelBDuplicateControlConfig`; `src/trainers/stage2_two_channel/target_builder.py::_apply_channel_b_duplicate_control` | First-class manifest fields: `stage2_policy_provenance.{duplicate_filter_strategy,duplicate_iou_threshold,duplicate_center_radius_scale}`. Corroborating config visibility: `resolved_config.json` at `stage2_ab.channel_b.duplicate_control.{iou_threshold,center_radius_scale}`. | Duplicate filtering must run before assignment and target realization. Preserve thresholds and diagnostic counters, or add an explicit replacement field plus tests before changing filtering order or semantics. |
+| `stage2_policy_provenance.object_ordering_policy` | `src/training/ordering.py`; `src/sft.py` injection into rollout configs; `src/trainers/stage2_two_channel/target_builder.py` for `stage2_ab.channel_b.insertion_order` | First-class manifest fields: `stage2_policy_provenance.{object_ordering_policy,object_ordering_strategy_id,sample_object_ordering}`. Corroborating non-manifest visibility: `resolved_config.json` at `custom.object_ordering` and `stage2_ab.channel_b.insertion_order`, plus Stage-2 eval summaries when materialized. | Preserve Channel-B final-target insertion ordering: default `tail_append` keeps retained accepted rollout objects first and appends false-negative GT objects; `sorted` applies final top-left ordering over retained accepted objects plus inserted false negatives. |
 
-Target manifest field names are reserved as
+Manifest field names are reserved as
 `stage2_policy_provenance.assignment_strategy`,
 `stage2_policy_provenance.duplicate_filter_strategy`, and
 `stage2_policy_provenance.object_ordering_policy` unless a later OpenSpec
-migration deliberately replaces them. The current absence of all three
-first-class fields from rank-0 manifests is a blocking migration gap for any
-Stage-2 assignment, duplicate-filtering, or object-ordering rewrite.
+migration deliberately replaces them. Any future Stage-2 assignment,
+duplicate-filtering, or object-ordering rewrite must update these fields and
+their tests in the same change.
 
 ### Diagnostic Compatibility Freeze
 

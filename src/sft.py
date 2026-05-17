@@ -39,6 +39,7 @@ from .tokens.row_offsets import (
 )
 from .bootstrap.pipeline_manifest import build_pipeline_manifest
 from .bootstrap.experiment_manifest import write_experiment_manifest_file
+from .bootstrap.stage2_policy_provenance import build_stage2_policy_provenance
 from .bootstrap.trainer_setup import (
     build_trainer_callbacks,
     compose_trainer_class,
@@ -872,6 +873,7 @@ def _build_effective_runtime_payload(
     train_jsonl: str | None,
     val_jsonl: str | None,
     pipeline_manifest: Mapping[str, Any] | None,
+    stage2_policy_provenance: Mapping[str, Any] | None = None,
     train_encoded_sample_cache_info: Mapping[str, Any] | None = None,
     eval_encoded_sample_cache_info: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
@@ -1005,6 +1007,8 @@ def _build_effective_runtime_payload(
         else "",
         "launcher": _collect_launcher_metadata_from_env(),
     }
+    if stage2_policy_provenance is not None:
+        payload["stage2_policy_provenance"] = dict(stage2_policy_provenance)
     payload.update(
         _build_benchmark_runtime_payload(
             training_config=training_config,
@@ -3766,6 +3770,11 @@ def main():
     if not isinstance(selected_pipeline_manifest, Mapping):
         selected_pipeline_manifest = None
 
+    stage2_policy_provenance = build_stage2_policy_provenance(
+        training_config,
+        trainer_variant=str(trainer_variant or ""),
+    )
+
     train_sample_limit_i = _normalize_optional_sample_limit(train_sample_limit)
     val_sample_limit_i = _normalize_optional_sample_limit(val_sample_limit)
     train_data_provenance = _build_data_source_provenance(
@@ -3796,6 +3805,7 @@ def main():
         train_jsonl=str(train_jsonl) if train_jsonl else None,
         val_jsonl=str(val_jsonl) if val_jsonl else None,
         pipeline_manifest=selected_pipeline_manifest,
+        stage2_policy_provenance=stage2_policy_provenance,
         train_encoded_sample_cache_info=train_encoded_sample_cache_info,
         eval_encoded_sample_cache_info=eval_encoded_sample_cache_info,
     )
@@ -3854,6 +3864,7 @@ def main():
                 dataset_seed=dataset_seed,
                 effective_runtime=effective_runtime,
                 pipeline_manifest=selected_pipeline_manifest,
+                stage2_policy_provenance=stage2_policy_provenance,
                 train_data_provenance=train_data_provenance,
                 eval_data_provenance=eval_data_provenance,
             )
@@ -3886,6 +3897,7 @@ def main():
             dataset_seed=dataset_seed,
             repo_root=repo_root,
             manifest_files=written,
+            stage2_policy_provenance=stage2_policy_provenance,
             train_cache_info=train_encoded_sample_cache_info,
             eval_cache_info=eval_encoded_sample_cache_info,
         )
@@ -3908,6 +3920,7 @@ def main():
             pipeline_manifest=selected_pipeline_manifest,
             run_metadata=run_metadata_payload,
             manifest_files=written,
+            stage2_policy_provenance=stage2_policy_provenance,
         )
         logger.info("Wrote experiment manifest: %s", str(experiment_manifest_path))
 

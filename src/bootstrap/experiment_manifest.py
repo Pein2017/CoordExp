@@ -22,6 +22,30 @@ def _module_names(raw: Any) -> list[str]:
     return names
 
 
+def _stage2_policy_from_manifest_inputs(
+    *,
+    stage2_policy_provenance: Mapping[str, Any] | None,
+    effective_runtime: Mapping[str, Any] | None,
+    pipeline_manifest: Mapping[str, Any] | None,
+    run_metadata: Mapping[str, Any] | None,
+) -> dict[str, Any] | None:
+    for source in (
+        stage2_policy_provenance,
+        effective_runtime.get("stage2_policy_provenance", None)
+        if isinstance(effective_runtime, Mapping)
+        else None,
+        pipeline_manifest.get("stage2_policy_provenance", None)
+        if isinstance(pipeline_manifest, Mapping)
+        else None,
+        run_metadata.get("stage2_policy_provenance", None)
+        if isinstance(run_metadata, Mapping)
+        else None,
+    ):
+        if isinstance(source, Mapping):
+            return copy.deepcopy(dict(source))
+    return None
+
+
 def build_experiment_manifest_payload(
     *,
     output_dir: str | Path,
@@ -34,6 +58,7 @@ def build_experiment_manifest_payload(
     pipeline_manifest: Mapping[str, Any] | None,
     run_metadata: Mapping[str, Any] | None,
     manifest_files: Mapping[str, Any] | None,
+    stage2_policy_provenance: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     artifact_files: dict[str, str] = {}
     if isinstance(manifest_files, Mapping):
@@ -87,6 +112,7 @@ def build_experiment_manifest_payload(
             "comparability_label",
             "stage1_eval_plan",
             "stage1_sft_structural_close",
+            "stage2_policy_provenance",
         ):
             if key in effective_runtime:
                 runtime_summary[key] = copy.deepcopy(effective_runtime[key])
@@ -115,7 +141,16 @@ def build_experiment_manifest_payload(
     if isinstance(experiment, Mapping) and experiment:
         authored_experiment = copy.deepcopy(dict(experiment))
 
-    return {
+    stage2_policy = _stage2_policy_from_manifest_inputs(
+        stage2_policy_provenance=stage2_policy_provenance,
+        effective_runtime=effective_runtime,
+        pipeline_manifest=pipeline_manifest,
+        run_metadata=run_metadata,
+    )
+    if stage2_policy is not None:
+        runtime_summary["stage2_policy_provenance"] = copy.deepcopy(stage2_policy)
+
+    payload = {
         "schema_version": EXPERIMENT_MANIFEST_SCHEMA_VERSION,
         "identity": {
             "config_path": str(config_path or ""),
@@ -131,6 +166,9 @@ def build_experiment_manifest_payload(
         "provenance_summary": provenance_summary,
         "artifacts": artifact_files,
     }
+    if stage2_policy is not None:
+        payload["stage2_policy_provenance"] = stage2_policy
+    return payload
 
 
 def write_experiment_manifest_file(
@@ -145,6 +183,7 @@ def write_experiment_manifest_file(
     pipeline_manifest: Mapping[str, Any] | None,
     run_metadata: Mapping[str, Any] | None,
     manifest_files: Mapping[str, Any] | None,
+    stage2_policy_provenance: Mapping[str, Any] | None = None,
 ) -> Path:
     payload = build_experiment_manifest_payload(
         output_dir=output_dir,
@@ -157,6 +196,7 @@ def write_experiment_manifest_file(
         pipeline_manifest=pipeline_manifest,
         run_metadata=run_metadata,
         manifest_files=manifest_files,
+        stage2_policy_provenance=stage2_policy_provenance,
     )
     out_path = Path(str(output_dir)) / "experiment_manifest.json"
     out_path.parent.mkdir(parents=True, exist_ok=True)

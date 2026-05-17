@@ -160,8 +160,9 @@ def build_run_metadata_payload(
     dataset_seed: int,
     repo_root: Path,
     manifest_files: Mapping[str, Any] | None,
-    train_cache_info: Mapping[str, Any] | None,
-    eval_cache_info: Mapping[str, Any] | None,
+    stage2_policy_provenance: Mapping[str, Any] | None = None,
+    train_cache_info: Mapping[str, Any] | None = None,
+    eval_cache_info: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     git_state = _safe_git_state(repo_root)
     status_lines_raw = git_state.get("status_porcelain", [])
@@ -186,6 +187,11 @@ def build_run_metadata_payload(
 
     if manifest_files is not None:
         meta["run_manifest_files"] = dict(manifest_files)
+
+    if stage2_policy_provenance is not None:
+        meta["stage2_policy_provenance"] = copy.deepcopy(
+            dict(stage2_policy_provenance)
+        )
 
     launcher_meta = collect_launcher_metadata_from_env()
     if launcher_meta:
@@ -222,8 +228,9 @@ def write_run_metadata_file(
     dataset_seed: int,
     repo_root: Path,
     manifest_files: Mapping[str, Any] | None,
-    train_cache_info: Mapping[str, Any] | None,
-    eval_cache_info: Mapping[str, Any] | None,
+    stage2_policy_provenance: Mapping[str, Any] | None = None,
+    train_cache_info: Mapping[str, Any] | None = None,
+    eval_cache_info: Mapping[str, Any] | None = None,
 ) -> Path:
     payload = build_run_metadata_payload(
         output_dir=output_dir,
@@ -233,6 +240,7 @@ def write_run_metadata_file(
         dataset_seed=dataset_seed,
         repo_root=repo_root,
         manifest_files=manifest_files,
+        stage2_policy_provenance=stage2_policy_provenance,
         train_cache_info=train_cache_info,
         eval_cache_info=eval_cache_info,
     )

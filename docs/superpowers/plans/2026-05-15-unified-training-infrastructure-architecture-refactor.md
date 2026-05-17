@@ -27,6 +27,12 @@ Follow-up Stage-2 assignment slice complete and committed as `1117da83` on
 preserved as the default compatibility adapter and `greedy_iou` available as
 the reusable opt-in target strategy.
 
+Follow-up Stage-2 policy provenance slice completed on 2026-05-17: rank-0
+Stage-2 two-channel manifests now write first-class
+`stage2_policy_provenance` for assignment strategy, duplicate-filter strategy,
+and object-ordering policy across effective runtime, pipeline manifest, run
+metadata, and experiment manifest artifacts.
+
 ## Execution Policy
 
 This is a staged architecture refactor. Do not try to implement all tasks in one
@@ -1864,12 +1870,13 @@ compatibility migration explicitly changes it.
 Run:
 
 ```bash
-conda run -n ms python -m pytest tests/test_experiment_manifest_file.py tests/test_run_manifest_files.py tests/test_run_metadata_file.py tests/test_dependency_provenance.py -q
+conda run -n ms python -m pytest tests/test_stage2_policy_provenance.py tests/test_experiment_manifest_file.py tests/test_run_manifest_files.py tests/test_run_metadata_file.py tests/test_dependency_provenance.py tests/test_artifact_contract_docs.py -q
 ```
 
 Expected: resolved config, runtime env, effective runtime, pipeline manifest,
-experiment manifest, run metadata, train/eval data provenance, and source
-config copies remain present or are deliberately migrated with docs/specs.
+experiment manifest, run metadata, Stage-2 policy provenance, train/eval data
+provenance, and source config copies remain present or are deliberately
+migrated with docs/specs.
 
 ### Level 1: Semantic Planning
 

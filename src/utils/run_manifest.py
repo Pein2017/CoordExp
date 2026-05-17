@@ -120,6 +120,7 @@ def write_run_manifest_files(
     dataset_seed: int,
     effective_runtime: Mapping[str, Any] | None = None,
     pipeline_manifest: Mapping[str, Any] | None = None,
+    stage2_policy_provenance: Mapping[str, Any] | None = None,
     train_data_provenance: Mapping[str, Any] | None = None,
     eval_data_provenance: Mapping[str, Any] | None = None,
     env_keys: list[str] | None = None,
@@ -162,23 +163,33 @@ def write_run_manifest_files(
 
     if effective_runtime is not None:
         effective_runtime_path = out_dir / "effective_runtime.json"
+        effective_runtime_payload: dict[str, Any] = {
+            "schema_version": RUN_MANIFEST_SCHEMA_VERSION,
+            "runtime": dict(effective_runtime),
+        }
+        if stage2_policy_provenance is not None:
+            effective_runtime_payload["stage2_policy_provenance"] = dict(
+                stage2_policy_provenance
+            )
         _write_json(
             effective_runtime_path,
-            {
-                "schema_version": RUN_MANIFEST_SCHEMA_VERSION,
-                "runtime": dict(effective_runtime),
-            },
+            effective_runtime_payload,
         )
         written["effective_runtime"] = str(effective_runtime_path.name)
 
     if pipeline_manifest is not None:
         pipeline_manifest_path = out_dir / "pipeline_manifest.json"
+        pipeline_manifest_payload: dict[str, Any] = {
+            "schema_version": RUN_MANIFEST_SCHEMA_VERSION,
+            "pipeline": dict(pipeline_manifest),
+        }
+        if stage2_policy_provenance is not None:
+            pipeline_manifest_payload["stage2_policy_provenance"] = dict(
+                stage2_policy_provenance
+            )
         _write_json(
             pipeline_manifest_path,
-            {
-                "schema_version": RUN_MANIFEST_SCHEMA_VERSION,
-                "pipeline": dict(pipeline_manifest),
-            },
+            pipeline_manifest_payload,
         )
         written["pipeline_manifest"] = str(pipeline_manifest_path.name)
 

@@ -315,6 +315,11 @@ What to expect:
 
 - A-only runs finish without Channel-B rollout metric families such as `rollout/*`
 - mixed A/B runs emit Channel-B rollout metrics and duplicate diagnostics
+- Stage-2 two-channel runs write `stage2_policy_provenance` into
+  `effective_runtime.json`, `pipeline_manifest.json`, `run_metadata.json`, and
+  `experiment_manifest.json`; verify `assignment_strategy`,
+  `duplicate_filter_strategy`, and `object_ordering_policy` before comparing
+  assignment or duplicate-filter experiments
 - duplicate-control runs should emit both raw gauges under `dup/raw/*` and
   additive policy counters under `stage2_ab/channel_b/dup/N_*`
 - eval-enabled server-mode runs emit grouped eval families such as `eval/detection/*`

@@ -40,6 +40,11 @@ def test_serialize_resolved_training_config_converts_paths_to_strings() -> None:
 
 def test_write_run_manifest_files_writes_required_json(tmp_path: Path) -> None:
     cfg = _TinyCfg(output_dir=Path("out"), template={"max_pixels": 10485760})
+    stage2_policy = {
+        "assignment_strategy": "greedy_iou",
+        "duplicate_filter_strategy": "legacy_channel_b_duplicate_control",
+        "object_ordering_policy": "sorted",
+    }
     written = write_run_manifest_files(
         output_dir=tmp_path,
         training_config=cfg,
@@ -53,6 +58,7 @@ def test_write_run_manifest_files_writes_required_json(tmp_path: Path) -> None:
             "hf_save_only_model": False,
         },
         pipeline_manifest={"checksum": "abc123", "objective": [{"name": "token_ce"}]},
+        stage2_policy_provenance=stage2_policy,
         train_data_provenance={"dataset_jsonl": "train.jsonl"},
         eval_data_provenance={"dataset_jsonl": "val.jsonl"},
     )
@@ -84,9 +90,11 @@ def test_write_run_manifest_files_writes_required_json(tmp_path: Path) -> None:
     assert effective_runtime["runtime"]["save_model_only"] is True
     assert effective_runtime["runtime"]["save_only_model"] is False
     assert effective_runtime["runtime"]["hf_save_only_model"] is False
+    assert effective_runtime["stage2_policy_provenance"] == stage2_policy
 
     pipeline_manifest = json.loads(pipeline_manifest_path.read_text(encoding="utf-8"))
     assert pipeline_manifest["pipeline"]["checksum"] == "abc123"
+    assert pipeline_manifest["stage2_policy_provenance"] == stage2_policy
 
     train_provenance = json.loads(train_provenance_path.read_text(encoding="utf-8"))
     assert train_provenance["split"] == "train"

@@ -25,6 +25,11 @@ def test_write_run_metadata_file_writes_expected_fields(
         dataset_seed=23,
         repo_root=tmp_path,
         manifest_files={"resolved_config": "resolved_config.json"},
+        stage2_policy_provenance={
+            "assignment_strategy": "greedy_iou",
+            "duplicate_filter_strategy": "legacy_channel_b_duplicate_control",
+            "object_ordering_policy": "sorted",
+        },
         train_cache_info={"status": "ready"},
         eval_cache_info={"status": "disabled"},
     )
@@ -37,6 +42,7 @@ def test_write_run_metadata_file_writes_expected_fields(
     assert payload["run_name"] == "unit-run"
     assert payload["dataset_seed"] == 23
     assert payload["run_manifest_files"]["resolved_config"] == "resolved_config.json"
+    assert payload["stage2_policy_provenance"]["assignment_strategy"] == "greedy_iou"
     assert payload["launcher"]["COORDEXP_STAGE2_LAUNCHER"] == "scripts/train_stage2.sh"
     assert payload["encoded_sample_cache"]["train"]["status"] == "ready"
     assert payload["encoded_sample_cache"]["eval"]["status"] == "disabled"

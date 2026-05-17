@@ -619,6 +619,11 @@ rank-0 artifact set:
 - `eval_data_provenance.json`;
 - source-config copies.
 
+Stage-2 two-channel runs additionally preserve first-class
+`stage2_policy_provenance` in rank-0 manifests for assignment strategy,
+duplicate-filter strategy, object-ordering policy, and their effective
+thresholds.
+
 Existing bootstrap owners such as `src/bootstrap/experiment_manifest.py`,
 `src/bootstrap/pipeline_manifest.py`, and `src/bootstrap/run_metadata.py` remain
 the migration authority until a tested replacement exists.

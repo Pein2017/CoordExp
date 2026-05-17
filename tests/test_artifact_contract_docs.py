@@ -27,20 +27,24 @@ def test_artifact_contract_docs_freeze_rank0_and_stage2_eval_surfaces() -> None:
 
     assert "rollout_matching.eval_detection.materialize_artifacts: true" in artifacts
     assert "Artifact/Provenance Freeze" in artifacts
-    assert "Stage-2 Policy Provenance Migration Target" in artifacts
+    assert "Stage-2 Policy Provenance" in artifacts
     assert "Diagnostic Compatibility Freeze" in artifacts
-    assert "not yet written by all rank-0 manifests" in artifacts
+    assert "Rank-0 Stage-2 two-channel" in artifacts
+    assert "not yet written by all rank-0 manifests" not in artifacts
 
     for policy_surface in (
         "stage2_policy_provenance.assignment_strategy",
         "stage2_policy_provenance.duplicate_filter_strategy",
         "stage2_policy_provenance.object_ordering_policy",
+        "stage2_policy_provenance.assignment_iou_threshold_effective",
+        "stage2_policy_provenance.object_ordering_strategy_id",
         "src/trainers/rollout_matching/matching.py::hungarian_match_maskiou",
         "src/trainers/stage2_two_channel/target_builder.py::_apply_channel_b_duplicate_control",
         "stage2_ab.channel_b.insertion_order",
-        "Blocking migration gap",
     ):
         assert policy_surface in artifacts
+
+    assert "Blocking migration gap" not in artifacts
 
     for diagnostic_surface in (
         "monitor_dumps/",
