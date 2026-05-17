@@ -1381,6 +1381,26 @@ If it fails with `valid_pred_objects_total=0` or a parser-template mismatch, do
 not interpret assignment/duplicate/filter metrics as model quality. Gate 1
 alone is not enough to claim training readiness.
 
+2026-05-17 attempt:
+
+- Added `configs/stage2_two_channel/smoke/compact_full_et_rmp_ce_ckpt3664_hf_1step.yaml`.
+- Real HF Stage-2 launch exited successfully and wrote run manifests, train
+  monitor dumps, eval monitor dumps, raw rollout artifacts, and COCO eval
+  artifacts under
+  `output/stage2_ab/smoke/compact_full_et_rmp_ce_ckpt3664_hf_1step/smoke_1step-compact_full-et_rmp_ce_ckpt3664-hf-unconstrained/v2-20260517-101433`.
+- The run resolved to `compact_full`, `rollout_decode_policy=unconstrained`,
+  `invalid_rollout_policy=fallback_gt_fn_append_only`, HF rollout/eval
+  backends, and `checkpoint-3664` via `model.adapters`.
+- The smoke did not pass Gate 1 readiness: tiny unconstrained samples produced
+  compact object starts but no valid predicted objects, with malformed
+  continuations such as tool-call/chat special tokens. Logged diagnostics
+  surfaced `stage2/invalid_rollout=1.0`, `rollout/fn_appended_total=2.0`,
+  `eval/runtime/coco_eval_ok=1.0`, and `eval/runtime/coco_counter_empty_pred=2.0`.
+- Interpretation: launch/I/O wiring and fallback supervision are operational,
+  but compact-full unconstrained rollout readiness remains unproven. Do not
+  claim training-trajectory preservation from this smoke; run Gate 2 only after
+  a Gate 1 smoke produces valid compact-full predictions.
+
 - [ ] **Step 3B: Add A2 compact-full rollout readiness smoke**
 
 After Gate 1 passes, run a small 16-32 sample readiness smoke with the same

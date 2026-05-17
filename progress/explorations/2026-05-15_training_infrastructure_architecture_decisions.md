@@ -3695,6 +3695,43 @@ Implementation consequence:
 - Record the resolved rollout template, parser, decode policy, and append policy
   in resolved config and artifacts.
 
+## 2026-05-17 Stage-2 Compact-Full Smoke Result
+
+Run:
+
+```text
+config=configs/stage2_two_channel/smoke/compact_full_et_rmp_ce_ckpt3664_hf_1step.yaml
+log=temp/train_logs/compact_full_stage2_smoke/compact_full_et_rmp_ce_ckpt3664_hf_1step-20260517T101306Z.log
+artifact=output/stage2_ab/smoke/compact_full_et_rmp_ce_ckpt3664_hf_1step/smoke_1step-compact_full-et_rmp_ce_ckpt3664-hf-unconstrained/v2-20260517-101433
+```
+
+Outcome:
+
+- Process launch succeeded, the Qwen3-VL base plus A2 compact-full
+  `checkpoint-3664` adapter loaded, one Stage-2 Channel-B step completed, and
+  eval artifacts materialized.
+- Resolved policy matched the design decision: `compact_full` rollout template,
+  HF rollout/eval backends, unconstrained greedy decode, random object ordering,
+  and `fallback_gt_fn_append_only`.
+- The tiny unconstrained rollout did not produce valid compact-full predicted
+  objects. Monitor samples emitted compact object starts such as
+  `<|object_ref_start|>bear<|box_start|>` but then fell into malformed chat/tool
+  continuations instead of coordinate tokens.
+- Diagnostics stayed visible rather than hidden: train logs included
+  `stage2/invalid_rollout=1.0`, `stage2_ab/channel_b/invalid_rollout=1.0`,
+  and `rollout/fn_appended_total=2.0`; eval logs included
+  `eval/runtime/coco_eval_ok=1.0` and `eval/runtime/coco_counter_empty_pred=2.0`.
+
+Interpretation:
+
+- This is a successful launch/fallback/artifact smoke, not a compact-full
+  rollout-readiness or training-trajectory proof.
+- The result supports the design choice to avoid constrained decode hiding the
+  failure basin. The next validation step should either identify the
+  prompt/decode mismatch causing malformed unconstrained compact continuations
+  or run a Gate-1 variant that demonstrates at least one valid predicted object
+  before any production Stage-2 compact-full training claim.
+
 ## Continue The Grill-Me Loop
 
 Next decisions still worth asking when the context resumes:

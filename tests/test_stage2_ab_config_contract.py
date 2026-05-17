@@ -1695,6 +1695,46 @@ def test_stage2_ablation_leaves_pin_ordering_cache_seed_and_names(
         assert data["dataloader_num_workers"] == 0
 
 
+def test_stage2_compact_full_a2_smoke_config_pins_unconstrained_fallback_policy() -> None:
+    repo_root = Path(__file__).resolve().parents[1]
+    cfg = ConfigLoader.load_materialized_training_config(
+        str(
+            repo_root
+            / "configs"
+            / "stage2_two_channel"
+            / "smoke"
+            / "compact_full_et_rmp_ce_ckpt3664_hf_1step.yaml"
+        )
+    )
+
+    assert cfg.custom.trainer_variant == "stage2_two_channel"
+    assert cfg.custom.detection_sequence_format == "compact_full"
+    assert cfg.custom.object_ordering == "random"
+
+    assert cfg.stage2_ab is not None
+    assert cfg.stage2_ab.schedule.b_ratio == 1.0
+    assert cfg.stage2_ab.channel_b.rollout_template_family == "compact_full"
+    assert cfg.stage2_ab.channel_b.rollout_decode_policy == "unconstrained"
+    assert (
+        cfg.stage2_ab.channel_b.invalid_rollout_policy
+        == "fallback_gt_fn_append_only"
+    )
+    assert cfg.stage2_ab.channel_b.fallback_loss_weight == 1.0
+    assert cfg.stage2_ab.channel_b.triage_posterior.num_rollouts == 2
+
+    assert cfg.rollout_matching.rollout_backend == "hf"
+    assert cfg.rollout_matching.eval_rollout_backend == "hf"
+    assert cfg.rollout_matching.eval_detection.enabled is True
+    assert cfg.rollout_matching.eval_detection.materialize_artifacts is True
+
+    assert cfg.training["effective_batch_size"] == 1
+    assert "gradient_accumulation_steps" not in cfg.training
+    assert cfg.training["max_steps"] == 1
+    assert cfg.custom.train_sample_limit == 4
+    assert cfg.custom.val_sample_limit == 2
+    assert "checkpoint-3664" in str(cfg.model["adapters"][0])
+
+
 def test_stage2_leaf_contract_rejects_live_tree_profile_without_extends() -> None:
     repo_root = Path(__file__).resolve().parents[1]
     bad_path = (
