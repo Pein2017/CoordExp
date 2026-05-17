@@ -1,4 +1,4 @@
-from dataclasses import replace
+from dataclasses import fields, replace
 from typing import get_args
 
 import pytest
@@ -179,6 +179,29 @@ def _equal_priority_classifying_overlaps(
             ):
                 conflicts.append((left, right))
     return conflicts
+
+
+def test_render_span_event_preserves_legacy_positional_field_order() -> None:
+    field_names = tuple(field.name for field in fields(RenderSpanEvent))
+
+    assert field_names[
+        field_names.index("source_object_index") + 1 :
+        field_names.index("provenance") + 1
+    ] == ("geometry_kind", "slot_name", "provenance")
+    assert all(
+        field_names.index(field_name) > field_names.index("provenance")
+        for field_name in (
+            "object_id",
+            "supervision_key",
+            "span_family",
+            "field_name",
+            "source_role",
+            "relation_snapshot",
+            "coordinate_weight",
+            "regression_weight",
+            "hard_bbox_supervision",
+        )
+    )
 
 
 def test_stage1_json_pretty_render_bytes_stay_canonical() -> None:

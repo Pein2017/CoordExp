@@ -289,12 +289,31 @@ def test_proxy_candidate_bbox_coords_do_not_receive_recursive_bbox_supervision()
 
     assert real_coord_targets
     assert not proxy_coord_targets
+    proxy_coord_token_ids = {
+        prepared.tokenized.input_ids[position]
+        for position in proxy_coord_positions
+    }
     assert all(
         target.loss_weight == pytest.approx(1.0) and target.coord_soft_targets
         for target in real_coord_targets
     )
-    assert any(
-        target.semantic_role is SemanticRole.BBOX_COORD
+    assert all(
+        target.kind == "hard_ce"
+        and target.semantic_role is SemanticRole.BBOX_COORD
+        and target.valid_token_ids == (target.teacher_token_id,)
+        and target.child_multiplicities == (1,)
+        and target.child_probabilities == pytest.approx((1.0,))
+        for target in real_coord_targets
+    )
+    assert all(
+        proxy_coord_token_ids.isdisjoint(target.valid_token_ids)
+        for target in real_coord_targets
+    )
+    assert all(
+        proxy_coord_token_ids.isdisjoint(
+            branch_target.token_id
+            for branch_target in target.trie_branch_targets
+        )
         for target in real_coord_targets
     )
     assert proxy_coord_positions.isdisjoint(targets_by_position)

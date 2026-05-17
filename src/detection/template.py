@@ -149,13 +149,13 @@ class RenderSpanEvent:
     object_instance_id: str | None = None
     object_index: int | None = None
     source_object_index: int | None = None
+    geometry_kind: str | None = None
+    slot_name: str | None = None
+    provenance: SpanProvenance | None = None
     object_id: str | None = None
     supervision_key: str | None = None
     span_family: str | None = None
     field_name: str | None = None
-    geometry_kind: str | None = None
-    slot_name: str | None = None
-    provenance: SpanProvenance | None = None
     source_role: str | None = None
     relation_snapshot: Mapping[str, Any] | None = None
     coordinate_weight: float | None = None
@@ -757,6 +757,9 @@ def _render_event(
         source_object_index=(
             None if object_entry is None else object_entry.source_object_index
         ),
+        geometry_kind=geometry_kind,
+        slot_name=slot_name,
+        provenance=provenance,
         object_id=None if object_entry is None else object_entry.object_id,
         supervision_key=None if object_entry is None else object_entry.object_id,
         span_family=span_family,
@@ -774,9 +777,6 @@ def _render_event(
         hard_bbox_supervision=(
             None if object_entry is None else object_entry.hard_bbox_supervision
         ),
-        geometry_kind=geometry_kind,
-        slot_name=slot_name,
-        provenance=provenance,
     )
 
 

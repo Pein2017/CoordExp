@@ -1388,14 +1388,36 @@ def _append_recursive_entry_targets(
                 "valid remaining-object trie child"
             )
 
-        active_count = node.descendant_count()
+        if coord_slot_name is None:
+            active_count = node.descendant_count()
+            child_multiplicities = tuple(
+                (child_token_id, child.descendant_count())
+                for child_token_id, child in sorted(node.children.items())
+            )
+        else:
+            child_multiplicities = tuple(
+                (child_token_id, hard_descendant_count)
+                for child_token_id, child in sorted(node.children.items())
+                if (
+                    hard_descendant_count := sum(
+                        1
+                        for instance in child.descendant_instances
+                        if instance.hard_bbox_supervision
+                    )
+                )
+                > 0
+            )
+            active_count = sum(
+                child_multiplicity
+                for _, child_multiplicity in child_multiplicities
+            )
         trie_branch_targets = tuple(
             TrieBranchTarget(
                 token_id=child_token_id,
-                multiplicity=child.descendant_count(),
-                probability=float(child.descendant_count() / max(active_count, 1)),
+                multiplicity=child_multiplicity,
+                probability=float(child_multiplicity / max(active_count, 1)),
             )
-            for child_token_id, child in sorted(node.children.items())
+            for child_token_id, child_multiplicity in child_multiplicities
         )
         if trie_branch_targets:
             probability_mass = sum(target.probability for target in trie_branch_targets)
