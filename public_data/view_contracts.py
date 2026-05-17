@@ -186,7 +186,11 @@ def _infer_repo_root(view_root: Path) -> Path:
 
     resolved_view_root = view_root.resolve()
     try:
-        public_data_index = resolved_view_root.parts.index("public_data")
+        public_data_index = (
+            len(resolved_view_root.parts)
+            - 1
+            - resolved_view_root.parts[::-1].index("public_data")
+        )
     except ValueError as exc:
         raise ValueError("repo_root is required when view_root is not under public_data") from exc
 

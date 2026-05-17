@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import FrozenInstanceError
 from pathlib import Path
 
 import pytest
@@ -12,6 +13,26 @@ from public_data.view_contracts import (
     resolve_view_image_root,
     write_view_metadata,
 )
+
+
+def _valid_view_metadata(**overrides: object) -> dict[str, object]:
+    metadata: dict[str, object] = {
+        "schema_version": 1,
+        "kind": "annotation_view",
+        "dataset": "coco",
+        "view": "coco80/len-12000",
+        "image_store": "public_data/coco/images/res-1024",
+        "path_anchor": "repo_root",
+        "image_path_semantics": "image_store_relative",
+        "coordinate_space": "norm1000",
+        "coordinate_storage": "integer",
+        "coordinate_range": [0, 999],
+        "coordinate_chart": "xyxy",
+        "assistant_coordinate_rendering": "qwen_coord_tokens",
+        "primary_jsonl": {"train": "train.jsonl", "val": "val.jsonl"},
+    }
+    metadata.update(overrides)
+    return metadata
 
 
 def test_resolve_image_path_is_image_store_relative(tmp_path: Path) -> None:
@@ -55,6 +76,55 @@ def test_resolve_image_path_is_image_store_relative(tmp_path: Path) -> None:
         )
         == image_path.resolve()
     )
+
+
+def test_infers_repo_root_from_innermost_public_data_component(tmp_path: Path) -> None:
+    outer_public_data = tmp_path / "public_data"
+    repo_root = outer_public_data / "checkout"
+    view_root = repo_root / "public_data" / "coco" / "views" / "coco80" / "len-12000"
+    meta = ViewMetadata(**_valid_view_metadata())
+
+    resolved_root = resolve_view_image_root(meta, view_root=view_root, repo_root=None)
+
+    assert resolved_root == (
+        repo_root / "public_data" / "coco" / "images" / "res-1024"
+    ).resolve()
+    assert resolved_root != (
+        outer_public_data / "coco" / "images" / "res-1024"
+    ).resolve()
+
+
+def test_write_and_load_view_metadata_round_trips_valid_metadata(tmp_path: Path) -> None:
+    metadata_path = tmp_path / "nested" / "view" / "metadata.json"
+
+    write_view_metadata(metadata_path, _valid_view_metadata())
+
+    assert metadata_path.exists()
+    loaded = load_view_metadata(metadata_path)
+    assert loaded.dataset == "coco"
+    assert loaded.view == "coco80/len-12000"
+    assert loaded.image_store == "public_data/coco/images/res-1024"
+    assert loaded.path_anchor == "repo_root"
+    assert loaded.coordinate_range == (0, 999)
+
+
+def test_image_store_metadata_is_frozen_public_contract() -> None:
+    metadata = ImageStoreMetadata(
+        schema_version=1,
+        kind="image_store",
+        dataset="coco",
+        image_store="res-1024",
+        image_path_semantics="image_store_relative",
+        max_pixels=1048576,
+        visual_token_budget=1024,
+        image_factor=28,
+        image_root="public_data/coco/images/res-1024",
+        splits=("train", "val"),
+    )
+
+    assert metadata.splits == ("train", "val")
+    with pytest.raises(FrozenInstanceError):
+        metadata.dataset = "lvis"
 
 
 def test_rejects_escaped_image_path(tmp_path: Path) -> None:
