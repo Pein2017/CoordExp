@@ -9,6 +9,7 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any, Literal, Mapping, MutableMapping, Sequence
 
+from public_data.view_contracts import load_view_metadata, resolve_view_image_root
 from torch.utils.data import Dataset
 
 from src.common.detection_chat import build_detection_chat_messages
@@ -86,6 +87,85 @@ TRAINER_BATCH_EXTRA_KEYS: frozenset[str] = frozenset(
 )
 
 
+def resolve_detection_jsonl_image_root(
+    jsonl_path: str | Path,
+    *,
+    image_root: str | Path | None,
+) -> Path:
+    """Resolve the image root for a latest compact detection JSONL.
+
+    :param jsonl_path: Training or evaluation JSONL path.
+    :param image_root: Optional legacy explicit image root override.
+    :returns: Absolute image-store root path.
+    """
+
+    path = Path(jsonl_path)
+
+    meta_path = path.parent / "meta.json"
+    if meta_path.exists():
+        metadata = load_view_metadata(meta_path)
+        metadata_image_root = resolve_view_image_root(metadata, path.parent)
+        explicit_image_root = _resolve_explicit_image_root(
+            image_root,
+            metadata_image_root=metadata_image_root,
+            metadata_image_store=metadata.image_store,
+        )
+        if (
+            explicit_image_root is not None
+            and explicit_image_root != metadata_image_root
+        ):
+            raise ValueError(
+                "explicit image_root does not match view metadata image_store: "
+                f"image_root={explicit_image_root}, "
+                f"meta.json={meta_path}, "
+                f"resolved_image_store={metadata_image_root}"
+            )
+
+        return metadata_image_root
+
+    explicit_image_root = _resolve_explicit_image_root(
+        image_root,
+        metadata_image_root=None,
+        metadata_image_store=None,
+    )
+    if explicit_image_root is not None:
+        return explicit_image_root
+
+    raise ValueError(
+        "DetectionTrainingDataset requires image_root or view metadata: "
+        f"expected meta.json next to JSONL at {meta_path}"
+    )
+
+
+def _resolve_explicit_image_root(
+    image_root: str | Path | None,
+    *,
+    metadata_image_root: Path | None,
+    metadata_image_store: str | None,
+) -> Path | None:
+    """Resolve an explicit image root without CWD dependence when metadata exists."""
+
+    if image_root is None:
+        return None
+
+    explicit_path = Path(image_root).expanduser()
+    if explicit_path.is_absolute():
+        return explicit_path.resolve(strict=False)
+
+    if metadata_image_root is None or metadata_image_store is None:
+        return explicit_path.resolve(strict=False)
+
+    metadata_image_store_path = Path(metadata_image_store)
+    if metadata_image_store_path.is_absolute():
+        return explicit_path.resolve(strict=False)
+
+    if explicit_path == metadata_image_store_path:
+        return metadata_image_root
+
+    repo_root = metadata_image_root.parents[len(metadata_image_store_path.parts) - 1]
+    return (repo_root / explicit_path).resolve(strict=False)
+
+
 @dataclass(frozen=True)
 class DetectionDatasetRuntimeConfig:
     image_root: str | None
@@ -122,8 +202,8 @@ class DetectionTrainingDataset(Dataset):
             raise ValueError("DetectionTrainingDataset requires at least one row")
         if config.image_root is None:
             raise ValueError(
-                "DetectionTrainingDataset requires explicit image_root until "
-                "view metadata image-root resolution is implemented"
+                "DetectionTrainingDataset requires resolved image_root; call "
+                "from_jsonl with data.image_root or a sibling view meta.json"
             )
         if config.max_objects is not None:
             warnings.warn(
@@ -166,6 +246,11 @@ class DetectionTrainingDataset(Dataset):
         dataset_name: str | None = None,
     ) -> "DetectionTrainingDataset":
         path = Path(jsonl_path)
+        resolved_image_root = resolve_detection_jsonl_image_root(
+            path,
+            image_root=image_root,
+        )
+
         rows, _invalid_count = load_jsonl_with_diagnostics(path, strict=True)
         if sample_limit is not None:
             if sample_limit <= 0:
@@ -175,7 +260,7 @@ class DetectionTrainingDataset(Dataset):
             rows,
             swift_template=swift_template,
             config=DetectionDatasetRuntimeConfig(
-                image_root=None if image_root is None else str(image_root),
+                image_root=str(resolved_image_root),
                 detection_template_id=detection_template_id,
                 mode=mode,
                 object_ordering=object_ordering,
@@ -689,5 +774,6 @@ __all__ = [
     "DetectionTrainingDataset",
     "REGISTERED_DETECTION_SIDECAR_KEYS",
     "DETECTION_DROPPED_BEFORE_MODEL_KEYS",
+    "resolve_detection_jsonl_image_root",
     "strip_non_model_detection_sidecars",
 ]

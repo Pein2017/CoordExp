@@ -21,6 +21,7 @@ from src.detection.objective import (
     prepare_detection_training_example,
 )
 from src.detection.template import get_detection_template
+from src.sft import _resolve_root_image_dir_for_training
 from test_detection_training_dataset import FakeSwiftTemplate
 
 
@@ -109,6 +110,76 @@ def _ensure_image(tmp_path: Path) -> None:
     image_path = tmp_path / "image-root/images/val2017/example.jpg"
     image_path.parent.mkdir(parents=True, exist_ok=True)
     image_path.write_bytes(b"unit-test-image-placeholder")
+
+
+def _write_latest_compact_view(tmp_path: Path) -> tuple[Path, Path]:
+    repo_root = tmp_path
+    image_root = repo_root / "public_data/coco/images/res-1024"
+    image_path = image_root / "images/val2017/000000000139.jpg"
+    image_path.parent.mkdir(parents=True, exist_ok=True)
+    image_path.write_bytes(b"unit-test-image-placeholder")
+
+    view_root = repo_root / "public_data/coco/views/coco80/len-12000"
+    view_root.mkdir(parents=True, exist_ok=True)
+    (view_root / "meta.json").write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "kind": "annotation_view",
+                "dataset": "coco",
+                "view": "coco80/len-12000",
+                "image_store": "public_data/coco/images/res-1024",
+                "path_anchor": "repo_root",
+                "image_path_semantics": "image_store_relative",
+                "coordinate_space": "norm1000",
+                "coordinate_storage": "integer",
+                "coordinate_range": [0, 999],
+                "coordinate_chart": "xyxy",
+                "assistant_coordinate_rendering": "qwen_coord_tokens",
+                "primary_jsonl": {"val": "val.jsonl"},
+                "sample_policy": {
+                    "type": "length_budget",
+                    "max_total_tokens": 12000,
+                },
+                "length_budget_scope": {"rendered_families": ["assistant"]},
+                "length_budget_template_id": "compact_full",
+                "summary": {},
+            },
+            ensure_ascii=False,
+            indent=2,
+            sort_keys=True,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    row = _canonical_all_proxy_row()
+    row["images"] = ["images/val2017/000000000139.jpg"]
+    row["file_name"] = "000000000139.jpg"
+    jsonl_path = view_root / "val.jsonl"
+    _write_jsonl(jsonl_path, [row])
+
+    return jsonl_path, image_root
+
+
+def _load_latest_compact_view_dataset(
+    jsonl_path: Path,
+    *,
+    image_root: str | Path | None = None,
+) -> DetectionTrainingDataset:
+    return DetectionTrainingDataset.from_jsonl(
+        jsonl_path,
+        swift_template=FakeSwiftTemplate(),
+        image_root=image_root,
+        detection_template_id="compact_full",
+        mode="sorted_sft",
+        object_ordering="sorted",
+        user_prompt="Detect every object.",
+        system_prompt="You are a detector.",
+        seed=123,
+        state_weighting="none",
+        normalization="token_mean",
+    )
 
 
 def test_metadata_supervision_joins_rendered_objects_by_stable_object_id() -> None:
@@ -240,6 +311,70 @@ def test_dataset_exposes_rendered_span_sources_without_model_input_leak(
     strip_candidate.pop("length", None)
     model_inputs = strip_non_model_detection_sidecars(strip_candidate)
     assert "rendered_span_sources" not in model_inputs
+
+
+def test_dataset_loads_latest_compact_view_image_root_from_metadata(
+    tmp_path: Path,
+) -> None:
+    jsonl_path, image_root = _write_latest_compact_view(tmp_path)
+
+    dataset = _load_latest_compact_view_dataset(jsonl_path)
+    sample = dataset[0]
+
+    assert dataset._image_root == image_root.resolve()
+    assert sample["messages"][1]["content"][0]["image"] == str(
+        image_root / "images/val2017/000000000139.jpg"
+    )
+    assert sample["detection_metadata"]["object_count"] == 2
+
+
+def test_dataset_accepts_explicit_image_root_matching_view_metadata(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    jsonl_path, image_root = _write_latest_compact_view(tmp_path)
+    monkeypatch.chdir(jsonl_path.parent)
+
+    dataset = _load_latest_compact_view_dataset(
+        jsonl_path,
+        image_root="public_data/coco/images/res-1024",
+    )
+
+    assert dataset._image_root == image_root.resolve()
+
+
+def test_dataset_rejects_explicit_image_root_mismatching_view_metadata(
+    tmp_path: Path,
+) -> None:
+    jsonl_path, _image_root = _write_latest_compact_view(tmp_path)
+
+    with pytest.raises(ValueError, match="image_root.*does not match view metadata"):
+        _load_latest_compact_view_dataset(
+            jsonl_path,
+            image_root=tmp_path / "public_data/coco/images/other-res",
+        )
+
+
+def test_sft_root_image_dir_uses_latest_compact_view_metadata_not_cwd(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    jsonl_path, image_root = _write_latest_compact_view(tmp_path)
+    latest_detection_config = type(
+        "LatestDetectionConfig",
+        (),
+        {"data": type("DataConfig", (), {"image_root": None})()},
+    )()
+    monkeypatch.chdir(tmp_path / "public_data/coco/views/coco80")
+
+    resolved = _resolve_root_image_dir_for_training(
+        latest_detection_config=latest_detection_config,
+        train_jsonl=jsonl_path,
+    )
+
+    assert resolved == str(image_root.resolve())
+    assert not resolved.endswith("/None")
+    assert Path(resolved) != Path.cwd().resolve()
 
 
 def test_proxy_candidate_bbox_coords_do_not_receive_recursive_bbox_supervision() -> None:

@@ -67,7 +67,10 @@ from .detection.packing import (
     build_stage1_static_sft_packing_fingerprint,
     require_static_sft_packing_eligibility,
 )
-from .detection.dataset import DetectionTrainingDataset
+from .detection.dataset import (
+    DetectionTrainingDataset,
+    resolve_detection_jsonl_image_root,
+)
 from .detection.length_bucketing import (
     LatestDetectionLengthBucketingConfig,
     LatestDetectionLengthGroupedTrainerMixin,
@@ -1779,12 +1782,12 @@ def _resolve_root_image_dir_for_training(
 ) -> str:
     if latest_detection_config is not None:
         image_root = latest_detection_config.data.image_root
-        if image_root is None:
-            raise ValueError(
-                "DetectionTrainingDataset requires explicit image_root until "
-                "view metadata image-root resolution is implemented"
+        return str(
+            resolve_detection_jsonl_image_root(
+                train_jsonl,
+                image_root=image_root,
             )
-        return os.path.abspath(str(image_root))
+        )
 
     return os.path.abspath(os.path.dirname(str(train_jsonl)))
 
@@ -2143,13 +2146,21 @@ def main():
     if not train_jsonl:
         raise ValueError("Config must specify 'custom.train_jsonl'/'custom.jsonl'")
 
-    if os.environ.get("ROOT_IMAGE_DIR") in (None, ""):
-        root_dir = _resolve_root_image_dir_for_training(
-            latest_detection_config=latest_detection_config,
-            train_jsonl=train_jsonl,
-        )
+    root_dir = _resolve_root_image_dir_for_training(
+        latest_detection_config=latest_detection_config,
+        train_jsonl=train_jsonl,
+    )
+    root_image_dir = os.environ.get("ROOT_IMAGE_DIR")
+    if root_image_dir in (None, ""):
         os.environ["ROOT_IMAGE_DIR"] = root_dir
         logger.info(f"Set ROOT_IMAGE_DIR={root_dir}")
+    elif latest_detection_config is not None:
+        existing_root_dir = os.path.abspath(str(root_image_dir))
+        if existing_root_dir != root_dir:
+            raise ValueError(
+                "ROOT_IMAGE_DIR does not match latest detection image root: "
+                f"ROOT_IMAGE_DIR={existing_root_dir}, resolved_image_root={root_dir}"
+            )
 
     # Initialize SwiftSft with TrainArguments object directly
     logger.info("Initializing ms-swift pipeline...")

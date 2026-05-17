@@ -200,14 +200,13 @@ def test_latest_detection_runtime_constructs_dataset_and_sft_delegates() -> None
     assert build_dataset_calls
 
 
-def test_sft_root_image_dir_autoconfig_rejects_latest_detection_without_image_root() -> None:
+def test_sft_root_image_dir_autoconfig_requires_image_root_or_view_metadata() -> None:
     latest_detection_config = SimpleNamespace(data=SimpleNamespace(image_root=None))
 
     with pytest.raises(
         ValueError,
         match=(
-            "DetectionTrainingDataset requires explicit image_root until "
-            "view metadata image-root resolution is implemented"
+            "DetectionTrainingDataset requires image_root or view metadata"
         ),
     ):
         _resolve_root_image_dir_for_training(
@@ -346,6 +345,7 @@ def test_recursive_detection_sidecars_survive_collation_but_not_model_forward() 
         "attention_mask": [1, 1, 1],
         "labels": [-100, 2, 3],
         "recursive_detection_targets": target_sidecar,
+        "rendered_span_sources": (),
         "detection_metadata": {"template_id": "compact_full"},
         "assistant_payload": {"objects": []},
         "sample_id": 42,
