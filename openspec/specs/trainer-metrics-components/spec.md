@@ -19,8 +19,8 @@ Normative policy-action counters:
 - `stage2_ab/channel_b/dup/N_clusters_exempt`
 - `stage2_ab/channel_b/dup/N_clusters_suppressed`
 - `stage2_ab/channel_b/dup/N_objects_suppressed`
-- `stage2_ab/channel_b/dup/N_ul_boundaries`
-- `stage2_ab/channel_b/dup/N_duplicate_burst_unlikelihood_skipped_no_divergence`
+- `stage2_ab/channel_b/dup/N_duplicate_control_first_divergence_boundaries`
+- `stage2_ab/channel_b/dup/N_duplicate_control_first_divergence_skipped_no_divergence`
 
 Normative behavior:
 - Count-like metrics MUST use `/N_`, `_count`, `_total`, `_sum`, `_num`, or
@@ -31,12 +31,15 @@ Normative behavior:
   remain additive totals across micro-steps.
 - `dup/raw/duplicate_like_max_cluster_size`,
   `dup/raw/desc_entropy`, and `stage2_ab/channel_b/dup/N_clusters_total` MUST
-  be derived from the same cluster-aware duplicate-targeting relation used by
+  be derived from the same cluster-aware duplicate-control relation used by
   Channel-B runtime preparation.
 - raw pathology metrics and policy-action counters MUST stay distinct:
   - `dup/raw/*` describes the pre-policy anchor duplicate state,
-  - `stage2_ab/channel_b/dup/N_*` describes duplicate-control decisions and UL
-    consequences.
+  - `stage2_ab/channel_b/dup/N_*` describes current duplicate-control
+    diagnostic decisions and metadata.
+- duplicate-control counters MUST remain diagnostic metadata only.
+  Duplicate-burst UL is not part of the current canonical objective list; only
+  retired legacy loss scalars are tied to the retired objective module.
 
 #### Scenario: Duplicate counters aggregate additively across micro-steps
 - **WHEN** duplicate count-like metrics are emitted from multiple micro-steps
@@ -47,7 +50,7 @@ Normative behavior:
 #### Scenario: Cluster-aware duplicate metrics share the runtime detector
 - **WHEN** Channel-B training emits duplicate-collapse diagnostics for a step
 - **THEN** cluster-aware gauges and counters are derived from the same
-  duplicate-like grouping used to build suppression targets
+  duplicate-like grouping used for filtering and diagnostic bookkeeping
 - **AND** operators do not need to reconcile separate duplicate definitions for
   metrics versus training behavior.
 

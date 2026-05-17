@@ -62,7 +62,6 @@ Normative behavior:
   - `preset`
 - `application.preset` MUST be valid for the referenced module:
   - `token_ce`: `anchor_text_only`, `rollout_text_only`
-  - `loss_duplicate_burst_unlikelihood`: `rollout_only`
   - `bbox_geo`, `bbox_size_aux`, `coord_reg`:
     - `anchor_only`
 - Presets that imply a deprecated final Channel-A self-context pass MUST be
@@ -735,21 +734,23 @@ Normative behavior:
 #### Scenario: Empty clean sequence still exposes one valid boundary
 - **WHEN** sequential dedup yields `accepted_objects_clean = []`
 - **THEN** duplicate bursts are still indexed against boundary `0`
-- **AND** duplicate-ul target construction remains well-defined.
+- **AND** duplicate-control diagnostic metadata remains well-defined.
 
 ### Requirement: Generic unmatched clean extras remain prefix-visible while staying outside desc and coord supervision
-Accepted clean objects that are unmatched after Hungarian MAY remain in the clean prefix as context, but they MUST remain outside desc, bbox, coord, and duplicate-ul supervision.
+Accepted clean objects that are unmatched after Hungarian MAY remain in the clean prefix as context, but they MUST remain outside desc, bbox, and coord supervision.
 
 Normative behavior:
 - Unmatched clean extras MAY populate global rollout-prefix struct masks when `token_ce.config.rollout_global_prefix_struct_ce_weight > 0`.
 - Unmatched clean extras MUST NOT populate coord/bbox supervision groups.
 - Unmatched clean extras MUST NOT create extra positive desc targets.
-- Unmatched clean extras MUST NOT create duplicate-ul positives.
+- Unmatched clean extras MUST NOT create duplicate-control first-divergence
+  diagnostic metadata.
 
 #### Scenario: Unmatched clean extra stays in context with shared prefix structure CE only
 - **WHEN** Channel-B retains an unmatched clean accepted object in the clean prefix
 - **THEN** that object remains visible in the canonical teacher-forced prefix
-- **AND** it contributes zero desc CE, zero bbox loss, zero coord loss, and zero duplicate-ul positives
+- **AND** it contributes zero desc CE, zero bbox loss, zero coord loss, and zero
+  duplicate-control first-divergence diagnostic metadata
 - **AND** it may still participate in the global rollout-prefix structure CE surface.
 
 ### Requirement: Channel-B rollout seeding is deterministic and logged
@@ -802,10 +803,14 @@ Channel-B:
 - **FP-neutral geometry**:
   - geometry losses MUST be computed for matched clean prefix objects and FN-injected objects,
   - generic unmatched clean extras MUST NOT receive geometric gradients.
-- **Duplicate-ul supervision**:
+- **Duplicate-control diagnostic metadata**:
   - duplicate-certified continuations MUST be removed from the positive clean prefix,
-  - duplicate UL MUST target the first true LCP-divergence token relative to the clean continuation at the same clean boundary,
-  - same-boundary duplicates that share the same divergence token MUST collapse to one UL term.
+  - duplicate-control metadata MAY record the first true LCP-divergence token
+    relative to the clean continuation at the same clean boundary,
+  - same-boundary duplicates that share the same divergence token MUST collapse
+    to one diagnostic metadata unit,
+  - duplicate-control metadata MUST NOT create live objective terms,
+    positive/negative supervision, or training target distributions.
 - **Closure supervision stays on**:
   - the outermost JSON closure `}` and `<|im_end|>` MUST remain CE-supervised,
   - if closure-marker bookkeeping becomes ambiguous after the clean target is built, the sample MUST stay on the deterministic FN-tail fallback path rather than being dropped.
@@ -1187,14 +1192,14 @@ When `custom.trainer_variant: stage2_two_channel`, the system SHALL use an expli
 
 Normative behavior:
 - `stage2_ab.pipeline` MUST be present. There is no implicit default pipeline manifest for this contract.
-- Canonical Stage-2 AB objective ordering for this contract is:
+- Future-canonical Stage-2 AB objective ordering for this contract is:
   1. `token_ce`
-  2. `loss_duplicate_burst_unlikelihood`
-  3. `bbox_geo`
+  2. `bbox_geo`
+  3. `bbox_size_aux`
   4. `coord_reg`
 - Canonical Stage-2 AB diagnostics MAY include `coord_diag`.
-- `loss_duplicate_burst_unlikelihood` MUST be present in canonical Stage-2 AB pipelines and MUST declare `channels: [B]`.
-- `loss_duplicate_burst_unlikelihood` module `weight` is the only v1 scaling surface for duplicate UL.
+- Live Stage-2 AB configs MUST omit `loss_duplicate_burst_unlikelihood`; the
+  removed objective has no compatibility alias.
 - The old raw-prefix Channel-B contract is removed; there is no contract toggle or compatibility mode.
 
 #### Scenario: Missing stage2_ab.pipeline fails fast
@@ -1203,11 +1208,13 @@ Normative behavior:
 - **THEN** config loading fails fast before trainer init
 - **AND** the error indicates `stage2_ab.pipeline` is required.
 
-#### Scenario: Missing loss_duplicate_burst_unlikelihood in the canonical Channel-B pipeline fails fast
+#### Scenario: Live Channel-B pipeline omits duplicate-burst unlikelihood
 - **WHEN** a Stage-2 AB config declares `stage2_ab.pipeline.objective`
 - **AND** the objective list omits `loss_duplicate_burst_unlikelihood`
-- **THEN** config validation fails fast
-- **AND** the error indicates the canonical clean-prefix Channel-B contract requires `loss_duplicate_burst_unlikelihood`.
+- **THEN** config validation accepts the live canonical objective order when
+  the remaining modules preserve canonical order
+- **AND** duplicate-control diagnostics remain valid independent of the removed
+  duplicate-UL objective module.
 
 #### Scenario: Stage-2 Two-Channel rejects rollout-matching pipeline keys
 - **WHEN** `custom.trainer_variant=stage2_two_channel`
@@ -1238,9 +1245,12 @@ YAML-declared experiments remain auditable.
 
 Normative minimum objective module names for this contract:
 - `token_ce`
-- `loss_duplicate_burst_unlikelihood`
 - `bbox_geo`
+- `bbox_size_aux`
 - `coord_reg`
+
+Removed objective module names:
+- `loss_duplicate_burst_unlikelihood`
 
 Normative minimum diagnostics module names:
 - `coord_diag`
@@ -1258,15 +1268,23 @@ Normative behavior:
 Stage-2 Two-Channel SHALL validate module `config` payloads and `stage2_ab.channel_b` payloads strictly so experiments are reproducible and fail fast on schema drift.
 
 Normative behavior:
-- `loss_duplicate_burst_unlikelihood.config` MUST be an empty mapping in v1.
+- `loss_duplicate_burst_unlikelihood` MUST be rejected when present in a live
+  objective list.
 - `token_ce.config` no longer accepts any legacy invalid-structure amplification knob for Channel-B.
 - `stage2_ab.channel_b` MUST accept only:
-  - `duplicate_iou_threshold`
+  - `duplicate_control`
   - `triage_posterior`
   - `producer_wait_timeout_s`
   - `ddp_phase_timeout_s`
   - `invalid_rollout_policy`
+  - `insertion_order`
   - `pseudo_positive`
+- `stage2_ab.channel_b.duplicate_control` MUST be a typed mapping and MUST
+  accept only:
+  - `iou_threshold`
+  - `center_radius_scale`
+- legacy flat `stage2_ab.channel_b.duplicate_iou_threshold` and
+  `stage2_ab.channel_b.center_radius_scale` MUST be rejected.
 - `stage2_ab.channel_b.pseudo_positive` MUST be a typed mapping and MUST accept only:
   - `enabled`
   - `coord_weight`
@@ -1281,11 +1299,11 @@ Normative behavior:
 - when `stage2_ab.channel_b.pseudo_positive.enabled=true`, `stage2_ab.channel_b.triage_posterior.num_rollouts` MUST be `>= 2`
 - Unknown keys in a module `config` or in `stage2_ab.channel_b` MUST fail fast with actionable diagnostics.
 
-#### Scenario: Non-empty loss_duplicate_burst_unlikelihood.config fails fast
+#### Scenario: Removed loss_duplicate_burst_unlikelihood fails fast
 - **WHEN** `stage2_ab.pipeline.objective[*].name=loss_duplicate_burst_unlikelihood`
-- **AND** its `config` mapping contains any key
 - **THEN** configuration parsing fails fast
-- **AND** the error indicates `loss_duplicate_burst_unlikelihood.config` must be empty for v1.
+- **AND** the error identifies `loss_duplicate_burst_unlikelihood` as an
+  unavailable objective module.
 
 #### Scenario: Legacy invalid-structure multiplier placement fails fast
 - **WHEN** a Stage-2 AB config sets `stage2_ab.channel_b.drop_invalid_struct_ce_multiplier`

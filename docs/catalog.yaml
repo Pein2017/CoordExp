@@ -1,5 +1,5 @@
 schema_version: 1
-updated: 2026-05-11
+updated: 2026-05-16
 
 entrypoints:
   human:
@@ -18,6 +18,63 @@ authority:
 
 config_surfaces:
   training:
+    - id: unified_training_shadow_stage1_json_ce
+      status: shadow-baseline
+      surface_id: stage1_json_ce
+      resolver: src/training/surfaces.py::TrainingSurfaceResolver
+      pipeline: src/training/pipelines/stage1_json_ce.py::Stage1JsonCEPipeline
+      domains:
+        - run
+        - surface
+        - data
+        - template
+        - supervision
+        - objectives
+        - observability
+        - artifacts
+        - runtime
+      notes: "Guarded shadow surface for JSON chat CE baseline/regression work. This keeps JSON CE available but does not make it the compact-full target architecture."
+    - id: unified_training_shadow_stage1_compact_trie_ce
+      status: shadow-primary-direction
+      surface_id: stage1_compact_trie_ce
+      resolver: src/training/surfaces.py::TrainingSurfaceResolver
+      pipeline: src/training/pipelines/stage1_compact_trie_ce.py::Stage1CompactTrieCEPipeline
+      domains:
+        - run
+        - surface
+        - data
+        - template
+        - supervision
+        - objectives
+        - observability
+        - artifacts
+        - runtime
+      template: compact_full
+      objective_order:
+        - token_ce
+        - trie_ce
+        - coord_soft_ce
+        - box_regression
+      notes: "Primary Stage-1 architecture direction: compact-full token-span supervision with trie CE, coordinate soft CE, and optional box regression. Disabled objectives remain explicit in the resolved profile."
+    - id: unified_training_shadow_stage2_two_channel
+      status: shadow-design-direction
+      surface_id: stage2_two_channel
+      resolver: src/training/surfaces.py::TrainingSurfaceResolver
+      pipeline: src/training/pipelines/stage2_two_channel.py::Stage2TwoChannelPipeline
+      domains:
+        - run
+        - surface
+        - data
+        - template
+        - supervision
+        - objectives
+        - observability
+        - artifacts
+        - runtime
+      assignment_strategy: greedy_iou
+      duplicate_filter_order: before_assignment_and_target_realization
+      channel_b_false_negative_insertion: true
+      notes: "Guarded Stage-2 design direction. Duplicate filtering runs before greedy-IoU assignment; unmatched GT becomes Channel-B false-negative insertion. Hungarian matching is migration-only legacy compatibility until removal."
     - id: stage1_latest_compact_detection_random_permutation_et_rmp_ce
       status: canonical-production-baseline
       config: configs/stage1/recursive_detection_ce_latest/prod/compact_full_support2.yaml
@@ -25,12 +82,6 @@ config_surfaces:
       parser: src/config/schema.py::LatestDetectionTrainingConfig
       runtime: src/detection/runtime.py
       notes: "Latest compact detection trusted anchor using random_permutation_et_rmp_ce with flat trie weights. Keep as comparator/baseline; do not use it as the prefix-rollin config surface."
-    - id: stage1_latest_compact_detection_a2_eos_loosen_ablation
-      status: running-ablation
-      config: configs/stage1/recursive_detection_ce_latest/prod/compact_full_support2_eos_loosen.yaml
-      parser: src/config/schema.py::LatestDetectionTrainingConfig
-      runtime: src/detection/runtime.py
-      notes: "A2E clean EOS ablation: A2/support2 plus objective.eos trust weighting, no prefix-rollin, no prefix masking, and no reduced supervised-token density."
     - id: stage1_latest_compact_detection_iou_gibbs_coord_softce_a5
       status: ablation-candidate
       config: configs/stage1/recursive_detection_ce_latest/prod/compact_full_support2_iou_gibbs_softce_a5.yaml
@@ -51,13 +102,7 @@ config_surfaces:
       authoring_snippets: configs/_shared/latest_detection/
       parser: src/config/schema.py::LatestDetectionTrainingConfig
       runtime: src/detection/runtime.py
-      notes: "Compact-full-only prefix_rollin_et_rmp_ce E1/A3/A4 mechanism surface. EOS supervision targets the Qwen chat-template <|im_end|> marker; empirical_unlabeled_poisson_v0 is smoke/ablation-only, and production requires calibrated_formula_ref plus a versioned calibration artifact. Treat A3/A4 as mechanism probes rather than fair A2 challengers unless supervised-token density is matched."
-    - id: stage1_latest_compact_detection_prefix_rollin_separator2_ablation
-      status: diagnostic-ablation
-      config: configs/stage1/recursive_detection_ce_latest/ablation/compact_full_prefix_rollin_separator2.yaml
-      parser: src/config/schema.py::LatestDetectionTrainingConfig
-      runtime: src/detection/runtime.py
-      notes: "E2 separator-continue ablation for prefix_rollin_et_rmp_ce. It keeps E1 target/type-gate/EOS settings and raises objective.boundary.separator_continue_weight to 2.0 to diagnose generated-prefix newline-vs-im_end early stopping."
+      notes: "Compact-full-only prefix_rollin_et_rmp_ce E1/A3 mechanism surface. EOS supervision targets the Qwen chat-template <|im_end|> marker with ordinary teacher-forced CE. Treat A3 as a mechanism probe rather than a fair A2 challenger unless supervised-token density is matched."
     - id: stage1_legacy_compact_bridge
       status: legacy-bridge
       config: configs/stage1/compact_detection_sequence/smoke/compact_full_tiny.yaml
@@ -202,7 +247,7 @@ progress:
     - path: progress/directions/full_idea_v4.md
       title: Full Idea v4
       type: direction
-      status: active-reference
+      status: superseded
     - path: progress/directions/full_idea_v3.md
       title: Full Idea v3
       type: direction
@@ -224,10 +269,6 @@ progress:
       title: Diagnostics Artifact Copies
       type: router
       status: canonical
-    - path: progress/diagnostics/2026-04-22_stage2_birth_first_channel_b_decision_study.md
-      title: Stage-2 Birth-First Channel-B Decision Study
-      type: diagnostic-study
-      status: active-reference
     - path: progress/diagnostics/2026-04-21_raw_text_coordinate_mechanism_findings.md
       title: Raw-Text Coordinate Mechanism Findings
       type: mechanism-summary
@@ -248,14 +289,18 @@ progress:
       title: Raw-Text Coordinate Continuity Probe
       type: diagnostic-study
       status: supporting-reference
+    - path: progress/diagnostics/2026-04-22_stage2_birth_first_channel_b_decision_study.md
+      title: Stage-2 Birth-First Channel-B Decision Study
+      type: diagnostic-study
+      status: decision-evidence
     - path: progress/diagnostics/2026-04-11_stage1_coord_basin_duplication_mechanism.md
       title: Stage-1 Coordinate-Basin Duplication Mechanism
       type: mechanism-summary
-      status: active-reference
+      status: mechanism-evidence
     - path: progress/diagnostics/2026-04-13_duplication_collapse_final_analysis.md
       title: Duplication Collapse Final Analysis
       type: diagnostic-study
-      status: active-reference
+      status: mechanism-evidence
     - path: progress/diagnostics/2026-04-15_cxcy_logw_logh_retrained_performance_analysis.md
       title: cxcy_logw_logh Retrained Performance Analysis
       type: diagnostic-study
@@ -283,7 +328,7 @@ progress:
     - path: progress/diagnostics/2026-03-26_stage2_small_object_duplication_offline_synthesis.md
       title: Stage-2 Small-Object Duplication Offline Diagnostics Synthesis
       type: diagnostic-study
-      status: active-reference
+      status: mechanism-evidence
     - path: progress/diagnostics/2026-03-25_stage2_small_object_duplication_offline_protocol.md
       title: Stage-2 Small-Object Duplication Offline Protocol
       type: supporting-note
@@ -411,6 +456,10 @@ progress:
       title: Explorations Index
       type: router
       status: canonical
+    - path: progress/explorations/2026-05-15_training_infrastructure_architecture_decisions.md
+      title: Training Infrastructure Architecture Decisions
+      type: exploration
+      status: active-reference
     - path: progress/explorations/2026-03-19_runtime_refactor_architecture_program.md
       title: Runtime Refactor Architecture Program (2026-03-19)
       type: exploration

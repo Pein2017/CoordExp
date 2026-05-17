@@ -26,11 +26,12 @@ Prefer `docs/` and `openspec/specs/` for the current contract. Use
 - [full_idea_v5.md](full_idea_v5.md)
   - current Stage-1 set-continuation direction note
   - source research note for subset-conditioned full-entry multi-positive supervision
-- [full_idea_v4.md](full_idea_v4.md)
-  - current historical summary for the Stage-1 + Stage-2 direction
-  - best first read when you want the present research story in one place
 
-## Earlier Direction Notes
+## Historical Direction Notes
+
+- [full_idea_v4.md](full_idea_v4.md)
+  - superseded Stage-1 + Stage-2 pseudo-positive direction summary
+  - useful for design lineage and K=4 context, not current training guidance
 
 - [full_idea_v3.md](full_idea_v3.md)
   - K=2 triage-posterior direction that bridges v2 to the later pseudo-positive line

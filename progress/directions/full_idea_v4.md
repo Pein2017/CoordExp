@@ -1,6 +1,6 @@
 ---
 title: Full Idea v4
-status: active
+status: superseded
 scope: stage1-stage2
 topics: [stage1, stage2, pseudo-positive, pseudo-label, clean-prefix, triage-posterior, k4]
 supersedes: progress/directions/full_idea_v3.md
@@ -17,12 +17,18 @@ references:
 
 # Full Idea v4
 
-This note is the new research-history summary for the current Stage-1 plus Stage-2 direction.
+This note is a superseded research-history summary for the Stage-1 plus
+Stage-2 pseudo-positive direction.
+
+Current training guidance lives in `docs/training/` and the stable OpenSpec
+contracts. In particular, duplicate-burst unlikelihood training support has
+been removed; mentions in this note are historical evidence, not launch
+guidance.
 
 Read it after the stable docs/spec layer when you want one place that explains:
 
 - what the latest Stage-1 pipeline is actually responsible for,
-- what the latest Stage-2 pseudo-positive pipeline is actually doing,
+- what the earlier Stage-2 pseudo-positive pipeline was doing,
 - why `K=4` now matters,
 - and how the current contract differs from:
   - [full_idea_v3.md](full_idea_v3.md),
@@ -346,19 +352,21 @@ Concrete handle:
 
 - [src/config/schema.py](../../src/config/schema.py)
 
-### Current objective surface is module-based
+### Historical objective surface was module-based
 
-The active Stage-2 prod recipe declares objectives through:
+At the time of this note, the Stage-2 prod recipe declared objectives through:
 
 - `token_ce`
-- `loss_duplicate_burst_unlikelihood`
+- `loss_duplicate_burst_unlikelihood` (now retired)
 - `bbox_geo`
 - `bbox_size_aux`
 - `coord_reg`
 
 inside `stage2_ab.pipeline.objective[]`.
 
-That is a cleaner and more reproducible surface than older free-form descriptions.
+That was a cleaner and more reproducible surface than older free-form
+descriptions, but the duplicate-burst UL objective is no longer live training
+support.
 
 ### Stronger geometry continuation variants
 

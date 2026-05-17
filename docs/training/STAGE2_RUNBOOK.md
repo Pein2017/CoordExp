@@ -5,7 +5,7 @@ doc_type: runbook
 status: canonical
 domain: training
 summary: YAML-first runbook for active Stage-2 training, including direct learner runs and vLLM server-mode launches.
-updated: 2026-05-03
+updated: 2026-05-16
 ---
 
 # Stage-2 Training Runbook
@@ -59,6 +59,10 @@ Current internal ownership seams:
 ## Current Supported Contract
 
 - `custom.trainer_variant: stage2_two_channel`
+- shadow architecture `surface.id: stage2_two_channel`
+- shadow config domains follow the unified contract:
+  `run`, `surface`, `data`, `template`, `supervision`, `objectives`,
+  `observability`, `artifacts`, and `runtime`
 - `stage2_ab.pipeline.objective[]` and `stage2_ab.pipeline.diagnostics[]` are required for active Stage-2 configs
 - Channel-A runs a single GT-anchored teacher-forced forward.
 - Channel-B keeps the rollout-aligned clean-prefix path.
@@ -79,15 +83,17 @@ Current internal ownership seams:
   - exact behavior is specified in `openspec/specs/rollout-matching-sft/spec.md`
 - supported routing/objective presets are:
   - `token_ce.application.preset: anchor_text_only`
-  - `loss_duplicate_burst_unlikelihood.application.preset: rollout_only`
   - `bbox_geo.application.preset: anchor_only`
   - `bbox_size_aux.application.preset: anchor_only`
   - `coord_reg.application.preset: anchor_only`
-- optional `coord_reg.config` adjacent anti-copy knobs:
-  - `adjacent_repulsion_weight`
-  - `adjacent_repulsion_filter_mode`
-  - `adjacent_repulsion_margin_ratio`
-  - `adjacent_repulsion_copy_margin`
+- duplicate-burst UL migration state:
+  - the live objective module `loss_duplicate_burst_unlikelihood` is removed and current Stage-2 configs must not declare it
+  - historical specs and archived run artifacts may still mention the retired objective name for compatibility notes
+  - duplicate-control diagnostics and counters remain supported after objective cleanup
+- retired adjacent-repulsion state:
+  - adjacent-repulsion anti-copy loss and config knobs are no longer live training support
+  - current configs must omit `adjacent_repulsion_*` keys; strict config parsing rejects them as unknown
+  - duplicate-control diagnostics remain supported and are separate from the retired loss
 - optional `bbox_geo.config` center-size knobs:
   - `parameterization: xyxy | center_size`
   - `center_weight`
@@ -101,8 +107,9 @@ Current internal ownership seams:
   - selected `pseudo_positive` anchors -> coord + global prefix structure CE
   - support-positive retained `shielded_anchor` objects that stay below promotion threshold -> support-weighted coord + global prefix structure CE
   - cluster-demoted pseudo-positive candidates -> global prefix structure CE only
-  - duplicate control runs before GT matching on the assembled anchor + explorer evidence surface
-  - non-exempt duplicate-control non-survivors are removed from the clean prefix and contribute only duplicate-burst unlikelihood
+  - duplicate control runs before GT matching and target realization on the assembled anchor + explorer evidence surface
+  - non-exempt duplicate-control non-survivors are removed from the clean
+    prefix and tracked only through duplicate-control diagnostics
   - `dead_anchor` -> no positive supervision, with duplicate-control suppression only
   - pseudo-positive selection remains anchor-centric: candidates start from unmatched anchor clean objects with explorer support; explorer-only non-GT-backed objects are not promoted into prefix positives
 - Default authored pseudo-positive profile:
@@ -126,6 +133,35 @@ Current internal ownership seams:
   - legacy flat duplicate-control leaves:
     - `stage2_ab.channel_b.duplicate_iou_threshold`
     - `stage2_ab.channel_b.center_radius_scale`
+
+## Assignment, Duplicate Filtering, And Channel-B Targets
+
+Current design direction:
+
+- Duplicate filtering happens before assignment and before target realization.
+  The assignment surface sees only the retained accepted-rollout survivors.
+- Greedy IoU assignment is the target architecture for Stage-2 shadow planning.
+  `src/training/stage2/assignment.py::GreedyIoUAssignment` builds one-to-one
+  prediction-to-GT pairs by descending IoU with stable prediction/GT indices as
+  tie-breakers.
+- Unmatched GT objects after greedy assignment are false negatives. Channel-B
+  inserts them into the final clean-prefix target as `source_role:
+  false_negative` objects.
+- The default Channel-B ordering remains `tail_append`: retained accepted
+  rollout objects first, false-negative GT objects at the tail. `sorted` remains
+  the explicit final top-left sort option over retained accepted objects plus
+  inserted false negatives.
+- Duplicate-control non-survivors are diagnostic evidence only. They must not
+  become positive clean-prefix targets after filtering.
+
+Migration note:
+
+- `src/trainers/rollout_matching/matching.py::hungarian_match_maskiou` is a
+  legacy compatibility/migration reader until the remaining live adapters and
+  historical comparisons are removed.
+- Hungarian assignment is not the target architecture for new Stage-2 planning
+  or docs. New policy provenance should record `greedy_iou` plus the
+  duplicate-filter and object-ordering policy used for target realization.
 
 ## Recommended Config Entry Points
 
@@ -176,7 +212,17 @@ For the first enabled runs, verify:
 - `rollout/explorer/*` remains interpretable as mean-over-valid-explorer-view aggregates
 - `dup/raw/duplicate_like_max_cluster_size` and `dup/raw/desc_entropy` move on hard duplicate-collapse scenes before the additive suppression counters do
 - `stage2_ab/channel_b/dup/N_clusters_suppressed` and `stage2_ab/channel_b/dup/N_objects_suppressed` remain sparse policy counters rather than raw pathology gauges
-- duplicate-burst unlikelihood remains narrow; do not expect every suppressed object or dead anchor to emit unlikelihood targets
+- duplicate-control diagnostics remain sparse; do not expect every suppressed
+  object or dead anchor to produce a boundary-local diagnostic record
+
+Regression gate for Stage-2 objective cleanup:
+
+```bash
+conda run -n ms python -m pytest \
+  tests/test_stage2_ab_config_contract.py \
+  tests/test_stage2_two_channel_training.py \
+  tests/test_training_runtime_sft_integration.py -q
+```
 
 ### Server-Mode Mixed A/B Run
 

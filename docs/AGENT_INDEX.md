@@ -6,7 +6,7 @@ status: canonical
 domain: repo
 summary: Agent-first retrieval guide for CoordExp documentation and research notes.
 tags: [agents, retrieval, docs]
-updated: 2026-05-09
+updated: 2026-05-16
 ---
 
 # Agent Index
@@ -54,19 +54,26 @@ Human support entrypoints:
   - [docs/training/README.md](training/README.md)
   - [docs/training/STAGE1_OBJECTIVE.md](training/STAGE1_OBJECTIVE.md) for baseline Stage-1 behavior, compact recursive detection, prefix-rollin ablation boundaries, and retired candidate-objective boundaries
   - [docs/data/PACKING.md](data/PACKING.md)
+  - Shadow surface IDs: `stage1_json_ce` for the JSON chat CE baseline and `stage1_compact_trie_ce` for the compact-full primary architecture direction.
+  - Shadow resolver and pipeline map: `src/training/surfaces.py`, `src/training/pipelines/stage1_json_ce.py`, and `src/training/pipelines/stage1_compact_trie_ce.py`.
+  - Objective profile order: `token_ce`, `trie_ce`, `coord_soft_ce`, `box_regression`; disabled objectives remain explicit.
   - Latest compact detection production baseline/comparator: `configs/stage1/recursive_detection_ce_latest/prod/compact_full_support2.yaml`, `src/config/schema.py::LatestDetectionTrainingConfig`, and `src/detection/runtime.py`
-  - Prefix-rollin E1 ablation route: `configs/stage1/recursive_detection_ce_latest/ablation/compact_full_prefix_rollin_balance2.yaml`; compact_full only, `<|im_end|>` only, empirical EOS prior only for smoke/ablation, production requires `calibrated_formula_ref` with a versioned artifact.
-  - Prefix-rollin E2 separator diagnostic route: `configs/stage1/recursive_detection_ce_latest/ablation/compact_full_prefix_rollin_separator2.yaml`; same as E1 except `objective.boundary.separator_continue_weight=2.0` to test the diagnosed `\n` vs `<|im_end|>` free-boundary failure.
+  - Prefix-rollin E1 ablation route: `configs/stage1/recursive_detection_ce_latest/ablation/compact_full_prefix_rollin_balance2.yaml`; compact_full only, with ordinary teacher-forced `<|im_end|>` CE.
   - Latest compact detection authoring snippets, not yet consumed by canonical launch configs: `configs/_shared/latest_detection/`
   - Legacy compact bridge example only: `configs/stage1/compact_detection_sequence/smoke/compact_full_tiny.yaml`
 - Stage-2 training:
   - [docs/training/README.md](training/README.md)
-  - [docs/training/STAGE2_RUNBOOK.md](training/STAGE2_RUNBOOK.md)
+  - [docs/training/STAGE2_RUNBOOK.md](training/STAGE2_RUNBOOK.md) for current behavior, launcher workflow, and historical-context pointers
   - [docs/training/METRICS.md](training/METRICS.md)
   - [`stage2-ab-training/spec.md`](../openspec/specs/stage2-ab-training/spec.md)
   - [`rollout-matching-sft/spec.md`](../openspec/specs/rollout-matching-sft/spec.md) for the supported `stage2_rollout_aligned` variant
   - [`runtime-architecture-refactor-program/spec.md`](../openspec/specs/runtime-architecture-refactor-program/spec.md)
-  - [docs/training/STAGE2_RUNBOOK.md](training/STAGE2_RUNBOOK.md) for current behavior and historical-context pointers
+  - Shadow surface ID: `stage2_two_channel`.
+  - Planning direction: duplicate filtering before target realization, greedy-IoU assignment over retained rollout objects, and Channel-B false-negative insertion for unmatched GT.
+  - Hungarian matching is migration-only legacy compatibility until removal; do not use it as the target architecture for new Stage-2 docs.
+- Metrics, diagnostics, and artifacts:
+  - [docs/training/METRICS.md](training/METRICS.md) for `MetricEvent`, `DiagnosticEvent`, bounded diagnostic profiles, and clean-write/tolerant-read metric behavior
+  - [ARTIFACTS.md](ARTIFACTS.md) for resolved config artifacts, rank-0 artifact names, and Stage-2 policy provenance
 - Inference and evaluation:
   - [docs/eval/README.md](eval/README.md)
   - [docs/eval/CONTRACT.md](eval/CONTRACT.md)
@@ -93,8 +100,9 @@ Do not answer current-behavior questions from `progress/` if `docs/` or `openspe
 ## Suggested Search Seeds
 
 ```bash
-rg -n "stage2_two_channel|stage2_ab|stage2_coordination|stage2_rollout_aligned|rollout_runtime|rollout_aligned_targets|rollout_aligned_evaluator|stage2_vllm_server|loss_duplicate_burst_unlikelihood" docs openspec src scripts configs
-rg -n "runtime-architecture-refactor-program|pipeline_manifest|run_metadata|trainer_setup" docs openspec src tests
+rg -n "stage2_two_channel|stage2_ab|stage2_coordination|stage2_rollout_aligned|rollout_runtime|rollout_aligned_targets|rollout_aligned_evaluator|stage2_vllm_server" docs openspec src scripts configs
+rg -n "surface.id|stage1_json_ce|stage1_compact_trie_ce|MetricEvent|DiagnosticEvent|GreedyIoUAssignment|Stage2GreedyIoUShadowPlanner" docs src tests
+rg -n "runtime-architecture-refactor-program|pipeline_manifest|run_metadata|trainer_setup|resolved_config.json|effective_runtime.json" docs openspec src tests
 rg -n "contract|jsonl|geometry|packing" docs/data src/datasets
 rg -n "infer|engine|backends|artifacts|orchestration|confidence|metrics" docs/eval docs/training src scripts
 ```

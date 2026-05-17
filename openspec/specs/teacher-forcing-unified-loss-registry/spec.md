@@ -19,9 +19,12 @@ Normative token types (mutually exclusive):
 Normative minimum canonical loss component names (metrics use these names when emitted):
 - `struct_ce`
 - `desc_ce`
-- `loss_duplicate_burst_unlikelihood`
 - `geo`
 - `coord_reg`
+
+Removed loss component names:
+- `loss_duplicate_burst_unlikelihood` is no longer part of the live
+  teacher-forcing objective registry.
 
 NOTE (logging contract):
 - These are canonical registry component names (often surfaced as `loss/<component>` keys inside pipeline-internal metrics).
@@ -32,10 +35,11 @@ NOTE (logging contract):
 - **THEN** the supported contexts include `gt` and `rollout`
 - **AND** `self_context` is not part of the active context contract.
 
-#### Scenario: loss_duplicate_burst_unlikelihood is a canonical registry loss component name
-- **WHEN** the clean-prefix Channel-B objective is reported through the unified registry
-- **THEN** the duplicate-unlikelihood component is identified canonically as `loss_duplicate_burst_unlikelihood`
-- **AND** it is not folded into `struct_ce` or `desc_ce`.
+#### Scenario: Removed duplicate-burst objective is not a live registry module
+- **WHEN** the live teacher-forcing objective registry is enumerated
+- **THEN** `loss_duplicate_burst_unlikelihood` is absent
+- **AND** duplicate-control diagnostics are not represented as a live objective
+  component.
 
 ### Requirement: Gate terms are logit-derived and require no new heads
 The registry SHALL support two complementary vocab-partition gate sub-terms inside `coord_reg`:
@@ -100,15 +104,21 @@ Normative loss component names (minimum set; can be extended):
 - `struct_ce`: token cross entropy on structure tokens, including EOS enforcement (EOS is a distinct token type but its
   CE contribution is accounted under `struct_ce`).
 - `desc_ce`: token cross entropy on description tokens.
-- `loss_duplicate_burst_unlikelihood`: duplicate-certified unlikelihood over clean-boundary divergence tokens in Channel-B rollout context.
 - `coord_token_ce`: token cross entropy on coord vocabulary tokens (optional; typically GT context only).
 - `coord_reg`: coord-subspace regularizers computed from logits/probabilities (optional; includes distribution/ordinal
   terms on coord positions and vocab-partition gate terms).
 - `geo`: bbox-level geometry loss computed on decoded boxes.
 
+Removed loss component names:
+- `loss_duplicate_burst_unlikelihood`: retired duplicate-certified
+  unlikelihood over clean-boundary divergence tokens in Channel-B rollout
+  context.
+
 Normative behavior:
 - A single implementation of the above components MUST be reused across stages/channels (no duplicated definitions).
 - Module pipelines and trainers MUST use these stable canonical component names for registry identity and objective semantics.
+- Live Stage-2 pipelines MUST reject `loss_duplicate_burst_unlikelihood`;
+  historical artifacts may retain the retired name for compatibility notes.
 - Public training logs for registry-defined objective modules MUST follow the canonical metric emission contract in
   `trainer-metrics-components` (for example `loss/<provenance>/<atom>` objective atoms), rather than inventing trainer-specific aliases.
 - This change MUST update `docs/training/METRICS.md` and `docs/training/STAGE2_RUNBOOK.md` to reflect the
@@ -213,49 +223,59 @@ Normative behavior:
 - `matched_clean` objects receive positive geometry/coord supervision as defined by the Channel-B contract.
 - `pseudo_positive_selected` objects receive positive geometry/coord supervision using their retained anchor coordinates and the configured pseudo-positive weight.
 - support-positive `shielded_clean` objects that are not cluster-demoted MAY receive support-rate-weighted geometry/coord supervision under pseudo-positive mode.
-- cluster-demoted or otherwise neutral `shielded_clean` objects MAY remain in the clean prefix as context but MUST remain outside positive geometry/coord supervision, duplicate-ul positives, and extra desc-positive supervision.
+- cluster-demoted or otherwise neutral `shielded_clean` objects MAY remain in the clean prefix as context but MUST remain outside positive geometry/coord supervision and extra desc-positive supervision.
 - `fn` objects remain positively supervised.
 - Closure / EOS remain supervised.
 
 #### Scenario: Duplicate-certified objects are removed from the positive prefix
 - **WHEN** a rollout object is classified as `duplicate`
 - **THEN** it does not contribute to the positive teacher-forced prefix
-- **AND** it is represented only through duplicate-ul supervision and diagnostics.
+- **AND** it is represented only through duplicate-control filtering metadata
+  and diagnostics.
 
 ### Requirement: Rollout-context semantics are explicit, auditable, and coherent across trainers
 The unified loss registry SHALL treat clean-prefix rollout semantics as the canonical Channel-B rollout contract.
 
 Normative behavior:
 - Channel-B positive masks are built from the clean teacher-forced target, not the raw rollout prefix.
-- Neutral `shielded_clean` extras MAY participate in the global rollout-prefix struct masks when that token-ce weight is enabled, but MUST stay outside coord supervision groups and duplicate-ul positives.
-- Duplicate-ul supervision MUST be boundary-local and explicit rather than encoded through hidden token-ce behavior.
+- Neutral `shielded_clean` extras MAY participate in the global rollout-prefix
+  struct masks when that token-ce weight is enabled, but MUST stay outside
+  coord supervision groups.
+- Duplicate-control metadata MAY record boundary-local clean-vs-duplicate
+  continuations for diagnostics, but it MUST NOT create a live objective,
+  training target distribution, or positive/negative supervision surface.
 
 #### Scenario: Cluster-demoted unmatched clean extras remain coord-neutral while keeping shared prefix structure supervision
 - **WHEN** a retained unmatched clean object is cluster-demoted or otherwise left neutral after pseudo-positive triage
 - **THEN** it may remain in the clean prefix as context
-- **AND** it contributes no positive geo/coord or duplicate-ul target
+- **AND** it contributes no positive geo/coord target
 - **AND** it may still participate in global rollout-prefix structure CE.
 
-### Requirement: Duplicate UL is boundary-local and LCP-defined
-The unified loss registry SHALL define duplicate unlikelihood as a boundary-local objective over canonical clean vs duplicate continuations.
+### Requirement: Duplicate-control diagnostic metadata is boundary-local and LCP-defined
+The unified loss registry SHALL define duplicate-control diagnostic metadata
+over canonical clean vs duplicate continuations without defining a live
+duplicate-unlikelihood objective.
 
 Normative behavior:
 - For each clean boundary `b`, define `clean_continuation(b)` from the canonical clean teacher-forced target.
 - For each duplicate attached to boundary `b`, define `duplicate_continuation(b, dup)` as canonical serialization of that duplicate object at boundary `b`, followed by the same canonical clean suffix.
-- The target token is the first true divergence token of `duplicate_continuation(b, dup)` relative to `clean_continuation(b)`.
-- Duplicate-ul aggregation is one unit term per unique divergence token per boundary.
+- The diagnostic divergence token is the first true divergence token of `duplicate_continuation(b, dup)` relative to `clean_continuation(b)`.
+- Diagnostic aggregation is one unit per unique divergence token per boundary.
 - If no safe divergence token exists for a continuation, that continuation is skipped and counted in diagnostics.
-- This deduplicated-per-boundary aggregation is intentional: the canonical v1 contract does not sum one UL term per duplicate object when multiple duplicates encode the same divergence token at the same clean boundary.
+- This deduplicated-per-boundary aggregation is intentional: the canonical v1 contract does not count one diagnostic record per duplicate object when multiple duplicates encode the same divergence token at the same clean boundary.
 
-#### Scenario: Same-class-next-object cases do not blindly suppress the first desc token
+#### Scenario: Same-class-next-object cases do not blindly label the first desc token
 - **WHEN** a duplicate continuation shares a non-empty token prefix with the clean continuation
-- **THEN** duplicate-ul targets the first true LCP-divergence token
-- **AND** it does not blindly suppress the first desc token.
+- **THEN** duplicate-control diagnostics record the first true
+  LCP-divergence token
+- **AND** they do not create positive or negative supervision for the first
+  desc token.
 
 #### Scenario: Unsafe or unavailable divergence token is skipped and counted
 - **WHEN** a duplicate continuation yields no safe divergence token relative to the clean continuation
-- **THEN** duplicate-ul does not contribute a loss term for that continuation
-- **AND** the skipped continuation is counted in the corresponding duplicate-ul diagnostics counter.
+- **THEN** the continuation produces no first-divergence diagnostic record
+- **AND** the skipped continuation is counted in the corresponding
+  duplicate-control diagnostics counter.
 
 ### Requirement: Stage-2 Channel-A uses GT context only
 The unified registry SHALL treat Stage-2 two-channel Channel-A as a single

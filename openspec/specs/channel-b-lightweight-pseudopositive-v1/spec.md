@@ -113,7 +113,7 @@ Normative behavior:
 - unmatched anchor objects MUST become pseudo-positive candidates only when both:
   - `support_count >= 2`
   - `support_rate >= 2/3`,
-- pseudo-positive candidates MUST be clustered as connected components of the undirected anchor-side overlap graph whose edges connect candidate pairs with IoU greater than or equal to `duplicate_iou_threshold`,
+- pseudo-positive candidates MUST be clustered as connected components of the undirected anchor-side overlap graph whose edges connect candidate pairs with IoU greater than or equal to the configured duplicate-control IoU threshold,
 - at most one pseudo-positive object MUST be selected from each such overlap cluster,
 - the selected pseudo-positive object in a cluster MUST be the candidate with the highest `support_rate`,
 - ties inside a cluster MUST be broken by earlier anchor order,
@@ -127,7 +127,7 @@ Normative behavior:
 
 #### Scenario: Threshold-meeting candidates collapse to one selected object inside an overlap cluster
 - **WHEN** two unmatched anchor objects both reach pseudo-positive candidacy under the `support_count >= 2` and `support_rate >= 2/3` rule
-- **AND** they overlap each other at or above `duplicate_iou_threshold`
+- **AND** they overlap each other at or above the configured duplicate-control IoU threshold
 - **THEN** only one of them is selected as pseudo-positive
 - **AND** the non-winning object falls back to `shielded_anchor`.
 
@@ -172,32 +172,33 @@ Normative behavior:
 - **THEN** the trainer computes all enabled losses from one clean edited-target forward
 - **AND** it does not run a second teacher-forced forward for dead-anchor handling.
 
-### Requirement: Dead anchors stay out of the final target and only duplicate-like dead branches produce suppression targets
-When lightweight pseudo-positive v1 is enabled, the system SHALL keep dead anchors out of the final edited target and SHALL narrow explicit negative suppression to duplicate-like dead alternate continuations only.
+### Requirement: Dead anchors stay out of the final target and duplicate-like branches remain diagnostic-only
+When lightweight pseudo-positive v1 is enabled, the system SHALL keep dead anchors out of the final edited target. Duplicate-like dead branches MAY remain only in duplicate-control diagnostics and bookkeeping after Task 1A objective cleanup.
 
 Normative behavior:
 
 - all dead anchors MUST be excluded from the final edited target sequence,
 - dead anchors MUST NOT be reinserted into the final teacher-forced target,
 - dead anchors MUST NOT receive full-object negative CE,
-- a dead anchor is duplicate-like in v1 only when it belongs to the same local continuation boundary group as an earlier kept anchor object, overlaps that earlier kept anchor object at or above `duplicate_iou_threshold`, and has the same normalized description under the existing duplicate-style normalization rule,
-- duplicate-like dead anchors MAY remain in dead-anchor bookkeeping,
-- duplicate-like dead anchors MUST create first-divergent bad-token suppression targets only when the dead-anchor suppression objective module is enabled,
-- dead anchors that are not duplicate-like MUST NOT create `dead_anchor_suppression_targets`,
-- the first-divergent bad-token suppression targets for duplicate-like dead anchors MUST be consumed from the same clean teacher-forced forward logits rather than from a second forward.
+- a dead anchor is duplicate-like in v1 only when it belongs to the same local continuation boundary group as an earlier kept anchor object, overlaps that earlier kept anchor object at or above the configured duplicate-control IoU threshold, and has the same normalized description under the existing duplicate-style normalization rule,
+- duplicate-like dead anchors MAY remain in duplicate-control diagnostics and dead-anchor bookkeeping,
+- duplicate-like dead anchors MAY record first-divergence metadata, but that metadata is diagnostic-only,
+- duplicate-like dead anchors MUST NOT create live objective terms, positive/negative supervision, training target distributions, or loss-consumed suppression targets,
+- dead anchors that are not duplicate-like MUST NOT create duplicate-control first-divergence diagnostic metadata.
 
-#### Scenario: Duplicate-like dead branch is penalized without a second forward
+#### Scenario: Duplicate-like dead branch is recorded without supervision
 - **WHEN** a dead anchor belongs to the same local continuation boundary group as an earlier kept anchor object
-- **AND** overlaps that earlier kept anchor object at or above `duplicate_iou_threshold`
+- **AND** overlaps that earlier kept anchor object at or above the configured duplicate-control IoU threshold
 - **AND** shares the same normalized description
-- **THEN** it is eligible to create a first-divergent dead-branch suppression target
-- **AND** that suppression is applied on the logits from the single clean teacher-forced forward.
+- **THEN** it may be recorded in duplicate-control diagnostics and bookkeeping
+- **AND** any first-divergence metadata is diagnostic-only
+- **AND** it creates no live objective terms, positive/negative supervision, training target distributions, or loss-consumed suppression targets.
 
 #### Scenario: Non-duplicate dead anchor is dropped without explicit suppression
 - **WHEN** a dead anchor does not satisfy the duplicate-like predicate
 - **THEN** it is excluded from the final target
 - **AND** it creates no full-object negative CE
-- **AND** it creates no `dead_anchor_suppression_targets`.
+- **AND** it creates no duplicate-control first-divergence diagnostic metadata.
 
 ### Requirement: Pseudo-positive v1 emits auditable support and bucket observability
 When lightweight pseudo-positive v1 is enabled, the system SHALL expose enough observability to audit support counting, pseudo-positive promotion, and recovered-GT evidence.

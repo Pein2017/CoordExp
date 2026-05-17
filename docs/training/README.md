@@ -6,7 +6,7 @@ status: canonical
 domain: training
 summary: Router for Stage-1 and Stage-2 training documentation, metrics, and runbooks.
 tags: [training, stage1, stage2]
-updated: 2026-05-11
+updated: 2026-05-16
 ---
 
 # Training Docs
@@ -16,17 +16,45 @@ or metric interpretation.
 
 ## Current Training Surface Matrix
 
+The unified training architecture is currently a guarded shadow contract, not a
+wholesale replacement for every live launcher. Use it as the current design
+direction and validation surface when adding new training behavior. It has
+closed top-level domains:
+
+```text
+run, surface, data, template, supervision, objectives, observability, artifacts, runtime
+```
+
+`experimental` is the only optional top-level domain and requires an explicit
+owner/expiry/opt-in. Supported `surface.id` values are:
+
+- `stage1_json_ce`: JSON chat CE baseline.
+- `stage1_compact_trie_ce`: primary Stage-1 compact-full direction with
+  token-span supervision and trie/coordinate objectives.
+- `stage2_two_channel`: Stage-2 two-channel shadow architecture.
+
 | Surface | Status | Primary config / route | Packing status | Notes |
 |---|---|---|---|---|
-| Stage-1 baseline SFT | Current baseline | `configs/stage1/sft_base.yaml` and shared Stage-1 profiles | Static packing where supported | Teacher-forced baseline without rollout-aware matching. |
-| Stage-1 compact recursive detection | Production baseline/comparator | `configs/stage1/recursive_detection_ce_latest/prod/compact_full_support2.yaml`; runtime policy in `src/detection/runtime.py` | Packing/cache fail fast for latest compact recursive CE surfaces until sidecar target-position offset rewriting is implemented and validated | Uses `LatestDetectionTrainingConfig` top-level sections with `random_permutation_et_rmp_ce`; legacy Stage-1 SFT remains a separate baseline surface. |
+| Stage-1 JSON CE | Current baseline and shadow `surface.id: stage1_json_ce` | `configs/stage1/sft_base.yaml`, shared Stage-1 profiles, and `src/training/pipelines/stage1_json_ce.py` | Static packing where supported | JSON chat CE remains the baseline/regression surface; do not treat it as the compact-full target architecture. |
+| Stage-1 compact recursive detection | Primary Stage-1 direction and shadow `surface.id: stage1_compact_trie_ce` | `configs/stage1/recursive_detection_ce_latest/prod/compact_full_support2.yaml`; runtime policy in `src/detection/runtime.py`; shadow pipeline in `src/training/pipelines/stage1_compact_trie_ce.py` | Packing/cache fail fast for latest compact recursive CE surfaces until sidecar target-position offset rewriting is implemented and validated | Compact-full is the default Stage-1 direction: token-span supervision plus `token_ce`, `trie_ce`, `coord_soft_ce`, and `box_regression` objective profiles. Disabled objectives stay explicit in the profile. |
 | Stage-1 compact recursive detection geometry-aware softCE | A5/A6 ablation candidates | `configs/stage1/recursive_detection_ce_latest/prod/compact_full_support2_iou_gibbs_softce_a5.yaml`; `configs/stage1/recursive_detection_ce_latest/prod/compact_full_support2_ciou_gibbs_softce_a6.yaml` | Same as latest compact recursive CE | Both extend the A2/support2 comparator, keep compact-full/data/model/optimizer/schedule unchanged, and replace coordinate hard CE with `objective.coord_soft_ce`; production intent is two concurrent 4-GPU jobs, one for A5 and one for A6, after tiny/DDP4 smoke and risk audit. |
-| Stage-1 compact prefix roll-in ET-RMP-CE | E1 ablation/smoke route | `configs/stage1/recursive_detection_ce_latest/ablation/compact_full_prefix_rollin_balance2.yaml` | Packing/cache disabled; recursive sidecar offset rewriting is not implemented | Compact-full only. EOS supervision uses `<|im_end|>`; `empirical_unlabeled_poisson_v0` is smoke/ablation-only, and production requires `calibrated_formula_ref` with a versioned artifact. |
-| Stage-1 compact prefix roll-in separator-continue ablation | E2 diagnostic ablation | `configs/stage1/recursive_detection_ce_latest/ablation/compact_full_prefix_rollin_separator2.yaml` | Same as E1 | Raises only `objective.boundary.separator_continue_weight` to test whether stronger newline continuation pressure fixes generated-prefix early EOS. |
+| Stage-1 compact prefix roll-in ET-RMP-CE | E1 ablation/smoke route | `configs/stage1/recursive_detection_ce_latest/ablation/compact_full_prefix_rollin_balance2.yaml` | Packing/cache disabled; recursive sidecar offset rewriting is not implemented | Compact-full only. EOS supervision uses ordinary teacher-forced `<|im_end|>` CE. |
 | Stage-1 compact detection bridge | Legacy bridge only | `configs/stage1/compact_detection_sequence/smoke/compact_full_tiny.yaml` | Legacy SFT smoke surface; not a latest packing example | Uses legacy `TrainingConfig` plus `custom.detection_sequence_format`; do not use as a latest-schema example. |
-| Stage-2 two-channel | Active Stage-2 operator path | `configs/stage2_two_channel/` | Post-rollout trainer packing when configured; rollout generation remains unpacked | YAML-first Channel-A plus clean-prefix Channel-B training. |
+| Stage-2 two-channel | Active Stage-2 operator path and shadow `surface.id: stage2_two_channel` | `configs/stage2_two_channel/`; shadow pipeline in `src/training/pipelines/stage2_two_channel.py` | Post-rollout trainer packing when configured; rollout generation remains unpacked | YAML-first Channel-A plus clean-prefix Channel-B training. New planning direction is duplicate filtering before greedy-IoU assignment and Channel-B false-negative insertion. |
 | Stage-2 rollout-aligned | Supported compatibility variant | `custom.trainer_variant: stage2_rollout_aligned` with `rollout_matching.pipeline.*` | Compatibility path | Do not author `stage2_ab.pipeline.*` for this variant. |
 | Runtime fusion config | Dormant legacy surface | `configs/fusion/` examples only | Not part of supported training authoring | Merge JSONLs offline for multi-dataset training today. |
+
+Current cleanup decisions:
+
+- New shadow surface configs reject removed training mechanisms anywhere in the
+  payload, including duplicate-burst unlikelihood, adjacent repulsion,
+  EOS-loosen/trust/weighted-loss variants, continuation forcing, separator
+  forcing, and stop-signal gate/damping variants.
+- Historical diagnostics, old artifacts, absence tests, and compatibility
+  readers may still mention those names. Current guidance must not recommend
+  them as active training strategy.
+- Objective profiles are keyed in YAML-like authoring, but resolve in canonical
+  order: `token_ce`, `trie_ce`, `coord_soft_ce`, `box_regression`.
 
 ## Read Order
 
@@ -54,8 +82,7 @@ that a benchmark, smoke, or validation run has completed.
   by canonical launch configs until the relevant `extends` chains are migrated.
 - `configs/stage1/recursive_detection_ce_latest/prod/compact_full_support2.yaml` remains the random-permutation ET-RMP-CE production baseline/comparator.
 - `configs/stage1/recursive_detection_ce_latest/prod/compact_full_support2_iou_gibbs_softce_a5.yaml` and `configs/stage1/recursive_detection_ce_latest/prod/compact_full_support2_ciou_gibbs_softce_a6.yaml` are unlaunched geometry-aware coordinate softCE ablation candidates that preserve the A2/support2 setup except for `objective.coord_soft_ce` and run identity.
-- `configs/stage1/recursive_detection_ce_latest/ablation/compact_full_prefix_rollin_balance2.yaml` is the first `prefix_rollin_et_rmp_ce` ablation route; do not describe it as production-ready while it uses the empirical EOS prior.
-- `configs/stage1/recursive_detection_ce_latest/ablation/compact_full_prefix_rollin_separator2.yaml` is the focused E2 diagnostic ablation for the separator/free-boundary failure mode; compare it against E1 before adding a new margin loss.
+- `configs/stage1/recursive_detection_ce_latest/ablation/compact_full_prefix_rollin_balance2.yaml` is the first `prefix_rollin_et_rmp_ce` ablation route; do not describe it as production-ready.
 - `configs/stage1/compact_detection_sequence/` is a legacy bridge around
   `TrainingConfig` plus `custom.detection_sequence_format`.
 - Strict template owner: `src/detection/template.py`.
@@ -110,6 +137,10 @@ latest-detection objective subkeys, but no new CLI flags.
 - `src/common/detection_sequence.py`
 - `src/common/detection_compact_rows.py`
 - `src/bootstrap/`
+- `src/training/surfaces.py`
+- `src/training/pipelines/`
+- `src/training/objectives/`
+- `src/training/observability/`
 - `configs/stage1/recursive_detection_ce_latest/`
 - `configs/stage1/compact_detection_sequence/`
 - `configs/_shared/latest_detection/` authoring snippets, not current launch inheritance

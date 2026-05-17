@@ -5,13 +5,45 @@ doc_type: reference
 status: canonical
 domain: training
 summary: Canonical training metric families for Stage-1 and the active Stage-2 single-pass contract.
-updated: 2026-05-07
+updated: 2026-05-16
 ---
 
 # Training Metrics and Losses
 
 This reference describes the canonical metric families for Stage-1 and the
 active single-pass Stage-2 contract.
+
+## Observability Event Contract
+
+Current training observability is typed at the producer boundary:
+
+- `MetricEvent` is the canonical metric record for objective losses, counts,
+  gauges, weighted means, ratios, and legacy aliases.
+- `MetricEvent` identities include the metric key plus axes such as `stage`,
+  `channel`, `objective_id`, `provenance`, and reducer/unit metadata. Flattening
+  for ms-swift happens only at the logging boundary through
+  `flatten_metric_events`.
+- New writers should produce clean current keys. Removed training-mechanism
+  writer keys are rejected by `src/training/observability/service.py`.
+- Legacy flat metric keys are tolerated only through read/adaptation helpers
+  such as `src/training/observability/legacy.py::adapt_legacy_metric`; tolerant
+  reads do not authorize new writes.
+
+Structured non-scalar diagnostics use `DiagnosticEvent`:
+
+- `DiagnosticEvent` is for bounded payloads that should not become scalar
+  training metrics.
+- Diagnostic profiles are `off`, `standard`, and `debug`.
+- `standard` keeps a small scalar summary and drops nested payloads.
+- `debug` keeps richer nested payloads, but still enforces entry, item, depth,
+  and string-length bounds.
+- Event payloads may be truncated; consumers must check the event `truncated`
+  flag before treating a diagnostic as complete evidence.
+
+When interpreting any metric run, join the metric stream against the resolved
+run artifacts documented in [`../ARTIFACTS.md`](../ARTIFACTS.md), especially
+`resolved_config.json`, `effective_runtime.json`, and
+`experiment_manifest.json`.
 
 ## Stage-1 Baseline Metric Families
 
@@ -41,7 +73,6 @@ Stage-1 training families that parity tests expect to stay user-visible.
   - `coord_softce_w1/w1`
   - `coord_softce_w1/gate`
   - `coord_softce_w1/text_gate`
-  - `coord_softce_w1/adjacent_repulsion`
 - coord diagnostics:
   - `coord_diag/enabled`
   - `coord_diag/loss`
@@ -51,14 +82,10 @@ Stage-1 training families that parity tests expect to stay user-visible.
   - `coord_diag/w1`
   - `coord_diag/gate`
   - `coord_diag/text_gate`
-  - `coord_diag/adjacent_repulsion`
   - `coord_diag/coord_tokens`
   - `coord_diag/coord_tokens_per_sample`
   - `coord_diag/coord_vocab_mass`
   - `coord_diag/text_coord_vocab_mass`
-  - `coord_diag/adjacent_repulsion_pair_count`
-  - `coord_diag/adjacent_repulsion_applied_count`
-  - `coord_diag/adjacent_repulsion_copy_score_mean`
   - `coord_diag/acc_top5`
   - `coord_diag/p_gt_mean`
   - `coord_diag/margin_mean`
@@ -160,7 +187,7 @@ Canonical recursive CE objective `MetricEvent` keys:
 - `detection_sequence/objective/recursive_detection_ce/batch_size`
 
 Diagnostic-only recursive CE objective keys expose internal multi-positive and
-EOS forces without changing the loss tensor:
+ordinary EOS CE behavior without changing the loss tensor:
 
 - `recursive_detection_ce/trie_valid_mass`
 - `recursive_detection_ce/support_loss`
@@ -170,14 +197,11 @@ EOS forces without changing the loss tensor:
 - `recursive_detection_ce/type_gate_allowed_tokens`
 - `recursive_detection_ce/type_gate_weight`
 - `recursive_detection_ce/eos_unweighted_ce`
-- `recursive_detection_ce/eos_weighted_loss`
-- `recursive_detection_ce/eos_trust_weight`
 
 `support_loss` and `balance_loss` are unweighted branch-local components.
 `type_gate_loss` is the weighted allowed-type-mass contribution.
-`eos_weighted_loss` equals `eos_unweighted_ce * eos_trust_weight` at stop
-targets, so it is the right key for checking whether censored EOS supervision
-is actually being softened.
+`eos_unweighted_ce` tracks ordinary teacher-forced `<|im_end|>` CE at stop
+targets.
 
 Canonical compact recursive-detection Phase-1 semantic `MetricEvent` keys:
 
@@ -247,10 +271,6 @@ trainer metric implementation entrypoints are:
 Use these modules for source-level changes. Keep `mixins.py` import-compatible
 for existing trainer imports and downstream tests.
 
-### Retired Stage-1 Continuation Metrics
-
-The former continuation metric family is no longer an active logging contract. Current metric claims should use the active baseline, compact recursive detection, or Stage-2 metric families documented above, with exact scope labels and artifact references.
-
 ## Interpreting Key Stage-2 Families
 
 - `loss/<...>`:
@@ -301,23 +321,22 @@ Channel-B keeps rollout-specific provenance:
 - rollout-text atoms:
   - `loss/B_rollout_text/struct_ce`
   - `loss/B_rollout_text/desc_ce`
-- duplicate suppression:
-  - `train/optimization/loss_duplicate_burst_unlikelihood`
+- duplicate-burst UL objective loss keys are retired; `train/optimization/loss_duplicate_burst_unlikelihood`
+  is no longer a live training metric
 - rollout-context coord atoms:
-- `loss/B_coord/bbox_smoothl1`
-- `loss/B_coord/bbox_ciou`
+  - `loss/B_coord/bbox_smoothl1`
+  - `loss/B_coord/bbox_ciou`
   - `loss/B_coord/bbox_log_wh`
   - `loss/B_coord/bbox_oversize`
   - `loss/B_coord/coord_token_ce`
   - `loss/B_coord/coord_soft_ce`
   - `loss/B_coord/coord_w1`
-  - `loss/B_coord/adjacent_repulsion`
   - `loss/B_coord/coord_gate`
   - `loss/B_coord/text_gate`
 - coord diagnostics:
   - `coord_diag/B/*`
 - gradient monitors:
-- `gradmon/*/B_coord/*` when enabled
+  - `gradmon/*/B_coord/*` when enabled
 
 Interpretation note:
 
@@ -327,7 +346,8 @@ Interpretation note:
 - duplicate control now runs on the assembled anchor plus explorer object
   surface before GT matching
 - non-exempt non-survivors disappear from the positive clean prefix and only
-  contribute the unchanged collapsed UL payload shape
+  contribute duplicate-control diagnostic metadata and counters; live
+  duplicate-burst UL loss keys remain retired
 
 ## Channel-B Pseudo-Positive And Arbitrary-K Notes
 
@@ -405,10 +425,16 @@ finalize as weighted means:
 - `dup/raw/saturation_rate`
 - `dup/raw/duplicate_like_max_cluster_size`
 - `dup/raw/desc_entropy`
+
+Raw duplicate-pathology counters are also emitted on the raw pre-match object
+surface, but remain additive counts:
+
 - `dup/raw/near_iou90_pairs_same_desc_count`
 - `dup/raw/near_iou90_pairs_any_desc_count`
 
-Canonical Channel-B duplicate-control counters remain additive:
+Canonical Channel-B duplicate-control counters remain additive diagnostic
+metadata only. Duplicate-burst UL is not part of the current canonical
+objective list:
 
 - `stage2_ab/channel_b/dup/N_raw_bbox_valid`
 - `stage2_ab/channel_b/dup/N_clean_accepted`
@@ -416,8 +442,8 @@ Canonical Channel-B duplicate-control counters remain additive:
 - `stage2_ab/channel_b/dup/N_clusters_exempt`
 - `stage2_ab/channel_b/dup/N_clusters_suppressed`
 - `stage2_ab/channel_b/dup/N_objects_suppressed`
-- `stage2_ab/channel_b/dup/N_ul_boundaries`
-- `stage2_ab/channel_b/dup/N_duplicate_burst_unlikelihood_skipped_no_divergence`
+- `stage2_ab/channel_b/dup/N_duplicate_control_first_divergence_boundaries`
+- `stage2_ab/channel_b/dup/N_duplicate_control_first_divergence_skipped_no_divergence`
 
 Use `docs/training/STAGE2_RUNBOOK.md` for the contract that produces these
 families and `docs/ARTIFACTS.md` for where the corresponding monitor dumps and

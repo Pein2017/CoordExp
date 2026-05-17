@@ -5,7 +5,7 @@ doc_type: reference
 status: canonical
 domain: training
 summary: Stage-1 objective surfaces and coord-token training behavior.
-updated: 2026-05-11
+updated: 2026-05-16
 ---
 
 # Coord Objective & Adapter
@@ -20,7 +20,7 @@ Scope note:
 - For Stage-2 pipeline-declared training, the canonical objective surface now lives under:
   - `stage2_ab.pipeline` for `custom.trainer_variant: stage2_two_channel`
   - `rollout_matching.pipeline` for `custom.trainer_variant: stage2_rollout_aligned`
-- In those Stage-2 paths, `coord_reg`, `bbox_geo`, and `loss_duplicate_burst_unlikelihood` are declared through the pipeline surface described in:
+- In those Stage-2 paths, `token_ce`, `bbox_geo`, `bbox_size_aux`, and `coord_reg` are declared through the pipeline surface described in:
   - `docs/training/STAGE2_RUNBOOK.md`
   - `docs/training/METRICS.md`
 - Legacy `custom.coord_soft_ce_w1.*` authoring should not be used for pipeline-declared Stage-2 configs.
@@ -43,6 +43,40 @@ Scope note:
   - `custom.bbox_geo.*`, `custom.bbox_size_aux.*`, soft CE, W1, and trainer-side
     rollout/Stage-2 surfaces are intentionally out of scope and should be
     treated as invalid for that experiment
+
+## Current Stage-1 Direction
+
+The new unified training architecture defines two Stage-1 shadow surfaces:
+
+- `surface.id: stage1_compact_trie_ce`
+  - primary direction for new Stage-1 architecture work
+  - uses `template.id: compact_full`
+  - supervises token spans, object-entry trie targets, coordinate soft targets,
+    and optional decoded-box regression through typed objective atoms
+- `surface.id: stage1_json_ce`
+  - JSON chat CE baseline for regression and fallback comparison
+  - keeps the baseline teacher-forced JSON surface available without making it
+    the compact-full default
+
+The canonical objective profile order is:
+
+```text
+token_ce, trie_ce, coord_soft_ce, box_regression
+```
+
+Objective authoring is keyed, but the resolver emits this deterministic order.
+Disabled objectives remain explicit so ablations preserve their intended
+contract instead of silently deleting siblings.
+
+Cleanup boundary:
+
+- Compact-full Stage-1 should not reintroduce duplicate-burst unlikelihood,
+  adjacent repulsion, EOS-loosen/trust/weighted-loss variants, continuation
+  forcing, separator forcing, or stop-signal gate/damping variants.
+- The removed names may appear in historical progress notes, diagnostic probes,
+  compatibility readers, or absence tests only.
+- Continue-vs-EOS probes remain diagnostic-only and must not be converted into
+  production training mechanisms.
 
 ## Current Mechanism Note (Interpretation, Not Stable Contract)
 
@@ -71,14 +105,14 @@ Working interpretation:
   make duplication self-reinforcing
 
 This does **not** yet prove that clean from-scratch pure CE fully solves the
-problem. The current CE-side references on disk remain continuation-style
-proxies unless a token-compatible pure-CE checkpoint is evaluated under the
-same onset-local protocol.
+problem. Treat the older CE-side references as diagnostic evidence, not current
+architecture guidance, unless a token-compatible pure-CE checkpoint is
+evaluated under the same onset-local protocol.
 
 ## Coord distribution loss (coord tokens)
 
-CoordExp can supervise coordinate tokens with **distribution-based losses**
-(recommended default for the existing `xyxy` Stage-1 baseline):
+CoordExp can supervise coordinate tokens with **distribution-based losses** on
+the legacy `xyxy` Stage-1 JSON baseline:
 
 - Standard full-vocab CE is applied **only to non-coordinate tokens** (text + JSON structure).
 - At `<|coord_*|>` positions, the model is supervised via:
@@ -92,18 +126,15 @@ custom:
   coord_soft_ce_w1:
     enabled: true
     # total_loss += ce_weight * CE + soft_ce_weight * softCE + w1_weight * W1
-    #             + gate_weight * gate + adjacent_repulsion_weight * adjacent_repulsion
+    #             + gate_weight * gate + text_gate_weight * text_gate
     ce_weight: 0.0
     soft_ce_weight: 1.0
     w1_weight: 1.0
     gate_weight: 1.0
+    text_gate_weight: 0.0
     temperature: 1.0
     target_sigma: 2.0
     target_truncate: 16
-    adjacent_repulsion_weight: 0.0
-    adjacent_repulsion_filter_mode: same_desc
-    adjacent_repulsion_margin_ratio: 0.05
-    adjacent_repulsion_copy_margin: 0.8
 ```
 
 **Notes**:
@@ -115,8 +146,8 @@ custom:
   `coord_x1` / `coord_y1` escape from the previous/local neighborhood as the
   primary rollout diagnostic surface.
 - Logged losses (train/eval parity, eval uses `eval_` prefix):
-  - Stage-1 coord-family loss keys include `coord_softce_w1/loss`, `coord_softce_w1/soft_ce`, `coord_softce_w1/w1`, `coord_softce_w1/gate`, and `coord_softce_w1/adjacent_repulsion`
-  - Stage-1 coord diagnostics include `coord_diag/loss`, `coord_diag/soft_ce`, `coord_diag/w1`, `coord_diag/gate`, `coord_diag/adjacent_repulsion`, `coord_diag/adjacent_repulsion_pair_count`, `coord_diag/adjacent_repulsion_applied_count`, `coord_diag/adjacent_repulsion_copy_score_mean`, plus `coord_diag/coord_vocab_mass`, `coord_diag/coord_tokens`, and the mode flag `coord_diag/enabled`
+  - Stage-1 coord-family loss keys include `coord_softce_w1/loss`, `coord_softce_w1/soft_ce`, `coord_softce_w1/w1`, `coord_softce_w1/gate`, and `coord_softce_w1/text_gate`
+  - Stage-1 coord diagnostics include `coord_diag/loss`, `coord_diag/soft_ce`, `coord_diag/w1`, `coord_diag/gate`, `coord_diag/text_gate`, `coord_diag/coord_vocab_mass`, `coord_diag/text_coord_vocab_mass`, `coord_diag/coord_tokens`, and the mode flag `coord_diag/enabled`
 - Stage-2 note:
   - `stage2_two_channel` and `stage2_rollout_aligned` still use provenance-aware metric families, but the active single-pass Stage-2 contract now routes Channel-A through `loss/text/*`, `loss/coord/*`, and `coord_diag/*`, while Channel-B uses `loss/B_rollout_text/*`, `loss/B_coord/*`, and `coord_diag/B/*`.
   - Historical iterative groups such as `loss/A1_*`, `loss/A2_*`, `coord_diag/A1/*`, and `coord_diag/A2/*` are no longer part of the active Stage-2 contract.
@@ -129,11 +160,10 @@ The active compact Stage-1 owner is the latest detection stack under `src/detect
 - `configs/stage1/recursive_detection_ce_latest/prod/compact_full_support2_iou_gibbs_softce_a5.yaml` is the A5 candidate: A2/support2 plus `iou_gibbs_v0` coordinate soft targets with `tau=0.0090909091` from the train one-token IoU-loss median.
 - `configs/stage1/recursive_detection_ce_latest/prod/compact_full_support2_ciou_gibbs_softce_a6.yaml` is the paired A6 candidate: same setup as A5 but with `ciou_gibbs_v0`; production preparation assumes a separate 4-GPU slice for A5 and A6 rather than one 8-GPU run.
 - `configs/stage1/recursive_detection_ce_latest/ablation/compact_full_prefix_rollin_balance2.yaml` is the E1 `prefix_rollin_et_rmp_ce` ablation route for Prefix-Closed Multi-Target SFT.
-- `configs/stage1/recursive_detection_ce_latest/ablation/compact_full_prefix_rollin_separator2.yaml` is the E2 separator-continue ablation. It keeps E1 support/balance/type-gate/EOS settings and changes only the append-boundary weights so the `\n` continuation token gets more pressure before `<|object_ref_start|>` can be emitted.
 
-`prefix_rollin_et_rmp_ce` is compact-full only. It requires `detection_template.id: compact_full`, masks roll-in prefix labels, samples `K` uniformly over `[0, object_count]`, keeps `suffix_order: same_sampled_permutation` for V1, and expresses support/balance weights under `objective.target`, append-boundary weights under `objective.boundary`, and not obsolete flat trie-weight aliases.
+`prefix_rollin_et_rmp_ce` is compact-full only. It requires `detection_template.id: compact_full`, masks roll-in prefix labels, samples `K` uniformly over `[0, object_count]`, keeps `suffix_order: same_sampled_permutation` for V1, and expresses support/balance weights under `objective.target`, not obsolete flat trie-weight aliases.
 
-EOS supervision for this variant targets the Qwen chat-template assistant stop marker `<|im_end|>` only. Text-level terminators such as `<|endoftext|>` or `<|end_of_text|>` must not be used as training EOS for this surface. The initial `empirical_unlabeled_poisson_v0` EOS prior is smoke/ablation-only: production configs must use `objective.eos.eos_trust_weight.source: calibrated_formula_ref` with a versioned calibration artifact and validation evidence.
+EOS supervision for this variant targets the Qwen chat-template assistant stop marker `<|im_end|>` only, using ordinary teacher-forced CE. Text-level terminators such as `<|endoftext|>` or `<|end_of_text|>` must not be used as training EOS for this surface.
 
 Generation-time HF/Qwen surfaces use the global chat-token contract
 `eos_token_id=id("<|im_end|>")` and `pad_token_id=id("<|endoftext|>")`.
@@ -153,13 +183,9 @@ substitutions. They must be `uniform_permutation` and
 is likewise the source of truth for optimizer-step budget; YAML must not also
 author `training.gradient_accumulation_steps`.
 
-The append-boundary loss is also authored config truth. `objective.boundary`
-must use `type: compact_full_append_boundary` and explicitly set
-`separator_continue_weight`, `eos_stop_weight`, and `component_weight`. E1 keeps
-the historical `0.5 / 0.5 / 0.3` boundary mix. E2 raises
-`separator_continue_weight` to `2.0` while leaving `eos_stop_weight=0.5` and
-`component_weight=0.3`, targeting the diagnosed failure where free decode stops
-at `<|im_end|>` before emitting the required separator newline.
+Separator, terminal, and chat-stop positions are ordinary recursive CE targets.
+They do not have a separate authored weighting section or metric; `<|im_end|>`
+is supervised with the same teacher-forced CE path as other hard targets.
 
 Compact-full token-row training uses 1002 trainable rows through the persisted
 `coord_offset_adapter` module name: the 1000 coord rows plus
@@ -194,20 +220,6 @@ Required training-health diagnostics for this surface include:
   `recursive_detection_ce/balance_loss`: support-vs-balance behavior for valid
   next-object entries. Healthy support should not collapse while balance remains
   nonzero enough to discourage one object from taking all probability mass.
-- `recursive_detection_ce/entry/continue_minus_eos_margin`: the local
-  continuation margin, computed as valid next-object log-mass minus the
-  `<|im_end|>` logit. Positive values mean the model prefers continuing over
-  stopping after a separator has already been supplied.
-- `recursive_detection_ce/free_boundary/continue_minus_eos_margin` and
-  `recursive_detection_ce/free_boundary/continue_mass`: the append-boundary
-  signal for object separators, computed at the token where autoregressive
-  decode must choose `\n` over `<|im_end|>` before the next object can start.
-  This is the more direct early-stop health signal for non-empty prefixes.
-- `recursive_detection_ce/boundary/separator_continue_weight`,
-  `recursive_detection_ce/boundary/eos_stop_weight`, and
-  `recursive_detection_ce/boundary/component_weight`: the runtime loss weights
-  actually used by the trainer. These should match the materialized
-  `objective.boundary` block so separator ablations are config-truthful.
 - `recursive_detection_ce/entry/valid_child_entropy` and
   `recursive_detection_ce/entry/valid_child_kl_to_uniform`: whether valid
   children remain reasonably balanced or collapse to one easy object. The KL is
@@ -216,10 +228,8 @@ Required training-health diagnostics for this surface include:
   `detection_sequence/coordinate/token_ce/full_vocab`: coordinate-token
   learning pressure, which is often the hard part even when description/schema
   tokens look saturated.
-- `recursive_detection_ce/eos_trust_weight`,
-  `recursive_detection_ce/eos_unweighted_ce`, and
-  `recursive_detection_ce/eos_weighted_loss`: whether the censored-EOS policy is
-  weakening stop supervision as intended.
+- `recursive_detection_ce/eos_unweighted_ce`: ordinary teacher-forced
+  `<|im_end|>` CE at stop targets.
 - `recursive_detection_ce/type_gate_loss`,
   `recursive_detection_ce/type_gate_allowed_mass`,
   `recursive_detection_ce/type_gate_allowed_tokens`, and
@@ -233,8 +243,9 @@ multi-target positions were present in the logged rows. For tiny smoke runs,
 prefer `effective_batch_size >= 4` when checking trend shape so uniformly sampled
 `K in [0, N]` does not produce many EOS-only optimizer steps.
 
-Use the forced-prefix continue-vs-EOS probe before changing EOS or balance
-hyperparameters based on decode under-generation alone:
+For analysis only, use the forced-prefix continue-vs-EOS probe before changing
+EOS or balance hyperparameters based on decode under-generation alone. This is
+a diagnostic probe, not a forced-continuation training mechanism:
 
 ```bash
 conda run -n ms python -m src.analysis.prefix_rollin_teacher_forced_diagnostic \
@@ -282,10 +293,9 @@ model knows how to start the next object after a newline but prefers
 continuation failure, not as evidence that the object-entry trie target itself
 collapsed.
 
-Current schema enforces production EOS source/reference shape. The stronger
-content-level check that a calibration artifact is `production_approved` with a
-full validation probe remains an artifact/registry gate until a concrete
-validator is introduced.
+The current training contract does not add an EOS calibration source or
+production approval gate. Continue-vs-EOS probes are diagnostic only; training
+keeps `<|im_end|>` as an ordinary teacher-forced CE target with weight `1.0`.
 
 Retired continuation code, config, and runtime paths should not be used for new training. Historical evidence remains in git history, archived progress notes, and run artifacts.
 
