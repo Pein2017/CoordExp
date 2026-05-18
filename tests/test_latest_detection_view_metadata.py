@@ -456,6 +456,22 @@ def test_sft_root_image_dir_uses_latest_compact_view_metadata_not_cwd(
     assert Path(resolved) != Path.cwd().resolve()
 
 
+def test_sft_custom_root_image_dir_uses_view_metadata_not_jsonl_dir(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    jsonl_path, image_root = _write_latest_compact_view(tmp_path)
+    monkeypatch.chdir(tmp_path / "public_data/coco/views/coco80")
+
+    resolved = _resolve_root_image_dir_for_training(
+        latest_detection_config=None,
+        train_jsonl=jsonl_path,
+    )
+
+    assert resolved == str(image_root.resolve())
+    assert Path(resolved) != jsonl_path.parent.resolve()
+
+
 def test_sft_accepts_preexisting_root_image_dir_resolving_to_metadata_root(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

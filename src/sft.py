@@ -23,6 +23,8 @@ from public_data.view_contracts import (
     COORDINATE_STORAGE_INTEGER,
     ViewMetadata,
     load_view_metadata,
+    resolve_view_image_root,
+    resolve_view_repo_root,
 )
 
 try:
@@ -1455,6 +1457,30 @@ def _load_sibling_view_metadata(jsonl_path: str) -> ViewMetadata | None:
     return load_view_metadata(meta_path)
 
 
+def _resolve_sibling_view_image_root(jsonl_path: str | Path) -> Path | None:
+    path = Path(jsonl_path)
+    metadata = _load_sibling_view_metadata(str(path))
+    if metadata is None:
+        return None
+
+    if not _jsonl_belongs_to_view_metadata(str(path), metadata):
+        raise ValueError(
+            f"train_jsonl={path} is not listed in sibling view meta.json "
+            "primary_jsonl."
+        )
+
+    metadata_repo_root = (
+        None
+        if Path(metadata.image_store).is_absolute()
+        else resolve_view_repo_root(metadata, path.parent)
+    )
+    return resolve_view_image_root(
+        metadata,
+        path.parent,
+        repo_root=metadata_repo_root,
+    )
+
+
 def _jsonl_belongs_to_view_metadata(jsonl_path: str, metadata: ViewMetadata) -> bool:
     jsonl_name = Path(jsonl_path).name
     return jsonl_name in set(metadata.primary_jsonl.values())
@@ -1912,6 +1938,10 @@ def _resolve_root_image_dir_for_training(
                 image_root=image_root,
             )
         )
+
+    view_image_root = _resolve_sibling_view_image_root(train_jsonl)
+    if view_image_root is not None:
+        return str(view_image_root)
 
     return os.path.abspath(os.path.dirname(str(train_jsonl)))
 

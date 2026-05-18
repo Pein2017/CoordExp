@@ -1,0 +1,9 @@
+extends: ./compact_full_et_rmp_ce_ckpt3664_hf_coco80_view_fallback1p0_2steps.yaml
+
+training:
+  run_name: smoke_2steps-coco80_view-fallback0p5-compact_full-et_rmp_ce_ckpt3664
+  artifact_subdir: stage2_ab/smoke/coco80_view_fallback_ablation/fallback0p5_2steps
+
+stage2_ab:
+  channel_b:
+    fallback_loss_weight: 0.5
