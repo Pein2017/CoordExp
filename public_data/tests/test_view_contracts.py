@@ -27,7 +27,7 @@ def _valid_image_store_metadata(**overrides: object) -> dict[str, object]:
         "image_path_semantics": "image_store_relative",
         "max_pixels": 1048576,
         "visual_token_budget": 1024,
-        "image_factor": 28,
+        "image_factor": 32,
         "image_root": "public_data/coco/images/res-1024",
         "splits": ["train", "val"],
     }
@@ -498,7 +498,7 @@ def test_image_store_metadata_is_frozen_public_contract() -> None:
         image_path_semantics="image_store_relative",
         max_pixels=1048576,
         visual_token_budget=1024,
-        image_factor=28,
+        image_factor=32,
         image_root="public_data/coco/images/res-1024",
         splits=("train", "val"),
     )

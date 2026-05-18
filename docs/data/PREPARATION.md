@@ -5,7 +5,7 @@ doc_type: workflow
 status: canonical
 domain: data
 summary: Offline preparation and intake workflow for dataset conversion and validation.
-updated: 2026-03-30
+updated: 2026-05-17
 ---
 
 # Data Preprocessing & Intake Pipeline
@@ -32,6 +32,37 @@ Raw annotations/images
 ```
 
 For LVIS, the converter is `public_data/scripts/convert_lvis.py`. For other datasets, add a matching converter that outputs the same JSONL contract (see [`CONTRACT.md`](CONTRACT.md)).
+
+---
+
+## Phase 1 Public-Data View Architecture
+
+Phase 1 separates COCO's reusable resized image store from model/eval
+annotation views:
+
+```text
+public_data/coco/images/res-1024/
+public_data/coco/views/coco80/full/
+public_data/coco/views/coco80/len-12000/
+public_data/coco/views/coco80/max-60/
+public_data/coco/views/coco80-lvis-proxy/len-12000/
+```
+
+Canonical view JSONLs under `public_data/coco/views/**` use:
+
+- `images[]` paths relative to the declared image store, not the JSONL
+  directory;
+- bare norm1000 integer `bbox_2d` / `poly` coordinates in strict JSON;
+- assistant rendering as Qwen `<|coord_k|>` tokens at the template/builder
+  boundary;
+- local `meta.json` for view/image-store metadata;
+- Git-tracked provenance manifests under `manifests/public_data_provenance/`
+  as the cross-node source of truth.
+
+Generated `public_data/coco/images/**` and `public_data/coco/views/**`
+artifacts are local data products. Do not treat the legacy preset roots as
+deleted during Phase 1, and do not assume production configs have all migrated
+until their config slice does so explicitly.
 
 ---
 
@@ -139,7 +170,7 @@ PYTHONPATH=. conda run -n ms python public_data/scripts/filter_low_diversity_ima
 ```
 Tip: add `--stats_json output/<name>.json` to record filter statistics for reproducibility.
 
-### Object-Count Cap (Transparency)
+### Object-Count Cap (Legacy / Transparency)
 
 If you want simple, transparent control over sequence length, cap objects per image:
 ```bash
@@ -149,15 +180,20 @@ PYTHONPATH=. conda run -n ms python public_data/scripts/filter_jsonl_max_objects
   --max-objects 60
 ```
 
+`max_objects` is legacy policy for derived artifacts such as `max-60` views.
+Current compact-full training should prefer prebuilt view JSONLs over runtime
+object-count admission or truncation.
+
 ### Total-Token Budget (Compact-Full)
 
 For latest compact-full training, prefer filtering by total compact-full token
-budget instead of object count. The COCO factory counts:
+budget instead of object count. The 12k COCO view budget counts:
 
 - post-merge Qwen3-VL image patch tokens;
 - system/user chat-template tokens;
 - the rendered compact-full assistant detection sequence;
-- all object rows present after optional LVIS-proxy augmentation.
+- all rendered assistant object rows present after optional LVIS-proxy
+  augmentation.
 
 Use the same tokenizer as the target compact-full checkpoint:
 
@@ -175,10 +211,11 @@ PYTHONPATH=. conda run -n ms python public_data/scripts/build_coco_length_budget
   --force
 ```
 
-The length-budget roots are derived JSONL/meta-only artifacts. They share the
-same 1024-resolution image files by using relative JSONL image paths that point
-back to `public_data/coco/rescale_32_1024_bbox/images/`; do not copy or relink
-images for sibling artifacts at the same resolution.
+The legacy length-budget roots above are derived JSONL/meta-only artifacts.
+Phase 1 canonical views write the same policy under
+`public_data/coco/views/{coco80,coco80-lvis-proxy}/len-12000/` and resolve
+`images[]` through `public_data/coco/images/res-1024/`. Do not copy images into
+each annotation view.
 
 ---
 
@@ -276,7 +313,8 @@ This exports both `bbox_only` and `poly_prefer_semantic` train/val JSONLs. See `
   canonical preset root.
 - For LVIS, pick a dataset-fixed variant that matches your ablation goal:
   - Geometry ablations: use `public_data/scripts/export_lvis_bbox_poly_prefer_semantic_max60.sh` outputs under `public_data/lvis/`.
-  - Sequence-length control: apply a simple record-level `max_objects` cap (e.g., 60).
+  - Legacy sequence-length control: consume a prepared `max-60` / `max_objects`
+    artifact when that historical comparison is intentional.
   - Optional: apply low-diversity filtering (`filter_low_diversity_images.py`) if you want to drop dense repetitive scenes.
 - Multi-dataset training:
   - merge JSONLs offline (see `public_data/scripts/merge_jsonl.py`)

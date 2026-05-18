@@ -451,7 +451,13 @@ class LengthBudgetViewBuilder:
 
         if not self._config.dry_run:
             output_jsonl.parent.mkdir(parents=True, exist_ok=True)
-        stats = SplitLengthStats(split=split, source_jsonl=str(source_jsonl))
+        stats = SplitLengthStats(
+            split=split,
+            source_jsonl=_safe_artifact_reference_path(
+                source_jsonl,
+                repo_root=self._config.repo_root,
+            ),
+        )
         summary = _empty_summary()
         output_handle = None
         try:
@@ -479,7 +485,12 @@ class LengthBudgetViewBuilder:
         stats_ref = self._stats_writer.write_length_stats(
             view_root=output_jsonl.parent,
             split=split,
-            stats=stats.as_dict(output_jsonl=str(output_jsonl)),
+            stats=stats.as_dict(
+                output_jsonl=_safe_artifact_reference_path(
+                    output_jsonl,
+                    repo_root=self._config.repo_root,
+                )
+            ),
             dry_run=self._config.dry_run,
         )
         return summary, stats_ref
@@ -513,7 +524,10 @@ class LegacyMaxObjectsViewBuilder:
             sample_policy={
                 "type": "max_objects_legacy",
                 "max_objects": int(max_objects),
-                "membership_source": str(self._config.legacy_max_objects_source),
+                "membership_source": _safe_artifact_reference_path(
+                    self._config.legacy_max_objects_source,
+                    repo_root=self._config.repo_root,
+                ),
             },
             source_suffix=source_suffix,
             assume_normalized=True,
@@ -606,7 +620,13 @@ class AllProxyResearchViewBuilder:
 
         if not self._config.dry_run:
             output_jsonl.parent.mkdir(parents=True, exist_ok=True)
-        stats = SplitLengthStats(split=split, source_jsonl=str(source_jsonl))
+        stats = SplitLengthStats(
+            split=split,
+            source_jsonl=_safe_artifact_reference_path(
+                source_jsonl,
+                repo_root=self._config.repo_root,
+            ),
+        )
         summary = _empty_summary()
         output_handle = None
         try:
@@ -640,7 +660,12 @@ class AllProxyResearchViewBuilder:
         stats_ref = self._stats_writer.write_length_stats(
             view_root=output_jsonl.parent,
             split=split,
-            stats=stats.as_dict(output_jsonl=str(output_jsonl)),
+            stats=stats.as_dict(
+                output_jsonl=_safe_artifact_reference_path(
+                    output_jsonl,
+                    repo_root=self._config.repo_root,
+                )
+            ),
             dry_run=self._config.dry_run,
         )
         return summary, stats_ref
@@ -1245,7 +1270,7 @@ class ViewManifestPayloadBuilder:
             "image_path_semantics": IMAGE_PATH_SEMANTICS_IMAGE_STORE_RELATIVE,
             "max_pixels": 1024 * 1024,
             "visual_token_budget": 1024,
-            "image_factor": 28,
+            "image_factor": 32,
             "image_root": _repo_relative_or_abs(
                 self._config.image_store_root,
                 repo_root=self._config.repo_root,

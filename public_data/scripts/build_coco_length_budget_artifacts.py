@@ -530,13 +530,17 @@ class ProvenanceManifestWriter:
         )
         payload = {
             "schema_version": 1,
+            "artifact_type": "processed_directory",
             "relative_path": str(relative_path),
             "producer_script": str(producer_script),
             "working_dir": ".",
             "command": command,
             "inputs": inputs,
             "key_params": key_params,
-            "checksums": _jsonl_checksums(self._repo_root / relative_path),
+            "checksums": _jsonl_checksums(
+                self._repo_root / relative_path,
+                repo_root=self._repo_root,
+            ),
             "code_ref": {
                 "git_commit": _git_head(),
                 "git_dirty_allowed": True,
@@ -882,13 +886,13 @@ def _write_pipeline_manifest(
     )
 
 
-def _jsonl_checksums(root: Path) -> dict[str, Any]:
+def _jsonl_checksums(root: Path, *, repo_root: Path = REPO_ROOT) -> dict[str, Any]:
     """Return JSONL-only checksum payload for a materialized artifact root."""
 
     files = []
     aggregate_lines = []
     for path in sorted(root.glob("*.jsonl")):
-        rel = _repo_relative(path)
+        rel = _repo_relative_to(path, repo_root=repo_root)
         sha = _sha256(path)
         records = _count_nonempty_lines(path)
         size = path.stat().st_size
@@ -900,12 +904,15 @@ def _jsonl_checksums(root: Path) -> dict[str, Any]:
         }
         files.append(entry)
         aggregate_lines.append(f"{rel} {sha} {size} {records}\n")
+    if not files:
+        raise ValueError(f"no JSONL files found under artifact root: {root}")
     aggregate = hashlib.sha256("".join(aggregate_lines).encode("utf-8")).hexdigest()
     return {
         "scope": "jsonl_training_samples_only",
         "algorithm": "sha256",
-        "files": files,
         "aggregate_sha256": aggregate,
+        "aggregate_source": "sorted path sha256 size_bytes records lines",
+        "files": files,
     }
 
 
@@ -1052,8 +1059,14 @@ def _count_nonempty_lines(path: Path) -> int:
 def _repo_relative(path: Path) -> Path:
     """Return a path relative to the repository root."""
 
-    absolute_path = path if path.is_absolute() else REPO_ROOT / path
-    return absolute_path.absolute().relative_to(REPO_ROOT.absolute())
+    return _repo_relative_to(path, repo_root=REPO_ROOT)
+
+
+def _repo_relative_to(path: Path, *, repo_root: Path) -> Path:
+    """Return ``path`` relative to ``repo_root``."""
+
+    absolute_path = path if path.is_absolute() else repo_root / path
+    return absolute_path.absolute().relative_to(repo_root.absolute())
 
 
 def _resolve_repo_path(path: Path) -> Path:

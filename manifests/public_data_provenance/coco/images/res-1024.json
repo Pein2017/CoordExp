@@ -1,0 +1,49 @@
+{
+  "schema_version": 1,
+  "artifact_type": "image_store",
+  "relative_path": "public_data/coco/images/res-1024",
+  "producer_script": "public_data/scripts/build_coco_views.py",
+  "working_dir": ".",
+  "command": "PYTHONPATH=. conda run -n ms python public_data/scripts/build_coco_views.py --config configs/stage1/recursive_detection_ce_latest/prod/compact_full_support2.yaml --model-path model_cache/models/Qwen/Qwen3-VL-2B-Instruct-coordexp --source-preset public_data/coco/rescale_32_1024_bbox --image-store-root public_data/coco/images/res-1024 --views-root public_data/coco/views --legacy-max-objects-source public_data/coco/rescale_32_1024_bbox_max60 --proxy-source public_data/coco/rescale_32_1024_bbox_lvis_proxy_len12000 --splits train val --views coco80/full coco80/len-12000 coco80/max-60 coco80-lvis-proxy/len-12000 --max-total-tokens 12000 --image-store-mode hardlink",
+  "inputs": [
+    {
+      "kind": "processed_image_root",
+      "path": "public_data/coco/rescale_32_1024_bbox/images",
+      "notes": "Existing COCO 1024 prepared image tree adopted as the Phase 1 shared image store without moving or deleting the legacy root."
+    },
+    {
+      "kind": "source_view_artifact",
+      "path": "public_data/coco/rescale_32_1024_bbox",
+      "notes": "Full-object COCO 1024 resized JSONL root used to validate image membership and regenerate views."
+    }
+  ],
+  "key_params": {
+    "dataset": "coco",
+    "image_store": "res-1024",
+    "image_path_semantics": "image_store_relative",
+    "image_factor": 32,
+    "max_pixels": 1048576,
+    "visual_token_budget": 1024,
+    "splits": [
+      "train",
+      "val"
+    ],
+    "image_store_mode": "hardlink",
+    "image_file_hashing": "not_materialized_by_default",
+    "routine_sync_policy": "regenerate_from_raw_plus_manifest"
+  },
+  "checksums": null,
+  "metadata": {
+    "image_store_metadata": {
+      "path": "public_data/coco/images/res-1024/meta.json",
+      "sha256": "84556c1d727a021256543e720585d308e2c5745e50b9ef45a1b9377f32be2ab8",
+      "size_bytes": 323
+    }
+  },
+  "code_ref": {
+    "git_commit": "593e9357ae2fc2126521b30fcc6c239cbd5af304",
+    "git_dirty_allowed": true
+  },
+  "generated_at_utc": null,
+  "notes": "Phase 1 COCO shared image store provenance. This manifest intentionally does not hash individual image files; use the annotation-view JSONL checksums as the routine cheap sentinel."
+}

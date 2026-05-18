@@ -1,10 +1,11 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "title": "CoordExp public_data processed-directory provenance",
+  "title": "CoordExp public_data provenance",
   "type": "object",
   "additionalProperties": false,
   "required": [
     "schema_version",
+    "artifact_type",
     "relative_path",
     "producer_script",
     "working_dir",
@@ -21,9 +22,20 @@
       "type": "integer",
       "const": 1
     },
+    "artifact_type": {
+      "type": "string",
+      "enum": [
+        "processed_directory",
+        "image_store",
+        "annotation_view"
+      ]
+    },
     "relative_path": {
       "type": "string",
-      "pattern": "^public_data/[^/]+(?:/[^/]+)*$"
+      "pattern": "^public_data/[^/]+(?:/[^/]+)*$",
+      "not": {
+        "pattern": "(^|/)\\.\\.(/|$)"
+      }
     },
     "producer_script": {
       "type": "string",
@@ -50,7 +62,10 @@
           },
           "path": {
             "type": "string",
-            "minLength": 1
+            "minLength": 1,
+            "not": {
+              "pattern": "(^|/)\\.\\.(/|$)"
+            }
           },
           "notes": {
             "type": "string"
@@ -84,6 +99,7 @@
         },
         "files": {
           "type": "array",
+          "minItems": 1,
           "items": {
             "type": "object",
             "additionalProperties": false,
@@ -91,7 +107,10 @@
             "properties": {
               "path": {
                 "type": "string",
-                "pattern": "^public_data/.*\\.jsonl$"
+                "pattern": "^public_data/[^/]+(?:/[^/]+)*\\.jsonl$",
+                "not": {
+                  "pattern": "(^|/)\\.\\.(/|$)"
+                }
               },
               "sha256": {
                 "type": "string",
@@ -110,8 +129,29 @@
         }
       }
     },
+    "metadata": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "image_store_metadata": {
+          "$ref": "#/$defs/sidecar_file"
+        },
+        "view_metadata": {
+          "$ref": "#/$defs/sidecar_file"
+        },
+        "source_comparison": {
+          "$ref": "#/$defs/sidecar_file"
+        },
+        "length_stats": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/sidecar_file"
+          }
+        }
+      }
+    },
     "code_ref": {
-      "type": ["string", "null"]
+      "type": ["string", "object", "null"]
     },
     "generated_at_utc": {
       "type": ["string", "null"]
@@ -119,5 +159,102 @@
     "notes": {
       "type": "string"
     }
-  }
+  },
+  "$defs": {
+    "sidecar_file": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "sha256", "size_bytes"],
+      "properties": {
+        "path": {
+          "type": "string",
+          "pattern": "^public_data/[^/]+(?:/[^/]+)*$",
+          "not": {
+            "pattern": "(^|/)\\.\\.(/|$)"
+          }
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "size_bytes": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "records": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "relative_path": {
+            "pattern": "^public_data/[^/]+/images/"
+          }
+        }
+      },
+      "then": {
+        "required": ["metadata"],
+        "properties": {
+          "artifact_type": {
+            "const": "image_store"
+          },
+          "checksums": {
+            "type": "null"
+          },
+          "metadata": {
+            "required": ["image_store_metadata"]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "relative_path": {
+            "pattern": "^public_data/[^/]+/views/"
+          }
+        }
+      },
+      "then": {
+        "required": ["metadata"],
+        "properties": {
+          "artifact_type": {
+            "const": "annotation_view"
+          },
+          "checksums": {
+            "type": "object"
+          },
+          "metadata": {
+            "required": ["view_metadata", "source_comparison"]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "relative_path": {
+            "not": {
+              "pattern": "^public_data/[^/]+/(images|views)/"
+            }
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "artifact_type": {
+            "const": "processed_directory"
+          },
+          "checksums": {
+            "type": "object"
+          }
+        }
+      }
+    }
+  ]
 }

@@ -89,6 +89,7 @@ def test_coco80_full_writes_norm1000_integer_boxes_and_image_store_refs(
     assert meta.view == "coco80/full"
     assert meta.primary_jsonl == {"train": "train.jsonl"}
     assert image_meta.image_root == "public_data/coco/images/res-1024"
+    assert image_meta.image_factor == 32
 
 
 def test_coco80_len12000_drops_over_budget_row_with_fake_estimator(
@@ -123,6 +124,13 @@ def test_coco80_len12000_drops_over_budget_row_with_fake_estimator(
     meta = load_view_metadata(config.view_root("coco80/len-12000") / "meta.json")
     assert [row["image_id"] for row in rows] == [1]
     assert summary["records"] == 1
+    assert str(tmp_path) not in json.dumps(stats)
+    assert stats["source_jsonl"] == (
+        "public_data/coco/views/coco80/full/train.jsonl"
+    )
+    assert stats["output_jsonl"] == (
+        "public_data/coco/views/coco80/len-12000/train.jsonl"
+    )
     assert stats["records_seen"] == 2
     assert stats["records_dropped"] == 1
     assert stats["length_over_budget_examples"][0]["image_id"] == 2
@@ -165,7 +173,7 @@ def test_coco80_max60_preserves_historical_membership_from_norm1000_source(
     assert meta.sample_policy == {
         "type": "max_objects_legacy",
         "max_objects": 60,
-        "membership_source": str(legacy_root),
+        "membership_source": "public_data/coco/rescale_32_1024_bbox_max60",
     }
 
 
@@ -209,8 +217,21 @@ def test_coco80_lvis_proxy_len12000_records_object_supervision_by_object_id(
     summary = builder.build(view_name="coco80-lvis-proxy/len-12000", max_total_tokens=12000)
 
     row = _read_jsonl(config.view_root("coco80-lvis-proxy/len-12000") / "train.jsonl")[0]
+    stats = json.loads(
+        (
+            config.view_root("coco80-lvis-proxy/len-12000")
+            / "train.length_stats.json"
+        ).read_text()
+    )
     object_supervision = row["metadata"]["supervision"]["object_supervision"]
     meta = load_view_metadata(config.view_root("coco80-lvis-proxy/len-12000") / "meta.json")
+    assert str(tmp_path) not in json.dumps(stats)
+    assert stats["source_jsonl"] == (
+        "public_data/coco/rescale_32_1024_bbox_lvis_proxy/train.norm.jsonl"
+    )
+    assert stats["output_jsonl"] == (
+        "public_data/coco/views/coco80-lvis-proxy/len-12000/train.jsonl"
+    )
     assert set(object_supervision) == {"coco:20:0", "lvis:20:1"}
     assert object_supervision["lvis:20:1"]["source_role"] == "lvis_proxy_candidate"
     assert object_supervision["lvis:20:1"]["coordinate_weight"] == 0.0
