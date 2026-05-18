@@ -1,0 +1,12 @@
+extends:
+  - ./compact_full_tiny.yaml
+
+training:
+  artifact_subdir: compact_full_coco80_len12000_tiny
+  run_name: smoke-compact-full-coco80-len12000-tiny
+
+data:
+  train_jsonl: public_data/coco/views/coco80/len-12000/train.jsonl
+  val_jsonl: public_data/coco/views/coco80/len-12000/val.jsonl
+  image_root: null
+  max_objects: null
