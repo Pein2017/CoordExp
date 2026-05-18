@@ -15,6 +15,15 @@ from types import SimpleNamespace
 from typing import Any, Literal, Mapping, Sequence, cast
 
 import torch
+from public_data.view_contracts import (
+    ASSISTANT_COORDINATE_RENDERING_QWEN_COORD_TOKENS,
+    COORDINATE_CHART_XYXY,
+    COORDINATE_RANGE_NORM1000,
+    COORDINATE_SPACE_NORM1000,
+    COORDINATE_STORAGE_INTEGER,
+    ViewMetadata,
+    load_view_metadata,
+)
 
 try:
     from torch.distributed.elastic.multiprocessing.errors import (
@@ -1386,6 +1395,61 @@ def _coord_tokens_fingerprint_payload(custom_config: Any) -> Any:
     return None
 
 
+def _load_sibling_view_metadata(jsonl_path: str) -> ViewMetadata | None:
+    path = Path(jsonl_path)
+    meta_path = path.parent / "meta.json"
+    if not meta_path.exists():
+        return None
+    return load_view_metadata(meta_path)
+
+
+def _jsonl_belongs_to_view_metadata(jsonl_path: str, metadata: ViewMetadata) -> bool:
+    jsonl_name = Path(jsonl_path).name
+    return jsonl_name in set(metadata.primary_jsonl.values())
+
+
+def _view_metadata_uses_qwen_coord_token_rendering(metadata: ViewMetadata) -> bool:
+    return (
+        metadata.coordinate_space == COORDINATE_SPACE_NORM1000
+        and metadata.coordinate_storage == COORDINATE_STORAGE_INTEGER
+        and tuple(metadata.coordinate_range) == COORDINATE_RANGE_NORM1000
+        and metadata.coordinate_chart == COORDINATE_CHART_XYXY
+        and (
+            metadata.assistant_coordinate_rendering
+            == ASSISTANT_COORDINATE_RENDERING_QWEN_COORD_TOKENS
+        )
+    )
+
+
+def _validate_view_jsonl_coord_surface(
+    *,
+    path_attr: str,
+    path_text: str,
+    coord_mode: str,
+    metadata: ViewMetadata,
+) -> bool:
+    if not _jsonl_belongs_to_view_metadata(path_text, metadata):
+        raise ValueError(
+            f"{path_attr}={path_text} is not listed in sibling view meta.json "
+            "primary_jsonl."
+        )
+
+    if coord_mode == "coord_tokens":
+        if _view_metadata_uses_qwen_coord_token_rendering(metadata):
+            return True
+        raise ValueError(
+            f"{path_attr}={path_text} is incompatible with custom.coord_tokens.enabled=true; "
+            "view meta.json must declare norm1000 integer xyxy geometry rendered "
+            "as qwen_coord_tokens."
+        )
+
+    raise ValueError(
+        f"{path_attr}={path_text} is incompatible with custom.coord_tokens.enabled=false; "
+        "canonical Phase 1 views currently declare "
+        "assistant_coordinate_rendering=qwen_coord_tokens."
+    )
+
+
 def _validate_bbox_format_contract(
     *,
     custom_config: Any,
@@ -1400,6 +1464,14 @@ def _validate_bbox_format_contract(
         if not path_value:
             continue
         path_text = str(path_value)
+        metadata = _load_sibling_view_metadata(path_text)
+        if metadata is not None and _validate_view_jsonl_coord_surface(
+            path_attr=path_attr,
+            path_text=path_text,
+            coord_mode=coord_mode,
+            metadata=metadata,
+        ):
+            continue
         if coord_mode == "coord_tokens":
             if not path_text.endswith(".coord.jsonl"):
                 raise ValueError(
