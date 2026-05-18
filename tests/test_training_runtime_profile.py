@@ -94,10 +94,9 @@ def test_default_profile_derives_generic_stage1_policy_from_plan() -> None:
     ("variant", "pipeline_namespace", "manifest_family"),
     [
         ("stage2_two_channel", "stage2_ab.pipeline", "stage2_ab"),
-        ("stage2_rollout_aligned", "rollout_matching.pipeline", "rollout_matching"),
     ],
 )
-def test_stage2_profiles_derive_rollout_policy_from_plan(
+def test_stage2_two_channel_profile_derives_rollout_policy_from_plan(
     variant: str,
     pipeline_namespace: str,
     manifest_family: str,
@@ -126,7 +125,9 @@ def test_stage2_profiles_derive_rollout_policy_from_plan(
     ("variant", "replacement"),
     [
         ("stage2_ab_training", "stage2_two_channel"),
-        ("rollout_matching_sft", "stage2_rollout_aligned"),
+        ("rollout_matching_sft", "stage2_two_channel"),
+        ("stage2_rollout_aligned", "stage2_two_channel"),
+        ("stage2_rollout_runtime", "stage2_two_channel"),
         ("stage1_set_continuation", "prefix_rollin_et_rmp_ce"),
     ],
 )
@@ -241,7 +242,6 @@ def test_compose_trainer_class_rejects_auxiliary_losses_with_recursive_ce(
     "variant",
     [
         "stage2_two_channel",
-        "stage2_rollout_aligned",
     ],
 )
 def test_compose_trainer_class_excludes_ordinary_stage1_mixins_via_profile(
@@ -259,7 +259,9 @@ def test_compose_trainer_class_excludes_ordinary_stage1_mixins_via_profile(
     ("variant", "replacement"),
     [
         ("stage2_ab_training", "stage2_two_channel"),
-        ("rollout_matching_sft", "stage2_rollout_aligned"),
+        ("rollout_matching_sft", "stage2_two_channel"),
+        ("stage2_rollout_aligned", "stage2_two_channel"),
+        ("stage2_rollout_runtime", "stage2_two_channel"),
         ("stage1_set_continuation", "prefix_rollin_et_rmp_ce"),
     ],
 )

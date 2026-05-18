@@ -5,12 +5,12 @@ import types
 import pytest
 import torch
 
-from src.trainers.stage2_rollout_aligned import RolloutMatchingSFTTrainer
-from src.trainers.stage2_two_channel import Stage2ABTrainingTrainer
+from src.trainers.stage2_rollout_runtime import Stage2RolloutRuntime
+from src.trainers.stage2_two_channel import Stage2TwoChannelTrainer
 
 
-def _mk_min_rm_trainer() -> RolloutMatchingSFTTrainer:
-    t = RolloutMatchingSFTTrainer.__new__(RolloutMatchingSFTTrainer)
+def _mk_min_rm_trainer() -> Stage2RolloutRuntime:
+    t = Stage2RolloutRuntime.__new__(Stage2RolloutRuntime)
     t.model = types.SimpleNamespace(device=torch.device("cpu"))
     t.state = types.SimpleNamespace(global_step=7)
     return t
@@ -91,7 +91,7 @@ def test_stage2_two_channel_step_rejects_empty_raw_batch(
     monkeypatch.setattr(torch.distributed, "get_world_size", lambda: 2, raising=False)
     monkeypatch.setattr(torch.distributed, "get_rank", lambda: 1, raising=False)
 
-    t = Stage2ABTrainingTrainer.__new__(Stage2ABTrainingTrainer)
+    t = Stage2TwoChannelTrainer.__new__(Stage2TwoChannelTrainer)
     t.state = types.SimpleNamespace(global_step=3)
 
     with pytest.raises(ValueError, match=r"empty raw batch"):

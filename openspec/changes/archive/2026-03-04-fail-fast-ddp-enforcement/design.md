@@ -82,7 +82,7 @@ Core training-path inventory (collectives + surrounding behavior):
   - `_reduce_stage2_pending_metrics_global` uses `dist.all_gather_object` (key union) and `dist.all_reduce` (sum/max reductions).
   - Behavior: strict under DDP; key-union failures and all-reduce failures raise immediately with rank/world-size context (no local fallback).
 
-- `src/trainers/stage2_rollout_aligned.py`:
+- `src/trainers/stage2_rollout_runtime.py`:
   - `_reduce_train_rollout_log_payload_global` uses `dist.all_gather_object` and `dist.all_reduce` for rollout metric synchronization.
   - `_ddp_assert_all_ranks_true_or_raise` uses `dist.all_reduce` to enforce rank-symmetric readiness before metric collectives.
   - Behavior: strict under DDP; failures raise with actionable context (no swallow-and-continue).
@@ -105,7 +105,7 @@ Core training-path inventory (collectives + surrounding behavior):
 
 High-risk sites recorded for this change (initial-evidence anchors):
 - Stage-2 AB pending-metric reduction (`src/trainers/stage2_two_channel.py`)
-- rollout-aligned metric reduction (`src/trainers/stage2_rollout_aligned.py`)
+- rollout-aligned metric reduction (`src/trainers/stage2_rollout_runtime.py`)
 - dataset metric key sync (`src/trainers/metrics/mixins.py`)
 - Stage-2 AB phase barriers / monitored-barrier fallback (`src/trainers/stage2_two_channel/executors.py`)
 

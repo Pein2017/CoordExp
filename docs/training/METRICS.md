@@ -480,7 +480,7 @@ Two distinct eval surfaces exist during training:
 - offline evaluator callback:
   - `eval_det_*`
 - trainer-native Stage-2 rollout eval:
-  - shared by `stage2_two_channel` and `stage2_rollout_aligned`
+  - owned by `stage2_two_channel` and implemented through the internal shared Stage-2 rollout runtime
   - `eval/detection/*`
   - `eval/parsing/*`
   - `eval/description/*`

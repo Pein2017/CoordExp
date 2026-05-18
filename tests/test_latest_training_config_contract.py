@@ -28,7 +28,6 @@ def _latest_payload() -> dict[str, object]:
             "train_jsonl": "public_data/coco/rescale_32_1024_bbox_max60/train.coord.jsonl",
             "val_jsonl": "public_data/coco/rescale_32_1024_bbox_max60/val.coord.jsonl",
             "image_root": "public_data/coco",
-            "max_objects": 60,
             "object_ordering": "random_permutation",
         },
         "prompt": {
@@ -105,7 +104,6 @@ def test_latest_config_parses_and_exposes_typed_sections() -> None:
 
     assert cfg.model["model"].endswith("Qwen3-VL-2B-Instruct-coordexp")
     assert cfg.template["truncation_strategy"] == "raise"
-    assert cfg.data.max_objects == 60
     assert cfg.data.object_ordering == "random_permutation"
     assert cfg.prompt.prompt_variant_enabled is True
     assert cfg.detection_template.id == "compact_full"
@@ -126,6 +124,16 @@ def test_latest_config_parses_and_exposes_typed_sections() -> None:
     assert isinstance(cfg.debug, DebugConfig)
     assert cfg.debug.enabled is False
     assert cfg.to_mapping()["objective"]["trie_support_weight"] == 2.0
+
+
+def test_latest_config_rejects_legacy_data_max_objects_key() -> None:
+    payload = _latest_payload()
+    data = dict(payload["data"])
+    data["max_objects"] = 60
+    payload["data"] = data
+
+    with pytest.raises(ValueError, match=r"Unknown keys.*data\.max_objects"):
+        LatestDetectionTrainingConfig.from_mapping(payload)
 
 
 def test_custom_is_rejected_with_latest_schema_message() -> None:
@@ -973,7 +981,6 @@ def test_coco80_len12000_smoke_configs_use_view_metadata_without_object_cap() ->
         assert cfg.data.train_jsonl == train_jsonl
         assert cfg.data.val_jsonl == val_jsonl
         assert cfg.data.image_root is None
-        assert cfg.data.max_objects is None
         assert cfg.training["max_steps"] == 1
         assert cfg.debug.enabled is True
         assert cfg.packing.static_packing is False

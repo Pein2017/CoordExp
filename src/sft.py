@@ -131,10 +131,6 @@ def resolve_trainer_cls(train_args):
         from .trainers.stage2_two_channel import Stage2TwoChannelTrainer
 
         trainer_cls = Stage2TwoChannelTrainer
-    elif trainer_variant == "stage2_rollout_aligned":
-        from .trainers.stage2_rollout_aligned import Stage2RolloutAlignedTrainer
-
-        trainer_cls = Stage2RolloutAlignedTrainer
     elif (
         getattr(train_args, "rlhf_type", None) == "gkd"
         and trainer_variant == "gkd_monitor"
@@ -1362,9 +1358,6 @@ def _build_static_packing_fingerprint(
         else None,
         "custom_user_prompt": getattr(custom_config, "user_prompt", None),
         "custom_emit_norm": getattr(custom_config, "emit_norm", None),
-        # Preserve the legacy null-valued fusion keys so older static-packing
-        # caches remain addressable after fusion was disabled in the schema.
-        "custom_fusion_config": getattr(custom_config, "fusion_config", None),
         "custom_json_format": getattr(custom_config, "json_format", None),
         "custom_bbox_format": getattr(custom_config, "bbox_format", None),
         "custom_detection_sequence_format": getattr(
@@ -1380,9 +1373,6 @@ def _build_static_packing_fingerprint(
         "coord_tokens": coord_tokens_payload,
         "dataset_jsonl": str(train_jsonl) if train_jsonl else None,
         "custom_train_jsonl": str(train_jsonl) if train_jsonl else None,
-        "dataset_source_fusion_config": _build_source_path_identity(
-            getattr(custom_config, "fusion_config", None)
-        ),
         "dataset_source_jsonl": _build_source_path_identity(train_jsonl),
         "dataset_source_train_jsonl": _build_source_path_identity(train_jsonl),
         "train_sample_limit": int(train_sample_limit)
@@ -1696,7 +1686,6 @@ def _resolve_static_packing_cache_dir(
     training_config: Any,
     train_args: Any,
     dataset_jsonl: str | None,
-    fusion_config_path: str | None,
     dataset_split: str,
     packing_cfg: PackingRuntimeConfig,
 ) -> Path:
@@ -1707,18 +1696,11 @@ def _resolve_static_packing_cache_dir(
         base_root = Path(str(dataset_jsonl)).expanduser().resolve(strict=False).parent
         base_root = base_root / "cache" / "static_packing"
         source = "dataset_jsonl"
-    elif fusion_config_path:
-        base_root = (
-            Path(str(fusion_config_path)).expanduser().resolve(strict=False).parent
-            / "cache"
-            / "static_packing"
-        )
-        source = "fusion_config"
     else:
         output_dir_raw = getattr(train_args, "output_dir", None)
         if not output_dir_raw:
             raise ValueError(
-                "training.output_dir must be set when training.packing_mode=static and no dataset/fusion path is available"
+                "training.output_dir must be set when training.packing_mode=static and no dataset JSONL path is available"
             )
         base_root = Path(str(output_dir_raw)).resolve() / "static_packing_auto"
         source = "output_dir"
@@ -2721,7 +2703,6 @@ def main():
             training_config=training_config,
             train_args=train_args,
             dataset_jsonl=str(train_jsonl) if train_jsonl else None,
-            fusion_config_path=None,
             dataset_split="train",
             packing_cfg=packing_cfg,
         )
@@ -3312,7 +3293,6 @@ def main():
             training_config=training_config,
             train_args=train_args,
             dataset_jsonl=str(val_jsonl) if val_jsonl else None,
-            fusion_config_path=None,
             dataset_split="eval",
             packing_cfg=packing_cfg,
         )
@@ -3690,8 +3670,8 @@ def main():
                 and isinstance(rollout_cfg.get("pipeline"), Mapping)
             ):
                 raise ValueError(
-                    f"rollout_matching.pipeline is not allowed when custom.trainer_variant={runtime_profile.variant}. "
-                    "Use stage2_ab.pipeline instead."
+                    "rollout_matching.pipeline has been removed. "
+                    "Use stage2_ab.pipeline with custom.trainer_variant=stage2_two_channel instead."
                 )
 
             # BREAKING: decoding knobs moved under rollout_matching.decoding.*.
@@ -3766,38 +3746,22 @@ def main():
             if callable(validate_hook):
                 validate_hook()
 
-            if (
-                runtime_profile.required_pipeline_namespace
-                == "rollout_matching.pipeline"
-            ):
-                rollout_manifest = _resolve_pipeline_manifest(
-                    rollout_cfg,
-                    default_objective=[
-                        "token_ce",
-                        "bbox_geo",
-                        "bbox_size_aux",
-                        "coord_reg",
-                    ],
-                    default_diagnostics=["coord_diag"],
-                    coord_soft_cfg=coord_soft_cfg_for_manifest,
-                )
-            else:
-                rollout_manifest = {
-                    "payload": {
-                        "objective": [],
-                        "diagnostics": [],
-                        "extra": {"variant": str(trainer_variant or "")},
-                    },
+            rollout_manifest = {
+                "payload": {
                     "objective": [],
                     "diagnostics": [],
                     "extra": {"variant": str(trainer_variant or "")},
-                    "checksum": "",
-                    "run_context": {
-                        "config": str(config_path),
-                        "run_name": str(getattr(train_args, "run_name", "") or ""),
-                        "seed": int(getattr(train_args.training_args, "seed", 0) or 0),
-                    },
-                }
+                },
+                "objective": [],
+                "diagnostics": [],
+                "extra": {"variant": str(trainer_variant or "")},
+                "checksum": "",
+                "run_context": {
+                    "config": str(config_path),
+                    "run_name": str(getattr(train_args, "run_name", "") or ""),
+                    "seed": int(getattr(train_args.training_args, "seed", 0) or 0),
+                },
+            }
             setattr(trainer, "rollout_pipeline_manifest", rollout_manifest)
 
             logger.info(

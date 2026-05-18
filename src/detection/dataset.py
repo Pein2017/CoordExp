@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import copy
 import random
-import warnings
 from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any, Literal, Mapping, MutableMapping, Sequence
@@ -195,7 +194,6 @@ class DetectionDatasetRuntimeConfig:
     seed: int
     state_weighting: str
     normalization: str
-    max_objects: int | None = None
     type_gate_config: Any | None = None
 
 
@@ -221,14 +219,6 @@ class DetectionTrainingDataset(Dataset):
             raise ValueError(
                 "DetectionTrainingDataset requires resolved image_root; call "
                 "from_jsonl with data.image_root or a sibling view meta.json"
-            )
-        if config.max_objects is not None:
-            warnings.warn(
-                "data.max_objects is compatibility-only for latest compact "
-                "datasets and is ignored at training runtime; generate a "
-                "filtered JSONL view such as a legacy max-60 view instead.",
-                UserWarning,
-                stacklevel=2,
             )
         self.rows = tuple(copy.deepcopy(dict(row)) for row in rows)
         self.swift_template = swift_template
@@ -256,7 +246,6 @@ class DetectionTrainingDataset(Dataset):
         seed: int,
         state_weighting: str,
         normalization: str,
-        max_objects: int | None = None,
         type_gate_config: Any | None = None,
         sample_limit: int | None = None,
         dataset_name: str | None = None,
@@ -282,7 +271,6 @@ class DetectionTrainingDataset(Dataset):
                 object_ordering=object_ordering,
                 user_prompt=user_prompt,
                 system_prompt=system_prompt,
-                max_objects=None if max_objects is None else int(max_objects),
                 seed=int(seed),
                 state_weighting=str(state_weighting),
                 normalization=str(normalization),

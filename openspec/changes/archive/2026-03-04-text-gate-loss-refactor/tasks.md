@@ -2,7 +2,7 @@
 
 - [x] 1.1 Create a single unified objective/diagnostics module registry (names + allowed config keys + resolution) and delete duplicated per-trainer registries.
 - [x] 1.2 Update Stage-2 pipeline schema to require `stage2_ab.pipeline` and remove flat objective weight knobs from `stage2_ab` (BREAKING).
-- [x] 1.3 Update rollout-matching schema to require `rollout_matching.pipeline` for `stage2_rollout_aligned` and add strict per-module config key allowlists (BREAKING).
+- [x] 1.3 Update rollout-matching schema to require `rollout_matching.pipeline` for `stage2_rollout_runtime` and add strict per-module config key allowlists (BREAKING).
 - [x] 1.4 Remove all loss-weight alias keys from schema validation (e.g., `coord_soft_ce_weight`, `coord_w1_weight`, `bbox_*_weight` inside module configs).
 
 ## 2. Implement `text_gate` (Correctness-Critical)

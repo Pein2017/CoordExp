@@ -37,10 +37,10 @@ Legacy compatibility:
 - **AND** canonical behavior is determined by `custom.coord_soft_ce_w1` (or pipeline `coord_reg` config when applicable).
 
 ### Requirement: Pipeline module config takes precedence in pipeline-driven Stage-2
-When `stage2_ab.pipeline` or `rollout_matching.pipeline` is present, `custom.coord_soft_ce_w1.*` SHALL be disallowed.
+When `stage2_ab.pipeline` is present, `custom.coord_soft_ce_w1.*` SHALL be disallowed.
 
 Normative behavior:
-- Users MUST express coord auxiliary knobs in the `coord_reg` objective module config under the active pipeline (`stage2_ab.pipeline` or `rollout_matching.pipeline`).
+- Users MUST express coord auxiliary knobs in the `coord_reg` objective module config under the active pipeline (`stage2_ab.pipeline`).
 - If both a pipeline objective and `custom.coord_soft_ce_w1.*` are present, config validation MUST fail fast with migration guidance.
 
 #### Scenario: Pipeline + custom coord config fails fast

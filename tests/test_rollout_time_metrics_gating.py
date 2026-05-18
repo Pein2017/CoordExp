@@ -1,11 +1,11 @@
-from src.trainers.stage2_rollout_aligned import (
-    RolloutMatchingSFTTrainer,
+from src.trainers.stage2_rollout_runtime import (
+    Stage2RolloutRuntime,
     _PendingTrainRolloutLog,
 )
 
 
 def test_rollout_time_metrics_only_present_when_rollout_ran() -> None:
-    t = object.__new__(RolloutMatchingSFTTrainer)
+    t = object.__new__(Stage2RolloutRuntime)
     t.rollout_matching_cfg = {}
 
     pending = _PendingTrainRolloutLog()
@@ -38,7 +38,7 @@ def test_rollout_time_metrics_only_present_when_rollout_ran() -> None:
 
 
 def test_rollout_log_emits_stage_total_time_metrics(monkeypatch) -> None:
-    trainer = object.__new__(RolloutMatchingSFTTrainer)
+    trainer = object.__new__(Stage2RolloutRuntime)
     trainer.state = type("State", (), {"global_step": 0})()
     trainer._rm_pending_train_logs = {}
     trainer._stage_wallclock_metrics_local = lambda: {
@@ -55,7 +55,7 @@ def test_rollout_log_emits_stage_total_time_metrics(monkeypatch) -> None:
 
     monkeypatch.setattr("swift.trainers.Seq2SeqTrainer.log", _capture_super_log)
 
-    RolloutMatchingSFTTrainer.log(trainer, {"loss": 1.0})
+    Stage2RolloutRuntime.log(trainer, {"loss": 1.0})
 
     assert captured["loss"] == 1.0
     assert captured["time/sft_total_time"] == 11.5

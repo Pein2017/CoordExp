@@ -4,7 +4,7 @@ from typing import Iterable
 
 import torch
 
-from src.trainers.stage2_rollout_aligned import RolloutMatchingSFTTrainer
+from src.trainers.stage2_rollout_runtime import Stage2RolloutRuntime
 
 
 def _iter_optimizer_state_tensors(optimizer: torch.optim.Optimizer) -> Iterable[torch.Tensor]:
@@ -23,7 +23,7 @@ def _iter_optimizer_state_tensors(optimizer: torch.optim.Optimizer) -> Iterable[
 
 
 def test_rollout_offload_context_smoke_cpu_keeps_state_on_cpu():
-    trainer = RolloutMatchingSFTTrainer.__new__(RolloutMatchingSFTTrainer)
+    trainer = Stage2RolloutRuntime.__new__(Stage2RolloutRuntime)
     trainer.rollout_matching_cfg = {
         "rollout_backend": "hf",
         "eval_rollout_backend": "vllm",
@@ -60,7 +60,7 @@ def test_rollout_offload_context_smoke_cpu_keeps_state_on_cpu():
 
 
 def test_offload_settings_defaults_to_model_and_optimizer_when_enabled():
-    trainer = RolloutMatchingSFTTrainer.__new__(RolloutMatchingSFTTrainer)
+    trainer = Stage2RolloutRuntime.__new__(Stage2RolloutRuntime)
     trainer.rollout_matching_cfg = {"offload": {"enabled": True}}
 
     enabled, offload_model, offload_optimizer = trainer._offload_settings()
@@ -70,7 +70,7 @@ def test_offload_settings_defaults_to_model_and_optimizer_when_enabled():
 
 
 def test_rollout_offload_context_works_for_eval_only_vllm_override():
-    trainer = RolloutMatchingSFTTrainer.__new__(RolloutMatchingSFTTrainer)
+    trainer = Stage2RolloutRuntime.__new__(Stage2RolloutRuntime)
     trainer.rollout_matching_cfg = {
         "rollout_backend": "hf",
         "vllm": {"mode": "colocate"},
@@ -90,7 +90,7 @@ def test_rollout_offload_context_works_for_eval_only_vllm_override():
 
 
 def test_rollout_offload_context_rejects_deepspeed():
-    trainer = RolloutMatchingSFTTrainer.__new__(RolloutMatchingSFTTrainer)
+    trainer = Stage2RolloutRuntime.__new__(Stage2RolloutRuntime)
     trainer.rollout_matching_cfg = {
         "rollout_backend": "hf",
         "eval_rollout_backend": "vllm",

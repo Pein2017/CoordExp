@@ -18,18 +18,21 @@ class LegacyMetricRecord:
     canonical_key: str
     reducer: MetricReducer
     legacy: bool = True
-    removed: bool = False
 
 
 def adapt_legacy_metric(key: str, value: MetricValue) -> LegacyMetricRecord:
-    """Return a tolerant read record without authorizing new writer usage."""
+    """Return a historical flat-key record for non-removed metric surfaces."""
+
+    if key in REMOVED_TRAINING_METRIC_KEYS:
+        raise ValueError(
+            f"Legacy metric key uses a removed training mechanism: {key}"
+        )
 
     return LegacyMetricRecord(
         original_key=key,
         value=value,
         canonical_key=key,
         reducer=legacy_reducer_for_key(key),
-        removed=key in REMOVED_TRAINING_METRIC_KEYS,
     )
 
 

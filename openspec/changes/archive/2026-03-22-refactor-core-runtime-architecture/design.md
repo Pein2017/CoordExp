@@ -16,7 +16,7 @@ The current codebase already contains the beginnings of a healthier architecture
 
 The problem is that the runtime-critical orchestration layer is still too braided:
 
-- `src/trainers/stage2_rollout_aligned.py` centralizes backend lifecycle, rollout execution, target construction, evaluation, and training-time metric/reporting concerns.
+- `src/trainers/stage2_rollout_runtime.py` centralizes backend lifecycle, rollout execution, target construction, evaluation, and training-time metric/reporting concerns.
 - `src/trainers/stage2_two_channel.py` still contains a large amount of clean-prefix and triage logic plus metric projection in two giant methods.
 - `src/sft.py` is both a repo entrypoint and a policy owner for packing, trainer injection, manifest generation, and provenance.
 - `src/infer/engine.py` and `src/eval/detection.py` are each mixing outer orchestration with backend/artifact-specific logic.
@@ -136,16 +136,16 @@ Why this first:
 
 - The package layout already supports incremental extraction.
 - The active Stage-2 path benefits immediately.
-- This reduces the amount of logic that still depends directly on `RolloutMatchingSFTTrainer`.
+- This reduces the amount of logic that still depends directly on `Stage2RolloutRuntime`.
 
 Alternative considered:
 
-- Start with the older `stage2_rollout_aligned.py` because it is larger.
+- Start with the older `stage2_rollout_runtime.py` because it is larger.
   Rejected as phase 1 because the two-channel path already contains the lower-risk extraction footholds.
 
 ### Decision 4: Extract a shared rollout runtime after the first two-channel seam freeze
 
-Once the two-channel path has explicit interfaces, the next step is to extract a shared rollout runtime layer from `RolloutMatchingSFTTrainer`.
+Once the two-channel path has explicit interfaces, the next step is to extract a shared rollout runtime layer from `Stage2RolloutRuntime`.
 
 That runtime should own:
 

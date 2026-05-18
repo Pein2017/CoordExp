@@ -24,8 +24,8 @@ or truncate object sequences at runtime.
 
 ## Current Problems
 
-- `max_objects` still exists as a latest compact runtime field and causes
-  `DetectionTrainingDataset` to reject rows after loading.
+- Prepared `max-*` views still encode legacy object-count provenance, but
+  latest compact training no longer accepts a runtime `data.max_objects` knob.
 - Current public-data preset names encode too many independent concerns, for
   example `rescale_32_1024_bbox_lvis_proxy_len12000`.
 - Same-resolution variants can duplicate or imply duplicated image roots.
@@ -52,8 +52,8 @@ New behavior:
 - Dataset filtering happens before training by generating a new JSONL view.
 - Existing object-count-filtered artifacts are represented as legacy views such
   as `max-60`.
-- Short-term config compatibility may warn and ignore old `data.max_objects`.
-  After migration, `data.max_objects` can become an obsolete key.
+- Authored latest compact configs with `data.max_objects` fail strict schema
+  parsing; use a prepared JSONL view such as a legacy `max-60` view instead.
 
 ### Decision 2: New JSONL Image Paths Are Image-Store-Relative
 
@@ -1209,9 +1209,8 @@ or a destructive image move is a separate user-approved cleanup decision after
 the new layout has passed smoke, provenance has been updated, rollback has been
 verified, and production training has reached an agreed acceptance signal.
 
-Short-term compatibility exceptions:
+Compatibility exceptions:
 
-- old configs with `data.max_objects` may warn and ignore;
 - explicit `data.image_root` may be accepted only if consistent with view
   metadata;
 - legacy `.coord.jsonl` may be supported by dedicated import/migration tooling,

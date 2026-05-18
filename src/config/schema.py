@@ -5,7 +5,6 @@ from __future__ import annotations
 from dataclasses import dataclass, field, fields
 from functools import lru_cache
 import math
-import warnings
 from pathlib import Path
 from typing import (
     Any,
@@ -1539,10 +1538,9 @@ class CustomConfig:
                 raise ValueError("custom.offline_max_pixels must be > 0 when provided")
         if "fusion_config" in data:
             raise ValueError(
-                "custom.fusion_config is temporarily disabled. "
-                "CoordExp now supports only the canonical single-dataset training configs; "
-                "merge JSONLs offline if you need dataset mixing for now. "
-                "Legacy fusion examples remain in-tree for future reactivation."
+                "custom.fusion_config has been removed. "
+                "CoordExp supports offline-prepared single-dataset JSONL training configs; "
+                "merge JSONLs offline before training when dataset mixing is needed."
             )
         if eval_monitor_dump_raw is None:
             eval_monitor_dump = EvalMonitorDumpConfig()
@@ -2503,10 +2501,10 @@ class Stage2ABChannelBConfig:
             cls.insertion_order,
         )
         insertion_order = str(insertion_order_raw).strip().lower()
-        if insertion_order not in {"tail_append", "sorted"}:
+        if insertion_order not in {"tail_append", "sorted", "fn_slot_shuffle"}:
             raise ValueError(
                 "stage2_ab.channel_b.insertion_order must be one of "
-                "{'tail_append', 'sorted'}"
+                "{'tail_append', 'sorted', 'fn_slot_shuffle'}"
             )
 
         producer_wait_timeout_s_raw = data.pop("producer_wait_timeout_s", None)
@@ -3434,7 +3432,6 @@ class DetectionDataConfig:
     train_jsonl: str
     val_jsonl: str
     image_root: str | None = None
-    max_objects: int | None = None
     object_ordering: Literal["sorted", "random_permutation"] = "sorted"
 
     def __post_init__(self) -> None:
@@ -3443,16 +3440,6 @@ class DetectionDataConfig:
                 raise TypeError(f"data.{field_name} must be a string")
         if self.image_root is not None and not isinstance(self.image_root, str):
             raise TypeError("data.image_root must be a string when provided")
-        if self.max_objects is not None:
-            if not isinstance(self.max_objects, int) or isinstance(self.max_objects, bool):
-                raise TypeError("data.max_objects must be an integer when provided")
-            warnings.warn(
-                "data.max_objects is compatibility-only for latest compact "
-                "datasets and is ignored at training runtime; generate a "
-                "filtered JSONL view such as a legacy max-60 view instead.",
-                UserWarning,
-                stacklevel=2,
-            )
         _latest_detection_validate_choice(
             self.object_ordering,
             path="data.object_ordering",
@@ -4374,7 +4361,11 @@ class TrainingConfig:
             )
         if trainer_variant == "rollout_matching_sft":
             raise ValueError(
-                "custom.trainer_variant=rollout_matching_sft has been removed; use stage2_rollout_aligned"
+                "custom.trainer_variant=rollout_matching_sft has been removed; use stage2_two_channel"
+            )
+        if trainer_variant in {"stage2_rollout_aligned", "stage2_rollout_runtime"}:
+            raise ValueError(
+                f"custom.trainer_variant={trainer_variant} has been removed; use stage2_two_channel"
             )
         if bool(getattr(custom.sft_structural_close, "enabled", False)):
             if bool(training.get("packing", False)):
@@ -4409,6 +4400,11 @@ class TrainingConfig:
                     "rollout_matching.coord_decode_mode is deprecated and unsupported in active/training "
                     "configs. Remove it; Stage-2 geometry decode now uses the fixed expectation-decode baseline."
                 )
+            if "pipeline" in rollout_matching_raw:
+                raise ValueError(
+                    "rollout_matching.pipeline has been removed. "
+                    "Use stage2_ab.pipeline with custom.trainer_variant=stage2_two_channel instead."
+                )
 
             # Preserve prior strictness: an explicitly empty mapping counts as "missing".
             if not rollout_matching_raw:
@@ -4433,25 +4429,15 @@ class TrainingConfig:
                     path="rollout_matching",
                 )
 
-        if trainer_variant in {"stage2_rollout_aligned", "stage2_two_channel"}:
+        if trainer_variant == "stage2_two_channel":
             if rollout_matching is None:
                 raise ValueError(
-                    "rollout_matching section must be provided for stage2_rollout_aligned/stage2_two_channel"
+                    "rollout_matching section must be provided for stage2_two_channel"
                 )
 
         stage2_pipeline_present = bool(
             stage2_ab is not None and getattr(stage2_ab, "pipeline", None) is not None
         )
-        rollout_pipeline_present = bool(
-            rollout_matching is not None
-            and getattr(rollout_matching, "pipeline", None) is not None
-        )
-
-        if trainer_variant == "stage2_rollout_aligned" and not rollout_pipeline_present:
-            raise ValueError(
-                "rollout_matching.pipeline must be provided when custom.trainer_variant=stage2_rollout_aligned "
-                "(no implicit default objective manifest)."
-            )
 
         if stage2_pipeline_present and custom_coord_soft_ce_w1_present:
             raise ValueError(
@@ -4468,33 +4454,6 @@ class TrainingConfig:
                 "stage2_ab.pipeline is provided; custom.bbox_size_aux.* is disallowed and must be moved into "
                 "stage2_ab.pipeline.objective[*].config for the bbox_size_aux module"
             )
-        if rollout_pipeline_present and custom_coord_soft_ce_w1_present:
-            raise ValueError(
-                "rollout_matching.pipeline is provided; custom.coord_soft_ce_w1.* is disallowed and must be moved into "
-                "rollout_matching.pipeline.objective[*].config for the coord_reg module"
-            )
-        if rollout_pipeline_present and custom_bbox_geo_present:
-            raise ValueError(
-                "rollout_matching.pipeline is provided; custom.bbox_geo.* is disallowed and must be moved into "
-                "rollout_matching.pipeline.objective[*].config for the bbox_geo module"
-            )
-        if rollout_pipeline_present and custom_bbox_size_aux_present:
-            raise ValueError(
-                "rollout_matching.pipeline is provided; custom.bbox_size_aux.* is disallowed and must be moved into "
-                "rollout_matching.pipeline.objective[*].config for the bbox_size_aux module"
-            )
-
-        if trainer_variant == "stage2_two_channel" and rollout_pipeline_present:
-            raise ValueError(
-                "rollout_matching.pipeline is not allowed when custom.trainer_variant=stage2_two_channel. "
-                "Use stage2_ab.pipeline instead."
-            )
-        if trainer_variant == "stage2_rollout_aligned" and stage2_pipeline_present:
-            raise ValueError(
-                "stage2_ab.pipeline is not allowed when custom.trainer_variant=stage2_rollout_aligned. "
-                "Use rollout_matching.pipeline instead."
-            )
-
         # Length-coherence guardrails (fail-fast). These settings affect whether the
         # eval-step vLLM backend will truncate/error on long prompts, which is
         # objective-changing.
@@ -4556,13 +4515,13 @@ class TrainingConfig:
 
         if custom.bbox_format in {"cxcy_logw_logh", "cxcywh"}:
             bbox_format_label = str(custom.bbox_format)
-            if trainer_variant in {"stage2_two_channel", "stage2_rollout_aligned"}:
+            if trainer_variant == "stage2_two_channel":
                 raise ValueError(
                     f"custom.bbox_format={bbox_format_label} is Stage-1-only in V1 and is unsupported for stage2 trainer variants."
                 )
-            if stage2_pipeline_present or rollout_pipeline_present:
+            if stage2_pipeline_present:
                 raise ValueError(
-                    f"custom.bbox_format={bbox_format_label} is Stage-1-only in V1 and cannot be combined with stage2_ab.pipeline or rollout_matching.pipeline."
+                    f"custom.bbox_format={bbox_format_label} is Stage-1-only in V1 and cannot be combined with stage2_ab.pipeline."
                 )
             if not bool(getattr(custom.coord_tokens, "enabled", False)):
                 raise ValueError(

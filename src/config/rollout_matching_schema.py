@@ -17,17 +17,6 @@ from typing import Any, Mapping, Optional, Sequence
 from urllib.parse import urlparse
 
 from .eval_monitor_dump_schema import EvalMonitorDumpConfig
-from src.trainers.teacher_forcing.module_registry import (
-    ALLOWED_DIAGNOSTIC_MODULES,
-    ALLOWED_OBJECTIVE_MODULES,
-    DIAGNOSTIC_CONFIG_ALLOWLIST,
-    OBJECTIVE_APPLICATION_PRESET_ALLOWLIST,
-    OBJECTIVE_CONFIG_ALLOWLIST,
-    OBJECTIVE_OPTIONAL_CONFIG_KEYS,
-    validate_bbox_geo_config_values,
-)
-
-
 @dataclass(frozen=True)
 class RolloutDecodingConfig:
     temperature: float = 0.0
@@ -277,22 +266,6 @@ class VllmConfig:
 
 
 @dataclass(frozen=True)
-class RolloutPipelineModuleSpec:
-    name: str
-    enabled: bool
-    weight: float
-    channels: tuple[str, ...]
-    config: Mapping[str, Any]
-    application: Mapping[str, Any] = field(default_factory=dict)
-
-
-@dataclass(frozen=True)
-class RolloutPipelineConfig:
-    objective: tuple[RolloutPipelineModuleSpec, ...] = field(default_factory=tuple)
-    diagnostics: tuple[RolloutPipelineModuleSpec, ...] = field(default_factory=tuple)
-
-
-@dataclass(frozen=True)
 class RolloutMatchingConfig:
     # Core backend selection.
     rollout_backend: str = "hf"
@@ -327,7 +300,6 @@ class RolloutMatchingConfig:
     train_monitor_dump: Optional[RolloutMonitorDumpConfig] = None
     eval_monitor_dump: Optional[RolloutEvalMonitorDumpConfig] = None
     desc_monitor: Optional[RolloutDescMonitorConfig] = None
-    pipeline: Optional[RolloutPipelineConfig] = None
     eval_detection: RolloutEvalDetectionConfig = field(
         default_factory=RolloutEvalDetectionConfig
     )
@@ -451,195 +423,6 @@ class RolloutMatchingConfig:
                     "vLLM rollouts require full merged-weight sync in this stack: "
                     "set rollout_matching.vllm.enable_lora=false."
                 )
-
-        if self.pipeline is not None:
-            if not isinstance(self.pipeline, RolloutPipelineConfig):
-                raise TypeError(
-                    "rollout_matching.pipeline must be a RolloutPipelineConfig"
-                )
-
-            if not self.pipeline.objective:
-                raise ValueError(
-                    "rollout_matching.pipeline.objective must be non-empty"
-                )
-
-            def _validate_specs(
-                specs: tuple[RolloutPipelineModuleSpec, ...],
-                *,
-                allowed_names: set[str],
-                config_allowlist_by_name: Mapping[str, set[str]],
-                path: str,
-            ) -> None:
-                seen: set[str] = set()
-                for idx, spec in enumerate(specs):
-                    if not isinstance(spec, RolloutPipelineModuleSpec):
-                        raise TypeError(
-                            f"{path}[{idx}] must be RolloutPipelineModuleSpec"
-                        )
-                    name = str(spec.name or "").strip()
-                    if not name:
-                        raise ValueError(f"{path}[{idx}].name must be non-empty")
-                    if name not in allowed_names:
-                        raise ValueError(
-                            f"{path}[{idx}].name must be one of {sorted(allowed_names)}; got {name!r}"
-                        )
-                    if name in seen:
-                        raise ValueError(f"Duplicate module name in {path}: {name}")
-                    seen.add(name)
-
-                    try:
-                        weight = float(spec.weight)
-                    except (TypeError, ValueError) as exc:
-                        raise TypeError(
-                            f"{path}[{idx}].weight must be numeric"
-                        ) from exc
-                    if weight < 0.0:
-                        raise ValueError(f"{path}[{idx}].weight must be >= 0")
-
-                    if not isinstance(spec.channels, Sequence) or isinstance(
-                        spec.channels, (str, bytes)
-                    ):
-                        raise TypeError(f"{path}[{idx}].channels must be a sequence")
-                    if not spec.channels:
-                        raise ValueError(f"{path}[{idx}].channels must not be empty")
-                    for cidx, ch in enumerate(spec.channels):
-                        ch_s = str(ch).strip().upper()
-                        if ch_s not in {"A", "B"}:
-                            raise ValueError(
-                                f"{path}[{idx}].channels[{cidx}] must be 'A' or 'B'"
-                            )
-
-                    if not isinstance(spec.config, Mapping):
-                        raise TypeError(f"{path}[{idx}].config must be a mapping")
-
-                    if path.endswith(".objective"):
-                        if not isinstance(spec.application, Mapping):
-                            raise TypeError(
-                                f"{path}[{idx}].application must be a mapping"
-                            )
-                        app_unknown = set(spec.application.keys()) - {"preset"}
-                        if app_unknown:
-                            raise ValueError(
-                                f"Unknown {path}[{idx}].application keys for module {name!r}: "
-                                f"{sorted(str(k) for k in app_unknown)}"
-                            )
-                        preset = str(spec.application.get("preset", "") or "").strip()
-                        if not preset:
-                            raise ValueError(
-                                f"{path}[{idx}].application.preset must be provided"
-                            )
-                        allowed_presets = OBJECTIVE_APPLICATION_PRESET_ALLOWLIST.get(
-                            name, set()
-                        )
-                        if preset not in allowed_presets:
-                            if preset in {
-                                "anchor_text_plus_final_struct",
-                                "anchor_if_single_iter_else_final",
-                                "final_only",
-                                "anchor_and_final",
-                            }:
-                                replacement = (
-                                    "anchor_text_only"
-                                    if name == "token_ce"
-                                    else "anchor_only"
-                                )
-                                raise ValueError(
-                                    f"{path}[{idx}].application.preset for module {name!r} "
-                                    f"uses deprecated self-context-era routing {preset!r}. "
-                                    f"Use {replacement!r} for the single-pass contract."
-                                )
-                            raise ValueError(
-                                f"{path}[{idx}].application.preset for module {name!r} "
-                                f"must be one of {sorted(str(x) for x in allowed_presets)}; got {preset!r}"
-                            )
-
-                        if name == "token_ce" and "struct_ce_weight" in spec.config:
-                            raise ValueError(
-                                f"{path}[{idx}].config.struct_ce_weight is deprecated and unsupported. "
-                                "Remove the self-context struct/EOS stabilizer; active training uses "
-                                "only the single-pass anchor_text_only contract."
-                            )
-                    allowed_cfg = config_allowlist_by_name.get(name, set())
-                    unknown_cfg = set(spec.config.keys()) - set(allowed_cfg)
-                    if unknown_cfg:
-                        raise ValueError(
-                            f"Unknown {path}[{idx}].config keys for module {name!r}: "
-                            f"{sorted(str(k) for k in unknown_cfg)}"
-                        )
-                    optional_cfg = OBJECTIVE_OPTIONAL_CONFIG_KEYS.get(name, set())
-                    missing_cfg = set(allowed_cfg) - set(spec.config.keys()) - set(optional_cfg)
-                    if missing_cfg:
-                        raise ValueError(
-                            f"Missing required {path}[{idx}].config keys for module {name!r}: "
-                            f"{sorted(str(k) for k in missing_cfg)}"
-                        )
-                    if name == "bbox_geo":
-                        validate_bbox_geo_config_values(
-                            spec.config,
-                            path=f"{path}[{idx}].config",
-                        )
-                        if isinstance(spec.config, dict):
-                            spec.config.setdefault("parameterization", "xyxy")
-                            spec.config.setdefault("center_weight", 1.0)
-                            spec.config.setdefault("size_weight", 1.0)
-            _validate_specs(
-                self.pipeline.objective,
-                allowed_names=ALLOWED_OBJECTIVE_MODULES,
-                config_allowlist_by_name=OBJECTIVE_CONFIG_ALLOWLIST,
-                path="rollout_matching.pipeline.objective",
-            )
-            _validate_specs(
-                self.pipeline.diagnostics,
-                allowed_names=ALLOWED_DIAGNOSTIC_MODULES,
-                config_allowlist_by_name=DIAGNOSTIC_CONFIG_ALLOWLIST,
-                path="rollout_matching.pipeline.diagnostics",
-            )
-
-            obj_by_name = {str(spec.name): spec for spec in self.pipeline.objective}
-            bbox_geo = obj_by_name.get("bbox_geo")
-            bbox_size_aux = obj_by_name.get("bbox_size_aux")
-            coord_reg = obj_by_name.get("coord_reg")
-            if bbox_size_aux is not None and bool(getattr(bbox_size_aux, "enabled", False)):
-                if bbox_geo is None or not bool(getattr(bbox_geo, "enabled", False)):
-                    raise ValueError(
-                        "rollout_matching.pipeline.objective requires bbox_geo to be present+enabled when bbox_size_aux is enabled "
-                        "(bbox_size_aux depends on bbox_geo state)."
-                    )
-                missing_channels = set(bbox_size_aux.channels) - set(bbox_geo.channels)
-                if missing_channels:
-                    raise ValueError(
-                        "rollout_matching.pipeline.objective bbox_size_aux channels must be a subset of bbox_geo channels; "
-                        f"missing={sorted(missing_channels)}"
-                    )
-            if coord_reg is not None and bool(getattr(coord_reg, "enabled", False)):
-                if bbox_geo is None or not bool(getattr(bbox_geo, "enabled", False)):
-                    raise ValueError(
-                        "rollout_matching.pipeline.objective requires bbox_geo to be present+enabled when coord_reg is enabled "
-                        "(coord_reg depends on bbox_geo state)."
-                    )
-                missing_channels = set(coord_reg.channels) - set(bbox_geo.channels)
-                if missing_channels:
-                    raise ValueError(
-                        "rollout_matching.pipeline.objective coord_reg channels must be a subset of bbox_geo channels; "
-                        f"missing={sorted(missing_channels)}"
-                    )
-
-            for dspec in self.pipeline.diagnostics:
-                if not bool(getattr(dspec, "enabled", False)):
-                    continue
-                if str(getattr(dspec, "name", "") or "") != "coord_diag":
-                    continue
-                if bbox_geo is None or not bool(getattr(bbox_geo, "enabled", False)):
-                    raise ValueError(
-                        "rollout_matching.pipeline.diagnostics requires bbox_geo to be present+enabled when coord_diag is enabled "
-                        "(coord_diag depends on bbox_geo state)."
-                    )
-                missing_channels = set(dspec.channels) - set(bbox_geo.channels)
-                if missing_channels:
-                    raise ValueError(
-                        "rollout_matching.pipeline.diagnostics coord_diag channels must be a subset of bbox_geo channels; "
-                        f"missing={sorted(missing_channels)}"
-                    )
 
         if self.eval_prompt_variant is not None and not isinstance(
             self.eval_prompt_variant, str

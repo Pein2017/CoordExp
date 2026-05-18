@@ -1,11 +1,11 @@
 import os
 import types
 
-from src.trainers.stage2_rollout_aligned import RolloutMatchingSFTTrainer
+from src.trainers.stage2_rollout_runtime import Stage2RolloutRuntime
 
 
-def _make_trainer(tmp_path) -> RolloutMatchingSFTTrainer:
-    t = object.__new__(RolloutMatchingSFTTrainer)
+def _make_trainer(tmp_path) -> Stage2RolloutRuntime:
+    t = object.__new__(Stage2RolloutRuntime)
     t.args = types.SimpleNamespace(
         output_dir=str(tmp_path), logging_steps=1, logging_first_step=True
     )

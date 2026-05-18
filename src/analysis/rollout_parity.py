@@ -17,7 +17,7 @@ from src.config.schema import CoordTokensConfig
 from src.coord_tokens.template_adapter import apply_coord_template_adapter
 from src.datasets.builders.jsonlines import JSONLinesBuilder
 from src.infer.engine import GenerationConfig, InferenceConfig, InferenceEngine
-from src.trainers.stage2_rollout_aligned import (
+from src.trainers.stage2_rollout_runtime import (
     _ensure_system_prompt_message,
     _strip_trailing_assistant_turns_for_rollout,
 )

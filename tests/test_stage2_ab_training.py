@@ -8,7 +8,7 @@ import pytest
 import torch
 import torch.nn as nn
 
-from src.trainers.stage2_rollout_aligned import (
+from src.trainers.stage2_rollout_runtime import (
     GTObject,
     _serialize_append_fragment,
     parse_rollout_for_matching,
@@ -23,7 +23,7 @@ from src.training.stage2.rollout_codec import (
 )
 from src.training.stage2.assignment import GreedyIoUAssignment
 from src.trainers.stage2_two_channel import (
-    Stage2ABTrainingTrainer,
+    Stage2TwoChannelTrainer,
     _PendingStage2Log,
     _assign_stage2_channel_b_objects,
     _bbox_groups_from_token_ids,
@@ -476,7 +476,7 @@ class _BoundaryMergingTokenizer(_DummyTokenizer):
 
 
 def test_b_ratio_schedule_is_deterministic():
-    t = Stage2ABTrainingTrainer.__new__(Stage2ABTrainingTrainer)
+    t = Stage2TwoChannelTrainer.__new__(Stage2TwoChannelTrainer)
     t.stage2_ab_cfg = {"schedule": {"b_ratio": 0.5}}
     t._stage2_channel_override = None
     got = [t._stage2_channel_for_step(i) for i in range(6)]
@@ -489,7 +489,7 @@ def test_b_ratio_schedule_is_deterministic():
 
 
 def test_legacy_stop_neutral_key_is_rejected() -> None:
-    t = Stage2ABTrainingTrainer.__new__(Stage2ABTrainingTrainer)
+    t = Stage2TwoChannelTrainer.__new__(Stage2TwoChannelTrainer)
     t.stage2_ab_cfg = {
         "schedule": {"b_ratio": 1.0},
         "channel_b": {
@@ -643,7 +643,7 @@ def _make_stage2_pipeline_manifest(
 
 
 def _make_min_trainer():
-    t = Stage2ABTrainingTrainer.__new__(Stage2ABTrainingTrainer)
+    t = Stage2TwoChannelTrainer.__new__(Stage2TwoChannelTrainer)
     t.stage2_ab_cfg = {
         "schedule": {"b_ratio": 0.0},
         "bbox_smoothl1_weight": 1.0,
@@ -669,8 +669,8 @@ def _make_compact_channel_b_trainer(
     fallback_loss_weight: float = 1.0,
     pseudo_positive_enabled: bool = False,
     num_rollouts: int = 2,
-) -> Stage2ABTrainingTrainer:
-    t = Stage2ABTrainingTrainer.__new__(Stage2ABTrainingTrainer)
+) -> Stage2TwoChannelTrainer:
+    t = Stage2TwoChannelTrainer.__new__(Stage2TwoChannelTrainer)
     t.stage2_ab_cfg = {
         "channel_b": {
             "rollout_template_family": "compact_full",
@@ -1166,7 +1166,7 @@ def test_channel_b_compact_full_invalid_explorer_rollouts_do_not_dilute_posterio
 
 
 def test_channel_b_matching_uses_greedy_assignment_threshold(monkeypatch):
-    t = Stage2ABTrainingTrainer.__new__(Stage2ABTrainingTrainer)
+    t = Stage2TwoChannelTrainer.__new__(Stage2TwoChannelTrainer)
     t.stage2_ab_cfg = {}
     t._stage2_pending_train_logs = {}
     t._rm_pending_train_logs = {}
@@ -1293,7 +1293,7 @@ def test_channel_b_matching_uses_greedy_assignment_threshold(monkeypatch):
 
 
 def test_channel_b_invalid_rollout_keeps_sample_via_empty_prefix_fallback(monkeypatch):
-    t = Stage2ABTrainingTrainer.__new__(Stage2ABTrainingTrainer)
+    t = Stage2TwoChannelTrainer.__new__(Stage2TwoChannelTrainer)
     cfg = {
         "maskiou_gate": 0.3,
         "candidate_top_k": 5,
@@ -1381,7 +1381,7 @@ def test_channel_b_enabled_pseudo_positive_drops_invalid_anchor_sample(
     monkeypatch,
     tmp_path,
 ):
-    t = Stage2ABTrainingTrainer.__new__(Stage2ABTrainingTrainer)
+    t = Stage2TwoChannelTrainer.__new__(Stage2TwoChannelTrainer)
     cfg = {
         "maskiou_gate": 0.3,
         "candidate_top_k": 5,
@@ -1504,7 +1504,7 @@ def test_channel_b_enabled_pseudo_positive_drops_invalid_anchor_sample(
 def test_channel_b_closure_resolution_failure_falls_back_without_dropping_sample(
     monkeypatch,
 ):
-    t = Stage2ABTrainingTrainer.__new__(Stage2ABTrainingTrainer)
+    t = Stage2TwoChannelTrainer.__new__(Stage2TwoChannelTrainer)
     cfg = {
         "maskiou_gate": 0.3,
         "candidate_top_k": 5,
@@ -1624,7 +1624,7 @@ def test_channel_b_closure_resolution_failure_falls_back_without_dropping_sample
 
 
 def test_channel_b_duplicate_iou_threshold_zero_propagates_to_dedup(monkeypatch):
-    t = Stage2ABTrainingTrainer.__new__(Stage2ABTrainingTrainer)
+    t = Stage2TwoChannelTrainer.__new__(Stage2TwoChannelTrainer)
     cfg = {
         "maskiou_gate": 0.3,
         "candidate_top_k": 5,
@@ -1712,7 +1712,7 @@ def test_channel_b_duplicate_iou_threshold_zero_propagates_to_dedup(monkeypatch)
 def test_channel_b_suspicious_monitor_dump_buffers_full_eval_style_payload(
     monkeypatch,
 ):
-    t = Stage2ABTrainingTrainer.__new__(Stage2ABTrainingTrainer)
+    t = Stage2TwoChannelTrainer.__new__(Stage2TwoChannelTrainer)
     cfg = {
         "maskiou_gate": 0.3,
         "candidate_top_k": 5,
@@ -1901,7 +1901,7 @@ def test_channel_b_suspicious_monitor_dump_buffers_full_eval_style_payload(
 
 
 def test_stage2_train_monitor_dump_prefers_most_duplicate_candidate():
-    t = Stage2ABTrainingTrainer.__new__(Stage2ABTrainingTrainer)
+    t = Stage2TwoChannelTrainer.__new__(Stage2TwoChannelTrainer)
     cfg = {
         "decode_mode": "greedy",
         "train_monitor_dump": {
@@ -1949,7 +1949,7 @@ def test_stage2_train_monitor_dump_prefers_most_duplicate_candidate():
 
 
 def test_stage2_train_monitor_dump_uses_logged_step_not_preincrement_step() -> None:
-    t = Stage2ABTrainingTrainer.__new__(Stage2ABTrainingTrainer)
+    t = Stage2TwoChannelTrainer.__new__(Stage2TwoChannelTrainer)
     cfg = {
         "decode_mode": "greedy",
         "train_monitor_dump": {
@@ -1997,7 +1997,7 @@ def test_stage2_train_monitor_dump_uses_logged_step_not_preincrement_step() -> N
 def test_stage2_train_monitor_dump_every_channel_b_steps_ignores_global_step_aliasing() -> (
     None
 ):
-    t = Stage2ABTrainingTrainer.__new__(Stage2ABTrainingTrainer)
+    t = Stage2TwoChannelTrainer.__new__(Stage2TwoChannelTrainer)
     cfg = {
         "decode_mode": "greedy",
         "train_monitor_dump": {
@@ -2053,7 +2053,7 @@ def test_stage2_train_monitor_dump_every_channel_b_steps_ignores_global_step_ali
 
 
 def test_stage2_train_monitor_dump_keeps_eval_budget_and_same_step_eligibility():
-    t = Stage2ABTrainingTrainer.__new__(Stage2ABTrainingTrainer)
+    t = Stage2TwoChannelTrainer.__new__(Stage2TwoChannelTrainer)
     cfg = {
         "decode_mode": "greedy",
         "train_monitor_dump": {
@@ -2101,7 +2101,7 @@ def test_stage2_train_monitor_dump_keeps_eval_budget_and_same_step_eligibility()
 
 
 def test_channel_b_fn_bbox_groups_anchor_to_clean_prefix_not_raw_prefix(monkeypatch):
-    t = Stage2ABTrainingTrainer.__new__(Stage2ABTrainingTrainer)
+    t = Stage2TwoChannelTrainer.__new__(Stage2TwoChannelTrainer)
     cfg = {
         "maskiou_gate": 0.3,
         "candidate_top_k": 5,
@@ -2263,7 +2263,7 @@ def test_channel_b_fn_bbox_groups_anchor_to_clean_prefix_not_raw_prefix(monkeypa
 def test_channel_b_dual_rollout_triage_emits_recovered_ground_truth_weight_multipliers(
     monkeypatch,
 ) -> None:
-    t = Stage2ABTrainingTrainer.__new__(Stage2ABTrainingTrainer)
+    t = Stage2TwoChannelTrainer.__new__(Stage2TwoChannelTrainer)
     cfg = {
         "maskiou_gate": 0.3,
         "candidate_top_k": 5,
@@ -2485,7 +2485,7 @@ def test_channel_b_dual_rollout_triage_emits_recovered_ground_truth_weight_multi
 
 
 def test_channel_b_dual_rollout_chunking_is_policy_symmetric(monkeypatch) -> None:
-    t = Stage2ABTrainingTrainer.__new__(Stage2ABTrainingTrainer)
+    t = Stage2TwoChannelTrainer.__new__(Stage2TwoChannelTrainer)
     cfg = {
         "maskiou_gate": 0.3,
         "candidate_top_k": 5,
@@ -2644,7 +2644,7 @@ def test_channel_b_dual_rollout_chunking_is_policy_symmetric(monkeypatch) -> Non
 def test_channel_b_enabled_pseudo_positive_uses_k4_rollouts_and_keeps_zero_object_explorer(
     monkeypatch,
 ) -> None:
-    t = Stage2ABTrainingTrainer.__new__(Stage2ABTrainingTrainer)
+    t = Stage2TwoChannelTrainer.__new__(Stage2TwoChannelTrainer)
     cfg = {
         "maskiou_gate": 0.3,
         "candidate_top_k": 5,
@@ -2826,7 +2826,7 @@ def test_channel_b_enabled_pseudo_positive_uses_k4_rollouts_and_keeps_zero_objec
 def test_channel_b_enabled_pseudo_positive_aborts_on_invalid_explorer(
     monkeypatch,
 ) -> None:
-    t = Stage2ABTrainingTrainer.__new__(Stage2ABTrainingTrainer)
+    t = Stage2TwoChannelTrainer.__new__(Stage2TwoChannelTrainer)
     cfg = {
         "maskiou_gate": 0.3,
         "candidate_top_k": 5,
@@ -3772,10 +3772,111 @@ def test_channel_b_compact_full_sorted_insertion_marks_fn_prefix_desc_positions(
     )
 
 
+def test_channel_b_compact_full_fn_slot_shuffle_injects_fn_objects_deterministically() -> (
+    None
+):
+    tok = _CoordLiteralTokenizer()
+    anchor_objects = [
+        GTObject(
+            index=0,
+            geom_type="bbox_2d",
+            points_norm1000=[400, 500, 450, 560],
+            desc="anchor-left",
+        ),
+        GTObject(
+            index=1,
+            geom_type="bbox_2d",
+            points_norm1000=[600, 500, 650, 560],
+            desc="anchor-right",
+        ),
+    ]
+    accepted_clean, duplicate_bursts_by_boundary = _sequential_dedup_bbox_objects(
+        parsed_bbox_objects_raw=anchor_objects,
+        duplicate_iou_threshold=0.9,
+    )
+    triage = _build_channel_b_triage(
+        accepted_objects_clean=accepted_clean,
+        duplicate_bursts_by_boundary=duplicate_bursts_by_boundary,
+        explorer_accepted_objects_clean_by_view=[[], [], []],
+        anchor_match_by_pred={0: 0, 1: 1},
+        explorer_match_by_pred_by_view=[{}, {}, {}],
+        unlabeled_consistent_iou_threshold=0.9,
+        duplicate_iou_threshold=0.9,
+        pseudo_positive_enabled=False,
+    )
+    gts = [
+        GTObject(
+            index=0,
+            geom_type="bbox_2d",
+            points_norm1000=[400, 500, 450, 560],
+            desc="matched-left",
+        ),
+        GTObject(
+            index=1,
+            geom_type="bbox_2d",
+            points_norm1000=[600, 500, 650, 560],
+            desc="matched-right",
+        ),
+        GTObject(
+            index=2,
+            geom_type="bbox_2d",
+            points_norm1000=[10, 20, 30, 40],
+            desc="fn-a",
+        ),
+        GTObject(
+            index=3,
+            geom_type="bbox_2d",
+            points_norm1000=[80, 90, 110, 140],
+            desc="fn-b",
+        ),
+    ]
+
+    def build(seed: int):
+        return _build_channel_b_supervision_targets(
+            tokenizer=tok,
+            prompt_ids=[],
+            coord_id_set=set(range(1000)),
+            gts=gts,
+            match=types.SimpleNamespace(matched_pairs=[(0, 0), (1, 1)]),
+            triage=triage,
+            recovered_ground_truth_weight_multiplier=2.0,
+            pseudo_positive_enabled=False,
+            pseudo_positive_coord_weight=0.4,
+            duplicate_iou_threshold=0.9,
+            object_field_order="desc_first",
+            bbox_groups_from_token_ids_fn=_bbox_groups_from_token_ids,
+            matched_prefix_structure_positions_fn=_matched_prefix_structure_positions,
+            serialize_append_fragment_fn=_serialize_append_fragment,
+            insertion_order="fn_slot_shuffle",
+            rollout_template_policy=resolve_stage2_rollout_template_policy(
+                "compact_full"
+            ),
+            shuffle_seed=seed,
+        )
+
+    first_targets = build(17)
+    replay_targets = build(17)
+    different_seed_targets = build(18)
+
+    assert first_targets.clean_target_text == replay_targets.clean_target_text
+    assert first_targets.clean_target_text != different_seed_targets.clean_target_text
+    assert first_targets.append_text == ""
+    assert first_targets.fn_bbox_groups == []
+    assert first_targets.tail_desc_pos == []
+    assert first_targets.clean_target_text.find(
+        f"{OBJECT_REF_START_TOKEN}anchor-left"
+    ) < first_targets.clean_target_text.find(f"{OBJECT_REF_START_TOKEN}anchor-right")
+    assert all(
+        any(group["gt_bins"] == list(obj.points_norm1000) for group in first_targets.prefix_bbox_groups)
+        for obj in gts[2:]
+    )
+    assert first_targets.prefix_desc_pos
+
+
 def test_channel_b_triage_posterior_nested_config_reaches_live_accessor_and_vllm_offsets(
     monkeypatch,
 ) -> None:
-    t = Stage2ABTrainingTrainer.__new__(Stage2ABTrainingTrainer)
+    t = Stage2TwoChannelTrainer.__new__(Stage2TwoChannelTrainer)
     cfg = {
         "maskiou_gate": 0.3,
         "candidate_top_k": 5,
@@ -3972,7 +4073,7 @@ def test_channel_b_triage_posterior_nested_config_reaches_live_accessor_and_vllm
 def test_channel_b_anchor_only_gt_hit_projects_anchor_gt_backed(
     monkeypatch,
 ) -> None:
-    t = Stage2ABTrainingTrainer.__new__(Stage2ABTrainingTrainer)
+    t = Stage2TwoChannelTrainer.__new__(Stage2TwoChannelTrainer)
     cfg = {
         "maskiou_gate": 0.3,
         "candidate_top_k": 5,
@@ -4135,7 +4236,7 @@ def test_channel_b_anchor_only_gt_hit_projects_anchor_gt_backed(
 
 
 def test_channel_b_shielded_anchor_stays_neutral_context(monkeypatch) -> None:
-    t = Stage2ABTrainingTrainer.__new__(Stage2ABTrainingTrainer)
+    t = Stage2TwoChannelTrainer.__new__(Stage2TwoChannelTrainer)
     cfg = {
         "maskiou_gate": 0.3,
         "candidate_top_k": 5,
@@ -4282,7 +4383,7 @@ def test_channel_b_shielded_anchor_stays_neutral_context(monkeypatch) -> None:
 
 
 def test_channel_b_explorer_only_dead_emits_no_explore_branch(monkeypatch) -> None:
-    t = Stage2ABTrainingTrainer.__new__(Stage2ABTrainingTrainer)
+    t = Stage2TwoChannelTrainer.__new__(Stage2TwoChannelTrainer)
     cfg = {
         "maskiou_gate": 0.3,
         "candidate_top_k": 5,
@@ -4446,7 +4547,7 @@ def test_channel_b_explorer_only_dead_emits_no_explore_branch(monkeypatch) -> No
 def test_channel_b_recovered_ground_truth_weight_multipliers_only_apply_to_recovered_tail_objects(
     monkeypatch,
 ) -> None:
-    t = Stage2ABTrainingTrainer.__new__(Stage2ABTrainingTrainer)
+    t = Stage2TwoChannelTrainer.__new__(Stage2TwoChannelTrainer)
     cfg = {
         "maskiou_gate": 0.3,
         "candidate_top_k": 5,
@@ -4629,7 +4730,7 @@ def test_channel_b_recovered_ground_truth_weight_multipliers_only_apply_to_recov
 
 
 def test_channel_b_tail_desc_weights_scale_desc_ce() -> None:
-    t = Stage2ABTrainingTrainer.__new__(Stage2ABTrainingTrainer)
+    t = Stage2TwoChannelTrainer.__new__(Stage2TwoChannelTrainer)
     t.stage2_ab_cfg = {
         "schedule": {"b_ratio": 1.0},
         "desc_ce_weight": 1.0,
@@ -4691,7 +4792,7 @@ def test_channel_b_tail_desc_weights_scale_desc_ce() -> None:
 
 
 def test_channel_b_bbox_group_weights_scale_geo_loss() -> None:
-    t = Stage2ABTrainingTrainer.__new__(Stage2ABTrainingTrainer)
+    t = Stage2TwoChannelTrainer.__new__(Stage2TwoChannelTrainer)
     t.stage2_ab_cfg = {
         "schedule": {"b_ratio": 1.0},
         "desc_ce_weight": 0.0,
@@ -4760,7 +4861,7 @@ def test_channel_b_bbox_group_weights_scale_geo_loss() -> None:
 
 
 def test_channel_b_coord_slot_weights_scale_coord_reg_loss() -> None:
-    t = Stage2ABTrainingTrainer.__new__(Stage2ABTrainingTrainer)
+    t = Stage2TwoChannelTrainer.__new__(Stage2TwoChannelTrainer)
     t.stage2_ab_cfg = {
         "schedule": {"b_ratio": 1.0},
         "desc_ce_weight": 0.0,
@@ -4830,7 +4931,7 @@ def test_channel_b_coord_slot_weights_scale_coord_reg_loss() -> None:
 
 
 def test_derive_rollout_seed_base_is_deterministic_and_matches_formula():
-    t = Stage2ABTrainingTrainer.__new__(Stage2ABTrainingTrainer)
+    t = Stage2TwoChannelTrainer.__new__(Stage2TwoChannelTrainer)
     t.args = types.SimpleNamespace(seed=123)
 
     out1 = t._derive_rollout_seed_base(global_step=7)
@@ -4843,7 +4944,7 @@ def test_derive_rollout_seed_base_is_deterministic_and_matches_formula():
 
 
 def test_hf_sampling_seeding_calls_seed_everything(monkeypatch):
-    t = Stage2ABTrainingTrainer.__new__(Stage2ABTrainingTrainer)
+    t = Stage2TwoChannelTrainer.__new__(Stage2TwoChannelTrainer)
 
     # Verify we call transformers.trainer_utils.set_seed(...) during HF sampling seeding.
     called = {}
@@ -4862,7 +4963,7 @@ def test_hf_sampling_seeding_calls_seed_everything(monkeypatch):
 
 
 def test_hf_sampling_seeding_restores_python_rng_state():
-    t = Stage2ABTrainingTrainer.__new__(Stage2ABTrainingTrainer)
+    t = Stage2TwoChannelTrainer.__new__(Stage2TwoChannelTrainer)
 
     import random
 
@@ -4917,7 +5018,7 @@ def test_packing_enabled_requires_qwen_packing_metadata():
 def test_post_rollout_packing_selector_is_remainder_aware():
     pytest.importorskip("binpacking")
 
-    from src.trainers.stage2_rollout_aligned import RolloutMatchingSFTTrainer
+    from src.trainers.stage2_rollout_runtime import Stage2RolloutRuntime
 
     packing_length = 10
     min_fill_ratio = 0.5
@@ -4959,7 +5060,7 @@ def test_post_rollout_packing_selector_is_remainder_aware():
     legacy_underfilled = _simulate(lens, selector=_legacy_fifo)
 
     def _smart(buf_lens: Sequence[int]) -> List[int]:
-        return RolloutMatchingSFTTrainer._select_post_rollout_segment_indices(
+        return Stage2RolloutRuntime._select_post_rollout_segment_indices(
             buf_lens,
             packing_length,
             min_fill_ratio=min_fill_ratio,
@@ -5116,7 +5217,7 @@ def test_compute_loss_raises_on_sliced_logits():
 
 
 def test_channel_b_includes_fn_geometry_loss():
-    t = Stage2ABTrainingTrainer.__new__(Stage2ABTrainingTrainer)
+    t = Stage2TwoChannelTrainer.__new__(Stage2TwoChannelTrainer)
     t.stage2_ab_cfg = {
         "schedule": {"b_ratio": 1.0},
         # Turn off CE so we isolate geometry contribution.
@@ -5170,7 +5271,7 @@ def test_channel_b_includes_fn_geometry_loss():
 
 
 def test_stage2_coord_soft_ce_w1_adds_coord_distribution_loss() -> None:
-    t = Stage2ABTrainingTrainer.__new__(Stage2ABTrainingTrainer)
+    t = Stage2TwoChannelTrainer.__new__(Stage2TwoChannelTrainer)
     t.stage2_ab_cfg = {
         "schedule": {"b_ratio": 1.0},
         "desc_ce_weight": 0.0,
@@ -5237,7 +5338,7 @@ def test_stage2_coord_soft_ce_w1_adds_coord_distribution_loss() -> None:
 
 
 def test_stage2_coord_soft_ce_w1_disabled_contributes_zero() -> None:
-    t = Stage2ABTrainingTrainer.__new__(Stage2ABTrainingTrainer)
+    t = Stage2TwoChannelTrainer.__new__(Stage2TwoChannelTrainer)
     t.stage2_ab_cfg = {
         "schedule": {"b_ratio": 1.0},
         "desc_ce_weight": 0.0,
@@ -5355,7 +5456,7 @@ def test_channel_a_bbox_size_aux_logs_bbox_log_wh_immediately() -> None:
 
 
 def test_channel_b_bbox_group_weights_scale_bbox_size_aux_loss() -> None:
-    t = Stage2ABTrainingTrainer.__new__(Stage2ABTrainingTrainer)
+    t = Stage2TwoChannelTrainer.__new__(Stage2TwoChannelTrainer)
     t.stage2_ab_cfg = {
         "schedule": {"b_ratio": 1.0},
         "desc_ce_weight": 0.0,
@@ -5491,7 +5592,7 @@ def test_channel_a_teacher_forcing_logits_drive_coord_losses_under_single_pass_n
 
 
 def test_channel_b_unused_meta_flag_does_not_change_supervision_semantics() -> None:
-    t = Stage2ABTrainingTrainer.__new__(Stage2ABTrainingTrainer)
+    t = Stage2TwoChannelTrainer.__new__(Stage2TwoChannelTrainer)
     t.stage2_ab_cfg = {
         "schedule": {"b_ratio": 1.0},
         "desc_ce_weight": 1.0,
@@ -5546,7 +5647,7 @@ def test_channel_b_unused_meta_flag_does_not_change_supervision_semantics() -> N
 
 
 def test_channel_b_tail_ignore_pos_masks_ce_tokens():
-    t = Stage2ABTrainingTrainer.__new__(Stage2ABTrainingTrainer)
+    t = Stage2TwoChannelTrainer.__new__(Stage2TwoChannelTrainer)
     t.stage2_ab_cfg = {
         "schedule": {"b_ratio": 1.0},
         "desc_ce_weight": 1.0,
@@ -5682,7 +5783,7 @@ def test_matched_prefix_structure_positions_uses_parser_char_frame_for_span_chec
 
 
 def test_channel_b_prefix_structure_supervision_uses_global_prefix_knob():
-    t = Stage2ABTrainingTrainer.__new__(Stage2ABTrainingTrainer)
+    t = Stage2TwoChannelTrainer.__new__(Stage2TwoChannelTrainer)
     t.stage2_ab_cfg = {
         "schedule": {"b_ratio": 1.0},
         "desc_ce_weight": 1.0,
@@ -5753,7 +5854,7 @@ def test_channel_b_prefix_structure_supervision_uses_global_prefix_knob():
 
 
 def test_channel_b_fn_desc_default_on_and_can_be_disabled_via_pipeline() -> None:
-    t = Stage2ABTrainingTrainer.__new__(Stage2ABTrainingTrainer)
+    t = Stage2TwoChannelTrainer.__new__(Stage2TwoChannelTrainer)
     t.stage2_ab_cfg = {
         "schedule": {"b_ratio": 1.0},
         "desc_ce_weight": 1.0,
@@ -5853,7 +5954,7 @@ def test_channel_b_fn_desc_default_on_and_can_be_disabled_via_pipeline() -> None
 def test_stage2_pipeline_canonical_bbox_geo_weights_control_precomputed_geo_loss() -> (
     None
 ):
-    t = Stage2ABTrainingTrainer.__new__(Stage2ABTrainingTrainer)
+    t = Stage2TwoChannelTrainer.__new__(Stage2TwoChannelTrainer)
     t.stage2_ab_cfg = {
         "schedule": {"b_ratio": 1.0},
         "desc_ce_weight": 0.0,
@@ -5928,7 +6029,7 @@ def test_stage2_pipeline_canonical_bbox_geo_weights_control_precomputed_geo_loss
 def test_stage2_pipeline_default_parity_channel_b_desc_weighting_unpacked() -> None:
     desc_w = 0.35
 
-    t = Stage2ABTrainingTrainer.__new__(Stage2ABTrainingTrainer)
+    t = Stage2TwoChannelTrainer.__new__(Stage2TwoChannelTrainer)
     t.stage2_ab_cfg = {
         "schedule": {"b_ratio": 1.0},
         "desc_ce_weight": float(desc_w),
@@ -6000,7 +6101,7 @@ def test_stage2_pipeline_default_parity_channel_b_desc_weighting_unpacked() -> N
 def test_stage2_pipeline_default_parity_channel_b_desc_weighting_packed() -> None:
     desc_w = 0.4
 
-    t = Stage2ABTrainingTrainer.__new__(Stage2ABTrainingTrainer)
+    t = Stage2TwoChannelTrainer.__new__(Stage2TwoChannelTrainer)
     t.stage2_ab_cfg = {
         "schedule": {"b_ratio": 1.0},
         "desc_ce_weight": float(desc_w),
@@ -6678,7 +6779,7 @@ def test_reduce_stage2_pending_metrics_global_recomputes_ratio_and_sums_invalid_
                     )
                 )
 
-    trainer = Stage2ABTrainingTrainer.__new__(Stage2ABTrainingTrainer)
+    trainer = Stage2TwoChannelTrainer.__new__(Stage2TwoChannelTrainer)
     trainer._dist_info = lambda: (0, 2, _FakeDist())
 
     out = trainer._reduce_stage2_pending_metrics_global(
@@ -6721,7 +6822,7 @@ def test_reduce_stage2_pending_metrics_global_uses_weight_total_for_means() -> N
                     )
                 )
 
-    trainer = Stage2ABTrainingTrainer.__new__(Stage2ABTrainingTrainer)
+    trainer = Stage2TwoChannelTrainer.__new__(Stage2TwoChannelTrainer)
     trainer._dist_info = lambda: (0, 2, _FakeDist())
 
     out = trainer._reduce_stage2_pending_metrics_global(
@@ -6761,7 +6862,7 @@ def test_reduce_stage2_pending_metrics_global_treats_train_optimization_losses_a
                     )
                 )
 
-    trainer = Stage2ABTrainingTrainer.__new__(Stage2ABTrainingTrainer)
+    trainer = Stage2TwoChannelTrainer.__new__(Stage2TwoChannelTrainer)
     trainer._dist_info = lambda: (0, 2, _FakeDist())
 
     out = trainer._reduce_stage2_pending_metrics_global(
@@ -6776,7 +6877,7 @@ def test_reduce_stage2_pending_metrics_global_treats_train_optimization_losses_a
 
 
 def test_reduce_stage2_pending_metrics_global_strips_internal_underscore_keys() -> None:
-    trainer = Stage2ABTrainingTrainer.__new__(Stage2ABTrainingTrainer)
+    trainer = Stage2TwoChannelTrainer.__new__(Stage2TwoChannelTrainer)
     trainer._dist_info = lambda: (0, 1, None)
 
     out = trainer._reduce_stage2_pending_metrics_global(
@@ -6805,7 +6906,7 @@ def test_channel_b_step_budgeted_path_is_supported_under_ddp_mock(monkeypatch):
     )
     monkeypatch.setattr(torch.distributed, "get_world_size", lambda: 2, raising=False)
 
-    t = Stage2ABTrainingTrainer.__new__(Stage2ABTrainingTrainer)
+    t = Stage2TwoChannelTrainer.__new__(Stage2TwoChannelTrainer)
     # Even if a legacy key is present in a hand-built dict, the trainer should not consult it.
     t.stage2_ab_cfg = {"schedule": {"b_ratio": 1.0}, "channel_b": {"mode": "async"}}
 
@@ -6834,7 +6935,7 @@ def test_channel_b_step_budgeted_path_is_supported_under_ddp_mock(monkeypatch):
 
 
 def test_b_ratio_realized_tracks_optimizer_steps_once():
-    t = Stage2ABTrainingTrainer.__new__(Stage2ABTrainingTrainer)
+    t = Stage2TwoChannelTrainer.__new__(Stage2TwoChannelTrainer)
     t._stage2_ab_realized_last_gs = None
 
     t._stage2_record_realized_step(global_step=0, executed_b=False)
@@ -6860,8 +6961,8 @@ def test_merge_rollout_matching_batch_metrics_preserves_existing_keys():
     assert bm["rollout/backend_vllm"] == 2.0
 
 
-def _make_eval_ready_stage2_ab_trainer() -> Stage2ABTrainingTrainer:
-    trainer = object.__new__(Stage2ABTrainingTrainer)
+def _make_eval_ready_stage2_ab_trainer() -> Stage2TwoChannelTrainer:
+    trainer = object.__new__(Stage2TwoChannelTrainer)
 
     class _EvalModel:
         def __init__(self) -> None:
@@ -6917,15 +7018,15 @@ def test_stage2_two_channel_eval_emits_rollout_map_and_coco_contract(
     )
 
     monkeypatch.setattr(
-        "src.trainers.stage2_rollout_aligned.parse_rollout_for_matching",
+        "src.trainers.stage2_rollout_runtime.parse_rollout_for_matching",
         lambda **_kwargs: parse_obj,
     )
     monkeypatch.setattr(
-        "src.trainers.stage2_rollout_aligned._points_from_coord_tokens",
+        "src.trainers.stage2_rollout_runtime._points_from_coord_tokens",
         lambda **_kwargs: [0, 0, 10, 10],
     )
     monkeypatch.setattr(
-        "src.trainers.stage2_rollout_aligned._extract_gt_objects",
+        "src.trainers.stage2_rollout_runtime._extract_gt_objects",
         lambda _sample: [
             GTObject(
                 index=0,
@@ -6936,7 +7037,7 @@ def test_stage2_two_channel_eval_emits_rollout_map_and_coco_contract(
         ],
     )
     monkeypatch.setattr(
-        "src.trainers.stage2_rollout_aligned.greedy_match_iou",
+        "src.trainers.stage2_rollout_runtime.greedy_match_iou",
         lambda **_kwargs: types.SimpleNamespace(
             matched_pairs=[(0, 0)],
             fp_pred_indices=[],
@@ -6947,7 +7048,7 @@ def test_stage2_two_channel_eval_emits_rollout_map_and_coco_contract(
         ),
     )
     monkeypatch.setattr(
-        "src.trainers.stage2_rollout_aligned._compute_eval_detection_coco_metrics",
+        "src.trainers.stage2_rollout_runtime._compute_eval_detection_coco_metrics",
         lambda **_kwargs: (
             {"bbox_AP": 0.25, "bbox_AP50": 0.5, "segm_AP": 0.75},
             {"empty_pred": 0},
@@ -6986,15 +7087,15 @@ def test_stage2_two_channel_eval_raises_when_coco_eval_fails(monkeypatch) -> Non
     )
 
     monkeypatch.setattr(
-        "src.trainers.stage2_rollout_aligned.parse_rollout_for_matching",
+        "src.trainers.stage2_rollout_runtime.parse_rollout_for_matching",
         lambda **_kwargs: parse_obj,
     )
     monkeypatch.setattr(
-        "src.trainers.stage2_rollout_aligned._points_from_coord_tokens",
+        "src.trainers.stage2_rollout_runtime._points_from_coord_tokens",
         lambda **_kwargs: [0, 0, 10, 10],
     )
     monkeypatch.setattr(
-        "src.trainers.stage2_rollout_aligned._extract_gt_objects",
+        "src.trainers.stage2_rollout_runtime._extract_gt_objects",
         lambda _sample: [
             GTObject(
                 index=0,
@@ -7005,7 +7106,7 @@ def test_stage2_two_channel_eval_raises_when_coco_eval_fails(monkeypatch) -> Non
         ],
     )
     monkeypatch.setattr(
-        "src.trainers.stage2_rollout_aligned.greedy_match_iou",
+        "src.trainers.stage2_rollout_runtime.greedy_match_iou",
         lambda **_kwargs: types.SimpleNamespace(
             matched_pairs=[(0, 0)],
             fp_pred_indices=[],
@@ -7020,7 +7121,7 @@ def test_stage2_two_channel_eval_raises_when_coco_eval_fails(monkeypatch) -> Non
         raise ValueError("synthetic coco eval failure")
 
     monkeypatch.setattr(
-        "src.trainers.stage2_rollout_aligned._compute_eval_detection_coco_metrics",
+        "src.trainers.stage2_rollout_runtime._compute_eval_detection_coco_metrics",
         _raise_coco_eval,
     )
 

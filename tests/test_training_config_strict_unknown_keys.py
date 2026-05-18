@@ -209,11 +209,11 @@ def test_materialized_training_artifact_paths_reject_non_string_components(
         ConfigLoader._materialize_training_artifact_paths(config)
 
 
-def test_disabled_custom_fusion_config_fails_fast() -> None:
+def test_removed_custom_fusion_config_fails_fast() -> None:
     payload = _base_training_payload()
     payload["custom"]["fusion_config"] = "toy/fusion.yaml"
 
-    with pytest.raises(ValueError, match=r"custom\.fusion_config is temporarily disabled"):
+    with pytest.raises(ValueError, match=r"custom\.fusion_config has been removed"):
         TrainingConfig.from_mapping(payload, PromptOverrides())
 
 
@@ -1093,6 +1093,29 @@ def test_unknown_top_level_key_fails_fast() -> None:
     assert "Migration guidance" in msg
 
 
+@pytest.mark.parametrize(
+    "trainer_variant",
+    [
+        "stage2_rollout_aligned",
+        "stage2_rollout_runtime",
+        "rollout_matching_sft",
+        "stage2_ab_training",
+    ],
+)
+def test_removed_stage2_trainer_variants_fail_fast_with_stage2_two_channel_guidance(
+    trainer_variant: str,
+) -> None:
+    payload = _base_training_payload()
+    payload["custom"]["trainer_variant"] = trainer_variant
+
+    with pytest.raises(ValueError) as exc:
+        TrainingConfig.from_mapping(payload, PromptOverrides())
+
+    msg = str(exc.value)
+    assert f"custom.trainer_variant={trainer_variant} has been removed" in msg
+    assert "use stage2_two_channel" in msg
+
+
 def _base_stage2_two_channel_payload() -> dict:
     payload = _base_training_payload()
     payload["custom"]["trainer_variant"] = "stage2_two_channel"
@@ -1108,18 +1131,6 @@ def _base_stage2_two_channel_payload() -> dict:
             "diagnostics": [],
         },
         "channel_b": {},
-    }
-    return payload
-
-
-def _base_stage2_rollout_aligned_payload() -> dict:
-    payload = _base_training_payload()
-    payload["custom"]["trainer_variant"] = "stage2_rollout_aligned"
-    payload["rollout_matching"] = {
-        "rollout_backend": "hf",
-        "channel_b_decode_batch_size": 1,
-        "eval_decode_batch_size": 1,
-        "pipeline": {"objective": [_pipeline_token_ce_spec()], "diagnostics": []},
     }
     return payload
 
@@ -1421,45 +1432,7 @@ def test_guardrail_stage2_two_channel_rejects_rollout_pipeline():
         "diagnostics": [],
     }
 
-    with pytest.raises(ValueError, match=r"rollout_matching\.pipeline is not allowed"):
-        TrainingConfig.from_mapping(payload, PromptOverrides())
-
-
-def test_guardrail_rollout_aligned_rejects_stage2_pipeline():
-    payload = _base_stage2_rollout_aligned_payload()
-    payload["stage2_ab"] = {
-        "schedule": {"b_ratio": 0.5},
-        "pipeline": {
-            "objective": _canonical_stage2_two_channel_objective(),
-            "diagnostics": [],
-        },
-    }
-
-    with pytest.raises(ValueError, match=r"stage2_ab\.pipeline is not allowed"):
-        TrainingConfig.from_mapping(payload, PromptOverrides())
-
-
-def test_rollout_pipeline_bbox_geo_rejects_zero_center_and_size_weights() -> None:
-    payload = _base_stage2_rollout_aligned_payload()
-    payload["rollout_matching"]["pipeline"] = {
-        "objective": [
-            _pipeline_bbox_geo_spec(
-                config={
-                    "smoothl1_weight": 0.5,
-                    "ciou_weight": 0.25,
-                    "parameterization": "center_size",
-                    "center_weight": 0.0,
-                    "size_weight": 0.0,
-                }
-            )
-        ],
-        "diagnostics": [],
-    }
-
-    with pytest.raises(
-        ValueError,
-        match=r"rollout_matching\.pipeline\.objective\[0\]\.config\.parameterization=center_size requires center_weight > 0 or size_weight > 0",
-    ):
+    with pytest.raises(ValueError, match=r"rollout_matching\.pipeline has been removed"):
         TrainingConfig.from_mapping(payload, PromptOverrides())
 
 

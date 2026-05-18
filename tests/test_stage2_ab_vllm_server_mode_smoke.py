@@ -190,7 +190,7 @@ def test_vllm_server_prompt_tokenization_parity_smoke(tmp_path: Path) -> None:
     from PIL import Image
     from swift.llm import get_model_tokenizer, get_template
 
-    from src.trainers.stage2_rollout_aligned import RolloutMatchingSFTTrainer
+    from src.trainers.stage2_rollout_runtime import Stage2RolloutRuntime
     from src.utils.assistant_json import dumps_coordjson
 
     def _find_subsequence(haystack: list[int], needle: list[int]) -> int:
@@ -258,7 +258,7 @@ def test_vllm_server_prompt_tokenization_parity_smoke(tmp_path: Path) -> None:
     rollout_template.system = str(teacher_template.system)
     rollout_template.set_mode("vllm")
 
-    trainer = object.__new__(RolloutMatchingSFTTrainer)
+    trainer = object.__new__(Stage2RolloutRuntime)
     trainer.template = rollout_template
 
     rollout_sample = {
@@ -360,7 +360,7 @@ def test_vllm_server_prompt_tokenization_parity_smoke(tmp_path: Path) -> None:
                 + _tail(server_log)
             ) from exc
 
-        request_cfg = RolloutMatchingSFTTrainer._rollout_vllm_request_config_kwargs(
+        request_cfg = Stage2RolloutRuntime._rollout_vllm_request_config_kwargs(
             max_tokens=1,
             temperature=0.0,
             top_p=1.0,
@@ -384,7 +384,7 @@ def test_vllm_server_prompt_tokenization_parity_smoke(tmp_path: Path) -> None:
         payload = json.loads(body.decode("utf-8"))
         assert isinstance(payload, list) and payload
         _token_ids, _text, server_prompt_ids = (
-            RolloutMatchingSFTTrainer._parse_vllm_server_output(payload[0])
+            Stage2RolloutRuntime._parse_vllm_server_output(payload[0])
         )
         server_image_token_count = sum(
             1

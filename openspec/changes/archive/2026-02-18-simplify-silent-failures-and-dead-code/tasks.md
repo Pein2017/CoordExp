@@ -38,8 +38,8 @@
 ## 6. Dead Code Removal (Verified Zero Call Sites)
 
 - [x] 6.1 Remove unused Stage-2 scheduler helpers (`Stage2ABSchedulerMixin._stage2_b_step_mode`, `_stage2_policy_channel_for_step`) after verifying no call sites.
-- [x] 6.2 Remove unused Stage-2 training RNG helper (`Stage2ABTrainingTrainer._maybe_seed_hf_sampling_rollout`) after verifying no call sites.
-- [x] 6.3 Remove unused rollout-matching helpers (`RolloutMatchingSFTTrainer._post_rollout_pack_scope`, `_rollout_one`, `_vllm_server_total_world_size`) after verifying no call sites.
+- [x] 6.2 Remove unused Stage-2 training RNG helper (`Stage2TwoChannelTrainer._maybe_seed_hf_sampling_rollout`) after verifying no call sites.
+- [x] 6.3 Remove unused rollout-matching helpers (`Stage2RolloutRuntime._post_rollout_pack_scope`, `_rollout_one`, `_vllm_server_total_world_size`) after verifying no call sites.
 - [x] 6.4 Remove unused inference pipeline helper (`_write_gt_vs_pred_plot_rows`) after verifying no call sites.
 
 ## 7. Simplify Deprecated/No-Op Surfaces (Safe Removals)

@@ -73,14 +73,13 @@ rollout-aligned setup behavior.
 
 Normative behavior:
 
-- Stage-2 variants MUST preserve raw sample metadata;
-- Stage-2 variants MUST disable dataset static packing;
+- Stage-2 Two-Channel MUST preserve raw sample metadata;
+- Stage-2 Two-Channel MUST disable dataset static packing;
 - `training.packing=true` MUST continue to mean trainer-owned dynamic
   post-rollout packing for Stage-2;
-- Stage-2 variants MUST select identity collation;
-- Stage-2 variants MUST exclude ordinary Stage-1 mixins;
+- Stage-2 Two-Channel MUST select identity collation;
+- Stage-2 Two-Channel MUST exclude ordinary Stage-1 mixins;
 - `stage2_two_channel` MUST require `stage2_ab.pipeline`;
-- `stage2_rollout_aligned` MUST require `rollout_matching.pipeline`;
 - Stage-2 rollout runtime settings MUST remain under top-level
   `rollout_matching`;
 - target construction, rollout matching, duplicate control, pseudo-positive

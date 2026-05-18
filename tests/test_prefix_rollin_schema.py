@@ -20,7 +20,6 @@ def _prefix_rollin_payload() -> dict[str, object]:
             "train_jsonl": "public_data/coco/rescale_32_1024_bbox_max60/train.coord.jsonl",
             "val_jsonl": "public_data/coco/rescale_32_1024_bbox_max60/val.coord.jsonl",
             "image_root": "public_data/coco",
-            "max_objects": 60,
             "object_ordering": "random_permutation",
         },
         "prompt": {

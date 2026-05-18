@@ -2,14 +2,14 @@ import json
 
 import pytest
 
-from src.trainers.stage2_rollout_aligned import RolloutMatchingSFTTrainer
+from src.trainers.stage2_rollout_runtime import Stage2RolloutRuntime
 
 
 def test_build_vllm_server_infer_requests_matches_swift_rollout_infer_request() -> None:
     # Import from ms-swift (CPU-only; no server required).
     from swift.llm.template.template_inputs import RolloutInferRequest
 
-    t = object.__new__(RolloutMatchingSFTTrainer)
+    t = object.__new__(Stage2RolloutRuntime)
 
     samples = [
         {
@@ -39,7 +39,7 @@ def test_build_vllm_server_infer_requests_matches_swift_rollout_infer_request() 
 
 
 def test_build_vllm_server_infer_requests_rejects_non_string_images() -> None:
-    t = object.__new__(RolloutMatchingSFTTrainer)
+    t = object.__new__(Stage2RolloutRuntime)
 
     with pytest.raises(ValueError, match=r"image entries"):
         t._build_vllm_server_infer_requests(
@@ -53,7 +53,7 @@ def test_build_vllm_server_infer_requests_rejects_non_string_images() -> None:
 
 
 def test_build_vllm_server_infer_requests_requires_messages_list() -> None:
-    t = object.__new__(RolloutMatchingSFTTrainer)
+    t = object.__new__(Stage2RolloutRuntime)
 
     with pytest.raises(ValueError, match=r"messages"):
         t._build_vllm_server_infer_requests([{"messages": "not-a-list"}])

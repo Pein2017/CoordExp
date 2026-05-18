@@ -41,8 +41,8 @@ owner/expiry/opt-in. Supported `surface.id` values are:
 | Stage-1 compact prefix roll-in ET-RMP-CE | E1 ablation/smoke route | `configs/stage1/recursive_detection_ce_latest/ablation/compact_full_prefix_rollin_balance2.yaml` | Packing/cache disabled; recursive sidecar offset rewriting is not implemented | Compact-full only. EOS supervision uses ordinary teacher-forced `<|im_end|>` CE. |
 | Stage-1 compact detection bridge | Legacy bridge only | `configs/stage1/compact_detection_sequence/smoke/compact_full_tiny.yaml` | Legacy SFT smoke surface; not a latest packing example | Uses legacy `TrainingConfig` plus `custom.detection_sequence_format`; do not use as a latest-schema example. |
 | Stage-2 two-channel | Active Stage-2 operator path and shadow `surface.id: stage2_two_channel` | `configs/stage2_two_channel/`; shadow pipeline in `src/training/pipelines/stage2_two_channel.py` | Post-rollout trainer packing when configured; rollout generation remains unpacked | YAML-first Channel-A plus clean-prefix Channel-B training. New planning direction is duplicate filtering before greedy-IoU assignment and Channel-B false-negative insertion. |
-| Stage-2 rollout-aligned | Supported compatibility variant | `custom.trainer_variant: stage2_rollout_aligned` with `rollout_matching.pipeline.*` | Compatibility path | Do not author `stage2_ab.pipeline.*` for this variant. |
-| Runtime fusion config | Dormant legacy surface | `configs/fusion/` examples only | Not part of supported training authoring | Merge JSONLs offline for multi-dataset training today. |
+| Retired Stage-2 rollout-aligned variants | Removed | `stage2_rollout_aligned`, `stage2_rollout_runtime`, `rollout_matching_sft` fail fast with guidance to `stage2_two_channel` | Removed | Shared rollout runtime code remains internal in `src/trainers/stage2_rollout_runtime.py`. |
+| Runtime fusion config | Removed | `custom.fusion_config` fails fast; `configs/fusion/` was deleted | Removed | Merge JSONLs offline for multi-dataset training. |
 
 Current cleanup decisions:
 
@@ -50,9 +50,9 @@ Current cleanup decisions:
   payload, including duplicate-burst unlikelihood, adjacent repulsion,
   EOS-loosen/trust/weighted-loss variants, continuation forcing, separator
   forcing, and stop-signal gate/damping variants.
-- Historical diagnostics, old artifacts, absence tests, and compatibility
-  readers may still mention those names. Current guidance must not recommend
-  them as active training strategy.
+- Historical diagnostics, old artifacts, and absence tests may still mention
+  those names. Current guidance must not recommend them as active training
+  strategy.
 - Objective profiles are keyed in YAML-like authoring, but resolve in canonical
   order: `token_ce`, `trie_ce`, `coord_soft_ce`, `box_regression`.
 
@@ -64,7 +64,7 @@ Current cleanup decisions:
 4. [LVIS.md](LVIS.md) for LVIS-specific dataset, prompt, Stage-2, and evaluation semantics
 5. [METRICS.md](METRICS.md) for loss-key and logging interpretation
 6. [`stage2-ab-training/spec.md`](../../openspec/specs/stage2-ab-training/spec.md) when exact `stage2_two_channel` stable contract semantics matter
-7. [`rollout-matching-sft/spec.md`](../../openspec/specs/rollout-matching-sft/spec.md) when working on the supported `stage2_rollout_aligned` variant
+7. [`rollout-matching-sft/spec.md`](../../openspec/specs/rollout-matching-sft/spec.md) when checking the retired rollout-matching trainer contract
 8. [`runtime-architecture-refactor-program/spec.md`](../../openspec/specs/runtime-architecture-refactor-program/spec.md) when the question is about runtime ownership seams or compatibility-preserving refactors
 
 ## Compact Detection Sequence Contracts
@@ -146,7 +146,7 @@ latest-detection objective subkeys, but no new CLI flags.
 - `configs/_shared/latest_detection/` authoring snippets, not current launch inheritance
 - `src/trainers/stage2_two_channel.py`
 - `src/trainers/stage2_two_channel/`
-- `src/trainers/stage2_rollout_aligned.py`
+- `src/trainers/stage2_rollout_runtime.py`
 - `src/trainers/rollout_aligned_targets.py`
 - `src/trainers/rollout_aligned_evaluator.py`
 - `src/trainers/rollout_runtime/`

@@ -1,7 +1,7 @@
 
 import pytest
 
-from src.trainers.stage2_rollout_aligned import RolloutMatchingSFTTrainer, _PendingTrainRolloutLog
+from src.trainers.stage2_rollout_runtime import Stage2RolloutRuntime, _PendingTrainRolloutLog
 
 
 def test_a_only_stage2_does_not_emit_rollout_monitors_when_no_rollout_ran() -> None:
@@ -11,7 +11,7 @@ def test_a_only_stage2_does_not_emit_rollout_monitors_when_no_rollout_ran() -> N
     telemetry, but we must not pretend a rollout executed.
     """
 
-    trainer = object.__new__(RolloutMatchingSFTTrainer)
+    trainer = object.__new__(Stage2RolloutRuntime)
     trainer.rollout_matching_cfg = {}
     trainer._cfg = lambda _k, default=None: default
 

@@ -456,7 +456,6 @@ Acceptance is not based on speed alone. The candidate must preserve:
 ```text
 loss/recursive_detection_ce
 recursive_detection_ce/type_gate_loss
-recursive_detection_ce/eos_trust_weight
 recursive_detection_ce/target_mix/trie_multi_positive_fraction
 recursive_detection_ce/entry/valid_child_entropy
 eval_loss or eval recursive CE on the same health/full-val scope
@@ -608,12 +607,11 @@ packed_loss = compute_loss_from_packed_row(two_original_groups_batch)
 assert packed_loss.item() == pytest.approx(unpacked_loss.item(), rel=1e-6)
 ```
 
-- [ ] **Step 2: Verify EOS/type-gate/trie preservation**
+- [ ] **Step 2: Verify type-gate/trie preservation**
 
 Add assertions that packed metrics equal unpacked metrics for:
 
 ```text
-recursive_detection_ce/eos_trust_weight
 recursive_detection_ce/type_gate_loss
 recursive_detection_ce/target_mix/trie_multi_positive_fraction
 recursive_detection_ce/entry/valid_child_entropy

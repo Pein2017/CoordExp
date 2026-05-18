@@ -2,11 +2,11 @@ from __future__ import annotations
 
 import math
 
-from src.trainers.stage2_two_channel import Stage2ABTrainingTrainer
+from src.trainers.stage2_two_channel import Stage2TwoChannelTrainer
 
 
 def _count_b_steps(*, b_ratio: float, steps: int) -> int:
-    t = Stage2ABTrainingTrainer.__new__(Stage2ABTrainingTrainer)
+    t = Stage2TwoChannelTrainer.__new__(Stage2TwoChannelTrainer)
     t._stage2_channel_override = None
     t.stage2_ab_cfg = {"schedule": {"b_ratio": float(b_ratio)}, "channel_b": {}}
     n_b = 0

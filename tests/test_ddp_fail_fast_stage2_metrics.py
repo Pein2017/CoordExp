@@ -7,18 +7,18 @@ import pytest
 import torch
 
 from src.trainers.metrics.mixins import AggregateTokenTypeMetricsMixin
-from src.trainers.stage2_rollout_aligned import RolloutMatchingSFTTrainer
-from src.trainers.stage2_two_channel import Stage2ABTrainingTrainer
+from src.trainers.stage2_rollout_runtime import Stage2RolloutRuntime
+from src.trainers.stage2_two_channel import Stage2TwoChannelTrainer
 
 
-def _mk_min_stage2_trainer() -> Stage2ABTrainingTrainer:
-    t = Stage2ABTrainingTrainer.__new__(Stage2ABTrainingTrainer)
+def _mk_min_stage2_trainer() -> Stage2TwoChannelTrainer:
+    t = Stage2TwoChannelTrainer.__new__(Stage2TwoChannelTrainer)
     t.model = types.SimpleNamespace(device=torch.device("cpu"))
     return t
 
 
-def _mk_min_rollout_trainer() -> RolloutMatchingSFTTrainer:
-    t = RolloutMatchingSFTTrainer.__new__(RolloutMatchingSFTTrainer)
+def _mk_min_rollout_trainer() -> Stage2RolloutRuntime:
+    t = Stage2RolloutRuntime.__new__(Stage2RolloutRuntime)
     t.model = types.SimpleNamespace(device=torch.device("cpu"))
     return t
 

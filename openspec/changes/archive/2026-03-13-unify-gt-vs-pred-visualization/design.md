@@ -11,7 +11,7 @@ The current repo already exposes the main visualization families we care about:
   - `src/eval/detection.py`
 - online monitor-dump visualization:
   - `vis_tools/vis_monitor_dump_gt_vs_pred.py`
-  - `src/trainers/stage2_rollout_aligned.py`
+  - `src/trainers/stage2_rollout_runtime.py`
   - `src/trainers/stage2_two_channel.py`
 - pairwise comparison:
   - `scripts/analysis/rollout_backend_bench/vis_rollout_backend_compare.py`

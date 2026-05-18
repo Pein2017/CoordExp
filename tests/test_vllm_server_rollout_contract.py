@@ -1,10 +1,10 @@
 import pytest
 
-from src.trainers.stage2_rollout_aligned import RolloutMatchingSFTTrainer
+from src.trainers.stage2_rollout_runtime import Stage2RolloutRuntime
 
 
 def test_vllm_request_config_enforces_return_details() -> None:
-    cfg = RolloutMatchingSFTTrainer._rollout_vllm_request_config_kwargs(
+    cfg = Stage2RolloutRuntime._rollout_vllm_request_config_kwargs(
         max_tokens=16,
         temperature=0.0,
         top_p=1.0,
@@ -19,7 +19,7 @@ def test_parse_vllm_server_output_requires_prompt_and_token_ids() -> None:
         "prompt_token_ids": [1, 2, 3],
         "choices": [{"message": {"content": "hi"}, "token_ids": [4, 5]}],
     }
-    token_ids, text, prompt_ids = RolloutMatchingSFTTrainer._parse_vllm_server_output(raw)
+    token_ids, text, prompt_ids = Stage2RolloutRuntime._parse_vllm_server_output(raw)
     assert token_ids == [4, 5]
     assert text == "hi"
     assert prompt_ids == [1, 2, 3]
@@ -32,7 +32,7 @@ def test_parse_vllm_server_output_accepts_response_wrapper() -> None:
             "choices": [{"message": {"content": "ok"}, "token_ids": [2]}],
         }
     }
-    token_ids, text, prompt_ids = RolloutMatchingSFTTrainer._parse_vllm_server_output(raw)
+    token_ids, text, prompt_ids = Stage2RolloutRuntime._parse_vllm_server_output(raw)
     assert token_ids == [2]
     assert text == "ok"
     assert prompt_ids == [1]
@@ -41,13 +41,13 @@ def test_parse_vllm_server_output_accepts_response_wrapper() -> None:
 def test_parse_vllm_server_output_raises_when_missing_prompt_token_ids() -> None:
     raw = {"choices": [{"message": {"content": "hi"}, "token_ids": [4, 5]}]}
     with pytest.raises(RuntimeError, match=r"prompt_token_ids"):
-        RolloutMatchingSFTTrainer._parse_vllm_server_output(raw)
+        Stage2RolloutRuntime._parse_vllm_server_output(raw)
 
 
 def test_parse_vllm_server_output_raises_when_missing_token_ids() -> None:
     raw = {"prompt_token_ids": [1], "choices": [{"message": {"content": "hi"}}]}
     with pytest.raises(RuntimeError, match=r"token_ids"):
-        RolloutMatchingSFTTrainer._parse_vllm_server_output(raw)
+        Stage2RolloutRuntime._parse_vllm_server_output(raw)
 
 
 def test_parse_vllm_server_output_traced_accepts_well_formed_trace() -> None:
@@ -67,7 +67,7 @@ def test_parse_vllm_server_output_traced_accepts_well_formed_trace() -> None:
         ],
     }
     token_ids, text, prompt_ids, token_logprobs, generated_token_text = (
-        RolloutMatchingSFTTrainer._parse_vllm_server_output_traced(raw)
+        Stage2RolloutRuntime._parse_vllm_server_output_traced(raw)
     )
     assert token_ids == [101, 102]
     assert text == "ok"
@@ -94,7 +94,7 @@ def test_parse_vllm_server_output_traced_clamps_longer_trace() -> None:
         ],
     }
     token_ids, text, prompt_ids, token_logprobs, generated_token_text = (
-        RolloutMatchingSFTTrainer._parse_vllm_server_output_traced(raw)
+        Stage2RolloutRuntime._parse_vllm_server_output_traced(raw)
     )
     assert token_ids == [101, 102]
     assert text == "ok"
@@ -119,7 +119,7 @@ def test_parse_vllm_server_output_traced_keeps_shorter_trace() -> None:
         ],
     }
     token_ids, text, prompt_ids, token_logprobs, generated_token_text = (
-        RolloutMatchingSFTTrainer._parse_vllm_server_output_traced(raw)
+        Stage2RolloutRuntime._parse_vllm_server_output_traced(raw)
     )
     assert token_ids == [101, 102]
     assert text == "ok"
@@ -161,7 +161,7 @@ def test_parse_vllm_server_output_traced_uses_token_id_frame_when_tokenizer_prov
         ],
     }
     token_ids, text, prompt_ids, token_logprobs, generated_token_text = (
-        RolloutMatchingSFTTrainer._parse_vllm_server_output_traced(
+        Stage2RolloutRuntime._parse_vllm_server_output_traced(
             raw,
             tokenizer=_ToyTokenizer(),
         )
@@ -176,4 +176,4 @@ def test_parse_vllm_server_output_traced_uses_token_id_frame_when_tokenizer_prov
 def test_extract_swift_choice_logprobs_rejects_non_finite_values() -> None:
     raw = {"content": [{"token": "a", "logprob": float("nan")}]}
     with pytest.raises(RuntimeError, match=r"non-finite"):
-        RolloutMatchingSFTTrainer._extract_swift_choice_logprobs(raw)
+        Stage2RolloutRuntime._extract_swift_choice_logprobs(raw)

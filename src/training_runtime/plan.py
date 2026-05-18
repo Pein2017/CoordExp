@@ -5,9 +5,7 @@ from typing import Final, Literal, TypeAlias
 
 CollatorFamily: TypeAlias = Literal["default", "identity"]
 PackingOwner: TypeAlias = Literal["dataset", "trainer"]
-PipelineNamespace: TypeAlias = Literal[
-    "stage2_ab.pipeline", "rollout_matching.pipeline"
-]
+PipelineNamespace: TypeAlias = Literal["stage2_ab.pipeline"]
 
 
 @dataclass(frozen=True, slots=True)
@@ -27,7 +25,9 @@ class TrainingRuntimePlan:
 
 _REMOVED_VARIANT_REPLACEMENTS: Final[dict[str, str]] = {
     "stage2_ab_training": "stage2_two_channel",
-    "rollout_matching_sft": "stage2_rollout_aligned",
+    "rollout_matching_sft": "stage2_two_channel",
+    "stage2_rollout_aligned": "stage2_two_channel",
+    "stage2_rollout_runtime": "stage2_two_channel",
     "stage1_set_continuation": "prefix_rollin_et_rmp_ce",
 }
 
@@ -45,12 +45,6 @@ def resolve_training_runtime_plan(trainer_variant: str | None) -> TrainingRuntim
     if variant == "stage2_two_channel":
         return _stage2_plan(
             variant=variant, required_pipeline_namespace="stage2_ab.pipeline"
-        )
-
-    if variant == "stage2_rollout_aligned":
-        return _stage2_plan(
-            variant=variant,
-            required_pipeline_namespace="rollout_matching.pipeline",
         )
 
     return TrainingRuntimePlan(

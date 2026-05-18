@@ -179,7 +179,7 @@ Decision:
     `text_gate` on supervised `struct|desc` positions to discourage coord-vocab
     mass
 - `gate_weight` and `text_gate_weight` MUST both be `> 0`.
-- Soft-target shaping knobs are compatibility-only in this profile:
+- Soft-target shaping knobs are fixed in this profile:
   - `temperature` MUST remain `1.0`
   - `target_sigma` MUST remain `2.0`
   - `target_truncate` MUST remain `null`

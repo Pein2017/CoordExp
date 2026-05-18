@@ -170,7 +170,7 @@ Normative key paths (this repo; required for implementers):
 - Stage-2 two-channel (`custom.trainer_variant: stage2_two_channel`):
   - `stage2_ab.coord_ctx_embed_mode`
   - `stage2_ab.coord_decode_mode`
-- Stage-2 rollout-aligned (`custom.trainer_variant: stage2_rollout_aligned`):
+- Stage-2 rollout-aligned (`custom.trainer_variant: stage2_rollout_runtime`):
   - `rollout_matching.coord_decode_mode`
 
 Normative semantics:

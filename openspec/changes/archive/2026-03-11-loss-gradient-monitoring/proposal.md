@@ -32,7 +32,7 @@ We need a lightweight, opt-in, monitoring-only tool to measure domination vs con
 - Integrate into training loops:
   - Stage-1 (SFT path): integrate into the existing metrics/loss mixin stack without refactoring trainers.
   - Stage-2 two-channel (`custom.trainer_variant: stage2_two_channel`): integrate into its packed-forward `compute_loss` path, then feed the existing `_PendingStage2Log` step reducer.
-  - Stage-2 rollout-aligned (`custom.trainer_variant: stage2_rollout_aligned`): integrate into its packed-forward `compute_loss` path, then feed the existing `PendingTrainRolloutLog` step reducer.
+  - Stage-2 rollout-aligned (`custom.trainer_variant: stage2_rollout_runtime`): integrate into its packed-forward `compute_loss` path, then feed the existing `PendingTrainRolloutLog` step reducer.
 
 - Configuration and activation:
   - Config-first enable/disable via `custom.extra.loss_gradient_monitor` (disabled by default).

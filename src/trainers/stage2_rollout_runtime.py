@@ -1,11 +1,10 @@
-"""Rollout-matching SFT trainer (stage_2).
+"""Shared Stage-2 rollout runtime helpers.
 
-Implements the OpenSpec change:
-  openspec/changes/2026-01-15-add-rollout-matching-trainer
-
-High-level loop per batch:
-  rollout (no grad) -> strict token-aligned parse -> greedy IoU match -> build Y_train
-  -> one teacher-forced forward -> masked CE + distributional coord losses.
+This module owns rollout prompt preparation, HF/vLLM/server dispatch, runtime
+rollout configuration, vLLM sync/debug helpers, evaluation rollout artifacts,
+and post-rollout packing helpers.  It is intentionally not a public trainer
+variant; concrete trainers such as :class:`Stage2TwoChannelTrainer` own the
+training objective.
 """
 
 from __future__ import annotations
@@ -54,7 +53,7 @@ from src.common.detection_sequence import (
     COORDJSON_FORMAT,
     normalize_detection_sequence_format,
 )
-from src.common.geometry import bbox_from_points, flatten_points, normalize_bbox_format
+from src.common.geometry import flatten_points, normalize_bbox_format
 from src.common.prediction_parsing import (
     extract_special_tokens,
     load_prediction_dict,
@@ -73,7 +72,6 @@ from src.coord_tokens.codec import (
     get_coord_token_ids,
     token_to_int,
 )
-from src.coord_tokens.soft_ce_w1 import coord_soft_ce_w1
 from src.utils.metric_key_lookup import (
     metric_lookup_candidates,
     metric_name_matches_key,
@@ -113,7 +111,6 @@ from .rollout_runtime.vllm_server import (
 )
 from .rollout_aligned_evaluator import finalize_rollout_aligned_evaluation
 from .rollout_aligned_targets import (
-    build_rollout_aligned_sample_targets,
     build_labels_and_coord_targets_for_batch,
     build_labels_and_coord_targets_for_sample,
 )
@@ -136,34 +133,6 @@ from .rollout_matching.parsing import (
 from .rollout_matching.telemetry import (
     PendingTrainRolloutLog as _PendingTrainRolloutLog,
 )
-from .monitoring.loss_gradient_monitor import (
-    build_stage2_coord_monitor_terms_from_pipeline,
-    get_loss_gradient_monitor,
-)
-from .teacher_forcing.contracts import ModuleResult, TeacherForcingContext
-from .teacher_forcing.forwards import (
-    assert_unsliced_logits,
-    prepare_forward_inputs,
-    run_no_cache_forward,
-)
-from .teacher_forcing.module_registry import (
-    ALLOWED_DIAGNOSTIC_MODULES,
-    ALLOWED_OBJECTIVE_MODULES,
-    DIAGNOSTIC_CONFIG_ALLOWLIST,
-    OBJECTIVE_CONFIG_ALLOWLIST,
-)
-from .teacher_forcing.objective_atoms import project_stage2_objective_atoms
-from .teacher_forcing.objective_pipeline import run_teacher_forcing_pipeline
-from .teacher_forcing.rollout_masks import build_rollout_subset_masks
-from .teacher_forcing.rollout_meta import (
-    bbox_groups_from_token_ids as _tf_bbox_groups_from_token_ids,
-    matched_prefix_structure_positions as _tf_matched_prefix_structure_positions,
-    semantic_stop_branch_metadata as _tf_semantic_stop_branch_metadata,
-    tail_closure_positions as _tf_tail_closure_positions,
-    tail_desc_positions as _tf_tail_desc_positions,
-)
-from .teacher_forcing.token_types import build_token_type_masks
-
 logger = get_logger()
 
 
@@ -900,19 +869,6 @@ def _extract_gt_objects(sample: Mapping[str, Any]) -> List[GTObject]:
     return objs
 
 
-def _coord_vocab_gate_loss(
-    *, logits_full: torch.Tensor, logits_coord: torch.Tensor, temperature: float
-) -> torch.Tensor:
-    from src.trainers.losses.coord_soft_ce_w1 import coord_vocab_gate_loss
-
-    gate, _mass_mean = coord_vocab_gate_loss(
-        logits_full=logits_full,
-        logits_coord=logits_coord,
-        temperature=float(temperature),
-    )
-    return gate
-
-
 def _build_labels_and_coord_targets_for_sample(
     *,
     input_ids_1d: torch.Tensor,  # [T]
@@ -959,158 +915,15 @@ def _build_labels_and_coord_targets_for_batch(
     )
 
 
-class _FixedRawMicroBatchStacker:
-    """Stack identity-collated raw micro-batches into fixed-size lists.
 
-    Stage_2 trainers often keep `training.per_device_train_batch_size=1` so the learner
-    does exactly one packed forward/backward per micro-step (global_max_length capped).
+class Stage2RolloutRuntime(Seq2SeqTrainer):
+    """Shared Stage-2 rollout runtime base.
 
-    However, post-rollout packing needs *multiple* raw samples to form a meaningfully
-    filled pack. This wrapper allows us to decouple those two concerns in a way that is
-    compatible with epoch-based training: `__len__` is adjusted to reflect the reduced
-    number of emitted micro-batches.
-
-    Expected input from the underlying dataloader: a list of raw samples.
-    Output: a list of raw samples of size `target_raw_batch_size` (last one may be smaller).
+    This class owns rollout generation, vLLM/server dispatch, dynamic
+    post-rollout packing, evaluation artifact support, and rollout observability.
+    It is not a public trainer variant; concrete Stage-2 trainers provide the
+    training-step and objective semantics.
     """
-
-    def __init__(
-        self,
-        dataloader,
-        *,
-        target_raw_batch_size: int,
-        base_raw_batch_size: int,
-    ):
-        self.dataloader = dataloader
-        self.target_raw_batch_size = max(1, int(target_raw_batch_size))
-        self.base_raw_batch_size = max(1, int(base_raw_batch_size))
-
-    def __iter__(self):
-        buf: List[Any] = []
-        for b in self.dataloader:
-            if not isinstance(b, list):
-                raise ValueError(
-                    "fixed raw microbatch stacker expects identity-collated train batches (list of raw samples)"
-                )
-            buf.extend(b)
-            while len(buf) >= self.target_raw_batch_size:
-                out = buf[: self.target_raw_batch_size]
-                del buf[: self.target_raw_batch_size]
-                yield out
-
-        if buf:
-            yield buf
-
-    def __len__(self) -> int:
-        # Underlying dataloader length is in units of micro-batches. Convert to a raw
-        # sample count using the base batch size, then divide by the target size.
-        n_micro = int(len(self.dataloader))
-        n_raw = int(n_micro) * int(self.base_raw_batch_size)
-        return int(
-            (n_raw + self.target_raw_batch_size - 1) // self.target_raw_batch_size
-        )
-
-    def __getattr__(self, name: str):
-        return getattr(self.dataloader, name)
-
-
-class _AdaptiveRawMicroBatchStacker:
-    """Stack identity-collated raw micro-batches into adaptive-size lists.
-
-    This helper is intentionally lightweight: it chooses a target raw microbatch size
-    based on the trainer's observed post-rollout packing fill, so repeated underfilled
-    packs can automatically increase the raw sample budget.
-
-    The class is currently used for unit tests and diagnostics; production runs
-    typically rely on configured context-specific decode batch sizes.
-    """
-
-    def __init__(self, dataloader, *, trainer: Any):
-        self.dataloader = dataloader
-        self.trainer = trainer
-
-    def _target_microbatch_size(self) -> int:
-        packing_length = int(self.trainer._packing_length())
-        min_fill = float(self.trainer._packing_min_fill_ratio())
-        buf_cap = int(self.trainer._packing_buffer_cap())
-
-        # Base estimate from the rolling average segment length.
-        avg_len = float(getattr(self.trainer, "_rm_avg_segment_len", 0.0) or 0.0)
-        if avg_len > 0.0:
-            base = int(math.ceil((packing_length * min_fill) / avg_len))
-        else:
-            base = 1
-        base = max(1, base)
-
-        # Bump estimate from last-pack underfill (only when there is no carry buffer).
-        bump = 0
-        last_fill = float(getattr(self.trainer, "_rm_last_pack_fill", 0.0) or 0.0)
-        last_segments = int(getattr(self.trainer, "_rm_last_pack_segments", 0) or 0)
-        last_buf_after = int(
-            getattr(self.trainer, "_rm_last_pack_buffer_after", 0) or 0
-        )
-        if (
-            last_buf_after == 0
-            and last_segments > 0
-            and min_fill > 0.0
-            and 0.0 < last_fill < min_fill
-        ):
-            bump = int(math.ceil((last_segments * min_fill) / last_fill))
-
-        target = max(base, bump)
-        if buf_cap > 0:
-            target = min(target, buf_cap)
-        return max(1, target)
-
-    def __iter__(self):
-        buf: List[Any] = []
-        target = int(self._target_microbatch_size())
-        for b in self.dataloader:
-            if not isinstance(b, list):
-                raise ValueError(
-                    "adaptive raw microbatch stacker expects identity-collated train batches (list of raw samples)"
-                )
-            buf.extend(b)
-            while len(buf) >= target:
-                out = buf[:target]
-                del buf[:target]
-                yield out
-
-        if buf:
-            yield buf
-
-    def __len__(self) -> int:
-        # Best-effort length; if the underlying dataloader does not implement __len__,
-        # fall back to 0 (PyTorch IterableDataset semantics).
-        try:
-            n_micro = int(len(self.dataloader))
-        except TypeError:
-            return 0
-
-        # Identity collator yields raw samples; base microbatch size defaults to 1.
-        base_raw_batch_size = 1
-        try:
-            base_raw_batch_size = int(
-                getattr(
-                    getattr(self.trainer, "args", None),
-                    "per_device_train_batch_size",
-                    1,
-                )
-                or 1
-            )
-        except (TypeError, ValueError):
-            base_raw_batch_size = 1
-
-        n_raw = int(n_micro) * int(base_raw_batch_size)
-        target = int(self._target_microbatch_size())
-        return int((n_raw + target - 1) // target)
-
-    def __getattr__(self, name: str):
-        return getattr(self.dataloader, name)
-
-
-class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
-    """Rollout-matching (stage_2) trainer variant."""
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -1185,7 +998,7 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
     ) -> None:
         if not isinstance(payload, Mapping):
             raise TypeError(
-                "RolloutMatchingSFTTrainer checkpoint runtime state must be a Mapping"
+                "Stage2RolloutRuntime checkpoint runtime state must be a Mapping"
             )
 
         post_rollout_segments = payload.get("post_rollout_segments")
@@ -1680,86 +1493,9 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
 
         pipeline_raw = cfg.get("pipeline", None)
         if pipeline_raw is not None:
-            if not isinstance(pipeline_raw, Mapping):
-                raise TypeError("rollout_matching.pipeline must be a mapping")
-
-            def _validate_pipeline_specs(items: Any, *, path: str, allowed_names: set[str]) -> None:
-                if not isinstance(items, Sequence) or isinstance(items, (str, bytes)):
-                    raise TypeError(f"{path} must be a list")
-                seen: set[str] = set()
-                for idx, spec in enumerate(items):
-                    if not isinstance(spec, Mapping):
-                        raise TypeError(f"{path}[{idx}] must be a mapping")
-
-                    unknown_spec_keys = set(spec.keys()) - {
-                        "name",
-                        "enabled",
-                        "weight",
-                        "channels",
-                        "config",
-                    }
-                    if unknown_spec_keys:
-                        raise ValueError(
-                            f"Unknown keys in {path}[{idx}]: {sorted(str(k) for k in unknown_spec_keys)}"
-                        )
-
-                    name = str(spec.get("name", "") or "").strip()
-                    if not name:
-                        raise ValueError(f"{path}[{idx}].name must be non-empty")
-                    if name not in allowed_names:
-                        raise ValueError(
-                            f"{path}[{idx}].name must be one of {sorted(allowed_names)}; got {name!r}"
-                        )
-                    if name in seen:
-                        raise ValueError(f"Duplicate module name in {path}: {name}")
-                    seen.add(name)
-
-                    if "weight" in spec:
-                        try:
-                            weight = float(spec.get("weight"))
-                        except (TypeError, ValueError) as exc:
-                            raise TypeError(f"{path}[{idx}].weight must be numeric") from exc
-                        if weight < 0.0:
-                            raise ValueError(f"{path}[{idx}].weight must be >= 0")
-
-                    channels_raw = spec.get("channels", ["A", "B"])
-                    if not isinstance(channels_raw, Sequence) or isinstance(channels_raw, (str, bytes)):
-                        raise TypeError(f"{path}[{idx}].channels must be a list")
-                    if len(channels_raw) == 0:
-                        raise ValueError(f"{path}[{idx}].channels must not be empty")
-                    for cidx, ch in enumerate(channels_raw):
-                        ch_s = str(ch).strip().upper()
-                        if ch_s not in {"A", "B"}:
-                            raise ValueError(
-                                f"{path}[{idx}].channels[{cidx}] must be 'A' or 'B'"
-                            )
-
-                    cfg_map = spec.get("config", {})
-                    if cfg_map is None:
-                        cfg_map = {}
-                    if not isinstance(cfg_map, Mapping):
-                        raise TypeError(f"{path}[{idx}].config must be a mapping")
-
-                    allowed_cfg = OBJECTIVE_CONFIG_ALLOWLIST.get(name)
-                    if allowed_cfg is None:
-                        allowed_cfg = DIAGNOSTIC_CONFIG_ALLOWLIST.get(name, set())
-
-                    unknown_cfg = set(cfg_map.keys()) - set(allowed_cfg)
-                    if unknown_cfg:
-                        raise ValueError(
-                            f"Unknown {path}[{idx}].config keys for module {name!r}: "
-                            f"{sorted(str(k) for k in unknown_cfg)}"
-                        )
-
-            _validate_pipeline_specs(
-                pipeline_raw.get("objective", []),
-                path="rollout_matching.pipeline.objective",
-                allowed_names=set(ALLOWED_OBJECTIVE_MODULES),
-            )
-            _validate_pipeline_specs(
-                pipeline_raw.get("diagnostics", []),
-                path="rollout_matching.pipeline.diagnostics",
-                allowed_names=set(ALLOWED_DIAGNOSTIC_MODULES),
+            raise ValueError(
+                "rollout_matching.pipeline has been removed. "
+                "Use stage2_ab.pipeline with custom.trainer_variant=stage2_two_channel instead."
             )
 
         eval_det_raw = cfg.get("eval_detection", None)
@@ -2128,7 +1864,7 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
                 "vLLM server response missing prompt_token_ids; ensure request_config.return_details=true"
             )
         prompt_ids = [int(t) for t in prompt_ids_raw]
-        prompt_ids = RolloutMatchingSFTTrainer._strip_left_padding_token_ids(
+        prompt_ids = Stage2RolloutRuntime._strip_left_padding_token_ids(
             prompt_ids,
             pad_token_id=getattr(tokenizer, "pad_token_id", None)
             if tokenizer is not None
@@ -2155,7 +1891,7 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
         token_ids = [int(t) for t in token_ids_raw]
 
         token_logprobs, generated_token_text = (
-            RolloutMatchingSFTTrainer._extract_swift_choice_logprobs(ch0.get("logprobs"))
+            Stage2RolloutRuntime._extract_swift_choice_logprobs(ch0.get("logprobs"))
         )
         if len(token_logprobs) != len(generated_token_text):
             pair_len = min(len(token_logprobs), len(generated_token_text))
@@ -5337,7 +5073,7 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
             *,
             selection: List[int],
             remaining_bins: List[List[int]],
-        ) -> Tuple[int, int, float, int, Tuple[int, ...]]:
+        ) -> Tuple[int, int, int, float, Tuple[int, ...]]:
             tot = int(sum(int(lens[i]) for i in selection))
             fill = float(tot) / float(packing_length) if packing_length > 0 else 0.0
             underfilled = 0
@@ -5353,10 +5089,44 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
             return (
                 int(n_bins),
                 int(underfilled),
-                -float(min_fill),
                 -int(tot),
+                -float(min_fill),
                 tuple(int(i) for i in selection),
             )
+
+        def _best_fill_oldest_pinned_selection() -> List[int]:
+            residual_cap = int(packing_length - oldest_len)
+            if residual_cap <= 0:
+                return [0]
+
+            # exact best-fill subset for the current pack, with stable
+            # lexicographic tie-breaks over insertion-order indices.
+            dp: Dict[int, Tuple[int, ...]] = {0: tuple()}
+            for i in range(1, len(lens)):
+                sl = int(lens[i])
+                if sl <= 0 or sl > residual_cap:
+                    continue
+
+                updates: Dict[int, Tuple[int, ...]] = {}
+                for used, idxs in dp.items():
+                    new_used = int(used + sl)
+                    if new_used > residual_cap:
+                        continue
+
+                    new_idxs = tuple(list(idxs) + [int(i)])
+                    incumbent = dp.get(new_used)
+                    pending = updates.get(new_used)
+                    best_existing = incumbent if incumbent is not None else pending
+                    if best_existing is None or new_idxs < best_existing:
+                        updates[new_used] = new_idxs
+
+                for used, idxs in updates.items():
+                    incumbent = dp.get(int(used))
+                    if incumbent is None or idxs < incumbent:
+                        dp[int(used)] = idxs
+
+            best_used = max(dp.keys())
+            return [0, *list(dp[int(best_used)])]
 
         baseline_set = set(baseline)
         baseline_remaining_idx = [i for i in range(len(lens)) if i not in baseline_set]
@@ -5388,9 +5158,25 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
             return baseline
 
         smart_score = _score(selection=oldest_bin, remaining_bins=rest_bins)
-        if smart_score < baseline_score:
-            return oldest_bin
-        return baseline
+
+        best_fill = _best_fill_oldest_pinned_selection()
+        best_fill_set = set(best_fill)
+        best_fill_remaining_idx = [
+            i for i in range(len(lens)) if i not in best_fill_set
+        ]
+        best_fill_remaining_bins = _bins_from_indices(best_fill_remaining_idx)
+        best_fill_remaining_bins = _rebalance_bins(best_fill_remaining_bins)
+        best_fill_score = _score(
+            selection=best_fill,
+            remaining_bins=best_fill_remaining_bins,
+        )
+
+        candidates = (
+            (baseline_score, baseline),
+            (smart_score, oldest_bin),
+            (best_fill_score, best_fill),
+        )
+        return list(min(candidates, key=lambda item: item[0])[1])
 
     def _pop_post_rollout_pack(
         self,
@@ -5481,561 +5267,6 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
             raise
 
         return selected, pack_metrics
-
-    def _prepare_batch_inputs(
-        self,
-        inputs: List[Mapping[str, Any]],
-        _segments_only: bool = False,
-    ) -> Any:
-        template = self.template
-        tok = template.tokenizer
-
-        coord_token_ids = self._get_coord_token_ids()
-        coord_id_set = set(int(i) for i in coord_token_ids if int(i) >= 0)
-        coord_id_to_bin = self._coord_id_map()
-
-        gate_thr = float(self._cfg("maskiou_gate", 0.3))
-        top_k = int(self._cfg("candidate_top_k", 10))
-        mask_res = int(self._cfg("maskiou_resolution", 256))
-
-        fp_cost = float(self._cfg("fp_cost", 1.0))
-        fn_cost = float(self._cfg("fn_cost", 1.0))
-
-        ot_eps = float(self._cfg("ot_epsilon", 10.0))
-        ot_iters = int(self._cfg("ot_iters", 30))
-        ot_cost = str(self._cfg("ot_cost", "l2")).lower()
-        ot_cost_kind: Literal["l1", "l2"] = "l1" if ot_cost == "l1" else "l2"
-
-        packing_enabled = self._packing_enabled()
-        if packing_enabled and not self._packing_drop_last():
-            raise ValueError(
-                "stage_2 post-rollout packing uses carry-only mode and requires training.packing_drop_last: true"
-            )
-        if packing_enabled and self._packing_buffer_cap() <= 0:
-            raise ValueError(
-                "training.packing_buffer must be a positive int when packing is enabled"
-            )
-        if packing_enabled and self._packing_length() <= 0:
-            raise ValueError(
-                "packing is enabled but no valid packing_length/template.max_length is set (check global_max_length)"
-            )
-
-        # Optional qualitative monitoring dumps: rollout vs GT vs training target.
-        gs = int(getattr(getattr(self, "state", None), "global_step", 0) or 0)
-        do_dump = False
-        dump_cfg = self._train_monitor_dump_cfg()
-        dump_max_samples = 0
-        dump_max_chars = 0
-        dump_samples: List[Dict[str, Any]] = []
-        if self._should_monitor_dump(global_step=gs):
-            do_dump = True
-            dump_max_samples = max(1, int(dump_cfg.get("max_samples", 1) or 1))
-            dump_max_chars_raw = dump_cfg.get("max_text_chars", 4000)
-            try:
-                dump_max_chars = (
-                    int(dump_max_chars_raw) if dump_max_chars_raw is not None else 4000
-                )
-            except Exception:
-                dump_max_chars = 4000
-            dump_max_chars = max(0, int(dump_max_chars))
-            # Mark early to avoid duplicate dumps in the same optimizer step.
-            self._monitor_dump_last_step = int(gs)
-
-        # Phase A: rollout generation (no grad, un-packed; batched via backend).
-        t_gen0 = time.perf_counter()
-        rollout_results = self._rollout_many(inputs)
-        if len(rollout_results) != len(inputs):
-            raise RuntimeError("rollout backend returned unexpected number of results")
-        t_gen_s = time.perf_counter() - t_gen0
-
-        # Phase B: strict parse/match/build targets, then teacher-forced encode per sample.
-        encoded_batch: List[Dict[str, Any]] = []
-        meta_unpacked: List[Dict[str, Any]] = []
-        segments: List[Tuple[Dict[str, Any], Dict[str, Any], int]] = []
-
-        t_parse_match_s = 0.0
-        t_encode_s = 0.0
-        rollout_lens: List[int] = []
-
-        for sample, (resp_ids, resp_text, decode_mode, prompt_ids) in zip(
-            inputs, rollout_results
-        ):
-            if "messages" not in sample:
-                raise ValueError(
-                    "rollout-matching requires 'messages' in dataset samples"
-                )
-
-            # 1) Strict token-aligned parsing + suffix-only prefix trimming
-            t_pm0 = time.perf_counter()
-            parse = parse_rollout_for_matching(
-                tokenizer=tok,
-                response_token_ids=resp_ids,
-                object_field_order=self._object_field_order(),
-            )
-            rollout_lens.append(int(len(parse.response_token_ids)))
-            self._maybe_debug_dump_parse_failure(
-                sample=sample,
-                response_text=resp_text,
-                prefix_text=parse.prefix_text,
-                dropped_invalid=int(parse.dropped_invalid),
-                dropped_ambiguous=int(parse.dropped_ambiguous),
-                truncated=bool(parse.truncated),
-                decode_mode=str(decode_mode),
-            )
-
-            # 2) Extract predicted objects (valid only) and map coord tokens -> bins
-            preds: List[GTObject] = []
-            pred_meta: List[ParsedPredObject] = []
-            for pobj in parse.valid_objects:
-                pts = _points_from_coord_tokens(
-                    response_token_ids=parse.response_token_ids,
-                    coord_token_indices=pobj.coord_token_indices,
-                    coord_id_to_bin=coord_id_to_bin,
-                )
-                if pts is None:
-                    continue
-                # For matching, keep geometry in norm1000.
-                preds.append(
-                    GTObject(
-                        index=int(pobj.index),
-                        geom_type=pobj.geom_type,
-                        points_norm1000=pts,
-                        desc="",
-                    )
-                )
-                pred_meta.append(pobj)
-
-            # 3) Extract GT objects and match
-            gts = _extract_gt_objects(sample)
-            match = greedy_match_iou(
-                preds=preds,
-                gts=gts,
-                gate_threshold=gate_thr,
-            )
-
-            # 3.0) Optional desc monitor (metrics only; does not affect loss).
-            desc_cfg = self._desc_monitor_cfg()
-            desc_monitor_ran = False
-            desc_pairs_total = 0
-            desc_exact_ok = 0
-            desc_sem_ok = 0
-            desc_sem_sim_sum = 0.0
-            desc_sem_sim_count = 0
-            desc_sem_enabled = 0
-            if isinstance(desc_cfg, Mapping) and bool(desc_cfg.get("enabled", False)):
-                every = int(desc_cfg.get("every_steps", 0) or 0)
-                if every <= 0:
-                    every = int(
-                        getattr(getattr(self, "args", None), "logging_steps", 0) or 0
-                    )
-                if every <= 0:
-                    every = 1
-                if int(gs) % int(every) == 0:
-                    desc_monitor_ran = True
-                    max_pairs = int(desc_cfg.get("max_pairs", 64) or 64)
-                    thr = float(desc_cfg.get("semantic_threshold", 0.6) or 0.6)
-                    mode = (
-                        str(desc_cfg.get("mode", "semantic") or "semantic")
-                        .strip()
-                        .lower()
-                    )
-
-                    try:
-                        from src.metrics.semantic_desc import normalize_desc
-                    except (TypeError, ValueError):
-                        normalize_desc = None  # type: ignore[assignment]
-
-                    pairs = list(match.matched_pairs)
-                    if max_pairs > 0 and len(pairs) > max_pairs:
-                        pairs = pairs[:max_pairs]
-
-                    norm_pairs: List[Tuple[str, str, bool]] = []
-                    uniq: set[str] = set()
-                    for pred_i, gt_i in pairs:
-                        if pred_i < 0 or pred_i >= len(pred_meta):
-                            continue
-                        if gt_i < 0 or gt_i >= len(gts):
-                            continue
-                        pred_desc_raw = str(
-                            getattr(pred_meta[pred_i], "desc", "") or ""
-                        )
-                        gt_desc_raw = str(getattr(gts[gt_i], "desc", "") or "")
-                        if normalize_desc is None:
-                            p = pred_desc_raw.strip().lower()
-                            g = gt_desc_raw.strip().lower()
-                        else:
-                            p = normalize_desc(pred_desc_raw)
-                            g = normalize_desc(gt_desc_raw)
-                        exact_ok = bool(p) and (p == g)
-                        if exact_ok:
-                            desc_exact_ok += 1
-                        if p and g:
-                            norm_pairs.append((p, g, bool(exact_ok)))
-                            uniq.add(p)
-                            uniq.add(g)
-
-                    desc_pairs_total = int(len(norm_pairs))
-
-                    if mode in {"semantic", "both"} and desc_pairs_total > 0:
-                        enc = None
-                        try:
-                            enc = self._get_desc_semantic_encoder(desc_cfg)
-                        except (TypeError, ValueError):
-                            enc = None
-
-                        if enc is not None:
-                            # Best-effort: if model load fails (missing cache/network), skip semantics.
-                            try:
-                                emb = enc.encode_norm_texts(sorted(uniq))
-                            except (TypeError, ValueError):
-                                emb = {}
-                                enc = None
-
-                        if enc is not None:
-                            desc_sem_enabled = 1
-                            for p, g, exact_ok in norm_pairs:
-                                pv = emb.get(p)
-                                gv = emb.get(g)
-                                if pv is None or gv is None:
-                                    ok = bool(exact_ok)
-                                    sim = None
-                                else:
-                                    sim = float(np.dot(pv, gv))
-                                    ok = bool(exact_ok or sim >= thr)
-                                if ok:
-                                    desc_sem_ok += 1
-                                if sim is not None:
-                                    desc_sem_sim_sum += float(sim)
-                                    desc_sem_sim_count += 1
-
-            sample_targets = build_rollout_aligned_sample_targets(
-                tokenizer=tok,
-                parse=parse,
-                prompt_ids=prompt_ids,
-                pred_meta=pred_meta,
-                preds=preds,
-                gts=gts,
-                match=match,
-                coord_id_set=coord_id_set,
-                object_field_order=self._object_field_order(),
-                ot_epsilon=ot_eps,
-                ot_iters=ot_iters,
-                ot_cost=ot_cost_kind,
-                build_prefix_targets_fn=self._build_prefix_targets,
-                matched_prefix_structure_positions_fn=_tf_matched_prefix_structure_positions,
-                serialize_append_fragment_fn=_serialize_append_fragment,
-                tail_desc_positions_fn=_tf_tail_desc_positions,
-                bbox_groups_from_token_ids_fn=_tf_bbox_groups_from_token_ids,
-                tail_closure_positions_fn=_tf_tail_closure_positions,
-                semantic_stop_branch_metadata_fn=_tf_semantic_stop_branch_metadata,
-            )
-            prefix_pos = list(sample_targets.prefix_coord_pos)
-            prefix_target_bins = list(sample_targets.prefix_coord_target_bins)
-            prefix_bbox_groups = list(sample_targets.bbox_groups_prefix)
-            excluded = int(sample_targets.excluded_from_supervision)
-            matched_gt_for_supervision = {
-                int(i) for i in sample_targets.matched_gt_indices
-            }
-            prefix_struct_pos = list(sample_targets.prefix_struct_pos)
-            fn_objs = list(sample_targets.fn_objs)
-            append_text = str(sample_targets.append_text)
-            y_train_ids = list(sample_targets.y_train_ids)
-            tail_desc_pos = list(sample_targets.tail_desc_pos)
-            tail_ignore_pos = list(sample_targets.tail_ignore_pos)
-            fn_bbox_groups = list(sample_targets.bbox_groups_fn)
-            tail_closure_pos = list(sample_targets.tail_closure_pos)
-            semantic_stop_meta = dict(sample_targets.semantic_stop_meta)
-            t_parse_match_s += time.perf_counter() - t_pm0
-
-            # 5) Teacher-forced encoding using the exact token ids (no re-tokenization)
-            t_enc0 = time.perf_counter()
-            data_for_encode = dict(sample)
-            # Deepcopy messages to avoid in-place mutations across dataloader workers.
-            messages = json.loads(json.dumps(sample["messages"]))
-            has_assistant = False
-            try:
-                for m in messages:
-                    if isinstance(m, dict) and m.get("role") == "assistant":
-                        has_assistant = True
-                        break
-            except (TypeError, ValueError):
-                has_assistant = False
-
-            if has_assistant:
-                data_for_encode["messages"] = replace_assistant_response_with_ids(
-                    messages, y_train_ids
-                )
-            else:
-                # Some datasets keep only the user turn in `messages` and store GT separately.
-                # Stage_2 needs an assistant turn to inject token ids for teacher forcing.
-                data_for_encode["messages"] = list(messages) + [
-                    {"role": "assistant", "content": y_train_ids}
-                ]
-            with self._template_train_mode():
-                encoded = template.encode(data_for_encode, return_length=True)
-            t_encode_s += time.perf_counter() - t_enc0
-
-            encoded_len = self._extract_encoded_len(encoded)
-            if int(encoded_len) <= int(len(prompt_ids)):
-                raise ValueError(
-                    "teacher-forced encode produced no assistant span: "
-                    f"prompt_len={int(len(prompt_ids))} encoded_len={int(encoded_len)} train_len={int(len(y_train_ids))} "
-                    f"sample_id={sample.get('sample_id')} base_idx={sample.get('base_idx')}. "
-                    "This indicates the assistant turn was not injected or got truncated; check max_length/truncation settings."
-                )
-
-            if do_dump and len(dump_samples) < dump_max_samples:
-                try:
-                    # Build a compact, human-readable record (strings are clipped).
-                    gt_objs_dump = [
-                        {
-                            "index": int(o.index),
-                            "geom_type": str(o.geom_type),
-                            "points_norm1000": list(o.points_norm1000),
-                            "desc": str(o.desc),
-                        }
-                        for o in gts
-                    ]
-                    pred_objs_dump = [
-                        {
-                            "key": str(pred_meta[i].key) if i < len(pred_meta) else "",
-                            "index": int(o.index),
-                            "geom_type": str(o.geom_type),
-                            "points_norm1000": list(o.points_norm1000),
-                            "desc": str(getattr(pred_meta[i], "desc", "") or "")
-                            if i < len(pred_meta)
-                            else "",
-                        }
-                        for i, o in enumerate(preds)
-                    ]
-
-                    pair_details: List[Dict[str, Any]] = []
-                    for pred_i, gt_i in match.matched_pairs:
-                        if pred_i < 0 or pred_i >= len(preds):
-                            continue
-                        if gt_i < 0 or gt_i >= len(gts):
-                            continue
-                        iou = _mask_iou_norm1000(
-                            pred_kind=preds[pred_i].geom_type,
-                            pred_points=preds[pred_i].points_norm1000,
-                            gt_kind=gts[gt_i].geom_type,
-                            gt_points=gts[gt_i].points_norm1000,
-                            resolution=mask_res,
-                        )
-                        pair_details.append(
-                            {
-                                "pred_i": int(pred_i),
-                                "gt_i": int(gt_i),
-                                "mask_iou": float(iou),
-                                "pred_index": int(preds[pred_i].index),
-                                "gt_index": int(gts[gt_i].index),
-                                "pred_desc": str(
-                                    getattr(pred_meta[pred_i], "desc", "") or ""
-                                )
-                                if pred_i < len(pred_meta)
-                                else "",
-                                "gt_desc": str(gts[gt_i].desc),
-                            }
-                        )
-
-                    # Per-sample derived quality stats.
-                    gt_n = float(len(gts))
-                    pred_n = float(len(preds))
-                    matched_n = float(len(matched_gt_for_supervision))
-                    prec = (matched_n / pred_n) if pred_n > 0 else 0.0
-                    rec = (matched_n / gt_n) if gt_n > 0 else 0.0
-                    f1 = (2.0 * prec * rec / (prec + rec)) if (prec + rec) > 0 else 0.0
-
-                    dump_samples.append(
-                        {
-                            "sample_id": sample.get("sample_id"),
-                            "base_idx": sample.get("base_idx"),
-                            "image": sample.get("image"),
-                            "images": sample.get("images"),
-                            "width": sample.get("width"),
-                            "height": sample.get("height"),
-                            "messages": sample.get("messages"),
-                            "rollout_text": self._clip_text(
-                                parse.response_text, max_chars=dump_max_chars
-                            ),
-                            "prefix_text": self._clip_text(
-                                parse.prefix_text, max_chars=dump_max_chars
-                            ),
-                            "append_text": self._clip_text(
-                                append_text, max_chars=dump_max_chars
-                            ),
-                            "train_text": self._clip_text(
-                                tok.decode(
-                                    y_train_ids,
-                                    skip_special_tokens=False,
-                                    clean_up_tokenization_spaces=False,
-                                ),
-                                max_chars=dump_max_chars,
-                            ),
-                            "gt_objects": gt_objs_dump,
-                            "pred_objects": pred_objs_dump,
-                            "match": {
-                                "matched_pairs": list(match.matched_pairs),
-                                "matched_pair_details": pair_details,
-                                "fn_gt_indices": list(match.fn_gt_indices),
-                                "fp_pred_indices": list(match.fp_pred_indices),
-                                "gating_rejections": int(match.gating_rejections),
-                            },
-                            "stats": {
-                                "decode_mode": str(decode_mode),
-                                "parse_dropped_invalid": int(parse.dropped_invalid),
-                                "parse_dropped_ambiguous": int(parse.dropped_ambiguous),
-                                "parse_truncated": bool(parse.truncated),
-                                "valid_pred_objects": int(len(preds)),
-                                "gt_objects": int(len(gts)),
-                                "matched_for_supervision": int(
-                                    len(matched_gt_for_supervision)
-                                ),
-                                "excluded_from_supervision": int(excluded),
-                                "fn_count": int(len(fn_objs)),
-                                "precision": float(prec),
-                                "recall": float(rec),
-                                "f1": float(f1),
-                                "matched_maskiou_mean": float(
-                                    (
-                                        match.matched_maskiou_sum
-                                        / match.matched_maskiou_count
-                                    )
-                                    if match.matched_maskiou_count > 0
-                                    else 0.0
-                                ),
-                            },
-                        }
-                    )
-                except (TypeError, ValueError):
-                    raise
-
-            meta_entry = {
-                "prompt_len": int(len(prompt_ids)),
-                "prompt_ids": prompt_ids,
-                "rollout_len": int(len(parse.response_token_ids)),
-                "prefix_len": int(len(parse.prefix_token_ids)),
-                "train_len": int(len(y_train_ids)),
-                "encoded_len": int(encoded_len),
-                "decode_mode": decode_mode,
-                "parse_dropped_invalid": int(parse.dropped_invalid),
-                "parse_dropped_ambiguous": int(parse.dropped_ambiguous),
-                "parse_truncated": bool(parse.truncated),
-                "valid_pred_objects": int(len(parse.valid_objects)),
-                "matched_pairs": match.matched_pairs,
-                "matched_for_supervision": int(len(matched_gt_for_supervision)),
-                "matched_maskiou_sum": float(match.matched_maskiou_sum),
-                "matched_maskiou_count": int(match.matched_maskiou_count),
-                "gt_objects": int(len(gts)),
-                "fn_count": int(len(fn_objs)),
-                "gating_rejections": int(match.gating_rejections),
-                "excluded_from_supervision": int(excluded),
-                "prefix_coord_pos": prefix_pos,
-                "prefix_coord_target_bins": prefix_target_bins,
-                "prefix_struct_pos": [int(p) for p in prefix_struct_pos],
-                "tail_ignore_pos": tail_ignore_pos,
-                "tail_desc_pos": [int(p) for p in tail_desc_pos],
-                "tail_closure_pos": [int(p) for p in tail_closure_pos],
-                "stop_rel_pos": int(semantic_stop_meta["stop_rel_pos"]),
-                "stop_token_id": int(semantic_stop_meta["stop_token_id"]),
-                "continue_token_id": int(semantic_stop_meta["continue_token_id"]),
-                "bbox_groups_prefix": prefix_bbox_groups,
-                "bbox_groups_fn": fn_bbox_groups,
-                # Optional desc monitor (metrics-only).
-                "desc_monitor_ran": bool(desc_monitor_ran),
-                "desc_pairs_total": int(desc_pairs_total),
-                "desc_exact_ok": int(desc_exact_ok),
-                "desc_sem_ok": int(desc_sem_ok),
-                "desc_sem_sim_sum": float(desc_sem_sim_sum),
-                "desc_sem_sim_count": int(desc_sem_sim_count),
-                "desc_sem_enabled": int(desc_sem_enabled),
-            }
-
-            segments.append((encoded, meta_entry, int(encoded_len)))
-            if not packing_enabled:
-                encoded_batch.append(encoded)
-                meta_unpacked.append(meta_entry)
-
-        from swift.llm import to_device
-
-        # Batch-level metrics are accumulated across micro-batches and merged into the
-        # main step log line (together with train/loss) to avoid messy TB curves.
-        batch_metrics: Dict[str, float] = {
-            "time/rollout_generate_s": float(t_gen_s),
-            "time/rollout_parse_match_s": float(t_parse_match_s),
-            "time/rollout_teacher_encode_s": float(t_encode_s),
-        }
-
-        if bool(_segments_only):
-            return segments, batch_metrics
-
-        # For monitor dumps only (no TB logging here).
-        toks_per_s = (
-            float(sum(int(x) for x in rollout_lens)) / float(t_gen_s)
-            if t_gen_s > 0
-            else 0.0
-        )
-
-        if do_dump:
-            try:
-                payload = {
-                    "global_step": int(gs),
-                    "epoch": float(
-                        getattr(getattr(self, "state", None), "epoch", 0.0) or 0.0
-                    ),
-                    "time": float(time.time()),
-                    "meta": {
-                        "rollout_backend": str(self._rollout_backend()),
-                        "decode_mode": str(self._cfg("decode_mode", "greedy")),
-                        "max_new_tokens": int(self._cfg("max_new_tokens", 0) or 0),
-                        "candidate_top_k": int(top_k),
-                        "maskiou_gate": float(gate_thr),
-                        "maskiou_resolution": int(mask_res),
-                        "fp_cost": float(fp_cost),
-                        "fn_cost": float(fn_cost),
-                        "ot_cost": str(ot_cost_kind),
-                        "ot_epsilon": float(ot_eps),
-                        "ot_iters": int(ot_iters),
-                        "packing_enabled": bool(packing_enabled),
-                        "rollout_generate_s": float(t_gen_s),
-                        "rollout_tokens_per_s": float(toks_per_s)
-                        if "toks_per_s" in locals()
-                        else 0.0,
-                    },
-                    "samples": dump_samples,
-                }
-                self._write_monitor_dump(global_step=int(gs), payload=payload)
-                self._monitor_dump_count += 1
-            except (TypeError, ValueError):
-                raise
-
-        if packing_enabled:
-            self._append_post_rollout_segments(segments)
-
-            t_pack0 = time.perf_counter()
-            selected, pack_metrics = self._pop_post_rollout_pack()
-            with self._template_packing_enabled():
-                packed = template.data_collator([enc for enc, _, _ in selected])
-            batch = to_device(packed, self.model.device)
-            self._assert_single_packed_forward(
-                batch, where="rollout_matching/_prepare_batch_inputs"
-            )
-            batch["_rollout_matching_meta"] = [m for _, m, _ in selected]
-
-            batch_metrics.update(pack_metrics)
-            batch_metrics["time/post_rollout_pack_s"] = float(
-                time.perf_counter() - t_pack0
-            )
-            self._merge_rollout_matching_batch_metrics(batch, batch_metrics)
-            return batch
-
-        with self._template_packing_disabled():
-            batch = to_device(template.data_collator(encoded_batch), self.model.device)
-        batch["_rollout_matching_meta"] = meta_unpacked
-        self._merge_rollout_matching_batch_metrics(batch, batch_metrics)
-        return batch
-
-    # ------------------------ loss ------------------------ #
 
     def _reduce_train_rollout_log_payload_global(
         self, payload: Mapping[str, Any]
@@ -6744,207 +5975,8 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
 
         return payload
 
-    def compute_loss(
-        self, model, inputs, return_outputs=False, num_items_in_batch=None
-    ):
-        meta = inputs.pop("_rollout_matching_meta", None)
-        if not isinstance(meta, list):
-            raise ValueError("rollout-matching trainer requires _rollout_matching_meta")
-
-        batch_metrics = inputs.pop("_rollout_matching_batch_metrics", None)
-
-        pipeline_manifest = getattr(self, "rollout_pipeline_manifest", None)
-        objective_specs = (
-            pipeline_manifest.get("objective", [])
-            if isinstance(pipeline_manifest, Mapping)
-            else []
-        )
-        diagnostic_specs = (
-            pipeline_manifest.get("diagnostics", [])
-            if isinstance(pipeline_manifest, Mapping)
-            else []
-        )
-
-        if not objective_specs:
-            raise ValueError(
-                "rollout-matching trainer requires rollout_matching.pipeline.objective (pipeline-only contract). "
-                "Ensure `sft.py` injected rollout_pipeline_manifest from your config."
-            )
-
-        ignored_keys = {
-            "labels",
-            "compute_loss_func",
-            "loss_scale",
-            "text_position_ids",
-            "channel",
-            "logits_to_keep",
-        }
-        packing_enabled = bool(self._packing_enabled())
-        _core_model, inputs_for_model, _model_type = prepare_forward_inputs(
-            model=model,
-            inputs=inputs,
-            ignored_keys=tuple(ignored_keys),
-            packing_enabled=packing_enabled,
-            where="rollout-matching",
-        )
-
-        t_fwd0 = time.perf_counter()
-        outputs = run_no_cache_forward(model=model, inputs_for_model=inputs_for_model)
-        t_fwd_s = time.perf_counter() - t_fwd0
-        logits = outputs.logits
-        if logits is None:
-            raise ValueError("model did not return logits")
-
-        input_ids = inputs.get("input_ids")
-        if not isinstance(input_ids, torch.Tensor):
-            raise ValueError("rollout-matching trainer requires input_ids tensor")
-        assert_unsliced_logits(
-            logits=logits,
-            input_ids=input_ids,
-            where="rollout-matching training",
-        )
-
-        coord_token_ids = self._get_coord_token_ids()
-        coord_id_set = {int(i) for i in coord_token_ids if int(i) >= 0}
-
-        coord_cfg_for_temp: Mapping[str, Any] = {}
-        for spec in list(objective_specs or []):
-            if not isinstance(spec, Mapping):
-                continue
-            if str(spec.get("name", "") or "").strip() != "coord_reg":
-                continue
-            cfg_raw = spec.get("config", {})
-            if isinstance(cfg_raw, Mapping):
-                coord_cfg_for_temp = cfg_raw
-            break
-
-        try:
-            temperature_coord = float(coord_cfg_for_temp.get("temperature", 1.0) or 1.0)
-        except (TypeError, ValueError):
-            temperature_coord = 1.0
-        temperature_coord = max(1e-6, float(temperature_coord))
-
-        token_type_masks = build_token_type_masks(
-            input_ids=input_ids,
-            meta=meta,
-            coord_id_set=coord_id_set,
-            channel="B",
-        )
-        rollout_subset_masks = build_rollout_subset_masks(
-            input_ids=input_ids,
-            meta=meta,
-            coord_id_set=coord_id_set,
-        )
-
-        tf_context = TeacherForcingContext(
-            channel="B",
-            registry_context="rollout",
-            input_ids=input_ids,
-            logits=logits,
-            logits_ce=logits,
-            meta=meta,
-            coord_token_ids=coord_token_ids,
-            temperature=float(temperature_coord),
-            token_type_masks=token_type_masks,
-            rollout_subset_masks=rollout_subset_masks,
-            extra={},
-        )
-
-        warn_once = getattr(self, "_tf_diag_warn_once", None)
-        if not isinstance(warn_once, set):
-            warn_once = set()
-            setattr(self, "_tf_diag_warn_once", warn_once)
-
-        pipeline_result = run_teacher_forcing_pipeline(
-            context=tf_context,
-            objective_specs=objective_specs,
-            diagnostics_specs=diagnostic_specs,
-            initial_state=None,
-            warn_once_cache=warn_once,
-        )
-
-        total = pipeline_result.total_loss
-
-        # Stage-2 logging contract: emit only objective atoms (post-weighting) with
-        # provenance keys. Do not emit aggregate "geo"/"coord_reg" combinations.
-        objective_atoms = project_stage2_objective_atoms(
-            pipeline_result=pipeline_result,
-            objective_specs=objective_specs,
-            text_provenance="B_rollout_text",
-            coord_provenance="B_coord",
-            emit_text=True,
-            emit_coord=True,
-        )
-        from src.metrics.reporter import best_effort_value
-
-        monitor = get_loss_gradient_monitor(self)
-        gradmon_metrics = {}
-        if monitor is not None:
-            gradmon_metrics = best_effort_value(
-                self,
-                name="loss_gradient_monitor",
-                fn=lambda: monitor.measure(
-                    model=model,
-                    loss_terms=build_stage2_coord_monitor_terms_from_pipeline(
-                        pipeline_result=pipeline_result,
-                        objective_specs=objective_specs,
-                        coord_provenance="B_coord",
-                    ),
-                ),
-                default={},
-            )
-
-        try:
-            step = int(getattr(getattr(self, "state", None), "global_step", 0) or 0)
-            target_step = step + 1
-            pending = self._rm_pending_train_logs.get(target_step)
-            if pending is None:
-                pending = _PendingTrainRolloutLog()
-                self._rm_pending_train_logs[target_step] = pending
-            pending.add_micro(
-                meta=meta,
-                objective_atoms=objective_atoms,
-                gradmon_metrics=gradmon_metrics if isinstance(gradmon_metrics, Mapping) else None,
-                time_forward_s=float(t_fwd_s),
-                time_mask_build_s=float(0.0),
-                batch_metrics=batch_metrics if isinstance(batch_metrics, Mapping) else None,
-            )
-        except (TypeError, ValueError):
-            raise
-
-        return (total, outputs) if return_outputs else total
-
     def get_train_dataloader(self):
         dl = super().get_train_dataloader()
-
-        try:
-            per_dev = int(getattr(self.args, "per_device_train_batch_size", 1) or 1)
-        except (TypeError, ValueError):
-            per_dev = 1
-
-        # Optional fixed raw batching for post-rollout packing.
-        #
-        # Stage-2 trainers use identity collator, so the dataloader yields lists of raw
-        # samples. When per_device_train_batch_size==1, a single raw sample per micro-step
-        # can lead to poor packing fill (until the carry buffer grows).
-        #
-        # We only apply this wrapper for the standalone rollout-matching SFT variant.
-        # Stage2-AB budgets raw samples per optimizer step via training.effective_batch_size
-        # and must not have its micro-batches implicitly resized here.
-        trainer_variant = str(getattr(self.args, "trainer_variant", "") or "")
-        if trainer_variant == "stage2_rollout_aligned":
-            try:
-                decode_bs = int(self._decode_batch_size(context="train"))
-            except (TypeError, ValueError):
-                decode_bs = 1
-            decode_bs = max(1, int(decode_bs))
-
-            if self._packing_enabled() and per_dev == 1 and int(decode_bs) > 1:
-                dl = _FixedRawMicroBatchStacker(
-                    dl,
-                    target_raw_batch_size=int(decode_bs),
-                    base_raw_batch_size=int(per_dev),
-                )
 
         gas = int(getattr(self.args, "gradient_accumulation_steps", 1) or 1)
 
@@ -7963,7 +6995,7 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
         ignore_keys: Optional[List[str]] = None,
     ):
         # Handle the case where inputs is a list of raw samples during evaluation.
-        # This can happen when using identity collator or during eval with rollout matching.
+        # Concrete Stage-2 trainers own the raw-sample-to-forward-batch conversion.
         if isinstance(inputs, list):
             inputs = self._prepare_batch_inputs(inputs)
 
@@ -7975,128 +7007,14 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
             ignore_keys=ignore_keys,
         )
 
-    def training_step(self, model, inputs, *args, **kwargs):
-        # When using identity collator, `inputs` is a list of raw samples.
-        if not isinstance(inputs, list):
-            with self._track_stage_wallclock("sft"):
-                return super().training_step(model, inputs, *args, **kwargs)
-
-        if not inputs:
-            rank = 0
-            world_size = 1
-            try:
-                import torch.distributed as dist
-            except (ImportError, TypeError, ValueError):
-                dist = None  # type: ignore[assignment]
-
-            if dist is not None and dist.is_available() and dist.is_initialized():
-                try:
-                    world_size = int(dist.get_world_size())
-                except (TypeError, ValueError, RuntimeError):
-                    world_size = 1
-                try:
-                    rank = int(dist.get_rank())
-                except (TypeError, ValueError, RuntimeError):
-                    rank = 0
-
-            gs = int(getattr(getattr(self, "state", None), "global_step", 0) or 0)
-            raise ValueError(
-                "rollout-matching training_step received an empty raw batch "
-                f"(global_step={int(gs)} rank={int(rank)}/{int(world_size)}). "
-                "This is unsafe under DDP because other ranks may execute forward/backward while this rank does not. "
-                "Mitigations: ensure dataset length >= world_size and verify your sampler/drop_last settings."
-            )
-
-        self._validate_rollout_matching_cfg()
-
-        with self._track_stage_wallclock("rollout"):
-            prepared = self._prepare_batch_inputs(inputs)
-
-        with self._track_stage_wallclock("sft"):
-            return super().training_step(model, prepared, *args, **kwargs)
-
-    # ------------------------ target construction ------------------------ #
-    @staticmethod
-    def _bbox_corners(points_xyxy: Sequence[int]) -> np.ndarray:
-        x1, y1, x2, y2 = [float(v) for v in points_xyxy]
-        x1, x2 = min(x1, x2), max(x1, x2)
-        y1, y2 = min(y1, y2), max(y1, y2)
-        return np.array([[x1, y1], [x2, y1], [x2, y2], [x1, y2]], dtype=np.float32)
-
-    def _build_prefix_targets(
+    def _prepare_batch_inputs(
         self,
-        *,
-        pred_obj: GTObject,
-        gt_obj: GTObject,
-        pred_coord_indices: Sequence[int],
-        ot_epsilon: float,
-        ot_iters: int,
-        ot_cost: Literal["l1", "l2"],
-    ) -> Optional[List[int]]:
-        """Compute GT-aware target bins for prefix coord supervision.
-
-        - bbox<->bbox: direct targets.
-        - otherwise: Sinkhorn OT + barycentric projection (no mixture).
-        """
-
-        if pred_obj.geom_type == "bbox_2d" and gt_obj.geom_type == "bbox_2d":
-            if len(gt_obj.points_norm1000) != 4 or len(pred_coord_indices) != 4:
-                return None
-            return [int(min(max(v, 0), 999)) for v in gt_obj.points_norm1000]
-
-        # Build point sets for OT in norm1000 space.
-        if pred_obj.geom_type == "poly":
-            pts = pred_obj.points_norm1000
-            if len(pts) < 6 or len(pts) % 2 != 0:
-                return None
-            pred_pts = np.array(list(zip(pts[0::2], pts[1::2])), dtype=np.float32)
-        else:
-            if len(pred_obj.points_norm1000) != 4:
-                return None
-            pred_pts = self._bbox_corners(pred_obj.points_norm1000)
-
-        if gt_obj.geom_type == "poly":
-            pts = gt_obj.points_norm1000
-            if len(pts) < 6 or len(pts) % 2 != 0:
-                return None
-            gt_pts = np.array(list(zip(pts[0::2], pts[1::2])), dtype=np.float32)
-        else:
-            if len(gt_obj.points_norm1000) != 4:
-                return None
-            gt_pts = self._bbox_corners(gt_obj.points_norm1000)
-
-        g_hat = _sinkhorn_barycentric_targets(
-            pred_points=pred_pts,
-            gt_points=gt_pts,
-            epsilon=ot_epsilon,
-            iters=ot_iters,
-            cost=ot_cost,
+        inputs: List[Mapping[str, Any]],
+        _segments_only: bool = False,
+    ) -> Any:
+        raise NotImplementedError(
+            "Stage2RolloutRuntime is a shared runtime base; concrete Stage-2 "
+            "trainers must implement raw-batch preparation."
         )
 
-        if pred_obj.geom_type == "poly":
-            flat = g_hat.reshape(-1).tolist()
-            out: List[int] = []
-            for v in flat:
-                vi = int(round(float(v)))
-                out.append(int(min(max(vi, 0), 999)))
-            if len(out) != len(pred_coord_indices):
-                # pred_coord_indices is 2N; ensure alignment.
-                return None
-            return out
-
-        # pred is bbox: derive xyxy bbox targets from projected corners.
-        x1, y1, x2, y2 = bbox_from_points(g_hat.reshape(-1).tolist())
-        bbox = [x1, y1, x2, y2]
-        out = []
-        for v in bbox:
-            vi = int(round(float(v)))
-            out.append(int(min(max(vi, 0), 999)))
-        if len(out) != 4 or len(pred_coord_indices) != 4:
-            return None
-        return out
-
-
-# Canonical alias for forward-looking callsites.
-Stage2RolloutAlignedTrainer = RolloutMatchingSFTTrainer
-
-__all__ = ["RolloutMatchingSFTTrainer", "Stage2RolloutAlignedTrainer"]
+__all__ = ["Stage2RolloutRuntime"]

@@ -48,7 +48,7 @@ Decision:
   - `center_weight`
   - `size_weight`
 - Preserve existing `smoothl1_weight` and `ciou_weight`.
-- For Stage-2, extend strict pipeline validation under `stage2_ab.pipeline.objective[*].config` and `rollout_matching.pipeline.objective[*].config`.
+- For Stage-2, extend strict pipeline validation under `stage2_ab.pipeline.objective[*].config`.
 - For Stage-1, mirror the same behavior under `custom.bbox_geo`.
 - Existing two-key configs must remain valid and resolve to default `xyxy`.
 

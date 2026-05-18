@@ -318,7 +318,7 @@ This exports both `bbox_only` and `poly_prefer_semantic` train/val JSONLs. See `
   - Optional: apply low-diversity filtering (`filter_low_diversity_images.py`) if you want to drop dense repetitive scenes.
 - Multi-dataset training:
   - merge JSONLs offline (see `public_data/scripts/merge_jsonl.py`)
-  - runtime fusion config authoring is temporarily disabled in the supported training surface
+  - runtime fusion config authoring has been removed from the supported training surface
 
 ---
 

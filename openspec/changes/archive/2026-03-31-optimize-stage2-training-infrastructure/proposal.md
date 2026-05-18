@@ -109,7 +109,7 @@ That first slice should **not** yet:
   - `src/trainers/stage2_two_channel.py`
   - `src/trainers/stage2_two_channel/executors.py`
   - `src/trainers/stage2_two_channel/coordination.py`
-  - `src/trainers/stage2_rollout_aligned.py`
+  - `src/trainers/stage2_rollout_runtime.py`
   - `src/trainers/rollout_aligned_evaluator.py`
   - `src/datasets/dense_caption.py`
   - `src/datasets/wrappers/packed_caption.py`
@@ -123,7 +123,7 @@ That first slice should **not** yet:
   - `tests/test_stage2_ab_ddp_phase_monitor_disable.py`
   - `tests/test_stage2_pending_metrics_aggregation.py`
   - `tests/test_stage2_ab_disable_average_tokens_across_devices.py`
-  - `tests/test_stage2_rollout_aligned.py`
+  - `tests/test_stage2_rollout_runtime.py`
   - `tests/test_stage1_static_packing_runtime_config.py`
   - `tests/test_encoded_sample_cache.py`
   - `tests/test_training_config_strict_unknown_keys.py`

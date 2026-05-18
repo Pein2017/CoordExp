@@ -32,21 +32,21 @@ Normative behavior:
   - omitted `parameterization` MUST resolve to the default `xyxy` behavior,
   - `center_weight` and `size_weight` MUST remain optional unless `parameterization: center_size` is explicitly authored.
 
-#### Scenario: Alias key in rollout module config fails fast
-- **WHEN** `rollout_matching.pipeline.objective[*].name=bbox_size_aux`
+#### Scenario: Alias key in Stage-2 module config fails fast
+- **WHEN** `stage2_ab.pipeline.objective[*].name=bbox_size_aux`
 - **AND** the module config contains `bbox_smoothl1_weight`
 - **THEN** configuration parsing fails fast
 - **AND** the error indicates the canonical `bbox_size_aux.config.*` key family
   must be used.
 
-#### Scenario: Rollout-aligned bbox_geo can opt into center-size supervision
-- **WHEN** `rollout_matching.pipeline.objective[*].name=bbox_geo`
+#### Scenario: Stage-2 bbox_geo can opt into center-size supervision
+- **WHEN** `stage2_ab.pipeline.objective[*].name=bbox_geo`
 - **AND** the module config authors `parameterization: center_size`, `center_weight`, and `size_weight`
 - **THEN** strict config validation accepts the config
-- **AND** rollout-aligned training can use the same center-size supervision mode without changing the rollout parser contract.
+- **AND** Stage-2 two-channel training can use the same center-size supervision mode without changing the rollout parser contract.
 
-#### Scenario: Existing rollout bbox_geo config remains valid
-- **WHEN** `rollout_matching.pipeline.objective[*].name=bbox_geo`
+#### Scenario: Existing Stage-2 bbox_geo config remains valid
+- **WHEN** `stage2_ab.pipeline.objective[*].name=bbox_geo`
 - **AND** the module config authors only `smoothl1_weight` and `ciou_weight`
 - **THEN** strict config validation still accepts the config
 - **AND** the resolved behavior remains default `xyxy`.

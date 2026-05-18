@@ -9,4 +9,3 @@ data:
   train_jsonl: public_data/coco/views/coco80-lvis-proxy/len-12000/train.jsonl
   val_jsonl: public_data/coco/views/coco80-lvis-proxy/len-12000/val.jsonl
   image_root: null
-  max_objects: null

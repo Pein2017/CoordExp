@@ -1334,7 +1334,7 @@ supervision planners, and shared object ordering.
 Run:
 
 ```bash
-conda run -n ms python -m pytest tests/test_stage2_rollout_template_policy.py tests/test_stage2_compact_full_rollout_io.py tests/test_stage2_coordjson_rollout_legacy.py tests/test_stage2_assignment_greedy_iou.py tests/test_stage2_duplicate_filter.py tests/test_stage2_supervision_planning_smoke.py tests/test_object_ordering_strategy.py tests/test_stage2_two_channel_training.py tests/test_stage2_rollout_aligned.py -q
+conda run -n ms python -m pytest tests/test_stage2_rollout_template_policy.py tests/test_stage2_compact_full_rollout_io.py tests/test_stage2_coordjson_rollout_legacy.py tests/test_stage2_assignment_greedy_iou.py tests/test_stage2_duplicate_filter.py tests/test_stage2_supervision_planning_smoke.py tests/test_object_ordering_strategy.py tests/test_stage2_two_channel_training.py tests/test_stage2_rollout_runtime.py -q
 ```
 
 Expected: pass.
@@ -1351,7 +1351,7 @@ the chance of accidental artifact or routing drift is highest.
 - Read/Modify only if needed: `src/training_runtime/plan.py`
 - Read: `configs/stage2_two_channel/smoke/a_only.yaml`
 - Test: `tests/test_stage2_two_channel_training.py`
-- Test: `tests/test_stage2_rollout_aligned.py`
+- Test: `tests/test_stage2_rollout_runtime.py`
 - Test: `tests/test_training_runtime_sft_integration.py`
 
 - [ ] **Step 1: Prove legacy Stage-2 still loads and runs**
@@ -1359,7 +1359,7 @@ the chance of accidental artifact or routing drift is highest.
 Run:
 
 ```bash
-conda run -n ms python -m pytest tests/test_stage2_two_channel_training.py tests/test_stage2_rollout_aligned.py tests/test_training_runtime_sft_integration.py -q
+conda run -n ms python -m pytest tests/test_stage2_two_channel_training.py tests/test_stage2_rollout_runtime.py tests/test_training_runtime_sft_integration.py -q
 ```
 
 Expected: current executable Stage-2/Hungarian path still passes before any
@@ -1467,8 +1467,8 @@ alone is not enough to claim training readiness.
     tests/test_recursive_detection_ce_sft_wiring.py::test_sft_fails_fast_if_coord_offset_hooks_are_missing_after_peft_wrap
     tests/test_rollout_matching_decoding_cfg.py::test_apply_rollout_decoding_to_generation_config_greedy_disables_sampling
     tests/test_rollout_matching_decoding_cfg.py::test_apply_rollout_decoding_to_generation_config_sampling_respects_top_p_and_top_k
-    tests/test_stage2_rollout_aligned.py::test_rollout_many_rebuilds_compact_full_prompt_from_coordjson_source
-    tests/test_stage2_rollout_aligned.py::test_prepare_samples_for_rollout_vllm_uses_compact_full_system_prompt
+    tests/test_stage2_rollout_runtime.py::test_rollout_many_rebuilds_compact_full_prompt_from_coordjson_source
+    tests/test_stage2_rollout_runtime.py::test_prepare_samples_for_rollout_vllm_uses_compact_full_system_prompt
     -q` passed.
   - real Gate-1 smoke:
     `gpus=0 config=configs/stage2_two_channel/smoke/compact_full_et_rmp_ce_ckpt3664_hf_1step.yaml
@@ -1957,7 +1957,7 @@ new bridge and objective runner.
 Run:
 
 ```bash
-conda run -n ms python -m pytest tests/test_stage2_rollout_template_policy.py tests/test_stage2_compact_full_rollout_io.py tests/test_stage2_coordjson_rollout_legacy.py tests/test_stage2_assignment_greedy_iou.py tests/test_stage2_duplicate_filter.py tests/test_stage2_supervision_planning_smoke.py tests/test_stage2_two_channel_training.py tests/test_stage2_rollout_aligned.py -q
+conda run -n ms python -m pytest tests/test_stage2_rollout_template_policy.py tests/test_stage2_compact_full_rollout_io.py tests/test_stage2_coordjson_rollout_legacy.py tests/test_stage2_assignment_greedy_iou.py tests/test_stage2_duplicate_filter.py tests/test_stage2_supervision_planning_smoke.py tests/test_stage2_two_channel_training.py tests/test_stage2_rollout_runtime.py -q
 ```
 
 Expected: synthetic rollout predictions produce assignment results, duplicate

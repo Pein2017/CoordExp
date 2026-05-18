@@ -5,7 +5,7 @@ import types
 import pytest
 
 from src.trainers.stage2_two_channel import (
-    Stage2ABTrainingTrainer,
+    Stage2TwoChannelTrainer,
     _PendingStage2Log,
     _merge_stage2_metric_snapshots,
 )
@@ -219,7 +219,7 @@ def test_stage2_metric_snapshots_carry_forward_channel_specific_keys() -> None:
 def test_stage2_log_emits_snapshots_alongside_current_reduced_metrics(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    trainer = Stage2ABTrainingTrainer.__new__(Stage2ABTrainingTrainer)
+    trainer = Stage2TwoChannelTrainer.__new__(Stage2TwoChannelTrainer)
     trainer.state = types.SimpleNamespace(global_step=1)
     trainer._stage2_pending_train_logs = {1: _PendingStage2Log()}
     trainer._stage2_pending_train_logs[1].add(
@@ -254,11 +254,11 @@ def test_stage2_log_emits_snapshots_alongside_current_reduced_metrics(
         return None
 
     monkeypatch.setattr(
-        "src.trainers.stage2_rollout_aligned.RolloutMatchingSFTTrainer.log",
+        "src.trainers.stage2_rollout_runtime.Stage2RolloutRuntime.log",
         _capture_super_log,
     )
 
-    Stage2ABTrainingTrainer.log(trainer, {"loss": 1.0})
+    Stage2TwoChannelTrainer.log(trainer, {"loss": 1.0})
 
     assert captured["loss"] == pytest.approx(1.0)
     assert captured["loss/B_rollout_text/struct_ce"] == pytest.approx(0.8)
@@ -275,7 +275,7 @@ def test_stage2_log_emits_snapshots_alongside_current_reduced_metrics(
 def test_stage2_log_reduces_pending_metrics_once_per_step(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    trainer = Stage2ABTrainingTrainer.__new__(Stage2ABTrainingTrainer)
+    trainer = Stage2TwoChannelTrainer.__new__(Stage2TwoChannelTrainer)
     trainer.state = types.SimpleNamespace(global_step=1)
     trainer._stage2_pending_train_logs = {1: _PendingStage2Log()}
     trainer._stage2_pending_train_logs[1].add(
@@ -310,11 +310,11 @@ def test_stage2_log_reduces_pending_metrics_once_per_step(
         return None
 
     monkeypatch.setattr(
-        "src.trainers.stage2_rollout_aligned.RolloutMatchingSFTTrainer.log",
+        "src.trainers.stage2_rollout_runtime.Stage2RolloutRuntime.log",
         _capture_super_log,
     )
 
-    Stage2ABTrainingTrainer.log(trainer, {"loss": 1.0})
+    Stage2TwoChannelTrainer.log(trainer, {"loss": 1.0})
 
     assert len(reduction_calls) == 1
     assert reduction_calls[0]["loss/B_rollout_text/struct_ce"] == pytest.approx(0.8)

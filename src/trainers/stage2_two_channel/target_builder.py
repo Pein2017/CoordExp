@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+import random
 from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
 
 from src.common.duplicate_control import (
@@ -333,10 +334,10 @@ def _compact_desc_prefix_positions_and_weights(
 
 def _normalize_channel_b_insertion_order(insertion_order: str) -> str:
     value = str(insertion_order or "tail_append").strip().lower()
-    if value not in {"tail_append", "sorted"}:
+    if value not in {"tail_append", "sorted", "fn_slot_shuffle"}:
         raise ValueError(
             "stage2_ab.channel_b.insertion_order must be one of "
-            "{'tail_append', 'sorted'}"
+            "{'tail_append', 'sorted', 'fn_slot_shuffle'}"
         )
     return value
 
@@ -351,6 +352,32 @@ def _gt_object_topleft_anchor(obj: GTObject) -> Tuple[int, int]:
     if not xs or not ys:
         return (10**9, 10**9)
     return (int(min(ys)), int(min(xs)))
+
+
+def _fn_slot_shuffle_entries(
+    *,
+    anchor_entries: Sequence[Dict[str, Any]],
+    fn_entries: Sequence[Dict[str, Any]],
+    shuffle_seed: int | None,
+) -> List[Dict[str, Any]]:
+    """Deterministically inject FN entries into accepted-anchor slots.
+
+    The accepted rollout objects keep their relative order. False-negative
+    objects are shuffled, then inserted into random slots so the target can
+    test order robustness without making run replay nondeterministic.
+    """
+
+    rng = random.Random(0 if shuffle_seed is None else int(shuffle_seed))
+
+    arranged_entries = [dict(entry) for entry in anchor_entries]
+    shuffled_fn_entries = [dict(entry) for entry in fn_entries]
+    rng.shuffle(shuffled_fn_entries)
+
+    for fn_entry in shuffled_fn_entries:
+        insert_at = rng.randint(0, len(arranged_entries))
+        arranged_entries.insert(int(insert_at), dict(fn_entry))
+
+    return arranged_entries
 
 
 def _sorted_duplicate_bursts_by_boundary(
@@ -895,6 +922,7 @@ def _build_channel_b_supervision_targets(
     serialize_append_fragment_fn: Any,
     rollout_template_policy: Stage2RolloutTemplatePolicy | None = None,
     parse: Any | None = None,
+    shuffle_seed: int | None = None,
 ) -> _ChannelBSupervisionTargets:
     insertion_order_resolved = _normalize_channel_b_insertion_order(insertion_order)
     rollout_template_family = (
@@ -1105,22 +1133,23 @@ def _build_channel_b_supervision_targets(
     fn_count_for_meta = int(len(fn_objs))
     prefix_desc_pos: List[int] = []
     prefix_desc_weights: List[float] = []
-    if insertion_order_resolved == "sorted":
+    if insertion_order_resolved in {"sorted", "fn_slot_shuffle"}:
         prefix_bbox_groups = []
         fn_bbox_groups = []
         prefix_pos = []
         prefix_bins = []
-        sorted_entries: List[Dict[str, Any]] = []
+        anchor_entries: List[Dict[str, Any]] = []
         for kept_idx, obj in enumerate(triage.kept_anchor_objects):
-            sorted_entries.append(
+            anchor_entries.append(
                 {
                     "kind": "anchor",
                     "index": int(kept_idx),
                     "obj": obj,
                 }
             )
+        fn_entries: List[Dict[str, Any]] = []
         for fn_idx, (obj, obj_weight) in enumerate(zip(fn_objs, fn_object_weights)):
-            sorted_entries.append(
+            fn_entries.append(
                 {
                     "kind": "fn",
                     "index": int(fn_idx),
@@ -1128,10 +1157,17 @@ def _build_channel_b_supervision_targets(
                     "weight": float(obj_weight),
                 }
             )
-        sorted_entries = sorted(
-            sorted_entries,
-            key=lambda entry: _gt_object_topleft_anchor(entry["obj"]),
-        )
+        if insertion_order_resolved == "sorted":
+            sorted_entries = sorted(
+                list(anchor_entries) + list(fn_entries),
+                key=lambda entry: _gt_object_topleft_anchor(entry["obj"]),
+            )
+        else:
+            sorted_entries = _fn_slot_shuffle_entries(
+                anchor_entries=anchor_entries,
+                fn_entries=fn_entries,
+                shuffle_seed=shuffle_seed,
+            )
         sorted_objects = [entry["obj"] for entry in sorted_entries]
         clean_prefix = (
             _build_compact_prefix_data(

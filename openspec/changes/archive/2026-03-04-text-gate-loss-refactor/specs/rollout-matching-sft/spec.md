@@ -3,7 +3,7 @@
 ## ADDED Requirements
 
 ### Requirement: Rollout-aligned Stage-2 uses explicit objective pipeline (no implicit defaults)
-When `custom.trainer_variant: stage2_rollout_aligned`, the rollout-aligned teacher-forcing objective MUST be fully determined by the declared module pipeline under:
+When `custom.trainer_variant: stage2_rollout_runtime`, the rollout-aligned teacher-forcing objective MUST be fully determined by the declared module pipeline under:
 - `rollout_matching.pipeline.objective[]` and `rollout_matching.pipeline.diagnostics[]`.
 
 Normative behavior:
@@ -11,7 +11,7 @@ Normative behavior:
 - Legacy aux-loss config surfaces MUST be rejected, including `custom.coord_soft_ce_w1.*`.
 
 #### Scenario: Missing rollout pipeline fails fast
-- **WHEN** `custom.trainer_variant: stage2_rollout_aligned`
+- **WHEN** `custom.trainer_variant: stage2_rollout_runtime`
 - **AND** `rollout_matching.pipeline` is absent
 - **THEN** config loading fails fast before trainer init
 - **AND** the error indicates `rollout_matching.pipeline` is required.

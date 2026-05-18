@@ -2,11 +2,11 @@ from __future__ import annotations
 
 import types
 
-from src.trainers.stage2_rollout_aligned import RolloutMatchingSFTTrainer
+from src.trainers.stage2_rollout_runtime import Stage2RolloutRuntime
 
 
-def _make_trainer(system: str = "SYS") -> RolloutMatchingSFTTrainer:
-    trainer = RolloutMatchingSFTTrainer.__new__(RolloutMatchingSFTTrainer)
+def _make_trainer(system: str = "SYS") -> Stage2RolloutRuntime:
+    trainer = Stage2RolloutRuntime.__new__(Stage2RolloutRuntime)
     trainer.template = types.SimpleNamespace(system=system)
     return trainer
 

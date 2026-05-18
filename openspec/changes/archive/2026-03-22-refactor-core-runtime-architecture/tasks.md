@@ -27,7 +27,7 @@
   - `conda run -n ms python -m pytest -q tests/test_training_config_strict_unknown_keys.py`
   - `conda run -n ms python -m pytest -q tests/test_stage2_ab_training.py`
   - `conda run -n ms python -m pytest -q tests/test_stage2_two_channel_training.py`
-  - `conda run -n ms python -m pytest -q tests/test_stage2_rollout_aligned.py`
+  - `conda run -n ms python -m pytest -q tests/test_stage2_rollout_runtime.py`
   - `conda run -n ms python -m pytest -q tests/test_stage2_rollout_import_boundaries.py`
   - `conda run -n ms python -m pytest -q tests/test_unified_infer_pipeline.py`
   - `conda run -n ms python -m pytest -q tests/test_detection_eval_output_parity.py`
@@ -66,11 +66,11 @@
 
 ## Workstream 3. Shared Rollout Runtime Extraction
 
-- [x] 3.1 Extract shared rollout backend/decode lifecycle from `src/trainers/stage2_rollout_aligned.py` into a dedicated runtime package.
+- [x] 3.1 Extract shared rollout backend/decode lifecycle from `src/trainers/stage2_rollout_runtime.py` into a dedicated runtime package.
 - [x] 3.2 Preserve trainer-facing adapter methods initially so existing tests and monkeypatches continue to work.
 - [x] 3.3 Move vLLM local/server lifecycle and rollout dispatch behind a narrower trainer-to-runtime interface.
 - [x] 3.4 Validate shared runtime parity:
-  - `conda run -n ms python -m pytest -q tests/test_stage2_rollout_aligned.py`
+  - `conda run -n ms python -m pytest -q tests/test_stage2_rollout_runtime.py`
   - `conda run -n ms python -m pytest -q tests/test_stage2_ab_training.py`
   - `conda run -n ms python -m pytest -q tests/test_stage2_ab_vllm_server_mode_smoke.py`
   - `conda run -n ms python -m pytest -q tests/test_stage2_rollout_import_boundaries.py`
@@ -81,7 +81,7 @@
 - [x] 4.2 Extract rollout-aligned evaluation flow from `evaluate` into an evaluator module while preserving metric and artifact behavior.
 - [x] 4.3 Keep current rollout metric keys and eval artifact expectations stable during the first extraction pass.
 - [x] 4.4 Validate rollout-aligned parity:
-  - `conda run -n ms python -m pytest -q tests/test_stage2_rollout_aligned.py`
+  - `conda run -n ms python -m pytest -q tests/test_stage2_rollout_runtime.py`
   - `conda run -n ms python -m pytest -q tests/test_detection_eval_output_parity.py`
 
 ## Workstream 5. Training Bootstrap And Manifest Authority Cleanup
@@ -141,7 +141,7 @@
   - `conda run -n ms python -m pytest -q tests/test_training_config_strict_unknown_keys.py`
   - `conda run -n ms python -m pytest -q tests/test_stage2_ab_training.py`
   - `conda run -n ms python -m pytest -q tests/test_stage2_two_channel_training.py`
-  - `conda run -n ms python -m pytest -q tests/test_stage2_rollout_aligned.py`
+  - `conda run -n ms python -m pytest -q tests/test_stage2_rollout_runtime.py`
   - `conda run -n ms python -m pytest -q tests/test_stage2_rollout_import_boundaries.py`
   - `conda run -n ms python -m pytest -q tests/test_stage2_ab_vllm_server_mode_smoke.py`
   - `conda run -n ms python -m pytest -q tests/test_unified_infer_pipeline.py`

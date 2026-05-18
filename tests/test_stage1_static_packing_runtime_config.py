@@ -655,49 +655,13 @@ def test_static_packing_fingerprint_tracks_prompt_variant_and_template_hash() ->
     assert default_fp["custom_prompt_template_hash"] != lvis_fp["custom_prompt_template_hash"]
 
 
-def test_static_packing_fingerprint_preserves_legacy_null_fusion_keys() -> None:
-    packing_cfg = _parse_packing_config(
-        training_cfg={"packing": True, "packing_mode": "static"},
-        template=_Template(max_length=128),
-        train_args=SimpleNamespace(max_model_len=0),
-    )
-
-    fingerprint = _build_static_packing_fingerprint(
-        training_config=SimpleNamespace(
-            global_max_length=1024,
-            template={"system": "sys", "truncation_strategy": "raise"},
-            training={"train_dataloader_shuffle": True},
-        ),
-        custom_config=SimpleNamespace(
-            user_prompt="prompt",
-            emit_norm="none",
-            json_format="standard",
-            object_ordering="none",
-            object_field_order="geometry_first",
-            use_summary=False,
-            system_prompt_dense=None,
-            system_prompt_summary=None,
-        ),
-        template=_Template(max_length=128),
-        train_args=SimpleNamespace(max_model_len=512),
-        dataset_seed=7,
-        packing_cfg=packing_cfg,
-        train_jsonl="train.jsonl",
-    )
-
-    assert "custom_fusion_config" in fingerprint
-    assert fingerprint["custom_fusion_config"] is None
-    assert "dataset_source_fusion_config" in fingerprint
-    assert fingerprint["dataset_source_fusion_config"] is None
-
-
 def test_fingerprint_diff_keys_reports_missing_vs_null() -> None:
     differing = _fingerprint_diff_keys(
-        {"custom_fusion_config": None},
+        {"custom_prompt_variant": None},
         {},
     )
 
-    assert differing == ["custom_fusion_config"]
+    assert differing == ["custom_prompt_variant"]
 
 
 def test_resolve_static_packing_cache_dir_defaults_to_dataset_local_root(
@@ -718,7 +682,6 @@ def test_resolve_static_packing_cache_dir_defaults_to_dataset_local_root(
         training_config=SimpleNamespace(global_max_length=12000),
         train_args=SimpleNamespace(output_dir=str(tmp_path / "out_v003")),
         dataset_jsonl=str(train_jsonl),
-        fusion_config_path=None,
         dataset_split="train",
         packing_cfg=packing_cfg,
     )

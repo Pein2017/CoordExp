@@ -14,8 +14,8 @@ Purpose: map the end-to-end CoordExp flow from data intake to training, inferenc
 Authority: explanatory system guide for the current codebase; if this page conflicts with a spec or runbook, defer to `docs/PROJECT_CONTEXT.md` and `openspec/specs/`.
 Read this after: `docs/PROJECT_CONTEXT.md`
 Read this before: domain runbooks under `docs/data/`, `docs/training/`, and `docs/eval/`
-Primary code handles: `src/config/loader.py`, `src/datasets/`, `src/sft.py`, `src/detection/runtime.py`, `src/detection/template.py`, `src/common/detection_sequence.py`, `src/common/detection_compact_rows.py`, `src/bootstrap/`, `src/trainers/metrics/`, `src/metrics/events.py`, `src/training/`, `src/training/surfaces.py::TrainingSurfaceResolver`, `src/trainers/stage2_two_channel.py`, `src/trainers/stage2_two_channel/`, `src/trainers/stage2_rollout_aligned.py`, `src/trainers/rollout_aligned_targets.py`, `src/trainers/rollout_aligned_evaluator.py`, `src/trainers/rollout_runtime/`, `src/launchers/stage2_vllm_server.py`, `src/infer/pipeline.py`, `src/infer/engine.py`, `src/infer/backends.py`, `src/infer/artifacts.py`, `src/eval/detection.py`, `src/eval/detection_records.py`, `src/eval/detection_geometry.py`, `src/eval/detection_coco.py`, `src/eval/detection_lvis.py`, `src/eval/detection_duplicate_guard.py`, `src/eval/detection_f1ish.py`, `src/eval/detection_orchestrator.py`, `src/eval/orchestration.py`, `src/eval/artifacts.py`
-Verification: `rg -n "detection/runtime|detection_sequence|detection_compact_rows|MetricEvent|flatten_metric_events|TrainingSurfaceResolver|stage1_compact_trie_ce|stage2_two_channel|stage2_rollout_aligned|pipeline_manifest|run_metadata|backends|artifacts|orchestration" src scripts configs docs`
+Primary code handles: `src/config/loader.py`, `src/datasets/`, `src/sft.py`, `src/detection/runtime.py`, `src/detection/template.py`, `src/common/detection_sequence.py`, `src/common/detection_compact_rows.py`, `src/bootstrap/`, `src/trainers/metrics/`, `src/metrics/events.py`, `src/training/`, `src/training/surfaces.py::TrainingSurfaceResolver`, `src/trainers/stage2_two_channel.py`, `src/trainers/stage2_two_channel/`, `src/trainers/stage2_rollout_runtime.py`, `src/trainers/rollout_aligned_targets.py`, `src/trainers/rollout_aligned_evaluator.py`, `src/trainers/rollout_runtime/`, `src/launchers/stage2_vllm_server.py`, `src/infer/pipeline.py`, `src/infer/engine.py`, `src/infer/backends.py`, `src/infer/artifacts.py`, `src/eval/detection.py`, `src/eval/detection_records.py`, `src/eval/detection_geometry.py`, `src/eval/detection_coco.py`, `src/eval/detection_lvis.py`, `src/eval/detection_duplicate_guard.py`, `src/eval/detection_f1ish.py`, `src/eval/detection_orchestrator.py`, `src/eval/orchestration.py`, `src/eval/artifacts.py`
+Verification: `rg -n "detection/runtime|detection_sequence|detection_compact_rows|MetricEvent|flatten_metric_events|TrainingSurfaceResolver|stage1_compact_trie_ce|stage2_two_channel|stage2_rollout_runtime|pipeline_manifest|run_metadata|backends|artifacts|orchestration" src scripts configs docs`
 
 ## Flow At A Glance
 
@@ -162,8 +162,7 @@ Use Stage-2 when you need rollout-time matching, clean-prefix Channel-B supervis
   - `src/trainers/stage2_two_channel/objective_runner.py`
   - `src/trainers/stage2_two_channel/coordination.py`
   - `src/trainers/stage2_two_channel/executors.py`
-  - `src/trainers/stage2_ab/`
-  - `src/trainers/stage2_rollout_aligned.py`
+  - `src/trainers/stage2_rollout_runtime.py`
   - `src/trainers/rollout_aligned_targets.py`
   - `src/trainers/rollout_aligned_evaluator.py`
   - `src/trainers/rollout_runtime/`
@@ -173,9 +172,8 @@ Use Stage-2 when you need rollout-time matching, clean-prefix Channel-B supervis
   - `src/trainers/teacher_forcing/module_registry.py`
 
 Compatibility note:
-- `src/trainers/stage2_ab_training.py` is a compatibility wrapper.
-- `src/trainers/stage2_two_channel.py` remains the public two-channel trainer surface, with shared Stage-2 coordination in `src/trainers/stage2_coordination.py` and helper modules under `src/trainers/stage2_ab/` and `src/trainers/stage2_two_channel/`.
-- `src/trainers/stage2_rollout_aligned.py` remains the rollout-matching compatibility trainer surface and now imports `src/trainers/rollout_aligned_targets.py`, `src/trainers/rollout_aligned_evaluator.py`, and `src/trainers/rollout_runtime/`.
+- `src/trainers/stage2_two_channel.py` is the only public Stage-2 trainer surface.
+- `src/trainers/stage2_rollout_runtime.py` is an internal shared runtime base for rollout generation, post-rollout packing, vLLM/server dispatch, and eval artifacts; it is not a public trainer variant.
 - Stage-2 historical rationale is summarized from the current runbook; use [`docs/training/STAGE2_RUNBOOK.md`](training/STAGE2_RUNBOOK.md) and stable specs for current behavior.
 
 ## 4. Inference, Confidence, And Evaluation

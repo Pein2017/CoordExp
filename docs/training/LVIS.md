@@ -204,7 +204,7 @@ Primary implementation surfaces:
 - `src/trainers/stage2_two_channel.py`
 - `src/trainers/stage2_two_channel/target_builder.py`
 - `src/trainers/stage2_two_channel/types.py`
-- `src/trainers/stage2_rollout_aligned.py`
+- `src/trainers/stage2_rollout_runtime.py`
 
 Useful config handles:
 

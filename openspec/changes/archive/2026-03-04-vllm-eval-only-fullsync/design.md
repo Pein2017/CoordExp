@@ -1,7 +1,7 @@
 ## Context
 
 Current state:
-- Stage-2 trainers (`stage2_rollout_aligned`, `stage2_two_channel`) implement evaluation as rollout-first decoding (no teacher-forced loss), then parse + match + optionally run detection metrics. This means evaluation can use a different rollout backend without affecting the training objective.
+- Stage-2 trainers (`stage2_rollout_runtime`, `stage2_two_channel`) implement evaluation as rollout-first decoding (no teacher-forced loss), then parse + match + optionally run detection metrics. This means evaluation can use a different rollout backend without affecting the training objective.
 - Rollout backends already support `hf` and `vllm`, and vLLM supports `colocate` (local engine) and `server` (external rollout server) modes.
 
 User target:
@@ -177,6 +177,6 @@ Rule-of-thumb (qualitative, for planning):
 
 ## Open Questions
 
-- Should eval-only vLLM be available for all trainers that inherit `RolloutMatchingSFTTrainer`, or limited to Stage-2 variants only?
+- Should eval-only vLLM be available for all trainers that inherit `Stage2RolloutRuntime`, or limited to Stage-2 variants only?
 - What is the preferred default for eval offload on non-A100 hardware (e.g., smaller GPUs)?
 - If operators need stronger memory isolation than standard colocate + offload, should we prioritize server-mode guidance or an out-of-process lifecycle design?

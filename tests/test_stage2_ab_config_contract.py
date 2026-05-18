@@ -855,50 +855,6 @@ def test_stage2_pipeline_rejects_custom_coord_soft_ce_w1_surface() -> None:
         TrainingConfig.from_mapping(raw, prompts)
 
 
-def test_rollout_pipeline_rejects_custom_coord_soft_ce_w1_surface() -> None:
-    token_ce_cfg = {
-        "desc_ce_weight": 1.0,
-        "rollout_fn_desc_weight": 1.0,
-        "rollout_global_prefix_struct_ce_weight": 1.0,
-    }
-    raw = {
-        "template": {"template": "qwen3_vl"},
-        "custom": {
-            "train_jsonl": "toy/train.jsonl",
-            "val_jsonl": "toy/val.jsonl",
-            "user_prompt": "{bbox}",
-            "emit_norm": "none",
-            "json_format": "standard",
-            "object_field_order": "desc_first",
-            "trainer_variant": "stage2_rollout_aligned",
-            "coord_soft_ce_w1": {"enabled": True, "soft_ce_weight": 0.25},
-        },
-        "training": {"per_device_train_batch_size": 1, "effective_batch_size": 1},
-        "rollout_matching": {
-            "rollout_backend": "hf",
-            "channel_b_decode_batch_size": 1,
-            "eval_decode_batch_size": 1,
-            "pipeline": {
-                "objective": [
-                    {
-                        "name": "token_ce",
-                        "enabled": True,
-                        "weight": 1.0,
-                        "channels": ["A", "B"],
-                        "application": {"preset": "anchor_text_only"},
-                        "config": dict(token_ce_cfg),
-                    }
-                ],
-                "diagnostics": [],
-            },
-        },
-    }
-
-    prompts = ConfigLoader.resolve_prompts(raw)
-    with pytest.raises(ValueError, match=r"custom\.coord_soft_ce_w1"):
-        TrainingConfig.from_mapping(raw, prompts)
-
-
 def test_stage2_pipeline_rejects_unknown_module_config_keys() -> None:
     coord_reg_cfg = {
         "coord_ce_weight": 0.0,
@@ -1148,7 +1104,7 @@ def test_rollout_matching_rejects_deprecated_decode_toggle() -> None:
             "emit_norm": "none",
             "json_format": "standard",
             "object_field_order": "desc_first",
-            "trainer_variant": "stage2_rollout_aligned",
+            "trainer_variant": "stage2_two_channel",
         },
         "training": {"per_device_train_batch_size": 1, "effective_batch_size": 1},
         "rollout_matching": {
@@ -1156,23 +1112,11 @@ def test_rollout_matching_rejects_deprecated_decode_toggle() -> None:
             "channel_b_decode_batch_size": 1,
             "eval_decode_batch_size": 1,
             "coord_decode_mode": "st",
-            "pipeline": {
-                "objective": [
-                    {
-                        "name": "token_ce",
-                        "enabled": True,
-                        "weight": 1.0,
-                        "channels": ["A", "B"],
-                        "application": {"preset": "anchor_text_only"},
-                        "config": {
-                            "desc_ce_weight": 1.0,
-                            "rollout_fn_desc_weight": 1.0,
-                            "rollout_global_prefix_struct_ce_weight": 1.0,
-                        },
-                    }
-                ],
-                "diagnostics": [],
-            },
+        },
+        "stage2_ab": {
+            "schedule": {"b_ratio": 1.0},
+            "pipeline": _canonical_stage2_pipeline(),
+            "channel_b": {},
         },
     }
 
@@ -1180,220 +1124,6 @@ def test_rollout_matching_rejects_deprecated_decode_toggle() -> None:
     with pytest.raises(
         ValueError,
         match=r"rollout_matching\.coord_decode_mode is deprecated and unsupported",
-    ):
-        TrainingConfig.from_mapping(raw, prompts)
-
-
-def test_rollout_pipeline_rejects_unknown_module_config_keys() -> None:
-    coord_reg_cfg = {
-        "coord_ce_weight": 0.0,
-        "coord_gate_weight": 0.0,
-        "text_gate_weight": 0.25,
-        "soft_ce_weight": 0.0,
-        "w1_weight": 0.0,
-        "temperature": 1.0,
-        "target_sigma": 2.0,
-        "target_truncate": None,
-    }
-    raw = {
-        "template": {"template": "qwen3_vl"},
-        "custom": {
-            "train_jsonl": "toy/train.jsonl",
-            "val_jsonl": "toy/val.jsonl",
-            "user_prompt": "{bbox}",
-            "emit_norm": "none",
-            "json_format": "standard",
-            "object_field_order": "desc_first",
-            "trainer_variant": "stage2_rollout_aligned",
-        },
-        "training": {"per_device_train_batch_size": 1, "effective_batch_size": 1},
-        "rollout_matching": {
-            "rollout_backend": "hf",
-            "channel_b_decode_batch_size": 1,
-            "eval_decode_batch_size": 1,
-            "pipeline": {
-                "objective": [
-                    {
-                        "name": "bbox_geo",
-                        "enabled": True,
-                        "weight": 0.0,
-                        "channels": ["A", "B"],
-                        "application": {"preset": "anchor_only"},
-                        "config": {
-                            "smoothl1_weight": 0.0,
-                            "ciou_weight": 0.0,
-                        },
-                    },
-                    {
-                        "name": "coord_reg",
-                        "enabled": True,
-                        "weight": 1.0,
-                        "channels": ["A", "B"],
-                        "application": {"preset": "anchor_only"},
-                        "config": {
-                            **coord_reg_cfg,
-                            "unknown_weight": 1.0,
-                        },
-                    }
-                ],
-                "diagnostics": [],
-            },
-        },
-    }
-
-    prompts = ConfigLoader.resolve_prompts(raw)
-    with pytest.raises(
-        ValueError,
-        match=r"Unknown rollout_matching\.pipeline\.objective\[1\]\.config keys.*unknown_weight",
-    ):
-        TrainingConfig.from_mapping(raw, prompts)
-
-
-def test_rollout_pipeline_accepts_bbox_geo_center_size_keys() -> None:
-    raw = {
-        "template": {"template": "qwen3_vl"},
-        "custom": {
-            "train_jsonl": "toy/train.jsonl",
-            "val_jsonl": "toy/val.jsonl",
-            "user_prompt": "{bbox}",
-            "emit_norm": "none",
-            "json_format": "standard",
-            "object_field_order": "desc_first",
-            "trainer_variant": "stage2_rollout_aligned",
-        },
-        "training": {"per_device_train_batch_size": 1, "effective_batch_size": 1},
-        "rollout_matching": {
-            "rollout_backend": "hf",
-            "channel_b_decode_batch_size": 1,
-            "eval_decode_batch_size": 1,
-            "pipeline": {
-                "objective": [
-                    {
-                        "name": "bbox_geo",
-                        "enabled": True,
-                        "weight": 0.0,
-                        "channels": ["A", "B"],
-                        "application": {"preset": "anchor_only"},
-                        "config": {
-                            "smoothl1_weight": 0.5,
-                            "ciou_weight": 0.25,
-                            "parameterization": "center_size",
-                            "center_weight": 1.0,
-                            "size_weight": 0.25,
-                        },
-                    }
-                ],
-                "diagnostics": [],
-            },
-        },
-    }
-
-    prompts = ConfigLoader.resolve_prompts(raw)
-    cfg = TrainingConfig.from_mapping(raw, prompts)
-    bbox_geo_cfg = cfg.rollout_matching.pipeline.objective[0].config
-    assert bbox_geo_cfg["parameterization"] == "center_size"
-    assert float(bbox_geo_cfg["center_weight"]) == pytest.approx(1.0)
-    assert float(bbox_geo_cfg["size_weight"]) == pytest.approx(0.25)
-
-
-@pytest.mark.parametrize(
-    "removed_key",
-    ["coord_el1_weight", "coord_ehuber_weight", "coord_entropy_weight", "coord_huber_delta"],
-)
-def test_rollout_pipeline_rejects_removed_coord_reg_keys(removed_key: str) -> None:
-    raw = {
-        "template": {"template": "qwen3_vl"},
-        "custom": {
-            "train_jsonl": "toy/train.jsonl",
-            "val_jsonl": "toy/val.jsonl",
-            "user_prompt": "{bbox}",
-            "emit_norm": "none",
-            "json_format": "standard",
-            "object_field_order": "desc_first",
-            "trainer_variant": "stage2_rollout_aligned",
-        },
-        "training": {"per_device_train_batch_size": 1, "effective_batch_size": 1},
-        "rollout_matching": {
-            "rollout_backend": "hf",
-            "channel_b_decode_batch_size": 1,
-            "eval_decode_batch_size": 1,
-            "pipeline": {
-                "objective": [
-                    {
-                        "name": "bbox_geo",
-                        "enabled": True,
-                        "weight": 0.0,
-                        "channels": ["A", "B"],
-                        "application": {"preset": "anchor_only"},
-                        "config": {
-                            "smoothl1_weight": 0.0,
-                            "ciou_weight": 0.0,
-                        },
-                    },
-                    {
-                        "name": "coord_reg",
-                        "enabled": True,
-                        "weight": 1.0,
-                        "channels": ["A", "B"],
-                        "application": {"preset": "anchor_only"},
-                        "config": {removed_key: 0.0},
-                    },
-                ],
-                "diagnostics": [],
-            },
-        },
-    }
-
-    prompts = ConfigLoader.resolve_prompts(raw)
-    with pytest.raises(
-        ValueError,
-        match=rf"Unknown rollout_matching\.pipeline\.objective\[1\]\.config keys.*{removed_key}",
-    ):
-        TrainingConfig.from_mapping(raw, prompts)
-
-
-def test_rollout_pipeline_rejects_deprecated_struct_ce_weight() -> None:
-    raw = {
-        "template": {"template": "qwen3_vl"},
-        "custom": {
-            "train_jsonl": "toy/train.jsonl",
-            "val_jsonl": "toy/val.jsonl",
-            "user_prompt": "{bbox}",
-            "emit_norm": "none",
-            "json_format": "standard",
-            "object_field_order": "desc_first",
-            "trainer_variant": "stage2_rollout_aligned",
-        },
-        "training": {"per_device_train_batch_size": 1, "effective_batch_size": 1},
-        "rollout_matching": {
-            "rollout_backend": "hf",
-            "channel_b_decode_batch_size": 1,
-            "eval_decode_batch_size": 1,
-            "pipeline": {
-                "objective": [
-                    {
-                        "name": "token_ce",
-                        "enabled": True,
-                        "weight": 1.0,
-                        "channels": ["A", "B"],
-                        "application": {"preset": "anchor_text_only"},
-                        "config": {
-                            "desc_ce_weight": 1.0,
-                            "rollout_fn_desc_weight": 1.0,
-                            "rollout_global_prefix_struct_ce_weight": 1.0,
-                            "struct_ce_weight": 0.1,
-                        },
-                    }
-                ],
-                "diagnostics": [],
-            },
-        },
-    }
-
-    prompts = ConfigLoader.resolve_prompts(raw)
-    with pytest.raises(
-        ValueError,
-        match=r"rollout_matching\.pipeline\.objective\[0\]\.config\.struct_ce_weight is deprecated and unsupported",
     ):
         TrainingConfig.from_mapping(raw, prompts)
 

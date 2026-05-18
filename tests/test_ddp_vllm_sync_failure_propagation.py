@@ -6,7 +6,7 @@ from typing import Any
 import pytest
 import torch
 
-from src.trainers.stage2_rollout_aligned import RolloutMatchingSFTTrainer
+from src.trainers.stage2_rollout_runtime import Stage2RolloutRuntime
 
 
 class _FakeDist:
@@ -67,8 +67,8 @@ class _FakeDist:
             object_list[0] = self.last_broadcast_msg
 
 
-def _mk_min_trainer() -> RolloutMatchingSFTTrainer:
-    t = RolloutMatchingSFTTrainer.__new__(RolloutMatchingSFTTrainer)
+def _mk_min_trainer() -> Stage2RolloutRuntime:
+    t = Stage2RolloutRuntime.__new__(Stage2RolloutRuntime)
     t.state = types.SimpleNamespace(global_step=0)
     t.model = types.SimpleNamespace(device=torch.device("cpu"))
     t.rollout_matching_cfg = {

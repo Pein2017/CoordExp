@@ -19,7 +19,6 @@ Scope note:
   and fail-fast when any atomic sample exceeds the cap.
 - For Stage-2 pipeline-declared training, the canonical objective surface now lives under:
   - `stage2_ab.pipeline` for `custom.trainer_variant: stage2_two_channel`
-  - `rollout_matching.pipeline` for `custom.trainer_variant: stage2_rollout_aligned`
 - In those Stage-2 paths, `token_ce`, `bbox_geo`, `bbox_size_aux`, and `coord_reg` are declared through the pipeline surface described in:
   - `docs/training/STAGE2_RUNBOOK.md`
   - `docs/training/METRICS.md`
@@ -149,7 +148,7 @@ custom:
   - Stage-1 coord-family loss keys include `coord_softce_w1/loss`, `coord_softce_w1/soft_ce`, `coord_softce_w1/w1`, `coord_softce_w1/gate`, and `coord_softce_w1/text_gate`
   - Stage-1 coord diagnostics include `coord_diag/loss`, `coord_diag/soft_ce`, `coord_diag/w1`, `coord_diag/gate`, `coord_diag/text_gate`, `coord_diag/coord_vocab_mass`, `coord_diag/text_coord_vocab_mass`, `coord_diag/coord_tokens`, and the mode flag `coord_diag/enabled`
 - Stage-2 note:
-  - `stage2_two_channel` and `stage2_rollout_aligned` still use provenance-aware metric families, but the active single-pass Stage-2 contract now routes Channel-A through `loss/text/*`, `loss/coord/*`, and `coord_diag/*`, while Channel-B uses `loss/B_rollout_text/*`, `loss/B_coord/*`, and `coord_diag/B/*`.
+  - `stage2_two_channel` uses provenance-aware metric families and routes Channel-A through `loss/text/*`, `loss/coord/*`, and `coord_diag/*`, while Channel-B uses `loss/B_rollout_text/*`, `loss/B_coord/*`, and `coord_diag/B/*`.
   - Historical iterative groups such as `loss/A1_*`, `loss/A2_*`, `coord_diag/A1/*`, and `coord_diag/A2/*` are no longer part of the active Stage-2 contract.
 
 ## Stage-1 compact recursive detection and prefix roll-in
@@ -314,7 +313,7 @@ surface is intentionally much narrower than the existing `xyxy` baseline:
 - `gate_weight > 0`
 - `text_gate_weight > 0`
 - `temperature = 1.0`, `target_sigma = 2.0`, and `target_truncate = null`
-  are compatibility-only defaults and do not define a soft-label path here
+  are fixed defaults and do not define a soft-label path here
 - `custom.bbox_geo.*` and `custom.bbox_size_aux.*` are out of scope for this
   experiment
 

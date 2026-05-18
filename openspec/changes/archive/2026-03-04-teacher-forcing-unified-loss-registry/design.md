@@ -33,9 +33,9 @@ contracts rather than “spread across code paths”:
 This change designs a single, cohesive contract that can be implemented incrementally while preserving current
 behavior by default.
 
-Rollout-aligned teacher forcing is implemented by `Stage2RolloutAlignedTrainer` in `src/trainers/stage2_rollout_aligned.py`
-and is configured via `custom.trainer_variant: stage2_rollout_aligned`. Stage-2 two-channel inherits from
-`Stage2RolloutAlignedTrainer`, so:
+Rollout-aligned teacher forcing is implemented by `Stage2RolloutRuntime` in `src/trainers/stage2_rollout_runtime.py`
+and is configured via `custom.trainer_variant: stage2_rollout_runtime`. Stage-2 two-channel inherits from
+`Stage2RolloutRuntime`, so:
 - any shared loss/mask utilities MUST live outside the concrete trainer classes, and
 - pipeline/registry refactors should treat rollout-matching SFT as a first-class consumer (not an optional follow-on),
   otherwise duplication and contract drift will accumulate in the base class.
@@ -53,16 +53,16 @@ This refactor is explicitly motivated by *semantic drift* across teacher-forcing
 same tensor-flow semantics:
 
 - **Rollout-matching SFT vs Stage-2 Channel-B desc supervision**
-  - `RolloutMatchingSFTTrainer._prepare_batch_inputs()` currently ignores appended-tail `desc` value tokens for CE by
+  - `Stage2RolloutRuntime._prepare_batch_inputs()` currently ignores appended-tail `desc` value tokens for CE by
     setting `tail_ignore_pos = _find_desc_value_token_positions(...)` on the append fragment
-    (`src/trainers/stage2_rollout_aligned.py`).
+    (`src/trainers/stage2_rollout_runtime.py`).
   - Stage-2 Channel-B instead computes `tail_desc_pos` and applies `desc_ce_weight` (default 1.0) to those tokens
     (`src/trainers/stage2_two_channel.py`).
   - `progress/full_idea.md` expects FN-injected objects to receive `CE_desc=1` by default.
 
 - **Rollout-matching SFT lacks matched-prefix structure CE**
   - Rollout-matching `_build_labels_and_coord_targets_for_sample()` only assigns CE labels in the tail span; the
-    prefix is CE-masked entirely (`src/trainers/stage2_rollout_aligned.py`).
+    prefix is CE-masked entirely (`src/trainers/stage2_rollout_runtime.py`).
   - Stage-2 Channel-B computes `prefix_struct_pos` via `_matched_prefix_structure_positions(...)` and supervises only
     structure tokens for matched prefix objects (`src/trainers/stage2_two_channel.py`), matching `full_idea`.
 
@@ -76,7 +76,7 @@ same tensor-flow semantics:
   - The Stage-2 runbook states that bbox geometry loss uses SmoothL1+CIoU (`docs/training/STAGE2_RUNBOOK.md:65`).
   - Stage-2 two-channel implements SmoothL1+CIoU in `src/trainers/stage2_two_channel.py` (see `_bbox_smoothl1_ciou_loss`).
   - Rollout-matching SFT currently does not include SmoothL1+CIoU in its objective
-    (`src/trainers/stage2_rollout_aligned.py`), so running `custom.trainer_variant: stage2_rollout_aligned` can silently
+    (`src/trainers/stage2_rollout_runtime.py`), so running `custom.trainer_variant: stage2_rollout_runtime` can silently
     produce a different Stage-2 objective than the runbook implies.
 
 - **Scheduler description mismatch (historical; now resolved)**
@@ -152,7 +152,7 @@ Recommended trainer file naming (public-facing clarity; no backward-compat layer
 - Stage-2 Two-Channel Teacher Forcing (Expectation/Rollout):
   - `src/trainers/stage2_two_channel.py`
 - Stage-2 Rollout-Aligned Teacher Forcing (rollout-only):
-  - `src/trainers/stage2_rollout_aligned.py`
+  - `src/trainers/stage2_rollout_runtime.py`
 
 Normative rename policy for this change (fail-fast, single naming):
 - The old trainer module paths (`src/trainers/stage2_ab_training.py`, `src/trainers/rollout_matching_sft.py`) SHOULD be
@@ -177,7 +177,7 @@ Recommended subpackage naming:
 
 - Prefer the following `custom.trainer_variant` strings in docs and example configs:
   - `stage2_two_channel`
-  - `stage2_rollout_aligned`
+  - `stage2_rollout_runtime`
 - The older strings (`stage2_ab_training`, `rollout_matching_sft`) are removed and MUST fail fast with actionable
   guidance.
 
@@ -244,13 +244,13 @@ Alternatives considered:
 
 4) **Config surface: rollout-matching SFT pipeline declaration**
 
-- For `custom.trainer_variant: stage2_rollout_aligned`, add a typed and strict pipeline declaration under the rollout
+- For `custom.trainer_variant: stage2_rollout_runtime`, add a typed and strict pipeline declaration under the rollout
   matching namespace:
   - Proposed canonical location: `rollout_matching.pipeline` (same module-spec shape as `stage2_ab.pipeline`).
 - Guardrails:
   - If `custom.trainer_variant: stage2_two_channel`, the presence of `rollout_matching.pipeline` MUST fail fast with
     guidance to use `stage2_ab.pipeline` (avoid “config declared but ignored” ambiguity).
-  - If `custom.trainer_variant: stage2_rollout_aligned`, the presence of `stage2_ab.pipeline` MUST fail fast (avoid the
+  - If `custom.trainer_variant: stage2_rollout_runtime`, the presence of `stage2_ab.pipeline` MUST fail fast (avoid the
     symmetric ambiguity).
 
 5) **Module contracts: objective (fail-fast) vs diagnostics (best-effort)**

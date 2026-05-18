@@ -760,7 +760,7 @@ Channel-B rollouts MUST be fully deterministic under greedy decoding given the s
 If stochastic decoding is enabled, the trainer MUST apply a deterministic seeding plan and SHOULD be reproducible under a fixed run configuration (same backend, same world size/sharding, same batch shapes/order). Exact per-request determinism for stochastic decoding is not required in this capability.
 
 Definition (normative):
-- `training_seed` refers to HuggingFace `TrainingArguments.seed` (ms-swift `train_args.seed`), i.e., the same seed source used by `rollout_matching_sft`.
+- `training_seed` refers to HuggingFace `TrainingArguments.seed` (ms-swift `train_args.seed`), i.e., the same seed source used by the active `stage2_two_channel` trainer.
 
 Deterministic decoding constraints (normative):
 - The trainer MUST support deterministic greedy decoding for Channel-B rollouts under both HF and vLLM backends.

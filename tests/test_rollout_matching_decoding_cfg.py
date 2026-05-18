@@ -4,11 +4,11 @@ from types import SimpleNamespace
 
 import pytest
 
-from src.trainers.stage2_rollout_aligned import RolloutMatchingSFTTrainer, _IM_END
+from src.trainers.stage2_rollout_runtime import Stage2RolloutRuntime, _IM_END
 
 
 def _mk_uninit_trainer(cfg, *, include_decode_defaults: bool = True):
-    t = RolloutMatchingSFTTrainer.__new__(RolloutMatchingSFTTrainer)
+    t = Stage2RolloutRuntime.__new__(Stage2RolloutRuntime)
     if include_decode_defaults:
         merged = {
             "channel_b_decode_batch_size": 1,
@@ -157,7 +157,7 @@ def test_validate_rollout_matching_cfg_rejects_unknown_eval_prompt_variant():
 
 def test_apply_rollout_decoding_to_generation_config_greedy_disables_sampling():
     gen_cfg = SimpleNamespace()
-    RolloutMatchingSFTTrainer._apply_rollout_decoding_to_generation_config(
+    Stage2RolloutRuntime._apply_rollout_decoding_to_generation_config(
         gen_cfg=gen_cfg,
         temperature=0.0,
         top_p=0.9,
@@ -174,7 +174,7 @@ def test_apply_rollout_decoding_to_generation_config_greedy_disables_sampling():
 
 def test_apply_rollout_decoding_to_generation_config_sampling_respects_top_p_and_top_k():
     gen_cfg0 = SimpleNamespace()
-    RolloutMatchingSFTTrainer._apply_rollout_decoding_to_generation_config(
+    Stage2RolloutRuntime._apply_rollout_decoding_to_generation_config(
         gen_cfg=gen_cfg0,
         temperature=0.01,
         top_p=0.9,
@@ -188,7 +188,7 @@ def test_apply_rollout_decoding_to_generation_config_sampling_respects_top_p_and
     assert gen_cfg0.use_cache is True
 
     gen_cfg1 = SimpleNamespace()
-    RolloutMatchingSFTTrainer._apply_rollout_decoding_to_generation_config(
+    Stage2RolloutRuntime._apply_rollout_decoding_to_generation_config(
         gen_cfg=gen_cfg1,
         temperature=0.01,
         top_p=0.95,
@@ -203,7 +203,7 @@ def test_apply_rollout_decoding_to_generation_config_sampling_respects_top_p_and
 
 
 def test_rollout_vllm_request_config_kwargs_propagates_decoding_knobs():
-    kwargs = RolloutMatchingSFTTrainer._rollout_vllm_request_config_kwargs(
+    kwargs = Stage2RolloutRuntime._rollout_vllm_request_config_kwargs(
         max_tokens=123,
         temperature=0.01,
         top_p=0.9,

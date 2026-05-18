@@ -4,7 +4,7 @@ CoordExp's current runtime-critical code has reached the point where architectur
 
 The strongest pressure is in the Stage-2 training stack:
 
-- `src/trainers/stage2_rollout_aligned.py` is a true god module that mixes rollout backend lifecycle, vLLM local/server orchestration, target construction, monitoring, post-rollout packing, teacher-forced loss execution, and production-style evaluation.
+- `src/trainers/stage2_rollout_runtime.py` is a true god module that mixes rollout backend lifecycle, vLLM local/server orchestration, target construction, monitoring, post-rollout packing, teacher-forced loss execution, and production-style evaluation.
 - `src/trainers/stage2_two_channel.py` is on a healthier path because it already has package seams in `scheduler.py`, `executors.py`, and the import-compat wrapper, but the remaining hotspots still braid runtime setup, clean-prefix domain logic, objective execution, and metric projection into a few oversized methods.
 - `src/sft.py` is the repo entrypoint and currently duplicates trainer and pipeline-manifest policy that also exists in typed config/schema code.
 - `src/infer/engine.py` and `src/eval/detection.py` are not the highest-risk modules, but both are carrying more backend/artifact orchestration than they should if the stack is expected to keep scaling.
@@ -37,7 +37,7 @@ The program should preserve these guardrails throughout:
   - `src/trainers/stage2_ab/__init__.py`
   - `src/trainers/stage2_ab/executors.py`
   - `src/trainers/stage2_ab/scheduler.py`
-- Extract a shared rollout runtime layer from `src/trainers/stage2_rollout_aligned.py` so both Stage-2 trainers can use the same backend and decode lifecycle through a narrower interface.
+- Extract a shared rollout runtime layer from `src/trainers/stage2_rollout_runtime.py` so both Stage-2 trainers can use the same backend and decode lifecycle through a narrower interface.
 - Extract bootstrap/setup responsibilities from `src/sft.py`, especially:
   - packing policy/setup,
   - trainer assembly/injection,
@@ -69,7 +69,7 @@ The program should preserve these guardrails throughout:
 ## Impact
 
 - Primary code surfaces:
-  - `src/trainers/stage2_rollout_aligned.py`
+  - `src/trainers/stage2_rollout_runtime.py`
   - `src/trainers/stage2_two_channel.py`
   - `src/trainers/stage2_two_channel/executors.py`
   - `src/trainers/stage2_ab_training.py`
@@ -101,7 +101,7 @@ The program should preserve these guardrails throughout:
   - `tests/test_prompt_variants.py`
   - `tests/test_stage2_ab_training.py`
   - `tests/test_stage2_two_channel_training.py`
-  - `tests/test_stage2_rollout_aligned.py`
+  - `tests/test_stage2_rollout_runtime.py`
   - `tests/test_stage2_rollout_import_boundaries.py`
   - `tests/test_stage2_ab_vllm_server_mode_smoke.py`
   - `tests/test_stage2_ab_config_contract.py`

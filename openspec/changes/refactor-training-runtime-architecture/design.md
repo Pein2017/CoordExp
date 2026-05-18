@@ -93,8 +93,7 @@ Stage-1 set-continuation remains branch-owned:
 
 ### 4. Stage-2 Ownership
 
-Stage-2 two-channel and rollout-aligned paths remain trainer-owned rollout
-paths:
+The Stage-2 two-channel path remains the trainer-owned rollout path:
 
 - raw sample metadata survives setup;
 - dataset static packing is disabled;
@@ -102,8 +101,8 @@ paths:
 - identity collation is selected;
 - ordinary Stage-1 mixins are excluded;
 - `stage2_two_channel` requires `stage2_ab.pipeline`;
-- `stage2_rollout_aligned` requires `rollout_matching.pipeline`;
-- both Stage-2 variants require top-level `rollout_matching` runtime settings.
+- Stage-2 requires top-level `rollout_matching` runtime settings for backend,
+  decoding, server, packing, and eval rollout behavior.
 
 Target construction, rollout matching, duplicate control, pseudo-positive
 logic, and teacher-forcing objective execution are math-bearing surfaces and

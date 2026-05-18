@@ -14,7 +14,7 @@ Purpose: route common research and engineering changes to the smallest useful se
 Authority: code-navigation guide for the current repo; for semantics and defaults, defer to `docs/PROJECT_CONTEXT.md`, runbooks, and `openspec/specs/`.
 Read this after: `docs/SYSTEM_OVERVIEW.md`
 Read this before: opening many source files blindly or doing broad repo-wide searches
-Primary code handles: `src/sft.py`, `src/training/`, `src/detection/runtime.py`, `src/detection/template.py`, `src/common/detection_sequence.py`, `src/common/detection_compact_rows.py`, `src/bootstrap/`, `src/config/schema.py`, `src/datasets/`, `src/trainers/metrics/`, `src/metrics/events.py`, `src/trainers/stage2_two_channel.py`, `src/trainers/stage2_two_channel/`, `src/trainers/stage2_rollout_aligned.py`, `src/trainers/rollout_aligned_targets.py`, `src/trainers/rollout_aligned_evaluator.py`, `src/trainers/rollout_runtime/`, `src/launchers/stage2_vllm_server.py`, `src/infer/pipeline.py`, `src/infer/engine.py`, `src/infer/backends.py`, `src/infer/artifacts.py`, `src/eval/detection.py`, `src/eval/detection_orchestrator.py`, `src/eval/detection_records.py`, `src/eval/detection_geometry.py`, `src/eval/detection_coco.py`, `src/eval/detection_lvis.py`, `src/eval/detection_duplicate_guard.py`, `src/eval/detection_f1ish.py`, `src/eval/orchestration.py`, `src/eval/artifacts.py`
+Primary code handles: `src/sft.py`, `src/training/`, `src/detection/runtime.py`, `src/detection/template.py`, `src/common/detection_sequence.py`, `src/common/detection_compact_rows.py`, `src/bootstrap/`, `src/config/schema.py`, `src/datasets/`, `src/trainers/metrics/`, `src/metrics/events.py`, `src/trainers/stage2_two_channel.py`, `src/trainers/stage2_two_channel/`, `src/trainers/stage2_rollout_runtime.py`, `src/trainers/rollout_aligned_targets.py`, `src/trainers/rollout_aligned_evaluator.py`, `src/trainers/rollout_runtime/`, `src/launchers/stage2_vllm_server.py`, `src/infer/pipeline.py`, `src/infer/engine.py`, `src/infer/backends.py`, `src/infer/artifacts.py`, `src/eval/detection.py`, `src/eval/detection_orchestrator.py`, `src/eval/detection_records.py`, `src/eval/detection_geometry.py`, `src/eval/detection_coco.py`, `src/eval/detection_lvis.py`, `src/eval/detection_duplicate_guard.py`, `src/eval/detection_f1ish.py`, `src/eval/orchestration.py`, `src/eval/artifacts.py`
 Verification: use the targeted test files listed below before running broader suites
 
 ## 1. Data Contract, JSONL Rendering, Or Geometry
@@ -142,13 +142,8 @@ Open these configs first:
 - `configs/stage2_two_channel/prod/`
 - `configs/stage2_two_channel/smoke/`
 
-For `custom.trainer_variant: stage2_rollout_aligned`:
-- author `rollout_matching.pipeline.objective[]` and `rollout_matching.pipeline.diagnostics[]`
-- do not author `stage2_ab.pipeline.*`
-
 Key v3 config handles:
 - `stage2_ab.channel_b.triage_posterior.*`
-- `rollout_matching.pipeline.*`
 - `rollout_matching.decoding.*`
 
 Open these code files first:
@@ -170,11 +165,9 @@ Open these code files first:
 - `src/trainers/stage2_two_channel/rollout_views.py`
 - `src/trainers/stage2_two_channel/coordination.py`
 - `src/trainers/stage2_two_channel/executors.py`
-- `src/trainers/stage2_ab/`
-- `src/trainers/stage2_rollout_aligned.py`
+- `src/trainers/stage2_rollout_runtime.py`
 - `src/trainers/rollout_aligned_targets.py`
 - `src/trainers/rollout_aligned_evaluator.py`
-- `src/trainers/rollout_matching_sft.py`
 - `src/trainers/rollout_runtime/`
 - `src/launchers/stage2_vllm_server.py`
 - `src/trainers/rollout_matching/parsing.py`
@@ -193,12 +186,12 @@ Stage-2 planning direction:
 - `src/training/stage2/planners.py::Stage2GreedyIoUShadowPlanner` derives
   false-negative GT insertions for Channel-B after duplicate filtering.
 - `src/trainers/rollout_matching/matching.py::greedy_match_iou` is the
-  rollout-matching owner for the older `stage2_rollout_aligned` surface.
+  shared rollout matching helper used by Stage-2 runtime code.
 
 Run these tests first:
 - `tests/test_stage2_ab_config_contract.py`
 - `tests/test_stage2_ab_training.py`
-- `tests/test_stage2_rollout_aligned.py`
+- `tests/test_stage2_rollout_runtime.py`
 - `tests/test_stage2_two_channel_training.py`
 - `tests/test_stage2_objective_atoms_projection.py`
 - `tests/test_teacher_forcing_token_ce.py`

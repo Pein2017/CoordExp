@@ -1,10 +1,10 @@
 from __future__ import annotations
 
-from src.trainers.stage2_two_channel import Stage2ABTrainingTrainer
+from src.trainers.stage2_two_channel import Stage2TwoChannelTrainer
 
 
 def test_channel_b_pipeline_disabled_under_ddp_vllm_server() -> None:
-    trainer = Stage2ABTrainingTrainer.__new__(Stage2ABTrainingTrainer)
+    trainer = Stage2TwoChannelTrainer.__new__(Stage2TwoChannelTrainer)
     trainer._dist_info = lambda: (0, 2, object())
 
     enabled = trainer._stage2_channel_b_pipeline_enabled(
@@ -17,7 +17,7 @@ def test_channel_b_pipeline_disabled_under_ddp_vllm_server() -> None:
 
 
 def test_channel_b_pipeline_enabled_only_for_single_rank_vllm_server() -> None:
-    trainer = Stage2ABTrainingTrainer.__new__(Stage2ABTrainingTrainer)
+    trainer = Stage2TwoChannelTrainer.__new__(Stage2TwoChannelTrainer)
     trainer._dist_info = lambda: (0, 1, None)
 
     assert (

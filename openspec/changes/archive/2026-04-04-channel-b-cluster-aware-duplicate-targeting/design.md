@@ -54,7 +54,7 @@ The chosen outcome for this change is explicit:
   `loss_duplicate_burst_unlikelihood` with a new objective module.
 - Preserve backward compatibility for the legacy sequential duplicate path,
   legacy metric aliases, or legacy config names.
-- Expand the first landing to `stage2_rollout_aligned`.
+- Expand the first landing to `stage2_rollout_runtime`.
 - Depend on post-hoc confidence scoring during training.
 
 ## Core Thesis

@@ -86,7 +86,6 @@ _BLOCKED_IMPL_EXPORTS = {
 }
 
 for _name in (
-    "Stage2ABTrainingTrainer",
     "Stage2TwoChannelTrainer",
     "_PendingStage2Log",
     "_expectation_decode_coords",
@@ -114,7 +113,6 @@ def __dir__() -> list[str]:
 __all__ = [
     "Stage2ABChannelExecutorsMixin",
     "Stage2ABSchedulerMixin",
-    "Stage2ABTrainingTrainer",
     "Stage2TwoChannelTrainer",
     "_PendingStage2Log",
 ]

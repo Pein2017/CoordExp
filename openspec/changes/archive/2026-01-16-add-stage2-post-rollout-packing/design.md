@@ -1,7 +1,7 @@
 ## Context
 Rollout-matching SFT (stage_2) is implemented in `src/trainers/rollout_matching_sft.py` as:
 
-1) rollout generation (no grad) via `RolloutMatchingSFTTrainer._rollout_one` (currently batch_size=1)
+1) rollout generation (no grad) via `Stage2RolloutRuntime._rollout_one` (currently batch_size=1)
 2) strict token-aligned parse -> matching -> build `Y_train`
 3) teacher-forced forward on `Y_train` and masked losses in `compute_loss`
 
@@ -282,7 +282,7 @@ Implications for CoordExp stage_2:
   - ensure any adapters that touch vision are disabled for rollout (or fall back to HF rollout).
 - Validate multimodal vLLM support early with a single-image prompt on the target checkpoint, before building more code.
 
-### Integration points for `RolloutMatchingSFTTrainer` (minimal-change seam)
+### Integration points for `Stage2RolloutRuntime` (minimal-change seam)
 No part of parsing/matching/teacher-forcing needs to change.
 The seam is restricted to: "given a raw sample, produce `(response_token_ids, decoded_text, prompt_token_ids)`".
 

@@ -328,21 +328,19 @@ def test_dataset_exposes_rendered_span_sources_without_model_input_leak(
     jsonl_path = tmp_path / "val.coord.jsonl"
     _write_jsonl(jsonl_path, [_canonical_all_proxy_row()])
     _ensure_image(tmp_path)
-    with pytest.warns(UserWarning, match="data.max_objects is compatibility-only"):
-        dataset = DetectionTrainingDataset.from_jsonl(
-            jsonl_path,
-            swift_template=FakeSwiftTemplate(),
-            image_root=tmp_path / "image-root",
-            detection_template_id="compact_full",
-            mode="sorted_sft",
-            object_ordering="sorted",
-            user_prompt="Detect every object.",
-            system_prompt="You are a detector.",
-            max_objects=60,
-            seed=123,
-            state_weighting="none",
-            normalization="token_mean",
-        )
+    dataset = DetectionTrainingDataset.from_jsonl(
+        jsonl_path,
+        swift_template=FakeSwiftTemplate(),
+        image_root=tmp_path / "image-root",
+        detection_template_id="compact_full",
+        mode="sorted_sft",
+        object_ordering="sorted",
+        user_prompt="Detect every object.",
+        system_prompt="You are a detector.",
+        seed=123,
+        state_weighting="none",
+        normalization="token_mean",
+    )
 
     sample = dataset[0]
 

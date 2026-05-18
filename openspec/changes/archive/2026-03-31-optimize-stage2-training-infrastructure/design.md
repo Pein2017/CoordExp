@@ -72,7 +72,7 @@ We will treat the following as one cohesive ownership problem:
 This work should converge on a shared `DistributedStepCoordinator` or equivalent explicit seam that is used by both:
 
 - `src/trainers/stage2_two_channel.py`
-- `src/trainers/stage2_rollout_aligned.py`
+- `src/trainers/stage2_rollout_runtime.py`
 
 Why:
 

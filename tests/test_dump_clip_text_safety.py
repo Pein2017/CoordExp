@@ -1,8 +1,8 @@
-from src.trainers.stage2_rollout_aligned import RolloutMatchingSFTTrainer
+from src.trainers.stage2_rollout_runtime import Stage2RolloutRuntime
 
 
 def test_clip_text_returns_full_string_when_disabled() -> None:
-    clip = RolloutMatchingSFTTrainer._clip_text
+    clip = Stage2RolloutRuntime._clip_text
 
     text = "x" * 12345
     out = clip(text, max_chars=0)
@@ -12,7 +12,7 @@ def test_clip_text_returns_full_string_when_disabled() -> None:
 
 
 def test_clip_text_truncates_when_positive() -> None:
-    clip = RolloutMatchingSFTTrainer._clip_text
+    clip = Stage2RolloutRuntime._clip_text
 
     text = "y" * 100
     out = clip(text, max_chars=10)

@@ -16,7 +16,7 @@
 
 - [x] 3.1 Update Stage-2 Channel-A teacher-forced payload and canonical-prefix construction so `custom.object_ordering` controls object sequence and numbering for both `sorted` and per-epoch `random`.
 - [x] 3.2 Keep Channel-B appearance-order semantics unchanged while routing trainer-driven rollout/eval prompt rebuilding through the same ordering-aware dense prompt resolver.
-- [x] 3.3 Add or update tests in `tests/test_stage2_ab_prompt_alignment_contract.py`, `tests/test_stage2_rollout_aligned.py`, and `tests/test_stage2_two_channel_training.py` to verify Channel-A ordering parity and rollout/eval prompt parity under `object_ordering: random`.
+- [x] 3.3 Add or update tests in `tests/test_stage2_ab_prompt_alignment_contract.py`, `tests/test_stage2_rollout_runtime.py`, and `tests/test_stage2_two_channel_training.py` to verify Channel-A ordering parity and rollout/eval prompt parity under `object_ordering: random`.
 
 ## 4. Ablation Configs And Reproducibility Checkpoints
 
@@ -30,7 +30,7 @@
 
 - [x] 5.1 Run `conda run -n ms python -m pytest tests/test_prompt_variants.py tests/test_dense_caption_prompt_override.py tests/test_infer_batch_decoding.py -q`.
 - [x] 5.2 Run `conda run -n ms python -m pytest tests/test_packing_wrapper.py tests/test_stage1_static_packing_runtime_config.py tests/test_encoded_sample_cache.py tests/test_dataset_multworker_determinism_probe.py -q`.
-- [x] 5.3 Run `conda run -n ms python -m pytest tests/test_stage2_ab_prompt_alignment_contract.py tests/test_stage2_rollout_aligned.py tests/test_stage2_two_channel_training.py -q`.
+- [x] 5.3 Run `conda run -n ms python -m pytest tests/test_stage2_ab_prompt_alignment_contract.py tests/test_stage2_rollout_runtime.py tests/test_stage2_two_channel_training.py -q`.
 - [x] 5.4 Run `conda run -n ms python -m pytest tests/test_stage2_ab_config_contract.py tests/test_stage2_ab_profile_leaf_contract.py -q`.
 - [x] 5.5 Do one end-to-end reproducibility check with the ablation configs by confirming the resolved config/run artifacts expose the intended arm, ordering policy, seed, and output paths before any long training job is launched.
 - [x] 5.6 After the new ordering feature is enabled, run a two-GPU smoke on the Stage-2 smoke YAML from `4.5`, confirm the run reaches the Stage-2 A-only path, and verify with runtime logs/artifacts that any observed instability is not caused by ordering/prompt/packing contract failures. Completed with repeated two-GPU smoke/debug runs on `2,3` and `0,1`; `resolved_config.json`/`run_metadata.json` were emitted, the feature path was exercised, and the remaining runtime asymmetry was localized to the downstream Qwen3-VL visual forward path rather than the random-ordering implementation.

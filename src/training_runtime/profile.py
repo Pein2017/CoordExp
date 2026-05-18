@@ -20,7 +20,6 @@ EncodedCachePolicy: TypeAlias = Literal[
 ManifestFamily: TypeAlias = Literal[
     "stage1",
     "stage2_ab",
-    "rollout_matching",
 ]
 PackingPolicy: TypeAlias = Literal[
     "dataset_static_packing",
@@ -120,9 +119,7 @@ def _derive_manifest_family(
     runtime_stage: RuntimeStage,
 ) -> ManifestFamily:
     if plan.required_pipeline_namespace is not None:
-        if plan.required_pipeline_namespace == "stage2_ab.pipeline":
-            return "stage2_ab"
-        return "rollout_matching"
+        return "stage2_ab"
     return "stage1"
 
 

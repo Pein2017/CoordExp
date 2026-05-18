@@ -20,9 +20,9 @@ from src.trainers.rollout_matching.matching import (
     greedy_match_iou,
 )
 from src.trainers.rollout_aligned_evaluator import finalize_rollout_aligned_evaluation
-from src.trainers.stage2_rollout_aligned import (
+from src.trainers.stage2_rollout_runtime import (
     GTObject,
-    RolloutMatchingSFTTrainer,
+    Stage2RolloutRuntime,
     _PendingTrainRolloutLog,
     _build_labels_and_coord_targets_for_batch,
     _build_labels_and_coord_targets_for_sample,
@@ -31,13 +31,13 @@ from src.trainers.stage2_rollout_aligned import (
     _sinkhorn_barycentric_targets,
     parse_rollout_for_matching,
 )
-from src.trainers.stage2_two_channel import Stage2ABTrainingTrainer
+from src.trainers.stage2_two_channel import Stage2TwoChannelTrainer
 from src.utils.metric_key_lookup import metric_name_matches_key, stage2_eval_metric_key
 
 
 def test_stage2_two_channel_reuses_rollout_aligned_eval_contract() -> None:
-    assert Stage2ABTrainingTrainer.evaluate is RolloutMatchingSFTTrainer.evaluate
-    assert Stage2ABTrainingTrainer.prediction_step is RolloutMatchingSFTTrainer.prediction_step
+    assert Stage2TwoChannelTrainer.evaluate is Stage2RolloutRuntime.evaluate
+    assert Stage2TwoChannelTrainer.prediction_step is Stage2RolloutRuntime.prediction_step
 
 
 def test_eval_detection_materialization_is_default_on() -> None:
@@ -45,7 +45,7 @@ def test_eval_detection_materialization_is_default_on() -> None:
 
 
 def test_rollout_trainer_checkpoint_runtime_state_round_trip() -> None:
-    trainer = object.__new__(RolloutMatchingSFTTrainer)
+    trainer = object.__new__(Stage2RolloutRuntime)
     pending = _PendingTrainRolloutLog(
         meta=[{"prompt_len": 3, "rollout_len": 2}],
         n_micro=1,
@@ -61,7 +61,7 @@ def test_rollout_trainer_checkpoint_runtime_state_round_trip() -> None:
 
     payload = trainer._coordexp_checkpoint_runtime_state()
 
-    restored = object.__new__(RolloutMatchingSFTTrainer)
+    restored = object.__new__(Stage2RolloutRuntime)
     restored._post_rollout_segments = []
     restored._rm_pending_train_logs = {}
     restored._monitor_dump_last_step = None
@@ -329,7 +329,7 @@ class _FakeRequestConfig:
 
 
 def _make_rollout_server_trainer():
-    trainer = object.__new__(RolloutMatchingSFTTrainer)
+    trainer = object.__new__(Stage2RolloutRuntime)
     trainer.rollout_matching_cfg = {
         "decode_mode": "greedy",
         "max_new_tokens": 8,
@@ -357,7 +357,7 @@ def _make_rollout_server_trainer():
 
 
 def test_shutdown_vllm_server_client_closes_resources():
-    trainer = object.__new__(RolloutMatchingSFTTrainer)
+    trainer = object.__new__(Stage2RolloutRuntime)
     trainer._vllm_server_client_lock = threading.Lock()
     client = _DummyVLLMClient()
     trainer._vllm_server_client = client
@@ -391,7 +391,7 @@ def test_ensure_vllm_server_client_wraps_import_error(monkeypatch) -> None:
 
 
 def test_shutdown_vllm_colocate_engine_cleans_runtime(monkeypatch) -> None:
-    trainer = object.__new__(RolloutMatchingSFTTrainer)
+    trainer = object.__new__(Stage2RolloutRuntime)
     trainer._vllm_last_loaded_step = 9
     trainer._vllm_tp_group = object()
     trainer._vllm_tp_size = 4
@@ -438,7 +438,7 @@ def test_shutdown_vllm_colocate_engine_cleans_runtime(monkeypatch) -> None:
 def test_fix_vllm_nccl_allocator_atexit_order_registers_mem_pool_last(
     monkeypatch,
 ) -> None:
-    trainer = object.__new__(RolloutMatchingSFTTrainer)
+    trainer = object.__new__(Stage2RolloutRuntime)
 
     import atexit
     from vllm.distributed.device_communicators import pynccl_allocator
@@ -465,7 +465,7 @@ def test_fix_vllm_nccl_allocator_atexit_order_registers_mem_pool_last(
 
 
 def test_patch_vllm_cumem_sleep_no_empty_cache_wraps_sleep(monkeypatch) -> None:
-    trainer = object.__new__(RolloutMatchingSFTTrainer)
+    trainer = object.__new__(Stage2RolloutRuntime)
 
     class _DummyCuMemAllocator:
         def sleep(self, *args, **kwargs):
@@ -504,7 +504,7 @@ def test_patch_vllm_cumem_sleep_no_empty_cache_wraps_sleep(monkeypatch) -> None:
 
 
 def test_best_effort_cleanup_vllm_sleep_mode_pools_clears_globals(monkeypatch) -> None:
-    trainer = object.__new__(RolloutMatchingSFTTrainer)
+    trainer = object.__new__(Stage2RolloutRuntime)
 
     class _DummyCuMemInst:
         def __init__(self) -> None:
@@ -555,7 +555,7 @@ def test_best_effort_cleanup_vllm_sleep_mode_pools_clears_globals(monkeypatch) -
 
 
 def test_vllm_server_timeouts_default_to_finite_infer_timeout() -> None:
-    trainer = object.__new__(RolloutMatchingSFTTrainer)
+    trainer = object.__new__(Stage2RolloutRuntime)
 
     trainer._vllm_server_cfg = lambda: {"timeout_s": 60.0, "infer_timeout_s": None}
     timeout_s, infer_timeout_s = trainer._vllm_server_timeouts()
@@ -564,7 +564,7 @@ def test_vllm_server_timeouts_default_to_finite_infer_timeout() -> None:
 
 
 def test_vllm_server_timeouts_allow_infinite_only_with_explicit_opt_in() -> None:
-    trainer = object.__new__(RolloutMatchingSFTTrainer)
+    trainer = object.__new__(Stage2RolloutRuntime)
 
     trainer._vllm_server_cfg = lambda: {
         "timeout_s": 60.0,
@@ -586,7 +586,7 @@ def test_vllm_server_timeouts_allow_infinite_only_with_explicit_opt_in() -> None
 
 
 def test_vllm_server_timeouts_reject_non_positive_without_explicit_opt_in() -> None:
-    trainer = object.__new__(RolloutMatchingSFTTrainer)
+    trainer = object.__new__(Stage2RolloutRuntime)
 
     trainer._vllm_server_cfg = lambda: {"timeout_s": 60.0, "infer_timeout_s": 0}
     with pytest.raises(
@@ -613,7 +613,7 @@ def test_parse_vllm_server_traced_single_trailing_stop_is_non_warning(
         warned.append(msg % args if args else str(msg))
 
     monkeypatch.setattr(
-        "src.trainers.stage2_rollout_aligned.logger.warning",
+        "src.trainers.stage2_rollout_runtime.logger.warning",
         _capture_warning,
     )
 
@@ -636,7 +636,7 @@ def test_parse_vllm_server_traced_single_trailing_stop_is_non_warning(
     }
 
     token_ids, _text, prompt_ids, token_logprobs, token_text = (
-        RolloutMatchingSFTTrainer._parse_vllm_server_output_traced(raw)
+        Stage2RolloutRuntime._parse_vllm_server_output_traced(raw)
     )
 
     assert prompt_ids == [1, 2]
@@ -656,7 +656,7 @@ def test_parse_vllm_server_traced_large_trailing_trace_is_non_warning(
         warned.append(msg % args if args else str(msg))
 
     monkeypatch.setattr(
-        "src.trainers.stage2_rollout_aligned.logger.warning",
+        "src.trainers.stage2_rollout_runtime.logger.warning",
         _capture_warning,
     )
 
@@ -680,7 +680,7 @@ def test_parse_vllm_server_traced_large_trailing_trace_is_non_warning(
     }
 
     token_ids, _text, _prompt_ids, token_logprobs, token_text = (
-        RolloutMatchingSFTTrainer._parse_vllm_server_output_traced(raw)
+        Stage2RolloutRuntime._parse_vllm_server_output_traced(raw)
     )
 
     assert token_ids == [21, 22, 23]
@@ -719,7 +719,7 @@ def test_parse_vllm_server_traced_strips_left_padded_prompt_token_ids() -> None:
     }
 
     token_ids, _text, prompt_ids, token_logprobs, token_text = (
-        RolloutMatchingSFTTrainer._parse_vllm_server_output_traced(raw, tokenizer=_Tok())
+        Stage2RolloutRuntime._parse_vllm_server_output_traced(raw, tokenizer=_Tok())
     )
 
     assert prompt_ids == [1, 2]
@@ -731,7 +731,7 @@ def test_parse_vllm_server_traced_strips_left_padded_prompt_token_ids() -> None:
 def test_rollout_decode_batch_size_per_rank_fails_fast_on_infeasible_topology(
     monkeypatch,
 ) -> None:
-    trainer = object.__new__(RolloutMatchingSFTTrainer)
+    trainer = object.__new__(Stage2RolloutRuntime)
     trainer._decode_batch_size = lambda **_kwargs: 1
     trainer._vllm_mode = lambda: "server"
     trainer._vllm_server_world_sizes = lambda: [1]
@@ -768,7 +768,7 @@ def test_per_server_rank_caps_preserve_per_rank_chunk_on_multi_server_topology()
 
 
 def test_rollout_many_enforces_server_chunk_cap_for_all_callers() -> None:
-    trainer = object.__new__(RolloutMatchingSFTTrainer)
+    trainer = object.__new__(Stage2RolloutRuntime)
     trainer.rollout_matching_cfg = {}
     trainer.template = types.SimpleNamespace(system=None)
 
@@ -819,7 +819,7 @@ def test_rollout_many_enforces_server_chunk_cap_for_all_callers() -> None:
 
 
 def test_rollout_many_offsets_server_chunks_from_caller_request_index() -> None:
-    trainer = object.__new__(RolloutMatchingSFTTrainer)
+    trainer = object.__new__(Stage2RolloutRuntime)
     trainer.rollout_matching_cfg = {}
     trainer.template = types.SimpleNamespace(system=None)
 
@@ -916,7 +916,7 @@ def test_vllm_server_rollout_wraps_request_config_import_error(monkeypatch) -> N
 
 
 def test_rollout_many_passes_untrimmed_samples_for_server_debug_dump():
-    trainer = object.__new__(RolloutMatchingSFTTrainer)
+    trainer = object.__new__(Stage2RolloutRuntime)
     trainer.rollout_matching_cfg = {}
     trainer.template = types.SimpleNamespace(system=None)
 
@@ -964,7 +964,7 @@ def test_rollout_many_passes_untrimmed_samples_for_server_debug_dump():
 
 
 def test_reduce_train_rollout_log_payload_global_uses_ddp_max_for_p99(monkeypatch):
-    trainer = object.__new__(RolloutMatchingSFTTrainer)
+    trainer = object.__new__(Stage2RolloutRuntime)
 
     import torch.distributed as dist
 
@@ -1025,7 +1025,7 @@ def test_reduce_train_rollout_log_payload_global_uses_ddp_max_for_p99(monkeypatc
 
 
 def test_build_rollout_metrics_from_meta_skips_inactive_rollout_steps() -> None:
-    trainer = object.__new__(RolloutMatchingSFTTrainer)
+    trainer = object.__new__(Stage2RolloutRuntime)
 
     out = trainer._build_rollout_metrics_from_meta(
         [
@@ -1042,7 +1042,7 @@ def test_build_rollout_metrics_from_meta_skips_inactive_rollout_steps() -> None:
 
 
 def test_build_rollout_metrics_from_meta_uses_counter_suffixes() -> None:
-    trainer = object.__new__(RolloutMatchingSFTTrainer)
+    trainer = object.__new__(Stage2RolloutRuntime)
     trainer._cfg = lambda _k, default=None: default
     trainer._decoding_params = lambda: (0.0, 1.0, -1)
 
@@ -1085,7 +1085,7 @@ def test_build_rollout_metrics_from_meta_uses_counter_suffixes() -> None:
 
 
 def test_reduce_train_rollout_log_payload_global_omits_parse_rate_without_parse_inputs() -> None:
-    trainer = object.__new__(RolloutMatchingSFTTrainer)
+    trainer = object.__new__(Stage2RolloutRuntime)
 
     out = trainer._reduce_train_rollout_log_payload_global(
         {
@@ -1100,7 +1100,7 @@ def test_reduce_train_rollout_log_payload_global_omits_parse_rate_without_parse_
 
 
 def test_reduce_train_rollout_log_payload_global_strips_internal_underscore_keys() -> None:
-    trainer = object.__new__(RolloutMatchingSFTTrainer)
+    trainer = object.__new__(Stage2RolloutRuntime)
     trainer._cfg = lambda _k, default=None: default
 
     out = trainer._reduce_train_rollout_log_payload_global(
@@ -1127,7 +1127,7 @@ def test_reduce_train_rollout_log_payload_global_strips_internal_underscore_keys
 
 
 def test_build_train_rollout_log_payload_uses_segment_weighted_losses() -> None:
-    trainer = object.__new__(RolloutMatchingSFTTrainer)
+    trainer = object.__new__(Stage2RolloutRuntime)
 
     pending = _PendingTrainRolloutLog()
     pending.add_micro(
@@ -1157,7 +1157,7 @@ def test_build_train_rollout_log_payload_uses_segment_weighted_losses() -> None:
 
 
 def test_build_train_rollout_log_payload_preserves_sparse_gradmon_weight() -> None:
-    trainer = object.__new__(RolloutMatchingSFTTrainer)
+    trainer = object.__new__(Stage2RolloutRuntime)
 
     pending = _PendingTrainRolloutLog()
     pending.add_micro(
@@ -1193,7 +1193,7 @@ def test_build_train_rollout_log_payload_preserves_sparse_gradmon_weight() -> No
 def test_reduce_train_rollout_log_payload_global_weights_losses_by_sample_total(
     monkeypatch,
 ) -> None:
-    trainer = object.__new__(RolloutMatchingSFTTrainer)
+    trainer = object.__new__(Stage2RolloutRuntime)
 
     import torch.distributed as dist
 
@@ -1249,7 +1249,7 @@ def test_reduce_train_rollout_log_payload_global_weights_losses_by_sample_total(
 
 
 def test_reduce_stage_wallclock_metrics_global_uses_ddp_max(monkeypatch) -> None:
-    trainer = object.__new__(RolloutMatchingSFTTrainer)
+    trainer = object.__new__(Stage2RolloutRuntime)
 
     import torch.distributed as dist
 
@@ -1295,7 +1295,7 @@ def test_reduce_stage_wallclock_metrics_global_uses_ddp_max(monkeypatch) -> None
 
 
 def test_evaluate_emits_rollout_metrics_and_runs_callback(monkeypatch) -> None:
-    trainer = object.__new__(RolloutMatchingSFTTrainer)
+    trainer = object.__new__(Stage2RolloutRuntime)
 
     class _DummyEvalModel:
         def __init__(self) -> None:
@@ -1361,15 +1361,15 @@ def test_evaluate_emits_rollout_metrics_and_runs_callback(monkeypatch) -> None:
     }
 
     monkeypatch.setattr(
-        "src.trainers.stage2_rollout_aligned.parse_rollout_for_matching",
+        "src.trainers.stage2_rollout_runtime.parse_rollout_for_matching",
         lambda **kwargs: parse_map[int(kwargs["response_token_ids"][0])],
     )
     monkeypatch.setattr(
-        "src.trainers.stage2_rollout_aligned._points_from_coord_tokens",
+        "src.trainers.stage2_rollout_runtime._points_from_coord_tokens",
         lambda **_kwargs: [0, 0, 10, 10],
     )
     monkeypatch.setattr(
-        "src.trainers.stage2_rollout_aligned._extract_gt_objects",
+        "src.trainers.stage2_rollout_runtime._extract_gt_objects",
         lambda _sample: [
             GTObject(index=0, geom_type="bbox", points_norm1000=[0, 0, 10, 10], desc="")
         ],
@@ -1399,7 +1399,7 @@ def test_evaluate_emits_rollout_metrics_and_runs_callback(monkeypatch) -> None:
         )
 
     monkeypatch.setattr(
-        "src.trainers.stage2_rollout_aligned.greedy_match_iou",
+        "src.trainers.stage2_rollout_runtime.greedy_match_iou",
         _fake_greedy_match,
     )
 
@@ -1435,7 +1435,7 @@ def test_evaluate_emits_rollout_metrics_and_runs_callback(monkeypatch) -> None:
 
 
 def test_rollout_many_overrides_last_user_prompt_for_eval_variant() -> None:
-    trainer = object.__new__(RolloutMatchingSFTTrainer)
+    trainer = object.__new__(Stage2RolloutRuntime)
     trainer.rollout_matching_cfg = {
         "rollout_backend": "hf",
         "object_ordering": "sorted",
@@ -1487,7 +1487,7 @@ def test_rollout_many_overrides_last_user_prompt_for_eval_variant() -> None:
 
 
 def test_rollout_many_rebuilds_compact_full_prompt_from_coordjson_source() -> None:
-    trainer = object.__new__(RolloutMatchingSFTTrainer)
+    trainer = object.__new__(Stage2RolloutRuntime)
     trainer.rollout_matching_cfg = {
         "rollout_backend": "hf",
         "object_ordering": "random",
@@ -1543,7 +1543,7 @@ def test_rollout_many_rebuilds_compact_full_prompt_from_coordjson_source() -> No
 
 
 def test_prepare_samples_for_rollout_vllm_fallback_uses_random_ordering_system_prompt() -> None:
-    trainer = object.__new__(RolloutMatchingSFTTrainer)
+    trainer = object.__new__(Stage2RolloutRuntime)
     trainer.rollout_matching_cfg = {
         "rollout_backend": "vllm",
         "object_ordering": "random",
@@ -1577,7 +1577,7 @@ def test_prepare_samples_for_rollout_vllm_fallback_uses_random_ordering_system_p
 
 
 def test_prepare_samples_for_rollout_vllm_uses_compact_full_system_prompt() -> None:
-    trainer = object.__new__(RolloutMatchingSFTTrainer)
+    trainer = object.__new__(Stage2RolloutRuntime)
     trainer.rollout_matching_cfg = {
         "rollout_backend": "vllm",
         "object_ordering": "random",
@@ -1615,7 +1615,7 @@ def test_prepare_samples_for_rollout_vllm_uses_compact_full_system_prompt() -> N
 
 
 def test_resolve_rollout_decode_request_applies_per_call_overrides() -> None:
-    trainer = object.__new__(RolloutMatchingSFTTrainer)
+    trainer = object.__new__(Stage2RolloutRuntime)
     trainer.rollout_matching_cfg = {
         "decode_mode": "greedy",
         "max_new_tokens": 12,
@@ -1641,7 +1641,7 @@ def test_resolve_rollout_decode_request_applies_per_call_overrides() -> None:
 
 
 def test_rollout_many_forwards_decode_override_to_hf_backend() -> None:
-    trainer = object.__new__(RolloutMatchingSFTTrainer)
+    trainer = object.__new__(Stage2RolloutRuntime)
     trainer.rollout_matching_cfg = {}
     trainer.template = types.SimpleNamespace(system=None)
 
@@ -1676,7 +1676,7 @@ def test_rollout_many_forwards_decode_override_to_hf_backend() -> None:
 def test_rollout_many_hf_training_rollout_does_not_force_optimizer_offload(
     monkeypatch,
 ) -> None:
-    trainer = object.__new__(RolloutMatchingSFTTrainer)
+    trainer = object.__new__(Stage2RolloutRuntime)
 
     class _DummyModel:
         def __init__(self) -> None:
@@ -1786,7 +1786,7 @@ def test_rollout_many_hf_training_rollout_does_not_force_optimizer_offload(
     )
 
     monkeypatch.setattr(
-        "src.trainers.stage2_rollout_aligned.unwrap_model_for_generation",
+        "src.trainers.stage2_rollout_runtime.unwrap_model_for_generation",
         lambda *_args, **_kwargs: nullcontext(_DummyUnwrapped()),
     )
 
@@ -1849,7 +1849,7 @@ def test_vllm_server_rollout_uses_decode_override_request_config(monkeypatch):
 
 
 def test_vllm_colocate_rollout_sets_seed_from_request_offset(monkeypatch) -> None:
-    trainer = object.__new__(RolloutMatchingSFTTrainer)
+    trainer = object.__new__(Stage2RolloutRuntime)
     trainer.rollout_matching_cfg = {
         "decode_mode": "greedy",
         "max_new_tokens": 8,
@@ -1923,7 +1923,7 @@ def test_evaluate_emits_coco_map_metrics_when_eval_detection_enabled(
     monkeypatch,
     tmp_path: Path,
 ) -> None:
-    trainer = object.__new__(RolloutMatchingSFTTrainer)
+    trainer = object.__new__(Stage2RolloutRuntime)
 
     class _DummyEvalModel:
         def __init__(self) -> None:
@@ -1997,15 +1997,15 @@ def test_evaluate_emits_coco_map_metrics_when_eval_detection_enabled(
         truncated=False,
     )
     monkeypatch.setattr(
-        "src.trainers.stage2_rollout_aligned.parse_rollout_for_matching",
+        "src.trainers.stage2_rollout_runtime.parse_rollout_for_matching",
         lambda **_kwargs: parse_obj,
     )
     monkeypatch.setattr(
-        "src.trainers.stage2_rollout_aligned._points_from_coord_tokens",
+        "src.trainers.stage2_rollout_runtime._points_from_coord_tokens",
         lambda **_kwargs: [0, 0, 10, 10],
     )
     monkeypatch.setattr(
-        "src.trainers.stage2_rollout_aligned._extract_gt_objects",
+        "src.trainers.stage2_rollout_runtime._extract_gt_objects",
         lambda _sample: [
             GTObject(
                 index=0,
@@ -2016,7 +2016,7 @@ def test_evaluate_emits_coco_map_metrics_when_eval_detection_enabled(
         ],
     )
     monkeypatch.setattr(
-        "src.trainers.stage2_rollout_aligned.greedy_match_iou",
+        "src.trainers.stage2_rollout_runtime.greedy_match_iou",
         lambda **_kwargs: types.SimpleNamespace(
             matched_pairs=[(0, 0)],
             fp_pred_indices=[],
@@ -2027,7 +2027,7 @@ def test_evaluate_emits_coco_map_metrics_when_eval_detection_enabled(
         ),
     )
     monkeypatch.setattr(
-        "src.trainers.stage2_rollout_aligned._compute_eval_detection_coco_metrics",
+        "src.trainers.stage2_rollout_runtime._compute_eval_detection_coco_metrics",
         lambda **_kwargs: (
             {"bbox_AP": 0.123, "bbox_AP50": 0.456},
             {"empty_pred": 0},
@@ -2113,7 +2113,7 @@ def test_evaluate_emits_coco_map_metrics_with_confidence_postop(
     monkeypatch,
     tmp_path: Path,
 ) -> None:
-    trainer = object.__new__(RolloutMatchingSFTTrainer)
+    trainer = object.__new__(Stage2RolloutRuntime)
 
     class _DummyEvalModel:
         def __init__(self) -> None:
@@ -2193,15 +2193,15 @@ def test_evaluate_emits_coco_map_metrics_with_confidence_postop(
         truncated=False,
     )
     monkeypatch.setattr(
-        "src.trainers.stage2_rollout_aligned.parse_rollout_for_matching",
+        "src.trainers.stage2_rollout_runtime.parse_rollout_for_matching",
         lambda **_kwargs: parse_obj,
     )
     monkeypatch.setattr(
-        "src.trainers.stage2_rollout_aligned._points_from_coord_tokens",
+        "src.trainers.stage2_rollout_runtime._points_from_coord_tokens",
         lambda **_kwargs: [0, 0, 10, 10],
     )
     monkeypatch.setattr(
-        "src.trainers.stage2_rollout_aligned._extract_gt_objects",
+        "src.trainers.stage2_rollout_runtime._extract_gt_objects",
         lambda _sample: [
             GTObject(
                 index=0,
@@ -2212,7 +2212,7 @@ def test_evaluate_emits_coco_map_metrics_with_confidence_postop(
         ],
     )
     monkeypatch.setattr(
-        "src.trainers.stage2_rollout_aligned.greedy_match_iou",
+        "src.trainers.stage2_rollout_runtime.greedy_match_iou",
         lambda **_kwargs: types.SimpleNamespace(
             matched_pairs=[(0, 0)],
             fp_pred_indices=[],
@@ -2246,7 +2246,7 @@ def test_evaluate_emits_coco_map_metrics_with_confidence_postop(
         return {"bbox_AP": 0.123, "bbox_AP50": 0.456}, {"empty_pred": 0}
 
     monkeypatch.setattr(
-        "src.trainers.stage2_rollout_aligned._compute_eval_detection_coco_metrics",
+        "src.trainers.stage2_rollout_runtime._compute_eval_detection_coco_metrics",
         _fake_coco,
     )
 
@@ -2310,7 +2310,7 @@ def test_evaluate_skips_eval_artifact_materialization_when_disabled(
     monkeypatch,
     tmp_path: Path,
 ) -> None:
-    trainer = object.__new__(RolloutMatchingSFTTrainer)
+    trainer = object.__new__(Stage2RolloutRuntime)
 
     class _DummyEvalModel:
         def __init__(self) -> None:
@@ -2387,15 +2387,15 @@ def test_evaluate_skips_eval_artifact_materialization_when_disabled(
         truncated=False,
     )
     monkeypatch.setattr(
-        "src.trainers.stage2_rollout_aligned.parse_rollout_for_matching",
+        "src.trainers.stage2_rollout_runtime.parse_rollout_for_matching",
         lambda **_kwargs: parse_obj,
     )
     monkeypatch.setattr(
-        "src.trainers.stage2_rollout_aligned._points_from_coord_tokens",
+        "src.trainers.stage2_rollout_runtime._points_from_coord_tokens",
         lambda **_kwargs: [0, 0, 10, 10],
     )
     monkeypatch.setattr(
-        "src.trainers.stage2_rollout_aligned._extract_gt_objects",
+        "src.trainers.stage2_rollout_runtime._extract_gt_objects",
         lambda _sample: [
             GTObject(
                 index=0,
@@ -2406,7 +2406,7 @@ def test_evaluate_skips_eval_artifact_materialization_when_disabled(
         ],
     )
     monkeypatch.setattr(
-        "src.trainers.stage2_rollout_aligned.greedy_match_iou",
+        "src.trainers.stage2_rollout_runtime.greedy_match_iou",
         lambda **_kwargs: types.SimpleNamespace(
             matched_pairs=[(0, 0)],
             fp_pred_indices=[],
@@ -2428,7 +2428,7 @@ def test_evaluate_skips_eval_artifact_materialization_when_disabled(
         _fail_if_materialized,
     )
     monkeypatch.setattr(
-        "src.trainers.stage2_rollout_aligned._compute_eval_detection_coco_metrics",
+        "src.trainers.stage2_rollout_runtime._compute_eval_detection_coco_metrics",
         lambda **_kwargs: (
             {"bbox_AP": 0.123, "bbox_AP50": 0.456},
             {"empty_pred": 0},
@@ -2451,7 +2451,7 @@ def test_evaluate_skips_eval_artifact_materialization_when_disabled(
 def test_evaluate_emits_coco_map_metrics_with_confidence_postop_vllm(
     monkeypatch,
 ) -> None:
-    trainer = object.__new__(RolloutMatchingSFTTrainer)
+    trainer = object.__new__(Stage2RolloutRuntime)
 
     class _DummyEvalModel:
         def __init__(self) -> None:
@@ -2535,15 +2535,15 @@ def test_evaluate_emits_coco_map_metrics_with_confidence_postop_vllm(
         truncated=False,
     )
     monkeypatch.setattr(
-        "src.trainers.stage2_rollout_aligned.parse_rollout_for_matching",
+        "src.trainers.stage2_rollout_runtime.parse_rollout_for_matching",
         lambda **_kwargs: parse_obj,
     )
     monkeypatch.setattr(
-        "src.trainers.stage2_rollout_aligned._points_from_coord_tokens",
+        "src.trainers.stage2_rollout_runtime._points_from_coord_tokens",
         lambda **_kwargs: [0, 0, 10, 10],
     )
     monkeypatch.setattr(
-        "src.trainers.stage2_rollout_aligned._extract_gt_objects",
+        "src.trainers.stage2_rollout_runtime._extract_gt_objects",
         lambda _sample: [
             GTObject(
                 index=0,
@@ -2554,7 +2554,7 @@ def test_evaluate_emits_coco_map_metrics_with_confidence_postop_vllm(
         ],
     )
     monkeypatch.setattr(
-        "src.trainers.stage2_rollout_aligned.greedy_match_iou",
+        "src.trainers.stage2_rollout_runtime.greedy_match_iou",
         lambda **_kwargs: types.SimpleNamespace(
             matched_pairs=[(0, 0)],
             fp_pred_indices=[],
@@ -2588,7 +2588,7 @@ def test_evaluate_emits_coco_map_metrics_with_confidence_postop_vllm(
         return {"bbox_AP": 0.123, "bbox_AP50": 0.456}, {"empty_pred": 0}
 
     monkeypatch.setattr(
-        "src.trainers.stage2_rollout_aligned._compute_eval_detection_coco_metrics",
+        "src.trainers.stage2_rollout_runtime._compute_eval_detection_coco_metrics",
         _fake_coco,
     )
 
@@ -2608,7 +2608,7 @@ def test_evaluate_emits_coco_map_metrics_with_confidence_postop_vllm(
 
 
 def test_validate_rollout_matching_cfg_preflights_eval_only_vllm_lifecycle() -> None:
-    trainer = object.__new__(RolloutMatchingSFTTrainer)
+    trainer = object.__new__(Stage2RolloutRuntime)
     trainer.rollout_matching_cfg = {
         "rollout_backend": "hf",
         "eval_rollout_backend": "vllm",
@@ -2629,7 +2629,7 @@ def test_validate_rollout_matching_cfg_preflights_eval_only_vllm_lifecycle() -> 
 
 
 def test_validate_rollout_matching_cfg_skips_preflight_when_sleep_mode_disabled() -> None:
-    trainer = object.__new__(RolloutMatchingSFTTrainer)
+    trainer = object.__new__(Stage2RolloutRuntime)
     trainer.rollout_matching_cfg = {
         "rollout_backend": "hf",
         "eval_rollout_backend": "vllm",
@@ -2652,7 +2652,7 @@ def test_validate_rollout_matching_cfg_skips_preflight_when_sleep_mode_disabled(
 
 
 def test_validate_rollout_matching_cfg_allows_colocate_reinit_each_eval() -> None:
-    trainer = object.__new__(RolloutMatchingSFTTrainer)
+    trainer = object.__new__(Stage2RolloutRuntime)
     trainer.rollout_matching_cfg = {
         "rollout_backend": "hf",
         "eval_rollout_backend": "vllm",
@@ -2669,7 +2669,7 @@ def test_validate_rollout_matching_cfg_allows_colocate_reinit_each_eval() -> Non
 
 
 def test_validate_rollout_matching_cfg_rejects_reinit_each_eval_for_server_mode() -> None:
-    trainer = object.__new__(RolloutMatchingSFTTrainer)
+    trainer = object.__new__(Stage2RolloutRuntime)
     trainer.rollout_matching_cfg = {
         "rollout_backend": "hf",
         "eval_rollout_backend": "vllm",
@@ -2692,7 +2692,7 @@ def test_validate_rollout_matching_cfg_rejects_reinit_each_eval_for_server_mode(
 def test_evaluate_eval_backend_override_routes_non_traced_rollouts_to_vllm(
     monkeypatch,
 ) -> None:
-    trainer = object.__new__(RolloutMatchingSFTTrainer)
+    trainer = object.__new__(Stage2RolloutRuntime)
 
     class _DummyEvalModel:
         def __init__(self) -> None:
@@ -2760,15 +2760,15 @@ def test_evaluate_eval_backend_override_routes_non_traced_rollouts_to_vllm(
         truncated=False,
     )
     monkeypatch.setattr(
-        "src.trainers.stage2_rollout_aligned.parse_rollout_for_matching",
+        "src.trainers.stage2_rollout_runtime.parse_rollout_for_matching",
         lambda **_kwargs: parse_obj,
     )
     monkeypatch.setattr(
-        "src.trainers.stage2_rollout_aligned._points_from_coord_tokens",
+        "src.trainers.stage2_rollout_runtime._points_from_coord_tokens",
         lambda **_kwargs: [0, 0, 10, 10],
     )
     monkeypatch.setattr(
-        "src.trainers.stage2_rollout_aligned._extract_gt_objects",
+        "src.trainers.stage2_rollout_runtime._extract_gt_objects",
         lambda _sample: [
             GTObject(
                 index=0,
@@ -2779,7 +2779,7 @@ def test_evaluate_eval_backend_override_routes_non_traced_rollouts_to_vllm(
         ],
     )
     monkeypatch.setattr(
-        "src.trainers.stage2_rollout_aligned.greedy_match_iou",
+        "src.trainers.stage2_rollout_runtime.greedy_match_iou",
         lambda **_kwargs: types.SimpleNamespace(
             matched_pairs=[(0, 0)],
             fp_pred_indices=[],
@@ -2802,7 +2802,7 @@ def test_evaluate_eval_backend_override_routes_non_traced_rollouts_to_vllm(
 def test_evaluate_vllm_confidence_trace_violation_falls_back_and_counts(
     monkeypatch,
 ) -> None:
-    trainer = object.__new__(RolloutMatchingSFTTrainer)
+    trainer = object.__new__(Stage2RolloutRuntime)
 
     class _DummyEvalModel:
         def __init__(self) -> None:
@@ -2867,15 +2867,15 @@ def test_evaluate_vllm_confidence_trace_violation_falls_back_and_counts(
         truncated=False,
     )
     monkeypatch.setattr(
-        "src.trainers.stage2_rollout_aligned.parse_rollout_for_matching",
+        "src.trainers.stage2_rollout_runtime.parse_rollout_for_matching",
         lambda **_kwargs: parse_obj,
     )
     monkeypatch.setattr(
-        "src.trainers.stage2_rollout_aligned._points_from_coord_tokens",
+        "src.trainers.stage2_rollout_runtime._points_from_coord_tokens",
         lambda **_kwargs: [0, 0, 10, 10],
     )
     monkeypatch.setattr(
-        "src.trainers.stage2_rollout_aligned._extract_gt_objects",
+        "src.trainers.stage2_rollout_runtime._extract_gt_objects",
         lambda _sample: [
             GTObject(
                 index=0,
@@ -2886,7 +2886,7 @@ def test_evaluate_vllm_confidence_trace_violation_falls_back_and_counts(
         ],
     )
     monkeypatch.setattr(
-        "src.trainers.stage2_rollout_aligned.greedy_match_iou",
+        "src.trainers.stage2_rollout_runtime.greedy_match_iou",
         lambda **_kwargs: types.SimpleNamespace(
             matched_pairs=[(0, 0)],
             fp_pred_indices=[],
@@ -2897,7 +2897,7 @@ def test_evaluate_vllm_confidence_trace_violation_falls_back_and_counts(
         ),
     )
     monkeypatch.setattr(
-        "src.trainers.stage2_rollout_aligned._compute_eval_detection_coco_metrics",
+        "src.trainers.stage2_rollout_runtime._compute_eval_detection_coco_metrics",
         lambda **_kwargs: ({"bbox_AP": 0.123}, {"empty_pred": 0}),
     )
 
@@ -2918,7 +2918,7 @@ def test_evaluate_vllm_confidence_trace_violation_falls_back_and_counts(
 def test_evaluate_vllm_per_sample_decode_error_is_skipped_and_counted(
     monkeypatch,
 ) -> None:
-    trainer = object.__new__(RolloutMatchingSFTTrainer)
+    trainer = object.__new__(Stage2RolloutRuntime)
 
     class _DummyEvalModel:
         def __init__(self) -> None:
@@ -2979,15 +2979,15 @@ def test_evaluate_vllm_per_sample_decode_error_is_skipped_and_counted(
         truncated=False,
     )
     monkeypatch.setattr(
-        "src.trainers.stage2_rollout_aligned.parse_rollout_for_matching",
+        "src.trainers.stage2_rollout_runtime.parse_rollout_for_matching",
         lambda **_kwargs: parse_obj,
     )
     monkeypatch.setattr(
-        "src.trainers.stage2_rollout_aligned._points_from_coord_tokens",
+        "src.trainers.stage2_rollout_runtime._points_from_coord_tokens",
         lambda **_kwargs: [0, 0, 10, 10],
     )
     monkeypatch.setattr(
-        "src.trainers.stage2_rollout_aligned._extract_gt_objects",
+        "src.trainers.stage2_rollout_runtime._extract_gt_objects",
         lambda _sample: [
             GTObject(
                 index=0,
@@ -2998,7 +2998,7 @@ def test_evaluate_vllm_per_sample_decode_error_is_skipped_and_counted(
         ],
     )
     monkeypatch.setattr(
-        "src.trainers.stage2_rollout_aligned.greedy_match_iou",
+        "src.trainers.stage2_rollout_runtime.greedy_match_iou",
         lambda **_kwargs: types.SimpleNamespace(
             matched_pairs=[(0, 0)],
             fp_pred_indices=[],
@@ -3019,7 +3019,7 @@ def test_evaluate_vllm_per_sample_decode_error_is_skipped_and_counted(
 
 
 def test_evaluate_vllm_engine_level_failure_is_fatal() -> None:
-    trainer = object.__new__(RolloutMatchingSFTTrainer)
+    trainer = object.__new__(Stage2RolloutRuntime)
 
     class _DummyEvalModel:
         def __init__(self) -> None:
@@ -3067,7 +3067,7 @@ def test_evaluate_vllm_engine_level_failure_is_fatal() -> None:
 def test_evaluate_vllm_colocate_window_wakes_sleeps_and_offloads_once_per_eval(
     monkeypatch,
 ) -> None:
-    trainer = object.__new__(RolloutMatchingSFTTrainer)
+    trainer = object.__new__(Stage2RolloutRuntime)
 
     class _DummyEvalModel:
         def __init__(self) -> None:
@@ -3118,15 +3118,15 @@ def test_evaluate_vllm_colocate_window_wakes_sleeps_and_offloads_once_per_eval(
         truncated=False,
     )
     monkeypatch.setattr(
-        "src.trainers.stage2_rollout_aligned.parse_rollout_for_matching",
+        "src.trainers.stage2_rollout_runtime.parse_rollout_for_matching",
         lambda **_kwargs: parse_obj,
     )
     monkeypatch.setattr(
-        "src.trainers.stage2_rollout_aligned._points_from_coord_tokens",
+        "src.trainers.stage2_rollout_runtime._points_from_coord_tokens",
         lambda **_kwargs: [0, 0, 10, 10],
     )
     monkeypatch.setattr(
-        "src.trainers.stage2_rollout_aligned._extract_gt_objects",
+        "src.trainers.stage2_rollout_runtime._extract_gt_objects",
         lambda _sample: [
             GTObject(
                 index=0,
@@ -3137,7 +3137,7 @@ def test_evaluate_vllm_colocate_window_wakes_sleeps_and_offloads_once_per_eval(
         ],
     )
     monkeypatch.setattr(
-        "src.trainers.stage2_rollout_aligned.greedy_match_iou",
+        "src.trainers.stage2_rollout_runtime.greedy_match_iou",
         lambda **_kwargs: types.SimpleNamespace(
             matched_pairs=[(0, 0)],
             fp_pred_indices=[],
@@ -3183,7 +3183,7 @@ def test_evaluate_vllm_colocate_window_wakes_sleeps_and_offloads_once_per_eval(
 def test_evaluate_vllm_colocate_window_without_sleep_mode_skips_wake_sleep(
     monkeypatch,
 ) -> None:
-    trainer = object.__new__(RolloutMatchingSFTTrainer)
+    trainer = object.__new__(Stage2RolloutRuntime)
 
     class _DummyEvalModel:
         def __init__(self) -> None:
@@ -3234,15 +3234,15 @@ def test_evaluate_vllm_colocate_window_without_sleep_mode_skips_wake_sleep(
         truncated=False,
     )
     monkeypatch.setattr(
-        "src.trainers.stage2_rollout_aligned.parse_rollout_for_matching",
+        "src.trainers.stage2_rollout_runtime.parse_rollout_for_matching",
         lambda **_kwargs: parse_obj,
     )
     monkeypatch.setattr(
-        "src.trainers.stage2_rollout_aligned._points_from_coord_tokens",
+        "src.trainers.stage2_rollout_runtime._points_from_coord_tokens",
         lambda **_kwargs: [0, 0, 10, 10],
     )
     monkeypatch.setattr(
-        "src.trainers.stage2_rollout_aligned._extract_gt_objects",
+        "src.trainers.stage2_rollout_runtime._extract_gt_objects",
         lambda _sample: [
             GTObject(
                 index=0,
@@ -3253,7 +3253,7 @@ def test_evaluate_vllm_colocate_window_without_sleep_mode_skips_wake_sleep(
         ],
     )
     monkeypatch.setattr(
-        "src.trainers.stage2_rollout_aligned.greedy_match_iou",
+        "src.trainers.stage2_rollout_runtime.greedy_match_iou",
         lambda **_kwargs: types.SimpleNamespace(
             matched_pairs=[(0, 0)],
             fp_pred_indices=[],
@@ -3297,7 +3297,7 @@ def test_evaluate_vllm_colocate_window_without_sleep_mode_skips_wake_sleep(
 
 
 def test_vllm_colocate_window_reinits_engine_when_enabled() -> None:
-    trainer = object.__new__(RolloutMatchingSFTTrainer)
+    trainer = object.__new__(Stage2RolloutRuntime)
     trainer.rollout_matching_cfg = {
         "vllm": {
             "mode": "colocate",
@@ -3350,7 +3350,7 @@ def test_vllm_colocate_window_reinits_engine_when_enabled() -> None:
 
 
 def test_evaluate_fails_fast_on_coco_error_by_default(monkeypatch) -> None:
-    trainer = object.__new__(RolloutMatchingSFTTrainer)
+    trainer = object.__new__(Stage2RolloutRuntime)
 
     class _DummyEvalModel:
         def __init__(self) -> None:
@@ -3424,15 +3424,15 @@ def test_evaluate_fails_fast_on_coco_error_by_default(monkeypatch) -> None:
         truncated=False,
     )
     monkeypatch.setattr(
-        "src.trainers.stage2_rollout_aligned.parse_rollout_for_matching",
+        "src.trainers.stage2_rollout_runtime.parse_rollout_for_matching",
         lambda **_kwargs: parse_obj,
     )
     monkeypatch.setattr(
-        "src.trainers.stage2_rollout_aligned._points_from_coord_tokens",
+        "src.trainers.stage2_rollout_runtime._points_from_coord_tokens",
         lambda **_kwargs: [0, 0, 10, 10],
     )
     monkeypatch.setattr(
-        "src.trainers.stage2_rollout_aligned._extract_gt_objects",
+        "src.trainers.stage2_rollout_runtime._extract_gt_objects",
         lambda _sample: [
             GTObject(
                 index=0,
@@ -3443,7 +3443,7 @@ def test_evaluate_fails_fast_on_coco_error_by_default(monkeypatch) -> None:
         ],
     )
     monkeypatch.setattr(
-        "src.trainers.stage2_rollout_aligned.greedy_match_iou",
+        "src.trainers.stage2_rollout_runtime.greedy_match_iou",
         lambda **_kwargs: types.SimpleNamespace(
             matched_pairs=[(0, 0)],
             fp_pred_indices=[],
@@ -3458,7 +3458,7 @@ def test_evaluate_fails_fast_on_coco_error_by_default(monkeypatch) -> None:
         raise RuntimeError("forced coco failure")
 
     monkeypatch.setattr(
-        "src.trainers.stage2_rollout_aligned._compute_eval_detection_coco_metrics",
+        "src.trainers.stage2_rollout_runtime._compute_eval_detection_coco_metrics",
         _raise_coco,
     )
 
@@ -3478,7 +3478,7 @@ def test_evaluate_fails_fast_on_coco_error_by_default(monkeypatch) -> None:
 
 
 def test_evaluate_fails_fast_on_coco_error_when_map_selects_best(monkeypatch) -> None:
-    trainer = object.__new__(RolloutMatchingSFTTrainer)
+    trainer = object.__new__(Stage2RolloutRuntime)
 
     class _DummyEvalModel:
         def __init__(self) -> None:
@@ -3554,15 +3554,15 @@ def test_evaluate_fails_fast_on_coco_error_when_map_selects_best(monkeypatch) ->
         truncated=False,
     )
     monkeypatch.setattr(
-        "src.trainers.stage2_rollout_aligned.parse_rollout_for_matching",
+        "src.trainers.stage2_rollout_runtime.parse_rollout_for_matching",
         lambda **_kwargs: parse_obj,
     )
     monkeypatch.setattr(
-        "src.trainers.stage2_rollout_aligned._points_from_coord_tokens",
+        "src.trainers.stage2_rollout_runtime._points_from_coord_tokens",
         lambda **_kwargs: [0, 0, 10, 10],
     )
     monkeypatch.setattr(
-        "src.trainers.stage2_rollout_aligned._extract_gt_objects",
+        "src.trainers.stage2_rollout_runtime._extract_gt_objects",
         lambda _sample: [
             GTObject(
                 index=0,
@@ -3573,7 +3573,7 @@ def test_evaluate_fails_fast_on_coco_error_when_map_selects_best(monkeypatch) ->
         ],
     )
     monkeypatch.setattr(
-        "src.trainers.stage2_rollout_aligned.greedy_match_iou",
+        "src.trainers.stage2_rollout_runtime.greedy_match_iou",
         lambda **_kwargs: types.SimpleNamespace(
             matched_pairs=[(0, 0)],
             fp_pred_indices=[],
@@ -3584,7 +3584,7 @@ def test_evaluate_fails_fast_on_coco_error_when_map_selects_best(monkeypatch) ->
         ),
     )
     monkeypatch.setattr(
-        "src.trainers.stage2_rollout_aligned._compute_eval_detection_coco_metrics",
+        "src.trainers.stage2_rollout_runtime._compute_eval_detection_coco_metrics",
         lambda **_kwargs: (_ for _ in ()).throw(RuntimeError("forced coco failure")),
     )
 
@@ -4286,102 +4286,3 @@ def test_packed_prompt_prefix_sanity_check_rejects_mismatch():
             coord_id_to_bin=coord_id_to_bin,
         )
 
-
-def test_prepare_batch_inputs_uses_extracted_sample_target_builder(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    import src.trainers.stage2_rollout_aligned as stage2_rollout_aligned
-
-    trainer = object.__new__(RolloutMatchingSFTTrainer)
-    trainer.template = types.SimpleNamespace(tokenizer=_DummyTokenizerRM())
-    trainer.state = types.SimpleNamespace(global_step=0)
-    trainer._get_coord_token_ids = lambda: [10]
-    trainer._coord_id_map = lambda: {10: 10}
-    trainer._cfg = lambda _key, default=None: default
-    trainer._packing_enabled = lambda: False
-    trainer._train_monitor_dump_cfg = lambda: {}
-    trainer._should_monitor_dump = lambda global_step: False
-    trainer._rollout_many = lambda inputs: [([10], "[]", "greedy", [1, 2]) for _ in inputs]
-    trainer._object_field_order = lambda: "field-order"
-    trainer._maybe_debug_dump_parse_failure = lambda **_kwargs: None
-    trainer._desc_monitor_cfg = lambda: {}
-    trainer._template_train_mode = lambda: nullcontext()
-    trainer._extract_encoded_len = lambda encoded: int(encoded.get("length", 0))
-
-    parse = types.SimpleNamespace(
-        response_token_ids=[10],
-        prefix_token_ids=[10],
-        prefix_text="[]",
-        response_text="[]",
-        dropped_invalid=0,
-        dropped_ambiguous=0,
-        truncated=False,
-        valid_objects=[],
-    )
-    match = types.SimpleNamespace(
-        matched_pairs=[],
-        matched_maskiou_sum=0.0,
-        matched_maskiou_count=0,
-        fn_gt_indices=[],
-        fp_pred_indices=[],
-        gating_rejections=0,
-    )
-
-    monkeypatch.setattr(
-        stage2_rollout_aligned,
-        "parse_rollout_for_matching",
-        lambda **_kwargs: parse,
-    )
-    monkeypatch.setattr(
-        stage2_rollout_aligned,
-        "_extract_gt_objects",
-        lambda _sample: [],
-    )
-    monkeypatch.setattr(
-        stage2_rollout_aligned,
-        "greedy_match_iou",
-        lambda **_kwargs: match,
-    )
-
-    def _raise_helper(**_kwargs):
-        raise RuntimeError("extracted target builder called")
-
-    monkeypatch.setattr(
-        stage2_rollout_aligned,
-        "build_rollout_aligned_sample_targets",
-        _raise_helper,
-    )
-
-    with pytest.raises(RuntimeError, match="extracted target builder called"):
-        trainer._prepare_batch_inputs(
-            [{"messages": [{"role": "user", "content": "x"}]}],
-            _segments_only=True,
-        )
-
-
-def test_adaptive_raw_microbatch_stacker_bumps_on_underfill() -> None:
-    from src.trainers.stage2_rollout_aligned import _AdaptiveRawMicroBatchStacker
-
-    class _DummyTrainer:
-        def __init__(self) -> None:
-            # Overestimated avg length would otherwise pick too few raw samples.
-            self._rm_avg_segment_len = 1100.0
-            # Last pack stats indicate underfill with 8 segments and an empty buffer.
-            self._rm_last_pack_fill = 0.579
-            self._rm_last_pack_segments = 8
-            self._rm_last_pack_buffer_after = 0
-
-        def _packing_length(self) -> int:
-            return 12000
-
-        def _packing_min_fill_ratio(self) -> float:
-            return 0.7
-
-        def _packing_buffer_cap(self) -> int:
-            return 256
-
-    trainer = _DummyTrainer()
-    stacker = _AdaptiveRawMicroBatchStacker(dataloader=[], trainer=trainer)
-
-    # Need >= ceil(8 * 0.7 / 0.579) == 10 to avoid repeating the same underfill.
-    assert stacker._target_microbatch_size() >= 10

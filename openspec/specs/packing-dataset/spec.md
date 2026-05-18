@@ -46,12 +46,12 @@ The system SHALL preserve multimodal tensors/metadata (e.g., `pixel_values`, `im
 
 ### Requirement: Legacy Fusion Scheduling Is Unsupported
 Packing no longer needs to coordinate with fusion scheduling because
-fusion-config training is temporarily disabled from the supported surface.
+fusion-config training has been removed from the supported surface.
 
 #### Scenario: packing does not imply legacy fusion support
 - GIVEN packing is enabled during training
 - WHEN a legacy config also attempts to author `custom.fusion_config`
-- THEN the run fails on the temporarily disabled fusion surface before any
+- THEN the run fails on the removed fusion surface before any
   fusion-specific packing behavior is entered.
 
 ### Requirement: Metric and telemetry behavior

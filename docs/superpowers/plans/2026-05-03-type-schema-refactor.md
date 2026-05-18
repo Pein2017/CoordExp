@@ -1433,7 +1433,7 @@ Expected: audit report separates stable state/result objects from dynamic metric
 Observed 2026-05-03:
 
 - Required scan was run exactly with `rg -n "PreparedSegment|prepared_segment|runtime_state|batch_extras|ModuleResult|PipelineResult|state: dict|dict\[str, Any\]|losses|metrics" src/trainers tests --glob '!output/**' --glob '!temp/**'`.
-- Inspected runtime-state concepts: `Stage2ABTrainingTrainer._coordexp_checkpoint_runtime_state()`, `_coordexp_restore_checkpoint_runtime_state()`, `_PendingStage2Log`, `_stage2_metric_snapshots`, `_stage2_post_rollout_segments`, `_stage2_b_step_raw`, `_stage2_a_step_raw`, `_stage2_train_monitor_candidates`, `_rollout_matching_batch_metrics`, `BatchExtras`, `ModuleResult`, `PipelineResult`, and `Stage2PreparedSegment`.
+- Inspected runtime-state concepts: `Stage2TwoChannelTrainer._coordexp_checkpoint_runtime_state()`, `_coordexp_restore_checkpoint_runtime_state()`, `_PendingStage2Log`, `_stage2_metric_snapshots`, `_stage2_post_rollout_segments`, `_stage2_b_step_raw`, `_stage2_a_step_raw`, `_stage2_train_monitor_candidates`, `_rollout_matching_batch_metrics`, `BatchExtras`, `ModuleResult`, `PipelineResult`, and `Stage2PreparedSegment`.
 - Stable state/result objects: `_PendingStage2Log` is already a dataclass accumulator; `BatchExtras` is already a dataclass for collator extras; `ModuleResult` and `PipelineResult` are already teacher-forcing result dataclasses.
 - Dynamic metrics classification: `ModuleResult.metrics`, `PipelineResult.metrics`, `_stage2_metric_snapshots`, `_rollout_matching_batch_metrics`, `Stage2BatchMetrics`, and the many `loss/*`, `stage2/*`, `rollout/*`, `gradmon/*`, and `packing/*` keys remain dynamic metric/logging maps.
 - Concrete runtime-state risk selected for follow-up: the Stage-2 checkpoint runtime-state payload serialized by `_coordexp_checkpoint_runtime_state()` and restored by `_coordexp_restore_checkpoint_runtime_state()`.
@@ -1475,7 +1475,7 @@ Observed 2026-05-03:
 - Stage-2 decision: create a dedicated follow-up plan for the first concrete runtime state object selected by the Task 10 inspection; do not reshape logging keys in this branch without a separate metric-contract spec.
 ```
 
-Selected first runtime-state object: `Stage2CheckpointRuntimeState`, scoped to `Stage2ABTrainingTrainer._coordexp_checkpoint_runtime_state()` and `_coordexp_restore_checkpoint_runtime_state()`.
+Selected first runtime-state object: `Stage2CheckpointRuntimeState`, scoped to `Stage2TwoChannelTrainer._coordexp_checkpoint_runtime_state()` and `_coordexp_restore_checkpoint_runtime_state()`.
 
 - [x] **Step 4: Create a separate implementation plan if needed**
 

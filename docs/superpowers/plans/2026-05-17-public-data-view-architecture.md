@@ -62,7 +62,7 @@ Modify:
 - `src/detection/data.py`: parse norm1000 integer boxes instead of requiring coord-token boxes for latest compact canonical views.
 - `src/detection/template.py`: render norm1000 integers as Qwen coord-token literals in compact assistant sequences.
 - `src/detection/dataset.py`: infer image store from view metadata, accept explicit image-root override only when consistent, and remove object-count rejection.
-- `src/config/schema.py`: make latest compact `data.image_root` optional and `data.max_objects` deprecated/ignored for the compatibility window.
+- `src/config/schema.py`: make latest compact `data.image_root` optional and reject obsolete authored `data.max_objects`.
 - `src/sft.py`: pass resolved image-store root into latest compact dataset construction and prevent stale or `None`-derived `ROOT_IMAGE_DIR`.
 - `tests/test_public_data_provenance_manifests.py`: accept image-store/view manifest paths and enforce JSONL checksum scope for views.
 - `docs/data/CONTRACT.md`: update canonical view JSONL semantics to image-store-relative paths and norm1000 integer geometry.
@@ -546,16 +546,17 @@ Run:
 conda run -n ms python -m pytest tests/test_latest_detection_length_bucketing.py -q
 ```
 
-Expected: existing code raises `data.max_objects=60`.
+Expected: rows from prepared `max-*` views remain valid without a runtime
+`data.max_objects` field.
 
-- [ ] **Step 3: Make `data.max_objects` compatibility-only**
+- [ ] **Step 3: Remove `data.max_objects` runtime compatibility**
 
 Change schema:
 
 - `DetectionDataConfig.image_root: str | None = None`;
-- `DetectionDataConfig.max_objects: int | None = None`;
-- accepting `max_objects` emits a compatibility warning during config resolution or dataset build;
-- no latest compact code uses it as an admission policy.
+- no `DetectionDataConfig.max_objects` field;
+- authored `data.max_objects` fails strict parsing;
+- no latest compact code uses object count as a runtime admission policy.
 
 Change dataset:
 
@@ -1135,9 +1136,8 @@ for path in [
 PY
 ```
 
-Expected: new smoke configs resolve without `data.max_objects`, and the existing
-production config still resolves through the legacy compatibility path because
-production migration is out of Phase 1 scope.
+Expected: smoke and production configs resolve without `data.max_objects`; any
+old config that authors the key now fails strict parsing.
 
 ### Task 10: Run Required Verification And Smoke
 

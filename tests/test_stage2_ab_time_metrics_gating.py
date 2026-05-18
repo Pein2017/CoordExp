@@ -1,6 +1,6 @@
 import types
 
-from src.trainers.stage2_two_channel import Stage2ABTrainingTrainer
+from src.trainers.stage2_two_channel import Stage2TwoChannelTrainer
 
 
 class _DummyTemplate:
@@ -11,7 +11,7 @@ class _DummyTemplate:
 def test_stage2_channel_a_does_not_emit_rollout_time_metrics() -> None:
     # Use __new__ to avoid heavy Trainer initialization; this test only exercises
     # Channel-A metric key emission (no model/encode required).
-    t = Stage2ABTrainingTrainer.__new__(Stage2ABTrainingTrainer)
+    t = Stage2TwoChannelTrainer.__new__(Stage2TwoChannelTrainer)
 
     t.template = _DummyTemplate()
 

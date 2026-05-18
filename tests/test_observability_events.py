@@ -112,7 +112,7 @@ def test_service_rejects_removed_mechanism_writer_keys() -> None:
         )
 
 
-def test_removed_metric_keys_are_shared_between_writer_and_legacy_reader() -> None:
+def test_removed_metric_keys_are_rejected_by_writers_and_legacy_readers() -> None:
     service = ObservabilityService()
 
     for key in sorted(REMOVED_TRAINING_METRIC_KEYS):
@@ -127,7 +127,8 @@ def test_removed_metric_keys_are_shared_between_writer_and_legacy_reader() -> No
                 unit="token",
                 provenance="objective_runner",
             )
-        assert adapt_legacy_metric(key, 1.0).removed is True
+        with pytest.raises(ValueError, match="removed training mechanism"):
+            adapt_legacy_metric(key, 1.0)
 
 
 def test_duplicate_diagnostic_counters_and_gauges_use_explicit_reducers() -> None:
@@ -180,19 +181,6 @@ def test_duplicate_training_loss_keys_are_rejected_but_diagnostics_are_allowed()
 
     assert diagnostic.key == "stage2_ab/channel_b/dup/N_clusters_total"
     assert diagnostic.diagnostic_only is True
-
-
-def test_legacy_adapter_labels_removed_flat_keys_without_validating_new_writes() -> None:
-    record = adapt_legacy_metric(
-        "loss_duplicate_burst_unlikelihood_contrib",
-        0.25,
-    )
-
-    assert record.legacy is True
-    assert record.removed is True
-    assert record.original_key == "loss_duplicate_burst_unlikelihood_contrib"
-    assert record.canonical_key == "loss_duplicate_burst_unlikelihood_contrib"
-    assert record.reducer == "last"
 
 
 def test_legacy_adapter_preserves_duplicate_reducer_semantics() -> None:

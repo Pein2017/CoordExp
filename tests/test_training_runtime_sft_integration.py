@@ -24,7 +24,9 @@ from src.training_runtime import (
     ("variant", "replacement"),
     [
         ("stage2_ab_training", "stage2_two_channel"),
-        ("rollout_matching_sft", "stage2_rollout_aligned"),
+        ("rollout_matching_sft", "stage2_two_channel"),
+        ("stage2_rollout_aligned", "stage2_two_channel"),
+        ("stage2_rollout_runtime", "stage2_two_channel"),
         ("stage1_set_continuation", "prefix_rollin_et_rmp_ce"),
     ],
 )
@@ -46,7 +48,6 @@ def test_resolve_trainer_cls_removed_variants_fail_through_runtime_plan(
         None,
         "",
         "stage2_two_channel",
-        "stage2_rollout_aligned",
     ],
 )
 def test_sft_variant_helpers_agree_with_runtime_plan(variant: str | None) -> None:
@@ -73,10 +74,8 @@ def test_validate_stage1_static_packing_policy_rejects_stage1_dynamic_mode() -> 
         )
 
 
-@pytest.mark.parametrize("variant", ["stage2_two_channel", "stage2_rollout_aligned"])
-def test_validate_stage1_static_packing_policy_allows_stage2_trainer_owned_packing(
-    variant: str,
-) -> None:
+def test_validate_stage1_static_packing_policy_allows_stage2_trainer_owned_packing() -> None:
+    variant = "stage2_two_channel"
     plan = resolve_training_runtime_plan(variant)
     assert plan.post_rollout_packing_owner == "trainer"
 
@@ -123,7 +122,6 @@ def test_static_packing_accumulation_warning_is_skipped_for_trainer_owned_packin
     ("trainer_variant", "required_namespace"),
     [
         ("stage2_two_channel", "stage2_ab.pipeline"),
-        ("stage2_rollout_aligned", "rollout_matching.pipeline"),
     ],
 )
 def test_pipeline_manifest_missing_pipeline_error_uses_runtime_namespace(
@@ -164,10 +162,8 @@ def test_rollout_decode_batch_size_override_skips_non_rollout_profiles(
     assert train_args.training_args.per_device_eval_batch_size == 3
 
 
-@pytest.mark.parametrize("variant", ["stage2_two_channel", "stage2_rollout_aligned"])
-def test_rollout_decode_batch_size_override_uses_rollout_runtime_profile(
-    variant: str,
-) -> None:
+def test_rollout_decode_batch_size_override_uses_rollout_runtime_profile() -> None:
+    variant = "stage2_two_channel"
     profile = resolve_training_runtime_profile(variant)
     assert profile.rollout_runtime_owned is True
 

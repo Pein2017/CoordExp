@@ -50,7 +50,7 @@
   - Call monitor only when enabled; merge returned metrics into the existing reporter flow.
 
 - [x] 3.2 Stage-2 rollout-aligned integration:
-  - Hook point: `RolloutMatchingSFTTrainer.compute_loss` in `src/trainers/stage2_rollout_aligned.py`.
+  - Hook point: `Stage2RolloutRuntime.compute_loss` in `src/trainers/stage2_rollout_runtime.py`.
   - Term discovery:
     - derive **atomic coord/geo tensors** from `pipeline_result.state` (module-provided contrib tensors):
       - bbox geo atoms: `bbox_smoothl1_contrib`, `bbox_ciou_contrib`
@@ -66,7 +66,7 @@
     - let `_reduce_train_rollout_log_payload_global(...)` synchronize them across ranks at the optimizer-step log boundary.
 
 - [x] 3.3 Stage-2 two-channel integration:
-  - Hook point: `Stage2ABTrainingTrainer.compute_loss` in `src/trainers/stage2_two_channel.py`.
+  - Hook point: `Stage2TwoChannelTrainer.compute_loss` in `src/trainers/stage2_two_channel.py`.
   - Term discovery:
     - Channel-B step: same as rollout-aligned (`B_coord/*` atomic coord/geo terms from `pipeline_ctx.state`, module-weighted),
     - Channel-A step:
@@ -130,4 +130,4 @@
 Validation commands (examples):
 - `conda run -n ms python -m pytest -q tests/test_loss_gradient_monitor.py`
 - `conda run -n ms python -m pytest -q tests/test_stage2_ab_training.py`
-- `conda run -n ms python -m pytest -q tests/test_stage2_rollout_aligned.py`
+- `conda run -n ms python -m pytest -q tests/test_stage2_rollout_runtime.py`

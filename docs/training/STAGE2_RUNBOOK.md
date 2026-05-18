@@ -19,9 +19,10 @@ The current contract is:
 - Channel-B keeps the rollout-aligned clean-prefix supervision path
 - Stage-2 remains YAML-first; no new CLI flags are required
 
-The older rollout-matching compatibility surface still exists in
-`src/trainers/stage2_rollout_aligned.py`, but the operator-facing config tree
-and runbook in this repo are centered on `configs/stage2_two_channel/`.
+The older rollout-matching public trainer variants have been removed.
+`src/trainers/stage2_rollout_runtime.py` remains as an internal runtime base for
+rollout prompt preparation, HF/vLLM/server dispatch, eval artifacts, and
+post-rollout packing.
 
 ## Normative References
 
@@ -49,7 +50,7 @@ Current internal ownership seams:
 - Stage-2 trainer/runtime:
   - `src/trainers/stage2_two_channel.py`
   - `src/trainers/stage2_two_channel/`
-  - `src/trainers/stage2_rollout_aligned.py`
+  - `src/trainers/stage2_rollout_runtime.py`
   - `src/trainers/rollout_aligned_targets.py`
   - `src/trainers/rollout_aligned_evaluator.py`
   - `src/trainers/rollout_runtime/`
@@ -76,11 +77,8 @@ Current internal ownership seams:
 - Channel-B pseudo-positive mode is opt-in through:
   - `stage2_ab.channel_b.pseudo_positive.enabled`
   - `stage2_ab.channel_b.pseudo_positive.coord_weight`
-- the supported secondary rollout-aligned variant uses:
-  - `custom.trainer_variant: stage2_rollout_aligned`
-  - `rollout_matching.pipeline.objective[]`
-  - `rollout_matching.pipeline.diagnostics[]`
-  - exact behavior is specified in `openspec/specs/rollout-matching-sft/spec.md`
+- `rollout_matching.pipeline.*` is retired; active objective ownership is only
+  through `stage2_ab.pipeline.*`
 - supported routing/objective presets are:
   - `token_ce.application.preset: anchor_text_only`
   - `bbox_geo.application.preset: anchor_only`
@@ -145,6 +143,8 @@ Current internal ownership seams:
   - zero-object explorers remain valid zero-support evidence
 - deprecated authored knobs fail fast in active/training configs:
   - `custom.trainer_variant: rollout_matching_sft`
+  - `custom.trainer_variant: stage2_rollout_aligned`
+  - `custom.trainer_variant: stage2_rollout_runtime`
   - `stage2_ab.n_softctx_iter`
   - `stage2_ab.softctx_grad_mode`
   - `stage2_ab.softctx_temperature`
@@ -337,11 +337,11 @@ Checkpoint restart note:
 - `training.save_model_only: false` writes inference-only artifacts and accepts
   that interruption may require restarting from the base checkpoint.
 
-Rollout-aligned note:
+Rollout runtime note:
 
-- `stage2_rollout_aligned` shares the same refactored bootstrap/runtime seams and
-  vLLM server infrastructure, but repo-owned YAML examples in this page focus on
-  `stage2_two_channel`
+- `src/trainers/stage2_rollout_runtime.py` shares the refactored
+  bootstrap/runtime seams and vLLM server infrastructure, but it is not a public
+  trainer variant. Repo-owned YAML examples use `stage2_two_channel`.
 
 ## Historical Context
 

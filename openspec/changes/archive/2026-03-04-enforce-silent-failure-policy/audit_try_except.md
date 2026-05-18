@@ -14,19 +14,19 @@ The previously failing blanket suppression patterns (`except Exception: pass`, b
 
 ### P0 (previously failing policy checks, now resolved)
 
-- `src/trainers/stage2_rollout_aligned.py`
+- `src/trainers/stage2_rollout_runtime.py`
   - `_cuda_memory_drain` best-effort cleanup handlers narrowed:
-    - [stage2_rollout_aligned.py:2691](/data/CoordExp/src/trainers/stage2_rollout_aligned.py:2691)
-    - [stage2_rollout_aligned.py:2696](/data/CoordExp/src/trainers/stage2_rollout_aligned.py:2696)
-    - [stage2_rollout_aligned.py:2703](/data/CoordExp/src/trainers/stage2_rollout_aligned.py:2703)
+    - [stage2_rollout_runtime.py:2691](/data/CoordExp/src/trainers/stage2_rollout_runtime.py:2691)
+    - [stage2_rollout_runtime.py:2696](/data/CoordExp/src/trainers/stage2_rollout_runtime.py:2696)
+    - [stage2_rollout_runtime.py:2703](/data/CoordExp/src/trainers/stage2_rollout_runtime.py:2703)
   - vLLM engine class lookup fallback narrowed from blanket continue:
-    - [stage2_rollout_aligned.py:2807](/data/CoordExp/src/trainers/stage2_rollout_aligned.py:2807)
+    - [stage2_rollout_runtime.py:2807](/data/CoordExp/src/trainers/stage2_rollout_runtime.py:2807)
   - atexit unregister / allocator-pool cleanup fallbacks narrowed:
-    - [stage2_rollout_aligned.py:2904](/data/CoordExp/src/trainers/stage2_rollout_aligned.py:2904)
-    - [stage2_rollout_aligned.py:2908](/data/CoordExp/src/trainers/stage2_rollout_aligned.py:2908)
-    - [stage2_rollout_aligned.py:3011](/data/CoordExp/src/trainers/stage2_rollout_aligned.py:3011)
+    - [stage2_rollout_runtime.py:2904](/data/CoordExp/src/trainers/stage2_rollout_runtime.py:2904)
+    - [stage2_rollout_runtime.py:2908](/data/CoordExp/src/trainers/stage2_rollout_runtime.py:2908)
+    - [stage2_rollout_runtime.py:3011](/data/CoordExp/src/trainers/stage2_rollout_runtime.py:3011)
   - decode helper fallback narrowed:
-    - [stage2_rollout_aligned.py:5341](/data/CoordExp/src/trainers/stage2_rollout_aligned.py:5341)
+    - [stage2_rollout_runtime.py:5341](/data/CoordExp/src/trainers/stage2_rollout_runtime.py:5341)
 
 - `src/trainers/stage2_two_channel.py`
   - Stage2-AB avg-tokens override fallback narrowed:

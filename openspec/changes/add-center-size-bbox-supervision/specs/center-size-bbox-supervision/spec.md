@@ -23,7 +23,6 @@ The system SHALL expose center-wise supervision only through existing YAML bbox 
 Normative behavior:
 - Stage-1 MUST author the feature under `custom.bbox_geo`.
 - Stage-2 AB MUST author the feature under `stage2_ab.pipeline.objective[*].config` for the `bbox_geo` module.
-- Rollout-aligned Stage-2 MUST author the feature under `rollout_matching.pipeline.objective[*].config` for the `bbox_geo` module.
 - The canonical authored knobs for the new mode are:
   - `parameterization`
   - `center_weight`

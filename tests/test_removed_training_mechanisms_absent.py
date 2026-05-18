@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import ast
+import importlib.util
 import inspect
 from pathlib import Path
 
@@ -141,6 +142,31 @@ PROHIBITED_STALE_DUPLICATE_METRIC_KEYS = (
     "stage2_ab/channel_b/dup/N_ul_boundaries",
     "stage2_ab/channel_b/dup/N_duplicate_burst_unlikelihood_skipped_no_divergence",
     "diag/duplicate_burst/",
+)
+
+REMOVED_FUSION_PATHS = (
+    "configs/fusion",
+    "src/datasets/fusion.py",
+    "src/datasets/fusion_types.py",
+    "src/datasets/unified_fusion_dataset.py",
+    "src/callbacks/fusion_epoch.py",
+    "tests/test_fusion_config.py",
+)
+REMOVED_FUSION_MODULES = (
+    "src.datasets.fusion",
+    "src.datasets.fusion_types",
+    "src.datasets.unified_fusion_dataset",
+    "src.callbacks.fusion_epoch",
+)
+REMOVED_PUBLIC_STAGE2_MODULE_PATHS = (
+    "src/trainers/rollout_matching_sft.py",
+    "src/trainers/stage2_ab_training.py",
+    "src/trainers/stage2_ab",
+)
+REMOVED_PUBLIC_STAGE2_MODULES = (
+    "src.trainers.rollout_matching_sft",
+    "src.trainers.stage2_ab_training",
+    "src.trainers.stage2_ab",
 )
 
 STALE_DUPLICATE_BURST_ANALYSIS_ARTIFACT_FIELD = (
@@ -373,6 +399,24 @@ def test_task_1c_boundary_forcing_terms_are_absent_from_live_training_surfaces()
 
 def test_task_1c_stop_gate_terms_are_absent_from_live_training_surfaces() -> None:
     _assert_task_1c_terms_absent(TASK_1C_STOP_GATE_TERMS)
+
+
+def test_removed_fusion_training_surface_files_and_modules_are_absent() -> None:
+    repo_root = Path(__file__).resolve().parents[1]
+
+    for rel_path in REMOVED_FUSION_PATHS:
+        assert not (repo_root / rel_path).exists(), rel_path
+    for module_name in REMOVED_FUSION_MODULES:
+        assert importlib.util.find_spec(module_name) is None, module_name
+
+
+def test_removed_public_stage2_trainer_modules_are_absent() -> None:
+    repo_root = Path(__file__).resolve().parents[1]
+
+    for rel_path in REMOVED_PUBLIC_STAGE2_MODULE_PATHS:
+        assert not (repo_root / rel_path).exists(), rel_path
+    for module_name in REMOVED_PUBLIC_STAGE2_MODULES:
+        assert importlib.util.find_spec(module_name) is None, module_name
 
 
 def test_adjacent_repulsion_is_not_in_coord_reg_catalog_projection() -> None:

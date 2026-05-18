@@ -1,10 +1,10 @@
 from __future__ import annotations
 
-from src.trainers.stage2_two_channel import Stage2ABTrainingTrainer
+from src.trainers.stage2_two_channel import Stage2TwoChannelTrainer
 
 
 def test_stage2_ab_post_rollout_packing_buffers_are_channel_local() -> None:
-    trainer = Stage2ABTrainingTrainer.__new__(Stage2ABTrainingTrainer)
+    trainer = Stage2TwoChannelTrainer.__new__(Stage2TwoChannelTrainer)
 
     # Provide the minimal rollout_matching_cfg needed by packing helpers.
     trainer.rollout_matching_cfg = {
@@ -37,7 +37,7 @@ def test_stage2_ab_post_rollout_packing_buffers_are_channel_local() -> None:
 
 
 def test_stage2_ab_post_rollout_pack_selector_passes_fill_target() -> None:
-    trainer = Stage2ABTrainingTrainer.__new__(Stage2ABTrainingTrainer)
+    trainer = Stage2TwoChannelTrainer.__new__(Stage2TwoChannelTrainer)
     trainer.rollout_matching_cfg = {
         "packing_enabled": True,
         "packing_length": 10,

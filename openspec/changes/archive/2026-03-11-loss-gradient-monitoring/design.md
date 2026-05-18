@@ -22,10 +22,10 @@ CoordExp has two distinct multi-loss training pipelines that can exhibit instabi
    - Teacher-forcing objective composition lives in [`src/trainers/teacher_forcing/objective_pipeline.py`](src/trainers/teacher_forcing/objective_pipeline.py):
      - `run_teacher_forcing_pipeline(...) -> PipelineResult(total_loss, module_losses, metrics, state)`
      - Critically, the objective modules already expose **per-atom tensors** in `ModuleResult.state` (e.g. `bbox_smoothl1_contrib`, `coord_soft_ce_contrib`) that can be used to build atomic loss terms before summation.
-   - Stage-2 rollout-aligned integrates the pipeline in [`src/trainers/stage2_rollout_aligned.py`](src/trainers/stage2_rollout_aligned.py):
-     - `RolloutMatchingSFTTrainer.compute_loss` computes one teacher-forced forward and returns `pipeline_result.total_loss`.
+   - Stage-2 rollout-aligned integrates the pipeline in [`src/trainers/stage2_rollout_runtime.py`](src/trainers/stage2_rollout_runtime.py):
+     - `Stage2RolloutRuntime.compute_loss` computes one teacher-forced forward and returns `pipeline_result.total_loss`.
    - Stage-2 two-channel integrates the pipeline in [`src/trainers/stage2_two_channel.py`](src/trainers/stage2_two_channel.py):
-     - `Stage2ABTrainingTrainer.compute_loss` runs:
+     - `Stage2TwoChannelTrainer.compute_loss` runs:
        - `pipeline_ctx` for Channel-A self-context or Channel-B rollout-context, and
        - `pipeline_gt` for Channel-A GT-anchor token CE,
        - plus optional A1 anchor terms (`a1_bbox_obj`, `a1_coord_obj`),
@@ -143,7 +143,7 @@ Normative decision for this change:
 - The monitor computes local diagnostics from the additive loss terms visible in each packed forward.
 - For Stage-2, the optimizer-step log value is the weighted aggregate of those packed-forward diagnostics through the trainer’s existing pending-log buffer:
   - `stage2_two_channel`: segment-weighted `_PendingStage2Log`,
-  - `stage2_rollout_aligned`: sample-weighted `PendingTrainRolloutLog`.
+  - `stage2_rollout_runtime`: sample-weighted `PendingTrainRolloutLog`.
 - This change does **not** attempt to reconstruct a single cross-pack gradient vector for the full optimizer step.
 
 Rationale:

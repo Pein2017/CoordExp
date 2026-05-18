@@ -397,10 +397,8 @@ This keeps the module code simple and avoids duplicated parsing logic.
 
 ### 9) Stage-2 is the correct first implementation surface
 
-The first implementation should target:
-
-- `stage2_two_channel`
-- `stage2_rollout_aligned`
+The first implementation should target `stage2_two_channel`; shared rollout
+helpers may live in the internal Stage-2 rollout runtime module.
 
 Why:
 

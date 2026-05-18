@@ -27,7 +27,7 @@
   - `conda run -n ms python -m pytest -q tests/test_stage2_ab_disable_average_tokens_across_devices.py`
   - `conda run -n ms python -m pytest -q tests/test_stage2_ab_training.py`
   - `conda run -n ms python -m pytest -q tests/test_stage2_two_channel_training.py`
-  - `conda run -n ms python -m pytest -q tests/test_stage2_rollout_aligned.py`
+  - `conda run -n ms python -m pytest -q tests/test_stage2_rollout_runtime.py`
   - `conda run -n ms python -m pytest -q tests/test_stage2_ab_vllm_server_mode_smoke.py`
   - `conda run -n ms python -m pytest -q tests/test_stage1_static_packing_runtime_config.py`
   - `conda run -n ms python -m pytest -q tests/test_encoded_sample_cache.py`
@@ -137,7 +137,7 @@
   - `conda run -n ms python -m pytest -q tests/test_stage2_ab_disable_average_tokens_across_devices.py`
   - `conda run -n ms python -m pytest -q tests/test_stage2_ab_training.py`
   - `conda run -n ms python -m pytest -q tests/test_stage2_two_channel_training.py`
-  - `conda run -n ms python -m pytest -q tests/test_stage2_rollout_aligned.py`
+  - `conda run -n ms python -m pytest -q tests/test_stage2_rollout_runtime.py`
   - `conda run -n ms python -m pytest -q tests/test_stage2_ab_vllm_server_mode_smoke.py`
   - `conda run -n ms python -m pytest -q tests/test_stage1_static_packing_runtime_config.py`
   - `conda run -n ms python -m pytest -q tests/test_encoded_sample_cache.py`

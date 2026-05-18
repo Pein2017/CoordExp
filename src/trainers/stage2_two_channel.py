@@ -28,7 +28,7 @@ from src.training.stage2.assignment import (
 )
 from src.utils.assistant_json import dumps_coordjson
 
-from .stage2_rollout_aligned import RolloutMatchingSFTTrainer
+from .stage2_rollout_runtime import Stage2RolloutRuntime
 from .rollout_matching.contracts import GTObject
 from .rollout_matching.parsing import (
     find_desc_value_token_positions,
@@ -899,14 +899,15 @@ def _matched_prefix_structure_positions(
     )
 
 
-class Stage2ABTrainingTrainer(
+class Stage2TwoChannelTrainer(
     Stage2ABSchedulerMixin,
     Stage2ABChannelExecutorsMixin,
-    RolloutMatchingSFTTrainer,
+    Stage2RolloutRuntime,
 ):
-    """Stage-2 AB trainer: Channel-A iterative soft self-context + Channel-B rollout matching.
+    """Stage-2 two-channel trainer.
 
-    This is bbox-only v1.
+    Channel-A runs GT-anchored teacher forcing. Channel-B uses rollout evidence
+    to build a clean canonical teacher-forced target.
     """
 
     def __init__(self, *args, **kwargs):
@@ -946,7 +947,7 @@ class Stage2ABTrainingTrainer(
         self._stage2_channel_override: Optional[str] = None
 
         # Keep per-channel packing buffers so mixed schedules never pack A/B segments together.
-        # (Packing uses a shared carry buffer in RolloutMatchingSFTTrainer.)
+        # (Packing uses a shared carry buffer in Stage2RolloutRuntime.)
         self._stage2_post_rollout_segments: Dict[
             str, List[Tuple[Dict[str, Any], Dict[str, Any], int]]
         ] = {"A": [], "B": []}
@@ -1016,7 +1017,7 @@ class Stage2ABTrainingTrainer(
         super()._coordexp_restore_checkpoint_runtime_state(payload)
         if not isinstance(payload, Mapping):
             raise TypeError(
-                "Stage2ABTrainingTrainer checkpoint runtime state must be a Mapping"
+                "Stage2TwoChannelTrainer checkpoint runtime state must be a Mapping"
             )
 
         pending_logs_raw = payload.get("stage2_pending_train_logs")
@@ -1541,7 +1542,7 @@ class Stage2ABTrainingTrainer(
         # When using identity collator, `inputs` is a list of raw samples.
         if not isinstance(inputs, list):
             with self._track_stage_wallclock("sft"):
-                return super(RolloutMatchingSFTTrainer, self).training_step(
+                return super(Stage2RolloutRuntime, self).training_step(
                     model, inputs, *args, **kwargs
                 )
 
@@ -1581,7 +1582,7 @@ class Stage2ABTrainingTrainer(
                 )
             with self._track_stage_wallclock("sft"):
                 prepared = self._prepare_batch_inputs(inputs)
-                return super(RolloutMatchingSFTTrainer, self).training_step(
+                return super(Stage2RolloutRuntime, self).training_step(
                     model, prepared, *args, **kwargs
                 )
         finally:
@@ -3036,6 +3037,7 @@ class Stage2ABTrainingTrainer(
                 serialize_append_fragment_fn=serialize_append_fragment,
                 rollout_template_policy=rollout_template_policy,
                 parse=parse,
+                shuffle_seed=int(seed_base) + int(sample_index),
             )
             clean_prefix = supervision_targets.clean_prefix
             prefix_len_raw_local = int(supervision_targets.prefix_len_raw_local)
@@ -4548,8 +4550,4 @@ class Stage2ABTrainingTrainer(
             raise
 
         return (total, outputs) if return_outputs else total
-
-# Canonical alias for forward-looking callsites.
-Stage2TwoChannelTrainer = Stage2ABTrainingTrainer
-
-__all__ = ["Stage2ABTrainingTrainer", "Stage2TwoChannelTrainer"]
+__all__ = ["Stage2TwoChannelTrainer"]

@@ -34,7 +34,7 @@
 
 ## 3. Channel-B Dual-Rollout Preparation
 
-- [x] 3.1 Extend `Stage2ABTrainingTrainer._prepare_batch_inputs_b` in `src/trainers/stage2_two_channel.py` to request two rollout views per sample:
+- [x] 3.1 Extend `Stage2TwoChannelTrainer._prepare_batch_inputs_b` in `src/trainers/stage2_two_channel.py` to request two rollout views per sample:
   - anchor greedy
   - explorer stochastic
 - [x] 3.2 Reuse the existing per-run v2 cleanup path independently for each rollout:
