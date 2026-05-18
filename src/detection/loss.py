@@ -379,6 +379,7 @@ def _recursive_objective_diagnostic_events(
                             candidates,
                             current_slot,
                             teacher_prefix_values,
+                            teacher_coord_value,
                         ) = _instance_trie_gaussian_candidates(
                             target,
                             weights.coord_soft_ce,
@@ -389,6 +390,7 @@ def _recursive_objective_diagnostic_events(
                             weights.coord_soft_ce,
                             current_slot=current_slot,
                             teacher_prefix_values=teacher_prefix_values,
+                            teacher_coord_value=teacher_coord_value,
                         )
                     else:
                         if target.kind == "trie_multi_positive":
@@ -1021,6 +1023,7 @@ def _compute_sample_loss(
                     coord_candidates,
                     current_slot,
                     teacher_prefix_values,
+                    teacher_coord_value,
                 ) = _instance_trie_gaussian_candidates(target, weights.coord_soft_ce)
                 coord_result = full_vocab_coord_soft_ce(
                     logits[target.position - 1],
@@ -1028,6 +1031,7 @@ def _compute_sample_loss(
                     weights.coord_soft_ce,
                     current_slot=current_slot,
                     teacher_prefix_values=teacher_prefix_values,
+                    teacher_coord_value=teacher_coord_value,
                 )
             else:
                 if target.kind == "trie_multi_positive":
@@ -1154,7 +1158,7 @@ def _coord_soft_ce_applies(
 def _instance_trie_gaussian_candidates(
     target: object,
     cfg: CoordSoftTargetRuntimeConfig,
-) -> tuple[tuple[CoordSoftTargetCandidate, ...], str, dict[str, int]]:
+) -> tuple[tuple[CoordSoftTargetCandidate, ...], str, dict[str, int], int]:
     specs = tuple(getattr(target, "coord_instance_candidates", ()) or ())
     if not specs:
         raise ValueError(
@@ -1276,6 +1280,7 @@ def _instance_trie_gaussian_candidates(
         tuple(candidates),
         slot_name,
         _teacher_prefix_values_for_slot(slot_name, teacher_bbox),
+        teacher_coord_value,
     )
 
 

@@ -287,6 +287,56 @@ def test_instance_trie_gaussian_coordinate_replacement_equals_manual_softce() ->
     assert differently_weighted.loss.item() == pytest.approx(result.loss.item())
 
 
+def test_ce_anchored_instance_trie_gaussian_loss_passes_teacher_coord_value() -> None:
+    cfg = CoordSoftTargetRuntimeConfig(
+        target_distribution="instance_trie_gaussian",
+        coord_token_start=10,
+        coord_token_end=1009,
+        gaussian_mixture_weight=0.2,
+    )
+    logits = torch.linspace(-1.0, 1.0, 2 * 1020, dtype=torch.float32).reshape(2, 1020)
+    target = _hard_target(
+        position=1,
+        teacher_token_id=410,
+        semantic_role=SemanticRole.BBOX_COORD,
+        token_role=TokenRole.COORD,
+        object_instance_id="obj-0",
+        coord_slot_name="x2",
+        coord_instance_candidates=(
+            CoordInstanceCandidateSpec("obj-0", (100, 200, 400, 500)),
+            CoordInstanceCandidateSpec("obj-1", (120, 220, 460, 560)),
+        ),
+    )
+
+    result = compute_recursive_detection_ce_batch_loss(
+        logits=logits,
+        targets=(_targets(token_targets=(target,)),),
+        weights=RecursiveDetectionLossWeights(
+            support_weight=2.0,
+            balance_weight=1.0,
+            coord_soft_ce=cfg,
+        ),
+    )
+    manual = full_vocab_coord_soft_ce(
+        logits[0],
+        (
+            CoordSoftTargetCandidate("obj-0", "x2", (100, 200, 400, 500), 1.0),
+            CoordSoftTargetCandidate("obj-1", "x2", (120, 220, 460, 560), 1.0),
+        ),
+        cfg,
+        current_slot="x2",
+        teacher_prefix_values={"x1": 100, "y1": 200},
+        teacher_coord_value=400,
+    )
+    reduced = reduce_metric_events(result.metric_events)
+
+    assert result.loss.item() == pytest.approx(manual.weighted_loss.item())
+    assert reduced["recursive_detection_ce/coord_soft_ce/target_peak_prob"] == pytest.approx(
+        manual.peak_prob.item()
+    )
+    assert manual.peak_prob.item() > 0.8
+
+
 def test_instance_trie_gaussian_preserves_desc_support_balance_targets() -> None:
     cfg = _instance_trie_gaussian_cfg()
     logits = torch.tensor([[1.5, -0.5, 0.25, -1.0], [0.0, 0.0, 0.0, 0.0]])

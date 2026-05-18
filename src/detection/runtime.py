@@ -396,10 +396,16 @@ def _resolve_coord_soft_ce_runtime_config(
 
     target_distribution = str(field_getter(raw_cfg, "target_distribution"))
     if target_distribution == "instance_trie_gaussian":
+        gaussian_mixture_weight = field_getter(raw_cfg, "gaussian_mixture_weight")
         return CoordSoftTargetRuntimeConfig(
             target_distribution="instance_trie_gaussian",
             coord_token_start=int(coord_group.expected_start),
             coord_token_end=int(coord_group.expected_end),
+            gaussian_mixture_weight=(
+                1.0
+                if gaussian_mixture_weight is None
+                else float(gaussian_mixture_weight)
+            ),
         )
 
     if field_getter(raw_cfg, "replace_coord_hard_ce") is not True:

@@ -17,18 +17,43 @@ PROD_CONFIG = (
     CONFIG_ROOT
     / "prod/compact_full_support2_instance_trie_gaussian_softce_a5.yaml"
 )
+CE_GAUSSIAN_MIX_PROD_CONFIG = (
+    CONFIG_ROOT
+    / "prod/compact_full_support2_ce_gaussian_mix0p2_a6.yaml"
+)
+CE_GAUSSIAN_MIX_EQUAL_PROD_CONFIG = (
+    CONFIG_ROOT
+    / "prod/compact_full_support2_ce_gaussian_mix0p5_a7.yaml"
+)
 TINY_CONFIG = (
     CONFIG_ROOT
     / "smoke/compact_full_support2_instance_trie_gaussian_softce_a5_tiny.yaml"
+)
+CE_GAUSSIAN_MIX_TINY_CONFIG = (
+    CONFIG_ROOT
+    / "smoke/compact_full_support2_ce_gaussian_mix0p2_a6_tiny.yaml"
+)
+CE_GAUSSIAN_MIX_EQUAL_TINY_CONFIG = (
+    CONFIG_ROOT
+    / "smoke/compact_full_support2_ce_gaussian_mix0p5_a7_tiny.yaml"
 )
 DDP8_CONFIG = (
     CONFIG_ROOT
     / "smoke/compact_full_support2_instance_trie_gaussian_softce_a5_ddp8_preflight.yaml"
 )
+CE_GAUSSIAN_MIX_DDP8_CONFIG = (
+    CONFIG_ROOT
+    / "smoke/compact_full_support2_ce_gaussian_mix0p2_a6_ddp8_preflight.yaml"
+)
+CE_GAUSSIAN_MIX_EQUAL_DDP8_CONFIG = (
+    CONFIG_ROOT
+    / "smoke/compact_full_support2_ce_gaussian_mix0p5_a7_ddp8_preflight.yaml"
+)
 
 PROD_ALLOWED_CHANGED_PATHS = {
     "/objective/coord_soft_ce/enabled",
     "/objective/coord_soft_ce/target_distribution",
+    "/objective/coord_soft_ce/gaussian_mixture_weight",
     "/training/run_name",
     "/training/artifact_subdir",
     "/training/save_model_only",
@@ -126,8 +151,14 @@ def _changed_paths(left: Any, right: Any, parent: str = "") -> set[str]:
     ("config_path", "allowed_paths"),
     [
         (PROD_CONFIG, PROD_ALLOWED_CHANGED_PATHS),
+        (CE_GAUSSIAN_MIX_PROD_CONFIG, PROD_ALLOWED_CHANGED_PATHS),
+        (CE_GAUSSIAN_MIX_EQUAL_PROD_CONFIG, PROD_ALLOWED_CHANGED_PATHS),
         (TINY_CONFIG, TINY_ALLOWED_CHANGED_PATHS),
+        (CE_GAUSSIAN_MIX_TINY_CONFIG, TINY_ALLOWED_CHANGED_PATHS),
+        (CE_GAUSSIAN_MIX_EQUAL_TINY_CONFIG, TINY_ALLOWED_CHANGED_PATHS),
         (DDP8_CONFIG, DDP8_ALLOWED_CHANGED_PATHS),
+        (CE_GAUSSIAN_MIX_DDP8_CONFIG, DDP8_ALLOWED_CHANGED_PATHS),
+        (CE_GAUSSIAN_MIX_EQUAL_DDP8_CONFIG, DDP8_ALLOWED_CHANGED_PATHS),
     ],
 )
 def test_instance_trie_gaussian_configs_only_change_whitelisted_paths(
@@ -140,16 +171,36 @@ def test_instance_trie_gaussian_configs_only_change_whitelisted_paths(
     changed_paths = _changed_paths(base, candidate)
 
     assert changed_paths <= allowed_paths
-    assert candidate["objective"]["coord_soft_ce"] == {
-        "enabled": True,
-        "target_distribution": "instance_trie_gaussian",
-    }
-    assert candidate["experiment"]["ablation_id"] == "A5-instance-trie-gaussian"
-    assert "instance_trie_gaussian_softce_a5" in candidate["training"]["run_name"]
-    assert (
-        "instance_trie_gaussian_softce_a5"
-        in candidate["training"]["artifact_subdir"]
-    )
+    coord_soft_ce = candidate["objective"]["coord_soft_ce"]
+    assert coord_soft_ce["enabled"] is True
+    assert coord_soft_ce["target_distribution"] == "instance_trie_gaussian"
+    if "ce_gaussian_mix0p2_a6" in config_path.name:
+        assert coord_soft_ce["gaussian_mixture_weight"] == pytest.approx(0.2)
+        assert candidate["experiment"]["ablation_id"] == "A6-ce-gaussian-mix0p2"
+        assert "ce-gaussian-mix0p2-a6" in candidate["training"]["run_name"]
+        assert (
+            "ce_gaussian_mix0p2_a6"
+            in candidate["training"]["artifact_subdir"]
+        )
+    elif "ce_gaussian_mix0p5_a7" in config_path.name:
+        assert coord_soft_ce["gaussian_mixture_weight"] == pytest.approx(0.5)
+        assert candidate["experiment"]["ablation_id"] == "A7-ce-gaussian-mix0p5"
+        assert "ce-gaussian-mix0p5-a7" in candidate["training"]["run_name"]
+        assert (
+            "ce_gaussian_mix0p5_a7"
+            in candidate["training"]["artifact_subdir"]
+        )
+    else:
+        assert coord_soft_ce == {
+            "enabled": True,
+            "target_distribution": "instance_trie_gaussian",
+        }
+        assert candidate["experiment"]["ablation_id"] == "A5-instance-trie-gaussian"
+        assert "instance_trie_gaussian_softce_a5" in candidate["training"]["run_name"]
+        assert (
+            "instance_trie_gaussian_softce_a5"
+            in candidate["training"]["artifact_subdir"]
+        )
 
 
 def test_instance_trie_gaussian_prod_keeps_fair_comparison_surfaces_equal() -> None:

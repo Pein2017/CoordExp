@@ -319,3 +319,49 @@ def test_full_vocab_coord_soft_ce_ignores_weights_and_uses_full_vocab_pressure()
     assert result.weighted_loss.item() == pytest.approx(manual.item())
     assert differently_weighted.weighted_loss.item() == pytest.approx(manual.item())
     assert result.weighted_loss.item() > coord_only_wrong.item() + 10.0
+
+
+def test_full_vocab_coord_soft_ce_can_anchor_gaussian_with_exact_ce_mass() -> None:
+    candidate = _candidate("box", "x1", (3, 1, 8, 9))
+    cfg = CoordSoftTargetRuntimeConfig(
+        target_distribution="instance_trie_gaussian",
+        coord_token_start=10,
+        coord_token_end=1009,
+        gaussian_mixture_weight=0.2,
+    )
+    logits = torch.zeros((1020,), dtype=torch.float32)
+    logits[13] = 2.0
+    logits[14] = 1.0
+
+    gaussian_dist = build_coord_soft_target((candidate,), _cfg())
+    result = full_vocab_coord_soft_ce(
+        logits,
+        (candidate,),
+        cfg,
+        teacher_coord_value=3,
+    )
+    coord_log_probs = F.log_softmax(logits, dim=-1).index_select(
+        0, gaussian_dist.token_ids
+    )
+    expected_probs = gaussian_dist.probs * 0.2
+    expected_probs[3] += 0.8
+    expected_loss = -(expected_probs * coord_log_probs).sum()
+
+    assert expected_probs.sum().item() == pytest.approx(1.0)
+    assert result.peak_prob.item() == pytest.approx(expected_probs[3].item())
+    assert result.weighted_loss.item() == pytest.approx(expected_loss.item())
+    assert result.target_entropy.item() < gaussian_dist.entropy.item()
+
+
+def test_full_vocab_coord_soft_ce_requires_teacher_value_for_ce_anchor() -> None:
+    candidate = _candidate("box", "x1", (3, 1, 8, 9))
+    cfg = CoordSoftTargetRuntimeConfig(
+        target_distribution="instance_trie_gaussian",
+        coord_token_start=10,
+        coord_token_end=1009,
+        gaussian_mixture_weight=0.2,
+    )
+    logits = torch.zeros((1020,), dtype=torch.float32)
+
+    with pytest.raises(ValueError, match="teacher_coord_value"):
+        full_vocab_coord_soft_ce(logits, (candidate,), cfg)

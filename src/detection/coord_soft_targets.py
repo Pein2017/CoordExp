@@ -59,6 +59,7 @@ class CoordSoftTargetRuntimeConfig:
         "preserve_recursive_support_balance"
     )
     apply_to_multi_positive: Literal["support_mixture"] = "support_mixture"
+    gaussian_mixture_weight: float = 1.0
 
     def __post_init__(self) -> None:
         if self.target_distribution not in _COORD_TARGET_DISTRIBUTIONS:
@@ -73,6 +74,11 @@ class CoordSoftTargetRuntimeConfig:
                 or float(self.tau) <= 0.0
             ):
                 raise ValueError("coord soft target tau must be finite and > 0")
+            if float(self.gaussian_mixture_weight) != 1.0:
+                raise ValueError(
+                    "coord soft target gaussian_mixture_weight is only supported "
+                    "for instance_trie_gaussian"
+                )
         elif self.tau is not None:
             raise ValueError(
                 "coord soft target tau is not supported for instance_trie_gaussian"
@@ -90,6 +96,18 @@ class CoordSoftTargetRuntimeConfig:
         if self.apply_to_multi_positive != "support_mixture":
             raise ValueError(
                 "coord soft target apply_to_multi_positive must be support_mixture"
+            )
+        if not isinstance(self.gaussian_mixture_weight, (int, float)) or isinstance(
+            self.gaussian_mixture_weight, bool
+        ):
+            raise TypeError("coord soft target gaussian_mixture_weight must be numeric")
+        if not math.isfinite(float(self.gaussian_mixture_weight)):
+            raise ValueError(
+                "coord soft target gaussian_mixture_weight must be finite and within [0, 1]"
+            )
+        if not 0.0 <= float(self.gaussian_mixture_weight) <= 1.0:
+            raise ValueError(
+                "coord soft target gaussian_mixture_weight must be within [0, 1]"
             )
 
     @property
@@ -276,6 +294,7 @@ def full_vocab_coord_soft_ce(
     *,
     current_slot: CoordSlotName | None = None,
     teacher_prefix_values: Mapping[str, int] | None = None,
+    teacher_coord_value: int | None = None,
     support_weight: float | None = None,
     balance_weight: float | None = None,
 ) -> CoordSoftCELoss:
@@ -313,9 +332,35 @@ def full_vocab_coord_soft_ce(
 
     log_probs = F.log_softmax(logits.float(), dim=-1)
     coord_log_probs = log_probs.index_select(0, dist.token_ids)
-    weighted_loss = -(
-        dist.probs.to(dtype=coord_log_probs.dtype) * coord_log_probs
-    ).sum()
+    target_probs = dist.probs.to(dtype=coord_log_probs.dtype)
+    gaussian_mixture_weight = float(cfg.gaussian_mixture_weight)
+    if gaussian_mixture_weight < 1.0:
+        if teacher_coord_value is None:
+            raise ValueError(
+                "teacher_coord_value is required when gaussian_mixture_weight < 1"
+            )
+        if not isinstance(teacher_coord_value, int) or isinstance(
+            teacher_coord_value, bool
+        ):
+            raise ValueError("teacher_coord_value must be an integer")
+        teacher_index = int(teacher_coord_value)
+        if not (0 <= teacher_index < cfg.coord_bins):
+            raise ValueError(
+                f"teacher_coord_value must be in [0, {cfg.coord_bins - 1}], "
+                f"got {teacher_coord_value}"
+            )
+        if not bool(dist.support_mask[teacher_index].item()):
+            raise ValueError("teacher_coord_value is outside the coordinate support mask")
+        target_probs = target_probs * gaussian_mixture_weight
+        target_probs[teacher_index] = target_probs[teacher_index] + (
+            1.0 - gaussian_mixture_weight
+        )
+        total_target_prob = target_probs.sum()
+        if not torch.isfinite(total_target_prob) or float(total_target_prob.item()) <= 0:
+            raise ValueError("CE-anchored coord soft target is not normalizable")
+        target_probs = target_probs / total_target_prob
+
+    weighted_loss = -(target_probs * coord_log_probs).sum()
     if not torch.isfinite(weighted_loss):
         raise ValueError("coord softCE produced non-finite weighted_loss")
 
@@ -325,7 +370,19 @@ def full_vocab_coord_soft_ce(
     support_log_mass = torch.logsumexp(coord_log_probs[support_mask], dim=0)
     support_mass = support_log_mass.exp()
     outside_support_mass = 1.0 - support_mass
-    kl_like = weighted_loss - dist.entropy.to(dtype=weighted_loss.dtype)
+    target_entropy = _entropy(target_probs.to(dtype=torch.float64)).to(
+        dtype=weighted_loss.dtype, device=weighted_loss.device
+    )
+    kl_like = weighted_loss - target_entropy
+    effective_support_size = 1.0 / torch.square(target_probs).sum()
+    bins = torch.arange(
+        cfg.coord_bins,
+        dtype=target_probs.dtype,
+        device=target_probs.device,
+    )
+    target_mean = (target_probs * bins).sum()
+    target_variance = (target_probs * torch.square(bins - target_mean)).sum()
+    target_std = target_variance.clamp_min(0.0).sqrt()
 
     return CoordSoftCELoss(
         weighted_loss=weighted_loss,
@@ -334,12 +391,12 @@ def full_vocab_coord_soft_ce(
         outside_support_mass=outside_support_mass,
         balance_loss=torch.zeros_like(weighted_loss),
         pure_soft_ce_equiv=weighted_loss,
-        target_entropy=dist.entropy,
+        target_entropy=target_entropy,
         kl_like=kl_like,
-        peak_prob=dist.peak_prob,
-        perplexity=dist.perplexity,
-        effective_support_size=dist.effective_support_size,
-        target_std=dist.std,
+        peak_prob=target_probs.max(),
+        perplexity=target_entropy.exp(),
+        effective_support_size=effective_support_size,
+        target_std=target_std,
         candidate_count=dist.candidate_count,
         support_bin_count=dist.support_bin_count,
         valid_candidate_count=dist.valid_candidate_count,

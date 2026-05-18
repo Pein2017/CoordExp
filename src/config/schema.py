@@ -3948,6 +3948,34 @@ class CoordSoftCEConfig:
             allowed={"iou_gibbs_v0", "ciou_gibbs_v0", "instance_trie_gaussian"},
         )
 
+
+@dataclass(frozen=True)
+class InstanceTrieGaussianCoordSoftCEConfig(CoordSoftCEConfig):
+    target_distribution: Literal["instance_trie_gaussian"]
+    gaussian_mixture_weight: float = 1.0
+
+    def __post_init__(self) -> None:
+        super().__post_init__()
+        _latest_detection_validate_choice(
+            self.target_distribution,
+            path="objective.coord_soft_ce.target_distribution",
+            allowed={"instance_trie_gaussian"},
+        )
+        if not isinstance(self.gaussian_mixture_weight, (int, float)) or isinstance(
+            self.gaussian_mixture_weight, bool
+        ):
+            raise TypeError(
+                "objective.coord_soft_ce.gaussian_mixture_weight must be numeric"
+            )
+        if not math.isfinite(float(self.gaussian_mixture_weight)):
+            raise ValueError(
+                "objective.coord_soft_ce.gaussian_mixture_weight must be finite and within [0, 1]"
+            )
+        if not 0.0 <= float(self.gaussian_mixture_weight) <= 1.0:
+            raise ValueError(
+                "objective.coord_soft_ce.gaussian_mixture_weight must be within [0, 1]"
+            )
+
 @dataclass(frozen=True)
 class GibbsCoordSoftCEConfig(CoordSoftCEConfig):
     target_distribution: Literal["iou_gibbs_v0", "ciou_gibbs_v0"]
@@ -4199,7 +4227,7 @@ class DetectionObjectiveConfig:
                                 "supported for target_distribution=instance_trie_gaussian"
                             )
                     payload["coord_soft_ce"] = parse_dataclass_strict(
-                        CoordSoftCEConfig,
+                        InstanceTrieGaussianCoordSoftCEConfig,
                         raw_coord_soft_ce,
                         path="objective.coord_soft_ce",
                     )

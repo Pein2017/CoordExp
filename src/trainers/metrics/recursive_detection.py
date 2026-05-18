@@ -160,6 +160,16 @@ class RecursiveDetectionCEMixin:
                     coord_soft_ce_updates["recursive_detection_ce/coord_soft_ce/tau"] = (
                         float(tau)
                     )
+                gaussian_mixture_weight = getattr(
+                    weights.coord_soft_ce, "gaussian_mixture_weight", None
+                )
+                if gaussian_mixture_weight is not None:
+                    coord_soft_ce_updates[
+                        "recursive_detection_ce/coord_soft_ce/gaussian_mixture_weight"
+                    ] = float(gaussian_mixture_weight)
+                    coord_soft_ce_updates[
+                        "recursive_detection_ce/coord_soft_ce/exact_ce_anchor_weight"
+                    ] = 1.0 - float(gaussian_mixture_weight)
                 reporter.update_many(coord_soft_ce_updates)
             reporter.update_many(metric_event_logs)
 

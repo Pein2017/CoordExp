@@ -388,6 +388,30 @@ def test_latest_random_permutation_accepts_instance_trie_gaussian_coord_softce()
     assert not hasattr(cfg.objective.coord_soft_ce, "weighting")
 
 
+def test_latest_random_permutation_accepts_ce_anchored_instance_trie_gaussian_coord_softce() -> None:
+    payload = _latest_payload()
+    payload["objective"] = {
+        "id": "recursive_detection_ce",
+        "variant": "random_permutation_et_rmp_ce",
+        "trie_support_weight": 2.0,
+        "trie_balance_weight": 1.0,
+        "state_weighting": "uniform_permutation",
+        "normalization": "semantic_image_bucket_balanced",
+        "coord_soft_ce": {
+            "enabled": True,
+            "target_distribution": "instance_trie_gaussian",
+            "gaussian_mixture_weight": 0.2,
+        },
+    }
+
+    cfg = LatestDetectionTrainingConfig.from_mapping(payload)
+
+    assert cfg.objective.coord_soft_ce is not None
+    assert cfg.objective.coord_soft_ce.enabled is True
+    assert cfg.objective.coord_soft_ce.target_distribution == "instance_trie_gaussian"
+    assert cfg.objective.coord_soft_ce.gaussian_mixture_weight == pytest.approx(0.2)
+
+
 def test_recursive_detection_runtime_resolves_coord_softce_token_range() -> None:
     payload = _latest_payload()
     payload["objective"] = {
@@ -1059,6 +1083,10 @@ def test_latest_recursive_detection_launch_configs_parse_without_custom() -> Non
         REPO_ROOT
         / "configs/stage1/recursive_detection_ce_latest/prod/compact_full_support2_instance_trie_gaussian_softce_a5.yaml",
         REPO_ROOT
+        / "configs/stage1/recursive_detection_ce_latest/prod/compact_full_support2_ce_gaussian_mix0p2_a6.yaml",
+        REPO_ROOT
+        / "configs/stage1/recursive_detection_ce_latest/prod/compact_full_support2_ce_gaussian_mix0p5_a7.yaml",
+        REPO_ROOT
         / "configs/stage1/recursive_detection_ce_latest/smoke/compact_full_tiny.yaml",
         REPO_ROOT
         / "configs/stage1/recursive_detection_ce_latest/smoke/compact_full_prodlike_single_gpu.yaml",
@@ -1071,11 +1099,19 @@ def test_latest_recursive_detection_launch_configs_parse_without_custom() -> Non
         REPO_ROOT
         / "configs/stage1/recursive_detection_ce_latest/smoke/compact_full_support2_instance_trie_gaussian_softce_a5_tiny.yaml",
         REPO_ROOT
+        / "configs/stage1/recursive_detection_ce_latest/smoke/compact_full_support2_ce_gaussian_mix0p2_a6_tiny.yaml",
+        REPO_ROOT
+        / "configs/stage1/recursive_detection_ce_latest/smoke/compact_full_support2_ce_gaussian_mix0p5_a7_tiny.yaml",
+        REPO_ROOT
         / "configs/stage1/recursive_detection_ce_latest/smoke/compact_full_support2_iou_gibbs_softce_a5_ddp4_preflight.yaml",
         REPO_ROOT
         / "configs/stage1/recursive_detection_ce_latest/smoke/compact_full_support2_ciou_gibbs_softce_a6_ddp4_preflight.yaml",
         REPO_ROOT
         / "configs/stage1/recursive_detection_ce_latest/smoke/compact_full_support2_instance_trie_gaussian_softce_a5_ddp8_preflight.yaml",
+        REPO_ROOT
+        / "configs/stage1/recursive_detection_ce_latest/smoke/compact_full_support2_ce_gaussian_mix0p2_a6_ddp8_preflight.yaml",
+        REPO_ROOT
+        / "configs/stage1/recursive_detection_ce_latest/smoke/compact_full_support2_ce_gaussian_mix0p5_a7_ddp8_preflight.yaml",
     ]
 
     for config_path in config_paths:
@@ -1119,6 +1155,27 @@ def test_latest_recursive_detection_launch_configs_parse_without_custom() -> Non
             assert (
                 cfg.objective.coord_soft_ce.target_distribution
                 == "instance_trie_gaussian"
+            )
+            assert cfg.objective.coord_soft_ce.gaussian_mixture_weight == pytest.approx(
+                1.0
+            )
+        if "ce_gaussian_mix0p2_a6" in config_path.name:
+            assert cfg.objective.coord_soft_ce is not None
+            assert (
+                cfg.objective.coord_soft_ce.target_distribution
+                == "instance_trie_gaussian"
+            )
+            assert cfg.objective.coord_soft_ce.gaussian_mixture_weight == pytest.approx(
+                0.2
+            )
+        if "ce_gaussian_mix0p5_a7" in config_path.name:
+            assert cfg.objective.coord_soft_ce is not None
+            assert (
+                cfg.objective.coord_soft_ce.target_distribution
+                == "instance_trie_gaussian"
+            )
+            assert cfg.objective.coord_soft_ce.gaussian_mixture_weight == pytest.approx(
+                0.5
             )
         assert cfg.packing.static_packing is False
         assert cfg.packing.padding_free_packed is False

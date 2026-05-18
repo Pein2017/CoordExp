@@ -1,0 +1,23 @@
+# A6 CE-anchored Gaussian ablation config: A2/support2 ET-RMP with
+# coordinate targets anchored by exact hard-CE mass and regularized by a
+# 0.2-weight instance-trie Gaussian mixture. The base model, data,
+# compact-full template, token rows, optimizer, schedule, batch semantics, and
+# support/balance coefficients are inherited from compact_full_support2.yaml.
+extends:
+  - ./compact_full_support2.yaml
+
+training:
+  save_model_only: true
+  artifact_subdir: compact_full_et_rmp_ce_gaussian_mix0p2_a6_support2_bsz16_8gpu_4epoch_tokenrows_v2
+  run_name: compact-full-et-rmp-ce-gaussian-mix0p2-a6-support2-bsz16-8gpu-4epoch-tokenrows-v2
+
+objective:
+  coord_soft_ce:
+    enabled: true
+    target_distribution: instance_trie_gaussian
+    gaussian_mixture_weight: 0.2
+
+experiment:
+  surface: ablation
+  ablation_id: A6-ce-gaussian-mix0p2
+  claim_scope: none
