@@ -17,6 +17,7 @@ from src.detection.coord_soft_targets import (
     full_vocab_coord_support_balance_ce,
 )
 from src.detection.objective import RecursiveDetectionTargets, SemanticRole
+from src.detection.tokenization import TokenRole
 from src.metrics.detection_sequence import (
     coordinate_token_accuracy_event,
     coordinate_token_cross_entropy_event,
@@ -423,6 +424,7 @@ def _recursive_objective_diagnostic_events(
                             coord_result.effective_support_size,
                         ),
                         ("target_std", coord_result.target_std),
+                        ("target_r95_radius", coord_result.target_r95_radius),
                         ("candidate_count", coord_result.candidate_count),
                         ("support_bin_count", coord_result.support_bin_count),
                     ):
@@ -442,6 +444,7 @@ def _recursive_objective_diagnostic_events(
                             ),
                             ("target_entropy", coord_result.target_entropy),
                             ("target_peak_prob", coord_result.peak_prob),
+                            ("target_r95_radius", coord_result.target_r95_radius),
                         ):
                             if metric_value is None:
                                 continue
@@ -1078,6 +1081,8 @@ def _compute_sample_loss(
             support_weight=float(weights.support_weight),
             balance_weight=float(weights.balance_weight),
         )
+        if getattr(target, "token_role", None) is TokenRole.DESC:
+            position_loss = position_loss + (-step_log_probs[target.teacher_token_id])
         per_position_main_losses[target.position] = _loss_float(position_loss)
         per_position_losses[target.position] = _apply_type_gate_loss(
             position_loss,

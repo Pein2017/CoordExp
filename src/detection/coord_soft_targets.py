@@ -60,6 +60,8 @@ class CoordSoftTargetRuntimeConfig:
     )
     apply_to_multi_positive: Literal["support_mixture"] = "support_mixture"
     gaussian_mixture_weight: float = 1.0
+    gaussian_r95_axis_fraction: float = 0.04
+    gaussian_r95_cap_bins: int = 8
 
     def __post_init__(self) -> None:
         if self.target_distribution not in _COORD_TARGET_DISTRIBUTIONS:
@@ -109,6 +111,26 @@ class CoordSoftTargetRuntimeConfig:
             raise ValueError(
                 "coord soft target gaussian_mixture_weight must be within [0, 1]"
             )
+        if not isinstance(self.gaussian_r95_axis_fraction, (int, float)) or isinstance(
+            self.gaussian_r95_axis_fraction, bool
+        ):
+            raise TypeError("coord soft target gaussian_r95_axis_fraction must be numeric")
+        if (
+            not math.isfinite(float(self.gaussian_r95_axis_fraction))
+            or float(self.gaussian_r95_axis_fraction) <= 0.0
+            or float(self.gaussian_r95_axis_fraction) > 1.0
+        ):
+            raise ValueError(
+                "coord soft target gaussian_r95_axis_fraction must be finite and within (0, 1]"
+            )
+        if not isinstance(self.gaussian_r95_cap_bins, int) or isinstance(
+            self.gaussian_r95_cap_bins, bool
+        ):
+            raise TypeError("coord soft target gaussian_r95_cap_bins must be an integer")
+        if int(self.gaussian_r95_cap_bins) < 0 or int(self.gaussian_r95_cap_bins) > 999:
+            raise ValueError(
+                "coord soft target gaussian_r95_cap_bins must be within [0, 999]"
+            )
 
     @property
     def coord_bins(self) -> int:
@@ -146,6 +168,7 @@ class CoordSoftTargetDistribution:
     perplexity: torch.Tensor
     effective_support_size: torch.Tensor
     std: torch.Tensor
+    target_r95_radius: torch.Tensor
     candidate_count: torch.Tensor
     support_bin_count: torch.Tensor
     valid_candidate_count: torch.Tensor
@@ -170,6 +193,7 @@ class CoordSoftCELoss:
     perplexity: torch.Tensor
     effective_support_size: torch.Tensor
     target_std: torch.Tensor
+    target_r95_radius: torch.Tensor
     candidate_count: torch.Tensor
     support_bin_count: torch.Tensor
     valid_candidate_count: torch.Tensor
@@ -255,6 +279,7 @@ def build_iou_gibbs_coord_target(
         perplexity=perplexity.to(device=target_device),
         effective_support_size=effective_support_size.to(device=target_device),
         std=std.to(device=target_device),
+        target_r95_radius=torch.tensor(0.0, dtype=torch.float32, device=target_device),
         candidate_count=candidate_count.to(device=target_device),
         support_bin_count=support_bin_count.to(device=target_device),
         valid_candidate_count=support_bin_count.to(device=target_device),
@@ -330,8 +355,8 @@ def full_vocab_coord_soft_ce(
     if int(dist.token_ids.max().item()) >= int(logits.shape[-1]):
         raise ValueError("coord token id exceeds logits vocab size")
 
-    log_probs = F.log_softmax(logits.float(), dim=-1)
-    coord_log_probs = log_probs.index_select(0, dist.token_ids)
+    coord_logits = logits.float().index_select(0, dist.token_ids)
+    coord_log_probs = F.log_softmax(coord_logits, dim=-1)
     target_probs = dist.probs.to(dtype=coord_log_probs.dtype)
     gaussian_mixture_weight = float(cfg.gaussian_mixture_weight)
     if gaussian_mixture_weight < 1.0:
@@ -367,9 +392,9 @@ def full_vocab_coord_soft_ce(
     support_mask = dist.support_mask
     if not torch.any(support_mask):
         raise ValueError("coord softCE support mask is empty")
-    support_log_mass = torch.logsumexp(coord_log_probs[support_mask], dim=0)
-    support_mass = support_log_mass.exp()
-    outside_support_mass = 1.0 - support_mass
+    coord_probs = coord_log_probs.exp()
+    support_mass = coord_probs[support_mask].sum()
+    outside_support_mass = coord_probs[~support_mask].sum()
     target_entropy = _entropy(target_probs.to(dtype=torch.float64)).to(
         dtype=weighted_loss.dtype, device=weighted_loss.device
     )
@@ -397,6 +422,7 @@ def full_vocab_coord_soft_ce(
         perplexity=target_entropy.exp(),
         effective_support_size=effective_support_size,
         target_std=target_std,
+        target_r95_radius=dist.target_r95_radius,
         candidate_count=dist.candidate_count,
         support_bin_count=dist.support_bin_count,
         valid_candidate_count=dist.valid_candidate_count,
@@ -471,6 +497,7 @@ def full_vocab_coord_support_balance_ce(
         perplexity=dist.perplexity,
         effective_support_size=dist.effective_support_size,
         target_std=dist.std,
+        target_r95_radius=dist.target_r95_radius,
         candidate_count=dist.candidate_count,
         support_bin_count=dist.support_bin_count,
         valid_candidate_count=dist.valid_candidate_count,
@@ -510,6 +537,7 @@ def _build_instance_trie_gaussian_coord_target(
     bins = torch.arange(1000, dtype=torch.float64)
     support_mask = torch.zeros((1000,), dtype=torch.bool)
     components: list[torch.Tensor] = []
+    component_r95_radii: list[torch.Tensor] = []
     posterior_log_weights: list[torch.Tensor] = []
 
     for candidate in candidates:
@@ -524,18 +552,31 @@ def _build_instance_trie_gaussian_coord_target(
             slot_name,
             bins,
             valid_mask,
+            cfg,
         )
         components.append(torch.exp(log_component))
+        component_r95_radii.append(
+            torch.tensor(
+                float(_slot_r95_radius(candidate.bbox_xyxy, slot_name, cfg)),
+                dtype=torch.float64,
+            )
+        )
         posterior_log_weights.append(
             _instance_prefix_log_compatibility(
                 candidate.bbox_xyxy,
                 slot_name,
                 prefix_values,
+                cfg,
             )
         )
 
     stacked_components = torch.stack(components, dim=0)
+    stacked_r95_radii = torch.stack(component_r95_radii, dim=0)
     posterior_logits = torch.stack(posterior_log_weights, dim=0)
+    if not torch.isfinite(posterior_logits).any():
+        raise ValueError(
+            "coord soft target has no finite prefix-compatible instance candidates"
+        )
     posterior = torch.softmax(posterior_logits, dim=0)
     probs = (posterior[:, None] * stacked_components).sum(dim=0)
     total_prob = probs.sum()
@@ -554,6 +595,7 @@ def _build_instance_trie_gaussian_coord_target(
     mean = (probs * bins).sum()
     variance = (probs * torch.square(bins - mean)).sum()
     std = variance.clamp_min(0.0).sqrt()
+    target_r95_radius = (posterior * stacked_r95_radii).sum()
     candidate_count = torch.tensor(float(len(candidates)), dtype=torch.float32)
     support_bin_count = support_mask.sum().to(dtype=torch.float32)
     valid_candidate_count = torch.tensor(float(len(candidates)), dtype=torch.float32)
@@ -582,6 +624,7 @@ def _build_instance_trie_gaussian_coord_target(
         perplexity=entropy.exp().to(device=target_device),
         effective_support_size=effective_support_size.to(device=target_device),
         std=std.to(device=target_device),
+        target_r95_radius=target_r95_radius.to(device=target_device),
         candidate_count=candidate_count.to(device=target_device),
         support_bin_count=support_bin_count.to(device=target_device),
         valid_candidate_count=valid_candidate_count.to(device=target_device),
@@ -629,13 +672,20 @@ def _instance_slot_gaussian_log_component(
     slot_name: CoordSlotName,
     bins: torch.Tensor,
     valid_mask: torch.Tensor,
+    cfg: CoordSoftTargetRuntimeConfig,
 ) -> torch.Tensor:
     if not torch.any(valid_mask):
         raise ValueError("coord soft target candidate has no structurally legal bins")
-    center = float(bbox_xyxy[_COORD_SLOT_INDEX[slot_name]])
-    variance = _slot_variance(bbox_xyxy, slot_name)
+    center = int(bbox_xyxy[_COORD_SLOT_INDEX[slot_name]])
     log_scores = torch.full_like(bins, -torch.inf, dtype=torch.float64)
-    delta = bins - bins.new_tensor(center)
+    radius = _slot_r95_radius(bbox_xyxy, slot_name, cfg)
+    if radius == 0:
+        if not (0 <= center < int(bins.numel())) or not bool(valid_mask[center].item()):
+            raise ValueError("coord soft target exact center is structurally illegal")
+        log_scores[center] = 0.0
+        return log_scores
+    variance = _r95_radius_variance(radius)
+    delta = bins - bins.new_tensor(float(center))
     log_scores[valid_mask] = -0.5 * torch.square(delta[valid_mask]) / variance
     normalizer = torch.logsumexp(log_scores[valid_mask], dim=0)
     if not torch.isfinite(normalizer):
@@ -647,14 +697,20 @@ def _instance_prefix_log_compatibility(
     bbox_xyxy: tuple[int, int, int, int],
     current_slot: CoordSlotName,
     teacher_prefix_values: Mapping[str, int],
+    cfg: CoordSoftTargetRuntimeConfig,
 ) -> torch.Tensor:
     log_weight = torch.tensor(0.0, dtype=torch.float64)
     for slot_name in _causal_previous_slots(current_slot):
         if slot_name not in teacher_prefix_values:
             continue
-        center = float(bbox_xyxy[_COORD_SLOT_INDEX[slot_name]])
-        delta = float(teacher_prefix_values[slot_name]) - center
-        variance = _slot_variance(bbox_xyxy, slot_name)
+        center = int(bbox_xyxy[_COORD_SLOT_INDEX[slot_name]])
+        radius = _slot_r95_radius(bbox_xyxy, slot_name, cfg)
+        if radius == 0:
+            if int(teacher_prefix_values[slot_name]) != center:
+                return torch.tensor(-math.inf, dtype=torch.float64)
+            continue
+        delta = float(teacher_prefix_values[slot_name]) - float(center)
+        variance = _r95_radius_variance(radius)
         log_weight = log_weight + (-0.5 * (delta**2) / variance)
     return log_weight
 
@@ -664,16 +720,34 @@ def _causal_previous_slots(current_slot: CoordSlotName) -> tuple[CoordSlotName, 
     return _COORD_SLOT_NAMES[:index]  # type: ignore[return-value]
 
 
-def _slot_variance(
+def _slot_axis_len(
     bbox_xyxy: tuple[int, int, int, int],
     slot_name: CoordSlotName,
-) -> float:
+) -> int:
     x1, y1, x2, y2 = bbox_xyxy
     if slot_name in {"x1", "x2"}:
-        return float((x2 - x1) + 1)
+        return int(x2 - x1)
     if slot_name in {"y1", "y2"}:
-        return float((y2 - y1) + 1)
+        return int(y2 - y1)
     raise ValueError(f"unsupported coordinate slot {slot_name!r}")
+
+
+def _slot_r95_radius(
+    bbox_xyxy: tuple[int, int, int, int],
+    slot_name: CoordSlotName,
+    cfg: CoordSoftTargetRuntimeConfig,
+) -> int:
+    axis_len = _slot_axis_len(bbox_xyxy, slot_name)
+    cap = int(cfg.gaussian_r95_cap_bins)
+    fractional_radius = float(cfg.gaussian_r95_axis_fraction) * float(axis_len)
+    return int(math.floor(min(float(cap), fractional_radius)))
+
+
+def _r95_radius_variance(radius: int) -> float:
+    if radius <= 0:
+        raise ValueError("R95 radius variance is undefined for radius <= 0")
+    sigma = float(radius) / 1.96
+    return sigma * sigma
 
 
 def _instance_slot_valid_mask(

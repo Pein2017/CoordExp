@@ -43,6 +43,7 @@ class RecursiveDetectionCERuntimeConfig:
     eos_stop_weight: float = 0.50
     boundary_component_weight: float = 0.30
     coord_soft_ce: CoordSoftTargetRuntimeConfig | None = None
+    type_gate: Any | None = None
 
 
 def is_latest_detection_config(training_config: Any) -> bool:
@@ -363,6 +364,7 @@ def resolve_recursive_detection_ce_runtime_cfg(
         eos_stop_weight=eos_stop_weight,
         boundary_component_weight=boundary_component_weight,
         coord_soft_ce=coord_soft_ce,
+        type_gate=_field(objective, "type_gate"),
     )
 
 
@@ -397,14 +399,27 @@ def _resolve_coord_soft_ce_runtime_config(
     target_distribution = str(field_getter(raw_cfg, "target_distribution"))
     if target_distribution == "instance_trie_gaussian":
         gaussian_mixture_weight = field_getter(raw_cfg, "gaussian_mixture_weight")
+        gaussian_r95_axis_fraction = field_getter(
+            raw_cfg,
+            "gaussian_r95_axis_fraction",
+        )
+        gaussian_r95_cap_bins = field_getter(raw_cfg, "gaussian_r95_cap_bins")
         return CoordSoftTargetRuntimeConfig(
             target_distribution="instance_trie_gaussian",
             coord_token_start=int(coord_group.expected_start),
             coord_token_end=int(coord_group.expected_end),
             gaussian_mixture_weight=(
-                1.0
+                0.1
                 if gaussian_mixture_weight is None
                 else float(gaussian_mixture_weight)
+            ),
+            gaussian_r95_axis_fraction=(
+                0.04
+                if gaussian_r95_axis_fraction is None
+                else float(gaussian_r95_axis_fraction)
+            ),
+            gaussian_r95_cap_bins=(
+                8 if gaussian_r95_cap_bins is None else int(gaussian_r95_cap_bins)
             ),
         )
 
@@ -438,6 +453,10 @@ def build_latest_detection_dataset(
         if eos_cfg is None:
             raise ValueError("prefix_rollin_et_rmp_ce requires objective.eos")
         eos_trust_weight_config = eos_cfg.eos_trust_weight
+    if training_config.objective.variant in {
+        "random_permutation_et_rmp_ce",
+        "prefix_rollin_et_rmp_ce",
+    }:
         type_gate_config = training_config.objective.type_gate
     return DetectionTrainingDataset.from_jsonl(
         jsonl_path,

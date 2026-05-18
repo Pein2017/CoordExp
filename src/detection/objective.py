@@ -290,6 +290,7 @@ def prepare_detection_training_example(
     mode: DetectionTrainingMode,
     state_weighting: StateWeightingStrategy = "uniform_permutation",
     normalization: LossNormalizationStrategy = "semantic_image_bucket_balanced",
+    type_gate_config: Any | None = None,
     system_prompt: str | None = None,
     user_content: str = "<image>",
     messages: Sequence[Mapping[str, Any]] | None = None,
@@ -321,6 +322,16 @@ def prepare_detection_training_example(
             state_weighting=state_weighting,
             normalization=normalization,
         )
+        gated_targets = _apply_compact_type_gate(
+            recursive_detection_targets.token_targets,
+            tokenizer=tokenizer,
+            type_gate_config=type_gate_config,
+        )
+        if gated_targets != recursive_detection_targets.token_targets:
+            recursive_detection_targets = replace(
+                recursive_detection_targets,
+                token_targets=gated_targets,
+            )
 
     return PreparedDetectionExample(
         mode=mode,
@@ -420,7 +431,7 @@ def build_compact_prefix_rollin_example(
         eos_positions=eos_positions,
         eos_trust_weight=eos_loss_weight,
     )
-    filtered_targets = _apply_prefix_rollin_type_gate(
+    filtered_targets = _apply_compact_type_gate(
         filtered_targets,
         tokenizer=tokenizer,
         type_gate_config=type_gate_config,
@@ -654,7 +665,7 @@ def compute_eos_trust_weight(gt_count: int, cfg: Any) -> float:
     raise ValueError(f"unsupported EOS trust weight source {source!r}")
 
 
-def _apply_prefix_rollin_type_gate(
+def _apply_compact_type_gate(
     token_targets: Sequence[TokenTarget],
     *,
     tokenizer: TokenizerWithOffsets,
@@ -1348,10 +1359,22 @@ def _append_recursive_entry_targets(
                     f"trie child probabilities must sum to 1.0 at position {position}; "
                     f"got {probability_mass}"
                 )
+        token_role = tokenized.token_roles[position]
         kind: TrieTargetKind = (
             "trie_multi_positive"
-            if len(trie_branch_targets) > 1
+            if len(trie_branch_targets) > 1 and token_role is TokenRole.DESC
             else "hard_ce"
+        )
+        positive_branch_targets = (
+            trie_branch_targets
+            if kind == "trie_multi_positive"
+            else (
+                TrieBranchTarget(
+                    token_id=teacher_token_id,
+                    multiplicity=1,
+                    probability=1.0,
+                ),
+            )
         )
         if coord_slot_name is not None and coord_block_candidate_instances is None:
             coord_block_candidate_instances = tuple(node.descendant_instances)
@@ -1363,9 +1386,9 @@ def _append_recursive_entry_targets(
                 position=position,
                 teacher_token_id=teacher_token_id,
                 kind=kind,
-                trie_branch_targets=trie_branch_targets,
+                trie_branch_targets=positive_branch_targets,
                 object_instance_id=entry.object_instance_id,
-                token_role=tokenized.token_roles[position],
+                token_role=token_role,
                 coord_soft_targets=(
                     _coord_soft_targets_for_instances(
                         node.descendant_instances,

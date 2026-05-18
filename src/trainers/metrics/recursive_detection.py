@@ -108,6 +108,8 @@ class RecursiveDetectionCEMixin:
         )
         loss = loss_result.loss
         metric_event_logs = flatten_metric_events(loss_result.metric_events)
+        type_gate = getattr(cfg, "type_gate", None)
+        type_gate_enabled = bool(getattr(type_gate, "enabled", False))
 
         reporter = SwiftMetricReporter(self)
 
@@ -138,8 +140,29 @@ class RecursiveDetectionCEMixin:
                     "recursive_detection_ce/coord_soft_ce/config_enabled": float(
                         1.0 if weights.coord_soft_ce is not None else 0.0
                     ),
+                    "recursive_detection_ce/type_gate/config_enabled": float(
+                        1.0 if type_gate_enabled else 0.0
+                    ),
                 }
             )
+            type_gate_weights = getattr(type_gate, "weights", None)
+            if type_gate is not None and type_gate_weights is not None:
+                reporter.update_many(
+                    {
+                        "recursive_detection_ce/type_gate/struct_weight": float(
+                            type_gate_weights.struct
+                        ),
+                        "recursive_detection_ce/type_gate/coord_weight": float(
+                            type_gate_weights.coord
+                        ),
+                        "recursive_detection_ce/type_gate/desc_weight": float(
+                            type_gate_weights.desc
+                        ),
+                        "recursive_detection_ce/type_gate/eos_weight": float(
+                            type_gate_weights.eos
+                        ),
+                    }
+                )
             if weights.coord_soft_ce is not None:
                 coord_soft_ce_updates = {
                     "recursive_detection_ce/coord_soft_ce/is_instance_trie_gaussian": float(
@@ -170,6 +193,24 @@ class RecursiveDetectionCEMixin:
                     coord_soft_ce_updates[
                         "recursive_detection_ce/coord_soft_ce/exact_ce_anchor_weight"
                     ] = 1.0 - float(gaussian_mixture_weight)
+                gaussian_r95_axis_fraction = getattr(
+                    weights.coord_soft_ce,
+                    "gaussian_r95_axis_fraction",
+                    None,
+                )
+                if gaussian_r95_axis_fraction is not None:
+                    coord_soft_ce_updates[
+                        "recursive_detection_ce/coord_soft_ce/gaussian_r95_axis_fraction"
+                    ] = float(gaussian_r95_axis_fraction)
+                gaussian_r95_cap_bins = getattr(
+                    weights.coord_soft_ce,
+                    "gaussian_r95_cap_bins",
+                    None,
+                )
+                if gaussian_r95_cap_bins is not None:
+                    coord_soft_ce_updates[
+                        "recursive_detection_ce/coord_soft_ce/gaussian_r95_cap_bins"
+                    ] = float(gaussian_r95_cap_bins)
                 reporter.update_many(coord_soft_ce_updates)
             reporter.update_many(metric_event_logs)
 

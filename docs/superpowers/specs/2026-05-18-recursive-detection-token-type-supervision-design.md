@@ -1,6 +1,6 @@
 # Recursive Detection Orthogonal Token-Type Supervision Design
 
-Status: draft superpowers design; implementation has not started.
+Status: draft superpowers design; implementation in progress on the feature worktree.
 
 Date: 2026-05-18
 
@@ -17,7 +17,7 @@ src/detection/loss.py
 src/detection/runtime.py
 src/detection/dataset.py
 src/config/schema.py
-configs/stage1/recursive_detection_ce_latest/prod/compact_full_support2_instance_trie_gaussian_softce_a5.yaml
+configs/stage1/recursive_detection_ce_latest/prod/compact_full_support2_instance_trie_focused_cap8_frac0p04_mix0p1.yaml
 tests/test_compact_type_gate.py
 tests/test_recursive_detection_ce_target_builder.py
 tests/test_recursive_detection_ce_loss_adapter.py
@@ -300,4 +300,3 @@ Use TDD. The first failing tests should prove the intended separation:
 - Non-coordinate leakage at coord positions is penalized only by the token-type
   gate, not by coordinate SoftCE.
 - Focused tests pass under `conda run -n ms python -m pytest`.
-

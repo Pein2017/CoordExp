@@ -5,7 +5,7 @@ doc_type: implementation-draft
 status: active-implementation-draft
 domain: training
 summary: Active implementation draft for instance-aware multi-positive Gaussian coordinate SoftCE in compact recursive detection.
-updated: 2026-05-14
+updated: 2026-05-18
 ---
 
 # Instance-Trie Gaussian SoftCE Draft
@@ -19,8 +19,8 @@ workflow, diagnosis/audit review, and branch acceptance complete.
 
 Naming convention: this draft uses the human-facing objective name
 `Instance-Trie Gaussian SoftCE`, the config `target_distribution`
-`instance_trie_gaussian`, the ablation label `A5-instance-trie-gaussian`, the
-config suffix `instance_trie_gaussian_softce_a5`, and the numeric metric flag
+`instance_trie_gaussian`, focused config suffixes such as
+`instance_trie_focused_cap8_frac0p04_mix0p1`, and the numeric metric flag
 `recursive_detection_ce/coord_soft_ce/is_instance_trie_gaussian`. New
 code/config/docs for this objective should not introduce `*_v0`, `v_*`, or
 version-prefixed names. Existing historical names such as `iou_gibbs_v0` may
@@ -49,15 +49,30 @@ The compact recursive detection loss should explicitly separate token groups.
 
 | Token group | Examples | Draft supervision |
 |---|---|---|
-| Schema/control | fixed wrapper and protocol tokens after the entry choice is fixed | hard CE |
-| Description/free text | object description tokens and semantic entry-choice branches | ET-RMP support + balance |
-| Coordinates | `<|coord_*|>` x1/y1/x2/y2 tokens | pure coordinate softCE or hard CE |
+| Schema/control | fixed wrapper, boundary, and protocol tokens | hard CE plus struct/eos type gate |
+| Description/free text | object description tokens and semantic entry-choice branches | hard CE plus trie support/balance at description branch positions plus desc type gate |
+| Coordinates | `<|coord_*|>` x1/y1/x2/y2 tokens | coord type gate plus coord-vocab Gaussian softCE or hard CE |
 
-Important nuance: a special token such as `<|box_start|>` can appear as a trie
-branch when it closes one description while another description continues, for
-example `car <|box_start|>` versus `cart ...`. In that position it participates
-in the entry-choice trie, not in ordinary deterministic schema. Once the entry
-choice is fixed, protocol tokens are schema/control and should be hard CE.
+Important nuance: a special token such as `<|box_start|>` may occur at the same
+serialized prefix depth where another object description could continue, for
+example `car <|box_start|>` versus `cart ...`. The orthogonal objective keeps
+that boundary token structural: the teacher path receives hard CE for
+`<|box_start|>`, while description-continuation ambiguity remains scoped to
+free-text description positions.
+
+## Orthogonal Token-Type Supervision
+
+The active feature-branch objective separates token-type validity from
+coordinate smoothness. Schema/control/boundary tokens use hard CE plus the
+struct/eos type gate. Free-text description tokens use hard CE and, at
+description trie branch positions, support/balance trie CE plus the desc type
+gate. Coordinate tokens use the coord type gate for coordinate-token
+exclusivity and `instance_trie_gaussian` SoftCE over the 1000 coordinate-token
+vocabulary for smooth coordinate supervision.
+
+Coordinate SoftCE should not be interpreted as a full-vocabulary gate. Its
+softmax scope is the coordinate-token vocabulary; full-vocabulary leakage is
+owned by `objective.type_gate`.
 
 ## One-Forward-Pass Instance Trie
 
@@ -138,14 +153,14 @@ w_j = x2_j - x1_j
 h_j = y2_j - y1_j
 ```
 
-Use axis-aware variance:
+Use a focused, axis-aware R95 radius:
 
 ```text
-var_x,j = w_j + 1
-var_y,j = h_j + 1
+R95_x,j = floor(min(gaussian_r95_cap_bins, gaussian_r95_axis_fraction * w_j))
+R95_y,j = floor(min(gaussian_r95_cap_bins, gaussian_r95_axis_fraction * h_j))
 
-sigma_x,j = sqrt(var_x,j)
-sigma_y,j = sqrt(var_y,j)
+sigma_x,j = R95_x,j / 1.96
+sigma_y,j = R95_y,j / 1.96
 ```
 
 Then:
@@ -154,6 +169,11 @@ Then:
 x1 and x2 use sigma_x,j
 y1 and y2 use sigma_y,j
 ```
+
+If `R95_axis = 0`, that candidate contributes an exact one-hot component at its
+candidate coordinate for the current slot. The same exact rule applies to prefix
+compatibility: a previous teacher-forced coordinate either matches the candidate
+coordinate exactly or gives that candidate zero posterior weight.
 
 The initial objective uses uniform candidate priors:
 
@@ -168,7 +188,7 @@ explicitly changes that contract.
 For coordinate bin `k`, candidate `j` contributes:
 
 ```text
-q_j,s(k) proportional to exp(-0.5 * (k - mu_j,s)^2 / var_axis,j)
+q_j,s(k) proportional to exp(-0.5 * (k - mu_j,s)^2 / sigma_axis,j^2)
 ```
 
 where `mu_j,s` is the candidate coordinate for the current slot.
@@ -182,13 +202,11 @@ y1: k < y2_j
 y2: k > y1_j
 ```
 
-This legality mask is not a smoothing truncation policy. It prevents impossible
-boxes. There should be no hand-tuned local radius, no IoU temperature, and no
-min/max sigma clipping in this objective.
-
-In mathematical terms, structural legality is still a candidate-specific mask
-and renormalization. The promise is narrower: no hand-selected finite-radius
-smoothing window is added beyond required box-validity constraints.
+This legality mask is not the smoothing policy. It prevents impossible boxes.
+The smoothing policy is the focused R95 rule above: default
+`gaussian_r95_axis_fraction=0.04`, `gaussian_r95_cap_bins=8`, and
+`gaussian_mixture_weight=0.1`. This replaces the earlier wide
+`sigma = sqrt(axis + 1)` draft behavior.
 
 Normalize each current-slot candidate target distribution over the resolved
 coordinate vocabulary, then compute the slot posterior from previous
@@ -198,7 +216,7 @@ The current-slot target uses a normalized distribution:
 
 ```text
 q_j,t(k) =
-  legal_j,t(k) * exp(-0.5 * (k - c_j,t)^2 / var_j,t) / Z_j,t
+  legal_j,t(k) * exp(-0.5 * (k - c_j,t)^2 / sigma_j,t^2) / Z_j,t
 ```
 
 The prefix compatibility used in `alpha` is deliberately **unnormalized**
@@ -206,7 +224,7 @@ mismatch energy:
 
 ```text
 compat_j,s =
-  exp(-0.5 * (c_s^teacher - c_j,s)^2 / var_j,s)
+  exp(-0.5 * (c_s^teacher - c_j,s)^2 / sigma_j,s^2)
 ```
 
 There is no `1 / sigma` or discrete-normalizer term in prefix compatibility.
@@ -268,25 +286,30 @@ active semantic branch -> coherent object instances -> soft posterior from coord
 The candidate posterior sharpens as the teacher-forced coordinate prefix
 advances, so ambiguous coordinates stay multi-positive only while they remain
 compatible with a coherent object-entry path. Because this objective uses
-untruncated Gaussian tails, this should be read as avoiding a high-probability
-union basin, not as assigning mathematically zero probability to every
-recombination coordinate.
+focused Gaussian tails over structurally legal bins, this should be read as
+avoiding a high-probability union basin, not as assigning mathematically zero
+probability to every recombination coordinate when the radius is nonzero.
 
 ## Feature-Branch Config Surface
 
-The feature-branch successor config is
-`configs/stage1/recursive_detection_ce_latest/prod/compact_full_support2_instance_trie_gaussian_softce_a5.yaml`
-with ablation label `A5-instance-trie-gaussian`. It should avoid exposing
-low-level smoothing knobs:
+The active feature-branch successor configs are:
+
+- main: `configs/stage1/recursive_detection_ce_latest/prod/compact_full_support2_instance_trie_focused_cap8_frac0p04_mix0p1.yaml`
+- slope ablation: `configs/stage1/recursive_detection_ce_latest/prod/compact_full_support2_instance_trie_focused_cap8_frac0p06_mix0p1.yaml`
+- strength ablation: `configs/stage1/recursive_detection_ce_latest/prod/compact_full_support2_instance_trie_focused_cap8_frac0p04_mix0p2.yaml`
+
+The public focused-policy surface is:
 
 ```yaml
 objective:
   coord_soft_ce:
     enabled: true
     target_distribution: instance_trie_gaussian
+    gaussian_mixture_weight: 0.1
+    gaussian_r95_axis_fraction: 0.04
+    gaussian_r95_cap_bins: 8
 ```
 
-For this target, the public surface should be exactly the two fields above.
 Stale knobs from older coordinate-softCE variants must be rejected, including
 `tau`, `tau_source`, `weighting`, `replace_coord_hard_ce`,
 `apply_to_multi_positive`, `sigma`, `truncate`, `target_sigma`, and
@@ -311,7 +334,7 @@ surfaces that protect objective correctness:
 
 - keep Gaussian target construction, posterior weighting, structural legality,
   coordinate-vocabulary mapping, fp32/log-space math, diagnostics, and
-  full-vocabulary coordinate softCE in a pure coordinate target module
+  coord-vocabulary coordinate SoftCE in a pure coordinate target module
 - add an explicit candidate-only `coord_instance_candidates` sidecar for active
   semantic-branch remaining-instance candidates; the sidecar carries instance
   identity and bbox geometry, while the current coordinate slot comes from the
@@ -338,8 +361,12 @@ from recursive text support/balance metrics:
 ```text
 recursive_detection_ce/coord_soft_ce/config_enabled
 recursive_detection_ce/coord_soft_ce/candidate_count
+recursive_detection_ce/coord_soft_ce/gaussian_mixture_weight
+recursive_detection_ce/coord_soft_ce/gaussian_r95_axis_fraction
+recursive_detection_ce/coord_soft_ce/gaussian_r95_cap_bins
 recursive_detection_ce/coord_soft_ce/target_entropy
 recursive_detection_ce/coord_soft_ce/target_std
+recursive_detection_ce/coord_soft_ce/target_r95_radius
 recursive_detection_ce/coord_soft_ce/target_peak_prob
 recursive_detection_ce/coord_soft_ce/effective_coord_bin_count
 recursive_detection_ce/coord_soft_ce/coord_vocab_bin_count
@@ -355,6 +382,10 @@ recursive_detection_ce/coord_soft_ce/x1/posterior_top1
 recursive_detection_ce/coord_soft_ce/y1/posterior_top1
 recursive_detection_ce/coord_soft_ce/x2/posterior_top1
 recursive_detection_ce/coord_soft_ce/y2/posterior_top1
+recursive_detection_ce/coord_soft_ce/x1/target_r95_radius
+recursive_detection_ce/coord_soft_ce/y1/target_r95_radius
+recursive_detection_ce/coord_soft_ce/x2/target_r95_radius
+recursive_detection_ce/coord_soft_ce/y2/target_r95_radius
 ```
 
 `target_distribution` is string provenance and should live in resolved config,
@@ -408,8 +439,8 @@ construction and collation. Do not infer candidates from decoded text.
 ## Non-Goals For The Initial Objective
 
 - no IoU/CIoU energy target
-- no finite-radius Gaussian truncation
-- no temperature, sigma multiplier, or per-dataset threshold knobs
+- no Gaussian support-window truncation beyond structural legality
+- no temperature, raw sigma multiplier, or per-dataset threshold knobs
 - no decoded-box loss
 - no W1 auxiliary objective
 - no duplicated candidate-branch forward pass
@@ -440,5 +471,5 @@ The implementation plan must enforce these invariants with tests:
 11. Prefix compatibility uses unnormalized Gaussian mismatch energy, while
     current-slot coordinate targets are normalized over legal coordinate bins.
 12. Posterior computation never peeks at the current or future coordinate slot.
-13. Coordinate softCE uses full-vocabulary log-softmax before indexing coord
-    tokens, so non-coordinate token leakage is still penalized.
+13. Coordinate SoftCE uses a coordinate-vocabulary softmax; non-coordinate
+    token leakage is penalized by `objective.type_gate`.

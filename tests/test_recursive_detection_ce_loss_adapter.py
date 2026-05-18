@@ -164,6 +164,34 @@ def test_hard_singleton_ce_matches_standard_log_softmax() -> None:
     assert result.per_position_losses[0][2].item() == pytest.approx(expected_second.item())
 
 
+def test_description_trie_loss_adds_teacher_hard_ce_anchor() -> None:
+    target = _branch_target(
+        position=1,
+        teacher_token_id=0,
+        branches=((0, 1), (1, 1)),
+        semantic_role=SemanticRole.DESC_IDENTITY,
+    )
+    target = replace(target, token_role=TokenRole.DESC)
+    logits = torch.tensor([[0.2, 1.4, -0.5]], dtype=torch.float32)
+
+    result = compute_recursive_detection_ce_batch_loss(
+        logits=logits,
+        targets=(_targets(token_targets=(target,)),),
+        weights=RecursiveDetectionLossWeights(support_weight=2.0, balance_weight=1.0),
+    )
+
+    step_log_probs = torch.log_softmax(logits[0], dim=-1)
+    hard_ce = -step_log_probs[0]
+    support_balance = loss_module.support_balance_loss(
+        logits[0],
+        torch.tensor([0, 1], dtype=torch.long),
+        torch.tensor([1.0, 1.0], dtype=torch.float32),
+        support_weight=2.0,
+        balance_weight=1.0,
+    )
+    assert result.loss.item() == pytest.approx((hard_ce + support_balance).item())
+
+
 def test_coord_soft_ce_replaces_hard_coordinate_ce_and_emits_diagnostics() -> None:
     cfg = CoordSoftTargetRuntimeConfig(
         target_distribution="iou_gibbs_v0",
@@ -337,7 +365,7 @@ def test_ce_anchored_instance_trie_gaussian_loss_passes_teacher_coord_value() ->
     assert manual.peak_prob.item() > 0.8
 
 
-def test_instance_trie_gaussian_preserves_desc_support_balance_targets() -> None:
+def test_instance_trie_gaussian_preserves_desc_support_balance_and_adds_hard_ce() -> None:
     cfg = _instance_trie_gaussian_cfg()
     logits = torch.tensor([[1.5, -0.5, 0.25, -1.0], [0.0, 0.0, 0.0, 0.0]])
     target = replace(
@@ -366,8 +394,11 @@ def test_instance_trie_gaussian_preserves_desc_support_balance_targets() -> None
         support_weight=2.0,
         balance_weight=1.0,
     )
+    hard_ce = -torch.log_softmax(logits[0], dim=-1)[0]
 
-    assert result.per_position_losses[0][1].item() == pytest.approx(manual.item())
+    assert result.per_position_losses[0][1].item() == pytest.approx(
+        (manual + hard_ce).item()
+    )
 
 
 def test_instance_trie_gaussian_preserves_entry_choice_support_balance_for_control_like_tokens() -> None:
@@ -755,6 +786,61 @@ def test_instance_trie_gaussian_type_gate_adds_to_pure_coord_softce() -> None:
     )
 
 
+def test_coord_type_gate_penalizes_non_coord_leakage_separately_from_softce() -> None:
+    cfg = CoordSoftTargetRuntimeConfig(
+        target_distribution="instance_trie_gaussian",
+        coord_token_start=10,
+        coord_token_end=1009,
+    )
+    target = _hard_target(
+        position=1,
+        teacher_token_id=110,
+        semantic_role=SemanticRole.BBOX_COORD,
+        token_role=TokenRole.COORD,
+        object_instance_id="obj-0",
+        coord_slot_name="x1",
+        coord_instance_candidates=(
+            CoordInstanceCandidateSpec("obj-0", (100, 100, 160, 220)),
+        ),
+    )
+    gated = replace(
+        target,
+        type_gate_token_ids=tuple(range(10, 1010)),
+        type_gate_weight=0.5,
+    )
+    logits = torch.zeros(1, 1200, dtype=torch.float32)
+    logits[0, 10:1010] = torch.linspace(-1.0, 1.0, steps=1000)
+    baseline = compute_recursive_detection_ce_batch_loss(
+        logits=logits,
+        targets=(_targets(token_targets=(gated,)),),
+        weights=RecursiveDetectionLossWeights(coord_soft_ce=cfg),
+    )
+
+    changed = logits.clone()
+    changed[0, 1100] = 50.0
+    with_non_coord_spike = compute_recursive_detection_ce_batch_loss(
+        logits=changed,
+        targets=(_targets(token_targets=(gated,)),),
+        weights=RecursiveDetectionLossWeights(coord_soft_ce=cfg),
+    )
+    manual_softce = full_vocab_coord_soft_ce(
+        logits[0],
+        (CoordSoftTargetCandidate("obj-0", "x1", (100, 100, 160, 220), 1.0),),
+        cfg,
+        current_slot="x1",
+        teacher_coord_value=100,
+    )
+    changed_log_probs = torch.log_softmax(changed[0], dim=-1)
+    type_gate_loss = 0.5 * (
+        -torch.logsumexp(changed_log_probs[torch.arange(10, 1010)], dim=-1)
+    )
+
+    assert with_non_coord_spike.per_position_losses[0][1].item() == pytest.approx(
+        (manual_softce.weighted_loss + type_gate_loss).item()
+    )
+    assert with_non_coord_spike.per_position_losses[0][1].item() > baseline.loss.item()
+
+
 def test_instance_trie_gaussian_emits_slot_specific_posterior_metrics() -> None:
     cfg = _instance_trie_gaussian_cfg()
     logits = torch.zeros((2, 1020), dtype=torch.float32)
@@ -806,6 +892,12 @@ def test_instance_trie_gaussian_emits_slot_specific_posterior_metrics() -> None:
     assert reduced["recursive_detection_ce/coord_soft_ce/x2/target_peak_prob"] == pytest.approx(
         manual.peak_prob.item()
     )
+    assert reduced[
+        "recursive_detection_ce/coord_soft_ce/x2/target_r95_radius"
+    ] == pytest.approx(manual.target_r95_radius.item())
+    assert reduced[
+        "recursive_detection_ce/coord_soft_ce/target_r95_radius"
+    ] == pytest.approx(manual.target_r95_radius.item())
     assert reduced["recursive_detection_ce/coord_soft_ce/weighted_loss"] == pytest.approx(
         manual.weighted_loss.item()
     )

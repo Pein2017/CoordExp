@@ -1,0 +1,34 @@
+# A6 focused/conservative coordinate SoftCE strength ablation.
+#
+# Purpose: keep the focused cap8 / 4% coordinate tolerance fixed while making
+# the SoftCE component strong enough to examine its contribution. Coordinate
+# hard CE is replaced by the coordinate SoftCE target; within that target this
+# sets a balanced 50% exact-anchor / 50% focused-Gaussian mixture.
+extends:
+  - ./compact_full_support2.yaml
+
+training:
+  save_model_only: true
+  artifact_subdir: compact_full_et_rmp_instance_trie_focused_cap8_frac0p04_mix0p5_a6_support2_bsz16_8gpu_4epoch_tokenrows_v2
+  run_name: compact-full-et-rmp-instance-trie-focused-cap8-frac0p04-mix0p5-a6-support2-bsz16-8gpu-4epoch-tokenrows-v2
+
+objective:
+  type_gate:
+    enabled: true
+    mode: allowed_type_mass
+    weights:
+      struct: 1.0
+      desc: 1.0
+      coord: 1.0
+      eos: 0.5
+  coord_soft_ce:
+    enabled: true
+    target_distribution: instance_trie_gaussian
+    gaussian_mixture_weight: 0.5
+    gaussian_r95_axis_fraction: 0.04
+    gaussian_r95_cap_bins: 8
+
+experiment:
+  surface: ablation
+  ablation_id: a6_cap8_frac0p04_mix0p5
+  claim_scope: none

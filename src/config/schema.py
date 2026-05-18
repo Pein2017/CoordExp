@@ -3952,7 +3952,9 @@ class CoordSoftCEConfig:
 @dataclass(frozen=True)
 class InstanceTrieGaussianCoordSoftCEConfig(CoordSoftCEConfig):
     target_distribution: Literal["instance_trie_gaussian"]
-    gaussian_mixture_weight: float = 1.0
+    gaussian_mixture_weight: float = 0.1
+    gaussian_r95_axis_fraction: float = 0.04
+    gaussian_r95_cap_bins: int = 8
 
     def __post_init__(self) -> None:
         super().__post_init__()
@@ -3974,6 +3976,30 @@ class InstanceTrieGaussianCoordSoftCEConfig(CoordSoftCEConfig):
         if not 0.0 <= float(self.gaussian_mixture_weight) <= 1.0:
             raise ValueError(
                 "objective.coord_soft_ce.gaussian_mixture_weight must be within [0, 1]"
+            )
+        if not isinstance(self.gaussian_r95_axis_fraction, (int, float)) or isinstance(
+            self.gaussian_r95_axis_fraction, bool
+        ):
+            raise TypeError(
+                "objective.coord_soft_ce.gaussian_r95_axis_fraction must be numeric"
+            )
+        if (
+            not math.isfinite(float(self.gaussian_r95_axis_fraction))
+            or float(self.gaussian_r95_axis_fraction) <= 0.0
+            or float(self.gaussian_r95_axis_fraction) > 1.0
+        ):
+            raise ValueError(
+                "objective.coord_soft_ce.gaussian_r95_axis_fraction must be finite and within (0, 1]"
+            )
+        if not isinstance(self.gaussian_r95_cap_bins, int) or isinstance(
+            self.gaussian_r95_cap_bins, bool
+        ):
+            raise TypeError(
+                "objective.coord_soft_ce.gaussian_r95_cap_bins must be an integer"
+            )
+        if int(self.gaussian_r95_cap_bins) < 0 or int(self.gaussian_r95_cap_bins) > 999:
+            raise ValueError(
+                "objective.coord_soft_ce.gaussian_r95_cap_bins must be within [0, 999]"
             )
 
 @dataclass(frozen=True)
@@ -4148,7 +4174,7 @@ class DetectionObjectiveConfig:
         else:
             unexpected = [
                 name
-                for name in ("rollin", "target", "boundary", "type_gate", "eos")
+                for name in ("rollin", "target", "boundary", "eos")
                 if getattr(self, name) is not None
             ]
             if unexpected:
@@ -4156,6 +4182,14 @@ class DetectionObjectiveConfig:
                     "objectized objective sections are only supported for "
                     "objective.variant=prefix_rollin_et_rmp_ce: "
                     f"{unexpected}"
+                )
+            if (
+                self.type_gate is not None
+                and self.variant != "random_permutation_et_rmp_ce"
+            ):
+                raise ValueError(
+                    "objective.type_gate is only supported for latest "
+                    "recursive_detection_ce ET-RMP variants"
                 )
         if self.id == "sft" and self.variant not in {"sorted_sft", "random_order_sft"}:
             raise ValueError("objective.id=sft requires an SFT objective.variant")

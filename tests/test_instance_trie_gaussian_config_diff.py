@@ -15,45 +15,53 @@ CONFIG_ROOT = REPO_ROOT / "configs/stage1/recursive_detection_ce_latest"
 BASE_CONFIG = CONFIG_ROOT / "prod/compact_full_support2.yaml"
 PROD_CONFIG = (
     CONFIG_ROOT
-    / "prod/compact_full_support2_instance_trie_gaussian_softce_a5.yaml"
+    / "prod/compact_full_support2_instance_trie_focused_cap8_frac0p04_mix0p1.yaml"
 )
-CE_GAUSSIAN_MIX_PROD_CONFIG = (
+SLOPE_PROD_CONFIG = (
     CONFIG_ROOT
-    / "prod/compact_full_support2_ce_gaussian_mix0p2_a6.yaml"
+    / "prod/compact_full_support2_instance_trie_focused_cap8_frac0p06_mix0p1.yaml"
 )
-CE_GAUSSIAN_MIX_EQUAL_PROD_CONFIG = (
+STRENGTH_PROD_CONFIG = (
     CONFIG_ROOT
-    / "prod/compact_full_support2_ce_gaussian_mix0p5_a7.yaml"
+    / "prod/compact_full_support2_instance_trie_focused_cap8_frac0p04_mix0p2.yaml"
 )
 TINY_CONFIG = (
     CONFIG_ROOT
-    / "smoke/compact_full_support2_instance_trie_gaussian_softce_a5_tiny.yaml"
+    / "smoke/compact_full_support2_instance_trie_focused_cap8_frac0p04_mix0p1_tiny.yaml"
 )
-CE_GAUSSIAN_MIX_TINY_CONFIG = (
+SLOPE_TINY_CONFIG = (
     CONFIG_ROOT
-    / "smoke/compact_full_support2_ce_gaussian_mix0p2_a6_tiny.yaml"
+    / "smoke/compact_full_support2_instance_trie_focused_cap8_frac0p06_mix0p1_tiny.yaml"
 )
-CE_GAUSSIAN_MIX_EQUAL_TINY_CONFIG = (
+STRENGTH_TINY_CONFIG = (
     CONFIG_ROOT
-    / "smoke/compact_full_support2_ce_gaussian_mix0p5_a7_tiny.yaml"
+    / "smoke/compact_full_support2_instance_trie_focused_cap8_frac0p04_mix0p2_tiny.yaml"
 )
 DDP8_CONFIG = (
     CONFIG_ROOT
-    / "smoke/compact_full_support2_instance_trie_gaussian_softce_a5_ddp8_preflight.yaml"
+    / "smoke/compact_full_support2_instance_trie_focused_cap8_frac0p04_mix0p1_ddp8_preflight.yaml"
 )
-CE_GAUSSIAN_MIX_DDP8_CONFIG = (
+SLOPE_DDP8_CONFIG = (
     CONFIG_ROOT
-    / "smoke/compact_full_support2_ce_gaussian_mix0p2_a6_ddp8_preflight.yaml"
+    / "smoke/compact_full_support2_instance_trie_focused_cap8_frac0p06_mix0p1_ddp8_preflight.yaml"
 )
-CE_GAUSSIAN_MIX_EQUAL_DDP8_CONFIG = (
+STRENGTH_DDP8_CONFIG = (
     CONFIG_ROOT
-    / "smoke/compact_full_support2_ce_gaussian_mix0p5_a7_ddp8_preflight.yaml"
+    / "smoke/compact_full_support2_instance_trie_focused_cap8_frac0p04_mix0p2_ddp8_preflight.yaml"
 )
 
 PROD_ALLOWED_CHANGED_PATHS = {
     "/objective/coord_soft_ce/enabled",
     "/objective/coord_soft_ce/target_distribution",
     "/objective/coord_soft_ce/gaussian_mixture_weight",
+    "/objective/coord_soft_ce/gaussian_r95_axis_fraction",
+    "/objective/coord_soft_ce/gaussian_r95_cap_bins",
+    "/objective/type_gate/enabled",
+    "/objective/type_gate/mode",
+    "/objective/type_gate/weights/struct",
+    "/objective/type_gate/weights/desc",
+    "/objective/type_gate/weights/coord",
+    "/objective/type_gate/weights/eos",
     "/training/run_name",
     "/training/artifact_subdir",
     "/training/save_model_only",
@@ -151,14 +159,14 @@ def _changed_paths(left: Any, right: Any, parent: str = "") -> set[str]:
     ("config_path", "allowed_paths"),
     [
         (PROD_CONFIG, PROD_ALLOWED_CHANGED_PATHS),
-        (CE_GAUSSIAN_MIX_PROD_CONFIG, PROD_ALLOWED_CHANGED_PATHS),
-        (CE_GAUSSIAN_MIX_EQUAL_PROD_CONFIG, PROD_ALLOWED_CHANGED_PATHS),
+        (SLOPE_PROD_CONFIG, PROD_ALLOWED_CHANGED_PATHS),
+        (STRENGTH_PROD_CONFIG, PROD_ALLOWED_CHANGED_PATHS),
         (TINY_CONFIG, TINY_ALLOWED_CHANGED_PATHS),
-        (CE_GAUSSIAN_MIX_TINY_CONFIG, TINY_ALLOWED_CHANGED_PATHS),
-        (CE_GAUSSIAN_MIX_EQUAL_TINY_CONFIG, TINY_ALLOWED_CHANGED_PATHS),
+        (SLOPE_TINY_CONFIG, TINY_ALLOWED_CHANGED_PATHS),
+        (STRENGTH_TINY_CONFIG, TINY_ALLOWED_CHANGED_PATHS),
         (DDP8_CONFIG, DDP8_ALLOWED_CHANGED_PATHS),
-        (CE_GAUSSIAN_MIX_DDP8_CONFIG, DDP8_ALLOWED_CHANGED_PATHS),
-        (CE_GAUSSIAN_MIX_EQUAL_DDP8_CONFIG, DDP8_ALLOWED_CHANGED_PATHS),
+        (SLOPE_DDP8_CONFIG, DDP8_ALLOWED_CHANGED_PATHS),
+        (STRENGTH_DDP8_CONFIG, DDP8_ALLOWED_CHANGED_PATHS),
     ],
 )
 def test_instance_trie_gaussian_configs_only_change_whitelisted_paths(
@@ -174,33 +182,39 @@ def test_instance_trie_gaussian_configs_only_change_whitelisted_paths(
     coord_soft_ce = candidate["objective"]["coord_soft_ce"]
     assert coord_soft_ce["enabled"] is True
     assert coord_soft_ce["target_distribution"] == "instance_trie_gaussian"
-    if "ce_gaussian_mix0p2_a6" in config_path.name:
+    type_gate = candidate["objective"]["type_gate"]
+    assert type_gate["enabled"] is True
+    assert type_gate["mode"] == "allowed_type_mass"
+    assert type_gate["weights"] == {
+        "struct": 1.0,
+        "desc": 1.0,
+        "coord": 1.0,
+        "eos": 0.5,
+    }
+    assert coord_soft_ce["gaussian_r95_cap_bins"] == 8
+    if "frac0p06_mix0p1" in config_path.name:
+        assert coord_soft_ce["gaussian_mixture_weight"] == pytest.approx(0.1)
+        assert coord_soft_ce["gaussian_r95_axis_fraction"] == pytest.approx(0.06)
+        assert candidate["experiment"]["ablation_id"] == "cap8_frac0p06_mix0p1"
+        assert "cap8-frac0p06-mix0p1" in candidate["training"]["run_name"]
+        assert "cap8_frac0p06_mix0p1" in candidate["training"]["artifact_subdir"]
+    elif "frac0p04_mix0p2" in config_path.name:
         assert coord_soft_ce["gaussian_mixture_weight"] == pytest.approx(0.2)
-        assert candidate["experiment"]["ablation_id"] == "A6-ce-gaussian-mix0p2"
-        assert "ce-gaussian-mix0p2-a6" in candidate["training"]["run_name"]
-        assert (
-            "ce_gaussian_mix0p2_a6"
-            in candidate["training"]["artifact_subdir"]
-        )
-    elif "ce_gaussian_mix0p5_a7" in config_path.name:
-        assert coord_soft_ce["gaussian_mixture_weight"] == pytest.approx(0.5)
-        assert candidate["experiment"]["ablation_id"] == "A7-ce-gaussian-mix0p5"
-        assert "ce-gaussian-mix0p5-a7" in candidate["training"]["run_name"]
-        assert (
-            "ce_gaussian_mix0p5_a7"
-            in candidate["training"]["artifact_subdir"]
-        )
+        assert coord_soft_ce["gaussian_r95_axis_fraction"] == pytest.approx(0.04)
+        assert candidate["experiment"]["ablation_id"] == "cap8_frac0p04_mix0p2"
+        assert "cap8-frac0p04-mix0p2" in candidate["training"]["run_name"]
+        assert "cap8_frac0p04_mix0p2" in candidate["training"]["artifact_subdir"]
     else:
         assert coord_soft_ce == {
             "enabled": True,
             "target_distribution": "instance_trie_gaussian",
+            "gaussian_mixture_weight": 0.1,
+            "gaussian_r95_axis_fraction": 0.04,
+            "gaussian_r95_cap_bins": 8,
         }
-        assert candidate["experiment"]["ablation_id"] == "A5-instance-trie-gaussian"
-        assert "instance_trie_gaussian_softce_a5" in candidate["training"]["run_name"]
-        assert (
-            "instance_trie_gaussian_softce_a5"
-            in candidate["training"]["artifact_subdir"]
-        )
+        assert candidate["experiment"]["ablation_id"] == "cap8_frac0p04_mix0p1"
+        assert "cap8-frac0p04-mix0p1" in candidate["training"]["run_name"]
+        assert "cap8_frac0p04_mix0p1" in candidate["training"]["artifact_subdir"]
 
 
 def test_instance_trie_gaussian_prod_keeps_fair_comparison_surfaces_equal() -> None:

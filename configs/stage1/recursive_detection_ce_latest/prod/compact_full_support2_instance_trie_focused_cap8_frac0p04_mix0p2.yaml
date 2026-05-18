@@ -1,0 +1,31 @@
+# Focused cap8/4%/mix0.2 strength ablation config. This preserves the main
+# focused R95 geometry and increases the Gaussian component weight.
+extends:
+  - ./compact_full_support2.yaml
+
+training:
+  save_model_only: true
+  artifact_subdir: compact_full_et_rmp_instance_trie_focused_cap8_frac0p04_mix0p2_support2_bsz16_8gpu_4epoch_tokenrows_v2
+  run_name: compact-full-et-rmp-instance-trie-focused-cap8-frac0p04-mix0p2-support2-bsz16-8gpu-4epoch-tokenrows-v2
+
+objective:
+  type_gate:
+    enabled: true
+    mode: allowed_type_mass
+    weights:
+      struct: 1.0
+      desc: 1.0
+      coord: 1.0
+      eos: 0.5
+  coord_soft_ce:
+    enabled: true
+    target_distribution: instance_trie_gaussian
+    gaussian_mixture_weight: 0.2
+    gaussian_r95_axis_fraction: 0.04
+    gaussian_r95_cap_bins: 8
+
+experiment:
+  surface: ablation
+  ablation_id: cap8_frac0p04_mix0p2
+  claim_scope: none
+

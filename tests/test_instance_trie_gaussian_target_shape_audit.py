@@ -17,7 +17,7 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 CONFIG_PATH = (
     REPO_ROOT
     / "configs/stage1/recursive_detection_ce_latest/smoke/"
-    "compact_full_support2_instance_trie_gaussian_softce_a5_tiny.yaml"
+    "compact_full_support2_instance_trie_focused_cap8_frac0p04_mix0p1_tiny.yaml"
 )
 REQUIRED_METRIC_KEYS = {
     "candidate_count",
@@ -26,6 +26,7 @@ REQUIRED_METRIC_KEYS = {
     "posterior_top1",
     "target_entropy",
     "target_peak_prob",
+    "target_r95_radius",
     "target_std",
     "union_coordinate_probability_ratio",
     "component_mass_by_candidate_id",
@@ -47,6 +48,9 @@ def test_build_audit_artifact_schema_and_required_synthetic_fixtures() -> None:
     )
 
     assert artifact["target_distribution"] == "instance_trie_gaussian"
+    assert artifact["gaussian_mixture_weight"] == pytest.approx(0.1)
+    assert artifact["gaussian_r95_axis_fraction"] == pytest.approx(0.04)
+    assert artifact["gaussian_r95_cap_bins"] == 8
     assert artifact["config_path"] == str(CONFIG_PATH)
     assert artifact["summary"] == {
         "teacher_candidate_missing_count": 0,

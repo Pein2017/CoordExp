@@ -1,10 +1,10 @@
 extends:
-  - ../prod/compact_full_support2_ce_gaussian_mix0p2_a6.yaml
+  - ../prod/compact_full_support2_instance_trie_focused_cap8_frac0p04_mix0p1.yaml
   - ./common_prodlike.yaml
 
 training:
-  artifact_subdir: compact_full_ce_gaussian_mix0p2_a6_ddp8_preflight
-  run_name: smoke-compact-full-ce-gaussian-mix0p2-a6-ddp8-preflight
+  artifact_subdir: compact_full_instance_trie_focused_cap8_frac0p04_mix0p1_ddp8_preflight
+  run_name: smoke-compact-full-instance-trie-focused-cap8-frac0p04-mix0p1-ddp8-preflight
   max_steps: 4
   eval_strategy: steps
   eval_steps: 1
@@ -19,5 +19,6 @@ debug:
 
 experiment:
   surface: smoke
-  ablation_id: A6-ce-gaussian-mix0p2
+  ablation_id: cap8_frac0p04_mix0p1
   claim_scope: smoke
+

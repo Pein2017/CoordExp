@@ -36,6 +36,7 @@ REQUIRED_METRIC_KEYS = (
     "posterior_top1",
     "target_entropy",
     "target_peak_prob",
+    "target_r95_radius",
     "target_std",
     "union_coordinate_probability_ratio",
     "component_mass_by_candidate_id",
@@ -91,6 +92,7 @@ def audit_slot(
         "posterior_top1": _round_float(target.posterior_top1),
         "target_entropy": _round_float(target.entropy),
         "target_peak_prob": _round_float(target.peak_prob),
+        "target_r95_radius": _round_float(target.target_r95_radius),
         "target_std": _round_float(target.std),
         "union_coordinate_probability_ratio": _round_float(union_ratio),
         "component_mass_by_candidate_id": component_mass,
@@ -112,6 +114,9 @@ def build_audit_artifact(
     ]
     artifact = {
         "target_distribution": "instance_trie_gaussian",
+        "gaussian_mixture_weight": float(runtime_cfg.gaussian_mixture_weight),
+        "gaussian_r95_axis_fraction": float(runtime_cfg.gaussian_r95_axis_fraction),
+        "gaussian_r95_cap_bins": int(runtime_cfg.gaussian_r95_cap_bins),
         "config_path": str(resolved_config_path),
         "synthetic_fixtures": synthetic_fixtures,
         "real_probe_records": _build_real_probe_records(

@@ -45,6 +45,84 @@ def test_large_bbox_gaussian_is_broader_than_tiny_bbox() -> None:
     assert large_target.peak_prob.item() < tiny_target.peak_prob.item()
 
 
+def test_focused_policy_makes_tiny_axis_exact_one_hot() -> None:
+    tiny = _candidate("tiny", "x1", (100, 100, 110, 200))
+
+    target = build_coord_soft_target((tiny,), _cfg())
+
+    assert target.target_r95_radius.item() == pytest.approx(0.0)
+    assert target.std.item() == pytest.approx(0.0)
+    assert target.entropy.item() == pytest.approx(0.0)
+    assert target.peak_prob.item() == pytest.approx(1.0)
+    assert _prob_at(target, 100) == pytest.approx(1.0)
+    assert target.probs.sum().item() == pytest.approx(1.0)
+
+
+def test_focused_policy_fraction_changes_axis_100_target_shape() -> None:
+    candidate = _candidate("box", "x1", (100, 100, 200, 240))
+    frac4_cfg = CoordSoftTargetRuntimeConfig(
+        target_distribution="instance_trie_gaussian",
+        coord_token_start=10,
+        coord_token_end=1009,
+        gaussian_r95_axis_fraction=0.04,
+        gaussian_r95_cap_bins=8,
+    )
+    frac6_cfg = CoordSoftTargetRuntimeConfig(
+        target_distribution="instance_trie_gaussian",
+        coord_token_start=10,
+        coord_token_end=1009,
+        gaussian_r95_axis_fraction=0.06,
+        gaussian_r95_cap_bins=8,
+    )
+
+    frac4 = build_coord_soft_target((candidate,), frac4_cfg)
+    frac6 = build_coord_soft_target((candidate,), frac6_cfg)
+
+    assert frac4.target_r95_radius.item() == pytest.approx(4.0)
+    assert frac6.target_r95_radius.item() == pytest.approx(6.0)
+    assert frac6.std.item() > frac4.std.item()
+    assert frac6.entropy.item() > frac4.entropy.item()
+    assert frac6.peak_prob.item() < frac4.peak_prob.item()
+
+
+def test_focused_policy_caps_large_axis_at_r95_eight_bins() -> None:
+    large = _candidate("large", "x1", (100, 100, 900, 240))
+
+    target = build_coord_soft_target((large,), _cfg())
+
+    assert target.target_r95_radius.item() == pytest.approx(8.0)
+    assert target.std.item() == pytest.approx(8.0 / 1.96, rel=0.03)
+    assert target.std.item() < (801.0**0.5) / 3.0
+
+
+def test_focused_cap8_distribution_is_sharper_than_previous_wide_span() -> None:
+    medium = _candidate("medium", "x1", (100, 100, 356, 240))
+
+    target = build_coord_soft_target((medium,), _cfg())
+    previous_wide_std = ((356 - 100) + 1) ** 0.5
+
+    assert target.target_r95_radius.item() == pytest.approx(8.0)
+    assert target.std.item() < previous_wide_std / 3.0
+    assert target.entropy.item() < 3.0
+
+
+def test_prefix_compatibility_uses_focused_exact_radius_for_tiny_axis() -> None:
+    aligned = _candidate("aligned", "x2", (100, 100, 110, 200))
+    shifted = _candidate("shifted", "x2", (101, 100, 111, 200))
+
+    target = build_coord_soft_target(
+        (aligned, shifted),
+        _cfg(),
+        current_slot="x2",
+        teacher_prefix_values={"x1": 100},
+        return_components=True,
+    )
+
+    assert target.posterior["aligned"].item() == pytest.approx(1.0)
+    assert target.posterior["shifted"].item() == pytest.approx(0.0)
+    assert target.target_r95_radius.item() == pytest.approx(0.0)
+
+
 def test_x1_mixture_has_separate_peaks_and_union_midpoint_valley() -> None:
     left = _candidate("left", "x1", (100, 100, 150, 200))
     right = _candidate("right", "x1", (800, 100, 850, 200))
@@ -267,15 +345,14 @@ def test_structural_legality_masks_invalid_bins_and_validation_errors() -> None:
         (candidate,),
         _cfg(),
         current_slot="x2",
-        teacher_prefix_values={"x1": 5},
+        teacher_prefix_values={"x1": 3},
     )
 
     assert target.probs[:4].sum().item() == pytest.approx(0.0)
     assert target.support_mask[:4].sum().item() == 0
     assert target.support_mask[4].item() is True
     assert target.support_mask[5].item() is True
-    assert target.probs[4].item() > 0.0
-    assert target.probs[5].item() > 0.0
+    assert target.probs[8].item() == pytest.approx(1.0)
     assert target.probs.sum().item() == pytest.approx(1.0)
 
     with pytest.raises(ValueError, match="valid token-space xyxy"):
@@ -286,7 +363,7 @@ def test_structural_legality_masks_invalid_bins_and_validation_errors() -> None:
         _candidate("bad-domain", "x1", (-1, 1, 8, 9))
 
 
-def test_full_vocab_coord_soft_ce_ignores_weights_and_uses_full_vocab_pressure() -> None:
+def test_full_vocab_coord_soft_ce_ignores_weights_and_uses_coord_vocab_pressure() -> None:
     candidate = _candidate("box", "x1", (3, 1, 8, 9))
     cfg = _cfg()
     logits = torch.zeros((1020,), dtype=torch.float32)
@@ -308,21 +385,70 @@ def test_full_vocab_coord_soft_ce_ignores_weights_and_uses_full_vocab_pressure()
         support_weight=0.0,
         balance_weight=100.0,
     )
-    manual = -(
-        dist.probs * F.log_softmax(logits, dim=-1).index_select(0, dist.token_ids)
-    ).sum()
-    coord_only_wrong = -(
+    coord_vocab_manual = -(
         dist.probs
         * F.log_softmax(logits.index_select(0, dist.token_ids), dim=-1)
     ).sum()
 
-    assert result.weighted_loss.item() == pytest.approx(manual.item())
-    assert differently_weighted.weighted_loss.item() == pytest.approx(manual.item())
-    assert result.weighted_loss.item() > coord_only_wrong.item() + 10.0
+    assert result.weighted_loss.item() == pytest.approx(coord_vocab_manual.item())
+    assert differently_weighted.weighted_loss.item() == pytest.approx(
+        coord_vocab_manual.item()
+    )
+
+
+def test_instance_trie_gaussian_softce_ignores_non_coord_logits() -> None:
+    cfg = _cfg()
+    candidate = _candidate("box", "x1", (100, 100, 160, 220))
+    logits = torch.zeros(1200, dtype=torch.float32)
+    logits[10:1010] = torch.linspace(-1.0, 1.0, steps=1000)
+    baseline = full_vocab_coord_soft_ce(
+        logits,
+        (candidate,),
+        cfg,
+        current_slot="x1",
+        teacher_coord_value=100,
+    )
+
+    changed = logits.clone()
+    changed[1100] = 50.0
+    with_non_coord_spike = full_vocab_coord_soft_ce(
+        changed,
+        (candidate,),
+        cfg,
+        current_slot="x1",
+        teacher_coord_value=100,
+    )
+
+    assert with_non_coord_spike.weighted_loss.item() == pytest.approx(
+        baseline.weighted_loss.item()
+    )
+
+
+def test_instance_trie_gaussian_support_mass_uses_structural_support_mask() -> None:
+    cfg = CoordSoftTargetRuntimeConfig(
+        target_distribution="instance_trie_gaussian",
+        coord_token_start=10,
+        coord_token_end=1009,
+        gaussian_mixture_weight=0.1,
+    )
+    candidate = _candidate("box", "x1", (100, 100, 160, 220))
+    logits = torch.zeros(1200, dtype=torch.float32)
+    logits[cfg.coord_value_to_token_id(900)] = 20.0
+
+    result = full_vocab_coord_soft_ce(
+        logits,
+        (candidate,),
+        cfg,
+        current_slot="x1",
+        teacher_coord_value=100,
+    )
+
+    assert result.support_mass.item() < 0.01
+    assert result.outside_support_mass.item() > 0.99
 
 
 def test_full_vocab_coord_soft_ce_can_anchor_gaussian_with_exact_ce_mass() -> None:
-    candidate = _candidate("box", "x1", (3, 1, 8, 9))
+    candidate = _candidate("box", "x1", (100, 1, 200, 9))
     cfg = CoordSoftTargetRuntimeConfig(
         target_distribution="instance_trie_gaussian",
         coord_token_start=10,
@@ -330,25 +456,26 @@ def test_full_vocab_coord_soft_ce_can_anchor_gaussian_with_exact_ce_mass() -> No
         gaussian_mixture_weight=0.2,
     )
     logits = torch.zeros((1020,), dtype=torch.float32)
-    logits[13] = 2.0
-    logits[14] = 1.0
+    logits[110] = 2.0
+    logits[111] = 1.0
 
     gaussian_dist = build_coord_soft_target((candidate,), _cfg())
     result = full_vocab_coord_soft_ce(
         logits,
         (candidate,),
         cfg,
-        teacher_coord_value=3,
+        teacher_coord_value=100,
     )
-    coord_log_probs = F.log_softmax(logits, dim=-1).index_select(
-        0, gaussian_dist.token_ids
+    coord_log_probs = F.log_softmax(
+        logits.index_select(0, gaussian_dist.token_ids),
+        dim=-1,
     )
     expected_probs = gaussian_dist.probs * 0.2
-    expected_probs[3] += 0.8
+    expected_probs[100] += 0.8
     expected_loss = -(expected_probs * coord_log_probs).sum()
 
     assert expected_probs.sum().item() == pytest.approx(1.0)
-    assert result.peak_prob.item() == pytest.approx(expected_probs[3].item())
+    assert result.peak_prob.item() == pytest.approx(expected_probs[100].item())
     assert result.weighted_loss.item() == pytest.approx(expected_loss.item())
     assert result.target_entropy.item() < gaussian_dist.entropy.item()
 

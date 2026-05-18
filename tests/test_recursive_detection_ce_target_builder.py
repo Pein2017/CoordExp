@@ -97,6 +97,12 @@ class SpecialTokenAwareTokenizer:
     def token_text(self, token_id: int) -> str:
         return self._id_to_token[token_id]
 
+    def convert_tokens_to_ids(self, token: str) -> int:
+        return self.token_id(token)
+
+    def get_vocab(self) -> dict[str, int]:
+        return dict(self._token_to_id)
+
 
 def _object(
     *,
@@ -221,6 +227,55 @@ def test_compact_shared_object_ref_is_hard_ce_and_first_desc_divergence_is_multi
     assert sum(desc_target.child_probabilities) == pytest.approx(1.0)
 
 
+def test_random_permutation_type_gate_attaches_allowed_type_ids() -> None:
+    tokenizer = SpecialTokenAwareTokenizer()
+    sample = _sample(
+        _object(
+            normalized_index=0,
+            source_index=7,
+            instance_id="img-9:ann-1201:src-7",
+            desc="cat",
+            coords=("<|coord_10|>", "<|coord_20|>", "<|coord_30|>", "<|coord_40|>"),
+        ),
+        _object(
+            normalized_index=1,
+            source_index=3,
+            instance_id="img-9:ann-1202:src-3",
+            desc="dog",
+            coords=("<|coord_100|>", "<|coord_200|>", "<|coord_300|>", "<|coord_400|>"),
+        ),
+    )
+
+    prepared = prepare_detection_training_example(
+        sample,
+        template=CompactFullTemplate(),
+        tokenizer=tokenizer,
+        mode="random_permutation_et_rmp_ce",
+        type_gate_config={
+            "enabled": True,
+            "weights": {
+                "struct": 1.0,
+                "coord": 1.0,
+                "desc": 1.0,
+                "eos": 0.5,
+            },
+        },
+    )
+    first_entry = prepared.tokenized.object_entries[0]
+    targets = _target_map(prepared)
+
+    object_ref_target = targets[first_entry.object_ref_start_span.start]
+    desc_target = targets[first_entry.desc_span.start]
+    coord_target = targets[first_entry.coord_spans[0].start]
+
+    assert object_ref_target.type_gate_weight == pytest.approx(1.0)
+    assert desc_target.type_gate_weight == pytest.approx(1.0)
+    assert coord_target.type_gate_weight == pytest.approx(1.0)
+    assert object_ref_target.teacher_token_id in object_ref_target.type_gate_token_ids
+    assert desc_target.teacher_token_id in desc_target.type_gate_token_ids
+    assert coord_target.teacher_token_id in coord_target.type_gate_token_ids
+
+
 def test_compact_same_desc_diverges_at_first_coordinate_token() -> None:
     tokenizer = SpecialTokenAwareTokenizer()
     sample = _sample(
@@ -255,13 +310,10 @@ def test_compact_same_desc_diverges_at_first_coordinate_token() -> None:
     assert _token_texts(tokenizer, bbox_start_target.valid_token_ids) == (BOX_START_TOKEN,)
 
     first_coord_target = targets[first_entry.coord_spans[0].start]
-    assert first_coord_target.kind == "trie_multi_positive"
+    assert first_coord_target.kind == "hard_ce"
     assert first_coord_target.token_role is TokenRole.COORD
-    assert _token_texts(tokenizer, first_coord_target.valid_token_ids) == (
-        "<|coord_10|>",
-        "<|coord_100|>",
-    )
-    assert first_coord_target.child_multiplicities == (1, 1)
+    assert _token_texts(tokenizer, first_coord_target.valid_token_ids) == ("<|coord_10|>",)
+    assert first_coord_target.child_multiplicities == (1,)
     assert tuple(
         (spec.object_instance_id, spec.slot_name, spec.bbox_xyxy)
         for spec in first_coord_target.coord_soft_targets
@@ -560,9 +612,9 @@ def test_compact_trie_coordinate_soft_ce_uses_coord_metadata_not_semantic_atom()
     assert prepared.recursive_detection_targets is not None
     first_entry = prepared.tokenized.object_entries[0]
     first_coord_target = _target_map(prepared)[first_entry.coord_spans[0].start]
-    assert first_coord_target.kind == "trie_multi_positive"
+    assert first_coord_target.kind == "hard_ce"
     assert first_coord_target.token_role is TokenRole.COORD
-    assert first_coord_target.semantic_role.value == "entry_trie_decision"
+    assert first_coord_target.semantic_role.value == "bbox_coord"
 
     cfg = CoordSoftTargetRuntimeConfig(
         target_distribution="iou_gibbs_v0",
@@ -601,7 +653,7 @@ def test_compact_trie_coordinate_soft_ce_uses_coord_metadata_not_semantic_atom()
         prepared.recursive_detection_targets,
         token_targets=(first_coord_target,),
         loss_atoms=tuple(
-            atom
+            replace(atom, token_positions=(first_coord_target.position,))
             for atom in prepared.recursive_detection_targets.loss_atoms
             if first_coord_target.position in atom.token_positions
         ),
@@ -629,7 +681,7 @@ def test_compact_trie_coordinate_soft_ce_uses_coord_metadata_not_semantic_atom()
     )
 
 
-def test_desc_prefix_collision_allows_box_start_as_trie_child() -> None:
+def test_structural_box_start_stays_hard_ce_when_description_prefix_branches() -> None:
     tokenizer = SpecialTokenAwareTokenizer()
     sample = _sample(
         _object(
@@ -659,13 +711,12 @@ def test_desc_prefix_collision_allows_box_start_as_trie_child() -> None:
     targets = _target_map(prepared)
 
     bbox_start_target = targets[first_entry.bbox_start_span.start]
-    assert bbox_start_target.kind == "trie_multi_positive"
+    assert bbox_start_target.kind == "hard_ce"
     assert bbox_start_target.token_role is TokenRole.BBOX_START
-    assert set(_token_texts(tokenizer, bbox_start_target.valid_token_ids)) == {
+    assert _token_texts(tokenizer, bbox_start_target.valid_token_ids) == (
         BOX_START_TOKEN,
-        "t",
-    }
-    assert bbox_start_target.child_multiplicities == (1, 1)
+    )
+    assert bbox_start_target.child_multiplicities == (1,)
 
 
 def test_exact_duplicate_entries_are_removed_one_teacher_instance_at_a_time() -> None:
@@ -751,12 +802,9 @@ def test_stage1_json_template_builds_recursive_targets_from_rendered_spans() -> 
     assert _token_texts(tokenizer, entry_open_target.valid_token_ids) == ("{",)
 
     first_coord_target = targets[first_entry.coord_spans[0].start]
-    assert first_coord_target.kind == "trie_multi_positive"
+    assert first_coord_target.kind == "hard_ce"
     assert first_coord_target.token_role is TokenRole.COORD
-    assert _token_texts(tokenizer, first_coord_target.valid_token_ids) == (
-        "<|coord_10|>",
-        "<|coord_100|>",
-    )
+    assert _token_texts(tokenizer, first_coord_target.valid_token_ids) == ("<|coord_10|>",)
 
 
 def test_recursive_builder_rejects_duplicate_active_object_instance_ids() -> None:
