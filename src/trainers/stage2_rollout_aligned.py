@@ -4,7 +4,7 @@ Implements the OpenSpec change:
   openspec/changes/2026-01-15-add-rollout-matching-trainer
 
 High-level loop per batch:
-  rollout (no grad) -> strict token-aligned parse -> Hungarian match -> build Y_train
+  rollout (no grad) -> strict token-aligned parse -> greedy IoU match -> build Y_train
   -> one teacher-forced forward -> masked CE + distributional coord losses.
 """
 
@@ -122,7 +122,7 @@ from .rollout_matching.contracts import (
     GTObject,
     ParsedPredObject,
 )
-from .rollout_matching.matching import _mask_iou_norm1000, hungarian_match_maskiou
+from .rollout_matching.matching import _mask_iou_norm1000, greedy_match_iou
 from .rollout_matching.packing import (
     DropRemainderAccumulationWindow as _DropRemainderAccumulationWindow,
 )
@@ -5607,14 +5607,10 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
 
             # 3) Extract GT objects and match
             gts = _extract_gt_objects(sample)
-            match = hungarian_match_maskiou(
+            match = greedy_match_iou(
                 preds=preds,
                 gts=gts,
-                top_k=top_k,
                 gate_threshold=gate_thr,
-                mask_resolution=mask_res,
-                fp_cost=fp_cost,
-                fn_cost=fn_cost,
             )
 
             # 3.0) Optional desc monitor (metrics only; does not affect loss).
@@ -7017,7 +7013,7 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
         ignore_keys=None,
         metric_key_prefix: str = "eval",
     ):
-        """Production-style evaluator: rollout -> parse -> Hungarian match.
+        """Production-style evaluator: rollout -> parse -> greedy IoU match.
 
         This intentionally skips teacher-forced encoding and loss computation to keep eval
         fast and reflective of real rollout performance on unseen data.
@@ -7486,14 +7482,10 @@ class RolloutMatchingSFTTrainer(Seq2SeqTrainer):
                     if len(preds) > 0:
                         n_samples_valid_pred += 1.0
 
-                    match = hungarian_match_maskiou(
+                    match = greedy_match_iou(
                         preds=preds,
                         gts=gts,
-                        top_k=top_k,
                         gate_threshold=gate_thr,
-                        mask_resolution=mask_res,
-                        fp_cost=fp_cost,
-                        fn_cost=fn_cost,
                     )
 
                     matched = float(len(match.matched_pairs))

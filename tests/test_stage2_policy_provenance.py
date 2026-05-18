@@ -4,7 +4,7 @@ from src.bootstrap.stage2_policy_provenance import build_stage2_policy_provenanc
 from src.config.loader import ConfigLoader
 
 
-def test_stage2_policy_provenance_records_effective_legacy_threshold() -> None:
+def test_stage2_policy_provenance_records_effective_greedy_threshold() -> None:
     provenance = build_stage2_policy_provenance(
         {
             "custom": {
@@ -13,7 +13,7 @@ def test_stage2_policy_provenance_records_effective_legacy_threshold() -> None:
             },
             "stage2_ab": {
                 "channel_b": {
-                    "assignment": {"strategy": "legacy_hungarian_mask_iou"},
+                    "assignment": {"strategy": "greedy_iou"},
                     "duplicate_control": {
                         "iou_threshold": 0.91,
                         "center_radius_scale": 0.75,
@@ -29,7 +29,7 @@ def test_stage2_policy_provenance_records_effective_legacy_threshold() -> None:
     )
 
     assert provenance is not None
-    assert provenance["assignment_strategy"] == "legacy_hungarian_mask_iou"
+    assert provenance["assignment_strategy"] == "greedy_iou"
     assert provenance["assignment_iou_threshold"] is None
     assert provenance["assignment_iou_threshold_effective"] == 0.55
     assert provenance["assignment_iou_threshold_source"] == "rollout_matching.maskiou_gate"
@@ -42,6 +42,7 @@ def test_stage2_policy_provenance_records_effective_legacy_threshold() -> None:
     assert provenance["rollout_template_family"] == "compact_full"
     assert provenance["rollout_decode_policy"] == "unconstrained"
     assert provenance["invalid_rollout_policy"] == "fallback_to_gt_fn_append"
+    assert provenance["fallback_loss_weight"] == 1.0
 
 
 def test_stage2_policy_provenance_prefers_explicit_assignment_threshold() -> None:
@@ -93,7 +94,7 @@ def test_stage2_policy_provenance_reads_real_typed_stage2_config() -> None:
     )
 
     assert provenance is not None
-    assert provenance["assignment_strategy"] == "legacy_hungarian_mask_iou"
+    assert provenance["assignment_strategy"] == "greedy_iou"
     assert provenance["assignment_iou_threshold"] is None
     assert provenance["assignment_iou_threshold_effective"] == 0.5
     assert provenance["assignment_iou_threshold_source"] == "rollout_matching.maskiou_gate"
@@ -106,3 +107,4 @@ def test_stage2_policy_provenance_reads_real_typed_stage2_config() -> None:
     assert provenance["rollout_template_family"] == "compact_full"
     assert provenance["rollout_decode_policy"] == "unconstrained"
     assert provenance["invalid_rollout_policy"] == "fallback_gt_fn_append_only"
+    assert provenance["fallback_loss_weight"] == 1.0

@@ -5,7 +5,7 @@ and Stage-2 AB, without relying on trainer implementation modules.
 """
 
 from .contracts import GTObject, GeomType, MatchResult, ParsedPredObject, RolloutParseResult
-from .matching import hungarian_match_maskiou
+from .matching import associate_one_to_one_greedy_iou, greedy_match_iou
 from .packing import DropRemainderAccumulationWindow
 from .parsing import (
     coerce_int,
@@ -32,7 +32,8 @@ __all__ = [
     "find_desc_value_char_spans",
     "find_desc_value_token_positions",
     "coerce_int",
-    "hungarian_match_maskiou",
+    "associate_one_to_one_greedy_iou",
+    "greedy_match_iou",
     "slim_rollout_meta_for_logging",
     "PendingTrainRolloutLog",
 ]

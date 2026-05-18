@@ -74,7 +74,7 @@ config_surfaces:
       assignment_strategy: greedy_iou
       duplicate_filter_order: before_assignment_and_target_realization
       channel_b_false_negative_insertion: true
-      notes: "Guarded Stage-2 design direction. Duplicate filtering runs before greedy-IoU assignment; unmatched GT becomes Channel-B false-negative insertion. Hungarian matching is migration-only legacy compatibility until removal."
+      notes: "Guarded Stage-2 design direction. Duplicate filtering runs before greedy-IoU assignment; unmatched GT becomes Channel-B false-negative insertion. Greedy IoU is the only live Stage-2 assignment strategy."
     - id: stage1_latest_compact_detection_random_permutation_et_rmp_ce
       status: canonical-production-baseline
       config: configs/stage1/recursive_detection_ce_latest/prod/compact_full_support2.yaml

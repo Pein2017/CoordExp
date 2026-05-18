@@ -3,11 +3,10 @@ from __future__ import annotations
 import pytest
 
 from src.trainers.rollout_matching.contracts import GTObject
-from src.trainers.rollout_matching.matching import hungarian_match_maskiou
+from src.trainers.rollout_matching.matching import greedy_match_iou
 from src.training.stage2.assignment import (
     AssignmentObject,
     GreedyIoUAssignment,
-    LegacyHungarianMaskIoUAssignment,
 )
 
 
@@ -82,32 +81,8 @@ def test_greedy_iou_assignment_rejects_invalid_boxes() -> None:
         )
 
 
-def test_legacy_hungarian_assignment_adapter_matches_live_rollout_matching_owner() -> None:
-    predictions = (
-        AssignmentObject(
-            object_id="pred-match",
-            description="matched",
-            bbox=(0.0, 0.0, 100.0, 100.0),
-        ),
-        AssignmentObject(
-            object_id="pred-fp",
-            description="false positive",
-            bbox=(800.0, 800.0, 900.0, 900.0),
-        ),
-    )
-    ground_truth = (
-        AssignmentObject(
-            object_id="gt-match",
-            description="matched",
-            bbox=(0.0, 0.0, 100.0, 100.0),
-        ),
-        AssignmentObject(
-            object_id="gt-fn",
-            description="false negative",
-            bbox=(300.0, 300.0, 400.0, 400.0),
-        ),
-    )
-    legacy_match = hungarian_match_maskiou(
+def test_rollout_matching_owner_uses_greedy_iou_assignment() -> None:
+    match = greedy_match_iou(
         preds=(
             GTObject(
                 index=0,
@@ -136,29 +111,12 @@ def test_legacy_hungarian_assignment_adapter_matches_live_rollout_matching_owner
                 desc="false negative",
             ),
         ),
-        top_k=2,
         gate_threshold=0.5,
-        mask_resolution=128,
-        fp_cost=1.0,
-        fn_cost=1.0,
     )
-    adapter_result = LegacyHungarianMaskIoUAssignment(
-        top_k=2,
-        gate_threshold=0.5,
-        mask_resolution=128,
-        fp_cost=1.0,
-        fn_cost=1.0,
-    ).assign(predictions=predictions, ground_truth=ground_truth)
 
-    assert [
-        (pair.prediction_index, pair.ground_truth_index)
-        for pair in adapter_result.pairs
-    ] == legacy_match.matched_pairs
-    assert [
-        item.index for item in adapter_result.unmatched_predictions
-    ] == legacy_match.fp_pred_indices
-    assert [
-        item.index for item in adapter_result.unmatched_ground_truth
-    ] == legacy_match.fn_gt_indices
-    assert adapter_result.metadata["assignment_strategy"] == "legacy_hungarian_mask_iou"
-    assert adapter_result.metadata["matched_maskiou_count"] == legacy_match.matched_maskiou_count
+    assert match.matched_pairs == [(0, 0)]
+    assert match.fp_pred_indices == [1]
+    assert match.fn_gt_indices == [1]
+    assert match.gating_rejections == 0
+    assert match.matched_maskiou_sum == pytest.approx(1.0)
+    assert match.matched_maskiou_count == 1

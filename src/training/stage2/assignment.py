@@ -5,7 +5,7 @@ from abc import ABC, abstractmethod
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from types import MappingProxyType
-from typing import Any, Callable, TypeAlias, cast
+from typing import TypeAlias, cast
 
 from src.training.ordering import ObjectBBox
 
@@ -233,6 +233,9 @@ class GreedyIoUAssignment(AssignmentStrategy):
             metadata={
                 "assignment_strategy": self.strategy_id,
                 "iou_threshold": self.iou_threshold,
+                "matched_iou_sum": float(sum(pair.iou for pair in pairs)),
+                "matched_iou_count": int(len(pairs)),
+                "gating_rejections": int(0),
             },
         )
 
@@ -366,175 +369,11 @@ class GreedyIoUAssignment(AssignmentStrategy):
         return tuple(unmatched)
 
 
-class LegacyHungarianMaskIoUAssignment(AssignmentStrategy):
-    """Compatibility adapter around the live rollout-matching assignment owner."""
-
-    strategy_id = "legacy_hungarian_mask_iou"
-
-    def __init__(
-        self,
-        *,
-        top_k: int,
-        gate_threshold: float,
-        mask_resolution: int,
-        fp_cost: float = 1.0,
-        fn_cost: float = 1.0,
-        matcher: Callable[..., Any] | None = None,
-    ) -> None:
-        """Initialize the live Hungarian/maskIoU adapter."""
-
-        self.top_k = int(top_k)
-        self.gate_threshold = float(gate_threshold)
-        self.mask_resolution = int(mask_resolution)
-        self.fp_cost = float(fp_cost)
-        self.fn_cost = float(fn_cost)
-        self._matcher = matcher
-        if self.top_k <= 0:
-            raise ValueError("top_k must be > 0")
-        if self.mask_resolution <= 0:
-            raise ValueError("mask_resolution must be > 0")
-        _validate_iou_threshold(self.gate_threshold)
-
-    def assign(
-        self,
-        *,
-        predictions: Sequence[AssignmentObject],
-        ground_truth: Sequence[AssignmentObject],
-    ) -> AssignmentResult:
-        """Return assignment by delegating to the live Hungarian matcher."""
-
-        matcher = self._matcher
-        if matcher is None:
-            from src.trainers.rollout_matching.matching import hungarian_match_maskiou
-
-            matcher = hungarian_match_maskiou
-
-        predictions_tuple = tuple(predictions)
-        ground_truth_tuple = tuple(ground_truth)
-        match = matcher(
-            preds=[
-                self._to_legacy_gt_object(
-                    assignment_object=prediction,
-                    index=index,
-                )
-                for index, prediction in enumerate(predictions_tuple)
-            ],
-            gts=[
-                self._to_legacy_gt_object(
-                    assignment_object=gt_object,
-                    index=index,
-                )
-                for index, gt_object in enumerate(ground_truth_tuple)
-            ],
-            top_k=self.top_k,
-            gate_threshold=self.gate_threshold,
-            mask_resolution=self.mask_resolution,
-            fp_cost=self.fp_cost,
-            fn_cost=self.fn_cost,
-        )
-
-        pairs = tuple(
-            AssignmentPair(
-                prediction_index=int(prediction_index),
-                ground_truth_index=int(ground_truth_index),
-                prediction_id=predictions_tuple[int(prediction_index)].object_id,
-                ground_truth_id=ground_truth_tuple[int(ground_truth_index)].object_id,
-                iou=_bbox_iou(
-                    cast(ObjectBBox, predictions_tuple[int(prediction_index)].bbox),
-                    cast(ObjectBBox, ground_truth_tuple[int(ground_truth_index)].bbox),
-                ),
-                reason="legacy_hungarian_matched",
-            )
-            for prediction_index, ground_truth_index in match.matched_pairs
-        )
-        unmatched_predictions = tuple(
-            UnmatchedAssignmentObject(
-                index=int(index),
-                object_id=predictions_tuple[int(index)].object_id,
-                reason="legacy_hungarian_fp",
-                best_iou=self._best_iou(
-                    source=predictions_tuple[int(index)],
-                    candidates=ground_truth_tuple,
-                ),
-            )
-            for index in match.fp_pred_indices
-        )
-        unmatched_ground_truth = tuple(
-            UnmatchedAssignmentObject(
-                index=int(index),
-                object_id=ground_truth_tuple[int(index)].object_id,
-                reason="legacy_hungarian_fn",
-                best_iou=self._best_iou(
-                    source=ground_truth_tuple[int(index)],
-                    candidates=predictions_tuple,
-                ),
-            )
-            for index in match.fn_gt_indices
-        )
-
-        return AssignmentResult(
-            pairs=pairs,
-            unmatched_predictions=unmatched_predictions,
-            unmatched_ground_truth=unmatched_ground_truth,
-            metadata={
-                "assignment_strategy": self.strategy_id,
-                "top_k": self.top_k,
-                "gate_threshold": self.gate_threshold,
-                "mask_resolution": self.mask_resolution,
-                "gating_rejections": int(match.gating_rejections),
-                "matched_maskiou_sum": float(match.matched_maskiou_sum),
-                "matched_maskiou_count": int(match.matched_maskiou_count),
-            },
-        )
-
-    def _to_legacy_gt_object(
-        self,
-        *,
-        assignment_object: AssignmentObject,
-        index: int,
-    ):
-        """Return the live rollout-matching object contract."""
-
-        from src.trainers.rollout_matching.contracts import GTObject
-
-        return GTObject(
-            index=int(index),
-            geom_type="bbox_2d",
-            points_norm1000=[
-                int(round(float(value)))
-                for value in cast(ObjectBBox, assignment_object.bbox)
-            ],
-            desc=str(assignment_object.description),
-        )
-
-    def _best_iou(
-        self,
-        *,
-        source: AssignmentObject,
-        candidates: Sequence[AssignmentObject],
-    ) -> float:
-        """Return the best bbox IoU against a candidate side."""
-
-        if not candidates:
-            return 0.0
-
-        return float(
-            max(
-                _bbox_iou(
-                    cast(ObjectBBox, source.bbox),
-                    cast(ObjectBBox, candidate.bbox),
-                )
-                for candidate in candidates
-            )
-        )
-
-
 __all__ = [
     "AssignmentObject",
     "AssignmentPair",
     "AssignmentResult",
     "AssignmentStrategy",
     "GreedyIoUAssignment",
-    "LegacyHungarianMaskIoUAssignment",
     "UnmatchedAssignmentObject",
 ]

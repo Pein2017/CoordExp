@@ -175,24 +175,17 @@ Current design direction:
 - Duplicate-control non-survivors are diagnostic evidence only. They must not
   become positive clean-prefix targets after filtering.
 
-Migration note:
+Assignment note:
 
-- `src/trainers/rollout_matching/matching.py::hungarian_match_maskiou` is a
-  legacy compatibility/migration reader until the remaining live adapters and
-  historical comparisons are removed.
-- Live Stage2-AB assignment is routed through `stage2_ab.channel_b.assignment`
-  so new strategies use the reusable assignment abstraction instead of direct
-  trainer-local matcher calls:
-  - `stage2_ab.channel_b.assignment.strategy: legacy_hungarian_mask_iou`
-    preserves the historical mask-IoU matcher and is the current default for
-    existing configs.
-  - `stage2_ab.channel_b.assignment.strategy: greedy_iou` opts into the new
-    deterministic bbox-IoU strategy.
+- Live Stage2-AB assignment is routed through
+  `src/training/stage2/assignment.py::GreedyIoUAssignment` and accepts only
+  `stage2_ab.channel_b.assignment.strategy: greedy_iou`.
+  - This intentionally faces rollout quality failures directly instead of
+    hiding them behind an alternative assignment mechanism.
   - `stage2_ab.channel_b.assignment.iou_threshold` is optional; when omitted,
     the live matcher gate threshold is reused.
-- Hungarian assignment is not the target architecture for new Stage-2 planning
-  or docs. New policy provenance should record `greedy_iou` plus the
-  duplicate-filter and object-ordering policy used for target realization.
+- Policy provenance should record `greedy_iou` plus the duplicate-filter,
+  object-ordering, and fallback-loss policy used for target realization.
 
 ## Recommended Config Entry Points
 

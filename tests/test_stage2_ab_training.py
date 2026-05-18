@@ -1165,7 +1165,7 @@ def test_channel_b_compact_full_invalid_explorer_rollouts_do_not_dilute_posterio
     assert metrics["rollout/explorer/valid_pred_objects"] == pytest.approx(1.0 / 3.0)
 
 
-def test_channel_b_matching_uses_candidate_top_k_and_assignment_threshold(monkeypatch):
+def test_channel_b_matching_uses_greedy_assignment_threshold(monkeypatch):
     t = Stage2ABTrainingTrainer.__new__(Stage2ABTrainingTrainer)
     t.stage2_ab_cfg = {}
     t._stage2_pending_train_logs = {}
@@ -1265,13 +1265,15 @@ def test_channel_b_matching_uses_candidate_top_k_and_assignment_threshold(monkey
     class _StopAfterMatch(RuntimeError):
         pass
 
-    def _fake_match(*, preds, gts, top_k, gate_threshold, **kwargs):
-        captured["top_k"] = int(top_k)
-        captured["gate_threshold"] = float(gate_threshold)
-        raise _StopAfterMatch("stop once matcher receives top_k")
+    def _fake_match(*, strategy, preds, gts, **kwargs):
+        captured["strategy_id"] = str(getattr(strategy, "strategy_id", ""))
+        captured["iou_threshold"] = float(getattr(strategy, "iou_threshold", -1.0))
+        captured["n_pred"] = int(len(preds))
+        captured["n_gt"] = int(len(gts))
+        raise _StopAfterMatch("stop once assignment receives greedy strategy")
 
     monkeypatch.setattr(
-        "src.trainers.stage2_two_channel.hungarian_match_maskiou",
+        "src.trainers.stage2_two_channel._assign_stage2_channel_b_objects",
         _fake_match,
     )
 
@@ -1284,8 +1286,10 @@ def test_channel_b_matching_uses_candidate_top_k_and_assignment_threshold(monkey
     with pytest.raises(_StopAfterMatch):
         t._prepare_batch_inputs_b([sample], _segments_only=True)
 
-    assert captured["top_k"] == 7
-    assert captured["gate_threshold"] == pytest.approx(0.75)
+    assert captured["strategy_id"] == "greedy_iou"
+    assert captured["iou_threshold"] == pytest.approx(0.75)
+    assert captured["n_pred"] == 0
+    assert captured["n_gt"] == 1
 
 
 def test_channel_b_invalid_rollout_keeps_sample_via_empty_prefix_fallback(monkeypatch):
@@ -1351,13 +1355,13 @@ def test_channel_b_invalid_rollout_keeps_sample_via_empty_prefix_fallback(monkey
     class _StopAfterMatch(RuntimeError):
         pass
 
-    def _fake_match(*, preds, gts, **kwargs):
+    def _fake_match(*, strategy, preds, gts, **kwargs):
         captured["n_pred"] = int(len(preds))
         captured["n_gt"] = int(len(gts))
         raise _StopAfterMatch("stop after invalid-rollout fallback reaches matcher")
 
     monkeypatch.setattr(
-        "src.trainers.stage2_two_channel.hungarian_match_maskiou",
+        "src.trainers.stage2_two_channel._assign_stage2_channel_b_objects",
         _fake_match,
     )
 
@@ -1451,7 +1455,7 @@ def test_channel_b_enabled_pseudo_positive_drops_invalid_anchor_sample(
         ),
     )
     monkeypatch.setattr(
-        "src.trainers.stage2_two_channel.hungarian_match_maskiou",
+        "src.trainers.stage2_two_channel._assign_stage2_channel_b_objects",
         lambda **kwargs: types.SimpleNamespace(
             matched_pairs=[],
             fn_gt_indices=[],
@@ -1839,7 +1843,7 @@ def test_channel_b_suspicious_monitor_dump_buffers_full_eval_style_payload(
         lambda **kwargs: list(coord_lookup[tuple(kwargs["coord_token_indices"])]),
     )
     monkeypatch.setattr(
-        "src.trainers.stage2_two_channel.hungarian_match_maskiou",
+        "src.trainers.stage2_two_channel._assign_stage2_channel_b_objects",
         lambda **kwargs: types.SimpleNamespace(
             matched_pairs=[(0, 0)],
             fn_gt_indices=[],
@@ -2199,7 +2203,7 @@ def test_channel_b_fn_bbox_groups_anchor_to_clean_prefix_not_raw_prefix(monkeypa
         lambda **kwargs: fake_parse,
     )
     monkeypatch.setattr(
-        "src.trainers.stage2_two_channel.hungarian_match_maskiou",
+        "src.trainers.stage2_two_channel._assign_stage2_channel_b_objects",
         lambda **kwargs: types.SimpleNamespace(
             matched_pairs=[],
             fn_gt_indices=[0],
@@ -2421,7 +2425,7 @@ def test_channel_b_dual_rollout_triage_emits_recovered_ground_truth_weight_multi
         )
 
     monkeypatch.setattr(
-        "src.trainers.stage2_two_channel.hungarian_match_maskiou",
+        "src.trainers.stage2_two_channel._assign_stage2_channel_b_objects",
         _fake_match,
     )
 
@@ -2600,7 +2604,7 @@ def test_channel_b_dual_rollout_chunking_is_policy_symmetric(monkeypatch) -> Non
             ],
         )
         mp.setattr(
-            "src.trainers.stage2_two_channel.hungarian_match_maskiou",
+            "src.trainers.stage2_two_channel._assign_stage2_channel_b_objects",
             lambda **kwargs: types.SimpleNamespace(
                 matched_pairs=[],
                 fn_gt_indices=[],
@@ -2774,7 +2778,7 @@ def test_channel_b_enabled_pseudo_positive_uses_k4_rollouts_and_keeps_zero_objec
             lambda _sample: [],
         )
         mp.setattr(
-            "src.trainers.stage2_two_channel.hungarian_match_maskiou",
+            "src.trainers.stage2_two_channel._assign_stage2_channel_b_objects",
             lambda **kwargs: types.SimpleNamespace(
                 matched_pairs=[],
                 fn_gt_indices=[],
@@ -2932,7 +2936,7 @@ def test_channel_b_enabled_pseudo_positive_aborts_on_invalid_explorer(
             lambda _sample: [],
         )
         mp.setattr(
-            "src.trainers.stage2_two_channel.hungarian_match_maskiou",
+            "src.trainers.stage2_two_channel._assign_stage2_channel_b_objects",
             lambda **kwargs: types.SimpleNamespace(
                 matched_pairs=[],
                 fn_gt_indices=[],
@@ -3920,7 +3924,7 @@ def test_channel_b_triage_posterior_nested_config_reaches_live_accessor_and_vllm
             ],
         )
         mp.setattr(
-            "src.trainers.stage2_two_channel.hungarian_match_maskiou",
+            "src.trainers.stage2_two_channel._assign_stage2_channel_b_objects",
             lambda **kwargs: types.SimpleNamespace(
                 matched_pairs=[],
                 fn_gt_indices=[],
@@ -4108,7 +4112,7 @@ def test_channel_b_anchor_only_gt_hit_projects_anchor_gt_backed(
         )
 
     monkeypatch.setattr(
-        "src.trainers.stage2_two_channel.hungarian_match_maskiou",
+        "src.trainers.stage2_two_channel._assign_stage2_channel_b_objects",
         _fake_match,
     )
 
@@ -4251,7 +4255,7 @@ def test_channel_b_shielded_anchor_stays_neutral_context(monkeypatch) -> None:
         lambda _sample: [],
     )
     monkeypatch.setattr(
-        "src.trainers.stage2_two_channel.hungarian_match_maskiou",
+        "src.trainers.stage2_two_channel._assign_stage2_channel_b_objects",
         lambda **kwargs: types.SimpleNamespace(
             matched_pairs=[],
             fn_gt_indices=[],
@@ -4414,7 +4418,7 @@ def test_channel_b_explorer_only_dead_emits_no_explore_branch(monkeypatch) -> No
         lambda _sample: [],
     )
     monkeypatch.setattr(
-        "src.trainers.stage2_two_channel.hungarian_match_maskiou",
+        "src.trainers.stage2_two_channel._assign_stage2_channel_b_objects",
         lambda **kwargs: types.SimpleNamespace(
             matched_pairs=[],
             fn_gt_indices=[],
@@ -4595,7 +4599,7 @@ def test_channel_b_recovered_ground_truth_weight_multipliers_only_apply_to_recov
         )
 
     monkeypatch.setattr(
-        "src.trainers.stage2_two_channel.hungarian_match_maskiou",
+        "src.trainers.stage2_two_channel._assign_stage2_channel_b_objects",
         _fake_match,
     )
 
@@ -6932,7 +6936,7 @@ def test_stage2_two_channel_eval_emits_rollout_map_and_coco_contract(
         ],
     )
     monkeypatch.setattr(
-        "src.trainers.stage2_rollout_aligned.hungarian_match_maskiou",
+        "src.trainers.stage2_rollout_aligned.greedy_match_iou",
         lambda **_kwargs: types.SimpleNamespace(
             matched_pairs=[(0, 0)],
             fp_pred_indices=[],
@@ -7001,7 +7005,7 @@ def test_stage2_two_channel_eval_raises_when_coco_eval_fails(monkeypatch) -> Non
         ],
     )
     monkeypatch.setattr(
-        "src.trainers.stage2_rollout_aligned.hungarian_match_maskiou",
+        "src.trainers.stage2_rollout_aligned.greedy_match_iou",
         lambda **_kwargs: types.SimpleNamespace(
             matched_pairs=[(0, 0)],
             fp_pred_indices=[],

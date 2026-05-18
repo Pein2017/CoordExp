@@ -81,7 +81,7 @@ def build_stage2_policy_provenance(
     assignment_strategy = _string_field(
         assignment,
         "strategy",
-        "legacy_hungarian_mask_iou",
+        "greedy_iou",
     )
     configured_assignment_iou = _optional_finite_float(
         assignment.get("iou_threshold")
@@ -106,6 +106,9 @@ def build_stage2_policy_provenance(
         duplicate_control.get("center_radius_scale", 0.80)
     )
     insertion_order = _string_field(channel_b, "insertion_order", "tail_append")
+    fallback_loss_weight = _optional_finite_float(
+        channel_b.get("fallback_loss_weight", 1.0)
+    )
 
     return {
         "schema_version": STAGE2_POLICY_PROVENANCE_SCHEMA_VERSION,
@@ -135,4 +138,5 @@ def build_stage2_policy_provenance(
             "invalid_rollout_policy",
             "abort",
         ),
+        "fallback_loss_weight": fallback_loss_weight,
     }

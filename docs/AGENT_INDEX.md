@@ -70,7 +70,7 @@ Human support entrypoints:
   - [`runtime-architecture-refactor-program/spec.md`](../openspec/specs/runtime-architecture-refactor-program/spec.md)
   - Shadow surface ID: `stage2_two_channel`.
   - Planning direction: duplicate filtering before target realization, greedy-IoU assignment over retained rollout objects, and Channel-B false-negative insertion for unmatched GT.
-  - Hungarian matching is migration-only legacy compatibility until removal; do not use it as the target architecture for new Stage-2 docs.
+  - Greedy IoU is the only live Stage-2 assignment strategy; do not reintroduce alternate assignment mechanisms without a new spec.
 - Metrics, diagnostics, and artifacts:
   - [docs/training/METRICS.md](training/METRICS.md) for `MetricEvent`, `DiagnosticEvent`, bounded diagnostic profiles, and clean-write/tolerant-read metric behavior
   - [ARTIFACTS.md](ARTIFACTS.md) for resolved config artifacts, rank-0 artifact names, and Stage-2 policy provenance

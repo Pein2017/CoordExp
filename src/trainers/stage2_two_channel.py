@@ -25,15 +25,11 @@ from src.training.stage2.assignment import (
     AssignmentResult,
     AssignmentStrategy,
     GreedyIoUAssignment,
-    LegacyHungarianMaskIoUAssignment,
 )
 from src.utils.assistant_json import dumps_coordjson
 
 from .stage2_rollout_aligned import RolloutMatchingSFTTrainer
 from .rollout_matching.contracts import GTObject
-from .rollout_matching.matching import (
-    hungarian_match_maskiou,
-)
 from .rollout_matching.parsing import (
     find_desc_value_token_positions,
     parse_rollout_for_matching,
@@ -240,12 +236,15 @@ def _stage2_assignment_result_to_match(
     fn_gt_indices = tuple(int(item.index) for item in result.unmatched_ground_truth)
 
     matched_iou_sum_raw = metadata.get(
-        "matched_maskiou_sum",
-        sum(float(pair.iou) for pair in result.pairs),
+        "matched_iou_sum",
+        metadata.get(
+            "matched_maskiou_sum",
+            sum(float(pair.iou) for pair in result.pairs),
+        ),
     )
     matched_iou_count_raw = metadata.get(
-        "matched_maskiou_count",
-        len(result.pairs),
+        "matched_iou_count",
+        metadata.get("matched_maskiou_count", len(result.pairs)),
     )
     gating_rejections_raw = metadata.get("gating_rejections", 0)
     iou_threshold_raw = metadata.get(
@@ -2196,7 +2195,7 @@ class Stage2ABTrainingTrainer(
         assignment_strategy = str(
             self._ab_channel_b_get(
                 "assignment.strategy",
-                "legacy_hungarian_mask_iou",
+                "greedy_iou",
             )
         ).strip().lower().replace("-", "_")
         assignment_iou_threshold_raw = self._ab_channel_b_get(
@@ -2210,13 +2209,9 @@ class Stage2ABTrainingTrainer(
         )
 
         if assignment_strategy == "legacy_hungarian_mask_iou":
-            return LegacyHungarianMaskIoUAssignment(
-                top_k=int(match_top_k),
-                gate_threshold=float(assignment_iou_threshold),
-                mask_resolution=int(mask_res),
-                fp_cost=float(fp_cost),
-                fn_cost=float(fn_cost),
-                matcher=hungarian_match_maskiou,
+            raise ValueError(
+                "stage2_ab.channel_b.assignment.strategy="
+                "legacy_hungarian_mask_iou has been removed; use greedy_iou"
             )
         if assignment_strategy == "greedy_iou":
             return GreedyIoUAssignment(
@@ -2225,7 +2220,7 @@ class Stage2ABTrainingTrainer(
 
         raise ValueError(
             "stage2_ab.channel_b.assignment.strategy must be one of "
-            "{'legacy_hungarian_mask_iou', 'greedy_iou'}"
+            "{'greedy_iou'}"
         )
 
     def _prepare_batch_inputs_b_impl(
@@ -3537,8 +3532,21 @@ class Stage2ABTrainingTrainer(
                 duplicate_control_first_divergence_skipped_no_divergence=int(
                     duplicate_control_first_divergence_skipped_no_divergence
                 ),
-                assignment_strategy=str(match.strategy_id),
-                assignment_iou_threshold=float(match.iou_threshold),
+                assignment_strategy=str(
+                    getattr(
+                        match,
+                        "strategy_id",
+                        getattr(assignment_strategy, "strategy_id", "greedy_iou"),
+                    )
+                    or getattr(assignment_strategy, "strategy_id", "greedy_iou")
+                ),
+                assignment_iou_threshold=float(
+                    getattr(
+                        match,
+                        "iou_threshold",
+                        getattr(assignment_strategy, "iou_threshold", gate_thr),
+                    )
+                ),
                 rollout_template_family=str(
                     supervision_targets.rollout_template_family
                 ),
@@ -3623,11 +3631,6 @@ class Stage2ABTrainingTrainer(
             "stage2_ab/channel_b/assignment/strategy_greedy_iou_count": float(
                 len(anchor_rollout_results)
                 if assignment_strategy_id == "greedy_iou"
-                else 0.0
-            ),
-            "stage2_ab/channel_b/assignment/strategy_legacy_hungarian_mask_iou_count": float(
-                len(anchor_rollout_results)
-                if assignment_strategy_id == "legacy_hungarian_mask_iou"
                 else 0.0
             ),
             "stage2_ab/channel_b/assignment/iou_threshold": float(

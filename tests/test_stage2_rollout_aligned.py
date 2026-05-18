@@ -15,7 +15,10 @@ import torch
 
 from src.config.prompts import build_dense_system_prompt, build_dense_user_prompt
 from src.config.rollout_matching_schema import RolloutEvalDetectionConfig
-from src.trainers.rollout_matching.matching import associate_one_to_one_max_iou
+from src.trainers.rollout_matching.matching import (
+    associate_one_to_one_greedy_iou,
+    greedy_match_iou,
+)
 from src.trainers.rollout_aligned_evaluator import finalize_rollout_aligned_evaluation
 from src.trainers.stage2_rollout_aligned import (
     GTObject,
@@ -26,7 +29,6 @@ from src.trainers.stage2_rollout_aligned import (
     _per_server_rank_request_caps,
     _serialize_append_fragment,
     _sinkhorn_barycentric_targets,
-    hungarian_match_maskiou,
     parse_rollout_for_matching,
 )
 from src.trainers.stage2_two_channel import Stage2ABTrainingTrainer
@@ -1375,7 +1377,7 @@ def test_evaluate_emits_rollout_metrics_and_runs_callback(monkeypatch) -> None:
 
     match_calls = {"idx": 0}
 
-    def _fake_hungarian(**_kwargs):
+    def _fake_greedy_match(**_kwargs):
         idx = int(match_calls["idx"])
         match_calls["idx"] = idx + 1
         if idx == 0:
@@ -1397,8 +1399,8 @@ def test_evaluate_emits_rollout_metrics_and_runs_callback(monkeypatch) -> None:
         )
 
     monkeypatch.setattr(
-        "src.trainers.stage2_rollout_aligned.hungarian_match_maskiou",
-        _fake_hungarian,
+        "src.trainers.stage2_rollout_aligned.greedy_match_iou",
+        _fake_greedy_match,
     )
 
     logged_metrics: dict[str, float] = {}
@@ -2014,7 +2016,7 @@ def test_evaluate_emits_coco_map_metrics_when_eval_detection_enabled(
         ],
     )
     monkeypatch.setattr(
-        "src.trainers.stage2_rollout_aligned.hungarian_match_maskiou",
+        "src.trainers.stage2_rollout_aligned.greedy_match_iou",
         lambda **_kwargs: types.SimpleNamespace(
             matched_pairs=[(0, 0)],
             fp_pred_indices=[],
@@ -2210,7 +2212,7 @@ def test_evaluate_emits_coco_map_metrics_with_confidence_postop(
         ],
     )
     monkeypatch.setattr(
-        "src.trainers.stage2_rollout_aligned.hungarian_match_maskiou",
+        "src.trainers.stage2_rollout_aligned.greedy_match_iou",
         lambda **_kwargs: types.SimpleNamespace(
             matched_pairs=[(0, 0)],
             fp_pred_indices=[],
@@ -2404,7 +2406,7 @@ def test_evaluate_skips_eval_artifact_materialization_when_disabled(
         ],
     )
     monkeypatch.setattr(
-        "src.trainers.stage2_rollout_aligned.hungarian_match_maskiou",
+        "src.trainers.stage2_rollout_aligned.greedy_match_iou",
         lambda **_kwargs: types.SimpleNamespace(
             matched_pairs=[(0, 0)],
             fp_pred_indices=[],
@@ -2552,7 +2554,7 @@ def test_evaluate_emits_coco_map_metrics_with_confidence_postop_vllm(
         ],
     )
     monkeypatch.setattr(
-        "src.trainers.stage2_rollout_aligned.hungarian_match_maskiou",
+        "src.trainers.stage2_rollout_aligned.greedy_match_iou",
         lambda **_kwargs: types.SimpleNamespace(
             matched_pairs=[(0, 0)],
             fp_pred_indices=[],
@@ -2777,7 +2779,7 @@ def test_evaluate_eval_backend_override_routes_non_traced_rollouts_to_vllm(
         ],
     )
     monkeypatch.setattr(
-        "src.trainers.stage2_rollout_aligned.hungarian_match_maskiou",
+        "src.trainers.stage2_rollout_aligned.greedy_match_iou",
         lambda **_kwargs: types.SimpleNamespace(
             matched_pairs=[(0, 0)],
             fp_pred_indices=[],
@@ -2884,7 +2886,7 @@ def test_evaluate_vllm_confidence_trace_violation_falls_back_and_counts(
         ],
     )
     monkeypatch.setattr(
-        "src.trainers.stage2_rollout_aligned.hungarian_match_maskiou",
+        "src.trainers.stage2_rollout_aligned.greedy_match_iou",
         lambda **_kwargs: types.SimpleNamespace(
             matched_pairs=[(0, 0)],
             fp_pred_indices=[],
@@ -2996,7 +2998,7 @@ def test_evaluate_vllm_per_sample_decode_error_is_skipped_and_counted(
         ],
     )
     monkeypatch.setattr(
-        "src.trainers.stage2_rollout_aligned.hungarian_match_maskiou",
+        "src.trainers.stage2_rollout_aligned.greedy_match_iou",
         lambda **_kwargs: types.SimpleNamespace(
             matched_pairs=[(0, 0)],
             fp_pred_indices=[],
@@ -3135,7 +3137,7 @@ def test_evaluate_vllm_colocate_window_wakes_sleeps_and_offloads_once_per_eval(
         ],
     )
     monkeypatch.setattr(
-        "src.trainers.stage2_rollout_aligned.hungarian_match_maskiou",
+        "src.trainers.stage2_rollout_aligned.greedy_match_iou",
         lambda **_kwargs: types.SimpleNamespace(
             matched_pairs=[(0, 0)],
             fp_pred_indices=[],
@@ -3251,7 +3253,7 @@ def test_evaluate_vllm_colocate_window_without_sleep_mode_skips_wake_sleep(
         ],
     )
     monkeypatch.setattr(
-        "src.trainers.stage2_rollout_aligned.hungarian_match_maskiou",
+        "src.trainers.stage2_rollout_aligned.greedy_match_iou",
         lambda **_kwargs: types.SimpleNamespace(
             matched_pairs=[(0, 0)],
             fp_pred_indices=[],
@@ -3441,7 +3443,7 @@ def test_evaluate_fails_fast_on_coco_error_by_default(monkeypatch) -> None:
         ],
     )
     monkeypatch.setattr(
-        "src.trainers.stage2_rollout_aligned.hungarian_match_maskiou",
+        "src.trainers.stage2_rollout_aligned.greedy_match_iou",
         lambda **_kwargs: types.SimpleNamespace(
             matched_pairs=[(0, 0)],
             fp_pred_indices=[],
@@ -3571,7 +3573,7 @@ def test_evaluate_fails_fast_on_coco_error_when_map_selects_best(monkeypatch) ->
         ],
     )
     monkeypatch.setattr(
-        "src.trainers.stage2_rollout_aligned.hungarian_match_maskiou",
+        "src.trainers.stage2_rollout_aligned.greedy_match_iou",
         lambda **_kwargs: types.SimpleNamespace(
             matched_pairs=[(0, 0)],
             fp_pred_indices=[],
@@ -3920,7 +3922,7 @@ def test_rollout_parse_fallback_when_no_open_brace():
     assert parsed.invalid_rollout is True
 
 
-def test_hungarian_matching_with_gating_and_dummy_augmentation():
+def test_greedy_matching_with_iou_gating():
     preds = [
         GTObject(
             index=1, geom_type="bbox_2d", points_norm1000=[100, 100, 200, 200], desc=""
@@ -3943,14 +3945,10 @@ def test_hungarian_matching_with_gating_and_dummy_augmentation():
             desc="gt2",
         ),
     ]
-    match = hungarian_match_maskiou(
+    match = greedy_match_iou(
         preds=preds,
         gts=gts,
-        top_k=2,
         gate_threshold=0.5,
-        mask_resolution=64,
-        fp_cost=1.0,
-        fn_cost=1.0,
     )
     assert sorted(match.matched_pairs) == [(0, 0), (1, 1)]
     assert match.fn_gt_indices == []
@@ -3963,21 +3961,17 @@ def test_hungarian_matching_with_gating_and_dummy_augmentation():
             index=2, geom_type="bbox_2d", points_norm1000=[900, 900, 950, 950], desc=""
         ),
     ]
-    match2 = hungarian_match_maskiou(
+    match2 = greedy_match_iou(
         preds=preds_far,
         gts=gts,
-        top_k=2,
         gate_threshold=0.5,
-        mask_resolution=64,
-        fp_cost=1.0,
-        fn_cost=1.0,
     )
     assert match2.matched_pairs == []
     assert match2.fn_gt_indices == [0, 1]
     assert match2.fp_pred_indices == [0, 1]
 
 
-def test_associate_one_to_one_max_iou_uses_lexicographic_tiebreak() -> None:
+def test_associate_one_to_one_greedy_iou_uses_stable_tiebreak() -> None:
     anchors = [
         GTObject(
             index=0,
@@ -4007,7 +4001,7 @@ def test_associate_one_to_one_max_iou_uses_lexicographic_tiebreak() -> None:
         ),
     ]
 
-    pairs = associate_one_to_one_max_iou(
+    pairs = associate_one_to_one_greedy_iou(
         anchors=anchors,
         explorers=explorers,
         min_iou=0.5,
@@ -4345,7 +4339,7 @@ def test_prepare_batch_inputs_uses_extracted_sample_target_builder(
     )
     monkeypatch.setattr(
         stage2_rollout_aligned,
-        "hungarian_match_maskiou",
+        "greedy_match_iou",
         lambda **_kwargs: match,
     )
 

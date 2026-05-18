@@ -95,7 +95,6 @@ for _name in (
     "_extract_gt_bboxonly",
     "_matched_prefix_structure_positions",
     "_stage2_ab_tail_closure_positions",
-    "hungarian_match_maskiou",
     "parse_rollout_for_matching",
 ):
     if hasattr(_IMPL, _name):

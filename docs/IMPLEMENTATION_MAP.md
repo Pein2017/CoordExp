@@ -192,9 +192,8 @@ Stage-2 planning direction:
   assignment strategy for new shadow planning.
 - `src/training/stage2/planners.py::Stage2GreedyIoUShadowPlanner` derives
   false-negative GT insertions for Channel-B after duplicate filtering.
-- `src/trainers/rollout_matching/matching.py::hungarian_match_maskiou` is
-  migration-only legacy compatibility until removal, not the target
-  architecture for new Stage-2 work.
+- `src/trainers/rollout_matching/matching.py::greedy_match_iou` is the
+  rollout-matching owner for the older `stage2_rollout_aligned` surface.
 
 Run these tests first:
 - `tests/test_stage2_ab_config_contract.py`

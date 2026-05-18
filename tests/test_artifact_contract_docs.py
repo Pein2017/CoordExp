@@ -43,9 +43,8 @@ def test_artifact_contract_docs_freeze_rank0_and_stage2_eval_surfaces() -> None:
         "stage2_policy_provenance.rollout_template_family",
         "stage2_policy_provenance.rollout_decode_policy",
         "stage2_policy_provenance.invalid_rollout_policy",
-        "legacy_hungarian_mask_iou",
-        "legacy_tail_append",
-        "src/trainers/rollout_matching/matching.py::hungarian_match_maskiou",
+        "stage2_policy_provenance.fallback_loss_weight",
+        "src/training/stage2/assignment.py::GreedyIoUAssignment",
         "src/trainers/stage2_two_channel/target_builder.py::_apply_channel_b_duplicate_control",
         "stage2_ab.channel_b.insertion_order",
     ):

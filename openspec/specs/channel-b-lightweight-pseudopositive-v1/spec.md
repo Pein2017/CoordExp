@@ -48,7 +48,7 @@ Normative behavior:
 - the anchor rollout MUST remain the only rollout used for target ordering and target editing,
 - the explorer rollouts MUST share one authored decode profile and differ only by seed or equivalent stochastic replay identity,
 - the explorer rollouts MUST use deterministic per-explorer stochastic identities derived from the sample's rollout seed base and explorer ordinal,
-- each rollout MUST independently reuse the existing bounded salvage + strict record acceptance + bbox-valid filtering + sequential dedup + Hungarian matching path,
+- each rollout MUST independently reuse the existing bounded salvage + strict record acceptance + bbox-valid filtering + sequential dedup + configured Stage-2 assignment path,
 - if the anchor view fails to complete accepted-clean preparation, the sample MUST be dropped from Channel-B training for the step,
 - anchor-preparation failure MUST NOT use the canonical empty-prefix fallback in the enabled pseudo-positive contract,
 - each explorer view MUST either complete that standard accepted-clean preparation path or raise and abort the current optimizer step rather than silently reducing the support denominator,

@@ -23,7 +23,7 @@ from src.training.stage2.rollout_codec import (
 from src.utils.assistant_json import dumps_coordjson
 
 from ..rollout_matching.contracts import GTObject, MatchResult
-from ..rollout_matching.matching import associate_one_to_one_max_iou
+from ..rollout_matching.matching import associate_one_to_one_greedy_iou
 from ..rollout_matching.parsing import decode_pieces, find_desc_value_char_spans
 from .types import Stage2ChannelBMeta, Stage2DuplicateControlDivergenceDiagnostic
 
@@ -629,7 +629,7 @@ def _build_channel_b_triage(
     ):
         association_pairs = [
             (int(anchor_i), int(explorer_i))
-            for anchor_i, explorer_i in associate_one_to_one_max_iou(
+            for anchor_i, explorer_i in associate_one_to_one_greedy_iou(
                 anchors=accepted_objects_clean,
                 explorers=explorer_objects_raw,
                 min_iou=float(unlabeled_consistent_iou_threshold),

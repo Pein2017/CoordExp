@@ -195,10 +195,9 @@ Training artifact policy is clean-write / tolerant-read:
 - Readers may tolerate historical flat metric keys, older diagnostic payloads,
   or migration-only Stage-2 policy metadata when explicitly documented.
 - Tolerant reads do not authorize new writers to emit removed training
-  mechanisms or undocumented legacy policy names. Explicitly documented Stage-2
-  migration identifiers such as `legacy_hungarian_mask_iou` and
-  `legacy_tail_append` remain valid manifest values only while their
-  compatibility adapters are the active default.
+  mechanisms or undocumented legacy policy names. Historical Stage-2 assignment
+  identifiers are tolerated only when reading archived artifacts; new writers
+  must emit `greedy_iou`.
 
 Resolved config artifacts are the primary bridge between configs, metrics, and
 runtime behavior:
@@ -402,10 +401,11 @@ surface fields:
 - `stage2_policy_provenance.rollout_template_family`
 - `stage2_policy_provenance.rollout_decode_policy`
 - `stage2_policy_provenance.invalid_rollout_policy`
+- `stage2_policy_provenance.fallback_loss_weight`
 
 | Policy surface | Current owner / location | Current artifact visibility | Compatibility decision |
 | --- | --- | --- | --- |
-| `stage2_policy_provenance.assignment_strategy` | Target direction: `src/training/stage2/assignment.py::GreedyIoUAssignment` through `src/training/stage2/planners.py::Stage2GreedyIoUShadowPlanner`; migration-only legacy reader: `src/trainers/rollout_matching/matching.py::hungarian_match_maskiou` behind the `LegacyHungarianMaskIoUAssignment` adapter | First-class manifest fields: `stage2_policy_provenance.{assignment_strategy,assignment_iou_threshold,assignment_iou_threshold_effective,assignment_iou_threshold_source}`. Corroborating non-manifest telemetry: `resolved_config.json` at `stage2_ab.channel_b.assignment.{strategy,iou_threshold}`, Channel-B rollout meta (`assignment_strategy`, `assignment_iou_threshold`), and batch metrics under `stage2_ab/channel_b/assignment/*`. | Preserve artifact visibility while migrating to `greedy_iou` over the post-duplicate survivor set. Hungarian is compatibility/migration-only until the remaining adapters and historical comparisons are removed; it is not the target architecture for new Stage-2 planning. |
+| `stage2_policy_provenance.assignment_strategy` | `src/training/stage2/assignment.py::GreedyIoUAssignment` through the Stage-2 assignment seam | First-class manifest fields: `stage2_policy_provenance.{assignment_strategy,assignment_iou_threshold,assignment_iou_threshold_effective,assignment_iou_threshold_source}`. Corroborating non-manifest telemetry: `resolved_config.json` at `stage2_ab.channel_b.assignment.{strategy,iou_threshold}`, Channel-B rollout meta (`assignment_strategy`, `assignment_iou_threshold`), and batch metrics under `stage2_ab/channel_b/assignment/*`. | Active Stage-2 runs must record `greedy_iou` over the post-duplicate survivor set. Removed assignment identifiers are tolerant-read only for archived artifacts and must not be emitted by new training runs. |
 | `stage2_policy_provenance.duplicate_filter_strategy` | `src/training/stage2/duplicate_filter.py::DuplicateFilter`; live compatibility owner `src/config/schema.py::Stage2ABChannelBDuplicateControlConfig`; `src/trainers/stage2_two_channel/target_builder.py::_apply_channel_b_duplicate_control` | First-class manifest fields: `stage2_policy_provenance.{duplicate_filter_strategy,duplicate_iou_threshold,duplicate_center_radius_scale}`. Corroborating config visibility: `resolved_config.json` at `stage2_ab.channel_b.duplicate_control.{iou_threshold,center_radius_scale}`. | Duplicate filtering must run before assignment and target realization. Preserve thresholds and diagnostic counters, or add an explicit replacement field plus tests before changing filtering order or semantics. |
 | `stage2_policy_provenance.object_ordering_policy` | `src/training/ordering.py`; `src/sft.py` injection into rollout configs; `src/trainers/stage2_two_channel/target_builder.py` for `stage2_ab.channel_b.insertion_order` | First-class manifest fields: `stage2_policy_provenance.{object_ordering_policy,object_ordering_strategy_id,sample_object_ordering}`. Corroborating non-manifest visibility: `resolved_config.json` at `custom.object_ordering` and `stage2_ab.channel_b.insertion_order`, plus Stage-2 eval summaries when materialized. | Preserve Channel-B final-target insertion ordering: default `tail_append` keeps retained accepted rollout objects first and appends false-negative GT objects; `sorted` applies final top-left ordering over retained accepted objects plus inserted false negatives. |
 

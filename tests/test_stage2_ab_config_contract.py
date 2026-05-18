@@ -197,11 +197,11 @@ def test_stage2_ab_channel_b_rollout_template_defaults_to_explicit_legacy() -> N
     assert cfg.fallback_loss_weight == pytest.approx(1.0)
 
 
-def test_stage2_ab_channel_b_assignment_defaults_to_legacy_adapter() -> None:
+def test_stage2_ab_channel_b_assignment_defaults_to_greedy_iou() -> None:
     cfg = Stage2ABChannelBConfig.from_mapping({})
 
     assert cfg.assignment == Stage2ABChannelBAssignmentConfig(
-        strategy="legacy_hungarian_mask_iou",
+        strategy="greedy_iou",
         iou_threshold=None,
     )
 
@@ -218,6 +218,10 @@ def test_stage2_ab_channel_b_assignment_accepts_greedy_iou() -> None:
 @pytest.mark.parametrize(
     "payload, expected_msg",
     [
+        (
+            {"strategy": "legacy_hungarian_mask_iou"},
+            r"legacy_hungarian_mask_iou has been removed; use greedy_iou",
+        ),
         (
             {"strategy": "oops"},
             r"stage2_ab\.channel_b\.assignment\.strategy must be one of",
@@ -1856,7 +1860,8 @@ def test_stage2_compact_full_a2_smoke_config_pins_unconstrained_fallback_policy(
         == "fallback_gt_fn_append_only"
     )
     assert cfg.stage2_ab.channel_b.fallback_loss_weight == 1.0
-    assert cfg.stage2_ab.channel_b.triage_posterior.num_rollouts == 2
+    assert cfg.stage2_ab.channel_b.assignment.strategy == "greedy_iou"
+    assert cfg.stage2_ab.channel_b.triage_posterior.num_rollouts == 4
 
     assert cfg.rollout_matching.rollout_backend == "hf"
     assert cfg.rollout_matching.eval_rollout_backend == "hf"
@@ -1893,6 +1898,8 @@ def test_stage2_compact_full_a2_gate2_smoke_config_keeps_compact_surface() -> No
         cfg.stage2_ab.channel_b.invalid_rollout_policy
         == "fallback_gt_fn_append_only"
     )
+    assert cfg.stage2_ab.channel_b.assignment.strategy == "greedy_iou"
+    assert cfg.stage2_ab.channel_b.triage_posterior.num_rollouts == 4
 
     assert cfg.training["max_steps"] == 16
     assert cfg.training["eval_steps"] == 16

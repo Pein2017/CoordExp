@@ -2307,7 +2307,7 @@ class Stage2ABChannelBDuplicateControlConfig:
 
 @dataclass(frozen=True)
 class Stage2ABChannelBAssignmentConfig:
-    strategy: str = "legacy_hungarian_mask_iou"
+    strategy: str = "greedy_iou"
     iou_threshold: Optional[float] = None
 
     @classmethod
@@ -2320,10 +2320,15 @@ class Stage2ABChannelBAssignmentConfig:
         data: MutableMapping[str, Any] = dict(payload)
         strategy_raw = data.pop("strategy", cls.strategy)
         strategy = str(strategy_raw).strip().lower().replace("-", "_")
-        if strategy not in {"legacy_hungarian_mask_iou", "greedy_iou"}:
+        if strategy == "legacy_hungarian_mask_iou":
+            raise ValueError(
+                "stage2_ab.channel_b.assignment.strategy=legacy_hungarian_mask_iou "
+                "has been removed; use greedy_iou"
+            )
+        if strategy != "greedy_iou":
             raise ValueError(
                 "stage2_ab.channel_b.assignment.strategy must be one of "
-                "{'legacy_hungarian_mask_iou', 'greedy_iou'}"
+                "{'greedy_iou'}"
             )
 
         iou_threshold_raw = data.pop("iou_threshold", None)

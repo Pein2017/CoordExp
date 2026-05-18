@@ -738,7 +738,7 @@ Normative behavior:
 - **AND** duplicate-control diagnostic metadata remains well-defined.
 
 ### Requirement: Generic unmatched clean extras remain prefix-visible while staying outside desc and coord supervision
-Accepted clean objects that are unmatched after Hungarian MAY remain in the clean prefix as context, but they MUST remain outside desc, bbox, and coord supervision.
+Accepted clean objects that are unmatched after the configured Stage-2 assignment MAY remain in the clean prefix as context, but they MUST remain outside desc, bbox, and coord supervision.
 
 Normative behavior:
 - Unmatched clean extras MAY populate global rollout-prefix struct masks when `token_ce.config.rollout_global_prefix_struct_ce_weight > 0`.
@@ -1273,13 +1273,24 @@ Normative behavior:
   objective list.
 - `token_ce.config` no longer accepts any legacy invalid-structure amplification knob for Channel-B.
 - `stage2_ab.channel_b` MUST accept only:
+  - `assignment`
   - `duplicate_control`
   - `triage_posterior`
   - `producer_wait_timeout_s`
   - `ddp_phase_timeout_s`
+  - `rollout_template_family`
+  - `rollout_decode_policy`
   - `invalid_rollout_policy`
+  - `fallback_loss_weight`
   - `insertion_order`
   - `pseudo_positive`
+- `stage2_ab.channel_b.assignment` MUST be a typed mapping and MUST accept only:
+  - `strategy`
+  - `iou_threshold`
+- `stage2_ab.channel_b.assignment.strategy` MUST default to `greedy_iou`.
+- `greedy_iou` MUST be the only accepted assignment strategy for live Stage-2
+  two-channel training.
+- `stage2_ab.channel_b.fallback_loss_weight` MUST be finite and non-negative.
 - `stage2_ab.channel_b.duplicate_control` MUST be a typed mapping and MUST
   accept only:
   - `iou_threshold`
@@ -1381,8 +1392,8 @@ Normative behavior:
 
 - when `stage2_ab.channel_b.pseudo_positive.enabled=false`, total rollout views MUST remain `2` (`1` anchor + `1` explorer),
 - when `stage2_ab.channel_b.pseudo_positive.enabled=true`, total rollout views MUST equal `stage2_ab.channel_b.triage_posterior.num_rollouts`,
-- each rollout MUST independently reuse the existing bounded salvage + strict record acceptance + bbox-valid filtering + sequential dedup + Hungarian matching path,
-- GT-backed semantics MUST inherit the existing Channel-B accepted-clean Hungarian + gating contract,
+- each rollout MUST independently reuse the existing bounded salvage + strict record acceptance + bbox-valid filtering + sequential dedup + configured Stage-2 assignment path,
+- GT-backed semantics MUST inherit the existing Channel-B accepted-clean assignment + gating contract,
 - the final positive target MUST be built by editing the **anchor** clean sequence rather than rebuilding a union order,
 - pseudo-positive candidate discovery MUST start from unmatched anchor clean objects and use explorer agreement only as support evidence,
 - explorer-only non-GT-backed objects MUST NOT be promoted into clean-prefix positives,
@@ -1642,14 +1653,14 @@ Normative behavior:
   - anchor objects that may survive or be suppressed,
   - explorer evidence that may trigger conservative crowd-safe exemptions,
 - duplicate-control MUST run once on that assembled evidence surface before any
-  GT Hungarian matching occurs,
+  GT assignment occurs,
 - duplicate-like grouping MUST be deterministic and MUST operate on parsed
   bbox objects before GT matching,
 - duplicate-like grouping MUST be able to merge local same-description repeats
   that are not strictly sequential neighbors in emission order,
 - GT-backed semantics apply only after duplicate-control has already reduced the
   anchor survivor set and MUST inherit the existing Channel-B accepted-clean
-  Hungarian + gating contract on that post-policy survivor set,
+  assignment + gating contract on that post-policy survivor set,
 - the final positive target MUST be built by editing the anchor clean sequence
   rather than rebuilding a union order,
 - explorer-only non-GT-backed objects MUST be treated as dead by default,

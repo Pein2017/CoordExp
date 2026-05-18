@@ -922,31 +922,29 @@ Normative algorithm sketch (no string-search for coord patterns; structure-aware
 - **THEN** that object contributes no self-context coord loss
 - **AND** its GT counterpart (if any) is treated as unmatched and included in `FN_gt_objects` for tail append.
 
-### Requirement: Matching baseline uses Hungarian assignment with dummy augmentation and maskIoU gating
-Matching SHALL be done via Hungarian assignment with dummy augmentation to allow FP/FN.
+### Requirement: Matching baseline uses deterministic greedy IoU assignment
+Matching SHALL be done via deterministic greedy IoU assignment to surface FP/FN
+behavior directly.
 
-MVP baseline (configurable via YAML, with defaults defined by the trainer):
-- Candidate reduction: for each predicted object, the trainer SHALL compute AABB IoU against GT AABBs and select top-k candidates before expensive geometry. If AABB IoU is all zero or candidates are insufficient, a deterministic fallback SHALL be used (e.g., keep top-k by center distance).
-- Geometry cost: the trainer SHALL compute `maskIoU` between predicted and GT shapes (bbox/poly rasterized to masks) and define:
-  - `cost_geo(i, j) = 1 - maskIoU(i, j)`
-  - `maskIoU` SHALL be computed in **norm1000 space** on a fixed virtual canvas of size `R x R` (default `R=256`), by:
-    - treating `poly` as a single-ring polygon,
-    - treating `bbox_2d` as its quadrilateral polygon,
-    - clamping coordinates to `[0, 999]` before projection to the `R x R` canvas.
-- Gating (pre-assignment): pairs with `maskIoU < threshold` SHALL be treated as infeasible (equivalently `cost = +INF`) BEFORE assignment, to avoid wrong matches.
-- Dummy semantics:
-  - `pred -> dummy` represents FP (low penalty / light control only),
-  - `dummy -> gt` represents FN and SHALL be handled by mandatory FN append (the GT object is appended, not silently dropped).
+Baseline behavior:
+- Candidate scoring: for each predicted object, the trainer SHALL compute bbox
+  IoU against every GT object in norm1000 coordinates.
+- Gating: pairs with `IoU < threshold` SHALL be treated as ineligible.
+- Selection: eligible pairs SHALL be sorted by descending IoU, then prediction
+  index, then GT index; a pair SHALL be selected only when neither side has
+  already been selected.
+- Unmatched predicted objects represent FP and receive no geometric GT target.
+- Unmatched GT objects represent FN and SHALL be handled by mandatory FN append
+  when the target-construction policy calls for append supervision.
 
 The matching output SHALL determine:
 - matched pairs eligible for self-context supervision (subject to coord-slot alignment validity), and
 - `FN_gt_objects` (all GT objects not matched to a usable predicted object).
 
-#### Scenario: Pre-assignment gating prevents wrong matches and triggers FN append
-- **GIVEN** a predicted shape that has `maskIoU < threshold` with every GT shape
-- **WHEN** Hungarian matching runs
-- **THEN** all `pred -> gt` edges are infeasible (`+INF`) prior to assignment
-- **AND** the predicted object is assigned to dummy (FP)
+#### Scenario: IoU gating prevents wrong matches and triggers FN append
+- **GIVEN** a predicted shape that has `IoU < threshold` with every GT shape
+- **WHEN** greedy IoU matching runs
+- **THEN** the predicted object is left unmatched as FP
 - **AND** all GT objects remain unmatched and are appended via `FN_gt_objects`.
 
 ### Requirement: Poly self-context targets use Sinkhorn OT with barycentric projection only
