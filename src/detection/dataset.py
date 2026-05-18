@@ -4,10 +4,16 @@ from __future__ import annotations
 
 import copy
 import random
+import warnings
 from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any, Literal, Mapping, MutableMapping, Sequence
 
+from public_data.view_contracts import (
+    load_view_metadata,
+    resolve_view_image_root,
+    resolve_view_repo_root,
+)
 from torch.utils.data import Dataset
 
 from src.common.detection_chat import build_detection_chat_messages
@@ -31,6 +37,7 @@ DetectionObjectOrdering = Literal["sorted", "random_permutation"]
 
 REGISTERED_DETECTION_SIDECAR_KEYS: tuple[str, ...] = (
     "recursive_detection_targets",
+    "rendered_span_sources",
     "detection_metadata",
     "assistant_payload",
     "sample_id",
@@ -83,18 +90,112 @@ TRAINER_BATCH_EXTRA_KEYS: frozenset[str] = frozenset(
 )
 
 
+def resolve_detection_jsonl_image_root(
+    jsonl_path: str | Path,
+    *,
+    image_root: str | Path | None,
+) -> Path:
+    """Resolve the image root for a latest compact detection JSONL.
+
+    :param jsonl_path: Training or evaluation JSONL path.
+    :param image_root: Optional legacy explicit image root override.
+    :returns: Absolute image-store root path.
+    """
+
+    path = Path(jsonl_path)
+
+    meta_path = path.parent / "meta.json"
+    if meta_path.exists():
+        metadata = load_view_metadata(meta_path)
+        metadata_repo_root = (
+            None
+            if Path(metadata.image_store).is_absolute()
+            else resolve_view_repo_root(metadata, path.parent)
+        )
+        metadata_image_root = resolve_view_image_root(
+            metadata,
+            path.parent,
+            repo_root=metadata_repo_root,
+        )
+        explicit_image_root = _resolve_explicit_image_root(
+            image_root,
+            metadata_image_root=metadata_image_root,
+            metadata_image_store=metadata.image_store,
+            metadata_repo_root=metadata_repo_root,
+        )
+        if (
+            explicit_image_root is not None
+            and explicit_image_root != metadata_image_root
+        ):
+            raise ValueError(
+                "explicit image_root does not match view metadata image_store: "
+                f"image_root={explicit_image_root}, "
+                f"meta.json={meta_path}, "
+                f"resolved_image_store={metadata_image_root}"
+            )
+
+        return metadata_image_root
+
+    explicit_image_root = _resolve_explicit_image_root(
+        image_root,
+        metadata_image_root=None,
+        metadata_image_store=None,
+        metadata_repo_root=None,
+    )
+    if explicit_image_root is not None:
+        return explicit_image_root
+
+    raise ValueError(
+        "DetectionTrainingDataset requires image_root or view metadata: "
+        f"expected meta.json next to JSONL at {meta_path}"
+    )
+
+
+def _resolve_explicit_image_root(
+    image_root: str | Path | None,
+    *,
+    metadata_image_root: Path | None,
+    metadata_image_store: str | None,
+    metadata_repo_root: Path | None,
+) -> Path | None:
+    """Resolve an explicit image root without CWD dependence when metadata exists."""
+
+    if image_root is None:
+        return None
+
+    explicit_path = Path(image_root).expanduser()
+    if explicit_path.is_absolute():
+        return explicit_path.resolve(strict=False)
+
+    if (
+        metadata_image_root is None
+        or metadata_image_store is None
+        or metadata_repo_root is None
+    ):
+        return explicit_path.resolve(strict=False)
+
+    metadata_image_store_path = Path(metadata_image_store)
+    if metadata_image_store_path.is_absolute():
+        return explicit_path.resolve(strict=False)
+
+    if explicit_path == metadata_image_store_path:
+        return metadata_image_root
+
+    return (metadata_repo_root / explicit_path).resolve(strict=False)
+
+
 @dataclass(frozen=True)
 class DetectionDatasetRuntimeConfig:
-    image_root: str
+    image_root: str | None
     detection_template_id: TemplateId
     mode: DetectionTrainingMode
     object_ordering: DetectionObjectOrdering
     user_prompt: str
     system_prompt: str | None
-    max_objects: int
     seed: int
     state_weighting: str
     normalization: str
+    max_objects: int | None = None
     type_gate_config: Any | None = None
 
 
@@ -116,8 +217,19 @@ class DetectionTrainingDataset(Dataset):
     ) -> None:
         if not rows:
             raise ValueError("DetectionTrainingDataset requires at least one row")
-        if config.max_objects <= 0:
-            raise ValueError("max_objects must be positive")
+        if config.image_root is None:
+            raise ValueError(
+                "DetectionTrainingDataset requires resolved image_root; call "
+                "from_jsonl with data.image_root or a sibling view meta.json"
+            )
+        if config.max_objects is not None:
+            warnings.warn(
+                "data.max_objects is compatibility-only for latest compact "
+                "datasets and is ignored at training runtime; generate a "
+                "filtered JSONL view such as a legacy max-60 view instead.",
+                UserWarning,
+                stacklevel=2,
+            )
         self.rows = tuple(copy.deepcopy(dict(row)) for row in rows)
         self.swift_template = swift_template
         self.template = swift_template
@@ -135,21 +247,26 @@ class DetectionTrainingDataset(Dataset):
         jsonl_path: str | Path,
         *,
         swift_template: Any,
-        image_root: str | Path,
+        image_root: str | Path | None,
         detection_template_id: TemplateId,
         mode: DetectionTrainingMode,
         object_ordering: DetectionObjectOrdering,
         user_prompt: str,
         system_prompt: str | None,
-        max_objects: int,
         seed: int,
         state_weighting: str,
         normalization: str,
+        max_objects: int | None = None,
         type_gate_config: Any | None = None,
         sample_limit: int | None = None,
         dataset_name: str | None = None,
     ) -> "DetectionTrainingDataset":
         path = Path(jsonl_path)
+        resolved_image_root = resolve_detection_jsonl_image_root(
+            path,
+            image_root=image_root,
+        )
+
         rows, _invalid_count = load_jsonl_with_diagnostics(path, strict=True)
         if sample_limit is not None:
             if sample_limit <= 0:
@@ -159,13 +276,13 @@ class DetectionTrainingDataset(Dataset):
             rows,
             swift_template=swift_template,
             config=DetectionDatasetRuntimeConfig(
-                image_root=str(image_root),
+                image_root=str(resolved_image_root),
                 detection_template_id=detection_template_id,
                 mode=mode,
                 object_ordering=object_ordering,
                 user_prompt=user_prompt,
                 system_prompt=system_prompt,
-                max_objects=int(max_objects),
+                max_objects=None if max_objects is None else int(max_objects),
                 seed=int(seed),
                 state_weighting=str(state_weighting),
                 normalization=str(normalization),
@@ -209,11 +326,6 @@ class DetectionTrainingDataset(Dataset):
 
         base_idx = self._base_index(index)
         raw = parse_raw_detection_row(self.rows[base_idx])
-        if len(raw.objects) > self.config.max_objects:
-            raise ValueError(
-                f"row {base_idx} has {len(raw.objects)} objects, exceeding "
-                f"data.max_objects={self.config.max_objects}"
-            )
 
         ordering_plan = self._ordering_plan(base_idx=base_idx, epoch=epoch)
         normalized = normalize_detection_row(raw, object_ordering=ordering_plan)
@@ -241,11 +353,6 @@ class DetectionTrainingDataset(Dataset):
     def __getitem__(self, index: int) -> dict[str, Any]:
         base_idx = self._base_index(index)
         raw = parse_raw_detection_row(self.rows[base_idx])
-        if len(raw.objects) > self.config.max_objects:
-            raise ValueError(
-                f"row {base_idx} has {len(raw.objects)} objects, exceeding "
-                f"data.max_objects={self.config.max_objects}"
-            )
 
         ordering_plan = self._ordering_plan(base_idx=base_idx)
         normalized = normalize_detection_row(raw, object_ordering=ordering_plan)
@@ -331,6 +438,9 @@ class DetectionTrainingDataset(Dataset):
             "file_name": raw.file_name,
         }
         encoded["detection_metadata"] = detection_metadata
+        encoded["rendered_span_sources"] = _rendered_span_sources(
+            prepared.rendered_assistant.render_span_events
+        )
         encoded["sample_id"] = _make_sample_id(self.dataset_name, base_idx)
         encoded["dataset"] = self.dataset_name
         encoded["base_idx"] = base_idx
@@ -568,6 +678,48 @@ def _make_sample_id(dataset_name: str, base_idx: int) -> int:
     return (namespace << 32) | (int(base_idx) & 0xFFFFFFFF)
 
 
+def _rendered_span_sources(render_span_events: Sequence[Any]) -> list[dict[str, Any]]:
+    sources: list[dict[str, Any]] = []
+    for event in render_span_events:
+        if getattr(event, "object_instance_id", None) is None:
+            continue
+        if getattr(event, "span_family", None) is None:
+            continue
+        sources.append(
+            {
+                "char_span": {
+                    "start": int(event.char_span.start),
+                    "end": int(event.char_span.end),
+                    "label": str(event.char_span.label),
+                },
+                "event_kind": str(event.span_kind),
+                "object_id": getattr(event, "object_id", None),
+                "object_instance_id": str(event.object_instance_id),
+                "supervision_key": getattr(event, "supervision_key", None),
+                "span_family": getattr(event, "span_family", None),
+                "field_name": getattr(event, "field_name", None),
+                "source_role": getattr(event, "source_role", None),
+                "relation_snapshot": _json_safe_sidecar_value(
+                    getattr(event, "relation_snapshot", None)
+                ),
+                "coordinate_weight": getattr(event, "coordinate_weight", None),
+                "regression_weight": getattr(event, "regression_weight", None),
+                "hard_bbox_supervision": getattr(event, "hard_bbox_supervision", None),
+            }
+        )
+    return sources
+
+
+def _json_safe_sidecar_value(value: Any) -> Any:
+    if isinstance(value, Mapping):
+        return {str(key): _json_safe_sidecar_value(item) for key, item in value.items()}
+    if isinstance(value, Sequence) and not isinstance(value, (str, bytes, bytearray)):
+        return [_json_safe_sidecar_value(item) for item in value]
+    if value is None or isinstance(value, (str, int, float, bool)):
+        return value
+    return str(value)
+
+
 def strip_non_model_detection_sidecars(
     batch: MutableMapping[str, Any],
 ) -> MutableMapping[str, Any]:
@@ -615,5 +767,6 @@ __all__ = [
     "DetectionTrainingDataset",
     "REGISTERED_DETECTION_SIDECAR_KEYS",
     "DETECTION_DROPPED_BEFORE_MODEL_KEYS",
+    "resolve_detection_jsonl_image_root",
     "strip_non_model_detection_sidecars",
 ]

@@ -398,7 +398,6 @@ def build_latest_detection_dataset(
         object_ordering=training_config.data.object_ordering,
         user_prompt=custom_config.user_prompt,
         system_prompt=system_prompt,
-        max_objects=training_config.data.max_objects,
         seed=seed,
         state_weighting=training_config.objective.state_weighting,
         normalization=training_config.objective.normalization,

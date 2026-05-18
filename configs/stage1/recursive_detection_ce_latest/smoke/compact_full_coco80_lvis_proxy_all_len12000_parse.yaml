@@ -1,0 +1,12 @@
+extends:
+  - ./compact_full_tiny.yaml
+
+training:
+  artifact_subdir: compact_full_coco80_lvis_proxy_all_len12000_parse
+  run_name: smoke-compact-full-coco80-lvis-proxy-all-len12000-parse
+
+data:
+  train_jsonl: public_data/coco/views/coco80-lvis-proxy/len-12000/train.jsonl
+  val_jsonl: public_data/coco/views/coco80-lvis-proxy/len-12000/val.jsonl
+  image_root: null
+  max_objects: null

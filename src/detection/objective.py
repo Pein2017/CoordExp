@@ -707,6 +707,7 @@ class _TrieObjectInstance:
     source_object_index: int
     token_ids: tuple[int, ...]
     bbox_xyxy: tuple[int, int, int, int]
+    hard_bbox_supervision: bool
 
 
 @dataclass
@@ -749,13 +750,17 @@ def build_recursive_detection_targets(
     token_targets: list[TokenTarget] = []
     cursor = tokenized.assistant_token_span.start
     for entry in tokenized.object_entries:
-        entry_coord_soft_targets = _single_object_coord_soft_targets_by_position(
-            entry,
-            object_instance=_find_object_instance(
-                remaining_instances,
-                object_instance_id=entry.object_instance_id,
-            ),
-        )
+        hard_bbox_supervision = _allows_hard_bbox_supervision(entry)
+        entry_coord_positions = _entry_coord_positions(entry)
+        entry_coord_soft_targets: Mapping[int, tuple[CoordSoftTargetSpec, ...]] = {}
+        if hard_bbox_supervision:
+            entry_coord_soft_targets = _single_object_coord_soft_targets_by_position(
+                entry,
+                object_instance=_find_object_instance(
+                    remaining_instances,
+                    object_instance_id=entry.object_instance_id,
+                ),
+            )
         _append_hard_ce_targets(
             token_targets,
             tokenized=tokenized,
@@ -770,12 +775,18 @@ def build_recursive_detection_targets(
             end=entry.trie_eligible_span.start,
             object_instance_id=entry.object_instance_id,
             coord_soft_targets_by_position=entry_coord_soft_targets,
+            excluded_positions=entry_coord_positions
+            if not hard_bbox_supervision
+            else (),
         )
         _append_recursive_entry_targets(
             token_targets,
             tokenized=tokenized,
             entry=entry,
             remaining_instances=remaining_instances,
+            excluded_positions=entry_coord_positions
+            if not hard_bbox_supervision
+            else (),
         )
         _append_hard_ce_targets(
             token_targets,
@@ -784,6 +795,9 @@ def build_recursive_detection_targets(
             end=entry.entry_span.end,
             object_instance_id=entry.object_instance_id,
             coord_soft_targets_by_position=entry_coord_soft_targets,
+            excluded_positions=entry_coord_positions
+            if not hard_bbox_supervision
+            else (),
         )
         _remove_object_instance(
             remaining_instances,
@@ -1009,7 +1023,9 @@ def _build_loss_atoms(
             position
             for coord_span in entry.coord_spans
             for position in coord_span.token_indices()
-            if position in target_by_position and position not in trie_positions
+            if _allows_hard_bbox_supervision(entry)
+            and position in target_by_position
+            and position not in trie_positions
         }
         object_control_positions = (
             entry_positions - trie_positions - desc_positions - coord_positions
@@ -1162,6 +1178,7 @@ def _build_trie_object_instances(
                 source_object_index=entry.source_object_index,
                 token_ids=token_ids,
                 bbox_xyxy=_bbox_xyxy_from_object(obj),
+                hard_bbox_supervision=_allows_hard_bbox_supervision(entry),
             )
         )
     return tuple(instances)
@@ -1192,6 +1209,7 @@ def _append_recursive_entry_targets(
     tokenized: TokenizedDetectionExample,
     entry: TokenizedObjectEntry,
     remaining_instances: list[_TrieObjectInstance],
+    excluded_positions: set[int] | frozenset[int] | tuple[int, ...] = (),
 ) -> None:
     trie_root = _build_entry_trie(remaining_instances)
     teacher_instance = _find_object_instance(
@@ -1219,14 +1237,36 @@ def _append_recursive_entry_targets(
                 "valid remaining-object trie child"
             )
 
-        active_count = node.descendant_count()
+        if coord_slot_name is None:
+            active_count = node.descendant_count()
+            child_multiplicities = tuple(
+                (child_token_id, child.descendant_count())
+                for child_token_id, child in sorted(node.children.items())
+            )
+        else:
+            child_multiplicities = tuple(
+                (child_token_id, hard_descendant_count)
+                for child_token_id, child in sorted(node.children.items())
+                if (
+                    hard_descendant_count := sum(
+                        1
+                        for instance in child.descendant_instances
+                        if instance.hard_bbox_supervision
+                    )
+                )
+                > 0
+            )
+            active_count = sum(
+                child_multiplicity
+                for _, child_multiplicity in child_multiplicities
+            )
         trie_branch_targets = tuple(
             TrieBranchTarget(
                 token_id=child_token_id,
-                multiplicity=child.descendant_count(),
-                probability=float(child.descendant_count() / max(active_count, 1)),
+                multiplicity=child_multiplicity,
+                probability=float(child_multiplicity / max(active_count, 1)),
             )
-            for child_token_id, child in sorted(node.children.items())
+            for child_token_id, child_multiplicity in child_multiplicities
         )
         if trie_branch_targets:
             probability_mass = sum(target.probability for target in trie_branch_targets)
@@ -1238,24 +1278,29 @@ def _append_recursive_entry_targets(
         kind: TrieTargetKind = (
             "trie_multi_positive" if len(trie_branch_targets) > 1 else "hard_ce"
         )
-        token_targets.append(
-            TokenTarget(
-                position=position,
-                teacher_token_id=teacher_token_id,
-                kind=kind,
-                trie_branch_targets=trie_branch_targets,
-                object_instance_id=entry.object_instance_id,
-                token_role=tokenized.token_roles[position],
-                coord_soft_targets=(
-                    _coord_soft_targets_for_instances(
-                        node.descendant_instances,
-                        slot_name=coord_slot_name,
-                    )
-                    if coord_slot_name is not None
-                    else ()
-                ),
+        if position not in excluded_positions:
+            token_targets.append(
+                TokenTarget(
+                    position=position,
+                    teacher_token_id=teacher_token_id,
+                    kind=kind,
+                    trie_branch_targets=trie_branch_targets,
+                    object_instance_id=entry.object_instance_id,
+                    token_role=tokenized.token_roles[position],
+                    coord_soft_targets=(
+                        _coord_soft_targets_for_instances(
+                            tuple(
+                                instance
+                                for instance in node.descendant_instances
+                                if instance.hard_bbox_supervision
+                            ),
+                            slot_name=coord_slot_name,
+                        )
+                        if coord_slot_name is not None
+                        else ()
+                    ),
+                )
             )
-        )
         node = node.children[teacher_token_id]
 
     if node.terminal_count <= 0:
@@ -1274,10 +1319,13 @@ def _append_hard_ce_targets(
     object_instance_id: str | None,
     coord_soft_targets_by_position: Mapping[int, tuple[CoordSoftTargetSpec, ...]]
     | None = None,
+    excluded_positions: set[int] | frozenset[int] | tuple[int, ...] = (),
 ) -> None:
     coord_soft_targets_by_position = coord_soft_targets_by_position or {}
     for position in range(start, end):
         if tokenized.labels[position] == -100:
+            continue
+        if position in excluded_positions:
             continue
         teacher_token_id = tokenized.input_ids[position]
         token_targets.append(
@@ -1602,6 +1650,24 @@ def _single_object_coord_soft_targets_by_position(
         for position in coord_span.token_indices():
             by_position[position] = (spec,)
     return by_position
+
+
+def _allows_hard_bbox_supervision(entry: TokenizedObjectEntry) -> bool:
+    if entry.hard_bbox_supervision is False:
+        return False
+    if entry.source_role == "proxy_candidate":
+        return False
+    if entry.coordinate_weight == 0.0 or entry.regression_weight == 0.0:
+        return False
+    return True
+
+
+def _entry_coord_positions(entry: TokenizedObjectEntry) -> set[int]:
+    return {
+        position
+        for coord_span in entry.coord_spans
+        for position in coord_span.token_indices()
+    }
 
 
 def _coord_soft_targets_for_instances(

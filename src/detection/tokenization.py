@@ -65,6 +65,11 @@ class TokenizedObjectEntry:
     separator_span: TokenSpan | None
     control_spans: tuple[TokenSpan, ...]
     trie_eligible_span: TokenSpan
+    object_id: str | None = None
+    source_role: str | None = None
+    coordinate_weight: float | None = None
+    regression_weight: float | None = None
+    hard_bbox_supervision: bool | None = None
 
 
 @dataclass(frozen=True)
@@ -629,6 +634,11 @@ def _align_object_entry(
             entry.trie_eligible_span,
             base_offset=assistant_base_offset,
         ),
+        object_id=entry.object_id,
+        source_role=entry.source_role,
+        coordinate_weight=entry.coordinate_weight,
+        regression_weight=entry.regression_weight,
+        hard_bbox_supervision=entry.hard_bbox_supervision,
     )
 
 

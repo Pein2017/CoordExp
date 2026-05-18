@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
 import torch
+from public_data.view_contracts import write_view_metadata
 
 from src.common.coord_standardizer import CoordinateStandardizer
 from src.common.geometry.bbox_parameterization import (
@@ -34,6 +36,34 @@ def _build_coord_id_map(vocab_size: int, coord_token_ids: list[int]) -> torch.Te
     for idx, tok_id in enumerate(coord_token_ids):
         coord_id_map[int(tok_id)] = int(idx)
     return coord_id_map
+
+
+def _write_qwen_coord_token_view_meta(view_root: Path) -> None:
+    write_view_metadata(
+        view_root / "meta.json",
+        {
+            "schema_version": 1,
+            "kind": "annotation_view",
+            "dataset": "coco",
+            "view": "coco80/len-12000",
+            "image_store": "public_data/coco/images/res-1024",
+            "path_anchor": "repo_root",
+            "image_path_semantics": "image_store_relative",
+            "coordinate_space": "norm1000",
+            "coordinate_storage": "integer",
+            "coordinate_range": [0, 999],
+            "coordinate_chart": "xyxy",
+            "assistant_coordinate_rendering": "qwen_coord_tokens",
+            "primary_jsonl": {"train": "train.jsonl", "val": "val.jsonl"},
+            "sample_policy": {
+                "type": "length_budget",
+                "max_total_tokens": 12000,
+            },
+            "length_budget_scope": {"rendered_families": ["assistant"]},
+            "length_budget_template_id": "compact_full",
+            "summary": {},
+        },
+    )
 
 
 def _perfect_next_token_logits(labels: torch.Tensor, *, vocab: int) -> torch.Tensor:
@@ -167,6 +197,45 @@ def test_validate_bbox_format_contract_rejects_coord_mode_on_norm_surface() -> N
                 bbox_format="xyxy",
                 coord_tokens=SimpleNamespace(enabled=True),
                 train_jsonl="public_data/coco/demo/train.norm.jsonl",
+            ),
+            trainer_variant="",
+        )
+
+
+def test_validate_bbox_format_contract_accepts_canonical_view_coord_rendering(
+    tmp_path: Path,
+) -> None:
+    view_root = tmp_path / "public_data/coco/views/coco80/len-12000"
+    view_root.mkdir(parents=True)
+    _write_qwen_coord_token_view_meta(view_root)
+
+    _validate_bbox_format_contract(
+        custom_config=SimpleNamespace(
+            bbox_format="xyxy",
+            coord_tokens=SimpleNamespace(enabled=True),
+            train_jsonl=str(view_root / "train.jsonl"),
+            val_jsonl=str(view_root / "val.jsonl"),
+        ),
+        trainer_variant="",
+    )
+
+
+def test_validate_bbox_format_contract_rejects_raw_text_mode_on_canonical_view(
+    tmp_path: Path,
+) -> None:
+    view_root = tmp_path / "public_data/coco/views/coco80/len-12000"
+    view_root.mkdir(parents=True)
+    _write_qwen_coord_token_view_meta(view_root)
+
+    with pytest.raises(
+        ValueError,
+        match="assistant_coordinate_rendering=qwen_coord_tokens",
+    ):
+        _validate_bbox_format_contract(
+            custom_config=SimpleNamespace(
+                bbox_format="xyxy",
+                coord_tokens=SimpleNamespace(enabled=False),
+                train_jsonl=str(view_root / "train.jsonl"),
             ),
             trainer_variant="",
         )

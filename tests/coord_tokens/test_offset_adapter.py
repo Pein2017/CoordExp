@@ -2,7 +2,10 @@ import torch
 import torch.nn as nn
 import pytest
 
-from src.coord_tokens.offset_adapter import install_coord_offset_adapter
+from src.coord_tokens.offset_adapter import (
+    CoordOffsetAdapter,
+    install_coord_offset_adapter,
+)
 from src.coord_tokens.codec import get_coord_token_ids
 from src.config.schema import CoordOffsetConfig, TrainableTokenRowsConfig
 
@@ -16,6 +19,34 @@ class TinyLM(nn.Module):
     def forward(self, input_ids: torch.Tensor) -> torch.Tensor:
         hidden = self.embed_tokens(input_ids)
         return self.lm_head(hidden)
+
+
+class CrossDeviceEmbedding(nn.Module):
+    def __init__(self, vocab_size: int = 10, hidden_size: int = 6) -> None:
+        super().__init__()
+        self.weight = nn.Parameter(
+            torch.randn(vocab_size, hidden_size, device=torch.device("cuda:1")),
+            requires_grad=False,
+        )
+
+    def forward(self, input_ids: torch.Tensor) -> torch.Tensor:
+        target_ids = input_ids.to(self.weight.device)
+        flat = target_ids.reshape(-1)
+        hidden = self.weight.index_select(0, flat)
+        return hidden.reshape(*target_ids.shape, self.weight.size(-1))
+
+
+class CrossDeviceHead(nn.Module):
+    def __init__(self, vocab_size: int = 10, hidden_size: int = 6) -> None:
+        super().__init__()
+        self.weight = nn.Parameter(
+            torch.randn(vocab_size, hidden_size, device=torch.device("cuda:1")),
+            requires_grad=False,
+        )
+
+    def forward(self, hidden_states: torch.Tensor) -> torch.Tensor:
+        shape = (*hidden_states.shape[:-1], self.weight.size(0))
+        return torch.zeros(shape, device=self.weight.device, dtype=hidden_states.dtype)
 
 
 def test_forward_backward_affects_only_coord_offsets():
@@ -122,6 +153,61 @@ def test_repeated_forward_graphs_backprop_without_inplace_version_error():
     assert torch.isfinite(adapter.embed_offset.grad).all()
     assert model.embed_tokens.weight.grad is None
     assert model.lm_head.weight.grad is None
+
+
+@pytest.mark.skipif(torch.cuda.device_count() < 2, reason="requires two CUDA devices")
+def test_embedding_hook_accepts_sharded_input_and_output_devices():
+    embed = CrossDeviceEmbedding()
+    head = nn.Linear(6, 10, bias=False).to(torch.device("cuda:1"))
+    adapter = CoordOffsetAdapter(
+        coord_ids=[2, 5],
+        tie_head=True,
+        embed_dim=6,
+        head_dim=6,
+        base_dtype=torch.float32,
+        device=torch.device("cuda:1"),
+    )
+    adapter.attach(embed, head)
+    adapter.embed_offset.data[:] = torch.tensor(
+        [[1.0] * 6, [0.5] * 6],
+        device=adapter.embed_offset.device,
+    )
+
+    base_embed_2 = embed.weight[2].detach().clone()
+    input_ids = torch.tensor([[2, 1, 5]], device=torch.device("cuda:0"))
+
+    hidden = embed(input_ids)
+
+    assert hidden.device == torch.device("cuda:1")
+    assert torch.allclose(
+        hidden[0, 0], base_embed_2 + adapter.embed_offset[0], atol=1e-5
+    )
+
+
+@pytest.mark.skipif(torch.cuda.device_count() < 2, reason="requires two CUDA devices")
+def test_head_hook_accepts_sharded_hidden_and_logits_devices():
+    embed = CrossDeviceEmbedding()
+    head = CrossDeviceHead()
+    adapter = CoordOffsetAdapter(
+        coord_ids=[2, 5],
+        tie_head=True,
+        embed_dim=6,
+        head_dim=6,
+        base_dtype=torch.float32,
+        device=torch.device("cuda:1"),
+    )
+    adapter.attach(embed, head)
+    adapter.embed_offset.data[:] = torch.tensor(
+        [[1.0] * 6, [0.5] * 6],
+        device=adapter.embed_offset.device,
+    )
+    hidden_states = torch.ones((1, 3, 6), device=torch.device("cuda:0"))
+
+    logits = head(hidden_states)
+
+    assert logits.device == torch.device("cuda:1")
+    assert torch.all(logits[..., 2] > 0)
+    assert torch.all(logits[..., 5] > 0)
 
 
 def test_coord_offset_config_parsing_on_off():

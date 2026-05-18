@@ -354,7 +354,8 @@ def test_prefix_rollin_ablation_launch_smoke_covers_config_dataset_loss_and_mani
         / "configs/stage1/recursive_detection_ce_latest/ablation/"
         "compact_full_prefix_rollin_balance2.yaml"
     )
-    cfg = ConfigLoader.load_materialized_training_config(str(cfg_path))
+    with pytest.warns(UserWarning, match="data.max_objects is compatibility-only"):
+        cfg = ConfigLoader.load_materialized_training_config(str(cfg_path))
     assert isinstance(cfg, LatestDetectionTrainingConfig)
 
     train_jsonl = tmp_path / "data" / "train.coord.jsonl"
@@ -368,7 +369,6 @@ def test_prefix_rollin_ablation_launch_smoke_covers_config_dataset_loss_and_mani
             train_jsonl=str(train_jsonl),
             val_jsonl=str(val_jsonl),
             image_root=str(tmp_path / "image-root"),
-            max_objects=cfg.data.max_objects,
             object_ordering=cfg.data.object_ordering,
         ),
         training={
@@ -650,7 +650,8 @@ def test_prefix_rollin_bsz8_configs_record_eval_and_disabled_packing_runtime() -
     )
 
     for cfg_path in config_paths:
-        cfg = ConfigLoader.load_materialized_training_config(str(cfg_path))
+        with pytest.warns(UserWarning, match="data.max_objects is compatibility-only"):
+            cfg = ConfigLoader.load_materialized_training_config(str(cfg_path))
         assert isinstance(cfg, LatestDetectionTrainingConfig)
         assert cfg.training["per_device_train_batch_size"] == 8
         assert cfg.training["per_device_eval_batch_size"] == 8

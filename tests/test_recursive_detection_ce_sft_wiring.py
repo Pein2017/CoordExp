@@ -22,12 +22,14 @@ from src.sft import (
     _latest_detection_mode,
     _latest_detection_runtime_custom_shim,
     _resolve_recursive_detection_ce_cfg,
+    _resolve_root_image_dir_for_training,
 )
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 SFT_PATH = REPO_ROOT / "src" / "sft.py"
 RUNTIME_PATH = REPO_ROOT / "src" / "detection" / "runtime.py"
+MAX_OBJECTS_COMPAT_WARNING = "data.max_objects is compatibility-only"
 
 
 def _prod_latest_detection_config() -> LatestDetectionTrainingConfig:
@@ -35,7 +37,8 @@ def _prod_latest_detection_config() -> LatestDetectionTrainingConfig:
         REPO_ROOT
         / "configs/stage1/recursive_detection_ce_latest/prod/compact_full_support2.yaml"
     )
-    cfg = ConfigLoader.load_materialized_training_config(str(config_path))
+    with pytest.warns(UserWarning, match=MAX_OBJECTS_COMPAT_WARNING):
+        cfg = ConfigLoader.load_materialized_training_config(str(config_path))
     assert isinstance(cfg, LatestDetectionTrainingConfig)
     return cfg
 
@@ -225,6 +228,21 @@ def test_latest_detection_runtime_constructs_dataset_and_sft_delegates() -> None
     assert build_dataset_calls
 
 
+def test_sft_root_image_dir_autoconfig_requires_image_root_or_view_metadata() -> None:
+    latest_detection_config = SimpleNamespace(data=SimpleNamespace(image_root=None))
+
+    with pytest.raises(
+        ValueError,
+        match=(
+            "DetectionTrainingDataset requires image_root or view metadata"
+        ),
+    ):
+        _resolve_root_image_dir_for_training(
+            latest_detection_config=latest_detection_config,
+            train_jsonl=Path("train.coord.jsonl"),
+        )
+
+
 def test_latest_detection_runtime_shim_preserves_trainable_token_rows() -> None:
     cfg = _prod_latest_detection_config()
     custom_config = _latest_detection_runtime_custom_shim(cfg)
@@ -263,8 +281,12 @@ def test_sft_rejects_latest_recursive_detection_packing_preflight_config() -> No
         / "configs/stage1/recursive_detection_ce_latest/negative/compact_full_static_packing_should_fail.yaml"
     )
 
-    with pytest.raises(ValueError, match=r"recursive_detection_ce.*static packing"):
-        ConfigLoader.load_materialized_training_config(str(config_path))
+    with pytest.warns(UserWarning, match=MAX_OBJECTS_COMPAT_WARNING):
+        with pytest.raises(
+            ValueError,
+            match=r"recursive_detection_ce.*static packing",
+        ):
+            ConfigLoader.load_materialized_training_config(str(config_path))
 
 
 @pytest.mark.parametrize(
@@ -355,6 +377,7 @@ def test_recursive_detection_sidecars_survive_collation_but_not_model_forward() 
         "attention_mask": [1, 1, 1],
         "labels": [-100, 2, 3],
         "recursive_detection_targets": target_sidecar,
+        "rendered_span_sources": (),
         "detection_metadata": {"template_id": "compact_full"},
         "assistant_payload": {"objects": []},
         "sample_id": 42,

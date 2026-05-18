@@ -33,9 +33,17 @@ from src.common.geometry.bbox_parameterization import (  # noqa: E402
     normalize_bbox_format,
 )
 from src.common.geometry.coord_utils import ints_to_pixels_norm1000  # noqa: E402
+from public_data.view_contracts import (  # noqa: E402
+    COORDINATE_STORAGE_INTEGER,
+    ViewMetadata,
+    load_view_metadata,
+    resolve_image_path,
+    resolve_view_image_root,
+)
 
 
 DISALLOWED_GEOMETRY_KEYS = {"bbox", "polygon", "line", "line_points"}
+SUPPORT_ONLY_ROLES = {"support_anchor", "support_cue"}
 
 
 def _as_float_coord(value: Any) -> Optional[float]:
@@ -84,6 +92,9 @@ class JSONLValidator:
         image_check_mode: Optional[str] = None,
         image_check_n: int = 0,
         enforce_rescale_images_real_dir: bool = False,
+        view_meta_path: Optional[str | Path] = None,
+        image_root: Optional[str | Path] = None,
+        coordinate_storage: Optional[str] = None,
     ) -> None:
         if image_check_mode is None:
             image_check_mode = "open" if bool(check_image_sizes) else "exists"
@@ -104,6 +115,53 @@ class JSONLValidator:
         self.check_image_sizes = bool(check_image_sizes) or mode == "open"
         self.bbox_format = normalize_bbox_format(bbox_format, path="bbox_format")
         self._current_numeric_coord_mode = "pixel"
+        self.view_meta_path = Path(view_meta_path) if view_meta_path is not None else None
+        self.view_metadata: Optional[ViewMetadata] = None
+        self.canonical_image_root: Optional[Path] = None
+        self.coordinate_storage = coordinate_storage
+        if coordinate_storage not in (None, COORDINATE_STORAGE_INTEGER):
+            raise ValueError(
+                "--coordinate-storage currently supports only "
+                f"{COORDINATE_STORAGE_INTEGER!r}"
+            )
+        if self.view_meta_path is not None:
+            self.view_metadata = load_view_metadata(self.view_meta_path)
+            if (
+                self.coordinate_storage is not None
+                and self.coordinate_storage != self.view_metadata.coordinate_storage
+            ):
+                raise ValueError(
+                    "--coordinate-storage must match --view-meta coordinate_storage; "
+                    f"got {self.coordinate_storage!r}, "
+                    f"expected {self.view_metadata.coordinate_storage!r}"
+                )
+            self.coordinate_storage = self.view_metadata.coordinate_storage
+        if image_root is not None:
+            self.canonical_image_root = Path(image_root).resolve()
+            if self.view_metadata is not None and self.view_meta_path is not None:
+                metadata_image_root = resolve_view_image_root(
+                    self.view_metadata,
+                    self.view_meta_path.parent,
+                    repo_root=ROOT,
+                )
+                if self.canonical_image_root != metadata_image_root:
+                    raise ValueError(
+                        "--image-root must match --view-meta image_store; "
+                        f"got {self.canonical_image_root}, expected {metadata_image_root}"
+                    )
+        elif self.view_metadata is not None and self.view_meta_path is not None:
+            self.canonical_image_root = resolve_view_image_root(
+                self.view_metadata,
+                self.view_meta_path.parent,
+                repo_root=ROOT,
+            )
+        self.canonical_image_mode = (
+            self.view_meta_path is not None or image_root is not None
+        )
+        self.canonical_metadata_mode = self.view_meta_path is not None
+        self.canonical_coordinate_mode = (
+            self.coordinate_storage == COORDINATE_STORAGE_INTEGER
+        )
         self.expected_max_pixels = expected_max_pixels
         self.expected_multiple_of = expected_multiple_of
         self.verbose = verbose
@@ -147,7 +205,10 @@ class JSONLValidator:
         )
         bbox_format_raw = prepared_format if prepared_format not in (None, "") else self.bbox_format
         try:
-            return normalize_bbox_format(bbox_format_raw, path="metadata.prepared_bbox_format")
+            bbox_format = normalize_bbox_format(
+                bbox_format_raw,
+                path="metadata.prepared_bbox_format",
+            )
         except ValueError as exc:
             self.errors.append(
                 ValidationError(
@@ -158,6 +219,19 @@ class JSONLValidator:
             )
             self.stats["invalid_bboxes"] += 1
             return None
+
+        if self.canonical_metadata_mode and bbox_format != "xyxy":
+            self.errors.append(
+                ValidationError(
+                    line_num,
+                    "metadata.prepared_bbox_format",
+                    "Canonical annotation views require xyxy bbox coordinates",
+                )
+            )
+            self.stats["invalid_bboxes"] += 1
+            return None
+
+        return bbox_format
     
     def validate_file(self, jsonl_path: str) -> bool:
         """
@@ -177,6 +251,8 @@ class JSONLValidator:
         self._current_numeric_coord_mode = self._infer_numeric_coord_mode_from_path(
             jsonl_path_obj
         )
+        if self.canonical_coordinate_mode:
+            self._current_numeric_coord_mode = "norm1000"
         jsonl_dir = os.path.dirname(os.path.abspath(jsonl_path))
 
         if not self._enforce_images_dir_policy(jsonl_path_obj):
@@ -287,16 +363,20 @@ class JSONLValidator:
                 )
                 sample_valid = False
             else:
-                # Enforce the global contract: images MUST be relative to the JSONL directory.
-                if os.path.isabs(image_path):
-                    self.errors.append(
-                        ValidationError(
-                            line_num,
-                            "images[0]",
-                            "Image path must be relative to the JSONL directory (docs/data/CONTRACT.md)",
+                if self.canonical_image_mode:
+                    if not self._validate_canonical_image_ref(image_path, line_num):
+                        sample_valid = False
+                else:
+                    # Enforce the global contract: images MUST be relative to the JSONL directory.
+                    if os.path.isabs(image_path):
+                        self.errors.append(
+                            ValidationError(
+                                line_num,
+                                "images[0]",
+                                "Image path must be relative to the JSONL directory (docs/data/CONTRACT.md)",
+                            )
                         )
-                    )
-                    sample_valid = False
+                        sample_valid = False
 
         # Validate 'width' and 'height'
         width = sample["width"]
@@ -351,8 +431,26 @@ class JSONLValidator:
             sample_valid = False
         else:
             self.stats["total_objects"] += len(objects)
+            if (
+                self.canonical_metadata_mode
+                and not self._validate_canonical_supervision_metadata(
+                    sample,
+                    line_num,
+                )
+            ):
+                sample_valid = False
             if width_ok and height_ok and bbox_format is not None:
                 for obj_idx, obj in enumerate(objects):
+                    if (
+                        self.canonical_metadata_mode
+                        and not self._validate_canonical_object_metadata(
+                            sample,
+                            obj,
+                            line_num,
+                            obj_idx,
+                        )
+                    ):
+                        sample_valid = False
                     if not self.validate_object(
                         obj,
                         line_num,
@@ -374,6 +472,149 @@ class JSONLValidator:
                 )
 
         return sample_valid
+
+    def _validate_canonical_image_ref(self, image_ref: str, line_num: int) -> bool:
+        """Validate a canonical view image reference without touching image IO."""
+
+        if self.canonical_image_root is None:
+            self.errors.append(
+                ValidationError(
+                    line_num,
+                    "images[0]",
+                    "Canonical view mode requires --image-root or --view-meta image_store",
+                )
+            )
+            return False
+
+        try:
+            resolve_image_path(image_ref, self.canonical_image_root)
+        except ValueError as exc:
+            self.errors.append(
+                ValidationError(
+                    line_num,
+                    "images[0]",
+                    f"Image path must be image-store-relative: {exc}",
+                )
+            )
+            return False
+
+        return True
+
+    def _validate_canonical_supervision_metadata(
+        self,
+        sample: Dict[str, Any],
+        line_num: int,
+    ) -> bool:
+        """Validate sample-level supervision metadata for canonical views."""
+
+        object_supervision = self._object_supervision(sample)
+        if object_supervision is None:
+            return True
+
+        if not isinstance(object_supervision, dict):
+            self.errors.append(
+                ValidationError(
+                    line_num,
+                    "metadata.supervision.object_supervision",
+                    "Must be object/dict keyed by rendered object_id",
+                )
+            )
+            return False
+
+        metadata_valid = True
+        for object_id, supervision_entry in object_supervision.items():
+            entry_prefix = f"metadata.supervision.object_supervision.{object_id}"
+            if not isinstance(supervision_entry, dict):
+                self.errors.append(
+                    ValidationError(
+                        line_num,
+                        entry_prefix,
+                        "Must be object/dict supervision metadata for object_supervision entry",
+                    )
+                )
+                metadata_valid = False
+                continue
+
+            for role_key in ("target_role", "source_role"):
+                role = supervision_entry.get(role_key)
+                if role in SUPPORT_ONLY_ROLES:
+                    self.errors.append(
+                        ValidationError(
+                            line_num,
+                            f"{entry_prefix}.{role_key}",
+                            "Support-only objects are sidecars and must not appear in rendered objects",
+                        )
+                    )
+                    metadata_valid = False
+
+        return metadata_valid
+
+    def _validate_canonical_object_metadata(
+        self,
+        sample: Dict[str, Any],
+        obj: Any,
+        line_num: int,
+        obj_idx: int,
+    ) -> bool:
+        """Validate rendered-object metadata required by canonical views."""
+
+        prefix = f"objects[{obj_idx}]"
+        if not isinstance(obj, dict):
+            return True
+
+        obj_valid = True
+        object_id = obj.get("object_id")
+        if not isinstance(object_id, str) or object_id == "":
+            self.errors.append(
+                ValidationError(
+                    line_num,
+                    f"{prefix}.object_id",
+                    "Canonical view rendered objects require non-empty object_id",
+                )
+            )
+            obj_valid = False
+
+        for role_key in ("target_role", "source_role"):
+            role = obj.get(role_key)
+            if role in SUPPORT_ONLY_ROLES:
+                self.errors.append(
+                    ValidationError(
+                        line_num,
+                        f"{prefix}.{role_key}",
+                        "Support-only objects are sidecars and must not appear in rendered objects",
+                    )
+                )
+                obj_valid = False
+
+        object_supervision = self._object_supervision(sample)
+        if object_supervision is not None:
+            if (
+                isinstance(object_supervision, dict)
+                and isinstance(object_id, str)
+                and object_id != ""
+            ):
+                supervision_entry = object_supervision.get(object_id)
+                if supervision_entry is None:
+                    self.errors.append(
+                        ValidationError(
+                            line_num,
+                            f"{prefix}.object_id",
+                            "Rendered object_id missing metadata.supervision.object_supervision entry",
+                        )
+                    )
+                    obj_valid = False
+
+        return obj_valid
+
+    @staticmethod
+    def _object_supervision(sample: Dict[str, Any]) -> Optional[Any]:
+        metadata = sample.get("metadata")
+        if not isinstance(metadata, dict):
+            return None
+        supervision = metadata.get("supervision")
+        if not isinstance(supervision, dict):
+            return None
+        return supervision.get("object_supervision")
 
     def _enforce_images_dir_policy(self, jsonl_path: Path) -> bool:
         if not self.enforce_rescale_images_real_dir:
@@ -427,7 +668,34 @@ class JSONLValidator:
             )
             return False
 
-        image_abs = os.path.join(base_dir, images[0])
+        if self.canonical_image_mode:
+            if self.canonical_image_root is None:
+                self.errors.append(
+                    ValidationError(
+                        line_num,
+                        "images[0]",
+                        "Canonical view mode requires --image-root or --view-meta image_store",
+                    )
+                )
+                return False
+            try:
+                image_abs_path = resolve_image_path(
+                    images[0],
+                    self.canonical_image_root,
+                )
+            except ValueError as exc:
+                self.errors.append(
+                    ValidationError(
+                        line_num,
+                        "images[0]",
+                        f"Image path must be image-store-relative: {exc}",
+                    )
+                )
+                return False
+            image_abs = str(image_abs_path)
+        else:
+            image_abs = os.path.join(base_dir, images[0])
+
         if not os.path.exists(image_abs):
             self.errors.append(
                 ValidationError(
@@ -473,6 +741,52 @@ class JSONLValidator:
                     return False
 
         return True
+
+    def _validate_canonical_coordinate_sequence(
+        self,
+        values: Sequence[Any],
+        *,
+        line_num: int,
+        field_prefix: str,
+    ) -> bool:
+        """Validate bare norm1000 integer coordinates for canonical views."""
+
+        valid = True
+        for i, coord in enumerate(values):
+            if is_coord_token(coord):
+                self.errors.append(
+                    ValidationError(
+                        line_num,
+                        f"{field_prefix}[{i}]",
+                        "Coord-token strings are invalid in canonical view mode; "
+                        "expected bare norm1000 integer",
+                    )
+                )
+                valid = False
+                continue
+
+            if type(coord) is not int:
+                self.errors.append(
+                    ValidationError(
+                        line_num,
+                        f"{field_prefix}[{i}]",
+                        f"Expected bare norm1000 integer in [0,{MAX_BIN}], got {coord!r}",
+                    )
+                )
+                valid = False
+                continue
+
+            if coord < 0 or coord > MAX_BIN:
+                self.errors.append(
+                    ValidationError(
+                        line_num,
+                        f"{field_prefix}[{i}]",
+                        f"Expected bare norm1000 integer in [0,{MAX_BIN}], got {coord}",
+                    )
+                )
+                valid = False
+
+        return valid
     
     def validate_object(
         self,
@@ -596,6 +910,17 @@ class JSONLValidator:
                         f"Must have 4 values, got {len(bbox)}",
                     )
                 )
+                self.stats["invalid_bboxes"] += 1
+                return False
+
+            if (
+                self.canonical_coordinate_mode
+                and not self._validate_canonical_coordinate_sequence(
+                    bbox,
+                    line_num=line_num,
+                    field_prefix=f"{prefix}.bbox_2d",
+                )
+            ):
                 self.stats["invalid_bboxes"] += 1
                 return False
 
@@ -765,6 +1090,14 @@ class JSONLValidator:
             self.stats["invalid_polys"] += 1
             obj_valid = False
 
+        if self.canonical_coordinate_mode and not self._validate_canonical_coordinate_sequence(
+            poly,
+            line_num=line_num,
+            field_prefix=f"{prefix}.poly",
+        ):
+            self.stats["invalid_polys"] += 1
+            return False
+
         if _sequence_has_coord_tokens(poly) and _sequence_has_numbers(poly):
             self.warnings.append(
                 f"Line {line_num}, {prefix}.poly: Mixed pixel numbers and coord tokens in one geometry"
@@ -931,6 +1264,25 @@ def main() -> None:
         action="store_true",
         help="Fail if preset images/ is a symlink for rescale presets.",
     )
+    parser.add_argument(
+        "--view-meta",
+        type=str,
+        default=None,
+        help="Canonical view meta.json; resolves image_store via public_data.view_contracts.",
+    )
+    parser.add_argument(
+        "--image-root",
+        type=str,
+        default=None,
+        help="Explicit canonical image-store root override for image-store-relative images[].",
+    )
+    parser.add_argument(
+        "--coordinate-storage",
+        type=str,
+        choices=[COORDINATE_STORAGE_INTEGER],
+        default=None,
+        help="Canonical coordinate storage mode; integer enforces bare norm1000 integers.",
+    )
     parser.add_argument("--verbose", action="store_true", help="Print verbose output")
 
     args = parser.parse_args()
@@ -949,6 +1301,9 @@ def main() -> None:
         image_check_mode=image_check_mode,
         image_check_n=int(args.image_check_n),
         enforce_rescale_images_real_dir=bool(args.enforce_rescale_images_real_dir),
+        view_meta_path=args.view_meta,
+        image_root=args.image_root,
+        coordinate_storage=args.coordinate_storage,
     )
 
     success = validator.validate_file(args.jsonl_file)

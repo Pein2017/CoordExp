@@ -7,6 +7,7 @@ from typing import Any, Mapping, Sequence
 
 import pytest
 
+from src.config import ConfigLoader, LatestDetectionTrainingConfig
 from src.detection.dataset import DetectionTrainingDataset
 
 
@@ -349,6 +350,17 @@ def test_latest_detection_dataset_returns_encoded_sample_with_recursive_sidecar(
         sample["labels"][target.position] == target.teacher_token_id
         for target in sample["recursive_detection_targets"].token_targets
     )
+
+
+def test_legacy_latest_compact_config_still_accepts_data_image_root() -> None:
+    config = ConfigLoader.load_materialized_training_config(
+        "configs/stage1/recursive_detection_ce_latest/prod/compact_full_support2.yaml"
+    )
+
+    assert isinstance(config, LatestDetectionTrainingConfig)
+    assert config.data.train_jsonl.endswith("train.coord.jsonl")
+    assert config.data.val_jsonl.endswith("val.coord.jsonl")
+    assert config.data.image_root == "public_data/coco/rescale_32_1024_bbox_max60"
 
 
 def test_latest_detection_dataset_uses_ordinary_stop_target_weight(

@@ -1,0 +1,87 @@
+{
+  "schema_version": 1,
+  "artifact_type": "annotation_view",
+  "relative_path": "public_data/coco/views/coco80/max-60",
+  "producer_script": "public_data/scripts/build_coco_views.py",
+  "working_dir": ".",
+  "command": "PYTHONPATH=. conda run -n ms python public_data/scripts/build_coco_views.py --config configs/stage1/recursive_detection_ce_latest/prod/compact_full_support2.yaml --model-path model_cache/models/Qwen/Qwen3-VL-2B-Instruct-coordexp --source-preset public_data/coco/rescale_32_1024_bbox --image-store-root public_data/coco/images/res-1024 --views-root public_data/coco/views --legacy-max-objects-source public_data/coco/rescale_32_1024_bbox_max60 --proxy-source public_data/coco/rescale_32_1024_bbox_lvis_proxy_len12000 --splits train val --views coco80/max-60 --image-store-mode reuse-existing",
+  "inputs": [
+    {
+      "kind": "image_store_manifest",
+      "path": "manifests/public_data_provenance/coco/images/res-1024.json",
+      "notes": "Shared Phase 1 COCO 1024 image-store contract."
+    },
+    {
+      "kind": "processed_dataset_manifest",
+      "path": "manifests/public_data_provenance/coco/rescale_32_1024_bbox_max60.json",
+      "notes": "Legacy max-60 COCO80 membership source preserved as a view for backward comparison."
+    },
+    {
+      "kind": "processed_dataset",
+      "path": "public_data/coco/rescale_32_1024_bbox_max60",
+      "notes": "Legacy max-object-filtered norm1000 rows converted into canonical view layout."
+    }
+  ],
+  "key_params": {
+    "dataset": "coco",
+    "view": "coco80/max-60",
+    "annotation_policy": "coco80",
+    "sample_policy": "max_objects_legacy",
+    "max_objects": 60,
+    "image_store": "public_data/coco/images/res-1024",
+    "image_path_semantics": "image_store_relative",
+    "coordinate_space": "norm1000",
+    "coordinate_storage": "integer",
+    "coordinate_range": [
+      0,
+      999
+    ],
+    "assistant_coordinate_rendering": "qwen_coord_tokens",
+    "routine_sync_policy": "regenerate_from_raw_plus_manifest",
+    "view_summary": {
+      "records": 122198,
+      "rendered_object_count": 884929,
+      "support_sidecar_count": 0,
+      "rendered_proxy_candidate_count": 0,
+      "object_supervision_count": 0
+    }
+  },
+  "checksums": {
+    "scope": "jsonl_training_samples_only",
+    "algorithm": "sha256",
+    "aggregate_sha256": "3c1cbc36f7c359003ff0c8f47dadfbf9e54555ad9a7cb1cc20a87a8240e267a7",
+    "aggregate_source": "sorted path sha256 size_bytes records lines",
+    "files": [
+      {
+        "path": "public_data/coco/views/coco80/max-60/train.jsonl",
+        "sha256": "fac29a5e6145b8e384f0e5e78b4dc98daf62a13daa31f586fa82a06f7581efa3",
+        "size_bytes": 150032103,
+        "records": 117247
+      },
+      {
+        "path": "public_data/coco/views/coco80/max-60/val.jsonl",
+        "sha256": "907c48c206f5bf0ed05115484f53765c82eb385003d553afbc16d8b3ce1b093c",
+        "size_bytes": 6369821,
+        "records": 4951
+      }
+    ]
+  },
+  "metadata": {
+    "view_metadata": {
+      "path": "public_data/coco/views/coco80/max-60/meta.json",
+      "sha256": "4485378224b97103e865b1e6ab388a4c37e64234422c08ebfb894738e80ec6af",
+      "size_bytes": 1015
+    },
+    "source_comparison": {
+      "path": "public_data/coco/views/coco80/max-60/source_comparison.json",
+      "sha256": "bf7dafb4511fe61d41f0dc96e0a5e4df2934b1558c230e07f9f485fff3c3995e",
+      "size_bytes": 2535
+    }
+  },
+  "code_ref": {
+    "git_commit": "593e9357ae2fc2126521b30fcc6c239cbd5af304",
+    "git_dirty_allowed": true
+  },
+  "generated_at_utc": null,
+  "notes": "Phase 1 legacy max-60 annotation view. This is provenance for historical membership, not a recommendation to keep runtime object-count filtering."
+}

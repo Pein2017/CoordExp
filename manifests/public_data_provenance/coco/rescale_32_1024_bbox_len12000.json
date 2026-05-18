@@ -1,0 +1,89 @@
+{
+  "artifact_type": "processed_directory",
+  "checksums": {
+    "aggregate_sha256": "d56e565e5fdc292860a2942391f37a3ff89ca61fedd330b51c34a1628c62c5f6",
+    "aggregate_source": "sorted path sha256 size_bytes records lines",
+    "algorithm": "sha256",
+    "files": [
+      {
+        "path": "public_data/coco/rescale_32_1024_bbox_len12000/train.coord.jsonl",
+        "records": 117266,
+        "sha256": "e61a7f7e2bddadeb3ffe5550f83feac1ecccc99149c7f98271113e9a3f9580f8",
+        "size_bytes": 172531224
+      },
+      {
+        "path": "public_data/coco/rescale_32_1024_bbox_len12000/train.jsonl",
+        "records": 117266,
+        "sha256": "93cf023169dfec0406c0e9148345f2e70976535d21717866acb403d9a5989aaf",
+        "size_bytes": 131997248
+      },
+      {
+        "path": "public_data/coco/rescale_32_1024_bbox_len12000/train.norm.jsonl",
+        "records": 117266,
+        "sha256": "d64edc553bdc4d725cb9c3a504f369a9799e8bdde20c8fef0787a09cec33c16a",
+        "size_bytes": 131733768
+      },
+      {
+        "path": "public_data/coco/rescale_32_1024_bbox_len12000/val.coord.jsonl",
+        "records": 4952,
+        "sha256": "b5100edc926c1adbffdb7b7976477a3489902ef9fd58c7d75aaf3c7bce3a3d27",
+        "size_bytes": 7331214
+      },
+      {
+        "path": "public_data/coco/rescale_32_1024_bbox_len12000/val.jsonl",
+        "records": 4952,
+        "sha256": "64042f65d3e7e9b662b55592fccf9ab41a8b475c3483ed02fd1cb9269acdece3",
+        "size_bytes": 5598645
+      },
+      {
+        "path": "public_data/coco/rescale_32_1024_bbox_len12000/val.norm.jsonl",
+        "records": 4952,
+        "sha256": "a34afb33c567690f56fa3704e213cfc00dc3c000f018d2bb89a7f60139efd795",
+        "size_bytes": 5587134
+      }
+    ],
+    "scope": "jsonl_training_samples_only"
+  },
+  "code_ref": {
+    "git_commit": "82eb100ae186ee084339e4e9cd4b821623581f50",
+    "git_dirty_allowed": true
+  },
+  "command": "PYTHONPATH=. conda run -n ms python public_data/scripts/build_coco_length_budget_artifacts.py --config configs/stage1/recursive_detection_ce_latest/prod/compact_full_support2.yaml --model-path model_cache/models/Qwen/Qwen3-VL-2B-Instruct-coordexp --source-preset public_data/coco/rescale_32_1024_bbox --coco-output public_data/coco/rescale_32_1024_bbox_len12000 --proxy-output public_data/coco/rescale_32_1024_bbox_lvis_proxy_len12000 --projection-root temp/coco_lvis_projection_length_budget --mapping-csv openspec/changes/add-lvis-coco-proxy-supervision/artifacts/determined_proxy_mappings_val2017.csv --max-total-tokens 12000 --splits train val --force",
+  "generated_at_utc": "2026-05-17T07:44:10Z",
+  "inputs": [
+    {
+      "kind": "processed_base",
+      "notes": "COCO 1024 resized pixel-space base preset.",
+      "path": "public_data/coco/rescale_32_1024_bbox"
+    },
+    {
+      "kind": "training_config",
+      "notes": "Latest compact-full prompt/model/template contract.",
+      "path": "configs/stage1/recursive_detection_ce_latest/prod/compact_full_support2.yaml"
+    }
+  ],
+  "key_params": {
+    "image_factor": 32,
+    "image_storage_policy": "share_same_resolution_image_root",
+    "lvis_proxy": false,
+    "max_objects": null,
+    "max_pixels": 1048576,
+    "max_total_tokens": 12000,
+    "routine_sync_policy": "regenerate_from_raw_plus_manifest",
+    "shared_image_root": "public_data/coco/rescale_32_1024_bbox/images",
+    "template": "compact_full",
+    "token_budget_components": [
+      "image_patch_tokens_post_merge",
+      "system_prompt_tokens",
+      "user_chat_tokens",
+      "assistant_compact_full_detection_tokens"
+    ],
+    "tokenizer": "model_cache/models/Qwen/Qwen3-VL-2B-Instruct-coordexp",
+    "training_config": "configs/stage1/recursive_detection_ce_latest/prod/compact_full_support2.yaml"
+  },
+  "notes": "COCO 1024 compact-full dataset filtered by total 12k token budget.",
+  "producer_script": "public_data/scripts/build_coco_length_budget_artifacts.py",
+  "relative_path": "public_data/coco/rescale_32_1024_bbox_len12000",
+  "schema_version": 1,
+  "working_dir": "."
+}

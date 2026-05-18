@@ -1,0 +1,108 @@
+{
+  "schema_version": 1,
+  "artifact_type": "annotation_view",
+  "relative_path": "public_data/coco/views/coco80/len-12000",
+  "producer_script": "public_data/scripts/build_coco_views.py",
+  "working_dir": ".",
+  "command": "PYTHONPATH=. conda run -n ms python public_data/scripts/build_coco_views.py --config configs/stage1/recursive_detection_ce_latest/prod/compact_full_support2.yaml --model-path model_cache/models/Qwen/Qwen3-VL-2B-Instruct-coordexp --source-preset public_data/coco/rescale_32_1024_bbox --image-store-root public_data/coco/images/res-1024 --views-root public_data/coco/views --legacy-max-objects-source public_data/coco/rescale_32_1024_bbox_max60 --proxy-source public_data/coco/rescale_32_1024_bbox_lvis_proxy_len12000 --splits train val --views coco80/full coco80/len-12000 --max-total-tokens 12000 --image-store-mode reuse-existing",
+  "inputs": [
+    {
+      "kind": "image_store_manifest",
+      "path": "manifests/public_data_provenance/coco/images/res-1024.json",
+      "notes": "Shared Phase 1 COCO 1024 image-store contract."
+    },
+    {
+      "kind": "parent_view_manifest",
+      "path": "manifests/public_data_provenance/coco/views/coco80/full.json",
+      "notes": "Canonical full COCO80 view filtered by the compact detection length-budget policy."
+    },
+    {
+      "kind": "training_config",
+      "path": "configs/stage1/recursive_detection_ce_latest/prod/compact_full_support2.yaml",
+      "notes": "Latest compact-full prompt/model/template contract used for total-token length estimation."
+    }
+  ],
+  "key_params": {
+    "dataset": "coco",
+    "view": "coco80/len-12000",
+    "annotation_policy": "coco80",
+    "sample_policy": "length_budget",
+    "max_total_tokens": 12000,
+    "image_store": "public_data/coco/images/res-1024",
+    "image_path_semantics": "image_store_relative",
+    "coordinate_space": "norm1000",
+    "coordinate_storage": "integer",
+    "coordinate_range": [
+      0,
+      999
+    ],
+    "assistant_coordinate_rendering": "qwen_coord_tokens",
+    "length_budget_template_id": "compact-detection-v1",
+    "routine_sync_policy": "regenerate_from_raw_plus_manifest",
+    "view_summary": {
+      "records": 122218,
+      "rendered_object_count": 886282,
+      "support_sidecar_count": 0,
+      "rendered_proxy_candidate_count": 0,
+      "object_supervision_count": 0
+    },
+    "length_budget_scope": {
+      "excluded_sidecars": [
+        "metadata.supervision.support_objects"
+      ],
+      "rendered_families": [
+        "objects"
+      ]
+    }
+  },
+  "checksums": {
+    "scope": "jsonl_training_samples_only",
+    "algorithm": "sha256",
+    "aggregate_sha256": "6d154510f7bf649508d6c86bc8a6d85e8dceea26e1443c6749adab78373ff202",
+    "aggregate_source": "sorted path sha256 size_bytes records lines",
+    "files": [
+      {
+        "path": "public_data/coco/views/coco80/len-12000/train.jsonl",
+        "sha256": "6b2749fabe26151441a84db05c0b56396bb8f1e35b8e267c55883432a39a02fd",
+        "size_bytes": 150227988,
+        "records": 117266
+      },
+      {
+        "path": "public_data/coco/views/coco80/len-12000/val.jsonl",
+        "sha256": "b5cd35fc5acd832df0647c5864607d11558d5a9e1c155f9df38aecedce6d6551",
+        "size_bytes": 6379230,
+        "records": 4952
+      }
+    ]
+  },
+  "metadata": {
+    "view_metadata": {
+      "path": "public_data/coco/views/coco80/len-12000/meta.json",
+      "sha256": "33729f5d5fb52f5226c7ad2eda9ed7bb73244417bf306122ae2ae2841eb7e21e",
+      "size_bytes": 1636
+    },
+    "source_comparison": {
+      "path": "public_data/coco/views/coco80/len-12000/source_comparison.json",
+      "sha256": "85c533dcf854ebf286393ff8e6c60731bd6928355de7218e7abfe96641d34ada",
+      "size_bytes": 2180600
+    },
+    "length_stats": {
+      "train": {
+        "path": "public_data/coco/views/coco80/len-12000/train.length_stats.json",
+        "sha256": "e6c612c60cac29d2152634e91a2f012f4fdd62e28710766cf280a6b51372fce4",
+        "size_bytes": 1385435
+      },
+      "val": {
+        "path": "public_data/coco/views/coco80/len-12000/val.length_stats.json",
+        "sha256": "33ffda194d24a31e5aaaa179338fc9ef50b8c19f60bed8f254d32441208fcaf9",
+        "size_bytes": 59047
+      }
+    }
+  },
+  "code_ref": {
+    "git_commit": "593e9357ae2fc2126521b30fcc6c239cbd5af304",
+    "git_dirty_allowed": true
+  },
+  "generated_at_utc": null,
+  "notes": "Phase 1 canonical COCO80 length-budget annotation view. The local generated artifact currently keeps all full-view records under the 12k token budget."
+}

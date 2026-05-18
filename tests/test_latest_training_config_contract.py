@@ -889,6 +889,10 @@ def test_latest_recursive_detection_launch_configs_parse_without_custom() -> Non
         REPO_ROOT
         / "configs/stage1/recursive_detection_ce_latest/smoke/compact_full_tiny.yaml",
         REPO_ROOT
+        / "configs/stage1/recursive_detection_ce_latest/smoke/compact_full_coco80_len12000_tiny.yaml",
+        REPO_ROOT
+        / "configs/stage1/recursive_detection_ce_latest/smoke/compact_full_coco80_lvis_proxy_all_len12000_parse.yaml",
+        REPO_ROOT
         / "configs/stage1/recursive_detection_ce_latest/smoke/compact_full_prodlike_single_gpu.yaml",
         REPO_ROOT
         / "configs/stage1/recursive_detection_ce_latest/smoke/compact_full_ddp8_preflight.yaml",
@@ -942,6 +946,39 @@ def test_latest_recursive_detection_launch_configs_parse_without_custom() -> Non
         assert cfg.packing.padding_free_packed is False
         assert cfg.training["packing"] is False
         assert cfg.training["optimizer"] == "multimodal_coord_offset"
+
+
+def test_coco80_len12000_smoke_configs_use_view_metadata_without_object_cap() -> None:
+    config_expectations = {
+        "compact_full_coco80_len12000_tiny.yaml": (
+            "public_data/coco/views/coco80/len-12000/train.jsonl",
+            "public_data/coco/views/coco80/len-12000/val.jsonl",
+        ),
+        "compact_full_coco80_lvis_proxy_all_len12000_parse.yaml": (
+            "public_data/coco/views/coco80-lvis-proxy/len-12000/train.jsonl",
+            "public_data/coco/views/coco80-lvis-proxy/len-12000/val.jsonl",
+        ),
+    }
+
+    for filename, (train_jsonl, val_jsonl) in config_expectations.items():
+        cfg = ConfigLoader.load_materialized_training_config(
+            str(
+                REPO_ROOT
+                / "configs/stage1/recursive_detection_ce_latest/smoke"
+                / filename
+            )
+        )
+
+        assert isinstance(cfg, LatestDetectionTrainingConfig)
+        assert cfg.data.train_jsonl == train_jsonl
+        assert cfg.data.val_jsonl == val_jsonl
+        assert cfg.data.image_root is None
+        assert cfg.data.max_objects is None
+        assert cfg.training["max_steps"] == 1
+        assert cfg.debug.enabled is True
+        assert cfg.packing.static_packing is False
+        assert cfg.packing.padding_free_packed is False
+        assert cfg.training["packing"] is False
 
 
 def test_latest_recursive_detection_1p0_control_config_parses() -> None:
