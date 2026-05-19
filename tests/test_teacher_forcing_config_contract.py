@@ -84,6 +84,10 @@ def _stage2_teacher_payload(
     return payload
 
 
+def _migrated_teacher_forcing_pipeline() -> dict:
+    return {"objective": [], "diagnostics": []}
+
+
 @pytest.mark.parametrize(
     "profile",
     [
@@ -249,11 +253,30 @@ def test_stage2_teacher_forcing_exact_mapping_bypasses_packing_guard() -> None:
             "effective_batch_size": 1,
             "packing": True,
         },
+        pipeline=_migrated_teacher_forcing_pipeline(),
     )
 
     prompts = ConfigLoader.resolve_prompts(raw)
-    with pytest.raises(ValueError, match=r"teacher_forcing.*token_ce"):
-        TrainingConfig.from_mapping(raw, prompts)
+    cfg = TrainingConfig.from_mapping(raw, prompts)
+
+    assert cfg.objective is not None
+    assert cfg.objective.target_ir.exact_packing_mapping.enabled is True
+    assert cfg.training["packing"] is True
+    assert cfg.stage2_ab is not None
+    assert cfg.stage2_ab.pipeline.objective == ()
+
+
+def test_stage2_teacher_forcing_accepts_migrated_pipeline_without_legacy_modules() -> None:
+    raw = _stage2_teacher_payload(pipeline=_migrated_teacher_forcing_pipeline())
+
+    prompts = ConfigLoader.resolve_prompts(raw)
+    cfg = TrainingConfig.from_mapping(raw, prompts)
+
+    assert cfg.objective is not None
+    assert cfg.objective.id == "teacher_forcing"
+    assert cfg.objective.modules.conditional_valid_set_likelihood.enabled is True
+    assert cfg.stage2_ab is not None
+    assert cfg.stage2_ab.pipeline.objective == ()
 
 
 def test_training_config_accepts_teacher_forcing_objective_without_stage2() -> None:

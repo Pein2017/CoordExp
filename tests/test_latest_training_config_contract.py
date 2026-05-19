@@ -253,38 +253,6 @@ def test_latest_teacher_forcing_rejects_static_packing_without_exact_mapping() -
         LatestDetectionTrainingConfig.from_mapping(payload)
 
 
-def test_latest_recursive_detection_rejects_padding_free_packing() -> None:
-    payload = _latest_payload()
-    _update_section(payload, "packing", padding_free_packed=True)
-
-    with pytest.raises(ValueError, match=r"recursive_detection_ce.*padding_free_packed"):
-        LatestDetectionTrainingConfig.from_mapping(payload)
-
-
-def test_latest_recursive_detection_rejects_use_logits_to_keep() -> None:
-    payload = _latest_payload()
-    _update_section(payload, "training", use_logits_to_keep=True)
-
-    with pytest.raises(ValueError, match=r"recursive_detection_ce.*use_logits_to_keep"):
-        LatestDetectionTrainingConfig.from_mapping(payload)
-
-
-def test_latest_recursive_detection_rejects_training_loss_scale() -> None:
-    payload = _latest_payload()
-    _update_section(payload, "training", loss_scale="default")
-
-    with pytest.raises(ValueError, match=r"recursive_detection_ce.*loss_scale"):
-        LatestDetectionTrainingConfig.from_mapping(payload)
-
-
-def test_latest_recursive_detection_rejects_training_left_padding() -> None:
-    payload = _latest_payload()
-    _update_section(payload, "training", padding_side="left")
-
-    with pytest.raises(ValueError, match=r"recursive_detection_ce.*padding_side='right'"):
-        LatestDetectionTrainingConfig.from_mapping(payload)
-
-
 @pytest.mark.parametrize(
     ("path", "value", "match"),
     [
@@ -322,191 +290,43 @@ def test_unknown_keys_fail_with_dotted_path() -> None:
     assert "objective.unknown_knob" in str(exc.value)
 
 
-def test_latest_trie_weight_names_are_accepted() -> None:
-    payload = _latest_payload()
-    payload["objective"] = {
-        **payload["objective"],  # type: ignore[arg-type]
-        "trie_support_weight": 0.5,
-        "trie_balance_weight": 0.25,
-    }
-
-    cfg = LatestDetectionTrainingConfig.from_mapping(payload)
-
-    assert cfg.objective.trie_support_weight == 0.5
-    assert cfg.objective.trie_balance_weight == 0.25
-
-
-def test_latest_random_permutation_accepts_iou_gibbs_coord_softce() -> None:
-    payload = _latest_payload()
-    payload["objective"] = {
-        "id": "recursive_detection_ce",
-        "variant": "random_permutation_et_rmp_ce",
-        "trie_support_weight": 2.0,
-        "trie_balance_weight": 1.0,
-        "state_weighting": "uniform_permutation",
-        "normalization": "semantic_image_bucket_balanced",
-        "coord_soft_ce": {
-            "enabled": True,
-            "target_distribution": "iou_gibbs_v0",
-            "tau": 0.0090909091,
-            "tau_source": "train_one_token_iou_median_v0",
-            "weighting": "preserve_recursive_support_balance",
-            "replace_coord_hard_ce": True,
-            "apply_to_multi_positive": "support_mixture",
+@pytest.mark.parametrize(
+    "legacy_objective",
+    [
+        {
+            "id": "recursive_detection_ce",
+            "variant": "random_permutation_et_rmp_ce",
+            "trie_support_weight": 2.0,
+            "trie_balance_weight": 1.0,
+            "state_weighting": "uniform_permutation",
+            "normalization": "semantic_image_bucket_balanced",
         },
-    }
-
-    cfg = LatestDetectionTrainingConfig.from_mapping(payload)
-
-    assert cfg.objective.coord_soft_ce is not None
-    assert cfg.objective.coord_soft_ce.enabled is True
-    assert cfg.objective.coord_soft_ce.tau == pytest.approx(0.0090909091)
-    assert cfg.objective.coord_soft_ce.target_distribution == "iou_gibbs_v0"
-    assert cfg.objective.coord_soft_ce.weighting == "preserve_recursive_support_balance"
-
-
-def test_latest_random_permutation_accepts_ciou_gibbs_coord_softce() -> None:
-    payload = _latest_payload()
-    payload["objective"] = {
-        "id": "recursive_detection_ce",
-        "variant": "random_permutation_et_rmp_ce",
-        "trie_support_weight": 2.0,
-        "trie_balance_weight": 1.0,
-        "state_weighting": "uniform_permutation",
-        "normalization": "semantic_image_bucket_balanced",
-        "coord_soft_ce": {
-            "enabled": True,
-            "target_distribution": "ciou_gibbs_v0",
-            "tau": 0.0090909091,
-            "tau_source": "train_one_token_iou_median_v0",
-            "weighting": "preserve_recursive_support_balance",
-            "replace_coord_hard_ce": True,
-            "apply_to_multi_positive": "support_mixture",
+        {
+            "id": "recursive_detection_ce",
+            "variant": "prefix_rollin_et_rmp_ce",
         },
-    }
-
-    cfg = LatestDetectionTrainingConfig.from_mapping(payload)
-
-    assert cfg.objective.coord_soft_ce is not None
-    assert cfg.objective.coord_soft_ce.enabled is True
-    assert cfg.objective.coord_soft_ce.target_distribution == "ciou_gibbs_v0"
-
-
-def test_latest_random_permutation_accepts_instance_trie_gaussian_coord_softce() -> None:
-    payload = _latest_payload()
-    payload["objective"] = {
-        "id": "recursive_detection_ce",
-        "variant": "random_permutation_et_rmp_ce",
-        "trie_support_weight": 2.0,
-        "trie_balance_weight": 1.0,
-        "state_weighting": "uniform_permutation",
-        "normalization": "semantic_image_bucket_balanced",
-        "coord_soft_ce": {
-            "enabled": True,
-            "target_distribution": "instance_trie_gaussian",
+        {
+            "id": "recursive_detection_ce",
+            "variant": "trie_disabled_full_suffix_ce",
         },
-    }
-
-    cfg = LatestDetectionTrainingConfig.from_mapping(payload)
-
-    assert cfg.objective.coord_soft_ce is not None
-    assert cfg.objective.coord_soft_ce.enabled is True
-    assert cfg.objective.coord_soft_ce.target_distribution == "instance_trie_gaussian"
-    assert cfg.objective.coord_soft_ce.gaussian_mixture_weight == pytest.approx(0.1)
-    assert cfg.objective.coord_soft_ce.gaussian_r95_axis_fraction == pytest.approx(0.04)
-    assert cfg.objective.coord_soft_ce.gaussian_r95_cap_bins == 8
-    assert not hasattr(cfg.objective.coord_soft_ce, "tau")
-    assert not hasattr(cfg.objective.coord_soft_ce, "weighting")
-
-
-def test_random_permutation_et_rmp_accepts_type_gate_section() -> None:
-    payload = _latest_payload()
-    payload["objective"] = {
-        "id": "recursive_detection_ce",
-        "variant": "random_permutation_et_rmp_ce",
-        "trie_support_weight": 2.0,
-        "trie_balance_weight": 1.0,
-        "state_weighting": "uniform_permutation",
-        "normalization": "semantic_image_bucket_balanced",
-        "type_gate": {
-            "enabled": True,
-            "mode": "allowed_type_mass",
-            "weights": {
-                "struct": 1.0,
-                "coord": 1.0,
-                "desc": 1.0,
-                "eos": 0.5,
-            },
+        {
+            "id": "sft",
+            "variant": "random_order_sft",
         },
-    }
-
-    cfg = LatestDetectionTrainingConfig.from_mapping(payload)
-
-    assert cfg.objective.type_gate is not None
-    assert cfg.objective.type_gate.enabled is True
-    assert cfg.objective.type_gate.weights.coord == pytest.approx(1.0)
-
-    runtime_cfg = resolve_recursive_detection_ce_runtime_cfg(cfg)
-    assert runtime_cfg is not None
-    assert runtime_cfg.type_gate is not None
-    assert runtime_cfg.type_gate.enabled is True
-    assert runtime_cfg.type_gate.weights.struct == pytest.approx(1.0)
-    assert runtime_cfg.type_gate.weights.desc == pytest.approx(1.0)
-    assert runtime_cfg.type_gate.weights.coord == pytest.approx(1.0)
-    assert runtime_cfg.type_gate.weights.eos == pytest.approx(0.5)
-
-
-def test_latest_random_permutation_accepts_ce_anchored_instance_trie_gaussian_coord_softce() -> None:
-    payload = _latest_payload()
-    payload["objective"] = {
-        "id": "recursive_detection_ce",
-        "variant": "random_permutation_et_rmp_ce",
-        "trie_support_weight": 2.0,
-        "trie_balance_weight": 1.0,
-        "state_weighting": "uniform_permutation",
-        "normalization": "semantic_image_bucket_balanced",
-        "coord_soft_ce": {
-            "enabled": True,
-            "target_distribution": "instance_trie_gaussian",
-            "gaussian_mixture_weight": 0.2,
-            "gaussian_r95_axis_fraction": 0.06,
-            "gaussian_r95_cap_bins": 8,
+        {
+            "id": "sft",
+            "variant": "sorted_sft",
         },
-    }
-
-    cfg = LatestDetectionTrainingConfig.from_mapping(payload)
-
-    assert cfg.objective.coord_soft_ce is not None
-    assert cfg.objective.coord_soft_ce.enabled is True
-    assert cfg.objective.coord_soft_ce.target_distribution == "instance_trie_gaussian"
-    assert cfg.objective.coord_soft_ce.gaussian_mixture_weight == pytest.approx(0.2)
-    assert cfg.objective.coord_soft_ce.gaussian_r95_axis_fraction == pytest.approx(0.06)
-    assert cfg.objective.coord_soft_ce.gaussian_r95_cap_bins == 8
-
-
-def test_recursive_detection_runtime_resolves_coord_softce_token_range() -> None:
+    ],
+)
+def test_latest_config_rejects_legacy_objective_payloads(
+    legacy_objective: dict[str, object],
+) -> None:
     payload = _latest_payload()
-    payload["objective"] = {
-        **payload["objective"],  # type: ignore[dict-item]
-        "coord_soft_ce": {
-            "enabled": True,
-            "target_distribution": "ciou_gibbs_v0",
-            "tau": 0.0090909091,
-            "tau_source": "train_one_token_iou_median_v0",
-            "weighting": "preserve_recursive_support_balance",
-            "replace_coord_hard_ce": True,
-            "apply_to_multi_positive": "support_mixture",
-        },
-    }
-    cfg = LatestDetectionTrainingConfig.from_mapping(payload)
+    payload["objective"] = legacy_objective
 
-    runtime_cfg = resolve_recursive_detection_ce_runtime_cfg(cfg)
-
-    assert runtime_cfg is not None
-    assert runtime_cfg.coord_soft_ce is not None
-    assert runtime_cfg.coord_soft_ce.target_distribution == "ciou_gibbs_v0"
-    assert runtime_cfg.coord_soft_ce.coord_token_start == 151670
-    assert runtime_cfg.coord_soft_ce.coord_token_end == 152669
+    with pytest.raises(ValueError, match=r"objective\.id.*teacher_forcing"):
+        LatestDetectionTrainingConfig.from_mapping(payload)
 
 
 def test_instance_trie_gaussian_runtime_uses_token_row_coordinate_id_offset() -> None:
@@ -544,97 +364,6 @@ def test_instance_trie_gaussian_runtime_uses_token_row_coordinate_id_offset() ->
     assert runtime_cfg.coord_soft_ce.gaussian_mixture_weight == pytest.approx(0.1)
     assert runtime_cfg.coord_soft_ce.gaussian_r95_axis_fraction == pytest.approx(0.04)
     assert runtime_cfg.coord_soft_ce.gaussian_r95_cap_bins == 8
-
-
-@pytest.mark.parametrize(
-    "deprecated_key",
-    ["sigma", "truncate", "target_sigma", "target_truncate", "window", "radius"],
-)
-def test_coord_softce_rejects_fixed_gaussian_knobs(deprecated_key: str) -> None:
-    payload = _latest_payload()
-    payload["objective"]["coord_soft_ce"] = {
-        "enabled": True,
-        "target_distribution": "iou_gibbs_v0",
-        "tau": 0.0090909091,
-        "tau_source": "train_one_token_iou_median_v0",
-        deprecated_key: 2.0,
-    }
-
-    with pytest.raises(ValueError, match=rf"objective\.coord_soft_ce\.{deprecated_key}"):
-        LatestDetectionTrainingConfig.from_mapping(payload)
-
-
-def test_coord_softce_requires_positive_data_derived_tau() -> None:
-    payload = _latest_payload()
-    payload["objective"]["coord_soft_ce"] = {
-        "enabled": True,
-        "target_distribution": "iou_gibbs_v0",
-        "tau": 0.0,
-        "tau_source": "train_one_token_iou_median_v0",
-    }
-
-    with pytest.raises(ValueError, match=r"objective\.coord_soft_ce\.tau.*> 0"):
-        LatestDetectionTrainingConfig.from_mapping(payload)
-
-
-@pytest.mark.parametrize(
-    "stale_key",
-    [
-        "tau",
-        "tau_source",
-        "weighting",
-        "replace_coord_hard_ce",
-        "apply_to_multi_positive",
-        "sigma",
-        "truncate",
-        "target_sigma",
-        "target_truncate",
-    ],
-)
-def test_instance_trie_gaussian_coord_softce_rejects_stale_knobs(
-    stale_key: str,
-) -> None:
-    payload = _latest_payload()
-    payload["objective"]["coord_soft_ce"] = {
-        "enabled": True,
-        "target_distribution": "instance_trie_gaussian",
-        stale_key: 0.01,
-    }
-
-    with pytest.raises(ValueError, match=rf"objective\.coord_soft_ce\.{stale_key}"):
-        LatestDetectionTrainingConfig.from_mapping(payload)
-
-
-@pytest.mark.parametrize(
-    ("key", "value", "pattern"),
-    [
-        ("gaussian_r95_axis_fraction", 0.0, "gaussian_r95_axis_fraction"),
-        ("gaussian_r95_axis_fraction", -0.01, "gaussian_r95_axis_fraction"),
-        ("gaussian_r95_axis_fraction", 1.5, "gaussian_r95_axis_fraction"),
-        ("gaussian_r95_axis_fraction", "0.04", "gaussian_r95_axis_fraction"),
-        ("gaussian_r95_cap_bins", -1, "gaussian_r95_cap_bins"),
-        ("gaussian_r95_cap_bins", 1000, "gaussian_r95_cap_bins"),
-        ("gaussian_r95_cap_bins", 8.0, "gaussian_r95_cap_bins"),
-        ("gaussian_r95_cap_bins", True, "gaussian_r95_cap_bins"),
-    ],
-)
-def test_instance_trie_gaussian_coord_softce_rejects_invalid_focused_policy(
-    key: str,
-    value: object,
-    pattern: str,
-) -> None:
-    payload = _latest_payload()
-    payload["objective"]["coord_soft_ce"] = {
-        "enabled": True,
-        "target_distribution": "instance_trie_gaussian",
-        "gaussian_mixture_weight": 0.1,
-        "gaussian_r95_axis_fraction": 0.04,
-        "gaussian_r95_cap_bins": 8,
-        key: value,
-    }
-
-    with pytest.raises((TypeError, ValueError), match=pattern):
-        LatestDetectionTrainingConfig.from_mapping(payload)
 
 
 def test_recursive_detection_metrics_do_not_require_coord_softce_tau(
@@ -757,35 +486,31 @@ def test_recursive_detection_metrics_do_not_require_coord_softce_tau(
     assert logged["recursive_detection_ce/type_gate/eos_weight"] == pytest.approx(0.5)
 
 
-def test_et_rmp_weights_must_be_non_negative_and_nonzero() -> None:
+def test_hard_sft_profile_is_minimal_teacher_forcing_baseline() -> None:
     payload = _latest_payload()
     payload["objective"] = {
-        **payload["objective"],  # type: ignore[arg-type]
-        "trie_support_weight": 0.0,
-        "trie_balance_weight": 0.0,
-    }
-
-    with pytest.raises(ValueError, match="trie_support_weight.*trie_balance_weight"):
-        LatestDetectionTrainingConfig.from_mapping(payload)
-
-
-def test_sft_objective_uses_neutral_defaults() -> None:
-    payload = _latest_payload()
-    payload["data"] = {
-        **payload["data"],  # type: ignore[arg-type]
-        "object_ordering": "sorted",
-    }
-    payload["objective"] = {
-        "id": "sft",
-        "variant": "sorted_sft",
+        "id": "teacher_forcing",
+        "profile": "hard_sft",
+        "target_ir": {
+            "rollin_policy": {
+                "name": "random_permutation",
+                "base_seed": 17,
+            }
+        },
+        "modules": {
+            "token_type_mass": {"enabled": False},
+            "conditional_valid_set_likelihood": {"enabled": False},
+        },
     }
 
     cfg = LatestDetectionTrainingConfig.from_mapping(payload)
 
-    assert cfg.objective.trie_support_weight == 0.0
-    assert cfg.objective.trie_balance_weight == 0.0
-    assert cfg.objective.state_weighting == "none"
-    assert cfg.objective.normalization == "token_mean"
+    assert cfg.objective.id == "teacher_forcing"
+    assert cfg.objective.profile == "hard_sft"
+    assert cfg.objective.modules.token_type_mass.enabled is False
+    assert cfg.objective.modules.conditional_valid_set_likelihood.enabled is False
+    assert cfg.objective.modules.within_valid_coverage.enabled is False
+    assert cfg.objective.modules.within_valid_coverage.coverage_strength == 0.0
 
 
 def test_latest_detection_requires_token_rows_section() -> None:
@@ -877,57 +602,23 @@ def test_latest_detection_rejects_extra_trainable_token_rows() -> None:
         LatestDetectionTrainingConfig.from_mapping(payload)
 
 
-def test_random_order_sft_accepts_random_permutation_ordering() -> None:
+def test_teacher_forcing_rollin_policy_accepts_random_permutation_ordering() -> None:
     payload = _latest_payload()
-    payload["objective"] = {
-        "id": "sft",
-        "variant": "random_order_sft",
-    }
 
     cfg = LatestDetectionTrainingConfig.from_mapping(payload)
 
     assert cfg.data.object_ordering == "random_permutation"
-    assert cfg.objective.variant == "random_order_sft"
+    assert cfg.objective.id == "teacher_forcing"
+    assert cfg.objective.target_ir.rollin_policy.name == "random_permutation"
 
 
 @pytest.mark.parametrize(
     ("object_ordering", "objective"),
     [
-        (
-            "random_permutation",
-            {
-                "id": "sft",
-                "variant": "sorted_sft",
-            },
-        ),
-        (
-            "sorted",
-            {
-                "id": "sft",
-                "variant": "random_order_sft",
-            },
-        ),
-        (
-            "sorted",
-            {
-                "id": "recursive_detection_ce",
-                "variant": "random_permutation_et_rmp_ce",
-                "trie_support_weight": 2.0,
-                "trie_balance_weight": 1.0,
-                "state_weighting": "uniform_permutation",
-                "normalization": "semantic_image_bucket_balanced",
-            },
-        ),
-        (
-            "sorted",
-            {
-                "id": "recursive_detection_ce",
-                "variant": "trie_disabled_full_suffix_ce",
-            },
-        ),
+        ("sorted", _latest_payload()["objective"]),
     ],
 )
-def test_object_ordering_must_match_objective_variant(
+def test_object_ordering_must_match_teacher_forcing_rollin_policy(
     object_ordering: str, objective: dict[str, object]
 ) -> None:
     payload = _latest_payload()
@@ -942,67 +633,23 @@ def test_object_ordering_must_match_objective_variant(
 
 
 @pytest.mark.parametrize(
-    "override",
+    "legacy_objective",
     [
-        {"trie_support_weight": 1.0},
-        {"trie_balance_weight": 1.0},
-        {"state_weighting": "uniform_permutation"},
-        {"normalization": "semantic_image_bucket_balanced"},
+        {"id": "sft", "variant": "random_order_sft", "trie_support_weight": 1.0},
+        {
+            "id": "recursive_detection_ce",
+            "variant": "trie_disabled_full_suffix_ce",
+            "trie_support_weight": 0.1,
+        },
     ],
 )
-def test_sft_objective_rejects_recursive_knobs(
-    override: dict[str, object],
+def test_legacy_objective_knobs_fail_at_objective_id_boundary(
+    legacy_objective: dict[str, object],
 ) -> None:
     payload = _latest_payload()
-    payload["objective"] = {
-        "id": "sft",
-        "variant": "random_order_sft",
-        **override,
-    }
+    payload["objective"] = legacy_objective
 
-    with pytest.raises(ValueError, match="SFT objective variants"):
-        LatestDetectionTrainingConfig.from_mapping(payload)
-
-
-def test_trie_disabled_full_suffix_ce_rejects_trie_weights() -> None:
-    payload = _latest_payload()
-    payload["objective"] = {
-        "id": "recursive_detection_ce",
-        "variant": "trie_disabled_full_suffix_ce",
-        "trie_support_weight": 0.1,
-        "trie_balance_weight": 0.0,
-        "state_weighting": "uniform_permutation",
-        "normalization": "semantic_image_bucket_balanced",
-    }
-
-    with pytest.raises(
-        ValueError,
-        match="trie_disabled_full_suffix_ce.*trie_support_weight=0",
-    ):
-        LatestDetectionTrainingConfig.from_mapping(payload)
-
-
-@pytest.mark.parametrize(
-    "override",
-    [
-        {"state_weighting": "uniform_permutation"},
-        {"normalization": "semantic_image_bucket_balanced"},
-    ],
-)
-def test_trie_disabled_full_suffix_ce_requires_neutral_profile(
-    override: dict[str, object],
-) -> None:
-    payload = _latest_payload()
-    payload["objective"] = {
-        "id": "recursive_detection_ce",
-        "variant": "trie_disabled_full_suffix_ce",
-        **override,
-    }
-
-    with pytest.raises(
-        ValueError,
-        match="trie_disabled_full_suffix_ce",
-    ):
+    with pytest.raises(ValueError, match=r"objective\.id.*teacher_forcing"):
         LatestDetectionTrainingConfig.from_mapping(payload)
 
 
@@ -1019,10 +666,11 @@ def test_objective_strategy_ids_are_strictly_validated(
     payload = _latest_payload()
     payload["objective"] = {
         **payload["objective"],  # type: ignore[arg-type]
-        field_name: bad_value,
+        "profile" if field_name == "state_weighting" else field_name: bad_value,
     }
 
-    with pytest.raises(ValueError, match=rf"objective\.{field_name}"):
+    expected_field = "profile" if field_name == "state_weighting" else field_name
+    with pytest.raises(ValueError, match=rf"objective\.{expected_field}"):
         LatestDetectionTrainingConfig.from_mapping(payload)
 
 
@@ -1061,21 +709,12 @@ def test_stage1_json_pretty_template_requires_desc_first_field_order() -> None:
     assert cfg.detection_template.object_field_order == "desc_first"
 
 
-def test_recursive_detection_ce_fixture_parses() -> None:
+def test_recursive_detection_ce_fixture_fails_objective_migration() -> None:
     path = REPO_ROOT / "configs/stage1/recursive_detection_ce.yaml"
     payload = yaml.safe_load(path.read_text(encoding="utf-8"))
 
-    cfg = LatestDetectionTrainingConfig.from_mapping(payload)
-
-    assert cfg.model["model"] == "schema-contract://model-placeholder"
-    assert cfg.data.train_jsonl == "schema-contract://train.coord.jsonl"
-    assert cfg.training["run_name"] == "schema-contract-do-not-launch"
-    assert cfg.detection_template.id == "compact_full"
-    assert cfg.objective.variant == "random_permutation_et_rmp_ce"
-    assert cfg.objective.trie_support_weight == 2.0
-    assert cfg.objective.trie_balance_weight == 1.0
-    assert cfg.objective.state_weighting == "uniform_permutation"
-    assert cfg.objective.normalization == "semantic_image_bucket_balanced"
+    with pytest.raises(ValueError, match=r"objective\.id.*teacher_forcing"):
+        LatestDetectionTrainingConfig.from_mapping(payload)
 
 
 def test_config_loader_materializes_latest_detection_config_without_custom(
@@ -1203,20 +842,17 @@ def test_config_loader_rejects_authored_gradient_accumulation_when_effective_bat
         ConfigLoader.build_train_arguments(cfg)
 
 
-def test_effective_batch_config_names_do_not_bake_derived_accumulation() -> None:
+def test_legacy_effective_batch_config_fails_objective_migration() -> None:
     cfg_path = (
         REPO_ROOT
         / "configs/stage1/recursive_detection_ce_latest/prod/compact_full_random_sft_chatfix_max12k_bsz1.yaml"
     )
-    cfg = ConfigLoader.load_materialized_training_config(str(cfg_path))
 
-    assert cfg.training.get("effective_batch_size") == 128
-    assert "gradient_accumulation_steps" not in cfg.training
-    assert "accum" not in str(cfg.training.get("artifact_subdir", ""))
-    assert "accum" not in str(cfg.training.get("run_name", ""))
+    with pytest.raises(ValueError, match=r"objective\.id.*teacher_forcing"):
+        ConfigLoader.load_materialized_training_config(str(cfg_path))
 
 
-def test_latest_recursive_detection_launch_configs_parse_without_custom() -> None:
+def test_latest_recursive_detection_launch_configs_fail_objective_migration() -> None:
     config_paths = [
         REPO_ROOT
         / "configs/stage1/recursive_detection_ce_latest/prod/compact_full_support2.yaml",
@@ -1263,98 +899,11 @@ def test_latest_recursive_detection_launch_configs_parse_without_custom() -> Non
     ]
 
     for config_path in config_paths:
-        cfg = ConfigLoader.load_materialized_training_config(str(config_path))
-        assert isinstance(cfg, LatestDetectionTrainingConfig)
-        assert not hasattr(cfg, "custom")
-        assert cfg.model["model"] == "model_cache/models/Qwen/Qwen3-VL-2B-Instruct-coordexp"
-        assert cfg.data.object_ordering == "random_permutation"
-        assert cfg.detection_template.id == "compact_full"
-        assert cfg.token_rows.enabled is True
-        assert cfg.token_rows.tie_head is True
-        assert "coord_geometry" in cfg.token_rows.groups
-        token_to_id = {
-            "<|object_ref_start|>": 151646,
-            "<|box_start|>": 151648,
-            **{f"<|coord_{idx}|>": 151670 + idx for idx in range(1000)},
-        }
-
-        class _FakeTokenizer:
-            def convert_tokens_to_ids(self, token: str) -> int:
-                return token_to_id[token]
-
-        role_sets = cfg.token_rows.resolve_role_sets(_FakeTokenizer())
-        assert set(role_sets.trainable_row_ids) == {
-            151646,
-            151648,
-            *range(151670, 152670),
-        }
-        assert len(role_sets.trainable_row_ids) == 1002
-        assert cfg.objective.variant == "random_permutation_et_rmp_ce"
-        assert cfg.objective.trie_support_weight == 2.0
-        assert cfg.objective.trie_balance_weight == 1.0
-        if "iou_gibbs_softce_a5" in config_path.name:
-            assert cfg.objective.coord_soft_ce is not None
-            assert cfg.objective.coord_soft_ce.target_distribution == "iou_gibbs_v0"
-        if "ciou_gibbs_softce_a6" in config_path.name:
-            assert cfg.objective.coord_soft_ce is not None
-            assert cfg.objective.coord_soft_ce.target_distribution == "ciou_gibbs_v0"
-        if "instance_trie_focused_cap8_frac0p04_mix0p1" in config_path.name:
-            assert cfg.objective.coord_soft_ce is not None
-            assert (
-                cfg.objective.coord_soft_ce.target_distribution
-                == "instance_trie_gaussian"
-            )
-            assert cfg.objective.coord_soft_ce.gaussian_mixture_weight == pytest.approx(
-                0.1
-            )
-            assert cfg.objective.coord_soft_ce.gaussian_r95_axis_fraction == pytest.approx(
-                0.04
-            )
-            assert cfg.objective.coord_soft_ce.gaussian_r95_cap_bins == 8
-        if "instance_trie_focused_cap8_frac0p06_mix0p1" in config_path.name:
-            assert cfg.objective.coord_soft_ce is not None
-            assert (
-                cfg.objective.coord_soft_ce.target_distribution
-                == "instance_trie_gaussian"
-            )
-            assert cfg.objective.coord_soft_ce.gaussian_mixture_weight == pytest.approx(
-                0.1
-            )
-            assert cfg.objective.coord_soft_ce.gaussian_r95_axis_fraction == pytest.approx(
-                0.06
-            )
-            assert cfg.objective.coord_soft_ce.gaussian_r95_cap_bins == 8
-        if "instance_trie_focused_cap8_frac0p04_mix0p2" in config_path.name:
-            assert cfg.objective.coord_soft_ce is not None
-            assert (
-                cfg.objective.coord_soft_ce.target_distribution
-                == "instance_trie_gaussian"
-            )
-            assert cfg.objective.coord_soft_ce.gaussian_mixture_weight == pytest.approx(
-                0.2
-            )
-            assert cfg.objective.coord_soft_ce.gaussian_r95_axis_fraction == pytest.approx(
-                0.04
-            )
-            assert cfg.objective.coord_soft_ce.gaussian_r95_cap_bins == 8
-        if (
-            "instance_trie_focused_cap8_frac0p04_mix0p1" in config_path.name
-            or "instance_trie_focused_cap8_frac0p06_mix0p1" in config_path.name
-            or "instance_trie_focused_cap8_frac0p04_mix0p2" in config_path.name
-        ):
-            assert cfg.objective.type_gate is not None
-            assert cfg.objective.type_gate.enabled is True
-            assert cfg.objective.type_gate.weights.struct == pytest.approx(1.0)
-            assert cfg.objective.type_gate.weights.desc == pytest.approx(1.0)
-            assert cfg.objective.type_gate.weights.coord == pytest.approx(1.0)
-            assert cfg.objective.type_gate.weights.eos == pytest.approx(0.5)
-        assert cfg.packing.static_packing is False
-        assert cfg.packing.padding_free_packed is False
-        assert cfg.training["packing"] is False
-        assert cfg.training["optimizer"] == "multimodal_coord_offset"
+        with pytest.raises(ValueError, match=r"objective\.id.*teacher_forcing"):
+            ConfigLoader.load_materialized_training_config(str(config_path))
 
 
-def test_coco80_len12000_smoke_configs_use_view_metadata_without_object_cap() -> None:
+def test_coco80_len12000_smoke_configs_fail_objective_migration() -> None:
     config_expectations = {
         "compact_full_coco80_len12000_tiny.yaml": (
             "public_data/coco/views/coco80/len-12000/train.jsonl",
@@ -1367,79 +916,45 @@ def test_coco80_len12000_smoke_configs_use_view_metadata_without_object_cap() ->
     }
 
     for filename, (train_jsonl, val_jsonl) in config_expectations.items():
-        cfg = ConfigLoader.load_materialized_training_config(
-            str(
-                REPO_ROOT
-                / "configs/stage1/recursive_detection_ce_latest/smoke"
-                / filename
-            )
-        )
-
-        assert isinstance(cfg, LatestDetectionTrainingConfig)
-        assert cfg.data.train_jsonl == train_jsonl
-        assert cfg.data.val_jsonl == val_jsonl
-        assert cfg.data.image_root is None
-        assert cfg.training["max_steps"] == 1
-        assert cfg.debug.enabled is True
-        assert cfg.packing.static_packing is False
-        assert cfg.packing.padding_free_packed is False
-        assert cfg.training["packing"] is False
-
-
-def test_latest_recursive_detection_1p0_control_config_parses() -> None:
-    cfg = ConfigLoader.load_materialized_training_config(
-        str(
+        assert train_jsonl.endswith("train.jsonl")
+        assert val_jsonl.endswith("val.jsonl")
+        config_path = (
             REPO_ROOT
-            / "configs/stage1/recursive_detection_ce_latest/smoke/compact_full_ddp8_et_rmp_1p0_1p0.yaml"
+            / "configs/stage1/recursive_detection_ce_latest/smoke"
+            / filename
         )
+        with pytest.raises(ValueError, match=r"objective\.id.*teacher_forcing"):
+            ConfigLoader.load_materialized_training_config(str(config_path))
+
+
+def test_latest_recursive_detection_1p0_control_config_fails_objective_migration() -> None:
+    config_path = (
+        REPO_ROOT
+        / "configs/stage1/recursive_detection_ce_latest/smoke/compact_full_ddp8_et_rmp_1p0_1p0.yaml"
     )
 
-    assert isinstance(cfg, LatestDetectionTrainingConfig)
-    assert cfg.objective.id == "recursive_detection_ce"
-    assert cfg.objective.variant == "random_permutation_et_rmp_ce"
-    assert cfg.objective.trie_support_weight == 1.0
-    assert cfg.objective.trie_balance_weight == 1.0
-    assert cfg.objective.state_weighting == "uniform_permutation"
-    assert cfg.objective.normalization == "semantic_image_bucket_balanced"
-    assert cfg.training["packing"] is False
-    assert cfg.packing.static_packing is False
-    assert cfg.packing.padding_free_packed is False
+    with pytest.raises(ValueError, match=r"objective\.id.*teacher_forcing"):
+        ConfigLoader.load_materialized_training_config(str(config_path))
 
 
-def test_latest_recursive_detection_adapter_smoke_configs_parse() -> None:
+def test_latest_recursive_detection_adapter_smoke_configs_fail_objective_migration() -> None:
     expected = {
         "compact_full_prefix_rollin_adapter_tiny.yaml": "prefix_rollin_et_rmp_ce",
         "compact_full_random_sft_adapter_tiny.yaml": "random_order_sft",
     }
 
     for file_name, objective_variant in expected.items():
-        cfg = ConfigLoader.load_materialized_training_config(
-            str(
-                REPO_ROOT
-                / "configs/stage1/recursive_detection_ce_latest/smoke"
-                / file_name
-            )
+        assert objective_variant
+        config_path = (
+            REPO_ROOT
+            / "configs/stage1/recursive_detection_ce_latest/smoke"
+            / file_name
         )
-
-        assert isinstance(cfg, LatestDetectionTrainingConfig)
-        assert (
-            cfg.model["model"]
-            == "model_cache_remote/model_cache/models/Qwen/Qwen3-VL-2B-Instruct-coordexp"
-        )
-        assert cfg.model["adapters"] == [
-            "outputs/stage1_2b/recursive_detection_ce_latest/compact_full_et_rmp_ce_support2_bsz16_4epoch_tokenrows_v2/compact-full-et-rmp-ce-support2-bsz16-4epoch-tokenrows-v2/v0-20260504-071356/checkpoint-3664"
-        ]
-        assert cfg.training["max_steps"] == 1
-        assert cfg.training["per_device_train_batch_size"] == 1
-        assert cfg.training["effective_batch_size"] == 1
-        assert "gradient_accumulation_steps" not in cfg.training
-        assert cfg.objective.variant == objective_variant
-        assert cfg.detection_template.id == "compact_full"
-        assert cfg.packing.static_packing is False
-        assert cfg.packing.padding_free_packed is False
+        with pytest.raises(ValueError, match=r"objective\.id.*teacher_forcing"):
+            ConfigLoader.load_materialized_training_config(str(config_path))
 
 
-def test_latest_compact_sft_smoke_configs_parse_with_hard_ce_objectives() -> None:
+def test_latest_compact_sft_smoke_configs_fail_objective_migration() -> None:
     expected = {
         "compact_full_sorted_sft.yaml": ("sorted", "sorted_sft", True),
         "compact_full_random_sft.yaml": (
@@ -1455,21 +970,16 @@ def test_latest_compact_sft_smoke_configs_parse_with_hard_ce_objectives() -> Non
     }
 
     for file_name, (ordering, variant, prompt_variant) in expected.items():
-        cfg = ConfigLoader.load_materialized_training_config(
-            str(
-                REPO_ROOT
-                / "configs/stage1/recursive_detection_ce_latest/smoke"
-                / file_name
-            )
+        assert ordering
+        assert variant
+        assert isinstance(prompt_variant, bool)
+        config_path = (
+            REPO_ROOT
+            / "configs/stage1/recursive_detection_ce_latest/smoke"
+            / file_name
         )
-        assert isinstance(cfg, LatestDetectionTrainingConfig)
-        assert cfg.objective.id == "sft"
-        assert cfg.objective.variant == variant
-        assert cfg.objective.trie_support_weight == 0.0
-        assert cfg.objective.trie_balance_weight == 0.0
-        assert cfg.objective.normalization == "token_mean"
-        assert cfg.data.object_ordering == ordering
-        assert cfg.prompt.prompt_variant_enabled is prompt_variant
+        with pytest.raises(ValueError, match=r"objective\.id.*teacher_forcing"):
+            ConfigLoader.load_materialized_training_config(str(config_path))
 
 
 def test_latest_recursive_detection_packing_preflight_config_is_failfast_only() -> None:
@@ -1478,48 +988,5 @@ def test_latest_recursive_detection_packing_preflight_config_is_failfast_only() 
         / "configs/stage1/recursive_detection_ce_latest/negative/compact_full_static_packing_should_fail.yaml"
     )
 
-    with pytest.raises(ValueError, match=r"recursive_detection_ce.*static packing"):
+    with pytest.raises(ValueError, match=r"objective\.id.*teacher_forcing"):
         ConfigLoader.load_materialized_training_config(str(config_path))
-
-
-_LEGACY_OBJECTIVE_BEHAVIOR_TESTS = [
-    "test_latest_recursive_detection_rejects_padding_free_packing",
-    "test_latest_recursive_detection_rejects_use_logits_to_keep",
-    "test_latest_recursive_detection_rejects_training_loss_scale",
-    "test_latest_recursive_detection_rejects_training_left_padding",
-    "test_latest_trie_weight_names_are_accepted",
-    "test_latest_random_permutation_accepts_iou_gibbs_coord_softce",
-    "test_latest_random_permutation_accepts_ciou_gibbs_coord_softce",
-    "test_latest_random_permutation_accepts_instance_trie_gaussian_coord_softce",
-    "test_random_permutation_et_rmp_accepts_type_gate_section",
-    "test_latest_random_permutation_accepts_ce_anchored_instance_trie_gaussian_coord_softce",
-    "test_recursive_detection_runtime_resolves_coord_softce_token_range",
-    "test_coord_softce_rejects_fixed_gaussian_knobs",
-    "test_coord_softce_requires_positive_data_derived_tau",
-    "test_instance_trie_gaussian_coord_softce_rejects_stale_knobs",
-    "test_instance_trie_gaussian_coord_softce_rejects_invalid_focused_policy",
-    "test_et_rmp_weights_must_be_non_negative_and_nonzero",
-    "test_sft_objective_uses_neutral_defaults",
-    "test_random_order_sft_accepts_random_permutation_ordering",
-    "test_object_ordering_must_match_objective_variant",
-    "test_sft_objective_rejects_recursive_knobs",
-    "test_trie_disabled_full_suffix_ce_rejects_trie_weights",
-    "test_trie_disabled_full_suffix_ce_requires_neutral_profile",
-    "test_recursive_detection_ce_fixture_parses",
-    "test_effective_batch_config_names_do_not_bake_derived_accumulation",
-    "test_latest_recursive_detection_launch_configs_parse_without_custom",
-    "test_coco80_len12000_smoke_configs_use_view_metadata_without_object_cap",
-    "test_latest_recursive_detection_1p0_control_config_parses",
-    "test_latest_recursive_detection_adapter_smoke_configs_parse",
-    "test_latest_compact_sft_smoke_configs_parse_with_hard_ce_objectives",
-    "test_latest_recursive_detection_packing_preflight_config_is_failfast_only",
-]
-
-for _test_name in _LEGACY_OBJECTIVE_BEHAVIOR_TESTS:
-    if _test_name in globals():
-        globals()[_test_name] = pytest.mark.skip(
-            reason=(
-                "legacy latest-detection objective ids are removed by the "
-                "teacher_forcing migration contract"
-            )
-        )(globals()[_test_name])

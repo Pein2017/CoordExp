@@ -2874,7 +2874,12 @@ class Stage2PipelineConfig:
     diagnostics: tuple[Stage2PipelineModuleSpec, ...] = field(default_factory=tuple)
 
     @classmethod
-    def from_mapping(cls, payload: Any) -> "Stage2PipelineConfig":
+    def from_mapping(
+        cls,
+        payload: Any,
+        *,
+        allow_empty_objective: bool = False,
+    ) -> "Stage2PipelineConfig":
         if not isinstance(payload, Mapping):
             raise TypeError("stage2_ab.pipeline must be a mapping")
         data: MutableMapping[str, Any] = dict(payload)
@@ -2900,8 +2905,6 @@ class Stage2PipelineConfig:
             )
             for idx, item in enumerate(objective_raw)
         ]
-        if not objective_specs:
-            raise ValueError("stage2_ab.pipeline.objective must be non-empty")
         diagnostics_specs = [
             Stage2PipelineModuleSpec.from_mapping(
                 item,
@@ -2910,6 +2913,19 @@ class Stage2PipelineConfig:
             )
             for idx, item in enumerate(diagnostics_raw)
         ]
+        if not objective_specs and allow_empty_objective:
+            if data:
+                unknown = [
+                    f"stage2_ab.pipeline.{str(k)}"
+                    for k in sorted(data.keys(), key=lambda x: str(x))
+                ]
+                raise ValueError(f"Unknown stage2_ab.pipeline keys: {unknown}")
+            return cls(
+                objective=(),
+                diagnostics=tuple(diagnostics_specs),
+            )
+        if not objective_specs:
+            raise ValueError("stage2_ab.pipeline.objective must be non-empty")
 
         def _assert_no_duplicates(
             items: list[Stage2PipelineModuleSpec], *, path: str
@@ -3194,7 +3210,12 @@ class Stage2ABConfig:
     channel_b: Stage2ABChannelBConfig = field(default_factory=Stage2ABChannelBConfig)
 
     @classmethod
-    def from_mapping(cls, payload: Any) -> "Stage2ABConfig":
+    def from_mapping(
+        cls,
+        payload: Any,
+        *,
+        allow_teacher_forcing_pipeline: bool = False,
+    ) -> "Stage2ABConfig":
         if not isinstance(payload, Mapping):
             raise TypeError("stage2_ab section must be a mapping")
 
@@ -3230,7 +3251,10 @@ class Stage2ABConfig:
             raise ValueError(
                 "stage2_ab.pipeline must be provided (no implicit default objective manifest)."
             )
-        pipeline = Stage2PipelineConfig.from_mapping(pipeline_raw)
+        pipeline = Stage2PipelineConfig.from_mapping(
+            pipeline_raw,
+            allow_empty_objective=allow_teacher_forcing_pipeline,
+        )
 
         if "bbox_l1_weight" in data or "bbox_giou_weight" in data:
             raise ValueError(
@@ -4620,90 +4644,6 @@ class DetectionObjectiveConfig:
             f"got {raw_id!r}"
         )
 
-    @classmethod
-    def from_legacy_mapping_for_tests(cls, payload: Any) -> "DetectionObjectiveConfig":
-        if isinstance(payload, Mapping):
-            payload = dict(payload)
-            raw_coord_soft_ce = payload.get("coord_soft_ce")
-            if raw_coord_soft_ce is not None:
-                if not isinstance(raw_coord_soft_ce, Mapping):
-                    raise TypeError("objective.coord_soft_ce must be a mapping")
-                target_distribution = raw_coord_soft_ce.get("target_distribution")
-                _latest_detection_validate_choice(
-                    target_distribution,
-                    path="objective.coord_soft_ce.target_distribution",
-                    allowed={
-                        "iou_gibbs_v0",
-                        "ciou_gibbs_v0",
-                        "instance_trie_gaussian",
-                    },
-                )
-                stale_instance_keys = (
-                    "tau",
-                    "tau_source",
-                    "weighting",
-                    "replace_coord_hard_ce",
-                    "apply_to_multi_positive",
-                    "sigma",
-                    "truncate",
-                    "target_sigma",
-                    "target_truncate",
-                )
-                if target_distribution == "instance_trie_gaussian":
-                    for stale_key in stale_instance_keys:
-                        if stale_key in raw_coord_soft_ce:
-                            raise ValueError(
-                                f"objective.coord_soft_ce.{stale_key} is not "
-                                "supported for target_distribution=instance_trie_gaussian"
-                            )
-                    payload["coord_soft_ce"] = parse_dataclass_strict(
-                        InstanceTrieGaussianCoordSoftCEConfig,
-                        raw_coord_soft_ce,
-                        path="objective.coord_soft_ce",
-                    )
-                else:
-                    for deprecated_key in (
-                        "sigma",
-                        "truncate",
-                        "target_sigma",
-                        "target_truncate",
-                        "window",
-                        "radius",
-                    ):
-                        if deprecated_key in raw_coord_soft_ce:
-                            raise ValueError(
-                                f"objective.coord_soft_ce.{deprecated_key} is deprecated; "
-                                "use iou_gibbs_v0 or ciou_gibbs_v0"
-                            )
-                    payload["coord_soft_ce"] = parse_dataclass_strict(
-                        GibbsCoordSoftCEConfig,
-                        raw_coord_soft_ce,
-                        path="objective.coord_soft_ce",
-                    )
-        if (
-            isinstance(payload, Mapping)
-            and payload.get("variant") == "prefix_rollin_et_rmp_ce"
-        ):
-            forbidden = [
-                f"objective.{key}"
-                for key in (
-                    "branch_support_weight",
-                    "branch_balance_weight",
-                    "support_weight",
-                    "balance_weight",
-                    "trie_support_weight",
-                    "trie_balance_weight",
-                )
-                if key in payload
-            ]
-            if forbidden:
-                raise ValueError(
-                    "prefix_rollin_et_rmp_ce rejects obsolete flat objective weight "
-                    f"aliases: {forbidden}"
-                )
-        return parse_dataclass_strict(cls, payload, path="objective")
-
-
 @dataclass(frozen=True)
 class DetectionPackingConfig:
     static_packing: bool = False
@@ -5119,7 +5059,10 @@ class TrainingConfig:
 
         stage2_ab = None
         if stage2_ab_raw is not None:
-            stage2_ab = Stage2ABConfig.from_mapping(stage2_ab_raw)
+            stage2_ab = Stage2ABConfig.from_mapping(
+                stage2_ab_raw,
+                allow_teacher_forcing_pipeline=objective is not None,
+            )
         elif trainer_variant == "stage2_two_channel":
             raise ValueError(
                 "stage2_ab section must be provided when custom.trainer_variant=stage2_two_channel"
