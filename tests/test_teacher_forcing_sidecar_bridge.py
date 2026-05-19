@@ -211,6 +211,59 @@ def test_semantic_and_raw_teacher_forcing_ir_conflict_fails() -> None:
         _run_bridge(semantic_ir=("semantic-ir",), raw_ir=("raw-ir",))
 
 
+def test_explicit_and_raw_training_sidecars_same_ir_preserves_explicit() -> None:
+    explicit_ir = ({"payload": "same-ir"},)
+    raw_ir = ({"payload": "same-ir"},)
+    explicit_sidecars = TrainingSidecars(
+        supervision=SupervisionSidecars(
+            teacher_forcing_target_ir=explicit_ir,
+        )
+    )
+    raw_batch = _minimal_raw_batch()
+    raw_batch["training_sidecars"] = TrainingSidecars(
+        supervision=SupervisionSidecars(
+            teacher_forcing_target_ir=raw_ir,
+        )
+    )
+
+    result = TrainerLossBridge().compute_loss(
+        model=_FakeModel(torch.zeros((1, 2, 5), dtype=torch.float32)),
+        raw_batch=raw_batch,
+        training_sidecars=explicit_sidecars,
+        supervision=SupervisionBatch(),
+        objectives=(ObjectiveSpec("token_ce"),),
+    )
+
+    assert result.training_sidecars is not raw_batch["training_sidecars"]
+    assert result.training_sidecars.supervision.teacher_forcing_target_ir is explicit_ir
+
+
+def test_explicit_and_raw_training_sidecars_different_ir_conflict_fails() -> None:
+    explicit_sidecars = TrainingSidecars(
+        supervision=SupervisionSidecars(
+            teacher_forcing_target_ir=("explicit-ir",),
+        )
+    )
+    raw_batch = _minimal_raw_batch()
+    raw_batch["training_sidecars"] = TrainingSidecars(
+        supervision=SupervisionSidecars(
+            teacher_forcing_target_ir=("raw-sidecar-ir",),
+        )
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="training_sidecars.*raw_batch\\.training_sidecars",
+    ):
+        TrainerLossBridge().compute_loss(
+            model=_FakeModel(torch.zeros((1, 2, 5), dtype=torch.float32)),
+            raw_batch=raw_batch,
+            training_sidecars=explicit_sidecars,
+            supervision=SupervisionBatch(),
+            objectives=(ObjectiveSpec("token_ce"),),
+        )
+
+
 def test_trainer_loss_bridge_rejects_logits_to_keep_for_teacher_forcing_sidecar() -> None:
     model = _FakeModel(torch.zeros((1, 2, 5), dtype=torch.float32))
 

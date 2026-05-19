@@ -179,6 +179,12 @@ class TrainerLossBridge:
         """Return semantic sidecars carried by the trainer batch."""
 
         raw_sidecars = raw_batch.get("training_sidecars")
+        if training_sidecars is not None and type(raw_sidecars) is TrainingSidecars:
+            self._validate_training_sidecars_match(
+                explicit_sidecars=training_sidecars,
+                raw_sidecars=raw_sidecars,
+            )
+
         if training_sidecars is not None:
             sidecars = training_sidecars
         elif type(raw_sidecars) is TrainingSidecars:
@@ -199,6 +205,24 @@ class TrainerLossBridge:
             teacher_forcing_target_ir=teacher_forcing_target_ir,
         )
         return replace(sidecars, supervision=supervision)
+
+    def _validate_training_sidecars_match(
+        self,
+        *,
+        explicit_sidecars: TrainingSidecars,
+        raw_sidecars: TrainingSidecars,
+    ) -> None:
+        """Validate explicit and raw full sidecars do not disagree."""
+
+        explicit_ir = explicit_sidecars.supervision.teacher_forcing_target_ir
+        raw_ir = raw_sidecars.supervision.teacher_forcing_target_ir
+        if self._teacher_forcing_target_ir_equal(explicit_ir, raw_ir):
+            return
+
+        raise ValueError(
+            "conflicting teacher_forcing_target_ir sources: "
+            "training_sidecars and raw_batch.training_sidecars"
+        )
 
     def _resolve_teacher_forcing_target_ir(
         self,
