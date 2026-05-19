@@ -3302,6 +3302,47 @@ class Stage2ABConfig:
         )
 
 
+def _compile_teacher_forcing_stage2_ab(
+    stage2_ab: Stage2ABConfig,
+    objective: TeacherForcingObjectiveConfig,
+) -> Stage2ABConfig:
+    if stage2_ab.pipeline.objective:
+        return stage2_ab
+
+    objective_specs: list[Stage2PipelineModuleSpec] = []
+    modules = objective.modules
+    if modules.conditional_valid_set_likelihood.enabled:
+        objective_specs.append(
+            Stage2PipelineModuleSpec(
+                name="conditional_valid_set_likelihood",
+                enabled=True,
+                weight=1.0,
+                channels=("A", "B"),
+                application={"preset": "valid_set_likelihood"},
+                config={
+                    "desc_ce_weight": 1.0,
+                    "rollout_fn_desc_weight": 1.0,
+                    "rollout_global_prefix_struct_ce_weight": 1.0,
+                },
+            )
+        )
+
+    if not objective_specs:
+        raise ValueError(
+            "teacher_forcing Stage-2 configs require at least one enabled "
+            "objective.modules entry that maps to the runtime objective manifest"
+        )
+
+    return Stage2ABConfig(
+        schedule=stage2_ab.schedule,
+        pipeline=Stage2PipelineConfig(
+            objective=tuple(objective_specs),
+            diagnostics=stage2_ab.pipeline.diagnostics,
+        ),
+        channel_b=stage2_ab.channel_b,
+    )
+
+
 def _validate_stage2_ab_rollout_surface_alignment(
     *,
     custom: CustomConfig,
@@ -4236,9 +4277,13 @@ class TeacherForcingRollinPolicyConfig:
 
     @classmethod
     def from_mapping(cls, payload: Any) -> "TeacherForcingRollinPolicyConfig":
+        if payload is None:
+            payload = {}
+        if not isinstance(payload, Mapping):
+            raise TypeError("objective.target_ir.rollin_policy must be a mapping")
         return parse_dataclass_strict(
             cls,
-            payload or {},
+            payload,
             path="objective.target_ir.rollin_policy",
         )
 
@@ -4255,9 +4300,15 @@ class TeacherForcingExactPackingMappingConfig:
 
     @classmethod
     def from_mapping(cls, payload: Any) -> "TeacherForcingExactPackingMappingConfig":
+        if payload is None:
+            payload = {}
+        if not isinstance(payload, Mapping):
+            raise TypeError(
+                "objective.target_ir.exact_packing_mapping must be a mapping"
+            )
         return parse_dataclass_strict(
             cls,
-            payload or {},
+            payload,
             path="objective.target_ir.exact_packing_mapping",
         )
 
@@ -5063,6 +5114,8 @@ class TrainingConfig:
                 stage2_ab_raw,
                 allow_teacher_forcing_pipeline=objective is not None,
             )
+            if objective is not None:
+                stage2_ab = _compile_teacher_forcing_stage2_ab(stage2_ab, objective)
         elif trainer_variant == "stage2_two_channel":
             raise ValueError(
                 "stage2_ab section must be provided when custom.trainer_variant=stage2_two_channel"

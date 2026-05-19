@@ -1,19 +1,32 @@
 from __future__ import annotations
 
 import copy
+from dataclasses import asdict, replace
 import sys
 from pathlib import Path
 
 import pytest
 
+from src.bootstrap.pipeline_manifest import build_pipeline_manifest
 from src.config.loader import ConfigLoader
 from src.config.schema import LatestDetectionTrainingConfig, TrainingConfig
+from src.detection.runtime import (
+    build_latest_detection_dataset,
+    build_latest_detection_runtime_custom_shim,
+    resolve_latest_detection_prompts,
+)
 
 TEST_DIR = Path(__file__).resolve().parent
 if str(TEST_DIR) not in sys.path:
     sys.path.insert(0, str(TEST_DIR))
 
 from test_latest_training_config_contract import _latest_payload
+from test_detection_training_dataset import (
+    FakeSwiftTemplate,
+    _ensure_image,
+    _raw_row,
+    _write_jsonl,
+)
 from test_stage2_ab_config_contract import (
     _canonical_stage2_pipeline,
     _make_stage2_training_payload,
@@ -86,6 +99,11 @@ def _stage2_teacher_payload(
 
 def _migrated_teacher_forcing_pipeline() -> dict:
     return {"objective": [], "diagnostics": []}
+
+
+def _teacher_forcing_stage2_objective_names(cfg: TrainingConfig) -> list[str]:
+    assert cfg.stage2_ab is not None
+    return [module.name for module in cfg.stage2_ab.pipeline.objective]
 
 
 @pytest.mark.parametrize(
@@ -166,6 +184,31 @@ def test_pure_profile_rejects_positive_coverage_strength() -> None:
     with pytest.raises(
         ValueError,
         match=r"pure_valid_set_marginal.*coverage_strength=0",
+    ):
+        LatestDetectionTrainingConfig.from_mapping(payload)
+
+
+@pytest.mark.parametrize(
+    ("section", "value"),
+    [
+        ("rollin_policy", []),
+        ("rollin_policy", False),
+        ("exact_packing_mapping", []),
+        ("exact_packing_mapping", False),
+    ],
+)
+def test_teacher_forcing_target_ir_nested_sections_reject_falsy_non_mappings(
+    section: str,
+    value: object,
+) -> None:
+    payload = _latest_teacher_payload()
+    target_ir = payload["objective"]["target_ir"]  # type: ignore[index]
+    assert isinstance(target_ir, dict)
+    target_ir[section] = value
+
+    with pytest.raises(
+        TypeError,
+        match=rf"objective\.target_ir\.{section} must be a mapping",
     ):
         LatestDetectionTrainingConfig.from_mapping(payload)
 
@@ -263,7 +306,9 @@ def test_stage2_teacher_forcing_exact_mapping_bypasses_packing_guard() -> None:
     assert cfg.objective.target_ir.exact_packing_mapping.enabled is True
     assert cfg.training["packing"] is True
     assert cfg.stage2_ab is not None
-    assert cfg.stage2_ab.pipeline.objective == ()
+    assert _teacher_forcing_stage2_objective_names(cfg) == [
+        "conditional_valid_set_likelihood"
+    ]
 
 
 def test_stage2_teacher_forcing_accepts_migrated_pipeline_without_legacy_modules() -> None:
@@ -276,7 +321,9 @@ def test_stage2_teacher_forcing_accepts_migrated_pipeline_without_legacy_modules
     assert cfg.objective.id == "teacher_forcing"
     assert cfg.objective.modules.conditional_valid_set_likelihood.enabled is True
     assert cfg.stage2_ab is not None
-    assert cfg.stage2_ab.pipeline.objective == ()
+    assert _teacher_forcing_stage2_objective_names(cfg) == [
+        "conditional_valid_set_likelihood"
+    ]
 
 
 def test_training_config_accepts_teacher_forcing_objective_without_stage2() -> None:
@@ -317,6 +364,46 @@ def test_checked_in_latest_teacher_forcing_smoke_config_materializes() -> None:
     assert cfg.training["packing"] is False
 
 
+def test_checked_in_latest_teacher_forcing_smoke_reaches_dataset_runtime(
+    tmp_path: Path,
+) -> None:
+    config_path = (
+        Path(__file__).resolve().parents[1]
+        / "configs/stage1/teacher_forcing/smoke/compact_full_hard_sft_tiny.yaml"
+    )
+    cfg = ConfigLoader.load_materialized_training_config(str(config_path))
+    assert isinstance(cfg, LatestDetectionTrainingConfig)
+
+    jsonl_path = tmp_path / "train.coord.jsonl"
+    _write_jsonl(jsonl_path, [_raw_row()])
+    image_root = _ensure_image(tmp_path).parents[2]
+    cfg = replace(
+        cfg,
+        data=replace(
+            cfg.data,
+            train_jsonl=str(jsonl_path),
+            image_root=str(image_root),
+        ),
+    )
+
+    system_prompt, _user_prompt = resolve_latest_detection_prompts(cfg)
+    custom_config = build_latest_detection_runtime_custom_shim(cfg)
+    dataset = build_latest_detection_dataset(
+        jsonl_path,
+        swift_template=FakeSwiftTemplate(),
+        training_config=cfg,
+        custom_config=custom_config,
+        system_prompt=system_prompt,
+        seed=17,
+        sample_limit=1,
+        dataset_name="teacher_forcing_smoke",
+    )
+    sample = dataset[0]
+
+    assert sample["detection_metadata"]["mode"] == "random_order_sft"
+    assert "recursive_detection_targets" not in sample
+
+
 def test_checked_in_stage2_teacher_forcing_smoke_config_materializes() -> None:
     config_path = (
         Path(__file__).resolve().parents[1]
@@ -330,4 +417,42 @@ def test_checked_in_stage2_teacher_forcing_smoke_config_materializes() -> None:
     assert cfg.objective.id == "teacher_forcing"
     assert cfg.objective.profile == "pure_valid_set_marginal"
     assert cfg.stage2_ab is not None
-    assert cfg.stage2_ab.pipeline.objective == ()
+    assert _teacher_forcing_stage2_objective_names(cfg) == [
+        "conditional_valid_set_likelihood"
+    ]
+
+
+def test_checked_in_stage2_teacher_forcing_smoke_builds_nonempty_manifest() -> None:
+    config_path = (
+        Path(__file__).resolve().parents[1]
+        / "configs/stage2_two_channel/teacher_forcing/pure_valid_set_marginal_smoke.yaml"
+    )
+    cfg = ConfigLoader.load_materialized_training_config(str(config_path))
+    assert isinstance(cfg, TrainingConfig)
+    assert cfg.stage2_ab is not None
+
+    manifest = build_pipeline_manifest(
+        asdict(cfg.stage2_ab),
+        default_objective=[
+            "token_ce",
+            "bbox_geo",
+            "bbox_size_aux",
+            "coord_reg",
+        ],
+        default_diagnostics=["coord_diag"],
+        trainer_variant="stage2_two_channel",
+        config_path=str(config_path),
+        run_name=str(cfg.training.get("run_name", "")),
+        seed=17,
+    )
+
+    objective_names = [module["name"] for module in manifest["objective"]]
+    assert objective_names == ["conditional_valid_set_likelihood"]
+    assert not {
+        "bbox_geo",
+        "bbox_size_aux",
+        "coord_reg",
+        "token_ce",
+        "coord_gate",
+        "text_gate",
+    }.intersection(objective_names)

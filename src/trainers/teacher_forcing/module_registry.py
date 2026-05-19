@@ -56,6 +56,30 @@ OBJECTIVE_MODULE_CATALOG: Final[dict[str, ObjectiveModuleDefinition]] = {
         ),
         emission_group="text",
     ),
+    "conditional_valid_set_likelihood": ObjectiveModuleDefinition(
+        family="text",
+        semantic_role="conditional_valid_set_likelihood",
+        config_keys=frozenset(
+            {
+                "desc_ce_weight",
+                "rollout_fn_desc_weight",
+                "rollout_global_prefix_struct_ce_weight",
+            }
+        ),
+        optional_config_keys=frozenset({"rollout_global_prefix_struct_ce_weight"}),
+        application_presets=frozenset({"valid_set_likelihood"}),
+        projected_atoms=(
+            ObjectiveLossAtomDefinition(
+                atom_name="struct_ce",
+                state_key="token_ce_struct_contrib",
+            ),
+            ObjectiveLossAtomDefinition(
+                atom_name="desc_ce",
+                state_key="token_ce_desc_contrib",
+            ),
+        ),
+        emission_group="text",
+    ),
     "stage2_trie_ce": ObjectiveModuleDefinition(
         family="text",
         semantic_role="stage2_trie_ce",

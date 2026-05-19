@@ -4704,10 +4704,14 @@ class Stage2TwoChannelTrainer(
             default=0.0,
             min_value=0.0,
         )
-        run_a_text = _token_ce_targets(token_preset)
-        run_a_bbox_geo = _coord_targets(bbox_geo_preset)
-        run_a_bbox_size_aux = _coord_targets(bbox_size_aux_preset)
-        run_a_coord_reg = _coord_targets(coord_reg_preset)
+        run_a_text = _token_ce_targets(token_preset) if token_preset else False
+        run_a_bbox_geo = _coord_targets(bbox_geo_preset) if bbox_geo_preset else False
+        run_a_bbox_size_aux = (
+            _coord_targets(bbox_size_aux_preset) if bbox_size_aux_preset else False
+        )
+        run_a_coord_reg = (
+            _coord_targets(coord_reg_preset) if coord_reg_preset else False
+        )
 
         # Always compute logits; do not rely on model.loss.
         ignored_keys = {

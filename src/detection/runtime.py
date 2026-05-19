@@ -158,6 +158,15 @@ def build_latest_detection_runtime_custom_shim(
 def latest_detection_mode(
     training_config: LatestDetectionTrainingConfig,
 ) -> LatestDetectionRuntimeMode:
+    if training_config.objective.id == "teacher_forcing":
+        rollin_policy = training_config.objective.target_ir.rollin_policy
+        if rollin_policy.name != "random_permutation":
+            raise ValueError(
+                "teacher_forcing latest detection runtime currently supports only "
+                "objective.target_ir.rollin_policy.name=random_permutation"
+            )
+        return "random_order_sft"
+
     variant = training_config.objective.variant
     supported = {
         "sorted_sft",
@@ -419,11 +428,20 @@ def build_latest_detection_dataset(
     dataset_name: str,
 ) -> DetectionTrainingDataset:
     type_gate_config = None
-    if training_config.objective.variant in {
+    objective = training_config.objective
+    objective_id = str(getattr(objective, "id", "") or "")
+    objective_variant = str(getattr(objective, "variant", "") or "")
+    if objective_variant in {
         "random_permutation_et_rmp_ce",
         "prefix_rollin_et_rmp_ce",
     }:
-        type_gate_config = training_config.objective.type_gate
+        type_gate_config = getattr(objective, "type_gate", None)
+    if objective_id == "teacher_forcing":
+        state_weighting = "uniform_permutation"
+        normalization = "semantic_image_bucket_balanced"
+    else:
+        state_weighting = getattr(objective, "state_weighting")
+        normalization = getattr(objective, "normalization")
     return DetectionTrainingDataset.from_jsonl(
         jsonl_path,
         swift_template=swift_template,
@@ -434,8 +452,8 @@ def build_latest_detection_dataset(
         user_prompt=custom_config.user_prompt,
         system_prompt=system_prompt,
         seed=seed,
-        state_weighting=training_config.objective.state_weighting,
-        normalization=training_config.objective.normalization,
+        state_weighting=state_weighting,
+        normalization=normalization,
         type_gate_config=type_gate_config,
         sample_limit=sample_limit,
         dataset_name=dataset_name,

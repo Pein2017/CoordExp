@@ -36,6 +36,9 @@ def _filter_channel_a_specs(
         if name == "token_ce" and run_a_text:
             out.append(spec)
             continue
+        if name == "conditional_valid_set_likelihood":
+            out.append(spec)
+            continue
         if name == "bbox_geo" and run_a_bbox_geo:
             out.append(spec)
             continue

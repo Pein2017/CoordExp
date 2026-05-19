@@ -866,7 +866,7 @@ def test_stage2_pipeline_rejects_legacy_modules_under_teacher_forcing() -> None:
         TrainingConfig.from_mapping(raw, prompts)
 
 
-def test_stage2_pipeline_accepts_empty_pipeline_under_teacher_forcing() -> None:
+def test_stage2_pipeline_compiles_empty_pipeline_from_teacher_forcing_objective() -> None:
     raw = _make_stage2_training_payload()
     raw["objective"] = _teacher_forcing_objective()
     raw["stage2_ab"]["pipeline"] = {"objective": [], "diagnostics": []}
@@ -877,7 +877,9 @@ def test_stage2_pipeline_accepts_empty_pipeline_under_teacher_forcing() -> None:
     assert cfg.objective is not None
     assert cfg.objective.id == "teacher_forcing"
     assert cfg.stage2_ab is not None
-    assert cfg.stage2_ab.pipeline.objective == ()
+    assert [
+        module.name for module in cfg.stage2_ab.pipeline.objective
+    ] == ["conditional_valid_set_likelihood"]
 
 
 def test_stage2_pipeline_accepts_channel_b_stage2_trie_ce() -> None:
