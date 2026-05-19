@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Literal, Mapping, Sequence
+from typing import Any, Literal, Mapping, NamedTuple, Sequence
 
 from src.common.detection_compact_rows import BOX_START_TOKEN, OBJECT_REF_START_TOKEN
 from src.detection.data import (
@@ -61,6 +61,11 @@ class _PreparedObject:
     obj: NormalizedDetectionObject
     branch: TokenBranch
     rendered_text: str
+
+
+class _InputPrefixToken(NamedTuple):
+    token_id: int
+    source: Literal["configured", "tokenizer_bos"]
 
 
 @dataclass(frozen=True)
@@ -122,8 +127,12 @@ class TeacherForcingTargetBuilder:
         except ValueError:
             return _drop("invalid_sample")
 
-        prefix_id = _input_prefix_token_id(self.tokenizer, self.input_prefix_token_id)
-        input_ids = (prefix_id, *rendered_ids)
+        try:
+            prefix = _input_prefix_token_id(self.tokenizer, self.input_prefix_token_id)
+        except ValueError as exc:
+            return _drop(str(exc), rendered_text=rendered_text)
+
+        input_ids = (prefix.token_id, *rendered_ids)
         if max_length is not None and len(input_ids) > int(max_length):
             return _drop("overlength", rendered_text=rendered_text)
 
@@ -146,6 +155,7 @@ class TeacherForcingTargetBuilder:
                 "serialization_policy": self.serialization_policy,
                 "rollin_policy_version": self.policy_version,
                 "stable_sample_id": sample_id,
+                "input_prefix_token_source": prefix.source,
                 "selected_source_object_indices": tuple(
                     parsed.objects[index].source_object_index for index in rollin_indices
                 ),
@@ -301,13 +311,13 @@ def _encode_rendered_text(tokenizer: Any, text: str) -> tuple[int, ...]:
     return tuple(int(token_id) for token_id in tokenizer.encode(text, add_special_tokens=False))
 
 
-def _input_prefix_token_id(tokenizer: Any, configured: int | None) -> int:
+def _input_prefix_token_id(tokenizer: Any, configured: int | None) -> _InputPrefixToken:
     if configured is not None:
-        return int(configured)
+        return _InputPrefixToken(int(configured), "configured")
     bos = getattr(tokenizer, "bos_token_id", None)
     if bos is not None:
-        return int(bos)
-    return 0
+        return _InputPrefixToken(int(bos), "tokenizer_bos")
+    raise ValueError("missing_input_prefix_token")
 
 
 def _normalize_profile(profile: str) -> Literal["hard_sft", "valid_set"]:
@@ -328,30 +338,34 @@ def _coerce_sample(
         return _drop("invalid_sample")
     if "objects" not in sample:
         return _drop("missing_objects")
-    objects_raw = sample["objects"]
-    if not isinstance(objects_raw, Sequence) or isinstance(objects_raw, (str, bytes)):
-        return _drop("invalid_sample")
-    if not objects_raw:
-        return _drop("empty_objects")
     try:
+        objects_raw = sample["objects"]
+        if not isinstance(objects_raw, Sequence) or isinstance(objects_raw, (str, bytes)):
+            return _drop("invalid_sample")
+        if not objects_raw:
+            return _drop("empty_objects")
         objects = tuple(
             _object_from_mapping(obj, index=index)
             for index, obj in enumerate(objects_raw)
         )
-    except (TypeError, ValueError):
+        image_id = int(sample.get("image_id", 0))
+        file_name = str(sample.get("file_name", ""))
+        width = int(sample.get("width", 0))
+        height = int(sample.get("height", 0))
+        source = str(sample.get("source", "mapping"))
+        split = str(sample.get("split", "unknown"))
+    except (KeyError, TypeError, ValueError, OverflowError):
         return _drop("invalid_sample")
-    image_id = int(sample.get("image_id", 0))
-    file_name = str(sample.get("file_name", ""))
     return NormalizedDetectionSample(
         images=(file_name,) if file_name else (),
         objects=objects,
-        width=int(sample.get("width", 0)),
-        height=int(sample.get("height", 0)),
+        width=width,
+        height=height,
         image_id=image_id,
         file_name=file_name,
         metadata=DetectionMetadata(
-            source=str(sample.get("source", "mapping")),
-            split=str(sample.get("split", "unknown")),
+            source=source,
+            split=split,
         ),
         object_ordering=ObjectOrderingPlan.sorted().with_realized(
             tuple(obj.source_object_index for obj in objects)

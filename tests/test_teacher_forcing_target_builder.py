@@ -153,6 +153,38 @@ class SplitMarkerTokenizer(TinyContextTokenizer):
         return super()._scan(text)
 
 
+class NoBosTokenizer:
+    stop_token_id = TinyContextTokenizer.stop_token_id
+
+    def __init__(self) -> None:
+        self._inner = TinyContextTokenizer()
+
+    def convert_tokens_to_ids(self, token: str) -> int:
+        return self._inner.convert_tokens_to_ids(token)
+
+    def encode(self, text: str, *, add_special_tokens: bool = False) -> list[int]:
+        return self._inner.encode(text, add_special_tokens=add_special_tokens)
+
+    def __call__(
+        self,
+        text: str,
+        *,
+        return_offsets_mapping: bool,
+        add_special_tokens: bool = False,
+    ) -> dict[str, list[int] | list[tuple[int, int]]]:
+        return self._inner(
+            text,
+            return_offsets_mapping=return_offsets_mapping,
+            add_special_tokens=add_special_tokens,
+        )
+
+    def token_id(self, token: str) -> int:
+        return self._inner.token_id(token)
+
+    def role_vocab(self) -> RoleVocab:
+        return self._inner.role_vocab()
+
+
 def _sample(
     objects: tuple[NormalizedDetectionObject, ...],
     *,
@@ -335,6 +367,46 @@ def test_selected_token_id_matches_rendered_input_ids_target_position() -> None:
     _validate(result, tokenizer)
 
 
+def test_tokenizer_bos_prefix_source_is_recorded_in_target_metadata() -> None:
+    result, tokenizer = _build(_sample((_object("cat", (1, 2, 10, 20)),)))
+
+    assert result.ok
+    assert result.input_ids[0] == tokenizer.bos_token_id
+    assert result.target_ir.metadata["input_prefix_token_source"] == "tokenizer_bos"
+
+
+def test_configured_input_prefix_source_is_recorded_in_target_metadata() -> None:
+    tokenizer = NoBosTokenizer()
+    builder = TeacherForcingTargetBuilder(
+        tokenizer=tokenizer,
+        profile="valid_set",
+        input_prefix_token_id=777,
+    )
+
+    result = builder.build(
+        _sample((_object("cat", (1, 2, 10, 20)),)),
+        epoch=0,
+        stable_sample_id="configured-prefix",
+    )
+
+    assert result.ok
+    assert result.input_ids[0] == 777
+    assert result.target_ir.metadata["input_prefix_token_source"] == "configured"
+    _validate(result, tokenizer)
+
+
+def test_missing_input_prefix_token_drops_without_synthetic_fallback() -> None:
+    result, _tokenizer = _build(
+        _sample((_object("cat", (1, 2, 10, 20)),)),
+        tokenizer=NoBosTokenizer(),
+    )
+
+    assert not result.ok
+    assert result.drop_reason == "missing_input_prefix_token"
+    assert result.target_ir is None
+    assert result.input_ids == ()
+
+
 def test_missing_detection_list_drops_sample() -> None:
     result, _tokenizer = _build({"image_id": 1, "file_name": "missing.jpg"})
 
@@ -349,6 +421,37 @@ def test_explicit_empty_coco_object_list_drops_sample() -> None:
 
     assert not result.ok
     assert result.drop_reason == "empty_objects"
+    assert result.target_ir is None
+    assert result.input_ids == ()
+
+
+@pytest.mark.parametrize(
+    "sample",
+    [
+        {"objects": [{"desc": "cat"}], "image_id": 1, "file_name": "missing-bbox.jpg"},
+        {
+            "objects": [{"bbox_2d": (1, 2, 10, 20)}],
+            "image_id": 1,
+            "file_name": "missing-desc.jpg",
+        },
+        {
+            "objects": [{"desc": "cat", "bbox_2d": (1, 2, 10, 20)}],
+            "image_id": "not-an-int",
+            "file_name": "bad-image-id.jpg",
+        },
+        {
+            "objects": [{"desc": "cat", "bbox_2d": (1, 2, 10, 20)}],
+            "image_id": 1,
+            "width": "not-an-int",
+            "file_name": "bad-width.jpg",
+        },
+    ],
+)
+def test_malformed_mapping_samples_drop_as_invalid_sample(sample: dict[str, Any]) -> None:
+    result, _tokenizer = _build(sample)
+
+    assert not result.ok
+    assert result.drop_reason == "invalid_sample"
     assert result.target_ir is None
     assert result.input_ids == ()
 
