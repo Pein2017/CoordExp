@@ -236,7 +236,7 @@ def test_latest_teacher_forcing_rejects_runtime_packing_without_exact_mapping() 
 
     with pytest.raises(
         ValueError,
-        match=r"teacher_forcing.*training\.packing=true.*exact_packing_mapping",
+        match=r"teacher_forcing.*training\.packing=true.*not implemented",
     ):
         LatestDetectionTrainingConfig.from_mapping(payload)
 
@@ -248,8 +248,20 @@ def test_latest_teacher_forcing_rejects_static_packing_without_exact_mapping() -
 
     with pytest.raises(
         ValueError,
-        match=r"teacher_forcing.*training\.packing=true.*exact_packing_mapping",
+        match=r"teacher_forcing.*training\.packing=true.*not implemented",
     ):
+        LatestDetectionTrainingConfig.from_mapping(payload)
+
+
+def test_latest_teacher_forcing_rejects_exact_packing_mapping_as_unsupported() -> None:
+    payload = _latest_payload()
+    objective = payload["objective"]
+    assert isinstance(objective, dict)
+    target_ir = objective["target_ir"]
+    assert isinstance(target_ir, dict)
+    target_ir["exact_packing_mapping"] = {"enabled": True}
+
+    with pytest.raises(ValueError, match=r"exact_packing_mapping.*unsupported"):
         LatestDetectionTrainingConfig.from_mapping(payload)
 
 

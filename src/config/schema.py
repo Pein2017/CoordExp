@@ -3308,35 +3308,29 @@ def _compile_teacher_forcing_stage2_ab(
 ) -> Stage2ABConfig:
     if stage2_ab.pipeline.objective:
         return stage2_ab
-
-    objective_specs: list[Stage2PipelineModuleSpec] = []
-    modules = objective.modules
-    if modules.conditional_valid_set_likelihood.enabled:
-        objective_specs.append(
-            Stage2PipelineModuleSpec(
-                name="conditional_valid_set_likelihood",
-                enabled=True,
-                weight=1.0,
-                channels=("A", "B"),
-                application={"preset": "valid_set_likelihood"},
-                config={
-                    "desc_ce_weight": 1.0,
-                    "rollout_fn_desc_weight": 1.0,
-                    "rollout_global_prefix_struct_ce_weight": 1.0,
-                },
-            )
-        )
-
-    if not objective_specs:
+    if objective.profile != "hard_sft":
         raise ValueError(
-            "teacher_forcing Stage-2 configs require at least one enabled "
-            "objective.modules entry that maps to the runtime objective manifest"
+            "teacher_forcing Stage-2 valid-set profiles require target IR runtime "
+            "wiring before they can compile to a runtime objective manifest"
         )
+
+    objective_spec = Stage2PipelineModuleSpec(
+        name="hard_sft",
+        enabled=True,
+        weight=1.0,
+        channels=("A", "B"),
+        application={"preset": "hard_sft"},
+        config={
+            "desc_ce_weight": 1.0,
+            "rollout_fn_desc_weight": 1.0,
+            "rollout_global_prefix_struct_ce_weight": 1.0,
+        },
+    )
 
     return Stage2ABConfig(
         schedule=stage2_ab.schedule,
         pipeline=Stage2PipelineConfig(
-            objective=tuple(objective_specs),
+            objective=(objective_spec,),
             diagnostics=stage2_ab.pipeline.diagnostics,
         ),
         channel_b=stage2_ab.channel_b,
@@ -3391,10 +3385,10 @@ def _validate_teacher_forcing_training_packing_contract(
         raise TypeError(
             "training.packing must be boolean when objective.id=teacher_forcing"
         )
-    if packing_raw and not objective.target_ir.exact_packing_mapping.enabled:
+    if packing_raw:
         raise ValueError(
-            "objective.id=teacher_forcing rejects training.packing=true unless "
-            "objective.target_ir.exact_packing_mapping.enabled=true."
+            "objective.id=teacher_forcing currently rejects training.packing=true; "
+            "exact atom-position packing mapping is not implemented"
         )
 
 
@@ -3647,16 +3641,16 @@ def _latest_detection_validate_packing_runtime_contract(
         )
 
     if getattr(objective, "id", None) == TEACHER_FORCING_OBJECTIVE_ID:
-        exact_mapping = bool(objective.target_ir.exact_packing_mapping.enabled)
-        if training_packing and not exact_mapping:
+        if training_packing:
             raise ValueError(
-                "objective.id=teacher_forcing rejects training.packing=true unless "
-                "objective.target_ir.exact_packing_mapping.enabled=true."
+                "objective.id=teacher_forcing currently rejects training.packing=true; "
+                "exact atom-position packing mapping is not implemented"
             )
-        if packing.static_packing and not exact_mapping:
+        if packing.static_packing:
             raise ValueError(
-                "objective.id=teacher_forcing rejects packing.static_packing=true unless "
-                "objective.target_ir.exact_packing_mapping.enabled=true."
+                "objective.id=teacher_forcing currently rejects "
+                "packing.static_packing=true; exact atom-position packing mapping "
+                "is not implemented"
             )
         return
 
@@ -4297,6 +4291,11 @@ class TeacherForcingExactPackingMappingConfig:
             self.enabled,
             path="objective.target_ir.exact_packing_mapping.enabled",
         )
+        if self.enabled:
+            raise ValueError(
+                "objective.target_ir.exact_packing_mapping.enabled=true is "
+                "unsupported until exact atom-position mapping is implemented"
+            )
 
     @classmethod
     def from_mapping(cls, payload: Any) -> "TeacherForcingExactPackingMappingConfig":

@@ -56,9 +56,9 @@ OBJECTIVE_MODULE_CATALOG: Final[dict[str, ObjectiveModuleDefinition]] = {
         ),
         emission_group="text",
     ),
-    "conditional_valid_set_likelihood": ObjectiveModuleDefinition(
+    "hard_sft": ObjectiveModuleDefinition(
         family="text",
-        semantic_role="conditional_valid_set_likelihood",
+        semantic_role="hard_sft",
         config_keys=frozenset(
             {
                 "desc_ce_weight",
@@ -67,7 +67,7 @@ OBJECTIVE_MODULE_CATALOG: Final[dict[str, ObjectiveModuleDefinition]] = {
             }
         ),
         optional_config_keys=frozenset({"rollout_global_prefix_struct_ce_weight"}),
-        application_presets=frozenset({"valid_set_likelihood"}),
+        application_presets=frozenset({"hard_sft"}),
         projected_atoms=(
             ObjectiveLossAtomDefinition(
                 atom_name="struct_ce",

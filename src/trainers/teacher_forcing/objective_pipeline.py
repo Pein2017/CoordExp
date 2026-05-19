@@ -64,7 +64,7 @@ def run_teacher_forcing_pipeline(
 
     objective_registry = {
         "token_ce": lambda spec: run_token_ce_module(context=context, spec=spec),
-        "conditional_valid_set_likelihood": lambda spec: run_token_ce_module(
+        "hard_sft": lambda spec: run_token_ce_module(
             context=context,
             spec=spec,
         ),

@@ -159,6 +159,11 @@ def latest_detection_mode(
     training_config: LatestDetectionTrainingConfig,
 ) -> LatestDetectionRuntimeMode:
     if training_config.objective.id == "teacher_forcing":
+        if training_config.objective.profile != "hard_sft":
+            raise ValueError(
+                "teacher_forcing valid-set profiles require target IR runtime wiring "
+                "before latest detection dataset construction is supported"
+            )
         rollin_policy = training_config.objective.target_ir.rollin_policy
         if rollin_policy.name != "random_permutation":
             raise ValueError(

@@ -13,6 +13,7 @@ from src.config.schema import LatestDetectionTrainingConfig, TrainingConfig
 from src.detection.runtime import (
     build_latest_detection_dataset,
     build_latest_detection_runtime_custom_shim,
+    latest_detection_mode,
     resolve_latest_detection_prompts,
 )
 
@@ -99,6 +100,24 @@ def _stage2_teacher_payload(
 
 def _migrated_teacher_forcing_pipeline() -> dict:
     return {"objective": [], "diagnostics": []}
+
+
+def _hard_sft_objective() -> dict:
+    return _teacher_forcing_objective(
+        profile="hard_sft",
+        coverage_strength=0.0,
+        coverage_enabled=False,
+    ) | {
+        "modules": {
+            "token_type_mass": {"enabled": False},
+            "conditional_valid_set_likelihood": {"enabled": False},
+            "within_valid_coverage": {
+                "enabled": False,
+                "coverage_strength": 0.0,
+            },
+            "continuation_margin": {"enabled": False},
+        }
+    }
 
 
 def _teacher_forcing_stage2_objective_names(cfg: TrainingConfig) -> list[str]:
@@ -282,20 +301,26 @@ def test_stage2_teacher_forcing_rejects_packing_without_exact_mapping() -> None:
     prompts = ConfigLoader.resolve_prompts(raw)
     with pytest.raises(
         ValueError,
-        match=r"teacher_forcing.*training\.packing=true.*exact_packing_mapping",
+        match=r"teacher_forcing.*training\.packing=true.*not implemented",
     ):
         TrainingConfig.from_mapping(raw, prompts)
 
 
-def test_stage2_teacher_forcing_exact_mapping_bypasses_packing_guard() -> None:
+def test_stage2_teacher_forcing_rejects_exact_packing_mapping_as_unsupported() -> None:
     objective = _teacher_forcing_objective(exact_packing_mapping=True)
     raw = _stage2_teacher_payload(
         objective=objective,
-        training={
-            "per_device_train_batch_size": 1,
-            "effective_batch_size": 1,
-            "packing": True,
-        },
+        pipeline=_migrated_teacher_forcing_pipeline(),
+    )
+
+    prompts = ConfigLoader.resolve_prompts(raw)
+    with pytest.raises(ValueError, match=r"exact_packing_mapping.*unsupported"):
+        TrainingConfig.from_mapping(raw, prompts)
+
+
+def test_stage2_teacher_forcing_hard_sft_compiles_runtime_manifest() -> None:
+    raw = _stage2_teacher_payload(
+        objective=_hard_sft_objective(),
         pipeline=_migrated_teacher_forcing_pipeline(),
     )
 
@@ -303,27 +328,37 @@ def test_stage2_teacher_forcing_exact_mapping_bypasses_packing_guard() -> None:
     cfg = TrainingConfig.from_mapping(raw, prompts)
 
     assert cfg.objective is not None
-    assert cfg.objective.target_ir.exact_packing_mapping.enabled is True
-    assert cfg.training["packing"] is True
+    assert cfg.objective.id == "teacher_forcing"
+    assert cfg.objective.profile == "hard_sft"
     assert cfg.stage2_ab is not None
-    assert _teacher_forcing_stage2_objective_names(cfg) == [
-        "conditional_valid_set_likelihood"
-    ]
+    assert _teacher_forcing_stage2_objective_names(cfg) == ["hard_sft"]
 
 
-def test_stage2_teacher_forcing_accepts_migrated_pipeline_without_legacy_modules() -> None:
-    raw = _stage2_teacher_payload(pipeline=_migrated_teacher_forcing_pipeline())
+@pytest.mark.parametrize(
+    "objective",
+    [
+        _teacher_forcing_objective(),
+        _teacher_forcing_objective(
+            profile="coverage_regularized_valid_set_marginal",
+            coverage_enabled=True,
+            coverage_strength=0.1,
+        ),
+    ],
+)
+def test_stage2_teacher_forcing_valid_set_profiles_require_runtime_wiring(
+    objective: dict,
+) -> None:
+    raw = _stage2_teacher_payload(
+        objective=objective,
+        pipeline=_migrated_teacher_forcing_pipeline(),
+    )
 
     prompts = ConfigLoader.resolve_prompts(raw)
-    cfg = TrainingConfig.from_mapping(raw, prompts)
-
-    assert cfg.objective is not None
-    assert cfg.objective.id == "teacher_forcing"
-    assert cfg.objective.modules.conditional_valid_set_likelihood.enabled is True
-    assert cfg.stage2_ab is not None
-    assert _teacher_forcing_stage2_objective_names(cfg) == [
-        "conditional_valid_set_likelihood"
-    ]
+    with pytest.raises(
+        ValueError,
+        match=r"valid-set profiles require target IR runtime wiring",
+    ):
+        TrainingConfig.from_mapping(raw, prompts)
 
 
 def test_training_config_accepts_teacher_forcing_objective_without_stage2() -> None:
@@ -404,10 +439,35 @@ def test_checked_in_latest_teacher_forcing_smoke_reaches_dataset_runtime(
     assert "recursive_detection_targets" not in sample
 
 
+@pytest.mark.parametrize(
+    "objective",
+    [
+        _teacher_forcing_objective(),
+        _teacher_forcing_objective(
+            profile="coverage_regularized_valid_set_marginal",
+            coverage_enabled=True,
+            coverage_strength=0.1,
+        ),
+    ],
+)
+def test_latest_teacher_forcing_valid_set_profiles_require_runtime_wiring(
+    objective: dict,
+) -> None:
+    payload = _latest_teacher_payload()
+    payload["objective"] = objective
+    cfg = LatestDetectionTrainingConfig.from_mapping(payload)
+
+    with pytest.raises(
+        ValueError,
+        match=r"valid-set profiles require target IR runtime wiring",
+    ):
+        latest_detection_mode(cfg)
+
+
 def test_checked_in_stage2_teacher_forcing_smoke_config_materializes() -> None:
     config_path = (
         Path(__file__).resolve().parents[1]
-        / "configs/stage2_two_channel/teacher_forcing/pure_valid_set_marginal_smoke.yaml"
+        / "configs/stage2_two_channel/teacher_forcing/hard_sft_smoke.yaml"
     )
 
     cfg = ConfigLoader.load_materialized_training_config(str(config_path))
@@ -415,17 +475,15 @@ def test_checked_in_stage2_teacher_forcing_smoke_config_materializes() -> None:
     assert isinstance(cfg, TrainingConfig)
     assert cfg.objective is not None
     assert cfg.objective.id == "teacher_forcing"
-    assert cfg.objective.profile == "pure_valid_set_marginal"
+    assert cfg.objective.profile == "hard_sft"
     assert cfg.stage2_ab is not None
-    assert _teacher_forcing_stage2_objective_names(cfg) == [
-        "conditional_valid_set_likelihood"
-    ]
+    assert _teacher_forcing_stage2_objective_names(cfg) == ["hard_sft"]
 
 
 def test_checked_in_stage2_teacher_forcing_smoke_builds_nonempty_manifest() -> None:
     config_path = (
         Path(__file__).resolve().parents[1]
-        / "configs/stage2_two_channel/teacher_forcing/pure_valid_set_marginal_smoke.yaml"
+        / "configs/stage2_two_channel/teacher_forcing/hard_sft_smoke.yaml"
     )
     cfg = ConfigLoader.load_materialized_training_config(str(config_path))
     assert isinstance(cfg, TrainingConfig)
@@ -447,7 +505,7 @@ def test_checked_in_stage2_teacher_forcing_smoke_builds_nonempty_manifest() -> N
     )
 
     objective_names = [module["name"] for module in manifest["objective"]]
-    assert objective_names == ["conditional_valid_set_likelihood"]
+    assert objective_names == ["hard_sft"]
     assert not {
         "bbox_geo",
         "bbox_size_aux",

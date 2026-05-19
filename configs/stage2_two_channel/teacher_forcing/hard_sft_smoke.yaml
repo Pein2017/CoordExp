@@ -11,14 +11,14 @@ custom:
   trainer_variant: stage2_two_channel
 
 training:
-  run_name: stage2-teacher-forcing-pure-valid-set-marginal-smoke
+  run_name: stage2-teacher-forcing-hard-sft-smoke
   per_device_train_batch_size: 1
   effective_batch_size: 1
   packing: false
 
 objective:
   id: teacher_forcing
-  profile: pure_valid_set_marginal
+  profile: hard_sft
   target_ir:
     rollin_policy:
       name: random_permutation
@@ -27,9 +27,9 @@ objective:
       enabled: false
   modules:
     token_type_mass:
-      enabled: true
+      enabled: false
     conditional_valid_set_likelihood:
-      enabled: true
+      enabled: false
     within_valid_coverage:
       enabled: false
       coverage_strength: 0.0
