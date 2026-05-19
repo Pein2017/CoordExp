@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import math
+from numbers import Real
 from typing import Any
 
 from .constants import TEACHER_FORCING_TARGET_IR_SCHEMA_VERSION
@@ -34,6 +36,7 @@ def _validate_atom(
     role_vocab: RoleVocab | None,
 ) -> None:
     prefix = f"teacher_forcing_target_ir.atoms[{atom_index}]"
+    _validate_loss_weight(atom.loss_weight, prefix=prefix)
     _validate_nonnegative_index(atom.batch_index, field_name="batch_index", prefix=prefix)
     _validate_nonnegative_index(atom.logit_position, field_name="logit_position", prefix=prefix)
     _validate_nonnegative_index(atom.target_position, field_name="target_position", prefix=prefix)
@@ -45,8 +48,8 @@ def _validate_atom(
         raise ValueError(f"{prefix}: selected_token_role must be in allowed_token_roles")
     if len(atom.allowed_token_roles) > 1 and atom.allowed_token_roles != _SUPPORTED_MIXED_ROLE_SET:
         raise ValueError(f"{prefix}: unsupported mixed allowed_token_roles")
-    if atom.loss_weight > 0.0 and not atom.valid_token_ids:
-        raise ValueError(f"{prefix}: valid_token_ids must be nonempty for trainable atoms")
+    if not atom.valid_token_ids:
+        raise ValueError(f"{prefix}: valid_token_ids must be nonempty for target-like atoms")
 
     live_token_id = _input_token_id(input_ids, atom.batch_index, atom.target_position, prefix=prefix)
     if atom.selected_token_id != live_token_id:
@@ -54,11 +57,8 @@ def _validate_atom(
     if atom.selected_token_id not in atom.valid_token_ids:
         raise ValueError(f"{prefix}: selected_token_id must be in valid_token_ids")
 
-    if atom.loss_weight > 0.0 and role_vocab is None:
-        raise ValueError(f"{prefix}: role_vocab is required for trainable atoms")
-
     if role_vocab is None:
-        return
+        raise ValueError(f"{prefix}: role_vocab is required for target-like atoms")
     if TokenRole.STOP in atom.allowed_token_roles:
         _validate_stop_atom(atom, role_vocab=role_vocab, prefix=prefix)
     _validate_valid_ids_inside_role_vocab(atom, role_vocab=role_vocab, prefix=prefix)
@@ -84,6 +84,14 @@ def _validate_valid_ids_inside_role_vocab(
 def _validate_nonnegative_index(value: int, *, field_name: str, prefix: str) -> None:
     if value < 0:
         raise ValueError(f"{prefix}: {field_name} must be nonnegative")
+
+
+def _validate_loss_weight(value: float, *, prefix: str) -> None:
+    if isinstance(value, bool) or not isinstance(value, Real):
+        raise ValueError(f"{prefix}: loss_weight must be a finite nonnegative real number")
+    loss_weight = float(value)
+    if not math.isfinite(loss_weight) or loss_weight < 0.0:
+        raise ValueError(f"{prefix}: loss_weight must be a finite nonnegative real number")
 
 
 def _input_token_id(input_ids: Any, batch_index: int, target_position: int, *, prefix: str) -> int:

@@ -134,14 +134,50 @@ def test_selected_token_role_must_be_allowed() -> None:
         validate_target_ir(make_ir(atom), input_ids=torch.tensor([[9, 201]]))
 
 
-def test_trainable_atoms_require_nonempty_valid_token_ids() -> None:
+def test_atoms_require_nonempty_valid_token_ids_even_when_loss_weight_is_zero() -> None:
+    atom = make_atom(valid_token_ids=frozenset(), selected_token_id=101, loss_weight=0.0)
+
+    with pytest.raises(ValueError, match="valid_token_ids must be nonempty"):
+        validate_target_ir(
+            make_ir(atom),
+            input_ids=torch.tensor([[9, 101]]),
+            role_vocab=make_test_role_vocab(),
+        )
+
+
+def test_atoms_allow_zero_loss_weight_without_relaxing_target_structure() -> None:
+    atom = make_atom(loss_weight=0.0)
+
+    validate_target_ir(make_ir(atom), input_ids=torch.tensor([[9, 101]]), role_vocab=make_test_role_vocab())
+
+
+def test_atoms_require_role_vocab_even_when_loss_weight_is_zero() -> None:
+    atom = make_atom(loss_weight=0.0)
+
+    with pytest.raises(ValueError, match="role_vocab is required"):
+        validate_target_ir(make_ir(atom), input_ids=torch.tensor([[9, 101]]))
+
+
+@pytest.mark.parametrize("loss_weight", [-1.0, float("nan"), float("inf"), -float("inf"), True])
+def test_loss_weight_must_be_finite_nonnegative_real_number(loss_weight: float) -> None:
+    atom = make_atom(loss_weight=loss_weight)
+
+    with pytest.raises(ValueError, match="loss_weight must be a finite nonnegative real number"):
+        validate_target_ir(
+            make_ir(atom),
+            input_ids=torch.tensor([[9, 101]]),
+            role_vocab=make_test_role_vocab(),
+        )
+
+
+def test_atoms_require_nonempty_valid_token_ids() -> None:
     atom = make_atom(valid_token_ids=frozenset(), selected_token_id=101)
 
     with pytest.raises(ValueError, match="valid_token_ids must be nonempty"):
         validate_target_ir(make_ir(atom), input_ids=torch.tensor([[9, 101]]))
 
 
-def test_trainable_atoms_require_role_vocab_for_fail_closed_validation() -> None:
+def test_atoms_require_role_vocab_for_fail_closed_validation() -> None:
     atom = make_atom(
         allowed_token_roles=frozenset({TokenRole.TEXT}),
         selected_token_role=TokenRole.TEXT,
