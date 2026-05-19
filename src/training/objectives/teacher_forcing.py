@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 from collections.abc import Mapping
 from types import MappingProxyType
 
@@ -133,7 +134,15 @@ class TeacherForcingObjective:
 
 
 def _require_input_ids(config: Mapping[str, object]) -> torch.Tensor:
-    return config_tensor(config, "input_ids", ndim=2)
+    input_ids = config_tensor(config, "input_ids", ndim=2)
+    if input_ids.requires_grad:
+        raise ValueError(
+            "teacher_forcing config['input_ids'] must not have requires_grad"
+        )
+    if input_ids.dtype is not torch.long:
+        raise TypeError("teacher_forcing config['input_ids'] must use dtype torch.long")
+
+    return input_ids.detach().clone()
 
 
 def _require_role_vocab(config: Mapping[str, object]) -> RoleVocab:
@@ -173,8 +182,7 @@ def _validate_atom_structure(
     role_vocab: RoleVocab,
 ) -> None:
     prefix = f"teacher_forcing_target_ir.atoms[{atom_index}]"
-    if atom.loss_weight < 0.0:
-        raise ValueError(f"{prefix}: loss_weight must be finite and nonnegative")
+    _validate_atom_loss_weight(atom.loss_weight, prefix=prefix)
     if not atom.allowed_token_roles:
         raise ValueError(f"{prefix}: allowed_token_roles must be nonempty")
     if atom.selected_token_role not in atom.allowed_token_roles:
@@ -210,6 +218,14 @@ def _validate_atom_structure(
         raise ValueError(
             f"{prefix}: valid_token_ids must be inside allowed role vocab"
         )
+
+
+def _validate_atom_loss_weight(value: object, *, prefix: str) -> None:
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise TypeError(f"{prefix}: loss_weight must be finite and nonnegative")
+    weight = float(value)
+    if not math.isfinite(weight) or weight < 0.0:
+        raise ValueError(f"{prefix}: loss_weight must be finite and nonnegative")
 
 
 def _validate_input_position(

@@ -151,6 +151,55 @@ def test_valid_token_role_vocab_mismatch_rejected_before_probability_math() -> N
         _run(logits=logits, input_ids=torch.tensor([[0, 1]]), ir=ir)
 
 
+def test_float_input_ids_with_fractional_target_rejected_before_probability_math() -> None:
+    logits = torch.zeros((1, 2, 10), dtype=torch.float32)
+    logits[0, 0, 1] = float("nan")
+    ir = _ir(_atom(selected_token_id=1))
+
+    with pytest.raises(TypeError, match="input_ids.*torch.long"):
+        _run(logits=logits, input_ids=torch.tensor([[0.0, 1.5]]), ir=ir)
+
+
+@pytest.mark.parametrize(
+    "input_ids",
+    (
+        torch.tensor([[False, True]], dtype=torch.bool),
+        torch.tensor([[0.0 + 0.0j, 1.0 + 0.0j]], dtype=torch.complex64),
+    ),
+)
+def test_non_integer_input_ids_rejected(input_ids: torch.Tensor) -> None:
+    ir = _ir(_atom(selected_token_id=1))
+
+    with pytest.raises(TypeError, match="input_ids.*torch.long"):
+        _run(
+            logits=torch.zeros((1, 2, 10), dtype=torch.float32),
+            input_ids=input_ids,
+            ir=ir,
+        )
+
+
+def test_input_ids_with_grad_history_rejected_before_probability_math() -> None:
+    logits = torch.zeros((1, 2, 10), dtype=torch.float32)
+    logits[0, 0, 1] = float("nan")
+    ir = _ir(_atom(selected_token_id=1))
+    input_ids = torch.tensor([[0.0, 1.0]], dtype=torch.float32, requires_grad=True)
+
+    with pytest.raises(ValueError, match="input_ids.*requires_grad"):
+        _run(logits=logits, input_ids=input_ids, ir=ir)
+
+
+@pytest.mark.parametrize("loss_weight", (float("nan"), -1.0))
+def test_invalid_atom_loss_weight_rejected_before_probability_math(
+    loss_weight: float,
+) -> None:
+    logits = torch.zeros((1, 2, 10), dtype=torch.float32)
+    logits[0, 0, 1] = float("nan")
+    ir = _ir(_atom(selected_token_id=1, loss_weight=loss_weight))
+
+    with pytest.raises(ValueError, match="loss_weight must be finite and nonnegative"):
+        _run(logits=logits, input_ids=torch.tensor([[0, 1]], dtype=torch.long), ir=ir)
+
+
 @pytest.mark.parametrize(
     "input_ids,error_match",
     (
