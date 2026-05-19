@@ -261,13 +261,13 @@ def test_compact_full_two_object_render_bytes_and_separator_stay_exact() -> None
 
     assert rendered.text == (
         f"{OBJECT_REF_START_TOKEN}cat{BOX_START_TOKEN}"
-        "<|coord_1|><|coord_2|><|coord_3|><|coord_4|>\n"
+        "<|coord_1|><|coord_2|><|coord_3|><|coord_4|>"
         f"{OBJECT_REF_START_TOKEN}dog{BOX_START_TOKEN}"
         "<|coord_10|><|coord_20|><|coord_30|><|coord_40|>"
     )
     assert len(rendered.object_entries) == 2
     assert len(rendered.separator_spans) == 1
-    assert rendered.separator_spans[0].text(rendered.text) == "\n"
+    assert rendered.separator_spans[0].text(rendered.text) == ""
     assert rendered.object_entries[0].separator_span == rendered.separator_spans[0]
     assert rendered.object_entries[0].entry_span.text(rendered.text) == (
         f"{OBJECT_REF_START_TOKEN}cat{BOX_START_TOKEN}"

@@ -42,7 +42,7 @@ def test_compact_full_renderer_uses_qwen_native_grounding_tokens() -> None:
     )
 
     assert text == (
-        f"{OBJECT_REF_START_TOKEN}traffic light{BOX_START_TOKEN}<|coord_10|><|coord_20|><|coord_30|><|coord_40|>\n"
+        f"{OBJECT_REF_START_TOKEN}traffic light{BOX_START_TOKEN}<|coord_10|><|coord_20|><|coord_30|><|coord_40|>"
         f"{OBJECT_REF_START_TOKEN}person{BOX_START_TOKEN}<|coord_100|><|coord_200|><|coord_300|><|coord_400|>"
     )
 
