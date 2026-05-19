@@ -4,7 +4,7 @@
     "config_path": "/data/home/xiaoyan/AIteam/data/CoordExp/.worktrees/a5-iou-gibbs-softce/configs/stage1/recursive_detection_ce_latest/prod/compact_full_support2_iou_gibbs_softce_a5.yaml",
     "base_config_path": "",
     "run_name": "compact-full-et-rmp-iou-gibbs-softce-a5-support2-bsz16-4gpu-4epoch-tokenrows-v2",
-    "output_dir": "/data/CoordExp/output_remote/stage1_2b/recursive_detection_ce_latest/compact_full_et_rmp_iou_gibbs_softce_a5_support2_bsz16_4gpu_4epoch_tokenrows_v2/compact-full-et-rmp-iou-gibbs-softce-a5-support2-bsz16-4gpu-4epoch-tokenrows-v2/v0-20260512-163533",
+    "output_dir": "/data/CoordExp/outputs/stage1_2b/recursive_detection_ce_latest/compact_full_et_rmp_iou_gibbs_softce_a5_support2_bsz16_4gpu_4epoch_tokenrows_v2/compact-full-et-rmp-iou-gibbs-softce-a5-support2-bsz16-4gpu-4epoch-tokenrows-v2/v0-20260512-163533",
     "dataset_seed": 42
   },
   "experiment": {

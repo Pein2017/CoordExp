@@ -10,12 +10,11 @@ updated: 2026-05-18
 
 # Instance-Trie Gaussian SoftCE Draft
 
-Status: active implementation draft. The objective is implemented on feature
-branch `codex/instance-trie-gaussian-softce` in isolated worktree
-`/data/home/xiaoyan/AIteam/data/CoordExp/.worktrees/instance-trie-gaussian-softce`,
-but it is not merged, stable, or current production behavior. Treat this as
-feature-branch provenance until focused tests, target-shape audit, smoke
-workflow, diagnosis/audit review, and branch acceptance complete.
+Status: active implementation draft. The objective is available as an
+ablation/smoke surface, but it is not production-approved behavior until
+production-scale validation evidence and explicit promotion approval are
+recorded. Treat this page as implementation/design provenance rather than a
+production runbook.
 
 Naming convention: this draft uses the human-facing objective name
 `Instance-Trie Gaussian SoftCE`, the config `target_distribution`
@@ -62,7 +61,7 @@ free-text description positions.
 
 ## Orthogonal Token-Type Supervision
 
-The active feature-branch objective separates token-type validity from
+The active ablation objective separates token-type validity from
 coordinate smoothness. Schema/control/boundary tokens use hard CE plus the
 struct/eos type gate. Free-text description tokens use hard CE and, at
 description trie branch positions, support/balance trie CE plus the desc type
@@ -290,9 +289,9 @@ focused Gaussian tails over structurally legal bins, this should be read as
 avoiding a high-probability union basin, not as assigning mathematically zero
 probability to every recombination coordinate when the radius is nonzero.
 
-## Feature-Branch Config Surface
+## Ablation Config Surface
 
-The active feature-branch successor configs are:
+The active ablation successor configs are:
 
 - main: `configs/stage1/recursive_detection_ce_latest/prod/compact_full_support2_instance_trie_focused_cap8_frac0p04_mix0p1.yaml`
 - slope ablation: `configs/stage1/recursive_detection_ce_latest/prod/compact_full_support2_instance_trie_focused_cap8_frac0p06_mix0p1.yaml`
@@ -325,7 +324,7 @@ Do not assume a 1001-bin inclusive `[0,1000]` value domain.
 
 The old IoU/CIoU-Gibbs configs should remain as negative-result provenance, but
 should not be presented as the recommended A5 direction for the active
-feature-branch implementation draft.
+implementation draft.
 
 ## Implementation Infrastructure Boundaries
 

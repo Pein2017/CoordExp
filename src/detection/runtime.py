@@ -448,6 +448,8 @@ def build_latest_detection_dataset(
 ) -> DetectionTrainingDataset:
     eos_trust_weight_config = None
     type_gate_config = None
+    if training_config.objective.eos is not None:
+        eos_trust_weight_config = training_config.objective.eos.eos_trust_weight
     if training_config.objective.variant == "prefix_rollin_et_rmp_ce":
         eos_cfg = training_config.objective.eos
         if eos_cfg is None:

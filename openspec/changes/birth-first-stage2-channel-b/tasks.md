@@ -2,7 +2,7 @@
 
 - [ ] 1.1 Update the Stage-2 OpenSpec deltas and typed schema so `stage2_ab.channel_b.birth_first` is validated with `enabled`, `continue_over_eos_weight`, and `continue_over_eos_margin`.
 - [ ] 1.2 Enforce the birth-first cross-field rules: `pseudo_positive.enabled=false`, `triage_posterior.num_rollouts=2`, and non-zero `token_ce.config.rollout_global_prefix_struct_ce_weight`.
-- [ ] 1.3 Update `docs/training/STAGE2_RUNBOOK.md` to pin the study to the fixed base model `/data/CoordExp/model_cache_remote/model_cache/models/Qwen/Qwen3-VL-2B-Instruct-coordexp` plus the fixed adapter checkpoint `/data/CoordExp/output_remote/stage1_2b/coco_bbox_max60-hard_ce_soft_ce_w1_gate/epoch_4-from-base-2B/v0-20260227-050057/checkpoint-1332`, document the `birth_first` knob set, state that birth-first reuses the existing `K=2` control profile, and spell out the paired decision-run protocol.
+- [ ] 1.3 Update `docs/training/STAGE2_RUNBOOK.md` to pin the study to the fixed base model `/data/CoordExp/model_cache_remote/model_cache/models/Qwen/Qwen3-VL-2B-Instruct-coordexp` plus the fixed adapter checkpoint `/data/CoordExp/outputs/stage1_2b/coco_bbox_max60-hard_ce_soft_ce_w1_gate/epoch_4-from-base-2B/v0-20260227-050057/checkpoint-1332`, document the `birth_first` knob set, state that birth-first reuses the existing `K=2` control profile, and spell out the paired decision-run protocol.
 - [ ] 1.4 Update `docs/training/METRICS.md` to document the birth-first metric family, including additive counters, recovered-ground-truth numerator/denominator surfaces, and `continue_over_eos_margin` as a mean-like rollout-text atom.
 
 ## 2. Channel-B Runtime And Objective Routing
@@ -22,7 +22,7 @@
 
 ## 4. Decision Runs And Promotion
 
-- [ ] 4.1 Author paired `K=2` configs rooted in the fixed base model `/data/CoordExp/model_cache_remote/model_cache/models/Qwen/Qwen3-VL-2B-Instruct-coordexp` plus the fixed adapter checkpoint `/data/CoordExp/output_remote/stage1_2b/coco_bbox_max60-hard_ce_soft_ce_w1_gate/epoch_4-from-base-2B/v0-20260227-050057/checkpoint-1332`:
+- [ ] 4.1 Author paired `K=2` configs rooted in the fixed base model `/data/CoordExp/model_cache_remote/model_cache/models/Qwen/Qwen3-VL-2B-Instruct-coordexp` plus the fixed adapter checkpoint `/data/CoordExp/outputs/stage1_2b/coco_bbox_max60-hard_ce_soft_ce_w1_gate/epoch_4-from-base-2B/v0-20260227-050057/checkpoint-1332`:
   - `configs/stage2_two_channel/smoke/birth_first_k2_control_4steps.yaml`
   - `configs/stage2_two_channel/smoke/birth_first_k2_enabled_4steps.yaml`
   - `configs/stage2_two_channel/prod/birth_first_k2_control_decision.yaml`

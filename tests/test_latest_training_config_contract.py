@@ -1364,7 +1364,7 @@ def test_latest_recursive_detection_adapter_smoke_configs_parse() -> None:
             == "model_cache_remote/model_cache/models/Qwen/Qwen3-VL-2B-Instruct-coordexp"
         )
         assert cfg.model["adapters"] == [
-            "output_remote/stage1_2b/recursive_detection_ce_latest/compact_full_et_rmp_ce_support2_bsz16_4epoch_tokenrows_v2/compact-full-et-rmp-ce-support2-bsz16-4epoch-tokenrows-v2/v0-20260504-071356/checkpoint-3664"
+            "outputs/stage1_2b/recursive_detection_ce_latest/compact_full_et_rmp_ce_support2_bsz16_4epoch_tokenrows_v2/compact-full-et-rmp-ce-support2-bsz16-4epoch-tokenrows-v2/v0-20260504-071356/checkpoint-3664"
         ]
         assert cfg.training["max_steps"] == 1
         assert cfg.training["per_device_train_batch_size"] == 1

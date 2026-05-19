@@ -26,7 +26,7 @@ the core-diagnosis addendum, and the final closure decision.
 The note is intentionally not a benchmark record. It is a mechanism diagnosis
 for one fixed CoordExp checkpoint:
 
-`output_remote/stage1_2b/coco_bbox_max60-hard_ce_soft_ce_w1_gate/epoch_4-from-base-2B/v0-20260227-050057/checkpoint-1332-merged-full`
+`outputs/stage1_2b/coco_bbox_max60-hard_ce_soft_ce_w1_gate/epoch_4-from-base-2B/v0-20260227-050057/checkpoint-1332-merged-full`
 
 Primary artifact root:
 

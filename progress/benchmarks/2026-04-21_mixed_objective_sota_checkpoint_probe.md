@@ -12,7 +12,7 @@ summary: Focused probe of the new 2B mixed-objective adapter checkpoint showing 
 This note records a focused follow-up probe on the new 2B mixed-objective adapter checkpoint:
 
 - adapter:
-  `output_remote/stage1_2b/coco_bbox_max60-hard_ce_soft_ce_w1_gate/epoch_4-from-base-2B/v0-20260227-050057/checkpoint-1332`
+  `outputs/stage1_2b/coco_bbox_max60-hard_ce_soft_ce_w1_gate/epoch_4-from-base-2B/v0-20260227-050057/checkpoint-1332`
 
 The goal was not to rerun the full earlier coord-family project, but to answer a narrower question:
 

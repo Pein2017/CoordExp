@@ -16,7 +16,7 @@ This design is intentionally scoped to one fixed base-model plus adapter pair:
 - base model:
   `/data/CoordExp/model_cache_remote/model_cache/models/Qwen/Qwen3-VL-2B-Instruct-coordexp`
 - adapter checkpoint:
-  `/data/CoordExp/output_remote/stage1_2b/coco_bbox_max60-hard_ce_soft_ce_w1_gate/epoch_4-from-base-2B/v0-20260227-050057/checkpoint-1332`
+  `/data/CoordExp/outputs/stage1_2b/coco_bbox_max60-hard_ce_soft_ce_w1_gate/epoch_4-from-base-2B/v0-20260227-050057/checkpoint-1332`
 
 ## Approaches Considered
 

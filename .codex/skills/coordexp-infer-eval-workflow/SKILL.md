@@ -1,236 +1,114 @@
 ---
 name: coordexp-infer-eval-workflow
-description: Use when launching, repairing, auditing, or summarizing CoordExp inference, confidence scoring, duplicate-control, COCO/LVIS-proxy evaluation, Oracle-K analysis, or benchmark artifact provenance.
+description: Use when launching, repairing, auditing, or summarizing CoordExp infer/scoring/eval/Oracle-K/proxy-bundle artifact workflows.
 ---
 
-# CoordExp Infer Eval Workflow
+# CoordExp Inference And Evaluation Workflow
 
-Use the repo's YAML-first production path.
-Do not invent one-off CLI flags when an existing config already captures the run.
-When running interactively, wrap noisy commands with `rtk` if useful, but keep `PYTHONPATH=.` and `conda run -n ms python`.
+Use YAML-first production paths. Do not invent stable CLI flags when config already captures the run.
+Treat this skill as the stable workflow guide, not a promise that one exact script path will never move.
 
-## Primary References
+## Entry Points
 
-- canonical docs:
+- Primary pipeline surfaces:
+  - infer entrypoints such as `scripts/run_infer.py`, `src/infer/pipeline.py::run_pipeline`, `src/infer/engine.py::InferenceEngine.infer`
+  - confidence / scoring surfaces such as `scripts/postop_confidence.py`, `src/eval/confidence_postop.py`
+  - evaluation surfaces such as `scripts/evaluate_detection.py`, `src/eval/detection.py::evaluate_and_save`
+  - proxy / bundle surfaces such as `scripts/evaluate_proxy_detection_bundle.py`, `src/eval/proxy_eval_bundle.py`
+  - artifact ownership such as `src/infer/artifacts.py`, `src/eval/artifacts.py`
+- Workflow references:
   - `docs/eval/WORKFLOW.md`
   - `docs/eval/CONTRACT.md`
   - `docs/ARTIFACTS.md`
-- reusable runtime seams:
-  - `src/infer/pipeline.py::run_pipeline`
-  - `src/infer/engine.py::InferenceEngine.infer`
-  - `src/infer/artifacts.py::build_infer_summary_payload`
-  - `src/eval/detection.py::evaluate_and_save`
-  - `src/eval/artifacts.py`
-- standard infer entrypoint:
-  - `scripts/run_infer.py`
-- confidence scoring:
-  - `scripts/postop_confidence.py`
-- single-view evaluation:
-  - `scripts/evaluate_detection.py`
-- one-run proxy bundle evaluation:
-  - `scripts/evaluate_proxy_detection_bundle.py`
 
-## Default Flow
+When code moves, prefer the current checked-in pipeline/config surfaces over memorized script names. First verify:
 
-```text
-config + checkpoint + input JSONL
-  -> inference
-  -> gt_vs_pred.jsonl
-  -> score materialization
-  -> gt_vs_pred_scored.jsonl
-  -> evaluation and optional duplicate-control guard
-  -> metrics.json / metrics_guarded.json / per_image.json / matches.jsonl / summaries
-```
+1. which config schema currently owns infer, scoring, and eval;
+2. which entrypoint actually consumes that schema;
+3. where the canonical output artifacts are written;
+4. whether the run is coord-token, raw-text, or another coordinate surface.
 
-Score materialization depends on the coordinate surface:
-
-- `bbox_format: xyxy` with coord tokens: run confidence post-op.
-- raw-text `xyxy` norm1000: run confidence post-op with numeric-text span alignment; set `infer.mode: text`, `infer.pred_coord_mode: norm1000`, and do not rely on `auto`.
-- `bbox_format: cxcy_logw_logh` or `cxcywh`: do not run confidence post-op; use the unified pipeline's deterministic constant-score compatibility artifact only for checkpoints trained on that serialization.
-
-## Core Commands
-
-Always run from repo root. Use YAML configs, not ad hoc shell overrides, for stable workflows.
-
-Inference:
+Commands:
 
 ```bash
-PYTHONPATH=. conda run -n ms python scripts/run_infer.py \
-  --config <infer_config.yaml>
+PYTHONPATH=. conda run -n ms python scripts/run_infer.py --config <infer.yaml>
+PYTHONPATH=. conda run -n ms python scripts/postop_confidence.py --config <postop.yaml>
+PYTHONPATH=. conda run -n ms python scripts/evaluate_detection.py --config <eval.yaml>
+PYTHONPATH=. conda run -n ms python scripts/evaluate_oracle_k.py --config <oracle.yaml>
 ```
 
-Confidence post-op:
+Wrap with `rtk` when filtered output is acceptable.
+
+## Default Decode Assumptions
+
+Unless the user explicitly asks otherwise, use:
+
+- `temperature = 0.0`
+- `repeat_penalty = 1.10`
+
+Treat these as the default reproducibility settings for ordinary CoordExp infer/eval prep. Override them only for intentional decoding ablations, legacy reproduction, or when a checked-in config already pins different values.
+
+## Coordinate-Surface Rules
+
+- Coord-token `xyxy`: run confidence post-op.
+- Raw-text `xyxy` norm1000: set `infer.mode: text`, `infer.pred_coord_mode: norm1000`; confidence post-op must use numeric-text alignment, not coord-token geometry.
+- `cxcy_logw_logh` or `cxcywh`: do not run confidence post-op; use deterministic constant-score compatibility only for checkpoints trained on that serialization.
+
+## Proxy Bundle
+
+For COCO + LVIS-proxy runs:
+
+1. infer once;
+2. score once;
+3. evaluate the same scored artifact under:
+   - `coco_real`: benchmark-aligned headline;
+   - `coco_real_strict`: COCO plus strict same-extent proxies;
+   - `coco_real_strict_plausible`: broad analysis view, not standard COCO.
+
+Do not compare proxy-expanded views against standard COCO baselines without the label.
+
+## Reusable Helper
 
 ```bash
-PYTHONPATH=. conda run -n ms python scripts/postop_confidence.py \
-  --config <postop_config.yaml>
+HELPER=.codex/skills/coordexp-infer-eval-workflow/scripts/coordexp_infer_eval.py
+python "$HELPER" prepare-recursive --repo-root <root> --checkpoint <ckpt> --run-tag <tag> --gpus <ids> --master-port <port>
+python "$HELPER" summarize <run_dir> --format markdown
 ```
 
-Single evaluation:
+The helper defaults to `temperature=0.0` and `repeat_penalty=1.10`. Pass `--rp` only when intentionally overriding the default repetition penalty.
 
-```bash
-PYTHONPATH=. conda run -n ms python scripts/evaluate_detection.py \
-  --config <eval_config.yaml>
-```
+Use `--dry-run` before writing and `--force` only when intentionally reusing an output directory.
 
-Oracle-K analysis:
+## Verification
 
-```bash
-PYTHONPATH=. conda run -n ms python scripts/evaluate_oracle_k.py \
-  --config <oracle_k_config.yaml>
-```
+Before launch, check intended JSONL, image roots, checkpoint/adapter, prompt/order settings, coordinate surface, scope label, decoding knobs, entrypoint ownership, and GPU launch shape.
 
-One-run proxy bundle evaluation:
+After infer:
 
-```bash
-PYTHONPATH=. conda run -n ms python scripts/evaluate_proxy_detection_bundle.py \
-  --config <bundle_eval_config.yaml>
-```
+- `summary.json`
+- `gt_vs_pred.jsonl`
+- `resolved_config.json`
+- `resolved_config.path` next to downstream artifacts when needed
 
-## Reusable Helpers
+After scoring:
 
-For repeated recursive-detection infer/eval sweeps, use the bundled helper instead of hand-writing near-duplicate temp configs, launchers, status checks, or comparison tables:
+- `confidence_postop_summary.json`
+- `pred_confidence.jsonl` for confidence-scored paths
+- `gt_vs_pred_scored.jsonl`
 
-```bash
-HELPER=/data/CoordExp/.codex/skills/coordexp-infer-eval-workflow/scripts/coordexp_infer_eval.py
-```
+After eval:
 
-Prepare one standard compact-full recursive detection run:
+- `metrics.json`, `per_image.json`
+- guarded companions when `duplicate_control.enabled`
+- proxy bundle summary when used
 
-```bash
-python "$HELPER" prepare-recursive \
-  --repo-root /data/CoordExp/.worktrees/recursive-detection-bucketing-packing \
-  --checkpoint <checkpoint-or-adapter-path> \
-  --run-tag <a3-or-a4_eos-or-other-short-label> \
-  --rp <repetition-penalty> \
-  --gpus <cuda-visible-devices> \
-  --master-port <free-port>
-```
-
-This writes a YAML config and a tmux-safe launcher under `temp/infer/recursive_detection_ce_latest/`, prints the output directory, log path, and exact tmux command, and does not launch unless `--launch` is passed. Use `--dry-run` before writing, and use `--force` only when intentionally reusing an existing output directory.
-
-Summarize completed or partial runs:
-
-```bash
-python "$HELPER" summarize \
-  /data/CoordExp/output_remote/infer/recursive_detection_ce_latest/<run-dir> \
-  --format markdown
-```
-
-For RP sweeps, pass multiple run directories or use `--glob '/data/CoordExp/output_remote/infer/recursive_detection_ce_latest/*rp1p15*'`. The summary table reads only artifacts and reports raw/guarded AP, AP50, AP75, F1-ish, prediction counts, degenerate geometry counters, and duplicate-control suppression counts.
-
-## COCO + LVIS Proxy Workflow
-
-For COCO runs trained with LVIS proxy supervision:
-
-1. Infer once.
-2. Score once.
-3. Evaluate three GT views from the same scored artifact.
-
-The standard view labels are:
-
-- `coco_real`: original COCO GT only; this is the benchmark-aligned headline.
-- `coco_real_strict`: COCO GT plus strict same-extent LVIS proxies.
-- `coco_real_strict_plausible`: broad analysis view; useful for recall, least comparable to standard COCO.
-
-Use existing configs under `configs/infer/`, `configs/postop/`, `configs/eval/`, and `configs/bench/`. Only reach for old concrete configs such as the COCO-1024 `val_200_lvis_proxy_*` set when the user is working on that exact historical run:
-
-- `configs/infer/coco_1024/val_200_lvis_proxy_merged.yaml`
-- `configs/postop/coco_1024/val_200_lvis_proxy_merged.yaml`
-- `configs/eval/coco_1024/val_200_lvis_proxy_bundle.yaml`
-
-Expected bundle outputs:
-
-- `<run_dir>/eval_coco_real/`
-- `<run_dir>/eval_coco_real_strict/`
-- `<run_dir>/eval_coco_real_strict_plausible/`
-- `<run_dir>/proxy_eval_bundle_summary.json`
-
-## What To Verify
-
-Before launch:
-
-- infer config points to the intended `gt_jsonl`
-- infer config uses the intended checkpoint or adapter shorthand
-- root image directories resolve from config/provenance, especially when running from `temp/` or sharded work dirs
-- prompt controls match training when required:
-  - `infer.prompt_variant`
-  - `infer.object_field_order`
-  - `infer.object_ordering`
-- coordinate surface is intentional:
-  - `infer.mode`
-  - `infer.pred_coord_mode`
-  - `infer.bbox_format`
-- benchmark scope is explicit:
-  - dataset path
-  - slice such as `val200`, `limit=200`, or full-val
-  - decoding knobs and GPU launch shape when reporting timing
-
-After inference:
-
-- `<run_dir>/summary.json` exists
-- `<run_dir>/gt_vs_pred.jsonl` exists
-- `<run_dir>/resolved_config.json` exists when using the YAML pipeline
-- `resolved_config.path` is present next to `gt_vs_pred.jsonl` when downstream jobs need to recover the authoritative config
-- prompt/order settings in `summary.json` and `resolved_config.json` match the config
-
-After confidence post-op:
-
-- `<run_dir>/confidence_postop_summary.json` exists
-- `<run_dir>/pred_confidence.jsonl` exists for confidence-scored paths
-- `<run_dir>/gt_vs_pred_scored.jsonl` exists
-
-After non-canonical constant-score compatibility scoring:
-
-- `<run_dir>/gt_vs_pred_scored.jsonl` exists
-- do not expect `pred_confidence.jsonl` or `confidence_postop_summary.json`
-
-After evaluation:
-
-- raw metrics exist:
-  - `metrics.json`
-  - `per_image.json`
-- guarded companions exist when `duplicate_control.enabled: true`:
-  - `metrics_guarded.json`
-  - `per_image_guarded.json`
-  - `duplicate_guard_report.json`
-- bundle summary exists when using proxy bundle eval:
-  - `<run_dir>/proxy_eval_bundle_summary.json`
-- each expected eval directory exists
-- each eval directory contains `metrics.json`
-- use the summary JSON as the default source for reporting cross-view metrics
-
-For long or sharded runs:
-
-- verify top-level merged artifacts and summaries, not just per-shard logs
-- rerun only failed or missing shards when possible
-- preserve canonical image roots or rewrite them explicitly before launching from scratch space
-
-## Reporting Guidance
-
-When the user asks for performance:
-
-- report `bbox_AP`, `bbox_AP50`, `bbox_AP75`, and the main F1-ish metric if available
-- lead with `coco_real`
-- clearly label `strict` and `strict_plausible` as additive proxy views
-- state scope before comparing numbers: `val200`, `limit=200`, first-200, full-val, proxy view, raw-text vs coord-token, checkpoint id, and repetition penalty if relevant
-- mention GT counts, kept/total prediction counts, or scorer repairs when they materially explain score shifts
-- compare throughput only across compatible launch shapes; GPU count differences can make timing non-comparable even when accuracy is comparable
+For sharded runs, trust merged top-level summaries/manifests over shard logs.
 
 ## Failure Modes
 
-- If `metrics: both` on a COCO proxy artifact seems to trigger LVIS-federated assumptions, inspect `src/eval/detection.py` routing and verify dataset-policy detection before trusting the output.
-- If eval behavior is unclear, inspect `src/eval/detection.py::EvalOptions` and `src/eval/detection.py::evaluate_and_save`; `scripts/evaluate_detection.py` is a wrapper.
-- If infer behavior is unclear, inspect `src/infer/pipeline.py::run_pipeline` and `src/infer/engine.py::InferenceEngine.infer`; `scripts/run_infer.py` is a wrapper.
-- If images cannot be re-opened for visualization from derived artifacts, inspect `provenance.source_jsonl_dir` in the canonical visualization resource.
-- If proxy-expanded GT counts look wrong, validate `metadata.coordexp_proxy_supervision.object_supervision` and the proxy-tier split before blaming the evaluator.
-- If raw-text predictions appear to collapse after scoring, verify the confidence post-op used the numeric-text path instead of coord-token geometry alignment.
-- If a non-canonical bbox-format result looks strong or weak, confirm the checkpoint was trained against that exact serialization before treating it as evidence.
-
-## Avoid
-
-- Do not re-run inference when only evaluation views changed.
-- Do not compare proxy-expanded numbers against standard COCO baselines without labeling them.
-- Do not compare `val200` or `limit=200` against full-val without saying so.
-- Do not treat guarded metrics as a replacement for raw model-output inspection; guarded artifacts are additive post-op views.
-- Do not override config semantics with ad hoc shell flags unless the user explicitly asks for a one-off debug run.
+- `metrics: both` on COCO proxy artifacts can route into LVIS-federated assumptions; inspect `src/eval/detection.py`.
+- Missing visualization images usually means `provenance.source_jsonl_dir` or root image provenance is wrong.
+- Proxy-expanded GT count surprises should be checked against `metadata.coordexp_proxy_supervision.object_supervision`.
+- A scored raw-text collapse usually means the wrong confidence alignment path ran.
+- If a familiar script disappeared, do not force the old command shape; trace the current config owner and artifact writer first.
+- Do not re-run inference when only eval views changed.

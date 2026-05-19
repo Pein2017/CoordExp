@@ -267,14 +267,18 @@ class PreparedPrefixRollinExample:
     def assistant_stop_token_span(self):
         span = self.tokenized.assistant_stop_token_span
         if span is None:
-            raise ValueError("prefix_rollin_et_rmp_ce requires assistant <|im_end|> span")
+            raise ValueError(
+                "prefix_rollin_et_rmp_ce requires assistant <|im_end|> span"
+            )
         return span
 
     @property
     def assistant_stop_char_span(self):
         char_span = self.assistant_stop_token_span.char_span
         if char_span is None:
-            raise ValueError("prefix_rollin_et_rmp_ce requires assistant stop char span")
+            raise ValueError(
+                "prefix_rollin_et_rmp_ce requires assistant stop char span"
+            )
         return char_span
 
     @property
@@ -291,6 +295,7 @@ def prepare_detection_training_example(
     state_weighting: StateWeightingStrategy = "uniform_permutation",
     normalization: LossNormalizationStrategy = "semantic_image_bucket_balanced",
     type_gate_config: Any | None = None,
+    eos_trust_weight: float | None = None,
     system_prompt: str | None = None,
     user_content: str = "<image>",
     messages: Sequence[Mapping[str, Any]] | None = None,
@@ -322,6 +327,22 @@ def prepare_detection_training_example(
             state_weighting=state_weighting,
             normalization=normalization,
         )
+        if eos_trust_weight is not None:
+            eos_loss_weight = _validate_eos_trust_weight(eos_trust_weight)
+            if tokenized.assistant_stop_token_span is None:
+                raise ValueError(
+                    "random_permutation_et_rmp_ce EOS trust requires assistant "
+                    "<|im_end|> span"
+                )
+            eos_positions = tuple(tokenized.assistant_stop_token_span.token_indices())
+            recursive_detection_targets = replace(
+                recursive_detection_targets,
+                token_targets=_apply_eos_trust_weight(
+                    recursive_detection_targets.token_targets,
+                    eos_positions=eos_positions,
+                    eos_trust_weight=eos_loss_weight,
+                ),
+            )
         gated_targets = _apply_compact_type_gate(
             recursive_detection_targets.token_targets,
             tokenizer=tokenizer,
@@ -363,8 +384,10 @@ def build_compact_prefix_rollin_example(
 ) -> PreparedPrefixRollinExample:
     """Build one compact_full prefix-rollin example for tests and materialization."""
 
-    eos_loss_weight = _validate_prefix_rollin_eos_trust_weight(eos_trust_weight)
-    source_objects = tuple(normalized_sample.objects if normalized_sample is not None else objects)
+    eos_loss_weight = _validate_eos_trust_weight(eos_trust_weight)
+    source_objects = tuple(
+        normalized_sample.objects if normalized_sample is not None else objects
+    )
     if normalized_sample is not None and tuple(objects) != source_objects:
         raise ValueError("objects must match normalized_sample.objects when provided")
     source_by_id = {obj.object_instance_id: obj for obj in source_objects}
@@ -384,11 +407,17 @@ def build_compact_prefix_rollin_example(
 
     rollin_state = make_prefix_rollin_state(
         tuple(ObjectInstanceId(obj.object_instance_id) for obj in source_objects),
-        permutation=tuple(ObjectInstanceId(obj.object_instance_id) for obj in ordered_objects),
+        permutation=tuple(
+            ObjectInstanceId(obj.object_instance_id) for obj in ordered_objects
+        ),
         k=k,
     )
     stop_contract = resolve_compact_training_stop_contract(tokenizer)
-    sample = normalized_sample if normalized_sample is not None else _build_prefix_rollin_sample(ordered_objects)
+    sample = (
+        normalized_sample
+        if normalized_sample is not None
+        else _build_prefix_rollin_sample(ordered_objects)
+    )
 
     rendered_assistant = CompactFullTemplate().render_assistant(sample)
     tokenized = tokenize_rendered_detection_conversation(
@@ -424,9 +453,11 @@ def build_compact_prefix_rollin_example(
         normalization="semantic_image_bucket_balanced",
     )
     filtered_targets = tuple(
-        target for target in full_targets.token_targets if target.position in active_positions
+        target
+        for target in full_targets.token_targets
+        if target.position in active_positions
     )
-    filtered_targets = _apply_prefix_rollin_eos_trust_weight(
+    filtered_targets = _apply_eos_trust_weight(
         filtered_targets,
         eos_positions=eos_positions,
         eos_trust_weight=eos_loss_weight,
@@ -536,7 +567,11 @@ def _prefix_rollin_payload_positions(
             if entry_index >= k - 1 and entry_index < object_count - 1:
                 separator_destination = suffix_positions
             separator_destination.extend(entry.separator_span.token_indices())
-    return tuple(prefix_positions), tuple(suffix_positions), tuple(suffix_entry_positions)
+    return (
+        tuple(prefix_positions),
+        tuple(suffix_positions),
+        tuple(suffix_entry_positions),
+    )
 
 
 def _prefix_rollin_state_weighting_diagnostics(
@@ -547,8 +582,7 @@ def _prefix_rollin_state_weighting_diagnostics(
 ) -> StateWeightingDiagnostics:
     object_count = len(tokenized.object_entries)
     probabilities = tuple(
-        1.0 if prefix_length == k else 0.0
-        for prefix_length in range(object_count + 1)
+        1.0 if prefix_length == k else 0.0 for prefix_length in range(object_count + 1)
     )
     counts = tuple(
         active_target_count if prefix_length == k else 0
@@ -602,8 +636,13 @@ def eos_trust_weight_from_expected_unlabeled_count(
 ) -> float:
     if not math.isfinite(float(expected_count)):
         raise ValueError("expected unlabeled count must be finite")
-    if not math.isfinite(float(penalty_per_missing)) or float(penalty_per_missing) < 0.0:
-        raise ValueError("EOS prior penalty_per_missing must be finite and non-negative")
+    if (
+        not math.isfinite(float(penalty_per_missing))
+        or float(penalty_per_missing) < 0.0
+    ):
+        raise ValueError(
+            "EOS prior penalty_per_missing must be finite and non-negative"
+        )
     if not math.isfinite(float(temperature)) or float(temperature) <= 0.0:
         raise ValueError("EOS prior temperature must be finite and positive")
     if (
@@ -613,7 +652,9 @@ def eos_trust_weight_from_expected_unlabeled_count(
         or float(max_weight) < float(min_weight)
         or float(max_weight) > 1.0
     ):
-        raise ValueError("EOS prior clamp must satisfy 0 <= min_weight <= max_weight <= 1")
+        raise ValueError(
+            "EOS prior clamp must satisfy 0 <= min_weight <= max_weight <= 1"
+        )
     raw = math.exp(
         -float(penalty_per_missing)
         * max(0.0, float(expected_count))
@@ -632,7 +673,9 @@ def compute_eos_trust_weight(gt_count: int, cfg: Any) -> float:
             raise ValueError("constant_ablation EOS trust weight requires value")
         result = float(value)
         if not math.isfinite(result) or result < 0.0 or result > 1.0:
-            raise ValueError("constant_ablation EOS trust weight value must be in [0, 1]")
+            raise ValueError(
+                "constant_ablation EOS trust weight value must be in [0, 1]"
+            )
         return result
     if source == "empirical_unlabeled_poisson_v0":
         expected_cfg = _cfg_value(cfg, "expected_unlabeled_count")
@@ -712,14 +755,14 @@ def _apply_compact_type_gate(
     return tuple(out)
 
 
-def _validate_prefix_rollin_eos_trust_weight(value: float) -> float:
+def _validate_eos_trust_weight(value: float) -> float:
     weight = float(value)
     if isinstance(value, bool) or not math.isfinite(weight) or weight < 0.0:
         raise ValueError("eos_trust_weight must be a non-negative finite float")
     return weight
 
 
-def _apply_prefix_rollin_eos_trust_weight(
+def _apply_eos_trust_weight(
     token_targets: tuple[TokenTarget, ...],
     *,
     eos_positions: Sequence[int],
@@ -785,8 +828,7 @@ def _validate_random_permutation_sample(
 ) -> None:
     if sample.object_ordering.strategy != "random_permutation":
         raise ValueError(
-            f"{mode_name} requires "
-            "sample.object_ordering.strategy='random_permutation'"
+            f"{mode_name} requires sample.object_ordering.strategy='random_permutation'"
         )
     if sample.object_ordering.seed is None:
         raise ValueError(f"{mode_name} requires sample.object_ordering.seed")
@@ -1036,9 +1078,7 @@ def _prefix_length_probabilities(object_count: int) -> tuple[float, ...]:
             + _FULL_PREFIX_PROBABILITY
         )
         return (
-            float(
-                (_EMPTY_PREFIX_PROBABILITY + _LEAVE_ONE_OUT_PROBABILITY) / total
-            ),
+            float((_EMPTY_PREFIX_PROBABILITY + _LEAVE_ONE_OUT_PROBABILITY) / total),
             float(_FULL_PREFIX_PROBABILITY / total),
         )
 
@@ -1222,14 +1262,18 @@ def _assign_loss_atoms(
     for atom in loss_atoms:
         for position in atom.token_positions:
             if position in position_to_atom:
-                raise ValueError(f"duplicate LossAtom assignment for token position {position}")
+                raise ValueError(
+                    f"duplicate LossAtom assignment for token position {position}"
+                )
             position_to_atom[position] = atom
 
     annotated_targets: list[TokenTarget] = []
     for target in token_targets:
         atom = position_to_atom.get(target.position)
         if atom is None:
-            raise ValueError(f"missing LossAtom assignment for token position {target.position}")
+            raise ValueError(
+                f"missing LossAtom assignment for token position {target.position}"
+            )
         annotated_targets.append(
             replace(
                 target,
@@ -1246,7 +1290,9 @@ def _build_trie_object_instances(
     tokenized: TokenizedDetectionExample,
 ) -> tuple[_TrieObjectInstance, ...]:
     if len(sample.objects) != len(tokenized.object_entries):
-        raise ValueError("tokenized object entries must match normalized sample objects")
+        raise ValueError(
+            "tokenized object entries must match normalized sample objects"
+        )
 
     seen_ids: set[str] = set()
     instances: list[_TrieObjectInstance] = []
@@ -1255,7 +1301,9 @@ def _build_trie_object_instances(
     ):
         _validate_trie_eligible_span(entry)
         if entry.object_index != expected_index:
-            raise ValueError("tokenized object entries must preserve teacher object order")
+            raise ValueError(
+                "tokenized object entries must preserve teacher object order"
+            )
         if entry.object_instance_id != obj.object_instance_id:
             raise ValueError(
                 "tokenized object entries must preserve object_instance_id order"
@@ -1323,7 +1371,9 @@ def _append_recursive_entry_targets(
         object_instance_id=entry.object_instance_id,
     )
     teacher_token_ids = tuple(
-        tokenized.input_ids[entry.trie_eligible_span.start : entry.trie_eligible_span.end]
+        tokenized.input_ids[
+            entry.trie_eligible_span.start : entry.trie_eligible_span.end
+        ]
     )
     if teacher_token_ids != teacher_instance.token_ids:
         raise ValueError(
@@ -1500,7 +1550,9 @@ def normalize_recursive_detection_token_losses(
     component_weights: dict[str, float] = {}
 
     if object_losses:
-        component_losses["objects"] = float(sum(object_losses.values()) / len(object_losses))
+        component_losses["objects"] = float(
+            sum(object_losses.values()) / len(object_losses)
+        )
         component_weights["objects"] = _IMAGE_MIXTURE_WEIGHTS["objects"]
 
     boundary_losses = _semantic_boundary_losses(

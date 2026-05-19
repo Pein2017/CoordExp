@@ -2,8 +2,8 @@
 """Reusable CoordExp inference/evaluation helpers.
 
 The script intentionally lives inside the skill bundle: it captures repeated
-operator work such as creating recursive-detection infer/eval configs, writing
-tmux-safe launchers, checking completion, and summarizing comparable metrics.
+operator work such as creating infer/eval configs, writing tmux-safe launchers,
+checking completion, and summarizing comparable metrics.
 """
 
 from __future__ import annotations
@@ -25,6 +25,8 @@ DEFAULT_TEMP_DIR = Path("/data/CoordExp/temp/infer/recursive_detection_ce_latest
 DEFAULT_GT_JSONL = Path("public_data/coco/rescale_32_1024_bbox_max60/val.coord.jsonl")
 DEFAULT_SEMANTIC_MODEL = Path("model_cache/all-MiniLM-L6-v2-local")
 DEFAULT_PYTHON = Path("/root/miniconda3/envs/ms/bin/python")
+DEFAULT_TEMPERATURE = 0.0
+DEFAULT_REPETITION_PENALTY = "1.10"
 
 
 def _rp_slug(value: str) -> str:
@@ -163,9 +165,9 @@ class RecursiveInferEvalSpec:
     repo_root: Path
     checkpoint: Path
     run_tag: str
-    repetition_penalty: str
     gpus: str
     master_port: int
+    repetition_penalty: str = DEFAULT_REPETITION_PENALTY
     output_root: Path = DEFAULT_OUTPUT_ROOT
     temp_dir: Path = DEFAULT_TEMP_DIR
     gt_jsonl: Path = DEFAULT_GT_JSONL
@@ -178,6 +180,7 @@ class RecursiveInferEvalSpec:
     object_ordering: str = "random"
     mode: str = "coord"
     pred_coord_mode: str = "auto"
+    temperature: float = DEFAULT_TEMPERATURE
     max_new_tokens: int = 3084
     batch_size: int = 8
     seed: int = 42
@@ -289,7 +292,7 @@ class RecursiveInferEvalSpec:
                     "attn_implementation": "flash_attention_2",
                 },
                 "generation": {
-                    "temperature": 0.0,
+                    "temperature": float(self.temperature),
                     "top_p": 0.9,
                     "max_new_tokens": self.max_new_tokens,
                     "repetition_penalty": float(self.repetition_penalty),
@@ -521,13 +524,13 @@ def _cmd_prepare_recursive(args: argparse.Namespace) -> int:
         repo_root=Path(args.repo_root).resolve(),
         checkpoint=Path(args.checkpoint).resolve(),
         run_tag=args.run_tag,
-        repetition_penalty=args.rp,
         gpus=args.gpus,
         master_port=args.master_port,
         output_root=Path(args.output_root).resolve(),
         temp_dir=Path(args.temp_dir).resolve(),
         gt_jsonl=Path(args.gt_jsonl),
         python=Path(args.python).resolve(),
+        repetition_penalty=args.rp,
         run_prefix=args.run_prefix,
         object_ordering=args.object_ordering,
         max_new_tokens=args.max_new_tokens,
@@ -572,7 +575,11 @@ def _build_parser() -> argparse.ArgumentParser:
     prepare.add_argument("--repo-root", required=True, help="CoordExp repo/worktree root to launch from")
     prepare.add_argument("--checkpoint", required=True, help="checkpoint or adapter-shorthand path")
     prepare.add_argument("--run-tag", required=True, help="short run tag, e.g. a3 or a4_eos")
-    prepare.add_argument("--rp", required=True, help="generation repetition penalty, e.g. 1.15")
+    prepare.add_argument(
+        "--rp",
+        default=DEFAULT_REPETITION_PENALTY,
+        help=f"generation repetition penalty; default: {DEFAULT_REPETITION_PENALTY}",
+    )
     prepare.add_argument("--gpus", required=True, help="CUDA_VISIBLE_DEVICES list, e.g. 0,1,2,3")
     prepare.add_argument("--master-port", required=True, type=int, help="distributed launch port")
     prepare.add_argument("--output-root", default=str(DEFAULT_OUTPUT_ROOT))

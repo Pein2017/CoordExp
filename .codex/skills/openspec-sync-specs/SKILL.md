@@ -1,138 +1,28 @@
 ---
 name: openspec-sync-specs
-description: Sync delta specs from a change to main specs. Use when the user wants to update main specs with changes from a delta spec, without archiving the change.
-license: MIT
-compatibility: Requires openspec CLI.
-metadata:
-  author: openspec
-  version: "1.0"
-  generatedBy: "1.1.1"
+description: Use when applying an OpenSpec delta spec into stable main specs without archiving the change.
 ---
 
-Sync delta specs from a change to main specs.
+# OpenSpec Sync Specs
 
-This is an **agent-driven** operation - you will read delta specs and directly edit main specs to apply the changes. This allows intelligent merging (e.g., adding a scenario without copying the entire requirement).
+Requires `openspec` CLI.
 
-**Input**: Optionally specify a change name. If omitted, check if it can be inferred from conversation context. If vague or ambiguous you MUST prompt for available changes.
+Merge delta specs into `openspec/specs/` only for stable, compatibility-sensitive contracts. This is an agent merge, not a mechanical copy.
 
-**Steps**
+## Flow
 
-1. **If no change name provided, prompt for selection**
+1. Select the change; ask if ambiguous.
+2. Find delta specs under `openspec/changes/<name>/specs/*/spec.md`.
+3. For each capability, read the delta and current main spec before editing.
+4. Apply:
+   - `ADDED`: add or update the requirement if it already exists;
+   - `MODIFIED`: patch only the named requirement/scenario content;
+   - `REMOVED`: remove the named requirement block;
+   - `RENAMED`: rename the requirement and preserve scenarios.
+5. Summarize changed capabilities and requirements.
 
-   Run `openspec list --json` to get available changes. Use the **AskUserQuestion tool** to let the user select.
+## Guardrails
 
-   Show changes that have delta specs (under `specs/` directory).
-
-   **IMPORTANT**: Do NOT guess or auto-select a change. Always let the user choose.
-
-2. **Find delta specs**
-
-   Look for delta spec files in `openspec/changes/<name>/specs/*/spec.md`.
-
-   Each delta spec file contains sections like:
-   - `## ADDED Requirements` - New requirements to add
-   - `## MODIFIED Requirements` - Changes to existing requirements
-   - `## REMOVED Requirements` - Requirements to remove
-   - `## RENAMED Requirements` - Requirements to rename (FROM:/TO: format)
-
-   If no delta specs found, inform user and stop.
-
-3. **For each delta spec, apply changes to main specs**
-
-   For each capability with a delta spec at `openspec/changes/<name>/specs/<capability>/spec.md`:
-
-   a. **Read the delta spec** to understand the intended changes
-
-   b. **Read the main spec** at `openspec/specs/<capability>/spec.md` (may not exist yet)
-
-   c. **Apply changes intelligently**:
-
-      **ADDED Requirements:**
-      - If requirement doesn't exist in main spec → add it
-      - If requirement already exists → update it to match (treat as implicit MODIFIED)
-
-      **MODIFIED Requirements:**
-      - Find the requirement in main spec
-      - Apply the changes - this can be:
-        - Adding new scenarios (don't need to copy existing ones)
-        - Modifying existing scenarios
-        - Changing the requirement description
-      - Preserve scenarios/content not mentioned in the delta
-
-      **REMOVED Requirements:**
-      - Remove the entire requirement block from main spec
-
-      **RENAMED Requirements:**
-      - Find the FROM requirement, rename to TO
-
-   d. **Create new main spec** if capability doesn't exist yet:
-      - Create `openspec/specs/<capability>/spec.md`
-      - Add Purpose section (can be brief, mark as TBD)
-      - Add Requirements section with the ADDED requirements
-
-4. **Show summary**
-
-   After applying all changes, summarize:
-   - Which capabilities were updated
-   - What changes were made (requirements added/modified/removed/renamed)
-
-**Delta Spec Format Reference**
-
-```markdown
-## ADDED Requirements
-
-### Requirement: New Feature
-The system SHALL do something new.
-
-#### Scenario: Basic case
-- **WHEN** user does X
-- **THEN** system does Y
-
-## MODIFIED Requirements
-
-### Requirement: Existing Feature
-#### Scenario: New scenario to add
-- **WHEN** user does A
-- **THEN** system does B
-
-## REMOVED Requirements
-
-### Requirement: Deprecated Feature
-
-## RENAMED Requirements
-
-- FROM: `### Requirement: Old Name`
-- TO: `### Requirement: New Name`
-```
-
-**Key Principle: Intelligent Merging**
-
-Unlike programmatic merging, you can apply **partial updates**:
-- To add a scenario, just include that scenario under MODIFIED - don't copy existing scenarios
-- The delta represents *intent*, not a wholesale replacement
-- Use your judgment to merge changes sensibly
-
-**Output On Success**
-
-```
-## Specs Synced: <change-name>
-
-Updated main specs:
-
-**<capability-1>**:
-- Added requirement: "New Feature"
-- Modified requirement: "Existing Feature" (added 1 scenario)
-
-**<capability-2>**:
-- Created new spec file
-- Added requirement: "Another Feature"
-
-Main specs are now updated. The change remains active - archive when implementation is complete.
-```
-
-**Guardrails**
-- Read both delta and main specs before making changes
-- Preserve existing content not mentioned in delta
-- If something is unclear, ask for clarification
-- Show what you're changing as you go
-- The operation should be idempotent - running twice should give same result
+- Preserve main-spec content not mentioned by the delta.
+- Keep the operation idempotent.
+- Do not sync experiment notes, implementation checklists, or unvalidated benchmark claims into stable specs.

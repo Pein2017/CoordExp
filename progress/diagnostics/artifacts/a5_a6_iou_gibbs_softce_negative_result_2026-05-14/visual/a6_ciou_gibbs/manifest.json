@@ -10,8 +10,8 @@
     "f1_full_50": 0.0,
     "error_count_50": 35,
     "rank": 1,
-    "png": "/data/home/xiaoyan/AIteam/data/CoordExp/output_remote/infer/recursive_detection_ce_latest/a6_ciou_gibbs_ckpt3664_val200_bsz8_temp0_rp1p10_max3084_chatfix_4gpu/vis_poor_raw_iou50_top12/vis_0000.png",
-    "canonical_resource": "/data/home/xiaoyan/AIteam/data/CoordExp/output_remote/infer/recursive_detection_ce_latest/a6_ciou_gibbs_ckpt3664_val200_bsz8_temp0_rp1p10_max3084_chatfix_4gpu/vis_resources/poor_raw_iou50_top12/gt_vs_pred.jsonl"
+    "png": "/data/home/xiaoyan/AIteam/data/CoordExp/outputs/infer/recursive_detection_ce_latest/a6_ciou_gibbs_ckpt3664_val200_bsz8_temp0_rp1p10_max3084_chatfix_4gpu/vis_poor_raw_iou50_top12/vis_0000.png",
+    "canonical_resource": "/data/home/xiaoyan/AIteam/data/CoordExp/outputs/infer/recursive_detection_ce_latest/a6_ciou_gibbs_ckpt3664_val200_bsz8_temp0_rp1p10_max3084_chatfix_4gpu/vis_resources/poor_raw_iou50_top12/gt_vs_pred.jsonl"
   },
   {
     "record_idx": 4,
@@ -24,8 +24,8 @@
     "f1_full_50": 0.0,
     "error_count_50": 5,
     "rank": 2,
-    "png": "/data/home/xiaoyan/AIteam/data/CoordExp/output_remote/infer/recursive_detection_ce_latest/a6_ciou_gibbs_ckpt3664_val200_bsz8_temp0_rp1p10_max3084_chatfix_4gpu/vis_poor_raw_iou50_top12/vis_0001.png",
-    "canonical_resource": "/data/home/xiaoyan/AIteam/data/CoordExp/output_remote/infer/recursive_detection_ce_latest/a6_ciou_gibbs_ckpt3664_val200_bsz8_temp0_rp1p10_max3084_chatfix_4gpu/vis_resources/poor_raw_iou50_top12/gt_vs_pred.jsonl"
+    "png": "/data/home/xiaoyan/AIteam/data/CoordExp/outputs/infer/recursive_detection_ce_latest/a6_ciou_gibbs_ckpt3664_val200_bsz8_temp0_rp1p10_max3084_chatfix_4gpu/vis_poor_raw_iou50_top12/vis_0001.png",
+    "canonical_resource": "/data/home/xiaoyan/AIteam/data/CoordExp/outputs/infer/recursive_detection_ce_latest/a6_ciou_gibbs_ckpt3664_val200_bsz8_temp0_rp1p10_max3084_chatfix_4gpu/vis_resources/poor_raw_iou50_top12/gt_vs_pred.jsonl"
   },
   {
     "record_idx": 23,
@@ -38,8 +38,8 @@
     "f1_full_50": 0.0,
     "error_count_50": 4,
     "rank": 3,
-    "png": "/data/home/xiaoyan/AIteam/data/CoordExp/output_remote/infer/recursive_detection_ce_latest/a6_ciou_gibbs_ckpt3664_val200_bsz8_temp0_rp1p10_max3084_chatfix_4gpu/vis_poor_raw_iou50_top12/vis_0002.png",
-    "canonical_resource": "/data/home/xiaoyan/AIteam/data/CoordExp/output_remote/infer/recursive_detection_ce_latest/a6_ciou_gibbs_ckpt3664_val200_bsz8_temp0_rp1p10_max3084_chatfix_4gpu/vis_resources/poor_raw_iou50_top12/gt_vs_pred.jsonl"
+    "png": "/data/home/xiaoyan/AIteam/data/CoordExp/outputs/infer/recursive_detection_ce_latest/a6_ciou_gibbs_ckpt3664_val200_bsz8_temp0_rp1p10_max3084_chatfix_4gpu/vis_poor_raw_iou50_top12/vis_0002.png",
+    "canonical_resource": "/data/home/xiaoyan/AIteam/data/CoordExp/outputs/infer/recursive_detection_ce_latest/a6_ciou_gibbs_ckpt3664_val200_bsz8_temp0_rp1p10_max3084_chatfix_4gpu/vis_resources/poor_raw_iou50_top12/gt_vs_pred.jsonl"
   },
   {
     "record_idx": 57,
@@ -52,8 +52,8 @@
     "f1_full_50": 0.0,
     "error_count_50": 3,
     "rank": 4,
-    "png": "/data/home/xiaoyan/AIteam/data/CoordExp/output_remote/infer/recursive_detection_ce_latest/a6_ciou_gibbs_ckpt3664_val200_bsz8_temp0_rp1p10_max3084_chatfix_4gpu/vis_poor_raw_iou50_top12/vis_0003.png",
-    "canonical_resource": "/data/home/xiaoyan/AIteam/data/CoordExp/output_remote/infer/recursive_detection_ce_latest/a6_ciou_gibbs_ckpt3664_val200_bsz8_temp0_rp1p10_max3084_chatfix_4gpu/vis_resources/poor_raw_iou50_top12/gt_vs_pred.jsonl"
+    "png": "/data/home/xiaoyan/AIteam/data/CoordExp/outputs/infer/recursive_detection_ce_latest/a6_ciou_gibbs_ckpt3664_val200_bsz8_temp0_rp1p10_max3084_chatfix_4gpu/vis_poor_raw_iou50_top12/vis_0003.png",
+    "canonical_resource": "/data/home/xiaoyan/AIteam/data/CoordExp/outputs/infer/recursive_detection_ce_latest/a6_ciou_gibbs_ckpt3664_val200_bsz8_temp0_rp1p10_max3084_chatfix_4gpu/vis_resources/poor_raw_iou50_top12/gt_vs_pred.jsonl"
   },
   {
     "record_idx": 113,
@@ -66,8 +66,8 @@
     "f1_full_50": 0.0,
     "error_count_50": 2,
     "rank": 5,
-    "png": "/data/home/xiaoyan/AIteam/data/CoordExp/output_remote/infer/recursive_detection_ce_latest/a6_ciou_gibbs_ckpt3664_val200_bsz8_temp0_rp1p10_max3084_chatfix_4gpu/vis_poor_raw_iou50_top12/vis_0004.png",
-    "canonical_resource": "/data/home/xiaoyan/AIteam/data/CoordExp/output_remote/infer/recursive_detection_ce_latest/a6_ciou_gibbs_ckpt3664_val200_bsz8_temp0_rp1p10_max3084_chatfix_4gpu/vis_resources/poor_raw_iou50_top12/gt_vs_pred.jsonl"
+    "png": "/data/home/xiaoyan/AIteam/data/CoordExp/outputs/infer/recursive_detection_ce_latest/a6_ciou_gibbs_ckpt3664_val200_bsz8_temp0_rp1p10_max3084_chatfix_4gpu/vis_poor_raw_iou50_top12/vis_0004.png",
+    "canonical_resource": "/data/home/xiaoyan/AIteam/data/CoordExp/outputs/infer/recursive_detection_ce_latest/a6_ciou_gibbs_ckpt3664_val200_bsz8_temp0_rp1p10_max3084_chatfix_4gpu/vis_resources/poor_raw_iou50_top12/gt_vs_pred.jsonl"
   },
   {
     "record_idx": 54,
@@ -80,8 +80,8 @@
     "f1_full_50": 0.05714285714285714,
     "error_count_50": 33,
     "rank": 6,
-    "png": "/data/home/xiaoyan/AIteam/data/CoordExp/output_remote/infer/recursive_detection_ce_latest/a6_ciou_gibbs_ckpt3664_val200_bsz8_temp0_rp1p10_max3084_chatfix_4gpu/vis_poor_raw_iou50_top12/vis_0005.png",
-    "canonical_resource": "/data/home/xiaoyan/AIteam/data/CoordExp/output_remote/infer/recursive_detection_ce_latest/a6_ciou_gibbs_ckpt3664_val200_bsz8_temp0_rp1p10_max3084_chatfix_4gpu/vis_resources/poor_raw_iou50_top12/gt_vs_pred.jsonl"
+    "png": "/data/home/xiaoyan/AIteam/data/CoordExp/outputs/infer/recursive_detection_ce_latest/a6_ciou_gibbs_ckpt3664_val200_bsz8_temp0_rp1p10_max3084_chatfix_4gpu/vis_poor_raw_iou50_top12/vis_0005.png",
+    "canonical_resource": "/data/home/xiaoyan/AIteam/data/CoordExp/outputs/infer/recursive_detection_ce_latest/a6_ciou_gibbs_ckpt3664_val200_bsz8_temp0_rp1p10_max3084_chatfix_4gpu/vis_resources/poor_raw_iou50_top12/gt_vs_pred.jsonl"
   },
   {
     "record_idx": 61,
@@ -94,8 +94,8 @@
     "f1_full_50": 0.0784313725490196,
     "error_count_50": 47,
     "rank": 7,
-    "png": "/data/home/xiaoyan/AIteam/data/CoordExp/output_remote/infer/recursive_detection_ce_latest/a6_ciou_gibbs_ckpt3664_val200_bsz8_temp0_rp1p10_max3084_chatfix_4gpu/vis_poor_raw_iou50_top12/vis_0006.png",
-    "canonical_resource": "/data/home/xiaoyan/AIteam/data/CoordExp/output_remote/infer/recursive_detection_ce_latest/a6_ciou_gibbs_ckpt3664_val200_bsz8_temp0_rp1p10_max3084_chatfix_4gpu/vis_resources/poor_raw_iou50_top12/gt_vs_pred.jsonl"
+    "png": "/data/home/xiaoyan/AIteam/data/CoordExp/outputs/infer/recursive_detection_ce_latest/a6_ciou_gibbs_ckpt3664_val200_bsz8_temp0_rp1p10_max3084_chatfix_4gpu/vis_poor_raw_iou50_top12/vis_0006.png",
+    "canonical_resource": "/data/home/xiaoyan/AIteam/data/CoordExp/outputs/infer/recursive_detection_ce_latest/a6_ciou_gibbs_ckpt3664_val200_bsz8_temp0_rp1p10_max3084_chatfix_4gpu/vis_resources/poor_raw_iou50_top12/gt_vs_pred.jsonl"
   },
   {
     "record_idx": 118,
@@ -108,8 +108,8 @@
     "f1_full_50": 0.0851063829787234,
     "error_count_50": 43,
     "rank": 8,
-    "png": "/data/home/xiaoyan/AIteam/data/CoordExp/output_remote/infer/recursive_detection_ce_latest/a6_ciou_gibbs_ckpt3664_val200_bsz8_temp0_rp1p10_max3084_chatfix_4gpu/vis_poor_raw_iou50_top12/vis_0007.png",
-    "canonical_resource": "/data/home/xiaoyan/AIteam/data/CoordExp/output_remote/infer/recursive_detection_ce_latest/a6_ciou_gibbs_ckpt3664_val200_bsz8_temp0_rp1p10_max3084_chatfix_4gpu/vis_resources/poor_raw_iou50_top12/gt_vs_pred.jsonl"
+    "png": "/data/home/xiaoyan/AIteam/data/CoordExp/outputs/infer/recursive_detection_ce_latest/a6_ciou_gibbs_ckpt3664_val200_bsz8_temp0_rp1p10_max3084_chatfix_4gpu/vis_poor_raw_iou50_top12/vis_0007.png",
+    "canonical_resource": "/data/home/xiaoyan/AIteam/data/CoordExp/outputs/infer/recursive_detection_ce_latest/a6_ciou_gibbs_ckpt3664_val200_bsz8_temp0_rp1p10_max3084_chatfix_4gpu/vis_resources/poor_raw_iou50_top12/gt_vs_pred.jsonl"
   },
   {
     "record_idx": 178,
@@ -122,8 +122,8 @@
     "f1_full_50": 0.08695652173913043,
     "error_count_50": 42,
     "rank": 9,
-    "png": "/data/home/xiaoyan/AIteam/data/CoordExp/output_remote/infer/recursive_detection_ce_latest/a6_ciou_gibbs_ckpt3664_val200_bsz8_temp0_rp1p10_max3084_chatfix_4gpu/vis_poor_raw_iou50_top12/vis_0008.png",
-    "canonical_resource": "/data/home/xiaoyan/AIteam/data/CoordExp/output_remote/infer/recursive_detection_ce_latest/a6_ciou_gibbs_ckpt3664_val200_bsz8_temp0_rp1p10_max3084_chatfix_4gpu/vis_resources/poor_raw_iou50_top12/gt_vs_pred.jsonl"
+    "png": "/data/home/xiaoyan/AIteam/data/CoordExp/outputs/infer/recursive_detection_ce_latest/a6_ciou_gibbs_ckpt3664_val200_bsz8_temp0_rp1p10_max3084_chatfix_4gpu/vis_poor_raw_iou50_top12/vis_0008.png",
+    "canonical_resource": "/data/home/xiaoyan/AIteam/data/CoordExp/outputs/infer/recursive_detection_ce_latest/a6_ciou_gibbs_ckpt3664_val200_bsz8_temp0_rp1p10_max3084_chatfix_4gpu/vis_resources/poor_raw_iou50_top12/gt_vs_pred.jsonl"
   },
   {
     "record_idx": 181,
@@ -136,8 +136,8 @@
     "f1_full_50": 0.0898876404494382,
     "error_count_50": 81,
     "rank": 10,
-    "png": "/data/home/xiaoyan/AIteam/data/CoordExp/output_remote/infer/recursive_detection_ce_latest/a6_ciou_gibbs_ckpt3664_val200_bsz8_temp0_rp1p10_max3084_chatfix_4gpu/vis_poor_raw_iou50_top12/vis_0009.png",
-    "canonical_resource": "/data/home/xiaoyan/AIteam/data/CoordExp/output_remote/infer/recursive_detection_ce_latest/a6_ciou_gibbs_ckpt3664_val200_bsz8_temp0_rp1p10_max3084_chatfix_4gpu/vis_resources/poor_raw_iou50_top12/gt_vs_pred.jsonl"
+    "png": "/data/home/xiaoyan/AIteam/data/CoordExp/outputs/infer/recursive_detection_ce_latest/a6_ciou_gibbs_ckpt3664_val200_bsz8_temp0_rp1p10_max3084_chatfix_4gpu/vis_poor_raw_iou50_top12/vis_0009.png",
+    "canonical_resource": "/data/home/xiaoyan/AIteam/data/CoordExp/outputs/infer/recursive_detection_ce_latest/a6_ciou_gibbs_ckpt3664_val200_bsz8_temp0_rp1p10_max3084_chatfix_4gpu/vis_resources/poor_raw_iou50_top12/gt_vs_pred.jsonl"
   },
   {
     "record_idx": 140,
@@ -150,8 +150,8 @@
     "f1_full_50": 0.09090909090909091,
     "error_count_50": 40,
     "rank": 11,
-    "png": "/data/home/xiaoyan/AIteam/data/CoordExp/output_remote/infer/recursive_detection_ce_latest/a6_ciou_gibbs_ckpt3664_val200_bsz8_temp0_rp1p10_max3084_chatfix_4gpu/vis_poor_raw_iou50_top12/vis_0010.png",
-    "canonical_resource": "/data/home/xiaoyan/AIteam/data/CoordExp/output_remote/infer/recursive_detection_ce_latest/a6_ciou_gibbs_ckpt3664_val200_bsz8_temp0_rp1p10_max3084_chatfix_4gpu/vis_resources/poor_raw_iou50_top12/gt_vs_pred.jsonl"
+    "png": "/data/home/xiaoyan/AIteam/data/CoordExp/outputs/infer/recursive_detection_ce_latest/a6_ciou_gibbs_ckpt3664_val200_bsz8_temp0_rp1p10_max3084_chatfix_4gpu/vis_poor_raw_iou50_top12/vis_0010.png",
+    "canonical_resource": "/data/home/xiaoyan/AIteam/data/CoordExp/outputs/infer/recursive_detection_ce_latest/a6_ciou_gibbs_ckpt3664_val200_bsz8_temp0_rp1p10_max3084_chatfix_4gpu/vis_resources/poor_raw_iou50_top12/gt_vs_pred.jsonl"
   },
   {
     "record_idx": 158,
@@ -164,7 +164,7 @@
     "f1_full_50": 0.1,
     "error_count_50": 18,
     "rank": 12,
-    "png": "/data/home/xiaoyan/AIteam/data/CoordExp/output_remote/infer/recursive_detection_ce_latest/a6_ciou_gibbs_ckpt3664_val200_bsz8_temp0_rp1p10_max3084_chatfix_4gpu/vis_poor_raw_iou50_top12/vis_0011.png",
-    "canonical_resource": "/data/home/xiaoyan/AIteam/data/CoordExp/output_remote/infer/recursive_detection_ce_latest/a6_ciou_gibbs_ckpt3664_val200_bsz8_temp0_rp1p10_max3084_chatfix_4gpu/vis_resources/poor_raw_iou50_top12/gt_vs_pred.jsonl"
+    "png": "/data/home/xiaoyan/AIteam/data/CoordExp/outputs/infer/recursive_detection_ce_latest/a6_ciou_gibbs_ckpt3664_val200_bsz8_temp0_rp1p10_max3084_chatfix_4gpu/vis_poor_raw_iou50_top12/vis_0011.png",
+    "canonical_resource": "/data/home/xiaoyan/AIteam/data/CoordExp/outputs/infer/recursive_detection_ce_latest/a6_ciou_gibbs_ckpt3664_val200_bsz8_temp0_rp1p10_max3084_chatfix_4gpu/vis_resources/poor_raw_iou50_top12/gt_vs_pred.jsonl"
   }
 ]

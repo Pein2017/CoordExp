@@ -143,6 +143,40 @@ Behavior:
 - Legacy `_max_<N>` naming is rejected with an actionable rename/rebuild hint.
 - Strict fail-fast: using `PUBLIC_DATA_MAX_OBJECTS` with `rescale`, `validate`, or `all` is rejected. Use two-step flow (`all`/`rescale` first, then `coord` with max filtering).
 
+## Length-Budget Filtering (`len{N}`)
+
+For compact-full Stage-1 datasets, prefer a total-token budget over an object
+count cap. The COCO length-budget factory uses the configured compact-full
+prompt, the local Qwen3-VL tokenizer, rendered assistant rows, and post-merge
+image patch tokens:
+
+```bash
+PYTHONPATH=. conda run -n ms python public_data/scripts/build_coco_length_budget_artifacts.py \
+  --model-path model_cache/models/Qwen/Qwen3-VL-2B-Instruct-coordexp \
+  --source-preset public_data/coco/rescale_32_1024_bbox \
+  --coco-output public_data/coco/rescale_32_1024_bbox_len12000 \
+  --proxy-output public_data/coco/rescale_32_1024_bbox_lvis_proxy_len12000 \
+  --projection-root temp/coco_lvis_projection_length_budget \
+  --mapping-csv openspec/changes/add-lvis-coco-proxy-supervision/artifacts/determined_proxy_mappings_val2017.csv \
+  --max-total-tokens 12000 \
+  --splits train val \
+  --build-lvis-proxy \
+  --force
+```
+
+The emitted roots are JSONL/meta-only derived artifacts. They share the same
+1024-resolution images by writing JSONL image paths that point back to
+`public_data/coco/rescale_32_1024_bbox/images/`; they do not copy or hardlink
+an `images/` tree.
+
+Current 12k outputs:
+- `public_data/coco/rescale_32_1024_bbox_len12000/`
+- `public_data/coco/rescale_32_1024_bbox_lvis_proxy_len12000/`
+
+Each split writes `*.length_budget_stats.json`, and each root writes
+`pipeline_manifest.json`. Git-tracked provenance manifests live under
+`manifests/public_data_provenance/coco/`.
+
 ## Rescale Safety (Fail-Fast)
 - `rescale`/`full` require a **fresh preset target**.
 - If target preset already contains prior artifacts (for example `images/`, `train.jsonl`, `pipeline_manifest.json`), execution fails fast.

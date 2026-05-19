@@ -9,7 +9,7 @@ Owner: Codex
 Design a mechanism-first study for one fixed CoordExp / Qwen3-VL detection
 checkpoint:
 
-`/data/CoordExp/output_remote/stage1_2b/coco_bbox_max60-hard_ce_soft_ce_w1_gate/epoch_4-from-base-2B/v0-20260227-050057/checkpoint-1332-merged-full`
+`/data/CoordExp/outputs/stage1_2b/coco_bbox_max60-hard_ce_soft_ce_w1_gate/epoch_4-from-base-2B/v0-20260227-050057/checkpoint-1332-merged-full`
 
 Implementation worktree:
 

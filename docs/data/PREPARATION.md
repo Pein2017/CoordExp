@@ -149,6 +149,37 @@ PYTHONPATH=. conda run -n ms python public_data/scripts/filter_jsonl_max_objects
   --max-objects 60
 ```
 
+### Total-Token Budget (Compact-Full)
+
+For latest compact-full training, prefer filtering by total compact-full token
+budget instead of object count. The COCO factory counts:
+
+- post-merge Qwen3-VL image patch tokens;
+- system/user chat-template tokens;
+- the rendered compact-full assistant detection sequence;
+- all object rows present after optional LVIS-proxy augmentation.
+
+Use the same tokenizer as the target compact-full checkpoint:
+
+```bash
+PYTHONPATH=. conda run -n ms python public_data/scripts/build_coco_length_budget_artifacts.py \
+  --model-path model_cache/models/Qwen/Qwen3-VL-2B-Instruct-coordexp \
+  --source-preset public_data/coco/rescale_32_1024_bbox \
+  --coco-output public_data/coco/rescale_32_1024_bbox_len12000 \
+  --proxy-output public_data/coco/rescale_32_1024_bbox_lvis_proxy_len12000 \
+  --projection-root temp/coco_lvis_projection_length_budget \
+  --mapping-csv openspec/changes/add-lvis-coco-proxy-supervision/artifacts/determined_proxy_mappings_val2017.csv \
+  --max-total-tokens 12000 \
+  --splits train val \
+  --build-lvis-proxy \
+  --force
+```
+
+The length-budget roots are derived JSONL/meta-only artifacts. They share the
+same 1024-resolution image files by using relative JSONL image paths that point
+back to `public_data/coco/rescale_32_1024_bbox/images/`; do not copy or relink
+images for sibling artifacts at the same resolution.
+
 ---
 
 ## Automation: One-Shot Wrapper

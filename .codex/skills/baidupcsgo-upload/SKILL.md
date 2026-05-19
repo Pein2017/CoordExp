@@ -1,211 +1,85 @@
 ---
 name: baidupcsgo-upload
-description: Install and use qjfoidnh/BaiduPCS-Go on Ubuntu to upload files or whole directories to Baidu Netdisk, especially when bypy fails on large files, slice uploads, or app-root path semantics. Use when Codex needs a reproducible CLI workflow for Baidu Netdisk login via browser cookies, tmux-safe long-running uploads, remote directory creation, or verification of uploaded artifacts.
+description: Use when Baidu Netdisk transfers need BaiduPCS-Go, browser-cookie login, tmux survival, or bypy large-file failure recovery.
 ---
 
-# BaiduPCS-Go Upload
+# BaiduPCS-Go Transfer
 
-Use this skill for Ubuntu-based Baidu Netdisk uploads or downloads when throughput matters more than resource economy, and default to the fastest stable parallelism that BaiduPCS-Go supports well.
+Use for Ubuntu-based Baidu Netdisk uploads/downloads, especially when `bypy` fails with `Slice MD5 mismatch`, `31064 file is not authorized`, app-root confusion, or large directory transfers.
 
-Prefer this over `bypy` when:
-- `bypy` hits `Slice MD5 mismatch`, `31064 file is not authorized`, or other large-file upload failures
-- the task is to upload a whole local directory and keep the original folder structure
-- the upload needs to run safely inside `tmux`
-- the user can provide browser cookies but does not want to type account credentials into the terminal
+## Non-Obvious Facts
 
-## Core facts
+- `BaiduPCS-Go` sees Netdisk root `/`; `bypy` uses an app sandbox.
+- Create remote directories under the real root before uploading; ignore `31061 文件已存在`.
+- Preserve the intended repo-relative remote layout unless the user gives a different root.
+- Upload safest default: `--norapid -p 1 -l 1 --retry 8`.
+- With `--norapid`, single-file threading is effectively limited; increase concurrent file count before per-file threads.
+- Large transfers should run in `tmux`.
+- Downloads may stage under an account-prefixed directory such as `1592545883_Pien1722/...`; treat it as BaiduPCS-Go staging, then verify/merge the intended contents.
 
-- `BaiduPCS-Go` sees the Baidu Netdisk root `/`, not `bypy`'s `/apps/bypy` sandbox.
-- A path that exists under `bypy` may still need to be created again under the real root for `BaiduPCS-Go`.
-- By default, preserve the original repo-relative path under the Netdisk root. If the local path is relative to the repo such as `./some/subtree/run-a`, prefer remote `/some/subtree/run-a` rather than adding an extra prefix such as `/output/...` unless the user explicitly asks for a different remote root.
-- For large model checkpoints, start with conservative upload settings:
-  `--norapid -p 1 -l 1 --retry 8`
-- Upload and download both support parallelism. Prefer raising concurrent file count first, then per-file threads.
-- For upload, `--norapid` is the safest default, but BaiduPCS-Go notes that disabling rapid upload effectively limits single-file threading to one thread.
-- For sync jobs by default, run inside `tmux` so transfers survive shell disconnects and can be reattached safely.
-
-## 1. Install the binary
-
-Use the bundled installer script:
+## Scripts
 
 ```bash
-bash scripts/install_baidupcsgo.sh
+bash .codex/skills/baidupcsgo-upload/scripts/install_baidupcsgo.sh
+bash .codex/skills/baidupcsgo-upload/scripts/upload_dir.sh <local_dir> <remote_dir> <BaiduPCS-Go>
+bash .codex/skills/baidupcsgo-upload/scripts/download_dir.sh <remote_dir> <local_parent> <BaiduPCS-Go>
 ```
 
-The script prints the absolute binary path on success.
-Default install directory: `./baidupcsgo`
+Install default: `./baidupcsgo`, release `v4.0.1`.
 
-Default release: `v4.0.1`
+## Login
 
-## 2. Log in with browser cookies
-
-Prefer cookie login over username/password.
-
-1. Ask the user to export the Cookie header from an already logged-in `pan.baidu.com` browser session.
-2. Put the cookie string into a local file such as `baidu_net_cookie.txt`.
-3. Run:
+Prefer browser cookies:
 
 ```bash
 COOKIE=$(tr -d '\n' < baidu_net_cookie.txt)
-/absolute/path/to/BaiduPCS-Go login --cookies="$COOKIE"
+/abs/path/to/BaiduPCS-Go login --cookies="$COOKIE"
+/abs/path/to/BaiduPCS-Go quota
+/abs/path/to/BaiduPCS-Go ls /
 ```
 
-4. Verify:
+Do not ask the user to type account credentials in the terminal if cookies are available.
 
-```bash
-/absolute/path/to/BaiduPCS-Go quota
-/absolute/path/to/BaiduPCS-Go pwd
-/absolute/path/to/BaiduPCS-Go ls /
-```
-
-Successful login should show the real Netdisk root and the account quota.
-
-## 3. Create the remote directory tree
-
-Before uploading, explicitly create the remote path if it may not exist:
-
-```bash
-/absolute/path/to/BaiduPCS-Go mkdir /some
-/absolute/path/to/BaiduPCS-Go mkdir /some/subtree
-/absolute/path/to/BaiduPCS-Go mkdir /some/subtree/run-a
-```
-
-Ignore `31061 文件已存在`.
-
-## 4. Upload a whole directory
-
-Use the bundled uploader script when the goal is “local directory -> same-named remote directory”.
-
-Example:
-
-```bash
-bash scripts/upload_dir.sh \
-  /abs/repo/some/subtree/run-a \
-  /some/subtree/run-a \
-  /abs/path/to/BaiduPCS-Go
-```
-
-The script:
-- ensures the remote parent directories exist
-- uploads the directory to `dirname(REMOTE_DIR)` so the original folder name is preserved
-- should usually mirror the local repo-relative path under `/`
-- defaults to conservative settings with `--norapid -p 1 -l 1 --retry 8`
-- can be tuned with environment variables instead of editing the script
-
-Example with parallel uploads across files while keeping `--norapid`:
+## Upload
 
 ```bash
 BAIDUPCS_UPLOAD_PARALLEL_FILES=4 \
 BAIDUPCS_UPLOAD_FILE_THREADS=1 \
-bash scripts/upload_dir.sh /abs/repo/some/subtree/run-a /some/subtree/run-a /abs/path/to/BaiduPCS-Go
+bash .codex/skills/baidupcsgo-upload/scripts/upload_dir.sh \
+  /abs/repo/some/subtree/run-a /some/subtree/run-a /abs/path/to/BaiduPCS-Go
 ```
 
-Example with more aggressive per-file parallelism:
+Use aggressive per-file mode only when throughput matters more than the safer `--norapid` path:
 
 ```bash
-BAIDUPCS_UPLOAD_NO_RAPID=0 \
-BAIDUPCS_UPLOAD_FILE_THREADS=4 \
-BAIDUPCS_UPLOAD_PARALLEL_FILES=2 \
-bash scripts/upload_dir.sh /abs/repo/some/subtree/run-a /some/subtree/run-a /abs/path/to/BaiduPCS-Go
+BAIDUPCS_UPLOAD_NO_RAPID=0 BAIDUPCS_UPLOAD_FILE_THREADS=4 BAIDUPCS_UPLOAD_PARALLEL_FILES=2 \
+bash .codex/skills/baidupcsgo-upload/scripts/upload_dir.sh <local_dir> <remote_dir> <BaiduPCS-Go>
 ```
 
-Use the aggressive mode only when higher throughput matters more than the safer `--norapid` path.
+Verify shard files, tokenizer/config files, and index files first.
 
-## 5. Download a whole directory
-
-Use the bundled downloader script when the goal is “remote directory -> local parent directory while preserving the remote folder name”.
-
-Example:
+## Download
 
 ```bash
-bash scripts/download_dir.sh \
-  /some/subtree/run-a \
-  /abs/repo \
-  /abs/path/to/BaiduPCS-Go
+BAIDUPCS_DOWNLOAD_THREADS=8 BAIDUPCS_DOWNLOAD_PARALLEL_FILES=4 \
+bash .codex/skills/baidupcsgo-upload/scripts/download_dir.sh \
+  /remote/run-a /abs/local/parent /abs/path/to/BaiduPCS-Go
 ```
 
-The script:
-- sets `BaiduPCS-Go`'s save directory to the provided local parent directory
-- downloads with `--fullpath` so the remote folder structure is preserved
-- defaults to parallel download settings `--mode locate -p 8 -l 4 --retry 8 --ow --mtime`
-- may still create an account-prefixed staging directory such as `1592545883_Pien1722/output/...` under the chosen local parent before the final files are merged into the repo tree
+If `locate` mode has authorization issues, try `BAIDUPCS_DOWNLOAD_MODE=pcs`. Reduce `BAIDUPCS_DOWNLOAD_THREADS` before reducing parallel files when unstable.
 
-This account prefix is a BaiduPCS-Go download behavior, not a transfer failure. Treat it as the staging area for the current login session.
-
-Example with even more aggressive download parallelism:
-
-```bash
-BAIDUPCS_DOWNLOAD_THREADS=12 \
-BAIDUPCS_DOWNLOAD_PARALLEL_FILES=6 \
-bash scripts/download_dir.sh /output/stage1_2b/my-run /abs/local/output_cache /abs/path/to/BaiduPCS-Go
-```
-
-## 6. Run inside tmux for large transfers
-
-For multi-GB uploads, prefer:
+## Tmux Pattern
 
 ```bash
 tmux new -s baidupcs_upload
-bash scripts/upload_dir.sh /abs/local/dir /remote/dir /abs/path/to/BaiduPCS-Go
+bash .codex/skills/baidupcsgo-upload/scripts/upload_dir.sh <local_dir> <remote_dir> <BaiduPCS-Go>
 ```
 
-For downloads, the same pattern applies:
+Detach with `Ctrl-b d`; reattach with `tmux attach -t baidupcs_upload`.
 
-```bash
-tmux new -s baidupcs_download
-bash scripts/download_dir.sh /remote/dir /abs/local/parent /abs/path/to/BaiduPCS-Go
-```
+## Failure Triage
 
-Treat `tmux` as the default launch mode for any long-running transfer. If a command may take more than a few seconds or involve a multi-file sync, start it in a dedicated session rather than the foreground.
-
-Detach with `Ctrl-b d`.
-
-Reattach with:
-
-```bash
-tmux attach -t baidupcs_upload
-```
-
-## 7. Verify completion
-
-Check the target directory:
-
-```bash
-/absolute/path/to/BaiduPCS-Go ls /some/subtree/run-a
-```
-
-For a large upload, validate the highest-risk artifacts first:
-- model shard files such as `model-00001-of-00002.safetensors`
-- tokenizer/config files needed for loading
-- index files such as `model.safetensors.index.json`
-
-For a large download, validate:
-- the expected top-level folder exists under the local parent directory
-- shard counts and file sizes match `ls` output from the remote side
-- loader-critical files such as tokenizer/config/index files are present
-- if an account-prefixed staging tree was used, confirm the contents were merged into the intended repo path that matches the original relative layout
-
-## 8. Failure handling
-
-If login succeeds but uploads fail:
-- rerun with `--norapid`
-- keep `-p 1 -l 1` before trying higher concurrency
-- if you need more throughput, raise `BAIDUPCS_UPLOAD_PARALLEL_FILES` before `BAIDUPCS_UPLOAD_FILE_THREADS`
-- verify the remote path is under the real Netdisk root, not `/apps/bypy`
-- verify quota with `quota`
-
-If downloads fail:
-- try `BAIDUPCS_DOWNLOAD_MODE=pcs` when `locate` hits authorization issues
-- keep the high default parallelism unless the transfer becomes unstable
-- if instability appears, reduce `BAIDUPCS_DOWNLOAD_THREADS` first, then `BAIDUPCS_DOWNLOAD_PARALLEL_FILES`
-- keep `--mtime` enabled unless you specifically want fresh local timestamps
-
-If `bypy` already uploaded files somewhere else:
-- remember that `BaiduPCS-Go` will not show files stored only under `bypy`'s app root
-- recreate the intended target path under the real root and upload again
-
-## Scripts
-
-- `scripts/install_baidupcsgo.sh`: download and unpack the tested Linux amd64 release
-- `scripts/upload_dir.sh`: create the remote directory chain and upload a local directory with stable defaults plus env-based parallel tuning
-- `scripts/download_dir.sh`: download a remote file or directory into a chosen local parent directory with env-based parallel tuning
+- Upload fails after login: use `--norapid`, keep `-p 1 -l 1`, verify quota and real-root path.
+- Need speed: raise `BAIDUPCS_UPLOAD_PARALLEL_FILES` first.
+- Download completes but files are not where expected: inspect the account-prefixed staging tree.
+- Existing `bypy` files are invisible: recreate the target path under `/` and transfer with BaiduPCS-Go.

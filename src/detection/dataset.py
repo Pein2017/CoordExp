@@ -256,20 +256,30 @@ class DetectionTrainingDataset(Dataset):
         detection_template = get_detection_template(self.config.detection_template_id)
         rendered_assistant = detection_template.render_assistant(normalized)
         messages = self._messages(raw.images, assistant_text=rendered_assistant.text)
+        eos_trust_weight = (
+            compute_eos_trust_weight(
+                len(normalized.objects),
+                self.config.eos_trust_weight_config,
+            )
+            if self.config.eos_trust_weight_config is not None
+            else None
+        )
 
         if self.config.mode == "prefix_rollin_et_rmp_ce":
             if self.config.detection_template_id != "compact_full":
-                raise ValueError("prefix_rollin_et_rmp_ce requires compact_full template")
+                raise ValueError(
+                    "prefix_rollin_et_rmp_ce requires compact_full template"
+                )
             if self.config.eos_trust_weight_config is None:
                 raise ValueError(
                     "prefix_rollin_et_rmp_ce requires eos_trust_weight_config"
                 )
             k_rng = random.Random(_mix_seed(self.config.seed, self._epoch, base_idx))
             k = k_rng.randint(0, len(normalized.objects))
-            eos_trust_weight = compute_eos_trust_weight(
-                len(normalized.objects),
-                self.config.eos_trust_weight_config,
-            )
+            if eos_trust_weight is None:
+                raise ValueError(
+                    "prefix_rollin_et_rmp_ce requires computed eos_trust_weight"
+                )
             prepared = build_compact_prefix_rollin_example(
                 objects=normalized.objects,
                 rollin_order=normalized.objects,
@@ -289,6 +299,7 @@ class DetectionTrainingDataset(Dataset):
                 state_weighting=self._state_weighting_for_prepare(),
                 normalization=self._normalization_for_prepare(),
                 type_gate_config=self.config.type_gate_config,
+                eos_trust_weight=eos_trust_weight,
                 messages=messages,
             )
 
@@ -338,6 +349,8 @@ class DetectionTrainingDataset(Dataset):
                     "eos_trust_weight": float(prepared.eos_trust_weight),
                 }
             )
+        elif eos_trust_weight is not None:
+            detection_metadata["eos_trust_weight"] = float(eos_trust_weight)
         encoded["metadata"] = {
             "source": raw.metadata.source,
             "split": raw.metadata.split,
@@ -380,7 +393,9 @@ class DetectionTrainingDataset(Dataset):
 
     def _resolve_image(self, image: str) -> str:
         image_path = Path(str(image))
-        candidate = image_path if image_path.is_absolute() else self._image_root / image_path
+        candidate = (
+            image_path if image_path.is_absolute() else self._image_root / image_path
+        )
         try:
             resolved = candidate.expanduser().resolve(strict=True)
         except FileNotFoundError as exc:
@@ -416,7 +431,9 @@ class DetectionTrainingDataset(Dataset):
         encoded: MutableMapping[str, Any],
         prepared: Any,
     ) -> RecursiveDetectionTargets | None:
-        encoded_input_ids = _as_int_tuple(encoded.get("input_ids"), path="encoded.input_ids")
+        encoded_input_ids = _as_int_tuple(
+            encoded.get("input_ids"), path="encoded.input_ids"
+        )
         encoded_labels = _as_int_tuple(encoded.get("labels"), path="encoded.labels")
         if len(encoded_input_ids) != len(encoded_labels):
             raise ValueError("encoded input_ids and labels must have the same length")
@@ -427,7 +444,9 @@ class DetectionTrainingDataset(Dataset):
         encoded_positions = tuple(
             index for index, label in enumerate(encoded_labels) if int(label) != -100
         )
-        prefix_rollin_mode = getattr(prepared, "mode", None) == "prefix_rollin_et_rmp_ce"
+        prefix_rollin_mode = (
+            getattr(prepared, "mode", None) == "prefix_rollin_et_rmp_ce"
+        )
         if prefix_rollin_mode:
             prepared_assistant_positions = [
                 index
@@ -481,7 +500,9 @@ class DetectionTrainingDataset(Dataset):
             encoded["labels"] = list(encoded_labels)
         else:
             if len(prepared_positions) != len(encoded_positions):
-                raise ValueError("encoded labels do not supervise the same target count")
+                raise ValueError(
+                    "encoded labels do not supervise the same target count"
+                )
 
             prepared_supervised_ids = tuple(
                 int(prepared.input_ids[index]) for index in prepared_positions

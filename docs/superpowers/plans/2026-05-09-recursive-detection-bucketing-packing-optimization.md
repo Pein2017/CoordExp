@@ -701,7 +701,7 @@ nvidia-smi --query-compute-apps=pid,gpu_uuid,used_memory --format=csv,noheader
 Expected: branch is `codex/recursive-detection-bucketing-packing`; no unrelated
 dirty code is present; target tmux session names are absent or explicitly idle;
 target GPUs are free. Do not use `tmux kill-server`, broad `pkill`, broad
-`rm -rf /data/CoordExp/output_remote`, or cleanup of existing A3/A4 artifacts.
+`rm -rf /data/CoordExp/outputs`, or cleanup of existing A3/A4 artifacts.
 
 - [ ] **Step 3: Run tiny training smoke**
 

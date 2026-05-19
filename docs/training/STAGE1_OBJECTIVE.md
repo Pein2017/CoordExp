@@ -128,7 +128,7 @@ The active compact Stage-1 owner is the latest detection stack under `src/detect
 - `configs/stage1/recursive_detection_ce_latest/prod/compact_full_support2.yaml` remains the random-permutation ET-RMP-CE production baseline/comparator.
 - `configs/stage1/recursive_detection_ce_latest/prod/compact_full_support2_iou_gibbs_softce_a5.yaml` is historical A5-iou-gibbs negative-result/superseded provenance: A2/support2 plus `iou_gibbs_v0` coordinate soft targets with `tau=0.0090909091` from the train one-token IoU-loss median.
 - `configs/stage1/recursive_detection_ce_latest/prod/compact_full_support2_ciou_gibbs_softce_a6.yaml` is historical paired A6-ciou-gibbs negative-result/superseded provenance: same setup as historical A5 but with `ciou_gibbs_v0`; production preparation assumed a separate 4-GPU slice for A5 and A6 rather than one 8-GPU run.
-- `configs/stage1/recursive_detection_ce_latest/prod/compact_full_support2_instance_trie_focused_cap8_frac0p04_mix0p1.yaml` is the active feature-branch successor config, with `cap8_frac0p06_mix0p1` as the slope ablation and `cap8_frac0p04_mix0p2` as the strength ablation; see [`INSTANCE_TRIE_GAUSSIAN_SOFTCE_DRAFT.md`](INSTANCE_TRIE_GAUSSIAN_SOFTCE_DRAFT.md). These configs use type-gated schema/desc/coord/eos positions, structural boundary hard CE, description hard CE plus trie support/balance, and coord-vocab-only Gaussian SoftCE over active-branch remaining-instance mixtures. The coordinate target uses the focused R95 policy `floor(min(cap, fraction * axis_len))` with default cap8/4%/mix0.1, replacing the earlier unconstrained `sqrt(axis + 1)` wide-span draft behavior. This successor is implemented on branch `codex/instance-trie-gaussian-softce`, but it is not production-validated, merged, stable, or current production behavior until focused tests, target-shape audit, smoke workflow, diagnosis/audit review, branch acceptance, and production approval complete.
+- `configs/stage1/recursive_detection_ce_latest/prod/compact_full_support2_instance_trie_focused_cap8_frac0p04_mix0p1.yaml` is the active ablation successor config, with `cap8_frac0p06_mix0p1` as the slope ablation and `cap8_frac0p04_mix0p2` as the strength ablation; see [`INSTANCE_TRIE_GAUSSIAN_SOFTCE_DRAFT.md`](INSTANCE_TRIE_GAUSSIAN_SOFTCE_DRAFT.md). These configs use type-gated schema/desc/coord/eos positions, structural boundary hard CE, description hard CE plus trie support/balance, and coord-vocab-only Gaussian SoftCE over active-branch remaining-instance mixtures. The coordinate target uses the focused R95 policy `floor(min(cap, fraction * axis_len))` with default cap8/4%/mix0.1, replacing the earlier unconstrained `sqrt(axis + 1)` wide-span draft behavior. Treat this successor as an ablation/smoke surface, not production-approved behavior, until production-scale validation evidence and explicit promotion approval are recorded.
 - `configs/stage1/recursive_detection_ce_latest/ablation/compact_full_prefix_rollin_balance2.yaml` is the E1 `prefix_rollin_et_rmp_ce` ablation route for Prefix-Closed Multi-Target SFT.
 - `configs/stage1/recursive_detection_ce_latest/ablation/compact_full_prefix_rollin_separator2.yaml` is the E2 separator-continue ablation. It keeps E1 support/balance/type-gate/EOS settings and changes only the append-boundary weights so the `\n` continuation token gets more pressure before `<|object_ref_start|>` can be emitted.
 
@@ -240,7 +240,7 @@ hyperparameters based on decode under-generation alone:
 ```bash
 conda run -n ms python -m src.analysis.prefix_rollin_teacher_forced_diagnostic \
   --config configs/stage1/recursive_detection_ce_latest/smoke/compact_full_prefix_rollin_adapter_tiny.yaml \
-  --checkpoint output_remote/stage1_2b/recursive_detection_ce_latest/compact_full_et_rmp_ce_support2_bsz16_4epoch_tokenrows_v2/compact-full-et-rmp-ce-support2-bsz16-4epoch-tokenrows-v2/v0-20260504-071356/checkpoint-3664 \
+  --checkpoint outputs/stage1_2b/recursive_detection_ce_latest/compact_full_et_rmp_ce_support2_bsz16_4epoch_tokenrows_v2/compact-full-et-rmp-ce-support2-bsz16-4epoch-tokenrows-v2/v0-20260504-071356/checkpoint-3664 \
   --split val \
   --limit 8 \
   --k-values every \
@@ -268,7 +268,7 @@ mode:
 ```bash
 conda run -n ms python -m src.analysis.prefix_rollin_teacher_forced_diagnostic \
   --config configs/stage1/recursive_detection_ce_latest/smoke/compact_full_prefix_rollin_adapter_tiny.yaml \
-  --checkpoint output_remote/stage1_2b/recursive_detection_ce_latest/compact_full_et_rmp_ce_support2_bsz16_4epoch_tokenrows_v2/compact-full-et-rmp-ce-support2-bsz16-4epoch-tokenrows-v2/v0-20260504-071356/checkpoint-3664 \
+  --checkpoint outputs/stage1_2b/recursive_detection_ce_latest/compact_full_et_rmp_ce_support2_bsz16_4epoch_tokenrows_v2/compact-full-et-rmp-ce-support2-bsz16-4epoch-tokenrows-v2/v0-20260504-071356/checkpoint-3664 \
   --split val \
   --limit 8 \
   --prefix-modes generated_prefix \

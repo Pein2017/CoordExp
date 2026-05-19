@@ -1,4 +1,4 @@
 interface:
   display_name: "Model Diagnosis"
-  short_description: "Diagnose model behavior after training changes"
-  default_prompt: "Use $model-diagnosis to analyze a training innovation, identify model symptoms, diagnose root causes, and propose corrective strategies."
+  short_description: "Diagnose model behavior and launch health"
+  default_prompt: "Use $model-diagnosis to diagnose CoordExp training, decoding, objective, data, architecture, optimization, or launch-health symptoms. Separate artifact validity, implementation bugs, objective mismatch, data distribution, optimization, and genuine model limits before recommending fixes."

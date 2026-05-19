@@ -8,7 +8,7 @@ Owner: Codex
 
 Design a focused follow-up probe study for the new adapter checkpoint:
 
-- `/data/CoordExp/output_remote/stage1_2b/coco_bbox_max60-hard_ce_soft_ce_w1_gate/epoch_4-from-base-2B/v0-20260227-050057/checkpoint-1332`
+- `/data/CoordExp/outputs/stage1_2b/coco_bbox_max60-hard_ce_soft_ce_w1_gate/epoch_4-from-base-2B/v0-20260227-050057/checkpoint-1332`
 
 This is not a fresh broad family-comparison study. It is a **delta study**
 whose job is to explain why this mixed-objective 2B checkpoint reaches
@@ -96,7 +96,7 @@ Questions:
 ### Included checkpoint
 
 - `mixed_objective_sota_adapter`
-  - `/data/CoordExp/output_remote/stage1_2b/coco_bbox_max60-hard_ce_soft_ce_w1_gate/epoch_4-from-base-2B/v0-20260227-050057/checkpoint-1332`
+  - `/data/CoordExp/outputs/stage1_2b/coco_bbox_max60-hard_ce_soft_ce_w1_gate/epoch_4-from-base-2B/v0-20260227-050057/checkpoint-1332`
 
 ### Required reference models
 

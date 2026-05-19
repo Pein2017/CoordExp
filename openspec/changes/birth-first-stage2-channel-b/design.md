@@ -8,7 +8,7 @@ The repo history backing this change is consistent on three points:
 - duplicate-burst unlikelihood is useful as a narrow guardrail, but it has not been the dominant active learning signal in the recent windows that were inspected;
 - some false negatives are not well described as pure perceptual misses, because short `EOS now` continuations can still beat plausible object continuations on total sequence score.
 
-This change is therefore a contract rewrite for the next decision round, not a broad architecture reset. It is also a fixed base-model plus adapter study: every design choice here assumes the base model stays `/data/CoordExp/model_cache_remote/model_cache/models/Qwen/Qwen3-VL-2B-Instruct-coordexp` and the only adapter checkpoint in scope is `/data/CoordExp/output_remote/stage1_2b/coco_bbox_max60-hard_ce_soft_ce_w1_gate/epoch_4-from-base-2B/v0-20260227-050057/checkpoint-1332`.
+This change is therefore a contract rewrite for the next decision round, not a broad architecture reset. It is also a fixed base-model plus adapter study: every design choice here assumes the base model stays `/data/CoordExp/model_cache_remote/model_cache/models/Qwen/Qwen3-VL-2B-Instruct-coordexp` and the only adapter checkpoint in scope is `/data/CoordExp/outputs/stage1_2b/coco_bbox_max60-hard_ce_soft_ce_w1_gate/epoch_4-from-base-2B/v0-20260227-050057/checkpoint-1332`.
 
 ## Goals / Non-Goals
 
@@ -141,7 +141,7 @@ Why:
 2. Extend typed Stage-2 config validation with `stage2_ab.channel_b.birth_first` while preserving the existing non-birth-first control profile and duplicate-control surfaces.
 3. Implement the retained-anchor partition and recovered-boundary continue-over-EOS atom in the current one-forward Channel-B runtime.
 4. Add focused schema, target-building, loss-projection, and aggregation tests.
-5. Author paired `K=2` control and birth-first smoke/decision configs rooted in the fixed base model `/data/CoordExp/model_cache_remote/model_cache/models/Qwen/Qwen3-VL-2B-Instruct-coordexp` plus the fixed adapter checkpoint `/data/CoordExp/output_remote/stage1_2b/coco_bbox_max60-hard_ce_soft_ce_w1_gate/epoch_4-from-base-2B/v0-20260227-050057/checkpoint-1332`.
+5. Author paired `K=2` control and birth-first smoke/decision configs rooted in the fixed base model `/data/CoordExp/model_cache_remote/model_cache/models/Qwen/Qwen3-VL-2B-Instruct-coordexp` plus the fixed adapter checkpoint `/data/CoordExp/outputs/stage1_2b/coco_bbox_max60-hard_ce_soft_ce_w1_gate/epoch_4-from-base-2B/v0-20260227-050057/checkpoint-1332`.
 6. Run the short decision round, compare the paired control and birth-first configs under matched runtime conditions, and only then promote the winning `K=2` contract to a long real-training run in this change.
 
 ## Open Questions
