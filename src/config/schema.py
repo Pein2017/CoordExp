@@ -3940,6 +3940,79 @@ class LatestDetectionExperimentConfig:
 @dataclass(frozen=True)
 class CoordSoftCEConfig:
     enabled: bool
+    target_distribution: Literal[
+        "iou_gibbs_v0",
+        "ciou_gibbs_v0",
+        "instance_trie_gaussian",
+    ]
+
+    def __post_init__(self) -> None:
+        _latest_detection_validate_bool(
+            self.enabled,
+            path="objective.coord_soft_ce.enabled",
+        )
+        _latest_detection_validate_choice(
+            self.target_distribution,
+            path="objective.coord_soft_ce.target_distribution",
+            allowed={"iou_gibbs_v0", "ciou_gibbs_v0", "instance_trie_gaussian"},
+        )
+
+
+@dataclass(frozen=True)
+class InstanceTrieGaussianCoordSoftCEConfig(CoordSoftCEConfig):
+    target_distribution: Literal["instance_trie_gaussian"]
+    gaussian_mixture_weight: float = 0.1
+    gaussian_r95_axis_fraction: float = 0.04
+    gaussian_r95_cap_bins: int = 8
+
+    def __post_init__(self) -> None:
+        super().__post_init__()
+        _latest_detection_validate_choice(
+            self.target_distribution,
+            path="objective.coord_soft_ce.target_distribution",
+            allowed={"instance_trie_gaussian"},
+        )
+        if not isinstance(self.gaussian_mixture_weight, (int, float)) or isinstance(
+            self.gaussian_mixture_weight, bool
+        ):
+            raise TypeError(
+                "objective.coord_soft_ce.gaussian_mixture_weight must be numeric"
+            )
+        if not math.isfinite(float(self.gaussian_mixture_weight)):
+            raise ValueError(
+                "objective.coord_soft_ce.gaussian_mixture_weight must be finite and within [0, 1]"
+            )
+        if not 0.0 <= float(self.gaussian_mixture_weight) <= 1.0:
+            raise ValueError(
+                "objective.coord_soft_ce.gaussian_mixture_weight must be within [0, 1]"
+            )
+        if not isinstance(self.gaussian_r95_axis_fraction, (int, float)) or isinstance(
+            self.gaussian_r95_axis_fraction, bool
+        ):
+            raise TypeError(
+                "objective.coord_soft_ce.gaussian_r95_axis_fraction must be numeric"
+            )
+        if (
+            not math.isfinite(float(self.gaussian_r95_axis_fraction))
+            or float(self.gaussian_r95_axis_fraction) <= 0.0
+            or float(self.gaussian_r95_axis_fraction) > 1.0
+        ):
+            raise ValueError(
+                "objective.coord_soft_ce.gaussian_r95_axis_fraction must be finite and within (0, 1]"
+            )
+        if not isinstance(self.gaussian_r95_cap_bins, int) or isinstance(
+            self.gaussian_r95_cap_bins, bool
+        ):
+            raise TypeError(
+                "objective.coord_soft_ce.gaussian_r95_cap_bins must be an integer"
+            )
+        if int(self.gaussian_r95_cap_bins) < 0 or int(self.gaussian_r95_cap_bins) > 999:
+            raise ValueError(
+                "objective.coord_soft_ce.gaussian_r95_cap_bins must be within [0, 999]"
+            )
+
+@dataclass(frozen=True)
+class GibbsCoordSoftCEConfig(CoordSoftCEConfig):
     target_distribution: Literal["iou_gibbs_v0", "ciou_gibbs_v0"]
     tau: float
     tau_source: Literal["train_one_token_iou_median_v0"]
@@ -3950,10 +4023,7 @@ class CoordSoftCEConfig:
     apply_to_multi_positive: Literal["support_mixture"] = "support_mixture"
 
     def __post_init__(self) -> None:
-        _latest_detection_validate_bool(
-            self.enabled,
-            path="objective.coord_soft_ce.enabled",
-        )
+        super().__post_init__()
         _latest_detection_validate_choice(
             self.target_distribution,
             path="objective.coord_soft_ce.target_distribution",
@@ -4007,7 +4077,7 @@ class DetectionObjectiveConfig:
     boundary: Optional[AppendBoundaryConfig] = None
     type_gate: Optional[CompactTypeGateConfig] = None
     eos: Optional[EosPriorConfig] = None
-    coord_soft_ce: Optional[CoordSoftCEConfig] = None
+    coord_soft_ce: Optional[Any] = None
 
     def __post_init__(self) -> None:
         _latest_detection_validate_choice(
@@ -4113,7 +4183,7 @@ class DetectionObjectiveConfig:
         else:
             unexpected = [
                 name
-                for name in ("rollin", "target", "boundary", "type_gate")
+                for name in ("rollin", "target", "boundary")
                 if getattr(self, name) is not None
             ]
             if self.eos is not None and self.variant != "random_permutation_et_rmp_ce":
@@ -4122,8 +4192,17 @@ class DetectionObjectiveConfig:
                 raise ValueError(
                     "objectized objective sections are only supported for "
                     "objective.variant=prefix_rollin_et_rmp_ce, except "
-                    "objective.eos on random_permutation_et_rmp_ce: "
+                    "objective.eos and objective.type_gate on "
+                    "random_permutation_et_rmp_ce: "
                     f"{unexpected}"
+                )
+            if (
+                self.type_gate is not None
+                and self.variant != "random_permutation_et_rmp_ce"
+            ):
+                raise ValueError(
+                    "objective.type_gate is only supported for latest "
+                    "recursive_detection_ce ET-RMP variants"
                 )
         if self.id == "sft" and self.variant not in {"sorted_sft", "random_order_sft"}:
             raise ValueError("objective.id=sft requires an SFT objective.variant")
@@ -4161,23 +4240,63 @@ class DetectionObjectiveConfig:
     @classmethod
     def from_mapping(cls, payload: Any) -> "DetectionObjectiveConfig":
         if isinstance(payload, Mapping):
+            payload = dict(payload)
             raw_coord_soft_ce = payload.get("coord_soft_ce")
             if raw_coord_soft_ce is not None:
                 if not isinstance(raw_coord_soft_ce, Mapping):
                     raise TypeError("objective.coord_soft_ce must be a mapping")
-                for deprecated_key in (
+                target_distribution = raw_coord_soft_ce.get("target_distribution")
+                _latest_detection_validate_choice(
+                    target_distribution,
+                    path="objective.coord_soft_ce.target_distribution",
+                    allowed={
+                        "iou_gibbs_v0",
+                        "ciou_gibbs_v0",
+                        "instance_trie_gaussian",
+                    },
+                )
+                stale_instance_keys = (
+                    "tau",
+                    "tau_source",
+                    "weighting",
+                    "replace_coord_hard_ce",
+                    "apply_to_multi_positive",
                     "sigma",
                     "truncate",
                     "target_sigma",
                     "target_truncate",
-                    "window",
-                    "radius",
-                ):
-                    if deprecated_key in raw_coord_soft_ce:
-                        raise ValueError(
-                            f"objective.coord_soft_ce.{deprecated_key} is deprecated; "
-                            "use iou_gibbs_v0 or ciou_gibbs_v0"
-                        )
+                )
+                if target_distribution == "instance_trie_gaussian":
+                    for stale_key in stale_instance_keys:
+                        if stale_key in raw_coord_soft_ce:
+                            raise ValueError(
+                                f"objective.coord_soft_ce.{stale_key} is not "
+                                "supported for target_distribution=instance_trie_gaussian"
+                            )
+                    payload["coord_soft_ce"] = parse_dataclass_strict(
+                        InstanceTrieGaussianCoordSoftCEConfig,
+                        raw_coord_soft_ce,
+                        path="objective.coord_soft_ce",
+                    )
+                else:
+                    for deprecated_key in (
+                        "sigma",
+                        "truncate",
+                        "target_sigma",
+                        "target_truncate",
+                        "window",
+                        "radius",
+                    ):
+                        if deprecated_key in raw_coord_soft_ce:
+                            raise ValueError(
+                                f"objective.coord_soft_ce.{deprecated_key} is deprecated; "
+                                "use iou_gibbs_v0 or ciou_gibbs_v0"
+                            )
+                    payload["coord_soft_ce"] = parse_dataclass_strict(
+                        GibbsCoordSoftCEConfig,
+                        raw_coord_soft_ce,
+                        path="objective.coord_soft_ce",
+                    )
         if (
             isinstance(payload, Mapping)
             and payload.get("variant") == "prefix_rollin_et_rmp_ce"

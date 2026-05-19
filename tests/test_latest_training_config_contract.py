@@ -4,6 +4,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
+import torch
 import yaml
 
 from src.config.loader import ConfigLoader
@@ -363,6 +364,98 @@ def test_latest_random_permutation_accepts_ciou_gibbs_coord_softce() -> None:
     assert cfg.objective.coord_soft_ce.target_distribution == "ciou_gibbs_v0"
 
 
+def test_latest_random_permutation_accepts_instance_trie_gaussian_coord_softce() -> None:
+    payload = _latest_payload()
+    payload["objective"] = {
+        "id": "recursive_detection_ce",
+        "variant": "random_permutation_et_rmp_ce",
+        "trie_support_weight": 2.0,
+        "trie_balance_weight": 1.0,
+        "state_weighting": "uniform_permutation",
+        "normalization": "semantic_image_bucket_balanced",
+        "coord_soft_ce": {
+            "enabled": True,
+            "target_distribution": "instance_trie_gaussian",
+        },
+    }
+
+    cfg = LatestDetectionTrainingConfig.from_mapping(payload)
+
+    assert cfg.objective.coord_soft_ce is not None
+    assert cfg.objective.coord_soft_ce.enabled is True
+    assert cfg.objective.coord_soft_ce.target_distribution == "instance_trie_gaussian"
+    assert cfg.objective.coord_soft_ce.gaussian_mixture_weight == pytest.approx(0.1)
+    assert cfg.objective.coord_soft_ce.gaussian_r95_axis_fraction == pytest.approx(0.04)
+    assert cfg.objective.coord_soft_ce.gaussian_r95_cap_bins == 8
+    assert not hasattr(cfg.objective.coord_soft_ce, "tau")
+    assert not hasattr(cfg.objective.coord_soft_ce, "weighting")
+
+
+def test_random_permutation_et_rmp_accepts_type_gate_section() -> None:
+    payload = _latest_payload()
+    payload["objective"] = {
+        "id": "recursive_detection_ce",
+        "variant": "random_permutation_et_rmp_ce",
+        "trie_support_weight": 2.0,
+        "trie_balance_weight": 1.0,
+        "state_weighting": "uniform_permutation",
+        "normalization": "semantic_image_bucket_balanced",
+        "type_gate": {
+            "enabled": True,
+            "mode": "allowed_type_mass",
+            "weights": {
+                "struct": 1.0,
+                "coord": 1.0,
+                "desc": 1.0,
+                "eos": 0.5,
+            },
+        },
+    }
+
+    cfg = LatestDetectionTrainingConfig.from_mapping(payload)
+
+    assert cfg.objective.type_gate is not None
+    assert cfg.objective.type_gate.enabled is True
+    assert cfg.objective.type_gate.weights.coord == pytest.approx(1.0)
+
+    runtime_cfg = resolve_recursive_detection_ce_runtime_cfg(cfg)
+    assert runtime_cfg is not None
+    assert runtime_cfg.type_gate is not None
+    assert runtime_cfg.type_gate.enabled is True
+    assert runtime_cfg.type_gate.weights.struct == pytest.approx(1.0)
+    assert runtime_cfg.type_gate.weights.desc == pytest.approx(1.0)
+    assert runtime_cfg.type_gate.weights.coord == pytest.approx(1.0)
+    assert runtime_cfg.type_gate.weights.eos == pytest.approx(0.5)
+
+
+def test_latest_random_permutation_accepts_ce_anchored_instance_trie_gaussian_coord_softce() -> None:
+    payload = _latest_payload()
+    payload["objective"] = {
+        "id": "recursive_detection_ce",
+        "variant": "random_permutation_et_rmp_ce",
+        "trie_support_weight": 2.0,
+        "trie_balance_weight": 1.0,
+        "state_weighting": "uniform_permutation",
+        "normalization": "semantic_image_bucket_balanced",
+        "coord_soft_ce": {
+            "enabled": True,
+            "target_distribution": "instance_trie_gaussian",
+            "gaussian_mixture_weight": 0.2,
+            "gaussian_r95_axis_fraction": 0.06,
+            "gaussian_r95_cap_bins": 8,
+        },
+    }
+
+    cfg = LatestDetectionTrainingConfig.from_mapping(payload)
+
+    assert cfg.objective.coord_soft_ce is not None
+    assert cfg.objective.coord_soft_ce.enabled is True
+    assert cfg.objective.coord_soft_ce.target_distribution == "instance_trie_gaussian"
+    assert cfg.objective.coord_soft_ce.gaussian_mixture_weight == pytest.approx(0.2)
+    assert cfg.objective.coord_soft_ce.gaussian_r95_axis_fraction == pytest.approx(0.06)
+    assert cfg.objective.coord_soft_ce.gaussian_r95_cap_bins == 8
+
+
 def test_recursive_detection_runtime_resolves_coord_softce_token_range() -> None:
     payload = _latest_payload()
     payload["objective"] = {
@@ -386,6 +479,43 @@ def test_recursive_detection_runtime_resolves_coord_softce_token_range() -> None
     assert runtime_cfg.coord_soft_ce.target_distribution == "ciou_gibbs_v0"
     assert runtime_cfg.coord_soft_ce.coord_token_start == 151670
     assert runtime_cfg.coord_soft_ce.coord_token_end == 152669
+
+
+def test_instance_trie_gaussian_runtime_uses_token_row_coordinate_id_offset() -> None:
+    cfg = SimpleNamespace(
+        objective=SimpleNamespace(
+            id="recursive_detection_ce",
+            variant="random_permutation_et_rmp_ce",
+            trie_support_weight=2.0,
+            trie_balance_weight=1.0,
+            coord_soft_ce=SimpleNamespace(
+                enabled=True,
+                target_distribution="instance_trie_gaussian",
+            ),
+        ),
+        token_rows=SimpleNamespace(
+            groups={
+                "coord_geometry": SimpleNamespace(
+                    role="coord_geometry",
+                    expected_start=42000,
+                    expected_end=42999,
+                )
+            }
+        ),
+    )
+
+    runtime_cfg = resolve_recursive_detection_ce_runtime_cfg(cfg)
+
+    assert runtime_cfg is not None
+    assert runtime_cfg.coord_soft_ce is not None
+    assert runtime_cfg.coord_soft_ce.target_distribution == "instance_trie_gaussian"
+    assert runtime_cfg.coord_soft_ce.coord_token_start == 42000
+    assert runtime_cfg.coord_soft_ce.coord_token_end == 42999
+    assert runtime_cfg.coord_soft_ce.coord_value_to_token_id(0) == 42000
+    assert runtime_cfg.coord_soft_ce.coord_value_to_token_id(999) == 42999
+    assert runtime_cfg.coord_soft_ce.gaussian_mixture_weight == pytest.approx(0.1)
+    assert runtime_cfg.coord_soft_ce.gaussian_r95_axis_fraction == pytest.approx(0.04)
+    assert runtime_cfg.coord_soft_ce.gaussian_r95_cap_bins == 8
 
 
 @pytest.mark.parametrize(
@@ -417,6 +547,186 @@ def test_coord_softce_requires_positive_data_derived_tau() -> None:
 
     with pytest.raises(ValueError, match=r"objective\.coord_soft_ce\.tau.*> 0"):
         LatestDetectionTrainingConfig.from_mapping(payload)
+
+
+@pytest.mark.parametrize(
+    "stale_key",
+    [
+        "tau",
+        "tau_source",
+        "weighting",
+        "replace_coord_hard_ce",
+        "apply_to_multi_positive",
+        "sigma",
+        "truncate",
+        "target_sigma",
+        "target_truncate",
+    ],
+)
+def test_instance_trie_gaussian_coord_softce_rejects_stale_knobs(
+    stale_key: str,
+) -> None:
+    payload = _latest_payload()
+    payload["objective"]["coord_soft_ce"] = {
+        "enabled": True,
+        "target_distribution": "instance_trie_gaussian",
+        stale_key: 0.01,
+    }
+
+    with pytest.raises(ValueError, match=rf"objective\.coord_soft_ce\.{stale_key}"):
+        LatestDetectionTrainingConfig.from_mapping(payload)
+
+
+@pytest.mark.parametrize(
+    ("key", "value", "pattern"),
+    [
+        ("gaussian_r95_axis_fraction", 0.0, "gaussian_r95_axis_fraction"),
+        ("gaussian_r95_axis_fraction", -0.01, "gaussian_r95_axis_fraction"),
+        ("gaussian_r95_axis_fraction", 1.5, "gaussian_r95_axis_fraction"),
+        ("gaussian_r95_axis_fraction", "0.04", "gaussian_r95_axis_fraction"),
+        ("gaussian_r95_cap_bins", -1, "gaussian_r95_cap_bins"),
+        ("gaussian_r95_cap_bins", 1000, "gaussian_r95_cap_bins"),
+        ("gaussian_r95_cap_bins", 8.0, "gaussian_r95_cap_bins"),
+        ("gaussian_r95_cap_bins", True, "gaussian_r95_cap_bins"),
+    ],
+)
+def test_instance_trie_gaussian_coord_softce_rejects_invalid_focused_policy(
+    key: str,
+    value: object,
+    pattern: str,
+) -> None:
+    payload = _latest_payload()
+    payload["objective"]["coord_soft_ce"] = {
+        "enabled": True,
+        "target_distribution": "instance_trie_gaussian",
+        "gaussian_mixture_weight": 0.1,
+        "gaussian_r95_axis_fraction": 0.04,
+        "gaussian_r95_cap_bins": 8,
+        key: value,
+    }
+
+    with pytest.raises((TypeError, ValueError), match=pattern):
+        LatestDetectionTrainingConfig.from_mapping(payload)
+
+
+def test_recursive_detection_metrics_do_not_require_coord_softce_tau(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from src.trainers.batch_extras import RECURSIVE_DETECTION_TARGETS_KEY
+    from src.trainers.metrics import recursive_detection as metrics_module
+    from src.trainers.metrics.recursive_detection import RecursiveDetectionCEMixin
+
+    logged: dict[str, float] = {}
+
+    class _Reporter:
+        def __init__(self, trainer: object) -> None:
+            self.trainer = trainer
+
+        def update_many(self, updates: dict[str, float]) -> None:
+            logged.update(updates)
+
+    class _Model:
+        training = True
+
+        def __call__(self, **inputs: object) -> SimpleNamespace:
+            input_ids = inputs["input_ids"]
+            assert isinstance(input_ids, torch.Tensor)
+            return SimpleNamespace(
+                logits=torch.zeros(
+                    (*input_ids.shape, 8),
+                    dtype=torch.float32,
+                    device=input_ids.device,
+                )
+            )
+
+    def _fake_loss(**kwargs: object) -> SimpleNamespace:
+        return SimpleNamespace(
+            loss=torch.tensor(1.25, dtype=torch.float32),
+            metrics={"batch_size": 1.0},
+            metric_events=(),
+        )
+
+    monkeypatch.setattr(
+        "src.metrics.reporter.SwiftMetricReporter",
+        _Reporter,
+    )
+    monkeypatch.setattr(
+        metrics_module,
+        "compute_recursive_detection_ce_batch_loss",
+        _fake_loss,
+    )
+
+    trainer = RecursiveDetectionCEMixin()
+    trainer.model = _Model()
+    trainer.recursive_detection_ce_cfg = SimpleNamespace(
+        trie_support_weight=2.0,
+        trie_balance_weight=1.0,
+        type_gate=SimpleNamespace(
+            enabled=True,
+            weights=SimpleNamespace(
+                struct=1.0,
+                coord=1.0,
+                desc=1.0,
+                eos=0.5,
+            ),
+        ),
+        coord_soft_ce=SimpleNamespace(
+            target_distribution="instance_trie_gaussian",
+            coord_token_start=42000,
+            coord_token_end=42999,
+            gaussian_mixture_weight=0.1,
+            gaussian_r95_axis_fraction=0.04,
+            gaussian_r95_cap_bins=8,
+        ),
+    )
+    inputs = {
+        "input_ids": torch.tensor([[1, 2]], dtype=torch.long),
+        "labels": torch.tensor([[1, 2]], dtype=torch.long),
+        "attention_mask": torch.tensor([[1, 1]], dtype=torch.long),
+        RECURSIVE_DETECTION_TARGETS_KEY: (SimpleNamespace(token_targets=()),),
+    }
+
+    loss = trainer.compute_loss(trainer.model, inputs)
+
+    assert loss.item() == pytest.approx(1.25)
+    assert "recursive_detection_ce/coord_soft_ce/tau" not in logged
+    assert logged["recursive_detection_ce/coord_soft_ce/config_enabled"] == pytest.approx(
+        1.0
+    )
+    assert logged[
+        "recursive_detection_ce/coord_soft_ce/is_instance_trie_gaussian"
+    ] == pytest.approx(1.0)
+    assert logged["recursive_detection_ce/coord_soft_ce/coord_token_start"] == pytest.approx(
+        42000.0
+    )
+    assert logged["recursive_detection_ce/coord_soft_ce/coord_token_end"] == pytest.approx(
+        42999.0
+    )
+    assert logged[
+        "recursive_detection_ce/coord_soft_ce/gaussian_mixture_weight"
+    ] == pytest.approx(0.1)
+    assert logged[
+        "recursive_detection_ce/coord_soft_ce/exact_ce_anchor_weight"
+    ] == pytest.approx(0.9)
+    assert logged[
+        "recursive_detection_ce/coord_soft_ce/gaussian_r95_axis_fraction"
+    ] == pytest.approx(0.04)
+    assert logged[
+        "recursive_detection_ce/coord_soft_ce/gaussian_r95_cap_bins"
+    ] == pytest.approx(8.0)
+    assert logged["recursive_detection_ce/type_gate/config_enabled"] == pytest.approx(
+        1.0
+    )
+    assert logged["recursive_detection_ce/type_gate/struct_weight"] == pytest.approx(
+        1.0
+    )
+    assert logged["recursive_detection_ce/type_gate/coord_weight"] == pytest.approx(
+        1.0
+    )
+    assert logged["recursive_detection_ce/type_gate/desc_weight"] == pytest.approx(
+        1.0
+    )
+    assert logged["recursive_detection_ce/type_gate/eos_weight"] == pytest.approx(0.5)
 
 
 def test_et_rmp_weights_must_be_non_negative_and_nonzero() -> None:
@@ -887,6 +1197,12 @@ def test_latest_recursive_detection_launch_configs_parse_without_custom() -> Non
         REPO_ROOT
         / "configs/stage1/recursive_detection_ce_latest/prod/compact_full_support2_ciou_gibbs_softce_a6.yaml",
         REPO_ROOT
+        / "configs/stage1/recursive_detection_ce_latest/prod/compact_full_support2_instance_trie_focused_cap8_frac0p04_mix0p1.yaml",
+        REPO_ROOT
+        / "configs/stage1/recursive_detection_ce_latest/prod/compact_full_support2_instance_trie_focused_cap8_frac0p06_mix0p1.yaml",
+        REPO_ROOT
+        / "configs/stage1/recursive_detection_ce_latest/prod/compact_full_support2_instance_trie_focused_cap8_frac0p04_mix0p2.yaml",
+        REPO_ROOT
         / "configs/stage1/recursive_detection_ce_latest/smoke/compact_full_tiny.yaml",
         REPO_ROOT
         / "configs/stage1/recursive_detection_ce_latest/smoke/compact_full_prodlike_single_gpu.yaml",
@@ -897,9 +1213,21 @@ def test_latest_recursive_detection_launch_configs_parse_without_custom() -> Non
         REPO_ROOT
         / "configs/stage1/recursive_detection_ce_latest/smoke/compact_full_support2_ciou_gibbs_softce_a6_tiny.yaml",
         REPO_ROOT
+        / "configs/stage1/recursive_detection_ce_latest/smoke/compact_full_support2_instance_trie_focused_cap8_frac0p04_mix0p1_tiny.yaml",
+        REPO_ROOT
+        / "configs/stage1/recursive_detection_ce_latest/smoke/compact_full_support2_instance_trie_focused_cap8_frac0p06_mix0p1_tiny.yaml",
+        REPO_ROOT
+        / "configs/stage1/recursive_detection_ce_latest/smoke/compact_full_support2_instance_trie_focused_cap8_frac0p04_mix0p2_tiny.yaml",
+        REPO_ROOT
         / "configs/stage1/recursive_detection_ce_latest/smoke/compact_full_support2_iou_gibbs_softce_a5_ddp4_preflight.yaml",
         REPO_ROOT
         / "configs/stage1/recursive_detection_ce_latest/smoke/compact_full_support2_ciou_gibbs_softce_a6_ddp4_preflight.yaml",
+        REPO_ROOT
+        / "configs/stage1/recursive_detection_ce_latest/smoke/compact_full_support2_instance_trie_focused_cap8_frac0p04_mix0p1_ddp8_preflight.yaml",
+        REPO_ROOT
+        / "configs/stage1/recursive_detection_ce_latest/smoke/compact_full_support2_instance_trie_focused_cap8_frac0p06_mix0p1_ddp8_preflight.yaml",
+        REPO_ROOT
+        / "configs/stage1/recursive_detection_ce_latest/smoke/compact_full_support2_instance_trie_focused_cap8_frac0p04_mix0p2_ddp8_preflight.yaml",
     ]
 
     for config_path in config_paths:
@@ -938,6 +1266,56 @@ def test_latest_recursive_detection_launch_configs_parse_without_custom() -> Non
         if "ciou_gibbs_softce_a6" in config_path.name:
             assert cfg.objective.coord_soft_ce is not None
             assert cfg.objective.coord_soft_ce.target_distribution == "ciou_gibbs_v0"
+        if "instance_trie_focused_cap8_frac0p04_mix0p1" in config_path.name:
+            assert cfg.objective.coord_soft_ce is not None
+            assert (
+                cfg.objective.coord_soft_ce.target_distribution
+                == "instance_trie_gaussian"
+            )
+            assert cfg.objective.coord_soft_ce.gaussian_mixture_weight == pytest.approx(
+                0.1
+            )
+            assert cfg.objective.coord_soft_ce.gaussian_r95_axis_fraction == pytest.approx(
+                0.04
+            )
+            assert cfg.objective.coord_soft_ce.gaussian_r95_cap_bins == 8
+        if "instance_trie_focused_cap8_frac0p06_mix0p1" in config_path.name:
+            assert cfg.objective.coord_soft_ce is not None
+            assert (
+                cfg.objective.coord_soft_ce.target_distribution
+                == "instance_trie_gaussian"
+            )
+            assert cfg.objective.coord_soft_ce.gaussian_mixture_weight == pytest.approx(
+                0.1
+            )
+            assert cfg.objective.coord_soft_ce.gaussian_r95_axis_fraction == pytest.approx(
+                0.06
+            )
+            assert cfg.objective.coord_soft_ce.gaussian_r95_cap_bins == 8
+        if "instance_trie_focused_cap8_frac0p04_mix0p2" in config_path.name:
+            assert cfg.objective.coord_soft_ce is not None
+            assert (
+                cfg.objective.coord_soft_ce.target_distribution
+                == "instance_trie_gaussian"
+            )
+            assert cfg.objective.coord_soft_ce.gaussian_mixture_weight == pytest.approx(
+                0.2
+            )
+            assert cfg.objective.coord_soft_ce.gaussian_r95_axis_fraction == pytest.approx(
+                0.04
+            )
+            assert cfg.objective.coord_soft_ce.gaussian_r95_cap_bins == 8
+        if (
+            "instance_trie_focused_cap8_frac0p04_mix0p1" in config_path.name
+            or "instance_trie_focused_cap8_frac0p06_mix0p1" in config_path.name
+            or "instance_trie_focused_cap8_frac0p04_mix0p2" in config_path.name
+        ):
+            assert cfg.objective.type_gate is not None
+            assert cfg.objective.type_gate.enabled is True
+            assert cfg.objective.type_gate.weights.struct == pytest.approx(1.0)
+            assert cfg.objective.type_gate.weights.desc == pytest.approx(1.0)
+            assert cfg.objective.type_gate.weights.coord == pytest.approx(1.0)
+            assert cfg.objective.type_gate.weights.eos == pytest.approx(0.5)
         assert cfg.packing.static_packing is False
         assert cfg.packing.padding_free_packed is False
         assert cfg.training["packing"] is False

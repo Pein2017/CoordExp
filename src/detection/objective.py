@@ -151,6 +151,14 @@ class CoordSoftTargetSpec:
 
 
 @dataclass(frozen=True)
+class CoordInstanceCandidateSpec:
+    object_instance_id: str
+    bbox_xyxy: tuple[int, int, int, int]
+    branch_key: str | None = None
+    source_record_id: str | None = None
+
+
+@dataclass(frozen=True)
 class TokenTarget:
     position: int
     teacher_token_id: int
@@ -166,6 +174,8 @@ class TokenTarget:
     type_gate_token_ids: tuple[int, ...] = ()
     type_gate_weight: float = 0.0
     coord_soft_targets: tuple[CoordSoftTargetSpec, ...] = ()
+    coord_instance_candidates: tuple[CoordInstanceCandidateSpec, ...] = ()
+    coord_slot_name: CoordSlotName | None = None
 
     @property
     def valid_token_ids(self) -> tuple[int, ...]:
@@ -284,6 +294,7 @@ def prepare_detection_training_example(
     mode: DetectionTrainingMode,
     state_weighting: StateWeightingStrategy = "uniform_permutation",
     normalization: LossNormalizationStrategy = "semantic_image_bucket_balanced",
+    type_gate_config: Any | None = None,
     eos_trust_weight: float | None = None,
     system_prompt: str | None = None,
     user_content: str = "<image>",
@@ -331,6 +342,16 @@ def prepare_detection_training_example(
                     eos_positions=eos_positions,
                     eos_trust_weight=eos_loss_weight,
                 ),
+            )
+        gated_targets = _apply_compact_type_gate(
+            recursive_detection_targets.token_targets,
+            tokenizer=tokenizer,
+            type_gate_config=type_gate_config,
+        )
+        if gated_targets != recursive_detection_targets.token_targets:
+            recursive_detection_targets = replace(
+                recursive_detection_targets,
+                token_targets=gated_targets,
             )
 
     return PreparedDetectionExample(
@@ -441,7 +462,7 @@ def build_compact_prefix_rollin_example(
         eos_positions=eos_positions,
         eos_trust_weight=eos_loss_weight,
     )
-    filtered_targets = _apply_prefix_rollin_type_gate(
+    filtered_targets = _apply_compact_type_gate(
         filtered_targets,
         tokenizer=tokenizer,
         type_gate_config=type_gate_config,
@@ -687,7 +708,7 @@ def compute_eos_trust_weight(gt_count: int, cfg: Any) -> float:
     raise ValueError(f"unsupported EOS trust weight source {source!r}")
 
 
-def _apply_prefix_rollin_type_gate(
+def _apply_compact_type_gate(
     token_targets: Sequence[TokenTarget],
     *,
     tokenizer: TokenizerWithOffsets,
@@ -1361,6 +1382,8 @@ def _append_recursive_entry_targets(
         )
 
     node = trie_root
+    coord_block_candidate_instances: tuple[_TrieObjectInstance, ...] | None = None
+    coord_block_candidates: tuple[CoordInstanceCandidateSpec, ...] = ()
     for offset, teacher_token_id in enumerate(teacher_token_ids):
         position = entry.trie_eligible_span.start + offset
         coord_slot_name = _coord_slot_name_for_position(entry, position)
@@ -1386,17 +1409,36 @@ def _append_recursive_entry_targets(
                     f"trie child probabilities must sum to 1.0 at position {position}; "
                     f"got {probability_mass}"
                 )
+        token_role = tokenized.token_roles[position]
         kind: TrieTargetKind = (
-            "trie_multi_positive" if len(trie_branch_targets) > 1 else "hard_ce"
+            "trie_multi_positive"
+            if len(trie_branch_targets) > 1 and token_role is TokenRole.DESC
+            else "hard_ce"
         )
+        positive_branch_targets = (
+            trie_branch_targets
+            if kind == "trie_multi_positive"
+            else (
+                TrieBranchTarget(
+                    token_id=teacher_token_id,
+                    multiplicity=1,
+                    probability=1.0,
+                ),
+            )
+        )
+        if coord_slot_name is not None and coord_block_candidate_instances is None:
+            coord_block_candidate_instances = tuple(node.descendant_instances)
+            coord_block_candidates = _coord_instance_candidates_for_instances(
+                coord_block_candidate_instances
+            )
         token_targets.append(
             TokenTarget(
                 position=position,
                 teacher_token_id=teacher_token_id,
                 kind=kind,
-                trie_branch_targets=trie_branch_targets,
+                trie_branch_targets=positive_branch_targets,
                 object_instance_id=entry.object_instance_id,
-                token_role=tokenized.token_roles[position],
+                token_role=token_role,
                 coord_soft_targets=(
                     _coord_soft_targets_for_instances(
                         node.descendant_instances,
@@ -1405,6 +1447,10 @@ def _append_recursive_entry_targets(
                     if coord_slot_name is not None
                     else ()
                 ),
+                coord_instance_candidates=(
+                    coord_block_candidates if coord_slot_name is not None else ()
+                ),
+                coord_slot_name=coord_slot_name,
             )
         )
         node = node.children[teacher_token_id]
@@ -1783,6 +1829,18 @@ def _coord_soft_targets_for_instances(
             slot_name=slot_name,
             bbox_xyxy=instance.bbox_xyxy,
             probability=probability,
+        )
+        for instance in instances
+    )
+
+
+def _coord_instance_candidates_for_instances(
+    instances: Sequence[_TrieObjectInstance],
+) -> tuple[CoordInstanceCandidateSpec, ...]:
+    return tuple(
+        CoordInstanceCandidateSpec(
+            object_instance_id=instance.object_instance_id,
+            bbox_xyxy=instance.bbox_xyxy,
         )
         for instance in instances
     )
