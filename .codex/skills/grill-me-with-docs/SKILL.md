@@ -1,5 +1,5 @@
 ---
-name: grill
+name: grill-me-with-docs
 description: Use when the user wants a rigorous CoordExp discussion that pressure-tests a research idea, experiment plan, model change, workflow, or architecture decision and records durable outcomes.
 ---
 
