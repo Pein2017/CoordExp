@@ -6,7 +6,7 @@ status: canonical
 domain: research-history
 summary: Router for failure investigations, mechanism studies, threshold sweeps, and operator notes that support diagnosis.
 tags: [progress, diagnostics, investigations]
-updated: 2026-05-09
+updated: 2026-05-18
 ---
 
 # Diagnostics Index
@@ -22,6 +22,18 @@ Prefer `progress/benchmarks/` when the output is mainly a measured run-vs-run or
 
 ## Current Clusters
 
+- Hard-CE coordinate-logit and token-embedding locality diagnostics
+  - Start with
+    [2026-05-18_hard_ce_coord_logit_embedding_locality.md](2026-05-18_hard_ce_coord_logit_embedding_locality.md)
+    for the current `val200` mechanism read comparing ET-RMP-CE and
+    random-shuffled pure hard-CE SFT at checkpoint `3664`, including
+    coordinate-logit locality, self-prefix fragility, effective coordinate-row
+    embedding geometry, and the narrowed SoftCE decision read.
+  - Use
+    [2026-05-18_gaussian_softce_a5_a6_coord_logit_locality.md](2026-05-18_gaussian_softce_a5_a6_coord_logit_locality.md)
+    for the Gaussian SoftCE A5/A6 follow-up on checkpoint `3664`, including
+    A5 Gaussian/default versus A6 CE-anchored mix-0.2 teacher-forced,
+    self-prefix, embedding-locality, and guarded `val200` rollout evidence.
 - Compact-full coord-confidence / stop-gate diagnostics
   - Start with
     [2026-05-08_compact_full_coord_confidence_stop_gate_diagnostics.md](2026-05-08_compact_full_coord_confidence_stop_gate_diagnostics.md)

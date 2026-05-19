@@ -1,5 +1,5 @@
 schema_version: 1
-updated: 2026-05-15
+updated: 2026-05-18
 
 entrypoints:
   human: progress/README.md
@@ -26,6 +26,8 @@ groups:
   diagnostics:
     - progress/diagnostics/README.md
     - progress/diagnostics/artifacts/README.md
+    - progress/diagnostics/2026-05-18_hard_ce_coord_logit_embedding_locality.md
+    - progress/diagnostics/2026-05-18_gaussian_softce_a5_a6_coord_logit_locality.md
     - progress/diagnostics/2026-05-08_compact_full_coord_confidence_stop_gate_diagnostics.md
     - progress/diagnostics/artifacts/et_rmp_continuation_diagnostics_2026-05-01/README.md
     - progress/diagnostics/2026-04-29_et_rmp_rp_continuation_bias_hypothesis.md
@@ -116,6 +118,16 @@ notes:
     kind: router
     status: canonical
     summary: Router for mechanism studies, failure investigations, threshold sweeps, and operator notes.
+  - path: progress/diagnostics/2026-05-18_hard_ce_coord_logit_embedding_locality.md
+    title: Hard-CE Coordinate-Logit And Embedding Locality Diagnosis
+    kind: diagnostic-study
+    status: active-reference
+    summary: Val200 mechanism diagnosis comparing ET-RMP-CE and random-shuffled pure hard-CE SFT at checkpoint 3664, showing strong coordinate-token row adjacency but fragile dynamic x1 onset locality and a narrowed SoftCE decision read.
+  - path: progress/diagnostics/2026-05-18_gaussian_softce_a5_a6_coord_logit_locality.md
+    title: Gaussian SoftCE A5/A6 Coordinate-Logit Locality Follow-Up
+    kind: diagnostic-study
+    status: active-reference
+    summary: Val200 follow-up for Gaussian SoftCE A5/A6 checkpoint 3664, showing A6 CE-anchored mix-0.2 is much healthier than A5 Gaussian/default but still does not beat the ET-RMP-CE baseline, while embedding locality remains strong across all runs.
   - path: progress/diagnostics/2026-04-21_raw_text_coordinate_mechanism_findings.md
     title: Raw-Text Coordinate Mechanism Findings
     kind: diagnostic-study
