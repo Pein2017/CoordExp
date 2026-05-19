@@ -13,6 +13,7 @@ from src.trainers.batch_extras import (
     INSTABILITY_META_JSON_KEY,
     PACK_NUM_SAMPLES_KEY,
     RECURSIVE_DETECTION_TARGETS_KEY,
+    TEACHER_FORCING_TARGET_IR_KEY,
     TOKEN_TYPES_KEY,
     get_stashed_batch_extras,
 )
@@ -30,6 +31,7 @@ def test_batch_extras_are_stripped_before_model_forward_and_stashed() -> None:
             assert TOKEN_TYPES_KEY not in inputs
             assert INSTABILITY_META_JSON_KEY not in inputs
             assert RECURSIVE_DETECTION_TARGETS_KEY not in inputs
+            assert TEACHER_FORCING_TARGET_IR_KEY not in inputs
 
             loss = torch.tensor(1.0)
             outputs = object()
@@ -65,6 +67,7 @@ def test_batch_extras_are_stripped_before_model_forward_and_stashed() -> None:
         TOKEN_TYPES_KEY: torch.zeros((2, 4), dtype=torch.long),
         INSTABILITY_META_JSON_KEY: "[]",
         RECURSIVE_DETECTION_TARGETS_KEY: ("target-a", "target-b"),
+        TEACHER_FORCING_TARGET_IR_KEY: ("ir-a", "ir-b"),
     }
 
     loss = trainer.compute_loss(model=None, inputs=inputs, return_outputs=False, num_items_in_batch=None)
@@ -77,6 +80,7 @@ def test_batch_extras_are_stripped_before_model_forward_and_stashed() -> None:
     assert isinstance(extras.token_types, torch.Tensor)
     assert extras.instability_meta_json == "[]"
     assert extras.recursive_detection_targets == ("target-a", "target-b")
+    assert extras.teacher_forcing_target_ir == ("ir-a", "ir-b")
 
 
 class _DummyTemplate:
@@ -127,5 +131,42 @@ def test_recursive_detection_targets_reject_packed_batches() -> None:
             [
                 [{"dataset": "coco", RECURSIVE_DETECTION_TARGETS_KEY: "target-a"}],
                 [{"dataset": "coco", RECURSIVE_DETECTION_TARGETS_KEY: "target-b"}],
+            ]
+        )
+
+
+def test_teacher_forcing_target_ir_is_collated_from_unpacked_samples() -> None:
+    collator = build_dataset_metrics_collator(_DummyTemplate(), _base_collator)
+
+    out = collator(
+        [
+            {"dataset": "coco", TEACHER_FORCING_TARGET_IR_KEY: "ir-a"},
+            {"dataset": "coco", TEACHER_FORCING_TARGET_IR_KEY: "ir-b"},
+        ]
+    )
+
+    assert out[TEACHER_FORCING_TARGET_IR_KEY] == ("ir-a", "ir-b")
+
+
+def test_teacher_forcing_target_ir_requires_all_unpacked_samples_to_have_sidecar() -> None:
+    collator = build_dataset_metrics_collator(_DummyTemplate(), _base_collator)
+
+    with pytest.raises(ValueError, match="teacher_forcing_target_ir"):
+        collator(
+            [
+                {"dataset": "coco", TEACHER_FORCING_TARGET_IR_KEY: "ir-a"},
+                {"dataset": "coco"},
+            ]
+        )
+
+
+def test_teacher_forcing_target_ir_rejects_packed_batches() -> None:
+    collator = build_dataset_metrics_collator(_DummyTemplate(), _base_collator)
+
+    with pytest.raises(ValueError, match="teacher_forcing_target_ir.*packing"):
+        collator(
+            [
+                [{"dataset": "coco", TEACHER_FORCING_TARGET_IR_KEY: "ir-a"}],
+                [{"dataset": "coco", TEACHER_FORCING_TARGET_IR_KEY: "ir-b"}],
             ]
         )

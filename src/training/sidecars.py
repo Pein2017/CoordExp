@@ -42,11 +42,13 @@ class SupervisionSidecars:
 
     :param spans: Semantic supervision spans or compatible span payloads.
     :param payloads: Additional supervision payload objects.
+    :param teacher_forcing_target_ir: Batch-local teacher-forcing target IR payloads.
     :param metadata: Optional sidecar metadata.
     """
 
     spans: Sequence[Any] = field(default_factory=tuple)
     payloads: Sequence[Any] = field(default_factory=tuple)
+    teacher_forcing_target_ir: Sequence[Any] | None = None
     metadata: SidecarMetadata = field(default_factory=dict)
 
     def __post_init__(self) -> None:
@@ -54,6 +56,12 @@ class SupervisionSidecars:
 
         object.__setattr__(self, "spans", _freeze_sequence(self.spans))
         object.__setattr__(self, "payloads", _freeze_sequence(self.payloads))
+        if self.teacher_forcing_target_ir is not None:
+            object.__setattr__(
+                self,
+                "teacher_forcing_target_ir",
+                _freeze_sequence(self.teacher_forcing_target_ir),
+            )
         object.__setattr__(self, "metadata", _freeze_mapping(self.metadata))
 
 

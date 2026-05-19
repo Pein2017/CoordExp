@@ -7,6 +7,8 @@ from dataclasses import dataclass
 from types import MappingProxyType
 from typing import Any, Literal, TypeAlias, cast
 
+from src.training.teacher_forcing.constants import TEACHER_FORCING_TARGET_IR_KEY
+
 BackendKeyDisposition: TypeAlias = Literal[
     "forwarded",
     "bridge_consumed",
@@ -75,6 +77,7 @@ SIDECAR_ONLY_KEYS: frozenset[str] = frozenset(
         "supervision_payload",
         "supervision_plan",
         "supervision_spans",
+        TEACHER_FORCING_TARGET_IR_KEY,
         "training_sidecars",
     }
 )

@@ -21,6 +21,7 @@ from src.data_collators.enrichers import (
     ProxySupervisionEnricher,
     RecursiveDetectionTargetsEnricher,
     SFTStructuralCloseEnricher,
+    TeacherForcingTargetIREnricher,
     TokenTypesEnricher,
 )
 
@@ -78,6 +79,7 @@ def build_batch_extras_collator(
     if instab_enabled:
         instab_enricher = InstabilityMetaEnricher(max_meta_samples=max_meta_samples)
     recursive_detection_targets_enricher = RecursiveDetectionTargetsEnricher()
+    teacher_forcing_target_ir_enricher = TeacherForcingTargetIREnricher()
 
     def _collate(batch: List[Dict[str, Any]]) -> Dict[str, Any]:
         collated = collate_fn(batch)
@@ -88,6 +90,11 @@ def build_batch_extras_collator(
             instab_enricher(batch=batch, collated=collated, packed=meta.packed)
 
         recursive_detection_targets_enricher(
+            collated=collated,
+            raw_batch=batch,
+            packed=meta.packed,
+        )
+        teacher_forcing_target_ir_enricher(
             collated=collated,
             raw_batch=batch,
             packed=meta.packed,

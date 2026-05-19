@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any
 
 import torch
@@ -16,7 +16,9 @@ from src.training.encoding.model_inputs import (
 )
 from src.training.objectives.runner import ObjectiveRunner
 from src.training.objectives.types import ObjectiveRunResult, ObjectiveSpec
+from src.training.sidecars import TrainingSidecars
 from src.training.supervision.batch import SupervisionBatch
+from src.training.teacher_forcing.constants import TEACHER_FORCING_TARGET_IR_KEY
 
 
 @dataclass(frozen=True, slots=True)
@@ -56,6 +58,7 @@ class TrainerLossBridgeResult:
     objective_result: ObjectiveRunResult
     model_inputs: ModelInputBundle
     coordinate_mapper: PredictionCoordinateMapper
+    training_sidecars: TrainingSidecars
 
 
 class TrainerLossBridge:
@@ -94,6 +97,7 @@ class TrainerLossBridge:
                 "the bridge currently returns ObjectiveRunner-owned losses only"
             )
 
+        training_sidecars = self._extract_training_sidecars(raw_batch)
         model_inputs = ModelInputBundle.from_mapping(
             self._strip_sidecars(raw_batch),
             runner_owns_loss=self._settings.runner_owns_loss,
@@ -142,6 +146,7 @@ class TrainerLossBridge:
             objective_result=objective_result,
             model_inputs=model_inputs,
             coordinate_mapper=coordinate_mapper,
+            training_sidecars=training_sidecars,
         )
 
     def _strip_sidecars(self, raw_batch: Mapping[str, Any]) -> dict[str, Any]:
@@ -152,6 +157,24 @@ class TrainerLossBridge:
             for key, value in raw_batch.items()
             if key not in SIDECAR_ONLY_KEYS
         }
+
+    def _extract_training_sidecars(self, raw_batch: Mapping[str, Any]) -> TrainingSidecars:
+        """Return semantic sidecars carried by the trainer batch."""
+
+        raw_sidecars = raw_batch.get("training_sidecars")
+        if type(raw_sidecars) is TrainingSidecars:
+            sidecars = raw_sidecars
+        else:
+            sidecars = TrainingSidecars()
+
+        if TEACHER_FORCING_TARGET_IR_KEY not in raw_batch:
+            return sidecars
+
+        supervision = replace(
+            sidecars.supervision,
+            teacher_forcing_target_ir=raw_batch[TEACHER_FORCING_TARGET_IR_KEY],
+        )
+        return replace(sidecars, supervision=supervision)
 
     def _reject_logits_projection(self, model_inputs: ModelInputBundle) -> None:
         """Reject logits projection unless an explicit future setting enables it."""

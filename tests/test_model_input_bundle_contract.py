@@ -18,6 +18,7 @@ from src.training.sidecars import (
     SupervisionSidecars,
     TrainingSidecars,
 )
+from src.training.teacher_forcing.constants import TEACHER_FORCING_TARGET_IR_KEY
 
 
 def test_model_input_bundle_forwards_only_registered_backend_inputs() -> None:
@@ -90,6 +91,7 @@ def test_runner_owns_loss_requires_plain_bool(runner_owns_loss: Any) -> None:
     "key",
     (
         "supervision_spans",
+        TEACHER_FORCING_TARGET_IR_KEY,
         "assignment_result",
         "duplicate_filter_result",
         "training_sidecars",
@@ -152,6 +154,7 @@ def test_backend_registry_classifies_current_qwen3_vl_boundary() -> None:
     assert registry["labels"] == "runner_owned_loss_stripped"
     assert registry["supervision_payload"] == "sidecar_only"
     assert registry["supervision_spans"] == "sidecar_only"
+    assert registry[TEACHER_FORCING_TARGET_IR_KEY] == "sidecar_only"
     assert registry["assignment_result"] == "sidecar_only"
     assert registry["duplicate_filter_result"] == "sidecar_only"
 
@@ -164,6 +167,7 @@ def test_training_sidecars_group_semantic_payloads_and_are_not_model_inputs() ->
         supervision=SupervisionSidecars(
             spans=("span-1",),
             payloads=("payload-1",),
+            teacher_forcing_target_ir=("ir-1",),
             metadata={"source": "unit"},
         ),
         diagnostics=DiagnosticSidecars(
@@ -184,6 +188,7 @@ def test_training_sidecars_group_semantic_payloads_and_are_not_model_inputs() ->
 
     assert sidecars.supervision.spans == ("span-1",)
     assert sidecars.supervision.payloads == ("payload-1",)
+    assert sidecars.supervision.teacher_forcing_target_ir == ("ir-1",)
     assert sidecars.diagnostics.rendered_assistant_text == "assistant text"
     assert sidecars.dataset.sample_id == "sample-1"
     assert sidecars.stage2.assignment_result == {"matched": 1}
