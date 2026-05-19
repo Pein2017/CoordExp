@@ -1,0 +1,2 @@
+TEACHER_FORCING_TARGET_IR_KEY = "teacher_forcing_target_ir"
+MARGINAL_SCOPE_SAMPLED_PATH_NEXT_TOKEN = "sampled_path_next_token"
