@@ -11,13 +11,15 @@ from src.common.detection_compact_rows import (
     BOX_START_TOKEN,
     COMPACT_ROW_COORD_TOKEN_RE,
     OBJECT_REF_START_TOKEN,
-    parse_compact_row,
-    render_compact_row,
 )
 from src.detection.data import (
     CoordinateTokenBox,
     NormalizedDetectionObject,
     NormalizedDetectionSample,
+)
+from src.detection.teacher_forcing.compact_full_policy import (
+    parse_compact_full,
+    render_compact_full,
 )
 from src.utils.assistant_json import dumps_coordjson
 
@@ -393,7 +395,7 @@ class CompactFullTemplate:
         coordinate_surface="coord_token",
         bbox_format="xyxy",
         object_field_order="compact_full_row",
-        object_separator="\n",
+        object_separator="",
         terminal_close="",
     )
 
@@ -471,22 +473,14 @@ class CompactFullTemplate:
     def parse_assistant(self, text: str) -> dict[str, Any]:
         if not text:
             return {"objects": []}
-        if text.endswith("\n") or "\n\n" in text:
-            raise ValueError("text is not strict compact_full")
-
-        objects: list[dict[str, Any]] = []
-        for row in text.split("\n"):
-            objects.append(_parse_compact_full_row(row))
-        return {"objects": objects}
+        result = parse_compact_full(text, mode="marker_delimited_strict")
+        if not result.ok:
+            raise ValueError(f"strict compact_full parse failed: {result.error_code}")
+        return result.to_payload()
 
     def render_entry(self, obj: NormalizedDetectionObject) -> str:
         _validate_compact_desc(obj.desc)
-        return render_compact_row(
-            obj.desc,
-            _render_bbox_coord_tokens(obj.bbox_2d),
-            include_object_ref_marker=True,
-            include_bbox_start_marker=True,
-        )
+        return render_compact_full({"objects": [obj]})
 
     def render_separator(self, before_index: int, after_index: int) -> str:
         del before_index, after_index
@@ -1124,21 +1118,6 @@ def _validate_compact_desc(desc: str) -> None:
     for forbidden in _COMPACT_FORBIDDEN_DESC_SUBSTRINGS:
         if forbidden in desc:
             raise ValueError(f"compact_full desc contains forbidden marker {forbidden!r}")
-
-
-def _parse_compact_full_row(row: str) -> dict[str, Any]:
-    parts = parse_compact_row(
-        row,
-        require_object_ref_marker=True,
-        require_bbox_start_marker=True,
-        bbox_marker_split="first",
-    )
-    if parts is None:
-        raise ValueError("text is not strict compact_full")
-    _validate_compact_desc(parts.desc)
-    coords = list(parts.bbox_tokens)
-    _validate_strict_coord_tokens(coords, context="strict compact_full bbox_2d")
-    return {"desc": parts.desc, "bbox_2d": coords}
 
 
 def _loads_coordjson_with_bare_coord_tokens(text: str) -> dict[str, Any]:

@@ -79,13 +79,14 @@ def test_compact_full_renders_approved_token_grammar_without_json_closure() -> N
 
     assert rendered.text == (
         f"{OBJECT_REF_START_TOKEN}traffic light{BOX_START_TOKEN}"
-        "<|coord_10|><|coord_20|><|coord_30|><|coord_40|>\n"
+        "<|coord_10|><|coord_20|><|coord_30|><|coord_40|>"
         f"{OBJECT_REF_START_TOKEN}person{BOX_START_TOKEN}"
         "<|coord_100|><|coord_200|><|coord_300|><|coord_400|>"
     )
+    assert "\n" not in rendered.text
     assert '{"objects"' not in rendered.text
     assert "]}" not in rendered.text
-    assert rendered.separator_spans[0].text(rendered.text) == "\n"
+    assert rendered.separator_spans[0].text(rendered.text) == ""
     assert rendered.terminal_close_span.start == len(rendered.text)
     assert rendered.terminal_close_span.end == len(rendered.text)
     assert rendered.terminal_close_span.text(rendered.text) == ""

@@ -153,7 +153,7 @@ def test_parse_prediction_ignores_extra_top_level_poly_field() -> None:
 def test_load_prediction_dict_accepts_compact_full_detection_sequence() -> None:
     raw = (
         "<|object_ref_start|>traffic light<|box_start|>"
-        "<|coord_10|><|coord_20|><|coord_30|><|coord_40|>\n"
+        "<|coord_10|><|coord_20|><|coord_30|><|coord_40|>"
         "<|object_ref_start|>person<|box_start|>"
         "<|coord_100|><|coord_200|><|coord_300|><|coord_400|><|im_end|>"
     )

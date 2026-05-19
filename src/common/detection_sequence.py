@@ -138,6 +138,15 @@ def render_compact_detection_sequence(
     fmt = normalize_detection_sequence_format(detection_sequence_format)
     if fmt == COORDJSON_FORMAT:
         return dumps_coordjson(payload)
+    if fmt == COMPACT_FULL_FORMAT:
+        from src.detection.teacher_forcing.compact_full_policy import (
+            render_compact_full,
+        )
+
+        return render_compact_full(
+            payload,
+            serialization_policy="marker_delimited",
+        )
 
     objects = payload.get("objects")
     if not isinstance(objects, Sequence) or isinstance(objects, (str, bytes)):
@@ -231,6 +240,13 @@ def parse_compact_detection_sequence(
     )
     if fmt == COORDJSON_FORMAT:
         return None
+    if fmt == COMPACT_FULL_FORMAT:
+        from src.detection.teacher_forcing.compact_full_policy import parse_compact_full
+
+        result = parse_compact_full(stripped, mode="legacy_compatible")
+        if not result.ok:
+            return None
+        return result.to_payload()
 
     objects: list[dict[str, Any]] = []
     for row in stripped.split("\n"):

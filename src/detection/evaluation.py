@@ -6,10 +6,13 @@ from dataclasses import asdict, dataclass
 from typing import Any, Literal
 
 from src.detection.template import TemplateId, get_detection_template
+from src.detection.teacher_forcing.compact_full_policy import parse_compact_full
 
 
 ParserMode = Literal[
     "strict_expected",
+    "marker_delimited_strict",
+    "legacy_compatible",
     "diagnostic_auto_detect",
     "diagnostic_salvage",
 ]
@@ -23,7 +26,13 @@ DIAGNOSTIC_ONLY_METRIC_SURFACE_BREAK = (
     "diagnostic_parser_outputs_are_not_metric_bearing"
 )
 _SUPPORTED_PARSER_MODES = frozenset(
-    {"strict_expected", "diagnostic_auto_detect", "diagnostic_salvage"}
+    {
+        "strict_expected",
+        "marker_delimited_strict",
+        "legacy_compatible",
+        "diagnostic_auto_detect",
+        "diagnostic_salvage",
+    }
 )
 
 
@@ -62,9 +71,9 @@ def parse_stage1_json_pretty_strict_expected(text: str) -> dict[str, Any]:
 
 
 def parse_compact_full_strict_expected(text: str) -> dict[str, Any]:
-    return _parse_expected_template(
+    return _parse_compact_full_expected(
         text,
-        expected_template="compact_full",
+        parser_mode="marker_delimited_strict",
     )
 
 
@@ -75,9 +84,18 @@ def parse_detection_output_strict_expected(
     parser_mode: str = "strict_expected",
 ) -> dict[str, Any]:
     parser_mode = _require_string(parser_mode, field_name="parser_mode")
+    template = get_detection_template(expected_template)
+    if template.template_id == "compact_full":
+        if parser_mode == "strict_expected":
+            parser_mode = "marker_delimited_strict"
+        if parser_mode not in {"marker_delimited_strict", "legacy_compatible"}:
+            raise ValueError(
+                f"Unsupported detection parser_mode for metrics: {parser_mode!r}"
+            )
+        return _parse_compact_full_expected(text, parser_mode=parser_mode)
     if parser_mode != "strict_expected":
         raise ValueError(f"Unsupported detection parser_mode for metrics: {parser_mode!r}")
-    return _parse_expected_template(text, expected_template=expected_template)
+    return _parse_expected_template(text, expected_template=template.template_id)
 
 
 def build_detection_template_eval_manifest(
@@ -104,10 +122,21 @@ def build_detection_template_eval_manifest(
             f"{template.template_id} evaluation requires coordinate_surface="
             f"{template.capabilities.coordinate_surface}"
         )
-    if parser_mode == "strict_expected":
+    if template.template_id == "compact_full" and parser_mode == "strict_expected":
+        parser_mode = "marker_delimited_strict"
+    if parser_mode in {
+        "strict_expected",
+        "marker_delimited_strict",
+        "legacy_compatible",
+    }:
+        if template.template_id != "compact_full" and parser_mode != "strict_expected":
+            raise ValueError(
+                f"{template.template_id} evaluation does not support "
+                f"parser_mode={parser_mode!r}"
+            )
         return DetectionTemplateEvalManifest(
             expected_template=template.template_id,
-            parser_mode="strict_expected",
+            parser_mode=_metric_parser_mode(parser_mode),
             coordinate_surface="coord_token",
             benchmark_scope=benchmark_scope,
             metric_surface="strict_expected_template",
@@ -139,6 +168,31 @@ def _parse_expected_template(
         raise ValueError(
             f"output does not match expected {template.template_id} template"
         ) from exc
+
+
+def _parse_compact_full_expected(text: str, *, parser_mode: str) -> dict[str, Any]:
+    text = _require_string(text, field_name="text")
+    result = parse_compact_full(text, mode=parser_mode)
+    if not result.ok:
+        raise ValueError(
+            "output does not match expected compact_full template: "
+            f"{result.error_code}"
+        )
+    return result.to_payload()
+
+
+def _metric_parser_mode(parser_mode: str) -> Literal[
+    "strict_expected",
+    "marker_delimited_strict",
+    "legacy_compatible",
+]:
+    if parser_mode == "strict_expected":
+        return "strict_expected"
+    if parser_mode == "marker_delimited_strict":
+        return "marker_delimited_strict"
+    if parser_mode == "legacy_compatible":
+        return "legacy_compatible"
+    raise ValueError(f"Unsupported detection parser_mode: {parser_mode!r}")
 
 
 def _diagnostic_parser_mode(parser_mode: str) -> Literal[
