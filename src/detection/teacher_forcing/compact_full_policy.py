@@ -13,6 +13,7 @@ from src.common.detection_compact_rows import (
     OBJECT_REF_START_TOKEN,
     STRICT_COMPACT_ROW_COORD_TOKEN_RE,
     render_compact_row,
+    valid_xyxy_positive_area,
 )
 
 CompactFullSerializationPolicy = Literal[
@@ -225,7 +226,7 @@ def _parse_one_object(
         return _error(mode, "wrong_coord_arity", coord_index)
 
     bbox = cast(tuple[str, str, str, str], tuple(bbox_tokens))
-    if not _valid_xyxy_geometry(bbox):
+    if not valid_xyxy_positive_area(bbox):
         return _error(mode, "invalid_geometry", box_start + len(BOX_START_TOKEN))
 
     return CompactFullParsedObject(description=desc, bbox_tokens=bbox), coord_index
@@ -289,18 +290,9 @@ def _validate_bbox_tokens(value: Any) -> tuple[str, str, str, str]:
     if not all(STRICT_COMPACT_ROW_COORD_TOKEN_RE.fullmatch(token) for token in tokens):
         raise ValueError("object bbox_2d must contain only <|coord_N|> tokens")
     bbox = cast(tuple[str, str, str, str], tokens)
-    if not _valid_xyxy_geometry(bbox):
+    if not valid_xyxy_positive_area(bbox):
         raise ValueError("object bbox_2d must be a valid xyxy positive-area box")
     return bbox
-
-
-def _valid_xyxy_geometry(tokens: tuple[str, str, str, str]) -> bool:
-    x1, y1, x2, y2 = (_coord_value(token) for token in tokens)
-    return x2 > x1 and y2 > y1
-
-
-def _coord_value(token: str) -> int:
-    return int(token.removeprefix("<|coord_").removesuffix("|>"))
 
 
 def _strip_generation_terminal(text: str) -> tuple[str, str | None]:

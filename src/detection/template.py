@@ -12,6 +12,7 @@ from src.common.detection_compact_rows import (
     COMPACT_DESC_FORBIDDEN_SUBSTRINGS,
     COMPACT_ROW_COORD_TOKEN_RE,
     OBJECT_REF_START_TOKEN,
+    valid_xyxy_positive_area,
 )
 from src.detection.data import (
     CoordinateTokenBox,
@@ -408,6 +409,7 @@ class CompactFullTemplate:
         )
         for obj in sample.objects:
             _validate_compact_desc(obj.desc)
+            _validate_compact_full_bbox_geometry(obj)
 
     def render_assistant(
         self,
@@ -1073,6 +1075,14 @@ def _validate_bbox_tokens(obj: NormalizedDetectionObject) -> None:
             raise ValueError(
                 f"object {obj.object_instance_id} must use coord-token bbox_2d values"
             )
+
+
+def _validate_compact_full_bbox_geometry(obj: NormalizedDetectionObject) -> None:
+    if not valid_xyxy_positive_area(_render_bbox_coord_tokens(obj.bbox_2d)):
+        raise ValueError(
+            f"object {obj.object_instance_id} compact_full bbox_2d must be a "
+            "valid xyxy positive-area box"
+        )
 
 
 def _render_bbox_coord_tokens(bbox_2d: CoordinateTokenBox) -> tuple[str, str, str, str]:

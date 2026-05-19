@@ -51,6 +51,17 @@ def render_compact_row(
     return f"{prefix}{desc}{bbox_start}{''.join(bbox_tokens)}"
 
 
+def valid_xyxy_positive_area(tokens: Sequence[str]) -> bool:
+    """Return whether four strict coord tokens form a positive-area xyxy box."""
+
+    if len(tokens) != 4:
+        return False
+    if not all(STRICT_COMPACT_ROW_COORD_TOKEN_RE.fullmatch(token) for token in tokens):
+        return False
+    x1, y1, x2, y2 = (_coord_token_value(token) for token in tokens)
+    return x2 > x1 and y2 > y1
+
+
 def parse_compact_row(
     row: str,
     *,
@@ -121,3 +132,7 @@ def _coord_tokens_from_matches(
     if coord_matches[-1].end() != len(text):
         return None
     return tuple(match.group(0) for match in coord_matches)
+
+
+def _coord_token_value(token: str) -> int:
+    return int(token.removeprefix("<|coord_").removesuffix("|>"))

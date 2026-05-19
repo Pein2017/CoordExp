@@ -216,6 +216,40 @@ def test_compact_full_rejects_desc_values_that_collide_with_grammar(
         CompactFullTemplate().render_assistant(_sample(desc=bad_desc))
 
 
+@pytest.mark.parametrize(
+    "bbox_2d",
+    [
+        CoordinateTokenBox(
+            "<|coord_30|>",
+            "<|coord_20|>",
+            "<|coord_10|>",
+            "<|coord_40|>",
+        ),
+        CoordinateTokenBox(
+            "<|coord_10|>",
+            "<|coord_20|>",
+            "<|coord_10|>",
+            "<|coord_40|>",
+        ),
+        CoordinateTokenBox(
+            "<|coord_10|>",
+            "<|coord_40|>",
+            "<|coord_30|>",
+            "<|coord_40|>",
+        ),
+    ],
+)
+def test_compact_full_render_rejects_non_positive_area_boxes(
+    bbox_2d: CoordinateTokenBox,
+) -> None:
+    sample = _sample()
+    bad_object = replace(sample.objects[0], bbox_2d=bbox_2d)
+    bad_sample = replace(sample, objects=(bad_object,))
+
+    with pytest.raises(ValueError, match="valid xyxy positive-area box"):
+        CompactFullTemplate().render_assistant(bad_sample)
+
+
 def test_compact_full_preserves_distinct_repeated_object_instances() -> None:
     rendered = CompactFullTemplate().render_assistant(_repeated_identical_sample())
     first, second = rendered.object_entries
