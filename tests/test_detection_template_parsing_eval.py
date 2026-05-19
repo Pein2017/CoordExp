@@ -88,6 +88,35 @@ def test_compact_full_eval_routes_marker_strict_and_legacy_compatible_modes() ->
     }
 
 
+def test_compact_full_marker_strict_treats_im_end_as_terminal_not_endoftext() -> None:
+    marker_with_padding = COMPACT_TEXT + "<|im_end|><|endoftext|><|endoftext|>"
+
+    assert parse_detection_output_strict_expected(
+        marker_with_padding,
+        expected_template="compact_full",
+        parser_mode="marker_delimited_strict",
+    ) == {
+        "objects": [
+            {
+                "desc": "cat",
+                "bbox_2d": [
+                    "<|coord_1|>",
+                    "<|coord_2|>",
+                    "<|coord_3|>",
+                    "<|coord_4|>",
+                ],
+            }
+        ]
+    }
+
+    with pytest.raises(ValueError, match="trailing_garbage"):
+        parse_detection_output_strict_expected(
+            COMPACT_TEXT + "<|endoftext|>",
+            expected_template="compact_full",
+            parser_mode="marker_delimited_strict",
+        )
+
+
 def test_stage1_json_pretty_strict_expected_parses_valid_json_output() -> None:
     assert parse_stage1_json_pretty_strict_expected(STAGE1_JSON_TEXT) == {
         "objects": [

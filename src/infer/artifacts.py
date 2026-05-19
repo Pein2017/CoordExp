@@ -142,6 +142,15 @@ def build_infer_resolved_meta(
         "detection_sequence_format": getattr(owner, "detection_sequence_format", "coordjson"),
         "object_field_order": owner.object_field_order,
         "object_ordering": owner.object_ordering,
+        "parsing": {
+            "compact_full": {
+                "mode": getattr(
+                    owner.cfg,
+                    "compact_full_parse_mode",
+                    "marker_delimited_strict",
+                ),
+            },
+        },
         "prompt_template_hash": owner.prompt_template_hash,
         "device": owner.cfg.device,
         "limit": owner.cfg.limit,
@@ -204,6 +213,15 @@ def build_infer_summary_payload(
             "detection_sequence_format": getattr(owner, "detection_sequence_format", "coordjson"),
             "object_field_order": owner.object_field_order,
             "object_ordering": owner.object_ordering,
+            "parsing": {
+                "compact_full": {
+                    "mode": getattr(
+                        owner.cfg,
+                        "compact_full_parse_mode",
+                        "marker_delimited_strict",
+                    ),
+                },
+            },
             "prompt_template_hash": owner.prompt_template_hash,
             "device": owner.cfg.device,
             "limit": owner.cfg.limit,

@@ -120,7 +120,7 @@ def _parse_marker_delimited_strict(
         if text.startswith(IM_END_TOKEN, index):
             terminal_token = IM_END_TOKEN
             index += len(IM_END_TOKEN)
-            if index != len(text):
+            if _strip_compat_padding_suffix(text[index:]):
                 return _error(mode, "trailing_garbage", index)
             break
         if not text.startswith(OBJECT_REF_START_TOKEN, index):
@@ -296,15 +296,17 @@ def _validate_bbox_tokens(value: Any) -> tuple[str, str, str, str]:
 
 
 def _strip_generation_terminal(text: str) -> tuple[str, str | None]:
-    terminal_positions = [
-        (pos, token)
-        for token in (IM_END_TOKEN, END_OF_TEXT_TOKEN)
-        if (pos := text.find(token)) >= 0
-    ]
-    if not terminal_positions:
-        return text.rstrip(), None
-    pos, token = min(terminal_positions, key=lambda item: item[0])
-    return text[:pos].rstrip(), token
+    im_end_pos = text.find(IM_END_TOKEN)
+    if im_end_pos >= 0:
+        return text[:im_end_pos].rstrip(), IM_END_TOKEN
+    return _strip_compat_padding_suffix(text).rstrip(), None
+
+
+def _strip_compat_padding_suffix(text: str) -> str:
+    stripped = text.rstrip()
+    while stripped.endswith(END_OF_TEXT_TOKEN):
+        stripped = stripped[: -len(END_OF_TEXT_TOKEN)].rstrip()
+    return stripped
 
 
 def _normalize_serialization_policy(value: str) -> CompactFullSerializationPolicy:

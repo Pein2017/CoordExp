@@ -113,6 +113,30 @@ def _require_choice(
     return v
 
 
+def _resolve_compact_full_parse_mode(cfg: Mapping[str, Any]) -> str:
+    infer_cfg = _get_map(cfg, "infer")
+    parsing_cfg = _get_map(infer_cfg, "parsing")
+    compact_cfg = _get_map(parsing_cfg, "compact_full")
+    raw_mode = compact_cfg.get("mode", "marker_delimited_strict")
+    if not isinstance(raw_mode, str):
+        raise ValueError("infer.parsing.compact_full.mode must be a string")
+    mode = raw_mode.strip().lower().replace("-", "_").replace(" ", "_")
+    if mode not in {"marker_delimited_strict", "legacy_compatible"}:
+        raise ValueError(
+            "infer.parsing.compact_full.mode must be one of "
+            "{'marker_delimited_strict', 'legacy_compatible'}"
+        )
+    if mode == "legacy_compatible":
+        metadata = _get_map(cfg, "metadata")
+        namespace = metadata.get("compatibility_namespace")
+        if namespace != "legacy":
+            raise ValueError(
+                "infer.parsing.compact_full.mode=legacy_compatible requires "
+                "metadata.compatibility_namespace=legacy"
+            )
+    return mode
+
+
 def _get_int(cfg: Mapping[str, Any], key: str, default: int) -> int:
     val = cfg.get(key, default)
     try:
@@ -634,6 +658,7 @@ def run_pipeline(
         resolved_object_field_order,
         resolved_object_ordering,
     ) = _resolve_infer_prompt_controls(infer_cfg)
+    resolved_compact_full_parse_mode = _resolve_compact_full_parse_mode(cfg)
     resolved_coord_mode = _resolve_infer_coord_mode(infer_cfg)
     if resolved_checkpoint is not None:
         validate_compact_coord_token_adapter_contract(
@@ -664,6 +689,7 @@ def run_pipeline(
     resolved_dump = {
         "schema_version": RESOLVED_CONFIG_SCHEMA_VERSION,
         "config_path": str(config_path),
+        "metadata": dict(_get_map(cfg, "metadata")),
         "root_image_dir": root_image_dir,
         "root_image_dir_source": root_image_dir_source,
         "stages": {
@@ -711,6 +737,20 @@ def run_pipeline(
             "detection_sequence_format": resolved_detection_sequence_format,
             "object_field_order": resolved_object_field_order,
             "object_ordering": resolved_object_ordering,
+            "parsing": {
+                "compact_full": {
+                    "mode": resolved_compact_full_parse_mode,
+                },
+            },
+            "generation": {
+                "compact_grammar": {
+                    "enabled": _get_bool(
+                        _get_map(_get_map(infer_cfg, "generation"), "compact_grammar"),
+                        "enabled",
+                        False,
+                    ),
+                },
+            },
             "prompt_template_hash": resolved_prompt_hash,
             "checkpoint_mode": (
                 resolved_checkpoint.checkpoint_mode
@@ -1079,6 +1119,7 @@ def _run_infer_stage(
             )
 
     rank, local_rank, world_size, distributed_enabled = _detect_infer_distributed_env()
+    compact_full_parse_mode = _resolve_compact_full_parse_mode(cfg)
 
     inf_cfg = InferenceConfig(
         gt_jsonl=gt_jsonl,
@@ -1095,6 +1136,7 @@ def _run_infer_stage(
         detection_sequence_format=detection_sequence_format,
         object_field_order=object_field_order,
         object_ordering=object_ordering,
+        compact_full_parse_mode=compact_full_parse_mode,
         pred_coord_mode=pred_coord_mode,
         out_path=str(artifacts.gt_vs_pred_jsonl),
         pred_token_trace_path=str(artifacts.pred_token_trace_jsonl),

@@ -6,7 +6,12 @@ from dataclasses import asdict, dataclass
 from typing import Any, Literal
 
 from src.detection.template import TemplateId, get_detection_template
-from src.detection.teacher_forcing.compact_full_policy import parse_compact_full
+from src.detection.teacher_forcing.compact_full_policy import (
+    END_OF_TEXT_TOKEN,
+    IM_END_TOKEN,
+    OBJECT_REF_START_TOKEN,
+    parse_compact_full,
+)
 
 
 ParserMode = Literal[
@@ -75,6 +80,31 @@ def parse_compact_full_strict_expected(text: str) -> dict[str, Any]:
         text,
         parser_mode="marker_delimited_strict",
     )
+
+
+def parse_compact_full_output_artifact(
+    text: str,
+    *,
+    parse_mode: str = "marker_delimited_strict",
+) -> dict[str, Any]:
+    """Parse compact_full inference text and return payload plus policy metadata."""
+
+    text = _require_string(text, field_name="text")
+    parse_mode = _require_string(parse_mode, field_name="parse_mode")
+    result = parse_compact_full(text, mode=parse_mode)
+    serialization_policy, object_separator = _compact_full_output_policy(
+        text,
+        parse_mode=result.mode,
+    )
+    return {
+        "raw_output_json": result.to_payload() if result.ok else None,
+        "parse_mode": result.mode,
+        "serialization_policy": serialization_policy,
+        "object_separator": object_separator,
+        "terminal_token": result.terminal_token,
+        "parse_error_code": result.error_code,
+        "parse_error_offset": result.error_offset,
+    }
 
 
 def parse_detection_output_strict_expected(
@@ -181,6 +211,29 @@ def _parse_compact_full_expected(text: str, *, parser_mode: str) -> dict[str, An
     return result.to_payload()
 
 
+def _compact_full_output_policy(
+    text: str,
+    *,
+    parse_mode: str,
+) -> tuple[str, str]:
+    if parse_mode == "marker_delimited_strict":
+        return "marker_delimited", OBJECT_REF_START_TOKEN
+    effective = _strip_compact_terminal_and_padding(text)
+    if "\n" in effective:
+        return "legacy_newline_delimited", "\n"
+    return "marker_delimited", OBJECT_REF_START_TOKEN
+
+
+def _strip_compact_terminal_and_padding(text: str) -> str:
+    im_end_pos = text.find(IM_END_TOKEN)
+    if im_end_pos >= 0:
+        return text[:im_end_pos].rstrip()
+    stripped = text.rstrip()
+    while stripped.endswith(END_OF_TEXT_TOKEN):
+        stripped = stripped[: -len(END_OF_TEXT_TOKEN)].rstrip()
+    return stripped
+
+
 def _metric_parser_mode(parser_mode: str) -> Literal[
     "strict_expected",
     "marker_delimited_strict",
@@ -213,6 +266,7 @@ __all__ = [
     "ParserMode",
     "STRICT_EXPECTED_METRIC_SURFACE_BREAK",
     "build_detection_template_eval_manifest",
+    "parse_compact_full_output_artifact",
     "parse_compact_full_strict_expected",
     "parse_detection_output_strict_expected",
     "parse_stage1_json_pretty_strict_expected",

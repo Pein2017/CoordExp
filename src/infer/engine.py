@@ -108,6 +108,7 @@ from src.config.prompts import (
 )
 from src.common.prediction_parsing import extract_special_tokens, load_prediction_dict
 from src.common.paths import resolve_image_path_strict
+from src.detection.evaluation import parse_compact_full_output_artifact
 from src.infer.checkpoints import (
     ResolvedInferenceCheckpoint,
     VLLM_ADAPTER_UNSUPPORTED_MESSAGE,
@@ -357,6 +358,7 @@ class InferenceConfig:
     detection_sequence_format: str = COORDJSON_FORMAT
     object_field_order: ObjectFieldOrder = "desc_first"
     object_ordering: ObjectOrdering = "sorted"
+    compact_full_parse_mode: str = "marker_delimited_strict"
     pred_coord_mode: Literal["auto", "norm1000", "pixel"] = "auto"
     adapter_checkpoint: Optional[str] = None
     checkpoint_mode: str = "full_model"
@@ -1264,7 +1266,31 @@ class InferenceEngine:
         width: int,
         height: int,
         errors: List[str],
+        compact_parse_artifact: Optional[Dict[str, Any]] = None,
     ) -> List[Dict[str, Any]]:
+        if self.detection_sequence_format == "compact_full":
+            artifact = compact_parse_artifact or parse_compact_full_output_artifact(
+                raw_text,
+                parse_mode=self.cfg.compact_full_parse_mode,
+            )
+            payload = artifact.get("raw_output_json")
+            if not isinstance(payload, Mapping):
+                errors.append("empty_pred")
+                return []
+            objects = payload.get("objects")
+            if not isinstance(objects, list) or not objects:
+                errors.append("empty_pred")
+                return []
+            preds = self.coord.process_objects(
+                objects,
+                width=width,
+                height=height,
+                is_gt=False,
+                errors=errors,
+            )
+            if not preds and "empty_pred" not in errors:
+                errors.append("empty_pred")
+            return preds
         return self.coord.process_prediction_text(
             raw_text, width=width, height=height, errors=errors
         )
@@ -1733,8 +1759,19 @@ class InferenceEngine:
                 raw_special_tokens = extract_special_tokens(
                     raw_text, preserve_duplicates=True
                 )
-                raw_ends_with_im_end = raw_text.endswith("<|im_end|>")
-                raw_output_json = load_prediction_dict(raw_text)
+                compact_parse_artifact: Optional[Dict[str, Any]] = None
+                if self.detection_sequence_format == "compact_full":
+                    compact_parse_artifact = parse_compact_full_output_artifact(
+                        raw_text,
+                        parse_mode=self.cfg.compact_full_parse_mode,
+                    )
+                    raw_output_json = compact_parse_artifact["raw_output_json"]
+                    raw_ends_with_im_end = (
+                        compact_parse_artifact.get("terminal_token") == IM_END_TOKEN
+                    )
+                else:
+                    raw_ends_with_im_end = raw_text.endswith("<|im_end|>")
+                    raw_output_json = load_prediction_dict(raw_text)
 
                 pred_errors: List[str] = []
                 pred = self._process_pred(
@@ -1742,6 +1779,7 @@ class InferenceEngine:
                     width=int(p["width"]),
                     height=int(p["height"]),
                     errors=pred_errors,
+                    compact_parse_artifact=compact_parse_artifact,
                 )
                 pred = self._compact_objects(pred)
 
@@ -1763,6 +1801,27 @@ class InferenceEngine:
                     "errors": error_codes,
                     "error_entries": error_entries,
                 }
+                if compact_parse_artifact is not None:
+                    output.update(
+                        {
+                            "parse_mode": compact_parse_artifact["parse_mode"],
+                            "serialization_policy": compact_parse_artifact[
+                                "serialization_policy"
+                            ],
+                            "object_separator": compact_parse_artifact[
+                                "object_separator"
+                            ],
+                            "terminal_token": compact_parse_artifact[
+                                "terminal_token"
+                            ],
+                            "parse_error_code": compact_parse_artifact[
+                                "parse_error_code"
+                            ],
+                            "parse_error_offset": compact_parse_artifact[
+                                "parse_error_offset"
+                            ],
+                        }
+                    )
                 if p.get("image_id") is not None:
                     output["image_id"] = p.get("image_id")
                 if isinstance(p.get("metadata"), Mapping):
