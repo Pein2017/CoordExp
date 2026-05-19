@@ -6,12 +6,23 @@ description: Use when the user explicitly asks to be grilled, stress-test a rese
 # Grill Me
 
 Use this as a focused clarification loop. For longer docs-aware sessions where
-resolved discussion must update durable repo records, use `grill`.
+resolved discussion must update durable repo records, use
+`grill-me-with-docs`.
+
+## Core Loop
+
+- Interview the user relentlessly until the plan, design, or decision reaches
+  shared understanding.
+- Walk the decision tree branch by branch, resolving dependencies between
+  decisions in order.
+- Ask exactly one question at a time, and include your recommended answer.
+- If repo context can answer the question, inspect the repo or artifacts first
+  instead of asking.
+- Stop grilling once the remaining uncertainty no longer changes the decision,
+  evidence plan, compatibility story, or next action.
 
 ## CoordExp Ground Rules
 
-- Ask one question at a time and include your recommended answer.
-- If repo context can answer the question, inspect the repo or artifacts first instead of asking.
 - Distinguish hypothesis, implementation plan, experiment result, interpretation, and stable contract.
 - Keep super-power plans, OpenSpec, docs, progress notes, and repo artifacts in their existing ownership lanes.
 - Do not rely on the context window as the only record when the decision will steer future work.
@@ -37,5 +48,6 @@ After each resolved branch, decide whether it produced a durable record:
 - For stable compatibility contracts, use `openspec/specs/` only when the contract is truly normative and compatibility-sensitive.
 - For executable truth, prefer repo configs, tests, scripts, manifests, and artifact paths over prose summaries.
 
-For detailed record shapes, use `../grill/RECORDING.md` when available. If the
-right surface is unclear, ask one short question with a recommended target.
+For detailed record shapes, use `../grill-me-with-docs/RECORDING.md` when
+available. If the right surface is unclear, ask one short question with a
+recommended target.

@@ -3,7 +3,7 @@ name: grill-me-with-docs
 description: Use when the user wants a rigorous CoordExp discussion that pressure-tests a research idea, experiment plan, model change, workflow, or architecture decision and records durable outcomes.
 ---
 
-# Grill
+# Grill With Docs
 
 Use this for a longer pressure-testing session where discussion should leave
 repo-local records, not just chat context. For a short direct challenge loop,
@@ -13,11 +13,21 @@ use `grill-me`; for architecture-specific refactor discovery, use
 ## Operating Loop
 
 - Start from the repo route: `docs/AGENT_INDEX.md`, `docs/catalog.yaml`, then the relevant docs, specs, configs, artifacts, or `progress/` notes.
-- Ask one question at a time and include your recommended answer.
+- Interview the user relentlessly until the plan, design, or decision reaches shared understanding.
+- Walk the decision tree branch by branch, resolving dependencies between decisions in order.
+- Ask exactly one question at a time, include your recommended answer, and wait for feedback before continuing.
 - If the repo or artifacts can answer the question, inspect them before asking.
 - Separate hypothesis, mechanism, implementation plan, experiment result, interpretation, and stable contract.
 - Stress-test the plan against concrete scenarios: data edge cases, geometry/order preservation, config inheritance, eval validity, artifact completeness, cost, and rollback.
 - Record resolved outcomes promptly using [RECORDING.md](RECORDING.md).
+
+## Domain Awareness
+
+- Treat CoordExp docs, specs, configs, tests, manifests, artifacts, and progress notes as the project language model.
+- When the user uses a term that conflicts with existing repo language, call out the conflict immediately and ask which meaning should win.
+- When language is vague or overloaded, propose a precise canonical term tied to the relevant code, config key, artifact, metric, or doc path.
+- Cross-reference claims with code and artifacts. If the code says something different from the discussion, surface the contradiction as the next question.
+- Do not import the official skill's root `CONTEXT.md` or generic ADR layout unless the repo already uses that surface for the topic.
 
 ## What To Challenge
 
@@ -39,3 +49,8 @@ placeholder docs, generic ADRs, root `CONTEXT.md`, or duplicate summaries.
 
 Records should be compact and link-rich: decision, rationale, consequence,
 exact paths or artifacts, evidence scope, and open follow-up.
+
+Offer a durable decision record only when the decision is hard to reverse,
+surprising without context, and the result of a real trade-off. Record measured
+evidence, stable behavior, and executable truth on the surfaces named in
+[RECORDING.md](RECORDING.md).
