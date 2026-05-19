@@ -199,6 +199,11 @@ class TrainerLossBridge:
         )
         if teacher_forcing_target_ir is None:
             return sidecars
+        if self._teacher_forcing_target_ir_equal(
+            sidecars.supervision.teacher_forcing_target_ir,
+            teacher_forcing_target_ir,
+        ):
+            return sidecars
 
         supervision = replace(
             sidecars.supervision,
@@ -214,9 +219,7 @@ class TrainerLossBridge:
     ) -> None:
         """Validate explicit and raw full sidecars do not disagree."""
 
-        explicit_ir = explicit_sidecars.supervision.teacher_forcing_target_ir
-        raw_ir = raw_sidecars.supervision.teacher_forcing_target_ir
-        if self._teacher_forcing_target_ir_equal(explicit_ir, raw_ir):
+        if self._sidecar_payload_equal(explicit_sidecars, raw_sidecars):
             return
 
         raise ValueError(
@@ -266,6 +269,17 @@ class TrainerLossBridge:
     @staticmethod
     def _teacher_forcing_target_ir_equal(left: Any, right: Any) -> bool:
         """Return whether two source payloads are equivalent."""
+
+        if left is right:
+            return True
+        try:
+            return bool(left == right)
+        except (RuntimeError, TypeError, ValueError):
+            return False
+
+    @staticmethod
+    def _sidecar_payload_equal(left: TrainingSidecars, right: TrainingSidecars) -> bool:
+        """Return whether two full semantic sidecar payloads are equivalent."""
 
         if left is right:
             return True

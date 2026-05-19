@@ -11,7 +11,12 @@ from src.data_collators.dataset_metrics import build_dataset_metrics_collator
 from src.trainers.batch_extras import BatchExtras, pop_batch_extras
 from src.training.bridge import TrainerLossBridge
 from src.training.objectives.types import ObjectiveSpec
-from src.training.sidecars import SupervisionSidecars, TrainingSidecars
+from src.training.sidecars import (
+    DatasetSidecars,
+    Stage2OwnershipSidecars,
+    SupervisionSidecars,
+    TrainingSidecars,
+)
 from src.training.supervision.batch import SupervisionBatch
 from src.training.teacher_forcing.constants import TEACHER_FORCING_TARGET_IR_KEY
 
@@ -236,6 +241,57 @@ def test_explicit_and_raw_training_sidecars_same_ir_preserves_explicit() -> None
 
     assert result.training_sidecars is not raw_batch["training_sidecars"]
     assert result.training_sidecars.supervision.teacher_forcing_target_ir is explicit_ir
+
+
+def test_equal_explicit_and_raw_training_sidecars_preserves_explicit() -> None:
+    explicit_sidecars = TrainingSidecars(
+        supervision=SupervisionSidecars(
+            teacher_forcing_target_ir=("same-ir",),
+        ),
+        dataset=DatasetSidecars(sample_id="sample-1"),
+        stage2=Stage2OwnershipSidecars(assignment_result={"matched": 1}),
+    )
+    raw_batch = _minimal_raw_batch()
+    raw_batch["training_sidecars"] = TrainingSidecars(
+        supervision=SupervisionSidecars(
+            teacher_forcing_target_ir=("same-ir",),
+        ),
+        dataset=DatasetSidecars(sample_id="sample-1"),
+        stage2=Stage2OwnershipSidecars(assignment_result={"matched": 1}),
+    )
+
+    result = TrainerLossBridge().compute_loss(
+        model=_FakeModel(torch.zeros((1, 2, 5), dtype=torch.float32)),
+        raw_batch=raw_batch,
+        training_sidecars=explicit_sidecars,
+        supervision=SupervisionBatch(),
+        objectives=(ObjectiveSpec("token_ce"),),
+    )
+
+    assert result.training_sidecars is explicit_sidecars
+
+
+def test_explicit_and_raw_training_sidecars_full_payload_conflict_fails() -> None:
+    explicit_sidecars = TrainingSidecars(
+        dataset=DatasetSidecars(sample_id="explicit-sample"),
+    )
+    raw_batch = _minimal_raw_batch()
+    raw_batch["training_sidecars"] = TrainingSidecars(
+        dataset=DatasetSidecars(sample_id="raw-sample"),
+        stage2=Stage2OwnershipSidecars(assignment_result={"matched": 1}),
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="training_sidecars.*raw_batch\\.training_sidecars",
+    ):
+        TrainerLossBridge().compute_loss(
+            model=_FakeModel(torch.zeros((1, 2, 5), dtype=torch.float32)),
+            raw_batch=raw_batch,
+            training_sidecars=explicit_sidecars,
+            supervision=SupervisionBatch(),
+            objectives=(ObjectiveSpec("token_ce"),),
+        )
 
 
 def test_explicit_and_raw_training_sidecars_different_ir_conflict_fails() -> None:
