@@ -299,3 +299,35 @@ def test_training_config_accepts_teacher_forcing_objective_without_stage2() -> N
 
     assert cfg.objective is not None
     assert cfg.objective.id == "teacher_forcing"
+
+
+def test_checked_in_latest_teacher_forcing_smoke_config_materializes() -> None:
+    config_path = (
+        Path(__file__).resolve().parents[1]
+        / "configs/stage1/teacher_forcing/smoke/compact_full_hard_sft_tiny.yaml"
+    )
+
+    cfg = ConfigLoader.load_materialized_training_config(str(config_path))
+
+    assert isinstance(cfg, LatestDetectionTrainingConfig)
+    assert cfg.objective.id == "teacher_forcing"
+    assert cfg.objective.profile == "hard_sft"
+    assert cfg.objective.target_ir.rollin_policy.name == "random_permutation"
+    assert cfg.objective.modules.within_valid_coverage.enabled is False
+    assert cfg.training["packing"] is False
+
+
+def test_checked_in_stage2_teacher_forcing_smoke_config_materializes() -> None:
+    config_path = (
+        Path(__file__).resolve().parents[1]
+        / "configs/stage2_two_channel/teacher_forcing/pure_valid_set_marginal_smoke.yaml"
+    )
+
+    cfg = ConfigLoader.load_materialized_training_config(str(config_path))
+
+    assert isinstance(cfg, TrainingConfig)
+    assert cfg.objective is not None
+    assert cfg.objective.id == "teacher_forcing"
+    assert cfg.objective.profile == "pure_valid_set_marginal"
+    assert cfg.stage2_ab is not None
+    assert cfg.stage2_ab.pipeline.objective == ()
