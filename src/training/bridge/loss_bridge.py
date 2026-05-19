@@ -8,6 +8,7 @@ from typing import Any
 
 import torch
 
+from src.trainers.batch_extras import BatchExtras
 from src.trainers.teacher_forcing.forwards import prepare_forward_inputs
 from src.training.bridge.coordinate_mapper import PredictionCoordinateMapper
 from src.training.encoding.model_inputs import (
@@ -80,6 +81,8 @@ class TrainerLossBridge:
         *,
         model: Any,
         raw_batch: Mapping[str, Any],
+        batch_extras: BatchExtras | None = None,
+        training_sidecars: TrainingSidecars | None = None,
         supervision: SupervisionBatch,
         objectives: Sequence[ObjectiveSpec],
         sample_id_to_batch_index: Mapping[str, int] | None = None,
@@ -89,6 +92,10 @@ class TrainerLossBridge:
         # establish the validated model-input bundle after dropping sidecars.
         if not isinstance(raw_batch, Mapping):
             raise TypeError("raw_batch must be a mapping")
+        if batch_extras is not None and type(batch_extras) is not BatchExtras:
+            raise TypeError("batch_extras must be a BatchExtras or None")
+        if training_sidecars is not None and type(training_sidecars) is not TrainingSidecars:
+            raise TypeError("training_sidecars must be a TrainingSidecars or None")
         if type(supervision) is not SupervisionBatch:
             raise TypeError("supervision must be a SupervisionBatch")
         if not self._settings.runner_owns_loss:
@@ -97,7 +104,11 @@ class TrainerLossBridge:
                 "the bridge currently returns ObjectiveRunner-owned losses only"
             )
 
-        training_sidecars = self._extract_training_sidecars(raw_batch)
+        resolved_sidecars = self._extract_training_sidecars(
+            raw_batch,
+            batch_extras=batch_extras,
+            training_sidecars=training_sidecars,
+        )
         model_inputs = ModelInputBundle.from_mapping(
             self._strip_sidecars(raw_batch),
             runner_owns_loss=self._settings.runner_owns_loss,
@@ -146,7 +157,7 @@ class TrainerLossBridge:
             objective_result=objective_result,
             model_inputs=model_inputs,
             coordinate_mapper=coordinate_mapper,
-            training_sidecars=training_sidecars,
+            training_sidecars=resolved_sidecars,
         )
 
     def _strip_sidecars(self, raw_batch: Mapping[str, Any]) -> dict[str, Any]:
@@ -158,21 +169,33 @@ class TrainerLossBridge:
             if key not in SIDECAR_ONLY_KEYS
         }
 
-    def _extract_training_sidecars(self, raw_batch: Mapping[str, Any]) -> TrainingSidecars:
+    def _extract_training_sidecars(
+        self,
+        raw_batch: Mapping[str, Any],
+        *,
+        batch_extras: BatchExtras | None,
+        training_sidecars: TrainingSidecars | None,
+    ) -> TrainingSidecars:
         """Return semantic sidecars carried by the trainer batch."""
 
         raw_sidecars = raw_batch.get("training_sidecars")
-        if type(raw_sidecars) is TrainingSidecars:
+        if training_sidecars is not None:
+            sidecars = training_sidecars
+        elif type(raw_sidecars) is TrainingSidecars:
             sidecars = raw_sidecars
         else:
             sidecars = TrainingSidecars()
 
-        if TEACHER_FORCING_TARGET_IR_KEY not in raw_batch:
+        teacher_forcing_target_ir = raw_batch.get(TEACHER_FORCING_TARGET_IR_KEY)
+        if batch_extras is not None and batch_extras.teacher_forcing_target_ir is not None:
+            teacher_forcing_target_ir = batch_extras.teacher_forcing_target_ir
+
+        if teacher_forcing_target_ir is None:
             return sidecars
 
         supervision = replace(
             sidecars.supervision,
-            teacher_forcing_target_ir=raw_batch[TEACHER_FORCING_TARGET_IR_KEY],
+            teacher_forcing_target_ir=teacher_forcing_target_ir,
         )
         return replace(sidecars, supervision=supervision)
 

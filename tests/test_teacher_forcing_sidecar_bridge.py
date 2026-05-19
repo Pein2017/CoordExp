@@ -108,6 +108,31 @@ def test_trainer_loss_bridge_strips_teacher_forcing_target_ir_and_carries_sideca
     assert model.calls[0]["max_length_k"] == 2
 
 
+def test_trainer_loss_bridge_carries_teacher_forcing_ir_after_batch_extras_pop() -> None:
+    collator = build_dataset_metrics_collator(_DummyTemplate(), _base_collator)
+    target_ir = {"schema_version": 1, "atoms": []}
+    raw_batch = collator(
+        [
+            {"dataset": "coco", TEACHER_FORCING_TARGET_IR_KEY: target_ir},
+        ]
+    )
+    batch_extras = pop_batch_extras(raw_batch)
+    model = _FakeModel(torch.zeros((1, 4, 5), dtype=torch.float32))
+
+    assert TEACHER_FORCING_TARGET_IR_KEY not in raw_batch
+
+    result = TrainerLossBridge().compute_loss(
+        model=model,
+        raw_batch=raw_batch,
+        batch_extras=batch_extras,
+        supervision=SupervisionBatch(),
+        objectives=(ObjectiveSpec("token_ce"),),
+    )
+
+    assert TEACHER_FORCING_TARGET_IR_KEY not in model.calls[0]
+    assert result.training_sidecars.supervision.teacher_forcing_target_ir == (target_ir,)
+
+
 def test_trainer_loss_bridge_rejects_logits_to_keep_for_teacher_forcing_sidecar() -> None:
     model = _FakeModel(torch.zeros((1, 2, 5), dtype=torch.float32))
 
