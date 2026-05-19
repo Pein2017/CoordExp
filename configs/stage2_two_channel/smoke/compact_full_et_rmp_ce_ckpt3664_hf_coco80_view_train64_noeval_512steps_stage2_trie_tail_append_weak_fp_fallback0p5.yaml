@@ -13,3 +13,6 @@ training:
 stage2_ab:
   channel_b:
     fallback_loss_weight: 0.5
+
+rollout_matching:
+  repetition_penalty: 1.10

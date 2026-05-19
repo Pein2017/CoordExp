@@ -12,3 +12,6 @@ training:
   save_strategy: steps
   save_steps: 512
   save_total_limit: 1
+
+rollout_matching:
+  repetition_penalty: 1.10

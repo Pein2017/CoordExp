@@ -13,3 +13,6 @@ stage2_ab:
     fp_policy:
       mode: weak_positive_context
       weak_positive_weight: 0.10
+
+rollout_matching:
+  repetition_penalty: 1.10

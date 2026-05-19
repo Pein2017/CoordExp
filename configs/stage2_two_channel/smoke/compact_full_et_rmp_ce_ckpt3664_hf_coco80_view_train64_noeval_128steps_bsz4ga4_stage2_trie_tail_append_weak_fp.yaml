@@ -17,5 +17,6 @@ training:
   save_steps: 128
 
 rollout_matching:
+  repetition_penalty: 1.10
   channel_b_decode_batch_size: 4
   eval_decode_batch_size: 4
