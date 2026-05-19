@@ -37,6 +37,7 @@ CompactFullParseErrorCode = Literal[
 ]
 
 _FORBIDDEN_DESCRIPTION_TOKENS = (
+    "\n",
     "\r",
     "\t",
     OBJECT_REF_START_TOKEN,
