@@ -4285,4 +4285,3 @@ def test_packed_prompt_prefix_sanity_check_rejects_mismatch():
             coord_id_set=coord_id_set,
             coord_id_to_bin=coord_id_to_bin,
         )
-
