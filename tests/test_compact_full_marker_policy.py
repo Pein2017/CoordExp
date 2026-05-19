@@ -4,6 +4,7 @@ import pytest
 
 from src.detection.teacher_forcing.compact_full_policy import (
     BOX_START_TOKEN,
+    END_OF_TEXT_TOKEN,
     IM_END_TOKEN,
     OBJECT_REF_START_TOKEN,
     parse_compact_full,
@@ -140,3 +141,84 @@ def test_strict_marker_parser_returns_stable_error_codes(
 ) -> None:
     result = parse_compact_full(text, mode="marker_delimited_strict")
     assert result.error_code == error_code
+
+
+@pytest.mark.parametrize(
+    ("bad_tail", "error_code"),
+    [
+        ("<|coord_1000|>", "invalid_coord_token"),
+        ("", "wrong_coord_arity"),
+        (
+            "<|coord_30|><|coord_20|><|coord_10|><|coord_40|>",
+            "invalid_geometry",
+        ),
+    ],
+)
+def test_legacy_compatible_parser_reports_second_row_global_error_offsets(
+    bad_tail: str,
+    error_code: str,
+) -> None:
+    first_row = (
+        f"{OBJECT_REF_START_TOKEN}person{BOX_START_TOKEN}"
+        "<|coord_10|><|coord_20|><|coord_30|><|coord_40|>"
+    )
+    second_row_prefix = f"{OBJECT_REF_START_TOKEN}car{BOX_START_TOKEN}"
+    second_row = second_row_prefix + bad_tail
+    result = parse_compact_full(
+        f"{first_row}\n{second_row}",
+        mode="legacy_compatible",
+    )
+
+    assert result.error_code == error_code
+    assert result.error_offset == len(first_row) + 1 + len(second_row_prefix)
+
+
+def test_render_rejects_endoftext_in_description() -> None:
+    payload = {
+        "objects": [
+            {
+                "desc": f"bad {END_OF_TEXT_TOKEN} desc",
+                "bbox_2d": [
+                    "<|coord_10|>",
+                    "<|coord_20|>",
+                    "<|coord_30|>",
+                    "<|coord_40|>",
+                ],
+            }
+        ]
+    }
+
+    with pytest.raises(ValueError, match="forbidden compact_full marker"):
+        render_compact_full(payload)
+
+
+def test_parser_rejects_endoftext_in_description() -> None:
+    result = parse_compact_full(
+        f"{OBJECT_REF_START_TOKEN}bad {END_OF_TEXT_TOKEN} desc{BOX_START_TOKEN}"
+        "<|coord_10|><|coord_20|><|coord_30|><|coord_40|>",
+        mode="marker_delimited_strict",
+    )
+
+    assert result.error_code == "forbidden_description_token"
+
+
+@pytest.mark.parametrize(
+    "bbox_tokens",
+    [
+        ["<|coord_30|>", "<|coord_20|>", "<|coord_10|>", "<|coord_40|>"],
+        ["<|coord_10|>", "<|coord_20|>", "<|coord_10|>", "<|coord_40|>"],
+        ["<|coord_10|>", "<|coord_40|>", "<|coord_30|>", "<|coord_40|>"],
+    ],
+)
+def test_render_rejects_invalid_xyxy_geometry(bbox_tokens: list[str]) -> None:
+    payload = {
+        "objects": [
+            {
+                "desc": "person",
+                "bbox_2d": bbox_tokens,
+            }
+        ]
+    }
+
+    with pytest.raises(ValueError, match="valid xyxy positive-area box"):
+        render_compact_full(payload)

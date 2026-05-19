@@ -2,7 +2,11 @@ from dataclasses import replace
 
 import pytest
 
-from src.common.detection_sequence import BOX_START_TOKEN, OBJECT_REF_START_TOKEN
+from src.common.detection_sequence import (
+    BOX_START_TOKEN,
+    END_OF_TEXT_TOKEN,
+    OBJECT_REF_START_TOKEN,
+)
 from src.detection.data import (
     CoordinateTokenBox,
     DetectionMetadata,
@@ -202,6 +206,7 @@ def test_compact_full_strict_parser_round_trips_rendered_text() -> None:
         "bad <|coord_1|>",
         "bad <|im_start|>",
         "bad <|im_end|>",
+        f"bad {END_OF_TEXT_TOKEN}",
     ],
 )
 def test_compact_full_rejects_desc_values_that_collide_with_grammar(

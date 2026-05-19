@@ -8,6 +8,20 @@ from typing import Literal, Sequence
 
 OBJECT_REF_START_TOKEN = "<|object_ref_start|>"
 BOX_START_TOKEN = "<|box_start|>"
+IM_END_TOKEN = "<|im_end|>"
+END_OF_TEXT_TOKEN = "<|endoftext|>"
+
+COMPACT_DESC_FORBIDDEN_SUBSTRINGS = (
+    "\n",
+    "\r",
+    "\t",
+    OBJECT_REF_START_TOKEN,
+    BOX_START_TOKEN,
+    "<|coord_",
+    "<|im_start|>",
+    IM_END_TOKEN,
+    END_OF_TEXT_TOKEN,
+)
 
 COMPACT_ROW_COORD_TOKEN_RE: re.Pattern[str] = re.compile(r"<\|coord_\d+\|>")
 STRICT_COMPACT_ROW_COORD_TOKEN_RE: re.Pattern[str] = re.compile(

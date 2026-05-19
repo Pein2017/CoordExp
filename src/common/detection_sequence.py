@@ -14,15 +14,15 @@ from typing import Any, Mapping, Sequence, cast
 
 from src.common.detection_compact_rows import (
     BOX_START_TOKEN,
+    COMPACT_DESC_FORBIDDEN_SUBSTRINGS,
+    END_OF_TEXT_TOKEN,
+    IM_END_TOKEN,
     OBJECT_REF_START_TOKEN,
     STRICT_COMPACT_ROW_COORD_TOKEN_RE,
     parse_compact_row,
     render_compact_row,
 )
 from src.utils.assistant_json import dumps_coordjson
-
-IM_END_TOKEN = "<|im_end|>"
-END_OF_TEXT_TOKEN = "<|endoftext|>"
 
 DetectionSequenceFormat = str
 
@@ -40,16 +40,7 @@ ALLOWED_DETECTION_SEQUENCE_FORMATS = {
     COMPACT_MIN_FORMAT,
 }
 
-_FORBIDDEN_DESC_SUBSTRINGS = (
-    "\n",
-    "\r",
-    "\t",
-    OBJECT_REF_START_TOKEN,
-    BOX_START_TOKEN,
-    "<|coord_",
-    "<|im_start|>",
-    IM_END_TOKEN,
-)
+_FORBIDDEN_DESC_SUBSTRINGS = COMPACT_DESC_FORBIDDEN_SUBSTRINGS
 
 
 def _compact_marker_flags(fmt: DetectionSequenceFormat) -> tuple[bool, bool]:

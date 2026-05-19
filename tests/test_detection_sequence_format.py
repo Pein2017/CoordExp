@@ -4,6 +4,7 @@ import pytest
 
 from src.common.detection_sequence import (
     BOX_START_TOKEN,
+    END_OF_TEXT_TOKEN,
     OBJECT_REF_START_TOKEN,
     parse_compact_detection_sequence,
     render_compact_detection_sequence,
@@ -141,6 +142,38 @@ def test_compact_parser_rejects_wrong_coord_arity() -> None:
     raw = f"{OBJECT_REF_START_TOKEN}cat{BOX_START_TOKEN}<|coord_1|><|coord_2|><|coord_3|>"
 
     assert parse_compact_detection_sequence(raw, detection_sequence_format="compact_full") is None
+
+
+def test_compact_full_renderer_rejects_endoftext_in_description() -> None:
+    payload = _payload()
+    payload["objects"][0]["desc"] = f"bad {END_OF_TEXT_TOKEN} desc"
+
+    with pytest.raises(ValueError, match="forbidden compact_full marker"):
+        render_compact_detection_sequence(
+            payload,
+            detection_sequence_format="compact_full",
+        )
+
+
+@pytest.mark.parametrize(
+    "bbox_tokens",
+    [
+        ["<|coord_30|>", "<|coord_20|>", "<|coord_10|>", "<|coord_40|>"],
+        ["<|coord_10|>", "<|coord_20|>", "<|coord_10|>", "<|coord_40|>"],
+        ["<|coord_10|>", "<|coord_40|>", "<|coord_30|>", "<|coord_40|>"],
+    ],
+)
+def test_compact_full_renderer_rejects_invalid_xyxy_geometry(
+    bbox_tokens: list[str],
+) -> None:
+    payload = _payload()
+    payload["objects"][0]["bbox_2d"] = bbox_tokens
+
+    with pytest.raises(ValueError, match="valid xyxy positive-area box"):
+        render_compact_detection_sequence(
+            payload,
+            detection_sequence_format="compact_full",
+        )
 
 
 def test_required_special_tokens_by_variant() -> None:

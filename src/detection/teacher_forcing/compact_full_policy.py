@@ -7,13 +7,13 @@ from typing import Any, Literal, Mapping, Sequence, cast
 
 from src.common.detection_compact_rows import (
     BOX_START_TOKEN,
+    COMPACT_DESC_FORBIDDEN_SUBSTRINGS,
+    END_OF_TEXT_TOKEN,
+    IM_END_TOKEN,
     OBJECT_REF_START_TOKEN,
     STRICT_COMPACT_ROW_COORD_TOKEN_RE,
     render_compact_row,
 )
-
-IM_END_TOKEN = "<|im_end|>"
-END_OF_TEXT_TOKEN = "<|endoftext|>"
 
 CompactFullSerializationPolicy = Literal[
     "marker_delimited",
@@ -36,16 +36,7 @@ CompactFullParseErrorCode = Literal[
     "invalid_geometry",
 ]
 
-_FORBIDDEN_DESCRIPTION_TOKENS = (
-    "\n",
-    "\r",
-    "\t",
-    OBJECT_REF_START_TOKEN,
-    BOX_START_TOKEN,
-    "<|coord_",
-    "<|im_start|>",
-    IM_END_TOKEN,
-)
+_FORBIDDEN_DESCRIPTION_TOKENS = COMPACT_DESC_FORBIDDEN_SUBSTRINGS
 
 
 @dataclass(frozen=True)
@@ -185,7 +176,12 @@ def _parse_legacy_compatible(
             return _error(mode, "legacy_separator_in_new_format", offset)
         parsed = _parse_marker_delimited_strict(row, mode=mode)
         if not parsed.ok:
-            return parsed
+            return CompactFullParseResult(
+                mode=mode,
+                terminal_token=parsed.terminal_token,
+                error_code=parsed.error_code,
+                error_offset=offset + (parsed.error_offset or 0),
+            )
         if len(parsed.objects) != 1:
             return _error(mode, "legacy_separator_in_new_format", offset)
         objects.extend(parsed.objects)
@@ -292,7 +288,10 @@ def _validate_bbox_tokens(value: Any) -> tuple[str, str, str, str]:
         raise ValueError("object bbox_2d must contain exactly four coord tokens")
     if not all(STRICT_COMPACT_ROW_COORD_TOKEN_RE.fullmatch(token) for token in tokens):
         raise ValueError("object bbox_2d must contain only <|coord_N|> tokens")
-    return cast(tuple[str, str, str, str], tokens)
+    bbox = cast(tuple[str, str, str, str], tokens)
+    if not _valid_xyxy_geometry(bbox):
+        raise ValueError("object bbox_2d must be a valid xyxy positive-area box")
+    return bbox
 
 
 def _valid_xyxy_geometry(tokens: tuple[str, str, str, str]) -> bool:

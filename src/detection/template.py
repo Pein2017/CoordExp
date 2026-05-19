@@ -9,6 +9,7 @@ from typing import Any, Literal, Mapping, Protocol, runtime_checkable
 
 from src.common.detection_compact_rows import (
     BOX_START_TOKEN,
+    COMPACT_DESC_FORBIDDEN_SUBSTRINGS,
     COMPACT_ROW_COORD_TOKEN_RE,
     OBJECT_REF_START_TOKEN,
 )
@@ -81,16 +82,7 @@ SpanProvenance = Literal[
 ]
 
 _COORD_TOKEN_RE = COMPACT_ROW_COORD_TOKEN_RE
-_COMPACT_FORBIDDEN_DESC_SUBSTRINGS = (
-    "\n",
-    "\r",
-    "\t",
-    OBJECT_REF_START_TOKEN,
-    BOX_START_TOKEN,
-    "<|coord_",
-    "<|im_start|>",
-    "<|im_end|>",
-)
+_COMPACT_FORBIDDEN_DESC_SUBSTRINGS = COMPACT_DESC_FORBIDDEN_SUBSTRINGS
 _COORD_SLOT_NAMES = ("x1", "y1", "x2", "y2")
 _ROLE_PRIORITIES: Mapping[TokenRoleName, int] = {
     "COORD": 100,
