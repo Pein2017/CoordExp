@@ -1,0 +1,18 @@
+# Round-2 tiny Stage-2 trie-CE standard-COCO overfit competition.
+#
+# Long memorization setting for the flexible-insertion candidate without sorted-order bias.
+
+extends: ./compact_full_et_rmp_ce_ckpt3664_hf_coco80_view_train64_noeval_512steps_stage2_trie_fn_slot_shuffle_weak_fp.yaml
+
+training:
+  run_name: overfit_640steps-bsz1ga1-coco80_view-train64-noeval-stage2_trie_ce-fn_slot_shuffle-weak_fp-compact_full-et_rmp_ce_ckpt3664
+  artifact_subdir: stage2_ab/ablation/coco80_view_stage2_trie_ce_overfit_round2_bsz1ga1_long/train64_640steps_bsz1ga1_fn_slot_shuffle_weak_fp
+  max_steps: 640
+  per_device_train_batch_size: 1
+  effective_batch_size: 1
+  save_steps: 640
+
+rollout_matching:
+  repetition_penalty: 1.10
+  channel_b_decode_batch_size: 1
+  eval_decode_batch_size: 1
