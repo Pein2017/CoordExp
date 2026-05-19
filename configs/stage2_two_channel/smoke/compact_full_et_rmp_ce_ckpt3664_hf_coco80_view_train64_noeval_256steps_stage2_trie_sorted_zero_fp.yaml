@@ -1,0 +1,10 @@
+# Tiny Stage-2 trie-CE standard-COCO overfit sweep.
+#
+# Axis: sorted FN insertion with neutral FP context.
+
+extends: ./compact_full_et_rmp_ce_ckpt3664_hf_coco80_view_train64_noeval_128steps_stage2_trie_sorted_zero_fp.yaml
+
+training:
+  run_name: overfit_256steps-coco80_view-train64-noeval-stage2_trie_ce-sorted-zero_fp-compact_full-et_rmp_ce_ckpt3664
+  artifact_subdir: stage2_ab/ablation/coco80_view_stage2_trie_ce_overfit/train64_256steps_sorted_zero_fp
+  max_steps: 256

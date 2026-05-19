@@ -1,4 +1,7 @@
-from typing import Any, Dict, List, Literal, NotRequired, TypeAlias, TypedDict
+from typing import TYPE_CHECKING, Any, Dict, List, Literal, NotRequired, TypeAlias, TypedDict
+
+if TYPE_CHECKING:
+    from .trie_supervision import Stage2TrieTargets
 
 
 class Stage2BBoxGroup(TypedDict):
@@ -95,6 +98,11 @@ class Stage2ChannelBMeta(Stage2RolloutMetaBase):
     duplicate_control_first_divergence_skipped_no_divergence: int
     assignment_strategy: str
     assignment_iou_threshold: float
+    stage2_trie_targets: NotRequired["Stage2TrieTargets"]
+    stage2_trie_span_scores: NotRequired[List[Dict[str, Any]]]
+    stage2_trie_candidate_summary: NotRequired[Dict[str, Any]]
+    stage2_trie_skip_loss: NotRequired[bool]
+    stage2_trie_weak_fp_span_level_fallback: NotRequired[bool]
 
 
 Stage2RolloutMeta: TypeAlias = Stage2ChannelAMeta | Stage2ChannelBMeta

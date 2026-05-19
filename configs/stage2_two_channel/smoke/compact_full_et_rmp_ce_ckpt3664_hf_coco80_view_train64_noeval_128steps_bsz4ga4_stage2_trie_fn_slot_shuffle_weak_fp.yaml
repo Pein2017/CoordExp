@@ -1,0 +1,17 @@
+# Round-2 fast tiny Stage-2 trie-CE standard-COCO overfit competition.
+#
+# Fast flexible-insertion candidate without sorted-order bias.
+
+extends: ./compact_full_et_rmp_ce_ckpt3664_hf_coco80_view_train64_noeval_512steps_stage2_trie_fn_slot_shuffle_weak_fp.yaml
+
+training:
+  run_name: overfit_128steps-bsz4ga4-coco80_view-train64-noeval-stage2_trie_ce-fn_slot_shuffle-weak_fp-compact_full-et_rmp_ce_ckpt3664
+  artifact_subdir: stage2_ab/ablation/coco80_view_stage2_trie_ce_overfit_round2_fast/train64_128steps_bsz4ga4_fn_slot_shuffle_weak_fp
+  max_steps: 128
+  per_device_train_batch_size: 4
+  effective_batch_size: 16
+  save_steps: 128
+
+rollout_matching:
+  channel_b_decode_batch_size: 4
+  eval_decode_batch_size: 4

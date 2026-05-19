@@ -1,6 +1,6 @@
 from dataclasses import dataclass
 import random
-from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
+from typing import Any, Dict, List, Mapping, MutableMapping, Optional, Sequence, Tuple
 
 from src.common.duplicate_control import (
     DuplicateControlDecision,
@@ -27,6 +27,14 @@ from ..rollout_matching.contracts import GTObject, MatchResult
 from ..rollout_matching.matching import associate_one_to_one_greedy_iou
 from ..rollout_matching.parsing import decode_pieces, find_desc_value_char_spans
 from .types import Stage2ChannelBMeta, Stage2DuplicateControlDivergenceDiagnostic
+from .trie_supervision import (
+    Stage2TrieCandidate,
+    Stage2TrieObjectSpan,
+    Stage2TrieTokenTarget,
+    build_fp_object_span,
+    compile_stage2_trie_targets_for_rollout_group,
+    stage2_trie_span_score_record_to_json,
+)
 
 
 @dataclass(frozen=True)
@@ -112,6 +120,8 @@ class _ChannelBSupervisionTargets:
     rollout_fallback_reason: str | None
     rollout_fallback_loss_weight: float
     rollout_counts_as_valid_rollout: bool
+    stage2_trie_object_spans: List[Stage2TrieObjectSpan]
+    stage2_trie_weak_fp_span_level_fallback: bool
 
 
 def _compact_coord_tokens(values: Sequence[object]) -> List[str]:
@@ -226,6 +236,184 @@ def _token_indices_overlapping_char_span(
             continue
         out.append(int(idx))
     return out
+
+
+def _prefix_object_token_span(
+    *,
+    token_spans: Sequence[Tuple[int, int]],
+    object_value_spans: Sequence[Tuple[int, int]],
+    object_index: int,
+) -> Tuple[int, int] | None:
+    if int(object_index) < 0 or int(object_index) >= len(object_value_spans):
+        return None
+
+    char_start, char_end = object_value_spans[int(object_index)]
+    token_indices = _token_indices_overlapping_char_span(
+        token_spans=token_spans,
+        char_start=int(char_start),
+        char_end=int(char_end),
+    )
+    if not token_indices:
+        return None
+
+    return int(min(token_indices)), int(max(token_indices) + 1)
+
+
+def _compact_object_marker_token_span(
+    *,
+    token_spans: Sequence[Tuple[int, int]],
+    prefix_text: str,
+    object_index: int,
+) -> Tuple[int, int] | None:
+    object_spans = _compact_object_and_desc_spans(prefix_text)
+    if int(object_index) < 0 or int(object_index) >= len(object_spans):
+        return None
+
+    object_span, desc_span = object_spans[int(object_index)]
+    marker_start = int(object_span[0])
+    marker_end = int(desc_span[0])
+    token_indices = [
+        int(idx)
+        for idx, (start, end) in enumerate(token_spans)
+        if int(start) >= marker_start and int(end) <= marker_end
+    ]
+    if not token_indices:
+        return None
+
+    return int(min(token_indices)), int(max(token_indices) + 1)
+
+
+def _build_stage2_trie_fp_object_spans(
+    *,
+    tokenizer: Any,
+    clean_prefix: _CanonicalPrefixData,
+    compact_full: bool,
+    final_prefix_anchor_indices: Mapping[int, int],
+    matched_kept_anchor_indices: Sequence[int],
+    original_anchor_index_by_kept: Mapping[int, int],
+    anchor_support_counts: Sequence[int],
+    fp_policy_mode: str,
+    fp_policy_weak_positive_weight: float,
+    fp_policy_require_explorer_support: bool,
+    fp_policy_min_support_count: int,
+    fp_policy_require_token_score: bool,
+) -> Tuple[List[Stage2TrieObjectSpan], bool]:
+    if fp_policy_mode not in {"zero_loss_context", "weak_positive_context"}:
+        raise ValueError(
+            "Unknown Stage-2 false-positive policy mode "
+            f"{fp_policy_mode!r}; expected zero_loss_context or weak_positive_context"
+        )
+    if (
+        str(fp_policy_mode) == "weak_positive_context"
+        and bool(fp_policy_require_token_score)
+    ):
+        raise ValueError(
+            "stage2_ab.channel_b.fp_policy.require_token_score=True is reserved "
+            "for token-score-gated weak-positive false positives, but that "
+            "gating is not implemented in v0"
+        )
+
+    token_spans = _token_piece_char_spans(
+        tokenizer=tokenizer,
+        token_ids=clean_prefix.prefix_token_ids,
+    )
+    matched_kept = {int(idx) for idx in matched_kept_anchor_indices}
+
+    object_spans: List[Stage2TrieObjectSpan] = []
+    for final_object_index, kept_anchor_index in sorted(
+        final_prefix_anchor_indices.items(),
+        key=lambda item: int(item[0]),
+    ):
+        kept_idx = int(kept_anchor_index)
+        if kept_idx in matched_kept:
+            continue
+
+        token_span = _prefix_object_token_span(
+            token_spans=token_spans,
+            object_value_spans=clean_prefix.object_value_spans,
+            object_index=int(final_object_index),
+        )
+        if token_span is None:
+            continue
+
+        original_idx = int(original_anchor_index_by_kept.get(kept_idx, kept_idx))
+        support_count = (
+            int(anchor_support_counts[original_idx])
+            if 0 <= original_idx < len(anchor_support_counts)
+            else 0
+        )
+        support_satisfied = (
+            (not bool(fp_policy_require_explorer_support))
+            or support_count >= int(fp_policy_min_support_count)
+        )
+        weak_positive_satisfied = (
+            str(fp_policy_mode) == "weak_positive_context"
+            and support_satisfied
+        )
+        span_policy_mode = (
+            "weak_positive_context"
+            if weak_positive_satisfied
+            else "zero_loss_context"
+        )
+
+        if span_policy_mode != "weak_positive_context" or not bool(compact_full):
+            if span_policy_mode == "weak_positive_context":
+                raise ValueError(
+                    "stage2_ab.channel_b.fp_policy.mode=weak_positive_context "
+                    "is compact_full-only in v0; non-compact FP marker "
+                    "supervision is not implemented"
+                )
+            object_spans.append(
+                build_fp_object_span(
+                    token_start=int(token_span[0]),
+                    token_end=int(token_span[1]),
+                    policy_mode=span_policy_mode,
+                    support_count=int(support_count),
+                    weak_positive_weight=float(fp_policy_weak_positive_weight),
+                    min_support_count=int(fp_policy_min_support_count),
+                    require_explorer_support=bool(fp_policy_require_explorer_support),
+                )
+            )
+            continue
+
+        object_spans.append(
+            build_fp_object_span(
+                token_start=int(token_span[0]),
+                token_end=int(token_span[1]),
+                policy_mode="zero_loss_context",
+                support_count=int(support_count),
+                weak_positive_weight=float(fp_policy_weak_positive_weight),
+                min_support_count=int(fp_policy_min_support_count),
+                require_explorer_support=bool(fp_policy_require_explorer_support),
+            )
+        )
+        weak_token_span = _compact_object_marker_token_span(
+            token_spans=token_spans,
+            prefix_text=clean_prefix.prefix_text,
+            object_index=int(final_object_index),
+        )
+        if weak_token_span is None:
+            raise ValueError(
+                "stage2_ab.channel_b.fp_policy.mode=weak_positive_context "
+                "could not isolate a compact_full object marker token span; "
+                "refusing to weak-supervise FP description or coordinate tokens"
+            )
+
+        object_spans.append(
+            build_fp_object_span(
+                token_start=int(weak_token_span[0]),
+                token_end=int(weak_token_span[1]),
+                policy_mode="weak_positive_context",
+                support_count=int(support_count),
+                weak_positive_weight=float(fp_policy_weak_positive_weight),
+                min_support_count=int(fp_policy_min_support_count),
+                require_explorer_support=bool(fp_policy_require_explorer_support),
+            )
+        )
+
+    return object_spans, any(
+        span.role == "weak_positive_fp" for span in object_spans
+    )
 
 
 def _compact_prefix_structure_positions(
@@ -916,6 +1104,11 @@ def _build_channel_b_supervision_targets(
     pseudo_positive_coord_weight: float,
     duplicate_iou_threshold: float | None = None,
     insertion_order: str = "tail_append",
+    fp_policy_mode: str = "zero_loss_context",
+    fp_policy_weak_positive_weight: float = 0.05,
+    fp_policy_require_explorer_support: bool = True,
+    fp_policy_min_support_count: int = 1,
+    fp_policy_require_token_score: bool = False,
     object_field_order: str,
     bbox_groups_from_token_ids_fn: Any,
     matched_prefix_structure_positions_fn: Any,
@@ -1003,6 +1196,14 @@ def _build_channel_b_supervision_targets(
         for i, tok_id in enumerate(clean_prefix.prefix_token_ids)
         if int(tok_id) in coord_id_set
     ]
+    original_anchor_index_by_kept: Dict[int, int] = {
+        int(new_idx): int(old_idx)
+        for old_idx, new_idx in triage.kept_anchor_new_index_by_old.items()
+    }
+    final_prefix_anchor_indices: Dict[int, int] = {
+        int(kept_idx): int(kept_idx)
+        for kept_idx in range(len(triage.kept_anchor_objects))
+    }
     expected_prefix_coord_slots = int(len(triage.kept_anchor_objects) * 4)
     if len(prefix_coord_positions_all) != expected_prefix_coord_slots:
         raise ValueError(
@@ -1203,6 +1404,10 @@ def _build_channel_b_supervision_targets(
                 continue
             if kind == "fn":
                 fn_idx_to_sorted_idx[int(entry["index"])] = int(sorted_idx)
+        final_prefix_anchor_indices = {
+            int(sorted_idx): int(kept_idx)
+            for kept_idx, sorted_idx in kept_idx_to_sorted_idx.items()
+        }
 
         remapped_matched_sorted_indices: List[int] = []
         for pred_i, gt_i in sorted(match.matched_pairs, key=lambda item: int(item[0])):
@@ -1456,6 +1661,25 @@ def _build_channel_b_supervision_targets(
                 }
             )
 
+    stage2_trie_object_spans, stage2_trie_weak_fp_span_level_fallback = (
+        _build_stage2_trie_fp_object_spans(
+            tokenizer=tokenizer,
+            clean_prefix=clean_prefix,
+            compact_full=bool(is_compact_full),
+            final_prefix_anchor_indices=final_prefix_anchor_indices,
+            matched_kept_anchor_indices=matched_clean_indices,
+            original_anchor_index_by_kept=original_anchor_index_by_kept,
+            anchor_support_counts=triage.anchor_support_counts,
+            fp_policy_mode=str(fp_policy_mode),
+            fp_policy_weak_positive_weight=float(fp_policy_weak_positive_weight),
+            fp_policy_require_explorer_support=bool(
+                fp_policy_require_explorer_support
+            ),
+            fp_policy_min_support_count=int(fp_policy_min_support_count),
+            fp_policy_require_token_score=bool(fp_policy_require_token_score),
+        )
+    )
+
     return _ChannelBSupervisionTargets(
         clean_prefix=clean_prefix,
         prefix_len_raw_local=prefix_len_raw_local,
@@ -1493,6 +1717,10 @@ def _build_channel_b_supervision_targets(
         rollout_fallback_reason=rollout_fallback_reason,
         rollout_fallback_loss_weight=float(rollout_fallback_loss_weight),
         rollout_counts_as_valid_rollout=bool(rollout_counts_as_valid_rollout),
+        stage2_trie_object_spans=list(stage2_trie_object_spans),
+        stage2_trie_weak_fp_span_level_fallback=bool(
+            stage2_trie_weak_fp_span_level_fallback
+        ),
     )
 
 
@@ -1561,6 +1789,12 @@ def _build_channel_b_meta_entry(
     rollout_fallback_reason: str | None,
     rollout_fallback_loss_weight: float,
     rollout_counts_as_valid_rollout: bool,
+    y_train_ids: Sequence[int],
+    sample_id: str,
+    rollout_index: int,
+    stage2_trie_candidates: Sequence[Stage2TrieCandidate] | None = None,
+    stage2_trie_object_spans: Sequence[Stage2TrieObjectSpan],
+    stage2_trie_weak_fp_span_level_fallback: bool,
     stage2_tail_closure_positions_fn: Any,
     stage2_semantic_stop_branch_metadata_fn: Any,
 ) -> Tuple[Stage2ChannelBMeta, int]:
@@ -1682,6 +1916,7 @@ def _build_channel_b_meta_entry(
         "continue_token_id": (
             int(semantic_stop_meta["continue_token_id"])
             if isinstance(semantic_stop_meta, Mapping)
+            and semantic_stop_meta.get("continue_token_id") is not None
             else None
         ),
         "fn_object_weights": [float(w) for w in fn_object_weights],
@@ -1751,7 +1986,310 @@ def _build_channel_b_meta_entry(
         "assignment_strategy": str(assignment_strategy),
         "assignment_iou_threshold": float(assignment_iou_threshold),
     }
+    if bool(stage2_trie_weak_fp_span_level_fallback):
+        meta_entry["stage2_trie_weak_fp_span_level_fallback"] = True
+    _attach_stage2_trie_sidecar_to_meta(
+        meta_entry=meta_entry,
+        y_train_ids=y_train_ids,
+        assistant_span_ids=assistant_span_ids,
+        tokenizer=tokenizer,
+        prompt_len=int(prompt_len),
+        sample_id=str(sample_id),
+        rollout_index=int(rollout_index),
+        stage2_trie_candidates=stage2_trie_candidates,
+        stage2_trie_object_spans=stage2_trie_object_spans,
+        stage2_trie_weak_fp_span_level_fallback=bool(
+            stage2_trie_weak_fp_span_level_fallback
+        ),
+    )
     return meta_entry, int(closure_supervision_drop_count)
+
+
+def _attach_stage2_trie_sidecar_to_meta(
+    *,
+    meta_entry: MutableMapping[str, Any],
+    y_train_ids: Sequence[int],
+    assistant_span_ids: Sequence[int] | None = None,
+    tokenizer: Any | None = None,
+    prompt_len: int,
+    sample_id: str,
+    rollout_index: int,
+    stage2_trie_candidates: Sequence[Stage2TrieCandidate] | None = None,
+    stage2_trie_object_spans: Sequence[Stage2TrieObjectSpan] = (),
+    stage2_trie_weak_fp_span_level_fallback: bool = False,
+) -> None:
+    label_position_start = int(prompt_len)
+    if stage2_trie_candidates is None:
+        if label_position_start <= 0:
+            return
+        candidates = _build_implicit_stage2_trie_candidates(
+            meta_entry=meta_entry,
+            y_train_ids=y_train_ids,
+            sample_id=sample_id,
+            rollout_index=rollout_index,
+            stage2_trie_object_spans=stage2_trie_object_spans,
+        )
+        if not candidates:
+            return
+    else:
+        candidates = list(stage2_trie_candidates)
+        explicit_sample_ids = {str(candidate.sample_id) for candidate in candidates}
+        if explicit_sample_ids and explicit_sample_ids != {str(sample_id)}:
+            expected = ", ".join(sorted(explicit_sample_ids))
+            raise ValueError(
+                "Stage-2 trie explicit candidate group sample_id must match "
+                f"metadata sample_id={sample_id!r}; got {expected}"
+            )
+
+    semantic_role_by_position = _build_stage2_trie_semantic_role_map(
+        meta_entry=meta_entry,
+        y_train_ids=y_train_ids,
+        prompt_len=prompt_len,
+        tokenizer=tokenizer,
+    )
+    extra_token_targets = _build_stage2_trie_extra_terminal_targets(
+        assistant_span_ids=assistant_span_ids,
+        y_train_ids=y_train_ids,
+        prompt_len=prompt_len,
+        candidates=candidates,
+    )
+
+    targets = compile_stage2_trie_targets_for_rollout_group(
+        candidates,
+        label_position_start=label_position_start,
+        semantic_role_by_position=semantic_role_by_position,
+        extra_token_targets=extra_token_targets,
+    )
+
+    meta_entry["stage2_trie_targets"] = targets
+    meta_entry["stage2_trie_span_scores"] = [
+        stage2_trie_span_score_record_to_json(record)
+        for record in targets.span_score_records
+    ]
+    summary: dict[str, Any] = {
+        "sample_id": str(candidates[0].sample_id),
+        "candidate_count": int(targets.summary.candidate_count),
+        "fallback_candidate_count": int(targets.summary.fallback_candidate_count),
+        "fallback_loss_weight_sum": float(targets.summary.fallback_loss_weight_sum),
+        "weak_positive_fp_count": int(targets.summary.weak_positive_fp_count),
+        "label_position_start": label_position_start,
+        "target_positions": int(targets.summary.target_positions),
+        "branch_points": int(targets.summary.branch_points),
+        "max_branching_factor": int(targets.summary.max_branching_factor),
+        "rollout_indices": [
+            int(candidate.rollout_index) for candidate in candidates
+        ],
+    }
+    if len(candidates) == 1:
+        candidate = candidates[0]
+        summary.update(
+            {
+                "rollout_index": int(candidate.rollout_index),
+                "source": str(candidate.source),
+                "token_count": len(candidate.token_ids),
+                "loss_weight": float(candidate.loss_weight),
+            }
+        )
+    meta_entry["stage2_trie_candidate_summary"] = summary
+    if bool(stage2_trie_weak_fp_span_level_fallback):
+        meta_entry["stage2_trie_weak_fp_span_level_fallback"] = True
+
+
+def _build_stage2_trie_semantic_role_map(
+    *,
+    meta_entry: Mapping[str, Any],
+    y_train_ids: Sequence[int],
+    prompt_len: int,
+    tokenizer: Any | None,
+) -> dict[int, str]:
+    """Build segment-local token-role annotations for Stage-2 trie CE."""
+
+    role_by_position: dict[int, str] = {}
+    prompt_len_i = int(prompt_len)
+    prefix_len = int(meta_entry.get("prefix_len", 0) or 0)
+    y_train_len = int(len(y_train_ids))
+
+    if str(meta_entry.get("rollout_template_family", "")) == "compact_full":
+        for rel in _compact_desc_positions_from_token_ids(
+            tokenizer=tokenizer,
+            token_ids=y_train_ids,
+        ):
+            _set_stage2_trie_role(
+                role_by_position,
+                prompt_len_i + int(rel),
+                "desc",
+            )
+
+    for rel in meta_entry.get("prefix_desc_pos") or []:
+        _set_stage2_trie_role(
+            role_by_position,
+            prompt_len_i + int(rel),
+            "desc",
+        )
+
+    for rel in meta_entry.get("tail_desc_pos") or []:
+        _set_stage2_trie_role(
+            role_by_position,
+            prompt_len_i + prefix_len + int(rel),
+            "desc",
+        )
+
+    for rel in meta_entry.get("prefix_coord_pos") or []:
+        _set_stage2_trie_role(
+            role_by_position,
+            prompt_len_i + int(rel),
+            "coord",
+        )
+
+    for group in list(meta_entry.get("bbox_groups_prefix") or []) + list(
+        meta_entry.get("bbox_groups_fn") or []
+    ):
+        if not isinstance(group, Mapping):
+            continue
+        for pos in group.get("pos") or []:
+            _set_stage2_trie_role(role_by_position, int(pos), "coord")
+
+    # ...mark remaining compact row tokens as structure after desc/coord roles land.
+    for local_index in range(y_train_len):
+        role_by_position.setdefault(prompt_len_i + int(local_index), "struct")
+
+    for rel in meta_entry.get("tail_closure_pos") or []:
+        _set_stage2_trie_role(
+            role_by_position,
+            prompt_len_i + prefix_len + int(rel),
+            "eos",
+        )
+
+    return role_by_position
+
+
+def _compact_desc_positions_from_token_ids(
+    *,
+    tokenizer: Any | None,
+    token_ids: Sequence[int],
+) -> list[int]:
+    """Locate compact-full description token positions from encoded rows."""
+
+    if tokenizer is None or not token_ids:
+        return []
+
+    token_ids_list = [int(token_id) for token_id in token_ids]
+    token_spans = _token_piece_char_spans(tokenizer=tokenizer, token_ids=token_ids_list)
+    text = tokenizer.decode(
+        token_ids_list,
+        skip_special_tokens=False,
+        clean_up_tokenization_spaces=False,
+    )
+
+    positions: set[int] = set()
+    for _object_span, desc_span in _compact_object_and_desc_spans(str(text)):
+        positions.update(
+            _token_indices_overlapping_char_span(
+                token_spans=token_spans,
+                char_start=int(desc_span[0]),
+                char_end=int(desc_span[1]),
+            )
+        )
+
+    return sorted(int(pos) for pos in positions)
+
+
+def _build_stage2_trie_extra_terminal_targets(
+    *,
+    assistant_span_ids: Sequence[int] | None,
+    y_train_ids: Sequence[int],
+    prompt_len: int,
+    candidates: Sequence[Stage2TrieCandidate],
+) -> tuple[Stage2TrieTokenTarget, ...]:
+    """Build explicit terminal-token supervision after repaired row content."""
+
+    if assistant_span_ids is None:
+        return ()
+
+    assistant_ids = [int(token_id) for token_id in assistant_span_ids]
+    y_train_len = int(len(y_train_ids))
+    if y_train_len >= len(assistant_ids):
+        return ()
+
+    terminal_token_id = int(assistant_ids[y_train_len])
+    terminal_weight = _stage2_trie_terminal_loss_weight(candidates)
+    if terminal_weight <= 0.0:
+        return ()
+
+    return (
+        Stage2TrieTokenTarget(
+            position=int(prompt_len) + y_train_len,
+            positive_token_ids=(terminal_token_id,),
+            source_weights=(float(terminal_weight),),
+            semantic_role="eos",
+        ),
+    )
+
+
+def _stage2_trie_terminal_loss_weight(
+    candidates: Sequence[Stage2TrieCandidate],
+) -> float:
+    """Resolve terminal supervision weight without letting fallback dominate."""
+
+    if any(candidate.source == "valid_rollout" for candidate in candidates):
+        return 1.0
+
+    fallback_weights = [
+        float(candidate.loss_weight)
+        for candidate in candidates
+        if candidate.source == "fallback_gt_fn_append_only"
+    ]
+    if fallback_weights:
+        return max(fallback_weights)
+
+    return 0.0
+
+
+def _set_stage2_trie_role(
+    role_by_position: MutableMapping[int, str],
+    position: int,
+    role: str,
+) -> None:
+    """Set one role using the same precedence as trie target merging."""
+
+    precedence = {"text": 0, "desc": 1, "struct": 2, "coord": 3, "eos": 4}
+    current = str(role_by_position.get(int(position), "text"))
+    if precedence[str(role)] >= precedence.get(current, 0):
+        role_by_position[int(position)] = str(role)
+
+
+def _build_implicit_stage2_trie_candidates(
+    *,
+    meta_entry: Mapping[str, Any],
+    y_train_ids: Sequence[int],
+    sample_id: str,
+    rollout_index: int,
+    stage2_trie_object_spans: Sequence[Stage2TrieObjectSpan] = (),
+) -> list[Stage2TrieCandidate]:
+    y_train_ids_list = [int(token_id) for token_id in y_train_ids]
+    if not y_train_ids_list:
+        return []
+
+    source = (
+        "fallback_gt_fn_append_only"
+        if str(meta_entry.get("rollout_context", "")) == FALLBACK_GT_FN_APPEND_ONLY
+        else "valid_rollout"
+    )
+    loss_weight = (
+        float(meta_entry.get("rollout_fallback_loss_weight", 1.0))
+        if source == "fallback_gt_fn_append_only"
+        else 1.0
+    )
+    return [
+        Stage2TrieCandidate(
+            sample_id=str(sample_id),
+            rollout_index=int(rollout_index),
+            source=source,
+            token_ids=y_train_ids_list,
+            loss_weight=float(loss_weight),
+            object_spans=list(stage2_trie_object_spans),
+        )
+    ]
 
 
 def _serialize_gt_object_entry(

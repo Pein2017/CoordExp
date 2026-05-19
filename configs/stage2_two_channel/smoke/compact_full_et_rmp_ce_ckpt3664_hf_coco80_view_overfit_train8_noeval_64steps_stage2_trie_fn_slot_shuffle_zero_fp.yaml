@@ -1,0 +1,11 @@
+# Tiny Stage-2 trie-CE standard-COCO overfit probe with FN slot shuffling.
+
+extends: ./compact_full_et_rmp_ce_ckpt3664_hf_coco80_view_overfit_train8_noeval_64steps_stage2_trie_tail_append_zero_fp.yaml
+
+training:
+  run_name: smoke_64steps-coco80_view-overfit_train8-noeval-stage2_trie_ce-fn_slot_shuffle-zero_fp-compact_full-et_rmp_ce_ckpt3664
+  artifact_subdir: stage2_ab/smoke/coco80_view_stage2_trie_ce_overfit_probe/fn_slot_shuffle_train8_noeval_64steps
+
+stage2_ab:
+  channel_b:
+    insertion_order: fn_slot_shuffle

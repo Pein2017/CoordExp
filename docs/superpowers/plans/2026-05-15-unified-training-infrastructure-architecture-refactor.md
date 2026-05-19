@@ -33,6 +33,16 @@ Stage-2 two-channel manifests now write first-class
 and object-ordering policy across effective runtime, pipeline manifest, run
 metadata, and experiment manifest artifacts.
 
+Focused Stage-2 trie forward-supervision follow-up created on 2026-05-18:
+`docs/superpowers/specs/2026-05-18-stage2-trie-forward-supervision-design.md`
+and
+`docs/superpowers/plans/2026-05-18-stage2-trie-forward-supervision.md`.
+This follow-up refines the Channel-B objective slice of this broader roadmap:
+Stage-2 should train from self-rollout, greedy pairing, FN insertion, FP policy,
+and fallback evidence through a merged per-example trie hard-CE objective rather
+than ordinary single-path Channel-B SFT. Stable docs and OpenSpec promotion are
+deferred until tiny train-side overfit evidence exists.
+
 ## Execution Policy
 
 This is a staged architecture refactor. Do not try to implement all tasks in one

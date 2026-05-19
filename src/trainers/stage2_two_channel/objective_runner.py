@@ -172,6 +172,16 @@ def build_stage2_core_loss_logs(
 ) -> Dict[str, float]:
     stage2_logs: Dict[str, float] = {}
 
+    def _emit_stage2_trie_metrics() -> None:
+        for key, value in pipeline_metrics_ctx.items():
+            key_s = str(key)
+            if not (
+                key_s.startswith("stage2_trie/")
+                or key_s in {"loss/B/stage2_trie_ce", "loss/stage2_trie_ce"}
+            ):
+                continue
+            stage2_logs[key_s] = float(value or 0.0)
+
     if channel == "A":
         if float(token_ce_module_w) != 0.0 and run_a_text:
             token_struct = float(
@@ -290,5 +300,7 @@ def build_stage2_core_loss_logs(
             _emit_b("coord_w1", coord_w1_w, "loss/coord_w1")
             _emit_b("coord_gate", coord_gate_w, "loss/coord_gate")
             _emit_b("text_gate", text_gate_w, "loss/text_gate")
+
+    _emit_stage2_trie_metrics()
 
     return stage2_logs

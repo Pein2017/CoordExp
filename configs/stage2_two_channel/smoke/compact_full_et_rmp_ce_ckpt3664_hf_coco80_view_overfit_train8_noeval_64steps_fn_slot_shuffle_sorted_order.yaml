@@ -1,0 +1,17 @@
+# Tiny Stage-2 standard-COCO training-only overfit probe.
+#
+# Ablation: keep the dataset/sample target side top-left sorted, but randomly
+# inject FN objects into accepted-rollout slots with a deterministic seed.
+
+extends: ./compact_full_et_rmp_ce_ckpt3664_hf_coco80_view_overfit_train8_noeval_64steps.yaml
+
+training:
+  run_name: smoke_64steps-coco80_view-overfit_train8-noeval-fn_slot_shuffle-sorted_order-fallback1p0-compact_full-et_rmp_ce_ckpt3664
+  artifact_subdir: stage2_ab/smoke/coco80_view_overfit_probe/fn_slot_shuffle_sorted_order_64steps
+
+custom:
+  object_ordering: sorted
+
+stage2_ab:
+  channel_b:
+    insertion_order: fn_slot_shuffle

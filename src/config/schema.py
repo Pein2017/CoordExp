@@ -71,6 +71,27 @@ AllowedVisualDistance = Literal["mse", "cosine"]
 AllowedJsonFormat = Literal["standard"]
 
 ALLOWED_JSON_FORMATS: set[str] = {"standard"}
+STAGE2_CHANNEL_B_FP_POLICIES: set[str] = {
+    "zero_loss_context",
+    "weak_positive_context",
+}
+STAGE2_TRIE_CE_MODULE_NAME = "stage2_trie_ce"
+STAGE2_TRIE_CE_CONFIG_KEYS: set[str] = {
+    "support_weight",
+    "balance_weight",
+    "struct_weight",
+    "desc_weight",
+    "coord_hard_ce_weight",
+    "eos_weight",
+    "normalization",
+}
+STAGE2_TRIE_CE_NORMALIZATIONS: set[str] = {
+    "token_mean",
+}
+STAGE2_TRIE_CE_RESERVED_WEIGHT_KEYS: set[str] = (
+    STAGE2_TRIE_CE_CONFIG_KEYS - {"normalization"}
+)
+STAGE2_TRIE_CE_APPLICATION_PRESETS: set[str] = {"rollout_trie_hard_ce"}
 
 
 def _normalize_json_format(value: Any) -> AllowedJsonFormat:
@@ -2363,6 +2384,135 @@ class Stage2ABChannelBAssignmentConfig:
 
 
 @dataclass(frozen=True)
+class Stage2ABChannelBFalsePositivePolicyConfig:
+    mode: str = "zero_loss_context"
+    weak_positive_weight: float = 0.05
+    require_explorer_support: bool = True
+    min_support_count: int = 1
+    require_token_score: bool = False
+
+    @classmethod
+    def from_mapping(
+        cls, payload: Any
+    ) -> "Stage2ABChannelBFalsePositivePolicyConfig":
+        if payload is None:
+            return cls()
+        if not isinstance(payload, Mapping):
+            raise TypeError("stage2_ab.channel_b.fp_policy must be a mapping")
+
+        data: MutableMapping[str, Any] = dict(payload)
+
+        mode_raw = data.pop("mode", cls.mode)
+        mode = str(mode_raw).strip().lower().replace("-", "_")
+        if mode not in STAGE2_CHANNEL_B_FP_POLICIES:
+            raise ValueError(
+                "stage2_ab.channel_b.fp_policy.mode must be one of "
+                f"{sorted(STAGE2_CHANNEL_B_FP_POLICIES)}"
+            )
+
+        weak_positive_weight_raw = data.pop(
+            "weak_positive_weight", cls.weak_positive_weight
+        )
+        try:
+            weak_positive_weight = float(weak_positive_weight_raw)
+        except (TypeError, ValueError) as exc:
+            raise TypeError(
+                "stage2_ab.channel_b.fp_policy.weak_positive_weight must be a float/int"
+            ) from exc
+        if isinstance(weak_positive_weight_raw, bool):
+            raise TypeError(
+                "stage2_ab.channel_b.fp_policy.weak_positive_weight must be a float/int, not bool"
+            )
+        if not math.isfinite(weak_positive_weight):
+            raise ValueError(
+                "stage2_ab.channel_b.fp_policy.weak_positive_weight must be finite"
+            )
+        if weak_positive_weight < 0.0:
+            raise ValueError(
+                "stage2_ab.channel_b.fp_policy.weak_positive_weight must be >= 0"
+            )
+
+        def _parse_bool(value: Any, *, path: str) -> bool:
+            if isinstance(value, bool):
+                return value
+            if isinstance(value, (int, float)):
+                if value in (0, 1, 0.0, 1.0):
+                    return bool(value)
+                raise ValueError(f"{path} must be boolean (0 or 1)")
+            if isinstance(value, str):
+                normalized = value.strip().lower()
+                if normalized in {"true", "1", "yes", "y", "on"}:
+                    return True
+                if normalized in {"false", "0", "no", "n", "off"}:
+                    return False
+                raise ValueError(
+                    f"{path} string value '{value}' is not a recognized boolean representation."
+                )
+            raise TypeError(f"{path} must be a boolean value")
+
+        require_explorer_support = _parse_bool(
+            data.pop("require_explorer_support", cls.require_explorer_support),
+            path="stage2_ab.channel_b.fp_policy.require_explorer_support",
+        )
+        require_token_score = _parse_bool(
+            data.pop("require_token_score", cls.require_token_score),
+            path="stage2_ab.channel_b.fp_policy.require_token_score",
+        )
+
+        min_support_count_raw = data.pop(
+            "min_support_count", cls.min_support_count
+        )
+        if isinstance(min_support_count_raw, bool):
+            raise TypeError(
+                "stage2_ab.channel_b.fp_policy.min_support_count must be an int, not bool"
+            )
+        if isinstance(min_support_count_raw, float):
+            if not math.isfinite(min_support_count_raw):
+                raise ValueError(
+                    "stage2_ab.channel_b.fp_policy.min_support_count must be finite"
+                )
+            if not min_support_count_raw.is_integer():
+                raise ValueError(
+                    "stage2_ab.channel_b.fp_policy.min_support_count must be an integer"
+                )
+            min_support_count = int(min_support_count_raw)
+        elif isinstance(min_support_count_raw, int):
+            min_support_count = min_support_count_raw
+        elif isinstance(min_support_count_raw, str):
+            normalized_count = min_support_count_raw.strip()
+            if not normalized_count or not normalized_count.lstrip("+-").isdigit():
+                raise ValueError(
+                    "stage2_ab.channel_b.fp_policy.min_support_count must be an int"
+                )
+            min_support_count = int(normalized_count)
+        else:
+            raise TypeError(
+                "stage2_ab.channel_b.fp_policy.min_support_count must be an int"
+            )
+        if min_support_count < 1:
+            raise ValueError(
+                "stage2_ab.channel_b.fp_policy.min_support_count must be >= 1"
+            )
+
+        if data:
+            unknown = [
+                f"stage2_ab.channel_b.fp_policy.{str(k)}"
+                for k in sorted(data.keys(), key=lambda x: str(x))
+            ]
+            raise ValueError(
+                f"Unknown stage2_ab.channel_b.fp_policy keys: {unknown}"
+            )
+
+        return cls(
+            mode=mode,
+            weak_positive_weight=weak_positive_weight,
+            require_explorer_support=require_explorer_support,
+            min_support_count=min_support_count,
+            require_token_score=require_token_score,
+        )
+
+
+@dataclass(frozen=True)
 class Stage2ABChannelBConfig:
     assignment: Stage2ABChannelBAssignmentConfig = field(
         default_factory=Stage2ABChannelBAssignmentConfig
@@ -2377,6 +2527,9 @@ class Stage2ABChannelBConfig:
     fallback_loss_weight: float = 1.0
     invalid_rollout_policy: str = "abort"
     insertion_order: str = "tail_append"
+    fp_policy: Stage2ABChannelBFalsePositivePolicyConfig = field(
+        default_factory=Stage2ABChannelBFalsePositivePolicyConfig
+    )
     pseudo_positive: Stage2ABChannelBPseudoPositiveConfig = field(
         default_factory=Stage2ABChannelBPseudoPositiveConfig
     )
@@ -2507,6 +2660,10 @@ class Stage2ABChannelBConfig:
                 "{'tail_append', 'sorted', 'fn_slot_shuffle'}"
             )
 
+        fp_policy = Stage2ABChannelBFalsePositivePolicyConfig.from_mapping(
+            data.pop("fp_policy", None)
+        )
+
         producer_wait_timeout_s_raw = data.pop("producer_wait_timeout_s", None)
         producer_wait_timeout_s: Optional[float] = None
         if producer_wait_timeout_s_raw is not None:
@@ -2542,7 +2699,7 @@ class Stage2ABChannelBConfig:
         )
         triage_default_rollouts = (
             4
-            if pseudo_positive.enabled
+            if pseudo_positive.enabled or fp_policy.mode == "weak_positive_context"
             else Stage2ABChannelBTriagePosteriorConfig.num_rollouts
         )
         triage_posterior = Stage2ABChannelBTriagePosteriorConfig.from_mapping(
@@ -2551,6 +2708,7 @@ class Stage2ABChannelBConfig:
         )
         if (
             not pseudo_positive.enabled
+            and fp_policy.mode != "weak_positive_context"
             and triage_posterior.num_rollouts
             != Stage2ABChannelBTriagePosteriorConfig.num_rollouts
         ):
@@ -2574,6 +2732,7 @@ class Stage2ABChannelBConfig:
             fallback_loss_weight=fallback_loss_weight,
             invalid_rollout_policy=invalid_rollout_policy,
             insertion_order=insertion_order,
+            fp_policy=fp_policy,
             pseudo_positive=pseudo_positive,
             triage_posterior=triage_posterior,
         )
@@ -2706,7 +2865,8 @@ class Stage2PipelineConfig:
             Stage2PipelineModuleSpec.from_mapping(
                 item,
                 path=f"stage2_ab.pipeline.objective[{idx}]",
-                allowed_names=ALLOWED_OBJECTIVE_MODULES,
+                allowed_names=ALLOWED_OBJECTIVE_MODULES
+                | {STAGE2_TRIE_CE_MODULE_NAME},
             )
             for idx, item in enumerate(objective_raw)
         ]
@@ -2739,11 +2899,22 @@ class Stage2PipelineConfig:
             "bbox_size_aux",
             "coord_reg",
         ]
+        trie_ce_objective_order = [
+            "token_ce",
+            STAGE2_TRIE_CE_MODULE_NAME,
+            "bbox_geo",
+            "bbox_size_aux",
+            "coord_reg",
+        ]
         authored_objective_order = [str(spec.name) for spec in objective_specs]
-        if authored_objective_order != canonical_objective_order:
+        if authored_objective_order not in (
+            canonical_objective_order,
+            trie_ce_objective_order,
+        ):
             raise ValueError(
                 "stage2_ab.pipeline.objective must use the canonical module order "
-                f"{canonical_objective_order}; got {authored_objective_order}"
+                f"{canonical_objective_order} or {trie_ce_objective_order}; "
+                f"got {authored_objective_order}"
             )
 
         for idx, spec in enumerate(objective_specs):
@@ -2766,6 +2937,8 @@ class Stage2PipelineConfig:
             allowed_presets = OBJECTIVE_APPLICATION_PRESET_ALLOWLIST.get(
                 str(spec.name), set()
             )
+            if str(spec.name) == STAGE2_TRIE_CE_MODULE_NAME:
+                allowed_presets = STAGE2_TRIE_CE_APPLICATION_PRESETS
             if preset not in allowed_presets:
                 if preset in {
                     "anchor_text_plus_final_struct",
@@ -2807,6 +2980,8 @@ class Stage2PipelineConfig:
                     "training uses only the single-pass anchor_text_only contract."
                 )
             allowed_cfg = OBJECTIVE_CONFIG_ALLOWLIST.get(str(spec.name), set())
+            if str(spec.name) == STAGE2_TRIE_CE_MODULE_NAME:
+                allowed_cfg = STAGE2_TRIE_CE_CONFIG_KEYS
             unknown_cfg = set(spec.config.keys()) - allowed_cfg
             if unknown_cfg:
                 raise ValueError(
@@ -2831,6 +3006,48 @@ class Stage2PipelineConfig:
                     spec.config.setdefault("parameterization", "xyxy")
                     spec.config.setdefault("center_weight", 1.0)
                     spec.config.setdefault("size_weight", 1.0)
+            if str(spec.name) == STAGE2_TRIE_CE_MODULE_NAME:
+                for weight_key in sorted(STAGE2_TRIE_CE_RESERVED_WEIGHT_KEYS):
+                    weight_raw = spec.config.get(weight_key)
+                    if isinstance(weight_raw, bool):
+                        raise TypeError(
+                            "stage2_ab.pipeline.objective"
+                            f"[{idx}].config.{weight_key} must be numeric, not bool"
+                        )
+                    try:
+                        weight_value = float(weight_raw)
+                    except (TypeError, ValueError) as exc:
+                        raise TypeError(
+                            "stage2_ab.pipeline.objective"
+                            f"[{idx}].config.{weight_key} must be numeric"
+                        ) from exc
+                    if not math.isfinite(weight_value):
+                        raise ValueError(
+                            "stage2_ab.pipeline.objective"
+                            f"[{idx}].config.{weight_key} must be finite"
+                        )
+                    if weight_value < 0.0:
+                        raise ValueError(
+                            "stage2_ab.pipeline.objective"
+                            f"[{idx}].config.{weight_key} must be >= 0"
+                        )
+                    if weight_value != 1.0:
+                        raise ValueError(
+                            "stage2_ab.pipeline.objective"
+                            f"[{idx}].config.{weight_key} must be 1.0 because "
+                            "Stage-2 trie CE pure hard CE v0 does not apply "
+                            "reserved future weight knobs."
+                        )
+                normalization = str(
+                    spec.config.get("normalization", "") or ""
+                ).strip().lower()
+                if normalization not in STAGE2_TRIE_CE_NORMALIZATIONS:
+                    raise ValueError(
+                        "stage2_ab.pipeline.objective"
+                        f"[{idx}].config.normalization: Stage-2 trie CE pure "
+                        "hard CE v0 requires token_mean; semantic bucket "
+                        "balancing is a reserved future knob."
+                    )
         for idx, spec in enumerate(diagnostics_specs):
             allowed_cfg = DIAGNOSTIC_CONFIG_ALLOWLIST.get(str(spec.name), set())
             unknown_cfg = set(spec.config.keys()) - allowed_cfg
@@ -2842,9 +3059,25 @@ class Stage2PipelineConfig:
                 )
 
         specs_by_name = {spec.name: spec for spec in objective_specs}
+        token_ce = specs_by_name.get("token_ce")
+        stage2_trie_ce = specs_by_name.get(STAGE2_TRIE_CE_MODULE_NAME)
         bbox_geo = specs_by_name.get("bbox_geo")
         bbox_size_aux = specs_by_name.get("bbox_size_aux")
         coord_reg = specs_by_name.get("coord_reg")
+
+        if (
+            token_ce is not None
+            and stage2_trie_ce is not None
+            and bool(token_ce.enabled)
+            and bool(stage2_trie_ce.enabled)
+            and "B" in token_ce.channels
+            and "B" in stage2_trie_ce.channels
+        ):
+            raise ValueError(
+                "Channel-B objective supervision cannot enable both token_ce and "
+                "stage2_trie_ce on Channel-B; remove Channel-B from token_ce.channels "
+                "or disable stage2_trie_ce."
+            )
 
         def _coord_targets_for_preset(preset: str) -> set[str]:
             if preset == "anchor_only":

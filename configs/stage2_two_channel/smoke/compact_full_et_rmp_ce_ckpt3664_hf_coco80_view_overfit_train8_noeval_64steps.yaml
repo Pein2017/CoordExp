@@ -1,0 +1,31 @@
+# Tiny Stage-2 standard-COCO training-only overfit probe.
+#
+# Purpose:
+# - repeatedly expose the model to the same 8 training samples
+# - avoid eval entirely so the signal is train-side memorization behavior
+# - inspect loss, rollout validity, train-side precision/recall/F1, and duplicate bursts
+
+extends: ./compact_full_et_rmp_ce_ckpt3664_hf_coco80_view_fallback1p0_2steps.yaml
+
+training:
+  run_name: smoke_64steps-coco80_view-overfit_train8-noeval-fallback1p0-compact_full-et_rmp_ce_ckpt3664
+  artifact_subdir: stage2_ab/smoke/coco80_view_overfit_probe/fallback1p0_train8_noeval_64steps
+  max_steps: 64
+  eval_strategy: "no"
+  save_strategy: "no"
+
+custom:
+  train_jsonl: public_data/coco/views/coco80/full/train.jsonl
+  train_sample_limit: 8
+  val_sample_limit: 0
+  object_ordering: random
+  detection_sequence_format: compact_full
+  coord_tokens:
+    enabled: true
+    skip_bbox_norm: true
+
+rollout_matching:
+  train_monitor_dump:
+    max_samples: 8
+  eval_monitor_dump:
+    max_samples: 0

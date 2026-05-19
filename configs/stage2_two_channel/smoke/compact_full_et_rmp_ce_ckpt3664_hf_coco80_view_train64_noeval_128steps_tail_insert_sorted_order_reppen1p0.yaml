@@ -1,0 +1,13 @@
+# Larger Stage-2 standard-COCO training-only preflight.
+#
+# Ablation: disable decode-time repetition penalty while preserving the
+# tail-append + sorted-order baseline.
+
+extends: ./compact_full_et_rmp_ce_ckpt3664_hf_coco80_view_train64_noeval_128steps_tail_insert_sorted_order.yaml
+
+training:
+  run_name: smoke_128steps-coco80_view-train64-noeval-tail_insert-sorted_order-reppen1p0-fallback1p0-compact_full-et_rmp_ce_ckpt3664
+  artifact_subdir: stage2_ab/smoke/coco80_view_larger_preflight/train64_128steps_tail_insert_sorted_order_reppen1p0
+
+rollout_matching:
+  repetition_penalty: 1.0

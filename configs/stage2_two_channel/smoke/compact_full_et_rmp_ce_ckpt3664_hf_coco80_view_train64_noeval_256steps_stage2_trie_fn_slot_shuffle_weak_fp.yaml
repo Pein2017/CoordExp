@@ -1,0 +1,15 @@
+# Tiny Stage-2 trie-CE standard-COCO overfit sweep.
+#
+# Axis: FN slot shuffling with explorer-supported weak FP context.
+
+extends: ./compact_full_et_rmp_ce_ckpt3664_hf_coco80_view_train64_noeval_256steps_stage2_trie_fn_slot_shuffle_zero_fp.yaml
+
+training:
+  run_name: overfit_256steps-coco80_view-train64-noeval-stage2_trie_ce-fn_slot_shuffle-weak_fp-compact_full-et_rmp_ce_ckpt3664
+  artifact_subdir: stage2_ab/ablation/coco80_view_stage2_trie_ce_overfit/train64_256steps_fn_slot_shuffle_weak_fp
+
+stage2_ab:
+  channel_b:
+    fp_policy:
+      mode: weak_positive_context
+      weak_positive_weight: 0.05

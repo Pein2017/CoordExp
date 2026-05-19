@@ -33,10 +33,14 @@ from src.trainers.stage2_two_channel import (
     _extract_gt_bboxonly,
     _is_stage2_channel_b_direct_batch_metric_key,
     _matched_prefix_structure_positions,
+    _sample_identifier_or_index,
     _stage2_ab_tail_closure_positions,
+    _stage2_compact_semantic_stop_branch_metadata,
+    _stage2_compact_tail_closure_positions,
 )
 from src.trainers.stage2_two_channel.target_builder import (
     _apply_channel_b_duplicate_control,
+    _attach_stage2_trie_sidecar_to_meta,
     _build_canonical_prefix_data,
     _build_canonical_prefix_text_data,
     _build_channel_b_supervision_targets,
@@ -44,6 +48,15 @@ from src.trainers.stage2_two_channel.target_builder import (
     _build_duplicate_control_divergence_diagnostics,
     _compute_duplicate_diagnostics,
     _sequential_dedup_bbox_objects,
+)
+from src.trainers.stage2_two_channel.objective_runner import (
+    build_stage2_core_loss_logs,
+)
+from src.trainers.stage2_two_channel.trie_supervision import (
+    Stage2TrieCandidate,
+    Stage2TrieObjectSpan,
+    Stage2TrieTokenTarget,
+    Stage2TrieTargets,
 )
 
 
@@ -410,6 +423,22 @@ class _CoordLiteralTokenizer(_DummyTokenizer):
             out.append(self._id_for(s[i]))
             i += 1
         return out
+
+
+class _CompactMarkerDescMergingTokenizer(_CoordLiteralTokenizer):
+    def encode(self, text: str, add_special_tokens: bool = False):
+        marker_desc = f"{OBJECT_REF_START_TOKEN}unmatched-anchor"
+        s = str(text)
+        if s.startswith(marker_desc):
+            return [self._id_for(marker_desc)] + [
+                int(token_id)
+                for token_id in super().encode(
+                    s[len(marker_desc) :],
+                    add_special_tokens=add_special_tokens,
+                )
+            ]
+
+        return super().encode(text, add_special_tokens=add_special_tokens)
 
 
 class _PieceFrameMismatchTokenizer(_DummyTokenizer):
@@ -785,6 +814,32 @@ def _single_bbox_sample() -> dict:
     }
 
 
+def test_compact_tail_closure_and_stop_metadata_use_turn_end_token() -> None:
+    tok = _CoordLiteralTokenizer()
+    assistant_text = (
+        f"{OBJECT_REF_START_TOKEN}cat{BOX_START_TOKEN}"
+        "<|coord_10|><|coord_20|><|coord_30|><|coord_40|>"
+    )
+    assistant_ids = list(tok.encode(assistant_text, add_special_tokens=False))
+    im_end_id = int(tok.convert_tokens_to_ids("<|im_end|>"))
+
+    closure_pos = _stage2_compact_tail_closure_positions(
+        tokenizer=tok,
+        assistant_span_ids=assistant_ids + [im_end_id],
+        prefix_len=0,
+    )
+    stop_meta = _stage2_compact_semantic_stop_branch_metadata(
+        tokenizer=tok,
+        assistant_span_ids=assistant_ids + [im_end_id],
+        prefix_len=0,
+    )
+
+    assert closure_pos == [len(assistant_ids)]
+    assert stop_meta["stop_rel_pos"] == len(assistant_ids)
+    assert stop_meta["stop_token_id"] == im_end_id
+    assert stop_meta["continue_token_id"] is None
+
+
 def test_channel_a_runs_single_forward_and_enforces_qwen_posids():
     trainer = _make_min_trainer()
     model = _DummyModel()
@@ -964,6 +1019,255 @@ def test_parse_rollout_fallback_prefix_brace_is_deterministic():
     assert p1.prefix_text == p2.prefix_text == '{"objects": ['
     assert p1.valid_objects == []
     assert p1.invalid_rollout is True
+
+
+def test_channel_b_trie_sidecar_uses_prompt_len_as_segment_local_label_start() -> None:
+    meta = {
+        "rollout_context": "rollout_valid_with_fn_append",
+        "rollout_fallback_loss_weight": 0.25,
+    }
+
+    _attach_stage2_trie_sidecar_to_meta(
+        meta_entry=meta,
+        y_train_ids=[101, 102, 103],
+        prompt_len=4,
+        sample_id="sample-1",
+        rollout_index=2,
+    )
+
+    targets = meta["stage2_trie_targets"]
+    assert isinstance(targets, Stage2TrieTargets)
+    assert [target.position for target in targets.token_targets] == [4, 5, 6]
+    assert [target.positive_token_ids for target in targets.token_targets] == [
+        (101,),
+        (102,),
+        (103,),
+    ]
+    assert targets.summary.candidate_count == 1
+    assert targets.summary.fallback_candidate_count == 0
+    summary = meta["stage2_trie_candidate_summary"]
+    assert summary == {
+        "sample_id": "sample-1",
+        "candidate_count": 1,
+        "fallback_candidate_count": 0,
+        "fallback_loss_weight_sum": 0.0,
+        "weak_positive_fp_count": 0,
+        "label_position_start": 4,
+        "target_positions": 3,
+        "branch_points": 0,
+        "max_branching_factor": 1,
+        "rollout_indices": [2],
+        "rollout_index": 2,
+        "source": "valid_rollout",
+        "token_count": 3,
+        "loss_weight": 1.0,
+    }
+    assert meta["stage2_trie_span_scores"] == []
+
+
+def test_channel_b_trie_sidecar_fallback_context_uses_fallback_source_and_weight() -> None:
+    meta = {
+        "rollout_context": "fallback_gt_fn_append_only",
+        "rollout_fallback_loss_weight": 0.25,
+    }
+
+    _attach_stage2_trie_sidecar_to_meta(
+        meta_entry=meta,
+        y_train_ids=[201, 202],
+        prompt_len=3,
+        sample_id="fallback-sample",
+        rollout_index=-1,
+    )
+
+    targets = meta["stage2_trie_targets"]
+    assert isinstance(targets, Stage2TrieTargets)
+    assert targets.summary.fallback_candidate_count == 1
+    assert targets.summary.fallback_loss_weight_sum == pytest.approx(0.25)
+    assert targets.token_targets[0].source_weights == (0.25,)
+    assert meta["stage2_trie_candidate_summary"]["source"] == (
+        "fallback_gt_fn_append_only"
+    )
+    assert meta["stage2_trie_candidate_summary"]["loss_weight"] == pytest.approx(0.25)
+
+
+def test_channel_b_trie_sidecar_attaches_explicit_grouped_candidates() -> None:
+    meta = {
+        "rollout_context": "rollout_valid_with_fn_append",
+        "rollout_fallback_loss_weight": 0.25,
+    }
+    candidates = [
+        Stage2TrieCandidate(
+            sample_id="group-sample",
+            rollout_index=0,
+            source="valid_rollout",
+            token_ids=[101, 11, 12],
+            loss_weight=1.0,
+            object_spans=[],
+        ),
+        Stage2TrieCandidate(
+            sample_id="group-sample",
+            rollout_index=1,
+            source="valid_rollout",
+            token_ids=[101, 11, 13],
+            loss_weight=1.0,
+            object_spans=[],
+        ),
+        Stage2TrieCandidate(
+            sample_id="group-sample",
+            rollout_index=-1,
+            source="fallback_gt_fn_append_only",
+            token_ids=[101, 11, 14],
+            loss_weight=0.25,
+            object_spans=[
+                Stage2TrieObjectSpan(
+                    role="fallback_fn",
+                    token_start=2,
+                    token_end=3,
+                    object_iou=None,
+                    support_count=0,
+                    loss_weight=0.25,
+                )
+            ],
+        ),
+    ]
+
+    _attach_stage2_trie_sidecar_to_meta(
+        meta_entry=meta,
+        y_train_ids=[999],
+        prompt_len=5,
+        sample_id="group-sample",
+        rollout_index=9,
+        stage2_trie_candidates=candidates,
+    )
+
+    targets = meta["stage2_trie_targets"]
+    assert isinstance(targets, Stage2TrieTargets)
+    assert targets.summary.candidate_count == 3
+    assert targets.summary.fallback_candidate_count == 1
+    assert targets.summary.branch_points == 1
+    assert targets.token_targets[2].positive_token_ids == (12, 13, 14)
+    summary = meta["stage2_trie_candidate_summary"]
+    assert summary["sample_id"] == "group-sample"
+    assert summary["candidate_count"] == 3
+    assert summary["fallback_candidate_count"] == 1
+    assert summary["fallback_loss_weight_sum"] == pytest.approx(0.25)
+    assert summary["weak_positive_fp_count"] == 0
+    assert summary["target_positions"] == 3
+    assert summary["branch_points"] == 1
+    assert summary["max_branching_factor"] == 3
+    assert summary["label_position_start"] == 5
+    assert summary["rollout_indices"] == [0, 1, -1]
+    assert "rollout_index" not in summary
+    assert "token_count" not in summary
+    assert meta["stage2_trie_span_scores"][0]["sample_id"] == "group-sample"
+
+
+def test_channel_b_trie_sidecar_rejects_explicit_grouped_candidate_sample_mismatch() -> None:
+    meta = {
+        "rollout_context": "rollout_valid_with_fn_append",
+        "rollout_fallback_loss_weight": 0.25,
+    }
+    candidates = [
+        Stage2TrieCandidate(
+            sample_id="candidate-sample",
+            rollout_index=0,
+            source="valid_rollout",
+            token_ids=[101],
+            loss_weight=1.0,
+            object_spans=[],
+        )
+    ]
+
+    with pytest.raises(ValueError, match="sample_id.*metadata"):
+        _attach_stage2_trie_sidecar_to_meta(
+            meta_entry=meta,
+            y_train_ids=[],
+            prompt_len=5,
+            sample_id="metadata-sample",
+            rollout_index=0,
+            stage2_trie_candidates=candidates,
+        )
+
+
+def test_channel_b_trie_sidecar_rejects_empty_explicit_grouped_candidates() -> None:
+    meta = {
+        "rollout_context": "rollout_valid_with_fn_append",
+        "rollout_fallback_loss_weight": 0.25,
+    }
+
+    with pytest.raises(ValueError, match="rollout group candidates.*non-empty"):
+        _attach_stage2_trie_sidecar_to_meta(
+            meta_entry=meta,
+            y_train_ids=[],
+            prompt_len=5,
+            sample_id="group-sample",
+            rollout_index=0,
+            stage2_trie_candidates=[],
+        )
+
+
+def test_channel_b_trie_sidecar_rejects_explicit_group_with_invalid_prompt_len() -> None:
+    meta = {
+        "rollout_context": "rollout_valid_with_fn_append",
+        "rollout_fallback_loss_weight": 0.25,
+    }
+    candidates = [
+        Stage2TrieCandidate(
+            sample_id="group-sample",
+            rollout_index=0,
+            source="valid_rollout",
+            token_ids=[101],
+            loss_weight=1.0,
+            object_spans=[],
+        )
+    ]
+
+    with pytest.raises(ValueError, match="label_position_start.*> 0"):
+        _attach_stage2_trie_sidecar_to_meta(
+            meta_entry=meta,
+            y_train_ids=[],
+            prompt_len=0,
+            sample_id="group-sample",
+            rollout_index=0,
+            stage2_trie_candidates=candidates,
+        )
+
+
+def test_stage2_two_channel_sample_identifier_preserves_falsy_ids() -> None:
+    assert _sample_identifier_or_index({"sample_id": 0, "image_id": 7}, 99) == 0
+    assert _sample_identifier_or_index({"sample_id": None, "image_id": 0}, 99) == 0
+    assert _sample_identifier_or_index({"base_idx": 0}, 99) == 0
+    assert _sample_identifier_or_index({}, 99) == 99
+
+
+@pytest.mark.parametrize(
+    ("prompt_len", "y_train_ids"),
+    [
+        (0, [301]),
+        (-1, [301]),
+        (3, []),
+    ],
+)
+def test_channel_b_trie_sidecar_skips_invalid_prompt_or_empty_targets(
+    prompt_len: int,
+    y_train_ids: list[int],
+) -> None:
+    meta = {
+        "rollout_context": "rollout_valid_with_fn_append",
+        "rollout_fallback_loss_weight": 0.25,
+    }
+
+    _attach_stage2_trie_sidecar_to_meta(
+        meta_entry=meta,
+        y_train_ids=y_train_ids,
+        prompt_len=prompt_len,
+        sample_id="skip-sample",
+        rollout_index=0,
+    )
+
+    assert "stage2_trie_targets" not in meta
+    assert "stage2_trie_candidate_summary" not in meta
+    assert "stage2_trie_span_scores" not in meta
 
 
 def test_channel_b_compact_full_rollout_template_uses_compact_parser_and_targets(
@@ -1163,6 +1467,139 @@ def test_channel_b_compact_full_invalid_explorer_rollouts_do_not_dilute_posterio
     assert metrics["rollout/invalid_fallback_gt_fn_rate"] == pytest.approx(0.5)
     assert metrics["rollout/fallback_gt_fn_append_only_count"] == pytest.approx(2.0)
     assert metrics["rollout/explorer/valid_pred_objects"] == pytest.approx(1.0 / 3.0)
+
+
+def test_channel_b_live_grouped_stage2_trie_candidates_branch_on_valid_explorer(
+    monkeypatch,
+) -> None:
+    anchor_text = (
+        f"{OBJECT_REF_START_TOKEN}cat{BOX_START_TOKEN}"
+        "<|coord_10|><|coord_20|><|coord_30|><|coord_40|>"
+    )
+    explorer_text = (
+        f"{OBJECT_REF_START_TOKEN}cat{BOX_START_TOKEN}"
+        "<|coord_10|><|coord_20|><|coord_30|><|coord_41|>"
+    )
+    invalid_explorer_text = "not compact output"
+    t = _make_compact_channel_b_trainer(
+        rollout_text=anchor_text,
+        rollout_texts_by_call=[anchor_text, invalid_explorer_text, explorer_text],
+        num_rollouts=3,
+    )
+    tok = t.template.tokenizer
+
+    class _PromptTemplate:
+        tokenizer = tok
+
+        def encode(self, data, return_length=True):
+            content = data["messages"][-1]["content"]
+            assistant_ids = (
+                [int(x) for x in content]
+                if isinstance(content, list)
+                else [
+                    int(x)
+                    for x in tok.encode(str(content), add_special_tokens=False)
+                ]
+            )
+            input_ids = [12345] + list(assistant_ids)
+            return {
+                "input_ids": input_ids,
+                "labels": [-100] + list(assistant_ids),
+                "length": len(input_ids),
+            }
+
+    t.template = _PromptTemplate()
+    monkeypatch.setattr(
+        "src.trainers.stage2_two_channel.parse_rollout_for_matching",
+        lambda **kwargs: pytest.fail("legacy CoordJSON parser must not run"),
+    )
+
+    segments, _metrics = t._prepare_batch_inputs_b(
+        [_single_bbox_sample()],
+        _segments_only=True,
+    )
+
+    assert len(segments) == 1
+    encoded, meta, _length = segments[0]
+    targets = meta["stage2_trie_targets"]
+    summary = meta["stage2_trie_candidate_summary"]
+    prompt_len = int(meta["prompt_len"])
+    train_len = int(meta["train_len"])
+
+    assert summary["candidate_count"] > 1
+    assert summary["rollout_indices"] == [0, 2]
+    assert summary["branch_points"] > 0
+    assert summary["sample_id"] == "0"
+    assert max(target.position for target in targets.token_targets) < (
+        prompt_len + train_len
+    )
+    assert all(
+        0 <= int(target.position) - prompt_len < train_len
+        for target in targets.token_targets
+    )
+    assert all(
+        int(encoded["input_ids"][int(target.position)]) in target.positive_token_ids
+        for target in targets.token_targets
+    )
+
+
+def test_channel_b_compact_full_stage2_trie_roles_and_eos_target(
+    monkeypatch,
+) -> None:
+    rollout_text = (
+        f"{OBJECT_REF_START_TOKEN}cat{BOX_START_TOKEN}"
+        "<|coord_10|><|coord_20|><|coord_30|><|coord_40|>"
+    )
+    t = _make_compact_channel_b_trainer(rollout_text=rollout_text)
+    tok = t.template.tokenizer
+    im_end_id = int(tok.convert_tokens_to_ids("<|im_end|>"))
+
+    class _PromptTemplate:
+        tokenizer = tok
+
+        def encode(self, data, return_length=True):
+            content = data["messages"][-1]["content"]
+            assistant_ids = (
+                [int(x) for x in content]
+                if isinstance(content, list)
+                else [
+                    int(x)
+                    for x in tok.encode(str(content), add_special_tokens=False)
+                ]
+            )
+            input_ids = [12345] + list(assistant_ids) + [im_end_id]
+            return {
+                "input_ids": input_ids,
+                "labels": [-100] + list(assistant_ids) + [im_end_id],
+                "length": len(input_ids),
+            }
+
+    t.template = _PromptTemplate()
+    monkeypatch.setattr(
+        "src.trainers.stage2_two_channel.parse_rollout_for_matching",
+        lambda **kwargs: pytest.fail("legacy CoordJSON parser must not run"),
+    )
+
+    segments, _metrics = t._prepare_batch_inputs_b(
+        [_single_bbox_sample()],
+        _segments_only=True,
+    )
+
+    encoded, meta, _length = segments[0]
+    targets = meta["stage2_trie_targets"]
+    roles = {str(target.semantic_role) for target in targets.token_targets}
+    eos_targets = [
+        target for target in targets.token_targets if target.semantic_role == "eos"
+    ]
+
+    assert {"struct", "desc", "coord", "eos"}.issubset(roles)
+    assert len(eos_targets) == 1
+    assert meta["tail_closure_pos"] == [0]
+    assert meta["stop_rel_pos"] == 0
+    assert meta["stop_token_id"] == im_end_id
+    assert meta["continue_token_id"] is None
+    assert int(encoded["input_ids"][int(eos_targets[0].position)]) == im_end_id
+    assert eos_targets[0].positive_token_ids == (im_end_id,)
 
 
 def test_channel_b_matching_uses_greedy_assignment_threshold(monkeypatch):
@@ -2052,6 +2489,39 @@ def test_stage2_train_monitor_dump_every_channel_b_steps_ignores_global_step_ali
     assert captured["payload"]["samples"][0]["sample_id"] == "third-b-step"
 
 
+def test_stage2_train_monitor_cadence_advances_without_suspicious_candidate() -> None:
+    t = Stage2TwoChannelTrainer.__new__(Stage2TwoChannelTrainer)
+    cfg = {
+        "decode_mode": "greedy",
+        "train_monitor_dump": {
+            "enabled": True,
+            "every_channel_b_steps": 3,
+            "max_samples": 1,
+            "write_markdown": False,
+        },
+    }
+    t._cfg = lambda key, default=None: cfg.get(key, default)
+    t.args = types.SimpleNamespace(logging_steps=10, logging_first_step=False)
+    t.is_world_process_zero = True
+    t._stage2_train_monitor_pending_gs = None
+    t._stage2_train_monitor_candidates = []
+    t._stage2_train_monitor_b_step_count = 0
+    t._stage2_train_monitor_dump_count = 0
+    t._stage2_train_monitor_dump_last_step = None
+
+    t._stage2_advance_train_monitor_b_step(global_step=4)
+    assert t._stage2_train_monitor_b_step_count == 1
+    assert t._stage2_train_monitor_step_allowed(global_step=4) is False
+
+    t._stage2_advance_train_monitor_b_step(global_step=8)
+    assert t._stage2_train_monitor_b_step_count == 2
+    assert t._stage2_train_monitor_step_allowed(global_step=8) is False
+
+    t._stage2_advance_train_monitor_b_step(global_step=12)
+    assert t._stage2_train_monitor_b_step_count == 3
+    assert t._stage2_train_monitor_step_allowed(global_step=12) is True
+
+
 def test_stage2_train_monitor_dump_keeps_eval_budget_and_same_step_eligibility():
     t = Stage2TwoChannelTrainer.__new__(Stage2TwoChannelTrainer)
     cfg = {
@@ -2098,6 +2568,155 @@ def test_stage2_train_monitor_dump_keeps_eval_budget_and_same_step_eligibility()
     assert t._monitor_dump_count == 0
     assert t._monitor_dump_last_step is None
     assert t._should_eval_monitor_dump(global_step=11, eval_index=1) is True
+
+
+def test_stage2_trie_span_score_dump_writes_jsonl(tmp_path) -> None:
+    t = Stage2TwoChannelTrainer.__new__(Stage2TwoChannelTrainer)
+    dump_root = tmp_path / "monitor_dumps"
+    cfg = {
+        "train_monitor_dump": {
+            "enabled": True,
+            "out_dir": str(dump_root),
+            "async_write": False,
+            "every_channel_b_steps": 1,
+            "max_events": 2,
+        },
+    }
+    t._cfg = lambda key, default=None: cfg.get(key, default)
+    t.args = types.SimpleNamespace(logging_steps=10, logging_first_step=False)
+    t.state = types.SimpleNamespace(global_step=6, epoch=0.0)
+    t.is_world_process_zero = True
+    t._stage2_train_monitor_b_step_count = 1
+    t._stage2_trie_span_score_dump_last_step = None
+    t._stage2_trie_span_score_dump_count = 0
+    meta = [
+        {
+            "stage2_trie_span_scores": [
+                {
+                    "sample_id": "sample-1",
+                    "rollout_index": 2,
+                    "candidate_source": "valid_rollout",
+                    "span_role": "weak_positive_fp",
+                    "object_role": "weak_positive_fp",
+                    "token_start": 5,
+                    "token_end": 6,
+                    "mean_token_logprob": None,
+                    "min_token_logprob": None,
+                    "object_iou": None,
+                    "support_count": 1,
+                    "loss_weight": 0.05,
+                }
+            ]
+        }
+    ]
+
+    records = t._collect_stage2_trie_span_score_records(
+        meta=meta,
+        global_step=7,
+    )
+    wrote = t._write_stage2_trie_span_score_dump(
+        global_step=7,
+        records=records,
+    )
+
+    assert wrote is True
+    assert t._stage2_trie_span_score_dump_count == 1
+    dump_path = dump_root / "stage2_trie_span_scores" / "step_000007.jsonl"
+    payloads = [
+        json.loads(line)
+        for line in dump_path.read_text(encoding="utf-8").splitlines()
+    ]
+    assert payloads == [
+        {
+            "sample_id": "sample-1",
+            "rollout_index": 2,
+            "candidate_source": "valid_rollout",
+            "span_role": "weak_positive_fp",
+            "object_role": "weak_positive_fp",
+            "token_start": 5,
+            "token_end": 6,
+            "mean_token_logprob": None,
+            "min_token_logprob": None,
+            "object_iou": None,
+            "support_count": 1,
+            "loss_weight": 0.05,
+            "global_step": 7,
+            "segment_index": 0,
+            "record_index": 0,
+        }
+    ]
+
+
+def test_stage2_trie_span_score_dump_appends_same_step_without_double_count(
+    tmp_path,
+) -> None:
+    t = Stage2TwoChannelTrainer.__new__(Stage2TwoChannelTrainer)
+    dump_root = tmp_path / "monitor_dumps"
+    cfg = {
+        "train_monitor_dump": {
+            "enabled": True,
+            "out_dir": str(dump_root),
+            "async_write": False,
+            "every_channel_b_steps": 1,
+            "max_events": 1,
+        },
+    }
+    t._cfg = lambda key, default=None: cfg.get(key, default)
+    t.args = types.SimpleNamespace(logging_steps=10, logging_first_step=False)
+    t.is_world_process_zero = True
+    t._stage2_train_monitor_b_step_count = 1
+    t._stage2_trie_span_score_dump_last_step = None
+    t._stage2_trie_span_score_dump_count = 0
+
+    first = t._write_stage2_trie_span_score_dump(
+        global_step=7,
+        records=[{"sample_id": "sample-1"}],
+    )
+    second = t._write_stage2_trie_span_score_dump(
+        global_step=7,
+        records=[{"sample_id": "sample-2"}],
+    )
+
+    assert first is True
+    assert second is True
+    assert t._stage2_trie_span_score_dump_count == 1
+    dump_path = dump_root / "stage2_trie_span_scores" / "step_000007.jsonl"
+    payloads = [
+        json.loads(line)
+        for line in dump_path.read_text(encoding="utf-8").splitlines()
+    ]
+    assert [payload["sample_id"] for payload in payloads] == [
+        "sample-1",
+        "sample-2",
+    ]
+
+
+def test_stage2_trie_span_score_dump_respects_disabled_train_monitor_dump(
+    tmp_path,
+) -> None:
+    t = Stage2TwoChannelTrainer.__new__(Stage2TwoChannelTrainer)
+    dump_root = tmp_path / "monitor_dumps"
+    cfg = {
+        "train_monitor_dump": {
+            "enabled": False,
+            "out_dir": str(dump_root),
+            "async_write": False,
+        },
+    }
+    t._cfg = lambda key, default=None: cfg.get(key, default)
+    t.args = types.SimpleNamespace(logging_steps=1, logging_first_step=True)
+    t.is_world_process_zero = True
+    t._stage2_train_monitor_b_step_count = 1
+    t._stage2_trie_span_score_dump_last_step = None
+    t._stage2_trie_span_score_dump_count = 0
+
+    wrote = t._write_stage2_trie_span_score_dump(
+        global_step=1,
+        records=[{"sample_id": "sample-1"}],
+    )
+
+    assert wrote is False
+    assert not dump_root.exists()
 
 
 def test_channel_b_fn_bbox_groups_anchor_to_clean_prefix_not_raw_prefix(monkeypatch):
@@ -3153,6 +3772,234 @@ def test_channel_b_triage_lvis_policy_forces_verified_dead_and_only_shields_ambi
     assert triage.dead_anchor_indices == [0, 3]
 
 
+def _build_fp_context_channel_b_targets(
+    *,
+    support_count: int,
+    fp_policy_mode: str,
+    fp_policy_min_support_count: int = 1,
+    fp_policy_require_token_score: bool = False,
+    tokenizer: object | None = None,
+    rollout_template_family: str = "compact_full",
+):
+    tok = tokenizer if tokenizer is not None else _CoordLiteralTokenizer()
+    anchor = GTObject(
+        index=0,
+        geom_type="bbox_2d",
+        points_norm1000=[10, 20, 30, 40],
+        desc="unmatched-anchor",
+    )
+    explorer_objects_by_view = [[anchor] for _ in range(int(support_count))]
+    accepted_clean, suppressed_duplicate_objects_by_boundary = (
+        _apply_test_duplicate_control(
+            parsed_bbox_objects_raw=[anchor],
+            duplicate_iou_threshold=0.9,
+        )
+    )
+    triage = _build_channel_b_triage(
+        accepted_objects_clean=accepted_clean,
+        suppressed_duplicate_objects_by_boundary=suppressed_duplicate_objects_by_boundary,
+        explorer_objects_raw_by_view=explorer_objects_by_view,
+        anchor_match_by_pred={},
+        explorer_match_by_pred_by_view=[{} for _ in explorer_objects_by_view],
+        unlabeled_consistent_iou_threshold=0.9,
+        duplicate_iou_threshold=0.9,
+        pseudo_positive_enabled=False,
+    )
+
+    return _build_channel_b_supervision_targets(
+        tokenizer=tok,
+        prompt_ids=[],
+        coord_id_set=set(range(1000)),
+        gts=[],
+        match=types.SimpleNamespace(matched_pairs=[]),
+        triage=triage,
+        recovered_ground_truth_weight_multiplier=2.0,
+        pseudo_positive_enabled=False,
+        pseudo_positive_coord_weight=0.4,
+        object_field_order="desc_first",
+        bbox_groups_from_token_ids_fn=_bbox_groups_from_token_ids,
+        matched_prefix_structure_positions_fn=_matched_prefix_structure_positions,
+        serialize_append_fragment_fn=_serialize_append_fragment,
+        fp_policy_mode=fp_policy_mode,
+        fp_policy_weak_positive_weight=0.05,
+        fp_policy_min_support_count=int(fp_policy_min_support_count),
+        fp_policy_require_token_score=bool(fp_policy_require_token_score),
+        rollout_template_policy=resolve_stage2_rollout_template_policy(
+            str(rollout_template_family)
+        ),
+    )
+
+
+def test_channel_b_zero_loss_fp_context_records_neutral_span_and_shields_trie_targets() -> None:
+    targets = _build_fp_context_channel_b_targets(
+        support_count=1,
+        fp_policy_mode="zero_loss_context",
+    )
+    span = targets.stage2_trie_object_spans[0]
+    terminal_token_id = 1234
+    meta = {
+        "rollout_context": "rollout_valid_with_fn_append",
+        "rollout_fallback_loss_weight": 0.25,
+    }
+
+    _attach_stage2_trie_sidecar_to_meta(
+        meta_entry=meta,
+        y_train_ids=targets.y_train_ids,
+        prompt_len=3,
+        sample_id="fp-context-neutral",
+        rollout_index=0,
+        stage2_trie_object_spans=targets.stage2_trie_object_spans,
+        assistant_span_ids=list(targets.y_train_ids) + [terminal_token_id],
+    )
+
+    covered_positions = set(range(3 + span.token_start, 3 + span.token_end))
+    emitted_positions = {
+        target.position for target in meta["stage2_trie_targets"].token_targets
+    }
+    eos_targets = [
+        target
+        for target in meta["stage2_trie_targets"].token_targets
+        if target.semantic_role == "eos"
+    ]
+    assert span.role == "neutral_fp"
+    assert span.loss_weight == pytest.approx(0.0)
+    assert covered_positions
+    assert emitted_positions.isdisjoint(covered_positions)
+    assert len(eos_targets) == 1
+    assert eos_targets[0].position == 3 + len(targets.y_train_ids)
+    assert eos_targets[0].positive_token_ids == (terminal_token_id,)
+    assert meta["stage2_trie_candidate_summary"]["weak_positive_fp_count"] == 0
+
+
+def test_channel_b_weak_positive_fp_context_records_json_safe_span_and_fallback_flag() -> None:
+    tok = _CoordLiteralTokenizer()
+    targets = _build_fp_context_channel_b_targets(
+        support_count=1,
+        fp_policy_mode="weak_positive_context",
+        tokenizer=tok,
+    )
+    meta = {
+        "rollout_context": "rollout_valid_with_fn_append",
+        "rollout_fallback_loss_weight": 0.25,
+    }
+
+    _attach_stage2_trie_sidecar_to_meta(
+        meta_entry=meta,
+        y_train_ids=targets.y_train_ids,
+        prompt_len=3,
+        sample_id="fp-context-weak",
+        rollout_index=0,
+        stage2_trie_object_spans=targets.stage2_trie_object_spans,
+        stage2_trie_weak_fp_span_level_fallback=(
+            targets.stage2_trie_weak_fp_span_level_fallback
+        ),
+    )
+
+    neutral_span = next(
+        span
+        for span in targets.stage2_trie_object_spans
+        if span.role == "neutral_fp"
+    )
+    weak_span = next(
+        span
+        for span in targets.stage2_trie_object_spans
+        if span.role == "weak_positive_fp"
+    )
+    desc_start = len(OBJECT_REF_START_TOKEN)
+    desc_end = int(desc_start + len("unmatched-anchor"))
+    desc_positions = set(range(int(desc_start), int(desc_end)))
+    coord_positions = {
+        int(idx)
+        for idx, token_id in enumerate(targets.y_train_ids)
+        if 0 <= int(token_id) <= 999
+    }
+    weak_positions = set(range(int(weak_span.token_start), int(weak_span.token_end)))
+    weak_span_text = tok.decode(
+        targets.y_train_ids[weak_span.token_start : weak_span.token_end]
+    )
+    emitted_positions = {
+        int(target.position) - 3
+        for target in meta["stage2_trie_targets"].token_targets
+    }
+
+    assert neutral_span.loss_weight == pytest.approx(0.0)
+    assert weak_span.loss_weight == pytest.approx(0.05)
+    assert weak_span_text == OBJECT_REF_START_TOKEN
+    assert weak_positions
+    assert weak_positions.isdisjoint(desc_positions)
+    assert weak_positions.isdisjoint(coord_positions)
+    assert emitted_positions.isdisjoint(desc_positions)
+    assert emitted_positions.isdisjoint(coord_positions)
+    assert targets.stage2_trie_weak_fp_span_level_fallback is True
+    assert meta["stage2_trie_candidate_summary"]["weak_positive_fp_count"] == 1
+    assert meta["stage2_trie_weak_fp_span_level_fallback"] is True
+    weak_score = next(
+        item
+        for item in meta["stage2_trie_span_scores"]
+        if item["span_role"] == "weak_positive_fp"
+    )
+    assert weak_score["loss_weight"] == pytest.approx(0.05)
+    json.dumps(meta["stage2_trie_span_scores"], allow_nan=False)
+
+
+def test_channel_b_weak_positive_fp_context_with_insufficient_support_stays_neutral() -> None:
+    targets = _build_fp_context_channel_b_targets(
+        support_count=1,
+        fp_policy_mode="weak_positive_context",
+        fp_policy_min_support_count=2,
+    )
+
+    assert len(targets.stage2_trie_object_spans) == 1
+    assert targets.stage2_trie_object_spans[0].role == "neutral_fp"
+    assert targets.stage2_trie_object_spans[0].support_count == 1
+    assert targets.stage2_trie_object_spans[0].loss_weight == pytest.approx(0.0)
+    assert targets.stage2_trie_weak_fp_span_level_fallback is False
+
+
+def test_channel_b_weak_positive_fp_context_rejects_non_compact_v0() -> None:
+    with pytest.raises(
+        ValueError,
+        match="weak_positive_context.*compact_full.*v0",
+    ):
+        _build_fp_context_channel_b_targets(
+            support_count=1,
+            fp_policy_mode="weak_positive_context",
+            rollout_template_family="coordjson",
+        )
+
+
+def test_channel_b_weak_positive_fp_context_raises_when_marker_span_not_isolated() -> None:
+    with pytest.raises(
+        ValueError,
+        match="object marker token span",
+    ):
+        _build_fp_context_channel_b_targets(
+            support_count=1,
+            fp_policy_mode="weak_positive_context",
+            tokenizer=_CompactMarkerDescMergingTokenizer(),
+        )
+
+
+def test_channel_b_weak_positive_fp_context_require_token_score_raises_until_supported() -> None:
+    with pytest.raises(
+        ValueError,
+        match="token-score-gated weak-positive false positives.*not implemented",
+    ):
+        _build_fp_context_channel_b_targets(
+            support_count=1,
+            fp_policy_mode="weak_positive_context",
+            fp_policy_require_token_score=True,
+        )
+
+
+def test_channel_b_unknown_fp_context_policy_raises_helper_style_error() -> None:
+    with pytest.raises(ValueError, match="zero_loss_context|weak_positive_context"):
+        _build_fp_context_channel_b_targets(
+            support_count=1,
+            fp_policy_mode="typo_policy",
+        )
+
+
 def test_channel_b_supervision_targets_make_pseudo_positive_coord_only_and_anchor_owned() -> (
     None
 ):
@@ -3871,6 +4718,104 @@ def test_channel_b_compact_full_fn_slot_shuffle_injects_fn_objects_deterministic
         for obj in gts[2:]
     )
     assert first_targets.prefix_desc_pos
+
+
+@pytest.mark.parametrize("insertion_order", ["sorted", "fn_slot_shuffle"])
+def test_channel_b_reordered_prefix_fp_spans_remap_to_unmatched_kept_anchor(
+    insertion_order: str,
+) -> None:
+    tok = _CoordLiteralTokenizer()
+    anchor_objects = [
+        GTObject(
+            index=0,
+            geom_type="bbox_2d",
+            points_norm1000=[400, 410, 460, 470],
+            desc="unmatched-anchor",
+        ),
+        GTObject(
+            index=1,
+            geom_type="bbox_2d",
+            points_norm1000=[800, 810, 860, 870],
+            desc="gt-backed-anchor",
+        ),
+    ]
+    accepted_clean, duplicate_bursts_by_boundary = _sequential_dedup_bbox_objects(
+        parsed_bbox_objects_raw=anchor_objects,
+        duplicate_iou_threshold=0.9,
+    )
+    triage = _build_channel_b_triage(
+        accepted_objects_clean=accepted_clean,
+        duplicate_bursts_by_boundary=duplicate_bursts_by_boundary,
+        explorer_accepted_objects_clean_by_view=[[anchor_objects[0]]],
+        anchor_match_by_pred={1: 0},
+        explorer_match_by_pred_by_view=[{}],
+        unlabeled_consistent_iou_threshold=0.9,
+        duplicate_iou_threshold=0.9,
+        pseudo_positive_enabled=False,
+    )
+    gts = [
+        GTObject(
+            index=0,
+            geom_type="bbox_2d",
+            points_norm1000=[800, 810, 860, 870],
+            desc="matched-gt",
+        ),
+        GTObject(
+            index=1,
+            geom_type="bbox_2d",
+            points_norm1000=[10, 20, 30, 40],
+            desc="fn-object",
+        ),
+    ]
+
+    targets = _build_channel_b_supervision_targets(
+        tokenizer=tok,
+        prompt_ids=[],
+        coord_id_set=set(range(1000)),
+        gts=gts,
+        match=types.SimpleNamespace(matched_pairs=[(1, 0)]),
+        triage=triage,
+        recovered_ground_truth_weight_multiplier=2.0,
+        pseudo_positive_enabled=False,
+        pseudo_positive_coord_weight=0.4,
+        duplicate_iou_threshold=0.9,
+        object_field_order="desc_first",
+        bbox_groups_from_token_ids_fn=_bbox_groups_from_token_ids,
+        matched_prefix_structure_positions_fn=_matched_prefix_structure_positions,
+        serialize_append_fragment_fn=_serialize_append_fragment,
+        insertion_order=insertion_order,
+        fp_policy_mode="weak_positive_context",
+        fp_policy_weak_positive_weight=0.05,
+        fp_policy_min_support_count=1,
+        rollout_template_policy=resolve_stage2_rollout_template_policy("compact_full"),
+        shuffle_seed=1,
+    )
+
+    assert targets.clean_target_text.find("fn-object") < targets.clean_target_text.find(
+        "unmatched-anchor"
+    )
+    assert len(targets.stage2_trie_object_spans) == 2
+    neutral_span = next(
+        span for span in targets.stage2_trie_object_spans if span.role == "neutral_fp"
+    )
+    weak_span = next(
+        span
+        for span in targets.stage2_trie_object_spans
+        if span.role == "weak_positive_fp"
+    )
+    neutral_span_text = tok.decode(
+        targets.y_train_ids[neutral_span.token_start : neutral_span.token_end]
+    )
+    weak_span_text = tok.decode(
+        targets.y_train_ids[weak_span.token_start : weak_span.token_end]
+    )
+    assert neutral_span.loss_weight == pytest.approx(0.0)
+    assert weak_span.loss_weight == pytest.approx(0.05)
+    assert weak_span.support_count == 1
+    assert "unmatched-anchor" in neutral_span_text
+    assert "gt-backed-anchor" not in neutral_span_text
+    assert "fn-object" not in neutral_span_text
+    assert weak_span_text == OBJECT_REF_START_TOKEN
 
 
 def test_channel_b_triage_posterior_nested_config_reaches_live_accessor_and_vllm_offsets(
@@ -6874,6 +7819,46 @@ def test_reduce_stage2_pending_metrics_global_treats_train_optimization_losses_a
 
     assert out["loss/B_rollout_text/struct_ce"] == pytest.approx((10.0 * 1.0 + 20.0 * 3.0) / 4.0)
     assert "stage2/_log_weight_total" not in out
+
+
+def test_stage2_core_loss_logs_preserves_stage2_trie_objective_metrics() -> None:
+    out = build_stage2_core_loss_logs(
+        channel="B",
+        pipeline_metrics_ctx={
+            "stage2_trie/target_positions": 3.0,
+            "stage2_trie/branch_points": 2.0,
+            "stage2_trie/candidate_count_mean": 4.0,
+            "loss/B/stage2_trie_ce": 1.25,
+            "loss/stage2_trie_ce": 1.25,
+            "coord_diag/debug_only": 99.0,
+        },
+        token_ce_module_w=0.0,
+        bbox_geo_module_w=0.0,
+        bbox_size_aux_module_w=0.0,
+        coord_reg_module_w=0.0,
+        run_a_text=False,
+        run_a_bbox_geo=False,
+        run_a_bbox_size_aux=False,
+        run_a_coord_reg=False,
+        token_desc_ce_weight=1.0,
+        fn_desc_ce_weight=1.0,
+        bbox_smoothl1_w=0.0,
+        bbox_ciou_w=0.0,
+        bbox_log_wh_w=0.0,
+        bbox_oversize_w=0.0,
+        coord_ce_w=0.0,
+        coord_soft_ce_w=0.0,
+        coord_w1_w=0.0,
+        coord_gate_w=0.0,
+        text_gate_w=0.0,
+    )
+
+    assert out["stage2_trie/target_positions"] == pytest.approx(3.0)
+    assert out["stage2_trie/branch_points"] == pytest.approx(2.0)
+    assert out["stage2_trie/candidate_count_mean"] == pytest.approx(4.0)
+    assert out["loss/B/stage2_trie_ce"] == pytest.approx(1.25)
+    assert out["loss/stage2_trie_ce"] == pytest.approx(1.25)
+    assert "coord_diag/debug_only" not in out
 
 
 def test_reduce_stage2_pending_metrics_global_strips_internal_underscore_keys() -> None:

@@ -56,6 +56,29 @@ OBJECTIVE_MODULE_CATALOG: Final[dict[str, ObjectiveModuleDefinition]] = {
         ),
         emission_group="text",
     ),
+    "stage2_trie_ce": ObjectiveModuleDefinition(
+        family="text",
+        semantic_role="stage2_trie_ce",
+        config_keys=frozenset(
+            {
+                "support_weight",
+                "balance_weight",
+                "struct_weight",
+                "desc_weight",
+                "coord_hard_ce_weight",
+                "eos_weight",
+                "normalization",
+            }
+        ),
+        application_presets=frozenset({"rollout_trie_hard_ce"}),
+        projected_atoms=(
+            ObjectiveLossAtomDefinition(
+                atom_name="trie_ce",
+                state_key="stage2_trie_ce_contrib",
+            ),
+        ),
+        emission_group="text",
+    ),
     "bbox_geo": ObjectiveModuleDefinition(
         family="bbox",
         semantic_role="geometry",

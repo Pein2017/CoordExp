@@ -1,0 +1,13 @@
+# Tiny Stage-2 trie-CE standard-COCO overfit sweep.
+#
+# Axis: tail-append baseline with stronger memorization pressure.
+
+extends: ./compact_full_et_rmp_ce_ckpt3664_hf_coco80_view_train64_noeval_256steps_stage2_trie_tail_append_zero_fp.yaml
+
+training:
+  run_name: overfit_256steps-coco80_view-train64-noeval-stage2_trie_ce-tail_append-zero_fp-lr5e5-nowarmup-compact_full-et_rmp_ce_ckpt3664
+  artifact_subdir: stage2_ab/ablation/coco80_view_stage2_trie_ce_overfit/train64_256steps_tail_append_zero_fp_lr5e5_nowarmup
+  learning_rate: 5.0e-5
+  vit_lr: 2.0e-5
+  aligner_lr: 1.0e-4
+  warmup_ratio: 0.0

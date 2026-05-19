@@ -58,6 +58,7 @@ from .stage2_two_channel.objective_runner import (
     run_stage2_objective_pipelines,
 )
 from .stage2_two_channel import target_builder as _channel_b_targets
+from .stage2_two_channel.trie_supervision import Stage2TrieCandidate
 from .stage2_two_channel.types import (
     Stage2BatchMetrics,
     Stage2ChannelAMeta,
@@ -135,6 +136,39 @@ def _stage2_debug_text_window(
     if bool(tail):
         return "...<truncated>" + value[-int(limit) :]
     return value[: int(limit)] + "...<truncated>"
+
+
+def _build_stage2_trie_candidate_from_supervision(
+    *,
+    sample_id: str,
+    rollout_index: int,
+    supervision_targets: Any,
+) -> Stage2TrieCandidate | None:
+    """Build one live Stage-2 trie candidate from Channel-B targets."""
+
+    token_ids = [int(token_id) for token_id in supervision_targets.y_train_ids]
+    if not token_ids:
+        return None
+
+    source = (
+        "fallback_gt_fn_append_only"
+        if str(supervision_targets.rollout_context) == FALLBACK_GT_FN_APPEND_ONLY
+        else "valid_rollout"
+    )
+    loss_weight = (
+        float(supervision_targets.rollout_fallback_loss_weight)
+        if source == "fallback_gt_fn_append_only"
+        else 1.0
+    )
+
+    return Stage2TrieCandidate(
+        sample_id=str(sample_id),
+        rollout_index=int(rollout_index),
+        source=source,
+        token_ids=token_ids,
+        loss_weight=float(loss_weight),
+        object_spans=list(supervision_targets.stage2_trie_object_spans),
+    )
 
 
 _STAGE2_CHANNEL_B_DIRECT_BATCH_METRIC_KEYS = frozenset(
@@ -706,6 +740,17 @@ def _sample_monitor_image_id(sample: Mapping[str, Any]) -> Any:
     return None
 
 
+def _sample_identifier_or_index(sample: Mapping[str, Any], sample_index: int) -> Any:
+    """Return the first explicit sample identifier without dropping falsy IDs."""
+
+    for key in ("sample_id", "image_id", "base_idx"):
+        value = sample.get(key)
+        if value is not None:
+            return value
+
+    return sample_index
+
+
 def _extract_sample_lvis_policy(sample: Mapping[str, Any]) -> Any:
     metadata = sample.get("metadata")
     if not isinstance(metadata, Mapping):
@@ -857,8 +902,17 @@ def _stage2_compact_tail_closure_positions(
     assistant_span_ids: Sequence[int],
     prefix_len: int,
 ) -> List[int]:
-    _ = tokenizer, assistant_span_ids, prefix_len
-    return []
+    im_end_id = _stage2_compact_im_end_token_id(tokenizer)
+    prefix_len_i = max(0, int(prefix_len))
+    span_ids = [int(token_id) for token_id in assistant_span_ids]
+    if prefix_len_i >= len(span_ids):
+        return []
+
+    return [
+        int(index - prefix_len_i)
+        for index, token_id in enumerate(span_ids)
+        if int(index) >= prefix_len_i and int(token_id) == int(im_end_id)
+    ]
 
 
 def _stage2_compact_semantic_stop_branch_metadata(
@@ -867,8 +921,36 @@ def _stage2_compact_semantic_stop_branch_metadata(
     assistant_span_ids: Sequence[int],
     prefix_len: int,
 ) -> Dict[str, Any]:
-    _ = tokenizer, assistant_span_ids, prefix_len
-    raise ValueError("compact-full Channel-B targets do not use JSON semantic stops")
+    im_end_id = _stage2_compact_im_end_token_id(tokenizer)
+    closure_positions = _stage2_compact_tail_closure_positions(
+        tokenizer=tokenizer,
+        assistant_span_ids=assistant_span_ids,
+        prefix_len=int(prefix_len),
+    )
+    if not closure_positions:
+        raise ValueError("compact-full Channel-B target has no turn-end stop token")
+
+    return {
+        "stop_rel_pos": int(closure_positions[0]),
+        "tail_closure_pos": [int(p) for p in closure_positions],
+        "stop_token_id": int(im_end_id),
+        "continue_token_id": None,
+    }
+
+
+def _stage2_compact_im_end_token_id(tokenizer: Any) -> int:
+    """Resolve the compact-full assistant turn-end token id."""
+
+    converted = tokenizer.convert_tokens_to_ids("<|im_end|>")
+    if isinstance(converted, Sequence) and not isinstance(converted, (str, bytes)):
+        if not converted:
+            raise ValueError("tokenizer returned no id for <|im_end|>")
+        converted = converted[0]
+
+    if converted is None or isinstance(converted, bool):
+        raise ValueError("tokenizer returned an invalid id for <|im_end|>")
+
+    return int(converted)
 
 
 def _bbox_groups_from_token_ids(
@@ -973,6 +1055,8 @@ class Stage2TwoChannelTrainer(
         self._stage2_train_monitor_dump_last_step: Optional[int] = None
         self._stage2_train_monitor_dump_count: int = 0
         self._stage2_train_monitor_dump_written_step: Optional[int] = None
+        self._stage2_trie_span_score_dump_last_step: Optional[int] = None
+        self._stage2_trie_span_score_dump_count: int = 0
 
     def _coordexp_checkpoint_runtime_state(self) -> Dict[str, Any]:
         payload = dict(super()._coordexp_checkpoint_runtime_state())
@@ -1007,6 +1091,10 @@ class Stage2TwoChannelTrainer(
                     self._stage2_train_monitor_dump_count
                 ),
                 "stage2_train_monitor_dump_written_step": self._stage2_train_monitor_dump_written_step,
+                "stage2_trie_span_score_dump_last_step": self._stage2_trie_span_score_dump_last_step,
+                "stage2_trie_span_score_dump_count": int(
+                    self._stage2_trie_span_score_dump_count
+                ),
             }
         )
         return payload
@@ -1077,6 +1165,12 @@ class Stage2TwoChannelTrainer(
         self._stage2_train_monitor_dump_written_step = payload.get(
             "stage2_train_monitor_dump_written_step"
         )
+        self._stage2_trie_span_score_dump_last_step = payload.get(
+            "stage2_trie_span_score_dump_last_step"
+        )
+        self._stage2_trie_span_score_dump_count = int(
+            payload.get("stage2_trie_span_score_dump_count", 0) or 0
+        )
 
     def _merge_rollout_matching_batch_metrics(
         self, batch: MutableMapping[str, Any], metrics: Mapping[str, Any]
@@ -1099,7 +1193,7 @@ class Stage2TwoChannelTrainer(
             out[str(k)] = v
         batch["_rollout_matching_batch_metrics"] = out
 
-    def _stage2_reset_train_monitor_dump(self, *, global_step: int) -> None:
+    def _stage2_advance_train_monitor_b_step(self, *, global_step: int) -> None:
         gs = int(global_step)
         pending_gs = getattr(self, "_stage2_train_monitor_pending_gs", None)
         if pending_gs is None or int(pending_gs) != gs:
@@ -1107,7 +1201,10 @@ class Stage2TwoChannelTrainer(
                 getattr(self, "_stage2_train_monitor_b_step_count", 0) or 0
             )
             self._stage2_train_monitor_b_step_count = b_step_count + 1
-        self._stage2_train_monitor_pending_gs = gs
+            self._stage2_train_monitor_pending_gs = gs
+
+    def _stage2_reset_train_monitor_dump(self, *, global_step: int) -> None:
+        self._stage2_advance_train_monitor_b_step(global_step=int(global_step))
         self._stage2_train_monitor_candidates = []
 
     def _stage2_train_monitor_step_allowed(self, *, global_step: int) -> bool:
@@ -1199,6 +1296,139 @@ class Stage2TwoChannelTrainer(
             candidates = []
             setattr(self, "_stage2_train_monitor_candidates", candidates)
         candidates.append(dict(sample))
+
+    def _stage2_trie_span_score_dump_step_allowed(self, *, global_step: int) -> bool:
+        cfg = self._train_monitor_dump_cfg()
+        if not bool(cfg.get("enabled", False)):
+            return False
+        if (
+            bool(cfg.get("only_world_process_zero", True))
+            and not self._is_main_process()
+        ):
+            return False
+
+        gs = int(global_step)
+        last_step = getattr(self, "_stage2_trie_span_score_dump_last_step", None)
+        if last_step is not None and int(last_step) == gs:
+            return True
+
+        max_events = int(cfg.get("max_events", 20) or 0)
+        dump_count = int(
+            getattr(self, "_stage2_trie_span_score_dump_count", 0) or 0
+        )
+        if max_events > 0 and dump_count >= max_events:
+            return False
+
+        args_obj = getattr(self, "args", None)
+        dump_first = bool(
+            cfg.get(
+                "dump_first_step",
+                bool(getattr(args_obj, "logging_first_step", False)),
+            )
+        )
+
+        every_channel_b = cfg.get("every_channel_b_steps", None)
+        if every_channel_b is not None:
+            every_channel_b = max(1, int(every_channel_b))
+            b_step_count = int(
+                getattr(self, "_stage2_train_monitor_b_step_count", 0) or 0
+            )
+            if b_step_count <= 0:
+                return False
+            if dump_first and b_step_count == 1:
+                return True
+            return (b_step_count % every_channel_b) == 0
+
+        every = cfg.get("every_steps", None)
+        if every is None:
+            every = int(getattr(args_obj, "logging_steps", 1) or 1)
+        every = max(1, int(every))
+        if gs == 0 and not dump_first:
+            return False
+        return (gs % every) == 0
+
+    @staticmethod
+    def _collect_stage2_trie_span_score_records(
+        *, meta: Sequence[Mapping[str, Any]], global_step: int
+    ) -> List[Dict[str, Any]]:
+        records: List[Dict[str, Any]] = []
+        for segment_index, item in enumerate(meta):
+            if not isinstance(item, Mapping):
+                continue
+            raw_records = item.get("stage2_trie_span_scores", [])
+            if not isinstance(raw_records, Sequence) or isinstance(
+                raw_records, (str, bytes)
+            ):
+                continue
+            for record_index, raw_record in enumerate(raw_records):
+                if not isinstance(raw_record, Mapping):
+                    continue
+                record = dict(raw_record)
+                record.setdefault("global_step", int(global_step))
+                record.setdefault("segment_index", int(segment_index))
+                record.setdefault("record_index", int(record_index))
+                records.append(record)
+        return records
+
+    def _write_stage2_trie_span_score_dump(
+        self, *, global_step: int, records: Sequence[Mapping[str, Any]]
+    ) -> bool:
+        if not records:
+            return False
+        if not self._stage2_trie_span_score_dump_step_allowed(
+            global_step=int(global_step)
+        ):
+            return False
+
+        cfg = self._train_monitor_dump_cfg()
+        out_dir = cfg.get("out_dir")
+        if not isinstance(out_dir, str) or not out_dir.strip():
+            out_dir = os.path.join(
+                str(getattr(getattr(self, "args", None), "output_dir", ".")),
+                "monitor_dumps",
+            )
+        dump_dir = os.path.join(str(out_dir), "stage2_trie_span_scores")
+
+        async_write = bool(cfg.get("async_write", True))
+        max_pending_raw = cfg.get("max_pending_writes", 2)
+        try:
+            max_pending_writes = (
+                int(max_pending_raw) if max_pending_raw is not None else 2
+            )
+        except (TypeError, ValueError):
+            max_pending_writes = 2
+        max_pending_writes = max(1, int(max_pending_writes))
+
+        gs = int(global_step)
+        serializable_records = [dict(record) for record in records]
+
+        def _write() -> None:
+            os.makedirs(dump_dir, exist_ok=True)
+            step_path = os.path.join(dump_dir, f"step_{gs:06d}.jsonl")
+            with open(step_path, "a", encoding="utf-8") as f:
+                for record in serializable_records:
+                    f.write(
+                        json.dumps(record, ensure_ascii=True, allow_nan=False)
+                        + "\n"
+                    )
+
+        self._submit_dump_write(
+            kind="stage2_trie_span_scores",
+            async_write=async_write,
+            max_pending_writes=max_pending_writes,
+            fn=_write,
+        )
+
+        # This diagnostic writer is intentionally best-effort: a `True` return
+        # means the write was attempted/submitted, not that the filesystem
+        # durably accepted every record.
+        last_step = getattr(self, "_stage2_trie_span_score_dump_last_step", None)
+        if last_step is None or int(last_step) != gs:
+            self._stage2_trie_span_score_dump_count = int(
+                getattr(self, "_stage2_trie_span_score_dump_count", 0) or 0
+            ) + 1
+            self._stage2_trie_span_score_dump_last_step = gs
+        return True
 
     def _stage2_flush_train_monitor_dump(self, *, global_step: int) -> None:
         pending_gs = getattr(self, "_stage2_train_monitor_pending_gs", None)
@@ -2032,6 +2262,21 @@ class Stage2TwoChannelTrainer(
         pseudo_positive_enabled = bool(
             self._ab_channel_b_get("pseudo_positive.enabled", False)
         )
+        fp_policy_mode = str(
+            self._ab_channel_b_get("fp_policy.mode", "zero_loss_context")
+        )
+        fp_policy_weak_positive_weight = float(
+            self._ab_channel_b_get("fp_policy.weak_positive_weight", 0.05)
+        )
+        fp_policy_require_explorer_support = bool(
+            self._ab_channel_b_get("fp_policy.require_explorer_support", True)
+        )
+        fp_policy_min_support_count = int(
+            self._ab_channel_b_get("fp_policy.min_support_count", 1)
+        )
+        fp_policy_require_token_score = bool(
+            self._ab_channel_b_get("fp_policy.require_token_score", False)
+        )
         invalid_rollout_policy = str(
             rollout_template_policy.invalid_rollout_policy
         ).strip().lower()
@@ -2129,6 +2374,11 @@ class Stage2TwoChannelTrainer(
                 explorer_top_p=explorer_top_p,
                 explorer_top_k=explorer_top_k,
                 pseudo_positive_enabled=pseudo_positive_enabled,
+                fp_policy_mode=fp_policy_mode,
+                fp_policy_weak_positive_weight=fp_policy_weak_positive_weight,
+                fp_policy_require_explorer_support=fp_policy_require_explorer_support,
+                fp_policy_min_support_count=fp_policy_min_support_count,
+                fp_policy_require_token_score=fp_policy_require_token_score,
                 invalid_rollout_policy=invalid_rollout_policy,
                 rollout_template_policy=rollout_template_policy,
                 num_rollouts=num_rollouts,
@@ -2248,6 +2498,11 @@ class Stage2TwoChannelTrainer(
         explorer_top_p: float,
         explorer_top_k: int,
         pseudo_positive_enabled: bool,
+        fp_policy_mode: str,
+        fp_policy_weak_positive_weight: float,
+        fp_policy_require_explorer_support: bool,
+        fp_policy_min_support_count: int,
+        fp_policy_require_token_score: bool,
         invalid_rollout_policy: str,
         rollout_template_policy: Stage2RolloutTemplatePolicy,
         num_rollouts: int,
@@ -2523,12 +2778,14 @@ class Stage2TwoChannelTrainer(
                 duplicate_diagnostics_fn=_channel_b_targets._compute_duplicate_diagnostics,
                 rollout_template_policy=rollout_template_policy,
             )
+            anchor_view["rollout_index"] = 0
             explorer_rollouts = [
                 explorer_rollout_results[int(sample_index)]
                 for explorer_rollout_results in explorer_rollout_results_by_view
             ]
-            explorer_views = [
-                build_channel_b_rollout_view(
+            explorer_views = []
+            for explorer_ordinal, explorer_rollout in enumerate(explorer_rollouts):
+                explorer_view_item = build_channel_b_rollout_view(
                     tokenizer=tok,
                     object_field_order=object_field_order,
                     coord_id_to_bin=coord_id_to_bin,
@@ -2542,8 +2799,8 @@ class Stage2TwoChannelTrainer(
                     duplicate_diagnostics_fn=_channel_b_targets._compute_duplicate_diagnostics,
                     rollout_template_policy=rollout_template_policy,
                 )
-                for explorer_rollout in explorer_rollouts
-            ]
+                explorer_view_item["rollout_index"] = int(explorer_ordinal) + 1
+                explorer_views.append(explorer_view_item)
             explorer_view = explorer_views[0]
 
             parse = anchor_view["parse"]
@@ -3031,6 +3288,13 @@ class Stage2TwoChannelTrainer(
                 insertion_order=str(
                     self._ab_channel_b_get("insertion_order", "tail_append")
                 ),
+                fp_policy_mode=str(fp_policy_mode),
+                fp_policy_weak_positive_weight=float(fp_policy_weak_positive_weight),
+                fp_policy_require_explorer_support=bool(
+                    fp_policy_require_explorer_support
+                ),
+                fp_policy_min_support_count=int(fp_policy_min_support_count),
+                fp_policy_require_token_score=bool(fp_policy_require_token_score),
                 object_field_order=object_field_order,
                 bbox_groups_from_token_ids_fn=_bbox_groups_from_token_ids,
                 matched_prefix_structure_positions_fn=_matched_prefix_structure_positions,
@@ -3058,6 +3322,170 @@ class Stage2TwoChannelTrainer(
             tail_desc_weights = list(supervision_targets.tail_desc_weights)
             y_train_ids = list(supervision_targets.y_train_ids)
             clean_target_text = str(supervision_targets.clean_target_text)
+            sample_id_for_meta = str(
+                _sample_identifier_or_index(sample, int(sample_index))
+            )
+            stage2_trie_candidates: List[Stage2TrieCandidate] = []
+            anchor_trie_candidate = _build_stage2_trie_candidate_from_supervision(
+                sample_id=sample_id_for_meta,
+                rollout_index=0,
+                supervision_targets=supervision_targets,
+            )
+            if anchor_trie_candidate is not None:
+                stage2_trie_candidates.append(anchor_trie_candidate)
+
+            valid_candidate_support_views = []
+            if int(anchor_view.get("rollout_counts_as_valid_rollout", 1)) != 0:
+                valid_candidate_support_views.append(anchor_view)
+            valid_candidate_support_views.extend(triage_explorer_views)
+
+            for candidate_position, candidate_view in enumerate(
+                triage_explorer_views,
+                start=1,
+            ):
+                candidate_rollout_index = int(
+                    candidate_view.get("rollout_index", int(candidate_position))
+                )
+                candidate_support_views = [
+                    support_view
+                    for support_view in valid_candidate_support_views
+                    if support_view is not candidate_view
+                ]
+                candidate_objects_raw = list(
+                    candidate_view["parsed_bbox_objects_raw"]
+                )
+                candidate_duplicate_control = (
+                    _channel_b_targets._apply_channel_b_duplicate_control(
+                        anchor_objects_raw=candidate_objects_raw,
+                        explorer_objects_raw_by_view=[
+                            list(support_view["parsed_bbox_objects_raw"])
+                            for support_view in candidate_support_views
+                        ],
+                        duplicate_iou_threshold=float(duplicate_iou_threshold),
+                        center_radius_scale=float(center_radius_scale),
+                        unlabeled_consistent_iou_threshold=float(
+                            unlabeled_consistent_iou_threshold
+                        ),
+                    )
+                )
+                candidate_accepted_objects_clean = list(
+                    candidate_duplicate_control.kept_anchor_objects
+                )
+                candidate_suppressed_duplicates = {
+                    int(boundary): list(duplicates)
+                    for boundary, duplicates in candidate_duplicate_control.suppressed_duplicate_objects_by_boundary.items()
+                }
+                candidate_match = _assign_stage2_channel_b_objects(
+                    strategy=assignment_strategy,
+                    preds=candidate_accepted_objects_clean,
+                    gts=gts,
+                )
+                candidate_anchor_match_by_pred = {
+                    int(pred_i): int(gt_i)
+                    for pred_i, gt_i in candidate_match.matched_pairs
+                    if 0 <= int(pred_i) < len(candidate_accepted_objects_clean)
+                    and 0 <= int(gt_i) < len(gts)
+                }
+                candidate_support_objects_by_view = [
+                    list(support_view["parsed_bbox_objects_raw"])
+                    for support_view in candidate_support_views
+                ]
+                candidate_support_match_by_pred_by_view = []
+                for support_objects_raw in candidate_support_objects_by_view:
+                    support_match = _assign_stage2_channel_b_objects(
+                        strategy=assignment_strategy,
+                        preds=support_objects_raw,
+                        gts=gts,
+                    )
+                    candidate_support_match_by_pred_by_view.append(
+                        {
+                            int(pred_i): int(gt_i)
+                            for pred_i, gt_i in support_match.matched_pairs
+                            if 0 <= int(pred_i) < len(support_objects_raw)
+                            and 0 <= int(gt_i) < len(gts)
+                        }
+                    )
+                candidate_triage = _channel_b_targets._build_channel_b_triage(
+                    accepted_objects_clean=candidate_accepted_objects_clean,
+                    suppressed_duplicate_objects_by_boundary=(
+                        candidate_suppressed_duplicates
+                    ),
+                    explorer_objects_raw_by_view=candidate_support_objects_by_view,
+                    anchor_match_by_pred=candidate_anchor_match_by_pred,
+                    explorer_match_by_pred_by_view=(
+                        candidate_support_match_by_pred_by_view
+                    ),
+                    anchor_policy_statuses=_anchor_lvis_policy_statuses(
+                        sample=sample,
+                        accepted_objects_clean=candidate_accepted_objects_clean,
+                    ),
+                    unlabeled_consistent_iou_threshold=float(
+                        unlabeled_consistent_iou_threshold
+                    ),
+                    duplicate_iou_threshold=float(duplicate_iou_threshold),
+                    pseudo_positive_enabled=bool(pseudo_positive_enabled),
+                )
+                candidate_supervision_targets = (
+                    _channel_b_targets._build_channel_b_supervision_targets(
+                        tokenizer=tok,
+                        prompt_ids=list(candidate_view["prompt_ids"]),
+                        coord_id_set=coord_id_set,
+                        gts=gts,
+                        match=candidate_match,
+                        triage=candidate_triage,
+                        recovered_ground_truth_weight_multiplier=float(
+                            recovered_ground_truth_weight_multiplier
+                        ),
+                        pseudo_positive_enabled=bool(pseudo_positive_enabled),
+                        pseudo_positive_coord_weight=float(
+                            self._ab_channel_b_get(
+                                "pseudo_positive.coord_weight",
+                                0.5,
+                            )
+                        ),
+                        insertion_order=str(
+                            self._ab_channel_b_get(
+                                "insertion_order",
+                                "tail_append",
+                            )
+                        ),
+                        fp_policy_mode=str(fp_policy_mode),
+                        fp_policy_weak_positive_weight=float(
+                            fp_policy_weak_positive_weight
+                        ),
+                        fp_policy_require_explorer_support=bool(
+                            fp_policy_require_explorer_support
+                        ),
+                        fp_policy_min_support_count=int(
+                            fp_policy_min_support_count
+                        ),
+                        fp_policy_require_token_score=bool(
+                            fp_policy_require_token_score
+                        ),
+                        object_field_order=object_field_order,
+                        bbox_groups_from_token_ids_fn=_bbox_groups_from_token_ids,
+                        matched_prefix_structure_positions_fn=(
+                            _matched_prefix_structure_positions
+                        ),
+                        serialize_append_fragment_fn=serialize_append_fragment,
+                        rollout_template_policy=rollout_template_policy,
+                        parse=candidate_view["parse"],
+                        shuffle_seed=(
+                            int(seed_base)
+                            + int(sample_index)
+                            + int(candidate_rollout_index)
+                        ),
+                    )
+                )
+                candidate_trie_candidate = (
+                    _build_stage2_trie_candidate_from_supervision(
+                        sample_id=sample_id_for_meta,
+                        rollout_index=int(candidate_rollout_index),
+                        supervision_targets=candidate_supervision_targets,
+                    )
+                )
+                if candidate_trie_candidate is not None:
+                    stage2_trie_candidates.append(candidate_trie_candidate)
             duplicate_control_first_divergence_diagnostics = list(
                 supervision_targets.duplicate_control_first_divergence_diagnostics
             )
@@ -3565,6 +3993,23 @@ class Stage2TwoChannelTrainer(
                 ),
                 rollout_counts_as_valid_rollout=bool(
                     supervision_targets.rollout_counts_as_valid_rollout
+                ),
+                y_train_ids=y_train_ids,
+                sample_id=sample_id_for_meta,
+                rollout_index=(
+                    -1
+                    if str(supervision_targets.rollout_context)
+                    == FALLBACK_GT_FN_APPEND_ONLY
+                    else 0
+                ),
+                stage2_trie_candidates=(
+                    stage2_trie_candidates
+                    if stage2_trie_candidates and int(prompt_len) > 0
+                    else None
+                ),
+                stage2_trie_object_spans=supervision_targets.stage2_trie_object_spans,
+                stage2_trie_weak_fp_span_level_fallback=bool(
+                    supervision_targets.stage2_trie_weak_fp_span_level_fallback
                 ),
                 stage2_tail_closure_positions_fn=(
                     _stage2_compact_tail_closure_positions
@@ -4520,6 +4965,25 @@ class Stage2TwoChannelTrainer(
                     if str(k) == "time/mask_build_s" and fv == 0.0:
                         continue
                     stage2_logs[str(k)] = fv
+
+            if channel == "B":
+                self._stage2_advance_train_monitor_b_step(
+                    global_step=int(target_step)
+                )
+                span_score_records = self._collect_stage2_trie_span_score_records(
+                    meta=meta,
+                    global_step=int(target_step),
+                )
+                stage2_logs["stage2_trie/span_score_records"] = float(
+                    len(span_score_records)
+                )
+                dump_attempted = self._write_stage2_trie_span_score_dump(
+                    global_step=int(target_step),
+                    records=span_score_records,
+                )
+                stage2_logs["stage2_trie/span_score_dump_attempted"] = float(
+                    1.0 if dump_attempted else 0.0
+                )
 
             pending2.add(stage2_logs)
         except (AttributeError, KeyError, TypeError, ValueError):
