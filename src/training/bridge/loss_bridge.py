@@ -186,10 +186,11 @@ class TrainerLossBridge:
         else:
             sidecars = TrainingSidecars()
 
-        teacher_forcing_target_ir = raw_batch.get(TEACHER_FORCING_TARGET_IR_KEY)
-        if batch_extras is not None and batch_extras.teacher_forcing_target_ir is not None:
-            teacher_forcing_target_ir = batch_extras.teacher_forcing_target_ir
-
+        teacher_forcing_target_ir = self._resolve_teacher_forcing_target_ir(
+            sidecars=sidecars,
+            raw_batch=raw_batch,
+            batch_extras=batch_extras,
+        )
         if teacher_forcing_target_ir is None:
             return sidecars
 
@@ -198,6 +199,56 @@ class TrainerLossBridge:
             teacher_forcing_target_ir=teacher_forcing_target_ir,
         )
         return replace(sidecars, supervision=supervision)
+
+    def _resolve_teacher_forcing_target_ir(
+        self,
+        *,
+        sidecars: TrainingSidecars,
+        raw_batch: Mapping[str, Any],
+        batch_extras: BatchExtras | None,
+    ) -> Any:
+        """Resolve teacher-forcing IR with semantic sidecars as canonical."""
+
+        semantic_ir = sidecars.supervision.teacher_forcing_target_ir
+        raw_ir = raw_batch.get(TEACHER_FORCING_TARGET_IR_KEY)
+        batch_ir = (
+            None
+            if batch_extras is None
+            else batch_extras.teacher_forcing_target_ir
+        )
+
+        sources: list[tuple[str, Any]] = []
+        if semantic_ir is not None:
+            sources.append(("training_sidecars", semantic_ir))
+        if raw_ir is not None:
+            sources.append(("raw_batch", raw_ir))
+        if batch_ir is not None:
+            sources.append(("batch_extras", batch_ir))
+
+        for index, (left_name, left_value) in enumerate(sources):
+            for right_name, right_value in sources[index + 1 :]:
+                if not self._teacher_forcing_target_ir_equal(left_value, right_value):
+                    raise ValueError(
+                        "conflicting teacher_forcing_target_ir sources: "
+                        f"{left_name} and {right_name}"
+                    )
+
+        if semantic_ir is not None:
+            return semantic_ir
+        if batch_ir is not None:
+            return batch_ir
+        return raw_ir
+
+    @staticmethod
+    def _teacher_forcing_target_ir_equal(left: Any, right: Any) -> bool:
+        """Return whether two source payloads are equivalent."""
+
+        if left is right:
+            return True
+        try:
+            return bool(left == right)
+        except (RuntimeError, TypeError, ValueError):
+            return False
 
     def _reject_logits_projection(self, model_inputs: ModelInputBundle) -> None:
         """Reject logits projection unless an explicit future setting enables it."""

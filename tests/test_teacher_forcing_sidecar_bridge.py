@@ -8,7 +8,7 @@ import pytest
 import torch
 
 from src.data_collators.dataset_metrics import build_dataset_metrics_collator
-from src.trainers.batch_extras import pop_batch_extras
+from src.trainers.batch_extras import BatchExtras, pop_batch_extras
 from src.training.bridge import TrainerLossBridge
 from src.training.objectives.types import ObjectiveSpec
 from src.training.sidecars import SupervisionSidecars, TrainingSidecars
@@ -49,6 +49,47 @@ class _FakeModel:
             logits=self.logits,
             loss=torch.tensor(999.0, dtype=torch.float32),
         )
+
+
+def _minimal_raw_batch(
+    *,
+    teacher_forcing_target_ir: object | None = None,
+) -> dict[str, Any]:
+    raw_batch: dict[str, Any] = {
+        "input_ids": torch.ones((1, 2), dtype=torch.long),
+        "attention_mask": torch.ones((1, 2), dtype=torch.long),
+    }
+    if teacher_forcing_target_ir is not None:
+        raw_batch[TEACHER_FORCING_TARGET_IR_KEY] = teacher_forcing_target_ir
+    return raw_batch
+
+
+def _run_bridge(
+    *,
+    raw_ir: object | None = None,
+    batch_ir: object | None = None,
+    semantic_ir: object | None = None,
+):
+    training_sidecars = None
+    if semantic_ir is not None:
+        training_sidecars = TrainingSidecars(
+            supervision=SupervisionSidecars(
+                teacher_forcing_target_ir=semantic_ir,
+            )
+        )
+
+    batch_extras = None
+    if batch_ir is not None:
+        batch_extras = BatchExtras(teacher_forcing_target_ir=batch_ir)
+
+    return TrainerLossBridge().compute_loss(
+        model=_FakeModel(torch.zeros((1, 2, 5), dtype=torch.float32)),
+        raw_batch=_minimal_raw_batch(teacher_forcing_target_ir=raw_ir),
+        batch_extras=batch_extras,
+        training_sidecars=training_sidecars,
+        supervision=SupervisionBatch(),
+        objectives=(ObjectiveSpec("token_ce"),),
+    )
 
 
 def test_teacher_forcing_target_ir_survives_collator_to_batch_extras() -> None:
@@ -131,6 +172,43 @@ def test_trainer_loss_bridge_carries_teacher_forcing_ir_after_batch_extras_pop()
 
     assert TEACHER_FORCING_TARGET_IR_KEY not in model.calls[0]
     assert result.training_sidecars.supervision.teacher_forcing_target_ir == (target_ir,)
+
+
+def test_semantic_teacher_forcing_sidecar_is_preserved_when_compat_sources_match() -> None:
+    semantic_ir = ({"payload": "same-ir"},)
+    raw_ir = ({"payload": "same-ir"},)
+    batch_ir = ({"payload": "same-ir"},)
+
+    result = _run_bridge(
+        raw_ir=raw_ir,
+        batch_ir=batch_ir,
+        semantic_ir=semantic_ir,
+    )
+
+    assert result.training_sidecars.supervision.teacher_forcing_target_ir is semantic_ir
+
+
+def test_batch_extras_teacher_forcing_ir_fills_absent_semantic_sidecar() -> None:
+    batch_ir = ("batch-ir",)
+
+    result = _run_bridge(batch_ir=batch_ir)
+
+    assert result.training_sidecars.supervision.teacher_forcing_target_ir is batch_ir
+
+
+def test_raw_and_batch_teacher_forcing_ir_conflict_fails() -> None:
+    with pytest.raises(ValueError, match="raw_batch.*batch_extras"):
+        _run_bridge(raw_ir=("raw-ir",), batch_ir=("batch-ir",))
+
+
+def test_semantic_and_batch_teacher_forcing_ir_conflict_fails() -> None:
+    with pytest.raises(ValueError, match="training_sidecars.*batch_extras"):
+        _run_bridge(semantic_ir=("semantic-ir",), batch_ir=("batch-ir",))
+
+
+def test_semantic_and_raw_teacher_forcing_ir_conflict_fails() -> None:
+    with pytest.raises(ValueError, match="training_sidecars.*raw_batch"):
+        _run_bridge(semantic_ir=("semantic-ir",), raw_ir=("raw-ir",))
 
 
 def test_trainer_loss_bridge_rejects_logits_to_keep_for_teacher_forcing_sidecar() -> None:
