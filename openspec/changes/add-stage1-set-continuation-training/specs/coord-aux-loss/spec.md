@@ -36,8 +36,8 @@ Additional normative behavior:
 - **THEN** setup fails with actionable diagnostics.
 
 ### Requirement: Coord/text vocabulary gate math is reusable but objective owned
-The low-level coord-vocabulary mass helpers MAY be reused by multiple trainer
-surfaces, but each trainer surface SHALL own its mask semantics.
+The low-level coord-vocabulary mass helpers SHALL remain reusable across trainer
+surfaces while each trainer surface owns its mask semantics.
 
 For `stage1_set_continuation`, bidirectional token-type gating is part of the
 native set-continuation objective and is not the same feature as enabling

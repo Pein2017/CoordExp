@@ -653,6 +653,10 @@ Normative behavior:
   and benchmark settings after training.
 
 ### Requirement: Train-time detection eval shards generation under DDP
+The system SHALL preserve the already-verified Stage-1 set-continuation
+rank-sharded detection-eval baseline without broadening it in the train-forward
+runtime stabilization slice.
+
 This requirement describes the already-verified Stage-1 set-continuation eval
 baseline. It is outside the train-forward runtime stabilization slice and MUST
 NOT be expanded by that slice.

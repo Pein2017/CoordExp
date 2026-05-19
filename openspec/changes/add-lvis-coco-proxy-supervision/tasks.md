@@ -17,7 +17,7 @@
   - `rollout-matching-sft`
   - `trainer-metrics-components`
 - [ ] 1.3 Re-validate the change after each artifact pass:
-  - `openspec validate add-lvis-coco-proxy-supervision --type change --strict --no-interactive`
+  - `openspec validate add-lvis-coco-proxy-supervision --strict --json --no-interactive`
 
 ## 2. Proxy Determination Research
 
@@ -133,7 +133,7 @@
 ## 7. Validation
 
 - [ ] 7.1 Re-run change validation:
-  - `openspec validate add-lvis-coco-proxy-supervision --type change --strict --no-interactive`
+  - `openspec validate add-lvis-coco-proxy-supervision --strict --json --no-interactive`
 - [ ] 7.2 Re-run focused Stage-2 config coverage:
   - `conda run -n ms pytest tests/test_stage2_ab_config_contract.py`
   - `conda run -n ms pytest tests/test_training_config_strict_unknown_keys.py`

@@ -208,7 +208,16 @@ Backend selection MUST be YAML-driven under `rollout_matching`:
 - `rollout_backend` MUST default to `"hf"`.
 - `eval_rollout_backend` MUST be `"vllm"` for this stack (eval-step backend is fixed).
 
+#### Scenario: vLLM rollout backend is selected from YAML
+- **WHEN** a rollout-aligned training config sets
+  `rollout_matching.rollout_backend: vllm`
+- **THEN** rollout generation uses the vLLM backend
+- **AND** teacher-forced forward/backprop remains on the normal training model.
+
 ### Requirement: Eval-step rollout artifacts are persisted in offline-compatible form
+The trainer SHALL persist eval-step rollout artifacts in an offline-compatible
+form when rollout-aligned Stage-2 evaluation runs with eval detection enabled.
+
 When rollout-aligned Stage-2 evaluation runs with eval detection enabled, the
 trainer SHALL persist per-eval-step artifacts under:
 - `training.output_dir/eval_detection/step_<global_step>/`
@@ -1591,6 +1600,9 @@ Normative behavior:
   optimizer-step reduction ownership model.
 
 ### Requirement: Rollout-aligned train-time detection eval MUST allow rank-efficient transport without broadening its contract
+Rollout-aligned train-time detection eval MUST preserve rank-0 summary
+semantics while allowing rank-efficient transport under DDP.
+
 When rollout-aligned train-time detection eval runs under DDP and rank 0 owns
 final COCO scoring, the transport path MUST allow non-zero ranks to avoid
 materializing the full combined payload solely for rank-0 scoring.

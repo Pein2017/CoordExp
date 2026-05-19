@@ -35,9 +35,10 @@ or metric interpretation.
 3. [STAGE2_RUNBOOK.md](STAGE2_RUNBOOK.md) for current Stage-2 workflows, launcher patterns, and historical-context pointers
 4. [LVIS.md](LVIS.md) for LVIS-specific dataset, prompt, Stage-2, and evaluation semantics
 5. [METRICS.md](METRICS.md) for loss-key and logging interpretation
-6. [`stage2-ab-training/spec.md`](../../openspec/specs/stage2-ab-training/spec.md) when exact `stage2_two_channel` stable contract semantics matter
-7. [`rollout-matching-sft/spec.md`](../../openspec/specs/rollout-matching-sft/spec.md) when working on the supported `stage2_rollout_aligned` variant
-8. [`runtime-architecture-refactor-program/spec.md`](../../openspec/specs/runtime-architecture-refactor-program/spec.md) when the question is about runtime ownership seams or compatibility-preserving refactors
+6. [`stage1-latest-detection-objectives/spec.md`](../../openspec/specs/stage1-latest-detection-objectives/spec.md) when exact latest compact recursive detection objective contracts matter
+7. [`stage2-ab-training/spec.md`](../../openspec/specs/stage2-ab-training/spec.md) when exact `stage2_two_channel` stable contract semantics matter
+8. [`rollout-matching-sft/spec.md`](../../openspec/specs/rollout-matching-sft/spec.md) when working on the supported `stage2_rollout_aligned` variant
+9. [`runtime-architecture-refactor-program/spec.md`](../../openspec/specs/runtime-architecture-refactor-program/spec.md) when the question is about runtime ownership seams or compatibility-preserving refactors
 
 ## Compact Detection Sequence Contracts
 
@@ -56,6 +57,7 @@ that a benchmark, smoke, or validation run has completed.
 - `configs/stage1/recursive_detection_ce_latest/prod/compact_full_support2_iou_gibbs_softce_a5.yaml` and `configs/stage1/recursive_detection_ce_latest/prod/compact_full_support2_ciou_gibbs_softce_a6.yaml` are unlaunched geometry-aware coordinate softCE ablation candidates that preserve the A2/support2 setup except for `objective.coord_soft_ce` and run identity.
 - `configs/stage1/recursive_detection_ce_latest/ablation/compact_full_prefix_rollin_balance2.yaml` is the first `prefix_rollin_et_rmp_ce` ablation route; do not describe it as production-ready while it uses the empirical EOS prior.
 - `configs/stage1/recursive_detection_ce_latest/ablation/compact_full_prefix_rollin_separator2.yaml` is the focused E2 diagnostic ablation for the separator/free-boundary failure mode; compare it against E1 before adding a new margin loss.
+- [`stage1-latest-detection-objectives/spec.md`](../../openspec/specs/stage1-latest-detection-objectives/spec.md) owns the stable OpenSpec contract for latest detection objective variants. New objective ideas should usually modify that capability through an active change rather than creating one spec per module.
 - `configs/stage1/compact_detection_sequence/` is a legacy bridge around
   `TrainingConfig` plus `custom.detection_sequence_format`.
 - Strict template owner: `src/detection/template.py`.

@@ -16,7 +16,7 @@
   - `rollout-matching-sft`
   - `trainer-metrics-components`
 - [ ] 1.3 Re-validate the change after each artifact pass:
-  - `openspec validate add-adjacent-distributional-repulsion-loss --type change --strict --json --no-interactive`
+  - `openspec validate add-adjacent-distributional-repulsion-loss --strict --json --no-interactive`
 
 ## 2. Coord-Distribution Adjacent Atom
 
@@ -128,7 +128,7 @@
   - partial-edge overlap staying below `adjacent_repulsion_copy_margin`
   - canonical clean-order adjacency behavior
 - [ ] 6.5 Validate the OpenSpec change at the end:
-  - `openspec validate add-adjacent-distributional-repulsion-loss --type change --strict --json --no-interactive`
+  - `openspec validate add-adjacent-distributional-repulsion-loss --strict --json --no-interactive`
 
 ## 7. Deferred Follow-Up
 

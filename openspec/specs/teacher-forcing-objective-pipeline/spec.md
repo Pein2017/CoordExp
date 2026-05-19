@@ -1,4 +1,8 @@
-## MODIFIED Requirements
+## Purpose
+Define the teacher-forcing objective pipeline module contract, including stable
+module names and Channel-B duplicate-suppression ownership.
+
+## Requirements
 
 ### Requirement: loss_duplicate_burst_unlikelihood remains the canonical B-only suppression module
 The teacher-forcing objective pipeline SHALL continue to use

@@ -1,4 +1,8 @@
-## MODIFIED Requirements
+## Purpose
+Define the detection evaluator input, duplicate-control, artifact, and metric
+contracts used by inference/evaluation workflows.
+
+## Requirements
 
 ### Requirement: Ingestion and validation
 For the unified pipeline workflow, the evaluator SHALL preserve the existing

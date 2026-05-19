@@ -6,7 +6,7 @@ status: canonical
 domain: research-history
 summary: Router for structured audit notes and decision-focused reviews.
 tags: [progress, audits, review]
-updated: 2026-05-03
+updated: 2026-05-19
 ---
 
 # Audits Index
@@ -22,6 +22,8 @@ decision record.
 
 ## Current Contents
 
+- [2026-05-19_openspec_reactivation_audit.md](2026-05-19_openspec_reactivation_audit.md)
+  - OpenSpec validation cleanup and active-change triage before trie-marginal planning
 - [2026-05-14-instance-trie-gaussian-post-implementation-audit.md](2026-05-14-instance-trie-gaussian-post-implementation-audit.md)
   - concluded implementation-contract audit for Instance-Trie Gaussian SoftCE before target-shape audit and smoke
 - [2026-05-14-instance-trie-gaussian-smoke-behavior-audit.md](2026-05-14-instance-trie-gaussian-smoke-behavior-audit.md)

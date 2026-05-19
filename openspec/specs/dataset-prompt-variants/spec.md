@@ -121,6 +121,9 @@ Prompt variant selection SHALL be configuration-driven and SHALL NOT require new
 - **THEN** the supported key path MUST be `infer.prompt_variant`
 
 ### Requirement: Legacy Fusion Prompt Overrides Are Unsupported
+The system MUST reject legacy fusion prompt overrides with the disabled fusion
+surface rather than treating them as supported prompt variants.
+
 Fusion dataset-level prompt overrides are no longer part of the supported
 training surface because fusion-config training is temporarily disabled.
 

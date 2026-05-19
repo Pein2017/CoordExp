@@ -1,6 +1,9 @@
 ## ADDED Requirements
 
 ### Requirement: Stage-1 non-canonical bbox experiments require provenance-matched prepared datasets
+The system SHALL require provenance-matched offline-prepared datasets for
+Stage-1 non-canonical bbox experiments.
+
 When Stage-1 coord auxiliary supervision is used with a non-canonical bbox
 format such as `cxcy_logw_logh` or `cxcywh`, the training dataset SHALL be an
 offline-prepared bbox-format branch whose provenance matches the authored
@@ -63,6 +66,9 @@ Normative behavior:
   required.
 
 ### Requirement: Runtime bbox-format conversion is unsupported for offline-prepared experiments
+The runtime dataset and builder layers MUST NOT perform a second bbox-format
+conversion for offline-prepared non-canonical bbox-format experiments.
+
 For offline-prepared non-canonical bbox-format experiments, runtime dataset and
 builder layers SHALL NOT perform an additional bbox-format conversion.
 

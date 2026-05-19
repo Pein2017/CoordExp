@@ -7,6 +7,8 @@ for future reactivation.
 
 ## Requirements
 ### Requirement: custom.fusion_config Is Rejected
+The system MUST reject `custom.fusion_config` in canonical training configs.
+
 Fusion-config training is currently not an active authored path.
 Training configs MUST NOT use `custom.fusion_config`.
 
