@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import math
-from numbers import Real
+from numbers import Integral, Real
 from typing import Any
 
 from .constants import TEACHER_FORCING_TARGET_IR_SCHEMA_VERSION
@@ -37,9 +37,9 @@ def _validate_atom(
 ) -> None:
     prefix = f"teacher_forcing_target_ir.atoms[{atom_index}]"
     _validate_loss_weight(atom.loss_weight, prefix=prefix)
-    _validate_nonnegative_index(atom.batch_index, field_name="batch_index", prefix=prefix)
-    _validate_nonnegative_index(atom.logit_position, field_name="logit_position", prefix=prefix)
-    _validate_nonnegative_index(atom.target_position, field_name="target_position", prefix=prefix)
+    _validate_nonnegative_integral_index(atom.batch_index, field_name="batch_index", prefix=prefix)
+    _validate_nonnegative_integral_index(atom.logit_position, field_name="logit_position", prefix=prefix)
+    _validate_nonnegative_integral_index(atom.target_position, field_name="target_position", prefix=prefix)
     if atom.target_position != atom.logit_position + 1:
         raise ValueError(f"{prefix}: target_position = logit_position + 1 is required")
     if not atom.allowed_token_roles:
@@ -81,7 +81,9 @@ def _validate_valid_ids_inside_role_vocab(
         raise ValueError(f"{prefix}: valid_token_ids must be inside allowed role vocab")
 
 
-def _validate_nonnegative_index(value: int, *, field_name: str, prefix: str) -> None:
+def _validate_nonnegative_integral_index(value: int, *, field_name: str, prefix: str) -> None:
+    if isinstance(value, bool) or not isinstance(value, Integral):
+        raise ValueError(f"{prefix}: {field_name} must be a nonnegative integer")
     if value < 0:
         raise ValueError(f"{prefix}: {field_name} must be nonnegative")
 

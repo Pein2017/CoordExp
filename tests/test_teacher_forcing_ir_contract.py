@@ -103,6 +103,35 @@ def test_negative_atom_positions_are_rejected_before_tensor_indexing(field_name:
         )
 
 
+@pytest.mark.parametrize("field_name", ["batch_index", "logit_position", "target_position"])
+@pytest.mark.parametrize("index_value", [True, 1.0, "1"])
+def test_atom_positions_must_be_integral_non_bool_values(field_name: str, index_value: object) -> None:
+    kwargs = {
+        "batch_index": 0,
+        "logit_position": 0,
+        "target_position": 1,
+    }
+    kwargs[field_name] = index_value
+    atom = make_atom(**kwargs)
+
+    with pytest.raises(ValueError, match=rf"atoms\[0\].*{field_name}.*integer"):
+        validate_target_ir(
+            make_ir(atom),
+            input_ids=torch.tensor([[9, 101], [9, 101]]),
+            role_vocab=make_test_role_vocab(),
+        )
+
+
+def test_atom_positions_accept_ordinary_python_int_values() -> None:
+    atom = make_atom(batch_index=1, logit_position=0, target_position=1)
+
+    validate_target_ir(
+        make_ir(atom),
+        input_ids=torch.tensor([[9, 102], [9, 101]]),
+        role_vocab=make_test_role_vocab(),
+    )
+
+
 def test_selected_token_must_be_inside_valid_token_ids() -> None:
     atom = make_atom(valid_token_ids=frozenset({102}), selected_token_id=101)
 
