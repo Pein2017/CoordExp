@@ -161,6 +161,9 @@ def parse_dataclass_strict(schema_type: type[T], payload: Any, *, path: str) -> 
             f"schema_type must be a dataclass type, got {schema_type!r}"
         )
 
+    if isinstance(payload, schema_type):
+        return payload
+
     if not isinstance(payload, Mapping):
         raise TypeError(f"{path} must be a mapping")
 

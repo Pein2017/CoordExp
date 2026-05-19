@@ -243,14 +243,6 @@ def test_existing_random_permutation_latest_schema_still_accepts_flat_trie_weigh
     "objective",
     [
         {
-            "id": "recursive_detection_ce",
-            "variant": "random_permutation_et_rmp_ce",
-            "trie_support_weight": 2.0,
-            "trie_balance_weight": 1.0,
-            "state_weighting": "legacy_row_mean_prefix_mixture_equivalence",
-            "normalization": "legacy_row_mean_equivalence",
-        },
-        {
             "id": "sft",
             "variant": "sorted_sft",
             "state_weighting": "none",
@@ -273,12 +265,32 @@ def test_non_prefix_variants_reject_objectized_type_gate_section(
 
     with pytest.raises(
         ValueError,
-        match=(
-            "objectized objective sections are only supported for "
-            "objective.variant=prefix_rollin_et_rmp_ce"
-        ),
+        match="objective.type_gate is only supported for latest recursive_detection_ce",
     ):
         _parse(payload)
+
+
+def test_random_permutation_accepts_objectized_type_gate_section() -> None:
+    payload = _prefix_rollin_payload()
+    payload.pop("experiment")
+    payload["objective"] = {
+        "id": "recursive_detection_ce",
+        "variant": "random_permutation_et_rmp_ce",
+        "trie_support_weight": 2.0,
+        "trie_balance_weight": 1.0,
+        "state_weighting": "legacy_row_mean_prefix_mixture_equivalence",
+        "normalization": "legacy_row_mean_equivalence",
+        "type_gate": {
+            "enabled": True,
+            "mode": "allowed_type_mass",
+            "weights": {"struct": 1.0, "coord": 1.0, "desc": 1.0, "eos": 1.0},
+        },
+    }
+
+    cfg = _parse(payload)
+
+    assert cfg.objective.type_gate is not None
+    assert cfg.objective.type_gate.enabled is True
 
 
 def test_prefix_rollin_rejects_non_compact_full_template() -> None:

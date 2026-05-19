@@ -1021,7 +1021,10 @@ def _compute_sample_loss(
             support_weight=float(weights.support_weight),
             balance_weight=float(weights.balance_weight),
         )
-        if getattr(target, "token_role", None) is TokenRole.DESC:
+        if (
+            getattr(target, "token_role", None) is TokenRole.DESC
+            and getattr(target, "semantic_role", None) is SemanticRole.DESC_IDENTITY
+        ):
             position_loss = position_loss + (-step_log_probs[target.teacher_token_id])
         per_position_main_losses[target.position] = _loss_float(position_loss)
         per_position_losses[target.position] = _apply_type_gate_loss(
