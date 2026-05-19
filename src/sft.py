@@ -103,8 +103,10 @@ from .detection.runtime import (
 from .infer.checkpoints import load_adapter_checkpoint_info
 from .trainers import with_final_checkpoint
 from .training_runtime import (
+    TrainingRuntimePlan,
     resolve_training_runtime_plan,
     resolve_training_runtime_profile,
+    validate_training_runtime_preflight,
 )
 from .utils import (
     FileLoggingConfig,
@@ -1828,6 +1830,17 @@ def _validate_stage1_static_packing_policy(
     )
 
 
+def _validate_sft_runtime_preflight(
+    *,
+    training_config: Any,
+    runtime_plan: TrainingRuntimePlan,
+) -> None:
+    validate_training_runtime_preflight(
+        training_config,
+        runtime_plan=runtime_plan,
+    )
+
+
 def _validate_attention_backend_for_packing(*, training_config: Any) -> None:
     """Fail-fast guard: packed training requires a padding-free-safe attention backend.
 
@@ -2564,13 +2577,18 @@ def main():
     train_encoded_sample_cache_info: dict[str, Any] | None = None
     eval_encoded_sample_cache_info: dict[str, Any] | None = None
     trainer_variant = getattr(train_args, "trainer_variant", None)
+    runtime_plan = resolve_training_runtime_plan(trainer_variant)
+    _validate_sft_runtime_preflight(
+        training_config=training_config,
+        runtime_plan=runtime_plan,
+    )
     packing_cfg = _parse_packing_config(
         training_config.training, sft.template, train_args
     )
     _validate_attention_backend_for_packing(training_config=training_config)
     # Stage_2 rollout-matching supports post-rollout packing inside the trainer only.
     # Do not apply dataset-level packing wrappers for this trainer variant.
-    is_rollout_matching_variant = _is_rollout_matching_variant(trainer_variant)
+    is_rollout_matching_variant = runtime_plan.post_rollout_packing_owner is not None
     _validate_stage1_static_packing_policy(
         packing_cfg=packing_cfg,
         trainer_variant=trainer_variant,

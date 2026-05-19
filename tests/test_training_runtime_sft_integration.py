@@ -10,6 +10,7 @@ from src.sft import (
     _build_pipeline_manifest,
     _apply_rollout_decode_batch_size_override,
     _is_rollout_matching_variant,
+    _validate_sft_runtime_preflight,
     _validate_static_packing_accumulation_windows,
     _validate_stage1_static_packing_policy,
     resolve_trainer_cls,
@@ -83,6 +84,32 @@ def test_validate_stage1_static_packing_policy_allows_stage2_trainer_owned_packi
         packing_cfg=PackingRuntimeConfig(enabled=True, mode="dynamic"),
         trainer_variant=variant,
     )
+
+
+def test_sft_runtime_preflight_rejects_teacher_forcing_encoded_sample_cache() -> None:
+    config = SimpleNamespace(
+        objective=SimpleNamespace(
+            id="teacher_forcing",
+            target_ir=SimpleNamespace(
+                rollin_policy=SimpleNamespace(
+                    name="random_permutation",
+                    base_seed=17,
+                )
+            ),
+        ),
+        training={
+            "encoded_sample_cache": {
+                "enabled": True,
+                "root_dir": "/tmp/coordexp-cache",
+            }
+        },
+    )
+
+    with pytest.raises(ValueError, match="teacher_forcing encoded training cache"):
+        _validate_sft_runtime_preflight(
+            training_config=config,
+            runtime_plan=resolve_training_runtime_plan("stage2_two_channel"),
+        )
 
 
 def test_static_packing_accumulation_warning_is_skipped_for_trainer_owned_packing(
