@@ -1,4 +1,8 @@
-## MODIFIED Requirements
+## Purpose
+Define trainer metric component naming, aggregation, and duplicate-collapse
+diagnostic contracts.
+
+## Requirements
 
 ### Requirement: Channel-B duplicate-collapse metrics are explicit and aggregation-safe
 The trainer metrics contract SHALL expose duplicate-collapse diagnostics with

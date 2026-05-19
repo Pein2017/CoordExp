@@ -1,7 +1,6 @@
-## MODIFIED Requirements
-
 ## Purpose
 Define the Stage-2 AB training contract (Channel-A supervised, Channel-B rollout-matching) including the configuration surface and reproducibility-critical invariants.
+
 ## Requirements
 ### Requirement: Stage-2 AB trainer variant is selectable via YAML
 When training config sets `custom.trainer_variant: stage2_two_channel`, the system SHALL use the Stage-2 AB trainer implementation.
@@ -1629,6 +1628,10 @@ Normative behavior:
 - **AND** it does not proceed as if the checkpoint were restartable.
 
 ### Requirement: Stage-2 AB Channel-B uses anchor-rooted rollout triage with pre-match duplicate-control and default K=4 pseudo-positive evidence
+The Stage-2 AB Channel-B contract MUST build anchor-rooted rollout triage from
+pre-match duplicate-control evidence while preserving default K=4
+pseudo-positive semantics.
+
 When `custom.trainer_variant: stage2_two_channel`, the canonical Channel-B
 contract SHALL build its clean teacher-forced target from rollout evidence
 rooted in the anchor clean sequence.

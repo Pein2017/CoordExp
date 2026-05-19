@@ -1,6 +1,9 @@
 ## MODIFIED Requirements
 
 ### Requirement: Stage-1 dataset-level packing is static-only
+The system SHALL keep ordinary Stage-1 dataset-level packing static-only while
+rejecting set-continuation packing in v1.
+
 For ordinary Stage-1 dataset-level packing (non-rollout, one-sequence SFT
 trainer variants), the system SHALL enforce the existing static-only policy.
 

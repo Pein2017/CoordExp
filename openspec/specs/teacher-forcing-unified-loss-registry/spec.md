@@ -457,6 +457,11 @@ Normative behavior:
 - public objective module names and emitted atom names remain unchanged in this
   first refactor slice.
 
+#### Scenario: Module taxonomy drives strict validation and projection
+- **WHEN** an objective module is registered in the unified loss registry
+- **THEN** its taxonomy fields are available to strict config validation
+- **AND** objective-atom projection uses the same module identity metadata.
+
 ### Requirement: Channel-B rollout context is FP-neutral and EOS-enforced
 For Stage-2 Channel-B (`context=rollout`), the rollout-context contract SHALL
 be defined over the anchor-edited clean sequence rather than the raw rollout

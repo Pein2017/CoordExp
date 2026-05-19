@@ -19,6 +19,23 @@ the resolved decision.
   explicitly in scope.
 - Use repo configs, tests, scripts, manifests, and artifact paths for
   executable truth whenever prose would become stale.
+- When discussion resolves terminology, update the narrowest existing docs or
+  spec surface that owns that term. Do not create a root glossary unless the
+  repo already routes the topic there.
+
+## When To Record
+
+Record promptly when a resolved branch will steer later implementation,
+evaluation, interpretation, or compatibility.
+
+For durable decision notes, require all three:
+
+- The decision is hard enough to reverse that future churn would be costly.
+- The decision is surprising without context.
+- The decision reflects a real trade-off among plausible alternatives.
+
+For measured evidence, record whenever the result may later be cited,
+reproduced, compared, promoted, or rejected.
 
 ## Record Shape
 

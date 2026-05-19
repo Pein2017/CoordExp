@@ -164,6 +164,9 @@ Normative behavior:
   bypassed from startup logs and run artifacts.
 
 ### Requirement: Encoded cache shard residency MUST be explicitly bounded
+The encoded-cache runtime MUST bound worker-local shard residency explicitly
+when persistent workers are used.
+
 When encoded-sample caching is used with persistent workers, worker-local cache
 residency MUST be bounded by explicit policy rather than allowed to grow
 without limit across the epoch.

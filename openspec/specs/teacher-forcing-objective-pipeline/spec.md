@@ -1,4 +1,8 @@
-## MODIFIED Requirements
+## Purpose
+Define the teacher-forcing objective pipeline module contract, including stable
+module names and Channel-B duplicate-suppression ownership.
+
+## Requirements
 
 ### Requirement: duplicate-burst unlikelihood is removed from live objectives
 The teacher-forcing objective pipeline SHALL reject

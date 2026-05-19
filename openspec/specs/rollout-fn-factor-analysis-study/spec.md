@@ -1,4 +1,8 @@
-## ADDED Requirements
+## Purpose
+Define the fixed-checkpoint rollout factor analysis study contract, including
+manifest provenance, execution scope, subset derivation, and reporting layers.
+
+## Requirements
 
 ### Requirement: Fixed-checkpoint study manifest
 The system SHALL require a manifest-driven study configuration for fixed-checkpoint rollout analysis.

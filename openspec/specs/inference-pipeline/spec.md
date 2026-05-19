@@ -1,4 +1,8 @@
-## MODIFIED Requirements
+## Purpose
+Define the staged inference pipeline contract for generation, evaluation,
+visualization, resolved manifests, and score-aware evaluation behavior.
+
+## Requirements
 
 ### Requirement: Staged pipeline (inference -> eval and/or viz)
 The system SHALL provide a unified pipeline runner that can execute stages:

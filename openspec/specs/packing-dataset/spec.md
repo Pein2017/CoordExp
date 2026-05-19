@@ -45,6 +45,8 @@ The system SHALL preserve multimodal tensors/metadata (e.g., `pixel_values`, `im
 - THEN it receives all required multimodal fields, produces `position_ids`, and flattens the pack into a single batch element.
 
 ### Requirement: Legacy Fusion Scheduling Is Unsupported
+The packing surface MUST NOT imply support for legacy fusion scheduling.
+
 Packing no longer needs to coordinate with fusion scheduling because
 fusion-config training has been removed from the supported surface.
 
@@ -312,6 +314,9 @@ Normative behavior:
   sample during plan creation.
 
 ### Requirement: Prepared-record sidecars MUST obey explicit eligibility and fingerprint rules
+The system MUST govern prepared-record sidecar reuse with explicit eligibility
+and fingerprint rules.
+
 When the system reuses a prepared-record sidecar before token encoding, that
 sidecar MUST be governed by an explicit validity contract rather than treated
 as generically reusable.
@@ -341,6 +346,9 @@ Normative behavior:
 - **AND** it bypasses reuse or fails fast according to the configured policy.
 
 ### Requirement: Static length precompute MUST be side-effect free or fall back to a safe execution mode
+The static length precompute path MUST avoid unsafe concurrent execution when
+dataset operations have mutable side effects.
+
 When static packing computes planning lengths with concurrency, the precompute
 path MUST be side-effect free for the relevant dataset operations.
 
