@@ -12,12 +12,14 @@ DistributionKind: TypeAlias = Literal[
     "multi_positive_token",
     "coordinate_soft_token",
     "box_regression",
+    "teacher_forcing_target_ir",
 ]
 TargetObjectiveId: TypeAlias = Literal[
     "token_ce",
     "trie_ce",
     "coord_soft_ce",
     "box_regression",
+    "teacher_forcing",
 ]
 CoordinateSoftTargetFamily: TypeAlias = Literal["iou_gibbs_v0", "ciou_gibbs_v0"]
 CoordinateSoftLossMode: TypeAlias = Literal[
@@ -42,6 +44,7 @@ VALID_DISTRIBUTION_KINDS: frozenset[str] = frozenset(
         "multi_positive_token",
         "coordinate_soft_token",
         "box_regression",
+        "teacher_forcing_target_ir",
     )
 )
 RETIRED_DISTRIBUTION_KINDS: frozenset[str] = frozenset(
@@ -60,6 +63,7 @@ VALID_TARGET_OBJECTIVE_IDS: frozenset[str] = frozenset(
         "trie_ce",
         "coord_soft_ce",
         "box_regression",
+        "teacher_forcing",
     )
 )
 RETIRED_TARGET_OBJECTIVE_IDS: frozenset[str] = frozenset(
@@ -86,6 +90,7 @@ SUPPORTED_OBJECTIVES_BY_DISTRIBUTION_KIND: Mapping[DistributionKind, frozenset[s
             "multi_positive_token": frozenset(("trie_ce",)),
             "coordinate_soft_token": frozenset(("coord_soft_ce",)),
             "box_regression": frozenset(("box_regression",)),
+            "teacher_forcing_target_ir": frozenset(("teacher_forcing",)),
         }
     )
 )
@@ -513,6 +518,28 @@ class BoxRegressionDistribution(TargetDistribution):
         object.__setattr__(self, "target_bbox", _normalize_bbox(self.target_bbox))
 
 
+@dataclass(frozen=True, slots=True)
+class TeacherForcingTargetDistribution(TargetDistribution):
+    """Teacher-forcing target IR distribution.
+
+    :param target_ir: Batch-local teacher-forcing target IR for one sample span.
+    """
+
+    target_ir: object
+    kind: Literal["teacher_forcing_target_ir"] = field(
+        default="teacher_forcing_target_ir",
+        init=False,
+    )
+
+    def __post_init__(self) -> None:
+        """Validate the IR carrier type without interpreting objective math."""
+
+        from src.training.teacher_forcing.ir import TeacherForcingTargetIR
+
+        if type(self.target_ir) is not TeacherForcingTargetIR:
+            raise TypeError("target_ir must be a TeacherForcingTargetIR")
+
+
 class TargetDistributionRegistry:
     """Closed registry for supported semantic target distributions."""
 
@@ -522,6 +549,7 @@ class TargetDistributionRegistry:
             "multi_positive_token": MultiPositiveTokenDistribution,
             "coordinate_soft_token": CoordinateSoftTokenDistribution,
             "box_regression": BoxRegressionDistribution,
+            "teacher_forcing_target_ir": TeacherForcingTargetDistribution,
         }
     )
 

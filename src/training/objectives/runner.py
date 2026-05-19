@@ -8,6 +8,7 @@ import torch
 
 from src.training.objectives.box_regression import BoxRegressionObjective
 from src.training.objectives.coord_soft_ce import CoordinateSoftCEObjective
+from src.training.objectives.teacher_forcing import TeacherForcingObjective
 from src.training.objectives.token_ce import TokenCEObjective
 from src.training.objectives.trie_ce import TrieCEObjective
 from src.training.objectives.types import (
@@ -16,6 +17,7 @@ from src.training.objectives.types import (
     ObjectiveRunResult,
     ObjectiveSpec,
     ResolvedObjectiveSpan,
+    config_tensor,
 )
 from src.training.supervision.batch import SupervisionBatch
 from src.training.supervision.distributions import (
@@ -26,6 +28,7 @@ from src.training.supervision.distributions import (
     SUPPORTED_OBJECTIVES_BY_DISTRIBUTION_KIND,
     TargetDistribution,
     TargetDistributionRegistry,
+    TeacherForcingTargetDistribution,
 )
 
 
@@ -40,6 +43,7 @@ class ObjectiveRunner:
             "trie_ce": TrieCEObjective(),
             "coord_soft_ce": CoordinateSoftCEObjective(),
             "box_regression": BoxRegressionObjective(),
+            "teacher_forcing": TeacherForcingObjective(),
         }
 
     def run(
@@ -69,6 +73,7 @@ class ObjectiveRunner:
             raise ValueError("objective ids must be unique")
 
         # guard deferred type-gate semantics before any objective math runs.
+        self._validate_teacher_forcing_logits_contract(logits, specs)
         self._reject_deferred_metadata(supervision)
         self._validate_distribution_objective_coverage(supervision, objective_ids)
         if len(supervision.spans) == 0:
@@ -283,4 +288,34 @@ class ObjectiveRunner:
                 )
             return
 
+        if type(distribution) is TeacherForcingTargetDistribution:
+            if len(label_positions) != len(distribution.target_ir.atoms):
+                raise ValueError(
+                    "teacher_forcing target distributions must resolve exactly "
+                    "one label position per target IR atom"
+                )
+            return
+
         raise TypeError(f"unsupported target distribution: {type(distribution)!r}")
+
+    def _validate_teacher_forcing_logits_contract(
+        self,
+        logits: torch.Tensor,
+        specs: tuple[ObjectiveSpec, ...],
+    ) -> None:
+        """Reject sliced or rank-collapsed teacher-forcing logits in the runner."""
+
+        teacher_forcing_specs = [
+            spec for spec in specs if spec.objective_id == "teacher_forcing"
+        ]
+        if not teacher_forcing_specs:
+            return
+
+        if logits.ndim != 3:
+            raise ValueError("teacher_forcing requires rank-3 logits [batch, seq, vocab]")
+        for spec in teacher_forcing_specs:
+            input_ids = config_tensor(spec.config, "input_ids", ndim=2)
+            if tuple(logits.shape[:2]) != tuple(input_ids.shape[:2]):
+                raise ValueError(
+                    "teacher_forcing requires logits.shape[:2] == input_ids.shape[:2]"
+                )

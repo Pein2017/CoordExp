@@ -440,6 +440,26 @@ def config_float(
     return parsed
 
 
+def config_tensor(
+    config: Mapping[str, object],
+    key: str,
+    *,
+    ndim: int | None = None,
+) -> torch.Tensor:
+    """Return a required tensor from objective config."""
+
+    try:
+        value = config[key]
+    except KeyError as exc:
+        raise ValueError(f"objective requires config[{key!r}]") from exc
+    if not isinstance(value, torch.Tensor):
+        raise TypeError(f"config[{key!r}] must be a torch.Tensor")
+    if ndim is not None and value.ndim != ndim:
+        raise ValueError(f"config[{key!r}] must have rank {ndim}")
+
+    return value
+
+
 def make_weighted_mean_event(
     *,
     key: str,
