@@ -163,6 +163,28 @@ def _stage2_pipeline_with_channel_b_trie_ce() -> dict:
     return pipeline
 
 
+def _teacher_forcing_objective() -> dict:
+    return {
+        "id": "teacher_forcing",
+        "profile": "pure_valid_set_marginal",
+        "target_ir": {
+            "rollin_policy": {
+                "name": "random_permutation",
+                "base_seed": 17,
+            },
+        },
+        "modules": {
+            "token_type_mass": {"enabled": True},
+            "conditional_valid_set_likelihood": {"enabled": True},
+            "within_valid_coverage": {
+                "enabled": False,
+                "coverage_strength": 0.0,
+            },
+            "continuation_margin": {"enabled": False},
+        },
+    }
+
+
 def _patch_loader_runtime(monkeypatch: pytest.MonkeyPatch, *, world_size: int) -> None:
     monkeypatch.setattr(
         "src.config.loader.get_dist_setting",
@@ -830,6 +852,18 @@ def test_stage2_pipeline_uses_canonical_objective_without_duplicate_burst_unlike
     assert [
         module.name for module in parsed.stage2_ab.pipeline.objective
     ] == ["token_ce", "bbox_geo", "bbox_size_aux", "coord_reg"]
+
+
+def test_stage2_pipeline_rejects_legacy_modules_under_teacher_forcing() -> None:
+    raw = _make_stage2_training_payload()
+    raw["objective"] = _teacher_forcing_objective()
+
+    prompts = ConfigLoader.resolve_prompts(raw)
+    with pytest.raises(
+        ValueError,
+        match=r"teacher_forcing.*stage2_ab\.pipeline\.objective.*token_ce",
+    ):
+        TrainingConfig.from_mapping(raw, prompts)
 
 
 def test_stage2_pipeline_accepts_channel_b_stage2_trie_ce() -> None:

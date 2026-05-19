@@ -92,6 +92,36 @@ STAGE2_TRIE_CE_RESERVED_WEIGHT_KEYS: set[str] = (
     STAGE2_TRIE_CE_CONFIG_KEYS - {"normalization"}
 )
 STAGE2_TRIE_CE_APPLICATION_PRESETS: set[str] = {"rollout_trie_hard_ce"}
+TEACHER_FORCING_OBJECTIVE_ID = "teacher_forcing"
+TEACHER_FORCING_PROFILES: set[str] = {
+    "hard_sft",
+    "pure_valid_set_marginal",
+    "coverage_regularized_valid_set_marginal",
+}
+LEGACY_TEACHER_FORCING_OBJECTIVE_IDS: set[str] = {
+    "recursive_detection_ce",
+    "random_permutation_et_rmp_ce",
+    "prefix_rollin_et_rmp_ce",
+    "ET_RMP_CE",
+    "et_rmp_like",
+    "typed_trie_alpha0_random_rollin",
+    "typed_trie_alpha0p1_random_rollin",
+    "support_balance",
+}
+LEGACY_STAGE2_TEACHER_FORCING_MODULES: set[str] = {
+    "bbox_geo",
+    "bbox_size_aux",
+    "coord_reg",
+    "token_ce",
+    "coord_gate",
+    "text_gate",
+}
+LEGACY_STAGE2_TEACHER_FORCING_CONFIG_KEYS: set[str] = {
+    "coord_gate_weight",
+    "text_gate_weight",
+    "soft_ce_weight",
+    "w1_weight",
+}
 
 
 def _normalize_json_format(value: Any) -> AllowedJsonFormat:
@@ -3282,6 +3312,66 @@ def _validate_stage2_ab_rollout_surface_alignment(
         )
 
 
+def _validate_teacher_forcing_training_packing_contract(
+    *,
+    objective: TeacherForcingObjectiveConfig | None,
+    training: Mapping[str, Any],
+) -> None:
+    if objective is None:
+        return
+    packing_raw = training.get("packing", False)
+    if packing_raw in (None, ""):
+        return
+    if not isinstance(packing_raw, bool):
+        raise TypeError(
+            "training.packing must be boolean when objective.id=teacher_forcing"
+        )
+    if packing_raw and not objective.target_ir.exact_packing_mapping.enabled:
+        raise ValueError(
+            "objective.id=teacher_forcing rejects training.packing=true unless "
+            "objective.target_ir.exact_packing_mapping.enabled=true."
+        )
+
+
+def _validate_teacher_forcing_stage2_migration_raw(stage2_ab_raw: Any) -> None:
+    if stage2_ab_raw is None:
+        return
+    if not isinstance(stage2_ab_raw, Mapping):
+        raise TypeError("stage2_ab section must be a mapping")
+    pipeline_raw = stage2_ab_raw.get("pipeline")
+    if not isinstance(pipeline_raw, Mapping):
+        return
+    objective_raw = pipeline_raw.get("objective", [])
+    if not isinstance(objective_raw, Sequence) or isinstance(
+        objective_raw, (str, bytes)
+    ):
+        return
+
+    violations: list[str] = []
+    for idx, item in enumerate(objective_raw):
+        if not isinstance(item, Mapping):
+            continue
+        name = str(item.get("name", "") or "").strip()
+        if name in LEGACY_STAGE2_TEACHER_FORCING_MODULES:
+            violations.append(f"stage2_ab.pipeline.objective[{idx}].name={name}")
+        config = item.get("config")
+        if isinstance(config, Mapping):
+            for key in sorted(
+                set(str(k) for k in config.keys())
+                & LEGACY_STAGE2_TEACHER_FORCING_CONFIG_KEYS
+            ):
+                violations.append(
+                    f"stage2_ab.pipeline.objective[{idx}].config.{key}"
+                )
+
+    if violations:
+        raise ValueError(
+            "objective.id=teacher_forcing rejects legacy "
+            "stage2_ab.pipeline.objective modules/config keys: "
+            f"{violations}. Move active loss selection to objective.modules."
+        )
+
+
 _LATEST_DETECTION_REQUIRED_SECTIONS: set[str] = {
     "data",
     "prompt",
@@ -3479,7 +3569,7 @@ def _latest_detection_runtime_bool(
 
 def _latest_detection_validate_packing_runtime_contract(
     *,
-    objective: "DetectionObjectiveConfig",
+    objective: "DetectionObjectiveConfig | TeacherForcingObjectiveConfig",
     packing: "DetectionPackingConfig",
     training: Mapping[str, Any],
 ) -> None:
@@ -3490,6 +3580,20 @@ def _latest_detection_validate_packing_runtime_contract(
         raise ValueError(
             "packing.static_packing=true requires training.packing=true for latest detection runtime materialization."
         )
+
+    if getattr(objective, "id", None) == TEACHER_FORCING_OBJECTIVE_ID:
+        exact_mapping = bool(objective.target_ir.exact_packing_mapping.enabled)
+        if training_packing and not exact_mapping:
+            raise ValueError(
+                "objective.id=teacher_forcing rejects training.packing=true unless "
+                "objective.target_ir.exact_packing_mapping.enabled=true."
+            )
+        if packing.static_packing and not exact_mapping:
+            raise ValueError(
+                "objective.id=teacher_forcing rejects packing.static_packing=true unless "
+                "objective.target_ir.exact_packing_mapping.enabled=true."
+            )
+        return
 
     if objective.id != "recursive_detection_ce":
         return
@@ -3540,8 +3644,18 @@ def _latest_detection_validate_deepspeed_mapping(value: Any) -> dict[str, Any]:
 
 def _latest_detection_validate_order_matches_objective(
     data: DetectionDataConfig,
-    objective: DetectionObjectiveConfig,
+    objective: DetectionObjectiveConfig | TeacherForcingObjectiveConfig,
 ) -> None:
+    if getattr(objective, "id", None) == TEACHER_FORCING_OBJECTIVE_ID:
+        required_order = objective.target_ir.rollin_policy.name
+        if data.object_ordering != required_order:
+            raise ValueError(
+                "data.object_ordering must be "
+                f"{required_order!r} for objective.id='teacher_forcing', "
+                f"got {data.object_ordering!r}"
+            )
+        return
+
     required_order = (
         "sorted" if objective.variant == "sorted_sft" else "random_permutation"
     )
@@ -3556,9 +3670,11 @@ def _latest_detection_validate_order_matches_objective(
 def _latest_detection_validate_prefix_rollin_contract(
     *,
     detection_template: "DetectionTemplateConfig",
-    objective: "DetectionObjectiveConfig",
+    objective: "DetectionObjectiveConfig | TeacherForcingObjectiveConfig",
     experiment: "LatestDetectionExperimentConfig | None",
 ) -> None:
+    if getattr(objective, "id", None) == TEACHER_FORCING_OBJECTIVE_ID:
+        return
     if objective.variant != "prefix_rollin_et_rmp_ce":
         return
 
@@ -4077,6 +4193,240 @@ class GibbsCoordSoftCEConfig(CoordSoftCEConfig):
 
 
 @dataclass(frozen=True)
+class TeacherForcingRollinPolicyConfig:
+    name: Literal["random_permutation"] = "random_permutation"
+    base_seed: int = 17
+
+    def __post_init__(self) -> None:
+        _latest_detection_validate_choice(
+            self.name,
+            path="objective.target_ir.rollin_policy.name",
+            allowed={"random_permutation"},
+        )
+        if not isinstance(self.base_seed, int) or isinstance(self.base_seed, bool):
+            raise TypeError(
+                "objective.target_ir.rollin_policy.base_seed must be an integer"
+            )
+        if int(self.base_seed) < 0:
+            raise ValueError("objective.target_ir.rollin_policy.base_seed must be >= 0")
+
+    @classmethod
+    def from_mapping(cls, payload: Any) -> "TeacherForcingRollinPolicyConfig":
+        return parse_dataclass_strict(
+            cls,
+            payload or {},
+            path="objective.target_ir.rollin_policy",
+        )
+
+
+@dataclass(frozen=True)
+class TeacherForcingExactPackingMappingConfig:
+    enabled: bool = False
+
+    def __post_init__(self) -> None:
+        _latest_detection_validate_bool(
+            self.enabled,
+            path="objective.target_ir.exact_packing_mapping.enabled",
+        )
+
+    @classmethod
+    def from_mapping(cls, payload: Any) -> "TeacherForcingExactPackingMappingConfig":
+        return parse_dataclass_strict(
+            cls,
+            payload or {},
+            path="objective.target_ir.exact_packing_mapping",
+        )
+
+
+@dataclass(frozen=True)
+class TeacherForcingTargetIRConfig:
+    rollin_policy: TeacherForcingRollinPolicyConfig = field(
+        default_factory=TeacherForcingRollinPolicyConfig
+    )
+    exact_packing_mapping: TeacherForcingExactPackingMappingConfig = field(
+        default_factory=TeacherForcingExactPackingMappingConfig
+    )
+
+    @classmethod
+    def from_mapping(cls, payload: Any) -> "TeacherForcingTargetIRConfig":
+        if payload is None:
+            payload = {}
+        if not isinstance(payload, Mapping):
+            raise TypeError("objective.target_ir must be a mapping")
+        data: MutableMapping[str, Any] = dict(payload)
+        rollin_policy = TeacherForcingRollinPolicyConfig.from_mapping(
+            data.pop("rollin_policy", {})
+        )
+        exact_packing_mapping = TeacherForcingExactPackingMappingConfig.from_mapping(
+            data.pop("exact_packing_mapping", {})
+        )
+        if data:
+            unknown = [
+                f"objective.target_ir.{str(k)}"
+                for k in sorted(data.keys(), key=lambda x: str(x))
+            ]
+            raise ValueError(f"Unknown objective.target_ir keys: {unknown}")
+        return cls(
+            rollin_policy=rollin_policy,
+            exact_packing_mapping=exact_packing_mapping,
+        )
+
+
+@dataclass(frozen=True)
+class TeacherForcingEnabledModuleConfig:
+    enabled: bool = False
+
+    def __post_init__(self) -> None:
+        _latest_detection_validate_bool(
+            self.enabled,
+            path="objective.modules.*.enabled",
+        )
+
+
+@dataclass(frozen=True)
+class TeacherForcingWithinValidCoverageConfig:
+    enabled: bool = False
+    coverage_strength: float = 0.0
+
+    def __post_init__(self) -> None:
+        _latest_detection_validate_bool(
+            self.enabled,
+            path="objective.modules.within_valid_coverage.enabled",
+        )
+        if not isinstance(self.coverage_strength, (int, float)) or isinstance(
+            self.coverage_strength, bool
+        ):
+            raise TypeError(
+                "objective.modules.within_valid_coverage.coverage_strength must be numeric"
+            )
+        value = float(self.coverage_strength)
+        if not math.isfinite(value):
+            raise ValueError(
+                "objective.modules.within_valid_coverage.coverage_strength must be finite"
+            )
+        if value < 0.0:
+            raise ValueError(
+                "objective.modules.within_valid_coverage.coverage_strength must be >= 0"
+            )
+        object.__setattr__(self, "coverage_strength", value)
+
+
+@dataclass(frozen=True)
+class TeacherForcingModulesConfig:
+    token_type_mass: TeacherForcingEnabledModuleConfig = field(
+        default_factory=TeacherForcingEnabledModuleConfig
+    )
+    conditional_valid_set_likelihood: TeacherForcingEnabledModuleConfig = field(
+        default_factory=TeacherForcingEnabledModuleConfig
+    )
+    within_valid_coverage: TeacherForcingWithinValidCoverageConfig = field(
+        default_factory=TeacherForcingWithinValidCoverageConfig
+    )
+    continuation_margin: TeacherForcingEnabledModuleConfig = field(
+        default_factory=TeacherForcingEnabledModuleConfig
+    )
+
+    @classmethod
+    def from_mapping(cls, payload: Any) -> "TeacherForcingModulesConfig":
+        if payload is None:
+            payload = {}
+        if not isinstance(payload, Mapping):
+            raise TypeError("objective.modules must be a mapping")
+        data: MutableMapping[str, Any] = dict(payload)
+        token_type_mass = parse_dataclass_strict(
+            TeacherForcingEnabledModuleConfig,
+            data.pop("token_type_mass", {}),
+            path="objective.modules.token_type_mass",
+        )
+        conditional_valid_set_likelihood = parse_dataclass_strict(
+            TeacherForcingEnabledModuleConfig,
+            data.pop("conditional_valid_set_likelihood", {}),
+            path="objective.modules.conditional_valid_set_likelihood",
+        )
+        within_valid_coverage = parse_dataclass_strict(
+            TeacherForcingWithinValidCoverageConfig,
+            data.pop("within_valid_coverage", {}),
+            path="objective.modules.within_valid_coverage",
+        )
+        continuation_margin = parse_dataclass_strict(
+            TeacherForcingEnabledModuleConfig,
+            data.pop("continuation_margin", {}),
+            path="objective.modules.continuation_margin",
+        )
+        if data:
+            unknown = [
+                f"objective.modules.{str(k)}"
+                for k in sorted(data.keys(), key=lambda x: str(x))
+            ]
+            raise ValueError(f"Unknown objective.modules keys: {unknown}")
+        return cls(
+            token_type_mass=token_type_mass,
+            conditional_valid_set_likelihood=conditional_valid_set_likelihood,
+            within_valid_coverage=within_valid_coverage,
+            continuation_margin=continuation_margin,
+        )
+
+
+@dataclass(frozen=True)
+class TeacherForcingObjectiveConfig:
+    id: Literal["teacher_forcing"]
+    profile: Literal[
+        "hard_sft",
+        "pure_valid_set_marginal",
+        "coverage_regularized_valid_set_marginal",
+    ] = "hard_sft"
+    target_ir: TeacherForcingTargetIRConfig = field(
+        default_factory=TeacherForcingTargetIRConfig
+    )
+    modules: TeacherForcingModulesConfig = field(default_factory=TeacherForcingModulesConfig)
+
+    def __post_init__(self) -> None:
+        if self.id != TEACHER_FORCING_OBJECTIVE_ID:
+            raise ValueError(
+                "objective.id must be exactly 'teacher_forcing'; "
+                f"got {self.id!r}"
+            )
+        _latest_detection_validate_choice(
+            self.profile,
+            path="objective.profile",
+            allowed=TEACHER_FORCING_PROFILES,
+        )
+        coverage = self.modules.within_valid_coverage
+        coverage_strength = float(coverage.coverage_strength)
+        if self.profile == "coverage_regularized_valid_set_marginal":
+            if not bool(coverage.enabled) or coverage_strength <= 0.0:
+                raise ValueError(
+                    "objective.profile=coverage_regularized_valid_set_marginal "
+                    "requires objective.modules.within_valid_coverage.enabled=true "
+                    "and coverage_strength > 0"
+                )
+        elif coverage_strength > 0.0:
+            raise ValueError(
+                f"objective.profile={self.profile} requires "
+                "objective.modules.within_valid_coverage.coverage_strength=0"
+            )
+
+    @classmethod
+    def from_mapping(cls, payload: Any) -> "TeacherForcingObjectiveConfig":
+        if not isinstance(payload, Mapping):
+            raise TypeError("objective must be a mapping")
+        data: MutableMapping[str, Any] = dict(payload)
+        raw_id = data.get("id")
+        if raw_id != TEACHER_FORCING_OBJECTIVE_ID:
+            raise ValueError(
+                "objective.id must be exactly 'teacher_forcing'; "
+                f"legacy objective ids are unsupported, got {raw_id!r}"
+            )
+        if "target_ir" in data:
+            data["target_ir"] = TeacherForcingTargetIRConfig.from_mapping(
+                data["target_ir"]
+            )
+        if "modules" in data:
+            data["modules"] = TeacherForcingModulesConfig.from_mapping(data["modules"])
+        return parse_dataclass_strict(cls, data, path="objective")
+
+
+@dataclass(frozen=True)
 class DetectionObjectiveConfig:
     id: Literal["sft", "recursive_detection_ce"]
     variant: Literal[
@@ -4252,7 +4602,26 @@ class DetectionObjectiveConfig:
         )
 
     @classmethod
-    def from_mapping(cls, payload: Any) -> "DetectionObjectiveConfig":
+    def from_mapping(
+        cls, payload: Any
+    ) -> "DetectionObjectiveConfig | TeacherForcingObjectiveConfig":
+        if not isinstance(payload, Mapping):
+            raise TypeError("objective must be a mapping")
+        raw_id = payload.get("id")
+        if raw_id == TEACHER_FORCING_OBJECTIVE_ID:
+            return TeacherForcingObjectiveConfig.from_mapping(payload)
+        if raw_id in LEGACY_TEACHER_FORCING_OBJECTIVE_IDS or raw_id in {"sft"}:
+            raise ValueError(
+                "objective.id must be exactly 'teacher_forcing'; "
+                f"legacy objective ids are unsupported, got {raw_id!r}"
+            )
+        raise ValueError(
+            "objective.id must be exactly 'teacher_forcing'; "
+            f"got {raw_id!r}"
+        )
+
+    @classmethod
+    def from_legacy_mapping_for_tests(cls, payload: Any) -> "DetectionObjectiveConfig":
         if isinstance(payload, Mapping):
             payload = dict(payload)
             raw_coord_soft_ce = payload.get("coord_soft_ce")
@@ -4405,7 +4774,7 @@ class LatestDetectionTrainingConfig:
     prompt: DetectionPromptConfig
     detection_template: DetectionTemplateConfig
     token_rows: TrainableTokenRowsConfig
-    objective: DetectionObjectiveConfig
+    objective: DetectionObjectiveConfig | TeacherForcingObjectiveConfig
     packing: DetectionPackingConfig
     evaluation: DetectionEvaluationConfig
     validation: DetectionValidationConfig
@@ -4488,7 +4857,10 @@ class LatestDetectionTrainingConfig:
         data_config = DetectionDataConfig.from_mapping(payload["data"])
         objective = DetectionObjectiveConfig.from_mapping(payload["objective"])
         _latest_detection_validate_order_matches_objective(data_config, objective)
-        if objective.variant == "prefix_rollin_et_rmp_ce":
+        if (
+            getattr(objective, "id", None) != TEACHER_FORCING_OBJECTIVE_ID
+            and objective.variant == "prefix_rollin_et_rmp_ce"
+        ):
             required_experiment_variant = "prefix_rollin_et_rmp_ce"
         else:
             required_experiment_variant = None
@@ -4586,6 +4958,7 @@ class TrainingConfig:
     data: Mapping[str, Any] = field(default_factory=dict)
     tuner: Mapping[str, Any] = field(default_factory=dict)
     training: Mapping[str, Any] = field(default_factory=dict)
+    objective: Optional[TeacherForcingObjectiveConfig] = None
     stage2_ab: Optional[Stage2ABConfig] = None
     rollout_matching: Optional[RolloutMatchingConfig] = None
     rlhf: Mapping[str, Any] = field(default_factory=dict)
@@ -4664,6 +5037,7 @@ class TrainingConfig:
 
         stage2_ab_raw = data.pop("stage2_ab", None)
         rollout_matching_raw = data.pop("rollout_matching", None)
+        objective_raw = data.pop("objective", None)
 
         rlhf = dict(_as_dict(data.pop("rlhf", None), path="rlhf"))
         _validate_section_keys_strict(
@@ -4684,6 +5058,9 @@ class TrainingConfig:
         debug = DebugConfig.from_mapping(data.pop("debug", None))
         deepspeed = DeepSpeedConfig.from_mapping(data.pop("deepspeed", None))
         global_max_length = data.pop("global_max_length", None)
+        objective = None
+        if objective_raw is not None:
+            objective = TeacherForcingObjectiveConfig.from_mapping(objective_raw)
 
         if data:
             unknown = sorted(str(k) for k in data.keys())
@@ -4731,6 +5108,14 @@ class TrainingConfig:
                     "custom.sft_structural_close requires training.eval_packing=false "
                     "because final global-close token weights are sequence-local."
                 )
+
+        _validate_teacher_forcing_training_packing_contract(
+            objective=objective,
+            training=training,
+        )
+
+        if objective is not None and stage2_ab_raw is not None:
+            _validate_teacher_forcing_stage2_migration_raw(stage2_ab_raw)
 
         stage2_ab = None
         if stage2_ab_raw is not None:
@@ -4946,6 +5331,7 @@ class TrainingConfig:
             data=data_section,
             tuner=tuner,
             training=training,
+            objective=objective,
             stage2_ab=stage2_ab,
             rollout_matching=rollout_matching,
             rlhf=rlhf,
