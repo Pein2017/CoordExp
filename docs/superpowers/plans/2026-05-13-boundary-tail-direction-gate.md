@@ -92,9 +92,9 @@ python - <<'PY'
 from pathlib import Path
 
 roots = {
-    "A2": "/data/CoordExp/output_remote/infer/recursive_detection_ce_latest/compact_full_support2_tokenrows_v2_ckpt3664_val200_bsz8_temp0_rep1p10_prompt_offset_fix_8gpu",
-    "A3": "/data/CoordExp/output_remote/infer/recursive_detection_ce_latest/compact_full_prefix_rollin_balance2_a3_ckpt3664_val200_bsz8_temp0_rp1p10_max3084_chatfix_4gpu",
-    "A4": "/data/CoordExp/output_remote/infer/recursive_detection_ce_latest/compact_full_prefix_rollin_balance2_a4_eos_ckpt3664_val200_bsz8_temp0_rp1p10_max3084_chatfix_4gpu",
+    "A2": "/data/CoordExp/outputs/infer/recursive_detection_ce_latest/compact_full_support2_tokenrows_v2_ckpt3664_val200_bsz8_temp0_rep1p10_prompt_offset_fix_8gpu",
+    "A3": "/data/CoordExp/outputs/infer/recursive_detection_ce_latest/compact_full_prefix_rollin_balance2_a3_ckpt3664_val200_bsz8_temp0_rp1p10_max3084_chatfix_4gpu",
+    "A4": "/data/CoordExp/outputs/infer/recursive_detection_ce_latest/compact_full_prefix_rollin_balance2_a4_eos_ckpt3664_val200_bsz8_temp0_rp1p10_max3084_chatfix_4gpu",
 }
 required = [
     "gt_vs_pred_scored.jsonl",
@@ -361,13 +361,13 @@ Create `configs/analysis/boundary_tail_direction_gate/a2_a3_a4_val200.yaml`:
 runs:
   - label: A2
     role: stability_control
-    artifact_root: /data/CoordExp/output_remote/infer/recursive_detection_ce_latest/compact_full_support2_tokenrows_v2_ckpt3664_val200_bsz8_temp0_rep1p10_prompt_offset_fix_8gpu
+    artifact_root: /data/CoordExp/outputs/infer/recursive_detection_ce_latest/compact_full_support2_tokenrows_v2_ckpt3664_val200_bsz8_temp0_rep1p10_prompt_offset_fix_8gpu
   - label: A3
     role: prefix_rollin
-    artifact_root: /data/CoordExp/output_remote/infer/recursive_detection_ce_latest/compact_full_prefix_rollin_balance2_a3_ckpt3664_val200_bsz8_temp0_rp1p10_max3084_chatfix_4gpu
+    artifact_root: /data/CoordExp/outputs/infer/recursive_detection_ce_latest/compact_full_prefix_rollin_balance2_a3_ckpt3664_val200_bsz8_temp0_rp1p10_max3084_chatfix_4gpu
   - label: A4
     role: eos_weakened
-    artifact_root: /data/CoordExp/output_remote/infer/recursive_detection_ce_latest/compact_full_prefix_rollin_balance2_a4_eos_ckpt3664_val200_bsz8_temp0_rp1p10_max3084_chatfix_4gpu
+    artifact_root: /data/CoordExp/outputs/infer/recursive_detection_ce_latest/compact_full_prefix_rollin_balance2_a4_eos_ckpt3664_val200_bsz8_temp0_rp1p10_max3084_chatfix_4gpu
 proxy:
   val_coord_jsonl: /data/CoordExp/public_data/coco/rescale_32_1024_bbox_max60_lvis_proxy/val.coord.jsonl
   val_proxy_summary_json: /data/CoordExp/public_data/coco/rescale_32_1024_bbox_max60_lvis_proxy/val.proxy_summary.json

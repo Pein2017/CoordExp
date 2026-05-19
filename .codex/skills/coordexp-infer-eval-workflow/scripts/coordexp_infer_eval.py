@@ -20,7 +20,7 @@ from pathlib import Path
 from typing import Any, Iterable, Sequence
 
 
-DEFAULT_OUTPUT_ROOT = Path("/data/CoordExp/output_remote/infer/recursive_detection_ce_latest")
+DEFAULT_OUTPUT_ROOT = Path("/data/CoordExp/outputs/infer/recursive_detection_ce_latest")
 DEFAULT_TEMP_DIR = Path("/data/CoordExp/temp/infer/recursive_detection_ce_latest")
 DEFAULT_GT_JSONL = Path("public_data/coco/rescale_32_1024_bbox_max60/val.coord.jsonl")
 DEFAULT_SEMANTIC_MODEL = Path("model_cache/all-MiniLM-L6-v2-local")

@@ -98,7 +98,7 @@ configs/stage1/recursive_detection_ce_latest/smoke/compact_full_support2_eos_loo
 Expected production artifact root pattern:
 
 ```text
-/data/CoordExp/output_remote/stage1_2b/recursive_detection_ce_latest/compact_full_support2_eos_loosen/compact-full-support2-eos-loosen-a2e/v0-<UTC>
+/data/CoordExp/outputs/stage1_2b/recursive_detection_ce_latest/compact_full_support2_eos_loosen/compact-full-support2-eos-loosen-a2e/v0-<UTC>
 ```
 
 ## Task 3: Broader Preflight
@@ -207,7 +207,7 @@ conda run --no-capture-output -n ms torchrun \
 Observed production artifact root:
 
 ```text
-/data/CoordExp/output_remote/stage1_2b/recursive_detection_ce_latest/compact_full_support2_eos_loosen/compact-full-support2-eos-loosen-a2e/v0-20260514-062803
+/data/CoordExp/outputs/stage1_2b/recursive_detection_ce_latest/compact_full_support2_eos_loosen/compact-full-support2-eos-loosen-a2e/v0-20260514-062803
 ```
 
 Launcher log:
