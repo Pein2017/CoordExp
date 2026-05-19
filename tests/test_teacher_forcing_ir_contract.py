@@ -5,6 +5,7 @@ import torch
 
 from src.training.teacher_forcing.constants import (
     MARGINAL_SCOPE_SAMPLED_PATH_NEXT_TOKEN,
+    TEACHER_FORCING_TARGET_IR_SCHEMA_VERSION,
     TEACHER_FORCING_TARGET_IR_KEY,
 )
 from src.training.teacher_forcing.ir import SupervisionAtom, TeacherForcingTargetIR
@@ -82,6 +83,24 @@ def test_selected_token_must_match_input_ids_at_canonical_target_position() -> N
 
     with pytest.raises(ValueError, match="selected_token_id must match input_ids"):
         validate_target_ir(make_ir(atom), input_ids=torch.tensor([[9, 9, 102]]))
+
+
+@pytest.mark.parametrize("field_name", ["batch_index", "logit_position", "target_position"])
+def test_negative_atom_positions_are_rejected_before_tensor_indexing(field_name: str) -> None:
+    kwargs = {
+        "batch_index": 0,
+        "logit_position": 0,
+        "target_position": 1,
+    }
+    kwargs[field_name] = -1
+    atom = make_atom(**kwargs)
+
+    with pytest.raises(ValueError, match=rf"atoms\[0\].*{field_name}"):
+        validate_target_ir(
+            make_ir(atom),
+            input_ids=torch.tensor([[9, 101], [9, 101]]),
+            role_vocab=make_test_role_vocab(),
+        )
 
 
 def test_selected_token_must_be_inside_valid_token_ids() -> None:
@@ -229,3 +248,82 @@ def test_canonical_target_position_keeps_redundant_logit_position_validation() -
         input_ids=torch.tensor([[9, 9, 101]]),
         role_vocab=make_test_role_vocab(),
     )
+
+
+def test_ir_canonicalizes_mutable_constructor_inputs() -> None:
+    coverage_target_weights = {101: 1.0}
+    provenance = {"source": "builder"}
+    metadata = {"run": "smoke"}
+    atom = SupervisionAtom(
+        batch_index=0,
+        logit_position=0,
+        target_position=1,
+        allowed_token_roles={TokenRole.TEXT},
+        selected_token_role=TokenRole.TEXT,
+        valid_token_ids={101},
+        selected_token_id=101,
+        latent_valid_token_ids={101, 102},
+        coverage_target_weights=coverage_target_weights,
+        loss_tags={"singleton"},
+        loss_weight=1.0,
+        coord_role=None,
+        provenance=provenance,
+    )
+    atoms = [atom]
+    ir = TeacherForcingTargetIR(
+        schema_version=TEACHER_FORCING_TARGET_IR_SCHEMA_VERSION,
+        atoms=atoms,
+        metadata=metadata,
+    )
+
+    coverage_target_weights[101] = 2.0
+    provenance["source"] = "mutated"
+    metadata["run"] = "mutated"
+    atoms.clear()
+
+    assert atom.allowed_token_roles == frozenset({TokenRole.TEXT})
+    assert atom.valid_token_ids == frozenset({101})
+    assert atom.latent_valid_token_ids == frozenset({101, 102})
+    assert atom.loss_tags == frozenset({"singleton"})
+    assert atom.coverage_target_weights[101] == 1.0
+    assert atom.provenance["source"] == "builder"
+    assert ir.atoms == (atom,)
+    assert ir.metadata["run"] == "smoke"
+
+
+def test_ir_mapping_fields_are_shallowly_immutable() -> None:
+    atom = SupervisionAtom(
+        batch_index=0,
+        logit_position=0,
+        target_position=1,
+        allowed_token_roles={TokenRole.TEXT},
+        selected_token_role=TokenRole.TEXT,
+        valid_token_ids={101},
+        selected_token_id=101,
+        latent_valid_token_ids={101},
+        coverage_target_weights={101: 1.0},
+        loss_tags={"singleton"},
+        loss_weight=1.0,
+        coord_role=None,
+        provenance={"source": "builder"},
+    )
+    ir = TeacherForcingTargetIR(
+        schema_version=TEACHER_FORCING_TARGET_IR_SCHEMA_VERSION,
+        atoms=[atom],
+        metadata={"run": "smoke"},
+    )
+
+    with pytest.raises(TypeError):
+        atom.coverage_target_weights[101] = 2.0
+    with pytest.raises(TypeError):
+        atom.provenance["source"] = "mutated"
+    with pytest.raises(TypeError):
+        ir.metadata["run"] = "mutated"
+
+
+def test_validate_target_ir_rejects_unsupported_schema_version() -> None:
+    atom = make_atom()
+    ir = TeacherForcingTargetIR(schema_version=999, atoms=(atom,), metadata={})
+
+    with pytest.raises(ValueError, match="schema_version"):
+        validate_target_ir(ir, input_ids=torch.tensor([[9, 101]]), role_vocab=make_test_role_vocab())

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from .constants import TEACHER_FORCING_TARGET_IR_SCHEMA_VERSION
 from .ir import SupervisionAtom, TeacherForcingTargetIR
 from .roles import TokenRole
 from .vocab import RoleVocab
@@ -15,6 +16,12 @@ def validate_target_ir(
     input_ids: Any,
     role_vocab: RoleVocab | None = None,
 ) -> None:
+    if target_ir.schema_version != TEACHER_FORCING_TARGET_IR_SCHEMA_VERSION:
+        raise ValueError(
+            "teacher_forcing_target_ir.schema_version: "
+            f"unsupported schema_version {target_ir.schema_version}; "
+            f"expected {TEACHER_FORCING_TARGET_IR_SCHEMA_VERSION}"
+        )
     for atom_index, atom in enumerate(target_ir.atoms):
         _validate_atom(atom_index, atom, input_ids=input_ids, role_vocab=role_vocab)
 
@@ -27,6 +34,9 @@ def _validate_atom(
     role_vocab: RoleVocab | None,
 ) -> None:
     prefix = f"teacher_forcing_target_ir.atoms[{atom_index}]"
+    _validate_nonnegative_index(atom.batch_index, field_name="batch_index", prefix=prefix)
+    _validate_nonnegative_index(atom.logit_position, field_name="logit_position", prefix=prefix)
+    _validate_nonnegative_index(atom.target_position, field_name="target_position", prefix=prefix)
     if atom.target_position != atom.logit_position + 1:
         raise ValueError(f"{prefix}: target_position = logit_position + 1 is required")
     if not atom.allowed_token_roles:
@@ -69,6 +79,11 @@ def _validate_valid_ids_inside_role_vocab(
     allowed_role_vocab = role_vocab.token_ids_for_roles(atom.allowed_token_roles)
     if not atom.valid_token_ids.issubset(allowed_role_vocab):
         raise ValueError(f"{prefix}: valid_token_ids must be inside allowed role vocab")
+
+
+def _validate_nonnegative_index(value: int, *, field_name: str, prefix: str) -> None:
+    if value < 0:
+        raise ValueError(f"{prefix}: {field_name} must be nonnegative")
 
 
 def _input_token_id(input_ids: Any, batch_index: int, target_position: int, *, prefix: str) -> int:
