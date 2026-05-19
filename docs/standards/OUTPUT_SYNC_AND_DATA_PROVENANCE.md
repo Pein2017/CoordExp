@@ -22,13 +22,13 @@ recoverable, reproducible, or experiment-specific.
 - processed `public_data/` directories are not mirrored by default. Their
   generation provenance is tracked in git under
   `manifests/public_data_provenance/`.
-- `output/` is the Baidu Netdisk sync surface. It contains experiment artifacts
+- `outputs/` is the Baidu Netdisk sync surface. It contains experiment artifacts
   that may be difficult or impossible to regenerate exactly.
 
 The canonical remote layout is:
 
 ```text
-output/... -> /CoordExp/output/...
+outputs/... -> /CoordExp/outputs/...
 ```
 
 Use repo-relative paths when describing artifacts. Avoid machine-specific
@@ -63,18 +63,29 @@ The provenance record should answer:
 These files are small and belong in git. They are not backed up through Baidu
 Netdisk as the primary truth source.
 
-## Output Backup
+## Outputs Backup
 
-Back up `output/` inclusively. This includes:
+Back up `outputs/` inclusively. This includes:
 
 - training run directories
 - adapter checkpoints and adapter metadata
-- inference artifacts under `output/infer/**`
+- inference artifacts under `outputs/infer/**`
 - evaluation outputs, metrics, summaries, and JSONL records
 - empty files or interrupted files if they are present on disk
 
-Do not apply automatic ignore rules to `output/` by default. Clean up the local
+Do not apply automatic ignore rules to `outputs/` by default. Clean up the local
 directory manually when something should not be preserved.
+
+When a node still has active training writing to `output_remote/`, do not rename
+or delete that tree in place. Instead, absorb it into `outputs/` with a
+no-overwrite copy:
+
+```bash
+conda run -n ms python scripts/absorb_output_remote_into_outputs.py --apply
+```
+
+This keeps `output_remote/` intact for the active writer while making
+`outputs/` the canonical sync surface for Baidu Netdisk.
 
 For long transfers, use `tmux` and BaiduPCS-Go. On offline nodes that can only
 egress through the local proxy, export:
@@ -86,8 +97,9 @@ export HTTP_PROXY=http://127.0.0.1:9090
 export HTTPS_PROXY=http://127.0.0.1:9090
 ```
 
-Use the repo skill `.codex/skills/baidupcsgo-upload` for the current manual
-upload/download procedure.
+Use the repo skill `.codex/skills/baidudisk-union-sync` for append-only
+cross-machine sync on `/CoordExp/outputs`, and `.codex/skills/baidupcsgo-upload`
+for one-off upload/download recovery.
 
 ## Duplicate Policy
 
@@ -109,10 +121,10 @@ Before relying on a processed data directory:
 test -f manifests/public_data_provenance/<dataset>/<processed-dir>.json
 ```
 
-Before relying on a remote output backup:
+Before relying on a remote outputs backup:
 
 ```bash
-./baidupcsgo/BaiduPCS-Go-v4.0.1-linux-amd64/BaiduPCS-Go ls /CoordExp/output
+./baidupcsgo/BaiduPCS-Go-v4.0.1-linux-amd64/BaiduPCS-Go ls /CoordExp/outputs
 ```
 
 Use targeted directory listings for the exact run path instead of full-tree

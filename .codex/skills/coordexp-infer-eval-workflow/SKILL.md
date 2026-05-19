@@ -3,18 +3,30 @@ name: coordexp-infer-eval-workflow
 description: Use when launching, repairing, auditing, or summarizing CoordExp infer/scoring/eval/Oracle-K/proxy-bundle artifact workflows.
 ---
 
-# CoordExp Infer Eval Workflow
+# CoordExp Inference And Evaluation Workflow
 
 Use YAML-first production paths. Do not invent stable CLI flags when config already captures the run.
+Treat this skill as the stable workflow guide, not a promise that one exact script path will never move.
 
 ## Entry Points
 
-- infer: `scripts/run_infer.py`, `src/infer/pipeline.py::run_pipeline`, `src/infer/engine.py::InferenceEngine.infer`
-- confidence: `scripts/postop_confidence.py`, `src/eval/confidence_postop.py`
-- eval: `scripts/evaluate_detection.py`, `src/eval/detection.py::evaluate_and_save`
-- proxy bundle: `scripts/evaluate_proxy_detection_bundle.py`, `src/eval/proxy_eval_bundle.py`
-- artifacts: `src/infer/artifacts.py`, `src/eval/artifacts.py`
-- docs: `docs/eval/WORKFLOW.md`, `docs/eval/CONTRACT.md`, `docs/ARTIFACTS.md`
+- Primary pipeline surfaces:
+  - infer entrypoints such as `scripts/run_infer.py`, `src/infer/pipeline.py::run_pipeline`, `src/infer/engine.py::InferenceEngine.infer`
+  - confidence / scoring surfaces such as `scripts/postop_confidence.py`, `src/eval/confidence_postop.py`
+  - evaluation surfaces such as `scripts/evaluate_detection.py`, `src/eval/detection.py::evaluate_and_save`
+  - proxy / bundle surfaces such as `scripts/evaluate_proxy_detection_bundle.py`, `src/eval/proxy_eval_bundle.py`
+  - artifact ownership such as `src/infer/artifacts.py`, `src/eval/artifacts.py`
+- Workflow references:
+  - `docs/eval/WORKFLOW.md`
+  - `docs/eval/CONTRACT.md`
+  - `docs/ARTIFACTS.md`
+
+When code moves, prefer the current checked-in pipeline/config surfaces over memorized script names. First verify:
+
+1. which config schema currently owns infer, scoring, and eval;
+2. which entrypoint actually consumes that schema;
+3. where the canonical output artifacts are written;
+4. whether the run is coord-token, raw-text, or another coordinate surface.
 
 Commands:
 
@@ -26,6 +38,15 @@ PYTHONPATH=. conda run -n ms python scripts/evaluate_oracle_k.py --config <oracl
 ```
 
 Wrap with `rtk` when filtered output is acceptable.
+
+## Default Decode Assumptions
+
+Unless the user explicitly asks otherwise, use:
+
+- `temperature = 0.0`
+- `repeat_penalty = 1.10`
+
+Treat these as the default reproducibility settings for ordinary CoordExp infer/eval prep. Override them only for intentional decoding ablations, legacy reproduction, or when a checked-in config already pins different values.
 
 ## Coordinate-Surface Rules
 
@@ -50,15 +71,17 @@ Do not compare proxy-expanded views against standard COCO baselines without the 
 
 ```bash
 HELPER=.codex/skills/coordexp-infer-eval-workflow/scripts/coordexp_infer_eval.py
-python "$HELPER" prepare-recursive --repo-root <root> --checkpoint <ckpt> --run-tag <tag> --rp <rp> --gpus <ids> --master-port <port>
+python "$HELPER" prepare-recursive --repo-root <root> --checkpoint <ckpt> --run-tag <tag> --gpus <ids> --master-port <port>
 python "$HELPER" summarize <run_dir> --format markdown
 ```
+
+The helper defaults to `temperature=0.0` and `repeat_penalty=1.10`. Pass `--rp` only when intentionally overriding the default repetition penalty.
 
 Use `--dry-run` before writing and `--force` only when intentionally reusing an output directory.
 
 ## Verification
 
-Before launch, check intended JSONL, image roots, checkpoint/adapter, prompt/order settings, coordinate surface, scope label, decoding knobs, and GPU launch shape.
+Before launch, check intended JSONL, image roots, checkpoint/adapter, prompt/order settings, coordinate surface, scope label, decoding knobs, entrypoint ownership, and GPU launch shape.
 
 After infer:
 
@@ -87,4 +110,5 @@ For sharded runs, trust merged top-level summaries/manifests over shard logs.
 - Missing visualization images usually means `provenance.source_jsonl_dir` or root image provenance is wrong.
 - Proxy-expanded GT count surprises should be checked against `metadata.coordexp_proxy_supervision.object_supervision`.
 - A scored raw-text collapse usually means the wrong confidence alignment path ran.
+- If a familiar script disappeared, do not force the old command shape; trace the current config owner and artifact writer first.
 - Do not re-run inference when only eval views changed.

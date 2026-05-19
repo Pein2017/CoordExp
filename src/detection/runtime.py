@@ -40,6 +40,7 @@ class RecursiveDetectionCERuntimeConfig:
     trie_balance_weight: float
     variant: str = "random_permutation_et_rmp_ce"
     coord_soft_ce: CoordSoftTargetRuntimeConfig | None = None
+    type_gate: Any | None = None
 
 
 def is_latest_detection_config(training_config: Any) -> bool:
@@ -335,6 +336,7 @@ def resolve_recursive_detection_ce_runtime_cfg(
         trie_balance_weight=trie_balance_weight,
         variant=variant,
         coord_soft_ce=coord_soft_ce,
+        type_gate=_field(objective, "type_gate"),
     )
 
 
@@ -347,15 +349,16 @@ def _resolve_coord_soft_ce_runtime_config(
     raw_cfg = field_getter(objective, "coord_soft_ce")
     if raw_cfg is None or not bool(field_getter(raw_cfg, "enabled")):
         return None
-    if field_getter(raw_cfg, "replace_coord_hard_ce") is not True:
-        raise ValueError("objective.coord_soft_ce.replace_coord_hard_ce must be true")
 
     coord_group = None
-    for group in training_config.token_rows.groups.values():
-        role = getattr(group.role, "value", group.role)
-        if str(role) == "coord_geometry":
-            coord_group = group
-            break
+    groups = getattr(training_config.token_rows, "groups", {})
+    coord_group = groups.get("coord_geometry") if isinstance(groups, Mapping) else None
+    if coord_group is None:
+        for group in training_config.token_rows.groups.values():
+            role = getattr(group.role, "value", group.role)
+            if str(role) == "coord_geometry":
+                coord_group = group
+                break
     if coord_group is None:
         raise ValueError(
             "objective.coord_soft_ce requires a token_rows coord_geometry group"
@@ -365,8 +368,37 @@ def _resolve_coord_soft_ce_runtime_config(
             "objective.coord_soft_ce requires token_rows coord_geometry expected_start/end"
         )
 
+    target_distribution = str(field_getter(raw_cfg, "target_distribution"))
+    if target_distribution == "instance_trie_gaussian":
+        gaussian_mixture_weight = field_getter(raw_cfg, "gaussian_mixture_weight")
+        gaussian_r95_axis_fraction = field_getter(
+            raw_cfg,
+            "gaussian_r95_axis_fraction",
+        )
+        gaussian_r95_cap_bins = field_getter(raw_cfg, "gaussian_r95_cap_bins")
+        return CoordSoftTargetRuntimeConfig(
+            target_distribution="instance_trie_gaussian",
+            coord_token_start=int(coord_group.expected_start),
+            coord_token_end=int(coord_group.expected_end),
+            gaussian_mixture_weight=(
+                0.1
+                if gaussian_mixture_weight is None
+                else float(gaussian_mixture_weight)
+            ),
+            gaussian_r95_axis_fraction=(
+                0.04
+                if gaussian_r95_axis_fraction is None
+                else float(gaussian_r95_axis_fraction)
+            ),
+            gaussian_r95_cap_bins=(
+                8 if gaussian_r95_cap_bins is None else int(gaussian_r95_cap_bins)
+            ),
+        )
+
+    if field_getter(raw_cfg, "replace_coord_hard_ce") is not True:
+        raise ValueError("objective.coord_soft_ce.replace_coord_hard_ce must be true")
     return CoordSoftTargetRuntimeConfig(
-        target_distribution=str(field_getter(raw_cfg, "target_distribution")),
+        target_distribution=target_distribution,
         tau=float(field_getter(raw_cfg, "tau")),
         coord_token_start=int(coord_group.expected_start),
         coord_token_end=int(coord_group.expected_end),
@@ -387,7 +419,10 @@ def build_latest_detection_dataset(
     dataset_name: str,
 ) -> DetectionTrainingDataset:
     type_gate_config = None
-    if training_config.objective.variant == "prefix_rollin_et_rmp_ce":
+    if training_config.objective.variant in {
+        "random_permutation_et_rmp_ce",
+        "prefix_rollin_et_rmp_ce",
+    }:
         type_gate_config = training_config.objective.type_gate
     return DetectionTrainingDataset.from_jsonl(
         jsonl_path,

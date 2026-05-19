@@ -371,6 +371,7 @@ class DetectionTrainingDataset(Dataset):
                 mode=self.config.mode,
                 state_weighting=self._state_weighting_for_prepare(),
                 normalization=self._normalization_for_prepare(),
+                type_gate_config=self.config.type_gate_config,
                 messages=messages,
             )
 

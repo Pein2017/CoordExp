@@ -40,9 +40,9 @@ Use A2/A3/A4 together on the current `rp=1.10` val200 compact-full decode surfac
 
 | Run | Role | Artifact root |
 |---|---|---|
-| A2 | stability/control surface | `/data/CoordExp/output_remote/infer/recursive_detection_ce_latest/compact_full_support2_tokenrows_v2_ckpt3664_val200_bsz8_temp0_rep1p10_prompt_offset_fix_8gpu` |
-| A3 | prefix-rollin mechanism surface | `/data/CoordExp/output_remote/infer/recursive_detection_ce_latest/compact_full_prefix_rollin_balance2_a3_ckpt3664_val200_bsz8_temp0_rp1p10_max3084_chatfix_4gpu` |
-| A4 | weakened-EOS recall/risk surface | `/data/CoordExp/output_remote/infer/recursive_detection_ce_latest/compact_full_prefix_rollin_balance2_a4_eos_ckpt3664_val200_bsz8_temp0_rp1p10_max3084_chatfix_4gpu` |
+| A2 | stability/control surface | `/data/CoordExp/outputs/infer/recursive_detection_ce_latest/compact_full_support2_tokenrows_v2_ckpt3664_val200_bsz8_temp0_rep1p10_prompt_offset_fix_8gpu` |
+| A3 | prefix-rollin mechanism surface | `/data/CoordExp/outputs/infer/recursive_detection_ce_latest/compact_full_prefix_rollin_balance2_a3_ckpt3664_val200_bsz8_temp0_rp1p10_max3084_chatfix_4gpu` |
+| A4 | weakened-EOS recall/risk surface | `/data/CoordExp/outputs/infer/recursive_detection_ce_latest/compact_full_prefix_rollin_balance2_a4_eos_ckpt3664_val200_bsz8_temp0_rp1p10_max3084_chatfix_4gpu` |
 
 Required per-run inputs:
 

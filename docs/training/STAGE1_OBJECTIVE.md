@@ -5,7 +5,7 @@ doc_type: reference
 status: canonical
 domain: training
 summary: Stage-1 objective surfaces and coord-token training behavior.
-updated: 2026-05-16
+updated: 2026-05-19
 ---
 
 # Coord Objective & Adapter
@@ -33,7 +33,7 @@ Scope note:
   - `configs/stage1/profiles/2b/raw_text_xyxy_pure_ce_coco80_desc_first_1024_lvis_proxy.yaml`
   - `configs/stage1/profiles/2b/bbox_geo_center_size_coco80_desc_first_1024_lvis_proxy.yaml`
 - Compact prefix roll-in multi-positive training now lives as the latest-detection `prefix_rollin_et_rmp_ce` ablation surface, not as a legacy custom trainer surface. The first checked-in route is `configs/stage1/recursive_detection_ce_latest/ablation/compact_full_prefix_rollin_balance2.yaml`; treat it as E1 ablation/smoke validation, not production.
-- Geometry-aware coordinate softCE for latest compact recursive detection is scoped to the A5/A6 ablation candidates under `configs/stage1/recursive_detection_ce_latest/prod/`. It uses `objective.coord_soft_ce` and does not route through legacy `custom.coord_soft_ce_w1.*`.
+- Geometry-aware coordinate SoftCE for latest compact recursive detection is scoped to the historical A5-iou-gibbs/A6-ciou-gibbs provenance configs and the active focused cap8 instance-trie successors under `configs/stage1/recursive_detection_ce_latest/prod/`. It uses `objective.coord_soft_ce` and does not route through legacy `custom.coord_soft_ce_w1.*`.
 - Narrow V1 exception:
   - `custom.bbox_format: cxcy_logw_logh` or `custom.bbox_format: cxcywh`
     defines an experimental Stage-1-only profile
@@ -156,8 +156,9 @@ custom:
 The active compact Stage-1 owner is the latest detection stack under `src/detection/`. There are now two distinct latest-schema routes:
 
 - `configs/stage1/recursive_detection_ce_latest/prod/compact_full_support2.yaml` remains the random-permutation ET-RMP-CE production baseline/comparator.
-- `configs/stage1/recursive_detection_ce_latest/prod/compact_full_support2_iou_gibbs_softce_a5.yaml` is the A5 candidate: A2/support2 plus `iou_gibbs_v0` coordinate soft targets with `tau=0.0090909091` from the train one-token IoU-loss median.
-- `configs/stage1/recursive_detection_ce_latest/prod/compact_full_support2_ciou_gibbs_softce_a6.yaml` is the paired A6 candidate: same setup as A5 but with `ciou_gibbs_v0`; production preparation assumes a separate 4-GPU slice for A5 and A6 rather than one 8-GPU run.
+- `configs/stage1/recursive_detection_ce_latest/prod/compact_full_support2_iou_gibbs_softce_a5.yaml` is historical A5-iou-gibbs negative-result/superseded provenance: A2/support2 plus `iou_gibbs_v0` coordinate soft targets with `tau=0.0090909091` from the train one-token IoU-loss median.
+- `configs/stage1/recursive_detection_ce_latest/prod/compact_full_support2_ciou_gibbs_softce_a6.yaml` is historical paired A6-ciou-gibbs negative-result/superseded provenance: same setup as historical A5 but with `ciou_gibbs_v0`; production preparation assumed a separate 4-GPU slice for A5 and A6 rather than one 8-GPU run.
+- `configs/stage1/recursive_detection_ce_latest/prod/compact_full_support2_instance_trie_focused_cap8_frac0p04_mix0p1.yaml` is the active ablation successor config, with `cap8_frac0p06_mix0p1` as the slope ablation and `cap8_frac0p04_mix0p2` as the strength ablation; see [`INSTANCE_TRIE_GAUSSIAN_SOFTCE_DRAFT.md`](INSTANCE_TRIE_GAUSSIAN_SOFTCE_DRAFT.md). These configs use type-gated schema/desc/coord/eos positions, structural boundary hard CE, description hard CE plus trie support/balance, and coord-vocab-only Gaussian SoftCE over active-branch remaining-instance mixtures. The coordinate target uses the focused R95 policy `floor(min(cap, fraction * axis_len))` with default cap8/4%/mix0.1, replacing the earlier unconstrained `sqrt(axis + 1)` wide-span draft behavior. Treat this successor as an ablation/smoke surface, not production-approved behavior, until production-scale validation evidence and explicit promotion approval are recorded.
 - `configs/stage1/recursive_detection_ce_latest/ablation/compact_full_prefix_rollin_balance2.yaml` is the E1 `prefix_rollin_et_rmp_ce` ablation route for Prefix-Closed Multi-Target SFT.
 
 `prefix_rollin_et_rmp_ce` is compact-full only. It requires `detection_template.id: compact_full`, masks roll-in prefix labels, samples `K` uniformly over `[0, object_count]`, keeps `suffix_order: same_sampled_permutation` for V1, and expresses support/balance weights under `objective.target`, not obsolete flat trie-weight aliases.

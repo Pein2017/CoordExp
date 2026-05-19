@@ -52,13 +52,13 @@ Evaluation surfaces:
 
 ```text
 checkpoint:
-/data/CoordExp/output_remote/stage1_2b/recursive_detection_ce_latest/compact_full_support2_eos_loosen/compact-full-support2-eos-loosen-a2e/v0-20260514-062803/checkpoint-3664
+/data/CoordExp/outputs/stage1_2b/recursive_detection_ce_latest/compact_full_support2_eos_loosen/compact-full-support2-eos-loosen-a2e/v0-20260514-062803/checkpoint-3664
 
 cap1024 run:
-/data/CoordExp/output_remote/infer/recursive_detection_ce_latest/compact_full_support2_eos_loosen_a2e_greedy_cap1024_rp110_ckpt3664_val200_bsz8_temp0_rp1p10_max1024_chatfix_8gpu
+/data/CoordExp/outputs/infer/recursive_detection_ce_latest/compact_full_support2_eos_loosen_a2e_greedy_cap1024_rp110_ckpt3664_val200_bsz8_temp0_rp1p10_max1024_chatfix_8gpu
 
 cap3084 run:
-/data/CoordExp/output_remote/infer/recursive_detection_ce_latest/compact_full_support2_eos_loosen_a2e_greedy_cap3084_rp110_ckpt3664_val200_bsz8_temp0_rp1p10_max3084_chatfix_8gpu
+/data/CoordExp/outputs/infer/recursive_detection_ce_latest/compact_full_support2_eos_loosen_a2e_greedy_cap3084_rp110_ckpt3664_val200_bsz8_temp0_rp1p10_max3084_chatfix_8gpu
 ```
 
 Matched comparison against the existing A2 anchor artifacts:
@@ -148,13 +148,13 @@ experiment.ablation_id = A2E-support2-eos-loosen
 Expected production artifact root pattern:
 
 ```text
-/data/CoordExp/output_remote/stage1_2b/recursive_detection_ce_latest/compact_full_support2_eos_loosen/compact-full-support2-eos-loosen-a2e/v0-<UTC>
+/data/CoordExp/outputs/stage1_2b/recursive_detection_ce_latest/compact_full_support2_eos_loosen/compact-full-support2-eos-loosen-a2e/v0-<UTC>
 ```
 
 Latest production artifact root:
 
 ```text
-/data/CoordExp/output_remote/stage1_2b/recursive_detection_ce_latest/compact_full_support2_eos_loosen/compact-full-support2-eos-loosen-a2e/v0-20260514-062803
+/data/CoordExp/outputs/stage1_2b/recursive_detection_ce_latest/compact_full_support2_eos_loosen/compact-full-support2-eos-loosen-a2e/v0-20260514-062803
 ```
 
 Launcher log:
@@ -326,13 +326,13 @@ val_sample_count = 4951
 Current run artifact evidence:
 
 ```text
-/data/CoordExp/output_remote/stage1_2b/recursive_detection_ce_latest/compact_full_support2_eos_loosen/compact-full-support2-eos-loosen-a2e/v0-20260514-062803/config_source.yaml
-/data/CoordExp/output_remote/stage1_2b/recursive_detection_ce_latest/compact_full_support2_eos_loosen/compact-full-support2-eos-loosen-a2e/v0-20260514-062803/effective_runtime.json
-/data/CoordExp/output_remote/stage1_2b/recursive_detection_ce_latest/compact_full_support2_eos_loosen/compact-full-support2-eos-loosen-a2e/v0-20260514-062803/experiment_manifest.json
-/data/CoordExp/output_remote/stage1_2b/recursive_detection_ce_latest/compact_full_support2_eos_loosen/compact-full-support2-eos-loosen-a2e/v0-20260514-062803/logging.jsonl
-/data/CoordExp/output_remote/stage1_2b/recursive_detection_ce_latest/compact_full_support2_eos_loosen/compact-full-support2-eos-loosen-a2e/v0-20260514-062803/resolved_config.json
-/data/CoordExp/output_remote/stage1_2b/recursive_detection_ce_latest/compact_full_support2_eos_loosen/compact-full-support2-eos-loosen-a2e/v0-20260514-062803/run_metadata.json
-/data/CoordExp/output_remote/stage1_2b/recursive_detection_ce_latest/compact_full_support2_eos_loosen/compact-full-support2-eos-loosen-a2e/v0-20260514-062803/train_heartbeat.rank0.jsonl ... train_heartbeat.rank7.jsonl
+/data/CoordExp/outputs/stage1_2b/recursive_detection_ce_latest/compact_full_support2_eos_loosen/compact-full-support2-eos-loosen-a2e/v0-20260514-062803/config_source.yaml
+/data/CoordExp/outputs/stage1_2b/recursive_detection_ce_latest/compact_full_support2_eos_loosen/compact-full-support2-eos-loosen-a2e/v0-20260514-062803/effective_runtime.json
+/data/CoordExp/outputs/stage1_2b/recursive_detection_ce_latest/compact_full_support2_eos_loosen/compact-full-support2-eos-loosen-a2e/v0-20260514-062803/experiment_manifest.json
+/data/CoordExp/outputs/stage1_2b/recursive_detection_ce_latest/compact_full_support2_eos_loosen/compact-full-support2-eos-loosen-a2e/v0-20260514-062803/logging.jsonl
+/data/CoordExp/outputs/stage1_2b/recursive_detection_ce_latest/compact_full_support2_eos_loosen/compact-full-support2-eos-loosen-a2e/v0-20260514-062803/resolved_config.json
+/data/CoordExp/outputs/stage1_2b/recursive_detection_ce_latest/compact_full_support2_eos_loosen/compact-full-support2-eos-loosen-a2e/v0-20260514-062803/run_metadata.json
+/data/CoordExp/outputs/stage1_2b/recursive_detection_ce_latest/compact_full_support2_eos_loosen/compact-full-support2-eos-loosen-a2e/v0-20260514-062803/train_heartbeat.rank0.jsonl ... train_heartbeat.rank7.jsonl
 ```
 
 Resolved production config check:

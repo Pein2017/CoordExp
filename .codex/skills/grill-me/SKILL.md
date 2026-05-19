@@ -1,12 +1,12 @@
 ---
 name: grill-me
-description: Use when the user explicitly asks to be grilled, stress-test a research idea, sharpen an experiment plan, pressure-test a design, or record decisions as discussion resolves.
+description: Use when the user explicitly asks to be grilled, stress-test a research idea, sharpen an experiment plan, pressure-test a design, or quickly resolve a decision.
 ---
 
 # Grill Me
 
-Use this as a focused clarification loop that leaves durable breadcrumbs as
-decisions resolve. Do not rely on the context window as the only record.
+Use this as a focused clarification loop. For longer docs-aware sessions where
+resolved discussion must update durable repo records, use `grill`.
 
 ## CoordExp Ground Rules
 
@@ -14,7 +14,7 @@ decisions resolve. Do not rely on the context window as the only record.
 - If repo context can answer the question, inspect the repo or artifacts first instead of asking.
 - Distinguish hypothesis, implementation plan, experiment result, interpretation, and stable contract.
 - Keep super-power plans, OpenSpec, docs, progress notes, and repo artifacts in their existing ownership lanes.
-- Capture resolved decisions promptly in the right persistent surface.
+- Do not rely on the context window as the only record when the decision will steer future work.
 
 ## Question Style
 
@@ -29,7 +29,7 @@ Avoid questions whose answer is already in `docs/`, configs, tests, artifacts, o
 
 ## Recording Loop
 
-After each resolved branch of the discussion, decide whether it produced a durable record:
+After each resolved branch, decide whether it produced a durable record:
 
 - For implementation details, command plans, verification checklists, and branch-local handoff notes, update the active super-power plan/spec.
 - For measured results, diagnostics, benchmark evidence, artifact guides, and empirical findings, update the relevant `progress/` note or create a dated note when warranted.
@@ -37,4 +37,5 @@ After each resolved branch of the discussion, decide whether it produced a durab
 - For stable compatibility contracts, use `openspec/specs/` only when the contract is truly normative and compatibility-sensitive.
 - For executable truth, prefer repo configs, tests, scripts, manifests, and artifact paths over prose summaries.
 
-If the right surface is unclear, ask one short question with a recommended target. Keep records link-rich and scoped: decision, rationale, consequence, exact paths or artifacts, and open follow-up.
+For detailed record shapes, use `../grill/RECORDING.md` when available. If the
+right surface is unclear, ask one short question with a recommended target.
