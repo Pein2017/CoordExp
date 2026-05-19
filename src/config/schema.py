@@ -4467,6 +4467,36 @@ class TeacherForcingObjectiveConfig:
         )
         coverage = self.modules.within_valid_coverage
         coverage_strength = float(coverage.coverage_strength)
+        if self.profile == "hard_sft":
+            hard_sft_module_checks = (
+                (
+                    "objective.modules.token_type_mass.enabled",
+                    bool(self.modules.token_type_mass.enabled),
+                ),
+                (
+                    "objective.modules.conditional_valid_set_likelihood.enabled",
+                    bool(self.modules.conditional_valid_set_likelihood.enabled),
+                ),
+                (
+                    "objective.modules.within_valid_coverage.enabled",
+                    bool(coverage.enabled),
+                ),
+                (
+                    "objective.modules.within_valid_coverage.coverage_strength",
+                    coverage_strength > 0.0,
+                ),
+                (
+                    "objective.modules.continuation_margin.enabled",
+                    bool(self.modules.continuation_margin.enabled),
+                ),
+            )
+            for module_key, is_enabled in hard_sft_module_checks:
+                if is_enabled:
+                    raise ValueError(
+                        "objective.profile=hard_sft does not support "
+                        f"{module_key}; target-IR teacher-forcing modules "
+                        "require a valid-set runtime path"
+                    )
         if self.profile == "coverage_regularized_valid_set_marginal":
             if not bool(coverage.enabled) or coverage_strength <= 0.0:
                 raise ValueError(

@@ -135,10 +135,15 @@ def _teacher_forcing_stage2_objective_names(cfg: TrainingConfig) -> list[str]:
 )
 def test_latest_teacher_forcing_accepts_supported_profiles(profile: str) -> None:
     coverage_enabled = profile == "coverage_regularized_valid_set_marginal"
+    base_modules = (
+        _hard_sft_objective()["modules"]
+        if profile == "hard_sft"
+        else _teacher_forcing_objective()["modules"]
+    )
     payload = _latest_teacher_payload(
         profile=profile,
         modules={
-            **_teacher_forcing_objective()["modules"],
+            **base_modules,
             "within_valid_coverage": {
                 "enabled": coverage_enabled,
                 "coverage_strength": 0.2 if coverage_enabled else 0.0,
@@ -152,6 +157,80 @@ def test_latest_teacher_forcing_accepts_supported_profiles(profile: str) -> None
     assert cfg.objective.profile == profile
     assert cfg.objective.target_ir.rollin_policy.name == "random_permutation"
     assert cfg.objective.target_ir.rollin_policy.base_seed == 17
+
+
+@pytest.mark.parametrize(
+    ("module_key", "module_payload", "expected_key"),
+    [
+        (
+            "token_type_mass",
+            {"enabled": True},
+            r"objective\.modules\.token_type_mass\.enabled",
+        ),
+        (
+            "conditional_valid_set_likelihood",
+            {"enabled": True},
+            r"objective\.modules\.conditional_valid_set_likelihood\.enabled",
+        ),
+        (
+            "within_valid_coverage",
+            {"enabled": True, "coverage_strength": 0.0},
+            r"objective\.modules\.within_valid_coverage\.enabled",
+        ),
+        (
+            "within_valid_coverage",
+            {"enabled": False, "coverage_strength": 0.1},
+            r"objective\.modules\.within_valid_coverage\.coverage_strength",
+        ),
+        (
+            "continuation_margin",
+            {"enabled": True},
+            r"objective\.modules\.continuation_margin\.enabled",
+        ),
+    ],
+)
+def test_hard_sft_rejects_target_ir_only_modules(
+    module_key: str,
+    module_payload: dict[str, object],
+    expected_key: str,
+) -> None:
+    objective = _hard_sft_objective()
+    objective["modules"] = {
+        **objective["modules"],
+        module_key: module_payload,
+    }
+    payload = _latest_teacher_payload(
+        profile="hard_sft",
+        modules=objective["modules"],
+    )
+
+    with pytest.raises(
+        ValueError,
+        match=rf"objective\.profile=hard_sft.*{expected_key}",
+    ):
+        LatestDetectionTrainingConfig.from_mapping(payload)
+
+
+def test_stage2_hard_sft_rejects_enabled_valid_set_likelihood_module() -> None:
+    objective = _hard_sft_objective()
+    objective["modules"] = {
+        **objective["modules"],
+        "conditional_valid_set_likelihood": {"enabled": True},
+    }
+    raw = _stage2_teacher_payload(
+        objective=objective,
+        pipeline=_migrated_teacher_forcing_pipeline(),
+    )
+
+    prompts = ConfigLoader.resolve_prompts(raw)
+    with pytest.raises(
+        ValueError,
+        match=(
+            r"objective\.profile=hard_sft.*"
+            r"objective\.modules\.conditional_valid_set_likelihood\.enabled"
+        ),
+    ):
+        TrainingConfig.from_mapping(raw, prompts)
 
 
 def test_latest_teacher_forcing_accepts_minimal_hard_sft_profile() -> None:
