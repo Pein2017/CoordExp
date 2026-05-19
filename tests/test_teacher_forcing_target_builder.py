@@ -445,6 +445,55 @@ def test_explicit_empty_coco_object_list_drops_sample() -> None:
             "width": "not-an-int",
             "file_name": "bad-width.jpg",
         },
+        {
+            "objects": [{"desc": None, "bbox_2d": (1, 2, 10, 20)}],
+            "image_id": 1,
+            "file_name": "bad-desc.jpg",
+        },
+        {
+            "objects": [
+                {
+                    "desc": "cat",
+                    "category_name": [],
+                    "bbox_2d": (1, 2, 10, 20),
+                }
+            ],
+            "image_id": 1,
+            "file_name": "bad-category-name.jpg",
+        },
+        {
+            "objects": [
+                {
+                    "desc": "cat",
+                    "object_instance_id": {},
+                    "bbox_2d": (1, 2, 10, 20),
+                }
+            ],
+            "image_id": 1,
+            "file_name": "bad-object-instance-id.jpg",
+        },
+        {
+            "objects": [{"desc": "cat", "bbox_2d": (1, 2, 10, 20)}],
+            "image_id": 1,
+            "file_name": [],
+        },
+        {
+            "objects": [{"desc": "cat", "bbox_2d": (1, 2, 10, 20)}],
+            "image_id": 1,
+            "file_name": "bad-metadata-source.jpg",
+            "metadata": {"source": [], "split": "train"},
+        },
+        {
+            "objects": [{"desc": "cat", "bbox_2d": (1, 2, 10, 20)}],
+            "image_id": 1,
+            "file_name": "bad-metadata-split.jpg",
+            "metadata": {"source": "unit", "split": None},
+        },
+        {
+            "objects": [{"desc": "cat", "bbox_2d": (1, 2, 10)}],
+            "image_id": 1,
+            "file_name": "bad-bbox.jpg",
+        },
     ],
 )
 def test_malformed_mapping_samples_drop_as_invalid_sample(sample: dict[str, Any]) -> None:

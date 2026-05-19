@@ -7,11 +7,11 @@ from typing import Any, Literal, Mapping, NamedTuple, Sequence
 
 from src.common.detection_compact_rows import BOX_START_TOKEN, OBJECT_REF_START_TOKEN
 from src.detection.data import (
-    CoordinateTokenBox,
     DetectionMetadata,
     NormalizedDetectionObject,
     NormalizedDetectionSample,
     ObjectOrderingPlan,
+    _parse_coordinate_box,
 )
 from src.detection.teacher_forcing.description_tokens import (
     DescriptionTokenPath,
@@ -349,11 +349,10 @@ def _coerce_sample(
             for index, obj in enumerate(objects_raw)
         )
         image_id = int(sample.get("image_id", 0))
-        file_name = str(sample.get("file_name", ""))
+        file_name = _optional_str(sample, "file_name", default="", path="file_name")
         width = int(sample.get("width", 0))
         height = int(sample.get("height", 0))
-        source = str(sample.get("source", "mapping"))
-        split = str(sample.get("split", "unknown"))
+        source, split = _metadata_source_split(sample)
     except (KeyError, TypeError, ValueError, OverflowError):
         return _drop("invalid_sample")
     return NormalizedDetectionSample(
@@ -376,22 +375,79 @@ def _coerce_sample(
 def _object_from_mapping(obj: Any, *, index: int) -> NormalizedDetectionObject:
     if not isinstance(obj, Mapping):
         raise TypeError("object must be a mapping")
-    bbox_raw = obj["bbox_2d"]
-    if not isinstance(bbox_raw, Sequence) or isinstance(bbox_raw, (str, bytes)):
-        raise TypeError("bbox_2d must be a sequence")
-    bbox = CoordinateTokenBox(*tuple(bbox_raw))
+    desc = _require_str(obj["desc"], path=f"objects[{index}].desc")
+    bbox = _parse_coordinate_box(obj["bbox_2d"], path=f"objects[{index}].bbox_2d")
     source_index = int(obj.get("source_object_index", index))
     return NormalizedDetectionObject(
         normalized_object_index=index,
         source_object_index=source_index,
-        object_instance_id=str(obj.get("object_instance_id", f"mapping:src-{source_index}")),
-        desc=str(obj["desc"]),
+        object_instance_id=_optional_str(
+            obj,
+            "object_instance_id",
+            default=f"mapping:src-{source_index}",
+            path=f"objects[{index}].object_instance_id",
+        ),
+        desc=desc,
         bbox_2d=bbox,
         category_id=int(obj.get("category_id", 0)),
-        category_name=str(obj.get("category_name", obj["desc"])),
+        category_name=_optional_str(
+            obj,
+            "category_name",
+            default=desc,
+            path=f"objects[{index}].category_name",
+        ),
         coco_ann_id=int(obj.get("coco_ann_id", index)),
-        object_id=obj.get("object_id"),
+        object_id=_optional_nullable_str(
+            obj,
+            "object_id",
+            path=f"objects[{index}].object_id",
+        ),
     )
+
+
+def _metadata_source_split(sample: Mapping[str, Any]) -> tuple[str, str]:
+    if "metadata" not in sample:
+        return (
+            _optional_str(sample, "source", default="mapping", path="source"),
+            _optional_str(sample, "split", default="unknown", path="split"),
+        )
+
+    metadata = sample["metadata"]
+    if not isinstance(metadata, Mapping):
+        raise TypeError("metadata must be a mapping")
+    return (
+        _optional_str(metadata, "source", default="mapping", path="metadata.source"),
+        _optional_str(metadata, "split", default="unknown", path="metadata.split"),
+    )
+
+
+def _optional_str(
+    mapping: Mapping[str, Any],
+    key: str,
+    *,
+    default: str,
+    path: str,
+) -> str:
+    if key not in mapping:
+        return default
+    return _require_str(mapping[key], path=path)
+
+
+def _optional_nullable_str(
+    mapping: Mapping[str, Any],
+    key: str,
+    *,
+    path: str,
+) -> str | None:
+    if key not in mapping or mapping[key] is None:
+        return None
+    return _require_str(mapping[key], path=path)
+
+
+def _require_str(value: Any, *, path: str) -> str:
+    if not isinstance(value, str):
+        raise TypeError(f"{path} must be a string")
+    return value
 
 
 def _stable_sample_id(sample: NormalizedDetectionSample) -> str:
