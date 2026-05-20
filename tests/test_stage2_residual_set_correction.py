@@ -324,6 +324,14 @@ def test_residual_state_constructor_validates_candidate_sets() -> None:
             stop_token_id=999,
         )
 
+    with pytest.raises(ValueError, match="active_candidate_ids"):
+        ResidualState(
+            objects=(obj,),
+            remaining_object_ids=frozenset({"a"}),
+            active_candidate_ids=frozenset(),
+            stop_token_id=999,
+        )
+
 
 def test_valid_action_constructor_validates_role_consistency() -> None:
     with pytest.raises(ValueError, match="selected_object_id"):
@@ -358,6 +366,14 @@ def test_valid_action_constructor_validates_role_consistency() -> None:
             token_role=TokenRole.STOP,
             token_text="<|im_end|>",
             candidate_ids_after=frozenset({"a"}),
+        )
+
+    with pytest.raises(ValueError, match="STOP requires canonical token_text"):
+        ValidAction(
+            token_id=999,
+            token_role=TokenRole.STOP,
+            token_text="<bad_stop>",
+            candidate_ids_after=frozenset(),
         )
 
 

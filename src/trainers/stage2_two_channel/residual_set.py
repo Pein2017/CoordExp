@@ -82,6 +82,8 @@ class ValidAction:
         if self.token_role is TokenRole.TEXT and self.coord_role is not None:
             raise ValueError("TokenRole.TEXT requires coord_role is None")
         if self.token_role is TokenRole.STOP:
+            if self.token_text != _STOP_TOKEN_TEXT:
+                raise ValueError("TokenRole.STOP requires canonical token_text")
             if candidate_ids_after:
                 raise ValueError("TokenRole.STOP requires empty candidate_ids_after")
             if self.selected_object_id is not None:
@@ -118,6 +120,8 @@ class ResidualState:
         active_candidate_ids = frozenset(self.active_candidate_ids)
         if not active_candidate_ids.issubset(remaining_object_ids):
             raise ValueError("ResidualState.active_candidate_ids must be a subset of remaining_object_ids")
+        if remaining_object_ids and not active_candidate_ids:
+            raise ValueError("ResidualState.active_candidate_ids must be nonempty when objects remain")
         if not remaining_object_ids and active_candidate_ids:
             raise ValueError("ResidualState.active_candidate_ids must be empty when no objects remain")
         object.__setattr__(self, "active_candidate_ids", active_candidate_ids)
