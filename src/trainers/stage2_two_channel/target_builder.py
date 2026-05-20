@@ -21,6 +21,12 @@ from src.training.stage2.rollout_codec import (
     FALLBACK_GT_FN_APPEND_ONLY,
     Stage2RolloutTemplatePolicy,
 )
+from src.training.teacher_forcing.constants import (
+    MARGINAL_SCOPE_SAMPLED_PATH_NEXT_TOKEN,
+    TEACHER_FORCING_TARGET_IR_SCHEMA_VERSION,
+)
+from src.training.teacher_forcing.ir import SupervisionAtom, TeacherForcingTargetIR
+from src.training.teacher_forcing.roles import TokenRole
 from src.utils.assistant_json import dumps_coordjson
 
 from ..rollout_matching.contracts import GTObject, MatchResult
@@ -35,6 +41,11 @@ from .trie_supervision import (
     compile_stage2_trie_targets_for_rollout_group,
     stage2_trie_span_score_record_to_json,
 )
+
+_RESIDUAL_SET_OBJECTIVE_NAME = "residual_set_correction"
+_DEFAULT_RESIDUAL_SET_ROLLIN_POLICY = "random_valid_branch"
+_DEFAULT_RESIDUAL_SET_BASE_SEED = 17
+_COORD_ROLE_BY_SLOT = ("x1", "y1", "x2", "y2")
 
 
 @dataclass(frozen=True)
@@ -1724,6 +1735,225 @@ def _build_channel_b_supervision_targets(
     )
 
 
+def _objective_spec_get(spec: Any, key: str, default: Any = None) -> Any:
+    if isinstance(spec, Mapping):
+        return spec.get(key, default)
+    return getattr(spec, key, default)
+
+
+def _objective_spec_enabled_for_channel_b(spec: Any) -> bool:
+    if not bool(_objective_spec_get(spec, "enabled", True)):
+        return False
+    channels_raw = _objective_spec_get(spec, "channels", ("A", "B"))
+    channels: List[str] = []
+    if isinstance(channels_raw, Sequence) and not isinstance(
+        channels_raw, (str, bytes)
+    ):
+        channels = [str(ch).strip().upper() for ch in channels_raw]
+    if not channels:
+        channels = ["A", "B"]
+    return "B" in set(channels)
+
+
+def _channel_b_residual_set_correction_options(
+    objective_specs: Sequence[Any] | None,
+) -> Dict[str, Any] | None:
+    for spec in objective_specs or ():
+        spec_name = str(_objective_spec_get(spec, "name", "") or "")
+        if spec_name != _RESIDUAL_SET_OBJECTIVE_NAME:
+            continue
+        if not _objective_spec_enabled_for_channel_b(spec):
+            continue
+        config_raw = _objective_spec_get(spec, "config", {})
+        config = dict(config_raw) if isinstance(config_raw, Mapping) else {}
+        rollin_policy = str(
+            config.get("rollin_policy", _DEFAULT_RESIDUAL_SET_ROLLIN_POLICY)
+            or _DEFAULT_RESIDUAL_SET_ROLLIN_POLICY
+        )
+        try:
+            base_seed = int(config.get("base_seed", _DEFAULT_RESIDUAL_SET_BASE_SEED))
+        except (TypeError, ValueError):
+            base_seed = int(_DEFAULT_RESIDUAL_SET_BASE_SEED)
+        return {
+            "rollin_policy": rollin_policy,
+            "base_seed": int(base_seed),
+        }
+    return None
+
+
+def _channel_b_residual_set_correction_enabled(
+    objective_specs: Sequence[Any] | None,
+) -> bool:
+    return _channel_b_residual_set_correction_options(objective_specs) is not None
+
+
+def _residual_set_singleton_atom(
+    *,
+    enc_ids_list: Sequence[int],
+    target_position: int,
+    token_role: TokenRole,
+    loss_weight: float,
+    coord_role: str | None,
+    provenance: Mapping[str, Any],
+) -> SupervisionAtom | None:
+    target_position_i = int(target_position)
+    if target_position_i <= 0 or target_position_i >= len(enc_ids_list):
+        return None
+    selected_token_id = int(enc_ids_list[target_position_i])
+    return SupervisionAtom(
+        batch_index=0,
+        logit_position=int(target_position_i - 1),
+        target_position=target_position_i,
+        allowed_token_roles=frozenset({token_role}),
+        selected_token_role=token_role,
+        valid_token_ids=frozenset({selected_token_id}),
+        selected_token_id=selected_token_id,
+        latent_valid_token_ids=frozenset({selected_token_id}),
+        coverage_target_weights=None,
+        loss_tags=frozenset({"stage2", "channel_b", "residual_set"}),
+        loss_weight=max(0.0, float(loss_weight)),
+        coord_role=coord_role,
+        provenance=dict(provenance),
+    )
+
+
+def _build_residual_set_target_ir_from_meta_positions(
+    *,
+    enc_ids_list: Sequence[int],
+    prompt_len: int,
+    prefix_len: int,
+    train_len: int,
+    encoded_len: int,
+    bbox_groups_prefix: Sequence[Mapping[str, Any]],
+    bbox_groups_fn: Sequence[Mapping[str, Any]],
+    prefix_desc_pos: Sequence[int],
+    prefix_desc_weights: Sequence[float],
+    tail_desc_pos: Sequence[int],
+    tail_desc_weights: Sequence[float],
+    rollin_policy: str,
+    base_seed: int,
+) -> TeacherForcingTargetIR:
+    atoms: List[SupervisionAtom] = []
+    seen_positions: set[int] = set()
+    lower = int(prompt_len)
+    upper = min(
+        int(encoded_len),
+        int(len(enc_ids_list)),
+        int(prompt_len) + int(train_len),
+    )
+
+    def _append_atom(
+        *,
+        target_position: int,
+        token_role: TokenRole,
+        loss_weight: float,
+        coord_role: str | None,
+        provenance: Mapping[str, Any],
+    ) -> None:
+        target_position_i = int(target_position)
+        if target_position_i in seen_positions:
+            return
+        if target_position_i < lower or target_position_i >= upper:
+            return
+        atom = _residual_set_singleton_atom(
+            enc_ids_list=enc_ids_list,
+            target_position=target_position_i,
+            token_role=token_role,
+            loss_weight=float(loss_weight),
+            coord_role=coord_role,
+            provenance=provenance,
+        )
+        if atom is None:
+            return
+        atoms.append(atom)
+        seen_positions.add(target_position_i)
+
+    for group_kind, groups in (
+        ("prefix", bbox_groups_prefix),
+        ("fn", bbox_groups_fn),
+    ):
+        for group_index, group in enumerate(groups):
+            if not isinstance(group, Mapping):
+                continue
+            positions = group.get("pos", ())
+            gt_bins = group.get("gt_bins", ())
+            if not isinstance(positions, Sequence) or isinstance(
+                positions, (str, bytes)
+            ):
+                continue
+            if len(positions) != 4:
+                continue
+            loss_weight = float(group.get("weight", 1.0))
+            for slot_index, position in enumerate(positions):
+                _append_atom(
+                    target_position=int(position),
+                    token_role=TokenRole.COORD,
+                    loss_weight=loss_weight,
+                    coord_role=_COORD_ROLE_BY_SLOT[int(slot_index)],
+                    provenance={
+                        "objective": _RESIDUAL_SET_OBJECTIVE_NAME,
+                        "source": f"bbox_group_{group_kind}",
+                        "bbox_group_index": int(group_index),
+                        "coord_slot": _COORD_ROLE_BY_SLOT[int(slot_index)],
+                        "gt_bin": (
+                            int(gt_bins[int(slot_index)])
+                            if isinstance(gt_bins, Sequence)
+                            and not isinstance(gt_bins, (str, bytes))
+                            and len(gt_bins) > int(slot_index)
+                            else None
+                        ),
+                    },
+                )
+
+    for source, rel_positions, weights, base in (
+        (
+            "prefix_desc",
+            prefix_desc_pos,
+            prefix_desc_weights,
+            int(prompt_len),
+        ),
+        (
+            "tail_desc",
+            tail_desc_pos,
+            tail_desc_weights,
+            int(prompt_len) + int(prefix_len),
+        ),
+    ):
+        for desc_index, rel_position in enumerate(rel_positions):
+            try:
+                weight = float(weights[int(desc_index)])
+            except (IndexError, TypeError, ValueError):
+                weight = 1.0
+            _append_atom(
+                target_position=int(base) + int(rel_position),
+                token_role=TokenRole.TEXT,
+                loss_weight=weight,
+                coord_role=None,
+                provenance={
+                    "objective": _RESIDUAL_SET_OBJECTIVE_NAME,
+                    "source": source,
+                    "desc_index": int(desc_index),
+                },
+            )
+
+    return TeacherForcingTargetIR(
+        schema_version=TEACHER_FORCING_TARGET_IR_SCHEMA_VERSION,
+        atoms=tuple(atoms),
+        metadata={
+            "stage": "stage2",
+            "stage2_channel": "B",
+            "objective": _RESIDUAL_SET_OBJECTIVE_NAME,
+            "marginal_scope": MARGINAL_SCOPE_SAMPLED_PATH_NEXT_TOKEN,
+            "rollin_policy": str(rollin_policy),
+            "base_seed": int(base_seed),
+            "prompt_len": int(prompt_len),
+            "prefix_len": int(prefix_len),
+            "train_len": int(train_len),
+            "encoded_len": int(encoded_len),
+        },
+    )
+
+
 def _build_channel_b_meta_entry(
     *,
     tokenizer: Any,
@@ -1795,6 +2025,9 @@ def _build_channel_b_meta_entry(
     stage2_trie_candidates: Sequence[Stage2TrieCandidate] | None = None,
     stage2_trie_object_spans: Sequence[Stage2TrieObjectSpan],
     stage2_trie_weak_fp_span_level_fallback: bool,
+    residual_set_selected: bool = False,
+    residual_set_rollin_policy: str = _DEFAULT_RESIDUAL_SET_ROLLIN_POLICY,
+    residual_set_base_seed: int = _DEFAULT_RESIDUAL_SET_BASE_SEED,
     stage2_tail_closure_positions_fn: Any,
     stage2_semantic_stop_branch_metadata_fn: Any,
 ) -> Tuple[Stage2ChannelBMeta, int]:
@@ -1988,20 +2221,43 @@ def _build_channel_b_meta_entry(
     }
     if bool(stage2_trie_weak_fp_span_level_fallback):
         meta_entry["stage2_trie_weak_fp_span_level_fallback"] = True
-    _attach_stage2_trie_sidecar_to_meta(
-        meta_entry=meta_entry,
-        y_train_ids=y_train_ids,
-        assistant_span_ids=assistant_span_ids,
-        tokenizer=tokenizer,
-        prompt_len=int(prompt_len),
-        sample_id=str(sample_id),
-        rollout_index=int(rollout_index),
-        stage2_trie_candidates=stage2_trie_candidates,
-        stage2_trie_object_spans=stage2_trie_object_spans,
-        stage2_trie_weak_fp_span_level_fallback=bool(
-            stage2_trie_weak_fp_span_level_fallback
-        ),
-    )
+    if bool(residual_set_selected):
+        residual_set_target_ir = _build_residual_set_target_ir_from_meta_positions(
+            enc_ids_list=enc_ids_list,
+            prompt_len=int(prompt_len),
+            prefix_len=int(prefix_len_eff),
+            train_len=int(train_len_eff),
+            encoded_len=int(encoded_len),
+            bbox_groups_prefix=bbox_groups_prefix,
+            bbox_groups_fn=bbox_groups_fn,
+            prefix_desc_pos=prefix_desc_pos_eff,
+            prefix_desc_weights=prefix_desc_weights_eff,
+            tail_desc_pos=tail_desc_pos_eff,
+            tail_desc_weights=tail_desc_weights_eff,
+            rollin_policy=str(residual_set_rollin_policy),
+            base_seed=int(residual_set_base_seed),
+        )
+        meta_entry["residual_set_target_ir"] = residual_set_target_ir
+        meta_entry["residual_set_rollin_policy"] = str(residual_set_rollin_policy)
+        meta_entry["residual_set_base_seed"] = int(residual_set_base_seed)
+        meta_entry["residual_set_metrics"] = {
+            "atom_count": float(len(residual_set_target_ir.atoms)),
+        }
+    else:
+        _attach_stage2_trie_sidecar_to_meta(
+            meta_entry=meta_entry,
+            y_train_ids=y_train_ids,
+            assistant_span_ids=assistant_span_ids,
+            tokenizer=tokenizer,
+            prompt_len=int(prompt_len),
+            sample_id=str(sample_id),
+            rollout_index=int(rollout_index),
+            stage2_trie_candidates=stage2_trie_candidates,
+            stage2_trie_object_spans=stage2_trie_object_spans,
+            stage2_trie_weak_fp_span_level_fallback=bool(
+                stage2_trie_weak_fp_span_level_fallback
+            ),
+        )
     return meta_entry, int(closure_supervision_drop_count)
 
 
@@ -2577,6 +2833,9 @@ __all__ = [
     "_build_channel_b_triage",
     "_build_channel_b_supervision_targets",
     "_build_channel_b_meta_entry",
+    "_channel_b_residual_set_correction_enabled",
+    "_channel_b_residual_set_correction_options",
+    "_build_residual_set_target_ir_from_meta_positions",
     "_bbox_iou_norm1000_xyxy",
     "_apply_channel_b_duplicate_control",
     "_compute_duplicate_diagnostics",

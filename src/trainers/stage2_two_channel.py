@@ -2555,6 +2555,28 @@ class Stage2TwoChannelTrainer(
                 f"event=enter_prepare_batch_inputs_b global_step={int(gs)} "
                 f"inputs={len(inputs)} segments_only={bool(_segments_only)}"
             )
+        pipeline_manifest = getattr(self, "stage2_pipeline_manifest", None)
+        objective_specs = (
+            pipeline_manifest.get("objective", [])
+            if isinstance(pipeline_manifest, Mapping)
+            else []
+        )
+        residual_set_options = (
+            _channel_b_targets._channel_b_residual_set_correction_options(
+                objective_specs
+            )
+        )
+        residual_set_selected = residual_set_options is not None
+        residual_set_rollin_policy = (
+            str(residual_set_options.get("rollin_policy", "random_valid_branch"))
+            if residual_set_options is not None
+            else "random_valid_branch"
+        )
+        residual_set_base_seed = (
+            int(residual_set_options.get("base_seed", 17))
+            if residual_set_options is not None
+            else 17
+        )
 
         inputs_for_rollout = self._prepare_samples_for_rollout(
             inputs,
@@ -4038,6 +4060,9 @@ class Stage2TwoChannelTrainer(
                 stage2_trie_weak_fp_span_level_fallback=bool(
                     supervision_targets.stage2_trie_weak_fp_span_level_fallback
                 ),
+                residual_set_selected=bool(residual_set_selected),
+                residual_set_rollin_policy=str(residual_set_rollin_policy),
+                residual_set_base_seed=int(residual_set_base_seed),
                 stage2_tail_closure_positions_fn=(
                     _stage2_compact_tail_closure_positions
                     if rollout_template_policy.template_family == "compact_full"

@@ -1,6 +1,8 @@
 from typing import TYPE_CHECKING, Any, Dict, List, Literal, NotRequired, TypeAlias, TypedDict
 
 if TYPE_CHECKING:
+    from src.training.teacher_forcing.ir import TeacherForcingTargetIR
+
     from .trie_supervision import Stage2TrieTargets
 
 
@@ -103,6 +105,11 @@ class Stage2ChannelBMeta(Stage2RolloutMetaBase):
     stage2_trie_candidate_summary: NotRequired[Dict[str, Any]]
     stage2_trie_skip_loss: NotRequired[bool]
     stage2_trie_weak_fp_span_level_fallback: NotRequired[bool]
+    residual_set_target_ir: NotRequired["TeacherForcingTargetIR"]
+    residual_set_rollin_policy: NotRequired[str]
+    residual_set_base_seed: NotRequired[int]
+    residual_set_event_summaries: NotRequired[List[Dict[str, Any]]]
+    residual_set_metrics: NotRequired[Dict[str, float]]
 
 
 Stage2RolloutMeta: TypeAlias = Stage2ChannelAMeta | Stage2ChannelBMeta

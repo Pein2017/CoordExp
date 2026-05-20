@@ -22,6 +22,7 @@ from src.training.stage2.rollout_codec import (
     resolve_stage2_rollout_template_policy,
 )
 from src.training.stage2.assignment import GreedyIoUAssignment
+from src.trainers.rollout_matching.contracts import MatchResult
 from src.trainers.stage2_two_channel import (
     Stage2TwoChannelTrainer,
     _PendingStage2Log,
@@ -43,9 +44,11 @@ from src.trainers.stage2_two_channel.target_builder import (
     _attach_stage2_trie_sidecar_to_meta,
     _build_canonical_prefix_data,
     _build_canonical_prefix_text_data,
+    _build_channel_b_meta_entry,
     _build_channel_b_supervision_targets,
     _build_channel_b_triage,
     _build_duplicate_control_divergence_diagnostics,
+    _channel_b_residual_set_correction_enabled,
     _compute_duplicate_diagnostics,
     _sequential_dedup_bbox_objects,
 )
@@ -615,6 +618,31 @@ def _make_stage2_pipeline_manifest(
                 "channels": ["A", "B"],
                 "application": {"preset": "anchor_text_only"},
                 "config": token_cfg,
+            },
+        ],
+        "diagnostics": [],
+    }
+
+
+def _make_residual_set_pipeline_manifest(
+    *,
+    enabled: bool = True,
+    channels: Sequence[str] = ("B",),
+    rollin_policy: str = "random_valid_branch",
+    base_seed: int = 17,
+) -> dict:
+    return {
+        "objective": [
+            {
+                "name": "residual_set_correction",
+                "enabled": bool(enabled),
+                "weight": 1.0,
+                "channels": list(channels),
+                "application": {"preset": "rollout_self_prefix"},
+                "config": {
+                    "rollin_policy": str(rollin_policy),
+                    "base_seed": int(base_seed),
+                },
             },
         ],
         "diagnostics": [],
@@ -1214,6 +1242,138 @@ def test_channel_b_trie_sidecar_skips_invalid_prompt_or_empty_targets(
     assert "stage2_trie_span_scores" not in meta
 
 
+def _minimal_channel_b_meta_entry_kwargs(**overrides):
+    kwargs = {
+        "tokenizer": _DummyTokenizer(),
+        "enc_ids_list": [100, 201],
+        "prompt_len": 1,
+        "prompt_ids": [100],
+        "train_len_eff": 1,
+        "prefix_len_eff": 0,
+        "encoded_len": 2,
+        "parse": types.SimpleNamespace(
+            response_token_ids=[],
+            dropped_invalid=0,
+            dropped_ambiguous=0,
+            truncated=False,
+        ),
+        "invalid_rollout": 0,
+        "seed_base": 0,
+        "decode_mode": "sampling",
+        "n_drop_invalid": 0,
+        "valid_pred_objects": 0,
+        "matched_for_supervision_count": 0,
+        "match": MatchResult(
+            matched_pairs=[],
+            fn_gt_indices=[],
+            fp_pred_indices=[],
+            gating_rejections=0,
+            matched_maskiou_sum=0.0,
+            matched_maskiou_count=0,
+        ),
+        "gt_objects_count": 0,
+        "fn_count_for_meta": 0,
+        "prefix_pos": [],
+        "prefix_bins": [],
+        "prefix_struct_pos": [],
+        "prefix_desc_pos": [],
+        "prefix_desc_weights": [],
+        "prefix_bbox_groups": [],
+        "fn_bbox_groups": [],
+        "tail_desc_pos": [],
+        "tail_desc_weights": [],
+        "fn_object_weights": [],
+        "anchor_decode_mode": "sampling",
+        "explorer_decode_mode": "sampling",
+        "valid_explorer_count": 0,
+        "duplicate_clusters_total": 0,
+        "duplicate_clusters_exempt": 0,
+        "duplicate_clusters_suppressed": 0,
+        "duplicate_objects_suppressed": 0,
+        "duplicate_survivor_anchor_indices": [],
+        "duplicate_exempt_anchor_indices": [],
+        "duplicate_suppressed_anchor_indices": [],
+        "anchor_gt_backed_indices": [],
+        "anchor_support_counts": [],
+        "anchor_support_rates": [],
+        "shielded_anchor_indices": [],
+        "dead_anchor_indices": [],
+        "lvis_verified_positive_dead_anchor_indices": [],
+        "lvis_verified_negative_dead_anchor_indices": [],
+        "lvis_not_exhaustive_anchor_indices": [],
+        "lvis_unevaluable_anchor_indices": [],
+        "pseudo_positive_anchor_indices": [],
+        "dead_explorer_indices_by_view": [],
+        "recovered_gt_indices": [],
+        "recovered_gt_support_counts": [],
+        "recovered_gt_support_rates": [],
+        "duplicate_control_first_divergence_diagnostics": [],
+        "duplicate_control_first_divergence_boundary_count": 0,
+        "duplicate_control_first_divergence_skipped_no_divergence": 0,
+        "assignment_strategy": "greedy_iou",
+        "assignment_iou_threshold": 0.3,
+        "rollout_template_family": "coordjson",
+        "rollout_parser_id": "coordjson_legacy",
+        "rollout_append_policy_id": "coordjson_legacy_fn_append",
+        "rollout_context": "rollout_valid_with_fn_append",
+        "rollout_fallback_reason": None,
+        "rollout_fallback_loss_weight": 0.0,
+        "rollout_counts_as_valid_rollout": True,
+        "y_train_ids": [201],
+        "sample_id": "sample-1",
+        "rollout_index": 0,
+        "stage2_trie_candidates": None,
+        "stage2_trie_object_spans": [],
+        "stage2_trie_weak_fp_span_level_fallback": False,
+        "stage2_tail_closure_positions_fn": lambda **_kwargs: [],
+        "stage2_semantic_stop_branch_metadata_fn": lambda **_kwargs: None,
+    }
+    kwargs.update(overrides)
+    return kwargs
+
+
+def test_channel_b_meta_entry_legacy_non_residual_attaches_stage2_trie_targets() -> None:
+    meta, _drop_count = _build_channel_b_meta_entry(
+        **_minimal_channel_b_meta_entry_kwargs()
+    )
+
+    assert "stage2_trie_targets" in meta
+    assert isinstance(meta["stage2_trie_targets"], Stage2TrieTargets)
+    assert "residual_set_target_ir" not in meta
+
+
+def test_channel_b_meta_entry_residual_empty_ir_replaces_missing_sidecar() -> None:
+    meta, _drop_count = _build_channel_b_meta_entry(
+        **_minimal_channel_b_meta_entry_kwargs(
+            residual_set_selected=True,
+            residual_set_rollin_policy="random_valid_branch",
+            residual_set_base_seed=17,
+        )
+    )
+
+    assert "residual_set_target_ir" in meta
+    assert "stage2_trie_targets" not in meta
+    assert meta["residual_set_rollin_policy"] == "random_valid_branch"
+    assert meta["residual_set_base_seed"] == 17
+    target_ir = meta["residual_set_target_ir"]
+    assert isinstance(target_ir, TeacherForcingTargetIR)
+    assert target_ir.schema_version == TEACHER_FORCING_TARGET_IR_SCHEMA_VERSION
+    assert target_ir.metadata["objective"] == "residual_set_correction"
+    assert target_ir.atoms == ()
+
+
+def test_channel_b_residual_objective_detection_honors_enabled_and_channel() -> None:
+    assert _channel_b_residual_set_correction_enabled(
+        _make_residual_set_pipeline_manifest()["objective"]
+    )
+    assert not _channel_b_residual_set_correction_enabled(
+        _make_residual_set_pipeline_manifest(enabled=False)["objective"]
+    )
+    assert not _channel_b_residual_set_correction_enabled(
+        _make_residual_set_pipeline_manifest(channels=("A",))["objective"]
+    )
+
+
 def test_channel_b_compact_full_rollout_template_uses_compact_parser_and_targets(
     monkeypatch,
 ) -> None:
@@ -1250,6 +1410,48 @@ def test_channel_b_compact_full_rollout_template_uses_compact_parser_and_targets
     assert metrics["rollout/template_family_compact_full"] == pytest.approx(1.0)
     assert metrics["rollout/invalid_fallback_gt_fn_count"] == pytest.approx(0.0)
     assert metrics["rollout/fallback_loss_share"] == pytest.approx(0.0)
+
+
+def test_channel_b_compact_full_residual_path_attaches_ir_without_trie(
+    monkeypatch,
+) -> None:
+    row = (
+        f"{OBJECT_REF_START_TOKEN}cat{BOX_START_TOKEN}"
+        "<|coord_10|><|coord_20|><|coord_30|><|coord_40|>"
+    )
+    t = _make_compact_channel_b_trainer(rollout_text=row)
+    t.stage2_pipeline_manifest = _make_residual_set_pipeline_manifest()
+    monkeypatch.setattr(
+        "src.trainers.stage2_two_channel.parse_rollout_for_matching",
+        lambda **kwargs: pytest.fail("legacy CoordJSON parser must not run"),
+    )
+
+    segments, _metrics = t._prepare_batch_inputs_b(
+        [_single_bbox_sample()],
+        _segments_only=True,
+    )
+
+    assert len(segments) == 1
+    encoded, meta, _length = segments[0]
+    assert "residual_set_target_ir" in meta
+    assert "stage2_trie_targets" not in meta
+    assert "stage2_trie_candidate_summary" not in meta
+    assert meta["residual_set_rollin_policy"] == "random_valid_branch"
+    assert meta["residual_set_base_seed"] == 17
+
+    target_ir = meta["residual_set_target_ir"]
+    assert isinstance(target_ir, TeacherForcingTargetIR)
+    assert target_ir.schema_version == TEACHER_FORCING_TARGET_IR_SCHEMA_VERSION
+    assert target_ir.metadata["objective"] == "residual_set_correction"
+    assert target_ir.metadata["stage2_channel"] == "B"
+    assert target_ir.atoms
+    input_ids = [int(token_id) for token_id in encoded["input_ids"]]
+    for atom in target_ir.atoms:
+        assert atom.logit_position + 1 == atom.target_position
+        assert atom.selected_token_id == input_ids[int(atom.target_position)]
+        assert atom.valid_token_ids == frozenset({atom.selected_token_id})
+        assert atom.selected_token_role in atom.allowed_token_roles
+        assert "residual_set" in atom.loss_tags
 
 
 def test_channel_b_compact_full_sorted_fn_desc_reaches_prefix_meta(
