@@ -133,10 +133,13 @@ def run_residual_set_correction_module(
     context: TeacherForcingContext,
     spec: PipelineModuleSpec,
 ) -> ModuleResult:
-    if context is None or spec is None:
-        raise NotImplementedError(
-            "Task 5 residual_set_correction requires a TeacherForcingContext "
-            "and PipelineModuleSpec"
+    if not isinstance(context, TeacherForcingContext):
+        raise TypeError(
+            "residual_set_correction requires context to be a TeacherForcingContext"
+        )
+    if not isinstance(spec, PipelineModuleSpec):
+        raise TypeError(
+            "residual_set_correction requires spec to be a PipelineModuleSpec"
         )
 
     if str(context.channel or "").strip().upper() != "B":
@@ -161,7 +164,10 @@ def run_residual_set_correction_module(
     ):
         target_ir = segment_meta.get("residual_set_target_ir")
         if target_ir is None:
-            continue
+            raise ValueError(
+                "residual_set_correction requires residual_set_target_ir "
+                "for every B-channel segment"
+            )
         if not isinstance(target_ir, TeacherForcingTargetIR):
             raise TypeError("residual_set_target_ir must be a TeacherForcingTargetIR")
         if role_vocab is None:

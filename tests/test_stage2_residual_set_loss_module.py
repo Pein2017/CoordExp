@@ -77,6 +77,14 @@ def make_ir(
     )
 
 
+def make_empty_ir() -> TeacherForcingTargetIR:
+    return TeacherForcingTargetIR(
+        schema_version=TEACHER_FORCING_TARGET_IR_SCHEMA_VERSION,
+        atoms=(),
+        metadata={"objective": "residual_set_correction"},
+    )
+
+
 def make_context(
     *,
     channel: str = "B",
@@ -86,6 +94,7 @@ def make_context(
     target_ir: TeacherForcingTargetIR | None = None,
     role_vocab: RoleVocab | None = None,
     include_role_vocab: bool = True,
+    include_residual_sidecar: bool = True,
     segment_start: int = 0,
     segment_len: int | None = None,
 ) -> TeacherForcingContext:
@@ -101,12 +110,10 @@ def make_context(
         segment_len = int(input_ids.shape[1]) - int(segment_start)
     if target_ir is None:
         target_ir = make_ir()
-    meta = [
-        {
-            "encoded_len": int(segment_len),
-            "residual_set_target_ir": target_ir,
-        }
-    ]
+    segment_meta = {"encoded_len": int(segment_len)}
+    if include_residual_sidecar:
+        segment_meta["residual_set_target_ir"] = target_ir
+    meta = [segment_meta]
     extra = {}
     if include_role_vocab:
         extra["role_vocab"] = role_vocab or make_role_vocab()
@@ -189,6 +196,32 @@ def test_no_role_vocab_fails_closed_with_clear_error() -> None:
             context=make_context(include_role_vocab=False),
             spec=make_spec(),
         )
+
+
+def test_b_channel_requires_residual_set_target_ir_sidecar() -> None:
+    from src.trainers.teacher_forcing.modules.residual_set_correction import (
+        run_residual_set_correction_module,
+    )
+
+    with pytest.raises(ValueError, match="residual_set_target_ir"):
+        run_residual_set_correction_module(
+            context=make_context(include_residual_sidecar=False),
+            spec=make_spec(),
+        )
+
+
+def test_present_empty_residual_set_target_ir_returns_zero() -> None:
+    from src.trainers.teacher_forcing.modules.residual_set_correction import (
+        run_residual_set_correction_module,
+    )
+
+    result = run_residual_set_correction_module(
+        context=make_context(target_ir=make_empty_ir()),
+        spec=make_spec(),
+    )
+
+    assert result.loss.item() == 0.0
+    assert result.metrics["stage2_ab/channel_b/residual_set/atom_count"] == 0.0
 
 
 @pytest.mark.parametrize(

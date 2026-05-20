@@ -6986,6 +6986,44 @@ def test_pending_stage2_log_aggregates_strict_drop_metrics_and_reasons() -> None
     )
 
 
+def test_pending_stage2_log_aggregates_residual_set_counts_and_weighted_scalars() -> None:
+    pending = _PendingStage2Log()
+    pending.add(
+        {
+            "stage2/_log_weight": 1.0,
+            "stage2_ab/channel_b/residual_set/atom_count": 2.0,
+            "stage2_ab/channel_b/residual_set/labeled_atom_count": 1.0,
+            "stage2_ab/channel_b/residual_set/loss": 10.0,
+            "stage2_ab/channel_b/residual_set/component/type": 1.0,
+            "stage2_ab/channel_b/residual_set/valid_prob_mean": 0.2,
+        }
+    )
+    pending.add(
+        {
+            "stage2/_log_weight": 3.0,
+            "stage2_ab/channel_b/residual_set/atom_count": 5.0,
+            "stage2_ab/channel_b/residual_set/labeled_atom_count": 2.0,
+            "stage2_ab/channel_b/residual_set/loss": 20.0,
+            "stage2_ab/channel_b/residual_set/component/type": 3.0,
+            "stage2_ab/channel_b/residual_set/valid_prob_mean": 0.8,
+        }
+    )
+
+    out = pending.finalize()
+
+    assert out["stage2_ab/channel_b/residual_set/atom_count"] == pytest.approx(7.0)
+    assert out["stage2_ab/channel_b/residual_set/labeled_atom_count"] == pytest.approx(3.0)
+    assert out["stage2_ab/channel_b/residual_set/loss"] == pytest.approx(
+        (10.0 * 1.0 + 20.0 * 3.0) / 4.0
+    )
+    assert out["stage2_ab/channel_b/residual_set/component/type"] == pytest.approx(
+        (1.0 * 1.0 + 3.0 * 3.0) / 4.0
+    )
+    assert out["stage2_ab/channel_b/residual_set/valid_prob_mean"] == pytest.approx(
+        (0.2 * 1.0 + 0.8 * 3.0) / 4.0
+    )
+
+
 def test_pending_stage2_log_omits_channel_b_keys_when_not_provided() -> None:
     pending = _PendingStage2Log()
     pending.add(
@@ -7126,6 +7164,50 @@ def test_reduce_stage2_pending_metrics_global_treats_train_optimization_losses_a
     assert "stage2/_log_weight_total" not in out
 
 
+def test_reduce_stage2_pending_metrics_global_handles_residual_set_metric_specs() -> None:
+    class _FakeReduceOp:
+        SUM = "sum"
+        MAX = "max"
+
+    class _FakeDist:
+        ReduceOp = _FakeReduceOp
+
+        def all_gather_object(self, gathered: list[object], obj: object) -> None:
+            for i in range(len(gathered)):
+                gathered[i] = list(obj) if isinstance(obj, list) else obj
+
+        def all_reduce(self, tensor: torch.Tensor, op: str) -> None:
+            if op == self.ReduceOp.SUM:
+                tensor.add_(
+                    torch.tensor(
+                        [3.0, 5.0, 60.0, 2.4],
+                        dtype=tensor.dtype,
+                        device=tensor.device,
+                    )
+                )
+
+    trainer = Stage2TwoChannelTrainer.__new__(Stage2TwoChannelTrainer)
+    trainer._dist_info = lambda: (0, 2, _FakeDist())
+
+    out = trainer._reduce_stage2_pending_metrics_global(
+        {
+            "stage2/_log_weight_total": 1.0,
+            "stage2_ab/channel_b/residual_set/atom_count": 2.0,
+            "stage2_ab/channel_b/residual_set/loss": 10.0,
+            "stage2_ab/channel_b/residual_set/valid_prob_mean": 0.2,
+        }
+    )
+
+    assert out["stage2_ab/channel_b/residual_set/atom_count"] == pytest.approx(7.0)
+    assert out["stage2_ab/channel_b/residual_set/loss"] == pytest.approx(
+        (10.0 * 1.0 + 20.0 * 3.0) / 4.0
+    )
+    assert out["stage2_ab/channel_b/residual_set/valid_prob_mean"] == pytest.approx(
+        (0.2 * 1.0 + 0.8 * 3.0) / 4.0
+    )
+    assert "stage2/_log_weight_total" not in out
+
+
 def test_stage2_core_loss_logs_preserves_stage2_trie_objective_metrics() -> None:
     out = build_stage2_core_loss_logs(
         channel="B",
@@ -7254,6 +7336,34 @@ def test_stage2_objective_pipelines_fail_closed_without_role_vocab_for_residual_
             rollout_subset_masks={},
             run_a_text=False,
             warn_once_cache=set(),
+        )
+
+
+def test_stage2_objective_pipelines_raise_when_residual_sidecar_missing() -> None:
+    logits = torch.zeros((1, 2, 50), dtype=torch.float32)
+
+    with pytest.raises(ValueError, match="residual_set_target_ir"):
+        run_stage2_objective_pipelines(
+            channel="B",
+            objective_specs=[
+                {
+                    "name": "residual_set_correction",
+                    "channels": ["B"],
+                    "config": {"coverage_strength": 0.0},
+                }
+            ],
+            diagnostic_specs=[],
+            input_ids=torch.tensor([[99, 10]], dtype=torch.long),
+            logits=logits,
+            logits_ce=logits.clone(),
+            meta=[{"encoded_len": 2}],
+            coord_token_ids=(30,),
+            temperature=1.0,
+            token_type_masks={},
+            rollout_subset_masks={},
+            run_a_text=False,
+            warn_once_cache=set(),
+            role_vocab=_make_stage2_residual_role_vocab(),
         )
 
 

@@ -76,7 +76,37 @@ def test_diagnostic_registry_drift_fails_fast() -> None:
         )
 
 
-def test_residual_set_placeholder_only_handles_missing_residual_module() -> None:
+def test_residual_set_module_rejects_missing_context_or_spec() -> None:
+    from src.trainers.teacher_forcing.modules.residual_set_correction import (
+        run_residual_set_correction_module,
+    )
+
+    with pytest.raises(TypeError, match="TeacherForcingContext"):
+        run_residual_set_correction_module(context=None, spec=None)
+
+
+def test_residual_set_lazy_import_missing_module_reports_task_5(monkeypatch) -> None:
+    import builtins
+
+    original_import = builtins.__import__
+
+    def fake_import(name, globals=None, locals=None, fromlist=(), level=0):
+        if (
+            name == "src.trainers.teacher_forcing.modules.residual_set_correction"
+            or (
+                level == 1
+                and name == "modules.residual_set_correction"
+                and fromlist == ("run_residual_set_correction_module",)
+            )
+        ):
+            raise ModuleNotFoundError(
+                "No module named 'src.trainers.teacher_forcing.modules.residual_set_correction'",
+                name="src.trainers.teacher_forcing.modules.residual_set_correction",
+            )
+        return original_import(name, globals, locals, fromlist, level)
+
+    monkeypatch.setattr(builtins, "__import__", fake_import)
+
     with pytest.raises(NotImplementedError, match="Task 5"):
         _run_residual_set_correction_module(context=None, spec=None)
 

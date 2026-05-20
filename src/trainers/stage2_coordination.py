@@ -371,6 +371,30 @@ def resolve_stage2_ab_metric_spec(key: str) -> MetricSpec:
     if key in {stage2_weight_key, gradmon_weight_key}:
         return MetricSpec(local_mode="sum", ddp_mode="sum")
 
+    residual_prefix = "stage2_ab/channel_b/residual_set/"
+    if key.startswith(residual_prefix):
+        residual_leaf = key[len(residual_prefix) :]
+        if residual_leaf in {
+            "atom_count",
+            "labeled_atom_count",
+            "ul_atom_count",
+            "mixed_atom_count",
+        }:
+            return MetricSpec(local_mode="sum", ddp_mode="sum")
+        if residual_leaf in {
+            "loss",
+            "component/type",
+            "component/valid",
+            "component/coverage",
+            "valid_prob_mean",
+            "allowed_prob_mean",
+        }:
+            return MetricSpec(
+                local_mode="weighted_mean",
+                ddp_mode="weighted_mean",
+                ddp_weight_key=stage2_weight_key,
+            )
+
     if key in {
         "stage2/raw_rollouts",
         "stage2/invalid_rollout",
