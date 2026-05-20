@@ -23,7 +23,7 @@ training:
   save_strategy: "no"
   per_device_train_batch_size: 1
   per_device_eval_batch_size: 1
-  effective_batch_size: 1
+  effective_batch_size: 8
   dataloader_drop_last: false
 
 data:
@@ -34,8 +34,8 @@ data:
 custom:
   detection_sequence_format: compact_full
   object_ordering: random
-  train_sample_limit: 4
-  val_sample_limit: 2
+  train_sample_limit: 8
+  val_sample_limit: 8
   coord_tokens:
     enabled: true
     skip_bbox_norm: true
