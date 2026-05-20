@@ -1359,6 +1359,13 @@ def test_channel_b_meta_entry_residual_empty_ir_replaces_missing_sidecar() -> No
     assert isinstance(target_ir, TeacherForcingTargetIR)
     assert target_ir.schema_version == TEACHER_FORCING_TARGET_IR_SCHEMA_VERSION
     assert target_ir.metadata["objective"] == "residual_set_correction"
+    assert target_ir.metadata["position_space"] == "segment_local"
+    assert target_ir.metadata["target_builder"] == "stage2_meta_position_singleton_v0"
+    assert (
+        target_ir.metadata["correction_semantics"]
+        == "selected_token_singleton_not_full_residual"
+    )
+    assert target_ir.metadata["full_residual_events"] is False
     assert target_ir.atoms == ()
 
 
@@ -1444,6 +1451,13 @@ def test_channel_b_compact_full_residual_path_attaches_ir_without_trie(
     assert target_ir.schema_version == TEACHER_FORCING_TARGET_IR_SCHEMA_VERSION
     assert target_ir.metadata["objective"] == "residual_set_correction"
     assert target_ir.metadata["stage2_channel"] == "B"
+    assert target_ir.metadata["position_space"] == "segment_local"
+    assert target_ir.metadata["target_builder"] == "stage2_meta_position_singleton_v0"
+    assert (
+        target_ir.metadata["correction_semantics"]
+        == "selected_token_singleton_not_full_residual"
+    )
+    assert target_ir.metadata["full_residual_events"] is False
     assert target_ir.atoms
     input_ids = [int(token_id) for token_id in encoded["input_ids"]]
     for atom in target_ir.atoms:
@@ -1452,6 +1466,91 @@ def test_channel_b_compact_full_residual_path_attaches_ir_without_trie(
         assert atom.valid_token_ids == frozenset({atom.selected_token_id})
         assert atom.selected_token_role in atom.allowed_token_roles
         assert "residual_set" in atom.loss_tags
+        assert atom.provenance["correction_kind"] == "selected_path_singleton"
+        assert "source_position_kind" in atom.provenance
+
+
+def test_channel_b_producer_residual_ir_rebases_when_packed() -> None:
+    meta_1, _drop_1 = _build_channel_b_meta_entry(
+        **_minimal_channel_b_meta_entry_kwargs(
+            enc_ids_list=[99, 10],
+            prompt_ids=[99],
+            prefix_len_eff=1,
+            prefix_desc_pos=[0],
+            prefix_desc_weights=[1.0],
+            y_train_ids=[10],
+            residual_set_selected=True,
+            residual_set_rollin_policy="random_valid_branch",
+            residual_set_base_seed=17,
+        )
+    )
+    meta_2, _drop_2 = _build_channel_b_meta_entry(
+        **_minimal_channel_b_meta_entry_kwargs(
+            enc_ids_list=[88, 11],
+            prompt_ids=[88],
+            prefix_len_eff=1,
+            prefix_desc_pos=[0],
+            prefix_desc_weights=[1.0],
+            y_train_ids=[11],
+            residual_set_selected=True,
+            residual_set_rollin_policy="random_valid_branch",
+            residual_set_base_seed=17,
+        )
+    )
+
+    for meta in (meta_1, meta_2):
+        target_ir = meta["residual_set_target_ir"]
+        assert target_ir.metadata["position_space"] == "segment_local"
+        assert (
+            target_ir.metadata["target_builder"]
+            == "stage2_meta_position_singleton_v0"
+        )
+        assert (
+            target_ir.metadata["correction_semantics"]
+            == "selected_token_singleton_not_full_residual"
+        )
+        assert target_ir.metadata["full_residual_events"] is False
+        assert target_ir.atoms[0].target_position == 1
+        assert (
+            target_ir.atoms[0].provenance["correction_kind"]
+            == "selected_path_singleton"
+        )
+        assert target_ir.atoms[0].provenance["source_position_kind"] == "prefix_desc"
+
+    input_ids = torch.tensor([[99, 10, 88, 11]], dtype=torch.long)
+    logits = torch.full((1, 4, 50), -20.0, dtype=torch.float32)
+    logits[0, 0, 10] = 20.0
+    logits[0, 2, 11] = 20.0
+
+    result = run_stage2_objective_pipelines(
+        channel="B",
+        objective_specs=[
+            {
+                "name": "residual_set_correction",
+                "channels": ["B"],
+                "config": {"coverage_strength": 0.0},
+            }
+        ],
+        diagnostic_specs=[],
+        input_ids=input_ids,
+        logits=logits,
+        logits_ce=logits.clone(),
+        meta=[meta_1, meta_2],
+        coord_token_ids=(30,),
+        temperature=1.0,
+        token_type_masks={},
+        rollout_subset_masks={},
+        run_a_text=False,
+        warn_once_cache=set(),
+        role_vocab=_make_stage2_residual_role_vocab(),
+    )
+
+    assert result.pipeline_metrics_ctx[
+        "stage2_ab/channel_b/residual_set/atom_count"
+    ] == pytest.approx(2.0)
+    assert result.pipeline_metrics_ctx[
+        "stage2_ab/channel_b/residual_set/loss"
+    ] == pytest.approx(0.0, abs=1.0e-6)
 
 
 def test_channel_b_compact_full_sorted_fn_desc_reaches_prefix_meta(
@@ -7444,7 +7543,7 @@ def test_stage2_core_loss_logs_preserves_stage2_trie_objective_metrics() -> None
 def _make_stage2_residual_role_vocab() -> RoleVocab:
     return RoleVocab(
         schema_token_ids=frozenset({20}),
-        text_token_ids=frozenset({10}),
+        text_token_ids=frozenset({10, 11}),
         coord_token_ids=frozenset({30}),
         stop_token_id=40,
     )
@@ -7468,12 +7567,19 @@ def _make_stage2_residual_target_ir(
         loss_tags=frozenset({"residual_set"}),
         loss_weight=1.0,
         coord_role=None,
-        provenance={"support_provenance": ("labeled",)},
+        provenance={
+            "support_provenance": ("labeled",),
+            "correction_kind": "selected_path_singleton",
+            "source_position_kind": "unit_test",
+        },
     )
     return TeacherForcingTargetIR(
         schema_version=TEACHER_FORCING_TARGET_IR_SCHEMA_VERSION,
         atoms=(atom,),
-        metadata={"objective": "residual_set_correction"},
+        metadata={
+            "objective": "residual_set_correction",
+            "position_space": "segment_local",
+        },
     )
 
 

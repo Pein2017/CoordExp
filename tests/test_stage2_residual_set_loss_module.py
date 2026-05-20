@@ -49,6 +49,7 @@ def make_ir(
     loss_weight: float = 1.0,
     action_weights: tuple[float, ...] | None = None,
     support_provenance: tuple[str, ...] = ("labeled",),
+    position_space: str | None = "segment_local",
 ) -> TeacherForcingTargetIR:
     if action_weights is not None:
         loss_weight = max(float(w) for w in action_weights)
@@ -68,12 +69,17 @@ def make_ir(
         provenance={
             "support_provenance": support_provenance,
             "action_weights": action_weights,
+            "correction_kind": "selected_path_singleton",
+            "source_position_kind": "unit_test",
         },
     )
+    metadata: dict[str, object] = {"objective": "residual_set_correction"}
+    if position_space is not None:
+        metadata["position_space"] = str(position_space)
     return TeacherForcingTargetIR(
         schema_version=TEACHER_FORCING_TARGET_IR_SCHEMA_VERSION,
         atoms=(atom,),
-        metadata={"objective": "residual_set_correction"},
+        metadata=metadata,
     )
 
 
@@ -81,7 +87,10 @@ def make_empty_ir() -> TeacherForcingTargetIR:
     return TeacherForcingTargetIR(
         schema_version=TEACHER_FORCING_TARGET_IR_SCHEMA_VERSION,
         atoms=(),
-        metadata={"objective": "residual_set_correction"},
+        metadata={
+            "objective": "residual_set_correction",
+            "position_space": "segment_local",
+        },
     )
 
 
@@ -262,8 +271,74 @@ def test_packed_segments_rebase_segment_local_residual_ir_positions() -> None:
 
     result = run_residual_set_correction_module(context=context, spec=make_spec())
 
+    for segment_meta in context.meta:
+        target_ir = segment_meta["residual_set_target_ir"]
+        assert target_ir.metadata["position_space"] == "segment_local"
+        assert (
+            target_ir.atoms[0].provenance["correction_kind"]
+            == "selected_path_singleton"
+        )
+        assert target_ir.atoms[0].provenance["source_position_kind"] == "unit_test"
     assert result.metrics["stage2_ab/channel_b/residual_set/atom_count"] == 2.0
     assert result.loss.item() == pytest.approx(0.0, abs=1.0e-6)
+
+
+def test_batch_tensor_residual_ir_uses_declared_positions_without_offset() -> None:
+    from src.trainers.teacher_forcing.modules.residual_set_correction import (
+        run_residual_set_correction_module,
+    )
+
+    input_ids = torch.tensor([[99, 10, 88, 11]], dtype=torch.long)
+    logits = torch.full((1, 4, 50), -20.0, dtype=torch.float32)
+    logits[0, 2, 11] = 20.0
+    target_ir = make_ir(
+        batch_index=0,
+        logit_position=2,
+        target_position=3,
+        selected_token_id=11,
+        valid_token_ids=frozenset({11}),
+        position_space="batch_tensor",
+    )
+    context = TeacherForcingContext(
+        channel="B",
+        registry_context="rollout",
+        input_ids=input_ids,
+        logits=logits,
+        logits_ce=logits.clone(),
+        meta=[
+            {"encoded_len": 2, "residual_set_target_ir": make_empty_ir()},
+            {"encoded_len": 2, "residual_set_target_ir": target_ir},
+        ],
+        coord_token_ids=(30, 31),
+        extra={"role_vocab": make_role_vocab()},
+    )
+
+    result = run_residual_set_correction_module(context=context, spec=make_spec())
+
+    assert result.metrics["stage2_ab/channel_b/residual_set/atom_count"] == 1.0
+    assert result.loss.item() == pytest.approx(0.0, abs=1.0e-6)
+
+
+@pytest.mark.parametrize(
+    "position_space,error_match",
+    [
+        (None, "position_space is required"),
+        ("mystery_space", "position_space must be"),
+    ],
+)
+def test_non_empty_residual_ir_requires_known_position_space(
+    position_space: str | None,
+    error_match: str,
+) -> None:
+    from src.trainers.teacher_forcing.modules.residual_set_correction import (
+        run_residual_set_correction_module,
+    )
+
+    with pytest.raises(ValueError, match=error_match):
+        run_residual_set_correction_module(
+            context=make_context(target_ir=make_ir(position_space=position_space)),
+            spec=make_spec(),
+        )
 
 
 @pytest.mark.parametrize(

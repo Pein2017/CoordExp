@@ -1892,7 +1892,9 @@ def _build_residual_set_target_ir_from_meta_positions(
                     coord_role=_COORD_ROLE_BY_SLOT[int(slot_index)],
                     provenance={
                         "objective": _RESIDUAL_SET_OBJECTIVE_NAME,
+                        "correction_kind": "selected_path_singleton",
                         "source": f"bbox_group_{group_kind}",
+                        "source_position_kind": f"bbox_group_{group_kind}",
                         "bbox_group_index": int(group_index),
                         "coord_slot": _COORD_ROLE_BY_SLOT[int(slot_index)],
                         "gt_bin": (
@@ -1931,7 +1933,9 @@ def _build_residual_set_target_ir_from_meta_positions(
                 coord_role=None,
                 provenance={
                     "objective": _RESIDUAL_SET_OBJECTIVE_NAME,
+                    "correction_kind": "selected_path_singleton",
                     "source": source,
+                    "source_position_kind": source,
                     "desc_index": int(desc_index),
                 },
             )
@@ -1943,6 +1947,10 @@ def _build_residual_set_target_ir_from_meta_positions(
             "stage": "stage2",
             "stage2_channel": "B",
             "objective": _RESIDUAL_SET_OBJECTIVE_NAME,
+            "position_space": "segment_local",
+            "target_builder": "stage2_meta_position_singleton_v0",
+            "correction_semantics": "selected_token_singleton_not_full_residual",
+            "full_residual_events": False,
             "marginal_scope": MARGINAL_SCOPE_SAMPLED_PATH_NEXT_TOKEN,
             "rollin_policy": str(rollin_policy),
             "base_seed": int(base_seed),

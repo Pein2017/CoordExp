@@ -128,37 +128,66 @@ def _support_provenance_flags(raw: Any) -> tuple[bool, bool]:
     return has_labeled, has_ul
 
 
-def _rebase_segment_local_target_ir(
+def _copy_atom_for_segment(
+    atom: SupervisionAtom,
+    *,
+    batch_index: int,
+    position_offset: int,
+) -> SupervisionAtom:
+    return SupervisionAtom(
+        batch_index=int(batch_index),
+        logit_position=int(atom.logit_position) + int(position_offset),
+        target_position=int(atom.target_position) + int(position_offset),
+        allowed_token_roles=atom.allowed_token_roles,
+        selected_token_role=atom.selected_token_role,
+        valid_token_ids=atom.valid_token_ids,
+        selected_token_id=int(atom.selected_token_id),
+        latent_valid_token_ids=atom.latent_valid_token_ids,
+        coverage_target_weights=atom.coverage_target_weights,
+        loss_tags=atom.loss_tags,
+        loss_weight=float(atom.loss_weight),
+        coord_role=atom.coord_role,
+        provenance=atom.provenance,
+    )
+
+
+def _project_target_ir_for_segment(
     target_ir: TeacherForcingTargetIR,
     *,
     batch_index: int,
     segment_start: int,
 ) -> TeacherForcingTargetIR:
-    """Project segment-local residual atoms to batch tensor coordinates."""
+    """Project declared residual IR position space to batch tensor coordinates."""
 
-    atoms: list[SupervisionAtom] = []
-    for atom in target_ir.atoms:
-        atoms.append(
-            SupervisionAtom(
-                batch_index=int(batch_index),
-                logit_position=int(atom.logit_position) + int(segment_start),
-                target_position=int(atom.target_position) + int(segment_start),
-                allowed_token_roles=atom.allowed_token_roles,
-                selected_token_role=atom.selected_token_role,
-                valid_token_ids=atom.valid_token_ids,
-                selected_token_id=int(atom.selected_token_id),
-                latent_valid_token_ids=atom.latent_valid_token_ids,
-                coverage_target_weights=atom.coverage_target_weights,
-                loss_tags=atom.loss_tags,
-                loss_weight=float(atom.loss_weight),
-                coord_role=atom.coord_role,
-                provenance=atom.provenance,
-            )
+    if not target_ir.atoms:
+        return target_ir
+
+    position_space_raw = target_ir.metadata.get("position_space")
+    position_space = str(position_space_raw or "")
+    if not position_space:
+        raise ValueError(
+            "residual_set_target_ir.metadata.position_space is required "
+            "for non-empty residual_set_target_ir"
         )
+    if position_space not in {"segment_local", "batch_tensor"}:
+        raise ValueError(
+            "residual_set_target_ir.metadata.position_space must be "
+            "'segment_local' or 'batch_tensor'"
+        )
+
+    position_offset = int(segment_start) if position_space == "segment_local" else 0
+    atoms = [
+        _copy_atom_for_segment(
+            atom,
+            batch_index=int(batch_index),
+            position_offset=int(position_offset),
+        )
+        for atom in target_ir.atoms
+    ]
     metadata = dict(target_ir.metadata)
     metadata["positions_rebased"] = True
     metadata["position_space"] = "batch_tensor"
-    metadata["source_position_space"] = "segment_local"
+    metadata["source_position_space"] = position_space
     metadata["segment_start"] = int(segment_start)
     metadata["batch_index"] = int(batch_index)
     return TeacherForcingTargetIR(
@@ -213,10 +242,10 @@ def run_residual_set_correction_module(
         if role_vocab is None:
             role_vocab = _role_vocab_from_context(context)
 
-        # Stage-2 stores residual sidecars as segment-local IR at meta construction.
-        # Loss consumption happens over batch/packed tensor coordinates from
-        # iter_segment_views, so rebase immediately before validation/use.
-        target_ir = _rebase_segment_local_target_ir(
+        # Stage-2 target_builder stores residual sidecars as segment-local IR.
+        # Other producers may hand us batch-tensor IR, so project according to
+        # the explicit position_space contract before validation/use.
+        target_ir = _project_target_ir_for_segment(
             target_ir,
             batch_index=int(batch_index),
             segment_start=int(segment_start),
