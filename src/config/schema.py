@@ -2952,11 +2952,21 @@ class Stage2PipelineConfig:
                         set(ul_geometry.keys())
                         - STAGE2_RESIDUAL_SET_UL_GEOMETRY_KEYS
                     )
+                    ul_geometry_missing = (
+                        STAGE2_RESIDUAL_SET_UL_GEOMETRY_KEYS
+                        - set(ul_geometry.keys())
+                    )
                     if ul_geometry_unknown:
                         raise ValueError(
                             "Unknown stage2_ab.pipeline.objective"
                             f"[{idx}].config.ul_geometry keys for module {spec.name!r}: "
                             f"{sorted(str(k) for k in ul_geometry_unknown)}"
+                        )
+                    if ul_geometry_missing:
+                        raise ValueError(
+                            "Missing required stage2_ab.pipeline.objective"
+                            f"[{idx}].config.ul_geometry keys for module {spec.name!r}: "
+                            f"{sorted(str(k) for k in ul_geometry_missing)}"
                         )
                 if "artifact_policy" in spec.config:
                     artifact_policy = spec.config["artifact_policy"]
@@ -2969,11 +2979,21 @@ class Stage2PipelineConfig:
                         set(artifact_policy.keys())
                         - STAGE2_RESIDUAL_SET_ARTIFACT_POLICY_KEYS
                     )
+                    artifact_policy_missing = (
+                        STAGE2_RESIDUAL_SET_ARTIFACT_POLICY_KEYS
+                        - set(artifact_policy.keys())
+                    )
                     if artifact_policy_unknown:
                         raise ValueError(
                             "Unknown stage2_ab.pipeline.objective"
                             f"[{idx}].config.artifact_policy keys for module {spec.name!r}: "
                             f"{sorted(str(k) for k in artifact_policy_unknown)}"
+                        )
+                    if artifact_policy_missing:
+                        raise ValueError(
+                            "Missing required stage2_ab.pipeline.objective"
+                            f"[{idx}].config.artifact_policy keys for module {spec.name!r}: "
+                            f"{sorted(str(k) for k in artifact_policy_missing)}"
                         )
             optional_cfg = OBJECTIVE_OPTIONAL_CONFIG_KEYS.get(str(spec.name), set())
             missing_cfg = allowed_cfg - set(spec.config.keys()) - set(optional_cfg)
@@ -3045,6 +3065,8 @@ class Stage2PipelineConfig:
             and bool(residual_set.enabled)
             and stage2_trie_ce is not None
             and bool(stage2_trie_ce.enabled)
+            and "B" in residual_set.channels
+            and "B" in stage2_trie_ce.channels
         ):
             raise ValueError(
                 "residual_set_correction cannot be enabled together with "
@@ -3198,7 +3220,9 @@ class Stage2ABConfig:
                     "to avoid double supervision."
                 )
             if STAGE2_TRIE_CE_MODULE_NAME in {
-                spec.name for spec in pipeline.objective if bool(spec.enabled)
+                spec.name
+                for spec in pipeline.objective
+                if bool(spec.enabled) and "B" in spec.channels
             }:
                 raise ValueError(
                     "residual_set_correction is mutually exclusive with "

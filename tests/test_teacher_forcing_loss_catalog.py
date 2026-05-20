@@ -1,21 +1,20 @@
+import pytest
+
 from src.trainers.teacher_forcing.module_registry import (
     ALLOWED_OBJECTIVE_MODULES,
+    DIAGNOSTIC_CONFIG_ALLOWLIST,
+    DIAGNOSTIC_MODULE_CATALOG,
     OBJECTIVE_APPLICATION_PRESET_ALLOWLIST,
     OBJECTIVE_CONFIG_ALLOWLIST,
     OBJECTIVE_MODULE_CATALOG,
     OBJECTIVE_OPTIONAL_CONFIG_KEYS,
     objective_modules_for_family,
 )
-
-
-
-import pytest
-
-from src.trainers.teacher_forcing.module_registry import (
-    DIAGNOSTIC_CONFIG_ALLOWLIST,
-    DIAGNOSTIC_MODULE_CATALOG,
+from src.trainers.teacher_forcing.objective_pipeline import (
+    _validate_registry_coverage,
+    _run_residual_set_correction_module,
 )
-from src.trainers.teacher_forcing.objective_pipeline import _validate_registry_coverage
+
 
 def test_loss_catalog_drives_objective_registry_allowlists() -> None:
     assert ALLOWED_OBJECTIVE_MODULES == set(OBJECTIVE_MODULE_CATALOG)
@@ -28,7 +27,6 @@ def test_loss_catalog_drives_objective_registry_allowlists() -> None:
         assert OBJECTIVE_OPTIONAL_CONFIG_KEYS.get(name, set()) == set(
             definition.optional_config_keys
         )
-
 
 
 def test_bbox_modules_are_removed_from_objective_catalog() -> None:
@@ -76,3 +74,36 @@ def test_diagnostic_registry_drift_fails_fast() -> None:
             allowed=set(DIAGNOSTIC_MODULE_CATALOG),
             kind="diagnostic",
         )
+
+
+def test_residual_set_placeholder_only_handles_missing_residual_module() -> None:
+    with pytest.raises(NotImplementedError, match="Task 5"):
+        _run_residual_set_correction_module(context=None, spec=None)
+
+
+def test_residual_set_lazy_import_reraises_inner_module_not_found(monkeypatch) -> None:
+    import builtins
+
+    original_import = builtins.__import__
+
+    def fake_import(name, globals=None, locals=None, fromlist=(), level=0):
+        if (
+            name == "src.trainers.teacher_forcing.modules.residual_set_correction"
+            or (
+                level == 1
+                and name == "modules.residual_set_correction"
+                and fromlist == ("run_residual_set_correction_module",)
+            )
+        ):
+            raise ModuleNotFoundError(
+                "No module named 'residual_dependency'",
+                name="residual_dependency",
+            )
+        return original_import(name, globals, locals, fromlist, level)
+
+    monkeypatch.setattr(builtins, "__import__", fake_import)
+
+    with pytest.raises(ModuleNotFoundError) as exc_info:
+        _run_residual_set_correction_module(context=None, spec=None)
+
+    assert exc_info.value.name == "residual_dependency"

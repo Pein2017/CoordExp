@@ -50,6 +50,12 @@ def _run_residual_set_correction_module(
     try:
         from .modules.residual_set_correction import run_residual_set_correction_module
     except ModuleNotFoundError as exc:
+        expected_missing_modules = {
+            f"{__package__}.modules.residual_set_correction",
+            "src.trainers.teacher_forcing.modules.residual_set_correction",
+        }
+        if exc.name not in expected_missing_modules:
+            raise
         raise NotImplementedError(
             "residual_set_correction objective is registered for config/import "
             "sanity, but its loss module is implemented by Task 5."
