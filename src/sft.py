@@ -103,6 +103,7 @@ from .detection.runtime import (
 from .infer.checkpoints import load_adapter_checkpoint_info
 from .trainers import with_final_checkpoint
 from .training_runtime import (
+    TrainingRuntimePreflightResult,
     TrainingRuntimePlan,
     resolve_training_runtime_plan,
     resolve_training_runtime_profile,
@@ -307,6 +308,34 @@ class EncodedSampleCacheRuntimeConfig:
 @dataclass(frozen=True)
 class StaticPackingCacheRuntimeConfig:
     root_dir: str | None = None
+
+
+@dataclass(frozen=True)
+class SFTEncodedSampleCachePreflightDecision:
+    encoded_sample_cache_cfg: EncodedSampleCacheRuntimeConfig
+    bypass_reason: str | None = None
+    ineligible_policy: Literal["error", "bypass"] = "error"
+
+    @property
+    def bypassed(self) -> bool:
+        return self.bypass_reason is not None
+
+    def bypass_info_for_split(
+        self,
+        *,
+        dataset_split: Literal["train", "eval"],
+        dataset_jsonl: str | None,
+    ) -> dict[str, Any] | None:
+        if self.bypass_reason is None:
+            return None
+        return {
+            "enabled": True,
+            "status": "bypassed",
+            "reason": self.bypass_reason,
+            "policy": self.ineligible_policy,
+            "dataset_split": dataset_split,
+            "dataset_jsonl": dataset_jsonl,
+        }
 
 
 def _parse_packing_config(
@@ -1834,10 +1863,39 @@ def _validate_sft_runtime_preflight(
     *,
     training_config: Any,
     runtime_plan: TrainingRuntimePlan,
-) -> None:
-    validate_training_runtime_preflight(
+) -> TrainingRuntimePreflightResult:
+    return validate_training_runtime_preflight(
         training_config,
         runtime_plan=runtime_plan,
+    )
+
+
+def _apply_sft_encoded_sample_cache_preflight(
+    *,
+    encoded_sample_cache_cfg: EncodedSampleCacheRuntimeConfig,
+    preflight_result: TrainingRuntimePreflightResult,
+) -> SFTEncodedSampleCachePreflightDecision:
+    encoded_cache = preflight_result.encoded_cache
+    if (
+        encoded_cache.enabled
+        and not encoded_cache.allowed
+        and encoded_cache.ineligible_policy == "bypass"
+        and encoded_cache.bypass_reason is not None
+    ):
+        return SFTEncodedSampleCachePreflightDecision(
+            encoded_sample_cache_cfg=EncodedSampleCacheRuntimeConfig(
+                enabled=False,
+                root_dir=encoded_sample_cache_cfg.root_dir,
+                ineligible_policy=encoded_sample_cache_cfg.ineligible_policy,
+                wait_timeout_s=encoded_sample_cache_cfg.wait_timeout_s,
+                max_resident_shards=encoded_sample_cache_cfg.max_resident_shards,
+            ),
+            bypass_reason=encoded_cache.bypass_reason,
+            ineligible_policy=encoded_cache.ineligible_policy,
+        )
+    return SFTEncodedSampleCachePreflightDecision(
+        encoded_sample_cache_cfg=encoded_sample_cache_cfg,
+        ineligible_policy=encoded_cache.ineligible_policy,
     )
 
 
@@ -2565,12 +2623,6 @@ def main():
     encoded_sample_cache_cfg = _parse_encoded_sample_cache_config(
         training_config.training, train_args
     )
-    if latest_detection_config is not None:
-        _assert_latest_detection_runtime_supported(
-            latest_detection_config,
-            encoded_sample_cache_cfg=encoded_sample_cache_cfg,
-            tokenizer=getattr(sft.template, "tokenizer", None),
-        )
     static_packing_cache_cfg = _parse_static_packing_cache_config(
         training_config.training
     )
@@ -2578,10 +2630,27 @@ def main():
     eval_encoded_sample_cache_info: dict[str, Any] | None = None
     trainer_variant = getattr(train_args, "trainer_variant", None)
     runtime_plan = resolve_training_runtime_plan(trainer_variant)
-    _validate_sft_runtime_preflight(
+    runtime_preflight = _validate_sft_runtime_preflight(
         training_config=training_config,
         runtime_plan=runtime_plan,
     )
+    encoded_sample_cache_decision = _apply_sft_encoded_sample_cache_preflight(
+        encoded_sample_cache_cfg=encoded_sample_cache_cfg,
+        preflight_result=runtime_preflight,
+    )
+    encoded_sample_cache_cfg = encoded_sample_cache_decision.encoded_sample_cache_cfg
+    train_encoded_sample_cache_info = (
+        encoded_sample_cache_decision.bypass_info_for_split(
+            dataset_split="train",
+            dataset_jsonl=str(train_jsonl) if train_jsonl else None,
+        )
+    )
+    if latest_detection_config is not None:
+        _assert_latest_detection_runtime_supported(
+            latest_detection_config,
+            encoded_sample_cache_cfg=encoded_sample_cache_cfg,
+            tokenizer=getattr(sft.template, "tokenizer", None),
+        )
     packing_cfg = _parse_packing_config(
         training_config.training, sft.template, train_args
     )
@@ -3204,6 +3273,14 @@ def main():
         latest_detection_config.data.val_jsonl
         if latest_detection_config is not None
         else custom_config.val_jsonl
+    )
+    eval_encoded_sample_cache_info = (
+        encoded_sample_cache_decision.bypass_info_for_split(
+            dataset_split="eval",
+            dataset_jsonl=str(val_jsonl) if val_jsonl else None,
+        )
+        if val_jsonl
+        else None
     )
     eval_encoded_sample_cache_request = _build_encoded_sample_cache_request(
         runtime_cfg=encoded_sample_cache_cfg,

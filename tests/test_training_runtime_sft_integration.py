@@ -6,8 +6,11 @@ import pytest
 
 import src.sft as sft_module
 from src.sft import (
+    EncodedSampleCacheRuntimeConfig,
     PackingRuntimeConfig,
+    _apply_sft_encoded_sample_cache_preflight,
     _build_pipeline_manifest,
+    _build_encoded_sample_cache_request,
     _apply_rollout_decode_batch_size_override,
     _is_rollout_matching_variant,
     _validate_sft_runtime_preflight,
@@ -110,6 +113,82 @@ def test_sft_runtime_preflight_rejects_teacher_forcing_encoded_sample_cache() ->
             training_config=config,
             runtime_plan=resolve_training_runtime_plan("stage2_two_channel"),
         )
+
+
+def test_sft_runtime_preflight_bypasses_teacher_forcing_encoded_sample_cache() -> None:
+    config = SimpleNamespace(
+        objective=SimpleNamespace(
+            id="teacher_forcing",
+            target_ir=SimpleNamespace(
+                rollin_policy=SimpleNamespace(
+                    name="random_permutation",
+                    base_seed=17,
+                )
+            ),
+        ),
+        training={
+            "encoded_sample_cache": {
+                "enabled": True,
+                "root_dir": "/tmp/coordexp-cache",
+                "ineligible_policy": "bypass",
+            }
+        },
+    )
+
+    preflight = _validate_sft_runtime_preflight(
+        training_config=config,
+        runtime_plan=resolve_training_runtime_plan("stage2_two_channel"),
+    )
+    decision = _apply_sft_encoded_sample_cache_preflight(
+        encoded_sample_cache_cfg=EncodedSampleCacheRuntimeConfig(
+            enabled=True,
+            root_dir="/tmp/coordexp-cache",
+            ineligible_policy="bypass",
+        ),
+        preflight_result=preflight,
+    )
+
+    assert decision.encoded_sample_cache_cfg.enabled is False
+    assert (
+        decision.bypass_reason
+        == "teacher_forcing_epoch_varying_rollin"
+    )
+    assert decision.bypass_info_for_split(
+        dataset_split="train",
+        dataset_jsonl="/tmp/train.jsonl",
+    ) == {
+        "enabled": True,
+        "status": "bypassed",
+        "reason": "teacher_forcing_epoch_varying_rollin",
+        "policy": "bypass",
+        "dataset_split": "train",
+        "dataset_jsonl": "/tmp/train.jsonl",
+    }
+    assert (
+        _build_encoded_sample_cache_request(
+            runtime_cfg=decision.encoded_sample_cache_cfg,
+            training_config=SimpleNamespace(global_max_length=1024, template={}),
+            custom_config=SimpleNamespace(
+                user_prompt="prompt",
+                emit_norm="none",
+                json_format="standard",
+                bbox_format="xyxy",
+                detection_sequence_format="coordjson",
+                object_ordering="random_permutation",
+                object_field_order="desc_first",
+                use_summary=False,
+                offline_max_pixels=None,
+                coord_tokens=None,
+            ),
+            template=SimpleNamespace(max_length=1024),
+            train_args=SimpleNamespace(max_model_len=1024),
+            dataset_seed=17,
+            dataset_jsonl="/tmp/train.jsonl",
+            dataset_split="train",
+            dataset_mode="dense",
+        )
+        is None
+    )
 
 
 def test_static_packing_accumulation_warning_is_skipped_for_trainer_owned_packing(
