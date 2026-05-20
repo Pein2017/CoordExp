@@ -93,6 +93,22 @@ def make_text_action(token_id: int, *, loss_weight: float = 1.0) -> ValidAction:
     )
 
 
+def make_coord_action(
+    token_id: int,
+    coord_role: CoordRole,
+    *,
+    selected_object_id: str = "a",
+) -> ValidAction:
+    return ValidAction(
+        token_id=token_id,
+        token_role=TokenRole.COORD,
+        token_text=str(token_id),
+        candidate_ids_after=frozenset({selected_object_id}),
+        selected_object_id=selected_object_id,
+        coord_role=coord_role,
+    )
+
+
 def make_event(
     *,
     kind: CorrectionKind = "transition_failure",
@@ -543,6 +559,108 @@ def test_event_to_ir_rejects_mixed_valid_action_roles_in_one_draft() -> None:
     )
 
     with pytest.raises(ValueError, match="same token role"):
+        build_residual_set_target_ir(
+            input_ids=input_ids,
+            batch_index=0,
+            events=(event,),
+            role_vocab=make_role_vocab(),
+        )
+
+
+def test_event_to_ir_rejects_bool_loss_weight_metadata() -> None:
+    input_ids = torch.tensor([[11, 22, 101, 102, 103]])
+    event = make_event(
+        target_position=2,
+        logit_position=1,
+        valid_actions=(make_text_action(101, loss_weight=True),),
+    )
+
+    with pytest.raises(ValueError, match="loss_weight"):
+        build_residual_set_target_ir(
+            input_ids=input_ids,
+            batch_index=0,
+            events=(event,),
+            role_vocab=make_role_vocab(),
+        )
+
+
+def test_event_to_ir_keeps_provenance_compact_and_uses_live_token() -> None:
+    input_ids = torch.tensor([[11, 22, 101, 102, 103]])
+    event = make_event(
+        target_position=2,
+        logit_position=1,
+        valid_actions=(make_text_action(101), make_text_action(201)),
+        draft_metadata={
+            "observed_token_id": 999,
+            "anchor_position": 1,
+            "raw_bad_token": {"token": 999},
+            "large_payload": list(range(100)),
+        },
+        event_metadata={
+            "rollout_index": 7,
+            "raw_rollout": [{"token_id": token_id} for token_id in range(100)],
+        },
+    )
+
+    ir = build_residual_set_target_ir(
+        input_ids=input_ids,
+        batch_index=0,
+        events=(event,),
+        role_vocab=make_role_vocab(),
+    )
+
+    atom = ir.atoms[0]
+    assert atom.selected_token_id == 101
+    assert atom.provenance["observed_token_id"] == 999
+    assert atom.provenance["rollout_index"] == 7
+    assert atom.provenance["anchor_position"] == 1
+    assert "raw_bad_token" not in atom.provenance
+    assert "raw_rollout" not in atom.provenance
+    assert "large_payload" not in atom.provenance
+
+
+def test_stop_draft_to_ir_uses_configured_stop_token() -> None:
+    input_ids = torch.tensor([[11, 22, 999]])
+    stop_action = ValidAction(
+        token_id=999,
+        token_role=TokenRole.STOP,
+        token_text="<|im_end|>",
+        candidate_ids_after=frozenset(),
+    )
+    event = make_event(
+        kind="premature_stop",
+        target_position=2,
+        logit_position=1,
+        valid_actions=(stop_action,),
+    )
+
+    ir = build_residual_set_target_ir(
+        input_ids=input_ids,
+        batch_index=0,
+        events=(event,),
+        role_vocab=make_role_vocab(),
+    )
+
+    atom = ir.atoms[0]
+    assert atom.selected_token_role is TokenRole.STOP
+    assert atom.allowed_token_roles == frozenset({TokenRole.STOP})
+    assert atom.selected_token_id == 999
+    assert atom.valid_token_ids == frozenset({999})
+    assert atom.coord_role is None
+
+
+def test_event_to_ir_rejects_same_role_mixed_coord_roles_in_one_draft() -> None:
+    input_ids = torch.tensor([[11, 22, coord_token(120), 102, 103]])
+    event = make_event(
+        target_position=2,
+        logit_position=1,
+        valid_actions=(
+            make_coord_action(coord_token(120), "x1"),
+            make_coord_action(coord_token(20), "y1"),
+        ),
+    )
+
+    with pytest.raises(ValueError, match="coord_role"):
         build_residual_set_target_ir(
             input_ids=input_ids,
             batch_index=0,

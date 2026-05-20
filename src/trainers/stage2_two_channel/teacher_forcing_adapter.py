@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import math
+from numbers import Real
 from typing import Any, Mapping, Sequence, cast
 
 import torch
@@ -322,11 +324,24 @@ def _live_token_id(
 
 def _action_loss_weight(action: Any) -> float:
     if hasattr(action, "loss_weight"):
-        return float(action.loss_weight)
-    metadata = getattr(action, "metadata", {})
-    if isinstance(metadata, Mapping) and "loss_weight" in metadata:
-        return float(metadata["loss_weight"])
-    return 1.0
+        value = action.loss_weight
+        source = "action.loss_weight"
+    else:
+        metadata = getattr(action, "metadata", {})
+        if not isinstance(metadata, Mapping) or "loss_weight" not in metadata:
+            return 1.0
+        value = metadata["loss_weight"]
+        source = "action.metadata['loss_weight']"
+    if isinstance(value, bool) or not isinstance(value, Real):
+        raise ValueError(
+            f"residual_set correction {source} must be a finite nonnegative real number"
+        )
+    loss_weight = float(value)
+    if not math.isfinite(loss_weight) or loss_weight < 0.0:
+        raise ValueError(
+            f"residual_set correction {source} must be a finite nonnegative real number"
+        )
+    return loss_weight
 
 
 def _residual_atom_provenance(
@@ -337,25 +352,21 @@ def _residual_atom_provenance(
     observed_token_id: Any,
     valid_ids: frozenset[int],
 ) -> Mapping[str, Any]:
-    provenance = dict(event.metadata)
-    provenance.update(draft.metadata)
     rollout_index = draft.metadata.get("rollout_index", event.metadata.get("rollout_index"))
     anchor_position = draft.metadata.get(
         "anchor_position", event.metadata.get("anchor_position")
     )
-    provenance.update(
-        {
-            "stage": "stage2",
-            "channel": "B",
-            "correction_kind": draft.correction_kind,
-            "draft_index": int(draft_index),
-            "observed_token_id": _optional_int(observed_token_id),
-            "rollout_index": _optional_int(rollout_index),
-            "sample_id": event.sample_id,
-            "anchor_position": _optional_int(anchor_position),
-            "valid_token_ids": tuple(sorted(valid_ids)),
-        }
-    )
+    provenance = {
+        "stage": "stage2",
+        "channel": "B",
+        "correction_kind": draft.correction_kind,
+        "draft_index": int(draft_index),
+        "observed_token_id": _optional_int(observed_token_id),
+        "rollout_index": _optional_int(rollout_index),
+        "sample_id": event.sample_id,
+        "anchor_position": _optional_int(anchor_position),
+        "valid_token_ids": tuple(sorted(valid_ids)),
+    }
     if event.correction_kind != draft.correction_kind:
         provenance["event_correction_kind"] = event.correction_kind
     return provenance
