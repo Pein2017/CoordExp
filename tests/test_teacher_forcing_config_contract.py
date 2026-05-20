@@ -4,6 +4,7 @@ import copy
 from dataclasses import asdict, replace
 import sys
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -11,6 +12,7 @@ from src.bootstrap.pipeline_manifest import build_pipeline_manifest
 from src.config.loader import ConfigLoader
 from src.config.schema import LatestDetectionTrainingConfig, TrainingConfig
 from src.detection.runtime import (
+    assert_latest_detection_runtime_supported,
     build_latest_detection_dataset,
     build_latest_detection_runtime_custom_shim,
     latest_detection_mode,
@@ -542,6 +544,34 @@ def test_latest_teacher_forcing_coverage_profile_still_requires_runtime_wiring()
         match=r"currently supports objective\.profile",
     ):
         latest_detection_mode(cfg)
+
+
+@pytest.mark.parametrize(
+    ("section", "key", "match"),
+    [
+        ("training", "packing", r"training\.packing=false"),
+        ("training", "eval_packing", r"training\.eval_packing=false"),
+        ("packing", "static_packing", r"packing\.static_packing=false"),
+        ("packing", "padding_free_packed", r"packing\.padding_free_packed=false"),
+    ],
+)
+def test_latest_teacher_forcing_runtime_rejects_packing_surfaces(
+    section: str,
+    key: str,
+    match: str,
+) -> None:
+    cfg = LatestDetectionTrainingConfig.from_mapping(_latest_teacher_payload())
+    if section == "training":
+        cfg = replace(cfg, training={**cfg.training, key: True})
+    else:
+        cfg = replace(cfg, packing=replace(cfg.packing, **{key: True}))
+
+    with pytest.raises(ValueError, match=match):
+        assert_latest_detection_runtime_supported(
+            cfg,
+            encoded_sample_cache_cfg=SimpleNamespace(enabled=False),
+            tokenizer=None,
+        )
 
 
 def test_checked_in_stage2_teacher_forcing_smoke_config_materializes() -> None:

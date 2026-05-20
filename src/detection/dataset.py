@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import copy
+import inspect
 import random
 from dataclasses import dataclass, replace
 from pathlib import Path
@@ -204,6 +205,29 @@ class DetectionDatasetRuntimeConfig:
     type_gate_config: Any | None = None
     teacher_forcing_profile: str | None = None
     teacher_forcing_rollin_base_seed: int | None = None
+
+
+def _encode_swift_template_no_resize(
+    swift_template: Any,
+    payload: Mapping[str, Any],
+) -> Any:
+    encode = getattr(swift_template, "encode")
+    if _callable_accepts_keyword(encode, "do_resize"):
+        return encode(payload, return_length=True, do_resize=False)
+    return encode(payload, return_length=True)
+
+
+def _callable_accepts_keyword(callable_obj: Any, keyword: str) -> bool:
+    try:
+        signature = inspect.signature(callable_obj)
+    except (TypeError, ValueError):
+        return True
+    for parameter in signature.parameters.values():
+        if parameter.kind is inspect.Parameter.VAR_KEYWORD:
+            return True
+        if parameter.name == keyword:
+            return True
+    return False
 
 
 class DetectionTrainingDataset(Dataset):
@@ -556,9 +580,9 @@ class DetectionTrainingDataset(Dataset):
     def _encode_messages(
         self, messages: Sequence[Mapping[str, Any]]
     ) -> MutableMapping[str, Any]:
-        encoded = self.swift_template.encode(
+        encoded = _encode_swift_template_no_resize(
+            self.swift_template,
             {"messages": copy.deepcopy([dict(message) for message in messages])},
-            return_length=True,
         )
         if not isinstance(encoded, MutableMapping):
             raise TypeError("swift_template.encode must return a mutable mapping")

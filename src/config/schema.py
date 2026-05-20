@@ -3635,16 +3635,17 @@ def _latest_detection_validate_packing_runtime_contract(
     training_packing = _latest_detection_runtime_bool(training, "packing")
     training_eval_packing = _latest_detection_runtime_bool(training, "eval_packing")
 
-    if packing.static_packing and not training_packing:
-        raise ValueError(
-            "packing.static_packing=true requires training.packing=true for latest detection runtime materialization."
-        )
-
     if getattr(objective, "id", None) == TEACHER_FORCING_OBJECTIVE_ID:
         if training_packing:
             raise ValueError(
                 "objective.id=teacher_forcing currently rejects training.packing=true; "
                 "exact atom-position packing mapping is not implemented"
+            )
+        if training_eval_packing:
+            raise ValueError(
+                "objective.id=teacher_forcing currently rejects "
+                "training.eval_packing=true; exact atom-position packing mapping "
+                "is not implemented"
             )
         if packing.static_packing:
             raise ValueError(
@@ -3652,7 +3653,18 @@ def _latest_detection_validate_packing_runtime_contract(
                 "packing.static_packing=true; exact atom-position packing mapping "
                 "is not implemented"
             )
+        if packing.padding_free_packed:
+            raise ValueError(
+                "objective.id=teacher_forcing currently rejects "
+                "packing.padding_free_packed=true; exact atom-position packing "
+                "mapping is not implemented"
+            )
         return
+
+    if packing.static_packing and not training_packing:
+        raise ValueError(
+            "packing.static_packing=true requires training.packing=true for latest detection runtime materialization."
+        )
 
     if objective.id != "recursive_detection_ce":
         return

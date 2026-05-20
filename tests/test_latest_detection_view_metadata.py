@@ -36,6 +36,24 @@ from src.training.teacher_forcing.vocab import RoleVocab
 from test_detection_training_dataset import FakeSwiftTemplate
 
 
+class RequiresNoResizeSwiftTemplate(FakeSwiftTemplate):
+    def __init__(self) -> None:
+        super().__init__()
+        self.do_resize_values: list[bool | None] = []
+
+    def encode(
+        self,
+        payload: Mapping[str, Any],
+        *,
+        return_length: bool,
+        do_resize: bool | None = None,
+    ) -> dict[str, Any]:
+        self.do_resize_values.append(do_resize)
+        if do_resize is not False:
+            raise AssertionError("latest detection encode must pass do_resize=False")
+        return super().encode(payload, return_length=return_length)
+
+
 def _canonical_all_proxy_row() -> dict[str, Any]:
     return {
         "images": ["images/val2017/example.jpg"],
@@ -444,6 +462,35 @@ def test_teacher_forcing_hard_sft_dataset_emits_aligned_target_ir(
     strip_candidate.pop("length", None)
     model_inputs = strip_non_model_detection_sidecars(strip_candidate)
     assert TEACHER_FORCING_TARGET_IR_KEY not in model_inputs
+
+
+def test_teacher_forcing_dataset_encode_passes_do_resize_false_when_supported(
+    tmp_path: Path,
+) -> None:
+    jsonl_path = tmp_path / "train.coord.jsonl"
+    _write_jsonl(jsonl_path, [_canonical_all_proxy_row()])
+    _ensure_image(tmp_path)
+    swift_template = RequiresNoResizeSwiftTemplate()
+    dataset = DetectionTrainingDataset.from_jsonl(
+        jsonl_path,
+        swift_template=swift_template,
+        image_root=tmp_path / "image-root",
+        detection_template_id="compact_full",
+        mode="random_order_sft",
+        object_ordering="sorted",
+        user_prompt="Detect every object.",
+        system_prompt="You are a detector.",
+        seed=123,
+        state_weighting="none",
+        normalization="token_mean",
+        teacher_forcing_profile="hard_sft",
+        teacher_forcing_rollin_base_seed=17,
+    )
+
+    sample = dataset[0]
+
+    assert TEACHER_FORCING_TARGET_IR_KEY in sample
+    assert swift_template.do_resize_values == [False]
 
 
 def test_teacher_forcing_pure_valid_set_dataset_emits_ambiguous_atoms(
