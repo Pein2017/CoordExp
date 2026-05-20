@@ -5,7 +5,7 @@ doc_type: reference
 status: canonical
 domain: training
 summary: Stage-1 objective surfaces and coord-token training behavior.
-updated: 2026-05-14
+updated: 2026-05-20
 ---
 
 # Coord Objective & Adapter
@@ -28,13 +28,11 @@ Scope note:
   - `custom.coord_soft_ce_w1.*`
   - `custom.bbox_geo.*`
   - `custom.bbox_size_aux.*`
-- Raw-text norm1000 and bbox-geometry ablations remain legacy Stage-1 SFT
-  surfaces, not latest compact detection overlays. Materialization verification
-  should include:
-  - `configs/stage1/profiles/2b/raw_text_xyxy_pure_ce_coco80_desc_first_1024_lvis_proxy.yaml`
-  - `configs/stage1/profiles/2b/bbox_geo_center_size_coco80_desc_first_1024_lvis_proxy.yaml`
-- Compact prefix roll-in multi-positive training now lives as the latest-detection `prefix_rollin_et_rmp_ce` ablation surface, not as a legacy custom trainer surface. The first checked-in route is `configs/stage1/recursive_detection_ce_latest/ablation/compact_full_prefix_rollin_balance2.yaml`; treat it as E1 ablation/smoke validation, not production.
-- Geometry-aware coordinate SoftCE for latest compact recursive detection is scoped to the historical A5-iou-gibbs/A6-ciou-gibbs provenance configs and the active focused cap8 instance-trie successors under `configs/stage1/recursive_detection_ce_latest/prod/`. It uses `objective.coord_soft_ce` and does not route through legacy `custom.coord_soft_ce_w1.*`.
+- Raw-text norm1000 and standalone bbox-geometry profile YAMLs were removed
+  from the current runnable config surface. Historical evidence remains in
+  `progress/`, archived OpenSpec changes, and run artifacts.
+- Compact prefix roll-in multi-positive training now lives as the detection `prefix_rollin_et_rmp_ce` ablation surface, not as a legacy custom trainer surface. The first checked-in route is `configs/stage1/recursive_detection_ce/ablation/compact_full_prefix_rollin_balance2.yaml`; treat it as E1 ablation/smoke validation, not production.
+- Geometry-aware coordinate SoftCE for compact recursive detection is scoped to the retained focused cap8 instance-trie successors under `configs/stage1/recursive_detection_ce/prod/`. It uses `objective.coord_soft_ce` and does not route through legacy `custom.coord_soft_ce_w1.*`.
 - Narrow V1 exception:
   - `custom.bbox_format: cxcy_logw_logh` or `custom.bbox_format: cxcywh`
     defines an experimental Stage-1-only profile
@@ -123,14 +121,12 @@ custom:
 
 ## Stage-1 compact recursive detection and prefix roll-in
 
-The active compact Stage-1 owner is the latest detection stack under `src/detection/`. There are now two distinct latest-schema routes:
+The active compact Stage-1 owner is the detection stack under `src/detection/`. There are now two distinct current-schema routes:
 
-- `configs/stage1/recursive_detection_ce_latest/prod/compact_full_support2.yaml` remains the random-permutation ET-RMP-CE production baseline/comparator.
-- `configs/stage1/recursive_detection_ce_latest/prod/compact_full_support2_iou_gibbs_softce_a5.yaml` is historical A5-iou-gibbs negative-result/superseded provenance: A2/support2 plus `iou_gibbs_v0` coordinate soft targets with `tau=0.0090909091` from the train one-token IoU-loss median.
-- `configs/stage1/recursive_detection_ce_latest/prod/compact_full_support2_ciou_gibbs_softce_a6.yaml` is historical paired A6-ciou-gibbs negative-result/superseded provenance: same setup as historical A5 but with `ciou_gibbs_v0`; production preparation assumed a separate 4-GPU slice for A5 and A6 rather than one 8-GPU run.
-- `configs/stage1/recursive_detection_ce_latest/prod/compact_full_support2_instance_trie_focused_cap8_frac0p04_mix0p1.yaml` is the active ablation successor config, with `cap8_frac0p06_mix0p1` as the slope ablation and `cap8_frac0p04_mix0p2` as the strength ablation; see [`INSTANCE_TRIE_GAUSSIAN_SOFTCE_DRAFT.md`](INSTANCE_TRIE_GAUSSIAN_SOFTCE_DRAFT.md). These configs use type-gated schema/desc/coord/eos positions, structural boundary hard CE, description hard CE plus trie support/balance, and coord-vocab-only Gaussian SoftCE over active-branch remaining-instance mixtures. The coordinate target uses the focused R95 policy `floor(min(cap, fraction * axis_len))` with default cap8/4%/mix0.1, replacing the earlier unconstrained `sqrt(axis + 1)` wide-span draft behavior. Treat this successor as an ablation/smoke surface, not production-approved behavior, until production-scale validation evidence and explicit promotion approval are recorded.
-- `configs/stage1/recursive_detection_ce_latest/ablation/compact_full_prefix_rollin_balance2.yaml` is the E1 `prefix_rollin_et_rmp_ce` ablation route for Prefix-Closed Multi-Target SFT.
-- `configs/stage1/recursive_detection_ce_latest/ablation/compact_full_prefix_rollin_separator2.yaml` is the E2 separator-continue ablation. It keeps E1 support/balance/type-gate/EOS settings and changes only the append-boundary weights so the `\n` continuation token gets more pressure before `<|object_ref_start|>` can be emitted.
+- `configs/stage1/recursive_detection_ce/prod/compact_full_support2.yaml` remains the random-permutation ET-RMP-CE production baseline/comparator.
+- `configs/stage1/recursive_detection_ce/prod/compact_full_support2_instance_trie_focused_cap8_frac0p04_mix0p1.yaml` is the active ablation successor config, with `cap8_frac0p06_mix0p1` as the slope ablation and `cap8_frac0p04_mix0p2` as the strength ablation; see [`INSTANCE_TRIE_GAUSSIAN_SOFTCE_DRAFT.md`](INSTANCE_TRIE_GAUSSIAN_SOFTCE_DRAFT.md). These configs use type-gated schema/desc/coord/eos positions, structural boundary hard CE, description hard CE plus trie support/balance, and coord-vocab-only Gaussian SoftCE over active-branch remaining-instance mixtures. The coordinate target uses the focused R95 policy `floor(min(cap, fraction * axis_len))` with default cap8/4%/mix0.1, replacing the earlier unconstrained `sqrt(axis + 1)` wide-span draft behavior. Treat this successor as an ablation/smoke surface, not production-approved behavior, until production-scale validation evidence and explicit promotion approval are recorded.
+- `configs/stage1/recursive_detection_ce/ablation/compact_full_prefix_rollin_balance2.yaml` is the E1 `prefix_rollin_et_rmp_ce` ablation route for Prefix-Closed Multi-Target SFT.
+- `configs/stage1/recursive_detection_ce/ablation/compact_full_prefix_rollin_separator2.yaml` is the E2 separator-continue ablation. It keeps E1 support/balance/type-gate/EOS settings and changes only the append-boundary weights so the `\n` continuation token gets more pressure before `<|object_ref_start|>` can be emitted.
 
 `prefix_rollin_et_rmp_ce` is compact-full only. It requires `detection_template.id: compact_full`, masks roll-in prefix labels, samples `K` uniformly over `[0, object_count]`, keeps `suffix_order: same_sampled_permutation` for V1, and expresses support/balance weights under `objective.target`, append-boundary weights under `objective.boundary`, and not obsolete flat trie-weight aliases.
 
@@ -239,8 +235,8 @@ hyperparameters based on decode under-generation alone:
 
 ```bash
 conda run -n ms python -m src.analysis.prefix_rollin_teacher_forced_diagnostic \
-  --config configs/stage1/recursive_detection_ce_latest/smoke/compact_full_prefix_rollin_adapter_tiny.yaml \
-  --checkpoint outputs/stage1_2b/recursive_detection_ce_latest/compact_full_et_rmp_ce_support2_bsz16_4epoch_tokenrows_v2/compact-full-et-rmp-ce-support2-bsz16-4epoch-tokenrows-v2/v0-20260504-071356/checkpoint-3664 \
+  --config configs/stage1/recursive_detection_ce/smoke/compact_full_prefix_rollin_tiny.yaml \
+  --checkpoint outputs/stage1_2b/recursive_detection_ce/compact_full_et_rmp_ce_support2_bsz16_4epoch_tokenrows_v2/compact-full-et-rmp-ce-support2-bsz16-4epoch-tokenrows-v2/v0-20260504-071356/checkpoint-3664 \
   --split val \
   --limit 8 \
   --k-values every \
@@ -267,13 +263,13 @@ mode:
 
 ```bash
 conda run -n ms python -m src.analysis.prefix_rollin_teacher_forced_diagnostic \
-  --config configs/stage1/recursive_detection_ce_latest/smoke/compact_full_prefix_rollin_adapter_tiny.yaml \
-  --checkpoint outputs/stage1_2b/recursive_detection_ce_latest/compact_full_et_rmp_ce_support2_bsz16_4epoch_tokenrows_v2/compact-full-et-rmp-ce-support2-bsz16-4epoch-tokenrows-v2/v0-20260504-071356/checkpoint-3664 \
+  --config configs/stage1/recursive_detection_ce/smoke/compact_full_prefix_rollin_tiny.yaml \
+  --checkpoint outputs/stage1_2b/recursive_detection_ce/compact_full_et_rmp_ce_support2_bsz16_4epoch_tokenrows_v2/compact-full-et-rmp-ce-support2-bsz16-4epoch-tokenrows-v2/v0-20260504-071356/checkpoint-3664 \
   --split val \
   --limit 8 \
   --prefix-modes generated_prefix \
-  --decode-artifact temp/infer/recursive_detection_ce_latest/smoke_compact_full_support2_tokenrows_v2_ckpt3664_hf_limit8/gt_vs_pred.jsonl \
-  --trace-artifact temp/infer/recursive_detection_ce_latest/smoke_compact_full_support2_tokenrows_v2_ckpt3664_hf_limit8/pred_token_trace.jsonl \
+  --decode-artifact temp/infer/recursive_detection_ce/smoke_compact_full_support2_tokenrows_v2_ckpt3664_hf_limit8/gt_vs_pred.jsonl \
+  --trace-artifact temp/infer/recursive_detection_ce/smoke_compact_full_support2_tokenrows_v2_ckpt3664_hf_limit8/pred_token_trace.jsonl \
   --output-dir temp/prefix_rollin_generated_prefix_probe_limit8
 ```
 
@@ -333,144 +329,6 @@ Evaluation note:
   `public_data/<dataset>/<preset>_cxcy_logw_logh/train.coord.jsonl` or
   `public_data/<dataset>/<preset>_cxcywh/train.coord.jsonl` rather
   than a runtime reinterpretation of canonical preset JSONL
-
-## Stage-1 raw-text xyxy benchmark
-
-The minimal raw-text benchmark keeps canonical `xyxy` geometry and the shared
-norm1000 lattice, but removes coord-token rendering:
-
-Materialized legacy profile:
-
-```text
-configs/stage1/profiles/2b/raw_text_xyxy_pure_ce_coco80_desc_first_1024_lvis_proxy.yaml
-```
-
-- train from canonical `train.norm.jsonl` / `val.norm.jsonl`
-- set `custom.coord_tokens.enabled: false`
-- keep `custom.coord_tokens.skip_bbox_norm: true`
-- keep `custom.bbox_format: xyxy`
-- keep `custom.coord_soft_ce_w1.enabled: false` for the pure-CE slice
-
-Inference/eval for this benchmark must stay explicit:
-
-- `infer.mode: text`
-- `infer.pred_coord_mode: norm1000`
-- `infer.bbox_format: xyxy`
-
-Evaluation and visualization always canonicalize through
-`norm1000 -> pixel-space xyxy` using the per-record image `width` and `height`
-before drawing boxes or scoring metrics. Score-aware mAP for this benchmark
-comes from numeric-span confidence post-op on the raw bbox integers rather than
-from constant-score compatibility artifacts.
-
-## Stage-1 bbox geometry loss
-
-Stage-1 can also supervise decoded bbox geometry directly from the same
-teacher-forced coord logits, without switching to a Stage-2 trainer variant.
-This remains a legacy Stage-1 SFT surface, not a latest compact detection
-overlay.
-
-Materialized legacy profile:
-
-```text
-configs/stage1/profiles/2b/bbox_geo_center_size_coco80_desc_first_1024_lvis_proxy.yaml
-```
-
-```yaml
-custom:
-  bbox_geo:
-    enabled: true
-    parameterization: xyxy
-    smoothl1_weight: 0.0
-    ciou_weight: 1.0
-    center_weight: 1.0
-    size_weight: 0.25
-```
-
-Semantics:
-
-- the Stage-1 trainer keeps standard base CE on text + structure tokens
-- coord-token positions are still supervised from labels
-- decoded bbox coordinates are produced by the same expectation decode used by
-  the existing bbox-size auxiliary path
-- outward `bbox_2d` supervision remains canonical `xyxy`; `parameterization:
-  center_size` changes only the internal regression loss-space
-- `smoothl1_weight` and `ciou_weight` gate the two decoded-box geometry atoms
-- `parameterization: center_size` derives `(cx, cy, log_w, log_h)` from the
-  canonical decoded box, applies stronger center supervision plus softer
-  size supervision, and still keeps CIoU on canonical `xyxy`
-- `center_weight` and `size_weight` only affect the internal regression term
-  when `parameterization: center_size`; legacy configs that only specify
-  `enabled`, `smoothl1_weight`, and `ciou_weight` continue to resolve to
-  `parameterization: xyxy`
-- this Stage-1 surface is intentionally config-first and narrow; Stage-2
-  pipeline-declared configs should continue to express geometry through the
-  `bbox_geo` objective module instead of `custom.bbox_geo`
-- `loss/geo/bbox_smoothl1` stays the stable metric key for the configured bbox
-  regression term, so compare it across runs only after joining against
-  `resolved_config.json`
-
-This is the intended way to run a legacy pure-SFT Stage-1 recipe with
-hard CE + soft CE + W1 + CIoU + bbox-size aux enabled together. It does not
-describe the narrower `cxcy_logw_logh` V1 experiment above.
-
-## Decoded BBox Geometry Loss (Stage-1)
-
-Standard Stage-1 SFT can optionally add decoded bbox geometry supervision from
-the same forward logits used for coord-token teacher forcing.
-
-```yaml
-custom:
-  bbox_geo:
-    enabled: true
-    parameterization: center_size
-    smoothl1_weight: 0.01
-    ciou_weight: 1.0
-    center_weight: 1.0
-    size_weight: 0.25
-```
-
-Semantics:
-
-- the model still uses standard full-vocab CE on non-coord tokens
-- coord-token positions still use `custom.coord_soft_ce_w1.*`
-- decoded bbox losses are applied only to bbox-only Stage-1 samples where the
-  coord-token stream forms explicit `bbox_2d` quartets
-- expectation decoding is used for the Stage-1 geometry probe, matching the
-  active teacher-forcing geometry baseline elsewhere in the repo
-- canonical external `bbox_2d` / `xyxy` serialization, parsing, inference, and
-  evaluation contracts do not change under `parameterization: center_size`
-- keep `smoothl1_weight > 0` when you want the center/size regression branch to
-  be active; `center_weight` and `size_weight` do not affect a CIoU-only setup
-
-Metric handles:
-
-- `loss/geo/bbox_geo`
-- `loss/geo/bbox_smoothl1`
-- `loss/geo/bbox_ciou`
-- `bbox_geo/loss_per_sample`
-- `bbox_geo/groups_total`
-- `bbox_geo/coord_slots_total`
-
-Cheaper debug loop:
-
-```bash
-PYTHONPATH=. conda run -n ms python -m src.sft \
-  --config configs/stage1/smoke/lvis_bbox_max60_1024.yaml
-```
-
-For a center-size experiment, override the same `custom.bbox_geo` block with:
-
-```yaml
-custom:
-  bbox_geo:
-    enabled: true
-    parameterization: center_size
-    smoothl1_weight: 0.01
-    ciou_weight: 1.0
-    center_weight: 1.0
-    size_weight: 0.25
-```
 
 ## Coord-offset adapter (tie-head / single shared table)
 

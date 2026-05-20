@@ -769,7 +769,7 @@ def test_default_configs_use_public_inference_only_checkpoint_policy() -> None:
     from src.config.loader import ConfigLoader
 
     audited = [
-        "configs/stage1/profiles/4b/coord_soft_ce_gate_coco80_geometry_first.yaml",
+        "configs/stage1/profiles/4b/coord_soft_ce_gate_coco80_desc_first_1024_lvis_proxy.yaml",
         "configs/stage2_two_channel/prod/ab_mixed.yaml",
     ]
 
@@ -781,12 +781,13 @@ def test_default_configs_use_public_inference_only_checkpoint_policy() -> None:
         assert "save_only_model" not in training_map
 
 
-def test_a5_a6_configs_use_restartable_public_checkpoint_policy() -> None:
+def test_instance_trie_configs_use_restartable_public_checkpoint_policy() -> None:
     from src.config.loader import ConfigLoader
 
     audited = [
-        "configs/stage1/recursive_detection_ce_latest/prod/compact_full_support2_iou_gibbs_softce_a5.yaml",
-        "configs/stage1/recursive_detection_ce_latest/prod/compact_full_support2_ciou_gibbs_softce_a6.yaml",
+        "configs/stage1/recursive_detection_ce/prod/compact_full_support2_instance_trie_focused_cap8_frac0p04_mix0p1.yaml",
+        "configs/stage1/recursive_detection_ce/prod/compact_full_support2_instance_trie_focused_cap8_frac0p04_mix0p2.yaml",
+        "configs/stage1/recursive_detection_ce/prod/compact_full_support2_instance_trie_focused_cap8_frac0p06_mix0p1.yaml",
     ]
 
     for path in audited:

@@ -75,7 +75,7 @@ def build_experiment_manifest_payload(
             "dataloader",
             "encoded_sample_cache",
             "model_source",
-            "latest_detection_objective",
+            "detection_objective",
             "token_rows",
             "dataset_source_train_jsonl",
             "dataset_source_val_jsonl",

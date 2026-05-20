@@ -1,4 +1,4 @@
-"""Length-bucketed sampling for latest detection datasets."""
+"""Length-bucketed sampling for detection datasets."""
 
 from __future__ import annotations
 
@@ -18,8 +18,8 @@ from src.detection.dataset import DetectionTrainingDataset
 
 
 @dataclass(frozen=True)
-class LatestDetectionLengthBucketingConfig:
-    """Runtime switch for row-atomic latest-detection length bucketing."""
+class DetectionLengthBucketingConfig:
+    """Runtime switch for row-atomic detection length bucketing."""
 
     enabled: bool = False
     seed: int = 0
@@ -27,7 +27,7 @@ class LatestDetectionLengthBucketingConfig:
 
 
 @dataclass(frozen=True)
-class LatestDetectionLengthBucketingProvenance:
+class DetectionLengthBucketingProvenance:
     """Sampler provenance recorded in runtime artifacts."""
 
     enabled: bool
@@ -57,8 +57,8 @@ class LatestDetectionLengthBucketingProvenance:
 
 
 @dataclass
-class LatestDetectionLengthProvider:
-    """Run-local encoded-length provider for latest detection rows."""
+class DetectionLengthProvider:
+    """Run-local encoded-length provider for detection rows."""
 
     dataset: DetectionTrainingDataset
     cache_policy: str = "run_local_only"
@@ -69,10 +69,10 @@ class LatestDetectionLengthProvider:
 
         if not isinstance(self.dataset, DetectionTrainingDataset):
             raise TypeError(
-                "LatestDetectionLengthProvider requires DetectionTrainingDataset"
+                "DetectionLengthProvider requires DetectionTrainingDataset"
             )
         if self.cache_policy != "run_local_only":
-            raise ValueError("latest detection length cache must be run_local_only")
+            raise ValueError("detection length cache must be run_local_only")
 
     def length_for_row(
         self,
@@ -115,14 +115,14 @@ class LatestDetectionLengthProvider:
         world_size: int,
         rank: int,
         drop_last: bool,
-    ) -> LatestDetectionLengthBucketingProvenance:
+    ) -> DetectionLengthBucketingProvenance:
         """Provenance summary for runtime manifests."""
 
         lengths = self.all_lengths()
         mean_length = (
             float(sum(lengths)) / float(len(lengths)) if lengths else None
         )
-        return LatestDetectionLengthBucketingProvenance(
+        return DetectionLengthBucketingProvenance(
             enabled=True,
             mode="row_atomic_length_bucketing",
             length_source="DetectionTrainingDataset.encoded_length_for_row",
@@ -140,7 +140,7 @@ class LatestDetectionLengthProvider:
         )
 
 
-class LatestDetectionLengthGroupedSampler(LengthGroupedSampler):
+class DetectionLengthGroupedSampler(LengthGroupedSampler):
     """Deterministic epoch-aware length-grouped sampler with explicit lengths."""
 
     def __init__(
@@ -172,7 +172,7 @@ class LatestDetectionLengthGroupedSampler(LengthGroupedSampler):
         return iter(indices)
 
 
-def build_latest_detection_length_grouped_sampler(
+def build_detection_length_grouped_sampler(
     *,
     batch_size: int,
     seed: int,
@@ -184,7 +184,7 @@ def build_latest_detection_length_grouped_sampler(
 ) -> Sampler[int]:
     """Length-grouped sampler with explicit precomputed lengths.
 
-    The helper accepts either a latest-detection dataset or an explicit length
+    The helper accepts either a detection dataset or an explicit length
     sequence so unit tests can cover DDP sharding without constructing full
     multimodal rows.
     """
@@ -192,7 +192,7 @@ def build_latest_detection_length_grouped_sampler(
     if lengths is None:
         if dataset is None:
             raise ValueError("dataset or lengths must be provided")
-        lengths = LatestDetectionLengthProvider(dataset).all_lengths()
+        lengths = DetectionLengthProvider(dataset).all_lengths()
     resolved_lengths = [int(value) for value in lengths]
     if not resolved_lengths:
         raise ValueError("length grouped sampler requires at least one length")
@@ -207,15 +207,15 @@ def build_latest_detection_length_grouped_sampler(
             drop_last=bool(drop_last),
         )
 
-    return LatestDetectionLengthGroupedSampler(
+    return DetectionLengthGroupedSampler(
         batch_size=int(batch_size),
         lengths=resolved_lengths,
         seed=int(seed),
     )
 
 
-class LatestDetectionLengthGroupedTrainerMixin:
-    """Trainer mixin that injects explicit latest-detection lengths into HF grouping."""
+class DetectionLengthGroupedTrainerMixin:
+    """Trainer mixin that injects explicit detection lengths into HF grouping."""
 
     def _distributed_sampler_context(self) -> tuple[int, int]:
         """World-size and rank values from the active trainer arguments."""
@@ -247,8 +247,8 @@ class LatestDetectionLengthGroupedTrainerMixin:
     def _get_train_sampler(self, train_dataset=None):
         """Build a row-atomic length-grouped sampler when explicitly enabled."""
 
-        cfg = getattr(self, "latest_detection_length_bucketing", None)
-        if not isinstance(cfg, LatestDetectionLengthBucketingConfig) or not cfg.enabled:
+        cfg = getattr(self, "detection_length_bucketing", None)
+        if not isinstance(cfg, DetectionLengthBucketingConfig) or not cfg.enabled:
             return self._fallback_train_sampler(train_dataset)
 
         dataset = train_dataset if train_dataset is not None else self.train_dataset
@@ -261,7 +261,7 @@ class LatestDetectionLengthGroupedTrainerMixin:
         drop_last = bool(getattr(self.args, "dataloader_drop_last", False))
         world_size, rank = self._distributed_sampler_context()
 
-        sampler = build_latest_detection_length_grouped_sampler(
+        sampler = build_detection_length_grouped_sampler(
             dataset=dataset,
             batch_size=batch_size,
             seed=int(cfg.seed),
@@ -269,8 +269,8 @@ class LatestDetectionLengthGroupedTrainerMixin:
             world_size=world_size,
             rank=rank,
         )
-        provider = LatestDetectionLengthProvider(dataset, cache_policy=cfg.cache_policy)
-        self.latest_detection_length_bucketing_runtime = provider.provenance(
+        provider = DetectionLengthProvider(dataset, cache_policy=cfg.cache_policy)
+        self.detection_length_bucketing_runtime = provider.provenance(
             sampler_class=type(sampler).__name__,
             batch_size=batch_size,
             seed=int(cfg.seed),
@@ -283,8 +283,8 @@ class LatestDetectionLengthGroupedTrainerMixin:
     def _get_eval_sampler(self, eval_dataset):
         """Build an explicit-length eval sampler without iterating dataset rows."""
 
-        cfg = getattr(self, "latest_detection_length_bucketing", None)
-        if not isinstance(cfg, LatestDetectionLengthBucketingConfig) or not cfg.enabled:
+        cfg = getattr(self, "detection_length_bucketing", None)
+        if not isinstance(cfg, DetectionLengthBucketingConfig) or not cfg.enabled:
             return self._fallback_eval_sampler(eval_dataset)
         if not isinstance(eval_dataset, DetectionTrainingDataset):
             return self._fallback_eval_sampler(eval_dataset)
@@ -295,7 +295,7 @@ class LatestDetectionLengthGroupedTrainerMixin:
             or 1
         )
         world_size, rank = self._distributed_sampler_context()
-        return build_latest_detection_length_grouped_sampler(
+        return build_detection_length_grouped_sampler(
             dataset=eval_dataset,
             batch_size=batch_size,
             seed=int(cfg.seed),
@@ -307,10 +307,10 @@ class LatestDetectionLengthGroupedTrainerMixin:
 
 def disabled_length_bucketing_provenance(
     *, reason: str
-) -> LatestDetectionLengthBucketingProvenance:
+) -> DetectionLengthBucketingProvenance:
     """Disabled runtime-provenance object for explicit artifact truth."""
 
-    return LatestDetectionLengthBucketingProvenance(
+    return DetectionLengthBucketingProvenance(
         enabled=False,
         mode="none",
         length_source="none",

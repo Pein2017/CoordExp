@@ -5,7 +5,7 @@ doc_type: design-note
 status: canonical
 domain: training
 summary: LVIS federated-label integration design, implementation notes, and migration guide for Stage-1, Stage-2, and evaluation.
-updated: 2026-03-29
+updated: 2026-05-20
 ---
 
 # LVIS Integration Guide
@@ -246,7 +246,7 @@ Ready-to-run Stage-1 config:
 
 Key overrides in that config:
 
-- extends the canonical 4B Stage-1 coord-token recipe (`profiles/4b/coord_soft_ce_gate_coco80_desc_first.yaml`)
+- extends the shared Stage-1 coord-token recipe (`configs/stage1/_shared/coord_soft_ce_gate_4b.yaml`)
 - extends the shared dataset facet `configs/_shared/datasets/lvis_1024_bbox_max60.yaml`
 - extends the shared prompt facet `configs/_shared/prompts/lvis_stage1_federated.yaml`
 - authors `training.artifact_subdir: stage1/lvis_bbox_max60_1024_adjacent_repulsion_global`
@@ -293,36 +293,19 @@ config=configs/stage1/smoke/lvis_bbox_max60_1024.yaml gpus=0 conda run -n ms bas
 
 ### 3. Stage-2 Training
 
-Ready-to-run Stage-2 config:
+There is no current ready-to-run LVIS Stage-2 leaf in `configs/stage2_two_channel/`.
+The previous dedicated LVIS Stage-2 YAML was retired during the config-surface
+cleanup because Stage-2 is being kept to a compact COCO/LVIS-proxy production and
+smoke set until the two-channel surface is regenerated.
 
-- `configs/stage2_two_channel/lvis_bbox_max60_1024.yaml`
+When LVIS Stage-2 is reintroduced, derive it from the retained Stage-2 prod
+templates rather than reviving the old leaf:
 
-Key overrides in that config:
-
-- `model.model: output/stage1/lvis_bbox_max60_1024/epoch_2-hard_ce_soft_ce_w1_ciou_bbox_size-merged`
-- extends the shared dataset facet `configs/_shared/datasets/lvis_1024_bbox_max60.yaml`
-- extends the shared prompt facet `configs/_shared/prompts/lvis_stage2_federated.yaml`
-- authors `training.artifact_subdir: stage2_ab/lvis_bbox_max60_1024`
-- `stage2_ab.pipeline.bbox_geo: { smoothl1_weight: 0.0, ciou_weight: 1.0 }`
-- `stage2_ab.pipeline.coord_reg: { coord_ce_weight: 1.0, soft_ce_weight: 1.0, w1_weight: 1.0, coord_gate_weight: 5.0 }`
-- `rollout_matching.eval_detection.metrics: f1ish`
-- reuses `training.output_root: ./output` and `training.logging_root: ./tb` from `configs/base.yaml`
-
-The conservative `f1ish` default is intentional for the current cached
-`1024/max60` LVIS export. Switch the config to `metrics: lvis` or `metrics: both`
-only after wiring in a metadata-bearing LVIS JSONL from the updated converter path.
-
-Example direct learner launch:
-
-```bash
-config=configs/stage2_two_channel/lvis_bbox_max60_1024.yaml gpus=0,1 conda run -n ms bash scripts/train.sh
-```
-
-Example server-mode launch:
-
-```bash
-server_gpus=0,1,2,3,4,5 train_gpus=6,7 config=configs/stage2_two_channel/lvis_bbox_max60_1024.yaml conda run -n ms bash scripts/train_stage2.sh
-```
+- start from `configs/stage2_two_channel/prod/a_only.yaml` or `configs/stage2_two_channel/prod/ab_mixed.yaml`
+- swap in `configs/_shared/datasets/lvis_1024_bbox_max60.yaml`
+- use `configs/_shared/prompts/lvis_stage2_federated.yaml`
+- keep `rollout_matching.eval_detection.metrics: f1ish` unless the JSONL carries
+  metadata sufficient for `metrics: lvis` or `metrics: both`
 
 ### 4. LVIS Inference + Evaluation
 

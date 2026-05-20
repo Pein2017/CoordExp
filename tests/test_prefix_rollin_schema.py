@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 
 from src.config.loader import ConfigLoader
-from src.config.schema import LatestDetectionTrainingConfig
+from src.config.schema import DetectionTrainingConfig
 
 
 def _prefix_rollin_payload() -> dict[str, object]:
@@ -159,8 +159,8 @@ def _random_permutation_eos_payload() -> dict[str, object]:
     return payload
 
 
-def _parse(payload: dict[str, object]) -> LatestDetectionTrainingConfig:
-    return LatestDetectionTrainingConfig.from_mapping(payload)
+def _parse(payload: dict[str, object]) -> DetectionTrainingConfig:
+    return DetectionTrainingConfig.from_mapping(payload)
 
 
 def _set_path(payload: dict[str, object], path: tuple[str, ...], value: object) -> None:
@@ -217,7 +217,7 @@ def test_prefix_rollin_schema_accepts_compact_full_empirical_eos_ablation() -> N
         "separator_continue_weight"
     ] == pytest.approx(2.0)
     assert as_mapping["experiment"]["surface"] == "ablation"
-    reparsed = LatestDetectionTrainingConfig.from_mapping(as_mapping)
+    reparsed = DetectionTrainingConfig.from_mapping(as_mapping)
     assert reparsed.objective.target.balance_weight == pytest.approx(2.0)
     assert reparsed.objective.boundary.eos_stop_weight == pytest.approx(0.5)
 
@@ -226,12 +226,12 @@ def test_prefix_rollin_e1_ablation_config_materializes_from_repo_path() -> None:
     repo_root = Path(__file__).resolve().parents[1]
     cfg_path = (
         repo_root
-        / "configs/stage1/recursive_detection_ce_latest/ablation/compact_full_prefix_rollin_balance2.yaml"
+        / "configs/stage1/recursive_detection_ce/ablation/compact_full_prefix_rollin_balance2.yaml"
     )
 
     cfg = ConfigLoader.load_materialized_training_config(str(cfg_path))
 
-    assert isinstance(cfg, LatestDetectionTrainingConfig)
+    assert isinstance(cfg, DetectionTrainingConfig)
     assert cfg.experiment is not None
     assert cfg.experiment.surface == "ablation"
     assert cfg.experiment.ablation_id == "E1"
@@ -271,12 +271,12 @@ def test_prefix_rollin_separator2_ablation_overrides_only_boundary_weights() -> 
     repo_root = Path(__file__).resolve().parents[1]
     cfg_path = (
         repo_root
-        / "configs/stage1/recursive_detection_ce_latest/ablation/compact_full_prefix_rollin_separator2.yaml"
+        / "configs/stage1/recursive_detection_ce/ablation/compact_full_prefix_rollin_separator2.yaml"
     )
 
     cfg = ConfigLoader.load_materialized_training_config(str(cfg_path))
 
-    assert isinstance(cfg, LatestDetectionTrainingConfig)
+    assert isinstance(cfg, DetectionTrainingConfig)
     assert cfg.experiment is not None
     assert cfg.experiment.surface == "ablation"
     assert cfg.experiment.ablation_id == "E2-separator2"
@@ -356,7 +356,7 @@ def test_prefix_rollin_ablation_rejects_evidence_bearing_claim_scope(
         _parse(payload)
 
 
-def test_latest_smoke_surface_rejects_production_claim_scope() -> None:
+def test_detection_smoke_surface_rejects_production_claim_scope() -> None:
     payload = _prefix_rollin_payload()
     _set_path(payload, ("experiment", "surface"), "smoke")
     _set_path(payload, ("experiment", "claim_scope"), "production")
@@ -365,7 +365,7 @@ def test_latest_smoke_surface_rejects_production_claim_scope() -> None:
         _parse(payload)
 
 
-def test_existing_random_permutation_latest_schema_still_accepts_flat_trie_weights() -> (
+def test_existing_random_permutation_current_schema_still_accepts_flat_trie_weights() -> (
     None
 ):
     payload = _prefix_rollin_payload()
@@ -408,7 +408,7 @@ def test_random_permutation_schema_accepts_eos_ablation_without_prefix_rollin() 
     assert "eos" in as_mapping["objective"]
     for prefix_only_section in ("rollin", "target", "boundary", "type_gate"):
         assert prefix_only_section not in as_mapping["objective"]
-    reparsed = LatestDetectionTrainingConfig.from_mapping(as_mapping)
+    reparsed = DetectionTrainingConfig.from_mapping(as_mapping)
     assert reparsed.objective.variant == "random_permutation_et_rmp_ce"
     assert reparsed.objective.eos is not None
 
@@ -422,42 +422,6 @@ def test_random_permutation_eos_ablation_requires_experiment_surface() -> None:
         match=r"experiment\.surface is required.*random_permutation_et_rmp_ce",
     ):
         _parse(payload)
-
-
-def test_random_permutation_eos_ablation_configs_materialize_from_repo_paths() -> None:
-    repo_root = Path(__file__).resolve().parents[1]
-    prod_path = (
-        repo_root
-        / "configs/stage1/recursive_detection_ce_latest/prod/compact_full_support2_eos_loosen.yaml"
-    )
-    smoke_path = (
-        repo_root
-        / "configs/stage1/recursive_detection_ce_latest/smoke/compact_full_support2_eos_loosen_ddp8_preflight.yaml"
-    )
-
-    prod_cfg = ConfigLoader.load_materialized_training_config(str(prod_path))
-    smoke_cfg = ConfigLoader.load_materialized_training_config(str(smoke_path))
-
-    for cfg in (prod_cfg, smoke_cfg):
-        assert isinstance(cfg, LatestDetectionTrainingConfig)
-        assert cfg.objective.variant == "random_permutation_et_rmp_ce"
-        assert cfg.objective.trie_support_weight == pytest.approx(2.0)
-        assert cfg.objective.trie_balance_weight == pytest.approx(1.0)
-        assert cfg.objective.rollin is None
-        assert cfg.objective.target is None
-        assert cfg.objective.boundary is None
-        assert cfg.objective.type_gate is None
-        assert cfg.objective.eos is not None
-        assert (
-            cfg.objective.eos.eos_trust_weight.source
-            == "empirical_unlabeled_poisson_v0"
-        )
-    assert prod_cfg.experiment is not None
-    assert prod_cfg.experiment.surface == "ablation"
-    assert prod_cfg.experiment.ablation_id == "A2E-support2-eos-loosen"
-    assert smoke_cfg.experiment is not None
-    assert smoke_cfg.experiment.surface == "smoke"
-    assert smoke_cfg.training["max_steps"] == 4
 
 
 @pytest.mark.parametrize(

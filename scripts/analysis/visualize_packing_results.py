@@ -10,8 +10,8 @@ This script takes the output from analyze_token_lengths.py and generates:
 
 Usage:
     python scripts/analysis/visualize_packing_results.py \
-        --input_dir docs/temp_packed_dataset \
-        --output_dir docs/temp_packed_dataset/figures
+        --input_dir outputs/analysis/token_lengths \
+        --output_dir outputs/analysis/token_lengths/figures
 """
 
 import argparse
@@ -385,13 +385,13 @@ def main():
     parser.add_argument(
         "--input_dir",
         type=str,
-        default="docs/temp_packed_dataset",
+        default="outputs/analysis/token_lengths",
         help="Directory containing analysis results",
     )
     parser.add_argument(
         "--output_dir",
         type=str,
-        default="docs/temp_packed_dataset/figures",
+        default="outputs/analysis/token_lengths/figures",
         help="Output directory for visualizations",
     )
     

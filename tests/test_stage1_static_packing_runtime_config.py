@@ -732,34 +732,6 @@ def test_resolve_static_packing_cache_dir_defaults_to_dataset_local_root(
     ).resolve()
 
 
-@pytest.mark.parametrize(
-    ("config_relpath", "expected_ordering"),
-    [
-        (
-            "configs/stage1/ablation/2b_coord_ce_soft_ce_w1_gate_coco80_desc_first_sorted_order.yaml",
-            "sorted",
-        ),
-        (
-            "configs/stage1/ablation/2b_coord_ce_soft_ce_w1_gate_coco80_desc_first_random_order.yaml",
-            "random",
-        ),
-    ],
-)
-def test_stage1_ablation_profiles_pin_cache_parity_and_ordering(
-    config_relpath: str,
-    expected_ordering: str,
-) -> None:
-    repo_root = Path(__file__).resolve().parents[1]
-    cfg = ConfigLoader.load_materialized_training_config(str(repo_root / config_relpath))
-
-    assert cfg.training["seed"] == 17
-    assert cfg.training["encoded_sample_cache"]["enabled"] is False
-    assert cfg.custom.object_ordering == expected_ordering
-    assert expected_ordering in cfg.training["run_name"]
-    assert expected_ordering in cfg.training["output_dir"]
-    assert expected_ordering in cfg.training["logging_dir"]
-
-
 def test_lvis_stage1_config_keeps_canonical_recipe_and_desc_first_sorted_contract() -> None:
     repo_root = Path(__file__).resolve().parents[1]
     cfg = ConfigLoader.load_materialized_training_config(
@@ -831,66 +803,12 @@ def test_lvis_stage1_smoke_config_only_overrides_runtime_limits() -> None:
     assert cfg.training["logging_dir"] == "./tb/stage1/smoke/lvis_bbox_max60_1024_adjacent_repulsion_global"
 
 
-def test_lvis_stage2_config_keeps_same_data_contract_with_stage2_prompt() -> None:
-    repo_root = Path(__file__).resolve().parents[1]
-    cfg = ConfigLoader.load_materialized_training_config(
-        str(repo_root / "configs/stage2_two_channel/lvis_bbox_max60_1024.yaml")
-    )
-
-    assert (
-        cfg.model["model"]
-        == "output/stage1/lvis_bbox_max60_1024/hard_ce_soft_ce_w1_ciou_bbox_size-ckpt_232-merged"
-    )
-    assert cfg.training["run_name"] == "continued_to_ckpt_232"
-    assert cfg.custom.train_jsonl == "public_data/lvis/rescale_32_1024_bbox_max60/train.coord.jsonl"
-    assert cfg.custom.val_jsonl == "public_data/lvis/rescale_32_1024_bbox_max60/val.coord.jsonl"
-    assert cfg.custom.object_ordering == "sorted"
-    assert cfg.custom.object_field_order == "desc_first"
-    assert cfg.custom.extra["prompt_variant"] == "lvis_stage2_federated"
-    assert cfg.rollout_matching.eval_detection.metrics == "f1ish"
-    assert cfg.training["artifact_subdir"] == "stage2_ab/lvis_bbox_max60_1024_continued_to_ckpt_232"
-    assert cfg.training["output_dir"] == "./output/stage2_ab/lvis_bbox_max60_1024_continued_to_ckpt_232"
-    assert cfg.training["logging_dir"] == "./tb/stage2_ab/lvis_bbox_max60_1024_continued_to_ckpt_232"
-    objective = {module.name: module for module in cfg.stage2_ab.pipeline.objective}
-    assert objective["bbox_geo"].config["smoothl1_weight"] == pytest.approx(0.0)
-    assert objective["bbox_geo"].config["ciou_weight"] == pytest.approx(1.0)
-    assert objective["bbox_geo"].config.get("parameterization", "xyxy") == "xyxy"
-    assert objective["bbox_geo"].config["parameterization"] == "xyxy"
-    assert objective["bbox_geo"].config["center_weight"] == pytest.approx(1.0)
-    assert objective["bbox_geo"].config["size_weight"] == pytest.approx(1.0)
-    assert objective["coord_reg"].config["coord_ce_weight"] == pytest.approx(1.0)
-    assert objective["coord_reg"].config["soft_ce_weight"] == pytest.approx(1.0)
-    assert objective["coord_reg"].config["w1_weight"] == pytest.approx(1.0)
-
-
-def test_stage2_center_size_smoke_config_resolves_bbox_geo_parameterization() -> None:
-    repo_root = Path(__file__).resolve().parents[1]
-    cfg = ConfigLoader.load_materialized_training_config(
-        str(
-            repo_root
-            / "configs/stage2_two_channel/smoke/a_only_center_size_2steps.yaml"
-        )
-    )
-
-    objective = {module.name: module for module in cfg.stage2_ab.pipeline.objective}
-    assert cfg.training["run_name"] == "stage2_a_only_center_size_smoke"
-    assert cfg.training["artifact_subdir"] == "stage2_ab/smoke/a_only_center_size_2steps"
-    assert cfg.experiment.title == "Stage-2 A-only center-size smoke"
-    assert (
-        cfg.experiment.purpose
-        == "Smoke-test the Stage-2 A-only path with center-size bbox regression enabled and a minimal two-step runtime budget."
-    )
-    assert cfg.experiment.tags == ("stage2", "smoke", "a-only", "center-size")
-    assert objective["bbox_geo"].config["parameterization"] == "center_size"
-    assert objective["bbox_geo"].config["center_weight"] == pytest.approx(1.0)
-    assert objective["bbox_geo"].config["size_weight"] == pytest.approx(0.25)
-
-
-def test_representative_raw_leaves_still_author_model_run_name_and_artifact_subdir() -> None:
+def test_representative_retained_leaves_still_author_model_run_name_and_artifact_subdir() -> None:
     repo_root = Path(__file__).resolve().parents[1]
     raw_paths = [
         repo_root / "configs/stage1/lvis_bbox_max60_1024.yaml",
-        repo_root / "configs/stage2_two_channel/lvis_bbox_max60_1024.yaml",
+        repo_root / "configs/stage2_two_channel/prod/a_only.yaml",
+        repo_root / "configs/stage2_two_channel/prod/ab_mixed.yaml",
     ]
 
     for path in raw_paths:
@@ -1160,42 +1078,6 @@ def test_validate_static_packing_accumulation_windows_warns_on_remainder(
         "is not divisible by gradient_accumulation_steps=8" in msg
         for msg in warning_logs
     )
-
-
-@pytest.mark.parametrize(
-    ("config_name", "expected_ordering"),
-    [
-        (
-            "2b_coord_ce_soft_ce_w1_gate_coco80_desc_first_sorted_order.yaml",
-            "sorted",
-        ),
-        (
-            "2b_coord_ce_soft_ce_w1_gate_coco80_desc_first_random_order.yaml",
-            "random",
-        ),
-    ],
-)
-def test_stage1_ablation_leaves_pin_ordering_cache_seed_and_paths(
-    config_name: str,
-    expected_ordering: str,
-) -> None:
-    repo_root = Path(__file__).resolve().parents[1]
-    cfg = ConfigLoader.load_materialized_training_config(
-        str(repo_root / "configs" / "stage1" / "ablation" / config_name)
-    )
-
-    training = cfg.training
-    custom = cfg.custom
-    template = cfg.template
-
-    assert custom.object_ordering == expected_ordering
-    assert training["encoded_sample_cache"]["enabled"] is False
-    assert training["seed"] == 17
-    assert expected_ordering in str(training["run_name"])
-    assert expected_ordering in str(training["output_dir"])
-    assert expected_ordering in str(training["logging_dir"])
-    assert template["max_pixels"] == 1048576
-    assert "rescale_32_1024_bbox_max60/train.coord.jsonl" in str(custom.train_jsonl)
 
 
 def test_static_packing_avoids_thread_pool_for_unsafe_length_helper_in_distributed_runtime(

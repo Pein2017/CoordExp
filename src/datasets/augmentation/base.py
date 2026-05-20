@@ -199,7 +199,7 @@ class Compose:
                 out_geoms, M_total, current_width, current_height
             )
             M_total = [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]]
-            # Track latest image size for telemetry consumers
+            # Track current image size for telemetry consumers
             self.last_image_width = current_width
             self.last_image_height = current_height
 

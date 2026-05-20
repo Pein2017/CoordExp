@@ -16,7 +16,7 @@ Usage:
     python scripts/analysis/analyze_token_lengths.py \
         --model_path model_cache/Qwen3-VL-8B-Instruct-coordexp \
         --train_jsonl public_data/lvis/rescale_32_768_poly_20/train.jsonl \
-        --output_dir docs/temp_packed_dataset \
+        --output_dir outputs/analysis/token_lengths \
         --max_samples 0  # 0 = all samples
 
 Output:
@@ -513,7 +513,7 @@ def main():
     parser.add_argument(
         "--output_dir",
         type=str,
-        default="docs/temp_packed_dataset",
+        default="outputs/analysis/token_lengths",
         help="Output directory for analysis results",
     )
     parser.add_argument(
@@ -530,7 +530,7 @@ def main():
     parser.add_argument(
         "--baseline_config",
         type=str,
-        default="configs/dlora/sft_coord_offset.yaml",
+        default="configs/stage1/sft_base.yaml",
         help="Path to baseline config (for comparison)",
     )
     

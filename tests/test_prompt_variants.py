@@ -265,23 +265,6 @@ def test_coord_mode_numeric_is_rejected() -> None:
         get_template_prompts(coord_mode="numeric")
 
 
-def test_training_prompt_resolution_supports_norm1000_raw_text() -> None:
-    prompts = ConfigLoader.resolve_prompts(
-        {
-            "custom": {
-                "object_field_order": "desc_first",
-                "coord_tokens": {"enabled": False},
-                "extra": {"prompt_variant": "default"},
-            }
-        }
-    )
-
-    assert "<|coord_" not in prompts.system
-    assert "<|coord_" not in prompts.user
-    assert "bare JSON integers" in prompts.system
-    assert '"bbox_2d": [110, 310, 410, 705]' in prompts.user
-
-
 def test_training_prompt_resolution_rejects_compact_without_coord_tokens() -> None:
     with pytest.raises(
         ValueError,

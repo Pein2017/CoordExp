@@ -19,7 +19,7 @@ artifacts:
 
 # Optional scoring controls.
 confidence:
-  # Unified fused confidence scoring (latest contract).
+  # Unified fused confidence scoring.
   fusion:
     w_geom: 0.7
     w_desc: 0.3

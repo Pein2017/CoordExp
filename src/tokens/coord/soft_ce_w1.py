@@ -194,7 +194,7 @@ def wasserstein_1_cdf(
     return w1
 
 
-# Legacy fixed Gaussian coordinate softCE/W1 surface. Latest recursive
+# Legacy fixed Gaussian coordinate softCE/W1 surface. Current recursive
 # detection uses objective.coord_soft_ce with iou_gibbs_v0 instead.
 
 def coord_soft_ce_w1(

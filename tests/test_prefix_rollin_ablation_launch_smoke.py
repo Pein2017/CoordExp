@@ -20,12 +20,12 @@ from src.bootstrap.run_metadata import (
     write_run_metadata_file_from_payload,
 )
 from src.config.loader import ConfigLoader
-from src.config.schema import DetectionDataConfig, LatestDetectionTrainingConfig
+from src.config.schema import DetectionDataConfig, DetectionTrainingConfig
 from src.detection.runtime import (
-    assert_latest_detection_runtime_supported,
-    build_latest_detection_dataset,
-    build_latest_detection_runtime_custom_shim,
-    resolve_latest_detection_prompts,
+    assert_detection_runtime_supported,
+    build_detection_training_dataset,
+    build_detection_runtime_custom_shim,
+    resolve_detection_prompts,
     resolve_recursive_detection_ce_runtime_cfg,
 )
 from src.sft import (
@@ -351,11 +351,11 @@ def test_prefix_rollin_ablation_launch_smoke_covers_config_dataset_loss_and_mani
     repo_root = Path(__file__).resolve().parents[1]
     cfg_path = (
         repo_root
-        / "configs/stage1/recursive_detection_ce_latest/ablation/"
+        / "configs/stage1/recursive_detection_ce/ablation/"
         "compact_full_prefix_rollin_balance2.yaml"
     )
     cfg = ConfigLoader.load_materialized_training_config(str(cfg_path))
-    assert isinstance(cfg, LatestDetectionTrainingConfig)
+    assert isinstance(cfg, DetectionTrainingConfig)
 
     train_jsonl = tmp_path / "data" / "train.coord.jsonl"
     val_jsonl = tmp_path / "data" / "val.coord.jsonl"
@@ -409,14 +409,14 @@ def test_prefix_rollin_ablation_launch_smoke_covers_config_dataset_loss_and_mani
 
     swift_template = FakeSwiftTemplate()
     encoded_cache_cfg = EncodedSampleCacheRuntimeConfig(enabled=False)
-    assert_latest_detection_runtime_supported(
+    assert_detection_runtime_supported(
         cfg,
         encoded_sample_cache_cfg=encoded_cache_cfg,
         tokenizer=swift_template.tokenizer,
     )
-    system_prompt, _user_prompt = resolve_latest_detection_prompts(cfg)
-    custom_config = build_latest_detection_runtime_custom_shim(cfg)
-    dataset = build_latest_detection_dataset(
+    system_prompt, _user_prompt = resolve_detection_prompts(cfg)
+    custom_config = build_detection_runtime_custom_shim(cfg)
+    dataset = build_detection_training_dataset(
         train_jsonl,
         swift_template=swift_template,
         training_config=cfg,
@@ -610,7 +610,7 @@ def test_prefix_rollin_ablation_launch_smoke_covers_config_dataset_loss_and_mani
     assert effective["runtime"]["actual_global_effective_batch_size"] == 1
     assert effective["runtime"]["effective_batch_rounding"] == "exact"
     assert effective["runtime"]["world_size"] == 1
-    assert effective["runtime"]["latest_detection_objective"] == {
+    assert effective["runtime"]["detection_objective"] == {
         "id": "recursive_detection_ce",
         "variant": "prefix_rollin_et_rmp_ce",
         "state_weighting": "uniform_permutation",
@@ -653,7 +653,7 @@ def test_prefix_rollin_ablation_launch_smoke_covers_config_dataset_loss_and_mani
     )
     assert experiment_manifest["experiment"]["authored"]["surface"] == "ablation"
     assert (
-        experiment_manifest["runtime_summary"]["latest_detection_objective"]["variant"]
+        experiment_manifest["runtime_summary"]["detection_objective"]["variant"]
         == "prefix_rollin_et_rmp_ce"
     )
     assert experiment_manifest["runtime_summary"]["effective_batch_size"] == 1
@@ -664,108 +664,3 @@ def test_prefix_rollin_ablation_launch_smoke_covers_config_dataset_loss_and_mani
     assert experiment_manifest["artifacts"]["resolved_config"] == "resolved_config.json"
     assert experiment_manifest["artifacts"]["effective_runtime"] == "effective_runtime.json"
     assert "pipeline_manifest" not in experiment_manifest["artifacts"]
-
-
-def test_prefix_rollin_bsz8_configs_record_eval_and_disabled_packing_runtime() -> None:
-    repo_root = Path(__file__).resolve().parents[1]
-    config_paths = (
-        repo_root
-        / "configs/stage1/recursive_detection_ce_latest/ablation/"
-        "compact_full_prefix_rollin_balance2_a3_bsz8_ebs128.yaml",
-        repo_root
-        / "configs/stage1/recursive_detection_ce_latest/ablation/"
-        "compact_full_prefix_rollin_balance2_a4_eos_bsz8_ebs128.yaml",
-    )
-
-    for cfg_path in config_paths:
-        cfg = ConfigLoader.load_materialized_training_config(str(cfg_path))
-        assert isinstance(cfg, LatestDetectionTrainingConfig)
-        assert cfg.training["per_device_train_batch_size"] == 8
-        assert cfg.training["per_device_eval_batch_size"] == 8
-        assert cfg.training["effective_batch_size"] == 128
-        assert cfg.training["eval_steps"] == 600
-        assert cfg.training["group_by_length"] is True
-        assert cfg.training["length_column_name"] == "length"
-        assert cfg.training["packing"] is False
-        assert cfg.training["eval_packing"] is False
-        assert cfg.packing.static_packing is False
-        assert cfg.packing.padding_free_packed is False
-
-        train_args = SimpleNamespace(
-            run_name=cfg.training["run_name"],
-            output_dir=str(repo_root / "temp" / "unit" / cfg.training["run_name"]),
-            logging_dir=str(repo_root / "temp" / "unit" / "tb" / cfg.training["run_name"]),
-            save_only_model=False,
-            save_strategy="no",
-            save_last_epoch=True,
-            seed=123,
-            per_device_train_batch_size=cfg.training["per_device_train_batch_size"],
-            per_device_eval_batch_size=cfg.training["per_device_eval_batch_size"],
-            gradient_accumulation_steps=4,
-            eval_strategy=cfg.training["eval_strategy"],
-            eval_steps=cfg.training["eval_steps"],
-            group_by_length=cfg.training["group_by_length"],
-            length_column_name=cfg.training["length_column_name"],
-            max_steps=cfg.training.get("max_steps", -1),
-            num_train_epochs=cfg.training.get("num_train_epochs", 1.0),
-            dataloader_drop_last=cfg.training.get("dataloader_drop_last", False),
-            deepspeed=None,
-            resume_from_checkpoint=None,
-            max_model_len=cfg.template.get("max_length", 0),
-        )
-        _apply_checkpoint_mode(train_args, checkpoint_mode="artifact_only")
-        packing_cfg = _parse_packing_config(
-            cfg.training,
-            template=SimpleNamespace(max_length=cfg.template.get("max_length", 0)),
-            train_args=train_args,
-        )
-        effective_runtime = _build_effective_runtime_payload(
-            training_config=cfg,
-            train_args=train_args,
-            trainer_variant=None,
-            dataset_seed=123,
-            checkpoint_mode="artifact_only",
-            packing_cfg=packing_cfg,
-            encoded_sample_cache_cfg=EncodedSampleCacheRuntimeConfig(enabled=False),
-            train_jsonl=cfg.data.train_jsonl,
-            val_jsonl=cfg.data.val_jsonl,
-            pipeline_manifest=None,
-        )
-
-        assert effective_runtime["eval_strategy"] == str(
-            getattr(train_args, "eval_strategy", "") or ""
-        )
-        assert effective_runtime["eval_steps"] == 600
-        assert effective_runtime["per_device_eval_batch_size"] == 8
-        assert effective_runtime["packing"]["enabled"] is False
-        assert effective_runtime["packing"]["eval_packing"] is False
-        assert effective_runtime["dataloader"]["group_by_length"] is True
-        assert effective_runtime["dataloader"]["length_column_name"] == "length"
-        length_bucketing = effective_runtime["dataloader"]["length_bucketing"]
-        assert length_bucketing["enabled"] is True
-        assert length_bucketing["mode"] == "row_atomic_length_bucketing"
-        assert (
-            length_bucketing["length_source"]
-            == "DetectionTrainingDataset.encoded_length_for_row"
-        )
-        assert length_bucketing["cache_policy"] == "run_local_only"
-
-        experiment_manifest = build_experiment_manifest_payload(
-            output_dir=str(Path(train_args.output_dir)),
-            config_path=str(cfg_path),
-            base_config_path=None,
-            run_name=str(train_args.run_name),
-            dataset_seed=123,
-            experiment=cfg.to_mapping()["experiment"],
-            effective_runtime=effective_runtime,
-            pipeline_manifest=None,
-            run_metadata={},
-            manifest_files={},
-        )
-        runtime_summary = experiment_manifest["runtime_summary"]
-        assert runtime_summary["eval_strategy"] == effective_runtime["eval_strategy"]
-        assert runtime_summary["eval_steps"] == 600
-        assert runtime_summary["per_device_eval_batch_size"] == 8
-        assert runtime_summary["packing"]["enabled"] is False
-        assert runtime_summary["packing"]["eval_packing"] is False
-        assert runtime_summary["dataloader"]["length_bucketing"]["enabled"] is True

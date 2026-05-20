@@ -692,7 +692,7 @@ def test_static_packing_writes_setup_index(tmp_path: Path):
 
     index_path = cache_dir / "INDEX.json"
     payload = json.loads(index_path.read_text(encoding="utf-8"))
-    assert payload["guard_policy"] == "latest_setup_wins"
+    assert payload["guard_policy"] == "configured_setup_wins"
     assert payload["cache_layout"] == "fingerprinted_v1"
     assert payload["setup_fingerprint"]["test_case"] == "indexed"
 

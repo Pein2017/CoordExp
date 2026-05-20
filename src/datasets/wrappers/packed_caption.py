@@ -770,7 +770,7 @@ def _persist_setup_index(path: Path, fingerprint: Mapping[str, Any]) -> None:
     canonical_fingerprint = json.loads(_json_canonical_dumps(dict(fingerprint)))
     payload: dict[str, Any] = {
         "version": _SETUP_INDEX_VERSION,
-        "guard_policy": "latest_setup_wins",
+        "guard_policy": "configured_setup_wins",
         "setup_fingerprint": canonical_fingerprint,
         "setup_fingerprint_sha256": _fingerprint_digest(canonical_fingerprint),
         "cache_layout": "fingerprinted_v1",

@@ -25,7 +25,7 @@ from src.common.detection_compact_rows import (
 )
 from src.common.detection_sequence import IM_END_TOKEN
 from src.config.loader import ConfigLoader
-from src.config.schema import LatestDetectionTrainingConfig
+from src.config.schema import DetectionTrainingConfig
 from src.detection.data import (
     ObjectOrderingPlan,
     NormalizedDetectionSample,
@@ -34,7 +34,7 @@ from src.detection.data import (
 )
 from src.detection.objective import PreparedPrefixRollinExample, TokenTarget
 from src.detection.objective import build_compact_prefix_rollin_example
-from src.detection.runtime import resolve_latest_detection_prompts
+from src.detection.runtime import resolve_detection_prompts
 from src.detection.template import CompactFullTemplate
 from src.infer.checkpoints import validate_compact_coord_token_adapter_contract
 
@@ -297,8 +297,8 @@ def run_prefix_rollin_teacher_forced_probe(
     from src.analysis.unmatched_proposal_verifier import TeacherForcedScorer
 
     training_config = ConfigLoader.load_materialized_training_config(str(config_path))
-    if not isinstance(training_config, LatestDetectionTrainingConfig):
-        raise TypeError("prefix rollin probe requires LatestDetectionTrainingConfig")
+    if not isinstance(training_config, DetectionTrainingConfig):
+        raise TypeError("prefix rollin probe requires DetectionTrainingConfig")
     processor_kwargs: dict[str, Any] = {"do_resize": False}
     mode_set = _normalize_prefix_modes(prefix_modes)
 
@@ -317,7 +317,7 @@ def run_prefix_rollin_teacher_forced_probe(
         training_config.data.val_jsonl if split == "val" else training_config.data.train_jsonl
     )
     image_root = _resolve_data_path(training_config.data.image_root)
-    system_prompt, user_prompt = resolve_latest_detection_prompts(training_config)
+    system_prompt, user_prompt = resolve_detection_prompts(training_config)
     rows: list[dict[str, Any]] = []
     decode_rows = _load_artifact_rows_by_index(decode_artifact_path)
     trace_rows = _load_artifact_rows_by_index(trace_artifact_path)
@@ -1110,7 +1110,7 @@ def _iter_jsonl(path: Path) -> Iterable[dict[str, Any]]:
 
 def _ordering_for_record(
     *,
-    training_config: LatestDetectionTrainingConfig,
+    training_config: DetectionTrainingConfig,
     record_idx: int,
 ) -> ObjectOrderingPlan:
     if training_config.data.object_ordering == "random_permutation":

@@ -13,7 +13,7 @@ def test_stage2_ab_canonical_profiles_load_under_current_hierarchy() -> None:
     stage2_root = repo_root / "configs" / "stage2_two_channel"
 
     profiles: list[Path] = []
-    for kind in ("prod", "smoke", "ablation"):
+    for kind in ("prod", "smoke"):
         profiles.extend(
             sorted(
                 path
@@ -22,35 +22,12 @@ def test_stage2_ab_canonical_profiles_load_under_current_hierarchy() -> None:
             )
         )
 
-    assert profiles, "Expected stage2_two_channel canonical profile leaves under prod/, smoke/, and ablation/."
+    assert profiles, "Expected stage2_two_channel canonical profile leaves under prod/ and smoke/."
 
     for path in profiles:
         # `load_materialized_training_config` is intentionally side-effect free.
         ConfigLoader.load_materialized_training_config(str(path))
 
-
-@pytest.mark.parametrize(
-    ("config_relpath", "expected_ordering"),
-    [
-        (
-            "configs/stage2_two_channel/ablation/a_only_iter1-res_1024.yaml",
-            "random",
-        ),
-    ],
-)
-def test_stage2_ablation_profiles_pin_cache_parity_and_ordering(
-    config_relpath: str,
-    expected_ordering: str,
-) -> None:
-    repo_root = Path(__file__).resolve().parents[1]
-    cfg = ConfigLoader.load_materialized_training_config(str(repo_root / config_relpath))
-
-    assert cfg.training["seed"] == 17
-    assert cfg.training["encoded_sample_cache"]["enabled"] is False
-    assert cfg.custom.object_ordering == expected_ordering
-    assert expected_ordering in cfg.training["run_name"]
-    assert expected_ordering in cfg.training["output_dir"]
-    assert expected_ordering in cfg.training["logging_dir"]
 
 def test_stage2_pseudo_positive_prod_profile_materializes_default_k4_contract() -> None:
     repo_root = Path(__file__).resolve().parents[1]
@@ -77,37 +54,6 @@ def test_stage2_pseudo_positive_prod_profile_materializes_default_k4_contract() 
     prod_objective = {m.name: m for m in prod_cfg.stage2_ab.pipeline.objective}
     assert prod_objective["token_ce"].config["rollout_fn_desc_weight"] == pytest.approx(1.5)
     assert prod_objective["loss_duplicate_burst_unlikelihood"].weight == pytest.approx(2.0)
-
-
-def test_lvis_stage2_entry_config_uses_federated_prompt_and_sorted_desc_first_contract() -> None:
-    repo_root = Path(__file__).resolve().parents[1]
-    cfg = ConfigLoader.load_materialized_training_config(
-        str(repo_root / "configs/stage2_two_channel/lvis_bbox_max60_1024.yaml")
-    )
-
-    assert (
-        cfg.model["model"]
-        == "output/stage1/lvis_bbox_max60_1024/hard_ce_soft_ce_w1_ciou_bbox_size-ckpt_232-merged"
-    )
-    assert cfg.custom.train_jsonl == "public_data/lvis/rescale_32_1024_bbox_max60/train.coord.jsonl"
-    assert cfg.custom.val_jsonl == "public_data/lvis/rescale_32_1024_bbox_max60/val.coord.jsonl"
-    assert cfg.custom.object_field_order == "desc_first"
-    assert cfg.custom.object_ordering == "sorted"
-    assert cfg.custom.extra["prompt_variant"] == "lvis_stage2_federated"
-    assert cfg.rollout_matching.eval_detection.metrics == "f1ish"
-    assert (
-        cfg.training["artifact_subdir"]
-        == "stage2_ab/lvis_bbox_max60_1024_continued_to_ckpt_232"
-    )
-    assert (
-        cfg.training["output_dir"]
-        == "./output/stage2_ab/lvis_bbox_max60_1024_continued_to_ckpt_232"
-    )
-    assert (
-        cfg.training["logging_dir"]
-        == "./tb/stage2_ab/lvis_bbox_max60_1024_continued_to_ckpt_232"
-    )
-
 
 def test_stage2_ab_leaf_contract_missing_required_keys_lists_dotted_paths(
     tmp_path: Path,

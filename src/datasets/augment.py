@@ -132,7 +132,7 @@ def apply_augmentations(
             telemetry.skip_reason,
             telemetry.skip_counts,
         )
-        # expose for preprocessors (pipeline metadata already set, but ensure Compose sees latest)
+        # expose for preprocessors (pipeline metadata already set, but ensure Compose sees current)
         setattr(pipeline, "last_crop_summary", telemetry)
 
     return images_bytes, geoms

@@ -7,11 +7,11 @@ from typing import Any
 import pytest
 
 from src.config.loader import ConfigLoader
-from src.config.schema import LatestDetectionTrainingConfig
+from src.config.schema import DetectionTrainingConfig
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-CONFIG_ROOT = REPO_ROOT / "configs/stage1/recursive_detection_ce_latest"
+CONFIG_ROOT = REPO_ROOT / "configs/stage1/recursive_detection_ce"
 BASE_CONFIG = CONFIG_ROOT / "prod/compact_full_support2.yaml"
 PROD_CONFIG = (
     CONFIG_ROOT
@@ -28,26 +28,6 @@ STRENGTH_PROD_CONFIG = (
 TINY_CONFIG = (
     CONFIG_ROOT
     / "smoke/compact_full_support2_instance_trie_focused_cap8_frac0p04_mix0p1_tiny.yaml"
-)
-SLOPE_TINY_CONFIG = (
-    CONFIG_ROOT
-    / "smoke/compact_full_support2_instance_trie_focused_cap8_frac0p06_mix0p1_tiny.yaml"
-)
-STRENGTH_TINY_CONFIG = (
-    CONFIG_ROOT
-    / "smoke/compact_full_support2_instance_trie_focused_cap8_frac0p04_mix0p2_tiny.yaml"
-)
-DDP8_CONFIG = (
-    CONFIG_ROOT
-    / "smoke/compact_full_support2_instance_trie_focused_cap8_frac0p04_mix0p1_ddp8_preflight.yaml"
-)
-SLOPE_DDP8_CONFIG = (
-    CONFIG_ROOT
-    / "smoke/compact_full_support2_instance_trie_focused_cap8_frac0p06_mix0p1_ddp8_preflight.yaml"
-)
-STRENGTH_DDP8_CONFIG = (
-    CONFIG_ROOT
-    / "smoke/compact_full_support2_instance_trie_focused_cap8_frac0p04_mix0p2_ddp8_preflight.yaml"
 )
 
 PROD_ALLOWED_CHANGED_PATHS = {
@@ -100,7 +80,7 @@ def _resolve_config(path: Path) -> dict[str, Any]:
     resolved = ConfigLoader.load_yaml_with_extends(str(path))
     assert isinstance(resolved, dict)
     cfg = ConfigLoader.load_materialized_training_config(str(path))
-    assert isinstance(cfg, LatestDetectionTrainingConfig)
+    assert isinstance(cfg, DetectionTrainingConfig)
     return resolved
 
 
@@ -162,11 +142,6 @@ def _changed_paths(left: Any, right: Any, parent: str = "") -> set[str]:
         (SLOPE_PROD_CONFIG, PROD_ALLOWED_CHANGED_PATHS),
         (STRENGTH_PROD_CONFIG, PROD_ALLOWED_CHANGED_PATHS),
         (TINY_CONFIG, TINY_ALLOWED_CHANGED_PATHS),
-        (SLOPE_TINY_CONFIG, TINY_ALLOWED_CHANGED_PATHS),
-        (STRENGTH_TINY_CONFIG, TINY_ALLOWED_CHANGED_PATHS),
-        (DDP8_CONFIG, DDP8_ALLOWED_CHANGED_PATHS),
-        (SLOPE_DDP8_CONFIG, DDP8_ALLOWED_CHANGED_PATHS),
-        (STRENGTH_DDP8_CONFIG, DDP8_ALLOWED_CHANGED_PATHS),
     ],
 )
 def test_instance_trie_gaussian_configs_only_change_whitelisted_paths(

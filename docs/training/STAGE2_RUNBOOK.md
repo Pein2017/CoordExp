@@ -133,11 +133,8 @@ Current internal ownership seams:
 - Mixed A/B baseline: `configs/stage2_two_channel/prod/ab_mixed.yaml`
 - Pseudo-positive `K=4` production profile: `configs/stage2_two_channel/prod/ab_mixed_coco1024_bmajority_channel_b_pseudo_positive.yaml`
 - A-only smoke: `configs/stage2_two_channel/smoke/a_only.yaml`
-- A-only center-size smoke: `configs/stage2_two_channel/smoke/a_only_center_size_2steps.yaml`
 - Production-like smoke: `configs/stage2_two_channel/smoke/ab_mixed_20steps.yaml`
 - Pseudo-positive smoke: `configs/stage2_two_channel/smoke/b_majority_coco1024_pseudo_positive_4steps.yaml`
-- Enabled `K=2` pseudo-positive control smoke: `configs/stage2_two_channel/smoke/b_majority_coco1024_pseudo_positive_k2_4steps.yaml`
-- Server-mode eval smoke: `configs/stage2_two_channel/smoke/b_majority_coco1024_triage_posterior_vllm_server_6srv2lr_eval_4steps.yaml`
 
 ## Launch Patterns
 
@@ -147,23 +144,9 @@ Use this when you do not need the dedicated server-mode launcher split.
 
 ```bash
 PYTHONPATH=. conda run -n ms python -m src.sft --config configs/stage2_two_channel/smoke/a_only.yaml
-PYTHONPATH=. conda run -n ms python -m src.sft --config configs/stage2_two_channel/smoke/a_only_center_size_2steps.yaml
 PYTHONPATH=. conda run -n ms python -m src.sft --config configs/stage2_two_channel/smoke/ab_mixed_20steps.yaml
 PYTHONPATH=. conda run -n ms python -m src.sft --config configs/stage2_two_channel/smoke/b_majority_coco1024_pseudo_positive_4steps.yaml
 ```
-
-Center-size experiment note:
-
-- `bbox_geo.config.parameterization: center_size` keeps Channel-A / Channel-B
-  decoded boxes and downstream artifacts canonical `xyxy`
-- the experimental mode only changes the internal bbox regression term:
-  stronger center supervision, softer `log_w` / `log_h`, CIoU still on
-  canonical `xyxy`
-- verify the intended mode from `resolved_config.json`
-- use `experiment_manifest.json` for authored run purpose / hypothesis / key
-  deviations plus a runtime summary
-- `run_metadata.json` remains the low-level provenance sidecar and does not
-  redefine loss semantics
 
 ## First Pseudo-Positive Checks
 

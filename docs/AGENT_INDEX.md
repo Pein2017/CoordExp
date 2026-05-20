@@ -30,7 +30,7 @@ Human support entrypoints:
 4. the relevant domain router
 5. relevant `openspec/specs/` only for stable contract semantics
    - use [`runtime-architecture-refactor-program/spec.md`](../openspec/specs/runtime-architecture-refactor-program/spec.md) for runtime structure, internal seams, and compatibility-preserving refactors
-   - use [`stage1-latest-detection-objectives/spec.md`](../openspec/specs/stage1-latest-detection-objectives/spec.md) for latest Stage-1 compact recursive detection objective contracts
+   - use [`stage1-detection-objectives/spec.md`](../openspec/specs/stage1-detection-objectives/spec.md) for current Stage-1 compact recursive detection objective contracts
    - use [`stage2-ab-training/spec.md`](../openspec/specs/stage2-ab-training/spec.md) for stable Stage-2 contract semantics and config-contract boundaries
 6. `progress/` only when current docs do not answer the historical or empirical question
 
@@ -55,12 +55,11 @@ Human support entrypoints:
   - [docs/training/README.md](training/README.md)
   - [docs/training/STAGE1_OBJECTIVE.md](training/STAGE1_OBJECTIVE.md) for baseline Stage-1 behavior, compact recursive detection, prefix-rollin ablation boundaries, and retired candidate-objective boundaries
   - [docs/data/PACKING.md](data/PACKING.md)
-  - Latest compact detection production baseline/comparator: `configs/stage1/recursive_detection_ce_latest/prod/compact_full_support2.yaml`, `src/config/schema.py::LatestDetectionTrainingConfig`, and `src/detection/runtime.py`
-  - Prefix-rollin E1 ablation route: `configs/stage1/recursive_detection_ce_latest/ablation/compact_full_prefix_rollin_balance2.yaml`; compact_full only, `<|im_end|>` only, empirical EOS prior only for smoke/ablation, production requires `calibrated_formula_ref` with a versioned artifact.
-  - Prefix-rollin E2 separator diagnostic route: `configs/stage1/recursive_detection_ce_latest/ablation/compact_full_prefix_rollin_separator2.yaml`; same as E1 except `objective.boundary.separator_continue_weight=2.0` to test the diagnosed `\n` vs `<|im_end|>` free-boundary failure.
-  - [`stage1-latest-detection-objectives/spec.md`](../openspec/specs/stage1-latest-detection-objectives/spec.md) for stable latest-detection objective contracts; active future variants live under `openspec/changes/<change-id>/`.
-  - Latest compact detection authoring snippets, not yet consumed by canonical launch configs: `configs/_shared/latest_detection/`
-  - Legacy compact bridge example only: `configs/stage1/compact_detection_sequence/smoke/compact_full_tiny.yaml`
+  - Compact detection production baseline/comparator: `configs/stage1/recursive_detection_ce/prod/compact_full_support2.yaml`, `src/config/schema.py::DetectionTrainingConfig`, and `src/detection/runtime.py`
+  - Prefix-rollin E1 ablation route: `configs/stage1/recursive_detection_ce/ablation/compact_full_prefix_rollin_balance2.yaml`; compact_full only, `<|im_end|>` only, empirical EOS prior only for smoke/ablation, production requires `calibrated_formula_ref` with a versioned artifact.
+  - Prefix-rollin E2 separator diagnostic route: `configs/stage1/recursive_detection_ce/ablation/compact_full_prefix_rollin_separator2.yaml`; same as E1 except `objective.boundary.separator_continue_weight=2.0` to test the diagnosed `\n` vs `<|im_end|>` free-boundary failure.
+  - [`stage1-detection-objectives/spec.md`](../openspec/specs/stage1-detection-objectives/spec.md) for stable detection objective contracts; active future variants live under `openspec/changes/<change-id>/`.
+  - Compact detection authoring snippets, not yet consumed by canonical launch configs: `configs/_shared/recursive_detection/`
 - Stage-2 training:
   - [docs/training/README.md](training/README.md)
   - [docs/training/STAGE2_RUNBOOK.md](training/STAGE2_RUNBOOK.md)

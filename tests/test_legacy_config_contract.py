@@ -35,7 +35,7 @@ def test_legacy_custom_coord_loss_is_hard_error() -> None:
         ValueError,
         match=(
             r"custom\.coord_loss is no longer supported.*"
-            r"custom\.coord_soft_ce_w1.*latest objective\.\*"
+            r"custom\.coord_soft_ce_w1.*objective\.\*"
         ),
     ):
         TrainingConfig.from_mapping(payload, PromptOverrides())

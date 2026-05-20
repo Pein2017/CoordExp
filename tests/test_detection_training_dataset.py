@@ -323,7 +323,7 @@ def _ensure_image(tmp_path: Path) -> Path:
     return image_path
 
 
-def test_latest_detection_dataset_returns_encoded_sample_with_recursive_sidecar(
+def test_detection_training_dataset_returns_encoded_sample_with_recursive_sidecar(
     tmp_path: Path,
 ) -> None:
     sample = _dataset(tmp_path)[0]
@@ -354,7 +354,7 @@ def test_latest_detection_dataset_returns_encoded_sample_with_recursive_sidecar(
     )
 
 
-def test_latest_detection_dataset_applies_eos_trust_without_prefix_rollin(
+def test_detection_training_dataset_applies_eos_trust_without_prefix_rollin(
     tmp_path: Path,
 ) -> None:
     eos_trust_weight_config = {"source": "constant_ablation", "value": 0.25}
@@ -385,7 +385,7 @@ def test_latest_detection_dataset_applies_eos_trust_without_prefix_rollin(
     assert all(target.loss_weight == pytest.approx(1.0) for target in non_eos_targets)
 
 
-def test_latest_detection_dataset_random_order_is_epoch_deterministic(
+def test_detection_training_dataset_random_order_is_epoch_deterministic(
     tmp_path: Path,
 ) -> None:
     dataset = _dataset(tmp_path)
@@ -405,7 +405,7 @@ def test_latest_detection_dataset_random_order_is_epoch_deterministic(
     assert len(observed) > 1
 
 
-def test_latest_detection_dataset_allows_swift_image_token_expansion(
+def test_detection_training_dataset_allows_swift_image_token_expansion(
     tmp_path: Path,
 ) -> None:
     sample = _dataset(tmp_path, swift_template=ImageExpandingSwiftTemplate())[0]
@@ -417,14 +417,14 @@ def test_latest_detection_dataset_allows_swift_image_token_expansion(
     )
 
 
-def test_latest_detection_dataset_rejects_encode_sidecar_drift(tmp_path: Path) -> None:
+def test_detection_training_dataset_rejects_encode_sidecar_drift(tmp_path: Path) -> None:
     dataset = _dataset(tmp_path, swift_template=DriftingSwiftTemplate())
 
     with pytest.raises(ValueError, match="encoded input_ids and labels"):
         dataset[0]
 
 
-def test_latest_detection_dataset_sft_mode_does_not_attach_recursive_sidecar(
+def test_detection_training_dataset_sft_mode_does_not_attach_recursive_sidecar(
     tmp_path: Path,
 ) -> None:
     jsonl_path = tmp_path / "train.coord.jsonl"
@@ -523,7 +523,7 @@ def test_prefix_rollin_dataset_masks_prefix_and_keeps_weighted_im_end_target(
     assert 0.0 <= sample["detection_metadata"]["eos_trust_weight"] <= 1.0
 
 
-def test_latest_detection_dataset_rejects_missing_image_path(tmp_path: Path) -> None:
+def test_detection_training_dataset_rejects_missing_image_path(tmp_path: Path) -> None:
     jsonl_path = tmp_path / "train.coord.jsonl"
     _write_jsonl(jsonl_path, [_raw_row()])
     dataset = DetectionTrainingDataset.from_jsonl(
@@ -545,7 +545,7 @@ def test_latest_detection_dataset_rejects_missing_image_path(tmp_path: Path) -> 
         dataset[0]
 
 
-def test_latest_detection_dataset_rejects_absolute_image_outside_root(
+def test_detection_training_dataset_rejects_absolute_image_outside_root(
     tmp_path: Path,
 ) -> None:
     jsonl_path = tmp_path / "train.coord.jsonl"

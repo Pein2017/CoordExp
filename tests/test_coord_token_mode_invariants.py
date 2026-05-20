@@ -5,7 +5,7 @@ from src.config.loader import ConfigLoader
 
 def test_coord_token_mode_invariants_for_anchored_configs() -> None:
     stage1 = ConfigLoader.load_materialized_training_config(
-        "configs/stage1/profiles/4b/coord_soft_ce_gate_coco80_geometry_first.yaml"
+        "configs/stage1/profiles/4b/coord_soft_ce_gate_coco80_desc_first_1024_lvis_proxy.yaml"
     )
     stage2 = ConfigLoader.load_materialized_training_config(
         "configs/stage2_two_channel/prod/ab_mixed.yaml"

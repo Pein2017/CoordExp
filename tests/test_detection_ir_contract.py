@@ -95,10 +95,10 @@ def test_detection_document_field_order_policy_is_coordinate_surface_independent
 
     doc = DetectionDocument.from_normalized_sample(
         sample,
-        coordinate_surface="raw_text",
+        coordinate_surface="numeric_text",
     )
 
-    assert doc.coordinate_surface == "raw_text"
+    assert doc.coordinate_surface == "numeric_text"
     assert doc.objects[0].field_order_policy == "desc_then_bbox_2d"
 
 
@@ -117,7 +117,7 @@ def test_detection_ir_dataclasses_are_frozen() -> None:
     )
 
     with pytest.raises(FrozenInstanceError):
-        doc.coordinate_surface = "raw_text"  # type: ignore[misc]
+        doc.coordinate_surface = "changed"  # type: ignore[misc]
     with pytest.raises(FrozenInstanceError):
         doc.objects[0].desc = "changed"  # type: ignore[misc]
     with pytest.raises(TypeError):
