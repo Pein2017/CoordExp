@@ -3,8 +3,10 @@ from __future__ import annotations
 from types import SimpleNamespace
 
 import pytest
+import torch
 
 import src.sft as sft_module
+from src.bootstrap.trainer_setup import compose_trainer_class
 from src.sft import (
     EncodedSampleCacheRuntimeConfig,
     PackingRuntimeConfig,
@@ -22,6 +24,10 @@ from src.training_runtime import (
     resolve_training_runtime_plan,
     resolve_training_runtime_profile,
 )
+from src.trainers.metrics.mixins import TeacherForcingObjectiveMixin
+from src.training.teacher_forcing.ir import SupervisionAtom, TeacherForcingTargetIR
+from src.training.teacher_forcing.roles import TokenRole
+from src.training.teacher_forcing.vocab import RoleVocab
 
 
 @pytest.mark.parametrize(
@@ -189,6 +195,95 @@ def test_sft_runtime_preflight_bypasses_teacher_forcing_encoded_sample_cache() -
         )
         is None
     )
+
+
+def test_compose_trainer_class_adds_teacher_forcing_objective_mixin() -> None:
+    trainer_cls = compose_trainer_class(
+        trainer_cls=object,
+        trainer_variant="",
+        instability_monitor_cfg=None,
+        token_type_cfg=None,
+        bbox_geo_cfg=None,
+        bbox_size_aux_cfg=None,
+        coord_soft_ce_w1_cfg=None,
+        sft_structural_close_cfg=None,
+        recursive_detection_ce_cfg=None,
+        teacher_forcing_objective_cfg=SimpleNamespace(enabled=True),
+    )
+
+    assert issubclass(trainer_cls, TeacherForcingObjectiveMixin)
+
+
+def test_teacher_forcing_objective_mixin_computes_loss_through_runner() -> None:
+    class _Model:
+        def __init__(self, logits: torch.Tensor) -> None:
+            self.logits = logits
+            self.calls: list[dict[str, object]] = []
+
+        def __call__(self, **kwargs):
+            self.calls.append(dict(kwargs))
+            return SimpleNamespace(logits=self.logits)
+
+    class _BaseTrainer:
+        def compute_loss(self, *args, **kwargs):  # pragma: no cover - must not run
+            raise AssertionError("base trainer CE path should not own teacher_forcing")
+
+    class _Trainer(TeacherForcingObjectiveMixin, _BaseTrainer):
+        pass
+
+    atom = SupervisionAtom(
+        batch_index=0,
+        logit_position=0,
+        target_position=1,
+        allowed_token_roles=frozenset({TokenRole.TEXT}),
+        selected_token_role=TokenRole.TEXT,
+        valid_token_ids=frozenset({1, 2}),
+        selected_token_id=1,
+        latent_valid_token_ids=frozenset({1, 2}),
+        coverage_target_weights=None,
+        loss_tags=frozenset({"pure_valid_set_marginal"}),
+        loss_weight=1.0,
+        coord_role=None,
+        provenance={},
+    )
+    target_ir = TeacherForcingTargetIR(
+        schema_version=1,
+        atoms=(atom,),
+        metadata={"serialization_policy": "marker_delimited"},
+    )
+    logits = torch.tensor(
+        [[[0.0, 2.0, 1.0], [0.0, 0.0, 0.0]]],
+        dtype=torch.float32,
+    )
+    inputs = {
+        "input_ids": torch.tensor([[0, 1]], dtype=torch.long),
+        "attention_mask": torch.tensor([[1, 1]], dtype=torch.long),
+        "labels": torch.tensor([[-100, 1]], dtype=torch.long),
+        "teacher_forcing_target_ir": (target_ir,),
+    }
+    trainer = _Trainer()
+    trainer.teacher_forcing_objective_cfg = SimpleNamespace(
+        profile="pure_valid_set_marginal",
+        modules=SimpleNamespace(
+            within_valid_coverage=SimpleNamespace(coverage_strength=0.0),
+        ),
+    )
+    trainer.teacher_forcing_role_vocab = RoleVocab(
+        text_token_ids=frozenset({1, 2}),
+        schema_token_ids=frozenset(),
+        coord_token_ids=frozenset(),
+        stop_token_id=9,
+    )
+
+    loss, outputs = trainer.compute_loss(
+        _Model(logits),
+        inputs,
+        return_outputs=True,
+    )
+
+    expected = -torch.log(torch.softmax(logits[0, 0], dim=-1)[[1, 2]].sum())
+    assert loss.item() == pytest.approx(expected.item())
+    assert outputs.logits is logits
 
 
 def test_static_packing_accumulation_warning_is_skipped_for_trainer_owned_packing(

@@ -15,6 +15,7 @@ from src.trainers.metrics.bbox_losses import BBoxGeoLossMixin, BBoxSizeAuxLossMi
 from src.trainers.metrics.coord_losses import CoordSoftCEW1LossMixin
 from src.trainers.metrics.recursive_detection import RecursiveDetectionCEMixin
 from src.trainers.metrics.structural_close import SFTStructuralCloseLossMixin
+from src.trainers.metrics.teacher_forcing import TeacherForcingObjectiveMixin
 from src.trainers.monitoring.instability import InstabilityMonitorMixin
 
 __all__ = [
@@ -24,6 +25,7 @@ __all__ = [
     "_validate_batch_contract",
     "SFTStructuralCloseLossMixin",
     "RecursiveDetectionCEMixin",
+    "TeacherForcingObjectiveMixin",
     "AggregateTokenTypeMetricsMixin",
     "CoordSoftCEW1LossMixin",
     "BBoxGeoLossMixin",

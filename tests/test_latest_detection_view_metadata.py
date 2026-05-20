@@ -6,7 +6,9 @@ from pathlib import Path
 from typing import Any, Mapping, Sequence
 
 import pytest
+import torch
 
+from src.common.detection_compact_rows import IM_END_TOKEN
 from src.detection.data import (
     ObjectOrderingPlan,
     normalize_detection_row,
@@ -22,10 +24,15 @@ from src.detection.objective import (
     prepare_detection_training_example,
 )
 from src.detection.template import get_detection_template
+from src.detection.token_types import build_compact_token_type_groups
 from src.sft import (
     _require_root_image_dir_matches_latest_detection,
     _resolve_root_image_dir_for_training,
 )
+from src.training.teacher_forcing.constants import TEACHER_FORCING_TARGET_IR_KEY
+from src.training.teacher_forcing.roles import TokenRole
+from src.training.teacher_forcing.validation import validate_target_ir
+from src.training.teacher_forcing.vocab import RoleVocab
 from test_detection_training_dataset import FakeSwiftTemplate
 
 
@@ -373,6 +380,125 @@ def test_dataset_exposes_rendered_span_sources_without_model_input_leak(
     strip_candidate.pop("length", None)
     model_inputs = strip_non_model_detection_sidecars(strip_candidate)
     assert "rendered_span_sources" not in model_inputs
+
+
+def test_teacher_forcing_hard_sft_dataset_emits_aligned_target_ir(
+    tmp_path: Path,
+) -> None:
+    jsonl_path = tmp_path / "train.coord.jsonl"
+    _write_jsonl(jsonl_path, [_canonical_all_proxy_row()])
+    _ensure_image(tmp_path)
+    swift_template = FakeSwiftTemplate()
+    swift_template.tokenizer.bos_token_id = swift_template.tokenizer.convert_tokens_to_ids(
+        "<|im_start|>"
+    )
+    dataset = DetectionTrainingDataset.from_jsonl(
+        jsonl_path,
+        swift_template=swift_template,
+        image_root=tmp_path / "image-root",
+        detection_template_id="compact_full",
+        mode="random_order_sft",
+        object_ordering="sorted",
+        user_prompt="Detect every object.",
+        system_prompt="You are a detector.",
+        seed=123,
+        state_weighting="none",
+        normalization="token_mean",
+        teacher_forcing_profile="hard_sft",
+        teacher_forcing_rollin_base_seed=17,
+    )
+
+    sample = dataset[0]
+
+    assert TEACHER_FORCING_TARGET_IR_KEY in sample
+    assert "recursive_detection_targets" not in sample
+    target_ir = sample[TEACHER_FORCING_TARGET_IR_KEY]
+    assert target_ir.metadata["serialization_policy"] == "marker_delimited"
+    assert target_ir.metadata["rollin_policy"] == "random_permutation"
+    assert target_ir.metadata["stop_token_text"] == IM_END_TOKEN
+    assert target_ir.metadata["pad_token_text"] == "<|endoftext|>"
+    assert target_ir.metadata["parser_mode"] == "strict_expected"
+    assert target_ir.metadata["compact_grammar_enabled"] is True
+    assert all(
+        atom.valid_token_ids == frozenset({atom.selected_token_id})
+        for atom in target_ir.atoms
+    )
+
+    stop_token_id = swift_template.tokenizer.convert_tokens_to_ids(IM_END_TOKEN)
+    assert target_ir.atoms[-1].selected_token_role is TokenRole.STOP
+    assert target_ir.atoms[-1].selected_token_id == stop_token_id
+
+    input_ids = sample["input_ids"]
+    for atom in target_ir.atoms:
+        assert atom.target_position == atom.logit_position + 1
+        assert input_ids[atom.target_position] == atom.selected_token_id
+        assert sample["labels"][atom.target_position] == atom.selected_token_id
+
+    validate_target_ir(
+        target_ir,
+        input_ids=torch.tensor([input_ids], dtype=torch.long),
+        role_vocab=_role_vocab_for_fake_tokenizer(swift_template.tokenizer),
+    )
+
+    strip_candidate = dict(sample)
+    strip_candidate.pop("length", None)
+    model_inputs = strip_non_model_detection_sidecars(strip_candidate)
+    assert TEACHER_FORCING_TARGET_IR_KEY not in model_inputs
+
+
+def test_teacher_forcing_pure_valid_set_dataset_emits_ambiguous_atoms(
+    tmp_path: Path,
+) -> None:
+    row = _canonical_all_proxy_row()
+    row["objects"][0]["desc"] = "person"
+    row["objects"][1]["desc"] = "person"
+    row["objects"][0]["bbox_2d"] = [100, 100, 200, 220]
+    row["objects"][1]["bbox_2d"] = [300, 120, 360, 180]
+    jsonl_path = tmp_path / "train.coord.jsonl"
+    _write_jsonl(jsonl_path, [row])
+    _ensure_image(tmp_path)
+    swift_template = FakeSwiftTemplate()
+    swift_template.tokenizer.bos_token_id = swift_template.tokenizer.convert_tokens_to_ids(
+        "<|im_start|>"
+    )
+    dataset = DetectionTrainingDataset.from_jsonl(
+        jsonl_path,
+        swift_template=swift_template,
+        image_root=tmp_path / "image-root",
+        detection_template_id="compact_full",
+        mode="random_order_sft",
+        object_ordering="sorted",
+        user_prompt="Detect every object.",
+        system_prompt="You are a detector.",
+        seed=123,
+        state_weighting="none",
+        normalization="token_mean",
+        teacher_forcing_profile="pure_valid_set_marginal",
+        teacher_forcing_rollin_base_seed=17,
+    )
+
+    target_ir = dataset[0][TEACHER_FORCING_TARGET_IR_KEY]
+
+    ambiguous_x1_atoms = [
+        atom
+        for atom in target_ir.atoms
+        if atom.coord_role == "x1" and len(atom.valid_token_ids) > 1
+    ]
+    assert ambiguous_x1_atoms
+    assert any(
+        atom.valid_token_ids != frozenset({atom.selected_token_id})
+        for atom in target_ir.atoms
+    )
+
+
+def _role_vocab_for_fake_tokenizer(tokenizer: object) -> RoleVocab:
+    groups = build_compact_token_type_groups(tokenizer)
+    return RoleVocab(
+        schema_token_ids=groups.struct,
+        text_token_ids=groups.desc,
+        coord_token_ids=groups.coord,
+        stop_token_id=next(iter(groups.eos)),
+    )
 
 
 def test_dataset_loads_latest_compact_view_image_root_from_metadata(

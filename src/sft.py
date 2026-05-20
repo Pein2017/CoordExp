@@ -1071,11 +1071,17 @@ def _latest_detection_objective_runtime_payload(training_config: Any) -> dict[st
     payload: dict[str, Any] = {
         "id": _get_section_value(objective_cfg, "id"),
         "variant": _get_section_value(objective_cfg, "variant"),
+        "profile": _get_section_value(objective_cfg, "profile"),
         "state_weighting": _get_section_value(objective_cfg, "state_weighting"),
         "normalization": _get_section_value(objective_cfg, "normalization"),
         "template_id": _get_section_value(template_cfg, "id"),
         "coordinate_surface": _get_section_value(template_cfg, "coordinate_surface"),
         "bbox_format": _get_section_value(template_cfg, "bbox_format"),
+        "stop_token_text": "<|im_end|>",
+        "pad_token_text": "<|endoftext|>",
+        "serialization_policy": "marker_delimited",
+        "parser_mode": "strict_expected",
+        "compact_grammar_enabled": _get_section_value(template_cfg, "id") == "compact_full",
     }
     if target_cfg is not None:
         payload.update(
@@ -3464,12 +3470,18 @@ def main():
     trainer_variant = getattr(train_args, "trainer_variant", None)
     runtime_profile = resolve_training_runtime_profile(trainer_variant)
     recursive_detection_ce_cfg = _resolve_recursive_detection_ce_cfg(training_config)
+    teacher_forcing_objective_cfg = None
+    if latest_detection_config is not None and getattr(
+        latest_detection_config.objective, "id", None
+    ) == "teacher_forcing":
+        teacher_forcing_objective_cfg = latest_detection_config.objective
     if (
         runtime_profile.preserve_raw_sample_metadata
         or recursive_detection_ce_cfg is not None
+        or teacher_forcing_objective_cfg is not None
     ):
         # Keep raw fields for trainer-owned branch/rollout construction.
-        if recursive_detection_ce_cfg is not None:
+        if recursive_detection_ce_cfg is not None or teacher_forcing_objective_cfg is not None:
             setattr(train_args, "remove_unused_columns", False)
         if getattr(train_args, "training_args", None) is not None:
             train_args.training_args.remove_unused_columns = False
@@ -3647,6 +3659,7 @@ def main():
         coord_soft_ce_w1_cfg=coord_soft_ce_w1_cfg,
         sft_structural_close_cfg=sft_structural_close_cfg,
         recursive_detection_ce_cfg=recursive_detection_ce_cfg,
+        teacher_forcing_objective_cfg=teacher_forcing_objective_cfg,
     )
     length_bucketing_cfg = _build_latest_detection_length_bucketing_config(
         dataset=dataset,
@@ -3923,6 +3936,8 @@ def main():
         setattr(trainer, "sft_structural_close_cfg", sft_structural_close_cfg)
     if recursive_detection_ce_cfg is not None:
         setattr(trainer, "recursive_detection_ce_cfg", recursive_detection_ce_cfg)
+    if teacher_forcing_objective_cfg is not None:
+        setattr(trainer, "teacher_forcing_objective_cfg", teacher_forcing_objective_cfg)
     setattr(trainer, "bbox_format", str(custom_config.bbox_format))
     if token_type_cfg is not None:
         setattr(trainer, "token_type_metrics_cfg", token_type_cfg)

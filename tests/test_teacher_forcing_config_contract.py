@@ -16,6 +16,7 @@ from src.detection.runtime import (
     latest_detection_mode,
     resolve_latest_detection_prompts,
 )
+from src.training.teacher_forcing.constants import TEACHER_FORCING_TARGET_IR_KEY
 
 TEST_DIR = Path(__file__).resolve().parent
 if str(TEST_DIR) not in sys.path:
@@ -516,29 +517,29 @@ def test_checked_in_latest_teacher_forcing_smoke_reaches_dataset_runtime(
 
     assert sample["detection_metadata"]["mode"] == "random_order_sft"
     assert "recursive_detection_targets" not in sample
+    assert TEACHER_FORCING_TARGET_IR_KEY in sample
 
 
-@pytest.mark.parametrize(
-    "objective",
-    [
-        _teacher_forcing_objective(),
-        _teacher_forcing_objective(
-            profile="coverage_regularized_valid_set_marginal",
-            coverage_enabled=True,
-            coverage_strength=0.1,
-        ),
-    ],
-)
-def test_latest_teacher_forcing_valid_set_profiles_require_runtime_wiring(
-    objective: dict,
-) -> None:
+def test_latest_teacher_forcing_pure_valid_set_profile_reaches_runtime() -> None:
     payload = _latest_teacher_payload()
-    payload["objective"] = objective
+    payload["objective"] = _teacher_forcing_objective()
+    cfg = LatestDetectionTrainingConfig.from_mapping(payload)
+
+    assert latest_detection_mode(cfg) == "random_order_sft"
+
+
+def test_latest_teacher_forcing_coverage_profile_still_requires_runtime_wiring() -> None:
+    payload = _latest_teacher_payload()
+    payload["objective"] = _teacher_forcing_objective(
+        profile="coverage_regularized_valid_set_marginal",
+        coverage_enabled=True,
+        coverage_strength=0.1,
+    )
     cfg = LatestDetectionTrainingConfig.from_mapping(payload)
 
     with pytest.raises(
         ValueError,
-        match=r"valid-set profiles require target IR runtime wiring",
+        match=r"currently supports objective\.profile",
     ):
         latest_detection_mode(cfg)
 

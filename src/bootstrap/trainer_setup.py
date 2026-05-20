@@ -13,6 +13,7 @@ from src.trainers.metrics.mixins import (
     InstabilityMonitorMixin,
     RecursiveDetectionCEMixin,
     SFTStructuralCloseLossMixin,
+    TeacherForcingObjectiveMixin,
 )
 
 
@@ -27,6 +28,7 @@ def compose_trainer_class(
     coord_soft_ce_w1_cfg: Any,
     sft_structural_close_cfg: Any = None,
     recursive_detection_ce_cfg: Any = None,
+    teacher_forcing_objective_cfg: Any = None,
 ) -> type:
     mixins: list[type] = []
     runtime_profile = resolve_training_runtime_profile(trainer_variant)
@@ -35,8 +37,12 @@ def compose_trainer_class(
             recursive_detection_ce_cfg
             and getattr(recursive_detection_ce_cfg, "enabled", False)
         )
+        teacher_forcing_enabled = bool(
+            teacher_forcing_objective_cfg
+            and getattr(teacher_forcing_objective_cfg, "enabled", True)
+        )
         mixins.append(GradAccumLossScaleMixin)
-        if recursive_ce_enabled:
+        if recursive_ce_enabled or teacher_forcing_enabled:
             incompatible = []
             for name, cfg in (
                 ("bbox_size_aux", bbox_size_aux_cfg),
@@ -49,8 +55,8 @@ def compose_trainer_class(
             if incompatible:
                 joined = ", ".join(sorted(incompatible))
                 raise ValueError(
-                    "recursive_detection_ce currently owns the teacher-forced token "
-                    "loss and does not support auxiliary loss mixins in the same "
+                    "teacher-forced target sidecars currently own the token loss "
+                    "and do not support auxiliary loss mixins in the same "
                     f"trainer composition: {joined}"
                 )
         if isinstance(instability_monitor_cfg, Mapping) and bool(
@@ -61,6 +67,8 @@ def compose_trainer_class(
             mixins.append(AggregateTokenTypeMetricsMixin)
         if recursive_ce_enabled:
             mixins.append(RecursiveDetectionCEMixin)
+        elif teacher_forcing_enabled:
+            mixins.append(TeacherForcingObjectiveMixin)
         elif bbox_size_aux_cfg and getattr(bbox_size_aux_cfg, "enabled", False):
             mixins.append(BBoxSizeAuxLossMixin)
         if (

@@ -159,10 +159,13 @@ def latest_detection_mode(
     training_config: LatestDetectionTrainingConfig,
 ) -> LatestDetectionRuntimeMode:
     if training_config.objective.id == "teacher_forcing":
-        if training_config.objective.profile != "hard_sft":
+        if training_config.objective.profile not in {
+            "hard_sft",
+            "pure_valid_set_marginal",
+        }:
             raise ValueError(
-                "teacher_forcing valid-set profiles require target IR runtime wiring "
-                "before latest detection dataset construction is supported"
+                "teacher_forcing latest detection runtime currently supports "
+                "objective.profile in {'hard_sft', 'pure_valid_set_marginal'}"
             )
         rollin_policy = training_config.objective.target_ir.rollin_policy
         if rollin_policy.name != "random_permutation":
@@ -194,7 +197,8 @@ def resolve_detection_runtime_support(
     return DetectionRuntimeSupport(
         recursive_sidecars_required=(
             training_config.detection_template.id == "compact_full"
-            and training_config.objective.id == "recursive_detection_ce"
+            and training_config.objective.id
+            in {"recursive_detection_ce", "teacher_forcing"}
         )
     )
 
@@ -223,7 +227,8 @@ def assert_latest_detection_runtime_supported(
                 "until sidecar offset rewriting is implemented"
             )
 
-    if training_config.objective.variant == "prefix_rollin_et_rmp_ce":
+    objective_variant = str(getattr(training_config.objective, "variant", "") or "")
+    if objective_variant == "prefix_rollin_et_rmp_ce":
         if tokenizer is None:
             raise ValueError(
                 "prefix_rollin_et_rmp_ce requires tokenizer context for <|im_end|> "
@@ -444,9 +449,15 @@ def build_latest_detection_dataset(
     if objective_id == "teacher_forcing":
         state_weighting = "uniform_permutation"
         normalization = "semantic_image_bucket_balanced"
+        teacher_forcing_profile = str(getattr(objective, "profile"))
+        teacher_forcing_rollin_base_seed = int(
+            getattr(objective.target_ir.rollin_policy, "base_seed")
+        )
     else:
         state_weighting = getattr(objective, "state_weighting")
         normalization = getattr(objective, "normalization")
+        teacher_forcing_profile = None
+        teacher_forcing_rollin_base_seed = None
     return DetectionTrainingDataset.from_jsonl(
         jsonl_path,
         swift_template=swift_template,
@@ -460,6 +471,8 @@ def build_latest_detection_dataset(
         state_weighting=state_weighting,
         normalization=normalization,
         type_gate_config=type_gate_config,
+        teacher_forcing_profile=teacher_forcing_profile,
+        teacher_forcing_rollin_base_seed=teacher_forcing_rollin_base_seed,
         sample_limit=sample_limit,
         dataset_name=dataset_name,
     )

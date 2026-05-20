@@ -5,7 +5,12 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Literal, Mapping, NamedTuple, Sequence
 
-from src.common.detection_compact_rows import BOX_START_TOKEN, OBJECT_REF_START_TOKEN
+from src.common.detection_compact_rows import (
+    BOX_START_TOKEN,
+    END_OF_TEXT_TOKEN,
+    IM_END_TOKEN,
+    OBJECT_REF_START_TOKEN,
+)
 from src.detection.data import (
     DetectionMetadata,
     NormalizedDetectionObject,
@@ -115,6 +120,7 @@ class TeacherForcingTargetBuilder:
                 prepared_by_index[index].rendered_text for index in rollin_indices
             )
             rendered_ids = _encode_rendered_text(self.tokenizer, rendered_text)
+            stop_token_id = _single_token_id(self.tokenizer, IM_END_TOKEN)
             expected_rendered_ids = tuple(
                 token_id
                 for index in rollin_indices
@@ -133,6 +139,7 @@ class TeacherForcingTargetBuilder:
             return _drop(str(exc), rendered_text=rendered_text)
 
         input_ids = (prefix.token_id, *rendered_ids)
+        input_ids = (*input_ids, stop_token_id)
         if max_length is not None and len(input_ids) > int(max_length):
             return _drop("overlength", rendered_text=rendered_text)
 
@@ -144,6 +151,7 @@ class TeacherForcingTargetBuilder:
             rollin_indices=rollin_indices,
             branches_by_index=branches_by_index,
             profile=normalized_profile,
+            stop_token_id=stop_token_id,
         )
         target_ir = TeacherForcingTargetIR(
             schema_version=TEACHER_FORCING_TARGET_IR_SCHEMA_VERSION,
@@ -153,12 +161,17 @@ class TeacherForcingTargetBuilder:
                 "rollin_policy": self.policy_name,
                 "rollin_seed": seed,
                 "serialization_policy": self.serialization_policy,
+                "stop_token_text": IM_END_TOKEN,
+                "pad_token_text": END_OF_TEXT_TOKEN,
+                "parser_mode": "strict_expected",
+                "compact_grammar_enabled": True,
                 "rollin_policy_version": self.policy_version,
                 "stable_sample_id": sample_id,
                 "input_prefix_token_source": prefix.source,
                 "selected_source_object_indices": tuple(
                     parsed.objects[index].source_object_index for index in rollin_indices
                 ),
+                "selected_normalized_object_indices": tuple(int(index) for index in rollin_indices),
             },
         )
         return TeacherForcingBuildResult(
@@ -178,11 +191,13 @@ def build_teacher_forcing_target(
     stable_sample_id: str | None = None,
     max_length: int | None = None,
     base_seed: int = DEFAULT_ROLLIN_BASE_SEED,
+    input_prefix_token_id: int | None = None,
 ) -> TeacherForcingBuildResult:
     builder = TeacherForcingTargetBuilder(
         tokenizer=tokenizer,
         profile=profile,
         base_seed=base_seed,
+        input_prefix_token_id=input_prefix_token_id,
     )
     return builder.build(
         sample,
@@ -197,6 +212,7 @@ def _build_atoms(
     rollin_indices: tuple[int, ...],
     branches_by_index: Mapping[int, TokenBranch],
     profile: Literal["hard_sft", "valid_set"],
+    stop_token_id: int,
 ) -> tuple[SupervisionAtom, ...]:
     atoms: list[SupervisionAtom] = []
     remaining = tuple(rollin_indices)
@@ -246,6 +262,24 @@ def _build_atoms(
             rendered_token_position += 1
         remaining = tuple(index for index in remaining if index != selected_index)
 
+    target_position = rendered_token_position + 1
+    atoms.append(
+        SupervisionAtom(
+            batch_index=0,
+            logit_position=target_position - 1,
+            target_position=target_position,
+            allowed_token_roles=frozenset({TokenRole.STOP}),
+            selected_token_role=TokenRole.STOP,
+            valid_token_ids=frozenset({int(stop_token_id)}),
+            selected_token_id=int(stop_token_id),
+            latent_valid_token_ids=frozenset({int(stop_token_id)}),
+            coverage_target_weights=None,
+            loss_tags=frozenset({profile}),
+            loss_weight=1.0,
+            coord_role=None,
+            provenance={"terminal": IM_END_TOKEN},
+        )
+    )
     return tuple(atoms)
 
 
@@ -322,7 +356,7 @@ def _input_prefix_token_id(tokenizer: Any, configured: int | None) -> _InputPref
 
 def _normalize_profile(profile: str) -> Literal["hard_sft", "valid_set"]:
     normalized = profile.strip().lower().replace("-", "_")
-    if normalized == "valid_set_marginal":
+    if normalized in {"valid_set_marginal", "pure_valid_set_marginal"}:
         normalized = "valid_set"
     if normalized not in {"hard_sft", "valid_set"}:
         raise ValueError("teacher-forcing profile must be one of {'hard_sft', 'valid_set'}")
