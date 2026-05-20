@@ -3219,7 +3219,7 @@ class Stage2ABConfig:
                     "stage2_ab.channel_b.pseudo_positive; disable pseudo_positive "
                     "to avoid double supervision."
                 )
-            if STAGE2_TRIE_CE_MODULE_NAME in {
+            if residual_set_on_channel_b and STAGE2_TRIE_CE_MODULE_NAME in {
                 spec.name
                 for spec in pipeline.objective
                 if bool(spec.enabled) and "B" in spec.channels
