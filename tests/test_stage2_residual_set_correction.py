@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import pytest
+import torch
 
 from src.trainers.stage2_two_channel.residual_set import (
     CorrectionAtomDraft,
@@ -12,6 +13,9 @@ from src.trainers.stage2_two_channel.residual_set import (
     ValidAction,
     enumerate_valid_actions,
     transition_state,
+)
+from src.trainers.stage2_two_channel.teacher_forcing_adapter import (
+    build_residual_set_target_ir,
 )
 from src.training.teacher_forcing.roles import TokenRole
 from src.training.teacher_forcing.vocab import RoleVocab
@@ -72,9 +76,20 @@ def apply_action(state: ResidualState, action: ValidAction) -> ResidualState:
 def make_role_vocab() -> RoleVocab:
     return RoleVocab(
         schema_token_ids=frozenset({1}),
-        text_token_ids=frozenset(ord(ch) for ch in "person_left_rightcar"),
+        text_token_ids=frozenset(ord(ch) for ch in "person_left_rightcar")
+        | frozenset({101, 201}),
         coord_token_ids=frozenset(coord_token(value) for value in range(0, 1001)),
         stop_token_id=999,
+    )
+
+
+def make_text_action(token_id: int, *, loss_weight: float = 1.0) -> ValidAction:
+    return ValidAction(
+        token_id=token_id,
+        token_role=TokenRole.TEXT,
+        token_text=f"text-{token_id}",
+        candidate_ids_after=frozenset({"a"}),
+        metadata={"loss_weight": loss_weight},
     )
 
 
@@ -84,19 +99,21 @@ def make_event(
     target_position: int = 8,
     logit_position: int = 7,
     valid_actions: tuple[ValidAction, ...],
+    draft_metadata: dict[str, object] | None = None,
+    event_metadata: dict[str, object] | None = None,
 ) -> CorrectionEvent:
     draft = CorrectionAtomDraft(
         correction_kind=kind,
         target_position=target_position,
         logit_position=logit_position,
         valid_actions=valid_actions,
-        metadata={"source": "unit-test"},
+        metadata={"source": "unit-test", **(draft_metadata or {})},
     )
     return CorrectionEvent(
         correction_kind=kind,
         sample_id="sample-1",
         atom_drafts=(draft,),
-        metadata={"adapter": "not-yet"},
+        metadata={"adapter": "not-yet", **(event_metadata or {})},
     )
 
 
@@ -391,3 +408,144 @@ def test_correction_event_and_atom_draft_are_pure_records_without_ir_adapter() -
     assert event.atom_drafts[0].valid_actions == actions
     assert event.atom_drafts[0].metadata == {"source": "unit-test"}
     assert event.metadata == {"adapter": "not-yet"}
+
+
+def test_correction_event_to_ir_uses_next_token_logit_row() -> None:
+    input_ids = torch.tensor([[11, 22, 101, 102, 103]])
+    event = make_event(
+        target_position=2,
+        logit_position=1,
+        valid_actions=(make_text_action(101), make_text_action(201)),
+        draft_metadata={"observed_token_id": 999, "anchor_position": 1},
+        event_metadata={"rollout_index": 3},
+    )
+
+    ir = build_residual_set_target_ir(
+        input_ids=input_ids,
+        batch_index=0,
+        events=(event,),
+        role_vocab=make_role_vocab(),
+    )
+
+    assert ir.metadata["stage"] == "stage2"
+    assert ir.metadata["stage2_channel"] == "B"
+    assert ir.metadata["objective"] == "residual_set_correction"
+    assert len(ir.atoms) == 1
+    atom = ir.atoms[0]
+    assert atom.batch_index == 0
+    assert atom.target_position == 2
+    assert atom.logit_position == 1
+    assert atom.logit_position + 1 == atom.target_position
+    assert atom.selected_token_id == 101
+    assert atom.valid_token_ids == frozenset({101, 201})
+    assert atom.latent_valid_token_ids == frozenset({101, 201})
+    assert atom.selected_token_role is TokenRole.TEXT
+    assert atom.allowed_token_roles == frozenset({TokenRole.TEXT})
+    assert atom.provenance["observed_token_id"] == 999
+    assert atom.provenance["anchor_position"] == 1
+    assert atom.provenance["rollout_index"] == 3
+
+
+def test_event_to_ir_rejects_wrong_shift() -> None:
+    input_ids = torch.tensor([[11, 22, 101, 102, 103]])
+    event = make_event(
+        target_position=2,
+        logit_position=2,
+        valid_actions=(make_text_action(101),),
+    )
+
+    with pytest.raises(ValueError, match="target_position = logit_position \\+ 1"):
+        build_residual_set_target_ir(
+            input_ids=input_ids,
+            batch_index=0,
+            events=(event,),
+            role_vocab=make_role_vocab(),
+        )
+
+
+def test_event_to_ir_rejects_selected_token_outside_valid_actions() -> None:
+    input_ids = torch.tensor([[11, 22, 101, 102, 103]])
+    event = make_event(
+        target_position=2,
+        logit_position=1,
+        valid_actions=(make_text_action(201),),
+    )
+
+    with pytest.raises(ValueError, match="live token.*valid actions"):
+        build_residual_set_target_ir(
+            input_ids=input_ids,
+            batch_index=0,
+            events=(event,),
+            role_vocab=make_role_vocab(),
+        )
+
+
+def test_coordinate_tail_event_to_ir_keeps_exact_coord_roles() -> None:
+    input_ids = torch.tensor(
+        [[11, 22, coord_token(120), coord_token(20), coord_token(30), coord_token(40)]]
+    )
+    state = make_state_for_objects(make_object("a", "person_left", x1=120))
+    drafts = []
+    for offset, coord_role in enumerate(("x1", "y1", "x2", "y2"), start=2):
+        drafts.append(
+            CorrectionAtomDraft(
+                correction_kind="matched_object_repair",
+                target_position=offset,
+                logit_position=offset - 1,
+                valid_actions=valid_coord_actions(state, coord_role),
+                metadata={"anchor_position": 1},
+            )
+        )
+    event = CorrectionEvent(
+        correction_kind="matched_object_repair",
+        sample_id="sample-1",
+        atom_drafts=tuple(drafts),
+        metadata={"rollout_index": 4},
+    )
+
+    ir = build_residual_set_target_ir(
+        input_ids=input_ids,
+        batch_index=0,
+        events=(event,),
+        role_vocab=make_role_vocab(),
+    )
+
+    assert len(ir.atoms) == 4
+    assert [atom.coord_role for atom in ir.atoms] == ["x1", "y1", "x2", "y2"]
+    assert [atom.selected_token_id for atom in ir.atoms] == [
+        coord_token(120),
+        coord_token(20),
+        coord_token(30),
+        coord_token(40),
+    ]
+    assert all(atom.logit_position + 1 == atom.target_position for atom in ir.atoms)
+    assert all(
+        atom.selected_token_id == int(input_ids[0, atom.target_position].item())
+        for atom in ir.atoms
+    )
+    assert all(atom.selected_token_role is TokenRole.COORD for atom in ir.atoms)
+
+
+def test_event_to_ir_rejects_mixed_valid_action_roles_in_one_draft() -> None:
+    input_ids = torch.tensor([[11, 22, 101, 102, 103]])
+    coord_action = ValidAction(
+        token_id=coord_token(120),
+        token_role=TokenRole.COORD,
+        token_text=str(coord_token(120)),
+        candidate_ids_after=frozenset({"a"}),
+        selected_object_id="a",
+        coord_role="x1",
+    )
+    event = make_event(
+        target_position=2,
+        logit_position=1,
+        valid_actions=(make_text_action(101), coord_action),
+    )
+
+    with pytest.raises(ValueError, match="same token role"):
+        build_residual_set_target_ir(
+            input_ids=input_ids,
+            batch_index=0,
+            events=(event,),
+            role_vocab=make_role_vocab(),
+        )

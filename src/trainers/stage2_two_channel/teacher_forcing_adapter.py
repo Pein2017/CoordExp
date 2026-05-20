@@ -11,6 +11,9 @@ from src.training.teacher_forcing.constants import (
 )
 from src.training.teacher_forcing.ir import SupervisionAtom, TeacherForcingTargetIR
 from src.training.teacher_forcing.roles import TokenRole
+from src.training.teacher_forcing.validation import validate_target_ir
+from src.training.teacher_forcing.vocab import RoleVocab
+from src.trainers.stage2_two_channel.residual_set import CorrectionEvent
 
 _COORD_ROLES = ("x1", "y1", "x2", "y2")
 _ROLLOUT_ZERO_POSITIVE_POLICIES = frozenset(
@@ -162,6 +165,103 @@ def build_stage2_teacher_forcing_target_ir(
     )
 
 
+def build_residual_set_target_ir(
+    *,
+    input_ids: torch.Tensor,
+    batch_index: int,
+    events: Sequence[CorrectionEvent],
+    role_vocab: RoleVocab,
+) -> TeacherForcingTargetIR:
+    """Translate residual-set correction events into shared target IR atoms."""
+
+    atoms: list[SupervisionAtom] = []
+    for event in events:
+        for draft_index, draft in enumerate(event.atom_drafts):
+            if draft.target_position != draft.logit_position + 1:
+                raise ValueError(
+                    "residual_set correction draft requires "
+                    "target_position = logit_position + 1"
+                )
+            if not draft.valid_actions:
+                raise ValueError("residual_set correction draft valid_actions must be nonempty")
+
+            live_token_id = _live_token_id(
+                input_ids,
+                batch_index=batch_index,
+                target_position=draft.target_position,
+            )
+            valid_ids = frozenset(int(action.token_id) for action in draft.valid_actions)
+            if live_token_id not in valid_ids:
+                raise ValueError(
+                    "residual_set correction live token must be inside valid actions"
+                )
+
+            roles = frozenset(action.token_role for action in draft.valid_actions)
+            if len(roles) != 1:
+                raise ValueError(
+                    "residual_set correction valid actions must have the same token role"
+                )
+            selected_action = next(
+                action for action in draft.valid_actions if int(action.token_id) == live_token_id
+            )
+            coord_roles = frozenset(
+                action.coord_role
+                for action in draft.valid_actions
+                if action.coord_role is not None
+            )
+            if selected_action.token_role is TokenRole.COORD:
+                if coord_roles != frozenset({selected_action.coord_role}):
+                    raise ValueError(
+                        "residual_set correction coord_role must be consistent within a draft"
+                    )
+            elif coord_roles:
+                raise ValueError(
+                    "residual_set correction non-coordinate actions must not carry coord_role"
+                )
+
+            atoms.append(
+                SupervisionAtom(
+                    batch_index=batch_index,
+                    logit_position=int(draft.logit_position),
+                    target_position=int(draft.target_position),
+                    allowed_token_roles=frozenset({selected_action.token_role}),
+                    selected_token_role=selected_action.token_role,
+                    valid_token_ids=valid_ids,
+                    selected_token_id=live_token_id,
+                    latent_valid_token_ids=valid_ids,
+                    coverage_target_weights=None,
+                    loss_tags=frozenset({"stage2", "channel_b", "residual_set"}),
+                    loss_weight=max(
+                        _action_loss_weight(action) for action in draft.valid_actions
+                    ),
+                    coord_role=selected_action.coord_role,
+                    provenance=_residual_atom_provenance(
+                        event=event,
+                        draft=draft,
+                        draft_index=draft_index,
+                        observed_token_id=draft.metadata.get(
+                            "observed_token_id",
+                            event.metadata.get("observed_token_id"),
+                        ),
+                        valid_ids=valid_ids,
+                    ),
+                )
+            )
+
+    target_ir = TeacherForcingTargetIR(
+        schema_version=TEACHER_FORCING_TARGET_IR_SCHEMA_VERSION,
+        atoms=tuple(atoms),
+        metadata={
+            "stage": "stage2",
+            "stage2_channel": "B",
+            "objective": "residual_set_correction",
+            "marginal_scope": MARGINAL_SCOPE_SAMPLED_PATH_NEXT_TOKEN,
+        },
+    )
+    validate_target_ir(target_ir, input_ids=input_ids, role_vocab=role_vocab)
+    return target_ir
+
+
 def _coord_atoms_for_target(
     *,
     input_ids: torch.Tensor,
@@ -204,6 +304,61 @@ def _coord_atoms_for_target(
             )
         )
     return tuple(atoms)
+
+
+def _live_token_id(
+    input_ids: torch.Tensor,
+    *,
+    batch_index: int,
+    target_position: int,
+) -> int:
+    try:
+        return int(input_ids[batch_index, target_position].item())
+    except Exception as exc:
+        raise ValueError(
+            "residual_set correction target_position is out of bounds for input_ids"
+        ) from exc
+
+
+def _action_loss_weight(action: Any) -> float:
+    if hasattr(action, "loss_weight"):
+        return float(action.loss_weight)
+    metadata = getattr(action, "metadata", {})
+    if isinstance(metadata, Mapping) and "loss_weight" in metadata:
+        return float(metadata["loss_weight"])
+    return 1.0
+
+
+def _residual_atom_provenance(
+    *,
+    event: CorrectionEvent,
+    draft: Any,
+    draft_index: int,
+    observed_token_id: Any,
+    valid_ids: frozenset[int],
+) -> Mapping[str, Any]:
+    provenance = dict(event.metadata)
+    provenance.update(draft.metadata)
+    rollout_index = draft.metadata.get("rollout_index", event.metadata.get("rollout_index"))
+    anchor_position = draft.metadata.get(
+        "anchor_position", event.metadata.get("anchor_position")
+    )
+    provenance.update(
+        {
+            "stage": "stage2",
+            "channel": "B",
+            "correction_kind": draft.correction_kind,
+            "draft_index": int(draft_index),
+            "observed_token_id": _optional_int(observed_token_id),
+            "rollout_index": _optional_int(rollout_index),
+            "sample_id": event.sample_id,
+            "anchor_position": _optional_int(anchor_position),
+            "valid_token_ids": tuple(sorted(valid_ids)),
+        }
+    )
+    if event.correction_kind != draft.correction_kind:
+        provenance["event_correction_kind"] = event.correction_kind
+    return provenance
 
 
 def _object_targets_from_legacy_meta(
@@ -338,5 +493,6 @@ def _mapping_sequence(value: Any) -> tuple[Mapping[str, Any], ...]:
 
 __all__ = [
     "Stage2TeacherForcingObjectTarget",
+    "build_residual_set_target_ir",
     "build_stage2_teacher_forcing_target_ir",
 ]
