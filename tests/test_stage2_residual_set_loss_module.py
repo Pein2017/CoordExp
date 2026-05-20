@@ -224,6 +224,48 @@ def test_present_empty_residual_set_target_ir_returns_zero() -> None:
     assert result.metrics["stage2_ab/channel_b/residual_set/atom_count"] == 0.0
 
 
+def test_packed_segments_rebase_segment_local_residual_ir_positions() -> None:
+    from src.trainers.teacher_forcing.modules.residual_set_correction import (
+        run_residual_set_correction_module,
+    )
+
+    input_ids = torch.tensor([[99, 10, 88, 11]], dtype=torch.long)
+    logits = torch.full((1, 4, 50), -20.0, dtype=torch.float32)
+    logits[0, 0, 10] = 20.0
+    logits[0, 2, 11] = 20.0
+    context = TeacherForcingContext(
+        channel="B",
+        registry_context="rollout",
+        input_ids=input_ids,
+        logits=logits,
+        logits_ce=logits.clone(),
+        meta=[
+            {
+                "encoded_len": 2,
+                # Residual-set sidecars are stored segment-local before module rebasing.
+                "residual_set_target_ir": make_ir(
+                    selected_token_id=10,
+                    valid_token_ids=frozenset({10}),
+                ),
+            },
+            {
+                "encoded_len": 2,
+                "residual_set_target_ir": make_ir(
+                    selected_token_id=11,
+                    valid_token_ids=frozenset({11}),
+                ),
+            },
+        ],
+        coord_token_ids=(30, 31),
+        extra={"role_vocab": make_role_vocab()},
+    )
+
+    result = run_residual_set_correction_module(context=context, spec=make_spec())
+
+    assert result.metrics["stage2_ab/channel_b/residual_set/atom_count"] == 2.0
+    assert result.loss.item() == pytest.approx(0.0, abs=1.0e-6)
+
+
 @pytest.mark.parametrize(
     "target_ir,error_match",
     [

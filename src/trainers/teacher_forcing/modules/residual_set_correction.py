@@ -7,7 +7,7 @@ from typing import Any, Mapping
 
 import torch
 
-from src.training.teacher_forcing.ir import TeacherForcingTargetIR
+from src.training.teacher_forcing.ir import SupervisionAtom, TeacherForcingTargetIR
 from src.training.teacher_forcing.probabilities import teacher_forcing_atom_loss
 from src.training.teacher_forcing.validation import validate_target_ir
 from src.training.teacher_forcing.vocab import RoleVocab
@@ -128,6 +128,46 @@ def _support_provenance_flags(raw: Any) -> tuple[bool, bool]:
     return has_labeled, has_ul
 
 
+def _rebase_segment_local_target_ir(
+    target_ir: TeacherForcingTargetIR,
+    *,
+    batch_index: int,
+    segment_start: int,
+) -> TeacherForcingTargetIR:
+    """Project segment-local residual atoms to batch tensor coordinates."""
+
+    atoms: list[SupervisionAtom] = []
+    for atom in target_ir.atoms:
+        atoms.append(
+            SupervisionAtom(
+                batch_index=int(batch_index),
+                logit_position=int(atom.logit_position) + int(segment_start),
+                target_position=int(atom.target_position) + int(segment_start),
+                allowed_token_roles=atom.allowed_token_roles,
+                selected_token_role=atom.selected_token_role,
+                valid_token_ids=atom.valid_token_ids,
+                selected_token_id=int(atom.selected_token_id),
+                latent_valid_token_ids=atom.latent_valid_token_ids,
+                coverage_target_weights=atom.coverage_target_weights,
+                loss_tags=atom.loss_tags,
+                loss_weight=float(atom.loss_weight),
+                coord_role=atom.coord_role,
+                provenance=atom.provenance,
+            )
+        )
+    metadata = dict(target_ir.metadata)
+    metadata["positions_rebased"] = True
+    metadata["position_space"] = "batch_tensor"
+    metadata["source_position_space"] = "segment_local"
+    metadata["segment_start"] = int(segment_start)
+    metadata["batch_index"] = int(batch_index)
+    return TeacherForcingTargetIR(
+        schema_version=target_ir.schema_version,
+        atoms=tuple(atoms),
+        metadata=metadata,
+    )
+
+
 def run_residual_set_correction_module(
     *,
     context: TeacherForcingContext,
@@ -173,6 +213,14 @@ def run_residual_set_correction_module(
         if role_vocab is None:
             role_vocab = _role_vocab_from_context(context)
 
+        # Stage-2 stores residual sidecars as segment-local IR at meta construction.
+        # Loss consumption happens over batch/packed tensor coordinates from
+        # iter_segment_views, so rebase immediately before validation/use.
+        target_ir = _rebase_segment_local_target_ir(
+            target_ir,
+            batch_index=int(batch_index),
+            segment_start=int(segment_start),
+        )
         validate_target_ir(
             target_ir,
             input_ids=context.input_ids,
