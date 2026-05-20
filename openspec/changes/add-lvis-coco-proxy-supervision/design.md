@@ -48,10 +48,8 @@ The repo already has strong building blocks for this:
 
 - rendered target syntax is stable CoordJSON,
 - Stage-2 `token_ce` already separates `struct_ce` and `desc_ce`,
-- Stage-2 `bbox_geo` and `coord_reg` already consume weighted bbox groups /
-  coord slots,
-- target-building code already knows how to recover desc spans and bbox groups
-  from teacher-forced sequences.
+- target-building code already knows how to recover desc spans and coord-token
+  positions from teacher-forced sequences.
 
 So the correct design is not "invent a second target language". The correct
 design is:
@@ -368,8 +366,8 @@ consume proxy metadata only when their authored config enables it.
 Recommended module config addition:
 
 - `token_ce.config.object_weight_mode: none | metadata`
-- `bbox_geo.config.object_weight_mode: none | metadata`
-- `coord_reg.config.object_weight_mode: none | metadata`
+- future trie/text modules may add metadata-weight knobs only through their
+  canonical module configs.
 
 Recommended first behavior:
 

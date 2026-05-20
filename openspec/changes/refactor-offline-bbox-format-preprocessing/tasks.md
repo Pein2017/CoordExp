@@ -29,7 +29,7 @@
 
 - [x] 5.1 Update Stage-1 `cxcy_logw_logh` configs to point at offline-prepared derived branch JSONLs rather than relying on runtime conversion.
 - [x] 5.2 Update `docs/data/PREPARATION.md`, `docs/data/CONTRACT.md`, and `docs/training/STAGE1_OBJECTIVE.md` to document the canonical `xyxy` source flow plus the separate offline bbox-format branch workflow.
-- [x] 5.3 Add `cxcywh` docs/examples/configs so the active ablation surface is `xyxy` vs `cxcy_logw_logh` vs `cxcywh` under the same pure-CE Stage-1 contract.
+- [x] 5.3 Add `cxcywh` docs/examples/configs so the bbox-format ablation surface is `xyxy` vs `cxcy_logw_logh` vs `cxcywh` under the same pure-CE Stage-1 contract.
 - [ ] 5.4 Add a reproducible smoke workflow that names the canonical preset, the derived branch path, and the required `train.jsonl` / `val.jsonl` plus `train.coord.jsonl` / `val.coord.jsonl` artifacts needed before launching training.
 
 ## 6. Verification And Re-Run

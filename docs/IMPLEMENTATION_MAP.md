@@ -48,8 +48,8 @@ Open these docs first:
 - [`docs/training/STAGE1_OBJECTIVE.md`](training/STAGE1_OBJECTIVE.md)
 - [`docs/data/PACKING.md`](data/PACKING.md)
 - [`configs/stage1/teacher_forcing/`](../configs/stage1/teacher_forcing/) for active compact teacher-forcing Stage-1 configs
-- [`configs/stage1/recursive_detection_ce_latest/prod/compact_full_support2.yaml`](../configs/stage1/recursive_detection_ce_latest/prod/compact_full_support2.yaml) as a legacy/comparator compact recursive detection handle, not an active production objective
-- [`configs/stage1/recursive_detection_ce_latest/ablation/compact_full_prefix_rollin_balance2.yaml`](../configs/stage1/recursive_detection_ce_latest/ablation/compact_full_prefix_rollin_balance2.yaml) as a legacy/comparator compact-full prefix-rollin E1 ablation handle
+- [`configs/stage1/recursive_detection_ce/prod/compact_full_support2.yaml`](../configs/stage1/recursive_detection_ce/prod/compact_full_support2.yaml) as a legacy/comparator compact recursive detection handle, not an active production objective
+- [`configs/stage1/recursive_detection_ce/ablation/compact_full_prefix_rollin_balance2.yaml`](../configs/stage1/recursive_detection_ce/ablation/compact_full_prefix_rollin_balance2.yaml) as a legacy/comparator compact-full prefix-rollin E1 ablation handle
 
 Open these configs first:
 - `configs/stage1/sft_base.yaml`
@@ -57,8 +57,8 @@ Open these configs first:
 - `configs/_shared/prompts/`
 - `configs/stage1/profiles/`
 - `configs/stage1/smoke/`
-- `configs/stage1/recursive_detection_ce_latest/prod/`
-- `configs/stage1/recursive_detection_ce_latest/ablation/`
+- `configs/stage1/recursive_detection_ce/prod/`
+- `configs/stage1/recursive_detection_ce/ablation/`
 
 Open these code files first:
 - `src/training/surfaces.py`
@@ -81,17 +81,15 @@ Open these code files first:
 - `src/trainers/metrics/recursive_detection.py`
 - `src/trainers/metrics/aggregate_tokens.py`
 - `src/trainers/metrics/coord_losses.py`
-- `src/trainers/metrics/bbox_losses.py`
 - `src/data_collators/batch_extras_collator.py`
 
 Compact recursive detection ownership:
 - `src/training/surfaces.py` owns the guarded shadow resolver and supported
   `surface.id` values: `stage1_json_ce`, `stage1_compact_trie_ce`, and
   `stage2_two_channel`.
-- Shadow objective profiles resolve in canonical order:
-  `token_ce`, `trie_ce`, `coord_soft_ce`, `box_regression`; disabled entries
-  remain explicit.
-- `src/detection/runtime.py` owns latest detection runtime support/preflight, recursive CE runtime config resolution, prompt/mode/custom shim resolution, and `build_latest_detection_dataset`.
+- Shadow objective profiles resolve through text/trie teacher-forcing modules;
+  geometry regularizers are not part of the active Stage-2 objective surface.
+- `src/detection/runtime.py` owns detection runtime support/preflight, recursive CE runtime config resolution, prompt/mode/custom shim resolution, and `build_detection_training_dataset`.
 - `src/detection/objective.py`, `src/detection/rollin.py`, `src/detection/dataset.py`, `src/detection/token_types.py`, and `src/detection/loss.py` own the `prefix_rollin_et_rmp_ce` roll-in state, objectized sparse targets, compact type gates, ordinary teacher-forced `<|im_end|>` CE, and loss-sidecar behavior.
 - `src/sft.py` delegates policy and keeps backward-compatible private aliases.
 - `src/detection/template.py` owns strict templates; only `stage1_json_pretty` and `compact_full` are factory-visible strict IDs.
@@ -176,8 +174,7 @@ Open these code files first:
 - `src/trainers/teacher_forcing/module_registry.py`
 - `src/trainers/teacher_forcing/objective_atoms.py`
 - `src/trainers/teacher_forcing/modules/token_ce.py`
-- `src/trainers/teacher_forcing/modules/bbox_geo.py`
-- `src/trainers/teacher_forcing/modules/coord_reg.py`
+- `src/trainers/teacher_forcing/modules/stage2_trie_ce.py`
 
 Stage-2 planning direction:
 - `src/training/stage2/duplicate_filter.py` filters accepted rollout objects

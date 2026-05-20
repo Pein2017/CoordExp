@@ -84,33 +84,7 @@ def build_pipeline_manifest(
             return value
         return _finite_float(f, 0.0)
 
-    def _coord_soft_defaults() -> dict[str, Any]:
-        enabled = bool(coord_soft_cfg.get("enabled", False))
-        soft_default = 1.0 if enabled else 0.0
-        w1_default = 1.0 if enabled else 0.0
-        gate_default = 1.0 if enabled else 0.0
-        return {
-            "coord_ce_weight": _finite_float(coord_soft_cfg.get("ce_weight", 0.0), 0.0),
-            "soft_ce_weight": _finite_float(
-                coord_soft_cfg.get("soft_ce_weight", soft_default),
-                soft_default,
-            ),
-            "w1_weight": _finite_float(
-                coord_soft_cfg.get("w1_weight", w1_default),
-                w1_default,
-            ),
-            "coord_gate_weight": _finite_float(
-                coord_soft_cfg.get("gate_weight", gate_default),
-                gate_default,
-            ),
-            "temperature": _finite_float(coord_soft_cfg.get("temperature", 1.0), 1.0),
-            "target_sigma": _finite_float(coord_soft_cfg.get("target_sigma", 2.0), 2.0),
-            "target_truncate": coord_soft_cfg.get("target_truncate", None),
-        }
-
     def _default_module_config(name: str) -> dict[str, Any]:
-        coord_soft_defaults = _coord_soft_defaults()
-
         if runtime_profile.manifest_family == "stage2_ab":
             desc_w = _finite_float(cfg.get("desc_ce_weight", 1.0), 1.0)
 
@@ -121,109 +95,11 @@ def build_pipeline_manifest(
                     "rollout_global_prefix_struct_ce_weight": 1.0,
                 }
 
-            if name == "bbox_geo":
-                return {
-                    "smoothl1_weight": _finite_float(
-                        cfg.get("bbox_smoothl1_weight", 1.0),
-                        1.0,
-                    ),
-                    "ciou_weight": _finite_float(
-                        cfg.get("bbox_ciou_weight", 1.0),
-                        1.0,
-                    ),
-                }
-
-            if name == "bbox_size_aux":
-                return {}
-
-            if name == "coord_reg":
-                return {
-                    "coord_ce_weight": _finite_float(
-                        cfg.get(
-                            "coord_ce_weight",
-                            coord_soft_defaults.get("coord_ce_weight", 0.0),
-                        ),
-                        0.0,
-                    ),
-                    "coord_gate_weight": _finite_float(
-                        cfg.get(
-                            "coord_gate_weight",
-                            coord_soft_defaults.get("coord_gate_weight", 0.0),
-                        ),
-                        0.0,
-                    ),
-                    "text_gate_weight": _finite_float(
-                        cfg.get("text_gate_weight", 0.0), 0.0
-                    ),
-                    "soft_ce_weight": _finite_float(
-                        coord_soft_defaults.get("soft_ce_weight", 0.0),
-                        0.0,
-                    ),
-                    "w1_weight": _finite_float(
-                        coord_soft_defaults.get("w1_weight", 0.0),
-                        0.0,
-                    ),
-                    "temperature": _finite_float(
-                        coord_soft_defaults.get("temperature", 1.0),
-                        1.0,
-                    ),
-                    "target_sigma": _finite_float(
-                        coord_soft_defaults.get("target_sigma", 2.0),
-                        2.0,
-                    ),
-                    "target_truncate": coord_soft_defaults.get("target_truncate", None),
-                }
-
         if runtime_profile.manifest_family == "rollout_matching":
             if name == "token_ce":
                 return {
                     "rollout_fn_desc_weight": 1.0,
                     "rollout_global_prefix_struct_ce_weight": 1.0,
-                }
-
-            if name == "bbox_geo":
-                return {
-                    "smoothl1_weight": _finite_float(
-                        cfg.get("bbox_smoothl1_weight", 1.0),
-                        1.0,
-                    ),
-                    "ciou_weight": _finite_float(
-                        cfg.get("bbox_ciou_weight", 1.0),
-                        1.0,
-                    ),
-                }
-
-            if name == "bbox_size_aux":
-                return {}
-
-            if name == "coord_reg":
-                return {
-                    "coord_ce_weight": _finite_float(
-                        coord_soft_defaults.get("coord_ce_weight", 0.0),
-                        0.0,
-                    ),
-                    "soft_ce_weight": _finite_float(
-                        coord_soft_defaults.get("soft_ce_weight", 0.0),
-                        0.0,
-                    ),
-                    "w1_weight": _finite_float(
-                        coord_soft_defaults.get("w1_weight", 0.0),
-                        0.0,
-                    ),
-                    "coord_gate_weight": _finite_float(
-                        coord_soft_defaults.get("coord_gate_weight", 0.0),
-                        0.0,
-                    ),
-                    "text_gate_weight": 0.0,
-                    "temperature": _finite_float(
-                        coord_soft_defaults.get("temperature", 1.0),
-                        1.0,
-                    ),
-                    "target_sigma": _finite_float(
-                        coord_soft_defaults.get("target_sigma", 2.0),
-                        2.0,
-                    ),
-                    "target_truncate": coord_soft_defaults.get("target_truncate", None),
                 }
 
         return {}

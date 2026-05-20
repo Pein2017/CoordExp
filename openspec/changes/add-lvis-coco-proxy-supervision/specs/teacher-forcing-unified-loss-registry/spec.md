@@ -15,17 +15,17 @@ Normative behavior:
 - object-local proxy weights MUST NOT reduce or disable `struct_ce`,
 - object-local `desc_ce_weight` MAY scale only desc-value supervision for the
   aligned object,
-- object-local `coord_weight` MAY scale only bbox-geometry and coord-side
-  supervision for the aligned object.
+- object-local `coord_weight` MAY scale only explicitly supported coord-token
+  CE for the aligned object.
 - object-local `coord_weight` MAY be `0.0` for cue-only proxies whose
   objectness signal is useful but whose box extent is not trustworthy enough for
-  geometry supervision.
+  coord-token supervision.
 
 #### Scenario: Proxy weighting does not leak onto structure tokens
 - **WHEN** proxy-supervision weighting is enabled for a plausible object
 - **THEN** the field-name tokens `"desc"` and `"bbox_2d"` remain fully
   supervised under `struct_ce`
-- **AND** only the desc-value tokens and bbox/coord supervision for that object
+- **AND** only the desc-value tokens and supported coord-token CE for that object
   use lowered proxy weights.
 
 ### Requirement: Canonical loss scalars are mean-like and scale-invariant
@@ -35,8 +35,8 @@ object-local proxy weights are applied.
 Normative behavior:
 
 - `desc_ce` remains a weighted mean over supervised desc-value tokens,
-- `geo` remains a weighted mean over supervised bbox groups,
-- `coord_reg` sub-terms remain weighted means over contributing coord slots,
+- supported coord-token CE remains a weighted mean over contributing coord
+  tokens,
 - object-local proxy weights MUST change the contributing numerators and
   denominators consistently rather than introducing raw unnormalized sums.
 

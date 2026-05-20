@@ -1,5 +1,5 @@
-# Coord-token compact SFT ablation only. This overlay excludes raw-text
-# norm1000 profiles and legacy custom.bbox_geo geometry-loss ablations.
+# Coord-token latest compact SFT ablation only. This overlay excludes raw-text
+# norm1000 profiles.
 objective:
   id: sft
   variant: random_order_sft

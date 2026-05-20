@@ -798,7 +798,7 @@ Tests must assert:
 - `objective.id: teacher_forcing` accepts profiles:
   - `hard_sft`
   - `pure_valid_set_marginal`
-  - `coverage_regularized_valid_set_marginal`
+  - `hybrid_valid_set_marginal`
 - coverage profile requires explicit positive `objective.modules.within_valid_coverage.coverage_strength`
 - pure profile rejects positive coverage
 - old ids fail:

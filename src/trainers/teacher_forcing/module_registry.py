@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Final, Literal, Mapping
+from typing import Any, Final, Literal
 
 LossEmissionGroup = Literal["text", "coord"]
 
@@ -103,124 +103,9 @@ OBJECTIVE_MODULE_CATALOG: Final[dict[str, ObjectiveModuleDefinition]] = {
         ),
         emission_group="text",
     ),
-    "bbox_geo": ObjectiveModuleDefinition(
-        family="bbox",
-        semantic_role="geometry",
-        config_keys=frozenset(
-            {
-                "smoothl1_weight",
-                "ciou_weight",
-                "parameterization",
-                "center_weight",
-                "size_weight",
-            }
-        ),
-        optional_config_keys=frozenset(
-            {"parameterization", "center_weight", "size_weight"}
-        ),
-        application_presets=frozenset({"anchor_only"}),
-        projected_atoms=(
-            ObjectiveLossAtomDefinition(
-                atom_name="bbox_smoothl1",
-                state_key="bbox_smoothl1_contrib",
-            ),
-            ObjectiveLossAtomDefinition(
-                atom_name="bbox_ciou",
-                state_key="bbox_ciou_contrib",
-            ),
-        ),
-        emission_group="coord",
-    ),
-    "bbox_size_aux": ObjectiveModuleDefinition(
-        family="bbox",
-        semantic_role="size_aux",
-        config_keys=frozenset(
-            {
-                "log_wh_weight",
-                "oversize_penalty_weight",
-                "oversize_area_frac_threshold",
-                "oversize_log_w_threshold",
-                "oversize_log_h_threshold",
-                "eps",
-            }
-        ),
-        application_presets=frozenset({"anchor_only"}),
-        projected_atoms=(
-            ObjectiveLossAtomDefinition(
-                atom_name="bbox_log_wh",
-                state_key="bbox_log_wh_contrib",
-            ),
-            ObjectiveLossAtomDefinition(
-                atom_name="bbox_oversize",
-                state_key="bbox_oversize_contrib",
-            ),
-        ),
-        emission_group="coord",
-    ),
-    "coord_reg": ObjectiveModuleDefinition(
-        family="coord",
-        semantic_role="regularizer",
-        config_keys=frozenset(
-            {
-                "coord_ce_weight",
-                "coord_gate_weight",
-                "text_gate_weight",
-                "soft_ce_weight",
-                "w1_weight",
-                "temperature",
-                "target_sigma",
-                "target_truncate",
-            }
-        ),
-        application_presets=frozenset({"anchor_only"}),
-        projected_atoms=(
-            ObjectiveLossAtomDefinition(
-                atom_name="coord_token_ce",
-                state_key="coord_token_ce_contrib",
-            ),
-            ObjectiveLossAtomDefinition(
-                atom_name="coord_soft_ce",
-                state_key="coord_soft_ce_contrib",
-            ),
-            ObjectiveLossAtomDefinition(
-                atom_name="coord_w1",
-                state_key="coord_w1_contrib",
-            ),
-            ObjectiveLossAtomDefinition(
-                atom_name="coord_el1",
-                state_key="coord_el1_contrib",
-                required_state=False,
-            ),
-            ObjectiveLossAtomDefinition(
-                atom_name="coord_ehuber",
-                state_key="coord_ehuber_contrib",
-                required_state=False,
-            ),
-            ObjectiveLossAtomDefinition(
-                atom_name="coord_entropy",
-                state_key="coord_entropy_contrib",
-                required_state=False,
-            ),
-            ObjectiveLossAtomDefinition(
-                atom_name="coord_gate",
-                state_key="coord_gate_contrib",
-            ),
-            ObjectiveLossAtomDefinition(
-                atom_name="text_gate",
-                state_key="text_gate_contrib",
-            ),
-        ),
-        emission_group="coord",
-    ),
 }
 
-DIAGNOSTIC_MODULE_CATALOG: Final[dict[str, DiagnosticModuleDefinition]] = {
-    "coord_diag": DiagnosticModuleDefinition(
-        family="coord",
-        semantic_role="diagnostic",
-        config_keys=frozenset(),
-    ),
-}
+DIAGNOSTIC_MODULE_CATALOG: Final[dict[str, DiagnosticModuleDefinition]] = {}
 
 
 ALLOWED_OBJECTIVE_MODULES: Final[set[str]] = set(OBJECTIVE_MODULE_CATALOG)
@@ -254,38 +139,3 @@ def objective_modules_for_family(family: str) -> tuple[str, ...]:
         for name, definition in OBJECTIVE_MODULE_CATALOG.items()
         if definition.family == family
     )
-
-
-def validate_bbox_geo_config_values(
-    config: Mapping[str, Any],
-    *,
-    path: str,
-) -> None:
-    parameterization = str(config.get("parameterization", "xyxy") or "xyxy").strip().lower()
-    if parameterization not in {"xyxy", "center_size"}:
-        raise ValueError(
-            f"{path}.parameterization must be one of ['center_size', 'xyxy']"
-        )
-
-    center_weight = 1.0
-    if "center_weight" in config:
-        try:
-            center_weight = float(config.get("center_weight"))
-        except (TypeError, ValueError) as exc:
-            raise ValueError(f"{path}.center_weight must be numeric") from exc
-        if center_weight < 0.0:
-            raise ValueError(f"{path}.center_weight must be >= 0")
-
-    size_weight = 1.0
-    if "size_weight" in config:
-        try:
-            size_weight = float(config.get("size_weight"))
-        except (TypeError, ValueError) as exc:
-            raise ValueError(f"{path}.size_weight must be numeric") from exc
-        if size_weight < 0.0:
-            raise ValueError(f"{path}.size_weight must be >= 0")
-
-    if parameterization == "center_size" and center_weight == 0.0 and size_weight == 0.0:
-        raise ValueError(
-            f"{path}.parameterization=center_size requires center_weight > 0 or size_weight > 0"
-        )

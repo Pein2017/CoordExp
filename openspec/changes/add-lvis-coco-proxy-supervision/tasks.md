@@ -98,16 +98,15 @@
 ## 5. Stage-2 Module Integration
 
 - [ ] 5.1 Extend `token_ce.config` with `object_weight_mode`.
-- [ ] 5.2 Extend `bbox_geo.config` with `object_weight_mode`.
-- [ ] 5.3 Extend `coord_reg.config` with `object_weight_mode`.
-- [ ] 5.4 Support:
+- [ ] 5.2 Support:
   - `none`
   - `metadata`
   object-weight modes with strict validation.
-- [ ] 5.5 In `metadata` mode:
+- [ ] 5.3 In `metadata` mode:
   - keep `struct_ce` global
   - apply metadata `desc_ce_weight` only to desc-value supervision
-  - apply metadata `coord_weight` only to bbox/coord supervision
+  - apply metadata `coord_weight` only where the active token objective
+    explicitly supports coord-token weighting
   - fall back to weight `1.0` if the metadata block is absent
 - [ ] 5.6 Add Stage-2 tests covering:
   - real/strict/plausible weighted desc supervision

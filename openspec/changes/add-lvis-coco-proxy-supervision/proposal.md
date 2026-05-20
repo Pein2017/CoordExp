@@ -44,9 +44,8 @@ The current evidence already suggests this split:
 The current stack already has the right loss decomposition to support this:
 
 - `token_ce` separates `struct_ce` from `desc_ce`,
-- `bbox_geo` and `coord_reg` already consume per-group / per-slot weights,
-- Stage-2 target building already has span-aware and group-aware supervision
-  carriers.
+- Stage-2 target building already has span-aware supervision carriers for
+  object-local token weighting.
 
 So the right first change is:
 
@@ -98,11 +97,10 @@ This is an important contract change because it affects:
 - Make structure supervision explicit:
   - punctuation, braces, commas, quotes, and field-name tokens like `"desc"` and
     `"bbox_2d"` remain global `struct_ce` targets
-  - proxy weighting applies only to desc-value tokens and bbox/coord groups
+  - proxy weighting applies only to desc-value tokens and explicitly supported
+    coord-token CE
 - Extend Stage-2 teacher-forcing context / modules so:
-  - `token_ce` can consume metadata-driven desc weights,
-  - `bbox_geo` can consume metadata-driven bbox group weights,
-  - `coord_reg` can consume metadata-driven coord-slot weights,
+  - `token_ce` can consume metadata-driven object-local token weights,
   - structure CE stays unaffected by proxy weights
 - Add canonical config knobs so Stage-2 pipelines can opt into metadata-driven
   object weighting without new CLI flags.
@@ -142,10 +140,8 @@ The recommended v1 is intentionally conservative and Stage-2-first:
   - `reject`
 - preserve deterministic object ordering after merge using the repo's existing
   `(minY, minX)` invariant,
-- apply metadata-driven weighting only in Stage-2 pipeline modules first:
-  - `token_ce`
-  - `bbox_geo`
-  - `coord_reg`
+- apply metadata-driven weighting only through surviving Stage-2 pipeline
+  modules first, starting with `token_ce`
 - leave Stage-1 integration as a follow-up once the Stage-2 behavior is
   validated.
 
@@ -284,12 +280,11 @@ hand-picked examples.
 ### Modified Capabilities
 
 - `teacher-forcing-unified-loss-registry`: clarify that structure tokens remain
-  global while proxy weights affect only desc and coord families.
+  global while proxy weights affect only surviving token objective families.
 - `teacher-forcing-objective-pipeline`: require derived object-local span/group
   carriers for metadata-driven proxy weighting.
 - `stage2-ab-training`: extend the Stage-2 AB config / runtime contract so
-  `token_ce`, `bbox_geo`, and `coord_reg` can opt into metadata-driven object
-  weighting.
+  `token_ce` can opt into metadata-driven object weighting.
 - `rollout-matching-sft`: extend rollout-aligned Stage-2 to the same
   metadata-driven object-weight contract.
 - `trainer-metrics-components`: add canonical observability for proxy-object
@@ -304,6 +299,4 @@ hand-picked examples.
   - `src/trainers/stage2_two_channel/target_builder.py`
   - `src/trainers/teacher_forcing/rollout_meta.py`
   - `src/trainers/teacher_forcing/modules/token_ce.py`
-  - `src/trainers/teacher_forcing/modules/bbox_geo.py`
-  - `src/trainers/teacher_forcing/modules/coord_reg.py`
   - Stage-2 config schema / validation surfaces

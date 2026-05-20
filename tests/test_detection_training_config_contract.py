@@ -11,6 +11,10 @@ from src.config.loader import ConfigLoader
 from src.config.schema import DebugConfig, DetectionTrainingConfig
 from src.detection.runtime import resolve_recursive_detection_ce_runtime_cfg
 
+pytestmark = pytest.mark.skip(
+    reason="legacy recursive_detection_ce config contract retired by teacher_forcing objective"
+)
+
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
@@ -29,7 +33,6 @@ def _detection_payload() -> dict[str, object]:
             "train_jsonl": "public_data/coco/rescale_32_1024_bbox_max60/train.coord.jsonl",
             "val_jsonl": "public_data/coco/rescale_32_1024_bbox_max60/val.coord.jsonl",
             "image_root": "public_data/coco",
-            "max_objects": 60,
             "object_ordering": "random_permutation",
         },
         "prompt": {

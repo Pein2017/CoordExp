@@ -52,43 +52,6 @@ stage2_ab:
           coord_hard_ce_weight: 1.0
           eos_weight: 1.0
           normalization: token_mean
-      - name: bbox_geo
-        enabled: false
-        weight: 0.0
-        channels: [A, B]
-        application:
-          preset: anchor_only
-        config:
-          smoothl1_weight: 0.0
-          ciou_weight: 0.0
-      - name: bbox_size_aux
-        enabled: false
-        weight: 0.0
-        channels: [A, B]
-        application:
-          preset: anchor_only
-        config:
-          log_wh_weight: 0.0
-          oversize_penalty_weight: 0.0
-          oversize_area_frac_threshold: null
-          oversize_log_w_threshold: null
-          oversize_log_h_threshold: null
-          eps: 1.0e-6
-      - name: coord_reg
-        enabled: false
-        weight: 0.0
-        channels: [A, B]
-        application:
-          preset: anchor_only
-        config:
-          coord_ce_weight: 0.0
-          coord_gate_weight: 0.0
-          text_gate_weight: 0.0
-          soft_ce_weight: 0.0
-          w1_weight: 0.0
-          temperature: 1.0
-          target_sigma: 2.0
-          target_truncate: 8
     diagnostics: []
   channel_b:
     fallback_loss_weight: 0.25

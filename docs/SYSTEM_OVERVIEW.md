@@ -122,23 +122,22 @@ Use Stage-1 when you want teacher-forced baseline training without rollout-aware
   - `src/trainers/metrics/mixins.py`
   - `src/trainers/metrics/batch_contract.py`
   - `src/trainers/metrics/structural_close.py`
-  - `src/trainers/metrics/recursive_detection.py`
-  - `src/trainers/metrics/aggregate_tokens.py`
-  - `src/trainers/metrics/coord_losses.py`
-  - `src/trainers/metrics/bbox_losses.py`
+- `src/trainers/metrics/recursive_detection.py`
+- `src/trainers/metrics/aggregate_tokens.py`
+- `src/trainers/metrics/coord_losses.py`
 
 ### Stage-1 Compact Recursive Detection
 
 Use this surface when the run is explicitly latest-schema compact detection CE.
 
-- Current config route: `configs/stage1/recursive_detection_ce_latest/`
+- Current config route: `configs/stage1/recursive_detection_ce/`
 - Runtime policy owner: `src/detection/runtime.py`
 - Template owner: `src/detection/template.py`
 - Compatibility sequence facade: `src/common/detection_sequence.py`
 - Row helper: `src/common/detection_compact_rows.py`
 
 Current source contract:
-- `src/detection/runtime.py` owns latest detection runtime support/preflight, recursive CE runtime config resolution, prompt/mode/custom shim resolution, and `build_latest_detection_dataset`.
+- `src/detection/runtime.py` owns detection runtime support/preflight, recursive CE runtime config resolution, prompt/mode/custom shim resolution, and `build_detection_training_dataset`.
 - `src/sft.py` delegates these policies and keeps backward-compatible private aliases.
 - packing/cache fail fast remains in force for latest compact recursive CE surfaces.
 - no new CLI flags or config schema keys are introduced by this extraction.

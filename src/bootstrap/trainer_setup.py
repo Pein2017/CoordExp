@@ -6,8 +6,6 @@ from src.config import SaveDelayConfig
 from src.training_runtime import resolve_training_runtime_profile
 from src.trainers.metrics.mixins import (
     AggregateTokenTypeMetricsMixin,
-    BBoxGeoLossMixin,
-    BBoxSizeAuxLossMixin,
     CoordSoftCEW1LossMixin,
     GradAccumLossScaleMixin,
     InstabilityMonitorMixin,
@@ -69,14 +67,6 @@ def compose_trainer_class(
             mixins.append(RecursiveDetectionCEMixin)
         elif teacher_forcing_enabled:
             mixins.append(TeacherForcingObjectiveMixin)
-        elif bbox_size_aux_cfg and getattr(bbox_size_aux_cfg, "enabled", False):
-            mixins.append(BBoxSizeAuxLossMixin)
-        if (
-            not recursive_ce_enabled
-            and bbox_geo_cfg
-            and getattr(bbox_geo_cfg, "enabled", False)
-        ):
-            mixins.append(BBoxGeoLossMixin)
         if (
             not recursive_ce_enabled
             and coord_soft_ce_w1_cfg

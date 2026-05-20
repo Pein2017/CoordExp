@@ -64,8 +64,6 @@
 - [x] Implement `loss/weak_schema_close` for `R = empty`.
 - [x] Exclude `R = empty` and zero-weight full-prefix metric-only samples from MP objective denominators.
 - [x] Implement branch-local `coord_soft_ce_w1` auxiliary adapter.
-- [x] Implement branch-local `bbox_geo` auxiliary adapter.
-- [x] Implement branch-local `bbox_size_aux` auxiliary adapter.
 - [x] Aggregate branch-local aux as mean-like candidate atoms uniformly over scored valid candidates.
 - [x] Keep responsibility-weighted aux out of v1 unless added as a separately named future mode.
 

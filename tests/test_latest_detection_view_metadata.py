@@ -26,7 +26,7 @@ from src.detection.objective import (
 from src.detection.template import get_detection_template
 from src.detection.token_types import build_compact_token_type_groups
 from src.sft import (
-    _require_root_image_dir_matches_latest_detection,
+    _require_root_image_dir_matches_detection,
     _resolve_root_image_dir_for_training,
 )
 from src.training.teacher_forcing.constants import TEACHER_FORCING_TARGET_IR_KEY
@@ -610,15 +610,15 @@ def test_sft_root_image_dir_uses_latest_compact_view_metadata_not_cwd(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     jsonl_path, image_root = _write_latest_compact_view(tmp_path)
-    latest_detection_config = type(
-        "LatestDetectionConfig",
+    detection_config = type(
+        "DetectionConfig",
         (),
         {"data": type("DataConfig", (), {"image_root": None})()},
     )()
     monkeypatch.chdir(tmp_path / "public_data/coco/views/coco80")
 
     resolved = _resolve_root_image_dir_for_training(
-        latest_detection_config=latest_detection_config,
+        detection_config=detection_config,
         train_jsonl=jsonl_path,
     )
 
@@ -635,7 +635,7 @@ def test_sft_custom_root_image_dir_uses_view_metadata_not_jsonl_dir(
     monkeypatch.chdir(tmp_path / "public_data/coco/views/coco80")
 
     resolved = _resolve_root_image_dir_for_training(
-        latest_detection_config=None,
+        detection_config=None,
         train_jsonl=jsonl_path,
     )
 
@@ -650,18 +650,18 @@ def test_sft_accepts_preexisting_root_image_dir_resolving_to_metadata_root(
     jsonl_path, image_root, explicit_relative = _write_symlinked_latest_compact_view(
         tmp_path
     )
-    latest_detection_config = type(
-        "LatestDetectionConfig",
+    detection_config = type(
+        "DetectionConfig",
         (),
         {"data": type("DataConfig", (), {"image_root": None})()},
     )()
     resolved = _resolve_root_image_dir_for_training(
-        latest_detection_config=latest_detection_config,
+        detection_config=detection_config,
         train_jsonl=jsonl_path,
     )
 
     monkeypatch.setenv("ROOT_IMAGE_DIR", str(tmp_path / explicit_relative))
-    accepted = _require_root_image_dir_matches_latest_detection(
+    accepted = _require_root_image_dir_matches_detection(
         os.environ["ROOT_IMAGE_DIR"],
         resolved_image_root=resolved,
     )

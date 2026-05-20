@@ -6,10 +6,9 @@ import pytest
 import torch
 import torch.nn.functional as F
 
-from src.config.schema import BBoxSizeAuxConfig, CoordSoftCEW1Config
-from src.metrics.dataset_metrics import BBoxSizeAuxLossMixin, CoordSoftCEW1LossMixin
+from src.config.schema import CoordSoftCEW1Config
+from src.metrics.dataset_metrics import CoordSoftCEW1LossMixin
 from src.trainers.losses.coord_soft_ce_w1 import compute_coord_soft_ce_w1_loss
-from src.trainers.teacher_forcing.stage1 import extract_stage1_bbox_quartets
 
 
 class DummyTokenizer:
@@ -104,16 +103,6 @@ class DummyTrainer(CoordSoftCEW1LossMixin, DummyBaseTrainer):
     def __init__(self, cfg):
         super().__init__()
         self.coord_soft_ce_w1_cfg = cfg
-        self.template = DummyTemplate()
-        self.model = None
-        self.args = SimpleNamespace(average_tokens_across_devices=False)
-        self.model_accepts_loss_kwargs = False
-
-
-class DummyBBoxTrainer(BBoxSizeAuxLossMixin, DummyBaseTrainer):
-    def __init__(self, cfg):
-        super().__init__()
-        self.bbox_size_aux_cfg = cfg
         self.template = DummyTemplate()
         self.model = None
         self.args = SimpleNamespace(average_tokens_across_devices=False)
@@ -287,109 +276,6 @@ def test_stage1_softce_w1_manual_grad_accum_scaling_matches_transformers_path():
     )
 
     assert torch.allclose(loss_mixin, loss_scaled, atol=1e-6)
-
-
-def test_stage1_bbox_size_aux_is_additive_only_when_prediction_size_mismatches():
-    vocab = 1200
-    labels = torch.tensor([[0, 5, 103, 104, 107, 108]], dtype=torch.long)
-
-    logits_exact = torch.full((1, labels.shape[1], vocab), -20.0, dtype=torch.float32)
-    logits_exact[0, 0, 5] = 20.0
-    logits_exact[0, 1, 103] = 20.0
-    logits_exact[0, 2, 104] = 20.0
-    logits_exact[0, 3, 107] = 20.0
-    logits_exact[0, 4, 108] = 20.0
-
-    logits_mismatch = logits_exact.clone()
-    logits_mismatch[0, 3, 109] = 25.0
-    logits_mismatch[0, 4, 111] = 25.0
-
-    cfg_disabled = BBoxSizeAuxConfig.from_mapping(
-        {
-            "enabled": False,
-            "log_wh_weight": 0.0,
-            "oversize_penalty_weight": 0.0,
-            "oversize_area_frac_threshold": None,
-            "oversize_log_w_threshold": None,
-            "oversize_log_h_threshold": None,
-            "eps": 1e-6,
-        }
-    )
-    cfg_enabled = BBoxSizeAuxConfig.from_mapping(
-        {
-            "enabled": True,
-            "log_wh_weight": 0.05,
-            "oversize_penalty_weight": 0.0,
-            "oversize_area_frac_threshold": None,
-            "oversize_log_w_threshold": None,
-            "oversize_log_h_threshold": None,
-            "eps": 1e-6,
-        }
-    )
-
-    trainer_disabled = DummyBBoxTrainer(cfg_disabled)
-    trainer_enabled = DummyBBoxTrainer(cfg_enabled)
-
-    loss_exact_disabled = trainer_disabled.compute_loss(
-        model=None,
-        inputs={"labels": labels, "fake_logits": logits_exact},
-        return_outputs=False,
-        num_items_in_batch=1,
-    )
-    loss_exact_enabled = trainer_enabled.compute_loss(
-        model=None,
-        inputs={"labels": labels, "fake_logits": logits_exact},
-        return_outputs=False,
-        num_items_in_batch=1,
-    )
-    assert float(loss_exact_enabled.detach().item()) == pytest.approx(
-        float(loss_exact_disabled.detach().item()),
-        abs=1e-5,
-    )
-
-    loss_mismatch_disabled = trainer_disabled.compute_loss(
-        model=None,
-        inputs={"labels": labels, "fake_logits": logits_mismatch},
-        return_outputs=False,
-        num_items_in_batch=1,
-    )
-    loss_mismatch_enabled = trainer_enabled.compute_loss(
-        model=None,
-        inputs={"labels": labels, "fake_logits": logits_mismatch},
-        return_outputs=False,
-        num_items_in_batch=1,
-    )
-    assert float(loss_mismatch_enabled.detach().item()) > float(
-        loss_mismatch_disabled.detach().item()
-    )
-
-
-def test_stage1_bbox_quartets_skip_incomplete_rows_instead_of_failing():
-    vocab = 1200
-    coord_token_ids = [103, 104, 107, 108]
-    coord_id_map = _build_coord_id_map(vocab, coord_token_ids)
-
-    labels = torch.tensor(
-        [
-            [0, 5, 103, 104, 107, 108],
-            [0, 5, 103, 104, 107, -100],
-        ],
-        dtype=torch.long,
-    )
-    logits = _perfect_next_token_logits(labels.clamp(min=0), vocab=vocab)
-
-    quartets = extract_stage1_bbox_quartets(
-        logits=logits,
-        labels=labels,
-        coord_token_ids=coord_token_ids,
-        coord_id_map=coord_id_map,
-        tokenizer=None,
-    )
-    assert quartets is not None
-    assert quartets.bbox_groups == 1
-    assert quartets.coord_slots == 4
-    assert quartets.skipped_incomplete_rows == 1
-    assert quartets.skipped_incomplete_coord_slots == 3
 
 
 def test_stage1_text_gate_penalizes_coord_vocab_mass_on_non_coord_positions() -> None:

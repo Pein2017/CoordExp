@@ -9,8 +9,6 @@ through canonical module config keys only.
 Normative behavior:
 
 - `token_ce.config` MUST accept `object_weight_mode`,
-- `bbox_geo.config` MUST accept `object_weight_mode`,
-- `coord_reg.config` MUST accept `object_weight_mode`,
 - `object_weight_mode` MUST be one of:
   - `none`
   - `metadata`
@@ -21,25 +19,23 @@ Normative behavior:
 #### Scenario: Metadata mode falls back cleanly on plain COCO samples
 - **WHEN** Stage-2 AB enables `object_weight_mode=metadata`
 - **AND** a sample has no proxy-supervision metadata block
-- **THEN** token / bbox / coord supervision uses weight `1.0`
+- **THEN** token supervision uses weight `1.0`
 - **AND** the sample behaves like an ordinary non-augmented COCO sample.
 
 ### Requirement: Stage-2 AB objective application is explicit and non-redundant
-Stage-2 AB SHALL keep proxy-supervision weighting local to desc and coord
-families without changing global structure supervision.
+Stage-2 AB SHALL keep proxy-supervision weighting local to surviving token
+objective families without changing global structure supervision.
 
 Normative behavior:
 
 - `token_ce` in metadata mode MUST apply object-local proxy weights only to
-  desc-value CE,
+  desc-value CE and any explicitly supported coord-token CE weighting,
 - structure CE MUST remain global and unchanged,
-- `bbox_geo` and `coord_reg` in metadata mode MUST apply object-local
-  `coord_weight` to the aligned bbox / coord carriers,
 - the same proxy object MUST NOT require a second alternate rendered target just
   to express its weight.
 
 #### Scenario: Plausible object lowers desc and coord supervision only
 - **WHEN** a plausible proxy object appears in a Stage-2 AB sample
-- **THEN** its desc-value CE and bbox/coord supervision use the lower proxy
-  weights
+- **THEN** its desc-value CE and explicitly supported coord-token CE use the
+  lower proxy weights
 - **AND** the surrounding object syntax remains fully supervised as structure.

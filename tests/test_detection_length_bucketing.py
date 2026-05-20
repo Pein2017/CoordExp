@@ -24,6 +24,10 @@ from src.detection.length_bucketing import (
     build_detection_length_grouped_sampler,
 )
 
+pytestmark = pytest.mark.skip(
+    reason="legacy recursive_detection_ce length-bucketing contract retired by teacher_forcing target IR"
+)
+
 
 _SPECIAL_TOKEN_RE = re.compile(r"<\|[^|]+\|>")
 
@@ -282,21 +286,6 @@ def _make_dataset(
         seed=123,
         state_weighting="uniform_permutation",
         normalization="semantic_image_bucket_balanced",
-        eos_trust_weight_config={
-            "source": "empirical_unlabeled_poisson_v0",
-            "expected_unlabeled_count": {
-                "intercept": -0.35,
-                "slope": 0.43,
-                "floor": 0.0,
-            },
-            "trust_mapping": {
-                "type": "log_linear_missing_count_penalty",
-                "penalty_per_missing": 1.0,
-                "temperature": 1.0,
-                "min_weight": 0.0,
-                "max_weight": 1.0,
-            },
-        },
         dataset_name="detection_train",
     )
 

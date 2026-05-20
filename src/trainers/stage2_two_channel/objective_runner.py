@@ -24,9 +24,6 @@ def _filter_channel_a_specs(
     specs: Sequence[Mapping[str, Any]],
     *,
     run_a_text: bool,
-    run_a_bbox_geo: bool,
-    run_a_bbox_size_aux: bool,
-    run_a_coord_reg: bool,
 ) -> list[Mapping[str, Any]]:
     out: list[Mapping[str, Any]] = []
     for spec in list(specs or []):
@@ -39,14 +36,6 @@ def _filter_channel_a_specs(
         if name == "hard_sft":
             out.append(spec)
             continue
-        if name == "bbox_geo" and run_a_bbox_geo:
-            out.append(spec)
-            continue
-        if name == "bbox_size_aux" and run_a_bbox_size_aux:
-            out.append(spec)
-            continue
-        if name == "coord_reg" and run_a_coord_reg:
-            out.append(spec)
     return out
 
 
@@ -92,18 +81,12 @@ def run_stage2_objective_pipelines(
     token_type_masks: Mapping[str, torch.Tensor],
     rollout_subset_masks: Mapping[str, torch.Tensor],
     run_a_text: bool,
-    run_a_bbox_geo: bool,
-    run_a_bbox_size_aux: bool,
-    run_a_coord_reg: bool,
     warn_once_cache: set[str],
 ) -> Stage2ObjectiveRunResult:
     objective_specs_ctx = (
         _filter_channel_a_specs(
             objective_specs,
             run_a_text=run_a_text,
-            run_a_bbox_geo=run_a_bbox_geo,
-            run_a_bbox_size_aux=run_a_bbox_size_aux,
-            run_a_coord_reg=run_a_coord_reg,
         )
         if channel == "A"
         else list(objective_specs or [])
@@ -154,24 +137,9 @@ def build_stage2_core_loss_logs(
     channel: str,
     pipeline_metrics_ctx: Mapping[str, float],
     token_ce_module_w: float,
-    bbox_geo_module_w: float,
-    bbox_size_aux_module_w: float,
-    coord_reg_module_w: float,
     run_a_text: bool,
-    run_a_bbox_geo: bool,
-    run_a_bbox_size_aux: bool,
-    run_a_coord_reg: bool,
     token_desc_ce_weight: float,
     fn_desc_ce_weight: float,
-    bbox_smoothl1_w: float,
-    bbox_ciou_w: float,
-    bbox_log_wh_w: float,
-    bbox_oversize_w: float,
-    coord_ce_w: float,
-    coord_soft_ce_w: float,
-    coord_w1_w: float,
-    coord_gate_w: float,
-    text_gate_w: float,
 ) -> Dict[str, float]:
     stage2_logs: Dict[str, float] = {}
 
@@ -202,48 +170,6 @@ def build_stage2_core_loss_logs(
                     float(token_ce_module_w) * float(token_desc)
                 )
 
-        if float(bbox_geo_module_w) != 0.0 and run_a_bbox_geo:
-            smoothl1 = float(
-                pipeline_metrics_ctx.get("loss/bbox_smoothl1", 0.0) or 0.0
-            )
-            ciou = float(
-                pipeline_metrics_ctx.get("loss/bbox_ciou", 0.0) or 0.0
-            )
-            if float(bbox_smoothl1_w) != 0.0:
-                stage2_logs["loss/coord/bbox_smoothl1"] = float(
-                    float(bbox_geo_module_w) * float(bbox_smoothl1_w) * float(smoothl1)
-                )
-            if float(bbox_ciou_w) != 0.0:
-                stage2_logs["loss/coord/bbox_ciou"] = float(
-                    float(bbox_geo_module_w) * float(bbox_ciou_w) * float(ciou)
-                )
-
-        if float(bbox_size_aux_module_w) != 0.0 and run_a_bbox_size_aux:
-            def _emit_a_bbox_size(term: str, weight: float, raw_key: str) -> None:
-                if float(weight) == 0.0:
-                    return
-                value = float(pipeline_metrics_ctx.get(raw_key, 0.0) or 0.0)
-                stage2_logs[f"loss/coord/{term}"] = float(
-                    float(bbox_size_aux_module_w) * float(weight) * float(value)
-                )
-
-            _emit_a_bbox_size("bbox_log_wh", bbox_log_wh_w, "loss/bbox_log_wh")
-            _emit_a_bbox_size("bbox_oversize", bbox_oversize_w, "loss/bbox_oversize")
-
-        if float(coord_reg_module_w) != 0.0 and run_a_coord_reg:
-            def _emit_a(term: str, weight: float, raw_key: str) -> None:
-                if float(weight) == 0.0:
-                    return
-                value = float(pipeline_metrics_ctx.get(raw_key, 0.0) or 0.0)
-                stage2_logs[f"loss/coord/{term}"] = float(
-                    float(coord_reg_module_w) * float(weight) * float(value)
-                )
-
-            _emit_a("coord_token_ce", coord_ce_w, "loss/coord_token_ce")
-            _emit_a("coord_soft_ce", coord_soft_ce_w, "loss/coord_soft_ce")
-            _emit_a("coord_w1", coord_w1_w, "loss/coord_w1")
-            _emit_a("coord_gate", coord_gate_w, "loss/coord_gate")
-            _emit_a("text_gate", text_gate_w, "loss/text_gate")
     else:
         if float(token_ce_module_w) != 0.0:
             token_struct = float(
@@ -260,49 +186,6 @@ def build_stage2_core_loss_logs(
                 stage2_logs["loss/B_rollout_text/desc_ce"] = float(
                     float(token_ce_module_w) * float(token_desc)
                 )
-
-        if float(bbox_geo_module_w) != 0.0:
-            smoothl1 = float(
-                pipeline_metrics_ctx.get("loss/bbox_smoothl1", 0.0) or 0.0
-            )
-            ciou = float(
-                pipeline_metrics_ctx.get("loss/bbox_ciou", 0.0) or 0.0
-            )
-            if float(bbox_smoothl1_w) != 0.0:
-                stage2_logs["loss/B_coord/bbox_smoothl1"] = float(
-                    float(bbox_geo_module_w) * float(bbox_smoothl1_w) * float(smoothl1)
-                )
-            if float(bbox_ciou_w) != 0.0:
-                stage2_logs["loss/B_coord/bbox_ciou"] = float(
-                    float(bbox_geo_module_w) * float(bbox_ciou_w) * float(ciou)
-                )
-
-        if float(bbox_size_aux_module_w) != 0.0:
-            def _emit_b_bbox_size(term: str, weight: float, raw_key: str) -> None:
-                if float(weight) == 0.0:
-                    return
-                value = float(pipeline_metrics_ctx.get(raw_key, 0.0) or 0.0)
-                stage2_logs[f"loss/B_coord/{term}"] = float(
-                    float(bbox_size_aux_module_w) * float(weight) * float(value)
-                )
-
-            _emit_b_bbox_size("bbox_log_wh", bbox_log_wh_w, "loss/bbox_log_wh")
-            _emit_b_bbox_size("bbox_oversize", bbox_oversize_w, "loss/bbox_oversize")
-
-        if float(coord_reg_module_w) != 0.0:
-            def _emit_b(term: str, weight: float, raw_key: str) -> None:
-                if float(weight) == 0.0:
-                    return
-                value = float(pipeline_metrics_ctx.get(raw_key, 0.0) or 0.0)
-                stage2_logs[f"loss/B_coord/{term}"] = float(
-                    float(coord_reg_module_w) * float(weight) * float(value)
-                )
-
-            _emit_b("coord_token_ce", coord_ce_w, "loss/coord_token_ce")
-            _emit_b("coord_soft_ce", coord_soft_ce_w, "loss/coord_soft_ce")
-            _emit_b("coord_w1", coord_w1_w, "loss/coord_w1")
-            _emit_b("coord_gate", coord_gate_w, "loss/coord_gate")
-            _emit_b("text_gate", text_gate_w, "loss/text_gate")
 
     _emit_stage2_trie_metrics()
 

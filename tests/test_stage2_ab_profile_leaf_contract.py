@@ -13,7 +13,7 @@ def test_stage2_ab_canonical_profiles_load_under_current_hierarchy() -> None:
     stage2_root = repo_root / "configs" / "stage2_two_channel"
 
     profiles: list[Path] = []
-    for kind in ("prod", "smoke"):
+    for kind in ("prod", "smoke", "ablation"):
         profiles.extend(
             sorted(
                 path
@@ -22,12 +22,31 @@ def test_stage2_ab_canonical_profiles_load_under_current_hierarchy() -> None:
             )
         )
 
-    assert profiles, "Expected stage2_two_channel canonical profile leaves under prod/ and smoke/."
+    assert profiles, "Expected stage2_two_channel canonical profile leaves under prod/, smoke/, and ablation/."
 
     for path in profiles:
         # `load_materialized_training_config` is intentionally side-effect free.
         ConfigLoader.load_materialized_training_config(str(path))
 
+
+@pytest.mark.parametrize(
+    ("config_relpath", "expected_ordering"),
+    [
+        (
+            "configs/stage2_two_channel/smoke/a_only.yaml",
+            "sorted",
+        ),
+    ],
+)
+def test_stage2_ablation_profiles_pin_cache_parity_and_ordering(
+    config_relpath: str,
+    expected_ordering: str,
+) -> None:
+    repo_root = Path(__file__).resolve().parents[1]
+    cfg = ConfigLoader.load_materialized_training_config(str(repo_root / config_relpath))
+
+    assert cfg.training["seed"] == 17
+    assert cfg.custom.object_ordering == expected_ordering
 
 def test_stage2_pseudo_positive_prod_profile_materializes_default_k4_contract() -> None:
     repo_root = Path(__file__).resolve().parents[1]
@@ -52,8 +71,24 @@ def test_stage2_pseudo_positive_prod_profile_materializes_default_k4_contract() 
     )
 
     prod_objective = {m.name: m for m in prod_cfg.stage2_ab.pipeline.objective}
-    assert list(prod_objective) == ["token_ce", "bbox_geo", "bbox_size_aux", "coord_reg"]
+    assert list(prod_objective) == ["token_ce"]
     assert prod_objective["token_ce"].config["rollout_fn_desc_weight"] == pytest.approx(1.5)
+
+
+def test_stage2_a_only_entry_config_uses_sorted_desc_first_contract() -> None:
+    repo_root = Path(__file__).resolve().parents[1]
+    cfg = ConfigLoader.load_materialized_training_config(
+        str(repo_root / "configs/stage2_two_channel/prod/a_only.yaml")
+    )
+    assert cfg.custom.object_field_order == "desc_first"
+    assert cfg.custom.object_ordering == "sorted"
+    assert cfg.rollout_matching.eval_detection.metrics == "coco"
+    assert (
+        cfg.training["artifact_subdir"]
+        == "stage2_ab/coco_bbox_max60/a_only"
+    )
+    assert [module.name for module in cfg.stage2_ab.pipeline.objective] == ["token_ce"]
+
 
 def test_stage2_ab_leaf_contract_missing_required_keys_lists_dotted_paths(
     tmp_path: Path,
@@ -131,49 +166,6 @@ def test_stage2_ab_leaf_contract_allows_multi_hop_when_fields_resolve(
                             "desc_ce_weight": 1.0,
                             "rollout_fn_desc_weight": 1.0,
                             "rollout_global_prefix_struct_ce_weight": 1.0,
-                        },
-                    },
-                    {
-                        "name": "bbox_geo",
-                        "enabled": True,
-                        "weight": 0.0,
-                        "channels": ["A", "B"],
-                        "application": {"preset": "anchor_only"},
-                        "config": {
-                            "smoothl1_weight": 0.0,
-                            "ciou_weight": 0.0,
-                        },
-                    },
-                    {
-                        "name": "bbox_size_aux",
-                        "enabled": True,
-                        "weight": 0.0,
-                        "channels": ["A", "B"],
-                        "application": {"preset": "anchor_only"},
-                        "config": {
-                            "log_wh_weight": 0.0,
-                            "oversize_penalty_weight": 0.0,
-                            "oversize_area_frac_threshold": None,
-                            "oversize_log_w_threshold": None,
-                            "oversize_log_h_threshold": None,
-                            "eps": 1e-6,
-                        },
-                    },
-                    {
-                        "name": "coord_reg",
-                        "enabled": True,
-                        "weight": 0.0,
-                        "channels": ["A", "B"],
-                        "application": {"preset": "anchor_only"},
-                        "config": {
-                            "coord_ce_weight": 0.0,
-                            "coord_gate_weight": 0.0,
-                            "text_gate_weight": 0.0,
-                            "soft_ce_weight": 0.0,
-                            "w1_weight": 0.0,
-                            "temperature": 1.0,
-                            "target_sigma": 2.0,
-                            "target_truncate": None,
                         },
                     },
                 ],

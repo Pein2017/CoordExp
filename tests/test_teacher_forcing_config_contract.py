@@ -10,13 +10,13 @@ import pytest
 
 from src.bootstrap.pipeline_manifest import build_pipeline_manifest
 from src.config.loader import ConfigLoader
-from src.config.schema import LatestDetectionTrainingConfig, TrainingConfig
+from src.config.schema import DetectionTrainingConfig, TrainingConfig
 from src.detection.runtime import (
-    assert_latest_detection_runtime_supported,
-    build_latest_detection_dataset,
-    build_latest_detection_runtime_custom_shim,
-    latest_detection_mode,
-    resolve_latest_detection_prompts,
+    assert_detection_runtime_supported,
+    build_detection_dataset,
+    build_detection_runtime_custom_shim,
+    detection_mode,
+    resolve_detection_prompts,
 )
 from src.training.teacher_forcing.constants import TEACHER_FORCING_TARGET_IR_KEY
 
@@ -24,7 +24,7 @@ TEST_DIR = Path(__file__).resolve().parent
 if str(TEST_DIR) not in sys.path:
     sys.path.insert(0, str(TEST_DIR))
 
-from test_latest_training_config_contract import _latest_payload
+from test_detection_training_config_contract import _detection_payload
 from test_detection_training_dataset import (
     FakeSwiftTemplate,
     _ensure_image,
@@ -81,7 +81,7 @@ def _teacher_forcing_objective(
 
 
 def _latest_teacher_payload(**objective_updates: object) -> dict:
-    payload = _latest_payload()
+    payload = _detection_payload()
     objective = _teacher_forcing_objective()
     objective.update(objective_updates)
     payload["objective"] = objective
@@ -133,11 +133,11 @@ def _teacher_forcing_stage2_objective_names(cfg: TrainingConfig) -> list[str]:
     [
         "hard_sft",
         "pure_valid_set_marginal",
-        "coverage_regularized_valid_set_marginal",
+        "hybrid_valid_set_marginal",
     ],
 )
 def test_latest_teacher_forcing_accepts_supported_profiles(profile: str) -> None:
-    coverage_enabled = profile == "coverage_regularized_valid_set_marginal"
+    coverage_enabled = profile == "hybrid_valid_set_marginal"
     base_modules = (
         _hard_sft_objective()["modules"]
         if profile == "hard_sft"
@@ -154,7 +154,7 @@ def test_latest_teacher_forcing_accepts_supported_profiles(profile: str) -> None
         },
     )
 
-    cfg = LatestDetectionTrainingConfig.from_mapping(payload)
+    cfg = DetectionTrainingConfig.from_mapping(payload)
 
     assert cfg.objective.id == "teacher_forcing"
     assert cfg.objective.profile == profile
@@ -211,7 +211,7 @@ def test_hard_sft_rejects_target_ir_only_modules(
         ValueError,
         match=rf"objective\.profile=hard_sft.*{expected_key}",
     ):
-        LatestDetectionTrainingConfig.from_mapping(payload)
+        DetectionTrainingConfig.from_mapping(payload)
 
 
 def test_stage2_hard_sft_rejects_enabled_valid_set_likelihood_module() -> None:
@@ -245,7 +245,7 @@ def test_latest_teacher_forcing_accepts_minimal_hard_sft_profile() -> None:
         },
     )
 
-    cfg = LatestDetectionTrainingConfig.from_mapping(payload)
+    cfg = DetectionTrainingConfig.from_mapping(payload)
 
     assert cfg.objective.profile == "hard_sft"
     assert cfg.objective.modules.within_valid_coverage.enabled is False
@@ -254,7 +254,7 @@ def test_latest_teacher_forcing_accepts_minimal_hard_sft_profile() -> None:
 
 def test_coverage_profile_requires_explicit_positive_coverage_strength() -> None:
     payload = _latest_teacher_payload(
-        profile="coverage_regularized_valid_set_marginal",
+        profile="hybrid_valid_set_marginal",
         modules={
             **_teacher_forcing_objective()["modules"],
             "within_valid_coverage": {
@@ -266,9 +266,9 @@ def test_coverage_profile_requires_explicit_positive_coverage_strength() -> None
 
     with pytest.raises(
         ValueError,
-        match=r"coverage_regularized_valid_set_marginal.*coverage_strength.*> 0",
+        match=r"hybrid_valid_set_marginal.*coverage_strength.*> 0",
     ):
-        LatestDetectionTrainingConfig.from_mapping(payload)
+        DetectionTrainingConfig.from_mapping(payload)
 
 
 def test_pure_profile_rejects_positive_coverage_strength() -> None:
@@ -286,7 +286,7 @@ def test_pure_profile_rejects_positive_coverage_strength() -> None:
         ValueError,
         match=r"pure_valid_set_marginal.*coverage_strength=0",
     ):
-        LatestDetectionTrainingConfig.from_mapping(payload)
+        DetectionTrainingConfig.from_mapping(payload)
 
 
 @pytest.mark.parametrize(
@@ -311,16 +311,16 @@ def test_teacher_forcing_target_ir_nested_sections_reject_falsy_non_mappings(
         TypeError,
         match=rf"objective\.target_ir\.{section} must be a mapping",
     ):
-        LatestDetectionTrainingConfig.from_mapping(payload)
+        DetectionTrainingConfig.from_mapping(payload)
 
 
 @pytest.mark.parametrize("old_id", OLD_OBJECTIVE_IDS)
 def test_latest_teacher_forcing_rejects_legacy_objective_ids(old_id: str) -> None:
-    payload = _latest_payload()
+    payload = _detection_payload()
     payload["objective"] = {"id": old_id}
 
     with pytest.raises(ValueError, match=r"objective\.id.*teacher_forcing"):
-        LatestDetectionTrainingConfig.from_mapping(payload)
+        DetectionTrainingConfig.from_mapping(payload)
 
 
 @pytest.mark.parametrize("old_id", OLD_OBJECTIVE_IDS)
@@ -360,7 +360,7 @@ def test_stage2_teacher_forcing_rejects_legacy_gate_config_keys(
     legacy_key: str,
 ) -> None:
     pipeline = _canonical_stage2_pipeline()
-    pipeline["objective"][3]["config"][legacy_key] = 0.25
+    pipeline["objective"][0]["config"][legacy_key] = 0.25
     raw = _stage2_teacher_payload(pipeline=pipeline)
 
     prompts = ConfigLoader.resolve_prompts(raw)
@@ -421,7 +421,7 @@ def test_stage2_teacher_forcing_hard_sft_compiles_runtime_manifest() -> None:
     [
         _teacher_forcing_objective(),
         _teacher_forcing_objective(
-            profile="coverage_regularized_valid_set_marginal",
+            profile="hybrid_valid_set_marginal",
             coverage_enabled=True,
             coverage_strength=0.1,
         ),
@@ -473,7 +473,7 @@ def test_checked_in_latest_teacher_forcing_smoke_config_materializes() -> None:
 
     cfg = ConfigLoader.load_materialized_training_config(str(config_path))
 
-    assert isinstance(cfg, LatestDetectionTrainingConfig)
+    assert isinstance(cfg, DetectionTrainingConfig)
     assert cfg.objective.id == "teacher_forcing"
     assert cfg.objective.profile == "hard_sft"
     assert cfg.objective.target_ir.rollin_policy.name == "random_permutation"
@@ -489,7 +489,7 @@ def test_checked_in_latest_teacher_forcing_smoke_reaches_dataset_runtime(
         / "configs/stage1/teacher_forcing/smoke/compact_full_hard_sft_tiny.yaml"
     )
     cfg = ConfigLoader.load_materialized_training_config(str(config_path))
-    assert isinstance(cfg, LatestDetectionTrainingConfig)
+    assert isinstance(cfg, DetectionTrainingConfig)
 
     jsonl_path = tmp_path / "train.coord.jsonl"
     _write_jsonl(jsonl_path, [_raw_row()])
@@ -503,9 +503,9 @@ def test_checked_in_latest_teacher_forcing_smoke_reaches_dataset_runtime(
         ),
     )
 
-    system_prompt, _user_prompt = resolve_latest_detection_prompts(cfg)
-    custom_config = build_latest_detection_runtime_custom_shim(cfg)
-    dataset = build_latest_detection_dataset(
+    system_prompt, _user_prompt = resolve_detection_prompts(cfg)
+    custom_config = build_detection_runtime_custom_shim(cfg)
+    dataset = build_detection_dataset(
         jsonl_path,
         swift_template=FakeSwiftTemplate(),
         training_config=cfg,
@@ -525,25 +525,25 @@ def test_checked_in_latest_teacher_forcing_smoke_reaches_dataset_runtime(
 def test_latest_teacher_forcing_pure_valid_set_profile_reaches_runtime() -> None:
     payload = _latest_teacher_payload()
     payload["objective"] = _teacher_forcing_objective()
-    cfg = LatestDetectionTrainingConfig.from_mapping(payload)
+    cfg = DetectionTrainingConfig.from_mapping(payload)
 
-    assert latest_detection_mode(cfg) == "random_order_sft"
+    assert detection_mode(cfg) == "random_order_sft"
 
 
 def test_latest_teacher_forcing_coverage_profile_still_requires_runtime_wiring() -> None:
     payload = _latest_teacher_payload()
     payload["objective"] = _teacher_forcing_objective(
-        profile="coverage_regularized_valid_set_marginal",
+        profile="hybrid_valid_set_marginal",
         coverage_enabled=True,
         coverage_strength=0.1,
     )
-    cfg = LatestDetectionTrainingConfig.from_mapping(payload)
+    cfg = DetectionTrainingConfig.from_mapping(payload)
 
     with pytest.raises(
         ValueError,
         match=r"currently supports objective\.profile",
     ):
-        latest_detection_mode(cfg)
+        detection_mode(cfg)
 
 
 @pytest.mark.parametrize(
@@ -560,14 +560,14 @@ def test_latest_teacher_forcing_runtime_rejects_packing_surfaces(
     key: str,
     match: str,
 ) -> None:
-    cfg = LatestDetectionTrainingConfig.from_mapping(_latest_teacher_payload())
+    cfg = DetectionTrainingConfig.from_mapping(_latest_teacher_payload())
     if section == "training":
         cfg = replace(cfg, training={**cfg.training, key: True})
     else:
         cfg = replace(cfg, packing=replace(cfg.packing, **{key: True}))
 
     with pytest.raises(ValueError, match=match):
-        assert_latest_detection_runtime_supported(
+        assert_detection_runtime_supported(
             cfg,
             encoded_sample_cache_cfg=SimpleNamespace(enabled=False),
             tokenizer=None,
@@ -601,13 +601,8 @@ def test_checked_in_stage2_teacher_forcing_smoke_builds_nonempty_manifest() -> N
 
     manifest = build_pipeline_manifest(
         asdict(cfg.stage2_ab),
-        default_objective=[
-            "token_ce",
-            "bbox_geo",
-            "bbox_size_aux",
-            "coord_reg",
-        ],
-        default_diagnostics=["coord_diag"],
+        default_objective=["token_ce"],
+        default_diagnostics=[],
         trainer_variant="stage2_two_channel",
         config_path=str(config_path),
         run_name=str(cfg.training.get("run_name", "")),

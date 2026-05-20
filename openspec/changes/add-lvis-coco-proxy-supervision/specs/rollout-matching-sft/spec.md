@@ -9,8 +9,6 @@ canonical module config keys only.
 Normative behavior:
 
 - `token_ce.config` MUST accept `object_weight_mode`,
-- `bbox_geo.config` MUST accept `object_weight_mode`,
-- `coord_reg.config` MUST accept `object_weight_mode`,
 - `object_weight_mode` MUST support:
   - `none`
   - `metadata`
@@ -27,8 +25,8 @@ training-time concern rather than a prompt-format change.
 
 Normative behavior:
 
-- metadata-driven object weighting MUST consume object-local desc / coord
-  weights from the shared context,
+- metadata-driven object weighting MUST consume object-local token weights from
+  the shared context,
 - rendered object syntax in the teacher-forced target MUST remain unchanged,
 - structure CE remains globally supervised even when plausible proxy objects are
   present,
@@ -38,4 +36,5 @@ Normative behavior:
 #### Scenario: Rollout-aligned metadata weighting preserves target syntax
 - **WHEN** rollout-aligned Stage-2 trains on augmented COCO+LVIS proxy records
 - **THEN** the rendered target format remains ordinary CoordJSON
-- **AND** proxy weighting changes only desc / coord supervision strength.
+- **AND** proxy weighting changes only explicitly supported token supervision
+  strength.

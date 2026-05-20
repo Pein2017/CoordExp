@@ -1,4 +1,4 @@
-# Production launch config for the current-schema compact detection pipeline.
+# Legacy comparator config for the current-schema compact detection pipeline.
 #
 # Objective: token-level Random-Permutation ET-RMP-CE with support reweighting.
 # Packing remains disabled until recursive sidecar target-position offset rewriting

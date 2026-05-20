@@ -17,8 +17,13 @@ one stable design frame:
 
 - Channel-A: one GT-anchored teacher-forced forward
 - Channel-B: rollout-aligned clean-prefix supervision
-- Canonical Channel-A families: `loss/text/*`, `loss/coord/*`, `coord_diag/*`
-- Canonical Channel-B families: `loss/B_rollout_text/*`, `loss/B_coord/*`, `coord_diag/B/*`, `dup/raw/*`, and `stage2_ab/channel_b/dup/N_*`
+- Historical Channel-A families included `loss/text/*`, `loss/coord/*`, and
+  `coord_diag/*`
+- Historical Channel-B families included `loss/B_rollout_text/*`,
+  `loss/B_coord/*`, `coord_diag/B/*`, `dup/raw/*`, and
+  `stage2_ab/channel_b/dup/N_*`
+- The active Stage-2 objective surface has retired the coordinate diagnostic
+  families in favor of text/trie objective metrics.
 
 ## Current Runtime Ownership
 

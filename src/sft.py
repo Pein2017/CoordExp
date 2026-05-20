@@ -761,10 +761,6 @@ def _stage1_aux_settings_payload(custom_config: Any) -> dict[str, Any]:
         "coord_soft_ce_w1": _config_to_mapping(
             getattr(custom_config, "coord_soft_ce_w1", None)
         ),
-        "bbox_geo": _config_to_mapping(getattr(custom_config, "bbox_geo", None)),
-        "bbox_size_aux": _config_to_mapping(
-            getattr(custom_config, "bbox_size_aux", None)
-        ),
     }
 
 
@@ -3506,8 +3502,6 @@ def main():
         base_collator = sft._get_data_collator()
     token_type_cfg = getattr(custom_config, "token_type_metrics", None)
     coord_soft_ce_w1_cfg = getattr(custom_config, "coord_soft_ce_w1", None)
-    bbox_geo_cfg = getattr(custom_config, "bbox_geo", None)
-    bbox_size_aux_cfg = getattr(custom_config, "bbox_size_aux", None)
     sft_structural_close_cfg = getattr(custom_config, "sft_structural_close", None)
     instability_monitor_cfg = None
     loss_gradient_monitor_cfg = None
@@ -3654,8 +3648,8 @@ def main():
         trainer_variant=str(trainer_variant or ""),
         instability_monitor_cfg=instability_monitor_cfg,
         token_type_cfg=token_type_cfg,
-        bbox_geo_cfg=bbox_geo_cfg,
-        bbox_size_aux_cfg=bbox_size_aux_cfg,
+        bbox_geo_cfg=None,
+        bbox_size_aux_cfg=None,
         coord_soft_ce_w1_cfg=coord_soft_ce_w1_cfg,
         sft_structural_close_cfg=sft_structural_close_cfg,
         recursive_detection_ce_cfg=recursive_detection_ce_cfg,
@@ -3905,13 +3899,8 @@ def main():
 
         stage2_manifest = _resolve_pipeline_manifest(
             stage2_ab_cfg,
-            default_objective=[
-                "token_ce",
-                "bbox_geo",
-                "bbox_size_aux",
-                "coord_reg",
-            ],
-            default_diagnostics=["coord_diag"],
+            default_objective=["token_ce"],
+            default_diagnostics=[],
             coord_soft_cfg=coord_soft_cfg_for_manifest,
         )
         setattr(trainer, "stage2_pipeline_manifest", stage2_manifest)
@@ -3928,10 +3917,6 @@ def main():
         )
     if coord_soft_ce_w1_cfg is not None:
         setattr(trainer, "coord_soft_ce_w1_cfg", coord_soft_ce_w1_cfg)
-    if bbox_geo_cfg is not None:
-        setattr(trainer, "bbox_geo_cfg", bbox_geo_cfg)
-    if bbox_size_aux_cfg is not None:
-        setattr(trainer, "bbox_size_aux_cfg", bbox_size_aux_cfg)
     if sft_structural_close_cfg is not None:
         setattr(trainer, "sft_structural_close_cfg", sft_structural_close_cfg)
     if recursive_detection_ce_cfg is not None:

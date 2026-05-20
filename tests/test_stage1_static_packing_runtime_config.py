@@ -695,6 +695,24 @@ def test_resolve_static_packing_cache_dir_defaults_to_dataset_local_root(
     ).resolve()
 
 
+@pytest.mark.parametrize(
+    ("config_relpath", "expected_ordering"),
+    [
+        ("configs/stage1/lvis_bbox_max60_1024.yaml", "sorted"),
+        ("configs/stage1/smoke/lvis_bbox_max60_1024.yaml", "sorted"),
+    ],
+)
+def test_stage1_profiles_pin_cache_parity_and_ordering(
+    config_relpath: str,
+    expected_ordering: str,
+) -> None:
+    repo_root = Path(__file__).resolve().parents[1]
+    cfg = ConfigLoader.load_materialized_training_config(str(repo_root / config_relpath))
+
+    assert cfg.training["seed"] == 17
+    assert cfg.custom.object_ordering == expected_ordering
+
+
 def test_lvis_stage1_config_keeps_canonical_recipe_and_desc_first_sorted_contract() -> None:
     repo_root = Path(__file__).resolve().parents[1]
     cfg = ConfigLoader.load_materialized_training_config(
@@ -702,10 +720,7 @@ def test_lvis_stage1_config_keeps_canonical_recipe_and_desc_first_sorted_contrac
     )
 
     assert cfg.training["optimizer"] == "multimodal_coord_offset"
-    assert (
-        cfg.training["run_name"]
-        == "epoch_4-hard_ce_soft_ce_w1_ciou_bbox_size-2b"
-    )
+    assert cfg.training["run_name"] == "epoch_4-hard_ce_soft_ce_w1-2b"
     assert cfg.custom.train_jsonl == "public_data/lvis/rescale_32_1024_bbox_max60/train.coord.jsonl"
     assert cfg.custom.val_jsonl == "public_data/lvis/rescale_32_1024_bbox_max60/val.coord.jsonl"
     assert cfg.custom.val_sample_limit == 512
@@ -721,14 +736,8 @@ def test_lvis_stage1_config_keeps_canonical_recipe_and_desc_first_sorted_contrac
     assert cfg.custom.coord_soft_ce_w1.soft_ce_weight == pytest.approx(1.0)
     assert cfg.custom.coord_soft_ce_w1.w1_weight == pytest.approx(1.0)
     assert cfg.custom.coord_soft_ce_w1.gate_weight == pytest.approx(5.0)
-    assert cfg.custom.bbox_geo.enabled is True
-    assert cfg.custom.bbox_geo.smoothl1_weight == pytest.approx(0.01)
-    assert cfg.custom.bbox_geo.ciou_weight == pytest.approx(1.0)
-    assert cfg.custom.bbox_geo.parameterization == "xyxy"
-    assert cfg.custom.bbox_geo.center_weight == pytest.approx(1.0)
-    assert cfg.custom.bbox_geo.size_weight == pytest.approx(1.0)
-    assert cfg.custom.bbox_size_aux.enabled is True
-    assert cfg.custom.bbox_size_aux.log_wh_weight == pytest.approx(0.05)
+    assert cfg.custom.bbox_geo.enabled is False
+    assert cfg.custom.bbox_size_aux.enabled is False
     assert cfg.training["artifact_subdir"] == "stage1/lvis_bbox_max60_1024_coord_softce_w1"
     assert cfg.training["output_dir"] == "./output/stage1/lvis_bbox_max60_1024_coord_softce_w1"
     assert cfg.training["logging_dir"] == "./tb/stage1/lvis_bbox_max60_1024_coord_softce_w1"
@@ -748,30 +757,55 @@ def test_lvis_stage1_smoke_config_only_overrides_runtime_limits() -> None:
     assert cfg.custom.coord_soft_ce_w1.ce_weight == pytest.approx(1.0)
     assert cfg.custom.coord_soft_ce_w1.soft_ce_weight == pytest.approx(1.0)
     assert cfg.custom.coord_soft_ce_w1.w1_weight == pytest.approx(1.0)
-    assert cfg.custom.bbox_geo.enabled is True
-    assert cfg.custom.bbox_geo.ciou_weight == pytest.approx(1.0)
-    assert cfg.custom.bbox_geo.parameterization == "xyxy"
-    assert cfg.custom.bbox_geo.center_weight == pytest.approx(1.0)
-    assert cfg.custom.bbox_geo.size_weight == pytest.approx(1.0)
-    assert cfg.custom.bbox_size_aux.enabled is True
+    assert cfg.custom.bbox_geo.enabled is False
+    assert cfg.custom.bbox_size_aux.enabled is False
     assert cfg.training["max_steps"] == 2
     assert cfg.custom.train_sample_limit == 32
     assert cfg.custom.val_sample_limit == 8
     assert (
         cfg.training["run_name"]
-        == "smoke_2steps-stage1-lvis_bbox_max60_1024-hard_ce_soft_ce_w1_ciou_bbox_size"
+        == "smoke_2steps-stage1-lvis_bbox_max60_1024-hard_ce_soft_ce_w1"
     )
     assert cfg.training["artifact_subdir"] == "stage1/smoke/lvis_bbox_max60_1024_coord_softce_w1"
     assert cfg.training["output_dir"] == "./output/stage1/smoke/lvis_bbox_max60_1024_coord_softce_w1"
     assert cfg.training["logging_dir"] == "./tb/stage1/smoke/lvis_bbox_max60_1024_coord_softce_w1"
 
 
-def test_representative_retained_leaves_still_author_model_run_name_and_artifact_subdir() -> None:
+def test_stage2_a_only_config_keeps_text_pipeline_contract() -> None:
+    repo_root = Path(__file__).resolve().parents[1]
+    cfg = ConfigLoader.load_materialized_training_config(
+        str(repo_root / "configs/stage2_two_channel/prod/a_only.yaml")
+    )
+
+    assert cfg.training["run_name"] == "epoch_2-eff_size_64-add_coord_ce"
+    assert cfg.custom.object_ordering == "sorted"
+    assert cfg.custom.object_field_order == "desc_first"
+    assert cfg.rollout_matching.eval_detection.metrics == "coco"
+    assert cfg.training["artifact_subdir"] == "stage2_ab/coco_bbox_max60/a_only"
+    objective = {module.name: module for module in cfg.stage2_ab.pipeline.objective}
+    assert list(objective) == ["token_ce"]
+
+
+def test_stage2_a_only_smoke_config_resolves_token_ce_pipeline() -> None:
+    repo_root = Path(__file__).resolve().parents[1]
+    cfg = ConfigLoader.load_materialized_training_config(
+        str(
+            repo_root
+            / "configs/stage2_two_channel/smoke/a_only.yaml"
+        )
+    )
+
+    objective = {module.name: module for module in cfg.stage2_ab.pipeline.objective}
+    assert cfg.training["run_name"] == "smoke_20steps-stage2-a_only"
+    assert cfg.training["artifact_subdir"] == "stage2_ab/smoke/a_only"
+    assert list(objective) == ["token_ce"]
+
+
+def test_representative_raw_leaves_still_author_model_run_name_and_artifact_subdir() -> None:
     repo_root = Path(__file__).resolve().parents[1]
     raw_paths = [
         repo_root / "configs/stage1/lvis_bbox_max60_1024.yaml",
         repo_root / "configs/stage2_two_channel/prod/a_only.yaml",
-        repo_root / "configs/stage2_two_channel/prod/ab_mixed.yaml",
     ]
 
     for path in raw_paths:
@@ -1041,6 +1075,32 @@ def test_validate_static_packing_accumulation_windows_warns_on_remainder(
         "is not divisible by gradient_accumulation_steps=8" in msg
         for msg in warning_logs
     )
+
+
+@pytest.mark.parametrize(
+    ("config_name", "expected_ordering"),
+    [
+        ("../lvis_bbox_max60_1024.yaml", "sorted"),
+        ("../smoke/lvis_bbox_max60_1024.yaml", "sorted"),
+    ],
+)
+def test_stage1_leaves_pin_ordering_cache_seed_and_paths(
+    config_name: str,
+    expected_ordering: str,
+) -> None:
+    repo_root = Path(__file__).resolve().parents[1]
+    cfg = ConfigLoader.load_materialized_training_config(
+        str(repo_root / "configs" / "stage1" / "ablation" / config_name)
+    )
+
+    training = cfg.training
+    custom = cfg.custom
+    template = cfg.template
+
+    assert custom.object_ordering == expected_ordering
+    assert training["seed"] == 17
+    assert template["max_pixels"] == 1048576
+    assert "rescale_32_1024_bbox_max60/train.coord.jsonl" in str(custom.train_jsonl)
 
 
 def test_static_packing_avoids_thread_pool_for_unsafe_length_helper_in_distributed_runtime(

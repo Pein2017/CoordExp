@@ -228,7 +228,7 @@ artifacts into `training.output_dir` before training starts:
   - Use this instead of only `resolved_config.json` when debugging the true
     launched topology or runtime knobs.
   - Latest compact detection runs also record:
-    - `latest_detection_objective`: objective id/variant, template id,
+    - `detection_objective`: objective id/variant, template id,
       coordinate surface, bbox format, state weighting, normalization,
       support/balance weights, roll-in source, type-gate mode, and EOS token.
     - `effective_batch_size` and `effective_batch_size_source`, because

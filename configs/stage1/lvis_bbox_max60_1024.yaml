@@ -10,7 +10,7 @@ training:
   artifact_subdir: stage1/lvis_bbox_max60_1024_coord_softce_w1
   num_train_epochs: 4
   effective_batch_size: 128
-  run_name: epoch_4-hard_ce_soft_ce_w1_ciou_bbox_size-2b
+  run_name: epoch_4-hard_ce_soft_ce_w1-2b
 
 custom:
   coord_soft_ce_w1:
@@ -22,18 +22,6 @@ custom:
     temperature: 0.9
     target_sigma: 1.5
     target_truncate: 8
-  bbox_geo:
-    enabled: true
-    smoothl1_weight: 0.01
-    ciou_weight: 1.0
-  bbox_size_aux:
-    enabled: true
-    log_wh_weight: 0.05
-    oversize_penalty_weight: 0.0
-    oversize_area_frac_threshold: null
-    oversize_log_w_threshold: null
-    oversize_log_h_threshold: null
-    eps: 1.0e-6
   eval_detection:
     enabled: false
     metrics: lvis

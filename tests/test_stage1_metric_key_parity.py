@@ -9,12 +9,10 @@ import pytest
 import torch
 import torch.nn.functional as F
 
-from src.config.schema import BBoxGeoConfig, BBoxSizeAuxConfig, CoordSoftCEW1Config
+from src.config.schema import CoordSoftCEW1Config
 from src.data_collators.token_types import TokenType
 from src.metrics.dataset_metrics import (
     AggregateTokenTypeMetricsMixin,
-    BBoxGeoLossMixin,
-    BBoxSizeAuxLossMixin,
     CoordSoftCEW1LossMixin,
     GradAccumLossScaleMixin,
 )
@@ -122,20 +120,11 @@ class _DummyBaseTrainer:
 class _DummyTrainer(
     GradAccumLossScaleMixin,
     AggregateTokenTypeMetricsMixin,
-    BBoxSizeAuxLossMixin,
-    BBoxGeoLossMixin,
     CoordSoftCEW1LossMixin,
     _DummyBaseTrainer,
 ):
-    def __init__(
-        self,
-        cfg: CoordSoftCEW1Config,
-        bbox_geo_cfg: BBoxGeoConfig,
-        bbox_cfg: BBoxSizeAuxConfig,
-    ):
+    def __init__(self, cfg: CoordSoftCEW1Config):
         self.coord_soft_ce_w1_cfg = cfg
-        self.bbox_geo_cfg = bbox_geo_cfg
-        self.bbox_size_aux_cfg = bbox_cfg
         self.template = _DummyTemplate()
         self.args = SimpleNamespace(
             average_tokens_across_devices=False,
@@ -198,38 +187,16 @@ def _make_toy_batch(
 @pytest.mark.parametrize("packed", [False, True])
 @pytest.mark.parametrize("with_token_types", [False, True])
 @pytest.mark.parametrize("coord_enabled", [False, True])
-@pytest.mark.parametrize("bbox_geo_enabled", [False, True])
-@pytest.mark.parametrize("bbox_enabled", [False, True])
 def test_stage1_metric_keys_are_documented_and_aggregate_only(
     *,
     packed: bool,
     with_token_types: bool,
     coord_enabled: bool,
-    bbox_geo_enabled: bool,
-    bbox_enabled: bool,
 ) -> None:
     doc_keys = _load_doc_keys()
 
     cfg = CoordSoftCEW1Config.from_mapping({"enabled": bool(coord_enabled)})
-    bbox_geo_cfg = BBoxGeoConfig.from_mapping(
-        {
-            "enabled": bool(bbox_geo_enabled),
-            "smoothl1_weight": 0.0,
-            "ciou_weight": 1.0,
-        }
-    )
-    bbox_cfg = BBoxSizeAuxConfig.from_mapping(
-        {
-            "enabled": bool(bbox_enabled),
-            "log_wh_weight": 0.05,
-            "oversize_penalty_weight": 0.0,
-            "oversize_area_frac_threshold": None,
-            "oversize_log_w_threshold": None,
-            "oversize_log_h_threshold": None,
-            "eps": 1e-6,
-        }
-    )
-    trainer = _DummyTrainer(cfg, bbox_geo_cfg, bbox_cfg)
+    trainer = _DummyTrainer(cfg)
 
     if packed:
         # One "packed unit" that represents multiple original samples.
@@ -261,16 +228,10 @@ def test_stage1_metric_keys_are_documented_and_aggregate_only(
     total_metric = train_metrics.get("stage1/total_loss_per_sample_est")
     base_metric = train_metrics.get("base_ce/loss_per_sample")
     coord_metric = train_metrics.get("coord_diag/loss_per_sample")
-    bbox_geo_metric = train_metrics.get("bbox_geo/loss_per_sample")
-    bbox_metric = train_metrics.get("bbox_size_aux/loss_per_sample")
     if total_metric is not None and base_metric is not None and base_metric.values:
         expected_total = float(base_metric.values[-1])
         if coord_metric is not None and coord_metric.values:
             expected_total += float(coord_metric.values[-1])
-        if bbox_geo_metric is not None and bbox_geo_metric.values:
-            expected_total += float(bbox_geo_metric.values[-1])
-        if bbox_metric is not None and bbox_metric.values:
-            expected_total += float(bbox_metric.values[-1])
         assert total_metric.values[-1] == pytest.approx(expected_total)
 
     # Eval bucket should use the same keys; ms-swift is responsible for the `eval_` prefix
@@ -330,48 +291,3 @@ def test_compact_recursive_detection_phase1_metric_events_are_documented() -> No
         "Compact recursive-detection Phase-1 MetricEvent keys missing from "
         f"docs/training/METRICS.md: {missing_docs}"
     )
-
-
-def test_stage1_center_size_bbox_geo_keeps_metric_keys_stable() -> None:
-    doc_keys = _load_doc_keys()
-    trainer = _DummyTrainer(
-        CoordSoftCEW1Config.from_mapping({"enabled": False}),
-        BBoxGeoConfig.from_mapping(
-            {
-                "enabled": True,
-                "smoothl1_weight": 1.0,
-                "ciou_weight": 1.0,
-                "parameterization": "center_size",
-                "center_weight": 1.0,
-                "size_weight": 0.25,
-            }
-        ),
-        BBoxSizeAuxConfig.from_mapping(
-            {
-                "enabled": False,
-                "log_wh_weight": 0.05,
-                "oversize_penalty_weight": 0.0,
-                "oversize_area_frac_threshold": None,
-                "oversize_log_w_threshold": None,
-                "oversize_log_h_threshold": None,
-                "eps": 1e-6,
-            }
-        ),
-    )
-
-    _ = trainer.compute_loss(
-        model=None,
-        inputs=_make_toy_batch(
-            bsz=1,
-            with_token_types=False,
-            pack_num_samples=torch.tensor([1]),
-        ),
-        return_outputs=False,
-        num_items_in_batch=1,
-    )
-
-    emitted = set(trainer.custom_metrics["train"].keys())
-    missing = sorted(k for k in emitted if k not in doc_keys)
-    assert not missing
-    assert "loss/geo/bbox_smoothl1" in emitted
-    assert "loss/geo/bbox_ciou" in emitted

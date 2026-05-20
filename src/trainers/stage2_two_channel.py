@@ -37,10 +37,6 @@ from .rollout_matching.parsing import (
     serialize_append_fragment,
 )
 from .rollout_matching.telemetry import PendingTrainRolloutLog
-from .monitoring.loss_gradient_monitor import (
-    build_stage2_two_channel_coord_monitor_terms,
-    get_loss_gradient_monitor,
-)
 from .stage2_coordination import (
     build_stage2_snapshot_logs,
     merge_stage2_metric_snapshots as _shared_merge_stage2_metric_snapshots,
@@ -4557,57 +4553,12 @@ class Stage2TwoChannelTrainer(
             channel_name=channel,
             default=0.0,
         )
-        bbox_geo_module_w = _module_weight(
-            objective_specs,
-            name="bbox_geo",
-            channel_name=channel,
-            default=0.0,
-        )
-        bbox_size_aux_module_w = _module_weight(
-            objective_specs,
-            name="bbox_size_aux",
-            channel_name=channel,
-            default=0.0,
-        )
-        coord_reg_module_w = _module_weight(
-            objective_specs,
-            name="coord_reg",
-            channel_name=channel,
-            default=0.0,
-        )
-        coord_diag_enabled = (
-            _module_weight(
-                diagnostic_specs,
-                name="coord_diag",
-                channel_name=channel,
-                default=0.0,
-            )
-            > 0.0
-        )
 
         token_module_cfg = _module_config(objective_specs, name="token_ce")
-        bbox_module_cfg = _module_config(objective_specs, name="bbox_geo")
-        bbox_size_aux_module_cfg = _module_config(objective_specs, name="bbox_size_aux")
-        coord_module_cfg = _module_config(objective_specs, name="coord_reg")
         token_module_app = _module_application(objective_specs, name="token_ce")
-        bbox_module_app = _module_application(objective_specs, name="bbox_geo")
-        bbox_size_aux_module_app = _module_application(objective_specs, name="bbox_size_aux")
-        coord_module_app = _module_application(objective_specs, name="coord_reg")
 
         token_cfg = token_module_cfg if isinstance(token_module_cfg, Mapping) else {}
-        bbox_cfg = bbox_module_cfg if isinstance(bbox_module_cfg, Mapping) else {}
-        bbox_size_aux_cfg = (
-            bbox_size_aux_module_cfg
-            if isinstance(bbox_size_aux_module_cfg, Mapping)
-            else {}
-        )
-        coord_cfg = coord_module_cfg if isinstance(coord_module_cfg, Mapping) else {}
         token_preset = str(token_module_app.get("preset", "") or "").strip()
-        bbox_geo_preset = str(bbox_module_app.get("preset", "") or "").strip()
-        bbox_size_aux_preset = str(
-            bbox_size_aux_module_app.get("preset", "") or ""
-        ).strip()
-        coord_reg_preset = str(coord_module_app.get("preset", "") or "").strip()
 
         def _token_ce_targets(preset: str) -> bool:
             if str(channel).upper() != "A":
@@ -4617,13 +4568,6 @@ class Stage2TwoChannelTrainer(
             if preset == "rollout_text_only":
                 return False
             raise ValueError(f"Unsupported token_ce application preset: {preset!r}")
-
-        def _coord_targets(preset: str) -> bool:
-            if str(channel).upper() != "A":
-                return False
-            if preset == "anchor_only":
-                return True
-            raise ValueError(f"Unsupported coord/bbox application preset: {preset!r}")
 
         def _cfg_float(
             cfg: Mapping[str, Any],
@@ -4657,74 +4601,7 @@ class Stage2TwoChannelTrainer(
             default=token_desc_ce_weight,
             min_value=0.0,
         )
-        bbox_smoothl1_w = _cfg_float(
-            bbox_cfg,
-            keys=("smoothl1_weight",),
-            default=1.0,
-            min_value=0.0,
-        )
-        bbox_ciou_w = _cfg_float(
-            bbox_cfg,
-            keys=("ciou_weight",),
-            default=1.0,
-            min_value=0.0,
-        )
-        bbox_log_wh_w = _cfg_float(
-            bbox_size_aux_cfg,
-            keys=("log_wh_weight",),
-            default=0.0,
-            min_value=0.0,
-        )
-        bbox_oversize_w = _cfg_float(
-            bbox_size_aux_cfg,
-            keys=("oversize_penalty_weight",),
-            default=0.0,
-            min_value=0.0,
-        )
-
-        # Optional coord-distribution losses/regularizers (multi-peak stability).
-        coord_ce_w = _cfg_float(
-            coord_cfg,
-            keys=("coord_ce_weight",),
-            default=0.0,
-            min_value=0.0,
-        )
-        # Coord-vocab gate: encourage coord slots to place probability mass on coord tokens
-        # rather than arbitrary text/number tokens (prevents "wrong_arity" rollouts).
-        coord_gate_w = _cfg_float(
-            coord_cfg,
-            keys=("coord_gate_weight",),
-            default=0.0,
-            min_value=0.0,
-        )
-
-        text_gate_w = _cfg_float(
-            coord_cfg,
-            keys=("text_gate_weight",),
-            default=0.0,
-            min_value=0.0,
-        )
-
-        coord_soft_ce_w = _cfg_float(
-            coord_cfg,
-            keys=("soft_ce_weight",),
-            default=0.0,
-            min_value=0.0,
-        )
-        coord_w1_w = _cfg_float(
-            coord_cfg,
-            keys=("w1_weight",),
-            default=0.0,
-            min_value=0.0,
-        )
         run_a_text = _token_ce_targets(token_preset) if token_preset else False
-        run_a_bbox_geo = _coord_targets(bbox_geo_preset) if bbox_geo_preset else False
-        run_a_bbox_size_aux = (
-            _coord_targets(bbox_size_aux_preset) if bbox_size_aux_preset else False
-        )
-        run_a_coord_reg = (
-            _coord_targets(coord_reg_preset) if coord_reg_preset else False
-        )
 
         # Always compute logits; do not rely on model.loss.
         ignored_keys = {
@@ -4797,13 +4674,8 @@ class Stage2TwoChannelTrainer(
 
         # ------------------------------------------------------------------
         # Teacher-forcing objective via the unified module pipeline.
-        #
-        # Channel-A runs one GT-context teacher-forced pass for token CE, bbox
-        # geometry, and coord regularization.
-        #
-        # Channel-B runs one context:
-        #   - B: registry_context=rollout (rollout-context token_ce + geo + coord_reg; FP-neutral)
-        # ------------------------------------------------------------------
+        # Channel-A runs GT-context token CE; Channel-B runs rollout-context
+        # token CE and optional trie CE.
 
         token_type_masks = build_token_type_masks(
             input_ids=input_ids,
@@ -4834,9 +4706,6 @@ class Stage2TwoChannelTrainer(
             token_type_masks=token_type_masks,
             rollout_subset_masks=rollout_subset_masks,
             run_a_text=run_a_text,
-            run_a_bbox_geo=run_a_bbox_geo,
-            run_a_bbox_size_aux=run_a_bbox_size_aux,
-            run_a_coord_reg=run_a_coord_reg,
             warn_once_cache=warn_once,
         )
         objective_specs_ctx = list(objective_run.objective_specs_ctx)
@@ -4846,25 +4715,7 @@ class Stage2TwoChannelTrainer(
 
         from src.metrics.reporter import best_effort_value
 
-        monitor = get_loss_gradient_monitor(self)
         gradmon_metrics = {}
-        if monitor is not None:
-            gradmon_metrics = best_effort_value(
-                self,
-                name="loss_gradient_monitor",
-                fn=lambda: monitor.measure(
-                    model=model,
-                    loss_terms=build_stage2_two_channel_coord_monitor_terms(
-                        channel=channel,
-                        pipeline_result=pipeline_ctx_result,
-                        objective_specs=objective_specs_ctx,
-                        bbox_module_weight=float(bbox_geo_module_w),
-                        bbox_size_aux_module_weight=float(bbox_size_aux_module_w),
-                        coord_module_weight=float(coord_reg_module_w),
-                    ),
-                ),
-                default={},
-            )
 
         # Buffer Stage-2 logs to merge into post-optimizer-step train log line.
         try:
@@ -4880,24 +4731,9 @@ class Stage2TwoChannelTrainer(
                 channel=str(channel),
                 pipeline_metrics_ctx=pipeline_metrics_ctx,
                 token_ce_module_w=float(token_ce_module_w),
-                bbox_geo_module_w=float(bbox_geo_module_w),
-                bbox_size_aux_module_w=float(bbox_size_aux_module_w),
-                coord_reg_module_w=float(coord_reg_module_w),
                 run_a_text=bool(run_a_text),
-                run_a_bbox_geo=bool(run_a_bbox_geo),
-                run_a_bbox_size_aux=bool(run_a_bbox_size_aux),
-                run_a_coord_reg=bool(run_a_coord_reg),
                 token_desc_ce_weight=float(token_desc_ce_weight),
                 fn_desc_ce_weight=float(fn_desc_ce_weight),
-                bbox_smoothl1_w=float(bbox_smoothl1_w),
-                bbox_ciou_w=float(bbox_ciou_w),
-                bbox_log_wh_w=float(bbox_log_wh_w),
-                bbox_oversize_w=float(bbox_oversize_w),
-                coord_ce_w=float(coord_ce_w),
-                coord_soft_ce_w=float(coord_soft_ce_w),
-                coord_w1_w=float(coord_w1_w),
-                coord_gate_w=float(coord_gate_w),
-                text_gate_w=float(text_gate_w),
             )
 
             if isinstance(gradmon_metrics, Mapping):
@@ -4913,24 +4749,6 @@ class Stage2TwoChannelTrainer(
                     "stage2-ab compute_loss requires non-empty _rollout_matching_meta per packed forward"
                 )
             stage2_logs["stage2/_log_weight"] = float(pack_segments)
-
-            if coord_diag_enabled:
-                def _emit_coord_diag(prefix: str, metrics: Mapping[str, float]) -> None:
-                    for k, v in metrics.items():
-                        ks = str(k)
-                        if not ks.startswith("coord_diag/"):
-                            continue
-                        suffix = ks[len("coord_diag/") :]
-                        stage2_logs[f"coord_diag/{prefix}/{suffix}"] = float(v)
-
-                if channel == "A":
-                    for k, v in pipeline_metrics_ctx.items():
-                        ks = str(k)
-                        if not ks.startswith("coord_diag/"):
-                            continue
-                        stage2_logs[ks] = float(v)
-                else:
-                    _emit_coord_diag("B", pipeline_metrics_ctx)
 
             b_ratio_cfg = float(self._ab_schedule_b_ratio())
             if 0.0 < b_ratio_cfg < 1.0:

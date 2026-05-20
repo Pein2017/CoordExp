@@ -5,7 +5,7 @@ from pathlib import Path
 import pytest
 
 from src.config.loader import ConfigLoader
-from src.config.schema import LatestDetectionTrainingConfig, TrainingConfig
+from src.config.schema import DetectionTrainingConfig, TrainingConfig
 from src.training.pipelines.stage1_compact_trie_ce import Stage1CompactTrieCEPipeline
 from src.training.pipelines.stage1_json_ce import Stage1JsonCEPipeline
 from src.training.pipelines.stage2_two_channel import Stage2TwoChannelPipeline
@@ -340,12 +340,12 @@ def test_removed_nested_objective_config_keys_fail_fast(removed_key: str) -> Non
     ("config_relpath", "expected_type"),
     [
         (
-            "configs/stage1/recursive_detection_ce_latest/smoke/compact_full_tiny.yaml",
-            LatestDetectionTrainingConfig,
+            "configs/stage1/recursive_detection_ce/smoke/compact_full_tiny.yaml",
+            DetectionTrainingConfig,
         ),
         (
-            "configs/stage1/recursive_detection_ce_latest/prod/compact_full_support2.yaml",
-            LatestDetectionTrainingConfig,
+            "configs/stage1/recursive_detection_ce/prod/compact_full_support2.yaml",
+            DetectionTrainingConfig,
         ),
         ("configs/stage2_two_channel/smoke/a_only.yaml", TrainingConfig),
         ("configs/stage2_two_channel/prod/a_only.yaml", TrainingConfig),

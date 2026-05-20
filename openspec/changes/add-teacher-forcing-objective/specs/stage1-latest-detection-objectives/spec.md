@@ -42,7 +42,7 @@ Normative behavior:
 - new active training configs MUST NOT use the old recursive-detection training
   objective ids, sidecars, or metric aliases;
 - structural comparator runs inside the new framework MUST be expressed as
-  `coverage_regularized_valid_set_marginal` with explicit
+  `hybrid_valid_set_marginal` with explicit
   `objective.modules.within_valid_coverage.coverage_strength: 1.0`, not as
   ET-RMP-named configs.
 
@@ -135,7 +135,7 @@ Normative behavior:
 - hard SFT baseline runs MUST use `profile: hard_sft`;
 - valid-set marginal runs MUST use `profile: pure_valid_set_marginal`;
 - coverage-regularized comparator runs MUST use
-  `profile: coverage_regularized_valid_set_marginal` plus explicit
+  `profile: hybrid_valid_set_marginal` plus explicit
   `objective.modules.within_valid_coverage.coverage_strength`;
 - old recursive-detection objectives, sidecars, and metrics MUST be documented
   only as retired training routes or historical inference/eval context.
@@ -153,7 +153,7 @@ Normative behavior:
 The old random-permutation ET-RMP-CE training surface is removed from active
 latest compact detection training. Historical checkpoints MAY remain scoreable
 through explicitly legacy inference/eval configs, and the comparator behavior is
-represented structurally through the new teacher-forcing coverage profile.
+represented structurally through the new teacher-forcing hybrid profile.
 
 ### Requirement: Prefix-rollin ET-RMP-CE is a compact-full ablation surface
 

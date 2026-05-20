@@ -22,8 +22,8 @@ Normative behavior:
 
 #### Scenario: Metadata-driven proxy weighting uses shared derived views
 - **WHEN** proxy-supervision metadata is present and object weighting is enabled
-- **THEN** `token_ce`, `bbox_geo`, and `coord_reg` observe aligned object-local
-  spans / groups from the shared context
+- **THEN** `token_ce` observes aligned object-local spans / token weights from
+  the shared context
 - **AND** the runtime does not silently guess object alignment independently in
   each module
 - **AND** the derived views remain sufficient to distinguish
@@ -36,10 +36,6 @@ through canonical module config keys.
 Normative behavior:
 
 - `token_ce.config` MAY include:
-  - `object_weight_mode`
-- `bbox_geo.config` MAY include:
-  - `object_weight_mode`
-- `coord_reg.config` MAY include:
   - `object_weight_mode`
 - `object_weight_mode` MUST support:
   - `none`

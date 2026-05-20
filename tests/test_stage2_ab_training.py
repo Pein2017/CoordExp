@@ -588,21 +588,7 @@ def _make_stage2_pipeline_manifest(
     desc_ce_weight: float = 1.0,
     rollout_fn_desc_weight: float | None = None,
     rollout_global_prefix_struct_ce_weight: float = 1.0,
-    bbox_geo_enabled: bool = True,
-    bbox_geo_weight: float = 1.0,
-    bbox_smoothl1_weight: float = 1.0,
-    bbox_ciou_weight: float = 1.0,
-    bbox_size_aux_enabled: bool = True,
-    bbox_size_aux_weight: float = 1.0,
-    bbox_log_wh_weight: float = 0.0,
-    bbox_oversize_weight: float = 0.0,
-    coord_reg_enabled: bool = True,
-    coord_reg_weight: float = 1.0,
-    coord_ce_weight: float = 0.0,
-    coord_soft_ce_weight: float = 0.0,
-    coord_w1_weight: float = 0.0,
-    coord_gate_weight: float = 0.0,
-    text_gate_weight: float = 0.0,
+    **_ignored_legacy_kwargs: object,
 ) -> dict:
     token_cfg: dict[str, object] = {
         "desc_ce_weight": float(desc_ce_weight),
@@ -623,49 +609,6 @@ def _make_stage2_pipeline_manifest(
                 "application": {"preset": "anchor_text_only"},
                 "config": token_cfg,
             },
-            {
-                "name": "bbox_geo",
-                "enabled": bool(bbox_geo_enabled),
-                "weight": float(bbox_geo_weight),
-                "channels": ["A", "B"],
-                "application": {"preset": "anchor_only"},
-                "config": {
-                    "smoothl1_weight": float(bbox_smoothl1_weight),
-                    "ciou_weight": float(bbox_ciou_weight),
-                },
-            },
-            {
-                "name": "bbox_size_aux",
-                "enabled": bool(bbox_size_aux_enabled),
-                "weight": float(bbox_size_aux_weight),
-                "channels": ["A", "B"],
-                "application": {"preset": "anchor_only"},
-                "config": {
-                    "log_wh_weight": float(bbox_log_wh_weight),
-                    "oversize_penalty_weight": float(bbox_oversize_weight),
-                    "oversize_area_frac_threshold": None,
-                    "oversize_log_w_threshold": None,
-                    "oversize_log_h_threshold": None,
-                    "eps": 1e-6,
-                },
-            },
-            {
-                "name": "coord_reg",
-                "enabled": bool(coord_reg_enabled),
-                "weight": float(coord_reg_weight),
-                "channels": ["A", "B"],
-                "application": {"preset": "anchor_only"},
-                "config": {
-                    "coord_ce_weight": float(coord_ce_weight),
-                    "soft_ce_weight": float(coord_soft_ce_weight),
-                    "w1_weight": float(coord_w1_weight),
-                    "coord_gate_weight": float(coord_gate_weight),
-                    "text_gate_weight": float(text_gate_weight),
-                    "temperature": 1.0,
-                    "target_sigma": 2.0,
-                    "target_truncate": 8,
-                },
-            },
         ],
         "diagnostics": [],
     }
@@ -681,8 +624,6 @@ def _make_min_trainer():
     }
     t.stage2_pipeline_manifest = _make_stage2_pipeline_manifest(
         desc_ce_weight=float(t.stage2_ab_cfg["desc_ce_weight"]),
-        bbox_smoothl1_weight=float(t.stage2_ab_cfg["bbox_smoothl1_weight"]),
-        bbox_ciou_weight=float(t.stage2_ab_cfg["bbox_ciou_weight"]),
     )
     t._stage2_pending_train_logs = {}
     t._rm_pending_train_logs = {}
@@ -954,10 +895,6 @@ def test_channel_a_ce_uses_single_forward_logits():
     trainer = _make_min_trainer()
     # Isolate anchor CE and non-text objectives.
     trainer.stage2_pipeline_manifest = _make_stage2_pipeline_manifest(
-        bbox_geo_enabled=False,
-        bbox_geo_weight=0.0,
-        coord_reg_enabled=False,
-        coord_reg_weight=0.0,
     )
 
     # Prompt (2 tokens) + assistant (5 tokens, includes 4 coord slots + 1 non-coord token).
@@ -5686,10 +5623,6 @@ def test_channel_b_tail_desc_weights_scale_desc_ce() -> None:
     t.stage2_pipeline_manifest = _make_stage2_pipeline_manifest(
         desc_ce_weight=1.0,
         rollout_fn_desc_weight=1.0,
-        bbox_geo_enabled=False,
-        bbox_geo_weight=0.0,
-        coord_reg_enabled=False,
-        coord_reg_weight=0.0,
     )
     t._stage2_pending_train_logs = {}
     t._rm_pending_train_logs = {}
@@ -5722,145 +5655,6 @@ def test_channel_b_tail_desc_weights_scale_desc_ce() -> None:
 
     meta_weighted = dict(meta_base)
     meta_weighted["tail_desc_weights"] = [2.0, 2.0]
-    loss_weighted = t.compute_loss(
-        model,
-        {
-            "_stage2_ab_channel": "B",
-            "_rollout_matching_meta": [meta_weighted],
-            "input_ids": input_ids,
-        },
-    )
-
-    assert float(loss_weighted.detach().cpu().item()) > float(
-        loss_default.detach().cpu().item()
-    )
-
-
-def test_channel_b_bbox_group_weights_scale_geo_loss() -> None:
-    t = Stage2TwoChannelTrainer.__new__(Stage2TwoChannelTrainer)
-    t.stage2_ab_cfg = {
-        "schedule": {"b_ratio": 1.0},
-        "desc_ce_weight": 0.0,
-        "bbox_smoothl1_weight": 1.0,
-        "bbox_ciou_weight": 1.0,
-        "channel_b": {},
-    }
-    t.stage2_pipeline_manifest = _make_stage2_pipeline_manifest(
-        token_ce_enabled=False,
-        token_ce_weight=0.0,
-        bbox_geo_enabled=True,
-        bbox_geo_weight=1.0,
-        bbox_smoothl1_weight=1.0,
-        bbox_ciou_weight=1.0,
-        coord_reg_enabled=False,
-        coord_reg_weight=0.0,
-    )
-    t._stage2_pending_train_logs = {}
-    t._rm_pending_train_logs = {}
-    t._get_coord_token_ids = lambda: list(range(1000))
-    t.state = types.SimpleNamespace(global_step=0)
-
-    model = _DummyAlwaysTokenModel(pred_id=0)
-    input_ids = torch.tensor([[0, 1, 2, 3, 4, 5, 6, 7, 8]], dtype=torch.long)
-    meta = {
-        "prompt_len": 0,
-        "prefix_len": 0,
-        "train_len": int(input_ids.shape[1]),
-        "encoded_len": int(input_ids.shape[1]),
-        "prefix_struct_pos": [],
-        "tail_desc_pos": [],
-        "tail_ignore_pos": [],
-        "bbox_groups_prefix": [],
-        "bbox_groups_fn": [
-            {"pos": [1, 2, 3, 4], "gt_bins": [0, 0, 0, 0], "weight": 1.0},
-            {"pos": [5, 6, 7, 8], "gt_bins": [999, 999, 999, 999], "weight": 1.0},
-        ],
-    }
-
-    loss_default = t.compute_loss(
-        model,
-        {
-            "_stage2_ab_channel": "B",
-            "_rollout_matching_meta": [dict(meta)],
-            "input_ids": input_ids,
-        },
-    )
-
-    meta_weighted = dict(meta)
-    meta_weighted["bbox_groups_fn"] = [
-        {"pos": [1, 2, 3, 4], "gt_bins": [0, 0, 0, 0], "weight": 1.0},
-        {"pos": [5, 6, 7, 8], "gt_bins": [999, 999, 999, 999], "weight": 4.0},
-    ]
-    loss_weighted = t.compute_loss(
-        model,
-        {
-            "_stage2_ab_channel": "B",
-            "_rollout_matching_meta": [meta_weighted],
-            "input_ids": input_ids,
-        },
-    )
-
-    assert float(loss_weighted.detach().cpu().item()) > float(
-        loss_default.detach().cpu().item()
-    )
-
-
-def test_channel_b_coord_slot_weights_scale_coord_reg_loss() -> None:
-    t = Stage2TwoChannelTrainer.__new__(Stage2TwoChannelTrainer)
-    t.stage2_ab_cfg = {
-        "schedule": {"b_ratio": 1.0},
-        "desc_ce_weight": 0.0,
-        "bbox_smoothl1_weight": 1.0,
-        "bbox_ciou_weight": 1.0,
-        "channel_b": {},
-    }
-    t.stage2_pipeline_manifest = _make_stage2_pipeline_manifest(
-        token_ce_enabled=False,
-        token_ce_weight=0.0,
-        bbox_geo_enabled=True,
-        bbox_geo_weight=0.0,
-        bbox_smoothl1_weight=1.0,
-        bbox_ciou_weight=1.0,
-        coord_reg_enabled=True,
-        coord_reg_weight=1.0,
-        coord_ce_weight=1.0,
-    )
-    t._stage2_pending_train_logs = {}
-    t._rm_pending_train_logs = {}
-    t._get_coord_token_ids = lambda: list(range(1000))
-    t.state = types.SimpleNamespace(global_step=0)
-
-    model = _DummyAlwaysTokenModel(pred_id=0)
-    input_ids = torch.tensor([[0, 1, 2, 3, 4, 5, 6, 7, 8]], dtype=torch.long)
-    meta = {
-        "prompt_len": 0,
-        "prefix_len": 0,
-        "train_len": int(input_ids.shape[1]),
-        "encoded_len": int(input_ids.shape[1]),
-        "prefix_struct_pos": [],
-        "tail_desc_pos": [],
-        "tail_ignore_pos": [],
-        "bbox_groups_prefix": [],
-        "bbox_groups_fn": [
-            {"pos": [1, 2, 3, 4], "gt_bins": [0, 0, 0, 0], "weight": 1.0},
-            {"pos": [5, 6, 7, 8], "gt_bins": [999, 999, 999, 999], "weight": 1.0},
-        ],
-    }
-
-    loss_default = t.compute_loss(
-        model,
-        {
-            "_stage2_ab_channel": "B",
-            "_rollout_matching_meta": [dict(meta)],
-            "input_ids": input_ids,
-        },
-    )
-
-    meta_weighted = dict(meta)
-    meta_weighted["bbox_groups_fn"] = [
-        {"pos": [1, 2, 3, 4], "gt_bins": [0, 0, 0, 0], "weight": 1.0},
-        {"pos": [5, 6, 7, 8], "gt_bins": [999, 999, 999, 999], "weight": 4.0},
-    ]
     loss_weighted = t.compute_loss(
         model,
         {
@@ -6161,381 +5955,6 @@ def test_compute_loss_raises_on_sliced_logits():
         )
 
 
-def test_channel_b_includes_fn_geometry_loss():
-    t = Stage2TwoChannelTrainer.__new__(Stage2TwoChannelTrainer)
-    t.stage2_ab_cfg = {
-        "schedule": {"b_ratio": 1.0},
-        # Turn off CE so we isolate geometry contribution.
-        "desc_ce_weight": 0.0,
-        "bbox_smoothl1_weight": 1.0,
-        "bbox_ciou_weight": 0.0,
-        "channel_b": {},
-    }
-    t.stage2_pipeline_manifest = _make_stage2_pipeline_manifest(
-        token_ce_enabled=False,
-        token_ce_weight=0.0,
-        bbox_geo_enabled=True,
-        bbox_geo_weight=1.0,
-        bbox_smoothl1_weight=1.0,
-        bbox_ciou_weight=0.0,
-        coord_reg_enabled=False,
-        coord_reg_weight=0.0,
-    )
-    t._stage2_pending_train_logs = {}
-    t._rm_pending_train_logs = {}
-    t._get_coord_token_ids = lambda: list(range(1000))
-    t.state = types.SimpleNamespace(global_step=0)
-
-    model = _DummyConstantCoord999Model()
-    input_ids = torch.tensor([[1100, 1100, 0, 1, 2, 3]], dtype=torch.long)
-
-    # Only FN groups are present in Channel-B metadata; this should still contribute
-    # geometry loss under the unified one-pass contract.
-    meta = [
-        {
-            "prompt_len": 0,
-            "prefix_len": 0,
-            "train_len": int(input_ids.shape[1]),
-            "encoded_len": int(input_ids.shape[1]),
-            "tail_ignore_pos": [],
-            "tail_desc_pos": [],
-            "bbox_groups_prefix": [],
-            "bbox_groups_fn": [{"pos": [2, 3, 4, 5], "gt_bins": [0, 0, 0, 0]}],
-        }
-    ]
-
-    loss = t.compute_loss(
-        model,
-        {
-            "_stage2_ab_channel": "B",
-            "_rollout_matching_meta": meta,
-            "input_ids": input_ids,
-        },
-    )
-    assert float(loss.detach().cpu().item()) > 0.0
-
-
-def test_stage2_coord_soft_ce_w1_adds_coord_distribution_loss() -> None:
-    t = Stage2TwoChannelTrainer.__new__(Stage2TwoChannelTrainer)
-    t.stage2_ab_cfg = {
-        "schedule": {"b_ratio": 1.0},
-        "desc_ce_weight": 0.0,
-        "bbox_smoothl1_weight": 0.0,
-        "bbox_ciou_weight": 0.0,
-        "channel_b": {},
-    }
-    t._stage2_pending_train_logs = {}
-    t._rm_pending_train_logs = {}
-    t._get_coord_token_ids = lambda: list(range(1000))
-    t.state = types.SimpleNamespace(global_step=0)
-
-    soft_ce_weight = 0.25
-    w1_weight = 0.25
-
-    t.stage2_pipeline_manifest = _make_stage2_pipeline_manifest(
-        token_ce_enabled=False,
-        token_ce_weight=0.0,
-        bbox_geo_enabled=True,
-        # Must run bbox_geo to populate coord_reg state, but don't let it contribute to total loss.\n        bbox_geo_weight=0.0,
-        bbox_smoothl1_weight=0.0,
-        bbox_ciou_weight=0.0,
-        coord_reg_enabled=True,
-        coord_reg_weight=1.0,
-        coord_soft_ce_weight=float(soft_ce_weight),
-        coord_w1_weight=float(w1_weight),
-    )
-
-    model = _DummyConstantCoord999Model()
-    input_ids = torch.tensor([[0, 1, 2, 3, 4, 5]], dtype=torch.long)
-    meta = [
-        {
-            "prompt_len": 0,
-            "prefix_len": 0,
-            "train_len": int(input_ids.shape[1]),
-            "encoded_len": int(input_ids.shape[1]),
-            "tail_ignore_pos": [],
-            "tail_desc_pos": [],
-            "bbox_groups_prefix": [],
-            "bbox_groups_fn": [{"pos": [1, 2, 3, 4], "gt_bins": [0, 0, 0, 0]}],
-        }
-    ]
-
-    loss = t.compute_loss(
-        model,
-        {
-            "_stage2_ab_channel": "B",
-            "_rollout_matching_meta": meta,
-            "input_ids": input_ids,
-        },
-    )
-
-    assert float(loss.detach().cpu().item()) > 0.0
-
-    pending = t._stage2_pending_train_logs.get(1)
-    assert pending is not None
-    finalized = pending.finalize()
-    assert float(finalized["loss/B_coord/coord_soft_ce"]) > 0.0
-    assert float(finalized["loss/B_coord/coord_w1"]) > 0.0
-    assert "loss/B_coord/coord_reg" not in finalized
-    assert "loss/coord_soft_ce" not in finalized
-    assert "loss/coord_w1" not in finalized
-    assert "loss/coord_reg" not in finalized
-
-
-def test_stage2_coord_soft_ce_w1_disabled_contributes_zero() -> None:
-    t = Stage2TwoChannelTrainer.__new__(Stage2TwoChannelTrainer)
-    t.stage2_ab_cfg = {
-        "schedule": {"b_ratio": 1.0},
-        "desc_ce_weight": 0.0,
-        "bbox_smoothl1_weight": 0.0,
-        "bbox_ciou_weight": 0.0,
-        "channel_b": {},
-    }
-    t._stage2_pending_train_logs = {}
-    t._rm_pending_train_logs = {}
-    t._get_coord_token_ids = lambda: list(range(1000))
-    t.state = types.SimpleNamespace(global_step=0)
-
-    t.stage2_pipeline_manifest = _make_stage2_pipeline_manifest(
-        token_ce_enabled=False,
-        token_ce_weight=0.0,
-        bbox_geo_enabled=True,
-        bbox_geo_weight=0.0,
-        bbox_smoothl1_weight=0.0,
-        bbox_ciou_weight=0.0,
-        coord_reg_enabled=True,
-        coord_reg_weight=1.0,
-        coord_soft_ce_weight=0.0,
-        coord_w1_weight=0.0,
-    )
-
-    model = _DummyAlwaysTokenModel(pred_id=999)
-    input_ids = torch.tensor([[0, 1, 2, 3, 4, 5]], dtype=torch.long)
-    meta = [
-        {
-            "prompt_len": 0,
-            "prefix_len": 0,
-            "train_len": int(input_ids.shape[1]),
-            "encoded_len": int(input_ids.shape[1]),
-            "tail_ignore_pos": [],
-            "tail_desc_pos": [],
-            "bbox_groups_prefix": [],
-            "bbox_groups_fn": [{"pos": [1, 2, 3, 4], "gt_bins": [0, 0, 0, 0]}],
-        }
-    ]
-
-    loss = t.compute_loss(
-        model,
-        {
-            "_stage2_ab_channel": "B",
-            "_rollout_matching_meta": meta,
-            "input_ids": input_ids,
-        },
-    )
-
-    assert float(loss.detach().cpu().item()) == pytest.approx(0.0)
-
-    pending = t._stage2_pending_train_logs.get(1)
-    assert pending is not None
-    finalized = pending.finalize()
-
-    assert "loss/B_coord/coord_soft_ce" not in finalized
-    assert "loss/B_coord/coord_w1" not in finalized
-    assert "loss/B_coord/coord_reg" not in finalized
-    assert "loss/coord_soft_ce" not in finalized
-    assert "loss/coord_w1" not in finalized
-    assert "loss/coord_reg" not in finalized
-
-
-def test_channel_a_bbox_size_aux_logs_bbox_log_wh_immediately() -> None:
-    t = _make_min_trainer()
-    t.stage2_pipeline_manifest = _make_stage2_pipeline_manifest(
-        token_ce_enabled=False,
-        token_ce_weight=0.0,
-        bbox_geo_enabled=True,
-        bbox_geo_weight=0.0,
-        bbox_smoothl1_weight=0.0,
-        bbox_ciou_weight=0.0,
-        bbox_size_aux_enabled=True,
-        bbox_size_aux_weight=1.0,
-        bbox_log_wh_weight=0.05,
-        coord_reg_enabled=False,
-        coord_reg_weight=0.0,
-    )
-
-    model = _DummyConstantCoord999Model()
-    input_ids = torch.tensor([[1100, 1101, 0, 1, 2, 3, 1102]], dtype=torch.long)
-    position_ids = torch.zeros((3, 1, input_ids.shape[1]), dtype=torch.long)
-    text_position_ids = torch.arange(input_ids.shape[1], dtype=torch.long).unsqueeze(0)
-    meta = [
-        {
-            "prompt_len": 2,
-            "prefix_len": 0,
-            "train_len": 5,
-            "encoded_len": int(input_ids.shape[1]),
-            "tail_desc_pos": [],
-            "bbox_groups_prefix": [],
-            "bbox_groups_fn": [
-                {"pos": [2, 3, 4, 5], "gt_bins": [0, 1, 2, 3]},
-            ],
-        }
-    ]
-
-    loss = t.compute_loss(
-        model,
-        {
-            "_stage2_ab_channel": "A",
-            "_rollout_matching_meta": meta,
-            "input_ids": input_ids,
-            "position_ids": position_ids,
-            "text_position_ids": text_position_ids,
-        },
-    )
-
-    assert float(loss.detach().cpu().item()) > 0.0
-
-    pending = t._stage2_pending_train_logs.get(1)
-    assert pending is not None
-    finalized = pending.finalize()
-    assert float(finalized["loss/coord/bbox_log_wh"]) > 0.0
-
-
-def test_channel_b_bbox_group_weights_scale_bbox_size_aux_loss() -> None:
-    t = Stage2TwoChannelTrainer.__new__(Stage2TwoChannelTrainer)
-    t.stage2_ab_cfg = {
-        "schedule": {"b_ratio": 1.0},
-        "desc_ce_weight": 0.0,
-        "bbox_smoothl1_weight": 1.0,
-        "bbox_ciou_weight": 1.0,
-        "channel_b": {},
-    }
-    t.stage2_pipeline_manifest = _make_stage2_pipeline_manifest(
-        token_ce_enabled=False,
-        token_ce_weight=0.0,
-        bbox_geo_enabled=True,
-        bbox_geo_weight=0.0,
-        bbox_smoothl1_weight=0.0,
-        bbox_ciou_weight=0.0,
-        bbox_size_aux_enabled=True,
-        bbox_size_aux_weight=1.0,
-        bbox_log_wh_weight=0.05,
-        coord_reg_enabled=False,
-        coord_reg_weight=0.0,
-    )
-    t._stage2_pending_train_logs = {}
-    t._rm_pending_train_logs = {}
-    t._get_coord_token_ids = lambda: list(range(1000))
-    t.state = types.SimpleNamespace(global_step=0)
-
-    model = _DummyConstantCoord999Model()
-    input_ids = torch.tensor([[1100, 1101, 0, 1, 2, 3, 4, 5, 6, 7]], dtype=torch.long)
-    meta = {
-        "prompt_len": 2,
-        "prefix_len": 0,
-        "train_len": int(input_ids.shape[1]) - 2,
-        "encoded_len": int(input_ids.shape[1]),
-        "tail_desc_pos": [],
-        "bbox_groups_prefix": [],
-        "bbox_groups_fn": [
-            {"pos": [2, 3, 4, 5], "gt_bins": [999, 999, 999, 999], "weight": 1.0},
-            {"pos": [6, 7, 8, 9], "gt_bins": [0, 1, 2, 3], "weight": 1.0},
-        ],
-    }
-
-    loss_default = t.compute_loss(
-        model,
-        {
-            "_stage2_ab_channel": "B",
-            "_rollout_matching_meta": [dict(meta)],
-            "input_ids": input_ids,
-        },
-    )
-
-    meta_weighted = dict(meta)
-    meta_weighted["bbox_groups_fn"] = [
-        {"pos": [2, 3, 4, 5], "gt_bins": [999, 999, 999, 999], "weight": 1.0},
-        {"pos": [6, 7, 8, 9], "gt_bins": [0, 1, 2, 3], "weight": 4.0},
-    ]
-    loss_weighted = t.compute_loss(
-        model,
-        {
-            "_stage2_ab_channel": "B",
-            "_rollout_matching_meta": [meta_weighted],
-            "input_ids": input_ids,
-        },
-    )
-
-    assert float(loss_weighted.detach().cpu().item()) > float(
-        loss_default.detach().cpu().item()
-    )
-
-
-def test_channel_a_teacher_forcing_logits_drive_coord_losses_under_single_pass_names() -> (
-    None
-):
-    t = _make_min_trainer()
-    t.stage2_pipeline_manifest = _make_stage2_pipeline_manifest(
-        token_ce_enabled=False,
-        token_ce_weight=0.0,
-        bbox_geo_enabled=True,
-        bbox_geo_weight=1.0,
-        bbox_smoothl1_weight=1.0,
-        bbox_ciou_weight=1.0,
-        bbox_size_aux_enabled=True,
-        bbox_size_aux_weight=1.0,
-        bbox_log_wh_weight=0.05,
-        coord_reg_enabled=True,
-        coord_reg_weight=1.0,
-        coord_ce_weight=0.25,
-        coord_soft_ce_weight=0.25,
-        coord_w1_weight=0.25,
-    )
-
-    model = _DummyConstantCoord999Model()
-    input_ids = torch.tensor([[1100, 1101, 0, 1, 2, 3, 1102]], dtype=torch.long)
-    position_ids = torch.zeros((3, 1, input_ids.shape[1]), dtype=torch.long)
-    text_position_ids = torch.arange(input_ids.shape[1], dtype=torch.long).unsqueeze(0)
-    meta = [
-        {
-            "prompt_len": 2,
-            "prefix_len": 0,
-            "train_len": 5,
-            "encoded_len": int(input_ids.shape[1]),
-            "tail_desc_pos": [],
-            "bbox_groups_prefix": [],
-            "bbox_groups_fn": [
-                {"pos": [2, 3, 4, 5], "gt_bins": [0, 1, 2, 3]},
-            ],
-        }
-    ]
-
-    loss = t.compute_loss(
-        model,
-        {
-            "_stage2_ab_channel": "A",
-            "_rollout_matching_meta": meta,
-            "input_ids": input_ids,
-            "position_ids": position_ids,
-            "text_position_ids": text_position_ids,
-        },
-    )
-
-    assert float(loss.detach().cpu().item()) > 0.0
-    assert len(model.calls) == 1
-
-    pending = t._stage2_pending_train_logs.get(1)
-    assert pending is not None
-    finalized = pending.finalize()
-
-    assert float(finalized["loss/coord/bbox_smoothl1"]) > 0.0
-    assert float(finalized["loss/coord/bbox_ciou"]) > 0.0
-    assert float(finalized["loss/coord/bbox_log_wh"]) > 0.0
-    assert float(finalized["loss/coord/coord_token_ce"]) > 0.0
-    assert float(finalized["loss/coord/coord_soft_ce"]) > 0.0
-    assert float(finalized["loss/coord/coord_w1"]) > 0.0
-    assert not any(key.startswith("loss/A1_") for key in finalized)
-
-
 def test_channel_b_unused_meta_flag_does_not_change_supervision_semantics() -> None:
     t = Stage2TwoChannelTrainer.__new__(Stage2TwoChannelTrainer)
     t.stage2_ab_cfg = {
@@ -6547,8 +5966,6 @@ def test_channel_b_unused_meta_flag_does_not_change_supervision_semantics() -> N
     }
     t.stage2_pipeline_manifest = _make_stage2_pipeline_manifest(
         desc_ce_weight=1.0,
-        bbox_smoothl1_weight=1.0,
-        bbox_ciou_weight=1.0,
     )
     t._stage2_pending_train_logs = {}
     t._rm_pending_train_logs = {}
@@ -6602,10 +6019,6 @@ def test_channel_b_tail_ignore_pos_masks_ce_tokens():
     }
     t.stage2_pipeline_manifest = _make_stage2_pipeline_manifest(
         desc_ce_weight=1.0,
-        bbox_geo_enabled=False,
-        bbox_geo_weight=0.0,
-        coord_reg_enabled=False,
-        coord_reg_weight=0.0,
     )
     t._stage2_pending_train_logs = {}
     t._rm_pending_train_logs = {}
@@ -6738,10 +6151,6 @@ def test_channel_b_prefix_structure_supervision_uses_global_prefix_knob():
     }
     t.stage2_pipeline_manifest = _make_stage2_pipeline_manifest(
         desc_ce_weight=1.0,
-        bbox_geo_enabled=False,
-        bbox_geo_weight=0.0,
-        coord_reg_enabled=False,
-        coord_reg_weight=0.0,
     )
     t._stage2_pending_train_logs = {}
     t._rm_pending_train_logs = {}
@@ -6809,10 +6218,6 @@ def test_channel_b_fn_desc_default_on_and_can_be_disabled_via_pipeline() -> None
     }
     t.stage2_pipeline_manifest = _make_stage2_pipeline_manifest(
         desc_ce_weight=1.0,
-        bbox_geo_enabled=False,
-        bbox_geo_weight=0.0,
-        coord_reg_enabled=False,
-        coord_reg_weight=0.0,
     )
     t._stage2_pending_train_logs = {}
     t._rm_pending_train_logs = {}
@@ -6854,10 +6259,6 @@ def test_channel_b_fn_desc_default_on_and_can_be_disabled_via_pipeline() -> None
     t.stage2_pipeline_manifest = _make_stage2_pipeline_manifest(
         desc_ce_weight=1.0,
         rollout_fn_desc_weight=0.0,
-        bbox_geo_enabled=False,
-        bbox_geo_weight=0.0,
-        coord_reg_enabled=False,
-        coord_reg_weight=0.0,
     )
     loss_fn_desc_off = t.compute_loss(
         model,
@@ -6874,10 +6275,6 @@ def test_channel_b_fn_desc_default_on_and_can_be_disabled_via_pipeline() -> None
     meta_mask_tail["tail_ignore_pos"] = [2, 3]
     t.stage2_pipeline_manifest = _make_stage2_pipeline_manifest(
         desc_ce_weight=1.0,
-        bbox_geo_enabled=False,
-        bbox_geo_weight=0.0,
-        coord_reg_enabled=False,
-        coord_reg_weight=0.0,
     )
     loss_tail_masked = t.compute_loss(
         model,
@@ -6892,81 +6289,6 @@ def test_channel_b_fn_desc_default_on_and_can_be_disabled_via_pipeline() -> None
         loss_default.detach().cpu().item()
     )
     assert float(loss_tail_masked.detach().cpu().item()) < float(
-        loss_default.detach().cpu().item()
-    )
-
-
-def test_stage2_pipeline_canonical_bbox_geo_weights_control_precomputed_geo_loss() -> (
-    None
-):
-    t = Stage2TwoChannelTrainer.__new__(Stage2TwoChannelTrainer)
-    t.stage2_ab_cfg = {
-        "schedule": {"b_ratio": 1.0},
-        "desc_ce_weight": 0.0,
-        "bbox_smoothl1_weight": 1.0,
-        "bbox_ciou_weight": 1.0,
-        "coord_ce_weight": 0.0,
-        "coord_gate_weight": 0.0,
-        "channel_b": {},
-    }
-    t.stage2_pipeline_manifest = _make_stage2_pipeline_manifest(
-        token_ce_enabled=False,
-        token_ce_weight=0.0,
-        bbox_geo_enabled=True,
-        bbox_geo_weight=1.0,
-        bbox_smoothl1_weight=1.0,
-        bbox_ciou_weight=1.0,
-        coord_reg_enabled=False,
-        coord_reg_weight=0.0,
-    )
-    t._stage2_pending_train_logs = {}
-    t._rm_pending_train_logs = {}
-    t._get_coord_token_ids = lambda: list(range(1000))
-    t.state = types.SimpleNamespace(global_step=0)
-
-    model = _DummyAlwaysTokenModel(pred_id=1100)
-    input_ids = torch.tensor([[0, 1, 2, 3, 4, 5]], dtype=torch.long)
-    meta = {
-        "prompt_len": 0,
-        "prefix_len": 0,
-        "train_len": int(input_ids.shape[1]),
-        "encoded_len": int(input_ids.shape[1]),
-        "prefix_struct_pos": [],
-        "tail_desc_pos": [],
-        "tail_ignore_pos": [],
-        "bbox_groups_prefix": [{"pos": [2, 3, 4, 5], "gt_bins": [10, 20, 30, 40]}],
-        "bbox_groups_fn": [],
-    }
-
-    loss_default = t.compute_loss(
-        model,
-        {
-            "_stage2_ab_channel": "B",
-            "_rollout_matching_meta": [dict(meta)],
-            "input_ids": input_ids,
-        },
-    )
-
-    t.stage2_pipeline_manifest = _make_stage2_pipeline_manifest(
-        token_ce_enabled=False,
-        token_ce_weight=0.0,
-        bbox_geo_enabled=True,
-        bbox_geo_weight=1.0,
-        bbox_smoothl1_weight=0.0,
-        bbox_ciou_weight=0.0,
-        coord_reg_enabled=False,
-        coord_reg_weight=0.0,
-    )
-    loss_geo_off = t.compute_loss(
-        model,
-        {
-            "_stage2_ab_channel": "B",
-            "_rollout_matching_meta": [dict(meta)],
-            "input_ids": input_ids,
-        },
-    )
-
-    assert float(loss_geo_off.detach().cpu().item()) < float(
         loss_default.detach().cpu().item()
     )
 
@@ -6986,10 +6308,6 @@ def test_stage2_pipeline_default_parity_channel_b_desc_weighting_unpacked() -> N
     }
     t.stage2_pipeline_manifest = _make_stage2_pipeline_manifest(
         desc_ce_weight=float(desc_w),
-        bbox_geo_enabled=False,
-        bbox_geo_weight=0.0,
-        coord_reg_enabled=False,
-        coord_reg_weight=0.0,
     )
     t._stage2_pending_train_logs = {}
     t._rm_pending_train_logs = {}
@@ -7024,10 +6342,6 @@ def test_stage2_pipeline_default_parity_channel_b_desc_weighting_unpacked() -> N
     t.stage2_pipeline_manifest = _make_stage2_pipeline_manifest(
         desc_ce_weight=1.0,
         rollout_fn_desc_weight=float(desc_w),
-        bbox_geo_enabled=False,
-        bbox_geo_weight=0.0,
-        coord_reg_enabled=False,
-        coord_reg_weight=0.0,
     )
     loss_from_rollout_fn_desc = t.compute_loss(
         model,
@@ -7058,10 +6372,6 @@ def test_stage2_pipeline_default_parity_channel_b_desc_weighting_packed() -> Non
     }
     t.stage2_pipeline_manifest = _make_stage2_pipeline_manifest(
         desc_ce_weight=float(desc_w),
-        bbox_geo_enabled=False,
-        bbox_geo_weight=0.0,
-        coord_reg_enabled=False,
-        coord_reg_weight=0.0,
     )
     t._stage2_pending_train_logs = {}
     t._rm_pending_train_logs = {}
@@ -7131,10 +6441,6 @@ def test_stage2_pipeline_default_parity_channel_b_desc_weighting_packed() -> Non
     t.stage2_pipeline_manifest = _make_stage2_pipeline_manifest(
         desc_ce_weight=1.0,
         rollout_fn_desc_weight=float(desc_w),
-        bbox_geo_enabled=False,
-        bbox_geo_weight=0.0,
-        coord_reg_enabled=False,
-        coord_reg_weight=0.0,
     )
     loss_from_rollout_fn_desc = t.compute_loss(
         model,
@@ -7442,10 +6748,6 @@ def test_stage2_channel_b_removed_duplicate_burst_unlikelihood_does_not_log_live
     t.stage2_pipeline_manifest = _make_stage2_pipeline_manifest(
         token_ce_enabled=True,
         token_ce_weight=1.0,
-        bbox_geo_enabled=False,
-        bbox_geo_weight=0.0,
-        coord_reg_enabled=False,
-        coord_reg_weight=0.0,
     )
     model = _DummyCallIndexedTokenModel(pred_ids=[7], vocab=1200)
     input_ids = torch.tensor([[10, 11, 12, 13]], dtype=torch.long)
@@ -7491,10 +6793,6 @@ def test_stage2_channel_b_compute_loss_copies_triage_and_split_rollout_telemetry
     t.stage2_pipeline_manifest = _make_stage2_pipeline_manifest(
         token_ce_enabled=False,
         token_ce_weight=0.0,
-        bbox_geo_enabled=False,
-        bbox_geo_weight=0.0,
-        coord_reg_enabled=False,
-        coord_reg_weight=0.0,
     )
     model = _DummyAlwaysTokenModel(pred_id=7)
     input_ids = torch.tensor([[10, 11, 12, 13]], dtype=torch.long)
@@ -7686,14 +6984,14 @@ def test_pending_stage2_log_omits_channel_b_keys_when_not_provided() -> None:
     pending.add(
         {
             "stage2/channel_a": 1.0,
-            "loss/coord/bbox_smoothl1": 0.25,
+            "loss/B_rollout_text/struct_ce": 0.25,
         }
     )
 
     out = pending.finalize()
 
     assert out["stage2/channel_a"] == pytest.approx(1.0)
-    assert out["loss/coord/bbox_smoothl1"] == pytest.approx(0.25)
+    assert out["loss/B_rollout_text/struct_ce"] == pytest.approx(0.25)
     assert "stage2/channel_b" not in out
     assert "stage2_ab/channel_b/invalid_rollout" not in out
     assert "stage2_ab/channel_b/strict_drop/N_valid_pred" not in out
@@ -7773,11 +7071,11 @@ def test_reduce_stage2_pending_metrics_global_uses_weight_total_for_means() -> N
     out = trainer._reduce_stage2_pending_metrics_global(
         {
             "stage2/_log_weight_total": 1.0,
-            "loss/coord/bbox_smoothl1": 10.0,
+            "loss/B_rollout_text/struct_ce": 10.0,
         }
     )
 
-    assert out["loss/coord/bbox_smoothl1"] == pytest.approx(
+    assert out["loss/B_rollout_text/struct_ce"] == pytest.approx(
         (10.0 * 1.0 + 20.0 * 3.0) / 4.0
     )
     assert "stage2/_log_weight_total" not in out
@@ -7830,27 +7128,12 @@ def test_stage2_core_loss_logs_preserves_stage2_trie_objective_metrics() -> None
             "stage2_trie/candidate_count_mean": 4.0,
             "loss/B/stage2_trie_ce": 1.25,
             "loss/stage2_trie_ce": 1.25,
-            "coord_diag/debug_only": 99.0,
+            "diagnostic/debug_only": 99.0,
         },
         token_ce_module_w=0.0,
-        bbox_geo_module_w=0.0,
-        bbox_size_aux_module_w=0.0,
-        coord_reg_module_w=0.0,
         run_a_text=False,
-        run_a_bbox_geo=False,
-        run_a_bbox_size_aux=False,
-        run_a_coord_reg=False,
         token_desc_ce_weight=1.0,
         fn_desc_ce_weight=1.0,
-        bbox_smoothl1_w=0.0,
-        bbox_ciou_w=0.0,
-        bbox_log_wh_w=0.0,
-        bbox_oversize_w=0.0,
-        coord_ce_w=0.0,
-        coord_soft_ce_w=0.0,
-        coord_w1_w=0.0,
-        coord_gate_w=0.0,
-        text_gate_w=0.0,
     )
 
     assert out["stage2_trie/target_positions"] == pytest.approx(3.0)
@@ -7858,7 +7141,7 @@ def test_stage2_core_loss_logs_preserves_stage2_trie_objective_metrics() -> None
     assert out["stage2_trie/candidate_count_mean"] == pytest.approx(4.0)
     assert out["loss/B/stage2_trie_ce"] == pytest.approx(1.25)
     assert out["loss/stage2_trie_ce"] == pytest.approx(1.25)
-    assert "coord_diag/debug_only" not in out
+    assert "diagnostic/debug_only" not in out
 
 
 def test_reduce_stage2_pending_metrics_global_strips_internal_underscore_keys() -> None:
@@ -7872,7 +7155,7 @@ def test_reduce_stage2_pending_metrics_global_strips_internal_underscore_keys() 
             "rollout/_parse_truncated_den": 4.0,
             "rollout/parse_truncated": 1.0,
             "stage2/raw_rollouts": 4.0,
-            "loss/coord/bbox_smoothl1": 1.0,
+            "loss/B_rollout_text/struct_ce": 1.0,
         }
     )
 

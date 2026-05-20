@@ -55,7 +55,6 @@ from src.trainers.teacher_forcing.module_registry import (
     OBJECTIVE_APPLICATION_PRESET_ALLOWLIST,
     OBJECTIVE_CONFIG_ALLOWLIST,
     OBJECTIVE_OPTIONAL_CONFIG_KEYS,
-    validate_bbox_geo_config_values,
 )
 from src.training.stage2.rollout_codec import (
     resolve_stage2_rollout_template_policy,
@@ -96,7 +95,7 @@ TEACHER_FORCING_OBJECTIVE_ID = "teacher_forcing"
 TEACHER_FORCING_PROFILES: set[str] = {
     "hard_sft",
     "pure_valid_set_marginal",
-    "coverage_regularized_valid_set_marginal",
+    "hybrid_valid_set_marginal",
 }
 LEGACY_TEACHER_FORCING_OBJECTIVE_IDS: set[str] = {
     "recursive_detection_ce",
@@ -478,76 +477,10 @@ class BBoxGeoConfig:
             return cls()
         if not isinstance(payload, Mapping):
             raise TypeError("bbox_geo section must be a mapping when provided")
-
-        data: MutableMapping[str, Any] = dict(payload)
-        required = {
-            "enabled",
-            "smoothl1_weight",
-            "ciou_weight",
-        }
-        optional = {
-            "parameterization",
-            "center_weight",
-            "size_weight",
-        }
-        allowed = required | optional
-        unknown = sorted(str(k) for k in data.keys() if k not in allowed)
-        if unknown:
-            raise ValueError(
-                f"Unknown bbox_geo keys: {[f'bbox_geo.{k}' for k in unknown]}"
-            )
-        missing = sorted(str(k) for k in required if k not in data)
-        if missing:
-            raise ValueError(
-                f"bbox_geo requires explicit keys: {[f'bbox_geo.{k}' for k in missing]}"
-            )
-
-        enabled = bool(data.pop("enabled"))
-
-        def _parse_float(key: str, default: float) -> float:
-            raw = data.pop(key, default)
-            try:
-                return float(raw)
-            except (TypeError, ValueError) as exc:
-                raise ValueError(f"bbox_geo.{key} must be numeric") from exc
-
-        smoothl1_weight = _parse_float("smoothl1_weight", cls.smoothl1_weight)
-        ciou_weight = _parse_float("ciou_weight", cls.ciou_weight)
-        parameterization = (
-            str(
-                data.pop("parameterization", cls.parameterization)
-                or cls.parameterization
-            )
-            .strip()
-            .lower()
-        )
-        center_weight = _parse_float("center_weight", cls.center_weight)
-        size_weight = _parse_float("size_weight", cls.size_weight)
-
-        if smoothl1_weight < 0:
-            raise ValueError("bbox_geo.smoothl1_weight must be >= 0")
-        if ciou_weight < 0:
-            raise ValueError("bbox_geo.ciou_weight must be >= 0")
-        validate_bbox_geo_config_values(
-            {
-                "parameterization": parameterization,
-                "center_weight": center_weight,
-                "size_weight": size_weight,
-            },
-            path="bbox_geo",
-        )
-        if enabled and smoothl1_weight == 0 and ciou_weight == 0:
-            raise ValueError(
-                "bbox_geo is enabled but smoothl1_weight and ciou_weight are both 0"
-            )
-
-        return cls(
-            enabled=enabled,
-            smoothl1_weight=smoothl1_weight,
-            ciou_weight=ciou_weight,
-            parameterization=parameterization,
-            center_weight=center_weight,
-            size_weight=size_weight,
+        raise ValueError(
+            "custom.bbox_geo has been removed from active training configs; "
+            "use the unified teacher-forcing objective or standard hard SFT "
+            "without bbox geometry auxiliaries."
         )
 
 
@@ -567,84 +500,10 @@ class BBoxSizeAuxConfig:
             return cls()
         if not isinstance(payload, Mapping):
             raise TypeError("bbox_size_aux section must be a mapping when provided")
-
-        data: MutableMapping[str, Any] = dict(payload)
-        required = {
-            "enabled",
-            "log_wh_weight",
-            "oversize_penalty_weight",
-            "oversize_area_frac_threshold",
-            "oversize_log_w_threshold",
-            "oversize_log_h_threshold",
-            "eps",
-        }
-        unknown = sorted(str(k) for k in data.keys() if k not in required)
-        if unknown:
-            raise ValueError(
-                f"Unknown bbox_size_aux keys: {[f'bbox_size_aux.{k}' for k in unknown]}"
-            )
-        missing = sorted(str(k) for k in required if k not in data)
-        if missing:
-            raise ValueError(
-                f"bbox_size_aux requires explicit keys: {[f'bbox_size_aux.{k}' for k in missing]}"
-            )
-
-        enabled = bool(data.pop("enabled"))
-
-        def _parse_float(key: str, default: float) -> float:
-            raw = data.pop(key)
-            try:
-                return float(raw)
-            except (TypeError, ValueError) as exc:
-                raise ValueError(f"bbox_size_aux.{key} must be numeric") from exc
-
-        def _parse_optional_float(key: str) -> Optional[float]:
-            raw = data.pop(key)
-            if raw is None:
-                return None
-            try:
-                return float(raw)
-            except (TypeError, ValueError) as exc:
-                raise ValueError(
-                    f"bbox_size_aux.{key} must be numeric or null"
-                ) from exc
-
-        log_wh_weight = _parse_float("log_wh_weight", cls.log_wh_weight)
-        oversize_penalty_weight = _parse_float(
-            "oversize_penalty_weight", cls.oversize_penalty_weight
-        )
-        oversize_area_frac_threshold = _parse_optional_float(
-            "oversize_area_frac_threshold"
-        )
-        oversize_log_w_threshold = _parse_optional_float("oversize_log_w_threshold")
-        oversize_log_h_threshold = _parse_optional_float("oversize_log_h_threshold")
-        eps = _parse_float("eps", cls.eps)
-
-        if log_wh_weight < 0:
-            raise ValueError("bbox_size_aux.log_wh_weight must be >= 0")
-        if oversize_penalty_weight < 0:
-            raise ValueError("bbox_size_aux.oversize_penalty_weight must be >= 0")
-        if enabled and (log_wh_weight == 0 and oversize_penalty_weight == 0):
-            raise ValueError(
-                "bbox_size_aux is enabled but log_wh_weight and oversize_penalty_weight are both 0"
-            )
-        if eps <= 0:
-            raise ValueError("bbox_size_aux.eps must be > 0")
-        if (
-            oversize_area_frac_threshold is not None
-            and oversize_area_frac_threshold < 0
-        ):
-            raise ValueError(
-                "bbox_size_aux.oversize_area_frac_threshold must be >= 0 or null"
-            )
-        return cls(
-            enabled=enabled,
-            log_wh_weight=log_wh_weight,
-            oversize_penalty_weight=oversize_penalty_weight,
-            oversize_area_frac_threshold=oversize_area_frac_threshold,
-            oversize_log_w_threshold=oversize_log_w_threshold,
-            oversize_log_h_threshold=oversize_log_h_threshold,
-            eps=eps,
+        raise ValueError(
+            "custom.bbox_size_aux has been removed from active training configs; "
+            "use the unified teacher-forcing objective or standard hard SFT "
+            "without bbox size auxiliaries."
         )
 
 
@@ -2890,6 +2749,8 @@ class Stage2PipelineConfig:
 
         objective_raw = data.pop("objective", [])
         diagnostics_raw = data.pop("diagnostics", [])
+        if diagnostics_raw is None:
+            diagnostics_raw = []
 
         if not isinstance(objective_raw, Sequence) or isinstance(
             objective_raw, (str, bytes)
@@ -2943,27 +2804,19 @@ class Stage2PipelineConfig:
         _assert_no_duplicates(objective_specs, path="stage2_ab.pipeline.objective")
         _assert_no_duplicates(diagnostics_specs, path="stage2_ab.pipeline.diagnostics")
 
-        canonical_objective_order = [
-            "token_ce",
-            "bbox_geo",
-            "bbox_size_aux",
-            "coord_reg",
-        ]
-        trie_ce_objective_order = [
-            "token_ce",
-            STAGE2_TRIE_CE_MODULE_NAME,
-            "bbox_geo",
-            "bbox_size_aux",
-            "coord_reg",
-        ]
+        canonical_objective_order = ["token_ce"]
+        trie_ce_objective_order = ["token_ce", STAGE2_TRIE_CE_MODULE_NAME]
+        hard_sft_objective_order = ["hard_sft"]
         authored_objective_order = [str(spec.name) for spec in objective_specs]
         if authored_objective_order not in (
             canonical_objective_order,
             trie_ce_objective_order,
+            hard_sft_objective_order,
         ):
             raise ValueError(
                 "stage2_ab.pipeline.objective must use the canonical module order "
-                f"{canonical_objective_order} or {trie_ce_objective_order}; "
+                f"{canonical_objective_order}, {trie_ce_objective_order}, "
+                f"or {hard_sft_objective_order}; "
                 f"got {authored_objective_order}"
             )
 
@@ -3047,15 +2900,6 @@ class Stage2PipelineConfig:
                     f"[{idx}].config keys for module {spec.name!r}: "
                     f"{sorted(str(k) for k in missing_cfg)}"
                 )
-            if str(spec.name) == "bbox_geo":
-                validate_bbox_geo_config_values(
-                    spec.config,
-                    path=f"stage2_ab.pipeline.objective[{idx}].config",
-                )
-                if isinstance(spec.config, dict):
-                    spec.config.setdefault("parameterization", "xyxy")
-                    spec.config.setdefault("center_weight", 1.0)
-                    spec.config.setdefault("size_weight", 1.0)
             if str(spec.name) == STAGE2_TRIE_CE_MODULE_NAME:
                 for weight_key in sorted(STAGE2_TRIE_CE_RESERVED_WEIGHT_KEYS):
                     weight_raw = spec.config.get(weight_key)
@@ -3111,9 +2955,6 @@ class Stage2PipelineConfig:
         specs_by_name = {spec.name: spec for spec in objective_specs}
         token_ce = specs_by_name.get("token_ce")
         stage2_trie_ce = specs_by_name.get(STAGE2_TRIE_CE_MODULE_NAME)
-        bbox_geo = specs_by_name.get("bbox_geo")
-        bbox_size_aux = specs_by_name.get("bbox_size_aux")
-        coord_reg = specs_by_name.get("coord_reg")
 
         if (
             token_ce is not None
@@ -3128,71 +2969,6 @@ class Stage2PipelineConfig:
                 "stage2_trie_ce on Channel-B; remove Channel-B from token_ce.channels "
                 "or disable stage2_trie_ce."
             )
-
-        def _coord_targets_for_preset(preset: str) -> set[str]:
-            if preset == "anchor_only":
-                return {"coord"}
-            raise ValueError(f"Unsupported coord/bbox application preset: {preset!r}")
-
-        if bbox_size_aux is not None and bool(bbox_size_aux.enabled):
-            if bbox_geo is None or not bool(bbox_geo.enabled):
-                raise ValueError(
-                    "stage2_ab.pipeline.objective requires bbox_geo to be present+enabled when bbox_size_aux is enabled "
-                    "(bbox_size_aux depends on bbox_geo state: decoded bbox tensors + weights)."
-                )
-            missing_channels = set(bbox_size_aux.channels) - set(bbox_geo.channels)
-            if missing_channels:
-                raise ValueError(
-                    "stage2_ab.pipeline.objective bbox_size_aux channels must be a subset of bbox_geo channels; "
-                    f"missing={sorted(missing_channels)}"
-                )
-        if coord_reg is not None and bool(coord_reg.enabled):
-            if bbox_geo is None or not bool(bbox_geo.enabled):
-                raise ValueError(
-                    "stage2_ab.pipeline.objective requires bbox_geo to be present+enabled when coord_reg is enabled "
-                    "(coord_reg depends on bbox_geo state: coord logits + targets)."
-                )
-            missing_channels = set(coord_reg.channels) - set(bbox_geo.channels)
-            if missing_channels:
-                raise ValueError(
-                    "stage2_ab.pipeline.objective coord_reg channels must be a subset of bbox_geo channels; "
-                    f"missing={sorted(missing_channels)}"
-                )
-
-        if bbox_geo is not None and bool(bbox_geo.enabled):
-            bbox_geo_preset = str(bbox_geo.application.get("preset", "") or "").strip()
-            bbox_geo_targets = _coord_targets_for_preset(bbox_geo_preset)
-            for dep_name, dep_spec in (
-                ("bbox_size_aux", bbox_size_aux),
-                ("coord_reg", coord_reg),
-            ):
-                if dep_spec is None or not bool(dep_spec.enabled):
-                    continue
-                dep_preset = str(dep_spec.application.get("preset", "") or "").strip()
-                dep_targets = _coord_targets_for_preset(dep_preset)
-                if not dep_targets.issubset(bbox_geo_targets):
-                    raise ValueError(
-                        "stage2_ab.pipeline.objective "
-                        f"{dep_name} application must be a subset of bbox_geo; "
-                        f"bbox_geo={sorted(bbox_geo_targets)} {dep_name}={sorted(dep_targets)}"
-                    )
-
-        for dspec in diagnostics_specs:
-            if not bool(dspec.enabled):
-                continue
-            if dspec.name != "coord_diag":
-                continue
-            if bbox_geo is None or not bool(bbox_geo.enabled):
-                raise ValueError(
-                    "stage2_ab.pipeline.diagnostics requires bbox_geo to be present+enabled when coord_diag is enabled "
-                    "(coord_diag depends on bbox_geo state)."
-                )
-            missing_channels = set(dspec.channels) - set(bbox_geo.channels)
-            if missing_channels:
-                raise ValueError(
-                    "stage2_ab.pipeline.diagnostics coord_diag channels must be a subset of bbox_geo channels; "
-                    f"missing={sorted(missing_channels)}"
-                )
 
         if data:
             unknown = [
@@ -3263,8 +3039,8 @@ class Stage2ABConfig:
         if "bbox_l1_weight" in data or "bbox_giou_weight" in data:
             raise ValueError(
                 "stage2_ab.bbox_l1_weight/bbox_giou_weight are deprecated. "
-                "Move bbox weights into stage2_ab.pipeline.objective[*].config for the bbox_geo module "
-                "using smoothl1_weight/ciou_weight."
+                "bbox geometry auxiliaries have been removed from the active "
+                "Stage-2 pipeline."
             )
 
         deprecated_keys = [
@@ -3282,7 +3058,7 @@ class Stage2ABConfig:
             raise ValueError(
                 "Deprecated Stage-2 self-context knobs are unsupported in active/training "
                 "configs. Remove them and use the single-pass Channel-A contract "
-                "(token_ce: anchor_text_only; bbox_geo/bbox_size_aux/coord_reg: anchor_only). "
+                "(token_ce: anchor_text_only; optional stage2_trie_ce: rollout_text_only). "
                 f"Found: {sorted(deprecated_keys)}"
             )
 
@@ -4463,7 +4239,7 @@ class TeacherForcingObjectiveConfig:
     profile: Literal[
         "hard_sft",
         "pure_valid_set_marginal",
-        "coverage_regularized_valid_set_marginal",
+        "hybrid_valid_set_marginal",
     ] = "hard_sft"
     target_ir: TeacherForcingTargetIRConfig = field(
         default_factory=TeacherForcingTargetIRConfig
@@ -4513,10 +4289,10 @@ class TeacherForcingObjectiveConfig:
                         f"{module_key}; target-IR teacher-forcing modules "
                         "require a valid-set runtime path"
                     )
-        if self.profile == "coverage_regularized_valid_set_marginal":
+        if self.profile == "hybrid_valid_set_marginal":
             if not bool(coverage.enabled) or coverage_strength <= 0.0:
                 raise ValueError(
-                    "objective.profile=coverage_regularized_valid_set_marginal "
+                    "objective.profile=hybrid_valid_set_marginal "
                     "requires objective.modules.within_valid_coverage.enabled=true "
                     "and coverage_strength > 0"
                 )
@@ -5220,18 +4996,18 @@ class TrainingConfig:
 
         if stage2_pipeline_present and custom_coord_soft_ce_w1_present:
             raise ValueError(
-                "stage2_ab.pipeline is provided; custom.coord_soft_ce_w1.* is disallowed and must be moved into "
-                "stage2_ab.pipeline.objective[*].config for the coord_reg module"
+                "stage2_ab.pipeline is provided; custom.coord_soft_ce_w1.* is disallowed. "
+                "Coordinate regularizers have been removed from the active Stage-2 pipeline."
             )
         if stage2_pipeline_present and custom_bbox_geo_present:
             raise ValueError(
-                "stage2_ab.pipeline is provided; custom.bbox_geo.* is disallowed and must be moved into "
-                "stage2_ab.pipeline.objective[*].config for the bbox_geo module"
+                "stage2_ab.pipeline is provided; custom.bbox_geo.* is disallowed. "
+                "bbox geometry auxiliaries have been removed from the active Stage-2 pipeline."
             )
         if stage2_pipeline_present and custom_bbox_size_aux_present:
             raise ValueError(
-                "stage2_ab.pipeline is provided; custom.bbox_size_aux.* is disallowed and must be moved into "
-                "stage2_ab.pipeline.objective[*].config for the bbox_size_aux module"
+                "stage2_ab.pipeline is provided; custom.bbox_size_aux.* is disallowed. "
+                "bbox size auxiliaries have been removed from the active Stage-2 pipeline."
             )
         # Length-coherence guardrails (fail-fast). These settings affect whether the
         # eval-step vLLM backend will truncate/error on long prompts, which is

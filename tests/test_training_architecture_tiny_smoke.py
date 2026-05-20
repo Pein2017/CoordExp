@@ -14,7 +14,7 @@ from helpers.training_architecture_fixture_builder import (
 FIXTURE_DIR = Path(__file__).resolve().parent / "fixtures" / "training_architecture"
 REAL_BACKEND_SMOKE_COMMAND = (
     "PYTHONDONTWRITEBYTECODE=1 "
-    "config=configs/stage1/recursive_detection_ce_latest/smoke/compact_full_tiny.yaml "
+    "config=configs/stage1/recursive_detection_ce/smoke/compact_full_tiny.yaml "
     "gpus=0 conda run -n ms bash scripts/train.sh"
 )
 

@@ -64,7 +64,7 @@ Stage-1 training families that parity tests expect to stay user-visible.
 - `base_ce/noncoord_tokens_per_sample`
 - `stage1/total_loss_per_sample_est`
 
-### Coord Objective And Diagnostics
+### Coord Objective
 
 - coord objective atoms:
   - `coord_softce_w1/loss`
@@ -73,69 +73,12 @@ Stage-1 training families that parity tests expect to stay user-visible.
   - `coord_softce_w1/w1`
   - `coord_softce_w1/gate`
   - `coord_softce_w1/text_gate`
-- coord diagnostics:
-  - `coord_diag/enabled`
-  - `coord_diag/loss`
-  - `coord_diag/loss_per_sample`
-  - `coord_diag/ce`
-  - `coord_diag/soft_ce`
-  - `coord_diag/w1`
-  - `coord_diag/gate`
-  - `coord_diag/text_gate`
-  - `coord_diag/coord_tokens`
-  - `coord_diag/coord_tokens_per_sample`
-  - `coord_diag/coord_vocab_mass`
-  - `coord_diag/text_coord_vocab_mass`
-  - `coord_diag/acc_top5`
-  - `coord_diag/p_gt_mean`
-  - `coord_diag/margin_mean`
-  - `coord_diag/expected_bin_mae`
-  - `coord_diag/expected_bin_abs_err_p90`
-  - `coord_diag/w1_to_delta`
 
 Stage-1 non-canonical bbox note:
 
 - The `cxcy_logw_logh` and `cxcywh` Stage-1 profiles use
   `coord_softce_w1/ce`, `coord_softce_w1/gate`, and
   `coord_softce_w1/text_gate` while forcing `soft_ce` and `w1` to zero.
-
-### BBox Geo
-
-- `loss/geo/bbox_geo`
-- `loss/geo/bbox_smoothl1`
-- `loss/geo/bbox_ciou`
-- `bbox_geo/loss_per_sample`
-- `bbox_geo/groups_total`
-- `bbox_geo/groups_per_sample`
-- `bbox_geo/coord_slots_total`
-- `bbox_geo/skipped_incomplete_rows`
-- `bbox_geo/skipped_incomplete_coord_slots`
-
-Interpretation note:
-
-- `loss/geo/bbox_smoothl1` is the stable key for the configured bbox regression
-  term
-- with `parameterization: xyxy`, it is the canonical decoded-box regression term
-- with `parameterization: center_size`, it is the internal center-strong plus
-  soft `log_w` / `log_h` regression term derived from canonical `xyxy`
-- `loss/geo/bbox_ciou` remains CIoU on canonical `xyxy` across both modes
-- compare `bbox_smoothl1` across runs only after joining against
-  `resolved_config.json`
-
-### BBox Size Aux
-
-- `loss/geo/bbox_size_aux`
-- `loss/geo/bbox_log_wh`
-- `loss/geo/bbox_oversize`
-- `bbox_size_aux/loss_per_sample`
-- `bbox_size_aux/groups_total`
-- `bbox_size_aux/groups_per_sample`
-- `bbox_size_aux/coord_slots_total`
-- `bbox_size_aux/skipped_incomplete_rows`
-- `bbox_size_aux/skipped_incomplete_coord_slots`
-- `bbox_size_aux/mean_width`
-- `bbox_size_aux/mean_height`
-- `bbox_size_aux/mean_log_area`
 
 ### Token-Type Aggregates And Coord Monitors
 
@@ -266,7 +209,6 @@ trainer metric implementation entrypoints are:
 - `src/trainers/metrics/recursive_detection.py`
 - `src/trainers/metrics/aggregate_tokens.py`
 - `src/trainers/metrics/coord_losses.py`
-- `src/trainers/metrics/bbox_losses.py`
 
 Use these modules for source-level changes. Keep `mixins.py` import-compatible
 for existing trainer imports and downstream tests.
@@ -275,8 +217,6 @@ for existing trainer imports and downstream tests.
 
 - `loss/<...>`:
   - post-weighting objective atoms
-- `coord_diag/<...>`:
-  - coord-distribution diagnostics
 - `dup/raw/<...>` and `stage2_ab/channel_b/dup/<...>`:
   - pre-match duplicate-control diagnostics and policy counters
 - `rollout/<...>`:
@@ -290,29 +230,10 @@ for existing trainer imports and downstream tests.
 
 ## Stage-2 Channel-A Objective Families
 
-Channel-A uses the normal single-pass GT-anchor groups only:
+Channel-A uses the normal single-pass GT-anchor text group only:
 
 - `loss/text/struct_ce`
 - `loss/text/desc_ce`
-- `loss/coord/bbox_smoothl1`
-- `loss/coord/bbox_ciou`
-- `loss/coord/bbox_log_wh`
-- `loss/coord/bbox_oversize`
-- `loss/coord/coord_token_ce`
-- `loss/coord/coord_soft_ce`
-- `loss/coord/coord_w1`
-- `loss/coord/coord_gate`
-- `loss/coord/text_gate`
-- `coord_diag/*`
-- `gradmon/*/coord/*` when gradient monitoring is enabled
-
-Interpretation note:
-
-- `loss/coord/bbox_smoothl1` keeps the same public key even when
-  `bbox_geo.config.parameterization: center_size` is enabled
-- the key means “the configured bbox regression term” and therefore must be
-  interpreted together with `resolved_config.json`
-- `loss/coord/bbox_ciou` remains canonical `xyxy` CIoU
 
 ## Stage-2 Channel-B Objective Families
 
@@ -326,26 +247,11 @@ Channel-B keeps rollout-specific provenance:
   - `loss/B_rollout_text/desc_ce`
 - duplicate-burst UL objective loss keys are retired; `train/optimization/loss_duplicate_burst_unlikelihood`
   is no longer a live training metric
-- rollout-context coord atoms:
-  - `loss/B_coord/bbox_smoothl1`
-  - `loss/B_coord/bbox_ciou`
-  - `loss/B_coord/bbox_log_wh`
-  - `loss/B_coord/bbox_oversize`
-  - `loss/B_coord/coord_token_ce`
-  - `loss/B_coord/coord_soft_ce`
-  - `loss/B_coord/coord_w1`
-  - `loss/B_coord/coord_gate`
-  - `loss/B_coord/text_gate`
-- coord diagnostics:
-  - `coord_diag/B/*`
-- gradient monitors:
-  - `gradmon/*/B_coord/*` when enabled
+- removed rollout-context coord/bbox atoms such as `loss/B_coord/*` are not
+  part of the active Stage-2 objective pipeline
 
 Interpretation note:
 
-- `loss/B_coord/bbox_smoothl1` follows the same configured regression semantics
-  as Channel-A
-- `loss/B_coord/bbox_ciou` remains canonical `xyxy` CIoU
 - duplicate control now runs on the assembled anchor plus explorer object
   surface before GT matching
 - non-exempt non-survivors disappear from the positive clean prefix and only
@@ -494,6 +400,7 @@ contract:
 
 - `loss/A1_*`
 - `loss/A2_*`
+- `coord_diag/<...>`
 - `coord_diag/A1/*`
 - `coord_diag/A2/*`
 - `eval_rollout/*`

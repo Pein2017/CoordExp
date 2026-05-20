@@ -29,7 +29,7 @@
   collator/batch-extras handling, model-input bundling, trainer bridges, and
   loss-side stripping; verify it never reaches model forward.
 - [ ] Implement Stage-1 latest compact `objective.id: teacher_forcing` with
-  `profile: hard_sft` first, then valid-set and coverage profiles.
+  `profile: hard_sft` first, then valid-set and hybrid profiles.
 - [ ] Add config migration failures for old Stage-1 ids and stale support,
   balance, recursive, bbox, geometry, duplicate, and coord-reg keys.
 - [ ] Wire Stage-2 adapters to emit the shared target IR without binding core

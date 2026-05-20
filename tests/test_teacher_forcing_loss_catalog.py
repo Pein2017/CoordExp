@@ -31,16 +31,10 @@ def test_loss_catalog_drives_objective_registry_allowlists() -> None:
 
 
 
-def test_bbox_modules_have_shared_family_but_distinct_roles() -> None:
-    bbox_modules = objective_modules_for_family("bbox")
-
-    assert bbox_modules == ("bbox_geo", "bbox_size_aux")
-    assert OBJECTIVE_MODULE_CATALOG["bbox_geo"].semantic_role == "geometry"
-    assert OBJECTIVE_MODULE_CATALOG["bbox_size_aux"].semantic_role == "size_aux"
-    assert (
-        OBJECTIVE_MODULE_CATALOG["bbox_geo"].projected_atoms[1].atom_name
-        == "bbox_ciou"
-    )
+def test_bbox_modules_are_removed_from_objective_catalog() -> None:
+    assert objective_modules_for_family("bbox") == ()
+    assert "bbox_geo" not in OBJECTIVE_MODULE_CATALOG
+    assert "bbox_size_aux" not in OBJECTIVE_MODULE_CATALOG
 
 
 def test_loss_catalog_drives_diagnostic_registry_allowlists() -> None:
@@ -49,16 +43,15 @@ def test_loss_catalog_drives_diagnostic_registry_allowlists() -> None:
 
 
 def test_objective_registry_drift_fails_fast() -> None:
-    registry = {
-        name: object() for name in OBJECTIVE_MODULE_CATALOG if name != "coord_reg"
-    }
+    missing_name = sorted(OBJECTIVE_MODULE_CATALOG)[0]
+    registry = {name: object() for name in OBJECTIVE_MODULE_CATALOG if name != missing_name}
     registry["unexpected_objective"] = object()
 
     with pytest.raises(
         RuntimeError,
         match=(
             r"objective registry is out of sync with loss catalog: "
-            r"missing=\['coord_reg'\] unexpected=\['unexpected_objective'\]"
+            rf"missing=\['{missing_name}'\] unexpected=\['unexpected_objective'\]"
         ),
     ):
         _validate_registry_coverage(
@@ -75,7 +68,7 @@ def test_diagnostic_registry_drift_fails_fast() -> None:
         RuntimeError,
         match=(
             r"diagnostic registry is out of sync with loss catalog: "
-            r"missing=\['coord_diag'\] unexpected=\['unexpected_diagnostic'\]"
+            r"missing=\[\] unexpected=\['unexpected_diagnostic'\]"
         ),
     ):
         _validate_registry_coverage(

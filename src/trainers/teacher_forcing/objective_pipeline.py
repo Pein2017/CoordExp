@@ -8,10 +8,6 @@ import torch
 from .contracts import PipelineModuleSpec, PipelineResult, TeacherForcingContext
 from .module_registry import DIAGNOSTIC_MODULE_CATALOG, OBJECTIVE_MODULE_CATALOG
 from .modules import (
-    run_bbox_size_aux_module,
-    run_bbox_geo_module,
-    run_coord_diag_module,
-    run_coord_reg_module,
     run_stage2_trie_ce_module,
     run_token_ce_module,
 )
@@ -72,13 +68,6 @@ def run_teacher_forcing_pipeline(
             context=context,
             spec=spec,
         ),
-        "bbox_geo": lambda spec: run_bbox_geo_module(context=context, spec=spec),
-        "bbox_size_aux": lambda spec: run_bbox_size_aux_module(
-            context=context,
-            spec=spec,
-            state=state,
-        ),
-        "coord_reg": lambda spec: run_coord_reg_module(context=context, spec=spec, state=state),
     }
     _validate_registry_coverage(
         objective_registry,
@@ -86,9 +75,7 @@ def run_teacher_forcing_pipeline(
         kind="objective",
     )
 
-    diag_registry = {
-        "coord_diag": lambda spec: run_coord_diag_module(context=context, spec=spec, state=state),
-    }
+    diag_registry = {}
     _validate_registry_coverage(
         diag_registry,
         allowed=set(DIAGNOSTIC_MODULE_CATALOG),

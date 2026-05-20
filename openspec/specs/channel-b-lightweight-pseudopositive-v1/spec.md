@@ -137,13 +137,14 @@ When lightweight pseudo-positive v1 is enabled, selected pseudo-positive anchor 
 Normative behavior:
 
 - selected pseudo-positive anchor objects MUST remain in the final edited anchor prefix in anchor order,
-- selected pseudo-positive anchor objects MUST contribute weighted positive supervision only through the existing decoded-box and coord paths,
+- selected pseudo-positive anchor objects MUST NOT create removed decoded-box or coord-regularizer objective terms,
 - selected pseudo-positive anchor objects MUST use `coord_weight` as their shared coord-group weight in v1,
 - selected pseudo-positive anchor objects MUST use their own retained anchor coordinate bins as the bbox/coord target source,
-- `coord_weight` MUST scale pseudo-positive contributions only for `bbox_geo`, `coord_reg`, and `bbox_size_aux`,
+- `coord_weight` is retained only as historical config context and MUST NOT
+  activate removed `bbox_geo`, `coord_reg`, or `bbox_size_aux` modules,
 - selected pseudo-positive anchor objects MUST NOT create new desc CE targets,
 - selected pseudo-positive anchor objects MAY participate in the same global rollout-prefix structure CE surface as other retained prefix objects when `token_ce.config.rollout_global_prefix_struct_ce_weight > 0`,
-- if `bbox_size_aux` is enabled for Channel-B, selected pseudo-positive anchor objects MUST reuse the same decoded-box auxiliary path as other coord-supervised groups,
+- `bbox_size_aux` MUST remain unavailable for Channel-B pseudo-positive supervision,
 - ordinary matched-clean and FN-injection supervision behavior MUST remain unchanged.
 
 #### Scenario: Pseudo-positive object receives coord supervision and shared prefix structure CE but no desc CE

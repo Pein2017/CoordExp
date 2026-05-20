@@ -10,14 +10,14 @@ The system SHALL expose the new unified teacher-forcing objective through
 Normative behavior:
 
 - active profiles MUST be `hard_sft`, `pure_valid_set_marginal`, and
-  `coverage_regularized_valid_set_marginal`;
+  `hybrid_valid_set_marginal`;
 - active configs MUST NOT use `recursive_detection_ce`,
   `prefix_rollin_et_rmp_ce`, `random_permutation_et_rmp_ce`, ET-RMP aliases, or
   support/balance names as runnable training objective identities;
 - hard SFT MUST be represented as the singleton-valid-set profile inside this
   objective surface;
 - the old ET-RMP comparator behavior MAY be represented structurally as
-  `coverage_regularized_valid_set_marginal` with
+  `hybrid_valid_set_marginal` with
   `objective.modules.within_valid_coverage.coverage_strength: 1.0`;
 - profile names MUST NOT encode hyperparameters, roll-in policy, or alpha-like
   shorthand.
@@ -253,7 +253,7 @@ Normative behavior:
 
 #### Scenario: Coverage strength one structurally matches old comparator behavior
 
-- **GIVEN** `objective.profile: coverage_regularized_valid_set_marginal`
+- **GIVEN** `objective.profile: hybrid_valid_set_marginal`
 - **AND** `objective.modules.within_valid_coverage.coverage_strength: 1.0`
 - **WHEN** coverage is computed for an ambiguous valid set
 - **THEN** the objective applies valid-set marginal plus within-valid

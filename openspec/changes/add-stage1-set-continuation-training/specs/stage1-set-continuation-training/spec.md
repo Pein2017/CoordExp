@@ -562,17 +562,16 @@ Normative behavior:
   `max(0, log_threshold - logZ_remaining_*)`
 - **AND** does not also add `-logZ_remaining_*` to the optimized total loss.
 
-### Requirement: Branch-local auxiliary losses are toggleable through adapters
-Compatible coord and geometry auxiliary losses SHALL be toggleable only through
-set-continuation branch-local adapters.
+### Requirement: Branch-local coord auxiliary loss is toggleable through an adapter
+Compatible coord auxiliary loss SHALL be toggleable only through a
+set-continuation branch-local adapter.
 
 Normative behavior:
-- branch-local adapters MUST reuse canonical low-level helpers where available,
+- branch-local adapter MUST reuse canonical low-level helpers where available,
 - ordinary one-sequence Stage-1 mixins MUST NOT be composed for this variant,
 - aux reductions MUST be mean-like within candidate entry and then uniformly
   averaged over scored candidates with valid atoms,
-- responsibility-weighted auxiliary losses are not a v1 mode,
-- setup MUST fail fast if an enabled aux config has no branch-local adapter.
+- responsibility-weighted auxiliary losses are not a v1 mode.
 
 #### Scenario: Coord soft loss uses branch-local coord positions
 - **GIVEN** `custom.coord_soft_ce_w1.enabled: true`
@@ -580,12 +579,6 @@ Normative behavior:
 - **THEN** coord soft CE/W1 terms apply only to coord-token positions inside
   scored candidate entries
 - **AND** aux metrics are logged separately from MP/PEM.
-
-#### Scenario: Geometry aux lacks required state
-- **GIVEN** `custom.bbox_geo.enabled: true` or
-  `custom.bbox_size_aux.enabled: true`
-- **WHEN** branch-local decoded bbox state is unavailable
-- **THEN** setup or loss computation fails fast with actionable diagnostics.
 
 ### Requirement: Mechanism metrics are canonical and aggregation-safe
 The trainer SHALL emit variant-specific mechanism metrics with canonical names
@@ -703,8 +696,8 @@ Normative behavior:
   seed, resolution/preset, sample/optimizer-step budget, checkpoint identity,
   inference decoding controls, and eval plan,
 - the production profile MUST pin coord-token settings, effective coord-slot scoring
-  surface, and aux objective settings (`coord_soft_ce_w1`, `bbox_geo`,
-  `bbox_size_aux`) so the launch identity does not hide extra objective changes,
+  surface, and aux objective settings (`coord_soft_ce_w1`) so the launch
+  identity does not hide extra objective changes,
 - the production profile MUST use `training.packing: false`; packed SFT may be
   a separately named throughput/control ablation but MUST NOT be silently mixed
   into the set-continuation production run,

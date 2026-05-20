@@ -13,8 +13,6 @@ import pytest
 from src.bootstrap.trainer_setup import compose_trainer_class
 from src.trainers.metrics.mixins import (
     AggregateTokenTypeMetricsMixin,
-    BBoxGeoLossMixin,
-    BBoxSizeAuxLossMixin,
     CoordSoftCEW1LossMixin,
     GradAccumLossScaleMixin,
     InstabilityMonitorMixin,
@@ -180,8 +178,6 @@ def test_compose_trainer_class_keeps_ordinary_stage1_mixins_for_default_variant(
     assert issubclass(trainer_cls, GradAccumLossScaleMixin)
     assert issubclass(trainer_cls, InstabilityMonitorMixin)
     assert issubclass(trainer_cls, AggregateTokenTypeMetricsMixin)
-    assert issubclass(trainer_cls, BBoxSizeAuxLossMixin)
-    assert issubclass(trainer_cls, BBoxGeoLossMixin)
     assert issubclass(trainer_cls, CoordSoftCEW1LossMixin)
     assert issubclass(trainer_cls, SFTStructuralCloseLossMixin)
     assert issubclass(trainer_cls, _BaseTrainer)
@@ -208,8 +204,6 @@ def test_compose_trainer_class_adds_recursive_detection_ce_mixin_when_enabled() 
 @pytest.mark.parametrize(
     ("field_name", "cfg_kwargs"),
     [
-        ("bbox_size_aux", {"bbox_size_aux_cfg": SimpleNamespace(enabled=True)}),
-        ("bbox_geo", {"bbox_geo_cfg": SimpleNamespace(enabled=True)}),
         ("coord_soft_ce_w1", {"coord_soft_ce_w1_cfg": SimpleNamespace(enabled=True)}),
         (
             "sft_structural_close",
@@ -234,7 +228,7 @@ def test_compose_trainer_class_rejects_auxiliary_losses_with_recursive_ce(
     }
     kwargs.update(cfg_kwargs)
 
-    with pytest.raises(ValueError, match=rf"recursive_detection_ce.*{field_name}"):
+    with pytest.raises(ValueError, match=rf"teacher-forced target sidecars.*{field_name}"):
         compose_trainer_class(**kwargs)
 
 

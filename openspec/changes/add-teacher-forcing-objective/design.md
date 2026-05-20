@@ -182,18 +182,18 @@ Profiles are semantic bundles, not hyperparameter encodings:
 
 - `hard_sft`
 - `pure_valid_set_marginal`
-- `coverage_regularized_valid_set_marginal`
+- `hybrid_valid_set_marginal`
 
 `coverage_strength` lives only under
 `objective.modules.within_valid_coverage.coverage_strength`. Production and
-ablation configs using the coverage-regularized profile must set it explicitly.
+ablation configs using the hybrid profile must set it explicitly.
 
 Old names such as `ET_RMP_CE`, `et_rmp_like`, `support_balance`, `alpha1`,
 `prefix_rollin_et_rmp_ce`, and `typed_trie_alpha0p1_random_rollin` are not
 active profile names.
 
 The old ET-RMP comparator semantics are represented structurally as
-`coverage_regularized_valid_set_marginal` with
+`hybrid_valid_set_marginal` with
 `objective.modules.within_valid_coverage.coverage_strength: 1.0`.
 
 ## Compact-Full Serialization

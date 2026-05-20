@@ -81,9 +81,10 @@ Current internal ownership seams:
   through `stage2_ab.pipeline.*`
 - supported routing/objective presets are:
   - `token_ce.application.preset: anchor_text_only`
-  - `bbox_geo.application.preset: anchor_only`
-  - `bbox_size_aux.application.preset: anchor_only`
-  - `coord_reg.application.preset: anchor_only`
+  - `stage2_trie_ce.application.preset: rollout_text_only`
+  - `hard_sft.application.preset: selected_path`
+- removed geometry/coordinate modules:
+  - `bbox_geo`, `bbox_size_aux`, `coord_reg`, and `coord_diag` are rejected by the active Stage-2 pipeline
 - duplicate-burst UL migration state:
   - the live objective module `loss_duplicate_burst_unlikelihood` is removed and current Stage-2 configs must not declare it
   - historical specs and archived run artifacts may still mention the retired objective name for compatibility notes
@@ -92,12 +93,6 @@ Current internal ownership seams:
   - adjacent-repulsion anti-copy loss and config knobs are no longer live training support
   - current configs must omit `adjacent_repulsion_*` keys; strict config parsing rejects them as unknown
   - duplicate-control diagnostics remain supported and are separate from the retired loss
-- optional `bbox_geo.config` center-size knobs:
-  - `parameterization: xyxy | center_size`
-  - `center_weight`
-  - `size_weight`
-  - `parameterization: center_size` keeps outward `bbox_2d` / `xyxy`
-    contracts canonical and only changes the internal regression loss-space
 - Pseudo-positive mode keeps the one-forward contract:
   - retained prefix objects share one global prefix structure CE surface through `token_ce.config.rollout_global_prefix_struct_ce_weight`
   - `matched_clean` -> coord + global prefix structure CE
@@ -193,8 +188,11 @@ Assignment note:
 - Mixed A/B baseline: `configs/stage2_two_channel/prod/ab_mixed.yaml`
 - Pseudo-positive `K=4` production profile: `configs/stage2_two_channel/prod/ab_mixed_coco1024_bmajority_channel_b_pseudo_positive.yaml`
 - A-only smoke: `configs/stage2_two_channel/smoke/a_only.yaml`
+- A-only center-size smoke: `configs/stage2_two_channel/smoke/a_only_center_size_2steps.yaml`
 - Production-like smoke: `configs/stage2_two_channel/smoke/ab_mixed_20steps.yaml`
 - Pseudo-positive smoke: `configs/stage2_two_channel/smoke/b_majority_coco1024_pseudo_positive_4steps.yaml`
+- Enabled `K=2` pseudo-positive control smoke: `configs/stage2_two_channel/smoke/b_majority_coco1024_pseudo_positive_k2_4steps.yaml`
+- Server-mode eval smoke: `configs/stage2_two_channel/smoke/b_majority_coco1024_triage_posterior_vllm_server_6srv2lr_eval_4steps.yaml`
 
 ## Launch Patterns
 
@@ -204,9 +202,19 @@ Use this when you do not need the dedicated server-mode launcher split.
 
 ```bash
 PYTHONPATH=. conda run -n ms python -m src.sft --config configs/stage2_two_channel/smoke/a_only.yaml
+PYTHONPATH=. conda run -n ms python -m src.sft --config configs/stage2_two_channel/smoke/a_only_center_size_2steps.yaml
 PYTHONPATH=. conda run -n ms python -m src.sft --config configs/stage2_two_channel/smoke/ab_mixed_20steps.yaml
 PYTHONPATH=. conda run -n ms python -m src.sft --config configs/stage2_two_channel/smoke/b_majority_coco1024_pseudo_positive_4steps.yaml
 ```
+
+Legacy center-size experiment note:
+
+- center-size Stage-2 geometry experiments are historical and no longer part
+  of the active Stage-2 objective pipeline
+- use `experiment_manifest.json` for authored run purpose / hypothesis / key
+  deviations plus a runtime summary
+- `run_metadata.json` remains the low-level provenance sidecar and does not
+  redefine loss semantics
 
 ## First Pseudo-Positive Checks
 
@@ -258,10 +266,10 @@ experiment:
   purpose: >
     Smoke-test the center-size bbox regression path under the A-only trainer.
   hypothesis: >
-    Center-size bbox supervision should resolve cleanly without changing the
-    canonical xyxy artifact contract.
+    Historical center-size bbox supervision should resolve cleanly without
+    changing the canonical xyxy artifact contract.
   key_deviations:
-    - Enables `bbox_geo.config.parameterization: center_size`.
+    - Historical center-size geometry path only; not part of new active configs.
     - Caps the run at two optimizer steps.
   runtime_settings:
     - Runs the Stage-2 two-channel trainer in A-only mode.

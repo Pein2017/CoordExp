@@ -10,8 +10,6 @@ import torch
 
 from src.metrics.reporter import warn_once
 
-from ..teacher_forcing.contracts import PipelineModuleSpec, PipelineResult
-
 _MONITOR_ATTR = "_coordexp_loss_gradient_monitor"
 
 _AUTO_EXCLUDE_TOKENS = (
@@ -30,25 +28,6 @@ _AUTO_NORM_TOKENS = (
     "ln_f",
     "ln_",
 )
-
-_BBOX_TERM_STATE_KEYS = {
-    "bbox_smoothl1": "bbox_smoothl1_contrib",
-    "bbox_ciou": "bbox_ciou_contrib",
-}
-_BBOX_SIZE_AUX_TERM_STATE_KEYS = {
-    "bbox_log_wh": "bbox_log_wh_contrib",
-    "bbox_oversize": "bbox_oversize_contrib",
-}
-_COORD_TERM_STATE_KEYS = {
-    "coord_token_ce": "coord_token_ce_contrib",
-    "coord_soft_ce": "coord_soft_ce_contrib",
-    "coord_w1": "coord_w1_contrib",
-    "coord_el1": "coord_el1_contrib",
-    "coord_ehuber": "coord_ehuber_contrib",
-    "coord_entropy": "coord_entropy_contrib",
-    "coord_gate": "coord_gate_contrib",
-}
-
 
 def loss_gradient_monitor_enabled(trainer: Any) -> bool:
     cfg = getattr(trainer, "loss_gradient_monitor_cfg", None)
@@ -75,20 +54,6 @@ def _as_scalar_tensor(value: Any) -> Optional[torch.Tensor]:
     if value.numel() != 1:
         return None
     return value
-
-
-def _parse_objective_specs(
-    objective_specs: Optional[Sequence[Mapping[str, Any]]],
-) -> Dict[str, PipelineModuleSpec]:
-    specs: Dict[str, PipelineModuleSpec] = {}
-    for raw in list(objective_specs or []):
-        if not isinstance(raw, Mapping):
-            continue
-        parsed = PipelineModuleSpec.from_mapping(raw)
-        if not parsed.name:
-            continue
-        specs.setdefault(parsed.name, parsed)
-    return specs
 
 
 def build_stage1_coord_monitor_terms(
@@ -132,110 +97,6 @@ def build_stage1_bbox_size_monitor_terms(
             continue
         terms[name] = tensor
     return terms
-
-
-def build_stage1_bbox_geo_monitor_terms(
-    *,
-    result: Any,
-    cfg: Any,
-) -> Dict[str, torch.Tensor]:
-    terms: Dict[str, torch.Tensor] = {}
-    candidates = (
-        ("S1/bbox_smoothl1", "smoothl1_contrib", "smoothl1_weight"),
-        ("S1/bbox_ciou", "ciou_contrib", "ciou_weight"),
-    )
-    for name, attr_name, weight_key in candidates:
-        if float(_cfg_float(cfg, weight_key, 0.0)) == 0.0:
-            continue
-        tensor = _as_scalar_tensor(getattr(result, attr_name, None))
-        if tensor is None:
-            continue
-        terms[name] = tensor
-    return terms
-
-
-def _collect_weighted_coord_terms_from_state(
-    *,
-    state: Mapping[str, Any],
-    coord_provenance: str,
-    bbox_module_weight: float,
-    bbox_size_aux_module_weight: float,
-    coord_module_weight: float,
-) -> Dict[str, torch.Tensor]:
-    out: Dict[str, torch.Tensor] = {}
-
-    if float(bbox_module_weight) != 0.0:
-        for atom_name, state_key in _BBOX_TERM_STATE_KEYS.items():
-            tensor = _as_scalar_tensor(state.get(state_key))
-            if tensor is None:
-                continue
-            out[f"{coord_provenance}/{atom_name}"] = tensor * float(bbox_module_weight)
-
-    if float(bbox_size_aux_module_weight) != 0.0:
-        for atom_name, state_key in _BBOX_SIZE_AUX_TERM_STATE_KEYS.items():
-            tensor = _as_scalar_tensor(state.get(state_key))
-            if tensor is None:
-                continue
-            out[f"{coord_provenance}/{atom_name}"] = tensor * float(
-                bbox_size_aux_module_weight
-            )
-
-    if float(coord_module_weight) != 0.0:
-        for atom_name, state_key in _COORD_TERM_STATE_KEYS.items():
-            tensor = _as_scalar_tensor(state.get(state_key))
-            if tensor is None:
-                continue
-            out[f"{coord_provenance}/{atom_name}"] = tensor * float(coord_module_weight)
-
-    return out
-
-
-def build_stage2_coord_monitor_terms_from_pipeline(
-    *,
-    pipeline_result: PipelineResult,
-    objective_specs: Optional[Sequence[Mapping[str, Any]]],
-    coord_provenance: str,
-) -> Dict[str, torch.Tensor]:
-    specs = _parse_objective_specs(objective_specs)
-    bbox_spec = specs.get("bbox_geo")
-    bbox_size_aux_spec = specs.get("bbox_size_aux")
-    coord_spec = specs.get("coord_reg")
-    bbox_module_weight = float(bbox_spec.weight) if bbox_spec is not None else 0.0
-    bbox_size_aux_module_weight = (
-        float(bbox_size_aux_spec.weight) if bbox_size_aux_spec is not None else 0.0
-    )
-    coord_module_weight = float(coord_spec.weight) if coord_spec is not None else 0.0
-    return _collect_weighted_coord_terms_from_state(
-        state=dict(pipeline_result.state or {}),
-        coord_provenance=str(coord_provenance),
-        bbox_module_weight=float(bbox_module_weight),
-        bbox_size_aux_module_weight=float(bbox_size_aux_module_weight),
-        coord_module_weight=float(coord_module_weight),
-    )
-
-
-def build_stage2_two_channel_coord_monitor_terms(
-    *,
-    channel: str,
-    pipeline_result: PipelineResult,
-    objective_specs: Optional[Sequence[Mapping[str, Any]]],
-    bbox_module_weight: float,
-    bbox_size_aux_module_weight: float,
-    coord_module_weight: float,
-) -> Dict[str, torch.Tensor]:
-    s = str(channel).strip().upper()
-    if s == "A":
-        return build_stage2_coord_monitor_terms_from_pipeline(
-            pipeline_result=pipeline_result,
-            objective_specs=objective_specs,
-            coord_provenance="coord",
-        )
-
-    return build_stage2_coord_monitor_terms_from_pipeline(
-        pipeline_result=pipeline_result,
-        objective_specs=objective_specs,
-        coord_provenance="B_coord",
-    )
 
 
 @dataclass
@@ -670,10 +531,7 @@ def get_loss_gradient_monitor(trainer: Any) -> Optional[LossGradientMonitor]:
 
 __all__ = [
     "LossGradientMonitor",
-    "build_stage1_bbox_geo_monitor_terms",
     "build_stage1_coord_monitor_terms",
-    "build_stage2_coord_monitor_terms_from_pipeline",
-    "build_stage2_two_channel_coord_monitor_terms",
     "get_loss_gradient_monitor",
     "loss_gradient_monitor_enabled",
 ]

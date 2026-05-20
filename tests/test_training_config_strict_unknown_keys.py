@@ -302,7 +302,7 @@ def test_custom_eval_detection_lvis_metrics_are_accepted() -> None:
     )
 
 
-def test_custom_bbox_size_aux_unknown_key_fails_fast() -> None:
+def test_custom_bbox_size_aux_is_removed_even_with_unknown_key() -> None:
     payload = _base_training_payload()
     payload["custom"]["bbox_size_aux"] = {
         "enabled": True,
@@ -312,21 +312,21 @@ def test_custom_bbox_size_aux_unknown_key_fails_fast() -> None:
     with pytest.raises(ValueError) as exc:
         TrainingConfig.from_mapping(payload, PromptOverrides())
 
-    assert "bbox_size_aux.unknown_flag" in str(exc.value)
+    assert "custom.bbox_size_aux has been removed" in str(exc.value)
 
 
-def test_custom_bbox_size_aux_requires_explicit_keys() -> None:
+def test_custom_bbox_size_aux_is_removed_instead_of_requiring_keys() -> None:
     payload = _base_training_payload()
     payload["custom"]["bbox_size_aux"] = {
         "enabled": True,
         "log_wh_weight": 0.05,
     }
 
-    with pytest.raises(ValueError, match=r"bbox_size_aux requires explicit keys"):
+    with pytest.raises(ValueError, match=r"custom\.bbox_size_aux has been removed"):
         TrainingConfig.from_mapping(payload, PromptOverrides())
 
 
-def test_custom_bbox_geo_unknown_key_fails_fast() -> None:
+def test_custom_bbox_geo_is_removed_even_with_unknown_key() -> None:
     payload = _base_training_payload()
     payload["custom"]["bbox_geo"] = {
         "enabled": True,
@@ -336,21 +336,21 @@ def test_custom_bbox_geo_unknown_key_fails_fast() -> None:
     with pytest.raises(ValueError) as exc:
         TrainingConfig.from_mapping(payload, PromptOverrides())
 
-    assert "bbox_geo.unknown_flag" in str(exc.value)
+    assert "custom.bbox_geo has been removed" in str(exc.value)
 
 
-def test_custom_bbox_geo_requires_explicit_keys() -> None:
+def test_custom_bbox_geo_is_removed_instead_of_requiring_keys() -> None:
     payload = _base_training_payload()
     payload["custom"]["bbox_geo"] = {
         "enabled": True,
         "ciou_weight": 1.0,
     }
 
-    with pytest.raises(ValueError, match=r"bbox_geo requires explicit keys"):
+    with pytest.raises(ValueError, match=r"custom\.bbox_geo has been removed"):
         TrainingConfig.from_mapping(payload, PromptOverrides())
 
 
-def test_custom_bbox_geo_accepts_center_size_keys() -> None:
+def test_custom_bbox_geo_center_size_keys_are_removed() -> None:
     payload = _base_training_payload()
     payload["custom"]["bbox_geo"] = {
         "enabled": True,
@@ -361,13 +361,11 @@ def test_custom_bbox_geo_accepts_center_size_keys() -> None:
         "size_weight": 0.25,
     }
 
-    cfg = TrainingConfig.from_mapping(payload, PromptOverrides())
-    assert cfg.custom.bbox_geo.parameterization == "center_size"
-    assert cfg.custom.bbox_geo.center_weight == pytest.approx(1.0)
-    assert cfg.custom.bbox_geo.size_weight == pytest.approx(0.25)
+    with pytest.raises(ValueError, match=r"custom\.bbox_geo has been removed"):
+        TrainingConfig.from_mapping(payload, PromptOverrides())
 
 
-def test_custom_bbox_geo_legacy_surface_defaults_to_xyxy_parameterization() -> None:
+def test_custom_bbox_geo_legacy_surface_is_removed() -> None:
     payload = _base_training_payload()
     payload["custom"]["bbox_geo"] = {
         "enabled": True,
@@ -375,13 +373,11 @@ def test_custom_bbox_geo_legacy_surface_defaults_to_xyxy_parameterization() -> N
         "ciou_weight": 1.0,
     }
 
-    cfg = TrainingConfig.from_mapping(payload, PromptOverrides())
-    assert cfg.custom.bbox_geo.parameterization == "xyxy"
-    assert cfg.custom.bbox_geo.center_weight == pytest.approx(1.0)
-    assert cfg.custom.bbox_geo.size_weight == pytest.approx(1.0)
+    with pytest.raises(ValueError, match=r"custom\.bbox_geo has been removed"):
+        TrainingConfig.from_mapping(payload, PromptOverrides())
 
 
-def test_custom_bbox_geo_center_size_requires_nonzero_center_or_size_weight() -> None:
+def test_custom_bbox_geo_center_size_zero_weights_are_removed() -> None:
     payload = _base_training_payload()
     payload["custom"]["bbox_geo"] = {
         "enabled": True,
@@ -392,10 +388,7 @@ def test_custom_bbox_geo_center_size_requires_nonzero_center_or_size_weight() ->
         "size_weight": 0.0,
     }
 
-    with pytest.raises(
-        ValueError,
-        match=r"bbox_geo\.parameterization=center_size requires center_weight > 0 or size_weight > 0",
-    ):
+    with pytest.raises(ValueError, match=r"custom\.bbox_geo has been removed"):
         TrainingConfig.from_mapping(payload, PromptOverrides())
 
 
@@ -1198,9 +1191,6 @@ def _pipeline_coord_reg_spec(*, config: dict | None = None) -> dict:
 def _canonical_stage2_two_channel_objective() -> list[dict]:
     return [
         _pipeline_token_ce_spec(),
-        _pipeline_bbox_geo_spec(),
-        _pipeline_bbox_size_aux_spec(),
-        _pipeline_coord_reg_spec(),
     ]
 
 
@@ -1232,9 +1222,6 @@ def test_stage2_pipeline_duplicate_module_name_fails_fast():
         "objective": [
             _pipeline_token_ce_spec(),
             _pipeline_token_ce_spec(),
-            _pipeline_bbox_geo_spec(),
-            _pipeline_bbox_size_aux_spec(),
-            _pipeline_coord_reg_spec(),
         ],
     }
 
@@ -1256,12 +1243,7 @@ def test_stage2_pipeline_canonical_channels_scope_parses():
     channels_by_name = {
         str(spec.name): spec.channels for spec in cfg.stage2_ab.pipeline.objective
     }
-    assert channels_by_name == {
-        "token_ce": ("A", "B"),
-        "bbox_geo": ("A", "B"),
-        "bbox_size_aux": ("A", "B"),
-        "coord_reg": ("A", "B"),
-    }
+    assert channels_by_name == {"token_ce": ("A", "B")}
     assert cfg.stage2_ab.channel_b.insertion_order == "tail_append"
 
 
@@ -1317,10 +1299,7 @@ def test_stage2_pipeline_bbox_geo_unknown_alias_fails_fast() -> None:
         ]
     }
 
-    with pytest.raises(
-        ValueError,
-        match=r"Unknown stage2_ab\.pipeline\.objective\[1\]\.config keys.*center_wt",
-    ):
+    with pytest.raises(ValueError, match=r"got 'bbox_geo'"):
         TrainingConfig.from_mapping(payload, PromptOverrides())
 
 
@@ -1343,10 +1322,7 @@ def test_stage2_pipeline_bbox_geo_rejects_zero_center_and_size_weights() -> None
         ]
     }
 
-    with pytest.raises(
-        ValueError,
-        match=r"stage2_ab\.pipeline\.objective\[1\]\.config\.parameterization=center_size requires center_weight > 0 or size_weight > 0",
-    ):
+    with pytest.raises(ValueError, match=r"got 'bbox_geo'"):
         TrainingConfig.from_mapping(payload, PromptOverrides())
 
 
@@ -1374,9 +1350,6 @@ def test_stage2_pipeline_module_config_unknown_key_fails_fast():
     payload["stage2_ab"]["pipeline"] = {
         "objective": [
             _pipeline_token_ce_spec(config={"unknown_knob": 1.0}),
-            _pipeline_bbox_geo_spec(),
-            _pipeline_bbox_size_aux_spec(),
-            _pipeline_coord_reg_spec(),
         ]
     }
 
@@ -1391,9 +1364,6 @@ def test_stage2_pipeline_legacy_matched_prefix_struct_knob_fails_fast():
             _pipeline_token_ce_spec(
                 config={"rollout_matched_prefix_struct_weight": 1.0}
             ),
-            _pipeline_bbox_geo_spec(),
-            _pipeline_bbox_size_aux_spec(),
-            _pipeline_coord_reg_spec(),
         ]
     }
 

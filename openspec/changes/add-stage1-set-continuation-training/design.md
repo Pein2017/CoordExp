@@ -60,7 +60,8 @@ Allowed in v1:
 - coord-token object coordinates only, serialized as `<|coord_*|>` tokens;
 - ordinary full-vocab non-coord logprob inside each candidate entry;
 - existing trainable modules such as coord-token adapters, if enabled by config and already compatible with LM CE;
-- compatible coord and geometry auxiliary losses when implemented through branch-local set-continuation adapters.
+- compatible coord auxiliary losses when implemented through branch-local
+  set-continuation adapters.
 
 Rejected in v1 unless explicitly redesigned:
 
@@ -84,9 +85,7 @@ The reason not to inherit existing Stage-1 mixins is mechanical, not philosophic
 
 V1 should make compatible auxiliary losses toggleable through the set-continuation trainer:
 
-- `coord_soft_ce_w1`: applies to coord-token positions inside each scored candidate entry;
-- `bbox_geo`: applies to decoded candidate-entry bbox coordinates when all needed token positions are present;
-- `bbox_size_aux`: applies to candidate-entry bbox geometry when `bbox_geo` state is available.
+- `coord_soft_ce_w1`: applies to coord-token positions inside each scored candidate entry.
 
 Recommended aggregation for v1:
 
@@ -856,7 +855,7 @@ Each profile must resolve:
 - `training.packing: false`;
 - dataset JSONL, prompt variant, object field order, seed, resolution/preset, effective batch/sample budget, optimizer-step budget, checkpoint/base/adapter identity, inference decoding controls, and eval plan, including whether train-time eval generation is rank-sharded under DDP.
 - coord-token settings, effective coord-slot scoring surface, aux objective
-  settings (`coord_soft_ce_w1`, `bbox_geo`, `bbox_size_aux`), PEM threshold
+  settings (`coord_soft_ce_w1`), PEM threshold
   calibration provenance where applicable, realized prefix-mode coverage,
   realized branch/token budget, and eval plan.
 

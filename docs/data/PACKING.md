@@ -85,9 +85,9 @@ packing:
 ```
 
 Until recursive sidecar target-position offset rewriting is implemented and
-validated, `configs/stage1/recursive_detection_ce_latest/` must not enable
+validated, `configs/stage1/recursive_detection_ce/` must not enable
 dataset/static packing or padding-free packed runtime. Expected-failure packing
-examples belong under `configs/stage1/recursive_detection_ce_latest/negative/`
+examples belong under `configs/stage1/recursive_detection_ce/negative/`
 or another explicit `contract_failures/` location, not under positive `smoke/`
 profiles.
 

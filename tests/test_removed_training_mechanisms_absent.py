@@ -298,46 +298,6 @@ def _canonical_live_stage2_objective() -> list[dict]:
                 "rollout_global_prefix_struct_ce_weight": 1.0,
             },
         },
-        {
-            "name": "bbox_geo",
-            "enabled": True,
-            "weight": 0.0,
-            "channels": ["A", "B"],
-            "application": {"preset": "anchor_only"},
-            "config": {"smoothl1_weight": 0.0, "ciou_weight": 0.0},
-        },
-        {
-            "name": "bbox_size_aux",
-            "enabled": True,
-            "weight": 0.0,
-            "channels": ["A", "B"],
-            "application": {"preset": "anchor_only"},
-            "config": {
-                "log_wh_weight": 0.0,
-                "oversize_penalty_weight": 0.0,
-                "oversize_area_frac_threshold": None,
-                "oversize_log_w_threshold": None,
-                "oversize_log_h_threshold": None,
-                "eps": 1e-6,
-            },
-        },
-        {
-            "name": "coord_reg",
-            "enabled": True,
-            "weight": 0.0,
-            "channels": ["A", "B"],
-            "application": {"preset": "anchor_only"},
-            "config": {
-                "coord_ce_weight": 0.0,
-                "coord_gate_weight": 0.0,
-                "text_gate_weight": 0.0,
-                "soft_ce_weight": 0.0,
-                "w1_weight": 0.0,
-                "temperature": 1.0,
-                "target_sigma": 2.0,
-                "target_truncate": None,
-            },
-        },
     ]
 
 
@@ -419,16 +379,27 @@ def test_removed_public_stage2_trainer_modules_are_absent() -> None:
         assert importlib.util.find_spec(module_name) is None, module_name
 
 
-def test_adjacent_repulsion_is_not_in_coord_reg_catalog_projection() -> None:
-    coord_reg = OBJECTIVE_MODULE_CATALOG["coord_reg"]
+@pytest.mark.parametrize("module_name", ["bbox_geo", "bbox_size_aux", "coord_reg"])
+def test_removed_geometry_modules_are_not_in_objective_catalog(module_name: str) -> None:
+    assert module_name not in OBJECTIVE_MODULE_CATALOG
 
-    assert "adjacent_repulsion" not in {
-        atom.atom_name for atom in coord_reg.projected_atoms
-    }
-    assert coord_reg.config_keys.isdisjoint(REMOVED_ADJACENT_REPULSION_CONFIG_KEYS)
-    assert coord_reg.optional_config_keys.isdisjoint(
-        REMOVED_ADJACENT_REPULSION_CONFIG_KEYS
-    )
+
+@pytest.mark.parametrize(
+    "rel_path",
+    [
+        "src/trainers/teacher_forcing/modules/bbox_geo.py",
+        "src/trainers/teacher_forcing/modules/bbox_size_aux.py",
+        "src/trainers/teacher_forcing/modules/coord_reg.py",
+        "src/trainers/teacher_forcing/modules/coord_diag.py",
+        "src/trainers/metrics/bbox_losses.py",
+        "src/trainers/losses/bbox_geo.py",
+        "src/trainers/losses/bbox_size_aux.py",
+    ],
+)
+def test_removed_geometry_loss_files_are_absent(rel_path: str) -> None:
+    repo_root = Path(__file__).resolve().parents[1]
+
+    assert not (repo_root / rel_path).exists(), rel_path
 
 
 def test_training_config_rejects_duplicate_burst_unlikelihood_objective() -> None:
@@ -460,12 +431,20 @@ def test_config_loader_rejects_temp_yaml_with_duplicate_burst_objective(
 
 @pytest.mark.parametrize("key", sorted(REMOVED_ADJACENT_REPULSION_CONFIG_KEYS))
 def test_training_config_rejects_adjacent_repulsion_coord_reg_keys(key: str) -> None:
-    objective = _canonical_live_stage2_objective()
-    coord_reg_cfg = objective[-1]["config"]
-    coord_reg_cfg[key] = 0.0 if key != "adjacent_repulsion_filter_mode" else "same_desc"
+    objective = [
+        *_canonical_live_stage2_objective(),
+        {
+            "name": "coord_reg",
+            "enabled": True,
+            "weight": 1.0,
+            "channels": ["A", "B"],
+            "application": {"preset": "anchor_only"},
+            "config": {key: 0.0 if key != "adjacent_repulsion_filter_mode" else "same_desc"},
+        },
+    ]
     payload = _stage2_training_payload(objective=objective)
 
-    with pytest.raises(ValueError, match=key):
+    with pytest.raises(ValueError, match="coord_reg"):
         TrainingConfig.from_mapping(payload, PromptOverrides())
 
 
@@ -671,7 +650,6 @@ def test_metric_writers_do_not_publish_adjacent_repulsion_live_loss_keys() -> No
     repo_root = Path(__file__).resolve().parents[1]
     checked_paths = [
         repo_root / "src" / "trainers" / "metrics" / "coord_losses.py",
-        repo_root / "src" / "trainers" / "teacher_forcing" / "modules" / "coord_reg.py",
         repo_root / "src" / "trainers" / "teacher_forcing" / "objective_atoms.py",
         repo_root / "src" / "trainers" / "stage2_two_channel" / "objective_runner.py",
         repo_root / "src" / "trainers" / "monitoring" / "loss_gradient_monitor.py",

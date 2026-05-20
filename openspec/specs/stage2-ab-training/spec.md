@@ -61,8 +61,8 @@ Normative behavior:
   - `preset`
 - `application.preset` MUST be valid for the referenced module:
   - `token_ce`: `anchor_text_only`, `rollout_text_only`
-  - `bbox_geo`, `bbox_size_aux`, `coord_reg`:
-    - `anchor_only`
+  - `hard_sft`: `selected_path`
+  - `stage2_trie_ce`: `rollout_text_only`
 - Presets that imply a deprecated final Channel-A self-context pass MUST be
   rejected with actionable migration guidance:
   - `token_ce.application.preset: anchor_text_plus_final_struct`
@@ -70,6 +70,8 @@ Normative behavior:
   - `bbox_geo.application.preset: final_only`
   - `bbox_geo.application.preset: anchor_and_final`
   - and the equivalent `bbox_size_aux` / `coord_reg` preset values.
+- `bbox_geo`, `bbox_size_aux`, `coord_reg`, and `coord_diag` are removed from
+  the active Stage-2 pipeline contract and MUST be rejected if authored.
 - `config` MUST include exactly the allowlisted keys for the referenced module:
   - missing required keys MUST fail fast (no implicit defaults),
   - unknown keys MUST fail fast (no escape-hatch aliases).
@@ -93,61 +95,47 @@ Normative behavior:
   `anchor_text_only`.
 
 ### Requirement: Stage-2 AB module configs are strict and canonical (no aliases)
-Stage-2 AB pipeline module configs MUST be strict and MUST reject unknown keys and legacy alias keys.
+Stage-2 AB pipeline module configs MUST be strict and MUST reject unknown keys, legacy alias keys, and removed geometry/coordinate module declarations.
 
 Normative behavior:
-- `bbox_geo.config` MUST accept only:
-  - `smoothl1_weight`
-  - `ciou_weight`
-- `bbox_size_aux.config` MUST accept only:
-  - `log_wh_weight`
-  - `oversize_penalty_weight`
-  - `oversize_area_frac_threshold`
-  - `oversize_log_w_threshold`
-  - `oversize_log_h_threshold`
-  - `eps`
-- `coord_reg.config` MUST accept only:
-  - `coord_ce_weight`
-  - `soft_ce_weight`
-  - `w1_weight`
-  - `coord_gate_weight`
-  - `text_gate_weight`
-  - `temperature`
-  - `target_sigma`
-  - `target_truncate`
+- `token_ce.config` MUST accept only its text/structure CE weights.
+- `stage2_trie_ce.config` MUST accept only Stage-2 trie CE weights.
+- `hard_sft.config` MUST accept only the standard selected-path hard SFT weights.
 - Legacy alias keys (e.g., `bbox_smoothl1_weight`, `coord_soft_ce_weight`, `coord_w1_weight`) MUST be rejected.
 
 #### Scenario: Alias key in module config fails fast
-- **WHEN** `stage2_ab.pipeline.objective[*].name=bbox_size_aux`
+- **WHEN** `stage2_ab.pipeline.objective[*].name=token_ce`
 - **AND** the module config contains `bbox_smoothl1_weight`
 - **THEN** configuration parsing fails fast
-- **AND** the error indicates the canonical `bbox_size_aux.config.*` key family
-  must be used instead.
+- **AND** the error indicates the unknown key is not accepted.
 
-### Requirement: Stage-2 AB supports text_gate via coord_reg module config
-Stage-2 AB MUST support `text_gate` as part of `coord_reg` with a typed weight:
-- `stage2_ab.pipeline.objective[*].config.text_gate_weight`
+#### Scenario: Removed geometry objective names fail fast
+- **WHEN** `stage2_ab.pipeline.objective[*].name` is `bbox_geo`,
+  `bbox_size_aux`, or `coord_reg`
+- **THEN** configuration parsing fails fast
+- **AND** the error lists the active objective names instead.
+
+### Requirement: Stage-2 AB does not expose coordinate-type gate regularizers
+Stage-2 AB MUST NOT expose `text_gate`, coordinate-vocabulary gate, soft-CE, W1, or bbox geometry auxiliaries through the active `stage2_ab.pipeline` contract.
 
 Normative behavior:
-- `text_gate_weight > 0` MUST introduce a non-zero `text_gate` contribution when coord-vocab mass appears at supervised text positions (subject to registry masking).
+- token-type exclusivity belongs to the typed teacher-forcing objective surface,
+  not to the Stage-2 two-channel legacy objective stack.
+- Stage-2 AB may still report rollout/duplicate/control diagnostics, but it MUST
+  NOT emit removed coord-gate or bbox-geometry objective atoms as live loss
+  contributions.
 
-#### Scenario: Non-zero text_gate_weight is effective
-- **WHEN** `coord_reg.config.text_gate_weight > 0`
-- **AND** the model places substantial coord-vocab probability mass at supervised `type=struct|desc` positions
-- **THEN** the emitted `text_gate` objective atom increases relative to the same run with `text_gate_weight = 0`:
-  - Channel-A: `loss/coord/text_gate`
-  - Channel-B: `loss/B_coord/text_gate`
-- **AND** the increase is attributable to the `text_gate` sub-term inside `coord_reg`.
+#### Scenario: Removed text-gate config is rejected
+- **WHEN** a Stage-2 AB config declares `coord_reg.config.text_gate_weight`
+- **THEN** configuration parsing fails fast
+- **AND** no `text_gate` loss atom is registered.
 
 ### Requirement: Stage-2 AB objective application is explicit and non-redundant
 Stage-2 AB SHALL route Channel-A objective provenance through `application.preset`
 instead of duplicating loss strengths across separate `a1_*` config families.
 
 Normative behavior:
-- `bbox_geo`, `bbox_size_aux`, and `coord_reg` MUST express Channel-A routing
-  through `stage2_ab.pipeline.objective[*].application.preset`.
-- The canonical non-redundant Channel-A preset is now `anchor_only`:
-  - Channel-A bbox/coord atoms MUST emit only under `loss/coord/*`.
+- The canonical non-redundant Channel-A token CE preset is `anchor_text_only`.
 - `token_ce.application.preset=anchor_text_only` MUST keep
   `loss/text/{struct_ce,desc_ce}` on the GT anchor path and MUST NOT emit
   `loss/A1_*` or `loss/A2_*`.
@@ -158,30 +146,24 @@ Normative behavior:
 - Stage-2 AB module configs MUST NOT use final-pass/self_context aliases or
   weight families to recreate A2 routing.
 
-#### Scenario: Anchor-only Channel-A routes bbox/coord atoms to the normal coord group
-- **GIVEN** `bbox_geo.application.preset: anchor_only`
-- **AND** `bbox_size_aux.application.preset: anchor_only`
-- **AND** `coord_reg.application.preset: anchor_only`
+#### Scenario: Anchor-only Channel-A routes token CE to the normal text group
+- **GIVEN** `token_ce.application.preset: anchor_text_only`
 - **WHEN** Channel-A executes
-- **THEN** bbox/coord objective atoms emit under `loss/coord/*`
+- **THEN** text objective atoms emit under `loss/text/*`
 - **AND** the same step does not emit `loss/A1_*` or `loss/A2_*`.
 
-### Requirement: Coord diagnostics are attributed to the normal coord group and B provenance in Stage-2 two-channel
-When Stage-2 two-channel emits coord-distribution diagnostics, it MUST
-attribute them only to the supported forward surfaces that still exist.
+### Requirement: Coord diagnostics are removed from the Stage-2 two-channel active pipeline
+Stage-2 two-channel MUST reject `coord_diag` in `stage2_ab.pipeline.diagnostics[]`.
 
 Normative behavior:
-- `coord_diag/*`: computed from the Channel-A GT-anchor logits.
-- `coord_diag/B/*`: computed from Channel-B rollout-context logits.
-- `coord_diag/A1/*` and `coord_diag/A2/*` MUST NOT be emitted.
-- The trainer MUST NOT emit ambiguous bare `coord_diag/*` keys for these
-  monitors beyond the normal single-pass Channel-A coord group.
+- `stage2_ab.pipeline.diagnostics[]` is normally empty for the active contract.
+- Removed coordinate diagnostic modules MUST NOT emit `coord_diag/*`,
+  `coord_diag/B/*`, `coord_diag/A1/*`, or `coord_diag/A2/*`.
 
-#### Scenario: Channel-A diagnostics use the normal coord group
-- **WHEN** Stage-2 AB runs with `coord_diag` enabled
-- **THEN** emitted coord diagnostics may include `coord_diag/*` and
-  `coord_diag/B/*` when the relevant channel runs
-- **AND** the same run does not emit `coord_diag/A1/*` or `coord_diag/A2/*`.
+#### Scenario: Removed coord diagnostics fail fast
+- **WHEN** Stage-2 AB config declares `stage2_ab.pipeline.diagnostics[name=coord_diag]`
+- **THEN** configuration parsing fails fast
+- **AND** the error lists the active diagnostic names.
 
 ### Requirement: Stage-2 AB profile hierarchy supports the current shared-base layout
 Stage-2 AB experiment profiles under `configs/stage2_two_channel/` SHALL use the current repo-owned inheritance layout so shared prod/smoke behaviors remain reusable without flattening every downstream profile into a one-hop leaf.
@@ -820,27 +802,12 @@ Configurable desc supervision (both channels):
   - Channel-A: `stage2_ab.pipeline.objective[name=token_ce].config.desc_ce_weight`
   - Channel-B (FN-injected tail or sorted prefix): `stage2_ab.pipeline.objective[name=token_ce].config.rollout_fn_desc_weight`
 
-Bbox geometry losses (both channels) are computed from coord distributions:
-- The trainer MUST decode coordinates from coord-token distributions via CoordExp expectation decoding (not argmax):
-  - Let bins `k ∈ {0..999}` correspond to the coord-token sub-vocabulary.
-  - Let `p(k)` be the softmax distribution over these 1000 bins for a coord slot, taken from the standard causal shift:
-    - For a coord token at input position `p`, `p(k)` MUST be computed from logits at position `p-1` (consistent with CE).
-  - The decoded normalized coordinate MUST be: `c_hat = Σ_k p(k) * (k/999)` in `[0, 1]`.
-- The trainer MUST compute bbox losses in normalized coordinate space `[0, 1]`:
-  - GT bbox ints in `[0, 999]` MUST be converted to floats by dividing by `999`.
-  - Predicted bbox coords MUST be the decoded normalized floats from `c_hat` above.
-- Geometry loss MUST use logits from:
-  - the single Channel-A GT-anchor forward, and
-  - the Channel-B clean-prefix teacher-forced logits.
-
-Loss form (normative):
-- The trainer MUST use SmoothL1 (Huber) + CIoU as the bbox regression terms.
-- The trainer MUST NOT use GIoU in Stage-2 AB.
-
-Numerical stability (normative):
-- The trainer MUST canonicalize predicted boxes before CIoU:
-  - `(x1,x2) := (min(x1,x2), max(x1,x2))`, `(y1,y2) := (min(y1,y2), max(y1,y2))`.
-- The trainer MUST ensure the geometry losses do not produce NaNs/Infs, including early training when predictions are degenerate.
+Removed bbox geometry losses:
+- The active Stage-2 two-channel contract no longer computes SmoothL1, CIoU,
+  coord soft-CE, W1, or decoded bbox-size auxiliary objective terms.
+- Coordinate logits may still exist in the teacher-forced sequence, but Stage-2
+  AB does not decode them into bbox regression losses.
+- Removed geometry module declarations MUST fail fast during config loading.
 
 #### Scenario: Desc can be fully masked while keeping structure CE
 - **GIVEN** `stage2_ab.pipeline.objective[name=token_ce].config.desc_ce_weight: 0`
@@ -848,28 +815,16 @@ Numerical stability (normative):
 - **THEN** JSON structure tokens remain supervised by CE
 - **AND** desc value tokens do not contribute to CE.
 
-#### Scenario: Expectation decoding uses probability-weighted mean (not argmax)
-- **GIVEN** a coord-slot distribution with `p(k=0)=0.5` and `p(k=999)=0.5`
-- **WHEN** the trainer decodes the coordinate via expectation decoding
-- **THEN** the decoded value is approximately `0.5` (i.e., `(0*0.5 + 999*0.5)/999`)
-- **AND** it is not equal to an argmax decode of `0` or `1`.
+#### Scenario: Removed geometry modules do not decode coord distributions
+- **GIVEN** a Stage-2 AB config without removed geometry modules
+- **WHEN** Stage-2 computes losses
+- **THEN** it does not expectation-decode coord-token distributions into bbox
+  regression terms.
 
-#### Scenario: Geometry losses operate on normalized coordinates
-- **GIVEN** a GT bbox coordinate bin value `k=999`
-- **WHEN** the trainer converts GT bins to normalized floats for geometry loss
-- **THEN** the converted value is `999/999 = 1.0`
-- **AND** geometry losses are computed using normalized floats in `[0, 1]`.
-
-#### Scenario: Channel-A geometry no longer depends on a final iteration
-- **WHEN** Stage-2 AB computes Channel-A geometry or coord regularization
-- **THEN** the same single-pass Channel-A logits feed those terms
-- **AND** no final self-context logits are required.
-
-#### Scenario: Channel-B geometry includes matched clean prefix objects and FN but excludes unmatched clean extras
-- **GIVEN** Channel-B where clean-prefix matching yields non-empty matched clean objects, unmatched clean extras, and FN sets
-- **WHEN** Channel-B losses are computed
-- **THEN** geometry loss is accumulated for matched clean prefix objects and FN-injected objects
-- **AND** unmatched clean extras contribute zero geometry loss.
+#### Scenario: Removed geometry modules fail before trainer init
+- **GIVEN** Stage-2 AB config declares `bbox_geo`, `bbox_size_aux`, or `coord_reg`
+- **WHEN** the config is loaded
+- **THEN** validation fails fast before trainer init.
 
 #### Scenario: Closure-supervision brace target is the same brace used for injection
 - **GIVEN** Channel-B injects FN entries before the outermost close brace resolved by brace-depth scan
@@ -1130,62 +1085,50 @@ Best-effort diagnostics MAY continue under guarded warning paths.
 - **THEN** training raises with contextual diagnostics including step kind and queue/version state
 - **AND** the failure is not silently suppressed.
 
-### Requirement: Stage-2 AB objective includes coord soft-CE and W1 terms on supervised bbox slots
-Stage-2 AB trainer MUST support Stage-1-style coord distribution penalties in Stage-2 training:
+### Requirement: Stage-2 AB does not expose coordinate soft-CE, W1, or geometry auxiliaries
+Stage-2 AB trainer MUST NOT support active `coord_reg`, `bbox_geo`, or
+`bbox_size_aux` pipeline modules in the unified teacher-forcing architecture.
 
-- `soft_ce` and `w1` MUST be computed on coord distributions for Stage-2-supervised bbox coord slots only:
-  - matched-prefix groups (`bbox_groups_prefix`),
-  - and FN-injected groups (`bbox_groups_fn`).
-- The coord distribution for each supervised coord slot MUST follow the same causal shift contract as other Stage-2 coord losses (coord token at position `p` uses logits at `p-1`).
-- These terms MUST contribute to the Stage-2 coord regularization objective (coord_reg module), and MUST be surfaced in training logs as **objective atoms** under provenance keys:
-  - Channel-A: `loss/coord/{coord_soft_ce,coord_w1}`
-  - Channel-B (rollout-context): `loss/B_coord/{coord_soft_ce,coord_w1}`
-- The trainer MUST NOT apply these terms to unsupervised FP-only coord slots.
+Normative behavior:
+- Stage-2 AB may still supervise text/structure CE through `token_ce`.
+- Stage-2 AB may opt into `stage2_trie_ce` for rollout-context trie CE where
+  authored.
+- Stage-2 AB MUST reject coordinate soft-CE, W1, CIoU, smooth-L1, and decoded
+  bbox-size auxiliary module declarations in `stage2_ab.pipeline`.
+- Removed geometry/coordinate loss atoms MUST NOT be emitted as live Stage-2
+  objective metrics.
 
-Weighting/config contract:
-- Stage-2 uses the declared pipeline config for coord distribution penalties:
-  - `stage2_ab.pipeline.objective[name=coord_reg].config.soft_ce_weight`
-  - `stage2_ab.pipeline.objective[name=coord_reg].config.w1_weight`
-  - `stage2_ab.pipeline.objective[name=coord_reg].config.temperature`
-  - `stage2_ab.pipeline.objective[name=coord_reg].config.target_sigma`
-  - `stage2_ab.pipeline.objective[name=coord_reg].config.target_truncate`
-- If `soft_ce_weight` and `w1_weight` are both `0`, Stage-2 soft-CE/W1 contributions MUST be zero.
+#### Scenario: Removed coord soft-CE config fails fast
+- **GIVEN** Stage-2 config declares `stage2_ab.pipeline.objective[name=coord_reg]`
+- **WHEN** the config is loaded
+- **THEN** validation fails fast before trainer init
+- **AND** no `loss/B_coord/coord_soft_ce` or `loss/B_coord/coord_w1` objective
+  atom is registered.
 
-#### Scenario: Enabled coord soft-CE/W1 increases Stage-2 coord regularization
-- **GIVEN** Stage-2 config has `stage2_ab.pipeline.objective[name=coord_reg].config.soft_ce_weight > 0`
-- **AND** `stage2_ab.pipeline.objective[name=coord_reg].config.w1_weight > 0`
-- **AND** a batch has supervised bbox coord slots
-- **WHEN** Stage-2 computes loss
-- **THEN** `loss/B_coord/coord_soft_ce` and `loss/B_coord/coord_w1` are positive
-- **AND** the Channel-A coord group, when active, uses `loss/coord/*` rather
-  than any `loss/A1_*` or `loss/A2_*` key.
-
-### Requirement: Canonical Stage-2 base and prod leaves declare CIoU/coord-CE/soft-CE/W1 weights explicitly
-The canonical Stage-2 AB config surfaces MUST declare CIoU and coord-distribution weights explicitly to avoid ambiguity between inherited defaults and production-tuned overrides.
+### Requirement: Canonical Stage-2 base and prod leaves use text/trie-only objective modules
+The canonical Stage-2 AB config surfaces MUST keep their objective pipeline
+limited to the active text/trie module set.
 
 Canonical base defaults (pipeline-only):
-- `stage2_ab.pipeline.objective[name=bbox_geo].config.smoothl1_weight: 2.0`
-- `stage2_ab.pipeline.objective[name=bbox_geo].config.ciou_weight: 0.5`
-- `stage2_ab.pipeline.objective[name=coord_reg].config.coord_ce_weight: 0.0`
-- `stage2_ab.pipeline.objective[name=coord_reg].config.soft_ce_weight: 0.02`
-- `stage2_ab.pipeline.objective[name=coord_reg].config.w1_weight: 0.02`
+- `stage2_ab.pipeline.objective[name=token_ce].config.desc_ce_weight: 1.0`
+- `stage2_ab.pipeline.objective[name=token_ce].config.rollout_fn_desc_weight: 1.0`
+- `stage2_ab.pipeline.objective[name=token_ce].config.rollout_global_prefix_struct_ce_weight: 1.0`
 
-Canonical prod overrides (pipeline-only):
-- `stage2_ab.pipeline.objective[name=bbox_geo].config.ciou_weight: 0.2`
-- `stage2_ab.pipeline.objective[name=coord_reg].config.coord_ce_weight: 0.02`
-- `stage2_ab.pipeline.objective[name=coord_reg].config.soft_ce_weight: 0.1`
-- `stage2_ab.pipeline.objective[name=coord_reg].config.w1_weight: 0.1`
-- `stage2_ab.pipeline.objective[name=coord_reg].config.target_truncate: 8`
+Canonical prod behavior:
+- prod leaves MAY override token/trie weights explicitly when needed.
+- prod leaves MUST NOT reintroduce removed bbox or coord module declarations.
 
-#### Scenario: Canonical prod leaves pin explicit CIoU/soft-CE/W1 overrides
+#### Scenario: Canonical prod leaves omit removed geometry/coord modules
 - **GIVEN** a canonical Stage-2 profile leaf under `configs/stage2_two_channel/prod/*.yaml`
 - **WHEN** config is materialized through the supported Stage-2 profile hierarchy rooted at `configs/stage2_two_channel/base.yaml`
-- **THEN** the leaf explicitly overrides effective Stage-2 loss weights with the canonical prod values above.
+- **THEN** the resolved objective names are a subset of `token_ce`, `hard_sft`,
+  and `stage2_trie_ce`.
 
-#### Scenario: Canonical smoke leaves inherit base CIoU/soft-CE/W1 defaults
+#### Scenario: Canonical smoke leaves omit removed geometry/coord modules
 - **GIVEN** a canonical Stage-2 profile leaf under `configs/stage2_two_channel/smoke/*.yaml`
 - **WHEN** config is materialized through the supported Stage-2 profile hierarchy rooted at `configs/stage2_two_channel/base.yaml`
-- **THEN** effective Stage-2 loss defaults include canonical base CIoU downweight and non-zero soft-CE/W1 terms.
+- **THEN** the resolved objective names are a subset of `token_ce`, `hard_sft`,
+  and `stage2_trie_ce`.
 
 ### Requirement: Stage-2 two-channel training supports a config-declared objective and diagnostics pipeline
 When `custom.trainer_variant: stage2_two_channel`, the system SHALL use an explicit YAML-declared objective/diagnostics pipeline for the canonical clean-prefix Channel-B contract.
@@ -1194,10 +1137,10 @@ Normative behavior:
 - `stage2_ab.pipeline` MUST be present. There is no implicit default pipeline manifest for this contract.
 - Future-canonical Stage-2 AB objective ordering for this contract is:
   1. `token_ce`
-  2. `bbox_geo`
-  3. `bbox_size_aux`
-  4. `coord_reg`
-- Canonical Stage-2 AB diagnostics MAY include `coord_diag`.
+  2. `stage2_trie_ce`
+  3. `hard_sft` when the config intentionally requests the baseline selected-path objective.
+- Canonical Stage-2 AB diagnostics are empty unless a future explicitly
+  reviewed diagnostic module is introduced.
 - Live Stage-2 AB configs MUST omit `loss_duplicate_burst_unlikelihood`; the
   removed objective has no compatibility alias.
 - The old raw-prefix Channel-B contract is removed; there is no contract toggle or compatibility mode.
@@ -1245,14 +1188,18 @@ YAML-declared experiments remain auditable.
 
 Normative minimum objective module names for this contract:
 - `token_ce`
+- `hard_sft`
+- `stage2_trie_ce`
+
+Removed objective module names:
+- `loss_duplicate_burst_unlikelihood`
 - `bbox_geo`
 - `bbox_size_aux`
 - `coord_reg`
 
-Removed objective module names:
-- `loss_duplicate_burst_unlikelihood`
+Normative minimum diagnostics module names: none.
 
-Normative minimum diagnostics module names:
+Removed diagnostics module names:
 - `coord_diag`
 
 Normative behavior:
@@ -1509,44 +1456,26 @@ Normative behavior:
 - **AND** it may still participate in the global rollout-prefix structure CE surface
 - **AND** it contributes no positive bbox/coord or desc supervision.
 
-### Requirement: Stage-2 AB can add matched decoded-box size auxiliaries through `bbox_size_aux`
-Stage-2 AB SHALL support optional decoded-box size auxiliaries on the existing
-matched geometry path without changing bbox parameterization or decode format.
+### Requirement: Stage-2 AB rejects matched decoded-box size auxiliaries
+Stage-2 AB SHALL NOT support `bbox_size_aux` in the active objective pipeline.
 
 Normative behavior:
+- `bbox_size_aux` is a removed Stage-2 two-channel objective module name.
+- Any `bbox_size_aux.config.*` key is rejected as part of module-name
+  validation.
+- The active Stage-2 two-channel surface stays text/trie-only; bbox geometry
+  auxiliaries belong to historical runs or separate future specs, not this
+  contract.
 
-- when `bbox_size_aux.config.log_wh_weight > 0`, the trainer MUST add matched
-  log-width/log-height supervision on canonicalized decoded boxes,
-- when `bbox_size_aux.config.oversize_penalty_weight > 0`, the trainer MAY add the
-  thresholded oversize penalty on decoded boxes for the same context,
-- Channel-A and Channel-B applicability MUST remain controlled by the authored
-  `channels` field on the `bbox_size_aux` module entry,
-- Channel-A provenance MUST remain controlled by
-  `bbox_size_aux.application.preset`, with `anchor_only` as the supported
-  Channel-A preset,
-- `bbox_size_aux` MUST remain separate from `bbox_geo` in the authored pipeline
-  so the new size loss is an independently removable plugin module,
-- `bbox_size_aux` MUST consume the current four bbox coord slots in the existing
-  `xyxy` order rather than introducing a new bbox expression,
-- the default canonical Stage-2 profile behavior SHOULD enable only the matched
-  `log_wh` term at a small weight and keep `log_area` / `oversize` off.
-
-#### Scenario: Channel-A matched geometry uses the normal coord-group log-size aux
+#### Scenario: Channel-A matched geometry aux is rejected
 - **GIVEN** a Stage-2 AB config with `bbox_size_aux.channels: [A]`
-- **AND** `bbox_size_aux.application.preset: anchor_only`
-- **AND** `bbox_size_aux.config.log_wh_weight > 0`
-- **WHEN** Channel-A computes matched geometry loss from decoded boxes
-- **THEN** `bbox_size_aux` contributes `bbox_log_wh` under `loss/coord/*`
-- **AND** the same step does not emit legacy `A*` size-aux objective
-  atoms.
+- **WHEN** the config is loaded
+- **THEN** validation fails fast before trainer init.
 
-#### Scenario: Channel-B matched rollout geometry can include log-size aux
+#### Scenario: Channel-B matched geometry aux is rejected
 - **GIVEN** a Stage-2 AB config with `bbox_size_aux.channels: [B]`
-- **AND** `bbox_size_aux.config.log_wh_weight > 0`
-- **WHEN** Channel-B computes matched rollout geometry loss from decoded boxes
-- **THEN** the matched log-width/log-height auxiliary contributes on the same
-  matched-clean + FN supervision set
-- **AND** unmatched clean extras remain outside positive geometry supervision.
+- **WHEN** the config is loaded
+- **THEN** validation fails fast before trainer init.
 
 ### Requirement: Stage-2 AB distributed step coordination MUST be explicit and shared across channels
 When Stage-2 AB runs under DDP, the trainer SHALL use one explicit
