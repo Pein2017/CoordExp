@@ -180,6 +180,27 @@ def _coord_candidate_tuples(target) -> tuple[tuple[str, tuple[int, int, int, int
     )
 
 
+def test_recursive_target_builder_rejects_teacher_forcing_mode_with_migration_guidance() -> None:
+    tokenizer = SpecialTokenAwareTokenizer()
+    sample = _sample(
+        _object(
+            normalized_index=0,
+            source_index=7,
+            instance_id="img-9:ann-501:src-7",
+            desc="cat",
+            coords=("<|coord_10|>", "<|coord_20|>", "<|coord_30|>", "<|coord_40|>"),
+        )
+    )
+
+    with pytest.raises(ValueError, match="teacher_forcing_target_ir.*recursive"):
+        prepare_detection_training_example(
+            sample,
+            template=CompactFullTemplate(),
+            tokenizer=tokenizer,
+            mode="teacher_forcing",  # type: ignore[arg-type]
+        )
+
+
 def test_compact_shared_object_ref_is_hard_ce_and_first_desc_divergence_is_multi_positive() -> None:
     tokenizer = SpecialTokenAwareTokenizer()
     sample = _sample(

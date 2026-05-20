@@ -16,6 +16,8 @@ from src.detection.dataset import (
     REGISTERED_DETECTION_SIDECAR_KEYS,
     strip_non_model_detection_sidecars,
 )
+from src.detection.packing import PackingProfile, require_static_sft_packing_eligibility
+from src.detection.runtime import resolve_detection_runtime_support
 from src.sft import (
     _assert_latest_detection_runtime_supported,
     _resolve_adapter_coord_offset_config,
@@ -41,6 +43,28 @@ def _prod_latest_detection_config() -> LatestDetectionTrainingConfig:
     return cfg
 
 
+def _teacher_forcing_latest_detection_config() -> LatestDetectionTrainingConfig:
+    config_path = (
+        REPO_ROOT
+        / "configs/stage1/teacher_forcing/smoke/compact_full_hard_sft_tiny.yaml"
+    )
+    cfg = ConfigLoader.load_materialized_training_config(str(config_path))
+    assert isinstance(cfg, LatestDetectionTrainingConfig)
+    return cfg
+
+
+def _legacy_recursive_detection_runtime_config() -> SimpleNamespace:
+    return SimpleNamespace(
+        detection_template=SimpleNamespace(id="compact_full"),
+        objective=SimpleNamespace(
+            id="recursive_detection_ce",
+            variant="random_permutation_et_rmp_ce",
+        ),
+        training={},
+        packing=SimpleNamespace(static_packing=False, padding_free_packed=False),
+    )
+
+
 def test_sft_resolves_recursive_detection_ce_runtime_cfg_from_latest_objective() -> None:
     cfg = _resolve_recursive_detection_ce_cfg(
         SimpleNamespace(
@@ -57,6 +81,65 @@ def test_sft_resolves_recursive_detection_ce_runtime_cfg_from_latest_objective()
     assert cfg.enabled is True
     assert cfg.trie_support_weight == pytest.approx(2.0)
     assert cfg.trie_balance_weight == pytest.approx(1.0)
+
+
+def test_teacher_forcing_latest_detection_does_not_resolve_recursive_ce_runtime_cfg() -> None:
+    cfg = _teacher_forcing_latest_detection_config()
+
+    assert _resolve_recursive_detection_ce_cfg(cfg) is None
+    support = resolve_detection_runtime_support(cfg)
+    assert support.recursive_sidecars_required is False
+    assert support.teacher_forcing_target_ir_required is True
+
+
+def test_teacher_forcing_runtime_preflight_names_target_ir_not_recursive_sidecars() -> None:
+    cfg = _teacher_forcing_latest_detection_config()
+    cfg = replace(cfg, training={**dict(cfg.training), "packing": True})
+
+    with pytest.raises(
+        ValueError,
+        match="teacher_forcing_target_ir.*training\\.packing=false",
+    ):
+        _assert_latest_detection_runtime_supported(
+            cfg,
+            encoded_sample_cache_cfg=SimpleNamespace(enabled=False),
+        )
+
+
+def test_teacher_forcing_runtime_preflight_rejects_encoded_sample_cache() -> None:
+    cfg = _teacher_forcing_latest_detection_config()
+
+    with pytest.raises(
+        ValueError,
+        match="teacher_forcing_target_ir.*training\\.encoded_sample_cache",
+    ):
+        _assert_latest_detection_runtime_supported(
+            cfg,
+            encoded_sample_cache_cfg=SimpleNamespace(enabled=True),
+        )
+
+
+def test_recursive_packing_helper_rejects_teacher_forcing_target_ir_boundary() -> None:
+    with pytest.raises(ValueError, match="teacher_forcing_target_ir.*legacy recursive"):
+        require_static_sft_packing_eligibility(
+            detection_sequence_format="compact_full",
+            profile=PackingProfile(mode="static", packing_length=128),
+            object_ordering="random_permutation",
+            objective_variant="teacher_forcing",
+        )
+
+
+def test_agent_index_routes_recursive_configs_as_legacy_comparator_handles() -> None:
+    text = (REPO_ROOT / "docs/AGENT_INDEX.md").read_text(encoding="utf-8")
+
+    for handle in (
+        "compact_full_support2.yaml",
+        "compact_full_prefix_rollin_balance2.yaml",
+    ):
+        handle_index = text.index(handle)
+        window = text[max(0, handle_index - 220) : handle_index + 260]
+        assert "legacy/comparator" in window
+        assert "teacher-forcing" in window
 
 
 def test_sft_resolves_prefix_rollin_runtime_cfg_from_objectized_target() -> None:
@@ -242,7 +325,7 @@ def test_sft_root_image_dir_autoconfig_requires_image_root_or_view_metadata() ->
 
 
 def test_latest_detection_runtime_shim_preserves_trainable_token_rows() -> None:
-    cfg = _prod_latest_detection_config()
+    cfg = _teacher_forcing_latest_detection_config()
     custom_config = _latest_detection_runtime_custom_shim(cfg)
 
     assert custom_config.trainable_token_rows is cfg.token_rows
@@ -252,19 +335,11 @@ def test_latest_detection_runtime_shim_preserves_trainable_token_rows() -> None:
 
 
 def test_sft_does_not_apply_recursive_sidecar_guard_to_other_latest_objectives() -> None:
-    cfg = _prod_latest_detection_config()
-    cfg = replace(
-        cfg,
-        objective=replace(
-            cfg.objective,
-            id="sft",
-            variant="sorted_sft",
-            trie_support_weight=0.0,
-            trie_balance_weight=0.0,
-            state_weighting="none",
-            normalization="token_mean",
-        ),
-        training={**dict(cfg.training), "packing": True},
+    cfg = SimpleNamespace(
+        detection_template=SimpleNamespace(id="stage1_json_pretty"),
+        objective=SimpleNamespace(id="sft", variant="sorted_sft"),
+        training={"packing": True},
+        packing=SimpleNamespace(static_packing=False, padding_free_packed=False),
     )
 
     _assert_latest_detection_runtime_supported(
@@ -281,7 +356,7 @@ def test_sft_rejects_latest_recursive_detection_packing_preflight_config() -> No
 
     with pytest.raises(
         ValueError,
-        match=r"recursive_detection_ce.*static packing",
+        match=r"legacy objective ids are unsupported.*recursive_detection_ce",
     ):
         ConfigLoader.load_materialized_training_config(str(config_path))
 
@@ -299,12 +374,10 @@ def test_sft_rejects_latest_recursive_detection_packing_surfaces(
     packing_update: dict[str, bool],
     match: str,
 ) -> None:
-    cfg = _prod_latest_detection_config()
-    cfg = replace(
-        cfg,
-        training={**dict(cfg.training), "packing": training_packing},
-        packing=replace(cfg.packing, **packing_update),
-    )
+    cfg = _legacy_recursive_detection_runtime_config()
+    cfg.training = {"packing": training_packing}
+    for key, value in packing_update.items():
+        setattr(cfg.packing, key, value)
 
     with pytest.raises(ValueError, match=match):
         _assert_latest_detection_runtime_supported(
@@ -314,7 +387,7 @@ def test_sft_rejects_latest_recursive_detection_packing_surfaces(
 
 
 def test_sft_rejects_latest_recursive_detection_encoded_sample_cache() -> None:
-    cfg = _prod_latest_detection_config()
+    cfg = _legacy_recursive_detection_runtime_config()
 
     with pytest.raises(ValueError, match="training\\.encoded_sample_cache"):
         _assert_latest_detection_runtime_supported(
@@ -324,8 +397,8 @@ def test_sft_rejects_latest_recursive_detection_encoded_sample_cache() -> None:
 
 
 def test_sft_runtime_preflight_rejects_latest_recursive_detection_eval_packing() -> None:
-    cfg = _prod_latest_detection_config()
-    cfg = replace(cfg, training={**dict(cfg.training), "eval_packing": True})
+    cfg = _legacy_recursive_detection_runtime_config()
+    cfg.training = {"eval_packing": True}
 
     with pytest.raises(ValueError, match="training\\.eval_packing=false"):
         _assert_latest_detection_runtime_supported(
@@ -335,8 +408,8 @@ def test_sft_runtime_preflight_rejects_latest_recursive_detection_eval_packing()
 
 
 def test_sft_runtime_preflight_rejects_latest_recursive_detection_use_logits_to_keep() -> None:
-    cfg = _prod_latest_detection_config()
-    cfg = replace(cfg, training={**dict(cfg.training), "use_logits_to_keep": True})
+    cfg = _legacy_recursive_detection_runtime_config()
+    cfg.training = {"use_logits_to_keep": True}
 
     with pytest.raises(ValueError, match="use_logits_to_keep=false"):
         _assert_latest_detection_runtime_supported(
@@ -346,8 +419,8 @@ def test_sft_runtime_preflight_rejects_latest_recursive_detection_use_logits_to_
 
 
 def test_sft_runtime_preflight_rejects_latest_recursive_detection_loss_scale() -> None:
-    cfg = _prod_latest_detection_config()
-    cfg = replace(cfg, training={**dict(cfg.training), "loss_scale": "default"})
+    cfg = _legacy_recursive_detection_runtime_config()
+    cfg.training = {"loss_scale": "default"}
 
     with pytest.raises(ValueError, match="training\\.loss_scale"):
         _assert_latest_detection_runtime_supported(
@@ -357,7 +430,7 @@ def test_sft_runtime_preflight_rejects_latest_recursive_detection_loss_scale() -
 
 
 def test_sft_runtime_preflight_rejects_left_padding_for_all_recursive_sidecars() -> None:
-    cfg = _prod_latest_detection_config()
+    cfg = _legacy_recursive_detection_runtime_config()
 
     with pytest.raises(ValueError, match="tokenizer\\.padding_side='right'"):
         _assert_latest_detection_runtime_supported(
@@ -400,7 +473,7 @@ def test_recursive_detection_sidecars_survive_collation_but_not_model_forward() 
     assert batch["recursive_detection_targets"] == (target_sidecar,)
 
     for key in REGISTERED_DETECTION_SIDECAR_KEYS:
-        if key == "recursive_detection_targets":
+        if key in {"recursive_detection_targets", "teacher_forcing_target_ir"}:
             continue
         batch[key] = sample[key]
 

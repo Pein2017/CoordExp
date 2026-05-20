@@ -28,6 +28,7 @@ from src.metrics.detection_sequence import (
     schema_token_cross_entropy_event,
 )
 from src.metrics.events import MetricEvent, last_event, ratio_event, weighted_mean_event
+from src.training.teacher_forcing.ir import TeacherForcingTargetIR
 
 _OBJECT_ROLE_WEIGHTS = {
     SemanticRole.DESC_IDENTITY: 0.35,
@@ -235,6 +236,11 @@ def compute_recursive_detection_ce_batch_loss(
     sample_losses: list[torch.Tensor] = []
     per_position_losses: list[dict[int, torch.Tensor]] = []
     for batch_index, recursive_targets in enumerate(targets):
+        if isinstance(recursive_targets, TeacherForcingTargetIR):
+            raise TypeError(
+                "teacher_forcing_target_ir is not a recursive_detection_ce "
+                "target; route it through the teacher_forcing objective runner"
+            )
         sample_loss, sample_position_losses = _compute_sample_loss(
             logits=batch_logits[batch_index],
             recursive_targets=recursive_targets,

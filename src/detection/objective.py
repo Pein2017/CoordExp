@@ -634,6 +634,11 @@ def _prepare_sample_for_mode(
     *,
     mode: DetectionTrainingMode,
 ) -> NormalizedDetectionSample:
+    if mode == "teacher_forcing":
+        raise ValueError(
+            "teacher_forcing_target_ir is built by the new teacher_forcing "
+            "target builder, not the legacy recursive detection objective"
+        )
     _validate_sample_ordering(sample)
     if mode == "sorted_sft":
         if sample.object_ordering.strategy != "sorted":

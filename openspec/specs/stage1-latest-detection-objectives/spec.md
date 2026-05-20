@@ -2,9 +2,9 @@
 
 ## Purpose
 Define the stable objective contract for the latest-schema Stage-1 compact
-recursive detection surface, including objective variant ownership, recursive
-CE semantics, latest-only coord-soft-target overlays, runtime guardrails, and
-diagnostic expectations.
+teacher-forcing surface, including the legacy recursive-detection comparator
+boundary, recursive CE migration behavior, runtime guardrails, and diagnostic
+expectations.
 
 ## Requirements
 
@@ -21,9 +21,9 @@ Normative behavior:
   `custom.trainer_variant: stage1_set_continuation`, or legacy
   `custom.coord_soft_ce_w1.*` to configure latest recursive detection
   objectives,
-- `objective.id=sft` MUST pair only with SFT objective variants,
-- `objective.id=recursive_detection_ce` MUST pair only with recursive detection
-  CE variants,
+- new active latest-schema configs MUST use `objective.id: teacher_forcing`,
+- legacy objective ids such as `sft` and `recursive_detection_ce` MUST NOT be
+  accepted as new active latest-schema objective ids,
 - objective variants MUST remain YAML/config driven and MUST NOT require new
   stable CLI flags.
 
@@ -35,46 +35,52 @@ Normative behavior:
 - **AND** the error explains that the latest detection surface owns its
   objective through top-level `objective`.
 
-#### Scenario: Recursive CE variant is selected through `objective.variant`
+#### Scenario: Legacy recursive CE objective id is rejected on the active surface
 - **GIVEN** a latest-schema config with `objective.id: recursive_detection_ce`
-- **WHEN** config parsing and runtime resolution run
-- **THEN** the recursive objective mode is selected from `objective.variant`
-- **AND** no extra CLI flag is needed.
+- **WHEN** active config parsing and runtime resolution run
+- **THEN** config validation fails fast
+- **AND** the error directs the author to `objective.id: teacher_forcing`.
 
-### Requirement: Random-permutation ET-RMP-CE remains the production baseline/comparator
-The latest compact recursive detection production baseline SHALL remain
-`objective.variant: random_permutation_et_rmp_ce` until an explicitly promoted
-successor is approved.
+### Requirement: Random-permutation ET-RMP-CE remains a legacy comparator handle
+The historical compact recursive detection random-permutation ET-RMP-CE setup MUST remain documented as a legacy/comparator handle for interpreting previous runs, but it MUST NOT be presented as the active latest-detection production objective after the teacher-forcing objective migration.
 
 Normative behavior:
 
-- the comparator config path MUST remain
+- the legacy/comparator config path MUST remain documented as
   `configs/stage1/recursive_detection_ce_latest/prod/compact_full_support2.yaml`
   unless a later contract supersedes it,
-- this baseline MUST use `objective.id: recursive_detection_ce`,
-- this baseline MUST use `detection_template.id: compact_full`,
-- this baseline MUST use `data.object_ordering: random_permutation`,
-- this baseline MUST keep `objective.state_weighting:
+- this legacy/comparator handle MAY record its historical
+  `objective.id: recursive_detection_ce`,
+- active config parsing MUST reject this legacy objective id with migration
+  guidance instead of silently routing it through new teacher-forcing training,
+- this legacy/comparator handle MUST record `detection_template.id:
+  compact_full`,
+- this legacy/comparator handle MUST record `data.object_ordering:
+  random_permutation`,
+- this legacy/comparator handle MUST record `objective.state_weighting:
   uniform_permutation`,
-- this baseline MUST keep `objective.normalization:
+- this legacy/comparator handle MUST record `objective.normalization:
   semantic_image_bucket_balanced`,
-- trie support and balance weights for this baseline MUST be authored as
-  `objective.trie_support_weight` and `objective.trie_balance_weight`,
-- the baseline MUST remain available as a comparator when new latest-detection
-  objective variants are introduced.
+- trie support and balance weights for the historical handle MUST remain
+  interpretable as `objective.trie_support_weight` and
+  `objective.trie_balance_weight`,
+- the handle MUST remain available as historical/comparator documentation when
+  new teacher-forcing variants are introduced.
 
-#### Scenario: Comparator config resolves to random-permutation ET-RMP-CE
+#### Scenario: Comparator config is not accepted as an active objective
 - **WHEN** the comparator config
   `configs/stage1/recursive_detection_ce_latest/prod/compact_full_support2.yaml`
-  is parsed
-- **THEN** it resolves to `objective.variant: random_permutation_et_rmp_ce`
-- **AND** runtime recursive CE support and balance weights come from the
-  top-level `objective.trie_*` fields.
+  is parsed through the active latest-detection config loader
+- **THEN** config validation fails fast because it uses the legacy
+  `objective.id: recursive_detection_ce`
+- **AND** docs route it as a legacy/comparator handle, not as a new
+  teacher-forcing launch config.
 
-### Requirement: Prefix-rollin ET-RMP-CE is a compact-full ablation surface
-The latest compact recursive detection surface SHALL support
-`objective.variant: prefix_rollin_et_rmp_ce` as a compact-full ablation and
-diagnostic route, not as a production baseline by default.
+### Requirement: Prefix-rollin ET-RMP-CE remains a compact-full legacy/comparator ablation surface
+The historical compact recursive detection surface SHALL keep
+`objective.variant: prefix_rollin_et_rmp_ce` documented as a compact-full
+legacy/comparator ablation and diagnostic route, not as an active production
+baseline or new teacher-forcing launch config.
 
 Normative behavior:
 
@@ -109,15 +115,15 @@ Normative behavior:
 - **AND** changes only the append-boundary continuation pressure needed to test
   newline-versus-`<|im_end|>` early stopping.
 
-### Requirement: Latest recursive detection coord-soft-target overlays are objective-local
-Latest recursive detection coord-soft-target overlays SHALL be authored through
+### Requirement: Legacy recursive detection coord-soft-target overlays are objective-local
+Legacy recursive detection coord-soft-target overlays SHALL be authored through
 `objective.coord_soft_ce`, not through legacy Stage-1 SFT coord-loss surfaces.
 
 Normative behavior:
 
-- `objective.coord_soft_ce` MUST be valid only for
-  `objective.id: recursive_detection_ce` with ET-RMP-family latest objective
-  variants,
+- `objective.coord_soft_ce` MUST be treated as a historical legacy/comparator
+  surface for `objective.id: recursive_detection_ce` ET-RMP-family variants,
+  not as an active teacher-forcing objective overlay,
 - `iou_gibbs_v0` and `ciou_gibbs_v0` overlays MUST be treated as historical
   A5/A6 ablation candidates unless promoted by later evidence,
 - `instance_trie_gaussian` overlays MUST use focused R95 policy fields:
@@ -135,9 +141,9 @@ Normative behavior:
 - **THEN** config parsing fails fast
 - **AND** the error identifies the unsupported `objective.coord_soft_ce` key.
 
-#### Scenario: Latest coord-soft-target overlay uses token-row coord ids
-- **GIVEN** a latest recursive detection config with `objective.coord_soft_ce`
-  enabled
+#### Scenario: Legacy comparator coord-soft-target overlay uses token-row coord ids
+- **GIVEN** a legacy recursive detection comparator config with
+  `objective.coord_soft_ce` enabled
 - **WHEN** runtime config is resolved
 - **THEN** coord token ids are read from the `token_rows` coord-geometry group
 - **AND** the overlay does not use legacy `custom.coord_soft_ce_w1` ids or
@@ -257,8 +263,8 @@ new modules do not accidentally inherit production claims.
 
 Normative behavior:
 
-- `random_permutation_et_rmp_ce` support2 MUST remain the production
-  baseline/comparator until explicitly superseded,
+- `random_permutation_et_rmp_ce` support2 MUST remain documented only as a
+  legacy/comparator handle until explicitly re-promoted by a later contract,
 - A5/A6 Gibbs coord-soft-target configs MUST remain historical or ablation
   candidates unless measured evidence promotes them,
 - focused instance-trie Gaussian configs MUST remain ablation/smoke surfaces
@@ -268,9 +274,9 @@ Normative behavior:
 - retired set-continuation candidate-branch objective routes MUST NOT be used
   as current latest-detection training surfaces.
 
-#### Scenario: New objective work keeps comparator baselines available
+#### Scenario: New objective work keeps comparator baselines documented
 - **WHEN** a new latest-detection objective variant is introduced
-- **THEN** the random-permutation ET-RMP-CE comparator remains runnable and
-  documented
+- **THEN** the random-permutation ET-RMP-CE comparator remains documented and
+  available only as a legacy/comparator handle
 - **AND** the new variant must declare its own claim scope before benchmark
   interpretation.

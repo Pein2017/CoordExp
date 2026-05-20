@@ -119,6 +119,12 @@ def resolve_static_sft_training_mode(
     object_ordering: str = "sorted",
     trainer_variant: str | None = None,
 ) -> DetectionTrainingMode:
+    if objective_variant == "teacher_forcing":
+        raise ValueError(
+            "teacher_forcing_target_ir must not use legacy recursive static "
+            "packing helpers; exact atom-position packing mapping is not "
+            "implemented"
+        )
     if objective_variant:
         return _validate_detection_training_mode(str(objective_variant))
     if str(object_ordering or "sorted") in {"random", "random_permutation"}:

@@ -9,6 +9,7 @@ import pytest
 
 from src.config import ConfigLoader, LatestDetectionTrainingConfig
 from src.detection.dataset import DetectionTrainingDataset
+from src.training.teacher_forcing.constants import TEACHER_FORCING_TARGET_IR_KEY
 
 
 _SPECIAL_TOKEN_RE = re.compile(r"<\|[^|]+\|>")
@@ -313,6 +314,27 @@ def _dataset(
     )
 
 
+def _teacher_forcing_dataset(tmp_path: Path) -> DetectionTrainingDataset:
+    jsonl_path = tmp_path / "train.coord.jsonl"
+    _write_jsonl(jsonl_path, [_raw_row()])
+    _ensure_image(tmp_path)
+    return DetectionTrainingDataset.from_jsonl(
+        jsonl_path,
+        swift_template=FakeSwiftTemplate(),
+        image_root=tmp_path / "image-root",
+        detection_template_id="compact_full",
+        mode="random_order_sft",
+        object_ordering="random_permutation",
+        user_prompt="Detect every object.",
+        system_prompt="You are a detector.",
+        seed=123,
+        state_weighting="uniform_permutation",
+        normalization="semantic_image_bucket_balanced",
+        teacher_forcing_profile="hard_sft",
+        teacher_forcing_rollin_base_seed=17,
+    )
+
+
 def _ensure_image(tmp_path: Path) -> Path:
     image_path = tmp_path / "image-root/images/train2017/example.jpg"
     image_path.parent.mkdir(parents=True, exist_ok=True)
@@ -351,15 +373,43 @@ def test_latest_detection_dataset_returns_encoded_sample_with_recursive_sidecar(
     )
 
 
-def test_legacy_latest_compact_config_still_accepts_data_image_root() -> None:
-    config = ConfigLoader.load_materialized_training_config(
-        "configs/stage1/recursive_detection_ce_latest/prod/compact_full_support2.yaml"
+def test_teacher_forcing_dataset_uses_target_ir_without_recursive_sidecar(
+    tmp_path: Path,
+) -> None:
+    sample = _teacher_forcing_dataset(tmp_path)[0]
+
+    assert TEACHER_FORCING_TARGET_IR_KEY in sample
+    assert "recursive_detection_targets" not in sample
+    assert sample["detection_metadata"]["mode"] == "random_order_sft"
+
+
+def test_teacher_forcing_dataset_does_not_call_recursive_sidecar_shift(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def _fail_recursive_shift(*args: object, **kwargs: object) -> object:
+        raise AssertionError("recursive sidecar shift should not run")
+
+    monkeypatch.setattr(
+        DetectionTrainingDataset,
+        "_align_prepared_targets_to_encoded",
+        _fail_recursive_shift,
     )
 
-    assert isinstance(config, LatestDetectionTrainingConfig)
-    assert config.data.train_jsonl.endswith("train.coord.jsonl")
-    assert config.data.val_jsonl.endswith("val.coord.jsonl")
-    assert config.data.image_root == "public_data/coco/rescale_32_1024_bbox_max60"
+    sample = _teacher_forcing_dataset(tmp_path)[0]
+
+    assert TEACHER_FORCING_TARGET_IR_KEY in sample
+    assert "recursive_detection_targets" not in sample
+
+
+def test_legacy_latest_compact_config_is_not_active_teacher_forcing_config() -> None:
+    with pytest.raises(
+        ValueError,
+        match=r"legacy objective ids are unsupported.*recursive_detection_ce",
+    ):
+        ConfigLoader.load_materialized_training_config(
+            "configs/stage1/recursive_detection_ce_latest/prod/compact_full_support2.yaml"
+        )
 
 
 def test_latest_detection_dataset_uses_ordinary_stop_target_weight(

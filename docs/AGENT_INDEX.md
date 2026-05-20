@@ -57,8 +57,8 @@ Human support entrypoints:
   - Shadow surface IDs: `stage1_json_ce` for the JSON chat CE baseline and `stage1_compact_trie_ce` for the compact-full primary architecture direction.
   - Shadow resolver and pipeline map: `src/training/surfaces.py`, `src/training/pipelines/stage1_json_ce.py`, and `src/training/pipelines/stage1_compact_trie_ce.py`.
   - Objective profile order: `token_ce`, `trie_ce`, `coord_soft_ce`, `box_regression`; disabled objectives remain explicit.
-  - Latest compact detection production baseline/comparator: `configs/stage1/recursive_detection_ce_latest/prod/compact_full_support2.yaml`, `src/config/schema.py::LatestDetectionTrainingConfig`, and `src/detection/runtime.py`
-  - Prefix-rollin E1 ablation route: `configs/stage1/recursive_detection_ce_latest/ablation/compact_full_prefix_rollin_balance2.yaml`; compact_full only, with ordinary teacher-forced `<|im_end|>` CE.
+  - legacy/comparator latest compact detection handle: `configs/stage1/recursive_detection_ce_latest/prod/compact_full_support2.yaml`; do not use as a new active teacher-forcing config.
+  - legacy/comparator prefix-rollin E1 handle: `configs/stage1/recursive_detection_ce_latest/ablation/compact_full_prefix_rollin_balance2.yaml`; compact_full only, with ordinary teacher-forced `<|im_end|>` CE.
   - Latest compact detection authoring snippets, not yet consumed by canonical launch configs: `configs/_shared/latest_detection/`
   - Legacy compact bridge example only: `configs/stage1/compact_detection_sequence/smoke/compact_full_tiny.yaml`
 - Stage-2 training:

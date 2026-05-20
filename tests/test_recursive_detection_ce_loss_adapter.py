@@ -30,6 +30,7 @@ from src.detection.objective import (
 )
 from src.detection.tokenization import TokenRole
 from src.metrics.events import flatten_metric_events, reduce_metric_events
+from src.training.teacher_forcing.ir import TeacherForcingTargetIR
 
 
 def _state_weighting(profile_id: str = "uniform_permutation") -> StateWeightingDiagnostics:
@@ -136,6 +137,20 @@ def _instance_trie_gaussian_cfg() -> CoordSoftTargetRuntimeConfig:
         coord_token_start=10,
         coord_token_end=1009,
     )
+
+
+def test_recursive_ce_loss_rejects_teacher_forcing_target_ir() -> None:
+    target_ir = TeacherForcingTargetIR(schema_version=1, atoms=(), metadata={})
+    logits = torch.zeros((1, 1, 4), dtype=torch.float32)
+
+    with pytest.raises(
+        TypeError,
+        match="teacher_forcing_target_ir.*recursive_detection_ce",
+    ):
+        compute_recursive_detection_ce_batch_loss(
+            logits=logits,
+            targets=(target_ir,),  # type: ignore[arg-type]
+        )
 
 
 def test_hard_singleton_ce_matches_standard_log_softmax() -> None:

@@ -47,8 +47,9 @@ Open these docs first:
 - [`docs/training/README.md`](training/README.md)
 - [`docs/training/STAGE1_OBJECTIVE.md`](training/STAGE1_OBJECTIVE.md)
 - [`docs/data/PACKING.md`](data/PACKING.md)
-- [`configs/stage1/recursive_detection_ce_latest/prod/compact_full_support2.yaml`](../configs/stage1/recursive_detection_ce_latest/prod/compact_full_support2.yaml) for the compact recursive detection production baseline/comparator
-- [`configs/stage1/recursive_detection_ce_latest/ablation/compact_full_prefix_rollin_balance2.yaml`](../configs/stage1/recursive_detection_ce_latest/ablation/compact_full_prefix_rollin_balance2.yaml) for the compact-full prefix-rollin E1 ablation route
+- [`configs/stage1/teacher_forcing/`](../configs/stage1/teacher_forcing/) for active compact teacher-forcing Stage-1 configs
+- [`configs/stage1/recursive_detection_ce_latest/prod/compact_full_support2.yaml`](../configs/stage1/recursive_detection_ce_latest/prod/compact_full_support2.yaml) as a legacy/comparator compact recursive detection handle, not an active production objective
+- [`configs/stage1/recursive_detection_ce_latest/ablation/compact_full_prefix_rollin_balance2.yaml`](../configs/stage1/recursive_detection_ce_latest/ablation/compact_full_prefix_rollin_balance2.yaml) as a legacy/comparator compact-full prefix-rollin E1 ablation handle
 
 Open these configs first:
 - `configs/stage1/sft_base.yaml`

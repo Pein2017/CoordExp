@@ -31,6 +31,7 @@ class DetectionRuntimeSupport:
     """Resolved latest-detection runtime support policy."""
 
     recursive_sidecars_required: bool
+    teacher_forcing_target_ir_required: bool = False
 
 
 @dataclass(frozen=True)
@@ -158,7 +159,8 @@ def build_latest_detection_runtime_custom_shim(
 def latest_detection_mode(
     training_config: LatestDetectionTrainingConfig,
 ) -> LatestDetectionRuntimeMode:
-    if training_config.objective.id == "teacher_forcing":
+    objective_id = getattr(training_config.objective, "id", None)
+    if objective_id == "teacher_forcing":
         if training_config.objective.profile not in {
             "hard_sft",
             "pure_valid_set_marginal",
@@ -194,12 +196,15 @@ def latest_detection_mode(
 def resolve_detection_runtime_support(
     training_config: LatestDetectionTrainingConfig,
 ) -> DetectionRuntimeSupport:
+    objective_id = getattr(training_config.objective, "id", None)
+    is_compact = training_config.detection_template.id == "compact_full"
     return DetectionRuntimeSupport(
         recursive_sidecars_required=(
-            training_config.detection_template.id == "compact_full"
-            and training_config.objective.id
-            in {"recursive_detection_ce", "teacher_forcing"}
-        )
+            is_compact and objective_id == "recursive_detection_ce"
+        ),
+        teacher_forcing_target_ir_required=(
+            is_compact and objective_id == "teacher_forcing"
+        ),
     )
 
 
@@ -210,6 +215,38 @@ def assert_latest_detection_runtime_supported(
     tokenizer: object | None = None,
 ) -> None:
     support = resolve_detection_runtime_support(training_config)
+    if support.teacher_forcing_target_ir_required:
+        if bool(training_config.training.get("packing", False)):
+            raise ValueError(
+                "latest teacher_forcing_target_ir requires "
+                "training.packing=false; exact atom-position packing mapping "
+                "is not implemented yet"
+            )
+        if bool(training_config.training.get("eval_packing", False)):
+            raise ValueError(
+                "latest teacher_forcing_target_ir requires "
+                "training.eval_packing=false; exact atom-position packing "
+                "mapping is not implemented yet"
+            )
+        if training_config.packing.static_packing:
+            raise ValueError(
+                "latest teacher_forcing_target_ir requires "
+                "packing.static_packing=false; exact atom-position packing "
+                "mapping is not implemented yet"
+            )
+        if training_config.packing.padding_free_packed:
+            raise ValueError(
+                "latest teacher_forcing_target_ir requires "
+                "packing.padding_free_packed=false; exact atom-position "
+                "packing mapping is not implemented yet"
+            )
+        if getattr(encoded_sample_cache_cfg, "enabled", False):
+            raise ValueError(
+                "latest teacher_forcing_target_ir requires "
+                "training.encoded_sample_cache.enabled=false; exact "
+                "atom-position cache replay is not implemented yet"
+            )
+        return
     if not support.recursive_sidecars_required:
         return
 
