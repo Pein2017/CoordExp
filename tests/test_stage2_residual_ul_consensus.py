@@ -5,6 +5,7 @@ import math
 
 import pytest
 
+from src.trainers.stage2_two_channel import write_ul_clusters_artifact
 from src.trainers.stage2_two_channel.ul_consensus import (
     ULConsensusCluster,
     ULConsensusResult,
@@ -311,6 +312,49 @@ def test_artifact_rows_include_all_decisions_and_required_fields() -> None:
             "pairwise_geometry",
             "consumed_overlap",
         }.issubset(row)
+
+
+def test_ul_clusters_artifact_written_only_when_artifact_policy_enabled(tmp_path) -> None:
+    rows = [
+        {"decision": "promoted", "reason": "consensus", "desc_id": "person"},
+        {"decision": "rejected", "reason": "insufficient_support", "desc_id": "car"},
+        {
+            "decision": "quarantined",
+            "reason": "consumed_target_overlap",
+            "desc_id": "dog",
+        },
+    ]
+
+    disabled_root = tmp_path / "disabled"
+    assert write_ul_clusters_artifact(disabled_root, rows, enabled=False) is None
+    assert not disabled_root.exists()
+
+    enabled_root = tmp_path / "enabled"
+    artifact_path = write_ul_clusters_artifact(enabled_root, rows, enabled=True)
+
+    assert artifact_path == str(enabled_root / "ul_clusters.jsonl")
+    artifact_text = (enabled_root / "ul_clusters.jsonl").read_text(encoding="utf-8")
+    parsed_rows = [
+        json.loads(line)
+        for line in artifact_text.splitlines()
+    ]
+    assert parsed_rows == rows
+    assert [row["decision"] for row in parsed_rows] == [
+        "promoted",
+        "rejected",
+        "quarantined",
+    ]
+    assert artifact_text.splitlines()[0] == json.dumps(
+        rows[0],
+        ensure_ascii=True,
+        sort_keys=True,
+        allow_nan=False,
+    )
+
+    empty_root = tmp_path / "empty"
+    empty_path = write_ul_clusters_artifact(empty_root, [], enabled=True)
+    assert empty_path == str(empty_root / "ul_clusters.jsonl")
+    assert (empty_root / "ul_clusters.jsonl").read_text(encoding="utf-8") == ""
 
 
 @pytest.mark.parametrize(

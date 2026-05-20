@@ -7509,7 +7509,7 @@ def test_reduce_stage2_pending_metrics_global_handles_residual_set_metric_specs(
     assert "stage2/_log_weight_total" not in out
 
 
-def test_stage2_core_loss_logs_preserves_stage2_trie_objective_metrics() -> None:
+def test_stage2_core_loss_logs_preserves_legacy_trie_metrics_without_rewriting() -> None:
     out = build_stage2_core_loss_logs(
         channel="B",
         pipeline_metrics_ctx={
@@ -7518,10 +7518,10 @@ def test_stage2_core_loss_logs_preserves_stage2_trie_objective_metrics() -> None
             "stage2_trie/candidate_count_mean": 4.0,
             "loss/B/stage2_trie_ce": 1.25,
             "loss/stage2_trie_ce": 1.25,
-            "stage2_ab/channel_b/residual_set/atom_count": 1.0,
-            "stage2_ab/channel_b/residual_set/component/type": 0.5,
-            "stage2_ab/channel_b/residual_set/valid_prob_mean": 0.75,
-            "diagnostic/debug_only": 99.0,
+            "trie/target_positions": 99.0,
+            "stage2_ab/channel_b/stage2_trie/target_positions": 88.0,
+            "stage2_ab/channel_b/loss/stage2_trie_ce": 77.0,
+            "diagnostic/debug_only": 66.0,
         },
         token_ce_module_w=0.0,
         run_a_text=False,
@@ -7534,9 +7534,34 @@ def test_stage2_core_loss_logs_preserves_stage2_trie_objective_metrics() -> None
     assert out["stage2_trie/candidate_count_mean"] == pytest.approx(4.0)
     assert out["loss/B/stage2_trie_ce"] == pytest.approx(1.25)
     assert out["loss/stage2_trie_ce"] == pytest.approx(1.25)
+    assert "trie/target_positions" not in out
+    assert "stage2_ab/channel_b/stage2_trie/target_positions" not in out
+    assert "stage2_ab/channel_b/loss/stage2_trie_ce" not in out
+    assert "diagnostic/debug_only" not in out
+
+
+def test_stage2_core_loss_logs_passes_residual_set_metrics_only_under_stable_prefix() -> None:
+    out = build_stage2_core_loss_logs(
+        channel="B",
+        pipeline_metrics_ctx={
+            "stage2_ab/channel_b/residual_set/atom_count": 1.0,
+            "stage2_ab/channel_b/residual_set/component/type": 0.5,
+            "stage2_ab/channel_b/residual_set/valid_prob_mean": 0.75,
+            "residual_set/atom_count": 99.0,
+            "stage2_ab/channel_b/residual/atom_count": 88.0,
+            "diagnostic/debug_only": 99.0,
+        },
+        token_ce_module_w=0.0,
+        run_a_text=False,
+        token_desc_ce_weight=1.0,
+        fn_desc_ce_weight=1.0,
+    )
+
     assert out["stage2_ab/channel_b/residual_set/atom_count"] == pytest.approx(1.0)
     assert out["stage2_ab/channel_b/residual_set/component/type"] == pytest.approx(0.5)
     assert out["stage2_ab/channel_b/residual_set/valid_prob_mean"] == pytest.approx(0.75)
+    assert "residual_set/atom_count" not in out
+    assert "stage2_ab/channel_b/residual/atom_count" not in out
     assert "diagnostic/debug_only" not in out
 
 

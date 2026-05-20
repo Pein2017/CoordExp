@@ -85,6 +85,31 @@ from .teacher_forcing.token_types import build_token_type_masks
 logger = logging.getLogger(__name__)
 
 
+def write_ul_clusters_artifact(
+    root: os.PathLike[str] | str,
+    rows: Sequence[Mapping[str, Any]],
+    enabled: bool,
+) -> Optional[str]:
+    if not enabled:
+        return None
+
+    root_path = os.fspath(root)
+    os.makedirs(root_path, exist_ok=True)
+    artifact_path = os.path.join(root_path, "ul_clusters.jsonl")
+    with open(artifact_path, "w", encoding="utf-8") as f:
+        for row in rows:
+            f.write(
+                json.dumps(
+                    dict(row),
+                    ensure_ascii=True,
+                    sort_keys=True,
+                    allow_nan=False,
+                )
+                + "\n"
+            )
+    return artifact_path
+
+
 def _stage2_batch_timing_enabled() -> bool:
     raw = str(os.environ.get("COORDEXP_STAGE2_BATCH_TIMING", "")).strip().lower()
     return raw in {"1", "true", "yes", "on"}
