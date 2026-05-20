@@ -1348,9 +1348,9 @@ def test_channel_b_compact_full_sorted_fn_desc_reaches_prefix_meta(
         (
             f"{OBJECT_REF_START_TOKEN}cat{BOX_START_TOKEN}"
             "<|coord_30|><|coord_20|><|coord_10|><|coord_40|>",
+            2.0,
             0.0,
-            1.0,
-            "empty_valid_object_set",
+            "malformed_compact_full",
         ),
     ],
 )

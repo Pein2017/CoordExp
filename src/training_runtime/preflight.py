@@ -76,6 +76,7 @@ def validate_training_runtime_preflight(
         config,
         runtime_plan=runtime_plan,
     )
+    _validate_teacher_forcing_stage2_packing(config, runtime_plan=result.runtime_plan)
     if (
         result.encoded_cache.enabled
         and not result.encoded_cache.allowed
@@ -90,6 +91,27 @@ def validate_training_runtime_preflight(
             f"{TEACHER_FORCING_EPOCH_VARYING_ROLLIN_BYPASS_REASON}"
         )
     return result
+
+
+def _validate_teacher_forcing_stage2_packing(
+    config: Any,
+    *,
+    runtime_plan: TrainingRuntimePlan,
+) -> None:
+    if _read_path(config, ("objective", "id")) != "teacher_forcing":
+        return
+    if _read_path(config, ("custom", "trainer_variant")) != "stage2_two_channel":
+        return
+    if runtime_plan.post_rollout_packing_owner != "trainer":
+        return
+    training = _read_path(config, ("training",))
+    if bool(_read_value(training, "packing")):
+        raise ValueError(
+            "objective.id=teacher_forcing with custom.trainer_variant="
+            "stage2_two_channel rejects training.packing=true before rollout "
+            "setup or model forward; exact atom-position packing mapping is not "
+            "implemented. Set training.packing=false for teacher_forcing."
+        )
 
 
 def _is_epoch_varying_teacher_forcing_rollin(config: Any) -> bool:

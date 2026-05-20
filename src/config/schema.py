@@ -112,12 +112,16 @@ LEGACY_STAGE2_TEACHER_FORCING_MODULES: set[str] = {
     "bbox_geo",
     "bbox_size_aux",
     "coord_reg",
+    "soft_ce",
+    "w1",
     "token_ce",
     "coord_gate",
     "text_gate",
 }
 LEGACY_STAGE2_TEACHER_FORCING_CONFIG_KEYS: set[str] = {
+    "coord_gate",
     "coord_gate_weight",
+    "text_gate",
     "text_gate_weight",
     "soft_ce_weight",
     "w1_weight",

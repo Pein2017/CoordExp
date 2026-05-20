@@ -881,6 +881,65 @@ def test_stage2_pipeline_rejects_legacy_modules_under_teacher_forcing() -> None:
         TrainingConfig.from_mapping(raw, prompts)
 
 
+@pytest.mark.parametrize(
+    "legacy_module",
+    ["bbox_geo", "bbox_size_aux", "coord_reg", "soft_ce", "w1", "token_ce"],
+)
+def test_stage2_pipeline_rejects_each_legacy_module_under_teacher_forcing(
+    legacy_module: str,
+) -> None:
+    raw = _make_stage2_training_payload()
+    raw["objective"] = _teacher_forcing_objective()
+    raw["stage2_ab"]["pipeline"] = {
+        "objective": [
+            {
+                "name": legacy_module,
+                "enabled": True,
+                "weight": 1.0,
+                "channels": ["A", "B"],
+                "application": {"preset": "anchor_only"},
+                "config": {},
+            }
+        ],
+        "diagnostics": [],
+    }
+
+    prompts = ConfigLoader.resolve_prompts(raw)
+    with pytest.raises(
+        ValueError,
+        match=rf"teacher_forcing.*stage2_ab\.pipeline\.objective.*{legacy_module}",
+    ):
+        TrainingConfig.from_mapping(raw, prompts)
+
+
+@pytest.mark.parametrize(
+    "legacy_key",
+    ["coord_gate", "text_gate", "coord_gate_weight", "text_gate_weight"],
+)
+def test_stage2_pipeline_rejects_legacy_gate_configs_under_teacher_forcing(
+    legacy_key: str,
+) -> None:
+    raw = _make_stage2_training_payload()
+    raw["objective"] = _teacher_forcing_objective()
+    raw["stage2_ab"]["pipeline"] = {
+        "objective": [
+            {
+                "name": "hard_sft",
+                "enabled": True,
+                "weight": 1.0,
+                "channels": ["A", "B"],
+                "application": {"preset": "target_ir"},
+                "config": {legacy_key: 1.0},
+            }
+        ],
+        "diagnostics": [],
+    }
+
+    prompts = ConfigLoader.resolve_prompts(raw)
+    with pytest.raises(ValueError, match=rf"teacher_forcing.*{legacy_key}"):
+        TrainingConfig.from_mapping(raw, prompts)
+
+
 def test_stage2_pipeline_compiles_empty_pipeline_from_hard_sft_objective() -> None:
     raw = _make_stage2_training_payload()
     raw["objective"] = _hard_sft_teacher_forcing_objective()

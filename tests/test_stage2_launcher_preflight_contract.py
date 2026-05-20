@@ -5,7 +5,28 @@ from pathlib import Path
 
 import pytest
 
+from src.training_runtime import (
+    resolve_training_runtime_plan,
+    validate_training_runtime_preflight,
+)
 from src.trainers.rollout_matching.preflight import build_stage2_launcher_preflight
+
+
+def test_stage2_teacher_forcing_packing_fails_before_launcher_rollout_setup() -> None:
+    training_config = types.SimpleNamespace(
+        objective=types.SimpleNamespace(id="teacher_forcing"),
+        custom=types.SimpleNamespace(trainer_variant="stage2_two_channel"),
+        training={"packing": True},
+    )
+
+    with pytest.raises(
+        ValueError,
+        match=r"teacher_forcing.*stage2_two_channel.*training\.packing=true",
+    ):
+        validate_training_runtime_preflight(
+            training_config,
+            runtime_plan=resolve_training_runtime_plan("stage2_two_channel"),
+        )
 
 
 def test_stage2_launcher_preflight_resolves_expected_fields_for_server_cfg() -> None:

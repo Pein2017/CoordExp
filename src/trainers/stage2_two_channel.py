@@ -4435,6 +4435,19 @@ class Stage2TwoChannelTrainer(
     def compute_loss(
         self, model, inputs, return_outputs=False, num_items_in_batch=None
     ):
+        objective_cfg = getattr(self, "teacher_forcing_objective_cfg", None)
+        if objective_cfg is not None and bool(getattr(objective_cfg, "enabled", True)):
+            packing_enabled_fn = getattr(self, "_packing_enabled", None)
+            packing_enabled = (
+                bool(packing_enabled_fn()) if callable(packing_enabled_fn) else False
+            )
+            if packing_enabled:
+                raise ValueError(
+                    "objective.id=teacher_forcing with custom.trainer_variant="
+                    "stage2_two_channel rejects packing before model forward; "
+                    "exact atom-position packing mapping is not implemented."
+                )
+
         channel = inputs.pop("_stage2_ab_channel", None)
         if channel not in {"A", "B"}:
             channel = "B"

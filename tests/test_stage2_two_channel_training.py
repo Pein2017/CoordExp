@@ -1,10 +1,13 @@
 """Canonical Stage-2 two-channel import-surface tests."""
 
 import importlib
+from types import SimpleNamespace
 
 import pytest
+import torch
 
 from test_stage2_ab_training import *  # noqa: F401,F403
+from src.trainers.stage2_two_channel import Stage2TwoChannelTrainer
 
 
 @pytest.mark.parametrize(
@@ -33,6 +36,29 @@ def test_stage2_two_channel_target_builder_helper_import_surface_remains_availab
     assert callable(_build_duplicate_control_divergence_diagnostics)
     assert callable(_compute_duplicate_diagnostics)
     assert callable(_apply_channel_b_duplicate_control)
+
+
+def test_stage2_trainer_keeps_teacher_forcing_packing_guard_before_forward() -> None:
+    class _Model:
+        def __call__(self, **kwargs):  # pragma: no cover - guard must fire first
+            raise AssertionError("model forward should not run for unsupported packing")
+
+    trainer = object.__new__(Stage2TwoChannelTrainer)
+    trainer.teacher_forcing_objective_cfg = SimpleNamespace(enabled=True)
+    trainer._packing_enabled = lambda: True
+
+    with pytest.raises(
+        ValueError,
+        match=r"teacher_forcing.*stage2_two_channel.*packing",
+    ):
+        trainer.compute_loss(
+            _Model(),
+            {
+                "_stage2_ab_channel": "A",
+                "_rollout_matching_meta": [],
+                "input_ids": torch.tensor([[1, 2]], dtype=torch.long),
+            },
+        )
 
 
 @pytest.mark.parametrize(

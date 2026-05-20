@@ -74,6 +74,7 @@ DETECTION_MODEL_INPUT_KEYS: frozenset[str] = frozenset(
         "cache_position",
         "past_key_values",
         "use_cache",
+        "output_router_logits",
         "logits_to_keep",
         "cu_seq_lens_q",
         "cu_seq_lens_k",

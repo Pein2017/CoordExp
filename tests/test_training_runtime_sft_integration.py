@@ -21,6 +21,7 @@ from src.sft import (
     resolve_trainer_cls,
 )
 from src.training_runtime import (
+    validate_training_runtime_preflight,
     resolve_training_runtime_plan,
     resolve_training_runtime_profile,
 )
@@ -93,6 +94,35 @@ def test_validate_stage1_static_packing_policy_allows_stage2_trainer_owned_packi
         packing_cfg=PackingRuntimeConfig(enabled=True, mode="dynamic"),
         trainer_variant=variant,
     )
+
+
+def test_teacher_forcing_stage2_packing_fails_runtime_preflight() -> None:
+    config = SimpleNamespace(
+        objective=SimpleNamespace(id="teacher_forcing"),
+        custom=SimpleNamespace(trainer_variant="stage2_two_channel"),
+        training={"packing": True},
+    )
+
+    with pytest.raises(ValueError, match=r"teacher_forcing.*stage2_two_channel.*packing"):
+        validate_training_runtime_preflight(
+            config,
+            runtime_plan=resolve_training_runtime_plan("stage2_two_channel"),
+        )
+
+
+def test_non_teacher_forcing_stage2_packing_stays_trainer_owned() -> None:
+    config = SimpleNamespace(
+        objective=SimpleNamespace(id="stage2_ab"),
+        custom=SimpleNamespace(trainer_variant="stage2_two_channel"),
+        training={"packing": True},
+    )
+
+    preflight = validate_training_runtime_preflight(
+        config,
+        runtime_plan=resolve_training_runtime_plan("stage2_two_channel"),
+    )
+
+    assert preflight.runtime_plan.post_rollout_packing_owner == "trainer"
 
 
 def test_sft_runtime_preflight_rejects_teacher_forcing_encoded_sample_cache() -> None:
@@ -258,6 +288,8 @@ def test_teacher_forcing_objective_mixin_computes_loss_through_runner() -> None:
     inputs = {
         "input_ids": torch.tensor([[0, 1]], dtype=torch.long),
         "attention_mask": torch.tensor([[1, 1]], dtype=torch.long),
+        "position_ids": torch.tensor([[0, 1]], dtype=torch.long),
+        "output_router_logits": True,
         "labels": torch.tensor([[-100, 1]], dtype=torch.long),
         "teacher_forcing_target_ir": (target_ir,),
     }
@@ -275,8 +307,9 @@ def test_teacher_forcing_objective_mixin_computes_loss_through_runner() -> None:
         stop_token_id=9,
     )
 
+    model = _Model(logits)
     loss, outputs = trainer.compute_loss(
-        _Model(logits),
+        model,
         inputs,
         return_outputs=True,
     )
@@ -284,6 +317,11 @@ def test_teacher_forcing_objective_mixin_computes_loss_through_runner() -> None:
     expected = -torch.log(torch.softmax(logits[0, 0], dim=-1)[[1, 2]].sum())
     assert loss.item() == pytest.approx(expected.item())
     assert outputs.logits is logits
+    assert len(model.calls) == 1
+    assert "teacher_forcing_target_ir" not in model.calls[0]
+    assert "labels" not in model.calls[0]
+    assert model.calls[0]["position_ids"] is inputs["position_ids"]
+    assert model.calls[0]["output_router_logits"] is True
 
 
 def test_static_packing_accumulation_warning_is_skipped_for_trainer_owned_packing(
