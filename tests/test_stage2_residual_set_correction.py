@@ -29,16 +29,20 @@ def make_object(
     y1: int = 20,
     x2: int = 30,
     y2: int = 40,
+    loss_weight: float = 1.0,
 ) -> ResidualObject:
+    first_token_text = desc.split("_", 1)[0]
     return ResidualObject(
         object_id=object_id,
         desc_token_ids=tuple(ord(ch) for ch in desc),
+        desc_token_texts=(first_token_text, *(None for _ in desc[1:])),
         coord_token_ids={
             "x1": coord_token(x1),
             "y1": coord_token(y1),
             "x2": coord_token(x2),
             "y2": coord_token(y2),
         },
+        loss_weight=loss_weight,
     )
 
 
@@ -111,6 +115,39 @@ def test_shared_description_prefix_coalesces_one_valid_boundary_action() -> None
     assert action.selected_object_id is None
 
 
+def test_shared_description_prefix_uses_supplied_token_text_for_non_character_token_ids() -> None:
+    state = make_state_for_objects(
+        ResidualObject(
+            object_id="a",
+            desc_token_ids=(50_257, 61_000),
+            desc_token_texts=("person", "_left"),
+            coord_token_ids={
+                "x1": coord_token(120),
+                "y1": coord_token(20),
+                "x2": coord_token(30),
+                "y2": coord_token(40),
+            },
+        ),
+        ResidualObject(
+            object_id="b",
+            desc_token_ids=(50_257, 62_000),
+            desc_token_texts=("person", "_right"),
+            coord_token_ids={
+                "x1": coord_token(640),
+                "y1": coord_token(20),
+                "x2": coord_token(30),
+                "y2": coord_token(40),
+            },
+        ),
+    )
+
+    action = only_action(state.valid_actions_at_boundary())
+
+    assert action.token_id == 50_257
+    assert action.token_text == "person"
+    assert action.candidate_ids_after == frozenset({"a", "b"})
+
+
 def test_stop_is_valid_only_when_residual_set_is_empty() -> None:
     nonempty = make_state_for_objects(make_object("a", "person_left", x1=120))
     empty = ResidualState(
@@ -127,6 +164,19 @@ def test_stop_is_valid_only_when_residual_set_is_empty() -> None:
     assert stop.token_id == 999
     assert stop.token_text == "<|im_end|>"
     assert stop.candidate_ids_after == frozenset()
+
+
+def test_forged_stop_transition_is_rejected_for_nonempty_residual_state() -> None:
+    state = make_state_for_objects(make_object("a", "person_left", x1=120))
+    forged_stop = ValidAction(
+        token_id=999,
+        token_role=TokenRole.STOP,
+        token_text="<|im_end|>",
+        candidate_ids_after=frozenset(),
+    )
+
+    with pytest.raises(ValueError, match="empty residual state"):
+        transition_state(state, forged_stop)
 
 
 def test_x1_ambiguity_filters_candidates_by_exact_coord_token() -> None:
@@ -201,6 +251,114 @@ def test_empty_non_stop_transition_is_guarded() -> None:
 
     with pytest.raises(ValueError, match="empty active candidates"):
         transition_state(state, bad_action)
+
+
+def test_residual_object_constructor_validates_core_invariants() -> None:
+    with pytest.raises(ValueError, match="object_id"):
+        make_object("", "person_left", x1=120)
+
+    with pytest.raises(ValueError, match="desc_token_ids"):
+        ResidualObject(
+            object_id="a",
+            desc_token_ids=(),
+            desc_token_texts=(),
+            coord_token_ids={
+                "x1": coord_token(120),
+                "y1": coord_token(20),
+                "x2": coord_token(30),
+                "y2": coord_token(40),
+            },
+        )
+
+    with pytest.raises(ValueError, match="coord_token_ids"):
+        ResidualObject(
+            object_id="a",
+            desc_token_ids=(101,),
+            desc_token_texts=("person",),
+            coord_token_ids={
+                "x1": coord_token(120),
+                "y1": coord_token(20),
+                "x2": coord_token(30),
+            },
+        )
+
+    with pytest.raises(ValueError, match="loss_weight"):
+        make_object("a", "person_left", x1=120, loss_weight=float("nan"))
+
+
+def test_original_coord_mapping_mutation_does_not_change_residual_object() -> None:
+    coord_tokens = {
+        "x1": coord_token(120),
+        "y1": coord_token(20),
+        "x2": coord_token(30),
+        "y2": coord_token(40),
+    }
+    obj = ResidualObject(
+        object_id="a",
+        desc_token_ids=(101,),
+        desc_token_texts=("person",),
+        coord_token_ids=coord_tokens,
+    )
+
+    coord_tokens["x1"] = coord_token(999)
+
+    assert obj.coord_token_ids["x1"] == coord_token(120)
+
+
+def test_residual_state_constructor_validates_candidate_sets() -> None:
+    obj = make_object("a", "person_left", x1=120)
+
+    with pytest.raises(ValueError, match="remaining_object_ids"):
+        ResidualState(
+            objects=(obj,),
+            remaining_object_ids=frozenset({"missing"}),
+            active_candidate_ids=frozenset(),
+            stop_token_id=999,
+        )
+
+    with pytest.raises(ValueError, match="active_candidate_ids"):
+        ResidualState(
+            objects=(obj,),
+            remaining_object_ids=frozenset({"a"}),
+            active_candidate_ids=frozenset({"missing"}),
+            stop_token_id=999,
+        )
+
+
+def test_valid_action_constructor_validates_role_consistency() -> None:
+    with pytest.raises(ValueError, match="selected_object_id"):
+        ValidAction(
+            token_id=101,
+            token_role=TokenRole.TEXT,
+            token_text="person",
+            candidate_ids_after=frozenset({"a"}),
+            selected_object_id="missing",
+        )
+
+    with pytest.raises(ValueError, match="COORD requires coord_role"):
+        ValidAction(
+            token_id=coord_token(120),
+            token_role=TokenRole.COORD,
+            token_text=str(coord_token(120)),
+            candidate_ids_after=frozenset({"a"}),
+        )
+
+    with pytest.raises(ValueError, match="TEXT requires coord_role"):
+        ValidAction(
+            token_id=101,
+            token_role=TokenRole.TEXT,
+            token_text="person",
+            candidate_ids_after=frozenset({"a"}),
+            coord_role="x1",
+        )
+
+    with pytest.raises(ValueError, match="STOP requires empty"):
+        ValidAction(
+            token_id=999,
+            token_role=TokenRole.STOP,
+            token_text="<|im_end|>",
+            candidate_ids_after=frozenset({"a"}),
+        )
 
 
 def test_correction_event_and_atom_draft_are_pure_records_without_ir_adapter() -> None:
