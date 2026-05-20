@@ -7,9 +7,8 @@ from typing import Any, Mapping, Sequence
 
 import pytest
 
-from src.config import ConfigLoader, LatestDetectionTrainingConfig
 from src.detection.dataset import DetectionTrainingDataset
-from src.training.teacher_forcing.constants import TEACHER_FORCING_TARGET_IR_KEY
+from src.detection.objective import compute_eos_trust_weight
 
 
 _SPECIAL_TOKEN_RE = re.compile(r"<\|[^|]+\|>")
@@ -295,6 +294,7 @@ def _dataset(
     tmp_path: Path,
     *,
     swift_template: Any | None = None,
+    eos_trust_weight_config: Mapping[str, Any] | None = None,
 ) -> DetectionTrainingDataset:
     jsonl_path = tmp_path / "train.coord.jsonl"
     _write_jsonl(jsonl_path, [_raw_row()])
@@ -308,30 +308,11 @@ def _dataset(
         object_ordering="random_permutation",
         user_prompt="Detect every object.",
         system_prompt="You are a detector.",
+        max_objects=60,
         seed=123,
         state_weighting="uniform_permutation",
         normalization="semantic_image_bucket_balanced",
-    )
-
-
-def _teacher_forcing_dataset(tmp_path: Path) -> DetectionTrainingDataset:
-    jsonl_path = tmp_path / "train.coord.jsonl"
-    _write_jsonl(jsonl_path, [_raw_row()])
-    _ensure_image(tmp_path)
-    return DetectionTrainingDataset.from_jsonl(
-        jsonl_path,
-        swift_template=FakeSwiftTemplate(),
-        image_root=tmp_path / "image-root",
-        detection_template_id="compact_full",
-        mode="random_order_sft",
-        object_ordering="random_permutation",
-        user_prompt="Detect every object.",
-        system_prompt="You are a detector.",
-        seed=123,
-        state_weighting="uniform_permutation",
-        normalization="semantic_image_bucket_balanced",
-        teacher_forcing_profile="hard_sft",
-        teacher_forcing_rollin_base_seed=17,
+        eos_trust_weight_config=eos_trust_weight_config,
     )
 
 
@@ -342,7 +323,7 @@ def _ensure_image(tmp_path: Path) -> Path:
     return image_path
 
 
-def test_latest_detection_dataset_returns_encoded_sample_with_recursive_sidecar(
+def test_detection_training_dataset_returns_encoded_sample_with_recursive_sidecar(
     tmp_path: Path,
 ) -> None:
     sample = _dataset(tmp_path)[0]
@@ -373,54 +354,19 @@ def test_latest_detection_dataset_returns_encoded_sample_with_recursive_sidecar(
     )
 
 
-def test_teacher_forcing_dataset_uses_target_ir_without_recursive_sidecar(
+def test_detection_training_dataset_applies_eos_trust_without_prefix_rollin(
     tmp_path: Path,
 ) -> None:
-    sample = _teacher_forcing_dataset(tmp_path)[0]
-
-    assert TEACHER_FORCING_TARGET_IR_KEY in sample
-    assert "recursive_detection_targets" not in sample
-    assert sample["detection_metadata"]["mode"] == "random_order_sft"
-
-
-def test_teacher_forcing_dataset_does_not_call_recursive_sidecar_shift(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    def _fail_recursive_shift(*args: object, **kwargs: object) -> object:
-        raise AssertionError("recursive sidecar shift should not run")
-
-    monkeypatch.setattr(
-        DetectionTrainingDataset,
-        "_align_prepared_targets_to_encoded",
-        _fail_recursive_shift,
-    )
-
-    sample = _teacher_forcing_dataset(tmp_path)[0]
-
-    assert TEACHER_FORCING_TARGET_IR_KEY in sample
-    assert "recursive_detection_targets" not in sample
-
-
-def test_legacy_latest_compact_config_is_not_active_teacher_forcing_config() -> None:
-    with pytest.raises(
-        ValueError,
-        match=r"legacy objective ids are unsupported.*recursive_detection_ce",
-    ):
-        ConfigLoader.load_materialized_training_config(
-            "configs/stage1/recursive_detection_ce_latest/prod/compact_full_support2.yaml"
-        )
-
-
-def test_latest_detection_dataset_uses_ordinary_stop_target_weight(
-    tmp_path: Path,
-) -> None:
-    dataset = _dataset(tmp_path)
+    eos_trust_weight_config = {"source": "constant_ablation", "value": 0.25}
+    dataset = _dataset(tmp_path, eos_trust_weight_config=eos_trust_weight_config)
 
     sample = dataset[0]
 
     assert sample["detection_metadata"]["mode"] == "random_permutation_et_rmp_ce"
     assert "rollin_k" not in sample["detection_metadata"]
+    assert sample["detection_metadata"]["eos_trust_weight"] == pytest.approx(
+        compute_eos_trust_weight(3, eos_trust_weight_config)
+    )
 
     supervised_positions = tuple(
         index for index, label in enumerate(sample["labels"]) if label != -100
@@ -435,11 +381,11 @@ def test_latest_detection_dataset_uses_ordinary_stop_target_weight(
         target for target in targets if target.teacher_token_id != im_end_id
     ]
     assert eos_targets
-    assert all(target.loss_weight == pytest.approx(1.0) for target in eos_targets)
+    assert all(target.loss_weight == pytest.approx(0.25) for target in eos_targets)
     assert all(target.loss_weight == pytest.approx(1.0) for target in non_eos_targets)
 
 
-def test_latest_detection_dataset_random_order_is_epoch_deterministic(
+def test_detection_training_dataset_random_order_is_epoch_deterministic(
     tmp_path: Path,
 ) -> None:
     dataset = _dataset(tmp_path)
@@ -459,7 +405,7 @@ def test_latest_detection_dataset_random_order_is_epoch_deterministic(
     assert len(observed) > 1
 
 
-def test_latest_detection_dataset_allows_swift_image_token_expansion(
+def test_detection_training_dataset_allows_swift_image_token_expansion(
     tmp_path: Path,
 ) -> None:
     sample = _dataset(tmp_path, swift_template=ImageExpandingSwiftTemplate())[0]
@@ -471,14 +417,14 @@ def test_latest_detection_dataset_allows_swift_image_token_expansion(
     )
 
 
-def test_latest_detection_dataset_rejects_encode_sidecar_drift(tmp_path: Path) -> None:
+def test_detection_training_dataset_rejects_encode_sidecar_drift(tmp_path: Path) -> None:
     dataset = _dataset(tmp_path, swift_template=DriftingSwiftTemplate())
 
     with pytest.raises(ValueError, match="encoded input_ids and labels"):
         dataset[0]
 
 
-def test_latest_detection_dataset_sft_mode_does_not_attach_recursive_sidecar(
+def test_detection_training_dataset_sft_mode_does_not_attach_recursive_sidecar(
     tmp_path: Path,
 ) -> None:
     jsonl_path = tmp_path / "train.coord.jsonl"
@@ -493,6 +439,7 @@ def test_latest_detection_dataset_sft_mode_does_not_attach_recursive_sidecar(
         object_ordering="sorted",
         user_prompt="Detect every object.",
         system_prompt=None,
+        max_objects=60,
         seed=123,
         state_weighting="none",
         normalization="token_mean",
@@ -520,9 +467,25 @@ def test_prefix_rollin_dataset_masks_prefix_and_keeps_weighted_im_end_target(
         object_ordering="random_permutation",
         user_prompt="Detect every object.",
         system_prompt="You are a detector.",
+        max_objects=60,
         seed=123,
         state_weighting="uniform_permutation",
         normalization="semantic_image_bucket_balanced",
+        eos_trust_weight_config={
+            "source": "empirical_unlabeled_poisson_v0",
+            "expected_unlabeled_count": {
+                "intercept": -0.35,
+                "slope": 0.43,
+                "floor": 0.0,
+            },
+            "trust_mapping": {
+                "type": "log_linear_missing_count_penalty",
+                "penalty_per_missing": 1.0,
+                "temperature": 1.0,
+                "min_weight": 0.0,
+                "max_weight": 1.0,
+            },
+        },
     )
     dataset.set_epoch(3)
 
@@ -554,10 +517,13 @@ def test_prefix_rollin_dataset_masks_prefix_and_keeps_weighted_im_end_target(
         if target.teacher_token_id == im_end_id
     ]
     assert eos_targets
-    assert eos_targets[-1].loss_weight == pytest.approx(1.0)
+    assert eos_targets[-1].loss_weight == pytest.approx(
+        sample["detection_metadata"]["eos_trust_weight"]
+    )
+    assert 0.0 <= sample["detection_metadata"]["eos_trust_weight"] <= 1.0
 
 
-def test_latest_detection_dataset_rejects_missing_image_path(tmp_path: Path) -> None:
+def test_detection_training_dataset_rejects_missing_image_path(tmp_path: Path) -> None:
     jsonl_path = tmp_path / "train.coord.jsonl"
     _write_jsonl(jsonl_path, [_raw_row()])
     dataset = DetectionTrainingDataset.from_jsonl(
@@ -569,6 +535,7 @@ def test_latest_detection_dataset_rejects_missing_image_path(tmp_path: Path) -> 
         object_ordering="random_permutation",
         user_prompt="Detect every object.",
         system_prompt="You are a detector.",
+        max_objects=60,
         seed=123,
         state_weighting="uniform_permutation",
         normalization="semantic_image_bucket_balanced",
@@ -578,7 +545,7 @@ def test_latest_detection_dataset_rejects_missing_image_path(tmp_path: Path) -> 
         dataset[0]
 
 
-def test_latest_detection_dataset_rejects_absolute_image_outside_root(
+def test_detection_training_dataset_rejects_absolute_image_outside_root(
     tmp_path: Path,
 ) -> None:
     jsonl_path = tmp_path / "train.coord.jsonl"
@@ -597,6 +564,7 @@ def test_latest_detection_dataset_rejects_absolute_image_outside_root(
         object_ordering="random_permutation",
         user_prompt="Detect every object.",
         system_prompt="You are a detector.",
+        max_objects=60,
         seed=123,
         state_weighting="uniform_permutation",
         normalization="semantic_image_bucket_balanced",

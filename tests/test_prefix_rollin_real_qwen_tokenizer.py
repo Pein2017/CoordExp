@@ -26,7 +26,7 @@ _QWEN3_VL_2B_COORD_EXP_CANDIDATES = (
 )
 
 _QWEN3_VL_2B_COORD_EXP_ADAPTER_REL = Path(
-    "outputs/stage1_2b/recursive_detection_ce_latest/"
+    "outputs/stage1_2b/recursive_detection_ce/"
     "compact_full_et_rmp_ce_support2_bsz16_4epoch_tokenrows_v2/"
     "compact-full-et-rmp-ce-support2-bsz16-4epoch-tokenrows-v2/"
     "v0-20260504-071356/checkpoint-3664"

@@ -1,6 +1,6 @@
 ---
 title: Full Idea v4
-status: superseded
+status: active
 scope: stage1-stage2
 topics: [stage1, stage2, pseudo-positive, pseudo-label, clean-prefix, triage-posterior, k4]
 supersedes: progress/directions/full_idea_v3.md
@@ -17,18 +17,12 @@ references:
 
 # Full Idea v4
 
-This note is a superseded research-history summary for the Stage-1 plus
-Stage-2 pseudo-positive direction.
-
-Current training guidance lives in `docs/training/` and the stable OpenSpec
-contracts. In particular, duplicate-burst unlikelihood training support has
-been removed; mentions in this note are historical evidence, not launch
-guidance.
+This note is the new research-history summary for the current Stage-1 plus Stage-2 direction.
 
 Read it after the stable docs/spec layer when you want one place that explains:
 
-- what the latest Stage-1 pipeline is actually responsible for,
-- what the earlier Stage-2 pseudo-positive pipeline was doing,
+- what the current Stage-1 pipeline is actually responsible for,
+- what the current Stage-2 pseudo-positive pipeline is actually doing,
 - why `K=4` now matters,
 - and how the current contract differs from:
   - [full_idea_v3.md](full_idea_v3.md),
@@ -71,7 +65,7 @@ In one sentence:
 
 > Keep Stage-1 strong and teacher-forced, keep Stage-2 clean-prefix and one-forward, and make pseudo-labeling a small, typed, anchor-centric, support-weighted `K=4` extension rather than a free-form rebuilt pseudo-target.
 
-## The Latest Stage-1 Pipeline
+## The Current Stage-1 Pipeline
 
 ### What Stage-1 is for now
 
@@ -90,7 +84,7 @@ Current handles:
   - [Stage-1 Objective](../../docs/training/STAGE1_OBJECTIVE.md)
 - config:
   - [configs/stage1/sft_base.yaml](../../configs/stage1/sft_base.yaml)
-  - [configs/stage1/profiles/4b/coord_soft_ce_gate_coco80_desc_first.yaml](../../configs/stage1/profiles/4b/coord_soft_ce_gate_coco80_desc_first.yaml)
+  - [configs/stage1/profiles/4b/coord_soft_ce_gate_coco80_desc_first_1024_lvis_proxy.yaml](../../configs/stage1/profiles/4b/coord_soft_ce_gate_coco80_desc_first_1024_lvis_proxy.yaml)
   - [configs/stage1/lvis_bbox_max60_1024.yaml](../../configs/stage1/lvis_bbox_max60_1024.yaml)
 - code:
   - [src/sft.py](../../src/sft.py)
@@ -111,7 +105,7 @@ The active Stage-1 surface is:
 - optional `bbox_size_aux`,
 - optional coord-offset adapter.
 
-This matters because the latest Stage-1 is no longer just a token-format warmup.
+This matters because the current Stage-1 is no longer just a token-format warmup.
 It is the checkpoint-quality foundation that Stage-2 can build from.
 
 Concrete handles:
@@ -142,7 +136,7 @@ That separation is part of the current design maturity:
 
 The separation is visible in the fact that Stage-2 rejects legacy Stage-1-style objective authoring as the active Channel-B surface and instead uses `stage2_ab.pipeline.objective[]`.
 
-## The Latest Stage-2 Pipeline
+## The Current Stage-2 Pipeline
 
 ### The active mental model
 
@@ -352,31 +346,31 @@ Concrete handle:
 
 - [src/config/schema.py](../../src/config/schema.py)
 
-### Historical objective surface was module-based
+### Current objective surface is module-based
 
-At the time of this note, the Stage-2 prod recipe declared objectives through:
+The active Stage-2 prod recipe declares objectives through:
 
 - `token_ce`
-- `loss_duplicate_burst_unlikelihood` (now retired)
+- `loss_duplicate_burst_unlikelihood`
 - `bbox_geo`
 - `bbox_size_aux`
 - `coord_reg`
 
 inside `stage2_ab.pipeline.objective[]`.
 
-That was a cleaner and more reproducible surface than older free-form
-descriptions, but the duplicate-burst UL objective is no longer live training
-support.
+That is a cleaner and more reproducible surface than older free-form descriptions.
 
-### Stronger geometry continuation variants
+### Stronger Stage-2 continuation variants
 
-The current production tree includes hardened variants:
+The current production tree keeps a compact Stage-2 surface:
 
-- [ab_mixed_coco1024_bmajority_channel_b_pseudo_positive_hardened_spiky_coord.yaml](../../configs/stage2_two_channel/prod/ab_mixed_coco1024_bmajority_channel_b_pseudo_positive_hardened_spiky_coord.yaml)
-- [ab_mixed_coco1024_bmajority_channel_b_pseudo_positive_hardened_spiky_coord-from_stage1.yaml](../../configs/stage2_two_channel/prod/ab_mixed_coco1024_bmajority_channel_b_pseudo_positive_hardened_spiky_coord-from_stage1.yaml)
+- [a_only.yaml](../../configs/stage2_two_channel/prod/a_only.yaml)
+- [ab_mixed.yaml](../../configs/stage2_two_channel/prod/ab_mixed.yaml)
+- [ab_mixed_coco1024_bmajority_channel_b_pseudo_positive.yaml](../../configs/stage2_two_channel/prod/ab_mixed_coco1024_bmajority_channel_b_pseudo_positive.yaml)
 
-These show that the current direction is not only about selection logic.
-It is also actively tuning the geometry side of the positive supervision surface and explicitly supporting Stage-1-to-Stage-2 continuation.
+Older hardened geometry-continuation leaves were retired from the current config
+surface. Future Stage-2 geometry tuning should be regenerated from these retained
+prod templates rather than by reviving one-off historical YAML.
 
 ### Better metric decomposition
 

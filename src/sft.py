@@ -58,7 +58,7 @@ from .bootstrap.trainer_setup import (
 )
 from .config import ConfigLoader
 from .config.schema import CoordOffsetConfig
-from .config.schema import CoordTokensConfig, DebugConfig, LatestDetectionTrainingConfig
+from .config.schema import CoordTokensConfig, DebugConfig, DetectionTrainingConfig
 from .config.prompts import (
     coord_mode_from_coord_tokens_enabled,
     get_template_prompts,
@@ -84,20 +84,20 @@ from .detection.dataset import (
     resolve_detection_jsonl_image_root,
 )
 from .detection.length_bucketing import (
-    LatestDetectionLengthBucketingConfig,
-    LatestDetectionLengthGroupedTrainerMixin,
+    DetectionLengthBucketingConfig,
+    DetectionLengthGroupedTrainerMixin,
     disabled_length_bucketing_provenance,
 )
 from .detection.runtime import (
     RecursiveDetectionCERuntimeConfig,
-    assert_latest_detection_runtime_supported as _assert_latest_detection_runtime_supported,
-    build_latest_detection_dataset,
-    build_latest_detection_runtime_custom_shim as _latest_detection_runtime_custom_shim,
-    is_latest_detection_config as _is_latest_detection_config,
-    latest_detection_mode as _latest_detection_mode,
-    latest_detection_prompt_variant as _latest_detection_prompt_variant,
-    latest_detection_sequence_format as _latest_detection_sequence_format,
-    resolve_latest_detection_prompts as _resolve_latest_detection_prompts,
+    assert_detection_runtime_supported as _assert_detection_runtime_supported,
+    build_detection_dataset,
+    build_detection_runtime_custom_shim as _detection_runtime_custom_shim,
+    is_detection_config as _is_detection_config,
+    detection_mode as _detection_mode,
+    detection_prompt_variant as _detection_prompt_variant,
+    detection_sequence_format as _detection_sequence_format,
+    resolve_detection_prompts as _resolve_detection_prompts,
     resolve_recursive_detection_ce_runtime_cfg as _resolve_recursive_detection_ce_cfg,
 )
 from .infer.checkpoints import load_adapter_checkpoint_info
@@ -845,7 +845,7 @@ def _train_args_str(train_args: Any, field_name: str, default: str = "") -> str:
     return str(value)
 
 
-def _latest_detection_length_bucketing_runtime_payload(
+def _detection_length_bucketing_runtime_payload(
     *,
     training_config: Any,
     train_args: Any,
@@ -862,18 +862,18 @@ def _latest_detection_length_bucketing_runtime_payload(
             length_bucketing = disabled_length_bucketing_provenance(
                 reason="packing is enabled"
             ).to_dict()
-        elif isinstance(training_config, LatestDetectionTrainingConfig):
+        elif isinstance(training_config, DetectionTrainingConfig):
             length_bucketing = {
                 "enabled": True,
                 "mode": "row_atomic_length_bucketing",
                 "length_source": "DetectionTrainingDataset.encoded_length_for_row",
                 "cache_policy": "run_local_only",
-                "sampler_class": "LatestDetectionLengthGroupedSampler",
+                "sampler_class": "DetectionLengthGroupedSampler",
                 "seed": int(getattr(train_args, "seed", 0) or 0),
             }
         else:
             length_bucketing = disabled_length_bucketing_provenance(
-                reason="not a latest detection config"
+                reason="not a detection config"
             ).to_dict()
 
     return {
@@ -883,19 +883,19 @@ def _latest_detection_length_bucketing_runtime_payload(
     }
 
 
-def _build_latest_detection_length_bucketing_config(
+def _build_detection_length_bucketing_config(
     *,
     dataset: Any,
     train_args: Any,
     packing_cfg: PackingRuntimeConfig,
-) -> LatestDetectionLengthBucketingConfig:
+) -> DetectionLengthBucketingConfig:
     if not _train_args_bool(train_args, "group_by_length", False):
-        return LatestDetectionLengthBucketingConfig(enabled=False)
+        return DetectionLengthBucketingConfig(enabled=False)
     if bool(packing_cfg.enabled):
-        return LatestDetectionLengthBucketingConfig(enabled=False)
+        return DetectionLengthBucketingConfig(enabled=False)
     if not isinstance(dataset, DetectionTrainingDataset):
-        return LatestDetectionLengthBucketingConfig(enabled=False)
-    return LatestDetectionLengthBucketingConfig(
+        return DetectionLengthBucketingConfig(enabled=False)
+    return DetectionLengthBucketingConfig(
         enabled=True,
         seed=int(getattr(train_args, "seed", 0) or 0),
         cache_policy="run_local_only",
@@ -1030,7 +1030,7 @@ def _build_effective_runtime_payload(
         if isinstance(template_cfg, Mapping)
         else None,
         "packing": dataclass_asdict_no_none(packing_cfg),
-        "dataloader": _latest_detection_length_bucketing_runtime_payload(
+        "dataloader": _detection_length_bucketing_runtime_payload(
             training_config=training_config,
             train_args=train_args,
             packing_cfg=packing_cfg,
@@ -1039,10 +1039,10 @@ def _build_effective_runtime_payload(
         "dataset_source_train_jsonl": _build_source_path_identity(train_jsonl),
         "dataset_source_val_jsonl": _build_source_path_identity(val_jsonl),
         "model_source": _build_source_path_identity(model_path),
-        "latest_detection_objective": _latest_detection_objective_runtime_payload(
+        "detection_objective": _detection_objective_runtime_payload(
             training_config
         ),
-        "token_rows": _latest_detection_token_rows_runtime_payload(training_config),
+        "token_rows": _detection_token_rows_runtime_payload(training_config),
         "pipeline_manifest_checksum": str(pipeline_manifest.get("checksum", ""))
         if isinstance(pipeline_manifest, Mapping)
         else "",
@@ -1059,7 +1059,7 @@ def _build_effective_runtime_payload(
     return payload
 
 
-def _latest_detection_objective_runtime_payload(training_config: Any) -> dict[str, Any] | None:
+def _detection_objective_runtime_payload(training_config: Any) -> dict[str, Any] | None:
     objective_cfg = getattr(training_config, "objective", None)
     if objective_cfg is None:
         return None
@@ -1103,7 +1103,7 @@ def _latest_detection_objective_runtime_payload(training_config: Any) -> dict[st
     return payload
 
 
-def _latest_detection_token_rows_runtime_payload(training_config: Any) -> dict[str, Any] | None:
+def _detection_token_rows_runtime_payload(training_config: Any) -> dict[str, Any] | None:
     token_rows_cfg = getattr(training_config, "token_rows", None)
     if token_rows_cfg is None or not bool(_get_section_value(token_rows_cfg, "enabled", False)):
         return None
@@ -1986,11 +1986,11 @@ def _resolve_dataset_seed(*, training_config: Any, train_args: Any) -> int:
 
 def _resolve_root_image_dir_for_training(
     *,
-    latest_detection_config: Any | None,
+    detection_config: Any | None,
     train_jsonl: Any,
 ) -> str:
-    if latest_detection_config is not None:
-        image_root = latest_detection_config.data.image_root
+    if detection_config is not None:
+        image_root = detection_config.data.image_root
         return str(
             resolve_detection_jsonl_image_root(
                 train_jsonl,
@@ -2005,7 +2005,7 @@ def _resolve_root_image_dir_for_training(
     return os.path.abspath(os.path.dirname(str(train_jsonl)))
 
 
-def _require_root_image_dir_matches_latest_detection(
+def _require_root_image_dir_matches_detection(
     root_image_dir: str | Path,
     *,
     resolved_image_root: str | Path,
@@ -2016,7 +2016,7 @@ def _require_root_image_dir_matches_latest_detection(
     resolved_root_dir = Path(resolved_image_root).expanduser().resolve(strict=False)
     if existing_root_dir != resolved_root_dir:
         raise ValueError(
-            "ROOT_IMAGE_DIR does not match latest detection image root: "
+            "ROOT_IMAGE_DIR does not match detection image root: "
             f"ROOT_IMAGE_DIR={existing_root_dir}, "
             f"resolved_image_root={resolved_root_dir}"
         )
@@ -2290,12 +2290,12 @@ def main():
             setattr(training_args, "model", normalized_model_path)
     # Ensure custom optimizer variant is available before trainer setup
     register_coord_offset_optimizer()
-    latest_detection_config = (
-        training_config if _is_latest_detection_config(training_config) else None
+    detection_config = (
+        training_config if _is_detection_config(training_config) else None
     )
     custom_config = (
-        _latest_detection_runtime_custom_shim(latest_detection_config)
-        if latest_detection_config is not None
+        _detection_runtime_custom_shim(detection_config)
+        if detection_config is not None
         else training_config.custom
     )
     debug_config = _coerce_debug_config(getattr(training_config, "debug", None))
@@ -2358,36 +2358,36 @@ def main():
         logger.debug(f"  rlhf={training_config.rlhf}")
         logger.debug(f"  deepspeed={training_config.deepspeed}")
         logger.debug(f"  debug={getattr(training_config, 'debug', None)}")
-        if latest_detection_config is None:
+        if detection_config is None:
             logger.debug(f"  prompts={training_config.prompts}")
             logger.debug("Custom dataset config:")
             for key, value in asdict(custom_config).items():
                 logger.debug(f"  {key}: {value}")
         else:
-            logger.debug("Latest detection config:")
+            logger.debug("Detection config:")
             logger.debug(f"  detection_template={training_config.detection_template}")
             logger.debug(f"  objective={training_config.objective}")
         logger.debug("=" * 70)
 
     # Auto-configure ROOT_IMAGE_DIR from the training JSONL path.
     train_jsonl = (
-        latest_detection_config.data.train_jsonl
-        if latest_detection_config is not None
+        detection_config.data.train_jsonl
+        if detection_config is not None
         else custom_config.train_jsonl or custom_config.extra.get("jsonl")
     )
     if not train_jsonl:
         raise ValueError("Config must specify 'custom.train_jsonl'/'custom.jsonl'")
 
     root_dir = _resolve_root_image_dir_for_training(
-        latest_detection_config=latest_detection_config,
+        detection_config=detection_config,
         train_jsonl=train_jsonl,
     )
     root_image_dir = os.environ.get("ROOT_IMAGE_DIR")
     if root_image_dir in (None, ""):
         os.environ["ROOT_IMAGE_DIR"] = root_dir
         logger.info(f"Set ROOT_IMAGE_DIR={root_dir}")
-    elif latest_detection_config is not None:
-        _require_root_image_dir_matches_latest_detection(
+    elif detection_config is not None:
+        _require_root_image_dir_matches_detection(
             root_image_dir,
             resolved_image_root=root_dir,
         )
@@ -2597,8 +2597,8 @@ def main():
     # Prepare system prompts for the selected mode
     # The system prompt is set on the template by ConfigLoader.resolve_prompts
     system_prompt_dense = (
-        _resolve_latest_detection_prompts(latest_detection_config)[0]
-        if latest_detection_config is not None
+        _resolve_detection_prompts(detection_config)[0]
+        if detection_config is not None
         else getattr(sft.template, "system", None)
     )
     system_prompt_summary = custom_config.system_prompt_summary
@@ -2651,9 +2651,9 @@ def main():
             dataset_jsonl=str(train_jsonl) if train_jsonl else None,
         )
     )
-    if latest_detection_config is not None:
-        _assert_latest_detection_runtime_supported(
-            latest_detection_config,
+    if detection_config is not None:
+        _assert_detection_runtime_supported(
+            detection_config,
             encoded_sample_cache_cfg=encoded_sample_cache_cfg,
             tokenizer=getattr(sft.template, "tokenizer", None),
         )
@@ -2695,20 +2695,20 @@ def main():
         custom_config.object_field_order,
     )
     logger.info(f"Loading training dataset: {train_jsonl}")
-    if latest_detection_config is not None:
+    if detection_config is not None:
         if train_encoded_sample_cache_request is not None:
             raise ValueError(
-                "latest detection dataset rejects encoded sample cache requests"
+                "detection dataset rejects encoded sample cache requests"
             )
-        dataset = build_latest_detection_dataset(
+        dataset = build_detection_dataset(
             train_jsonl,
             swift_template=sft.template,
-            training_config=latest_detection_config,
+            training_config=detection_config,
             custom_config=custom_config,
             system_prompt=system_prompt_dense,
             seed=dataset_seed,
             sample_limit=_normalize_optional_sample_limit(train_sample_limit),
-            dataset_name="latest_detection_train",
+            dataset_name="detection_train",
         )
     else:
         dataset = BaseCaptionDataset.from_jsonl(
@@ -3149,7 +3149,7 @@ def main():
     if dump_conv and dataset_nonempty:
         try:
             template = dataset.template
-            if latest_detection_config is not None:
+            if detection_config is not None:
                 sample_encoded = dataset[0]
             else:
                 template.set_mode("pt")
@@ -3183,7 +3183,7 @@ def main():
 
             assistant_gt = None
             try:
-                if latest_detection_config is not None:
+                if detection_config is not None:
                     messages = sample_encoded.get("messages", [])
                     assistant_turn = next(
                         (
@@ -3276,8 +3276,8 @@ def main():
     # Build validation dataset from a single JSONL.
     eval_dataset = None
     val_jsonl = (
-        latest_detection_config.data.val_jsonl
-        if latest_detection_config is not None
+        detection_config.data.val_jsonl
+        if detection_config is not None
         else custom_config.val_jsonl
     )
     eval_encoded_sample_cache_info = (
@@ -3305,20 +3305,20 @@ def main():
     if val_jsonl:
         logger.info(f"Loading validation dataset: {val_jsonl}")
         eval_sample_limit = None if val_sample_with_replacement else val_sample_limit
-        if latest_detection_config is not None:
+        if detection_config is not None:
             if eval_encoded_sample_cache_request is not None:
                 raise ValueError(
-                    "latest detection eval dataset rejects encoded sample cache requests"
+                    "detection eval dataset rejects encoded sample cache requests"
                 )
-            eval_dataset = build_latest_detection_dataset(
+            eval_dataset = build_detection_dataset(
                 val_jsonl,
                 swift_template=sft.template,
-                training_config=latest_detection_config,
+                training_config=detection_config,
                 custom_config=custom_config,
                 system_prompt=system_prompt_dense,
                 seed=dataset_seed + 11,
                 sample_limit=_normalize_optional_sample_limit(eval_sample_limit),
-                dataset_name="latest_detection_eval",
+                dataset_name="detection_eval",
             )
         else:
             eval_dataset = BaseCaptionDataset.from_jsonl(
@@ -3471,10 +3471,10 @@ def main():
     runtime_profile = resolve_training_runtime_profile(trainer_variant)
     recursive_detection_ce_cfg = _resolve_recursive_detection_ce_cfg(training_config)
     teacher_forcing_objective_cfg = None
-    if latest_detection_config is not None and getattr(
-        latest_detection_config.objective, "id", None
+    if detection_config is not None and getattr(
+        detection_config.objective, "id", None
     ) == "teacher_forcing":
-        teacher_forcing_objective_cfg = latest_detection_config.objective
+        teacher_forcing_objective_cfg = detection_config.objective
     if (
         runtime_profile.preserve_raw_sample_metadata
         or recursive_detection_ce_cfg is not None
@@ -3661,19 +3661,19 @@ def main():
         recursive_detection_ce_cfg=recursive_detection_ce_cfg,
         teacher_forcing_objective_cfg=teacher_forcing_objective_cfg,
     )
-    length_bucketing_cfg = _build_latest_detection_length_bucketing_config(
+    length_bucketing_cfg = _build_detection_length_bucketing_config(
         dataset=dataset,
         train_args=train_args,
         packing_cfg=packing_cfg,
     )
     if length_bucketing_cfg.enabled:
         trainer_cls = type(
-            f"{trainer_cls.__name__}WithLatestDetectionLengthBucketing",
-            (LatestDetectionLengthGroupedTrainerMixin, trainer_cls),
+            f"{trainer_cls.__name__}WithDetectionLengthBucketing",
+            (DetectionLengthGroupedTrainerMixin, trainer_cls),
             {},
         )
         logger.info(
-            "Latest detection row-atomic length bucketing enabled: cache_policy=%s seed=%s",
+            "Detection row-atomic length bucketing enabled: cache_policy=%s seed=%s",
             length_bucketing_cfg.cache_policy,
             length_bucketing_cfg.seed,
         )
@@ -3708,7 +3708,7 @@ def main():
         heartbeat_writer=heartbeat_writer,
     )
     if length_bucketing_cfg.enabled:
-        setattr(trainer, "latest_detection_length_bucketing", length_bucketing_cfg)
+        setattr(trainer, "detection_length_bucketing", length_bucketing_cfg)
     # Non-standard evaluators do not emit ordinary token-accuracy metrics.
     # Guard against inherited defaults that would crash best-checkpoint
     # selection after a successful callback/rollout evaluation.

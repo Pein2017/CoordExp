@@ -1672,7 +1672,7 @@ class CustomConfig:
         if "coord_loss" in data:
             raise ValueError(
                 "custom.coord_loss is no longer supported; use custom.coord_soft_ce_w1 "
-                "for legacy Stage-1 SFT losses or latest objective.* for LatestDetectionTrainingConfig."
+                "for legacy Stage-1 SFT losses or latest objective.* for DetectionTrainingConfig."
             )
         coord_soft_ce_w1_raw = data.pop("coord_soft_ce_w1", None)
         coord_soft_ce_w1 = CoordSoftCEW1Config.from_mapping(coord_soft_ce_w1_raw)
@@ -3435,7 +3435,7 @@ def _validate_teacher_forcing_stage2_migration_raw(stage2_ab_raw: Any) -> None:
         )
 
 
-_LATEST_DETECTION_REQUIRED_SECTIONS: set[str] = {
+_DETECTION_REQUIRED_SECTIONS: set[str] = {
     "data",
     "prompt",
     "detection_template",
@@ -3446,7 +3446,7 @@ _LATEST_DETECTION_REQUIRED_SECTIONS: set[str] = {
     "validation",
 }
 
-_LATEST_DETECTION_RUNTIME_SECTIONS: set[str] = {
+_DETECTION_RUNTIME_SECTIONS: set[str] = {
     "model",
     "template",
     "training",
@@ -3456,13 +3456,13 @@ _LATEST_DETECTION_RUNTIME_SECTIONS: set[str] = {
     "quantization",
 }
 
-_LATEST_DETECTION_OPTIONAL_SECTIONS: set[str] = {
+_DETECTION_OPTIONAL_SECTIONS: set[str] = {
     "debug",
     "experiment",
     "global_max_length",
 }
 
-_LATEST_DETECTION_OBSOLETE_KEYS: set[str] = {
+_DETECTION_OBSOLETE_KEYS: set[str] = {
     "trainer_variant",
     "stage1_set_continuation",
     "prefix_conditioning",
@@ -3499,84 +3499,84 @@ _LATEST_DETECTION_OBSOLETE_KEYS: set[str] = {
     "pem_weight",
 }
 
-_LATEST_DETECTION_STATE_WEIGHTINGS: set[str] = {
+_DETECTION_STATE_WEIGHTINGS: set[str] = {
     "none",
     "legacy_row_mean_prefix_mixture_equivalence",
     "uniform_permutation",
 }
 
-_LATEST_DETECTION_NORMALIZATIONS: set[str] = {
+_DETECTION_NORMALIZATIONS: set[str] = {
     "token_mean",
     "legacy_row_mean_equivalence",
     "semantic_image_bucket_balanced",
 }
 
-_LATEST_DETECTION_OBSOLETE_SCAN_SECTIONS: set[str] = (
-    _LATEST_DETECTION_REQUIRED_SECTIONS - {"data", "prompt"}
+_DETECTION_OBSOLETE_SCAN_SECTIONS: set[str] = (
+    _DETECTION_REQUIRED_SECTIONS - {"data", "prompt"}
 )
 
 
-def _latest_detection_join_path(parent: str, child: str) -> str:
+def _detection_join_path(parent: str, child: str) -> str:
     if not parent:
         return child
     return f"{parent}.{child}"
 
 
-def _latest_detection_find_obsolete_keys(value: Any, *, path: str = "") -> list[str]:
+def _detection_find_obsolete_keys(value: Any, *, path: str = "") -> list[str]:
     found: list[str] = []
     if isinstance(value, Mapping):
         for raw_key, raw_value in value.items():
             key = str(raw_key)
-            key_path = _latest_detection_join_path(path, key)
+            key_path = _detection_join_path(path, key)
             normalized = key.strip().lower().replace("-", "_")
             # `target.support_weight` and `target.balance_weight` are the
             # canonical objectized paths for prefix-rollin; only the flat
             # objective-level aliases remain obsolete.
-            if normalized in _LATEST_DETECTION_OBSOLETE_KEYS and key_path not in {
+            if normalized in _DETECTION_OBSOLETE_KEYS and key_path not in {
                 "objective.target.support_weight",
                 "objective.target.balance_weight",
             }:
                 found.append(key_path)
-            found.extend(_latest_detection_find_obsolete_keys(raw_value, path=key_path))
+            found.extend(_detection_find_obsolete_keys(raw_value, path=key_path))
     elif isinstance(value, Sequence) and not isinstance(value, (str, bytes, bytearray)):
         for index, item in enumerate(value):
             found.extend(
-                _latest_detection_find_obsolete_keys(item, path=f"{path}[{index}]")
+                _detection_find_obsolete_keys(item, path=f"{path}[{index}]")
             )
     return found
 
 
-def _latest_detection_find_obsolete_keys_on_latest_surface(
+def _detection_find_obsolete_keys_on_latest_surface(
     payload: Mapping[str, Any],
 ) -> list[str]:
     found: list[str] = []
     for raw_key in payload.keys():
         key = str(raw_key)
         normalized = key.strip().lower().replace("-", "_")
-        if normalized in _LATEST_DETECTION_OBSOLETE_KEYS:
+        if normalized in _DETECTION_OBSOLETE_KEYS:
             found.append(key)
 
-    for section in sorted(_LATEST_DETECTION_OBSOLETE_SCAN_SECTIONS):
+    for section in sorted(_DETECTION_OBSOLETE_SCAN_SECTIONS):
         if section in payload:
             found.extend(
-                _latest_detection_find_obsolete_keys(payload[section], path=section)
+                _detection_find_obsolete_keys(payload[section], path=section)
             )
     return found
 
 
-def _latest_detection_validate_choice(
+def _detection_validate_choice(
     value: str, *, path: str, allowed: set[str]
 ) -> None:
     if value not in allowed:
         raise ValueError(f"{path} must be one of {sorted(allowed)}, got {value!r}")
 
 
-def _latest_detection_validate_bool(value: bool, *, path: str) -> None:
+def _detection_validate_bool(value: bool, *, path: str) -> None:
     if not isinstance(value, bool):
         raise TypeError(f"{path} must be a boolean")
 
 
-def _latest_detection_validate_runtime_mapping(
+def _detection_validate_runtime_mapping(
     value: Any, *, path: str
 ) -> dict[str, Any]:
     if value is None:
@@ -3586,16 +3586,16 @@ def _latest_detection_validate_runtime_mapping(
     return dict(value)
 
 
-def _latest_detection_validate_framework_mapping(
+def _detection_validate_framework_mapping(
     value: Any, *, path: str, allowed: set[str]
 ) -> dict[str, Any]:
-    data = _latest_detection_validate_runtime_mapping(value, path=path)
+    data = _detection_validate_runtime_mapping(value, path=path)
     _validate_section_keys_strict(path, data, allowed=allowed)
     return data
 
 
-def _latest_detection_validate_training_mapping(value: Any) -> dict[str, Any]:
-    data = _latest_detection_validate_runtime_mapping(value, path="training")
+def _detection_validate_training_mapping(value: Any) -> dict[str, Any]:
+    data = _detection_validate_runtime_mapping(value, path="training")
     _validate_training_checkpoint_keys(data)
     _validate_section_keys_strict("training", data, allowed=_training_allowed_keys())
     if "packing_length" in data:
@@ -3616,7 +3616,7 @@ def _latest_detection_validate_training_mapping(value: Any) -> dict[str, Any]:
     return data
 
 
-def _latest_detection_runtime_bool(
+def _detection_runtime_bool(
     training: Mapping[str, Any],
     key: str,
 ) -> bool:
@@ -3625,19 +3625,19 @@ def _latest_detection_runtime_bool(
         return False
     if not isinstance(value, bool):
         raise TypeError(
-            f"training.{key} must be boolean when used with latest detection packing guardrails"
+            f"training.{key} must be boolean when used with detection packing guardrails"
         )
     return value
 
 
-def _latest_detection_validate_packing_runtime_contract(
+def _detection_validate_packing_runtime_contract(
     *,
     objective: "DetectionObjectiveConfig | TeacherForcingObjectiveConfig",
     packing: "DetectionPackingConfig",
     training: Mapping[str, Any],
 ) -> None:
-    training_packing = _latest_detection_runtime_bool(training, "packing")
-    training_eval_packing = _latest_detection_runtime_bool(training, "eval_packing")
+    training_packing = _detection_runtime_bool(training, "packing")
+    training_eval_packing = _detection_runtime_bool(training, "eval_packing")
 
     if getattr(objective, "id", None) == TEACHER_FORCING_OBJECTIVE_ID:
         if training_packing:
@@ -3667,7 +3667,7 @@ def _latest_detection_validate_packing_runtime_contract(
 
     if packing.static_packing and not training_packing:
         raise ValueError(
-            "packing.static_packing=true requires training.packing=true for latest detection runtime materialization."
+            "packing.static_packing=true requires training.packing=true for detection runtime materialization."
         )
 
     if objective.id != "recursive_detection_ce":
@@ -3709,15 +3709,15 @@ def _latest_detection_validate_packing_runtime_contract(
         )
 
 
-def _latest_detection_validate_deepspeed_mapping(value: Any) -> dict[str, Any]:
+def _detection_validate_deepspeed_mapping(value: Any) -> dict[str, Any]:
     if value is None:
         return {}
-    data = _latest_detection_validate_runtime_mapping(value, path="deepspeed")
+    data = _detection_validate_runtime_mapping(value, path="deepspeed")
     DeepSpeedConfig.from_mapping(data)
     return data
 
 
-def _latest_detection_validate_order_matches_objective(
+def _detection_validate_order_matches_objective(
     data: DetectionDataConfig,
     objective: DetectionObjectiveConfig | TeacherForcingObjectiveConfig,
 ) -> None:
@@ -3742,11 +3742,11 @@ def _latest_detection_validate_order_matches_objective(
         )
 
 
-def _latest_detection_validate_prefix_rollin_contract(
+def _detection_validate_prefix_rollin_contract(
     *,
     detection_template: "DetectionTemplateConfig",
     objective: "DetectionObjectiveConfig | TeacherForcingObjectiveConfig",
-    experiment: "LatestDetectionExperimentConfig | None",
+    experiment: "DetectionExperimentConfig | None",
 ) -> None:
     if getattr(objective, "id", None) == TEACHER_FORCING_OBJECTIVE_ID:
         return
@@ -3767,13 +3767,13 @@ def _latest_detection_validate_prefix_rollin_contract(
         )
 
 
-def _latest_detection_validate_token_rows(
+def _detection_validate_token_rows(
     detection_template: "DetectionTemplateConfig",
     token_rows: TrainableTokenRowsConfig,
 ) -> None:
     if not token_rows.enabled:
         raise ValueError(
-            "token_rows.enabled must be true for latest detection coord-token training; "
+            "token_rows.enabled must be true for detection coord-token training; "
             "otherwise coordinate special-token rows stay frozen and cannot be saved "
             "in the adapter"
         )
@@ -3864,7 +3864,7 @@ class DetectionDataConfig:
                 raise TypeError(f"data.{field_name} must be a string")
         if self.image_root is not None and not isinstance(self.image_root, str):
             raise TypeError("data.image_root must be a string when provided")
-        _latest_detection_validate_choice(
+        _detection_validate_choice(
             self.object_ordering,
             path="data.object_ordering",
             allowed={"sorted", "random_permutation"},
@@ -3886,11 +3886,11 @@ class DetectionPromptConfig:
         for field_name in ("system_variant", "user_variant"):
             if not isinstance(getattr(self, field_name), str):
                 raise TypeError(f"prompt.{field_name} must be a string")
-        _latest_detection_validate_bool(
+        _detection_validate_bool(
             self.include_template_summary,
             path="prompt.include_template_summary",
         )
-        _latest_detection_validate_bool(
+        _detection_validate_bool(
             self.prompt_variant_enabled,
             path="prompt.prompt_variant_enabled",
         )
@@ -3909,28 +3909,28 @@ class DetectionTemplateConfig:
     strict_parse: bool = True
 
     def __post_init__(self) -> None:
-        _latest_detection_validate_choice(
+        _detection_validate_choice(
             self.id,
             path="detection_template.id",
             allowed={"stage1_json_pretty", "compact_full"},
         )
-        _latest_detection_validate_choice(
+        _detection_validate_choice(
             self.coordinate_surface,
             path="detection_template.coordinate_surface",
             allowed={"coord_token"},
         )
-        _latest_detection_validate_choice(
+        _detection_validate_choice(
             self.bbox_format,
             path="detection_template.bbox_format",
             allowed={"xyxy"},
         )
         if self.object_field_order is not None:
-            _latest_detection_validate_choice(
+            _detection_validate_choice(
                 self.object_field_order,
                 path="detection_template.object_field_order",
                 allowed={"desc_first"},
             )
-        _latest_detection_validate_bool(
+        _detection_validate_bool(
             self.strict_parse,
             path="detection_template.strict_parse",
         )
@@ -3978,18 +3978,18 @@ class PrefixRollinConfig:
     k_distribution: UniformInclusiveKConfig
 
     def __post_init__(self) -> None:
-        _latest_detection_validate_bool(self.enabled, path="objective.rollin.enabled")
-        _latest_detection_validate_choice(
+        _detection_validate_bool(self.enabled, path="objective.rollin.enabled")
+        _detection_validate_choice(
             self.source,
             path="objective.rollin.source",
             allowed={"ground_truth"},
         )
-        _latest_detection_validate_choice(
+        _detection_validate_choice(
             self.prefix_loss,
             path="objective.rollin.prefix_loss",
             allowed={"masked"},
         )
-        _latest_detection_validate_choice(
+        _detection_validate_choice(
             self.suffix_order,
             path="objective.rollin.suffix_order",
             allowed={"same_sampled_permutation"},
@@ -4007,27 +4007,27 @@ class EntryTrieSupportBalanceConfig:
     balance_weight: float
 
     def __post_init__(self) -> None:
-        _latest_detection_validate_choice(
+        _detection_validate_choice(
             self.type,
             path="objective.target.type",
             allowed={"entry_trie_support_balance"},
         )
-        _latest_detection_validate_choice(
+        _detection_validate_choice(
             self.trie_scope,
             path="objective.target.trie_scope",
             allowed={"object_entry"},
         )
-        _latest_detection_validate_choice(
+        _detection_validate_choice(
             self.q_weighting,
             path="objective.target.q_weighting",
             allowed={"object_multiplicity_uniform"},
         )
-        _latest_detection_validate_choice(
+        _detection_validate_choice(
             self.singleton,
             path="objective.target.singleton",
             allowed={"hard_ce"},
         )
-        _latest_detection_validate_choice(
+        _detection_validate_choice(
             self.control_tokens,
             path="objective.target.control_tokens",
             allowed={"hard_ce"},
@@ -4073,10 +4073,10 @@ class CompactTypeGateConfig:
     weights: CompactTypeGateWeights
 
     def __post_init__(self) -> None:
-        _latest_detection_validate_bool(
+        _detection_validate_bool(
             self.enabled, path="objective.type_gate.enabled"
         )
-        _latest_detection_validate_choice(
+        _detection_validate_choice(
             self.mode,
             path="objective.type_gate.mode",
             allowed={"allowed_type_mass"},
@@ -4084,19 +4084,19 @@ class CompactTypeGateConfig:
 
 
 @dataclass(frozen=True)
-class LatestDetectionExperimentConfig:
+class DetectionExperimentConfig:
     surface: Literal["smoke", "ablation", "production"]
     ablation_id: Optional[str] = None
     claim_scope: Optional[Literal["none", "smoke", "paper", "production"]] = None
 
     def __post_init__(self) -> None:
-        _latest_detection_validate_choice(
+        _detection_validate_choice(
             self.surface,
             path="experiment.surface",
             allowed={"smoke", "ablation", "production"},
         )
         if self.claim_scope is not None:
-            _latest_detection_validate_choice(
+            _detection_validate_choice(
                 self.claim_scope,
                 path="experiment.claim_scope",
                 allowed={"none", "smoke", "paper", "production"},
@@ -4128,7 +4128,7 @@ class LatestDetectionExperimentConfig:
         payload: Optional[Mapping[str, Any]],
         *,
         required_for_variant: Optional[str] = None,
-    ) -> Optional["LatestDetectionExperimentConfig"]:
+    ) -> Optional["DetectionExperimentConfig"]:
         if payload is None:
             if required_for_variant is not None:
                 raise ValueError(
@@ -4156,11 +4156,11 @@ class CoordSoftCEConfig:
     ]
 
     def __post_init__(self) -> None:
-        _latest_detection_validate_bool(
+        _detection_validate_bool(
             self.enabled,
             path="objective.coord_soft_ce.enabled",
         )
-        _latest_detection_validate_choice(
+        _detection_validate_choice(
             self.target_distribution,
             path="objective.coord_soft_ce.target_distribution",
             allowed={"iou_gibbs_v0", "ciou_gibbs_v0", "instance_trie_gaussian"},
@@ -4176,7 +4176,7 @@ class InstanceTrieGaussianCoordSoftCEConfig(CoordSoftCEConfig):
 
     def __post_init__(self) -> None:
         super().__post_init__()
-        _latest_detection_validate_choice(
+        _detection_validate_choice(
             self.target_distribution,
             path="objective.coord_soft_ce.target_distribution",
             allowed={"instance_trie_gaussian"},
@@ -4233,7 +4233,7 @@ class GibbsCoordSoftCEConfig(CoordSoftCEConfig):
 
     def __post_init__(self) -> None:
         super().__post_init__()
-        _latest_detection_validate_choice(
+        _detection_validate_choice(
             self.target_distribution,
             path="objective.coord_soft_ce.target_distribution",
             allowed={"iou_gibbs_v0", "ciou_gibbs_v0"},
@@ -4242,17 +4242,17 @@ class GibbsCoordSoftCEConfig(CoordSoftCEConfig):
             raise TypeError("objective.coord_soft_ce.tau must be numeric")
         if not math.isfinite(float(self.tau)) or float(self.tau) <= 0.0:
             raise ValueError("objective.coord_soft_ce.tau must be finite and > 0")
-        _latest_detection_validate_choice(
+        _detection_validate_choice(
             self.tau_source,
             path="objective.coord_soft_ce.tau_source",
             allowed={"train_one_token_iou_median_v0"},
         )
-        _latest_detection_validate_choice(
+        _detection_validate_choice(
             self.weighting,
             path="objective.coord_soft_ce.weighting",
             allowed={"preserve_recursive_support_balance"},
         )
-        _latest_detection_validate_bool(
+        _detection_validate_bool(
             self.replace_coord_hard_ce,
             path="objective.coord_soft_ce.replace_coord_hard_ce",
         )
@@ -4260,7 +4260,7 @@ class GibbsCoordSoftCEConfig(CoordSoftCEConfig):
             raise ValueError(
                 "objective.coord_soft_ce.replace_coord_hard_ce=false is unsupported"
             )
-        _latest_detection_validate_choice(
+        _detection_validate_choice(
             self.apply_to_multi_positive,
             path="objective.coord_soft_ce.apply_to_multi_positive",
             allowed={"support_mixture"},
@@ -4273,7 +4273,7 @@ class TeacherForcingRollinPolicyConfig:
     base_seed: int = 17
 
     def __post_init__(self) -> None:
-        _latest_detection_validate_choice(
+        _detection_validate_choice(
             self.name,
             path="objective.target_ir.rollin_policy.name",
             allowed={"random_permutation"},
@@ -4303,7 +4303,7 @@ class TeacherForcingExactPackingMappingConfig:
     enabled: bool = False
 
     def __post_init__(self) -> None:
-        _latest_detection_validate_bool(
+        _detection_validate_bool(
             self.enabled,
             path="objective.target_ir.exact_packing_mapping.enabled",
         )
@@ -4367,7 +4367,7 @@ class TeacherForcingEnabledModuleConfig:
     enabled: bool = False
 
     def __post_init__(self) -> None:
-        _latest_detection_validate_bool(
+        _detection_validate_bool(
             self.enabled,
             path="objective.modules.*.enabled",
         )
@@ -4379,7 +4379,7 @@ class TeacherForcingWithinValidCoverageConfig:
     coverage_strength: float = 0.0
 
     def __post_init__(self) -> None:
-        _latest_detection_validate_bool(
+        _detection_validate_bool(
             self.enabled,
             path="objective.modules.within_valid_coverage.enabled",
         )
@@ -4476,7 +4476,7 @@ class TeacherForcingObjectiveConfig:
                 "objective.id must be exactly 'teacher_forcing'; "
                 f"got {self.id!r}"
             )
-        _latest_detection_validate_choice(
+        _detection_validate_choice(
             self.profile,
             path="objective.profile",
             allowed=TEACHER_FORCING_PROFILES,
@@ -4566,12 +4566,12 @@ class DetectionObjectiveConfig:
     coord_soft_ce: Optional[CoordSoftCEConfig] = None
 
     def __post_init__(self) -> None:
-        _latest_detection_validate_choice(
+        _detection_validate_choice(
             self.id,
             path="objective.id",
             allowed={"sft", "recursive_detection_ce"},
         )
-        _latest_detection_validate_choice(
+        _detection_validate_choice(
             self.variant,
             path="objective.variant",
             allowed={
@@ -4710,15 +4710,15 @@ class DetectionObjectiveConfig:
         for field_name in ("state_weighting", "normalization"):
             if not isinstance(getattr(self, field_name), str):
                 raise TypeError(f"objective.{field_name} must be a string")
-        _latest_detection_validate_choice(
+        _detection_validate_choice(
             self.state_weighting,
             path="objective.state_weighting",
-            allowed=_LATEST_DETECTION_STATE_WEIGHTINGS,
+            allowed=_DETECTION_STATE_WEIGHTINGS,
         )
-        _latest_detection_validate_choice(
+        _detection_validate_choice(
             self.normalization,
             path="objective.normalization",
-            allowed=_LATEST_DETECTION_NORMALIZATIONS,
+            allowed=_DETECTION_NORMALIZATIONS,
         )
 
     @classmethod
@@ -4746,11 +4746,11 @@ class DetectionPackingConfig:
     padding_free_packed: bool = False
 
     def __post_init__(self) -> None:
-        _latest_detection_validate_bool(
+        _detection_validate_bool(
             self.static_packing,
             path="packing.static_packing",
         )
-        _latest_detection_validate_bool(
+        _detection_validate_bool(
             self.padding_free_packed,
             path="packing.padding_free_packed",
         )
@@ -4766,12 +4766,12 @@ class DetectionEvaluationConfig:
     parser_mode: Literal["strict_expected", "diagnostic_salvage"] = "strict_expected"
 
     def __post_init__(self) -> None:
-        _latest_detection_validate_choice(
+        _detection_validate_choice(
             self.expected_template,
             path="evaluation.expected_template",
             allowed={"stage1_json_pretty", "compact_full"},
         )
-        _latest_detection_validate_choice(
+        _detection_validate_choice(
             self.parser_mode,
             path="evaluation.parser_mode",
             allowed={"strict_expected", "diagnostic_salvage"},
@@ -4794,7 +4794,7 @@ class DetectionValidationConfig:
             "validate_template_capabilities",
             "fail_fast",
         ):
-            _latest_detection_validate_bool(
+            _detection_validate_bool(
                 getattr(self, field_name),
                 path=f"validation.{field_name}",
             )
@@ -4805,7 +4805,7 @@ class DetectionValidationConfig:
 
 
 @dataclass(frozen=True)
-class LatestDetectionTrainingConfig:
+class DetectionTrainingConfig:
     data: DetectionDataConfig
     prompt: DetectionPromptConfig
     detection_template: DetectionTemplateConfig
@@ -4814,7 +4814,7 @@ class LatestDetectionTrainingConfig:
     packing: DetectionPackingConfig
     evaluation: DetectionEvaluationConfig
     validation: DetectionValidationConfig
-    experiment: Optional[LatestDetectionExperimentConfig] = None
+    experiment: Optional[DetectionExperimentConfig] = None
     debug: DebugConfig = field(default_factory=DebugConfig)
     model: Mapping[str, Any] = field(default_factory=dict)
     template: Mapping[str, Any] = field(default_factory=dict)
@@ -4826,9 +4826,9 @@ class LatestDetectionTrainingConfig:
     global_max_length: Optional[int] = None
 
     @classmethod
-    def from_mapping(cls, payload: Any) -> "LatestDetectionTrainingConfig":
+    def from_mapping(cls, payload: Any) -> "DetectionTrainingConfig":
         if not isinstance(payload, Mapping):
-            raise TypeError("latest detection config payload must be a mapping")
+            raise TypeError("detection config payload must be a mapping")
         if "custom" in payload:
             custom_raw = payload.get("custom")
             if isinstance(custom_raw, Mapping) and (
@@ -4836,21 +4836,21 @@ class LatestDetectionTrainingConfig:
                 or custom_raw.get("trainer_variant") == "stage1_set_continuation"
             ):
                 raise ValueError(
-                    "custom is obsolete for latest detection configs; "
+                    "custom is obsolete for detection configs; "
                     "custom.trainer_variant=stage1_set_continuation and "
                     "custom.stage1_set_continuation have been removed"
                 )
-            raise ValueError("custom is obsolete for latest detection configs")
+            raise ValueError("custom is obsolete for detection configs")
 
-        obsolete_paths = _latest_detection_find_obsolete_keys_on_latest_surface(payload)
+        obsolete_paths = _detection_find_obsolete_keys_on_latest_surface(payload)
         if obsolete_paths:
             rendered = sorted(obsolete_paths)
-            raise ValueError(f"Obsolete latest detection config keys: {rendered}")
+            raise ValueError(f"Obsolete detection config keys: {rendered}")
 
         known_top_level = (
-            _LATEST_DETECTION_REQUIRED_SECTIONS
-            | _LATEST_DETECTION_RUNTIME_SECTIONS
-            | _LATEST_DETECTION_OPTIONAL_SECTIONS
+            _DETECTION_REQUIRED_SECTIONS
+            | _DETECTION_RUNTIME_SECTIONS
+            | _DETECTION_OPTIONAL_SECTIONS
         )
         unknown_top_level = sorted(
             str(k)
@@ -4859,17 +4859,17 @@ class LatestDetectionTrainingConfig:
         )
         if unknown_top_level:
             raise ValueError(
-                f"Unknown latest detection config top-level keys: {unknown_top_level}"
+                f"Unknown detection config top-level keys: {unknown_top_level}"
             )
 
         missing_sections = sorted(
             section
-            for section in _LATEST_DETECTION_REQUIRED_SECTIONS
+            for section in _DETECTION_REQUIRED_SECTIONS
             if section not in payload
         )
         if missing_sections:
             raise ValueError(
-                f"Missing latest detection config sections: {missing_sections}"
+                f"Missing detection config sections: {missing_sections}"
             )
 
         global_max_length = payload.get("global_max_length")
@@ -4892,7 +4892,7 @@ class LatestDetectionTrainingConfig:
             )
         data_config = DetectionDataConfig.from_mapping(payload["data"])
         objective = DetectionObjectiveConfig.from_mapping(payload["objective"])
-        _latest_detection_validate_order_matches_objective(data_config, objective)
+        _detection_validate_order_matches_objective(data_config, objective)
         if (
             getattr(objective, "id", None) != TEACHER_FORCING_OBJECTIVE_ID
             and objective.variant == "prefix_rollin_et_rmp_ce"
@@ -4900,11 +4900,11 @@ class LatestDetectionTrainingConfig:
             required_experiment_variant = "prefix_rollin_et_rmp_ce"
         else:
             required_experiment_variant = None
-        experiment = LatestDetectionExperimentConfig.from_mapping(
+        experiment = DetectionExperimentConfig.from_mapping(
             payload.get("experiment"),
             required_for_variant=required_experiment_variant,
         )
-        _latest_detection_validate_prefix_rollin_contract(
+        _detection_validate_prefix_rollin_contract(
             detection_template=detection_template,
             objective=objective,
             experiment=experiment,
@@ -4913,10 +4913,10 @@ class LatestDetectionTrainingConfig:
             payload["token_rows"],
             path="token_rows",
         )
-        _latest_detection_validate_token_rows(detection_template, token_rows)
+        _detection_validate_token_rows(detection_template, token_rows)
         packing = DetectionPackingConfig.from_mapping(payload["packing"])
-        training = _latest_detection_validate_training_mapping(payload.get("training"))
-        _latest_detection_validate_packing_runtime_contract(
+        training = _detection_validate_training_mapping(payload.get("training"))
+        _detection_validate_packing_runtime_contract(
             objective=objective,
             packing=packing,
             training=training,
@@ -4933,31 +4933,31 @@ class LatestDetectionTrainingConfig:
             validation=DetectionValidationConfig.from_mapping(payload["validation"]),
             experiment=experiment,
             debug=DebugConfig.from_mapping(payload.get("debug")),
-            model=_latest_detection_validate_framework_mapping(
+            model=_detection_validate_framework_mapping(
                 payload.get("model"),
                 path="model",
                 allowed=_train_arguments_allowed_keys(),
             ),
-            template=_latest_detection_validate_framework_mapping(
+            template=_detection_validate_framework_mapping(
                 payload.get("template"),
                 path="template",
                 allowed=_train_arguments_allowed_keys(),
             ),
             training=training,
-            deepspeed=_latest_detection_validate_deepspeed_mapping(
+            deepspeed=_detection_validate_deepspeed_mapping(
                 payload.get("deepspeed")
             ),
-            rlhf=_latest_detection_validate_framework_mapping(
+            rlhf=_detection_validate_framework_mapping(
                 payload.get("rlhf"),
                 path="rlhf",
                 allowed=_rlhf_arguments_allowed_keys(),
             ),
-            tuner=_latest_detection_validate_framework_mapping(
+            tuner=_detection_validate_framework_mapping(
                 payload.get("tuner"),
                 path="tuner",
                 allowed=_train_arguments_allowed_keys(),
             ),
-            quantization=_latest_detection_validate_framework_mapping(
+            quantization=_detection_validate_framework_mapping(
                 payload.get("quantization"),
                 path="quantization",
                 allowed=_train_arguments_allowed_keys(),
@@ -4967,7 +4967,7 @@ class LatestDetectionTrainingConfig:
 
     def to_mapping(self) -> dict[str, Any]:
         payload = dataclass_asdict_no_none(self)
-        for section in _LATEST_DETECTION_RUNTIME_SECTIONS:
+        for section in _DETECTION_RUNTIME_SECTIONS:
             if payload.get(section) == {}:
                 payload.pop(section, None)
         token_groups = payload.get("token_rows", {}).get("groups", {})

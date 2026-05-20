@@ -39,6 +39,7 @@ def _is_stage1_non_smoke_leaf(path: Path) -> bool:
         rel.startswith("configs/stage1/")
         and "/_shared/" not in rel
         and "/smoke/" not in rel
+        and "/negative/" not in rel
         and rel != "configs/stage1/sft_base.yaml"
     )
 
@@ -71,11 +72,10 @@ def _all_non_smoke_training_configs() -> list[Path]:
 
 def _representative_migrated_leaves() -> list[Path]:
     return [
-        STAGE1_ROOT / "profiles/4b/coord_soft_ce_gate_coco80_desc_first.yaml",
+        STAGE1_ROOT / "profiles/4b/coord_soft_ce_gate_coco80_desc_first_1024_lvis_proxy.yaml",
         STAGE1_ROOT / "lvis_bbox_max60_1024.yaml",
         STAGE2_ROOT / "prod/a_only.yaml",
         STAGE2_ROOT / "prod/ab_mixed.yaml",
-        STAGE2_ROOT / "lvis_bbox_max60_1024.yaml",
     ]
 
 
@@ -134,18 +134,18 @@ def test_stage2_prod_common_no_longer_hides_prompt_identity() -> None:
         assert custom["object_field_order"] == "desc_first"
 
 
-def test_canonical_non_smoke_leaves_author_raw_run_identity_fields() -> None:
+def test_canonical_non_smoke_leaves_materialize_run_identity_fields() -> None:
     leaves = _all_non_smoke_training_configs()
     assert leaves, "Expected canonical non-smoke training leaves across Stage-1 and Stage-2."
 
     for leaf in leaves:
-        payload = _raw_yaml(leaf)
-        model = payload.get("model", {}) or {}
-        training = payload.get("training", {}) or {}
-        assert model.get("model"), f"{leaf.relative_to(REPO_ROOT)} must author model.model"
-        assert training.get("run_name"), f"{leaf.relative_to(REPO_ROOT)} must author training.run_name"
-        assert training.get("artifact_subdir"), (
-            f"{leaf.relative_to(REPO_ROOT)} must author training.artifact_subdir"
+        cfg = ConfigLoader.load_materialized_training_config(str(leaf))
+        assert cfg.model.get("model"), f"{leaf.relative_to(REPO_ROOT)} must materialize model.model"
+        assert cfg.training.get("run_name"), (
+            f"{leaf.relative_to(REPO_ROOT)} must materialize training.run_name"
+        )
+        assert cfg.training.get("artifact_subdir"), (
+            f"{leaf.relative_to(REPO_ROOT)} must materialize training.artifact_subdir"
         )
 
 

@@ -1,4 +1,4 @@
-"""Latest-schema detection launch/runtime policy helpers."""
+"""Current-schema detection launch/runtime policy helpers."""
 
 from __future__ import annotations
 
@@ -12,13 +12,13 @@ from src.config.prompts import get_template_prompts
 from src.config.schema import (
     CoordOffsetConfig,
     CoordTokensConfig,
-    LatestDetectionTrainingConfig,
+    DetectionTrainingConfig,
 )
 from src.detection.dataset import DetectionTrainingDataset
 from src.detection.coord_soft_targets import CoordSoftTargetRuntimeConfig
 from src.detection.tokenizer_contract import resolve_compact_training_stop_contract
 
-LatestDetectionRuntimeMode = Literal[
+DetectionRuntimeMode = Literal[
     "sorted_sft",
     "random_order_sft",
     "random_permutation_et_rmp_ce",
@@ -44,12 +44,12 @@ class RecursiveDetectionCERuntimeConfig:
     type_gate: Any | None = None
 
 
-def is_latest_detection_config(training_config: Any) -> bool:
-    return isinstance(training_config, LatestDetectionTrainingConfig)
+def is_detection_config(training_config: Any) -> bool:
+    return isinstance(training_config, DetectionTrainingConfig)
 
 
-def latest_detection_sequence_format(
-    training_config: LatestDetectionTrainingConfig,
+def detection_sequence_format(
+    training_config: DetectionTrainingConfig,
 ) -> str:
     if training_config.detection_template.id == "compact_full":
         return "compact_full"
@@ -60,18 +60,18 @@ def latest_detection_sequence_format(
     )
 
 
-def latest_detection_prompt_variant(
-    training_config: LatestDetectionTrainingConfig,
+def detection_prompt_variant(
+    training_config: DetectionTrainingConfig,
 ) -> str | None:
     return "coco_80" if training_config.prompt.prompt_variant_enabled else None
 
 
-def resolve_latest_detection_prompts(
-    training_config: LatestDetectionTrainingConfig,
+def resolve_detection_prompts(
+    training_config: DetectionTrainingConfig,
 ) -> tuple[str, str]:
     if training_config.prompt.system_variant != "stage1_detection":
         raise ValueError(
-            "latest detection runtime currently supports only "
+            "detection runtime currently supports only "
             "prompt.system_variant=stage1_detection"
         )
     if (
@@ -102,17 +102,17 @@ def resolve_latest_detection_prompts(
     return get_template_prompts(
         ordering=ordering,
         coord_mode="coord_tokens",
-        prompt_variant=latest_detection_prompt_variant(training_config),
+        prompt_variant=detection_prompt_variant(training_config),
         object_field_order=str(object_field_order),
         bbox_format=str(training_config.detection_template.bbox_format),
-        detection_sequence_format=latest_detection_sequence_format(training_config),
+        detection_sequence_format=detection_sequence_format(training_config),
     )
 
 
-def build_latest_detection_runtime_custom_shim(
-    training_config: LatestDetectionTrainingConfig,
+def build_detection_runtime_custom_shim(
+    training_config: DetectionTrainingConfig,
 ) -> SimpleNamespace:
-    _system_prompt, user_prompt = resolve_latest_detection_prompts(training_config)
+    _system_prompt, user_prompt = resolve_detection_prompts(training_config)
     object_field_order = training_config.detection_template.object_field_order
     if object_field_order is None:
         object_field_order = "desc_first"
@@ -121,7 +121,7 @@ def build_latest_detection_runtime_custom_shim(
         if training_config.data.object_ordering == "random_permutation"
         else "sorted"
     )
-    prompt_variant = latest_detection_prompt_variant(training_config)
+    prompt_variant = detection_prompt_variant(training_config)
     return SimpleNamespace(
         extra={"prompt_variant": prompt_variant} if prompt_variant else {},
         train_jsonl=training_config.data.train_jsonl,
@@ -142,7 +142,7 @@ def build_latest_detection_runtime_custom_shim(
         object_ordering=object_ordering,
         object_field_order=str(object_field_order),
         bbox_format=str(training_config.detection_template.bbox_format),
-        detection_sequence_format=latest_detection_sequence_format(training_config),
+        detection_sequence_format=detection_sequence_format(training_config),
         eval_detection=None,
         token_type_metrics=None,
         coord_soft_ce_w1=None,
@@ -156,9 +156,9 @@ def build_latest_detection_runtime_custom_shim(
     )
 
 
-def latest_detection_mode(
-    training_config: LatestDetectionTrainingConfig,
-) -> LatestDetectionRuntimeMode:
+def detection_mode(
+    training_config: DetectionTrainingConfig,
+) -> DetectionRuntimeMode:
     objective_id = getattr(training_config.objective, "id", None)
     if objective_id == "teacher_forcing":
         if training_config.objective.profile not in {
@@ -166,13 +166,13 @@ def latest_detection_mode(
             "pure_valid_set_marginal",
         }:
             raise ValueError(
-                "teacher_forcing latest detection runtime currently supports "
+                "teacher_forcing detection runtime currently supports "
                 "objective.profile in {'hard_sft', 'pure_valid_set_marginal'}"
             )
         rollin_policy = training_config.objective.target_ir.rollin_policy
         if rollin_policy.name != "random_permutation":
             raise ValueError(
-                "teacher_forcing latest detection runtime currently supports only "
+                "teacher_forcing detection runtime currently supports only "
                 "objective.target_ir.rollin_policy.name=random_permutation"
             )
         return "random_order_sft"
@@ -185,16 +185,16 @@ def latest_detection_mode(
         "prefix_rollin_et_rmp_ce",
     }
     if variant in supported:
-        return cast(LatestDetectionRuntimeMode, variant)
+        return cast(DetectionRuntimeMode, variant)
     raise ValueError(
-        "latest detection runtime does not support "
+        "detection runtime does not support "
         f"objective.variant={variant!r}; use sorted_sft, random_order_sft, "
         "random_permutation_et_rmp_ce, or prefix_rollin_et_rmp_ce"
     )
 
 
 def resolve_detection_runtime_support(
-    training_config: LatestDetectionTrainingConfig,
+    training_config: DetectionTrainingConfig,
 ) -> DetectionRuntimeSupport:
     objective_id = getattr(training_config.objective, "id", None)
     is_compact = training_config.detection_template.id == "compact_full"
@@ -208,8 +208,8 @@ def resolve_detection_runtime_support(
     )
 
 
-def assert_latest_detection_runtime_supported(
-    training_config: LatestDetectionTrainingConfig,
+def assert_detection_runtime_supported(
+    training_config: DetectionTrainingConfig,
     *,
     encoded_sample_cache_cfg: Any,
     tokenizer: object | None = None,
@@ -398,7 +398,7 @@ def resolve_recursive_detection_ce_runtime_cfg(
 
 def _resolve_coord_soft_ce_runtime_config(
     *,
-    training_config: LatestDetectionTrainingConfig,
+    training_config: DetectionTrainingConfig,
     objective: Any,
     field_getter: Any,
 ) -> CoordSoftTargetRuntimeConfig | None:
@@ -463,11 +463,11 @@ def _resolve_coord_soft_ce_runtime_config(
     )
 
 
-def build_latest_detection_dataset(
+def build_detection_dataset(
     jsonl_path: str | Path,
     *,
     swift_template: Any,
-    training_config: LatestDetectionTrainingConfig,
+    training_config: DetectionTrainingConfig,
     custom_config: Any,
     system_prompt: str | None,
     seed: int,
@@ -500,7 +500,7 @@ def build_latest_detection_dataset(
         swift_template=swift_template,
         image_root=training_config.data.image_root,
         detection_template_id=training_config.detection_template.id,
-        mode=latest_detection_mode(training_config),
+        mode=detection_mode(training_config),
         object_ordering=training_config.data.object_ordering,
         user_prompt=custom_config.user_prompt,
         system_prompt=system_prompt,
@@ -517,16 +517,16 @@ def build_latest_detection_dataset(
 
 __all__ = [
     "DetectionRuntimeSupport",
-    "LatestDetectionRuntimeMode",
+    "DetectionRuntimeMode",
     "RecursiveDetectionCERuntimeConfig",
-    "assert_latest_detection_runtime_supported",
-    "build_latest_detection_dataset",
-    "build_latest_detection_runtime_custom_shim",
-    "is_latest_detection_config",
-    "latest_detection_mode",
-    "latest_detection_prompt_variant",
-    "latest_detection_sequence_format",
+    "assert_detection_runtime_supported",
+    "build_detection_dataset",
+    "build_detection_runtime_custom_shim",
+    "is_detection_config",
+    "detection_mode",
+    "detection_prompt_variant",
+    "detection_sequence_format",
     "resolve_detection_runtime_support",
-    "resolve_latest_detection_prompts",
+    "resolve_detection_prompts",
     "resolve_recursive_detection_ce_runtime_cfg",
 ]

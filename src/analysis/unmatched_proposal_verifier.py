@@ -27,7 +27,12 @@ from typing import (
 import torch
 import yaml
 from PIL import Image, ImageDraw
-from transformers import AutoProcessor, Qwen3VLForConditionalGeneration
+from transformers import (
+    AutoProcessor,
+    LogitsProcessorList,
+    Qwen3VLForConditionalGeneration,
+    RepetitionPenaltyLogitsProcessor,
+)
 
 from src.common.object_field_order import (
     build_object_payload,
@@ -45,11 +50,6 @@ from src.coord_tokens.offset_adapter import (
 from src.infer.checkpoints import resolve_inference_checkpoint
 from src.infer.pipeline import run_pipeline
 from src.analysis.rollout_parity import collect_stage2_parity_gt_vs_pred
-from src.analysis.raw_text_coordinate_decode_bias_scoring import (
-    build_repetition_penalty_processors,
-    score_processed_span_token_rows,
-)
-from src.analysis.raw_text_coord_continuity_scoring import score_span_logprobs
 from src.trainers.rollout_matching.contracts import GTObject
 from src.trainers.rollout_matching.parsing import (
     find_desc_value_token_positions_by_span,
@@ -71,6 +71,129 @@ _MANUAL_AUDIT_LABELS = (
     "dead_or_hallucinated",
     "uncertain",
 )
+
+
+def _token_logprob(*, logits: torch.Tensor, token_id: int) -> float:
+    return float(
+        logits[int(token_id)].detach().cpu().item()
+        - torch.logsumexp(logits, dim=-1).detach().cpu().item()
+    )
+
+
+def _decode_token_text(*, tokenizer: object | None, token_id: int) -> str | None:
+    if tokenizer is None:
+        return None
+    decode = getattr(tokenizer, "decode", None)
+    if not callable(decode):
+        return None
+    return str(
+        decode(
+            [int(token_id)],
+            skip_special_tokens=False,
+            clean_up_tokenization_spaces=False,
+        )
+    )
+
+
+def _score_span_logprobs(
+    *,
+    logits: torch.Tensor,
+    input_ids: torch.Tensor,
+    batch_idx: int,
+    positions: Sequence[int],
+) -> dict[str, float | int]:
+    values: list[float] = []
+    for pos in positions:
+        if int(pos) <= 0 or int(pos) >= int(input_ids.shape[1]):
+            raise ValueError(f"position out of range: {pos}")
+        prev_logits = logits[batch_idx, int(pos) - 1].float()
+        target_id = int(input_ids[batch_idx, int(pos)].item())
+        values.append(_token_logprob(logits=prev_logits, token_id=target_id))
+    if not values:
+        raise ValueError("positions must not be empty")
+    return {
+        "count": len(values),
+        "sum_logprob": float(sum(values)),
+        "mean_logprob": float(sum(values) / len(values)),
+    }
+
+
+def _build_repetition_penalty_processors(
+    *, repetition_penalty: float = 1.0
+) -> LogitsProcessorList:
+    processors = LogitsProcessorList()
+    if float(repetition_penalty) != 1.0:
+        processors.append(RepetitionPenaltyLogitsProcessor(float(repetition_penalty)))
+    return processors
+
+
+def _apply_logits_processors(
+    *,
+    raw_logits: torch.Tensor,
+    history_ids: Sequence[int],
+    processors: LogitsProcessorList,
+) -> torch.Tensor:
+    if not processors:
+        return raw_logits
+    history = torch.tensor(
+        [list(history_ids)],
+        dtype=torch.long,
+        device=raw_logits.device,
+    )
+    return processors(history, raw_logits.unsqueeze(0))[0]
+
+
+def _score_processed_span_token_rows(
+    *,
+    logits: torch.Tensor,
+    input_ids: torch.Tensor,
+    batch_idx: int,
+    positions: Sequence[int],
+    tokenizer: object | None = None,
+    logits_processors: Sequence[object] | LogitsProcessorList | None = None,
+    history_start: int = 0,
+) -> list[dict[str, object]]:
+    if not positions:
+        raise ValueError("positions must not be empty")
+    processors = LogitsProcessorList()
+    if isinstance(logits_processors, LogitsProcessorList):
+        processors = logits_processors
+    elif logits_processors is not None:
+        for processor in logits_processors:
+            processors.append(processor)
+
+    rows: list[dict[str, object]] = []
+    for pos in positions:
+        if int(pos) <= 0 or int(pos) >= int(input_ids.shape[1]):
+            raise ValueError(f"position out of range: {pos}")
+        raw_logits = logits[batch_idx, int(pos) - 1].float()
+        history_ids = [
+            int(value)
+            for value in input_ids[batch_idx, int(history_start) : int(pos)]
+            .detach()
+            .cpu()
+            .tolist()
+        ]
+        processed_logits = _apply_logits_processors(
+            raw_logits=raw_logits,
+            history_ids=history_ids,
+            processors=processors,
+        )
+        token_id = int(input_ids[batch_idx, int(pos)].item())
+        rows.append(
+            {
+                "position": int(pos),
+                "token_id": token_id,
+                "token_text": _decode_token_text(tokenizer=tokenizer, token_id=token_id),
+                "history_ids": history_ids,
+                "raw_logprob": _token_logprob(logits=raw_logits, token_id=token_id),
+                "processed_logprob": _token_logprob(
+                    logits=processed_logits,
+                    token_id=token_id,
+                ),
+            }
+        )
+    return rows
 _VALID_AUDIT_LABELS = frozenset(_MANUAL_AUDIT_LABELS)
 
 
@@ -2100,7 +2223,7 @@ class TeacherForcedScorer:
         if logits.shape[:2] != input_ids.shape[:2]:
             raise RuntimeError("teacher-forced scorer requires unsliced logits")
         return [
-            score_span_logprobs(
+            _score_span_logprobs(
                 logits=logits,
                 input_ids=input_ids,
                 batch_idx=0,
@@ -2168,7 +2291,7 @@ class TeacherForcedScorer:
             ]:
                 raise RuntimeError("assistant_span_build_failed")
             scored.append(
-                score_span_logprobs(
+                _score_span_logprobs(
                     logits=logits,
                     input_ids=input_ids,
                     batch_idx=batch_idx,
@@ -2212,7 +2335,7 @@ class TeacherForcedScorer:
         if logits.shape[:2] != input_ids.shape[:2]:
             raise RuntimeError("teacher-forced scorer requires unsliced logits")
         padded_len = int(input_ids.shape[1])
-        processors = build_repetition_penalty_processors(
+        processors = _build_repetition_penalty_processors(
             repetition_penalty=repetition_penalty
         )
         scored_rows: List[List[Dict[str, Any]]] = []
@@ -2224,7 +2347,7 @@ class TeacherForcedScorer:
                 int(value) for value in example.full_input_ids
             ]:
                 raise RuntimeError("assistant_span_build_failed")
-            token_rows = score_processed_span_token_rows(
+            token_rows = _score_processed_span_token_rows(
                 logits=logits,
                 input_ids=input_ids,
                 batch_idx=batch_idx,

@@ -293,9 +293,9 @@ probability to every recombination coordinate when the radius is nonzero.
 
 The active ablation successor configs are:
 
-- main: `configs/stage1/recursive_detection_ce_latest/prod/compact_full_support2_instance_trie_focused_cap8_frac0p04_mix0p1.yaml`
-- slope ablation: `configs/stage1/recursive_detection_ce_latest/prod/compact_full_support2_instance_trie_focused_cap8_frac0p06_mix0p1.yaml`
-- strength ablation: `configs/stage1/recursive_detection_ce_latest/prod/compact_full_support2_instance_trie_focused_cap8_frac0p04_mix0p2.yaml`
+- main: `configs/stage1/recursive_detection_ce/prod/compact_full_support2_instance_trie_focused_cap8_frac0p04_mix0p1.yaml`
+- slope ablation: `configs/stage1/recursive_detection_ce/prod/compact_full_support2_instance_trie_focused_cap8_frac0p06_mix0p1.yaml`
+- strength ablation: `configs/stage1/recursive_detection_ce/prod/compact_full_support2_instance_trie_focused_cap8_frac0p04_mix0p2.yaml`
 
 The public focused-policy surface is:
 
@@ -315,7 +315,7 @@ Stale knobs from older coordinate-softCE variants must be rejected, including
 `target_truncate`.
 
 Runtime should resolve the coordinate token id range from
-`token_rows.groups.coord_geometry`, as the existing latest recursive detection
+`token_rows.groups.coord_geometry`, as the existing recursive detection
 surface does for previous coordinate softCE experiments.
 
 The coordinate value domain is the resolved coordinate-token vocabulary,

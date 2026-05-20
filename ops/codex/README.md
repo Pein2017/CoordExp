@@ -1,11 +1,11 @@
 # Codex Ops
 
-Codex operational helpers live here instead of under `scripts/` so training,
-inference, and evaluation entrypoints stay focused on CoordExp itself.
+Tracked Codex operations are intentionally minimal.
 
-- `commit_codex_memories.sh`: commits only `.codex/memories/**/*.md` changes
-  with the default message `refresh memories`.
-- `watch_codex_memories.sh`: watches `.codex/memories` and invokes the commit
-  helper after a debounce interval.
-- `install_codex_memory_watcher.sh`: installs the watcher as a user-level
-  `systemd` service.
+Policy:
+
+- `.codex/skills/` is the tracked repo-local agent capability surface.
+- `.codex/memories/`, sessions, logs, plugin caches, auth, local config, and
+  app runtime state are local-only workspace state.
+- Do not add memory auto-commit watchers here. They conflict with the current
+  local-only memory policy and can silently mix agent state with source changes.

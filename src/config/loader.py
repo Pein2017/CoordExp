@@ -26,7 +26,7 @@ from .prompts import (
     get_template_prompts,
 )
 from .schema import (
-    LatestDetectionTrainingConfig,
+    DetectionTrainingConfig,
     PromptOverrides,
     SaveDelayConfig,
     TrainingConfig,
@@ -497,7 +497,7 @@ class ConfigLoader:
         )
 
     @staticmethod
-    def build_train_arguments(config: TrainingConfig | LatestDetectionTrainingConfig) -> TrainArguments:
+    def build_train_arguments(config: TrainingConfig | DetectionTrainingConfig) -> TrainArguments:
         """Directly instantiate TrainArguments from config.
 
         TrainArguments is a unified dataclass that inherits from:
@@ -518,12 +518,12 @@ class ConfigLoader:
         Returns:
             Fully initialized TrainArguments object
         """
-        is_latest_detection = isinstance(config, LatestDetectionTrainingConfig)
+        is_detection = isinstance(config, DetectionTrainingConfig)
         model_section = dict(config.model)
         quant_section = dict(config.quantization)
         data_section = (
             {"dataset": ["dummy"], "val_dataset": ["dummy"]}
-            if is_latest_detection
+            if is_detection
             else dict(config.data)
         )
         template_section = dict(config.template)
@@ -588,7 +588,7 @@ class ConfigLoader:
         #
         # Stage2-AB standardizes step semantics around a true (exact) global effective batch.
         is_stage2_ab = bool(
-            not is_latest_detection
+            not is_detection
             and
             str(getattr(getattr(config, "custom", None), "trainer_variant", "") or "")
             == "stage2_two_channel"
@@ -672,7 +672,7 @@ class ConfigLoader:
             template_section.setdefault("max_length", config.global_max_length)
 
         if (
-            not is_latest_detection
+            not is_detection
             and "system" not in template_section
             and config.prompts.system
         ):
@@ -682,7 +682,7 @@ class ConfigLoader:
         rlhf_type = rlhf_section_original.get("rlhf_type")
         llm_kd_active = rlhf_type == "gkd" and llm_kd_weight > 0
         visual_kd_enabled = (
-            False if is_latest_detection else bool(config.custom.visual_kd.enabled)
+            False if is_detection else bool(config.custom.visual_kd.enabled)
         )
         kd_requested = llm_kd_active or visual_kd_enabled
         if kd_requested and not teacher_model_path:
@@ -714,7 +714,7 @@ class ConfigLoader:
             if section:
                 args_dict.update(section)
 
-        if is_latest_detection:
+        if is_detection:
             deepspeed_section = config.deepspeed
             if deepspeed_section and bool(deepspeed_section.get("enabled", False)):
                 args_dict["deepspeed"] = deepspeed_section.get("config")
@@ -735,7 +735,7 @@ class ConfigLoader:
                 "Unable to attach save_last_epoch to TrainArguments; ensure ms-swift exposes this attribute."
             ) from exc
 
-        if not is_latest_detection and config.custom.trainer_variant:
+        if not is_detection and config.custom.trainer_variant:
             try:
                 setattr(train_args, "trainer_variant", config.custom.trainer_variant)
             except (AttributeError, TypeError) as exc:  # pragma: no cover - explicit failure
@@ -749,7 +749,7 @@ class ConfigLoader:
         if save_delay_config.epochs is not None:
             setattr(train_args, "save_delay_epochs", save_delay_config.epochs)
 
-        if not is_latest_detection:
+        if not is_detection:
             try:
                 setattr(train_args, "visual_kd_config", config.custom.visual_kd)
             except (AttributeError, TypeError) as exc:  # pragma: no cover
@@ -764,8 +764,8 @@ class ConfigLoader:
                 "Unable to attach llm_kd_weight to TrainArguments; ensure ms-swift exposes this attribute."
             ) from exc
 
-        if is_latest_detection:
-            setattr(train_args, "latest_detection_config", config)
+        if is_detection:
+            setattr(train_args, "detection_config", config)
         else:
             try:
                 setattr(train_args, "coord_offset_config", config.custom.coord_offset)
@@ -780,7 +780,7 @@ class ConfigLoader:
                 "TrainArguments missing nested training_args; ms-swift interface may have changed."
             )
 
-        if not is_latest_detection:
+        if not is_detection:
             try:
                 setattr(inner_args, "visual_kd_config", config.custom.visual_kd)
             except (AttributeError, TypeError) as exc:  # pragma: no cover
@@ -795,8 +795,8 @@ class ConfigLoader:
                 "Unable to attach llm_kd_weight to inner training arguments; ensure ms-swift exposes this attribute."
             ) from exc
 
-        if is_latest_detection:
-            setattr(inner_args, "latest_detection_config", config)
+        if is_detection:
+            setattr(inner_args, "detection_config", config)
         else:
             try:
                 setattr(inner_args, "coord_offset_config", config.custom.coord_offset)
@@ -810,9 +810,9 @@ class ConfigLoader:
     @staticmethod
     def _materialize_training_config(
         raw_config: Dict[str, Any], prompts: PromptOverrides
-    ) -> TrainingConfig | LatestDetectionTrainingConfig:
-        if ConfigLoader._is_latest_detection_config_payload(raw_config):
-            return LatestDetectionTrainingConfig.from_mapping(raw_config)
+    ) -> TrainingConfig | DetectionTrainingConfig:
+        if ConfigLoader._is_detection_training_config_payload(raw_config):
+            return DetectionTrainingConfig.from_mapping(raw_config)
         try:
             return TrainingConfig.from_mapping(raw_config, prompts)
         except TypeError as exc:
@@ -821,8 +821,8 @@ class ConfigLoader:
             ) from exc
 
     @staticmethod
-    def _is_latest_detection_config_payload(raw_config: Mapping[str, Any]) -> bool:
-        latest_markers = {
+    def _is_detection_training_config_payload(raw_config: Mapping[str, Any]) -> bool:
+        detection_markers = {
             "data",
             "prompt",
             "detection_template",
@@ -831,12 +831,12 @@ class ConfigLoader:
             "evaluation",
             "validation",
         }
-        return latest_markers.issubset(set(raw_config.keys()))
+        return detection_markers.issubset(set(raw_config.keys()))
 
     @staticmethod
     def load_materialized_training_config(
         config_path: str, base_config_path: Optional[str] = None
-    ) -> TrainingConfig | LatestDetectionTrainingConfig:
+    ) -> TrainingConfig | DetectionTrainingConfig:
         """Load + materialize a TrainingConfig without constructing ms-swift TrainArguments.
 
         This is intentionally side-effect free (no hub downloads / model probing) and is
@@ -853,7 +853,7 @@ class ConfigLoader:
         config = ConfigLoader._materialize_training_artifact_paths(config)
         prompts = (
             PromptOverrides()
-            if ConfigLoader._is_latest_detection_config_payload(config)
+            if ConfigLoader._is_detection_training_config_payload(config)
             else ConfigLoader.resolve_prompts(config)
         )
         return ConfigLoader._materialize_training_config(config, prompts)
@@ -861,7 +861,7 @@ class ConfigLoader:
     @staticmethod
     def load_training_config(
         config_path: str, base_config_path: Optional[str] = None
-    ) -> tuple[TrainArguments, TrainingConfig | LatestDetectionTrainingConfig]:
+    ) -> tuple[TrainArguments, TrainingConfig | DetectionTrainingConfig]:
         ConfigLoader._validate_stage2_leaf_contract(config_path)
         config = ConfigLoader.load_yaml_with_extends(config_path)
 
@@ -872,7 +872,7 @@ class ConfigLoader:
         config = ConfigLoader._materialize_training_artifact_paths(config)
         prompts = (
             PromptOverrides()
-            if ConfigLoader._is_latest_detection_config_payload(config)
+            if ConfigLoader._is_detection_training_config_payload(config)
             else ConfigLoader.resolve_prompts(config)
         )
         materialized = ConfigLoader._materialize_training_config(config, prompts)

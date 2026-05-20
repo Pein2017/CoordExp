@@ -16,7 +16,7 @@ from scripts.diagnostics import audit_instance_trie_gaussian_targets as audit
 REPO_ROOT = Path(__file__).resolve().parents[1]
 CONFIG_PATH = (
     REPO_ROOT
-    / "configs/stage1/recursive_detection_ce_latest/smoke/"
+    / "configs/stage1/recursive_detection_ce/smoke/"
     "compact_full_support2_instance_trie_focused_cap8_frac0p04_mix0p1_tiny.yaml"
 )
 REQUIRED_METRIC_KEYS = {

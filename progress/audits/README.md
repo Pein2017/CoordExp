@@ -6,7 +6,7 @@ status: canonical
 domain: research-history
 summary: Router for structured audit notes and decision-focused reviews.
 tags: [progress, audits, review]
-updated: 2026-05-19
+updated: 2026-05-20
 ---
 
 # Audits Index
@@ -22,6 +22,8 @@ decision record.
 
 ## Current Contents
 
+- [2026-05-20_repository_stewardship_audit.md](2026-05-20_repository_stewardship_audit.md)
+  - repository structure diagnosis, cleanup candidates, and long-term governance rules
 - [2026-05-19_openspec_reactivation_audit.md](2026-05-19_openspec_reactivation_audit.md)
   - OpenSpec validation cleanup and active-change triage before trie-marginal planning
 - [2026-05-14-instance-trie-gaussian-post-implementation-audit.md](2026-05-14-instance-trie-gaussian-post-implementation-audit.md)

@@ -16,24 +16,24 @@ Usage:
   # Basic: Verify coordinate tokens were trained
   conda run -n ms python scripts/tools/verify_coord_tokens.py \\
     --original model_cache/Qwen3-VL-8B-Instruct-coordexp \\
-    --merged output/debug/coord_merged
+    --merged outputs/debug/coord_merged
 
   # With adapter checkpoint verification
   conda run -n ms python scripts/tools/verify_coord_tokens.py \\
     --original model_cache/Qwen3-VL-8B-Instruct-coordexp \\
-    --merged output/debug/coord_merged \\
-    --adapter output/debug/coord/checkpoint-15
+    --merged outputs/debug/coord_merged \\
+    --adapter outputs/debug/coord/checkpoint-15
 
   # Also check other layers (vision, LLM, aligner)
   conda run -n ms python scripts/tools/verify_coord_tokens.py \\
     --original model_cache/Qwen3-VL-8B-Instruct-coordexp \\
-    --merged output/debug/coord_merged \\
+    --merged outputs/debug/coord_merged \\
     --check-layers
 
   # Use GPU for faster loading
   conda run -n ms python scripts/tools/verify_coord_tokens.py \\
     --original model_cache/Qwen3-VL-8B-Instruct-coordexp \\
-    --merged output/debug/coord_merged \\
+    --merged outputs/debug/coord_merged \\
     --device cuda:0
 
 Exit codes:
@@ -747,24 +747,24 @@ Examples:
   # Basic: Verify coordinate tokens were trained
   python verify_coord_tokens.py \\
     --original model_cache/Qwen3-VL-8B-Instruct-coordexp \\
-    --merged output/debug/coord_merged
+    --merged outputs/debug/coord_merged
 
   # With adapter checkpoint verification
   python verify_coord_tokens.py \\
     --original model_cache/Qwen3-VL-8B-Instruct-coordexp \\
-    --merged output/debug/coord_merged \\
-    --adapter output/debug/coord/checkpoint-15
+    --merged outputs/debug/coord_merged \\
+    --adapter outputs/debug/coord/checkpoint-15
 
   # Also check other layers (vision, LLM, aligner)
   python verify_coord_tokens.py \\
     --original model_cache/Qwen3-VL-8B-Instruct-coordexp \\
-    --merged output/debug/coord_merged \\
+    --merged outputs/debug/coord_merged \\
     --check-layers
 
   # Use GPU for faster loading
   python verify_coord_tokens.py \\
     --original model_cache/Qwen3-VL-8B-Instruct-coordexp \\
-    --merged output/debug/coord_merged \\
+    --merged outputs/debug/coord_merged \\
     --device cuda:0
         """,
     )
@@ -777,7 +777,7 @@ Examples:
     parser.add_argument(
         "--merged",
         type=str,
-        default="output/debug/coord_merged",
+        default="outputs/debug/coord_merged",
         help="Path to merged model",
     )
     parser.add_argument(

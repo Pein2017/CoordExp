@@ -1330,7 +1330,7 @@ def _run_forward_extraction_stage(
                             "cohort": str(case.get("cohort") or ""),
                             "slot": slot,
                             "prediction_role": prediction_role,
-                            "mass_surface": "coord_family_softmax_full",
+                            "mass_surface": "coordinate_softmax_full",
                             "top_coord_bins": top_rows,
                             **alignment,
                         }

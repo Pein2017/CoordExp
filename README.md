@@ -9,14 +9,30 @@ CoordExp extends Qwen3-VL with coordinate-specialized tokens, expectation-based 
 - **Dataset focus**: Defaults to single-source JSONL training; multi-dataset training uses offline-merged JSONL; runtime `custom.fusion_config` is dormant in the supported training surface.
 
 ## Repo layout
-- `src/` – training stack (datasets, callbacks, config loader, SFT entry `sft.py`; optional fusion dataset support)
-- `configs/` – YAMLs (base, LoRA variants)
-- `scripts/` – model utilities (e.g., `scripts/tools/expand_coord_vocab.py`)
-- `public_data/scripts/` – data utilities (converters, resize, coord-token conversion)
-- `docs/` – documentation index + runbooks; see `docs/README.md` (standards live in `docs/standards/`)
-- `docs/standards/CODE_STYLE.md` – code + architecture style guidelines (Transformers-inspired “Option A”)
-- `docs/notes/patent/` – background draft for CoordExp method
-- `AGENTS.md` – project instructions
+- `src/` - importable CoordExp library code for config loading, datasets,
+  training, inference, evaluation, metrics, and visualization helpers.
+- `configs/` - YAML-first training, inference, evaluation, benchmark, and
+  analysis configs. Current training surfaces live under `configs/stage1/` and
+  `configs/stage2_two_channel/`.
+- `scripts/` - stable user-facing entrypoints plus maintained wrappers and
+  utilities. See `scripts/README.md`.
+- `public_data/` - dataset tooling and local raw/processed public datasets.
+  Processed data reproducibility is recorded in
+  `manifests/public_data_provenance/`.
+- `docs/` - current operator-facing documentation and standards. Start with
+  `docs/README.md`.
+- `progress/` - historical notes, diagnostics, audits, and benchmark evidence.
+  Do not treat it as current behavior when `docs/` or `openspec/specs/`
+  already cover the contract.
+- `openspec/` - stable compatibility-sensitive contracts and active contract
+  deltas.
+- `outputs/` - local experiment artifacts and Baidu Netdisk sync surface. This
+  is not source-controlled.
+- `ops/` - workstation and agent-runtime policy helpers that are not CoordExp
+  training, inference, evaluation, or artifact entrypoints.
+- `.codex/skills/` - tracked repo-local agent skills. Other `.codex/` runtime
+  state is local-only.
+- `AGENTS.md` - project instructions for coding agents.
 
 ## Quick start
 1) **Environment**: activate `ms` conda env (`/root/miniconda3/envs/ms`), transformers in that env, ms-swift at `/data/ms-swift`.
@@ -27,14 +43,20 @@ CoordExp extends Qwen3-VL with coordinate-specialized tokens, expectation-based 
      --src /data/home/xiaoyan/AIteam/data/Qwen3-VL/model_cache/models/Qwen/Qwen3-VL-4B-Instruct \
      --dst /data/home/xiaoyan/AIteam/data/Qwen3-VL/model_cache/models/Qwen/Qwen3-VL-4B-Instruct-coordexp
    ```
-3) **Train (example)**:
+3) **Train (examples)**:
    ```bash
-   python -m src.sft \
-     --config configs/dlora/sft_base.yaml \
-     --base_config configs/base.yaml
+   conda run -n ms python -m src.sft \
+     --config configs/stage1/sft_base.yaml
+
+   conda run -n ms python -m src.sft \
+     --config configs/stage1/recursive_detection_ce/prod/compact_full_support2.yaml
    ```
-   - Set `custom.train_jsonl` / `custom.val_jsonl` in the YAMLs to your datasets (single-source).
-   - Or merge prepared JSONLs offline and point `custom.train_jsonl` / `custom.val_jsonl` at the merged artifacts; runtime `custom.fusion_config` is dormant in the supported training surface.
+   - Set `custom.train_jsonl` / `custom.val_jsonl` in legacy Stage-1 SFT YAMLs
+     to the prepared single-source dataset.
+   - Compact recursive detection uses the top-level detection
+     schema in `configs/stage1/recursive_detection_ce/`.
+   - Merge prepared JSONLs offline for multi-dataset training; runtime
+     `custom.fusion_config` is dormant in the supported training surface.
 
 ### Data prep: LVIS end-to-end (raw → resized JSONL → coord tokens → tiny)
 - After `public_data/scripts/download_lvis.py`, run:
@@ -61,9 +83,9 @@ CoordExp extends Qwen3-VL with coordinate-specialized tokens, expectation-based 
 - Purpose: lets coord token rows learn without touching the rest of the vocab. Adds trainable offsets on `embed_tokens` and `lm_head` for coord IDs 151670–152669 (skips 151669 `<|coord_*|>`).
 - How to enable:
   ```yaml
-  extends: configs/dlora/sft_base.yaml
+  extends: configs/stage1/sft_base.yaml
   training:
-    optimizer: multimodal_coord_offset   # keeps dlora buckets + coord offsets
+    optimizer: multimodal_coord_offset   # keeps multimodal buckets + coord offsets
   custom:
     coord_offset:
       enabled: true
@@ -79,8 +101,8 @@ CoordExp extends Qwen3-VL with coordinate-specialized tokens, expectation-based 
 ### Merging LoRA + coord offsets (export)
 Standard `swift export --merge_lora` drops the coord offsets, so use the helper script that patches shards in-place:
 ```bash
-ADAPTERS=output/debug/coord/<run>/checkpoint-* \
-OUTPUT_DIR=output/debug/coord_merged \
+ADAPTERS=outputs/debug/coord/<run>/checkpoint-* \
+OUTPUT_DIR=outputs/debug/coord_merged \
 GPU_DEVICES=3 \
 bash scripts/merge_coord.sh
 ```

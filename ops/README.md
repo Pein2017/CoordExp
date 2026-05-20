@@ -9,7 +9,7 @@ agent-runtime, and workstation automation helpers.
 
 ## Current Layout
 
-- `ops/codex/`: Codex agent/runtime helpers, including memory auto-commit
-  tooling.
+- `ops/codex/`: tracked policy note for repo-local Codex state. Agent runtime
+  state stays local-only; there is no memory auto-commit helper.
 - `ops/workspace/`: local workstation and repository hygiene helpers that are
   not training, inference, evaluation, or artifact-production entrypoints.

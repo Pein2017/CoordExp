@@ -1,9 +1,0 @@
-extends:
-  - ./compact_full_random_sft.yaml
-
-training:
-  artifact_subdir: compact_full_random_sft_prompt_variant
-  run_name: smoke-compact-full-random-sft-prompt-variant
-
-prompt:
-  prompt_variant_enabled: true

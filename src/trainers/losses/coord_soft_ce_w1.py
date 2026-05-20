@@ -151,7 +151,7 @@ def coord_vocab_text_gate_loss(
     return gate, mass_mean
 
 
-# Legacy fixed Gaussian coordinate softCE/W1 surface. Latest recursive
+# Legacy fixed Gaussian coordinate softCE/W1 surface. Current recursive
 # detection uses objective.coord_soft_ce with iou_gibbs_v0 instead.
 
 def compute_coord_soft_ce_w1_loss(

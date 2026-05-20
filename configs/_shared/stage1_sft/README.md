@@ -13,7 +13,7 @@ including:
 - `custom.object_field_order`
 - `custom.extra.prompt_variant`
 
-Latest compact detection configs must not extend those legacy overlays. Latest
-detection uses `LatestDetectionTrainingConfig` and top-level `data`, `prompt`,
+Compact detection configs must not extend those legacy overlays. Detection
+detection uses `DetectionTrainingConfig` and top-level `data`, `prompt`,
 `detection_template`, `token_rows`, `objective`, `packing`, `evaluation`, and
 `validation` sections instead.

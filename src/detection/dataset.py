@@ -1,4 +1,4 @@
-"""Latest-schema detection dataset with recursive CE sidecar alignment checks."""
+"""Current-schema detection dataset with recursive CE sidecar alignment checks."""
 
 from __future__ import annotations
 
@@ -232,7 +232,7 @@ def _callable_accepts_keyword(callable_obj: Any, keyword: str) -> bool:
 
 
 class DetectionTrainingDataset(Dataset):
-    """Map-style dataset for latest detection configs.
+    """Map-style dataset for detection configs.
 
     The dataset derives recursive CE targets independently from the rendered
     assistant sequence, then fails fast unless those token IDs/labels exactly
@@ -537,11 +537,11 @@ class DetectionTrainingDataset(Dataset):
     ) -> ObjectOrderingPlan:
         resolved_epoch = self._epoch if epoch is None else int(epoch)
         if self.config.object_ordering == "sorted":
-            return ObjectOrderingPlan.sorted(seed_source="latest_detection_dataset")
+            return ObjectOrderingPlan.sorted(seed_source="detection_training_dataset")
         seed = _mix_seed(self.config.seed, resolved_epoch, base_idx)
         return ObjectOrderingPlan.random_permutation(
             seed=seed,
-            seed_source=f"latest_detection_dataset:seed={self.config.seed}:epoch={resolved_epoch}:base_idx={base_idx}",
+            seed_source=f"detection_training_dataset:seed={self.config.seed}:epoch={resolved_epoch}:base_idx={base_idx}",
         )
 
     def _messages(
@@ -890,10 +890,10 @@ def strip_non_model_detection_sidecars(
 ) -> MutableMapping[str, Any]:
     """Strip registered detection sidecars from a model-input batch.
 
-    Latest detection samples carry sidecars for recursive CE and diagnostics.
+    Detection samples carry sidecars for recursive CE and diagnostics.
     Those sidecars may need to survive dataset collation and Trainer column
     filtering, but they must not leak into ``model(**inputs)``.  This helper is
-    the narrow model-input boundary for latest detection batches: every
+    the narrow model-input boundary for detection batches: every
     non-model detection sidecar must be registered here, and unknown leftovers
     fail fast instead of being silently forwarded.
     """

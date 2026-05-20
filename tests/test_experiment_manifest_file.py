@@ -5,7 +5,7 @@ from pathlib import Path
 
 from src.bootstrap.experiment_manifest import write_experiment_manifest_file
 from src.config.loader import ConfigLoader
-from src.config.schema import LatestDetectionTrainingConfig
+from src.config.schema import DetectionTrainingConfig
 from src.sft import _resolve_authored_experiment_payload
 
 
@@ -19,14 +19,14 @@ def test_write_experiment_manifest_file_captures_soft_and_hard_context(
     }
     out_path = write_experiment_manifest_file(
         output_dir=tmp_path,
-        config_path="configs/stage2_two_channel/smoke/a_only_center_size_2steps.yaml",
+        config_path="configs/stage2_two_channel/smoke/a_only.yaml",
         base_config_path="configs/base.yaml",
-        run_name="stage2_a_only_center_size_smoke",
+        run_name="smoke_20steps-stage2-a_only",
         dataset_seed=17,
         experiment={
-            "title": "Stage-2 A-only center-size smoke",
-            "purpose": "Validate the center-size smoke path.",
-            "key_deviations": ["Uses center-size bbox regression."],
+            "title": "Stage-2 A-only smoke",
+            "purpose": "Validate the compact A-only smoke path.",
+            "key_deviations": ["Uses the retained canonical A-only smoke profile."],
         },
         effective_runtime={
             "trainer_variant": "stage2_two_channel",
@@ -59,9 +59,9 @@ def test_write_experiment_manifest_file_captures_soft_and_hard_context(
     payload = json.loads(out_path.read_text(encoding="utf-8"))
 
     assert out_path.name == "experiment_manifest.json"
-    assert payload["identity"]["run_name"] == "stage2_a_only_center_size_smoke"
+    assert payload["identity"]["run_name"] == "smoke_20steps-stage2-a_only"
     assert payload["experiment"]["authored"]["purpose"] == (
-        "Validate the center-size smoke path."
+        "Validate the compact A-only smoke path."
     )
     assert payload["runtime_summary"]["trainer_variant"] == "stage2_two_channel"
     assert payload["runtime_summary"]["save_model_only"] is False
@@ -96,11 +96,11 @@ def test_write_experiment_manifest_file_marks_missing_authored_experiment(
     assert payload["experiment"]["authored"] is None
 
 
-def test_latest_detection_authored_experiment_preserves_claim_scope() -> None:
+def test_detection_authored_experiment_preserves_claim_scope() -> None:
     cfg = ConfigLoader.load_materialized_training_config(
-        "configs/stage1/recursive_detection_ce_latest/ablation/compact_full_prefix_rollin_balance2.yaml"
+        "configs/stage1/recursive_detection_ce/ablation/compact_full_prefix_rollin_balance2.yaml"
     )
-    assert isinstance(cfg, LatestDetectionTrainingConfig)
+    assert isinstance(cfg, DetectionTrainingConfig)
 
     authored = _resolve_authored_experiment_payload(cfg)
 

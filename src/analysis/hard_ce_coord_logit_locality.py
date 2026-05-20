@@ -2013,7 +2013,7 @@ def _resolve_prompts(config: StudyConfig) -> tuple[str | None, str]:
 
 
 def _ordering_plan(config: StudyConfig, *, row_index: int) -> ObjectOrderingPlan:
-    """Mirror latest DetectionTrainingDataset object ordering."""
+    """Mirror current DetectionTrainingDataset object ordering."""
 
     if config.model.object_ordering == "sorted":
         return ObjectOrderingPlan.sorted(seed_source="hard_ce_coord_logit_locality")
