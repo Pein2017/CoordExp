@@ -3,6 +3,8 @@ from typing import Any, Dict, Mapping, Optional, Sequence
 
 import torch
 
+from src.training.teacher_forcing.vocab import RoleVocab
+
 from ..teacher_forcing.contracts import PipelineResult, TeacherForcingContext
 from ..teacher_forcing.objective_pipeline import run_teacher_forcing_pipeline
 
@@ -51,7 +53,9 @@ def build_teacher_forcing_context(
     temperature: float,
     token_type_masks: Optional[Mapping[str, torch.Tensor]] = None,
     rollout_subset_masks: Optional[Mapping[str, torch.Tensor]] = None,
+    role_vocab: RoleVocab | None = None,
 ) -> TeacherForcingContext:
+    extra = {"role_vocab": role_vocab} if isinstance(role_vocab, RoleVocab) else {}
     return TeacherForcingContext(
         channel=str(channel),
         registry_context=str(registry_context),
@@ -63,7 +67,7 @@ def build_teacher_forcing_context(
         temperature=float(temperature),
         token_type_masks=dict(token_type_masks or {}),
         rollout_subset_masks=dict(rollout_subset_masks or {}),
-        extra={},
+        extra=extra,
     )
 
 
@@ -82,6 +86,7 @@ def run_stage2_objective_pipelines(
     rollout_subset_masks: Mapping[str, torch.Tensor],
     run_a_text: bool,
     warn_once_cache: set[str],
+    role_vocab: RoleVocab | None = None,
 ) -> Stage2ObjectiveRunResult:
     objective_specs_ctx = (
         _filter_channel_a_specs(
@@ -103,6 +108,7 @@ def run_stage2_objective_pipelines(
         temperature=float(temperature),
         token_type_masks=token_type_masks,
         rollout_subset_masks=rollout_subset_masks,
+        role_vocab=role_vocab,
     )
 
     pipeline_ctx_result = run_teacher_forcing_pipeline(
@@ -143,11 +149,12 @@ def build_stage2_core_loss_logs(
 ) -> Dict[str, float]:
     stage2_logs: Dict[str, float] = {}
 
-    def _emit_stage2_trie_metrics() -> None:
+    def _emit_passthrough_metrics() -> None:
         for key, value in pipeline_metrics_ctx.items():
             key_s = str(key)
             if not (
                 key_s.startswith("stage2_trie/")
+                or key_s.startswith("stage2_ab/channel_b/residual_set/")
                 or key_s in {"loss/B/stage2_trie_ce", "loss/stage2_trie_ce"}
             ):
                 continue
@@ -187,6 +194,6 @@ def build_stage2_core_loss_logs(
                     float(token_ce_module_w) * float(token_desc)
                 )
 
-    _emit_stage2_trie_metrics()
+    _emit_passthrough_metrics()
 
     return stage2_logs

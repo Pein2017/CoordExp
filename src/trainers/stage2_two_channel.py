@@ -15,6 +15,8 @@ from swift.trainers.rlhf_trainer.utils import replace_assistant_response_with_id
 
 from src.common.lvis_semantics import extract_lvis_image_policy
 from src.common.object_field_order import build_object_payload
+from src.detection.token_types import build_compact_token_type_groups
+from src.training.teacher_forcing.vocab import RoleVocab
 from src.training.stage2.rollout_codec import (
     FALLBACK_GT_FN_APPEND_ONLY,
     Stage2RolloutTemplatePolicy,
@@ -947,6 +949,35 @@ def _stage2_compact_im_end_token_id(tokenizer: Any) -> int:
         raise ValueError("tokenizer returned an invalid id for <|im_end|>")
 
     return int(converted)
+
+
+def _resolve_stage2_teacher_forcing_role_vocab(trainer: Any) -> RoleVocab | None:
+    role_vocab = getattr(trainer, "teacher_forcing_role_vocab", None)
+    if isinstance(role_vocab, RoleVocab):
+        return role_vocab
+
+    tokenizer = getattr(trainer, "tokenizer", None)
+    if tokenizer is None:
+        processing_class = getattr(trainer, "processing_class", None)
+        tokenizer = getattr(processing_class, "tokenizer", None)
+    if tokenizer is None:
+        template = getattr(trainer, "template", None)
+        tokenizer = getattr(template, "tokenizer", None)
+    if tokenizer is None:
+        return None
+
+    try:
+        groups = build_compact_token_type_groups(tokenizer)
+    except (AttributeError, TypeError, ValueError):
+        return None
+    if len(groups.eos) != 1:
+        return None
+    return RoleVocab(
+        schema_token_ids=groups.struct,
+        text_token_ids=groups.desc,
+        coord_token_ids=groups.coord,
+        stop_token_id=next(iter(groups.eos)),
+    )
 
 
 def _bbox_groups_from_token_ids(
@@ -4707,6 +4738,7 @@ class Stage2TwoChannelTrainer(
             rollout_subset_masks=rollout_subset_masks,
             run_a_text=run_a_text,
             warn_once_cache=warn_once,
+            role_vocab=_resolve_stage2_teacher_forcing_role_vocab(self),
         )
         objective_specs_ctx = list(objective_run.objective_specs_ctx)
         pipeline_ctx_result = objective_run.pipeline_ctx_result

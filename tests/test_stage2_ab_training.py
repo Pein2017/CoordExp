@@ -51,6 +51,7 @@ from src.trainers.stage2_two_channel.target_builder import (
 )
 from src.trainers.stage2_two_channel.objective_runner import (
     build_stage2_core_loss_logs,
+    run_stage2_objective_pipelines,
 )
 from src.trainers.stage2_two_channel.trie_supervision import (
     Stage2TrieCandidate,
@@ -58,6 +59,12 @@ from src.trainers.stage2_two_channel.trie_supervision import (
     Stage2TrieTokenTarget,
     Stage2TrieTargets,
 )
+from src.training.teacher_forcing.constants import (
+    TEACHER_FORCING_TARGET_IR_SCHEMA_VERSION,
+)
+from src.training.teacher_forcing.ir import SupervisionAtom, TeacherForcingTargetIR
+from src.training.teacher_forcing.roles import TokenRole
+from src.training.teacher_forcing.vocab import RoleVocab
 
 
 def _apply_test_duplicate_control(
@@ -7128,6 +7135,9 @@ def test_stage2_core_loss_logs_preserves_stage2_trie_objective_metrics() -> None
             "stage2_trie/candidate_count_mean": 4.0,
             "loss/B/stage2_trie_ce": 1.25,
             "loss/stage2_trie_ce": 1.25,
+            "stage2_ab/channel_b/residual_set/atom_count": 1.0,
+            "stage2_ab/channel_b/residual_set/component/type": 0.5,
+            "stage2_ab/channel_b/residual_set/valid_prob_mean": 0.75,
             "diagnostic/debug_only": 99.0,
         },
         token_ce_module_w=0.0,
@@ -7141,7 +7151,110 @@ def test_stage2_core_loss_logs_preserves_stage2_trie_objective_metrics() -> None
     assert out["stage2_trie/candidate_count_mean"] == pytest.approx(4.0)
     assert out["loss/B/stage2_trie_ce"] == pytest.approx(1.25)
     assert out["loss/stage2_trie_ce"] == pytest.approx(1.25)
+    assert out["stage2_ab/channel_b/residual_set/atom_count"] == pytest.approx(1.0)
+    assert out["stage2_ab/channel_b/residual_set/component/type"] == pytest.approx(0.5)
+    assert out["stage2_ab/channel_b/residual_set/valid_prob_mean"] == pytest.approx(0.75)
     assert "diagnostic/debug_only" not in out
+
+
+def _make_stage2_residual_role_vocab() -> RoleVocab:
+    return RoleVocab(
+        schema_token_ids=frozenset({20}),
+        text_token_ids=frozenset({10}),
+        coord_token_ids=frozenset({30}),
+        stop_token_id=40,
+    )
+
+
+def _make_stage2_residual_target_ir() -> TeacherForcingTargetIR:
+    atom = SupervisionAtom(
+        batch_index=0,
+        logit_position=0,
+        target_position=1,
+        allowed_token_roles=frozenset({TokenRole.TEXT}),
+        selected_token_role=TokenRole.TEXT,
+        valid_token_ids=frozenset({10}),
+        selected_token_id=10,
+        latent_valid_token_ids=frozenset({10}),
+        coverage_target_weights=None,
+        loss_tags=frozenset({"residual_set"}),
+        loss_weight=1.0,
+        coord_role=None,
+        provenance={"support_provenance": ("labeled",)},
+    )
+    return TeacherForcingTargetIR(
+        schema_version=TEACHER_FORCING_TARGET_IR_SCHEMA_VERSION,
+        atoms=(atom,),
+        metadata={"objective": "residual_set_correction"},
+    )
+
+
+def test_stage2_objective_pipelines_threads_role_vocab_for_residual_set_sidecar() -> None:
+    logits = torch.zeros((1, 2, 50), dtype=torch.float32)
+    result = run_stage2_objective_pipelines(
+        channel="B",
+        objective_specs=[
+            {
+                "name": "residual_set_correction",
+                "channels": ["B"],
+                "config": {"coverage_strength": 0.0},
+            }
+        ],
+        diagnostic_specs=[],
+        input_ids=torch.tensor([[99, 10]], dtype=torch.long),
+        logits=logits,
+        logits_ce=logits.clone(),
+        meta=[
+            {
+                "encoded_len": 2,
+                "residual_set_target_ir": _make_stage2_residual_target_ir(),
+            }
+        ],
+        coord_token_ids=(30,),
+        temperature=1.0,
+        token_type_masks={},
+        rollout_subset_masks={},
+        run_a_text=False,
+        warn_once_cache=set(),
+        role_vocab=_make_stage2_residual_role_vocab(),
+    )
+
+    assert result.pipeline_metrics_ctx[
+        "stage2_ab/channel_b/residual_set/atom_count"
+    ] == pytest.approx(1.0)
+    assert "residual_set_correction_contrib" in result.pipeline_ctx_result.state
+
+
+def test_stage2_objective_pipelines_fail_closed_without_role_vocab_for_residual_set_sidecar() -> None:
+    logits = torch.zeros((1, 2, 50), dtype=torch.float32)
+
+    with pytest.raises(ValueError, match="role_vocab"):
+        run_stage2_objective_pipelines(
+            channel="B",
+            objective_specs=[
+                {
+                    "name": "residual_set_correction",
+                    "channels": ["B"],
+                    "config": {"coverage_strength": 0.0},
+                }
+            ],
+            diagnostic_specs=[],
+            input_ids=torch.tensor([[99, 10]], dtype=torch.long),
+            logits=logits,
+            logits_ce=logits.clone(),
+            meta=[
+                {
+                    "encoded_len": 2,
+                    "residual_set_target_ir": _make_stage2_residual_target_ir(),
+                }
+            ],
+            coord_token_ids=(30,),
+            temperature=1.0,
+            token_type_masks={},
+            rollout_subset_masks={},
+            run_a_text=False,
+            warn_once_cache=set(),
+        )
 
 
 def test_reduce_stage2_pending_metrics_global_strips_internal_underscore_keys() -> None:
