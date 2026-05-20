@@ -1930,3 +1930,16 @@ only reliable field and entry boundaries.
 The grilling loop should next resolve:
 
 1. whether to stop grilling and prepare the stage1/stage2 implementation plan.
+
+
+## 2026-05-20 Stage-2 Residual-Set Self-Prefix / UL Redesign
+
+Detailed decisions were moved to [2026-05-20_stage2_residual_set_self_prefix_ul_redesign.md](2026-05-20_stage2_residual_set_self_prefix_ul_redesign.md).
+
+Summary:
+
+- Stage-2 correction should be residual-set conditioned at grammar-valid self-prefixes.
+- K rollout attempts are independent self-prefix correction samples, not merged target distributions.
+- Correction samples anchor at the earliest actionable error boundary.
+- Repeated-object boundaries use positive-only residual-set correction, not duplicate unlikelihood.
+- UL mining can promote strict K-valid consensus clusters as rollout-local TP-like positives with separate provenance, weight, metrics, and review artifacts.
