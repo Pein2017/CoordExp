@@ -1077,6 +1077,83 @@ def test_residual_set_rejects_pseudo_positive_double_supervision() -> None:
         TrainingConfig.from_mapping(raw, ConfigLoader.resolve_prompts(raw))
 
 
+def test_residual_set_rejects_channel_b_token_ce_double_supervision() -> None:
+    raw = _make_stage2_training_payload()
+    raw["stage2_ab"]["pipeline"]["objective"] = [
+        {
+            "name": "token_ce",
+            "enabled": True,
+            "weight": 1.0,
+            "channels": ["A", "B"],
+            "application": {"preset": "anchor_text_only"},
+            "config": {
+                "desc_ce_weight": 1.0,
+                "rollout_fn_desc_weight": 1.0,
+                "rollout_global_prefix_struct_ce_weight": 1.0,
+            },
+        },
+        {
+            "name": "residual_set_correction",
+            "enabled": True,
+            "weight": 1.0,
+            "channels": ["B"],
+            "application": {"preset": "rollout_self_prefix"},
+            "config": _residual_set_config(),
+        },
+    ]
+    raw["stage2_ab"]["channel_b"]["pseudo_positive"] = {"enabled": False}
+
+    with pytest.raises(ValueError, match="residual_set_correction.*token_ce"):
+        TrainingConfig.from_mapping(raw, ConfigLoader.resolve_prompts(raw))
+
+
+@pytest.mark.parametrize(
+    "nested_key, nested_value, expected_msg",
+    [
+        ("ul_geometry", {"unexpected_geometry": 1.0}, "ul_geometry.*unexpected_geometry"),
+        (
+            "artifact_policy",
+            {"unexpected_artifact": "debug"},
+            "artifact_policy.*unexpected_artifact",
+        ),
+    ],
+)
+def test_residual_set_rejects_unknown_nested_config_keys(
+    nested_key: str,
+    nested_value: dict,
+    expected_msg: str,
+) -> None:
+    raw = _make_stage2_training_payload()
+    config = _residual_set_config()
+    config[nested_key] = {**config[nested_key], **nested_value}
+    raw["stage2_ab"]["pipeline"]["objective"] = [
+        {
+            "name": "token_ce",
+            "enabled": True,
+            "weight": 1.0,
+            "channels": ["A"],
+            "application": {"preset": "anchor_text_only"},
+            "config": {
+                "desc_ce_weight": 1.0,
+                "rollout_fn_desc_weight": 1.0,
+                "rollout_global_prefix_struct_ce_weight": 1.0,
+            },
+        },
+        {
+            "name": "residual_set_correction",
+            "enabled": True,
+            "weight": 1.0,
+            "channels": ["B"],
+            "application": {"preset": "rollout_self_prefix"},
+            "config": config,
+        },
+    ]
+    raw["stage2_ab"]["channel_b"]["pseudo_positive"] = {"enabled": False}
+
+    with pytest.raises(ValueError, match=expected_msg):
+        TrainingConfig.from_mapping(raw, ConfigLoader.resolve_prompts(raw))
+
+
 @pytest.mark.parametrize(
     "weight_key, value, expected_msg",
     [

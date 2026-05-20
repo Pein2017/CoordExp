@@ -109,6 +109,16 @@ STAGE2_RESIDUAL_SET_CONFIG_KEYS: set[str] = {
     "ul_geometry",
     "artifact_policy",
 }
+STAGE2_RESIDUAL_SET_UL_GEOMETRY_KEYS: set[str] = {
+    "iou_min",
+    "center_distance_scale_max",
+    "area_ratio_max",
+    "aspect_ratio_max",
+    "consumed_overlap_iou_min",
+}
+STAGE2_RESIDUAL_SET_ARTIFACT_POLICY_KEYS: set[str] = {
+    "ul_clusters",
+}
 TEACHER_FORCING_OBJECTIVE_ID = "teacher_forcing"
 TEACHER_FORCING_PROFILES: set[str] = {
     "hard_sft",
@@ -2930,6 +2940,41 @@ class Stage2PipelineConfig:
                     f"[{idx}].config keys for module {spec.name!r}: "
                     f"{sorted(str(k) for k in unknown_cfg)}"
                 )
+            if str(spec.name) == STAGE2_RESIDUAL_SET_MODULE_NAME:
+                if "ul_geometry" in spec.config:
+                    ul_geometry = spec.config["ul_geometry"]
+                    if not isinstance(ul_geometry, Mapping):
+                        raise TypeError(
+                            "stage2_ab.pipeline.objective"
+                            f"[{idx}].config.ul_geometry must be a mapping"
+                        )
+                    ul_geometry_unknown = (
+                        set(ul_geometry.keys())
+                        - STAGE2_RESIDUAL_SET_UL_GEOMETRY_KEYS
+                    )
+                    if ul_geometry_unknown:
+                        raise ValueError(
+                            "Unknown stage2_ab.pipeline.objective"
+                            f"[{idx}].config.ul_geometry keys for module {spec.name!r}: "
+                            f"{sorted(str(k) for k in ul_geometry_unknown)}"
+                        )
+                if "artifact_policy" in spec.config:
+                    artifact_policy = spec.config["artifact_policy"]
+                    if not isinstance(artifact_policy, Mapping):
+                        raise TypeError(
+                            "stage2_ab.pipeline.objective"
+                            f"[{idx}].config.artifact_policy must be a mapping"
+                        )
+                    artifact_policy_unknown = (
+                        set(artifact_policy.keys())
+                        - STAGE2_RESIDUAL_SET_ARTIFACT_POLICY_KEYS
+                    )
+                    if artifact_policy_unknown:
+                        raise ValueError(
+                            "Unknown stage2_ab.pipeline.objective"
+                            f"[{idx}].config.artifact_policy keys for module {spec.name!r}: "
+                            f"{sorted(str(k) for k in artifact_policy_unknown)}"
+                        )
             optional_cfg = OBJECTIVE_OPTIONAL_CONFIG_KEYS.get(str(spec.name), set())
             missing_cfg = allowed_cfg - set(spec.config.keys()) - set(optional_cfg)
             if missing_cfg:
@@ -3126,6 +3171,26 @@ class Stage2ABConfig:
             None,
         )
         if residual_set is not None:
+            residual_set_on_channel_b = "B" in residual_set.channels
+            if residual_set_on_channel_b:
+                for conflicting_module_name in ("token_ce", "hard_sft"):
+                    conflicting_module = next(
+                        (
+                            spec
+                            for spec in pipeline.objective
+                            if spec.name == conflicting_module_name
+                            and bool(spec.enabled)
+                            and "B" in spec.channels
+                        ),
+                        None,
+                    )
+                    if conflicting_module is not None:
+                        raise ValueError(
+                            "residual_set_correction is mutually exclusive with "
+                            f"{conflicting_module_name} on Channel-B; remove "
+                            f"Channel-B from {conflicting_module_name}.channels "
+                            "or disable one objective."
+                        )
             if channel_b.pseudo_positive.enabled:
                 raise ValueError(
                     "residual_set_correction is mutually exclusive with "
