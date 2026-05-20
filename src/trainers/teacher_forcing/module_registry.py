@@ -103,6 +103,36 @@ OBJECTIVE_MODULE_CATALOG: Final[dict[str, ObjectiveModuleDefinition]] = {
         ),
         emission_group="text",
     ),
+    "residual_set_correction": ObjectiveModuleDefinition(
+        family="text",
+        semantic_role="residual_set_correction",
+        config_keys=frozenset(
+            {
+                "rollin_policy",
+                "rollin_resample_policy",
+                "base_seed",
+                "coord_span_policy",
+                "strict_builder_invariants",
+                "lambda_ul_promoted",
+                "lambda_continue_margin",
+                "continue_margin_m",
+                "coverage_strength",
+                "num_rollouts",
+                "min_ul_valid_rollouts",
+                "ul_consensus_ratio",
+                "ul_geometry",
+                "artifact_policy",
+            }
+        ),
+        application_presets=frozenset({"rollout_self_prefix"}),
+        projected_atoms=(
+            ObjectiveLossAtomDefinition(
+                atom_name="residual_set",
+                state_key="residual_set_correction_contrib",
+            ),
+        ),
+        emission_group="text",
+    ),
 }
 
 DIAGNOSTIC_MODULE_CATALOG: Final[dict[str, DiagnosticModuleDefinition]] = {}

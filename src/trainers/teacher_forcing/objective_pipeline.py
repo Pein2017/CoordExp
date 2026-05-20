@@ -42,6 +42,22 @@ def _validate_registry_coverage(
         )
 
 
+def _run_residual_set_correction_module(
+    *,
+    context: TeacherForcingContext,
+    spec: PipelineModuleSpec,
+) -> PipelineResult:
+    try:
+        from .modules.residual_set_correction import run_residual_set_correction_module
+    except ModuleNotFoundError as exc:
+        raise NotImplementedError(
+            "residual_set_correction objective is registered for config/import "
+            "sanity, but its loss module is implemented by Task 5."
+        ) from exc
+
+    return run_residual_set_correction_module(context=context, spec=spec)
+
+
 def run_teacher_forcing_pipeline(
     *,
     context: TeacherForcingContext,
@@ -65,6 +81,10 @@ def run_teacher_forcing_pipeline(
             spec=spec,
         ),
         "stage2_trie_ce": lambda spec: run_stage2_trie_ce_module(
+            context=context,
+            spec=spec,
+        ),
+        "residual_set_correction": lambda spec: _run_residual_set_correction_module(
             context=context,
             spec=spec,
         ),

@@ -111,6 +111,31 @@ def _stage2_pipeline_with_channel_b_trie_ce() -> dict:
     return pipeline
 
 
+def _residual_set_config() -> dict:
+    return {
+        "rollin_policy": "random_valid_branch",
+        "rollin_resample_policy": "fixed_event",
+        "base_seed": 17,
+        "coord_span_policy": "bbox_tail_from_anchor",
+        "strict_builder_invariants": True,
+        "lambda_ul_promoted": 0.5,
+        "lambda_continue_margin": 0.0,
+        "continue_margin_m": 0.0,
+        "coverage_strength": 0.0,
+        "num_rollouts": 3,
+        "min_ul_valid_rollouts": 3,
+        "ul_consensus_ratio": 1.0,
+        "ul_geometry": {
+            "iou_min": 0.75,
+            "center_distance_scale_max": 0.05,
+            "area_ratio_max": 1.5,
+            "aspect_ratio_max": 1.5,
+            "consumed_overlap_iou_min": 0.75,
+        },
+        "artifact_policy": {"ul_clusters": "monitor_debug_smoke"},
+    }
+
+
 def _teacher_forcing_objective() -> dict:
     return {
         "id": "teacher_forcing",
@@ -950,6 +975,106 @@ def test_stage2_pipeline_accepts_channel_b_stage2_trie_ce() -> None:
     assert parsed.stage2_ab.channel_b.insertion_order == "fn_slot_shuffle"
     assert parsed.stage2_ab.channel_b.fp_policy.mode == "weak_positive_context"
     assert parsed.stage2_ab.channel_b.triage_posterior.num_rollouts == 4
+
+
+def test_stage2_pipeline_accepts_residual_set_correction_objective() -> None:
+    raw = _make_stage2_training_payload()
+    raw["stage2_ab"]["pipeline"]["objective"] = [
+        {
+            "name": "token_ce",
+            "enabled": True,
+            "weight": 1.0,
+            "channels": ["A"],
+            "application": {"preset": "anchor_text_only"},
+            "config": {
+                "desc_ce_weight": 1.0,
+                "rollout_fn_desc_weight": 1.0,
+                "rollout_global_prefix_struct_ce_weight": 1.0,
+            },
+        },
+        {
+            "name": "residual_set_correction",
+            "enabled": True,
+            "weight": 1.0,
+            "channels": ["B"],
+            "application": {"preset": "rollout_self_prefix"},
+            "config": _residual_set_config(),
+        },
+    ]
+    raw["stage2_ab"]["channel_b"]["pseudo_positive"] = {"enabled": False}
+    raw["stage2_ab"]["channel_b"].pop("triage_posterior", None)
+
+    prompts = ConfigLoader.resolve_prompts(raw)
+    loaded = TrainingConfig.from_mapping(raw, prompts)
+
+    objective = loaded.stage2_ab.pipeline.objective[1]
+    assert objective.name == "residual_set_correction"
+    assert objective.application["preset"] == "rollout_self_prefix"
+    assert objective.config["base_seed"] == 17
+    assert objective.config["num_rollouts"] == 3
+    assert objective.config["lambda_ul_promoted"] == 0.5
+
+
+def test_residual_set_rejects_legacy_channel_b_trie_double_supervision() -> None:
+    raw = _make_stage2_training_payload()
+    trie_cfg = _stage2_pipeline_with_channel_b_trie_ce()["objective"][1]
+    raw["stage2_ab"]["pipeline"]["objective"] = [
+        {
+            "name": "token_ce",
+            "enabled": True,
+            "weight": 1.0,
+            "channels": ["A"],
+            "application": {"preset": "anchor_text_only"},
+            "config": {
+                "desc_ce_weight": 1.0,
+                "rollout_fn_desc_weight": 1.0,
+                "rollout_global_prefix_struct_ce_weight": 1.0,
+            },
+        },
+        trie_cfg,
+        {
+            "name": "residual_set_correction",
+            "enabled": True,
+            "weight": 1.0,
+            "channels": ["B"],
+            "application": {"preset": "rollout_self_prefix"},
+            "config": _residual_set_config(),
+        },
+    ]
+    raw["stage2_ab"]["channel_b"]["pseudo_positive"] = {"enabled": False}
+
+    with pytest.raises(ValueError, match="residual_set_correction.*stage2_trie_ce"):
+        TrainingConfig.from_mapping(raw, ConfigLoader.resolve_prompts(raw))
+
+
+def test_residual_set_rejects_pseudo_positive_double_supervision() -> None:
+    raw = _make_stage2_training_payload()
+    raw["stage2_ab"]["pipeline"]["objective"] = [
+        {
+            "name": "token_ce",
+            "enabled": True,
+            "weight": 1.0,
+            "channels": ["A"],
+            "application": {"preset": "anchor_text_only"},
+            "config": {
+                "desc_ce_weight": 1.0,
+                "rollout_fn_desc_weight": 1.0,
+                "rollout_global_prefix_struct_ce_weight": 1.0,
+            },
+        },
+        {
+            "name": "residual_set_correction",
+            "enabled": True,
+            "weight": 1.0,
+            "channels": ["B"],
+            "application": {"preset": "rollout_self_prefix"},
+            "config": _residual_set_config(),
+        },
+    ]
+    raw["stage2_ab"]["channel_b"]["pseudo_positive"] = {"enabled": True}
+
+    with pytest.raises(ValueError, match="residual_set_correction.*pseudo_positive"):
+        TrainingConfig.from_mapping(raw, ConfigLoader.resolve_prompts(raw))
 
 
 @pytest.mark.parametrize(
@@ -1810,11 +1935,11 @@ def test_stage2_compact_full_a2_smoke_config_pins_unconstrained_fallback_policy(
     assert cfg.rollout_matching.eval_detection.enabled is True
     assert cfg.rollout_matching.eval_detection.materialize_artifacts is True
 
-    assert cfg.training["effective_batch_size"] == 1
+    assert cfg.training["effective_batch_size"] == 8
     assert "gradient_accumulation_steps" not in cfg.training
     assert cfg.training["max_steps"] == 1
-    assert cfg.custom.train_sample_limit == 4
-    assert cfg.custom.val_sample_limit == 2
+    assert cfg.custom.train_sample_limit == 8
+    assert cfg.custom.val_sample_limit == 8
     assert "checkpoint-3664" in str(cfg.model["adapters"][0])
 
 

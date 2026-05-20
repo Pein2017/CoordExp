@@ -91,6 +91,24 @@ STAGE2_TRIE_CE_RESERVED_WEIGHT_KEYS: set[str] = (
     STAGE2_TRIE_CE_CONFIG_KEYS - {"normalization"}
 )
 STAGE2_TRIE_CE_APPLICATION_PRESETS: set[str] = {"rollout_trie_hard_ce"}
+STAGE2_RESIDUAL_SET_MODULE_NAME = "residual_set_correction"
+STAGE2_RESIDUAL_SET_APPLICATION_PRESETS: set[str] = {"rollout_self_prefix"}
+STAGE2_RESIDUAL_SET_CONFIG_KEYS: set[str] = {
+    "rollin_policy",
+    "rollin_resample_policy",
+    "base_seed",
+    "coord_span_policy",
+    "strict_builder_invariants",
+    "lambda_ul_promoted",
+    "lambda_continue_margin",
+    "continue_margin_m",
+    "coverage_strength",
+    "num_rollouts",
+    "min_ul_valid_rollouts",
+    "ul_consensus_ratio",
+    "ul_geometry",
+    "artifact_policy",
+}
 TEACHER_FORCING_OBJECTIVE_ID = "teacher_forcing"
 TEACHER_FORCING_PROFILES: set[str] = {
     "hard_sft",
@@ -2431,7 +2449,12 @@ class Stage2ABChannelBConfig:
     )
 
     @classmethod
-    def from_mapping(cls, payload: Any) -> "Stage2ABChannelBConfig":
+    def from_mapping(
+        cls,
+        payload: Any,
+        *,
+        validate_legacy_rollouts: bool = True,
+    ) -> "Stage2ABChannelBConfig":
         if payload is None:
             return cls()
         if not isinstance(payload, Mapping):
@@ -2600,7 +2623,8 @@ class Stage2ABChannelBConfig:
             default_num_rollouts=triage_default_rollouts,
         )
         if (
-            not pseudo_positive.enabled
+            validate_legacy_rollouts
+            and not pseudo_positive.enabled
             and fp_policy.mode != "weak_positive_context"
             and triage_posterior.num_rollouts
             != Stage2ABChannelBTriagePosteriorConfig.num_rollouts
@@ -2766,7 +2790,7 @@ class Stage2PipelineConfig:
                 item,
                 path=f"stage2_ab.pipeline.objective[{idx}]",
                 allowed_names=ALLOWED_OBJECTIVE_MODULES
-                | {STAGE2_TRIE_CE_MODULE_NAME},
+                | {STAGE2_TRIE_CE_MODULE_NAME, STAGE2_RESIDUAL_SET_MODULE_NAME},
             )
             for idx, item in enumerate(objective_raw)
         ]
@@ -2806,16 +2830,26 @@ class Stage2PipelineConfig:
 
         canonical_objective_order = ["token_ce"]
         trie_ce_objective_order = ["token_ce", STAGE2_TRIE_CE_MODULE_NAME]
+        residual_set_objective_order = ["token_ce", STAGE2_RESIDUAL_SET_MODULE_NAME]
+        trie_ce_residual_set_objective_order = [
+            "token_ce",
+            STAGE2_TRIE_CE_MODULE_NAME,
+            STAGE2_RESIDUAL_SET_MODULE_NAME,
+        ]
         hard_sft_objective_order = ["hard_sft"]
         authored_objective_order = [str(spec.name) for spec in objective_specs]
         if authored_objective_order not in (
             canonical_objective_order,
             trie_ce_objective_order,
+            residual_set_objective_order,
+            trie_ce_residual_set_objective_order,
             hard_sft_objective_order,
         ):
             raise ValueError(
                 "stage2_ab.pipeline.objective must use the canonical module order "
                 f"{canonical_objective_order}, {trie_ce_objective_order}, "
+                f"{residual_set_objective_order}, "
+                f"{trie_ce_residual_set_objective_order}, "
                 f"or {hard_sft_objective_order}; "
                 f"got {authored_objective_order}"
             )
@@ -2842,6 +2876,8 @@ class Stage2PipelineConfig:
             )
             if str(spec.name) == STAGE2_TRIE_CE_MODULE_NAME:
                 allowed_presets = STAGE2_TRIE_CE_APPLICATION_PRESETS
+            if str(spec.name) == STAGE2_RESIDUAL_SET_MODULE_NAME:
+                allowed_presets = STAGE2_RESIDUAL_SET_APPLICATION_PRESETS
             if preset not in allowed_presets:
                 if preset in {
                     "anchor_text_plus_final_struct",
@@ -2885,6 +2921,8 @@ class Stage2PipelineConfig:
             allowed_cfg = OBJECTIVE_CONFIG_ALLOWLIST.get(str(spec.name), set())
             if str(spec.name) == STAGE2_TRIE_CE_MODULE_NAME:
                 allowed_cfg = STAGE2_TRIE_CE_CONFIG_KEYS
+            if str(spec.name) == STAGE2_RESIDUAL_SET_MODULE_NAME:
+                allowed_cfg = STAGE2_RESIDUAL_SET_CONFIG_KEYS
             unknown_cfg = set(spec.config.keys()) - allowed_cfg
             if unknown_cfg:
                 raise ValueError(
@@ -2955,6 +2993,18 @@ class Stage2PipelineConfig:
         specs_by_name = {spec.name: spec for spec in objective_specs}
         token_ce = specs_by_name.get("token_ce")
         stage2_trie_ce = specs_by_name.get(STAGE2_TRIE_CE_MODULE_NAME)
+        residual_set = specs_by_name.get(STAGE2_RESIDUAL_SET_MODULE_NAME)
+
+        if (
+            residual_set is not None
+            and bool(residual_set.enabled)
+            and stage2_trie_ce is not None
+            and bool(stage2_trie_ce.enabled)
+        ):
+            raise ValueError(
+                "residual_set_correction cannot be enabled together with "
+                "stage2_trie_ce on Channel-B; remove the legacy trie CE path."
+            )
 
         if (
             token_ce is not None
@@ -3062,7 +3112,56 @@ class Stage2ABConfig:
                 f"Found: {sorted(deprecated_keys)}"
             )
 
-        channel_b = Stage2ABChannelBConfig.from_mapping(data.pop("channel_b", None))
+        channel_b = Stage2ABChannelBConfig.from_mapping(
+            data.pop("channel_b", None),
+            validate_legacy_rollouts=False,
+        )
+
+        residual_set = next(
+            (
+                spec
+                for spec in pipeline.objective
+                if spec.name == STAGE2_RESIDUAL_SET_MODULE_NAME and bool(spec.enabled)
+            ),
+            None,
+        )
+        if residual_set is not None:
+            if channel_b.pseudo_positive.enabled:
+                raise ValueError(
+                    "residual_set_correction is mutually exclusive with "
+                    "stage2_ab.channel_b.pseudo_positive; disable pseudo_positive "
+                    "to avoid double supervision."
+                )
+            if STAGE2_TRIE_CE_MODULE_NAME in {
+                spec.name for spec in pipeline.objective if bool(spec.enabled)
+            }:
+                raise ValueError(
+                    "residual_set_correction is mutually exclusive with "
+                    "stage2_trie_ce; remove the legacy Channel-B trie CE objective."
+                )
+            num_rollouts_raw = residual_set.config.get("num_rollouts")
+            if isinstance(num_rollouts_raw, bool) or not isinstance(
+                num_rollouts_raw, int
+            ):
+                raise TypeError(
+                    "stage2_ab.pipeline.objective residual_set_correction "
+                    "config.num_rollouts must be an int"
+                )
+            if num_rollouts_raw < 2:
+                raise ValueError(
+                    "stage2_ab.pipeline.objective residual_set_correction "
+                    "config.num_rollouts must be >= 2"
+                )
+        elif (
+            not channel_b.pseudo_positive.enabled
+            and channel_b.fp_policy.mode != "weak_positive_context"
+            and channel_b.triage_posterior.num_rollouts
+            != Stage2ABChannelBTriagePosteriorConfig.num_rollouts
+        ):
+            raise ValueError(
+                "stage2_ab.channel_b.triage_posterior.num_rollouts must be 2 when "
+                "stage2_ab.channel_b.pseudo_positive.enabled=false"
+            )
 
         if data:
             unknown = [
