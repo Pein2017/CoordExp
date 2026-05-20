@@ -85,7 +85,9 @@ def test_ul_consensus_uses_k_valid_denominator_and_promotes_ratio_one() -> None:
     assert promoted.support_ratio == 1.0
     assert promoted.decision == "promoted"
     first_pair = promoted.pairwise_geometry[0]
-    assert first_pair["center_distance_scale"] == pytest.approx(math.sqrt(5) / math.sqrt(100**2 + 120**2))
+    assert first_pair["center_distance_scale"] == pytest.approx(
+        math.sqrt(5) / ((math.sqrt(100**2 + 120**2) + math.sqrt(100**2 + 120**2)) / 2.0)
+    )
 
 
 def test_same_rollout_near_duplicates_contribute_one_vote() -> None:
@@ -145,6 +147,30 @@ def test_geometry_complete_link_rejects_far_box_without_promotion() -> None:
         min_ul_valid_rollouts=3,
         consensus_ratio=1.0,
         geometry=GEOMETRY,
+    )
+
+    assert result.promoted_clusters == ()
+    assert any(cluster.reason == "geometry_mismatch" for cluster in result.rejected_clusters)
+
+
+def test_center_distance_uses_pair_median_diagonal_not_max_diagonal() -> None:
+    geometry = ULGeometryConfig(
+        iou_min=0.0,
+        center_distance_scale_max=0.2,
+        area_ratio_max=30.0,
+        aspect_ratio_max=2.0,
+        consumed_overlap_iou_min=0.8,
+    )
+    rollouts = (
+        make_valid_rollout("r0", (make_unmatched("person", (100, 100, 200, 200)),)),
+        make_valid_rollout("r1", (make_unmatched("person", (160, 140, 180, 160)),)),
+    )
+
+    result = mine_ul_consensus(
+        rollouts,
+        min_ul_valid_rollouts=2,
+        consensus_ratio=1.0,
+        geometry=geometry,
     )
 
     assert result.promoted_clusters == ()

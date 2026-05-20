@@ -464,13 +464,13 @@ def _area(box: Box) -> float:
 
 
 def _center_distance_scale(left: Box, right: Box) -> float:
-    """Center distance normalized by the larger candidate box diagonal."""
+    """Center distance normalized by the pair median box diagonal."""
     left_cx = (left[0] + left[2]) / 2.0
     left_cy = (left[1] + left[3]) / 2.0
     right_cx = (right[0] + right[2]) / 2.0
     right_cy = (right[1] + right[3]) / 2.0
     distance = math.hypot(left_cx - right_cx, left_cy - right_cy)
-    scale = max(_box_diagonal(left), _box_diagonal(right), 1.0)
+    scale = max((_box_diagonal(left) + _box_diagonal(right)) / 2.0, 1.0)
     return distance / scale
 
 
