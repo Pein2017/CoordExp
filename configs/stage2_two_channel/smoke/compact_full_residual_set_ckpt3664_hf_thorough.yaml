@@ -1,0 +1,24 @@
+# Compact-full Stage-2 residual-set runnable smoke beyond the 1-step check.
+#
+# Keeps the same checkpoint/template/decode contracts as the 1-step smoke while
+# increasing sample exposure enough to materialize monitor and eval artifacts.
+
+extends: ./compact_full_residual_set_ckpt3664_hf_1step.yaml
+
+training:
+  run_name: smoke_thorough-compact_full-residual_set-ckpt3664-hf-unconstrained
+  artifact_subdir: stage2_ab/smoke/compact_full_residual_set_ckpt3664_hf_thorough
+  max_steps: 4
+  eval_steps: 4
+  save_strategy: "no"
+
+custom:
+  train_sample_limit: 16
+  val_sample_limit: 16
+
+rollout_matching:
+  train_monitor_dump:
+    max_samples: 16
+  eval_monitor_dump:
+    max_samples: 16
+

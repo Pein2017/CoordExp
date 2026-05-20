@@ -140,6 +140,7 @@ Open these configs first:
 - `configs/_shared/prompts/`
 - `configs/stage2_two_channel/prod/`
 - `configs/stage2_two_channel/smoke/`
+  - residual-set ckpt3664 smoke: `compact_full_residual_set_ckpt3664_hf_1step.yaml`, `compact_full_residual_set_ckpt3664_hf_thorough.yaml`
 
 Key v3 config handles:
 - `stage2_ab.channel_b.triage_posterior.*`
