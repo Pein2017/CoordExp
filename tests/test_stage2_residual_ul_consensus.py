@@ -177,6 +177,39 @@ def test_center_distance_uses_pair_median_diagonal_not_max_diagonal() -> None:
     assert any(cluster.reason == "geometry_mismatch" for cluster in result.rejected_clusters)
 
 
+def test_ul_consensus_artifacts_are_stable_under_rollout_order_permutation() -> None:
+    geometry = ULGeometryConfig(
+        iou_min=0.0,
+        center_distance_scale_max=0.8,
+        area_ratio_max=1.0,
+        aspect_ratio_max=1.0,
+        consumed_overlap_iou_min=0.8,
+    )
+    rollouts = (
+        make_valid_rollout("r0", (make_unmatched("person", (0, 0, 100, 100)),)),
+        make_valid_rollout("r1", (make_unmatched("person", (200, 0, 300, 100)),)),
+        make_valid_rollout("r2", (make_unmatched("person", (100, 0, 200, 100)),)),
+    )
+
+    forward = mine_ul_consensus(
+        rollouts,
+        min_ul_valid_rollouts=3,
+        consensus_ratio=1.0,
+        geometry=geometry,
+    )
+    permuted = mine_ul_consensus(
+        (rollouts[1], rollouts[0], rollouts[2]),
+        min_ul_valid_rollouts=3,
+        consensus_ratio=1.0,
+        geometry=geometry,
+    )
+
+    assert ul_cluster_artifact_rows(forward, image_id="img-1") == ul_cluster_artifact_rows(permuted, image_id="img-1")
+    assert [cluster.decision for cluster in forward.rejected_clusters] == [
+        cluster.decision for cluster in permuted.rejected_clusters
+    ]
+
+
 def test_different_desc_ids_never_cluster_or_promote_together() -> None:
     rollouts = (
         make_valid_rollout("r0", (make_unmatched("person", (100, 100, 200, 220)),)),
@@ -241,6 +274,9 @@ def test_artifact_rows_include_all_decisions_and_required_fields() -> None:
     )
     result = ULConsensusResult(
         k_valid=1,
+        min_ul_valid_rollouts=1,
+        consensus_ratio=1.0,
+        geometry=GEOMETRY,
         skip_reasons={},
         promoted_clusters=(promoted,),
         rejected_clusters=(rejected,),
@@ -249,11 +285,21 @@ def test_artifact_rows_include_all_decisions_and_required_fields() -> None:
     )
 
     rows = ul_cluster_artifact_rows(result, image_id="img-1")
-    json.dumps(rows)
+    json.dumps(rows, allow_nan=False)
 
     assert [row["decision"] for row in rows] == ["promoted", "rejected", "quarantined"]
     for row in rows:
         assert row["image_id"] == "img-1"
+        assert row["k_valid"] == 1
+        assert row["min_ul_valid_rollouts"] == 1
+        assert row["consensus_ratio"] == 1.0
+        assert row["geometry_thresholds"] == {
+            "iou_min": GEOMETRY.iou_min,
+            "center_distance_scale_max": GEOMETRY.center_distance_scale_max,
+            "area_ratio_max": GEOMETRY.area_ratio_max,
+            "aspect_ratio_max": GEOMETRY.aspect_ratio_max,
+            "consumed_overlap_iou_min": GEOMETRY.consumed_overlap_iou_min,
+        }
         assert {
             "decision",
             "reason",
@@ -265,3 +311,39 @@ def test_artifact_rows_include_all_decisions_and_required_fields() -> None:
             "pairwise_geometry",
             "consumed_overlap",
         }.issubset(row)
+
+
+@pytest.mark.parametrize(
+    "bbox",
+    (
+        (0, 0, 999, 1000),
+        (-1, 0, 100, 100),
+        (0, 0, 100, math.inf),
+        (0, 0, 100, math.nan),
+        (0, 0, 100, True),
+        (0, 0, 100, "101"),
+        (0, 0, 0, 100),
+        (0, 0, 100, 0),
+        (100, 0, 99, 100),
+    ),
+)
+def test_ul_member_rejects_bad_norm1000_boxes(bbox: tuple[object, ...]) -> None:
+    with pytest.raises(ValueError):
+        ULMember("r0", 0, "person", "person", bbox)  # type: ignore[arg-type]
+
+
+def test_ul_member_accepts_boundary_valid_norm1000_box() -> None:
+    member = ULMember("r0", 0, "person", "person", (0, 0, 999, 999))
+
+    assert member.bbox_norm1000 == (0.0, 0.0, 999.0, 999.0)
+
+
+@pytest.mark.parametrize("min_ul_valid_rollouts", (False, 0, -1, 1.5, "3"))
+def test_mine_ul_consensus_rejects_bad_min_ul_valid_rollouts(min_ul_valid_rollouts: object) -> None:
+    with pytest.raises(ValueError, match="min_ul_valid_rollouts"):
+        mine_ul_consensus(
+            (make_valid_rollout("r0", (make_unmatched("person", (100, 100, 200, 220)),)),),
+            min_ul_valid_rollouts=min_ul_valid_rollouts,  # type: ignore[arg-type]
+            consensus_ratio=1.0,
+            geometry=GEOMETRY,
+        )

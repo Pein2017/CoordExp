@@ -13,7 +13,7 @@ Box = tuple[float, float, float, float]
 def _immutable_member_mapping(mapping: Mapping[str, Sequence["ULMember"]]) -> Mapping[str, tuple["ULMember", ...]]:
     return MappingProxyType(
         {
-            str(key): tuple(sorted(value, key=lambda member: (member.local_index, member.bbox_norm1000)))
+            str(key): tuple(sorted(value, key=_member_sort_key))
             for key, value in sorted(mapping.items(), key=lambda item: str(item[0]))
         }
     )
@@ -33,12 +33,17 @@ def _finite_float(value: object, *, name: str) -> float:
 
 
 def _normalize_box(box: Sequence[float]) -> Box:
-    values = tuple(_finite_float(value, name="bbox_norm1000") for value in box)
+    try:
+        values = tuple(_finite_float(value, name="bbox_norm1000") for value in box)
+    except TypeError as exc:
+        raise ValueError("bbox_norm1000 must contain exactly x1/y1/x2/y2") from exc
     if len(values) != 4:
         raise ValueError("bbox_norm1000 must contain exactly x1/y1/x2/y2")
     x1, y1, x2, y2 = values
-    if x2 < x1 or y2 < y1:
-        raise ValueError("bbox_norm1000 must be xyxy ordered")
+    if any(value < 0.0 or value > 999.0 for value in values):
+        raise ValueError("bbox_norm1000 coordinates must be in [0, 999]")
+    if x2 <= x1 or y2 <= y1:
+        raise ValueError("bbox_norm1000 must be nondegenerate xyxy")
     return values  # type: ignore[return-value]
 
 
@@ -145,6 +150,9 @@ class ULConsensusCluster:
 @dataclass(frozen=True, slots=True)
 class ULConsensusResult:
     k_valid: int
+    min_ul_valid_rollouts: int
+    consensus_ratio: float
+    geometry: ULGeometryConfig
     skip_reasons: Mapping[str, int]
     promoted_clusters: tuple[ULConsensusCluster, ...]
     rejected_clusters: tuple[ULConsensusCluster, ...]
@@ -153,6 +161,12 @@ class ULConsensusResult:
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "k_valid", int(self.k_valid))
+        object.__setattr__(
+            self,
+            "min_ul_valid_rollouts",
+            _validate_min_ul_valid_rollouts(self.min_ul_valid_rollouts),
+        )
+        object.__setattr__(self, "consensus_ratio", _finite_float(self.consensus_ratio, name="consensus_ratio"))
         object.__setattr__(
             self,
             "skip_reasons",
@@ -175,8 +189,8 @@ def mine_ul_consensus(
     if consensus_ratio != 1.0:
         raise ValueError("mine_ul_consensus currently supports only consensus_ratio == 1.0")
 
-    min_ul_valid_rollouts = int(min_ul_valid_rollouts)
-    rollouts = tuple(rollouts)
+    min_ul_valid_rollouts = _validate_min_ul_valid_rollouts(min_ul_valid_rollouts)
+    rollouts = tuple(sorted(rollouts, key=_rollout_sort_key))
     valid_rollouts = tuple(rollout for rollout in rollouts if rollout.is_valid)
     k_valid = len(valid_rollouts)
     skip_reasons = _count_skip_reasons(rollouts)
@@ -238,6 +252,9 @@ def mine_ul_consensus(
 
     return ULConsensusResult(
         k_valid=k_valid,
+        min_ul_valid_rollouts=min_ul_valid_rollouts,
+        consensus_ratio=consensus_ratio,
+        geometry=geometry,
         skip_reasons=skip_reasons,
         promoted_clusters=tuple(promoted_clusters),
         rejected_clusters=tuple(rejected_clusters),
@@ -256,6 +273,10 @@ def ul_cluster_artifact_rows(result: ULConsensusResult, *, image_id: str) -> lis
                 "reason": cluster.reason,
                 "desc_id": cluster.desc_id,
                 "desc_text": cluster.desc_text,
+                "k_valid": result.k_valid,
+                "min_ul_valid_rollouts": result.min_ul_valid_rollouts,
+                "consensus_ratio": result.consensus_ratio,
+                "geometry_thresholds": _geometry_thresholds(result.geometry),
                 "support_rollout_ids": list(cluster.support_rollout_ids),
                 "support_ratio": cluster.support_ratio,
                 "member_boxes": [
@@ -272,6 +293,24 @@ def ul_cluster_artifact_rows(result: ULConsensusResult, *, image_id: str) -> lis
             }
         )
     return rows
+
+
+def _validate_min_ul_valid_rollouts(value: object) -> int:
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise ValueError("min_ul_valid_rollouts must be a positive integer")
+    if value < 1:
+        raise ValueError("min_ul_valid_rollouts must be a positive integer")
+    return value
+
+
+def _geometry_thresholds(geometry: ULGeometryConfig) -> dict[str, float]:
+    return {
+        "iou_min": geometry.iou_min,
+        "center_distance_scale_max": geometry.center_distance_scale_max,
+        "area_ratio_max": geometry.area_ratio_max,
+        "aspect_ratio_max": geometry.aspect_ratio_max,
+        "consumed_overlap_iou_min": geometry.consumed_overlap_iou_min,
+    }
 
 
 @dataclass
@@ -295,8 +334,12 @@ class _WorkingCluster:
             return
 
 
-def _member_sort_key(member: ULMember) -> tuple[str, int, Box]:
-    return (member.rollout_id, member.local_index, member.bbox_norm1000)
+def _member_sort_key(member: ULMember) -> tuple[str, int, str, str, Box]:
+    return (member.rollout_id, member.local_index, member.desc_id, member.desc_text, member.bbox_norm1000)
+
+
+def _rollout_sort_key(rollout: ULRolloutEvidence) -> tuple[str, tuple[tuple[str, int, str, str, Box], ...]]:
+    return (rollout.rollout_id, tuple(_member_sort_key(member) for member in rollout.unmatched_members))
 
 
 def _working_cluster_sort_key(cluster: _WorkingCluster) -> tuple[str, str, tuple[str, ...]]:
@@ -327,13 +370,17 @@ def _find_same_rollout_duplicate_cluster(
     member: ULMember,
     geometry: ULGeometryConfig,
 ) -> _WorkingCluster | None:
+    candidates: list[tuple[tuple[float, float, float, float, tuple[str, str, tuple[str, ...]]], _WorkingCluster]] = []
     for cluster in clusters:
         for existing in cluster.members:
             if existing.rollout_id != member.rollout_id:
                 continue
-            if _geometry_record(existing, member, geometry)["pass"]:
-                return cluster
-    return None
+            record = _geometry_record(existing, member, geometry)
+            if record["pass"]:
+                candidates.append((_geometry_score((record,), cluster), cluster))
+    if not candidates:
+        return None
+    return min(candidates, key=lambda item: item[0])[1]
 
 
 def _find_compatible_cluster(
@@ -341,12 +388,29 @@ def _find_compatible_cluster(
     member: ULMember,
     geometry: ULGeometryConfig,
 ) -> _WorkingCluster | None:
+    candidates: list[tuple[tuple[float, float, float, float, tuple[str, str, tuple[str, ...]]], _WorkingCluster]] = []
     for cluster in clusters:
         if any(existing.rollout_id == member.rollout_id for existing in cluster.members):
             continue
-        if all(_geometry_record(existing, member, geometry)["pass"] for existing in cluster.members):
-            return cluster
-    return None
+        records = tuple(_geometry_record(existing, member, geometry) for existing in cluster.members)
+        if records and all(record["pass"] for record in records):
+            candidates.append((_geometry_score(records, cluster), cluster))
+    if not candidates:
+        return None
+    return min(candidates, key=lambda item: item[0])[1]
+
+
+def _geometry_score(
+    records: Sequence[Mapping[str, Any]],
+    cluster: "_WorkingCluster",
+) -> tuple[float, float, float, float, tuple[str, str, tuple[str, ...]]]:
+    return (
+        max(float(record["center_distance_scale"]) for record in records),
+        max(float(record["area_ratio"]) for record in records),
+        max(float(record["aspect_ratio_ratio"]) for record in records),
+        -min(float(record["iou"]) for record in records),
+        _working_cluster_sort_key(cluster),
+    )
 
 
 def _to_cluster(
