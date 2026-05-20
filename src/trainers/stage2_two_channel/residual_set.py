@@ -126,7 +126,7 @@ def _enumerate_boundary_actions(state: ResidualState) -> tuple[ValidAction, ...]
             ValidAction(
                 token_id=state.stop_token_id,
                 token_role=TokenRole.STOP,
-                token_text="<STOP>",
+                token_text="<|im_end|>",
                 candidate_ids_after=frozenset(),
             ),
         )

@@ -125,6 +125,7 @@ def test_stop_is_valid_only_when_residual_set_is_empty() -> None:
     stop = only_action(empty.valid_actions_at_boundary())
     assert stop.token_role is TokenRole.STOP
     assert stop.token_id == 999
+    assert stop.token_text == "<|im_end|>"
     assert stop.candidate_ids_after == frozenset()
 
 
@@ -156,6 +157,25 @@ def test_shared_x1_keeps_bbox_tail_ambiguous_until_y1() -> None:
 
     assert after_x1.active_candidate_ids == frozenset({"a", "b"})
     assert {action.token_id for action in y1_actions} == {coord_token(120), coord_token(300)}
+
+
+def test_coordinate_enumeration_supports_x2_and_y2_exact_token_roles() -> None:
+    state = make_state_for_objects(
+        make_object("a", "person_left", x1=120, x2=420, y2=700),
+        make_object("b", "person_right", x1=640, x2=520, y2=800),
+    )
+
+    x2_actions = valid_coord_actions(state, "x2")
+    y2_actions = valid_coord_actions(state, "y2")
+
+    assert {(action.coord_role, action.token_id) for action in x2_actions} == {
+        ("x2", coord_token(420)),
+        ("x2", coord_token(520)),
+    }
+    assert {(action.coord_role, action.token_id) for action in y2_actions} == {
+        ("y2", coord_token(700)),
+        ("y2", coord_token(800)),
+    }
 
 
 def test_singleton_coordinate_action_sets_selected_object_id() -> None:
