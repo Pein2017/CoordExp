@@ -107,6 +107,8 @@ def write_ul_clusters_artifact(
     root: os.PathLike[str] | str,
     rows: Sequence[Mapping[str, Any]],
     enabled: bool,
+    *,
+    append: bool = False,
 ) -> Optional[str]:
     if not enabled:
         return None
@@ -114,17 +116,39 @@ def write_ul_clusters_artifact(
     root_path = os.fspath(root)
     os.makedirs(root_path, exist_ok=True)
     artifact_path = os.path.join(root_path, "ul_clusters.jsonl")
-    with open(artifact_path, "w", encoding="utf-8") as f:
+
+    existing_lines: set[str] = set()
+    if append and os.path.exists(artifact_path):
+        with open(artifact_path, "r", encoding="utf-8") as f:
+            for raw_line in f:
+                line = raw_line.strip()
+                if not line:
+                    continue
+                try:
+                    existing_lines.add(
+                        json.dumps(
+                            json.loads(line),
+                            ensure_ascii=True,
+                            sort_keys=True,
+                            allow_nan=False,
+                        )
+                    )
+                except (TypeError, ValueError, json.JSONDecodeError):
+                    existing_lines.add(line)
+
+    mode = "a" if append else "w"
+    with open(artifact_path, mode, encoding="utf-8") as f:
         for row in rows:
-            f.write(
-                json.dumps(
-                    dict(row),
-                    ensure_ascii=True,
-                    sort_keys=True,
-                    allow_nan=False,
-                )
-                + "\n"
+            line = json.dumps(
+                dict(row),
+                ensure_ascii=True,
+                sort_keys=True,
+                allow_nan=False,
             )
+            if append and line in existing_lines:
+                continue
+            f.write(line + "\n")
+            existing_lines.add(line)
     return artifact_path
 
 
@@ -159,6 +183,11 @@ def _stage2_ul_rollout_evidence(
         )
 
     members: List[ULMember] = []
+    member_drop_reasons: Dict[str, int] = {}
+
+    def _drop(reason: str) -> None:
+        member_drop_reasons[reason] = member_drop_reasons.get(reason, 0) + 1
+
     for obj in list(view.get("parsed_bbox_objects_raw", [])):
         if not isinstance(obj, GTObject):
             continue
@@ -171,6 +200,14 @@ def _stage2_ul_rollout_evidence(
                 bbox_norm1000=tuple(float(v) for v in obj.points_norm1000),
             )
         except (TypeError, ValueError):
+            _drop("invalid_bbox")
+            continue
+        if _stage2_object_spatially_conflicts_with_wrong_desc_gt(
+            member=member,
+            gts=gts,
+            assignment_iou_threshold=assignment_iou_threshold,
+        ):
+            _drop("spatial_wrong_desc_conflict")
             continue
         members.append(member)
     return ULRolloutEvidence(
@@ -178,6 +215,7 @@ def _stage2_ul_rollout_evidence(
         is_valid=True,
         skip_reason=None,
         unmatched_members=tuple(members),
+        member_drop_reasons=member_drop_reasons,
     )
 
 
@@ -265,6 +303,24 @@ def _stage2_object_matches_any_gt(
             continue
         iou = _channel_b_targets._bbox_iou_norm1000_xyxy(
             obj.points_norm1000,
+            gt.points_norm1000,
+        )
+        if iou >= float(assignment_iou_threshold):
+            return True
+    return False
+
+
+def _stage2_object_spatially_conflicts_with_wrong_desc_gt(
+    *,
+    member: ULMember,
+    gts: Sequence[GTObject],
+    assignment_iou_threshold: float,
+) -> bool:
+    for gt in gts:
+        if member.desc_id == normalize_desc(str(gt.desc)):
+            continue
+        iou = _channel_b_targets._bbox_iou_norm1000_xyxy(
+            member.bbox_norm1000,
             gt.points_norm1000,
         )
         if iou >= float(assignment_iou_threshold):
@@ -3395,6 +3451,7 @@ class Stage2TwoChannelTrainer(
         residual_set_ul_quarantined_total = 0
         residual_set_ul_rejected_total = 0
         residual_set_ul_valid_rollout_total = 0
+        residual_set_ul_skip_reason_totals: Dict[str, int] = {}
         residual_set_ul_artifact_rows: List[Dict[str, Any]] = []
         residual_set_ul_result_cache: Dict[tuple[str, str], Any] = {}
 
@@ -3944,6 +4001,12 @@ class Stage2TwoChannelTrainer(
                         len(ul_result.rejected_clusters)
                     )
                     residual_set_ul_valid_rollout_total += int(ul_result.k_valid)
+                    for reason, count in ul_result.skip_reasons.items():
+                        reason_key = str(reason)
+                        residual_set_ul_skip_reason_totals[reason_key] = (
+                            residual_set_ul_skip_reason_totals.get(reason_key, 0)
+                            + int(count)
+                        )
                     if residual_set_ul_artifact_enabled:
                         residual_set_ul_artifact_rows.extend(
                             ul_cluster_artifact_rows(
@@ -4932,10 +4995,32 @@ class Stage2TwoChannelTrainer(
             and residual_set_ul_artifact_enabled
             and residual_set_ul_artifact_rows
         ):
+            ul_artifact_root = _stage2_ul_artifact_root(
+                self, global_step=int(monitor_step)
+            )
+            initialized_roots = getattr(
+                self, "_stage2_ul_artifact_initialized_roots", None
+            )
+            if initialized_roots is None:
+                initialized_roots = set()
+                setattr(
+                    self,
+                    "_stage2_ul_artifact_initialized_roots",
+                    initialized_roots,
+                )
+            if ul_artifact_root not in initialized_roots:
+                write_ul_clusters_artifact(
+                    ul_artifact_root,
+                    [],
+                    enabled=True,
+                    append=False,
+                )
+                initialized_roots.add(ul_artifact_root)
             ul_artifact_path = write_ul_clusters_artifact(
-                _stage2_ul_artifact_root(self, global_step=int(monitor_step)),
+                ul_artifact_root,
                 residual_set_ul_artifact_rows,
                 enabled=True,
+                append=True,
             )
 
         batch_metrics: Stage2BatchMetrics = {
@@ -5310,6 +5395,11 @@ class Stage2TwoChannelTrainer(
             "time/rollout_parse_match_s": float(t_parse_match_s),
             "time/rollout_teacher_encode_s": float(t_encode_s),
         }
+
+        for reason, count in sorted(residual_set_ul_skip_reason_totals.items()):
+            batch_metrics[
+                f"stage2_ab/channel_b/residual_set/ul/skip_reason/{reason}"
+            ] = float(count)
 
         batch_metrics["stage2_ab/channel_b/strict_drop/N_valid_pred"] = float(
             strict_valid_pred_total

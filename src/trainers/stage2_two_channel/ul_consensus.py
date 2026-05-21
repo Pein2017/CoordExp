@@ -113,6 +113,7 @@ class ULRolloutEvidence:
     is_valid: bool
     skip_reason: str | None
     unmatched_members: tuple[ULMember, ...]
+    member_drop_reasons: Mapping[str, int] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "rollout_id", str(self.rollout_id))
@@ -132,6 +133,17 @@ class ULRolloutEvidence:
             for member in self.unmatched_members
         )
         object.__setattr__(self, "unmatched_members", tuple(sorted(members, key=_member_sort_key)))
+        object.__setattr__(
+            self,
+            "member_drop_reasons",
+            MappingProxyType(
+                {
+                    str(key): int(value)
+                    for key, value in sorted(self.member_drop_reasons.items())
+                    if int(value) > 0
+                }
+            ),
+        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -436,10 +448,12 @@ def _sort_clusters(clusters: Sequence[ULConsensusCluster]) -> tuple[ULConsensusC
 def _count_skip_reasons(rollouts: Sequence[ULRolloutEvidence]) -> dict[str, int]:
     counts: dict[str, int] = {}
     for rollout in rollouts:
-        if rollout.is_valid:
-            continue
-        reason = rollout.skip_reason or "invalid"
-        counts[reason] = counts.get(reason, 0) + 1
+        if not rollout.is_valid:
+            reason = rollout.skip_reason or "invalid"
+            counts[reason] = counts.get(reason, 0) + 1
+        for reason, count in rollout.member_drop_reasons.items():
+            key = f"member_drop/{reason}"
+            counts[key] = counts.get(key, 0) + int(count)
     return counts
 
 

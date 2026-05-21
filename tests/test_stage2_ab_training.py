@@ -1887,6 +1887,71 @@ def test_ul_consensus_rollout_evidence_skips_invalid_unmatched_boxes() -> None:
 
     assert evidence.is_valid is True
     assert evidence.unmatched_members == ()
+    assert evidence.member_drop_reasons == {"invalid_bbox": 1}
+
+    from src.trainers.stage2_two_channel.ul_consensus import mine_ul_consensus
+
+    ul_result = mine_ul_consensus(
+        [evidence],
+        min_ul_valid_rollouts=1,
+        consensus_ratio=1.0,
+        geometry=_stage2_ul_geometry_from_options({}),
+    )
+    assert ul_result.skip_reasons == {"member_drop/invalid_bbox": 1}
+
+
+def test_ul_consensus_rollout_evidence_drops_spatial_wrong_desc_gt_conflicts() -> None:
+    gts = [
+        GTObject(
+            index=0,
+            geom_type="bbox_2d",
+            points_norm1000=[100, 100, 200, 220],
+            desc="cat",
+        ),
+    ]
+    rollouts = [
+        _stage2_ul_rollout_evidence(
+            sample_id="sample-wrong-desc-conflict",
+            view={
+                "rollout_id": rollout_id,
+                "rollout_counts_as_valid_rollout": True,
+                "parsed_bbox_objects_raw": [
+                    GTObject(
+                        index=0,
+                        geom_type="bbox_2d",
+                        points_norm1000=list(box),
+                        desc="dog",
+                    ),
+                ],
+            },
+            gts=gts,
+            assignment_iou_threshold=0.5,
+        )
+        for rollout_id, box in (
+            ("r0", (100, 100, 200, 220)),
+            ("r1", (101, 101, 201, 221)),
+        )
+    ]
+    from src.trainers.stage2_two_channel.ul_consensus import mine_ul_consensus
+
+    ul_result = mine_ul_consensus(
+        rollouts,
+        min_ul_valid_rollouts=2,
+        consensus_ratio=1.0,
+        geometry=_stage2_ul_geometry_from_options({}),
+    )
+
+    assert all(evidence.unmatched_members == () for evidence in rollouts)
+    assert [evidence.member_drop_reasons for evidence in rollouts] == [
+        {"spatial_wrong_desc_conflict": 1},
+        {"spatial_wrong_desc_conflict": 1},
+    ]
+    assert ul_result.promoted_clusters == ()
+    assert ul_result.rejected_clusters == ()
+    assert ul_result.quarantined_clusters == ()
+    assert ul_result.skip_reasons == {
+        "member_drop/spatial_wrong_desc_conflict": 2,
+    }
 
 
 def test_residual_set_ul_consensus_promotes_into_residual_atoms_and_artifacts() -> None:
@@ -2380,10 +2445,13 @@ def test_channel_b_offline_residual_set_writes_ul_artifact_rows(
     )
     written = {}
 
-    def _record_ul_artifact(root, artifact_rows, *, enabled):
+    def _record_ul_artifact(root, artifact_rows, *, enabled, append=False):
+        if not artifact_rows:
+            return str(tmp_path / "out" / "monitor_dumps" / "ul_clusters.jsonl")
         written["root"] = str(root)
         written["rows"] = list(artifact_rows)
         written["enabled"] = bool(enabled)
+        written["append"] = bool(append)
         return str(tmp_path / "out" / "monitor_dumps" / "ul_clusters.jsonl")
 
     monkeypatch.setattr(
@@ -2413,6 +2481,7 @@ def test_channel_b_offline_residual_set_writes_ul_artifact_rows(
         "stage2_ab/channel_b/residual_set/ul/artifact_written"
     ] == pytest.approx(1.0)
     assert written["enabled"] is True
+    assert written["append"] is True
     assert written["root"] == str(tmp_path / "out" / "monitor_dumps")
     artifact_row = written["rows"][0]
     assert artifact_row["image_id"] == "image-prepared"
@@ -2428,6 +2497,80 @@ def test_channel_b_offline_residual_set_writes_ul_artifact_rows(
     assert len(artifact_row["member_boxes"]) == 2
     assert "pairwise_geometry" in artifact_row
     assert "consumed_overlap" in artifact_row
+
+
+def test_residual_set_ul_artifact_rows_accumulate_across_prepare_batches_without_duplicates(
+    tmp_path,
+) -> None:
+    rows = [
+        (
+            "sample-prepared-a",
+            "image-prepared-a",
+            "a-r0",
+            f"{OBJECT_REF_START_TOKEN}dog{BOX_START_TOKEN}"
+            "<|coord_50|><|coord_60|><|coord_150|><|coord_180|>",
+            "greedy",
+        ),
+        (
+            "sample-prepared-a",
+            "image-prepared-a",
+            "a-r1",
+            f"{OBJECT_REF_START_TOKEN}dog{BOX_START_TOKEN}"
+            "<|coord_51|><|coord_61|><|coord_151|><|coord_181|>",
+            "sampling",
+        ),
+        (
+            "sample-prepared-b",
+            "image-prepared-b",
+            "b-r0",
+            f"{OBJECT_REF_START_TOKEN}car{BOX_START_TOKEN}"
+            "<|coord_250|><|coord_260|><|coord_350|><|coord_380|>",
+            "greedy",
+        ),
+        (
+            "sample-prepared-b",
+            "image-prepared-b",
+            "b-r1",
+            f"{OBJECT_REF_START_TOKEN}car{BOX_START_TOKEN}"
+            "<|coord_251|><|coord_261|><|coord_351|><|coord_381|>",
+            "sampling",
+        ),
+    ]
+    t = _make_compact_channel_b_trainer(rollout_text=rows[0][3])
+    t.args = types.SimpleNamespace(output_dir=str(tmp_path / "out"))
+    prepared_path = tmp_path / "prepared_rollouts.jsonl"
+    _write_prepared_rollout_jsonl(prepared_path, t.template.tokenizer, rows)
+    t.stage2_pipeline_manifest = _make_residual_set_pipeline_manifest(
+        prepared_rollout_jsonl=str(prepared_path),
+        min_ul_valid_rollouts=2,
+    )
+
+    sample_a = _single_bbox_sample()
+    sample_a["sample_id"] = "sample-prepared-a"
+    sample_a["image_id"] = "image-prepared-a"
+    sample_b = _single_bbox_sample()
+    sample_b["sample_id"] = "sample-prepared-b"
+    sample_b["image_id"] = "image-prepared-b"
+
+    t._prepare_batch_inputs_b([sample_a], _segments_only=True)
+    t._prepare_batch_inputs_b([sample_b], _segments_only=True)
+    t._prepare_batch_inputs_b([sample_b], _segments_only=True)
+
+    artifact_path = tmp_path / "out" / "monitor_dumps" / "ul_clusters.jsonl"
+    parsed_rows = [
+        json.loads(line)
+        for line in artifact_path.read_text(encoding="utf-8").splitlines()
+    ]
+
+    assert [row["sample_id"] for row in parsed_rows] == [
+        "sample-prepared-a",
+        "sample-prepared-b",
+    ]
+    assert [row["desc_id"] for row in parsed_rows] == ["dog", "car"]
+    assert [row["support_rollout_ids"] for row in parsed_rows] == [
+        ["a-r0", "a-r1"],
+        ["b-r0", "b-r1"],
+    ]
 
 
 def test_residual_events_use_compact_row_context_desc_tokens() -> None:
