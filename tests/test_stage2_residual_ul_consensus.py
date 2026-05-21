@@ -226,7 +226,51 @@ def test_cross_rollout_duplicate_burst_is_quarantined_by_consumed_overlap() -> N
 
     assert result.promoted_clusters == ()
     assert len(result.quarantined_clusters) == 1
-    assert result.quarantined_clusters[0].reason == "consumed_target_overlap"
+    cluster = result.quarantined_clusters[0]
+    assert cluster.reason == "consumed_target_overlap"
+    assert cluster.consumed_overlap
+    assert {record["overlap_band"] for record in cluster.consumed_overlap} == {"overlap"}
+    assert all(record["crosses_consumed_overlap_iou_min"] for record in cluster.consumed_overlap)
+
+
+def test_same_desc_consumed_gray_zone_is_quarantined_with_artifact_records() -> None:
+    geometry = ULGeometryConfig(
+        iou_min=0.75,
+        gray_iou_min=0.30,
+        duplicate_burst_iou_min=0.75,
+        center_distance_scale_max=0.2,
+        area_ratio_max=1.5,
+        aspect_ratio_max=1.5,
+        consumed_overlap_iou_min=0.75,
+    )
+    consumed = (ULMember("gt", 0, "person", "person", (100, 100, 200, 200)),)
+    rollouts = (
+        make_valid_rollout("r0", (make_unmatched("person", (136, 100, 236, 200)),)),
+        make_valid_rollout("r1", (make_unmatched("person", (138, 100, 238, 200)),)),
+    )
+
+    result = mine_ul_consensus(
+        rollouts,
+        min_ul_valid_rollouts=2,
+        consensus_ratio=1.0,
+        geometry=geometry,
+        consumed_members=consumed,
+    )
+
+    assert result.promoted_clusters == ()
+    assert result.rejected_clusters == ()
+    assert len(result.quarantined_clusters) == 1
+    cluster = result.quarantined_clusters[0]
+    assert cluster.reason == "consumed_target_gray_zone"
+    assert cluster.consumed_overlap
+    assert {record["overlap_band"] for record in cluster.consumed_overlap} == {"gray_zone"}
+
+    rows = ul_cluster_artifact_rows(result, image_id="img-1")
+    assert len(rows) == 1
+    assert rows[0]["decision"] == "quarantined"
+    assert rows[0]["reason"] == "consumed_target_gray_zone"
+    assert rows[0]["consumed_overlap"]
+    assert {record["overlap_band"] for record in rows[0]["consumed_overlap"]} == {"gray_zone"}
 
 
 def test_geometry_complete_link_rejects_far_box_without_promotion() -> None:

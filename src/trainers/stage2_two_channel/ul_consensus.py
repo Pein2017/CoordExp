@@ -242,12 +242,20 @@ def mine_ul_consensus(
             pairwise_gray_pass = all(bool(record["gray_pass"]) for record in pairwise_records)
             consumed_overlap = _consumed_overlap_records(working_cluster.members, consumed_members, geometry)
             if consumed_overlap:
+                reason = (
+                    "consumed_target_overlap"
+                    if any(
+                        bool(record["crosses_consumed_overlap_iou_min"])
+                        for record in consumed_overlap
+                    )
+                    else "consumed_target_gray_zone"
+                )
                 quarantined_clusters.append(
                     _to_cluster(
                         working_cluster,
                         k_valid,
                         "quarantined",
-                        "consumed_target_overlap",
+                        reason,
                         geometry,
                         consumed_overlap=consumed_overlap,
                     )
@@ -589,7 +597,8 @@ def _consumed_overlap_records(
             if member.desc_id != consumed.desc_id:
                 continue
             iou = _bbox_iou(member.bbox_norm1000, consumed.bbox_norm1000)
-            if iou >= geometry.consumed_overlap_iou_min:
+            if iou >= geometry.gray_iou_min:
+                crosses_consumed_overlap_iou_min = iou >= geometry.consumed_overlap_iou_min
                 records.append(
                     MappingProxyType(
                         {
@@ -598,6 +607,12 @@ def _consumed_overlap_records(
                             "consumed_rollout_id": consumed.rollout_id,
                             "consumed_local_index": consumed.local_index,
                             "iou": iou,
+                            "crosses_consumed_overlap_iou_min": crosses_consumed_overlap_iou_min,
+                            "overlap_band": (
+                                "overlap"
+                                if crosses_consumed_overlap_iou_min
+                                else "gray_zone"
+                            ),
                         }
                     )
                 )
