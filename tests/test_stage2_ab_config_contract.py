@@ -134,6 +134,35 @@ def _residual_set_config() -> dict:
     }
 
 
+def _make_raw_with_residual_set_config(config: dict) -> dict:
+    raw = _make_stage2_training_payload()
+    raw["stage2_ab"]["pipeline"]["objective"] = [
+        {
+            "name": "token_ce",
+            "enabled": True,
+            "weight": 1.0,
+            "channels": ["A"],
+            "application": {"preset": "anchor_text_only"},
+            "config": {
+                "desc_ce_weight": 1.0,
+                "rollout_fn_desc_weight": 1.0,
+                "rollout_global_prefix_struct_ce_weight": 1.0,
+            },
+        },
+        {
+            "name": "residual_set_correction",
+            "enabled": True,
+            "weight": 1.0,
+            "channels": ["B"],
+            "application": {"preset": "rollout_self_prefix"},
+            "config": dict(config),
+        },
+    ]
+    raw["stage2_ab"]["channel_b"]["pseudo_positive"] = {"enabled": False}
+    raw["stage2_ab"]["channel_b"].pop("triage_posterior", None)
+    return raw
+
+
 def _teacher_forcing_objective() -> dict:
     return {
         "id": "teacher_forcing",
@@ -1144,6 +1173,50 @@ def test_residual_set_expected_num_rollouts_does_not_own_channel_b_rollout_count
 
     assert loaded.stage2_ab.pipeline.objective[1].config["expected_num_rollouts"] == 5
     assert loaded.stage2_ab.channel_b.triage_posterior.num_rollouts == 2
+
+
+@pytest.mark.parametrize(
+    "key, bad_value, expected_msg",
+    [
+        ("expected_num_rollouts", True, r"expected_num_rollouts.*positive integer"),
+        ("expected_num_rollouts", 1.5, r"expected_num_rollouts.*positive integer"),
+        ("expected_num_rollouts", 0, r"expected_num_rollouts.*positive integer"),
+        ("min_ul_valid_rollouts", False, r"min_ul_valid_rollouts.*positive integer"),
+        ("min_ul_valid_rollouts", "2", r"min_ul_valid_rollouts.*positive integer"),
+        ("min_ul_valid_rollouts", -1, r"min_ul_valid_rollouts.*positive integer"),
+        ("lambda_type", -0.1, r"lambda_type.*nonnegative"),
+        ("lambda_inner", float("inf"), r"lambda_inner.*finite"),
+        ("fallback_loss_weight", float("nan"), r"fallback_loss_weight.*finite"),
+        ("lambda_ul_promoted", -0.1, r"lambda_ul_promoted.*nonnegative"),
+        ("label_conflict_weight", -0.1, r"label_conflict_weight.*nonnegative"),
+        ("commit_iou_threshold", -0.01, r"commit_iou_threshold.*\[0, 1\]"),
+        ("duplicate_burst_iou_threshold", 1.01, r"duplicate_burst_iou_threshold.*\[0, 1\]"),
+        ("ul_cluster_iou_threshold", -0.01, r"ul_cluster_iou_threshold.*\[0, 1\]"),
+        ("ul_gray_iou_low", 1.01, r"ul_gray_iou_low.*\[0, 1\]"),
+        ("ul_consensus_ratio", 0.5, r"ul_consensus_ratio.*1\.0"),
+    ],
+)
+def test_residual_set_rejects_invalid_v1_config_values(
+    key: str,
+    bad_value: object,
+    expected_msg: str,
+) -> None:
+    config = _residual_set_config()
+    config[key] = bad_value
+    raw = _make_raw_with_residual_set_config(config)
+
+    with pytest.raises((TypeError, ValueError), match=expected_msg):
+        TrainingConfig.from_mapping(raw, ConfigLoader.resolve_prompts(raw))
+
+
+def test_residual_set_rejects_gray_iou_above_cluster_threshold() -> None:
+    config = _residual_set_config()
+    config["ul_gray_iou_low"] = 0.91
+    config["ul_cluster_iou_threshold"] = 0.90
+    raw = _make_raw_with_residual_set_config(config)
+
+    with pytest.raises(ValueError, match=r"ul_gray_iou_low.*ul_cluster_iou_threshold"):
+        TrainingConfig.from_mapping(raw, ConfigLoader.resolve_prompts(raw))
 
 
 def test_residual_set_rejects_legacy_channel_b_trie_double_supervision() -> None:

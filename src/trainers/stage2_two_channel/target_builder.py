@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+import math
 import random
 from typing import Any, Dict, List, Mapping, MutableMapping, Optional, Sequence, Tuple
 
@@ -57,6 +58,17 @@ _RESIDUAL_SET_OBJECTIVE_NAME = "residual_set_correction"
 _DEFAULT_RESIDUAL_SET_ROLLIN_POLICY = "random_valid_branch"
 _DEFAULT_RESIDUAL_SET_BASE_SEED = 17
 _COORD_ROLE_BY_SLOT = ("x1", "y1", "x2", "y2")
+_RESIDUAL_SET_OPTION_DEFAULTS: Dict[str, Any] = {
+    "expected_num_rollouts": 4,
+    "base_seed": _DEFAULT_RESIDUAL_SET_BASE_SEED,
+    "lambda_ul_promoted": 0.5,
+    "commit_iou_threshold": 0.75,
+    "duplicate_burst_iou_threshold": 0.95,
+    "ul_cluster_iou_threshold": 0.9,
+    "ul_gray_iou_low": 0.30,
+    "min_ul_valid_rollouts": 2,
+    "ul_consensus_ratio": 1.0,
+}
 
 
 @dataclass(frozen=True)
@@ -2670,6 +2682,49 @@ def _objective_spec_enabled_for_channel_b(spec: Any) -> bool:
     return "B" in set(channels)
 
 
+def _residual_set_option_positive_int(
+    config: Mapping[str, Any],
+    *,
+    key: str,
+) -> int:
+    value = config.get(key, _RESIDUAL_SET_OPTION_DEFAULTS[key])
+    if isinstance(value, bool) or not isinstance(value, int) or int(value) <= 0:
+        raise ValueError(f"residual_set_correction.config.{key} must be a positive integer")
+    return int(value)
+
+
+def _residual_set_option_nonnegative_float(
+    config: Mapping[str, Any],
+    *,
+    key: str,
+) -> float:
+    value = config.get(key, _RESIDUAL_SET_OPTION_DEFAULTS[key])
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise TypeError(f"residual_set_correction.config.{key} must be numeric, not bool")
+    result = float(value)
+    if not math.isfinite(result):
+        raise ValueError(f"residual_set_correction.config.{key} must be finite")
+    if result < 0.0:
+        raise ValueError(f"residual_set_correction.config.{key} must be nonnegative")
+    return result
+
+
+def _residual_set_option_threshold(
+    config: Mapping[str, Any],
+    *,
+    key: str,
+) -> float:
+    value = config.get(key, _RESIDUAL_SET_OPTION_DEFAULTS[key])
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise TypeError(f"residual_set_correction.config.{key} must be numeric, not bool")
+    result = float(value)
+    if not math.isfinite(result):
+        raise ValueError(f"residual_set_correction.config.{key} must be finite")
+    if result < 0.0 or result > 1.0:
+        raise ValueError(f"residual_set_correction.config.{key} must be in [0, 1]")
+    return result
+
+
 def _channel_b_residual_set_correction_options(
     objective_specs: Sequence[Any] | None,
 ) -> Dict[str, Any] | None:
@@ -2680,40 +2735,61 @@ def _channel_b_residual_set_correction_options(
         if not _objective_spec_enabled_for_channel_b(spec):
             continue
         config_raw = _objective_spec_get(spec, "config", {})
-        config = dict(config_raw) if isinstance(config_raw, Mapping) else {}
-        try:
-            base_seed = int(config.get("base_seed", _DEFAULT_RESIDUAL_SET_BASE_SEED))
-        except (TypeError, ValueError):
-            base_seed = int(_DEFAULT_RESIDUAL_SET_BASE_SEED)
-        try:
-            expected_num_rollouts = int(config.get("expected_num_rollouts", 4))
-        except (TypeError, ValueError):
-            expected_num_rollouts = 4
-        try:
-            lambda_ul_promoted = float(config.get("lambda_ul_promoted", 0.5))
-        except (TypeError, ValueError):
-            lambda_ul_promoted = 0.5
-        try:
-            min_ul_valid_rollouts = int(config.get("min_ul_valid_rollouts", 2))
-        except (TypeError, ValueError):
-            min_ul_valid_rollouts = 2
-        try:
-            ul_consensus_ratio = float(config.get("ul_consensus_ratio", 1.0))
-        except (TypeError, ValueError):
-            ul_consensus_ratio = 1.0
+        if not isinstance(config_raw, Mapping):
+            raise TypeError("residual_set_correction.config must be a mapping")
+        config = dict(config_raw)
+        base_seed = config.get("base_seed", _RESIDUAL_SET_OPTION_DEFAULTS["base_seed"])
+        if isinstance(base_seed, bool) or not isinstance(base_seed, int):
+            raise ValueError("residual_set_correction.config.base_seed must be an integer")
+        expected_num_rollouts = _residual_set_option_positive_int(
+            config,
+            key="expected_num_rollouts",
+        )
+        lambda_ul_promoted = _residual_set_option_nonnegative_float(
+            config,
+            key="lambda_ul_promoted",
+        )
+        min_ul_valid_rollouts = _residual_set_option_positive_int(
+            config,
+            key="min_ul_valid_rollouts",
+        )
+        ul_consensus_ratio = _residual_set_option_threshold(
+            config,
+            key="ul_consensus_ratio",
+        )
+        if float(ul_consensus_ratio) != 1.0:
+            raise ValueError(
+                "residual_set_correction.config.ul_consensus_ratio must be 1.0 "
+                "because mine_ul_consensus currently supports only consensus_ratio == 1.0"
+            )
+        ul_cluster_iou_threshold = _residual_set_option_threshold(
+            config,
+            key="ul_cluster_iou_threshold",
+        )
+        ul_gray_iou_low = _residual_set_option_threshold(
+            config,
+            key="ul_gray_iou_low",
+        )
+        if float(ul_gray_iou_low) > float(ul_cluster_iou_threshold):
+            raise ValueError(
+                "residual_set_correction.config.ul_gray_iou_low must be <= "
+                "residual_set_correction.config.ul_cluster_iou_threshold"
+            )
         return {
             "prepared_rollout_jsonl": str(config.get("prepared_rollout_jsonl", "") or ""),
             "expected_num_rollouts": int(expected_num_rollouts),
             "base_seed": int(base_seed),
             "lambda_ul_promoted": float(lambda_ul_promoted),
-            "commit_iou_threshold": float(config.get("commit_iou_threshold", 0.75)),
-            "duplicate_burst_iou_threshold": float(
-                config.get("duplicate_burst_iou_threshold", 0.95)
+            "commit_iou_threshold": _residual_set_option_threshold(
+                config,
+                key="commit_iou_threshold",
             ),
-            "ul_cluster_iou_threshold": float(
-                config.get("ul_cluster_iou_threshold", 0.9)
+            "duplicate_burst_iou_threshold": _residual_set_option_threshold(
+                config,
+                key="duplicate_burst_iou_threshold",
             ),
-            "ul_gray_iou_low": float(config.get("ul_gray_iou_low", 0.30)),
+            "ul_cluster_iou_threshold": float(ul_cluster_iou_threshold),
+            "ul_gray_iou_low": float(ul_gray_iou_low),
             "min_ul_valid_rollouts": int(min_ul_valid_rollouts),
             "ul_consensus_ratio": float(ul_consensus_ratio),
         }

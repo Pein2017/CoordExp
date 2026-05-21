@@ -413,7 +413,7 @@ def test_artifact_rows_include_all_decisions_and_required_fields() -> None:
         }.issubset(row)
 
 
-def test_ul_clusters_artifact_written_only_when_artifact_policy_enabled(tmp_path) -> None:
+def test_ul_clusters_artifact_writer_handles_runtime_monitoring_flag(tmp_path) -> None:
     rows = [
         {"decision": "promoted", "reason": "consensus", "desc_id": "person"},
         {"decision": "rejected", "reason": "insufficient_support", "desc_id": "car"},

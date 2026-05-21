@@ -643,9 +643,14 @@ def _make_residual_set_pipeline_manifest(
     *,
     enabled: bool = True,
     channels: Sequence[str] = ("B",),
-    rollin_policy: str = "random_valid_branch",
     base_seed: int = 17,
+    prepared_rollout_jsonl: str | None = "tests/test_stage2_ab_training.py",
 ) -> dict:
+    config: dict[str, object] = {
+        "base_seed": int(base_seed),
+    }
+    if prepared_rollout_jsonl is not None:
+        config["prepared_rollout_jsonl"] = str(prepared_rollout_jsonl)
     return {
         "objective": [
             {
@@ -654,10 +659,7 @@ def _make_residual_set_pipeline_manifest(
                 "weight": 1.0,
                 "channels": list(channels),
                 "application": {"preset": "rollout_self_prefix"},
-                "config": {
-                    "rollin_policy": str(rollin_policy),
-                    "base_seed": int(base_seed),
-                },
+                "config": config,
             },
         ],
         "diagnostics": [],
@@ -1389,6 +1391,28 @@ def test_channel_b_residual_objective_detection_honors_enabled_and_channel() -> 
     assert not _channel_b_residual_set_correction_enabled(
         _make_residual_set_pipeline_manifest(channels=("A",))["objective"]
     )
+
+
+def test_channel_b_residual_set_preflight_rejects_missing_prepared_rollout_jsonl(
+    tmp_path,
+) -> None:
+    row = (
+        f"{OBJECT_REF_START_TOKEN}cat{BOX_START_TOKEN}"
+        "<|coord_10|><|coord_20|><|coord_30|><|coord_41|>"
+    )
+    t = _make_compact_channel_b_trainer(rollout_text=row)
+    t.stage2_pipeline_manifest = _make_residual_set_pipeline_manifest(
+        prepared_rollout_jsonl=str(tmp_path / "missing_prepared_rollouts.jsonl")
+    )
+    t._prepare_samples_for_rollout = lambda *_args, **_kwargs: pytest.fail(
+        "prepared residual-set preflight must run before live rollout preparation"
+    )
+
+    with pytest.raises(FileNotFoundError, match="prepared_rollout_jsonl.*does not exist"):
+        t._prepare_batch_inputs_b(
+            [_single_bbox_sample()],
+            _segments_only=True,
+        )
 
 
 def test_channel_b_compact_full_rollout_template_uses_compact_parser_and_targets(

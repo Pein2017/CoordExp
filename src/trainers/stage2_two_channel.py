@@ -124,9 +124,9 @@ def write_ul_clusters_artifact(
 def _stage2_ul_geometry_from_options(options: Mapping[str, Any]) -> ULGeometryConfig:
     return ULGeometryConfig(
         iou_min=float(options.get("ul_cluster_iou_threshold", 0.9)),
-        center_distance_scale_max=float("inf"),
-        area_ratio_max=float("inf"),
-        aspect_ratio_max=float("inf"),
+        center_distance_scale_max=1.0e12,
+        area_ratio_max=1.0e12,
+        aspect_ratio_max=1.0e12,
         consumed_overlap_iou_min=float(options.get("commit_iou_threshold", 0.75)),
         gray_iou_min=float(options.get("ul_gray_iou_low", 0.30)),
         duplicate_burst_iou_min=float(
@@ -258,6 +258,24 @@ def _stage2_ul_rollout_id(*, sample_id: str, view: Mapping[str, Any]) -> str:
 
 def _stage2_ul_artifact_enabled(options: Mapping[str, Any]) -> bool:
     return bool(options)
+
+
+def _stage2_preflight_residual_set_prepared_rollout_jsonl(
+    options: Mapping[str, Any],
+) -> str:
+    path_raw = options.get("prepared_rollout_jsonl")
+    if not isinstance(path_raw, str) or not path_raw.strip():
+        raise ValueError(
+            "residual_set_correction.config.prepared_rollout_jsonl must be a "
+            "non-empty path before residual-set Channel-B execution"
+        )
+    path = os.path.expanduser(str(path_raw).strip())
+    if not os.path.isfile(path):
+        raise FileNotFoundError(
+            "residual_set_correction.config.prepared_rollout_jsonl does not exist "
+            f"or is not a file: {path}"
+        )
+    return path
 
 
 def _stage2_ul_artifact_root(owner: Any, *, global_step: int) -> str:
@@ -2768,6 +2786,8 @@ class Stage2TwoChannelTrainer(
             )
         )
         residual_set_selected = residual_set_options is not None
+        if residual_set_options is not None:
+            _stage2_preflight_residual_set_prepared_rollout_jsonl(residual_set_options)
         residual_set_rollin_policy = _RESIDUAL_SET_INTERNAL_ROLLIN_POLICY
         residual_set_base_seed = (
             int(residual_set_options.get("base_seed", 17))

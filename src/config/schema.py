@@ -119,6 +119,29 @@ STAGE2_RESIDUAL_SET_CONFIG_KEYS: set[str] = (
     STAGE2_RESIDUAL_SET_REQUIRED_CONFIG_KEYS
     | set(STAGE2_RESIDUAL_SET_DEFAULT_CONFIG_VALUES)
 )
+STAGE2_RESIDUAL_SET_POSITIVE_INT_CONFIG_KEYS: set[str] = {
+    "expected_num_rollouts",
+    "min_ul_valid_rollouts",
+}
+STAGE2_RESIDUAL_SET_NONNEGATIVE_FLOAT_CONFIG_KEYS: set[str] = {
+    "lambda_type",
+    "lambda_inner",
+    "fallback_loss_weight",
+    "lambda_ul_promoted",
+    "label_conflict_weight",
+}
+STAGE2_RESIDUAL_SET_THRESHOLD_CONFIG_KEYS: set[str] = {
+    "commit_iou_threshold",
+    "duplicate_burst_iou_threshold",
+    "ul_cluster_iou_threshold",
+    "ul_gray_iou_low",
+    "ul_consensus_ratio",
+}
+STAGE2_RESIDUAL_SET_BOOL_CONFIG_KEYS: set[str] = {
+    "strict_prepared_rollout_tokens",
+    "legacy_reencode_fallback",
+    "strict_builder_invariants",
+}
 TEACHER_FORCING_OBJECTIVE_ID = "teacher_forcing"
 TEACHER_FORCING_PROFILES: set[str] = {
     "hard_sft",
@@ -217,6 +240,99 @@ def _is_versioned_alias_for(name: str, canonical: str) -> bool:
         return version.isdigit()
 
     return False
+
+
+def _stage2_residual_set_config_path(key: str) -> str:
+    return (
+        "stage2_ab.pipeline.objective[name=residual_set_correction]"
+        f".config.{key}"
+    )
+
+
+def _coerce_stage2_residual_set_positive_int(value: Any, *, key: str) -> int:
+    path = _stage2_residual_set_config_path(key)
+    if isinstance(value, bool) or not isinstance(value, int) or int(value) <= 0:
+        raise ValueError(f"{path} must be a positive integer")
+    return int(value)
+
+
+def _coerce_stage2_residual_set_nonnegative_float(value: Any, *, key: str) -> float:
+    path = _stage2_residual_set_config_path(key)
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise TypeError(f"{path} must be numeric, not bool")
+    result = float(value)
+    if not math.isfinite(result):
+        raise ValueError(f"{path} must be finite")
+    if result < 0.0:
+        raise ValueError(f"{path} must be nonnegative")
+    return result
+
+
+def _coerce_stage2_residual_set_threshold(value: Any, *, key: str) -> float:
+    path = _stage2_residual_set_config_path(key)
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise TypeError(f"{path} must be numeric, not bool")
+    result = float(value)
+    if not math.isfinite(result):
+        raise ValueError(f"{path} must be finite")
+    if result < 0.0 or result > 1.0:
+        raise ValueError(f"{path} must be in [0, 1]")
+    return result
+
+
+def _validate_stage2_residual_set_config(
+    config: MutableMapping[str, Any],
+) -> None:
+    for key in sorted(STAGE2_RESIDUAL_SET_POSITIVE_INT_CONFIG_KEYS):
+        config[key] = _coerce_stage2_residual_set_positive_int(
+            config.get(key),
+            key=key,
+        )
+
+    base_seed = config.get("base_seed")
+    if isinstance(base_seed, bool) or not isinstance(base_seed, int):
+        raise ValueError(
+            f"{_stage2_residual_set_config_path('base_seed')} must be an integer"
+        )
+    config["base_seed"] = int(base_seed)
+
+    for key in sorted(STAGE2_RESIDUAL_SET_NONNEGATIVE_FLOAT_CONFIG_KEYS):
+        config[key] = _coerce_stage2_residual_set_nonnegative_float(
+            config.get(key),
+            key=key,
+        )
+
+    for key in sorted(STAGE2_RESIDUAL_SET_THRESHOLD_CONFIG_KEYS):
+        config[key] = _coerce_stage2_residual_set_threshold(
+            config.get(key),
+            key=key,
+        )
+
+    if float(config["ul_consensus_ratio"]) != 1.0:
+        raise ValueError(
+            f"{_stage2_residual_set_config_path('ul_consensus_ratio')} must be 1.0 "
+            "because mine_ul_consensus currently supports only consensus_ratio == 1.0"
+        )
+    if float(config["ul_gray_iou_low"]) > float(config["ul_cluster_iou_threshold"]):
+        raise ValueError(
+            f"{_stage2_residual_set_config_path('ul_gray_iou_low')} must be <= "
+            f"{_stage2_residual_set_config_path('ul_cluster_iou_threshold')}"
+        )
+
+    clean_gt_sft_mix = config.get("clean_gt_sft_mix")
+    if isinstance(clean_gt_sft_mix, bool) or not isinstance(clean_gt_sft_mix, int):
+        raise ValueError(
+            f"{_stage2_residual_set_config_path('clean_gt_sft_mix')} must be an integer"
+        )
+    if int(clean_gt_sft_mix) < 0:
+        raise ValueError(
+            f"{_stage2_residual_set_config_path('clean_gt_sft_mix')} must be nonnegative"
+        )
+    config["clean_gt_sft_mix"] = int(clean_gt_sft_mix)
+
+    for key in sorted(STAGE2_RESIDUAL_SET_BOOL_CONFIG_KEYS):
+        if not isinstance(config.get(key), bool):
+            raise TypeError(f"{_stage2_residual_set_config_path(key)} must be bool")
 
 
 @lru_cache(maxsize=1)
@@ -2954,6 +3070,7 @@ class Stage2PipelineConfig:
                     **STAGE2_RESIDUAL_SET_DEFAULT_CONFIG_VALUES,
                     **dict(spec.config),
                 }
+                _validate_stage2_residual_set_config(defaulted_config)
                 spec.config.clear()
                 spec.config.update(defaulted_config)
             optional_cfg = OBJECTIVE_OPTIONAL_CONFIG_KEYS.get(str(spec.name), set())
