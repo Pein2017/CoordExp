@@ -259,6 +259,9 @@ def _stage2_object_matches_any_gt(
 
 
 def _stage2_ul_rollout_id(*, sample_id: str, view: Mapping[str, Any]) -> str:
+    explicit = view.get("rollout_id")
+    if explicit is not None and str(explicit):
+        return str(explicit)
     rollout_index = int(view.get("rollout_index", 0) or 0)
     return f"{sample_id}:r{rollout_index}"
 
@@ -390,6 +393,34 @@ def _stage2_prepared_rollout_to_result(
         str(attempt.decode_mode),
         prompt_ids,
     )
+
+
+def _stage2_prepared_rollout_metadata(
+    *,
+    attempt: PreparedRolloutAttempt,
+    stats: Mapping[str, Any],
+) -> Dict[str, Any]:
+    dropped_reasons_raw = stats.get("dropped_reasons", {})
+    dropped_reasons = (
+        {
+            str(reason): int(count)
+            for reason, count in dropped_reasons_raw.items()
+        }
+        if isinstance(dropped_reasons_raw, Mapping)
+        else {}
+    )
+    return {
+        "sample_id": str(attempt.sample_id),
+        "image_id": str(attempt.image_id),
+        "image_path": str(attempt.image_path),
+        "rollout_id": str(attempt.rollout_id),
+        "dedup_status": "kept_first",
+        "K_total": int(stats.get("K_total", 0)),
+        "K_after_dedup": int(stats.get("K_after_dedup", 0)),
+        "K_valid": int(stats.get("K_valid", 0)),
+        "exact_duplicate_attempts": int(stats.get("exact_duplicate_attempts", 0)),
+        "dropped_reasons": dropped_reasons,
+    }
 
 
 def _stage2_prepared_dropped_reason_totals(
@@ -3383,16 +3414,10 @@ class Stage2TwoChannelTrainer(
             anchor_view["rollout_index"] = int(prepared_rollout_ordinal)
             if prepared_attempt is not None:
                 anchor_view["rollout_id"] = str(prepared_attempt.rollout_id)
-                anchor_view["prepared_rollout"] = {
-                    "sample_id": str(prepared_attempt.sample_id),
-                    "image_id": str(prepared_attempt.image_id),
-                    "image_path": str(prepared_attempt.image_path),
-                    "rollout_id": str(prepared_attempt.rollout_id),
-                    "dedup_status": "kept_first",
-                    "K_total": int(prepared_stats.get("K_total", 0)),
-                    "K_after_dedup": int(prepared_stats.get("K_after_dedup", 0)),
-                    "K_valid": int(prepared_stats.get("K_valid", 0)),
-                }
+                anchor_view["prepared_rollout"] = _stage2_prepared_rollout_metadata(
+                    attempt=prepared_attempt,
+                    stats=prepared_stats,
+                )
             explorer_rollouts = [
                 explorer_rollout_results[int(sample_index)]
                 for explorer_rollout_results in explorer_rollout_results_by_view
@@ -4801,16 +4826,10 @@ class Stage2TwoChannelTrainer(
                 ),
             )
             if prepared_attempt is not None:
-                meta_entry["prepared_rollout"] = {
-                    "sample_id": str(prepared_attempt.sample_id),
-                    "image_id": str(prepared_attempt.image_id),
-                    "image_path": str(prepared_attempt.image_path),
-                    "rollout_id": str(prepared_attempt.rollout_id),
-                    "dedup_status": "kept_first",
-                    "K_total": int(prepared_stats.get("K_total", 0)),
-                    "K_after_dedup": int(prepared_stats.get("K_after_dedup", 0)),
-                    "K_valid": int(prepared_stats.get("K_valid", 0)),
-                }
+                meta_entry["prepared_rollout"] = _stage2_prepared_rollout_metadata(
+                    attempt=prepared_attempt,
+                    stats=prepared_stats,
+                )
             closure_supervision_drop_total += int(closure_drop_count)
 
             segments.append((encoded, meta_entry, int(encoded_len)))

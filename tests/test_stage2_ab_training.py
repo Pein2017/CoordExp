@@ -38,6 +38,7 @@ from src.trainers.stage2_two_channel import (
     _stage2_ab_tail_closure_positions,
     _stage2_compact_semantic_stop_branch_metadata,
     _stage2_compact_tail_closure_positions,
+    _stage2_ul_rollout_id,
 )
 from src.trainers.stage2_two_channel.target_builder import (
     _apply_channel_b_duplicate_control,
@@ -1755,6 +1756,30 @@ def test_channel_b_offline_residual_set_k_valid_excludes_invalid_after_dedup(
     ] == pytest.approx(1.0)
     assert segments[0][1]["prepared_rollout"]["K_after_dedup"] == 2
     assert segments[0][1]["prepared_rollout"]["K_valid"] == 1
+    assert (
+        segments[0][1]["prepared_rollout"]["dropped_reasons"][
+            "invalid_prepared_rollout"
+        ]
+        == 1
+    )
+    assert segments[0][1]["prepared_rollout"]["exact_duplicate_attempts"] == 0
+
+
+def test_stage2_ul_rollout_id_prefers_explicit_prepared_rollout_id() -> None:
+    assert (
+        _stage2_ul_rollout_id(
+            sample_id="sample-prepared",
+            view={"rollout_index": 0, "rollout_id": "r1"},
+        )
+        == "r1"
+    )
+    assert (
+        _stage2_ul_rollout_id(
+            sample_id="sample-prepared",
+            view={"rollout_index": 2},
+        )
+        == "sample-prepared:r2"
+    )
 
 
 def test_residual_events_use_compact_row_context_desc_tokens() -> None:
