@@ -572,6 +572,68 @@ def test_malformed_span_context_has_no_atoms_or_type_loss() -> None:
     assert result.type_loss_mask_spans == ((3, 9),)
 
 
+def test_unreliable_malformed_resync_at_first_row_drops_sample() -> None:
+    state = make_state_for_objects(make_object("a", "person_left", x1=120, x2=220))
+
+    result = scan_dirty_prefix_rows(
+        state,
+        (
+            row(
+                None,
+                None,
+                object_start=3,
+                object_end=9,
+                reliable_resync=False,
+                malformed=True,
+            ),
+        ),
+    )
+
+    decision = result.row_decisions[0]
+    assert decision.kind == "malformed_span"
+    assert decision.remaining_before == frozenset({"a"})
+    assert decision.remaining_after == frozenset({"a"})
+    assert decision.metadata["reliable_resync"] is False
+    assert result.final_state.remaining_object_ids == frozenset({"a"})
+    assert result.retained_prefix_end == 0
+    assert result.dropped_sample is True
+    assert result.no_atom_reasons == ("unreliable_resync_boundary",)
+    assert result.type_loss_mask_spans == ((3, 9),)
+
+
+def test_unreliable_malformed_resync_after_committed_row_retains_last_stable_boundary() -> None:
+    state = make_state_for_objects(
+        make_object("a", "person_left", x1=120, x2=220),
+        make_object("b", "car", x1=500, x2=650),
+    )
+
+    result = scan_dirty_prefix_rows(
+        state,
+        (
+            row("person_left", (120, 20, 220, 40), object_start=2, object_end=10),
+            row(
+                None,
+                None,
+                object_start=10,
+                object_end=16,
+                reliable_resync=False,
+                malformed=True,
+            ),
+        ),
+    )
+
+    assert result.row_decisions[0].kind == "committed"
+    decision = result.row_decisions[1]
+    assert decision.kind == "malformed_span"
+    assert decision.remaining_before == frozenset({"b"})
+    assert decision.remaining_after == frozenset({"b"})
+    assert result.final_state.remaining_object_ids == frozenset({"b"})
+    assert result.retained_prefix_end == 10
+    assert result.dropped_sample is False
+    assert result.no_atom_reasons == ("unreliable_resync_boundary",)
+    assert result.type_loss_mask_spans == ((10, 16),)
+
+
 def test_row_commitment_uses_deterministic_gt_before_ul_tiebreak() -> None:
     state = make_state_for_objects(
         make_object("gt:2", "person_left", x1=100, y1=100, x2=200, y2=200, source="labeled"),
@@ -640,6 +702,85 @@ def test_strict_transition_rejects_empty_next_state_while_objects_remain() -> No
     )
 
     with pytest.raises(ValueError, match="empty next_state"):
+        transition_state(state, action)
+
+
+def test_strict_transition_rejects_forged_y2_next_state_that_keeps_selected_object() -> None:
+    obj_a = make_object("a", "person_left", x1=120)
+    obj_b = make_object("b", "person_right", x1=640)
+    state = ResidualState(
+        objects=(obj_a, obj_b),
+        remaining_object_ids=frozenset({"a", "b"}),
+        active_candidate_ids=frozenset({"a"}),
+        stop_token_id=999,
+    )
+    forged_next_state = ResidualState(
+        objects=state.objects,
+        remaining_object_ids=frozenset({"a", "b"}),
+        active_candidate_ids=frozenset({"a"}),
+        stop_token_id=999,
+    )
+    action = ValidAction(
+        token_id=coord_token(40),
+        token_role=TokenRole.COORD,
+        token_text=str(coord_token(40)),
+        candidate_ids_after=frozenset({"a"}),
+        next_state=forged_next_state,
+        selected_object_id="a",
+        coord_role="y2",
+    )
+
+    with pytest.raises(ValueError, match="transition semantics"):
+        transition_state(state, action)
+
+
+def test_strict_transition_rejects_forged_next_state_that_drops_unselected_objects() -> None:
+    state = make_state_for_objects(
+        make_object("a", "person_left", x1=120),
+        make_object("b", "person_right", x1=640),
+    )
+    forged_next_state = ResidualState(
+        objects=state.objects,
+        remaining_object_ids=frozenset({"a"}),
+        active_candidate_ids=frozenset({"a"}),
+        stop_token_id=999,
+    )
+    action = ValidAction(
+        token_id=coord_token(120),
+        token_role=TokenRole.COORD,
+        token_text=str(coord_token(120)),
+        candidate_ids_after=frozenset({"a"}),
+        next_state=forged_next_state,
+        selected_object_id="a",
+        coord_role="x1",
+    )
+
+    with pytest.raises(ValueError, match="transition semantics"):
+        transition_state(state, action)
+
+
+def test_strict_transition_rejects_forged_next_state_active_candidate_mismatch() -> None:
+    state = make_state_for_objects(
+        make_object("a", "person_left", x1=120),
+        make_object("b", "person_right", x1=640),
+    )
+    forged_next_state = ResidualState(
+        objects=state.objects,
+        remaining_object_ids=frozenset({"a", "b"}),
+        active_candidate_ids=frozenset({"b"}),
+        stop_token_id=999,
+    )
+    action = ValidAction(
+        token_id=coord_token(120),
+        token_role=TokenRole.COORD,
+        token_text=str(coord_token(120)),
+        candidate_ids_after=frozenset({"a"}),
+        next_state=forged_next_state,
+        selected_object_id="a",
+        coord_role="x1",
+    )
+
+    with pytest.raises(ValueError, match="transition semantics"):
         transition_state(state, action)
 
 

@@ -307,6 +307,7 @@ def transition_state(
         if strict:
             raise ValueError("residual-set strict transition requires action.next_state")
     else:
+        active_after = state.active_candidate_ids & action.candidate_ids_after
         if not action.next_state.remaining_object_ids:
             if not (
                 action.token_role is TokenRole.COORD
@@ -317,12 +318,26 @@ def transition_state(
                 raise ValueError(
                     "residual-set transition has empty next_state while objects remain"
                 )
+            expected_next_state = _next_state_for_action(
+                state,
+                token_role=action.token_role,
+                candidate_ids_after=active_after,
+                selected_object_id=action.selected_object_id,
+                coord_role=action.coord_role,
+                token_id=action.token_id,
+            )
+            if strict and not _residual_state_transition_semantics_equal(
+                action.next_state,
+                expected_next_state,
+            ):
+                raise ValueError(
+                    "residual-set action.next_state does not match transition semantics"
+                )
             return action.next_state
         if not action.next_state.active_candidate_ids:
             raise ValueError(
                 "residual-set transition produced empty active candidates for non-STOP action"
             )
-        active_after = state.active_candidate_ids & action.candidate_ids_after
         if not active_after:
             raise ValueError(
                 "residual-set transition produced empty active candidates for non-STOP action"
@@ -331,6 +346,21 @@ def transition_state(
             action.next_state.remaining_object_ids
         ):
             raise ValueError("residual-set action.next_state has invalid active candidates")
+        expected_next_state = _next_state_for_action(
+            state,
+            token_role=action.token_role,
+            candidate_ids_after=active_after,
+            selected_object_id=action.selected_object_id,
+            coord_role=action.coord_role,
+            token_id=action.token_id,
+        )
+        if strict and not _residual_state_transition_semantics_equal(
+            action.next_state,
+            expected_next_state,
+        ):
+            raise ValueError(
+                "residual-set action.next_state does not match transition semantics"
+            )
         return action.next_state
 
     active_after = state.active_candidate_ids & action.candidate_ids_after
@@ -350,6 +380,21 @@ def transition_state(
         box_start_token_id=state.box_start_token_id,
         stop_token_id=state.stop_token_id,
         metadata=state.metadata,
+    )
+
+
+def _residual_state_transition_semantics_equal(
+    left: ResidualState,
+    right: ResidualState,
+) -> bool:
+    return (
+        left.objects == right.objects
+        and left.remaining_object_ids == right.remaining_object_ids
+        and left.active_candidate_ids == right.active_candidate_ids
+        and left.text_prefix_token_ids == right.text_prefix_token_ids
+        and left.object_start_token_id == right.object_start_token_id
+        and left.box_start_token_id == right.box_start_token_id
+        and left.stop_token_id == right.stop_token_id
     )
 
 
