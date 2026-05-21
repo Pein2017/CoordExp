@@ -8,10 +8,13 @@ from src.trainers.stage2_two_channel.residual_set import (
     CorrectionEvent,
     CorrectionKind,
     CoordRole,
+    ObservedResidualRow,
     ResidualObject,
+    ResidualRowScanResult,
     ResidualState,
     ValidAction,
     enumerate_valid_actions,
+    scan_dirty_prefix_rows,
     transition_state,
 )
 from src.trainers.stage2_two_channel.rollout_views import (
@@ -38,6 +41,7 @@ def make_object(
     x2: int = 30,
     y2: int = 40,
     loss_weight: float = 1.0,
+    source: str = "labeled",
 ) -> ResidualObject:
     first_token_text = desc.split("_", 1)[0]
     return ResidualObject(
@@ -51,6 +55,12 @@ def make_object(
             "y2": coord_token(y2),
         },
         loss_weight=loss_weight,
+        metadata={
+            "bbox_norm1000": (x1, y1, x2, y2),
+            "desc_norm": desc,
+            "support_provenance": (source,),
+            "source": source,
+        },
     )
 
 
@@ -75,6 +85,31 @@ def valid_coord_actions(state: ResidualState, role: CoordRole) -> tuple[ValidAct
 
 def apply_action(state: ResidualState, action: ValidAction) -> ResidualState:
     return transition_state(state, action)
+
+
+def row(
+    desc: str | None,
+    bbox: tuple[int, int, int, int] | None,
+    *,
+    object_start: int = 4,
+    object_end: int | None = 12,
+    reliable_span: bool = True,
+    reliable_resync: bool = True,
+    malformed: bool = False,
+    incomplete: bool = False,
+    desc_token_ids: tuple[int, ...] | None = None,
+) -> ObservedResidualRow:
+    return ObservedResidualRow(
+        desc=desc,
+        bbox_norm1000=bbox,
+        object_start=object_start,
+        object_end=object_end,
+        reliable_span=reliable_span,
+        reliable_resync=reliable_resync,
+        malformed=malformed,
+        incomplete=incomplete,
+        desc_token_ids=desc_token_ids,
+    )
 
 
 def make_role_vocab() -> RoleVocab:
@@ -309,19 +344,32 @@ def test_forged_stop_transition_is_rejected_for_nonempty_residual_state() -> Non
         transition_state(state, forged_stop)
 
 
-def test_x1_ambiguity_filters_candidates_by_exact_coord_token() -> None:
+def test_x1_valid_action_commits_subsequent_bbox_to_same_object() -> None:
     state = make_state_for_objects(
         make_object("a", "person_left", x1=120),
         make_object("b", "person_right", x1=640),
         make_object("c", "car", x1=850),
     )
 
+    assert state.remaining_object_ids == frozenset({"a", "b", "c"})
     actions = valid_coord_actions(state, "x1")
 
     assert {action.token_id for action in actions} == {coord_token(120), coord_token(640), coord_token(850)}
     chosen = only_action(tuple(action for action in actions if action.token_id == coord_token(640)))
+    assert chosen.next_state is not None
+    assert chosen.next_state.active_candidate_ids == frozenset({"b"})
+    assert chosen.next_state.remaining_object_ids == frozenset({"a", "b", "c"})
+
     narrowed = apply_action(state, chosen)
     assert narrowed.active_candidate_ids == frozenset({"b"})
+    assert narrowed.remaining_object_ids == frozenset({"a", "b", "c"})
+
+    for role in ("y1", "x2", "y2"):
+        action = only_action(valid_coord_actions(narrowed, role))
+        narrowed = apply_action(narrowed, action)
+
+    assert narrowed.remaining_object_ids == frozenset({"a", "c"})
+    assert narrowed.active_candidate_ids == frozenset({"a", "c"})
 
 
 def test_shared_x1_keeps_bbox_tail_ambiguous_until_y1() -> None:
@@ -370,6 +418,180 @@ def test_singleton_coordinate_action_sets_selected_object_id() -> None:
     assert action.selected_object_id == "b"
 
 
+def test_invalid_bbox_row_is_dirty_context_and_does_not_update_remaining_set() -> None:
+    state = make_state_for_objects(make_object("a", "person_left", x1=120, x2=220))
+
+    result: ResidualRowScanResult = scan_dirty_prefix_rows(
+        state,
+        (row("person_left", (220, 20, 120, 40), object_start=5, object_end=11),),
+    )
+
+    decision = result.row_decisions[0]
+    assert result.initial_remaining_object_ids == frozenset({"a"})
+    assert decision.remaining_before == frozenset({"a"})
+    assert decision.kind == "invalid_geometry"
+    assert decision.iou is None
+    assert decision.remaining_after == frozenset({"a"})
+    assert result.final_state.remaining_object_ids == frozenset({"a"})
+    assert result.dirty_context_spans == ((5, 11),)
+    assert result.events == ()
+
+
+def test_trailing_incomplete_object_is_removed_to_last_stable_boundary() -> None:
+    state = make_state_for_objects(
+        make_object("a", "person_left", x1=120, x2=220),
+        make_object("b", "car", x1=500, x2=650),
+    )
+
+    result = scan_dirty_prefix_rows(
+        state,
+        (
+            row("person_left", (120, 20, 220, 40), object_start=2, object_end=10),
+            row("car", None, object_start=10, object_end=None, incomplete=True),
+        ),
+    )
+
+    assert result.row_decisions[0].remaining_before == frozenset({"a", "b"})
+    assert result.row_decisions[0].remaining_after == frozenset({"b"})
+    assert result.row_decisions[1].kind == "trailing_incomplete"
+    assert result.row_decisions[1].remaining_before == frozenset({"b"})
+    assert result.row_decisions[1].remaining_after == frozenset({"b"})
+    assert result.final_state.remaining_object_ids == frozenset({"b"})
+    assert result.retained_prefix_end == 10
+    assert result.masked_label_spans == ((10, 10),)
+
+
+def test_spatial_wrong_desc_conflict_emits_low_weight_desc_atom_when_span_reliable() -> None:
+    state = make_state_for_objects(make_object("a", "person_left", x1=120, x2=220))
+
+    result = scan_dirty_prefix_rows(
+        state,
+        (
+            row(
+                "person_right",
+                (120, 20, 220, 40),
+                object_start=5,
+                object_end=19,
+                reliable_span=True,
+            ),
+        ),
+    )
+
+    decision = result.row_decisions[0]
+    assert decision.remaining_before == frozenset({"a"})
+    assert decision.kind == "spatial_wrong_desc_conflict"
+    assert decision.selected_object_id is None
+    assert decision.remaining_after == frozenset({"a"})
+    assert result.final_state.remaining_object_ids == frozenset({"a"})
+    assert decision.eligible_for_ul is False
+    assert len(result.events) == 1
+    atom = result.events[0].atom_drafts[0]
+    assert atom.correction_kind == "spatial_wrong_desc_conflict"
+    assert atom.metadata["label_conflict_weight"] == 0.25
+    assert atom.metadata["slot"] == "desc"
+    assert atom.metadata["no_atom_reason"] is None
+
+
+def test_spatial_wrong_desc_conflict_records_no_atom_reason_when_span_unreliable() -> None:
+    state = make_state_for_objects(make_object("a", "person_left", x1=120, x2=220))
+
+    result = scan_dirty_prefix_rows(
+        state,
+        (
+            row(
+                "person_right",
+                (120, 20, 220, 40),
+                object_start=5,
+                object_end=19,
+                reliable_span=False,
+            ),
+        ),
+    )
+
+    decision = result.row_decisions[0]
+    assert decision.remaining_before == frozenset({"a"})
+    assert decision.kind == "spatial_wrong_desc_conflict"
+    assert decision.remaining_after == frozenset({"a"})
+    assert result.events == ()
+    assert result.no_atom_reasons == ("unreliable_desc_divergence_span",)
+    assert decision.no_atom_reason == "unreliable_desc_divergence_span"
+
+
+def test_duplicate_burst_is_uncommitted_and_cannot_vote_for_ul() -> None:
+    state = make_state_for_objects(
+        make_object("a", "person_left", x1=120, x2=220),
+        make_object("b", "car", x1=500, x2=650),
+    )
+
+    result = scan_dirty_prefix_rows(
+        state,
+        (
+            row("person_left", (120, 20, 220, 40), object_start=2, object_end=10),
+            row("person_left", (120, 20, 220, 40), object_start=10, object_end=18),
+        ),
+    )
+
+    assert result.row_decisions[0].kind == "committed"
+    assert result.row_decisions[0].remaining_before == frozenset({"a", "b"})
+    assert result.row_decisions[0].remaining_after == frozenset({"b"})
+    duplicate = result.row_decisions[1]
+    assert duplicate.kind == "duplicate_burst"
+    assert duplicate.remaining_before == frozenset({"b"})
+    assert duplicate.remaining_after == frozenset({"b"})
+    assert duplicate.eligible_for_ul is False
+    assert duplicate.unlikelihood_eligible is False
+    assert result.final_state.remaining_object_ids == frozenset({"b"})
+    assert result.events == ()
+
+
+def test_malformed_span_context_has_no_atoms_or_type_loss() -> None:
+    state = make_state_for_objects(make_object("a", "person_left", x1=120, x2=220))
+
+    result = scan_dirty_prefix_rows(
+        state,
+        (
+            row(
+                None,
+                None,
+                object_start=3,
+                object_end=9,
+                reliable_span=True,
+                reliable_resync=True,
+                malformed=True,
+            ),
+        ),
+    )
+
+    decision = result.row_decisions[0]
+    assert decision.kind == "malformed_span"
+    assert decision.remaining_before == frozenset({"a"})
+    assert decision.remaining_after == frozenset({"a"})
+    assert result.final_state.remaining_object_ids == frozenset({"a"})
+    assert result.events == ()
+    assert result.no_atom_reasons == ("malformed_retained_span",)
+    assert result.type_loss_mask_spans == ((3, 9),)
+
+
+def test_row_commitment_uses_deterministic_gt_before_ul_tiebreak() -> None:
+    state = make_state_for_objects(
+        make_object("gt:2", "person_left", x1=100, y1=100, x2=200, y2=200, source="labeled"),
+        make_object("ul:0", "person_left", x1=100, y1=100, x2=200, y2=200, source="ul"),
+        make_object("gt:1", "person_left", x1=100, y1=100, x2=200, y2=200, source="labeled"),
+    )
+
+    result = scan_dirty_prefix_rows(
+        state,
+        (row("person_left", (100, 100, 200, 200), object_start=1, object_end=9),),
+    )
+
+    decision = result.row_decisions[0]
+    assert decision.remaining_before == frozenset({"gt:2", "ul:0", "gt:1"})
+    assert decision.kind == "committed"
+    assert decision.selected_object_id == "gt:1"
+    assert decision.remaining_after == frozenset({"gt:2", "ul:0"})
+    assert result.final_state.remaining_object_ids == frozenset({"gt:2", "ul:0"})
+
+
 def test_empty_non_stop_transition_is_guarded() -> None:
     state = make_state_for_objects(make_object("a", "person_left", x1=120))
     bad_action = ValidAction(
@@ -380,7 +602,45 @@ def test_empty_non_stop_transition_is_guarded() -> None:
     )
 
     with pytest.raises(ValueError, match="empty active candidates"):
-        transition_state(state, bad_action)
+        transition_state(state, bad_action, strict=False)
+
+
+def test_strict_transition_requires_materialized_next_state() -> None:
+    state = make_state_for_objects(make_object("a", "person_left", x1=120))
+    action = ValidAction(
+        token_id=ord("p"),
+        token_role=TokenRole.TEXT,
+        token_text="person",
+        candidate_ids_after=frozenset({"a"}),
+    )
+
+    with pytest.raises(ValueError, match="requires action.next_state"):
+        transition_state(state, action)
+
+
+def test_strict_transition_rejects_empty_next_state_while_objects_remain() -> None:
+    state = make_state_for_objects(
+        make_object("a", "person_left", x1=120),
+        make_object("b", "person_right", x1=640),
+    )
+    empty_next_state = ResidualState(
+        objects=state.objects,
+        remaining_object_ids=frozenset(),
+        active_candidate_ids=frozenset(),
+        stop_token_id=999,
+    )
+    action = ValidAction(
+        token_id=coord_token(120),
+        token_role=TokenRole.COORD,
+        token_text=str(coord_token(120)),
+        candidate_ids_after=frozenset({"a"}),
+        next_state=empty_next_state,
+        selected_object_id="a",
+        coord_role="x1",
+    )
+
+    with pytest.raises(ValueError, match="empty next_state"):
+        transition_state(state, action)
 
 
 def test_residual_object_constructor_validates_core_invariants() -> None:
@@ -593,7 +853,7 @@ def test_event_to_ir_rejects_selected_token_outside_valid_actions() -> None:
         )
 
 
-def test_coordinate_tail_event_to_ir_keeps_exact_coord_roles() -> None:
+def test_coordinate_event_to_ir_keeps_exact_coord_roles_without_repair_kind() -> None:
     input_ids = torch.tensor(
         [[11, 22, coord_token(120), coord_token(20), coord_token(30), coord_token(40)]]
     )
@@ -602,7 +862,7 @@ def test_coordinate_tail_event_to_ir_keeps_exact_coord_roles() -> None:
     for offset, coord_role in enumerate(("x1", "y1", "x2", "y2"), start=2):
         drafts.append(
             CorrectionAtomDraft(
-                correction_kind="matched_object_repair",
+                correction_kind="transition_failure",
                 target_position=offset,
                 logit_position=offset - 1,
                 valid_actions=valid_coord_actions(state, coord_role),
@@ -610,7 +870,7 @@ def test_coordinate_tail_event_to_ir_keeps_exact_coord_roles() -> None:
             )
         )
     event = CorrectionEvent(
-        correction_kind="matched_object_repair",
+        correction_kind="transition_failure",
         sample_id="sample-1",
         atom_drafts=tuple(drafts),
         metadata={"rollout_index": 4},
