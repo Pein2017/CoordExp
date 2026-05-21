@@ -1,301 +1,212 @@
 ## ADDED Requirements
 
-### Requirement: Stage-2 AB residual-set objective module is named and typed
+### Requirement: Stage-2 AB exposes residual-set self-prefix correction as an explicit objective path
 
-Stage-2 AB SHALL expose residual-set correction through a strict objective
-module named `residual_set_correction`.
+Stage-2 AB SHALL expose the residual-set correction objective through explicit
+YAML configuration and SHALL NOT silently mutate existing baseline objective
+behavior.
 
 Normative behavior:
 
-- The module name SHALL be `residual_set_correction`.
+- The objective module name SHALL be `residual_set_correction`.
 - The module SHALL support `application.preset: rollout_self_prefix`.
-- The module SHALL be valid only for Channel-B objective application.
-- On Channel-B, `residual_set_correction` SHALL be mutually exclusive with
-  legacy target-realization modules such as `token_ce`, `hard_sft`, and
-  `stage2_trie_ce`; Channel-A objectives MAY remain separate pipeline entries.
-- `residual_set_correction.config` SHALL be strict and SHALL accept only:
-  - `rollin_policy`
-  - `rollin_resample_policy`
-  - `base_seed`
-  - `coord_span_policy`
-  - `strict_builder_invariants`
-  - `lambda_ul_promoted`
-  - `lambda_continue_margin`
-  - `continue_margin_m`
-  - `coverage_strength`
-  - `num_rollouts`
-  - `min_ul_valid_rollouts`
-  - `ul_consensus_ratio`
-  - `ul_geometry`
-  - `artifact_policy`
-- `rollin_policy` default SHALL be `random_valid_branch`.
-- `rollin_resample_policy` default SHALL be `fixed_event`.
-- `base_seed` default SHALL be `17`.
-- `coord_span_policy` default SHALL be `bbox_tail_from_anchor`.
-- `lambda_ul_promoted` default SHALL be `0.5`.
-- `lambda_continue_margin` default SHALL be `0.0`.
-- `continue_margin_m` default SHALL be `0.0`.
-- `coverage_strength` default SHALL be `0.0`; nonzero coverage is an explicit
-  within-valid calibration ablation and MUST NOT be required for the core
-  residual-set marginal objective.
-- `num_rollouts` SHALL be owned by `residual_set_correction.config` and SHALL
-  NOT require `stage2_ab.channel_b.pseudo_positive.enabled=true`.
-- `ul_geometry` SHALL record explicit complete-link gate names for IoU minimum,
-  center-distance scale, area-ratio maximum, and aspect-ratio maximum.
-- `stage2_ab.channel_b.pseudo_positive.enabled=true` SHALL be rejected when the
-  residual-set objective is selected, to avoid mixing legacy pseudo-positive
-  semantics with rollout-local UL promotion.
+- The module is valid only for Channel-B objective application.
+- Existing `hard_sft`, `token_ce`, and `stage2_trie_ce` baselines MUST remain
+  selectable and unchanged unless explicitly configured otherwise.
+- Residual-set configs MUST NOT use legacy edited-anchor final targets,
+  sorted/tail FN insertion, or a one-merged-forward target as canonical target
+  semantics.
+- Removed duplicate, bbox, geometry, coordinate repair, and coord diagnostic
+  modules MUST remain rejected in the residual-set path.
 
-#### Scenario: Residual-set module config is accepted
-
-- **WHEN** a Stage-2 AB pipeline includes
-  `name: residual_set_correction`, `channels: [B]`, and
-  `application.preset: rollout_self_prefix`
-- **THEN** config validation accepts the residual-set objective module when its
-  config uses only the allowlisted keys
-- **AND** Channel-A objective modules remain separately configurable.
-
-#### Scenario: Residual-set rejects legacy pseudo-positive mixing
+#### Scenario: Residual-set objective is explicit opt-in
 
 - **WHEN** a Stage-2 AB config selects `residual_set_correction`
-- **AND** `stage2_ab.channel_b.pseudo_positive.enabled=true`
-- **THEN** config validation fails fast with guidance to use
-  `residual_set_correction.config.num_rollouts` and UL mining settings instead.
+- **THEN** Channel-B target construction uses offline self-prefix correction
+  samples
+- **AND** configs that do not select it continue using their selected baseline
+  objective behavior.
 
-### Requirement: Stage-2 AB exposes residual-set correction as an explicit objective path
+### Requirement: Residual-set Stage-2 config is strict and minimal
 
-Stage-2 AB SHALL expose the residual-set self-prefix correction objective as an
-explicit YAML-selected pipeline path without silently changing existing baseline
-objective behavior.
-
-Normative behavior:
-
-- The residual-set path MUST be selected through the typed Stage-2 pipeline
-  configuration.
-- Hard-SFT and existing Stage-2 trie/text objective baselines MUST remain
-  selectable for ablation.
-- New residual-set configs MUST NOT use the legacy edited-anchor final target,
-  sorted/tail FN insertion, or one merged teacher-forced forward as their
-  canonical target semantics.
-- Legacy `stage2_ab.channel_b.insertion_order` and duplicate-control knobs MAY
-  remain in inherited base configs, but for the residual-set objective they SHALL
-  be target-construction inactive. They MAY contribute provenance/diagnostics,
-  but MUST NOT prune repeated-object correction events, order corrected targets,
-  or perform FN insertion.
-- Config validation MUST reject removed duplicate-specific loss modules and
-  removed bbox/coord auxiliary modules in the residual-set path.
-
-#### Scenario: Residual-set objective path is selected explicitly
-
-- **WHEN** a Stage-2 AB config selects the residual-set correction objective
-- **THEN** Channel-B target construction uses independent correction samples
-  from valid self-prefix rollouts
-- **AND** existing baseline objective modules are not mutated implicitly.
-
-#### Scenario: Removed duplicate loss remains rejected
-
-- **WHEN** a residual-set Stage-2 config declares
-  `loss_duplicate_burst_unlikelihood`
-- **THEN** config validation fails before trainer initialization
-- **AND** duplicate-like behavior remains diagnostic/provenance only.
-
-#### Scenario: Legacy ordering knobs are inactive for residual-set targets
-
-- **WHEN** a residual-set Stage-2 config inherits
-  `stage2_ab.channel_b.insertion_order`
-- **THEN** residual-set correction target construction ignores that ordering
-  knob
-- **AND** target ordering is determined by self-prefix residual-state actions.
-
-### Requirement: Stage-2 AB residual-set rollouts use K-valid sample semantics
-
-Stage-2 AB SHALL treat K rollout attempts as independent self-prefix correction
-samples for the residual-set objective.
+Stage-2 AB SHALL validate residual-set config keys strictly and avoid
+configuration explosion.
 
 Normative behavior:
 
-- K rollout outputs MUST NOT be collapsed into one cross-prefix multiple-target
-  objective or one empirical pseudo-label distribution.
-- Each grammar-valid eligible rollout MAY contribute its own correction sample.
-- Invalid or malformed rollouts MUST be counted by reason and excluded from
-  K-valid UL consensus denominators.
-- The builder order MUST be UL consensus first, then per-rollout earliest
-  actionable correction selection against rollout-local `G*_k`.
-- The residual-set rollout count MUST come from
-  `residual_set_correction.config.num_rollouts`, not from legacy
-  `stage2_ab.channel_b.triage_posterior.num_rollouts`.
+- `residual_set_correction.config` MUST require exactly one prepared rollout
+  input key in v1:
+  - `prepared_rollout_jsonl`
+- `residual_set_correction.config` MUST accept these optional keys with
+  defaults:
+  - `expected_num_rollouts`: default `4`;
+  - `base_seed`: default `17`;
+  - `lambda_type`: default `1.0`;
+  - `lambda_inner`: default `1.0`;
+  - `fallback_loss_weight`;
+  - `lambda_ul_promoted`: default `0.5`;
+  - `label_conflict_weight`: default `0.25`;
+  - `commit_iou_threshold`: default `0.75`;
+  - `duplicate_burst_iou_threshold`: default `0.95`;
+  - `ul_cluster_iou_threshold`: default `0.9`;
+  - `ul_gray_iou_low`: default `0.30`;
+  - `ul_consensus_ratio`: default `1.0`;
+  - `min_ul_valid_rollouts`: default `2`;
+  - `clean_gt_sft_mix`: default `0`;
+  - `strict_prepared_rollout_tokens`: default `true`;
+  - `legacy_reencode_fallback`: default `false`;
+  - `strict_builder_invariants`: default `true`.
+- `residual_set_correction.config` MUST reject every other key.
+- The config MUST NOT expose a coordinate repair policy in v1.
+- The config MUST NOT expose default-on online generation inside training.
+- Unknown residual-set keys MUST fail fast.
 
-#### Scenario: Two valid rollouts produce separate correction samples
+#### Scenario: Missing prepared rollout JSONL fails fast
 
-- **WHEN** two valid rollouts for the same image have different grammar-valid
-  self-prefix contexts
-- **THEN** the residual-set path builds separate correction samples
-- **AND** it does not merge their target supports into one teacher-forced
-  forward.
+- **WHEN** a residual-set config omits `prepared_rollout_jsonl`
+- **THEN** validation fails before trainer initialization
+- **AND** the error identifies
+  `stage2_ab.pipeline.objective[name=residual_set_correction].config.prepared_rollout_jsonl`.
 
-#### Scenario: UL consensus precedes correction selection
+#### Scenario: Coordinate repair config is rejected
 
-- **WHEN** an unmatched object is promoted by K-valid consensus
-- **THEN** per-rollout correction selection uses the rollout-local universe that
-  includes that promoted UL member
-- **AND** the object is not selected earlier as an FP boundary for its first
-  occurrence.
+- **WHEN** a residual-set config declares `coord_span_policy:
+  bbox_tail_from_anchor`
+- **THEN** validation fails fast
+- **AND** the error explains that Stage-2 v1 does not repair raw-rollout
+  coordinates.
 
-#### Scenario: Residual K does not require legacy pseudo-positive
+### Requirement: Stage-2 AB prepared-rollout path is offline and replayable
 
-- **WHEN** `residual_set_correction.config.num_rollouts` is `3` or greater
-- **AND** `stage2_ab.channel_b.pseudo_positive.enabled=false`
-- **THEN** config validation may accept the residual-set objective
-- **AND** the legacy non-residual requirement that pseudo-positive-disabled
-  triage has two rollout views does not apply to the residual-set K.
-
-### Requirement: Stage-2 AB emits residual-set and UL observability
-
-Stage-2 AB residual-set runs SHALL emit diagnostics that expose correction
-selection, residual provenance, valid-action mass, and UL mining decisions.
+Stage-2 AB SHALL treat prepared rollout artifacts as the input surface for the
+residual-set objective.
 
 Normative behavior:
 
-- Metrics MUST distinguish labeled remaining, UL remaining, and mixed remaining
-  premature-stop cases.
-- Metrics MUST expose repeated-object boundary corrections separately from
-  duplicate-specific losses.
-- Metrics MUST expose valid-action support, selected token probability,
-  illegal/STOP mass where applicable, and corrected-roll-in diagnostics.
-- Residual-set Stage-2 metric keys MUST use the stable prefix
-  `stage2_ab/channel_b/residual_set/`.
-- When monitor/debug/smoke artifact dumping is enabled, Stage-2 AB SHALL write
-  discovered UL clusters under the artifact root at relative path
-  `ul_clusters.jsonl`.
-- Detailed UL artifact rows MUST include support rollouts, support ratio,
-  geometry stats, overlap stats to labeled GT/emitted objects, consumed-target
-  overlap/quarantine evidence, decision, reason, and member boxes.
+- Residual-set training MUST read prepared rollout attempts from offline data.
+- Fully online generate-while-training MUST NOT be the v1 default or required
+  path.
+- Prepared record validation MUST fail/drop on missing `response_token_ids`
+  except in an explicit legacy fallback mode.
+- The training run MUST record prepared artifact provenance and generation
+  config hashes where available.
 
-#### Scenario: Premature stop provenance is visible
+#### Scenario: Offline prepared rollouts are replayed
 
-- **WHEN** a residual-set run encounters raw STOP with remaining objects
-- **THEN** metrics identify whether the remaining set is labeled-only,
-  UL-only, or mixed
-- **AND** STOP/continuation probabilities are reported without requiring a
-  continuation-margin loss.
+- **WHEN** a residual-set training run starts
+- **THEN** it reads fixed prepared rollout attempts
+- **AND** the target builder constructs training atoms from those attempts
+  without calling generation inside the optimizer loop.
 
-#### Scenario: UL clusters are reviewable under monitor dumps
+### Requirement: Stage-2 AB residual-set diagnostics are compact and stable
 
-- **WHEN** monitor dumps are enabled and UL mining discovers clusters
-- **THEN** Stage-2 AB writes `ul_clusters.jsonl` under the active artifact root
-- **AND** the rows contain support, geometry, overlap, decision, and member-box
-  evidence.
+Stage-2 AB SHALL emit compact diagnostics sufficient to validate the residual
+correction contract without creating many files by default.
+
+Normative behavior:
+
+- Step monitors SHOULD include counts for committed GT rows, committed UL rows,
+  pending UL candidates, promoted UL clusters, invalid geometry, malformed rows,
+  duplicate rows, clean/dirty correction events, EOS/continue targets,
+  truncation drops, re-encoded legacy prefixes, clean-success skips, type mass,
+  wrong-type mass, active atom count, atom weight sum, raw atom loss sum, and
+  sequence loss.
+- Decode-mode slices SHOULD be emitted for clean-success rate, invalid rate,
+  dirty-correction events, and promoted-UL support.
+- `monitor_dumps/ul_clusters.jsonl` is the canonical default UL review file
+  when artifact dumping is enabled.
+- A standalone `label_conflict_review.jsonl` MUST NOT be created by default.
+
+#### Scenario: Dirty-prefix recovery is visible
+
+- **WHEN** dirty-prefix recovery contributes atoms
+- **THEN** monitor diagnostics include dirty correction counts and atom/weight
+  summaries
+- **AND** malformed segments that were masked but retained as context are
+  counted separately.
 
 ## MODIFIED Requirements
 
+### Requirement: Stage-2 two-channel training supports a config-declared objective and diagnostics pipeline
+
+When `custom.trainer_variant: stage2_two_channel`, the system SHALL use an
+explicit YAML-declared objective/diagnostics pipeline.
+
+Normative behavior:
+
+- `stage2_ab.pipeline` MUST be present.
+- Canonical clean-prefix baseline ordering remains:
+  1. `token_ce`
+  2. `stage2_trie_ce`
+  3. `hard_sft` when the config intentionally requests the baseline
+     selected-path objective.
+- `residual_set_correction` is an explicit opt-in alternative objective module
+  with `application.preset: rollout_self_prefix`, not an implicit default and
+  not part of the clean-prefix baseline ordering.
+- Live Stage-2 AB configs MUST omit `loss_duplicate_burst_unlikelihood`; the
+  removed objective has no compatibility alias.
+
+#### Scenario: Residual-set objective is not ordered as clean-prefix baseline
+
+- **WHEN** a Stage-2 config selects `residual_set_correction`
+- **THEN** validation treats it as the explicit rollout-self-prefix objective
+  path
+- **AND** it does not require the clean-prefix baseline objective ordering.
+
 ### Requirement: Stage-2 Two-Channel module names are stable and discoverable
-Stage-2 Two-Channel SHALL provide a strict module registry for its pipeline modules, and the module names SHALL be stable so
-YAML-declared experiments remain auditable.
+
+Stage-2 Two-Channel SHALL provide a strict module registry for its pipeline
+modules, and the module names SHALL be stable so YAML-declared experiments
+remain auditable.
 
 Normative minimum objective module names for this contract:
+
 - `token_ce`
 - `hard_sft`
 - `stage2_trie_ce`
 - `residual_set_correction`
 
 Removed objective module names:
+
 - `loss_duplicate_burst_unlikelihood`
 - `bbox_geo`
 - `bbox_size_aux`
 - `coord_reg`
 
-Normative minimum diagnostics module names: none.
-
-Removed diagnostics module names:
-- `coord_diag`
-
 Normative behavior:
+
 - Unknown module names MUST fail fast before training starts.
-- Error messages MUST list the unknown module name and available Stage-2 Two-Channel module names.
-- Baseline module and preset names used in docs, specs, config validation, and
-  the runtime registry MUST be aligned before adding new residual-set baseline
-  configs.
+- Error messages MUST list the unknown module name and available Stage-2
+  Two-Channel module names.
+- The residual-set objective MUST reject removed coordinate/geometry/duplicate
+  modules rather than aliasing them.
 
-#### Scenario: Unknown Stage-2 two-channel module names fail fast
-- **WHEN** `stage2_ab.pipeline` references an objective module name not present in the Stage-2 registry
-- **THEN** trainer initialization fails fast
-- **AND** the error includes the unknown name and allowed module names.
+#### Scenario: Removed duplicate loss remains rejected
 
-### Requirement: Stage-2 AB Channel-B uses anchor/explorer triage with an optional pseudo-positive multi-view extension
-The legacy clean-prefix Channel-B path SHALL build its clean teacher-forced
-target from one greedy anchor rollout plus one or more explorer rollouts when
-`custom.trainer_variant: stage2_two_channel` selects a legacy/baseline
-Channel-B objective path:
+- **WHEN** a residual-set config declares `loss_duplicate_burst_unlikelihood`
+- **THEN** validation fails fast before trainer initialization
+- **AND** duplicate burst remains diagnostic/provenance only.
 
-- one anchor rollout using greedy / deterministic decoding,
-- one or more explorer rollouts using stochastic decoding configured under `stage2_ab.channel_b.triage_posterior`.
+### Requirement: Stage-2 AB Channel-B uses anchor-rooted rollout triage with pre-match duplicate-control and default K=4 pseudo-positive evidence
+
+The existing anchor/explorer clean-prefix Channel-B contract SHALL remain scoped
+to legacy/baseline Channel-B objective paths and SHALL NOT apply to
+`residual_set_correction`.
 
 Normative behavior:
 
-- this requirement applies to legacy/baseline clean-prefix Channel-B objective
-  paths such as `token_ce`, `hard_sft`, and `stage2_trie_ce`, not to
-  `residual_set_correction`,
-- when `stage2_ab.channel_b.pseudo_positive.enabled=false`, total rollout views MUST remain `2` (`1` anchor + `1` explorer),
-- when `stage2_ab.channel_b.pseudo_positive.enabled=true`, total rollout views MUST equal `stage2_ab.channel_b.triage_posterior.num_rollouts`,
-- each rollout MUST independently reuse the existing bounded salvage + strict record acceptance + bbox-valid filtering + sequential dedup + configured Stage-2 assignment path,
-- GT-backed semantics MUST inherit the existing Channel-B accepted-clean assignment + gating contract,
-- the final positive target MUST be built by editing the **anchor** clean sequence rather than rebuilding a union order,
-- pseudo-positive candidate discovery MUST start from unmatched anchor clean objects and use explorer agreement only as support evidence,
-- explorer-only non-GT-backed objects MUST NOT be promoted into clean-prefix positives,
-- a GT hit found only on the explorer side MUST project to `recovered_fn`, not to anchor retention.
+- Anchor/explorer rollout views, pseudo-positive semantics, duplicate-control
+  survivor editing, and anchor-clean-sequence final targets apply only to the
+  canonical clean-prefix Channel-B path.
+- When `stage2_ab.pipeline.objective[].name=residual_set_correction` with
+  `application.preset: rollout_self_prefix`, Stage-2 AB SHALL consume offline
+  prepared `rollout_attempt` records and SHALL NOT apply anchor/explorer,
+  pseudo-positive, or anchor-clean-sequence target semantics.
+- Any future mapping from anchor/explorer fields into `rollout_attempts[]` must
+  be an explicit offline legacy adapter, not the residual-set runtime contract.
 
-Residual-set correction is an explicit opt-in path with separate self-prefix
-correction samples and rollout-local UL promotion. It MUST NOT use this
-requirement's edited-anchor final target as its canonical target semantics.
+#### Scenario: Residual-set path bypasses anchor-rooted target construction
 
-#### Scenario: Channel-B builds the final target from the anchor clean sequence
-- **GIVEN** anchor and explorer rollouts were both produced for a legacy clean-prefix Channel-B sample
-- **WHEN** the trainer constructs the teacher-forced target
-- **THEN** it starts from the anchor clean accepted sequence
-- **AND** it preserves anchor order for retained objects
-- **AND** it does not rebuild a union ordering over anchor and explorer objects.
-
-#### Scenario: Residual-set path does not build an edited anchor target
-- **GIVEN** a Stage-2 config selects `residual_set_correction`
-- **WHEN** Channel-B constructs correction samples
-- **THEN** it builds independent self-prefix correction samples
-- **AND** it does not use the edited-anchor final target as the canonical target.
-
-#### Scenario: Explorer-only GT hit does not keep a bad anchor object positive
-- **GIVEN** an anchor/explorer pair-or-singleton record where the anchor side misses GT and the explorer side matches GT
-- **WHEN** the trainer projects triage evidence into training actions
-- **THEN** the outcome is `recovered_fn`
-- **AND** the bad anchor object is not kept as an anchor GT-backed positive.
-
-#### Scenario: Explorer-only non-GT-backed object does not become a pseudo-positive prefix object
-- **GIVEN** an explorer object that does not correspond to any unmatched anchor clean object
-- **WHEN** Channel-B projects pseudo-positive evidence into the final clean prefix
-- **THEN** that explorer-only non-GT-backed object is not promoted into a new prefix positive
-- **AND** pseudo-positive selection remains anchored on unmatched anchor clean objects.
-
-### Requirement: Channel-B v3 uses one merged teacher-forced forward
-The canonical legacy v1 v3 clean-prefix contract SHALL realize
-`L(clean_anchor) + L(explore-derived corrections)` through one merged
-teacher-forced forward on the edited anchor target.
-
-Normative behavior:
-
-- this requirement applies only to legacy/baseline clean-prefix Channel-B
-  objective paths,
-- the trainer MUST run one teacher-forced forward on the final edited target for
-  that legacy path,
-- positive, weighted-FN, and dead-anchor UL terms MUST be derived from that same forward,
-- the trainer MUST NOT require a second explore teacher-forced payload in the canonical legacy v1 contract,
-- `residual_set_correction` is exempt from this one-merged-forward target
-  realization and instead compiles independent correction events into
-  `TeacherForcingTargetIR`.
-
-#### Scenario: Single-forward v3 target realization
-- **WHEN** a legacy clean-prefix Channel-B v3 sample is prepared
-- **THEN** all loss terms are derived from a single teacher-forced forward over the edited anchor target
-- **AND** no second teacher-forced explore payload is required.
-
-#### Scenario: Residual-set realization uses correction-event IR
-- **WHEN** a residual-set Stage-2 sample is prepared
-- **THEN** the builder compiles correction events into `TeacherForcingTargetIR`
-- **AND** the legacy one-edited-target realization does not apply.
+- **WHEN** a Stage-2 config selects `residual_set_correction`
+- **THEN** Channel-B does not build an edited anchor clean target
+- **AND** K prepared rollout attempts are treated as equal self-prefix samples.

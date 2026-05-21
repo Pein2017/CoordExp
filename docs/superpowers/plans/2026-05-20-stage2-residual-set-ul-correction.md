@@ -2,381 +2,153 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Implement Stage-2 Channel-B residual-set self-prefix correction with strict unlabeled-object consensus mining, shared `TeacherForcingTargetIR`, and a new explicit `residual_set_correction` objective path.
+**Goal:** Replace the current partial/legacy Stage-2 residual-set path with the approved offline self-prefix residual-set correction objective, including strict prepared-rollout input, shared target IR atoms, valid-action transitions, dirty-prefix recovery, and conservative unlabeled-object promotion.
 
-**Architecture:** Keep the stable semantics in OpenSpec and implement the first code slice in the existing Stage-2 Channel-B and teacher-forcing pipeline. Add a compact residual state/event abstraction, compile correction events into shared `TeacherForcingTargetIR` atoms, and consume those atoms through a `residual_set_correction` module that reuses the shared teacher-forcing probability decomposition. Preserve hard SFT and current Stage-2 trie baselines as explicit comparators.
+**Architecture:** Keep the stable semantics in OpenSpec and implement them through a small number of reusable boundaries: strict config parsing, prepared rollout attempts, a training-side template/span boundary adapter, a residual-state scanner, UL consensus, shared `SupervisionAtom` compilation, and the existing teacher-forcing objective runner. Treat the current residual-set code as migration material, not as final contract, because it still contains old `bbox_tail_from_anchor`, `num_rollouts`, `ul_geometry`, and artifact-policy assumptions.
 
-**Tech Stack:** Python dataclasses, PyTorch logits math, CoordExp compact-full Stage-2 AB trainer, shared `src/training/teacher_forcing` IR/probability helpers, YAML config schema, pytest under `conda run -n ms`.
+**Tech Stack:** Python dataclasses, PyTorch logits math, CoordExp Stage-2 AB trainer, shared `src/training/teacher_forcing` IR/probability helpers, Stage-1 detection template/tokenization helpers, YAML config schema, and pytest under `conda run -n ms`.
 
 ---
 
-Date: 2026-05-20
+## Scope And Gates
 
-Status: implemented in `codex/unified-training-infra-refactor`; final blocker-fix review pending after the production residual path was rewired from the singleton sidecar to CorrectionEvent-derived target IR.
-
-Implementation status ledger:
-
-- Task 1-7: implemented and reviewed in commits through `3a2cc850`; later blocker-fix rewired the production residual path to CorrectionEvent-derived target IR and preserved the config/metric/artifact guards.
-- Task 8: residual smoke YAMLs and historical tiny-smoke artifacts exist from `ca6c2d02`, but those artifacts predate the production event-path blocker fix. A post-blocker-fix 1-step rerun was attempted and aborted during Swift initialization before a new artifact root was created, so current event-path smoke remains pending.
-- Task 9: OpenSpec strict validation and targeted unit/config tests passed after blocker-fix; final code/config review is the active gate.
-- The unchecked step checklist below is retained as the historical implementation plan, not as the current task-state source of truth. Use this ledger plus `openspec/changes/add-stage2-residual-set-ul-correction/tasks.md` for current status.
-
-Worktree root:
+Worktree:
 
 ```text
 /data/CoordExp/.worktrees/unified-training-infra-refactor
 ```
 
-Stable contract:
+Normative OpenSpec:
 
 ```text
 openspec/changes/add-stage2-residual-set-ul-correction/
 ```
 
-Decision note:
+Decision log:
 
 ```text
 progress/explorations/2026-05-20_stage2_residual_set_self_prefix_ul_redesign.md
 ```
 
-## Execution Policy
+Execution rules:
 
 - Work only under `/data/CoordExp/.worktrees/unified-training-infra-refactor`.
-- Do not edit `/data/CoordExp` root `main` while executing this plan.
-- Do not edit upstream Hugging Face or Qwen3-VL model files.
-- Do not reintroduce duplicate loss, coordinate regression loss, bbox regression aux loss, geometry regularizers, or continuation-margin loss as active defaults.
-- Keep `stage2_trie_ce` and hard SFT available as baselines, but make `residual_set_correction` an explicit opt-in path.
-- Use `target_position` as the canonical label-token position and verify `logit_position + 1 == target_position` in tests and runtime guards.
-- Use `<|im_end|>` as STOP/EOS and `<|endoftext|>` as padding only.
-- Treat K rollouts as K independent self-prefix samples. Do not average K losses as pseudo-labels.
-- Run narrow tests after each task group before touching the next group.
+- Do not edit `/data/CoordExp` root `main`.
+- Do not touch upstream HF/Qwen model files.
+- Do not implement code until the user approves this audited plan.
+- Do not reintroduce `loss_duplicate_burst_unlikelihood`, `duplicate_unlikelihood`, `bbox_geo`, `bbox_size_aux`, `coord_reg`, `coord_gate`, `text_gate`, coordinate regression, bbox geometry aux, geometry regularizers, or raw-rollout coordinate repair.
+- Preserve hard SFT and current `stage2_trie_ce` as baselines.
+- `residual_set_correction` is explicit opt-in and consumes offline prepared rollout records.
+- New v1 data requires `response_token_ids`; raw-text re-encode is legacy-only.
+- `<|im_end|>` is the STOP/EOS token; `<|endoftext|>` is padding only.
+- Keep checkpoint-compatible Stage-1 newline/separator rendering in v1; do not force the no-newline grammar in this refactor.
+- `target_position` is the supervised label-token position; `logit_position + 1 == target_position` must be verified.
+- K rollout attempts are K independent self-prefix samples after exact duplicate dedup; they are not averaged pseudo-labels.
+- After each task, run the listed narrow tests before the next task.
 
-## Planned File Map
+Review boundary before implementation:
+
+- This plan intentionally describes work that is not implemented yet.
+- Current code is expected to still contain old residual-set behavior before this plan is executed.
+- Pre-implementation review should flag a P0/P1 only when this plan omits, weakens, or contradicts a required implementation step.
+- Do not treat the current absence of `prepared_rollout_jsonl` runtime wiring, the producer script, schema migration, smoke YAML migration, or per-attempt sequence fan-out as a plan blocker when the plan already assigns those edits and tests.
+
+## File Map
 
 Create:
 
-- `src/trainers/stage2_two_channel/residual_set.py`  
-  Owns residual object records, active candidate state, `ValidAction`, `CorrectionEvent`, deterministic roll-in, exact coordinate transition rules, and event-to-IR atom construction helpers.
+- `src/training/span_adapters/residual_boundary.py`
+  Thin Stage-2 residual-set facade over existing detection rendering/tokenization and `EncodedDetectionView`. This is the one justified new source file because it replaces several ad hoc compact-string span builders without creating a second detection-level span contract.
 
-- `src/trainers/stage2_two_channel/ul_consensus.py`  
-  Owns K-valid rollout eligibility, per-rollout pre-dedup, strict same-description complete-link UL clustering, cluster artifact row construction, and UL metrics.
+- `scripts/tools/prepare_stage2_residual_rollouts.py`
+  Offline producer for prepared residual-set rollout JSONL. This is the one justified new script because v1 explicitly separates rollout generation from training and the smoke needs a reproducible producer command.
 
-- `src/trainers/teacher_forcing/modules/residual_set_correction.py`  
-  Consumes residual-set target IR sidecars from Stage-2 metadata, delegates atom loss math to `src.training.teacher_forcing.probabilities.teacher_forcing_atom_loss`, validates logits rows, and emits residual-set metrics.
-
-- `tests/test_stage2_residual_set_correction.py`  
-  Consolidated unit tests for residual state transitions, correction events, deterministic roll-in, coordinate tail behavior, STOP exclusivity, and event-to-IR invariants.
-
-- `tests/test_stage2_residual_ul_consensus.py`  
-  Unit tests for UL eligibility, clustering, pre-dedup, promotion/rejection/quarantine, local `G*_k`, weights, and artifact rows.
-
-- `tests/test_stage2_residual_set_loss_module.py`  
-  Unit tests for `residual_set_correction` loss math, logits-position alignment, coverage-strength behavior, mixed labeled/UL support weight, and metric keys.
+- `tests/test_stage2_residual_boundary_adapter.py`
+  Tests assistant span extraction, object/separator/terminal spans, suffix slicing, checkpoint-compatible newline/separator behavior, and no schema duplication against the existing `TokenizedDetectionExample` / `EncodedDetectionView` contract.
 
 Modify:
 
-- `src/trainers/stage2_two_channel/types.py`  
-  Add residual-set metadata sidecar keys with minimal `NotRequired[...]` fields.
+- `src/config/schema.py`
+  Replace old residual-set config keys with strict `prepared_rollout_jsonl` v1 contract and explicit optional keys.
 
-- `src/trainers/stage2_two_channel/target_builder.py`  
-  Add residual-set Channel-B target construction branch selected by config. Keep legacy clean-prefix/trie target construction available for comparator configs.
+- `src/trainers/teacher_forcing/module_registry.py`
+  Keep the teacher-forcing module catalog aligned with the strict residual-set v1 key set so schema defaults and registry validation cannot diverge.
 
-- `src/trainers/stage2_two_channel/teacher_forcing_adapter.py`  
-  Add a bridge from residual `CorrectionEvent` atoms into shared `TeacherForcingTargetIR`; keep existing legacy coordinate-target adapter intact for baseline paths.
+- `configs/stage2_two_channel/smoke/compact_full_residual_set_ckpt3664_hf_1step.yaml`
+  Migrate the existing smoke leaf away from `coord_span_policy`, `num_rollouts`, `ul_geometry`, and `artifact_policy`; explicitly disable inherited eval work.
 
-- `src/trainers/stage2_two_channel/objective_runner.py`  
-  Let Stage-2 metrics pass through `stage2_ab/channel_b/residual_set/*` keys and preserve old `stage2_trie/*` metrics.
+- `src/trainers/stage2_two_channel/rollout_views.py`
+  Own prepared rollout record parsing, strict `response_token_ids` validation, exact duplicate dedup, and legacy re-encode diagnostics.
 
-- `src/trainers/stage2_two_channel.py`  
-  Aggregate residual-set counters and write `ul_clusters.jsonl` under the active monitor/debug/smoke artifact root.
+- `src/trainers/stage2_two_channel/residual_set.py`
+  Own `ResidualObject`, `ResidualState`, `ValidAction`, row classification, semantic residual scan, dirty-prefix recovery decisions, deterministic suffix ordering, and correction atom draft construction.
 
-- `src/bootstrap/stage2_policy_provenance.py`  
-  Record residual-set objective id, base seed, roll-in policy, UL thresholds,
-  STOP margin weight, and artifact policy in run metadata.
+- `src/trainers/stage2_two_channel/ul_consensus.py`
+  Replace geometry-heavy UL logic with strict same-desc cross-rollout consensus, gray-zone rejection, rollout-local member supervision, and flat artifact rows.
 
-- `src/trainers/teacher_forcing/module_registry.py`  
-  Register `residual_set_correction` as an explicit Stage-2 objective module with strict config keys and application preset `rollout_self_prefix`.
+- `src/trainers/stage2_two_channel/teacher_forcing_adapter.py`
+  Compile residual correction atom drafts into shared `TeacherForcingTargetIR` with causal alignment checks.
 
-- `src/trainers/teacher_forcing/objective_pipeline.py`  
-  Route `residual_set_correction` to the new module and keep registry coverage checks strict.
+- `src/trainers/stage2_two_channel/target_builder.py`
+  Route `residual_set_correction` to prepared-rollout/self-prefix target construction and remove old coordinate-repair target construction from this path.
 
-- `src/config/schema.py`  
-  Add strict `residual_set_correction.config` schema, mutual exclusion with legacy Channel-B target modules, removed-loss rejection, `num_rollouts` ownership, base seed `17`, UL defaults, and STOP-margin default `0.0`.
+- `src/trainers/stage2_two_channel.py`
+  Bypass live rollout generation in residual-set offline mode, attach prepared attempts to each batch sample, carry compact residual diagnostics, and write `monitor_dumps/ul_clusters.jsonl`.
 
-- `tests/test_stage2_ab_config_contract.py`  
-  Add config acceptance/rejection tests for residual-set config and legacy conflicts.
+- `src/trainers/stage2_two_channel/types.py`
+  Keep only the minimal residual metadata sidecar fields needed by the trainer and objective runner.
 
-- `tests/test_stage2_ab_training.py`  
-  Add trainer wiring tests for metadata propagation, residual-set metric aggregation, and artifact gating.
+- `src/trainers/teacher_forcing/modules/residual_set_correction.py`
+  Ensure the module applies standalone token-type loss plus inner valid-set/hard-path loss and normalizes by per-sequence atom-weighted means.
 
-- `tests/test_teacher_forcing_objective_runner.py`  
-  Extend shared IR tests only if residual-set loss reveals missing generic validation; do not make Stage-2 provenance logic leak into generic objective tests.
+- `src/trainers/teacher_forcing/module_registry.py`
+  Register only the strict v1 residual-set module config keys.
 
-- `configs/stage2_two_channel/smoke/*.yaml`  
-  Add at most two residual-set smoke leaves after unit tests pass. Prefer editing nearby smoke templates over creating many new YAMLs.
+- `src/trainers/teacher_forcing/objective_pipeline.py`
+  Preserve explicit module routing and avoid silent fallback to trie/hard-SFT behavior.
 
-## Shared Test Helper Contract
+- `src/training/teacher_forcing/ir.py` and `src/training/teacher_forcing/validation.py`
+  Modify only if the current IR validator lacks a reusable check required by residual-set atoms.
 
-Several tasks below use small local helpers to keep test intent readable. Add
-the helpers in the test file that first uses them; do not create a separate
-test utility module.
+- `tests/test_stage2_ab_config_contract.py`
+  Update residual-set config acceptance/rejection tests.
 
-In `tests/test_stage2_residual_set_correction.py`, define these helpers before
-the first test:
+- `tests/test_teacher_forcing_loss_catalog.py`
+  Verify residual-set registry keys and removed objective modules stay rejected.
 
-```python
-def coord_token(bin_value: int) -> int:
-    return 100 + int(bin_value)
+- `tests/test_stage2_residual_boundary_adapter.py`
+  Verify the training-side residual boundary adapter against existing tokenization/span contracts.
 
+- `tests/test_stage2_residual_set_correction.py`
+  Update state/valid-action/dirty-prefix/correction-event tests.
 
-def make_object(
-    desc: str,
-    bbox: tuple[int, int, int, int],
-    *,
-    object_id: str = "obj",
-    provenance: str = "labeled_gt",
-    loss_weight: float = 1.0,
-) -> ResidualObject:
-    return ResidualObject(
-        object_id=object_id,
-        desc=desc,
-        desc_token_ids=tuple(ord(ch) for ch in desc),
-        coord_token_ids=tuple(coord_token(v) for v in bbox),
-        provenance=provenance,
-        loss_weight=loss_weight,
-    )
+- `tests/test_stage2_residual_ul_consensus.py`
+  Update UL consensus, gray-zone, duplicate-exclusion, rollout-local bbox, and artifact path tests.
 
+- `tests/test_stage2_residual_set_loss_module.py`
+  Update residual-set loss normalization, type-loss, valid-set, and alignment tests.
 
-def make_state_for_objects(
-    objects: list[ResidualObject],
-    *,
-    active_candidate_ids: set[str] | None = None,
-) -> ResidualState:
-    by_id = {obj.object_id: obj for obj in objects}
-    remaining = frozenset(by_id)
-    active = frozenset(active_candidate_ids) if active_candidate_ids is not None else remaining
-    return ResidualState(
-        emitted_object_ids=frozenset(),
-        remaining_object_ids=remaining,
-        active_candidate_ids=active,
-        objects_by_id=by_id,
-    )
+- `tests/test_stage2_ab_training.py`
+  Keep only trainer/integration tests that prove metadata propagation, diagnostics, and artifact writing.
 
-
-def only_action(actions: tuple[ValidAction, ...], token_id: int) -> ValidAction:
-    matches = [action for action in actions if action.token_id == token_id]
-    assert len(matches) == 1
-    return matches[0]
-
-
-def valid_coord_actions(state: ResidualState, *, coord_role: str) -> tuple[ValidAction, ...]:
-    return tuple(action for action in enumerate_valid_actions(state, slot=coord_role))
-
-
-def apply_action(state: ResidualState, action: ValidAction) -> ResidualState:
-    return transition_state(state, action)
-
-
-def make_role_vocab(
-    *,
-    text_ids: set[int] | None = None,
-    coord_ids: set[int] | None = None,
-    schema_ids: set[int] | None = None,
-    stop_id: int = 2,
-) -> RoleVocab:
-    return RoleVocab(
-        text_token_ids=frozenset(text_ids or {101, 201}),
-        coord_token_ids=frozenset(coord_ids or set(range(100, 1100))),
-        schema_token_ids=frozenset(schema_ids or {11, 22}),
-        stop_token_id=stop_id,
-    )
-```
-
-After `CorrectionEvent` exists, add this helper in the same file:
-
-```python
-def make_event(
-    *,
-    anchor_position: int = 1,
-    target_position: int = 2,
-    logit_position: int | None = None,
-    observed_token_id: int | None = None,
-    valid_token_ids: set[int] | None = None,
-    selected_token_id: int | None = None,
-    role: TokenRole = TokenRole.TEXT,
-) -> CorrectionEvent:
-    valid_ids = valid_token_ids or {selected_token_id or 101}
-    actions = tuple(
-        ValidAction(
-            token_id=token_id,
-            token_text=None,
-            role=role,
-            candidate_ids_before=frozenset({"a"}),
-            candidate_ids_after=frozenset({"a"}),
-            selected_object_id="a",
-        )
-        for token_id in sorted(valid_ids)
-    )
-    target = target_position
-    logit = target_position - 1 if logit_position is None else logit_position
-    return CorrectionEvent(
-        kind="transition_failure",
-        sample_id="sample-1",
-        rollout_index=0,
-        anchor_position=anchor_position,
-        observed_token_id=observed_token_id,
-        atom_drafts=(
-            CorrectionAtomDraft(
-                target_position=target,
-                logit_position=logit,
-                valid_actions=actions,
-            ),
-        ),
-        state_before=make_state_for_objects([make_object("person", (1, 2, 3, 4), object_id="a")]),
-    )
-```
-
-In `tests/test_stage2_residual_ul_consensus.py`, define local helpers that wrap
-the public dataclasses from `ul_consensus.py`:
-
-```python
-def make_unmatched(
-    desc: str,
-    bbox: tuple[int, int, int, int],
-    *,
-    local_index: int = 0,
-) -> ULMember:
-    return ULMember(
-        rollout_id="",
-        local_index=local_index,
-        desc_id=desc,
-        desc_text=desc,
-        bbox_norm1000=bbox,
-    )
-
-
-def make_valid_rollout(rollout_id: str, members: list[ULMember]) -> ULRolloutEvidence:
-    return ULRolloutEvidence(
-        rollout_id=rollout_id,
-        is_valid=True,
-        skip_reason=None,
-        unmatched_members=tuple(
-            replace(member, rollout_id=rollout_id) for member in members
-        ),
-    )
-
-
-def make_invalid_rollout(rollout_id: str, *, reason: str) -> ULRolloutEvidence:
-    return ULRolloutEvidence(
-        rollout_id=rollout_id,
-        is_valid=False,
-        skip_reason=reason,
-        unmatched_members=(),
-    )
-```
-
-In `tests/test_stage2_residual_set_loss_module.py`, define local helpers that
-construct real pipeline contracts:
-
-```python
-def make_spec(*, coverage_strength: float) -> PipelineModuleSpec:
-    return PipelineModuleSpec.from_mapping(
-        {
-            "name": "residual_set_correction",
-            "enabled": True,
-            "channels": ["B"],
-            "application": {"preset": "rollout_self_prefix"},
-            "config": {"coverage_strength": coverage_strength},
-        }
-    )
-
-
-def make_ir(
-    *,
-    valid_token_ids: set[int],
-    selected_token_id: int,
-    target_position: int = 1,
-    logit_position: int = 0,
-    coverage_target_weights: dict[int, float] | None = None,
-    expected_loss_weight: float = 1.0,
-    action_weights: dict[int, float] | None = None,
-    support_provenance: str = "labeled_only",
-) -> TeacherForcingTargetIR:
-    if action_weights:
-        assert set(action_weights).issubset(valid_token_ids)
-        expected_loss_weight = max(float(value) for value in action_weights.values())
-    atom = SupervisionAtom(
-        batch_index=0,
-        logit_position=logit_position,
-        target_position=target_position,
-        allowed_token_roles=frozenset({TokenRole.TEXT}),
-        selected_token_role=TokenRole.TEXT,
-        valid_token_ids=frozenset(valid_token_ids),
-        selected_token_id=selected_token_id,
-        latent_valid_token_ids=frozenset(valid_token_ids),
-        coverage_target_weights=coverage_target_weights,
-        loss_tags=frozenset({"stage2", "channel_b", "residual_set"}),
-        loss_weight=expected_loss_weight,
-        coord_role=None,
-        provenance={
-            "support_provenance": support_provenance,
-            "action_weights": dict(action_weights or {}),
-        },
-    )
-    return TeacherForcingTargetIR(schema_version=1, atoms=(atom,), metadata={})
-
-
-def make_context(
-    *,
-    input_ids: torch.Tensor,
-    logits: torch.Tensor,
-    irs: tuple[TeacherForcingTargetIR, ...],
-    text_ids: set[int],
-) -> TeacherForcingContext:
-    return TeacherForcingContext(
-        channel="B",
-        registry_context="rollout",
-        input_ids=input_ids,
-        logits=logits,
-        logits_ce=logits,
-        meta=({"stage2_channel": "B", "residual_set_target_ir": irs[0]},),
-        coord_token_ids=tuple(range(100, 1100)),
-        extra={"role_vocab": RoleVocab(text_token_ids=frozenset(text_ids), schema_token_ids=frozenset({3, 4}), coord_token_ids=frozenset(range(100, 1100)), stop_token_id=2)},
-    )
-```
-
-In `tests/test_stage2_ab_training.py`, reuse existing Stage-2 fixtures when
-available. If no local helper exists, define `make_gt` and `make_pred` using
-`src.trainers.rollout_matching.contracts.GTObject` and `ParsedPredObject`; the
-helper must construct the smallest valid object records needed by the test and
-must not import production trainer internals just to create fixtures.
-
-## Task 1: Config Contract And Registry Gate
+## Task 1: Strict Residual Config Contract
 
 **Files:**
 
 - Modify: `src/config/schema.py`
 - Modify: `src/trainers/teacher_forcing/module_registry.py`
-- Modify: `src/trainers/teacher_forcing/objective_pipeline.py`
+- Modify: `src/trainers/stage2_two_channel/target_builder.py`
+- Modify: `src/trainers/stage2_two_channel.py`
 - Modify: `tests/test_stage2_ab_config_contract.py`
+- Modify: `tests/test_teacher_forcing_loss_catalog.py`
+- Modify: `configs/stage2_two_channel/smoke/compact_full_residual_set_ckpt3664_hf_1step.yaml`
 
-- [ ] **Step 1: Inspect current Stage-2 objective config owners**
+- [ ] **Step 1.1: Write failing config contract tests**
 
-Run:
-
-```bash
-cd /data/CoordExp/.worktrees/unified-training-infra-refactor
-rg -n "stage2_trie_ce|token_ce|OBJECTIVE_MODULE_CATALOG|OBJECTIVE_CONFIG_ALLOWLIST|pipeline.objective|triage_posterior|pseudo_positive|duplicate_control|insertion_order" src/config/schema.py src/trainers/teacher_forcing tests/test_stage2_ab_config_contract.py
-```
-
-Expected: output shows `STAGE2_TRIE_CE_MODULE_NAME`, `OBJECTIVE_MODULE_CATALOG`, pipeline objective validation, and current Stage-2 config tests.
-
-- [ ] **Step 2: Add failing acceptance test for residual-set config**
-
-Add to `tests/test_stage2_ab_config_contract.py` near the Stage-2 objective validation tests:
+Add or rewrite tests in `tests/test_stage2_ab_config_contract.py`:
 
 ```python
-def test_stage2_pipeline_accepts_residual_set_correction_objective() -> None:
+def _payload_with_residual_set_config(config: dict) -> dict:
     raw = _make_stage2_training_payload()
     raw["stage2_ab"]["pipeline"]["objective"] = [
         {
@@ -397,344 +169,424 @@ def test_stage2_pipeline_accepts_residual_set_correction_objective() -> None:
             "weight": 1.0,
             "channels": ["B"],
             "application": {"preset": "rollout_self_prefix"},
-            "config": _residual_set_config(),
+            "config": dict(config),
         },
     ]
     raw["stage2_ab"]["channel_b"]["pseudo_positive"] = {"enabled": False}
-    raw["stage2_ab"]["channel_b"].pop("triage_posterior", None)
+    return raw
 
-    prompts = ConfigLoader.resolve_prompts(raw)
-    loaded = TrainingConfig.from_mapping(raw, prompts)
 
-    objective = loaded.stage2_ab.pipeline.objective[1]
-    assert objective.name == "residual_set_correction"
-    assert objective.application["preset"] == "rollout_self_prefix"
+def _load_stage2_payload(raw: dict) -> TrainingConfig:
+    return TrainingConfig.from_mapping(raw, ConfigLoader.resolve_prompts(raw))
+
+
+def _find_pipeline_objective(cfg: TrainingConfig, name: str):
+    assert cfg.stage2_ab is not None
+    matches = [objective for objective in cfg.stage2_ab.pipeline.objective if objective.name == name]
+    assert len(matches) == 1
+    return matches[0]
+
+
+def test_residual_set_requires_prepared_rollout_jsonl() -> None:
+    raw = _payload_with_residual_set_config(config={})
+    with pytest.raises(
+        ValueError,
+        match=r"stage2_ab\.pipeline\.objective\[name=residual_set_correction\]\.config\.prepared_rollout_jsonl",
+    ):
+        _load_stage2_payload(raw)
+
+
+def test_residual_set_accepts_minimal_prepared_rollout_config() -> None:
+    raw = _payload_with_residual_set_config(
+        config={"prepared_rollout_jsonl": "output/stage2/prepared_rollouts/train8.jsonl"}
+    )
+    cfg = _load_stage2_payload(raw)
+    objective = _find_pipeline_objective(cfg, "residual_set_correction")
+    assert objective.config["prepared_rollout_jsonl"] == "output/stage2/prepared_rollouts/train8.jsonl"
+    assert objective.config["expected_num_rollouts"] == 4
     assert objective.config["base_seed"] == 17
-    assert objective.config["num_rollouts"] == 3
-    assert objective.config["lambda_ul_promoted"] == 0.5
-```
+    assert objective.config["lambda_type"] == 1.0
+    assert objective.config["lambda_inner"] == 1.0
+    assert objective.config["clean_gt_sft_mix"] == 0
 
-Add `_residual_set_config()` beside the existing config helpers:
 
-```python
-def _residual_set_config() -> dict:
-    return {
-        "rollin_policy": "random_valid_branch",
-        "rollin_resample_policy": "fixed_event",
-        "base_seed": 17,
-        "coord_span_policy": "bbox_tail_from_anchor",
-        "strict_builder_invariants": True,
-        "lambda_ul_promoted": 0.5,
-        "lambda_continue_margin": 0.0,
-        "continue_margin_m": 0.0,
-        "coverage_strength": 0.0,
-        "num_rollouts": 3,
-        "min_ul_valid_rollouts": 3,
-        "ul_consensus_ratio": 1.0,
-        "ul_geometry": {
-            "iou_min": 0.75,
-            "center_distance_scale_max": 0.05,
-            "area_ratio_max": 1.5,
-            "aspect_ratio_max": 1.5,
-            "consumed_overlap_iou_min": 0.75,
-        },
-        "artifact_policy": {"ul_clusters": "monitor_debug_smoke"},
-    }
-```
+@pytest.mark.parametrize(
+    "bad_key,bad_value",
+    [
+        ("num_rollouts", 4),
+        ("coord_span_policy", "bbox_tail_from_anchor"),
+        ("coverage_strength", 0.0),
+        ("ul_geometry", {"iou_min": 0.9}),
+        ("artifact_policy", {"ul_clusters": "monitor_debug_smoke"}),
+    ],
+)
+def test_residual_set_rejects_removed_config_keys(bad_key: str, bad_value: object) -> None:
+    raw = _payload_with_residual_set_config(
+        config={
+            "prepared_rollout_jsonl": "output/stage2/prepared_rollouts/train8.jsonl",
+            bad_key: bad_value,
+        }
+    )
+    with pytest.raises(ValueError, match=bad_key):
+        _load_stage2_payload(raw)
 
-- [ ] **Step 3: Add failing rejection tests for residual-set conflicts**
 
-Add:
-
-```python
-def test_residual_set_rejects_legacy_channel_b_trie_double_supervision() -> None:
-    raw = _make_stage2_training_payload()
-    trie_cfg = _stage2_pipeline_with_channel_b_trie_ce()["objective"][1]
-    raw["stage2_ab"]["pipeline"]["objective"] = [
+@pytest.mark.parametrize(
+    "removed_module",
+    ["loss_duplicate_burst_unlikelihood", "bbox_geo", "bbox_size_aux", "coord_reg", "coord_gate", "text_gate"],
+)
+def test_residual_set_rejects_removed_live_objective_modules(removed_module: str) -> None:
+    raw = _payload_with_residual_set_config(
+        config={"prepared_rollout_jsonl": "output/stage2/prepared_rollouts/train8.jsonl"}
+    )
+    raw["stage2_ab"]["pipeline"]["objective"].append(
         {
-            "name": "token_ce",
-            "enabled": True,
-            "weight": 1.0,
-            "channels": ["A"],
-            "application": {"preset": "anchor_text_only"},
-            "config": {
-                "desc_ce_weight": 1.0,
-                "rollout_fn_desc_weight": 1.0,
-                "rollout_global_prefix_struct_ce_weight": 1.0,
-            },
-        },
-        trie_cfg,
-        {
-            "name": "residual_set_correction",
+            "name": removed_module,
             "enabled": True,
             "weight": 1.0,
             "channels": ["B"],
-            "application": {"preset": "rollout_self_prefix"},
-            "config": _residual_set_config(),
-        },
-    ]
-    raw["stage2_ab"]["channel_b"]["pseudo_positive"] = {"enabled": False}
-
-    with pytest.raises(ValueError, match="residual_set_correction.*stage2_trie_ce"):
-        TrainingConfig.from_mapping(raw, ConfigLoader.resolve_prompts(raw))
+            "config": {},
+        }
+    )
+    with pytest.raises(ValueError, match=removed_module):
+        _load_stage2_payload(raw)
 ```
 
-Add a second rejection test that uses `pseudo_positive.enabled=true` with `residual_set_correction` and expects `ValueError` matching `pseudo_positive`.
-
-The implementation must move the residual-set K validation to the cross-section
-`Stage2ABConfig.from_mapping` level: non-residual configs keep the current
-legacy rule that `pseudo_positive.enabled=false` implies
-`stage2_ab.channel_b.triage_posterior.num_rollouts == 2`; residual-set configs
-derive K from `residual_set_correction.config.num_rollouts` and may omit legacy
-`triage_posterior`.
-
-- [ ] **Step 4: Implement config and registry changes**
-
-Add constants in `src/config/schema.py`:
-
-```python
-STAGE2_RESIDUAL_SET_MODULE_NAME = "residual_set_correction"
-STAGE2_RESIDUAL_SET_APPLICATION_PRESETS: set[str] = {"rollout_self_prefix"}
-STAGE2_RESIDUAL_SET_CONFIG_KEYS: set[str] = {
-    "rollin_policy",
-    "rollin_resample_policy",
-    "base_seed",
-    "coord_span_policy",
-    "strict_builder_invariants",
-    "lambda_ul_promoted",
-    "lambda_continue_margin",
-    "continue_margin_m",
-    "coverage_strength",
-    "num_rollouts",
-    "min_ul_valid_rollouts",
-    "ul_consensus_ratio",
-    "ul_geometry",
-    "artifact_policy",
-}
-```
-
-Register in `src/trainers/teacher_forcing/module_registry.py`:
-
-```python
-"residual_set_correction": ObjectiveModuleDefinition(
-    family="text",
-    semantic_role="residual_set_correction",
-    config_keys=frozenset({
-        "rollin_policy",
-        "rollin_resample_policy",
-        "base_seed",
-        "coord_span_policy",
-        "strict_builder_invariants",
-        "lambda_ul_promoted",
-        "lambda_continue_margin",
-        "continue_margin_m",
-        "coverage_strength",
-        "num_rollouts",
-        "min_ul_valid_rollouts",
-        "ul_consensus_ratio",
-        "ul_geometry",
-        "artifact_policy",
-    }),
-    application_presets=frozenset({"rollout_self_prefix"}),
-    projected_atoms=(
-        ObjectiveLossAtomDefinition(
-            atom_name="residual_set",
-            state_key="residual_set_correction_contrib",
-        ),
-    ),
-    emission_group="text",
-),
-```
-
-Route in `src/trainers/teacher_forcing/objective_pipeline.py`:
-
-```python
-from .modules import (
-    run_residual_set_correction_module,
-    run_stage2_trie_ce_module,
-    run_token_ce_module,
-)
-
-objective_registry = {
-    "token_ce": lambda spec: run_token_ce_module(context=context, spec=spec),
-    "hard_sft": lambda spec: run_token_ce_module(context=context, spec=spec),
-    "stage2_trie_ce": lambda spec: run_stage2_trie_ce_module(context=context, spec=spec),
-    "residual_set_correction": lambda spec: run_residual_set_correction_module(
-        context=context,
-        spec=spec,
-    ),
-}
-```
-
-- [ ] **Step 5: Run config tests**
+- [ ] **Step 1.2: Run tests and confirm failure**
 
 Run:
 
 ```bash
-conda run -n ms python -m pytest tests/test_stage2_ab_config_contract.py -q
+conda run -n ms python -m pytest tests/test_stage2_ab_config_contract.py -k 'residual_set and (prepared_rollout_jsonl or removed_config_keys)' -q
 ```
 
-Expected: the new tests and existing Stage-2 config tests pass.
+Expected now: FAIL because the current schema still allows old residual-set keys and does not require `prepared_rollout_jsonl`.
 
-## Task 2: Residual State, ValidAction, And CorrectionEvent
+- [ ] **Step 1.3: Implement strict schema**
+
+In `src/config/schema.py` and `src/trainers/teacher_forcing/module_registry.py`:
+
+- Replace `STAGE2_RESIDUAL_SET_CONFIG_KEYS` with the OpenSpec v1 set:
+  `prepared_rollout_jsonl`, `expected_num_rollouts`, `base_seed`, `lambda_type`, `lambda_inner`, `fallback_loss_weight`, `lambda_ul_promoted`, `label_conflict_weight`, `commit_iou_threshold`, `duplicate_burst_iou_threshold`, `ul_cluster_iou_threshold`, `ul_gray_iou_low`, `ul_consensus_ratio`, `min_ul_valid_rollouts`, `clean_gt_sft_mix`, `strict_prepared_rollout_tokens`, `legacy_reencode_fallback`, `strict_builder_invariants`.
+- Require `prepared_rollout_jsonl` before trainer initialization.
+- Default `expected_num_rollouts=4`, `base_seed=17`, `lambda_type=1.0`, `lambda_inner=1.0`, `lambda_ul_promoted=0.5`, `label_conflict_weight=0.25`, `commit_iou_threshold=0.75`, `duplicate_burst_iou_threshold=0.95`, `ul_cluster_iou_threshold=0.9`, `ul_gray_iou_low=0.30`, `ul_consensus_ratio=1.0`, `min_ul_valid_rollouts=2`, `clean_gt_sft_mix=0`, `strict_prepared_rollout_tokens=True`, `legacy_reencode_fallback=False`, and `strict_builder_invariants=True`.
+- Delete residual-set ownership of `channel_b.triage_posterior.num_rollouts`; keep that legacy count only for non-residual baseline paths.
+- Remove old residual-set readers in `_channel_b_residual_set_correction_options()` and trainer setup. Runtime readers must use `expected_num_rollouts`, flat UL thresholds, and the canonical flat artifact path.
+- Assert the parsed `objective.config` contains defaulted v1 keys and does not contain `num_rollouts`, `coord_span_policy`, `coverage_strength`, `ul_geometry`, or `artifact_policy`.
+
+- [ ] **Step 1.4: Migrate the smoke YAML**
+
+In `configs/stage2_two_channel/smoke/compact_full_residual_set_ckpt3664_hf_1step.yaml`:
+
+```yaml
+config:
+  prepared_rollout_jsonl: output/stage2_ab/prepared_rollouts/train8_ckpt3664.jsonl
+  expected_num_rollouts: 4
+  base_seed: 17
+  lambda_type: 1.0
+  lambda_inner: 1.0
+```
+
+Remove old keys from the residual objective config: `num_rollouts`, `coord_span_policy`, `ul_geometry`, and `artifact_policy`.
+
+Also override inherited eval work in the smoke leaf:
+
+```yaml
+training:
+  eval_strategy: "no"
+custom:
+  val_sample_limit: 0
+rollout_matching:
+  eval_monitor_dump:
+    enabled: false
+  eval_detection:
+    enabled: false
+    materialize_artifacts: false
+```
+
+Add a config contract test for this smoke leaf asserting the config uses checkpoint-3664, has `eval_strategy == "no"`, `val_sample_limit == 0`, eval detection disabled, a `prepared_rollout_jsonl` path, and no removed residual-set keys.
+
+- [ ] **Step 1.5: Verify**
+
+Run:
+
+```bash
+conda run -n ms python -m pytest \
+  tests/test_stage2_ab_config_contract.py \
+  tests/test_teacher_forcing_loss_catalog.py \
+  -k 'residual_set or removed or duplicate_burst_unlikelihood or bbox_geo or coord_reg' \
+  -q
+```
+
+Expected: PASS.
+
+## Task 2: Prepared Rollout Attempt Input
 
 **Files:**
 
-- Create: `src/trainers/stage2_two_channel/residual_set.py`
-- Modify: `src/trainers/stage2_two_channel/types.py`
-- Test: `tests/test_stage2_residual_set_correction.py`
+- Modify: `src/trainers/stage2_two_channel/rollout_views.py`
+- Modify: `src/trainers/stage2_two_channel.py`
+- Modify: `src/trainers/stage2_two_channel/target_builder.py`
+- Create: `scripts/tools/prepare_stage2_residual_rollouts.py`
+- Modify: `tests/test_stage2_residual_set_correction.py`
+- Modify: `tests/test_stage2_ab_training.py`
 
-- [ ] **Step 1: Write failing tests for valid-action coalescing and STOP exclusivity**
+- [ ] **Step 2.1: Add failing tests for prepared records**
 
-Add:
-
-```python
-def test_shared_desc_prefix_coalesces_valid_action_by_token_id() -> None:
-    state = make_state_for_objects(
-        [
-            make_object("person_left", (10, 20, 30, 40), object_id="a"),
-            make_object("person_right", (50, 20, 70, 40), object_id="b"),
-        ]
-    )
-
-    actions = state.valid_actions_at_boundary()
-
-    person_actions = [a for a in actions if a.token_text == "person"]
-    assert len(person_actions) == 1
-    assert person_actions[0].candidate_ids_after == frozenset({"a", "b"})
-    assert person_actions[0].selected_object_id is None
-
-
-def test_stop_is_valid_only_when_residual_set_is_empty() -> None:
-    nonempty = make_state_for_objects([make_object("person", (10, 20, 30, 40))])
-    empty = make_state_for_objects([])
-
-    assert all(action.role != TokenRole.STOP for action in nonempty.valid_actions_at_boundary())
-    assert [action.role for action in empty.valid_actions_at_boundary()] == [TokenRole.STOP]
-```
-
-- [ ] **Step 2: Implement residual dataclasses and pure state transitions**
-
-Create `src/trainers/stage2_two_channel/residual_set.py` with the public core:
+Add tests that cover:
 
 ```python
-from __future__ import annotations
-
-from dataclasses import dataclass, field
-from typing import Any, Literal, Mapping, Sequence
-
-from src.training.teacher_forcing.roles import TokenRole
-
-CoordRole = Literal["x1", "y1", "x2", "y2"]
-CorrectionKind = Literal[
-    "transition_failure",
-    "premature_stop",
-    "fp_boundary",
-    "repeated_object_boundary",
-    "matched_object_repair",
-]
+def test_prepared_rollout_requires_response_token_ids_in_strict_mode() -> None:
+    record = {
+        "sample_id": "s0",
+        "rollout_id": "r0",
+        "raw_text": "<|object_ref_start|>person<|box_start|><|coord_1|><|coord_2|><|coord_3|><|coord_4|>",
+        "decode_mode": "greedy",
+    }
+    with pytest.raises(ValueError, match="response_token_ids"):
+        parse_prepared_rollout_attempt(record, strict_prepared_rollout_tokens=True)
 
 
-@dataclass(frozen=True, slots=True)
-class ResidualObject:
-    object_id: str
-    desc: str
-    desc_token_ids: tuple[int, ...]
-    coord_token_ids: tuple[int, int, int, int]
-    provenance: Literal["labeled_gt", "ul_promoted_local"]
-    loss_weight: float = 1.0
-    source_index: int | None = None
+def test_prepared_rollout_exact_dedup_uses_response_token_ids() -> None:
+    attempts = [
+        parse_prepared_rollout_attempt({"sample_id": "s0", "rollout_id": "a", "response_token_ids": [1, 2], "raw_text": "x", "decode_mode": "greedy"}),
+        parse_prepared_rollout_attempt({"sample_id": "s0", "rollout_id": "b", "response_token_ids": [1, 2], "raw_text": "x changed", "decode_mode": "sample"}),
+        parse_prepared_rollout_attempt({"sample_id": "s0", "rollout_id": "c", "response_token_ids": [1, 3], "raw_text": "y", "decode_mode": "sample"}),
+    ]
+    kept, stats = dedup_prepared_rollout_attempts(attempts, legacy_reencode_fallback=False)
+    assert [attempt.rollout_id for attempt in kept] == ["a", "c"]
+    assert stats["exact_duplicate_attempts"] == 1
 
 
-@dataclass(frozen=True, slots=True)
-class ValidAction:
-    token_id: int
-    token_text: str | None
-    role: TokenRole
-    candidate_ids_before: frozenset[str]
-    candidate_ids_after: frozenset[str]
-    selected_object_id: str | None = None
-    coord_role: CoordRole | None = None
-    loss_weight: float = 1.0
-
-
-@dataclass(frozen=True, slots=True)
-class ResidualState:
-    emitted_object_ids: frozenset[str]
-    remaining_object_ids: frozenset[str]
-    active_candidate_ids: frozenset[str]
-    objects_by_id: Mapping[str, ResidualObject]
-
-    def valid_actions_at_boundary(self) -> tuple[ValidAction, ...]:
-        return tuple(_valid_boundary_actions(self))
-
-
-@dataclass(frozen=True, slots=True)
-class CorrectionAtomDraft:
-    target_position: int
-    logit_position: int
-    valid_actions: tuple[ValidAction, ...]
-    state_before_slot: ResidualState | None = None
-    coord_role: CoordRole | None = None
-
-
-@dataclass(frozen=True, slots=True)
-class CorrectionEvent:
-    kind: CorrectionKind
-    sample_id: str
-    rollout_index: int
-    anchor_position: int
-    observed_token_id: int | None
-    atom_drafts: tuple[CorrectionAtomDraft, ...]
-    state_before: ResidualState
-    provenance: Mapping[str, Any] = field(default_factory=dict)
+@pytest.mark.parametrize("missing_key", ["generation_config_hash", "image_id", "image_path"])
+def test_prepared_rollout_requires_replay_provenance(missing_key: str) -> None:
+    record = {
+        "sample_id": "s0",
+        "image_id": "image-0",
+        "image_path": "images/000000.jpg",
+        "rollout_id": "r0",
+        "response_token_ids": [1, 2, 3],
+        "raw_text": "raw",
+        "decode_mode": "greedy",
+        "generation_config_hash": "sha256:abc",
+    }
+    record.pop(missing_key)
+    with pytest.raises(ValueError, match=missing_key):
+        parse_prepared_rollout_attempt(record, strict_prepared_rollout_tokens=True)
 ```
 
-Each `CorrectionEvent` may produce one or more atom drafts. Text/schema
-corrections usually have one draft; `bbox_tail_from_anchor` coordinate repair
-MUST emit one draft per supervised coordinate slot so `x1/y1/x2/y2` can each
-carry its own valid set, selected token, commitment state, loss weight, and
-position. Keep helper functions private in this module.
+- [ ] **Step 2.2: Implement parser/dedup**
 
-- [ ] **Step 3: Add transition tests for coordinate onset and bbox tail**
+In `src/trainers/stage2_two_channel/rollout_views.py`, add or refactor:
 
-Add:
+- `PreparedRolloutAttempt`
+- `parse_prepared_rollout_attempt(record, *, strict_prepared_rollout_tokens: bool)`
+- `load_prepared_rollout_jsonl(path, *, strict_prepared_rollout_tokens: bool)`
+- `dedup_prepared_rollout_attempts(attempts, *, legacy_reencode_fallback: bool)`
+
+Required fields for new strict data: `sample_id`, `image_id`, `image_path`, `rollout_id`, `response_token_ids`, `raw_text`, `decode_mode`, and `generation_config_hash`. `sampling_seed` and extra decode metadata are optional but preserved when present. Missing detection list for a sample is a drop+diagnose condition.
+
+- [ ] **Step 2.3: Wire prepared attempts into Stage-2 runtime**
+
+Before residual target construction:
+
+- resolve `prepared_rollout_jsonl` from the materialized config;
+- load records once per training process;
+- group attempts by `sample_id` and/or stable image/sample provenance;
+- attach grouped attempts to each B-channel batch sample;
+- exact-dedup attempts by `response_token_ids`;
+- diagnose `K_total`, `K_after_dedup`, `K_valid`, and dropped reasons;
+- enforce `expected_num_rollouts` as a diagnostic/default expectation, not as live rollout ownership;
+- bypass `_prepare_samples_for_rollout` and live rollout backend generation when `residual_set_correction` is active.
+
+Fan-out requirement:
+
+- one retained prepared rollout attempt becomes one Channel-B residual training sequence/segment, or an explicitly equivalent per-attempt segment record;
+- build residual events per retained attempt, never only from the first `anchor_view`;
+- each segment metadata carries `sample_id`, `image_id`, `rollout_id`, dedup status, `K_total`, `K_after_dedup`, and `K_valid`;
+- `stage2_ab/channel_b/residual_set/sequence_count` equals the retained prepared-attempt count that produced active residual atoms/sequences.
+
+Add a trainer-level test in `tests/test_stage2_ab_training.py` that stubs `_prepare_samples_for_rollout` and `_rollout_many` to raise, feeds two nonduplicate prepared attempts for one sample, and proves the residual-set path produces two residual sequences with distinct `rollout_id` metadata.
+
+- [ ] **Step 2.4: Implement the offline producer CLI**
+
+Create `scripts/tools/prepare_stage2_residual_rollouts.py` with this operator contract:
+
+```bash
+PYTHONPATH=. conda run -n ms python scripts/tools/prepare_stage2_residual_rollouts.py \
+  --config configs/stage2_two_channel/smoke/compact_full_residual_set_ckpt3664_hf_1step.yaml \
+  --out output/stage2_ab/prepared_rollouts/train8_ckpt3664.jsonl \
+  --train-sample-limit 8 \
+  --expected-num-rollouts 4 \
+  --seed 17 \
+  --greedy-rollouts 1 \
+  --sampling-rollouts 3 \
+  --include-debug-cases invalid_bbox_dirty_prefix,exact_duplicate_attempt
+```
+
+The script must insert the repo root into `sys.path` like existing `scripts/tools/*` scripts, or the documented `PYTHONPATH=.` command must be sufficient. It must resolve the model checkpoint and dataset from the materialized config, write required provenance fields, keep checkpoint-compatible newline/template output, and fail before generation if the resolved checkpoint path does not contain `checkpoint-3664` for this smoke config.
+
+- [ ] **Step 2.5: Verify**
+
+Run:
+
+```bash
+conda run -n ms python -m pytest \
+  tests/test_stage2_residual_set_correction.py \
+  tests/test_stage2_ab_training.py \
+  -k 'prepared_rollout or dedup or offline_residual_set' \
+  -q
+```
+
+Expected: PASS.
+
+## Task 3: Residual Boundary Adapter
+
+**Files:**
+
+- Create: `src/training/span_adapters/residual_boundary.py`
+- Create: `tests/test_stage2_residual_boundary_adapter.py`
+- Modify: `src/trainers/stage2_two_channel/target_builder.py`
+- Modify: `src/trainers/stage2_two_channel/teacher_forcing_adapter.py`
+
+- [ ] **Step 3.1: Write failing adapter tests**
+
+Add tests that prove:
+
+- assistant spans are found from Stage-1 rendering/tokenization, not hand-authored strings;
+- newline/separator tokens follow `get_detection_template("compact_full")` and the active tokenizer;
+- suffix slicing from object boundary removes trailing incomplete object spans;
+- no deterministic schema token is duplicated when prefix plus generated suffix are joined;
+- adapter spans equal the existing `TokenizedDetectionExample` object/separator/terminal/assistant spans and can be projected into `EncodedDetectionView`.
+
+Use function names:
 
 ```python
-def test_x1_ambiguity_filters_candidates_by_exact_coord_token() -> None:
-    state = make_state_for_objects(
-        [
-            make_object("person", (120, 20, 300, 400), object_id="a"),
-            make_object("person", (640, 22, 820, 410), object_id="b"),
-            make_object("person", (850, 25, 940, 420), object_id="c"),
-        ],
-        active_candidate_ids={"a", "b", "c"},
-    )
-
-    actions = valid_coord_actions(state, coord_role="x1")
-
-    assert {a.token_id for a in actions} == {coord_token(120), coord_token(640), coord_token(850)}
-    chosen = apply_action(state, only_action(actions, coord_token(640)))
-    assert chosen.active_candidate_ids == frozenset({"b"})
-
-
-def test_shared_x1_keeps_bbox_tail_ambiguous_until_y1() -> None:
-    state = make_state_for_objects(
-        [
-            make_object("person", (120, 20, 300, 400), object_id="a"),
-            make_object("person", (120, 80, 310, 430), object_id="b"),
-        ],
-        active_candidate_ids={"a", "b"},
-    )
-
-    after_x1 = apply_action(state, only_action(valid_coord_actions(state, coord_role="x1"), coord_token(120)))
-    assert after_x1.active_candidate_ids == frozenset({"a", "b"})
-
-    y1_actions = valid_coord_actions(after_x1, coord_role="y1")
-    assert {a.token_id for a in y1_actions} == {coord_token(20), coord_token(80)}
+def test_residual_boundary_adapter_slices_suffix_from_object_boundary() -> None: ...
+def test_residual_boundary_adapter_drops_trailing_incomplete_object_span() -> None: ...
+def test_residual_boundary_adapter_matches_tokenized_detection_spans() -> None: ...
+def test_residual_boundary_adapter_validates_no_schema_duplication() -> None: ...
 ```
 
-- [ ] **Step 4: Run residual state tests**
+- [ ] **Step 3.2: Implement adapter**
+
+In `src/training/span_adapters/residual_boundary.py`, implement a small API that wraps existing surfaces instead of duplicating them:
+
+```python
+@dataclass(frozen=True)
+class ResidualBoundarySlice:
+    tokenized: TokenizedDetectionExample
+    encoded_view: EncodedDetectionView
+    suffix_start: int
+    suffix_input_ids: tuple[int, ...]
+    retained_prefix_input_ids: tuple[int, ...]
+
+
+class ResidualBoundaryAdapter:
+    def __init__(self, *, tokenizer: Any, template_mode: str = "compact_full") -> None: ...
+    def render_objects(self, objects: Sequence[Mapping[str, Any]]) -> RenderedAssistantSequence: ...
+    def tokenize_rendered(self, rendered: RenderedAssistantSequence) -> TokenizedDetectionExample: ...
+    def slice_from_boundary(self, rendered: RenderedAssistantSequence, *, boundary: str, object_index: int | None = None) -> ResidualBoundarySlice: ...
+```
+
+Use existing surfaces:
+
+- `src/detection/template.py::get_detection_template`
+- `RenderedAssistantSequence.object_entries`
+- `RenderedAssistantSequence.separator_spans`
+- `src/detection/tokenization.py::tokenize_rendered_detection_conversation`
+- `src/training/encoding/view.py::EncodedDetectionView`
+- existing compact span adapters under `src/training/span_adapters/`
+
+- [ ] **Step 3.3: Replace ad hoc compact builders**
+
+In `src/trainers/stage2_two_channel/target_builder.py`, remove residual-set dependence on `_render_compact_objects`, `_build_compact_prefix_text_data`, `_compact_object_and_desc_spans`, and ad hoc suffix-token slicing. Keep those helpers only if non-residual legacy paths still call them.
+
+- [ ] **Step 3.4: Verify**
+
+Run:
+
+```bash
+conda run -n ms python -m pytest tests/test_stage2_residual_boundary_adapter.py tests/test_stage2_teacher_forcing_adapter_contract.py -q
+```
+
+Expected: PASS.
+
+## Task 4: Residual State, ValidAction, And Dirty-Prefix Scan
+
+**Files:**
+
+- Modify: `src/trainers/stage2_two_channel/residual_set.py`
+- Modify: `tests/test_stage2_residual_set_correction.py`
+
+- [ ] **Step 4.1: Write failing state-transition tests**
+
+Add tests for:
+
+```python
+def test_x1_valid_action_commits_subsequent_bbox_to_same_object() -> None: ...
+def test_invalid_bbox_row_is_dirty_context_and_does_not_update_remaining_set() -> None: ...
+def test_trailing_incomplete_object_is_removed_to_last_stable_boundary() -> None: ...
+def test_spatial_wrong_desc_conflict_emits_low_weight_desc_atom_when_span_reliable() -> None: ...
+def test_spatial_wrong_desc_conflict_records_no_atom_reason_when_span_unreliable() -> None: ...
+def test_duplicate_burst_is_uncommitted_and_cannot_vote_for_ul() -> None: ...
+def test_malformed_span_context_has_no_atoms_or_type_loss() -> None: ...
+def test_row_commitment_uses_deterministic_gt_before_ul_tiebreak() -> None: ...
+```
+
+Each test must assert the remaining-object set before and after the row scan.
+
+- [ ] **Step 4.2: Refactor `ValidAction`**
+
+In `src/trainers/stage2_two_channel/residual_set.py`:
+
+- Ensure every ambiguous token choice is represented as a `ValidAction`.
+- Include materialized transition data to drive later suffix construction. The selected action consumed by atom/suffix builders must expose `next_state` directly or through a `ResolvedValidAction` wrapper that stores the transition result. Bare recomputation from token ids is not allowed downstream.
+- Ensure `valid_token_ids == {action.token_id for action in valid_actions}`.
+- Ensure selected x1 action filters active candidates before y1/x2/y2 atoms are built.
+- Fail fast in strict mode if a selected action has missing, invalid, or empty `next_state` while objects remain.
+
+- [ ] **Step 4.3: Remove coordinate repair semantics**
+
+Delete or deprecate residual correction kinds and code paths that imply raw coordinate repair:
+
+- `matched_object_repair` as an active objective event;
+- `bbox_tail_from_anchor`;
+- nearest-GT coordinate fixup;
+- low-IoU coordinate refinement.
+- coordinate-neighborhood tolerance as a repair target;
+- sort/clamp repair for invalid xyxy boxes.
+
+Keep invalid bbox diagnostics, but do not emit coordinate-tail supervision from invalid rows.
+
+- [ ] **Step 4.4: Implement dirty-prefix recovery**
+
+Rules:
+
+- legal row + exact normalized desc + IoU `>=0.75`: commit and remove that object;
+- duplicate burst: uncommitted, excluded from UL, no unlikelihood;
+- invalid geometry: uncommitted dirty context, no IoU;
+- malformed middle span with reliable resync: masked dirty context, continue;
+- unreliable resync: cut to last stable boundary or drop sample;
+- trailing incomplete object: remove the whole incomplete object span from `<|object_ref_start|>`.
+- rollout prefix labels are masked by default;
+- malformed retained spans get no atoms and no type loss inside the span;
+- no atom may cross prompt/assistant boundaries, padding bounds, or an unreliable resync boundary.
+
+Commitment tie-breaks:
+
+- consider labeled GT candidates before promoted UL candidates;
+- among passing same-desc candidates, choose IoU descending, center-distance ascending, then stable object id ascending;
+- remove exactly the selected object id from the remaining set.
+
+Spatial wrong-description conflicts:
+
+- desc-agnostic IoU `>=0.75` plus desc mismatch is `spatial_wrong_desc_conflict`;
+- it is uncommitted, does not update remaining state, and is never a UL candidate;
+- reliable divergence emits an earliest-divergence desc atom with `label_conflict_weight=0.25`;
+- unreliable divergence emits no atom and records a no-atom diagnostic reason.
+
+- [ ] **Step 4.5: Verify**
 
 Run:
 
@@ -742,292 +594,65 @@ Run:
 conda run -n ms python -m pytest tests/test_stage2_residual_set_correction.py -q
 ```
 
-Expected: the residual state/action tests pass.
+Expected: PASS.
 
-## Task 3: Event-To-IR Adapter And Logits Alignment Guard
-
-**Files:**
-
-- Modify: `src/trainers/stage2_two_channel/residual_set.py`
-- Modify: `src/trainers/stage2_two_channel/teacher_forcing_adapter.py`
-- Test: `tests/test_stage2_residual_set_correction.py`
-- Test: `tests/test_stage2_teacher_forcing_adapter_contract.py`
-
-- [ ] **Step 1: Add failing test for event-to-IR alignment**
-
-Add:
-
-```python
-def test_correction_event_to_ir_uses_next_token_logit_row() -> None:
-    input_ids = torch.tensor([[11, 22, 101, 102, 103]])
-    event = make_event(
-        anchor_position=1,
-        target_position=2,
-        observed_token_id=999,
-        valid_token_ids={101, 201},
-        selected_token_id=101,
-        role=TokenRole.TEXT,
-    )
-
-    ir = build_residual_set_target_ir(
-        input_ids=input_ids,
-        batch_index=0,
-        events=(event,),
-        role_vocab=make_role_vocab(text_ids={101, 201}),
-    )
-
-    atom = ir.atoms[0]
-    assert atom.target_position == 2
-    assert atom.logit_position == 1
-    assert atom.selected_token_id == 101
-    assert atom.valid_token_ids == frozenset({101, 201})
-    assert atom.provenance["observed_token_id"] == 999
-```
-
-- [ ] **Step 2: Implement adapter function with hard validation**
-
-Add `build_residual_set_target_ir(...)` in
-`src/trainers/stage2_two_channel/teacher_forcing_adapter.py`. Keep
-`residual_set.py` focused on state/events; the existing adapter owns Stage-2 to
-shared-IR conversion.
-
-```python
-def build_residual_set_target_ir(
-    *,
-    input_ids: torch.Tensor,
-    batch_index: int,
-    events: Sequence[CorrectionEvent],
-    role_vocab: RoleVocab,
-) -> TeacherForcingTargetIR:
-    atoms: list[SupervisionAtom] = []
-    for event in events:
-        for draft_index, draft in enumerate(event.atom_drafts):
-            if draft.target_position != draft.logit_position + 1:
-                raise ValueError("CorrectionAtomDraft target_position must equal logit_position + 1")
-            if not draft.valid_actions:
-                raise ValueError("CorrectionAtomDraft valid_actions must be nonempty")
-            live_token_id = int(input_ids[batch_index, draft.target_position].item())
-            valid_ids = frozenset(action.token_id for action in draft.valid_actions)
-            if live_token_id not in valid_ids:
-                raise ValueError("corrected roll-in selected token must be in valid actions")
-            selected_action = next(action for action in draft.valid_actions if action.token_id == live_token_id)
-            atom_weight = max(float(action.loss_weight) for action in draft.valid_actions)
-            atoms.append(
-                SupervisionAtom(
-                    batch_index=batch_index,
-                    logit_position=int(draft.logit_position),
-                    target_position=int(draft.target_position),
-                    allowed_token_roles=frozenset({selected_action.role}),
-                    selected_token_role=selected_action.role,
-                    valid_token_ids=valid_ids,
-                    selected_token_id=live_token_id,
-                    latent_valid_token_ids=valid_ids,
-                    coverage_target_weights=None,
-                    loss_tags=frozenset({"stage2", "channel_b", "residual_set"}),
-                    loss_weight=atom_weight,
-                    coord_role=selected_action.coord_role,
-                    provenance=dict(event.provenance) | {
-                        "stage": "stage2",
-                        "channel": "B",
-                        "correction_kind": event.kind,
-                        "draft_index": draft_index,
-                        "observed_token_id": event.observed_token_id,
-                    },
-                )
-            )
-    return TeacherForcingTargetIR(schema_version=1, atoms=tuple(atoms), metadata={"stage": "stage2", "stage2_channel": "B", "objective": "residual_set_correction"})
-```
-
-Use the project’s current `TEACHER_FORCING_TARGET_IR_SCHEMA_VERSION` constant instead of a literal `1` in implementation.
-
-- [ ] **Step 3: Add tests for wrong live token and wrong shift**
-
-Add:
-
-```python
-def test_event_to_ir_rejects_wrong_shift() -> None:
-    event = make_event(anchor_position=1, target_position=3, logit_position=1)
-    with pytest.raises(ValueError, match="target_position.*logit_position"):
-        build_residual_set_target_ir(
-            input_ids=torch.tensor([[1, 2, 3, 4]]),
-            batch_index=0,
-            events=(event,),
-            role_vocab=make_role_vocab(text_ids={4}),
-        )
-
-
-def test_event_to_ir_rejects_selected_token_outside_valid_actions() -> None:
-    event = make_event(target_position=2, logit_position=1, valid_token_ids={7}, selected_token_id=7)
-    with pytest.raises(ValueError, match="selected token.*valid actions"):
-        build_residual_set_target_ir(
-            input_ids=torch.tensor([[1, 2, 9]]),
-            batch_index=0,
-            events=(event,),
-            role_vocab=make_role_vocab(text_ids={7, 9}),
-        )
-```
-
-Add a coordinate-tail test that builds one event with four `atom_drafts` and
-asserts that `build_residual_set_target_ir(...)` emits four atoms with
-coordinate roles `x1/y1/x2/y2` and adjacent `logit_position + 1 ==
-target_position` for every slot.
-
-- [ ] **Step 4: Run adapter tests**
-
-Run:
-
-```bash
-conda run -n ms python -m pytest tests/test_stage2_residual_set_correction.py tests/test_stage2_teacher_forcing_adapter_contract.py -q
-```
-
-Expected: all adapter and residual-set tests pass.
-
-## Task 4: UL Consensus Mining And Artifacts
+## Task 5: UL Consensus And Artifacts
 
 **Files:**
 
-- Create: `src/trainers/stage2_two_channel/ul_consensus.py`
-- Test: `tests/test_stage2_residual_ul_consensus.py`
-- Modify: `src/trainers/stage2_two_channel/types.py`
+- Modify: `src/trainers/stage2_two_channel/ul_consensus.py`
+- Modify: `src/trainers/stage2_two_channel.py`
+- Modify: `tests/test_stage2_residual_ul_consensus.py`
 
-- [ ] **Step 1: Add failing tests for K-valid consensus and per-rollout pre-dedup**
+- [ ] **Step 5.1: Write failing UL tests**
 
-Add:
-
-```python
-def test_ul_consensus_uses_k_valid_denominator_and_promotes_ratio_one() -> None:
-    rollouts = [
-        make_valid_rollout("r0", [make_unmatched("person", (10, 10, 30, 30))]),
-        make_valid_rollout("r1", [make_unmatched("person", (11, 10, 31, 30))]),
-        make_valid_rollout("r2", [make_unmatched("person", (10, 11, 30, 31))]),
-        make_invalid_rollout("r3", reason="parse_error"),
-    ]
-
-    result = mine_ul_consensus(
-        rollouts,
-        min_ul_valid_rollouts=3,
-        consensus_ratio=1.0,
-        geometry=ULGeometryConfig(iou_min=0.75, center_distance_scale_max=0.05, area_ratio_max=1.5, aspect_ratio_max=1.5),
-    )
-
-    assert result.k_valid == 3
-    assert result.skip_reasons["parse_error"] == 1
-    assert len(result.promoted_clusters) == 1
-    assert result.promoted_clusters[0].support_ratio == 1.0
-
-
-def test_same_rollout_near_duplicates_contribute_one_vote() -> None:
-    rollout = make_valid_rollout(
-        "r0",
-        [
-            make_unmatched("person", (10, 10, 30, 30), local_index=0),
-            make_unmatched("person", (11, 10, 31, 30), local_index=1),
-        ],
-    )
-
-    result = mine_ul_consensus(
-        [rollout, make_valid_rollout("r1", [make_unmatched("person", (12, 10, 32, 30))]), make_valid_rollout("r2", [make_unmatched("person", (10, 12, 30, 32))])],
-        min_ul_valid_rollouts=3,
-        consensus_ratio=1.0,
-        geometry=ULGeometryConfig(iou_min=0.75, center_distance_scale_max=0.05, area_ratio_max=1.5, aspect_ratio_max=1.5),
-    )
-
-    promoted = result.promoted_clusters[0]
-    assert promoted.support_rollout_ids == ("r0", "r1", "r2")
-    assert promoted.members_by_rollout["r0"].local_index == 0
-    assert result.duplicate_like_suppressed_count == 1
-
-
-def test_cross_rollout_duplicate_burst_is_quarantined_by_consumed_overlap() -> None:
-    rollouts = [
-        make_valid_rollout("r0", [make_unmatched("person", (10, 10, 30, 30))]),
-        make_valid_rollout("r1", [make_unmatched("person", (11, 10, 31, 30))]),
-        make_valid_rollout("r2", [make_unmatched("person", (10, 11, 30, 31))]),
-    ]
-    consumed = [make_unmatched("person", (10, 10, 30, 30))]
-
-    result = mine_ul_consensus(
-        rollouts,
-        min_ul_valid_rollouts=3,
-        consensus_ratio=1.0,
-        geometry=ULGeometryConfig(iou_min=0.75, center_distance_scale_max=0.05, area_ratio_max=1.5, aspect_ratio_max=1.5, consumed_overlap_iou_min=0.75),
-        consumed_members=consumed,
-    )
-
-    assert result.promoted_clusters == ()
-    assert len(result.quarantined_clusters) == 1
-    assert result.quarantined_clusters[0].reason == "consumed_target_overlap"
-```
-
-- [ ] **Step 2: Implement UL clustering dataclasses and complete-link gate**
-
-Use this public shape in `src/trainers/stage2_two_channel/ul_consensus.py`:
+Add or update tests:
 
 ```python
-@dataclass(frozen=True, slots=True)
-class ULGeometryConfig:
-    iou_min: float
-    center_distance_scale_max: float
-    area_ratio_max: float
-    aspect_ratio_max: float
-    consumed_overlap_iou_min: float
-
-
-@dataclass(frozen=True, slots=True)
-class ULConsensusCluster:
-    desc_id: str
-    desc_text: str
-    support_rollout_ids: tuple[str, ...]
-    support_ratio: float
-    decision: Literal["promoted", "rejected", "quarantined"]
-    reason: str
-    members_by_rollout: Mapping[str, ULMember]
-    pairwise_geometry: Mapping[str, float]
-    consumed_overlap: Mapping[str, float]
-
-
-@dataclass(frozen=True, slots=True)
-class ULConsensusResult:
-    k_valid: int
-    skip_reasons: Mapping[str, int]
-    promoted_clusters: tuple[ULConsensusCluster, ...]
-    rejected_clusters: tuple[ULConsensusCluster, ...]
-    quarantined_clusters: tuple[ULConsensusCluster, ...]
-    duplicate_like_suppressed_count: int
+def test_ul_consensus_requires_distinct_rollout_ids() -> None: ...
+def test_ul_consensus_ratio_one_promotes_all_valid_rollout_members() -> None: ...
+def test_promoted_ul_training_uses_rollout_local_member_bbox_not_medoid() -> None: ...
+def test_near_gt_gray_zone_rejects_ul_candidate() -> None: ...
+def test_duplicate_burst_members_cannot_vote_for_ul() -> None: ...
+def test_spatial_wrong_desc_conflict_cannot_vote_for_ul() -> None: ...
+def test_ul_clusters_artifact_uses_monitor_dumps_relative_path() -> None: ...
 ```
 
-Promotion rules:
+- [ ] **Step 5.2: Simplify UL config**
 
-- same canonical description id;
-- one vote per rollout after local pre-dedup;
-- `K_valid >= min_ul_valid_rollouts`;
-- `support_rollouts == K_valid`;
-- `support_ratio == 1.0`; the first implementation rejects authored
-  `consensus_ratio != 1.0`;
-- all-pairs complete-link geometry passes every configured threshold;
-- same-description high-overlap with consumed labeled/UL/emitted objects
-  quarantines or rejects the cluster before promotion.
+Remove v1 dependence on `ULGeometryConfig` fields that are not in OpenSpec. Keep only:
 
-- [ ] **Step 3: Add artifact row tests**
+- `ul_cluster_iou_threshold=0.9`;
+- `ul_gray_iou_low=0.30`;
+- `ul_consensus_ratio=1.0`;
+- `min_ul_valid_rollouts=2`;
+- `lambda_ul_promoted=0.5`.
 
-Add:
+- [ ] **Step 5.3: Implement consensus**
 
-```python
-def test_ul_cluster_artifact_rows_include_rejected_and_quarantined() -> None:
-    result = make_consensus_result_with_all_decisions()
+Rules:
 
-    rows = ul_cluster_artifact_rows(result, image_id="image-1")
+- Candidate must be legal, unmatched, non-duplicate, and same normalized desc within its cluster.
+- Candidate must not be a `spatial_wrong_desc_conflict`.
+- Support must come from distinct rollout ids.
+- Denominator is `K_valid`, not raw K when attempts were dropped before UL eligibility.
+- Consensus admits the cluster only.
+- Each retained rollout attempt trains against its own local promoted UL member bbox/desc.
+- Medoid/representative bbox is review metadata only.
 
-    decisions = {row["decision"] for row in rows}
-    assert decisions == {"promoted", "rejected", "quarantined"}
-    assert all(row["image_id"] == "image-1" for row in rows)
-    assert all("member_boxes" in row for row in rows)
-    assert all("pairwise_geometry" in row for row in rows)
-    assert all("consumed_overlap" in row for row in rows)
-    assert all("support_ratio" in row for row in rows)
+- [ ] **Step 5.4: Emit flat review artifact**
+
+Write:
+
+```text
+<run_dir>/monitor_dumps/ul_clusters.jsonl
 ```
 
-- [ ] **Step 4: Run UL tests**
+Each row contains global step, sample/image provenance, desc, representative bbox, member bboxes, member rollout ids, `K_total`, `K_valid`, support ratio, decision, and rejection/promotion reason. Do not generate PNGs by default.
+
+If current integration still resolves a nested root such as `monitor_dumps/stage2_ul_consensus/step_<global_step>/`, change the trainer root resolver so this writer receives `<run_dir>/monitor_dumps` and carries step/sample provenance inside each JSONL row. Add an integration assertion in `tests/test_stage2_ab_training.py`; a low-level `write_ul_clusters_artifact(root)` unit test is not enough.
+
+- [ ] **Step 5.5: Verify**
 
 Run:
 
@@ -1035,487 +660,338 @@ Run:
 conda run -n ms python -m pytest tests/test_stage2_residual_ul_consensus.py -q
 ```
 
-Expected: all UL consensus and artifact-row tests pass.
+Expected: PASS.
 
-## Task 5: Residual-Set Loss Module
+## Task 6: Compile Correction Atoms Into Shared IR
 
 **Files:**
 
-- Create: `src/trainers/teacher_forcing/modules/residual_set_correction.py`
-- Modify: `src/trainers/teacher_forcing/modules/__init__.py`
-- Test: `tests/test_stage2_residual_set_loss_module.py`
+- Modify: `src/trainers/stage2_two_channel/teacher_forcing_adapter.py`
+- Modify: `src/trainers/stage2_two_channel/target_builder.py`
+- Modify: `src/trainers/stage2_two_channel/types.py`
+- Modify: `tests/test_stage2_teacher_forcing_adapter_contract.py`
+- Modify: `tests/test_stage2_ab_training.py`
 
-- [ ] **Step 1: Add failing loss tests for valid-set marginal and coverage strength**
+- [ ] **Step 6.1: Write failing IR compilation tests**
 
-Add:
+Tests must assert:
 
-```python
-def test_residual_set_module_uses_valid_set_marginal_not_selected_only() -> None:
-    input_ids = torch.tensor([[0, 1]], dtype=torch.long)
-    logits = torch.full((1, 2, 8), -10.0)
-    logits[0, 0, 1] = 0.0
-    logits[0, 0, 2] = 0.0
-    ir = make_ir(valid_token_ids={1, 2}, selected_token_id=1, target_position=1, logit_position=0)
+- `atom.logit_position + 1 == atom.target_position`;
+- `input_ids[atom.target_position] == atom.selected_token_id`;
+- `selected_token_id in valid_token_ids`;
+- `selected_token_role in allowed_token_roles`;
+- all eligible non-conflicting correction atoms from one rollout attempt stay in one sequence;
+- same-logit identical targets merge provenance;
+- conflicting same-logit targets diagnose and do not silently pick a random target.
 
-    out = run_residual_set_correction_module(
-        context=make_context(input_ids=input_ids, logits=logits, irs=(ir,), text_ids={1, 2}),
-        spec=make_spec(coverage_strength=0.0),
-    )
+- [ ] **Step 6.2: Compile from selected `ValidAction`**
 
-    assert float(out.loss) < 0.01
-    assert out.metrics["stage2_ab/channel_b/residual_set/atom_count"] == 1.0
+For every correction atom draft:
 
+- `valid_token_ids` comes from action token ids;
+- `selected_token_id` comes from the selected action;
+- later suffix construction uses the selected action transition state;
+- singleton branches are represented as singleton valid sets;
+- STOP/EOS is a singleton valid set only when no remaining objects exist.
 
-def test_residual_set_module_coverage_strength_zero_disables_coverage() -> None:
-    input_ids = torch.tensor([[0, 1]], dtype=torch.long)
-    logits = torch.full((1, 2, 8), -10.0)
-    logits[0, 0, 1] = 4.0
-    logits[0, 0, 2] = 0.0
-    ir = make_ir(valid_token_ids={1, 2}, selected_token_id=1, coverage_target_weights={1: 0.5, 2: 0.5})
+- [ ] **Step 6.3: Preserve sequence boundaries**
 
-    no_coverage = run_residual_set_correction_module(
-        context=make_context(input_ids=input_ids, logits=logits, irs=(ir,), text_ids={1, 2}),
-        spec=make_spec(coverage_strength=0.0),
-    )
-    with_coverage = run_residual_set_correction_module(
-        context=make_context(input_ids=input_ids, logits=logits, irs=(ir,), text_ids={1, 2}),
-        spec=make_spec(coverage_strength=1.0),
-    )
+Carry rollout-attempt sequence identity through sidecar metadata so the loss module can compute per-sequence weighted means before batch mean. Do not normalize clean/dirty/UL buckets separately.
 
-    assert float(with_coverage.loss) > float(no_coverage.loss)
-```
+Required runtime shape:
 
-- [ ] **Step 2: Implement module by delegating atom math**
+- a sample with two retained nonduplicate prepared attempts yields two residual IR sidecars/segments;
+- each sidecar keeps the originating `rollout_id`;
+- artifacts and metrics can be traced back to the originating attempt;
+- the first/anchor attempt has no privileged training role after dedup.
 
-Use this execution contract:
-
-```python
-def run_residual_set_correction_module(
-    *,
-    context: TeacherForcingContext,
-    spec: PipelineModuleSpec,
-) -> ModuleResult:
-    if str(context.channel).upper() != "B":
-        return ModuleResult(loss=context.logits.float().sum() * 0.0, metrics={})
-    config = build_residual_set_correction_config(spec.config)
-    role_vocab = _role_vocab_from_context(context)
-    loss_terms: list[torch.Tensor] = []
-    component_totals: dict[str, torch.Tensor] = {}
-    atom_count = 0
-    for batch_index, segment_start, segment_end, segment_meta in iter_segment_views(input_ids=context.input_ids, meta=context.meta):
-        target_ir = segment_meta.get("residual_set_target_ir")
-        if target_ir is None:
-            continue
-        for atom in target_ir.atoms:
-            _validate_residual_atom_positions(atom, segment_start=segment_start, segment_end=segment_end, batch_index=batch_index, input_ids=context.input_ids)
-            row_logits = context.logits[atom.batch_index, atom.logit_position]
-            atom_loss = teacher_forcing_atom_loss(
-                row_logits,
-                atom=atom,
-                role_vocab=role_vocab,
-                coverage_strength=config.coverage_strength,
-            )
-            loss_terms.append(atom_loss.total * float(atom.loss_weight))
-            atom_count += 1
-            _add(component_totals, "type", atom_loss.type)
-            _add(component_totals, "valid", atom_loss.valid)
-            _add(component_totals, "coverage", atom_loss.coverage)
-    loss = _mean_or_zero(loss_terms, context.logits)
-    return ModuleResult(
-        loss=loss,
-        metrics=_residual_metrics(loss=loss, atom_count=atom_count, component_totals=component_totals),
-        state={"residual_set_correction_contrib": loss},
-    )
-```
-
-The implementation must read full-rank `context.logits`, not `context.logits_ce[:, :-1, :]`, so row positions remain explicit and flash-attention-compatible.
-
-- [ ] **Step 3: Add mixed labeled/UL weight test**
-
-Add:
-
-```python
-def test_mixed_labeled_ul_support_uses_max_atom_loss_weight() -> None:
-    ir = make_ir(
-        valid_token_ids={1, 2},
-        selected_token_id=1,
-        action_weights={1: 1.0, 2: 0.5},
-        support_provenance="mixed_labeled_ul",
-    )
-
-    atom = ir.atoms[0]
-    assert atom.loss_weight == 1.0
-    assert atom.provenance["support_provenance"] == "mixed_labeled_ul"
-```
-
-- [ ] **Step 4: Run loss module tests**
+- [ ] **Step 6.4: Verify**
 
 Run:
 
 ```bash
-conda run -n ms python -m pytest tests/test_stage2_residual_set_loss_module.py tests/test_teacher_forcing_objective_runner.py -q
+conda run -n ms python -m pytest tests/test_stage2_teacher_forcing_adapter_contract.py tests/test_stage2_ab_training.py -k 'residual_set or target_ir or logit_position' -q
 ```
 
-Expected: residual module tests pass and shared teacher-forcing objective tests remain green.
+Expected: PASS.
 
-## Task 6: Stage-2 Target Builder Integration
+## Task 7: Residual-Set Loss Module And Metrics
+
+**Files:**
+
+- Modify: `src/trainers/teacher_forcing/modules/residual_set_correction.py`
+- Modify: `src/trainers/teacher_forcing/module_registry.py`
+- Modify: `src/trainers/teacher_forcing/objective_pipeline.py`
+- Modify: `tests/test_stage2_residual_set_loss_module.py`
+- Modify: `tests/test_teacher_forcing_loss_catalog.py`
+
+- [ ] **Step 7.1: Write failing loss tests**
+
+Update tests so residual-set v1 proves:
+
+- type loss is standalone and default-on through `lambda_type=1.0`;
+- inner loss uses valid-set marginal over atom `valid_token_ids`;
+- singleton valid set equals hard CE;
+- STOP singleton uses STOP role only;
+- per-sequence loss is `sum(weight_i * loss_i) / sum(weight_i)`;
+- batch loss is mean of sequence losses;
+- zero active atoms contribute zero residual-set loss and explicit metrics.
+
+- [ ] **Step 7.2: Implement module config**
+
+Expose only residual-set v1 config keys from Task 1. Do not keep old `coverage_strength`, `coord_span_policy`, `ul_geometry`, or `artifact_policy` as live residual-set config. Add registry/catalog tests proving these removed module names are rejected in residual-set live configs: `loss_duplicate_burst_unlikelihood`, `bbox_geo`, `bbox_size_aux`, `coord_reg`, `coord_gate`, and `text_gate`.
+
+- [ ] **Step 7.3: Implement metrics**
+
+Emit compact keys under `stage2_ab/channel_b/residual_set/`, including:
+
+- `sequence_count`;
+- `atom_count`;
+- `atom_weight_sum`;
+- `raw_atom_loss_sum`;
+- `sequence_loss`;
+- `type_loss`;
+- `inner_loss`;
+- `wrong_type_mass`;
+- `valid_set_mass`;
+- `dirty_prefix_sequence_count`;
+- `committed_gt_rows`;
+- `committed_ul_rows`;
+- `pending_ul_candidates`;
+- `promoted_ul_clusters`;
+- `uncommitted_invalid_geometry`;
+- `uncommitted_malformed`;
+- `uncommitted_duplicate`;
+- `uncommitted_fp_or_unpromoted`;
+- `spatial_wrong_desc_conflict`;
+- `label_conflict_atoms`;
+- `label_conflict_no_atom`;
+- `eos_targets`;
+- `continue_targets`;
+- decode-mode sliced counts;
+- `dirty_prefix_reencoded`;
+- `clean_success_skipped`.
+
+- [ ] **Step 7.4: Verify**
+
+Run:
+
+```bash
+conda run -n ms python -m pytest tests/test_stage2_residual_set_loss_module.py tests/test_teacher_forcing_loss_catalog.py -q
+```
+
+Expected: PASS.
+
+## Task 8: Integration, Docs, And Smoke
 
 **Files:**
 
 - Modify: `src/trainers/stage2_two_channel/target_builder.py`
-- Modify: `src/trainers/stage2_two_channel/types.py`
 - Modify: `src/trainers/stage2_two_channel/objective_runner.py`
 - Modify: `src/trainers/stage2_two_channel.py`
-- Modify: `src/bootstrap/stage2_policy_provenance.py`
-- Test: `tests/test_stage2_ab_training.py`
-- Test: `tests/test_stage2_residual_set_correction.py`
+- Modify: `docs/training/STAGE2_RUNBOOK.md` if stable behavior changed
+- Modify: `docs/ARTIFACTS.md` if artifact names changed
+- Modify: `openspec/changes/add-stage2-residual-set-ul-correction/tasks.md`
+- Create: `scripts/tools/prepare_stage2_residual_rollouts.py`
 
-- [ ] **Step 1: Add failing integration test for residual path metadata**
-
-Add to `tests/test_stage2_ab_training.py`:
-
-```python
-def test_channel_b_residual_set_path_attaches_target_ir_and_skips_legacy_trie() -> None:
-    segment, meta, _length = build_channel_b_segment_with_objective(
-        objective_name="residual_set_correction",
-        rollout_objects=[make_pred("person", (10, 20, 30, 40))],
-        gt_objects=[make_gt("person", (10, 20, 30, 40)), make_gt("cat", (50, 60, 70, 80))],
-    )
-
-    assert meta["stage2_channel"] == "B"
-    assert "residual_set_target_ir" in meta
-    assert "stage2_trie_targets" not in meta
-    assert meta["residual_set_rollin_policy"] == "random_valid_branch"
-    assert meta["residual_set_base_seed"] == 17
-```
-
-- [ ] **Step 2: Implement config-selected branch**
-
-In `target_builder.py`, branch only when the active Channel-B objective list
-selects `residual_set_correction`. Do not replace the current
-`_build_channel_b_supervision_targets(...) -> _ChannelBSupervisionTargets`
-return contract. Either extend `_ChannelBSupervisionTargets` with residual-set
-fields or add a sibling residual builder that is called from the same layer that
-currently creates `meta_entry`.
-
-```python
-if _uses_residual_set_correction(objective_specs):
-    residual_result = build_residual_set_correction_targets(
-        tokenizer=tokenizer,
-        prompt_ids=prompt_ids,
-        gts=gts,
-        rollout_group=rollout_group,
-        config=residual_set_config,
-    )
-    supervision_targets = replace(
-        supervision_targets,
-        residual_set_target_ir=residual_result.target_ir,
-        residual_set_event_summaries=residual_result.event_summaries,
-        residual_set_metrics=residual_result.metrics,
-    )
-```
-
-Then `_build_channel_b_meta_entry(...)` copies those residual fields into
-`Stage2ChannelBMeta`. Keep the existing `stage2_trie_targets` construction in
-the legacy branch.
-
-- [ ] **Step 3: Add earliest-anchor tests**
-
-Add tests covering:
-
-- matched TP repair anchors before `object_start`, `desc_start`, or `box_start`;
-- FN premature STOP anchors at the STOP target position;
-- FP/duplicate boundary anchors before the next object boundary action;
-- raw bad tokens are stored as provenance only and never as positive targets.
-
-Each test must assert:
-
-```python
-for draft in event.atom_drafts:
-    assert draft.logit_position + 1 == draft.target_position
-    assert draft.valid_actions
-    selected_token = corrected_input_ids[draft.target_position]
-    assert selected_token in {action.token_id for action in draft.valid_actions}
-assert event.observed_token_id == raw_bad_token_id
-```
-
-Do not assert that `observed_token_id` is outside valid actions. At object
-boundaries a raw duplicate/FP token can be the same token id as a valid
-remaining-object continuation; the correction is path/set based, not token-id
-unlikelihood.
-
-- [ ] **Step 4: Run integration tests**
-
-Run:
-
-```bash
-conda run -n ms python -m pytest tests/test_stage2_residual_set_correction.py tests/test_stage2_ab_training.py -q
-```
-
-Expected: residual target-builder integration tests pass and existing Stage-2 trainer tests remain green.
-
-## Task 7: Metrics, Artifacts, And Compatibility Guards
-
-**Files:**
-
-- Modify: `src/trainers/stage2_two_channel.py`
-- Modify: `src/trainers/stage2_two_channel/objective_runner.py`
-- Test: `tests/test_stage2_ab_training.py`
-- Test: `tests/test_stage2_residual_ul_consensus.py`
-
-- [ ] **Step 1: Add failing metric prefix test**
-
-Add:
-
-```python
-def test_residual_set_metrics_use_stable_prefixes() -> None:
-    logs = build_stage2_core_loss_logs(
-        channel="B",
-        pipeline_metrics_ctx={
-            "stage2_ab/channel_b/residual_set/atom_count": 2.0,
-            "stage2_ab/channel_b/residual_set/ul/promoted_clusters": 1.0,
-        },
-        token_ce_module_w=0.0,
-        run_a_text=False,
-        token_desc_ce_weight=1.0,
-        fn_desc_ce_weight=1.0,
-    )
-
-    assert logs["stage2_ab/channel_b/residual_set/atom_count"] == 2.0
-    assert logs["stage2_ab/channel_b/residual_set/ul/promoted_clusters"] == 1.0
-
-
-def test_residual_metric_pass_through_does_not_rewrite_legacy_trie_metrics() -> None:
-    logs = build_stage2_core_loss_logs(
-        channel="B",
-        pipeline_metrics_ctx={
-            "stage2_trie/target_positions": 3.0,
-            "stage2_ab/channel_b/residual_set/atom_count": 2.0,
-        },
-        token_ce_module_w=0.0,
-        run_a_text=False,
-        token_desc_ce_weight=1.0,
-        fn_desc_ce_weight=1.0,
-    )
-
-    assert logs["stage2_trie/target_positions"] == 3.0
-    assert logs["stage2_ab/channel_b/residual_set/atom_count"] == 2.0
-```
-
-- [ ] **Step 2: Add artifact gate test**
-
-Add:
-
-```python
-def test_ul_clusters_artifact_written_only_when_artifact_policy_enabled(tmp_path: Path) -> None:
-    rows = [{"image_id": "image-1", "decision": "promoted", "member_boxes": []}]
-
-    disabled = write_ul_clusters_artifact(tmp_path / "monitor_dumps" / "disabled", rows, enabled=False)
-    enabled = write_ul_clusters_artifact(tmp_path / "monitor_dumps" / "enabled", rows, enabled=True)
-
-    assert disabled is None
-    assert not (tmp_path / "monitor_dumps" / "disabled" / "ul_clusters.jsonl").exists()
-    assert enabled == tmp_path / "monitor_dumps" / "enabled" / "ul_clusters.jsonl"
-    assert (tmp_path / "monitor_dumps" / "enabled" / "ul_clusters.jsonl").read_text().strip()
-```
-
-- [ ] **Step 3: Implement metric pass-through and artifact writer**
-
-Rules:
-
-- pass through keys starting with `stage2_ab/channel_b/residual_set/`;
-- write `ul_clusters.jsonl` under the active Stage-2 monitor/debug/smoke artifact root only when artifact dumping is enabled. For train monitor dumps, use the existing `train_monitor_dump.out_dir` resolution and its default under `args.output_dir/monitor_dumps/...`; do not create an unrelated residual-set root;
-- include promoted, rejected, and quarantined rows;
-- do not count `ul_promoted_local` as labeled recall.
-
-- [ ] **Step 4: Run metrics/artifact tests**
-
-Run:
-
-```bash
-conda run -n ms python -m pytest tests/test_stage2_ab_training.py tests/test_stage2_residual_ul_consensus.py -q
-```
-
-Expected: metric pass-through and artifact gating tests pass.
-
-## Task 8: Smoke Configs And Runnable Checks
-
-**Files:**
-
-- Modify or create at most two files under `configs/stage2_two_channel/smoke/`
-- Modify: `docs/IMPLEMENTATION_MAP.md` only after smoke path is runnable
-- Modify: `docs/training/README.md` only after smoke path is runnable
-- Modify: `progress/diagnostics/*.md` after smoke results exist
-
-- [ ] **Step 1: Add compact residual smoke config by editing nearest template**
-
-Preferred names:
-
-```text
-configs/stage2_two_channel/smoke/compact_full_residual_set_ckpt3664_hf_1step.yaml
-configs/stage2_two_channel/smoke/compact_full_residual_set_ckpt3664_hf_thorough.yaml
-```
-
-The config must set:
-
-```yaml
-stage2_ab:
-  schedule:
-    b_ratio: 1.0
-  pipeline:
-    objective:
-      - name: residual_set_correction
-        enabled: true
-        weight: 1.0
-        channels: ["B"]
-        application:
-          preset: rollout_self_prefix
-        config:
-          rollin_policy: random_valid_branch
-          rollin_resample_policy: fixed_event
-          base_seed: 17
-          coord_span_policy: bbox_tail_from_anchor
-          strict_builder_invariants: true
-          lambda_ul_promoted: 0.5
-          lambda_continue_margin: 0.0
-          continue_margin_m: 0.0
-          coverage_strength: 0.0
-          num_rollouts: 3
-          min_ul_valid_rollouts: 3
-          ul_consensus_ratio: 1.0
-          ul_geometry:
-            iou_min: 0.75
-            center_distance_scale_max: 0.05
-            area_ratio_max: 1.5
-            aspect_ratio_max: 1.5
-            consumed_overlap_iou_min: 0.75
-          artifact_policy:
-            ul_clusters: monitor_debug_smoke
-```
-
-Use the tuned A2-ET-RMP-CE checkpoint path already used by the current worktree
-smoke configs, specifically the `checkpoint-3664` adapter in
-`configs/stage2_two_channel/smoke/compact_full_et_rmp_ce_ckpt3664_hf_1step.yaml`.
-If the smoke keeps `b_ratio: 1.0`, the residual objective list may contain only
-the B-side `residual_set_correction` entry. If any mixed A/B schedule is used,
-the objective list must restate `token_ce` as `channels: ["A"]` plus
-`residual_set_correction` as `channels: ["B"]` because YAML list inheritance is
-replacement, not append.
-
-- [ ] **Step 2: Run narrow unit suite before smoke**
+- [ ] **Step 8.1: Run integrated unit suite**
 
 Run:
 
 ```bash
 conda run -n ms python -m pytest \
   tests/test_stage2_ab_config_contract.py \
+  tests/test_stage2_residual_boundary_adapter.py \
   tests/test_stage2_residual_set_correction.py \
   tests/test_stage2_residual_ul_consensus.py \
   tests/test_stage2_residual_set_loss_module.py \
-  tests/test_stage2_ab_training.py \
   tests/test_stage2_teacher_forcing_adapter_contract.py \
+  tests/test_stage2_ab_training.py \
   -q
 ```
 
-Expected: all selected tests pass.
+Expected: PASS.
 
-- [ ] **Step 3: Run config parse check**
-
-Run:
-
-```bash
-conda run -n ms python - <<'PY'
-from pathlib import Path
-from src.config.loader import ConfigLoader
-
-path = "configs/stage2_two_channel/smoke/compact_full_residual_set_ckpt3664_hf_1step.yaml"
-cfg = ConfigLoader.load_materialized_training_config(path)
-objective_names = [spec.name for spec in cfg.stage2_ab.pipeline.objective]
-assert "residual_set_correction" in objective_names
-assert all(spec.name not in {"bbox_geo", "coord_reg", "duplicate_unlikelihood"} for spec in cfg.stage2_ab.pipeline.objective)
-for adapter in cfg.model.adapters:
-    assert Path(adapter).exists(), adapter
-print(path)
-print(objective_names)
-print(cfg.training.artifact_subdir)
-PY
-```
-
-Expected: config resolves, checkpoint path exists, no removed-loss modules are selected, and artifact root is created only by the actual smoke run.
-
-- [ ] **Step 4: Run Stage-2 one-step smoke**
-
-Run the one-step smoke on the tuned checkpoint. Use up to 8 GPUs only if the existing launcher and config already support distributed Stage-2 smoke safely.
-
-Expected evidence to record:
-
-- config path;
-- checkpoint path;
-- seed `17`;
-- output/artifact root;
-- parse/drop counters;
-- residual-set atom count;
-- UL promoted/rejected/quarantined counters;
-- STOP/continuation diagnostics;
-- no `target_position/logit_position` invariant failures.
-
-- [ ] **Step 5: Run thorough smoke after one-step passes**
-
-Run the thorough config and compare against available hard SFT/current Stage-2 baseline artifacts. Treat performance as smoke evidence only unless the scope is at least val200.
-
-Record:
-
-- labeled recall;
-- duplicate rate;
-- missed object rate;
-- object coherence rate;
-- residual-set correction event distribution;
-- UL cluster sample rows for visualization review;
-- whether any performance drop correlates with residual event type, UL promotion, STOP handling, or coordinate onset.
-
-## Task 9: Final Review Before Implementation Claim
-
-**Files:**
-
-- Modify: progress diagnostics note created during smoke
-- Modify: implementation map/docs only after runnable evidence exists
-
-- [ ] **Step 1: Run OpenSpec validation**
+- [ ] **Step 8.2: Validate OpenSpec**
 
 Run:
 
 ```bash
-openspec validate add-stage2-residual-set-ul-correction --strict
+openspec validate add-stage2-residual-set-ul-correction --type change --strict --no-interactive
 ```
 
 Expected: `Change 'add-stage2-residual-set-ul-correction' is valid`.
 
-- [ ] **Step 2: Run removed-mechanism guard tests**
+- [ ] **Step 8.3: Prepare and preflight a tiny offline rollout JSONL**
 
-Run:
+Run the offline prepared-rollout producer from Task 2.4. It must write:
 
-```bash
-conda run -n ms python -m pytest tests/test_removed_training_mechanisms_absent.py tests/test_teacher_forcing_config_contract.py -q
+```text
+output/stage2_ab/prepared_rollouts/train8_ckpt3664.jsonl
 ```
 
-Expected: removed duplicate/coord/bbox/geometry training mechanisms remain absent from active residual-set configs.
+Minimum fixture composition:
 
-- [ ] **Step 3: Request subagent review**
+- one clean committed GT row;
+- one invalid bbox dirty-prefix attempt that must not update the remaining set;
+- one exact duplicate rollout attempt so dedup is exercised;
+- one K-valid sample with no UL promotion;
+- one optional sample with a strict UL-consensus candidate when the smoke is intended to write `monitor_dumps/ul_clusters.jsonl`.
 
-Dispatch at least two read-only reviewers:
+Generate K attempts before exact-token dedup. Retained attempts may be `< K`; diagnostics must report both pre-dedup and post-dedup counts.
 
-- algorithm/math reviewer: residual-set semantics, UL promotion safety, next-token alignment, coordinate commitment;
-- pipeline/config reviewer: config strictness, baseline preservation, artifacts, smoke commands, docs route.
+Run this CPU preflight before GPU smoke:
 
-Each reviewer must return blockers first. Fix blockers before asking the user for implementation approval.
+```bash
+conda run -n ms python - <<'PY'
+import json
+from pathlib import Path
+from collections import defaultdict
 
-- [ ] **Step 4: Present final implementation readiness summary**
+from src.config.loader import ConfigLoader
 
-Report:
+path = Path("output/stage2_ab/prepared_rollouts/train8_ckpt3664.jsonl")
+config_path = Path("configs/stage2_two_channel/smoke/compact_full_residual_set_ckpt3664_hf_1step.yaml")
+if not path.is_file():
+    raise SystemExit(f"missing prepared rollout JSONL: {path}")
 
-- OpenSpec validation status;
-- super-power plan path;
-- subagent review status and fixes;
-- exact files expected to change during implementation;
-- narrow tests and smoke commands that will be run first;
-- unresolved risks, especially UL cluster false promotion and performance drop diagnosis.
+cfg = ConfigLoader.load_materialized_training_config(str(config_path))
+assert cfg.stage2_ab is not None
+residual = [obj for obj in cfg.stage2_ab.pipeline.objective if obj.name == "residual_set_correction"]
+if len(residual) != 1:
+    raise SystemExit("expected exactly one residual_set_correction objective")
+configured_path = Path(str(residual[0].config["prepared_rollout_jsonl"]))
+if configured_path != path:
+    raise SystemExit(f"config prepared_rollout_jsonl={configured_path} does not match preflight path={path}")
+
+rows = [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
+if not rows:
+    raise SystemExit("prepared rollout JSONL is empty")
+
+required = {"sample_id", "image_id", "image_path", "rollout_id", "response_token_ids", "raw_text", "decode_mode", "generation_config_hash"}
+missing = [(i, sorted(required - set(row))) for i, row in enumerate(rows) if required - set(row)]
+if missing:
+    raise SystemExit(f"missing required keys: {missing[:3]}")
+
+def join_keys(row: dict, fallback_index: int | None = None) -> set[tuple[str, str]]:
+    out: set[tuple[str, str]] = set()
+    for key in ("sample_id", "image_id", "image_path"):
+        value = row.get(key)
+        if value is not None:
+            out.add((key, str(value)))
+    if fallback_index is not None:
+        out.add(("base_idx", str(fallback_index)))
+    return out
+
+train_path = Path(str(cfg.custom.train_jsonl))
+if not train_path.is_file():
+    raise SystemExit(f"train_jsonl not found for join preflight: {train_path}")
+train_rows = []
+limit = int(getattr(cfg.custom, "train_sample_limit", 8) or 8)
+for idx, line in enumerate(train_path.read_text(encoding="utf-8").splitlines()):
+    if idx >= limit:
+        break
+    if line.strip():
+        train_rows.append(json.loads(line))
+train_keys = set()
+for idx, row in enumerate(train_rows):
+    train_keys.update(join_keys(row, idx))
+prepared_keys = set()
+for row in rows:
+    prepared_keys.update(join_keys(row))
+if not train_keys & prepared_keys:
+    raise SystemExit("prepared rows do not overlap selected train samples by sample_id/image_id/image_path/base_idx")
+
+expected_k = int(residual[0].config.get("expected_num_rollouts", 4))
+by_sample: dict[str, list[dict]] = defaultdict(list)
+for row in rows:
+    by_sample[str(row["sample_id"])].append(row)
+if not any(len(group) == expected_k for group in by_sample.values()):
+    raise SystemExit(f"no sample has expected_num_rollouts={expected_k} rows before exact dedup")
+
+if not any(row.get("debug_case") == "invalid_bbox_dirty_prefix" for row in rows):
+    raise SystemExit("prepared rollout JSONL must include invalid_bbox_dirty_prefix debug case")
+duplicate_rows = [row for row in rows if row.get("debug_case") == "exact_duplicate_attempt"]
+if not duplicate_rows:
+    raise SystemExit("prepared rollout JSONL must include exact_duplicate_attempt debug case")
+tokens_to_rollouts: dict[tuple[int, ...], set[str]] = defaultdict(set)
+for row in duplicate_rows:
+    tokens_to_rollouts[tuple(int(tok) for tok in row["response_token_ids"])].add(str(row["rollout_id"]))
+if not any(len(rollout_ids) >= 2 for rollout_ids in tokens_to_rollouts.values()):
+    raise SystemExit("exact_duplicate_attempt rows must include distinct rollout_ids with identical response_token_ids")
+
+print(f"prepared_rows={len(rows)} path={path}")
+PY
+```
+
+- [ ] **Step 8.4: Run smoke without eval_step**
+
+Use the checkpoint family the user requested:
+
+```text
+et-rmp-ce-ckpt-3660+ / checkpoint-3664 base
+```
+
+Launch only after confirming the migrated YAML points at a real prepared rollout JSONL:
+
+```bash
+config=configs/stage2_two_channel/smoke/compact_full_residual_set_ckpt3664_hf_1step.yaml \
+gpus=0,1,2,3 \
+conda run -n ms bash scripts/train.sh
+```
+
+Expected for the first smoke:
+
+- training starts from the ET-RMP-CE checkpoint-3664 base;
+- the materialized config keeps `eval_strategy: "no"` and does not schedule `eval_step`;
+- residual-set metric namespace appears under `stage2_ab/channel_b/residual_set/`;
+- fixture-specific counters match the prepared input, including nonzero `dirty_prefix_sequence_count` and `uncommitted_invalid_geometry`;
+- if the fixture includes a UL candidate, `monitor_dumps/ul_clusters.jsonl` exists and contains rows; otherwise the artifact is absent or empty with `promoted_ul_clusters == 0`;
+- live rollout backend generation is not invoked in residual-set offline mode.
+
+Post-smoke artifact check:
+
+```bash
+conda run -n ms python - <<'PY'
+import json
+from pathlib import Path
+
+roots = sorted(Path("output").glob("**/compact_full_residual_set_ckpt3664_hf_1step*/**/logging.jsonl"))
+if not roots:
+    raise SystemExit("could not find smoke logging.jsonl")
+log = roots[-1]
+rows = [json.loads(line) for line in log.read_text(encoding="utf-8").splitlines() if line.strip()]
+metric_rows = [row for row in rows if isinstance(row, dict) and any(str(k).startswith("stage2_ab/channel_b/residual_set/") for k in row)]
+if not metric_rows:
+    raise SystemExit(f"missing residual-set metrics in {log}")
+print(f"checked_residual_metrics={log}")
+PY
+```
+
+- [ ] **Step 8.5: Update docs and OpenSpec tasks**
+
+After tests and smoke pass:
+
+- update stable docs only for behavior that is now supported;
+- mark implementation tasks complete in `openspec/changes/add-stage2-residual-set-ul-correction/tasks.md`;
+- record smoke scope and artifact root in `progress/`, not as an OpenSpec success gate.
+
+## Suggested Subagent Ownership
+
+Use subagent-driven development after user approval. Keep write sets disjoint:
+
+- Agent A, Config: `src/config/schema.py`, `src/trainers/teacher_forcing/module_registry.py`, `tests/test_stage2_ab_config_contract.py`, `tests/test_teacher_forcing_loss_catalog.py`, one smoke YAML.
+- Agent B, Template/Span Adapter: `src/training/span_adapters/residual_boundary.py`, `tests/test_stage2_residual_boundary_adapter.py`, adapter call-site migrations.
+- Agent C, Residual State: `src/trainers/stage2_two_channel/residual_set.py`, `tests/test_stage2_residual_set_correction.py`.
+- Agent D, UL Consensus: `src/trainers/stage2_two_channel/ul_consensus.py`, `tests/test_stage2_residual_ul_consensus.py`.
+- Agent E, Prepared Runtime/IR/Loss: `rollout_views.py`, `stage2_two_channel.py`, `teacher_forcing_adapter.py`, `residual_set_correction.py`, objective pipeline tests.
+- Main agent, Integration: resolve conflicts, run combined tests, update docs/progress, launch smoke.
+
+## Self-Review
+
+- Spec coverage: Every OpenSpec task maps to at least one plan task.
+- Config explosion check: The existing residual smoke YAML is migrated instead of adding many new leaves.
+- File creation check: Only one reusable source abstraction and one focused adapter test file are created.
+- Deleted behavior check: `bbox_tail_from_anchor`, coordinate repair, `ul_geometry`, `loss_duplicate_burst_unlikelihood`, and duplicate unlikelihood are explicitly rejected.
+- Causal alignment check: `logit_position + 1 == target_position` is tested in state, adapter, and integration layers.
+- Implementation gate: This plan is for review only; code execution starts only after user approval.

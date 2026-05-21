@@ -791,89 +791,45 @@ smoke-run comparisons reproducible. Future ablations may add `per_epoch` or
 `per_step` resampling as data augmentation, but those should not be the default
 while the residual-set and UL mining semantics are being validated.
 
-Approved local correction span default:
+Superseded local coordinate-repair span:
 
-In the first version, one `CorrectionEvent` should compile to one local
-correction span, not automatically to the entire corrected suffix.
+The earlier `bbox_tail_from_anchor` plan is deleted for Stage-2 v1. It would
+have anchored correction inside raw-rollout coordinate slots, but that conflicts
+with the later decision to treat bbox geometry as a commitment gate rather than
+a coordinate-repair target.
 
-Default span policy:
-
-```text
-schema / boundary / description transition:
-    one event -> one primary SupervisionAtom
-
-coordinate transition:
-    one event -> bbox_tail_from_anchor
-```
-
-For coordinate correction, the bbox group is a local structured unit. Once a
-coordinate correction is anchored, supervise the remaining coordinate slots in
-that bbox:
+Do not implement local coordinate repair/refinement in the first version:
 
 ```text
-anchor before x1:
-    supervise x1, y1, x2, y2
-
-anchor before y1:
-    supervise y1, x2, y2
-
-anchor before x2:
-    supervise x2, y2
-
-anchor before y2:
-    supervise y2
+no raw-rollout x1/y1/x2/y2 correction anchor
+no bbox_tail_from_anchor correction event
+no nearest-GT coordinate repair
+no invalid-bbox coordinate repair
+no low-IoU coordinate refine
 ```
 
-This preserves precise anchoring while preventing Stage-2 from only repairing
-the earliest coordinate slot, such as repeatedly fixing `x1` while leaving
-`y1/x2/y2` under-corrected. The span should not extend beyond the current bbox
-or into the next object unless a future explicit mode enables that behavior.
-
-Within the coordinate span, the normal divergence/commitment rule still applies:
+Stage-2 v1 coordinate supervision exists only inside constructed teacher-forced
+continuations:
 
 ```text
-ambiguous coordinate slot:
-    residual-set valid-set marginal
+constructed correction suffix:
+    selected remaining object bbox tokens
 
-after A_t becomes singleton:
-    selected-object hard teacher-forcing CE
+optional clean GT stabilizer stream:
+    same typed-trie / singleton coord targets if enabled
 ```
 
-For matched labeled GT, the coordinate hard-CE atoms use GT bbox slots. For
-`ul_promoted_local`, they use the promoted member bbox from the same rollout and
-the configured UL loss weight. Future ablations may explicitly test broader
-spans such as:
+Bbox geometry is a commitment gate, not a coordinate-repair target:
 
 ```text
-span_policy = first_object
-span_policy = until_commit
-span_policy = full_corrected_suffix
+legal + desc exact + IoU >= 0.75:
+    commit object and update remaining set
+
+otherwise:
+    uncommitted dirty prefix
+    semantic remaining unchanged
+    train the next valid boundary/continuation from the residual set
 ```
-
-but these should not be first-version defaults.
-
-Approved dynamic commitment within coordinate spans:
-
-Within `bbox_tail_from_anchor`, each coordinate slot should be supervised
-according to the current active candidate set after the corrected roll-in tokens
-chosen so far:
-
-```text
-|A_t| > 1:
-    coordinate slot uses residual-set valid-set marginal
-
-|A_t| == 1:
-    coordinate slot uses selected-object hard CE
-
-|A_t| == 0:
-    invalid corrected roll-in state; builder should reject or regenerate
-```
-
-The first coordinate slot does not force the entire remaining tail to be hard
-CE unless it actually commits the branch. If repeated same-description objects
-share `x1`, `y1` may remain a valid-set branch point. Once a corrected roll-in
-token narrows `A_t` to a singleton, all later slots in the bbox tail use that
-selected object's coordinate targets.
 
 Approved residual-state-machine action abstraction:
 
@@ -1178,3 +1134,2043 @@ The new grilling loop should resolve, in order:
    first differentiating error occurs later in description or coordinate slots;
 5. which diagnostics and smoke ablations are sufficient before promoting this
    from progress decision to OpenSpec contract.
+
+## 2026-05-21 Dirty-Prefix Recovery / K-Rollout UL Mining Update
+
+This section records the follow-up grilling loop after the Stage-2 smoke run
+against the `et-rmp-ce-ckpt-3660+` / `checkpoint-3664` base. It supersedes the
+earlier first-version assumption that Stage-2 should keep only one first
+actionable correction event per rollout and only grammar-clean prefixes.
+
+The updated principle is:
+
+```text
+Stage-2 correction uses dirty textual prefixes with clean semantic residual state.
+
+textual prefix:
+    preserve the model's actual rollout token history when boundaries are reliable
+
+semantic residual state:
+    only committed supervision objects update emitted / remaining state
+
+loss:
+    do not imitate rollout-prefix tokens;
+    attach expert correction atoms at eligible next-token positions
+```
+
+K rollout terminology is now:
+
+```text
+K rollouts = K equal rollout_attempts
+```
+
+Canonical terms:
+
+```text
+rollout_attempt
+rollout_id
+decode_mode
+generation_config / sampling_seed
+```
+
+Deprecated / legacy terms:
+
+```text
+anchor
+explorer
+anchor_rollout
+explorer_rollout
+```
+
+The new IR should not use anchor/explorer naming. Legacy fields may be read only
+by an adapter that converts them into equal `rollout_attempts[]`.
+
+OpenSpec and implementation plans for the new path should fully remove
+anchor/explorer as concepts. The only allowed reference is in offline legacy
+artifact adapters or migration notes:
+
+```text
+legacy anchor/explorer fields -> rollout_attempts[]
+```
+
+Canonical runtime/config should not expose anchor/explorer options, metrics, or
+target-builder concepts. New training runtime must emit `rollout_attempts[]`
+directly. If training runtime still emits anchor/explorer fields, treat it as
+incomplete migration. The legacy adapter is offline-only.
+
+Default attempt generation for the first version:
+
+```text
+K = 4
+attempts:
+    1 greedy rollout_attempt
+    3 sampling rollout_attempts
+
+all attempts:
+    equal semantic status
+    same generation_config by default
+    seed variation for sampling attempts
+```
+
+Greedy is just `decode_mode=greedy`, not an anchor.
+
+Attempt metadata should include:
+
+```text
+rollout_id
+decode_mode
+sampling_seed optional
+generation_config_hash
+```
+
+Diagnostics should preserve decode-mode slices so sampling noise and useful
+exposure-bias states are separable:
+
+```text
+clean_success_rate_by_decode_mode
+invalid_rate_by_decode_mode
+promoted_ul_support_by_decode_mode
+dirty_correction_events_by_decode_mode
+```
+
+Stage-2 v1 should use offline prepared rollout JSONL, not online generation
+inside the training loop:
+
+```text
+1. rollout preparation job:
+       model checkpoint -> K rollout_attempts per sample
+       store response_token_ids, raw_text, decode_mode, seed, config hash
+
+2. stage2 target builder / training:
+       read prepared JSONL
+       parse rows, dedup attempts, promote UL, assemble target IR
+       train correction objective
+
+3. monitor / review:
+       write compact step monitors and ul_clusters.jsonl
+```
+
+This is round-based offline DAgger-like correction data. It preserves the core
+idea that each round trains on self-prefix states from the current or recent
+policy, but keeps generation out of the training loop for reproducibility.
+Future refresh can be explicit and round-based:
+
+```text
+round 0: generate rollouts from checkpoint A
+round 1: train correction checkpoint B
+round 2: regenerate rollouts from checkpoint B
+```
+
+The prepared rollout record must carry enough information for target IR replay:
+
+```text
+response_token_ids required for new prepared data
+raw decoded text
+decode_mode
+sampling_seed optional
+generation_config_hash
+sample/image provenance
+```
+
+It does not need to store absolute assistant spans from the rollout-time
+processor. Those positions depend on the current tokenizer/processor/chat
+template and should be recomputed during training assembly:
+
+```text
+not required:
+    rollout-time absolute assistant_start
+    rollout-time full input span
+
+optional debug fields:
+    response_token_count
+    raw_text_sha256
+    generation_prompt_hash
+    tokenizer_name_or_hash
+```
+
+Training assembly must reconstruct prompt + assistant context in the current
+environment and validate:
+
+```text
+assistant response span is located
+response_token_ids are the intended assistant prefix
+logit_position is valid
+target_position = logit_position + 1 when target_position is represented
+positions do not cross prompt / assistant boundaries
+```
+
+Do not implement fully online generate-while-training in the first version.
+Offline rounds keep dirty-prefix parsing, UL consensus, logits-position checks,
+and ablations replayable.
+
+Raw text is required for diagnostics, span recovery, and human review, but it is
+not the canonical training prefix. New prepared rollout JSONL should fail/drop
+when `response_token_ids` are missing:
+
+```text
+strict new-data mode:
+    missing response_token_ids -> drop sample + diagnostic
+
+explicit legacy fallback mode:
+    re-encode raw_text
+    dirty_prefix_reencoded = 1
+    allow smoke / legacy ablation only
+```
+
+This protects the causal logits-position contract from tokenizer drift,
+special-token handling differences, and legacy newline re-encoding changes.
+
+### Implementation Abstraction
+
+Do not implement the redesign as a long case-by-case target builder. Use a
+layered pipeline where each layer owns one semantic question:
+
+```text
+1. Row Segmentation
+2. Row Classification
+3. Semantic State Scan
+4. Correction Atom Extraction
+5. Target Sequence Assembly
+```
+
+Target Sequence Assembly must use a template boundary adapter rather than
+hand-authored schema strings:
+
+```text
+TemplateBoundaryAdapter:
+    resolve the Stage-1 assistant template / serialization policy
+    render full assistant text for chosen supervision objects
+    tokenize with the same tokenizer / processor contract
+    expose object spans, separator spans, terminal/stop spans
+    slice the constructed suffix from a requested boundary state
+    validate that prefix + suffix does not duplicate deterministic schema
+```
+
+Stage-2 may choose the remaining supervision objects, object order, suffix-start
+state, and correction atoms. It must not manually author schema fragments such
+as newline, `<|object_ref_start|>`, `<|box_start|>`, or `<|im_end|>` by string
+concatenation outside the adapter.
+
+The core idea is that special cases such as invalid bbox, FP, duplicate burst,
+wrong description, early EOS, and truncation should fall out of these reusable
+layers rather than being independently reimplemented in loss code.
+
+#### 1. Row Segmentation
+
+Input:
+
+```text
+prompt_ids
+rollout_attempt response_token_ids
+rollout decoded text for span recovery / diagnostics
+compact_full grammar markers
+```
+
+Output:
+
+```text
+RowSpan[]
+```
+
+`RowSpan` should describe token-level boundaries, not supervision meaning:
+
+```text
+row_index
+start_token
+end_token optional
+boundary_reliable
+is_complete_row
+is_middle_malformed_resynced
+is_trailing_incomplete
+raw_text_span
+desc_span optional
+box_start_span optional
+coord_spans optional
+next_row_start optional
+```
+
+Segmentation policy:
+
+```text
+complete row:
+    can be scanned and may become committed or uncommitted
+
+middle malformed span with later reliable <|object_ref_start|>:
+    can remain dirty context and allow suffix resync
+
+trailing incomplete object:
+    drop from its <|object_ref_start|> and return to the last stable boundary
+
+unresynchronizable suffix:
+    diagnostics-only after the last stable boundary
+```
+
+This layer must not inspect GT/UL matching. It only answers whether object-row
+boundaries are reliable.
+
+The row segmentation layer is also the only layer that should directly depend
+on raw rollout text for boundary recovery. Downstream layers should consume
+token spans and structured row observations rather than re-splitting text.
+
+#### 2. Row Classification
+
+Input:
+
+```text
+RowSpan
+earlier legal predictions in the same rollout_attempt
+```
+
+Output:
+
+```text
+RowObservation
+```
+
+`RowObservation` should describe row-local facts:
+
+```text
+structural_status:
+    complete
+    malformed_resynced
+    trailing_incomplete
+    unparseable
+
+desc_status:
+    normalized_desc
+    invalid_desc
+    missing_desc
+
+geometry_status:
+    legal_bbox
+    invalid_bbox
+    missing_bbox
+    wrong_coord_arity
+
+duplicate_status:
+    duplicate_burst
+    not_duplicate
+```
+
+Duplicate burst is row-local / rollout-local:
+
+```text
+duplicate if:
+    current row is legal positive-area bbox
+    earlier row is legal positive-area bbox
+    normalized desc matches
+    pred-vs-pred IoU >= 0.95
+```
+
+This layer must guard all IoU computations:
+
+```text
+IoU is defined only for legal positive-area bbox:
+    x1 < x2
+    y1 < y2
+```
+
+Invalid bbox rows bypass IoU-based modules and only contribute dirty context and
+diagnostics.
+
+#### 3. Semantic State Scan
+
+Input:
+
+```text
+RowObservation stream
+remaining supervision set = GT + promoted UL
+```
+
+Output:
+
+```text
+ResidualScanState at each stable boundary
+ScanDecision for each row
+```
+
+This is the only layer that can update emitted / remaining state:
+
+```text
+try_commit(row, remaining):
+    if row is not structurally complete:
+        return uncommitted
+    if row bbox is not legal positive-area:
+        return uncommitted
+    if row is duplicate_burst:
+        return uncommitted
+
+    candidates =
+        remaining objects with
+        normalized_desc match
+        and IoU(row.bbox, object.bbox) >= 0.75
+
+    if candidates empty:
+        return uncommitted
+
+    return committed(best candidate by IoU desc, center distance asc, stable id asc)
+```
+
+Committed rows:
+
+```text
+remove exactly one GT or promoted UL id from remaining
+do not rewrite rollout tokens
+do not create loss on rollout-prefix tokens
+```
+
+Uncommitted rows:
+
+```text
+remaining unchanged
+dirty_context becomes true after the row is in prefix
+row tokens remain masked
+```
+
+This layer unifies invalid geometry, legal low-IoU rows, FP, duplicate burst,
+wrong-desc overlap, and failed UL candidates as commitment failures with
+different provenance.
+
+Dataset-description vocabulary is a required dataset contract for this layer:
+
+```text
+dataset_desc_vocab:
+    supplied by dataset adapter / view metadata / resolved config
+    not hard-coded in Stage-2 target builder
+    unavailable -> fail fast
+```
+
+GT supervision objects must use descriptions in `dataset_desc_vocab`. A GT desc
+outside the vocab is a hard data-contract error, not an object-drop condition.
+
+Rollout descriptions outside the vocab are model-output errors:
+
+```text
+rollout desc outside dataset_desc_vocab:
+    uncommitted dirty prefix if boundary reliable
+    no commitment
+    no pending UL candidacy
+    diagnostic: rollout_desc_out_of_vocab
+```
+
+Promoted-UL clusters outside the vocab are rejected, not hard errors:
+
+```text
+status = rejected_desc_out_of_vocab
+```
+
+Diagnostics should record:
+
+```text
+dataset_desc_vocab_id
+dataset_desc_vocab_size
+dataset_desc_vocab_hash
+```
+
+Do not dump the full vocab list into every monitor sample by default.
+
+`dataset_desc_vocab_id` should come from dataset/view metadata. Stage-2 target
+building should not invent or hard-code dataset names. If an id is missing but
+the vocab/hash exists, diagnostics may use a deterministic fallback id:
+
+```text
+dataset_desc_vocab_id = "desc_vocab:<hash_prefix>"
+```
+
+The fallback id is diagnostic-only.
+
+Within one run, the mapping must be stable:
+
+```text
+dataset_desc_vocab_id -> dataset_desc_vocab_hash
+```
+
+If the same id appears with different hashes in one run, fail fast.
+
+First version requires one desc vocab per batch/run. Mixed-vocab batches are not
+supported for this Stage-2 objective:
+
+```text
+multiple dataset_desc_vocab_hash values in one batch/run:
+    fail fast
+```
+
+Promoted UL uses the same dataset desc vocabulary contract as GT; no separate UL
+vocab exists in v1.
+
+Vocab contract should be logged once at run level / resolved config level:
+
+```text
+dataset_desc_vocab_id
+dataset_desc_vocab_size
+dataset_desc_vocab_hash
+```
+
+Per-sample monitor payloads should only include vocab fields for hard errors,
+rejected clusters, or diagnostic exceptions.
+
+`dataset_desc_vocab_hash` is defined as:
+
+```text
+vocab_items =
+    sorted(normalize_desc(desc) for desc in dataset_desc_vocab)
+
+payload =
+    json.dumps(vocab_items, ensure_ascii=False, separators=(",", ":"))
+
+dataset_desc_vocab_hash =
+    sha256(payload.encode("utf-8")).hexdigest()
+```
+
+The hash is order-insensitive with respect to the source vocab container and is
+based on normalized canonical desc strings.
+
+Normalized-desc collisions are hard errors:
+
+```text
+if len(set(normalized_vocab)) != len(raw_vocab):
+    fail fast
+```
+
+Example:
+
+```text
+"potted  plant" and "potted plant"
+    -> both normalize to "potted plant"
+```
+
+This would break exact canonical mapping.
+
+Description normalization is also used before tokenizing supervision descs:
+
+```text
+canonical_desc = normalize_desc(raw_desc)
+desc_token_ids = tokenizer.encode(canonical_desc, add_special_tokens=False)
+```
+
+Constructed suffix rendering must use `canonical_desc`, not raw dataset
+whitespace.
+
+Rollout desc normalization:
+
+```text
+normalize_desc(rollout_desc) == "":
+    desc_status = invalid_desc_empty
+    row uncommitted
+    not pending UL
+    dirty prefix if boundary reliable
+```
+
+For hard errors and rejected clusters, diagnostics should include:
+
+```text
+sample_id
+image_id
+object_id or cluster_id
+raw_desc
+normalized_desc
+dataset_desc_vocab_id
+dataset_desc_vocab_hash
+```
+
+Normal rows should not dump raw/normalized desc pairs by default.
+
+#### 4. Correction Atom Extraction
+
+Input:
+
+```text
+RowSpan / RowObservation stream
+ResidualScanState before and after stable boundaries
+constructed-suffix trie state
+```
+
+Output:
+
+```text
+SupervisionAtom[]
+```
+
+Universal rule:
+
+```text
+At each eligible next-token decision point:
+    expert target = ValidNext(prefix_state, current remaining supervision set)
+```
+
+The actual rollout token may be wrong. The correction atom supervises the expert
+next-token distribution at that causal position; it does not imitate the actual
+token.
+
+Event examples under this rule:
+
+```text
+remaining nonempty + model stops:
+    target valid continuation
+
+remaining empty + model continues:
+    target EOS singleton
+
+wrong-desc row:
+    target earliest valid description-trie child before the divergent desc token
+    unless it is a spatially matched label-conflict case, which uses reduced
+    weight and separate provenance
+
+legal FP / low-IoU / invalid geometry / duplicate:
+    row is uncommitted, remaining unchanged, later boundary target uses same
+    remaining set
+```
+
+First-version bbox policy:
+
+```text
+do not create bbox-coordinate internal repair atoms
+do not correct x1/y1/x2/y2 divergence in rollout prefix
+do not use nearest-GT bbox repair
+```
+
+Description divergence is allowed because it is an object identity choice.
+Bbox coordinate divergence is not corrected in the first version; bbox quality
+only affects commitment.
+
+Correction atom extraction must not redo upstream semantics:
+
+```text
+do not reparse raw rollout text
+do not redo bbox legality parsing
+do not redo duplicate detection
+do not redo GT/UL matching
+do not recompute remaining set
+do not run UL promotion
+```
+
+It consumes:
+
+```text
+RowSpan
+RowObservation
+ScanDecision
+ResidualScanState
+remaining supervision objects exposed by scan state
+constructed suffix trie state
+```
+
+Wrong-description rows may get description divergence correction atoms:
+
+```text
+remaining = {person, horse}
+actual row = <|object_ref_start|>dog...
+
+position:
+    token immediately before the first divergent desc token
+role:
+    desc
+token_type:
+    text
+valid_token_ids:
+    description-trie children for current remaining set
+```
+
+However, wrong-desc rows are split by localization evidence:
+
+```text
+ordinary wrong-desc:
+    no desc-agnostic spatial match to a remaining supervision object
+    may use normal context weight
+
+spatial_wrong_desc_conflict:
+    legal bbox
+    desc does not match
+    desc-agnostic IoU with a remaining GT / promoted UL >= commit_iou_threshold
+    may create the same earliest-divergence desc atom
+    but with reduced label-conflict weight
+    row remains uncommitted
+    remaining state is unchanged
+    record review diagnostics
+```
+
+Rationale: a high-IoU wrong-description prediction may indicate annotation noise
+or a dataset category disagreement rather than a pure model error. It should not
+receive the same supervision strength as a clear wrong-desc hallucination.
+
+Default label-conflict weighting:
+
+```text
+label_conflict_weight = 0.25
+
+ordinary wrong-desc:
+    weight = context/source weight
+
+spatial_wrong_desc_conflict:
+    weight = context/source weight * label_conflict_weight
+```
+
+This weight is separate from `fallback_loss_weight`; fallback expresses dirty
+context confidence, while `label_conflict_weight` expresses possible annotation
+or category-noise uncertainty.
+
+Diagnostics:
+
+```text
+spatial_wrong_desc_conflict_count
+spatial_wrong_desc_conflict_loss
+spatial_wrong_desc_conflict_pred_desc
+spatial_wrong_desc_conflict_nearest_gt_desc
+spatial_wrong_desc_conflict_iou
+```
+
+Spatial wrong-description conflicts are never UL candidates in v1:
+
+```text
+if legal proposal has high IoU with any GT/promoted UL but desc differs:
+    classify as spatial_wrong_desc_conflict
+    do not add to pending UL candidates
+    do not promote to UL even with cross-rollout consensus
+    keep review diagnostics only
+```
+
+This avoids creating two supervised labels for the same spatial object. Future
+semi-automatic dataset repair may export these cases as a label-conflict review
+surface, but they should not enter the Stage-2 residual supervision set.
+
+They also do not update emitted / remaining state:
+
+```text
+spatial_wrong_desc_conflict:
+    desc correction atom weight *= label_conflict_weight
+    row remains uncommitted
+    remaining supervision set unchanged
+```
+
+Do not introduce a third "spatially emitted but semantically uncommitted" state
+in v1.
+
+Do not create a separate `label_conflict_review.jsonl` by default. Keep these
+cases in compact diagnostics:
+
+```text
+monitor_dumps/step_*.json:
+    spatial_wrong_desc_conflict_count
+    capped examples for review
+
+ul_clusters.jsonl:
+    include related GT conflict info only when a UL candidate/cluster is rejected
+    because of cross-desc or near-GT conflict
+```
+
+A dedicated label-conflict review artifact can be added later if these cases
+become a primary semi-automatic dataset repair workflow.
+
+If the row description is compatible but the bbox is invalid or IoU-low, do not
+create a coordinate or box-start correction atom in the first version. The row
+is uncommitted and later boundary targets are derived from the unchanged
+remaining set.
+
+Every atom uses causal next-token indexing:
+
+```text
+logit_position = prefix_last_token_index
+logits at token i predict token i+1
+```
+
+#### 5. Target Sequence Assembly
+
+Input:
+
+```text
+prompt_ids
+kept raw rollout prefix ids
+remaining supervision set at suffix start
+SupervisionAtom[]
+```
+
+Output:
+
+```text
+training input_ids
+labels / masks
+canonical atom registry
+diagnostics
+```
+
+Assembly rules:
+
+```text
+input_ids =
+    prompt_ids
+    + raw rollout response_token_ids up to the kept stable prefix
+    + constructed continuation suffix ids
+
+rollout prefix labels:
+    -100
+
+constructed suffix:
+    all remaining supervision objects
+    random order with seed 17-derived deterministic RNG
+    GT and promoted UL shuffled together
+    EOS appended if it fits
+```
+
+Do not truncate rollout prefix in the first version. If prompt plus raw rollout
+prefix plus constructed suffix exceeds length budget, drop the sample and record
+overlength diagnostics. Constructed suffix may be truncated only at complete
+object boundaries; never include a partial target object.
+
+All supervision atoms enter one canonical registry:
+
+```text
+key = logit_position
+same position + same target:
+    merge provenance
+same position + conflicting target:
+    record conflict diagnostic
+    deterministic keep one canonical atom
+```
+
+Default correction sample granularity:
+
+```text
+one rollout_attempt -> one training sequence
+```
+
+Within that sequence, collect all eligible non-conflicting correction atoms:
+
+```text
+before uncommitted rows
+after dirty rows when recovery is valid
+before early EOS
+before first over-generation row when remaining is empty
+constructed suffix positions
+```
+
+Do not split a rollout_attempt into one sample per correction event in v1. If no
+active atom remains after filtering/merging, skip the sample and record the
+reason. This keeps K rollouts as K self-prefix contexts while allowing each
+context to expose multiple next-token correction points.
+
+Each `SupervisionAtom` owns both token-type and inner valid-set targets:
+
+```text
+logit_position
+target_position optional
+token_type
+role
+valid_token_ids
+selected_token_id optional
+weight
+target_kind
+provenance list
+```
+
+Do not create separate independently mergeable type atoms and inner atoms.
+
+`logit_position` is the canonical runtime field consumed by the loss module.
+Older prose may use `position_index` as a synonym, but implementation should not
+introduce a separate peer field with that name. `target_position` is for
+validation and debugging:
+
+```text
+if target_position is not None:
+    logit_position + 1 == target_position
+```
+
+`SupervisionAtom` contract:
+
+```text
+token_type:
+    schema
+    text
+    coord
+
+role:
+    object_boundary
+    desc
+    box_start
+    x1
+    y1
+    x2
+    y2
+    eos
+
+target_kind:
+    valid_set
+    singleton
+    eos
+```
+
+`role=object_boundary` is used for continue decisions:
+
+```text
+remaining nonempty:
+    role = object_boundary
+    valid_token_ids = {<|object_ref_start|>}
+```
+
+`role=eos` is used for stop decisions:
+
+```text
+remaining empty:
+    role = eos
+    valid_token_ids = {<|im_end|>}
+```
+
+Do not add a separate `object_ref_start` role.
+
+`selected_token_id` is optional. It is used for constructed-suffix roll-in,
+validation, hard-singleton consistency, and diagnostics. The loss computation
+uses `valid_token_ids`.
+
+`weight` is the final scalar event weight exposed to the loss module. Upstream
+target builders combine source/context factors before creating the atom:
+
+```text
+GT clean:
+    1.0
+
+GT dirty:
+    fallback_loss_weight
+
+UL clean:
+    0.5
+
+UL dirty:
+    0.5 * fallback_loss_weight
+```
+
+Loss modules must not recompute these components.
+
+Atom weight scales the full atom loss:
+
+```text
+L_atom =
+    atom.weight * (
+        lambda_type  * L_type
+      + lambda_inner * L_inner
+    )
+```
+
+The type/inner tradeoff is global; atoms do not carry separate type and inner
+weights.
+
+Stage-2 v1 keeps the standalone token-type loss enabled by default. Do not turn
+off type exclusivity to tolerate ambiguous or malformed segments:
+
+```text
+lambda_type = 1.0
+lambda_inner = 1.0
+```
+
+Principle:
+
+```text
+prefer dropping or resynchronizing malformed segments
+over weakening schema/text/coord type supervision
+```
+
+Type loss owns global schema/text/coord mass. Inner valid-set loss consumes
+conditional within-type targets and must not own or recompute the type loss.
+
+Loss computation should be unified through valid-token marginal:
+
+```text
+L_inner = -log sum_{v in valid_token_ids} p(v)
+```
+
+Hard CE and EOS are singleton valid-set special cases. `target_kind` is for
+validation, diagnostics, and metric grouping.
+
+When a sequence contains multiple correction atoms, normalize within the
+rollout_attempt sequence by atom weights:
+
+```text
+sequence_loss =
+    sum_i atom_weight_i * atom_loss_i
+    / max(eps, sum_i atom_weight_i)
+
+batch_loss =
+    mean(sequence_loss over retained rollout_attempt sequences)
+```
+
+This keeps all eligible correction atoms active without letting unusually dirty
+or long rollout attempts dominate simply because they contain more atoms. Still
+report atom-level diagnostics:
+
+```text
+active_atom_count
+atom_weight_sum
+raw_atom_loss_sum
+sequence_loss
+```
+
+Do not add a second clean/dirty/UL bucket normalization layer in v1. Clean,
+dirty, GT, UL, EOS, and continuation differences are expressed by atom weights;
+they are grouped only for diagnostics:
+
+```text
+loss_clean_atoms
+loss_dirty_atoms
+loss_ul_atoms
+loss_eos_atoms
+atom_count_by_provenance
+atom_weight_sum_by_provenance
+```
+
+Loss modules are row-category agnostic. They consume only:
+
+```text
+logits
+SupervisionAtom.logit_position
+SupervisionAtom.token_type
+SupervisionAtom.valid_token_ids
+SupervisionAtom.weight
+token type groups
+global loss coefficients
+```
+
+They must not know about invalid geometry, FP, duplicate burst, pending UL,
+promoted UL, dirty prefixes, early EOS, or truncation. Those categories remain
+in provenance and diagnostics only.
+
+Description trie construction:
+
+```text
+desc_token_ids = tokenizer.encode(canonical_desc, add_special_tokens=False)
+```
+
+The canonical desc string is normalized only with:
+
+```text
+strip
+collapse repeated whitespace to one space
+```
+
+All description target token ids must belong to the text token group. If a GT or
+promoted-UL supervision object's description tokenization contains schema,
+coord, EOS, PAD, or disallowed special tokens, record
+`invalid_description_tokenization` and reject that supervision object; if no
+supervision objects remain, drop the sample. COCO should not hit this path.
+
+For COCO first version, promoted UL descriptions must be in
+`dataset_desc_vocab`. The promoted UL desc is the exact normalized cluster desc;
+all members must share it exactly.
+
+Valid-token sets are sets, not multisets:
+
+```text
+duplicate text/coord token ids:
+    deduplicate
+    no multiplicity weighting
+```
+
+### Universal Principles
+
+The implementation should be organized around these principles:
+
+```text
+Preserve observed state, supervise expert action.
+    Rollout tokens are context, not imitation labels.
+
+Only committed rows change semantic state.
+    Committed = legal bbox + exact desc + IoU >= 0.75 + not duplicate burst.
+
+Expert target is always a function of current remaining supervision set.
+    remaining nonempty -> valid continuation
+    remaining empty -> EOS
+
+Dirty context changes weight, not target semantics.
+    clean context -> weight 1.0
+    dirty context -> fallback_loss_weight
+
+Bbox errors are commitment failures, not coordinate-repair targets.
+    No bbox internal repair in first version.
+
+One logits position has one canonical supervision atom.
+    Merge duplicates, diagnose conflicts.
+```
+
+### Evidence From Current Smoke Artifacts
+
+Evidence scope is smoke / monitor-dump only, not a full training-distribution
+claim.
+
+Primary artifact:
+
+```text
+output/stage2_ab/smoke/coco80_view_stage2_trie_ce_overfit_probe/
+  tail_append_train8_noeval_64steps/
+  smoke_64steps-coco80_view-overfit_train8-noeval-stage2_trie_ce-tail_append-zero_fp-compact_full-et_rmp_ce_ckpt3664/
+  v1-20260521-020538/
+```
+
+The inspected invalid-bbox sidecar is:
+
+```text
+monitor_dumps/invalid_bbox_points/invalid_bbox_points_summary.json
+```
+
+Important observations:
+
+```text
+current train8 / 64-step stage2_trie smoke:
+    monitor samples inspected: 80
+    parse-invalid samples: 15
+    complete geometry-invalid row events: 11
+    structural malformed row events: 7
+
+geometry invalids:
+    concentrated on image_id=49
+    desc=person
+    x-axis order violation
+    nearest GT:
+        object_id=49:7
+        coco_ann_id=2010752
+        bbox=[501,669,521,716]
+        width=20
+```
+
+Raw COCO for `coco_ann_id=2010752` is valid:
+
+```text
+raw xywh=[191.0,334.37,7.16,23.41]
+norm1000 xyxy ~= [501,669,520,716]
+processed bbox_2d=[501,669,521,716]
+```
+
+The repeated invalid predictions were like:
+
+```text
+[543,666,520,711]
+[539,666,520,717]
+[545,668,520,711]
+[545,669,520,717]
+```
+
+This is not raw-GT corruption. It is a model-learning issue around a crowded,
+same-description, very thin person object where `x1` crosses beyond `x2`.
+
+Broader smoke scan over `output/stage2_ab/smoke/**/monitor_dumps/step_*.json`
+found strong concentration rather than random invalidity:
+
+```text
+monitor step files: 873
+monitor samples: 1018
+parse-invalid samples: 62
+complete geometry-invalid row events: 4706
+structural malformed row events: 7676
+```
+
+The larger train64 preflight runs showed many invalid rows, but concentrated in
+particular unstable configs and crowded/thin/boundary-heavy images or classes.
+This supports treating complete geometry-invalid rows differently from
+structurally malformed rows.
+
+### Final Row Terminology
+
+Do not use `no-credit` as the canonical term. Use:
+
+```text
+committed row
+pending UL candidate
+uncommitted row
+```
+
+Definitions:
+
+```text
+committed row:
+    legal row matched to a remaining GT object or promoted UL object
+    can update emitted / remaining semantic state
+    may provide supervision only when it is part of constructed target suffix,
+    not when it is historical rollout prefix
+
+pending UL candidate:
+    legal unmatched proposal collected from one rollout before K-rollout
+    consensus decides whether it becomes promoted UL
+
+uncommitted row:
+    invalid geometry
+    structural malformed row
+    duplicate burst row
+    legal FP / low-IoU localization miss
+    failed or unpromoted UL candidate
+    wrong-desc unmatched row
+    does not update emitted / remaining state
+```
+
+### Dirty Textual Prefix / Clean Semantic Residual State
+
+The canonical Stage-2 state split is:
+
+```text
+rollout textual prefix:
+    raw model-generated token history
+    use original response_token_ids whenever available
+    preserve legacy newline and other emitted token quirks
+
+semantic residual state:
+    GT + promoted UL supervision objects not yet committed by online matching
+```
+
+Do not rewrite rollout prefix rows into GT rows:
+
+```text
+committed TP prefix row:
+    keep original rollout desc/bbox tokens
+    do not replace with canonical GT tokens
+    use it only to update semantic state
+```
+
+All self-rollout prefix tokens are context, not imitation targets:
+
+```text
+rollout prefix tokens:
+    input context: yes
+    normal CE labels: -100
+    type loss: no, unless an explicit correction atom is attached to that
+              logits position
+```
+
+Correction atoms may attach to logits positions inside the rollout prefix, but
+those atoms supervise expert next-token choices, not the actual generated token
+that follows in the rollout.
+
+### Causal Logits Position Contract
+
+Correction-event positions use standard causal-LM next-token convention:
+
+```text
+logit_position = prefix_last_token_index
+loss reads logits[:, logit_position, :]
+logits at token i predict token i+1
+```
+
+Examples:
+
+```text
+assistant output start:
+    logit_position = last prompt token
+
+boundary before object row k:
+    logit_position = token immediately before row_k_start
+
+boundary after complete object row:
+    logit_position = row_end_token
+
+boundary before rollout EOS:
+    logit_position = token immediately before EOS
+```
+
+Never use the row-start token index for boundary supervision.
+
+### Matching / Commitment Rules
+
+First-version committed matching is deliberately stricter than normal IoU-0.5
+detection matching:
+
+```text
+commit_iou_threshold = 0.75
+```
+
+The threshold applies to both GT objects and promoted UL objects.
+
+Committed match condition:
+
+```text
+row structurally complete
+bbox legal: x1 < x2 and y1 < y2
+not duplicate burst
+normalize_desc(pred.desc) == normalize_desc(target.desc)
+IoU(pred.bbox, target.bbox) >= 0.75
+greedy online match to current remaining supervision set
+```
+
+Description normalization is intentionally minimal:
+
+```text
+strip leading/trailing whitespace
+collapse repeated whitespace to one space
+```
+
+Do not use case folding, underscore/space conversion, synonym matching, alias
+matching, or text-similarity matching in the first version.
+
+Online matching is rollout-order greedy:
+
+```text
+for each complete legal row in rollout order:
+    first check duplicate burst
+    then match remaining GT by desc + IoU
+    then match remaining promoted UL by desc + IoU
+    if committed, remove matched supervision object from remaining set
+```
+
+Random-order legal TP sequences are clean contexts. Canonical/sorted order is
+not required for clean status.
+
+Rows with same desc but IoU below `0.75` are uncommitted FP/localization misses,
+not refinement targets. Rows with desc outside the remaining supervision set are
+uncommitted FP dirty-prefix context, not structural errors.
+
+### Bbox Coordinates Are Not Repaired In Stage-2
+
+The first implementation should not do bbox-coordinate refinement:
+
+```text
+do not sort x1/x2 or y1/y2
+do not clamp invalid boxes
+do not use nearest-GT repair
+do not apply coord-token trie repair
+do not use coord tolerance radius
+do not add regression-ish bbox repair
+do not require exact coord-token equality for committed TP rows
+```
+
+Bbox geometry only decides whether a prediction is good enough to commit:
+
+```text
+legal + desc exact + IoU >= 0.75:
+    committed
+
+otherwise:
+    uncommitted dirty row
+    semantic remaining unchanged
+```
+
+This supersedes the earlier consideration of bbox-internal coordinate
+earliest-divergence correction for invalid geometry rows.
+
+### Invalid / Malformed / Truncation Handling
+
+Complete-but-illegal bbox row:
+
+```text
+conditions:
+    object row boundary is reliable
+    desc and box_start present
+    exactly four coord tokens
+    geometry invalid: x2 <= x1 or y2 <= y1
+
+handling:
+    keep as dirty textual prefix
+    do not commit
+    do not repair
+    do not supervise its internal tokens
+    remaining state unchanged
+```
+
+Structurally malformed middle span:
+
+```text
+examples:
+    wrong coordinate arity
+    missing desc or missing box_start
+    text/tool_call contamination inside object row
+
+if a later <|object_ref_start|> delimiter reliably resynchronizes:
+    keep malformed span as dirty context
+    mask malformed tokens
+    do not create atoms or type loss inside the malformed span
+    continue scanning suffix
+
+if no reliable resync:
+    suffix is diagnostics-only from the last stable boundary
+```
+
+This policy supports dirty-context recovery without weakening schema
+supervision:
+
+```text
+malformed but resync reliable:
+    keep tokens as masked context
+    train later reliable correction atoms
+
+malformed and resync unreliable:
+    cut back to last stable boundary or drop sample
+```
+
+Trailing incomplete object due truncation/no-EOS:
+
+```text
+drop whole trailing object span from its <|object_ref_start|>
+revert training prefix to the last stable boundary
+do not keep the incomplete tail as dirty prefix
+```
+
+This applies regardless of how far the trailing object got:
+
+```text
+<|object_ref_start|>
+<|object_ref_start|>cat
+<|object_ref_start|>cat<|box_start|>
+<|object_ref_start|>cat<|box_start|><|coord_x1|>
+...
+```
+
+If no complete object remains after dropping the tail, return to assistant
+output start with the full supervision set remaining.
+
+EOS is terminal:
+
+```text
+early EOS with remaining nonempty:
+    train at the position immediately before EOS
+    target valid continuation
+
+do not:
+    include EOS as dirty prefix and train after-EOS recovery
+```
+
+### Duplicate Burst Definition
+
+Duplicate is a pred-vs-pred phenomenon, not primarily a pred-vs-GT status:
+
+```text
+duplicate burst if:
+    current row is legal bbox
+    same normalized desc as an earlier legal prediction in the same rollout
+    IoU(current_bbox, earlier_bbox) >= 0.95
+```
+
+Duplicate burst is checked before remaining-GT/UL matching.
+
+Duplicate handling:
+
+```text
+uncommitted row
+no semantic credit
+remaining state unchanged
+tokens masked
+can remain as dirty textual prefix if boundary reliable
+boundary target remains current remaining set or EOS
+```
+
+Within-rollout duplicate burst evidence must not provide positive UL consensus.
+
+Within-rollout here means within one `rollout_attempt`.
+
+### Dirty-Prefix Recovery Gate
+
+Dirty-prefix recovery has a small hard quality gate. This is not a new
+hyperparameter family; it only prevents template/logits-position corruption:
+
+```text
+dirty prefix may be used when:
+    prompt / assistant boundary is reliable
+    at least one stable boundary can be located
+    correction atom logit_position points to a real prefix token
+    target valid set is nonempty
+    prefix + constructed complete suffix fits max_length
+```
+
+Drop the correction sample when:
+
+```text
+assistant response start cannot be located
+no stable boundary can be located
+prefix_last_token / logits position is invalid
+constructed suffix cannot fit any complete target object or EOS
+desc vocab / token-type contract fails fast
+```
+
+The gate does not require every intermediate row to parse cleanly. It preserves
+dirty-context recovery while refusing cases where the training position itself
+would be ambiguous or wrong.
+
+### K-Rollout UL Promotion
+
+Use collect-then-classify:
+
+```text
+Phase 1: aggregate K rollouts
+    parse rows
+    identify valid object boundaries
+    collect legal unmatched non-duplicate proposals as pending UL candidates
+    flag invalid/malformed/duplicate diagnostics
+
+Phase 2: promote UL
+    cluster pending candidates across different rollouts
+    same normalized desc
+    cross-rollout cluster IoU >= 0.9
+    K_valid >= 2
+    support_distinct_rollouts >= 2
+    support_distinct_rollouts / K_valid >= 1.0 by default
+    no GT conflict
+    not based only on within-rollout duplicate burst
+
+Phase 3: build target IR
+    supervision set = GT + promoted UL
+    GT weight = 1.0
+    promoted UL weight = 0.5
+    online greedy scan each rollout against this supervision set
+```
+
+The canonical aggregate input is:
+
+```text
+rollout_attempts[]
+```
+
+Legacy adapter rule:
+
+```text
+if rollout_attempts[] exists:
+    use it directly
+
+else:
+    collect known legacy fields deterministically:
+        rollout_text
+        anchor_rollout_text
+        explorer_rollout_text
+        corresponding token ids when available
+
+    deduplicate exact same attempts
+    assign rollout_id = 0..K-1
+    record legacy_source_fields in provenance
+```
+
+After adaptation, all attempts are equal. There is no anchor/explorer priority.
+
+Exact duplicate rollout attempts are deduplicated before UL consensus and before
+correction training sample generation:
+
+```text
+attempt_dedup_key =
+    response_token_ids if available
+    else exact raw text / canonical byte string
+```
+
+Only exact duplicates are removed. Near-duplicate attempts remain distinct
+self-prefix samples:
+
+```text
+keep as separate attempts:
+    slightly different bbox coordinates
+    different object order
+    same proposal under different tokenization/text
+    similar malformed spans with different error positions
+```
+
+Rationale: K rollouts are K self-prefix contexts, not an averaging estimator.
+Approximate deduplication could delete the exposure-bias states Stage-2 is meant
+to repair. Exact duplicates add no new context and must not count as distinct UL
+consensus support.
+
+Diagnostics:
+
+```text
+rollout_attempt_duplicate_dropped
+legacy_source_fields
+dedup_source_rollout_ids
+```
+
+Non-identical attempts with the same candidate bbox/desc can provide distinct
+UL support:
+
+```text
+same desc
+cluster IoU >= 0.9
+distinct rollout_id after exact-attempt dedup
+    -> distinct support
+```
+
+Pending UL candidates can only come from legal bbox rows:
+
+```text
+structurally complete
+valid desc
+legal bbox
+not duplicate burst
+not matched to GT
+```
+
+Invalid geometry rows and malformed rows are never UL candidates.
+
+Consensus support counts distinct rollout ids:
+
+```text
+multiple near-duplicate candidates from the same rollout count as one vote
+```
+
+`rollout_id` means the stable id of a deduplicated equal rollout attempt within
+the sample/batch context, not an anchor/explorer role.
+
+Use `K_valid` as the consensus denominator:
+
+```text
+K_valid = rollout_attempts whose object boundaries are reliable enough to
+          extract legal proposals
+```
+
+`K_valid` is about reliable proposal extraction, not a clean or fully successful
+rollout. An attempt can contain invalid rows, malformed spans with reliable
+resync, FP, duplicates, or dirty context and still be K-valid if legal proposal
+rows can be extracted reliably. An attempt is K-invalid when object boundaries
+are globally unparseable or too unreliable for proposal extraction.
+
+Because K-valid excludes structurally invalid attempts, a default K=4 run can
+promote from `3/3` valid attempts if the greedy attempt is invalid:
+
+```text
+K_total = 4
+K_valid = 3
+support = 3
+ratio_over_valid = 1.0
+ratio_over_total = 0.75
+```
+
+This is allowed if all other gates pass, but diagnostics must expose which
+attempt decode modes were invalid.
+
+Still report:
+
+```text
+K_total
+K_valid
+K_invalid
+ratio_over_valid
+ratio_over_total
+invalid_attempt_decode_modes
+```
+
+Below-threshold clusters are retained for review, not training:
+
+```text
+status = candidate_below_threshold
+not in supervision set
+not committed
+not supervised
+does not override EOS
+```
+
+Promoted UL enters the sample-local residual set:
+
+```text
+remaining_supervision_set = GT objects + promoted UL objects
+```
+
+Promoted UL can be committed by legal rollout rows under the same desc + IoU
+`0.75` rule, with supervision weight `0.5` when used in constructed suffix.
+
+UL representative bbox:
+
+```text
+cluster representative = medoid
+    member with highest mean IoU to other cluster members
+
+do not average bboxes
+```
+
+GT/UL conflict rules:
+
+```text
+same-desc UL-vs-GT IoU >= 0.75:
+    reject as GT conflict / GT support evidence
+
+same-desc UL-vs-GT 0.30 <= IoU < 0.75:
+    reject from training in v1
+    status = rejected_near_gt_gray_zone
+    keep review artifact
+
+cross-desc UL-vs-GT IoU >= 0.75:
+    reject promotion
+    keep review artifact
+
+UL-UL same-desc overlap >= 0.9:
+    merge or keep one representative before entering supervision set
+```
+
+The near-GT gray zone prevents stable localization bias around an already
+labeled same-description object from being promoted as a new unlabeled object.
+It trades away some near-object UL recall for safer first-version mining:
+
+```text
+gt_gray_iou_low = 0.30
+commit_iou_threshold = 0.75
+```
+
+Do not cap the number of promoted UL objects per sample in v1. Use all promoted
+UL clusters that pass the gates, but make high-UL cases visible:
+
+```text
+promoted_ul_count
+gt_count
+promoted_ul_to_gt_ratio
+promoted_ul_weighted_mass
+promoted_ul_high_count_warning if promoted_ul_count > max(3, 2 * gt_count)
+```
+
+This keeps the first version useful for discovering heavily under-labeled images
+while preserving diagnostics for stop-calibration or noise issues.
+
+### Correction Events And Weights
+
+The first version should use:
+
+```text
+one rollout -> one training sequence
+all eligible correction events active
+no max active event cap
+```
+
+This supersedes the earlier `one first event per rollout` plan.
+
+The sequence is:
+
+```text
+input = prompt_ids + raw rollout prefix ids + constructed continuation suffix ids
+```
+
+Loss is not ordinary label imitation over the rollout prefix. Instead:
+
+```text
+rollout prefix tokens:
+    labels = -100
+
+eligible correction event positions:
+    custom target IR atoms may read logits at the prefix-last-token position
+
+constructed suffix:
+    active target IR labels/loss atoms
+```
+
+Eligible correction events include:
+
+```text
+before first uncommitted row:
+    clean-prefix correction
+
+after uncommitted rows when boundaries are reliable:
+    dirty-prefix recovery
+
+clean incomplete / early stop:
+    continue remaining set
+
+remaining empty but model continues:
+    EOS correction
+```
+
+Weights:
+
+```text
+clean-prefix correction:
+    1.0
+
+clean-incomplete / clean early-stop continue:
+    1.0
+
+dirty-prefix recovery:
+    fallback_loss_weight
+
+promoted UL object path:
+    0.5
+```
+
+`fallback_loss_weight` is reused. Do not add a new dirty-recovery weight knob.
+
+Clean-success rollouts are skipped for correction training:
+
+```text
+all rows committed
+remaining supervision set empty
+EOS/stop correct
+no dirty/uncommitted rows
+```
+
+They are not used as implicit positive-retention samples in the default
+correction builder:
+
+```text
+clean_success:
+    no correction atom
+    no constructed suffix
+    skip sample
+    count diagnostic only
+```
+
+Diagnostics:
+
+```text
+clean_success_rollout_skipped
+clean_success_rate
+```
+
+An optional clean GT SFT stabilizer stream may be supported, but it is disabled
+by default. The default Stage-2 dataset is all self-prefix correction attempts:
+
+```text
+default:
+    clean_gt_sft_mix = 0
+    train every retained rollout_attempt as a self-prefix correction sample
+
+optional stabilizer:
+    mix clean GT random-order samples into training
+    use the same typed-trie valid-set semantics
+    keep promoted UL out of the clean stream in v1
+```
+
+This optional stream is a schema/enumeration stabilizer only. It must not become
+the main Stage-2 objective or silently reintroduce sorted-order SFT.
+
+Clean-incomplete rollouts produce correction:
+
+```text
+prefix = committed rollout subset
+remaining supervision set nonempty
+target = remaining continuation
+weight = 1.0
+```
+
+Remaining-empty over-generation produces EOS correction:
+
+```text
+boundary before first extra row:
+    target EOS
+    weight 1.0 if prefix clean
+
+later dirty boundaries:
+    target EOS
+    weight fallback_loss_weight
+```
+
+### Constructed Continuation Suffix
+
+For the `checkpoint-3660+` / `checkpoint-3664` Stage-2 v1 path, the constructed
+continuation suffix should remain checkpoint-compatible with the existing
+Stage-1 chat/template contract. Do not invent a second Stage-2 grammar for
+newline, object separators, or EOS placement.
+
+```text
+v1 checkpoint-compatible template resolution:
+    reuse / mirror the existing Stage-1 rendered assistant template
+    preserve any template-rendered newline / separator / stop behavior
+    do not strip newline from supervised continuations if Stage-1 renders it
+
+future no-newline grammar:
+    possible later migration
+    not the default for this checkpoint-compatible Stage-2 run
+```
+
+If the resolved Stage-1 template renders newline at a position, newline is a
+deterministic schema/control token there, not an optional grammar alternative:
+
+```text
+newline position:
+    token_type = schema
+    valid_token_ids = {newline_token_id}
+    target_kind = singleton
+```
+
+Do not use boundary valid sets such as `{newline, <|object_ref_start|>}` in v1.
+That optional grammar would be a separate migration and would complicate the
+residual-state and logits-position checks.
+
+Target assembly must still avoid duplicating deterministic schema tokens that
+the kept raw prefix already contains. This is a suffix-start-state problem, not
+optional grammar:
+
+```text
+if kept raw prefix already includes the Stage-1-rendered separator/close token:
+    constructed suffix starts after that token
+
+if kept raw prefix ends immediately before the next Stage-1-rendered schema token:
+    constructed suffix emits that schema token first
+
+if suffix starts from assistant output start:
+    use the full checkpoint-compatible Stage-1 template from the beginning
+```
+
+Template-rendered schema remains deterministic, but the builder must not emit
+the same deterministic schema token twice. EOS-before/after-separator behavior
+must follow the resolved Stage-1 chat/template surface rather than a Stage-2
+hard-coded rule.
+
+But dirty textual prefix preserves raw rollout token ids:
+
+```text
+do not decode -> normalize -> re-encode the rollout prefix by default
+```
+
+Only if original token ids are unavailable may the builder re-encode decoded
+text, and it must record a diagnostic:
+
+```text
+dirty_prefix_reencoded = 1
+```
+
+Continuation object order:
+
+```text
+random remaining order
+base seed = 17
+deterministically derived once per correction sequence from sample / rollout /
+suffix-start boundary identity
+GT and promoted UL shuffled together
+```
+
+Do not force GT-first or UL-tail ordering. Object source affects loss weight,
+not order.
+
+The order is fixed for the built correction sequence in v1:
+
+```text
+same base_seed + sample_id + rollout_id + suffix_start_boundary
+    -> same remaining object order
+```
+
+Do not resample suffix object order per epoch or per optimizer step in the first
+version. Future augmentation may add explicit multi-view suffix order sampling,
+but the default should stay reproducible while self-prefix correction and UL
+promotion semantics are being validated.
+
+For active target positions:
+
+```text
+valid set = current remaining supervision set
+```
+
+For masked rollout-prefix positions:
+
+```text
+do not train A/B again even if a clean full-sequence target would have included
+trie-marginal alternatives at those earlier boundaries
+```
+
+Example:
+
+```text
+GT = {A,B,C}
+rollout prefix = A,B,EOS
+
+active correction:
+    prefix A,B
+    remaining {C}
+    target C continuation, then EOS after C
+```
+
+The `A` and `B` rollout tokens stay masked. Stage-2 does not back-fill their
+earlier clean SFT losses in this correction sample.
+
+### Diagnostics And Artifacts
+
+Do not create many new files by default.
+
+UL review artifact:
+
+```text
+<run_dir>/monitor_dumps/ul_clusters.jsonl
+```
+
+One JSONL row per cluster, including enough information for later visualization:
+
+```text
+global_step
+sample_id / image_id / base_idx
+dataset_name / dataset_id when available
+image_path when available
+original_width / original_height when available
+processed_width / processed_height
+coordinate_space = norm1000
+cluster_id
+status
+desc
+representative_bbox
+all member bboxes
+member rollout ids
+K_total / K_valid / support / ratios
+weight_if_promoted
+GT conflict info
+nearby_gt_summary
+duplicate-burst flags
+promotion/rejection reason
+recoverable image provenance
+```
+
+UL bbox fields should be canonical normalized `xyxy` coordinate tokens /
+norm1000 coordinates. The artifact should carry enough image provenance for a
+later visualization tool to load the image and convert coordinates, but it
+should not generate PNGs by default.
+
+For dirty-prefix correction, do not create a default target-IR dump file.
+Instead, add compact counters to existing `monitor_dumps/step_*.json` sample
+stats or triage payloads:
+
+```text
+committed_gt_rows
+committed_ul_rows
+pending_ul_candidates
+promoted_ul_clusters
+uncommitted_invalid_geometry
+uncommitted_malformed
+uncommitted_duplicate
+uncommitted_fp_or_unpromoted
+clean_correction_events
+dirty_correction_events
+eos_targets
+continue_targets
+truncated_tail_dropped
+truncated_tail_token_count
+truncated_tail_stage
+dirty_prefix_reencoded
+```
+
+The implementation should also preserve invalid-geometry diagnostics by image,
+desc, axis, and nearest-GT summary for analysis, but this is diagnostic only and
+must not become nearest-GT training supervision.
+
+## 2026-05-21 OpenSpec Rewrite Decision And Audit Outcome
+
+Decision: reuse and rewrite the existing OpenSpec change
+`openspec/changes/add-stage2-residual-set-ul-correction` instead of creating a
+new overlapping change.
+
+Rationale:
+
+- The change name already matches the intended stable contract: Stage-2
+  residual-set correction with UL support.
+- The previous contents were stale and carried superseded concepts such as
+  `bbox_tail_from_anchor`, earliest-only events, and anchor/explorer framing.
+- Reusing the change avoids duplicate OpenSpec surfaces while still allowing a
+  full rewrite of proposal, design, tasks, and spec deltas.
+
+The rewritten OpenSpec now treats the v1 contract as:
+
+- offline prepared rollout attempts as input;
+- K rollout attempts as independent self-prefix samples, not an averaged
+  pseudo-label set;
+- exact rollout-token dedup;
+- template-boundary adapter for Stage-1-compatible rendering/tokenization;
+- shared `SupervisionAtom` IR with explicit causal `logit_position`;
+- standalone token-type loss plus inner valid-set marginal/hard-path loss;
+- action-based valid-set transitions to avoid object-coordinate mixing;
+- dirty-prefix recovery by constructing correction suffixes from the semantic
+  residual set;
+- no raw-coordinate repair and no `bbox_tail_from_anchor`;
+- strict UL promotion with cross-rollout same-desc consensus and rollout-local
+  member bbox supervision;
+- duplicate burst as diagnostic/exclusion only, not unlikelihood;
+- spatial wrong-description conflicts as low-weight earliest-divergence desc
+  correction when the span is reliable.
+
+Subagent audit outcome:
+
+- First review round found no P0, but flagged config ambiguity, stale
+  anchor/explorer language, underspecified `SupervisionAtom`, underspecified
+  valid-set transitions, rollout-local UL ambiguity, and missing migration
+  tasks.
+- The spec was refined to require `prepared_rollout_jsonl`, strict residual-set
+  config keys, `ValidAction` transitions, rollout-local UL training bboxes, and
+  canonical `monitor_dumps/ul_clusters.jsonl`.
+- Second review round found no remaining P0 implementation blockers. One P1
+  wording mismatch was fixed by making reliable `spatial_wrong_desc_conflict`
+  atoms mandatory; one P1 implementation-alignment concern was converted into
+  explicit schema/test/smoke migration tasks.
+
+Verification after refinement:
+
+```bash
+openspec validate add-stage2-residual-set-ul-correction --type change --strict --no-interactive
+git diff --check -- openspec/changes/add-stage2-residual-set-ul-correction progress/explorations/2026-05-20_stage2_residual_set_self_prefix_ul_redesign.md
+```
+
+Both checks passed on 2026-05-21 in
+`/data/CoordExp/.worktrees/unified-training-infra-refactor`.

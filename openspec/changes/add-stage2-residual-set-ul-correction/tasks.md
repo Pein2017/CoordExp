@@ -1,78 +1,160 @@
-Implementation status: the first production code slice is implemented in `codex/unified-training-infra-refactor`. Completed items are checked below; explicitly deferred items remain unchecked with a reason so future agents do not confuse them with untouched work.
+Implementation tasks for the rewritten Stage-2 residual-set self-prefix
+correction contract. These tasks intentionally reset the older implementation
+checklist; prior `bbox_tail_from_anchor` and earliest-only assumptions are
+superseded.
 
-## 1. Config And Contracts
+## 1. OpenSpec And Documentation
 
-- [x] 1.1 Add typed Stage-2 config entries for the residual-set correction objective, UL mining, roll-in policy, coordinate span policy, STOP margin diagnostics, and artifact toggles.
-- [x] 1.2 Add config validation that rejects removed duplicate/coord/bbox objective names in the residual-set path.
-- [x] 1.3 Add baseline-preserving configs for hard SFT/current Stage-2 objective versus residual-set correction ablations.
-- [x] 1.4 Update run metadata/provenance so residual-set configs record objective id, base seed `17`, roll-in policy, UL thresholds, and STOP margin weight.
-- [x] 1.5 Add the `residual_set_correction` objective module name with `application.preset: rollout_self_prefix` and strict config keys.
-- [x] 1.6 Align baseline module/preset names across docs, specs, config validation, and runtime registry before adding residual-set smoke configs.
+- [ ] 1.1 Validate and refine this OpenSpec change after subagent review.
+- [ ] 1.2 Update stable Stage-2 docs/runbook only after the spec is approved.
+- [ ] 1.3 Record the final implementation roadmap in a super-power plan before
+  code changes.
+- [ ] 1.4 Keep progress evidence in `progress/`; do not turn smoke metrics into
+  OpenSpec success gates.
 
-## 2. Residual State Machine
+## 2. Prepared Rollout Input
 
-- [x] 2.1 Implement a Stage-2 residual-state model for grammar-valid compact-full prefixes.
-- [x] 2.2 Implement desc-gated one-to-one matching for completed emitted objects before they enter `E_t`.
-- [x] 2.3 Implement token-level `ValidAction` enumeration with transition-validated `next_state`.
-- [x] 2.4 Implement active-candidate transitions for description, schema, bbox coordinate slots, and STOP.
-- [x] 2.5 Add invariant tests that `valid_actions` and transitions cannot produce empty corrected roll-in states.
-- [x] 2.6 Add tests that shared next tokens produce one coalesced `ValidAction` whose candidate subset is the union of compatible objects.
+- [ ] 2.1 Define prepared rollout JSONL schema with required
+  `response_token_ids`, `raw_text`, decode metadata, and sample/image
+  provenance.
+- [ ] 2.1a Add strict config support for
+  `stage2_ab.pipeline.objective[name=residual_set_correction].config.prepared_rollout_jsonl`
+  and reject residual-set configs that omit it. Update the active schema
+  allowlist/validator (`STAGE2_RESIDUAL_SET_CONFIG_KEYS` and related required
+  key checks), not only target-builder defaults.
+- [ ] 2.1b Replace the old residual-set config surface (`num_rollouts`,
+  `coord_span_policy`, `ul_geometry`, `artifact_policy`, and other removed
+  keys) with the refined strict key set. Add/update
+  `tests/test_stage2_ab_config_contract.py` coverage so a spec-compliant
+  `prepared_rollout_jsonl` config parses, omitting it fails at the dotted path,
+  and old coordinate-repair configs are rejected.
+- [ ] 2.2 Implement strict missing-token-id behavior: drop+diagnose for new
+  data; explicit legacy fallback only for smoke/ablation.
+- [ ] 2.3 Implement exact duplicate rollout-attempt dedup by token ids, with raw
+  text fallback only in legacy mode.
+- [ ] 2.4 Emit decode-mode sliced diagnostics for clean success, invalid rate,
+  dirty corrections, and UL support.
 
-## 3. Correction Events And Roll-In
+## 3. Template And Target IR
 
-- [x] 3.1 Implement unified `CorrectionEvent` records with anchor position, residual state, active candidates, valid actions, observed bad token, and provenance tags.
-- [x] 3.2 Implement earliest-actionable event selection across transition failures, premature STOP, FP boundary, repeated-object boundary, and matched-object repair.
-- [x] 3.3 Implement corrected teacher-forced sequence construction where raw bad tokens are provenance only.
-- [ ] 3.4 Deferred: deterministic `random_valid_branch` roll-in with `fixed_event` resampling and base seed `17` is represented in config/provenance, but the first production slice uses deterministic earliest-event selection.
-- [x] 3.5 Add validator coverage for `logit_position + 1 == target_position`, selected-token equality, and prompt/assistant boundary safety.
+- [ ] 3.1 Implement `TemplateBoundaryAdapter` for Stage-1-compatible assistant
+  rendering, tokenization, span exposure, and suffix slicing using
+  `src/detection/template.py::get_detection_template`,
+  `RenderedAssistantSequence`, and
+  `src/detection/tokenization.py::tokenize_rendered_detection_conversation`.
+- [ ] 3.1a Replace residual-set suffix construction that hand-authors compact
+  schema strings, including `_render_compact_objects`,
+  `_build_compact_prefix_text_data`, `_compact_object_and_desc_spans`, and
+  ad-hoc suffix-token slicing, with adapter-produced rendered/tokenized spans.
+- [ ] 3.2 Add validator coverage for assistant span location, prefix/suffix
+  boundary safety, schema duplication, and template-rendered stop/separator
+  behavior.
+- [ ] 3.3 Introduce or refactor shared `SupervisionAtom` with canonical
+  `logit_position` and v1-required `target_position`.
+- [ ] 3.3a Map the conceptual residual atom onto the current shared IR fields in
+  `src/training/teacher_forcing/ir.py`, including required `target_position`,
+  `selected_token_id`, `allowed_token_roles`, `selected_token_role`,
+  `loss_weight`, `coord_role`, `loss_tags`, and `provenance`.
+- [ ] 3.4 Validate `logit_position + 1 == target_position` and selected-token
+  equality against `input_ids[target_position]`.
+- [ ] 3.5 Keep loss modules consuming atom-local fields only.
 
-## 4. Coordinate And STOP Semantics
+## 4. Type And Inner Loss
 
-- [x] 4.1 Implement `bbox_tail_from_anchor` coordinate spans.
-- [x] 4.2 Implement dynamic commitment inside coordinate spans: valid-set marginal while ambiguous, hard CE after singleton.
-- [x] 4.3 Implement STOP as a token-level `ValidAction` using `<|im_end|>` and `TokenRole.STOP`.
-- [x] 4.4 Enforce core STOP/continuation exclusivity and keep continuation margin disabled by default.
-- [ ] 4.5 Deferred: core repeated/shared branch behavior is covered at residual-state level; broader production rollout fixtures for repeated same-description x1/y1 branch cases remain a follow-up.
+- [ ] 4.1 Enable standalone token-type exclusivity by default for Stage-2
+  residual-set atoms.
+- [ ] 4.2 Implement inner valid-set marginal likelihood with singleton hard CE /
+  EOS behavior as special cases.
+- [ ] 4.3 Implement per-sequence weighted mean over all active atoms, with no
+  second clean/dirty/UL bucket normalization.
+- [ ] 4.3a Carry rollout-attempt sequence boundaries through the target IR/segment
+  metadata so the residual-set loss can compute per-sequence weighted means
+  before averaging sequences.
+- [ ] 4.4 Add diagnostics for type mass, wrong-type mass, atom counts, atom
+  weight sums, and sequence loss.
 
-## 5. UL Consensus Mining
+## 5. Row Pipeline
 
-- [x] 5.1 Implement K-valid rollout eligibility accounting with invalid/ineligible skip reasons.
-- [x] 5.2 Implement per-rollout same-description pre-dedup so one rollout contributes at most one vote to a UL cluster.
-- [x] 5.3 Implement strict complete-link UL clustering with same canonical desc id, all-pairs geometry gates, `K_valid` denominator, `ul_consensus_ratio=1.0` validation, and default `min_ul_valid_rollouts=3`.
-- [x] 5.4 Implement rollout-local `G*_k = labeled GT union ul_promoted_local(k)` and UL emission accounting into `E_t`.
-- [x] 5.5 Apply default `lambda_ul_promoted=0.5` and keep labeled-GT and UL-promoted metrics separate.
-- [x] 5.6 Implement mixed labeled/UL marginal atom weighting: mixed support weight `1.0`, UL-only support weight `lambda_ul_promoted`, with separate mass diagnostics.
-- [x] 5.7 Implement consumed-target overlap quarantine/rejection for UL clusters so cross-rollout duplicate bursts cannot promote into positives.
+- [ ] 5.1 Implement row segmentation over raw rollout token ids/text without
+  assigning supervision meaning.
+- [ ] 5.2 Implement row classification for committed, pending UL candidate, and
+  uncommitted rows.
+- [ ] 5.3 Implement semantic state scan over remaining GT/promoted UL objects
+  using exact desc normalization and IoU commit threshold `0.75`.
+- [ ] 5.4 Implement dirty-prefix recovery gate and malformed-span resync policy.
+- [ ] 5.5 Implement trailing incomplete object removal back to the last stable
+  boundary.
+- [ ] 5.6 Ensure no raw-rollout coordinate repair atoms are emitted.
+- [ ] 5.7 Remove or fail-fast reject `coord_span_policy` / `bbox_tail_from_anchor`
+  in residual-set configs and migrate existing residual smoke configs away from
+  that key, including
+  `configs/stage2_two_channel/smoke/compact_full_residual_set_ckpt3664_hf_1step.yaml`
+  or any replacement smoke preset.
 
-## 6. Event-To-IR And Loss Integration
+## 6. Correction Atom Extraction And Suffix Assembly
 
-- [x] 6.1 Compile correction events into `TeacherForcingTargetIR` / `SupervisionAtom` without exposing Stage-2 provenance logic to loss modules.
-- [x] 6.2 Add residual-set valid-action marginal support for Stage-2 correction atoms.
-- [x] 6.3 Preserve selected-path hard CE behavior for committed labeled GT and committed UL branches.
-- [x] 6.4 Ensure existing hard-SFT/current Stage-2 baselines remain selectable and unchanged unless their config explicitly opts into the new path.
+- [ ] 6.1 Collect all eligible non-conflicting atoms per rollout attempt.
+- [ ] 6.2 Merge same-logit-position identical targets and diagnose conflicts.
+- [ ] 6.3 Build deterministic random remaining-object suffixes with base seed
+  `17`, fixed per correction sequence, using selected `ValidAction.next_state`
+  to drive later suffix/atom construction.
+- [ ] 6.4 Skip clean-success rollouts by default.
+- [ ] 6.5 Support optional clean GT SFT stabilizer stream with default disabled.
 
-## 7. Diagnostics And Artifacts
+## 7. UL Mining
 
-- [x] 7.1 Emit residual-set correction counters by provenance tag and anchor role.
-- [x] 7.2 Emit valid-action mass, selected-token probability, illegal/STOP mass, and STOP/continuation margin diagnostics.
-- [ ] 7.3 Deferred: labeled/UL/mixed remaining premature-stop diagnostics are partially represented through provenance counters; richer remaining-set breakdown remains follow-up.
-- [x] 7.4 Emit UL consensus counters and `ul_clusters.jsonl` rows under monitor/debug/smoke artifact flags.
-- [x] 7.5 Keep repeated-object boundary diagnostics while ensuring no duplicate-specific live loss is emitted.
-- [x] 7.6 Emit residual-set metrics under `stage2_ab/channel_b/residual_set/` and UL metrics under `stage2_ab/channel_b/residual_set/ul/`, with artifact-root provenance for `ul_clusters.jsonl`.
+- [ ] 7.1 Implement legal unmatched non-duplicate proposal collection.
+- [ ] 7.2 Implement cross-rollout same-desc clustering with cluster IoU `>= 0.9`.
+- [ ] 7.3 Implement K-valid denominator, support from distinct rollout ids, and
+  default consensus ratio `1.0`.
+- [ ] 7.4 Implement same-desc GT conflict and near-GT gray-zone rejection.
+- [ ] 7.5 Implement promoted UL medoid representative, weight `0.5`, and no
+  hard per-sample UL cap.
+- [ ] 7.5a Ensure cross-rollout UL consensus is admission-only: each retained
+  rollout attempt trains against its own promoted member bbox/desc, while medoid
+  or representative bboxes remain review metadata only.
+- [ ] 7.6 Emit canonical `monitor_dumps/ul_clusters.jsonl` with norm1000 xyxy
+  bboxes and image provenance; migrate any step-scoped writer path if needed.
 
-## 8. Verification
+## 8. Duplicate And Label Conflict
 
-- [x] 8.1 Add unit tests for grammar-valid eligibility, malformed-prefix drops, desc-gated matching, residual-state valid actions, and corrected roll-in invariants.
-- [x] 8.2 Add unit tests for event anchoring, next-token logits alignment, corrected-sequence target positions, and coordinate bbox-tail spans.
-- [x] 8.3 Add unit tests for UL consensus promotion/rejection/quarantine, K-valid denominator, per-rollout pre-dedup, UL artifact rows, and UL loss weights.
-- [x] 8.4 Add config validation tests for residual-set configs and removed objective names.
-- [x] 8.5 Add compatibility tests that legacy hard-SFT/stage2-trie configs still use legacy clean-prefix target construction and residual-set configs do not.
-- [x] 8.6 Add config tests that residual-set `num_rollouts >= 3` works with legacy pseudo-positive disabled, while non-residual pseudo-positive-disabled K>2 behavior remains unchanged.
-- [x] 8.7 Run targeted tests with `conda run -n ms python -m pytest <targets>`.
-- [ ] 8.8 Deferred after blocker-fix: historical tiny smoke artifacts were recorded before the production event-path rewiring; a post-blocker-fix 1-step rerun was attempted but aborted during Swift initialization before a new artifact root was created. Re-run Stage-2 smoke configs from the committed worktree before making runtime/performance claims.
+- [ ] 8.1 Implement duplicate burst detection as same-desc pred-vs-pred IoU
+  `>= 0.95` within one rollout attempt.
+- [ ] 8.2 Ensure duplicates cannot vote for UL and never emit duplicate
+  unlikelihood.
+- [ ] 8.3 Implement `spatial_wrong_desc_conflict` with desc-agnostic IoU
+  `>= 0.75`, weight multiplier `0.25`, no commit, no UL candidacy.
+- [ ] 8.4 Emit compact label-conflict diagnostics without adding a default
+  standalone artifact file.
 
-## 9. Docs And Handoff
+## 9. Configs And Baselines
 
-- [x] 9.1 Update Stage-2 runbook and implementation map after implementation validates the final config/artifact names.
-- [x] 9.2 Record experiment scope and results in `progress/` before interpreting model-quality changes.
-- [x] 9.3 Prepare the super-power implementation plan with file ownership, task decomposition, verification commands, and review checkpoints.
+- [ ] 9.1 Add strict residual-set objective config path without silently mutating
+  hard-SFT/current Stage-2 baselines.
+- [ ] 9.2 Keep default clean GT SFT mix disabled.
+- [ ] 9.3 Reject removed bbox/coord/geometry/duplicate live objective modules in
+  the residual-set path.
+- [ ] 9.4 Provide smoke configs for default self-prefix correction and any
+  explicitly approved stabilizer/ablation paths without config explosion.
+
+## 10. Verification
+
+- [ ] 10.1 Unit-test prepared rollout schema, exact dedup, and legacy fallback.
+- [ ] 10.2 Unit-test template boundary adapter and causal logit alignment.
+- [ ] 10.3 Unit-test token-type loss and valid-set marginal behavior.
+- [ ] 10.3a Unit-test action-based valid-set construction so selected
+  `ValidAction.next_state` commits subsequent object-internal tokens correctly.
+- [ ] 10.3b Unit-test per-sequence weighted mean loss with one-atom and many-atom
+  rollout sequences and non-unit atom weights.
+- [ ] 10.4 Unit-test dirty-prefix resync/drop, malformed masking, truncation, and
+  invalid bbox behavior.
+- [ ] 10.5 Unit-test UL promotion/rejection/gray-zone/no-cap diagnostics.
+- [ ] 10.5a Unit-test rollout-local UL member bbox supervision distinct from
+  medoid/review bbox.
+- [ ] 10.6 Unit-test duplicate burst and spatial wrong-desc conflict behavior.
+- [ ] 10.6a Unit-test deterministic row commitment tie-breaks in same-desc
+  crowded cases.
+- [ ] 10.6b Unit-test canonical UL artifact relative path.
+- [ ] 10.7 Run targeted tests with `conda run -n ms python -m pytest <targets>`.
+- [ ] 10.8 Run small offline prepared-rollout smoke/overfit checks from the
+  `et-rmp-ce-ckpt-3660+` / checkpoint-3664 base before model-quality claims.

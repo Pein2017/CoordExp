@@ -1,245 +1,353 @@
 ## Context
 
-Stage-2 Channel-B currently prepares rollout-aligned targets by accepting a
-rollout prefix, editing the anchor target, appending false-negative GT objects,
-and training one merged teacher-forced sequence. That path is reproducible, but
-it does not directly model the autoregressive point where the rollout first
-goes wrong. It also keeps pressure on sorted/tail object-order conventions that
-are not part of the decoding grammar.
-
-The new design treats each valid rollout as a self-prefix correction sample. At
-the first actionable error, the builder computes the remaining object set,
-constructs valid next-token actions, and compiles one local correction span into
-the shared teacher-forcing IR. This keeps loss modules generic and moves
-Stage-2-specific reasoning into a residual-state builder.
-
-Constraints:
-
-- YAML/config-first; no new stable CLI flags.
-- Qwen3-VL template compatibility stays intact; `<|im_end|>` is STOP/EOS and
-  `<|endoftext|>` remains padding.
-- `do_resize=false` and geometry/coord order invariants remain unchanged.
-- Upstream HF model files remain off-limits.
-- Duplicate-specific training loss remains removed; duplicate-like behavior is
-  handled through residual-set correction provenance and diagnostics only.
-
-## Goals / Non-Goals
-
-**Goals:**
-
-- Define Stage-2 correction as residual-set valid-action likelihood at
-  grammar-valid self-prefixes.
-- Use one residual-state machine to produce token-level `ValidAction` records
-  and their transition-validated `next_state`.
-- Compile correction events into `SupervisionAtom` / `TeacherForcingTargetIR`
-  with strict causal next-token alignment.
-- Support repeated same-description objects whose first branch point may be a
-  coordinate slot.
-- Mine strict K-valid consensus UL clusters and use them as rollout-local
-  TP-like positives with separate provenance, metrics, artifacts, and default
-  loss weight `0.5`.
-- Preserve hard-SFT and existing Stage-2 objectives as explicit ablation
-  baselines rather than mutating their behavior silently.
-
-**Non-Goals:**
-
-- No full recursive autoregressive subtree marginal over alternative hidden
-  states.
-- No duplicate-burst unlikelihood, coord regularizer, bbox geometry auxiliary,
-  or soft regression objective resurrection.
-- No automatic mutation of dataset GT from online UL mining.
-- No always-on visualization rendering from the training loop.
-- No claim that smoke/val200 performance improvement is a spec validity gate.
-
-## Decisions
-
-### Residual State Machine
-
-Use a `ResidualStateMachine` that owns both valid next-token enumeration and
-state transition. Its core API returns token-level actions:
+Stage-2 should correct the model on states it actually visits during rollout,
+without relying on sorted order, edited-anchor targets, duplicate-specific
+unlikelihood, or coordinate repair. The intended first version is deliberately
+offline and replayable:
 
 ```text
-valid_actions(state) -> list[ValidAction]
-
-ValidAction:
-    token_id
-    token_role
-    next_state
-    candidate_subset_after
-    selected_object_id optional
-    object_provenance optional
-    coord_slot optional
-    action_tags optional
+checkpoint -> K rollout_attempts per sample -> prepared JSONL
+prepared JSONL -> target IR -> training
 ```
 
-Rationale: this prevents separate valid-set and transition implementations from
-drifting. Corrected roll-in samples an action, not a bare token id, so the next
-state is transition-validated by construction.
+This is DAgger-like because each round trains on self-prefix states generated
+by the current or recent policy, but v1 does not generate inside the training
+loop.
 
-Alternative rejected: construct `valid_token_ids` first and run an independent
-transition filter later. That creates silent object-coordinate mixing risks.
+## Key Decisions
 
-Action coalescing rule: actions are unique by `token_id`. If multiple active
-candidates share a next token, that one action carries the unioned
-`candidate_subset_after` and does not set `selected_object_id` until the
-transition actually becomes singleton.
+### Reuse Existing OpenSpec Change
 
-### Correction Events And IR Layering
+The existing `add-stage2-residual-set-ul-correction` change is reused and
+rewritten. Older Stage-1 trie-marginal artifacts and older residual-set drafts
+are treated as superseded background, not as normative contract.
 
-Stage-2 produces `CorrectionEvent` records that own rollout provenance,
-residual state, UL/repeated/FP/FN labels, anchor choice, and artifact evidence.
-Those events compile into `SupervisionAtom` records. Loss modules consume only
-`TeacherForcingTargetIR`.
+### Prepared Rollout Records
 
-Rationale: loss code should not know how FN, FP, duplicate-like, or UL mining
-was detected. It should only see token roles, valid token ids, selected token id,
-positions, loss tags, and loss weight.
-
-### Earliest Actionable Anchor
-
-Each rollout contributes the earliest actionable correction event by sequence
-position. Transition failures anchor immediately before the invalid token.
-Object-level FP or repeated-object branches anchor before object start.
-
-Rationale: this keeps Stage-2 correction precise and avoids training on a
-post-error prefix that the decoder can no longer repair.
-
-### Corrected Roll-In And Logits Alignment
-
-Raw bad tokens are provenance only. The teacher-forced input sequence uses a
-corrected selected action. For each atom:
+New prepared rollout JSONL records must provide:
 
 ```text
-logit_position = target_position - 1
+response_token_ids
+raw decoded text
+decode_mode
+sampling_seed optional
+generation_config_hash
+sample/image provenance
 ```
 
-The selected token must match the corrected sequence at `target_position`.
-
-Rationale: causal LM logits before the target token supervise that target. Using
-the raw bad token or a hidden state after the target would make metrics
-uninterpretable.
-
-### Coordinate Local Span
-
-Boundary, schema, and description corrections compile to one primary atom.
-Coordinate corrections compile to `bbox_tail_from_anchor`:
+Residual-set configs name this file at:
 
 ```text
-x1 -> x1,y1,x2,y2
-y1 -> y1,x2,y2
-x2 -> x2,y2
-y2 -> y2
+stage2_ab.pipeline.objective[name=residual_set_correction].config.prepared_rollout_jsonl
 ```
 
-Within that span, each slot still follows the active-candidate rule:
-valid-set marginal while ambiguous, hard CE after singleton commitment.
+`response_token_ids` are required for new data. Raw text is diagnostic and
+review surface, not the canonical training prefix. Missing token ids should
+drop the sample in strict mode; explicit legacy fallback may re-encode raw text
+for smoke/legacy ablation only and must record `dirty_prefix_reencoded=1`.
 
-Rationale: bbox coordinates are a local structured unit. Repairing only the
-first wrong coordinate would over-focus Stage-2 correction on `x1` and undercut
-object coherence.
+Absolute rollout-time assistant spans are not required. Training assembly
+reconstructs prompt plus assistant context in the current tokenizer/processor
+environment and validates assistant span, logit positions, and target positions
+there.
+
+### Rollout Attempts
+
+Default attempt generation:
+
+```text
+K = 4
+attempts:
+    1 greedy rollout_attempt
+    3 sampling rollout_attempts
+```
+
+After generation all attempts are equal. `greedy` is decode metadata, not an
+anchor. Exact duplicate attempts are deduplicated by `response_token_ids`, or by
+exact raw text only when token ids are unavailable in an explicit legacy path.
+Approximate duplicates are kept.
+
+### Template Boundary Adapter
+
+Target assembly must not hand-author schema strings. It must use a
+Stage-1-compatible template adapter:
+
+```text
+TemplateBoundaryAdapter:
+    resolve Stage-1 assistant template / serialization policy through
+        src/detection/template.py::get_detection_template
+    render assistant text for chosen supervision objects
+        via RenderedAssistantSequence / object_entries / separator_spans
+    tokenize with the active tokenizer / processor contract
+        via src/detection/tokenization.py::tokenize_rendered_detection_conversation
+    expose object, separator, terminal, and stop spans
+    slice suffix from a requested boundary state
+    validate no deterministic schema token is duplicated
+```
+
+For the checkpoint-compatible v1 path, newline/separator/EOS placement follows
+the resolved Stage-1 template. If the resolved template renders newline at a
+position, newline is a deterministic schema/control token there, not an optional
+alternative. Future no-newline migration is a separate change.
+
+### Shared Target IR
+
+The runtime-facing atom uses canonical `logit_position`:
+
+```text
+SupervisionAtom:
+    logit_position
+    target_position optional
+    token_type
+    role
+    valid_token_ids
+    selected_token_id optional
+    weight
+    target_kind
+    provenance
+```
+
+`target_position` exists for validation/debug. If present:
+
+```text
+logit_position + 1 == target_position
+```
+
+Loss modules consume `logit_position`, not a separate `position_index` field.
+Older prose may use `position_index` as a synonym only.
+
+In the current shared IR, residual-set atoms map onto
+`src/training/teacher_forcing/ir.py::SupervisionAtom`, where
+`target_position`, `selected_token_id`, `allowed_token_roles`,
+`selected_token_role`, `loss_weight`, `coord_role`, and `loss_tags` are required
+or first-class fields. A future IR migration may simplify the conceptual atom,
+but v1 must satisfy the current validator.
+
+### Type Loss And Inner Loss
+
+Token-type exclusivity is standalone and enabled by default:
+
+```text
+lambda_type = 1.0
+lambda_inner = 1.0
+```
+
+The type module globally supervises schema/text/coord mass. Existing registry
+names may be `struct` for schema/control and `desc` for free-text description;
+the residual-set implementation must define this mapping explicitly rather than
+mixing names ad hoc. The inner objective uses valid-set marginal likelihood:
+
+```text
+L_inner = -log sum_{v in valid_token_ids} p(v)
+```
+
+Hard CE, deterministic schema tokens, newline when template-rendered, and EOS
+are singleton valid-set cases.
+
+`valid_token_ids` must come from `ValidAction` records returned by the
+residual-state machine. When corrected roll-in selects one action, that action's
+`next_state` drives later suffix and atom construction.
+
+### Sequence Granularity And Normalization
+
+One retained `rollout_attempt` becomes one training sequence. The sequence may
+contain all eligible non-conflicting correction atoms. Atoms sharing the same
+`logit_position` and target merge provenance; conflicting atoms are diagnosed
+and resolved deterministically.
+
+Sequence loss is normalized by atom weights:
+
+```text
+sequence_loss =
+    sum_i atom_weight_i * atom_loss_i
+    / max(eps, sum_i atom_weight_i)
+
+batch_loss =
+    mean(sequence_loss over retained rollout_attempt sequences)
+```
+
+No additional clean/dirty/UL bucket normalization is applied in v1.
+
+### Residual Scan State
+
+The scanner walks rollout rows in order. A committed row is a legal row matched
+to a remaining GT or promoted UL object by exact normalized description and
+IoU `>= 0.75`. Tie-breaks are deterministic.
+
+Uncommitted rows include invalid geometry, structural malformed rows, duplicate
+bursts, low-IoU localization misses, failed/unpromoted UL candidates, and
+wrong-description unmatched rows. Uncommitted rows do not update emitted or
+remaining state.
+
+### Dirty Prefix Handling
+
+Dirty tokens may remain as masked context when the builder can still locate a
+reliable boundary and valid logit position. No loss is applied to dirty prefix
+tokens unless a reliable correction atom is attached at a causal position.
+
+Structurally malformed middle spans:
+
+```text
+resync reliable:
+    keep malformed span as masked dirty context
+    no atoms/type loss inside the malformed span
+    continue scanning suffix
+
+resync unreliable:
+    cut back to last stable boundary or drop sample
+```
+
+Trailing incomplete object spans are removed from their `<|object_ref_start|>`
+and the prefix reverts to the last stable boundary.
+
+### No Coordinate Repair
+
+The prior `bbox_tail_from_anchor` design is deleted for Stage-2 v1. Do not
+implement raw-rollout coordinate repair, coordinate tolerance, nearest-GT
+repair, invalid-bbox repair, low-IoU coordinate refinement, or regression-ish
+bbox losses.
+
+Bbox geometry is a commitment gate:
+
+```text
+legal + exact desc + IoU >= 0.75:
+    commit and update remaining
+
+otherwise:
+    uncommitted dirty prefix
+    remaining unchanged
+```
+
+Coordinate supervision still occurs in constructed teacher-forced suffixes for
+selected remaining objects, and in the optional clean GT stream if explicitly
+enabled.
+
+### Constructed Suffix
+
+Constructed suffixes contain all remaining supervision objects plus EOS if the
+complete suffix fits. Object order is deterministic random:
+
+```text
+base seed = 17
+derived from sample / rollout / suffix-start boundary
+GT and promoted UL shuffled together
+```
+
+Order is fixed for the built correction sequence in v1. It is not resampled per
+epoch or optimizer step. Clean-success rollouts are skipped by default.
+
+Optional clean GT SFT stabilizer may be supported, but default mix is `0` and
+it should use GT only in v1.
 
 ### UL Mining
 
-UL mining runs before correction-event selection:
+UL mining is collect-then-classify:
 
-1. generate K rollouts;
-2. keep K-valid grammar-valid eligible rollouts;
-3. desc-gated match completed objects to labeled GT;
-4. pre-deduplicate unmatched same-description objects within each rollout;
-5. run strict complete-link cross-rollout clustering;
-6. promote clusters only when `support_rollouts == K_valid` and
-   `K_valid >= min_ul_valid_rollouts` (default 3).
+1. aggregate K rollout attempts after exact dedup;
+2. parse rows and collect legal unmatched non-duplicate proposals;
+3. cluster same-normalized-description proposals across distinct rollouts;
+4. require cluster IoU `>= 0.9`, `K_valid >= 2`, support from at least two
+   distinct rollout ids, and support/K_valid `>= 1.0` by default;
+5. reject GT conflicts and near-GT gray-zone clusters;
+6. promote remaining passing clusters as sample-local UL supervision objects
+   with default weight `0.5`.
 
-Promoted UL members extend only the rollout-local universe:
-
-```text
-G*_k = labeled GT union ul_promoted_local(k)
-```
-
-Rationale: K-rollout consensus can prevent real unlabeled objects from being
-trained as FP, but online mining must remain provenance-separated from dataset
-GT and reviewable.
-
-The residual objective owns its rollout count under
-`residual_set_correction.config.num_rollouts`; it does not require legacy
-`stage2_ab.channel_b.pseudo_positive.enabled=true`. Legacy duplicate-control
-and insertion-order knobs may remain inherited as provenance or diagnostics, but
-they do not prune residual correction events or order corrected targets.
-
-Per-rollout same-description pre-dedup keeps the earliest object in rollout
-order as the representative. Suppressed same-rollout duplicates do not vote for
-UL and cannot become rollout-local UL positives.
-
-Mixed labeled/UL ambiguous valid-action marginals use the union of valid tokens
-as support. The scalar atom weight is `1.0` if any labeled candidate is
-reachable, and `lambda_ul_promoted` only when the support is UL-only. Metrics
-still report labeled-valid and UL-valid mass separately.
-
-### STOP Handling
-
-STOP is a token-level `ValidAction` using `TokenRole.STOP` and `<|im_end|>`.
-STOP and continuation actions are mutually exclusive:
+Near-GT gray zone:
 
 ```text
-R_t empty -> STOP
-R_t non-empty -> continuation
+same-desc IoU >= 0.75:
+    reject as GT conflict / already explained
+
+same-desc 0.30 <= IoU < 0.75:
+    reject from training, keep review artifact
+
+same-desc IoU < 0.30:
+    eligible if all other UL gates pass
 ```
 
-Continuation margin defaults to `0.0` and is optional.
+No hard cap is applied to the number of promoted UL objects per sample in v1.
+High UL/GT ratio is diagnosis-only.
 
-Rationale: the core target should not weaken remaining-object continuation by
-placing STOP in the same valid set.
+Consensus admits a UL cluster; it does not define one canonical training bbox.
+For rollout attempt `k`, the promoted UL supervision object uses rollout `k`'s
+own member bbox/desc. The medoid/representative bbox is review metadata only.
+
+UL review rows are written to:
+
+```text
+monitor_dumps/ul_clusters.jsonl
+```
+
+Rows use canonical norm1000 xyxy bboxes and include enough image provenance for
+later visualization. PNGs are not generated by default.
+
+### Duplicate Burst
+
+Duplicate burst is pred-vs-pred, same normalized description, legal positive
+area, same rollout attempt, and IoU `>= 0.95` with an earlier prediction. It is
+checked before GT/UL matching. Duplicate rows are uncommitted, cannot vote for
+UL, and do not produce duplicate-specific unlikelihood.
+
+### Spatial Wrong-Description Conflict
+
+A legal bbox with high desc-agnostic IoU to a remaining GT or promoted UL but a
+different description is a `spatial_wrong_desc_conflict`:
+
+```text
+desc-agnostic IoU >= 0.75
+desc mismatch
+```
+
+When the rendered/tokenized text span and earliest divergence position are
+reliable, it MUST receive an earliest-divergence description correction atom
+with reduced weight:
+
+```text
+label_conflict_weight = 0.25
+effective weight = context/source weight * label_conflict_weight
+```
+
+It is never committed, never removes a remaining object, never enters UL
+candidate/promotion, and does not get a dedicated artifact in v1. Compact
+diagnostics and capped examples are sufficient.
+
+If the divergence span is not reliable, the builder MUST diagnose the no-atom
+reason instead of silently treating the conflict as ordinary FP or UL evidence.
 
 ## Risks / Trade-offs
 
-- [Risk] Corrected sequence/logit alignment is off by one.  
-  Mitigation: IR validator and unit tests require
-  `logit_position + 1 == target_position`, selected token equality, and prompt
-  boundary checks before smoke metrics are trusted.
-
-- [Risk] UL mining reinforces correlated model hallucinations.  
-  Mitigation: ratio must be `1.0` over K-valid rollouts, complete-link all-pairs
-  geometry must pass, one rollout contributes at most one vote, UL loss defaults
-  to `0.5`, and every cluster is auditable through metrics/artifacts.
-
-- [Risk] Duplicate-like bursts leak into UL positives.  
-  Mitigation: per-rollout same-description pre-dedup suppresses burst members
-  from UL voting; repeated-object boundaries use only positive residual-set
-  correction and diagnostics.
-
-- [Risk] New builder complexity obscures old baselines.  
-  Mitigation: old hard-SFT/current Stage-2 objective paths remain explicit
-  baselines; configs select the new residual-set path explicitly.
-
-- [Risk] Artifact volume grows too large.  
-  Mitigation: scalar counters are always available when enabled, but detailed
-  `ul_clusters.jsonl` appears under the Stage-2 artifact root only when
-  monitor/debug/smoke artifact flags are enabled.
+- Dirty prefixes may contain tokens the model should not imitate. Mitigation:
+  prefix labels remain masked; atoms only attach at validated causal positions.
+- Offline prepared rollouts may become stale after training. Mitigation:
+  use round-based refresh rather than online generation in v1.
+- UL mining may reinforce correlated hallucinations. Mitigation: strict
+  consensus, exact dedup, duplicate exclusion, near-GT gray zone, UL weight
+  `0.5`, and review artifacts.
+- Type loss may expose malformed parser mistakes. Mitigation: prefer drop/resync
+  over weakening type supervision.
+- Template compatibility is fragile. Mitigation: centralize rendering/slicing in
+  `TemplateBoundaryAdapter` and validate spans.
 
 ## Migration Plan
 
-1. Add config schema entries for the residual-set correction objective and UL
-   mining under the Stage-2 YAML namespace.
-2. Implement the residual-state machine and unit-test valid actions before
-   connecting it to training.
-3. Implement correction-event extraction, corrected roll-in, and event-to-IR
-   compilation with validator coverage.
-4. Add UL metrics/artifacts and STOP/continuation diagnostics.
-5. Add smoke configs that compare hard SFT/current Stage-2 baselines against the
-   new residual-set path without deleting baseline configs.
-6. Update Stage-2 docs/runbook after implementation verifies the new config
-   surface and artifact paths.
+1. Update OpenSpec/docs to make this rewritten contract canonical.
+2. Replace or refactor current Stage-2 target builders into layered modules:
+   row segmentation, row classification, semantic scan, atom extraction, target
+   sequence assembly.
+3. Add the template boundary adapter and shared target IR validator before
+   connecting the trainer.
+4. Implement prepared-rollout JSONL ingestion with strict token-id handling.
+5. Implement residual-set correction, UL mining, label-conflict handling, and
+   diagnostics.
+6. Preserve hard-SFT/current Stage-2 baseline configs unchanged.
+7. Run targeted unit tests, then small offline rollout smoke/overfit runs.
 
-Rollback: keep baseline configs and objective modules selectable. Disable the
-new residual-set objective by selecting hard-SFT or existing Stage-2 objective
-pipeline entries.
+Rollback: select baseline objective modules and ignore the residual-set
+objective path. Prepared rollout artifacts are offline inputs and do not mutate
+dataset GT.
 
 ## Open Questions
 
-- Exact numeric default geometry thresholds for UL complete-link promotion
-  should be finalized during implementation after checking current config
-  conventions. The config names are fixed by the spec: IoU minimum,
-  center-distance scale, area-ratio maximum, and aspect-ratio maximum.
-- The exact module/file split may be refined by the super-power implementation
-  roadmap and code review, but must preserve the event-to-IR layering and
-  residual-state-machine contract.
+- Exact file/module split is deferred to the super-power implementation plan.
+- The optional clean GT stabilizer config name and sampling ratio surface should
+  be finalized during implementation, with default disabled.
