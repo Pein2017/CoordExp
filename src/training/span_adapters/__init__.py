@@ -11,6 +11,11 @@ if TYPE_CHECKING:
         CompactObjectProjection,
         CompactSpanProjection,
     )
+    from src.training.span_adapters.residual_boundary import (
+        ResidualBoundaryAdapter,
+        ResidualBoundaryObjectSpan,
+        ResidualBoundarySlice,
+    )
     from src.training.span_adapters.stage1_compact import (
         CompactCoordinateSoftTargetSpec,
         CompactCoordinateTokenWeightSpec,
@@ -31,6 +36,9 @@ _LAZY_EXPORTS = {
     "CompactCoordinateSoftTargetSpec": "src.training.span_adapters.stage1_compact",
     "CompactCoordinateTokenWeightSpec": "src.training.span_adapters.stage1_compact",
     "CompactTrieTargetSpec": "src.training.span_adapters.stage1_compact",
+    "ResidualBoundaryAdapter": "src.training.span_adapters.residual_boundary",
+    "ResidualBoundaryObjectSpan": "src.training.span_adapters.residual_boundary",
+    "ResidualBoundarySlice": "src.training.span_adapters.residual_boundary",
     "Stage1CompactSpanAdapter": "src.training.span_adapters.stage1_compact",
     "Stage2CompactSpanAdapter": "src.training.span_adapters.stage2_compact",
     "Stage2CompactTokenTargetSpec": "src.training.span_adapters.stage2_compact",
@@ -60,6 +68,9 @@ __all__ = [
     "CompactObjectProjection",
     "CompactSpanProjection",
     "CompactTrieTargetSpec",
+    "ResidualBoundaryAdapter",
+    "ResidualBoundaryObjectSpan",
+    "ResidualBoundarySlice",
     "Stage1CompactSpanAdapter",
     "Stage2CompactSpanAdapter",
     "Stage2CompactTokenTargetSpec",

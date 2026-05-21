@@ -29,6 +29,11 @@ from src.training.teacher_forcing.constants import (
 )
 from src.training.teacher_forcing.ir import SupervisionAtom, TeacherForcingTargetIR
 from src.training.teacher_forcing.roles import TokenRole
+from src.training.span_adapters.residual_boundary import (
+    ResidualBoundaryAdapter,
+    ResidualBoundaryObjectSpan,
+    ResidualBoundarySlice,
+)
 from src.utils.assistant_json import dumps_coordjson
 
 from ..rollout_matching.contracts import GTObject, MatchResult
@@ -1904,16 +1909,18 @@ def _build_residual_set_correction_events(
             + [target_id]
             + [item_id for item_id in remaining_ids if item_id != target_id]
         )
-        clean_target_text, y_train_ids = _render_residual_target_ids(
-            tokenizer=tokenizer,
+        target_objects = _residual_target_objects(
             target_ids=ordered_target_ids,
             universe_by_id=universe_by_id,
         )
         target_row_index = int(len(emitted_ids))
-        target_span = extract_compact_full_object_token_spans(
+        clean_target_text, y_train_ids, boundary_slice = _render_residual_target_slice(
             tokenizer=tokenizer,
-            response_token_ids=y_train_ids,
-        )[target_row_index]
+            target_objects=target_objects,
+            boundary="object",
+            object_index=target_row_index,
+        )
+        target_span = boundary_slice.object_spans[target_row_index]
         draft_specs = _residual_object_repair_draft_specs(
             target_span=target_span,
             mismatch_index=int(mismatch_index),
@@ -1942,16 +1949,17 @@ def _build_residual_set_correction_events(
         )
 
     if remaining_ids:
-        clean_target_text, y_train_ids = _render_residual_target_ids(
-            tokenizer=tokenizer,
+        target_objects = _residual_target_objects(
             target_ids=list(emitted_ids) + list(remaining_ids),
             universe_by_id=universe_by_id,
         )
-        spans = extract_compact_full_object_token_spans(
+        clean_target_text, y_train_ids, boundary_slice = _render_residual_target_slice(
             tokenizer=tokenizer,
-            response_token_ids=y_train_ids,
+            target_objects=target_objects,
+            boundary="object",
+            object_index=int(len(emitted_ids)),
         )
-        target_span = spans[int(len(emitted_ids))]
+        target_span = boundary_slice.object_spans[int(len(emitted_ids))]
         current_target = universe_by_id[remaining_ids[0]]
         event = _build_residual_event_from_specs(
             universe=universe,
@@ -2088,14 +2096,13 @@ def _compact_context_desc_token_ids(*, tokenizer: Any, obj: GTObject) -> Tuple[i
         points_norm1000=[int(v) for v in obj.points_norm1000],
         desc=str(obj.desc),
     )
-    row_text = _render_compact_objects([row_object])
-    row_token_ids = [
-        int(token_id) for token_id in tokenizer.encode(row_text, add_special_tokens=False)
-    ]
-    span = extract_compact_full_object_token_spans(
+    rendered, row_token_ids, boundary_slice = _render_residual_target_slice(
         tokenizer=tokenizer,
-        response_token_ids=row_token_ids,
-    )[0]
+        target_objects=[row_object],
+        boundary="assistant_start",
+    )
+    del rendered
+    span = boundary_slice.object_spans[0]
     return tuple(
         int(token_id)
         for token_id in row_token_ids[int(span.desc_start) : int(span.desc_end)]
@@ -2189,17 +2196,24 @@ def _build_residual_boundary_event(
     stop_token_id: int,
     rollout_id: str | None = None,
 ) -> _ResidualSetCorrectionBuildResult | None:
-    clean_target_text, y_train_ids = _render_residual_target_ids(
-        tokenizer=tokenizer,
+    target_objects = _residual_target_objects(
         target_ids=list(emitted_ids) + list(remaining_ids),
         universe_by_id=universe_by_id,
     )
-    if remaining_ids:
-        spans = extract_compact_full_object_token_spans(
+    clean_target_text = ""
+    y_train_ids: List[int] = []
+    boundary_slice: ResidualBoundarySlice | None = None
+    if target_objects:
+        clean_target_text, y_train_ids, boundary_slice = _render_residual_target_slice(
             tokenizer=tokenizer,
-            response_token_ids=y_train_ids,
+            target_objects=target_objects,
+            boundary="object",
+            object_index=int(len(emitted_ids)),
         )
-        span = spans[int(len(emitted_ids))]
+    if remaining_ids:
+        if boundary_slice is None:
+            raise ValueError("residual boundary adapter did not produce a target slice")
+        span = boundary_slice.object_spans[int(len(emitted_ids))]
         current_target = universe_by_id[remaining_ids[0]]
         event = _build_residual_event_from_specs(
             universe=universe,
@@ -2288,7 +2302,7 @@ def _build_residual_boundary_event(
 
 def _residual_object_repair_draft_specs(
     *,
-    target_span: CompactFullObjectTokenSpan,
+    target_span: CompactFullObjectTokenSpan | ResidualBoundaryObjectSpan,
     mismatch_index: int,
 ) -> List[Tuple[str, int, int]]:
     target_position = int(target_span.object_start) + int(mismatch_index)
@@ -2314,7 +2328,7 @@ def _residual_object_repair_draft_specs(
 
 
 def _slot_for_compact_span_position(
-    span: CompactFullObjectTokenSpan,
+    span: CompactFullObjectTokenSpan | ResidualBoundaryObjectSpan,
     target_position: int,
 ) -> str:
     target_position = int(target_position)
@@ -2533,13 +2547,12 @@ def _selected_action_for_token(
     raise ValueError("residual_set_correction selected target token is not valid")
 
 
-def _render_residual_target_ids(
+def _residual_target_objects(
     *,
-    tokenizer: Any,
     target_ids: Sequence[str],
     universe_by_id: Mapping[str, _ResidualSetUniverseObject],
-) -> Tuple[str, List[int]]:
-    objects = [
+) -> List[GTObject]:
+    return [
         GTObject(
             index=int(row_index),
             geom_type="bbox_2d",
@@ -2551,10 +2564,51 @@ def _render_residual_target_ids(
         )
         for row_index, object_id in enumerate(target_ids)
     ]
+
+
+def _render_residual_target_slice(
+    *,
+    tokenizer: Any,
+    target_objects: Sequence[GTObject],
+    boundary: str,
+    object_index: int | None = None,
+) -> Tuple[str, List[int], ResidualBoundarySlice]:
+    if not target_objects:
+        raise ValueError("residual boundary adapter requires at least one target object")
+    adapter = ResidualBoundaryAdapter(tokenizer=tokenizer)
+    rendered = adapter.render_objects(target_objects)
+    boundary_slice = adapter.slice_from_boundary(
+        rendered,
+        boundary=boundary,
+        object_index=object_index,
+    )
+    token_ids = [
+        int(token_id)
+        for token_id in (
+            boundary_slice.retained_prefix_input_ids
+            + boundary_slice.suffix_input_ids
+        )
+    ]
+    return str(rendered.text), token_ids, boundary_slice
+
+
+def _render_residual_target_ids(
+    *,
+    tokenizer: Any,
+    target_ids: Sequence[str],
+    universe_by_id: Mapping[str, _ResidualSetUniverseObject],
+) -> Tuple[str, List[int]]:
+    objects = _residual_target_objects(
+        target_ids=target_ids,
+        universe_by_id=universe_by_id,
+    )
     if not objects:
         return "", []
-    text = _render_compact_objects(objects)
-    token_ids = [int(token_id) for token_id in tokenizer.encode(text, add_special_tokens=False)]
+    text, token_ids, _boundary_slice = _render_residual_target_slice(
+        tokenizer=tokenizer,
+        target_objects=objects,
+        boundary="assistant_start",
+    )
     return str(text), token_ids
 
 
