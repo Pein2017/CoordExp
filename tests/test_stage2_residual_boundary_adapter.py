@@ -168,22 +168,22 @@ def test_residual_boundary_adapter_matches_tokenized_detection_spans() -> None:
     ]
 
 
-def test_residual_boundary_adapter_validates_no_schema_duplication() -> None:
+def test_residual_boundary_adapter_validates_no_adjacent_duplicate_boundary_token() -> None:
     adapter = ResidualBoundaryAdapter(tokenizer=SnapshotTokenizer())
     rendered = adapter.render_objects(_objects())
     sliced = adapter.slice_from_boundary(rendered, boundary="object", object_index=1)
 
-    adapter.validate_no_schema_duplication(
+    adapter.validate_no_adjacent_duplicate_boundary_token(
         retained_prefix_input_ids=sliced.retained_prefix_input_ids,
         suffix_input_ids=sliced.suffix_input_ids,
     )
 
-    duplicated_schema_prefix = (
+    duplicated_boundary_prefix = (
         sliced.retained_prefix_input_ids + sliced.suffix_input_ids[:1]
     )
-    with pytest.raises(ValueError, match="schema token duplicated"):
-        adapter.validate_no_schema_duplication(
-            retained_prefix_input_ids=duplicated_schema_prefix,
+    with pytest.raises(ValueError, match="token duplicated"):
+        adapter.validate_no_adjacent_duplicate_boundary_token(
+            retained_prefix_input_ids=duplicated_boundary_prefix,
             suffix_input_ids=sliced.suffix_input_ids,
         )
 

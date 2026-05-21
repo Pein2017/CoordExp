@@ -195,7 +195,7 @@ class ResidualBoundaryAdapter:
 
         retained_prefix = tuple(assistant_ids[:suffix_start])
         suffix = tuple(assistant_ids[suffix_start:])
-        self.validate_no_schema_duplication(
+        self.validate_no_adjacent_duplicate_boundary_token(
             retained_prefix_input_ids=retained_prefix,
             suffix_input_ids=suffix,
         )
@@ -209,18 +209,18 @@ class ResidualBoundaryAdapter:
             boundary_object_span=boundary_object_span,
         )
 
-    def validate_no_schema_duplication(
+    def validate_no_adjacent_duplicate_boundary_token(
         self,
         *,
         retained_prefix_input_ids: Sequence[int],
         suffix_input_ids: Sequence[int],
     ) -> None:
-        """Reject a boundary join that repeats the first suffix schema token."""
+        """Reject a boundary join that repeats the first suffix token."""
 
         if not retained_prefix_input_ids or not suffix_input_ids:
             return
         if int(retained_prefix_input_ids[-1]) == int(suffix_input_ids[0]):
-            raise ValueError("schema token duplicated at residual boundary")
+            raise ValueError("token duplicated at residual boundary")
 
 
 def _normalized_object_from_mapping_or_attr(
