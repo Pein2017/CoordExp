@@ -240,7 +240,19 @@ def mine_ul_consensus(
             has_full_support = support_count == k_valid
             pairwise_pass, pairwise_records = _pairwise_geometry(working_cluster.members, geometry)
             pairwise_gray_pass = all(bool(record["gray_pass"]) for record in pairwise_records)
-            if k_valid < min_ul_valid_rollouts:
+            consumed_overlap = _consumed_overlap_records(working_cluster.members, consumed_members, geometry)
+            if consumed_overlap:
+                quarantined_clusters.append(
+                    _to_cluster(
+                        working_cluster,
+                        k_valid,
+                        "quarantined",
+                        "consumed_target_overlap",
+                        geometry,
+                        consumed_overlap=consumed_overlap,
+                    )
+                )
+            elif k_valid < min_ul_valid_rollouts:
                 rejected_clusters.append(_to_cluster(working_cluster, k_valid, "rejected", "insufficient_support", geometry))
             elif not has_full_support:
                 reason = "geometry_mismatch" if full_desc_support_but_split else "insufficient_support"
@@ -259,20 +271,7 @@ def mine_ul_consensus(
                 else:
                     rejected_clusters.append(_to_cluster(working_cluster, k_valid, "rejected", "geometry_mismatch", geometry))
             else:
-                consumed_overlap = _consumed_overlap_records(working_cluster.members, consumed_members, geometry)
-                if consumed_overlap:
-                    quarantined_clusters.append(
-                        _to_cluster(
-                            working_cluster,
-                            k_valid,
-                            "quarantined",
-                            "consumed_target_overlap",
-                            geometry,
-                            consumed_overlap=consumed_overlap,
-                        )
-                    )
-                else:
-                    promoted_clusters.append(_to_cluster(working_cluster, k_valid, "promoted", "consensus", geometry))
+                promoted_clusters.append(_to_cluster(working_cluster, k_valid, "promoted", "consensus", geometry))
 
     return ULConsensusResult(
         k_valid=k_valid,
@@ -292,37 +291,76 @@ def ul_cluster_artifact_rows(
     *,
     image_id: str,
     sample_id: str | None = None,
+    image_path: str | None = None,
+    image_width: int | None = None,
+    image_height: int | None = None,
 ) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
     for cluster in (*result.promoted_clusters, *result.rejected_clusters, *result.quarantined_clusters):
+        representative = _representative_member(cluster)
+        row = {
+            "image_id": image_id,
+            "sample_id": str(sample_id) if sample_id is not None else image_id,
+            "decision": cluster.decision,
+            "reason": cluster.reason,
+            "desc_id": cluster.desc_id,
+            "desc_text": cluster.desc_text,
+            "k_valid": result.k_valid,
+            "min_ul_valid_rollouts": result.min_ul_valid_rollouts,
+            "consensus_ratio": result.consensus_ratio,
+            "geometry_thresholds": _geometry_thresholds(result.geometry),
+            "support_rollout_ids": list(cluster.support_rollout_ids),
+            "support_ratio": cluster.support_ratio,
+            "representative_bbox_norm1000": (
+                list(representative.bbox_norm1000) if representative is not None else None
+            ),
+            "representative_member": (
+                {
+                    "rollout_id": representative.rollout_id,
+                    "local_index": representative.local_index,
+                }
+                if representative is not None
+                else None
+            ),
+            "member_boxes": [
+                {
+                    "rollout_id": member.rollout_id,
+                    "local_index": member.local_index,
+                    "bbox_norm1000": list(member.bbox_norm1000),
+                }
+                for _, members in sorted(cluster.members_by_rollout.items())
+                for member in members
+            ],
+            "pairwise_geometry": [_jsonable_mapping(item) for item in cluster.pairwise_geometry],
+            "consumed_overlap": [_jsonable_mapping(item) for item in cluster.consumed_overlap],
+        }
+        if image_path is not None:
+            row["image_path"] = str(image_path)
+        if image_width is not None:
+            row["image_width"] = int(image_width)
+        if image_height is not None:
+            row["image_height"] = int(image_height)
         rows.append(
-            {
-                "image_id": image_id,
-                "sample_id": str(sample_id) if sample_id is not None else image_id,
-                "decision": cluster.decision,
-                "reason": cluster.reason,
-                "desc_id": cluster.desc_id,
-                "desc_text": cluster.desc_text,
-                "k_valid": result.k_valid,
-                "min_ul_valid_rollouts": result.min_ul_valid_rollouts,
-                "consensus_ratio": result.consensus_ratio,
-                "geometry_thresholds": _geometry_thresholds(result.geometry),
-                "support_rollout_ids": list(cluster.support_rollout_ids),
-                "support_ratio": cluster.support_ratio,
-                "member_boxes": [
-                    {
-                        "rollout_id": member.rollout_id,
-                        "local_index": member.local_index,
-                        "bbox_norm1000": list(member.bbox_norm1000),
-                    }
-                    for _, members in sorted(cluster.members_by_rollout.items())
-                    for member in members
-                ],
-                "pairwise_geometry": [_jsonable_mapping(item) for item in cluster.pairwise_geometry],
-                "consumed_overlap": [_jsonable_mapping(item) for item in cluster.consumed_overlap],
-            }
+            row
         )
     return rows
+
+
+def _representative_member(cluster: ULConsensusCluster) -> ULMember | None:
+    members = tuple(
+        member
+        for _, rollout_members in sorted(cluster.members_by_rollout.items())
+        for member in rollout_members
+    )
+    if not members:
+        return None
+    return sorted(
+        members,
+        key=lambda candidate: (
+            sum(1.0 - _bbox_iou(candidate.bbox_norm1000, other.bbox_norm1000) for other in members),
+            _member_sort_key(candidate),
+        ),
+    )[0]
 
 
 def _validate_min_ul_valid_rollouts(value: object) -> int:

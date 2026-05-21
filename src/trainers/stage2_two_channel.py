@@ -172,12 +172,6 @@ def _stage2_ul_rollout_evidence(
             )
         except (TypeError, ValueError):
             continue
-        if _stage2_object_matches_any_gt(
-            obj=obj,
-            gts=gts,
-            assignment_iou_threshold=float(assignment_iou_threshold),
-        ):
-            continue
         members.append(member)
     return ULRolloutEvidence(
         rollout_id=rollout_id,
@@ -204,40 +198,58 @@ def _stage2_ul_promoted_targets(
     clusters: Sequence[Any],
     *,
     lambda_ul_promoted: float,
+    rollout_id: str | None = None,
 ) -> List[Dict[str, Any]]:
     promoted: List[Dict[str, Any]] = []
     for cluster_index, cluster in enumerate(clusters):
-        members: List[ULMember] = []
         members_by_rollout = getattr(cluster, "members_by_rollout", {})
-        if isinstance(members_by_rollout, Mapping):
-            for _, rollout_members in sorted(members_by_rollout.items()):
-                members.extend(
-                    member
-                    for member in rollout_members
-                    if isinstance(member, ULMember)
-                )
-        if not members:
+        if not isinstance(members_by_rollout, Mapping):
             continue
-        member = sorted(
-            members,
+        if rollout_id is None:
+            member_candidates = [
+                member
+                for _, rollout_members in sorted(members_by_rollout.items())
+                for member in rollout_members
+                if isinstance(member, ULMember)
+            ]
+        else:
+            member_candidates = [
+                member
+                for member in members_by_rollout.get(str(rollout_id), ())
+                if isinstance(member, ULMember)
+            ]
+        members = sorted(
+            member_candidates,
             key=lambda item: (
                 str(item.rollout_id),
                 int(item.local_index),
                 tuple(float(v) for v in item.bbox_norm1000),
             ),
-        )[0]
-        promoted.append(
-            {
-                "object": GTObject(
-                    index=int(cluster_index),
-                    geom_type="bbox_2d",
-                    points_norm1000=[int(round(v)) for v in member.bbox_norm1000],
-                    desc=str(getattr(cluster, "desc_text", member.desc_text)),
-                ),
-                "loss_weight": float(lambda_ul_promoted),
-                "support_provenance": ("ul",),
-            }
         )
+        if not members:
+            continue
+        selected_members = members if rollout_id is not None else members[:1]
+        for member in selected_members:
+            promoted.append(
+                {
+                    "object": GTObject(
+                        index=int(cluster_index),
+                        geom_type="bbox_2d",
+                        points_norm1000=[int(round(v)) for v in member.bbox_norm1000],
+                        desc=str(getattr(cluster, "desc_text", member.desc_text)),
+                    ),
+                    "loss_weight": float(lambda_ul_promoted),
+                    "support_provenance": (
+                        "ul",
+                        f"cluster:{int(cluster_index)}",
+                        f"rollout:{str(member.rollout_id)}",
+                        f"member:{int(member.local_index)}",
+                    ),
+                    "cluster_index": int(cluster_index),
+                    "rollout_id": str(member.rollout_id),
+                    "member_local_index": int(member.local_index),
+                }
+            )
     return promoted
 
 
@@ -258,6 +270,30 @@ def _stage2_object_matches_any_gt(
         if iou >= float(assignment_iou_threshold):
             return True
     return False
+
+
+def _stage2_artifact_image_path(sample: Mapping[str, Any]) -> str | None:
+    for key in ("image_path", "file_name", "image"):
+        value = sample.get(key)
+        if isinstance(value, str) and value.strip():
+            return str(value)
+    images = sample.get("images")
+    if isinstance(images, Sequence) and not isinstance(images, (str, bytes)):
+        for value in images:
+            if isinstance(value, str) and value.strip():
+                return str(value)
+    return None
+
+
+def _stage2_optional_image_dim(sample: Mapping[str, Any], key: str) -> int | None:
+    value = sample.get(key)
+    try:
+        parsed = int(value) if value is not None else None
+    except (TypeError, ValueError):
+        return None
+    if parsed is None or parsed <= 0:
+        return None
+    return parsed
 
 
 def _stage2_ul_rollout_id(*, sample_id: str, view: Mapping[str, Any]) -> str:
@@ -3360,7 +3396,7 @@ class Stage2TwoChannelTrainer(
         residual_set_ul_rejected_total = 0
         residual_set_ul_valid_rollout_total = 0
         residual_set_ul_artifact_rows: List[Dict[str, Any]] = []
-        residual_set_ul_promoted_cache: Dict[tuple[str, str], List[Dict[str, Any]]] = {}
+        residual_set_ul_result_cache: Dict[tuple[str, str], Any] = {}
 
         anchor_pred_objects_total = 0
         anchor_valid_pred_objects_total = 0
@@ -3860,6 +3896,10 @@ class Stage2TwoChannelTrainer(
             )
             residual_set_ul_promoted_objects: List[Dict[str, Any]] = []
             if residual_set_selected and residual_set_ul_geometry is not None:
+                anchor_rollout_id_for_ul = _stage2_ul_rollout_id(
+                    sample_id=sample_id_for_meta,
+                    view=anchor_view,
+                )
                 ul_cache_key = (
                     str(sample_id_for_meta),
                     str(
@@ -3868,10 +3908,8 @@ class Stage2TwoChannelTrainer(
                         or sample_id_for_meta
                     ),
                 )
-                cached_ul_promoted = residual_set_ul_promoted_cache.get(ul_cache_key)
-                if cached_ul_promoted is not None:
-                    residual_set_ul_promoted_objects = list(cached_ul_promoted)
-                else:
+                ul_result = residual_set_ul_result_cache.get(ul_cache_key)
+                if ul_result is None:
                     assignment_iou_threshold_for_ul = float(
                         getattr(
                             assignment_strategy,
@@ -3895,13 +3933,7 @@ class Stage2TwoChannelTrainer(
                         geometry=residual_set_ul_geometry,
                         consumed_members=_stage2_gt_consumed_members(gts=gts),
                     )
-                    residual_set_ul_promoted_objects = _stage2_ul_promoted_targets(
-                        ul_result.promoted_clusters,
-                        lambda_ul_promoted=float(residual_set_lambda_ul_promoted),
-                    )
-                    residual_set_ul_promoted_cache[ul_cache_key] = list(
-                        residual_set_ul_promoted_objects
-                    )
+                    residual_set_ul_result_cache[ul_cache_key] = ul_result
                     residual_set_ul_promoted_total += int(
                         len(ul_result.promoted_clusters)
                     )
@@ -3922,8 +3954,20 @@ class Stage2TwoChannelTrainer(
                                     or sample_id_for_meta
                                 ),
                                 sample_id=str(sample_id_for_meta),
+                                image_path=_stage2_artifact_image_path(sample),
+                                image_width=_stage2_optional_image_dim(
+                                    sample, "width"
+                                ),
+                                image_height=_stage2_optional_image_dim(
+                                    sample, "height"
+                                ),
                             )
                         )
+                residual_set_ul_promoted_objects = _stage2_ul_promoted_targets(
+                    ul_result.promoted_clusters,
+                    lambda_ul_promoted=float(residual_set_lambda_ul_promoted),
+                    rollout_id=str(anchor_rollout_id_for_ul),
+                )
 
             triage_anchor_gt_backed_total += int(len(anchor_gt_backed_indices))
             triage_shielded_anchor_total += int(len(shielded_anchor_indices))

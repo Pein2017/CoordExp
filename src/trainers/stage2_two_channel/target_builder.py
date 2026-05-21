@@ -2304,6 +2304,13 @@ def _build_residual_universe_objects(
             loss_weight = float(item.get("loss_weight", lambda_ul_promoted))
         except (TypeError, ValueError):
             loss_weight = float(lambda_ul_promoted)
+        support_provenance_raw = item.get("support_provenance", ("ul",))
+        if isinstance(support_provenance_raw, str):
+            support_provenance = (support_provenance_raw,)
+        elif isinstance(support_provenance_raw, Sequence):
+            support_provenance = tuple(str(value) for value in support_provenance_raw)
+        else:
+            support_provenance = ("ul",)
         universe.append(
             _residual_universe_object_from_gt(
                 tokenizer=tokenizer,
@@ -2312,7 +2319,7 @@ def _build_residual_universe_objects(
                 source_index=int(ul_index),
                 obj=obj,
                 loss_weight=max(0.0, float(loss_weight)),
-                support_provenance=("ul",),
+                support_provenance=support_provenance,
             )
         )
     return universe

@@ -38,6 +38,7 @@ from src.trainers.stage2_two_channel import (
     _stage2_ab_tail_closure_positions,
     _stage2_compact_semantic_stop_branch_metadata,
     _stage2_compact_tail_closure_positions,
+    _stage2_gt_consumed_members,
     _stage2_ul_geometry_from_options,
     _stage2_ul_promoted_targets,
     _stage2_ul_rollout_evidence,
@@ -1641,10 +1642,10 @@ def test_channel_b_compact_full_residual_path_attaches_ir_without_trie(
     ] == pytest.approx(0.0)
     assert metrics[
         "stage2_ab/channel_b/residual_set/ul/artifact_rows"
-    ] == pytest.approx(0.0)
+    ] == pytest.approx(1.0)
     assert metrics[
         "stage2_ab/channel_b/residual_set/ul/artifact_written"
-    ] == pytest.approx(0.0)
+    ] == pytest.approx(1.0)
     assert "stage2_ab/channel_b/ul/promoted_clusters" not in metrics
 
 
@@ -1978,7 +1979,12 @@ def test_residual_set_ul_consensus_promotes_into_residual_atoms_and_artifacts() 
     atom = result.events[0].atom_drafts[0]
     assert atom.metadata["selected_object_id"].startswith("ul:")
     assert atom.selected_action is not None
-    assert atom.selected_action.metadata["support_provenance"] == ("ul",)
+    assert atom.selected_action.metadata["support_provenance"] == (
+        "ul",
+        "cluster:0",
+        "rollout:r0",
+        "member:0",
+    )
     assert atom.selected_action.metadata["loss_weight"] == pytest.approx(0.25)
 
     rows = ul_cluster_artifact_rows(ul_result, image_id="image-ul")
@@ -1991,6 +1997,282 @@ def test_residual_set_ul_consensus_promotes_into_residual_atoms_and_artifacts() 
     ]
     assert "pairwise_geometry" in rows[0]
     assert "consumed_overlap" in rows[0]
+
+
+def test_residual_set_ul_consensus_materializes_rollout_local_promoted_boxes() -> None:
+    tok = _CoordLiteralTokenizer()
+    prepared_attempt_views = [
+        {
+            "rollout_id": "r0",
+            "rollout_counts_as_valid_rollout": True,
+            "parsed_bbox_objects_raw": [
+                GTObject(
+                    index=0,
+                    geom_type="bbox_2d",
+                    points_norm1000=[50, 60, 150, 180],
+                    desc="dog",
+                ),
+            ],
+        },
+        {
+            "rollout_id": "r1",
+            "rollout_counts_as_valid_rollout": True,
+            "parsed_bbox_objects_raw": [
+                GTObject(
+                    index=0,
+                    geom_type="bbox_2d",
+                    points_norm1000=[52, 62, 152, 182],
+                    desc="dog",
+                ),
+            ],
+        },
+    ]
+    rollouts = [
+        _stage2_ul_rollout_evidence(
+            sample_id="sample-ul-local",
+            view=view,
+            gts=[],
+            assignment_iou_threshold=0.5,
+        )
+        for view in prepared_attempt_views
+    ]
+    geometry = _stage2_ul_geometry_from_options(
+        {
+            "ul_cluster_iou_threshold": 0.9,
+            "ul_gray_iou_low": 0.3,
+            "duplicate_burst_iou_threshold": 0.95,
+            "commit_iou_threshold": 0.75,
+        }
+    )
+    from src.trainers.stage2_two_channel.ul_consensus import mine_ul_consensus
+
+    ul_result = mine_ul_consensus(
+        rollouts,
+        min_ul_valid_rollouts=2,
+        consensus_ratio=1.0,
+        geometry=geometry,
+    )
+
+    clean_prefix = (
+        f"{OBJECT_REF_START_TOKEN}cat{BOX_START_TOKEN}"
+        "<|coord_10|><|coord_20|><|coord_30|><|coord_40|>"
+    )
+    parsed = [
+        GTObject(
+            index=0,
+            geom_type="bbox_2d",
+            points_norm1000=[10, 20, 30, 40],
+            desc="cat",
+        ),
+    ]
+    match = MatchResult(
+        matched_pairs=[(0, 0)],
+        fn_gt_indices=[],
+        fp_pred_indices=[],
+        gating_rejections=0,
+        matched_maskiou_sum=1.0,
+        matched_maskiou_count=1,
+    )
+
+    def _coord_targets_for_rollout(rollout_id: str) -> dict[str, int]:
+        promoted_objects = _stage2_ul_promoted_targets(
+            ul_result.promoted_clusters,
+            lambda_ul_promoted=0.25,
+            rollout_id=rollout_id,
+        )
+        result = _build_residual_set_correction_events(
+            tokenizer=tok,
+            response_token_ids=list(tok.encode(clean_prefix, add_special_tokens=False)),
+            parsed_bbox_objects_raw=parsed,
+            compact_full_object_spans=[],
+            gts=parsed,
+            accepted_objects_clean=parsed,
+            match=match,
+            ul_promoted_objects=promoted_objects,
+            assignment_iou_threshold=0.5,
+            sample_id="sample-ul-local",
+            rollout_index=0,
+            rollout_id=rollout_id,
+            lambda_ul_promoted=0.25,
+        )
+        assert len(promoted_objects) == 1
+        assert promoted_objects[0]["object"].points_norm1000 == (
+            [50, 60, 150, 180] if rollout_id == "r0" else [52, 62, 152, 182]
+        )
+        atoms = result.events[0].atom_drafts
+        selected = {
+            str(atom.metadata["slot"]): int(atom.selected_action.token_id)
+            for atom in atoms
+            if atom.selected_action is not None
+            and str(atom.metadata["slot"]) in {"x1", "y1", "x2", "y2"}
+        }
+        assert atoms[0].selected_action.metadata["support_provenance"] == (
+            "ul",
+            "cluster:0",
+            f"rollout:{rollout_id}",
+            "member:0",
+        )
+        return selected
+
+    assert _coord_targets_for_rollout("r0") == {
+        "x1": 50,
+        "y1": 60,
+        "x2": 150,
+        "y2": 180,
+    }
+    assert _coord_targets_for_rollout("r1") == {
+        "x1": 52,
+        "y1": 62,
+        "x2": 152,
+        "y2": 182,
+    }
+
+
+def test_ul_consensus_gt_overlap_reaches_miner_quarantine_and_artifacts() -> None:
+    gt = [
+        GTObject(
+            index=0,
+            geom_type="bbox_2d",
+            points_norm1000=[100, 100, 200, 220],
+            desc="dog",
+        ),
+    ]
+    rollouts = [
+        _stage2_ul_rollout_evidence(
+            sample_id="sample-ul-consumed",
+            view={
+                "rollout_id": rollout_id,
+                "rollout_counts_as_valid_rollout": True,
+                "parsed_bbox_objects_raw": [
+                    GTObject(
+                        index=0,
+                        geom_type="bbox_2d",
+                        points_norm1000=list(box),
+                        desc="dog",
+                    ),
+                ],
+            },
+            gts=gt,
+            assignment_iou_threshold=0.5,
+        )
+        for rollout_id, box in (
+            ("r0", (100, 100, 200, 220)),
+            ("r1", (101, 101, 201, 221)),
+        )
+    ]
+    geometry = _stage2_ul_geometry_from_options(
+        {
+            "ul_cluster_iou_threshold": 0.9,
+            "ul_gray_iou_low": 0.3,
+            "duplicate_burst_iou_threshold": 0.95,
+            "commit_iou_threshold": 0.75,
+        }
+    )
+    from src.trainers.stage2_two_channel.ul_consensus import (
+        mine_ul_consensus,
+        ul_cluster_artifact_rows,
+    )
+
+    ul_result = mine_ul_consensus(
+        rollouts,
+        min_ul_valid_rollouts=2,
+        consensus_ratio=1.0,
+        geometry=geometry,
+        consumed_members=_stage2_gt_consumed_members(gts=gt),
+    )
+
+    assert ul_result.promoted_clusters == ()
+    assert len(ul_result.quarantined_clusters) == 1
+    assert ul_result.quarantined_clusters[0].reason == "consumed_target_overlap"
+    rows = ul_cluster_artifact_rows(ul_result, image_id="image-consumed")
+    assert rows[0]["reason"] == "consumed_target_overlap"
+    assert rows[0]["consumed_overlap"]
+
+
+def test_channel_b_offline_residual_set_passes_rollout_local_ul_targets(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    rows = [
+        (
+            "sample-prepared",
+            "image-prepared",
+            "r0",
+            f"{OBJECT_REF_START_TOKEN}dog{BOX_START_TOKEN}"
+            "<|coord_50|><|coord_60|><|coord_150|><|coord_180|>",
+            "greedy",
+        ),
+        (
+            "sample-prepared",
+            "image-prepared",
+            "r1",
+            f"{OBJECT_REF_START_TOKEN}dog{BOX_START_TOKEN}"
+            "<|coord_52|><|coord_62|><|coord_152|><|coord_182|>",
+            "sampling",
+        ),
+    ]
+    t = _make_compact_channel_b_trainer(rollout_text=rows[0][3])
+    prepared_path = tmp_path / "prepared_rollouts.jsonl"
+    _write_prepared_rollout_jsonl(prepared_path, t.template.tokenizer, rows)
+    t.stage2_pipeline_manifest = _make_residual_set_pipeline_manifest(
+        prepared_rollout_jsonl=str(prepared_path),
+        min_ul_valid_rollouts=2,
+    )
+    seen_targets: list[tuple[str, list[list[int]], list[tuple[str, ...]]]] = []
+
+    def _record_residual_set_build(**kwargs):
+        promoted = list(kwargs["ul_promoted_objects"])
+        rollout_id = str(kwargs["rollout_id"])
+        seen_targets.append(
+            (
+                rollout_id,
+                [list(item["object"].points_norm1000) for item in promoted],
+                [tuple(item["support_provenance"]) for item in promoted],
+            )
+        )
+        raw_ids = list(kwargs["response_token_ids"])
+        return types.SimpleNamespace(
+            y_train_ids=raw_ids,
+            clean_target_text=t.template.tokenizer.decode(raw_ids),
+            prefix_len_raw_local=len(raw_ids),
+            events=[],
+            event_summaries=[],
+            metrics={
+                "event_count": 0.0,
+                "atom_count": 0.0,
+                "ul_promoted_object_count": float(len(promoted)),
+                },
+            )
+
+    from src.trainers.stage2_two_channel import target_builder as target_builder_module
+
+    monkeypatch.setattr(
+        target_builder_module,
+        "_build_residual_set_correction_events",
+        _record_residual_set_build,
+    )
+    sample = _single_bbox_sample()
+    sample["sample_id"] = "sample-prepared"
+    sample["image_id"] = "image-prepared"
+
+    segments, _metrics = t._prepare_batch_inputs_b(
+        [sample],
+        _segments_only=True,
+    )
+
+    assert len(segments) == 2
+    assert seen_targets == [
+        (
+            "r0",
+            [[50, 60, 150, 180]],
+            [("ul", "cluster:0", "rollout:r0", "member:0")],
+        ),
+        (
+            "r1",
+            [[52, 62, 152, 182]],
+            [("ul", "cluster:0", "rollout:r1", "member:0")],
+        ),
+    ]
 
 
 def test_channel_b_offline_residual_set_writes_ul_artifact_rows(
@@ -2038,6 +2320,9 @@ def test_channel_b_offline_residual_set_writes_ul_artifact_rows(
     sample = _single_bbox_sample()
     sample["sample_id"] = "sample-prepared"
     sample["image_id"] = "image-prepared"
+    sample["image_path"] = "images/from-sample.jpg"
+    sample["width"] = 640
+    sample["height"] = 480
 
     segments, metrics = t._prepare_batch_inputs_b(
         [sample],
@@ -2059,9 +2344,14 @@ def test_channel_b_offline_residual_set_writes_ul_artifact_rows(
     artifact_row = written["rows"][0]
     assert artifact_row["image_id"] == "image-prepared"
     assert artifact_row["sample_id"] == "sample-prepared"
+    assert artifact_row["image_path"] == "images/from-sample.jpg"
+    assert artifact_row["image_width"] == 640
+    assert artifact_row["image_height"] == 480
     assert artifact_row["decision"] == "promoted"
     assert artifact_row["reason"] == "consensus"
     assert artifact_row["support_rollout_ids"] == ["r0", "r1"]
+    assert artifact_row["representative_bbox_norm1000"] == [50.0, 60.0, 150.0, 180.0]
+    assert artifact_row["representative_member"]["rollout_id"] == "r0"
     assert len(artifact_row["member_boxes"]) == 2
     assert "pairwise_geometry" in artifact_row
     assert "consumed_overlap" in artifact_row
