@@ -38,6 +38,9 @@ from src.trainers.stage2_two_channel import (
     _stage2_ab_tail_closure_positions,
     _stage2_compact_semantic_stop_branch_metadata,
     _stage2_compact_tail_closure_positions,
+    _stage2_ul_geometry_from_options,
+    _stage2_ul_promoted_targets,
+    _stage2_ul_rollout_evidence,
     _stage2_ul_rollout_id,
 )
 from src.trainers.stage2_two_channel.target_builder import (
@@ -701,12 +704,14 @@ def _make_residual_set_pipeline_manifest(
     channels: Sequence[str] = ("B",),
     base_seed: int = 17,
     prepared_rollout_jsonl: str | None = None,
+    **config_overrides: object,
 ) -> dict:
     config: dict[str, object] = {
         "base_seed": int(base_seed),
     }
     if prepared_rollout_jsonl is not None:
         config["prepared_rollout_jsonl"] = str(prepared_rollout_jsonl)
+    config.update(config_overrides)
     return {
         "objective": [
             {
@@ -1569,14 +1574,6 @@ def test_channel_b_compact_full_residual_path_attaches_ir_without_trie(
         "src.trainers.stage2_two_channel.parse_rollout_for_matching",
         lambda **kwargs: pytest.fail("legacy CoordJSON parser must not run"),
     )
-    monkeypatch.setattr(
-        "src.trainers.stage2_two_channel.mine_ul_consensus",
-        lambda *args, **kwargs: pytest.fail("Task 4 must not run UL consensus"),
-    )
-    monkeypatch.setattr(
-        "src.trainers.stage2_two_channel.write_ul_clusters_artifact",
-        lambda *args, **kwargs: pytest.fail("Task 4 must not write UL artifacts"),
-    )
 
     sample = _single_bbox_sample()
     sample["sample_id"] = "sample-prepared"
@@ -1866,6 +1863,208 @@ def test_stage2_ul_rollout_id_prefers_explicit_prepared_rollout_id() -> None:
         )
         == "sample-prepared:r2"
     )
+
+
+def test_ul_consensus_rollout_evidence_skips_invalid_unmatched_boxes() -> None:
+    evidence = _stage2_ul_rollout_evidence(
+        sample_id="sample-invalid-ul-box",
+        view={
+            "rollout_id": "r0",
+            "rollout_counts_as_valid_rollout": True,
+            "parsed_bbox_objects_raw": [
+                GTObject(
+                    index=0,
+                    geom_type="bbox_2d",
+                    points_norm1000=[100, 200, 50, 300],
+                    desc="dog",
+                ),
+            ],
+        },
+        gts=[],
+        assignment_iou_threshold=0.5,
+    )
+
+    assert evidence.is_valid is True
+    assert evidence.unmatched_members == ()
+
+
+def test_residual_set_ul_consensus_promotes_into_residual_atoms_and_artifacts() -> None:
+    tok = _CoordLiteralTokenizer()
+    rollouts = [
+        _stage2_ul_rollout_evidence(
+            sample_id="sample-ul",
+            view={
+                "rollout_id": rollout_id,
+                "rollout_counts_as_valid_rollout": True,
+                "parsed_bbox_objects_raw": [
+                    GTObject(
+                        index=0,
+                        geom_type="bbox_2d",
+                        points_norm1000=list(box),
+                        desc="dog",
+                    ),
+                ],
+            },
+            gts=[],
+            assignment_iou_threshold=0.5,
+        )
+        for rollout_id, box in (
+            ("r0", (50, 60, 150, 180)),
+            ("r1", (51, 61, 151, 181)),
+        )
+    ]
+    geometry = _stage2_ul_geometry_from_options(
+        {
+            "ul_cluster_iou_threshold": 0.9,
+            "ul_gray_iou_low": 0.3,
+            "duplicate_burst_iou_threshold": 0.95,
+            "commit_iou_threshold": 0.75,
+        }
+    )
+    from src.trainers.stage2_two_channel.ul_consensus import (
+        mine_ul_consensus,
+        ul_cluster_artifact_rows,
+    )
+
+    ul_result = mine_ul_consensus(
+        rollouts,
+        min_ul_valid_rollouts=2,
+        consensus_ratio=1.0,
+        geometry=geometry,
+    )
+    promoted_objects = _stage2_ul_promoted_targets(
+        ul_result.promoted_clusters,
+        lambda_ul_promoted=0.25,
+    )
+
+    clean_prefix = (
+        f"{OBJECT_REF_START_TOKEN}cat{BOX_START_TOKEN}"
+        "<|coord_10|><|coord_20|><|coord_30|><|coord_40|>"
+    )
+    parsed = [
+        GTObject(
+            index=0,
+            geom_type="bbox_2d",
+            points_norm1000=[10, 20, 30, 40],
+            desc="cat",
+        ),
+    ]
+    result = _build_residual_set_correction_events(
+        tokenizer=tok,
+        response_token_ids=list(tok.encode(clean_prefix, add_special_tokens=False)),
+        parsed_bbox_objects_raw=parsed,
+        compact_full_object_spans=[],
+        gts=parsed,
+        accepted_objects_clean=parsed,
+        match=MatchResult(
+            matched_pairs=[(0, 0)],
+            fn_gt_indices=[],
+            fp_pred_indices=[],
+            gating_rejections=0,
+            matched_maskiou_sum=1.0,
+            matched_maskiou_count=1,
+        ),
+        ul_promoted_objects=promoted_objects,
+        assignment_iou_threshold=0.5,
+        sample_id="sample-ul",
+        rollout_index=0,
+        lambda_ul_promoted=0.25,
+    )
+
+    assert len(promoted_objects) == 1
+    assert result.metrics["residual_object_count"] == pytest.approx(2.0)
+    assert result.metrics["ul_promoted_object_count"] == pytest.approx(1.0)
+    assert result.events
+    atom = result.events[0].atom_drafts[0]
+    assert atom.metadata["selected_object_id"].startswith("ul:")
+    assert atom.selected_action is not None
+    assert atom.selected_action.metadata["support_provenance"] == ("ul",)
+    assert atom.selected_action.metadata["loss_weight"] == pytest.approx(0.25)
+
+    rows = ul_cluster_artifact_rows(ul_result, image_id="image-ul")
+    assert rows[0]["decision"] == "promoted"
+    assert rows[0]["reason"] == "consensus"
+    assert rows[0]["support_rollout_ids"] == ["r0", "r1"]
+    assert [member["bbox_norm1000"] for member in rows[0]["member_boxes"]] == [
+        [50.0, 60.0, 150.0, 180.0],
+        [51.0, 61.0, 151.0, 181.0],
+    ]
+    assert "pairwise_geometry" in rows[0]
+    assert "consumed_overlap" in rows[0]
+
+
+def test_channel_b_offline_residual_set_writes_ul_artifact_rows(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    rows = [
+        (
+            "sample-prepared",
+            "image-prepared",
+            "r0",
+            f"{OBJECT_REF_START_TOKEN}dog{BOX_START_TOKEN}"
+            "<|coord_50|><|coord_60|><|coord_150|><|coord_180|>",
+            "greedy",
+        ),
+        (
+            "sample-prepared",
+            "image-prepared",
+            "r1",
+            f"{OBJECT_REF_START_TOKEN}dog{BOX_START_TOKEN}"
+            "<|coord_51|><|coord_61|><|coord_151|><|coord_181|>",
+            "sampling",
+        ),
+    ]
+    t = _make_compact_channel_b_trainer(rollout_text=rows[0][3])
+    t.args = types.SimpleNamespace(output_dir=str(tmp_path / "out"))
+    prepared_path = tmp_path / "prepared_rollouts.jsonl"
+    _write_prepared_rollout_jsonl(prepared_path, t.template.tokenizer, rows)
+    t.stage2_pipeline_manifest = _make_residual_set_pipeline_manifest(
+        prepared_rollout_jsonl=str(prepared_path),
+        min_ul_valid_rollouts=2,
+    )
+    written = {}
+
+    def _record_ul_artifact(root, artifact_rows, *, enabled):
+        written["root"] = str(root)
+        written["rows"] = list(artifact_rows)
+        written["enabled"] = bool(enabled)
+        return str(tmp_path / "out" / "monitor_dumps" / "ul_clusters.jsonl")
+
+    monkeypatch.setattr(
+        "src.trainers.stage2_two_channel.write_ul_clusters_artifact",
+        _record_ul_artifact,
+    )
+    sample = _single_bbox_sample()
+    sample["sample_id"] = "sample-prepared"
+    sample["image_id"] = "image-prepared"
+
+    segments, metrics = t._prepare_batch_inputs_b(
+        [sample],
+        _segments_only=True,
+    )
+
+    assert len(segments) == 2
+    assert metrics[
+        "stage2_ab/channel_b/residual_set/ul/promoted_clusters"
+    ] == pytest.approx(1.0)
+    assert metrics[
+        "stage2_ab/channel_b/residual_set/ul/artifact_rows"
+    ] == pytest.approx(1.0)
+    assert metrics[
+        "stage2_ab/channel_b/residual_set/ul/artifact_written"
+    ] == pytest.approx(1.0)
+    assert written["enabled"] is True
+    assert written["root"] == str(tmp_path / "out" / "monitor_dumps")
+    artifact_row = written["rows"][0]
+    assert artifact_row["image_id"] == "image-prepared"
+    assert artifact_row["sample_id"] == "sample-prepared"
+    assert artifact_row["decision"] == "promoted"
+    assert artifact_row["reason"] == "consensus"
+    assert artifact_row["support_rollout_ids"] == ["r0", "r1"]
+    assert len(artifact_row["member_boxes"]) == 2
+    assert "pairwise_geometry" in artifact_row
+    assert "consumed_overlap" in artifact_row
 
 
 def test_residual_events_use_compact_row_context_desc_tokens() -> None:
@@ -2158,12 +2357,24 @@ def test_residual_target_builder_committed_match_removes_object_through_scanner(
     assert all(event.correction_kind != "matched_object_repair" for event in result.events)
 
 
-def test_residual_target_builder_ignores_ul_promoted_objects_for_task4() -> None:
+def test_residual_target_builder_accepts_ul_promoted_objects() -> None:
     tok = _CoordLiteralTokenizer()
+    clean_prefix = (
+        f"{OBJECT_REF_START_TOKEN}cat{BOX_START_TOKEN}"
+        "<|coord_10|><|coord_20|><|coord_30|><|coord_40|>"
+    )
+    parsed = [
+        GTObject(
+            index=0,
+            geom_type="bbox_2d",
+            points_norm1000=[10, 20, 30, 40],
+            desc="cat",
+        ),
+    ]
     result = _build_residual_set_correction_events(
         tokenizer=tok,
-        response_token_ids=[],
-        parsed_bbox_objects_raw=[],
+        response_token_ids=list(tok.encode(clean_prefix, add_special_tokens=False)),
+        parsed_bbox_objects_raw=parsed,
         compact_full_object_spans=[],
         gts=[
             GTObject(
@@ -2173,14 +2384,14 @@ def test_residual_target_builder_ignores_ul_promoted_objects_for_task4() -> None
                 desc="cat",
             ),
         ],
-        accepted_objects_clean=[],
+        accepted_objects_clean=parsed,
         match=MatchResult(
-            matched_pairs=[],
-            fn_gt_indices=[0],
+            matched_pairs=[(0, 0)],
+            fn_gt_indices=[],
             fp_pred_indices=[],
             gating_rejections=0,
-            matched_maskiou_sum=0.0,
-            matched_maskiou_count=0,
+            matched_maskiou_sum=1.0,
+            matched_maskiou_count=1,
         ),
         ul_promoted_objects=[
             {
@@ -2199,19 +2410,19 @@ def test_residual_target_builder_ignores_ul_promoted_objects_for_task4() -> None
         lambda_ul_promoted=0.5,
     )
 
-    assert result.metrics["residual_object_count"] == pytest.approx(1.0)
-    assert result.metrics["ul_promoted_object_count"] == pytest.approx(0.0)
-    assert result.metrics["ul_promoted_object_count_ignored_task4"] == pytest.approx(1.0)
+    assert result.metrics["residual_object_count"] == pytest.approx(2.0)
+    assert result.metrics["ul_promoted_object_count"] == pytest.approx(1.0)
     assert result.events
     assert [
         atom.metadata["selected_object_id"] for atom in result.events[0].atom_drafts
-    ] == ["gt:0"] * len(result.events[0].atom_drafts)
-    assert all(
-        "ul:" not in candidate_id
-        for atom in result.events[0].atom_drafts
-        for action in atom.valid_actions
-        for candidate_id in action.candidate_ids_after
-    )
+    ] == ["ul:0"] * len(result.events[0].atom_drafts)
+    assert result.events[0].atom_drafts[0].selected_action is not None
+    assert result.events[0].atom_drafts[0].selected_action.metadata[
+        "support_provenance"
+    ] == ("ul",)
+    assert result.events[0].atom_drafts[0].selected_action.metadata[
+        "loss_weight"
+    ] == pytest.approx(0.25)
 
 
 @pytest.mark.parametrize("separator", ["\n", ""])

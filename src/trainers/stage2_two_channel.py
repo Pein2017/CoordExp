@@ -162,21 +162,23 @@ def _stage2_ul_rollout_evidence(
     for obj in list(view.get("parsed_bbox_objects_raw", [])):
         if not isinstance(obj, GTObject):
             continue
-        if _stage2_object_matches_any_gt(
-            obj=obj,
-            gts=gts,
-            assignment_iou_threshold=float(assignment_iou_threshold),
-        ):
-            continue
-        members.append(
-            ULMember(
+        try:
+            member = ULMember(
                 rollout_id=rollout_id,
                 local_index=int(obj.index),
                 desc_id=normalize_desc(str(obj.desc)),
                 desc_text=str(obj.desc),
                 bbox_norm1000=tuple(float(v) for v in obj.points_norm1000),
             )
-        )
+        except (TypeError, ValueError):
+            continue
+        if _stage2_object_matches_any_gt(
+            obj=obj,
+            gts=gts,
+            assignment_iou_threshold=float(assignment_iou_threshold),
+        ):
+            continue
+        members.append(member)
     return ULRolloutEvidence(
         rollout_id=rollout_id,
         is_valid=True,
@@ -2955,19 +2957,25 @@ class Stage2TwoChannelTrainer(
             else 0.5
         )
         residual_set_min_ul_valid_rollouts = (
-            int(residual_set_options.get("min_ul_valid_rollouts", num_rollouts))
+            int(residual_set_options.get("min_ul_valid_rollouts", 2))
             if residual_set_options is not None
-            else int(num_rollouts)
+            else 2
         )
         residual_set_ul_consensus_ratio = (
             float(residual_set_options.get("ul_consensus_ratio", 1.0))
             if residual_set_options is not None
             else 1.0
         )
-        # Task 4 residual-set supervision is GT-only. UL consensus/promotion and
-        # cluster artifacts are Task 5, so keep their schema defaults inert here.
-        residual_set_ul_geometry = None
-        residual_set_ul_artifact_enabled = False
+        residual_set_ul_geometry = (
+            _stage2_ul_geometry_from_options(residual_set_options)
+            if residual_set_options is not None
+            else None
+        )
+        residual_set_ul_artifact_enabled = (
+            _stage2_ul_artifact_enabled(residual_set_options)
+            if residual_set_options is not None
+            else False
+        )
         residual_set_role_vocab = (
             _resolve_stage2_teacher_forcing_role_vocab(self)
             if residual_set_selected
@@ -3352,6 +3360,7 @@ class Stage2TwoChannelTrainer(
         residual_set_ul_rejected_total = 0
         residual_set_ul_valid_rollout_total = 0
         residual_set_ul_artifact_rows: List[Dict[str, Any]] = []
+        residual_set_ul_promoted_cache: Dict[tuple[str, str], List[Dict[str, Any]]] = {}
 
         anchor_pred_objects_total = 0
         anchor_valid_pred_objects_total = 0
@@ -3851,54 +3860,70 @@ class Stage2TwoChannelTrainer(
             )
             residual_set_ul_promoted_objects: List[Dict[str, Any]] = []
             if residual_set_selected and residual_set_ul_geometry is not None:
-                assignment_iou_threshold_for_ul = float(
-                    getattr(
-                        assignment_strategy,
-                        "iou_threshold",
-                        getattr(assignment_strategy, "gate_threshold", gate_thr),
-                    )
+                ul_cache_key = (
+                    str(sample_id_for_meta),
+                    str(
+                        sample.get("image_id")
+                        or sample.get("sample_id")
+                        or sample_id_for_meta
+                    ),
                 )
-                ul_evidence = [
-                    _stage2_ul_rollout_evidence(
-                        sample_id=sample_id_for_meta,
-                        view=view_item,
-                        gts=gts,
-                        assignment_iou_threshold=assignment_iou_threshold_for_ul,
-                    )
-                    for view_item in ([anchor_view] + list(explorer_views))
-                ]
-                ul_result = mine_ul_consensus(
-                    ul_evidence,
-                    min_ul_valid_rollouts=int(residual_set_min_ul_valid_rollouts),
-                    consensus_ratio=float(residual_set_ul_consensus_ratio),
-                    geometry=residual_set_ul_geometry,
-                    consumed_members=_stage2_gt_consumed_members(gts=gts),
-                )
-                residual_set_ul_promoted_objects = _stage2_ul_promoted_targets(
-                    ul_result.promoted_clusters,
-                    lambda_ul_promoted=float(residual_set_lambda_ul_promoted),
-                )
-                residual_set_ul_promoted_total += int(
-                    len(ul_result.promoted_clusters)
-                )
-                residual_set_ul_quarantined_total += int(
-                    len(ul_result.quarantined_clusters)
-                )
-                residual_set_ul_rejected_total += int(
-                    len(ul_result.rejected_clusters)
-                )
-                residual_set_ul_valid_rollout_total += int(ul_result.k_valid)
-                if residual_set_ul_artifact_enabled:
-                    residual_set_ul_artifact_rows.extend(
-                        ul_cluster_artifact_rows(
-                            ul_result,
-                            image_id=str(
-                                sample.get("image_id")
-                                or sample.get("sample_id")
-                                or sample_id_for_meta
-                            ),
+                cached_ul_promoted = residual_set_ul_promoted_cache.get(ul_cache_key)
+                if cached_ul_promoted is not None:
+                    residual_set_ul_promoted_objects = list(cached_ul_promoted)
+                else:
+                    assignment_iou_threshold_for_ul = float(
+                        getattr(
+                            assignment_strategy,
+                            "iou_threshold",
+                            getattr(assignment_strategy, "gate_threshold", gate_thr),
                         )
                     )
+                    ul_evidence = [
+                        _stage2_ul_rollout_evidence(
+                            sample_id=sample_id_for_meta,
+                            view=view_item,
+                            gts=gts,
+                            assignment_iou_threshold=assignment_iou_threshold_for_ul,
+                        )
+                        for view_item in ([anchor_view] + list(explorer_views))
+                    ]
+                    ul_result = mine_ul_consensus(
+                        ul_evidence,
+                        min_ul_valid_rollouts=int(residual_set_min_ul_valid_rollouts),
+                        consensus_ratio=float(residual_set_ul_consensus_ratio),
+                        geometry=residual_set_ul_geometry,
+                        consumed_members=_stage2_gt_consumed_members(gts=gts),
+                    )
+                    residual_set_ul_promoted_objects = _stage2_ul_promoted_targets(
+                        ul_result.promoted_clusters,
+                        lambda_ul_promoted=float(residual_set_lambda_ul_promoted),
+                    )
+                    residual_set_ul_promoted_cache[ul_cache_key] = list(
+                        residual_set_ul_promoted_objects
+                    )
+                    residual_set_ul_promoted_total += int(
+                        len(ul_result.promoted_clusters)
+                    )
+                    residual_set_ul_quarantined_total += int(
+                        len(ul_result.quarantined_clusters)
+                    )
+                    residual_set_ul_rejected_total += int(
+                        len(ul_result.rejected_clusters)
+                    )
+                    residual_set_ul_valid_rollout_total += int(ul_result.k_valid)
+                    if residual_set_ul_artifact_enabled:
+                        residual_set_ul_artifact_rows.extend(
+                            ul_cluster_artifact_rows(
+                                ul_result,
+                                image_id=str(
+                                    sample.get("image_id")
+                                    or sample.get("sample_id")
+                                    or sample_id_for_meta
+                                ),
+                                sample_id=str(sample_id_for_meta),
+                            )
+                        )
 
             triage_anchor_gt_backed_total += int(len(anchor_gt_backed_indices))
             triage_shielded_anchor_total += int(len(shielded_anchor_indices))

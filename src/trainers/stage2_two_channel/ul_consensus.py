@@ -287,12 +287,18 @@ def mine_ul_consensus(
     )
 
 
-def ul_cluster_artifact_rows(result: ULConsensusResult, *, image_id: str) -> list[dict[str, Any]]:
+def ul_cluster_artifact_rows(
+    result: ULConsensusResult,
+    *,
+    image_id: str,
+    sample_id: str | None = None,
+) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
     for cluster in (*result.promoted_clusters, *result.rejected_clusters, *result.quarantined_clusters):
         rows.append(
             {
                 "image_id": image_id,
+                "sample_id": str(sample_id) if sample_id is not None else image_id,
                 "decision": cluster.decision,
                 "reason": cluster.reason,
                 "desc_id": cluster.desc_id,

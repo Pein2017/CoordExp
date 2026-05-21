@@ -1813,13 +1813,10 @@ def _build_residual_set_correction_events(
     )
     stop_token_id = _stop_token_id(tokenizer)
 
-    ignored_ul_promoted_object_count = sum(
-        1 for item in ul_promoted_objects if isinstance(item, Mapping)
-    )
     universe = _build_residual_universe_objects(
         tokenizer=tokenizer,
         gts=gts,
-        ul_promoted_objects=(),
+        ul_promoted_objects=ul_promoted_objects,
         lambda_ul_promoted=float(lambda_ul_promoted),
     )
     universe_by_id = {item.object_id: item for item in universe}
@@ -1832,9 +1829,6 @@ def _build_residual_set_correction_events(
         "atom_count": 0.0,
         "no_event_exact_path": 0.0,
         "dropped_stop_at_empty_prefix": 0.0,
-        "ul_promoted_object_count_ignored_task4": float(
-            ignored_ul_promoted_object_count
-        ),
     }
     del parsed_bbox_objects_raw, compact_full_object_spans, accepted_objects_clean, match
     raw_ids = [int(token_id) for token_id in response_token_ids]
