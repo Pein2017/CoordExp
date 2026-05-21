@@ -113,26 +113,24 @@ def _stage2_pipeline_with_channel_b_trie_ce() -> dict:
 
 def _residual_set_config() -> dict:
     return {
-        "rollin_policy": "random_valid_branch",
-        "rollin_resample_policy": "fixed_event",
+        "prepared_rollout_jsonl": "output/stage2_ab/prepared_rollouts/train8_ckpt3664.jsonl",
+        "expected_num_rollouts": 4,
         "base_seed": 17,
-        "coord_span_policy": "bbox_tail_from_anchor",
-        "strict_builder_invariants": True,
+        "lambda_type": 1.0,
+        "lambda_inner": 1.0,
+        "fallback_loss_weight": 1.0,
         "lambda_ul_promoted": 0.5,
-        "lambda_continue_margin": 0.0,
-        "continue_margin_m": 0.0,
-        "coverage_strength": 0.0,
-        "num_rollouts": 3,
-        "min_ul_valid_rollouts": 3,
+        "label_conflict_weight": 0.25,
+        "commit_iou_threshold": 0.75,
+        "duplicate_burst_iou_threshold": 0.95,
+        "ul_cluster_iou_threshold": 0.9,
+        "ul_gray_iou_low": 0.30,
         "ul_consensus_ratio": 1.0,
-        "ul_geometry": {
-            "iou_min": 0.75,
-            "center_distance_scale_max": 0.05,
-            "area_ratio_max": 1.5,
-            "aspect_ratio_max": 1.5,
-            "consumed_overlap_iou_min": 0.75,
-        },
-        "artifact_policy": {"ul_clusters": "monitor_debug_smoke"},
+        "min_ul_valid_rollouts": 2,
+        "clean_gt_sft_mix": 0,
+        "strict_prepared_rollout_tokens": True,
+        "legacy_reencode_fallback": False,
+        "strict_builder_invariants": True,
     }
 
 
@@ -1010,16 +1008,112 @@ def test_stage2_pipeline_accepts_residual_set_correction_objective() -> None:
     objective = loaded.stage2_ab.pipeline.objective[1]
     assert objective.name == "residual_set_correction"
     assert objective.application["preset"] == "rollout_self_prefix"
+    assert objective.config["prepared_rollout_jsonl"].endswith("train8_ckpt3664.jsonl")
     assert objective.config["base_seed"] == 17
-    assert objective.config["num_rollouts"] == 3
+    assert objective.config["expected_num_rollouts"] == 4
+    assert objective.config["lambda_type"] == pytest.approx(1.0)
+    assert objective.config["lambda_inner"] == pytest.approx(1.0)
     assert objective.config["lambda_ul_promoted"] == 0.5
-    assert loaded.stage2_ab.channel_b.triage_posterior.num_rollouts == 3
+    assert loaded.stage2_ab.channel_b.triage_posterior.num_rollouts == 2
 
 
-def test_residual_set_num_rollouts_owns_channel_b_rollout_count_when_legacy_omitted() -> None:
+def test_residual_set_requires_prepared_rollout_jsonl_before_trainer_init() -> None:
     raw = _make_stage2_training_payload()
     residual_cfg = _residual_set_config()
-    residual_cfg["num_rollouts"] = 5
+    residual_cfg.pop("prepared_rollout_jsonl")
+    raw["stage2_ab"]["pipeline"]["objective"] = [
+        {
+            "name": "token_ce",
+            "enabled": True,
+            "weight": 1.0,
+            "channels": ["A"],
+            "application": {"preset": "anchor_text_only"},
+            "config": {
+                "desc_ce_weight": 1.0,
+                "rollout_fn_desc_weight": 1.0,
+                "rollout_global_prefix_struct_ce_weight": 1.0,
+            },
+        },
+        {
+            "name": "residual_set_correction",
+            "enabled": True,
+            "weight": 1.0,
+            "channels": ["B"],
+            "application": {"preset": "rollout_self_prefix"},
+            "config": residual_cfg,
+        },
+    ]
+    raw["stage2_ab"]["channel_b"]["pseudo_positive"] = {"enabled": False}
+
+    with pytest.raises(
+        ValueError,
+        match=r"stage2_ab\.pipeline\.objective\[name=residual_set_correction\]\.config\.prepared_rollout_jsonl",
+    ):
+        TrainingConfig.from_mapping(raw, ConfigLoader.resolve_prompts(raw))
+
+
+def test_residual_set_minimal_prepared_rollout_config_gets_v1_defaults() -> None:
+    raw = _make_stage2_training_payload()
+    raw["stage2_ab"]["pipeline"]["objective"] = [
+        {
+            "name": "token_ce",
+            "enabled": True,
+            "weight": 1.0,
+            "channels": ["A"],
+            "application": {"preset": "anchor_text_only"},
+            "config": {
+                "desc_ce_weight": 1.0,
+                "rollout_fn_desc_weight": 1.0,
+                "rollout_global_prefix_struct_ce_weight": 1.0,
+            },
+        },
+        {
+            "name": "residual_set_correction",
+            "enabled": True,
+            "weight": 1.0,
+            "channels": ["B"],
+            "application": {"preset": "rollout_self_prefix"},
+            "config": {
+                "prepared_rollout_jsonl": "output/stage2_ab/prepared_rollouts/train8_ckpt3664.jsonl"
+            },
+        },
+    ]
+    raw["stage2_ab"]["channel_b"]["pseudo_positive"] = {"enabled": False}
+    raw["stage2_ab"]["channel_b"].pop("triage_posterior", None)
+
+    loaded = TrainingConfig.from_mapping(raw, ConfigLoader.resolve_prompts(raw))
+
+    config = loaded.stage2_ab.pipeline.objective[1].config
+    assert config["prepared_rollout_jsonl"].endswith("train8_ckpt3664.jsonl")
+    assert config["expected_num_rollouts"] == 4
+    assert config["base_seed"] == 17
+    assert config["lambda_type"] == pytest.approx(1.0)
+    assert config["lambda_inner"] == pytest.approx(1.0)
+    assert config["clean_gt_sft_mix"] == 0
+    assert config["lambda_ul_promoted"] == pytest.approx(0.5)
+    assert config["label_conflict_weight"] == pytest.approx(0.25)
+    assert config["commit_iou_threshold"] == pytest.approx(0.75)
+    assert config["duplicate_burst_iou_threshold"] == pytest.approx(0.95)
+    assert config["ul_cluster_iou_threshold"] == pytest.approx(0.9)
+    assert config["ul_gray_iou_low"] == pytest.approx(0.30)
+    assert config["ul_consensus_ratio"] == pytest.approx(1.0)
+    assert config["min_ul_valid_rollouts"] == 2
+    assert config["strict_prepared_rollout_tokens"] is True
+    assert config["legacy_reencode_fallback"] is False
+    assert config["strict_builder_invariants"] is True
+    assert {
+        "num_rollouts",
+        "coord_span_policy",
+        "coverage_strength",
+        "ul_geometry",
+        "artifact_policy",
+    }.isdisjoint(config)
+
+
+def test_residual_set_expected_num_rollouts_does_not_own_channel_b_rollout_count() -> None:
+    raw = _make_stage2_training_payload()
+    residual_cfg = _residual_set_config()
+    residual_cfg["expected_num_rollouts"] = 5
     residual_cfg["min_ul_valid_rollouts"] = 5
     raw["stage2_ab"]["pipeline"]["objective"] = [
         {
@@ -1048,74 +1142,8 @@ def test_residual_set_num_rollouts_owns_channel_b_rollout_count_when_legacy_omit
 
     loaded = TrainingConfig.from_mapping(raw, ConfigLoader.resolve_prompts(raw))
 
-    assert loaded.stage2_ab.pipeline.objective[1].config["num_rollouts"] == 5
-    assert loaded.stage2_ab.channel_b.triage_posterior.num_rollouts == 5
-
-
-def test_residual_set_num_rollouts_rejects_explicit_legacy_conflict() -> None:
-    raw = _make_stage2_training_payload()
-    residual_cfg = _residual_set_config()
-    residual_cfg["num_rollouts"] = 5
-    residual_cfg["min_ul_valid_rollouts"] = 5
-    raw["stage2_ab"]["pipeline"]["objective"] = [
-        {
-            "name": "token_ce",
-            "enabled": True,
-            "weight": 1.0,
-            "channels": ["A"],
-            "application": {"preset": "anchor_text_only"},
-            "config": {
-                "desc_ce_weight": 1.0,
-                "rollout_fn_desc_weight": 1.0,
-                "rollout_global_prefix_struct_ce_weight": 1.0,
-            },
-        },
-        {
-            "name": "residual_set_correction",
-            "enabled": True,
-            "weight": 1.0,
-            "channels": ["B"],
-            "application": {"preset": "rollout_self_prefix"},
-            "config": residual_cfg,
-        },
-    ]
-    raw["stage2_ab"]["channel_b"]["pseudo_positive"] = {"enabled": False}
-    raw["stage2_ab"]["channel_b"]["triage_posterior"] = {"num_rollouts": 3}
-
-    with pytest.raises(ValueError, match="num_rollouts.*omitted or match"):
-        TrainingConfig.from_mapping(raw, ConfigLoader.resolve_prompts(raw))
-
-
-def test_residual_set_num_rollouts_allows_explicit_legacy_match() -> None:
-    raw = _make_stage2_training_payload()
-    raw["stage2_ab"]["pipeline"]["objective"] = [
-        {
-            "name": "token_ce",
-            "enabled": True,
-            "weight": 1.0,
-            "channels": ["A"],
-            "application": {"preset": "anchor_text_only"},
-            "config": {
-                "desc_ce_weight": 1.0,
-                "rollout_fn_desc_weight": 1.0,
-                "rollout_global_prefix_struct_ce_weight": 1.0,
-            },
-        },
-        {
-            "name": "residual_set_correction",
-            "enabled": True,
-            "weight": 1.0,
-            "channels": ["B"],
-            "application": {"preset": "rollout_self_prefix"},
-            "config": _residual_set_config(),
-        },
-    ]
-    raw["stage2_ab"]["channel_b"]["pseudo_positive"] = {"enabled": False}
-    raw["stage2_ab"]["channel_b"]["triage_posterior"] = {"num_rollouts": 3}
-
-    loaded = TrainingConfig.from_mapping(raw, ConfigLoader.resolve_prompts(raw))
-
-    assert loaded.stage2_ab.channel_b.triage_posterior.num_rollouts == 3
+    assert loaded.stage2_ab.pipeline.objective[1].config["expected_num_rollouts"] == 5
+    assert loaded.stage2_ab.channel_b.triage_posterior.num_rollouts == 2
 
 
 def test_residual_set_rejects_legacy_channel_b_trie_double_supervision() -> None:
@@ -1280,24 +1308,22 @@ def test_residual_set_rejects_channel_b_token_ce_double_supervision() -> None:
 
 
 @pytest.mark.parametrize(
-    "nested_key, nested_value, expected_msg",
+    "removed_key, removed_value",
     [
-        ("ul_geometry", {"unexpected_geometry": 1.0}, "ul_geometry.*unexpected_geometry"),
-        (
-            "artifact_policy",
-            {"unexpected_artifact": "debug"},
-            "artifact_policy.*unexpected_artifact",
-        ),
+        ("num_rollouts", 4),
+        ("coord_span_policy", "bbox_tail_from_anchor"),
+        ("coverage_strength", 0.0),
+        ("ul_geometry", {"iou_min": 0.75}),
+        ("artifact_policy", {"ul_clusters": "monitor_debug_smoke"}),
     ],
 )
-def test_residual_set_rejects_unknown_nested_config_keys(
-    nested_key: str,
-    nested_value: dict,
-    expected_msg: str,
+def test_residual_set_rejects_removed_config_keys(
+    removed_key: str,
+    removed_value: object,
 ) -> None:
     raw = _make_stage2_training_payload()
     config = _residual_set_config()
-    config[nested_key] = {**config[nested_key], **nested_value}
+    config[removed_key] = removed_value
     raw["stage2_ab"]["pipeline"]["objective"] = [
         {
             "name": "token_ce",
@@ -1322,35 +1348,25 @@ def test_residual_set_rejects_unknown_nested_config_keys(
     ]
     raw["stage2_ab"]["channel_b"]["pseudo_positive"] = {"enabled": False}
 
-    with pytest.raises(ValueError, match=expected_msg):
+    with pytest.raises(ValueError, match=rf"residual_set_correction.*{removed_key}"):
         TrainingConfig.from_mapping(raw, ConfigLoader.resolve_prompts(raw))
 
 
 @pytest.mark.parametrize(
-    "nested_key, nested_value, expected_msg",
+    "removed_name",
     [
-        ("ul_geometry", {}, "ul_geometry.*iou_min"),
-        (
-            "ul_geometry",
-            {
-                "iou_min": 0.75,
-                "center_distance_scale_max": 0.05,
-                "area_ratio_max": 1.5,
-                "aspect_ratio_max": 1.5,
-            },
-            "ul_geometry.*consumed_overlap_iou_min",
-        ),
-        ("artifact_policy", {}, "artifact_policy.*ul_clusters"),
+        "loss_duplicate_burst_unlikelihood",
+        "bbox_geo",
+        "bbox_size_aux",
+        "coord_reg",
+        "coord_gate",
+        "text_gate",
     ],
 )
-def test_residual_set_rejects_missing_nested_config_keys(
-    nested_key: str,
-    nested_value: dict,
-    expected_msg: str,
+def test_stage2_pipeline_rejects_removed_live_objective_module_names(
+    removed_name: str,
 ) -> None:
     raw = _make_stage2_training_payload()
-    config = _residual_set_config()
-    config[nested_key] = nested_value
     raw["stage2_ab"]["pipeline"]["objective"] = [
         {
             "name": "token_ce",
@@ -1365,17 +1381,16 @@ def test_residual_set_rejects_missing_nested_config_keys(
             },
         },
         {
-            "name": "residual_set_correction",
+            "name": removed_name,
             "enabled": True,
             "weight": 1.0,
             "channels": ["B"],
-            "application": {"preset": "rollout_self_prefix"},
-            "config": config,
+            "application": {"preset": "rollout_only"},
+            "config": {},
         },
     ]
-    raw["stage2_ab"]["channel_b"]["pseudo_positive"] = {"enabled": False}
 
-    with pytest.raises(ValueError, match=expected_msg):
+    with pytest.raises(ValueError, match=removed_name):
         TrainingConfig.from_mapping(raw, ConfigLoader.resolve_prompts(raw))
 
 
@@ -2243,6 +2258,60 @@ def test_stage2_compact_full_a2_smoke_config_pins_unconstrained_fallback_policy(
     assert cfg.custom.train_sample_limit == 8
     assert cfg.custom.val_sample_limit == 8
     assert "checkpoint-3664" in str(cfg.model["adapters"][0])
+
+
+def test_stage2_compact_full_residual_set_smoke_config_uses_v1_contract() -> None:
+    repo_root = Path(__file__).resolve().parents[1]
+    config_path = (
+        repo_root
+        / "configs"
+        / "stage2_two_channel"
+        / "smoke"
+        / "compact_full_residual_set_ckpt3664_hf_1step.yaml"
+    )
+
+    cfg = ConfigLoader.load_materialized_training_config(str(config_path))
+    raw = ConfigLoader.load_yaml_with_extends(str(config_path))
+
+    assert "checkpoint-3664" in str(cfg.model["adapters"][0])
+    assert cfg.training["eval_strategy"] == "no"
+    assert cfg.custom.val_sample_limit == 0
+    assert cfg.rollout_matching.eval_monitor_dump.enabled is False
+    assert cfg.rollout_matching.eval_detection.enabled is False
+    assert cfg.rollout_matching.eval_detection.materialize_artifacts is False
+
+    assert cfg.stage2_ab is not None
+    objective_by_name = {
+        module.name: module for module in cfg.stage2_ab.pipeline.objective
+    }
+    residual_config = objective_by_name["residual_set_correction"].config
+    assert (
+        residual_config["prepared_rollout_jsonl"]
+        == "output/stage2_ab/prepared_rollouts/train8_ckpt3664.jsonl"
+    )
+    assert residual_config["expected_num_rollouts"] == 4
+    assert residual_config["base_seed"] == 17
+    assert residual_config["lambda_type"] == pytest.approx(1.0)
+    assert residual_config["lambda_inner"] == pytest.approx(1.0)
+    assert {
+        "num_rollouts",
+        "coord_span_policy",
+        "coverage_strength",
+        "ul_geometry",
+        "artifact_policy",
+    }.isdisjoint(residual_config)
+
+    raw_objective = raw["stage2_ab"]["pipeline"]["objective"]
+    raw_residual = next(
+        item for item in raw_objective if item["name"] == "residual_set_correction"
+    )
+    assert {
+        "num_rollouts",
+        "coord_span_policy",
+        "coverage_strength",
+        "ul_geometry",
+        "artifact_policy",
+    }.isdisjoint(raw_residual["config"])
 
 
 def test_stage2_compact_full_a2_gate2_smoke_config_keeps_compact_surface() -> None:

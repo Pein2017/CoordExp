@@ -120,14 +120,12 @@ def write_ul_clusters_artifact(
 
 
 def _stage2_ul_geometry_from_options(options: Mapping[str, Any]) -> ULGeometryConfig:
-    raw = options.get("ul_geometry", {})
-    geometry = raw if isinstance(raw, Mapping) else {}
     return ULGeometryConfig(
-        iou_min=float(geometry.get("iou_min", 0.75)),
-        center_distance_scale_max=float(geometry.get("center_distance_scale_max", 0.05)),
-        area_ratio_max=float(geometry.get("area_ratio_max", 1.5)),
-        aspect_ratio_max=float(geometry.get("aspect_ratio_max", 1.5)),
-        consumed_overlap_iou_min=float(geometry.get("consumed_overlap_iou_min", 0.75)),
+        iou_min=float(options.get("ul_cluster_iou_threshold", 0.9)),
+        center_distance_scale_max=float("inf"),
+        area_ratio_max=float("inf"),
+        aspect_ratio_max=float("inf"),
+        consumed_overlap_iou_min=float(options.get("commit_iou_threshold", 0.75)),
     )
 
 
@@ -253,13 +251,11 @@ def _stage2_ul_rollout_id(*, sample_id: str, view: Mapping[str, Any]) -> str:
 
 
 def _stage2_ul_artifact_enabled(options: Mapping[str, Any]) -> bool:
-    policy = options.get("artifact_policy", {})
-    if not isinstance(policy, Mapping):
-        return False
-    return str(policy.get("ul_clusters", "") or "").strip() == "monitor_debug_smoke"
+    return bool(options)
 
 
 def _stage2_ul_artifact_root(owner: Any, *, global_step: int) -> str:
+    _ = global_step
     cfg = owner._train_monitor_dump_cfg()
     out_dir = cfg.get("out_dir") if isinstance(cfg, Mapping) else None
     if not isinstance(out_dir, str) or not out_dir.strip():
@@ -267,11 +263,7 @@ def _stage2_ul_artifact_root(owner: Any, *, global_step: int) -> str:
             str(getattr(getattr(owner, "args", None), "output_dir", ".")),
             "monitor_dumps",
         )
-    return os.path.join(
-        str(out_dir),
-        "stage2_ul_consensus",
-        f"step_{int(global_step):06d}",
-    )
+    return str(out_dir)
 
 
 def _stage2_batch_timing_enabled() -> bool:
@@ -2518,7 +2510,7 @@ class Stage2TwoChannelTrainer(
             )
         )
         if residual_set_options is not None:
-            num_rollouts = int(residual_set_options.get("num_rollouts", 2))
+            num_rollouts = int(residual_set_options.get("expected_num_rollouts", 4))
         else:
             num_rollouts_default = 4 if pseudo_positive_enabled else 2
             num_rollouts = int(

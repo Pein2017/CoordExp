@@ -93,32 +93,32 @@ STAGE2_TRIE_CE_RESERVED_WEIGHT_KEYS: set[str] = (
 STAGE2_TRIE_CE_APPLICATION_PRESETS: set[str] = {"rollout_trie_hard_ce"}
 STAGE2_RESIDUAL_SET_MODULE_NAME = "residual_set_correction"
 STAGE2_RESIDUAL_SET_APPLICATION_PRESETS: set[str] = {"rollout_self_prefix"}
-STAGE2_RESIDUAL_SET_CONFIG_KEYS: set[str] = {
-    "rollin_policy",
-    "rollin_resample_policy",
-    "base_seed",
-    "coord_span_policy",
-    "strict_builder_invariants",
-    "lambda_ul_promoted",
-    "lambda_continue_margin",
-    "continue_margin_m",
-    "coverage_strength",
-    "num_rollouts",
-    "min_ul_valid_rollouts",
-    "ul_consensus_ratio",
-    "ul_geometry",
-    "artifact_policy",
+STAGE2_RESIDUAL_SET_DEFAULT_CONFIG_VALUES: dict[str, Any] = {
+    "expected_num_rollouts": 4,
+    "base_seed": 17,
+    "lambda_type": 1.0,
+    "lambda_inner": 1.0,
+    "fallback_loss_weight": 1.0,
+    "lambda_ul_promoted": 0.5,
+    "label_conflict_weight": 0.25,
+    "commit_iou_threshold": 0.75,
+    "duplicate_burst_iou_threshold": 0.95,
+    "ul_cluster_iou_threshold": 0.9,
+    "ul_gray_iou_low": 0.30,
+    "ul_consensus_ratio": 1.0,
+    "min_ul_valid_rollouts": 2,
+    "clean_gt_sft_mix": 0,
+    "strict_prepared_rollout_tokens": True,
+    "legacy_reencode_fallback": False,
+    "strict_builder_invariants": True,
 }
-STAGE2_RESIDUAL_SET_UL_GEOMETRY_KEYS: set[str] = {
-    "iou_min",
-    "center_distance_scale_max",
-    "area_ratio_max",
-    "aspect_ratio_max",
-    "consumed_overlap_iou_min",
+STAGE2_RESIDUAL_SET_REQUIRED_CONFIG_KEYS: set[str] = {
+    "prepared_rollout_jsonl",
 }
-STAGE2_RESIDUAL_SET_ARTIFACT_POLICY_KEYS: set[str] = {
-    "ul_clusters",
-}
+STAGE2_RESIDUAL_SET_CONFIG_KEYS: set[str] = (
+    STAGE2_RESIDUAL_SET_REQUIRED_CONFIG_KEYS
+    | set(STAGE2_RESIDUAL_SET_DEFAULT_CONFIG_VALUES)
+)
 TEACHER_FORCING_OBJECTIVE_ID = "teacher_forcing"
 TEACHER_FORCING_PROFILES: set[str] = {
     "hard_sft",
@@ -2941,60 +2941,21 @@ class Stage2PipelineConfig:
                     f"{sorted(str(k) for k in unknown_cfg)}"
                 )
             if str(spec.name) == STAGE2_RESIDUAL_SET_MODULE_NAME:
-                if "ul_geometry" in spec.config:
-                    ul_geometry = spec.config["ul_geometry"]
-                    if not isinstance(ul_geometry, Mapping):
-                        raise TypeError(
-                            "stage2_ab.pipeline.objective"
-                            f"[{idx}].config.ul_geometry must be a mapping"
-                        )
-                    ul_geometry_unknown = (
-                        set(ul_geometry.keys())
-                        - STAGE2_RESIDUAL_SET_UL_GEOMETRY_KEYS
+                prepared_rollout_jsonl = spec.config.get("prepared_rollout_jsonl")
+                if (
+                    not isinstance(prepared_rollout_jsonl, str)
+                    or not prepared_rollout_jsonl.strip()
+                ):
+                    raise ValueError(
+                        "stage2_ab.pipeline.objective[name=residual_set_correction]"
+                        ".config.prepared_rollout_jsonl must be a non-empty string"
                     )
-                    ul_geometry_missing = (
-                        STAGE2_RESIDUAL_SET_UL_GEOMETRY_KEYS
-                        - set(ul_geometry.keys())
-                    )
-                    if ul_geometry_unknown:
-                        raise ValueError(
-                            "Unknown stage2_ab.pipeline.objective"
-                            f"[{idx}].config.ul_geometry keys for module {spec.name!r}: "
-                            f"{sorted(str(k) for k in ul_geometry_unknown)}"
-                        )
-                    if ul_geometry_missing:
-                        raise ValueError(
-                            "Missing required stage2_ab.pipeline.objective"
-                            f"[{idx}].config.ul_geometry keys for module {spec.name!r}: "
-                            f"{sorted(str(k) for k in ul_geometry_missing)}"
-                        )
-                if "artifact_policy" in spec.config:
-                    artifact_policy = spec.config["artifact_policy"]
-                    if not isinstance(artifact_policy, Mapping):
-                        raise TypeError(
-                            "stage2_ab.pipeline.objective"
-                            f"[{idx}].config.artifact_policy must be a mapping"
-                        )
-                    artifact_policy_unknown = (
-                        set(artifact_policy.keys())
-                        - STAGE2_RESIDUAL_SET_ARTIFACT_POLICY_KEYS
-                    )
-                    artifact_policy_missing = (
-                        STAGE2_RESIDUAL_SET_ARTIFACT_POLICY_KEYS
-                        - set(artifact_policy.keys())
-                    )
-                    if artifact_policy_unknown:
-                        raise ValueError(
-                            "Unknown stage2_ab.pipeline.objective"
-                            f"[{idx}].config.artifact_policy keys for module {spec.name!r}: "
-                            f"{sorted(str(k) for k in artifact_policy_unknown)}"
-                        )
-                    if artifact_policy_missing:
-                        raise ValueError(
-                            "Missing required stage2_ab.pipeline.objective"
-                            f"[{idx}].config.artifact_policy keys for module {spec.name!r}: "
-                            f"{sorted(str(k) for k in artifact_policy_missing)}"
-                        )
+                defaulted_config = {
+                    **STAGE2_RESIDUAL_SET_DEFAULT_CONFIG_VALUES,
+                    **dict(spec.config),
+                }
+                spec.config.clear()
+                spec.config.update(defaulted_config)
             optional_cfg = OBJECTIVE_OPTIONAL_CONFIG_KEYS.get(str(spec.name), set())
             missing_cfg = allowed_cfg - set(spec.config.keys()) - set(optional_cfg)
             if missing_cfg:
@@ -3190,61 +3151,12 @@ class Stage2ABConfig:
             None,
         )
         channel_b_raw = data.pop("channel_b", None)
-        channel_b_parse_raw = channel_b_raw
-        legacy_triage_num_rollouts_raw = None
-        legacy_triage_num_rollouts_explicit = False
-        if isinstance(channel_b_raw, Mapping):
-            triage_raw = channel_b_raw.get("triage_posterior")
-            if isinstance(triage_raw, Mapping) and "num_rollouts" in triage_raw:
-                legacy_triage_num_rollouts_explicit = True
-                legacy_triage_num_rollouts_raw = triage_raw.get("num_rollouts")
-
-        if residual_set_candidate is not None and "B" in residual_set_candidate.channels:
-            residual_num_rollouts_raw = residual_set_candidate.config.get("num_rollouts")
-            if isinstance(residual_num_rollouts_raw, bool) or not isinstance(
-                residual_num_rollouts_raw, int
-            ):
-                raise TypeError(
-                    "stage2_ab.pipeline.objective residual_set_correction "
-                    "config.num_rollouts must be an int"
-                )
-            if residual_num_rollouts_raw < 2:
-                raise ValueError(
-                    "stage2_ab.pipeline.objective residual_set_correction "
-                    "config.num_rollouts must be >= 2"
-                )
-            if legacy_triage_num_rollouts_explicit:
-                try:
-                    legacy_num_rollouts = int(legacy_triage_num_rollouts_raw)
-                except (TypeError, ValueError) as exc:
-                    raise TypeError(
-                        "stage2_ab.channel_b.triage_posterior.num_rollouts "
-                        "must be an int"
-                    ) from exc
-                if legacy_num_rollouts != int(residual_num_rollouts_raw):
-                    raise ValueError(
-                        "residual_set_correction on Channel-B takes rollout "
-                        "ownership from stage2_ab.pipeline.objective"
-                        "[name=residual_set_correction].config.num_rollouts; "
-                        "explicit stage2_ab.channel_b.triage_posterior.num_rollouts "
-                        "must be omitted or match it"
-                    )
-            else:
-                channel_b_data: MutableMapping[str, Any] = (
-                    dict(channel_b_raw) if isinstance(channel_b_raw, Mapping) else {}
-                )
-                triage_data: MutableMapping[str, Any] = (
-                    dict(channel_b_data.get("triage_posterior"))
-                    if isinstance(channel_b_data.get("triage_posterior"), Mapping)
-                    else {}
-                )
-                triage_data["num_rollouts"] = int(residual_num_rollouts_raw)
-                channel_b_data["triage_posterior"] = triage_data
-                channel_b_parse_raw = channel_b_data
-
+        residual_set_candidate_on_channel_b = (
+            residual_set_candidate is not None and "B" in residual_set_candidate.channels
+        )
         channel_b = Stage2ABChannelBConfig.from_mapping(
-            channel_b_parse_raw,
-            validate_legacy_rollouts=False,
+            channel_b_raw,
+            validate_legacy_rollouts=not residual_set_candidate_on_channel_b,
         )
 
         residual_set = residual_set_candidate
@@ -3283,19 +3195,6 @@ class Stage2ABConfig:
                 raise ValueError(
                     "residual_set_correction is mutually exclusive with "
                     "stage2_trie_ce; remove the legacy Channel-B trie CE objective."
-                )
-            num_rollouts_raw = residual_set.config.get("num_rollouts")
-            if isinstance(num_rollouts_raw, bool) or not isinstance(
-                num_rollouts_raw, int
-            ):
-                raise TypeError(
-                    "stage2_ab.pipeline.objective residual_set_correction "
-                    "config.num_rollouts must be an int"
-                )
-            if num_rollouts_raw < 2:
-                raise ValueError(
-                    "stage2_ab.pipeline.objective residual_set_correction "
-                    "config.num_rollouts must be >= 2"
                 )
         elif (
             not channel_b.pseudo_positive.enabled

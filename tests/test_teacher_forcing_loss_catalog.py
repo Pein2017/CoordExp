@@ -33,6 +33,42 @@ def test_bbox_modules_are_removed_from_objective_catalog() -> None:
     assert objective_modules_for_family("bbox") == ()
     assert "bbox_geo" not in OBJECTIVE_MODULE_CATALOG
     assert "bbox_size_aux" not in OBJECTIVE_MODULE_CATALOG
+    assert "coord_reg" not in OBJECTIVE_MODULE_CATALOG
+    assert "coord_gate" not in OBJECTIVE_MODULE_CATALOG
+    assert "text_gate" not in OBJECTIVE_MODULE_CATALOG
+    assert "loss_duplicate_burst_unlikelihood" not in OBJECTIVE_MODULE_CATALOG
+
+
+def test_residual_set_module_catalog_uses_strict_v1_config_keys() -> None:
+    definition = OBJECTIVE_MODULE_CATALOG["residual_set_correction"]
+
+    assert set(definition.config_keys) == {
+        "prepared_rollout_jsonl",
+        "expected_num_rollouts",
+        "base_seed",
+        "lambda_type",
+        "lambda_inner",
+        "fallback_loss_weight",
+        "lambda_ul_promoted",
+        "label_conflict_weight",
+        "commit_iou_threshold",
+        "duplicate_burst_iou_threshold",
+        "ul_cluster_iou_threshold",
+        "ul_gray_iou_low",
+        "ul_consensus_ratio",
+        "min_ul_valid_rollouts",
+        "clean_gt_sft_mix",
+        "strict_prepared_rollout_tokens",
+        "legacy_reencode_fallback",
+        "strict_builder_invariants",
+    }
+    assert {
+        "num_rollouts",
+        "coord_span_policy",
+        "coverage_strength",
+        "ul_geometry",
+        "artifact_policy",
+    }.isdisjoint(definition.config_keys)
 
 
 def test_loss_catalog_drives_diagnostic_registry_allowlists() -> None:

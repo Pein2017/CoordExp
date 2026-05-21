@@ -2681,43 +2681,41 @@ def _channel_b_residual_set_correction_options(
             continue
         config_raw = _objective_spec_get(spec, "config", {})
         config = dict(config_raw) if isinstance(config_raw, Mapping) else {}
-        rollin_policy = str(
-            config.get("rollin_policy", _DEFAULT_RESIDUAL_SET_ROLLIN_POLICY)
-            or _DEFAULT_RESIDUAL_SET_ROLLIN_POLICY
-        )
         try:
             base_seed = int(config.get("base_seed", _DEFAULT_RESIDUAL_SET_BASE_SEED))
         except (TypeError, ValueError):
             base_seed = int(_DEFAULT_RESIDUAL_SET_BASE_SEED)
         try:
-            num_rollouts = int(config.get("num_rollouts", 2))
+            expected_num_rollouts = int(config.get("expected_num_rollouts", 4))
         except (TypeError, ValueError):
-            num_rollouts = 2
+            expected_num_rollouts = 4
         try:
             lambda_ul_promoted = float(config.get("lambda_ul_promoted", 0.5))
         except (TypeError, ValueError):
             lambda_ul_promoted = 0.5
         try:
-            min_ul_valid_rollouts = int(config.get("min_ul_valid_rollouts", num_rollouts))
+            min_ul_valid_rollouts = int(config.get("min_ul_valid_rollouts", 2))
         except (TypeError, ValueError):
-            min_ul_valid_rollouts = int(num_rollouts)
+            min_ul_valid_rollouts = 2
         try:
             ul_consensus_ratio = float(config.get("ul_consensus_ratio", 1.0))
         except (TypeError, ValueError):
             ul_consensus_ratio = 1.0
-        ul_geometry = config.get("ul_geometry", {})
-        artifact_policy = config.get("artifact_policy", {})
         return {
-            "rollin_policy": rollin_policy,
+            "prepared_rollout_jsonl": str(config.get("prepared_rollout_jsonl", "") or ""),
+            "expected_num_rollouts": int(expected_num_rollouts),
             "base_seed": int(base_seed),
-            "num_rollouts": int(num_rollouts),
             "lambda_ul_promoted": float(lambda_ul_promoted),
+            "commit_iou_threshold": float(config.get("commit_iou_threshold", 0.75)),
+            "duplicate_burst_iou_threshold": float(
+                config.get("duplicate_burst_iou_threshold", 0.95)
+            ),
+            "ul_cluster_iou_threshold": float(
+                config.get("ul_cluster_iou_threshold", 0.9)
+            ),
+            "ul_gray_iou_low": float(config.get("ul_gray_iou_low", 0.30)),
             "min_ul_valid_rollouts": int(min_ul_valid_rollouts),
             "ul_consensus_ratio": float(ul_consensus_ratio),
-            "ul_geometry": dict(ul_geometry) if isinstance(ul_geometry, Mapping) else {},
-            "artifact_policy": (
-                dict(artifact_policy) if isinstance(artifact_policy, Mapping) else {}
-            ),
         }
     return None
 
