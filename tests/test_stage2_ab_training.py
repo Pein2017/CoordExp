@@ -2573,6 +2573,38 @@ def test_residual_set_ul_artifact_rows_accumulate_across_prepare_batches_without
     ]
 
 
+def test_residual_set_ul_artifact_enabled_no_rows_clears_stale_file(
+    tmp_path,
+) -> None:
+    rollout_text = (
+        f"{OBJECT_REF_START_TOKEN}cat{BOX_START_TOKEN}"
+        "<|coord_10|><|coord_20|><|coord_30|><|coord_40|>"
+    )
+    t = _make_compact_channel_b_trainer(rollout_text=rollout_text)
+    t.args = types.SimpleNamespace(output_dir=str(tmp_path / "out"))
+    prepared_path = tmp_path / "prepared_rollouts.jsonl"
+    prepared_path.write_text("", encoding="utf-8")
+    t.stage2_pipeline_manifest = _make_residual_set_pipeline_manifest(
+        prepared_rollout_jsonl=str(prepared_path),
+    )
+    artifact_path = tmp_path / "out" / "monitor_dumps" / "ul_clusters.jsonl"
+    artifact_path.parent.mkdir(parents=True)
+    artifact_path.write_text('{"sample_id": "stale"}\n', encoding="utf-8")
+
+    sample = _single_bbox_sample()
+    sample["sample_id"] = "sample-no-ul"
+    sample["image_id"] = "image-no-ul"
+    _segments, metrics = t._prepare_batch_inputs_b([sample], _segments_only=True)
+
+    assert metrics[
+        "stage2_ab/channel_b/residual_set/ul/artifact_rows"
+    ] == pytest.approx(0.0)
+    assert metrics[
+        "stage2_ab/channel_b/residual_set/ul/artifact_written"
+    ] == pytest.approx(1.0)
+    assert artifact_path.read_text(encoding="utf-8") == ""
+
+
 def test_residual_events_use_compact_row_context_desc_tokens() -> None:
     tok = _BareDescMergingTokenizer()
     raw_text = (

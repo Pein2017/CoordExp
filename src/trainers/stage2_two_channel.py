@@ -4990,11 +4990,7 @@ class Stage2TwoChannelTrainer(
             )
         )
         ul_artifact_path = None
-        if (
-            residual_set_selected
-            and residual_set_ul_artifact_enabled
-            and residual_set_ul_artifact_rows
-        ):
+        if residual_set_selected and residual_set_ul_artifact_enabled:
             ul_artifact_root = _stage2_ul_artifact_root(
                 self, global_step=int(monitor_step)
             )
@@ -5016,12 +5012,17 @@ class Stage2TwoChannelTrainer(
                     append=False,
                 )
                 initialized_roots.add(ul_artifact_root)
-            ul_artifact_path = write_ul_clusters_artifact(
-                ul_artifact_root,
-                residual_set_ul_artifact_rows,
-                enabled=True,
-                append=True,
-            )
+                ul_artifact_path = os.path.join(
+                    ul_artifact_root,
+                    "ul_clusters.jsonl",
+                )
+            if residual_set_ul_artifact_rows:
+                ul_artifact_path = write_ul_clusters_artifact(
+                    ul_artifact_root,
+                    residual_set_ul_artifact_rows,
+                    enabled=True,
+                    append=True,
+                )
 
         batch_metrics: Stage2BatchMetrics = {
             "stage2/channel_a": float(0.0),
