@@ -344,6 +344,33 @@ def test_forged_stop_transition_is_rejected_for_nonempty_residual_state() -> Non
         transition_state(state, forged_stop)
 
 
+def test_strict_stop_transition_rejects_forged_next_state() -> None:
+    state = ResidualState(
+        objects=(),
+        remaining_object_ids=frozenset(),
+        active_candidate_ids=frozenset(),
+        text_prefix_token_ids=(42,),
+        stop_token_id=999,
+    )
+    forged_next_state = ResidualState(
+        objects=(),
+        remaining_object_ids=frozenset(),
+        active_candidate_ids=frozenset(),
+        text_prefix_token_ids=(123,),
+        stop_token_id=999,
+    )
+    forged_stop = ValidAction(
+        token_id=999,
+        token_role=TokenRole.STOP,
+        token_text="<|im_end|>",
+        candidate_ids_after=frozenset(),
+        next_state=forged_next_state,
+    )
+
+    with pytest.raises(ValueError, match="transition semantics"):
+        transition_state(state, forged_stop)
+
+
 def test_x1_valid_action_commits_subsequent_bbox_to_same_object() -> None:
     state = make_state_for_objects(
         make_object("a", "person_left", x1=120),

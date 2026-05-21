@@ -290,18 +290,17 @@ def transition_state(
             raise ValueError("STOP transition requires selected_object_id is None")
         if action.coord_role is not None:
             raise ValueError("STOP transition requires coord_role is None")
+        expected_next_state = _stop_next_state(state)
         if action.next_state is not None:
+            if strict and not _residual_state_transition_semantics_equal(
+                action.next_state,
+                expected_next_state,
+            ):
+                raise ValueError(
+                    "residual-set action.next_state does not match transition semantics"
+                )
             return action.next_state
-        return ResidualState(
-            objects=state.objects,
-            remaining_object_ids=state.remaining_object_ids,
-            active_candidate_ids=frozenset(),
-            text_prefix_token_ids=state.text_prefix_token_ids,
-            object_start_token_id=state.object_start_token_id,
-            box_start_token_id=state.box_start_token_id,
-            stop_token_id=state.stop_token_id,
-            metadata=state.metadata,
-        )
+        return expected_next_state
 
     if action.next_state is None:
         if strict:
@@ -395,6 +394,19 @@ def _residual_state_transition_semantics_equal(
         and left.object_start_token_id == right.object_start_token_id
         and left.box_start_token_id == right.box_start_token_id
         and left.stop_token_id == right.stop_token_id
+    )
+
+
+def _stop_next_state(state: ResidualState) -> ResidualState:
+    return ResidualState(
+        objects=state.objects,
+        remaining_object_ids=state.remaining_object_ids,
+        active_candidate_ids=frozenset(),
+        text_prefix_token_ids=state.text_prefix_token_ids,
+        object_start_token_id=state.object_start_token_id,
+        box_start_token_id=state.box_start_token_id,
+        stop_token_id=state.stop_token_id,
+        metadata=state.metadata,
     )
 
 
