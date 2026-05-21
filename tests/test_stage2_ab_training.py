@@ -2128,6 +2128,79 @@ def test_residual_set_ul_consensus_materializes_rollout_local_promoted_boxes() -
     }
 
 
+def test_residual_set_ul_consensus_materializes_rollout_local_desc_text() -> None:
+    prepared_attempt_views = [
+        {
+            "rollout_id": "r0",
+            "rollout_counts_as_valid_rollout": True,
+            "parsed_bbox_objects_raw": [
+                GTObject(
+                    index=0,
+                    geom_type="bbox_2d",
+                    points_norm1000=[50, 60, 150, 180],
+                    desc="Dog",
+                ),
+            ],
+        },
+        {
+            "rollout_id": "r1",
+            "rollout_counts_as_valid_rollout": True,
+            "parsed_bbox_objects_raw": [
+                GTObject(
+                    index=0,
+                    geom_type="bbox_2d",
+                    points_norm1000=[52, 62, 152, 182],
+                    desc="dog",
+                ),
+            ],
+        },
+    ]
+    rollouts = [
+        _stage2_ul_rollout_evidence(
+            sample_id="sample-ul-local-desc",
+            view=view,
+            gts=[],
+            assignment_iou_threshold=0.5,
+        )
+        for view in prepared_attempt_views
+    ]
+    geometry = _stage2_ul_geometry_from_options(
+        {
+            "ul_cluster_iou_threshold": 0.9,
+            "ul_gray_iou_low": 0.3,
+            "duplicate_burst_iou_threshold": 0.95,
+            "commit_iou_threshold": 0.75,
+        }
+    )
+    from src.trainers.stage2_two_channel.ul_consensus import mine_ul_consensus
+
+    assert {
+        member.desc_text
+        for rollout in rollouts
+        for member in rollout.unmatched_members
+    } == {"Dog", "dog"}
+    ul_result = mine_ul_consensus(
+        rollouts,
+        min_ul_valid_rollouts=2,
+        consensus_ratio=1.0,
+        geometry=geometry,
+    )
+
+    r0_target = _stage2_ul_promoted_targets(
+        ul_result.promoted_clusters,
+        lambda_ul_promoted=0.25,
+        rollout_id="r0",
+    )
+    r1_target = _stage2_ul_promoted_targets(
+        ul_result.promoted_clusters,
+        lambda_ul_promoted=0.25,
+        rollout_id="r1",
+    )
+
+    assert r0_target[0]["object"].desc == "Dog"
+    assert r1_target[0]["object"].desc == "dog"
+
+
 def test_ul_consensus_gt_overlap_reaches_miner_quarantine_and_artifacts() -> None:
     gt = [
         GTObject(

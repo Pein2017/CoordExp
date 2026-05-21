@@ -236,7 +236,7 @@ def _stage2_ul_promoted_targets(
                         index=int(cluster_index),
                         geom_type="bbox_2d",
                         points_norm1000=[int(round(v)) for v in member.bbox_norm1000],
-                        desc=str(getattr(cluster, "desc_text", member.desc_text)),
+                        desc=str(member.desc_text),
                     ),
                     "loss_weight": float(lambda_ul_promoted),
                     "support_provenance": (
