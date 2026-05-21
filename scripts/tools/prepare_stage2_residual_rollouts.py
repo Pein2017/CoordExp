@@ -265,16 +265,17 @@ def main(argv: Sequence[str] | None = None) -> int:
     )
     args = parser.parse_args(argv)
 
-    config_path = args.config
-    if not config_path.is_absolute():
-        config_path = (ROOT / config_path).resolve()
-    info = preflight_config(config_path)
     mode = "preflight" if bool(args.dry_run) else str(args.mode)
     if mode == "real":
         raise SystemExit(
             "real GPU generation is not implemented in this Task 2 producer; "
             "use --mode fixture for deterministic non-expensive JSONL output"
         )
+
+    config_path = args.config
+    if not config_path.is_absolute():
+        config_path = (ROOT / config_path).resolve()
+    info = preflight_config(config_path)
     if mode == "preflight":
         print(json.dumps({"status": "ok", **info}, sort_keys=True))
         return 0

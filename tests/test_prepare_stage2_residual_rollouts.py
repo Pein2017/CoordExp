@@ -77,3 +77,28 @@ def test_prepare_stage2_residual_rollouts_cli_preflight_checkpoint_guard() -> No
     assert payload["status"] == "ok"
     assert "checkpoint-3664" in payload["checkpoint"]
     assert payload["train_jsonl"].endswith("train.coord.jsonl")
+
+
+def test_prepare_stage2_residual_rollouts_cli_real_mode_fails_before_preflight() -> None:
+    root = Path(__file__).resolve().parents[1]
+    script = root / "scripts" / "tools" / "prepare_stage2_residual_rollouts.py"
+    result = subprocess.run(
+        [
+            sys.executable,
+            str(script),
+            "--config",
+            str(root / "does_not_exist.yaml"),
+            "--out",
+            str(root / "temp" / "prepared_rollouts_test.jsonl"),
+            "--mode",
+            "real",
+        ],
+        cwd=str(root),
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert result.returncode != 0
+    assert "real GPU generation is not implemented" in result.stderr
+    assert "does_not_exist.yaml" not in result.stderr

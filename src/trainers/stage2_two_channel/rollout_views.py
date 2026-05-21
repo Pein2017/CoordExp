@@ -185,6 +185,29 @@ def load_prepared_rollout_jsonl(
     return attempts
 
 
+def validate_prepared_rollout_token_text(
+    attempt: PreparedRolloutAttempt,
+    *,
+    tokenizer: Any,
+) -> None:
+    token_ids = attempt.response_token_ids
+    if token_ids is None:
+        return
+    decoded = str(
+        tokenizer.decode(
+            [int(token_id) for token_id in token_ids],
+            skip_special_tokens=False,
+            clean_up_tokenization_spaces=False,
+        )
+    )
+    if str(attempt.raw_text) != decoded:
+        raise ValueError(
+            "prepared rollout raw_text does not match tokenizer.decode("
+            "response_token_ids) for rollout_id="
+            f"{attempt.rollout_id!r}"
+        )
+
+
 def dedup_prepared_rollout_attempts(
     attempts: Sequence[PreparedRolloutAttempt],
     *,
@@ -750,4 +773,5 @@ __all__ = [
     "extract_compact_full_object_token_spans",
     "load_prepared_rollout_jsonl",
     "parse_prepared_rollout_attempt",
+    "validate_prepared_rollout_token_text",
 ]

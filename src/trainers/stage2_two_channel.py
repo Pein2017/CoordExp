@@ -56,6 +56,7 @@ from .stage2_two_channel.rollout_views import (
     PreparedRolloutDedupStats,
     dedup_prepared_rollout_attempts,
     load_prepared_rollout_jsonl,
+    validate_prepared_rollout_token_text,
 )
 from .stage2_two_channel.scheduler import Stage2ABSchedulerMixin
 from .stage2_two_channel.teacher_forcing_adapter import build_residual_set_target_ir
@@ -289,6 +290,7 @@ def _stage2_load_prepared_rollout_attempts_once(
     path: str,
     *,
     strict_prepared_rollout_tokens: bool,
+    tokenizer: Any,
 ) -> List[PreparedRolloutAttempt]:
     cache = getattr(owner, "_stage2_prepared_rollout_cache", None)
     if not isinstance(cache, dict):
@@ -297,12 +299,20 @@ def _stage2_load_prepared_rollout_attempts_once(
     cache_key = (
         os.path.abspath(os.path.expanduser(str(path))),
         bool(strict_prepared_rollout_tokens),
+        id(tokenizer),
     )
     if cache_key not in cache:
-        cache[cache_key] = load_prepared_rollout_jsonl(
+        attempts = load_prepared_rollout_jsonl(
             cache_key[0],
             strict_prepared_rollout_tokens=bool(strict_prepared_rollout_tokens),
         )
+        if bool(strict_prepared_rollout_tokens):
+            for attempt in attempts:
+                validate_prepared_rollout_token_text(
+                    attempt,
+                    tokenizer=tokenizer,
+                )
+        cache[cache_key] = attempts
     return list(cache[cache_key])
 
 
@@ -317,9 +327,24 @@ def _stage2_prepared_rollout_lookup_keys_for_sample(
     image_id = sample.get("image_id")
     if image_id is not None:
         keys.append(("image_id", str(image_id)))
-    image_path = sample.get("image") or sample.get("image_path")
-    if image_path is not None:
-        keys.append(("image_path", str(image_path)))
+    image_paths: List[Any] = []
+    images = sample.get("images")
+    if (
+        isinstance(images, Sequence)
+        and not isinstance(images, (str, bytes))
+        and images
+    ):
+        image_paths.append(images[0])
+    image_paths.extend(
+        [
+            sample.get("image"),
+            sample.get("image_path"),
+            sample.get("file_name"),
+        ]
+    )
+    for image_path in image_paths:
+        if image_path is not None:
+            keys.append(("image_path", str(image_path)))
     keys.append(("sample_id", str(_sample_identifier_or_index(sample, int(sample_index)))))
     deduped: List[tuple[str, str]] = []
     seen: set[tuple[str, str]] = set()
@@ -2941,6 +2966,7 @@ class Stage2TwoChannelTrainer(
         prepared_support_attempts_for_rollout: List[List[PreparedRolloutAttempt]] = []
         prepared_k_total = 0
         prepared_k_after_dedup = 0
+        prepared_k_valid = 0
         prepared_exact_duplicate_attempts = 0
         prepared_missing_sample_total = 0
         prepared_dropped_reasons_total: Dict[str, int] = {}
@@ -2952,6 +2978,7 @@ class Stage2TwoChannelTrainer(
                 self,
                 prepared_rollout_path,
                 strict_prepared_rollout_tokens=True,
+                tokenizer=tok,
             )
             prepared_by_key = _stage2_group_prepared_rollout_attempts(
                 prepared_attempts
@@ -2991,10 +3018,38 @@ class Stage2TwoChannelTrainer(
                 dropped_reasons = _stage2_prepared_dropped_reason_totals(dedup_stats)
                 for reason, count in local_dropped_reasons.items():
                     dropped_reasons[str(reason)] = int(dropped_reasons.get(str(reason), 0)) + int(count)
+                valid_kept: List[PreparedRolloutAttempt] = []
+                for attempt in kept:
+                    try:
+                        attempt_view = build_channel_b_rollout_view(
+                            tokenizer=tok,
+                            object_field_order=object_field_order,
+                            coord_id_to_bin=coord_id_to_bin,
+                            duplicate_iou_threshold=duplicate_iou_threshold,
+                            center_radius_scale=center_radius_scale,
+                            max_new_tokens=max_new_tokens,
+                            rollout_result=_stage2_prepared_rollout_to_result(attempt),
+                            source_label="prepared",
+                            parse_rollout_for_matching_fn=parse_rollout_for_matching,
+                            points_from_coord_tokens_fn=points_from_coord_tokens,
+                            duplicate_diagnostics_fn=_channel_b_targets._compute_duplicate_diagnostics,
+                            rollout_template_policy=rollout_template_policy,
+                        )
+                    except Exception:
+                        dropped_reasons["invalid_prepared_rollout"] = (
+                            int(dropped_reasons.get("invalid_prepared_rollout", 0)) + 1
+                        )
+                        continue
+                    if int(attempt_view.get("invalid_rollout", 0) or 0) != 0:
+                        dropped_reasons["invalid_prepared_rollout"] = (
+                            int(dropped_reasons.get("invalid_prepared_rollout", 0)) + 1
+                        )
+                        continue
+                    valid_kept.append(attempt)
                 local_stats = {
                     "K_total": int(len(candidates)),
                     "K_after_dedup": int(len(kept)),
-                    "K_valid": int(len(kept)),
+                    "K_valid": int(len(valid_kept)),
                     "expected_num_rollouts": int(num_rollouts),
                     "exact_duplicate_attempts": int(
                         dedup_stats.exact_duplicate_attempts
@@ -3003,6 +3058,7 @@ class Stage2TwoChannelTrainer(
                 }
                 prepared_k_total += int(local_stats["K_total"])
                 prepared_k_after_dedup += int(local_stats["K_after_dedup"])
+                prepared_k_valid += int(local_stats["K_valid"])
                 prepared_exact_duplicate_attempts += int(
                     local_stats["exact_duplicate_attempts"]
                 )
@@ -3011,10 +3067,10 @@ class Stage2TwoChannelTrainer(
                         int(prepared_dropped_reasons_total.get(str(reason), 0))
                         + int(count)
                     )
-                for local_ordinal, attempt in enumerate(kept):
+                for local_ordinal, attempt in enumerate(valid_kept):
                     support_attempts = [
                         other
-                        for support_ordinal, other in enumerate(kept)
+                        for support_ordinal, other in enumerate(valid_kept)
                         if int(support_ordinal) != int(local_ordinal)
                     ]
                     if not support_attempts:
@@ -5135,7 +5191,7 @@ class Stage2TwoChannelTrainer(
                 prepared_k_after_dedup
             ),
             "stage2_ab/channel_b/residual_set/prepared/K_valid": float(
-                prepared_k_after_dedup
+                prepared_k_valid
             ),
             "stage2_ab/channel_b/residual_set/prepared/exact_duplicate_attempts": float(
                 prepared_exact_duplicate_attempts

@@ -655,7 +655,7 @@ def _make_residual_set_pipeline_manifest(
     enabled: bool = True,
     channels: Sequence[str] = ("B",),
     base_seed: int = 17,
-    prepared_rollout_jsonl: str | None = "tests/test_stage2_ab_training.py",
+    prepared_rollout_jsonl: str | None = None,
 ) -> dict:
     config: dict[str, object] = {
         "base_seed": int(base_seed),
@@ -675,6 +675,35 @@ def _make_residual_set_pipeline_manifest(
         ],
         "diagnostics": [],
     }
+
+
+def _write_prepared_rollout_jsonl(
+    path,
+    tok,
+    rows: Sequence[tuple[str, str, str, str, str]],
+    *,
+    image_path: str = "images/prepared.jpg",
+) -> None:
+    with path.open("w", encoding="utf-8") as f:
+        for sample_id, image_id, rollout_id, raw_text, decode_mode in rows:
+            f.write(
+                json.dumps(
+                    {
+                        "sample_id": sample_id,
+                        "image_id": image_id,
+                        "image_path": image_path,
+                        "rollout_id": rollout_id,
+                        "response_token_ids": list(
+                            tok.encode(raw_text, add_special_tokens=False)
+                        ),
+                        "raw_text": raw_text,
+                        "decode_mode": decode_mode,
+                        "generation_config_hash": "sha256:test",
+                    },
+                    sort_keys=True,
+                )
+                + "\n"
+            )
 
 
 def _make_min_trainer():
@@ -1393,8 +1422,11 @@ def test_channel_b_meta_entry_residual_refuses_missing_event_sidecar() -> None:
 
 
 def test_channel_b_residual_objective_detection_honors_enabled_and_channel() -> None:
+    manifest = _make_residual_set_pipeline_manifest(
+        prepared_rollout_jsonl="tests/prepared_rollouts.jsonl"
+    )
     assert _channel_b_residual_set_correction_enabled(
-        _make_residual_set_pipeline_manifest()["objective"]
+        manifest["objective"]
     )
     assert not _channel_b_residual_set_correction_enabled(
         _make_residual_set_pipeline_manifest(enabled=False)["objective"]
@@ -1466,20 +1498,38 @@ def test_channel_b_compact_full_rollout_template_uses_compact_parser_and_targets
 
 def test_channel_b_compact_full_residual_path_attaches_ir_without_trie(
     monkeypatch,
+    tmp_path,
 ) -> None:
     row = (
         f"{OBJECT_REF_START_TOKEN}cat{BOX_START_TOKEN}"
         "<|coord_10|><|coord_20|><|coord_30|><|coord_41|>"
     )
     t = _make_compact_channel_b_trainer(rollout_text=row)
-    t.stage2_pipeline_manifest = _make_residual_set_pipeline_manifest()
+    prepared_path = tmp_path / "prepared_rollouts.jsonl"
+    _write_prepared_rollout_jsonl(
+        prepared_path,
+        t.template.tokenizer,
+        [("sample-prepared", "image-prepared", "r0", row, "greedy")],
+    )
+    t.stage2_pipeline_manifest = _make_residual_set_pipeline_manifest(
+        prepared_rollout_jsonl=str(prepared_path)
+    )
+    t._prepare_samples_for_rollout = lambda *_args, **_kwargs: pytest.fail(
+        "offline residual-set mode must not prepare live rollout samples"
+    )
+    t._rollout_many = lambda *_args, **_kwargs: pytest.fail(
+        "offline residual-set mode must not call live rollout backend"
+    )
     monkeypatch.setattr(
         "src.trainers.stage2_two_channel.parse_rollout_for_matching",
         lambda **kwargs: pytest.fail("legacy CoordJSON parser must not run"),
     )
 
+    sample = _single_bbox_sample()
+    sample["sample_id"] = "sample-prepared"
+    sample["image_id"] = "image-prepared"
     segments, metrics = t._prepare_batch_inputs_b(
-        [_single_bbox_sample()],
+        [sample],
         _segments_only=True,
     )
 
@@ -1540,28 +1590,12 @@ def test_channel_b_offline_residual_set_fans_out_prepared_attempts(
         ),
     ]
     t = _make_compact_channel_b_trainer(rollout_text=rows[0][3])
-    tok = t.template.tokenizer
     prepared_path = tmp_path / "prepared_rollouts.jsonl"
-    with prepared_path.open("w", encoding="utf-8") as f:
-        for sample_id, image_id, rollout_id, raw_text, decode_mode in rows:
-            f.write(
-                json.dumps(
-                    {
-                        "sample_id": sample_id,
-                        "image_id": image_id,
-                        "image_path": "images/prepared.jpg",
-                        "rollout_id": rollout_id,
-                        "response_token_ids": list(
-                            tok.encode(raw_text, add_special_tokens=False)
-                        ),
-                        "raw_text": raw_text,
-                        "decode_mode": decode_mode,
-                        "generation_config_hash": "sha256:test",
-                    },
-                    sort_keys=True,
-                )
-                + "\n"
-            )
+    _write_prepared_rollout_jsonl(
+        prepared_path,
+        t.template.tokenizer,
+        rows,
+    )
 
     t.stage2_pipeline_manifest = _make_residual_set_pipeline_manifest(
         prepared_rollout_jsonl=str(prepared_path)
@@ -1592,6 +1626,135 @@ def test_channel_b_offline_residual_set_fans_out_prepared_attempts(
         segment[1]["residual_set_target_ir"].atoms[0].provenance["rollout_index"]
         for segment in segments
     ] == [0, 1]
+
+
+def test_channel_b_offline_residual_set_matches_sample_images_alias(
+    tmp_path,
+) -> None:
+    row = (
+        f"{OBJECT_REF_START_TOKEN}cat{BOX_START_TOKEN}"
+        "<|coord_10|><|coord_20|><|coord_30|><|coord_41|>"
+    )
+    t = _make_compact_channel_b_trainer(rollout_text=row)
+    prepared_path = tmp_path / "prepared_rollouts.jsonl"
+    _write_prepared_rollout_jsonl(
+        prepared_path,
+        t.template.tokenizer,
+        [("sample-from-producer", "image-from-producer", "r0", row, "greedy")],
+        image_path="images/from-images-alias.jpg",
+    )
+    t.stage2_pipeline_manifest = _make_residual_set_pipeline_manifest(
+        prepared_rollout_jsonl=str(prepared_path)
+    )
+    t._prepare_samples_for_rollout = lambda *_args, **_kwargs: pytest.fail(
+        "offline residual-set mode must not prepare live rollout samples"
+    )
+    t._rollout_many = lambda *_args, **_kwargs: pytest.fail(
+        "offline residual-set mode must not call live rollout backend"
+    )
+
+    sample = _single_bbox_sample()
+    sample["images"] = ["images/from-images-alias.jpg"]
+    segments, metrics = t._prepare_batch_inputs_b(
+        [sample],
+        _segments_only=True,
+    )
+
+    assert len(segments) == 1
+    assert metrics[
+        "stage2_ab/channel_b/residual_set/prepared/missing_sample_count"
+    ] == pytest.approx(0.0)
+    assert segments[0][1]["prepared_rollout"]["image_path"] == "images/from-images-alias.jpg"
+
+
+def test_channel_b_offline_residual_set_rejects_raw_text_token_mismatch(
+    tmp_path,
+) -> None:
+    token_text = (
+        f"{OBJECT_REF_START_TOKEN}cat{BOX_START_TOKEN}"
+        "<|coord_10|><|coord_20|><|coord_30|><|coord_41|>"
+    )
+    stale_text = (
+        f"{OBJECT_REF_START_TOKEN}cat{BOX_START_TOKEN}"
+        "<|coord_10|><|coord_20|><|coord_30|><|coord_99|>"
+    )
+    t = _make_compact_channel_b_trainer(rollout_text=token_text)
+    prepared_path = tmp_path / "prepared_rollouts.jsonl"
+    with prepared_path.open("w", encoding="utf-8") as f:
+        f.write(
+            json.dumps(
+                {
+                    "sample_id": "sample-prepared",
+                    "image_id": "image-prepared",
+                    "image_path": "images/prepared.jpg",
+                    "rollout_id": "r0",
+                    "response_token_ids": list(
+                        t.template.tokenizer.encode(
+                            token_text,
+                            add_special_tokens=False,
+                        )
+                    ),
+                    "raw_text": stale_text,
+                    "decode_mode": "greedy",
+                    "generation_config_hash": "sha256:test",
+                },
+                sort_keys=True,
+            )
+            + "\n"
+        )
+    t.stage2_pipeline_manifest = _make_residual_set_pipeline_manifest(
+        prepared_rollout_jsonl=str(prepared_path)
+    )
+    sample = _single_bbox_sample()
+    sample["sample_id"] = "sample-prepared"
+    sample["image_id"] = "image-prepared"
+
+    with pytest.raises(ValueError, match="raw_text.*response_token_ids"):
+        t._prepare_batch_inputs_b(
+            [sample],
+            _segments_only=True,
+        )
+
+
+def test_channel_b_offline_residual_set_k_valid_excludes_invalid_after_dedup(
+    tmp_path,
+) -> None:
+    valid_row = (
+        f"{OBJECT_REF_START_TOKEN}cat{BOX_START_TOKEN}"
+        "<|coord_10|><|coord_20|><|coord_30|><|coord_41|>"
+    )
+    invalid_row = "not a compact detection row"
+    t = _make_compact_channel_b_trainer(rollout_text=valid_row)
+    prepared_path = tmp_path / "prepared_rollouts.jsonl"
+    _write_prepared_rollout_jsonl(
+        prepared_path,
+        t.template.tokenizer,
+        [
+            ("sample-prepared", "image-prepared", "valid", valid_row, "greedy"),
+            ("sample-prepared", "image-prepared", "invalid", invalid_row, "sampling"),
+        ],
+    )
+    t.stage2_pipeline_manifest = _make_residual_set_pipeline_manifest(
+        prepared_rollout_jsonl=str(prepared_path)
+    )
+
+    sample = _single_bbox_sample()
+    sample["sample_id"] = "sample-prepared"
+    sample["image_id"] = "image-prepared"
+    segments, metrics = t._prepare_batch_inputs_b(
+        [sample],
+        _segments_only=True,
+    )
+
+    assert len(segments) == 1
+    assert metrics["stage2_ab/channel_b/residual_set/prepared/K_total"] == pytest.approx(2.0)
+    assert metrics["stage2_ab/channel_b/residual_set/prepared/K_after_dedup"] == pytest.approx(2.0)
+    assert metrics["stage2_ab/channel_b/residual_set/prepared/K_valid"] == pytest.approx(1.0)
+    assert metrics[
+        "stage2_ab/channel_b/residual_set/prepared/drop_reason/invalid_prepared_rollout"
+    ] == pytest.approx(1.0)
+    assert segments[0][1]["prepared_rollout"]["K_after_dedup"] == 2
+    assert segments[0][1]["prepared_rollout"]["K_valid"] == 1
 
 
 def test_residual_events_use_compact_row_context_desc_tokens() -> None:
@@ -1729,7 +1892,7 @@ def test_channel_b_producer_residual_ir_rebases_when_packed() -> None:
             {
                 "name": "residual_set_correction",
                 "channels": ["B"],
-                "config": {"coverage_strength": 0.0},
+                "config": {},
             }
         ],
         diagnostic_specs=[],
@@ -7817,7 +7980,7 @@ def test_stage2_objective_pipelines_threads_role_vocab_for_residual_set_sidecar(
             {
                 "name": "residual_set_correction",
                 "channels": ["B"],
-                "config": {"coverage_strength": 0.0},
+                "config": {},
             }
         ],
         diagnostic_specs=[],
@@ -7856,7 +8019,7 @@ def test_stage2_objective_pipelines_rebase_residual_sidecars_for_unpacked_rows()
             {
                 "name": "residual_set_correction",
                 "channels": ["B"],
-                "config": {"coverage_strength": 0.0},
+                "config": {},
             }
         ],
         diagnostic_specs=[],
@@ -7901,7 +8064,7 @@ def test_stage2_objective_pipelines_fail_closed_without_role_vocab_for_residual_
                 {
                     "name": "residual_set_correction",
                     "channels": ["B"],
-                    "config": {"coverage_strength": 0.0},
+                    "config": {},
                 }
             ],
             diagnostic_specs=[],
@@ -7933,7 +8096,7 @@ def test_stage2_objective_pipelines_raise_when_residual_sidecar_missing() -> Non
                 {
                     "name": "residual_set_correction",
                     "channels": ["B"],
-                    "config": {"coverage_strength": 0.0},
+                    "config": {},
                 }
             ],
             diagnostic_specs=[],
