@@ -401,6 +401,47 @@ class _DummyTokenizer:
                 out.append(self._id_to_tok.get(tid, "?"))
         return "".join(out)
 
+    def __call__(
+        self,
+        text: str,
+        return_offsets_mapping: bool = False,
+        add_special_tokens: bool = False,
+        **_kwargs,
+    ):
+        s = str(text)
+        input_ids: list[int] = []
+        offsets: list[tuple[int, int]] = []
+        i = 0
+        special_tokens = (
+            OBJECT_REF_START_TOKEN,
+            BOX_START_TOKEN,
+            "<|im_end|>",
+            "<|endoftext|>",
+        )
+        while i < len(s):
+            token_id: int | None = None
+            token_end = i + 1
+            for special in special_tokens:
+                if s.startswith(special, i):
+                    token_id = self._id_for(special)
+                    token_end = i + len(special)
+                    break
+            if token_id is None and s.startswith("<|coord_", i):
+                j = s.find("|>", i)
+                if j >= 0:
+                    token_text = s[i : j + 2]
+                    token_id = int(self.encode(token_text, add_special_tokens=False)[0])
+                    token_end = j + 2
+            if token_id is None:
+                token_id = self._id_for(s[i])
+            input_ids.append(int(token_id))
+            offsets.append((int(i), int(token_end)))
+            i = int(token_end)
+        out = {"input_ids": input_ids}
+        if return_offsets_mapping:
+            out["offset_mapping"] = offsets
+        return out
+
     def convert_tokens_to_ids(self, tokens):
         if isinstance(tokens, str):
             toks = [tokens]
@@ -1624,9 +1665,13 @@ def test_channel_b_offline_residual_set_fans_out_prepared_attempts(
     rollout_ids = [segment[1]["prepared_rollout"]["rollout_id"] for segment in segments]
     assert rollout_ids == ["r0", "r1"]
     assert [
-        segment[1]["residual_set_target_ir"].atoms[0].provenance["rollout_index"]
+        segment[1]["residual_set_metrics"]["scanner_row_decision/committed"]
         for segment in segments
-    ] == [0, 1]
+    ] == [pytest.approx(1.0), pytest.approx(1.0)]
+    assert [
+        segment[1]["residual_set_event_summaries"]
+        for segment in segments
+    ] == [[], []]
 
 
 def test_channel_b_offline_residual_set_matches_sample_images_alias(
@@ -1833,10 +1878,189 @@ def test_residual_events_use_compact_row_context_desc_tokens() -> None:
 
     assert result.events
     atom = result.events[0].atom_drafts[0]
-    assert atom.correction_kind == "matched_object_repair"
+    assert atom.correction_kind == "spatial_wrong_desc_conflict"
     assert atom.metadata["slot"] == "desc"
     assert atom.selected_action is not None
     assert atom.selected_action.token_id == tok._id_for("t")
+
+
+def _residual_result_for_compact_text(
+    *,
+    tok: _CoordLiteralTokenizer,
+    raw_text: str,
+    gts: Sequence[GTObject],
+    parsed: Sequence[GTObject],
+    match: MatchResult,
+    sample_id: str = "sample-dirty-prefix",
+):
+    response_token_ids = list(tok.encode(raw_text, add_special_tokens=False))
+    try:
+        spans = extract_compact_full_object_token_spans(
+            tokenizer=tok,
+            response_token_ids=response_token_ids,
+            parsed_objects=list(parsed),
+        )
+    except ValueError:
+        spans = []
+    return _build_residual_set_correction_events(
+        tokenizer=tok,
+        response_token_ids=response_token_ids,
+        parsed_bbox_objects_raw=list(parsed),
+        compact_full_object_spans=spans,
+        gts=list(gts),
+        accepted_objects_clean=list(parsed),
+        match=match,
+        assignment_iou_threshold=0.5,
+        sample_id=sample_id,
+        rollout_index=0,
+        lambda_ul_promoted=0.5,
+    )
+
+
+def test_residual_target_builder_retains_invalid_geometry_as_dirty_context() -> None:
+    tok = _CoordLiteralTokenizer()
+    dirty_text = (
+        f"{OBJECT_REF_START_TOKEN}cat{BOX_START_TOKEN}"
+        "<|coord_30|><|coord_20|><|coord_10|><|coord_40|>"
+    )
+    dirty_ids = list(tok.encode(dirty_text, add_special_tokens=False))
+
+    result = _residual_result_for_compact_text(
+        tok=tok,
+        raw_text=dirty_text,
+        gts=[
+            GTObject(index=0, geom_type="bbox_2d", points_norm1000=[10, 20, 30, 40], desc="cat"),
+        ],
+        parsed=[],
+        match=MatchResult(
+            matched_pairs=[],
+            fn_gt_indices=[0],
+            fp_pred_indices=[],
+            gating_rejections=0,
+            matched_maskiou_sum=0.0,
+            matched_maskiou_count=0,
+        ),
+    )
+
+    assert result.y_train_ids[: len(dirty_ids)] == dirty_ids
+    assert result.metrics["scanner_row_decision/invalid_geometry"] == pytest.approx(1.0)
+    assert result.metrics["scanner_final_remaining_object_count"] == pytest.approx(1.0)
+    assert result.events
+    event = result.events[0]
+    assert event.correction_kind == "invalid_geometry"
+    atom = event.atom_drafts[0]
+    assert atom.target_position == len(dirty_ids)
+    assert atom.metadata["selected_object_id"] == "gt:0"
+
+
+def test_residual_target_builder_removes_trailing_incomplete_object_span() -> None:
+    tok = _CoordLiteralTokenizer()
+    stable_text = (
+        f"{OBJECT_REF_START_TOKEN}cat{BOX_START_TOKEN}"
+        "<|coord_10|><|coord_20|><|coord_30|><|coord_40|>"
+    )
+    raw_text = f"{stable_text}{OBJECT_REF_START_TOKEN}dog{BOX_START_TOKEN}<|coord_50|>"
+    stable_ids = list(tok.encode(stable_text, add_special_tokens=False))
+    parsed = [
+        GTObject(index=0, geom_type="bbox_2d", points_norm1000=[10, 20, 30, 40], desc="cat"),
+    ]
+
+    result = _residual_result_for_compact_text(
+        tok=tok,
+        raw_text=raw_text,
+        gts=[
+            GTObject(index=0, geom_type="bbox_2d", points_norm1000=[10, 20, 30, 40], desc="cat"),
+            GTObject(index=1, geom_type="bbox_2d", points_norm1000=[50, 60, 70, 80], desc="dog"),
+        ],
+        parsed=parsed,
+        match=MatchResult(
+            matched_pairs=[(0, 0)],
+            fn_gt_indices=[1],
+            fp_pred_indices=[],
+            gating_rejections=0,
+            matched_maskiou_sum=1.0,
+            matched_maskiou_count=1,
+        ),
+    )
+
+    assert result.y_train_ids[: len(stable_ids)] == stable_ids
+    assert result.y_train_ids[len(stable_ids)] == tok.convert_tokens_to_ids(OBJECT_REF_START_TOKEN)
+    assert tok._id_for("d") in result.y_train_ids
+    assert tok._id_for("g") in result.y_train_ids
+    assert result.y_train_ids.count(tok.convert_tokens_to_ids(BOX_START_TOKEN)) == 2
+    assert result.metrics["scanner_row_decision/trailing_incomplete"] == pytest.approx(1.0)
+    assert result.events[0].correction_kind == "trailing_incomplete"
+    assert result.events[0].atom_drafts[0].target_position == len(stable_ids)
+
+
+def test_residual_target_builder_drops_unreliable_malformed_first_row_to_noop() -> None:
+    tok = _CoordLiteralTokenizer()
+    raw_text = "not a compact detection row"
+    response_token_ids = list(tok.encode(raw_text, add_special_tokens=False))
+
+    result = _build_residual_set_correction_events(
+        tokenizer=tok,
+        response_token_ids=response_token_ids,
+        parsed_bbox_objects_raw=[],
+        compact_full_object_spans=[],
+        gts=[
+            GTObject(index=0, geom_type="bbox_2d", points_norm1000=[10, 20, 30, 40], desc="cat"),
+        ],
+        accepted_objects_clean=[],
+        match=MatchResult(
+            matched_pairs=[],
+            fn_gt_indices=[0],
+            fp_pred_indices=[],
+            gating_rejections=0,
+            matched_maskiou_sum=0.0,
+            matched_maskiou_count=0,
+        ),
+        assignment_iou_threshold=0.5,
+        sample_id="sample-malformed",
+        rollout_index=0,
+        lambda_ul_promoted=0.5,
+    )
+
+    assert result.events == []
+    assert result.y_train_ids == []
+    assert result.metrics["scanner_dropped_sample"] == pytest.approx(1.0)
+    assert result.metrics["scanner_no_atom_reason/unreliable_resync_boundary"] == pytest.approx(1.0)
+    assert result.metrics["no_event_dropped_dirty_prefix"] == pytest.approx(1.0)
+
+
+def test_residual_target_builder_committed_match_removes_object_through_scanner() -> None:
+    tok = _CoordLiteralTokenizer()
+    raw_text = (
+        f"{OBJECT_REF_START_TOKEN}cat{BOX_START_TOKEN}"
+        "<|coord_10|><|coord_20|><|coord_30|><|coord_41|>"
+    )
+    parsed = [
+        GTObject(index=0, geom_type="bbox_2d", points_norm1000=[10, 20, 30, 41], desc="cat"),
+    ]
+
+    result = _residual_result_for_compact_text(
+        tok=tok,
+        raw_text=raw_text,
+        gts=[
+            GTObject(index=0, geom_type="bbox_2d", points_norm1000=[10, 20, 30, 40], desc="cat"),
+            GTObject(index=1, geom_type="bbox_2d", points_norm1000=[50, 60, 70, 80], desc="dog"),
+        ],
+        parsed=parsed,
+        match=MatchResult(
+            matched_pairs=[(0, 0)],
+            fn_gt_indices=[1],
+            fp_pred_indices=[],
+            gating_rejections=0,
+            matched_maskiou_sum=0.95,
+            matched_maskiou_count=1,
+        ),
+    )
+
+    assert result.metrics["scanner_row_decision/committed"] == pytest.approx(1.0)
+    assert result.metrics["scanner_final_remaining_object_count"] == pytest.approx(1.0)
+    assert [event.correction_kind for event in result.events] == ["premature_stop"]
+    assert result.events[0].atom_drafts[0].metadata["selected_object_id"] == "gt:1"
+    assert all(event.correction_kind != "matched_object_repair" for event in result.events)
 
 
 @pytest.mark.parametrize("separator", ["\n", ""])

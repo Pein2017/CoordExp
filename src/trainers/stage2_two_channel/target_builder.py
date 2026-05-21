@@ -1,6 +1,7 @@
 from dataclasses import dataclass
 import math
 import random
+import re
 from typing import Any, Dict, List, Mapping, MutableMapping, Optional, Sequence, Tuple
 
 from src.common.duplicate_control import (
@@ -31,7 +32,6 @@ from src.training.teacher_forcing.ir import SupervisionAtom, TeacherForcingTarge
 from src.training.teacher_forcing.roles import TokenRole
 from src.training.span_adapters.residual_boundary import (
     ResidualBoundaryAdapter,
-    ResidualBoundaryObjectSpan,
     ResidualBoundarySlice,
 )
 from src.utils.assistant_json import dumps_coordjson
@@ -51,10 +51,13 @@ from .trie_supervision import (
 from .residual_set import (
     CorrectionAtomDraft,
     CorrectionEvent,
+    ObservedResidualRow,
     ResidualObject,
+    ResidualRowScanResult,
     ResidualState,
     ValidAction,
     enumerate_valid_actions,
+    scan_dirty_prefix_rows,
     transition_state,
 )
 from .rollout_views import CompactFullObjectTokenSpan, extract_compact_full_object_token_spans
@@ -74,6 +77,7 @@ _RESIDUAL_SET_OPTION_DEFAULTS: Dict[str, Any] = {
     "min_ul_valid_rollouts": 2,
     "ul_consensus_ratio": 1.0,
 }
+_COMPACT_COORD_TOKEN_RE = re.compile(r"<\|coord_(0|[1-9]\d{0,2})\|>")
 
 
 @dataclass(frozen=True)
@@ -1815,10 +1819,6 @@ def _build_residual_set_correction_events(
         lambda_ul_promoted=float(lambda_ul_promoted),
     )
     universe_by_id = {item.object_id: item for item in universe}
-    remaining_ids: List[str] = [item.object_id for item in universe]
-    emitted_ids: List[str] = []
-    events: List[CorrectionEvent] = []
-    event_summaries: List[Dict[str, Any]] = []
     metrics: Dict[str, float] = {
         "residual_object_count": float(len(universe)),
         "ul_promoted_object_count": float(
@@ -1829,173 +1829,444 @@ def _build_residual_set_correction_events(
         "no_event_exact_path": 0.0,
         "dropped_stop_at_empty_prefix": 0.0,
     }
-
-    raw_index_to_gt_index = _raw_index_to_matched_gt_index(
-        accepted_objects_clean=accepted_objects_clean,
-        match=match,
-    )
-    spans_by_raw_index = {
-        int(span.object_index): span for span in compact_full_object_spans
-    }
+    del parsed_bbox_objects_raw, compact_full_object_spans, accepted_objects_clean, match
     raw_ids = [int(token_id) for token_id in response_token_ids]
 
-    for raw_order, raw_obj in enumerate(parsed_bbox_objects_raw):
-        raw_index = int(raw_obj.index)
-        span = spans_by_raw_index.get(raw_index)
-        if span is None:
-            raise ValueError(
-                "residual_set_correction requires compact-full raw token spans "
-                "aligned with parsed_bbox_objects_raw"
-            )
+    initial_state = ResidualState(
+        objects=tuple(item.residual_object for item in universe),
+        remaining_object_ids=frozenset(str(item.object_id) for item in universe),
+        active_candidate_ids=frozenset(str(item.object_id) for item in universe),
+        object_start_token_id=int(object_start_token_id),
+        box_start_token_id=int(box_start_token_id),
+        stop_token_id=int(stop_token_id),
+    )
+    observed_rows = _observed_residual_rows_from_compact_response(
+        tokenizer=tokenizer,
+        response_token_ids=raw_ids,
+    )
+    scan = scan_dirty_prefix_rows(
+        initial_state,
+        observed_rows,
+        iou_threshold=float(assignment_iou_threshold),
+        sample_id=str(sample_id),
+    )
+    _add_residual_scan_metrics(metrics, scan)
 
-        target_id = _select_residual_target_for_raw_object(
-            raw_obj=raw_obj,
-            remaining_ids=remaining_ids,
-            universe_by_id=universe_by_id,
-            raw_index_to_gt_index=raw_index_to_gt_index,
-            assignment_iou_threshold=float(assignment_iou_threshold),
-        )
-        if target_id is None:
-            duplicate_like = _raw_object_overlaps_emitted(
-                raw_obj=raw_obj,
-                emitted_ids=emitted_ids,
-                universe_by_id=universe_by_id,
-                assignment_iou_threshold=float(assignment_iou_threshold),
-            )
-            result = _build_residual_boundary_event(
-                tokenizer=tokenizer,
-                universe=universe,
-                universe_by_id=universe_by_id,
-                emitted_ids=emitted_ids,
-                remaining_ids=remaining_ids,
-                sample_id=sample_id,
-                rollout_index=int(rollout_index),
-                rollout_id=rollout_id,
-                correction_kind=(
-                    "repeated_object_boundary" if duplicate_like else "fp_boundary"
-                ),
-                observed_token_id=(
-                    int(raw_ids[int(span.object_start)])
-                    if 0 <= int(span.object_start) < len(raw_ids)
-                    else None
-                ),
-                anchor_position=int(span.object_start),
-                object_start_token_id=int(object_start_token_id),
-                box_start_token_id=int(box_start_token_id),
-                stop_token_id=int(stop_token_id),
-            )
-            if result is not None:
-                return result
-            metrics["dropped_stop_at_empty_prefix"] = 1.0
-            continue
-
-        target = universe_by_id[target_id]
-        raw_object_ids = raw_ids[
-            int(span.object_start) : int(span.coord_positions[-1]) + 1
-        ]
-        target_object_ids = _render_residual_target_ids(
-            tokenizer=tokenizer,
-            target_ids=[target_id],
-            universe_by_id=universe_by_id,
-        )[1]
-        mismatch_index = _first_mismatch_index(raw_object_ids, target_object_ids)
-        if mismatch_index is None:
-            emitted_ids.append(target_id)
-            remaining_ids = [item_id for item_id in remaining_ids if item_id != target_id]
-            continue
-
-        ordered_target_ids = (
-            list(emitted_ids)
-            + [target_id]
-            + [item_id for item_id in remaining_ids if item_id != target_id]
-        )
-        target_objects = _residual_target_objects(
-            target_ids=ordered_target_ids,
-            universe_by_id=universe_by_id,
-        )
-        target_row_index = int(len(emitted_ids))
-        clean_target_text, y_train_ids, boundary_slice = _render_residual_target_slice(
-            tokenizer=tokenizer,
-            target_objects=target_objects,
-            boundary="object",
-            object_index=target_row_index,
-        )
-        target_span = boundary_slice.object_spans[target_row_index]
-        draft_specs = _residual_object_repair_draft_specs(
-            target_span=target_span,
-            mismatch_index=int(mismatch_index),
-        )
-        event = _build_residual_event_from_specs(
-            universe=universe,
-            current_target=target,
-            remaining_ids=remaining_ids,
-            draft_specs=draft_specs,
-            correction_kind="matched_object_repair",
-            sample_id=sample_id,
-            rollout_index=int(rollout_index),
-            rollout_id=rollout_id,
-            observed_token_ids=raw_object_ids,
-            observed_object_start=int(span.object_start),
-            object_start_token_id=int(object_start_token_id),
-            box_start_token_id=int(box_start_token_id),
-            stop_token_id=int(stop_token_id),
-        )
+    if scan.dropped_sample:
+        metrics["no_event_dropped_dirty_prefix"] = 1.0
+        retained_end = max(0, int(scan.retained_prefix_end or 0))
+        y_train_ids = raw_ids[:retained_end]
+        clean_target_text = _decode_token_ids(tokenizer, y_train_ids)
         return _residual_build_result(
             y_train_ids=y_train_ids,
             clean_target_text=clean_target_text,
-            events=[event],
-            event_summaries=[_residual_event_summary(event)],
+            events=[],
+            event_summaries=[],
             metrics=metrics,
         )
 
-    if remaining_ids:
-        target_objects = _residual_target_objects(
-            target_ids=list(emitted_ids) + list(remaining_ids),
+    remaining_ids = [
+        str(item.object_id)
+        for item in universe
+        if str(item.object_id) in scan.final_state.remaining_object_ids
+    ]
+    retained_prefix_end = _residual_retained_prefix_end(scan, observed_rows)
+    (
+        y_train_ids,
+        clean_target_text,
+        boundary_slice,
+        prefix_object_count,
+        target_position_offset,
+    ) = (
+        _render_residual_scanned_target(
+            tokenizer=tokenizer,
+            raw_ids=raw_ids,
+            rows=observed_rows,
+            retained_prefix_end=int(retained_prefix_end),
+            remaining_ids=remaining_ids,
             universe_by_id=universe_by_id,
         )
-        clean_target_text, y_train_ids, boundary_slice = _render_residual_target_slice(
-            tokenizer=tokenizer,
-            target_objects=target_objects,
-            boundary="object",
-            object_index=int(len(emitted_ids)),
-        )
-        target_span = boundary_slice.object_spans[int(len(emitted_ids))]
+    )
+
+    events: List[CorrectionEvent] = list(scan.events)
+    if remaining_ids:
+        if boundary_slice is None:
+            raise ValueError("residual boundary adapter did not produce a target slice")
+        target_span = boundary_slice.object_spans[int(prefix_object_count)]
         current_target = universe_by_id[remaining_ids[0]]
         event = _build_residual_event_from_specs(
             universe=universe,
             current_target=current_target,
             remaining_ids=remaining_ids,
-            draft_specs=[("object_start", int(target_span.object_start), 0)],
-            correction_kind="premature_stop",
+            draft_specs=[
+                (
+                    "object_start",
+                    int(target_position_offset) + int(target_span.object_start),
+                    0,
+                )
+            ],
+            correction_kind=_residual_continuation_correction_kind(scan),
             sample_id=sample_id,
             rollout_index=int(rollout_index),
             rollout_id=rollout_id,
-            observed_token_ids=raw_ids,
-            observed_object_start=int(len(raw_ids)),
+            observed_token_ids=y_train_ids,
+            observed_object_start=0,
             object_start_token_id=int(object_start_token_id),
             box_start_token_id=int(box_start_token_id),
             stop_token_id=int(stop_token_id),
         )
-        return _residual_build_result(
-            y_train_ids=y_train_ids,
-            clean_target_text=clean_target_text,
-            events=[event],
-            event_summaries=[_residual_event_summary(event)],
-            metrics=metrics,
-        )
+        events.append(event)
+    elif not events:
+        metrics["no_event_exact_path"] = 1.0
 
-    clean_target_text, y_train_ids = _render_residual_target_ids(
-        tokenizer=tokenizer,
-        target_ids=emitted_ids,
-        universe_by_id=universe_by_id,
-    )
-    metrics["no_event_exact_path"] = 1.0
     return _residual_build_result(
         y_train_ids=y_train_ids,
         clean_target_text=clean_target_text,
         events=events,
-        event_summaries=event_summaries,
+        event_summaries=[_residual_event_summary(event) for event in events],
         metrics=metrics,
+    )
+
+
+def _observed_residual_rows_from_compact_response(
+    *,
+    tokenizer: Any,
+    response_token_ids: Sequence[int],
+) -> Tuple[ObservedResidualRow, ...]:
+    token_ids = [int(token_id) for token_id in response_token_ids]
+    if not token_ids:
+        return ()
+
+    pieces = decode_pieces(tokenizer, token_ids)
+    token_spans: List[Tuple[int, int]] = []
+    cursor = 0
+    for piece in pieces:
+        start = int(cursor)
+        cursor += int(len(piece))
+        token_spans.append((start, int(cursor)))
+    text = "".join(str(piece) for piece in pieces)
+
+    terminal_positions = [
+        pos
+        for marker in ("<|im_end|>", "<|endoftext|>")
+        if (pos := text.find(marker)) >= 0
+    ]
+    parse_end = min(terminal_positions) if terminal_positions else len(text)
+    parse_text = text[:parse_end]
+    if not parse_text.strip("\r\n"):
+        return ()
+
+    object_starts: List[int] = []
+    search_start = 0
+    while True:
+        found = parse_text.find(OBJECT_REF_START_TOKEN, search_start)
+        if found < 0:
+            break
+        object_starts.append(int(found))
+        search_start = int(found + len(OBJECT_REF_START_TOKEN))
+
+    if not object_starts or parse_text[: object_starts[0]].strip("\r\n"):
+        return (
+            ObservedResidualRow(
+                desc=None,
+                bbox_norm1000=None,
+                object_start=0,
+                object_end=_token_index_at_or_after_char(token_spans, parse_end),
+                reliable_span=False,
+                reliable_resync=False,
+                malformed=True,
+            ),
+        )
+
+    rows: List[ObservedResidualRow] = []
+    for row_index, row_start in enumerate(object_starts):
+        next_row_start = (
+            int(object_starts[int(row_index) + 1])
+            if int(row_index) + 1 < len(object_starts)
+            else int(parse_end)
+        )
+        row_end = int(next_row_start)
+        while row_end > int(row_start) and parse_text[int(row_end) - 1] in "\r\n":
+            row_end -= 1
+        row = parse_text[int(row_start) : int(row_end)]
+        object_start_token = _single_token_index_for_char_span(
+            token_spans=token_spans,
+            char_start=int(row_start),
+            char_end=int(row_start) + len(OBJECT_REF_START_TOKEN),
+            default=_token_index_at_or_after_char(token_spans, int(row_start)),
+        )
+        next_object_start_token = _token_index_at_or_after_char(
+            token_spans,
+            int(next_row_start),
+        )
+
+        box_rel = row.rfind(BOX_START_TOKEN)
+        coord_tail_start = int(box_rel) + len(BOX_START_TOKEN)
+        coord_matches = (
+            list(_COMPACT_COORD_TOKEN_RE.finditer(row, coord_tail_start))
+            if box_rel >= len(OBJECT_REF_START_TOKEN)
+            else []
+        )
+        coord_tail_complete = (
+            len(coord_matches) == 4
+            and coord_matches[0].start() == coord_tail_start
+            and all(
+                left.end() == right.start()
+                for left, right in zip(coord_matches, coord_matches[1:])
+            )
+            and coord_matches[-1].end() == len(row)
+        )
+        if coord_tail_complete:
+            desc_start_char = int(row_start) + len(OBJECT_REF_START_TOKEN)
+            desc_end_char = int(row_start) + int(box_rel)
+            desc_token_positions = _token_indices_overlapping_char_span(
+                token_spans=token_spans,
+                char_start=desc_start_char,
+                char_end=desc_end_char,
+            )
+            coord_positions = [
+                _single_token_index_for_char_span(
+                    token_spans=token_spans,
+                    char_start=int(row_start) + int(match.start()),
+                    char_end=int(row_start) + int(match.end()),
+                    default=_token_index_at_or_after_char(
+                        token_spans,
+                        int(row_start) + int(match.start()),
+                    ),
+                )
+                for match in coord_matches
+            ]
+            rows.append(
+                ObservedResidualRow(
+                    desc=row[len(OBJECT_REF_START_TOKEN) : int(box_rel)],
+                    bbox_norm1000=tuple(int(match.group(1)) for match in coord_matches),  # type: ignore[arg-type]
+                    object_start=int(object_start_token),
+                    object_end=int(coord_positions[-1]) + 1,
+                    reliable_span=True,
+                    reliable_resync=True,
+                    desc_token_ids=tuple(
+                        int(token_ids[int(pos)]) for pos in desc_token_positions
+                    ),
+                    metadata={"row_index": int(row_index)},
+                )
+            )
+            continue
+
+        incomplete = int(row_index) + 1 >= len(object_starts)
+        rows.append(
+            ObservedResidualRow(
+                desc=None,
+                bbox_norm1000=None,
+                object_start=int(object_start_token),
+                object_end=None if incomplete else int(next_object_start_token),
+                reliable_span=False,
+                reliable_resync=not incomplete,
+                malformed=not incomplete,
+                incomplete=bool(incomplete),
+                metadata={"row_index": int(row_index)},
+            )
+        )
+
+    return tuple(rows)
+
+
+def _token_index_at_or_after_char(
+    token_spans: Sequence[Tuple[int, int]],
+    char_pos: int,
+) -> int:
+    for index, (start, _end) in enumerate(token_spans):
+        if int(start) >= int(char_pos):
+            return int(index)
+    return int(len(token_spans))
+
+
+def _single_token_index_for_char_span(
+    *,
+    token_spans: Sequence[Tuple[int, int]],
+    char_start: int,
+    char_end: int,
+    default: int,
+) -> int:
+    positions = _token_indices_overlapping_char_span(
+        token_spans=token_spans,
+        char_start=int(char_start),
+        char_end=int(char_end),
+    )
+    if len(positions) == 1:
+        return int(positions[0])
+    return int(default)
+
+
+def _add_residual_scan_metrics(
+    metrics: MutableMapping[str, float],
+    scan: ResidualRowScanResult,
+) -> None:
+    metrics["scanner_row_count"] = float(len(scan.row_decisions))
+    metrics["scanner_event_count"] = float(len(scan.events))
+    metrics["scanner_dirty_context_span_count"] = float(len(scan.dirty_context_spans))
+    metrics["scanner_masked_label_span_count"] = float(len(scan.masked_label_spans))
+    metrics["scanner_type_loss_mask_span_count"] = float(len(scan.type_loss_mask_spans))
+    metrics["scanner_dropped_sample"] = float(1.0 if scan.dropped_sample else 0.0)
+    metrics["scanner_final_remaining_object_count"] = float(
+        len(scan.final_state.remaining_object_ids)
+    )
+    if scan.retained_prefix_end is not None:
+        metrics["scanner_retained_prefix_end"] = float(int(scan.retained_prefix_end))
+    for decision in scan.row_decisions:
+        metrics[f"scanner_row_decision/{decision.kind}"] = (
+            float(metrics.get(f"scanner_row_decision/{decision.kind}", 0.0)) + 1.0
+        )
+    for reason in scan.no_atom_reasons:
+        key = f"scanner_no_atom_reason/{reason}"
+        metrics[key] = float(metrics.get(key, 0.0)) + 1.0
+
+
+def _residual_retained_prefix_end(
+    scan: ResidualRowScanResult,
+    rows: Sequence[ObservedResidualRow],
+) -> int:
+    if scan.retained_prefix_end is not None:
+        return max(0, int(scan.retained_prefix_end))
+    end = 0
+    for row in rows[: len(scan.row_decisions)]:
+        if row.incomplete:
+            break
+        if row.object_end is not None:
+            end = max(int(end), int(row.object_end))
+    return int(end)
+
+
+def _render_residual_scanned_target(
+    *,
+    tokenizer: Any,
+    raw_ids: Sequence[int],
+    rows: Sequence[ObservedResidualRow],
+    retained_prefix_end: int,
+    remaining_ids: Sequence[str],
+    universe_by_id: Mapping[str, _ResidualSetUniverseObject],
+) -> Tuple[List[int], str, ResidualBoundarySlice | None, int, int]:
+    prefix_objects = _observed_prefix_objects(
+        rows=rows,
+        retained_prefix_end=int(retained_prefix_end),
+    )
+    remaining_objects = _residual_target_objects(
+        target_ids=remaining_ids,
+        universe_by_id=universe_by_id,
+    )
+    can_render_prefix = _can_render_observed_prefix(
+        rows=rows,
+        retained_prefix_end=int(retained_prefix_end),
+        prefix_objects=prefix_objects,
+    )
+    if remaining_objects:
+        if not can_render_prefix:
+            clean_tail_text, tail_ids, boundary_slice = _render_residual_target_slice(
+                tokenizer=tokenizer,
+                target_objects=remaining_objects,
+                boundary="object",
+                object_index=0,
+            )
+            prefix_ids = [int(token_id) for token_id in raw_ids[: int(retained_prefix_end)]]
+            y_train_ids = prefix_ids + list(tail_ids)
+            clean_target_text = _decode_token_ids(tokenizer, y_train_ids)
+            del clean_tail_text
+            return (
+                y_train_ids,
+                clean_target_text,
+                boundary_slice,
+                0,
+                int(retained_prefix_end),
+            )
+        target_objects = list(prefix_objects) + list(remaining_objects)
+        clean_target_text, y_train_ids, boundary_slice = _render_residual_target_slice(
+            tokenizer=tokenizer,
+            target_objects=target_objects,
+            boundary="object",
+            object_index=int(len(prefix_objects)),
+        )
+        return y_train_ids, clean_target_text, boundary_slice, int(len(prefix_objects)), 0
+    if prefix_objects and can_render_prefix:
+        clean_target_text, y_train_ids, _boundary_slice = _render_residual_target_slice(
+            tokenizer=tokenizer,
+            target_objects=prefix_objects,
+            boundary="assistant_start",
+        )
+        return y_train_ids, clean_target_text, None, int(len(prefix_objects)), 0
+    y_train_ids = [int(token_id) for token_id in raw_ids[: int(retained_prefix_end)]]
+    return y_train_ids, _decode_token_ids(tokenizer, y_train_ids), None, 0, 0
+
+
+def _observed_prefix_objects(
+    *,
+    rows: Sequence[ObservedResidualRow],
+    retained_prefix_end: int,
+) -> List[GTObject]:
+    objects: List[GTObject] = []
+    for row_index, row in enumerate(rows):
+        if row.object_end is None or int(row.object_end) > int(retained_prefix_end):
+            continue
+        if row.desc is None or row.bbox_norm1000 is None:
+            continue
+        objects.append(
+            GTObject(
+                index=int(row_index),
+                geom_type="bbox_2d",
+                points_norm1000=[int(value) for value in row.bbox_norm1000],
+                desc=str(row.desc),
+            )
+        )
+    return objects
+
+
+def _can_render_observed_prefix(
+    *,
+    rows: Sequence[ObservedResidualRow],
+    retained_prefix_end: int,
+    prefix_objects: Sequence[GTObject],
+) -> bool:
+    complete_rows = [
+        row
+        for row in rows
+        if row.object_end is not None
+        and int(row.object_end) <= int(retained_prefix_end)
+        and row.desc is not None
+        and row.bbox_norm1000 is not None
+    ]
+    if len(complete_rows) != len(prefix_objects):
+        return False
+    for row in complete_rows:
+        if row.bbox_norm1000 is None:
+            return False
+        x1, y1, x2, y2 = [int(value) for value in row.bbox_norm1000]
+        if x2 <= x1 or y2 <= y1:
+            return False
+    return True
+
+
+def _residual_continuation_correction_kind(scan: ResidualRowScanResult) -> str:
+    if not scan.row_decisions:
+        return "premature_stop"
+    last_kind = str(scan.row_decisions[-1].kind)
+    if last_kind in {"invalid_geometry", "malformed_span", "trailing_incomplete"}:
+        return last_kind
+    if last_kind == "duplicate_burst":
+        return "repeated_object_boundary"
+    if last_kind == "unmatched_dirty_context":
+        return "fp_boundary"
+    if last_kind == "spatial_wrong_desc_conflict":
+        return "spatial_wrong_desc_conflict"
+    return "premature_stop"
+
+
+def _decode_token_ids(tokenizer: Any, token_ids: Sequence[int]) -> str:
+    if not token_ids:
+        return ""
+    return str(
+        tokenizer.decode(
+            [int(token_id) for token_id in token_ids],
+            skip_special_tokens=False,
+            clean_up_tokenization_spaces=False,
+        )
     )
 
 
@@ -2072,6 +2343,8 @@ def _residual_universe_object_from_gt(
             "source": str(source),
             "source_index": int(source_index),
             "support_provenance": tuple(str(item) for item in support_provenance),
+            "bbox_norm1000": tuple(int(value) for value in obj.points_norm1000),
+            "desc_norm": normalize_desc(str(obj.desc)),
         },
     )
     gt_object = GTObject(
@@ -2107,241 +2380,6 @@ def _compact_context_desc_token_ids(*, tokenizer: Any, obj: GTObject) -> Tuple[i
         int(token_id)
         for token_id in row_token_ids[int(span.desc_start) : int(span.desc_end)]
     )
-
-
-def _raw_index_to_matched_gt_index(
-    *,
-    accepted_objects_clean: Sequence[GTObject],
-    match: MatchResult,
-) -> Dict[int, int]:
-    raw_index_to_gt_index: Dict[int, int] = {}
-    for pred_i, gt_i in match.matched_pairs:
-        pred_i = int(pred_i)
-        gt_i = int(gt_i)
-        if pred_i < 0 or pred_i >= len(accepted_objects_clean):
-            continue
-        raw_index_to_gt_index[int(accepted_objects_clean[pred_i].index)] = int(gt_i)
-    return raw_index_to_gt_index
-
-
-def _select_residual_target_for_raw_object(
-    *,
-    raw_obj: GTObject,
-    remaining_ids: Sequence[str],
-    universe_by_id: Mapping[str, _ResidualSetUniverseObject],
-    raw_index_to_gt_index: Mapping[int, int],
-    assignment_iou_threshold: float,
-) -> str | None:
-    labeled_gt_index = raw_index_to_gt_index.get(int(raw_obj.index))
-    if labeled_gt_index is not None:
-        object_id = f"gt:{int(labeled_gt_index)}"
-        if object_id in set(remaining_ids):
-            return object_id
-
-    candidates: List[Tuple[float, int, str]] = []
-    for order, object_id in enumerate(remaining_ids):
-        target = universe_by_id[object_id]
-        if target.source != "ul":
-            continue
-        if normalize_desc(raw_obj.desc) != normalize_desc(target.gt_object.desc):
-            continue
-        iou = _bbox_iou_norm1000_xyxy(
-            raw_obj.points_norm1000,
-            target.gt_object.points_norm1000,
-        )
-        if iou < float(assignment_iou_threshold):
-            continue
-        candidates.append((-float(iou), int(order), str(object_id)))
-    if not candidates:
-        return None
-    return min(candidates)[2]
-
-
-def _raw_object_overlaps_emitted(
-    *,
-    raw_obj: GTObject,
-    emitted_ids: Sequence[str],
-    universe_by_id: Mapping[str, _ResidualSetUniverseObject],
-    assignment_iou_threshold: float,
-) -> bool:
-    for object_id in emitted_ids:
-        target = universe_by_id[object_id]
-        if normalize_desc(raw_obj.desc) != normalize_desc(target.gt_object.desc):
-            continue
-        if (
-            _bbox_iou_norm1000_xyxy(
-                raw_obj.points_norm1000,
-                target.gt_object.points_norm1000,
-            )
-            >= float(assignment_iou_threshold)
-        ):
-            return True
-    return False
-
-
-def _build_residual_boundary_event(
-    *,
-    tokenizer: Any,
-    universe: Sequence[_ResidualSetUniverseObject],
-    universe_by_id: Mapping[str, _ResidualSetUniverseObject],
-    emitted_ids: Sequence[str],
-    remaining_ids: Sequence[str],
-    sample_id: str,
-    rollout_index: int,
-    correction_kind: str,
-    observed_token_id: int | None,
-    anchor_position: int,
-    object_start_token_id: int,
-    box_start_token_id: int,
-    stop_token_id: int,
-    rollout_id: str | None = None,
-) -> _ResidualSetCorrectionBuildResult | None:
-    target_objects = _residual_target_objects(
-        target_ids=list(emitted_ids) + list(remaining_ids),
-        universe_by_id=universe_by_id,
-    )
-    clean_target_text = ""
-    y_train_ids: List[int] = []
-    boundary_slice: ResidualBoundarySlice | None = None
-    if target_objects:
-        clean_target_text, y_train_ids, boundary_slice = _render_residual_target_slice(
-            tokenizer=tokenizer,
-            target_objects=target_objects,
-            boundary="object",
-            object_index=int(len(emitted_ids)),
-        )
-    if remaining_ids:
-        if boundary_slice is None:
-            raise ValueError("residual boundary adapter did not produce a target slice")
-        span = boundary_slice.object_spans[int(len(emitted_ids))]
-        current_target = universe_by_id[remaining_ids[0]]
-        event = _build_residual_event_from_specs(
-            universe=universe,
-            current_target=current_target,
-            remaining_ids=remaining_ids,
-            draft_specs=[("object_start", int(span.object_start), 0)],
-            correction_kind=correction_kind,
-            sample_id=sample_id,
-            rollout_index=int(rollout_index),
-            rollout_id=rollout_id,
-            observed_token_ids=(
-                [int(observed_token_id)] if observed_token_id is not None else []
-            ),
-            observed_object_start=int(anchor_position),
-            object_start_token_id=int(object_start_token_id),
-            box_start_token_id=int(box_start_token_id),
-            stop_token_id=int(stop_token_id),
-        )
-        return _residual_build_result(
-            y_train_ids=y_train_ids,
-            clean_target_text=clean_target_text,
-            events=[event],
-            event_summaries=[_residual_event_summary(event)],
-            metrics={
-                "residual_object_count": float(len(universe)),
-                "ul_promoted_object_count": float(
-                    sum(1 for item in universe if item.source == "ul")
-                ),
-                "event_count": 0.0,
-                "atom_count": 0.0,
-            },
-        )
-
-    if len(y_train_ids) <= 0:
-        return None
-    state = ResidualState(
-        objects=tuple(item.residual_object for item in universe),
-        remaining_object_ids=frozenset(),
-        active_candidate_ids=frozenset(),
-        object_start_token_id=int(object_start_token_id),
-        box_start_token_id=int(box_start_token_id),
-        stop_token_id=int(stop_token_id),
-    )
-    actions = enumerate_valid_actions(state, slot="boundary")
-    selected = _selected_action_for_token(actions, int(stop_token_id))
-    draft = CorrectionAtomDraft(
-        correction_kind=correction_kind,  # type: ignore[arg-type]
-        target_position=int(len(y_train_ids)),
-        logit_position=int(len(y_train_ids) - 1),
-        valid_actions=actions,
-        selected_action=selected,
-        metadata={
-            "observed_token_id": observed_token_id,
-            "rollout_index": int(rollout_index),
-            **({"rollout_id": str(rollout_id)} if rollout_id is not None else {}),
-            "anchor_position": int(anchor_position),
-            "slot": "stop",
-        },
-    )
-    event = CorrectionEvent(
-        correction_kind=correction_kind,  # type: ignore[arg-type]
-        sample_id=str(sample_id),
-        atom_drafts=(draft,),
-        metadata={
-            "rollout_index": int(rollout_index),
-            **({"rollout_id": str(rollout_id)} if rollout_id is not None else {}),
-            "anchor_position": int(anchor_position),
-            "target_builder": "stage2_residual_events_v1",
-        },
-    )
-    return _residual_build_result(
-        y_train_ids=y_train_ids,
-        clean_target_text=clean_target_text,
-        events=[event],
-        event_summaries=[_residual_event_summary(event)],
-        metrics={
-            "residual_object_count": float(len(universe)),
-            "ul_promoted_object_count": float(
-                sum(1 for item in universe if item.source == "ul")
-            ),
-            "event_count": 0.0,
-            "atom_count": 0.0,
-        },
-    )
-
-
-def _residual_object_repair_draft_specs(
-    *,
-    target_span: CompactFullObjectTokenSpan | ResidualBoundaryObjectSpan,
-    mismatch_index: int,
-) -> List[Tuple[str, int, int]]:
-    target_position = int(target_span.object_start) + int(mismatch_index)
-    slot = _slot_for_compact_span_position(target_span, target_position)
-    if slot not in _COORD_ROLE_BY_SLOT:
-        prefix_len = (
-            int(target_position) - int(target_span.desc_start)
-            if slot == "desc"
-            else 0
-        )
-        return [(slot, target_position, int(prefix_len))]
-
-    coord_positions = [int(p) for p in target_span.coord_positions]
-    start_index = coord_positions.index(int(target_position))
-    return [
-        (
-            _COORD_ROLE_BY_SLOT[int(idx)],
-            int(coord_positions[int(idx)]),
-            0,
-        )
-        for idx in range(start_index, len(coord_positions))
-    ]
-
-
-def _slot_for_compact_span_position(
-    span: CompactFullObjectTokenSpan | ResidualBoundaryObjectSpan,
-    target_position: int,
-) -> str:
-    target_position = int(target_position)
-    if target_position == int(span.object_start):
-        return "object_start"
-    if int(span.desc_start) <= target_position < int(span.desc_end):
-        return "desc"
-    if target_position == int(span.box_start):
-        return "box_start"
-    coord_positions = [int(p) for p in span.coord_positions]
-    if target_position in coord_positions:
-        return _COORD_ROLE_BY_SLOT[coord_positions.index(target_position)]
-    raise ValueError("compact-full target position is outside object span")
 
 
 def _build_residual_event_from_specs(
@@ -2610,18 +2648,6 @@ def _render_residual_target_ids(
         boundary="assistant_start",
     )
     return str(text), token_ids
-
-
-def _first_mismatch_index(
-    left: Sequence[int],
-    right: Sequence[int],
-) -> int | None:
-    for index, (left_id, right_id) in enumerate(zip(left, right)):
-        if int(left_id) != int(right_id):
-            return int(index)
-    if len(left) != len(right):
-        return int(min(len(left), len(right)))
-    return None
 
 
 def _residual_build_result(

@@ -4081,7 +4081,14 @@ class Stage2TwoChannelTrainer(
                 residual_set_atom_total += int(
                     residual_set_build_result.metrics.get("atom_count", 0.0)
                 )
-                if int(residual_set_build_result.metrics.get("atom_count", 0.0)) > 0:
+                if (
+                    float(
+                        residual_set_build_result.metrics.get(
+                            "scanner_dropped_sample", 0.0
+                        )
+                    )
+                    <= 0.0
+                ):
                     residual_set_sequence_total += 1
             stage2_trie_candidates: List[Stage2TrieCandidate] = []
             if not residual_set_selected:
