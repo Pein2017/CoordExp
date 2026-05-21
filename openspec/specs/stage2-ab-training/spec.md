@@ -62,7 +62,8 @@ Normative behavior:
 - `application.preset` MUST be valid for the referenced module:
   - `token_ce`: `anchor_text_only`, `rollout_text_only`
   - `hard_sft`: `selected_path`
-  - `stage2_trie_ce`: `rollout_text_only`
+  - `stage2_trie_ce`: `rollout_trie_hard_ce`
+  - `residual_set_correction`: `rollout_self_prefix`
 - Presets that imply a deprecated final Channel-A self-context pass MUST be
   rejected with actionable migration guidance:
   - `token_ce.application.preset: anchor_text_plus_final_struct`
@@ -1122,13 +1123,13 @@ Canonical prod behavior:
 - **GIVEN** a canonical Stage-2 profile leaf under `configs/stage2_two_channel/prod/*.yaml`
 - **WHEN** config is materialized through the supported Stage-2 profile hierarchy rooted at `configs/stage2_two_channel/base.yaml`
 - **THEN** the resolved objective names are a subset of `token_ce`, `hard_sft`,
-  and `stage2_trie_ce`.
+  `stage2_trie_ce`, and `residual_set_correction`.
 
 #### Scenario: Canonical smoke leaves omit removed geometry/coord modules
 - **GIVEN** a canonical Stage-2 profile leaf under `configs/stage2_two_channel/smoke/*.yaml`
 - **WHEN** config is materialized through the supported Stage-2 profile hierarchy rooted at `configs/stage2_two_channel/base.yaml`
 - **THEN** the resolved objective names are a subset of `token_ce`, `hard_sft`,
-  and `stage2_trie_ce`.
+  `stage2_trie_ce`, and `residual_set_correction`.
 
 ### Requirement: Stage-2 two-channel training supports a config-declared objective and diagnostics pipeline
 When `custom.trainer_variant: stage2_two_channel`, the system SHALL use an explicit YAML-declared objective/diagnostics pipeline for the canonical clean-prefix Channel-B contract.

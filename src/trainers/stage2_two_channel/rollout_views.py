@@ -1,13 +1,30 @@
-from dataclasses import replace
+from dataclasses import dataclass, replace
+import re
 from typing import Any, Dict, List, Mapping, Tuple
 
 from src.common.duplicate_control import duplicate_control_object_from_bbox
+from src.common.detection_sequence import BOX_START_TOKEN, OBJECT_REF_START_TOKEN
+from src.common.semantic_desc import normalize_desc
 from src.training.stage2.rollout_codec import (
     CompactFullRolloutCodec,
     Stage2RolloutTemplatePolicy,
 )
 
 from ..rollout_matching.contracts import GTObject
+from ..rollout_matching.parsing import decode_pieces
+
+
+_COMPACT_COORD_RE = re.compile(r"<\|coord_(0|[1-9]\d{0,2})\|>")
+
+
+@dataclass(frozen=True)
+class CompactFullObjectTokenSpan:
+    object_index: int
+    object_start: int
+    desc_start: int
+    desc_end: int
+    box_start: int
+    coord_positions: tuple[int, int, int, int]
 
 
 def _response_text_from_rollout(
@@ -52,6 +69,169 @@ def _view_from_bbox_objects(
         center_radius_scale=float(center_radius_scale),
     )
     return duplicate_control_objects_raw, duplicate_metrics
+
+
+def extract_compact_full_object_token_spans(
+    *,
+    tokenizer: Any,
+    response_token_ids: List[int],
+    parsed_objects: List[GTObject] | None = None,
+) -> List[CompactFullObjectTokenSpan]:
+    token_ids = [int(t) for t in response_token_ids]
+    if not token_ids:
+        return []
+
+    pieces = decode_pieces(tokenizer, token_ids)
+    token_spans: List[tuple[int, int]] = []
+    cursor = 0
+    for piece in pieces:
+        start = int(cursor)
+        cursor += int(len(piece))
+        token_spans.append((start, int(cursor)))
+    text = "".join(pieces)
+
+    terminal_positions = [
+        pos
+        for marker in ("<|im_end|>", "<|endoftext|>")
+        if (pos := text.find(marker)) >= 0
+    ]
+    parse_text = text[: min(terminal_positions)] if terminal_positions else text
+
+    spans_by_row_index: dict[int, CompactFullObjectTokenSpan] = {}
+    payload_by_row_index: dict[int, tuple[str, tuple[int, int, int, int]]] = {}
+    row_start = 0
+    row_index = 0
+    for raw_row in parse_text.splitlines(keepends=True):
+        row = raw_row.rstrip("\r\n")
+        row_end = row_start + len(row)
+        next_row_start = row_start + len(raw_row)
+        if not row:
+            row_start = next_row_start
+            continue
+        if not row.startswith(OBJECT_REF_START_TOKEN):
+            raise ValueError("compact-full span extractor found row without object_start marker")
+        box_rel = row.rfind(BOX_START_TOKEN)
+        if box_rel < len(OBJECT_REF_START_TOKEN):
+            raise ValueError("compact-full span extractor found row without box_start marker")
+
+        coord_tail_start = box_rel + len(BOX_START_TOKEN)
+        coord_matches = list(_COMPACT_COORD_RE.finditer(row, coord_tail_start))
+        if len(coord_matches) != 4:
+            raise ValueError("compact-full span extractor requires exactly four coord tokens")
+        if coord_matches[0].start() != coord_tail_start:
+            raise ValueError("compact-full coord tail must start immediately after box_start")
+        if any(
+            left.end() != right.start()
+            for left, right in zip(coord_matches, coord_matches[1:])
+        ):
+            raise ValueError("compact-full coord tokens must be contiguous")
+        if coord_matches[-1].end() != len(row):
+            raise ValueError("compact-full coord tail must end at row boundary")
+        coord_values = tuple(int(match.group(1)) for match in coord_matches)
+        if len(coord_values) != 4:
+            raise ValueError("compact-full span extractor requires four coord values")
+
+        object_start = _marker_token_for_char_span(
+            token_spans,
+            row_start,
+            row_start + len(OBJECT_REF_START_TOKEN),
+            label="object_start",
+        )
+        desc_start_char = row_start + len(OBJECT_REF_START_TOKEN)
+        desc_end_char = row_start + box_rel
+        desc_positions = _token_indices_overlapping_char_span(
+            token_spans,
+            desc_start_char,
+            desc_end_char,
+        )
+        if not desc_positions:
+            raise ValueError("compact-full span extractor found empty desc token span")
+        box_start = _marker_token_for_char_span(
+            token_spans,
+            row_start + box_rel,
+            row_start + box_rel + len(BOX_START_TOKEN),
+            label="box_start",
+        )
+        coord_positions = tuple(
+            _single_token_for_char_span(
+                token_spans,
+                row_start + match.start(),
+                row_start + match.end(),
+                label="coord",
+            )
+            for match in coord_matches
+        )
+        spans_by_row_index[int(row_index)] = CompactFullObjectTokenSpan(
+            object_index=int(row_index),
+            object_start=int(object_start),
+            desc_start=int(min(desc_positions)),
+            desc_end=int(max(desc_positions) + 1),
+            box_start=int(box_start),
+            coord_positions=coord_positions,  # type: ignore[arg-type]
+        )
+        payload_by_row_index[int(row_index)] = (
+            row[len(OBJECT_REF_START_TOKEN) : box_rel],
+            coord_values,  # type: ignore[arg-type]
+        )
+        row_index += 1
+        row_start = next_row_start
+
+    if parsed_objects is None:
+        return [spans_by_row_index[index] for index in sorted(spans_by_row_index)]
+
+    aligned: List[CompactFullObjectTokenSpan] = []
+    for obj in parsed_objects:
+        obj_index = int(obj.index)
+        span = spans_by_row_index.get(obj_index)
+        if span is None:
+            raise ValueError(
+                "compact-full span extractor could not align parsed_bbox_objects_raw"
+            )
+        desc_text, coord_values = payload_by_row_index[obj_index]
+        if normalize_desc(desc_text) != normalize_desc(str(obj.desc)):
+            raise ValueError("compact-full span desc does not align parsed object")
+        if list(coord_values) != [int(v) for v in obj.points_norm1000]:
+            raise ValueError("compact-full span coords do not align parsed object")
+        aligned.append(span)
+    return aligned
+
+
+def _token_indices_overlapping_char_span(
+    token_spans: List[tuple[int, int]],
+    char_start: int,
+    char_end: int,
+) -> List[int]:
+    return [
+        int(index)
+        for index, (start, end) in enumerate(token_spans)
+        if int(start) < int(char_end) and int(end) > int(char_start)
+    ]
+
+
+def _single_token_for_char_span(
+    token_spans: List[tuple[int, int]],
+    char_start: int,
+    char_end: int,
+    *,
+    label: str,
+) -> int:
+    positions = _token_indices_overlapping_char_span(token_spans, char_start, char_end)
+    if len(positions) != 1:
+        raise ValueError(f"compact-full {label} span must align to one token")
+    return int(positions[0])
+
+
+def _marker_token_for_char_span(
+    token_spans: List[tuple[int, int]],
+    char_start: int,
+    char_end: int,
+    *,
+    label: str,
+) -> int:
+    positions = _token_indices_overlapping_char_span(token_spans, char_start, char_end)
+    if not positions:
+        raise ValueError(f"compact-full {label} span did not align to tokens")
+    return int(positions[0])
 
 
 def _build_compact_full_rollout_view(
@@ -143,6 +323,14 @@ def _build_compact_full_rollout_view(
     )
     fallback_applies = bool(parse.invalid_rollout or parse.empty_valid_object_set)
 
+    compact_full_object_spans: List[CompactFullObjectTokenSpan] = []
+    if not fallback_applies:
+        compact_full_object_spans = extract_compact_full_object_token_spans(
+            tokenizer=tokenizer,
+            response_token_ids=resp_ids_local,
+            parsed_objects=parsed_bbox_objects_raw,
+        )
+
     return {
         "prompt_ids": [int(t) for t in prompt_ids],
         "decode_mode": str(rollout_decode_mode),
@@ -161,6 +349,7 @@ def _build_compact_full_rollout_view(
         "drop_unknown": int(0),
         "drop_bbox_invalid": int(drop_bbox_invalid),
         "parsed_bbox_objects_raw": parsed_bbox_objects_raw,
+        "compact_full_object_spans": compact_full_object_spans,
         "duplicate_control_objects_raw": duplicate_control_objects_raw,
         "n_valid_pred": int(len(parsed_bbox_objects_raw)),
         "n_drop_invalid": int(drop_bbox_invalid),
@@ -340,4 +529,8 @@ def build_channel_b_rollout_view(
     }
 
 
-__all__ = ["build_channel_b_rollout_view"]
+__all__ = [
+    "CompactFullObjectTokenSpan",
+    "build_channel_b_rollout_view",
+    "extract_compact_full_object_token_spans",
+]

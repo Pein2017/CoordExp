@@ -12,7 +12,14 @@
 
 Date: 2026-05-20
 
-Status: proposal for user review. Do not implement until the user explicitly approves.
+Status: implemented in `codex/unified-training-infra-refactor`; final blocker-fix review pending after the production residual path was rewired from the singleton sidecar to CorrectionEvent-derived target IR.
+
+Implementation status ledger:
+
+- Task 1-7: implemented and reviewed in commits through `3a2cc850`; later blocker-fix rewired the production residual path to CorrectionEvent-derived target IR and preserved the config/metric/artifact guards.
+- Task 8: residual smoke YAMLs and historical tiny-smoke artifacts exist from `ca6c2d02`, but those artifacts predate the production event-path blocker fix. A post-blocker-fix 1-step rerun was attempted and aborted during Swift initialization before a new artifact root was created, so current event-path smoke remains pending.
+- Task 9: OpenSpec strict validation and targeted unit/config tests passed after blocker-fix; final code/config review is the active gate.
+- The unchecked step checklist below is retained as the historical implementation plan, not as the current task-state source of truth. Use this ledger plus `openspec/changes/add-stage2-residual-set-ul-correction/tasks.md` for current status.
 
 Worktree root:
 

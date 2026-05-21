@@ -173,8 +173,13 @@ def build_residual_set_target_ir(
     batch_index: int,
     events: Sequence[CorrectionEvent],
     role_vocab: RoleVocab,
+    position_space: str = "batch_tensor",
 ) -> TeacherForcingTargetIR:
     """Translate residual-set correction events into shared target IR atoms."""
+
+    position_space = str(position_space or "").strip()
+    if position_space not in {"segment_local", "batch_tensor"}:
+        raise ValueError("residual_set target IR position_space must be segment_local or batch_tensor")
 
     atoms: list[SupervisionAtom] = []
     for event in events:
@@ -233,9 +238,7 @@ def build_residual_set_target_ir(
                     latent_valid_token_ids=valid_ids,
                     coverage_target_weights=None,
                     loss_tags=frozenset({"stage2", "channel_b", "residual_set"}),
-                    loss_weight=max(
-                        _action_loss_weight(action) for action in draft.valid_actions
-                    ),
+                    loss_weight=_action_loss_weight(selected_action),
                     coord_role=selected_action.coord_role,
                     provenance=_residual_atom_provenance(
                         event=event,
@@ -246,6 +249,7 @@ def build_residual_set_target_ir(
                             event.metadata.get("observed_token_id"),
                         ),
                         valid_ids=valid_ids,
+                        valid_actions=draft.valid_actions,
                     ),
                 )
             )
@@ -258,6 +262,7 @@ def build_residual_set_target_ir(
             "stage2_channel": "B",
             "objective": "residual_set_correction",
             "marginal_scope": MARGINAL_SCOPE_SAMPLED_PATH_NEXT_TOKEN,
+            "position_space": position_space,
         },
     )
     validate_target_ir(target_ir, input_ids=input_ids, role_vocab=role_vocab)
@@ -351,6 +356,7 @@ def _residual_atom_provenance(
     draft_index: int,
     observed_token_id: Any,
     valid_ids: frozenset[int],
+    valid_actions: Sequence[Any],
 ) -> Mapping[str, Any]:
     rollout_index = draft.metadata.get("rollout_index", event.metadata.get("rollout_index"))
     anchor_position = draft.metadata.get(
@@ -366,10 +372,34 @@ def _residual_atom_provenance(
         "sample_id": event.sample_id,
         "anchor_position": _optional_int(anchor_position),
         "valid_token_ids": tuple(sorted(valid_ids)),
+        "support_provenance": _support_provenance_for_actions(valid_actions),
     }
+    if event.metadata.get("target_builder") is not None:
+        provenance["target_builder"] = str(event.metadata["target_builder"])
     if event.correction_kind != draft.correction_kind:
         provenance["event_correction_kind"] = event.correction_kind
     return provenance
+
+
+def _support_provenance_for_actions(valid_actions: Sequence[Any]) -> tuple[str, ...]:
+    support: set[str] = set()
+    for action in valid_actions:
+        metadata = getattr(action, "metadata", {})
+        if not isinstance(metadata, Mapping):
+            continue
+        raw = metadata.get("support_provenance")
+        if raw is None:
+            continue
+        if isinstance(raw, str):
+            support.add(raw)
+            continue
+        try:
+            support.update(str(item) for item in raw)
+        except TypeError:
+            support.add(str(raw))
+    if not support:
+        support.add("labeled")
+    return tuple(sorted(support))
 
 
 def _object_targets_from_legacy_meta(

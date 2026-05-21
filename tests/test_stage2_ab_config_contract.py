@@ -1013,6 +1013,109 @@ def test_stage2_pipeline_accepts_residual_set_correction_objective() -> None:
     assert objective.config["base_seed"] == 17
     assert objective.config["num_rollouts"] == 3
     assert objective.config["lambda_ul_promoted"] == 0.5
+    assert loaded.stage2_ab.channel_b.triage_posterior.num_rollouts == 3
+
+
+def test_residual_set_num_rollouts_owns_channel_b_rollout_count_when_legacy_omitted() -> None:
+    raw = _make_stage2_training_payload()
+    residual_cfg = _residual_set_config()
+    residual_cfg["num_rollouts"] = 5
+    residual_cfg["min_ul_valid_rollouts"] = 5
+    raw["stage2_ab"]["pipeline"]["objective"] = [
+        {
+            "name": "token_ce",
+            "enabled": True,
+            "weight": 1.0,
+            "channels": ["A"],
+            "application": {"preset": "anchor_text_only"},
+            "config": {
+                "desc_ce_weight": 1.0,
+                "rollout_fn_desc_weight": 1.0,
+                "rollout_global_prefix_struct_ce_weight": 1.0,
+            },
+        },
+        {
+            "name": "residual_set_correction",
+            "enabled": True,
+            "weight": 1.0,
+            "channels": ["B"],
+            "application": {"preset": "rollout_self_prefix"},
+            "config": residual_cfg,
+        },
+    ]
+    raw["stage2_ab"]["channel_b"]["pseudo_positive"] = {"enabled": False}
+    raw["stage2_ab"]["channel_b"].pop("triage_posterior", None)
+
+    loaded = TrainingConfig.from_mapping(raw, ConfigLoader.resolve_prompts(raw))
+
+    assert loaded.stage2_ab.pipeline.objective[1].config["num_rollouts"] == 5
+    assert loaded.stage2_ab.channel_b.triage_posterior.num_rollouts == 5
+
+
+def test_residual_set_num_rollouts_rejects_explicit_legacy_conflict() -> None:
+    raw = _make_stage2_training_payload()
+    residual_cfg = _residual_set_config()
+    residual_cfg["num_rollouts"] = 5
+    residual_cfg["min_ul_valid_rollouts"] = 5
+    raw["stage2_ab"]["pipeline"]["objective"] = [
+        {
+            "name": "token_ce",
+            "enabled": True,
+            "weight": 1.0,
+            "channels": ["A"],
+            "application": {"preset": "anchor_text_only"},
+            "config": {
+                "desc_ce_weight": 1.0,
+                "rollout_fn_desc_weight": 1.0,
+                "rollout_global_prefix_struct_ce_weight": 1.0,
+            },
+        },
+        {
+            "name": "residual_set_correction",
+            "enabled": True,
+            "weight": 1.0,
+            "channels": ["B"],
+            "application": {"preset": "rollout_self_prefix"},
+            "config": residual_cfg,
+        },
+    ]
+    raw["stage2_ab"]["channel_b"]["pseudo_positive"] = {"enabled": False}
+    raw["stage2_ab"]["channel_b"]["triage_posterior"] = {"num_rollouts": 3}
+
+    with pytest.raises(ValueError, match="num_rollouts.*omitted or match"):
+        TrainingConfig.from_mapping(raw, ConfigLoader.resolve_prompts(raw))
+
+
+def test_residual_set_num_rollouts_allows_explicit_legacy_match() -> None:
+    raw = _make_stage2_training_payload()
+    raw["stage2_ab"]["pipeline"]["objective"] = [
+        {
+            "name": "token_ce",
+            "enabled": True,
+            "weight": 1.0,
+            "channels": ["A"],
+            "application": {"preset": "anchor_text_only"},
+            "config": {
+                "desc_ce_weight": 1.0,
+                "rollout_fn_desc_weight": 1.0,
+                "rollout_global_prefix_struct_ce_weight": 1.0,
+            },
+        },
+        {
+            "name": "residual_set_correction",
+            "enabled": True,
+            "weight": 1.0,
+            "channels": ["B"],
+            "application": {"preset": "rollout_self_prefix"},
+            "config": _residual_set_config(),
+        },
+    ]
+    raw["stage2_ab"]["channel_b"]["pseudo_positive"] = {"enabled": False}
+    raw["stage2_ab"]["channel_b"]["triage_posterior"] = {"num_rollouts": 3}
+
+    loaded = TrainingConfig.from_mapping(raw, ConfigLoader.resolve_prompts(raw))
+
+    assert loaded.stage2_ab.channel_b.triage_posterior.num_rollouts == 3
 
 
 def test_residual_set_rejects_legacy_channel_b_trie_double_supervision() -> None:

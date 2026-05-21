@@ -17,6 +17,7 @@ from src.common.detection_sequence import (
     render_compact_detection_sequence,
 )
 from src.common.object_field_order import build_object_payload
+from src.common.semantic_desc import normalize_desc
 from src.training.stage2.rollout_codec import (
     FALLBACK_GT_FN_APPEND_ONLY,
     Stage2RolloutTemplatePolicy,
@@ -41,6 +42,16 @@ from .trie_supervision import (
     compile_stage2_trie_targets_for_rollout_group,
     stage2_trie_span_score_record_to_json,
 )
+from .residual_set import (
+    CorrectionAtomDraft,
+    CorrectionEvent,
+    ResidualObject,
+    ResidualState,
+    ValidAction,
+    enumerate_valid_actions,
+    transition_state,
+)
+from .rollout_views import CompactFullObjectTokenSpan, extract_compact_full_object_token_spans
 
 _RESIDUAL_SET_OBJECTIVE_NAME = "residual_set_correction"
 _DEFAULT_RESIDUAL_SET_ROLLIN_POLICY = "random_valid_branch"
@@ -133,6 +144,25 @@ class _ChannelBSupervisionTargets:
     rollout_counts_as_valid_rollout: bool
     stage2_trie_object_spans: List[Stage2TrieObjectSpan]
     stage2_trie_weak_fp_span_level_fallback: bool
+
+
+@dataclass(frozen=True)
+class _ResidualSetUniverseObject:
+    object_id: str
+    source: str
+    source_index: int
+    gt_object: GTObject
+    residual_object: ResidualObject
+
+
+@dataclass(frozen=True)
+class _ResidualSetCorrectionBuildResult:
+    y_train_ids: List[int]
+    clean_target_text: str
+    prefix_len_raw_local: int
+    events: List[CorrectionEvent]
+    event_summaries: List[Dict[str, Any]]
+    metrics: Dict[str, float]
 
 
 def _compact_coord_tokens(values: Sequence[object]) -> List[str]:
@@ -1735,6 +1765,891 @@ def _build_channel_b_supervision_targets(
     )
 
 
+def _build_residual_set_correction_events(
+    *,
+    tokenizer: Any,
+    response_token_ids: Sequence[int],
+    parsed_bbox_objects_raw: Sequence[GTObject],
+    compact_full_object_spans: Sequence[CompactFullObjectTokenSpan],
+    gts: Sequence[GTObject],
+    accepted_objects_clean: Sequence[GTObject],
+    match: MatchResult,
+    ul_promoted_objects: Sequence[Mapping[str, Any]] = (),
+    assignment_iou_threshold: float,
+    sample_id: str,
+    rollout_index: int,
+    lambda_ul_promoted: float,
+) -> _ResidualSetCorrectionBuildResult:
+    """Build sampled-path residual correction events for compact-full Channel-B."""
+
+    object_start_token_id = _single_token_id_for_text(
+        tokenizer, OBJECT_REF_START_TOKEN, label="object_start"
+    )
+    box_start_token_id = _single_token_id_for_text(
+        tokenizer, BOX_START_TOKEN, label="box_start"
+    )
+    stop_token_id = _stop_token_id(tokenizer)
+
+    universe = _build_residual_universe_objects(
+        tokenizer=tokenizer,
+        gts=gts,
+        ul_promoted_objects=ul_promoted_objects,
+        lambda_ul_promoted=float(lambda_ul_promoted),
+    )
+    universe_by_id = {item.object_id: item for item in universe}
+    remaining_ids: List[str] = [item.object_id for item in universe]
+    emitted_ids: List[str] = []
+    events: List[CorrectionEvent] = []
+    event_summaries: List[Dict[str, Any]] = []
+    metrics: Dict[str, float] = {
+        "residual_object_count": float(len(universe)),
+        "ul_promoted_object_count": float(
+            sum(1 for item in universe if item.source == "ul")
+        ),
+        "event_count": 0.0,
+        "atom_count": 0.0,
+        "no_event_exact_path": 0.0,
+        "dropped_stop_at_empty_prefix": 0.0,
+    }
+
+    raw_index_to_gt_index = _raw_index_to_matched_gt_index(
+        accepted_objects_clean=accepted_objects_clean,
+        match=match,
+    )
+    spans_by_raw_index = {
+        int(span.object_index): span for span in compact_full_object_spans
+    }
+    raw_ids = [int(token_id) for token_id in response_token_ids]
+
+    for raw_order, raw_obj in enumerate(parsed_bbox_objects_raw):
+        raw_index = int(raw_obj.index)
+        span = spans_by_raw_index.get(raw_index)
+        if span is None:
+            raise ValueError(
+                "residual_set_correction requires compact-full raw token spans "
+                "aligned with parsed_bbox_objects_raw"
+            )
+
+        target_id = _select_residual_target_for_raw_object(
+            raw_obj=raw_obj,
+            remaining_ids=remaining_ids,
+            universe_by_id=universe_by_id,
+            raw_index_to_gt_index=raw_index_to_gt_index,
+            assignment_iou_threshold=float(assignment_iou_threshold),
+        )
+        if target_id is None:
+            duplicate_like = _raw_object_overlaps_emitted(
+                raw_obj=raw_obj,
+                emitted_ids=emitted_ids,
+                universe_by_id=universe_by_id,
+                assignment_iou_threshold=float(assignment_iou_threshold),
+            )
+            result = _build_residual_boundary_event(
+                tokenizer=tokenizer,
+                universe=universe,
+                universe_by_id=universe_by_id,
+                emitted_ids=emitted_ids,
+                remaining_ids=remaining_ids,
+                sample_id=sample_id,
+                rollout_index=int(rollout_index),
+                correction_kind=(
+                    "repeated_object_boundary" if duplicate_like else "fp_boundary"
+                ),
+                observed_token_id=(
+                    int(raw_ids[int(span.object_start)])
+                    if 0 <= int(span.object_start) < len(raw_ids)
+                    else None
+                ),
+                anchor_position=int(span.object_start),
+                object_start_token_id=int(object_start_token_id),
+                box_start_token_id=int(box_start_token_id),
+                stop_token_id=int(stop_token_id),
+            )
+            if result is not None:
+                return result
+            metrics["dropped_stop_at_empty_prefix"] = 1.0
+            continue
+
+        target = universe_by_id[target_id]
+        raw_object_ids = raw_ids[
+            int(span.object_start) : int(span.coord_positions[-1]) + 1
+        ]
+        target_object_ids = _render_residual_target_ids(
+            tokenizer=tokenizer,
+            target_ids=[target_id],
+            universe_by_id=universe_by_id,
+        )[1]
+        mismatch_index = _first_mismatch_index(raw_object_ids, target_object_ids)
+        if mismatch_index is None:
+            emitted_ids.append(target_id)
+            remaining_ids = [item_id for item_id in remaining_ids if item_id != target_id]
+            continue
+
+        ordered_target_ids = (
+            list(emitted_ids)
+            + [target_id]
+            + [item_id for item_id in remaining_ids if item_id != target_id]
+        )
+        clean_target_text, y_train_ids = _render_residual_target_ids(
+            tokenizer=tokenizer,
+            target_ids=ordered_target_ids,
+            universe_by_id=universe_by_id,
+        )
+        target_row_index = int(len(emitted_ids))
+        target_span = extract_compact_full_object_token_spans(
+            tokenizer=tokenizer,
+            response_token_ids=y_train_ids,
+        )[target_row_index]
+        draft_specs = _residual_object_repair_draft_specs(
+            target_span=target_span,
+            mismatch_index=int(mismatch_index),
+        )
+        event = _build_residual_event_from_specs(
+            universe=universe,
+            current_target=target,
+            remaining_ids=remaining_ids,
+            draft_specs=draft_specs,
+            correction_kind="matched_object_repair",
+            sample_id=sample_id,
+            rollout_index=int(rollout_index),
+            observed_token_ids=raw_object_ids,
+            observed_object_start=int(span.object_start),
+            object_start_token_id=int(object_start_token_id),
+            box_start_token_id=int(box_start_token_id),
+            stop_token_id=int(stop_token_id),
+        )
+        return _residual_build_result(
+            y_train_ids=y_train_ids,
+            clean_target_text=clean_target_text,
+            events=[event],
+            event_summaries=[_residual_event_summary(event)],
+            metrics=metrics,
+        )
+
+    if remaining_ids:
+        clean_target_text, y_train_ids = _render_residual_target_ids(
+            tokenizer=tokenizer,
+            target_ids=list(emitted_ids) + list(remaining_ids),
+            universe_by_id=universe_by_id,
+        )
+        spans = extract_compact_full_object_token_spans(
+            tokenizer=tokenizer,
+            response_token_ids=y_train_ids,
+        )
+        target_span = spans[int(len(emitted_ids))]
+        current_target = universe_by_id[remaining_ids[0]]
+        event = _build_residual_event_from_specs(
+            universe=universe,
+            current_target=current_target,
+            remaining_ids=remaining_ids,
+            draft_specs=[("object_start", int(target_span.object_start), 0)],
+            correction_kind="premature_stop",
+            sample_id=sample_id,
+            rollout_index=int(rollout_index),
+            observed_token_ids=raw_ids,
+            observed_object_start=int(len(raw_ids)),
+            object_start_token_id=int(object_start_token_id),
+            box_start_token_id=int(box_start_token_id),
+            stop_token_id=int(stop_token_id),
+        )
+        return _residual_build_result(
+            y_train_ids=y_train_ids,
+            clean_target_text=clean_target_text,
+            events=[event],
+            event_summaries=[_residual_event_summary(event)],
+            metrics=metrics,
+        )
+
+    clean_target_text, y_train_ids = _render_residual_target_ids(
+        tokenizer=tokenizer,
+        target_ids=emitted_ids,
+        universe_by_id=universe_by_id,
+    )
+    metrics["no_event_exact_path"] = 1.0
+    return _residual_build_result(
+        y_train_ids=y_train_ids,
+        clean_target_text=clean_target_text,
+        events=events,
+        event_summaries=event_summaries,
+        metrics=metrics,
+    )
+
+
+def _build_residual_universe_objects(
+    *,
+    tokenizer: Any,
+    gts: Sequence[GTObject],
+    ul_promoted_objects: Sequence[Mapping[str, Any]],
+    lambda_ul_promoted: float,
+) -> List[_ResidualSetUniverseObject]:
+    universe: List[_ResidualSetUniverseObject] = []
+    for gt_index, obj in enumerate(gts):
+        universe.append(
+            _residual_universe_object_from_gt(
+                tokenizer=tokenizer,
+                object_id=f"gt:{int(gt_index)}",
+                source="labeled",
+                source_index=int(gt_index),
+                obj=obj,
+                loss_weight=1.0,
+                support_provenance=("labeled",),
+            )
+        )
+    for ul_index, item in enumerate(ul_promoted_objects):
+        obj = item.get("object") if isinstance(item, Mapping) else None
+        if not isinstance(obj, GTObject):
+            continue
+        try:
+            loss_weight = float(item.get("loss_weight", lambda_ul_promoted))
+        except (TypeError, ValueError):
+            loss_weight = float(lambda_ul_promoted)
+        universe.append(
+            _residual_universe_object_from_gt(
+                tokenizer=tokenizer,
+                object_id=f"ul:{int(ul_index)}",
+                source="ul",
+                source_index=int(ul_index),
+                obj=obj,
+                loss_weight=max(0.0, float(loss_weight)),
+                support_provenance=("ul",),
+            )
+        )
+    return universe
+
+
+def _residual_universe_object_from_gt(
+    *,
+    tokenizer: Any,
+    object_id: str,
+    source: str,
+    source_index: int,
+    obj: GTObject,
+    loss_weight: float,
+    support_provenance: Sequence[str],
+) -> _ResidualSetUniverseObject:
+    desc_token_ids = tuple(
+        int(token_id) for token_id in tokenizer.encode(str(obj.desc), add_special_tokens=False)
+    )
+    if not desc_token_ids:
+        raise ValueError("residual_set_correction requires nonempty object descriptions")
+    coord_token_ids = {
+        role: _single_token_id_for_text(
+            tokenizer,
+            f"<|coord_{int(value)}|>",
+            label=f"coord_{role}",
+        )
+        for role, value in zip(_COORD_ROLE_BY_SLOT, obj.points_norm1000)
+    }
+    residual_object = ResidualObject(
+        object_id=str(object_id),
+        desc_token_ids=desc_token_ids,
+        coord_token_ids=coord_token_ids,
+        desc_token_texts=tuple(decode_pieces(tokenizer, list(desc_token_ids))),
+        loss_weight=float(loss_weight),
+        metadata={
+            "source": str(source),
+            "source_index": int(source_index),
+            "support_provenance": tuple(str(item) for item in support_provenance),
+        },
+    )
+    gt_object = GTObject(
+        index=int(source_index),
+        geom_type="bbox_2d",
+        points_norm1000=[int(v) for v in obj.points_norm1000],
+        desc=str(obj.desc),
+    )
+    return _ResidualSetUniverseObject(
+        object_id=str(object_id),
+        source=str(source),
+        source_index=int(source_index),
+        gt_object=gt_object,
+        residual_object=residual_object,
+    )
+
+
+def _raw_index_to_matched_gt_index(
+    *,
+    accepted_objects_clean: Sequence[GTObject],
+    match: MatchResult,
+) -> Dict[int, int]:
+    raw_index_to_gt_index: Dict[int, int] = {}
+    for pred_i, gt_i in match.matched_pairs:
+        pred_i = int(pred_i)
+        gt_i = int(gt_i)
+        if pred_i < 0 or pred_i >= len(accepted_objects_clean):
+            continue
+        raw_index_to_gt_index[int(accepted_objects_clean[pred_i].index)] = int(gt_i)
+    return raw_index_to_gt_index
+
+
+def _select_residual_target_for_raw_object(
+    *,
+    raw_obj: GTObject,
+    remaining_ids: Sequence[str],
+    universe_by_id: Mapping[str, _ResidualSetUniverseObject],
+    raw_index_to_gt_index: Mapping[int, int],
+    assignment_iou_threshold: float,
+) -> str | None:
+    labeled_gt_index = raw_index_to_gt_index.get(int(raw_obj.index))
+    if labeled_gt_index is not None:
+        object_id = f"gt:{int(labeled_gt_index)}"
+        if object_id in set(remaining_ids):
+            return object_id
+
+    candidates: List[Tuple[float, int, str]] = []
+    for order, object_id in enumerate(remaining_ids):
+        target = universe_by_id[object_id]
+        if target.source != "ul":
+            continue
+        if normalize_desc(raw_obj.desc) != normalize_desc(target.gt_object.desc):
+            continue
+        iou = _bbox_iou_norm1000_xyxy(
+            raw_obj.points_norm1000,
+            target.gt_object.points_norm1000,
+        )
+        if iou < float(assignment_iou_threshold):
+            continue
+        candidates.append((-float(iou), int(order), str(object_id)))
+    if not candidates:
+        return None
+    return min(candidates)[2]
+
+
+def _raw_object_overlaps_emitted(
+    *,
+    raw_obj: GTObject,
+    emitted_ids: Sequence[str],
+    universe_by_id: Mapping[str, _ResidualSetUniverseObject],
+    assignment_iou_threshold: float,
+) -> bool:
+    for object_id in emitted_ids:
+        target = universe_by_id[object_id]
+        if normalize_desc(raw_obj.desc) != normalize_desc(target.gt_object.desc):
+            continue
+        if (
+            _bbox_iou_norm1000_xyxy(
+                raw_obj.points_norm1000,
+                target.gt_object.points_norm1000,
+            )
+            >= float(assignment_iou_threshold)
+        ):
+            return True
+    return False
+
+
+def _build_residual_boundary_event(
+    *,
+    tokenizer: Any,
+    universe: Sequence[_ResidualSetUniverseObject],
+    universe_by_id: Mapping[str, _ResidualSetUniverseObject],
+    emitted_ids: Sequence[str],
+    remaining_ids: Sequence[str],
+    sample_id: str,
+    rollout_index: int,
+    correction_kind: str,
+    observed_token_id: int | None,
+    anchor_position: int,
+    object_start_token_id: int,
+    box_start_token_id: int,
+    stop_token_id: int,
+) -> _ResidualSetCorrectionBuildResult | None:
+    clean_target_text, y_train_ids = _render_residual_target_ids(
+        tokenizer=tokenizer,
+        target_ids=list(emitted_ids) + list(remaining_ids),
+        universe_by_id=universe_by_id,
+    )
+    if remaining_ids:
+        spans = extract_compact_full_object_token_spans(
+            tokenizer=tokenizer,
+            response_token_ids=y_train_ids,
+        )
+        span = spans[int(len(emitted_ids))]
+        current_target = universe_by_id[remaining_ids[0]]
+        event = _build_residual_event_from_specs(
+            universe=universe,
+            current_target=current_target,
+            remaining_ids=remaining_ids,
+            draft_specs=[("object_start", int(span.object_start), 0)],
+            correction_kind=correction_kind,
+            sample_id=sample_id,
+            rollout_index=int(rollout_index),
+            observed_token_ids=(
+                [int(observed_token_id)] if observed_token_id is not None else []
+            ),
+            observed_object_start=int(anchor_position),
+            object_start_token_id=int(object_start_token_id),
+            box_start_token_id=int(box_start_token_id),
+            stop_token_id=int(stop_token_id),
+        )
+        return _residual_build_result(
+            y_train_ids=y_train_ids,
+            clean_target_text=clean_target_text,
+            events=[event],
+            event_summaries=[_residual_event_summary(event)],
+            metrics={
+                "residual_object_count": float(len(universe)),
+                "ul_promoted_object_count": float(
+                    sum(1 for item in universe if item.source == "ul")
+                ),
+                "event_count": 0.0,
+                "atom_count": 0.0,
+            },
+        )
+
+    if len(y_train_ids) <= 0:
+        return None
+    state = ResidualState(
+        objects=tuple(item.residual_object for item in universe),
+        remaining_object_ids=frozenset(),
+        active_candidate_ids=frozenset(),
+        object_start_token_id=int(object_start_token_id),
+        box_start_token_id=int(box_start_token_id),
+        stop_token_id=int(stop_token_id),
+    )
+    actions = enumerate_valid_actions(state, slot="boundary")
+    selected = _selected_action_for_token(actions, int(stop_token_id))
+    draft = CorrectionAtomDraft(
+        correction_kind=correction_kind,  # type: ignore[arg-type]
+        target_position=int(len(y_train_ids)),
+        logit_position=int(len(y_train_ids) - 1),
+        valid_actions=actions,
+        selected_action=selected,
+        metadata={
+            "observed_token_id": observed_token_id,
+            "rollout_index": int(rollout_index),
+            "anchor_position": int(anchor_position),
+            "slot": "stop",
+        },
+    )
+    event = CorrectionEvent(
+        correction_kind=correction_kind,  # type: ignore[arg-type]
+        sample_id=str(sample_id),
+        atom_drafts=(draft,),
+        metadata={
+            "rollout_index": int(rollout_index),
+            "anchor_position": int(anchor_position),
+            "target_builder": "stage2_residual_events_v1",
+        },
+    )
+    return _residual_build_result(
+        y_train_ids=y_train_ids,
+        clean_target_text=clean_target_text,
+        events=[event],
+        event_summaries=[_residual_event_summary(event)],
+        metrics={
+            "residual_object_count": float(len(universe)),
+            "ul_promoted_object_count": float(
+                sum(1 for item in universe if item.source == "ul")
+            ),
+            "event_count": 0.0,
+            "atom_count": 0.0,
+        },
+    )
+
+
+def _residual_object_repair_draft_specs(
+    *,
+    target_span: CompactFullObjectTokenSpan,
+    mismatch_index: int,
+) -> List[Tuple[str, int, int]]:
+    target_position = int(target_span.object_start) + int(mismatch_index)
+    slot = _slot_for_compact_span_position(target_span, target_position)
+    if slot not in _COORD_ROLE_BY_SLOT:
+        prefix_len = (
+            int(target_position) - int(target_span.desc_start)
+            if slot == "desc"
+            else 0
+        )
+        return [(slot, target_position, int(prefix_len))]
+
+    coord_positions = [int(p) for p in target_span.coord_positions]
+    start_index = coord_positions.index(int(target_position))
+    return [
+        (
+            _COORD_ROLE_BY_SLOT[int(idx)],
+            int(coord_positions[int(idx)]),
+            0,
+        )
+        for idx in range(start_index, len(coord_positions))
+    ]
+
+
+def _slot_for_compact_span_position(
+    span: CompactFullObjectTokenSpan,
+    target_position: int,
+) -> str:
+    target_position = int(target_position)
+    if target_position == int(span.object_start):
+        return "object_start"
+    if int(span.desc_start) <= target_position < int(span.desc_end):
+        return "desc"
+    if target_position == int(span.box_start):
+        return "box_start"
+    coord_positions = [int(p) for p in span.coord_positions]
+    if target_position in coord_positions:
+        return _COORD_ROLE_BY_SLOT[coord_positions.index(target_position)]
+    raise ValueError("compact-full target position is outside object span")
+
+
+def _build_residual_event_from_specs(
+    *,
+    universe: Sequence[_ResidualSetUniverseObject],
+    current_target: _ResidualSetUniverseObject,
+    remaining_ids: Sequence[str],
+    draft_specs: Sequence[Tuple[str, int, int]],
+    correction_kind: str,
+    sample_id: str,
+    rollout_index: int,
+    observed_token_ids: Sequence[int],
+    observed_object_start: int,
+    object_start_token_id: int,
+    box_start_token_id: int,
+    stop_token_id: int,
+) -> CorrectionEvent:
+    base_state = ResidualState(
+        objects=tuple(item.residual_object for item in universe),
+        remaining_object_ids=frozenset(str(item_id) for item_id in remaining_ids),
+        active_candidate_ids=frozenset(str(item_id) for item_id in remaining_ids),
+        object_start_token_id=int(object_start_token_id),
+        box_start_token_id=int(box_start_token_id),
+        stop_token_id=int(stop_token_id),
+    )
+    drafts: List[CorrectionAtomDraft] = []
+    for slot, target_position, desc_prefix_len in draft_specs:
+        state = _advance_residual_state_to_slot(
+            base_state,
+            current_target=current_target.residual_object,
+            slot=str(slot),
+            desc_prefix_len=int(desc_prefix_len),
+        )
+        actions = enumerate_valid_actions(state, slot=str(slot))
+        selected_token_id = _selected_token_for_slot(
+            current_target.residual_object,
+            str(slot),
+            desc_prefix_len=int(desc_prefix_len),
+            object_start_token_id=int(object_start_token_id),
+            box_start_token_id=int(box_start_token_id),
+        )
+        actions = _with_selected_path_metadata(
+            actions=actions,
+            selected_token_id=int(selected_token_id),
+            selected_object=current_target.residual_object,
+        )
+        selected = _selected_action_for_token(actions, int(selected_token_id))
+        observed_rel = int(target_position) - int(observed_object_start)
+        observed_token_id = (
+            int(observed_token_ids[int(observed_rel)])
+            if 0 <= observed_rel < len(observed_token_ids)
+            else None
+        )
+        drafts.append(
+            CorrectionAtomDraft(
+                correction_kind=correction_kind,  # type: ignore[arg-type]
+                target_position=int(target_position),
+                logit_position=int(target_position) - 1,
+                valid_actions=actions,
+                selected_action=selected,
+                metadata={
+                    "observed_token_id": observed_token_id,
+                    "rollout_index": int(rollout_index),
+                    "anchor_position": int(observed_object_start),
+                    "slot": str(slot),
+                    "selected_object_id": current_target.object_id,
+                    "selected_object_source": current_target.source,
+                    "selected_object_source_index": int(current_target.source_index),
+                },
+            )
+        )
+    return CorrectionEvent(
+        correction_kind=correction_kind,  # type: ignore[arg-type]
+        sample_id=str(sample_id),
+        atom_drafts=tuple(drafts),
+        metadata={
+            "rollout_index": int(rollout_index),
+            "anchor_position": int(observed_object_start),
+            "target_builder": "stage2_residual_events_v1",
+            "full_residual_events": True,
+        },
+    )
+
+
+def _advance_residual_state_to_slot(
+    state: ResidualState,
+    *,
+    current_target: ResidualObject,
+    slot: str,
+    desc_prefix_len: int,
+) -> ResidualState:
+    if slot == "object_start":
+        return state
+    object_start_action = _selected_action_for_token(
+        enumerate_valid_actions(state, slot="object_start"),
+        int(state.object_start_token_id or -1),
+    )
+    state = transition_state(state, object_start_action)
+    desc_prefix_len = (
+        int(desc_prefix_len)
+        if slot == "desc"
+        else len(current_target.desc_token_ids)
+    )
+    for token_id in current_target.desc_token_ids[:desc_prefix_len]:
+        action = _selected_action_for_token(
+            enumerate_valid_actions(state, slot="desc"),
+            int(token_id),
+        )
+        state = transition_state(state, action)
+    if slot == "desc":
+        return state
+    if slot == "box_start":
+        return state
+    box_action = _selected_action_for_token(
+        enumerate_valid_actions(state, slot="box_start"),
+        int(state.box_start_token_id or -1),
+    )
+    state = transition_state(state, box_action)
+    for coord_role in _COORD_ROLE_BY_SLOT:
+        if slot == coord_role:
+            return state
+        action = _selected_action_for_token(
+            enumerate_valid_actions(state, slot=coord_role),
+            int(current_target.coord_token_ids[coord_role]),
+        )
+        state = transition_state(state, action)
+    raise ValueError(f"unsupported residual-set event slot: {slot!r}")
+
+
+def _selected_token_for_slot(
+    obj: ResidualObject,
+    slot: str,
+    *,
+    desc_prefix_len: int,
+    object_start_token_id: int,
+    box_start_token_id: int,
+) -> int:
+    if slot == "object_start":
+        return int(object_start_token_id)
+    if slot == "box_start":
+        return int(box_start_token_id)
+    if slot == "desc":
+        cursor = int(desc_prefix_len)
+        if cursor < 0 or cursor >= len(obj.desc_token_ids):
+            raise ValueError("residual-set desc draft prefix is out of range")
+        return int(obj.desc_token_ids[cursor])
+    if slot in _COORD_ROLE_BY_SLOT:
+        return int(obj.coord_token_ids[slot])
+    raise ValueError(f"unsupported residual-set event slot: {slot!r}")
+
+
+def _with_selected_path_metadata(
+    *,
+    actions: Sequence[ValidAction],
+    selected_token_id: int,
+    selected_object: ResidualObject,
+) -> Tuple[ValidAction, ...]:
+    selected_support = selected_object.metadata.get("support_provenance", ("labeled",))
+    if isinstance(selected_support, str):
+        selected_support_tuple = (selected_support,)
+    else:
+        selected_support_tuple = tuple(str(item) for item in selected_support)
+    out: List[ValidAction] = []
+    for action in actions:
+        if int(action.token_id) != int(selected_token_id):
+            out.append(action)
+            continue
+        metadata = dict(action.metadata)
+        metadata["loss_weight"] = float(selected_object.loss_weight)
+        metadata["support_provenance"] = selected_support_tuple
+        out.append(
+            ValidAction(
+                token_id=int(action.token_id),
+                token_role=action.token_role,
+                token_text=str(action.token_text),
+                candidate_ids_after=action.candidate_ids_after,
+                selected_object_id=(
+                    selected_object.object_id
+                    if selected_object.object_id in action.candidate_ids_after
+                    else action.selected_object_id
+                ),
+                coord_role=action.coord_role,
+                metadata=metadata,
+            )
+        )
+    return tuple(out)
+
+
+def _selected_action_for_token(
+    actions: Sequence[ValidAction],
+    token_id: int,
+) -> ValidAction:
+    for action in actions:
+        if int(action.token_id) == int(token_id):
+            return action
+    raise ValueError("residual_set_correction selected target token is not valid")
+
+
+def _render_residual_target_ids(
+    *,
+    tokenizer: Any,
+    target_ids: Sequence[str],
+    universe_by_id: Mapping[str, _ResidualSetUniverseObject],
+) -> Tuple[str, List[int]]:
+    objects = [
+        GTObject(
+            index=int(row_index),
+            geom_type="bbox_2d",
+            points_norm1000=[
+                int(value)
+                for value in universe_by_id[str(object_id)].gt_object.points_norm1000
+            ],
+            desc=str(universe_by_id[str(object_id)].gt_object.desc),
+        )
+        for row_index, object_id in enumerate(target_ids)
+    ]
+    if not objects:
+        return "", []
+    text = _render_compact_objects(objects)
+    token_ids = [int(token_id) for token_id in tokenizer.encode(text, add_special_tokens=False)]
+    return str(text), token_ids
+
+
+def _first_mismatch_index(
+    left: Sequence[int],
+    right: Sequence[int],
+) -> int | None:
+    for index, (left_id, right_id) in enumerate(zip(left, right)):
+        if int(left_id) != int(right_id):
+            return int(index)
+    if len(left) != len(right):
+        return int(min(len(left), len(right)))
+    return None
+
+
+def _residual_build_result(
+    *,
+    y_train_ids: Sequence[int],
+    clean_target_text: str,
+    events: Sequence[CorrectionEvent],
+    event_summaries: Sequence[Mapping[str, Any]],
+    metrics: Mapping[str, float],
+) -> _ResidualSetCorrectionBuildResult:
+    metric_out = dict(metrics)
+    metric_out["event_count"] = float(len(events))
+    metric_out["atom_count"] = float(
+        sum(len(event.atom_drafts) for event in events)
+    )
+    return _ResidualSetCorrectionBuildResult(
+        y_train_ids=[int(token_id) for token_id in y_train_ids],
+        clean_target_text=str(clean_target_text),
+        prefix_len_raw_local=int(len(y_train_ids)),
+        events=list(events),
+        event_summaries=[dict(item) for item in event_summaries],
+        metrics=metric_out,
+    )
+
+
+def _residual_event_summary(event: CorrectionEvent) -> Dict[str, Any]:
+    return {
+        "correction_kind": str(event.correction_kind),
+        "sample_id": str(event.sample_id),
+        "atom_count": int(len(event.atom_drafts)),
+        "target_positions": [
+            int(draft.target_position) for draft in event.atom_drafts
+        ],
+        "slots": [
+            str(draft.metadata.get("slot", "")) for draft in event.atom_drafts
+        ],
+        "support_provenance": sorted(
+            {
+                str(item)
+                for draft in event.atom_drafts
+                for action in draft.valid_actions
+                for item in _metadata_sequence(
+                    action.metadata.get("support_provenance", ("labeled",))
+                )
+            }
+        ),
+    }
+
+
+def _shift_residual_correction_events(
+    events: Sequence[CorrectionEvent],
+    *,
+    position_offset: int,
+) -> List[CorrectionEvent]:
+    offset = int(position_offset)
+    if offset == 0:
+        return list(events)
+    shifted_events: List[CorrectionEvent] = []
+    for event in events:
+        shifted_drafts: List[CorrectionAtomDraft] = []
+        for draft in event.atom_drafts:
+            metadata = dict(draft.metadata)
+            if "anchor_position" in metadata:
+                try:
+                    metadata["anchor_position"] = int(metadata["anchor_position"]) + offset
+                except (TypeError, ValueError):
+                    pass
+            shifted_drafts.append(
+                CorrectionAtomDraft(
+                    correction_kind=draft.correction_kind,
+                    target_position=int(draft.target_position) + offset,
+                    logit_position=int(draft.logit_position) + offset,
+                    valid_actions=draft.valid_actions,
+                    selected_action=draft.selected_action,
+                    metadata=metadata,
+                )
+            )
+        event_metadata = dict(event.metadata)
+        if "anchor_position" in event_metadata:
+            try:
+                event_metadata["anchor_position"] = (
+                    int(event_metadata["anchor_position"]) + offset
+                )
+            except (TypeError, ValueError):
+                pass
+        event_metadata["position_offset"] = offset
+        shifted_events.append(
+            CorrectionEvent(
+                correction_kind=event.correction_kind,
+                sample_id=event.sample_id,
+                atom_drafts=tuple(shifted_drafts),
+                metadata=event_metadata,
+            )
+        )
+    return shifted_events
+
+
+def _metadata_sequence(value: Any) -> Tuple[Any, ...]:
+    if value is None:
+        return ()
+    if isinstance(value, str):
+        return (value,)
+    try:
+        return tuple(value)
+    except TypeError:
+        return (value,)
+
+
+def _single_token_id_for_text(tokenizer: Any, token_text: str, *, label: str) -> int:
+    token_ids = [int(token_id) for token_id in tokenizer.encode(str(token_text), add_special_tokens=False)]
+    if len(token_ids) == 1:
+        return int(token_ids[0])
+    convert = getattr(tokenizer, "convert_tokens_to_ids", None)
+    if callable(convert):
+        token_id = int(convert(str(token_text)))
+        unk_id = getattr(tokenizer, "unk_token_id", None)
+        if unk_id is None or int(token_id) != int(unk_id):
+            return int(token_id)
+    raise ValueError(f"residual_set_correction {label} must resolve to one token")
+
+
+def _stop_token_id(tokenizer: Any) -> int:
+    eos_token_id = getattr(tokenizer, "eos_token_id", None)
+    if eos_token_id is not None:
+        return int(eos_token_id)
+    return _single_token_id_for_text(tokenizer, "<|im_end|>", label="stop")
+
+
 def _objective_spec_get(spec: Any, key: str, default: Any = None) -> Any:
     if isinstance(spec, Mapping):
         return spec.get(key, default)
@@ -1774,9 +2689,35 @@ def _channel_b_residual_set_correction_options(
             base_seed = int(config.get("base_seed", _DEFAULT_RESIDUAL_SET_BASE_SEED))
         except (TypeError, ValueError):
             base_seed = int(_DEFAULT_RESIDUAL_SET_BASE_SEED)
+        try:
+            num_rollouts = int(config.get("num_rollouts", 2))
+        except (TypeError, ValueError):
+            num_rollouts = 2
+        try:
+            lambda_ul_promoted = float(config.get("lambda_ul_promoted", 0.5))
+        except (TypeError, ValueError):
+            lambda_ul_promoted = 0.5
+        try:
+            min_ul_valid_rollouts = int(config.get("min_ul_valid_rollouts", num_rollouts))
+        except (TypeError, ValueError):
+            min_ul_valid_rollouts = int(num_rollouts)
+        try:
+            ul_consensus_ratio = float(config.get("ul_consensus_ratio", 1.0))
+        except (TypeError, ValueError):
+            ul_consensus_ratio = 1.0
+        ul_geometry = config.get("ul_geometry", {})
+        artifact_policy = config.get("artifact_policy", {})
         return {
             "rollin_policy": rollin_policy,
             "base_seed": int(base_seed),
+            "num_rollouts": int(num_rollouts),
+            "lambda_ul_promoted": float(lambda_ul_promoted),
+            "min_ul_valid_rollouts": int(min_ul_valid_rollouts),
+            "ul_consensus_ratio": float(ul_consensus_ratio),
+            "ul_geometry": dict(ul_geometry) if isinstance(ul_geometry, Mapping) else {},
+            "artifact_policy": (
+                dict(artifact_policy) if isinstance(artifact_policy, Mapping) else {}
+            ),
         }
     return None
 
@@ -2034,6 +2975,9 @@ def _build_channel_b_meta_entry(
     stage2_trie_object_spans: Sequence[Stage2TrieObjectSpan],
     stage2_trie_weak_fp_span_level_fallback: bool,
     residual_set_selected: bool = False,
+    residual_set_target_ir: TeacherForcingTargetIR | None = None,
+    residual_set_event_summaries: Sequence[Mapping[str, Any]] = (),
+    residual_set_metrics: Mapping[str, float] | None = None,
     residual_set_rollin_policy: str = _DEFAULT_RESIDUAL_SET_ROLLIN_POLICY,
     residual_set_base_seed: int = _DEFAULT_RESIDUAL_SET_BASE_SEED,
     stage2_tail_closure_positions_fn: Any,
@@ -2230,27 +3174,20 @@ def _build_channel_b_meta_entry(
     if bool(stage2_trie_weak_fp_span_level_fallback):
         meta_entry["stage2_trie_weak_fp_span_level_fallback"] = True
     if bool(residual_set_selected):
-        residual_set_target_ir = _build_residual_set_target_ir_from_meta_positions(
-            enc_ids_list=enc_ids_list,
-            prompt_len=int(prompt_len),
-            prefix_len=int(prefix_len_eff),
-            train_len=int(train_len_eff),
-            encoded_len=int(encoded_len),
-            bbox_groups_prefix=bbox_groups_prefix,
-            bbox_groups_fn=bbox_groups_fn,
-            prefix_desc_pos=prefix_desc_pos_eff,
-            prefix_desc_weights=prefix_desc_weights_eff,
-            tail_desc_pos=tail_desc_pos_eff,
-            tail_desc_weights=tail_desc_weights_eff,
-            rollin_policy=str(residual_set_rollin_policy),
-            base_seed=int(residual_set_base_seed),
-        )
+        if residual_set_target_ir is None:
+            raise ValueError(
+                "residual_set_correction production path requires a live "
+                "CorrectionEvent-derived target IR; refusing singleton fallback"
+            )
         meta_entry["residual_set_target_ir"] = residual_set_target_ir
+        meta_entry["residual_set_event_summaries"] = [
+            dict(item) for item in residual_set_event_summaries
+        ]
         meta_entry["residual_set_rollin_policy"] = str(residual_set_rollin_policy)
         meta_entry["residual_set_base_seed"] = int(residual_set_base_seed)
-        meta_entry["residual_set_metrics"] = {
-            "atom_count": float(len(residual_set_target_ir.atoms)),
-        }
+        metrics = dict(residual_set_metrics or {})
+        metrics.setdefault("atom_count", float(len(residual_set_target_ir.atoms)))
+        meta_entry["residual_set_metrics"] = metrics
     else:
         _attach_stage2_trie_sidecar_to_meta(
             meta_entry=meta_entry,
@@ -2840,10 +3777,11 @@ __all__ = [
     "_ChannelBSupervisionTargets",
     "_build_channel_b_triage",
     "_build_channel_b_supervision_targets",
+    "_build_residual_set_correction_events",
+    "_shift_residual_correction_events",
     "_build_channel_b_meta_entry",
     "_channel_b_residual_set_correction_enabled",
     "_channel_b_residual_set_correction_options",
-    "_build_residual_set_target_ir_from_meta_positions",
     "_bbox_iou_norm1000_xyxy",
     "_apply_channel_b_duplicate_control",
     "_compute_duplicate_diagnostics",

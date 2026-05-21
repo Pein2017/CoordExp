@@ -15,6 +15,7 @@ from swift.trainers.rlhf_trainer.utils import replace_assistant_response_with_id
 
 from src.common.lvis_semantics import extract_lvis_image_policy
 from src.common.object_field_order import build_object_payload
+from src.common.semantic_desc import normalize_desc
 from src.detection.token_types import build_compact_token_type_groups
 from src.training.teacher_forcing.vocab import RoleVocab
 from src.training.stage2.rollout_codec import (
@@ -51,6 +52,14 @@ from ..common.geometry.coord_utils import decode_coord
 from .stage2_two_channel.executors import Stage2ABChannelExecutorsMixin
 from .stage2_two_channel.rollout_views import build_channel_b_rollout_view
 from .stage2_two_channel.scheduler import Stage2ABSchedulerMixin
+from .stage2_two_channel.teacher_forcing_adapter import build_residual_set_target_ir
+from .stage2_two_channel.ul_consensus import (
+    ULGeometryConfig,
+    ULMember,
+    ULRolloutEvidence,
+    mine_ul_consensus,
+    ul_cluster_artifact_rows,
+)
 from .stage2_two_channel.objective_runner import (
     build_stage2_core_loss_logs,
     run_stage2_objective_pipelines,
@@ -108,6 +117,161 @@ def write_ul_clusters_artifact(
                 + "\n"
             )
     return artifact_path
+
+
+def _stage2_ul_geometry_from_options(options: Mapping[str, Any]) -> ULGeometryConfig:
+    raw = options.get("ul_geometry", {})
+    geometry = raw if isinstance(raw, Mapping) else {}
+    return ULGeometryConfig(
+        iou_min=float(geometry.get("iou_min", 0.75)),
+        center_distance_scale_max=float(geometry.get("center_distance_scale_max", 0.05)),
+        area_ratio_max=float(geometry.get("area_ratio_max", 1.5)),
+        aspect_ratio_max=float(geometry.get("aspect_ratio_max", 1.5)),
+        consumed_overlap_iou_min=float(geometry.get("consumed_overlap_iou_min", 0.75)),
+    )
+
+
+def _stage2_ul_rollout_evidence(
+    *,
+    sample_id: str,
+    view: Mapping[str, Any],
+    gts: Sequence[GTObject],
+    assignment_iou_threshold: float,
+) -> ULRolloutEvidence:
+    rollout_id = _stage2_ul_rollout_id(sample_id=sample_id, view=view)
+    if int(view.get("rollout_counts_as_valid_rollout", 1) or 0) == 0:
+        return ULRolloutEvidence(
+            rollout_id=rollout_id,
+            is_valid=False,
+            skip_reason=str(view.get("fallback_reason") or "invalid_or_fallback"),
+            unmatched_members=(),
+        )
+
+    members: List[ULMember] = []
+    for obj in list(view.get("parsed_bbox_objects_raw", [])):
+        if not isinstance(obj, GTObject):
+            continue
+        if _stage2_object_matches_any_gt(
+            obj=obj,
+            gts=gts,
+            assignment_iou_threshold=float(assignment_iou_threshold),
+        ):
+            continue
+        members.append(
+            ULMember(
+                rollout_id=rollout_id,
+                local_index=int(obj.index),
+                desc_id=normalize_desc(str(obj.desc)),
+                desc_text=str(obj.desc),
+                bbox_norm1000=tuple(float(v) for v in obj.points_norm1000),
+            )
+        )
+    return ULRolloutEvidence(
+        rollout_id=rollout_id,
+        is_valid=True,
+        skip_reason=None,
+        unmatched_members=tuple(members),
+    )
+
+
+def _stage2_gt_consumed_members(*, gts: Sequence[GTObject]) -> List[ULMember]:
+    return [
+        ULMember(
+            rollout_id="labeled_gt",
+            local_index=int(gt_i),
+            desc_id=normalize_desc(str(obj.desc)),
+            desc_text=str(obj.desc),
+            bbox_norm1000=tuple(float(v) for v in obj.points_norm1000),
+        )
+        for gt_i, obj in enumerate(gts)
+    ]
+
+
+def _stage2_ul_promoted_targets(
+    clusters: Sequence[Any],
+    *,
+    lambda_ul_promoted: float,
+) -> List[Dict[str, Any]]:
+    promoted: List[Dict[str, Any]] = []
+    for cluster_index, cluster in enumerate(clusters):
+        members: List[ULMember] = []
+        members_by_rollout = getattr(cluster, "members_by_rollout", {})
+        if isinstance(members_by_rollout, Mapping):
+            for _, rollout_members in sorted(members_by_rollout.items()):
+                members.extend(
+                    member
+                    for member in rollout_members
+                    if isinstance(member, ULMember)
+                )
+        if not members:
+            continue
+        member = sorted(
+            members,
+            key=lambda item: (
+                str(item.rollout_id),
+                int(item.local_index),
+                tuple(float(v) for v in item.bbox_norm1000),
+            ),
+        )[0]
+        promoted.append(
+            {
+                "object": GTObject(
+                    index=int(cluster_index),
+                    geom_type="bbox_2d",
+                    points_norm1000=[int(round(v)) for v in member.bbox_norm1000],
+                    desc=str(getattr(cluster, "desc_text", member.desc_text)),
+                ),
+                "loss_weight": float(lambda_ul_promoted),
+                "support_provenance": ("ul",),
+            }
+        )
+    return promoted
+
+
+def _stage2_object_matches_any_gt(
+    *,
+    obj: GTObject,
+    gts: Sequence[GTObject],
+    assignment_iou_threshold: float,
+) -> bool:
+    obj_desc = normalize_desc(str(obj.desc))
+    for gt in gts:
+        if obj_desc != normalize_desc(str(gt.desc)):
+            continue
+        iou = _channel_b_targets._bbox_iou_norm1000_xyxy(
+            obj.points_norm1000,
+            gt.points_norm1000,
+        )
+        if iou >= float(assignment_iou_threshold):
+            return True
+    return False
+
+
+def _stage2_ul_rollout_id(*, sample_id: str, view: Mapping[str, Any]) -> str:
+    rollout_index = int(view.get("rollout_index", 0) or 0)
+    return f"{sample_id}:r{rollout_index}"
+
+
+def _stage2_ul_artifact_enabled(options: Mapping[str, Any]) -> bool:
+    policy = options.get("artifact_policy", {})
+    if not isinstance(policy, Mapping):
+        return False
+    return str(policy.get("ul_clusters", "") or "").strip() == "monitor_debug_smoke"
+
+
+def _stage2_ul_artifact_root(owner: Any, *, global_step: int) -> str:
+    cfg = owner._train_monitor_dump_cfg()
+    out_dir = cfg.get("out_dir") if isinstance(cfg, Mapping) else None
+    if not isinstance(out_dir, str) or not out_dir.strip():
+        out_dir = os.path.join(
+            str(getattr(getattr(owner, "args", None), "output_dir", ".")),
+            "monitor_dumps",
+        )
+    return os.path.join(
+        str(out_dir),
+        "stage2_ul_consensus",
+        f"step_{int(global_step):06d}",
+    )
 
 
 def _stage2_batch_timing_enabled() -> bool:
@@ -2342,13 +2506,27 @@ class Stage2TwoChannelTrainer(
                 "stage2_ab.channel_b.invalid_rollout_policy "
                 f"must be one of {sorted(allowed_invalid_policies)!r}"
             )
-        num_rollouts_default = 4 if pseudo_positive_enabled else 2
-        num_rollouts = int(
-            self._ab_channel_b_get(
-                "triage_posterior.num_rollouts",
-                num_rollouts_default,
+        pipeline_manifest = getattr(self, "stage2_pipeline_manifest", None)
+        objective_specs = (
+            pipeline_manifest.get("objective", [])
+            if isinstance(pipeline_manifest, Mapping)
+            else []
+        )
+        residual_set_options = (
+            _channel_b_targets._channel_b_residual_set_correction_options(
+                objective_specs
             )
         )
+        if residual_set_options is not None:
+            num_rollouts = int(residual_set_options.get("num_rollouts", 2))
+        else:
+            num_rollouts_default = 4 if pseudo_positive_enabled else 2
+            num_rollouts = int(
+                self._ab_channel_b_get(
+                    "triage_posterior.num_rollouts",
+                    num_rollouts_default,
+                )
+            )
         explorer_view_count = max(1, int(num_rollouts) - 1)
 
 
@@ -2602,6 +2780,46 @@ class Stage2TwoChannelTrainer(
             if residual_set_options is not None
             else 17
         )
+        residual_set_lambda_ul_promoted = (
+            float(residual_set_options.get("lambda_ul_promoted", 0.5))
+            if residual_set_options is not None
+            else 0.5
+        )
+        residual_set_min_ul_valid_rollouts = (
+            int(residual_set_options.get("min_ul_valid_rollouts", num_rollouts))
+            if residual_set_options is not None
+            else int(num_rollouts)
+        )
+        residual_set_ul_consensus_ratio = (
+            float(residual_set_options.get("ul_consensus_ratio", 1.0))
+            if residual_set_options is not None
+            else 1.0
+        )
+        residual_set_ul_geometry = (
+            _stage2_ul_geometry_from_options(residual_set_options)
+            if residual_set_options is not None
+            else None
+        )
+        residual_set_ul_artifact_enabled = (
+            _stage2_ul_artifact_enabled(residual_set_options)
+            if residual_set_options is not None
+            else False
+        )
+        residual_set_role_vocab = (
+            _resolve_stage2_teacher_forcing_role_vocab(self)
+            if residual_set_selected
+            else None
+        )
+        if residual_set_selected and residual_set_role_vocab is None:
+            raise ValueError(
+                "residual_set_correction requires teacher-forcing role vocab "
+                "for live CorrectionEvent target IR validation"
+            )
+        if residual_set_selected and rollout_template_policy.template_family != "compact_full":
+            raise ValueError(
+                "residual_set_correction production path requires compact_full "
+                "rollout_template_family"
+            )
 
         inputs_for_rollout = self._prepare_samples_for_rollout(
             inputs,
@@ -2814,6 +3032,13 @@ class Stage2TwoChannelTrainer(
         anchor_preparation_dropped_total = 0
         invalid_rollout_sample_dropped_total = 0
         matched_for_supervision_total = 0
+        residual_set_event_total = 0
+        residual_set_atom_total = 0
+        residual_set_ul_promoted_total = 0
+        residual_set_ul_quarantined_total = 0
+        residual_set_ul_rejected_total = 0
+        residual_set_ul_valid_rollout_total = 0
+        residual_set_ul_artifact_rows: List[Dict[str, Any]] = []
 
         anchor_pred_objects_total = 0
         anchor_valid_pred_objects_total = 0
@@ -3278,6 +3503,59 @@ class Stage2TwoChannelTrainer(
                 list(indices) for indices in triage.dead_explorer_indices_by_view
             ]
             valid_explorer_count = int(triage.valid_explorer_count)
+            sample_id_for_meta = str(
+                _sample_identifier_or_index(sample, int(sample_index))
+            )
+            residual_set_ul_promoted_objects: List[Dict[str, Any]] = []
+            if residual_set_selected and residual_set_ul_geometry is not None:
+                assignment_iou_threshold_for_ul = float(
+                    getattr(
+                        assignment_strategy,
+                        "iou_threshold",
+                        getattr(assignment_strategy, "gate_threshold", gate_thr),
+                    )
+                )
+                ul_evidence = [
+                    _stage2_ul_rollout_evidence(
+                        sample_id=sample_id_for_meta,
+                        view=view_item,
+                        gts=gts,
+                        assignment_iou_threshold=assignment_iou_threshold_for_ul,
+                    )
+                    for view_item in ([anchor_view] + list(explorer_views))
+                ]
+                ul_result = mine_ul_consensus(
+                    ul_evidence,
+                    min_ul_valid_rollouts=int(residual_set_min_ul_valid_rollouts),
+                    consensus_ratio=float(residual_set_ul_consensus_ratio),
+                    geometry=residual_set_ul_geometry,
+                    consumed_members=_stage2_gt_consumed_members(gts=gts),
+                )
+                residual_set_ul_promoted_objects = _stage2_ul_promoted_targets(
+                    ul_result.promoted_clusters,
+                    lambda_ul_promoted=float(residual_set_lambda_ul_promoted),
+                )
+                residual_set_ul_promoted_total += int(
+                    len(ul_result.promoted_clusters)
+                )
+                residual_set_ul_quarantined_total += int(
+                    len(ul_result.quarantined_clusters)
+                )
+                residual_set_ul_rejected_total += int(
+                    len(ul_result.rejected_clusters)
+                )
+                residual_set_ul_valid_rollout_total += int(ul_result.k_valid)
+                if residual_set_ul_artifact_enabled:
+                    residual_set_ul_artifact_rows.extend(
+                        ul_cluster_artifact_rows(
+                            ul_result,
+                            image_id=str(
+                                sample.get("image_id")
+                                or sample.get("sample_id")
+                                or sample_id_for_meta
+                            ),
+                        )
+                    )
 
             triage_anchor_gt_backed_total += int(len(anchor_gt_backed_indices))
             triage_shielded_anchor_total += int(len(shielded_anchor_indices))
@@ -3399,14 +3677,65 @@ class Stage2TwoChannelTrainer(
             sample_id_for_meta = str(
                 _sample_identifier_or_index(sample, int(sample_index))
             )
+            residual_set_build_result = None
+            if residual_set_selected:
+                residual_set_build_result = (
+                    _channel_b_targets._build_residual_set_correction_events(
+                        tokenizer=tok,
+                        response_token_ids=list(
+                            getattr(anchor_view["parse"], "response_token_ids", ())
+                        ),
+                        parsed_bbox_objects_raw=parsed_bbox_objects_raw,
+                        compact_full_object_spans=list(
+                            anchor_view.get("compact_full_object_spans", ())
+                        ),
+                        gts=gts,
+                        accepted_objects_clean=accepted_objects_clean,
+                        match=match,
+                        ul_promoted_objects=residual_set_ul_promoted_objects,
+                        assignment_iou_threshold=float(
+                            getattr(
+                                assignment_strategy,
+                                "iou_threshold",
+                                getattr(assignment_strategy, "gate_threshold", gate_thr),
+                            )
+                        ),
+                        sample_id=sample_id_for_meta,
+                        rollout_index=0,
+                        lambda_ul_promoted=float(residual_set_lambda_ul_promoted),
+                    )
+                )
+                y_train_ids = list(residual_set_build_result.y_train_ids)
+                clean_target_text = str(residual_set_build_result.clean_target_text)
+                prefix_len_raw_local = int(
+                    residual_set_build_result.prefix_len_raw_local
+                )
+                prefix_bbox_groups = []
+                fn_bbox_groups = []
+                prefix_pos = []
+                prefix_bins = []
+                prefix_struct_pos = []
+                prefix_desc_pos = []
+                prefix_desc_weights = []
+                tail_desc_pos = []
+                tail_desc_weights = []
+                fn_object_weights = []
+                fn_count_for_meta = int(len(match.fn_gt_indices))
+                residual_set_event_total += int(
+                    residual_set_build_result.metrics.get("event_count", 0.0)
+                )
+                residual_set_atom_total += int(
+                    residual_set_build_result.metrics.get("atom_count", 0.0)
+                )
             stage2_trie_candidates: List[Stage2TrieCandidate] = []
-            anchor_trie_candidate = _build_stage2_trie_candidate_from_supervision(
-                sample_id=sample_id_for_meta,
-                rollout_index=0,
-                supervision_targets=supervision_targets,
-            )
-            if anchor_trie_candidate is not None:
-                stage2_trie_candidates.append(anchor_trie_candidate)
+            if not residual_set_selected:
+                anchor_trie_candidate = _build_stage2_trie_candidate_from_supervision(
+                    sample_id=sample_id_for_meta,
+                    rollout_index=0,
+                    supervision_targets=supervision_targets,
+                )
+                if anchor_trie_candidate is not None:
+                    stage2_trie_candidates.append(anchor_trie_candidate)
 
             valid_candidate_support_views = []
             if int(anchor_view.get("rollout_counts_as_valid_rollout", 1)) != 0:
@@ -3414,7 +3743,7 @@ class Stage2TwoChannelTrainer(
             valid_candidate_support_views.extend(triage_explorer_views)
 
             for candidate_position, candidate_view in enumerate(
-                triage_explorer_views,
+                [] if residual_set_selected else triage_explorer_views,
                 start=1,
             ):
                 candidate_rollout_index = int(
@@ -3970,6 +4299,31 @@ class Stage2TwoChannelTrainer(
                         )
                     continue
 
+            residual_set_target_ir = None
+            residual_set_event_summaries: List[Dict[str, Any]] = []
+            residual_set_metrics: Dict[str, float] = {}
+            if residual_set_selected:
+                if residual_set_build_result is None:
+                    raise ValueError(
+                        "residual_set_correction selected but no correction "
+                        "event build result was produced"
+                    )
+                residual_events = _channel_b_targets._shift_residual_correction_events(
+                    residual_set_build_result.events,
+                    position_offset=int(prompt_len),
+                )
+                residual_set_target_ir = build_residual_set_target_ir(
+                    input_ids=torch.tensor([enc_ids_list], dtype=torch.long),
+                    batch_index=0,
+                    events=residual_events,
+                    role_vocab=residual_set_role_vocab,
+                    position_space="segment_local",
+                )
+                residual_set_event_summaries = list(
+                    residual_set_build_result.event_summaries
+                )
+                residual_set_metrics = dict(residual_set_build_result.metrics)
+
             invalid_rollout_total += int(invalid_rollout)
             meta_entry, closure_drop_count = _channel_b_targets._build_channel_b_meta_entry(
                 tokenizer=tok,
@@ -4086,6 +4440,9 @@ class Stage2TwoChannelTrainer(
                     supervision_targets.stage2_trie_weak_fp_span_level_fallback
                 ),
                 residual_set_selected=bool(residual_set_selected),
+                residual_set_target_ir=residual_set_target_ir,
+                residual_set_event_summaries=residual_set_event_summaries,
+                residual_set_metrics=residual_set_metrics,
                 residual_set_rollin_policy=str(residual_set_rollin_policy),
                 residual_set_base_seed=int(residual_set_base_seed),
                 stage2_tail_closure_positions_fn=(
@@ -4125,6 +4482,17 @@ class Stage2TwoChannelTrainer(
                 getattr(assignment_strategy, "gate_threshold", gate_thr),
             )
         )
+        ul_artifact_path = None
+        if (
+            residual_set_selected
+            and residual_set_ul_artifact_enabled
+            and residual_set_ul_artifact_rows
+        ):
+            ul_artifact_path = write_ul_clusters_artifact(
+                _stage2_ul_artifact_root(self, global_step=int(monitor_step)),
+                residual_set_ul_artifact_rows,
+                enabled=True,
+            )
 
         batch_metrics: Stage2BatchMetrics = {
             "stage2/channel_a": float(0.0),
@@ -4451,6 +4819,30 @@ class Stage2TwoChannelTrainer(
                 float(matched_for_supervision_total) / float(strict_valid_pred_total)
                 if strict_valid_pred_total > 0
                 else 0.0
+            ),
+            "stage2_ab/channel_b/residual_set/event_count": float(
+                residual_set_event_total
+            ),
+            "stage2_ab/channel_b/residual_set/atom_count": float(
+                residual_set_atom_total
+            ),
+            "stage2_ab/channel_b/residual_set/ul/promoted_clusters": float(
+                residual_set_ul_promoted_total
+            ),
+            "stage2_ab/channel_b/residual_set/ul/quarantined_clusters": float(
+                residual_set_ul_quarantined_total
+            ),
+            "stage2_ab/channel_b/residual_set/ul/rejected_clusters": float(
+                residual_set_ul_rejected_total
+            ),
+            "stage2_ab/channel_b/residual_set/ul/valid_rollouts": float(
+                residual_set_ul_valid_rollout_total
+            ),
+            "stage2_ab/channel_b/residual_set/ul/artifact_rows": float(
+                len(residual_set_ul_artifact_rows)
+            ),
+            "stage2_ab/channel_b/residual_set/ul/artifact_written": float(
+                1.0 if ul_artifact_path else 0.0
             ),
             "time/rollout_generate_s": float(t_gen_s),
             "time/rollout_parse_match_s": float(t_parse_match_s),

@@ -3175,16 +3175,13 @@ class Stage2ABConfig:
             raise ValueError(
                 "Deprecated Stage-2 self-context knobs are unsupported in active/training "
                 "configs. Remove them and use the single-pass Channel-A contract "
-                "(token_ce: anchor_text_only; optional stage2_trie_ce: rollout_text_only). "
+                "(token_ce: anchor_text_only; optional stage2_trie_ce: "
+                "rollout_trie_hard_ce; optional residual_set_correction: "
+                "rollout_self_prefix). "
                 f"Found: {sorted(deprecated_keys)}"
             )
 
-        channel_b = Stage2ABChannelBConfig.from_mapping(
-            data.pop("channel_b", None),
-            validate_legacy_rollouts=False,
-        )
-
-        residual_set = next(
+        residual_set_candidate = next(
             (
                 spec
                 for spec in pipeline.objective
@@ -3192,6 +3189,65 @@ class Stage2ABConfig:
             ),
             None,
         )
+        channel_b_raw = data.pop("channel_b", None)
+        channel_b_parse_raw = channel_b_raw
+        legacy_triage_num_rollouts_raw = None
+        legacy_triage_num_rollouts_explicit = False
+        if isinstance(channel_b_raw, Mapping):
+            triage_raw = channel_b_raw.get("triage_posterior")
+            if isinstance(triage_raw, Mapping) and "num_rollouts" in triage_raw:
+                legacy_triage_num_rollouts_explicit = True
+                legacy_triage_num_rollouts_raw = triage_raw.get("num_rollouts")
+
+        if residual_set_candidate is not None and "B" in residual_set_candidate.channels:
+            residual_num_rollouts_raw = residual_set_candidate.config.get("num_rollouts")
+            if isinstance(residual_num_rollouts_raw, bool) or not isinstance(
+                residual_num_rollouts_raw, int
+            ):
+                raise TypeError(
+                    "stage2_ab.pipeline.objective residual_set_correction "
+                    "config.num_rollouts must be an int"
+                )
+            if residual_num_rollouts_raw < 2:
+                raise ValueError(
+                    "stage2_ab.pipeline.objective residual_set_correction "
+                    "config.num_rollouts must be >= 2"
+                )
+            if legacy_triage_num_rollouts_explicit:
+                try:
+                    legacy_num_rollouts = int(legacy_triage_num_rollouts_raw)
+                except (TypeError, ValueError) as exc:
+                    raise TypeError(
+                        "stage2_ab.channel_b.triage_posterior.num_rollouts "
+                        "must be an int"
+                    ) from exc
+                if legacy_num_rollouts != int(residual_num_rollouts_raw):
+                    raise ValueError(
+                        "residual_set_correction on Channel-B takes rollout "
+                        "ownership from stage2_ab.pipeline.objective"
+                        "[name=residual_set_correction].config.num_rollouts; "
+                        "explicit stage2_ab.channel_b.triage_posterior.num_rollouts "
+                        "must be omitted or match it"
+                    )
+            else:
+                channel_b_data: MutableMapping[str, Any] = (
+                    dict(channel_b_raw) if isinstance(channel_b_raw, Mapping) else {}
+                )
+                triage_data: MutableMapping[str, Any] = (
+                    dict(channel_b_data.get("triage_posterior"))
+                    if isinstance(channel_b_data.get("triage_posterior"), Mapping)
+                    else {}
+                )
+                triage_data["num_rollouts"] = int(residual_num_rollouts_raw)
+                channel_b_data["triage_posterior"] = triage_data
+                channel_b_parse_raw = channel_b_data
+
+        channel_b = Stage2ABChannelBConfig.from_mapping(
+            channel_b_parse_raw,
+            validate_legacy_rollouts=False,
+        )
+
+        residual_set = residual_set_candidate
         if residual_set is not None:
             residual_set_on_channel_b = "B" in residual_set.channels
             if residual_set_on_channel_b:

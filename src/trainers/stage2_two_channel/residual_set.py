@@ -8,6 +8,7 @@ from typing import Any, Literal, Mapping
 from src.training.teacher_forcing.roles import TokenRole
 
 CoordRole = Literal["x1", "y1", "x2", "y2"]
+SchemaSlot = Literal["object_start", "box_start"]
 CorrectionKind = Literal[
     "transition_failure",
     "premature_stop",
@@ -99,6 +100,8 @@ class ResidualState:
     remaining_object_ids: frozenset[str]
     active_candidate_ids: frozenset[str]
     text_prefix_token_ids: tuple[int, ...] = ()
+    object_start_token_id: int | None = None
+    box_start_token_id: int | None = None
     stop_token_id: int = 0
     metadata: Mapping[str, Any] = field(default_factory=dict)
     objects_by_id: Mapping[str, ResidualObject] = field(init=False)
@@ -161,6 +164,12 @@ class CorrectionEvent:
 def enumerate_valid_actions(state: ResidualState, *, slot: str | CoordRole = "boundary") -> tuple[ValidAction, ...]:
     if slot == "boundary":
         return _enumerate_boundary_actions(state)
+    if slot == "object_start":
+        return _enumerate_schema_marker_actions(state, slot="object_start")
+    if slot == "desc":
+        return _enumerate_boundary_actions(state)
+    if slot == "box_start":
+        return _enumerate_schema_marker_actions(state, slot="box_start")
     if slot in ("x1", "y1", "x2", "y2"):
         return _enumerate_coord_actions(state, slot)
     raise ValueError(f"unsupported residual-set slot: {slot!r}")
@@ -183,6 +192,8 @@ def transition_state(state: ResidualState, action: ValidAction) -> ResidualState
             remaining_object_ids=state.remaining_object_ids,
             active_candidate_ids=frozenset(),
             text_prefix_token_ids=state.text_prefix_token_ids,
+            object_start_token_id=state.object_start_token_id,
+            box_start_token_id=state.box_start_token_id,
             stop_token_id=state.stop_token_id,
             metadata=state.metadata,
         )
@@ -200,8 +211,44 @@ def transition_state(state: ResidualState, action: ValidAction) -> ResidualState
         remaining_object_ids=state.remaining_object_ids,
         active_candidate_ids=active_after,
         text_prefix_token_ids=text_prefix_token_ids,
+        object_start_token_id=state.object_start_token_id,
+        box_start_token_id=state.box_start_token_id,
         stop_token_id=state.stop_token_id,
         metadata=state.metadata,
+    )
+
+
+def _enumerate_schema_marker_actions(
+    state: ResidualState,
+    *,
+    slot: SchemaSlot,
+) -> tuple[ValidAction, ...]:
+    if not state.remaining_object_ids:
+        return _enumerate_boundary_actions(state)
+
+    token_id = (
+        state.object_start_token_id if slot == "object_start" else state.box_start_token_id
+    )
+    if token_id is None:
+        raise ValueError(f"residual-set {slot} action requires configured schema token id")
+    candidate_ids_after = frozenset(
+        obj.object_id for obj in _active_remaining_objects(state)
+    )
+    if not candidate_ids_after:
+        raise ValueError(f"residual-set {slot} action has no active candidates")
+    return (
+        ValidAction(
+            token_id=int(token_id),
+            token_role=TokenRole.SCHEMA,
+            token_text=slot,
+            candidate_ids_after=candidate_ids_after,
+            selected_object_id=(
+                next(iter(candidate_ids_after))
+                if len(candidate_ids_after) == 1
+                else None
+            ),
+            metadata=_action_metadata_for_candidates(state, candidate_ids_after),
+        ),
     )
 
 
@@ -233,6 +280,7 @@ def _enumerate_boundary_actions(state: ResidualState) -> tuple[ValidAction, ...]
 
     return _coalesced_actions(
         candidate_ids_by_token,
+        state=state,
         token_role=TokenRole.TEXT,
         token_text_by_token=token_text_by_token,
         coord_role=None,
@@ -250,6 +298,7 @@ def _enumerate_coord_actions(state: ResidualState, coord_role: CoordRole) -> tup
     token_text_by_token = {token_id: str(token_id) for token_id in candidate_ids_by_token}
     return _coalesced_actions(
         candidate_ids_by_token,
+        state=state,
         token_role=TokenRole.COORD,
         token_text_by_token=token_text_by_token,
         coord_role=coord_role,
@@ -264,6 +313,7 @@ def _active_remaining_objects(state: ResidualState) -> tuple[ResidualObject, ...
 def _coalesced_actions(
     candidate_ids_by_token: Mapping[int, set[str]],
     *,
+    state: ResidualState,
     token_role: TokenRole,
     token_text_by_token: Mapping[int, str],
     coord_role: CoordRole | None,
@@ -280,9 +330,37 @@ def _coalesced_actions(
                 candidate_ids_after=candidate_ids_after,
                 selected_object_id=selected_object_id,
                 coord_role=coord_role,
+                metadata=_action_metadata_for_candidates(state, candidate_ids_after),
             )
         )
     return tuple(actions)
+
+
+def _action_metadata_for_candidates(
+    state: ResidualState,
+    candidate_ids: frozenset[str],
+) -> Mapping[str, Any]:
+    support: set[str] = set()
+    weights: list[float] = []
+    for candidate_id in sorted(candidate_ids):
+        obj = state.objects_by_id.get(candidate_id)
+        if obj is None:
+            continue
+        raw_support = obj.metadata.get("support_provenance", ("labeled",))
+        if isinstance(raw_support, str):
+            support.add(raw_support)
+        else:
+            try:
+                support.update(str(item) for item in raw_support)
+            except TypeError:
+                support.add(str(raw_support))
+        weights.append(float(obj.loss_weight))
+    if not support:
+        support.add("labeled")
+    return {
+        "support_provenance": tuple(sorted(support)),
+        "loss_weight": max(weights) if weights else 1.0,
+    }
 
 
 def _derive_text_token_text(obj: ResidualObject, cursor: int) -> tuple[str, bool]:
@@ -295,6 +373,7 @@ def _derive_text_token_text(obj: ResidualObject, cursor: int) -> tuple[str, bool
 
 __all__ = [
     "CoordRole",
+    "SchemaSlot",
     "CorrectionKind",
     "ResidualObject",
     "ValidAction",

@@ -423,7 +423,22 @@ class _CoordLiteralTokenizer(_DummyTokenizer):
         s = str(text)
         out: list[int] = []
         i = 0
+        special_tokens = (
+            OBJECT_REF_START_TOKEN,
+            BOX_START_TOKEN,
+            "<|im_end|>",
+            "<|endoftext|>",
+        )
         while i < len(s):
+            matched_special = False
+            for special in special_tokens:
+                if s.startswith(special, i):
+                    out.append(self._id_for(special))
+                    i += len(special)
+                    matched_special = True
+                    break
+            if matched_special:
+                continue
             if s.startswith("<|coord_", i):
                 j = s.find("|>", i)
                 if j >= 0:
@@ -721,6 +736,17 @@ def _make_compact_channel_b_trainer(
             }
 
     t.template = _FakeTemplate()
+    schema_ids = {
+        tok._id_for(OBJECT_REF_START_TOKEN),
+        tok._id_for(BOX_START_TOKEN),
+    }
+    stop_id = tok._id_for("<|im_end|>")
+    t.teacher_forcing_role_vocab = RoleVocab(
+        schema_token_ids=frozenset(schema_ids),
+        text_token_ids=frozenset(set(range(1000, 5000)) - schema_ids - {stop_id}),
+        coord_token_ids=frozenset(range(1000)),
+        stop_token_id=stop_id,
+    )
     t._template_train_mode = lambda: nullcontext()
     t._extract_encoded_len = lambda encoded: int(len(encoded["input_ids"]))
     t._get_coord_token_ids = lambda: list(range(1000))
@@ -1342,31 +1368,15 @@ def test_channel_b_meta_entry_legacy_non_residual_attaches_stage2_trie_targets()
     assert "residual_set_target_ir" not in meta
 
 
-def test_channel_b_meta_entry_residual_empty_ir_replaces_missing_sidecar() -> None:
-    meta, _drop_count = _build_channel_b_meta_entry(
-        **_minimal_channel_b_meta_entry_kwargs(
-            residual_set_selected=True,
-            residual_set_rollin_policy="random_valid_branch",
-            residual_set_base_seed=17,
+def test_channel_b_meta_entry_residual_refuses_missing_event_sidecar() -> None:
+    with pytest.raises(ValueError, match="CorrectionEvent-derived target IR"):
+        _build_channel_b_meta_entry(
+            **_minimal_channel_b_meta_entry_kwargs(
+                residual_set_selected=True,
+                residual_set_rollin_policy="random_valid_branch",
+                residual_set_base_seed=17,
+            )
         )
-    )
-
-    assert "residual_set_target_ir" in meta
-    assert "stage2_trie_targets" not in meta
-    assert meta["residual_set_rollin_policy"] == "random_valid_branch"
-    assert meta["residual_set_base_seed"] == 17
-    target_ir = meta["residual_set_target_ir"]
-    assert isinstance(target_ir, TeacherForcingTargetIR)
-    assert target_ir.schema_version == TEACHER_FORCING_TARGET_IR_SCHEMA_VERSION
-    assert target_ir.metadata["objective"] == "residual_set_correction"
-    assert target_ir.metadata["position_space"] == "segment_local"
-    assert target_ir.metadata["target_builder"] == "stage2_meta_position_singleton_v0"
-    assert (
-        target_ir.metadata["correction_semantics"]
-        == "selected_token_singleton_not_full_residual"
-    )
-    assert target_ir.metadata["full_residual_events"] is False
-    assert target_ir.atoms == ()
 
 
 def test_channel_b_residual_objective_detection_honors_enabled_and_channel() -> None:
@@ -1424,7 +1434,7 @@ def test_channel_b_compact_full_residual_path_attaches_ir_without_trie(
 ) -> None:
     row = (
         f"{OBJECT_REF_START_TOKEN}cat{BOX_START_TOKEN}"
-        "<|coord_10|><|coord_20|><|coord_30|><|coord_40|>"
+        "<|coord_10|><|coord_20|><|coord_30|><|coord_41|>"
     )
     t = _make_compact_channel_b_trainer(rollout_text=row)
     t.stage2_pipeline_manifest = _make_residual_set_pipeline_manifest()
@@ -1433,7 +1443,7 @@ def test_channel_b_compact_full_residual_path_attaches_ir_without_trie(
         lambda **kwargs: pytest.fail("legacy CoordJSON parser must not run"),
     )
 
-    segments, _metrics = t._prepare_batch_inputs_b(
+    segments, metrics = t._prepare_batch_inputs_b(
         [_single_bbox_sample()],
         _segments_only=True,
     )
@@ -1452,22 +1462,25 @@ def test_channel_b_compact_full_residual_path_attaches_ir_without_trie(
     assert target_ir.metadata["objective"] == "residual_set_correction"
     assert target_ir.metadata["stage2_channel"] == "B"
     assert target_ir.metadata["position_space"] == "segment_local"
-    assert target_ir.metadata["target_builder"] == "stage2_meta_position_singleton_v0"
-    assert (
-        target_ir.metadata["correction_semantics"]
-        == "selected_token_singleton_not_full_residual"
-    )
-    assert target_ir.metadata["full_residual_events"] is False
+    assert target_ir.metadata["marginal_scope"] == "sampled_path_next_token"
+    assert "target_builder" not in target_ir.metadata
     assert target_ir.atoms
     input_ids = [int(token_id) for token_id in encoded["input_ids"]]
     for atom in target_ir.atoms:
         assert atom.logit_position + 1 == atom.target_position
         assert atom.selected_token_id == input_ids[int(atom.target_position)]
-        assert atom.valid_token_ids == frozenset({atom.selected_token_id})
+        assert atom.selected_token_id in atom.valid_token_ids
         assert atom.selected_token_role in atom.allowed_token_roles
         assert "residual_set" in atom.loss_tags
-        assert atom.provenance["correction_kind"] == "selected_path_singleton"
-        assert "source_position_kind" in atom.provenance
+        assert atom.provenance["target_builder"] == "stage2_residual_events_v1"
+        assert atom.provenance["correction_kind"] in {
+            "matched_object_repair",
+            "premature_stop",
+            "fp_boundary",
+            "repeated_object_boundary",
+        }
+    assert "stage2_ab/channel_b/residual_set/ul/promoted_clusters" in metrics
+    assert "stage2_ab/channel_b/ul/promoted_clusters" not in metrics
 
 
 def test_channel_b_producer_residual_ir_rebases_when_packed() -> None:
@@ -1480,6 +1493,7 @@ def test_channel_b_producer_residual_ir_rebases_when_packed() -> None:
             prefix_desc_weights=[1.0],
             y_train_ids=[10],
             residual_set_selected=True,
+            residual_set_target_ir=_make_stage2_residual_target_ir(),
             residual_set_rollin_policy="random_valid_branch",
             residual_set_base_seed=17,
         )
@@ -1493,6 +1507,7 @@ def test_channel_b_producer_residual_ir_rebases_when_packed() -> None:
             prefix_desc_weights=[1.0],
             y_train_ids=[11],
             residual_set_selected=True,
+            residual_set_target_ir=_make_stage2_residual_target_ir(selected_token_id=11, valid_token_ids=frozenset({11})),
             residual_set_rollin_policy="random_valid_branch",
             residual_set_base_seed=17,
         )
@@ -1501,21 +1516,7 @@ def test_channel_b_producer_residual_ir_rebases_when_packed() -> None:
     for meta in (meta_1, meta_2):
         target_ir = meta["residual_set_target_ir"]
         assert target_ir.metadata["position_space"] == "segment_local"
-        assert (
-            target_ir.metadata["target_builder"]
-            == "stage2_meta_position_singleton_v0"
-        )
-        assert (
-            target_ir.metadata["correction_semantics"]
-            == "selected_token_singleton_not_full_residual"
-        )
-        assert target_ir.metadata["full_residual_events"] is False
         assert target_ir.atoms[0].target_position == 1
-        assert (
-            target_ir.atoms[0].provenance["correction_kind"]
-            == "selected_path_singleton"
-        )
-        assert target_ir.atoms[0].provenance["source_position_kind"] == "prefix_desc"
 
     input_ids = torch.tensor([[99, 10, 88, 11]], dtype=torch.long)
     logits = torch.full((1, 4, 50), -20.0, dtype=torch.float32)

@@ -81,8 +81,13 @@ Current internal ownership seams:
   through `stage2_ab.pipeline.*`
 - supported routing/objective presets are:
   - `token_ce.application.preset: anchor_text_only`
-  - `stage2_trie_ce.application.preset: rollout_text_only`
+  - `stage2_trie_ce.application.preset: rollout_trie_hard_ce`
+  - `residual_set_correction.application.preset: rollout_self_prefix`
   - `hard_sft.application.preset: selected_path`
+- residual-set smoke handles live under
+  `configs/stage2_two_channel/smoke/compact_full_residual_set_ckpt3664_hf_*.yaml`;
+  they are tiny runnable checks for the correction-event path, not full validation or
+  production-quality evidence.
 - removed geometry/coordinate modules:
   - `bbox_geo`, `bbox_size_aux`, `coord_reg`, and `coord_diag` are rejected by the active Stage-2 pipeline
 - duplicate-burst UL migration state:
