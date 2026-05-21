@@ -1791,6 +1791,7 @@ def _build_residual_set_correction_events(
     sample_id: str,
     rollout_index: int,
     lambda_ul_promoted: float,
+    rollout_id: str | None = None,
 ) -> _ResidualSetCorrectionBuildResult:
     """Build sampled-path residual correction events for compact-full Channel-B."""
 
@@ -1864,6 +1865,7 @@ def _build_residual_set_correction_events(
                 remaining_ids=remaining_ids,
                 sample_id=sample_id,
                 rollout_index=int(rollout_index),
+                rollout_id=rollout_id,
                 correction_kind=(
                     "repeated_object_boundary" if duplicate_like else "fp_boundary"
                 ),
@@ -1924,6 +1926,7 @@ def _build_residual_set_correction_events(
             correction_kind="matched_object_repair",
             sample_id=sample_id,
             rollout_index=int(rollout_index),
+            rollout_id=rollout_id,
             observed_token_ids=raw_object_ids,
             observed_object_start=int(span.object_start),
             object_start_token_id=int(object_start_token_id),
@@ -1958,6 +1961,7 @@ def _build_residual_set_correction_events(
             correction_kind="premature_stop",
             sample_id=sample_id,
             rollout_index=int(rollout_index),
+            rollout_id=rollout_id,
             observed_token_ids=raw_ids,
             observed_object_start=int(len(raw_ids)),
             object_start_token_id=int(object_start_token_id),
@@ -2039,9 +2043,7 @@ def _residual_universe_object_from_gt(
     loss_weight: float,
     support_provenance: Sequence[str],
 ) -> _ResidualSetUniverseObject:
-    desc_token_ids = tuple(
-        int(token_id) for token_id in tokenizer.encode(str(obj.desc), add_special_tokens=False)
-    )
+    desc_token_ids = _compact_context_desc_token_ids(tokenizer=tokenizer, obj=obj)
     if not desc_token_ids:
         raise ValueError("residual_set_correction requires nonempty object descriptions")
     coord_token_ids = {
@@ -2076,6 +2078,27 @@ def _residual_universe_object_from_gt(
         source_index=int(source_index),
         gt_object=gt_object,
         residual_object=residual_object,
+    )
+
+
+def _compact_context_desc_token_ids(*, tokenizer: Any, obj: GTObject) -> Tuple[int, ...]:
+    row_object = GTObject(
+        index=0,
+        geom_type="bbox_2d",
+        points_norm1000=[int(v) for v in obj.points_norm1000],
+        desc=str(obj.desc),
+    )
+    row_text = _render_compact_objects([row_object])
+    row_token_ids = [
+        int(token_id) for token_id in tokenizer.encode(row_text, add_special_tokens=False)
+    ]
+    span = extract_compact_full_object_token_spans(
+        tokenizer=tokenizer,
+        response_token_ids=row_token_ids,
+    )[0]
+    return tuple(
+        int(token_id)
+        for token_id in row_token_ids[int(span.desc_start) : int(span.desc_end)]
     )
 
 
@@ -2164,6 +2187,7 @@ def _build_residual_boundary_event(
     object_start_token_id: int,
     box_start_token_id: int,
     stop_token_id: int,
+    rollout_id: str | None = None,
 ) -> _ResidualSetCorrectionBuildResult | None:
     clean_target_text, y_train_ids = _render_residual_target_ids(
         tokenizer=tokenizer,
@@ -2185,6 +2209,7 @@ def _build_residual_boundary_event(
             correction_kind=correction_kind,
             sample_id=sample_id,
             rollout_index=int(rollout_index),
+            rollout_id=rollout_id,
             observed_token_ids=(
                 [int(observed_token_id)] if observed_token_id is not None else []
             ),
@@ -2229,6 +2254,7 @@ def _build_residual_boundary_event(
         metadata={
             "observed_token_id": observed_token_id,
             "rollout_index": int(rollout_index),
+            **({"rollout_id": str(rollout_id)} if rollout_id is not None else {}),
             "anchor_position": int(anchor_position),
             "slot": "stop",
         },
@@ -2239,6 +2265,7 @@ def _build_residual_boundary_event(
         atom_drafts=(draft,),
         metadata={
             "rollout_index": int(rollout_index),
+            **({"rollout_id": str(rollout_id)} if rollout_id is not None else {}),
             "anchor_position": int(anchor_position),
             "target_builder": "stage2_residual_events_v1",
         },
@@ -2317,6 +2344,7 @@ def _build_residual_event_from_specs(
     object_start_token_id: int,
     box_start_token_id: int,
     stop_token_id: int,
+    rollout_id: str | None = None,
 ) -> CorrectionEvent:
     base_state = ResidualState(
         objects=tuple(item.residual_object for item in universe),
@@ -2364,6 +2392,11 @@ def _build_residual_event_from_specs(
                 metadata={
                     "observed_token_id": observed_token_id,
                     "rollout_index": int(rollout_index),
+                    **(
+                        {"rollout_id": str(rollout_id)}
+                        if rollout_id is not None
+                        else {}
+                    ),
                     "anchor_position": int(observed_object_start),
                     "slot": str(slot),
                     "selected_object_id": current_target.object_id,
@@ -2378,6 +2411,7 @@ def _build_residual_event_from_specs(
         atom_drafts=tuple(drafts),
         metadata={
             "rollout_index": int(rollout_index),
+            **({"rollout_id": str(rollout_id)} if rollout_id is not None else {}),
             "anchor_position": int(observed_object_start),
             "target_builder": "stage2_residual_events_v1",
             "full_residual_events": True,

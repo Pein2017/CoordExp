@@ -1,6 +1,8 @@
 from dataclasses import dataclass, replace
+import json
 import re
-from typing import Any, Dict, List, Mapping, Tuple
+from os import PathLike
+from typing import Any, Dict, List, Mapping, Sequence, Tuple
 
 from src.common.duplicate_control import duplicate_control_object_from_bbox
 from src.common.detection_sequence import BOX_START_TOKEN, OBJECT_REF_START_TOKEN
@@ -25,6 +27,199 @@ class CompactFullObjectTokenSpan:
     desc_end: int
     box_start: int
     coord_positions: tuple[int, int, int, int]
+
+
+@dataclass(frozen=True)
+class PreparedRolloutAttempt:
+    sample_id: str
+    image_id: str
+    image_path: str
+    rollout_id: str
+    response_token_ids: tuple[int, ...] | None
+    raw_text: str
+    decode_mode: str
+    generation_config_hash: str
+    sampling_seed: int | None = None
+    metadata: Mapping[str, Any] | None = None
+
+
+@dataclass(frozen=True)
+class PreparedRolloutDedupStats:
+    K_total: int
+    K_after_dedup: int
+    exact_duplicate_attempts: int
+    dropped_reasons: Mapping[str, int]
+
+    def as_dict(self) -> Dict[str, Any]:
+        return {
+            "K_total": int(self.K_total),
+            "K_after_dedup": int(self.K_after_dedup),
+            "exact_duplicate_attempts": int(self.exact_duplicate_attempts),
+            "dropped_reasons": dict(self.dropped_reasons),
+        }
+
+    def __getitem__(self, key: str) -> Any:
+        return self.as_dict()[str(key)]
+
+
+_PREPARED_ROLLOUT_REQUIRED_FIELDS = (
+    "sample_id",
+    "image_id",
+    "image_path",
+    "rollout_id",
+    "raw_text",
+    "decode_mode",
+    "generation_config_hash",
+)
+
+
+def _require_prepared_string(record: Mapping[str, Any], field: str) -> str:
+    value = record.get(field)
+    if not isinstance(value, str) or not value:
+        raise ValueError(f"prepared rollout record missing required field: {field}")
+    return str(value)
+
+
+def _parse_response_token_ids(
+    value: Any,
+    *,
+    strict_prepared_rollout_tokens: bool,
+) -> tuple[int, ...] | None:
+    if value is None:
+        if strict_prepared_rollout_tokens:
+            raise ValueError("prepared rollout record missing response_token_ids")
+        return None
+    if isinstance(value, (str, bytes)) or not isinstance(value, Sequence):
+        raise ValueError("prepared rollout response_token_ids must be a sequence of integers")
+    parsed: List[int] = []
+    for token_id in value:
+        if isinstance(token_id, bool) or not isinstance(token_id, int):
+            raise ValueError("prepared rollout response_token_ids must contain only integers")
+        parsed.append(int(token_id))
+    return tuple(parsed)
+
+
+def parse_prepared_rollout_attempt(
+    record: Mapping[str, Any],
+    *,
+    strict_prepared_rollout_tokens: bool,
+) -> PreparedRolloutAttempt:
+    if not isinstance(record, Mapping):
+        raise TypeError("prepared rollout record must be a mapping")
+    for field in _PREPARED_ROLLOUT_REQUIRED_FIELDS:
+        _require_prepared_string(record, field)
+
+    response_token_ids = _parse_response_token_ids(
+        record.get("response_token_ids"),
+        strict_prepared_rollout_tokens=bool(strict_prepared_rollout_tokens),
+    )
+    sampling_seed_raw = record.get("sampling_seed")
+    sampling_seed: int | None = None
+    if sampling_seed_raw is not None:
+        if isinstance(sampling_seed_raw, bool) or not isinstance(sampling_seed_raw, int):
+            raise ValueError("prepared rollout sampling_seed must be an integer")
+        sampling_seed = int(sampling_seed_raw)
+
+    preserved_keys = {
+        key: value
+        for key, value in record.items()
+        if key
+        not in {
+            "sample_id",
+            "image_id",
+            "image_path",
+            "rollout_id",
+            "response_token_ids",
+            "raw_text",
+            "decode_mode",
+            "generation_config_hash",
+            "sampling_seed",
+        }
+    }
+    return PreparedRolloutAttempt(
+        sample_id=_require_prepared_string(record, "sample_id"),
+        image_id=_require_prepared_string(record, "image_id"),
+        image_path=_require_prepared_string(record, "image_path"),
+        rollout_id=_require_prepared_string(record, "rollout_id"),
+        response_token_ids=response_token_ids,
+        raw_text=_require_prepared_string(record, "raw_text"),
+        decode_mode=_require_prepared_string(record, "decode_mode"),
+        generation_config_hash=_require_prepared_string(
+            record, "generation_config_hash"
+        ),
+        sampling_seed=sampling_seed,
+        metadata=preserved_keys,
+    )
+
+
+def load_prepared_rollout_jsonl(
+    path: str | PathLike[str],
+    *,
+    strict_prepared_rollout_tokens: bool,
+) -> List[PreparedRolloutAttempt]:
+    attempts: List[PreparedRolloutAttempt] = []
+    with open(path, "r", encoding="utf-8") as f:
+        for line_no, line in enumerate(f, start=1):
+            text = line.strip()
+            if not text:
+                continue
+            try:
+                record = json.loads(text)
+            except json.JSONDecodeError as exc:
+                raise ValueError(
+                    f"invalid prepared rollout JSONL at line {int(line_no)}: {exc}"
+                ) from exc
+            try:
+                attempts.append(
+                    parse_prepared_rollout_attempt(
+                        record,
+                        strict_prepared_rollout_tokens=bool(
+                            strict_prepared_rollout_tokens
+                        ),
+                    )
+                )
+            except Exception as exc:
+                raise ValueError(
+                    f"invalid prepared rollout record at line {int(line_no)}: {exc}"
+                ) from exc
+    return attempts
+
+
+def dedup_prepared_rollout_attempts(
+    attempts: Sequence[PreparedRolloutAttempt],
+    *,
+    legacy_reencode_fallback: bool,
+) -> tuple[List[PreparedRolloutAttempt], PreparedRolloutDedupStats]:
+    kept: List[PreparedRolloutAttempt] = []
+    seen: set[tuple[int, ...]] = set()
+    dropped_reasons: Dict[str, int] = {}
+    exact_duplicates = 0
+    for attempt in attempts:
+        token_ids = attempt.response_token_ids
+        if token_ids is None:
+            reason = (
+                "missing_response_token_ids_legacy_reencode_unavailable"
+                if bool(legacy_reencode_fallback)
+                else "missing_response_token_ids"
+            )
+            dropped_reasons[reason] = int(dropped_reasons.get(reason, 0)) + 1
+            continue
+        key = tuple(int(token_id) for token_id in token_ids)
+        if key in seen:
+            exact_duplicates += 1
+            dropped_reasons["exact_duplicate_response_token_ids"] = (
+                int(dropped_reasons.get("exact_duplicate_response_token_ids", 0)) + 1
+            )
+            continue
+        seen.add(key)
+        kept.append(attempt)
+    stats = PreparedRolloutDedupStats(
+        K_total=int(len(attempts)),
+        K_after_dedup=int(len(kept)),
+        exact_duplicate_attempts=int(exact_duplicates),
+        dropped_reasons=dropped_reasons,
+    )
+    return kept, stats
 
 
 def _response_text_from_rollout(
@@ -97,16 +292,35 @@ def extract_compact_full_object_token_spans(
     ]
     parse_text = text[: min(terminal_positions)] if terminal_positions else text
 
+    object_starts: List[int] = []
+    search_start = 0
+    while True:
+        found = parse_text.find(OBJECT_REF_START_TOKEN, search_start)
+        if found < 0:
+            break
+        object_starts.append(int(found))
+        search_start = int(found + len(OBJECT_REF_START_TOKEN))
+
+    if not object_starts:
+        if parse_text.strip("\r\n"):
+            raise ValueError("compact-full span extractor found row without object_start marker")
+        return []
+    if parse_text[: object_starts[0]].strip("\r\n"):
+        raise ValueError("compact-full span extractor found row without object_start marker")
+
     spans_by_row_index: dict[int, CompactFullObjectTokenSpan] = {}
     payload_by_row_index: dict[int, tuple[str, tuple[int, int, int, int]]] = {}
-    row_start = 0
-    row_index = 0
-    for raw_row in parse_text.splitlines(keepends=True):
-        row = raw_row.rstrip("\r\n")
-        row_end = row_start + len(row)
-        next_row_start = row_start + len(raw_row)
+    for row_index, row_start in enumerate(object_starts):
+        next_row_start = (
+            int(object_starts[int(row_index) + 1])
+            if int(row_index) + 1 < len(object_starts)
+            else len(parse_text)
+        )
+        row_end = int(next_row_start)
+        while row_end > int(row_start) and parse_text[int(row_end) - 1] in "\r\n":
+            row_end -= 1
+        row = parse_text[int(row_start) : int(row_end)]
         if not row:
-            row_start = next_row_start
             continue
         if not row.startswith(OBJECT_REF_START_TOKEN):
             raise ValueError("compact-full span extractor found row without object_start marker")
@@ -173,8 +387,6 @@ def extract_compact_full_object_token_spans(
             row[len(OBJECT_REF_START_TOKEN) : box_rel],
             coord_values,  # type: ignore[arg-type]
         )
-        row_index += 1
-        row_start = next_row_start
 
     if parsed_objects is None:
         return [spans_by_row_index[index] for index in sorted(spans_by_row_index)]
@@ -531,6 +743,11 @@ def build_channel_b_rollout_view(
 
 __all__ = [
     "CompactFullObjectTokenSpan",
+    "PreparedRolloutAttempt",
+    "PreparedRolloutDedupStats",
     "build_channel_b_rollout_view",
+    "dedup_prepared_rollout_attempts",
     "extract_compact_full_object_token_spans",
+    "load_prepared_rollout_jsonl",
+    "parse_prepared_rollout_attempt",
 ]

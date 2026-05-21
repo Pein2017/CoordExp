@@ -14,6 +14,10 @@ from src.trainers.stage2_two_channel.residual_set import (
     enumerate_valid_actions,
     transition_state,
 )
+from src.trainers.stage2_two_channel.rollout_views import (
+    dedup_prepared_rollout_attempts,
+    parse_prepared_rollout_attempt,
+)
 from src.trainers.stage2_two_channel.teacher_forcing_adapter import (
     build_residual_set_target_ir,
 )
@@ -81,6 +85,99 @@ def make_role_vocab() -> RoleVocab:
         coord_token_ids=frozenset(coord_token(value) for value in range(0, 1001)),
         stop_token_id=999,
     )
+
+
+def _prepared_rollout_record(**overrides: object) -> dict[str, object]:
+    record: dict[str, object] = {
+        "sample_id": "s0",
+        "image_id": "image-0",
+        "image_path": "images/000000.jpg",
+        "rollout_id": "r0",
+        "response_token_ids": [1, 2, 3],
+        "raw_text": "raw",
+        "decode_mode": "greedy",
+        "generation_config_hash": "sha256:abc",
+    }
+    record.update(overrides)
+    return record
+
+
+def test_prepared_rollout_requires_response_token_ids_in_strict_mode() -> None:
+    record = _prepared_rollout_record()
+    record.pop("response_token_ids")
+
+    with pytest.raises(ValueError, match="response_token_ids"):
+        parse_prepared_rollout_attempt(
+            record,
+            strict_prepared_rollout_tokens=True,
+        )
+
+
+def test_prepared_rollout_rejects_bool_response_token_ids() -> None:
+    record = _prepared_rollout_record(response_token_ids=[1, True, 3])
+
+    with pytest.raises(ValueError, match="response_token_ids"):
+        parse_prepared_rollout_attempt(
+            record,
+            strict_prepared_rollout_tokens=True,
+        )
+
+
+def test_prepared_rollout_exact_dedup_uses_response_token_ids() -> None:
+    attempts = [
+        parse_prepared_rollout_attempt(
+            _prepared_rollout_record(
+                rollout_id="a",
+                response_token_ids=[1, 2],
+                raw_text="x",
+                decode_mode="greedy",
+            ),
+            strict_prepared_rollout_tokens=True,
+        ),
+        parse_prepared_rollout_attempt(
+            _prepared_rollout_record(
+                rollout_id="b",
+                response_token_ids=[1, 2],
+                raw_text="x changed",
+                decode_mode="sampling",
+            ),
+            strict_prepared_rollout_tokens=True,
+        ),
+        parse_prepared_rollout_attempt(
+            _prepared_rollout_record(
+                rollout_id="c",
+                response_token_ids=[1, 3],
+                raw_text="x",
+                decode_mode="sampling",
+            ),
+            strict_prepared_rollout_tokens=True,
+        ),
+    ]
+
+    kept, stats = dedup_prepared_rollout_attempts(
+        attempts,
+        legacy_reencode_fallback=False,
+    )
+
+    assert [attempt.rollout_id for attempt in kept] == ["a", "c"]
+    assert stats["K_total"] == 3
+    assert stats["K_after_dedup"] == 2
+    assert stats["exact_duplicate_attempts"] == 1
+
+
+@pytest.mark.parametrize(
+    "missing_key",
+    ["sample_id", "image_id", "image_path", "rollout_id", "generation_config_hash"],
+)
+def test_prepared_rollout_requires_replay_provenance(missing_key: str) -> None:
+    record = _prepared_rollout_record()
+    record.pop(missing_key)
+
+    with pytest.raises(ValueError, match=missing_key):
+        parse_prepared_rollout_attempt(
+            record,
+            strict_prepared_rollout_tokens=True,
+        )
 
 
 def make_text_action(token_id: int, *, loss_weight: float = 1.0) -> ValidAction:

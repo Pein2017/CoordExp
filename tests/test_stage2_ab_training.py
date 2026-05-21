@@ -48,6 +48,7 @@ from src.trainers.stage2_two_channel.target_builder import (
     _build_channel_b_supervision_targets,
     _build_channel_b_triage,
     _build_duplicate_control_divergence_diagnostics,
+    _build_residual_set_correction_events,
     _channel_b_residual_set_correction_enabled,
     _compute_duplicate_diagnostics,
     _sequential_dedup_bbox_objects,
@@ -55,6 +56,9 @@ from src.trainers.stage2_two_channel.target_builder import (
 from src.trainers.stage2_two_channel.objective_runner import (
     build_stage2_core_loss_logs,
     run_stage2_objective_pipelines,
+)
+from src.trainers.stage2_two_channel.rollout_views import (
+    extract_compact_full_object_token_spans,
 )
 from src.trainers.stage2_two_channel.trie_supervision import (
     Stage2TrieCandidate,
@@ -463,6 +467,13 @@ class _CompactMarkerDescMergingTokenizer(_CoordLiteralTokenizer):
                 )
             ]
 
+        return super().encode(text, add_special_tokens=add_special_tokens)
+
+
+class _BareDescMergingTokenizer(_CoordLiteralTokenizer):
+    def encode(self, text: str, add_special_tokens: bool = False):
+        if str(text) == "cat":
+            return [self._id_for("cat")]
         return super().encode(text, add_special_tokens=add_special_tokens)
 
 
@@ -1505,6 +1516,171 @@ def test_channel_b_compact_full_residual_path_attaches_ir_without_trie(
         }
     assert "stage2_ab/channel_b/residual_set/ul/promoted_clusters" in metrics
     assert "stage2_ab/channel_b/ul/promoted_clusters" not in metrics
+
+
+def test_channel_b_offline_residual_set_fans_out_prepared_attempts(
+    tmp_path,
+) -> None:
+    rows = [
+        (
+            "sample-prepared",
+            "image-prepared",
+            "r0",
+            f"{OBJECT_REF_START_TOKEN}cat{BOX_START_TOKEN}"
+            "<|coord_10|><|coord_20|><|coord_30|><|coord_41|>",
+            "greedy",
+        ),
+        (
+            "sample-prepared",
+            "image-prepared",
+            "r1",
+            f"{OBJECT_REF_START_TOKEN}cat{BOX_START_TOKEN}"
+            "<|coord_10|><|coord_20|><|coord_30|><|coord_42|>",
+            "sampling",
+        ),
+    ]
+    t = _make_compact_channel_b_trainer(rollout_text=rows[0][3])
+    tok = t.template.tokenizer
+    prepared_path = tmp_path / "prepared_rollouts.jsonl"
+    with prepared_path.open("w", encoding="utf-8") as f:
+        for sample_id, image_id, rollout_id, raw_text, decode_mode in rows:
+            f.write(
+                json.dumps(
+                    {
+                        "sample_id": sample_id,
+                        "image_id": image_id,
+                        "image_path": "images/prepared.jpg",
+                        "rollout_id": rollout_id,
+                        "response_token_ids": list(
+                            tok.encode(raw_text, add_special_tokens=False)
+                        ),
+                        "raw_text": raw_text,
+                        "decode_mode": decode_mode,
+                        "generation_config_hash": "sha256:test",
+                    },
+                    sort_keys=True,
+                )
+                + "\n"
+            )
+
+    t.stage2_pipeline_manifest = _make_residual_set_pipeline_manifest(
+        prepared_rollout_jsonl=str(prepared_path)
+    )
+    t._prepare_samples_for_rollout = lambda *_args, **_kwargs: pytest.fail(
+        "offline residual-set mode must not prepare live rollout samples"
+    )
+    t._rollout_many = lambda *_args, **_kwargs: pytest.fail(
+        "offline residual-set mode must not call live rollout backend"
+    )
+
+    sample = _single_bbox_sample()
+    sample["sample_id"] = "sample-prepared"
+    sample["image_id"] = "image-prepared"
+    segments, metrics = t._prepare_batch_inputs_b(
+        [sample],
+        _segments_only=True,
+    )
+
+    assert len(segments) == 2
+    assert metrics["stage2_ab/channel_b/residual_set/sequence_count"] == pytest.approx(2.0)
+    assert metrics["stage2_ab/channel_b/residual_set/prepared/K_total"] == pytest.approx(2.0)
+    assert metrics["stage2_ab/channel_b/residual_set/prepared/K_after_dedup"] == pytest.approx(2.0)
+    assert metrics["stage2_ab/channel_b/residual_set/prepared/K_valid"] == pytest.approx(2.0)
+    rollout_ids = [segment[1]["prepared_rollout"]["rollout_id"] for segment in segments]
+    assert rollout_ids == ["r0", "r1"]
+    assert [
+        segment[1]["residual_set_target_ir"].atoms[0].provenance["rollout_index"]
+        for segment in segments
+    ] == [0, 1]
+
+
+def test_residual_events_use_compact_row_context_desc_tokens() -> None:
+    tok = _BareDescMergingTokenizer()
+    raw_text = (
+        f"{OBJECT_REF_START_TOKEN}cab{BOX_START_TOKEN}"
+        "<|coord_10|><|coord_20|><|coord_30|><|coord_41|>"
+    )
+    response_token_ids = list(tok.encode(raw_text, add_special_tokens=False))
+    parsed = [
+        GTObject(
+            index=0,
+            geom_type="bbox_2d",
+            points_norm1000=[10, 20, 30, 41],
+            desc="cab",
+        )
+    ]
+    spans = extract_compact_full_object_token_spans(
+        tokenizer=tok,
+        response_token_ids=response_token_ids,
+        parsed_objects=parsed,
+    )
+
+    result = _build_residual_set_correction_events(
+        tokenizer=tok,
+        response_token_ids=response_token_ids,
+        parsed_bbox_objects_raw=parsed,
+        compact_full_object_spans=spans,
+        gts=[
+            GTObject(
+                index=0,
+                geom_type="bbox_2d",
+                points_norm1000=[10, 20, 30, 40],
+                desc="cat",
+            )
+        ],
+        accepted_objects_clean=parsed,
+        match=MatchResult(
+            matched_pairs=[(0, 0)],
+            fn_gt_indices=[],
+            fp_pred_indices=[],
+            gating_rejections=0,
+            matched_maskiou_sum=1.0,
+            matched_maskiou_count=1,
+        ),
+        assignment_iou_threshold=0.5,
+        sample_id="sample-context-desc",
+        rollout_index=0,
+        lambda_ul_promoted=0.5,
+    )
+
+    assert result.events
+    atom = result.events[0].atom_drafts[0]
+    assert atom.correction_kind == "matched_object_repair"
+    assert atom.metadata["slot"] == "desc"
+    assert atom.selected_action is not None
+    assert atom.selected_action.token_id == tok._id_for("t")
+
+
+@pytest.mark.parametrize("separator", ["\n", ""])
+def test_compact_full_span_extractor_handles_adjacent_objects_with_optional_newlines(
+    separator: str,
+) -> None:
+    tok = _CoordLiteralTokenizer()
+    text = (
+        f"{OBJECT_REF_START_TOKEN}cat{BOX_START_TOKEN}"
+        "<|coord_10|><|coord_20|><|coord_30|><|coord_40|>"
+        f"{separator}"
+        f"{OBJECT_REF_START_TOKEN}dog{BOX_START_TOKEN}"
+        "<|coord_50|><|coord_60|><|coord_70|><|coord_80|>"
+    )
+    token_ids = list(tok.encode(text, add_special_tokens=False))
+
+    spans = extract_compact_full_object_token_spans(
+        tokenizer=tok,
+        response_token_ids=token_ids,
+    )
+
+    assert len(spans) == 2
+    assert token_ids[spans[0].desc_start : spans[0].desc_end] == [
+        tok._id_for("c"),
+        tok._id_for("a"),
+        tok._id_for("t"),
+    ]
+    assert token_ids[spans[1].desc_start : spans[1].desc_end] == [
+        tok._id_for("d"),
+        tok._id_for("o"),
+        tok._id_for("g"),
+    ]
 
 
 def test_channel_b_producer_residual_ir_rebases_when_packed() -> None:
