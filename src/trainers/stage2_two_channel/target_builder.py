@@ -1899,6 +1899,13 @@ def _build_residual_set_correction_events(
     if remaining_ids:
         if boundary_slice is None:
             raise ValueError("residual boundary adapter did not produce a target slice")
+        events = _remap_spatial_wrong_desc_events_to_clean_target(
+            events,
+            remaining_ids=remaining_ids,
+            boundary_slice=boundary_slice,
+            prefix_object_count=int(prefix_object_count),
+            target_position_offset=int(target_position_offset),
+        )
         target_span = boundary_slice.object_spans[int(prefix_object_count)]
         current_target = universe_by_id[remaining_ids[0]]
         event = _build_residual_event_from_specs(
@@ -2051,6 +2058,7 @@ def _observed_residual_rows_from_compact_response(
                     desc_token_ids=tuple(
                         int(token_ids[int(pos)]) for pos in desc_token_positions
                     ),
+                    desc_token_positions=tuple(int(pos) for pos in desc_token_positions),
                     metadata={"row_index": int(row_index)},
                 )
             )
@@ -2771,6 +2779,72 @@ def _shift_residual_correction_events(
             )
         )
     return shifted_events
+
+
+def _remap_spatial_wrong_desc_events_to_clean_target(
+    events: Sequence[CorrectionEvent],
+    *,
+    remaining_ids: Sequence[str],
+    boundary_slice: ResidualBoundarySlice,
+    prefix_object_count: int,
+    target_position_offset: int,
+) -> List[CorrectionEvent]:
+    remapped_events: List[CorrectionEvent] = []
+    remaining_index_by_id = {
+        str(object_id): int(index) for index, object_id in enumerate(remaining_ids)
+    }
+    for event in events:
+        if event.correction_kind != "spatial_wrong_desc_conflict":
+            remapped_events.append(event)
+            continue
+        object_id = event.metadata.get("conflicting_object_id")
+        if object_id is None or str(object_id) not in remaining_index_by_id:
+            remapped_events.append(event)
+            continue
+        span_index = int(prefix_object_count) + remaining_index_by_id[str(object_id)]
+        if span_index < 0 or span_index >= len(boundary_slice.object_spans):
+            remapped_events.append(event)
+            continue
+        target_span = boundary_slice.object_spans[span_index]
+
+        shifted_drafts: List[CorrectionAtomDraft] = []
+        for draft in event.atom_drafts:
+            if draft.correction_kind != "spatial_wrong_desc_conflict":
+                shifted_drafts.append(draft)
+                continue
+            metadata = dict(draft.metadata)
+            try:
+                divergence = int(metadata["desc_divergence"])
+            except (KeyError, TypeError, ValueError):
+                shifted_drafts.append(draft)
+                continue
+            target_position = int(target_position_offset) + int(target_span.desc_start) + divergence
+            if target_position < int(target_position_offset) + int(target_span.desc_start):
+                shifted_drafts.append(draft)
+                continue
+            if target_position >= int(target_position_offset) + int(target_span.desc_end):
+                shifted_drafts.append(draft)
+                continue
+            metadata["raw_target_position"] = int(draft.target_position)
+            shifted_drafts.append(
+                CorrectionAtomDraft(
+                    correction_kind=draft.correction_kind,
+                    target_position=int(target_position),
+                    logit_position=int(target_position) - 1,
+                    valid_actions=draft.valid_actions,
+                    selected_action=draft.selected_action,
+                    metadata=metadata,
+                )
+            )
+        remapped_events.append(
+            CorrectionEvent(
+                correction_kind=event.correction_kind,
+                sample_id=event.sample_id,
+                atom_drafts=tuple(shifted_drafts),
+                metadata=event.metadata,
+            )
+        )
+    return remapped_events
 
 
 def _metadata_sequence(value: Any) -> Tuple[Any, ...]:

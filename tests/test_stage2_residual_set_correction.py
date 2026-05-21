@@ -98,6 +98,7 @@ def row(
     malformed: bool = False,
     incomplete: bool = False,
     desc_token_ids: tuple[int, ...] | None = None,
+    desc_token_positions: tuple[int, ...] | None = None,
 ) -> ObservedResidualRow:
     return ObservedResidualRow(
         desc=desc,
@@ -109,6 +110,7 @@ def row(
         malformed=malformed,
         incomplete=incomplete,
         desc_token_ids=desc_token_ids,
+        desc_token_positions=desc_token_positions,
     )
 
 
@@ -500,6 +502,7 @@ def test_spatial_wrong_desc_conflict_emits_low_weight_desc_atom_when_span_reliab
                 object_start=5,
                 object_end=19,
                 reliable_span=True,
+                desc_token_positions=tuple(range(6, 6 + len("person_right"))),
             ),
         ),
     )
@@ -517,6 +520,29 @@ def test_spatial_wrong_desc_conflict_emits_low_weight_desc_atom_when_span_reliab
     assert atom.metadata["label_conflict_weight"] == 0.25
     assert atom.metadata["slot"] == "desc"
     assert atom.metadata["no_atom_reason"] is None
+
+
+def test_spatial_wrong_desc_conflict_records_no_atom_reason_without_desc_positions() -> None:
+    state = make_state_for_objects(make_object("a", "person_left", x1=120, x2=220))
+
+    result = scan_dirty_prefix_rows(
+        state,
+        (
+            row(
+                "person_right",
+                (120, 20, 220, 40),
+                object_start=5,
+                object_end=19,
+                reliable_span=True,
+            ),
+        ),
+    )
+
+    decision = result.row_decisions[0]
+    assert decision.kind == "spatial_wrong_desc_conflict"
+    assert result.events == ()
+    assert result.no_atom_reasons == ("desc_atom_crosses_unreliable_boundary",)
+    assert decision.no_atom_reason == "desc_atom_crosses_unreliable_boundary"
 
 
 def test_spatial_wrong_desc_conflict_records_no_atom_reason_when_span_unreliable() -> None:

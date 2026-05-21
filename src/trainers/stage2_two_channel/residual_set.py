@@ -191,6 +191,7 @@ class ObservedResidualRow:
     malformed: bool = False
     incomplete: bool = False
     desc_token_ids: tuple[int, ...] | None = None
+    desc_token_positions: tuple[int, ...] | None = None
     metadata: Mapping[str, Any] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
@@ -210,6 +211,13 @@ class ObservedResidualRow:
         )
         if self.desc_token_ids is not None:
             object.__setattr__(self, "desc_token_ids", tuple(int(value) for value in self.desc_token_ids))
+        if self.desc_token_positions is not None:
+            positions = tuple(int(value) for value in self.desc_token_positions)
+            if self.desc_token_ids is not None and len(positions) != len(self.desc_token_ids):
+                raise ValueError(
+                    "ObservedResidualRow.desc_token_positions must match desc_token_ids length"
+                )
+            object.__setattr__(self, "desc_token_positions", positions)
         object.__setattr__(self, "metadata", _immutable_mapping(self.metadata))
 
 
@@ -997,6 +1005,8 @@ def _spatial_wrong_desc_event(
     divergence = _first_desc_divergence(observed_tokens, target.desc_token_ids)
     if divergence is None:
         return None
+    if observed.desc_token_positions is None or int(divergence) >= len(observed.desc_token_positions):
+        return None
 
     cursor_state = state
     for token_id in target.desc_token_ids[:divergence]:
@@ -1013,7 +1023,9 @@ def _spatial_wrong_desc_event(
     )
     selected_token_id = int(target.desc_token_ids[divergence])
     selected_action = _selected_action_for_token(actions, selected_token_id)
-    target_position = int(observed.object_start) + int(divergence)
+    target_position = int(observed.desc_token_positions[int(divergence)])
+    if target_position <= int(observed.object_start):
+        return None
     if observed.object_end is not None and target_position >= int(observed.object_end):
         return None
 
@@ -1028,6 +1040,8 @@ def _spatial_wrong_desc_event(
             "row_index": int(row_index),
             "selected_object_id": target_id,
             "label_conflict_weight": 0.25,
+            "desc_divergence": int(divergence),
+            "observed_desc_token_position": int(target_position),
             "no_atom_reason": None,
         },
     )
@@ -1039,6 +1053,7 @@ def _spatial_wrong_desc_event(
             "target_builder": "stage2_residual_dirty_prefix_scan_v1",
             "row_index": int(row_index),
             "conflicting_object_id": target_id,
+            "desc_divergence": int(divergence),
         },
     )
 

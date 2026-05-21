@@ -54,6 +54,9 @@ from src.trainers.stage2_two_channel.target_builder import (
     _compute_duplicate_diagnostics,
     _sequential_dedup_bbox_objects,
 )
+from src.trainers.stage2_two_channel.teacher_forcing_adapter import (
+    build_residual_set_target_ir,
+)
 from src.trainers.stage2_two_channel.objective_runner import (
     build_stage2_core_loss_logs,
     run_stage2_objective_pipelines,
@@ -1920,6 +1923,46 @@ def test_residual_events_use_compact_row_context_desc_tokens() -> None:
     assert atom.metadata["slot"] == "desc"
     assert atom.selected_action is not None
     assert atom.selected_action.token_id == tok._id_for("t")
+    assert atom.metadata["observed_desc_token_position"] == response_token_ids.index(tok._id_for("b"))
+    assert result.y_train_ids[atom.target_position] == tok._id_for("t")
+
+    schema_token_ids = frozenset(
+        {
+            tok._id_for(OBJECT_REF_START_TOKEN),
+            tok._id_for(BOX_START_TOKEN),
+        }
+    )
+    coord_token_ids = frozenset(range(1000))
+    role_vocab = RoleVocab(
+        schema_token_ids=schema_token_ids,
+        text_token_ids=frozenset(
+            int(token_id)
+            for token_id in result.y_train_ids
+            if int(token_id) not in schema_token_ids
+            and int(token_id) not in coord_token_ids
+        ),
+        coord_token_ids=coord_token_ids,
+        stop_token_id=tok._id_for("<|im_end|>"),
+    )
+    input_ids = torch.tensor([result.y_train_ids], dtype=torch.long)
+    target_ir = build_residual_set_target_ir(
+        input_ids=input_ids,
+        batch_index=0,
+        events=result.events,
+        role_vocab=role_vocab,
+        position_space="segment_local",
+    )
+
+    spatial_atoms = [
+        atom
+        for atom in target_ir.atoms
+        if atom.provenance["target_builder"] == "stage2_residual_dirty_prefix_scan_v1"
+    ]
+    assert len(spatial_atoms) == 1
+    ir_atom = spatial_atoms[0]
+    assert ir_atom.target_position == atom.target_position
+    assert ir_atom.selected_token_id == input_ids[0, ir_atom.target_position].item()
+    assert ir_atom.selected_token_id == tok._id_for("t")
 
 
 def _residual_result_for_compact_text(
