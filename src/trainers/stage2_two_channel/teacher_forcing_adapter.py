@@ -374,6 +374,9 @@ def _residual_atom_provenance(
         "valid_token_ids": tuple(sorted(valid_ids)),
         "support_provenance": _support_provenance_for_actions(valid_actions),
     }
+    selected_object_id = draft.metadata.get("selected_object_id")
+    if selected_object_id is not None:
+        provenance["selected_object_id"] = str(selected_object_id)
     if event.metadata.get("target_builder") is not None:
         provenance["target_builder"] = str(event.metadata["target_builder"])
     if event.correction_kind != draft.correction_kind:

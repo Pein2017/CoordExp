@@ -2964,16 +2964,10 @@ class Stage2TwoChannelTrainer(
             if residual_set_options is not None
             else 1.0
         )
-        residual_set_ul_geometry = (
-            _stage2_ul_geometry_from_options(residual_set_options)
-            if residual_set_options is not None
-            else None
-        )
-        residual_set_ul_artifact_enabled = (
-            _stage2_ul_artifact_enabled(residual_set_options)
-            if residual_set_options is not None
-            else False
-        )
+        # Task 4 residual-set supervision is GT-only. UL consensus/promotion and
+        # cluster artifacts are Task 5, so keep their schema defaults inert here.
+        residual_set_ul_geometry = None
+        residual_set_ul_artifact_enabled = False
         residual_set_role_vocab = (
             _resolve_stage2_teacher_forcing_role_vocab(self)
             if residual_set_selected

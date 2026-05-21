@@ -32,6 +32,7 @@ from src.training.teacher_forcing.ir import SupervisionAtom, TeacherForcingTarge
 from src.training.teacher_forcing.roles import TokenRole
 from src.training.span_adapters.residual_boundary import (
     ResidualBoundaryAdapter,
+    ResidualBoundaryObjectSpan,
     ResidualBoundarySlice,
 )
 from src.utils.assistant_json import dumps_coordjson
@@ -1812,10 +1813,13 @@ def _build_residual_set_correction_events(
     )
     stop_token_id = _stop_token_id(tokenizer)
 
+    ignored_ul_promoted_object_count = sum(
+        1 for item in ul_promoted_objects if isinstance(item, Mapping)
+    )
     universe = _build_residual_universe_objects(
         tokenizer=tokenizer,
         gts=gts,
-        ul_promoted_objects=ul_promoted_objects,
+        ul_promoted_objects=(),
         lambda_ul_promoted=float(lambda_ul_promoted),
     )
     universe_by_id = {item.object_id: item for item in universe}
@@ -1828,6 +1832,9 @@ def _build_residual_set_correction_events(
         "atom_count": 0.0,
         "no_event_exact_path": 0.0,
         "dropped_stop_at_empty_prefix": 0.0,
+        "ul_promoted_object_count_ignored_task4": float(
+            ignored_ul_promoted_object_count
+        ),
     }
     del parsed_bbox_objects_raw, compact_full_object_spans, accepted_objects_clean, match
     raw_ids = [int(token_id) for token_id in response_token_ids]
@@ -1898,13 +1905,10 @@ def _build_residual_set_correction_events(
             universe=universe,
             current_target=current_target,
             remaining_ids=remaining_ids,
-            draft_specs=[
-                (
-                    "object_start",
-                    int(target_position_offset) + int(target_span.object_start),
-                    0,
-                )
-            ],
+            draft_specs=_residual_continuation_draft_specs_from_span(
+                target_span=target_span,
+                target_position_offset=int(target_position_offset),
+            ),
             correction_kind=_residual_continuation_correction_kind(scan),
             sample_id=sample_id,
             rollout_index=int(rollout_index),
@@ -2310,6 +2314,30 @@ def _build_residual_universe_objects(
             )
         )
     return universe
+
+
+def _residual_continuation_draft_specs_from_span(
+    *,
+    target_span: ResidualBoundaryObjectSpan,
+    target_position_offset: int,
+) -> List[Tuple[str, int, int]]:
+    """Return full selected-object continuation specs from compact target spans."""
+
+    offset = int(target_position_offset)
+    specs: List[Tuple[str, int, int]] = [
+        ("object_start", offset + int(target_span.object_start), 0)
+    ]
+    desc_start = int(target_span.desc_start)
+    desc_end = int(target_span.desc_end)
+    for desc_prefix_len, target_position in enumerate(range(desc_start, desc_end)):
+        specs.append(("desc", offset + int(target_position), int(desc_prefix_len)))
+    specs.append(("box_start", offset + int(target_span.box_start), 0))
+    for coord_role, target_position in zip(
+        _COORD_ROLE_BY_SLOT,
+        target_span.coord_positions,
+    ):
+        specs.append((str(coord_role), offset + int(target_position), 0))
+    return specs
 
 
 def _residual_universe_object_from_gt(

@@ -1566,10 +1566,21 @@ def test_channel_b_compact_full_residual_path_attaches_ir_without_trie(
         "src.trainers.stage2_two_channel.parse_rollout_for_matching",
         lambda **kwargs: pytest.fail("legacy CoordJSON parser must not run"),
     )
+    monkeypatch.setattr(
+        "src.trainers.stage2_two_channel.mine_ul_consensus",
+        lambda *args, **kwargs: pytest.fail("Task 4 must not run UL consensus"),
+    )
+    monkeypatch.setattr(
+        "src.trainers.stage2_two_channel.write_ul_clusters_artifact",
+        lambda *args, **kwargs: pytest.fail("Task 4 must not write UL artifacts"),
+    )
 
     sample = _single_bbox_sample()
     sample["sample_id"] = "sample-prepared"
     sample["image_id"] = "image-prepared"
+    sample["assistant_payload"]["objects"].append(
+        {"bbox_2d": [50, 60, 70, 80], "desc": "dog"}
+    )
     segments, metrics = t._prepare_batch_inputs_b(
         [sample],
         _segments_only=True,
@@ -1601,12 +1612,39 @@ def test_channel_b_compact_full_residual_path_attaches_ir_without_trie(
         assert "residual_set" in atom.loss_tags
         assert atom.provenance["target_builder"] == "stage2_residual_events_v1"
         assert atom.provenance["correction_kind"] in {
-            "matched_object_repair",
             "premature_stop",
             "fp_boundary",
             "repeated_object_boundary",
         }
+        assert atom.provenance["selected_object_id"] == "gt:1"
+    role_slots = [
+        (
+            atom.selected_token_role,
+            atom.coord_role,
+        )
+        for atom in target_ir.atoms
+    ]
+    assert role_slots == [
+        (TokenRole.SCHEMA, None),
+        (TokenRole.TEXT, None),
+        (TokenRole.TEXT, None),
+        (TokenRole.TEXT, None),
+        (TokenRole.SCHEMA, None),
+        (TokenRole.COORD, "x1"),
+        (TokenRole.COORD, "y1"),
+        (TokenRole.COORD, "x2"),
+        (TokenRole.COORD, "y2"),
+    ]
     assert "stage2_ab/channel_b/residual_set/ul/promoted_clusters" in metrics
+    assert metrics[
+        "stage2_ab/channel_b/residual_set/ul/promoted_clusters"
+    ] == pytest.approx(0.0)
+    assert metrics[
+        "stage2_ab/channel_b/residual_set/ul/artifact_rows"
+    ] == pytest.approx(0.0)
+    assert metrics[
+        "stage2_ab/channel_b/residual_set/ul/artifact_written"
+    ] == pytest.approx(0.0)
     assert "stage2_ab/channel_b/ul/promoted_clusters" not in metrics
 
 
@@ -2059,8 +2097,78 @@ def test_residual_target_builder_committed_match_removes_object_through_scanner(
     assert result.metrics["scanner_row_decision/committed"] == pytest.approx(1.0)
     assert result.metrics["scanner_final_remaining_object_count"] == pytest.approx(1.0)
     assert [event.correction_kind for event in result.events] == ["premature_stop"]
-    assert result.events[0].atom_drafts[0].metadata["selected_object_id"] == "gt:1"
+    slots = [str(atom.metadata["slot"]) for atom in result.events[0].atom_drafts]
+    assert slots == [
+        "object_start",
+        "desc",
+        "desc",
+        "desc",
+        "box_start",
+        "x1",
+        "y1",
+        "x2",
+        "y2",
+    ]
+    assert [
+        atom.metadata["selected_object_id"] for atom in result.events[0].atom_drafts
+    ] == ["gt:1"] * 9
     assert all(event.correction_kind != "matched_object_repair" for event in result.events)
+
+
+def test_residual_target_builder_ignores_ul_promoted_objects_for_task4() -> None:
+    tok = _CoordLiteralTokenizer()
+    result = _build_residual_set_correction_events(
+        tokenizer=tok,
+        response_token_ids=[],
+        parsed_bbox_objects_raw=[],
+        compact_full_object_spans=[],
+        gts=[
+            GTObject(
+                index=0,
+                geom_type="bbox_2d",
+                points_norm1000=[10, 20, 30, 40],
+                desc="cat",
+            ),
+        ],
+        accepted_objects_clean=[],
+        match=MatchResult(
+            matched_pairs=[],
+            fn_gt_indices=[0],
+            fp_pred_indices=[],
+            gating_rejections=0,
+            matched_maskiou_sum=0.0,
+            matched_maskiou_count=0,
+        ),
+        ul_promoted_objects=[
+            {
+                "object": GTObject(
+                    index=7,
+                    geom_type="bbox_2d",
+                    points_norm1000=[50, 60, 70, 80],
+                    desc="dog",
+                ),
+                "loss_weight": 0.25,
+            }
+        ],
+        assignment_iou_threshold=0.5,
+        sample_id="sample-ignore-ul",
+        rollout_index=0,
+        lambda_ul_promoted=0.5,
+    )
+
+    assert result.metrics["residual_object_count"] == pytest.approx(1.0)
+    assert result.metrics["ul_promoted_object_count"] == pytest.approx(0.0)
+    assert result.metrics["ul_promoted_object_count_ignored_task4"] == pytest.approx(1.0)
+    assert result.events
+    assert [
+        atom.metadata["selected_object_id"] for atom in result.events[0].atom_drafts
+    ] == ["gt:0"] * len(result.events[0].atom_drafts)
+    assert all(
+        "ul:" not in candidate_id
+        for atom in result.events[0].atom_drafts
+        for action in atom.valid_actions
+        for candidate_id in action.candidate_ids_after
+    )
 
 
 @pytest.mark.parametrize("separator", ["\n", ""])
