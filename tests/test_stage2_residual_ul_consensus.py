@@ -19,6 +19,8 @@ from src.trainers.stage2_two_channel.ul_consensus import (
 
 GEOMETRY = ULGeometryConfig(
     iou_min=0.7,
+    gray_iou_min=0.7,
+    duplicate_burst_iou_min=0.7,
     center_distance_scale_max=0.2,
     area_ratio_max=1.5,
     aspect_ratio_max=1.5,
@@ -116,6 +118,97 @@ def test_same_rollout_near_duplicates_contribute_one_vote() -> None:
     assert tuple(member.local_index for member in promoted.members_by_rollout["r0"]) == (0,)
 
 
+def test_duplicate_burst_threshold_controls_same_rollout_suppression() -> None:
+    loose_duplicate_geometry = ULGeometryConfig(
+        iou_min=0.7,
+        gray_iou_min=0.7,
+        duplicate_burst_iou_min=0.7,
+        center_distance_scale_max=0.2,
+        area_ratio_max=1.5,
+        aspect_ratio_max=1.5,
+        consumed_overlap_iou_min=0.8,
+    )
+    strict_duplicate_geometry = ULGeometryConfig(
+        iou_min=0.7,
+        gray_iou_min=0.7,
+        duplicate_burst_iou_min=0.95,
+        center_distance_scale_max=0.2,
+        area_ratio_max=1.5,
+        aspect_ratio_max=1.5,
+        consumed_overlap_iou_min=0.8,
+    )
+    rollouts = (
+        make_valid_rollout(
+            "r0",
+            (
+                make_unmatched("person", (100, 100, 200, 220), local_index=0),
+                make_unmatched("person", (108, 100, 208, 220), local_index=1),
+            ),
+        ),
+        make_valid_rollout("r1", (make_unmatched("person", (102, 102, 202, 222)),)),
+    )
+
+    loose = mine_ul_consensus(
+        rollouts,
+        min_ul_valid_rollouts=2,
+        consensus_ratio=1.0,
+        geometry=loose_duplicate_geometry,
+    )
+    strict = mine_ul_consensus(
+        rollouts,
+        min_ul_valid_rollouts=2,
+        consensus_ratio=1.0,
+        geometry=strict_duplicate_geometry,
+    )
+
+    assert loose.duplicate_like_suppressed_count == 1
+    assert strict.duplicate_like_suppressed_count == 0
+
+
+def test_ul_gray_iou_low_controls_gray_zone_quarantine() -> None:
+    gray_geometry = ULGeometryConfig(
+        iou_min=0.9,
+        gray_iou_min=0.8,
+        duplicate_burst_iou_min=0.95,
+        center_distance_scale_max=0.2,
+        area_ratio_max=1.5,
+        aspect_ratio_max=1.5,
+        consumed_overlap_iou_min=0.8,
+    )
+    strict_geometry = ULGeometryConfig(
+        iou_min=0.9,
+        gray_iou_min=0.88,
+        duplicate_burst_iou_min=0.95,
+        center_distance_scale_max=0.2,
+        area_ratio_max=1.5,
+        aspect_ratio_max=1.5,
+        consumed_overlap_iou_min=0.8,
+    )
+    rollouts = (
+        make_valid_rollout("r0", (make_unmatched("person", (100, 100, 200, 220)),)),
+        make_valid_rollout("r1", (make_unmatched("person", (108, 100, 208, 220)),)),
+    )
+
+    gray = mine_ul_consensus(
+        rollouts,
+        min_ul_valid_rollouts=2,
+        consensus_ratio=1.0,
+        geometry=gray_geometry,
+    )
+    strict = mine_ul_consensus(
+        rollouts,
+        min_ul_valid_rollouts=2,
+        consensus_ratio=1.0,
+        geometry=strict_geometry,
+    )
+
+    assert gray.promoted_clusters == ()
+    assert len(gray.quarantined_clusters) == 1
+    assert gray.quarantined_clusters[0].reason == "geometry_gray_zone"
+    assert strict.quarantined_clusters == ()
+    assert any(cluster.reason == "geometry_mismatch" for cluster in strict.rejected_clusters)
+
+
 def test_cross_rollout_duplicate_burst_is_quarantined_by_consumed_overlap() -> None:
     consumed = (ULMember("gt", 0, "person", "person", (98, 99, 202, 223)),)
     rollouts = (
@@ -157,6 +250,8 @@ def test_geometry_complete_link_rejects_far_box_without_promotion() -> None:
 def test_center_distance_uses_pair_median_diagonal_not_max_diagonal() -> None:
     geometry = ULGeometryConfig(
         iou_min=0.0,
+        gray_iou_min=0.0,
+        duplicate_burst_iou_min=0.0,
         center_distance_scale_max=0.2,
         area_ratio_max=30.0,
         aspect_ratio_max=2.0,
@@ -181,6 +276,8 @@ def test_center_distance_uses_pair_median_diagonal_not_max_diagonal() -> None:
 def test_ul_consensus_artifacts_are_stable_under_rollout_order_permutation() -> None:
     geometry = ULGeometryConfig(
         iou_min=0.0,
+        gray_iou_min=0.0,
+        duplicate_burst_iou_min=0.0,
         center_distance_scale_max=0.8,
         area_ratio_max=1.0,
         aspect_ratio_max=1.0,
@@ -300,6 +397,8 @@ def test_artifact_rows_include_all_decisions_and_required_fields() -> None:
             "area_ratio_max": GEOMETRY.area_ratio_max,
             "aspect_ratio_max": GEOMETRY.aspect_ratio_max,
             "consumed_overlap_iou_min": GEOMETRY.consumed_overlap_iou_min,
+            "gray_iou_min": GEOMETRY.gray_iou_min,
+            "duplicate_burst_iou_min": GEOMETRY.duplicate_burst_iou_min,
         }
         assert {
             "decision",

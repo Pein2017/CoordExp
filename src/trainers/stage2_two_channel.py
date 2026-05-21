@@ -93,6 +93,8 @@ from .teacher_forcing.token_types import build_token_type_masks
 
 logger = logging.getLogger(__name__)
 
+_RESIDUAL_SET_INTERNAL_ROLLIN_POLICY = "random_valid_branch"
+
 
 def write_ul_clusters_artifact(
     root: os.PathLike[str] | str,
@@ -126,6 +128,10 @@ def _stage2_ul_geometry_from_options(options: Mapping[str, Any]) -> ULGeometryCo
         area_ratio_max=float("inf"),
         aspect_ratio_max=float("inf"),
         consumed_overlap_iou_min=float(options.get("commit_iou_threshold", 0.75)),
+        gray_iou_min=float(options.get("ul_gray_iou_low", 0.30)),
+        duplicate_burst_iou_min=float(
+            options.get("duplicate_burst_iou_threshold", 0.95)
+        ),
     )
 
 
@@ -2762,11 +2768,7 @@ class Stage2TwoChannelTrainer(
             )
         )
         residual_set_selected = residual_set_options is not None
-        residual_set_rollin_policy = (
-            str(residual_set_options.get("rollin_policy", "random_valid_branch"))
-            if residual_set_options is not None
-            else "random_valid_branch"
-        )
+        residual_set_rollin_policy = _RESIDUAL_SET_INTERNAL_ROLLIN_POLICY
         residual_set_base_seed = (
             int(residual_set_options.get("base_seed", 17))
             if residual_set_options is not None

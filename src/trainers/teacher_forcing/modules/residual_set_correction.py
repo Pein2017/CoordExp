@@ -21,7 +21,32 @@ _METRIC_PREFIX = "stage2_ab/channel_b/residual_set"
 
 @dataclass(frozen=True)
 class ResidualSetCorrectionConfig:
-    coverage_strength: float = 0.0
+    lambda_type: float = 1.0
+    lambda_inner: float = 1.0
+
+
+_RESIDUAL_SET_V1_CONFIG_KEYS = frozenset(
+    {
+        "prepared_rollout_jsonl",
+        "expected_num_rollouts",
+        "base_seed",
+        "lambda_type",
+        "lambda_inner",
+        "fallback_loss_weight",
+        "lambda_ul_promoted",
+        "label_conflict_weight",
+        "commit_iou_threshold",
+        "duplicate_burst_iou_threshold",
+        "ul_cluster_iou_threshold",
+        "ul_gray_iou_low",
+        "ul_consensus_ratio",
+        "min_ul_valid_rollouts",
+        "clean_gt_sft_mix",
+        "strict_prepared_rollout_tokens",
+        "legacy_reencode_fallback",
+        "strict_builder_invariants",
+    }
+)
 
 
 def _coerce_nonnegative_finite_float(value: Any, *, key: str) -> float:
@@ -39,11 +64,21 @@ def _coerce_nonnegative_finite_float(value: Any, *, key: str) -> float:
 
 def build_residual_set_correction_config(raw_config: Any) -> ResidualSetCorrectionConfig:
     cfg = raw_config if isinstance(raw_config, Mapping) else {}
+    unknown_keys = sorted(str(key) for key in cfg if str(key) not in _RESIDUAL_SET_V1_CONFIG_KEYS)
+    if unknown_keys:
+        raise ValueError(
+            "residual_set_correction config contains unsupported key(s): "
+            + ", ".join(unknown_keys)
+        )
     default = ResidualSetCorrectionConfig()
     return ResidualSetCorrectionConfig(
-        coverage_strength=_coerce_nonnegative_finite_float(
-            cfg.get("coverage_strength", default.coverage_strength),
-            key="coverage_strength",
+        lambda_type=_coerce_nonnegative_finite_float(
+            cfg.get("lambda_type", default.lambda_type),
+            key="lambda_type",
+        ),
+        lambda_inner=_coerce_nonnegative_finite_float(
+            cfg.get("lambda_inner", default.lambda_inner),
+            key="lambda_inner",
         ),
     )
 
@@ -211,10 +246,10 @@ def run_residual_set_correction_module(
             "residual_set_correction requires spec to be a PipelineModuleSpec"
         )
 
+    config = build_residual_set_correction_config(spec.config)
     if str(context.channel or "").strip().upper() != "B":
         return _zero_result(context)
 
-    config = build_residual_set_correction_config(spec.config)
     role_vocab: RoleVocab | None = None
 
     loss_terms: list[torch.Tensor] = []
@@ -273,18 +308,20 @@ def run_residual_set_correction_module(
                 row_logits,
                 atom=atom,
                 role_vocab=role_vocab,
-                coverage_strength=config.coverage_strength,
+                coverage_strength=0.0,
+            )
+            weighted_atom_loss = (
+                atom_loss.type * float(config.lambda_type)
+                + atom_loss.valid * float(config.lambda_inner)
             )
             atom_weight = row_logits.new_tensor(
                 float(atom.loss_weight),
                 dtype=torch.float32,
             )
-            loss_terms.append(atom_loss.total * atom_weight)
-            type_terms.append(atom_loss.type * atom_weight)
-            valid_terms.append(atom_loss.valid * atom_weight)
-            coverage_terms.append(
-                atom_loss.coverage * float(config.coverage_strength) * atom_weight
-            )
+            loss_terms.append(weighted_atom_loss * atom_weight)
+            type_terms.append(atom_loss.type * float(config.lambda_type) * atom_weight)
+            valid_terms.append(atom_loss.valid * float(config.lambda_inner) * atom_weight)
+            coverage_terms.append(atom_loss.coverage * 0.0 * atom_weight)
             valid_probs.append(atom_loss.valid_probability)
             allowed_probs.append(atom_loss.allowed_probability)
 

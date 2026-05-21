@@ -54,18 +54,30 @@ class ULGeometryConfig:
     area_ratio_max: float
     aspect_ratio_max: float
     consumed_overlap_iou_min: float
+    gray_iou_min: float | None = None
+    duplicate_burst_iou_min: float | None = None
 
     def __post_init__(self) -> None:
+        if self.gray_iou_min is None:
+            object.__setattr__(self, "gray_iou_min", self.iou_min)
+        if self.duplicate_burst_iou_min is None:
+            object.__setattr__(self, "duplicate_burst_iou_min", self.iou_min)
         for name in (
             "iou_min",
             "center_distance_scale_max",
             "area_ratio_max",
             "aspect_ratio_max",
             "consumed_overlap_iou_min",
+            "gray_iou_min",
+            "duplicate_burst_iou_min",
         ):
             object.__setattr__(self, name, _finite_float(getattr(self, name), name=name))
         if not 0.0 <= self.iou_min <= 1.0:
             raise ValueError("iou_min must be in [0, 1]")
+        if not 0.0 <= self.gray_iou_min <= self.iou_min:
+            raise ValueError("gray_iou_min must be in [0, iou_min]")
+        if not 0.0 <= self.duplicate_burst_iou_min <= 1.0:
+            raise ValueError("duplicate_burst_iou_min must be in [0, 1]")
         if not 0.0 <= self.consumed_overlap_iou_min <= 1.0:
             raise ValueError("consumed_overlap_iou_min must be in [0, 1]")
         if self.center_distance_scale_max < 0.0:
@@ -226,14 +238,26 @@ def mine_ul_consensus(
 
             support_count = len(working_cluster.members_by_rollout())
             has_full_support = support_count == k_valid
-            pairwise_pass, _ = _pairwise_geometry(working_cluster.members, geometry)
+            pairwise_pass, pairwise_records = _pairwise_geometry(working_cluster.members, geometry)
+            pairwise_gray_pass = all(bool(record["gray_pass"]) for record in pairwise_records)
             if k_valid < min_ul_valid_rollouts:
                 rejected_clusters.append(_to_cluster(working_cluster, k_valid, "rejected", "insufficient_support", geometry))
             elif not has_full_support:
                 reason = "geometry_mismatch" if full_desc_support_but_split else "insufficient_support"
                 rejected_clusters.append(_to_cluster(working_cluster, k_valid, "rejected", reason, geometry))
             elif not pairwise_pass:
-                rejected_clusters.append(_to_cluster(working_cluster, k_valid, "rejected", "geometry_mismatch", geometry))
+                if pairwise_gray_pass:
+                    quarantined_clusters.append(
+                        _to_cluster(
+                            working_cluster,
+                            k_valid,
+                            "quarantined",
+                            "geometry_gray_zone",
+                            geometry,
+                        )
+                    )
+                else:
+                    rejected_clusters.append(_to_cluster(working_cluster, k_valid, "rejected", "geometry_mismatch", geometry))
             else:
                 consumed_overlap = _consumed_overlap_records(working_cluster.members, consumed_members, geometry)
                 if consumed_overlap:
@@ -310,6 +334,8 @@ def _geometry_thresholds(geometry: ULGeometryConfig) -> dict[str, float]:
         "area_ratio_max": geometry.area_ratio_max,
         "aspect_ratio_max": geometry.aspect_ratio_max,
         "consumed_overlap_iou_min": geometry.consumed_overlap_iou_min,
+        "gray_iou_min": float(geometry.gray_iou_min),
+        "duplicate_burst_iou_min": float(geometry.duplicate_burst_iou_min),
     }
 
 
@@ -375,7 +401,7 @@ def _find_same_rollout_duplicate_cluster(
         for existing in cluster.members:
             if existing.rollout_id != member.rollout_id:
                 continue
-            record = _geometry_record(existing, member, geometry)
+            record = _duplicate_geometry_record(existing, member, geometry)
             if record["pass"]:
                 candidates.append((_geometry_score((record,), cluster), cluster))
     if not candidates:
@@ -393,7 +419,7 @@ def _find_compatible_cluster(
         if any(existing.rollout_id == member.rollout_id for existing in cluster.members):
             continue
         records = tuple(_geometry_record(existing, member, geometry) for existing in cluster.members)
-        if records and all(record["pass"] for record in records):
+        if records and all(record["gray_pass"] for record in records):
             candidates.append((_geometry_score(records, cluster), cluster))
     if not candidates:
         return None
@@ -465,6 +491,12 @@ def _geometry_record(left: ULMember, right: ULMember, geometry: ULGeometryConfig
         and area_ratio <= geometry.area_ratio_max
         and aspect_ratio_ratio <= geometry.aspect_ratio_max
     )
+    gray_passed = (
+        iou >= float(geometry.gray_iou_min)
+        and center_distance_scale <= geometry.center_distance_scale_max
+        and area_ratio <= geometry.area_ratio_max
+        and aspect_ratio_ratio <= geometry.aspect_ratio_max
+    )
     return MappingProxyType(
         {
             "left_rollout_id": left.rollout_id,
@@ -476,6 +508,28 @@ def _geometry_record(left: ULMember, right: ULMember, geometry: ULGeometryConfig
             "area_ratio": area_ratio,
             "aspect_ratio_ratio": aspect_ratio_ratio,
             "pass": passed,
+            "gray_pass": gray_passed,
+        }
+    )
+
+
+def _duplicate_geometry_record(left: ULMember, right: ULMember, geometry: ULGeometryConfig) -> Mapping[str, Any]:
+    iou = _bbox_iou(left.bbox_norm1000, right.bbox_norm1000)
+    center_distance_scale = _center_distance_scale(left.bbox_norm1000, right.bbox_norm1000)
+    area_ratio = _area_ratio(left.bbox_norm1000, right.bbox_norm1000)
+    aspect_ratio_ratio = _aspect_ratio_ratio(left.bbox_norm1000, right.bbox_norm1000)
+    return MappingProxyType(
+        {
+            "left_rollout_id": left.rollout_id,
+            "left_local_index": left.local_index,
+            "right_rollout_id": right.rollout_id,
+            "right_local_index": right.local_index,
+            "iou": iou,
+            "center_distance_scale": center_distance_scale,
+            "area_ratio": area_ratio,
+            "aspect_ratio_ratio": aspect_ratio_ratio,
+            "pass": iou >= float(geometry.duplicate_burst_iou_min),
+            "gray_pass": iou >= float(geometry.duplicate_burst_iou_min),
         }
     )
 

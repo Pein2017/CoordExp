@@ -26,7 +26,7 @@ def make_role_vocab(*, text_ids: set[int] | None = None) -> RoleVocab:
 
 def make_spec(
     *,
-    coverage_strength: float = 0.0,
+    config: dict[str, object] | None = None,
     weight: float = 1.0,
 ) -> PipelineModuleSpec:
     return PipelineModuleSpec(
@@ -34,7 +34,7 @@ def make_spec(
         enabled=True,
         weight=weight,
         channels=("A", "B"),
-        config={"coverage_strength": coverage_strength},
+        config=dict(config or {}),
     )
 
 
@@ -155,44 +155,39 @@ def test_valid_set_marginal_is_not_selected_token_ce() -> None:
     assert selected_only_ce.item() > 0.5
 
 
-def test_coverage_strength_zero_disables_coverage_and_one_penalizes_imbalance() -> None:
+def test_residual_set_module_rejects_stale_coverage_strength_config() -> None:
     from src.trainers.teacher_forcing.modules.residual_set_correction import (
         run_residual_set_correction_module,
     )
 
-    logits = torch.full((1, 2, 50), -20.0, dtype=torch.float32)
-    logits[0, 0, 10] = 20.0
-    logits[0, 0, 11] = 0.0
-    target_ir = make_ir(coverage_target_weights={10: 0.5, 11: 0.5})
-    context = make_context(logits=logits, target_ir=target_ir)
-
-    no_coverage = run_residual_set_correction_module(
-        context=context,
-        spec=make_spec(coverage_strength=0.0),
-    )
-    with_coverage = run_residual_set_correction_module(
-        context=context,
-        spec=make_spec(coverage_strength=1.0),
-    )
-
-    assert no_coverage.metrics["stage2_ab/channel_b/residual_set/component/coverage"] == 0.0
-    assert with_coverage.loss.item() > no_coverage.loss.item() + 5.0
-    assert (
-        with_coverage.metrics["stage2_ab/channel_b/residual_set/component/coverage"]
-        > 5.0
-    )
+    with pytest.raises(ValueError, match="coverage_strength"):
+        run_residual_set_correction_module(
+            context=make_context(),
+            spec=make_spec(config={"coverage_strength": 1.0}),
+        )
 
 
-@pytest.mark.parametrize("coverage_strength", [True, float("nan"), float("inf"), -0.1])
-def test_coverage_config_rejects_bool_nonfinite_and_negative_values(
-    coverage_strength: object,
-) -> None:
+def test_residual_set_module_applies_lambda_inner_to_valid_set_term() -> None:
     from src.trainers.teacher_forcing.modules.residual_set_correction import (
-        build_residual_set_correction_config,
+        run_residual_set_correction_module,
     )
 
-    with pytest.raises((TypeError, ValueError), match="coverage_strength"):
-        build_residual_set_correction_config({"coverage_strength": coverage_strength})
+    context = make_context(
+        target_ir=make_ir(valid_token_ids=frozenset({10})),
+        role_vocab=make_role_vocab(text_ids={10, 11}),
+    )
+
+    default_weight = run_residual_set_correction_module(
+        context=context,
+        spec=make_spec(config={"lambda_type": 1.0, "lambda_inner": 1.0}),
+    )
+    disabled_inner = run_residual_set_correction_module(
+        context=context,
+        spec=make_spec(config={"lambda_type": 1.0, "lambda_inner": 0.0}),
+    )
+
+    assert default_weight.loss.item() > disabled_inner.loss.item() + 0.5
+    assert disabled_inner.metrics["stage2_ab/channel_b/residual_set/component/valid"] == 0.0
 
 
 def test_no_role_vocab_fails_closed_with_clear_error() -> None:
@@ -397,7 +392,7 @@ def test_non_b_channel_is_zero_noop_even_without_role_vocab() -> None:
         context=context,
         spec=PipelineModuleSpec(
             name="residual_set_correction",
-            config={"coverage_strength": True},
+            config={},
         ),
     )
 
@@ -430,7 +425,7 @@ def test_state_contribution_and_pipeline_projection_route_are_visible() -> None:
                 "name": "residual_set_correction",
                 "weight": 2.0,
                 "channels": ["B"],
-                "config": {"coverage_strength": 0.0},
+                "config": {},
             }
         ],
         diagnostics_specs=[],
@@ -446,7 +441,7 @@ def test_state_contribution_and_pipeline_projection_route_are_visible() -> None:
                 "name": "residual_set_correction",
                 "weight": 2.0,
                 "channels": ["B"],
-                "config": {"coverage_strength": 0.0},
+                "config": {},
             }
         ],
         text_provenance="B_rollout_text",
