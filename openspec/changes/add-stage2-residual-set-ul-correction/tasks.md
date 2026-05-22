@@ -156,9 +156,8 @@ superseded.
   crowded cases.
 - [x] 10.6b Unit-test canonical UL artifact relative path.
 - [x] 10.7 Run targeted tests with `conda run -n ms python -m pytest <targets>`.
-- [ ] 10.8 Run small offline prepared-rollout smoke/overfit checks from the
+- [x] 10.8 Run small offline prepared-rollout smoke/overfit checks from the
   `et-rmp-ce-ckpt-3660+` / checkpoint-3664 base before model-quality claims.
-  CPU prepared-rollout preflight is recorded in
-  `progress/diagnostics/2026-05-22_residual_set_refactor_preflight.md`; the
-  4-GPU smoke command remains intentionally unlaunched pending explicit
-  approval for the high-cost run.
+  CPU prepared-rollout preflight and the 4-GPU `smoke_1step` result are
+  recorded in
+  `progress/diagnostics/2026-05-22_residual_set_refactor_preflight.md`.

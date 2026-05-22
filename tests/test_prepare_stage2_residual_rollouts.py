@@ -7,7 +7,9 @@ import types
 from pathlib import Path
 
 from scripts.tools.prepare_stage2_residual_rollouts import (
+    _infer_dataset_name_from_jsonl,
     _load_tokenizer_encode_fn,
+    _runtime_sample_id,
     _should_try_next_tokenizer_source,
     _tokenizer_source_candidates,
     build_fixture_records,
@@ -61,6 +63,44 @@ def test_prepare_stage2_residual_rollouts_fixture_records_have_v1_fields() -> No
     assert len(kept) == 2
     assert stats.K_after_dedup == 2
     assert stats.exact_duplicate_attempts == 1
+
+
+def test_prepare_stage2_residual_rollouts_fixture_uses_runtime_sample_id_for_jsonl_records() -> None:
+    records = build_fixture_records(
+        [
+            {
+                "image_id": 9,
+                "images": ["images/train2017/000000000009.jpg"],
+                "objects": [
+                    {
+                        "desc": "orange",
+                        "bbox_2d": [10, 20, 30, 40],
+                    }
+                ],
+            }
+        ],
+        encode_fn=lambda text: [ord(ch) for ch in text],
+        expected_num_rollouts=1,
+        seed=17,
+        greedy_rollouts=1,
+        sampling_rollouts=0,
+        dataset_name="coco",
+    )
+
+    assert records[0]["sample_id"] == _runtime_sample_id("coco", 0)
+    assert records[0]["image_id"] == "9"
+    assert records[0]["dataset"] == "coco"
+    assert records[0]["base_idx"] == 0
+    assert records[0]["rollout_id"] == f"{_runtime_sample_id('coco', 0)}:r0"
+
+
+def test_prepare_stage2_residual_rollouts_infers_dataset_name_like_base_caption_dataset() -> None:
+    assert (
+        _infer_dataset_name_from_jsonl(
+            Path("public_data/coco/rescale_32_1024_bbox_max60/train.coord.jsonl")
+        )
+        == "coco"
+    )
 
 
 def test_prepare_stage2_residual_rollouts_fixture_keeps_clean_k_after_dedup() -> None:

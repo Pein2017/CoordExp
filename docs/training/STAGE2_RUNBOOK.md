@@ -91,6 +91,9 @@ Current internal ownership seams:
 - `residual_set_correction` is an offline prepared-rollout Channel-B objective:
   - `config.prepared_rollout_jsonl` is required and is resolved before trainer setup
   - live rollout backend generation is bypassed for residual-set offline mode
+  - fixture `sample_id` values must match the runtime encoded dataset metadata
+    (`dataset` namespace plus `base_idx` for JSONL-backed samples); raw
+    `image_id` and `image_path` remain provenance/secondary lookup keys
   - the current ckpt3664 smoke fixture path is
     `output/stage2_ab/prepared_rollouts/train8_ckpt3664.jsonl`
   - prepare deterministic fixture/preflight data with

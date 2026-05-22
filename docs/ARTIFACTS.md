@@ -309,6 +309,10 @@ artifacts into `training.output_dir` before training starts:
   - Each JSONL row includes `sample_id`, `image_id`, `image_path`,
     `rollout_id`, `response_token_ids`, `raw_text`, `decode_mode`, and
     `generation_config_hash`.
+  - Fixture rows generated from offline JSONL use the same runtime `sample_id`
+    contract as `BaseCaptionDataset`: dataset namespace plus `base_idx`. The
+    source `image_id`/`image_path` stay present for provenance and secondary
+    lookup.
   - The ckpt3664 smoke fixture uses
     `output/stage2_ab/prepared_rollouts/train8_ckpt3664.jsonl`.
   - Produce deterministic fixture/preflight records with

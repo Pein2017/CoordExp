@@ -13,6 +13,7 @@ import argparse
 import hashlib
 import json
 import sys
+import zlib
 from pathlib import Path
 from typing import Any, Callable, Iterable, Mapping, Sequence
 
@@ -104,6 +105,19 @@ def _load_sample_records(path: Path, limit: int) -> list[dict[str, Any]]:
     return records
 
 
+def _infer_dataset_name_from_jsonl(path: Path) -> str:
+    parts = {part.lower() for part in Path(str(path)).parts}
+    for candidate in ("lvis", "coco", "refcoco", "refcoco+", "refcocog", "vg"):
+        if candidate in parts:
+            return candidate.replace("+", "plus")
+    return Path(str(path)).stem
+
+
+def _runtime_sample_id(dataset_name: str, base_idx: int) -> str:
+    namespace = zlib.crc32(str(dataset_name).encode("utf-8")) & 0xFFFF
+    return str((namespace << 32) | (int(base_idx) & 0xFFFFFFFF))
+
+
 def _coord_token(value: Any) -> str:
     if isinstance(value, str) and value.startswith("<|coord_"):
         return value
@@ -145,10 +159,17 @@ def _fixture_variant_text(raw_text: str, *, sample_index: int, rollout_index: in
     return f"{raw_text}\n{extra}"
 
 
-def _sample_id(sample: Mapping[str, Any], index: int) -> str:
+def _sample_id(
+    sample: Mapping[str, Any],
+    index: int,
+    *,
+    dataset_name: str | None = None,
+) -> str:
     value = sample.get("sample_id")
     if value is not None:
         return str(value)
+    if dataset_name:
+        return _runtime_sample_id(str(dataset_name), int(index))
     image_id = sample.get("image_id")
     if image_id is not None:
         return str(image_id)
@@ -189,6 +210,7 @@ def build_fixture_records(
     seed: int,
     greedy_rollouts: int,
     sampling_rollouts: int,
+    dataset_name: str | None = None,
     include_debug_cases: Iterable[str] = (),
 ) -> list[dict[str, Any]]:
     gen_hash = generation_config_hash(
@@ -203,6 +225,14 @@ def build_fixture_records(
     debug_cases = {str(item).strip() for item in include_debug_cases if str(item).strip()}
     records: list[dict[str, Any]] = []
     for sample_index, sample in enumerate(samples):
+        sample_id = _sample_id(
+            sample,
+            int(sample_index),
+            dataset_name=dataset_name,
+        )
+        source_sample_id = (
+            str(sample.get("sample_id")) if sample.get("sample_id") is not None else None
+        )
         rollout_specs = [
             ("greedy", ordinal)
             for ordinal in range(int(greedy_rollouts))
@@ -224,10 +254,10 @@ def build_fixture_records(
                     rollout_index=int(rollout_index),
                 )
             record = {
-                "sample_id": _sample_id(sample, int(sample_index)),
+                "sample_id": sample_id,
                 "image_id": _image_id(sample, int(sample_index)),
                 "image_path": _image_path(sample),
-                "rollout_id": f"{_sample_id(sample, int(sample_index))}:r{int(rollout_index)}",
+                "rollout_id": f"{sample_id}:r{int(rollout_index)}",
                 "response_token_ids": [int(token_id) for token_id in encode_fn(raw_text)],
                 "raw_text": raw_text,
                 "decode_mode": str(decode_mode),
@@ -237,6 +267,11 @@ def build_fixture_records(
                 "producer_mode": "fixture",
                 "decode_ordinal": int(decode_ordinal),
             }
+            if dataset_name:
+                record["dataset"] = str(dataset_name)
+                record["base_idx"] = int(sample_index)
+            if source_sample_id is not None and source_sample_id != sample_id:
+                record["source_sample_id"] = source_sample_id
             if dirty:
                 record["debug_case"] = "invalid_bbox_dirty_prefix"
             records.append(record)
@@ -378,6 +413,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     records = _load_sample_records(train_jsonl, int(args.train_sample_limit))
     if not records:
         raise SystemExit(f"no training records found in {train_jsonl}")
+    dataset_name = _infer_dataset_name_from_jsonl(train_jsonl)
     encode_fn = _load_tokenizer_encode_fn(str(info["checkpoint"]))
     out_records = build_fixture_records(
         records,
@@ -386,6 +422,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         seed=int(args.seed),
         greedy_rollouts=int(args.greedy_rollouts),
         sampling_rollouts=int(args.sampling_rollouts),
+        dataset_name=dataset_name,
         include_debug_cases=_parse_debug_cases(args.include_debug_cases),
     )
     args.out.parent.mkdir(parents=True, exist_ok=True)
