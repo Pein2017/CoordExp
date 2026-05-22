@@ -12,6 +12,11 @@
 - Ask only when a choice affects research meaning, high cost, destructive cleanup, external publication, security/privacy, or irreversible compatibility.
 - Keep changes scoped; do not refactor unrelated code.
 
+## Codex Agent Operations
+- Use subagents when parallel work materially helps: independent audits, subsystem exploration, disjoint implementation slices, or separate verification tracks.
+- Remember the active subagent capacity is limited to 6. Close completed or no-longer-needed subagents promptly before launching more.
+- For complex or long-running tasks, set an explicit `/goal` that captures the current objective, scope boundary, and stop condition before substantial execution.
+
 ## Change Safety
 - Preserve unrelated user work. Inspect dirty state before staging, committing, or broad edits.
 - Do not run destructive commands or delete data without explicit approval.
