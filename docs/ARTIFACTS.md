@@ -296,9 +296,24 @@ artifacts into `training.output_dir` before training starts:
   - Channel-B `prepare_failures/` dumps preserve both token IDs and decoded
     rollout/prefix text so malformed JSON failure modes can be inspected without
     manual retokenization.
+  - Stage-2 residual-set UL consensus writes the canonical review sidecar
+    `monitor_dumps/ul_clusters.jsonl` when promoted/rejected/review UL cluster
+    artifact dumping is enabled. Rows carry step/sample/rollout provenance and
+    norm1000 xyxy boxes; the path is flat under `monitor_dumps/`, not nested by
+    step.
   - These remain raw telemetry artifacts; shared GT-vs-Pred review rendering
     uses an explicit normalized `vis_resources/gt_vs_pred.jsonl` sidecar
     instead of taking ownership of the monitor-dump path layout.
+- `output/stage2_ab/prepared_rollouts/*.jsonl`
+  - Offline prepared rollout inputs for `residual_set_correction`.
+  - Each JSONL row includes `sample_id`, `image_id`, `image_path`,
+    `rollout_id`, `response_token_ids`, `raw_text`, `decode_mode`, and
+    `generation_config_hash`.
+  - The ckpt3664 smoke fixture uses
+    `output/stage2_ab/prepared_rollouts/train8_ckpt3664.jsonl`.
+  - Produce deterministic fixture/preflight records with
+    `scripts/tools/prepare_stage2_residual_rollouts.py`; real GPU rollout
+    generation is not owned by this fixture producer yet.
 - `eval_detection/step_<global_step>/` when Stage-1 `custom.eval_detection.enabled: true`
   - Generation-backed eval-step artifacts for standard Stage-1 SFT runs.
   - Writes `gt_vs_pred.jsonl`, `gt_vs_pred_scored.jsonl`, `infer_summary.json`,
@@ -510,6 +525,11 @@ Stage-2 trainers also emit rollout-specific metrics directly
   - `stage2_ab/channel_b/dup/N_*`
   - `stage2_ab/channel_b/closure_supervision/N_drop` for the
     legacy-named closure-resolution fallback activation counter
+- `stage2_two_channel` residual-set correction metrics live under
+  `stage2_ab/channel_b/residual_set/` and include compact loss/source counters
+  such as `sequence_count`, `atom_count`, `sequence_loss`, `type_loss`,
+  `inner_loss`, `wrong_type_mass`, `valid_set_mass`, dirty-prefix counters, and
+  decode-mode slices.
 
 ---
 

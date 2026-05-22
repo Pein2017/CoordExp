@@ -88,6 +88,20 @@ Current internal ownership seams:
   `configs/stage2_two_channel/smoke/compact_full_residual_set_ckpt3664_hf_*.yaml`;
   they are tiny runnable checks for the correction-event path, not full validation or
   production-quality evidence.
+- `residual_set_correction` is an offline prepared-rollout Channel-B objective:
+  - `config.prepared_rollout_jsonl` is required and is resolved before trainer setup
+  - live rollout backend generation is bypassed for residual-set offline mode
+  - the current ckpt3664 smoke fixture path is
+    `output/stage2_ab/prepared_rollouts/train8_ckpt3664.jsonl`
+  - prepare deterministic fixture/preflight data with
+    `scripts/tools/prepare_stage2_residual_rollouts.py`
+  - live loss config consumes `lambda_type` and `lambda_inner`; the remaining
+    residual-set config keys belong to prepared-rollout/runtime construction
+- residual-set loss and telemetry are reported under
+  `stage2_ab/channel_b/residual_set/`; key compact metrics include
+  `sequence_count`, `atom_count`, `atom_weight_sum`, `sequence_loss`,
+  `type_loss`, `inner_loss`, `wrong_type_mass`, `valid_set_mass`,
+  dirty-prefix/source counters, STOP/continue counts, and decode-mode slices.
 - removed geometry/coordinate modules:
   - `bbox_geo`, `bbox_size_aux`, `coord_reg`, and `coord_diag` are rejected by the active Stage-2 pipeline
 - duplicate-burst UL migration state:

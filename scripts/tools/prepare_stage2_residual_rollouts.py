@@ -132,6 +132,19 @@ def _raw_text_from_sample(sample: Mapping[str, Any], *, dirty_prefix: bool = Fal
     return raw_text
 
 
+def _fixture_variant_text(raw_text: str, *, sample_index: int, rollout_index: int) -> str:
+    if int(rollout_index) <= 0:
+        return raw_text
+    x1 = 700 + int(sample_index) * 10 + int(rollout_index)
+    extra = _row_from_object(
+        {
+            "desc": f"fixture_variant_{int(rollout_index)}",
+            "bbox_2d": [x1, 20, x1 + 5, 40],
+        }
+    )
+    return f"{raw_text}\n{extra}"
+
+
 def _sample_id(sample: Mapping[str, Any], index: int) -> str:
     value = sample.get("sample_id")
     if value is not None:
@@ -204,6 +217,12 @@ def build_fixture_records(
                 and int(rollout_index) == len(rollout_specs) - 1
             )
             raw_text = _raw_text_from_sample(sample, dirty_prefix=dirty)
+            if not dirty:
+                raw_text = _fixture_variant_text(
+                    raw_text,
+                    sample_index=int(sample_index),
+                    rollout_index=int(rollout_index),
+                )
             record = {
                 "sample_id": _sample_id(sample, int(sample_index)),
                 "image_id": _image_id(sample, int(sample_index)),
@@ -218,11 +237,16 @@ def build_fixture_records(
                 "producer_mode": "fixture",
                 "decode_ordinal": int(decode_ordinal),
             }
+            if dirty:
+                record["debug_case"] = "invalid_bbox_dirty_prefix"
             records.append(record)
-        if "exact_duplicate_attempt" in debug_cases and rollout_specs:
-            duplicate = dict(records[-len(rollout_specs)])
+        if "exact_duplicate_attempt" in debug_cases and int(sample_index) == 0 and rollout_specs:
+            source_index = len(records) - len(rollout_specs)
+            records[source_index]["debug_case"] = "exact_duplicate_attempt"
+            duplicate = dict(records[source_index])
             duplicate["rollout_id"] = f"{duplicate['rollout_id']}:dup"
             duplicate["decode_mode"] = "sampling"
+            duplicate["debug_case"] = "exact_duplicate_attempt"
             records.append(duplicate)
     return records
 
@@ -230,12 +254,82 @@ def build_fixture_records(
 def _load_tokenizer_encode_fn(checkpoint: str) -> Callable[[str], Sequence[int]]:
     from transformers import AutoTokenizer
 
-    tokenizer = AutoTokenizer.from_pretrained(checkpoint, trust_remote_code=True)
+    tokenizer = None
+    errors: list[str] = []
+    candidates = _tokenizer_source_candidates(checkpoint)
+    for source_index, source in enumerate(candidates):
+        try:
+            tokenizer = AutoTokenizer.from_pretrained(source, trust_remote_code=True)
+            break
+        except Exception as exc:
+            errors.append(f"{source}: {type(exc).__name__}: {exc}")
+            if not _should_try_next_tokenizer_source(
+                source_index=source_index,
+                candidates=candidates,
+                source=source,
+            ):
+                raise
+    if tokenizer is None:
+        raise RuntimeError(
+            "failed to load tokenizer for prepared residual rollout fixture; tried "
+            + " | ".join(errors)
+        )
 
     def _encode(text: str) -> Sequence[int]:
         return tokenizer.encode(str(text), add_special_tokens=False)
 
     return _encode
+
+
+def _has_tokenizer_files(source: str) -> bool:
+    path = Path(str(source))
+    if not path.is_dir():
+        return False
+    return any(
+        (path / name).is_file()
+        for name in (
+            "tokenizer.json",
+            "tokenizer_config.json",
+            "tokenizer.model",
+            "spiece.model",
+            "sentencepiece.bpe.model",
+            "vocab.json",
+            "merges.txt",
+        )
+    )
+
+
+def _should_try_next_tokenizer_source(
+    *,
+    source_index: int,
+    candidates: Sequence[str],
+    source: str,
+) -> bool:
+    return (
+        int(source_index) == 0
+        and len(candidates) > 1
+        and not _has_tokenizer_files(str(source))
+        and (Path(str(source)) / "adapter_config.json").is_file()
+    )
+
+
+def _tokenizer_source_candidates(checkpoint: str) -> tuple[str, ...]:
+    checkpoint_path = Path(str(checkpoint))
+    candidates: list[str] = [str(checkpoint)]
+    adapter_config_path = checkpoint_path / "adapter_config.json"
+    if adapter_config_path.is_file():
+        try:
+            adapter_config = json.loads(adapter_config_path.read_text(encoding="utf-8"))
+        except (OSError, TypeError, ValueError):
+            adapter_config = {}
+        base_model = adapter_config.get("base_model_name_or_path")
+        if isinstance(base_model, str) and base_model.strip():
+            candidates.append(base_model.strip())
+    deduped: list[str] = []
+    for candidate in candidates:
+        if candidate not in deduped:
+            deduped.append(candidate)
+    return tuple(deduped)
 
 
 def _parse_debug_cases(value: str) -> list[str]:
