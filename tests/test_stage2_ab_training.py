@@ -3062,7 +3062,7 @@ def test_channel_b_producer_residual_ir_rebases_when_packed() -> None:
         "stage2_ab/channel_b/residual_set/atom_count"
     ] == pytest.approx(2.0)
     assert result.pipeline_metrics_ctx[
-        "stage2_ab/channel_b/residual_set/loss"
+        "stage2_ab/channel_b/residual_set/sequence_loss"
     ] == pytest.approx(0.0, abs=1.0e-6)
 
 
@@ -8806,34 +8806,37 @@ def test_pending_stage2_log_aggregates_residual_set_counts_and_weighted_scalars(
         {
             "stage2/_log_weight": 1.0,
             "stage2_ab/channel_b/residual_set/atom_count": 2.0,
-            "stage2_ab/channel_b/residual_set/labeled_atom_count": 1.0,
-            "stage2_ab/channel_b/residual_set/loss": 10.0,
-            "stage2_ab/channel_b/residual_set/component/type": 1.0,
-            "stage2_ab/channel_b/residual_set/valid_prob_mean": 0.2,
+            "stage2_ab/channel_b/residual_set/sequence_count": 1.0,
+            "stage2_ab/channel_b/residual_set/eos_targets": 1.0,
+            "stage2_ab/channel_b/residual_set/sequence_loss": 10.0,
+            "stage2_ab/channel_b/residual_set/type_loss": 1.0,
+            "stage2_ab/channel_b/residual_set/valid_set_mass": 0.2,
         }
     )
     pending.add(
         {
             "stage2/_log_weight": 3.0,
             "stage2_ab/channel_b/residual_set/atom_count": 5.0,
-            "stage2_ab/channel_b/residual_set/labeled_atom_count": 2.0,
-            "stage2_ab/channel_b/residual_set/loss": 20.0,
-            "stage2_ab/channel_b/residual_set/component/type": 3.0,
-            "stage2_ab/channel_b/residual_set/valid_prob_mean": 0.8,
+            "stage2_ab/channel_b/residual_set/sequence_count": 2.0,
+            "stage2_ab/channel_b/residual_set/eos_targets": 2.0,
+            "stage2_ab/channel_b/residual_set/sequence_loss": 20.0,
+            "stage2_ab/channel_b/residual_set/type_loss": 3.0,
+            "stage2_ab/channel_b/residual_set/valid_set_mass": 0.8,
         }
     )
 
     out = pending.finalize()
 
     assert out["stage2_ab/channel_b/residual_set/atom_count"] == pytest.approx(7.0)
-    assert out["stage2_ab/channel_b/residual_set/labeled_atom_count"] == pytest.approx(3.0)
-    assert out["stage2_ab/channel_b/residual_set/loss"] == pytest.approx(
+    assert out["stage2_ab/channel_b/residual_set/sequence_count"] == pytest.approx(3.0)
+    assert out["stage2_ab/channel_b/residual_set/eos_targets"] == pytest.approx(3.0)
+    assert out["stage2_ab/channel_b/residual_set/sequence_loss"] == pytest.approx(
         (10.0 * 1.0 + 20.0 * 3.0) / 4.0
     )
-    assert out["stage2_ab/channel_b/residual_set/component/type"] == pytest.approx(
+    assert out["stage2_ab/channel_b/residual_set/type_loss"] == pytest.approx(
         (1.0 * 1.0 + 3.0 * 3.0) / 4.0
     )
-    assert out["stage2_ab/channel_b/residual_set/valid_prob_mean"] == pytest.approx(
+    assert out["stage2_ab/channel_b/residual_set/valid_set_mass"] == pytest.approx(
         (0.2 * 1.0 + 0.8 * 3.0) / 4.0
     )
 
@@ -9007,16 +9010,16 @@ def test_reduce_stage2_pending_metrics_global_handles_residual_set_metric_specs(
         {
             "stage2/_log_weight_total": 1.0,
             "stage2_ab/channel_b/residual_set/atom_count": 2.0,
-            "stage2_ab/channel_b/residual_set/loss": 10.0,
-            "stage2_ab/channel_b/residual_set/valid_prob_mean": 0.2,
+            "stage2_ab/channel_b/residual_set/sequence_loss": 10.0,
+            "stage2_ab/channel_b/residual_set/valid_set_mass": 0.2,
         }
     )
 
     assert out["stage2_ab/channel_b/residual_set/atom_count"] == pytest.approx(7.0)
-    assert out["stage2_ab/channel_b/residual_set/loss"] == pytest.approx(
+    assert out["stage2_ab/channel_b/residual_set/sequence_loss"] == pytest.approx(
         (10.0 * 1.0 + 20.0 * 3.0) / 4.0
     )
-    assert out["stage2_ab/channel_b/residual_set/valid_prob_mean"] == pytest.approx(
+    assert out["stage2_ab/channel_b/residual_set/valid_set_mass"] == pytest.approx(
         (0.2 * 1.0 + 0.8 * 3.0) / 4.0
     )
     assert "stage2/_log_weight_total" not in out
@@ -9058,8 +9061,8 @@ def test_stage2_core_loss_logs_passes_residual_set_metrics_only_under_stable_pre
         channel="B",
         pipeline_metrics_ctx={
             "stage2_ab/channel_b/residual_set/atom_count": 1.0,
-            "stage2_ab/channel_b/residual_set/component/type": 0.5,
-            "stage2_ab/channel_b/residual_set/valid_prob_mean": 0.75,
+            "stage2_ab/channel_b/residual_set/type_loss": 0.5,
+            "stage2_ab/channel_b/residual_set/valid_set_mass": 0.75,
             "residual_set/atom_count": 99.0,
             "stage2_ab/channel_b/residual/atom_count": 88.0,
             "diagnostic/debug_only": 99.0,
@@ -9071,8 +9074,8 @@ def test_stage2_core_loss_logs_passes_residual_set_metrics_only_under_stable_pre
     )
 
     assert out["stage2_ab/channel_b/residual_set/atom_count"] == pytest.approx(1.0)
-    assert out["stage2_ab/channel_b/residual_set/component/type"] == pytest.approx(0.5)
-    assert out["stage2_ab/channel_b/residual_set/valid_prob_mean"] == pytest.approx(0.75)
+    assert out["stage2_ab/channel_b/residual_set/type_loss"] == pytest.approx(0.5)
+    assert out["stage2_ab/channel_b/residual_set/valid_set_mass"] == pytest.approx(0.75)
     assert "residual_set/atom_count" not in out
     assert "stage2_ab/channel_b/residual/atom_count" not in out
     assert "diagnostic/debug_only" not in out
@@ -9199,7 +9202,7 @@ def test_stage2_objective_pipelines_rebase_residual_sidecars_for_unpacked_rows()
         "stage2_ab/channel_b/residual_set/atom_count"
     ] == pytest.approx(2.0)
     assert result.pipeline_metrics_ctx[
-        "stage2_ab/channel_b/residual_set/loss"
+        "stage2_ab/channel_b/residual_set/sequence_loss"
     ] == pytest.approx(0.0, abs=1.0e-6)
 
 

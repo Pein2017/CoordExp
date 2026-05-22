@@ -42,6 +42,27 @@ def _validate_registry_coverage(
         )
 
 
+def _validate_module_config_keys(
+    spec: PipelineModuleSpec,
+    *,
+    catalog: Mapping[str, object],
+    kind: str,
+) -> None:
+    definition = catalog.get(spec.name)
+    if definition is None:
+        return
+    allowed = {str(key) for key in getattr(definition, "config_keys", frozenset())}
+    allowed.update(
+        str(key) for key in getattr(definition, "optional_config_keys", frozenset())
+    )
+    unknown = sorted(str(key) for key in spec.config if str(key) not in allowed)
+    if unknown:
+        raise ValueError(
+            f"{kind} module {spec.name!r} config contains unsupported key(s): "
+            + ", ".join(unknown)
+        )
+
+
 def _run_residual_set_correction_module(
     *,
     context: TeacherForcingContext,
@@ -114,6 +135,11 @@ def run_teacher_forcing_pipeline(
         module_fn = objective_registry.get(spec.name)
         if module_fn is None:
             raise ValueError(f"unknown objective module: {spec.name}")
+        _validate_module_config_keys(
+            spec,
+            catalog=OBJECTIVE_MODULE_CATALOG,
+            kind="objective",
+        )
         out = module_fn(spec)
         weighted_loss = out.loss * float(spec.weight)
         total = total + weighted_loss

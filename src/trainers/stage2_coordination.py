@@ -374,20 +374,39 @@ def resolve_stage2_ab_metric_spec(key: str) -> MetricSpec:
     residual_prefix = "stage2_ab/channel_b/residual_set/"
     if key.startswith(residual_prefix):
         residual_leaf = key[len(residual_prefix) :]
+        if residual_leaf.startswith("decode_mode/") and residual_leaf.endswith(
+            ("/sequence_count", "/atom_count")
+        ):
+            return MetricSpec(local_mode="sum", ddp_mode="sum")
         if residual_leaf in {
+            "sequence_count",
             "atom_count",
-            "labeled_atom_count",
-            "ul_atom_count",
-            "mixed_atom_count",
+            "atom_weight_sum",
+            "raw_atom_loss_sum",
+            "dirty_prefix_sequence_count",
+            "committed_gt_rows",
+            "committed_ul_rows",
+            "pending_ul_candidates",
+            "promoted_ul_clusters",
+            "uncommitted_invalid_geometry",
+            "uncommitted_malformed",
+            "uncommitted_duplicate",
+            "uncommitted_fp_or_unpromoted",
+            "spatial_wrong_desc_conflict",
+            "label_conflict_atoms",
+            "label_conflict_no_atom",
+            "eos_targets",
+            "continue_targets",
+            "dirty_prefix_reencoded",
+            "clean_success_skipped",
         }:
             return MetricSpec(local_mode="sum", ddp_mode="sum")
         if residual_leaf in {
-            "loss",
-            "component/type",
-            "component/valid",
-            "component/coverage",
-            "valid_prob_mean",
-            "allowed_prob_mean",
+            "sequence_loss",
+            "type_loss",
+            "inner_loss",
+            "wrong_type_mass",
+            "valid_set_mass",
         }:
             return MetricSpec(
                 local_mode="weighted_mean",
