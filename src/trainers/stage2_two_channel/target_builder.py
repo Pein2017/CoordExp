@@ -1,4 +1,4 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 import math
 import random
 import re
@@ -2595,17 +2595,13 @@ def _with_selected_path_metadata(
         metadata["loss_weight"] = float(selected_object.loss_weight)
         metadata["support_provenance"] = selected_support_tuple
         out.append(
-            ValidAction(
-                token_id=int(action.token_id),
-                token_role=action.token_role,
-                token_text=str(action.token_text),
-                candidate_ids_after=action.candidate_ids_after,
+            replace(
+                action,
                 selected_object_id=(
                     selected_object.object_id
                     if selected_object.object_id in action.candidate_ids_after
                     else action.selected_object_id
                 ),
-                coord_role=action.coord_role,
                 metadata=metadata,
             )
         )
@@ -2711,7 +2707,7 @@ def _residual_build_result(
 
 
 def _residual_event_summary(event: CorrectionEvent) -> Dict[str, Any]:
-    return {
+    summary: Dict[str, Any] = {
         "correction_kind": str(event.correction_kind),
         "sample_id": str(event.sample_id),
         "atom_count": int(len(event.atom_drafts)),
@@ -2732,6 +2728,15 @@ def _residual_event_summary(event: CorrectionEvent) -> Dict[str, Any]:
             }
         ),
     }
+    rollout_id = event.metadata.get("rollout_id")
+    if rollout_id is None:
+        for draft in event.atom_drafts:
+            if draft.metadata.get("rollout_id") is not None:
+                rollout_id = draft.metadata["rollout_id"]
+                break
+    if rollout_id is not None:
+        summary["rollout_id"] = str(rollout_id)
+    return summary
 
 
 def _shift_residual_correction_events(

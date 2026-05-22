@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 import math
 from numbers import Real
 from typing import Any, Mapping, Sequence, cast
@@ -182,6 +182,7 @@ def build_residual_set_target_ir(
         raise ValueError("residual_set target IR position_space must be segment_local or batch_tensor")
 
     atoms: list[SupervisionAtom] = []
+    atom_index_by_logit: dict[tuple[int, int], int] = {}
     for event in events:
         for draft_index, draft in enumerate(event.atom_drafts):
             if draft.target_position != draft.logit_position + 1:
@@ -208,9 +209,33 @@ def build_residual_set_target_ir(
                 raise ValueError(
                     "residual_set correction valid actions must have the same token role"
                 )
-            selected_action = next(
-                action for action in draft.valid_actions if int(action.token_id) == live_token_id
+            selected_matches = tuple(
+                action
+                for action in draft.valid_actions
+                if int(action.token_id) == live_token_id
             )
+            if len(selected_matches) != 1:
+                raise ValueError(
+                    "residual_set correction live token must select exactly one "
+                    "valid action"
+                )
+            selected_action = selected_matches[0]
+            if draft.selected_action is not None:
+                if int(draft.selected_action.token_id) != live_token_id:
+                    raise ValueError(
+                        "residual_set correction selected_action token_id "
+                        "must match the live target token"
+                    )
+                if draft.selected_action != selected_action:
+                    raise ValueError(
+                        "residual_set correction selected_action must match the "
+                        "selected member of valid_actions"
+                    )
+            if selected_action.token_role not in roles:
+                raise ValueError(
+                    "residual_set correction selected_action token role must match "
+                    "the draft valid actions"
+                )
             coord_roles = frozenset(
                 action.coord_role
                 for action in draft.valid_actions
@@ -226,47 +251,212 @@ def build_residual_set_target_ir(
                     "residual_set correction non-coordinate actions must not carry coord_role"
                 )
 
-            atoms.append(
-                SupervisionAtom(
-                    batch_index=batch_index,
-                    logit_position=int(draft.logit_position),
-                    target_position=int(draft.target_position),
-                    allowed_token_roles=frozenset({selected_action.token_role}),
-                    selected_token_role=selected_action.token_role,
-                    valid_token_ids=valid_ids,
-                    selected_token_id=live_token_id,
-                    latent_valid_token_ids=valid_ids,
-                    coverage_target_weights=None,
-                    loss_tags=frozenset({"stage2", "channel_b", "residual_set"}),
-                    loss_weight=_action_loss_weight(selected_action),
-                    coord_role=selected_action.coord_role,
-                    provenance=_residual_atom_provenance(
-                        event=event,
-                        draft=draft,
-                        draft_index=draft_index,
-                        observed_token_id=draft.metadata.get(
-                            "observed_token_id",
-                            event.metadata.get("observed_token_id"),
-                        ),
-                        valid_ids=valid_ids,
-                        valid_actions=draft.valid_actions,
+            atom = SupervisionAtom(
+                batch_index=batch_index,
+                logit_position=int(draft.logit_position),
+                target_position=int(draft.target_position),
+                allowed_token_roles=frozenset({selected_action.token_role}),
+                selected_token_role=selected_action.token_role,
+                valid_token_ids=valid_ids,
+                selected_token_id=live_token_id,
+                latent_valid_token_ids=valid_ids,
+                coverage_target_weights=None,
+                loss_tags=frozenset({"stage2", "channel_b", "residual_set"}),
+                loss_weight=_action_loss_weight(selected_action),
+                coord_role=selected_action.coord_role,
+                provenance=_residual_atom_provenance(
+                    event=event,
+                    draft=draft,
+                    draft_index=draft_index,
+                    observed_token_id=draft.metadata.get(
+                        "observed_token_id",
+                        event.metadata.get("observed_token_id"),
                     ),
-                )
+                    valid_ids=valid_ids,
+                    valid_actions=draft.valid_actions,
+                ),
+            )
+            _append_or_merge_residual_atom(
+                atoms=atoms,
+                atom_index_by_logit=atom_index_by_logit,
+                atom=atom,
             )
 
     target_ir = TeacherForcingTargetIR(
         schema_version=TEACHER_FORCING_TARGET_IR_SCHEMA_VERSION,
         atoms=tuple(atoms),
-        metadata={
-            "stage": "stage2",
-            "stage2_channel": "B",
-            "objective": "residual_set_correction",
-            "marginal_scope": MARGINAL_SCOPE_SAMPLED_PATH_NEXT_TOKEN,
-            "position_space": position_space,
-        },
+        metadata=_residual_target_ir_metadata(
+            events=events,
+            position_space=position_space,
+        ),
     )
     validate_target_ir(target_ir, input_ids=input_ids, role_vocab=role_vocab)
     return target_ir
+
+
+def _append_or_merge_residual_atom(
+    *,
+    atoms: list[SupervisionAtom],
+    atom_index_by_logit: dict[tuple[int, int], int],
+    atom: SupervisionAtom,
+) -> None:
+    key = (int(atom.batch_index), int(atom.logit_position))
+    existing_index = atom_index_by_logit.get(key)
+    if existing_index is None:
+        atom_index_by_logit[key] = len(atoms)
+        atoms.append(atom)
+        return
+
+    existing = atoms[existing_index]
+    if not _same_residual_atom_target(existing, atom):
+        raise ValueError(
+            "conflicting same-logit residual_set correction atoms: "
+            f"batch_index={atom.batch_index} logit_position={atom.logit_position} "
+            f"existing_target={existing.selected_token_id} "
+            f"new_target={atom.selected_token_id} "
+            f"existing_valid={tuple(sorted(existing.valid_token_ids))} "
+            f"new_valid={tuple(sorted(atom.valid_token_ids))}"
+        )
+
+    atoms[existing_index] = replace(
+        existing,
+        loss_weight=max(float(existing.loss_weight), float(atom.loss_weight)),
+        provenance=_merge_residual_atom_provenance(
+            existing.provenance,
+            atom.provenance,
+            existing_loss_weight=float(existing.loss_weight),
+            new_loss_weight=float(atom.loss_weight),
+        ),
+    )
+
+
+def _same_residual_atom_target(left: SupervisionAtom, right: SupervisionAtom) -> bool:
+    return (
+        left.batch_index == right.batch_index
+        and left.logit_position == right.logit_position
+        and left.target_position == right.target_position
+        and left.allowed_token_roles == right.allowed_token_roles
+        and left.selected_token_role == right.selected_token_role
+        and left.valid_token_ids == right.valid_token_ids
+        and left.selected_token_id == right.selected_token_id
+        and left.latent_valid_token_ids == right.latent_valid_token_ids
+        and left.coverage_target_weights == right.coverage_target_weights
+        and left.loss_tags == right.loss_tags
+        and left.coord_role == right.coord_role
+    )
+
+
+def _merge_residual_atom_provenance(
+    existing: Mapping[str, Any],
+    new: Mapping[str, Any],
+    *,
+    existing_loss_weight: float,
+    new_loss_weight: float,
+) -> Mapping[str, Any]:
+    merged = dict(existing)
+    existing_count = merged.get("merged_provenance_count", 1)
+    try:
+        count = int(existing_count)
+    except (TypeError, ValueError):
+        count = 1
+    merged["merged_provenance_count"] = count + 1
+
+    for key in (
+        "correction_kind",
+        "event_correction_kind",
+        "draft_index",
+        "observed_token_id",
+        "rollout_index",
+        "rollout_id",
+        "sample_id",
+        "anchor_position",
+        "selected_object_id",
+        "target_builder",
+        "support_provenance",
+    ):
+        values = _ordered_compact_values(
+            existing.get(f"merged_{key}s", ()),
+            existing.get(key),
+            new.get(key),
+        )
+        if values:
+            merged[f"merged_{key}s"] = values
+            if key == "support_provenance":
+                merged["support_provenance"] = values
+    loss_weights = _ordered_compact_values(
+        merged.get("merged_loss_weights", ()),
+        float(existing_loss_weight),
+        float(new_loss_weight),
+    )
+    if loss_weights:
+        merged["merged_loss_weights"] = loss_weights
+    return merged
+
+
+def _ordered_compact_values(*values: Any) -> tuple[Any, ...]:
+    ordered: list[Any] = []
+    seen: set[str] = set()
+    for value in values:
+        if value is None:
+            continue
+        if isinstance(value, (tuple, list, frozenset, set)):
+            nested_values = value
+        else:
+            nested_values = (value,)
+        for item in nested_values:
+            if item is None:
+                continue
+            marker = repr(item)
+            if marker in seen:
+                continue
+            seen.add(marker)
+            ordered.append(item)
+    return tuple(ordered)
+
+
+def _residual_target_ir_metadata(
+    *,
+    events: Sequence[CorrectionEvent],
+    position_space: str,
+) -> Mapping[str, Any]:
+    metadata: dict[str, Any] = {
+        "stage": "stage2",
+        "stage2_channel": "B",
+        "objective": "residual_set_correction",
+        "marginal_scope": MARGINAL_SCOPE_SAMPLED_PATH_NEXT_TOKEN,
+        "position_space": position_space,
+        "sequence_scope": "rollout_attempt",
+    }
+    rollout_ids = _event_and_draft_metadata_values(events, "rollout_id")
+    rollout_indices = _event_and_draft_metadata_values(events, "rollout_index")
+    sample_ids = _ordered_compact_values(tuple(event.sample_id for event in events))
+
+    if len(rollout_ids) == 1:
+        metadata["rollout_id"] = str(rollout_ids[0])
+        metadata["sequence_id"] = str(rollout_ids[0])
+    if len(rollout_indices) == 1:
+        metadata["rollout_index"] = int(rollout_indices[0])
+    if len(sample_ids) == 1:
+        metadata["sample_id"] = str(sample_ids[0])
+    if "sequence_id" not in metadata and len(sample_ids) == 1 and len(rollout_indices) == 1:
+        metadata["sequence_id"] = (
+            f"{sample_ids[0]}:rollout_index={int(rollout_indices[0])}"
+        )
+    return metadata
+
+
+def _event_and_draft_metadata_values(
+    events: Sequence[CorrectionEvent],
+    key: str,
+) -> tuple[Any, ...]:
+    values: list[Any] = []
+    for event in events:
+        if key in event.metadata:
+            values.append(event.metadata[key])
+        for draft in event.atom_drafts:
+            if key in draft.metadata:
+                values.append(draft.metadata[key])
+    return _ordered_compact_values(values)
 
 
 def _coord_atoms_for_target(
@@ -359,6 +549,7 @@ def _residual_atom_provenance(
     valid_actions: Sequence[Any],
 ) -> Mapping[str, Any]:
     rollout_index = draft.metadata.get("rollout_index", event.metadata.get("rollout_index"))
+    rollout_id = draft.metadata.get("rollout_id", event.metadata.get("rollout_id"))
     anchor_position = draft.metadata.get(
         "anchor_position", event.metadata.get("anchor_position")
     )
@@ -369,6 +560,7 @@ def _residual_atom_provenance(
         "draft_index": int(draft_index),
         "observed_token_id": _optional_int(observed_token_id),
         "rollout_index": _optional_int(rollout_index),
+        "rollout_id": _optional_str(rollout_id),
         "sample_id": event.sample_id,
         "anchor_position": _optional_int(anchor_position),
         "valid_token_ids": tuple(sorted(valid_ids)),
@@ -508,6 +700,12 @@ def _optional_int(value: Any) -> int | None:
     if value is None:
         return None
     return int(value)
+
+
+def _optional_str(value: Any) -> str | None:
+    if value is None:
+        return None
+    return str(value)
 
 
 def _tuple4(value: Sequence[Any], *, field_name: str) -> tuple[int, int, int, int]:

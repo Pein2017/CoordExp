@@ -24,6 +24,7 @@ from src.trainers.stage2_two_channel.rollout_views import (
 from src.trainers.stage2_two_channel.teacher_forcing_adapter import (
     build_residual_set_target_ir,
 )
+from src.trainers.stage2_two_channel.target_builder import _with_selected_path_metadata
 from src.training.teacher_forcing.roles import TokenRole
 from src.training.teacher_forcing.vocab import RoleVocab
 
@@ -217,13 +218,21 @@ def test_prepared_rollout_requires_replay_provenance(missing_key: str) -> None:
         )
 
 
-def make_text_action(token_id: int, *, loss_weight: float = 1.0) -> ValidAction:
+def make_text_action(
+    token_id: int,
+    *,
+    loss_weight: float = 1.0,
+    support_provenance: tuple[str, ...] = ("labeled",),
+) -> ValidAction:
     return ValidAction(
         token_id=token_id,
         token_role=TokenRole.TEXT,
         token_text=f"text-{token_id}",
         candidate_ids_after=frozenset({"a"}),
-        metadata={"loss_weight": loss_weight},
+        metadata={
+            "loss_weight": loss_weight,
+            "support_provenance": support_provenance,
+        },
     )
 
 
@@ -249,6 +258,7 @@ def make_event(
     target_position: int = 8,
     logit_position: int = 7,
     valid_actions: tuple[ValidAction, ...],
+    selected_action: ValidAction | None = None,
     draft_metadata: dict[str, object] | None = None,
     event_metadata: dict[str, object] | None = None,
 ) -> CorrectionEvent:
@@ -257,6 +267,7 @@ def make_event(
         target_position=target_position,
         logit_position=logit_position,
         valid_actions=valid_actions,
+        selected_action=selected_action,
         metadata={"source": "unit-test", **(draft_metadata or {})},
     )
     return CorrectionEvent(
@@ -1168,6 +1179,186 @@ def test_event_to_ir_keeps_provenance_compact_and_uses_live_token() -> None:
     assert "raw_bad_token" not in atom.provenance
     assert "raw_rollout" not in atom.provenance
     assert "large_payload" not in atom.provenance
+
+
+def test_event_to_ir_merges_identical_same_logit_atoms_with_compact_provenance() -> None:
+    input_ids = torch.tensor([[11, 22, 101, 102, 103]])
+    actions = (make_text_action(101), make_text_action(201))
+    first = make_event(
+        target_position=2,
+        logit_position=1,
+        valid_actions=actions,
+        draft_metadata={"observed_token_id": 901, "anchor_position": 1},
+        event_metadata={"rollout_index": 3, "rollout_id": "r0"},
+    )
+    second = make_event(
+        target_position=2,
+        logit_position=1,
+        valid_actions=actions,
+        draft_metadata={"observed_token_id": 902, "anchor_position": 4},
+        event_metadata={"rollout_index": 3, "rollout_id": "r0"},
+    )
+
+    ir = build_residual_set_target_ir(
+        input_ids=input_ids,
+        batch_index=0,
+        events=(first, second),
+        role_vocab=make_role_vocab(),
+    )
+
+    assert len(ir.atoms) == 1
+    atom = ir.atoms[0]
+    assert atom.logit_position + 1 == atom.target_position
+    assert atom.selected_token_id == int(input_ids[0, atom.target_position].item())
+    assert atom.selected_token_id in atom.valid_token_ids
+    assert atom.selected_token_role in atom.allowed_token_roles
+    assert atom.provenance["merged_provenance_count"] == 2
+    assert atom.provenance["merged_observed_token_ids"] == (901, 902)
+    assert atom.provenance["merged_anchor_positions"] == (1, 4)
+    assert atom.provenance["merged_rollout_ids"] == ("r0",)
+
+
+def test_event_to_ir_merges_same_logit_weights_and_canonical_support_provenance() -> None:
+    input_ids = torch.tensor([[11, 22, 101, 102, 103]])
+    labeled = make_event(
+        target_position=2,
+        logit_position=1,
+        valid_actions=(
+            make_text_action(
+                101,
+                loss_weight=0.25,
+                support_provenance=("labeled",),
+            ),
+        ),
+    )
+    ul = make_event(
+        target_position=2,
+        logit_position=1,
+        valid_actions=(
+            make_text_action(
+                101,
+                loss_weight=1.0,
+                support_provenance=("ul",),
+            ),
+        ),
+    )
+
+    ir = build_residual_set_target_ir(
+        input_ids=input_ids,
+        batch_index=0,
+        events=(labeled, ul),
+        role_vocab=make_role_vocab(),
+    )
+
+    assert len(ir.atoms) == 1
+    atom = ir.atoms[0]
+    assert atom.loss_weight == 1.0
+    assert atom.provenance["support_provenance"] == ("labeled", "ul")
+    assert atom.provenance["merged_support_provenances"] == ("labeled", "ul")
+    assert atom.provenance["merged_loss_weights"] == (0.25, 1.0)
+
+
+def test_event_to_ir_rejects_conflicting_same_logit_atoms() -> None:
+    input_ids = torch.tensor([[11, 22, 101, 102, 103]])
+    first = make_event(
+        target_position=2,
+        logit_position=1,
+        valid_actions=(make_text_action(101), make_text_action(201)),
+    )
+    second = make_event(
+        target_position=2,
+        logit_position=1,
+        valid_actions=(make_text_action(101),),
+    )
+
+    with pytest.raises(ValueError, match="conflicting same-logit"):
+        build_residual_set_target_ir(
+            input_ids=input_ids,
+            batch_index=0,
+            events=(first, second),
+            role_vocab=make_role_vocab(),
+        )
+
+
+def test_event_to_ir_rejects_selected_action_that_disagrees_with_live_token() -> None:
+    input_ids = torch.tensor([[11, 22, 101, 102, 103]])
+    event = make_event(
+        target_position=2,
+        logit_position=1,
+        valid_actions=(make_text_action(101), make_text_action(201)),
+        selected_action=make_text_action(201),
+    )
+
+    with pytest.raises(ValueError, match="selected_action token_id"):
+        build_residual_set_target_ir(
+            input_ids=input_ids,
+            batch_index=0,
+            events=(event,),
+            role_vocab=make_role_vocab(),
+        )
+
+
+def test_event_to_ir_rejects_selected_action_not_matching_valid_action_member() -> None:
+    input_ids = torch.tensor([[11, 22, 101, 102, 103]])
+    event = make_event(
+        target_position=2,
+        logit_position=1,
+        valid_actions=(make_text_action(101, loss_weight=1.0),),
+        selected_action=make_text_action(101, loss_weight=9.0),
+    )
+
+    with pytest.raises(ValueError, match="selected_action must match"):
+        build_residual_set_target_ir(
+            input_ids=input_ids,
+            batch_index=0,
+            events=(event,),
+            role_vocab=make_role_vocab(),
+        )
+
+
+def test_event_to_ir_preserves_rollout_attempt_sequence_identity() -> None:
+    input_ids = torch.tensor([[11, 22, 101, 102, 103]])
+    event = make_event(
+        target_position=2,
+        logit_position=1,
+        valid_actions=(make_text_action(101), make_text_action(201)),
+        draft_metadata={"rollout_id": "r0", "rollout_index": 3},
+        event_metadata={"rollout_id": "r0", "rollout_index": 3},
+    )
+
+    ir = build_residual_set_target_ir(
+        input_ids=input_ids,
+        batch_index=0,
+        events=(event,),
+        role_vocab=make_role_vocab(),
+    )
+
+    assert ir.metadata["sequence_scope"] == "rollout_attempt"
+    assert ir.metadata["sequence_id"] == "r0"
+    assert ir.metadata["rollout_id"] == "r0"
+    assert ir.metadata["rollout_index"] == 3
+    assert ir.metadata["sample_id"] == "sample-1"
+    assert ir.atoms[0].provenance["rollout_id"] == "r0"
+    assert ir.atoms[0].provenance["rollout_index"] == 3
+
+
+def test_selected_path_metadata_preserves_valid_action_next_state() -> None:
+    selected_object = make_object("a", "person_left", x1=120, source="ul")
+    state = make_state_for_objects(selected_object)
+    actions = state.valid_actions_at_boundary()
+    original = only_action(actions)
+
+    updated_actions = _with_selected_path_metadata(
+        actions=actions,
+        selected_token_id=int(original.token_id),
+        selected_object=selected_object,
+    )
+
+    updated = only_action(updated_actions)
+    assert updated.next_state == original.next_state
+    assert updated.selected_object_id == "a"
+    assert updated.metadata["loss_weight"] == selected_object.loss_weight
+    assert updated.metadata["support_provenance"] == ("ul",)
 
 
 def test_stop_draft_to_ir_uses_configured_stop_token() -> None:
