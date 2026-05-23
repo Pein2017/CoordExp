@@ -1,7 +1,7 @@
 # Larger Stage-2 standard-COCO training-only preflight.
 #
 # Ablation: increase triage posterior rollout count to test whether additional
-# explorer views recover more missed GT objects.
+# peer attempts recover more missed GT objects.
 
 extends: ./compact_full_et_rmp_ce_ckpt3664_hf_coco80_view_train64_noeval_128steps_tail_insert_sorted_order.yaml
 
@@ -13,3 +13,4 @@ stage2_ab:
   channel_b:
     triage_posterior:
       num_rollouts: 6
+      rollout_temperatures: [0.0, 0.7, 0.7, 0.7, 0.7, 0.7]

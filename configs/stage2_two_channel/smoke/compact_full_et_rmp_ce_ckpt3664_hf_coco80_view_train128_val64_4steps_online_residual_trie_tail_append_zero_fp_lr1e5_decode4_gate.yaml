@@ -1,0 +1,12 @@
+# Short online residual-trie gate for adapter/runtime validation.
+
+extends: ./compact_full_et_rmp_ce_ckpt3664_hf_coco80_view_train128_val64_32steps_online_residual_trie_tail_append_zero_fp_lr1e5_decode4.yaml
+
+training:
+  run_name: gate_4steps-coco80_view-train128-val64-online_residual_trie-tail_append-zero_fp-lr1e5-decode4-compact_full-et_rmp_ce_ckpt3664
+  artifact_subdir: stage2_ab/smoke/coco80_view_online_residual_trie_train128_val64/tail_append_zero_fp_lr1e5_decode4_gate
+  max_steps: 4
+  logging_steps: 1
+  eval_strategy: steps
+  eval_steps: 2
+  save_strategy: "no"

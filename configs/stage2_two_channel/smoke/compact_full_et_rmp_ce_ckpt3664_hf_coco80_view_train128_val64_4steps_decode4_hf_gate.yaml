@@ -1,0 +1,70 @@
+# 8-GPU runtime gate for compact-full Channel-B batch decode.
+#
+# Purpose:
+# - validate DDP + live Channel-B rollout + eval rollout with decode batch size 4
+# - use the HF rollout backend for this diagnostic round
+# - keep the run short; this gate is not residual-trie training evidence
+
+extends: ./compact_full_et_rmp_ce_ckpt3664_hf_coco80_view_fallback1p0_2steps.yaml
+
+global_max_length: 20000
+
+training:
+  run_name: gate_4steps-coco80_view-train128-val64-decode4-hf-compact_full-et_rmp_ce_ckpt3664
+  artifact_subdir: stage2_ab/smoke/coco80_view_decode4_gate/train128_val64_4steps_hf
+  max_steps: 4
+  logging_steps: 1
+  eval_strategy: steps
+  eval_steps: 2
+  save_strategy: "no"
+  per_device_train_batch_size: 1
+  per_device_eval_batch_size: 1
+  effective_batch_size: 16
+  dataloader_drop_last: true
+
+custom:
+  train_sample_limit: 128
+  val_sample_limit: 64
+  object_ordering: random
+  detection_sequence_format: compact_full
+
+stage2_ab:
+  schedule:
+    b_ratio: 1.0
+  channel_b:
+    ddp_phase_timeout_s: 600
+    rollout_template_family: compact_full
+    rollout_decode_policy: unconstrained
+    invalid_rollout_policy: fallback_gt_fn_append_only
+    fallback_loss_weight: 1.0
+    triage_posterior:
+      num_rollouts: 4
+      rollout_temperatures: [0.0, 0.4, 0.7, 1.0]
+
+rollout_matching:
+  rollout_backend: hf
+  eval_rollout_backend: hf
+  channel_b_decode_batch_size: 4
+  eval_decode_batch_size: 4
+  train_monitor_dump:
+    enabled: true
+    every_steps: 1
+    every_channel_b_steps: 1
+    max_events: 0
+    max_samples: 16
+    max_text_chars: 2048
+    write_markdown: true
+  eval_monitor_dump:
+    enabled: true
+    every_evals: 1
+    max_events: 0
+    max_samples: 16
+    max_text_chars: 2048
+    write_markdown: true
+  eval_detection:
+    enabled: true
+    materialize_artifacts: true
+    metrics: coco
+    use_segm: false
+    strict_parse: false
+    score_mode: confidence_postop

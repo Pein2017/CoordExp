@@ -4,6 +4,12 @@
 # - keep the same trie objective surface as the train8 overfit probe
 # - increase the train-side sample range to 64 examples
 # - avoid eval so the run focuses on training dynamics and rollout stability
+#
+# Prepared-rollout note:
+# - this leaf intentionally inherits the train8 prepared-rollout artifact until a
+#   matching train64 file is generated and set in stage2_trie_ce.config
+# - the trainer preflight must reject true train64 launches with undersized
+#   prepared-rollout coverage rather than silently replaying train8 attempts
 
 extends: ./compact_full_et_rmp_ce_ckpt3664_hf_coco80_view_overfit_train8_noeval_64steps_stage2_trie_tail_append_zero_fp.yaml
 

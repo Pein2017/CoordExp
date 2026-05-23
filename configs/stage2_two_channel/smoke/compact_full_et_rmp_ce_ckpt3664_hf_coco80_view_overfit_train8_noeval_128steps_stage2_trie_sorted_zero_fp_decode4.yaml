@@ -1,0 +1,17 @@
+# Tiny Stage-2 trie-CE standard-COCO overfit probe with a longer schedule.
+#
+# Purpose:
+# - keep the train8 sorted-zero-FP surface fixed
+# - extend the LR schedule beyond the 64-step probe
+# - raise HF rollout decode batching to use the available GPU memory
+
+extends: ./compact_full_et_rmp_ce_ckpt3664_hf_coco80_view_overfit_train8_noeval_64steps_stage2_trie_sorted_zero_fp.yaml
+
+training:
+  run_name: smoke_128steps-coco80_view-overfit_train8-noeval-stage2_trie_ce-sorted-zero_fp-decode4-compact_full-et_rmp_ce_ckpt3664
+  artifact_subdir: stage2_ab/smoke/coco80_view_stage2_trie_ce_overfit_probe/sorted_train8_noeval_128steps_decode4
+  max_steps: 128
+
+rollout_matching:
+  channel_b_decode_batch_size: 4
+  eval_decode_batch_size: 4

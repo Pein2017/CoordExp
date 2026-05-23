@@ -1,6 +1,8 @@
 # Larger Stage-2 standard-COCO training-only preflight.
 #
 # Ablation: reduce triage posterior rollout count as a lower-cost/noise control.
+# K=2 is no longer a pseudo-positive profile because promotion requires
+# full K-of-K consensus with K>=4.
 
 extends: ./compact_full_et_rmp_ce_ckpt3664_hf_coco80_view_train64_noeval_128steps_tail_insert_sorted_order.yaml
 
@@ -10,5 +12,8 @@ training:
 
 stage2_ab:
   channel_b:
+    pseudo_positive:
+      enabled: false
     triage_posterior:
       num_rollouts: 2
+      rollout_temperatures: [0.0, 0.7]
