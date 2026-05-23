@@ -294,7 +294,6 @@ def sync_vllm_full_weights_if_needed(
                     if "original_module" not in k
                 }
                 state_dict = {k: v for k, v in state_dict.items() if "lora_" not in k}
-
             engine.inner_model.load_weights(state_dict.items())
         finally:
             if is_peft and merged:

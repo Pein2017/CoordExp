@@ -17,10 +17,6 @@ from src.trainers.stage2_two_channel.residual_set import (
     scan_dirty_prefix_rows,
     transition_state,
 )
-from src.trainers.stage2_two_channel.rollout_views import (
-    dedup_prepared_rollout_attempts,
-    parse_prepared_rollout_attempt,
-)
 from src.trainers.stage2_two_channel.teacher_forcing_adapter import (
     build_residual_set_target_ir,
 )
@@ -123,99 +119,6 @@ def make_role_vocab() -> RoleVocab:
         coord_token_ids=frozenset(coord_token(value) for value in range(0, 1001)),
         stop_token_id=999,
     )
-
-
-def _prepared_rollout_record(**overrides: object) -> dict[str, object]:
-    record: dict[str, object] = {
-        "sample_id": "s0",
-        "image_id": "image-0",
-        "image_path": "images/000000.jpg",
-        "rollout_id": "r0",
-        "response_token_ids": [1, 2, 3],
-        "raw_text": "raw",
-        "decode_mode": "greedy",
-        "generation_config_hash": "sha256:abc",
-    }
-    record.update(overrides)
-    return record
-
-
-def test_prepared_rollout_requires_response_token_ids_in_strict_mode() -> None:
-    record = _prepared_rollout_record()
-    record.pop("response_token_ids")
-
-    with pytest.raises(ValueError, match="response_token_ids"):
-        parse_prepared_rollout_attempt(
-            record,
-            strict_prepared_rollout_tokens=True,
-        )
-
-
-def test_prepared_rollout_rejects_bool_response_token_ids() -> None:
-    record = _prepared_rollout_record(response_token_ids=[1, True, 3])
-
-    with pytest.raises(ValueError, match="response_token_ids"):
-        parse_prepared_rollout_attempt(
-            record,
-            strict_prepared_rollout_tokens=True,
-        )
-
-
-def test_prepared_rollout_exact_dedup_uses_response_token_ids() -> None:
-    attempts = [
-        parse_prepared_rollout_attempt(
-            _prepared_rollout_record(
-                rollout_id="a",
-                response_token_ids=[1, 2],
-                raw_text="x",
-                decode_mode="greedy",
-            ),
-            strict_prepared_rollout_tokens=True,
-        ),
-        parse_prepared_rollout_attempt(
-            _prepared_rollout_record(
-                rollout_id="b",
-                response_token_ids=[1, 2],
-                raw_text="x changed",
-                decode_mode="sampling",
-            ),
-            strict_prepared_rollout_tokens=True,
-        ),
-        parse_prepared_rollout_attempt(
-            _prepared_rollout_record(
-                rollout_id="c",
-                response_token_ids=[1, 3],
-                raw_text="x",
-                decode_mode="sampling",
-            ),
-            strict_prepared_rollout_tokens=True,
-        ),
-    ]
-
-    kept, stats = dedup_prepared_rollout_attempts(
-        attempts,
-        legacy_reencode_fallback=False,
-    )
-
-    assert [attempt.rollout_id for attempt in kept] == ["a", "c"]
-    assert stats["K_total"] == 3
-    assert stats["K_after_dedup"] == 2
-    assert stats["exact_duplicate_attempts"] == 1
-
-
-@pytest.mark.parametrize(
-    "missing_key",
-    ["sample_id", "image_id", "image_path", "rollout_id", "generation_config_hash"],
-)
-def test_prepared_rollout_requires_replay_provenance(missing_key: str) -> None:
-    record = _prepared_rollout_record()
-    record.pop(missing_key)
-
-    with pytest.raises(ValueError, match=missing_key):
-        parse_prepared_rollout_attempt(
-            record,
-            strict_prepared_rollout_tokens=True,
-        )
 
 
 def make_text_action(
@@ -1258,7 +1161,7 @@ def test_event_to_ir_merges_same_logit_weights_and_canonical_support_provenance(
     assert atom.provenance["merged_loss_weights"] == (0.25, 1.0)
 
 
-def test_event_to_ir_rejects_conflicting_same_logit_atoms() -> None:
+def test_event_to_ir_merges_same_logit_atoms_with_union_valid_set() -> None:
     input_ids = torch.tensor([[11, 22, 101, 102, 103]])
     first = make_event(
         target_position=2,
@@ -1271,16 +1174,21 @@ def test_event_to_ir_rejects_conflicting_same_logit_atoms() -> None:
         valid_actions=(make_text_action(101),),
     )
 
-    with pytest.raises(ValueError, match="conflicting same-logit"):
-        build_residual_set_target_ir(
-            input_ids=input_ids,
-            batch_index=0,
-            events=(first, second),
-            role_vocab=make_role_vocab(),
-        )
+    ir = build_residual_set_target_ir(
+        input_ids=input_ids,
+        batch_index=0,
+        events=(first, second),
+        role_vocab=make_role_vocab(),
+    )
+
+    assert len(ir.atoms) == 1
+    atom = ir.atoms[0]
+    assert atom.selected_token_id == 101
+    assert atom.valid_token_ids == frozenset({101, 201})
+    assert atom.latent_valid_token_ids == frozenset({101, 201})
 
 
-def test_event_to_ir_rejects_selected_action_that_disagrees_with_live_token() -> None:
+def test_event_to_ir_uses_live_token_when_selected_action_disagrees() -> None:
     input_ids = torch.tensor([[11, 22, 101, 102, 103]])
     event = make_event(
         target_position=2,
@@ -1289,13 +1197,62 @@ def test_event_to_ir_rejects_selected_action_that_disagrees_with_live_token() ->
         selected_action=make_text_action(201),
     )
 
-    with pytest.raises(ValueError, match="selected_action token_id"):
-        build_residual_set_target_ir(
-            input_ids=input_ids,
-            batch_index=0,
-            events=(event,),
-            role_vocab=make_role_vocab(),
-        )
+    ir = build_residual_set_target_ir(
+        input_ids=input_ids,
+        batch_index=0,
+        events=(event,),
+        role_vocab=make_role_vocab(),
+    )
+
+    assert len(ir.atoms) == 1
+    assert ir.atoms[0].selected_token_id == 101
+
+
+def test_event_to_ir_adds_live_token_to_same_role_valid_set() -> None:
+    input_ids = torch.tensor([[11, 22, 101, 102, 103]])
+    event = make_event(
+        target_position=2,
+        logit_position=1,
+        valid_actions=(make_text_action(201),),
+    )
+
+    ir = build_residual_set_target_ir(
+        input_ids=input_ids,
+        batch_index=0,
+        events=(event,),
+        role_vocab=make_role_vocab(),
+    )
+
+    assert len(ir.atoms) == 1
+    atom = ir.atoms[0]
+    assert atom.selected_token_id == 101
+    assert atom.selected_token_role is TokenRole.TEXT
+    assert atom.valid_token_ids == frozenset({101, 201})
+    assert atom.latent_valid_token_ids == frozenset({101, 201})
+
+
+def test_event_to_ir_uses_live_role_when_draft_role_disagrees() -> None:
+    input_ids = torch.tensor([[11, 22, coord_token(7), 102, 103]])
+    event = make_event(
+        target_position=2,
+        logit_position=1,
+        valid_actions=(make_text_action(201),),
+    )
+
+    ir = build_residual_set_target_ir(
+        input_ids=input_ids,
+        batch_index=0,
+        events=(event,),
+        role_vocab=make_role_vocab(),
+    )
+
+    assert len(ir.atoms) == 1
+    atom = ir.atoms[0]
+    assert atom.selected_token_id == coord_token(7)
+    assert atom.selected_token_role is TokenRole.COORD
+    assert atom.allowed_token_roles == frozenset({TokenRole.COORD})
+    assert atom.valid_token_ids == frozenset({coord_token(7)})
+    assert atom.latent_valid_token_ids == frozenset({coord_token(7)})
 
 
 def test_event_to_ir_rejects_selected_action_not_matching_valid_action_member() -> None:
@@ -1307,7 +1264,7 @@ def test_event_to_ir_rejects_selected_action_not_matching_valid_action_member() 
         selected_action=make_text_action(101, loss_weight=9.0),
     )
 
-    with pytest.raises(ValueError, match="selected_action must match"):
+    with pytest.raises(ValueError, match="selected_action must be one member"):
         build_residual_set_target_ir(
             input_ids=input_ids,
             batch_index=0,

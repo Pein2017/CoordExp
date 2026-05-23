@@ -2148,6 +2148,11 @@ Examples:
         action="store_true",
         help="Enable logging from all ranks in distributed training",
     )
+    parser.add_argument(
+        "--cfg-only",
+        action="store_true",
+        help="Load and validate the YAML config, then exit before dataset/model/trainer setup.",
+    )
 
     return parser.parse_args()
 
@@ -2318,6 +2323,36 @@ def main():
 
     if run_name and not debug_output_override_applied:
         _scope_logging_dir_under_run_name(train_args)
+
+    if args.cfg_only:
+        rank, local_rank, world_size, local_world_size = get_dist_setting()
+        if int(rank) in {-1, 0}:
+            cfg_summary = {
+                "status": "ok",
+                "cfg_only": True,
+                "config": str(config_path),
+                "run_name": str(getattr(train_args, "run_name", "") or ""),
+                "output_dir": str(getattr(train_args, "output_dir", "") or ""),
+                "trainer_variant": str(
+                    getattr(custom_config, "trainer_variant", "") or ""
+                ),
+                "max_steps": getattr(train_args, "max_steps", None),
+                "eval_strategy": str(getattr(train_args, "eval_strategy", "") or ""),
+                "eval_steps": getattr(train_args, "eval_steps", None),
+                "save_strategy": str(getattr(train_args, "save_strategy", "") or ""),
+                "save_steps": getattr(train_args, "save_steps", None),
+                "per_device_train_batch_size": getattr(
+                    train_args, "per_device_train_batch_size", None
+                ),
+                "gradient_accumulation_steps": getattr(
+                    train_args, "gradient_accumulation_steps", None
+                ),
+                "world_size": int(world_size),
+                "local_world_size": int(local_world_size),
+                "local_rank": int(local_rank),
+            }
+            print(json.dumps(cfg_summary, sort_keys=True))
+        return
 
     # Optional: mirror logs into output_dir for quick review (rank 0 only).
     try:

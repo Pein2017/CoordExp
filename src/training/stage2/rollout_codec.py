@@ -111,7 +111,9 @@ class Stage2RolloutParseResult:
     :param invalid_rollout: Whether the rollout was malformed for this parser.
     :param empty_valid_object_set: Whether parsing succeeded but produced no
         valid objects.
-    :param truncated: Whether the parser observed truncation.
+    :param truncated: Whether the parser observed true output truncation.  For
+        compact-full rollouts, terminal or padding suffixes such as chat stop
+        markers and EOS padding must not be treated as truncation.
     :param fallback_reason: Optional fallback reason for compact-full policy.
     :param append_prefix_text: Typed legacy CoordJSON prefix for append-ready
         non-invalid rollouts. Compact-full parse results leave it unset.
@@ -422,6 +424,7 @@ class CompactFullRolloutCodec:
         parsed = parse_compact_detection_sequence(
             response_text,
             detection_sequence_format=COMPACT_FULL_FORMAT,
+            salvage_malformed_rows=True,
         )
         if parsed is None:
             return self._parse_result(
@@ -528,7 +531,11 @@ class CompactFullRolloutCodec:
             valid_objects=valid_objects,
             invalid_rollout=bool(invalid_rollout),
             empty_valid_object_set=bool(empty_valid_object_set),
-            truncated=_has_generation_suffix(response_text),
+            # Compact-full parsing strips chat/EOS suffixes before row parsing.
+            # Those suffixes are normal with batched HF decoding, especially
+            # when EOS is used as padding, so they are not evidence that the
+            # output hit max_new_tokens or was cut mid-row.
+            truncated=False,
             fallback_reason=fallback_reason,
             metadata=self.policy.diagnostics_metadata,
         )
@@ -705,10 +712,6 @@ def _looks_like_coordjson(text: str) -> bool:
 
 def _looks_like_compact_full(text: str) -> bool:
     return OBJECT_REF_START_TOKEN in str(text) or BOX_START_TOKEN in str(text)
-
-
-def _has_generation_suffix(text: str) -> bool:
-    return "<|im_end|>" in str(text) or "<|endoftext|>" in str(text)
 
 
 def _stage2_object_from_compact_entry(

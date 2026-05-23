@@ -9,6 +9,7 @@ from src.trainers.stage2_two_channel import (
     _PendingStage2Log,
     _merge_stage2_metric_snapshots,
 )
+from src.trainers.stage2_coordination import resolve_stage2_ab_metric_spec
 
 
 def test_stage2_pending_log_finalize_averages_losses_and_sums_counters() -> None:
@@ -74,6 +75,18 @@ def test_stage2_pending_log_finalize_uses_segment_weight_when_provided() -> None
     assert out["loss/B_coord/bbox_smoothl1"] == pytest.approx((10.0 * 1.0 + 20.0 * 3.0) / 4.0)
     assert out["stage2/raw_rollouts"] == pytest.approx(3.0)
     assert "stage2/_log_weight_total" not in out
+
+
+def test_stage2_pack_schedule_metric_specs_are_explicit_gauges() -> None:
+    for key in (
+        "packing/post_rollout_local_pack_count",
+        "packing/post_rollout_global_slot_count",
+        "packing/post_rollout_empty_slot_count",
+    ):
+        spec = resolve_stage2_ab_metric_spec(key)
+        assert spec.local_mode == "weighted_mean"
+        assert spec.ddp_mode == "max"
+        assert spec.ddp_weight_key is None
 
 
 def test_stage2_pending_log_counter_suffixes_sum_not_weighted() -> None:

@@ -41,9 +41,9 @@ def test_bbox_modules_are_removed_from_objective_catalog() -> None:
 
 def test_residual_set_module_catalog_uses_strict_v1_config_keys() -> None:
     definition = OBJECTIVE_MODULE_CATALOG["residual_set_correction"]
+    trie_alias_definition = OBJECTIVE_MODULE_CATALOG["stage2_trie_ce"]
 
     assert set(definition.config_keys) == {
-        "prepared_rollout_jsonl",
         "expected_num_rollouts",
         "base_seed",
         "lambda_type",
@@ -58,8 +58,6 @@ def test_residual_set_module_catalog_uses_strict_v1_config_keys() -> None:
         "ul_consensus_ratio",
         "min_ul_valid_rollouts",
         "clean_gt_sft_mix",
-        "strict_prepared_rollout_tokens",
-        "legacy_reencode_fallback",
         "strict_builder_invariants",
     }
     assert {
@@ -69,6 +67,12 @@ def test_residual_set_module_catalog_uses_strict_v1_config_keys() -> None:
         "ul_geometry",
         "artifact_policy",
     }.isdisjoint(definition.config_keys)
+    assert trie_alias_definition.semantic_role == "residual_state_trie_ce"
+    assert trie_alias_definition.config_keys == definition.config_keys
+    assert tuple(
+        (atom.atom_name, atom.state_key)
+        for atom in trie_alias_definition.projected_atoms
+    ) == (("residual_state_trie_ce", "stage2_trie_ce_contrib"),)
 
 
 def test_loss_catalog_drives_diagnostic_registry_allowlists() -> None:

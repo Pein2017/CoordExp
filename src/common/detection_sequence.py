@@ -208,6 +208,7 @@ def parse_compact_detection_sequence(
     text: str,
     *,
     detection_sequence_format: str | None = None,
+    salvage_malformed_rows: bool = False,
 ) -> dict[str, Any] | None:
     """Parse compact generated text back into canonical prediction objects.
 
@@ -235,6 +236,8 @@ def parse_compact_detection_sequence(
         from src.detection.teacher_forcing.compact_full_policy import parse_compact_full
 
         result = parse_compact_full(stripped, mode="legacy_compatible")
+        if not result.ok and bool(salvage_malformed_rows):
+            return _salvage_compact_full_payload(stripped)
         if not result.ok:
             return None
         return result.to_payload()
@@ -247,6 +250,37 @@ def parse_compact_detection_sequence(
         if parsed is None:
             return None
         objects.append(parsed)
+    return {"objects": objects}
+
+
+def _salvage_compact_full_payload(text: str) -> dict[str, Any] | None:
+    """Return valid compact_full rows when a generated neighbor row is malformed."""
+
+    from src.detection.teacher_forcing.compact_full_policy import parse_compact_full
+
+    candidates: list[str] = []
+    if "\n" in text:
+        candidates = [row for row in text.split("\n") if row]
+    elif OBJECT_REF_START_TOKEN in text:
+        candidates = [
+            f"{OBJECT_REF_START_TOKEN}{part}"
+            for part in text.split(OBJECT_REF_START_TOKEN)[1:]
+            if part
+        ]
+    if not candidates:
+        return None
+
+    objects: list[dict[str, Any]] = []
+    for candidate in candidates:
+        candidate = _strip_generation_suffix(candidate)
+        if not candidate:
+            continue
+        parsed = parse_compact_full(candidate, mode="legacy_compatible")
+        if parsed.ok:
+            objects.extend(obj.to_payload_object() for obj in parsed.objects)
+
+    if not objects:
+        return None
     return {"objects": objects}
 
 

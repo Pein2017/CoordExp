@@ -252,6 +252,352 @@ def test_channel_b_nonpipeline_prepare_and_final_sync_barriers_use_separate_time
     ]
 
 
+def test_channel_b_nonpipeline_left_pads_shadow_slots_before_final_sync(
+    monkeypatch,
+):
+    import contextlib
+
+    import torch
+
+    import src.trainers.stage2_two_channel.coordination as coordination_mod
+
+    class DummyOwner:
+        def __init__(self):
+            self._buffer = []
+            self.traces = []
+
+        def _stage2_record_ddp_phase_trace(
+            self, *, global_step, phase, rank, world_size, payload
+        ):
+            self.traces.append(
+                {
+                    "global_step": global_step,
+                    "phase": phase,
+                    "rank": rank,
+                    "world_size": world_size,
+                    "payload": dict(payload),
+                }
+            )
+
+        def _stage2_flush_train_monitor_dump(self, *, global_step: int):
+            return None
+
+        def _stage2_append_post_rollout_segments(self, *, channel: str, segments):
+            assert channel == "B"
+            self._buffer.extend(segments)
+
+        def _stage2_post_rollout_buffer(self, *, channel: str):
+            assert channel == "B"
+            return self._buffer
+
+        def _stage2_stage_wallclock_ctx(self, _stage: str):
+            return contextlib.nullcontext()
+
+        def _stage2_pop_post_rollout_pack(self, *, channel: str):
+            assert channel == "B"
+            selected = list(self._buffer)
+            self._buffer.clear()
+            return selected, {"packing/post_rollout_segments": float(len(selected))}
+
+    barrier_calls = []
+    train_calls = []
+
+    def _barrier(phase: str, *, timeout_s=None):
+        barrier_calls.append((phase, timeout_s))
+
+    monkeypatch.setattr(
+        coordination_mod,
+        "gather_channel_b_local_pack_counts",
+        lambda **_kwargs: [1, 3],
+    )
+
+    def _train_one_pack(**kwargs):
+        train_calls.append(
+            {
+                "selected": list(kwargs["selected"]),
+                "sync_gradients": bool(kwargs["sync_gradients"]),
+                "shadow_zero_loss": bool(kwargs.get("shadow_zero_loss", False)),
+                "pack_metrics": dict(kwargs["pack_metrics"]),
+            }
+        )
+        return torch.tensor(1.0)
+
+    monkeypatch.setattr(
+        coordination_mod,
+        "run_channel_b_train_one_pack",
+        _train_one_pack,
+    )
+
+    owner = DummyOwner()
+    loss = coordination_mod.run_channel_b_nonpipeline_learning_loop(
+        owner=owner,
+        model=object(),
+        segments=[({"input_ids": [1]}, {"sample_id": "s0"}, 1)],
+        batch_metrics={},
+        target_log_step=2,
+        total_segments_target=1,
+        ddp_phase_prepare_timeout_s=480.0,
+        ddp_phase_final_sync_timeout_s=120.0,
+        ddp_phase_barrier_fn=_barrier,
+        dist=None,
+        ddp_rank=0,
+        ddp_world_size=2,
+    )
+
+    assert isinstance(loss, torch.Tensor)
+    assert barrier_calls == [
+        ("channel_b_non_pipeline_after_prepare", 480.0),
+        ("channel_b_non_pipeline_before_final_sync_backward", 120.0),
+        ("channel_b_non_pipeline_before_final_sync_backward", 120.0),
+        ("channel_b_non_pipeline_before_final_sync_backward", 120.0),
+    ]
+    assert len(train_calls) == 3
+    assert [call["sync_gradients"] for call in train_calls] == [True, True, True]
+    assert [call["shadow_zero_loss"] for call in train_calls] == [True, True, False]
+    assert train_calls[-1]["pack_metrics"][
+        "packing/post_rollout_global_slot_count"
+    ] == pytest.approx(3.0)
+    assert train_calls[-1]["pack_metrics"][
+        "packing/post_rollout_empty_slot_count"
+    ] == pytest.approx(2.0)
+    assert train_calls[-1]["pack_metrics"][
+        "packing/post_rollout_slot_index"
+    ] == pytest.approx(2.0)
+    assert train_calls[-1]["pack_metrics"][
+        "packing/post_rollout_local_pack_count"
+    ] == pytest.approx(1.0)
+    assert train_calls[-1]["pack_metrics"][
+        "packing/post_rollout_slot_is_final_sync"
+    ] == pytest.approx(1.0)
+    empty_traces = [
+        item
+        for item in owner.traces
+        if item["phase"] == "channel_b_non_pipeline_empty_pack_slot"
+    ]
+    assert [item["payload"]["slot_index"] for item in empty_traces] == [0, 1]
+    assert all(
+        item["payload"]["sync_gradients"] == pytest.approx(1.0)
+        for item in empty_traces
+    )
+
+
+def test_channel_b_nonpipeline_zero_local_packs_fail_after_count_gather(
+    monkeypatch,
+):
+    import contextlib
+
+    import pytest
+    import torch
+
+    import src.trainers.stage2_two_channel.coordination as coordination_mod
+
+    class DummyOwner:
+        def __init__(self):
+            self._buffer = []
+
+        def _stage2_flush_train_monitor_dump(self, *, global_step: int):
+            return None
+
+        def _stage2_append_post_rollout_segments(self, *, channel: str, segments):
+            assert channel == "B"
+            self._buffer.extend(segments)
+
+        def _stage2_post_rollout_buffer(self, *, channel: str):
+            assert channel == "B"
+            return self._buffer
+
+        def _stage2_stage_wallclock_ctx(self, _stage: str):
+            return contextlib.nullcontext()
+
+    barrier_calls = []
+    train_calls = []
+
+    def _barrier(phase: str, *, timeout_s=None):
+        barrier_calls.append((phase, timeout_s))
+
+    monkeypatch.setattr(
+        coordination_mod,
+        "gather_channel_b_local_pack_counts",
+        lambda **_kwargs: [0, 2],
+    )
+    monkeypatch.setattr(
+        coordination_mod,
+        "run_channel_b_train_one_pack",
+        lambda **kwargs: train_calls.append(kwargs) or torch.tensor(1.0),
+    )
+
+    with pytest.raises(RuntimeError, match="zero local packs"):
+        coordination_mod.run_channel_b_nonpipeline_learning_loop(
+            owner=DummyOwner(),
+            model=object(),
+            segments=[],
+            batch_metrics={},
+            target_log_step=2,
+            total_segments_target=1,
+            ddp_phase_prepare_timeout_s=480.0,
+            ddp_phase_final_sync_timeout_s=120.0,
+            ddp_phase_barrier_fn=_barrier,
+            dist=None,
+            ddp_rank=0,
+            ddp_world_size=2,
+        )
+
+    assert barrier_calls == [("channel_b_non_pipeline_after_prepare", 480.0)]
+    assert train_calls == []
+
+
+def test_gather_channel_b_local_pack_counts_uses_object_gather_when_available():
+    import src.trainers.stage2_two_channel.coordination as coordination_mod
+
+    class FakeDist:
+        def is_available(self):
+            return True
+
+        def is_initialized(self):
+            return True
+
+        def all_gather_object(self, gathered, local_value):
+            assert local_value == 2
+            gathered[:] = [1, 2, 3]
+
+        def all_gather(self, *_args, **_kwargs):
+            raise AssertionError("tensor all_gather should not be used")
+
+    counts = coordination_mod.gather_channel_b_local_pack_counts(
+        owner=object(),
+        model=object(),
+        local_pack_count=2,
+        dist=FakeDist(),
+        ddp_world_size=3,
+    )
+
+    assert counts == [1, 2, 3]
+
+
+def test_gather_channel_b_local_pack_counts_gloo_tensor_fallback_uses_cpu():
+    import torch
+
+    import src.trainers.stage2_two_channel.coordination as coordination_mod
+
+    class FakeDist:
+        def is_available(self):
+            return True
+
+        def is_initialized(self):
+            return True
+
+        def get_backend(self):
+            return "gloo"
+
+        def all_gather(self, gathered, local):
+            assert local.device.type == "cpu"
+            gathered[0].fill_(4)
+            gathered[1].fill_(5)
+
+    class FakeModel:
+        device = torch.device("cuda:0")
+
+    counts = coordination_mod.gather_channel_b_local_pack_counts(
+        owner=object(),
+        model=FakeModel(),
+        local_pack_count=4,
+        dist=FakeDist(),
+        ddp_world_size=2,
+    )
+
+    assert counts == [4, 5]
+
+
+def test_channel_b_nonpipeline_uses_global_slot_count_for_sync_sequence(
+    monkeypatch,
+):
+    import contextlib
+
+    import torch
+
+    import src.trainers.stage2_two_channel.coordination as coordination_mod
+
+    class DummyOwner:
+        def __init__(self):
+            self._buffer = []
+
+        def _stage2_flush_train_monitor_dump(self, *, global_step: int):
+            return None
+
+        def _stage2_append_post_rollout_segments(self, *, channel: str, segments):
+            assert channel == "B"
+            self._buffer.extend(segments)
+
+        def _stage2_post_rollout_buffer(self, *, channel: str):
+            assert channel == "B"
+            return self._buffer
+
+        def _stage2_stage_wallclock_ctx(self, _stage: str):
+            return contextlib.nullcontext()
+
+        def _stage2_pop_post_rollout_pack(self, *, channel: str):
+            assert channel == "B"
+            selected = [self._buffer.pop(0)]
+            return selected, {"packing/post_rollout_segments": 1.0}
+
+    barrier_calls = []
+    train_calls = []
+
+    def _barrier(phase: str, *, timeout_s=None):
+        barrier_calls.append((phase, timeout_s))
+
+    monkeypatch.setattr(
+        coordination_mod,
+        "gather_channel_b_local_pack_counts",
+        lambda **_kwargs: [1, 2],
+    )
+
+    def _train_one_pack(**kwargs):
+        train_calls.append(
+            {
+                "sync_gradients": bool(kwargs["sync_gradients"]),
+                "pack_metrics": dict(kwargs["pack_metrics"]),
+            }
+        )
+        return torch.tensor(1.0)
+
+    monkeypatch.setattr(
+        coordination_mod,
+        "run_channel_b_train_one_pack",
+        _train_one_pack,
+    )
+
+    loss = coordination_mod.run_channel_b_nonpipeline_learning_loop(
+        owner=DummyOwner(),
+        model=object(),
+        segments=[
+            ({"input_ids": [1]}, {"sample_id": "s0"}, 1),
+            ({"input_ids": [2]}, {"sample_id": "s1"}, 1),
+        ],
+        batch_metrics={},
+        target_log_step=2,
+        total_segments_target=2,
+        ddp_phase_prepare_timeout_s=480.0,
+        ddp_phase_final_sync_timeout_s=120.0,
+        ddp_phase_barrier_fn=_barrier,
+        dist=None,
+        ddp_rank=1,
+        ddp_world_size=2,
+    )
+
+    assert isinstance(loss, torch.Tensor)
+    assert [call["sync_gradients"] for call in train_calls] == [True, True]
+    assert [
+        call["pack_metrics"]["packing/post_rollout_slot_index"]
+        for call in train_calls
+    ] == [pytest.approx(0.0), pytest.approx(1.0)]
+    assert barrier_calls == [
+        ("channel_b_non_pipeline_after_prepare", 480.0),
+        ("channel_b_non_pipeline_before_final_sync_backward", 120.0),
+        ("channel_b_non_pipeline_before_final_sync_backward", 120.0),
+    ]
+
+
 def test_stage2_shared_metric_collectives_use_bounded_entry_barrier() -> None:
     import torch
 
@@ -453,6 +799,11 @@ def test_stage2_ab_channel_a_and_b_share_final_sync_barrier_policy(monkeypatch):
     monkeypatch.setattr(dist, "get_world_size", lambda: 2)
     monkeypatch.setattr(dist, "monitored_barrier", lambda *_args, **_kwargs: None)
     monkeypatch.setattr(dist, "new_group", lambda *_args, **_kwargs: object())
+    monkeypatch.setattr(
+        dist,
+        "all_gather_object",
+        lambda gathered, local: gathered.__setitem__(slice(None), [local, local]),
+    )
 
     a_barrier_calls = []
 
@@ -483,6 +834,14 @@ def test_stage2_ab_channel_a_and_b_share_final_sync_barrier_policy(monkeypatch):
     assert isinstance(loss_a, torch.Tensor)
     assert isinstance(loss_b, torch.Tensor)
     assert a_barrier_calls == [
+        {
+            "dist": dist,
+            "phase": "stage2-ab Channel-A after-prepare",
+            "rank": 0,
+            "world_size": 2,
+            "timeout_s": pytest.approx(210.0),
+            "monitor_group_timeout_s": pytest.approx(210.0),
+        },
         {
             "dist": dist,
             "phase": "stage2-ab Channel-A final-sync backward",

@@ -517,6 +517,27 @@ def test_common_compact_parser_returns_none_for_diagnostic_failures() -> None:
         template.parse_assistant(malformed_row)
 
 
+def test_common_compact_parser_can_salvage_valid_rows_when_explicitly_enabled() -> None:
+    template = CompactFullTemplate()
+    rendered = template.render_assistant(_two_object_sample())
+    malformed_second_row = rendered.text.replace("<|coord_20|>", " bad<|coord_20|>")
+
+    assert (
+        parse_compact_detection_sequence(
+            malformed_second_row,
+            detection_sequence_format="compact_full",
+        )
+        is None
+    )
+    assert parse_compact_detection_sequence(
+        malformed_second_row,
+        detection_sequence_format="compact_full",
+        salvage_malformed_rows=True,
+    ) == _payload()
+    with pytest.raises(ValueError):
+        template.parse_assistant(malformed_second_row)
+
+
 @pytest.mark.parametrize("bad_coord", ["<|coord_1000|>", "<|coord_01|>"])
 def test_common_and_strict_compact_parsers_reject_invalid_coord_tokens(
     bad_coord: str,

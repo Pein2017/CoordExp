@@ -93,6 +93,11 @@ def test_stage2_ab_step_budgeted_disables_average_tokens_across_devices(monkeypa
     monkeypatch.setattr(dist, "barrier", lambda *_args, **_kwargs: None)
     monkeypatch.setattr(dist, "new_group", lambda *_args, **_kwargs: object())
     monkeypatch.setattr(dist, "monitored_barrier", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(
+        dist,
+        "all_gather_object",
+        lambda gathered, local: gathered.__setitem__(slice(None), [local, local]),
+    )
 
     t = DummyTrainer()
 

@@ -75,24 +75,13 @@ STAGE2_CHANNEL_B_FP_POLICIES: set[str] = {
     "weak_positive_context",
 }
 STAGE2_TRIE_CE_MODULE_NAME = "stage2_trie_ce"
-STAGE2_TRIE_CE_CONFIG_KEYS: set[str] = {
-    "support_weight",
-    "balance_weight",
-    "struct_weight",
-    "desc_weight",
-    "coord_hard_ce_weight",
-    "eos_weight",
-    "normalization",
-}
-STAGE2_TRIE_CE_NORMALIZATIONS: set[str] = {
-    "token_mean",
-}
-STAGE2_TRIE_CE_RESERVED_WEIGHT_KEYS: set[str] = (
-    STAGE2_TRIE_CE_CONFIG_KEYS - {"normalization"}
-)
 STAGE2_TRIE_CE_APPLICATION_PRESETS: set[str] = {"rollout_trie_hard_ce"}
 STAGE2_RESIDUAL_SET_MODULE_NAME = "residual_set_correction"
 STAGE2_RESIDUAL_SET_APPLICATION_PRESETS: set[str] = {"rollout_self_prefix"}
+STAGE2_RESIDUAL_TRIE_MODULE_NAMES: set[str] = {
+    STAGE2_TRIE_CE_MODULE_NAME,
+    STAGE2_RESIDUAL_SET_MODULE_NAME,
+}
 STAGE2_RESIDUAL_SET_DEFAULT_CONFIG_VALUES: dict[str, Any] = {
     "expected_num_rollouts": 4,
     "base_seed": 17,
@@ -106,17 +95,15 @@ STAGE2_RESIDUAL_SET_DEFAULT_CONFIG_VALUES: dict[str, Any] = {
     "ul_cluster_iou_threshold": 0.9,
     "ul_gray_iou_low": 0.30,
     "ul_consensus_ratio": 1.0,
-    "min_ul_valid_rollouts": 2,
+    "min_ul_valid_rollouts": 4,
     "clean_gt_sft_mix": 0,
-    "strict_prepared_rollout_tokens": True,
-    "legacy_reencode_fallback": False,
     "strict_builder_invariants": True,
 }
-STAGE2_RESIDUAL_SET_REQUIRED_CONFIG_KEYS: set[str] = {
-    "prepared_rollout_jsonl",
-}
+STAGE2_RESIDUAL_SET_REQUIRED_CONFIG_KEYS: set[str] = set()
+STAGE2_RESIDUAL_SET_OPTIONAL_CONFIG_KEYS: set[str] = set()
 STAGE2_RESIDUAL_SET_CONFIG_KEYS: set[str] = (
     STAGE2_RESIDUAL_SET_REQUIRED_CONFIG_KEYS
+    | STAGE2_RESIDUAL_SET_OPTIONAL_CONFIG_KEYS
     | set(STAGE2_RESIDUAL_SET_DEFAULT_CONFIG_VALUES)
 )
 STAGE2_RESIDUAL_SET_POSITIVE_INT_CONFIG_KEYS: set[str] = {
@@ -138,8 +125,6 @@ STAGE2_RESIDUAL_SET_THRESHOLD_CONFIG_KEYS: set[str] = {
     "ul_consensus_ratio",
 }
 STAGE2_RESIDUAL_SET_BOOL_CONFIG_KEYS: set[str] = {
-    "strict_prepared_rollout_tokens",
-    "legacy_reencode_fallback",
     "strict_builder_invariants",
 }
 TEACHER_FORCING_OBJECTIVE_ID = "teacher_forcing"
@@ -244,7 +229,7 @@ def _is_versioned_alias_for(name: str, canonical: str) -> bool:
 
 def _stage2_residual_set_config_path(key: str) -> str:
     return (
-        "stage2_ab.pipeline.objective[name=residual_set_correction]"
+        "stage2_ab.pipeline.objective[name=residual_set_correction|stage2_trie_ce]"
         f".config.{key}"
     )
 
@@ -2057,6 +2042,7 @@ class Stage2ABScheduleConfig:
 class Stage2ABChannelBTriagePosteriorConfig:
     num_rollouts: int = 2
     explorer_temperature: float = 0.7
+    rollout_temperatures: tuple[float, ...] | None = None
     explorer_top_p: float = 1.0
     explorer_top_k: int = -1
     unlabeled_consistent_iou_threshold: float = 0.85
@@ -2115,6 +2101,43 @@ class Stage2ABChannelBTriagePosteriorConfig:
             raise ValueError(
                 "stage2_ab.channel_b.triage_posterior.explorer_temperature must be >= 0"
             )
+
+        rollout_temperatures_raw = data.pop("rollout_temperatures", None)
+        rollout_temperatures: tuple[float, ...] | None = None
+        if rollout_temperatures_raw is not None:
+            if isinstance(rollout_temperatures_raw, (str, bytes)) or not isinstance(
+                rollout_temperatures_raw, Sequence
+            ):
+                raise TypeError(
+                    "stage2_ab.channel_b.triage_posterior.rollout_temperatures "
+                    "must be a sequence of float/int values"
+                )
+            parsed_temperatures = []
+            for idx, raw_value in enumerate(rollout_temperatures_raw):
+                try:
+                    value = float(raw_value)
+                except (TypeError, ValueError) as exc:
+                    raise TypeError(
+                        "stage2_ab.channel_b.triage_posterior.rollout_temperatures "
+                        f"must contain only float/int values; bad index={int(idx)}"
+                    ) from exc
+                if not math.isfinite(value):
+                    raise ValueError(
+                        "stage2_ab.channel_b.triage_posterior.rollout_temperatures "
+                        f"must contain only finite values; bad index={int(idx)}"
+                    )
+                if value < 0.0:
+                    raise ValueError(
+                        "stage2_ab.channel_b.triage_posterior.rollout_temperatures "
+                        f"must contain only values >= 0; bad index={int(idx)}"
+                    )
+                parsed_temperatures.append(float(value))
+            if len(parsed_temperatures) not in {1, int(num_rollouts)}:
+                raise ValueError(
+                    "stage2_ab.channel_b.triage_posterior.rollout_temperatures "
+                    "length must be 1 or match num_rollouts"
+                )
+            rollout_temperatures = tuple(float(v) for v in parsed_temperatures)
 
         explorer_top_p_raw = data.pop("explorer_top_p", cls.explorer_top_p)
         try:
@@ -2203,6 +2226,7 @@ class Stage2ABChannelBTriagePosteriorConfig:
         return cls(
             num_rollouts=num_rollouts,
             explorer_temperature=explorer_temperature,
+            rollout_temperatures=rollout_temperatures,
             explorer_top_p=explorer_top_p,
             explorer_top_k=explorer_top_k,
             unlabeled_consistent_iou_threshold=unlabeled_consistent_iou_threshold,
@@ -2575,12 +2599,7 @@ class Stage2ABChannelBConfig:
     )
 
     @classmethod
-    def from_mapping(
-        cls,
-        payload: Any,
-        *,
-        validate_legacy_rollouts: bool = True,
-    ) -> "Stage2ABChannelBConfig":
+    def from_mapping(cls, payload: Any) -> "Stage2ABChannelBConfig":
         if payload is None:
             return cls()
         if not isinstance(payload, Mapping):
@@ -2748,18 +2767,12 @@ class Stage2ABChannelBConfig:
             data.pop("triage_posterior", None),
             default_num_rollouts=triage_default_rollouts,
         )
-        if (
-            validate_legacy_rollouts
-            and not pseudo_positive.enabled
-            and fp_policy.mode != "weak_positive_context"
-            and triage_posterior.num_rollouts
-            != Stage2ABChannelBTriagePosteriorConfig.num_rollouts
-        ):
+        if pseudo_positive.enabled and int(triage_posterior.num_rollouts) < 4:
             raise ValueError(
-                "stage2_ab.channel_b.triage_posterior.num_rollouts must be 2 when "
-                "stage2_ab.channel_b.pseudo_positive.enabled=false"
+                "stage2_ab.channel_b.triage_posterior.num_rollouts must be >= 4 "
+                "when stage2_ab.channel_b.pseudo_positive.enabled=true; "
+                "pseudo-positive promotion requires 4-of-4 rollout consensus"
             )
-
         if data:
             raise ValueError(
                 f"Unknown stage2_ab.channel_b keys: {sorted(str(k) for k in data.keys())}"
@@ -3045,9 +3058,7 @@ class Stage2PipelineConfig:
                     "training uses only the single-pass anchor_text_only contract."
                 )
             allowed_cfg = OBJECTIVE_CONFIG_ALLOWLIST.get(str(spec.name), set())
-            if str(spec.name) == STAGE2_TRIE_CE_MODULE_NAME:
-                allowed_cfg = STAGE2_TRIE_CE_CONFIG_KEYS
-            if str(spec.name) == STAGE2_RESIDUAL_SET_MODULE_NAME:
+            if str(spec.name) in STAGE2_RESIDUAL_TRIE_MODULE_NAMES:
                 allowed_cfg = STAGE2_RESIDUAL_SET_CONFIG_KEYS
             unknown_cfg = set(spec.config.keys()) - allowed_cfg
             if unknown_cfg:
@@ -3056,16 +3067,7 @@ class Stage2PipelineConfig:
                     f"[{idx}].config keys for module {spec.name!r}: "
                     f"{sorted(str(k) for k in unknown_cfg)}"
                 )
-            if str(spec.name) == STAGE2_RESIDUAL_SET_MODULE_NAME:
-                prepared_rollout_jsonl = spec.config.get("prepared_rollout_jsonl")
-                if (
-                    not isinstance(prepared_rollout_jsonl, str)
-                    or not prepared_rollout_jsonl.strip()
-                ):
-                    raise ValueError(
-                        "stage2_ab.pipeline.objective[name=residual_set_correction]"
-                        ".config.prepared_rollout_jsonl must be a non-empty string"
-                    )
+            if str(spec.name) in STAGE2_RESIDUAL_TRIE_MODULE_NAMES:
                 defaulted_config = {
                     **STAGE2_RESIDUAL_SET_DEFAULT_CONFIG_VALUES,
                     **dict(spec.config),
@@ -3074,6 +3076,8 @@ class Stage2PipelineConfig:
                 spec.config.clear()
                 spec.config.update(defaulted_config)
             optional_cfg = OBJECTIVE_OPTIONAL_CONFIG_KEYS.get(str(spec.name), set())
+            if str(spec.name) in STAGE2_RESIDUAL_TRIE_MODULE_NAMES:
+                optional_cfg = STAGE2_RESIDUAL_SET_OPTIONAL_CONFIG_KEYS
             missing_cfg = allowed_cfg - set(spec.config.keys()) - set(optional_cfg)
             if missing_cfg:
                 raise ValueError(
@@ -3081,48 +3085,6 @@ class Stage2PipelineConfig:
                     f"[{idx}].config keys for module {spec.name!r}: "
                     f"{sorted(str(k) for k in missing_cfg)}"
                 )
-            if str(spec.name) == STAGE2_TRIE_CE_MODULE_NAME:
-                for weight_key in sorted(STAGE2_TRIE_CE_RESERVED_WEIGHT_KEYS):
-                    weight_raw = spec.config.get(weight_key)
-                    if isinstance(weight_raw, bool):
-                        raise TypeError(
-                            "stage2_ab.pipeline.objective"
-                            f"[{idx}].config.{weight_key} must be numeric, not bool"
-                        )
-                    try:
-                        weight_value = float(weight_raw)
-                    except (TypeError, ValueError) as exc:
-                        raise TypeError(
-                            "stage2_ab.pipeline.objective"
-                            f"[{idx}].config.{weight_key} must be numeric"
-                        ) from exc
-                    if not math.isfinite(weight_value):
-                        raise ValueError(
-                            "stage2_ab.pipeline.objective"
-                            f"[{idx}].config.{weight_key} must be finite"
-                        )
-                    if weight_value < 0.0:
-                        raise ValueError(
-                            "stage2_ab.pipeline.objective"
-                            f"[{idx}].config.{weight_key} must be >= 0"
-                        )
-                    if weight_value != 1.0:
-                        raise ValueError(
-                            "stage2_ab.pipeline.objective"
-                            f"[{idx}].config.{weight_key} must be 1.0 because "
-                            "Stage-2 trie CE pure hard CE v0 does not apply "
-                            "reserved future weight knobs."
-                        )
-                normalization = str(
-                    spec.config.get("normalization", "") or ""
-                ).strip().lower()
-                if normalization not in STAGE2_TRIE_CE_NORMALIZATIONS:
-                    raise ValueError(
-                        "stage2_ab.pipeline.objective"
-                        f"[{idx}].config.normalization: Stage-2 trie CE pure "
-                        "hard CE v0 requires token_mean; semantic bucket "
-                        "balancing is a reserved future knob."
-                    )
         for idx, spec in enumerate(diagnostics_specs):
             allowed_cfg = DIAGNOSTIC_CONFIG_ALLOWLIST.get(str(spec.name), set())
             unknown_cfg = set(spec.config.keys()) - allowed_cfg
@@ -3148,7 +3110,8 @@ class Stage2PipelineConfig:
         ):
             raise ValueError(
                 "residual_set_correction cannot be enabled together with "
-                "stage2_trie_ce on Channel-B; remove the legacy trie CE path."
+                "stage2_trie_ce on Channel-B; they are aliases for the same "
+                "residual-state trie objective, so select exactly one."
             )
 
         if (
@@ -3253,27 +3216,28 @@ class Stage2ABConfig:
             raise ValueError(
                 "Deprecated Stage-2 self-context knobs are unsupported in active/training "
                 "configs. Remove them and use the single-pass Channel-A contract "
-                "(token_ce: anchor_text_only; optional stage2_trie_ce: "
-                "rollout_trie_hard_ce; optional residual_set_correction: "
-                "rollout_self_prefix). "
+                "(token_ce: anchor_text_only; Stage-2 residual trie: "
+                "stage2_trie_ce/rollout_trie_hard_ce or "
+                "residual_set_correction/rollout_self_prefix). "
                 f"Found: {sorted(deprecated_keys)}"
             )
 
+        residual_trie_candidates = [
+            spec
+            for spec in pipeline.objective
+            if spec.name in STAGE2_RESIDUAL_TRIE_MODULE_NAMES and bool(spec.enabled)
+        ]
         residual_set_candidate = next(
             (
                 spec
-                for spec in pipeline.objective
-                if spec.name == STAGE2_RESIDUAL_SET_MODULE_NAME and bool(spec.enabled)
+                for spec in residual_trie_candidates
+                if "B" in spec.channels
             ),
             None,
         )
         channel_b_raw = data.pop("channel_b", None)
-        residual_set_candidate_on_channel_b = (
-            residual_set_candidate is not None and "B" in residual_set_candidate.channels
-        )
         channel_b = Stage2ABChannelBConfig.from_mapping(
             channel_b_raw,
-            validate_legacy_rollouts=not residual_set_candidate_on_channel_b,
         )
 
         residual_set = residual_set_candidate
@@ -3293,37 +3257,30 @@ class Stage2ABConfig:
                     )
                     if conflicting_module is not None:
                         raise ValueError(
-                            "residual_set_correction is mutually exclusive with "
+                            "Stage-2 residual trie is mutually exclusive with "
                             f"{conflicting_module_name} on Channel-B; remove "
                             f"Channel-B from {conflicting_module_name}.channels "
                             "or disable one objective."
                         )
             if channel_b.pseudo_positive.enabled:
                 raise ValueError(
-                    "residual_set_correction is mutually exclusive with "
+                    "Stage-2 residual trie is mutually exclusive with "
                     "stage2_ab.channel_b.pseudo_positive; disable pseudo_positive "
-                    "to avoid double supervision."
+                    "because unlabeled regions must be admitted only by rollout "
+                    "consensus before entering the residual valid set."
                 )
-            if residual_set_on_channel_b and STAGE2_TRIE_CE_MODULE_NAME in {
-                spec.name
-                for spec in pipeline.objective
-                if bool(spec.enabled) and "B" in spec.channels
-            }:
+            if residual_set_on_channel_b and len(
+                [
+                    spec
+                    for spec in residual_trie_candidates
+                    if "B" in spec.channels
+                ]
+            ) > 1:
                 raise ValueError(
-                    "residual_set_correction is mutually exclusive with "
-                    "stage2_trie_ce; remove the legacy Channel-B trie CE objective."
+                    "stage2_trie_ce and residual_set_correction are aliases for "
+                    "the same Channel-B residual-state trie objective; select "
+                    "exactly one to avoid double supervision."
                 )
-        elif (
-            not channel_b.pseudo_positive.enabled
-            and channel_b.fp_policy.mode != "weak_positive_context"
-            and channel_b.triage_posterior.num_rollouts
-            != Stage2ABChannelBTriagePosteriorConfig.num_rollouts
-        ):
-            raise ValueError(
-                "stage2_ab.channel_b.triage_posterior.num_rollouts must be 2 when "
-                "stage2_ab.channel_b.pseudo_positive.enabled=false"
-            )
-
         if data:
             unknown = [
                 f"stage2_ab.{str(k)}" for k in sorted(data.keys(), key=lambda x: str(x))

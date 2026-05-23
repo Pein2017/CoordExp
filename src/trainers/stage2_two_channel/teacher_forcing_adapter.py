@@ -199,47 +199,59 @@ def build_residual_set_target_ir(
                 target_position=draft.target_position,
             )
             valid_ids = frozenset(int(action.token_id) for action in draft.valid_actions)
-            if live_token_id not in valid_ids:
-                raise ValueError(
-                    "residual_set correction live token must be inside valid actions"
-                )
 
             roles = frozenset(action.token_role for action in draft.valid_actions)
             if len(roles) != 1:
                 raise ValueError(
                     "residual_set correction valid actions must have the same token role"
                 )
+            draft_role = next(iter(roles))
+            live_role = _role_for_live_token_id(live_token_id, role_vocab=role_vocab)
+            role_matches_live = live_role is draft_role
+            valid_ids = (
+                frozenset((*valid_ids, live_token_id))
+                if role_matches_live
+                else frozenset({live_token_id})
+            )
             selected_matches = tuple(
                 action
                 for action in draft.valid_actions
                 if int(action.token_id) == live_token_id
             )
-            if len(selected_matches) != 1:
-                raise ValueError(
-                    "residual_set correction live token must select exactly one "
-                    "valid action"
+            selected_action = (
+                selected_matches[0]
+                if role_matches_live and len(selected_matches) == 1
+                else replace(
+                    draft.valid_actions[0],
+                    token_id=live_token_id,
+                    token_role=live_role,
+                    coord_role=(
+                        draft.valid_actions[0].coord_role
+                        or "x1"
+                        if live_role is TokenRole.COORD
+                        else None
+                    ),
                 )
-            selected_action = selected_matches[0]
+            )
             if draft.selected_action is not None:
-                if int(draft.selected_action.token_id) != live_token_id:
+                if draft.selected_action not in draft.valid_actions:
                     raise ValueError(
-                        "residual_set correction selected_action token_id "
-                        "must match the live target token"
+                        "residual_set correction selected_action must be one "
+                        "member of valid_actions"
                     )
-                if draft.selected_action != selected_action:
-                    raise ValueError(
-                        "residual_set correction selected_action must match the "
-                        "selected member of valid_actions"
-                    )
-            if selected_action.token_role not in roles:
+            if role_matches_live and selected_action.token_role not in roles:
                 raise ValueError(
                     "residual_set correction selected_action token role must match "
                     "the draft valid actions"
                 )
-            coord_roles = frozenset(
-                action.coord_role
-                for action in draft.valid_actions
-                if action.coord_role is not None
+            coord_roles = (
+                frozenset({selected_action.coord_role})
+                if not role_matches_live and selected_action.coord_role is not None
+                else frozenset(
+                    action.coord_role
+                    for action in draft.valid_actions
+                    if action.coord_role is not None
+                )
             )
             if selected_action.token_role is TokenRole.COORD:
                 if coord_roles != frozenset({selected_action.coord_role}):
@@ -320,6 +332,11 @@ def _append_or_merge_residual_atom(
 
     atoms[existing_index] = replace(
         existing,
+        valid_token_ids=frozenset(existing.valid_token_ids) | frozenset(atom.valid_token_ids),
+        latent_valid_token_ids=(
+            frozenset(existing.latent_valid_token_ids)
+            | frozenset(atom.latent_valid_token_ids)
+        ),
         loss_weight=max(float(existing.loss_weight), float(atom.loss_weight)),
         provenance=_merge_residual_atom_provenance(
             existing.provenance,
@@ -330,6 +347,16 @@ def _append_or_merge_residual_atom(
     )
 
 
+def _role_for_live_token_id(token_id: int, *, role_vocab: RoleVocab) -> TokenRole:
+    token_id = int(token_id)
+    for role in (TokenRole.SCHEMA, TokenRole.TEXT, TokenRole.COORD, TokenRole.STOP):
+        if token_id in role_vocab.token_ids_for_role(role):
+            return role
+    raise ValueError(
+        "residual_set correction live token must be inside the role vocab"
+    )
+
+
 def _same_residual_atom_target(left: SupervisionAtom, right: SupervisionAtom) -> bool:
     return (
         left.batch_index == right.batch_index
@@ -337,9 +364,7 @@ def _same_residual_atom_target(left: SupervisionAtom, right: SupervisionAtom) ->
         and left.target_position == right.target_position
         and left.allowed_token_roles == right.allowed_token_roles
         and left.selected_token_role == right.selected_token_role
-        and left.valid_token_ids == right.valid_token_ids
         and left.selected_token_id == right.selected_token_id
-        and left.latent_valid_token_ids == right.latent_valid_token_ids
         and left.coverage_target_weights == right.coverage_target_weights
         and left.loss_tags == right.loss_tags
         and left.coord_role == right.coord_role

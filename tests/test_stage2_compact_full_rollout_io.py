@@ -10,11 +10,13 @@ from src.common.detection_sequence import (
     OBJECT_REF_START_TOKEN,
     parse_compact_detection_sequence,
 )
+from src.trainers.stage2_two_channel.rollout_views import build_channel_b_rollout_view
 from src.training.stage2.rollout_codec import (
     CompactFullRolloutCodec,
     Stage2RolloutObject,
     Stage2RolloutParseResult,
     Stage2RolloutTemplateMismatchError,
+    resolve_stage2_rollout_template_policy,
 )
 
 
@@ -33,6 +35,53 @@ def _gt(index: int, desc: str, points: list[object]) -> _TestGTObject:
         points_norm1000=points,
         desc=desc,
     )
+
+
+class _MiniTokenizer:
+    eos_token_id = 999_999
+
+    def __init__(self) -> None:
+        self._ids: dict[str, int] = {}
+        self._pieces: dict[int, str] = {}
+
+    def _id_for(self, piece: str) -> int:
+        if piece not in self._ids:
+            token_id = len(self._ids) + 10
+            self._ids[piece] = token_id
+            self._pieces[token_id] = piece
+        return self._ids[piece]
+
+    def encode(self, text: str, add_special_tokens: bool = False) -> list[int]:
+        del add_special_tokens
+        out: list[int] = []
+        i = 0
+        specials = (OBJECT_REF_START_TOKEN, BOX_START_TOKEN, "<|im_end|>")
+        while i < len(text):
+            for special in specials:
+                if text.startswith(special, i):
+                    out.append(self._id_for(special))
+                    i += len(special)
+                    break
+            else:
+                if text.startswith("<|coord_", i):
+                    end = text.find("|>", i)
+                    if end >= 0:
+                        piece = text[i : end + 2]
+                        out.append(self._id_for(piece))
+                        i = end + 2
+                        continue
+                out.append(self._id_for(text[i]))
+                i += 1
+        return out
+
+    def decode(
+        self,
+        token_ids: list[int],
+        skip_special_tokens: bool = False,
+        clean_up_tokenization_spaces: bool = False,
+    ) -> str:
+        del skip_special_tokens, clean_up_tokenization_spaces
+        return "".join(self._pieces[int(token_id)] for token_id in token_ids)
 
 
 def test_compact_full_parse_and_append_round_trip_without_json_fallback() -> None:
@@ -62,7 +111,7 @@ def test_compact_full_parse_and_append_round_trip_without_json_fallback() -> Non
 
     assert target.text == (
         f"{OBJECT_REF_START_TOKEN}cat{BOX_START_TOKEN}"
-        "<|coord_1|><|coord_2|><|coord_3|><|coord_4|>\n"
+        "<|coord_1|><|coord_2|><|coord_3|><|coord_4|>"
         f"{OBJECT_REF_START_TOKEN}dog{BOX_START_TOKEN}"
         "<|coord_10|><|coord_20|><|coord_30|><|coord_40|>"
     )
@@ -96,6 +145,82 @@ def test_compact_full_parse_and_append_round_trip_without_json_fallback() -> Non
             },
         ]
     }
+
+
+def test_compact_full_eos_padding_is_not_parse_truncation() -> None:
+    codec = CompactFullRolloutCodec()
+    raw = (
+        f"{OBJECT_REF_START_TOKEN}chair{BOX_START_TOKEN}"
+        "<|coord_453|><|coord_512|><|coord_546|><|coord_737|>"
+        "<|im_end|><|endoftext|><|endoftext|><|endoftext|>"
+    )
+
+    parse_result = codec.parse(raw)
+
+    assert parse_result.invalid_rollout is False
+    assert parse_result.truncated is False
+    assert [obj.desc for obj in parse_result.valid_objects] == ["chair"]
+    assert parse_result.valid_objects[0].bbox_tokens == (
+        "<|coord_453|>",
+        "<|coord_512|>",
+        "<|coord_546|>",
+        "<|coord_737|>",
+    )
+
+
+def test_compact_full_rollout_codec_salvages_valid_rows_for_training() -> None:
+    codec = CompactFullRolloutCodec()
+    raw = (
+        f"{OBJECT_REF_START_TOKEN}cat{BOX_START_TOKEN}"
+        "<|coord_1|><|coord_2|><|coord_3|><|coord_4|>"
+        f"{OBJECT_REF_START_TOKEN}dog{BOX_START_TOKEN}"
+        "bad<|coord_10|><|coord_20|><|coord_30|><|coord_40|>"
+    )
+
+    parse_result = codec.parse(raw)
+
+    assert parse_result.invalid_rollout is False
+    assert parse_result.empty_valid_object_set is False
+    assert [obj.desc for obj in parse_result.valid_objects] == ["cat"]
+    assert (
+        parse_compact_detection_sequence(
+            raw,
+            detection_sequence_format=COMPACT_FULL_FORMAT,
+        )
+        is None
+    )
+
+
+def test_compact_full_rollout_view_does_not_crash_on_salvaged_rows() -> None:
+    tok = _MiniTokenizer()
+    raw = (
+        f"{OBJECT_REF_START_TOKEN}cat{BOX_START_TOKEN}"
+        "<|coord_1|><|coord_2|><|coord_3|><|coord_4|>"
+        f"{OBJECT_REF_START_TOKEN}dog{BOX_START_TOKEN}"
+        "bad<|coord_10|><|coord_20|><|coord_30|><|coord_40|>"
+    )
+    token_ids = tok.encode(raw, add_special_tokens=False)
+
+    view = build_channel_b_rollout_view(
+        tokenizer=tok,
+        object_field_order="desc_first",
+        coord_id_to_bin={},
+        duplicate_iou_threshold=0.5,
+        center_radius_scale=0.5,
+        max_new_tokens=256,
+        rollout_result=(token_ids, raw, "unit", []),
+        source_label="anchor",
+        parse_rollout_for_matching_fn=None,
+        points_from_coord_tokens_fn=None,
+        duplicate_diagnostics_fn=lambda *_args, **_kwargs: {},
+        rollout_template_policy=resolve_stage2_rollout_template_policy("compact_full"),
+    )
+
+    assert view["invalid_rollout"] == 0
+    assert view["pred_objects"] == 1
+    assert view["compact_full_span_extraction_failed"] == 1
+    assert view["compact_full_object_spans"] == []
+    assert view["drop_reasons"]["compact_full_span_extraction_failed"] == 1
 
 
 @pytest.mark.parametrize(

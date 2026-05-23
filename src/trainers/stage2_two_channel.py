@@ -6,6 +6,7 @@ import time
 import logging
 from collections import deque
 from dataclasses import asdict, dataclass, field
+from types import SimpleNamespace
 from typing import Any, ClassVar, Deque, Dict, List, Literal, Mapping, MutableMapping, Optional, Sequence, Tuple
 
 import torch
@@ -50,14 +51,11 @@ from .stage2_coordination import (
 from ..common.geometry.coord_utils import decode_coord
 
 from .stage2_two_channel.executors import Stage2ABChannelExecutorsMixin
-from .stage2_two_channel.rollout_views import build_channel_b_rollout_view
-from .stage2_two_channel.rollout_views import (
-    PreparedRolloutAttempt,
-    PreparedRolloutDedupStats,
-    dedup_prepared_rollout_attempts,
-    load_prepared_rollout_jsonl,
-    validate_prepared_rollout_token_text,
+from .stage2_two_channel.attempt_table import (
+    build_attempt_table,
+    wrap_rollout_attempt_view,
 )
+from .stage2_two_channel.rollout_views import build_channel_b_rollout_view
 from .stage2_two_channel.scheduler import Stage2ABSchedulerMixin
 from .stage2_two_channel.teacher_forcing_adapter import build_residual_set_target_ir
 from .stage2_two_channel.ul_consensus import (
@@ -72,7 +70,6 @@ from .stage2_two_channel.objective_runner import (
     run_stage2_objective_pipelines,
 )
 from .stage2_two_channel import target_builder as _channel_b_targets
-from .stage2_two_channel.trie_supervision import Stage2TrieCandidate
 from .stage2_two_channel.types import (
     Stage2BatchMetrics,
     Stage2ChannelAMeta,
@@ -364,165 +361,43 @@ def _stage2_ul_artifact_enabled(options: Mapping[str, Any]) -> bool:
     return bool(options)
 
 
-def _stage2_preflight_residual_set_prepared_rollout_jsonl(
-    options: Mapping[str, Any],
-) -> str:
-    path_raw = options.get("prepared_rollout_jsonl")
-    if not isinstance(path_raw, str) or not path_raw.strip():
-        raise ValueError(
-            "residual_set_correction.config.prepared_rollout_jsonl must be a "
-            "non-empty path before residual-set Channel-B execution"
-        )
-    path = os.path.expanduser(str(path_raw).strip())
-    if not os.path.isfile(path):
-        raise FileNotFoundError(
-            "residual_set_correction.config.prepared_rollout_jsonl does not exist "
-            f"or is not a file: {path}"
-        )
-    return path
-
-
-def _stage2_load_prepared_rollout_attempts_once(
-    owner: Any,
-    path: str,
-    *,
-    strict_prepared_rollout_tokens: bool,
-    tokenizer: Any,
-) -> List[PreparedRolloutAttempt]:
-    cache = getattr(owner, "_stage2_prepared_rollout_cache", None)
-    if not isinstance(cache, dict):
-        cache = {}
-        setattr(owner, "_stage2_prepared_rollout_cache", cache)
-    cache_key = (
-        os.path.abspath(os.path.expanduser(str(path))),
-        bool(strict_prepared_rollout_tokens),
-        id(tokenizer),
-    )
-    if cache_key not in cache:
-        attempts = load_prepared_rollout_jsonl(
-            cache_key[0],
-            strict_prepared_rollout_tokens=bool(strict_prepared_rollout_tokens),
-        )
-        if bool(strict_prepared_rollout_tokens):
-            for attempt in attempts:
-                validate_prepared_rollout_token_text(
-                    attempt,
-                    tokenizer=tokenizer,
-                )
-        cache[cache_key] = attempts
-    return list(cache[cache_key])
-
-
-def _stage2_prepared_rollout_lookup_keys_for_sample(
-    sample: Mapping[str, Any],
-    sample_index: int,
-) -> List[tuple[str, str]]:
-    keys: List[tuple[str, str]] = []
-    sample_id = sample.get("sample_id")
-    if sample_id is not None:
-        keys.append(("sample_id", str(sample_id)))
-    image_id = sample.get("image_id")
-    if image_id is not None:
-        keys.append(("image_id", str(image_id)))
-    image_paths: List[Any] = []
-    images = sample.get("images")
-    if (
-        isinstance(images, Sequence)
-        and not isinstance(images, (str, bytes))
-        and images
-    ):
-        image_paths.append(images[0])
-    image_paths.extend(
-        [
-            sample.get("image"),
-            sample.get("image_path"),
-            sample.get("file_name"),
-        ]
-    )
-    for image_path in image_paths:
-        if image_path is not None:
-            keys.append(("image_path", str(image_path)))
-    keys.append(("sample_id", str(_sample_identifier_or_index(sample, int(sample_index)))))
-    deduped: List[tuple[str, str]] = []
-    seen: set[tuple[str, str]] = set()
-    for key in keys:
-        if key in seen:
-            continue
-        seen.add(key)
-        deduped.append(key)
-    return deduped
-
-
-def _stage2_group_prepared_rollout_attempts(
-    attempts: Sequence[PreparedRolloutAttempt],
-) -> Dict[tuple[str, str], List[PreparedRolloutAttempt]]:
-    grouped: Dict[tuple[str, str], List[PreparedRolloutAttempt]] = {}
-    for attempt in attempts:
-        for key in (
-            ("sample_id", str(attempt.sample_id)),
-            ("image_id", str(attempt.image_id)),
-            ("image_path", str(attempt.image_path)),
-        ):
-            grouped.setdefault(key, []).append(attempt)
-    return grouped
-
-
-def _stage2_prepared_rollout_to_result(
-    attempt: PreparedRolloutAttempt,
-) -> Tuple[List[int], str, str, List[int]]:
-    metadata = attempt.metadata if isinstance(attempt.metadata, Mapping) else {}
-    prompt_ids_raw = metadata.get("prompt_token_ids")
-    prompt_ids: List[int] = []
-    if isinstance(prompt_ids_raw, Sequence) and not isinstance(
-        prompt_ids_raw, (str, bytes)
-    ):
-        prompt_ids = [
-            int(token_id)
-            for token_id in prompt_ids_raw
-            if isinstance(token_id, int) and not isinstance(token_id, bool)
-        ]
-    return (
-        [int(token_id) for token_id in (attempt.response_token_ids or ())],
-        str(attempt.raw_text),
-        str(attempt.decode_mode),
-        prompt_ids,
-    )
-
-
-def _stage2_prepared_rollout_metadata(
-    *,
-    attempt: PreparedRolloutAttempt,
-    stats: Mapping[str, Any],
-) -> Dict[str, Any]:
-    dropped_reasons_raw = stats.get("dropped_reasons", {})
-    dropped_reasons = (
-        {
-            str(reason): int(count)
-            for reason, count in dropped_reasons_raw.items()
-        }
-        if isinstance(dropped_reasons_raw, Mapping)
-        else {}
+def _stage2_missing_peer_rollout_view() -> Dict[str, Any]:
+    parse = SimpleNamespace(
+        prefix_token_ids=[],
+        prefix_text="",
+        response_token_ids=[],
+        response_text="",
+        valid_objects=[],
+        dropped_invalid_by_reason={},
+        dropped_invalid=0,
+        dropped_ambiguous=0,
+        truncated=False,
+        invalid_rollout=False,
+        empty_valid_object_set=True,
     )
     return {
-        "sample_id": str(attempt.sample_id),
-        "image_id": str(attempt.image_id),
-        "image_path": str(attempt.image_path),
-        "rollout_id": str(attempt.rollout_id),
-        "dedup_status": "kept_first",
-        "K_total": int(stats.get("K_total", 0)),
-        "K_after_dedup": int(stats.get("K_after_dedup", 0)),
-        "K_valid": int(stats.get("K_valid", 0)),
-        "exact_duplicate_attempts": int(stats.get("exact_duplicate_attempts", 0)),
-        "dropped_reasons": dropped_reasons,
+        "parse": parse,
+        "invalid_rollout": 0,
+        "drop_reasons": {},
+        "drop_poly": 0,
+        "drop_unknown": 0,
+        "drop_bbox_invalid": 0,
+        "parsed_bbox_objects_raw": [],
+        "n_valid_pred": 0,
+        "n_drop_invalid": 0,
+        "duplicate_metrics": {},
+        "prompt_ids": [],
+        "decode_mode": "missing_peer",
+        "pred_objects": 0,
+        "parse_truncated": 0,
+        "gen_new_tokens": 0,
+        "rollout_template_family": "missing_peer",
+        "rollout_parser_id": "missing_peer",
+        "rollout_append_policy_id": "missing_peer",
+        "compact_fallback_applies": 0,
+        "rollout_counts_as_valid_rollout": 0,
+        "rollout_fallback_loss_weight": 0.0,
     }
-
-
-def _stage2_prepared_dropped_reason_totals(
-    stats: PreparedRolloutDedupStats,
-) -> Dict[str, int]:
-    raw = stats.dropped_reasons
-    return {str(key): int(value) for key, value in raw.items()}
-
 
 def _stage2_ul_artifact_root(owner: Any, *, global_step: int) -> str:
     _ = global_step
@@ -587,39 +462,6 @@ def _stage2_debug_text_window(
     return value[: int(limit)] + "...<truncated>"
 
 
-def _build_stage2_trie_candidate_from_supervision(
-    *,
-    sample_id: str,
-    rollout_index: int,
-    supervision_targets: Any,
-) -> Stage2TrieCandidate | None:
-    """Build one live Stage-2 trie candidate from Channel-B targets."""
-
-    token_ids = [int(token_id) for token_id in supervision_targets.y_train_ids]
-    if not token_ids:
-        return None
-
-    source = (
-        "fallback_gt_fn_append_only"
-        if str(supervision_targets.rollout_context) == FALLBACK_GT_FN_APPEND_ONLY
-        else "valid_rollout"
-    )
-    loss_weight = (
-        float(supervision_targets.rollout_fallback_loss_weight)
-        if source == "fallback_gt_fn_append_only"
-        else 1.0
-    )
-
-    return Stage2TrieCandidate(
-        sample_id=str(sample_id),
-        rollout_index=int(rollout_index),
-        source=source,
-        token_ids=token_ids,
-        loss_weight=float(loss_weight),
-        object_spans=list(supervision_targets.stage2_trie_object_spans),
-    )
-
-
 _STAGE2_CHANNEL_B_DIRECT_BATCH_METRIC_KEYS = frozenset(
     {
         "rollout/backend_hf",
@@ -667,16 +509,25 @@ def _is_stage2_channel_b_direct_batch_metric_key(key: str) -> bool:
 
     Stage2-AB emits richer rollout telemetry than the base rollout-aligned
     trainer can derive from slim per-segment meta. In particular, compact-full
-    fallback diagnostics count anchor and explorer views, not only the final
+    fallback diagnostics count current and peer attempts, not only the final
     prepared segment, so they must be routed directly from Channel-B preparation.
     """
 
     key = str(key)
+    if key in {
+        "packing/post_rollout_local_pack_count",
+        "packing/post_rollout_global_slot_count",
+        "packing/post_rollout_empty_slot_count",
+    }:
+        return True
+
     if key.startswith(
         (
             "stage2_ab/",
             "dup/",
             "train/triage/",
+            "rollout/current/",
+            "rollout/peer/",
             "rollout/anchor/",
             "rollout/explorer/",
         )
@@ -1093,6 +944,53 @@ def _percentile(xs: Sequence[float], q: float) -> float:
         return float(vals[lo])
     frac = float(rank - float(lo))
     return float((1.0 - frac) * float(vals[lo]) + frac * float(vals[hi]))
+
+
+def _stage2_runtime_rollout_temperatures(
+    raw: Any,
+    *,
+    num_rollouts: int,
+    default_nonzero_temperature: float,
+) -> Tuple[float, ...]:
+    if int(num_rollouts) <= 0:
+        raise ValueError("num_rollouts must be positive")
+    if raw is None:
+        return tuple(
+            float(default_nonzero_temperature) for _ in range(int(num_rollouts))
+        )
+    if isinstance(raw, (str, bytes)) or not isinstance(raw, Sequence):
+        raise TypeError(
+            "stage2_ab.channel_b.triage_posterior.rollout_temperatures "
+            "must be a sequence of float/int values"
+        )
+    values: List[float] = []
+    for idx, item in enumerate(raw):
+        try:
+            value = float(item)
+        except (TypeError, ValueError) as exc:
+            raise TypeError(
+                "stage2_ab.channel_b.triage_posterior.rollout_temperatures "
+                f"must contain only float/int values; bad index={int(idx)}"
+            ) from exc
+        if not math.isfinite(value):
+            raise ValueError(
+                "stage2_ab.channel_b.triage_posterior.rollout_temperatures "
+                f"must contain only finite values; bad index={int(idx)}"
+            )
+        if value < 0.0:
+            raise ValueError(
+                "stage2_ab.channel_b.triage_posterior.rollout_temperatures "
+                f"must contain only values >= 0; bad index={int(idx)}"
+            )
+        values.append(float(value))
+    if len(values) == 1:
+        return tuple(float(values[0]) for _ in range(int(num_rollouts)))
+    if len(values) != int(num_rollouts):
+        raise ValueError(
+            "stage2_ab.channel_b.triage_posterior.rollout_temperatures "
+            "length must be 1 or match num_rollouts"
+        )
+    return tuple(float(v) for v in values)
 
 
 def _coerce_bbox_bins(values: Any) -> Optional[List[int]]:
@@ -2735,6 +2633,10 @@ class Stage2TwoChannelTrainer(
         explorer_temperature = float(
             self._ab_channel_b_get("triage_posterior.explorer_temperature", 0.7)
         )
+        rollout_temperatures_raw = self._ab_channel_b_get(
+            "triage_posterior.rollout_temperatures",
+            None,
+        )
         explorer_top_p = float(self._ab_channel_b_get("triage_posterior.explorer_top_p", 1.0))
         explorer_top_k = int(self._ab_channel_b_get("triage_posterior.explorer_top_k", -1))
         pseudo_positive_enabled = bool(
@@ -2789,7 +2691,12 @@ class Stage2TwoChannelTrainer(
                     num_rollouts_default,
                 )
             )
-        explorer_view_count = max(1, int(num_rollouts) - 1)
+        rollout_temperatures = _stage2_runtime_rollout_temperatures(
+            rollout_temperatures_raw,
+            num_rollouts=int(num_rollouts),
+            default_nonzero_temperature=float(explorer_temperature),
+        )
+        peer_view_count = max(0, int(num_rollouts) - 1)
 
 
         packing_enabled = self._packing_enabled()
@@ -2815,26 +2722,27 @@ class Stage2TwoChannelTrainer(
         seed_base = int(self._derive_rollout_seed_base(global_step=gs))
 
         backend = self._rollout_backend()
-        anchor_decode_request = self._resolve_rollout_decode_request(
-            decode_override={
-                "decode_mode": "greedy",
-                "temperature": 0.0,
-                "top_p": 1.0,
-                "top_k": -1,
-            }
+        rollout_decode_requests = [
+            self._resolve_rollout_decode_request(
+                decode_override={
+                    "decode_mode": (
+                        "sampling" if float(temperature) > 0.0 else "greedy"
+                    ),
+                    "temperature": float(temperature),
+                    "top_p": float(explorer_top_p if float(temperature) > 0.0 else 1.0),
+                    "top_k": int(explorer_top_k if float(temperature) > 0.0 else -1),
+                }
+            )
+            for temperature in rollout_temperatures
+        ]
+        first_decode_request = rollout_decode_requests[0]
+        max_new_tokens = int(first_decode_request.max_new_tokens)
+        num_beams = int(first_decode_request.num_beams)
+        repetition_penalty = float(first_decode_request.repetition_penalty)
+        do_sample = any(
+            bool(float(request.temperature) > 0.0)
+            for request in rollout_decode_requests
         )
-        explorer_decode_request = self._resolve_rollout_decode_request(
-            decode_override={
-                "decode_mode": "sampling",
-                "temperature": float(explorer_temperature),
-                "top_p": float(explorer_top_p),
-                "top_k": int(explorer_top_k),
-            }
-        )
-        max_new_tokens = int(anchor_decode_request.max_new_tokens)
-        num_beams = int(anchor_decode_request.num_beams)
-        repetition_penalty = float(anchor_decode_request.repetition_penalty)
-        do_sample = bool(float(explorer_decode_request.temperature) > 0.0)
         assignment_strategy = self._resolve_stage2_channel_b_assignment_strategy(
             gate_thr=gate_thr,
             match_top_k=match_top_k,
@@ -2862,6 +2770,7 @@ class Stage2TwoChannelTrainer(
                 center_radius_scale=center_radius_scale,
                 unlabeled_consistent_iou_threshold=unlabeled_consistent_iou_threshold,
                 recovered_ground_truth_weight_multiplier=recovered_ground_truth_weight_multiplier,
+                rollout_temperatures=rollout_temperatures,
                 explorer_temperature=explorer_temperature,
                 explorer_top_p=explorer_top_p,
                 explorer_top_k=explorer_top_k,
@@ -2874,7 +2783,7 @@ class Stage2TwoChannelTrainer(
                 invalid_rollout_policy=invalid_rollout_policy,
                 rollout_template_policy=rollout_template_policy,
                 num_rollouts=num_rollouts,
-                explorer_view_count=explorer_view_count,
+                explorer_view_count=peer_view_count,
                 packing_enabled=packing_enabled,
                 gs=gs,
                 monitor_step=monitor_step,
@@ -2882,8 +2791,13 @@ class Stage2TwoChannelTrainer(
                 track_monitor_candidates=track_monitor_candidates,
                 seed_base=seed_base,
                 backend=backend,
-                anchor_decode_request=anchor_decode_request,
-                explorer_decode_request=explorer_decode_request,
+                rollout_decode_requests=rollout_decode_requests,
+                anchor_decode_request=first_decode_request,
+                explorer_decode_request=(
+                    rollout_decode_requests[1]
+                    if len(rollout_decode_requests) > 1
+                    else first_decode_request
+                ),
                 max_new_tokens=max_new_tokens,
                 num_beams=num_beams,
                 repetition_penalty=repetition_penalty,
@@ -2986,6 +2900,7 @@ class Stage2TwoChannelTrainer(
         center_radius_scale: float,
         unlabeled_consistent_iou_threshold: float,
         recovered_ground_truth_weight_multiplier: float,
+        rollout_temperatures: Sequence[float],
         explorer_temperature: float,
         explorer_top_p: float,
         explorer_top_k: int,
@@ -3006,6 +2921,7 @@ class Stage2TwoChannelTrainer(
         track_monitor_candidates: bool,
         seed_base: int,
         backend: str,
+        rollout_decode_requests: Sequence[Any],
         anchor_decode_request: Any,
         explorer_decode_request: Any,
         max_new_tokens: int,
@@ -3032,11 +2948,6 @@ class Stage2TwoChannelTrainer(
             )
         )
         residual_set_selected = residual_set_options is not None
-        prepared_rollout_path: Optional[str] = None
-        if residual_set_options is not None:
-            prepared_rollout_path = _stage2_preflight_residual_set_prepared_rollout_jsonl(
-                residual_set_options
-            )
         residual_set_rollin_policy = _RESIDUAL_SET_INTERNAL_ROLLIN_POLICY
         residual_set_base_seed = (
             int(residual_set_options.get("base_seed", 17))
@@ -3049,9 +2960,9 @@ class Stage2TwoChannelTrainer(
             else 0.5
         )
         residual_set_min_ul_valid_rollouts = (
-            int(residual_set_options.get("min_ul_valid_rollouts", 2))
+            int(residual_set_options.get("min_ul_valid_rollouts", 4))
             if residual_set_options is not None
-            else 2
+            else 4
         )
         residual_set_ul_consensus_ratio = (
             float(residual_set_options.get("ul_consensus_ratio", 1.0))
@@ -3084,136 +2995,14 @@ class Stage2TwoChannelTrainer(
                 "rollout_template_family"
             )
 
-        prepared_rollout_mode = bool(residual_set_selected)
-        prepared_attempts_for_rollout: List[PreparedRolloutAttempt] = []
-        prepared_stats_for_rollout: List[Dict[str, Any]] = []
-        prepared_rollout_ordinals: List[int] = []
-        prepared_support_attempts_for_rollout: List[List[PreparedRolloutAttempt]] = []
-        prepared_k_total = 0
-        prepared_k_after_dedup = 0
-        prepared_k_valid = 0
-        prepared_exact_duplicate_attempts = 0
-        prepared_missing_sample_total = 0
-        prepared_dropped_reasons_total: Dict[str, int] = {}
-
-        if prepared_rollout_mode:
-            if prepared_rollout_path is None:
-                raise ValueError("residual_set_correction prepared rollout path was not resolved")
-            prepared_attempts = _stage2_load_prepared_rollout_attempts_once(
-                self,
-                prepared_rollout_path,
-                strict_prepared_rollout_tokens=True,
-                tokenizer=tok,
-            )
-            prepared_by_key = _stage2_group_prepared_rollout_attempts(
-                prepared_attempts
-            )
-            inputs_for_rollout = []
-            for original_sample_index, sample in enumerate(inputs):
-                candidates: List[PreparedRolloutAttempt] = []
-                for key in _stage2_prepared_rollout_lookup_keys_for_sample(
-                    sample,
-                    int(original_sample_index),
-                ):
-                    if key in prepared_by_key:
-                        candidates = list(prepared_by_key[key])
-                        break
-                if not candidates:
-                    prepared_missing_sample_total += 1
-                    continue
-
-                usable_candidates: List[PreparedRolloutAttempt] = []
-                local_dropped_reasons: Dict[str, int] = {}
-                for attempt in candidates:
-                    metadata = attempt.metadata if isinstance(attempt.metadata, Mapping) else {}
-                    if "detections" in metadata and not isinstance(
-                        metadata.get("detections"), list
-                    ):
-                        local_dropped_reasons["missing_detection_list"] = (
-                            int(local_dropped_reasons.get("missing_detection_list", 0))
-                            + 1
-                        )
-                        continue
-                    usable_candidates.append(attempt)
-
-                kept, dedup_stats = dedup_prepared_rollout_attempts(
-                    usable_candidates,
-                    legacy_reencode_fallback=False,
-                )
-                dropped_reasons = _stage2_prepared_dropped_reason_totals(dedup_stats)
-                for reason, count in local_dropped_reasons.items():
-                    dropped_reasons[str(reason)] = int(dropped_reasons.get(str(reason), 0)) + int(count)
-                valid_kept: List[PreparedRolloutAttempt] = []
-                for attempt in kept:
-                    try:
-                        attempt_view = build_channel_b_rollout_view(
-                            tokenizer=tok,
-                            object_field_order=object_field_order,
-                            coord_id_to_bin=coord_id_to_bin,
-                            duplicate_iou_threshold=duplicate_iou_threshold,
-                            center_radius_scale=center_radius_scale,
-                            max_new_tokens=max_new_tokens,
-                            rollout_result=_stage2_prepared_rollout_to_result(attempt),
-                            source_label="prepared",
-                            parse_rollout_for_matching_fn=parse_rollout_for_matching,
-                            points_from_coord_tokens_fn=points_from_coord_tokens,
-                            duplicate_diagnostics_fn=_channel_b_targets._compute_duplicate_diagnostics,
-                            rollout_template_policy=rollout_template_policy,
-                        )
-                    except Exception:
-                        dropped_reasons["invalid_prepared_rollout"] = (
-                            int(dropped_reasons.get("invalid_prepared_rollout", 0)) + 1
-                        )
-                        continue
-                    if int(attempt_view.get("invalid_rollout", 0) or 0) != 0:
-                        dropped_reasons["invalid_prepared_rollout"] = (
-                            int(dropped_reasons.get("invalid_prepared_rollout", 0)) + 1
-                        )
-                        continue
-                    valid_kept.append(attempt)
-                local_stats = {
-                    "K_total": int(len(candidates)),
-                    "K_after_dedup": int(len(kept)),
-                    "K_valid": int(len(valid_kept)),
-                    "expected_num_rollouts": int(num_rollouts),
-                    "exact_duplicate_attempts": int(
-                        dedup_stats.exact_duplicate_attempts
-                    ),
-                    "dropped_reasons": dropped_reasons,
-                }
-                prepared_k_total += int(local_stats["K_total"])
-                prepared_k_after_dedup += int(local_stats["K_after_dedup"])
-                prepared_k_valid += int(local_stats["K_valid"])
-                prepared_exact_duplicate_attempts += int(
-                    local_stats["exact_duplicate_attempts"]
-                )
-                for reason, count in dropped_reasons.items():
-                    prepared_dropped_reasons_total[str(reason)] = (
-                        int(prepared_dropped_reasons_total.get(str(reason), 0))
-                        + int(count)
-                    )
-                for local_ordinal, attempt in enumerate(valid_kept):
-                    support_attempts = [
-                        other
-                        for support_ordinal, other in enumerate(valid_kept)
-                        if int(support_ordinal) != int(local_ordinal)
-                    ]
-                    if not support_attempts:
-                        support_attempts = [attempt]
-                    inputs_for_rollout.append(sample)
-                    prepared_attempts_for_rollout.append(attempt)
-                    prepared_stats_for_rollout.append(dict(local_stats))
-                    prepared_rollout_ordinals.append(int(local_ordinal))
-                    prepared_support_attempts_for_rollout.append(support_attempts)
-        else:
-            inputs_for_rollout = self._prepare_samples_for_rollout(
-                inputs,
-                rollout_backend=backend,
-            )
+        inputs_for_rollout = self._prepare_samples_for_rollout(
+            inputs,
+            rollout_backend=backend,
+        )
         if timing_enabled:
             _append_stage2_timing_line(
                 "stage2_batch_milestone "
-                f"event=prepared_samples_for_rollout global_step={int(gs)} "
+                f"event=samples_for_rollout global_step={int(gs)} "
                 f"inputs_for_rollout={len(inputs_for_rollout)} backend={backend}"
             )
 
@@ -3245,143 +3034,127 @@ class Stage2TwoChannelTrainer(
                 raise last_exc
             raise AssertionError("unreachable")
 
-        if prepared_rollout_mode:
-            hf_seeded_global = 0.0
-            t_gen_s = 0.0
-            anchor_rollout_results = [
-                _stage2_prepared_rollout_to_result(attempt)
-                for attempt in prepared_attempts_for_rollout
+        primary_rollout_ordinals: List[int] = []
+        peer_rollout_ordinals_for_rollout: List[List[int]] = []
+        raw_rollout_count = 0
+        base_inputs_for_rollout = list(inputs_for_rollout)
+        with self._hf_sampling_seed_context(
+            seed_base=seed_base, backend=backend, do_sample=do_sample
+        ) as seeded:
+            hf_seeded_global = float(1.0 if seeded else 0.0)
+
+            t_gen0 = time.perf_counter()
+            if timing_enabled:
+                _append_stage2_timing_line(
+                    "stage2_batch_milestone "
+                    f"event=before_rollout_many global_step={int(gs)} "
+                    f"inputs_for_rollout={len(base_inputs_for_rollout)} "
+                    f"rollout_count={int(num_rollouts)} "
+                    f"rollout_infer_bs_pre={int(self._rollout_decode_batch_size_per_rank())}"
+                )
+
+            # Derived rollout request chunk size per learner rank.
+            #
+            # `channel_b_decode_batch_size` is defined as a per-rollout-GPU cap per
+            # generation call during train-step Channel-B rollouts. For vLLM server mode
+            # (data-parallel replicas), we derive the per-rank chunk size so the per-GPU
+            # cap holds when all learner ranks run concurrently.
+            rollout_infer_bs = int(self._rollout_decode_batch_size_per_rank())
+            rollout_infer_bs = max(1, int(rollout_infer_bs))
+            if int(len(base_inputs_for_rollout)) > 0:
+                rollout_infer_bs = min(
+                    int(rollout_infer_bs), int(len(base_inputs_for_rollout))
+                )
+
+            rollout_results_by_ordinal: List[List[Any]] = [
+                [] for _ in range(int(num_rollouts))
             ]
-            max_support_views = max(
-                1,
-                max(
-                    (len(items) for items in prepared_support_attempts_for_rollout),
-                    default=1,
-                ),
-            )
-            explorer_view_count = int(max_support_views)
-            explorer_rollout_results_by_view = [
-                [] for _ in range(int(explorer_view_count))
-            ]
-            for support_attempts in prepared_support_attempts_for_rollout:
-                for explorer_ordinal in range(int(explorer_view_count)):
-                    support = support_attempts[
-                        int(explorer_ordinal) % int(len(support_attempts))
+            for attempt_ordinal in range(int(num_rollouts)):
+                request = rollout_decode_requests[int(attempt_ordinal)]
+                decode_override = {
+                    "decode_mode": str(request.decode_mode),
+                    "temperature": float(request.temperature),
+                    "top_p": float(request.top_p),
+                    "top_k": int(request.top_k),
+                }
+                for off in range(
+                    0,
+                    int(len(base_inputs_for_rollout)),
+                    int(rollout_infer_bs),
+                ):
+                    chunk = base_inputs_for_rollout[
+                        int(off) : int(off + rollout_infer_bs)
                     ]
-                    explorer_rollout_results_by_view[int(explorer_ordinal)].append(
-                        _stage2_prepared_rollout_to_result(support)
-                    )
-        else:
-            with self._hf_sampling_seed_context(
-                seed_base=seed_base, backend=backend, do_sample=do_sample
-            ) as seeded:
-                hf_seeded_global = float(1.0 if seeded else 0.0)
-
-                t_gen0 = time.perf_counter()
-                if timing_enabled:
-                    _append_stage2_timing_line(
-                        "stage2_batch_milestone "
-                        f"event=before_rollout_many global_step={int(gs)} "
-                        f"inputs_for_rollout={len(inputs_for_rollout)} "
-                        f"explorer_view_count={int(explorer_view_count)} "
-                        f"rollout_infer_bs_pre={int(self._rollout_decode_batch_size_per_rank())}"
-                    )
-
-                # Derived rollout request chunk size per learner rank.
-                #
-                # `channel_b_decode_batch_size` is defined as a per-rollout-GPU cap per
-                # generation call during train-step Channel-B rollouts. For vLLM server mode
-                # (data-parallel replicas), we derive the per-rank chunk size so the per-GPU
-                # cap holds when all learner ranks run concurrently.
-                rollout_infer_bs = int(self._rollout_decode_batch_size_per_rank())
-                rollout_infer_bs = max(1, int(rollout_infer_bs))
-                if int(len(inputs_for_rollout)) > 0:
-                    rollout_infer_bs = min(
-                        int(rollout_infer_bs), int(len(inputs_for_rollout))
-                    )
-
-                anchor_rollout_results = []
-                explorer_rollout_results_by_view = [
-                    [] for _ in range(int(explorer_view_count))
-                ]
-                for off in range(0, int(len(inputs_for_rollout)), int(rollout_infer_bs)):
-                    chunk = inputs_for_rollout[int(off) : int(off + rollout_infer_bs)]
                     if not chunk:
                         continue
                     if timing_enabled:
                         _append_stage2_timing_line(
                             "stage2_batch_milestone "
-                            f"event=before_anchor_chunk global_step={int(gs)} "
-                            f"off={int(off)} chunk_size={len(chunk)}"
+                            f"event=before_rollout_chunk global_step={int(gs)} "
+                            f"off={int(off)} attempt_ordinal={int(attempt_ordinal)} "
+                            f"chunk_size={len(chunk)}"
                         )
 
-                    anchor_chunk_results = _rollout_many_with_decode_override(
+                    chunk_results = _rollout_many_with_decode_override(
                         chunk,
-                        decode_override={
-                            "decode_mode": str(anchor_decode_request.decode_mode),
-                            "temperature": float(anchor_decode_request.temperature),
-                            "top_p": float(anchor_decode_request.top_p),
-                            "top_k": int(anchor_decode_request.top_k),
-                        },
-                        request_index_offset=int(off),
+                        decode_override=decode_override,
+                        request_index_offset=int(
+                            attempt_ordinal * len(base_inputs_for_rollout) + off
+                        ),
                     )
-                    anchor_rollout_results.extend(anchor_chunk_results)
+                    rollout_results_by_ordinal[int(attempt_ordinal)].extend(
+                        chunk_results
+                    )
                     if timing_enabled:
                         _append_stage2_timing_line(
                             "stage2_batch_milestone "
-                            f"event=after_anchor_chunk global_step={int(gs)} "
-                            f"off={int(off)} returned={len(anchor_chunk_results)}"
+                            f"event=after_rollout_chunk global_step={int(gs)} "
+                            f"off={int(off)} attempt_ordinal={int(attempt_ordinal)} "
+                            f"returned={len(chunk_results)}"
                         )
-                    for explorer_ordinal in range(int(explorer_view_count)):
-                        if timing_enabled:
-                            _append_stage2_timing_line(
-                                "stage2_batch_milestone "
-                                f"event=before_explorer_chunk global_step={int(gs)} "
-                                f"off={int(off)} explorer_ordinal={int(explorer_ordinal)} "
-                                f"chunk_size={len(chunk)}"
-                            )
-                        explorer_chunk_results = _rollout_many_with_decode_override(
-                            chunk,
-                            decode_override={
-                                "decode_mode": str(explorer_decode_request.decode_mode),
-                                "temperature": float(explorer_decode_request.temperature),
-                                "top_p": float(explorer_decode_request.top_p),
-                                "top_k": int(explorer_decode_request.top_k),
-                            },
-                            request_index_offset=int(
-                                explorer_ordinal * len(inputs_for_rollout) + off
-                            ),
-                        )
-                        explorer_rollout_results_by_view[int(explorer_ordinal)].extend(
-                            explorer_chunk_results
-                        )
-                        if timing_enabled:
-                            _append_stage2_timing_line(
-                                "stage2_batch_milestone "
-                                f"event=after_explorer_chunk global_step={int(gs)} "
-                                f"off={int(off)} explorer_ordinal={int(explorer_ordinal)} "
-                                f"returned={len(explorer_chunk_results)}"
-                            )
 
-                if len(anchor_rollout_results) != len(inputs_for_rollout):
+            for attempt_ordinal, attempt_results in enumerate(
+                rollout_results_by_ordinal
+            ):
+                if len(attempt_results) != len(base_inputs_for_rollout):
                     raise RuntimeError(
-                        "anchor rollout backend returned unexpected number of results"
+                        "rollout backend returned unexpected number of results "
+                        f"for attempt ordinal {int(attempt_ordinal)}"
                     )
-                for explorer_ordinal, explorer_rollout_results in enumerate(
-                    explorer_rollout_results_by_view
-                ):
-                    if len(explorer_rollout_results) != len(inputs_for_rollout):
-                        raise RuntimeError(
-                            "explorer rollout backend returned unexpected number of results "
-                            f"for explorer ordinal {int(explorer_ordinal)}"
+
+            inputs_for_rollout = []
+            anchor_rollout_results = []
+            explorer_view_count = max(0, int(num_rollouts) - 1)
+            explorer_rollout_results_by_view = [
+                [] for _ in range(int(explorer_view_count))
+            ]
+            for base_index, sample in enumerate(base_inputs_for_rollout):
+                for primary_ordinal in range(int(num_rollouts)):
+                    peer_ordinals = [
+                        int(ordinal)
+                        for ordinal in range(int(num_rollouts))
+                        if int(ordinal) != int(primary_ordinal)
+                    ]
+                    inputs_for_rollout.append(sample)
+                    anchor_rollout_results.append(
+                        rollout_results_by_ordinal[int(primary_ordinal)][int(base_index)]
+                    )
+                    primary_rollout_ordinals.append(int(primary_ordinal))
+                    peer_rollout_ordinals_for_rollout.append(list(peer_ordinals))
+                    for peer_slot, peer_ordinal in enumerate(peer_ordinals):
+                        explorer_rollout_results_by_view[int(peer_slot)].append(
+                            rollout_results_by_ordinal[int(peer_ordinal)][int(base_index)]
                         )
-                t_gen_s = time.perf_counter() - t_gen0
-                if timing_enabled:
-                    _append_stage2_timing_line(
-                        "stage2_batch_milestone "
-                        f"event=after_rollout_many global_step={int(gs)} "
-                        f"t_gen_ms={t_gen_s * 1000.0:.1f}"
-                    )
+            raw_rollout_count = int(
+                sum(len(items) for items in rollout_results_by_ordinal)
+            )
+            t_gen_s = time.perf_counter() - t_gen0
+            if timing_enabled:
+                _append_stage2_timing_line(
+                    "stage2_batch_milestone "
+                    f"event=after_rollout_many global_step={int(gs)} "
+                    f"t_gen_ms={t_gen_s * 1000.0:.1f}"
+                )
 
         encoded_batch: List[Dict[str, Any]] = []
         meta_unpacked: List[Stage2RolloutMeta] = []
@@ -3478,6 +3251,13 @@ class Stage2TwoChannelTrainer(
 
             t_pm0 = time.perf_counter()
             gts = _extract_gt_bboxonly(sample)
+            primary_rollout_ordinal = int(primary_rollout_ordinals[int(sample_index)])
+            peer_rollout_ordinals = list(
+                peer_rollout_ordinals_for_rollout[int(sample_index)]
+            )
+            sample_attempt_id = str(
+                _sample_identifier_or_index(sample, int(sample_index))
+            )
             anchor_view = build_channel_b_rollout_view(
                 tokenizer=tok,
                 object_field_order=object_field_order,
@@ -3486,108 +3266,93 @@ class Stage2TwoChannelTrainer(
                 center_radius_scale=center_radius_scale,
                 max_new_tokens=max_new_tokens,
                 rollout_result=anchor_rollout,
-                source_label="anchor",
+                source_label="attempt",
                 parse_rollout_for_matching_fn=parse_rollout_for_matching,
                 points_from_coord_tokens_fn=points_from_coord_tokens,
                 duplicate_diagnostics_fn=_channel_b_targets._compute_duplicate_diagnostics,
                 rollout_template_policy=rollout_template_policy,
             )
-            prepared_attempt = (
-                prepared_attempts_for_rollout[int(sample_index)]
-                if prepared_rollout_mode
-                else None
+            current_attempt = wrap_rollout_attempt_view(
+                sample_id=sample_attempt_id,
+                sample_index=int(sample_index),
+                role="primary_attempt",
+                source="live",
+                rollout_index=int(primary_rollout_ordinal),
+                view=anchor_view,
+                rollout_result=anchor_rollout,
             )
-            prepared_stats = (
-                dict(prepared_stats_for_rollout[int(sample_index)])
-                if prepared_rollout_mode
-                else {}
-            )
-            prepared_rollout_ordinal = (
-                int(prepared_rollout_ordinals[int(sample_index)])
-                if prepared_rollout_mode
-                else 0
-            )
-            anchor_view["rollout_index"] = int(prepared_rollout_ordinal)
-            if prepared_attempt is not None:
-                anchor_view["rollout_id"] = str(prepared_attempt.rollout_id)
-                anchor_view["prepared_rollout"] = _stage2_prepared_rollout_metadata(
-                    attempt=prepared_attempt,
-                    stats=prepared_stats,
-                )
             explorer_rollouts = [
                 explorer_rollout_results[int(sample_index)]
                 for explorer_rollout_results in explorer_rollout_results_by_view
             ]
-            explorer_views = []
+            peer_attempts = []
             for explorer_ordinal, explorer_rollout in enumerate(explorer_rollouts):
-                explorer_view_item = build_channel_b_rollout_view(
-                    tokenizer=tok,
-                    object_field_order=object_field_order,
-                    coord_id_to_bin=coord_id_to_bin,
-                    duplicate_iou_threshold=duplicate_iou_threshold,
-                    center_radius_scale=center_radius_scale,
-                    max_new_tokens=max_new_tokens,
-                    rollout_result=explorer_rollout,
-                    source_label="explorer",
-                    parse_rollout_for_matching_fn=parse_rollout_for_matching,
-                    points_from_coord_tokens_fn=points_from_coord_tokens,
-                    duplicate_diagnostics_fn=_channel_b_targets._compute_duplicate_diagnostics,
-                    rollout_template_policy=rollout_template_policy,
+                if explorer_rollout is None:
+                    explorer_view_item = _stage2_missing_peer_rollout_view()
+                    peer_source = "missing_peer"
+                else:
+                    explorer_view_item = build_channel_b_rollout_view(
+                        tokenizer=tok,
+                        object_field_order=object_field_order,
+                        coord_id_to_bin=coord_id_to_bin,
+                        duplicate_iou_threshold=duplicate_iou_threshold,
+                        center_radius_scale=center_radius_scale,
+                        max_new_tokens=max_new_tokens,
+                        rollout_result=explorer_rollout,
+                        source_label="peer_attempt",
+                        parse_rollout_for_matching_fn=parse_rollout_for_matching,
+                        points_from_coord_tokens_fn=points_from_coord_tokens,
+                        duplicate_diagnostics_fn=_channel_b_targets._compute_duplicate_diagnostics,
+                        rollout_template_policy=rollout_template_policy,
+                    )
+                    peer_source = "live"
+                peer_rollout_ordinal = (
+                    int(peer_rollout_ordinals[int(explorer_ordinal)])
+                    if int(explorer_ordinal) < len(peer_rollout_ordinals)
+                    else -1
                 )
-                explorer_view_item["rollout_index"] = int(explorer_ordinal) + 1
-                if prepared_rollout_mode:
-                    support_attempts = prepared_support_attempts_for_rollout[
-                        int(sample_index)
-                    ]
-                    support_attempt = support_attempts[
-                        int(explorer_ordinal) % int(len(support_attempts))
-                    ]
-                    explorer_view_item["rollout_index"] = int(explorer_ordinal)
-                    explorer_view_item["rollout_id"] = str(support_attempt.rollout_id)
-                explorer_views.append(explorer_view_item)
-            explorer_view = explorer_views[0]
+                peer_attempts.append(
+                    wrap_rollout_attempt_view(
+                        sample_id=sample_attempt_id,
+                        sample_index=int(sample_index),
+                        role="peer_attempt",
+                        source=peer_source,
+                        rollout_index=int(peer_rollout_ordinal),
+                        view=explorer_view_item,
+                        rollout_result=explorer_rollout,
+                    )
+                )
+            attempt_table = build_attempt_table(
+                sample_id=sample_attempt_id,
+                sample_index=int(sample_index),
+                primary=current_attempt,
+                peers=peer_attempts,
+            )
+            anchor_view = attempt_table.current_view
+            explorer_views = list(attempt_table.peer_views)
+            explorer_view = explorer_views[0] if explorer_views else anchor_view
 
             parse = anchor_view["parse"]
             invalid_rollout = int(anchor_view["invalid_rollout"])
-            parse_truncated_total += int(1 if bool(parse.truncated) else 0) + sum(
-                int(explorer_view_item["parse_truncated"])
-                for explorer_view_item in explorer_views
+            parse_truncated_total += int(1 if bool(parse.truncated) else 0)
+            invalid_fallback_gt_fn_total += int(
+                int(anchor_view.get("compact_fallback_applies", 0)) != 0
+                and bool(getattr(anchor_view.get("parse"), "invalid_rollout", False))
             )
-            rollout_views_for_metrics = [anchor_view] + list(explorer_views)
-            invalid_fallback_gt_fn_total += sum(
-                int(
-                    int(view_item.get("compact_fallback_applies", 0)) != 0
-                    and bool(getattr(view_item.get("parse"), "invalid_rollout", False))
-                )
-                for view_item in rollout_views_for_metrics
+            empty_valid_object_total += int(
+                bool(getattr(anchor_view.get("parse"), "empty_valid_object_set", False))
             )
-            empty_valid_object_total += sum(
-                int(bool(getattr(view_item.get("parse"), "empty_valid_object_set", False)))
-                for view_item in rollout_views_for_metrics
-            )
-            compact_fallback_view_total += sum(
-                int(view_item.get("compact_fallback_applies", 0) or 0)
-                for view_item in rollout_views_for_metrics
+            compact_fallback_view_total += int(
+                anchor_view.get("compact_fallback_applies", 0) or 0
             )
             compact_anchor_fallback_total += int(
                 anchor_view.get("compact_fallback_applies", 0) or 0
             )
             invalid_rollout_views: List[tuple[str, Mapping[str, Any], Optional[int]]] = []
             if int(invalid_rollout) != 0:
-                invalid_rollout_views.append(("anchor", anchor_view, None))
-            invalid_explorer_ordinals = [
-                int(explorer_ordinal)
-                for explorer_ordinal, explorer_view_item in enumerate(explorer_views)
-                if int(explorer_view_item["invalid_rollout"]) != 0
-            ]
-            invalid_rollout_views.extend(
-                (
-                    f"explorer_{int(explorer_ordinal)}",
-                    explorer_views[int(explorer_ordinal)],
-                    int(explorer_ordinal),
+                invalid_rollout_views.append(
+                    (f"attempt_{int(primary_rollout_ordinal)}", anchor_view, None)
                 )
-                for explorer_ordinal in invalid_explorer_ordinals
-            )
             if (
                 invalid_rollout_views
                 and bool(pseudo_positive_enabled)
@@ -3899,6 +3664,7 @@ class Stage2TwoChannelTrainer(
                 sample=sample,
                 accepted_objects_clean=accepted_objects_clean,
             )
+            expected_peer_count_for_triage = max(0, int(num_rollouts) - 1)
             triage = _channel_b_targets._build_channel_b_triage(
                 accepted_objects_clean=accepted_objects_clean,
                 suppressed_duplicate_objects_by_boundary=(
@@ -3913,6 +3679,7 @@ class Stage2TwoChannelTrainer(
                 ),
                 duplicate_iou_threshold=float(duplicate_iou_threshold),
                 pseudo_positive_enabled=bool(pseudo_positive_enabled),
+                expected_peer_count=int(expected_peer_count_for_triage),
             )
             association_pairs_by_view = [
                 list(pairs) for pairs in triage.association_pairs_by_view
@@ -4053,7 +3820,8 @@ class Stage2TwoChannelTrainer(
                 )
             )
             triage_pseudo_positive_support_rate_den_total += float(
-                int(valid_explorer_count) * int(len(pseudo_positive_candidate_indices))
+                int(expected_peer_count_for_triage)
+                * int(len(pseudo_positive_candidate_indices))
             )
             triage_pseudo_positive_selected_support_rate_num_total += float(
                 sum(
@@ -4062,7 +3830,8 @@ class Stage2TwoChannelTrainer(
                 )
             )
             triage_pseudo_positive_selected_support_rate_den_total += float(
-                int(valid_explorer_count) * int(len(pseudo_positive_anchor_indices))
+                int(expected_peer_count_for_triage)
+                * int(len(pseudo_positive_anchor_indices))
             )
             triage_dead_anchor_total += int(len(dead_anchor_indices))
             triage_dead_explorer_total += int(
@@ -4085,7 +3854,7 @@ class Stage2TwoChannelTrainer(
                 sum(int(v) for v in recovered_gt_support_counts)
             )
             triage_recovered_gt_rate_den_total += float(
-                int(valid_explorer_count) * int(len(recovered_gt_indices))
+                int(expected_peer_count_for_triage) * int(len(recovered_gt_indices))
             )
             triage_dead_anchor_den_total += int(len(accepted_objects_clean))
             triage_dead_explorer_den_total += int(
@@ -4098,57 +3867,6 @@ class Stage2TwoChannelTrainer(
             suppressed_duplicate_objects_by_boundary = dict(
                 triage.suppressed_duplicate_objects_by_boundary
             )
-            supervision_targets = _channel_b_targets._build_channel_b_supervision_targets(
-                tokenizer=tok,
-                prompt_ids=prompt_ids,
-                coord_id_set=coord_id_set,
-                gts=gts,
-                match=match,
-                triage=triage,
-                recovered_ground_truth_weight_multiplier=float(
-                    recovered_ground_truth_weight_multiplier
-                ),
-                pseudo_positive_enabled=bool(pseudo_positive_enabled),
-                pseudo_positive_coord_weight=float(
-                    self._ab_channel_b_get("pseudo_positive.coord_weight", 0.5)
-                ),
-                insertion_order=str(
-                    self._ab_channel_b_get("insertion_order", "tail_append")
-                ),
-                fp_policy_mode=str(fp_policy_mode),
-                fp_policy_weak_positive_weight=float(fp_policy_weak_positive_weight),
-                fp_policy_require_explorer_support=bool(
-                    fp_policy_require_explorer_support
-                ),
-                fp_policy_min_support_count=int(fp_policy_min_support_count),
-                fp_policy_require_token_score=bool(fp_policy_require_token_score),
-                object_field_order=object_field_order,
-                bbox_groups_from_token_ids_fn=_bbox_groups_from_token_ids,
-                matched_prefix_structure_positions_fn=_matched_prefix_structure_positions,
-                serialize_append_fragment_fn=serialize_append_fragment,
-                rollout_template_policy=rollout_template_policy,
-                parse=parse,
-                shuffle_seed=int(seed_base) + int(sample_index),
-            )
-            clean_prefix = supervision_targets.clean_prefix
-            prefix_len_raw_local = int(supervision_targets.prefix_len_raw_local)
-            prefix_bbox_groups = list(supervision_targets.prefix_bbox_groups)
-            fn_bbox_groups = list(supervision_targets.fn_bbox_groups)
-            prefix_pos = list(supervision_targets.prefix_pos)
-            prefix_bins = list(supervision_targets.prefix_bins)
-            prefix_struct_pos = list(supervision_targets.prefix_struct_pos)
-            prefix_desc_pos = list(supervision_targets.prefix_desc_pos)
-            prefix_desc_weights = list(supervision_targets.prefix_desc_weights)
-            matched_for_supervision_total += int(
-                len(supervision_targets.matched_gt_indices)
-            )
-            fn_object_weights = list(supervision_targets.fn_object_weights)
-            fn_count_for_meta = int(supervision_targets.fn_count_for_meta)
-            append_text = str(supervision_targets.append_text)
-            tail_desc_pos = list(supervision_targets.tail_desc_pos)
-            tail_desc_weights = list(supervision_targets.tail_desc_weights)
-            y_train_ids = list(supervision_targets.y_train_ids)
-            clean_target_text = str(supervision_targets.clean_target_text)
             sample_id_for_meta = str(
                 _sample_identifier_or_index(sample, int(sample_index))
             )
@@ -4201,6 +3919,25 @@ class Stage2TwoChannelTrainer(
                 tail_desc_weights = []
                 fn_object_weights = []
                 fn_count_for_meta = int(len(match.fn_gt_indices))
+                append_text = ""
+                prefix_text_for_monitor = ""
+                matched_for_supervision_count = int(len(match.matched_pairs))
+                matched_for_supervision_total += int(matched_for_supervision_count)
+                duplicate_control_first_divergence_diagnostics = []
+                duplicate_control_first_divergence_boundary_count = 0
+                duplicate_control_first_divergence_skipped_no_divergence = 0
+                rollout_template_family = str(rollout_template_policy.template_family)
+                rollout_parser_id = str(rollout_template_policy.parser_id)
+                rollout_append_policy_id = str(rollout_template_policy.append_policy_id)
+                rollout_context = "residual_set_self_prefix"
+                rollout_fallback_reason = None
+                rollout_fallback_loss_weight = 0.0
+                rollout_counts_as_valid_rollout = bool(
+                    anchor_view.get("rollout_counts_as_valid_rollout", 1)
+                )
+                rollout_index_for_meta = int(anchor_view.get("rollout_index", 0) or 0)
+                stage2_trie_object_spans = []
+                stage2_trie_weak_fp_span_level_fallback = False
                 residual_set_event_total += int(
                     residual_set_build_result.metrics.get("event_count", 0.0)
                 )
@@ -4216,177 +3953,99 @@ class Stage2TwoChannelTrainer(
                     <= 0.0
                 ):
                     residual_set_sequence_total += 1
-            stage2_trie_candidates: List[Stage2TrieCandidate] = []
-            if not residual_set_selected:
-                anchor_trie_candidate = _build_stage2_trie_candidate_from_supervision(
-                    sample_id=sample_id_for_meta,
-                    rollout_index=0,
-                    supervision_targets=supervision_targets,
-                )
-                if anchor_trie_candidate is not None:
-                    stage2_trie_candidates.append(anchor_trie_candidate)
-
-            valid_candidate_support_views = []
-            if int(anchor_view.get("rollout_counts_as_valid_rollout", 1)) != 0:
-                valid_candidate_support_views.append(anchor_view)
-            valid_candidate_support_views.extend(triage_explorer_views)
-
-            for candidate_position, candidate_view in enumerate(
-                [] if residual_set_selected else triage_explorer_views,
-                start=1,
-            ):
-                candidate_rollout_index = int(
-                    candidate_view.get("rollout_index", int(candidate_position))
-                )
-                candidate_support_views = [
-                    support_view
-                    for support_view in valid_candidate_support_views
-                    if support_view is not candidate_view
-                ]
-                candidate_objects_raw = list(
-                    candidate_view["parsed_bbox_objects_raw"]
-                )
-                candidate_duplicate_control = (
-                    _channel_b_targets._apply_channel_b_duplicate_control(
-                        anchor_objects_raw=candidate_objects_raw,
-                        explorer_objects_raw_by_view=[
-                            list(support_view["parsed_bbox_objects_raw"])
-                            for support_view in candidate_support_views
-                        ],
-                        duplicate_iou_threshold=float(duplicate_iou_threshold),
-                        center_radius_scale=float(center_radius_scale),
-                        unlabeled_consistent_iou_threshold=float(
-                            unlabeled_consistent_iou_threshold
-                        ),
-                    )
-                )
-                candidate_accepted_objects_clean = list(
-                    candidate_duplicate_control.kept_anchor_objects
-                )
-                candidate_suppressed_duplicates = {
-                    int(boundary): list(duplicates)
-                    for boundary, duplicates in candidate_duplicate_control.suppressed_duplicate_objects_by_boundary.items()
-                }
-                candidate_match = _assign_stage2_channel_b_objects(
-                    strategy=assignment_strategy,
-                    preds=candidate_accepted_objects_clean,
+            else:
+                supervision_targets = _channel_b_targets._build_channel_b_supervision_targets(
+                    tokenizer=tok,
+                    prompt_ids=prompt_ids,
+                    coord_id_set=coord_id_set,
                     gts=gts,
-                )
-                candidate_anchor_match_by_pred = {
-                    int(pred_i): int(gt_i)
-                    for pred_i, gt_i in candidate_match.matched_pairs
-                    if 0 <= int(pred_i) < len(candidate_accepted_objects_clean)
-                    and 0 <= int(gt_i) < len(gts)
-                }
-                candidate_support_objects_by_view = [
-                    list(support_view["parsed_bbox_objects_raw"])
-                    for support_view in candidate_support_views
-                ]
-                candidate_support_match_by_pred_by_view = []
-                for support_objects_raw in candidate_support_objects_by_view:
-                    support_match = _assign_stage2_channel_b_objects(
-                        strategy=assignment_strategy,
-                        preds=support_objects_raw,
-                        gts=gts,
-                    )
-                    candidate_support_match_by_pred_by_view.append(
-                        {
-                            int(pred_i): int(gt_i)
-                            for pred_i, gt_i in support_match.matched_pairs
-                            if 0 <= int(pred_i) < len(support_objects_raw)
-                            and 0 <= int(gt_i) < len(gts)
-                        }
-                    )
-                candidate_triage = _channel_b_targets._build_channel_b_triage(
-                    accepted_objects_clean=candidate_accepted_objects_clean,
-                    suppressed_duplicate_objects_by_boundary=(
-                        candidate_suppressed_duplicates
+                    match=match,
+                    triage=triage,
+                    recovered_ground_truth_weight_multiplier=float(
+                        recovered_ground_truth_weight_multiplier
                     ),
-                    explorer_objects_raw_by_view=candidate_support_objects_by_view,
-                    anchor_match_by_pred=candidate_anchor_match_by_pred,
-                    explorer_match_by_pred_by_view=(
-                        candidate_support_match_by_pred_by_view
-                    ),
-                    anchor_policy_statuses=_anchor_lvis_policy_statuses(
-                        sample=sample,
-                        accepted_objects_clean=candidate_accepted_objects_clean,
-                    ),
-                    unlabeled_consistent_iou_threshold=float(
-                        unlabeled_consistent_iou_threshold
-                    ),
-                    duplicate_iou_threshold=float(duplicate_iou_threshold),
                     pseudo_positive_enabled=bool(pseudo_positive_enabled),
+                    pseudo_positive_coord_weight=float(
+                        self._ab_channel_b_get("pseudo_positive.coord_weight", 0.5)
+                    ),
+                    insertion_order=str(
+                        self._ab_channel_b_get("insertion_order", "tail_append")
+                    ),
+                    fp_policy_mode=str(fp_policy_mode),
+                    fp_policy_weak_positive_weight=float(
+                        fp_policy_weak_positive_weight
+                    ),
+                    fp_policy_require_explorer_support=bool(
+                        fp_policy_require_explorer_support
+                    ),
+                    fp_policy_min_support_count=int(fp_policy_min_support_count),
+                    fp_policy_require_token_score=bool(fp_policy_require_token_score),
+                    object_field_order=object_field_order,
+                    bbox_groups_from_token_ids_fn=_bbox_groups_from_token_ids,
+                    matched_prefix_structure_positions_fn=(
+                        _matched_prefix_structure_positions
+                    ),
+                    serialize_append_fragment_fn=serialize_append_fragment,
+                    rollout_template_policy=rollout_template_policy,
+                    parse=parse,
+                    shuffle_seed=int(seed_base) + int(sample_index),
                 )
-                candidate_supervision_targets = (
-                    _channel_b_targets._build_channel_b_supervision_targets(
-                        tokenizer=tok,
-                        prompt_ids=list(candidate_view["prompt_ids"]),
-                        coord_id_set=coord_id_set,
-                        gts=gts,
-                        match=candidate_match,
-                        triage=candidate_triage,
-                        recovered_ground_truth_weight_multiplier=float(
-                            recovered_ground_truth_weight_multiplier
-                        ),
-                        pseudo_positive_enabled=bool(pseudo_positive_enabled),
-                        pseudo_positive_coord_weight=float(
-                            self._ab_channel_b_get(
-                                "pseudo_positive.coord_weight",
-                                0.5,
-                            )
-                        ),
-                        insertion_order=str(
-                            self._ab_channel_b_get(
-                                "insertion_order",
-                                "tail_append",
-                            )
-                        ),
-                        fp_policy_mode=str(fp_policy_mode),
-                        fp_policy_weak_positive_weight=float(
-                            fp_policy_weak_positive_weight
-                        ),
-                        fp_policy_require_explorer_support=bool(
-                            fp_policy_require_explorer_support
-                        ),
-                        fp_policy_min_support_count=int(
-                            fp_policy_min_support_count
-                        ),
-                        fp_policy_require_token_score=bool(
-                            fp_policy_require_token_score
-                        ),
-                        object_field_order=object_field_order,
-                        bbox_groups_from_token_ids_fn=_bbox_groups_from_token_ids,
-                        matched_prefix_structure_positions_fn=(
-                            _matched_prefix_structure_positions
-                        ),
-                        serialize_append_fragment_fn=serialize_append_fragment,
-                        rollout_template_policy=rollout_template_policy,
-                        parse=candidate_view["parse"],
-                        shuffle_seed=(
-                            int(seed_base)
-                            + int(sample_index)
-                            + int(candidate_rollout_index)
-                        ),
-                    )
+                clean_prefix = supervision_targets.clean_prefix
+                prefix_text_for_monitor = str(clean_prefix.prefix_text)
+                prefix_len_raw_local = int(supervision_targets.prefix_len_raw_local)
+                prefix_bbox_groups = list(supervision_targets.prefix_bbox_groups)
+                fn_bbox_groups = list(supervision_targets.fn_bbox_groups)
+                prefix_pos = list(supervision_targets.prefix_pos)
+                prefix_bins = list(supervision_targets.prefix_bins)
+                prefix_struct_pos = list(supervision_targets.prefix_struct_pos)
+                prefix_desc_pos = list(supervision_targets.prefix_desc_pos)
+                prefix_desc_weights = list(supervision_targets.prefix_desc_weights)
+                matched_for_supervision_count = int(
+                    len(supervision_targets.matched_gt_indices)
                 )
-                candidate_trie_candidate = (
-                    _build_stage2_trie_candidate_from_supervision(
-                        sample_id=sample_id_for_meta,
-                        rollout_index=int(candidate_rollout_index),
-                        supervision_targets=candidate_supervision_targets,
-                    )
+                matched_for_supervision_total += int(matched_for_supervision_count)
+                fn_object_weights = list(supervision_targets.fn_object_weights)
+                fn_count_for_meta = int(supervision_targets.fn_count_for_meta)
+                append_text = str(supervision_targets.append_text)
+                tail_desc_pos = list(supervision_targets.tail_desc_pos)
+                tail_desc_weights = list(supervision_targets.tail_desc_weights)
+                y_train_ids = list(supervision_targets.y_train_ids)
+                clean_target_text = str(supervision_targets.clean_target_text)
+                duplicate_control_first_divergence_diagnostics = list(
+                    supervision_targets.duplicate_control_first_divergence_diagnostics
                 )
-                if candidate_trie_candidate is not None:
-                    stage2_trie_candidates.append(candidate_trie_candidate)
-            duplicate_control_first_divergence_diagnostics = list(
-                supervision_targets.duplicate_control_first_divergence_diagnostics
-            )
-            duplicate_control_first_divergence_boundary_count = int(
-                supervision_targets.duplicate_control_first_divergence_boundary_count
-            )
-            duplicate_control_first_divergence_skipped_no_divergence = int(
-                supervision_targets.duplicate_control_first_divergence_skipped_no_divergence
-            )
+                duplicate_control_first_divergence_boundary_count = int(
+                    supervision_targets.duplicate_control_first_divergence_boundary_count
+                )
+                duplicate_control_first_divergence_skipped_no_divergence = int(
+                    supervision_targets.duplicate_control_first_divergence_skipped_no_divergence
+                )
+                rollout_template_family = str(
+                    supervision_targets.rollout_template_family
+                )
+                rollout_parser_id = str(supervision_targets.rollout_parser_id)
+                rollout_append_policy_id = str(
+                    supervision_targets.rollout_append_policy_id
+                )
+                rollout_context = str(supervision_targets.rollout_context)
+                rollout_fallback_reason = supervision_targets.rollout_fallback_reason
+                rollout_fallback_loss_weight = float(
+                    supervision_targets.rollout_fallback_loss_weight
+                )
+                rollout_counts_as_valid_rollout = bool(
+                    supervision_targets.rollout_counts_as_valid_rollout
+                )
+                rollout_index_for_meta = (
+                    -1
+                    if str(rollout_context) == FALLBACK_GT_FN_APPEND_ONLY
+                    else int(anchor_view.get("rollout_index", 0) or 0)
+                )
+                stage2_trie_object_spans = list(
+                    supervision_targets.stage2_trie_object_spans
+                )
+                stage2_trie_weak_fp_span_level_fallback = bool(
+                    supervision_targets.stage2_trie_weak_fp_span_level_fallback
+                )
             dup_first_divergence_boundaries_total += int(
                 duplicate_control_first_divergence_boundary_count
             )
@@ -4470,7 +4129,7 @@ class Stage2TwoChannelTrainer(
                         "explorer_rollout_text": str(
                             getattr(explorer_view["parse"], "response_text", "") or ""
                         ),
-                        "prefix_text": str(clean_prefix.prefix_text),
+                        "prefix_text": str(prefix_text_for_monitor),
                         "append_text": str(append_text),
                         "train_text": str(clean_target_text),
                         "gt": monitor_record.get("gt"),
@@ -4590,6 +4249,7 @@ class Stage2TwoChannelTrainer(
                                 for association_pairs in association_pairs_by_view
                             ],
                             "valid_explorer_count": int(valid_explorer_count),
+                            "expected_peer_count": int(expected_peer_count_for_triage),
                             "anchor_gt_backed_indices": [
                                 int(idx) for idx in anchor_gt_backed_indices
                             ],
@@ -4812,19 +4472,6 @@ class Stage2TwoChannelTrainer(
                     residual_set_build_result.event_summaries
                 )
                 residual_set_metrics = dict(residual_set_build_result.metrics)
-                if prepared_attempt is not None:
-                    residual_set_metrics.setdefault(
-                        "prepared_K_total",
-                        float(prepared_stats.get("K_total", 0)),
-                    )
-                    residual_set_metrics.setdefault(
-                        "prepared_K_after_dedup",
-                        float(prepared_stats.get("K_after_dedup", 0)),
-                    )
-                    residual_set_metrics.setdefault(
-                        "prepared_K_valid",
-                        float(prepared_stats.get("K_valid", 0)),
-                    )
 
             invalid_rollout_total += int(invalid_rollout)
             meta_entry, closure_drop_count = _channel_b_targets._build_channel_b_meta_entry(
@@ -4842,7 +4489,7 @@ class Stage2TwoChannelTrainer(
                 n_drop_invalid=int(n_drop_invalid),
                 valid_pred_objects=int(len(parsed_bbox_objects_raw)),
                 matched_for_supervision_count=int(
-                    len(supervision_targets.matched_gt_indices)
+                    matched_for_supervision_count
                 ),
                 match=match,
                 gt_objects_count=int(len(gts)),
@@ -4907,39 +4554,20 @@ class Stage2TwoChannelTrainer(
                         getattr(assignment_strategy, "iou_threshold", gate_thr),
                     )
                 ),
-                rollout_template_family=str(
-                    supervision_targets.rollout_template_family
-                ),
-                rollout_parser_id=str(supervision_targets.rollout_parser_id),
-                rollout_append_policy_id=str(
-                    supervision_targets.rollout_append_policy_id
-                ),
-                rollout_context=str(supervision_targets.rollout_context),
-                rollout_fallback_reason=(
-                    supervision_targets.rollout_fallback_reason
-                ),
-                rollout_fallback_loss_weight=float(
-                    supervision_targets.rollout_fallback_loss_weight
-                ),
-                rollout_counts_as_valid_rollout=bool(
-                    supervision_targets.rollout_counts_as_valid_rollout
-                ),
+                rollout_template_family=str(rollout_template_family),
+                rollout_parser_id=str(rollout_parser_id),
+                rollout_append_policy_id=str(rollout_append_policy_id),
+                rollout_context=str(rollout_context),
+                rollout_fallback_reason=rollout_fallback_reason,
+                rollout_fallback_loss_weight=float(rollout_fallback_loss_weight),
+                rollout_counts_as_valid_rollout=bool(rollout_counts_as_valid_rollout),
                 y_train_ids=y_train_ids,
                 sample_id=sample_id_for_meta,
-                rollout_index=(
-                    -1
-                    if str(supervision_targets.rollout_context)
-                    == FALLBACK_GT_FN_APPEND_ONLY
-                    else 0
-                ),
-                stage2_trie_candidates=(
-                    stage2_trie_candidates
-                    if stage2_trie_candidates and int(prompt_len) > 0
-                    else None
-                ),
-                stage2_trie_object_spans=supervision_targets.stage2_trie_object_spans,
+                rollout_index=int(rollout_index_for_meta),
+                stage2_trie_candidates=None,
+                stage2_trie_object_spans=stage2_trie_object_spans,
                 stage2_trie_weak_fp_span_level_fallback=bool(
-                    supervision_targets.stage2_trie_weak_fp_span_level_fallback
+                    stage2_trie_weak_fp_span_level_fallback
                 ),
                 residual_set_selected=bool(residual_set_selected),
                 residual_set_target_ir=residual_set_target_ir,
@@ -4958,11 +4586,6 @@ class Stage2TwoChannelTrainer(
                     else _stage2_ab_semantic_stop_branch_metadata
                 ),
             )
-            if prepared_attempt is not None:
-                meta_entry["prepared_rollout"] = _stage2_prepared_rollout_metadata(
-                    attempt=prepared_attempt,
-                    stats=prepared_stats,
-                )
             closure_supervision_drop_total += int(closure_drop_count)
 
             segments.append((encoded, meta_entry, int(encoded_len)))
@@ -4972,7 +4595,6 @@ class Stage2TwoChannelTrainer(
 
         from swift.llm import to_device
 
-        raw_rollout_count = int(len(anchor_rollout_results) + explorer_view_count_total)
         anchor_rollout_count = int(len(anchor_rollout_results))
         fallback_loss_share = (
             float(compact_anchor_fallback_total) / float(anchor_rollout_count)
@@ -5134,6 +4756,12 @@ class Stage2TwoChannelTrainer(
             "rollout/explorer_temperature": float(explorer_decode_request.temperature),
             "rollout/explorer_top_p": float(explorer_decode_request.top_p),
             "rollout/explorer_top_k": float(explorer_decode_request.top_k),
+            "rollout/current_temperature": float(anchor_decode_request.temperature),
+            "rollout/current_top_p": float(anchor_decode_request.top_p),
+            "rollout/current_top_k": float(anchor_decode_request.top_k),
+            "rollout/peer_reference_temperature": float(explorer_decode_request.temperature),
+            "rollout/peer_reference_top_p": float(explorer_decode_request.top_p),
+            "rollout/peer_reference_top_k": float(explorer_decode_request.top_k),
             # Per-policy rollout split over the current Channel-B raw rollout window.
             "rollout/anchor/pred_objects": float(anchor_pred_objects_total),
             "rollout/anchor/valid_pred_objects": float(anchor_valid_pred_objects_total),
@@ -5152,6 +4780,23 @@ class Stage2TwoChannelTrainer(
             ),
             "rollout/anchor/near_iou90_any": float(anchor_near_any_desc_pairs_total),
             "rollout/anchor/near_iou90_same": float(anchor_near_same_desc_pairs_total),
+            "rollout/current/pred_objects": float(anchor_pred_objects_total),
+            "rollout/current/valid_pred_objects": float(anchor_valid_pred_objects_total),
+            "rollout/current/parse_truncated_rate": float(
+                float(anchor_parse_truncated_total) / float(len(anchor_rollout_results))
+                if len(anchor_rollout_results) > 0
+                else 0.0
+            ),
+            "rollout/current/gen_new_tokens_mean": float(
+                sum(anchor_gen_new_token_lens) / len(anchor_gen_new_token_lens)
+                if anchor_gen_new_token_lens
+                else 0.0
+            ),
+            "rollout/current/gen_new_tokens_p90": float(
+                _percentile(anchor_gen_new_token_lens, 90.0)
+            ),
+            "rollout/current/near_iou90_any": float(anchor_near_any_desc_pairs_total),
+            "rollout/current/near_iou90_same": float(anchor_near_same_desc_pairs_total),
             "rollout/explorer/pred_objects": float(
                 float(explorer_pred_objects_total) / float(explorer_view_count_total)
                 if explorer_view_count_total > 0
@@ -5193,19 +4838,55 @@ class Stage2TwoChannelTrainer(
             "rollout/explorer/do_sample": float(1.0 if do_sample else 0.0),
             "rollout/explorer/top_p": float(explorer_decode_request.top_p),
             "rollout/explorer/top_k": float(explorer_decode_request.top_k),
+            "rollout/peer/pred_objects": float(
+                float(explorer_pred_objects_total) / float(explorer_view_count_total)
+                if explorer_view_count_total > 0
+                else 0.0
+            ),
+            "rollout/peer/valid_pred_objects": float(
+                float(explorer_valid_pred_objects_total)
+                / float(explorer_view_count_total)
+                if explorer_view_count_total > 0
+                else 0.0
+            ),
+            "rollout/peer/parse_truncated_rate": float(
+                float(explorer_parse_truncated_total)
+                / float(explorer_view_count_total)
+                if explorer_view_count_total > 0
+                else 0.0
+            ),
+            "rollout/peer/gen_new_tokens_mean": float(
+                sum(explorer_gen_new_token_lens) / len(explorer_gen_new_token_lens)
+                if explorer_gen_new_token_lens
+                else 0.0
+            ),
+            "rollout/peer/gen_new_tokens_p90": float(
+                _percentile(explorer_gen_new_token_lens, 90.0)
+            ),
+            "rollout/peer/near_iou90_any": float(
+                float(explorer_near_any_desc_pairs_total)
+                / float(explorer_view_count_total)
+                if explorer_view_count_total > 0
+                else 0.0
+            ),
+            "rollout/peer/near_iou90_same": float(
+                float(explorer_near_same_desc_pairs_total)
+                / float(explorer_view_count_total)
+                if explorer_view_count_total > 0
+                else 0.0
+            ),
+            "rollout/peer/temperature": float(explorer_decode_request.temperature),
+            "rollout/peer/do_sample": float(1.0 if do_sample else 0.0),
+            "rollout/peer/top_p": float(explorer_decode_request.top_p),
+            "rollout/peer/top_k": float(explorer_decode_request.top_k),
             "rollout/parse_truncated": float(parse_truncated_total),
             "rollout/parse_truncated_rate": float(
-                (
-                    float(parse_truncated_total)
-                    / float(len(anchor_rollout_results) + explorer_view_count_total)
-                )
-                if (len(anchor_rollout_results) + explorer_view_count_total) > 0
+                (float(parse_truncated_total) / float(len(anchor_rollout_results)))
+                if len(anchor_rollout_results) > 0
                 else 0.0
             ),
             "rollout/_parse_truncated_num": float(parse_truncated_total),
-            "rollout/_parse_truncated_den": float(
-                len(anchor_rollout_results) + explorer_view_count_total
-            ),
+            "rollout/_parse_truncated_den": float(len(anchor_rollout_results)),
             "dup/raw/max_desc_count": float(
                 dup_max_desc_count_sum / float(dup_metric_samples)
                 if dup_metric_samples > 0
@@ -5258,7 +4939,13 @@ class Stage2TwoChannelTrainer(
             "train/triage/unlabeled_consistent_count": float(
                 triage_shielded_anchor_total
             ),
+            "train/triage/shield_only_count": float(
+                triage_shielded_anchor_total
+            ),
             "train/triage/dead_anchor_count": float(
+                triage_dead_anchor_total
+            ),
+            "train/triage/dead_current_count": float(
                 triage_dead_anchor_total
             ),
             "train/triage/lvis_verified_positive_dead_count": float(
@@ -5276,6 +4963,9 @@ class Stage2TwoChannelTrainer(
             "train/triage/explorer_only_dead_count": float(
                 triage_dead_explorer_total
             ),
+            "train/triage/peer_only_dead_count": float(
+                triage_dead_explorer_total
+            ),
             "train/triage/pseudo_positive_candidate_count": float(
                 triage_pseudo_positive_candidate_total
             ),
@@ -5289,6 +4979,9 @@ class Stage2TwoChannelTrainer(
                 triage_pseudo_positive_cluster_demoted_total
             ),
             "train/triage/anchor_preparation_dropped_count": float(
+                anchor_preparation_dropped_total
+            ),
+            "train/triage/current_preparation_dropped_count": float(
                 anchor_preparation_dropped_total
             ),
             "train/triage/pseudo_positive_support_rate_num": float(
@@ -5329,6 +5022,17 @@ class Stage2TwoChannelTrainer(
                 if triage_dead_anchor_den_total > 0
                 else 0.0
             ),
+            "train/triage/dead_current_rate_num": float(
+                triage_dead_anchor_total
+            ),
+            "train/triage/dead_current_rate_den": float(
+                triage_dead_anchor_den_total
+            ),
+            "train/triage/dead_current_rate": float(
+                float(triage_dead_anchor_total) / float(triage_dead_anchor_den_total)
+                if triage_dead_anchor_den_total > 0
+                else 0.0
+            ),
             "train/triage/explorer_only_dead_rate_num": float(
                 triage_dead_explorer_total
             ),
@@ -5336,6 +5040,18 @@ class Stage2TwoChannelTrainer(
                 triage_dead_explorer_den_total
             ),
             "train/triage/explorer_only_dead_rate": float(
+                float(triage_dead_explorer_total)
+                / float(triage_dead_explorer_den_total)
+                if triage_dead_explorer_den_total > 0
+                else 0.0
+            ),
+            "train/triage/peer_only_dead_rate_num": float(
+                triage_dead_explorer_total
+            ),
+            "train/triage/peer_only_dead_rate_den": float(
+                triage_dead_explorer_den_total
+            ),
+            "train/triage/peer_only_dead_rate": float(
                 float(triage_dead_explorer_total)
                 / float(triage_dead_explorer_den_total)
                 if triage_dead_explorer_den_total > 0
@@ -5358,21 +5074,6 @@ class Stage2TwoChannelTrainer(
             ),
             "stage2_ab/channel_b/residual_set/sequence_count": float(
                 residual_set_sequence_total
-            ),
-            "stage2_ab/channel_b/residual_set/prepared/K_total": float(
-                prepared_k_total
-            ),
-            "stage2_ab/channel_b/residual_set/prepared/K_after_dedup": float(
-                prepared_k_after_dedup
-            ),
-            "stage2_ab/channel_b/residual_set/prepared/K_valid": float(
-                prepared_k_valid
-            ),
-            "stage2_ab/channel_b/residual_set/prepared/exact_duplicate_attempts": float(
-                prepared_exact_duplicate_attempts
-            ),
-            "stage2_ab/channel_b/residual_set/prepared/missing_sample_count": float(
-                prepared_missing_sample_total
             ),
             "stage2_ab/channel_b/residual_set/ul/promoted_clusters": float(
                 residual_set_ul_promoted_total
@@ -5418,17 +5119,6 @@ class Stage2TwoChannelTrainer(
             batch_metrics[f"stage2_ab/channel_b/strict_drop/reason/{str(rk)}"] = float(
                 rvi
             )
-        for rk, rv in prepared_dropped_reasons_total.items():
-            try:
-                rvi = int(rv)
-            except (TypeError, ValueError):
-                continue
-            if rvi <= 0:
-                continue
-            batch_metrics[
-                f"stage2_ab/channel_b/residual_set/prepared/drop_reason/{str(rk)}"
-            ] = float(rvi)
-
         if bool(_segments_only):
             return segments, batch_metrics
 
@@ -5489,6 +5179,7 @@ class Stage2TwoChannelTrainer(
             raise ValueError("stage2-ab trainer requires _rollout_matching_meta")
 
         batch_metrics = inputs.pop("_rollout_matching_batch_metrics", None)
+        shadow_pack = bool(inputs.pop("_stage2_ab_shadow_pack", False))
 
         input_ids = inputs.get("input_ids")
         if not isinstance(input_ids, torch.Tensor):
@@ -5749,6 +5440,9 @@ class Stage2TwoChannelTrainer(
         pipeline_ctx_result = objective_run.pipeline_ctx_result
         pipeline_metrics_ctx = dict(objective_run.pipeline_metrics_ctx)
         total = objective_run.total_loss
+        if bool(shadow_pack):
+            total = total * 0.0
+            return (total, outputs) if return_outputs else total
 
         from src.metrics.reporter import best_effort_value
 

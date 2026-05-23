@@ -11,6 +11,7 @@ from ..stage2_coordination import (
     resolve_stage2_ab_ddp_phase_config,
     run_stage2_ddp_monitored_barrier,
 )
+from .pack_schedule import Stage2PackSchedule, Stage2PackSlot
 
 
 def run_stage2_ab_ddp_monitored_barrier(
@@ -232,6 +233,7 @@ def run_channel_b_train_one_pack(
     dist: Any,
     ddp_rank: int,
     ddp_world_size: int,
+    shadow_zero_loss: bool = False,
 ) -> torch.Tensor:
     from swift.llm import to_device
 
@@ -248,9 +250,15 @@ def run_channel_b_train_one_pack(
 
     owner._merge_rollout_matching_batch_metrics(batch, bm)
     batch["_stage2_ab_channel"] = "B"
+    if bool(shadow_zero_loss):
+        batch["_stage2_ab_shadow_pack"] = True
 
     pack_segments = int(len(selected))
-    weight = float(pack_segments) / float(total_segments_target)
+    weight = (
+        0.0
+        if bool(shadow_zero_loss)
+        else float(pack_segments) / float(total_segments_target)
+    )
 
     cm = contextlib.nullcontext()
     if not bool(sync_gradients):
@@ -298,6 +306,140 @@ def run_channel_b_train_one_pack(
     return loss.detach() * float(weight)
 
 
+def _channel_b_pack_count_gather_device(*, owner: Any, model: Any, dist: Any) -> torch.device:
+    backend = None
+    get_backend = getattr(dist, "get_backend", None)
+    if callable(get_backend):
+        try:
+            backend = str(get_backend()).lower()
+        except Exception:
+            backend = None
+    if backend == "gloo":
+        return torch.device("cpu")
+    if backend == "nccl":
+        for candidate in (
+            getattr(getattr(owner, "model", None), "device", None),
+            getattr(model, "device", None),
+        ):
+            if candidate is None:
+                continue
+            try:
+                device = torch.device(candidate)
+            except Exception:
+                continue
+            if device.type == "cuda":
+                return device
+        parameters = getattr(model, "parameters", None)
+        if callable(parameters):
+            try:
+                first_param = next(parameters())
+                device = torch.device(first_param.device)
+                if device.type == "cuda":
+                    return device
+            except Exception:
+                pass
+        if torch.cuda.is_available():
+            try:
+                return torch.device("cuda", torch.cuda.current_device())
+            except Exception:
+                pass
+        raise RuntimeError(
+            "stage2-ab DDP pack-count gather with NCCL requires a CUDA device"
+        )
+
+    for candidate in (
+        getattr(getattr(owner, "model", None), "device", None),
+        getattr(model, "device", None),
+    ):
+        if candidate is None:
+            continue
+        try:
+            return torch.device(candidate)
+        except Exception:
+            continue
+
+    parameters = getattr(model, "parameters", None)
+    if callable(parameters):
+        try:
+            first_param = next(parameters())
+            return torch.device(first_param.device)
+        except Exception:
+            pass
+    return torch.device("cpu")
+
+
+def gather_channel_b_local_pack_counts(
+    *,
+    owner: Any,
+    model: Any,
+    local_pack_count: int,
+    dist: Any,
+    ddp_world_size: int,
+) -> list[int]:
+    """Gather local post-rollout pack counts so every rank runs the same slot plan."""
+    local_pack_count = int(local_pack_count)
+    if int(ddp_world_size) <= 1:
+        return [local_pack_count]
+    if dist is None:
+        return [local_pack_count]
+    is_available = getattr(dist, "is_available", None)
+    if callable(is_available) and not bool(is_available()):
+        return [local_pack_count]
+    is_initialized = getattr(dist, "is_initialized", None)
+    if callable(is_initialized) and not bool(is_initialized()):
+        return [local_pack_count]
+    all_gather_object = getattr(dist, "all_gather_object", None)
+    if callable(all_gather_object):
+        gathered_obj: list[Any] = [None] * int(ddp_world_size)
+        all_gather_object(gathered_obj, int(local_pack_count))
+        counts = [int(item) for item in gathered_obj]
+        if len(counts) != int(ddp_world_size):
+            raise RuntimeError(
+                "stage2-ab Channel-B DDP pack scheduling gathered unexpected world size: "
+                f"counts={len(counts)} world_size={int(ddp_world_size)}"
+            )
+        return counts
+
+    all_gather = getattr(dist, "all_gather", None)
+    if not callable(all_gather):
+        raise RuntimeError(
+            "stage2-ab Channel-B DDP pack scheduling requires torch.distributed.all_gather_object or all_gather"
+        )
+
+    device = _channel_b_pack_count_gather_device(owner=owner, model=model, dist=dist)
+    local = torch.tensor([local_pack_count], dtype=torch.long, device=device)
+    gathered = [torch.zeros_like(local) for _ in range(int(ddp_world_size))]
+    all_gather(gathered, local)
+    counts = [int(item.item()) for item in gathered]
+    if len(counts) != int(ddp_world_size):
+        raise RuntimeError(
+            "stage2-ab Channel-B DDP pack scheduling gathered unexpected world size: "
+            f"counts={len(counts)} world_size={int(ddp_world_size)}"
+        )
+    return counts
+
+
+def build_channel_b_pack_schedule(
+    *,
+    owner: Any,
+    model: Any,
+    local_pack_count: int,
+    dist: Any,
+    ddp_world_size: int,
+) -> Stage2PackSchedule:
+    pack_counts = gather_channel_b_local_pack_counts(
+        owner=owner,
+        model=model,
+        local_pack_count=int(local_pack_count),
+        dist=dist,
+        ddp_world_size=int(ddp_world_size),
+    )
+    return Stage2PackSchedule.from_rank_pack_counts(
+        local_pack_count=int(local_pack_count),
+        rank_pack_counts=pack_counts,
+    )
+
+
 def run_channel_b_nonpipeline_learning_loop(
     *,
     owner: Any,
@@ -337,10 +479,10 @@ def run_channel_b_nonpipeline_learning_loop(
 
     _trace("channel_b_non_pipeline_before_flush")
     owner._stage2_flush_train_monitor_dump(global_step=target_log_step)
-    if not isinstance(segments, list) or not segments:
+    if not isinstance(segments, list):
         raise ValueError(
-            "stage2-ab Channel-B step mode produced no post-rollout segments; "
-            "check rollout parsing / dataset contract"
+            "stage2-ab Channel-B step mode expected post-rollout segments as a list; "
+            f"got {type(segments).__name__}"
         )
 
     batch_metrics = dict(batch_metrics) if isinstance(batch_metrics, Mapping) else {}
@@ -363,8 +505,18 @@ def run_channel_b_nonpipeline_learning_loop(
 
     owner._stage2_append_post_rollout_segments(channel="B", segments=segments)
     _trace("channel_b_non_pipeline_after_append")
+    local_packs: list[
+        tuple[Sequence[tuple[dict[str, Any], dict[str, Any], int]], dict[str, float]]
+    ] = []
+    while owner._stage2_post_rollout_buffer(channel="B"):
+        t_pack0 = time.perf_counter()
+        selected, pack_metrics = owner._stage2_pop_post_rollout_pack(channel="B")
+        pack_metrics = dict(pack_metrics)
+        pack_metrics["time/post_rollout_pack_s"] = float(time.perf_counter() - t_pack0)
+        local_packs.append((selected, pack_metrics))
+
     _trace("channel_b_non_pipeline_before_prepare_barrier")
-    # This barrier sits after the full rank-local rollout/parse/prepare path.
+    # This barrier sits after the full rank-local rollout/parse/prepare/pack path.
     # Use the rollout wait budget rather than the shorter final-sync timeout so
     # healthy but imbalanced ranks do not trip a false DDP deadlock.
     ddp_phase_barrier_fn(
@@ -373,25 +525,138 @@ def run_channel_b_nonpipeline_learning_loop(
     )
     _trace("channel_b_non_pipeline_after_prepare_barrier")
 
-    loss_total = None
-    first_pack = True
-    while owner._stage2_post_rollout_buffer(channel="B"):
-        with owner._stage2_stage_wallclock_ctx("sft"):
-            t_pack0 = time.perf_counter()
-            selected, pack_metrics = owner._stage2_pop_post_rollout_pack(channel="B")
-            pack_metrics = dict(pack_metrics)
-            pack_metrics["time/post_rollout_pack_s"] = float(time.perf_counter() - t_pack0)
+    schedule = build_channel_b_pack_schedule(
+        owner=owner,
+        model=model,
+        local_pack_count=int(len(local_packs)),
+        dist=dist,
+        ddp_world_size=int(ddp_world_size),
+    )
+    if not schedule.has_global_packs:
+        raise ValueError(
+            "stage2-ab Channel-B step mode produced zero post-rollout packs on all ranks; "
+            "check rollout parsing, fallback policy, and target construction"
+        )
+    _trace(
+        "channel_b_non_pipeline_after_pack_schedule",
+        extra=schedule.trace_payload(),
+    )
+    if (
+        schedule.has_global_packs
+        and schedule.rank_pack_counts
+        and int(min(schedule.rank_pack_counts)) <= 0
+    ):
+        raise RuntimeError(
+            "stage2-ab Channel-B DDP pack schedule found a rank with zero local packs "
+            "while at least one peer rank has trainable packs. This is a target-construction "
+            "or strict-drop issue; ensure fallback target construction yields at least one "
+            "segment per rank before entering DDP learner slots. "
+            f"rank_pack_counts={list(schedule.rank_pack_counts)}"
+        )
 
-            step_totals_pack = step_totals if first_pack else {}
-            sync_gradients = not bool(owner._stage2_post_rollout_buffer(channel="B"))
+    loss_total = None
+    first_real_pack = True
+    for slot in schedule.slots:
+        with owner._stage2_stage_wallclock_ctx("sft"):
+            assert isinstance(slot, Stage2PackSlot)
+            sync_gradients = bool(slot.sync_gradients)
+            if slot.is_empty:
+                _trace(
+                    "channel_b_non_pipeline_empty_pack_slot",
+                    extra={
+                        "slot_index": int(slot.slot_index),
+                        "global_slot_count": int(schedule.global_slot_count),
+                        "local_pack_count": int(schedule.local_pack_count),
+                        "sync_gradients": float(bool(sync_gradients)),
+                    },
+                )
+                if bool(sync_gradients):
+                    _trace(
+                        "channel_b_non_pipeline_before_final_sync_backward_barrier",
+                        extra={
+                            "slot_index": int(slot.slot_index),
+                            "global_slot_count": int(schedule.global_slot_count),
+                            "local_pack_count": int(schedule.local_pack_count),
+                            "shadow_zero_loss": 1.0,
+                        },
+                    )
+                    ddp_phase_barrier_fn(
+                        "channel_b_non_pipeline_before_final_sync_backward",
+                        timeout_s=float(ddp_phase_final_sync_timeout_s),
+                    )
+                    _trace(
+                        "channel_b_non_pipeline_after_final_sync_backward_barrier",
+                        extra={
+                            "slot_index": int(slot.slot_index),
+                            "global_slot_count": int(schedule.global_slot_count),
+                            "local_pack_count": int(schedule.local_pack_count),
+                            "shadow_zero_loss": 1.0,
+                        },
+                    )
+                shadow_selected, shadow_pack_metrics = local_packs[0]
+                shadow_metrics = dict(shadow_pack_metrics)
+                shadow_metrics["packing/post_rollout_local_pack_count"] = float(
+                    schedule.local_pack_count
+                )
+                shadow_metrics["packing/post_rollout_global_slot_count"] = float(
+                    schedule.global_slot_count
+                )
+                shadow_metrics["packing/post_rollout_empty_slot_count"] = float(
+                    schedule.empty_slot_count
+                )
+                shadow_metrics["packing/post_rollout_slot_index"] = float(slot.slot_index)
+                shadow_metrics["packing/post_rollout_slot_is_final_sync"] = float(
+                    1.0 if bool(sync_gradients) else 0.0
+                )
+                shadow_metrics["packing/post_rollout_slot_sync_gradients"] = float(
+                    1.0 if bool(sync_gradients) else 0.0
+                )
+                shadow_metrics["packing/post_rollout_shadow_slot"] = 1.0
+                loss_pack = run_channel_b_train_one_pack(
+                    owner=owner,
+                    model=model,
+                    selected=shadow_selected,
+                    pack_metrics=shadow_metrics,
+                    rollout_static=rollout_static,
+                    step_totals={},
+                    total_segments_target=int(total_segments_target),
+                    sync_gradients=bool(sync_gradients),
+                    dist=dist,
+                    ddp_rank=int(ddp_rank),
+                    ddp_world_size=int(ddp_world_size),
+                    shadow_zero_loss=True,
+                )
+                loss_total = loss_pack if loss_total is None else (loss_total + loss_pack)
+                continue
+
+            selected, pack_metrics = local_packs[int(slot.local_pack_index)]
+            pack_metrics = dict(pack_metrics)
+            pack_metrics["packing/post_rollout_local_pack_count"] = float(
+                schedule.local_pack_count
+            )
+            pack_metrics["packing/post_rollout_global_slot_count"] = float(
+                schedule.global_slot_count
+            )
+            pack_metrics["packing/post_rollout_empty_slot_count"] = float(
+                schedule.empty_slot_count
+            )
+            pack_metrics["packing/post_rollout_slot_index"] = float(slot.slot_index)
+            pack_metrics["packing/post_rollout_slot_is_final_sync"] = float(
+                1.0 if bool(sync_gradients) else 0.0
+            )
+            pack_metrics["packing/post_rollout_slot_sync_gradients"] = float(
+                1.0 if bool(sync_gradients) else 0.0
+            )
+
+            step_totals_pack = step_totals if first_real_pack else {}
             if bool(sync_gradients):
                 _trace(
                     "channel_b_non_pipeline_before_final_sync_backward_barrier",
                     extra={
                         "selected_pack_size": int(len(selected)),
-                        "remaining_buffer_size": int(
-                            len(owner._stage2_post_rollout_buffer(channel="B"))
-                        ),
+                        "slot_index": int(slot.slot_index),
+                        "global_slot_count": int(schedule.global_slot_count),
+                        "local_pack_count": int(schedule.local_pack_count),
                     },
                 )
                 ddp_phase_barrier_fn(
@@ -402,9 +667,9 @@ def run_channel_b_nonpipeline_learning_loop(
                     "channel_b_non_pipeline_after_final_sync_backward_barrier",
                     extra={
                         "selected_pack_size": int(len(selected)),
-                        "remaining_buffer_size": int(
-                            len(owner._stage2_post_rollout_buffer(channel="B"))
-                        ),
+                        "slot_index": int(slot.slot_index),
+                        "global_slot_count": int(schedule.global_slot_count),
+                        "local_pack_count": int(schedule.local_pack_count),
                     },
                 )
             loss_pack = run_channel_b_train_one_pack(
@@ -422,7 +687,7 @@ def run_channel_b_nonpipeline_learning_loop(
             )
 
         loss_total = loss_pack if loss_total is None else (loss_total + loss_pack)
-        first_pack = False
+        first_real_pack = False
 
     if loss_total is None:
         raise AssertionError("stage2-ab Channel-B step mode produced no packs")
@@ -629,8 +894,10 @@ def accumulate_step_mode_microbatches(
 __all__ = [
     "accumulate_channel_b_producer_item",
     "accumulate_step_mode_microbatches",
+    "build_channel_b_pack_schedule",
     "consume_channel_b_queue_item",
     "finalize_channel_b_pipeline_step",
+    "gather_channel_b_local_pack_counts",
     "prepare_channel_b_pipeline_pack_step",
     "run_channel_b_nonpipeline_learning_loop",
     "run_channel_b_pipeline_learning_loop",

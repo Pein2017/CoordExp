@@ -5,12 +5,14 @@ from typing import Any, Mapping, Sequence
 
 import torch
 
-from .contracts import PipelineModuleSpec, PipelineResult, TeacherForcingContext
-from .module_registry import DIAGNOSTIC_MODULE_CATALOG, OBJECTIVE_MODULE_CATALOG
-from .modules import (
-    run_stage2_trie_ce_module,
-    run_token_ce_module,
+from .contracts import (
+    ModuleResult,
+    PipelineModuleSpec,
+    PipelineResult,
+    TeacherForcingContext,
 )
+from .module_registry import DIAGNOSTIC_MODULE_CATALOG, OBJECTIVE_MODULE_CATALOG
+from .modules import run_token_ce_module
 
 logger = logging.getLogger(__name__)
 
@@ -67,7 +69,7 @@ def _run_residual_set_correction_module(
     *,
     context: TeacherForcingContext,
     spec: PipelineModuleSpec,
-) -> PipelineResult:
+) -> ModuleResult:
     try:
         from .modules.residual_set_correction import run_residual_set_correction_module
     except ModuleNotFoundError as exc:
@@ -83,6 +85,31 @@ def _run_residual_set_correction_module(
         ) from exc
 
     return run_residual_set_correction_module(context=context, spec=spec)
+
+
+def _run_stage2_residual_trie_ce_module(
+    *,
+    context: TeacherForcingContext,
+    spec: PipelineModuleSpec,
+) -> ModuleResult:
+    """Run the canonical Stage-2 trie name through residual-state valid sets."""
+
+    residual_spec = PipelineModuleSpec(
+        name="residual_set_correction",
+        enabled=spec.enabled,
+        weight=1.0,
+        channels=spec.channels,
+        application={"preset": "rollout_self_prefix"},
+        config=spec.config,
+    )
+    out = _run_residual_set_correction_module(context=context, spec=residual_spec)
+    metrics = dict(out.metrics)
+    metrics["stage2_trie/residual_state_alias"] = 1.0
+    metrics["loss/B/stage2_trie_ce"] = float(out.loss.detach().cpu().item())
+    state = dict(out.state)
+    state["stage2_trie_ce"] = out.loss
+    state["stage2_trie_ce_contrib"] = out.loss
+    return ModuleResult(loss=out.loss, metrics=metrics, state=state)
 
 
 def run_teacher_forcing_pipeline(
@@ -107,7 +134,7 @@ def run_teacher_forcing_pipeline(
             context=context,
             spec=spec,
         ),
-        "stage2_trie_ce": lambda spec: run_stage2_trie_ce_module(
+        "stage2_trie_ce": lambda spec: _run_stage2_residual_trie_ce_module(
             context=context,
             spec=spec,
         ),

@@ -4101,6 +4101,36 @@ class Stage2RolloutRuntime(Seq2SeqTrainer):
             "Reduce rollout_matching.max_new_tokens and/or ensure prompts fit within the model context."
         )
 
+    def _build_hf_rollout_logits_processor(
+        self,
+        *,
+        tokenizer: Any,
+        prompt_pad_len: int,
+        batch_size: int,
+        trailing_processors: Optional[Sequence[Any]] = None,
+    ) -> Any:
+        processors: List[Any] = []
+        rollout_template_policy = self._eval_rollout_template_policy()
+        if rollout_template_policy.decode_policy == "compact_grammar":
+            from src.infer.compact_grammar import build_compact_grammar_logits_processor
+
+            processors.append(
+                build_compact_grammar_logits_processor(
+                    tokenizer=tokenizer,
+                    prompt_lengths=[int(prompt_pad_len)] * int(batch_size),
+                    detection_sequence_format=rollout_template_policy.template_family,
+                    force_row_start=True,
+                )
+            )
+        if trailing_processors:
+            processors.extend(trailing_processors)
+        if not processors:
+            return None
+
+        from transformers import LogitsProcessorList
+
+        return LogitsProcessorList(processors)
+
     @torch.no_grad()
     def _rollout_many_hf(
         self,
@@ -4199,7 +4229,11 @@ class Stage2RolloutRuntime(Seq2SeqTrainer):
                 model_inputs.pop("position_ids", None)
                 model_inputs.pop("text_position_ids", None)
 
-                logits_processor = None
+                logits_processor = self._build_hf_rollout_logits_processor(
+                    tokenizer=tok,
+                    prompt_pad_len=prompt_pad_len,
+                    batch_size=int(input_ids_t.shape[0]),
+                )
 
                 with unwrap_model_for_generation(
                     self.model_wrapped,
@@ -4459,7 +4493,14 @@ class Stage2RolloutRuntime(Seq2SeqTrainer):
                     return scores
 
             tracer = _GreedyTokenLogprobTracer()
-            logits_processor: LogitsProcessorList = LogitsProcessorList([tracer])
+            logits_processor = self._build_hf_rollout_logits_processor(
+                tokenizer=tok,
+                prompt_pad_len=prompt_pad_len,
+                batch_size=int(input_ids_t.shape[0]),
+                trailing_processors=[tracer],
+            )
+            if logits_processor is None:
+                logits_processor = LogitsProcessorList([tracer])
 
             with unwrap_model_for_generation(
                 self.model_wrapped,

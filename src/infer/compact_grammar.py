@@ -81,49 +81,240 @@ class CompactFullGrammarLogitsProcessor(LogitsProcessor):
         self.eos_id_set = set(int(v) for v in ids.eos_ids)
         self.row_start_allowed = tuple(dict.fromkeys((ids.object_start_id, *ids.eos_ids)))
         self.after_bbox_allowed = tuple(dict.fromkeys((*ids.newline_ids, *ids.eos_ids)))
+        self._allowed_tensor_cache: dict[tuple[str, str], torch.LongTensor] = {}
+        self._membership_mask_cache: dict[tuple[str, str, int], torch.BoolTensor] = {}
+        self._row_processed_generated_lens: list[int] = []
+        self._row_states: list[dict[str, int | bool | None]] = []
 
-    def _generated_ids(self, input_ids: torch.LongTensor, row_idx: int) -> list[int]:
+    def _generated_ids(self, input_ids: torch.LongTensor, row_idx: int) -> torch.LongTensor:
         prompt_len = self.prompt_lengths[min(row_idx, len(self.prompt_lengths) - 1)]
         if prompt_len >= int(input_ids.shape[-1]):
-            return []
-        return [int(v) for v in input_ids[row_idx, prompt_len:].detach().cpu().tolist()]
+            return input_ids.new_empty((0,), dtype=torch.long)
+        return input_ids[row_idx, prompt_len:]
 
-    def _allowed_ids_for_generated(self, generated: Sequence[int]) -> tuple[int, ...] | None:
-        if not generated:
-            return self.row_start_allowed if self.force_row_start else None
-        last = int(generated[-1])
-        if last in self.eos_id_set:
-            return None
-        if last in self.newline_id_set:
-            return self.row_start_allowed if self.force_row_start else None
+    def _cached_allowed_tensor(
+        self,
+        *,
+        name: str,
+        ids: Sequence[int],
+        device: torch.device,
+    ) -> torch.LongTensor:
+        key = (name, str(device))
+        cached = self._allowed_tensor_cache.get(key)
+        if cached is None:
+            cached = torch.tensor([int(v) for v in ids], device=device, dtype=torch.long)
+            self._allowed_tensor_cache[key] = cached
+        return cached
 
-        try:
-            last_box_idx = len(generated) - 1 - list(reversed(generated)).index(
-                self.ids.box_start_id
+    def _cached_membership_mask(
+        self,
+        *,
+        name: str,
+        ids: Sequence[int],
+        device: torch.device,
+        vocab_size: int,
+    ) -> torch.BoolTensor:
+        key = (name, str(device), int(vocab_size))
+        cached = self._membership_mask_cache.get(key)
+        if cached is None:
+            cached = torch.zeros(int(vocab_size), device=device, dtype=torch.bool)
+            ids_tensor = self._cached_allowed_tensor(
+                name=f"{name}_ids",
+                ids=ids,
+                device=device,
             )
-        except ValueError:
-            return None
+            valid = ids_tensor[(ids_tensor >= 0) & (ids_tensor < int(vocab_size))]
+            if valid.numel() > 0:
+                cached[valid] = True
+            self._membership_mask_cache[key] = cached
+        return cached
 
-        tail = [int(v) for v in generated[last_box_idx + 1 :]]
-        if any(v in self.newline_id_set or v in self.eos_id_set for v in tail):
+    def _ensure_row_state(self, row_idx: int) -> None:
+        while len(self._row_states) <= row_idx:
+            self._row_states.append(
+                {"coord_count": None, "row_start": True, "done": False}
+            )
+            self._row_processed_generated_lens.append(0)
+
+    def _reset_row_state(self, row_idx: int) -> None:
+        self._ensure_row_state(row_idx)
+        self._row_states[row_idx] = {
+            "coord_count": None,
+            "row_start": True,
+            "done": False,
+        }
+        self._row_processed_generated_lens[row_idx] = 0
+
+    def _advance_state_with_token(self, row_idx: int, token_id: int) -> None:
+        state = self._row_states[row_idx]
+        if bool(state["done"]):
+            return
+        token = int(token_id)
+        if token in self.eos_id_set:
+            state["coord_count"] = None
+            state["row_start"] = False
+            state["done"] = True
+            return
+        if token in self.newline_id_set:
+            state["coord_count"] = None
+            state["row_start"] = True
+            return
+        coord_count = state["coord_count"]
+        if isinstance(coord_count, int):
+            if token in self.coord_id_set and coord_count < 4:
+                state["coord_count"] = coord_count + 1
+                state["row_start"] = False
+                return
+            state["coord_count"] = None
+            state["row_start"] = False
+            return
+        if token == self.ids.box_start_id:
+            state["coord_count"] = 0
+            state["row_start"] = False
+            return
+        state["row_start"] = False
+
+    def _sync_row_state(self, row_idx: int, generated: torch.LongTensor) -> None:
+        self._ensure_row_state(row_idx)
+        generated_len = int(generated.numel())
+        processed_len = int(self._row_processed_generated_lens[row_idx])
+        if generated_len < processed_len:
+            self._reset_row_state(row_idx)
+            processed_len = 0
+        if generated_len == processed_len:
+            return
+        new_tokens = (
+            generated[processed_len:generated_len].detach().cpu().tolist()
+        )
+        for token in new_tokens:
+            self._advance_state_with_token(row_idx, int(token))
+        self._row_processed_generated_lens[row_idx] = generated_len
+
+    def _allowed_ids_for_row_state(
+        self,
+        row_idx: int,
+        *,
+        device: torch.device,
+    ) -> torch.LongTensor | None:
+        state = self._row_states[row_idx]
+        if bool(state["done"]):
             return None
-        if not all(v in self.coord_id_set for v in tail):
+        coord_count = state["coord_count"]
+        if isinstance(coord_count, int):
+            if coord_count < 4:
+                return self._cached_allowed_tensor(
+                    name="coord",
+                    ids=self.ids.coord_ids,
+                    device=device,
+                )
+            if coord_count == 4:
+                return self._cached_allowed_tensor(
+                    name="after_bbox",
+                    ids=self.after_bbox_allowed,
+                    device=device,
+                )
             return None
-        if len(tail) < 4:
-            return self.ids.coord_ids
-        if len(tail) == 4:
-            return self.after_bbox_allowed
+        if bool(state["row_start"]) and self.force_row_start:
+            return self._cached_allowed_tensor(
+                name="row_start",
+                ids=self.row_start_allowed,
+                device=device,
+            )
+        return None
+
+    def _allowed_ids_for_generated(
+        self,
+        generated: torch.LongTensor,
+        *,
+        vocab_size: int,
+    ) -> torch.LongTensor | None:
+        if generated.numel() == 0:
+            return (
+                self._cached_allowed_tensor(
+                    name="row_start",
+                    ids=self.row_start_allowed,
+                    device=generated.device,
+                )
+                if self.force_row_start
+                else None
+            )
+        eos_mask = self._cached_membership_mask(
+            name="eos",
+            ids=self.ids.eos_ids,
+            device=generated.device,
+            vocab_size=vocab_size,
+        )
+        newline_mask = self._cached_membership_mask(
+            name="newline",
+            ids=self.ids.newline_ids,
+            device=generated.device,
+            vocab_size=vocab_size,
+        )
+        last = generated[-1]
+        if bool(eos_mask[last].item()):
+            return None
+        if bool(newline_mask[last].item()):
+            return (
+                self._cached_allowed_tensor(
+                    name="row_start",
+                    ids=self.row_start_allowed,
+                    device=generated.device,
+                )
+                if self.force_row_start
+                else None
+            )
+
+        box_positions = (generated == int(self.ids.box_start_id)).nonzero(
+            as_tuple=False
+        )
+        if box_positions.numel() == 0:
+            return None
+        last_box_idx = int(box_positions[-1].item())
+
+        tail = generated[last_box_idx + 1 :]
+        if tail.numel() > 0 and bool((newline_mask[tail] | eos_mask[tail]).any().item()):
+            return None
+        coord_mask = self._cached_membership_mask(
+            name="coord",
+            ids=self.ids.coord_ids,
+            device=generated.device,
+            vocab_size=vocab_size,
+        )
+        if tail.numel() > 0 and not bool(coord_mask[tail].all().item()):
+            return None
+        if int(tail.numel()) < 4:
+            return self._cached_allowed_tensor(
+                name="coord",
+                ids=self.ids.coord_ids,
+                device=generated.device,
+            )
+        if int(tail.numel()) == 4:
+            return self._cached_allowed_tensor(
+                name="after_bbox",
+                ids=self.after_bbox_allowed,
+                device=generated.device,
+            )
         return None
 
     @staticmethod
     def _mask_to_allowed(
-        scores_row: torch.FloatTensor, allowed_ids: Iterable[int]
+        scores_row: torch.FloatTensor, allowed_ids: Iterable[int] | torch.LongTensor
     ) -> torch.FloatTensor:
-        allowed = [int(v) for v in allowed_ids if 0 <= int(v) < int(scores_row.shape[-1])]
-        if not allowed:
+        if isinstance(allowed_ids, torch.Tensor):
+            allowed_tensor = allowed_ids.to(device=scores_row.device, dtype=torch.long)
+            allowed_tensor = allowed_tensor[
+                (allowed_tensor >= 0) & (allowed_tensor < int(scores_row.shape[-1]))
+            ]
+        else:
+            allowed = [
+                int(v) for v in allowed_ids if 0 <= int(v) < int(scores_row.shape[-1])
+            ]
+            allowed_tensor = torch.tensor(
+                allowed, device=scores_row.device, dtype=torch.long
+            )
+        if allowed_tensor.numel() == 0:
             return scores_row
         masked = torch.full_like(scores_row, -float("inf"))
-        allowed_tensor = torch.tensor(allowed, device=scores_row.device, dtype=torch.long)
         masked.index_copy_(0, allowed_tensor, scores_row.index_select(0, allowed_tensor))
         return masked
 
@@ -131,8 +322,11 @@ class CompactFullGrammarLogitsProcessor(LogitsProcessor):
         self, input_ids: torch.LongTensor, scores: torch.FloatTensor
     ) -> torch.FloatTensor:
         for row_idx in range(int(input_ids.shape[0])):
-            allowed = self._allowed_ids_for_generated(
-                self._generated_ids(input_ids, row_idx)
+            generated = self._generated_ids(input_ids, row_idx)
+            self._sync_row_state(row_idx, generated)
+            allowed = self._allowed_ids_for_row_state(
+                row_idx,
+                device=scores.device,
             )
             if allowed is not None:
                 scores[row_idx] = self._mask_to_allowed(scores[row_idx], allowed)

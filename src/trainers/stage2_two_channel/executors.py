@@ -24,6 +24,7 @@ from ..stage2_coordination import (
 )
 from .coordination import (
     accumulate_step_mode_microbatches,
+    build_channel_b_pack_schedule,
     resolve_channel_b_timeouts,
     run_channel_b_nonpipeline_learning_loop,
     run_channel_b_pipeline_learning_loop,
@@ -309,6 +310,7 @@ class Stage2ABChannelExecutorsMixin:
                 pack_metrics: Mapping[str, float],
                 step_totals: Mapping[str, float],
                 sync_gradients: bool,
+                shadow_zero_loss: bool = False,
             ) -> torch.Tensor:
                 t_collate0 = time.perf_counter()
                 with self._template_packing_enabled():
@@ -326,9 +328,15 @@ class Stage2ABChannelExecutorsMixin:
 
                 self._merge_rollout_matching_batch_metrics(batch, bm)
                 batch["_stage2_ab_channel"] = "A"
+                if bool(shadow_zero_loss):
+                    batch["_stage2_ab_shadow_pack"] = True
 
                 pack_segments = int(len(selected))
-                weight = float(pack_segments) / float(total_segments_target)
+                weight = (
+                    0.0
+                    if bool(shadow_zero_loss)
+                    else float(pack_segments) / float(total_segments_target)
+                )
                 cm = contextlib.nullcontext()
                 if not bool(sync_gradients):
                     acc = getattr(self, "accelerator", None)
@@ -426,8 +434,9 @@ class Stage2ABChannelExecutorsMixin:
                 logger=logger,
             )
 
-            loss_total = None
-            first_pack = True
+            local_packs: List[
+                Tuple[List[Tuple[Dict[str, Any], Dict[str, Any], int]], Dict[str, float]]
+            ] = []
             while self._stage2_post_rollout_buffer(channel="A"):
                 t_pack0 = time.perf_counter()
                 selected, pack_metrics = self._stage2_pop_post_rollout_pack(channel="A")
@@ -435,9 +444,122 @@ class Stage2ABChannelExecutorsMixin:
                 pack_metrics["time/post_rollout_pack_s"] = float(
                     time.perf_counter() - t_pack0
                 )
+                local_packs.append((selected, pack_metrics))
 
-                step_totals_pack = step_totals if first_pack else {}
-                sync_gradients = not bool(self._stage2_post_rollout_buffer(channel="A"))
+            if (
+                dist is not None
+                and dist.is_available()
+                and dist.is_initialized()
+                and int(ddp_world_size) > 1
+                and float(phase_config.final_sync_timeout_s) > 0.0
+            ):
+                self._stage2_ab_ddp_monitored_barrier(
+                    dist=dist,
+                    phase="stage2-ab Channel-A after-prepare",
+                    rank=int(ddp_rank),
+                    world_size=int(ddp_world_size),
+                    timeout_s=float(phase_config.final_sync_timeout_s),
+                    monitor_group_timeout_s=float(phase_config.monitor_group_timeout_s),
+                )
+
+            schedule = build_channel_b_pack_schedule(
+                owner=self,
+                model=model,
+                local_pack_count=int(len(local_packs)),
+                dist=dist,
+                ddp_world_size=int(ddp_world_size),
+            )
+            if not schedule.has_global_packs:
+                raise ValueError(
+                    "stage2-ab Channel-A step mode produced zero packs on all ranks; "
+                    "check dataset contract"
+                )
+            if (
+                schedule.rank_pack_counts
+                and int(min(schedule.rank_pack_counts)) <= 0
+            ):
+                raise RuntimeError(
+                    "stage2-ab Channel-A DDP pack schedule found a rank with zero local packs "
+                    "while at least one peer rank has trainable packs. "
+                    f"rank_pack_counts={list(schedule.rank_pack_counts)}"
+                )
+
+            loss_total = None
+            first_real_pack = True
+            for slot in schedule.slots:
+                sync_gradients = bool(slot.sync_gradients)
+                if slot.is_empty:
+                    if (
+                        bool(sync_gradients)
+                        and dist is not None
+                        and dist.is_available()
+                        and dist.is_initialized()
+                        and int(ddp_world_size) > 1
+                    ):
+                        if float(phase_config.final_sync_timeout_s) > 0.0:
+                            self._stage2_ab_ddp_monitored_barrier(
+                                dist=dist,
+                                phase="stage2-ab Channel-A final-sync backward",
+                                rank=int(ddp_rank),
+                                world_size=int(ddp_world_size),
+                                timeout_s=float(phase_config.final_sync_timeout_s),
+                                monitor_group_timeout_s=float(
+                                    phase_config.monitor_group_timeout_s
+                                ),
+                            )
+                    shadow_selected, shadow_pack_metrics = local_packs[0]
+                    shadow_metrics = dict(shadow_pack_metrics)
+                    shadow_metrics["packing/post_rollout_local_pack_count"] = float(
+                        schedule.local_pack_count
+                    )
+                    shadow_metrics["packing/post_rollout_global_slot_count"] = float(
+                        schedule.global_slot_count
+                    )
+                    shadow_metrics["packing/post_rollout_empty_slot_count"] = float(
+                        schedule.empty_slot_count
+                    )
+                    shadow_metrics["packing/post_rollout_slot_index"] = float(
+                        slot.slot_index
+                    )
+                    shadow_metrics["packing/post_rollout_slot_is_final_sync"] = float(
+                        1.0 if bool(sync_gradients) else 0.0
+                    )
+                    shadow_metrics["packing/post_rollout_slot_sync_gradients"] = float(
+                        1.0 if bool(sync_gradients) else 0.0
+                    )
+                    shadow_metrics["packing/post_rollout_shadow_slot"] = 1.0
+                    loss_pack = _train_one_pack(
+                        selected=shadow_selected,
+                        pack_metrics=shadow_metrics,
+                        step_totals={},
+                        sync_gradients=bool(sync_gradients),
+                        shadow_zero_loss=True,
+                    )
+                    loss_total = (
+                        loss_pack if loss_total is None else (loss_total + loss_pack)
+                    )
+                    continue
+
+                selected, pack_metrics = local_packs[int(slot.local_pack_index)]
+                pack_metrics = dict(pack_metrics)
+                pack_metrics["packing/post_rollout_local_pack_count"] = float(
+                    schedule.local_pack_count
+                )
+                pack_metrics["packing/post_rollout_global_slot_count"] = float(
+                    schedule.global_slot_count
+                )
+                pack_metrics["packing/post_rollout_empty_slot_count"] = float(
+                    schedule.empty_slot_count
+                )
+                pack_metrics["packing/post_rollout_slot_index"] = float(slot.slot_index)
+                pack_metrics["packing/post_rollout_slot_is_final_sync"] = float(
+                    1.0 if bool(slot.sync_gradients) else 0.0
+                )
+                pack_metrics["packing/post_rollout_slot_sync_gradients"] = float(
+                    1.0 if bool(sync_gradients) else 0.0
+                )
+
+                step_totals_pack = step_totals if first_real_pack else {}
                 if (
                     bool(sync_gradients)
                     and dist is not None
@@ -466,7 +588,7 @@ class Stage2ABChannelExecutorsMixin:
                 )
 
                 loss_total = loss_pack if loss_total is None else (loss_total + loss_pack)
-                first_pack = False
+                first_real_pack = False
 
             if loss_total is None:
                 raise AssertionError("stage2-ab Channel-A step mode produced no packs")

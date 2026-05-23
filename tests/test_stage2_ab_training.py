@@ -704,14 +704,11 @@ def _make_residual_set_pipeline_manifest(
     enabled: bool = True,
     channels: Sequence[str] = ("B",),
     base_seed: int = 17,
-    prepared_rollout_jsonl: str | None = None,
     **config_overrides: object,
 ) -> dict:
     config: dict[str, object] = {
         "base_seed": int(base_seed),
     }
-    if prepared_rollout_jsonl is not None:
-        config["prepared_rollout_jsonl"] = str(prepared_rollout_jsonl)
     config.update(config_overrides)
     return {
         "objective": [
@@ -726,35 +723,6 @@ def _make_residual_set_pipeline_manifest(
         ],
         "diagnostics": [],
     }
-
-
-def _write_prepared_rollout_jsonl(
-    path,
-    tok,
-    rows: Sequence[tuple[str, str, str, str, str]],
-    *,
-    image_path: str = "images/prepared.jpg",
-) -> None:
-    with path.open("w", encoding="utf-8") as f:
-        for sample_id, image_id, rollout_id, raw_text, decode_mode in rows:
-            f.write(
-                json.dumps(
-                    {
-                        "sample_id": sample_id,
-                        "image_id": image_id,
-                        "image_path": image_path,
-                        "rollout_id": rollout_id,
-                        "response_token_ids": list(
-                            tok.encode(raw_text, add_special_tokens=False)
-                        ),
-                        "raw_text": raw_text,
-                        "decode_mode": decode_mode,
-                        "generation_config_hash": "sha256:test",
-                    },
-                    sort_keys=True,
-                )
-                + "\n"
-            )
 
 
 def _make_min_trainer():
@@ -781,7 +749,7 @@ def _make_compact_channel_b_trainer(
     rollout_texts_by_call: list[str] | None = None,
     fallback_loss_weight: float = 1.0,
     pseudo_positive_enabled: bool = False,
-    num_rollouts: int = 2,
+    num_rollouts: int = 1,
 ) -> Stage2TwoChannelTrainer:
     t = Stage2TwoChannelTrainer.__new__(Stage2TwoChannelTrainer)
     t.stage2_ab_cfg = {
@@ -1099,7 +1067,7 @@ def test_channel_a_ce_uses_single_forward_logits():
 
 
 def test_parse_rollout_fallback_prefix_brace_is_deterministic():
-    tok = _DummyTokenizer()
+    tok = _CoordLiteralTokenizer()
     resp_ids = tok.encode("hello", add_special_tokens=False)
 
     p1 = parse_rollout_for_matching(tokenizer=tok, response_token_ids=list(resp_ids))
@@ -1451,13 +1419,13 @@ def _minimal_channel_b_meta_entry_kwargs(**overrides):
     return kwargs
 
 
-def test_channel_b_meta_entry_legacy_non_residual_attaches_stage2_trie_targets() -> None:
+def test_channel_b_meta_entry_non_residual_does_not_attach_legacy_stage2_trie_targets() -> None:
     meta, _drop_count = _build_channel_b_meta_entry(
         **_minimal_channel_b_meta_entry_kwargs()
     )
 
-    assert "stage2_trie_targets" in meta
-    assert isinstance(meta["stage2_trie_targets"], Stage2TrieTargets)
+    assert "stage2_trie_targets" not in meta
+    assert "stage2_trie_candidate_summary" not in meta
     assert "residual_set_target_ir" not in meta
 
 
@@ -1473,9 +1441,7 @@ def test_channel_b_meta_entry_residual_refuses_missing_event_sidecar() -> None:
 
 
 def test_channel_b_residual_objective_detection_honors_enabled_and_channel() -> None:
-    manifest = _make_residual_set_pipeline_manifest(
-        prepared_rollout_jsonl="tests/prepared_rollouts.jsonl"
-    )
+    manifest = _make_residual_set_pipeline_manifest()
     assert _channel_b_residual_set_correction_enabled(
         manifest["objective"]
     )
@@ -1485,28 +1451,6 @@ def test_channel_b_residual_objective_detection_honors_enabled_and_channel() -> 
     assert not _channel_b_residual_set_correction_enabled(
         _make_residual_set_pipeline_manifest(channels=("A",))["objective"]
     )
-
-
-def test_channel_b_residual_set_preflight_rejects_missing_prepared_rollout_jsonl(
-    tmp_path,
-) -> None:
-    row = (
-        f"{OBJECT_REF_START_TOKEN}cat{BOX_START_TOKEN}"
-        "<|coord_10|><|coord_20|><|coord_30|><|coord_41|>"
-    )
-    t = _make_compact_channel_b_trainer(rollout_text=row)
-    t.stage2_pipeline_manifest = _make_residual_set_pipeline_manifest(
-        prepared_rollout_jsonl=str(tmp_path / "missing_prepared_rollouts.jsonl")
-    )
-    t._prepare_samples_for_rollout = lambda *_args, **_kwargs: pytest.fail(
-        "prepared residual-set preflight must run before live rollout preparation"
-    )
-
-    with pytest.raises(FileNotFoundError, match="prepared_rollout_jsonl.*does not exist"):
-        t._prepare_batch_inputs_b(
-            [_single_bbox_sample()],
-            _segments_only=True,
-        )
 
 
 def test_channel_b_compact_full_rollout_template_uses_compact_parser_and_targets(
@@ -1545,325 +1489,6 @@ def test_channel_b_compact_full_rollout_template_uses_compact_parser_and_targets
     assert metrics["rollout/template_family_compact_full"] == pytest.approx(1.0)
     assert metrics["rollout/invalid_fallback_gt_fn_count"] == pytest.approx(0.0)
     assert metrics["rollout/fallback_loss_share"] == pytest.approx(0.0)
-
-
-def test_channel_b_compact_full_residual_path_attaches_ir_without_trie(
-    monkeypatch,
-    tmp_path,
-) -> None:
-    row = (
-        f"{OBJECT_REF_START_TOKEN}cat{BOX_START_TOKEN}"
-        "<|coord_10|><|coord_20|><|coord_30|><|coord_41|>"
-    )
-    t = _make_compact_channel_b_trainer(rollout_text=row)
-    prepared_path = tmp_path / "prepared_rollouts.jsonl"
-    _write_prepared_rollout_jsonl(
-        prepared_path,
-        t.template.tokenizer,
-        [("sample-prepared", "image-prepared", "r0", row, "greedy")],
-    )
-    t.stage2_pipeline_manifest = _make_residual_set_pipeline_manifest(
-        prepared_rollout_jsonl=str(prepared_path)
-    )
-    t._prepare_samples_for_rollout = lambda *_args, **_kwargs: pytest.fail(
-        "offline residual-set mode must not prepare live rollout samples"
-    )
-    t._rollout_many = lambda *_args, **_kwargs: pytest.fail(
-        "offline residual-set mode must not call live rollout backend"
-    )
-    monkeypatch.setattr(
-        "src.trainers.stage2_two_channel.parse_rollout_for_matching",
-        lambda **kwargs: pytest.fail("legacy CoordJSON parser must not run"),
-    )
-
-    sample = _single_bbox_sample()
-    sample["sample_id"] = "sample-prepared"
-    sample["image_id"] = "image-prepared"
-    sample["assistant_payload"]["objects"].append(
-        {"bbox_2d": [50, 60, 70, 80], "desc": "dog"}
-    )
-    segments, metrics = t._prepare_batch_inputs_b(
-        [sample],
-        _segments_only=True,
-    )
-
-    assert len(segments) == 1
-    encoded, meta, _length = segments[0]
-    assert "residual_set_target_ir" in meta
-    assert "stage2_trie_targets" not in meta
-    assert "stage2_trie_candidate_summary" not in meta
-    assert meta["residual_set_rollin_policy"] == "random_valid_branch"
-    assert meta["residual_set_base_seed"] == 17
-
-    target_ir = meta["residual_set_target_ir"]
-    assert isinstance(target_ir, TeacherForcingTargetIR)
-    assert target_ir.schema_version == TEACHER_FORCING_TARGET_IR_SCHEMA_VERSION
-    assert target_ir.metadata["objective"] == "residual_set_correction"
-    assert target_ir.metadata["stage2_channel"] == "B"
-    assert target_ir.metadata["position_space"] == "segment_local"
-    assert target_ir.metadata["marginal_scope"] == "sampled_path_next_token"
-    assert "target_builder" not in target_ir.metadata
-    assert target_ir.atoms
-    input_ids = [int(token_id) for token_id in encoded["input_ids"]]
-    for atom in target_ir.atoms:
-        assert atom.logit_position + 1 == atom.target_position
-        assert atom.selected_token_id == input_ids[int(atom.target_position)]
-        assert atom.selected_token_id in atom.valid_token_ids
-        assert atom.selected_token_role in atom.allowed_token_roles
-        assert "residual_set" in atom.loss_tags
-        assert atom.provenance["target_builder"] == "stage2_residual_events_v1"
-        assert atom.provenance["correction_kind"] in {
-            "premature_stop",
-            "fp_boundary",
-            "repeated_object_boundary",
-        }
-        assert atom.provenance["selected_object_id"] == "gt:1"
-    role_slots = [
-        (
-            atom.selected_token_role,
-            atom.coord_role,
-        )
-        for atom in target_ir.atoms
-    ]
-    assert role_slots == [
-        (TokenRole.SCHEMA, None),
-        (TokenRole.TEXT, None),
-        (TokenRole.TEXT, None),
-        (TokenRole.TEXT, None),
-        (TokenRole.SCHEMA, None),
-        (TokenRole.COORD, "x1"),
-        (TokenRole.COORD, "y1"),
-        (TokenRole.COORD, "x2"),
-        (TokenRole.COORD, "y2"),
-    ]
-    assert "stage2_ab/channel_b/residual_set/ul/promoted_clusters" in metrics
-    assert metrics[
-        "stage2_ab/channel_b/residual_set/ul/promoted_clusters"
-    ] == pytest.approx(0.0)
-    assert metrics[
-        "stage2_ab/channel_b/residual_set/ul/artifact_rows"
-    ] == pytest.approx(1.0)
-    assert metrics[
-        "stage2_ab/channel_b/residual_set/ul/artifact_written"
-    ] == pytest.approx(1.0)
-    assert "stage2_ab/channel_b/ul/promoted_clusters" not in metrics
-
-
-def test_channel_b_offline_residual_set_fans_out_prepared_attempts(
-    tmp_path,
-) -> None:
-    rows = [
-        (
-            "sample-prepared",
-            "image-prepared",
-            "r0",
-            f"{OBJECT_REF_START_TOKEN}cat{BOX_START_TOKEN}"
-            "<|coord_10|><|coord_20|><|coord_30|><|coord_41|>",
-            "greedy",
-        ),
-        (
-            "sample-prepared",
-            "image-prepared",
-            "r1",
-            f"{OBJECT_REF_START_TOKEN}cat{BOX_START_TOKEN}"
-            "<|coord_10|><|coord_20|><|coord_30|><|coord_42|>",
-            "sampling",
-        ),
-    ]
-    t = _make_compact_channel_b_trainer(rollout_text=rows[0][3])
-    prepared_path = tmp_path / "prepared_rollouts.jsonl"
-    _write_prepared_rollout_jsonl(
-        prepared_path,
-        t.template.tokenizer,
-        rows,
-    )
-
-    t.stage2_pipeline_manifest = _make_residual_set_pipeline_manifest(
-        prepared_rollout_jsonl=str(prepared_path)
-    )
-    t._prepare_samples_for_rollout = lambda *_args, **_kwargs: pytest.fail(
-        "offline residual-set mode must not prepare live rollout samples"
-    )
-    t._rollout_many = lambda *_args, **_kwargs: pytest.fail(
-        "offline residual-set mode must not call live rollout backend"
-    )
-
-    sample = _single_bbox_sample()
-    sample["sample_id"] = "sample-prepared"
-    sample["image_id"] = "image-prepared"
-    segments, metrics = t._prepare_batch_inputs_b(
-        [sample],
-        _segments_only=True,
-    )
-
-    assert len(segments) == 2
-    assert metrics["stage2_ab/channel_b/residual_set/sequence_count"] == pytest.approx(2.0)
-    assert metrics["stage2_ab/channel_b/residual_set/prepared/K_total"] == pytest.approx(2.0)
-    assert metrics["stage2_ab/channel_b/residual_set/prepared/K_after_dedup"] == pytest.approx(2.0)
-    assert metrics["stage2_ab/channel_b/residual_set/prepared/K_valid"] == pytest.approx(2.0)
-    rollout_ids = [segment[1]["prepared_rollout"]["rollout_id"] for segment in segments]
-    assert rollout_ids == ["r0", "r1"]
-    assert [
-        segment[1]["residual_set_metrics"]["scanner_row_decision/committed"]
-        for segment in segments
-    ] == [pytest.approx(1.0), pytest.approx(1.0)]
-    assert [
-        segment[1]["residual_set_event_summaries"]
-        for segment in segments
-    ] == [[], []]
-
-
-def test_channel_b_offline_residual_set_matches_sample_images_alias(
-    tmp_path,
-) -> None:
-    row = (
-        f"{OBJECT_REF_START_TOKEN}cat{BOX_START_TOKEN}"
-        "<|coord_10|><|coord_20|><|coord_30|><|coord_41|>"
-    )
-    t = _make_compact_channel_b_trainer(rollout_text=row)
-    prepared_path = tmp_path / "prepared_rollouts.jsonl"
-    _write_prepared_rollout_jsonl(
-        prepared_path,
-        t.template.tokenizer,
-        [("sample-from-producer", "image-from-producer", "r0", row, "greedy")],
-        image_path="images/from-images-alias.jpg",
-    )
-    t.stage2_pipeline_manifest = _make_residual_set_pipeline_manifest(
-        prepared_rollout_jsonl=str(prepared_path)
-    )
-    t._prepare_samples_for_rollout = lambda *_args, **_kwargs: pytest.fail(
-        "offline residual-set mode must not prepare live rollout samples"
-    )
-    t._rollout_many = lambda *_args, **_kwargs: pytest.fail(
-        "offline residual-set mode must not call live rollout backend"
-    )
-
-    sample = _single_bbox_sample()
-    sample["images"] = ["images/from-images-alias.jpg"]
-    segments, metrics = t._prepare_batch_inputs_b(
-        [sample],
-        _segments_only=True,
-    )
-
-    assert len(segments) == 1
-    assert metrics[
-        "stage2_ab/channel_b/residual_set/prepared/missing_sample_count"
-    ] == pytest.approx(0.0)
-    assert segments[0][1]["prepared_rollout"]["image_path"] == "images/from-images-alias.jpg"
-
-
-def test_channel_b_offline_residual_set_rejects_raw_text_token_mismatch(
-    tmp_path,
-) -> None:
-    token_text = (
-        f"{OBJECT_REF_START_TOKEN}cat{BOX_START_TOKEN}"
-        "<|coord_10|><|coord_20|><|coord_30|><|coord_41|>"
-    )
-    stale_text = (
-        f"{OBJECT_REF_START_TOKEN}cat{BOX_START_TOKEN}"
-        "<|coord_10|><|coord_20|><|coord_30|><|coord_99|>"
-    )
-    t = _make_compact_channel_b_trainer(rollout_text=token_text)
-    prepared_path = tmp_path / "prepared_rollouts.jsonl"
-    with prepared_path.open("w", encoding="utf-8") as f:
-        f.write(
-            json.dumps(
-                {
-                    "sample_id": "sample-prepared",
-                    "image_id": "image-prepared",
-                    "image_path": "images/prepared.jpg",
-                    "rollout_id": "r0",
-                    "response_token_ids": list(
-                        t.template.tokenizer.encode(
-                            token_text,
-                            add_special_tokens=False,
-                        )
-                    ),
-                    "raw_text": stale_text,
-                    "decode_mode": "greedy",
-                    "generation_config_hash": "sha256:test",
-                },
-                sort_keys=True,
-            )
-            + "\n"
-        )
-    t.stage2_pipeline_manifest = _make_residual_set_pipeline_manifest(
-        prepared_rollout_jsonl=str(prepared_path)
-    )
-    sample = _single_bbox_sample()
-    sample["sample_id"] = "sample-prepared"
-    sample["image_id"] = "image-prepared"
-
-    with pytest.raises(ValueError, match="raw_text.*response_token_ids"):
-        t._prepare_batch_inputs_b(
-            [sample],
-            _segments_only=True,
-        )
-
-
-def test_channel_b_offline_residual_set_k_valid_excludes_invalid_after_dedup(
-    tmp_path,
-) -> None:
-    valid_row = (
-        f"{OBJECT_REF_START_TOKEN}cat{BOX_START_TOKEN}"
-        "<|coord_10|><|coord_20|><|coord_30|><|coord_41|>"
-    )
-    invalid_row = "not a compact detection row"
-    t = _make_compact_channel_b_trainer(rollout_text=valid_row)
-    prepared_path = tmp_path / "prepared_rollouts.jsonl"
-    _write_prepared_rollout_jsonl(
-        prepared_path,
-        t.template.tokenizer,
-        [
-            ("sample-prepared", "image-prepared", "valid", valid_row, "greedy"),
-            ("sample-prepared", "image-prepared", "invalid", invalid_row, "sampling"),
-        ],
-    )
-    t.stage2_pipeline_manifest = _make_residual_set_pipeline_manifest(
-        prepared_rollout_jsonl=str(prepared_path)
-    )
-
-    sample = _single_bbox_sample()
-    sample["sample_id"] = "sample-prepared"
-    sample["image_id"] = "image-prepared"
-    segments, metrics = t._prepare_batch_inputs_b(
-        [sample],
-        _segments_only=True,
-    )
-
-    assert len(segments) == 1
-    assert metrics["stage2_ab/channel_b/residual_set/prepared/K_total"] == pytest.approx(2.0)
-    assert metrics["stage2_ab/channel_b/residual_set/prepared/K_after_dedup"] == pytest.approx(2.0)
-    assert metrics["stage2_ab/channel_b/residual_set/prepared/K_valid"] == pytest.approx(1.0)
-    assert metrics[
-        "stage2_ab/channel_b/residual_set/prepared/drop_reason/invalid_prepared_rollout"
-    ] == pytest.approx(1.0)
-    assert segments[0][1]["prepared_rollout"]["K_after_dedup"] == 2
-    assert segments[0][1]["prepared_rollout"]["K_valid"] == 1
-    assert (
-        segments[0][1]["prepared_rollout"]["dropped_reasons"][
-            "invalid_prepared_rollout"
-        ]
-        == 1
-    )
-    assert segments[0][1]["prepared_rollout"]["exact_duplicate_attempts"] == 0
-
-
-def test_stage2_ul_rollout_id_prefers_explicit_prepared_rollout_id() -> None:
-    assert (
-        _stage2_ul_rollout_id(
-            sample_id="sample-prepared",
-            view={"rollout_index": 0, "rollout_id": "r1"},
-        )
-        == "r1"
-    )
-    assert (
-        _stage2_ul_rollout_id(
-            sample_id="sample-prepared",
-            view={"rollout_index": 2},
-        )
-        == "sample-prepared:r2"
-    )
 
 
 def test_ul_consensus_rollout_evidence_skips_invalid_unmatched_boxes() -> None:
@@ -2325,284 +1950,6 @@ def test_ul_consensus_gt_overlap_reaches_miner_quarantine_and_artifacts() -> Non
     rows = ul_cluster_artifact_rows(ul_result, image_id="image-consumed")
     assert rows[0]["reason"] == "consumed_target_overlap"
     assert rows[0]["consumed_overlap"]
-
-
-def test_channel_b_offline_residual_set_passes_rollout_local_ul_targets(
-    monkeypatch,
-    tmp_path,
-) -> None:
-    rows = [
-        (
-            "sample-prepared",
-            "image-prepared",
-            "r0",
-            f"{OBJECT_REF_START_TOKEN}dog{BOX_START_TOKEN}"
-            "<|coord_50|><|coord_60|><|coord_150|><|coord_180|>",
-            "greedy",
-        ),
-        (
-            "sample-prepared",
-            "image-prepared",
-            "r1",
-            f"{OBJECT_REF_START_TOKEN}dog{BOX_START_TOKEN}"
-            "<|coord_52|><|coord_62|><|coord_152|><|coord_182|>",
-            "sampling",
-        ),
-    ]
-    t = _make_compact_channel_b_trainer(rollout_text=rows[0][3])
-    prepared_path = tmp_path / "prepared_rollouts.jsonl"
-    _write_prepared_rollout_jsonl(prepared_path, t.template.tokenizer, rows)
-    t.stage2_pipeline_manifest = _make_residual_set_pipeline_manifest(
-        prepared_rollout_jsonl=str(prepared_path),
-        min_ul_valid_rollouts=2,
-    )
-    seen_targets: list[tuple[str, list[list[int]], list[tuple[str, ...]]]] = []
-
-    def _record_residual_set_build(**kwargs):
-        promoted = list(kwargs["ul_promoted_objects"])
-        rollout_id = str(kwargs["rollout_id"])
-        seen_targets.append(
-            (
-                rollout_id,
-                [list(item["object"].points_norm1000) for item in promoted],
-                [tuple(item["support_provenance"]) for item in promoted],
-            )
-        )
-        raw_ids = list(kwargs["response_token_ids"])
-        return types.SimpleNamespace(
-            y_train_ids=raw_ids,
-            clean_target_text=t.template.tokenizer.decode(raw_ids),
-            prefix_len_raw_local=len(raw_ids),
-            events=[],
-            event_summaries=[],
-            metrics={
-                "event_count": 0.0,
-                "atom_count": 0.0,
-                "ul_promoted_object_count": float(len(promoted)),
-                },
-            )
-
-    from src.trainers.stage2_two_channel import target_builder as target_builder_module
-
-    monkeypatch.setattr(
-        target_builder_module,
-        "_build_residual_set_correction_events",
-        _record_residual_set_build,
-    )
-    sample = _single_bbox_sample()
-    sample["sample_id"] = "sample-prepared"
-    sample["image_id"] = "image-prepared"
-
-    segments, _metrics = t._prepare_batch_inputs_b(
-        [sample],
-        _segments_only=True,
-    )
-
-    assert len(segments) == 2
-    assert seen_targets == [
-        (
-            "r0",
-            [[50, 60, 150, 180]],
-            [("ul", "cluster:0", "rollout:r0", "member:0")],
-        ),
-        (
-            "r1",
-            [[52, 62, 152, 182]],
-            [("ul", "cluster:0", "rollout:r1", "member:0")],
-        ),
-    ]
-
-
-def test_channel_b_offline_residual_set_writes_ul_artifact_rows(
-    monkeypatch,
-    tmp_path,
-) -> None:
-    rows = [
-        (
-            "sample-prepared",
-            "image-prepared",
-            "r0",
-            f"{OBJECT_REF_START_TOKEN}dog{BOX_START_TOKEN}"
-            "<|coord_50|><|coord_60|><|coord_150|><|coord_180|>",
-            "greedy",
-        ),
-        (
-            "sample-prepared",
-            "image-prepared",
-            "r1",
-            f"{OBJECT_REF_START_TOKEN}dog{BOX_START_TOKEN}"
-            "<|coord_51|><|coord_61|><|coord_151|><|coord_181|>",
-            "sampling",
-        ),
-    ]
-    t = _make_compact_channel_b_trainer(rollout_text=rows[0][3])
-    t.args = types.SimpleNamespace(output_dir=str(tmp_path / "out"))
-    prepared_path = tmp_path / "prepared_rollouts.jsonl"
-    _write_prepared_rollout_jsonl(prepared_path, t.template.tokenizer, rows)
-    t.stage2_pipeline_manifest = _make_residual_set_pipeline_manifest(
-        prepared_rollout_jsonl=str(prepared_path),
-        min_ul_valid_rollouts=2,
-    )
-    written = {}
-
-    def _record_ul_artifact(root, artifact_rows, *, enabled, append=False):
-        if not artifact_rows:
-            return str(tmp_path / "out" / "monitor_dumps" / "ul_clusters.jsonl")
-        written["root"] = str(root)
-        written["rows"] = list(artifact_rows)
-        written["enabled"] = bool(enabled)
-        written["append"] = bool(append)
-        return str(tmp_path / "out" / "monitor_dumps" / "ul_clusters.jsonl")
-
-    monkeypatch.setattr(
-        "src.trainers.stage2_two_channel.write_ul_clusters_artifact",
-        _record_ul_artifact,
-    )
-    sample = _single_bbox_sample()
-    sample["sample_id"] = "sample-prepared"
-    sample["image_id"] = "image-prepared"
-    sample["image_path"] = "images/from-sample.jpg"
-    sample["width"] = 640
-    sample["height"] = 480
-
-    segments, metrics = t._prepare_batch_inputs_b(
-        [sample],
-        _segments_only=True,
-    )
-
-    assert len(segments) == 2
-    assert metrics[
-        "stage2_ab/channel_b/residual_set/ul/promoted_clusters"
-    ] == pytest.approx(1.0)
-    assert metrics[
-        "stage2_ab/channel_b/residual_set/ul/artifact_rows"
-    ] == pytest.approx(1.0)
-    assert metrics[
-        "stage2_ab/channel_b/residual_set/ul/artifact_written"
-    ] == pytest.approx(1.0)
-    assert written["enabled"] is True
-    assert written["append"] is True
-    assert written["root"] == str(tmp_path / "out" / "monitor_dumps")
-    artifact_row = written["rows"][0]
-    assert artifact_row["image_id"] == "image-prepared"
-    assert artifact_row["sample_id"] == "sample-prepared"
-    assert artifact_row["image_path"] == "images/from-sample.jpg"
-    assert artifact_row["image_width"] == 640
-    assert artifact_row["image_height"] == 480
-    assert artifact_row["decision"] == "promoted"
-    assert artifact_row["reason"] == "consensus"
-    assert artifact_row["support_rollout_ids"] == ["r0", "r1"]
-    assert artifact_row["representative_bbox_norm1000"] == [50.0, 60.0, 150.0, 180.0]
-    assert artifact_row["representative_member"]["rollout_id"] == "r0"
-    assert len(artifact_row["member_boxes"]) == 2
-    assert "pairwise_geometry" in artifact_row
-    assert "consumed_overlap" in artifact_row
-
-
-def test_residual_set_ul_artifact_rows_accumulate_across_prepare_batches_without_duplicates(
-    tmp_path,
-) -> None:
-    rows = [
-        (
-            "sample-prepared-a",
-            "image-prepared-a",
-            "a-r0",
-            f"{OBJECT_REF_START_TOKEN}dog{BOX_START_TOKEN}"
-            "<|coord_50|><|coord_60|><|coord_150|><|coord_180|>",
-            "greedy",
-        ),
-        (
-            "sample-prepared-a",
-            "image-prepared-a",
-            "a-r1",
-            f"{OBJECT_REF_START_TOKEN}dog{BOX_START_TOKEN}"
-            "<|coord_51|><|coord_61|><|coord_151|><|coord_181|>",
-            "sampling",
-        ),
-        (
-            "sample-prepared-b",
-            "image-prepared-b",
-            "b-r0",
-            f"{OBJECT_REF_START_TOKEN}car{BOX_START_TOKEN}"
-            "<|coord_250|><|coord_260|><|coord_350|><|coord_380|>",
-            "greedy",
-        ),
-        (
-            "sample-prepared-b",
-            "image-prepared-b",
-            "b-r1",
-            f"{OBJECT_REF_START_TOKEN}car{BOX_START_TOKEN}"
-            "<|coord_251|><|coord_261|><|coord_351|><|coord_381|>",
-            "sampling",
-        ),
-    ]
-    t = _make_compact_channel_b_trainer(rollout_text=rows[0][3])
-    t.args = types.SimpleNamespace(output_dir=str(tmp_path / "out"))
-    prepared_path = tmp_path / "prepared_rollouts.jsonl"
-    _write_prepared_rollout_jsonl(prepared_path, t.template.tokenizer, rows)
-    t.stage2_pipeline_manifest = _make_residual_set_pipeline_manifest(
-        prepared_rollout_jsonl=str(prepared_path),
-        min_ul_valid_rollouts=2,
-    )
-
-    sample_a = _single_bbox_sample()
-    sample_a["sample_id"] = "sample-prepared-a"
-    sample_a["image_id"] = "image-prepared-a"
-    sample_b = _single_bbox_sample()
-    sample_b["sample_id"] = "sample-prepared-b"
-    sample_b["image_id"] = "image-prepared-b"
-
-    t._prepare_batch_inputs_b([sample_a], _segments_only=True)
-    t._prepare_batch_inputs_b([sample_b], _segments_only=True)
-    t._prepare_batch_inputs_b([sample_b], _segments_only=True)
-
-    artifact_path = tmp_path / "out" / "monitor_dumps" / "ul_clusters.jsonl"
-    parsed_rows = [
-        json.loads(line)
-        for line in artifact_path.read_text(encoding="utf-8").splitlines()
-    ]
-
-    assert [row["sample_id"] for row in parsed_rows] == [
-        "sample-prepared-a",
-        "sample-prepared-b",
-    ]
-    assert [row["desc_id"] for row in parsed_rows] == ["dog", "car"]
-    assert [row["support_rollout_ids"] for row in parsed_rows] == [
-        ["a-r0", "a-r1"],
-        ["b-r0", "b-r1"],
-    ]
-
-
-def test_residual_set_ul_artifact_enabled_no_rows_clears_stale_file(
-    tmp_path,
-) -> None:
-    rollout_text = (
-        f"{OBJECT_REF_START_TOKEN}cat{BOX_START_TOKEN}"
-        "<|coord_10|><|coord_20|><|coord_30|><|coord_40|>"
-    )
-    t = _make_compact_channel_b_trainer(rollout_text=rollout_text)
-    t.args = types.SimpleNamespace(output_dir=str(tmp_path / "out"))
-    prepared_path = tmp_path / "prepared_rollouts.jsonl"
-    prepared_path.write_text("", encoding="utf-8")
-    t.stage2_pipeline_manifest = _make_residual_set_pipeline_manifest(
-        prepared_rollout_jsonl=str(prepared_path),
-    )
-    artifact_path = tmp_path / "out" / "monitor_dumps" / "ul_clusters.jsonl"
-    artifact_path.parent.mkdir(parents=True)
-    artifact_path.write_text('{"sample_id": "stale"}\n', encoding="utf-8")
-
-    sample = _single_bbox_sample()
-    sample["sample_id"] = "sample-no-ul"
-    sample["image_id"] = "image-no-ul"
-    _segments, metrics = t._prepare_batch_inputs_b([sample], _segments_only=True)
-
-    assert metrics[
-        "stage2_ab/channel_b/residual_set/ul/artifact_rows"
-    ] == pytest.approx(0.0)
-    assert metrics[
-        "stage2_ab/channel_b/residual_set/ul/artifact_written"
-    ] == pytest.approx(1.0)
-    assert artifact_path.read_text(encoding="utf-8") == ""
 
 
 def test_residual_events_use_compact_row_context_desc_tokens() -> None:
@@ -3101,12 +2448,12 @@ def test_channel_b_compact_full_sorted_fn_desc_reaches_prefix_meta(
 @pytest.mark.parametrize(
     ("rollout_text", "expected_invalid_count", "expected_empty_rate", "reason"),
     [
-        ("not compact output", 2.0, 0.0, "malformed_compact_full"),
+        ("not compact output", 4.0, 0.0, "malformed_compact_full"),
         ("", 0.0, 1.0, "empty_valid_object_set"),
         (
             f"{OBJECT_REF_START_TOKEN}cat{BOX_START_TOKEN}"
             "<|coord_30|><|coord_20|><|coord_10|><|coord_40|>",
-            2.0,
+            4.0,
             0.0,
             "malformed_compact_full",
         ),
@@ -3123,6 +2470,7 @@ def test_channel_b_compact_full_invalid_or_empty_rollout_falls_back_with_metrics
         rollout_text=rollout_text,
         fallback_loss_weight=0.25,
         pseudo_positive_enabled=True,
+        num_rollouts=4,
     )
     monkeypatch.setattr(
         "src.trainers.stage2_two_channel.parse_rollout_for_matching",
@@ -3134,7 +2482,7 @@ def test_channel_b_compact_full_invalid_or_empty_rollout_falls_back_with_metrics
         _segments_only=True,
     )
 
-    assert len(segments) == 1
+    assert len(segments) == 4
     _encoded, meta, _length = segments[0]
     assert meta["rollout_context"] == "fallback_gt_fn_append_only"
     assert meta["rollout_fallback_reason"] == reason
@@ -3150,7 +2498,7 @@ def test_channel_b_compact_full_invalid_or_empty_rollout_falls_back_with_metrics
         expected_invalid_count
     )
     assert metrics["rollout/invalid_fallback_gt_fn_rate"] == pytest.approx(
-        expected_invalid_count / 2.0
+        expected_invalid_count / 4.0
     )
     assert metrics["rollout/empty_valid_object_rate"] == pytest.approx(
         expected_empty_rate
@@ -3180,7 +2528,7 @@ def test_channel_b_compact_full_template_mismatch_raises_before_legacy_parser(
     assert parser_called is False
 
 
-def test_channel_b_compact_full_invalid_explorer_rollouts_do_not_dilute_posterior(
+def test_channel_b_compact_full_invalid_explorer_rollouts_block_full_consensus(
     monkeypatch,
 ) -> None:
     anchor_text = (
@@ -3213,21 +2561,24 @@ def test_channel_b_compact_full_invalid_explorer_rollouts_do_not_dilute_posterio
         _segments_only=True,
     )
 
-    assert len(segments) == 1
+    assert len(segments) == 4
     _encoded, meta, _length = segments[0]
     assert meta["valid_explorer_count"] == 1
     assert meta["anchor_support_counts"] == [1]
-    assert meta["anchor_support_rates"] == pytest.approx([1.0])
+    assert meta["anchor_support_rates"] == pytest.approx([1.0 / 3.0])
     assert meta["shielded_anchor_indices"] == [0]
     assert meta["pseudo_positive_anchor_indices"] == []
     assert metrics["stage2/raw_rollouts"] == pytest.approx(4.0)
     assert metrics["rollout/invalid_fallback_gt_fn_count"] == pytest.approx(2.0)
     assert metrics["rollout/invalid_fallback_gt_fn_rate"] == pytest.approx(0.5)
     assert metrics["rollout/fallback_gt_fn_append_only_count"] == pytest.approx(2.0)
-    assert metrics["rollout/explorer/valid_pred_objects"] == pytest.approx(1.0 / 3.0)
+    assert metrics["rollout/peer/valid_pred_objects"] == pytest.approx(0.5)
+    assert metrics["rollout/explorer/valid_pred_objects"] == pytest.approx(
+        metrics["rollout/peer/valid_pred_objects"]
+    )
 
 
-def test_channel_b_live_grouped_stage2_trie_candidates_branch_on_valid_explorer(
+def test_channel_b_live_non_residual_skips_legacy_stage2_trie_sidecar(
     monkeypatch,
 ) -> None:
     anchor_text = (
@@ -3277,31 +2628,16 @@ def test_channel_b_live_grouped_stage2_trie_candidates_branch_on_valid_explorer(
         _segments_only=True,
     )
 
-    assert len(segments) == 1
-    encoded, meta, _length = segments[0]
-    targets = meta["stage2_trie_targets"]
-    summary = meta["stage2_trie_candidate_summary"]
-    prompt_len = int(meta["prompt_len"])
-    train_len = int(meta["train_len"])
+    assert len(segments) == 3
+    _encoded, meta, _length = segments[0]
 
-    assert summary["candidate_count"] > 1
-    assert summary["rollout_indices"] == [0, 2]
-    assert summary["branch_points"] > 0
-    assert summary["sample_id"] == "0"
-    assert max(target.position for target in targets.token_targets) < (
-        prompt_len + train_len
-    )
-    assert all(
-        0 <= int(target.position) - prompt_len < train_len
-        for target in targets.token_targets
-    )
-    assert all(
-        int(encoded["input_ids"][int(target.position)]) in target.positive_token_ids
-        for target in targets.token_targets
-    )
+    assert meta["valid_explorer_count"] == 1
+    for _encoded, meta, _length in segments:
+        assert "stage2_trie_targets" not in meta
+        assert "stage2_trie_candidate_summary" not in meta
 
 
-def test_channel_b_compact_full_stage2_trie_roles_and_eos_target(
+def test_channel_b_compact_full_non_residual_has_no_legacy_stage2_trie_roles(
     monkeypatch,
 ) -> None:
     rollout_text = (
@@ -3343,21 +2679,14 @@ def test_channel_b_compact_full_stage2_trie_roles_and_eos_target(
         _segments_only=True,
     )
 
-    encoded, meta, _length = segments[0]
-    targets = meta["stage2_trie_targets"]
-    roles = {str(target.semantic_role) for target in targets.token_targets}
-    eos_targets = [
-        target for target in targets.token_targets if target.semantic_role == "eos"
-    ]
+    _encoded, meta, _length = segments[0]
 
-    assert {"struct", "desc", "coord", "eos"}.issubset(roles)
-    assert len(eos_targets) == 1
+    assert "stage2_trie_targets" not in meta
+    assert "stage2_trie_candidate_summary" not in meta
     assert meta["tail_closure_pos"] == [0]
     assert meta["stop_rel_pos"] == 0
     assert meta["stop_token_id"] == im_end_id
     assert meta["continue_token_id"] is None
-    assert int(encoded["input_ids"][int(eos_targets[0].position)]) == im_end_id
-    assert eos_targets[0].positive_token_ids == (im_end_id,)
 
 
 def test_channel_b_matching_uses_greedy_assignment_threshold(monkeypatch):
@@ -3503,8 +2832,28 @@ def test_channel_b_invalid_rollout_keeps_sample_via_empty_prefix_fallback(monkey
     t._cfg = lambda key, default=None: cfg.get(key, default)
     t._ab_channel_b_get = lambda key, default=None: default
 
-    tok = _DummyTokenizer()
-    t.template = types.SimpleNamespace(tokenizer=tok)
+    tok = _CoordLiteralTokenizer()
+
+    class _PromptTemplate:
+        tokenizer = tok
+
+        def encode(self, data, return_length=True):
+            content = data["messages"][-1]["content"]
+            assistant_ids = (
+                [int(x) for x in content]
+                if isinstance(content, list)
+                else [
+                    int(x)
+                    for x in tok.encode(str(content), add_special_tokens=False)
+                ]
+            )
+            return {
+                "input_ids": list(assistant_ids),
+                "labels": list(assistant_ids),
+                "length": len(assistant_ids),
+            }
+
+    t.template = _PromptTemplate()
     t._get_coord_token_ids = lambda: list(range(1000))
     t._coord_id_map = lambda: {i: i for i in range(1000)}
     t._packing_enabled = lambda: False
@@ -3596,8 +2945,28 @@ def test_channel_b_enabled_pseudo_positive_drops_invalid_anchor_sample(
     t._cfg = lambda key, default=None: cfg.get(key, default)
     t._ab_channel_b_get = lambda key, default=None: ab_cfg.get(key, default)
 
-    tok = _DummyTokenizer()
-    t.template = types.SimpleNamespace(tokenizer=tok)
+    tok = _CoordLiteralTokenizer()
+
+    class _PromptTemplate:
+        tokenizer = tok
+
+        def encode(self, data, return_length=True):
+            content = data["messages"][-1]["content"]
+            assistant_ids = (
+                [int(x) for x in content]
+                if isinstance(content, list)
+                else [
+                    int(x)
+                    for x in tok.encode(str(content), add_special_tokens=False)
+                ]
+            )
+            return {
+                "input_ids": list(assistant_ids),
+                "labels": list(assistant_ids),
+                "length": len(assistant_ids),
+            }
+
+    t.template = _PromptTemplate()
     t.args = types.SimpleNamespace(output_dir=str(tmp_path))
     t._get_coord_token_ids = lambda: list(range(1000))
     t._coord_id_map = lambda: {i: i for i in range(1000)}
@@ -3632,22 +3001,42 @@ def test_channel_b_enabled_pseudo_positive_drops_invalid_anchor_sample(
 
     t._hf_sampling_seed_context = lambda **kwargs: _NoSeedCtx()
 
-    monkeypatch.setattr(
-        "src.trainers.stage2_two_channel.parse_rollout_for_matching",
-        lambda **kwargs: types.SimpleNamespace(
+    def _fake_parse(**kwargs):
+        marker = int(kwargs["response_token_ids"][0])
+        is_invalid = marker == 102
+        return types.SimpleNamespace(
             prefix_token_ids=list(
                 tok.encode('{"objects": [', add_special_tokens=False)
             ),
             prefix_text='{"objects": [',
             response_token_ids=list(kwargs["response_token_ids"]),
             response_text='{"objects": [{"desc": "broken", "bbox_2d": [1, 2',
-            valid_objects=[],
+            valid_objects=(
+                []
+                if is_invalid
+                else [
+                    types.SimpleNamespace(
+                        index=0,
+                        geom_type="bbox_2d",
+                        coord_token_indices=[0, 1, 2, 3],
+                        desc="x",
+                    )
+                ]
+            ),
             dropped_invalid_by_reason={},
             dropped_invalid=0,
             dropped_ambiguous=0,
             truncated=False,
-            invalid_rollout=int(kwargs["response_token_ids"][0]) == 102,
-        ),
+            invalid_rollout=is_invalid,
+        )
+
+    monkeypatch.setattr(
+        "src.trainers.stage2_two_channel.parse_rollout_for_matching",
+        _fake_parse,
+    )
+    monkeypatch.setattr(
+        "src.trainers.stage2_two_channel.points_from_coord_tokens",
+        lambda **kwargs: [0, 0, 1, 1],
     )
     monkeypatch.setattr(
         "src.trainers.stage2_two_channel._assign_stage2_channel_b_objects",
@@ -3668,7 +3057,7 @@ def test_channel_b_enabled_pseudo_positive_drops_invalid_anchor_sample(
         },
     }
     segments, batch_metrics = t._prepare_batch_inputs_b([sample], _segments_only=True)
-    assert segments == []
+    assert len(segments) == 3
     assert batch_metrics["stage2/invalid_rollout"] == pytest.approx(1.0)
     assert batch_metrics[
         "stage2_ab/channel_b/invalid_rollout_sample_dropped"
@@ -3803,12 +3192,12 @@ def test_channel_b_closure_resolution_failure_falls_back_without_dropping_sample
 
     segments, batch_metrics = t._prepare_batch_inputs_b([sample], _segments_only=True)
 
-    assert len(segments) == 1
+    assert len(segments) == 2
     meta = segments[0][1]
     assert meta["tail_closure_pos"] == []
     assert batch_metrics[
         "stage2_ab/channel_b/closure_supervision/N_drop"
-    ] == pytest.approx(1.0)
+    ] == pytest.approx(2.0)
     assert batch_metrics["stage2_ab/channel_b/invalid_rollout"] == pytest.approx(0.0)
     assert batch_metrics["rollout/template_family_coordjson"] == pytest.approx(1.0)
     assert batch_metrics["rollout/template_family_compact_full"] == pytest.approx(0.0)
@@ -4062,14 +3451,14 @@ def test_channel_b_suspicious_monitor_dump_buffers_full_eval_style_payload(
     }
 
     segments, batch_metrics = t._prepare_batch_inputs_b([sample], _segments_only=True)
-    assert len(segments) == 1
+    assert len(segments) == 2
     assert batch_metrics[
         "stage2_ab/channel_b/dup/N_objects_suppressed"
     ] == pytest.approx(0.0)
     assert batch_metrics["stage2_ab/channel_b/dup/N_clusters_exempt"] == pytest.approx(
-        1.0
+        2.0
     )
-    assert len(t._stage2_train_monitor_candidates) == 1
+    assert len(t._stage2_train_monitor_candidates) == 2
 
     captured = {}
     t._write_monitor_dump = lambda *, global_step, payload: captured.update(
@@ -4655,6 +4044,7 @@ def test_channel_b_dual_rollout_triage_emits_recovered_ground_truth_weight_multi
     t._cfg = lambda key, default=None: cfg.get(key, default)
     t._ab_channel_b_get = lambda key, default=None: {
         "triage_posterior.explorer_temperature": 0.7,
+        "triage_posterior.rollout_temperatures": [0.0, 0.7],
         "triage_posterior.explorer_top_p": 0.9,
         "triage_posterior.explorer_top_k": 12,
         "triage_posterior.unlabeled_consistent_iou_threshold": 0.8,
@@ -4842,23 +4232,29 @@ def test_channel_b_dual_rollout_triage_emits_recovered_ground_truth_weight_multi
     assert batch_metrics["train/triage/recovered_ground_truth_rate"] == pytest.approx(
         1.0
     )
-    assert batch_metrics["train/triage/dead_anchor_rate"] == pytest.approx(1.0)
-    assert batch_metrics["train/triage/explorer_only_dead_rate"] == pytest.approx(0.0)
-    assert batch_metrics["rollout/anchor/pred_objects"] == pytest.approx(1.0)
-    assert batch_metrics["rollout/anchor/valid_pred_objects"] == pytest.approx(1.0)
-    assert batch_metrics["rollout/anchor/gen_new_tokens_mean"] == pytest.approx(1.0)
-    assert batch_metrics["rollout/anchor/gen_new_tokens_p90"] == pytest.approx(1.0)
-    assert batch_metrics["rollout/explorer/pred_objects"] == pytest.approx(1.0)
-    assert batch_metrics["rollout/explorer/valid_pred_objects"] == pytest.approx(1.0)
-    assert batch_metrics["rollout/explorer/gen_new_tokens_mean"] == pytest.approx(1.0)
-    assert batch_metrics["rollout/explorer/gen_new_tokens_p90"] == pytest.approx(1.0)
-    assert batch_metrics["rollout/explorer/temperature"] == pytest.approx(0.7)
-    assert batch_metrics["rollout/explorer/do_sample"] == pytest.approx(1.0)
-    assert batch_metrics["rollout/explorer/top_p"] == pytest.approx(0.9)
-    assert batch_metrics["rollout/explorer/top_k"] == pytest.approx(12.0)
+    assert batch_metrics["train/triage/dead_anchor_rate"] == pytest.approx(0.5)
+    assert batch_metrics["train/triage/explorer_only_dead_rate"] == pytest.approx(0.5)
+    assert batch_metrics["rollout/current/pred_objects"] == pytest.approx(2.0)
+    assert batch_metrics["rollout/current/valid_pred_objects"] == pytest.approx(2.0)
+    assert batch_metrics["rollout/current/gen_new_tokens_mean"] == pytest.approx(1.0)
+    assert batch_metrics["rollout/current/gen_new_tokens_p90"] == pytest.approx(1.0)
+    assert batch_metrics["rollout/peer/pred_objects"] == pytest.approx(1.0)
+    assert batch_metrics["rollout/peer/valid_pred_objects"] == pytest.approx(1.0)
+    assert batch_metrics["rollout/peer/gen_new_tokens_mean"] == pytest.approx(1.0)
+    assert batch_metrics["rollout/peer/gen_new_tokens_p90"] == pytest.approx(1.0)
+    assert batch_metrics["rollout/peer/temperature"] == pytest.approx(0.7)
+    assert batch_metrics["rollout/peer/do_sample"] == pytest.approx(1.0)
+    assert batch_metrics["rollout/peer/top_p"] == pytest.approx(0.9)
+    assert batch_metrics["rollout/peer/top_k"] == pytest.approx(12.0)
+    assert batch_metrics["rollout/anchor/pred_objects"] == pytest.approx(
+        batch_metrics["rollout/current/pred_objects"]
+    )
+    assert batch_metrics["rollout/explorer/pred_objects"] == pytest.approx(
+        batch_metrics["rollout/peer/pred_objects"]
+    )
     assert batch_metrics[
         "rollout/matched_for_supervision_over_valid_pred"
-    ] == pytest.approx(0.0)
+    ] == pytest.approx(0.5)
 
 
 def test_channel_b_dual_rollout_chunking_is_policy_symmetric(monkeypatch) -> None:
@@ -5011,9 +4407,9 @@ def test_channel_b_dual_rollout_chunking_is_policy_symmetric(monkeypatch) -> Non
         )
 
     assert rollout_calls == [
-        (2, 0.0),
         (2, 0.7),
-        (1, 0.0),
+        (1, 0.7),
+        (2, 0.7),
         (1, 0.7),
     ]
 
@@ -5173,31 +4569,34 @@ def test_channel_b_enabled_pseudo_positive_uses_k4_rollouts_and_keeps_zero_objec
         )
 
     assert [call["temperature"] for call in rollout_calls] == [
-        pytest.approx(0.0),
+        pytest.approx(0.7),
         pytest.approx(0.7),
         pytest.approx(0.7),
         pytest.approx(0.7),
     ]
     assert [call["request_index_offset"] for call in rollout_calls] == [
         pytest.approx(0.0),
-        pytest.approx(0.0),
         pytest.approx(1.0),
         pytest.approx(2.0),
+        pytest.approx(3.0),
     ]
 
     meta = segments[0][1]
-    assert meta["shielded_anchor_indices"] == []
+    assert meta["shielded_anchor_indices"] == [0]
     assert meta["dead_anchor_indices"] == []
-    assert meta["pseudo_positive_anchor_indices"] == [0]
+    assert meta["pseudo_positive_anchor_indices"] == []
     assert meta["valid_explorer_count"] == 3
     assert meta["anchor_support_counts"] == [2]
     assert meta["anchor_support_rates"] == pytest.approx([2.0 / 3.0])
     assert batch_metrics["stage2/raw_rollouts"] == pytest.approx(4.0)
-    assert batch_metrics["rollout/explorer/pred_objects"] == pytest.approx(2.0 / 3.0)
-    assert batch_metrics["rollout/explorer/valid_pred_objects"] == pytest.approx(
-        2.0 / 3.0
+    assert batch_metrics["rollout/peer/pred_objects"] == pytest.approx(0.75)
+    assert batch_metrics["rollout/peer/valid_pred_objects"] == pytest.approx(
+        0.75
     )
-    assert batch_metrics["rollout/explorer/parse_truncated_rate"] == pytest.approx(0.0)
+    assert batch_metrics["rollout/peer/parse_truncated_rate"] == pytest.approx(0.0)
+    assert batch_metrics["rollout/explorer/pred_objects"] == pytest.approx(
+        batch_metrics["rollout/peer/pred_objects"]
+    )
 
 
 def test_channel_b_enabled_pseudo_positive_aborts_on_invalid_explorer(
@@ -5226,7 +4625,7 @@ def test_channel_b_enabled_pseudo_positive_aborts_on_invalid_explorer(
     t._cfg = lambda key, default=None: cfg.get(key, default)
     t._ab_channel_b_get = lambda key, default=None: ab_cfg.get(key, default)
 
-    tok = _DummyTokenizer()
+    tok = _CoordLiteralTokenizer()
 
     class _FakeTemplate:
         tokenizer = tok
@@ -5333,7 +4732,7 @@ def test_channel_b_enabled_pseudo_positive_aborts_on_invalid_explorer(
         with pytest.raises(
             ValueError,
             match=(
-                r"invalid_labels=\['explorer_1'\].*"
+                r"invalid_labels=\['attempt_2'\].*"
                 r"sample_id=sample-0.*image_id=image-0.*manual_analysis_required=true"
             ),
         ):
@@ -5380,6 +4779,54 @@ def test_channel_b_triage_enabled_k2_remains_no_promotion_control() -> None:
     assert triage.valid_explorer_count == 1
     assert triage.anchor_support_counts == [1]
     assert triage.anchor_support_rates == pytest.approx([1.0])
+    assert triage.pseudo_positive_candidate_indices == []
+    assert triage.pseudo_positive_anchor_indices == []
+    assert triage.shielded_anchor_indices == [0]
+    assert triage.dead_anchor_indices == []
+
+
+def test_channel_b_triage_pseudo_positive_requires_expected_peer_consensus() -> None:
+    anchor_objects = [
+        GTObject(
+            index=0,
+            geom_type="bbox_2d",
+            points_norm1000=[10, 10, 20, 20],
+            desc="obj",
+        )
+    ]
+    explorer_objects_by_view = [
+        [
+            GTObject(
+                index=view_i,
+                geom_type="bbox_2d",
+                points_norm1000=[10, 10, 20, 20],
+                desc="obj",
+            )
+        ]
+        for view_i in range(3)
+    ]
+
+    accepted_clean, suppressed_duplicate_objects_by_boundary = (
+        _apply_test_duplicate_control(
+            parsed_bbox_objects_raw=anchor_objects,
+            duplicate_iou_threshold=0.9,
+        )
+    )
+    triage = _build_channel_b_triage(
+        accepted_objects_clean=accepted_clean,
+        suppressed_duplicate_objects_by_boundary=suppressed_duplicate_objects_by_boundary,
+        explorer_objects_raw_by_view=explorer_objects_by_view,
+        anchor_match_by_pred={},
+        explorer_match_by_pred_by_view=[{}, {}, {}],
+        unlabeled_consistent_iou_threshold=0.9,
+        duplicate_iou_threshold=0.9,
+        pseudo_positive_enabled=True,
+        expected_peer_count=4,
+    )
+
+    assert triage.valid_explorer_count == 3
+    assert triage.anchor_support_counts == [3]
+    assert triage.anchor_support_rates == pytest.approx([0.75])
     assert triage.pseudo_positive_candidate_indices == []
     assert triage.pseudo_positive_anchor_indices == []
     assert triage.shielded_anchor_indices == [0]
@@ -5436,7 +4883,13 @@ def test_channel_b_triage_clusters_pseudo_positive_candidates_by_support_rate() 
                 geom_type="bbox_2d",
                 points_norm1000=[0, 0, 100, 100],
                 desc="obj-a",
-            )
+            ),
+            GTObject(
+                index=1,
+                geom_type="bbox_2d",
+                points_norm1000=[0, 0, 100, 90],
+                desc="obj-b",
+            ),
         ],
     ]
 
@@ -5458,8 +4911,8 @@ def test_channel_b_triage_clusters_pseudo_positive_candidates_by_support_rate() 
     )
 
     assert triage.valid_explorer_count == 3
-    assert triage.anchor_support_counts == [3, 2]
-    assert triage.anchor_support_rates == pytest.approx([1.0, 2.0 / 3.0])
+    assert triage.anchor_support_counts == [3, 3]
+    assert triage.anchor_support_rates == pytest.approx([1.0, 1.0])
     assert triage.pseudo_positive_candidate_indices == [0, 1]
     assert triage.pseudo_positive_anchor_indices == [0]
     assert triage.pseudo_positive_cluster_demoted_indices == [1]
@@ -5805,7 +5258,14 @@ def test_channel_b_supervision_targets_make_pseudo_positive_coord_only_and_ancho
                 desc="obj",
             )
         ],
-        [],
+        [
+            GTObject(
+                index=0,
+                geom_type="bbox_2d",
+                points_norm1000=[10, 20, 30, 40],
+                desc="obj",
+            )
+        ],
     ]
     accepted_clean, suppressed_duplicate_objects_by_boundary = (
         _apply_test_duplicate_control(
@@ -6614,6 +6074,10 @@ def test_channel_b_triage_posterior_nested_config_reaches_live_accessor_and_vllm
         }
     }
     t.stage2_ab_cfg["channel_b"]["triage_posterior"]["explorer_temperature"] = 0.55
+    t.stage2_ab_cfg["channel_b"]["triage_posterior"]["rollout_temperatures"] = [
+        0.0,
+        0.55,
+    ]
     t.stage2_ab_cfg["channel_b"]["triage_posterior"]["explorer_top_p"] = 0.91
     t.stage2_ab_cfg["channel_b"]["triage_posterior"]["explorer_top_k"] = 7
     t.stage2_ab_cfg["channel_b"]["triage_posterior"][
@@ -6765,11 +6229,11 @@ def test_channel_b_triage_posterior_nested_config_reaches_live_accessor_and_vllm
     ) == pytest.approx(3.0)
     assert rollout_calls == [
         (2, 0.0, 0),
-        (2, 0.55, 0),
         (2, 0.0, 2),
-        (2, 0.55, 2),
         (1, 0.0, 4),
-        (1, 0.55, 4),
+        (2, 0.55, 5),
+        (2, 0.55, 7),
+        (1, 0.55, 9),
     ]
 
 
@@ -6790,6 +6254,7 @@ def test_channel_b_anchor_only_gt_hit_projects_anchor_gt_backed(
     }
     t._cfg = lambda key, default=None: cfg.get(key, default)
     t._ab_channel_b_get = lambda key, default=None: {
+        "triage_posterior.num_rollouts": 1,
         "triage_posterior.explorer_temperature": 0.7,
         "triage_posterior.unlabeled_consistent_iou_threshold": 0.8,
     }.get(key, default)
@@ -6954,6 +6419,7 @@ def test_channel_b_shielded_anchor_stays_neutral_context(monkeypatch) -> None:
     t._cfg = lambda key, default=None: cfg.get(key, default)
     t._ab_channel_b_get = lambda key, default=None: {
         "triage_posterior.explorer_temperature": 0.7,
+        "triage_posterior.rollout_temperatures": [0.0, 0.7],
         "triage_posterior.unlabeled_consistent_iou_threshold": 0.8,
     }.get(key, default)
 
@@ -7081,7 +6547,7 @@ def test_channel_b_shielded_anchor_stays_neutral_context(monkeypatch) -> None:
     assert meta["bbox_groups_prefix"] == []
     assert meta["bbox_groups_fn"] == []
     assert batch_metrics["train/triage/unlabeled_consistent_count"] == pytest.approx(
-        1.0
+        2.0
     )
 
 
@@ -7101,6 +6567,7 @@ def test_channel_b_explorer_only_dead_emits_no_explore_branch(monkeypatch) -> No
     t._cfg = lambda key, default=None: cfg.get(key, default)
     t._ab_channel_b_get = lambda key, default=None: {
         "triage_posterior.explorer_temperature": 0.7,
+        "triage_posterior.rollout_temperatures": [0.0, 0.7],
         "triage_posterior.unlabeled_consistent_iou_threshold": 0.8,
     }.get(key, default)
 
@@ -7265,6 +6732,7 @@ def test_channel_b_recovered_ground_truth_weight_multipliers_only_apply_to_recov
     t._cfg = lambda key, default=None: cfg.get(key, default)
     t._ab_channel_b_get = lambda key, default=None: {
         "triage_posterior.explorer_temperature": 0.7,
+        "triage_posterior.rollout_temperatures": [0.0, 0.7],
         "triage_posterior.recovered_ground_truth_weight_multiplier": 2.5,
         "triage_posterior.unlabeled_consistent_iou_threshold": 0.8,
     }.get(key, default)
@@ -8648,9 +8116,13 @@ def test_stage2_channel_b_compute_loss_copies_triage_and_split_rollout_telemetry
                 "train/triage/recovered_ground_truth_rate_num": 1.0,
                 "train/triage/recovered_ground_truth_rate_den": 4.0,
                 "train/triage/recovered_ground_truth_rate": 0.25,
+                "rollout/current/pred_objects": 5.0,
                 "rollout/anchor/pred_objects": 5.0,
+                "rollout/peer/pred_objects": 7.0,
                 "rollout/explorer/pred_objects": 7.0,
+                "rollout/peer/temperature": 0.7,
                 "rollout/explorer/temperature": 0.7,
+                "rollout/peer/do_sample": 1.0,
                 "rollout/explorer/do_sample": 1.0,
                 "rollout/matched_for_supervision_over_valid_pred": 0.5,
                 "rollout/matched_for_supervision_count": 3.0,
@@ -8663,10 +8135,16 @@ def test_stage2_channel_b_compute_loss_copies_triage_and_split_rollout_telemetry
     pending = t._stage2_pending_train_logs[1].finalize()
     assert pending["train/triage/gt_backed_count"] == pytest.approx(2.0)
     assert pending["train/triage/recovered_ground_truth_rate"] == pytest.approx(0.25)
-    assert pending["rollout/anchor/pred_objects"] == pytest.approx(5.0)
-    assert pending["rollout/explorer/pred_objects"] == pytest.approx(7.0)
-    assert pending["rollout/explorer/temperature"] == pytest.approx(0.7)
-    assert pending["rollout/explorer/do_sample"] == pytest.approx(1.0)
+    assert pending["rollout/current/pred_objects"] == pytest.approx(5.0)
+    assert pending["rollout/peer/pred_objects"] == pytest.approx(7.0)
+    assert pending["rollout/peer/temperature"] == pytest.approx(0.7)
+    assert pending["rollout/peer/do_sample"] == pytest.approx(1.0)
+    assert pending["rollout/anchor/pred_objects"] == pytest.approx(
+        pending["rollout/current/pred_objects"]
+    )
+    assert pending["rollout/explorer/pred_objects"] == pytest.approx(
+        pending["rollout/peer/pred_objects"]
+    )
     assert pending["rollout/matched_for_supervision_over_valid_pred"] == pytest.approx(
         0.5
     )
@@ -8722,6 +8200,8 @@ def test_pending_stage2_log_aggregates_closure_and_invalid_rollout_metrics() -> 
         "rollout/fallback_dominance_warning",
         "rollout/fallback_gt_fn_append_only_count",
         "rollout/fallback_loss_weight",
+        "rollout/current/pred_objects",
+        "rollout/peer/valid_pred_objects",
     ],
 )
 def test_channel_b_direct_batch_metric_filter_keeps_compact_fallback_metrics(

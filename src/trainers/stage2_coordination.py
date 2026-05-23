@@ -371,6 +371,13 @@ def resolve_stage2_ab_metric_spec(key: str) -> MetricSpec:
     if key in {stage2_weight_key, gradmon_weight_key}:
         return MetricSpec(local_mode="sum", ddp_mode="sum")
 
+    if key in {
+        "packing/post_rollout_local_pack_count",
+        "packing/post_rollout_global_slot_count",
+        "packing/post_rollout_empty_slot_count",
+    }:
+        return MetricSpec(local_mode="weighted_mean", ddp_mode="max")
+
     residual_prefix = "stage2_ab/channel_b/residual_set/"
     if key.startswith(residual_prefix):
         residual_leaf = key[len(residual_prefix) :]

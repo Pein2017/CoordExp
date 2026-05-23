@@ -97,15 +97,7 @@ def _stage2_pipeline_with_channel_b_trie_ce() -> dict:
             "weight": 1.0,
             "channels": ["B"],
             "application": {"preset": "rollout_trie_hard_ce"},
-            "config": {
-                "support_weight": 1.0,
-                "balance_weight": 1.0,
-                "struct_weight": 1.0,
-                "desc_weight": 1.0,
-                "coord_hard_ce_weight": 1.0,
-                "eos_weight": 1.0,
-                "normalization": "token_mean",
-            },
+            "config": _residual_set_config(),
         },
     )
     return pipeline
@@ -113,7 +105,6 @@ def _stage2_pipeline_with_channel_b_trie_ce() -> dict:
 
 def _residual_set_config() -> dict:
     return {
-        "prepared_rollout_jsonl": "output/stage2_ab/prepared_rollouts/train8_ckpt3664.jsonl",
         "expected_num_rollouts": 4,
         "base_seed": 17,
         "lambda_type": 1.0,
@@ -126,10 +117,8 @@ def _residual_set_config() -> dict:
         "ul_cluster_iou_threshold": 0.9,
         "ul_gray_iou_low": 0.30,
         "ul_consensus_ratio": 1.0,
-        "min_ul_valid_rollouts": 2,
+        "min_ul_valid_rollouts": 4,
         "clean_gt_sft_mix": 0,
-        "strict_prepared_rollout_tokens": True,
-        "legacy_reencode_fallback": False,
         "strict_builder_invariants": True,
     }
 
@@ -441,8 +430,11 @@ def test_stage2_ab_channel_b_pseudo_positive_keys_are_supported() -> None:
 def test_stage2_ab_channel_b_triage_posterior_keys_are_supported() -> None:
     cfg = Stage2ABChannelBConfig.from_mapping(
         {
+            "pseudo_positive": {"enabled": True},
             "triage_posterior": {
+                "num_rollouts": 4,
                 "explorer_temperature": 0.6,
+                "rollout_temperatures": [0.0, 0.4, 0.6, 0.8],
                 "explorer_top_p": 0.95,
                 "explorer_top_k": 32,
                 "unlabeled_consistent_iou_threshold": 0.8,
@@ -450,7 +442,11 @@ def test_stage2_ab_channel_b_triage_posterior_keys_are_supported() -> None:
             }
         }
     )
+    assert cfg.triage_posterior.num_rollouts == 4
     assert cfg.triage_posterior.explorer_temperature == pytest.approx(0.6)
+    assert cfg.triage_posterior.rollout_temperatures == pytest.approx(
+        (0.0, 0.4, 0.6, 0.8)
+    )
     assert cfg.triage_posterior.explorer_top_p == pytest.approx(0.95)
     assert cfg.triage_posterior.explorer_top_k == 32
     assert cfg.triage_posterior.unlabeled_consistent_iou_threshold == pytest.approx(0.8)
@@ -462,29 +458,39 @@ def test_stage2_ab_channel_b_num_rollouts_follow_pseudo_positive_mode() -> None:
     assert disabled_cfg.pseudo_positive == Stage2ABChannelBPseudoPositiveConfig()
     assert disabled_cfg.triage_posterior.num_rollouts == 2
 
-    with pytest.raises(
-        ValueError,
-        match=(
-            r"stage2_ab\.channel_b\.triage_posterior\.num_rollouts must be 2 when "
-            r"stage2_ab\.channel_b\.pseudo_positive\.enabled=false"
-        ),
-    ):
-        Stage2ABChannelBConfig.from_mapping(
-            {"triage_posterior": {"num_rollouts": 4}}
-        )
+    k4_cfg = Stage2ABChannelBConfig.from_mapping(
+        {
+            "pseudo_positive": {"enabled": False},
+            "triage_posterior": {
+                "num_rollouts": 4,
+                "rollout_temperatures": [0.0, 0.4, 0.7, 1.0],
+            },
+        }
+    )
+    assert k4_cfg.pseudo_positive.enabled is False
+    assert k4_cfg.triage_posterior.num_rollouts == 4
+    assert k4_cfg.triage_posterior.rollout_temperatures == pytest.approx(
+        (0.0, 0.4, 0.7, 1.0)
+    )
 
     enabled_cfg = Stage2ABChannelBConfig.from_mapping(
         {"pseudo_positive": {"enabled": True}}
     )
     assert enabled_cfg.triage_posterior.num_rollouts == 4
 
-    enabled_k2_cfg = Stage2ABChannelBConfig.from_mapping(
-        {
-            "pseudo_positive": {"enabled": True},
-            "triage_posterior": {"num_rollouts": 2},
-        }
-    )
-    assert enabled_k2_cfg.triage_posterior.num_rollouts == 2
+    with pytest.raises(
+        ValueError,
+        match=(
+            r"stage2_ab\.channel_b\.triage_posterior\.num_rollouts must be >= 4 "
+            r"when stage2_ab\.channel_b\.pseudo_positive\.enabled=true"
+        ),
+    ):
+        Stage2ABChannelBConfig.from_mapping(
+            {
+                "pseudo_positive": {"enabled": True},
+                "triage_posterior": {"num_rollouts": 2},
+            }
+        )
 
 
 @pytest.mark.parametrize(
@@ -497,6 +503,14 @@ def test_stage2_ab_channel_b_num_rollouts_follow_pseudo_positive_mode() -> None:
         (
             {"explorer_temperature": "oops"},
             r"stage2_ab\.channel_b\.triage_posterior\.explorer_temperature must be a float/int",
+        ),
+        (
+            {"num_rollouts": 4, "rollout_temperatures": [0.0, 0.4]},
+            r"stage2_ab\.channel_b\.triage_posterior\.rollout_temperatures length must be 1 or match num_rollouts",
+        ),
+        (
+            {"num_rollouts": 4, "rollout_temperatures": [0.0, -0.1, 0.6, 0.8]},
+            r"stage2_ab\.channel_b\.triage_posterior\.rollout_temperatures must contain only values >= 0",
         ),
         (
             {"explorer_top_p": 0.0},
@@ -995,9 +1009,14 @@ def test_stage2_pipeline_accepts_channel_b_stage2_trie_ce() -> None:
     parsed = TrainingConfig.from_mapping(raw, prompts)
 
     assert parsed.stage2_ab is not None
-    assert [
-        module.name for module in parsed.stage2_ab.pipeline.objective
-    ] == ["token_ce", "stage2_trie_ce"]
+    assert [module.name for module in parsed.stage2_ab.pipeline.objective] == [
+        "token_ce",
+        "stage2_trie_ce",
+    ]
+    trie_objective = parsed.stage2_ab.pipeline.objective[1]
+    assert trie_objective.application["preset"] == "rollout_trie_hard_ce"
+    assert "prepared_rollout_jsonl" not in trie_objective.config
+    assert trie_objective.config["min_ul_valid_rollouts"] == 4
     assert parsed.stage2_ab.channel_b.fallback_loss_weight == pytest.approx(0.25)
     assert parsed.stage2_ab.channel_b.insertion_order == "fn_slot_shuffle"
     assert parsed.stage2_ab.channel_b.fp_policy.mode == "weak_positive_context"
@@ -1037,106 +1056,13 @@ def test_stage2_pipeline_accepts_residual_set_correction_objective() -> None:
     objective = loaded.stage2_ab.pipeline.objective[1]
     assert objective.name == "residual_set_correction"
     assert objective.application["preset"] == "rollout_self_prefix"
-    assert objective.config["prepared_rollout_jsonl"].endswith("train8_ckpt3664.jsonl")
+    assert "prepared_rollout_jsonl" not in objective.config
     assert objective.config["base_seed"] == 17
     assert objective.config["expected_num_rollouts"] == 4
     assert objective.config["lambda_type"] == pytest.approx(1.0)
     assert objective.config["lambda_inner"] == pytest.approx(1.0)
     assert objective.config["lambda_ul_promoted"] == 0.5
     assert loaded.stage2_ab.channel_b.triage_posterior.num_rollouts == 2
-
-
-def test_residual_set_requires_prepared_rollout_jsonl_before_trainer_init() -> None:
-    raw = _make_stage2_training_payload()
-    residual_cfg = _residual_set_config()
-    residual_cfg.pop("prepared_rollout_jsonl")
-    raw["stage2_ab"]["pipeline"]["objective"] = [
-        {
-            "name": "token_ce",
-            "enabled": True,
-            "weight": 1.0,
-            "channels": ["A"],
-            "application": {"preset": "anchor_text_only"},
-            "config": {
-                "desc_ce_weight": 1.0,
-                "rollout_fn_desc_weight": 1.0,
-                "rollout_global_prefix_struct_ce_weight": 1.0,
-            },
-        },
-        {
-            "name": "residual_set_correction",
-            "enabled": True,
-            "weight": 1.0,
-            "channels": ["B"],
-            "application": {"preset": "rollout_self_prefix"},
-            "config": residual_cfg,
-        },
-    ]
-    raw["stage2_ab"]["channel_b"]["pseudo_positive"] = {"enabled": False}
-
-    with pytest.raises(
-        ValueError,
-        match=r"stage2_ab\.pipeline\.objective\[name=residual_set_correction\]\.config\.prepared_rollout_jsonl",
-    ):
-        TrainingConfig.from_mapping(raw, ConfigLoader.resolve_prompts(raw))
-
-
-def test_residual_set_minimal_prepared_rollout_config_gets_v1_defaults() -> None:
-    raw = _make_stage2_training_payload()
-    raw["stage2_ab"]["pipeline"]["objective"] = [
-        {
-            "name": "token_ce",
-            "enabled": True,
-            "weight": 1.0,
-            "channels": ["A"],
-            "application": {"preset": "anchor_text_only"},
-            "config": {
-                "desc_ce_weight": 1.0,
-                "rollout_fn_desc_weight": 1.0,
-                "rollout_global_prefix_struct_ce_weight": 1.0,
-            },
-        },
-        {
-            "name": "residual_set_correction",
-            "enabled": True,
-            "weight": 1.0,
-            "channels": ["B"],
-            "application": {"preset": "rollout_self_prefix"},
-            "config": {
-                "prepared_rollout_jsonl": "output/stage2_ab/prepared_rollouts/train8_ckpt3664.jsonl"
-            },
-        },
-    ]
-    raw["stage2_ab"]["channel_b"]["pseudo_positive"] = {"enabled": False}
-    raw["stage2_ab"]["channel_b"].pop("triage_posterior", None)
-
-    loaded = TrainingConfig.from_mapping(raw, ConfigLoader.resolve_prompts(raw))
-
-    config = loaded.stage2_ab.pipeline.objective[1].config
-    assert config["prepared_rollout_jsonl"].endswith("train8_ckpt3664.jsonl")
-    assert config["expected_num_rollouts"] == 4
-    assert config["base_seed"] == 17
-    assert config["lambda_type"] == pytest.approx(1.0)
-    assert config["lambda_inner"] == pytest.approx(1.0)
-    assert config["clean_gt_sft_mix"] == 0
-    assert config["lambda_ul_promoted"] == pytest.approx(0.5)
-    assert config["label_conflict_weight"] == pytest.approx(0.25)
-    assert config["commit_iou_threshold"] == pytest.approx(0.75)
-    assert config["duplicate_burst_iou_threshold"] == pytest.approx(0.95)
-    assert config["ul_cluster_iou_threshold"] == pytest.approx(0.9)
-    assert config["ul_gray_iou_low"] == pytest.approx(0.30)
-    assert config["ul_consensus_ratio"] == pytest.approx(1.0)
-    assert config["min_ul_valid_rollouts"] == 2
-    assert config["strict_prepared_rollout_tokens"] is True
-    assert config["legacy_reencode_fallback"] is False
-    assert config["strict_builder_invariants"] is True
-    assert {
-        "num_rollouts",
-        "coord_span_policy",
-        "coverage_strength",
-        "ul_geometry",
-        "artifact_policy",
-    }.isdisjoint(config)
 
 
 def test_residual_set_expected_num_rollouts_does_not_own_channel_b_rollout_count() -> None:
@@ -1247,7 +1173,7 @@ def test_residual_set_rejects_legacy_channel_b_trie_double_supervision() -> None
     ]
     raw["stage2_ab"]["channel_b"]["pseudo_positive"] = {"enabled": False}
 
-    with pytest.raises(ValueError, match="residual_set_correction.*stage2_trie_ce"):
+    with pytest.raises(ValueError, match=r"aliases.*residual-state trie.*select exactly one"):
         TrainingConfig.from_mapping(raw, ConfigLoader.resolve_prompts(raw))
 
 
@@ -1346,7 +1272,7 @@ def test_residual_set_rejects_pseudo_positive_double_supervision() -> None:
     ]
     raw["stage2_ab"]["channel_b"]["pseudo_positive"] = {"enabled": True}
 
-    with pytest.raises(ValueError, match="residual_set_correction.*pseudo_positive"):
+    with pytest.raises(ValueError, match=r"residual trie.*pseudo_positive"):
         TrainingConfig.from_mapping(raw, ConfigLoader.resolve_prompts(raw))
 
 
@@ -1376,7 +1302,7 @@ def test_residual_set_rejects_channel_b_token_ce_double_supervision() -> None:
     ]
     raw["stage2_ab"]["channel_b"]["pseudo_positive"] = {"enabled": False}
 
-    with pytest.raises(ValueError, match="residual_set_correction.*token_ce"):
+    with pytest.raises(ValueError, match=r"residual trie.*token_ce"):
         TrainingConfig.from_mapping(raw, ConfigLoader.resolve_prompts(raw))
 
 
@@ -1468,20 +1394,23 @@ def test_stage2_pipeline_rejects_removed_live_objective_module_names(
 
 
 @pytest.mark.parametrize(
-    "weight_key, value, expected_msg",
+    "legacy_key, value",
     [
-        ("support_weight", -0.1, r"support_weight must be >= 0"),
-        ("balance_weight", True, r"balance_weight must be numeric, not bool"),
-        ("eos_weight", float("inf"), r"eos_weight must be finite"),
+        ("support_weight", 1.0),
+        ("balance_weight", 1.0),
+        ("struct_weight", 1.0),
+        ("desc_weight", 1.0),
+        ("coord_hard_ce_weight", 1.0),
+        ("eos_weight", 1.0),
+        ("normalization", "token_mean"),
     ],
 )
-def test_stage2_pipeline_rejects_invalid_stage2_trie_ce_weights(
-    weight_key: str,
+def test_stage2_pipeline_rejects_legacy_candidate_trie_config_keys(
+    legacy_key: str,
     value: object,
-    expected_msg: str,
 ) -> None:
     pipeline = _stage2_pipeline_with_channel_b_trie_ce()
-    pipeline["objective"][1]["config"][weight_key] = value
+    pipeline["objective"][1]["config"][legacy_key] = value
     raw = {
         "template": {"template": "qwen3_vl"},
         "custom": {
@@ -1507,73 +1436,7 @@ def test_stage2_pipeline_rejects_invalid_stage2_trie_ce_weights(
     }
 
     prompts = ConfigLoader.resolve_prompts(raw)
-    with pytest.raises((TypeError, ValueError), match=expected_msg):
-        TrainingConfig.from_mapping(raw, prompts)
-
-
-def test_stage2_pipeline_rejects_stage2_trie_ce_semantic_bucket_balancing_v0() -> None:
-    pipeline = _stage2_pipeline_with_channel_b_trie_ce()
-    pipeline["objective"][1]["config"][
-        "normalization"
-    ] = "semantic_image_bucket_balanced"
-    raw = {
-        "template": {"template": "qwen3_vl"},
-        "custom": {
-            "train_jsonl": "toy/train.jsonl",
-            "val_jsonl": "toy/val.jsonl",
-            "user_prompt": "{bbox}",
-            "emit_norm": "none",
-            "json_format": "standard",
-            "object_field_order": "desc_first",
-            "trainer_variant": "stage2_two_channel",
-        },
-        "training": {"per_device_train_batch_size": 1, "effective_batch_size": 1},
-        "rollout_matching": {
-            "rollout_backend": "hf",
-            "channel_b_decode_batch_size": 1,
-            "eval_decode_batch_size": 1,
-        },
-        "stage2_ab": {
-            "schedule": {"b_ratio": 1.0},
-            "pipeline": pipeline,
-            "channel_b": {},
-        },
-    }
-
-    prompts = ConfigLoader.resolve_prompts(raw)
-    with pytest.raises(ValueError, match=r"pure hard CE v0.*token_mean"):
-        TrainingConfig.from_mapping(raw, prompts)
-
-
-def test_stage2_pipeline_rejects_stage2_trie_ce_reserved_weight_v0() -> None:
-    pipeline = _stage2_pipeline_with_channel_b_trie_ce()
-    pipeline["objective"][1]["config"]["desc_weight"] = 2.0
-    raw = {
-        "template": {"template": "qwen3_vl"},
-        "custom": {
-            "train_jsonl": "toy/train.jsonl",
-            "val_jsonl": "toy/val.jsonl",
-            "user_prompt": "{bbox}",
-            "emit_norm": "none",
-            "json_format": "standard",
-            "object_field_order": "desc_first",
-            "trainer_variant": "stage2_two_channel",
-        },
-        "training": {"per_device_train_batch_size": 1, "effective_batch_size": 1},
-        "rollout_matching": {
-            "rollout_backend": "hf",
-            "channel_b_decode_batch_size": 1,
-            "eval_decode_batch_size": 1,
-        },
-        "stage2_ab": {
-            "schedule": {"b_ratio": 1.0},
-            "pipeline": pipeline,
-            "channel_b": {},
-        },
-    }
-
-    prompts = ConfigLoader.resolve_prompts(raw)
-    with pytest.raises(ValueError, match=r"desc_weight.*pure hard CE v0.*reserved"):
+    with pytest.raises(ValueError, match=rf"Unknown.*stage2_trie_ce.*{legacy_key}"):
         TrainingConfig.from_mapping(raw, prompts)
 
 
@@ -2358,10 +2221,7 @@ def test_stage2_compact_full_residual_set_smoke_config_uses_v1_contract() -> Non
         module.name: module for module in cfg.stage2_ab.pipeline.objective
     }
     residual_config = objective_by_name["residual_set_correction"].config
-    assert (
-        residual_config["prepared_rollout_jsonl"]
-        == "output/stage2_ab/prepared_rollouts/train8_ckpt3664.jsonl"
-    )
+    assert "prepared_rollout_jsonl" not in residual_config
     assert residual_config["expected_num_rollouts"] == 4
     assert residual_config["base_seed"] == 17
     assert residual_config["lambda_type"] == pytest.approx(1.0)
@@ -2416,6 +2276,127 @@ def test_stage2_compact_full_a2_gate2_smoke_config_keeps_compact_surface() -> No
     assert cfg.training["eval_steps"] == 16
     assert cfg.custom.train_sample_limit == 16
     assert cfg.custom.val_sample_limit == 16
+
+
+def test_stage2_decode4_train128_val64_gate_config_is_worldsize8_safe(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    repo_root = Path(__file__).resolve().parents[1]
+    config_path = (
+        repo_root
+        / "configs"
+        / "stage2_two_channel"
+        / "smoke"
+        / "compact_full_et_rmp_ce_ckpt3664_hf_coco80_view_train128_val64_4steps_decode4_hf_gate.yaml"
+    )
+    cfg = ConfigLoader.load_materialized_training_config(str(config_path))
+
+    assert cfg.custom.trainer_variant == "stage2_two_channel"
+    assert cfg.custom.detection_sequence_format == "compact_full"
+    assert cfg.global_max_length == 20000
+    assert cfg.custom.train_jsonl == "public_data/coco/views/coco80/full/train.jsonl"
+    assert cfg.custom.train_sample_limit == 128
+    assert cfg.custom.val_sample_limit == 64
+    assert cfg.custom.object_ordering == "random"
+
+    assert cfg.training["max_steps"] == 4
+    assert cfg.training["eval_strategy"] == "steps"
+    assert cfg.training["eval_steps"] == 2
+    assert cfg.training["save_strategy"] == "no"
+    assert cfg.training["per_device_train_batch_size"] == 1
+    assert cfg.training["effective_batch_size"] == 16
+    assert cfg.training["dataloader_drop_last"] is True
+
+    assert cfg.stage2_ab is not None
+    assert cfg.stage2_ab.schedule.b_ratio == pytest.approx(1.0)
+    assert cfg.stage2_ab.channel_b.ddp_phase_timeout_s == pytest.approx(600.0)
+    assert cfg.stage2_ab.channel_b.rollout_template_family == "compact_full"
+    assert cfg.stage2_ab.channel_b.rollout_decode_policy == "unconstrained"
+    assert (
+        cfg.stage2_ab.channel_b.invalid_rollout_policy
+        == "fallback_gt_fn_append_only"
+    )
+    assert cfg.stage2_ab.channel_b.triage_posterior.num_rollouts == 4
+    assert cfg.stage2_ab.channel_b.triage_posterior.rollout_temperatures == pytest.approx(
+        (0.0, 0.4, 0.7, 1.0)
+    )
+    assert cfg.stage2_ab.channel_b.ddp_phase_timeout_s == pytest.approx(600.0)
+
+    assert cfg.rollout_matching.rollout_backend == "hf"
+    assert cfg.rollout_matching.eval_rollout_backend == "hf"
+    assert cfg.rollout_matching.channel_b_decode_batch_size == 4
+    assert cfg.rollout_matching.eval_decode_batch_size == 4
+    assert cfg.rollout_matching.eval_detection.enabled is True
+    assert cfg.rollout_matching.eval_detection.materialize_artifacts is True
+
+    _patch_loader_runtime(monkeypatch, world_size=8)
+    args = ConfigLoader.build_train_arguments(cfg)
+    assert args.kwargs["gradient_accumulation_steps"] == 2
+
+
+@pytest.mark.parametrize(
+    ("config_name", "expected_insertion_order"),
+    [
+        (
+            "compact_full_et_rmp_ce_ckpt3664_hf_coco80_view_train128_val64_32steps_online_residual_trie_tail_append_zero_fp_lr1e5_decode4.yaml",
+            "tail_append",
+        ),
+        (
+            "compact_full_et_rmp_ce_ckpt3664_hf_coco80_view_train128_val64_32steps_online_residual_trie_sorted_zero_fp_lr1e5_decode4.yaml",
+            "sorted",
+        ),
+    ],
+)
+def test_online_residual_trie_train128_val64_configs_use_live_rollouts(
+    monkeypatch: pytest.MonkeyPatch,
+    config_name: str,
+    expected_insertion_order: str,
+) -> None:
+    repo_root = Path(__file__).resolve().parents[1]
+    cfg = ConfigLoader.load_materialized_training_config(
+        str(repo_root / "configs" / "stage2_two_channel" / "smoke" / config_name)
+    )
+
+    assert cfg.custom.trainer_variant == "stage2_two_channel"
+    assert cfg.custom.detection_sequence_format == "compact_full"
+    assert cfg.custom.train_sample_limit == 128
+    assert cfg.custom.val_sample_limit == 64
+    assert cfg.training["max_steps"] == 32
+    assert cfg.training["eval_steps"] == 16
+    assert cfg.training["per_device_train_batch_size"] == 2
+    assert cfg.training["effective_batch_size"] == 16
+    assert cfg.training["learning_rate"] == pytest.approx(1.0e-5)
+    assert cfg.training["aligner_lr"] == pytest.approx(2.5e-5)
+
+    assert cfg.stage2_ab is not None
+    assert cfg.stage2_ab.channel_b.rollout_template_family == "compact_full"
+    assert cfg.stage2_ab.channel_b.rollout_decode_policy == "compact_grammar"
+    assert cfg.stage2_ab.channel_b.insertion_order == expected_insertion_order
+    assert cfg.stage2_ab.channel_b.pseudo_positive.enabled is False
+    assert cfg.stage2_ab.channel_b.fp_policy.mode == "zero_loss_context"
+    assert cfg.stage2_ab.channel_b.triage_posterior.num_rollouts == 4
+    assert cfg.stage2_ab.channel_b.triage_posterior.rollout_temperatures == pytest.approx(
+        (0.0, 0.4, 0.7, 1.0)
+    )
+
+    objective_by_name = {
+        module.name: module for module in cfg.stage2_ab.pipeline.objective
+    }
+    trie_config = objective_by_name["stage2_trie_ce"].config
+    assert "rollout_source" not in trie_config
+    assert "prepared_rollout_jsonl" not in trie_config
+    assert trie_config["expected_num_rollouts"] == 4
+    assert trie_config["min_ul_valid_rollouts"] == 4
+    assert "require_real_prepared_rollouts" not in trie_config
+
+    assert cfg.rollout_matching.channel_b_decode_batch_size == 4
+    assert cfg.rollout_matching.eval_decode_batch_size == 4
+    assert cfg.rollout_matching.train_monitor_dump.enabled is True
+    assert cfg.rollout_matching.eval_detection.materialize_artifacts is True
+
+    _patch_loader_runtime(monkeypatch, world_size=4)
+    args = ConfigLoader.build_train_arguments(cfg)
+    assert args.kwargs["gradient_accumulation_steps"] == 2
 
 
 @pytest.mark.parametrize(
@@ -2523,7 +2504,19 @@ def test_stage2_trie_ce_coco80_overfit_smoke_configs_are_training_only(
         objective_by_name["stage2_trie_ce"].application["preset"]
         == "rollout_trie_hard_ce"
     )
-    assert objective_by_name["stage2_trie_ce"].config["normalization"] == "token_mean"
+    trie_config = objective_by_name["stage2_trie_ce"].config
+    assert "prepared_rollout_jsonl" not in trie_config
+    assert trie_config["expected_num_rollouts"] == 4
+    assert trie_config["min_ul_valid_rollouts"] == 4
+    assert {
+        "support_weight",
+        "balance_weight",
+        "struct_weight",
+        "desc_weight",
+        "coord_hard_ce_weight",
+        "eos_weight",
+        "normalization",
+    }.isdisjoint(trie_config)
     assert cfg.stage2_ab.pipeline.diagnostics == ()
 
     assert cfg.rollout_matching.rollout_backend == "hf"

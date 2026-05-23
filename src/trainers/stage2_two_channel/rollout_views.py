@@ -1,7 +1,5 @@
 from dataclasses import dataclass, replace
-import json
 import re
-from os import PathLike
 from typing import Any, Dict, List, Mapping, Sequence, Tuple
 
 from src.common.duplicate_control import duplicate_control_object_from_bbox
@@ -27,222 +25,6 @@ class CompactFullObjectTokenSpan:
     desc_end: int
     box_start: int
     coord_positions: tuple[int, int, int, int]
-
-
-@dataclass(frozen=True)
-class PreparedRolloutAttempt:
-    sample_id: str
-    image_id: str
-    image_path: str
-    rollout_id: str
-    response_token_ids: tuple[int, ...] | None
-    raw_text: str
-    decode_mode: str
-    generation_config_hash: str
-    sampling_seed: int | None = None
-    metadata: Mapping[str, Any] | None = None
-
-
-@dataclass(frozen=True)
-class PreparedRolloutDedupStats:
-    K_total: int
-    K_after_dedup: int
-    exact_duplicate_attempts: int
-    dropped_reasons: Mapping[str, int]
-
-    def as_dict(self) -> Dict[str, Any]:
-        return {
-            "K_total": int(self.K_total),
-            "K_after_dedup": int(self.K_after_dedup),
-            "exact_duplicate_attempts": int(self.exact_duplicate_attempts),
-            "dropped_reasons": dict(self.dropped_reasons),
-        }
-
-    def __getitem__(self, key: str) -> Any:
-        return self.as_dict()[str(key)]
-
-
-_PREPARED_ROLLOUT_REQUIRED_FIELDS = (
-    "sample_id",
-    "image_id",
-    "image_path",
-    "rollout_id",
-    "raw_text",
-    "decode_mode",
-    "generation_config_hash",
-)
-
-
-def _require_prepared_string(record: Mapping[str, Any], field: str) -> str:
-    value = record.get(field)
-    if not isinstance(value, str) or not value:
-        raise ValueError(f"prepared rollout record missing required field: {field}")
-    return str(value)
-
-
-def _parse_response_token_ids(
-    value: Any,
-    *,
-    strict_prepared_rollout_tokens: bool,
-) -> tuple[int, ...] | None:
-    if value is None:
-        if strict_prepared_rollout_tokens:
-            raise ValueError("prepared rollout record missing response_token_ids")
-        return None
-    if isinstance(value, (str, bytes)) or not isinstance(value, Sequence):
-        raise ValueError("prepared rollout response_token_ids must be a sequence of integers")
-    parsed: List[int] = []
-    for token_id in value:
-        if isinstance(token_id, bool) or not isinstance(token_id, int):
-            raise ValueError("prepared rollout response_token_ids must contain only integers")
-        parsed.append(int(token_id))
-    return tuple(parsed)
-
-
-def parse_prepared_rollout_attempt(
-    record: Mapping[str, Any],
-    *,
-    strict_prepared_rollout_tokens: bool,
-) -> PreparedRolloutAttempt:
-    if not isinstance(record, Mapping):
-        raise TypeError("prepared rollout record must be a mapping")
-    for field in _PREPARED_ROLLOUT_REQUIRED_FIELDS:
-        _require_prepared_string(record, field)
-
-    response_token_ids = _parse_response_token_ids(
-        record.get("response_token_ids"),
-        strict_prepared_rollout_tokens=bool(strict_prepared_rollout_tokens),
-    )
-    sampling_seed_raw = record.get("sampling_seed")
-    sampling_seed: int | None = None
-    if sampling_seed_raw is not None:
-        if isinstance(sampling_seed_raw, bool) or not isinstance(sampling_seed_raw, int):
-            raise ValueError("prepared rollout sampling_seed must be an integer")
-        sampling_seed = int(sampling_seed_raw)
-
-    preserved_keys = {
-        key: value
-        for key, value in record.items()
-        if key
-        not in {
-            "sample_id",
-            "image_id",
-            "image_path",
-            "rollout_id",
-            "response_token_ids",
-            "raw_text",
-            "decode_mode",
-            "generation_config_hash",
-            "sampling_seed",
-        }
-    }
-    return PreparedRolloutAttempt(
-        sample_id=_require_prepared_string(record, "sample_id"),
-        image_id=_require_prepared_string(record, "image_id"),
-        image_path=_require_prepared_string(record, "image_path"),
-        rollout_id=_require_prepared_string(record, "rollout_id"),
-        response_token_ids=response_token_ids,
-        raw_text=_require_prepared_string(record, "raw_text"),
-        decode_mode=_require_prepared_string(record, "decode_mode"),
-        generation_config_hash=_require_prepared_string(
-            record, "generation_config_hash"
-        ),
-        sampling_seed=sampling_seed,
-        metadata=preserved_keys,
-    )
-
-
-def load_prepared_rollout_jsonl(
-    path: str | PathLike[str],
-    *,
-    strict_prepared_rollout_tokens: bool,
-) -> List[PreparedRolloutAttempt]:
-    attempts: List[PreparedRolloutAttempt] = []
-    with open(path, "r", encoding="utf-8") as f:
-        for line_no, line in enumerate(f, start=1):
-            text = line.strip()
-            if not text:
-                continue
-            try:
-                record = json.loads(text)
-            except json.JSONDecodeError as exc:
-                raise ValueError(
-                    f"invalid prepared rollout JSONL at line {int(line_no)}: {exc}"
-                ) from exc
-            try:
-                attempts.append(
-                    parse_prepared_rollout_attempt(
-                        record,
-                        strict_prepared_rollout_tokens=bool(
-                            strict_prepared_rollout_tokens
-                        ),
-                    )
-                )
-            except Exception as exc:
-                raise ValueError(
-                    f"invalid prepared rollout record at line {int(line_no)}: {exc}"
-                ) from exc
-    return attempts
-
-
-def validate_prepared_rollout_token_text(
-    attempt: PreparedRolloutAttempt,
-    *,
-    tokenizer: Any,
-) -> None:
-    token_ids = attempt.response_token_ids
-    if token_ids is None:
-        return
-    decoded = str(
-        tokenizer.decode(
-            [int(token_id) for token_id in token_ids],
-            skip_special_tokens=False,
-            clean_up_tokenization_spaces=False,
-        )
-    )
-    if str(attempt.raw_text) != decoded:
-        raise ValueError(
-            "prepared rollout raw_text does not match tokenizer.decode("
-            "response_token_ids) for rollout_id="
-            f"{attempt.rollout_id!r}"
-        )
-
-
-def dedup_prepared_rollout_attempts(
-    attempts: Sequence[PreparedRolloutAttempt],
-    *,
-    legacy_reencode_fallback: bool,
-) -> tuple[List[PreparedRolloutAttempt], PreparedRolloutDedupStats]:
-    kept: List[PreparedRolloutAttempt] = []
-    seen: set[tuple[int, ...]] = set()
-    dropped_reasons: Dict[str, int] = {}
-    exact_duplicates = 0
-    for attempt in attempts:
-        token_ids = attempt.response_token_ids
-        if token_ids is None:
-            reason = (
-                "missing_response_token_ids_legacy_reencode_unavailable"
-                if bool(legacy_reencode_fallback)
-                else "missing_response_token_ids"
-            )
-            dropped_reasons[reason] = int(dropped_reasons.get(reason, 0)) + 1
-            continue
-        key = tuple(int(token_id) for token_id in token_ids)
-        if key in seen:
-            exact_duplicates += 1
-            dropped_reasons["exact_duplicate_response_token_ids"] = (
-                int(dropped_reasons.get("exact_duplicate_response_token_ids", 0)) + 1
-            )
-            continue
-        seen.add(key)
-        kept.append(attempt)
-    stats = PreparedRolloutDedupStats(
-        K_total=int(len(attempts)),
-        K_after_dedup=int(len(kept)),
-        exact_duplicate_attempts=int(exact_duplicates),
-        dropped_reasons=dropped_reasons,
-    )
-    return kept, stats
 
 
 def _response_text_from_rollout(
@@ -559,12 +341,19 @@ def _build_compact_full_rollout_view(
     fallback_applies = bool(parse.invalid_rollout or parse.empty_valid_object_set)
 
     compact_full_object_spans: List[CompactFullObjectTokenSpan] = []
+    compact_full_span_extraction_failed = False
+    compact_full_span_error: str | None = None
     if not fallback_applies:
-        compact_full_object_spans = extract_compact_full_object_token_spans(
-            tokenizer=tokenizer,
-            response_token_ids=resp_ids_local,
-            parsed_objects=parsed_bbox_objects_raw,
-        )
+        try:
+            compact_full_object_spans = extract_compact_full_object_token_spans(
+                tokenizer=tokenizer,
+                response_token_ids=resp_ids_local,
+                parsed_objects=parsed_bbox_objects_raw,
+            )
+        except ValueError as exc:
+            compact_full_span_extraction_failed = True
+            compact_full_span_error = str(exc)
+            drop_reasons["compact_full_span_extraction_failed"] = 1
 
     return {
         "prompt_ids": [int(t) for t in prompt_ids],
@@ -585,6 +374,10 @@ def _build_compact_full_rollout_view(
         "drop_bbox_invalid": int(drop_bbox_invalid),
         "parsed_bbox_objects_raw": parsed_bbox_objects_raw,
         "compact_full_object_spans": compact_full_object_spans,
+        "compact_full_span_extraction_failed": int(
+            1 if compact_full_span_extraction_failed else 0
+        ),
+        "compact_full_span_error": compact_full_span_error,
         "duplicate_control_objects_raw": duplicate_control_objects_raw,
         "n_valid_pred": int(len(parsed_bbox_objects_raw)),
         "n_drop_invalid": int(drop_bbox_invalid),
@@ -766,12 +559,6 @@ def build_channel_b_rollout_view(
 
 __all__ = [
     "CompactFullObjectTokenSpan",
-    "PreparedRolloutAttempt",
-    "PreparedRolloutDedupStats",
     "build_channel_b_rollout_view",
-    "dedup_prepared_rollout_attempts",
     "extract_compact_full_object_token_spans",
-    "load_prepared_rollout_jsonl",
-    "parse_prepared_rollout_attempt",
-    "validate_prepared_rollout_token_text",
 ]

@@ -67,6 +67,7 @@ class Stage2ChannelBMeta(Stage2RolloutMetaBase):
     rollout_counts_as_valid_rollout: bool
     drop_invalid_total: int
     valid_explorer_count: int
+    valid_peer_count: NotRequired[int]
     prefix_struct_pos: List[int]
     prefix_desc_pos: NotRequired[List[int]]
     prefix_desc_weights: NotRequired[List[float]]
@@ -74,6 +75,8 @@ class Stage2ChannelBMeta(Stage2RolloutMetaBase):
     fn_object_weights: List[float]
     anchor_decode_mode: str
     explorer_decode_mode: str
+    current_decode_mode: NotRequired[str]
+    peer_reference_decode_mode: NotRequired[str]
     duplicate_clusters_total: int
     duplicate_clusters_exempt: int
     duplicate_clusters_suppressed: int
@@ -81,6 +84,9 @@ class Stage2ChannelBMeta(Stage2RolloutMetaBase):
     duplicate_survivor_anchor_indices: List[int]
     duplicate_exempt_anchor_indices: List[int]
     duplicate_suppressed_anchor_indices: List[int]
+    duplicate_survivor_current_indices: NotRequired[List[int]]
+    duplicate_exempt_current_indices: NotRequired[List[int]]
+    duplicate_suppressed_current_indices: NotRequired[List[int]]
     anchor_gt_backed_indices: List[int]
     anchor_support_counts: List[int]
     anchor_support_rates: List[float]
@@ -92,6 +98,17 @@ class Stage2ChannelBMeta(Stage2RolloutMetaBase):
     lvis_unevaluable_anchor_indices: List[int]
     pseudo_positive_anchor_indices: List[int]
     dead_explorer_indices_by_view: List[List[int]]
+    current_gt_backed_indices: NotRequired[List[int]]
+    current_support_counts: NotRequired[List[int]]
+    current_support_rates: NotRequired[List[float]]
+    shield_only_current_indices: NotRequired[List[int]]
+    dead_current_indices: NotRequired[List[int]]
+    lvis_verified_positive_dead_current_indices: NotRequired[List[int]]
+    lvis_verified_negative_dead_current_indices: NotRequired[List[int]]
+    lvis_not_exhaustive_current_indices: NotRequired[List[int]]
+    lvis_unevaluable_current_indices: NotRequired[List[int]]
+    pseudo_positive_current_indices: NotRequired[List[int]]
+    dead_peer_indices_by_view: NotRequired[List[List[int]]]
     recovered_gt_indices: List[int]
     recovered_gt_support_counts: List[int]
     recovered_gt_support_rates: List[float]

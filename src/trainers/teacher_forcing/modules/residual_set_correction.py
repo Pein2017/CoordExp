@@ -29,7 +29,6 @@ class ResidualSetCorrectionConfig:
 
 _RESIDUAL_SET_V1_CONFIG_KEYS = frozenset(
     {
-        "prepared_rollout_jsonl",
         "expected_num_rollouts",
         "base_seed",
         "lambda_type",
@@ -44,8 +43,6 @@ _RESIDUAL_SET_V1_CONFIG_KEYS = frozenset(
         "ul_consensus_ratio",
         "min_ul_valid_rollouts",
         "clean_gt_sft_mix",
-        "strict_prepared_rollout_tokens",
-        "legacy_reencode_fallback",
         "strict_builder_invariants",
     }
 )

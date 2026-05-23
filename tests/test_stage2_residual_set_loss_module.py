@@ -764,6 +764,45 @@ def test_state_contribution_and_pipeline_projection_route_are_visible() -> None:
     )
 
 
+def test_stage2_trie_ce_alias_routes_to_residual_state_valid_set() -> None:
+    logits = torch.zeros((1, 2, 50), dtype=torch.float32)
+    context = make_context(
+        logits=logits,
+        role_vocab=make_role_vocab(text_ids={10, 11, 12}),
+    )
+    objective_specs = [
+        {
+            "name": "stage2_trie_ce",
+            "weight": 2.0,
+            "channels": ["B"],
+            "application": {"preset": "rollout_trie_hard_ce"},
+            "config": {},
+        }
+    ]
+
+    pipeline_out = run_teacher_forcing_pipeline(
+        context=context,
+        objective_specs=objective_specs,
+        diagnostics_specs=[],
+    )
+
+    assert pipeline_out.metrics["stage2_trie/residual_state_alias"] == 1.0
+    assert "stage2_trie_ce_contrib" in pipeline_out.state
+    assert "residual_set_correction_contrib" in pipeline_out.state
+
+    atoms = project_stage2_objective_atoms(
+        pipeline_result=pipeline_out,
+        objective_specs=objective_specs,
+        text_provenance="B_rollout_text",
+        coord_provenance=None,
+    )
+
+    assert atoms["loss/B_rollout_text/residual_state_trie_ce"] == pytest.approx(
+        float(pipeline_out.total_loss.detach().cpu().item())
+    )
+    assert "loss/B_rollout_text/trie_ce" not in atoms
+
+
 def test_pipeline_rejects_removed_residual_set_live_config_key() -> None:
     context = make_context()
 
@@ -793,7 +832,6 @@ def test_pipeline_accepts_residual_set_runtime_config_keys() -> None:
                 "weight": 1.0,
                 "channels": ["B"],
                 "config": {
-                    "prepared_rollout_jsonl": "/tmp/prepared.jsonl",
                     "expected_num_rollouts": 4,
                     "base_seed": 17,
                     "lambda_type": 1.0,
@@ -801,8 +839,6 @@ def test_pipeline_accepts_residual_set_runtime_config_keys() -> None:
                     "lambda_ul_promoted": 0.5,
                     "ul_consensus_ratio": 1.0,
                     "min_ul_valid_rollouts": 2,
-                    "strict_prepared_rollout_tokens": True,
-                    "legacy_reencode_fallback": False,
                     "strict_builder_invariants": True,
                 },
             }

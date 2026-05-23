@@ -130,25 +130,16 @@ def _make_targets(
 
 def test_stage2_trie_ce_catalog_entry_exists_with_expected_contract() -> None:
     definition = OBJECTIVE_MODULE_CATALOG["stage2_trie_ce"]
+    residual_definition = OBJECTIVE_MODULE_CATALOG["residual_set_correction"]
 
     assert definition.family == "text"
-    assert definition.semantic_role == "stage2_trie_ce"
+    assert definition.semantic_role == "residual_state_trie_ce"
     assert definition.emission_group == "text"
-    assert definition.config_keys == frozenset(
-        {
-            "support_weight",
-            "balance_weight",
-            "struct_weight",
-            "desc_weight",
-            "coord_hard_ce_weight",
-            "eos_weight",
-            "normalization",
-        }
-    )
+    assert definition.config_keys == residual_definition.config_keys
     assert definition.application_presets == frozenset({"rollout_trie_hard_ce"})
     assert tuple(
         (atom.atom_name, atom.state_key) for atom in definition.projected_atoms
-    ) == (("trie_ce", "stage2_trie_ce_contrib"),)
+    ) == (("residual_state_trie_ce", "stage2_trie_ce_contrib"),)
     assert Stage2TrieCEConfig().normalization == "token_mean"
 
 
@@ -805,7 +796,7 @@ def test_stage2_trie_ce_rejects_malformed_summary_fields() -> None:
         run_stage2_trie_ce_module(context=context, spec=_make_spec())
 
 
-def test_stage2_trie_ce_emits_task4_metrics_and_pipeline_loss_metric() -> None:
+def test_legacy_stage2_trie_ce_direct_module_emits_task4_metrics() -> None:
     logits = torch.full((1, 4, 8), -5.0, dtype=torch.float32)
     logits[0, 1, 2] = 5.0
     targets = _make_targets(
@@ -833,20 +824,6 @@ def test_stage2_trie_ce_emits_task4_metrics_and_pipeline_loss_metric() -> None:
     )
 
     module_out = run_stage2_trie_ce_module(context=context, spec=_make_spec())
-    pipeline_out = run_teacher_forcing_pipeline(
-        context=context,
-        objective_specs=[
-            {
-                "name": "stage2_trie_ce",
-                "enabled": True,
-                "weight": 1.0,
-                "channels": ("B",),
-                "application": {"preset": "rollout_trie_hard_ce"},
-                "config": _make_spec().config,
-            }
-        ],
-        diagnostics_specs=[],
-    )
 
     assert module_out.metrics["stage2_trie/target_positions"] == pytest.approx(1.0)
     assert module_out.metrics["stage2_trie/branch_points"] == pytest.approx(1.0)
@@ -861,34 +838,24 @@ def test_stage2_trie_ce_emits_task4_metrics_and_pipeline_loss_metric() -> None:
         3.0
     )
     assert "loss/B/stage2_trie_ce" in module_out.metrics
-    assert pipeline_out.metrics["loss/stage2_trie_ce"] == pytest.approx(
-        module_out.metrics["loss/B/stage2_trie_ce"]
-    )
 
 
-def test_teacher_forcing_pipeline_executes_stage2_trie_ce_spec() -> None:
+def test_teacher_forcing_pipeline_rejects_legacy_stage2_trie_ce_config_keys() -> None:
     context = _make_context()
     spec = _make_spec()
 
-    out = run_teacher_forcing_pipeline(
-        context=context,
-        objective_specs=[
-            {
-                "name": spec.name,
-                "enabled": spec.enabled,
-                "weight": spec.weight,
-                "channels": spec.channels,
-                "application": spec.application,
-                "config": spec.config,
-            }
-        ],
-        diagnostics_specs=[],
-    )
-
-    assert float(out.total_loss.detach().cpu().item()) == pytest.approx(0.0)
-    assert float(out.module_losses["stage2_trie_ce"].detach().cpu().item()) == pytest.approx(
-        0.0
-    )
-    assert out.metrics["stage2_trie/target_positions"] == pytest.approx(0.0)
-    assert out.metrics["loss/stage2_trie_ce"] == pytest.approx(0.0)
-    assert "stage2_trie_ce_contrib" in out.state
+    with pytest.raises(ValueError, match=r"unsupported key.*support_weight"):
+        run_teacher_forcing_pipeline(
+            context=context,
+            objective_specs=[
+                {
+                    "name": spec.name,
+                    "enabled": spec.enabled,
+                    "weight": spec.weight,
+                    "channels": spec.channels,
+                    "application": spec.application,
+                    "config": spec.config,
+                }
+            ],
+            diagnostics_specs=[],
+        )

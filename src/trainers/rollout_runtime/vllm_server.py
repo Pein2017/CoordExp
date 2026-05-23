@@ -649,7 +649,6 @@ def sync_vllm_server_full_weights(
                 state_dict = {
                     k: v for k, v in state_dict.items() if "lora_" not in k
                 }
-
             owner._vllm_server_update_state_dict(client, state_dict)
         finally:
             if is_peft and merged:

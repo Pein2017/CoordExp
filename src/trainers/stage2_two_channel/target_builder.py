@@ -64,6 +64,9 @@ from .residual_set import (
 from .rollout_views import CompactFullObjectTokenSpan, extract_compact_full_object_token_spans
 
 _RESIDUAL_SET_OBJECTIVE_NAME = "residual_set_correction"
+_RESIDUAL_STATE_TRIE_OBJECTIVE_NAMES = frozenset(
+    {_RESIDUAL_SET_OBJECTIVE_NAME, "stage2_trie_ce"}
+)
 _DEFAULT_RESIDUAL_SET_ROLLIN_POLICY = "random_valid_branch"
 _DEFAULT_RESIDUAL_SET_BASE_SEED = 17
 _COORD_ROLE_BY_SLOT = ("x1", "y1", "x2", "y2")
@@ -75,7 +78,7 @@ _RESIDUAL_SET_OPTION_DEFAULTS: Dict[str, Any] = {
     "duplicate_burst_iou_threshold": 0.95,
     "ul_cluster_iou_threshold": 0.9,
     "ul_gray_iou_low": 0.30,
-    "min_ul_valid_rollouts": 2,
+    "min_ul_valid_rollouts": 4,
     "ul_consensus_ratio": 1.0,
 }
 _COMPACT_COORD_TOKEN_RE = re.compile(r"<\|coord_(0|[1-9]\d{0,2})\|>")
@@ -861,6 +864,7 @@ def _build_channel_b_triage(
     duplicate_iou_threshold: float,
     pseudo_positive_enabled: bool,
     anchor_policy_statuses: Sequence[Optional[str]] = (),
+    expected_peer_count: Optional[int] = None,
 ) -> _ChannelBTriageResult:
     if duplicate_bursts_by_boundary is not None:
         suppressed_duplicate_objects_by_boundary = duplicate_bursts_by_boundary
@@ -872,6 +876,11 @@ def _build_channel_b_triage(
         explorer_objects_raw_by_view = []
     anchor_gt_backed_indices = sorted(int(pred_i) for pred_i in anchor_match_by_pred.keys())
     valid_explorer_count = int(len(explorer_objects_raw_by_view))
+    expected_peer_count_resolved = (
+        int(valid_explorer_count)
+        if expected_peer_count is None
+        else max(0, int(expected_peer_count))
+    )
     anchor_support_counts = [0 for _ in range(len(accepted_objects_clean))]
     association_pairs_by_view: List[List[Tuple[int, int]]] = []
     dead_explorer_indices_by_view: List[List[int]] = []
@@ -900,6 +909,12 @@ def _build_channel_b_triage(
             >= float(unlabeled_consistent_iou_threshold)
             for gt_anchor_i in anchor_gt_backed_indices
         )
+
+    def _normalized_desc(obj: GTObject) -> str:
+        return str(getattr(obj, "desc", "") or "").strip()
+
+    def _same_desc(anchor_obj: GTObject, explorer_obj: GTObject) -> bool:
+        return _normalized_desc(anchor_obj) == _normalized_desc(explorer_obj)
 
     for explorer_objects_raw, explorer_match_by_pred in zip(
         explorer_objects_raw_by_view,
@@ -936,12 +951,14 @@ def _build_channel_b_triage(
                 continue
             if _conflicts_gt_backed(anchor_obj):
                 continue
+            if not _same_desc(anchor_obj, explorer_objects_raw[int(explorer_i)]):
+                continue
             anchor_support_counts[int(anchor_i)] += 1
 
     anchor_support_rates = [
         (
-            float(int(support_count)) / float(valid_explorer_count)
-            if valid_explorer_count > 0
+            float(int(support_count)) / float(expected_peer_count_resolved)
+            if expected_peer_count_resolved > 0
             else 0.0
         )
         for support_count in anchor_support_counts
@@ -978,8 +995,9 @@ def _build_channel_b_triage(
         shielded_anchor_indices.add(int(anchor_i))
         if (
             pseudo_positive_enabled
-            and support_count >= 2
-            and support_rate >= (2.0 / 3.0)
+            and (int(expected_peer_count_resolved) + 1) >= 4
+            and support_count == int(expected_peer_count_resolved)
+            and support_rate == 1.0
         ):
             pseudo_positive_candidate_indices.append(int(anchor_i))
         continue
@@ -1063,8 +1081,8 @@ def _build_channel_b_triage(
     ]
     recovered_gt_support_rates = [
         (
-            float(int(support_count)) / float(valid_explorer_count)
-            if valid_explorer_count > 0
+            float(int(support_count)) / float(expected_peer_count_resolved)
+            if expected_peer_count_resolved > 0
             else 0.0
         )
         for support_count in recovered_gt_support_counts
@@ -2952,17 +2970,17 @@ def _channel_b_residual_set_correction_options(
 ) -> Dict[str, Any] | None:
     for spec in objective_specs or ():
         spec_name = str(_objective_spec_get(spec, "name", "") or "")
-        if spec_name != _RESIDUAL_SET_OBJECTIVE_NAME:
+        if spec_name not in _RESIDUAL_STATE_TRIE_OBJECTIVE_NAMES:
             continue
         if not _objective_spec_enabled_for_channel_b(spec):
             continue
         config_raw = _objective_spec_get(spec, "config", {})
         if not isinstance(config_raw, Mapping):
-            raise TypeError("residual_set_correction.config must be a mapping")
+            raise TypeError("Stage-2 residual trie config must be a mapping")
         config = dict(config_raw)
         base_seed = config.get("base_seed", _RESIDUAL_SET_OPTION_DEFAULTS["base_seed"])
         if isinstance(base_seed, bool) or not isinstance(base_seed, int):
-            raise ValueError("residual_set_correction.config.base_seed must be an integer")
+            raise ValueError("Stage-2 residual trie config base_seed must be an integer")
         expected_num_rollouts = _residual_set_option_positive_int(
             config,
             key="expected_num_rollouts",
@@ -2981,7 +2999,7 @@ def _channel_b_residual_set_correction_options(
         )
         if float(ul_consensus_ratio) != 1.0:
             raise ValueError(
-                "residual_set_correction.config.ul_consensus_ratio must be 1.0 "
+                "Stage-2 residual trie config ul_consensus_ratio must be 1.0 "
                 "because mine_ul_consensus currently supports only consensus_ratio == 1.0"
             )
         ul_cluster_iou_threshold = _residual_set_option_threshold(
@@ -2994,11 +3012,13 @@ def _channel_b_residual_set_correction_options(
         )
         if float(ul_gray_iou_low) > float(ul_cluster_iou_threshold):
             raise ValueError(
-                "residual_set_correction.config.ul_gray_iou_low must be <= "
-                "residual_set_correction.config.ul_cluster_iou_threshold"
+                "Stage-2 residual trie config ul_gray_iou_low must be <= "
+                "ul_cluster_iou_threshold"
             )
         return {
-            "prepared_rollout_jsonl": str(config.get("prepared_rollout_jsonl", "") or ""),
+            "strict_builder_invariants": bool(
+                config.get("strict_builder_invariants", False)
+            ),
             "expected_num_rollouts": int(expected_num_rollouts),
             "base_seed": int(base_seed),
             "lambda_ul_promoted": float(lambda_ul_promoted),
@@ -3406,6 +3426,9 @@ def _build_channel_b_meta_entry(
         "anchor_decode_mode": str(anchor_decode_mode),
         "explorer_decode_mode": str(explorer_decode_mode),
         "valid_explorer_count": int(valid_explorer_count),
+        "current_decode_mode": str(anchor_decode_mode),
+        "peer_reference_decode_mode": str(explorer_decode_mode),
+        "valid_peer_count": int(valid_explorer_count),
         "duplicate_clusters_total": int(duplicate_clusters_total),
         "duplicate_clusters_exempt": int(duplicate_clusters_exempt),
         "duplicate_clusters_suppressed": int(duplicate_clusters_suppressed),
@@ -3417,6 +3440,15 @@ def _build_channel_b_meta_entry(
             int(idx) for idx in duplicate_exempt_anchor_indices
         ],
         "duplicate_suppressed_anchor_indices": [
+            int(idx) for idx in duplicate_suppressed_anchor_indices
+        ],
+        "duplicate_survivor_current_indices": [
+            int(idx) for idx in duplicate_survivor_anchor_indices
+        ],
+        "duplicate_exempt_current_indices": [
+            int(idx) for idx in duplicate_exempt_anchor_indices
+        ],
+        "duplicate_suppressed_current_indices": [
             int(idx) for idx in duplicate_suppressed_anchor_indices
         ],
         "anchor_gt_backed_indices": [int(idx) for idx in anchor_gt_backed_indices],
@@ -3440,6 +3472,30 @@ def _build_channel_b_meta_entry(
             int(idx) for idx in pseudo_positive_anchor_indices
         ],
         "dead_explorer_indices_by_view": [
+            [int(idx) for idx in dead_explorer_indices]
+            for dead_explorer_indices in dead_explorer_indices_by_view
+        ],
+        "current_gt_backed_indices": [int(idx) for idx in anchor_gt_backed_indices],
+        "current_support_counts": [int(v) for v in anchor_support_counts],
+        "current_support_rates": [float(v) for v in anchor_support_rates],
+        "shield_only_current_indices": [int(idx) for idx in shielded_anchor_indices],
+        "dead_current_indices": [int(idx) for idx in dead_anchor_indices],
+        "lvis_verified_positive_dead_current_indices": [
+            int(idx) for idx in lvis_verified_positive_dead_anchor_indices
+        ],
+        "lvis_verified_negative_dead_current_indices": [
+            int(idx) for idx in lvis_verified_negative_dead_anchor_indices
+        ],
+        "lvis_not_exhaustive_current_indices": [
+            int(idx) for idx in lvis_not_exhaustive_anchor_indices
+        ],
+        "lvis_unevaluable_current_indices": [
+            int(idx) for idx in lvis_unevaluable_anchor_indices
+        ],
+        "pseudo_positive_current_indices": [
+            int(idx) for idx in pseudo_positive_anchor_indices
+        ],
+        "dead_peer_indices_by_view": [
             [int(idx) for idx in dead_explorer_indices]
             for dead_explorer_indices in dead_explorer_indices_by_view
         ],
@@ -3484,21 +3540,6 @@ def _build_channel_b_meta_entry(
         metrics = dict(residual_set_metrics or {})
         metrics.setdefault("atom_count", float(len(residual_set_target_ir.atoms)))
         meta_entry["residual_set_metrics"] = metrics
-    else:
-        _attach_stage2_trie_sidecar_to_meta(
-            meta_entry=meta_entry,
-            y_train_ids=y_train_ids,
-            assistant_span_ids=assistant_span_ids,
-            tokenizer=tokenizer,
-            prompt_len=int(prompt_len),
-            sample_id=str(sample_id),
-            rollout_index=int(rollout_index),
-            stage2_trie_candidates=stage2_trie_candidates,
-            stage2_trie_object_spans=stage2_trie_object_spans,
-            stage2_trie_weak_fp_span_level_fallback=bool(
-                stage2_trie_weak_fp_span_level_fallback
-            ),
-        )
     return meta_entry, int(closure_supervision_drop_count)
 
 
