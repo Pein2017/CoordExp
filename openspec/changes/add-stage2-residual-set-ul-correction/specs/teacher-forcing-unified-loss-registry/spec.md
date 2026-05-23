@@ -81,18 +81,22 @@ Normative behavior:
 
 ## MODIFIED Requirements
 
-### Requirement: Stage-2 text objectives and typed-trie objectives remain separable
+### Requirement: Stage-2 text objectives and residual-state trie aliases remain separable
 
-Stage-2 two-channel legacy objectives SHALL remain selectable baselines, while
-the residual-set correction objective SHALL own self-prefix residual-set
-semantics only when explicitly selected.
+Stage-2 two-channel legacy text objectives SHALL remain selectable baselines,
+while `stage2_trie_ce` and `residual_set_correction` SHALL be two public names
+for one residual-state trie objective when explicitly selected.
 
 Normative behavior:
 
 - Stage-2 AB active pipeline objective module names include `token_ce`,
   `hard_sft`, `stage2_trie_ce`, and `residual_set_correction`.
-- `residual_set_correction` is explicit opt-in and MUST NOT silently mutate
-  `token_ce`, `hard_sft`, or `stage2_trie_ce` behavior.
+- `stage2_trie_ce` and `residual_set_correction` MUST share the same config key
+  set and residual-state valid-set loss semantics.
+- A Channel-B config MUST select at most one of `stage2_trie_ce` and
+  `residual_set_correction`.
+- The residual-state trie aliases MUST NOT silently mutate `token_ce` or
+  `hard_sft` behavior.
 - New residual-set configs MUST NOT reuse removed legacy bbox/coord module
   names.
 - The hard-SFT baseline MUST remain available as an explicit ablation surface.

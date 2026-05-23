@@ -252,8 +252,8 @@ Channel-B keeps rollout-specific provenance:
 
 Interpretation note:
 
-- duplicate control now runs on the assembled anchor plus explorer object
-  surface before GT matching
+- duplicate control now runs on the assembled current-attempt plus peer-attempt
+  object surface before GT matching
 - non-exempt non-survivors disappear from the positive clean prefix and only
   contribute duplicate-control diagnostic metadata and counters; live
   duplicate-burst UL loss keys remain retired
@@ -262,17 +262,20 @@ Interpretation note:
 
 When `stage2_ab.channel_b.pseudo_positive.enabled=true`, Channel-B still emits a
 single clean teacher-forced forward, but the rollout evidence path widens from
-`1` anchor + `1` explorer to `1 + (K-1)` views.
+`1` current attempt + `K-1` peer attempts.
 
 Operational semantics:
 
 - `stage2/raw_rollouts`
   - total number of rollout generations used for the batch
   - under the default pseudo-positive profile this is `4` per eligible sample
+- `rollout/peer/*`
+  - canonical peer-attempt aggregate metrics
+  - interpreted as means over valid peer views under arbitrary `K`
+  - with legacy `K=2`, these reduce to the single peer-attempt values
 - `rollout/explorer/*`
-  - preserved as compatibility metrics
-  - now interpreted as means over valid explorer views under arbitrary `K`
-  - with legacy `K=2`, these still reduce to the single explorer values
+  - preserved as compatibility aliases for older dashboards
+  - mirrors `rollout/peer/*`; prefer `rollout/peer/*` in new analysis
 - `train/triage/unlabeled_consistent_count`
   - total shielded-anchor count
   - includes support-positive-but-subthreshold anchors and cluster-demoted pseudo-positive candidates
@@ -288,25 +291,27 @@ Operational semantics:
 - `train/triage/pseudo_positive_cluster_demoted_count`
   - pseudo-positive candidates demoted back to shielded due to overlap clustering
 - `train/triage/pseudo_positive_support_rate_num`
-  - summed explorer-support numerators over pseudo-positive candidates
+  - summed peer-support numerators over pseudo-positive candidates
 - `train/triage/pseudo_positive_support_rate_den`
-  - summed explorer-support denominators over pseudo-positive candidates
+  - summed peer-support denominators over pseudo-positive candidates
 - `train/triage/pseudo_positive_selected_support_rate_num`
-  - summed explorer-support numerators over selected pseudo-positive winners
+  - summed peer-support numerators over selected pseudo-positive winners
 - `train/triage/pseudo_positive_selected_support_rate_den`
-  - summed explorer-support denominators over selected pseudo-positive winners
+  - summed peer-support denominators over selected pseudo-positive winners
 - supervision note for interpretation:
   - selected pseudo-positive winners contribute fixed-weight prefix bbox/coord supervision
   - support-positive retained shielded anchors that are not cluster-demoted contribute support-rate-weighted prefix bbox/coord supervision
   - cluster-demoted pseudo-positive candidates remain structure-only prefix context
 - `train/triage/recovered_ground_truth_rate_num`
-  - summed explorer-hit numerators for recovered GT objects missed by the anchor
+  - summed peer-hit numerators for recovered GT objects missed by the current attempt
 - `train/triage/recovered_ground_truth_rate_den`
-  - summed valid-explorer denominators for those recovered GT objects
+  - summed valid-peer denominators for those recovered GT objects
 - `train/triage/recovered_ground_truth_rate`
   - `rate_num / rate_den` when the denominator is non-zero
+- `train/triage/current_preparation_dropped_count`
+  - enabled pseudo-positive samples dropped because current-attempt accepted-clean preparation was malformed
 - `train/triage/anchor_preparation_dropped_count`
-  - enabled pseudo-positive samples dropped because anchor accepted-clean preparation was malformed
+  - compatibility alias for `train/triage/current_preparation_dropped_count`
 
 Failure telemetry:
 

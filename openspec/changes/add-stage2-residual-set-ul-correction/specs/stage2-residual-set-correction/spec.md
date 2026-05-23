@@ -17,9 +17,13 @@ Normative behavior:
 - Prepared records are not required to store rollout-time absolute assistant
   spans; training assembly MUST recompute assistant span and logit positions in
   the active tokenizer/processor environment.
-- Default first-version generation SHOULD use `K=4`: one greedy attempt and
-  three sampling attempts. After generation all attempts have equal semantic
-  status.
+- Default first-version generation SHOULD use `K=4`. Temperature schedules may
+  be homogeneous or explicitly mixed; after generation all attempts have equal
+  semantic status.
+- The residual-state dynamic valid set is the canonical Stage-2 trie /
+  multiple-positive object. `candidate0`, anchor rollout, greedy rollout, first
+  rollout, primary segment, or any single repaired candidate MUST NOT define the
+  coordinate system for multiple-positive supervision.
 
 #### Scenario: Missing response token ids drop strict samples
 
@@ -51,6 +55,10 @@ Normative behavior:
 - Approximate duplicates MUST remain separate training samples.
 - UL consensus support MUST count distinct rollout ids after exact attempt
   deduplication.
+- Default UL promotion MUST require full consensus from every valid retained
+  rollout id and `min_ul_valid_rollouts=expected_num_rollouts=4`; if exact
+  duplicate removal or invalid attempts leaves fewer than four valid ids, no UL
+  pseudo-positive is promoted by default.
 - Decode-mode-sliced diagnostics SHOULD report clean-success, invalid,
   dirty-correction, and promoted-UL support rates.
 
@@ -320,8 +328,13 @@ Normative behavior:
 - A cluster must contain same normalized desc proposals from distinct rollout
   ids after exact attempt deduplication.
 - Default cluster IoU threshold SHALL be `0.9`.
-- Default `K_valid` minimum SHALL be `2`.
-- Default support from distinct rollout ids SHALL be at least `2`.
+- Default `K_valid` minimum SHALL equal `expected_num_rollouts`, default `4`.
+- Default support from distinct rollout ids SHALL equal `K_valid`; with default
+  `ul_consensus_ratio=1.0`, every valid retained rollout id must support the
+  cluster.
+- If exact duplicate removal or invalid attempts leaves fewer than
+  `expected_num_rollouts` valid retained rollout ids, no UL pseudo-positive is
+  promoted by default.
 - Default support/K_valid ratio SHALL be `1.0`.
 - Promoted UL weight SHALL default to `0.5`.
 - Same-desc IoU `>= 0.75` with GT rejects as GT conflict.

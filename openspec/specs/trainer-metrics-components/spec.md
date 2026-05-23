@@ -38,7 +38,7 @@ Normative behavior:
   be derived from the same cluster-aware duplicate-control relation used by
   Channel-B runtime preparation.
 - raw pathology metrics and policy-action counters MUST stay distinct:
-  - `dup/raw/*` describes the pre-policy anchor duplicate state,
+  - `dup/raw/*` describes the pre-policy current-attempt duplicate state,
   - `stage2_ab/channel_b/dup/N_*` describes current duplicate-control
     diagnostic decisions and metadata.
 - duplicate-control counters MUST remain diagnostic metadata only.

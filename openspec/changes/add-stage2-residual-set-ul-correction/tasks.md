@@ -161,3 +161,18 @@ superseded.
   CPU prepared-rollout preflight and the 4-GPU `smoke_1step` result are
   recorded in
   `progress/diagnostics/2026-05-22_residual_set_refactor_preflight.md`.
+
+## 11. Semantic Correction: Residual Trie Equivalence
+
+- [x] 11.1 Document that Stage-2 trie, multiple-positive supervision, and the
+  residual-state dynamic valid set are the same canonical object.
+- [x] 11.2 Treat `stage2_trie_ce` as a residual-state trie alias in schema,
+  registry, and objective-pipeline execution.
+- [x] 11.3 Reject legacy candidate-trie config keys on `stage2_trie_ce` so
+  `support_weight` / `normalization` style configs cannot silently reach
+  candidate0-rooted supervision.
+- [x] 11.4 Make default UL pseudo-positive promotion strict 4-of-4 by setting
+  `min_ul_valid_rollouts=expected_num_rollouts=4`.
+- [ ] 11.5 Delete or quarantine remaining direct legacy candidate-trie helper
+  code after the post-change audit confirms no active config/runtime path
+  reaches it.

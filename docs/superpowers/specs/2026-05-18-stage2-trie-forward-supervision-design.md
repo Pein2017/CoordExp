@@ -2,7 +2,23 @@
 
 Date: 2026-05-18
 
-Status: design approved for implementation planning. This is a Superpowers roadmap artifact, not a stable OpenSpec contract. Stable docs and OpenSpec updates should happen after the first tiny overfit evidence proves the behavior.
+Status: superseded by the 2026-05-22 residual-state trie correction. This is a Superpowers roadmap artifact, not a stable OpenSpec contract.
+
+Correction note, 2026-05-22: the useful intent in this document was
+`trie + multiple-positive` supervision. The mistaken drift was treating the
+merged trie as a repaired-candidate object rooted in one privileged segment or
+rollout ordinal. The canonical
+Stage-2 trie is now the residual-state dynamic valid set: every retained rollout
+attempt is an independent self-prefix sequence, and multiple-positive choices
+come from the valid actions available in that rollout's current residual state.
+The legacy `support_weight` / `balance_weight` / `normalization` config surface
+is no longer the active `stage2_trie_ce` contract.
+
+Do not implement from the historical body below. It is retained only as a record
+of the semantic drift that was corrected. The current contract is
+`openspec/changes/add-stage2-residual-set-ul-correction/design.md`; any merged
+candidate trie, candidate aggregation, or YAML snippet below is explicitly
+invalid for active `stage2_trie_ce`.
 
 Parent roadmap:
 
@@ -13,7 +29,9 @@ Implementation plan:
 
 - `docs/superpowers/plans/2026-05-18-stage2-trie-forward-supervision.md`
 
-## Problem Statement
+## Historical Superseded Body, Do Not Implement
+
+### Problem Statement
 
 The current Stage-2 two-channel training loop can launch, roll out compact-full predictions, pair predictions with ground truth through greedy IoU, insert false negatives, and supervise a repaired Channel-B target. However, the current Channel-B forward objective still behaves like a single repaired sequence SFT objective. That makes the model pay for one sampled ordering and one repaired target path, even though Stage-2 data construction naturally produces multiple valid alternatives:
 
@@ -115,7 +133,9 @@ Main ablations should compare `tail_append` and `fn_slot_shuffle`. `sorted` exis
 The v0 false-positive policies are:
 
 - `zero_loss_context`: keep unmatched predicted objects in the serialized context when needed, but assign zero object/token loss and exclude them from positive trie children.
-- `weak_positive_context`: if an unmatched prediction is supported by explorer rollouts, give it weak object-entry encouragement without desc, coord, or geometry supervision.
+- `weak_positive_context`: if an unmatched prediction is supported by peer
+  rollouts, give it weak object-entry encouragement without desc, coord, or
+  geometry supervision.
 
 Weak-positive policy defaults:
 

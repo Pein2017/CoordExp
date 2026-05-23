@@ -107,38 +107,45 @@ Normative behavior:
 - **THEN** active `loss/<component>` scalars remain comparable mean-like values.
 
 ### Requirement: Pseudo-positive rollout spans remain text/structure aligned
-Channel-B pseudo-positive anchors SHALL be handled as accepted-prefix context,
-not as a way to reactivate retired coord/bbox regularizers.
+This clean-prefix baseline requirement applies only when Channel-B selects
+`token_ce` or `hard_sft`. Channel-B pseudo-positive current-attempt objects
+SHALL be handled as accepted-prefix context, not as a way to reactivate retired
+coord/bbox regularizers.
 
 Normative behavior:
-- `dead_anchor` objects MUST NOT appear in the positive teacher-forced prefix.
+- dead current-attempt objects MUST NOT appear in the positive teacher-forced prefix.
 - Retained prefix objects MAY receive global rollout-prefix structure
   supervision as defined by the Channel-B contract.
-- `pseudo_positive` objects MAY remain in the edited anchor prefix for accepted
-  structure context.
-- `pseudo_positive`, `shielded_anchor`, and dead unmatched anchors MUST NOT
-  contribute desc-positive supervision unless explicitly represented as
-  `matched_clean`, `fn`, or `recovered_fn`.
-- `pseudo_positive` anchors MUST NOT activate `bbox_geo`, `bbox_size_aux`,
-  `coord_reg`, `coord_gate`, or `text_gate`.
+- `pseudo_positive` objects MAY remain in the edited current-attempt prefix for
+  accepted structure context.
+- `pseudo_positive`, shield-only, and dead-current objects MUST NOT contribute
+  desc-positive supervision unless explicitly represented as `matched_clean`,
+  `fn`, or `recovered_fn`.
+- `pseudo_positive` current-attempt objects MUST NOT activate `bbox_geo`,
+  `bbox_size_aux`, `coord_reg`, `coord_gate`, or `text_gate`.
+- shield-only objects MUST NOT receive bbox/coord positive supervision unless
+  they are promoted to `pseudo_positive` by full peer consensus.
 
 #### Scenario: Pseudo-positive spans are desc-neutral
 - **WHEN** `stage2_ab.channel_b.pseudo_positive.enabled=true`
-- **THEN** selected pseudo-positive anchors may remain as structure/context
+- **THEN** selected pseudo-positive current-attempt objects may remain as structure/context
   prefix content
 - **AND** they do not contribute desc CE
 - **AND** they do not activate retired coord/bbox regularizer terms.
 
-### Requirement: Stage-2 text objectives and typed-trie objectives remain separable
+### Requirement: Stage-2 text objectives and residual-state trie aliases remain separable
 Stage-2 two-channel legacy objectives SHALL remain text/structure-only, while
-the unified typed-trie objective SHALL own token-type exclusivity, valid-set
-marginal likelihood, optional coverage, and optional continuation calibration.
+the residual-state trie aliases SHALL own token-type exclusivity and valid-set
+marginal likelihood over dynamic residual actions.
 
 Normative behavior:
 - Stage-2 AB active pipeline objective module names are limited to `token_ce`,
-  `hard_sft`, and `stage2_trie_ce`.
-- New typed teacher-forcing objective configs MAY introduce typed-trie module
-  names, but MUST NOT reuse removed legacy bbox/coord module names.
+  `hard_sft`, `stage2_trie_ce`, and `residual_set_correction`.
+- `stage2_trie_ce` and `residual_set_correction` are aliases for the same
+  residual-state dynamic valid-set objective; Channel-B configs MUST select at
+  most one of them.
+- Residual-state trie configs MUST NOT reuse removed legacy bbox/coord module
+  names or legacy candidate-trie config keys.
 - The hard-SFT baseline MUST remain available as an explicit ablation surface.
 
 #### Scenario: Hard SFT remains a baseline

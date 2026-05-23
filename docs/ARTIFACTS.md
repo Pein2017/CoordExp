@@ -304,20 +304,10 @@ artifacts into `training.output_dir` before training starts:
   - These remain raw telemetry artifacts; shared GT-vs-Pred review rendering
     uses an explicit normalized `vis_resources/gt_vs_pred.jsonl` sidecar
     instead of taking ownership of the monitor-dump path layout.
-- `output/stage2_ab/prepared_rollouts/*.jsonl`
-  - Offline prepared rollout inputs for `residual_set_correction`.
-  - Each JSONL row includes `sample_id`, `image_id`, `image_path`,
-    `rollout_id`, `response_token_ids`, `raw_text`, `decode_mode`, and
-    `generation_config_hash`.
-  - Fixture rows generated from offline JSONL use the same runtime `sample_id`
-    contract as `BaseCaptionDataset`: dataset namespace plus `base_idx`. The
-    source `image_id`/`image_path` stay present for provenance and secondary
-    lookup.
-  - The ckpt3664 smoke fixture uses
-    `output/stage2_ab/prepared_rollouts/train8_ckpt3664.jsonl`.
-  - Produce deterministic fixture/preflight records with
-    `scripts/tools/prepare_stage2_residual_rollouts.py`; real GPU rollout
-    generation is not owned by this fixture producer yet.
+- Residual-state trie no longer consumes `output/stage2_ab/prepared_rollouts/*.jsonl`.
+  Channel-B online-learning runs generate live rollout attempts from the
+  current batch and record the resulting supervision/UL evidence under the
+  run-local `monitor_dumps/` artifacts above.
 - `eval_detection/step_<global_step>/` when Stage-1 `custom.eval_detection.enabled: true`
   - Generation-backed eval-step artifacts for standard Stage-1 SFT runs.
   - Writes `gt_vs_pred.jsonl`, `gt_vs_pred_scored.jsonl`, `infer_summary.json`,

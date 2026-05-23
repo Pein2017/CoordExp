@@ -50,8 +50,11 @@ Normative behavior:
 - **THEN** config loading fails fast before trainer init
 - **AND** the error indicates `stage2_ab.pipeline` is required.
 
-### Requirement: Stage-2 AB pipeline specs are explicit and complete (no implicit defaults)
-Stage-2 AB pipeline module specs MUST be authored with explicit fields and complete module configs to prevent silent drift from default injection.
+### Requirement: Stage-2 AB pipeline specs are explicit and complete where required
+Stage-2 AB pipeline module specs MUST be authored with explicit fields and
+strict module configs to prevent silent drift. Residual-state trie aliases MAY
+inject documented optional defaults, but required inputs still fail fast when
+omitted.
 
 Normative behavior:
 - Each entry in `stage2_ab.pipeline.objective[]` and `stage2_ab.pipeline.diagnostics[]` MUST include:
@@ -61,7 +64,7 @@ Normative behavior:
   - `preset`
 - `application.preset` MUST be valid for the referenced module:
   - `token_ce`: `anchor_text_only`, `rollout_text_only`
-  - `hard_sft`: `selected_path`
+  - `hard_sft`: `hard_sft`
   - `stage2_trie_ce`: `rollout_trie_hard_ce`
   - `residual_set_correction`: `rollout_self_prefix`
 - Presets that imply a deprecated final Channel-A self-context pass MUST be
@@ -100,7 +103,14 @@ Stage-2 AB pipeline module configs MUST be strict and MUST reject unknown keys, 
 
 Normative behavior:
 - `token_ce.config` MUST accept only its text/structure CE weights.
-- `stage2_trie_ce.config` MUST accept only Stage-2 trie CE weights.
+- `stage2_trie_ce.config` and `residual_set_correction.config` MUST accept
+  only residual-state trie keys. The two module names are aliases for the same
+  dynamic valid-set semantics and MUST NOT accept legacy candidate-trie keys such
+  as `support_weight`, `balance_weight`, or `normalization`.
+- Residual-state trie configs MAY set
+  `require_real_prepared_rollouts: true`; when set, Channel-B training MUST
+  reject fixture/preflight prepared rollout records unless every loaded
+  prepared attempt declares `producer_mode: real`.
 - `hard_sft.config` MUST accept only the standard selected-path hard SFT weights.
 - Legacy alias keys (e.g., `bbox_smoothl1_weight`, `coord_soft_ce_weight`, `coord_w1_weight`) MUST be rejected.
 
@@ -109,6 +119,14 @@ Normative behavior:
 - **AND** the module config contains `bbox_smoothl1_weight`
 - **THEN** configuration parsing fails fast
 - **AND** the error indicates the unknown key is not accepted.
+
+#### Scenario: Legacy candidate-trie keys fail fast
+- **WHEN** `stage2_ab.pipeline.objective[*].name=stage2_trie_ce`
+- **AND** the module config contains `support_weight`, `balance_weight`, or
+  `normalization`
+- **THEN** configuration parsing fails fast
+- **AND** the config is not allowed to reach legacy candidate-rooted
+  clean-prefix supervision.
 
 #### Scenario: Removed geometry objective names fail fast
 - **WHEN** `stage2_ab.pipeline.objective[*].name` is `bbox_geo`,
@@ -953,6 +971,9 @@ Normative behavior:
   - Under DDP, each rank MUST collect a deterministic share `local_rollouts_per_step` such that the sum over ranks equals `rollouts_per_step`.
 - The trainer MUST then construct per-sample teacher-forced segments (rollout prefix + mandatory FN append).
 - When `training.packing=true`, the trainer MUST pack these segments into a **variable** number of packed sequences under the `packing_length` cap derived from `global_max_length`.
+- Under DDP, local pack counts MAY differ by rank because rollout/target lengths are data dependent. Before running learner forwards, the trainer MUST gather the local pack counts and derive a shared `global_slot_count := max(local_pack_count across ranks)`.
+- Under DDP, every rank MUST execute the same `global_slot_count` learning slots for the optimizer step. Ranks with fewer local packs MUST left-pad non-sync **shadow slots** before their real packs so the final slot still contains a real local pack whenever the rank produced any local segments. Shadow slots MUST run a zero-weight learner forward/backward through a real local pack to keep DDP forward/backward ordering aligned while contributing no loss or train metrics.
+- Under DDP, `local_pack_count=0` on any rank while a peer rank has `local_pack_count>0` MUST fail fast on all ranks after pack-count gather and before learner slot execution. This is a target-construction/data-flow failure; fallback target construction SHOULD provide at least one trainable segment per rank.
 - The trainer MUST run forward/backward once per packed sequence and accumulate gradients, then perform **exactly one** optimizer update for the optimizer step.
 
 #### Scenario: 32 raw rollouts pack into fewer than 32 packed sequences
@@ -969,6 +990,22 @@ Normative behavior:
 - **THEN** each rank buffers its raw rollouts across the first 7 micro-steps without running the Channel-B loop
 - **AND** the full Channel-B loop (rollout→pack→learn-to-completion) runs on the 8th (final) micro-step
 - **AND** the outer Trainer performs exactly one optimizer update for the step.
+
+#### Scenario: DDP ranks with skewed post-rollout pack counts share one slot schedule
+- **GIVEN** `world_size=2`
+- **AND** rank 0 has one local post-rollout pack while rank 1 has two local post-rollout packs
+- **WHEN** Channel-B executes the learner portion of the optimizer step
+- **THEN** both ranks execute two learning slots
+- **AND** rank 0 uses an empty non-sync slot followed by its real pack in the final sync slot
+- **AND** rank 1 uses its first real pack in a non-sync slot and its second real pack in the final sync slot
+- **AND** no rank decides to enter final-sync backward solely from rank-local buffer emptiness.
+
+#### Scenario: DDP rank with zero local packs fails before learner slots
+- **GIVEN** `world_size=2`
+- **AND** rank 0 has zero local post-rollout packs while rank 1 has at least one local post-rollout pack
+- **WHEN** Channel-B gathers local pack counts
+- **THEN** both ranks fail before learner slot execution
+- **AND** neither rank enters a gradient-synchronizing backward.
 
 ### Requirement: Removed Channel-B semantic-desc gate knobs fail fast
 Training-time semantic-desc gating is removed from Stage-2 AB Channel-B and MUST NOT be configurable.
@@ -996,8 +1033,12 @@ Normative behavior:
 
 ### Requirement: DDP-safe Channel-B execution semantics for multi-GPU learners
 When `world_size > 1`, Channel-B MUST be executed in a DDP-safe way:
-- Each micro-step MUST perform exactly one packed forward/backward per rank.
-- The trainer MUST NOT run any inner loops that cause different ranks to perform different numbers of forwards within the same micro-step.
+- Each optimizer step MUST use a globally synchronized Channel-B pack slot schedule.
+- Local post-rollout pack counts MAY vary by rank, but the trainer MUST gather those counts and run the same number of learning slots on every rank.
+- Shadow padding slots MAY be used only before the final sync slot and MUST NOT perform a gradient-synchronizing backward or contribute loss/metrics.
+- A rank with zero local packs MUST NOT attempt to synthesize a final-sync empty backward; the step MUST fail consistently after pack-count gather unless all ranks have zero packs.
+- The final sync slot MUST be reached by every rank together; rank-local buffer emptiness MUST NOT independently trigger final-sync backward.
+- The trainer MUST NOT run inner loops that cause different ranks to perform different numbers of gradient-synchronizing backwards within the same optimizer step.
 
 Legacy guardrail (v1):
 - Under all world sizes (including DDP), `stage2_ab.channel_b.mode` is removed and MUST fail fast when provided.
@@ -1092,8 +1133,8 @@ Stage-2 AB trainer MUST NOT support active `coord_reg`, `bbox_geo`, or
 
 Normative behavior:
 - Stage-2 AB may still supervise text/structure CE through `token_ce`.
-- Stage-2 AB may opt into `stage2_trie_ce` for rollout-context trie CE where
-  authored.
+- Stage-2 AB may opt into `stage2_trie_ce` or `residual_set_correction` for
+  residual-state trie CE where authored.
 - Stage-2 AB MUST reject coordinate soft-CE, W1, CIoU, smooth-L1, and decoded
   bbox-size auxiliary module declarations in `stage2_ab.pipeline`.
 - Removed geometry/coordinate loss atoms MUST NOT be emitted as live Stage-2
@@ -1132,14 +1173,18 @@ Canonical prod behavior:
   `stage2_trie_ce`, and `residual_set_correction`.
 
 ### Requirement: Stage-2 two-channel training supports a config-declared objective and diagnostics pipeline
-When `custom.trainer_variant: stage2_two_channel`, the system SHALL use an explicit YAML-declared objective/diagnostics pipeline for the canonical clean-prefix Channel-B contract.
+When `custom.trainer_variant: stage2_two_channel`, the system SHALL use an
+explicit YAML-declared objective/diagnostics pipeline. Clean-prefix Channel-B
+baselines and residual-state trie aliases are separate objective paths.
 
 Normative behavior:
 - `stage2_ab.pipeline` MUST be present. There is no implicit default pipeline manifest for this contract.
-- Future-canonical Stage-2 AB objective ordering for this contract is:
+- Canonical clean-prefix Stage-2 AB objective ordering for this contract is:
   1. `token_ce`
-  2. `stage2_trie_ce`
-  3. `hard_sft` when the config intentionally requests the baseline selected-path objective.
+  2. `hard_sft` when the config intentionally requests the baseline selected-path objective.
+- `stage2_trie_ce` and `residual_set_correction` are explicit residual-state
+  trie aliases, not clean-prefix baseline modules, and Channel-B configs MUST
+  select at most one of them.
 - Canonical Stage-2 AB diagnostics are empty unless a future explicitly
   reviewed diagnostic module is introduced.
 - Live Stage-2 AB configs MUST omit `loss_duplicate_burst_unlikelihood`; the
@@ -1191,6 +1236,7 @@ Normative minimum objective module names for this contract:
 - `token_ce`
 - `hard_sft`
 - `stage2_trie_ce`
+- `residual_set_correction`
 
 Removed objective module names:
 - `loss_duplicate_burst_unlikelihood`
@@ -1250,12 +1296,16 @@ Normative behavior:
 - `stage2_ab.channel_b.triage_posterior` MUST accept only:
   - `num_rollouts`
   - `explorer_temperature`
+  - `rollout_temperatures`
   - `explorer_top_p`
   - `explorer_top_k`
   - `unlabeled_consistent_iou_threshold`
   - `recovered_ground_truth_weight_multiplier`
 - when `stage2_ab.channel_b.pseudo_positive.enabled=false`, `stage2_ab.channel_b.triage_posterior.num_rollouts` MUST be `2`
-- when `stage2_ab.channel_b.pseudo_positive.enabled=true`, `stage2_ab.channel_b.triage_posterior.num_rollouts` MUST be `>= 2`
+- when `stage2_ab.channel_b.pseudo_positive.enabled=true`, `stage2_ab.channel_b.triage_posterior.num_rollouts` MUST be `>= 4`
+- `stage2_ab.channel_b.triage_posterior.rollout_temperatures`, when authored,
+  MUST have length `1` or exactly `num_rollouts`; a length-1 value broadcasts
+  to all rollout attempts.
 - Unknown keys in a module `config` or in `stage2_ab.channel_b` MUST fail fast with actionable diagnostics.
 
 #### Scenario: Removed loss_duplicate_burst_unlikelihood fails fast
@@ -1329,44 +1379,66 @@ Normative behavior:
 - **WHEN** `eval_step` runs
 - **THEN** `eval/detection/mAP` is present in the eval metrics payload
 
-### Requirement: Stage-2 AB Channel-B uses anchor/explorer triage with an optional pseudo-positive multi-view extension
-When `custom.trainer_variant: stage2_two_channel`, the canonical Channel-B contract SHALL build its clean teacher-forced target from one greedy anchor rollout plus one or more explorer rollouts:
+### Requirement: Stage-2 AB Channel-B uses peer rollout attempts with optional pseudo-positive consensus
+This clean-prefix baseline requirement applies only when Channel-B selects
+`token_ce` or `hard_sft`. It MUST NOT apply when Channel-B selects
+`stage2_trie_ce` or `residual_set_correction`.
 
-- one anchor rollout using greedy / deterministic decoding,
-- one or more explorer rollouts using stochastic decoding configured under `stage2_ab.channel_b.triage_posterior`.
+When `custom.trainer_variant: stage2_two_channel`, the clean-prefix baseline
+Channel-B contract SHALL generate `K = stage2_ab.channel_b.triage_posterior.num_rollouts`
+peer rollout attempts. Every attempt is an independent training attempt: it is
+  matched to GT, triaged, and converted into its own teacher-forced target. No
+  rollout ordinal, temperature bucket, or decode request is globally privileged
+  over the others.
+
+Rollout temperatures are configured by
+`stage2_ab.channel_b.triage_posterior.rollout_temperatures`. If that field is
+omitted, every ordinal uses `triage_posterior.explorer_temperature`. Authors
+MAY still request mixed schedules such as `[0.0, 0.7, ...]` explicitly, but
+temperature choice MUST NOT create privileged rollout roles.
 
 Normative behavior:
 
-- when `stage2_ab.channel_b.pseudo_positive.enabled=false`, total rollout views MUST remain `2` (`1` anchor + `1` explorer),
-- when `stage2_ab.channel_b.pseudo_positive.enabled=true`, total rollout views MUST equal `stage2_ab.channel_b.triage_posterior.num_rollouts`,
+- when `stage2_ab.channel_b.pseudo_positive.enabled=false`, `K` MAY be any
+  schema-valid value `>=2`; each configured rollout ordinal still contributes an
+  independent current-attempt segment,
+- when `stage2_ab.channel_b.pseudo_positive.enabled=true`, `K` MUST be at least
+  `4`,
 - each rollout MUST independently reuse the existing bounded salvage + strict record acceptance + bbox-valid filtering + sequential dedup + configured Stage-2 assignment path,
 - GT-backed semantics MUST inherit the existing Channel-B accepted-clean assignment + gating contract,
-- the final positive target MUST be built by editing the **anchor** clean sequence rather than rebuilding a union order,
-- pseudo-positive candidate discovery MUST start from unmatched anchor clean objects and use explorer agreement only as support evidence,
-- explorer-only non-GT-backed objects MUST NOT be promoted into clean-prefix positives,
-- a GT hit found only on the explorer side MUST project to `recovered_fn`, not to anchor retention.
+- the final positive target for each attempt MUST be built by editing that
+  attempt's own clean sequence rather than rebuilding a union order across
+  attempts,
+- pseudo-positive promotion MUST require all `K` rollout attempts to point to
+  the same unlabeled region and the same normalized description,
+- a non-GT-backed object from one attempt MUST NOT become pseudo-positive unless
+  the full K-of-K peer consensus condition holds,
+- a GT hit found only by another attempt MUST project to the current attempt's
+  `recovered_fn`, not to retention of an unrelated unlabeled object.
 
-#### Scenario: Channel-B builds the final target from the anchor clean sequence
-- **GIVEN** anchor and explorer rollouts were both produced for a Channel-B sample
+#### Scenario: Channel-B builds one target per rollout attempt
+- **GIVEN** K rollout attempts were produced for a Channel-B sample
 - **WHEN** the trainer constructs the teacher-forced target
-- **THEN** it starts from the anchor clean accepted sequence
-- **AND** it preserves anchor order for retained objects
-- **AND** it does not rebuild a union ordering over anchor and explorer objects.
+- **THEN** it creates one training segment per valid attempt
+- **AND** each segment starts from that attempt's clean accepted sequence
+- **AND** it does not rebuild a union ordering over all attempts.
 
-#### Scenario: Explorer-only GT hit does not keep a bad anchor object positive
-- **GIVEN** an anchor/explorer pair-or-singleton record where the anchor side misses GT and the explorer side matches GT
+#### Scenario: Peer-only GT hit becomes recovered FN for the current attempt
+- **GIVEN** a current attempt misses GT and a different rollout attempt matches GT
 - **WHEN** the trainer projects triage evidence into training actions
 - **THEN** the outcome is `recovered_fn`
-- **AND** the bad anchor object is not kept as an anchor GT-backed positive.
+- **AND** the current attempt's unrelated unlabeled object is not kept as a
+  GT-backed positive.
 
-#### Scenario: Explorer-only non-GT-backed object does not become a pseudo-positive prefix object
-- **GIVEN** an explorer object that does not correspond to any unmatched anchor clean object
+#### Scenario: Non-consensus unlabeled object does not become pseudo-positive
+- **GIVEN** an unlabeled object appears in fewer than all K rollout attempts or
+  disagrees on normalized description
 - **WHEN** Channel-B projects pseudo-positive evidence into the final clean prefix
-- **THEN** that explorer-only non-GT-backed object is not promoted into a new prefix positive
-- **AND** pseudo-positive selection remains anchored on unmatched anchor clean objects.
+- **THEN** that object is not promoted into a new prefix positive.
 
 ### Requirement: Stage-2 AB Channel-B rollout and pseudo-positive knobs are typed and grouped
-The Stage-2 AB config SHALL expose rollout-view and pseudo-positive knobs under `stage2_ab.channel_b`.
+The Stage-2 AB config SHALL expose clean-prefix rollout-view and
+pseudo-positive knobs under `stage2_ab.channel_b`.
 
 Normative behavior:
 
@@ -1378,11 +1450,15 @@ Normative behavior:
 - the mapping MUST accept only:
   - `num_rollouts`
   - `explorer_temperature`
+  - `rollout_temperatures`
   - `explorer_top_p`
   - `explorer_top_k`
   - `unlabeled_consistent_iou_threshold`
   - `recovered_ground_truth_weight_multiplier`
 - unknown keys under `stage2_ab.channel_b.triage_posterior` MUST fail fast.
+- When Channel-B selects `stage2_trie_ce` or `residual_set_correction`,
+  `stage2_ab.channel_b.pseudo_positive.enabled=true` MUST fail fast because UL
+  pseudo-positive admission is owned by residual-state cross-rollout consensus.
 
 #### Scenario: Unknown triage_posterior key fails fast
 - **WHEN** a Stage-2 AB config includes an unknown key under `stage2_ab.channel_b.triage_posterior`
@@ -1393,62 +1469,74 @@ The canonical v1 v3 contract SHALL treat recovered GT objects as weighted FN inj
 
 Normative behavior:
 
-- `recovered GT` means “missed in anchor accepted-clean matching and hit in explorer accepted-clean matching,”
+- `recovered GT` means “missed in the current attempt's accepted-clean
+  matching and hit by at least one valid peer attempt,”
 - recovered GT objects MUST remain on the same FN injection path used by ordinary FN objects,
 - the configured `recovered_ground_truth_weight_multiplier` MUST increase their desc+geo+coord supervision weight relative to ordinary FN objects,
 - recovered-prefix distillation MUST NOT be part of the canonical v1 contract.
 
 #### Scenario: Recovered GT object uses weighted FN injection
-- **WHEN** a GT object is missed in anchor and hit in explorer
+- **WHEN** a GT object is missed in the current attempt and hit in a valid peer
+  attempt
 - **THEN** it is appended through the normal FN-injection path
 - **AND** it receives the configured recovered-FN positive weight
 - **AND** no separate explore-prefix teacher-forced pass is created.
 
-### Requirement: Channel-B v3 uses deterministic one-to-one anchor/explorer association
-The canonical v1 v3 contract SHALL associate anchor and explorer accepted objects deterministically before projecting triage actions.
+### Requirement: Channel-B v3 uses deterministic one-to-one current/peer association
+The canonical v1 v3 contract SHALL associate current-attempt and peer-attempt
+accepted objects deterministically before projecting triage actions.
 
 Normative behavior:
 
 - candidate cross-rollout pairs MUST be scored by IoU,
 - only pairs with `IoU >= unlabeled_consistent_iou_threshold` are eligible,
 - the chosen association MUST be one-to-one and maximize IoU,
-- if multiple assignments achieve the same maximum total IoU, the chosen assignment MUST be the one whose sorted pair list `[(anchor_index, explorer_index), ...]` is lexicographically smallest.
+- if multiple assignments achieve the same maximum total IoU, the chosen
+  assignment MUST be the one whose sorted pair list
+  `[(current_index, peer_index), ...]` is lexicographically smallest.
 
 #### Scenario: Crowded-scene association is stable under tie conditions
-- **WHEN** two eligible anchor/explorer candidate pairs have identical IoU
+- **WHEN** two eligible current/peer candidate pairs have identical IoU
 - **THEN** the selected association is resolved by the canonical lexicographic assignment tie-break rule rather than container ordering or hash iteration.
 
 ### Requirement: Channel-B v3 uses one merged teacher-forced forward
-The canonical v1 v3 contract SHALL realize `L(clean_anchor) + L(explore-derived corrections)` through one merged teacher-forced forward on the edited anchor target.
+This clean-prefix baseline requirement applies only when Channel-B selects
+`token_ce` or `hard_sft`. The canonical v1 v3 contract SHALL realize
+`L(clean_current_attempt) + L(peer-derived corrections)` through one merged
+teacher-forced forward on the edited current-attempt target.
 
 Normative behavior:
 
 - the trainer MUST run one teacher-forced forward on the final edited target,
-- positive, weighted-FN, and dead-anchor UL terms MUST be derived from that same forward,
-- the trainer MUST NOT require a second explore teacher-forced payload in the canonical v1 contract.
+- positive, weighted-FN, and dead-current UL terms MUST be derived from that same forward,
+- the trainer MUST NOT require a second peer teacher-forced payload in the canonical v1 contract.
 
 #### Scenario: Single-forward v3 target realization
 - **WHEN** a Channel-B v3 sample is prepared
-- **THEN** all loss terms are derived from a single teacher-forced forward over the edited anchor target
-- **AND** no second teacher-forced explore payload is required.
+- **THEN** all loss terms are derived from a single teacher-forced forward over the edited current-attempt target
+- **AND** no second teacher-forced peer payload is required.
 
-### Requirement: Retained unmatched anchor objects remain prefix-visible with explicit pseudo-positive supervision subsets
-Retained unmatched anchor objects MAY remain in the clean prefix, but the Channel-B contract SHALL distinguish between selected pseudo-positive anchors, support-positive shielded anchors, and cluster-demoted shielded anchors.
+### Requirement: Retained unmatched current-attempt objects remain prefix-visible with explicit pseudo-positive supervision subsets
+This clean-prefix baseline requirement applies only when Channel-B selects
+`token_ce` or `hard_sft`. Retained unmatched current-attempt objects MAY remain in the
+clean prefix, but the Channel-B contract SHALL distinguish between selected
+pseudo-positive objects, support-positive shield-only objects, and
+cluster-demoted shield-only objects.
 
 Normative behavior:
 
-- retained unmatched anchor objects MAY participate in global rollout-prefix struct masks when `token_ce.config.rollout_global_prefix_struct_ce_weight > 0`,
-- selected pseudo-positive anchors MUST receive positive bbox/coord supervision using their retained anchor coordinates and the configured pseudo-positive weight,
-- support-positive retained shielded anchors that are not cluster-demoted MAY receive support-rate-weighted bbox/coord supervision,
+- retained unmatched current-attempt objects MAY participate in global rollout-prefix struct masks when `token_ce.config.rollout_global_prefix_struct_ce_weight > 0`,
+- selected pseudo-positive objects MUST receive positive bbox/coord supervision using their retained current-attempt coordinates and the configured pseudo-positive weight,
+- support-positive retained shield-only objects that are not cluster-demoted MUST stay outside bbox/coord positive supervision unless they are promoted by full peer consensus,
 - cluster-demoted pseudo-positive candidates MUST stay outside bbox/coord supervision groups,
-- retained unmatched anchor objects MUST NOT create extra positive desc targets,
-- retained unmatched anchor objects MAY remain visible in the final clean prefix as context.
+- retained unmatched current-attempt objects MUST NOT create extra positive desc targets,
+- retained unmatched current-attempt objects MAY remain visible in the final clean prefix as context.
 
-#### Scenario: Support-positive shielded anchor keeps context visibility and partial coord supervision
-- **WHEN** an unmatched anchor object is retained as shielded with non-zero explorer support and is not cluster-demoted
+#### Scenario: Support-positive shield-only object keeps context visibility without positive coord supervision
+- **WHEN** an unmatched current-attempt object is retained as shield-only with non-zero peer support and is not cluster-demoted
 - **THEN** it may remain in the edited clean prefix
 - **AND** it may still participate in the global rollout-prefix structure CE surface
-- **AND** it may receive support-rate-weighted bbox/coord supervision
+- **AND** it does not receive positive bbox/coord supervision
 - **AND** it contributes no extra positive desc CE.
 
 #### Scenario: Cluster-demoted pseudo-positive candidate stays struct-only
@@ -1557,34 +1645,36 @@ Normative behavior:
 - **THEN** the run fails fast with actionable guidance
 - **AND** it does not proceed as if the checkpoint were restartable.
 
-### Requirement: Stage-2 AB Channel-B uses anchor-rooted rollout triage with pre-match duplicate-control and default K=4 pseudo-positive evidence
-The Stage-2 AB Channel-B contract MUST build anchor-rooted rollout triage from
-pre-match duplicate-control evidence while preserving default K=4
-pseudo-positive semantics.
+### Requirement: Stage-2 AB peer-rollout triage stays outside residual-state trie correction
+The Stage-2 AB Channel-B clean-prefix contract MUST build peer-rollout triage
+from pre-match duplicate-control evidence while preserving default K=4
+pseudo-positive semantics only for clean-prefix baseline paths.
 
 When `custom.trainer_variant: stage2_two_channel`, the canonical Channel-B
-contract SHALL build its clean teacher-forced target from rollout evidence
-rooted in the anchor clean sequence.
+contract SHALL build one clean teacher-forced target per independent rollout
+attempt. Temperature ordinals MAY differ across attempts, but no attempt,
+ordinal, or temperature bucket is privileged over the others.
+
+This clean-prefix contract MUST NOT apply when Channel-B selects
+`stage2_trie_ce` or `residual_set_correction`; those names consume offline
+prepared `rollout_attempt` records as independent self-prefix samples and use
+residual-state dynamic valid sets rather than clean-prefix candidate aggregation
+or privileged-rollout multiple-positive supervision.
 
 Normative behavior:
 - when `stage2_ab.channel_b.pseudo_positive.enabled=false`, the canonical
-  Channel-B contract uses exactly two rollout views:
-  - one anchor rollout using greedy / deterministic decoding,
-  - one explorer rollout using stochastic decoding configured under
-    `stage2_ab.channel_b.triage_posterior`,
+  Channel-B contract uses exactly two peer rollout attempts,
 - when `stage2_ab.channel_b.pseudo_positive.enabled=true`, the opt-in
   pseudo-positive contract uses exactly
-  `stage2_ab.channel_b.triage_posterior.num_rollouts` total rollout views:
-  - one anchor rollout using greedy / deterministic decoding,
-  - `num_rollouts - 1` explorer rollouts using the shared stochastic decode
-    profile configured under `stage2_ab.channel_b.triage_posterior`,
+  `stage2_ab.channel_b.triage_posterior.num_rollouts` total peer rollout attempts:
+  - each attempt uses the ordinal temperature schedule configured by
+    `stage2_ab.channel_b.triage_posterior.rollout_temperatures`, or the
+    legacy-derived default schedule when that field is omitted,
   - repo-authored default pseudo-positive profiles SHOULD set `num_rollouts`
     to `4`,
-- after anchor and explorer rollouts complete bounded salvage, strict record
-  acceptance, and bbox-valid filtering, Channel-B preparation MUST assemble one
-  duplicate-control evidence surface across:
-  - anchor objects that may survive or be suppressed,
-  - explorer evidence that may trigger conservative crowd-safe exemptions,
+- after all peer attempts complete bounded salvage, strict record acceptance,
+  and bbox-valid filtering, Channel-B preparation MUST assemble each training
+  segment from one current attempt plus peer evidence,
 - duplicate-control MUST run once on that assembled evidence surface before any
   GT assignment occurs,
 - duplicate-like grouping MUST be deterministic and MUST operate on parsed
@@ -1592,21 +1682,21 @@ Normative behavior:
 - duplicate-like grouping MUST be able to merge local same-description repeats
   that are not strictly sequential neighbors in emission order,
 - GT-backed semantics apply only after duplicate-control has already reduced the
-  anchor survivor set and MUST inherit the existing Channel-B accepted-clean
-  assignment + gating contract on that post-policy survivor set,
-- the final positive target MUST be built by editing the anchor clean sequence
-  rather than rebuilding a union order,
-- explorer-only non-GT-backed objects MUST be treated as dead by default,
-- a GT hit found only on one or more explorer views MUST project to
-  `recovered_fn`, not to anchor retention,
-- duplicate-like objects that are spatially spread or explorer-supported MUST
+  current attempt survivor set and MUST inherit the existing Channel-B
+  accepted-clean assignment + gating contract on that post-policy survivor set,
+- the final positive target MUST be built by editing the current attempt's clean
+  sequence rather than rebuilding a union order,
+- peer-only non-GT-backed objects MUST be treated as neutral/dead by default,
+- a GT hit found only on one or more peer attempts MUST project to
+  `recovered_fn`, not to current-attempt unlabeled-object retention,
+- duplicate-like objects that are spatially spread or peer-supported MUST
   be eligible for crowd-safe exemption rather than automatic duplicate
   suppression,
-- when `stage2_ab.channel_b.pseudo_positive.enabled=true` and the anchor view
-  fails to complete accepted-clean preparation, the sample MUST be dropped from
-  Channel-B training for that step,
+- when `stage2_ab.channel_b.pseudo_positive.enabled=true` and any rollout
+  attempt remains invalid after salvage, the step MUST fail fast or drop the
+  affected sample according to the authored invalid-rollout policy,
 - the enabled pseudo-positive contract MUST NOT use the canonical empty-prefix
-  fallback for malformed anchor preparation.
+  fallback for malformed rollout-attempt preparation.
 
 Typed duplicate-control config contract:
 - `stage2_ab.channel_b.duplicate_control` is the canonical authored mapping for
@@ -1617,26 +1707,27 @@ Typed duplicate-control config contract:
 - no other authored duplicate-control knobs are allowed in the first landing,
 - unknown keys under `stage2_ab.channel_b.duplicate_control` MUST fail fast.
 
-#### Scenario: Enabled pseudo-positive drops malformed anchor samples
+#### Scenario: Enabled pseudo-positive rejects malformed rollout attempts
 - **WHEN** `stage2_ab.channel_b.pseudo_positive.enabled=true`
-- **AND** the anchor rollout does not complete accepted-clean preparation for a
-  sample
-- **THEN** that sample is dropped from Channel-B training for the step
-- **AND** the trainer does not fall back to the empty-prefix FN-only path for
-  that sample.
+- **AND** a current rollout attempt does not complete accepted-clean preparation
+  for a sample
+- **THEN** only that current attempt is skipped from Channel-B training for the
+  step
+- **AND** peer attempts from the same sample can still train independently when
+  they complete accepted-clean preparation.
 
 #### Scenario: Local same-description duplicate cluster is collapsed before GT matching
-- **WHEN** an anchor rollout emits multiple same-description bbox objects that
+- **WHEN** a current rollout attempt emits multiple same-description bbox objects that
   form one deterministic local duplicate-like cluster
-- **AND** the assembled anchor plus explorer evidence does not trigger a
+- **AND** the assembled current plus peer evidence does not trigger a
   crowd-safe exemption
 - **THEN** the Channel-B preparation keeps one deterministic survivor on the
-  anchor surface before GT matching
+  current-attempt surface before GT matching
 - **AND** the remaining members are carried as duplicate-candidate
-  continuations rather than additional kept anchor objects.
+  continuations rather than additional kept current-attempt objects.
 
 #### Scenario: Spread-out same-description crowded objects avoid duplicate collapse targeting
-- **WHEN** an anchor rollout emits multiple same-description bbox objects that
+- **WHEN** a current rollout attempt emits multiple same-description bbox objects that
   are spatially separated enough to satisfy the crowd-safety rule
 - **THEN** Channel-B preparation does not force those objects into one
   duplicate-suppression cluster

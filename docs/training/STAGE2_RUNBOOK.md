@@ -66,11 +66,12 @@ Current internal ownership seams:
   `observability`, `artifacts`, and `runtime`
 - `stage2_ab.pipeline.objective[]` and `stage2_ab.pipeline.diagnostics[]` are required for active Stage-2 configs
 - Channel-A runs a single GT-anchored teacher-forced forward.
-- Channel-B keeps the rollout-aligned clean-prefix path.
+- Channel-B clean-prefix behavior is scoped to `token_ce` / `hard_sft`
+  baselines. Residual-state trie configs bypass the clean-prefix target path.
 - Channel-B final object sequencing is controlled by:
   - `stage2_ab.channel_b.insertion_order: tail_append | sorted`
   - default `tail_append` preserves the historical clean-prefix plus FN-tail path
-  - `sorted` applies a final top-left sort over the retained anchor objects plus FN objects before final teacher-forced serialization, and compact-full FN descriptions remain explicitly tagged for `rollout_fn_desc_weight`
+  - `sorted` applies a final top-left sort over retained current-attempt objects plus FN objects before final teacher-forced serialization, and compact-full FN descriptions remain explicitly tagged for `rollout_fn_desc_weight`
 - Channel-B duplicate control is configured only through:
   - `stage2_ab.channel_b.duplicate_control.iou_threshold`
   - `stage2_ab.channel_b.duplicate_control.center_radius_scale`
@@ -83,23 +84,25 @@ Current internal ownership seams:
   - `token_ce.application.preset: anchor_text_only`
   - `stage2_trie_ce.application.preset: rollout_trie_hard_ce`
   - `residual_set_correction.application.preset: rollout_self_prefix`
-  - `hard_sft.application.preset: selected_path`
+  - `hard_sft.application.preset: hard_sft`
+- `stage2_trie_ce` and `residual_set_correction` are aliases for the same
+  residual-state trie semantics. Both consume live Channel-B rollout attempts
+  and dynamic residual valid sets; neither uses privileged-rollout
+  multiple-positive supervision.
 - residual-set smoke handles live under
   `configs/stage2_two_channel/smoke/compact_full_residual_set_ckpt3664_hf_*.yaml`;
   they are tiny runnable checks for the correction-event path, not full validation or
   production-quality evidence.
-- `residual_set_correction` is an offline prepared-rollout Channel-B objective:
-  - `config.prepared_rollout_jsonl` is required and is resolved before trainer setup
-  - live rollout backend generation is bypassed for residual-set offline mode
-  - fixture `sample_id` values must match the runtime encoded dataset metadata
-    (`dataset` namespace plus `base_idx` for JSONL-backed samples); raw
-    `image_id` and `image_path` remain provenance/secondary lookup keys
-  - the current ckpt3664 smoke fixture path is
-    `output/stage2_ab/prepared_rollouts/train8_ckpt3664.jsonl`
-  - prepare deterministic fixture/preflight data with
-    `scripts/tools/prepare_stage2_residual_rollouts.py`
-  - live loss config consumes `lambda_type` and `lambda_inner`; the remaining
-    residual-set config keys belong to prepared-rollout/runtime construction
+- `stage2_trie_ce` / `residual_set_correction` is an online-learning
+  Channel-B objective:
+  - Channel-B always generates live rollout attempts from the current batch;
+    offline prepared-rollout JSONL inputs are no longer a supported code path.
+  - default UL promotion is strict 4-of-4 consensus:
+    `expected_num_rollouts: 4`, `ul_consensus_ratio: 1.0`,
+    `min_ul_valid_rollouts: 4`
+  - loss config consumes `lambda_type`, `lambda_inner`, and residual-set
+    runtime construction knobs such as `expected_num_rollouts`, `base_seed`,
+    UL thresholds, and `strict_builder_invariants`.
 - residual-set loss and telemetry are reported under
   `stage2_ab/channel_b/residual_set/`; key compact metrics include
   `sequence_count`, `atom_count`, `atom_weight_sum`, `sequence_loss`,
@@ -115,22 +118,28 @@ Current internal ownership seams:
   - adjacent-repulsion anti-copy loss and config knobs are no longer live training support
   - current configs must omit `adjacent_repulsion_*` keys; strict config parsing rejects them as unknown
   - duplicate-control diagnostics remain supported and are separate from the retired loss
-- Pseudo-positive mode keeps the one-forward contract:
+- Legacy pseudo-positive clean-prefix mode keeps the one-forward contract and is
+  mutually exclusive with residual-state trie objectives:
   - retained prefix objects share one global prefix structure CE surface through `token_ce.config.rollout_global_prefix_struct_ce_weight`
   - `matched_clean` -> coord + global prefix structure CE
   - `fn_injection` -> coord + FN desc CE
-  - selected `pseudo_positive` anchors -> coord + global prefix structure CE
-  - support-positive retained `shielded_anchor` objects that stay below promotion threshold -> support-weighted coord + global prefix structure CE
+  - selected `pseudo_positive` current-attempt objects -> coord + global prefix structure CE
+  - support-positive retained shield-only objects that stay below promotion threshold -> global prefix structure CE only; no desc, bbox, or coord positive supervision
   - cluster-demoted pseudo-positive candidates -> global prefix structure CE only
-  - duplicate control runs before GT matching and target realization on the assembled anchor + explorer evidence surface
+  - duplicate control runs before GT matching and target realization on the assembled current-attempt plus peer-attempt evidence surface
   - non-exempt duplicate-control non-survivors are removed from the clean
     prefix and tracked only through duplicate-control diagnostics
-  - `dead_anchor` -> no positive supervision, with duplicate-control suppression only
-  - pseudo-positive selection remains anchor-centric: candidates start from unmatched anchor clean objects with explorer support; explorer-only non-GT-backed objects are not promoted into prefix positives
+  - dead current-attempt object -> no positive supervision, with duplicate-control suppression only
+  - pseudo-positive selection is K-of-K peer consensus: an unlabeled object can
+    be promoted only when all rollout attempts point to the same unlabeled
+    region and normalized description
 - Default authored pseudo-positive profile:
   - `triage_posterior.num_rollouts: 4`
-  - `1` anchor + `3` explorers
-  - enabled `K=2` remains the explicit no-promotion control
+  - optional `triage_posterior.rollout_temperatures` supplies one broadcast
+    temperature or exactly K ordinal temperatures; omitted values broadcast
+    `triage_posterior.explorer_temperature` to every ordinal
+  - enabled `K<4` is rejected because pseudo-positive promotion requires full
+    4-of-4 consensus in the default profile
 - Enabled failure semantics:
   - `stage2_ab.channel_b.rollout_template_family: coordjson` is the explicit
     legacy rollout surface. It uses the legacy CoordJSON parser and records
@@ -146,18 +155,19 @@ Current internal ownership seams:
     `rollout_context: fallback_gt_fn_append_only`, and does not count as a valid
     rollout for readiness gates. Parser/template mismatches remain hard
     failures, not fallback cases.
-  - compact-full explorer rollouts that enter fallback remain visible in raw
-    rollout/fallback metrics, but they are excluded from posterior-support
-    denominators used for support rates, recovered-GT rates, and pseudo-positive
-    selection.
+  - compact-full peer attempts that enter fallback remain visible in raw
+    rollout/fallback metrics. They do not contribute positive support, while
+    pseudo-positive and recovered-GT support denominators remain the configured
+    peer-attempt count (`num_rollouts - 1`) so missing/fallback peers cannot
+    silently relax consensus.
   - compact-full Channel-B targets do not use CoordJSON tail-closure or
     semantic-stop supervision. Stop/closure metrics should be interpreted as
     CoordJSON-specific unless explicitly documented otherwise.
-  - malformed anchor preparation drops that sample from Channel-B training
-  - malformed explorer rollouts that remain invalid after salvage parsing abort the step by default only when pseudo-positive mode is enabled
+  - malformed current-attempt preparation drops that attempt/sample from Channel-B training
+  - malformed peer attempts that remain invalid after salvage parsing abort the step by default only when pseudo-positive mode is enabled
   - outside pseudo-positive mode, malformed rollouts fall back to the existing empty-prefix / FN-only handling instead of taking the invalid-rollout abort path
   - `stage2_ab.channel_b.invalid_rollout_policy: dump_and_continue` dumps and skips the offending pseudo-positive sample instead
-  - zero-object explorers remain valid zero-support evidence
+  - zero-object peer attempts remain valid zero-support evidence
 - deprecated authored knobs fail fast in active/training configs:
   - `custom.trainer_variant: rollout_matching_sft`
   - `custom.trainer_variant: stage2_rollout_aligned`
@@ -212,11 +222,114 @@ Assignment note:
 - A-only smoke: `configs/stage2_two_channel/smoke/a_only.yaml`
 - A-only center-size smoke: `configs/stage2_two_channel/smoke/a_only_center_size_2steps.yaml`
 - Production-like smoke: `configs/stage2_two_channel/smoke/ab_mixed_20steps.yaml`
+- Residual-state trie startup smoke:
+  `configs/stage2_two_channel/smoke/compact_full_residual_set_ckpt3664_hf_1step.yaml`
+- `stage2_trie_ce` alias train8 overfit probe:
+  `configs/stage2_two_channel/smoke/compact_full_et_rmp_ce_ckpt3664_hf_coco80_view_overfit_train8_noeval_64steps_stage2_trie_tail_append_zero_fp.yaml`
+- Decode-batch=4 train128/val64 runtime gate:
+  `configs/stage2_two_channel/smoke/compact_full_et_rmp_ce_ckpt3664_hf_coco80_view_train128_val64_4steps_decode4_hf_gate.yaml`
+- Residual-state trie train128/val64 mini matrix:
+  - H1 tail-append + weak FP 0.02:
+    `configs/stage2_two_channel/smoke/compact_full_et_rmp_ce_ckpt3664_hf_coco80_view_train128_val64_32steps_stage2_trie_tail_append_weak_fp_w0p02_lr1e5_decode4.yaml`
+  - H2 sorted + zero FP:
+    `configs/stage2_two_channel/smoke/compact_full_et_rmp_ce_ckpt3664_hf_coco80_view_train128_val64_32steps_stage2_trie_sorted_zero_fp_lr1e5_decode4.yaml`
+  - H3 tail-append + zero FP:
+    `configs/stage2_two_channel/smoke/compact_full_et_rmp_ce_ckpt3664_hf_coco80_view_train128_val64_32steps_stage2_trie_tail_append_zero_fp_lr1e5_decode4.yaml`
+  - H4 sorted + weak FP 0.02:
+    `configs/stage2_two_channel/smoke/compact_full_et_rmp_ce_ckpt3664_hf_coco80_view_train128_val64_32steps_stage2_trie_sorted_weak_fp_w0p02_lr1e5_decode4.yaml`
 - Pseudo-positive smoke: `configs/stage2_two_channel/smoke/b_majority_coco1024_pseudo_positive_4steps.yaml`
 - Enabled `K=2` pseudo-positive control smoke: `configs/stage2_two_channel/smoke/b_majority_coco1024_pseudo_positive_k2_4steps.yaml`
 - Server-mode eval smoke: `configs/stage2_two_channel/smoke/b_majority_coco1024_triage_posterior_vllm_server_6srv2lr_eval_4steps.yaml`
 
 ## Launch Patterns
+
+### Train128/Val64 Decode4 Mini Matrix
+
+This matrix is a two-stage diagnostic. First run the live Channel-B decode
+gate to prove DDP plus batch decode plus eval artifacts. Only after the gate is
+clean should the residual-state trie H-runs be treated as model-training
+evidence.
+
+Config-only checks:
+
+```bash
+PYTHONPATH=. conda run -n ms python -m src.sft \
+  --config configs/stage2_two_channel/smoke/compact_full_et_rmp_ce_ckpt3664_hf_coco80_view_train128_val64_4steps_decode4_hf_gate.yaml \
+  --cfg-only
+
+PYTHONPATH=. CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 \
+  conda run --no-capture-output -n ms torchrun \
+  --nproc_per_node=8 --master_addr=127.0.0.1 --master_port=29650 \
+  -m src.sft \
+  --config configs/stage2_two_channel/smoke/compact_full_et_rmp_ce_ckpt3664_hf_coco80_view_train128_val64_4steps_decode4_hf_gate.yaml \
+  --cfg-only
+```
+
+G0 runtime gate:
+
+```bash
+PYTHONPATH=. OMP_NUM_THREADS=8 TORCH_NCCL_ASYNC_ERROR_HANDLING=1 \
+PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True COORDEXP_TRAIN_HEARTBEAT=1 \
+CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 \
+conda run --no-capture-output -n ms torchrun \
+  --nproc_per_node=8 --master_addr=127.0.0.1 --master_port=29650 \
+  -m src.sft \
+  --config configs/stage2_two_channel/smoke/compact_full_et_rmp_ce_ckpt3664_hf_coco80_view_train128_val64_4steps_decode4_hf_gate.yaml
+```
+
+The gate config uses `rollout_matching.rollout_backend: hf` for the current
+diagnostic round. This still exercises live Channel-B decode, DDP, batch
+decode size 4, and eval artifact materialization. Validate vLLM server or
+colocate mode in a separate gate before claiming vLLM production readiness.
+The train128/val64 decode4 configs set
+`stage2_ab.channel_b.ddp_phase_timeout_s: 600` because HF batch decode and
+target construction can create substantial rank skew before the learner step.
+Post-rollout packing is DDP-scheduled: each rank first plans its local packs,
+the trainer gathers local pack counts, and all ranks execute the same
+`global_slot_count`. Ranks with fewer local packs use front-padded zero-weight
+shadow slots before their real packs, so DDP forward/backward ordering remains
+aligned and the final sync slot is reached together. A rank with zero local
+packs while peers have trainable packs fails fast after pack-count gather; that
+is treated as a target-construction/fallback data-flow bug, not as a valid empty
+training step. The configs also set `global_max_length: 20000` to reduce
+avoidable pack splits; DDP safety must come from the shared slot schedule rather
+than from assuming equal rank-local pack counts.
+
+Pass criteria:
+
+- train and eval complete without DDP timeout or barrier hang
+- batch metrics include `stage2/raw_rollouts`, `rollout/backend_hf`, and
+  `rollout/template_family_compact_full`
+- batch metrics include pack-schedule counters such as
+  `packing/post_rollout_global_slot_count` and
+  `packing/post_rollout_empty_slot_count`
+- `prompt_tok_mismatch_total == 0`
+- eval artifacts are materialized, especially `gt_vs_pred_scored.jsonl`
+
+First-wave 4+4 layout once G0 and online rollout validation pass:
+
+```bash
+PYTHONPATH=. OMP_NUM_THREADS=8 TORCH_NCCL_ASYNC_ERROR_HANDLING=1 \
+PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True COORDEXP_TRAIN_HEARTBEAT=1 \
+CUDA_VISIBLE_DEVICES=0,1,2,3 \
+conda run --no-capture-output -n ms torchrun \
+  --nproc_per_node=4 --master_addr=127.0.0.1 --master_port=29651 \
+  -m src.sft \
+  --config configs/stage2_two_channel/smoke/compact_full_et_rmp_ce_ckpt3664_hf_coco80_view_train128_val64_32steps_stage2_trie_tail_append_weak_fp_w0p02_lr1e5_decode4.yaml
+
+PYTHONPATH=. OMP_NUM_THREADS=8 TORCH_NCCL_ASYNC_ERROR_HANDLING=1 \
+PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True COORDEXP_TRAIN_HEARTBEAT=1 \
+CUDA_VISIBLE_DEVICES=4,5,6,7 \
+conda run --no-capture-output -n ms torchrun \
+  --nproc_per_node=4 --master_addr=127.0.0.1 --master_port=29652 \
+  -m src.sft \
+  --config configs/stage2_two_channel/smoke/compact_full_et_rmp_ce_ckpt3664_hf_coco80_view_train128_val64_32steps_stage2_trie_sorted_zero_fp_lr1e5_decode4.yaml
+```
+
+Monitor recall first, then F1, with precision interpreted cautiously because
+the standard COCO labels may be incomplete. If train recall does not rise,
+audit live rollout generation, response-token fidelity, residual target
+construction, and loss/gradient flow before trying a hotter learning rate.
 
 ### Direct Learner Run
 
@@ -242,15 +355,16 @@ Legacy center-size experiment note:
 
 For the first enabled runs, verify:
 
-- `stage2/raw_rollouts` reflects `1 + (K-1)` rollout execution
+- `stage2/raw_rollouts` reflects `K` rollout attempts per source sample
 - `train/triage/pseudo_positive_selected_count` is non-zero on at least some dense scenes
-- `train/triage/unlabeled_consistent_count` remains the total shielded-anchor count
-- `train/triage/pseudo_positive_subthreshold_count` currently mirrors that retained shielded-anchor total; use `train/triage/pseudo_positive_cluster_demoted_count` to separate cluster losers from plain below-threshold support-positive anchors
-- `rollout/explorer/*` remains interpretable as mean-over-valid-explorer-view aggregates
+- `train/triage/shield_only_count` remains the total shield-only count
+- `train/triage/pseudo_positive_subthreshold_count` currently mirrors that retained shield-only total; use `train/triage/pseudo_positive_cluster_demoted_count` to separate cluster losers from plain below-threshold support-positive current-attempt objects
+- `rollout/peer/*` remains interpretable as mean-over-valid-peer-view aggregates; legacy `rollout/explorer/*` mirrors it for compatibility only
 - `dup/raw/duplicate_like_max_cluster_size` and `dup/raw/desc_entropy` move on hard duplicate-collapse scenes before the additive suppression counters do
 - `stage2_ab/channel_b/dup/N_clusters_suppressed` and `stage2_ab/channel_b/dup/N_objects_suppressed` remain sparse policy counters rather than raw pathology gauges
 - duplicate-control diagnostics remain sparse; do not expect every suppressed
-  object or dead anchor to produce a boundary-local diagnostic record
+  object or dead current-attempt object to produce a boundary-local diagnostic
+  record
 
 Regression gate for Stage-2 objective cleanup:
 

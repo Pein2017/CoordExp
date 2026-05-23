@@ -22,6 +22,21 @@ The existing `add-stage2-residual-set-ul-correction` change is reused and
 rewritten. Older Stage-1 trie-marginal artifacts and older residual-set drafts
 are treated as superseded background, not as normative contract.
 
+### Trie / Multiple-Positive Equivalence Correction
+
+Stage-2 trie and residual-set correction are the same semantic object: a
+residual-state dynamic valid set over the actions still legal after one
+rollout attempt's own prefix. The public module names `stage2_trie_ce` and
+`residual_set_correction` are compatibility-facing aliases for that object.
+
+The earlier repaired-candidate plan that merged alternatives around one
+privileged segment or rollout ordinal is a semantic drift and is superseded. A
+single rollout may not define the coordinate system for multiple-positive
+supervision. Each retained rollout attempt is an independent self-prefix
+training sequence; multiple-positive means the current residual state exposes
+multiple valid next actions, not that other rollouts are forced to share one
+rollout's token prefix.
+
 ### Prepared Rollout Records
 
 New prepared rollout JSONL records must provide:
@@ -35,10 +50,10 @@ generation_config_hash
 sample/image provenance
 ```
 
-Residual-set configs name this file at:
+Residual trie configs name this file at:
 
 ```text
-stage2_ab.pipeline.objective[name=residual_set_correction].config.prepared_rollout_jsonl
+stage2_ab.pipeline.objective[name=residual_set_correction|stage2_trie_ce].config.prepared_rollout_jsonl
 ```
 
 `response_token_ids` are required for new data. Raw text is diagnostic and
@@ -246,8 +261,8 @@ UL mining is collect-then-classify:
 1. aggregate K rollout attempts after exact dedup;
 2. parse rows and collect legal unmatched non-duplicate proposals;
 3. cluster same-normalized-description proposals across distinct rollouts;
-4. require cluster IoU `>= 0.9`, `K_valid >= 2`, support from at least two
-   distinct rollout ids, and support/K_valid `>= 1.0` by default;
+4. require cluster IoU `>= 0.9`, `K_valid >= 4`, support from every valid
+   retained rollout id, and support/K_valid `>= 1.0` by default;
 5. reject GT conflicts and near-GT gray-zone clusters;
 6. promote remaining passing clusters as sample-local UL supervision objects
    with default weight `0.5`.
@@ -271,6 +286,9 @@ High UL/GT ratio is diagnosis-only.
 Consensus admits a UL cluster; it does not define one canonical training bbox.
 For rollout attempt `k`, the promoted UL supervision object uses rollout `k`'s
 own member bbox/desc. The medoid/representative bbox is review metadata only.
+If exact duplicate removal or invalid attempts leaves fewer than four valid
+rollout ids, default v1 behavior is no pseudo-positive promotion for that
+sample.
 
 UL review rows are written to:
 
