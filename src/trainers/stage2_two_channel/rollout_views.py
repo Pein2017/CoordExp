@@ -264,6 +264,9 @@ def _build_compact_full_rollout_view(
 ) -> Dict[str, Any]:
     resp_ids, resp_text, rollout_decode_mode, prompt_ids = rollout_result
     resp_ids_local = [int(t) for t in resp_ids]
+    strict_rollout_preflight = bool(
+        getattr(rollout_template_policy, "strict_rollout_preflight", False)
+    )
     eos_id = getattr(tokenizer, "eos_token_id", None)
     truncated_by_budget = False
     if int(max_new_tokens) > 0 and int(len(resp_ids_local)) >= int(max_new_tokens):
@@ -339,6 +342,27 @@ def _build_compact_full_rollout_view(
         duplicate_diagnostics_fn=duplicate_diagnostics_fn,
     )
     fallback_applies = bool(parse.invalid_rollout or parse.empty_valid_object_set)
+    if strict_rollout_preflight:
+        strict_reasons: List[str] = []
+        if bool(parse.truncated):
+            strict_reasons.append("truncated")
+        if fallback_applies:
+            strict_reasons.append(
+                f"fallback(reason={str(parse.fallback_reason or 'unknown')})"
+            )
+        dropped_invalid = int(getattr(parse, "dropped_invalid", 0) or 0)
+        dropped_ambiguous = int(getattr(parse, "dropped_ambiguous", 0) or 0)
+        if dropped_invalid:
+            strict_reasons.append(f"dropped_invalid={dropped_invalid}")
+        if dropped_ambiguous:
+            strict_reasons.append(f"dropped_ambiguous={dropped_ambiguous}")
+        if drop_bbox_invalid:
+            strict_reasons.append(f"dropped_bbox_invalid={int(drop_bbox_invalid)}")
+        if strict_reasons:
+            raise ValueError(
+                "compact-full strict rollout preflight rejected rollout "
+                f"source_label={source_label} reasons={','.join(strict_reasons)}"
+            )
 
     compact_full_object_spans: List[CompactFullObjectTokenSpan] = []
     compact_full_span_extraction_failed = False
@@ -354,6 +378,27 @@ def _build_compact_full_rollout_view(
             compact_full_span_extraction_failed = True
             compact_full_span_error = str(exc)
             drop_reasons["compact_full_span_extraction_failed"] = 1
+            if strict_rollout_preflight:
+                raise ValueError(
+                    "compact-full strict rollout preflight rejected rollout "
+                    f"source_label={source_label} "
+                    f"reasons=dropped_compact_full_span_extraction_failed "
+                    f"error={compact_full_span_error}"
+                ) from exc
+            parse = replace(
+                parse,
+                invalid_rollout=True,
+                fallback_reason="compact_full_span_extraction_failed",
+                dropped_invalid=int(getattr(parse, "dropped_invalid", 0) or 0) + 1,
+                dropped_invalid_by_reason={
+                    **dict(getattr(parse, "dropped_invalid_by_reason", {}) or {}),
+                    "compact_full_span_extraction_failed": 1,
+                },
+            )
+            fallback_applies = True
+            duplicate_control_objects_raw = []
+            duplicate_metrics = duplicate_diagnostics_fn([])
+            parsed_bbox_objects_raw = []
 
     return {
         "prompt_ids": [int(t) for t in prompt_ids],

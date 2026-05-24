@@ -25,6 +25,7 @@ def test_compact_full_policy_is_explicit_and_unconstrained_by_default() -> None:
     assert policy.decode_policy == "unconstrained"
     assert policy.invalid_rollout_policy == "fallback_gt_fn_append_only"
     assert policy.fallback_loss_weight == 1.0
+    assert policy.strict_rollout_preflight is False
     assert policy.diagnostics_metadata == {
         "resolved_rollout_template": "compact_full",
         "rollout_parser_id": "compact_full",
@@ -32,6 +33,7 @@ def test_compact_full_policy_is_explicit_and_unconstrained_by_default() -> None:
         "rollout_decode_policy": "unconstrained",
         "invalid_rollout_policy": "fallback_gt_fn_append_only",
         "fallback_loss_weight": 1.0,
+        "strict_rollout_preflight": False,
     }
 
 
@@ -41,12 +43,14 @@ def test_compact_full_policy_accepts_explicit_fallback_runtime_knobs() -> None:
         rollout_decode_policy="compact-grammar",
         invalid_rollout_policy="fallback_gt_fn_append_only",
         fallback_loss_weight=0.5,
+        strict_rollout_preflight=True,
     )
 
     assert policy.template_family == "compact_full"
     assert policy.decode_policy == "compact_grammar"
     assert policy.invalid_rollout_policy == "fallback_gt_fn_append_only"
     assert policy.fallback_loss_weight == pytest.approx(0.5)
+    assert policy.strict_rollout_preflight is True
 
 
 @pytest.mark.parametrize("invalid_rollout_policy", ["abort", "dump_and_continue"])

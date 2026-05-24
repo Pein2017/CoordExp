@@ -111,6 +111,19 @@ OBJECTIVE_MODULE_CATALOG: Final[dict[str, ObjectiveModuleDefinition]] = {
         ),
         emission_group="text",
     ),
+    "schema_format_ce": ObjectiveModuleDefinition(
+        family="text",
+        semantic_role="schema_format_ce",
+        config_keys=frozenset({"schema_ce_weight"}),
+        application_presets=frozenset({"rollout_schema_format"}),
+        projected_atoms=(
+            ObjectiveLossAtomDefinition(
+                atom_name="schema_format_ce",
+                state_key="schema_format_ce_contrib",
+            ),
+        ),
+        emission_group="text",
+    ),
     "residual_set_correction": ObjectiveModuleDefinition(
         family="text",
         semantic_role="residual_set_correction",

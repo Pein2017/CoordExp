@@ -76,6 +76,7 @@ STAGE2_CHANNEL_B_FP_POLICIES: set[str] = {
 }
 STAGE2_TRIE_CE_MODULE_NAME = "stage2_trie_ce"
 STAGE2_TRIE_CE_APPLICATION_PRESETS: set[str] = {"rollout_trie_hard_ce"}
+STAGE2_SCHEMA_FORMAT_CE_MODULE_NAME = "schema_format_ce"
 STAGE2_RESIDUAL_SET_MODULE_NAME = "residual_set_correction"
 STAGE2_RESIDUAL_SET_APPLICATION_PRESETS: set[str] = {"rollout_self_prefix"}
 STAGE2_RESIDUAL_TRIE_MODULE_NAMES: set[str] = {
@@ -2587,6 +2588,7 @@ class Stage2ABChannelBConfig:
     rollout_decode_policy: str = "legacy_coordjson"
     fallback_loss_weight: float = 1.0
     invalid_rollout_policy: str = "abort"
+    strict_rollout_preflight: bool = False
     insertion_order: str = "tail_append"
     fp_policy: Stage2ABChannelBFalsePositivePolicyConfig = field(
         default_factory=Stage2ABChannelBFalsePositivePolicyConfig
@@ -2699,16 +2701,23 @@ class Stage2ABChannelBConfig:
         fallback_loss_weight_raw = data.pop(
             "fallback_loss_weight", cls.fallback_loss_weight
         )
+        strict_rollout_preflight_raw = data.pop(
+            "strict_rollout_preflight", cls.strict_rollout_preflight
+        )
         rollout_template_policy = resolve_stage2_rollout_template_policy(
             rollout_template_family_raw,
             rollout_decode_policy=rollout_decode_policy_raw,
             invalid_rollout_policy=invalid_rollout_policy_raw,
             fallback_loss_weight=fallback_loss_weight_raw,
+            strict_rollout_preflight=strict_rollout_preflight_raw,
         )
         rollout_template_family = rollout_template_policy.template_family
         rollout_decode_policy = rollout_template_policy.decode_policy
         invalid_rollout_policy = rollout_template_policy.invalid_rollout_policy
         fallback_loss_weight = float(rollout_template_policy.fallback_loss_weight)
+        strict_rollout_preflight = bool(
+            rollout_template_policy.strict_rollout_preflight
+        )
 
         insertion_order_raw = data.pop(
             "insertion_order",
@@ -2787,6 +2796,7 @@ class Stage2ABChannelBConfig:
             rollout_decode_policy=rollout_decode_policy,
             fallback_loss_weight=fallback_loss_weight,
             invalid_rollout_policy=invalid_rollout_policy,
+            strict_rollout_preflight=strict_rollout_preflight,
             insertion_order=insertion_order,
             fp_policy=fp_policy,
             pseudo_positive=pseudo_positive,
@@ -2969,7 +2979,17 @@ class Stage2PipelineConfig:
 
         canonical_objective_order = ["token_ce"]
         trie_ce_objective_order = ["token_ce", STAGE2_TRIE_CE_MODULE_NAME]
+        trie_ce_schema_objective_order = [
+            "token_ce",
+            STAGE2_TRIE_CE_MODULE_NAME,
+            STAGE2_SCHEMA_FORMAT_CE_MODULE_NAME,
+        ]
         residual_set_objective_order = ["token_ce", STAGE2_RESIDUAL_SET_MODULE_NAME]
+        residual_set_schema_objective_order = [
+            "token_ce",
+            STAGE2_RESIDUAL_SET_MODULE_NAME,
+            STAGE2_SCHEMA_FORMAT_CE_MODULE_NAME,
+        ]
         trie_ce_residual_set_objective_order = [
             "token_ce",
             STAGE2_TRIE_CE_MODULE_NAME,
@@ -2980,14 +3000,18 @@ class Stage2PipelineConfig:
         if authored_objective_order not in (
             canonical_objective_order,
             trie_ce_objective_order,
+            trie_ce_schema_objective_order,
             residual_set_objective_order,
+            residual_set_schema_objective_order,
             trie_ce_residual_set_objective_order,
             hard_sft_objective_order,
         ):
             raise ValueError(
                 "stage2_ab.pipeline.objective must use the canonical module order "
                 f"{canonical_objective_order}, {trie_ce_objective_order}, "
+                f"{trie_ce_schema_objective_order}, "
                 f"{residual_set_objective_order}, "
+                f"{residual_set_schema_objective_order}, "
                 f"{trie_ce_residual_set_objective_order}, "
                 f"or {hard_sft_objective_order}; "
                 f"got {authored_objective_order}"

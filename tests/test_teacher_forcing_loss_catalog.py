@@ -75,6 +75,18 @@ def test_residual_set_module_catalog_uses_strict_v1_config_keys() -> None:
     ) == (("residual_state_trie_ce", "stage2_trie_ce_contrib"),)
 
 
+def test_schema_format_ce_catalog_exposes_struct_only_atom() -> None:
+    definition = OBJECTIVE_MODULE_CATALOG["schema_format_ce"]
+
+    assert definition.semantic_role == "schema_format_ce"
+    assert definition.config_keys == frozenset({"schema_ce_weight"})
+    assert definition.application_presets == frozenset({"rollout_schema_format"})
+    assert tuple(
+        (atom.atom_name, atom.state_key)
+        for atom in definition.projected_atoms
+    ) == (("schema_format_ce", "schema_format_ce_contrib"),)
+
+
 def test_loss_catalog_drives_diagnostic_registry_allowlists() -> None:
     for name, definition in DIAGNOSTIC_MODULE_CATALOG.items():
         assert DIAGNOSTIC_CONFIG_ALLOWLIST[name] == set(definition.config_keys)

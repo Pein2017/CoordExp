@@ -48,6 +48,13 @@ def run_token_ce_module(
             1.0,
         ),
     )
+    schema_struct_ce_weight = max(
+        0.0,
+        _coerce_float(
+            cfg.get("schema_ce_weight", 1.0),
+            1.0,
+        ),
+    )
     labels_masked = torch.full_like(input_ids, -100)
     base_weights = input_ids.new_zeros(input_ids.shape, dtype=torch.float32)
     struct_weights = input_ids.new_zeros(input_ids.shape, dtype=torch.float32)
@@ -120,11 +127,13 @@ def run_token_ce_module(
                     labels_masked[b, p] = input_ids[b, p]
                     base_weights[b, p] = max(
                         float(base_weights[b, p].item()),
-                        float(global_prefix_struct_ce_weight),
+                        float(global_prefix_struct_ce_weight)
+                        * float(schema_struct_ce_weight),
                     )
                     struct_weights[b, p] = max(
                         float(struct_weights[b, p].item()),
-                        float(global_prefix_struct_ce_weight),
+                        float(global_prefix_struct_ce_weight)
+                        * float(schema_struct_ce_weight),
                     )
 
         tail_ignore = {int(x) for x in tail_ignore_pos if int(x) >= 0}
@@ -165,8 +174,8 @@ def run_token_ce_module(
                 base_weights[b, p] = float(w_desc)
                 desc_weights[b, p] = float(w_desc)
             else:
-                base_weights[b, p] = 1.0
-                struct_weights[b, p] = 1.0
+                base_weights[b, p] = float(schema_struct_ce_weight)
+                struct_weights[b, p] = float(schema_struct_ce_weight)
 
         for rel in tail_closure:
             p = int(tail_start + rel)
@@ -175,8 +184,14 @@ def run_token_ce_module(
             if int(input_ids[b, p].item()) in coord_id_set:
                 continue
             labels_masked[b, p] = input_ids[b, p]
-            base_weights[b, p] = max(float(base_weights[b, p].item()), 1.0)
-            struct_weights[b, p] = max(float(struct_weights[b, p].item()), 1.0)
+            base_weights[b, p] = max(
+                float(base_weights[b, p].item()),
+                float(schema_struct_ce_weight),
+            )
+            struct_weights[b, p] = max(
+                float(struct_weights[b, p].item()),
+                float(schema_struct_ce_weight),
+            )
 
     bsz, _, vocab = logits_ce.shape
     logits_next = logits_ce[:, :-1, :]

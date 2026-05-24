@@ -209,11 +209,10 @@ def finalize_channel_b_pipeline_step(
             f"seen_raw={int(seen_raw)} target={int(total_segments_target)}"
         )
 
-    if int(total_segments_target) > 0 and int(seen_segments) > int(total_segments_target):
-        raise ValueError(
-            "stage2-ab Channel-B pipeline produced too many segments: "
-            f"seen_segments={int(seen_segments)} target={int(total_segments_target)}"
-        )
+    # `total_segments_target` is the raw-rollout budget. Residual-trie and
+    # self-prefix objectives may legitimately emit multiple post-rollout
+    # teacher-forcing segments per raw rollout, so `seen_segments` is
+    # telemetry, not a cardinality guard.
 
     if loss_total is None:
         raise AssertionError("stage2-ab Channel-B pipelined step produced no packs")

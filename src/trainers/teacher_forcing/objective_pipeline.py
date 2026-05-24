@@ -12,7 +12,7 @@ from .contracts import (
     TeacherForcingContext,
 )
 from .module_registry import DIAGNOSTIC_MODULE_CATALOG, OBJECTIVE_MODULE_CATALOG
-from .modules import run_token_ce_module
+from .modules import run_schema_format_ce_module, run_token_ce_module
 
 logger = logging.getLogger(__name__)
 
@@ -135,6 +135,10 @@ def run_teacher_forcing_pipeline(
             spec=spec,
         ),
         "stage2_trie_ce": lambda spec: _run_stage2_residual_trie_ce_module(
+            context=context,
+            spec=spec,
+        ),
+        "schema_format_ce": lambda spec: run_schema_format_ce_module(
             context=context,
             spec=spec,
         ),

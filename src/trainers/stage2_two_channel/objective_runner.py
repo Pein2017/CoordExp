@@ -156,6 +156,7 @@ def build_stage2_core_loss_logs(
                 key_s.startswith("stage2_trie/")
                 or key_s.startswith("stage2_ab/channel_b/residual_set/")
                 or key_s in {"loss/B/stage2_trie_ce", "loss/stage2_trie_ce"}
+                or key_s.startswith("loss/schema_format")
             ):
                 continue
             stage2_logs[key_s] = float(value or 0.0)

@@ -191,7 +191,7 @@ def test_compact_full_rollout_codec_salvages_valid_rows_for_training() -> None:
     )
 
 
-def test_compact_full_rollout_view_does_not_crash_on_salvaged_rows() -> None:
+def test_compact_full_rollout_view_drops_salvaged_span_mismatch_attempt() -> None:
     tok = _MiniTokenizer()
     raw = (
         f"{OBJECT_REF_START_TOKEN}cat{BOX_START_TOKEN}"
@@ -216,11 +216,70 @@ def test_compact_full_rollout_view_does_not_crash_on_salvaged_rows() -> None:
         rollout_template_policy=resolve_stage2_rollout_template_policy("compact_full"),
     )
 
-    assert view["invalid_rollout"] == 0
+    assert view["invalid_rollout"] == 1
+    assert view["fallback_reason"] == "compact_full_span_extraction_failed"
+    assert view["rollout_counts_as_valid_rollout"] == 0
     assert view["pred_objects"] == 1
+    assert view["n_valid_pred"] == 0
+    assert view["parsed_bbox_objects_raw"] == []
     assert view["compact_full_span_extraction_failed"] == 1
     assert view["compact_full_object_spans"] == []
     assert view["drop_reasons"]["compact_full_span_extraction_failed"] == 1
+
+
+def test_compact_full_strict_preflight_rejects_salvaged_rows() -> None:
+    tok = _MiniTokenizer()
+    raw = (
+        f"{OBJECT_REF_START_TOKEN}cat{BOX_START_TOKEN}"
+        "<|coord_1|><|coord_2|><|coord_3|><|coord_4|>"
+        f"{OBJECT_REF_START_TOKEN}dog{BOX_START_TOKEN}"
+        "bad<|coord_10|><|coord_20|><|coord_30|><|coord_40|>"
+    )
+    token_ids = tok.encode(raw, add_special_tokens=False)
+
+    with pytest.raises(ValueError, match="strict rollout preflight.*dropped"):
+        build_channel_b_rollout_view(
+            tokenizer=tok,
+            object_field_order="desc_first",
+            coord_id_to_bin={},
+            duplicate_iou_threshold=0.5,
+            center_radius_scale=0.5,
+            max_new_tokens=256,
+            rollout_result=(token_ids, raw, "unit", []),
+            source_label="anchor",
+            parse_rollout_for_matching_fn=None,
+            points_from_coord_tokens_fn=None,
+            duplicate_diagnostics_fn=lambda *_args, **_kwargs: {},
+            rollout_template_policy=resolve_stage2_rollout_template_policy(
+                "compact_full",
+                strict_rollout_preflight=True,
+            ),
+        )
+
+
+def test_compact_full_strict_preflight_rejects_fallback_output() -> None:
+    tok = _MiniTokenizer()
+    raw = "not compact output"
+    token_ids = tok.encode(raw, add_special_tokens=False)
+
+    with pytest.raises(ValueError, match="strict rollout preflight.*fallback"):
+        build_channel_b_rollout_view(
+            tokenizer=tok,
+            object_field_order="desc_first",
+            coord_id_to_bin={},
+            duplicate_iou_threshold=0.5,
+            center_radius_scale=0.5,
+            max_new_tokens=256,
+            rollout_result=(token_ids, raw, "unit", []),
+            source_label="anchor",
+            parse_rollout_for_matching_fn=None,
+            points_from_coord_tokens_fn=None,
+            duplicate_diagnostics_fn=lambda *_args, **_kwargs: {},
+            rollout_template_policy=resolve_stage2_rollout_template_policy(
+                "compact_full",
+                strict_rollout_preflight=True,
+            ),
+        )
 
 
 @pytest.mark.parametrize(

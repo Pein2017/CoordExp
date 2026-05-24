@@ -9,6 +9,9 @@ from src.trainers.teacher_forcing.contracts import (
     TeacherForcingContext,
 )
 from src.trainers.teacher_forcing.modules.token_ce import run_token_ce_module
+from src.trainers.teacher_forcing.modules.schema_format_ce import (
+    run_schema_format_ce_module,
+)
 
 
 def test_token_ce_chunked_matches_dense_reference() -> None:
@@ -134,6 +137,7 @@ def test_token_ce_prefix_desc_pos_uses_fn_desc_weight_without_struct_ce() -> Non
     input_ids = torch.tensor([[7, 11, 12, 13, 14]], dtype=torch.long)
     logits = torch.zeros(1, input_ids.shape[1], vocab, dtype=torch.float32)
     logits[:, :, 0] = 5.0
+    logits.requires_grad_()
 
     context = TeacherForcingContext(
         channel="B",
@@ -182,3 +186,57 @@ def test_token_ce_prefix_desc_pos_uses_fn_desc_weight_without_struct_ce() -> Non
     assert bool(token_type_masks["struct"][0, 2].item()) is False
     assert out.metrics["loss/struct_ce"] == pytest.approx(0.0)
     assert out.metrics["loss/desc_ce"] > 0.0
+
+
+def test_schema_format_ce_supervises_only_compact_schema_tokens() -> None:
+    vocab = 32
+    input_ids = torch.tensor([[7, 11, 12, 13, 14]], dtype=torch.long)
+    logits = torch.zeros(1, input_ids.shape[1], vocab, dtype=torch.float32)
+    logits[:, :, 0] = 5.0
+    logits.requires_grad_()
+
+    context = TeacherForcingContext(
+        channel="B",
+        registry_context="rollout",
+        input_ids=input_ids,
+        logits=logits,
+        logits_ce=logits,
+        meta=[
+            {
+                "prompt_len": 1,
+                "prefix_len": 3,
+                "train_len": 4,
+                "tail_ignore_pos": [],
+                "tail_desc_pos": [1],
+                "tail_closure_pos": [],
+                "prefix_desc_pos": [1],
+                "prefix_desc_weights": [9.0],
+                "drop_invalid_total": 0,
+            }
+        ],
+        coord_token_ids=[],
+        temperature=1.0,
+    )
+    spec = PipelineModuleSpec(
+        name="schema_format_ce",
+        enabled=True,
+        weight=1.0,
+        channels=("B",),
+        config={"schema_ce_weight": 0.5},
+    )
+
+    out = run_schema_format_ce_module(context=context, spec=spec)
+
+    labels_masked = out.state["labels_masked"]
+    weights_masked = out.state["weights_masked"]
+    assert int(labels_masked[0, 1].item()) == 11
+    assert int(labels_masked[0, 2].item()) == -100
+    assert int(labels_masked[0, 3].item()) == 13
+    assert int(labels_masked[0, 4].item()) == 14
+    assert float(weights_masked[0, 1].item()) == pytest.approx(0.5)
+    assert float(weights_masked[0, 2].item()) == pytest.approx(0.0)
+    assert float(weights_masked[0, 3].item()) == pytest.approx(0.5)
+    assert float(weights_masked[0, 4].item()) == pytest.approx(0.5)
+    assert out.metrics["loss/schema_format_ce"] > 0.0
+    assert out.metrics["loss/schema_format_desc_ce"] == pytest.approx(0.0)
+    assert out.state["schema_format_ce_contrib"].requires_grad

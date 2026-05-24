@@ -47,6 +47,9 @@ class Stage2RolloutTemplatePolicy:
         labeled diagnostic/control choice.
     :param invalid_rollout_policy: Policy used for invalid rollout outputs.
     :param fallback_loss_weight: Loss weight applied to fallback targets.
+    :param strict_rollout_preflight: When true, reject compact-full rollout
+        salvage/fallback paths instead of silently converting them into
+        training targets.
     """
 
     template_family: Stage2RolloutTemplateFamily
@@ -55,6 +58,7 @@ class Stage2RolloutTemplatePolicy:
     decode_policy: Stage2RolloutDecodePolicy
     invalid_rollout_policy: str
     fallback_loss_weight: float = 1.0
+    strict_rollout_preflight: bool = False
 
     @property
     def diagnostics_metadata(self) -> dict[str, object]:
@@ -67,6 +71,7 @@ class Stage2RolloutTemplatePolicy:
             "rollout_decode_policy": self.decode_policy,
             "invalid_rollout_policy": self.invalid_rollout_policy,
             "fallback_loss_weight": float(self.fallback_loss_weight),
+            "strict_rollout_preflight": bool(self.strict_rollout_preflight),
         }
 
 
@@ -248,6 +253,7 @@ def resolve_stage2_rollout_template_policy(
     rollout_decode_policy: str | None = None,
     invalid_rollout_policy: str | None = None,
     fallback_loss_weight: float = 1.0,
+    strict_rollout_preflight: bool | str | int = False,
 ) -> Stage2RolloutTemplatePolicy:
     """Resolve the explicit Stage-2 rollout template policy.
 
@@ -276,6 +282,27 @@ def resolve_stage2_rollout_template_policy(
         raise ValueError("stage2_ab.channel_b.fallback_loss_weight must be finite")
     if resolved_fallback_loss_weight < 0.0:
         raise ValueError("stage2_ab.channel_b.fallback_loss_weight must be >= 0")
+    if isinstance(strict_rollout_preflight, bool):
+        resolved_strict_rollout_preflight = bool(strict_rollout_preflight)
+    elif isinstance(strict_rollout_preflight, int) and strict_rollout_preflight in {
+        0,
+        1,
+    }:
+        resolved_strict_rollout_preflight = bool(strict_rollout_preflight)
+    elif isinstance(strict_rollout_preflight, str):
+        strict_raw = strict_rollout_preflight.strip().lower()
+        if strict_raw in {"true", "1", "yes", "on"}:
+            resolved_strict_rollout_preflight = True
+        elif strict_raw in {"false", "0", "no", "off"}:
+            resolved_strict_rollout_preflight = False
+        else:
+            raise ValueError(
+                "stage2_ab.channel_b.strict_rollout_preflight must be boolean"
+            )
+    else:
+        raise TypeError(
+            "stage2_ab.channel_b.strict_rollout_preflight must be boolean"
+        )
 
     # normalize optional runtime policies
     decode_policy_raw = rollout_decode_policy
@@ -318,6 +345,7 @@ def resolve_stage2_rollout_template_policy(
             decode_policy=decode_policy,  # type: ignore[arg-type]
             invalid_rollout_policy=invalid_policy or FALLBACK_GT_FN_APPEND_ONLY,
             fallback_loss_weight=resolved_fallback_loss_weight,
+            strict_rollout_preflight=resolved_strict_rollout_preflight,
         )
 
     # resolve the explicit legacy CoordJSON surface
@@ -341,6 +369,7 @@ def resolve_stage2_rollout_template_policy(
             decode_policy="legacy_coordjson",
             invalid_rollout_policy=invalid_policy or "abort",
             fallback_loss_weight=resolved_fallback_loss_weight,
+            strict_rollout_preflight=resolved_strict_rollout_preflight,
         )
 
     raise ValueError(

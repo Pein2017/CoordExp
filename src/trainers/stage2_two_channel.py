@@ -2838,6 +2838,10 @@ class Stage2TwoChannelTrainer(
                 None,
             ),
             fallback_loss_weight=self._ab_channel_b_get("fallback_loss_weight", 1.0),
+            strict_rollout_preflight=self._ab_channel_b_get(
+                "strict_rollout_preflight",
+                False,
+            ),
         )
 
     def _resolve_stage2_channel_b_assignment_strategy(
