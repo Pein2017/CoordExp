@@ -207,51 +207,29 @@ def build_residual_set_target_ir(
                 )
             draft_role = next(iter(roles))
             live_role = _role_for_live_token_id(live_token_id, role_vocab=role_vocab)
-            role_matches_live = live_role is draft_role
-            valid_ids = (
-                frozenset((*valid_ids, live_token_id))
-                if role_matches_live
-                else frozenset({live_token_id})
-            )
-            selected_matches = tuple(
-                action
-                for action in draft.valid_actions
-                if int(action.token_id) == live_token_id
-            )
-            selected_action = (
-                selected_matches[0]
-                if role_matches_live and len(selected_matches) == 1
-                else replace(
-                    draft.valid_actions[0],
-                    token_id=live_token_id,
-                    token_role=live_role,
-                    coord_role=(
-                        draft.valid_actions[0].coord_role
-                        or "x1"
-                        if live_role is TokenRole.COORD
-                        else None
-                    ),
-                )
-            )
             if draft.selected_action is not None:
                 if draft.selected_action not in draft.valid_actions:
                     raise ValueError(
                         "residual_set correction selected_action must be one "
                         "member of valid_actions"
                     )
-            if role_matches_live and selected_action.token_role not in roles:
+                selected_action = draft.selected_action
+            else:
+                live_matches = tuple(
+                    action
+                    for action in draft.valid_actions
+                    if int(action.token_id) == live_token_id
+                )
+                selected_action = live_matches[0] if live_matches else draft.valid_actions[0]
+            if selected_action.token_role not in roles:
                 raise ValueError(
                     "residual_set correction selected_action token role must match "
                     "the draft valid actions"
                 )
-            coord_roles = (
-                frozenset({selected_action.coord_role})
-                if not role_matches_live and selected_action.coord_role is not None
-                else frozenset(
-                    action.coord_role
-                    for action in draft.valid_actions
-                    if action.coord_role is not None
-                )
+            coord_roles = frozenset(
+                action.coord_role
+                for action in draft.valid_actions
+                if action.coord_role is not None
             )
             if selected_action.token_role is TokenRole.COORD:
                 if coord_roles != frozenset({selected_action.coord_role}):
@@ -270,7 +248,7 @@ def build_residual_set_target_ir(
                 allowed_token_roles=frozenset({selected_action.token_role}),
                 selected_token_role=selected_action.token_role,
                 valid_token_ids=valid_ids,
-                selected_token_id=live_token_id,
+                selected_token_id=int(selected_action.token_id),
                 latent_valid_token_ids=valid_ids,
                 coverage_target_weights=None,
                 loss_tags=frozenset({"stage2", "channel_b", "residual_set"}),
@@ -284,6 +262,9 @@ def build_residual_set_target_ir(
                         "observed_token_id",
                         event.metadata.get("observed_token_id"),
                     ),
+                    live_token_id=live_token_id,
+                    live_token_role=live_role,
+                    selected_token_id=selected_action.token_id,
                     valid_ids=valid_ids,
                     valid_actions=draft.valid_actions,
                 ),
@@ -570,6 +551,9 @@ def _residual_atom_provenance(
     draft: Any,
     draft_index: int,
     observed_token_id: Any,
+    live_token_id: int,
+    live_token_role: TokenRole,
+    selected_token_id: int,
     valid_ids: frozenset[int],
     valid_actions: Sequence[Any],
 ) -> Mapping[str, Any]:
@@ -588,9 +572,14 @@ def _residual_atom_provenance(
         "rollout_id": _optional_str(rollout_id),
         "sample_id": event.sample_id,
         "anchor_position": _optional_int(anchor_position),
+        "live_token_id": int(live_token_id),
+        "live_token_role": str(live_token_role.value),
+        "target_token_mismatch": bool(int(selected_token_id) != int(live_token_id)),
         "valid_token_ids": tuple(sorted(valid_ids)),
         "support_provenance": _support_provenance_for_actions(valid_actions),
     }
+    if int(selected_token_id) != int(live_token_id):
+        provenance["allow_target_token_mismatch"] = True
     selected_object_id = draft.metadata.get("selected_object_id")
     if selected_object_id is not None:
         provenance["selected_object_id"] = str(selected_object_id)

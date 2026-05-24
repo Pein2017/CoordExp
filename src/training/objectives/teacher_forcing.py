@@ -207,9 +207,10 @@ def _validate_atom_structure(
         field_name="target position",
     )
     if atom.selected_token_id != live_token_id:
-        raise ValueError(
-            f"{prefix}: selected_token_id must match input_ids at target_position"
-        )
+        if not bool(atom.provenance.get("allow_target_token_mismatch", False)):
+            raise ValueError(
+                f"{prefix}: selected_token_id must match input_ids at target_position"
+            )
     if atom.selected_token_id not in atom.valid_token_ids:
         raise ValueError(f"{prefix}: selected_token_id must be in valid_token_ids")
 

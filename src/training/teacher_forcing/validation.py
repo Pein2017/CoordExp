@@ -53,7 +53,8 @@ def _validate_atom(
 
     live_token_id = _input_token_id(input_ids, atom.batch_index, atom.target_position, prefix=prefix)
     if atom.selected_token_id != live_token_id:
-        raise ValueError(f"{prefix}: selected_token_id must match input_ids at target_position")
+        if not bool(atom.provenance.get("allow_target_token_mismatch", False)):
+            raise ValueError(f"{prefix}: selected_token_id must match input_ids at target_position")
     if atom.selected_token_id not in atom.valid_token_ids:
         raise ValueError(f"{prefix}: selected_token_id must be in valid_token_ids")
 

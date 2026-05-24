@@ -172,6 +172,99 @@ def test_valid_set_marginal_is_not_selected_token_ce() -> None:
     assert selected_only_ce.item() > 0.5
 
 
+def test_residual_set_module_counts_ambiguous_strict_and_mismatch_atoms() -> None:
+    from src.trainers.teacher_forcing.modules.residual_set_correction import (
+        run_residual_set_correction_module,
+    )
+
+    ambiguous = SupervisionAtom(
+        batch_index=0,
+        logit_position=0,
+        target_position=1,
+        allowed_token_roles=frozenset({TokenRole.TEXT}),
+        selected_token_role=TokenRole.TEXT,
+        valid_token_ids=frozenset({10, 11}),
+        selected_token_id=10,
+        latent_valid_token_ids=frozenset({10, 11}),
+        coverage_target_weights=None,
+        loss_tags=frozenset({"residual_set"}),
+        loss_weight=1.0,
+        coord_role=None,
+        provenance={"source_position_kind": "unit_test"},
+    )
+    corrected = SupervisionAtom(
+        batch_index=0,
+        logit_position=1,
+        target_position=2,
+        allowed_token_roles=frozenset({TokenRole.TEXT}),
+        selected_token_role=TokenRole.TEXT,
+        valid_token_ids=frozenset({11}),
+        selected_token_id=11,
+        latent_valid_token_ids=frozenset({11}),
+        coverage_target_weights=None,
+        loss_tags=frozenset({"residual_set"}),
+        loss_weight=1.0,
+        coord_role=None,
+        provenance={
+            "source_position_kind": "unit_test",
+            "allow_target_token_mismatch": True,
+            "target_token_mismatch": True,
+            "live_token_id": 10,
+        },
+    )
+    target_ir = make_multi_atom_ir((ambiguous, corrected), position_space="batch_tensor")
+    input_ids = torch.tensor([[99, 10, 10]], dtype=torch.long)
+    logits = torch.full((1, 3, 50), -20.0, dtype=torch.float32)
+    logits[0, 0, 10] = 20.0
+    logits[0, 0, 11] = 20.0
+    logits[0, 1, 10] = 20.0
+    context = make_context(
+        input_ids=input_ids,
+        logits=logits,
+        target_ir=target_ir,
+        role_vocab=make_role_vocab(text_ids={10, 11}),
+        segment_len=3,
+    )
+
+    result = run_residual_set_correction_module(context=context, spec=make_spec())
+
+    assert result.metrics["stage2_ab/channel_b/residual_set/ambiguous_token_targets"] == 1.0
+    assert result.metrics["stage2_ab/channel_b/residual_set/strict_token_targets"] == 1.0
+    assert result.metrics["stage2_ab/channel_b/residual_set/target_token_mismatch"] == 1.0
+    assert result.loss.item() > 10.0
+
+
+def test_target_token_mismatch_requires_explicit_first_error_provenance() -> None:
+    from src.trainers.teacher_forcing.modules.residual_set_correction import (
+        run_residual_set_correction_module,
+    )
+
+    atom = SupervisionAtom(
+        batch_index=0,
+        logit_position=0,
+        target_position=1,
+        allowed_token_roles=frozenset({TokenRole.TEXT}),
+        selected_token_role=TokenRole.TEXT,
+        valid_token_ids=frozenset({11}),
+        selected_token_id=11,
+        latent_valid_token_ids=frozenset({11}),
+        coverage_target_weights=None,
+        loss_tags=frozenset({"residual_set"}),
+        loss_weight=1.0,
+        coord_role=None,
+        provenance={"source_position_kind": "unit_test"},
+    )
+    context = make_context(
+        input_ids=torch.tensor([[99, 10]], dtype=torch.long),
+        target_ir=make_multi_atom_ir((atom,), position_space="batch_tensor"),
+        role_vocab=make_role_vocab(text_ids={10, 11}),
+        segment_len=2,
+    )
+
+    with pytest.raises(ValueError, match="selected_token_id must match"):
+        run_residual_set_correction_module(context=context, spec=make_spec())
+
+
 def test_residual_set_module_rejects_stale_coverage_strength_config() -> None:
     from src.trainers.teacher_forcing.modules.residual_set_correction import (
         run_residual_set_correction_module,

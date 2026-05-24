@@ -42,6 +42,7 @@ def _atom(
     selected_token_id: int = 1,
     coverage_target_weights: dict[int, float] | None = None,
     loss_weight: float = 1.0,
+    provenance: dict[str, object] | None = None,
 ) -> SupervisionAtom:
     return SupervisionAtom(
         batch_index=batch_index,
@@ -56,7 +57,7 @@ def _atom(
         loss_tags=frozenset({"test"}),
         loss_weight=loss_weight,
         coord_role=None,
-        provenance={},
+        provenance=provenance or {},
     )
 
 
@@ -134,6 +135,31 @@ def test_selected_token_mismatch_is_rejected() -> None:
             input_ids=torch.tensor([[0, 2]], dtype=torch.long),
             ir=ir,
         )
+
+
+def test_selected_token_mismatch_can_be_first_error_opd_correction() -> None:
+    ir = _ir(
+        _atom(
+            selected_token_id=1,
+            valid_token_ids=frozenset({1}),
+            provenance={
+                "allow_target_token_mismatch": True,
+                "target_token_mismatch": True,
+                "live_token_id": 2,
+            },
+        )
+    )
+    logits = torch.full((1, 2, 10), -5.0, dtype=torch.float32)
+    logits[0, 0, 1] = 5.0
+
+    loss = _run(
+        logits=logits,
+        input_ids=torch.tensor([[0, 2]], dtype=torch.long),
+        ir=ir,
+    )
+
+    assert torch.isfinite(loss)
+    assert float(loss) < 0.01
 
 
 def test_valid_token_role_vocab_mismatch_rejected_before_probability_math() -> None:

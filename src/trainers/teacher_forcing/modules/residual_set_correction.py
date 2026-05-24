@@ -73,6 +73,10 @@ _COMPACT_METRIC_KEYS = (
     "continue_targets",
     "dirty_prefix_reencoded",
     "clean_success_skipped",
+    "ambiguous_token_targets",
+    "strict_token_targets",
+    "target_token_mismatch",
+    "coord_ambiguous_token_targets",
 )
 
 
@@ -419,6 +423,17 @@ def run_residual_set_correction_module(
                 source_metric_totals["eos_targets"] += 1.0
             else:
                 source_metric_totals["continue_targets"] += 1.0
+            if len(atom.valid_token_ids) > 1:
+                source_metric_totals["ambiguous_token_targets"] += 1.0
+                if atom.selected_token_role is TokenRole.COORD:
+                    source_metric_totals["coord_ambiguous_token_targets"] += 1.0
+            else:
+                source_metric_totals["strict_token_targets"] += 1.0
+            live_token_id = int(
+                context.input_ids[atom.batch_index, atom.target_position].item()
+            )
+            if int(atom.selected_token_id) != live_token_id:
+                source_metric_totals["target_token_mismatch"] += 1.0
             correction_kind = str(atom.provenance.get("correction_kind", ""))
             if correction_kind == "spatial_wrong_desc_conflict":
                 source_metric_totals["label_conflict_atoms"] += 1.0

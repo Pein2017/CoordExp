@@ -361,6 +361,64 @@ def test_singleton_coordinate_action_sets_selected_object_id() -> None:
     assert action.selected_object_id == "b"
 
 
+def test_ambiguous_desc_choice_collapses_later_object_internal_tokens_to_strict() -> None:
+    left = ResidualObject(
+        object_id="left",
+        desc_token_ids=(101, 111),
+        desc_token_texts=("left", "_tail"),
+        coord_token_ids={
+            "x1": coord_token(120),
+            "y1": coord_token(20),
+            "x2": coord_token(30),
+            "y2": coord_token(40),
+        },
+    )
+    right = ResidualObject(
+        object_id="right",
+        desc_token_ids=(201, 211),
+        desc_token_texts=("right", "_tail"),
+        coord_token_ids={
+            "x1": coord_token(640),
+            "y1": coord_token(20),
+            "x2": coord_token(30),
+            "y2": coord_token(40),
+        },
+    )
+    state = ResidualState(
+        objects=(left, right),
+        remaining_object_ids=frozenset({"left", "right"}),
+        active_candidate_ids=frozenset({"left", "right"}),
+        object_start_token_id=1,
+        box_start_token_id=2,
+        stop_token_id=999,
+    )
+
+    object_start = only_action(enumerate_valid_actions(state, slot="object_start"))
+    after_object_start = transition_state(state, object_start)
+    first_desc_actions = enumerate_valid_actions(after_object_start, slot="desc")
+
+    assert {action.token_id for action in first_desc_actions} == {101, 201}
+    assert all(len(action.candidate_ids_after) == 1 for action in first_desc_actions)
+
+    choose_right = only_action(
+        tuple(action for action in first_desc_actions if action.token_id == 201)
+    )
+    after_choice = transition_state(after_object_start, choose_right)
+    second_desc = only_action(enumerate_valid_actions(after_choice, slot="desc"))
+    after_second_desc = transition_state(after_choice, second_desc)
+    box_start = only_action(enumerate_valid_actions(after_second_desc, slot="box_start"))
+    after_box_start = transition_state(after_second_desc, box_start)
+    x1 = only_action(enumerate_valid_actions(after_box_start, slot="x1"))
+
+    assert after_choice.active_candidate_ids == frozenset({"right"})
+    assert second_desc.token_id == 211
+    assert second_desc.candidate_ids_after == frozenset({"right"})
+    assert box_start.token_id == 2
+    assert box_start.candidate_ids_after == frozenset({"right"})
+    assert x1.token_id == coord_token(640)
+    assert x1.candidate_ids_after == frozenset({"right"})
+
+
 def test_invalid_bbox_row_is_dirty_context_and_does_not_update_remaining_set() -> None:
     state = make_state_for_objects(make_object("a", "person_left", x1=120, x2=220))
 
@@ -944,7 +1002,7 @@ def test_event_to_ir_rejects_wrong_shift() -> None:
         )
 
 
-def test_event_to_ir_rejects_selected_token_outside_valid_actions() -> None:
+def test_event_to_ir_corrects_wrong_live_token_without_adding_it_to_valid_set() -> None:
     input_ids = torch.tensor([[11, 22, 101, 102, 103]])
     event = make_event(
         target_position=2,
@@ -952,13 +1010,21 @@ def test_event_to_ir_rejects_selected_token_outside_valid_actions() -> None:
         valid_actions=(make_text_action(201),),
     )
 
-    with pytest.raises(ValueError, match="live token.*valid actions"):
-        build_residual_set_target_ir(
-            input_ids=input_ids,
-            batch_index=0,
-            events=(event,),
-            role_vocab=make_role_vocab(),
-        )
+    ir = build_residual_set_target_ir(
+        input_ids=input_ids,
+        batch_index=0,
+        events=(event,),
+        role_vocab=make_role_vocab(),
+    )
+
+    atom = ir.atoms[0]
+    assert atom.selected_token_id == 201
+    assert atom.selected_token_id != int(input_ids[0, atom.target_position].item())
+    assert atom.valid_token_ids == frozenset({201})
+    assert atom.latent_valid_token_ids == frozenset({201})
+    assert atom.provenance["live_token_id"] == 101
+    assert atom.provenance["allow_target_token_mismatch"] is True
+    assert atom.provenance["target_token_mismatch"] is True
 
 
 def test_coordinate_event_to_ir_keeps_exact_coord_roles_without_repair_kind() -> None:
@@ -1188,7 +1254,7 @@ def test_event_to_ir_merges_same_logit_atoms_with_union_valid_set() -> None:
     assert atom.latent_valid_token_ids == frozenset({101, 201})
 
 
-def test_event_to_ir_uses_live_token_when_selected_action_disagrees() -> None:
+def test_event_to_ir_honors_explicit_selected_action_over_live_token() -> None:
     input_ids = torch.tensor([[11, 22, 101, 102, 103]])
     event = make_event(
         target_position=2,
@@ -1205,10 +1271,14 @@ def test_event_to_ir_uses_live_token_when_selected_action_disagrees() -> None:
     )
 
     assert len(ir.atoms) == 1
-    assert ir.atoms[0].selected_token_id == 101
+    atom = ir.atoms[0]
+    assert atom.selected_token_id == 201
+    assert atom.valid_token_ids == frozenset({101, 201})
+    assert atom.provenance["live_token_id"] == 101
+    assert atom.provenance["target_token_mismatch"] is True
 
 
-def test_event_to_ir_adds_live_token_to_same_role_valid_set() -> None:
+def test_event_to_ir_does_not_add_same_role_live_token_to_oracle_valid_set() -> None:
     input_ids = torch.tensor([[11, 22, 101, 102, 103]])
     event = make_event(
         target_position=2,
@@ -1225,13 +1295,15 @@ def test_event_to_ir_adds_live_token_to_same_role_valid_set() -> None:
 
     assert len(ir.atoms) == 1
     atom = ir.atoms[0]
-    assert atom.selected_token_id == 101
+    assert atom.selected_token_id == 201
     assert atom.selected_token_role is TokenRole.TEXT
-    assert atom.valid_token_ids == frozenset({101, 201})
-    assert atom.latent_valid_token_ids == frozenset({101, 201})
+    assert atom.valid_token_ids == frozenset({201})
+    assert atom.latent_valid_token_ids == frozenset({201})
+    assert atom.provenance["live_token_id"] == 101
+    assert atom.provenance["target_token_mismatch"] is True
 
 
-def test_event_to_ir_uses_live_role_when_draft_role_disagrees() -> None:
+def test_event_to_ir_uses_oracle_role_when_live_role_disagrees() -> None:
     input_ids = torch.tensor([[11, 22, coord_token(7), 102, 103]])
     event = make_event(
         target_position=2,
@@ -1248,11 +1320,13 @@ def test_event_to_ir_uses_live_role_when_draft_role_disagrees() -> None:
 
     assert len(ir.atoms) == 1
     atom = ir.atoms[0]
-    assert atom.selected_token_id == coord_token(7)
-    assert atom.selected_token_role is TokenRole.COORD
-    assert atom.allowed_token_roles == frozenset({TokenRole.COORD})
-    assert atom.valid_token_ids == frozenset({coord_token(7)})
-    assert atom.latent_valid_token_ids == frozenset({coord_token(7)})
+    assert atom.selected_token_id == 201
+    assert atom.selected_token_role is TokenRole.TEXT
+    assert atom.allowed_token_roles == frozenset({TokenRole.TEXT})
+    assert atom.valid_token_ids == frozenset({201})
+    assert atom.latent_valid_token_ids == frozenset({201})
+    assert atom.provenance["live_token_id"] == coord_token(7)
+    assert atom.provenance["target_token_mismatch"] is True
 
 
 def test_event_to_ir_rejects_selected_action_not_matching_valid_action_member() -> None:
