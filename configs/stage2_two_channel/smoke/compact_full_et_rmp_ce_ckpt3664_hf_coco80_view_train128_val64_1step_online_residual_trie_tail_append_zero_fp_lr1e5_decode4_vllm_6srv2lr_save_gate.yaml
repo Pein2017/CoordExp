@@ -1,0 +1,19 @@
+# vLLM server-mode save gate for adapter-only checkpoint validation.
+#
+# Intended launcher:
+#   server_gpus=0,1,2,3,4,5 train_gpus=6,7
+# This keeps the 6:2 = 3:1 rollout-server-to-learner GPU ratio and decode batch
+# cap 4, but runs only one optimizer step and writes a checkpoint immediately.
+
+extends: ./compact_full_et_rmp_ce_ckpt3664_hf_coco80_view_train128_val64_4steps_online_residual_trie_tail_append_zero_fp_lr1e5_decode4_vllm_6srv2lr_gate.yaml
+
+training:
+  run_name: save_gate_1step-coco80_view-train128-val64-online_residual_trie-tail_append-zero_fp-lr1e5-decode4-vllm6srv2lr-compact_full-et_rmp_ce_ckpt3664
+  artifact_subdir: stage2_ab/smoke/coco80_view_online_residual_trie_train128_val64/tail_append_zero_fp_lr1e5_decode4_vllm6srv2lr_save_gate
+  max_steps: 1
+  logging_steps: 1
+  eval_strategy: "no"
+  save_strategy: steps
+  save_steps: 1
+  save_total_limit: 1
+  save_delay_steps: 0

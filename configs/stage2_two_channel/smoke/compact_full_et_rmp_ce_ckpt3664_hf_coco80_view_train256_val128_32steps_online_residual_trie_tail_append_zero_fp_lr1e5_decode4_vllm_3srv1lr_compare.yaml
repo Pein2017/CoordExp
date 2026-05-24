@@ -1,0 +1,46 @@
+# Paired online residual-trie compare: tail_append branch.
+#
+# Intended launcher:
+#   server_gpus=0,1,2 train_gpus=3
+# This gives a 3:1 rollout-server-to-learner GPU ratio. The sorted branch uses
+# GPUs 4,5,6 -> 7 and a different server port/group port.
+
+extends: ./compact_full_et_rmp_ce_ckpt3664_hf_coco80_view_train128_val64_32steps_online_residual_trie_tail_append_zero_fp_lr1e5_decode4.yaml
+
+training:
+  run_name: compare_32steps-coco80_view-train256-val128-online_residual_trie-tail_append-zero_fp-lr1e5-decode4-vllm3srv1lr-compact_full-et_rmp_ce_ckpt3664
+  artifact_subdir: stage2_ab/compare/coco80_view_online_residual_trie_train256_val128/tail_append_zero_fp_lr1e5_decode4_vllm3srv1lr
+  max_steps: 32
+  logging_steps: 1
+  eval_strategy: steps
+  eval_steps: 16
+  save_strategy: "no"
+
+custom:
+  train_sample_limit: 256
+  val_sample_limit: 128
+
+rollout_matching:
+  rollout_backend: vllm
+  eval_rollout_backend: vllm
+  channel_b_decode_batch_size: 4
+  eval_decode_batch_size: 4
+  vllm:
+    mode: server
+    tensor_parallel_size: 1
+    gpu_memory_utilization: 0.80
+    max_model_len: 20000
+    enable_lora: false
+    enable_prefix_caching: true
+    enforce_eager: true
+    disable_custom_all_reduce: true
+    sync:
+      mode: full
+    mm_processor_kwargs:
+      do_resize: false
+    server:
+      timeout_s: 240.0
+      infer_timeout_s: 240.0
+      servers:
+        - base_url: http://127.0.0.1:8000
+          group_port: 51216

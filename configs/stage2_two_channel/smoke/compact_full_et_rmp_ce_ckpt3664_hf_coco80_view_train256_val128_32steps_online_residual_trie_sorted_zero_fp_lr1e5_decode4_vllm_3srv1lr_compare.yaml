@@ -1,0 +1,23 @@
+# Paired online residual-trie compare: sorted branch.
+#
+# Intended launcher:
+#   server_gpus=4,5,6 train_gpus=7
+# This gives a 3:1 rollout-server-to-learner GPU ratio and avoids the
+# tail_append branch's server endpoint.
+
+extends: ./compact_full_et_rmp_ce_ckpt3664_hf_coco80_view_train256_val128_32steps_online_residual_trie_tail_append_zero_fp_lr1e5_decode4_vllm_3srv1lr_compare.yaml
+
+training:
+  run_name: compare_32steps-coco80_view-train256-val128-online_residual_trie-sorted-zero_fp-lr1e5-decode4-vllm3srv1lr-compact_full-et_rmp_ce_ckpt3664
+  artifact_subdir: stage2_ab/compare/coco80_view_online_residual_trie_train256_val128/sorted_zero_fp_lr1e5_decode4_vllm3srv1lr
+
+stage2_ab:
+  channel_b:
+    insertion_order: sorted
+
+rollout_matching:
+  vllm:
+    server:
+      servers:
+        - base_url: http://127.0.0.1:8001
+          group_port: 51217

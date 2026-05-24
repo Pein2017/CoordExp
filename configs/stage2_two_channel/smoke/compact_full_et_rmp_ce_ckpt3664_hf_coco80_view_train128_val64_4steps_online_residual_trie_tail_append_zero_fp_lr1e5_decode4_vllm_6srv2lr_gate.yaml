@@ -1,0 +1,36 @@
+# vLLM server-mode memory/throughput gate for online residual-trie training.
+#
+# Intended launcher:
+#   server_gpus=0,1,2,3,4,5 train_gpus=6,7
+# This gives a 6:2 = 3:1 rollout-server-to-learner GPU ratio. Keep
+# rollout_matching.*_decode_batch_size at 4 to test the current cap without
+# conflating backend migration with a larger decode batch.
+
+extends: ./compact_full_et_rmp_ce_ckpt3664_hf_coco80_view_train128_val64_4steps_online_residual_trie_tail_append_zero_fp_lr1e5_decode4_gate.yaml
+
+training:
+  run_name: gate_4steps-coco80_view-train128-val64-online_residual_trie-tail_append-zero_fp-lr1e5-decode4-vllm6srv2lr-compact_full-et_rmp_ce_ckpt3664
+  artifact_subdir: stage2_ab/smoke/coco80_view_online_residual_trie_train128_val64/tail_append_zero_fp_lr1e5_decode4_vllm6srv2lr_gate
+
+rollout_matching:
+  rollout_backend: vllm
+  eval_rollout_backend: vllm
+  channel_b_decode_batch_size: 4
+  eval_decode_batch_size: 4
+  vllm:
+    mode: server
+    tensor_parallel_size: 1
+    gpu_memory_utilization: 0.80
+    max_model_len: 20000
+    enable_lora: false
+    enable_prefix_caching: true
+    enforce_eager: true
+    disable_custom_all_reduce: true
+    mm_processor_kwargs:
+      do_resize: false
+    server:
+      timeout_s: 240.0
+      infer_timeout_s: 240.0
+      servers:
+        - base_url: http://127.0.0.1:8000
+          group_port: 51216

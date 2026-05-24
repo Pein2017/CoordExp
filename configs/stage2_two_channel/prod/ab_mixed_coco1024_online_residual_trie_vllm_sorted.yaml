@@ -1,0 +1,11 @@
+# Paired insertion-order ablation for the online residual-trie production candidate.
+
+extends: ./ab_mixed_coco1024_online_residual_trie_vllm_tail_append.yaml
+
+training:
+  run_name: online_residual_trie-k4-sorted-zero_fp-lr1e5-decode4-vllm6srv2lr-compact_full-et_rmp_ce_ckpt3664
+  artifact_subdir: stage2_ab/prod/online_residual_trie_sorted_zero_fp_lr1e5_decode4_vllm6srv2lr
+
+stage2_ab:
+  channel_b:
+    insertion_order: sorted
