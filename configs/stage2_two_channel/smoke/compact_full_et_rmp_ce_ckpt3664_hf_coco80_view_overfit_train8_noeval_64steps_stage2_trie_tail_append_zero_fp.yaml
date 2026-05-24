@@ -1,34 +1,24 @@
-# Online residual-trie train128/val64 mini experiment.
+# Tiny Stage-2 trie-CE standard-COCO training-only overfit probe.
 #
-# Same live rollout + immediate teacher-forcing target construction as the
-# tail_append variant, with only residual insertion order changed to sorted.
+# Purpose:
+# - test whether Channel-B can memorize the same 8 COCO80 training samples
+# - use trie multiple-positive hard CE for rollout-aware forward supervision
+# - avoid eval entirely so rollout validity and recall remain train-side diagnostics
+# - keep this leaf standard COCO only; no LVIS proxy or runtime fusion
 
 extends: ./compact_full_et_rmp_ce_ckpt3664_hf_coco80_view_fallback1p0_2steps.yaml
 
-global_max_length: 20000
-
 training:
-  run_name: mini_32steps-coco80_view-train128-val64-online_residual_trie-sorted-zero_fp-lr1e5-decode4-compact_full-et_rmp_ce_ckpt3664
-  artifact_subdir: stage2_ab/mini/coco80_view_online_residual_trie_train128_val64/sorted_zero_fp_lr1e5_decode4
-  max_steps: 32
-  logging_steps: 1
-  eval_strategy: steps
-  eval_steps: 16
-  save_strategy: steps
-  save_steps: 16
-  save_total_limit: 2
-  per_device_train_batch_size: 2
-  per_device_eval_batch_size: 1
-  effective_batch_size: 16
-  learning_rate: 1.0e-5
-  vit_lr: 1.0e-5
-  aligner_lr: 2.5e-5
-  dataloader_drop_last: true
+  run_name: smoke_64steps-coco80_view-overfit_train8-noeval-stage2_trie_ce-tail_append-zero_fp-compact_full-et_rmp_ce_ckpt3664
+  artifact_subdir: stage2_ab/smoke/coco80_view_stage2_trie_ce_overfit_probe/tail_append_train8_noeval_64steps
+  max_steps: 64
+  eval_strategy: "no"
+  save_strategy: "no"
 
 custom:
   train_jsonl: public_data/coco/views/coco80/full/train.jsonl
-  train_sample_limit: 128
-  val_sample_limit: 64
+  train_sample_limit: 8
+  val_sample_limit: 0
   object_ordering: random
   detection_sequence_format: compact_full
   coord_tokens:
@@ -72,11 +62,8 @@ stage2_ab:
           strict_builder_invariants: true
     diagnostics: []
   channel_b:
-    ddp_phase_timeout_s: 600
-    rollout_template_family: compact_full
-    rollout_decode_policy: compact_grammar
     fallback_loss_weight: 0.25
-    insertion_order: sorted
+    insertion_order: tail_append
     pseudo_positive:
       enabled: false
     fp_policy:
@@ -86,28 +73,16 @@ stage2_ab:
       rollout_temperatures: [0.0, 0.3, 0.5, 0.7]
 
 rollout_matching:
-  repetition_penalty: 1.10
-  channel_b_decode_batch_size: 4
-  eval_decode_batch_size: 4
   train_monitor_dump:
     enabled: true
     every_steps: 1
     every_channel_b_steps: 1
     max_events: 0
-    max_samples: 16
-    max_text_chars: 2048
+    max_samples: 8
     write_markdown: false
   eval_monitor_dump:
-    enabled: true
-    every_evals: 1
-    max_events: 0
-    max_samples: 16
-    max_text_chars: 2048
-    write_markdown: true
+    enabled: false
+    max_samples: 0
   eval_detection:
-    enabled: true
-    materialize_artifacts: true
-    metrics: coco
-    use_segm: false
-    strict_parse: false
-    score_mode: confidence_postop
+    enabled: false
+    materialize_artifacts: false

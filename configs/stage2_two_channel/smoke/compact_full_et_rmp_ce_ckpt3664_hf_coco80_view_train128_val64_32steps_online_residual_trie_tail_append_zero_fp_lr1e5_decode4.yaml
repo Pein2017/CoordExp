@@ -37,6 +37,8 @@ custom:
     skip_bbox_norm: true
 
 stage2_ab:
+  schedule:
+    b_ratio: 1.0
   pipeline:
     objective:
       - name: token_ce
@@ -71,6 +73,14 @@ stage2_ab:
           min_ul_valid_rollouts: 4
           clean_gt_sft_mix: 0
           strict_builder_invariants: true
+      - name: schema_format_ce
+        enabled: true
+        weight: 0.25
+        channels: [B]
+        application:
+          preset: rollout_schema_format
+        config:
+          schema_ce_weight: 1.0
     diagnostics: []
   channel_b:
     ddp_phase_timeout_s: 600
@@ -84,7 +94,7 @@ stage2_ab:
       mode: zero_loss_context
     triage_posterior:
       num_rollouts: 4
-      rollout_temperatures: [0.0, 0.4, 0.7, 1.0]
+      rollout_temperatures: [0.0, 0.3, 0.5, 0.7]
 
 rollout_matching:
   repetition_penalty: 1.10

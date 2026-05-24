@@ -8,8 +8,8 @@
 extends: ./compact_full_et_rmp_ce_ckpt3664_hf_coco80_view_train256_val128_32steps_online_residual_trie_tail_append_zero_fp_lr1e5_decode4_vllm_3srv1lr_compare.yaml
 
 training:
-  run_name: compare_32steps-coco80_view-train256-val128-online_residual_trie-sorted-zero_fp-lr1e5-decode4-vllm3srv1lr-compact_full-et_rmp_ce_ckpt3664
-  artifact_subdir: stage2_ab/compare/coco80_view_online_residual_trie_train256_val128/sorted_zero_fp_lr1e5_decode4_vllm3srv1lr
+  run_name: compare_32steps-coco80_view-train384-val144-online_residual_trie-sorted-zero_fp-lr1e5-decode4-vllm3srv1lr-ebs12-schemafmt_t0_0p3_0p5_0p7-lenient_peer_preflight-compact_full-et_rmp_ce_ckpt3664
+  artifact_subdir: stage2_ab/compare/coco80_view_online_residual_trie_train384_val144/sorted_zero_fp_lr1e5_decode4_vllm3srv1lr_ebs12_schemafmt_t0_0p3_0p5_0p7_lenient_peer_preflight
 
 stage2_ab:
   channel_b:

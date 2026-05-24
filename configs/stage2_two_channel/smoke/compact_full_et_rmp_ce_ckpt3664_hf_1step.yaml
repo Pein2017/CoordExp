@@ -50,7 +50,7 @@ stage2_ab:
     fallback_loss_weight: 1.0
     triage_posterior:
       num_rollouts: 4
-      rollout_temperatures: [0.0, 0.7, 0.7, 0.7]
+      rollout_temperatures: [0.0, 0.3, 0.5, 0.7]
 
 rollout_matching:
   rollout_backend: hf

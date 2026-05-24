@@ -35,7 +35,7 @@ stage2_ab:
       coord_weight: 0.3
     triage_posterior:
       num_rollouts: 4
-      rollout_temperatures: [0.0, 0.7, 0.7, 0.7]
+      rollout_temperatures: [0.0, 0.3, 0.5, 0.7]
       explorer_temperature: 0.7
       explorer_top_p: 0.95
       explorer_top_k: 64

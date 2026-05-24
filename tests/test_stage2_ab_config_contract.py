@@ -1023,6 +1023,34 @@ def test_stage2_pipeline_accepts_channel_b_stage2_trie_ce() -> None:
     assert parsed.stage2_ab.channel_b.triage_posterior.num_rollouts == 4
 
 
+def test_stage2_pipeline_accepts_schema_format_ce_with_stage2_trie_ce() -> None:
+    raw = _make_stage2_training_payload()
+    raw["stage2_ab"]["pipeline"] = _stage2_pipeline_with_channel_b_trie_ce()
+    raw["stage2_ab"]["pipeline"]["objective"].append(
+        {
+            "name": "schema_format_ce",
+            "enabled": True,
+            "weight": 0.25,
+            "channels": ["B"],
+            "application": {"preset": "rollout_schema_format"},
+            "config": {"schema_ce_weight": 1.0},
+        }
+    )
+
+    prompts = ConfigLoader.resolve_prompts(raw)
+    loaded = TrainingConfig.from_mapping(raw, prompts)
+
+    assert [module.name for module in loaded.stage2_ab.pipeline.objective] == [
+        "token_ce",
+        "stage2_trie_ce",
+        "schema_format_ce",
+    ]
+    schema_objective = loaded.stage2_ab.pipeline.objective[2]
+    assert schema_objective.channels == ("B",)
+    assert schema_objective.application["preset"] == "rollout_schema_format"
+    assert schema_objective.config["schema_ce_weight"] == pytest.approx(1.0)
+
+
 def test_stage2_pipeline_accepts_residual_set_correction_objective() -> None:
     raw = _make_stage2_training_payload()
     raw["stage2_ab"]["pipeline"]["objective"] = [
@@ -2318,7 +2346,7 @@ def test_stage2_decode4_train128_val64_gate_config_is_worldsize8_safe(
     )
     assert cfg.stage2_ab.channel_b.triage_posterior.num_rollouts == 4
     assert cfg.stage2_ab.channel_b.triage_posterior.rollout_temperatures == pytest.approx(
-        (0.0, 0.4, 0.7, 1.0)
+        (0.0, 0.3, 0.5, 0.7)
     )
     assert cfg.stage2_ab.channel_b.ddp_phase_timeout_s == pytest.approx(600.0)
 
@@ -2376,7 +2404,7 @@ def test_online_residual_trie_train128_val64_configs_use_live_rollouts(
     assert cfg.stage2_ab.channel_b.fp_policy.mode == "zero_loss_context"
     assert cfg.stage2_ab.channel_b.triage_posterior.num_rollouts == 4
     assert cfg.stage2_ab.channel_b.triage_posterior.rollout_temperatures == pytest.approx(
-        (0.0, 0.4, 0.7, 1.0)
+        (0.0, 0.3, 0.5, 0.7)
     )
 
     objective_by_name = {

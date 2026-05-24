@@ -20,8 +20,8 @@ model:
 
 training:
   num_train_epochs: 1
-  run_name: online_residual_trie-k4-tail_append-zero_fp-lr1e5-decode4-vllm6srv2lr-compact_full-et_rmp_ce_ckpt3664
-  artifact_subdir: stage2_ab/prod/online_residual_trie_tail_append_zero_fp_lr1e5_decode4_vllm6srv2lr
+  run_name: online_residual_trie-k4-selfrollout-tail_append-schemafmt-zero_fp-lr1e5-decode4-vllm6srv2lr-compact_full-et_rmp_ce_ckpt3664
+  artifact_subdir: stage2_ab/prod/online_residual_trie_selfrollout_tail_append_schemafmt_zero_fp_lr1e5_decode4_vllm6srv2lr
   learning_rate: 1.0e-5
   vit_lr: 1.0e-5
   aligner_lr: 2.5e-5
@@ -41,7 +41,7 @@ custom:
 
 stage2_ab:
   schedule:
-    b_ratio: 0.85
+    b_ratio: 1.0
   pipeline:
     objective:
       - name: token_ce
@@ -76,11 +76,20 @@ stage2_ab:
           min_ul_valid_rollouts: 4
           clean_gt_sft_mix: 0
           strict_builder_invariants: true
+      - name: schema_format_ce
+        enabled: true
+        weight: 0.25
+        channels: [B]
+        application:
+          preset: rollout_schema_format
+        config:
+          schema_ce_weight: 1.0
     diagnostics: []
   channel_b:
     ddp_phase_timeout_s: 600
     rollout_template_family: compact_full
     rollout_decode_policy: compact_grammar
+    strict_rollout_preflight: false
     invalid_rollout_policy: fallback_gt_fn_append_only
     fallback_loss_weight: 0.25
     insertion_order: tail_append
@@ -90,7 +99,7 @@ stage2_ab:
       mode: zero_loss_context
     triage_posterior:
       num_rollouts: 4
-      rollout_temperatures: [0.0, 0.4, 0.7, 1.0]
+      rollout_temperatures: [0.0, 0.3, 0.5, 0.7]
 
 rollout_matching:
   rollout_backend: vllm

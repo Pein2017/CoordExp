@@ -2,23 +2,35 @@
 #
 # Intended launcher:
 #   server_gpus=0,1,2 train_gpus=3
-# This gives a 3:1 rollout-server-to-learner GPU ratio. The sorted branch uses
-# GPUs 4,5,6 -> 7 and a different server port/group port.
+# This gives a 3:1 rollout-server-to-learner GPU ratio. With
+# channel_b_decode_batch_size=4, the derived per-learner rollout chunk is 12
+# samples (3 server ranks * 4), so keep the learner effective batch and sample
+# limits divisible by 12.
 
 extends: ./compact_full_et_rmp_ce_ckpt3664_hf_coco80_view_train128_val64_32steps_online_residual_trie_tail_append_zero_fp_lr1e5_decode4.yaml
 
 training:
-  run_name: compare_32steps-coco80_view-train256-val128-online_residual_trie-tail_append-zero_fp-lr1e5-decode4-vllm3srv1lr-compact_full-et_rmp_ce_ckpt3664
-  artifact_subdir: stage2_ab/compare/coco80_view_online_residual_trie_train256_val128/tail_append_zero_fp_lr1e5_decode4_vllm3srv1lr
+  run_name: compare_32steps-coco80_view-train384-val144-online_residual_trie-tail_append-zero_fp-lr1e5-decode4-vllm3srv1lr-ebs12-schemafmt_t0_0p3_0p5_0p7-lenient_peer_preflight-compact_full-et_rmp_ce_ckpt3664
+  artifact_subdir: stage2_ab/compare/coco80_view_online_residual_trie_train384_val144/tail_append_zero_fp_lr1e5_decode4_vllm3srv1lr_ebs12_schemafmt_t0_0p3_0p5_0p7_lenient_peer_preflight
   max_steps: 32
   logging_steps: 1
   eval_strategy: steps
   eval_steps: 16
   save_strategy: "no"
+  effective_batch_size: 12
 
 custom:
-  train_sample_limit: 256
-  val_sample_limit: 128
+  train_sample_limit: 384
+  val_sample_limit: 144
+
+stage2_ab:
+  schedule:
+    b_ratio: 1.0
+  channel_b:
+    # Initial peer attempts can be malformed before schema_format_ce has had
+    # any update opportunity; keep explicit counters/dumps but do not abort
+    # the whole training probe on the first malformed sampled peer rollout.
+    strict_rollout_preflight: false
 
 rollout_matching:
   rollout_backend: vllm
