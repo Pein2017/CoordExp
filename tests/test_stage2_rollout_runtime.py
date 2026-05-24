@@ -12,9 +12,11 @@ from pathlib import Path
 
 import pytest
 import torch
+import torch.nn as nn
 
 from src.config.prompts import build_dense_system_prompt, build_dense_user_prompt
 from src.config.rollout_matching_schema import RolloutEvalDetectionConfig
+from src.tokens.row_offsets import install_coord_offset_adapter
 from src.trainers.rollout_matching.matching import (
     associate_one_to_one_greedy_iou,
     greedy_match_iou,
@@ -33,6 +35,71 @@ from src.trainers.stage2_rollout_runtime import (
 )
 from src.trainers.stage2_two_channel import Stage2TwoChannelTrainer
 from src.utils.metric_key_lookup import metric_name_matches_key, stage2_eval_metric_key
+
+
+class _TinyVLLMSyncModel(nn.Module):
+    def __init__(self) -> None:
+        super().__init__()
+        self.embed_tokens = nn.Embedding(8, 4)
+        self.lm_head = nn.Linear(4, 8, bias=False)
+        self.lm_head.weight = self.embed_tokens.weight
+        self.config = types.SimpleNamespace(tie_word_embeddings=True)
+
+    def get_input_embeddings(self):
+        return self.embed_tokens
+
+    def get_output_embeddings(self):
+        return self.lm_head
+
+    def forward(self, input_ids: torch.Tensor) -> torch.Tensor:
+        return self.lm_head(self.embed_tokens(input_ids))
+
+
+def _install_fake_full_sync_imports(
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    is_peft_model=lambda _model: False,
+) -> None:
+    accelerate = types.ModuleType("accelerate")
+    accelerate_utils = types.ModuleType("accelerate.utils")
+    accelerate_utils.is_peft_model = is_peft_model
+    accelerate.utils = accelerate_utils
+    monkeypatch.setitem(sys.modules, "accelerate", accelerate)
+    monkeypatch.setitem(sys.modules, "accelerate.utils", accelerate_utils)
+
+    swift = types.ModuleType("swift")
+    swift_trainers = types.ModuleType("swift.trainers")
+    swift_rlhf = types.ModuleType("swift.trainers.rlhf_trainer")
+    swift_utils = types.ModuleType("swift.trainers.rlhf_trainer.utils")
+    swift_utils.get_gather_if_zero3_context = lambda _owner: (
+        lambda _params: nullcontext()
+    )
+    swift_utils.patch_lora_merge = lambda _model: nullcontext()
+    swift_utils.patch_lora_unmerge = lambda _model: nullcontext()
+    swift.trainers = swift_trainers
+    swift_trainers.rlhf_trainer = swift_rlhf
+    swift_rlhf.utils = swift_utils
+    monkeypatch.setitem(sys.modules, "swift", swift)
+    monkeypatch.setitem(sys.modules, "swift.trainers", swift_trainers)
+    monkeypatch.setitem(sys.modules, "swift.trainers.rlhf_trainer", swift_rlhf)
+    monkeypatch.setitem(sys.modules, "swift.trainers.rlhf_trainer.utils", swift_utils)
+
+
+def _forbidden_vllm_sync_keys(state_dict: dict[str, object]) -> list[str]:
+    forbidden = ("coord_offset_adapter", "modules_to_save", "original_module", "lora_")
+    return [
+        key
+        for key in state_dict
+        if any(fragment in key for fragment in forbidden)
+    ]
+
+
+def _non_coord_token_ids(coord_ids: torch.Tensor, vocab_size: int) -> torch.Tensor:
+    coord_set = {int(idx) for idx in coord_ids.tolist()}
+    return torch.tensor(
+        [idx for idx in range(vocab_size) if idx not in coord_set],
+        dtype=torch.long,
+    )
 
 
 def test_stage2_two_channel_reuses_rollout_aligned_eval_contract() -> None:
@@ -354,6 +421,177 @@ def _make_rollout_server_trainer():
     trainer._maybe_debug_dump_vllm_server_rollouts = lambda **_kwargs: None
     trainer.processing_class = _DummyTokenizerRM()
     return trainer
+
+
+def test_vllm_server_full_sync_materializes_coord_offset_rows(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from src.trainers.rollout_runtime.vllm_server import (
+        sync_vllm_server_full_weights,
+    )
+
+    _install_fake_full_sync_imports(monkeypatch)
+    model = _TinyVLLMSyncModel()
+    adapter = install_coord_offset_adapter(
+        model,
+        coord_ids=[2, 5],
+        tie_head=True,
+        dtype="float32",
+    )
+    with torch.no_grad():
+        adapter.embed_offset.copy_(
+            torch.tensor(
+                [
+                    [0.25, -0.5, 0.75, 1.0],
+                    [-1.25, 0.5, 0.125, -0.75],
+                ],
+                dtype=torch.float32,
+            )
+        )
+    state_before = {
+        key: tensor.detach().clone() for key, tensor in model.state_dict().items()
+    }
+    coord_ids = adapter.coord_ids.detach().clone()
+    non_coord_ids = _non_coord_token_ids(coord_ids, model.embed_tokens.num_embeddings)
+    captured: dict[str, torch.Tensor] = {}
+
+    def _capture_update(_client, state_dict):
+        captured.update(state_dict)
+
+    owner = types.SimpleNamespace(
+        model=model,
+        _vllm_server_update_state_dict=_capture_update,
+    )
+    client = types.SimpleNamespace(reset_prefix_cache=lambda: None)
+    logger = types.SimpleNamespace(info=lambda *args, **kwargs: None, warning=print)
+
+    sync_vllm_server_full_weights(owner=owner, client=client, logger=logger)
+
+    assert torch.allclose(
+        captured["embed_tokens.weight"][coord_ids],
+        state_before["embed_tokens.weight"][coord_ids] + adapter.embed_offset.detach(),
+    )
+    assert torch.allclose(
+        captured["lm_head.weight"][coord_ids],
+        state_before["lm_head.weight"][coord_ids] + adapter.embed_offset.detach(),
+    )
+    assert torch.equal(
+        captured["embed_tokens.weight"][non_coord_ids],
+        state_before["embed_tokens.weight"][non_coord_ids],
+    )
+    assert torch.equal(
+        captured["lm_head.weight"][non_coord_ids],
+        state_before["lm_head.weight"][non_coord_ids],
+    )
+    assert _forbidden_vllm_sync_keys(captured) == []
+
+
+def test_vllm_colocate_full_sync_materializes_coord_offset_rows(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from src.trainers.rollout_runtime.vllm_engine import (
+        sync_vllm_full_weights_if_needed,
+    )
+
+    _install_fake_full_sync_imports(monkeypatch)
+    model = _TinyVLLMSyncModel()
+    adapter = install_coord_offset_adapter(
+        model,
+        coord_ids=[1, 6],
+        tie_head=True,
+        dtype="float32",
+    )
+    with torch.no_grad():
+        adapter.embed_offset.copy_(
+            torch.tensor(
+                [
+                    [0.5, -0.25, 1.0, -1.5],
+                    [1.25, 0.75, -0.5, 0.25],
+                ],
+                dtype=torch.float32,
+            )
+        )
+    state_before = {
+        key: tensor.detach().clone() for key, tensor in model.state_dict().items()
+    }
+    coord_ids = adapter.coord_ids.detach().clone()
+    loaded: dict[str, torch.Tensor] = {}
+    reset_calls: list[bool] = []
+
+    class _InnerModel:
+        def load_weights(self, items) -> None:
+            loaded.update(dict(items))
+
+    engine = types.SimpleNamespace(
+        inner_model=_InnerModel(),
+        engine=types.SimpleNamespace(
+            reset_prefix_cache=lambda: reset_calls.append(True)
+        ),
+    )
+    owner = types.SimpleNamespace(
+        model=model,
+        accelerator=None,
+        state=types.SimpleNamespace(global_step=7),
+        _vllm_last_loaded_step=-1,
+        _ensure_vllm_engine=lambda: engine,
+        logger=types.SimpleNamespace(info=lambda *args, **kwargs: None),
+    )
+
+    sync_vllm_full_weights_if_needed(owner=owner)
+
+    assert torch.allclose(
+        loaded["embed_tokens.weight"][coord_ids],
+        state_before["embed_tokens.weight"][coord_ids] + adapter.embed_offset.detach(),
+    )
+    assert torch.allclose(
+        loaded["lm_head.weight"][coord_ids],
+        state_before["lm_head.weight"][coord_ids] + adapter.embed_offset.detach(),
+    )
+    assert _forbidden_vllm_sync_keys(loaded) == []
+    assert reset_calls == [True]
+    assert owner._vllm_last_loaded_step == 7
+
+
+def test_peft_merge_is_unmerged_when_materialization_raises(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from src.trainers.rollout_runtime.vllm_server import (
+        sync_vllm_server_full_weights,
+    )
+
+    _install_fake_full_sync_imports(monkeypatch, is_peft_model=lambda _model: True)
+    model = _TinyVLLMSyncModel()
+    install_coord_offset_adapter(model, coord_ids=[2, 5], tie_head=True, dtype="float32")
+    full_state_dict = model.state_dict
+    model.merged = False
+
+    def _merge_adapter() -> None:
+        model.merged = True
+
+    def _unmerge_adapter() -> None:
+        model.merged = False
+
+    def _state_dict_missing_embed_tokens() -> dict[str, torch.Tensor]:
+        return {
+            key: value
+            for key, value in full_state_dict().items()
+            if key != "embed_tokens.weight"
+        }
+
+    model.merge_adapter = _merge_adapter
+    model.unmerge_adapter = _unmerge_adapter
+    model.state_dict = _state_dict_missing_embed_tokens
+    owner = types.SimpleNamespace(
+        model=model,
+        _vllm_server_update_state_dict=lambda _client, _state_dict: None,
+    )
+    client = types.SimpleNamespace(reset_prefix_cache=lambda: None)
+    logger = types.SimpleNamespace(info=lambda *args, **kwargs: None, warning=print)
+
+    with pytest.raises(ValueError, match="embed_tokens.weight"):
+        sync_vllm_server_full_weights(owner=owner, client=client, logger=logger)
+
+    assert model.merged is False
 
 
 def test_shutdown_vllm_server_client_closes_resources():

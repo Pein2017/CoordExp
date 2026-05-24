@@ -8,6 +8,8 @@ from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
 
 import torch
 
+from .vllm_sync_materialization import materialize_state_dict_for_vllm_full_sync
+
 
 @dataclass(frozen=True)
 class PreparedVLLMServerRollout:
@@ -649,6 +651,11 @@ def sync_vllm_server_full_weights(
                 state_dict = {
                     k: v for k, v in state_dict.items() if "lora_" not in k
                 }
+            state_dict = materialize_state_dict_for_vllm_full_sync(
+                model=owner.model,
+                state_dict=state_dict,
+                logger=logger,
+            )
             owner._vllm_server_update_state_dict(client, state_dict)
         finally:
             if is_peft and merged:

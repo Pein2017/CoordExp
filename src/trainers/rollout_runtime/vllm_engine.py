@@ -6,6 +6,7 @@ from typing import Any
 import torch
 
 from .vllm_config import VllmEngineConfig
+from .vllm_sync_materialization import materialize_state_dict_for_vllm_full_sync
 
 
 def instantiate_vllm_engine(
@@ -294,6 +295,11 @@ def sync_vllm_full_weights_if_needed(
                     if "original_module" not in k
                 }
                 state_dict = {k: v for k, v in state_dict.items() if "lora_" not in k}
+            state_dict = materialize_state_dict_for_vllm_full_sync(
+                model=train_model,
+                state_dict=state_dict,
+                logger=getattr(owner, "logger", None),
+            )
             engine.inner_model.load_weights(state_dict.items())
         finally:
             if is_peft and merged:

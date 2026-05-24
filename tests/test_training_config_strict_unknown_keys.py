@@ -917,6 +917,52 @@ def test_unknown_rollout_vllm_sync_key_fails_fast():
     assert "rollout_matching.vllm.sync.unknown" in str(exc.value)
 
 
+def test_vllm_enable_lora_is_rejected_for_native_vllm_rollouts() -> None:
+    payload = _base_stage2_two_channel_payload()
+    payload["rollout_matching"]["rollout_backend"] = "vllm"
+    payload["rollout_matching"]["vllm"] = {"enable_lora": True}
+
+    with pytest.raises(ValueError) as exc:
+        TrainingConfig.from_mapping(payload, PromptOverrides())
+
+    msg = str(exc.value)
+    assert "rollout_matching.vllm.enable_lora=false" in msg
+
+
+def test_vllm_adapter_sync_mode_is_rejected_for_native_vllm_rollouts() -> None:
+    payload = _base_stage2_two_channel_payload()
+    payload["rollout_matching"]["rollout_backend"] = "vllm"
+    payload["rollout_matching"]["vllm"] = {"sync": {"mode": "adapter"}}
+
+    with pytest.raises(ValueError) as exc:
+        TrainingConfig.from_mapping(payload, PromptOverrides())
+
+    assert "rollout_matching.vllm.sync.mode must be 'full'" in str(exc.value)
+
+
+@pytest.mark.parametrize(
+    ("alias_path", "alias_payload"),
+    [
+        ("vllm.enable_lora", {"vllm": {"enable_lora": True}}),
+        ("vllm.sync.mode", {"vllm": {"sync": {"mode": "adapter"}}}),
+        ("enable_lora", {"enable_lora": True}),
+        ("sync.mode", {"sync": {"mode": "adapter"}}),
+    ],
+)
+def test_legacy_top_level_vllm_aliases_are_rejected_by_strict_parsing(
+    alias_path: str, alias_payload: dict
+) -> None:
+    payload = _base_stage2_two_channel_payload()
+    payload.update(alias_payload)
+
+    with pytest.raises(ValueError) as exc:
+        TrainingConfig.from_mapping(payload, PromptOverrides())
+
+    msg = str(exc.value)
+    assert "Unknown top-level config keys" in msg
+    assert alias_path.split(".", maxsplit=1)[0] in msg
+
+
 def test_unknown_stage2_ab_schedule_key_fails_fast():
     payload = _base_training_payload()
     payload["stage2_ab"] = {"schedule": {"b_ratio": 0.5, "unknown_flag": 1}}

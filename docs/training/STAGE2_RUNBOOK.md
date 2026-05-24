@@ -391,6 +391,14 @@ conda run -n ms bash scripts/train_stage2.sh
 JSONL validation, GPU-split checks, rollout-server boot, and launcher metadata
 export to `src.launchers.stage2_vllm_server`.
 
+For adapter-backed compact-full checkpoints that use `coord_offset_adapter`,
+native Stage-2 vLLM rollout still uses
+`rollout_matching.vllm.sync.mode=full`: at runtime the trainer materializes an
+ordinary-weight snapshot for vLLM, then patches coord/schema token rows before
+native vLLM `load_weights()`. This does not permanently merge the learner base
+model and does not change adapter-only checkpoint saving. Filtering-only sync
+behavior is rejected; true native vLLM adapter-only row-sync remains future work.
+
 ## Experiment Authoring
 
 Prefer a concise `training.run_name` and put experiment intent in the top-level
