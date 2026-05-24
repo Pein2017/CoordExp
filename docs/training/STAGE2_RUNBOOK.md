@@ -83,6 +83,7 @@ Current internal ownership seams:
 - supported routing/objective presets are:
   - `token_ce.application.preset: anchor_text_only`
   - `stage2_trie_ce.application.preset: rollout_trie_hard_ce`
+  - `schema_format_ce.application.preset: rollout_schema_format`
   - `residual_set_correction.application.preset: rollout_self_prefix`
   - `hard_sft.application.preset: hard_sft`
 - `stage2_trie_ce` and `residual_set_correction` are aliases for the same
@@ -103,11 +104,30 @@ Current internal ownership seams:
   - loss config consumes `lambda_type`, `lambda_inner`, and residual-set
     runtime construction knobs such as `expected_num_rollouts`, `base_seed`,
     UL thresholds, and `strict_builder_invariants`.
+  - self-prefix tokens are roll-in context, not automatic positives. Residual
+    `ValidAction` records define the oracle positive set at a correction
+    position.
+  - multiple-positive marginal likelihood is allowed only while the current
+    residual-state prefix leaves multiple valid next-token actions ambiguous.
+    Once a teacher-forced token collapses the branch to one object, later
+    object-internal positions use singleton strict CE until the next genuine
+    ambiguity point.
+  - a wrong live token at a first-error position is counted as a correction and
+    MUST NOT be inserted into `valid_token_ids`; otherwise malformed same-role
+    drift can become self-reinforcing.
 - residual-set loss and telemetry are reported under
   `stage2_ab/channel_b/residual_set/`; key compact metrics include
   `sequence_count`, `atom_count`, `atom_weight_sum`, `sequence_loss`,
   `type_loss`, `inner_loss`, `wrong_type_mass`, `valid_set_mass`,
   dirty-prefix/source counters, STOP/continue counts, and decode-mode slices.
+  First-error OPD telemetry additionally includes `ambiguous_token_targets`,
+  `strict_token_targets`, `target_token_mismatch`, and
+  `coord_ambiguous_token_targets`.
+- `schema_format_ce` may be added after `stage2_trie_ce` /
+  `residual_set_correction` for compact-full online rollouts. It supervises
+  non-coordinate schema/format tokens on Channel-B rollout targets with
+  `schema_ce_weight`, while forcing desc CE weight to zero so residual-trie
+  semantics keep ownership of object-content correction.
 - removed geometry/coordinate modules:
   - `bbox_geo`, `bbox_size_aux`, `coord_reg`, and `coord_diag` are rejected by the active Stage-2 pipeline
 - duplicate-burst UL migration state:
@@ -155,6 +175,11 @@ Current internal ownership seams:
     `rollout_context: fallback_gt_fn_append_only`, and does not count as a valid
     rollout for readiness gates. Parser/template mismatches remain hard
     failures, not fallback cases.
+  - `stage2_ab.channel_b.strict_rollout_preflight: true` is the fail-fast
+    diagnostic mode for online compact-full training. It rejects truncation,
+    parser invalid/fallback outputs, salvage/drop paths, and compact-full
+    object-span extraction failures before target construction, so parser or
+    token-alignment drift cannot be hidden as fallback supervision.
   - compact-full peer attempts that enter fallback remain visible in raw
     rollout/fallback metrics. They do not contribute positive support, while
     pseudo-positive and recovered-GT support denominators remain the configured
@@ -284,6 +309,9 @@ colocate mode in a separate gate before claiming vLLM production readiness.
 The train128/val64 decode4 configs set
 `stage2_ab.channel_b.ddp_phase_timeout_s: 600` because HF batch decode and
 target construction can create substantial rank skew before the learner step.
+Four-rollout decode presets use ordinal temperatures `[0.0, 0.3, 0.5, 0.7]`;
+avoid `1.0` for these infra gates because it has been unstable in grammar
+rollouts.
 Post-rollout packing is DDP-scheduled: each rank first plans its local packs,
 the trainer gathers local pack counts, and all ranks execute the same
 `global_slot_count`. Ranks with fewer local packs use front-padded zero-weight

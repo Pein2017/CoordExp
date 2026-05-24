@@ -153,3 +153,27 @@ Normative behavior:
 - **THEN** the objective supervises the selected teacher path
 - **AND** it does not silently enable valid-set marginal, coverage, or retired
   bbox/coord auxiliaries.
+
+### Requirement: First-error correction atoms may target oracle tokens
+Teacher-forcing target IR SHALL normally require `selected_token_id` to match
+`input_ids[target_position]`, but residual first-error correction atoms MAY
+target an oracle token different from the live self-prefix token when the
+provenance explicitly marks that mismatch.
+
+Normative behavior:
+- A target-token mismatch is valid only when
+  `provenance.allow_target_token_mismatch=true`.
+- The oracle `selected_token_id` MUST still be inside `valid_token_ids`.
+- Loss modules compute valid-set probability from `valid_token_ids`; they MUST
+  NOT treat the live self-prefix token as positive unless it is also an oracle
+  valid action.
+- Residual-set metrics SHOULD count target-token mismatches and ambiguous vs
+  singleton target surfaces.
+
+#### Scenario: First-error mismatch remains explicit
+- **WHEN** an atom's selected token differs from the live target-position token
+- **AND** the provenance flag is absent
+- **THEN** validation fails fast.
+- **WHEN** the provenance flag is present
+- **THEN** validation succeeds and the valid-set loss supervises the oracle
+  positive set.

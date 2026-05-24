@@ -50,6 +50,35 @@ Normative behavior:
 - **THEN** config loading fails fast before trainer init
 - **AND** the error indicates `stage2_ab.pipeline` is required.
 
+### Requirement: Residual-state trie correction uses first-error online policy distillation semantics
+When Stage-2 AB Channel-B uses `stage2_trie_ce` or
+`residual_set_correction`, self-prefix rollout tokens SHALL be treated as
+roll-in context, not as automatic positive labels.
+
+Normative behavior:
+- Residual-state `ValidAction` records define the positive next-token set at
+  each correction position.
+- Multiple-positive marginal likelihood is allowed only when the current
+  residual-state prefix leaves multiple next-token actions genuinely valid.
+- Once a teacher-forced token collapses the residual candidate set to a
+  singleton, subsequent object-internal positions MUST use singleton strict CE
+  until another genuine residual-state ambiguity is reached.
+- A live token that is not in the oracle valid-action set MUST NOT be added to
+  `valid_token_ids`.
+- First-error atoms MAY supervise an oracle selected token that differs from
+  `input_ids[target_position]`, but only when the atom provenance explicitly
+  marks this as an intentional target-token mismatch.
+
+#### Scenario: Same-role wrong live token is corrected instead of reinforced
+- **GIVEN** a Channel-B self-prefix contains a text token at a correction
+  position
+- **AND** the residual-state oracle valid action set contains a different text
+  token
+- **WHEN** residual-set target IR is built
+- **THEN** the live token is recorded as provenance
+- **AND** the live token is not inserted into the positive token set
+- **AND** the objective trains the oracle valid action set.
+
 ### Requirement: Stage-2 AB pipeline specs are explicit and complete where required
 Stage-2 AB pipeline module specs MUST be authored with explicit fields and
 strict module configs to prevent silent drift. Residual-state trie aliases MAY
