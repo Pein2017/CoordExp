@@ -1,11 +1,23 @@
 ---
 name: model-diagnosis
-description: Use when diagnosing model behavior around training, decoding, data, objective, architecture, optimization, or production-run launch health.
+description: "Use when CoordExp model behavior is already abnormal or uncertain: metric drops, FP/FN shifts, invalid or malformed outputs, duplication bursts, length/stop/repetition changes, train/eval divergence, optimization instability, or launch-health symptoms."
 ---
 
 # Model Diagnosis
 
-Stay causal. Separate artifact/eval validity, implementation bugs, objective mismatch, data distribution, optimization instability, and genuine model limitation before recommending fixes.
+Stay causal. This skill is a **symptom-to-root-cause debugger**, not a pre-launch contract audit. Separate artifact/eval validity, implementation bugs, objective mismatch, data distribution, optimization instability, and genuine model limitation before recommending fixes.
+
+## Role Boundary
+
+Use this skill when the question is:
+
+- "Why did this metric, rollout behavior, loss, parse rate, prediction count, or qualitative output change?"
+- "Is this real model degradation, eval/artifact mismatch, objective mismatch, data shift, optimization instability, or a model limitation?"
+- "What small probe or visualization will separate competing behavioral hypotheses?"
+
+Do **not** use this skill as the first pass when the user is asking whether a planned or newly wired mechanism is contract-safe before results exist. Use `model-innovation-risk-audit` first for pre-launch/new-integration risk checks.
+
+Switch to `model-innovation-risk-audit` when symptom evidence suggests silent train/eval/config/runtime mismatch, stale artifacts, wrong adapter, prompt/template drift, schema drift, or metric-contract ambiguity.
 
 ## Diagnostic Order
 
@@ -25,7 +37,7 @@ Stay causal. Separate artifact/eval validity, implementation bugs, objective mis
 
 ## Tiny Probe Gate
 
-Use before expensive training when the change affects objective math, targets, tokenizer/template, sampling, packing, precision, optimizer groups, decoding, or eval semantics.
+Use before expensive training when abnormal behavior needs a causal read and the change affects objective math, targets, tokenizer/template, sampling, packing, precision, optimizer groups, decoding, or eval semantics.
 
 Probe requirements:
 

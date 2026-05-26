@@ -1,11 +1,23 @@
 ---
 name: model-innovation-risk-audit
-description: Use when auditing a new CoordExp model/objective/data/tokenizer/decode/eval/runtime innovation for silent train/eval mismatch risk.
+description: "Use when reviewing a planned or newly wired CoordExp model/objective/data/tokenizer/decode/eval/runtime change before trusting training or eval claims, especially for silent train/eval/config/artifact mismatch risk."
 ---
 
 # Model Innovation Risk Audit
 
-Default to read-only audit. The goal is to find mismatches that do not crash, can pass smokes, and can produce normal-looking losses while changing the actual training signal or eval claim.
+Default to read-only audit. This skill is a **contract and provenance gate**, not a symptom debugger. The goal is to find mismatches that do not crash, can pass smokes, and can produce normal-looking losses while changing the actual training signal or eval claim.
+
+## Role Boundary
+
+Use this skill when the question is:
+
+- "Can we trust this new mechanism, config, data path, tokenizer/template, loss, decode path, eval path, or runtime integration?"
+- "Could this innovation silently train or evaluate a different contract than intended?"
+- "Before launching or interpreting a run, are schema, materialized config, data, loss, decode/eval, and artifacts aligned?"
+
+Do **not** use this skill as the main tool when the user already has a concrete behavioral symptom such as a metric drop, FP/FN shift, invalid rollout spike, duplication burst, length collapse, train/eval divergence, or optimization instability. Start with `model-diagnosis` for those symptoms, then return here only if the diagnosis points to silent config/runtime/eval contract drift.
+
+Hand off to `model-diagnosis` when the contract appears wired correctly but behavior remains unproven or abnormal.
 
 ## Contract Triangulation
 
@@ -34,7 +46,7 @@ Prefer narrow evidence:
 - artifact manifest check;
 - targeted unit test or smoke command.
 
-If the contract is wired plausibly but behavior remains unproven, hand off to `model-diagnosis` for a tiny probe before expensive training.
+Probe goal: prove or falsify a contract mismatch. Do not explain a metric regression from aggregate scores alone; that is `model-diagnosis` territory.
 
 ## Findings-First Report
 
