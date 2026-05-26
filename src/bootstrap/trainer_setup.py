@@ -15,6 +15,50 @@ from src.trainers.metrics.mixins import (
 )
 
 
+class _InjectedSwiftDataCollatorMixin:
+    """Route CoordExp's collator through ms-swift's current trainer lifecycle."""
+
+    def __init__(self, *args: Any, data_collator: Any = None, **kwargs: Any) -> None:
+        self._coordexp_injected_data_collator = data_collator
+        super().__init__(*args, **kwargs)  # type: ignore[misc]
+
+    def _get_data_collator(self, args: Any, template: Any) -> Any:
+        collator = getattr(self, "_coordexp_injected_data_collator", None)
+        if collator is not None:
+            return collator
+        return super()._get_data_collator(args, template)  # type: ignore[misc]
+
+
+_SWIFT_COLLATOR_WRAPPER_CACHE: dict[type, type] = {}
+
+
+def _trainer_uses_swift_collator_factory(trainer_cls: type) -> bool:
+    for cls in trainer_cls.mro():
+        if str(getattr(cls, "__module__", "")).startswith("swift.") and hasattr(
+            cls, "_get_data_collator"
+        ):
+            return True
+    return False
+
+
+def _with_injected_swift_data_collator(trainer_cls: type) -> type:
+    if not _trainer_uses_swift_collator_factory(trainer_cls):
+        return trainer_cls
+    if issubclass(trainer_cls, _InjectedSwiftDataCollatorMixin):
+        return trainer_cls
+    cached = _SWIFT_COLLATOR_WRAPPER_CACHE.get(trainer_cls)
+    if cached is not None:
+        return cached
+    wrapped = type(
+        f"{trainer_cls.__name__}WithInjectedDataCollator",
+        (_InjectedSwiftDataCollatorMixin, trainer_cls),
+        {},
+    )
+    wrapped.__module__ = trainer_cls.__module__
+    _SWIFT_COLLATOR_WRAPPER_CACHE[trainer_cls] = wrapped
+    return wrapped
+
+
 def compose_trainer_class(
     *,
     trainer_cls: type,
@@ -162,6 +206,7 @@ def instantiate_trainer(
 ) -> Any:
     if heartbeat_writer is not None:
         heartbeat_writer.emit("trainer_init_start")
+    trainer_cls = _with_injected_swift_data_collator(trainer_cls)
     trainer = trainer_cls(
         model=sft_model,
         args=training_args,

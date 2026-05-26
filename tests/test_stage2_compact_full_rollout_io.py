@@ -10,7 +10,7 @@ from src.common.detection_sequence import (
     OBJECT_REF_START_TOKEN,
     parse_compact_detection_sequence,
 )
-from src.trainers.stage2_two_channel.rollout_views import build_channel_b_rollout_view
+from src.trainers.rollout_correction.rollout_views import build_rollout_correction_view
 from src.training.stage2.rollout_codec import (
     CompactFullRolloutCodec,
     Stage2RolloutObject,
@@ -92,7 +92,7 @@ def test_compact_full_parse_and_append_round_trip_without_json_fallback() -> Non
     )
 
     parse_result = codec.parse(raw)
-    target = codec.build_channel_b_target(
+    target = codec.build_rollout_correction_target(
         parse_result,
         fn_objects=(_gt(1, "dog", [10, 20, 30, 40]),),
     )
@@ -201,7 +201,7 @@ def test_compact_full_rollout_view_drops_salvaged_span_mismatch_attempt() -> Non
     )
     token_ids = tok.encode(raw, add_special_tokens=False)
 
-    view = build_channel_b_rollout_view(
+    view = build_rollout_correction_view(
         tokenizer=tok,
         object_field_order="desc_first",
         coord_id_to_bin={},
@@ -238,7 +238,7 @@ def test_compact_full_strict_preflight_rejects_salvaged_rows() -> None:
     token_ids = tok.encode(raw, add_special_tokens=False)
 
     with pytest.raises(ValueError, match="strict rollout preflight.*dropped"):
-        build_channel_b_rollout_view(
+        build_rollout_correction_view(
             tokenizer=tok,
             object_field_order="desc_first",
             coord_id_to_bin={},
@@ -263,7 +263,7 @@ def test_compact_full_strict_preflight_rejects_fallback_output() -> None:
     token_ids = tok.encode(raw, add_special_tokens=False)
 
     with pytest.raises(ValueError, match="strict rollout preflight.*fallback"):
-        build_channel_b_rollout_view(
+        build_rollout_correction_view(
             tokenizer=tok,
             object_field_order="desc_first",
             coord_id_to_bin={},
@@ -296,7 +296,7 @@ def test_compact_full_invalid_or_empty_output_falls_back_to_gt_fn_append_only(
     codec = CompactFullRolloutCodec()
 
     parse_result = codec.parse(raw)
-    target = codec.build_channel_b_target(
+    target = codec.build_rollout_correction_target(
         parse_result,
         fn_objects=(_gt(0, "fallback cat", [100, 200, 300, 400]),),
     )
@@ -355,7 +355,7 @@ def test_compact_full_rejects_malformed_accepted_bbox(
     )
 
     with pytest.raises(ValueError, match="norm1000 bbox"):
-        codec.build_channel_b_target(parse_result, fn_objects=())
+        codec.build_rollout_correction_target(parse_result, fn_objects=())
 
 
 def test_compact_full_rejects_out_of_range_fn_bbox() -> None:
@@ -371,7 +371,7 @@ def test_compact_full_rejects_out_of_range_fn_bbox() -> None:
     )
 
     with pytest.raises(ValueError, match="norm1000 bbox"):
-        codec.build_channel_b_target(
+        codec.build_rollout_correction_target(
             parse_result,
             fn_objects=(_gt(0, "dog", [10, 20, 30, 1000]),),
         )

@@ -1,0 +1,29 @@
+extends: compact_full_vllm_train64_val32_12steps_baseline.yaml
+
+experiment:
+  title: Stage-2 rollout-correction same-surface base-control eval
+  purpose: >
+    Measure the ckpt3664 base adapter under the exact rollout-correction smoke
+    eval surface used by the 12-step baseline/rollback runs, without applying a
+    meaningful optimizer update.
+  hypothesis: >
+    If mAP is already low before Stage-2 updates, the observed step-6 AP drop is
+    primarily an eval-surface or slice mismatch rather than a real training
+    degradation caused by the duplicate-prefix rollback candidate.
+  key_deviations:
+    - Runs one optimizer step with all configured learning rates set to zero.
+    - Evaluates at step 1 on the same val32 JSONL and vLLM eval path.
+
+training:
+  output_dir: output/stage2_rollout_correction/smoke/compact_full_vllm_train64_val32_base_control_lr0_1step
+  run_name: compact_full_vllm_train64_val32_base_control_lr0_1step
+  max_steps: 1
+  eval_steps: 1
+  # Keep this nonzero because cosine_warmup_with_min_lr divides by the base lr.
+  # One 1e-12-lr step is effectively a no-update base-control probe.
+  learning_rate: 1.0e-12
+  vit_lr: 1.0e-12
+  aligner_lr: 1.0e-12
+  warmup_ratio: 0.0
+  lr_scheduler_kwargs:
+    min_lr: 1.0e-12

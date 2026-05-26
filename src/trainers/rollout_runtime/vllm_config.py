@@ -3,6 +3,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Dict, Mapping, Optional
 
+from src.trainers.rollout_runtime.vllm_compat import validate_vllm_engine_kwargs
+
 
 @dataclass(frozen=True)
 class VllmEngineConfig:
@@ -66,8 +68,8 @@ def resolve_vllm_engine_config(owner: Any) -> VllmEngineConfig:
     enable_lora = bool(vcfg.get("enable_lora", False))
     if enable_lora:
         raise RuntimeError(
-            "vLLM rollouts require full merged-weight sync in this stack: "
-            "set rollout_matching.vllm.enable_lora=false."
+            "Adapter-only vLLM sync is currently wired for server mode only; "
+            "set rollout_matching.vllm.mode=server or disable enable_lora."
         )
 
     load_format = vcfg.get("load_format", None)
@@ -189,6 +191,17 @@ def resolve_vllm_engine_config(owner: Any) -> VllmEngineConfig:
 
     if "skip_mm_profiling" in vcfg:
         vllm_engine_kwargs["skip_mm_profiling"] = bool(vcfg.get("skip_mm_profiling"))
+    if (
+        "enable_tower_connector_lora" in vcfg
+        and vcfg.get("enable_tower_connector_lora") is not None
+    ):
+        vllm_engine_kwargs["enable_tower_connector_lora"] = bool(
+            vcfg.get("enable_tower_connector_lora")
+        )
+    vllm_engine_kwargs = validate_vllm_engine_kwargs(
+        vllm_engine_kwargs,
+        context="rollout_matching.vllm colocate engine kwargs",
+    )
 
     dist_backend_raw = vcfg.get("distributed_executor_backend")
     if dist_backend_raw is None:
@@ -219,4 +232,3 @@ def resolve_vllm_engine_config(owner: Any) -> VllmEngineConfig:
         vllm_engine_kwargs=vllm_engine_kwargs,
         dist_backend=str(dist_backend),
     )
-

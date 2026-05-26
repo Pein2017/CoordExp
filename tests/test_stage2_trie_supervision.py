@@ -4,7 +4,7 @@ import json
 
 import pytest
 
-from src.trainers.stage2_two_channel.trie_supervision import (
+from src.trainers.rollout_correction.trie_supervision import (
     Stage2TrieCandidate,
     Stage2TrieObjectSpan,
     Stage2TrieSpanScoreRecord,

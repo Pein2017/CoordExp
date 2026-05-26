@@ -12,7 +12,10 @@ import torch.nn as nn
 import torch.nn.functional as F
 import transformers
 from packaging import version
-from swift.trainers.rlhf_trainer.gkd_trainer import GKDTrainer as _MsSwiftGKDTrainer
+try:
+    from swift.rlhf_trainers.gkd_trainer import GKDTrainer as _MsSwiftGKDTrainer
+except ImportError:
+    from swift.trainers.rlhf_trainer.gkd_trainer import GKDTrainer as _MsSwiftGKDTrainer
 
 from ..config import VisualKDConfig, VisualKDTargetConfig
 

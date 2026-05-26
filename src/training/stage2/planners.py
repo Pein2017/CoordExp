@@ -251,92 +251,8 @@ def _coerce_stage2_object(
     raise TypeError("unsupported Stage-2 planning object")
 
 
-class Stage2ChannelAPlanner:
-    """Shadow planner for Stage-2 Channel-A ground-truth supervision."""
-
-    def __init__(self, *, ordering: ObjectOrderingStrategy | None = None) -> None:
-        """Initialize the Channel-A planner."""
-
-        self.ordering = ordering if ordering is not None else TopLeftSpatialOrdering()
-
-    def plan(
-        self,
-        *,
-        sample_id: str,
-        template_id: str,
-        ground_truth_objects: Sequence[Stage2PlanningObject | AssignmentObject],
-        context_id: str | None = None,
-    ) -> SupervisionPlan:
-        """Return a semantic Channel-A supervision plan for one example."""
-
-        gt_objects = tuple(
-            _IndexedStage2PlanningObject(
-                planning_object=_coerce_stage2_object(
-                    source,
-                    default_provenance="ground_truth",
-                ),
-                source_index=index,
-                source_role="ground_truth",
-            )
-            for index, source in enumerate(ground_truth_objects)
-        )
-        ordered_objects = self.ordering.order(
-            accepted_objects=gt_objects,
-            false_negative_objects=(),
-        )
-
-        supervision_objects = tuple(
-            self._to_supervision_object(
-                indexed_object=indexed_object,
-                plan_index=plan_index,
-            )
-            for plan_index, indexed_object in enumerate(ordered_objects)
-        )
-
-        return SupervisionPlan(
-            sample_id=sample_id,
-            stage="stage2",
-            template_id=template_id,
-            objects=supervision_objects,
-            channel="channel_a",
-            provenance="stage2_channel_a_shadow_planner",
-            context_id=context_id,
-            metadata={
-                "object_ordering": self.ordering.strategy_id,
-                "object_count": len(supervision_objects),
-            },
-        )
-
-    def _to_supervision_object(
-        self,
-        *,
-        indexed_object: _IndexedStage2PlanningObject,
-        plan_index: int,
-    ) -> SupervisionObject:
-        """Return a semantic supervision object with planner provenance."""
-
-        planning_object = indexed_object.planning_object
-        metadata: dict[str, PlanningScalar] = {
-            "source_role": indexed_object.source_role,
-            "object_ordering": self.ordering.strategy_id,
-            "source_index": indexed_object.source_index,
-            "plan_index": plan_index,
-            "original_index": indexed_object.source_index,
-        }
-        for key, value in planning_object.metadata.items():
-            metadata.setdefault(key, value)
-
-        return SupervisionObject(
-            object_id=planning_object.object_id,
-            description=planning_object.description,
-            bbox=planning_object.bbox,
-            provenance=planning_object.provenance,
-            metadata=metadata,
-        )
-
-
-class Stage2ChannelBPlanner:
-    """Shadow planner for Stage-2 Channel-B rollout-plus-FN supervision."""
+class Stage2RolloutCorrectionPlanner:
+    """Shadow planner for Stage-2 rollout-correction rollout-plus-FN supervision."""
 
     def __init__(
         self,
@@ -344,7 +260,7 @@ class Stage2ChannelBPlanner:
         duplicate_filter: DuplicateFilterStrategy | None = None,
         ordering: ObjectOrderingStrategy | None = None,
     ) -> None:
-        """Initialize the Channel-B planner."""
+        """Initialize the rollout-correction planner."""
 
         self.duplicate_filter = (
             duplicate_filter
@@ -362,7 +278,7 @@ class Stage2ChannelBPlanner:
         missing_ground_truth_objects: Sequence[Stage2PlanningObject | AssignmentObject],
         context_id: str | None = None,
     ) -> SupervisionPlan:
-        """Return a semantic Channel-B supervision plan for one example."""
+        """Return a semantic rollout-correction supervision plan for one example."""
 
         accepted_objects = self._index_planning_objects(
             sources=accepted_rollout_objects,
@@ -444,7 +360,7 @@ class Stage2ChannelBPlanner:
         duplicate_plan: _Stage2DuplicatePlanningResult | None = None,
         accepted_rollout_count: int | None = None,
     ) -> SupervisionPlan:
-        """Return a Channel-B plan from already indexed semantic objects."""
+        """Return a rollout-correction plan from already indexed semantic objects."""
 
         resolved_duplicate_plan = (
             duplicate_plan
@@ -476,8 +392,8 @@ class Stage2ChannelBPlanner:
             stage="stage2",
             template_id=template_id,
             objects=supervision_objects,
-            channel="channel_b",
-            provenance="stage2_channel_b_shadow_planner",
+            channel="rollout_correction",
+            provenance="stage2_rollout_correction_shadow_planner",
             context_id=context_id,
             metadata={
                 "assignment_strategy": "external_missing_gt",
@@ -556,11 +472,11 @@ class Stage2ChannelBPlanner:
 
 
 class Stage2GreedyIoUShadowPlanner:
-    """Diagnostic Stage-2 planner that shadows legacy Channel-B assignment.
+    """Diagnostic Stage-2 planner that shadows legacy rollout-correction assignment.
 
     The planner performs greedy IoU assignment only to derive semantic
     diagnostics and false-negative GT insertion candidates. It delegates final
-    Channel-B object planning to ``Stage2ChannelBPlanner`` so the live trainer
+    rollout-correction object planning to ``Stage2RolloutCorrectionPlanner`` so the live trainer
     defaults remain untouched.
     """
 
@@ -568,13 +484,13 @@ class Stage2GreedyIoUShadowPlanner:
         self,
         *,
         assignment_strategy: AssignmentStrategy | None = None,
-        channel_b_planner: Stage2ChannelBPlanner | None = None,
+        rollout_correction_planner: Stage2RolloutCorrectionPlanner | None = None,
     ) -> None:
         """Initialize the shadow planner.
 
         :param assignment_strategy: Optional assignment strategy. Defaults to
             greedy IoU with the legacy diagnostic threshold.
-        :param channel_b_planner: Optional Channel-B semantic planner.
+        :param rollout_correction_planner: Optional rollout-correction semantic planner.
         """
 
         self.assignment_strategy = (
@@ -582,10 +498,10 @@ class Stage2GreedyIoUShadowPlanner:
             if assignment_strategy is not None
             else GreedyIoUAssignment(iou_threshold=0.5)
         )
-        self.channel_b_planner = (
-            channel_b_planner
-            if channel_b_planner is not None
-            else Stage2ChannelBPlanner()
+        self.rollout_correction_planner = (
+            rollout_correction_planner
+            if rollout_correction_planner is not None
+            else Stage2RolloutCorrectionPlanner()
         )
 
     def plan(
@@ -597,7 +513,7 @@ class Stage2GreedyIoUShadowPlanner:
         ground_truth_objects: Sequence[Stage2PlanningObject | AssignmentObject],
         context_id: str | None = None,
     ) -> SupervisionPlan:
-        """Return a Channel-B shadow plan with greedy-IoU diagnostics."""
+        """Return a rollout-correction shadow plan with greedy-IoU diagnostics."""
 
         return self.plan_with_diagnostics(
             sample_id=sample_id,
@@ -616,21 +532,21 @@ class Stage2GreedyIoUShadowPlanner:
         ground_truth_objects: Sequence[Stage2PlanningObject | AssignmentObject],
         context_id: str | None = None,
     ) -> "Stage2GreedyIoUShadowPlanningResult":
-        """Return the Channel-B shadow plan and planner-owned diagnostics."""
+        """Return the rollout-correction shadow plan and planner-owned diagnostics."""
 
         predictions = tuple(predicted_objects)
         ground_truth = tuple(ground_truth_objects)
-        indexed_predictions = self.channel_b_planner._index_planning_objects(
+        indexed_predictions = self.rollout_correction_planner._index_planning_objects(
             sources=predictions,
             default_provenance="rollout_accepted",
             source_role="accepted_rollout",
         )
-        indexed_ground_truth = self.channel_b_planner._index_planning_objects(
+        indexed_ground_truth = self.rollout_correction_planner._index_planning_objects(
             sources=ground_truth,
             default_provenance="gt_false_negative",
             source_role="false_negative",
         )
-        duplicate_plan = self.channel_b_planner._filter_accepted_objects(
+        duplicate_plan = self.rollout_correction_planner._filter_accepted_objects(
             indexed_predictions,
         )
 
@@ -657,7 +573,7 @@ class Stage2GreedyIoUShadowPlanner:
             for unmatched in assignment_result.unmatched_ground_truth
         )
 
-        channel_b_plan = self.channel_b_planner._plan_indexed(
+        rollout_correction_plan = self.rollout_correction_planner._plan_indexed(
             sample_id=sample_id,
             template_id=template_id,
             accepted_objects=duplicate_plan.accepted_survivors,
@@ -668,15 +584,15 @@ class Stage2GreedyIoUShadowPlanner:
         )
 
         plan = SupervisionPlan(
-            sample_id=channel_b_plan.sample_id,
-            stage=channel_b_plan.stage,
-            template_id=channel_b_plan.template_id,
-            objects=channel_b_plan.objects,
-            channel=channel_b_plan.channel,
+            sample_id=rollout_correction_plan.sample_id,
+            stage=rollout_correction_plan.stage,
+            template_id=rollout_correction_plan.template_id,
+            objects=rollout_correction_plan.objects,
+            channel=rollout_correction_plan.channel,
             provenance="stage2_greedy_iou_shadow_planner",
-            context_id=channel_b_plan.context_id,
+            context_id=rollout_correction_plan.context_id,
             metadata={
-                **dict(channel_b_plan.metadata),
+                **dict(rollout_correction_plan.metadata),
                 "assignment_strategy": self.assignment_strategy.strategy_id,
                 "matched_prediction_count": len(assignment_result.pairs),
                 "matched_ground_truth_count": len(assignment_result.pairs),
@@ -730,7 +646,7 @@ class Stage2GreedyIoUShadowPlanner:
 class Stage2GreedyIoUShadowPlanningResult:
     """Planner-owned Stage-2 shadow plan with reusable diagnostics.
 
-    :param plan: Final semantic Channel-B supervision plan.
+    :param plan: Final semantic rollout-correction supervision plan.
     :param duplicate_decisions: Duplicate-filter decisions from the same pass
         that produced ``plan``.
     :param assignment_result: Greedy assignment result from the same
@@ -745,17 +661,17 @@ class Stage2GreedyIoUShadowPlanningResult:
     post_duplicate_prediction_count: int
 
 
-class LegacyStage2ChannelBTargetBuilderAdapter:
-    """Compatibility seam from live target-builder contracts to semantic plans."""
+class LegacyStage2RolloutCorrectionRealizerAdapter:
+    """Compatibility seam from live correction realization contracts to semantic plans."""
 
-    strategy_id = "legacy_stage2_channel_b_target_builder_adapter"
+    strategy_id = "legacy_stage2_rollout_correction_realizer_adapter"
 
     def __init__(
         self,
         *,
         duplicate_filter: DuplicateFilterStrategy | None = None,
     ) -> None:
-        """Initialize the legacy target-builder adapter."""
+        """Initialize the legacy correction-realizer adapter."""
 
         self.duplicate_filter = (
             duplicate_filter
@@ -774,7 +690,7 @@ class LegacyStage2ChannelBTargetBuilderAdapter:
         insertion_order: str = "tail_append",
         context_id: str | None = None,
     ) -> SupervisionPlan:
-        """Return a semantic plan from live Stage-2 target-builder inputs."""
+        """Return a semantic plan from live Stage-2 correction-realizer inputs."""
 
         matched_gt_indices = {
             int(gt_index)
@@ -783,7 +699,7 @@ class LegacyStage2ChannelBTargetBuilderAdapter:
         missing_gt_objects = tuple(
             self._from_legacy_gt_object(
                 gt_object=gt_object,
-                default_provenance="legacy_target_builder_false_negative",
+                default_provenance="legacy_correction_realizer_false_negative",
             )
             for index, gt_object in enumerate(gts)
             if int(index) not in matched_gt_indices
@@ -791,11 +707,11 @@ class LegacyStage2ChannelBTargetBuilderAdapter:
         accepted_objects = tuple(
             self._from_legacy_gt_object(
                 gt_object=gt_object,
-                default_provenance="legacy_target_builder_accepted_clean",
+                default_provenance="legacy_correction_realizer_accepted_clean",
             )
             for gt_object in accepted_objects_clean
         )
-        planner = Stage2ChannelBPlanner(
+        planner = Stage2RolloutCorrectionPlanner(
             duplicate_filter=self.duplicate_filter,
             ordering=resolve_object_ordering_strategy(insertion_order),
         )
@@ -817,7 +733,7 @@ class LegacyStage2ChannelBTargetBuilderAdapter:
             context_id=plan.context_id,
             metadata={
                 **dict(plan.metadata),
-                "target_builder_adapter": self.strategy_id,
+                "correction_realizer_adapter": self.strategy_id,
                 "assignment_strategy": "legacy_match_result",
             },
         )
@@ -843,9 +759,8 @@ class LegacyStage2ChannelBTargetBuilderAdapter:
 
 
 __all__ = [
-    "LegacyStage2ChannelBTargetBuilderAdapter",
-    "Stage2ChannelAPlanner",
-    "Stage2ChannelBPlanner",
+    "LegacyStage2RolloutCorrectionRealizerAdapter",
+    "Stage2RolloutCorrectionPlanner",
     "Stage2GreedyIoUShadowPlanningResult",
     "Stage2GreedyIoUShadowPlanner",
     "Stage2PlanningObject",

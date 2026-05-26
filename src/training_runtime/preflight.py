@@ -100,7 +100,7 @@ def _validate_teacher_forcing_stage2_packing(
 ) -> None:
     if _read_path(config, ("objective", "id")) != "teacher_forcing":
         return
-    if _read_path(config, ("custom", "trainer_variant")) != "stage2_two_channel":
+    if runtime_plan.variant != "stage2_rollout_correction":
         return
     if runtime_plan.post_rollout_packing_owner != "trainer":
         return
@@ -108,7 +108,7 @@ def _validate_teacher_forcing_stage2_packing(
     if bool(_read_value(training, "packing")):
         raise ValueError(
             "objective.id=teacher_forcing with custom.trainer_variant="
-            "stage2_two_channel rejects training.packing=true before rollout "
+            "stage2_rollout_correction rejects training.packing=true before rollout "
             "setup or model forward; exact atom-position packing mapping is not "
             "implemented. Set training.packing=false for teacher_forcing."
         )

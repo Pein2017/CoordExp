@@ -42,7 +42,7 @@ def test_write_run_manifest_files_writes_required_json(tmp_path: Path) -> None:
     cfg = _TinyCfg(output_dir=Path("out"), template={"max_pixels": 10485760})
     stage2_policy = {
         "assignment_strategy": "greedy_iou",
-        "duplicate_filter_strategy": "legacy_channel_b_duplicate_control",
+        "duplicate_filter_strategy": "rollout_correction_duplicate_control",
         "object_ordering_policy": "sorted",
     }
     written = write_run_manifest_files(

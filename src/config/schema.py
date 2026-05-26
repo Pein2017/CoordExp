@@ -70,7 +70,7 @@ AllowedVisualDistance = Literal["mse", "cosine"]
 AllowedJsonFormat = Literal["standard"]
 
 ALLOWED_JSON_FORMATS: set[str] = {"standard"}
-STAGE2_CHANNEL_B_FP_POLICIES: set[str] = {
+STAGE2_ROLLOUT_CORRECTION_FP_POLICIES: set[str] = {
     "zero_loss_context",
     "weak_positive_context",
 }
@@ -93,6 +93,7 @@ STAGE2_RESIDUAL_SET_DEFAULT_CONFIG_VALUES: dict[str, Any] = {
     "label_conflict_weight": 0.25,
     "commit_iou_threshold": 0.75,
     "duplicate_burst_iou_threshold": 0.95,
+    "duplicate_burst_prefix_rollback": False,
     "ul_cluster_iou_threshold": 0.9,
     "ul_gray_iou_low": 0.30,
     "ul_consensus_ratio": 1.0,
@@ -127,6 +128,7 @@ STAGE2_RESIDUAL_SET_THRESHOLD_CONFIG_KEYS: set[str] = {
 }
 STAGE2_RESIDUAL_SET_BOOL_CONFIG_KEYS: set[str] = {
     "strict_builder_invariants",
+    "duplicate_burst_prefix_rollback",
 }
 TEACHER_FORCING_OBJECTIVE_ID = "teacher_forcing"
 TEACHER_FORCING_PROFILES: set[str] = {
@@ -230,7 +232,7 @@ def _is_versioned_alias_for(name: str, canonical: str) -> bool:
 
 def _stage2_residual_set_config_path(key: str) -> str:
     return (
-        "stage2_ab.pipeline.objective[name=residual_set_correction|stage2_trie_ce]"
+        "stage2_rollout_correction.pipeline.objective[name=residual_set_correction]"
         f".config.{key}"
     )
 
@@ -324,9 +326,15 @@ def _validate_stage2_residual_set_config(
 @lru_cache(maxsize=1)
 def _train_arguments_allowed_keys() -> set[str]:
     # Schema-derived strict key acceptance for ms-swift TrainArguments-driven sections.
-    from swift.llm.argument import TrainArguments
+    try:
+        from swift.llm.argument import TrainArguments
+    except ImportError:
+        from swift.arguments import SftArguments as TrainArguments
 
-    return {f.name for f in fields(TrainArguments)}
+    allowed = {f.name for f in fields(TrainArguments)}
+    if "tuner_type" in allowed:
+        allowed.add("train_type")
+    return allowed
 
 
 _TRAINING_INTERNAL_KEYS: set[str] = {
@@ -383,7 +391,10 @@ def _validate_training_checkpoint_keys(data: Mapping[str, Any]) -> None:
 
 @lru_cache(maxsize=1)
 def _rlhf_arguments_allowed_keys() -> set[str]:
-    from swift.llm.argument import RLHFArguments
+    try:
+        from swift.llm.argument import RLHFArguments
+    except ImportError:
+        from swift.arguments import RLHFArguments
 
     allowed = {f.name for f in fields(RLHFArguments)}
     # Local knob (popped before RLHFArguments/TrainArguments init).
@@ -1995,52 +2006,7 @@ class BenchmarkConfig:
 
 
 @dataclass(frozen=True)
-class Stage2ABScheduleConfig:
-    """Deterministic Stage-2 AB channel schedule."""
-
-    b_ratio: float
-
-    @classmethod
-    def from_mapping(cls, payload: Any) -> "Stage2ABScheduleConfig":
-        if not isinstance(payload, Mapping):
-            raise TypeError("stage2_ab.schedule must be a mapping")
-
-        data: MutableMapping[str, Any] = dict(payload)
-
-        if "pattern" in data:
-            raise ValueError(
-                "stage2_ab.schedule.pattern is not supported. "
-                "Use stage2_ab.schedule.b_ratio (float in [0,1]) instead."
-            )
-
-        if "b_ratio" not in data:
-            raise ValueError(
-                "stage2_ab.schedule.b_ratio must be provided (float in [0,1]); "
-                "e.g. 0.0=A-only, 1.0=B-only, 0.05=~5% B."
-            )
-        b_ratio_raw = data.pop("b_ratio", None)
-        try:
-            b_ratio = float(b_ratio_raw)
-        except (TypeError, ValueError) as exc:
-            raise TypeError(
-                "stage2_ab.schedule.b_ratio must be a float in [0,1]"
-            ) from exc
-
-        if not (0.0 <= b_ratio <= 1.0):
-            raise ValueError(
-                f"stage2_ab.schedule.b_ratio must be in [0,1], got {b_ratio!r}"
-            )
-
-        if data:
-            raise ValueError(
-                f"Unknown stage2_ab.schedule keys: {sorted(str(k) for k in data.keys())}"
-            )
-
-        return cls(b_ratio=b_ratio)
-
-
-@dataclass(frozen=True)
-class Stage2ABChannelBTriagePosteriorConfig:
+class Stage2RolloutCorrectionTriagePosteriorConfig:
     num_rollouts: int = 2
     explorer_temperature: float = 0.7
     rollout_temperatures: tuple[float, ...] | None = None
@@ -2055,7 +2021,7 @@ class Stage2ABChannelBTriagePosteriorConfig:
         payload: Any,
         *,
         default_num_rollouts: Optional[int] = None,
-    ) -> "Stage2ABChannelBTriagePosteriorConfig":
+    ) -> "Stage2RolloutCorrectionTriagePosteriorConfig":
         if payload is None:
             return cls(
                 num_rollouts=cls.num_rollouts
@@ -2064,7 +2030,7 @@ class Stage2ABChannelBTriagePosteriorConfig:
             )
         if not isinstance(payload, Mapping):
             raise TypeError(
-                "stage2_ab.channel_b.triage_posterior must be a mapping when provided"
+                "stage2_rollout_correction.correction.triage_posterior must be a mapping when provided"
             )
 
         data: MutableMapping[str, Any] = dict(payload)
@@ -2077,11 +2043,11 @@ class Stage2ABChannelBTriagePosteriorConfig:
             num_rollouts = int(num_rollouts_raw)
         except (TypeError, ValueError) as exc:
             raise TypeError(
-                "stage2_ab.channel_b.triage_posterior.num_rollouts must be an int"
+                "stage2_rollout_correction.correction.triage_posterior.num_rollouts must be an int"
             ) from exc
         if num_rollouts < 2:
             raise ValueError(
-                "stage2_ab.channel_b.triage_posterior.num_rollouts must be >= 2"
+                "stage2_rollout_correction.correction.triage_posterior.num_rollouts must be >= 2"
             )
 
         explorer_temperature_raw = data.pop(
@@ -2092,15 +2058,15 @@ class Stage2ABChannelBTriagePosteriorConfig:
             explorer_temperature = float(explorer_temperature_raw)
         except (TypeError, ValueError) as exc:
             raise TypeError(
-                "stage2_ab.channel_b.triage_posterior.explorer_temperature must be a float/int"
+                "stage2_rollout_correction.correction.triage_posterior.explorer_temperature must be a float/int"
             ) from exc
         if not math.isfinite(explorer_temperature):
             raise ValueError(
-                "stage2_ab.channel_b.triage_posterior.explorer_temperature must be finite"
+                "stage2_rollout_correction.correction.triage_posterior.explorer_temperature must be finite"
             )
         if explorer_temperature < 0.0:
             raise ValueError(
-                "stage2_ab.channel_b.triage_posterior.explorer_temperature must be >= 0"
+                "stage2_rollout_correction.correction.triage_posterior.explorer_temperature must be >= 0"
             )
 
         rollout_temperatures_raw = data.pop("rollout_temperatures", None)
@@ -2110,7 +2076,7 @@ class Stage2ABChannelBTriagePosteriorConfig:
                 rollout_temperatures_raw, Sequence
             ):
                 raise TypeError(
-                    "stage2_ab.channel_b.triage_posterior.rollout_temperatures "
+                    "stage2_rollout_correction.correction.triage_posterior.rollout_temperatures "
                     "must be a sequence of float/int values"
                 )
             parsed_temperatures = []
@@ -2119,23 +2085,23 @@ class Stage2ABChannelBTriagePosteriorConfig:
                     value = float(raw_value)
                 except (TypeError, ValueError) as exc:
                     raise TypeError(
-                        "stage2_ab.channel_b.triage_posterior.rollout_temperatures "
+                        "stage2_rollout_correction.correction.triage_posterior.rollout_temperatures "
                         f"must contain only float/int values; bad index={int(idx)}"
                     ) from exc
                 if not math.isfinite(value):
                     raise ValueError(
-                        "stage2_ab.channel_b.triage_posterior.rollout_temperatures "
+                        "stage2_rollout_correction.correction.triage_posterior.rollout_temperatures "
                         f"must contain only finite values; bad index={int(idx)}"
                     )
                 if value < 0.0:
                     raise ValueError(
-                        "stage2_ab.channel_b.triage_posterior.rollout_temperatures "
+                        "stage2_rollout_correction.correction.triage_posterior.rollout_temperatures "
                         f"must contain only values >= 0; bad index={int(idx)}"
                     )
                 parsed_temperatures.append(float(value))
             if len(parsed_temperatures) not in {1, int(num_rollouts)}:
                 raise ValueError(
-                    "stage2_ab.channel_b.triage_posterior.rollout_temperatures "
+                    "stage2_rollout_correction.correction.triage_posterior.rollout_temperatures "
                     "length must be 1 or match num_rollouts"
                 )
             rollout_temperatures = tuple(float(v) for v in parsed_temperatures)
@@ -2147,15 +2113,15 @@ class Stage2ABChannelBTriagePosteriorConfig:
             )
         except (TypeError, ValueError) as exc:
             raise TypeError(
-                "stage2_ab.channel_b.triage_posterior.explorer_top_p must be a float/int"
+                "stage2_rollout_correction.correction.triage_posterior.explorer_top_p must be a float/int"
             ) from exc
         if not math.isfinite(explorer_top_p):
             raise ValueError(
-                "stage2_ab.channel_b.triage_posterior.explorer_top_p must be finite"
+                "stage2_rollout_correction.correction.triage_posterior.explorer_top_p must be finite"
             )
         if not (0.0 < explorer_top_p <= 1.0):
             raise ValueError(
-                "stage2_ab.channel_b.triage_posterior.explorer_top_p must be in (0, 1]"
+                "stage2_rollout_correction.correction.triage_posterior.explorer_top_p must be in (0, 1]"
             )
 
         explorer_top_k_raw = data.pop("explorer_top_k", cls.explorer_top_k)
@@ -2163,11 +2129,11 @@ class Stage2ABChannelBTriagePosteriorConfig:
             explorer_top_k = int(explorer_top_k_raw)
         except (TypeError, ValueError) as exc:
             raise TypeError(
-                "stage2_ab.channel_b.triage_posterior.explorer_top_k must be an int"
+                "stage2_rollout_correction.correction.triage_posterior.explorer_top_k must be an int"
             ) from exc
         if explorer_top_k != -1 and explorer_top_k < 1:
             raise ValueError(
-                "stage2_ab.channel_b.triage_posterior.explorer_top_k must be -1 (disabled) or >= 1"
+                "stage2_rollout_correction.correction.triage_posterior.explorer_top_k must be -1 (disabled) or >= 1"
             )
 
         unlabeled_consistent_iou_threshold_raw = data.pop(
@@ -2180,18 +2146,18 @@ class Stage2ABChannelBTriagePosteriorConfig:
             )
         except (TypeError, ValueError) as exc:
             raise TypeError(
-                "stage2_ab.channel_b.triage_posterior.unlabeled_consistent_iou_threshold must be a float/int"
+                "stage2_rollout_correction.correction.triage_posterior.unlabeled_consistent_iou_threshold must be a float/int"
             ) from exc
         if not math.isfinite(unlabeled_consistent_iou_threshold):
             raise ValueError(
-                "stage2_ab.channel_b.triage_posterior.unlabeled_consistent_iou_threshold must be finite"
+                "stage2_rollout_correction.correction.triage_posterior.unlabeled_consistent_iou_threshold must be finite"
             )
         if (
             unlabeled_consistent_iou_threshold < 0.0
             or unlabeled_consistent_iou_threshold > 1.0
         ):
             raise ValueError(
-                "stage2_ab.channel_b.triage_posterior.unlabeled_consistent_iou_threshold must be in [0, 1]"
+                "stage2_rollout_correction.correction.triage_posterior.unlabeled_consistent_iou_threshold must be in [0, 1]"
             )
 
         recovered_ground_truth_weight_multiplier_raw = data.pop(
@@ -2204,24 +2170,24 @@ class Stage2ABChannelBTriagePosteriorConfig:
             )
         except (TypeError, ValueError) as exc:
             raise TypeError(
-                "stage2_ab.channel_b.triage_posterior.recovered_ground_truth_weight_multiplier must be a float/int"
+                "stage2_rollout_correction.correction.triage_posterior.recovered_ground_truth_weight_multiplier must be a float/int"
             ) from exc
         if not math.isfinite(recovered_ground_truth_weight_multiplier):
             raise ValueError(
-                "stage2_ab.channel_b.triage_posterior.recovered_ground_truth_weight_multiplier must be finite"
+                "stage2_rollout_correction.correction.triage_posterior.recovered_ground_truth_weight_multiplier must be finite"
             )
         if recovered_ground_truth_weight_multiplier < 1.0:
             raise ValueError(
-                "stage2_ab.channel_b.triage_posterior.recovered_ground_truth_weight_multiplier must be >= 1.0"
+                "stage2_rollout_correction.correction.triage_posterior.recovered_ground_truth_weight_multiplier must be >= 1.0"
             )
 
         if data:
             unknown = [
-                f"stage2_ab.channel_b.triage_posterior.{str(k)}"
+                f"stage2_rollout_correction.correction.triage_posterior.{str(k)}"
                 for k in sorted(data.keys(), key=lambda x: str(x))
             ]
             raise ValueError(
-                f"Unknown stage2_ab.channel_b.triage_posterior keys: {unknown}"
+                f"Unknown stage2_rollout_correction.correction.triage_posterior keys: {unknown}"
             )
 
         return cls(
@@ -2236,23 +2202,23 @@ class Stage2ABChannelBTriagePosteriorConfig:
 
 
 @dataclass(frozen=True)
-class Stage2ABChannelBPseudoPositiveConfig:
+class Stage2RolloutCorrectionPseudoPositiveConfig:
     enabled: bool = False
     coord_weight: float = 0.5
 
     @classmethod
-    def from_mapping(cls, payload: Any) -> "Stage2ABChannelBPseudoPositiveConfig":
+    def from_mapping(cls, payload: Any) -> "Stage2RolloutCorrectionPseudoPositiveConfig":
         if payload is None:
             return cls()
         if not isinstance(payload, Mapping):
             raise TypeError(
-                "stage2_ab.channel_b.pseudo_positive must be a mapping when provided"
+                "stage2_rollout_correction.correction.pseudo_positive must be a mapping when provided"
             )
 
         data: MutableMapping[str, Any] = dict(payload)
 
         versioned = [
-            f"stage2_ab.channel_b.pseudo_positive.{str(key)}"
+            f"stage2_rollout_correction.correction.pseudo_positive.{str(key)}"
             for key in sorted(data.keys(), key=lambda x: str(x))
             if isinstance(key, str)
             and (
@@ -2274,7 +2240,7 @@ class Stage2ABChannelBPseudoPositiveConfig:
                 enabled = bool(enabled_raw)
             else:
                 raise ValueError(
-                    "stage2_ab.channel_b.pseudo_positive.enabled must be boolean (0 or 1)"
+                    "stage2_rollout_correction.correction.pseudo_positive.enabled must be boolean (0 or 1)"
                 )
         elif isinstance(enabled_raw, str):
             normalized = enabled_raw.strip().lower()
@@ -2284,12 +2250,12 @@ class Stage2ABChannelBPseudoPositiveConfig:
                 enabled = False
             else:
                 raise ValueError(
-                    "stage2_ab.channel_b.pseudo_positive.enabled string value "
+                    "stage2_rollout_correction.correction.pseudo_positive.enabled string value "
                     f"'{enabled_raw}' is not a recognized boolean representation."
                 )
         else:
             raise TypeError(
-                "stage2_ab.channel_b.pseudo_positive.enabled must be a boolean value"
+                "stage2_rollout_correction.correction.pseudo_positive.enabled must be a boolean value"
             )
 
         coord_weight_raw = data.pop("coord_weight", cls.coord_weight)
@@ -2297,41 +2263,41 @@ class Stage2ABChannelBPseudoPositiveConfig:
             coord_weight = float(coord_weight_raw)
         except (TypeError, ValueError) as exc:
             raise TypeError(
-                "stage2_ab.channel_b.pseudo_positive.coord_weight must be a float/int"
+                "stage2_rollout_correction.correction.pseudo_positive.coord_weight must be a float/int"
             ) from exc
         if not math.isfinite(coord_weight):
             raise ValueError(
-                "stage2_ab.channel_b.pseudo_positive.coord_weight must be finite"
+                "stage2_rollout_correction.correction.pseudo_positive.coord_weight must be finite"
             )
         if not (0.0 < coord_weight < 1.0):
             raise ValueError(
-                "stage2_ab.channel_b.pseudo_positive.coord_weight must be in (0, 1)"
+                "stage2_rollout_correction.correction.pseudo_positive.coord_weight must be in (0, 1)"
             )
 
         if data:
             unknown = [
-                f"stage2_ab.channel_b.pseudo_positive.{str(k)}"
+                f"stage2_rollout_correction.correction.pseudo_positive.{str(k)}"
                 for k in sorted(data.keys(), key=lambda x: str(x))
             ]
             raise ValueError(
-                f"Unknown stage2_ab.channel_b.pseudo_positive keys: {unknown}"
+                f"Unknown stage2_rollout_correction.correction.pseudo_positive keys: {unknown}"
             )
 
         return cls(enabled=enabled, coord_weight=coord_weight)
 
 
 @dataclass(frozen=True)
-class Stage2ABChannelBDuplicateControlConfig:
+class Stage2RolloutCorrectionDuplicateControlConfig:
     iou_threshold: float = 0.90
     center_radius_scale: float = 0.80
 
     @classmethod
-    def from_mapping(cls, payload: Any) -> "Stage2ABChannelBDuplicateControlConfig":
+    def from_mapping(cls, payload: Any) -> "Stage2RolloutCorrectionDuplicateControlConfig":
         if payload is None:
             return cls()
         if not isinstance(payload, Mapping):
             raise TypeError(
-                "stage2_ab.channel_b.duplicate_control must be a mapping when provided"
+                "stage2_rollout_correction.correction.duplicate_control must be a mapping when provided"
             )
 
         data: MutableMapping[str, Any] = dict(payload)
@@ -2341,15 +2307,15 @@ class Stage2ABChannelBDuplicateControlConfig:
             iou_threshold = float(iou_threshold_raw)
         except (TypeError, ValueError) as exc:
             raise TypeError(
-                "stage2_ab.channel_b.duplicate_control.iou_threshold must be a float/int"
+                "stage2_rollout_correction.correction.duplicate_control.iou_threshold must be a float/int"
             ) from exc
         if not math.isfinite(iou_threshold):
             raise ValueError(
-                "stage2_ab.channel_b.duplicate_control.iou_threshold must be finite"
+                "stage2_rollout_correction.correction.duplicate_control.iou_threshold must be finite"
             )
         if iou_threshold < 0.0 or iou_threshold > 1.0:
             raise ValueError(
-                "stage2_ab.channel_b.duplicate_control.iou_threshold must be in [0, 1]"
+                "stage2_rollout_correction.correction.duplicate_control.iou_threshold must be in [0, 1]"
             )
 
         center_radius_scale_raw = data.pop(
@@ -2360,24 +2326,24 @@ class Stage2ABChannelBDuplicateControlConfig:
             center_radius_scale = float(center_radius_scale_raw)
         except (TypeError, ValueError) as exc:
             raise TypeError(
-                "stage2_ab.channel_b.duplicate_control.center_radius_scale must be a float/int"
+                "stage2_rollout_correction.correction.duplicate_control.center_radius_scale must be a float/int"
             ) from exc
         if not math.isfinite(center_radius_scale):
             raise ValueError(
-                "stage2_ab.channel_b.duplicate_control.center_radius_scale must be finite"
+                "stage2_rollout_correction.correction.duplicate_control.center_radius_scale must be finite"
             )
         if center_radius_scale < 0.0:
             raise ValueError(
-                "stage2_ab.channel_b.duplicate_control.center_radius_scale must be >= 0"
+                "stage2_rollout_correction.correction.duplicate_control.center_radius_scale must be >= 0"
             )
 
         if data:
             unknown = [
-                f"stage2_ab.channel_b.duplicate_control.{str(k)}"
+                f"stage2_rollout_correction.correction.duplicate_control.{str(k)}"
                 for k in sorted(data.keys(), key=lambda x: str(x))
             ]
             raise ValueError(
-                f"Unknown stage2_ab.channel_b.duplicate_control keys: {unknown}"
+                f"Unknown stage2_rollout_correction.correction.duplicate_control keys: {unknown}"
             )
 
         return cls(
@@ -2387,28 +2353,28 @@ class Stage2ABChannelBDuplicateControlConfig:
 
 
 @dataclass(frozen=True)
-class Stage2ABChannelBAssignmentConfig:
+class Stage2RolloutCorrectionAssignmentConfig:
     strategy: str = "greedy_iou"
     iou_threshold: Optional[float] = None
 
     @classmethod
-    def from_mapping(cls, payload: Any) -> "Stage2ABChannelBAssignmentConfig":
+    def from_mapping(cls, payload: Any) -> "Stage2RolloutCorrectionAssignmentConfig":
         if payload is None:
             return cls()
         if not isinstance(payload, Mapping):
-            raise TypeError("stage2_ab.channel_b.assignment must be a mapping when provided")
+            raise TypeError("stage2_rollout_correction.correction.assignment must be a mapping when provided")
 
         data: MutableMapping[str, Any] = dict(payload)
         strategy_raw = data.pop("strategy", cls.strategy)
         strategy = str(strategy_raw).strip().lower().replace("-", "_")
         if strategy == "legacy_hungarian_mask_iou":
             raise ValueError(
-                "stage2_ab.channel_b.assignment.strategy=legacy_hungarian_mask_iou "
+                "stage2_rollout_correction.correction.assignment.strategy=legacy_hungarian_mask_iou "
                 "has been removed; use greedy_iou"
             )
         if strategy != "greedy_iou":
             raise ValueError(
-                "stage2_ab.channel_b.assignment.strategy must be one of "
+                "stage2_rollout_correction.correction.assignment.strategy must be one of "
                 "{'greedy_iou'}"
             )
 
@@ -2419,24 +2385,24 @@ class Stage2ABChannelBAssignmentConfig:
                 iou_threshold = float(iou_threshold_raw)
             except (TypeError, ValueError) as exc:
                 raise TypeError(
-                    "stage2_ab.channel_b.assignment.iou_threshold must be a float/int when set"
+                    "stage2_rollout_correction.correction.assignment.iou_threshold must be a float/int when set"
                 ) from exc
             if not math.isfinite(iou_threshold):
                 raise ValueError(
-                    "stage2_ab.channel_b.assignment.iou_threshold must be finite"
+                    "stage2_rollout_correction.correction.assignment.iou_threshold must be finite"
                 )
             if iou_threshold < 0.0 or iou_threshold > 1.0:
                 raise ValueError(
-                    "stage2_ab.channel_b.assignment.iou_threshold must be in [0, 1]"
+                    "stage2_rollout_correction.correction.assignment.iou_threshold must be in [0, 1]"
                 )
 
         if data:
             unknown = [
-                f"stage2_ab.channel_b.assignment.{str(k)}"
+                f"stage2_rollout_correction.correction.assignment.{str(k)}"
                 for k in sorted(data.keys(), key=lambda x: str(x))
             ]
             raise ValueError(
-                f"Unknown stage2_ab.channel_b.assignment keys: {unknown}"
+                f"Unknown stage2_rollout_correction.correction.assignment keys: {unknown}"
             )
 
         return cls(
@@ -2446,7 +2412,7 @@ class Stage2ABChannelBAssignmentConfig:
 
 
 @dataclass(frozen=True)
-class Stage2ABChannelBFalsePositivePolicyConfig:
+class Stage2RolloutCorrectionFalsePositivePolicyConfig:
     mode: str = "zero_loss_context"
     weak_positive_weight: float = 0.05
     require_explorer_support: bool = True
@@ -2456,20 +2422,20 @@ class Stage2ABChannelBFalsePositivePolicyConfig:
     @classmethod
     def from_mapping(
         cls, payload: Any
-    ) -> "Stage2ABChannelBFalsePositivePolicyConfig":
+    ) -> "Stage2RolloutCorrectionFalsePositivePolicyConfig":
         if payload is None:
             return cls()
         if not isinstance(payload, Mapping):
-            raise TypeError("stage2_ab.channel_b.fp_policy must be a mapping")
+            raise TypeError("stage2_rollout_correction.correction.fp_policy must be a mapping")
 
         data: MutableMapping[str, Any] = dict(payload)
 
         mode_raw = data.pop("mode", cls.mode)
         mode = str(mode_raw).strip().lower().replace("-", "_")
-        if mode not in STAGE2_CHANNEL_B_FP_POLICIES:
+        if mode not in STAGE2_ROLLOUT_CORRECTION_FP_POLICIES:
             raise ValueError(
-                "stage2_ab.channel_b.fp_policy.mode must be one of "
-                f"{sorted(STAGE2_CHANNEL_B_FP_POLICIES)}"
+                "stage2_rollout_correction.correction.fp_policy.mode must be one of "
+                f"{sorted(STAGE2_ROLLOUT_CORRECTION_FP_POLICIES)}"
             )
 
         weak_positive_weight_raw = data.pop(
@@ -2479,19 +2445,19 @@ class Stage2ABChannelBFalsePositivePolicyConfig:
             weak_positive_weight = float(weak_positive_weight_raw)
         except (TypeError, ValueError) as exc:
             raise TypeError(
-                "stage2_ab.channel_b.fp_policy.weak_positive_weight must be a float/int"
+                "stage2_rollout_correction.correction.fp_policy.weak_positive_weight must be a float/int"
             ) from exc
         if isinstance(weak_positive_weight_raw, bool):
             raise TypeError(
-                "stage2_ab.channel_b.fp_policy.weak_positive_weight must be a float/int, not bool"
+                "stage2_rollout_correction.correction.fp_policy.weak_positive_weight must be a float/int, not bool"
             )
         if not math.isfinite(weak_positive_weight):
             raise ValueError(
-                "stage2_ab.channel_b.fp_policy.weak_positive_weight must be finite"
+                "stage2_rollout_correction.correction.fp_policy.weak_positive_weight must be finite"
             )
         if weak_positive_weight < 0.0:
             raise ValueError(
-                "stage2_ab.channel_b.fp_policy.weak_positive_weight must be >= 0"
+                "stage2_rollout_correction.correction.fp_policy.weak_positive_weight must be >= 0"
             )
 
         def _parse_bool(value: Any, *, path: str) -> bool:
@@ -2514,11 +2480,11 @@ class Stage2ABChannelBFalsePositivePolicyConfig:
 
         require_explorer_support = _parse_bool(
             data.pop("require_explorer_support", cls.require_explorer_support),
-            path="stage2_ab.channel_b.fp_policy.require_explorer_support",
+            path="stage2_rollout_correction.correction.fp_policy.require_explorer_support",
         )
         require_token_score = _parse_bool(
             data.pop("require_token_score", cls.require_token_score),
-            path="stage2_ab.channel_b.fp_policy.require_token_score",
+            path="stage2_rollout_correction.correction.fp_policy.require_token_score",
         )
 
         min_support_count_raw = data.pop(
@@ -2526,16 +2492,16 @@ class Stage2ABChannelBFalsePositivePolicyConfig:
         )
         if isinstance(min_support_count_raw, bool):
             raise TypeError(
-                "stage2_ab.channel_b.fp_policy.min_support_count must be an int, not bool"
+                "stage2_rollout_correction.correction.fp_policy.min_support_count must be an int, not bool"
             )
         if isinstance(min_support_count_raw, float):
             if not math.isfinite(min_support_count_raw):
                 raise ValueError(
-                    "stage2_ab.channel_b.fp_policy.min_support_count must be finite"
+                    "stage2_rollout_correction.correction.fp_policy.min_support_count must be finite"
                 )
             if not min_support_count_raw.is_integer():
                 raise ValueError(
-                    "stage2_ab.channel_b.fp_policy.min_support_count must be an integer"
+                    "stage2_rollout_correction.correction.fp_policy.min_support_count must be an integer"
                 )
             min_support_count = int(min_support_count_raw)
         elif isinstance(min_support_count_raw, int):
@@ -2544,25 +2510,25 @@ class Stage2ABChannelBFalsePositivePolicyConfig:
             normalized_count = min_support_count_raw.strip()
             if not normalized_count or not normalized_count.lstrip("+-").isdigit():
                 raise ValueError(
-                    "stage2_ab.channel_b.fp_policy.min_support_count must be an int"
+                    "stage2_rollout_correction.correction.fp_policy.min_support_count must be an int"
                 )
             min_support_count = int(normalized_count)
         else:
             raise TypeError(
-                "stage2_ab.channel_b.fp_policy.min_support_count must be an int"
+                "stage2_rollout_correction.correction.fp_policy.min_support_count must be an int"
             )
         if min_support_count < 1:
             raise ValueError(
-                "stage2_ab.channel_b.fp_policy.min_support_count must be >= 1"
+                "stage2_rollout_correction.correction.fp_policy.min_support_count must be >= 1"
             )
 
         if data:
             unknown = [
-                f"stage2_ab.channel_b.fp_policy.{str(k)}"
+                f"stage2_rollout_correction.correction.fp_policy.{str(k)}"
                 for k in sorted(data.keys(), key=lambda x: str(x))
             ]
             raise ValueError(
-                f"Unknown stage2_ab.channel_b.fp_policy keys: {unknown}"
+                f"Unknown stage2_rollout_correction.correction.fp_policy keys: {unknown}"
             )
 
         return cls(
@@ -2574,13 +2540,167 @@ class Stage2ABChannelBFalsePositivePolicyConfig:
         )
 
 
+
+
+
+
+
+
 @dataclass(frozen=True)
-class Stage2ABChannelBConfig:
-    assignment: Stage2ABChannelBAssignmentConfig = field(
-        default_factory=Stage2ABChannelBAssignmentConfig
+class Stage2RolloutCorrectionModuleSpec:
+    name: str
+    enabled: bool = True
+    weight: float = 1.0
+    application: Mapping[str, Any] = field(default_factory=dict)
+    config: Mapping[str, Any] = field(default_factory=dict)
+
+    @classmethod
+    def from_mapping(cls, payload: Any, *, path: str) -> "Stage2RolloutCorrectionModuleSpec":
+        if not isinstance(payload, Mapping):
+            raise TypeError(f"{path} must be a mapping")
+        data: MutableMapping[str, Any] = dict(payload)
+
+        name = str(data.pop("name", "") or "").strip()
+        if not name:
+            raise ValueError(f"{path}.name must be a non-empty string")
+        if name != STAGE2_RESIDUAL_SET_MODULE_NAME:
+            raise ValueError(
+                f"{path}.name={name!r} has been removed from unified Stage-2; "
+                "use residual_set_correction with application.preset=rollout_self_prefix."
+            )
+
+        if "channels" in data:
+            raise ValueError(
+                f"{path}.channels has been removed from unified Stage-2; "
+                "stage2_rollout_correction has no per-channel split."
+            )
+
+        if "enabled" not in data:
+            raise ValueError(f"{path}.enabled must be provided")
+        enabled = bool(data.pop("enabled"))
+
+        if "weight" not in data:
+            raise ValueError(f"{path}.weight must be provided")
+        try:
+            weight = float(data.pop("weight"))
+        except (TypeError, ValueError) as exc:
+            raise TypeError(f"{path}.weight must be numeric") from exc
+        if weight < 0.0:
+            raise ValueError(f"{path}.weight must be >= 0")
+
+        app_raw = data.pop("application", None)
+        if not isinstance(app_raw, Mapping):
+            raise TypeError(f"{path}.application must be a mapping")
+        application = dict(app_raw)
+        app_unknown = set(application.keys()) - {"preset"}
+        if app_unknown:
+            raise ValueError(
+                f"Unknown {path}.application keys: {sorted(str(k) for k in app_unknown)}"
+            )
+        preset = str(application.get("preset", "") or "").strip()
+        if preset != "rollout_self_prefix":
+            raise ValueError(
+                f"{path}.application.preset must be 'rollout_self_prefix'; got {preset!r}"
+            )
+
+        if "config" not in data:
+            raise ValueError(f"{path}.config must be provided")
+        cfg_raw = data.pop("config")
+        if cfg_raw is None:
+            cfg_raw = {}
+        if not isinstance(cfg_raw, Mapping):
+            raise TypeError(f"{path}.config must be a mapping")
+        config = {
+            **STAGE2_RESIDUAL_SET_DEFAULT_CONFIG_VALUES,
+            **dict(cfg_raw),
+        }
+        unknown_cfg = set(config.keys()) - STAGE2_RESIDUAL_SET_CONFIG_KEYS
+        if unknown_cfg:
+            raise ValueError(
+                f"Unknown {path}.config keys for residual_set_correction: "
+                f"{sorted(str(k) for k in unknown_cfg)}"
+            )
+        _validate_stage2_residual_set_config(config)
+        missing_cfg = (
+            STAGE2_RESIDUAL_SET_REQUIRED_CONFIG_KEYS
+            - set(config.keys())
+            - STAGE2_RESIDUAL_SET_OPTIONAL_CONFIG_KEYS
+        )
+        if missing_cfg:
+            raise ValueError(
+                f"Missing required {path}.config keys for residual_set_correction: "
+                f"{sorted(str(k) for k in missing_cfg)}"
+            )
+
+        if data:
+            unknown = [f"{path}.{str(k)}" for k in sorted(data.keys(), key=lambda x: str(x))]
+            raise ValueError(f"Unknown rollout-correction module keys: {unknown}")
+
+        return cls(
+            name=name,
+            enabled=enabled,
+            weight=weight,
+            application=application,
+            config=config,
+        )
+
+
+@dataclass(frozen=True)
+class Stage2RolloutCorrectionPipelineConfig:
+    objective: tuple[Stage2RolloutCorrectionModuleSpec, ...] = field(default_factory=tuple)
+    diagnostics: tuple[Stage2RolloutCorrectionModuleSpec, ...] = field(default_factory=tuple)
+
+    @classmethod
+    def from_mapping(cls, payload: Any) -> "Stage2RolloutCorrectionPipelineConfig":
+        if not isinstance(payload, Mapping):
+            raise TypeError("stage2_rollout_correction.pipeline must be a mapping")
+        data: MutableMapping[str, Any] = dict(payload)
+
+        objective_raw = data.pop("objective", None)
+        diagnostics_raw = data.pop("diagnostics", [])
+        if not isinstance(objective_raw, Sequence) or isinstance(objective_raw, (str, bytes)):
+            raise TypeError("stage2_rollout_correction.pipeline.objective must be a list")
+        if diagnostics_raw is None:
+            diagnostics_raw = []
+        if not isinstance(diagnostics_raw, Sequence) or isinstance(diagnostics_raw, (str, bytes)):
+            raise TypeError("stage2_rollout_correction.pipeline.diagnostics must be a list")
+        if diagnostics_raw:
+            raise ValueError(
+                "stage2_rollout_correction.pipeline.diagnostics must be empty; "
+                "legacy Stage-2 diagnostic modules are removed from the unified contract."
+            )
+
+        objective = tuple(
+            Stage2RolloutCorrectionModuleSpec.from_mapping(
+                item,
+                path=f"stage2_rollout_correction.pipeline.objective[{idx}]",
+            )
+            for idx, item in enumerate(objective_raw)
+        )
+        enabled_objective = [spec for spec in objective if bool(spec.enabled)]
+        if len(enabled_objective) != 1:
+            raise ValueError(
+                "stage2_rollout_correction.pipeline.objective must contain exactly "
+                "one enabled residual_set_correction module"
+            )
+
+        if data:
+            unknown = [
+                f"stage2_rollout_correction.pipeline.{str(k)}"
+                for k in sorted(data.keys(), key=lambda x: str(x))
+            ]
+            raise ValueError(f"Unknown stage2_rollout_correction.pipeline keys: {unknown}")
+
+        return cls(objective=objective, diagnostics=())
+
+
+@dataclass(frozen=True)
+class Stage2RolloutCorrectionRuntimeConfig:
+    assignment: Stage2RolloutCorrectionAssignmentConfig = field(
+        default_factory=Stage2RolloutCorrectionAssignmentConfig
     )
-    duplicate_control: Stage2ABChannelBDuplicateControlConfig = field(
-        default_factory=Stage2ABChannelBDuplicateControlConfig
+    duplicate_control: Stage2RolloutCorrectionDuplicateControlConfig = field(
+        default_factory=Stage2RolloutCorrectionDuplicateControlConfig
     )
     producer_wait_timeout_s: Optional[float] = None
     ddp_phase_timeout_s: Optional[float] = None
@@ -2590,806 +2710,154 @@ class Stage2ABChannelBConfig:
     invalid_rollout_policy: str = "abort"
     strict_rollout_preflight: bool = False
     insertion_order: str = "tail_append"
-    fp_policy: Stage2ABChannelBFalsePositivePolicyConfig = field(
-        default_factory=Stage2ABChannelBFalsePositivePolicyConfig
+    fp_policy: Stage2RolloutCorrectionFalsePositivePolicyConfig = field(
+        default_factory=Stage2RolloutCorrectionFalsePositivePolicyConfig
     )
-    pseudo_positive: Stage2ABChannelBPseudoPositiveConfig = field(
-        default_factory=Stage2ABChannelBPseudoPositiveConfig
-    )
-    triage_posterior: Stage2ABChannelBTriagePosteriorConfig = field(
-        default_factory=Stage2ABChannelBTriagePosteriorConfig
+    triage_posterior: Stage2RolloutCorrectionTriagePosteriorConfig = field(
+        default_factory=Stage2RolloutCorrectionTriagePosteriorConfig
     )
 
     @classmethod
-    def from_mapping(cls, payload: Any) -> "Stage2ABChannelBConfig":
+    def from_mapping(cls, payload: Any) -> "Stage2RolloutCorrectionRuntimeConfig":
         if payload is None:
             return cls()
         if not isinstance(payload, Mapping):
-            raise TypeError("stage2_ab.channel_b must be a mapping when provided")
-
+            raise TypeError("stage2_rollout_correction.correction must be a mapping")
         data: MutableMapping[str, Any] = dict(payload)
 
-        # Removed keys (single step-budgeted pathway; no legacy knobs).
-        if "mode" in data:
-            raise ValueError(
-                "stage2_ab.channel_b.mode has been removed. "
-                "Remove this key (Channel-B is always step-budgeted)."
-            )
-        if "async" in data:
-            raise ValueError(
-                "stage2_ab.channel_b.async has been removed. "
-                "Remove this key (async actor-learner is unsupported)."
-            )
-        if "rollouts_per_step" in data:
-            raise ValueError(
-                "stage2_ab.channel_b.rollouts_per_step has been removed. "
-                "Use training.effective_batch_size to control raw rollouts per optimizer step."
-            )
-        if "enable_pipeline" in data:
-            raise ValueError(
-                "stage2_ab.channel_b.enable_pipeline has been removed. "
-                "Pipeline overlap is runtime-managed under vLLM server mode; "
-                "under DDP it may be disabled for safety."
-            )
-        if "rollout_decode_batch_size" in data:
-            raise ValueError(
-                "stage2_ab.channel_b.rollout_decode_batch_size has been removed. "
-                "Use rollout_matching.channel_b_decode_batch_size instead."
-            )
-        for key in sorted(data.keys(), key=lambda x: str(x)):
-            if isinstance(key, str) and _is_versioned_alias_for(
-                key, "invalid_rollout_policy"
-            ):
+        for removed_key in (
+            "pseudo_positive",
+            "channel_b",
+            "mode",
+            "async",
+            "rollouts_per_step",
+            "enable_pipeline",
+            "rollout_decode_batch_size",
+            "reordered_gt_sft",
+            "desc_ce_weight_matched",
+            "semantic_desc_gate",
+        ):
+            if removed_key in data:
                 raise ValueError(
-                    "Versioned invalid-rollout policy aliases are unsupported; "
-                    "use stage2_ab.channel_b.invalid_rollout_policy instead."
+                    f"stage2_rollout_correction.correction.{removed_key} has been removed "
+                    "from unified Stage-2 rollout correction."
                 )
 
-        if "drop_invalid_struct_ce_multiplier" in data:
-            raise ValueError(
-                "stage2_ab.channel_b.drop_invalid_struct_ce_multiplier has been removed. "
-                "Legacy raw-prefix invalid-structure amplification is not part of the "
-                "canonical clean-prefix Channel-B contract."
-            )
-
-        # Removed keys (legacy/ablation-only behavior is now deleted).
-        if "reordered_gt_sft" in data:
-            raise ValueError(
-                "stage2_ab.channel_b.reordered_gt_sft has been removed. "
-                "Remove this key (Channel-B is unified rollout-prefix + FN-append)."
-            )
-        if "desc_ce_weight_matched" in data:
-            raise ValueError(
-                "stage2_ab.channel_b.desc_ce_weight_matched has been removed. "
-                "Remove this key (matched-object desc CE is always disabled in Channel-B)."
-            )
-        if "semantic_desc_gate" in data:
-            raise ValueError(
-                "stage2_ab.channel_b.semantic_desc_gate has been removed. "
-                "Remove this key (training-time semantic gating is unsupported)."
-            )
-        for key in sorted(data.keys(), key=lambda x: str(x)):
-            if isinstance(key, str) and _is_versioned_alias_for(key, "pseudo_positive"):
-                raise ValueError(
-                    "Versioned pseudo-positive knob aliases are unsupported; "
-                    "use stage2_ab.channel_b.pseudo_positive instead."
-                )
-
-        if "duplicate_iou_threshold" in data:
-            raise ValueError(
-                "stage2_ab.channel_b.duplicate_iou_threshold has been removed. "
-                "Use stage2_ab.channel_b.duplicate_control.iou_threshold instead."
-            )
-        if "center_radius_scale" in data:
-            raise ValueError(
-                "stage2_ab.channel_b.center_radius_scale has been removed. "
-                "Use stage2_ab.channel_b.duplicate_control.center_radius_scale instead."
-            )
-
-        assignment = Stage2ABChannelBAssignmentConfig.from_mapping(
-            data.pop("assignment", None)
-        )
-        duplicate_control = Stage2ABChannelBDuplicateControlConfig.from_mapping(
+        assignment = Stage2RolloutCorrectionAssignmentConfig.from_mapping(data.pop("assignment", None))
+        duplicate_control = Stage2RolloutCorrectionDuplicateControlConfig.from_mapping(
             data.pop("duplicate_control", None)
         )
 
-        rollout_template_family_raw = data.pop(
-            "rollout_template_family", cls.rollout_template_family
-        )
-        rollout_decode_policy_raw = data.pop("rollout_decode_policy", None)
-        invalid_rollout_policy_raw = data.pop("invalid_rollout_policy", None)
-        fallback_loss_weight_raw = data.pop(
-            "fallback_loss_weight", cls.fallback_loss_weight
-        )
-        strict_rollout_preflight_raw = data.pop(
-            "strict_rollout_preflight", cls.strict_rollout_preflight
-        )
         rollout_template_policy = resolve_stage2_rollout_template_policy(
-            rollout_template_family_raw,
-            rollout_decode_policy=rollout_decode_policy_raw,
-            invalid_rollout_policy=invalid_rollout_policy_raw,
-            fallback_loss_weight=fallback_loss_weight_raw,
-            strict_rollout_preflight=strict_rollout_preflight_raw,
-        )
-        rollout_template_family = rollout_template_policy.template_family
-        rollout_decode_policy = rollout_template_policy.decode_policy
-        invalid_rollout_policy = rollout_template_policy.invalid_rollout_policy
-        fallback_loss_weight = float(rollout_template_policy.fallback_loss_weight)
-        strict_rollout_preflight = bool(
-            rollout_template_policy.strict_rollout_preflight
+            data.pop("rollout_template_family", cls.rollout_template_family),
+            rollout_decode_policy=data.pop("rollout_decode_policy", None),
+            invalid_rollout_policy=data.pop("invalid_rollout_policy", None),
+            fallback_loss_weight=data.pop("fallback_loss_weight", cls.fallback_loss_weight),
+            strict_rollout_preflight=data.pop(
+                "strict_rollout_preflight",
+                cls.strict_rollout_preflight,
+            ),
         )
 
-        insertion_order_raw = data.pop(
-            "insertion_order",
-            cls.insertion_order,
-        )
-        insertion_order = str(insertion_order_raw).strip().lower()
+        insertion_order = str(data.pop("insertion_order", cls.insertion_order)).strip().lower()
         if insertion_order not in {"tail_append", "sorted", "fn_slot_shuffle"}:
             raise ValueError(
-                "stage2_ab.channel_b.insertion_order must be one of "
+                "stage2_rollout_correction.correction.insertion_order must be one of "
                 "{'tail_append', 'sorted', 'fn_slot_shuffle'}"
             )
 
-        fp_policy = Stage2ABChannelBFalsePositivePolicyConfig.from_mapping(
+        fp_policy = Stage2RolloutCorrectionFalsePositivePolicyConfig.from_mapping(
             data.pop("fp_policy", None)
+        )
+        triage_default_rollouts = (
+            4
+            if fp_policy.mode == "weak_positive_context"
+            else Stage2RolloutCorrectionTriagePosteriorConfig.num_rollouts
+        )
+        triage_posterior = Stage2RolloutCorrectionTriagePosteriorConfig.from_mapping(
+            data.pop("triage_posterior", None),
+            default_num_rollouts=triage_default_rollouts,
         )
 
         producer_wait_timeout_s_raw = data.pop("producer_wait_timeout_s", None)
         producer_wait_timeout_s: Optional[float] = None
         if producer_wait_timeout_s_raw is not None:
-            try:
-                producer_wait_timeout_s = float(producer_wait_timeout_s_raw)
-            except (TypeError, ValueError) as exc:
-                raise TypeError(
-                    "stage2_ab.channel_b.producer_wait_timeout_s must be a float/int when set"
-                ) from exc
+            producer_wait_timeout_s = float(producer_wait_timeout_s_raw)
             if producer_wait_timeout_s < 0.0:
                 raise ValueError(
-                    "stage2_ab.channel_b.producer_wait_timeout_s must be >= 0 when set "
-                    "(use 0 for automatic timeout selection)"
+                    "stage2_rollout_correction.correction.producer_wait_timeout_s must be >= 0"
                 )
 
         ddp_phase_timeout_s_raw = data.pop("ddp_phase_timeout_s", None)
         ddp_phase_timeout_s: Optional[float] = None
         if ddp_phase_timeout_s_raw is not None:
-            try:
-                ddp_phase_timeout_s = float(ddp_phase_timeout_s_raw)
-            except (TypeError, ValueError) as exc:
-                raise TypeError(
-                    "stage2_ab.channel_b.ddp_phase_timeout_s must be a float/int when set"
-                ) from exc
+            ddp_phase_timeout_s = float(ddp_phase_timeout_s_raw)
             if ddp_phase_timeout_s <= 0.0:
                 raise ValueError(
-                    "stage2_ab.channel_b.ddp_phase_timeout_s must be > 0 when set "
-                    "(bounded DDP phase barriers are required)"
+                    "stage2_rollout_correction.correction.ddp_phase_timeout_s must be > 0"
                 )
 
-        pseudo_positive = Stage2ABChannelBPseudoPositiveConfig.from_mapping(
-            data.pop("pseudo_positive", None)
-        )
-        triage_default_rollouts = (
-            4
-            if pseudo_positive.enabled or fp_policy.mode == "weak_positive_context"
-            else Stage2ABChannelBTriagePosteriorConfig.num_rollouts
-        )
-        triage_posterior = Stage2ABChannelBTriagePosteriorConfig.from_mapping(
-            data.pop("triage_posterior", None),
-            default_num_rollouts=triage_default_rollouts,
-        )
-        if pseudo_positive.enabled and int(triage_posterior.num_rollouts) < 4:
-            raise ValueError(
-                "stage2_ab.channel_b.triage_posterior.num_rollouts must be >= 4 "
-                "when stage2_ab.channel_b.pseudo_positive.enabled=true; "
-                "pseudo-positive promotion requires 4-of-4 rollout consensus"
-            )
         if data:
-            raise ValueError(
-                f"Unknown stage2_ab.channel_b keys: {sorted(str(k) for k in data.keys())}"
-            )
+            unknown = [
+                f"stage2_rollout_correction.correction.{str(k)}"
+                for k in sorted(data.keys(), key=lambda x: str(x))
+            ]
+            raise ValueError(f"Unknown stage2_rollout_correction.correction keys: {unknown}")
 
         return cls(
             assignment=assignment,
             duplicate_control=duplicate_control,
             producer_wait_timeout_s=producer_wait_timeout_s,
             ddp_phase_timeout_s=ddp_phase_timeout_s,
-            rollout_template_family=rollout_template_family,
-            rollout_decode_policy=rollout_decode_policy,
-            fallback_loss_weight=fallback_loss_weight,
-            invalid_rollout_policy=invalid_rollout_policy,
-            strict_rollout_preflight=strict_rollout_preflight,
+            rollout_template_family=rollout_template_policy.template_family,
+            rollout_decode_policy=rollout_template_policy.decode_policy,
+            fallback_loss_weight=float(rollout_template_policy.fallback_loss_weight),
+            invalid_rollout_policy=rollout_template_policy.invalid_rollout_policy,
+            strict_rollout_preflight=bool(rollout_template_policy.strict_rollout_preflight),
             insertion_order=insertion_order,
             fp_policy=fp_policy,
-            pseudo_positive=pseudo_positive,
             triage_posterior=triage_posterior,
         )
 
 
 @dataclass(frozen=True)
-class Stage2PipelineModuleSpec:
-    name: str
-    enabled: bool = True
-    weight: float = 1.0
-    channels: tuple[str, ...] = ("A", "B")
-    application: Mapping[str, Any] = field(default_factory=dict)
-    config: Mapping[str, Any] = field(default_factory=dict)
+class Stage2RolloutCorrectionConfig:
+    pipeline: Stage2RolloutCorrectionPipelineConfig
+    correction: Stage2RolloutCorrectionRuntimeConfig = field(
+        default_factory=Stage2RolloutCorrectionRuntimeConfig
+    )
 
     @classmethod
-    def from_mapping(
-        cls,
-        payload: Any,
-        *,
-        path: str,
-        allowed_names: set[str],
-    ) -> "Stage2PipelineModuleSpec":
+    def from_mapping(cls, payload: Any) -> "Stage2RolloutCorrectionConfig":
         if not isinstance(payload, Mapping):
-            raise TypeError(f"{path} must be a mapping")
+            raise TypeError("stage2_rollout_correction section must be a mapping")
         data: MutableMapping[str, Any] = dict(payload)
 
-        name_raw = data.pop("name", None)
-        name = str(name_raw or "").strip()
-        if not name:
-            raise ValueError(f"{path}.name must be a non-empty string")
-        if name not in allowed_names:
-            raise ValueError(
-                f"{path}.name must be one of {sorted(allowed_names)}; got {name!r}"
-            )
-
-        if "enabled" not in data:
-            raise ValueError(
-                f"{path}.enabled must be provided (explicit pipeline spec; no defaults)"
-            )
-        enabled_raw = data.pop("enabled")
-        enabled = bool(enabled_raw)
-
-        if "weight" not in data:
-            raise ValueError(
-                f"{path}.weight must be provided (explicit pipeline spec; no defaults)"
-            )
-        weight_raw = data.pop("weight")
-        try:
-            weight = float(weight_raw)
-        except (TypeError, ValueError) as exc:
-            raise TypeError(f"{path}.weight must be numeric") from exc
-        if weight < 0.0:
-            raise ValueError(f"{path}.weight must be >= 0")
-
-        if "channels" not in data:
-            raise ValueError(
-                f"{path}.channels must be provided (explicit pipeline spec; no defaults)"
-            )
-        channels_raw = data.pop("channels")
-        if not isinstance(channels_raw, Sequence) or isinstance(
-            channels_raw, (str, bytes)
-        ):
-            raise TypeError(f"{path}.channels must be a sequence of 'A'/'B'")
-        channels_list: list[str] = []
-        for idx, ch in enumerate(channels_raw):
-            ch_s = str(ch).strip().upper()
-            if ch_s not in {"A", "B"}:
-                raise ValueError(f"{path}.channels[{idx}] must be 'A' or 'B'")
-            channels_list.append(ch_s)
-        if not channels_list:
-            raise ValueError(f"{path}.channels must not be empty")
-        channels = tuple(dict.fromkeys(channels_list).keys())
-
-        application_raw = data.pop("application", {})
-        if not isinstance(application_raw, Mapping):
-            raise TypeError(f"{path}.application must be a mapping")
-        application = dict(application_raw)
-
-        if "config" not in data:
-            raise ValueError(
-                f"{path}.config must be provided (explicit pipeline spec; no defaults)"
-            )
-        cfg_raw = data.pop("config")
-        if cfg_raw is None:
-            cfg_raw = {}
-        if not isinstance(cfg_raw, Mapping):
-            raise TypeError(f"{path}.config must be a mapping")
-        config = dict(cfg_raw)
-
-        if data:
-            unknown = [
-                f"{path}.{str(k)}" for k in sorted(data.keys(), key=lambda x: str(x))
-            ]
-            raise ValueError(f"Unknown pipeline module keys: {unknown}")
-
-        return cls(
-            name=name,
-            enabled=enabled,
-            weight=weight,
-            channels=channels,
-            application=application,
-            config=config,
-        )
-
-
-@dataclass(frozen=True)
-class Stage2PipelineConfig:
-    objective: tuple[Stage2PipelineModuleSpec, ...] = field(default_factory=tuple)
-    diagnostics: tuple[Stage2PipelineModuleSpec, ...] = field(default_factory=tuple)
-
-    @classmethod
-    def from_mapping(
-        cls,
-        payload: Any,
-        *,
-        allow_empty_objective: bool = False,
-    ) -> "Stage2PipelineConfig":
-        if not isinstance(payload, Mapping):
-            raise TypeError("stage2_ab.pipeline must be a mapping")
-        data: MutableMapping[str, Any] = dict(payload)
-
-        objective_raw = data.pop("objective", [])
-        diagnostics_raw = data.pop("diagnostics", [])
-        if diagnostics_raw is None:
-            diagnostics_raw = []
-
-        if not isinstance(objective_raw, Sequence) or isinstance(
-            objective_raw, (str, bytes)
-        ):
-            raise TypeError("stage2_ab.pipeline.objective must be a list")
-        if not isinstance(diagnostics_raw, Sequence) or isinstance(
-            diagnostics_raw, (str, bytes)
-        ):
-            raise TypeError("stage2_ab.pipeline.diagnostics must be a list")
-
-        objective_specs = [
-            Stage2PipelineModuleSpec.from_mapping(
-                item,
-                path=f"stage2_ab.pipeline.objective[{idx}]",
-                allowed_names=ALLOWED_OBJECTIVE_MODULES
-                | {STAGE2_TRIE_CE_MODULE_NAME, STAGE2_RESIDUAL_SET_MODULE_NAME},
-            )
-            for idx, item in enumerate(objective_raw)
-        ]
-        diagnostics_specs = [
-            Stage2PipelineModuleSpec.from_mapping(
-                item,
-                path=f"stage2_ab.pipeline.diagnostics[{idx}]",
-                allowed_names=ALLOWED_DIAGNOSTIC_MODULES,
-            )
-            for idx, item in enumerate(diagnostics_raw)
-        ]
-        if not objective_specs and allow_empty_objective:
-            if data:
-                unknown = [
-                    f"stage2_ab.pipeline.{str(k)}"
-                    for k in sorted(data.keys(), key=lambda x: str(x))
-                ]
-                raise ValueError(f"Unknown stage2_ab.pipeline keys: {unknown}")
-            return cls(
-                objective=(),
-                diagnostics=tuple(diagnostics_specs),
-            )
-        if not objective_specs:
-            raise ValueError("stage2_ab.pipeline.objective must be non-empty")
-
-        def _assert_no_duplicates(
-            items: list[Stage2PipelineModuleSpec], *, path: str
-        ) -> None:
-            seen: set[str] = set()
-            for spec in items:
-                if spec.name in seen:
-                    raise ValueError(f"Duplicate module name in {path}: {spec.name}")
-                seen.add(spec.name)
-
-        _assert_no_duplicates(objective_specs, path="stage2_ab.pipeline.objective")
-        _assert_no_duplicates(diagnostics_specs, path="stage2_ab.pipeline.diagnostics")
-
-        canonical_objective_order = ["token_ce"]
-        trie_ce_objective_order = ["token_ce", STAGE2_TRIE_CE_MODULE_NAME]
-        trie_ce_schema_objective_order = [
-            "token_ce",
-            STAGE2_TRIE_CE_MODULE_NAME,
-            STAGE2_SCHEMA_FORMAT_CE_MODULE_NAME,
-        ]
-        residual_set_objective_order = ["token_ce", STAGE2_RESIDUAL_SET_MODULE_NAME]
-        residual_set_schema_objective_order = [
-            "token_ce",
-            STAGE2_RESIDUAL_SET_MODULE_NAME,
-            STAGE2_SCHEMA_FORMAT_CE_MODULE_NAME,
-        ]
-        trie_ce_residual_set_objective_order = [
-            "token_ce",
-            STAGE2_TRIE_CE_MODULE_NAME,
-            STAGE2_RESIDUAL_SET_MODULE_NAME,
-        ]
-        hard_sft_objective_order = ["hard_sft"]
-        authored_objective_order = [str(spec.name) for spec in objective_specs]
-        if authored_objective_order not in (
-            canonical_objective_order,
-            trie_ce_objective_order,
-            trie_ce_schema_objective_order,
-            residual_set_objective_order,
-            residual_set_schema_objective_order,
-            trie_ce_residual_set_objective_order,
-            hard_sft_objective_order,
-        ):
-            raise ValueError(
-                "stage2_ab.pipeline.objective must use the canonical module order "
-                f"{canonical_objective_order}, {trie_ce_objective_order}, "
-                f"{trie_ce_schema_objective_order}, "
-                f"{residual_set_objective_order}, "
-                f"{residual_set_schema_objective_order}, "
-                f"{trie_ce_residual_set_objective_order}, "
-                f"or {hard_sft_objective_order}; "
-                f"got {authored_objective_order}"
-            )
-
-        for idx, spec in enumerate(objective_specs):
-            if not isinstance(spec.application, Mapping):
-                raise TypeError(
-                    f"stage2_ab.pipeline.objective[{idx}].application must be a mapping"
-                )
-            app_unknown = set(spec.application.keys()) - {"preset"}
-            if app_unknown:
+        for removed_key in ("schedule", "b_ratio", "channel_b"):
+            if removed_key in data:
                 raise ValueError(
-                    "Unknown stage2_ab.pipeline.objective"
-                    f"[{idx}].application keys for module {spec.name!r}: "
-                    f"{sorted(str(k) for k in app_unknown)}"
+                    f"stage2_rollout_correction.{removed_key} has been removed; "
+                    "unified Stage-2 has no scheduler or per-channel namespace."
                 )
-            preset = str(spec.application.get("preset", "") or "").strip()
-            if not preset:
-                raise ValueError(
-                    f"stage2_ab.pipeline.objective[{idx}].application.preset must be provided"
-                )
-            allowed_presets = OBJECTIVE_APPLICATION_PRESET_ALLOWLIST.get(
-                str(spec.name), set()
-            )
-            if str(spec.name) == STAGE2_TRIE_CE_MODULE_NAME:
-                allowed_presets = STAGE2_TRIE_CE_APPLICATION_PRESETS
-            if str(spec.name) == STAGE2_RESIDUAL_SET_MODULE_NAME:
-                allowed_presets = STAGE2_RESIDUAL_SET_APPLICATION_PRESETS
-            if preset not in allowed_presets:
-                if preset in {
-                    "anchor_text_plus_final_struct",
-                    "anchor_if_single_iter_else_final",
-                    "final_only",
-                    "anchor_and_final",
-                }:
-                    replacement = (
-                        "anchor_text_only"
-                        if str(spec.name) == "token_ce"
-                        else "anchor_only"
-                    )
-                    raise ValueError(
-                        "stage2_ab.pipeline.objective"
-                        f"[{idx}].application.preset for module {spec.name!r} uses deprecated "
-                        f"self-context-era routing {preset!r}. Use {replacement!r} for the "
-                        "single-pass Channel-A contract."
-                    )
-                raise ValueError(
-                    "stage2_ab.pipeline.objective"
-                    f"[{idx}].application.preset for module {spec.name!r} must be one of "
-                    f"{sorted(str(x) for x in allowed_presets)}; got {preset!r}"
-                )
-            if (
-                str(spec.name) == "token_ce"
-                and "rollout_drop_invalid_struct_ce_multiplier" in spec.config
-            ):
-                raise ValueError(
-                    "stage2_ab.pipeline.objective[%d].config.rollout_drop_invalid_struct_ce_multiplier "
-                    "has been removed. Legacy raw-prefix invalid-structure amplification "
-                    "is not part of the canonical clean-prefix Channel-B contract."
-                    % int(idx)
-                )
-            if str(spec.name) == "token_ce" and "struct_ce_weight" in spec.config:
-                raise ValueError(
-                    "stage2_ab.pipeline.objective"
-                    f"[{idx}].config.struct_ce_weight is deprecated and unsupported. "
-                    "Remove the self-context struct/EOS stabilizer; active Stage-2 Channel-A "
-                    "training uses only the single-pass anchor_text_only contract."
-                )
-            allowed_cfg = OBJECTIVE_CONFIG_ALLOWLIST.get(str(spec.name), set())
-            if str(spec.name) in STAGE2_RESIDUAL_TRIE_MODULE_NAMES:
-                allowed_cfg = STAGE2_RESIDUAL_SET_CONFIG_KEYS
-            unknown_cfg = set(spec.config.keys()) - allowed_cfg
-            if unknown_cfg:
-                raise ValueError(
-                    "Unknown stage2_ab.pipeline.objective"
-                    f"[{idx}].config keys for module {spec.name!r}: "
-                    f"{sorted(str(k) for k in unknown_cfg)}"
-                )
-            if str(spec.name) in STAGE2_RESIDUAL_TRIE_MODULE_NAMES:
-                defaulted_config = {
-                    **STAGE2_RESIDUAL_SET_DEFAULT_CONFIG_VALUES,
-                    **dict(spec.config),
-                }
-                _validate_stage2_residual_set_config(defaulted_config)
-                spec.config.clear()
-                spec.config.update(defaulted_config)
-            optional_cfg = OBJECTIVE_OPTIONAL_CONFIG_KEYS.get(str(spec.name), set())
-            if str(spec.name) in STAGE2_RESIDUAL_TRIE_MODULE_NAMES:
-                optional_cfg = STAGE2_RESIDUAL_SET_OPTIONAL_CONFIG_KEYS
-            missing_cfg = allowed_cfg - set(spec.config.keys()) - set(optional_cfg)
-            if missing_cfg:
-                raise ValueError(
-                    "Missing required stage2_ab.pipeline.objective"
-                    f"[{idx}].config keys for module {spec.name!r}: "
-                    f"{sorted(str(k) for k in missing_cfg)}"
-                )
-        for idx, spec in enumerate(diagnostics_specs):
-            allowed_cfg = DIAGNOSTIC_CONFIG_ALLOWLIST.get(str(spec.name), set())
-            unknown_cfg = set(spec.config.keys()) - allowed_cfg
-            if unknown_cfg:
-                raise ValueError(
-                    "Unknown stage2_ab.pipeline.diagnostics"
-                    f"[{idx}].config keys for module {spec.name!r}: "
-                    f"{sorted(str(k) for k in unknown_cfg)}"
-                )
-
-        specs_by_name = {spec.name: spec for spec in objective_specs}
-        token_ce = specs_by_name.get("token_ce")
-        stage2_trie_ce = specs_by_name.get(STAGE2_TRIE_CE_MODULE_NAME)
-        residual_set = specs_by_name.get(STAGE2_RESIDUAL_SET_MODULE_NAME)
-
-        if (
-            residual_set is not None
-            and bool(residual_set.enabled)
-            and stage2_trie_ce is not None
-            and bool(stage2_trie_ce.enabled)
-            and "B" in residual_set.channels
-            and "B" in stage2_trie_ce.channels
-        ):
-            raise ValueError(
-                "residual_set_correction cannot be enabled together with "
-                "stage2_trie_ce on Channel-B; they are aliases for the same "
-                "residual-state trie objective, so select exactly one."
-            )
-
-        if (
-            token_ce is not None
-            and stage2_trie_ce is not None
-            and bool(token_ce.enabled)
-            and bool(stage2_trie_ce.enabled)
-            and "B" in token_ce.channels
-            and "B" in stage2_trie_ce.channels
-        ):
-            raise ValueError(
-                "Channel-B objective supervision cannot enable both token_ce and "
-                "stage2_trie_ce on Channel-B; remove Channel-B from token_ce.channels "
-                "or disable stage2_trie_ce."
-            )
-
-        if data:
-            unknown = [
-                f"stage2_ab.pipeline.{str(k)}"
-                for k in sorted(data.keys(), key=lambda x: str(x))
-            ]
-            raise ValueError(f"Unknown stage2_ab.pipeline keys: {unknown}")
-
-        return cls(
-            objective=tuple(objective_specs),
-            diagnostics=tuple(diagnostics_specs),
-        )
-
-
-@dataclass(frozen=True)
-class Stage2ABConfig:
-    schedule: Stage2ABScheduleConfig
-    pipeline: Stage2PipelineConfig
-    channel_b: Stage2ABChannelBConfig = field(default_factory=Stage2ABChannelBConfig)
-
-    @classmethod
-    def from_mapping(
-        cls,
-        payload: Any,
-        *,
-        allow_teacher_forcing_pipeline: bool = False,
-    ) -> "Stage2ABConfig":
-        if not isinstance(payload, Mapping):
-            raise TypeError("stage2_ab section must be a mapping")
-
-        data: MutableMapping[str, Any] = dict(payload)
-
-        disallowed_flat = [
-            k
-            for k in (
-                "desc_ce_weight",
-                "fmt_struct_ce_weight",
-                "bbox_smoothl1_weight",
-                "bbox_ciou_weight",
-                "text_gate_weight",
-                "coord_ce_weight",
-                "coord_gate_weight",
-            )
-            if k in data
-        ]
-        if disallowed_flat:
-            raise ValueError(
-                "Flat stage2_ab objective knobs have been removed. "
-                "Express objective weights via stage2_ab.pipeline.objective[*].config instead: "
-                f"{sorted(disallowed_flat)}"
-            )
-
-        schedule_raw = data.pop("schedule", None)
-        if schedule_raw is None:
-            raise ValueError("stage2_ab.schedule must be provided")
-        schedule = Stage2ABScheduleConfig.from_mapping(schedule_raw)
 
         pipeline_raw = data.pop("pipeline", None)
         if pipeline_raw is None:
-            raise ValueError(
-                "stage2_ab.pipeline must be provided (no implicit default objective manifest)."
-            )
-        pipeline = Stage2PipelineConfig.from_mapping(
-            pipeline_raw,
-            allow_empty_objective=allow_teacher_forcing_pipeline,
+            raise ValueError("stage2_rollout_correction.pipeline must be provided")
+        pipeline = Stage2RolloutCorrectionPipelineConfig.from_mapping(pipeline_raw)
+        correction = Stage2RolloutCorrectionRuntimeConfig.from_mapping(
+            data.pop("correction", None)
         )
 
-        if "bbox_l1_weight" in data or "bbox_giou_weight" in data:
-            raise ValueError(
-                "stage2_ab.bbox_l1_weight/bbox_giou_weight are deprecated. "
-                "bbox geometry auxiliaries have been removed from the active "
-                "Stage-2 pipeline."
-            )
-
-        deprecated_keys = [
-            f"stage2_ab.{key}"
-            for key in (
-                "n_softctx_iter",
-                "softctx_grad_mode",
-                "softctx_temperature",
-                "coord_ctx_embed_mode",
-                "coord_decode_mode",
-            )
-            if key in data
-        ]
-        if deprecated_keys:
-            raise ValueError(
-                "Deprecated Stage-2 self-context knobs are unsupported in active/training "
-                "configs. Remove them and use the single-pass Channel-A contract "
-                "(token_ce: anchor_text_only; Stage-2 residual trie: "
-                "stage2_trie_ce/rollout_trie_hard_ce or "
-                "residual_set_correction/rollout_self_prefix). "
-                f"Found: {sorted(deprecated_keys)}"
-            )
-
-        residual_trie_candidates = [
-            spec
-            for spec in pipeline.objective
-            if spec.name in STAGE2_RESIDUAL_TRIE_MODULE_NAMES and bool(spec.enabled)
-        ]
-        residual_set_candidate = next(
-            (
-                spec
-                for spec in residual_trie_candidates
-                if "B" in spec.channels
-            ),
-            None,
-        )
-        channel_b_raw = data.pop("channel_b", None)
-        channel_b = Stage2ABChannelBConfig.from_mapping(
-            channel_b_raw,
-        )
-
-        residual_set = residual_set_candidate
-        if residual_set is not None:
-            residual_set_on_channel_b = "B" in residual_set.channels
-            if residual_set_on_channel_b:
-                for conflicting_module_name in ("token_ce", "hard_sft"):
-                    conflicting_module = next(
-                        (
-                            spec
-                            for spec in pipeline.objective
-                            if spec.name == conflicting_module_name
-                            and bool(spec.enabled)
-                            and "B" in spec.channels
-                        ),
-                        None,
-                    )
-                    if conflicting_module is not None:
-                        raise ValueError(
-                            "Stage-2 residual trie is mutually exclusive with "
-                            f"{conflicting_module_name} on Channel-B; remove "
-                            f"Channel-B from {conflicting_module_name}.channels "
-                            "or disable one objective."
-                        )
-            if channel_b.pseudo_positive.enabled:
-                raise ValueError(
-                    "Stage-2 residual trie is mutually exclusive with "
-                    "stage2_ab.channel_b.pseudo_positive; disable pseudo_positive "
-                    "because unlabeled regions must be admitted only by rollout "
-                    "consensus before entering the residual valid set."
-                )
-            if residual_set_on_channel_b and len(
-                [
-                    spec
-                    for spec in residual_trie_candidates
-                    if "B" in spec.channels
-                ]
-            ) > 1:
-                raise ValueError(
-                    "stage2_trie_ce and residual_set_correction are aliases for "
-                    "the same Channel-B residual-state trie objective; select "
-                    "exactly one to avoid double supervision."
-                )
         if data:
             unknown = [
-                f"stage2_ab.{str(k)}" for k in sorted(data.keys(), key=lambda x: str(x))
+                f"stage2_rollout_correction.{str(k)}"
+                for k in sorted(data.keys(), key=lambda x: str(x))
             ]
-            raise ValueError(
-                "Unknown stage2_ab keys: "
-                f"{unknown}. "
-                "Migration guidance: remove unsupported keys or move them into "
-                "the current stage2_ab schema (for Channel-B options use stage2_ab.channel_b.*)."
-            )
+            raise ValueError(f"Unknown stage2_rollout_correction keys: {unknown}")
 
-        return cls(
-            schedule=schedule,
-            pipeline=pipeline,
-            channel_b=channel_b,
-        )
+        return cls(pipeline=pipeline, correction=correction)
 
 
-def _compile_teacher_forcing_stage2_ab(
-    stage2_ab: Stage2ABConfig,
-    objective: TeacherForcingObjectiveConfig,
-) -> Stage2ABConfig:
-    if stage2_ab.pipeline.objective:
-        return stage2_ab
-    if objective.profile != "hard_sft":
-        raise ValueError(
-            "teacher_forcing Stage-2 valid-set profiles require target IR runtime "
-            "wiring before they can compile to a runtime objective manifest"
-        )
-
-    objective_spec = Stage2PipelineModuleSpec(
-        name="hard_sft",
-        enabled=True,
-        weight=1.0,
-        channels=("A", "B"),
-        application={"preset": "hard_sft"},
-        config={
-            "desc_ce_weight": 1.0,
-            "rollout_fn_desc_weight": 1.0,
-            "rollout_global_prefix_struct_ce_weight": 1.0,
-        },
-    )
-
-    return Stage2ABConfig(
-        schedule=stage2_ab.schedule,
-        pipeline=Stage2PipelineConfig(
-            objective=(objective_spec,),
-            diagnostics=stage2_ab.pipeline.diagnostics,
-        ),
-        channel_b=stage2_ab.channel_b,
-    )
-
-
-def _validate_stage2_ab_rollout_surface_alignment(
-    *,
-    custom: CustomConfig,
-    stage2_ab: Stage2ABConfig | None,
-) -> None:
-    if stage2_ab is None or custom.trainer_variant != "stage2_two_channel":
-        return
-
-    detection_sequence_format = normalize_detection_sequence_format(
-        custom.detection_sequence_format
-    )
-    rollout_template_family = str(stage2_ab.channel_b.rollout_template_family)
-
-    if detection_sequence_format == COORDJSON_FORMAT:
-        expected_rollout_template_family = "coordjson"
-    elif detection_sequence_format == COMPACT_FULL_FORMAT:
-        expected_rollout_template_family = COMPACT_FULL_FORMAT
-    else:
-        raise ValueError(
-            "custom.trainer_variant=stage2_two_channel supports "
-            "custom.detection_sequence_format values {'coordjson', 'compact_full'}; "
-            f"got {detection_sequence_format!r}."
-        )
-
-    if rollout_template_family != expected_rollout_template_family:
-        raise ValueError(
-            "custom.trainer_variant=stage2_two_channel requires aligned prompt and "
-            "rollout parser surfaces: "
-            f"custom.detection_sequence_format={detection_sequence_format} requires "
-            "stage2_ab.channel_b.rollout_template_family="
-            f"{expected_rollout_template_family}; got {rollout_template_family!r}."
-        )
 
 
 def _validate_teacher_forcing_training_packing_contract(
@@ -3413,43 +2881,7 @@ def _validate_teacher_forcing_training_packing_contract(
         )
 
 
-def _validate_teacher_forcing_stage2_migration_raw(stage2_ab_raw: Any) -> None:
-    if stage2_ab_raw is None:
-        return
-    if not isinstance(stage2_ab_raw, Mapping):
-        raise TypeError("stage2_ab section must be a mapping")
-    pipeline_raw = stage2_ab_raw.get("pipeline")
-    if not isinstance(pipeline_raw, Mapping):
-        return
-    objective_raw = pipeline_raw.get("objective", [])
-    if not isinstance(objective_raw, Sequence) or isinstance(
-        objective_raw, (str, bytes)
-    ):
-        return
 
-    violations: list[str] = []
-    for idx, item in enumerate(objective_raw):
-        if not isinstance(item, Mapping):
-            continue
-        name = str(item.get("name", "") or "").strip()
-        if name in LEGACY_STAGE2_TEACHER_FORCING_MODULES:
-            violations.append(f"stage2_ab.pipeline.objective[{idx}].name={name}")
-        config = item.get("config")
-        if isinstance(config, Mapping):
-            for key in sorted(
-                set(str(k) for k in config.keys())
-                & LEGACY_STAGE2_TEACHER_FORCING_CONFIG_KEYS
-            ):
-                violations.append(
-                    f"stage2_ab.pipeline.objective[{idx}].config.{key}"
-                )
-
-    if violations:
-        raise ValueError(
-            "objective.id=teacher_forcing rejects legacy "
-            "stage2_ab.pipeline.objective modules/config keys: "
-            f"{violations}. Move active loss selection to objective.modules."
-        )
 
 
 _DETECTION_REQUIRED_SECTIONS: set[str] = {
@@ -5012,7 +4444,7 @@ class TrainingConfig:
     tuner: Mapping[str, Any] = field(default_factory=dict)
     training: Mapping[str, Any] = field(default_factory=dict)
     objective: Optional[TeacherForcingObjectiveConfig] = None
-    stage2_ab: Optional[Stage2ABConfig] = None
+    stage2_rollout_correction: Optional[Stage2RolloutCorrectionConfig] = None
     rollout_matching: Optional[RolloutMatchingConfig] = None
     rlhf: Mapping[str, Any] = field(default_factory=dict)
     prompts: PromptOverrides = field(default_factory=PromptOverrides)
@@ -5089,6 +4521,7 @@ class TrainingConfig:
             training["static_packing_cache"] = static_packing_cache.to_mapping()
 
         stage2_ab_raw = data.pop("stage2_ab", None)
+        stage2_rollout_correction_raw = data.pop("stage2_rollout_correction", None)
         rollout_matching_raw = data.pop("rollout_matching", None)
         objective_raw = data.pop("objective", None)
 
@@ -5138,17 +4571,27 @@ class TrainingConfig:
 
         custom = CustomConfig.from_mapping(custom_raw, prompts=prompts)
         trainer_variant = str(custom.trainer_variant or "")
-        if trainer_variant == "stage2_ab_training":
+        removed_two_channel_variant = "stage2_" "two_channel"
+        removed_ab_training_variant = "stage2_" "ab_training"
+        if trainer_variant == removed_two_channel_variant:
             raise ValueError(
-                "custom.trainer_variant=stage2_ab_training has been removed; use stage2_two_channel"
+                f"custom.trainer_variant={removed_two_channel_variant} has been removed; "
+                "use stage2_rollout_correction"
+            )
+        if trainer_variant == removed_ab_training_variant:
+            raise ValueError(
+                f"custom.trainer_variant={removed_ab_training_variant} has been removed; "
+                "use stage2_rollout_correction"
             )
         if trainer_variant == "rollout_matching_sft":
             raise ValueError(
-                "custom.trainer_variant=rollout_matching_sft has been removed; use stage2_two_channel"
+                "custom.trainer_variant=rollout_matching_sft has been removed; "
+                "use stage2_rollout_correction"
             )
         if trainer_variant in {"stage2_rollout_aligned", "stage2_rollout_runtime"}:
             raise ValueError(
-                f"custom.trainer_variant={trainer_variant} has been removed; use stage2_two_channel"
+                f"custom.trainer_variant={trainer_variant} has been removed; "
+                "use stage2_rollout_correction"
             )
         if bool(getattr(custom.sft_structural_close, "enabled", False)):
             if bool(training.get("packing", False)):
@@ -5167,26 +4610,22 @@ class TrainingConfig:
             training=training,
         )
 
-        if objective is not None and stage2_ab_raw is not None:
-            _validate_teacher_forcing_stage2_migration_raw(stage2_ab_raw)
-
-        stage2_ab = None
         if stage2_ab_raw is not None:
-            stage2_ab = Stage2ABConfig.from_mapping(
-                stage2_ab_raw,
-                allow_teacher_forcing_pipeline=objective is not None,
-            )
-            if objective is not None:
-                stage2_ab = _compile_teacher_forcing_stage2_ab(stage2_ab, objective)
-        elif trainer_variant == "stage2_two_channel":
             raise ValueError(
-                "stage2_ab section must be provided when custom.trainer_variant=stage2_two_channel"
+                "stage2_ab has been removed from active Stage-2 configs; "
+                "use stage2_rollout_correction."
             )
-        _validate_stage2_ab_rollout_surface_alignment(
-            custom=custom,
-            stage2_ab=stage2_ab,
-        )
 
+        stage2_rollout_correction = None
+        if stage2_rollout_correction_raw is not None:
+            stage2_rollout_correction = Stage2RolloutCorrectionConfig.from_mapping(
+                stage2_rollout_correction_raw
+            )
+        elif trainer_variant == "stage2_rollout_correction":
+            raise ValueError(
+                "stage2_rollout_correction section must be provided when "
+                "custom.trainer_variant=stage2_rollout_correction"
+            )
         rollout_matching = None
         if rollout_matching_raw is not None:
             if not isinstance(rollout_matching_raw, Mapping):
@@ -5199,7 +4638,8 @@ class TrainingConfig:
             if "pipeline" in rollout_matching_raw:
                 raise ValueError(
                     "rollout_matching.pipeline has been removed. "
-                    "Use stage2_ab.pipeline with custom.trainer_variant=stage2_two_channel instead."
+                    "Use stage2_rollout_correction.pipeline with "
+                    "custom.trainer_variant=stage2_rollout_correction instead."
                 )
 
             # Preserve prior strictness: an explicitly empty mapping counts as "missing".
@@ -5225,29 +4665,30 @@ class TrainingConfig:
                     path="rollout_matching",
                 )
 
-        if trainer_variant == "stage2_two_channel":
+        if trainer_variant == "stage2_rollout_correction":
             if rollout_matching is None:
                 raise ValueError(
-                    "rollout_matching section must be provided for stage2_two_channel"
+                    "rollout_matching section must be provided for stage2_rollout_correction"
                 )
 
         stage2_pipeline_present = bool(
-            stage2_ab is not None and getattr(stage2_ab, "pipeline", None) is not None
+            stage2_rollout_correction is not None
+            and getattr(stage2_rollout_correction, "pipeline", None) is not None
         )
 
         if stage2_pipeline_present and custom_coord_soft_ce_w1_present:
             raise ValueError(
-                "stage2_ab.pipeline is provided; custom.coord_soft_ce_w1.* is disallowed. "
+                "stage2_rollout_correction.pipeline is provided; custom.coord_soft_ce_w1.* is disallowed. "
                 "Coordinate regularizers have been removed from the active Stage-2 pipeline."
             )
         if stage2_pipeline_present and custom_bbox_geo_present:
             raise ValueError(
-                "stage2_ab.pipeline is provided; custom.bbox_geo.* is disallowed. "
+                "stage2_rollout_correction.pipeline is provided; custom.bbox_geo.* is disallowed. "
                 "bbox geometry auxiliaries have been removed from the active Stage-2 pipeline."
             )
         if stage2_pipeline_present and custom_bbox_size_aux_present:
             raise ValueError(
-                "stage2_ab.pipeline is provided; custom.bbox_size_aux.* is disallowed. "
+                "stage2_rollout_correction.pipeline is provided; custom.bbox_size_aux.* is disallowed. "
                 "bbox size auxiliaries have been removed from the active Stage-2 pipeline."
             )
         # Length-coherence guardrails (fail-fast). These settings affect whether the
@@ -5276,10 +4717,32 @@ class TrainingConfig:
 
             if backend == "vllm" or effective_eval_backend == "vllm":
                 vllm_cfg = getattr(rollout_matching, "vllm", None)
-                if bool(getattr(vllm_cfg, "enable_lora", False)):
+                enable_lora = bool(getattr(vllm_cfg, "enable_lora", False))
+                sync_cfg = getattr(vllm_cfg, "sync", None)
+                sync_mode = (
+                    str(getattr(sync_cfg, "mode", "full") or "full")
+                    .strip()
+                    .lower()
+                )
+                if sync_mode != "adapter":
                     raise ValueError(
-                        "vLLM rollouts require full merged-weight sync in this stack: "
-                        "set rollout_matching.vllm.enable_lora=false."
+                        "vLLM rollouts require official adapter sync: set "
+                        "rollout_matching.vllm.sync.mode=adapter."
+                    )
+                if not enable_lora:
+                    raise ValueError(
+                        "vLLM rollouts require official adapter sync: set "
+                        "rollout_matching.vllm.enable_lora=true."
+                    )
+                if enable_lora and sync_mode != "adapter":
+                    raise ValueError(
+                        "rollout_matching.vllm.enable_lora=true requires "
+                        "rollout_matching.vllm.sync.mode=adapter."
+                    )
+                if sync_mode == "adapter" and not enable_lora:
+                    raise ValueError(
+                        "rollout_matching.vllm.sync.mode=adapter requires "
+                        "rollout_matching.vllm.enable_lora=true."
                     )
                 vllm_max_model_len_raw = getattr(vllm_cfg, "max_model_len", None)
                 max_new_tokens_raw = getattr(rollout_matching, "max_new_tokens", None)
@@ -5311,13 +4774,13 @@ class TrainingConfig:
 
         if custom.bbox_format in {"cxcy_logw_logh", "cxcywh"}:
             bbox_format_label = str(custom.bbox_format)
-            if trainer_variant == "stage2_two_channel":
+            if trainer_variant == removed_two_channel_variant:
                 raise ValueError(
                     f"custom.bbox_format={bbox_format_label} is Stage-1-only in V1 and is unsupported for stage2 trainer variants."
                 )
             if stage2_pipeline_present:
                 raise ValueError(
-                    f"custom.bbox_format={bbox_format_label} is Stage-1-only in V1 and cannot be combined with stage2_ab.pipeline."
+                    f"custom.bbox_format={bbox_format_label} is Stage-1-only in V1 and cannot be combined with stage2_rollout_correction.pipeline."
                 )
             if not bool(getattr(custom.coord_tokens, "enabled", False)):
                 raise ValueError(
@@ -5390,7 +4853,7 @@ class TrainingConfig:
             tuner=tuner,
             training=training,
             objective=objective,
-            stage2_ab=stage2_ab,
+            stage2_rollout_correction=stage2_rollout_correction,
             rollout_matching=rollout_matching,
             rlhf=rlhf,
             prompts=prompts,

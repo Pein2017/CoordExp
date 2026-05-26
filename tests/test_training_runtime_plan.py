@@ -102,10 +102,10 @@ def test_default_empty_and_unknown_variants_keep_generic_stage1_policy() -> None
 @pytest.mark.parametrize(
     ("variant", "pipeline_namespace"),
     [
-        ("stage2_two_channel", "stage2_ab.pipeline"),
+        ("stage2_rollout_correction", "stage2_rollout_correction.pipeline"),
     ],
 )
-def test_stage2_two_channel_owns_rollout_setup_policy(
+def test_stage2_rollout_correction_owns_rollout_setup_policy(
     variant: str,
     pipeline_namespace: str,
 ) -> None:
@@ -126,10 +126,11 @@ def test_stage2_two_channel_owns_rollout_setup_policy(
 @pytest.mark.parametrize(
     ("variant", "replacement"),
     [
-        ("stage2_ab_training", "stage2_two_channel"),
-        ("rollout_matching_sft", "stage2_two_channel"),
-        ("stage2_rollout_aligned", "stage2_two_channel"),
-        ("stage2_rollout_runtime", "stage2_two_channel"),
+        ("stage2_ab_training", "stage2_rollout_correction"),
+        ("stage2_two_channel", "stage2_rollout_correction"),
+        ("rollout_matching_sft", "stage2_rollout_correction"),
+        ("stage2_rollout_aligned", "stage2_rollout_correction"),
+        ("stage2_rollout_runtime", "stage2_rollout_correction"),
         ("stage1_set_continuation", "prefix_rollin_et_rmp_ce"),
     ],
 )
@@ -150,7 +151,7 @@ def test_removed_variants_fail_fast_with_replacement_guidance(
 def test_training_runtime_plan_is_frozen() -> None:
     plan_mod = _plan_module()
 
-    plan = plan_mod.resolve_training_runtime_plan("stage2_two_channel")
+    plan = plan_mod.resolve_training_runtime_plan("stage2_rollout_correction")
 
     with pytest.raises(FrozenInstanceError):
         plan.collator_family = "default"
@@ -161,13 +162,13 @@ def test_resolved_plans_use_known_policy_vocabularies() -> None:
 
     collator_families = {"default", "identity"}
     packing_owners = {"dataset", "trainer", None}
-    pipeline_namespaces = {"stage2_ab.pipeline", None}
+    pipeline_namespaces = {"stage2_rollout_correction.pipeline", None}
 
     for variant in (
         None,
         "",
         "legacy_custom_trainer",
-        "stage2_two_channel",
+        "stage2_rollout_correction",
     ):
         plan = plan_mod.resolve_training_runtime_plan(variant)
         assert plan.collator_family in collator_families

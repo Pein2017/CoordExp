@@ -9,10 +9,10 @@ from src.config.loader import ConfigLoader
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 STAGE1_ROOT = REPO_ROOT / "configs" / "stage1"
-STAGE2_ROOT = REPO_ROOT / "configs" / "stage2_two_channel"
+STAGE2_ROOT = REPO_ROOT / "configs" / "stage2_rollout_correction"
 STAGE_BASES = {
     "configs/stage1/sft_base.yaml",
-    "configs/stage2_two_channel/base.yaml",
+    "configs/stage2_rollout_correction/base.yaml",
 }
 
 
@@ -47,10 +47,9 @@ def _is_stage1_non_smoke_leaf(path: Path) -> bool:
 def _is_stage2_non_smoke_leaf(path: Path) -> bool:
     rel = path.relative_to(REPO_ROOT).as_posix()
     return (
-        rel.startswith("configs/stage2_two_channel/")
-        and "/_shared/" not in rel
+        rel.startswith("configs/stage2_rollout_correction/")
         and "/smoke/" not in rel
-        and rel != "configs/stage2_two_channel/base.yaml"
+        and rel != "configs/stage2_rollout_correction/base.yaml"
     )
 
 
@@ -74,8 +73,8 @@ def _representative_migrated_leaves() -> list[Path]:
     return [
         STAGE1_ROOT / "profiles/4b/coord_soft_ce_gate_coco80_desc_first_1024_lvis_proxy.yaml",
         STAGE1_ROOT / "lvis_bbox_max60_1024.yaml",
-        STAGE2_ROOT / "prod/a_only.yaml",
-        STAGE2_ROOT / "prod/ab_mixed.yaml",
+        STAGE2_ROOT / "prod/coco1024_online_residual_correction_vllm_tail_append.yaml",
+        STAGE2_ROOT / "smoke/compact_full_hf_1step.yaml",
     ]
 
 
@@ -112,26 +111,11 @@ def test_stage1_canonical_profiles_load_under_current_hierarchy() -> None:
         ConfigLoader.load_materialized_training_config(str(path))
 
 
-def test_stage2_prod_common_no_longer_hides_prompt_identity() -> None:
-    prod_common = ConfigLoader.load_yaml_with_extends(
-        str(STAGE2_ROOT / "_shared/prod_common.yaml")
-    )
-    prod_common_custom = prod_common.get("custom", {}) or {}
-    prod_common_extra = prod_common_custom.get("extra", {}) or {}
-
-    assert "prompt_variant" not in prod_common_extra
-    assert "object_field_order" not in prod_common_custom
-
-    expected_prompt = "coco_80"
-    for path in (
-        STAGE2_ROOT / "_shared/prod_ab_mixed_vllm.yaml",
-        STAGE2_ROOT / "_shared/prod_a_only_hf.yaml",
-    ):
-        merged = ConfigLoader.load_yaml_with_extends(str(path))
-        custom = merged.get("custom", {}) or {}
-        extra = custom.get("extra", {}) or {}
-        assert extra["prompt_variant"] == expected_prompt
-        assert custom["object_field_order"] == "desc_first"
+def test_stage2_rollout_correction_hierarchy_uses_single_active_root() -> None:
+    assert STAGE2_ROOT.is_dir()
+    assert (STAGE2_ROOT / "base.yaml").is_file()
+    assert not (REPO_ROOT / "configs" / "stage2_two_channel").exists()
+    assert not (REPO_ROOT / "configs" / "stage2_ab").exists()
 
 
 def test_canonical_non_smoke_leaves_materialize_run_identity_fields() -> None:

@@ -233,7 +233,7 @@ manual_audit:
 
 checkpoints:
   - name: ckpt
-    path: output/stage2_ab/prod/ul-res_1024-ckpt_300_merged
+    path: output/stage2_rollout_correction/prod/ul-res_1024-ckpt_300_merged
 """.strip()
         + "\n",
         encoding="utf-8",
@@ -313,13 +313,13 @@ def test_build_pipeline_yaml_applies_checkpoint_infer_contract_overrides(
 def test_resolve_checkpoint_path_labels_common_root(tmp_path: Path, monkeypatch) -> None:
     worktree_root = tmp_path / "repo" / ".worktrees" / "coord-family-comparison"
     common_root = tmp_path / "repo"
-    checkpoint = common_root / "output" / "stage2_ab" / "prod" / "ul-res_1024-ckpt_300_merged"
+    checkpoint = common_root / "output" / "stage2_rollout_correction" / "prod" / "ul-res_1024-ckpt_300_merged"
     checkpoint.mkdir(parents=True)
     monkeypatch.setattr(verifier_module, "REPO_ROOT", worktree_root)
     monkeypatch.setattr(verifier_module, "COMMON_REPO_ROOT", common_root)
 
     path, source = resolve_checkpoint_path(
-        "output/stage2_ab/prod/ul-res_1024-ckpt_300_merged"
+        "output/stage2_rollout_correction/prod/ul-res_1024-ckpt_300_merged"
     )
     assert path.exists()
     assert source == "config_path_common_root"

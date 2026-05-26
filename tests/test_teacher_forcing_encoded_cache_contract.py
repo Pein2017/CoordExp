@@ -33,7 +33,7 @@ def make_training_config(
         ineligible_policy=ineligible_policy,
     )
     return SimpleNamespace(
-        custom=SimpleNamespace(trainer_variant="stage2_two_channel"),
+        custom=SimpleNamespace(trainer_variant="stage2_rollout_correction"),
         objective=SimpleNamespace(
             id=objective_id,
             target_ir=SimpleNamespace(

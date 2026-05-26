@@ -8,11 +8,11 @@ def test_stage2_policy_provenance_records_effective_greedy_threshold() -> None:
     provenance = build_stage2_policy_provenance(
         {
             "custom": {
-                "trainer_variant": "stage2_two_channel",
+                "trainer_variant": "stage2_rollout_correction",
                 "object_ordering": "sorted",
             },
-            "stage2_ab": {
-                "channel_b": {
+            "stage2_rollout_correction": {
+                "correction": {
                     "assignment": {"strategy": "greedy_iou"},
                     "duplicate_control": {
                         "iou_threshold": 0.91,
@@ -33,7 +33,7 @@ def test_stage2_policy_provenance_records_effective_greedy_threshold() -> None:
     assert provenance["assignment_iou_threshold"] is None
     assert provenance["assignment_iou_threshold_effective"] == 0.55
     assert provenance["assignment_iou_threshold_source"] == "rollout_matching.maskiou_gate"
-    assert provenance["duplicate_filter_strategy"] == "legacy_channel_b_duplicate_control"
+    assert provenance["duplicate_filter_strategy"] == "rollout_correction_duplicate_control"
     assert provenance["duplicate_iou_threshold"] == 0.91
     assert provenance["duplicate_center_radius_scale"] == 0.75
     assert provenance["object_ordering_policy"] == "tail_append"
@@ -48,9 +48,9 @@ def test_stage2_policy_provenance_records_effective_greedy_threshold() -> None:
 def test_stage2_policy_provenance_prefers_explicit_assignment_threshold() -> None:
     provenance = build_stage2_policy_provenance(
         {
-            "custom": {"trainer_variant": "stage2_two_channel"},
-            "stage2_ab": {
-                "channel_b": {
+            "custom": {"trainer_variant": "stage2_rollout_correction"},
+            "stage2_rollout_correction": {
+                "correction": {
                     "assignment": {
                         "strategy": "greedy_iou",
                         "iou_threshold": 0.61,
@@ -68,13 +68,13 @@ def test_stage2_policy_provenance_prefers_explicit_assignment_threshold() -> Non
     assert provenance["assignment_iou_threshold_effective"] == 0.61
     assert (
         provenance["assignment_iou_threshold_source"]
-        == "stage2_ab.channel_b.assignment.iou_threshold"
+        == "stage2_rollout_correction.correction.assignment.iou_threshold"
     )
     assert provenance["object_ordering_policy"] == "sorted"
     assert provenance["object_ordering_strategy_id"] == "top_left_spatial"
 
 
-def test_stage2_policy_provenance_omits_non_stage2_two_channel_runs() -> None:
+def test_stage2_policy_provenance_omits_non_stage2_rollout_correction_runs() -> None:
     provenance = build_stage2_policy_provenance(
         {"custom": {"trainer_variant": "sft"}},
         trainer_variant="sft",
@@ -85,12 +85,12 @@ def test_stage2_policy_provenance_omits_non_stage2_two_channel_runs() -> None:
 
 def test_stage2_policy_provenance_reads_real_typed_stage2_config() -> None:
     cfg = ConfigLoader.load_materialized_training_config(
-        "configs/stage2_two_channel/smoke/compact_full_et_rmp_ce_ckpt3664_hf_gate2_16sample.yaml"
+        "configs/stage2_rollout_correction/smoke/compact_full_hf_1step.yaml"
     )
 
     provenance = build_stage2_policy_provenance(
         cfg,
-        trainer_variant="stage2_two_channel",
+        trainer_variant="stage2_rollout_correction",
     )
 
     assert provenance is not None
@@ -98,12 +98,12 @@ def test_stage2_policy_provenance_reads_real_typed_stage2_config() -> None:
     assert provenance["assignment_iou_threshold"] is None
     assert provenance["assignment_iou_threshold_effective"] == 0.5
     assert provenance["assignment_iou_threshold_source"] == "rollout_matching.maskiou_gate"
-    assert provenance["duplicate_filter_strategy"] == "legacy_channel_b_duplicate_control"
-    assert provenance["duplicate_iou_threshold"] == 0.95
+    assert provenance["duplicate_filter_strategy"] == "rollout_correction_duplicate_control"
+    assert provenance["duplicate_iou_threshold"] == 0.90
     assert provenance["duplicate_center_radius_scale"] == 0.80
     assert provenance["object_ordering_policy"] == "tail_append"
     assert provenance["object_ordering_strategy_id"] == "legacy_tail_append"
-    assert provenance["sample_object_ordering"] == "random"
+    assert provenance["sample_object_ordering"] == "sorted"
     assert provenance["rollout_template_family"] == "compact_full"
     assert provenance["rollout_decode_policy"] == "unconstrained"
     assert provenance["invalid_rollout_policy"] == "fallback_gt_fn_append_only"

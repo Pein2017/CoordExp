@@ -14,19 +14,19 @@ Use this page for the active Stage-2 path.
 
 The current contract is:
 
-- `custom.trainer_variant: stage2_two_channel`
-- Channel-A runs one GT-anchored teacher-forced forward
-- Channel-B keeps the rollout-aligned clean-prefix supervision path
+- `custom.trainer_variant: stage2_rollout_correction`
+- `stage2_rollout_correction.pipeline.objective[]` contains exactly one enabled `residual_set_correction`
+- the training sequence is rollout prefix plus GT/residual correction
 - Stage-2 remains YAML-first; no new CLI flags are required
 
-The older rollout-matching public trainer variants have been removed.
+The older split public trainer variants have been removed.
 `src/trainers/stage2_rollout_runtime.py` remains as an internal runtime base for
 rollout prompt preparation, HF/vLLM/server dispatch, eval artifacts, and
 post-rollout packing.
 
 ## Normative References
 
-- [`openspec/specs/stage2-ab-training/spec.md`](../../openspec/specs/stage2-ab-training/spec.md)
+- [`openspec/specs/stage2-rollout-correction/spec.md`](../../openspec/specs/stage2-rollout-correction/spec.md)
 - [`openspec/specs/rollout-matching-sft/spec.md`](../../openspec/specs/rollout-matching-sft/spec.md)
 - [`openspec/specs/teacher-forcing-unified-loss-registry/spec.md`](../../openspec/specs/teacher-forcing-unified-loss-registry/spec.md)
 - [`openspec/specs/trainer-metrics-components/spec.md`](../../openspec/specs/trainer-metrics-components/spec.md)
@@ -48,8 +48,9 @@ Current internal ownership seams:
   - `src/bootstrap/trainer_setup.py`
   - `src/bootstrap/run_metadata.py`
 - Stage-2 trainer/runtime:
-  - `src/trainers/stage2_two_channel.py`
-  - `src/trainers/stage2_two_channel/`
+  - `src/trainers/stage2_rollout_correction.py`
+  - `src/trainers/stage2_rollout_correction.py`
+  - `src/trainers/stage2_rollout_correction/` when package-local helpers are present
   - `src/trainers/stage2_rollout_runtime.py`
   - `src/trainers/rollout_aligned_targets.py`
   - `src/trainers/rollout_aligned_evaluator.py`
@@ -59,75 +60,27 @@ Current internal ownership seams:
 
 ## Current Supported Contract
 
-- `custom.trainer_variant: stage2_two_channel`
-- shadow architecture `surface.id: stage2_two_channel`
-- shadow config domains follow the unified contract:
-  `run`, `surface`, `data`, `template`, `supervision`, `objectives`,
-  `observability`, `artifacts`, and `runtime`
-- `stage2_ab.pipeline.objective[]` and `stage2_ab.pipeline.diagnostics[]` are required for active Stage-2 configs
-- Channel-A runs a single GT-anchored teacher-forced forward.
-- Channel-B clean-prefix behavior is scoped to `token_ce` / `hard_sft`
-  baselines. Residual-state trie configs bypass the clean-prefix target path.
-- Channel-B final object sequencing is controlled by:
-  - `stage2_ab.channel_b.insertion_order: tail_append | sorted`
-  - default `tail_append` preserves the historical clean-prefix plus FN-tail path
-  - `sorted` applies a final top-left sort over retained current-attempt objects plus FN objects before final teacher-forced serialization, and compact-full FN descriptions remain explicitly tagged for `rollout_fn_desc_weight`
-- Channel-B duplicate control is configured only through:
-  - `stage2_ab.channel_b.duplicate_control.iou_threshold`
-  - `stage2_ab.channel_b.duplicate_control.center_radius_scale`
-- Channel-B pseudo-positive mode is opt-in through:
-  - `stage2_ab.channel_b.pseudo_positive.enabled`
-  - `stage2_ab.channel_b.pseudo_positive.coord_weight`
+- `custom.trainer_variant: stage2_rollout_correction`
+- shadow architecture `surface.id: stage2_rollout_correction`
+- `stage2_rollout_correction.pipeline.objective[]` is required for active Stage-2 configs
+- `stage2_rollout_correction.pipeline.diagnostics[]` must be empty
+- the only active objective is `residual_set_correction`
+- the only active application preset is `rollout_self_prefix`
+- removed clean-prefix objectives (`token_ce`, `hard_sft`, `stage2_trie_ce`) fail fast in unified Stage-2 configs
+- authored `channels`, scheduler keys, and per-channel namespaces fail fast
 - `rollout_matching.pipeline.*` is retired; active objective ownership is only
-  through `stage2_ab.pipeline.*`
-- supported routing/objective presets are:
-  - `token_ce.application.preset: anchor_text_only`
-  - `stage2_trie_ce.application.preset: rollout_trie_hard_ce`
-  - `schema_format_ce.application.preset: rollout_schema_format`
-  - `residual_set_correction.application.preset: rollout_self_prefix`
-  - `hard_sft.application.preset: hard_sft`
-- `stage2_trie_ce` and `residual_set_correction` are aliases for the same
-  residual-state trie semantics. Both consume live Channel-B rollout attempts
-  and dynamic residual valid sets; neither uses privileged-rollout
-  multiple-positive supervision.
-- residual-set smoke handles live under
-  `configs/stage2_two_channel/smoke/compact_full_residual_set_ckpt3664_hf_*.yaml`;
-  they are tiny runnable checks for the correction-event path, not full validation or
-  production-quality evidence.
-- `stage2_trie_ce` / `residual_set_correction` is an online-learning
-  Channel-B objective:
-  - Channel-B always generates live rollout attempts from the current batch;
-    offline prepared-rollout JSONL inputs are no longer a supported code path.
-  - default UL promotion is strict 4-of-4 consensus:
-    `expected_num_rollouts: 4`, `ul_consensus_ratio: 1.0`,
-    `min_ul_valid_rollouts: 4`
-  - loss config consumes `lambda_type`, `lambda_inner`, and residual-set
-    runtime construction knobs such as `expected_num_rollouts`, `base_seed`,
-    UL thresholds, and `strict_builder_invariants`.
-  - self-prefix tokens are roll-in context, not automatic positives. Residual
-    `ValidAction` records define the oracle positive set at a correction
-    position.
-  - multiple-positive marginal likelihood is allowed only while the current
-    residual-state prefix leaves multiple valid next-token actions ambiguous.
-    Once a teacher-forced token collapses the branch to one object, later
-    object-internal positions use singleton strict CE until the next genuine
-    ambiguity point.
-  - a wrong live token at a first-error position is counted as a correction and
-    MUST NOT be inserted into `valid_token_ids`; otherwise malformed same-role
-    drift can become self-reinforcing.
+  through `stage2_rollout_correction.pipeline.*`
+- rollout runtime/backend/decode/eval knobs remain under `rollout_matching.*`
+- final object sequencing is controlled by:
+  - `stage2_rollout_correction.correction.insertion_order: tail_append | sorted | fn_slot_shuffle`
+- duplicate control is configured only through:
+  - `stage2_rollout_correction.correction.duplicate_control.iou_threshold`
+  - `stage2_rollout_correction.correction.duplicate_control.center_radius_scale`
+- pseudo-positive clean-prefix knobs are removed from the active Stage-2 contract
 - residual-set loss and telemetry are reported under
-  `stage2_ab/channel_b/residual_set/`; key compact metrics include
+  `stage2_rollout_correction/residual_set/`; key compact metrics include
   `sequence_count`, `atom_count`, `atom_weight_sum`, `sequence_loss`,
-  `type_loss`, `inner_loss`, `wrong_type_mass`, `valid_set_mass`,
-  dirty-prefix/source counters, STOP/continue counts, and decode-mode slices.
-  First-error OPD telemetry additionally includes `ambiguous_token_targets`,
-  `strict_token_targets`, `target_token_mismatch`, and
-  `coord_ambiguous_token_targets`.
-- `schema_format_ce` may be added after `stage2_trie_ce` /
-  `residual_set_correction` for compact-full online rollouts. It supervises
-  non-coordinate schema/format tokens on Channel-B rollout targets with
-  `schema_ce_weight`, while forcing desc CE weight to zero so residual-trie
-  semantics keep ownership of object-content correction.
+  `type_loss`, `inner_loss`, `wrong_type_mass`, and `valid_set_mass`.
 - removed geometry/coordinate modules:
   - `bbox_geo`, `bbox_size_aux`, `coord_reg`, and `coord_diag` are rejected by the active Stage-2 pipeline
 - duplicate-burst UL migration state:
@@ -161,12 +114,12 @@ Current internal ownership seams:
   - enabled `K<4` is rejected because pseudo-positive promotion requires full
     4-of-4 consensus in the default profile
 - Enabled failure semantics:
-  - `stage2_ab.channel_b.rollout_template_family: coordjson` is the explicit
+  - `stage2_rollout_correction.correction.rollout_template_family: coordjson` is the explicit
     legacy rollout surface. It uses the legacy CoordJSON parser and records
-    rollout template/decode/parser provenance in Channel-B batch metrics.
-  - `stage2_ab.channel_b.rollout_template_family: compact_full` is the new
+    rollout template/decode/parser provenance in rollout-correction batch metrics.
+  - `stage2_rollout_correction.correction.rollout_template_family: compact_full` is the new
     canonical target surface for compact-full checkpoints. It uses the
-    compact-full parser and compact-full Channel-B target renderer, with default
+    compact-full parser and compact-full rollout-correction target renderer, with default
     `rollout_decode_policy: unconstrained`. It must not flow through the legacy
     CoordJSON parser or CoordJSON FN appender.
   - compact-full invalid, malformed, or empty-valid-object rollout policy
@@ -175,7 +128,7 @@ Current internal ownership seams:
     `rollout_context: fallback_gt_fn_append_only`, and does not count as a valid
     rollout for readiness gates. Parser/template mismatches remain hard
     failures, not fallback cases.
-  - `stage2_ab.channel_b.strict_rollout_preflight: true` is the fail-fast
+  - `stage2_rollout_correction.correction.strict_rollout_preflight: true` is the fail-fast
     diagnostic mode for online compact-full training. It rejects truncation,
     parser invalid/fallback outputs, salvage/drop paths, and compact-full
     object-span extraction failures before target construction, so parser or
@@ -185,29 +138,26 @@ Current internal ownership seams:
     pseudo-positive and recovered-GT support denominators remain the configured
     peer-attempt count (`num_rollouts - 1`) so missing/fallback peers cannot
     silently relax consensus.
-  - compact-full Channel-B targets do not use CoordJSON tail-closure or
+  - compact-full rollout-correction targets do not use CoordJSON tail-closure or
     semantic-stop supervision. Stop/closure metrics should be interpreted as
     CoordJSON-specific unless explicitly documented otherwise.
-  - malformed current-attempt preparation drops that attempt/sample from Channel-B training
+  - malformed current-attempt preparation drops that attempt/sample from rollout-correction training
   - malformed peer attempts that remain invalid after salvage parsing abort the step by default only when pseudo-positive mode is enabled
   - outside pseudo-positive mode, malformed rollouts fall back to the existing empty-prefix / FN-only handling instead of taking the invalid-rollout abort path
-  - `stage2_ab.channel_b.invalid_rollout_policy: dump_and_continue` dumps and skips the offending pseudo-positive sample instead
+  - `stage2_rollout_correction.correction.invalid_rollout_policy: dump_and_continue` dumps and skips the offending pseudo-positive sample instead
   - zero-object peer attempts remain valid zero-support evidence
 - deprecated authored knobs fail fast in active/training configs:
   - `custom.trainer_variant: rollout_matching_sft`
   - `custom.trainer_variant: stage2_rollout_aligned`
   - `custom.trainer_variant: stage2_rollout_runtime`
-  - `stage2_ab.n_softctx_iter`
-  - `stage2_ab.softctx_grad_mode`
-  - `stage2_ab.softctx_temperature`
-  - `stage2_ab.coord_ctx_embed_mode`
-  - `stage2_ab.coord_decode_mode`
+  - removed split-stage trainer variants and namespaces
+  - removed self-context iteration controls
   - `rollout_matching.coord_decode_mode`
   - legacy flat duplicate-control leaves:
-    - `stage2_ab.channel_b.duplicate_iou_threshold`
-    - `stage2_ab.channel_b.center_radius_scale`
+    - `stage2_rollout_correction.correction.duplicate_iou_threshold`
+    - `stage2_rollout_correction.correction.center_radius_scale`
 
-## Assignment, Duplicate Filtering, And Channel-B Targets
+## Assignment, Duplicate Filtering, And Rollout-Correction Targets
 
 Current design direction:
 
@@ -217,10 +167,10 @@ Current design direction:
   `src/training/stage2/assignment.py::GreedyIoUAssignment` builds one-to-one
   prediction-to-GT pairs by descending IoU with stable prediction/GT indices as
   tie-breakers.
-- Unmatched GT objects after greedy assignment are false negatives. Channel-B
+- Unmatched GT objects after greedy assignment are false negatives. Rollout-correction
   inserts them into the final clean-prefix target as `source_role:
   false_negative` objects.
-- The default Channel-B ordering remains `tail_append`: retained accepted
+- The default rollout-correction ordering remains `tail_append`: retained accepted
   rollout objects first, false-negative GT objects at the tail. `sorted` remains
   the explicit final top-left sort option over retained accepted objects plus
   inserted false negatives.
@@ -229,64 +179,43 @@ Current design direction:
 
 Assignment note:
 
-- Live Stage2-AB assignment is routed through
+- Live Stage-2 rollout-correction assignment is routed through
   `src/training/stage2/assignment.py::GreedyIoUAssignment` and accepts only
-  `stage2_ab.channel_b.assignment.strategy: greedy_iou`.
+  `stage2_rollout_correction.correction.assignment.strategy: greedy_iou`.
   - This intentionally faces rollout quality failures directly instead of
     hiding them behind an alternative assignment mechanism.
-  - `stage2_ab.channel_b.assignment.iou_threshold` is optional; when omitted,
+  - `stage2_rollout_correction.correction.assignment.iou_threshold` is optional; when omitted,
     the live matcher gate threshold is reused.
 - Policy provenance should record `greedy_iou` plus the duplicate-filter,
   object-ordering, and fallback-loss policy used for target realization.
 
 ## Recommended Config Entry Points
 
-- A-only baseline: `configs/stage2_two_channel/prod/a_only.yaml`
-- Mixed A/B baseline: `configs/stage2_two_channel/prod/ab_mixed.yaml`
-- Pseudo-positive `K=4` production profile: `configs/stage2_two_channel/prod/ab_mixed_coco1024_bmajority_channel_b_pseudo_positive.yaml`
-- A-only smoke: `configs/stage2_two_channel/smoke/a_only.yaml`
-- A-only center-size smoke: `configs/stage2_two_channel/smoke/a_only_center_size_2steps.yaml`
-- Production-like smoke: `configs/stage2_two_channel/smoke/ab_mixed_20steps.yaml`
-- Residual-state trie startup smoke:
-  `configs/stage2_two_channel/smoke/compact_full_residual_set_ckpt3664_hf_1step.yaml`
-- `stage2_trie_ce` alias train8 overfit probe:
-  `configs/stage2_two_channel/smoke/compact_full_et_rmp_ce_ckpt3664_hf_coco80_view_overfit_train8_noeval_64steps_stage2_trie_tail_append_zero_fp.yaml`
-- Decode-batch=4 train128/val64 runtime gate:
-  `configs/stage2_two_channel/smoke/compact_full_et_rmp_ce_ckpt3664_hf_coco80_view_train128_val64_4steps_decode4_hf_gate.yaml`
-- Residual-state trie train128/val64 mini matrix:
-  - H1 tail-append + weak FP 0.02:
-    `configs/stage2_two_channel/smoke/compact_full_et_rmp_ce_ckpt3664_hf_coco80_view_train128_val64_32steps_stage2_trie_tail_append_weak_fp_w0p02_lr1e5_decode4.yaml`
-  - H2 sorted + zero FP:
-    `configs/stage2_two_channel/smoke/compact_full_et_rmp_ce_ckpt3664_hf_coco80_view_train128_val64_32steps_stage2_trie_sorted_zero_fp_lr1e5_decode4.yaml`
-  - H3 tail-append + zero FP:
-    `configs/stage2_two_channel/smoke/compact_full_et_rmp_ce_ckpt3664_hf_coco80_view_train128_val64_32steps_stage2_trie_tail_append_zero_fp_lr1e5_decode4.yaml`
-  - H4 sorted + weak FP 0.02:
-    `configs/stage2_two_channel/smoke/compact_full_et_rmp_ce_ckpt3664_hf_coco80_view_train128_val64_32steps_stage2_trie_sorted_weak_fp_w0p02_lr1e5_decode4.yaml`
-- Pseudo-positive smoke: `configs/stage2_two_channel/smoke/b_majority_coco1024_pseudo_positive_4steps.yaml`
-- Enabled `K=2` pseudo-positive control smoke: `configs/stage2_two_channel/smoke/b_majority_coco1024_pseudo_positive_k2_4steps.yaml`
-- Server-mode eval smoke: `configs/stage2_two_channel/smoke/b_majority_coco1024_triage_posterior_vllm_server_6srv2lr_eval_4steps.yaml`
+- Canonical base: `configs/stage2_rollout_correction/base.yaml`
+- New production and smoke leaves should live under `configs/stage2_rollout_correction/`
+- Every migrated leaf must restate the full `stage2_rollout_correction.pipeline.objective[]` list because config list merging replaces lists wholesale
+- Old split-stage and pseudo-positive clean-prefix handles are removed active contracts; use historical records only when interpreting older runs
 
 ## Launch Patterns
 
-### Train128/Val64 Decode4 Mini Matrix
+### Minimal Config And Runtime Gate
 
-This matrix is a two-stage diagnostic. First run the live Channel-B decode
-gate to prove DDP plus batch decode plus eval artifacts. Only after the gate is
-clean should the residual-state trie H-runs be treated as model-training
-evidence.
+Use this first when changing Stage-2 runtime plumbing. It proves config
+resolution, DDP launch wiring, live rollout decode, target construction, and eval
+artifact materialization on the single active rollout-correction surface.
 
 Config-only checks:
 
 ```bash
 PYTHONPATH=. conda run -n ms python -m src.sft \
-  --config configs/stage2_two_channel/smoke/compact_full_et_rmp_ce_ckpt3664_hf_coco80_view_train128_val64_4steps_decode4_hf_gate.yaml \
+  --config configs/stage2_rollout_correction/base.yaml \
   --cfg-only
 
 PYTHONPATH=. CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 \
   conda run --no-capture-output -n ms torchrun \
   --nproc_per_node=8 --master_addr=127.0.0.1 --master_port=29650 \
   -m src.sft \
-  --config configs/stage2_two_channel/smoke/compact_full_et_rmp_ce_ckpt3664_hf_coco80_view_train128_val64_4steps_decode4_hf_gate.yaml \
+  --config configs/stage2_rollout_correction/base.yaml \
   --cfg-only
 ```
 
@@ -299,19 +228,16 @@ CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 \
 conda run --no-capture-output -n ms torchrun \
   --nproc_per_node=8 --master_addr=127.0.0.1 --master_port=29650 \
   -m src.sft \
-  --config configs/stage2_two_channel/smoke/compact_full_et_rmp_ce_ckpt3664_hf_coco80_view_train128_val64_4steps_decode4_hf_gate.yaml
+  --config configs/stage2_rollout_correction/base.yaml
 ```
 
-The gate config uses `rollout_matching.rollout_backend: hf` for the current
-diagnostic round. This still exercises live Channel-B decode, DDP, batch
-decode size 4, and eval artifact materialization. Validate vLLM server or
+The base config uses `rollout_matching.*` only for rollout runtime/backend,
+decode, and eval settings. It still exercises live rollout-correction decode,
+DDP, batch decode, and eval artifact materialization. Validate vLLM server or
 colocate mode in a separate gate before claiming vLLM production readiness.
-The train128/val64 decode4 configs set
-`stage2_ab.channel_b.ddp_phase_timeout_s: 600` because HF batch decode and
-target construction can create substantial rank skew before the learner step.
-Four-rollout decode presets use ordinal temperatures `[0.0, 0.3, 0.5, 0.7]`;
-avoid `1.0` for these infra gates because it has been unstable in grammar
-rollouts.
+Set `stage2_rollout_correction.correction.ddp_phase_timeout_s` conservatively
+for large HF batch decode runs because rollout and target construction can
+create substantial rank skew before the learner step.
 Post-rollout packing is DDP-scheduled: each rank first plans its local packs,
 the trainer gathers local pack counts, and all ranks execute the same
 `global_slot_count`. Ranks with fewer local packs use front-padded zero-weight
@@ -334,26 +260,6 @@ Pass criteria:
 - `prompt_tok_mismatch_total == 0`
 - eval artifacts are materialized, especially `gt_vs_pred_scored.jsonl`
 
-First-wave 4+4 layout once G0 and online rollout validation pass:
-
-```bash
-PYTHONPATH=. OMP_NUM_THREADS=8 TORCH_NCCL_ASYNC_ERROR_HANDLING=1 \
-PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True COORDEXP_TRAIN_HEARTBEAT=1 \
-CUDA_VISIBLE_DEVICES=0,1,2,3 \
-conda run --no-capture-output -n ms torchrun \
-  --nproc_per_node=4 --master_addr=127.0.0.1 --master_port=29651 \
-  -m src.sft \
-  --config configs/stage2_two_channel/smoke/compact_full_et_rmp_ce_ckpt3664_hf_coco80_view_train128_val64_32steps_stage2_trie_tail_append_weak_fp_w0p02_lr1e5_decode4.yaml
-
-PYTHONPATH=. OMP_NUM_THREADS=8 TORCH_NCCL_ASYNC_ERROR_HANDLING=1 \
-PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True COORDEXP_TRAIN_HEARTBEAT=1 \
-CUDA_VISIBLE_DEVICES=4,5,6,7 \
-conda run --no-capture-output -n ms torchrun \
-  --nproc_per_node=4 --master_addr=127.0.0.1 --master_port=29652 \
-  -m src.sft \
-  --config configs/stage2_two_channel/smoke/compact_full_et_rmp_ce_ckpt3664_hf_coco80_view_train128_val64_32steps_stage2_trie_sorted_zero_fp_lr1e5_decode4.yaml
-```
-
 Monitor recall first, then F1, with precision interpreted cautiously because
 the standard COCO labels may be incomplete. If train recall does not rise,
 audit live rollout generation, response-token fidelity, residual target
@@ -364,10 +270,7 @@ construction, and loss/gradient flow before trying a hotter learning rate.
 Use this when you do not need the dedicated server-mode launcher split.
 
 ```bash
-PYTHONPATH=. conda run -n ms python -m src.sft --config configs/stage2_two_channel/smoke/a_only.yaml
-PYTHONPATH=. conda run -n ms python -m src.sft --config configs/stage2_two_channel/smoke/a_only_center_size_2steps.yaml
-PYTHONPATH=. conda run -n ms python -m src.sft --config configs/stage2_two_channel/smoke/ab_mixed_20steps.yaml
-PYTHONPATH=. conda run -n ms python -m src.sft --config configs/stage2_two_channel/smoke/b_majority_coco1024_pseudo_positive_4steps.yaml
+PYTHONPATH=. conda run -n ms python -m src.sft --config configs/stage2_rollout_correction/base.yaml
 ```
 
 Legacy center-size experiment note:
@@ -389,7 +292,7 @@ For the first enabled runs, verify:
 - `train/triage/pseudo_positive_subthreshold_count` currently mirrors that retained shield-only total; use `train/triage/pseudo_positive_cluster_demoted_count` to separate cluster losers from plain below-threshold support-positive current-attempt objects
 - `rollout/peer/*` remains interpretable as mean-over-valid-peer-view aggregates; legacy `rollout/explorer/*` mirrors it for compatibility only
 - `dup/raw/duplicate_like_max_cluster_size` and `dup/raw/desc_entropy` move on hard duplicate-collapse scenes before the additive suppression counters do
-- `stage2_ab/channel_b/dup/N_clusters_suppressed` and `stage2_ab/channel_b/dup/N_objects_suppressed` remain sparse policy counters rather than raw pathology gauges
+- `stage2_rollout_correction/correction/dup/N_clusters_suppressed` and `stage2_rollout_correction/correction/dup/N_objects_suppressed` remain sparse policy counters rather than raw pathology gauges
 - duplicate-control diagnostics remain sparse; do not expect every suppressed
   object or dead current-attempt object to produce a boundary-local diagnostic
   record
@@ -398,20 +301,19 @@ Regression gate for Stage-2 objective cleanup:
 
 ```bash
 conda run -n ms python -m pytest \
-  tests/test_stage2_ab_config_contract.py \
-  tests/test_stage2_two_channel_training.py \
+  tests/test_stage2_rollout_correction_contract.py \
   tests/test_training_runtime_sft_integration.py -q
 ```
 
-### Server-Mode Mixed A/B Run
+### Server-Mode Rollout-Correction Run
 
-Use this when Channel-B rollout generation should run through the repo-owned
+Use this when rollout generation should run through the repo-owned
 vLLM server launcher.
 
 ```bash
 server_gpus=0,1,2,3,4,5 \
 train_gpus=6,7 \
-config=configs/stage2_two_channel/smoke/ab_mixed_20steps.yaml \
+config=configs/stage2_rollout_correction/base.yaml \
 conda run -n ms bash scripts/train_stage2.sh
 ```
 
@@ -419,13 +321,13 @@ conda run -n ms bash scripts/train_stage2.sh
 JSONL validation, GPU-split checks, rollout-server boot, and launcher metadata
 export to `src.launchers.stage2_vllm_server`.
 
-For adapter-backed compact-full checkpoints that use `coord_offset_adapter`,
-native Stage-2 vLLM rollout still uses
-`rollout_matching.vllm.sync.mode=full`: at runtime the trainer materializes an
-ordinary-weight snapshot for vLLM, then patches coord/schema token rows before
-native vLLM `load_weights()`. This does not permanently merge the learner base
-model and does not change adapter-only checkpoint saving. Filtering-only sync
-behavior is rejected; true native vLLM adapter-only row-sync remains future work.
+For adapter-backed compact-full checkpoints, native Stage-2 vLLM rollout now
+requires official ms-swift adapter sync:
+`rollout_matching.vllm.enable_lora=true` and
+`rollout_matching.vllm.sync.mode=adapter`. Qwen3-VL ViT/connector LoRA also
+sets `rollout_matching.vllm.enable_tower_connector_lora=true`, which the
+launcher forwards through `--vllm_engine_kwargs`. The old transient full-weight
+materialization path was removed because it did not match HF backend behavior.
 
 ## Experiment Authoring
 
@@ -434,17 +336,17 @@ Prefer a concise `training.run_name` and put experiment intent in the top-level
 
 ```yaml
 experiment:
-  title: Stage-2 A-only center-size smoke
+  title: Stage-2 rollout-correction smoke
   purpose: >
-    Smoke-test the center-size bbox regression path under the A-only trainer.
+    Smoke-test the residual rollout prefix plus GT correction trainer path.
   hypothesis: >
-    Historical center-size bbox supervision should resolve cleanly without
-    changing the canonical xyxy artifact contract.
+    Residual correction should construct trainable target IR from live rollout
+    prefixes without changing the canonical xyxy artifact contract.
   key_deviations:
-    - Historical center-size geometry path only; not part of new active configs.
+    - Uses the canonical residual_set_correction objective only.
     - Caps the run at two optimizer steps.
   runtime_settings:
-    - Runs the Stage-2 two-channel trainer in A-only mode.
+    - Runs `custom.trainer_variant: stage2_rollout_correction`.
   comments:
     - Use this for contract validation, not model-quality comparison.
 ```
@@ -469,15 +371,14 @@ After a healthy launch, check the run directory for:
 
 What to expect:
 
-- A-only runs finish without Channel-B rollout metric families such as `rollout/*`
-- mixed A/B runs emit Channel-B rollout metrics and duplicate diagnostics
-- Stage-2 two-channel runs write `stage2_policy_provenance` into
+- rollout-correction runs emit rollout metrics and duplicate diagnostics
+- Stage-2 rollout-correction runs write `stage2_policy_provenance` into
   `effective_runtime.json`, `pipeline_manifest.json`, `run_metadata.json`, and
   `experiment_manifest.json`; verify `assignment_strategy`,
   `duplicate_filter_strategy`, and `object_ordering_policy` before comparing
   assignment or duplicate-filter experiments
 - duplicate-control runs should emit both raw gauges under `dup/raw/*` and
-  additive policy counters under `stage2_ab/channel_b/dup/N_*`
+  additive policy counters under `stage2_rollout_correction/correction/dup/N_*`
 - eval-enabled server-mode runs emit grouped eval families such as `eval/detection/*`
 - eval-enabled runs also materialize offline-compatible eval artifacts under
   `eval_detection/step_<global_step>/` when
@@ -504,7 +405,7 @@ Rollout runtime note:
 
 - `src/trainers/stage2_rollout_runtime.py` shares the refactored
   bootstrap/runtime seams and vLLM server infrastructure, but it is not a public
-  trainer variant. Repo-owned YAML examples use `stage2_two_channel`.
+  trainer variant. Repo-owned YAML examples use `stage2_rollout_correction`.
 
 ## Historical Context
 

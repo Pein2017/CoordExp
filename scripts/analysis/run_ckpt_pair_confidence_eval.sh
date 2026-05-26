@@ -11,12 +11,12 @@ SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 source "${SCRIPT_DIR}/../_lib/backbone.sh"
 
 # Required (with analysis-oriented defaults)
-CKPT_A="${ckpt_a:-${CKPT_A:-output/stage2_ab/coco_bbox_max60/analysis/ckpt-300}}"
-CKPT_B="${ckpt_b:-${CKPT_B:-output/stage2_ab/coco_bbox_max60/analysis/ckpt-2400}}"
+CKPT_A="${ckpt_a:-${CKPT_A:-output/stage2_rollout_correction/coco_bbox_max60/analysis/ckpt-300}}"
+CKPT_B="${ckpt_b:-${CKPT_B:-output/stage2_rollout_correction/coco_bbox_max60/analysis/ckpt-2400}}"
 GT_JSONL="${gt_jsonl:-${GT_JSONL:-}}"
 
 # Run layout / devices
-OUTPUT_BASE_DIR="${output_base_dir:-${OUTPUT_BASE_DIR:-output/stage2_ab/coco_bbox_max60/analysis/pair_eval}}"
+OUTPUT_BASE_DIR="${output_base_dir:-${OUTPUT_BASE_DIR:-output/stage2_rollout_correction/coco_bbox_max60/analysis/pair_eval}}"
 RUN_A_NAME="${run_a_name:-${RUN_A_NAME:-ckpt_300}}"
 RUN_B_NAME="${run_b_name:-${RUN_B_NAME:-ckpt_2400}}"
 DEVICE_A="${device_a:-${DEVICE_A:-cuda:0}}"

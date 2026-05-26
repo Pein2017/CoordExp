@@ -38,7 +38,7 @@ def test_token_ce_chunked_matches_dense_reference() -> None:
     ]
 
     context = TeacherForcingContext(
-        channel="B",
+        channel="rollout_correction",
         registry_context="rollout",
         input_ids=input_ids,
         logits=logits,
@@ -51,7 +51,7 @@ def test_token_ce_chunked_matches_dense_reference() -> None:
         name="token_ce",
         enabled=True,
         weight=1.0,
-        channels=("A", "B"),
+        surfaces=("rollout_correction",),
         config={},
     )
 
@@ -83,14 +83,14 @@ def test_token_ce_chunked_matches_dense_reference() -> None:
     assert logits.grad is not None
 
 
-def test_token_ce_global_prefix_struct_ce_supervises_channel_b_prefix_tokens() -> None:
+def test_token_ce_global_prefix_struct_ce_supervises_rollout_correction_prefix_tokens() -> None:
     vocab = 32
     input_ids = torch.tensor([[7, 11, 12, 13, 14]], dtype=torch.long)
     logits = torch.zeros(1, input_ids.shape[1], vocab, dtype=torch.float32)
     logits[:, :, 0] = 5.0
 
     context = TeacherForcingContext(
-        channel="B",
+        channel="rollout_correction",
         registry_context="rollout",
         input_ids=input_ids,
         logits=logits,
@@ -114,7 +114,7 @@ def test_token_ce_global_prefix_struct_ce_supervises_channel_b_prefix_tokens() -
         name="token_ce",
         enabled=True,
         weight=1.0,
-        channels=("A", "B"),
+        surfaces=("rollout_correction",),
         config={"rollout_global_prefix_struct_ce_weight": 1.0},
     )
 
@@ -140,7 +140,7 @@ def test_token_ce_prefix_desc_pos_uses_fn_desc_weight_without_struct_ce() -> Non
     logits.requires_grad_()
 
     context = TeacherForcingContext(
-        channel="B",
+        channel="rollout_correction",
         registry_context="rollout",
         input_ids=input_ids,
         logits=logits,
@@ -166,7 +166,7 @@ def test_token_ce_prefix_desc_pos_uses_fn_desc_weight_without_struct_ce() -> Non
         name="token_ce",
         enabled=True,
         weight=1.0,
-        channels=("A", "B"),
+        surfaces=("rollout_correction",),
         config={
             "rollout_fn_desc_weight": 1.5,
             "rollout_global_prefix_struct_ce_weight": 0.0,
@@ -196,7 +196,7 @@ def test_schema_format_ce_supervises_only_compact_schema_tokens() -> None:
     logits.requires_grad_()
 
     context = TeacherForcingContext(
-        channel="B",
+        channel="rollout_correction",
         registry_context="rollout",
         input_ids=input_ids,
         logits=logits,
@@ -221,7 +221,7 @@ def test_schema_format_ce_supervises_only_compact_schema_tokens() -> None:
         name="schema_format_ce",
         enabled=True,
         weight=1.0,
-        channels=("B",),
+        surfaces=("rollout_correction",),
         config={"schema_ce_weight": 0.5},
     )
 

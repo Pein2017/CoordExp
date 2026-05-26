@@ -5,7 +5,7 @@ import types
 import pytest
 import torch
 
-from src.trainers.stage2_two_channel.trie_supervision import (
+from src.trainers.rollout_correction.trie_supervision import (
     Stage2TrieSummary,
     Stage2TrieTargets,
     Stage2TrieTokenTarget,
@@ -30,7 +30,7 @@ def _make_context() -> TeacherForcingContext:
     logits = torch.randn(1, input_ids.shape[1], 32, dtype=torch.float32)
 
     return TeacherForcingContext(
-        channel="B",
+        channel="rollout_correction",
         registry_context="rollout",
         input_ids=input_ids,
         logits=logits,
@@ -56,7 +56,7 @@ def _make_context_with_logits(
     *,
     input_ids: torch.Tensor | None = None,
     meta: list[dict[str, object]] | None = None,
-    channel: str = "B",
+    channel: str = "rollout_correction",
 ) -> TeacherForcingContext:
     if input_ids is None:
         input_ids = torch.arange(logits.shape[1], dtype=torch.long).unsqueeze(0)
@@ -91,7 +91,7 @@ def _make_spec() -> PipelineModuleSpec:
         name="stage2_trie_ce",
         enabled=True,
         weight=1.0,
-        channels=("B",),
+        surfaces=("rollout_correction",),
         application={"preset": "rollout_trie_hard_ce"},
         config={
             "support_weight": 1.0,
@@ -208,7 +208,6 @@ def test_stage2_trie_ce_multi_positive_logsum_uses_float32_math() -> None:
         logits,
         meta=[
             {
-                "stage2_channel": "B",
                 "stage2_trie_targets": targets,
                 "prompt_len": 1,
                 "prefix_len": 1,
@@ -238,7 +237,6 @@ def test_stage2_trie_ce_any_active_positive_child_is_acceptable() -> None:
         logits,
         meta=[
             {
-                "stage2_channel": "B",
                 "stage2_trie_targets": targets,
                 "prompt_len": 1,
                 "prefix_len": 1,
@@ -270,7 +268,6 @@ def test_stage2_trie_ce_equal_weight_positives_remain_hard_union(
         logits,
         meta=[
             {
-                "stage2_channel": "B",
                 "stage2_trie_targets": targets,
                 "prompt_len": 1,
                 "prefix_len": 1,
@@ -299,7 +296,6 @@ def test_stage2_trie_ce_mixed_source_weights_do_not_make_weak_branch_free() -> N
         logits,
         meta=[
             {
-                "stage2_channel": "B",
                 "stage2_trie_targets": targets,
                 "prompt_len": 1,
                 "prefix_len": 1,
@@ -335,7 +331,6 @@ def test_stage2_trie_ce_hard_singleton_matches_log_softmax() -> None:
         logits,
         meta=[
             {
-                "stage2_channel": "B",
                 "stage2_trie_targets": targets,
                 "prompt_len": 1,
                 "prefix_len": 1,
@@ -381,7 +376,6 @@ def test_stage2_trie_ce_eos_weight_changes_mixed_role_loss() -> None:
         logits,
         meta=[
             {
-                "stage2_channel": "B",
                 "stage2_trie_targets": targets,
                 "prompt_len": 1,
                 "prefix_len": 1,
@@ -442,7 +436,6 @@ def test_stage2_trie_ce_emits_role_target_count_metrics() -> None:
         logits,
         meta=[
             {
-                "stage2_channel": "B",
                 "stage2_trie_targets": targets,
                 "prompt_len": 1,
                 "prefix_len": 1,
@@ -489,7 +482,6 @@ def test_stage2_trie_ce_source_weight_scales_numerator_not_denominator() -> None
         logits,
         meta=[
             {
-                "stage2_channel": "B",
                 "stage2_trie_targets": targets,
                 "prompt_len": 1,
                 "prefix_len": 1,
@@ -508,7 +500,7 @@ def test_stage2_trie_ce_source_weight_scales_numerator_not_denominator() -> None
     )
 
 
-def test_stage2_trie_ce_ignores_non_channel_b_and_skip_loss_metadata() -> None:
+def test_stage2_trie_ce_ignores_non_rollout_correction_and_skip_loss_metadata() -> None:
     logits = torch.zeros((1, 4, 8), dtype=torch.float32)
     targets = _make_targets(
         Stage2TrieTokenTarget(
@@ -521,10 +513,9 @@ def test_stage2_trie_ce_ignores_non_channel_b_and_skip_loss_metadata() -> None:
 
     context_a = _make_context_with_logits(
         logits,
-        channel="A",
+        channel="offline_sft",
         meta=[
             {
-                "stage2_channel": "B",
                 "stage2_trie_targets": targets,
                 "prompt_len": 1,
                 "prefix_len": 1,
@@ -538,7 +529,6 @@ def test_stage2_trie_ce_ignores_non_channel_b_and_skip_loss_metadata() -> None:
         logits,
         meta=[
             {
-                "stage2_channel": "B",
                 "stage2_trie_skip_loss": True,
                 "stage2_trie_targets": targets,
                 "prompt_len": 1,
@@ -569,7 +559,6 @@ def test_stage2_trie_ce_raises_clear_error_for_position_outside_logits() -> None
         logits,
         meta=[
             {
-                "stage2_channel": "B",
                 "stage2_trie_targets": targets,
                 "prompt_len": 1,
                 "prefix_len": 1,
@@ -599,14 +588,12 @@ def test_stage2_trie_ce_projects_packed_segment_local_positions_to_row_logits() 
         meta=[
             {
                 "encoded_len": 3,
-                "stage2_channel": "B",
                 "prompt_len": 1,
                 "prefix_len": 1,
                 "train_len": 2,
             },
             {
                 "encoded_len": 3,
-                "stage2_channel": "B",
                 "stage2_trie_targets": targets,
                 "prompt_len": 1,
                 "prefix_len": 1,
@@ -637,14 +624,12 @@ def test_stage2_trie_ce_rejects_packed_target_at_segment_start() -> None:
         meta=[
             {
                 "encoded_len": 3,
-                "stage2_channel": "B",
                 "prompt_len": 1,
                 "prefix_len": 1,
                 "train_len": 2,
             },
             {
                 "encoded_len": 3,
-                "stage2_channel": "B",
                 "stage2_trie_targets": targets,
                 "prompt_len": 1,
                 "prefix_len": 1,
@@ -667,7 +652,6 @@ def test_stage2_trie_ce_rejects_malformed_sidecar_shape() -> None:
         logits,
         meta=[
             {
-                "stage2_channel": "B",
                 "stage2_trie_targets": malformed_targets,
                 "prompt_len": 1,
                 "prefix_len": 1,
@@ -746,7 +730,6 @@ def test_stage2_trie_ce_rejects_malformed_nested_sidecar_fields(
         logits,
         meta=[
             {
-                "stage2_channel": "B",
                 "stage2_trie_targets": malformed_targets,
                 "prompt_len": 1,
                 "prefix_len": 1,
@@ -783,7 +766,6 @@ def test_stage2_trie_ce_rejects_malformed_summary_fields() -> None:
         logits,
         meta=[
             {
-                "stage2_channel": "B",
                 "stage2_trie_targets": targets,
                 "prompt_len": 1,
                 "prefix_len": 1,
@@ -814,7 +796,6 @@ def test_legacy_stage2_trie_ce_direct_module_emits_task4_metrics() -> None:
         logits,
         meta=[
             {
-                "stage2_channel": "B",
                 "stage2_trie_targets": targets,
                 "prompt_len": 1,
                 "prefix_len": 1,
@@ -837,7 +818,34 @@ def test_legacy_stage2_trie_ce_direct_module_emits_task4_metrics() -> None:
     assert module_out.metrics["stage2_trie/fp_policy_weak_positive_count"] == pytest.approx(
         3.0
     )
-    assert "loss/B/stage2_trie_ce" in module_out.metrics
+    assert "loss/stage2_rollout_correction/stage2_trie_ce" in module_out.metrics
+
+
+def test_stage2_trie_ce_rejects_legacy_stage2_channel_metadata() -> None:
+    logits = torch.zeros((1, 4, 8), dtype=torch.float32)
+    targets = _make_targets(
+        Stage2TrieTokenTarget(
+            position=2,
+            positive_token_ids=(2,),
+            source_weights=(1.0,),
+            semantic_role="text",
+        )
+    )
+    context = _make_context_with_logits(
+        logits,
+        meta=[
+            {
+                "stage2_channel": "B",
+                "stage2_trie_targets": targets,
+                "prompt_len": 1,
+                "prefix_len": 1,
+                "train_len": 3,
+            }
+        ],
+    )
+
+    with pytest.raises(ValueError, match="stage2_channel.*removed"):
+        run_stage2_trie_ce_module(context=context, spec=_make_spec())
 
 
 def test_teacher_forcing_pipeline_rejects_legacy_stage2_trie_ce_config_keys() -> None:
@@ -852,7 +860,6 @@ def test_teacher_forcing_pipeline_rejects_legacy_stage2_trie_ce_config_keys() ->
                     "name": spec.name,
                     "enabled": spec.enabled,
                     "weight": spec.weight,
-                    "channels": spec.channels,
                     "application": spec.application,
                     "config": spec.config,
                 }

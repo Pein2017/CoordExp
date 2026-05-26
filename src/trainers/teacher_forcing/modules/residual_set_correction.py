@@ -18,7 +18,7 @@ from ..contracts import ModuleResult, PipelineModuleSpec, TeacherForcingContext
 from ..token_types import iter_segment_views
 
 
-_METRIC_PREFIX = "stage2_ab/channel_b/residual_set"
+_METRIC_PREFIX = "stage2_rollout_correction/residual_set"
 
 
 @dataclass(frozen=True)
@@ -38,6 +38,7 @@ _RESIDUAL_SET_V1_CONFIG_KEYS = frozenset(
         "label_conflict_weight",
         "commit_iou_threshold",
         "duplicate_burst_iou_threshold",
+        "duplicate_burst_prefix_rollback",
         "ul_cluster_iou_threshold",
         "ul_gray_iou_low",
         "ul_consensus_ratio",
@@ -65,6 +66,7 @@ _COMPACT_METRIC_KEYS = (
     "uncommitted_invalid_geometry",
     "uncommitted_malformed",
     "uncommitted_duplicate",
+    "duplicate_prefix_rollback",
     "uncommitted_fp_or_unpromoted",
     "spatial_wrong_desc_conflict",
     "label_conflict_atoms",
@@ -175,6 +177,9 @@ def _add_sequence_source_metrics(
     )
     totals["uncommitted_duplicate"] += _metric_value(
         raw, "uncommitted_duplicate", "scanner_row_decision/duplicate_burst"
+    )
+    totals["duplicate_prefix_rollback"] += _metric_value(
+        raw, "scanner_duplicate_prefix_rollback"
     )
     totals["uncommitted_fp_or_unpromoted"] += _metric_value(
         raw,
@@ -323,7 +328,7 @@ def run_residual_set_correction_module(
         )
 
     config = build_residual_set_correction_config(spec.config)
-    if str(context.channel or "").strip().upper() != "B":
+    if str(context.channel or "").strip() != "rollout_correction":
         return _zero_result(context)
 
     role_vocab: RoleVocab | None = None
@@ -347,7 +352,7 @@ def run_residual_set_correction_module(
         if target_ir is None:
             raise ValueError(
                 "residual_set_correction requires residual_set_target_ir "
-                "for every B-channel segment"
+                "for every rollout-correction segment"
             )
         if not isinstance(target_ir, TeacherForcingTargetIR):
             raise TypeError("residual_set_target_ir must be a TeacherForcingTargetIR")

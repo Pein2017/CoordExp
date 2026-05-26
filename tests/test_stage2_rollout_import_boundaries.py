@@ -4,16 +4,18 @@ import ast
 from pathlib import Path
 
 
-def test_stage2_two_channel_does_not_import_private_rollout_symbols() -> None:
-    """Regression guard: Stage-2 two-channel must not import underscore-private rollout symbols.
+def test_stage2_rollout_correction_does_not_import_private_rollout_symbols() -> None:
+    """Regression guard: Stage-2 rollout-correction must not import underscore-private rollout symbols.
 
     This uses AST inspection (not regex) so formatting/comment changes do not
     introduce false positives.
     """
 
     repo_root = Path(__file__).resolve().parents[1]
-    stage2_paths = [repo_root / "src" / "trainers" / "stage2_two_channel.py"]
-    stage2_pkg = repo_root / "src" / "trainers" / "stage2_two_channel"
+    stage2_paths = [
+        repo_root / "src" / "trainers" / "stage2_rollout_correction_impl.py"
+    ]
+    stage2_pkg = repo_root / "src" / "trainers" / "rollout_correction"
     stage2_paths.extend(sorted(stage2_pkg.rglob("*.py")))
 
     violations: list[tuple[str, str, str, int]] = []
@@ -48,6 +50,6 @@ def test_stage2_two_channel_does_not_import_private_rollout_symbols() -> None:
             for path, mod, name, lineno in violations
         )
         raise AssertionError(
-            "Stage-2 two-channel reintroduced underscore-private rollout imports.\n"
+            "Stage-2 rollout-correction reintroduced underscore-private rollout imports.\n"
             + formatted
         )

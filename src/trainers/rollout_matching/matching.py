@@ -2,7 +2,7 @@
 
 This module is intentionally import-light with respect to trainers (no swift/HF
 trainer imports). It provides the stable matching surface used by both
-rollout-matching SFT and Stage-2 AB.
+rollout-matching SFT and Stage-2 rollout-correction.
 """
 
 from __future__ import annotations

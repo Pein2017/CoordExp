@@ -13,7 +13,7 @@ from src.training.supervision.distributions import MultiPositiveTokenDistributio
 from test_compact_span_projector import _compact_view
 
 
-def test_stage2_adapter_preserves_channel_assignment_and_duplicate_provenance() -> None:
+def test_stage2_adapter_preserves_rollout_correction_and_duplicate_provenance() -> None:
     projection = CompactFullSpanProjector().project(_compact_view())
     batch = Stage2CompactSpanAdapter().build_batch(
         sample_id="sample-1",
@@ -22,7 +22,7 @@ def test_stage2_adapter_preserves_channel_assignment_and_duplicate_provenance() 
             Stage2CompactTokenTargetSpec(
                 label_position=6,
                 token_ids=(106, 1006),
-                channel="channel_a",
+                channel="rollout_correction",
                 provenance=Stage2SpanProvenance(
                     source_role="matched_gt",
                     assignment_id="assign-1",
@@ -30,13 +30,13 @@ def test_stage2_adapter_preserves_channel_assignment_and_duplicate_provenance() 
                     false_negative=False,
                     source_object_instance_id="obj-1",
                 ),
-                span_provenance="channel-a-target",
+                span_provenance="rollout-correction-coordinate-target",
                 token_weights=(3.0, 1.0),
             ),
             Stage2CompactTokenTargetSpec(
                 label_position=2,
                 token_ids=(202,),
-                channel="channel_b",
+                channel="rollout_correction",
                 provenance=Stage2SpanProvenance(
                     source_role="false_negative_append",
                     assignment_id=None,
@@ -44,36 +44,36 @@ def test_stage2_adapter_preserves_channel_assignment_and_duplicate_provenance() 
                     false_negative=True,
                     source_object_instance_id="obj-2",
                 ),
-                span_provenance="channel-b-target",
+                span_provenance="rollout-correction-schema-target",
             ),
         ),
         context_id="ctx-2",
     )
 
-    channel_a, channel_b = batch.spans
-    assert channel_a.sample_id == "sample-1"
-    assert channel_a.context_id == "ctx-2"
-    assert channel_a.provenance == "channel-a-target"
-    assert channel_a.role == "coordinate"
-    assert channel_a.label_positions == (6,)
-    assert isinstance(channel_a.distribution, MultiPositiveTokenDistribution)
-    assert channel_a.distribution.token_ids == (106, 1006)
-    assert channel_a.distribution.token_weights == (3.0, 1.0)
-    assert channel_a.metadata["channel"] == "channel_a"
-    assert channel_a.metadata["source_role"] == "matched_gt"
-    assert channel_a.metadata["assignment_id"] == "assign-1"
-    assert channel_a.metadata["duplicate_filter_id"] == "dup-keep-1"
-    assert channel_a.metadata["false_negative"] is False
-    assert channel_a.metadata["source_object_instance_id"] == "obj-1"
+    coordinate_span, schema_span = batch.spans
+    assert coordinate_span.sample_id == "sample-1"
+    assert coordinate_span.context_id == "ctx-2"
+    assert coordinate_span.provenance == "rollout-correction-coordinate-target"
+    assert coordinate_span.role == "coordinate"
+    assert coordinate_span.label_positions == (6,)
+    assert isinstance(coordinate_span.distribution, MultiPositiveTokenDistribution)
+    assert coordinate_span.distribution.token_ids == (106, 1006)
+    assert coordinate_span.distribution.token_weights == (3.0, 1.0)
+    assert coordinate_span.metadata["channel"] == "rollout_correction"
+    assert coordinate_span.metadata["source_role"] == "matched_gt"
+    assert coordinate_span.metadata["assignment_id"] == "assign-1"
+    assert coordinate_span.metadata["duplicate_filter_id"] == "dup-keep-1"
+    assert coordinate_span.metadata["false_negative"] is False
+    assert coordinate_span.metadata["source_object_instance_id"] == "obj-1"
 
-    assert channel_b.role == "schema"
-    assert channel_b.distribution.token_weights is None
-    assert channel_b.metadata["channel"] == "channel_b"
-    assert channel_b.metadata["source_role"] == "false_negative_append"
-    assert channel_b.metadata["assignment_id"] is None
-    assert channel_b.metadata["duplicate_filter_id"] == "fn-1"
-    assert channel_b.metadata["false_negative"] is True
-    assert channel_b.metadata["source_object_instance_id"] == "obj-2"
+    assert schema_span.role == "schema"
+    assert schema_span.distribution.token_weights is None
+    assert schema_span.metadata["channel"] == "rollout_correction"
+    assert schema_span.metadata["source_role"] == "false_negative_append"
+    assert schema_span.metadata["assignment_id"] is None
+    assert schema_span.metadata["duplicate_filter_id"] == "fn-1"
+    assert schema_span.metadata["false_negative"] is True
+    assert schema_span.metadata["source_object_instance_id"] == "obj-2"
 
 
 def test_stage2_adapter_propagates_objective_weight_metadata_without_mutation() -> None:
@@ -81,7 +81,7 @@ def test_stage2_adapter_propagates_objective_weight_metadata_without_mutation() 
     target = Stage2CompactTokenTargetSpec(
         label_position=6,
         token_ids=(106, 1006),
-        channel="channel_a",
+        channel="rollout_correction",
         provenance=Stage2SpanProvenance(
             source_role="matched_gt",
             state_weight=2.0,
@@ -110,18 +110,18 @@ def test_stage2_target_specs_do_not_accept_role_override() -> None:
         Stage2CompactTokenTargetSpec(
             label_position=3,
             token_ids=(103,),
-            channel="channel_a",
+            channel="rollout_correction",
             provenance=Stage2SpanProvenance(source_role="matched_gt"),
             role="coordinate",
         )
 
 
-def test_stage2_adapter_validates_channel_and_positions() -> None:
+def test_stage2_adapter_validates_rollout_correction_surface_and_positions() -> None:
     adapter = Stage2CompactSpanAdapter()
     projection = CompactFullSpanProjector().project(_compact_view())
     provenance = Stage2SpanProvenance(source_role="matched_gt")
 
-    with pytest.raises(ValueError, match="channel_a"):
+    with pytest.raises(ValueError, match="rollout_correction"):
         adapter.build_batch(
             sample_id="sample-1",
             projection=projection,
@@ -143,7 +143,7 @@ def test_stage2_adapter_validates_channel_and_positions() -> None:
                 Stage2CompactTokenTargetSpec(
                     label_position=10,
                     token_ids=(1,),
-                    channel="channel_a",
+                    channel="rollout_correction",
                     provenance=provenance,
                 ),
             ),

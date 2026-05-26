@@ -448,9 +448,9 @@ class PassthroughDuplicateFilter:
 
 
 class LegacyChannelBDuplicateControlAdapter:
-    """Compatibility adapter around the live Channel-B duplicate-control owner."""
+    """Compatibility adapter around the live rollout-correction duplicate owner."""
 
-    policy_id = "legacy_channel_b_duplicate_control"
+    policy_id = "rollout_correction_duplicate_control"
 
     def __init__(
         self,
@@ -480,12 +480,12 @@ class LegacyChannelBDuplicateControlAdapter:
     ) -> DuplicateFilterResult:
         """Return duplicate-control output by delegating to the live owner."""
 
-        from src.trainers.stage2_two_channel.target_builder import (
-            _apply_channel_b_duplicate_control,
+        from src.trainers.rollout_correction.target_builder import (
+            _apply_rollout_correction_duplicate_control,
         )
 
         candidates_tuple = tuple(candidates)
-        legacy_result = _apply_channel_b_duplicate_control(
+        legacy_result = _apply_rollout_correction_duplicate_control(
             anchor_objects_raw=[
                 self._to_legacy_gt_object(candidate=candidate, index=index)
                 for index, candidate in enumerate(candidates_tuple)
@@ -531,7 +531,7 @@ class LegacyChannelBDuplicateControlAdapter:
                 "suppressed_count": len(suppressed_indices),
                 "cluster_count": int(
                     legacy_result.counter_metrics.get(
-                        "stage2_ab/channel_b/dup/N_clusters_total",
+                        "stage2_rollout_correction/correction/dup/N_clusters_total",
                         0,
                     )
                 ),

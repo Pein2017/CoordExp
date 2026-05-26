@@ -1,14 +1,17 @@
 from __future__ import annotations
 
 import json
-import os
 import threading
+from collections import OrderedDict
 from dataclasses import asdict, dataclass
 from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
 
 import torch
 
-from .vllm_sync_materialization import materialize_state_dict_for_vllm_full_sync
+from src.tokens.row_offsets import CoordOffsetAdapter
+
+from .swift_coord_row_patch import apply_coord_row_patch_for_vllm_client
+from .swift_infer_compat import import_swift_request_config
 
 
 @dataclass(frozen=True)
@@ -117,13 +120,7 @@ def prepare_vllm_server_rollout(
             f"(greedy), got {float(temperature)}"
         )
 
-    try:
-        from swift.llm import RequestConfig
-    except (ImportError, TypeError, ValueError) as exc:
-        raise RuntimeError(
-            "swift.llm.RequestConfig is required for vLLM server rollouts"
-        ) from exc
-
+    RequestConfig = import_swift_request_config()
     base_request_kwargs = owner._rollout_vllm_request_config_kwargs(
         max_tokens=max_new_tokens,
         temperature=temperature,
@@ -286,11 +283,11 @@ def ensure_vllm_server_client(
         timeout_s, _infer_timeout_s = owner._vllm_server_timeouts()
 
         try:
-            from swift.trainers.rlhf_trainer.vllm_client import VLLMClient
-        except (ImportError, TypeError, ValueError) as exc:
+            VLLMClient = apply_coord_row_patch_for_vllm_client()
+        except Exception as exc:
             raise RuntimeError(
                 "vLLM server mode requires ms-swift's VLLMClient (and vLLM + pynccl). "
-                "Install/enable vLLM in the ms env, or switch to vllm.mode=colocate or rollout_backend=hf."
+                "Install/enable vLLM in the ms env, or switch to rollout_backend=hf."
             ) from exc
 
         base_urls = [str(s["base_url"]) for s in servers]
@@ -467,10 +464,11 @@ def sync_vllm_server_rollout_model_if_needed(
         return
 
     eff_mode = owner._effective_vllm_server_sync_mode()
-    if eff_mode != "full":
+    if eff_mode != "adapter":
         raise ValueError(
-            "rollout_matching.vllm.sync.mode must be 'full' in this stack "
-            "(adapter/auto sync modes are unsupported)."
+            "CoordExp vLLM rollouts now require official adapter sync: "
+            "set rollout_matching.vllm.sync.mode=adapter and "
+            "rollout_matching.vllm.enable_lora=true."
         )
 
     if (
@@ -490,7 +488,7 @@ def sync_vllm_server_rollout_model_if_needed(
                     "Mitigations: verify group_port reachability, set NCCL env, or increase vllm.server.timeout_s."
                 ) from exc
 
-        owner._sync_vllm_server_full_weights(client)
+        owner._sync_vllm_server_adapter(client)
         owner._vllm_server_last_synced_step = step
         return
 
@@ -502,7 +500,7 @@ def sync_vllm_server_rollout_model_if_needed(
         try:
             client = owner._ensure_vllm_server_client()
             owner._ensure_vllm_server_communicator_rank0(client)
-            owner._sync_vllm_server_full_weights(client)
+            owner._sync_vllm_server_adapter(client)
         except Exception as exc:
             sync_failed = 1
             sync_err_msg = f"{exc.__class__.__name__}: {exc}"
@@ -532,141 +530,350 @@ def sync_vllm_server_rollout_model_if_needed(
 
     if int(sync_failed) != 0:
         raise RuntimeError(
-            "vLLM server full weight sync failed on rank0 under DDP; aborting all ranks to avoid deadlocks. "
+            "vLLM server adapter sync failed on rank0 under DDP; aborting all ranks to avoid deadlocks. "
             f"Error: {sync_err_msg}"
         )
 
     owner._vllm_server_last_synced_step = step
 
 
-def vllm_server_update_state_dict(
-    *,
-    client: Any,
-    state_dict: dict[str, Any],
-) -> None:
+def _import_swift_rollout_utils() -> Any:
     try:
-        from swift.trainers.rlhf_trainer.utils import FlattenedTensorBucket
-    except (TypeError, ValueError) as exc:
+        from swift.rlhf_trainers import utils as rollout_utils
+    except (ImportError, TypeError, ValueError):
+        try:
+            from swift.trainers.rlhf_trainer import utils as rollout_utils
+        except (ImportError, TypeError, ValueError) as exc:
+            raise RuntimeError(
+                "Adapter-only vLLM sync requires ms-swift rollout utility helpers."
+            ) from exc
+    return rollout_utils
+
+
+def _peft_config_to_dict(peft_config: Any) -> dict[str, Any]:
+    if hasattr(peft_config, "to_dict"):
+        return dict(peft_config.to_dict())
+    if hasattr(peft_config, "model_dump"):
+        return dict(peft_config.model_dump())
+    if hasattr(peft_config, "dict"):
+        return dict(peft_config.dict())
+    if isinstance(peft_config, Mapping):
+        return dict(peft_config)
+    raise RuntimeError(
+        "Adapter-only vLLM sync requires a serializable PEFT LoRA config."
+    )
+
+
+def _vllm_adapter_peft_config(peft_config: Any) -> tuple[dict[str, Any], tuple[str, ...]]:
+    payload = _peft_config_to_dict(peft_config)
+    modules_raw = payload.get("modules_to_save") or []
+    modules_to_save = (
+        tuple(str(item) for item in modules_raw)
+        if isinstance(modules_raw, (list, tuple, set))
+        else ()
+    )
+    if modules_to_save:
+        # vLLM's in-memory adapter endpoint only consumes LoRA tensors. Extra
+        # PEFT modules such as CoordExp's coord_offset_adapter stay on the
+        # learner/checkpoint path and must not be declared to the vLLM LoRA loader.
+        payload["modules_to_save"] = None
+    return payload, modules_to_save
+
+
+def _filter_vllm_adapter_lora_tensors(
+    lora_params: "OrderedDict[str, torch.Tensor]",
+) -> tuple["OrderedDict[str, torch.Tensor]", tuple[str, ...]]:
+    kept: "OrderedDict[str, torch.Tensor]" = OrderedDict()
+    dropped: list[str] = []
+    for name, tensor in lora_params.items():
+        name_s = str(name)
+        if "modules_to_save." in name_s or "coord_offset_adapter" in name_s:
+            dropped.append(name_s)
+            continue
+        if "lora_" in name_s or "lora_magnitude_vector" in name_s:
+            kept[name_s] = tensor
+            continue
+        dropped.append(name_s)
+    return kept, tuple(dropped)
+
+
+_UNRESOLVED_ACTIVE_ADAPTER = object()
+
+
+def _find_active_coord_offset_adapter(model: Any) -> CoordOffsetAdapter | None:
+    named_modules = getattr(model, "named_modules", None)
+    if not callable(named_modules):
+        return None
+
+    direct: CoordOffsetAdapter | None = None
+    for name, module in named_modules():
+        wrapped = _active_modules_to_save_coord_adapter(module)
+        if wrapped is _UNRESOLVED_ACTIVE_ADAPTER:
+            return None
+        if isinstance(wrapped, CoordOffsetAdapter):
+            return wrapped
+        if (
+            direct is None
+            and isinstance(module, CoordOffsetAdapter)
+            and not _is_wrapper_internal_module_name(name)
+        ):
+            direct = module
+    return direct
+
+
+def _active_modules_to_save_coord_adapter(
+    module: Any,
+) -> CoordOffsetAdapter | object | None:
+    modules_to_save = getattr(module, "modules_to_save", None)
+    if not _looks_like_module_mapping(modules_to_save):
+        return None
+
+    active_adapters = _active_adapter_names(module)
+    if active_adapters is not None:
+        for name in active_adapters:
+            if name in modules_to_save and isinstance(
+                modules_to_save[name], CoordOffsetAdapter
+            ):
+                return modules_to_save[name]
+        return _UNRESOLVED_ACTIVE_ADAPTER
+
+    for candidate in modules_to_save.values():
+        if isinstance(candidate, CoordOffsetAdapter):
+            return candidate
+    return None
+
+
+def _active_adapter_names(module: Any) -> list[str] | None:
+    if hasattr(module, "active_adapters"):
+        active_adapters = getattr(module, "active_adapters")
+    elif hasattr(module, "active_adapter"):
+        active_adapters = getattr(module, "active_adapter")
+    else:
+        return None
+
+    if isinstance(active_adapters, str):
+        return [active_adapters]
+    return list(active_adapters or [])
+
+
+def _is_wrapper_internal_module_name(name: str) -> bool:
+    return any(
+        component in {"original_module", "modules_to_save"}
+        for component in str(name).split(".")
+    )
+
+
+def _looks_like_module_mapping(value: Any) -> bool:
+    return isinstance(value, Mapping) or (
+        hasattr(value, "__contains__")
+        and hasattr(value, "__getitem__")
+        and hasattr(value, "values")
+    )
+
+
+def _validate_coord_offset_adapter_for_vllm_sync(
+    adapter: CoordOffsetAdapter,
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor | None, bool]:
+    coord_ids = getattr(adapter, "coord_ids", None)
+    embed_offset = getattr(adapter, "embed_offset", None)
+    head_offset = getattr(adapter, "head_offset", None)
+    tie_head = bool(getattr(adapter, "tie_head", True))
+
+    if not torch.is_tensor(coord_ids) or coord_ids.ndim != 1 or coord_ids.numel() == 0:
         raise RuntimeError(
-            "FlattenedTensorBucket is required for vLLM server sync"
-        ) from exc
-
-    bucket_size_mb = int(os.environ.get("SWIFT_UPDATE_WEIGHTS_BUCKET_SIZE", 512))
-    bucket_size_bytes = int(bucket_size_mb) * 1024 * 1024
-
-    bucket: list[tuple[str, torch.Tensor]] = []
-    bucket_bytes = 0
-
-    def _flush_bucket() -> None:
-        nonlocal bucket, bucket_bytes
-        if not bucket:
-            return
-        b = FlattenedTensorBucket(named_tensors=bucket)
-        client.update_flattened_params(b.get_metadata(), b.get_flattened_tensor())
-        bucket = []
-        bucket_bytes = 0
-
-    for name, t in state_dict.items():
-        if t is None or not isinstance(t, torch.Tensor):
-            continue
-        if t.numel() == 0:
-            continue
-        ten = t.detach()
-        nbytes = int(ten.numel() * ten.element_size())
-        if bucket and bucket_size_bytes > 0 and bucket_bytes + nbytes > bucket_size_bytes:
-            _flush_bucket()
-        bucket.append((str(name), ten))
-        bucket_bytes += nbytes
-
-    _flush_bucket()
+            "coord_offset_adapter vLLM sync requires non-empty 1D coord_ids."
+        )
+    if (
+        not torch.is_tensor(embed_offset)
+        or embed_offset.ndim != 2
+        or embed_offset.size(0) != coord_ids.numel()
+    ):
+        raise RuntimeError(
+            "coord_offset_adapter vLLM sync requires embed_offset with shape "
+            "[num_coord_ids, hidden]."
+        )
+    if not tie_head and (
+        not torch.is_tensor(head_offset)
+        or head_offset.ndim != 2
+        or head_offset.size(0) != coord_ids.numel()
+    ):
+        raise RuntimeError(
+            "untied coord_offset_adapter vLLM sync requires head_offset with "
+            "shape [num_coord_ids, hidden]."
+        )
+    return (
+        coord_ids.detach().to(dtype=torch.long).contiguous(),
+        embed_offset.detach().contiguous(),
+        head_offset.detach().contiguous() if torch.is_tensor(head_offset) else None,
+        tie_head,
+    )
 
 
-def sync_vllm_server_full_weights(
+def _sync_vllm_server_coord_offset_adapter(
+    *,
+    owner: Any,
+    client: Any,
+    logger: Any,
+    dropped_modules_to_save: tuple[str, ...],
+    dropped_param_names: tuple[str, ...],
+) -> None:
+    has_declared_coord = "coord_offset_adapter" in set(dropped_modules_to_save) or any(
+        "coord_offset_adapter" in name for name in dropped_param_names
+    )
+    adapter = _find_active_coord_offset_adapter(owner.model)
+    if adapter is None:
+        if has_declared_coord:
+            raise RuntimeError(
+                "vLLM adapter sync detected coord_offset_adapter in the PEFT "
+                "payload, but could not find an active CoordOffsetAdapter on "
+                "the learner model. Refusing to run rollouts with missing "
+                "token-row offsets."
+            )
+        return
+
+    update_fn = getattr(client, "update_token_row_offsets", None)
+    if not callable(update_fn):
+        raise RuntimeError(
+            "vLLM adapter sync requires ms-swift VLLMClient.update_token_row_offsets "
+            "when the learner has coord_offset_adapter. Update /data/ms-swift or "
+            "disable vLLM server rollouts for this checkpoint."
+        )
+
+    coord_ids, embed_offset, head_offset, tie_head = (
+        _validate_coord_offset_adapter_for_vllm_sync(adapter)
+    )
+    update_fn(
+        coord_ids.to(device=embed_offset.device),
+        embed_offset,
+        head_offset=head_offset,
+        tie_head=tie_head,
+    )
+    logger.info(
+        "vLLM adapter sync updated coord_offset_adapter token rows: rows=%s "
+        "tie_head=%s embed_shape=%s head_shape=%s",
+        int(coord_ids.numel()),
+        bool(tie_head),
+        tuple(embed_offset.shape),
+        tuple(head_offset.shape) if head_offset is not None else None,
+    )
+
+
+def sync_vllm_server_adapter(
     *,
     owner: Any,
     client: Any,
     logger: Any,
 ) -> None:
-    from contextlib import nullcontext
-
     try:
         from accelerate.utils import is_peft_model
-    except (TypeError, ValueError):
+    except (ImportError, TypeError, ValueError):
         is_peft_model = None  # type: ignore[assignment]
 
     is_peft = bool(is_peft_model(owner.model)) if is_peft_model is not None else False
+    if not is_peft:
+        raise RuntimeError(
+            "Adapter-only vLLM sync requires a PEFT/Swift LoRA-wrapped learner model."
+        )
 
-    merge_cm = nullcontext()
-    unmerge_cm = nullcontext()
-    if is_peft:
-        try:
-            from swift.trainers.rlhf_trainer.utils import (
-                patch_lora_merge,
-                patch_lora_unmerge,
-            )
+    try:
+        from peft.utils.save_and_load import get_peft_model_state_dict
+    except (ImportError, TypeError, ValueError) as exc:
+        raise RuntimeError(
+            "Adapter-only vLLM sync requires peft.utils.save_and_load.get_peft_model_state_dict."
+        ) from exc
 
-            merge_cm = patch_lora_merge(owner.model)
-            unmerge_cm = patch_lora_unmerge(owner.model)
-        except (TypeError, ValueError):
-            merge_cm = nullcontext()
-            unmerge_cm = nullcontext()
+    rollout_utils = _import_swift_rollout_utils()
+    gather_if_zero3 = rollout_utils.get_gather_if_zero3_context(owner)
+    patch_lora_merge = rollout_utils.patch_lora_merge
+    patch_lora_unmerge = rollout_utils.patch_lora_unmerge
+    FlattenedTensorBucket = rollout_utils.FlattenedTensorBucket
 
-    from swift.trainers.rlhf_trainer.utils import get_gather_if_zero3_context
+    peft_config = getattr(owner.model, "peft_config", {}).get("default", None)
+    if peft_config is None:
+        raise RuntimeError(
+            "Adapter-only vLLM sync could not find owner.model.peft_config['default']."
+        )
 
     params = [p for _, p in owner.model.named_parameters()]
-    gather_if_zero3 = get_gather_if_zero3_context(owner)
 
-    with gather_if_zero3(params), merge_cm, torch.no_grad():
+    with gather_if_zero3(params), patch_lora_merge(owner.model), torch.no_grad():
         merged = False
         try:
-            if is_peft:
-                try:
-                    owner.model.merge_adapter()
-                    merged = True
-                except (TypeError, ValueError) as exc:
-                    raise RuntimeError(
-                        "vLLM server full sync requires merging adapter weights from the training model. "
-                        "Mitigations: ensure PEFT supports merge_adapter/unmerge_adapter (required for vLLM full sync in this stack), or switch rollout_matching.rollout_backend=hf."
-                    ) from exc
+            try:
+                owner.model.merge_adapter()
+                merged = True
+            except (TypeError, ValueError) as exc:
+                raise RuntimeError(
+                    "Adapter-only vLLM sync requires PEFT merge_adapter/unmerge_adapter "
+                    "to extract the current LoRA tensors for ms-swift's in-memory adapter update."
+                ) from exc
 
-            state_dict = owner.model.state_dict()
-            if is_peft:
-                prefix_removed = {
-                    k.removeprefix("base_model.model."): v
-                    for k, v in state_dict.items()
-                }
-                state_dict = {
-                    k.replace(".base_layer", ""): v for k, v in prefix_removed.items()
-                }
-                prefix = getattr(owner.model, "prefix", None)
-                if isinstance(prefix, str) and prefix:
-                    state_dict = {
-                        k: v for k, v in state_dict.items() if prefix not in k
-                    }
-                state_dict = {
-                    k.replace("modules_to_save.default.", ""): v
-                    for k, v in state_dict.items()
-                    if "original_module" not in k
-                }
-                state_dict = {
-                    k: v for k, v in state_dict.items() if "lora_" not in k
-                }
-            state_dict = materialize_state_dict_for_vllm_full_sync(
-                model=owner.model,
-                state_dict=state_dict,
-                logger=logger,
+            named_state = OrderedDict(owner.model.named_parameters())
+            for name, buffer in owner.model.named_buffers():
+                named_state.setdefault(str(name), buffer)
+            lora_params = get_peft_model_state_dict(owner.model, named_state)
+            lora_params = OrderedDict(
+                (
+                    str(name),
+                    param.full_tensor().detach()
+                    if hasattr(param, "full_tensor")
+                    else param.detach(),
+                )
+                for name, param in lora_params.items()
+                if torch.is_tensor(param)
             )
-            owner._vllm_server_update_state_dict(client, state_dict)
         finally:
-            if is_peft and merged:
-                with unmerge_cm:
+            if merged:
+                with patch_lora_unmerge(owner.model):
                     owner.model.unmerge_adapter()
+
+    if not lora_params:
+        raise RuntimeError(
+            "Adapter-only vLLM sync collected no LoRA tensors. "
+            "Check tuner.train_type/lora_rank/target_modules and PEFT wrapping."
+        )
+    lora_params, dropped_param_names = _filter_vllm_adapter_lora_tensors(lora_params)
+    vllm_peft_config, dropped_modules_to_save = _vllm_adapter_peft_config(peft_config)
+    if not lora_params:
+        raise RuntimeError(
+            "Adapter-only vLLM sync has no vLLM-compatible LoRA tensors after "
+            f"filtering unsupported modules_to_save tensors: {list(dropped_param_names)}"
+        )
+    if dropped_param_names or dropped_modules_to_save:
+        logger.info(
+            "vLLM adapter sync filtered unsupported PEFT modules_to_save payload: "
+            "modules_to_save=%s dropped_tensors=%s",
+            list(dropped_modules_to_save),
+            list(dropped_param_names),
+        )
+
+    bucket = FlattenedTensorBucket(named_tensors=list(lora_params.items()))
+    client.update_adapter_flattened_param(
+        vllm_peft_config,
+        bucket.get_metadata(),
+        bucket.get_flattened_tensor(),
+    )
+    _sync_vllm_server_coord_offset_adapter(
+        owner=owner,
+        client=client,
+        logger=logger,
+        dropped_modules_to_save=dropped_modules_to_save,
+        dropped_param_names=dropped_param_names,
+    )
+    logger.info(
+        "synced vLLM LoRA adapter via official ms-swift endpoint: tensors=%s bytes=%s",
+        int(len(lora_params)),
+        int(bucket.get_flattened_tensor().numel()),
+    )
 
     try:
         client.reset_prefix_cache()
-    except (TypeError, ValueError) as exc:
+        reset_mm_cache = getattr(client, "reset_mm_cache", None)
+        if callable(reset_mm_cache):
+            reset_mm_cache()
+    except (RuntimeError, TypeError, ValueError) as exc:
         logger.warning(
-            "Failed to reset vLLM server prefix cache after full sync: %s", exc
+            "Failed to reset vLLM server caches after adapter sync: %s", exc
         )
 
 
@@ -700,7 +907,6 @@ def infer_on_vllm_server_slice(
         "infer_requests": infer_requests[start:end],
         "request_config": req_cfg,
         "metrics": None,
-        "template": None,
         "use_tqdm": None,
         "adapter_request": None,
     }

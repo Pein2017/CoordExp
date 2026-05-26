@@ -13,7 +13,7 @@ prefix_perturbation:
   max_new_tokens: 64
   targets:
     - alias: stage2_pseudo_positive_ckpt300
-      checkpoint_path: output/stage2_ab/prod/pseudo_positive-ckpt_300_merged-v1
+      checkpoint_path: output/stage2_rollout_correction/prod/pseudo_positive-ckpt_300_merged-v1
       reproduce_gt_vs_pred_jsonl: research/duplication_collapse_pure_ce/duplication-collapse-contrastive-pure-ce-panel/reproduce/stage2_pseudo_positive_ckpt300/gt_vs_pred.jsonl
       prompt_variant: coco_80
       object_field_order: desc_first

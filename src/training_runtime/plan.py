@@ -5,7 +5,7 @@ from typing import Final, Literal, TypeAlias
 
 CollatorFamily: TypeAlias = Literal["default", "identity"]
 PackingOwner: TypeAlias = Literal["dataset", "trainer"]
-PipelineNamespace: TypeAlias = Literal["stage2_ab.pipeline"]
+PipelineNamespace: TypeAlias = Literal["stage2_rollout_correction.pipeline"]
 
 
 @dataclass(frozen=True, slots=True)
@@ -24,10 +24,11 @@ class TrainingRuntimePlan:
 
 
 _REMOVED_VARIANT_REPLACEMENTS: Final[dict[str, str]] = {
-    "stage2_ab_training": "stage2_two_channel",
-    "rollout_matching_sft": "stage2_two_channel",
-    "stage2_rollout_aligned": "stage2_two_channel",
-    "stage2_rollout_runtime": "stage2_two_channel",
+    "stage2_" "ab_training": "stage2_rollout_correction",
+    "stage2_" "two_channel": "stage2_rollout_correction",
+    "rollout_matching_sft": "stage2_rollout_correction",
+    "stage2_rollout_aligned": "stage2_rollout_correction",
+    "stage2_rollout_runtime": "stage2_rollout_correction",
     "stage1_set_continuation": "prefix_rollin_et_rmp_ce",
 }
 
@@ -42,9 +43,10 @@ def resolve_training_runtime_plan(trainer_variant: str | None) -> TrainingRuntim
             f"custom.trainer_variant={variant} has been removed; use {replacement}"
         )
 
-    if variant == "stage2_two_channel":
+    if variant == "stage2_rollout_correction":
         return _stage2_plan(
-            variant=variant, required_pipeline_namespace="stage2_ab.pipeline"
+            variant=variant,
+            required_pipeline_namespace="stage2_rollout_correction.pipeline",
         )
 
     return TrainingRuntimePlan(

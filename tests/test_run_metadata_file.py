@@ -27,7 +27,7 @@ def test_write_run_metadata_file_writes_expected_fields(
         manifest_files={"resolved_config": "resolved_config.json"},
         stage2_policy_provenance={
             "assignment_strategy": "greedy_iou",
-            "duplicate_filter_strategy": "legacy_channel_b_duplicate_control",
+            "duplicate_filter_strategy": "rollout_correction_duplicate_control",
             "object_ordering_policy": "sorted",
         },
         train_cache_info={"status": "ready"},

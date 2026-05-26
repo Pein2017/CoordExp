@@ -5,8 +5,8 @@ import math
 
 import pytest
 
-from src.trainers.stage2_two_channel import write_ul_clusters_artifact
-from src.trainers.stage2_two_channel.ul_consensus import (
+from src.trainers.stage2_rollout_correction import write_ul_clusters_artifact
+from src.trainers.rollout_correction.ul_consensus import (
     ULConsensusCluster,
     ULConsensusResult,
     ULGeometryConfig,

@@ -98,14 +98,16 @@ def _run_stage2_residual_trie_ce_module(
         name="residual_set_correction",
         enabled=spec.enabled,
         weight=1.0,
-        channels=spec.channels,
+        surfaces=spec.surfaces,
         application={"preset": "rollout_self_prefix"},
         config=spec.config,
     )
     out = _run_residual_set_correction_module(context=context, spec=residual_spec)
     metrics = dict(out.metrics)
     metrics["stage2_trie/residual_state_alias"] = 1.0
-    metrics["loss/B/stage2_trie_ce"] = float(out.loss.detach().cpu().item())
+    metrics["loss/stage2_rollout_correction/stage2_trie_ce"] = float(
+        out.loss.detach().cpu().item()
+    )
     state = dict(out.state)
     state["stage2_trie_ce"] = out.loss
     state["stage2_trie_ce_contrib"] = out.loss
@@ -161,7 +163,7 @@ def run_teacher_forcing_pipeline(
     )
 
     for spec in obj_specs:
-        if not spec.enabled_for_channel(context.channel):
+        if not spec.enabled_for_surface(context.channel):
             continue
         module_fn = objective_registry.get(spec.name)
         if module_fn is None:
@@ -186,7 +188,7 @@ def run_teacher_forcing_pipeline(
 
     warn_cache = warn_once_cache if warn_once_cache is not None else set()
     for spec in diag_specs:
-        if not spec.enabled_for_channel(context.channel):
+        if not spec.enabled_for_surface(context.channel):
             continue
         module_fn = diag_registry.get(spec.name)
         if module_fn is None:

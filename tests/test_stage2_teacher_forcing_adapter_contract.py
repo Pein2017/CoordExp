@@ -4,7 +4,7 @@ import torch
 
 from src.training.teacher_forcing.ir import TeacherForcingTargetIR
 from src.training.teacher_forcing.roles import TokenRole
-from src.trainers.stage2_two_channel.teacher_forcing_adapter import (
+from src.trainers.rollout_correction.teacher_forcing_adapter import (
     Stage2TeacherForcingObjectTarget,
     build_stage2_teacher_forcing_target_ir,
 )
@@ -14,10 +14,10 @@ def _coord_token_ids() -> tuple[int, ...]:
     return tuple(range(100, 1100))
 
 
-def test_channel_a_emits_gt_context_target_ir_without_self_context() -> None:
+def test_rollout_correction_emits_gt_context_target_ir_without_self_context() -> None:
     input_ids = torch.tensor([[10, 20, 101, 102, 103, 104, 30, 31, 2]])
     meta = {
-        "stage2_channel": "A",
+        "stage2_surface": "rollout_correction",
         "prompt_len": 2,
         "prefix_len": 0,
         "train_len": 7,
@@ -38,7 +38,7 @@ def test_channel_a_emits_gt_context_target_ir_without_self_context() -> None:
     )
 
     assert type(ir) is TeacherForcingTargetIR
-    assert ir.metadata["stage2_channel"] == "A"
+    assert ir.metadata["stage2_surface"] == "rollout_correction"
     assert ir.metadata["stage2_context"] == "gt_context"
     assert len(ir.atoms) == 6
     assert all(atom.batch_index == 0 for atom in ir.atoms)
@@ -51,12 +51,12 @@ def test_channel_a_emits_gt_context_target_ir_without_self_context() -> None:
     assert [atom.logit_position for atom in text_atoms] == [3, 4]
 
 
-def test_channel_b_converts_rollout_fn_and_recovered_fn_provenance() -> None:
+def test_rollout_correction_converts_rollout_fn_and_recovered_fn_provenance() -> None:
     input_ids = torch.tensor(
         [[10, 20, 101, 102, 103, 104, 105, 106, 107, 108, 109, 110, 2]]
     )
     meta = {
-        "stage2_channel": "B",
+        "stage2_surface": "rollout_correction",
         "prompt_len": 2,
         "prefix_len": 4,
         "train_len": 11,
@@ -101,10 +101,10 @@ def test_channel_b_converts_rollout_fn_and_recovered_fn_provenance() -> None:
     assert all("recovered_fn" not in atom.loss_tags for atom in rollout_atoms + fn_atoms)
 
 
-def test_channel_b_tail_description_positions_are_relative_to_prompt_and_prefix() -> None:
+def test_rollout_correction_tail_description_positions_are_relative_to_prompt_and_prefix() -> None:
     input_ids = torch.tensor([[10, 20, 101, 102, 103, 104, 77, 78, 2]])
     meta = {
-        "stage2_channel": "B",
+        "stage2_surface": "rollout_correction",
         "prompt_len": 2,
         "prefix_len": 4,
         "train_len": 7,
@@ -143,7 +143,7 @@ def test_duplicate_pseudo_and_shielded_rollout_objects_emit_zero_positive_atoms(
             input_ids=input_ids,
             batch_index=0,
             meta={
-                "stage2_channel": "B",
+                "stage2_surface": "rollout_correction",
                 "prompt_len": 2,
                 "prefix_len": 4,
                 "train_len": 4,
@@ -168,7 +168,7 @@ def test_promoted_pseudo_positive_rollout_object_can_emit_positive_atoms() -> No
         input_ids=input_ids,
         batch_index=0,
         meta={
-            "stage2_channel": "B",
+            "stage2_surface": "rollout_correction",
             "prompt_len": 2,
             "prefix_len": 4,
             "train_len": 4,

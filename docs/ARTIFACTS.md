@@ -289,11 +289,11 @@ artifacts into `training.output_dir` before training starts:
   `rollout_matching.eval_monitor_dump.enabled: true`
   - Qualitative rollout diagnostics written as `.json` and optional `.md`.
   - `eval_step` uses the configured eval-window cadence (`every_evals`).
-  - `stage2_two_channel` Channel-B `train_step` writes only suspicious
+  - `stage2_rollout_correction` `train_step` writes only suspicious
     duplicate-heavy rollouts for the current optimizer step.
-    `train_monitor_dump.every_channel_b_steps` counts realized Channel-B
+    `train_monitor_dump.every_correction_steps` counts realized rollout-correction
     rollout steps when set; otherwise the trainer falls back to `every_steps`.
-  - Channel-B `prepare_failures/` dumps preserve both token IDs and decoded
+  - rollout-correction `prepare_failures/` dumps preserve both token IDs and decoded
     rollout/prefix text so malformed JSON failure modes can be inspected without
     manual retokenization.
   - Stage-2 residual-set UL consensus writes the canonical review sidecar
@@ -304,8 +304,8 @@ artifacts into `training.output_dir` before training starts:
   - These remain raw telemetry artifacts; shared GT-vs-Pred review rendering
     uses an explicit normalized `vis_resources/gt_vs_pred.jsonl` sidecar
     instead of taking ownership of the monitor-dump path layout.
-- Residual-state trie no longer consumes `output/stage2_ab/prepared_rollouts/*.jsonl`.
-  Channel-B online-learning runs generate live rollout attempts from the
+- Residual correction no longer consumes prepared-rollout JSONL caches.
+  Rollout-correction online-learning runs generate live rollout attempts from the
   current batch and record the resulting supervision/UL evidence under the
   run-local `monitor_dumps/` artifacts above.
 - `eval_detection/step_<global_step>/` when Stage-1 `custom.eval_detection.enabled: true`
@@ -381,7 +381,7 @@ migrates them with explicit docs and tests.
 
 Stage-2 assignment, duplicate filtering, and object ordering have first-class
 policy provenance as the architecture moves from legacy trainer internals to
-the reusable `src/training/stage2/` planning stack. Rank-0 Stage-2 two-channel
+the reusable `src/training/stage2/` planning stack. Rank-0 Stage-2 rollout-correction
 runs write the same `stage2_policy_provenance` block into the executable
 manifest family:
 
@@ -414,9 +414,9 @@ surface fields:
 
 | Policy surface | Current owner / location | Current artifact visibility | Compatibility decision |
 | --- | --- | --- | --- |
-| `stage2_policy_provenance.assignment_strategy` | `src/training/stage2/assignment.py::GreedyIoUAssignment` through the Stage-2 assignment seam | First-class manifest fields: `stage2_policy_provenance.{assignment_strategy,assignment_iou_threshold,assignment_iou_threshold_effective,assignment_iou_threshold_source}`. Corroborating non-manifest telemetry: `resolved_config.json` at `stage2_ab.channel_b.assignment.{strategy,iou_threshold}`, Channel-B rollout meta (`assignment_strategy`, `assignment_iou_threshold`), and batch metrics under `stage2_ab/channel_b/assignment/*`. | Active Stage-2 runs must record `greedy_iou` over the post-duplicate survivor set. Removed assignment identifiers are tolerant-read only for archived artifacts and must not be emitted by new training runs. |
-| `stage2_policy_provenance.duplicate_filter_strategy` | `src/training/stage2/duplicate_filter.py::DuplicateFilter`; live compatibility owner `src/config/schema.py::Stage2ABChannelBDuplicateControlConfig`; `src/trainers/stage2_two_channel/target_builder.py::_apply_channel_b_duplicate_control` | First-class manifest fields: `stage2_policy_provenance.{duplicate_filter_strategy,duplicate_iou_threshold,duplicate_center_radius_scale}`. Corroborating config visibility: `resolved_config.json` at `stage2_ab.channel_b.duplicate_control.{iou_threshold,center_radius_scale}`. | Duplicate filtering must run before assignment and target realization. Preserve thresholds and diagnostic counters, or add an explicit replacement field plus tests before changing filtering order or semantics. |
-| `stage2_policy_provenance.object_ordering_policy` | `src/training/ordering.py`; `src/sft.py` injection into rollout configs; `src/trainers/stage2_two_channel/target_builder.py` for `stage2_ab.channel_b.insertion_order` | First-class manifest fields: `stage2_policy_provenance.{object_ordering_policy,object_ordering_strategy_id,sample_object_ordering}`. Corroborating non-manifest visibility: `resolved_config.json` at `custom.object_ordering` and `stage2_ab.channel_b.insertion_order`, plus Stage-2 eval summaries when materialized. | Preserve Channel-B final-target insertion ordering: default `tail_append` keeps retained accepted rollout objects first and appends false-negative GT objects; `sorted` applies final top-left ordering over retained accepted objects plus inserted false negatives. |
+| `stage2_policy_provenance.assignment_strategy` | `src/training/stage2/assignment.py::GreedyIoUAssignment` through the Stage-2 assignment seam | First-class manifest fields: `stage2_policy_provenance.{assignment_strategy,assignment_iou_threshold,assignment_iou_threshold_effective,assignment_iou_threshold_source}`. Corroborating non-manifest telemetry: `resolved_config.json` at `stage2_rollout_correction.correction.assignment.{strategy,iou_threshold}`, rollout-correction meta (`assignment_strategy`, `assignment_iou_threshold`), and batch metrics under `stage2_rollout_correction/correction/assignment/*`. | Active Stage-2 runs must record `greedy_iou` over the post-duplicate survivor set. Removed assignment identifiers are tolerant-read only for archived artifacts and must not be emitted by new training runs. |
+| `stage2_policy_provenance.duplicate_filter_strategy` | `src/training/stage2/duplicate_filter.py::DuplicateFilter`; live owner `src/config/schema.py::Stage2RolloutCorrectionDuplicateControlConfig`; rollout-correction target construction | First-class manifest fields: `stage2_policy_provenance.{duplicate_filter_strategy,duplicate_iou_threshold,duplicate_center_radius_scale}`. Corroborating config visibility: `resolved_config.json` at `stage2_rollout_correction.correction.duplicate_control.{iou_threshold,center_radius_scale}`. | Duplicate filtering must run before assignment and target realization. Preserve thresholds and diagnostic counters, or add an explicit replacement field plus tests before changing filtering order or semantics. |
+| `stage2_policy_provenance.object_ordering_policy` | `src/training/ordering.py`; `src/sft.py` injection into rollout configs; rollout-correction target construction for `stage2_rollout_correction.correction.insertion_order` | First-class manifest fields: `stage2_policy_provenance.{object_ordering_policy,object_ordering_strategy_id,sample_object_ordering}`. Corroborating non-manifest visibility: `resolved_config.json` at `custom.object_ordering` and `stage2_rollout_correction.correction.insertion_order`, plus Stage-2 eval summaries when materialized. | Preserve rollout-correction final-target insertion ordering: default `tail_append` keeps retained accepted rollout objects first and appends false-negative GT objects; `sorted` applies final top-left ordering over retained accepted objects plus inserted false negatives. |
 
 Manifest field names are reserved as
 `stage2_policy_provenance.assignment_strategy`,
@@ -441,7 +441,7 @@ artifact, run config, and rollout/eval window.
 | Current diagnostic surface | Current owner / producer | Future bounded-writer compatibility decision |
 | --- | --- | --- |
 | `monitor_dumps/` | Stage-2 rollout monitor dumping under the trainer `rollout_matching.*monitor_dump` configs | Keep a bounded qualitative rollout dump writer with the same directory-level discoverability, cadence controls, and raw text/token visibility. |
-| `prepare_failures/` | Channel-B rollout preparation failure dumps under `monitor_dumps/prepare_failures/` | Keep structured malformed-rollout evidence with token IDs, decoded rollout text, prefix text, and parse/error classes. |
+| `prepare_failures/` | Rollout-correction preparation failure dumps under `monitor_dumps/prepare_failures/` | Keep structured malformed-rollout evidence with token IDs, decoded rollout text, prefix text, and parse/error classes. |
 | `raw_rollouts.jsonl` | Stage-2 eval artifact materialization under `eval_detection/step_<global_step>/` | Keep per-sample rollout text, token IDs, parse diagnostics, match diagnostics, score metadata, and pre/post score prediction views. |
 | `pred_token_trace.jsonl` | Inference and traced Stage-2 eval generation paths | Keep line-aligned token text/logprob traces whenever trace metadata is available; downstream confidence and rollout inspection depend on this name. |
 | guarded eval/post-op artifacts (`gt_vs_pred_guarded.jsonl`, `gt_vs_pred_scored_guarded.jsonl`, `metrics_guarded.json`, `per_image_guarded.json`) | `src/eval/detection_duplicate_guard.py`, `src/eval/artifacts.py`, and confidence/eval orchestration | Keep guarded artifacts additive to the raw/scored families; do not replace authoritative raw artifacts with guarded-only outputs. |
@@ -513,14 +513,14 @@ Common ones you may see in logs or artifacts:
 Stage-2 trainers also emit rollout-specific metrics directly
 (see `docs/training/STAGE2_RUNBOOK.md` and `docs/training/METRICS.md`).
 
-- `stage2_two_channel` includes clean-prefix Channel-B duplicate-control
+- `stage2_rollout_correction` includes residual-correction duplicate-control
   diagnostics under:
   - `dup/raw/*`
-  - `stage2_ab/channel_b/dup/N_*`
-  - `stage2_ab/channel_b/closure_supervision/N_drop` for the
+  - `stage2_rollout_correction/correction/dup/N_*`
+  - `stage2_rollout_correction/correction/closure_supervision/N_drop` for the
     legacy-named closure-resolution fallback activation counter
-- `stage2_two_channel` residual-set correction metrics live under
-  `stage2_ab/channel_b/residual_set/` and include compact loss/source counters
+- `stage2_rollout_correction` residual-set correction metrics live under
+  `stage2_rollout_correction/residual_set/` and include compact loss/source counters
   such as `sequence_count`, `atom_count`, `sequence_loss`, `type_loss`,
   `inner_loss`, `wrong_type_mass`, `valid_set_mass`, dirty-prefix counters, and
   decode-mode slices.

@@ -217,7 +217,7 @@ for existing trainer imports and downstream tests.
 
 - `loss/<...>`:
   - post-weighting objective atoms
-- `dup/raw/<...>` and `stage2_ab/channel_b/dup/<...>`:
+- `dup/raw/<...>` and `stage2_rollout_correction/correction/dup/<...>`:
   - pre-match duplicate-control diagnostics and policy counters
 - `rollout/<...>`:
   - rollout parsing, matching, and coverage diagnostics
@@ -228,23 +228,23 @@ for existing trainer imports and downstream tests.
   - emitted when the current step did not freshly observe that metric family
   - live current-step namespaces such as `rollout/*` remain sparse and are not reused for stale values
 
-## Stage-2 Channel-A Objective Families
+## Removed Stage-2 Clean-Prefix Families
 
-Channel-A uses the normal single-pass GT-anchor text group only:
+The old GT-anchored clean-prefix branch is not part of active Stage-2 training.
+Do not interpret these metric families as current rollout-correction evidence:
 
 - `loss/text/struct_ce`
 - `loss/text/desc_ce`
 
-## Stage-2 Channel-B Objective Families
+## Stage-2 Rollout-Correction Objective Families
 
-Channel-B keeps rollout-specific provenance:
+Rollout-correction keeps rollout-specific provenance:
 
 - assignment policy:
-  - `stage2_ab/channel_b/assignment/strategy_greedy_iou_count`
-  - `stage2_ab/channel_b/assignment/iou_threshold`
+  - `stage2_rollout_correction/correction/assignment/strategy_greedy_iou_count`
+  - `stage2_rollout_correction/correction/assignment/iou_threshold`
 - rollout-text atoms:
-  - `loss/B_rollout_text/struct_ce`
-  - `loss/B_rollout_text/desc_ce`
+  - `stage2_rollout_correction/residual_set/*`
 - duplicate-burst UL objective loss keys are retired; `train/optimization/loss_duplicate_burst_unlikelihood`
   is no longer a live training metric
 - removed rollout-context coord/bbox atoms such as `loss/B_coord/*` are not
@@ -258,11 +258,10 @@ Interpretation note:
   contribute duplicate-control diagnostic metadata and counters; live
   duplicate-burst UL loss keys remain retired
 
-## Channel-B Pseudo-Positive And Arbitrary-K Notes
+## Rollout Evidence And Arbitrary-K Notes
 
-When `stage2_ab.channel_b.pseudo_positive.enabled=true`, Channel-B still emits a
-single clean teacher-forced forward, but the rollout evidence path widens from
-`1` current attempt + `K-1` peer attempts.
+The active residual-correction path emits a residual target IR from `1` current
+rollout attempt plus `K-1` peer attempts.
 
 Operational semantics:
 
@@ -276,6 +275,19 @@ Operational semantics:
 - `rollout/explorer/*`
   - preserved as compatibility aliases for older dashboards
   - mirrors `rollout/peer/*`; prefer `rollout/peer/*` in new analysis
+- `rollout/temperature_config/ordinal_<i>/*`
+  - records the configured decode request for rollout ordinal `i`
+  - includes `temperature`, `top_p`, `top_k`, and `do_sample`
+- `rollout/by_temperature/t<value>/*`
+  - aggregates all valid current and peer rollout views for the same sampling
+    temperature, for example `t0`, `t0p3`, `t0p5`, `t0p7`
+  - includes `raw_rollouts`, `invalid_rollout_rate`,
+    `parse_dropped_invalid`, `parse_truncated_rate`, `pred_objects`,
+    `valid_pred_objects`, `gen_new_tokens_mean`, `gen_new_tokens_p90`,
+    `unique_sequence_count`, and `unique_sequence_rate`
+  - use these keys to check whether invalid outputs correlate with sampling
+    temperature and whether non-greedy samples provide enough sequence
+    diversity for a learning signal
 - `train/triage/unlabeled_consistent_count`
   - total shielded-anchor count
   - includes support-positive-but-subthreshold anchors and cluster-demoted pseudo-positive candidates
@@ -317,9 +329,9 @@ Failure telemetry:
 
 - malformed rollouts that remain invalid after salvage parsing abort the step
   by default instead of emitting an ordinary finalized `train/triage/*` counter
-- with `stage2_ab.channel_b.invalid_rollout_policy=dump_and_continue`, the
-  trainer logs `stage2_ab/channel_b/invalid_rollout_sample_dropped` and
-  `stage2_ab/channel_b/invalid_rollout_sample_dropped_rate`
+- with `stage2_rollout_correction.correction.invalid_rollout_policy=dump_and_continue`, the
+  trainer logs `stage2_rollout_correction/correction/invalid_rollout_sample_dropped` and
+  `stage2_rollout_correction/correction/invalid_rollout_sample_dropped_rate`
 - compact-full uses a different invalid/empty policy:
   `fallback_gt_fn_append_only`. Malformed compact output, empty compact output,
   or compact rows whose bboxes are dropped before any valid survivor remain
@@ -345,7 +357,7 @@ Failure telemetry:
 Canonical duplicate/rollout families include:
 
 - `dup/raw/*`
-- `stage2_ab/channel_b/dup/N_*`
+- `stage2_rollout_correction/correction/dup/N_*`
 - `rollout/*`
 - `time/rollout_*`
 
@@ -363,18 +375,18 @@ surface, but remain additive counts:
 - `dup/raw/near_iou90_pairs_same_desc_count`
 - `dup/raw/near_iou90_pairs_any_desc_count`
 
-Canonical Channel-B duplicate-control counters remain additive diagnostic
-metadata only. Duplicate-burst UL is not part of the current canonical
-objective list:
+Canonical rollout-correction duplicate-control counters remain additive
+diagnostic metadata only. Duplicate-burst UL is not part of the current
+canonical objective list:
 
-- `stage2_ab/channel_b/dup/N_raw_bbox_valid`
-- `stage2_ab/channel_b/dup/N_clean_accepted`
-- `stage2_ab/channel_b/dup/N_clusters_total`
-- `stage2_ab/channel_b/dup/N_clusters_exempt`
-- `stage2_ab/channel_b/dup/N_clusters_suppressed`
-- `stage2_ab/channel_b/dup/N_objects_suppressed`
-- `stage2_ab/channel_b/dup/N_duplicate_control_first_divergence_boundaries`
-- `stage2_ab/channel_b/dup/N_duplicate_control_first_divergence_skipped_no_divergence`
+- `stage2_rollout_correction/correction/dup/N_raw_bbox_valid`
+- `stage2_rollout_correction/correction/dup/N_clean_accepted`
+- `stage2_rollout_correction/correction/dup/N_clusters_total`
+- `stage2_rollout_correction/correction/dup/N_clusters_exempt`
+- `stage2_rollout_correction/correction/dup/N_clusters_suppressed`
+- `stage2_rollout_correction/correction/dup/N_objects_suppressed`
+- `stage2_rollout_correction/correction/dup/N_duplicate_control_first_divergence_boundaries`
+- `stage2_rollout_correction/correction/dup/N_duplicate_control_first_divergence_skipped_no_divergence`
 
 Use `docs/training/STAGE2_RUNBOOK.md` for the contract that produces these
 families and `docs/ARTIFACTS.md` for where the corresponding monitor dumps and
@@ -391,7 +403,7 @@ Two distinct eval surfaces exist during training:
 - offline evaluator callback:
   - `eval_det_*`
 - trainer-native Stage-2 rollout eval:
-  - owned by `stage2_two_channel` and implemented through the internal shared Stage-2 rollout runtime
+  - owned by `stage2_rollout_correction` and implemented through the internal shared Stage-2 rollout runtime
   - `eval/detection/*`
   - `eval/parsing/*`
   - `eval/description/*`
@@ -400,7 +412,7 @@ Two distinct eval surfaces exist during training:
 
 ## Removed Historical Families
 
-Legacy iterative Channel-A provenance groups are no longer part of the active
+Legacy iterative clean-prefix provenance groups are no longer part of the active
 contract:
 
 - `loss/A1_*`

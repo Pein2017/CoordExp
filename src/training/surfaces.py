@@ -11,7 +11,9 @@ from typing import Any
 from src.training.pipelines.base import TrainingPipeline
 from src.training.pipelines.stage1_compact_trie_ce import Stage1CompactTrieCEPipeline
 from src.training.pipelines.stage1_json_ce import Stage1JsonCEPipeline
-from src.training.pipelines.stage2_two_channel import Stage2TwoChannelPipeline
+from src.training.pipelines.stage2_rollout_correction import (
+    Stage2RolloutCorrectionPipeline,
+)
 from src.training.supervision.distributions import (
     TargetObjectiveId,
     validate_target_objective_id,
@@ -77,6 +79,7 @@ ORDERED_OBJECTIVE_IDS: tuple[str, ...] = (
     "trie_ce",
     "coord_soft_ce",
     "box_regression",
+    "teacher_forcing",
 )
 
 
@@ -224,11 +227,9 @@ SURFACE_OBJECTIVE_POLICIES: Mapping[str, SurfaceObjectivePolicy] = MappingProxyT
             ),
             required_enabled_objectives=frozenset(("trie_ce",)),
         ),
-        "stage2_two_channel": SurfaceObjectivePolicy(
-            allowed_objectives=frozenset(
-                ("token_ce", "coord_soft_ce", "box_regression")
-            ),
-            required_enabled_objectives=frozenset(("token_ce",)),
+        "stage2_rollout_correction": SurfaceObjectivePolicy(
+            allowed_objectives=frozenset(("teacher_forcing",)),
+            required_enabled_objectives=frozenset(("teacher_forcing",)),
         ),
     }
 )
@@ -266,7 +267,7 @@ class TrainingSurfaceResolver:
             {
                 "stage1_json_ce": Stage1JsonCEPipeline(),
                 "stage1_compact_trie_ce": Stage1CompactTrieCEPipeline(),
-                "stage2_two_channel": Stage2TwoChannelPipeline(),
+                "stage2_rollout_correction": Stage2RolloutCorrectionPipeline(),
             }
         )
 
@@ -450,8 +451,8 @@ class TrainingSurfaceResolver:
         if surface_id == "stage1_compact_trie_ce":
             self._validate_stage1_compact_supervision(supervision)
             return
-        if surface_id == "stage2_two_channel":
-            self._validate_stage2_two_channel_supervision(supervision)
+        if surface_id == "stage2_rollout_correction":
+            self._validate_stage2_rollout_correction_supervision(supervision)
             return
 
         raise ValueError(f"unsupported surface.id: {surface_id!r}")
@@ -484,43 +485,18 @@ class TrainingSurfaceResolver:
         )
         self._require_mode(supervision, expected="compact_trie")
 
-    def _validate_stage2_two_channel_supervision(
+    def _validate_stage2_rollout_correction_supervision(
         self,
         supervision: Mapping[str, object],
     ) -> None:
-        """Validate Stage-2 two-channel supervision metadata."""
+        """Validate Stage-2 rollout-correction supervision metadata."""
 
-        # require explicit channel ownership for the two-channel surface.
         self._validate_allowed_keys(
             supervision,
             path="supervision",
-            allowed={"mode", "channels", "assignment", "duplicate_filter"},
+            allowed={"mode", "assignment", "duplicate_filter", "target_ir"},
         )
-        self._require_mode(supervision, expected="two_channel")
-        if "channels" not in supervision:
-            raise ValueError("supervision.channels is required for stage2_two_channel")
-        channels = self._require_mapping(
-            supervision.get("channels"),
-            path="supervision.channels",
-        )
-        missing = [channel for channel in ("a", "b") if channel not in channels]
-        if missing:
-            raise ValueError(f"supervision.channels missing required channels: {missing}")
-        for channel in ("a", "b"):
-            channel_payload = self._require_mapping(
-                channels[channel],
-                path=f"supervision.channels.{channel}",
-            )
-            self._validate_allowed_keys(
-                channel_payload,
-                path=f"supervision.channels.{channel}",
-                allowed={"source", "objective_scope", "planner"},
-            )
-            source = channel_payload.get("source")
-            if type(source) is not str or not source.strip():
-                raise ValueError(
-                    f"supervision.channels.{channel}.source must be a non-empty string"
-                )
+        self._require_mode(supervision, expected="rollout_correction")
 
     def _resolve_surface_id(self, surface: Mapping[str, object]) -> str:
         """Return the selected surface identifier."""

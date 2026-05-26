@@ -29,16 +29,16 @@ The manifest MUST resolve, at minimum:
 
 The study MUST record the resolved manifest before any rollout cell executes.
 
-#### Scenario: Manifest resolves `original` and `a_only`
-- **WHEN** the user launches the study with checkpoint aliases `original` and `a_only`
+#### Scenario: Manifest resolves `original` and `rollout_correction`
+- **WHEN** the user launches the study with checkpoint aliases `original` and `rollout_correction`
 - **THEN** the study writes a resolved manifest that records both aliases, their resolved checkpoint paths, artifact kinds, checkpoint fingerprints, the dataset split, the split-specific offline JSONL, the subset name, the exact image ids and image order, subset-selection provenance, the image root, the prompt variant, the prompt hash, the object field order, the authoritative backend, and the seed schedule before any rollout begins.
 
 #### Scenario: Canonical 2B pair records concrete checkpoint and dataset provenance
 - **WHEN** the user launches the canonical first-version study
 - **THEN** the resolved manifest records:
   - `original = output/stage1_2b/coco_bbox_max60-hard_ce_soft_ce_w1_gate_merged-1332`
-  - `a_only = output/stage2_ab/2b_1024/a_only_iter1/merged_ckpt-900`
-  - `a_only_config_source = output/stage2_ab/2b_1024/a_only_iter1/epoch_2-eff_size_64-n_softctx_iter_1-a_only/v0-20260309-102351/config_source.yaml`
+  - `rollout_correction = output/stage2_rollout_correction/2b_1024/rollout_correction_iter1/merged_ckpt-900`
+  - `rollout_correction_config_source = output/stage2_rollout_correction/2b_1024/rollout_correction_iter1/epoch_2-eff_size_64-n_softctx_iter_1-rollout_correction/v0-20260309-102351/config_source.yaml`
   - `train = public_data/coco/rescale_32_1024_bbox_max60/train.coord.jsonl`
   - `val = public_data/coco/rescale_32_1024_bbox_max60/val.coord.jsonl`
 - **AND** each executed logical cell records which dataset split and split-specific JSONL it used.

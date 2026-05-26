@@ -3,11 +3,11 @@ from __future__ import annotations
 import inspect
 
 from src.trainers.stage2_rollout_runtime import Stage2RolloutRuntime
-from src.trainers.stage2_two_channel import Stage2TwoChannelTrainer
+from src.trainers.stage2_rollout_correction import Stage2RolloutCorrectionTrainer
 
 
-def test_stage2_ab_enforces_prompt_tokenization_alignment() -> None:
-    src = inspect.getsource(Stage2TwoChannelTrainer._prepare_batch_inputs_b_impl)
+def test_stage2_rollout_correction_enforces_prompt_tokenization_alignment() -> None:
+    src = inspect.getsource(Stage2RolloutCorrectionTrainer._prepare_rollout_correction_inputs_impl)
     assert "prompt tokenization mismatch" in src
 
 

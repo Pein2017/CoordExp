@@ -18,7 +18,7 @@ from transformers import Trainer, TrainingArguments
 
 from src.trainers import with_final_checkpoint
 from src.trainers.stage2_rollout_runtime import Stage2RolloutRuntime
-from src.trainers.stage2_two_channel import Stage2TwoChannelTrainer
+from src.trainers.stage2_rollout_correction import Stage2RolloutCorrectionTrainer
 from src.utils.ddp_fail_fast import ddp_rank0_coordinated_fail_fast
 
 
@@ -136,7 +136,7 @@ def _worker_stage2_metric_nonrank0_failure(
     _init_cpu_pg(rank=int(rank), port=int(port))
     original_all_reduce = dist.all_reduce
     try:
-        trainer = Stage2TwoChannelTrainer.__new__(Stage2TwoChannelTrainer)
+        trainer = Stage2RolloutCorrectionTrainer.__new__(Stage2RolloutCorrectionTrainer)
         trainer.model = types.SimpleNamespace(device=torch.device("cpu"))
 
         def _patched_all_reduce(tensor: torch.Tensor, op: object = None) -> None:

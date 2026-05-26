@@ -23,16 +23,16 @@ from src.training.stage2.rollout_codec import (
 )
 from src.training.stage2.assignment import GreedyIoUAssignment
 from src.trainers.rollout_matching.contracts import MatchResult
-from src.trainers.stage2_two_channel import (
-    Stage2TwoChannelTrainer,
+from src.trainers.stage2_rollout_correction import (
+    Stage2RolloutCorrectionTrainer,
     _PendingStage2Log,
-    _assign_stage2_channel_b_objects,
+    _assign_stage2_rollout_correction_objects,
     _bbox_groups_from_token_ids,
     _bbox_smoothl1_ciou_loss,
     _build_teacher_forced_payload,
     _expectation_decode_coords,
     _extract_gt_bboxonly,
-    _is_stage2_channel_b_direct_batch_metric_key,
+    _is_rollout_correction_direct_batch_metric_key,
     _matched_prefix_structure_positions,
     _sample_identifier_or_index,
     _stage2_ab_tail_closure_positions,
@@ -43,32 +43,36 @@ from src.trainers.stage2_two_channel import (
     _stage2_ul_promoted_targets,
     _stage2_ul_rollout_evidence,
     _stage2_ul_rollout_id,
+    _stage2_rollout_attempt_monitor_record,
+    _stage2_rollout_temperature_bucket,
+    _stage2_rollout_temperature_metrics,
+    _stage2_update_rollout_temperature_stats,
 )
-from src.trainers.stage2_two_channel.target_builder import (
-    _apply_channel_b_duplicate_control,
+from src.trainers.rollout_correction.target_builder import (
+    _apply_rollout_correction_duplicate_control,
     _attach_stage2_trie_sidecar_to_meta,
     _build_canonical_prefix_data,
     _build_canonical_prefix_text_data,
-    _build_channel_b_meta_entry,
-    _build_channel_b_supervision_targets,
-    _build_channel_b_triage,
+    _build_rollout_correction_meta_entry,
+    _build_rollout_correction_supervision_targets,
+    _build_rollout_correction_triage,
     _build_duplicate_control_divergence_diagnostics,
     _build_residual_set_correction_events,
-    _channel_b_residual_set_correction_enabled,
+    _rollout_correction_residual_set_enabled,
     _compute_duplicate_diagnostics,
     _sequential_dedup_bbox_objects,
 )
-from src.trainers.stage2_two_channel.teacher_forcing_adapter import (
+from src.trainers.rollout_correction.teacher_forcing_adapter import (
     build_residual_set_target_ir,
 )
-from src.trainers.stage2_two_channel.objective_runner import (
+from src.trainers.rollout_correction.objective_runner import (
     build_stage2_core_loss_logs,
     run_stage2_objective_pipelines,
 )
-from src.trainers.stage2_two_channel.rollout_views import (
+from src.trainers.rollout_correction.rollout_views import (
     extract_compact_full_object_token_spans,
 )
-from src.trainers.stage2_two_channel.trie_supervision import (
+from src.trainers.rollout_correction.trie_supervision import (
     Stage2TrieCandidate,
     Stage2TrieObjectSpan,
     Stage2TrieTokenTarget,
@@ -85,7 +89,7 @@ from src.training.teacher_forcing.vocab import RoleVocab
 def _apply_test_duplicate_control(
     parsed_bbox_objects_raw: Sequence[GTObject], *, duplicate_iou_threshold: float
 ):
-    result = _apply_channel_b_duplicate_control(
+    result = _apply_rollout_correction_duplicate_control(
         anchor_objects_raw=parsed_bbox_objects_raw,
         explorer_objects_raw_by_view=[],
         duplicate_iou_threshold=float(duplicate_iou_threshold),
@@ -98,8 +102,90 @@ def _apply_test_duplicate_control(
     )
 
 
-def test_channel_b_assignment_helper_supports_greedy_iou_provenance() -> None:
-    match = _assign_stage2_channel_b_objects(
+def test_rollout_correction_temperature_bucket_metrics_track_invalid_and_diversity() -> None:
+    stats = {}
+    view_a = {
+        "rollout_temperature": 0.3,
+        "invalid_rollout": 0,
+        "parse_truncated": 0,
+        "pred_objects": 3,
+        "n_valid_pred": 2,
+        "gen_new_tokens": 40,
+        "parse": types.SimpleNamespace(
+            response_text="first",
+            dropped_invalid=0,
+            dropped_ambiguous=0,
+        ),
+    }
+    view_b = {
+        "rollout_temperature": 0.3,
+        "invalid_rollout": 1,
+        "parse_truncated": 1,
+        "pred_objects": 4,
+        "n_valid_pred": 1,
+        "gen_new_tokens": 80,
+        "parse": types.SimpleNamespace(
+            response_text="second",
+            dropped_invalid=2,
+            dropped_ambiguous=1,
+        ),
+    }
+
+    _stage2_update_rollout_temperature_stats(stats, view_a)
+    _stage2_update_rollout_temperature_stats(stats, view_b)
+    metrics = _stage2_rollout_temperature_metrics(stats)
+
+    prefix = "rollout/by_temperature/t0p3"
+    assert _stage2_rollout_temperature_bucket(0.3) == "t0p3"
+    assert metrics[f"{prefix}/raw_rollouts"] == 2.0
+    assert metrics[f"{prefix}/invalid_rollout"] == 1.0
+    assert metrics[f"{prefix}/invalid_rollout_rate"] == 0.5
+    assert metrics[f"{prefix}/parse_dropped_invalid"] == 2.0
+    assert metrics[f"{prefix}/gen_new_tokens_mean"] == 60.0
+    assert metrics[f"{prefix}/gen_new_tokens_p90"] == pytest.approx(76.0)
+    assert metrics[f"{prefix}/unique_sequence_count"] == 2.0
+    assert metrics[f"{prefix}/unique_sequence_rate"] == 1.0
+    assert _is_rollout_correction_direct_batch_metric_key(
+        f"{prefix}/invalid_rollout_rate"
+    )
+
+
+def test_rollout_correction_temperature_monitor_record_preserves_attempt_decode_params() -> None:
+    record = _stage2_rollout_attempt_monitor_record(
+        label="peer",
+        view={
+            "rollout_index": 2,
+            "rollout_role": "peer_attempt",
+            "decode_mode": "sampling",
+            "rollout_decode_mode": "sampling",
+            "rollout_temperature": 0.7,
+            "rollout_top_p": 0.9,
+            "rollout_top_k": 50,
+            "invalid_rollout": 1,
+            "parse_truncated": 0,
+            "pred_objects": 5,
+            "n_valid_pred": 3,
+            "gen_new_tokens": 128,
+            "parse": types.SimpleNamespace(
+                response_text="object row",
+                dropped_invalid=4,
+                dropped_ambiguous=1,
+            ),
+        },
+    )
+
+    assert record["label"] == "peer"
+    assert record["rollout_index"] == 2
+    assert record["temperature"] == 0.7
+    assert record["top_p"] == 0.9
+    assert record["top_k"] == 50.0
+    assert record["invalid_rollout"] is True
+    assert record["parse_dropped_invalid"] == 4
+    assert record["response_text"] == "object row"
+
+
+def test_rollout_correction_assignment_helper_supports_greedy_iou_provenance() -> None:
+    match = _assign_stage2_rollout_correction_objects(
         strategy=GreedyIoUAssignment(iou_threshold=0.5),
         preds=(
             GTObject(
@@ -589,29 +675,15 @@ class _BoundaryMergingTokenizer(_DummyTokenizer):
         return out
 
 
-def test_b_ratio_schedule_is_deterministic():
-    t = Stage2TwoChannelTrainer.__new__(Stage2TwoChannelTrainer)
-    t.stage2_ab_cfg = {"schedule": {"b_ratio": 0.5}}
-    t._stage2_channel_override = None
-    got = [t._stage2_channel_for_step(i) for i in range(6)]
-    assert got == ["A", "B", "A", "B", "A", "B"]
-
-    t.stage2_ab_cfg = {"schedule": {"b_ratio": 0.05}}
-    got2 = [t._stage2_channel_for_step(i) for i in range(20)]
-    assert got2.count("B") == 1
-    assert got2[-1] == "B"
-
-
 def test_legacy_stop_neutral_key_is_rejected() -> None:
-    t = Stage2TwoChannelTrainer.__new__(Stage2TwoChannelTrainer)
-    t.stage2_ab_cfg = {
-        "schedule": {"b_ratio": 1.0},
-        "channel_b": {
+    t = Stage2RolloutCorrectionTrainer.__new__(Stage2RolloutCorrectionTrainer)
+    t.stage2_rollout_correction_cfg = {
+        "correction": {
             "stop_neutral": {"enabled": True},
         },
     }
     with pytest.raises(ValueError, match="stop_neutral"):
-        _ = t._ab_channel_b_cfg()
+        _ = t._rollout_correction_cfg_get("anything", None)
 
 
 def test_expectation_decode_is_mean_not_argmax():
@@ -690,7 +762,6 @@ def _make_stage2_pipeline_manifest(
                 "name": "token_ce",
                 "enabled": bool(token_ce_enabled),
                 "weight": float(token_ce_weight),
-                "channels": ["A", "B"],
                 "application": {"preset": "anchor_text_only"},
                 "config": token_cfg,
             },
@@ -702,7 +773,6 @@ def _make_stage2_pipeline_manifest(
 def _make_residual_set_pipeline_manifest(
     *,
     enabled: bool = True,
-    channels: Sequence[str] = ("B",),
     base_seed: int = 17,
     **config_overrides: object,
 ) -> dict:
@@ -716,7 +786,6 @@ def _make_residual_set_pipeline_manifest(
                 "name": "residual_set_correction",
                 "enabled": bool(enabled),
                 "weight": 1.0,
-                "channels": list(channels),
                 "application": {"preset": "rollout_self_prefix"},
                 "config": config,
             },
@@ -726,15 +795,16 @@ def _make_residual_set_pipeline_manifest(
 
 
 def _make_min_trainer():
-    t = Stage2TwoChannelTrainer.__new__(Stage2TwoChannelTrainer)
-    t.stage2_ab_cfg = {
-        "schedule": {"b_ratio": 0.0},
+    t = Stage2RolloutCorrectionTrainer.__new__(Stage2RolloutCorrectionTrainer)
+    desc_ce_weight = 1.0
+    t.stage2_rollout_correction_cfg = {
+        "correction": {},
         "bbox_smoothl1_weight": 1.0,
         "bbox_ciou_weight": 1.0,
-        "desc_ce_weight": 1.0,
+        "desc_ce_weight": desc_ce_weight,
     }
     t.stage2_pipeline_manifest = _make_stage2_pipeline_manifest(
-        desc_ce_weight=float(t.stage2_ab_cfg["desc_ce_weight"]),
+        desc_ce_weight=float(desc_ce_weight),
     )
     t._stage2_pending_train_logs = {}
     t._rm_pending_train_logs = {}
@@ -743,17 +813,17 @@ def _make_min_trainer():
     return t
 
 
-def _make_compact_channel_b_trainer(
+def _make_compact_rollout_correction_trainer(
     *,
     rollout_text: str,
     rollout_texts_by_call: list[str] | None = None,
     fallback_loss_weight: float = 1.0,
     pseudo_positive_enabled: bool = False,
     num_rollouts: int = 1,
-) -> Stage2TwoChannelTrainer:
-    t = Stage2TwoChannelTrainer.__new__(Stage2TwoChannelTrainer)
-    t.stage2_ab_cfg = {
-        "channel_b": {
+) -> Stage2RolloutCorrectionTrainer:
+    t = Stage2RolloutCorrectionTrainer.__new__(Stage2RolloutCorrectionTrainer)
+    t.stage2_rollout_correction_cfg = {
+        "correction": {
             "rollout_template_family": "compact_full",
             "fallback_loss_weight": float(fallback_loss_weight),
             "pseudo_positive": {"enabled": bool(pseudo_positive_enabled)},
@@ -903,126 +973,11 @@ def test_compact_tail_closure_and_stop_metadata_use_turn_end_token() -> None:
     assert stop_meta["continue_token_id"] is None
 
 
-def test_channel_a_runs_single_forward_and_enforces_qwen_posids():
-    trainer = _make_min_trainer()
-    model = _DummyModel()
-
-    # Prompt (2 tokens) + assistant (5 tokens, includes 4 coord slots)
-    input_ids = torch.tensor([[1100, 1101, 0, 1, 2, 3, 1102]], dtype=torch.long)
-    position_ids = torch.zeros((3, 1, input_ids.shape[1]), dtype=torch.long)
-    text_position_ids = torch.arange(input_ids.shape[1], dtype=torch.long).unsqueeze(0)
-
-    meta = [
-        {
-            "prompt_len": 2,
-            "prefix_len": 0,
-            "train_len": 5,
-            "encoded_len": int(input_ids.shape[1]),
-            "tail_desc_pos": [],
-            "bbox_groups_prefix": [],
-            "bbox_groups_fn": [
-                {"pos": [2, 3, 4, 5], "gt_bins": [0, 1, 2, 3]},
-            ],
-        }
-    ]
-
-    loss = trainer.compute_loss(
-        model,
-        {
-            "_stage2_ab_channel": "A",
-            "_rollout_matching_meta": meta,
-            "input_ids": input_ids,
-            "position_ids": position_ids,
-            "text_position_ids": text_position_ids,
-        },
-    )
-    assert isinstance(loss, torch.Tensor)
-    assert len(model.calls) == 1
-
-
-def test_channel_a_does_not_use_inputs_embeds_iteration_path():
+def test_compute_loss_rejects_legacy_stage2_ab_channel_marker():
     trainer = _make_min_trainer()
     model = _DummyModel()
 
     input_ids = torch.tensor([[1100, 1101, 0, 1, 2, 3, 1102]], dtype=torch.long)
-    position_ids = torch.zeros((3, 1, input_ids.shape[1]), dtype=torch.long)
-    text_position_ids = torch.arange(input_ids.shape[1], dtype=torch.long).unsqueeze(0)
-
-    meta = [
-        {
-            "prompt_len": 2,
-            "prefix_len": 0,
-            "train_len": 5,
-            "encoded_len": int(input_ids.shape[1]),
-            "tail_desc_pos": [],
-            "bbox_groups_prefix": [],
-            "bbox_groups_fn": [
-                {"pos": [2, 3, 4, 5], "gt_bins": [0, 1, 2, 3]},
-            ],
-        }
-    ]
-
-    _ = trainer.compute_loss(
-        model,
-        {
-            "_stage2_ab_channel": "A",
-            "_rollout_matching_meta": meta,
-            "input_ids": input_ids,
-            "position_ids": position_ids,
-            "text_position_ids": text_position_ids,
-        },
-    )
-    assert len(model.calls) == 1
-
-
-def test_channel_a_multimodal_path_uses_single_inputs_embeds_forward():
-    trainer = _make_min_trainer()
-    model = _DummyConstantCoord999Model()
-
-    input_ids = torch.tensor([[1100, 1101, 0, 1, 2, 3, 1102]], dtype=torch.long)
-    position_ids = torch.zeros((3, 1, input_ids.shape[1]), dtype=torch.long)
-    text_position_ids = torch.arange(input_ids.shape[1], dtype=torch.long).unsqueeze(0)
-
-    meta = [
-        {
-            "prompt_len": 2,
-            "prefix_len": 0,
-            "train_len": 5,
-            "encoded_len": int(input_ids.shape[1]),
-            "tail_desc_pos": [],
-            "bbox_groups_prefix": [],
-            "bbox_groups_fn": [
-                {"pos": [2, 3, 4, 5], "gt_bins": [0, 1, 2, 3]},
-            ],
-        }
-    ]
-
-    _ = trainer.compute_loss(
-        model,
-        {
-            "_stage2_ab_channel": "A",
-            "_rollout_matching_meta": meta,
-            "input_ids": input_ids,
-            "position_ids": position_ids,
-            "text_position_ids": text_position_ids,
-            # Multimodal batches carry pixel_values; trainer must not perturb non-coord slots.
-            "pixel_values": torch.zeros((1, 3, 2, 2), dtype=torch.float32),
-        },
-    )
-
-    assert len(model.inputs_embeds_calls) == 1
-
-
-def test_channel_a_ce_uses_single_forward_logits():
-    trainer = _make_min_trainer()
-    # Isolate anchor CE and non-text objectives.
-    trainer.stage2_pipeline_manifest = _make_stage2_pipeline_manifest(
-    )
-
-    # Prompt (2 tokens) + assistant (5 tokens, includes 4 coord slots + 1 non-coord token).
-    input_ids = torch.tensor([[1100, 1101, 0, 1, 2, 3, 1102]], dtype=torch.long)
-    position_ids = torch.zeros((3, 1, input_ids.shape[1]), dtype=torch.long)
-    text_position_ids = torch.arange(input_ids.shape[1], dtype=torch.long).unsqueeze(0)
     meta = [
         {
             "prompt_len": 2,
@@ -1035,35 +990,15 @@ def test_channel_a_ce_uses_single_forward_logits():
         }
     ]
 
-    # First forward predicts token 1102 (correct), second predicts 1103 (wrong).
-    model_good_a1 = _DummyCallIndexedTokenModel(pred_ids=[1102, 1103])
-    loss_good = trainer.compute_loss(
-        model_good_a1,
-        {
-            "_stage2_ab_channel": "A",
-            "_rollout_matching_meta": meta,
-            "input_ids": input_ids,
-            "position_ids": position_ids,
-            "text_position_ids": text_position_ids,
-        },
-    )
-
-    # If CE incorrectly ignored the first forward logits, this comparison would collapse.
-    model_bad_a1 = _DummyCallIndexedTokenModel(pred_ids=[1103, 1102])
-    loss_bad = trainer.compute_loss(
-        model_bad_a1,
-        {
-            "_stage2_ab_channel": "A",
-            "_rollout_matching_meta": meta,
-            "input_ids": input_ids,
-            "position_ids": position_ids,
-            "text_position_ids": text_position_ids,
-        },
-    )
-
-    assert float(loss_good.detach().cpu().item()) < float(
-        loss_bad.detach().cpu().item()
-    )
+    with pytest.raises(ValueError, match="retired A/B phase marker"):
+        trainer.compute_loss(
+            model,
+            {
+                "_stage2_ab_channel": "A",
+                "_rollout_matching_meta": meta,
+                "input_ids": input_ids,
+            },
+        )
 
 
 def test_parse_rollout_fallback_prefix_brace_is_deterministic():
@@ -1080,7 +1015,7 @@ def test_parse_rollout_fallback_prefix_brace_is_deterministic():
     assert p1.invalid_rollout is True
 
 
-def test_channel_b_trie_sidecar_uses_prompt_len_as_segment_local_label_start() -> None:
+def test_rollout_correction_trie_sidecar_uses_prompt_len_as_segment_local_label_start() -> None:
     meta = {
         "rollout_context": "rollout_valid_with_fn_append",
         "rollout_fallback_loss_weight": 0.25,
@@ -1124,7 +1059,7 @@ def test_channel_b_trie_sidecar_uses_prompt_len_as_segment_local_label_start() -
     assert meta["stage2_trie_span_scores"] == []
 
 
-def test_channel_b_trie_sidecar_fallback_context_uses_fallback_source_and_weight() -> None:
+def test_rollout_correction_trie_sidecar_fallback_context_uses_fallback_source_and_weight() -> None:
     meta = {
         "rollout_context": "fallback_gt_fn_append_only",
         "rollout_fallback_loss_weight": 0.25,
@@ -1149,7 +1084,7 @@ def test_channel_b_trie_sidecar_fallback_context_uses_fallback_source_and_weight
     assert meta["stage2_trie_candidate_summary"]["loss_weight"] == pytest.approx(0.25)
 
 
-def test_channel_b_trie_sidecar_attaches_explicit_grouped_candidates() -> None:
+def test_rollout_correction_trie_sidecar_attaches_explicit_grouped_candidates() -> None:
     meta = {
         "rollout_context": "rollout_valid_with_fn_append",
         "rollout_fallback_loss_weight": 0.25,
@@ -1221,7 +1156,7 @@ def test_channel_b_trie_sidecar_attaches_explicit_grouped_candidates() -> None:
     assert meta["stage2_trie_span_scores"][0]["sample_id"] == "group-sample"
 
 
-def test_channel_b_trie_sidecar_rejects_explicit_grouped_candidate_sample_mismatch() -> None:
+def test_rollout_correction_trie_sidecar_rejects_explicit_grouped_candidate_sample_mismatch() -> None:
     meta = {
         "rollout_context": "rollout_valid_with_fn_append",
         "rollout_fallback_loss_weight": 0.25,
@@ -1248,7 +1183,7 @@ def test_channel_b_trie_sidecar_rejects_explicit_grouped_candidate_sample_mismat
         )
 
 
-def test_channel_b_trie_sidecar_rejects_empty_explicit_grouped_candidates() -> None:
+def test_rollout_correction_trie_sidecar_rejects_empty_explicit_grouped_candidates() -> None:
     meta = {
         "rollout_context": "rollout_valid_with_fn_append",
         "rollout_fallback_loss_weight": 0.25,
@@ -1265,7 +1200,7 @@ def test_channel_b_trie_sidecar_rejects_empty_explicit_grouped_candidates() -> N
         )
 
 
-def test_channel_b_trie_sidecar_rejects_explicit_group_with_invalid_prompt_len() -> None:
+def test_rollout_correction_trie_sidecar_rejects_explicit_group_with_invalid_prompt_len() -> None:
     meta = {
         "rollout_context": "rollout_valid_with_fn_append",
         "rollout_fallback_loss_weight": 0.25,
@@ -1292,7 +1227,7 @@ def test_channel_b_trie_sidecar_rejects_explicit_group_with_invalid_prompt_len()
         )
 
 
-def test_stage2_two_channel_sample_identifier_preserves_falsy_ids() -> None:
+def test_stage2_rollout_correction_sample_identifier_preserves_falsy_ids() -> None:
     assert _sample_identifier_or_index({"sample_id": 0, "image_id": 7}, 99) == 0
     assert _sample_identifier_or_index({"sample_id": None, "image_id": 0}, 99) == 0
     assert _sample_identifier_or_index({"base_idx": 0}, 99) == 0
@@ -1307,7 +1242,7 @@ def test_stage2_two_channel_sample_identifier_preserves_falsy_ids() -> None:
         (3, []),
     ],
 )
-def test_channel_b_trie_sidecar_skips_invalid_prompt_or_empty_targets(
+def test_rollout_correction_trie_sidecar_skips_invalid_prompt_or_empty_targets(
     prompt_len: int,
     y_train_ids: list[int],
 ) -> None:
@@ -1329,7 +1264,7 @@ def test_channel_b_trie_sidecar_skips_invalid_prompt_or_empty_targets(
     assert "stage2_trie_span_scores" not in meta
 
 
-def _minimal_channel_b_meta_entry_kwargs(**overrides):
+def _minimal_rollout_correction_meta_entry_kwargs(**overrides):
     kwargs = {
         "tokenizer": _DummyTokenizer(),
         "enc_ids_list": [100, 201],
@@ -1419,9 +1354,9 @@ def _minimal_channel_b_meta_entry_kwargs(**overrides):
     return kwargs
 
 
-def test_channel_b_meta_entry_non_residual_does_not_attach_legacy_stage2_trie_targets() -> None:
-    meta, _drop_count = _build_channel_b_meta_entry(
-        **_minimal_channel_b_meta_entry_kwargs()
+def test_rollout_correction_meta_entry_non_residual_does_not_attach_legacy_stage2_trie_targets() -> None:
+    meta, _drop_count = _build_rollout_correction_meta_entry(
+        **_minimal_rollout_correction_meta_entry_kwargs()
     )
 
     assert "stage2_trie_targets" not in meta
@@ -1429,10 +1364,10 @@ def test_channel_b_meta_entry_non_residual_does_not_attach_legacy_stage2_trie_ta
     assert "residual_set_target_ir" not in meta
 
 
-def test_channel_b_meta_entry_residual_refuses_missing_event_sidecar() -> None:
+def test_rollout_correction_meta_entry_residual_refuses_missing_event_sidecar() -> None:
     with pytest.raises(ValueError, match="CorrectionEvent-derived target IR"):
-        _build_channel_b_meta_entry(
-            **_minimal_channel_b_meta_entry_kwargs(
+        _build_rollout_correction_meta_entry(
+            **_minimal_rollout_correction_meta_entry_kwargs(
                 residual_set_selected=True,
                 residual_set_rollin_policy="random_valid_branch",
                 residual_set_base_seed=17,
@@ -1440,27 +1375,23 @@ def test_channel_b_meta_entry_residual_refuses_missing_event_sidecar() -> None:
         )
 
 
-def test_channel_b_residual_objective_detection_honors_enabled_and_channel() -> None:
+def test_rollout_correction_residual_objective_detection_honors_enabled_and_channel() -> None:
     manifest = _make_residual_set_pipeline_manifest()
-    assert _channel_b_residual_set_correction_enabled(
+    assert _rollout_correction_residual_set_enabled(
         manifest["objective"]
     )
-    assert not _channel_b_residual_set_correction_enabled(
+    assert not _rollout_correction_residual_set_enabled(
         _make_residual_set_pipeline_manifest(enabled=False)["objective"]
     )
-    assert not _channel_b_residual_set_correction_enabled(
-        _make_residual_set_pipeline_manifest(channels=("A",))["objective"]
-    )
 
-
-def test_channel_b_compact_full_rollout_template_uses_compact_parser_and_targets(
+def test_rollout_correction_compact_full_rollout_template_uses_compact_parser_and_targets(
     monkeypatch,
 ) -> None:
     row = (
         f"{OBJECT_REF_START_TOKEN}cat{BOX_START_TOKEN}"
         "<|coord_10|><|coord_20|><|coord_30|><|coord_40|>"
     )
-    t = _make_compact_channel_b_trainer(rollout_text=row)
+    t = _make_compact_rollout_correction_trainer(rollout_text=row)
     parser_called = False
 
     def _fail_if_legacy_parser_called(**kwargs):
@@ -1469,11 +1400,11 @@ def test_channel_b_compact_full_rollout_template_uses_compact_parser_and_targets
         raise AssertionError("legacy CoordJSON parser must not run for compact_full")
 
     monkeypatch.setattr(
-        "src.trainers.stage2_two_channel.parse_rollout_for_matching",
+        "src.trainers.rollout_correction.parse_rollout_for_matching",
         _fail_if_legacy_parser_called,
     )
 
-    segments, metrics = t._prepare_batch_inputs_b(
+    segments, metrics = t._prepare_rollout_correction_inputs(
         [_single_bbox_sample()],
         _segments_only=True,
     )
@@ -1514,7 +1445,7 @@ def test_ul_consensus_rollout_evidence_skips_invalid_unmatched_boxes() -> None:
     assert evidence.unmatched_members == ()
     assert evidence.member_drop_reasons == {"invalid_bbox": 1}
 
-    from src.trainers.stage2_two_channel.ul_consensus import mine_ul_consensus
+    from src.trainers.rollout_correction.ul_consensus import mine_ul_consensus
 
     ul_result = mine_ul_consensus(
         [evidence],
@@ -1557,7 +1488,7 @@ def test_ul_consensus_rollout_evidence_drops_spatial_wrong_desc_gt_conflicts() -
             ("r1", (101, 101, 201, 221)),
         )
     ]
-    from src.trainers.stage2_two_channel.ul_consensus import mine_ul_consensus
+    from src.trainers.rollout_correction.ul_consensus import mine_ul_consensus
 
     ul_result = mine_ul_consensus(
         rollouts,
@@ -1612,7 +1543,7 @@ def test_residual_set_ul_consensus_promotes_into_residual_atoms_and_artifacts() 
             "commit_iou_threshold": 0.75,
         }
     )
-    from src.trainers.stage2_two_channel.ul_consensus import (
+    from src.trainers.rollout_correction.ul_consensus import (
         mine_ul_consensus,
         ul_cluster_artifact_rows,
     )
@@ -1734,7 +1665,7 @@ def test_residual_set_ul_consensus_materializes_rollout_local_promoted_boxes() -
             "commit_iou_threshold": 0.75,
         }
     )
-    from src.trainers.stage2_two_channel.ul_consensus import mine_ul_consensus
+    from src.trainers.rollout_correction.ul_consensus import mine_ul_consensus
 
     ul_result = mine_ul_consensus(
         rollouts,
@@ -1862,7 +1793,7 @@ def test_residual_set_ul_consensus_materializes_rollout_local_desc_text() -> Non
             "commit_iou_threshold": 0.75,
         }
     )
-    from src.trainers.stage2_two_channel.ul_consensus import mine_ul_consensus
+    from src.trainers.rollout_correction.ul_consensus import mine_ul_consensus
 
     assert {
         member.desc_text
@@ -1931,7 +1862,7 @@ def test_ul_consensus_gt_overlap_reaches_miner_quarantine_and_artifacts() -> Non
             "commit_iou_threshold": 0.75,
         }
     )
-    from src.trainers.stage2_two_channel.ul_consensus import (
+    from src.trainers.rollout_correction.ul_consensus import (
         mine_ul_consensus,
         ul_cluster_artifact_rows,
     )
@@ -2040,7 +1971,7 @@ def test_residual_events_use_compact_row_context_desc_tokens() -> None:
     spatial_atoms = [
         atom
         for atom in target_ir.atoms
-        if atom.provenance["target_builder"] == "stage2_residual_dirty_prefix_scan_v1"
+        if atom.provenance["correction_builder"] == "stage2_residual_dirty_prefix_scan_v1"
     ]
     assert len(spatial_atoms) == 1
     ir_atom = spatial_atoms[0]
@@ -2342,9 +2273,9 @@ def test_compact_full_span_extractor_handles_adjacent_objects_with_optional_newl
     ]
 
 
-def test_channel_b_producer_residual_ir_rebases_when_packed() -> None:
-    meta_1, _drop_1 = _build_channel_b_meta_entry(
-        **_minimal_channel_b_meta_entry_kwargs(
+def test_rollout_correction_producer_residual_ir_rebases_when_packed() -> None:
+    meta_1, _drop_1 = _build_rollout_correction_meta_entry(
+        **_minimal_rollout_correction_meta_entry_kwargs(
             enc_ids_list=[99, 10],
             prompt_ids=[99],
             prefix_len_eff=1,
@@ -2357,8 +2288,8 @@ def test_channel_b_producer_residual_ir_rebases_when_packed() -> None:
             residual_set_base_seed=17,
         )
     )
-    meta_2, _drop_2 = _build_channel_b_meta_entry(
-        **_minimal_channel_b_meta_entry_kwargs(
+    meta_2, _drop_2 = _build_rollout_correction_meta_entry(
+        **_minimal_rollout_correction_meta_entry_kwargs(
             enc_ids_list=[88, 11],
             prompt_ids=[88],
             prefix_len_eff=1,
@@ -2383,11 +2314,10 @@ def test_channel_b_producer_residual_ir_rebases_when_packed() -> None:
     logits[0, 2, 11] = 20.0
 
     result = run_stage2_objective_pipelines(
-        channel="B",
+        channel="rollout_correction",
         objective_specs=[
             {
                 "name": "residual_set_correction",
-                "channels": ["B"],
                 "config": {},
             }
         ],
@@ -2406,28 +2336,28 @@ def test_channel_b_producer_residual_ir_rebases_when_packed() -> None:
     )
 
     assert result.pipeline_metrics_ctx[
-        "stage2_ab/channel_b/residual_set/atom_count"
+        "stage2_rollout_correction/residual_set/atom_count"
     ] == pytest.approx(2.0)
     assert result.pipeline_metrics_ctx[
-        "stage2_ab/channel_b/residual_set/sequence_loss"
+        "stage2_rollout_correction/residual_set/sequence_loss"
     ] == pytest.approx(0.0, abs=1.0e-6)
 
 
-def test_channel_b_compact_full_sorted_fn_desc_reaches_prefix_meta(
+def test_rollout_correction_compact_full_sorted_fn_desc_reaches_prefix_meta(
     monkeypatch,
 ) -> None:
-    t = _make_compact_channel_b_trainer(
+    t = _make_compact_rollout_correction_trainer(
         rollout_text="",
         fallback_loss_weight=0.25,
         num_rollouts=1,
     )
-    t.stage2_ab_cfg["channel_b"]["insertion_order"] = "sorted"
+    t.stage2_rollout_correction_cfg["correction"]["insertion_order"] = "sorted"
     monkeypatch.setattr(
-        "src.trainers.stage2_two_channel.parse_rollout_for_matching",
+        "src.trainers.rollout_correction.parse_rollout_for_matching",
         lambda **kwargs: pytest.fail("legacy CoordJSON parser must not run"),
     )
 
-    segments, _metrics = t._prepare_batch_inputs_b(
+    segments, _metrics = t._prepare_rollout_correction_inputs(
         [_single_bbox_sample()],
         _segments_only=True,
     )
@@ -2459,25 +2389,25 @@ def test_channel_b_compact_full_sorted_fn_desc_reaches_prefix_meta(
         ),
     ],
 )
-def test_channel_b_compact_full_invalid_or_empty_rollout_falls_back_with_metrics(
+def test_rollout_correction_compact_full_invalid_or_empty_rollout_falls_back_with_metrics(
     monkeypatch,
     rollout_text: str,
     expected_invalid_count: float,
     expected_empty_rate: float,
     reason: str,
 ) -> None:
-    t = _make_compact_channel_b_trainer(
+    t = _make_compact_rollout_correction_trainer(
         rollout_text=rollout_text,
         fallback_loss_weight=0.25,
         pseudo_positive_enabled=True,
         num_rollouts=4,
     )
     monkeypatch.setattr(
-        "src.trainers.stage2_two_channel.parse_rollout_for_matching",
+        "src.trainers.rollout_correction.parse_rollout_for_matching",
         lambda **kwargs: pytest.fail("legacy CoordJSON parser must not run"),
     )
 
-    segments, metrics = t._prepare_batch_inputs_b(
+    segments, metrics = t._prepare_rollout_correction_inputs(
         [_single_bbox_sample()],
         _segments_only=True,
     )
@@ -2506,10 +2436,10 @@ def test_channel_b_compact_full_invalid_or_empty_rollout_falls_back_with_metrics
     assert metrics["rollout/fallback_loss_share"] == pytest.approx(1.0)
 
 
-def test_channel_b_compact_full_template_mismatch_raises_before_legacy_parser(
+def test_rollout_correction_compact_full_template_mismatch_raises_before_legacy_parser(
     monkeypatch,
 ) -> None:
-    t = _make_compact_channel_b_trainer(rollout_text='{"objects": []}')
+    t = _make_compact_rollout_correction_trainer(rollout_text='{"objects": []}')
     parser_called = False
 
     def _fail_if_legacy_parser_called(**kwargs):
@@ -2518,17 +2448,17 @@ def test_channel_b_compact_full_template_mismatch_raises_before_legacy_parser(
         raise AssertionError("legacy CoordJSON parser must not run for compact_full")
 
     monkeypatch.setattr(
-        "src.trainers.stage2_two_channel.parse_rollout_for_matching",
+        "src.trainers.rollout_correction.parse_rollout_for_matching",
         _fail_if_legacy_parser_called,
     )
 
     with pytest.raises(Stage2RolloutTemplateMismatchError, match="compact_full"):
-        t._prepare_batch_inputs_b([_single_bbox_sample()], _segments_only=True)
+        t._prepare_rollout_correction_inputs([_single_bbox_sample()], _segments_only=True)
 
     assert parser_called is False
 
 
-def test_channel_b_compact_full_invalid_explorer_rollouts_block_full_consensus(
+def test_rollout_correction_compact_full_invalid_explorer_rollouts_block_full_consensus(
     monkeypatch,
 ) -> None:
     anchor_text = (
@@ -2540,7 +2470,7 @@ def test_channel_b_compact_full_invalid_explorer_rollouts_block_full_consensus(
         "<|coord_101|><|coord_101|><|coord_201|><|coord_201|>"
     )
     invalid_explorer_text = "not compact output"
-    t = _make_compact_channel_b_trainer(
+    t = _make_compact_rollout_correction_trainer(
         rollout_text=anchor_text,
         rollout_texts_by_call=[
             anchor_text,
@@ -2552,11 +2482,11 @@ def test_channel_b_compact_full_invalid_explorer_rollouts_block_full_consensus(
         num_rollouts=4,
     )
     monkeypatch.setattr(
-        "src.trainers.stage2_two_channel.parse_rollout_for_matching",
+        "src.trainers.rollout_correction.parse_rollout_for_matching",
         lambda **kwargs: pytest.fail("legacy CoordJSON parser must not run"),
     )
 
-    segments, metrics = t._prepare_batch_inputs_b(
+    segments, metrics = t._prepare_rollout_correction_inputs(
         [_single_bbox_sample()],
         _segments_only=True,
     )
@@ -2578,7 +2508,7 @@ def test_channel_b_compact_full_invalid_explorer_rollouts_block_full_consensus(
     )
 
 
-def test_channel_b_live_non_residual_skips_legacy_stage2_trie_sidecar(
+def test_rollout_correction_live_non_residual_skips_legacy_stage2_trie_sidecar(
     monkeypatch,
 ) -> None:
     anchor_text = (
@@ -2590,7 +2520,7 @@ def test_channel_b_live_non_residual_skips_legacy_stage2_trie_sidecar(
         "<|coord_10|><|coord_20|><|coord_30|><|coord_41|>"
     )
     invalid_explorer_text = "not compact output"
-    t = _make_compact_channel_b_trainer(
+    t = _make_compact_rollout_correction_trainer(
         rollout_text=anchor_text,
         rollout_texts_by_call=[anchor_text, invalid_explorer_text, explorer_text],
         num_rollouts=3,
@@ -2619,11 +2549,11 @@ def test_channel_b_live_non_residual_skips_legacy_stage2_trie_sidecar(
 
     t.template = _PromptTemplate()
     monkeypatch.setattr(
-        "src.trainers.stage2_two_channel.parse_rollout_for_matching",
+        "src.trainers.rollout_correction.parse_rollout_for_matching",
         lambda **kwargs: pytest.fail("legacy CoordJSON parser must not run"),
     )
 
-    segments, _metrics = t._prepare_batch_inputs_b(
+    segments, _metrics = t._prepare_rollout_correction_inputs(
         [_single_bbox_sample()],
         _segments_only=True,
     )
@@ -2637,14 +2567,14 @@ def test_channel_b_live_non_residual_skips_legacy_stage2_trie_sidecar(
         assert "stage2_trie_candidate_summary" not in meta
 
 
-def test_channel_b_compact_full_non_residual_has_no_legacy_stage2_trie_roles(
+def test_rollout_correction_compact_full_non_residual_has_no_legacy_stage2_trie_roles(
     monkeypatch,
 ) -> None:
     rollout_text = (
         f"{OBJECT_REF_START_TOKEN}cat{BOX_START_TOKEN}"
         "<|coord_10|><|coord_20|><|coord_30|><|coord_40|>"
     )
-    t = _make_compact_channel_b_trainer(rollout_text=rollout_text)
+    t = _make_compact_rollout_correction_trainer(rollout_text=rollout_text)
     tok = t.template.tokenizer
     im_end_id = int(tok.convert_tokens_to_ids("<|im_end|>"))
 
@@ -2670,11 +2600,11 @@ def test_channel_b_compact_full_non_residual_has_no_legacy_stage2_trie_roles(
 
     t.template = _PromptTemplate()
     monkeypatch.setattr(
-        "src.trainers.stage2_two_channel.parse_rollout_for_matching",
+        "src.trainers.rollout_correction.parse_rollout_for_matching",
         lambda **kwargs: pytest.fail("legacy CoordJSON parser must not run"),
     )
 
-    segments, _metrics = t._prepare_batch_inputs_b(
+    segments, _metrics = t._prepare_rollout_correction_inputs(
         [_single_bbox_sample()],
         _segments_only=True,
     )
@@ -2689,9 +2619,9 @@ def test_channel_b_compact_full_non_residual_has_no_legacy_stage2_trie_roles(
     assert meta["continue_token_id"] is None
 
 
-def test_channel_b_matching_uses_greedy_assignment_threshold(monkeypatch):
-    t = Stage2TwoChannelTrainer.__new__(Stage2TwoChannelTrainer)
-    t.stage2_ab_cfg = {}
+def test_rollout_correction_matching_uses_greedy_assignment_threshold(monkeypatch):
+    t = Stage2RolloutCorrectionTrainer.__new__(Stage2RolloutCorrectionTrainer)
+    t.stage2_rollout_correction_cfg = {}
     t._stage2_pending_train_logs = {}
     t._rm_pending_train_logs = {}
     t.state = types.SimpleNamespace(global_step=0)
@@ -2708,12 +2638,12 @@ def test_channel_b_matching_uses_greedy_assignment_threshold(monkeypatch):
         "repetition_penalty": 1.0,
     }
     t._cfg = lambda key, default=None: cfg.get(key, default)
-    def _channel_b_get(key, default=None):
+    def _rollout_correction_get(key, default=None):
         if key == "assignment.iou_threshold":
             return 0.75
         return default
 
-    t._ab_channel_b_get = _channel_b_get
+    t._rollout_correction_cfg_get = _rollout_correction_get
 
     class _CoordLiteralTokenizer(_DummyTokenizer):
         def encode(self, text: str, add_special_tokens: bool = False):
@@ -2780,7 +2710,7 @@ def test_channel_b_matching_uses_greedy_assignment_threshold(monkeypatch):
         truncated=False,
     )
     monkeypatch.setattr(
-        "src.trainers.stage2_two_channel.parse_rollout_for_matching",
+        "src.trainers.rollout_correction.parse_rollout_for_matching",
         lambda **kwargs: fake_parse,
     )
 
@@ -2797,7 +2727,7 @@ def test_channel_b_matching_uses_greedy_assignment_threshold(monkeypatch):
         raise _StopAfterMatch("stop once assignment receives greedy strategy")
 
     monkeypatch.setattr(
-        "src.trainers.stage2_two_channel._assign_stage2_channel_b_objects",
+        "src.trainers.rollout_correction._assign_stage2_rollout_correction_objects",
         _fake_match,
     )
 
@@ -2808,7 +2738,7 @@ def test_channel_b_matching_uses_greedy_assignment_threshold(monkeypatch):
         },
     }
     with pytest.raises(_StopAfterMatch):
-        t._prepare_batch_inputs_b([sample], _segments_only=True)
+        t._prepare_rollout_correction_inputs([sample], _segments_only=True)
 
     assert captured["strategy_id"] == "greedy_iou"
     assert captured["iou_threshold"] == pytest.approx(0.75)
@@ -2816,8 +2746,8 @@ def test_channel_b_matching_uses_greedy_assignment_threshold(monkeypatch):
     assert captured["n_gt"] == 1
 
 
-def test_channel_b_invalid_rollout_keeps_sample_via_empty_prefix_fallback(monkeypatch):
-    t = Stage2TwoChannelTrainer.__new__(Stage2TwoChannelTrainer)
+def test_rollout_correction_invalid_rollout_keeps_sample_via_empty_prefix_fallback(monkeypatch):
+    t = Stage2RolloutCorrectionTrainer.__new__(Stage2RolloutCorrectionTrainer)
     cfg = {
         "maskiou_gate": 0.3,
         "candidate_top_k": 5,
@@ -2830,7 +2760,7 @@ def test_channel_b_invalid_rollout_keeps_sample_via_empty_prefix_fallback(monkey
         "repetition_penalty": 1.0,
     }
     t._cfg = lambda key, default=None: cfg.get(key, default)
-    t._ab_channel_b_get = lambda key, default=None: default
+    t._rollout_correction_cfg_get = lambda key, default=None: default
 
     tok = _CoordLiteralTokenizer()
 
@@ -2890,7 +2820,7 @@ def test_channel_b_invalid_rollout_keeps_sample_via_empty_prefix_fallback(monkey
         invalid_rollout=True,
     )
     monkeypatch.setattr(
-        "src.trainers.stage2_two_channel.parse_rollout_for_matching",
+        "src.trainers.rollout_correction.parse_rollout_for_matching",
         lambda **kwargs: fake_parse,
     )
 
@@ -2905,7 +2835,7 @@ def test_channel_b_invalid_rollout_keeps_sample_via_empty_prefix_fallback(monkey
         raise _StopAfterMatch("stop after invalid-rollout fallback reaches matcher")
 
     monkeypatch.setattr(
-        "src.trainers.stage2_two_channel._assign_stage2_channel_b_objects",
+        "src.trainers.rollout_correction._assign_stage2_rollout_correction_objects",
         _fake_match,
     )
 
@@ -2916,16 +2846,16 @@ def test_channel_b_invalid_rollout_keeps_sample_via_empty_prefix_fallback(monkey
         },
     }
     with pytest.raises(_StopAfterMatch):
-        t._prepare_batch_inputs_b([sample], _segments_only=True)
+        t._prepare_rollout_correction_inputs([sample], _segments_only=True)
 
     assert captured == {"n_pred": 0, "n_gt": 1}
 
 
-def test_channel_b_enabled_pseudo_positive_drops_invalid_anchor_sample(
+def test_rollout_correction_enabled_pseudo_positive_drops_invalid_anchor_sample(
     monkeypatch,
     tmp_path,
 ):
-    t = Stage2TwoChannelTrainer.__new__(Stage2TwoChannelTrainer)
+    t = Stage2RolloutCorrectionTrainer.__new__(Stage2RolloutCorrectionTrainer)
     cfg = {
         "maskiou_gate": 0.3,
         "candidate_top_k": 5,
@@ -2943,7 +2873,7 @@ def test_channel_b_enabled_pseudo_positive_drops_invalid_anchor_sample(
         "invalid_rollout_policy": "dump_and_continue",
     }
     t._cfg = lambda key, default=None: cfg.get(key, default)
-    t._ab_channel_b_get = lambda key, default=None: ab_cfg.get(key, default)
+    t._rollout_correction_cfg_get = lambda key, default=None: ab_cfg.get(key, default)
 
     tok = _CoordLiteralTokenizer()
 
@@ -3031,15 +2961,15 @@ def test_channel_b_enabled_pseudo_positive_drops_invalid_anchor_sample(
         )
 
     monkeypatch.setattr(
-        "src.trainers.stage2_two_channel.parse_rollout_for_matching",
+        "src.trainers.rollout_correction.parse_rollout_for_matching",
         _fake_parse,
     )
     monkeypatch.setattr(
-        "src.trainers.stage2_two_channel.points_from_coord_tokens",
+        "src.trainers.rollout_correction.points_from_coord_tokens",
         lambda **kwargs: [0, 0, 1, 1],
     )
     monkeypatch.setattr(
-        "src.trainers.stage2_two_channel._assign_stage2_channel_b_objects",
+        "src.trainers.rollout_correction._assign_stage2_rollout_correction_objects",
         lambda **kwargs: types.SimpleNamespace(
             matched_pairs=[],
             fn_gt_indices=[],
@@ -3056,11 +2986,11 @@ def test_channel_b_enabled_pseudo_positive_drops_invalid_anchor_sample(
             "objects": [{"bbox_2d": [0, 0, 1, 1], "desc": "x"}],
         },
     }
-    segments, batch_metrics = t._prepare_batch_inputs_b([sample], _segments_only=True)
+    segments, batch_metrics = t._prepare_rollout_correction_inputs([sample], _segments_only=True)
     assert len(segments) == 3
     assert batch_metrics["stage2/invalid_rollout"] == pytest.approx(1.0)
     assert batch_metrics[
-        "stage2_ab/channel_b/invalid_rollout_sample_dropped"
+        "stage2_rollout_correction/invalid_rollout_sample_dropped"
     ] == pytest.approx(1.0)
     dump_dir = tmp_path / "monitor_dumps" / "prepare_failures"
     dump_paths = sorted(dump_dir.glob("*.json"))
@@ -3085,10 +3015,10 @@ def test_channel_b_enabled_pseudo_positive_drops_invalid_anchor_sample(
     assert invalid_rollout["response_text_tail"] == invalid_rollout["response_text"]
 
 
-def test_channel_b_closure_resolution_failure_falls_back_without_dropping_sample(
+def test_rollout_correction_closure_resolution_failure_falls_back_without_dropping_sample(
     monkeypatch,
 ):
-    t = Stage2TwoChannelTrainer.__new__(Stage2TwoChannelTrainer)
+    t = Stage2RolloutCorrectionTrainer.__new__(Stage2RolloutCorrectionTrainer)
     cfg = {
         "maskiou_gate": 0.3,
         "candidate_top_k": 5,
@@ -3101,7 +3031,7 @@ def test_channel_b_closure_resolution_failure_falls_back_without_dropping_sample
         "repetition_penalty": 1.0,
     }
     t._cfg = lambda key, default=None: cfg.get(key, default)
-    t._ab_channel_b_get = lambda key, default=None: default
+    t._rollout_correction_cfg_get = lambda key, default=None: default
 
     class _CoordLiteralTokenizer(_DummyTokenizer):
         def encode(self, text: str, add_special_tokens: bool = False):
@@ -3173,11 +3103,11 @@ def test_channel_b_closure_resolution_failure_falls_back_without_dropping_sample
         invalid_rollout=False,
     )
     monkeypatch.setattr(
-        "src.trainers.stage2_two_channel.parse_rollout_for_matching",
+        "src.trainers.rollout_correction.parse_rollout_for_matching",
         lambda **kwargs: fake_parse,
     )
     monkeypatch.setattr(
-        "src.trainers.stage2_two_channel._stage2_ab_tail_closure_positions",
+        "src.trainers.rollout_correction._stage2_ab_tail_closure_positions",
         lambda **kwargs: (_ for _ in ()).throw(
             ValueError("synthetic closure ambiguity")
         ),
@@ -3190,15 +3120,15 @@ def test_channel_b_closure_resolution_failure_falls_back_without_dropping_sample
         },
     }
 
-    segments, batch_metrics = t._prepare_batch_inputs_b([sample], _segments_only=True)
+    segments, batch_metrics = t._prepare_rollout_correction_inputs([sample], _segments_only=True)
 
     assert len(segments) == 2
     meta = segments[0][1]
     assert meta["tail_closure_pos"] == []
     assert batch_metrics[
-        "stage2_ab/channel_b/closure_supervision/N_drop"
+        "stage2_rollout_correction/closure_supervision/N_drop"
     ] == pytest.approx(2.0)
-    assert batch_metrics["stage2_ab/channel_b/invalid_rollout"] == pytest.approx(0.0)
+    assert batch_metrics["stage2_rollout_correction/invalid_rollout"] == pytest.approx(0.0)
     assert batch_metrics["rollout/template_family_coordjson"] == pytest.approx(1.0)
     assert batch_metrics["rollout/template_family_compact_full"] == pytest.approx(0.0)
     assert batch_metrics["rollout/parser_coordjson_legacy"] == pytest.approx(1.0)
@@ -3207,8 +3137,8 @@ def test_channel_b_closure_resolution_failure_falls_back_without_dropping_sample
     assert batch_metrics["rollout/fallback_loss_weight"] == pytest.approx(1.0)
 
 
-def test_channel_b_duplicate_iou_threshold_zero_propagates_to_dedup(monkeypatch):
-    t = Stage2TwoChannelTrainer.__new__(Stage2TwoChannelTrainer)
+def test_rollout_correction_duplicate_iou_threshold_zero_propagates_to_dedup(monkeypatch):
+    t = Stage2RolloutCorrectionTrainer.__new__(Stage2RolloutCorrectionTrainer)
     cfg = {
         "maskiou_gate": 0.3,
         "candidate_top_k": 5,
@@ -3221,7 +3151,7 @@ def test_channel_b_duplicate_iou_threshold_zero_propagates_to_dedup(monkeypatch)
         "repetition_penalty": 1.0,
     }
     t._cfg = lambda key, default=None: cfg.get(key, default)
-    t._ab_channel_b_get = (
+    t._rollout_correction_cfg_get = (
         lambda key, default=None: 0.0
         if key == "duplicate_control.iou_threshold"
         else default
@@ -3263,7 +3193,7 @@ def test_channel_b_duplicate_iou_threshold_zero_propagates_to_dedup(monkeypatch)
         invalid_rollout=False,
     )
     monkeypatch.setattr(
-        "src.trainers.stage2_two_channel.parse_rollout_for_matching",
+        "src.trainers.rollout_correction.parse_rollout_for_matching",
         lambda **kwargs: fake_parse,
     )
 
@@ -3277,7 +3207,7 @@ def test_channel_b_duplicate_iou_threshold_zero_propagates_to_dedup(monkeypatch)
         raise _StopAfterDedup("stop after dedup threshold capture")
 
     monkeypatch.setattr(
-        "src.trainers.stage2_two_channel.target_builder._apply_channel_b_duplicate_control",
+        "src.trainers.rollout_correction.target_builder._apply_rollout_correction_duplicate_control",
         _fake_duplicate_control,
     )
 
@@ -3288,15 +3218,15 @@ def test_channel_b_duplicate_iou_threshold_zero_propagates_to_dedup(monkeypatch)
         },
     }
     with pytest.raises(_StopAfterDedup):
-        t._prepare_batch_inputs_b([sample], _segments_only=True)
+        t._prepare_rollout_correction_inputs([sample], _segments_only=True)
 
     assert captured["threshold"] == pytest.approx(0.0)
 
 
-def test_channel_b_suspicious_monitor_dump_buffers_full_eval_style_payload(
+def test_rollout_correction_suspicious_monitor_dump_buffers_full_eval_style_payload(
     monkeypatch,
 ):
-    t = Stage2TwoChannelTrainer.__new__(Stage2TwoChannelTrainer)
+    t = Stage2RolloutCorrectionTrainer.__new__(Stage2RolloutCorrectionTrainer)
     cfg = {
         "maskiou_gate": 0.3,
         "candidate_top_k": 5,
@@ -3315,7 +3245,7 @@ def test_channel_b_suspicious_monitor_dump_buffers_full_eval_style_payload(
         },
     }
     t._cfg = lambda key, default=None: cfg.get(key, default)
-    t._ab_channel_b_get = lambda key, default=None: default
+    t._rollout_correction_cfg_get = lambda key, default=None: default
 
     class _CoordLiteralTokenizer(_DummyTokenizer):
         def encode(self, text: str, add_special_tokens: bool = False):
@@ -3413,7 +3343,7 @@ def test_channel_b_suspicious_monitor_dump_buffers_full_eval_style_payload(
         invalid_rollout=False,
     )
     monkeypatch.setattr(
-        "src.trainers.stage2_two_channel.parse_rollout_for_matching",
+        "src.trainers.rollout_correction.parse_rollout_for_matching",
         lambda **kwargs: fake_parse,
     )
 
@@ -3423,11 +3353,11 @@ def test_channel_b_suspicious_monitor_dump_buffers_full_eval_style_payload(
         (8, 9, 10, 11): [40, 40, 60, 60],
     }
     monkeypatch.setattr(
-        "src.trainers.stage2_two_channel.points_from_coord_tokens",
+        "src.trainers.rollout_correction.points_from_coord_tokens",
         lambda **kwargs: list(coord_lookup[tuple(kwargs["coord_token_indices"])]),
     )
     monkeypatch.setattr(
-        "src.trainers.stage2_two_channel._assign_stage2_channel_b_objects",
+        "src.trainers.rollout_correction._assign_stage2_rollout_correction_objects",
         lambda **kwargs: types.SimpleNamespace(
             matched_pairs=[(0, 0)],
             fn_gt_indices=[],
@@ -3450,12 +3380,12 @@ def test_channel_b_suspicious_monitor_dump_buffers_full_eval_style_payload(
         },
     }
 
-    segments, batch_metrics = t._prepare_batch_inputs_b([sample], _segments_only=True)
+    segments, batch_metrics = t._prepare_rollout_correction_inputs([sample], _segments_only=True)
     assert len(segments) == 2
     assert batch_metrics[
-        "stage2_ab/channel_b/dup/N_objects_suppressed"
+        "stage2_rollout_correction/correction/dup/N_objects_suppressed"
     ] == pytest.approx(0.0)
-    assert batch_metrics["stage2_ab/channel_b/dup/N_clusters_exempt"] == pytest.approx(
+    assert batch_metrics["stage2_rollout_correction/correction/dup/N_clusters_exempt"] == pytest.approx(
         2.0
     )
     assert len(t._stage2_train_monitor_candidates) == 2
@@ -3485,7 +3415,7 @@ def test_channel_b_suspicious_monitor_dump_buffers_full_eval_style_payload(
 
 
 def test_stage2_train_monitor_dump_prefers_most_duplicate_candidate():
-    t = Stage2TwoChannelTrainer.__new__(Stage2TwoChannelTrainer)
+    t = Stage2RolloutCorrectionTrainer.__new__(Stage2RolloutCorrectionTrainer)
     cfg = {
         "decode_mode": "greedy",
         "train_monitor_dump": {
@@ -3533,7 +3463,7 @@ def test_stage2_train_monitor_dump_prefers_most_duplicate_candidate():
 
 
 def test_stage2_train_monitor_dump_uses_logged_step_not_preincrement_step() -> None:
-    t = Stage2TwoChannelTrainer.__new__(Stage2TwoChannelTrainer)
+    t = Stage2RolloutCorrectionTrainer.__new__(Stage2RolloutCorrectionTrainer)
     cfg = {
         "decode_mode": "greedy",
         "train_monitor_dump": {
@@ -3578,16 +3508,16 @@ def test_stage2_train_monitor_dump_uses_logged_step_not_preincrement_step() -> N
     assert captured["payload"]["samples"][0]["sample_id"] == "dup-heavy"
 
 
-def test_stage2_train_monitor_dump_every_channel_b_steps_ignores_global_step_aliasing() -> (
+def test_stage2_train_monitor_dump_every_rollout_steps_ignores_global_step_aliasing() -> (
     None
 ):
-    t = Stage2TwoChannelTrainer.__new__(Stage2TwoChannelTrainer)
+    t = Stage2RolloutCorrectionTrainer.__new__(Stage2RolloutCorrectionTrainer)
     cfg = {
         "decode_mode": "greedy",
         "train_monitor_dump": {
             "enabled": True,
             "every_steps": 40,
-            "every_channel_b_steps": 3,
+            "every_rollout_steps": 3,
             "max_samples": 1,
             "write_markdown": False,
         },
@@ -3637,12 +3567,12 @@ def test_stage2_train_monitor_dump_every_channel_b_steps_ignores_global_step_ali
 
 
 def test_stage2_train_monitor_cadence_advances_without_suspicious_candidate() -> None:
-    t = Stage2TwoChannelTrainer.__new__(Stage2TwoChannelTrainer)
+    t = Stage2RolloutCorrectionTrainer.__new__(Stage2RolloutCorrectionTrainer)
     cfg = {
         "decode_mode": "greedy",
         "train_monitor_dump": {
             "enabled": True,
-            "every_channel_b_steps": 3,
+            "every_rollout_steps": 3,
             "max_samples": 1,
             "write_markdown": False,
         },
@@ -3670,7 +3600,7 @@ def test_stage2_train_monitor_cadence_advances_without_suspicious_candidate() ->
 
 
 def test_stage2_train_monitor_dump_keeps_eval_budget_and_same_step_eligibility():
-    t = Stage2TwoChannelTrainer.__new__(Stage2TwoChannelTrainer)
+    t = Stage2RolloutCorrectionTrainer.__new__(Stage2RolloutCorrectionTrainer)
     cfg = {
         "decode_mode": "greedy",
         "train_monitor_dump": {
@@ -3718,14 +3648,14 @@ def test_stage2_train_monitor_dump_keeps_eval_budget_and_same_step_eligibility()
 
 
 def test_stage2_trie_span_score_dump_writes_jsonl(tmp_path) -> None:
-    t = Stage2TwoChannelTrainer.__new__(Stage2TwoChannelTrainer)
+    t = Stage2RolloutCorrectionTrainer.__new__(Stage2RolloutCorrectionTrainer)
     dump_root = tmp_path / "monitor_dumps"
     cfg = {
         "train_monitor_dump": {
             "enabled": True,
             "out_dir": str(dump_root),
             "async_write": False,
-            "every_channel_b_steps": 1,
+            "every_rollout_steps": 1,
             "max_events": 2,
         },
     }
@@ -3797,14 +3727,14 @@ def test_stage2_trie_span_score_dump_writes_jsonl(tmp_path) -> None:
 def test_stage2_trie_span_score_dump_appends_same_step_without_double_count(
     tmp_path,
 ) -> None:
-    t = Stage2TwoChannelTrainer.__new__(Stage2TwoChannelTrainer)
+    t = Stage2RolloutCorrectionTrainer.__new__(Stage2RolloutCorrectionTrainer)
     dump_root = tmp_path / "monitor_dumps"
     cfg = {
         "train_monitor_dump": {
             "enabled": True,
             "out_dir": str(dump_root),
             "async_write": False,
-            "every_channel_b_steps": 1,
+            "every_rollout_steps": 1,
             "max_events": 1,
         },
     }
@@ -3841,7 +3771,7 @@ def test_stage2_trie_span_score_dump_appends_same_step_without_double_count(
 def test_stage2_trie_span_score_dump_respects_disabled_train_monitor_dump(
     tmp_path,
 ) -> None:
-    t = Stage2TwoChannelTrainer.__new__(Stage2TwoChannelTrainer)
+    t = Stage2RolloutCorrectionTrainer.__new__(Stage2RolloutCorrectionTrainer)
     dump_root = tmp_path / "monitor_dumps"
     cfg = {
         "train_monitor_dump": {
@@ -3866,8 +3796,8 @@ def test_stage2_trie_span_score_dump_respects_disabled_train_monitor_dump(
     assert not dump_root.exists()
 
 
-def test_channel_b_fn_bbox_groups_anchor_to_clean_prefix_not_raw_prefix(monkeypatch):
-    t = Stage2TwoChannelTrainer.__new__(Stage2TwoChannelTrainer)
+def test_rollout_correction_fn_bbox_groups_anchor_to_clean_prefix_not_raw_prefix(monkeypatch):
+    t = Stage2RolloutCorrectionTrainer.__new__(Stage2RolloutCorrectionTrainer)
     cfg = {
         "maskiou_gate": 0.3,
         "candidate_top_k": 5,
@@ -3880,7 +3810,7 @@ def test_channel_b_fn_bbox_groups_anchor_to_clean_prefix_not_raw_prefix(monkeypa
         "repetition_penalty": 1.0,
     }
     t._cfg = lambda key, default=None: cfg.get(key, default)
-    t._ab_channel_b_get = lambda key, default=None: default
+    t._rollout_correction_cfg_get = lambda key, default=None: default
 
     class _CoordLiteralTokenizer(_DummyTokenizer):
         def encode(self, text: str, add_special_tokens: bool = False):
@@ -3965,11 +3895,11 @@ def test_channel_b_fn_bbox_groups_anchor_to_clean_prefix_not_raw_prefix(monkeypa
         invalid_rollout=False,
     )
     monkeypatch.setattr(
-        "src.trainers.stage2_two_channel.parse_rollout_for_matching",
+        "src.trainers.rollout_correction.parse_rollout_for_matching",
         lambda **kwargs: fake_parse,
     )
     monkeypatch.setattr(
-        "src.trainers.stage2_two_channel._assign_stage2_channel_b_objects",
+        "src.trainers.rollout_correction._assign_stage2_rollout_correction_objects",
         lambda **kwargs: types.SimpleNamespace(
             matched_pairs=[],
             fn_gt_indices=[0],
@@ -3987,7 +3917,7 @@ def test_channel_b_fn_bbox_groups_anchor_to_clean_prefix_not_raw_prefix(monkeypa
         },
     }
 
-    segments, _batch_metrics = t._prepare_batch_inputs_b([sample], _segments_only=True)
+    segments, _batch_metrics = t._prepare_rollout_correction_inputs([sample], _segments_only=True)
     meta = segments[0][1]
 
     clean_prefix = _build_canonical_prefix_data(
@@ -4026,10 +3956,10 @@ def test_channel_b_fn_bbox_groups_anchor_to_clean_prefix_not_raw_prefix(monkeypa
     assert meta["bbox_groups_fn"][0]["pos"] == expected_pos
 
 
-def test_channel_b_dual_rollout_triage_emits_recovered_ground_truth_weight_multipliers(
+def test_rollout_correction_dual_rollout_triage_emits_recovered_ground_truth_weight_multipliers(
     monkeypatch,
 ) -> None:
-    t = Stage2TwoChannelTrainer.__new__(Stage2TwoChannelTrainer)
+    t = Stage2RolloutCorrectionTrainer.__new__(Stage2RolloutCorrectionTrainer)
     cfg = {
         "maskiou_gate": 0.3,
         "candidate_top_k": 5,
@@ -4042,7 +3972,7 @@ def test_channel_b_dual_rollout_triage_emits_recovered_ground_truth_weight_multi
         "repetition_penalty": 1.0,
     }
     t._cfg = lambda key, default=None: cfg.get(key, default)
-    t._ab_channel_b_get = lambda key, default=None: {
+    t._rollout_correction_cfg_get = lambda key, default=None: {
         "triage_posterior.explorer_temperature": 0.7,
         "triage_posterior.rollout_temperatures": [0.0, 0.7],
         "triage_posterior.explorer_top_p": 0.9,
@@ -4159,7 +4089,7 @@ def test_channel_b_dual_rollout_triage_emits_recovered_ground_truth_weight_multi
     )
 
     monkeypatch.setattr(
-        "src.trainers.stage2_two_channel.parse_rollout_for_matching",
+        "src.trainers.rollout_correction.parse_rollout_for_matching",
         lambda **kwargs: (
             anchor_parse
             if int(kwargs["response_token_ids"][0]) == 101
@@ -4167,7 +4097,7 @@ def test_channel_b_dual_rollout_triage_emits_recovered_ground_truth_weight_multi
         ),
     )
     monkeypatch.setattr(
-        "src.trainers.stage2_two_channel.points_from_coord_tokens",
+        "src.trainers.rollout_correction.points_from_coord_tokens",
         lambda **kwargs: [10, 10, 20, 20],
     )
 
@@ -4192,7 +4122,7 @@ def test_channel_b_dual_rollout_triage_emits_recovered_ground_truth_weight_multi
         )
 
     monkeypatch.setattr(
-        "src.trainers.stage2_two_channel._assign_stage2_channel_b_objects",
+        "src.trainers.rollout_correction._assign_stage2_rollout_correction_objects",
         _fake_match,
     )
 
@@ -4203,7 +4133,7 @@ def test_channel_b_dual_rollout_triage_emits_recovered_ground_truth_weight_multi
         },
     }
 
-    segments, batch_metrics = t._prepare_batch_inputs_b([sample], _segments_only=True)
+    segments, batch_metrics = t._prepare_rollout_correction_inputs([sample], _segments_only=True)
 
     assert len(rollout_calls) == 2
     assert rollout_calls[0]["temperature"] == pytest.approx(0.0)
@@ -4257,8 +4187,8 @@ def test_channel_b_dual_rollout_triage_emits_recovered_ground_truth_weight_multi
     ] == pytest.approx(0.5)
 
 
-def test_channel_b_dual_rollout_chunking_is_policy_symmetric(monkeypatch) -> None:
-    t = Stage2TwoChannelTrainer.__new__(Stage2TwoChannelTrainer)
+def test_rollout_correction_dual_rollout_chunking_is_policy_symmetric(monkeypatch) -> None:
+    t = Stage2RolloutCorrectionTrainer.__new__(Stage2RolloutCorrectionTrainer)
     cfg = {
         "maskiou_gate": 0.3,
         "candidate_top_k": 5,
@@ -4271,7 +4201,7 @@ def test_channel_b_dual_rollout_chunking_is_policy_symmetric(monkeypatch) -> Non
         "repetition_penalty": 1.0,
     }
     t._cfg = lambda key, default=None: cfg.get(key, default)
-    t._ab_channel_b_get = lambda key, default=None: default
+    t._rollout_correction_cfg_get = lambda key, default=None: default
 
     class _CoordLiteralTokenizer(_DummyTokenizer):
         def encode(self, text: str, add_special_tokens: bool = False):
@@ -4362,11 +4292,11 @@ def test_channel_b_dual_rollout_chunking_is_policy_symmetric(monkeypatch) -> Non
     )
     with monkeypatch.context() as mp:
         mp.setattr(
-            "src.trainers.stage2_two_channel.parse_rollout_for_matching",
+            "src.trainers.rollout_correction.parse_rollout_for_matching",
             lambda **kwargs: fake_parse,
         )
         mp.setattr(
-            "src.trainers.stage2_two_channel._extract_gt_bboxonly",
+            "src.trainers.rollout_correction._extract_gt_bboxonly",
             lambda _sample: [
                 GTObject(
                     index=0,
@@ -4377,7 +4307,7 @@ def test_channel_b_dual_rollout_chunking_is_policy_symmetric(monkeypatch) -> Non
             ],
         )
         mp.setattr(
-            "src.trainers.stage2_two_channel._assign_stage2_channel_b_objects",
+            "src.trainers.rollout_correction._assign_stage2_rollout_correction_objects",
             lambda **kwargs: types.SimpleNamespace(
                 matched_pairs=[],
                 fn_gt_indices=[],
@@ -4388,7 +4318,7 @@ def test_channel_b_dual_rollout_chunking_is_policy_symmetric(monkeypatch) -> Non
             ),
         )
         mp.setattr(
-            "src.trainers.stage2_two_channel._bbox_groups_from_token_ids",
+            "src.trainers.rollout_correction._bbox_groups_from_token_ids",
             lambda **kwargs: [[0, 1, 2, 3] for _ in kwargs["gt_objs"]],
         )
 
@@ -4401,7 +4331,7 @@ def test_channel_b_dual_rollout_chunking_is_policy_symmetric(monkeypatch) -> Non
             }
             for _ in range(3)
         ]
-        _segments, _batch_metrics = t._prepare_batch_inputs_b(
+        _segments, _batch_metrics = t._prepare_rollout_correction_inputs(
             samples,
             _segments_only=True,
         )
@@ -4414,10 +4344,10 @@ def test_channel_b_dual_rollout_chunking_is_policy_symmetric(monkeypatch) -> Non
     ]
 
 
-def test_channel_b_enabled_pseudo_positive_uses_k4_rollouts_and_keeps_zero_object_explorer(
+def test_rollout_correction_enabled_pseudo_positive_uses_k4_rollouts_and_keeps_zero_object_explorer(
     monkeypatch,
 ) -> None:
-    t = Stage2TwoChannelTrainer.__new__(Stage2TwoChannelTrainer)
+    t = Stage2RolloutCorrectionTrainer.__new__(Stage2RolloutCorrectionTrainer)
     cfg = {
         "maskiou_gate": 0.3,
         "candidate_top_k": 5,
@@ -4437,7 +4367,7 @@ def test_channel_b_enabled_pseudo_positive_uses_k4_rollouts_and_keeps_zero_objec
         "triage_posterior.explorer_top_k": -1,
     }
     t._cfg = lambda key, default=None: cfg.get(key, default)
-    t._ab_channel_b_get = lambda key, default=None: ab_cfg.get(key, default)
+    t._rollout_correction_cfg_get = lambda key, default=None: ab_cfg.get(key, default)
 
     class _CoordLiteralTokenizer(_DummyTokenizer):
         def encode(self, text: str, add_special_tokens: bool = False):
@@ -4539,19 +4469,19 @@ def test_channel_b_enabled_pseudo_positive_uses_k4_rollouts_and_keeps_zero_objec
 
     with monkeypatch.context() as mp:
         mp.setattr(
-            "src.trainers.stage2_two_channel.parse_rollout_for_matching",
+            "src.trainers.rollout_correction.parse_rollout_for_matching",
             _parse_with_optional_empty_view,
         )
         mp.setattr(
-            "src.trainers.stage2_two_channel.points_from_coord_tokens",
+            "src.trainers.rollout_correction.points_from_coord_tokens",
             lambda **kwargs: [10, 10, 20, 20],
         )
         mp.setattr(
-            "src.trainers.stage2_two_channel._extract_gt_bboxonly",
+            "src.trainers.rollout_correction._extract_gt_bboxonly",
             lambda _sample: [],
         )
         mp.setattr(
-            "src.trainers.stage2_two_channel._assign_stage2_channel_b_objects",
+            "src.trainers.rollout_correction._assign_stage2_rollout_correction_objects",
             lambda **kwargs: types.SimpleNamespace(
                 matched_pairs=[],
                 fn_gt_indices=[],
@@ -4563,7 +4493,7 @@ def test_channel_b_enabled_pseudo_positive_uses_k4_rollouts_and_keeps_zero_objec
         )
 
         sample = {"messages": [], "assistant_payload": {"objects": []}}
-        segments, batch_metrics = t._prepare_batch_inputs_b(
+        segments, batch_metrics = t._prepare_rollout_correction_inputs(
             [sample],
             _segments_only=True,
         )
@@ -4599,10 +4529,10 @@ def test_channel_b_enabled_pseudo_positive_uses_k4_rollouts_and_keeps_zero_objec
     )
 
 
-def test_channel_b_enabled_pseudo_positive_aborts_on_invalid_explorer(
+def test_rollout_correction_enabled_pseudo_positive_aborts_on_invalid_explorer(
     monkeypatch,
 ) -> None:
-    t = Stage2TwoChannelTrainer.__new__(Stage2TwoChannelTrainer)
+    t = Stage2RolloutCorrectionTrainer.__new__(Stage2RolloutCorrectionTrainer)
     cfg = {
         "maskiou_gate": 0.3,
         "candidate_top_k": 5,
@@ -4623,7 +4553,7 @@ def test_channel_b_enabled_pseudo_positive_aborts_on_invalid_explorer(
         "invalid_rollout_policy": "abort",
     }
     t._cfg = lambda key, default=None: cfg.get(key, default)
-    t._ab_channel_b_get = lambda key, default=None: ab_cfg.get(key, default)
+    t._rollout_correction_cfg_get = lambda key, default=None: ab_cfg.get(key, default)
 
     tok = _CoordLiteralTokenizer()
 
@@ -4700,19 +4630,19 @@ def test_channel_b_enabled_pseudo_positive_aborts_on_invalid_explorer(
 
     with monkeypatch.context() as mp:
         mp.setattr(
-            "src.trainers.stage2_two_channel.parse_rollout_for_matching",
+            "src.trainers.rollout_correction.parse_rollout_for_matching",
             _parse_with_invalid_middle_explorer,
         )
         mp.setattr(
-            "src.trainers.stage2_two_channel.points_from_coord_tokens",
+            "src.trainers.rollout_correction.points_from_coord_tokens",
             lambda **kwargs: [10, 10, 20, 20],
         )
         mp.setattr(
-            "src.trainers.stage2_two_channel._extract_gt_bboxonly",
+            "src.trainers.rollout_correction._extract_gt_bboxonly",
             lambda _sample: [],
         )
         mp.setattr(
-            "src.trainers.stage2_two_channel._assign_stage2_channel_b_objects",
+            "src.trainers.rollout_correction._assign_stage2_rollout_correction_objects",
             lambda **kwargs: types.SimpleNamespace(
                 matched_pairs=[],
                 fn_gt_indices=[],
@@ -4736,10 +4666,10 @@ def test_channel_b_enabled_pseudo_positive_aborts_on_invalid_explorer(
                 r"sample_id=sample-0.*image_id=image-0.*manual_analysis_required=true"
             ),
         ):
-            t._prepare_batch_inputs_b([sample], _segments_only=True)
+            t._prepare_rollout_correction_inputs([sample], _segments_only=True)
 
 
-def test_channel_b_triage_enabled_k2_remains_no_promotion_control() -> None:
+def test_rollout_correction_triage_enabled_k2_remains_no_promotion_control() -> None:
     anchor_objects = [
         GTObject(
             index=0,
@@ -4765,7 +4695,7 @@ def test_channel_b_triage_enabled_k2_remains_no_promotion_control() -> None:
             duplicate_iou_threshold=0.9,
         )
     )
-    triage = _build_channel_b_triage(
+    triage = _build_rollout_correction_triage(
         accepted_objects_clean=accepted_clean,
         suppressed_duplicate_objects_by_boundary=suppressed_duplicate_objects_by_boundary,
         explorer_objects_raw_by_view=explorer_objects_by_view,
@@ -4785,7 +4715,7 @@ def test_channel_b_triage_enabled_k2_remains_no_promotion_control() -> None:
     assert triage.dead_anchor_indices == []
 
 
-def test_channel_b_triage_pseudo_positive_requires_expected_peer_consensus() -> None:
+def test_rollout_correction_triage_pseudo_positive_requires_expected_peer_consensus() -> None:
     anchor_objects = [
         GTObject(
             index=0,
@@ -4812,7 +4742,7 @@ def test_channel_b_triage_pseudo_positive_requires_expected_peer_consensus() -> 
             duplicate_iou_threshold=0.9,
         )
     )
-    triage = _build_channel_b_triage(
+    triage = _build_rollout_correction_triage(
         accepted_objects_clean=accepted_clean,
         suppressed_duplicate_objects_by_boundary=suppressed_duplicate_objects_by_boundary,
         explorer_objects_raw_by_view=explorer_objects_by_view,
@@ -4833,7 +4763,7 @@ def test_channel_b_triage_pseudo_positive_requires_expected_peer_consensus() -> 
     assert triage.dead_anchor_indices == []
 
 
-def test_channel_b_triage_clusters_pseudo_positive_candidates_by_support_rate() -> None:
+def test_rollout_correction_triage_clusters_pseudo_positive_candidates_by_support_rate() -> None:
     anchor_objects = [
         GTObject(
             index=0,
@@ -4899,7 +4829,7 @@ def test_channel_b_triage_clusters_pseudo_positive_candidates_by_support_rate() 
             duplicate_iou_threshold=0.9,
         )
     )
-    triage = _build_channel_b_triage(
+    triage = _build_rollout_correction_triage(
         accepted_objects_clean=accepted_clean,
         suppressed_duplicate_objects_by_boundary=suppressed_duplicate_objects_by_boundary,
         explorer_objects_raw_by_view=explorer_objects_by_view,
@@ -4920,7 +4850,7 @@ def test_channel_b_triage_clusters_pseudo_positive_candidates_by_support_rate() 
     assert triage.dead_anchor_indices == []
 
 
-def test_channel_b_triage_lvis_policy_forces_verified_dead_and_only_shields_ambiguous() -> (
+def test_rollout_correction_triage_lvis_policy_forces_verified_dead_and_only_shields_ambiguous() -> (
     None
 ):
     anchor_objects = [
@@ -4957,7 +4887,7 @@ def test_channel_b_triage_lvis_policy_forces_verified_dead_and_only_shields_ambi
             duplicate_iou_threshold=0.9,
         )
     )
-    triage = _build_channel_b_triage(
+    triage = _build_rollout_correction_triage(
         accepted_objects_clean=accepted_clean,
         suppressed_duplicate_objects_by_boundary=suppressed_duplicate_objects_by_boundary,
         explorer_objects_raw_by_view=explorer_objects_by_view,
@@ -4983,7 +4913,7 @@ def test_channel_b_triage_lvis_policy_forces_verified_dead_and_only_shields_ambi
     assert triage.dead_anchor_indices == [0, 3]
 
 
-def _build_fp_context_channel_b_targets(
+def _build_fp_context_correction_targets(
     *,
     support_count: int,
     fp_policy_mode: str,
@@ -5006,7 +4936,7 @@ def _build_fp_context_channel_b_targets(
             duplicate_iou_threshold=0.9,
         )
     )
-    triage = _build_channel_b_triage(
+    triage = _build_rollout_correction_triage(
         accepted_objects_clean=accepted_clean,
         suppressed_duplicate_objects_by_boundary=suppressed_duplicate_objects_by_boundary,
         explorer_objects_raw_by_view=explorer_objects_by_view,
@@ -5017,7 +4947,7 @@ def _build_fp_context_channel_b_targets(
         pseudo_positive_enabled=False,
     )
 
-    return _build_channel_b_supervision_targets(
+    return _build_rollout_correction_supervision_targets(
         tokenizer=tok,
         prompt_ids=[],
         coord_id_set=set(range(1000)),
@@ -5041,8 +4971,8 @@ def _build_fp_context_channel_b_targets(
     )
 
 
-def test_channel_b_zero_loss_fp_context_records_neutral_span_and_shields_trie_targets() -> None:
-    targets = _build_fp_context_channel_b_targets(
+def test_rollout_correction_zero_loss_fp_context_records_neutral_span_and_shields_trie_targets() -> None:
+    targets = _build_fp_context_correction_targets(
         support_count=1,
         fp_policy_mode="zero_loss_context",
     )
@@ -5082,9 +5012,9 @@ def test_channel_b_zero_loss_fp_context_records_neutral_span_and_shields_trie_ta
     assert meta["stage2_trie_candidate_summary"]["weak_positive_fp_count"] == 0
 
 
-def test_channel_b_weak_positive_fp_context_records_json_safe_span_and_fallback_flag() -> None:
+def test_rollout_correction_weak_positive_fp_context_records_json_safe_span_and_fallback_flag() -> None:
     tok = _CoordLiteralTokenizer()
-    targets = _build_fp_context_channel_b_targets(
+    targets = _build_fp_context_correction_targets(
         support_count=1,
         fp_policy_mode="weak_positive_context",
         tokenizer=tok,
@@ -5153,8 +5083,8 @@ def test_channel_b_weak_positive_fp_context_records_json_safe_span_and_fallback_
     json.dumps(meta["stage2_trie_span_scores"], allow_nan=False)
 
 
-def test_channel_b_weak_positive_fp_context_with_insufficient_support_stays_neutral() -> None:
-    targets = _build_fp_context_channel_b_targets(
+def test_rollout_correction_weak_positive_fp_context_with_insufficient_support_stays_neutral() -> None:
+    targets = _build_fp_context_correction_targets(
         support_count=1,
         fp_policy_mode="weak_positive_context",
         fp_policy_min_support_count=2,
@@ -5167,51 +5097,51 @@ def test_channel_b_weak_positive_fp_context_with_insufficient_support_stays_neut
     assert targets.stage2_trie_weak_fp_span_level_fallback is False
 
 
-def test_channel_b_weak_positive_fp_context_rejects_non_compact_v0() -> None:
+def test_rollout_correction_weak_positive_fp_context_rejects_non_compact_v0() -> None:
     with pytest.raises(
         ValueError,
         match="weak_positive_context.*compact_full.*v0",
     ):
-        _build_fp_context_channel_b_targets(
+        _build_fp_context_correction_targets(
             support_count=1,
             fp_policy_mode="weak_positive_context",
             rollout_template_family="coordjson",
         )
 
 
-def test_channel_b_weak_positive_fp_context_raises_when_marker_span_not_isolated() -> None:
+def test_rollout_correction_weak_positive_fp_context_raises_when_marker_span_not_isolated() -> None:
     with pytest.raises(
         ValueError,
         match="object marker token span",
     ):
-        _build_fp_context_channel_b_targets(
+        _build_fp_context_correction_targets(
             support_count=1,
             fp_policy_mode="weak_positive_context",
             tokenizer=_CompactMarkerDescMergingTokenizer(),
         )
 
 
-def test_channel_b_weak_positive_fp_context_require_token_score_raises_until_supported() -> None:
+def test_rollout_correction_weak_positive_fp_context_require_token_score_raises_until_supported() -> None:
     with pytest.raises(
         ValueError,
         match="token-score-gated weak-positive false positives.*not implemented",
     ):
-        _build_fp_context_channel_b_targets(
+        _build_fp_context_correction_targets(
             support_count=1,
             fp_policy_mode="weak_positive_context",
             fp_policy_require_token_score=True,
         )
 
 
-def test_channel_b_unknown_fp_context_policy_raises_helper_style_error() -> None:
+def test_rollout_correction_unknown_fp_context_policy_raises_helper_style_error() -> None:
     with pytest.raises(ValueError, match="zero_loss_context|weak_positive_context"):
-        _build_fp_context_channel_b_targets(
+        _build_fp_context_correction_targets(
             support_count=1,
             fp_policy_mode="typo_policy",
         )
 
 
-def test_channel_b_supervision_targets_make_pseudo_positive_coord_only_and_anchor_owned() -> (
+def test_rollout_correction_supervision_targets_make_pseudo_positive_coord_only_and_anchor_owned() -> (
     None
 ):
     class _CoordLiteralTokenizer(_DummyTokenizer):
@@ -5273,7 +5203,7 @@ def test_channel_b_supervision_targets_make_pseudo_positive_coord_only_and_ancho
             duplicate_iou_threshold=0.9,
         )
     )
-    triage = _build_channel_b_triage(
+    triage = _build_rollout_correction_triage(
         accepted_objects_clean=accepted_clean,
         suppressed_duplicate_objects_by_boundary=suppressed_duplicate_objects_by_boundary,
         explorer_objects_raw_by_view=explorer_objects_by_view,
@@ -5284,7 +5214,7 @@ def test_channel_b_supervision_targets_make_pseudo_positive_coord_only_and_ancho
         pseudo_positive_enabled=True,
     )
 
-    targets = _build_channel_b_supervision_targets(
+    targets = _build_rollout_correction_supervision_targets(
         tokenizer=tok,
         prompt_ids=[],
         coord_id_set=set(range(1000)),
@@ -5310,7 +5240,7 @@ def test_channel_b_supervision_targets_make_pseudo_positive_coord_only_and_ancho
     assert targets.prefix_bins == [10, 20, 30, 40]
 
 
-def test_channel_b_supervision_targets_allow_partial_pseudo_positive_coord_for_shielded_anchor() -> (
+def test_rollout_correction_supervision_targets_allow_partial_pseudo_positive_coord_for_shielded_anchor() -> (
     None
 ):
     class _CoordLiteralTokenizer(_DummyTokenizer):
@@ -5358,7 +5288,7 @@ def test_channel_b_supervision_targets_allow_partial_pseudo_positive_coord_for_s
             duplicate_iou_threshold=0.9,
         )
     )
-    triage = _build_channel_b_triage(
+    triage = _build_rollout_correction_triage(
         accepted_objects_clean=accepted_clean,
         suppressed_duplicate_objects_by_boundary=suppressed_duplicate_objects_by_boundary,
         explorer_objects_raw_by_view=explorer_objects_by_view,
@@ -5369,7 +5299,7 @@ def test_channel_b_supervision_targets_allow_partial_pseudo_positive_coord_for_s
         pseudo_positive_enabled=True,
     )
 
-    targets = _build_channel_b_supervision_targets(
+    targets = _build_rollout_correction_supervision_targets(
         tokenizer=tok,
         prompt_ids=[],
         coord_id_set=set(range(1000)),
@@ -5396,7 +5326,7 @@ def test_channel_b_supervision_targets_allow_partial_pseudo_positive_coord_for_s
     assert targets.prefix_bins == [10, 20, 30, 40]
 
 
-def test_channel_b_supervision_targets_skip_duplicate_burst_unlikelihood_for_non_duplicate_dead_anchor() -> (
+def test_rollout_correction_supervision_targets_skip_duplicate_burst_unlikelihood_for_non_duplicate_dead_anchor() -> (
     None
 ):
     class _CoordLiteralTokenizer(_DummyTokenizer):
@@ -5450,7 +5380,7 @@ def test_channel_b_supervision_targets_skip_duplicate_burst_unlikelihood_for_non
             duplicate_iou_threshold=0.9,
         )
     )
-    triage = _build_channel_b_triage(
+    triage = _build_rollout_correction_triage(
         accepted_objects_clean=accepted_clean,
         suppressed_duplicate_objects_by_boundary=suppressed_duplicate_objects_by_boundary,
         explorer_objects_raw_by_view=explorer_objects_by_view,
@@ -5461,7 +5391,7 @@ def test_channel_b_supervision_targets_skip_duplicate_burst_unlikelihood_for_non
         pseudo_positive_enabled=True,
     )
 
-    targets = _build_channel_b_supervision_targets(
+    targets = _build_rollout_correction_supervision_targets(
         tokenizer=tok,
         prompt_ids=[],
         coord_id_set=set(range(1000)),
@@ -5483,7 +5413,7 @@ def test_channel_b_supervision_targets_skip_duplicate_burst_unlikelihood_for_non
     assert targets.duplicate_control_first_divergence_boundary_count == 0
 
 
-def test_channel_b_supervision_targets_keep_duplicate_control_diagnostics_when_duplicate_survivor_is_kept() -> (
+def test_rollout_correction_supervision_targets_keep_duplicate_control_diagnostics_when_duplicate_survivor_is_kept() -> (
     None
 ):
     class _CoordLiteralTokenizer(_DummyTokenizer):
@@ -5537,7 +5467,7 @@ def test_channel_b_supervision_targets_keep_duplicate_control_diagnostics_when_d
             duplicate_iou_threshold=0.9,
         )
     )
-    triage = _build_channel_b_triage(
+    triage = _build_rollout_correction_triage(
         accepted_objects_clean=accepted_clean,
         suppressed_duplicate_objects_by_boundary=suppressed_duplicate_objects_by_boundary,
         explorer_objects_raw_by_view=explorer_objects_by_view,
@@ -5548,7 +5478,7 @@ def test_channel_b_supervision_targets_keep_duplicate_control_diagnostics_when_d
         pseudo_positive_enabled=True,
     )
 
-    targets = _build_channel_b_supervision_targets(
+    targets = _build_rollout_correction_supervision_targets(
         tokenizer=tok,
         prompt_ids=[],
         coord_id_set=set(range(1000)),
@@ -5570,7 +5500,7 @@ def test_channel_b_supervision_targets_keep_duplicate_control_diagnostics_when_d
     assert targets.duplicate_control_first_divergence_boundary_count == 1
 
 
-def test_channel_b_supervision_targets_keep_duplicate_control_diagnostics_when_all_cluster_members_die() -> (
+def test_rollout_correction_supervision_targets_keep_duplicate_control_diagnostics_when_all_cluster_members_die() -> (
     None
 ):
     class _CoordLiteralTokenizer(_DummyTokenizer):
@@ -5612,7 +5542,7 @@ def test_channel_b_supervision_targets_keep_duplicate_control_diagnostics_when_a
             duplicate_iou_threshold=0.9,
         )
     )
-    triage = _build_channel_b_triage(
+    triage = _build_rollout_correction_triage(
         accepted_objects_clean=accepted_clean,
         suppressed_duplicate_objects_by_boundary=suppressed_duplicate_objects_by_boundary,
         explorer_objects_raw_by_view=[[], [], []],
@@ -5623,7 +5553,7 @@ def test_channel_b_supervision_targets_keep_duplicate_control_diagnostics_when_a
         pseudo_positive_enabled=True,
     )
 
-    targets = _build_channel_b_supervision_targets(
+    targets = _build_rollout_correction_supervision_targets(
         tokenizer=tok,
         prompt_ids=[],
         coord_id_set=set(range(1000)),
@@ -5647,7 +5577,7 @@ def test_channel_b_supervision_targets_keep_duplicate_control_diagnostics_when_a
     assert targets.duplicate_control_first_divergence_boundary_count == 1
 
 
-def test_channel_b_supervision_targets_sorted_insertion_reorders_final_sequence() -> (
+def test_rollout_correction_supervision_targets_sorted_insertion_reorders_final_sequence() -> (
     None
 ):
     class _CoordLiteralTokenizer(_DummyTokenizer):
@@ -5681,7 +5611,7 @@ def test_channel_b_supervision_targets_sorted_insertion_reorders_final_sequence(
         parsed_bbox_objects_raw=anchor_objects,
         duplicate_iou_threshold=0.9,
     )
-    triage = _build_channel_b_triage(
+    triage = _build_rollout_correction_triage(
         accepted_objects_clean=accepted_clean,
         duplicate_bursts_by_boundary=duplicate_bursts_by_boundary,
         explorer_accepted_objects_clean_by_view=[[], [], []],
@@ -5706,7 +5636,7 @@ def test_channel_b_supervision_targets_sorted_insertion_reorders_final_sequence(
         ),
     ]
 
-    tail_targets = _build_channel_b_supervision_targets(
+    tail_targets = _build_rollout_correction_supervision_targets(
         tokenizer=tok,
         prompt_ids=[],
         coord_id_set=set(range(1000)),
@@ -5722,7 +5652,7 @@ def test_channel_b_supervision_targets_sorted_insertion_reorders_final_sequence(
         matched_prefix_structure_positions_fn=_matched_prefix_structure_positions,
         serialize_append_fragment_fn=_serialize_append_fragment,
     )
-    sorted_targets = _build_channel_b_supervision_targets(
+    sorted_targets = _build_rollout_correction_supervision_targets(
         tokenizer=tok,
         prompt_ids=[],
         coord_id_set=set(range(1000)),
@@ -5756,7 +5686,7 @@ def test_channel_b_supervision_targets_sorted_insertion_reorders_final_sequence(
     assert sorted_targets.tail_desc_pos == []
 
 
-def test_channel_b_compact_full_sorted_insertion_marks_fn_prefix_desc_positions() -> (
+def test_rollout_correction_compact_full_sorted_insertion_marks_fn_prefix_desc_positions() -> (
     None
 ):
     tok = _CoordLiteralTokenizer()
@@ -5772,7 +5702,7 @@ def test_channel_b_compact_full_sorted_insertion_marks_fn_prefix_desc_positions(
         parsed_bbox_objects_raw=anchor_objects,
         duplicate_iou_threshold=0.9,
     )
-    triage = _build_channel_b_triage(
+    triage = _build_rollout_correction_triage(
         accepted_objects_clean=accepted_clean,
         duplicate_bursts_by_boundary=duplicate_bursts_by_boundary,
         explorer_accepted_objects_clean_by_view=[[], [], []],
@@ -5797,7 +5727,7 @@ def test_channel_b_compact_full_sorted_insertion_marks_fn_prefix_desc_positions(
         ),
     ]
 
-    sorted_targets = _build_channel_b_supervision_targets(
+    sorted_targets = _build_rollout_correction_supervision_targets(
         tokenizer=tok,
         prompt_ids=[],
         coord_id_set=set(range(1000)),
@@ -5837,7 +5767,7 @@ def test_channel_b_compact_full_sorted_insertion_marks_fn_prefix_desc_positions(
     )
 
 
-def test_channel_b_compact_full_fn_slot_shuffle_injects_fn_objects_deterministically() -> (
+def test_rollout_correction_compact_full_fn_slot_shuffle_injects_fn_objects_deterministically() -> (
     None
 ):
     tok = _CoordLiteralTokenizer()
@@ -5859,7 +5789,7 @@ def test_channel_b_compact_full_fn_slot_shuffle_injects_fn_objects_deterministic
         parsed_bbox_objects_raw=anchor_objects,
         duplicate_iou_threshold=0.9,
     )
-    triage = _build_channel_b_triage(
+    triage = _build_rollout_correction_triage(
         accepted_objects_clean=accepted_clean,
         duplicate_bursts_by_boundary=duplicate_bursts_by_boundary,
         explorer_accepted_objects_clean_by_view=[[], [], []],
@@ -5897,7 +5827,7 @@ def test_channel_b_compact_full_fn_slot_shuffle_injects_fn_objects_deterministic
     ]
 
     def build(seed: int):
-        return _build_channel_b_supervision_targets(
+        return _build_rollout_correction_supervision_targets(
             tokenizer=tok,
             prompt_ids=[],
             coord_id_set=set(range(1000)),
@@ -5939,7 +5869,7 @@ def test_channel_b_compact_full_fn_slot_shuffle_injects_fn_objects_deterministic
 
 
 @pytest.mark.parametrize("insertion_order", ["sorted", "fn_slot_shuffle"])
-def test_channel_b_reordered_prefix_fp_spans_remap_to_unmatched_kept_anchor(
+def test_rollout_correction_reordered_prefix_fp_spans_remap_to_unmatched_kept_anchor(
     insertion_order: str,
 ) -> None:
     tok = _CoordLiteralTokenizer()
@@ -5961,7 +5891,7 @@ def test_channel_b_reordered_prefix_fp_spans_remap_to_unmatched_kept_anchor(
         parsed_bbox_objects_raw=anchor_objects,
         duplicate_iou_threshold=0.9,
     )
-    triage = _build_channel_b_triage(
+    triage = _build_rollout_correction_triage(
         accepted_objects_clean=accepted_clean,
         duplicate_bursts_by_boundary=duplicate_bursts_by_boundary,
         explorer_accepted_objects_clean_by_view=[[anchor_objects[0]]],
@@ -5986,7 +5916,7 @@ def test_channel_b_reordered_prefix_fp_spans_remap_to_unmatched_kept_anchor(
         ),
     ]
 
-    targets = _build_channel_b_supervision_targets(
+    targets = _build_rollout_correction_supervision_targets(
         tokenizer=tok,
         prompt_ids=[],
         coord_id_set=set(range(1000)),
@@ -6036,10 +5966,10 @@ def test_channel_b_reordered_prefix_fp_spans_remap_to_unmatched_kept_anchor(
     assert weak_span_text == OBJECT_REF_START_TOKEN
 
 
-def test_channel_b_triage_posterior_nested_config_reaches_live_accessor_and_vllm_offsets(
+def test_rollout_correction_triage_posterior_nested_config_reaches_live_accessor_and_vllm_offsets(
     monkeypatch,
 ) -> None:
-    t = Stage2TwoChannelTrainer.__new__(Stage2TwoChannelTrainer)
+    t = Stage2RolloutCorrectionTrainer.__new__(Stage2RolloutCorrectionTrainer)
     cfg = {
         "maskiou_gate": 0.3,
         "candidate_top_k": 5,
@@ -6053,8 +5983,8 @@ def test_channel_b_triage_posterior_nested_config_reaches_live_accessor_and_vllm
     }
     t._cfg = lambda key, default=None: cfg.get(key, default)
 
-    t.stage2_ab_cfg = {
-        "channel_b": {
+    t.stage2_rollout_correction_cfg = {
+        "correction": {
             "duplicate_control": {
                 "iou_threshold": 0.90,
                 "center_radius_scale": 0.8,
@@ -6073,17 +6003,17 @@ def test_channel_b_triage_posterior_nested_config_reaches_live_accessor_and_vllm
             },
         }
     }
-    t.stage2_ab_cfg["channel_b"]["triage_posterior"]["explorer_temperature"] = 0.55
-    t.stage2_ab_cfg["channel_b"]["triage_posterior"]["rollout_temperatures"] = [
+    t.stage2_rollout_correction_cfg["correction"]["triage_posterior"]["explorer_temperature"] = 0.55
+    t.stage2_rollout_correction_cfg["correction"]["triage_posterior"]["rollout_temperatures"] = [
         0.0,
         0.55,
     ]
-    t.stage2_ab_cfg["channel_b"]["triage_posterior"]["explorer_top_p"] = 0.91
-    t.stage2_ab_cfg["channel_b"]["triage_posterior"]["explorer_top_k"] = 7
-    t.stage2_ab_cfg["channel_b"]["triage_posterior"][
+    t.stage2_rollout_correction_cfg["correction"]["triage_posterior"]["explorer_top_p"] = 0.91
+    t.stage2_rollout_correction_cfg["correction"]["triage_posterior"]["explorer_top_k"] = 7
+    t.stage2_rollout_correction_cfg["correction"]["triage_posterior"][
         "unlabeled_consistent_iou_threshold"
     ] = 0.82
-    t.stage2_ab_cfg["channel_b"]["triage_posterior"][
+    t.stage2_rollout_correction_cfg["correction"]["triage_posterior"][
         "recovered_ground_truth_weight_multiplier"
     ] = 3.0
 
@@ -6177,11 +6107,11 @@ def test_channel_b_triage_posterior_nested_config_reaches_live_accessor_and_vllm
     )
     with monkeypatch.context() as mp:
         mp.setattr(
-            "src.trainers.stage2_two_channel.parse_rollout_for_matching",
+            "src.trainers.rollout_correction.parse_rollout_for_matching",
             lambda **kwargs: fake_parse,
         )
         mp.setattr(
-            "src.trainers.stage2_two_channel._extract_gt_bboxonly",
+            "src.trainers.rollout_correction._extract_gt_bboxonly",
             lambda _sample: [
                 GTObject(
                     index=0,
@@ -6192,7 +6122,7 @@ def test_channel_b_triage_posterior_nested_config_reaches_live_accessor_and_vllm
             ],
         )
         mp.setattr(
-            "src.trainers.stage2_two_channel._assign_stage2_channel_b_objects",
+            "src.trainers.rollout_correction._assign_stage2_rollout_correction_objects",
             lambda **kwargs: types.SimpleNamespace(
                 matched_pairs=[],
                 fn_gt_indices=[],
@@ -6203,7 +6133,7 @@ def test_channel_b_triage_posterior_nested_config_reaches_live_accessor_and_vllm
             ),
         )
         mp.setattr(
-            "src.trainers.stage2_two_channel._bbox_groups_from_token_ids",
+            "src.trainers.rollout_correction._bbox_groups_from_token_ids",
             lambda **kwargs: [[0, 1, 2, 3] for _ in kwargs["gt_objs"]],
         )
 
@@ -6216,15 +6146,15 @@ def test_channel_b_triage_posterior_nested_config_reaches_live_accessor_and_vllm
             }
             for _ in range(5)
         ]
-        _segments, _batch_metrics = t._prepare_batch_inputs_b(
+        _segments, _batch_metrics = t._prepare_rollout_correction_inputs(
             samples,
             _segments_only=True,
         )
 
-    assert t._ab_channel_b_get(
+    assert t._rollout_correction_cfg_get(
         "triage_posterior.explorer_temperature", None
     ) == pytest.approx(0.55)
-    assert t._ab_channel_b_get(
+    assert t._rollout_correction_cfg_get(
         "triage_posterior.recovered_ground_truth_weight_multiplier", None
     ) == pytest.approx(3.0)
     assert rollout_calls == [
@@ -6237,10 +6167,10 @@ def test_channel_b_triage_posterior_nested_config_reaches_live_accessor_and_vllm
     ]
 
 
-def test_channel_b_anchor_only_gt_hit_projects_anchor_gt_backed(
+def test_rollout_correction_anchor_only_gt_hit_projects_anchor_gt_backed(
     monkeypatch,
 ) -> None:
-    t = Stage2TwoChannelTrainer.__new__(Stage2TwoChannelTrainer)
+    t = Stage2RolloutCorrectionTrainer.__new__(Stage2RolloutCorrectionTrainer)
     cfg = {
         "maskiou_gate": 0.3,
         "candidate_top_k": 5,
@@ -6253,7 +6183,7 @@ def test_channel_b_anchor_only_gt_hit_projects_anchor_gt_backed(
         "repetition_penalty": 1.0,
     }
     t._cfg = lambda key, default=None: cfg.get(key, default)
-    t._ab_channel_b_get = lambda key, default=None: {
+    t._rollout_correction_cfg_get = lambda key, default=None: {
         "triage_posterior.num_rollouts": 1,
         "triage_posterior.explorer_temperature": 0.7,
         "triage_posterior.unlabeled_consistent_iou_threshold": 0.8,
@@ -6349,11 +6279,11 @@ def test_channel_b_anchor_only_gt_hit_projects_anchor_gt_backed(
         invalid_rollout=False,
     )
     monkeypatch.setattr(
-        "src.trainers.stage2_two_channel.parse_rollout_for_matching",
+        "src.trainers.rollout_correction.parse_rollout_for_matching",
         lambda **kwargs: shared_parse,
     )
     monkeypatch.setattr(
-        "src.trainers.stage2_two_channel.points_from_coord_tokens",
+        "src.trainers.rollout_correction.points_from_coord_tokens",
         lambda **kwargs: [10, 10, 20, 20],
     )
 
@@ -6381,7 +6311,7 @@ def test_channel_b_anchor_only_gt_hit_projects_anchor_gt_backed(
         )
 
     monkeypatch.setattr(
-        "src.trainers.stage2_two_channel._assign_stage2_channel_b_objects",
+        "src.trainers.rollout_correction._assign_stage2_rollout_correction_objects",
         _fake_match,
     )
 
@@ -6392,7 +6322,7 @@ def test_channel_b_anchor_only_gt_hit_projects_anchor_gt_backed(
         },
     }
 
-    segments, batch_metrics = t._prepare_batch_inputs_b([sample], _segments_only=True)
+    segments, batch_metrics = t._prepare_rollout_correction_inputs([sample], _segments_only=True)
     meta = segments[0][1]
 
     assert meta["anchor_gt_backed_indices"] == [0]
@@ -6403,8 +6333,8 @@ def test_channel_b_anchor_only_gt_hit_projects_anchor_gt_backed(
     assert batch_metrics["train/triage/gt_backed_count"] == pytest.approx(1.0)
 
 
-def test_channel_b_shielded_anchor_stays_neutral_context(monkeypatch) -> None:
-    t = Stage2TwoChannelTrainer.__new__(Stage2TwoChannelTrainer)
+def test_rollout_correction_shielded_anchor_stays_neutral_context(monkeypatch) -> None:
+    t = Stage2RolloutCorrectionTrainer.__new__(Stage2RolloutCorrectionTrainer)
     cfg = {
         "maskiou_gate": 0.3,
         "candidate_top_k": 5,
@@ -6417,7 +6347,7 @@ def test_channel_b_shielded_anchor_stays_neutral_context(monkeypatch) -> None:
         "repetition_penalty": 1.0,
     }
     t._cfg = lambda key, default=None: cfg.get(key, default)
-    t._ab_channel_b_get = lambda key, default=None: {
+    t._rollout_correction_cfg_get = lambda key, default=None: {
         "triage_posterior.explorer_temperature": 0.7,
         "triage_posterior.rollout_temperatures": [0.0, 0.7],
         "triage_posterior.unlabeled_consistent_iou_threshold": 0.8,
@@ -6513,19 +6443,19 @@ def test_channel_b_shielded_anchor_stays_neutral_context(monkeypatch) -> None:
         invalid_rollout=False,
     )
     monkeypatch.setattr(
-        "src.trainers.stage2_two_channel.parse_rollout_for_matching",
+        "src.trainers.rollout_correction.parse_rollout_for_matching",
         lambda **kwargs: shared_parse,
     )
     monkeypatch.setattr(
-        "src.trainers.stage2_two_channel.points_from_coord_tokens",
+        "src.trainers.rollout_correction.points_from_coord_tokens",
         lambda **kwargs: [10, 10, 20, 20],
     )
     monkeypatch.setattr(
-        "src.trainers.stage2_two_channel._extract_gt_bboxonly",
+        "src.trainers.rollout_correction._extract_gt_bboxonly",
         lambda _sample: [],
     )
     monkeypatch.setattr(
-        "src.trainers.stage2_two_channel._assign_stage2_channel_b_objects",
+        "src.trainers.rollout_correction._assign_stage2_rollout_correction_objects",
         lambda **kwargs: types.SimpleNamespace(
             matched_pairs=[],
             fn_gt_indices=[],
@@ -6537,7 +6467,7 @@ def test_channel_b_shielded_anchor_stays_neutral_context(monkeypatch) -> None:
     )
 
     sample = {"messages": [], "assistant_payload": {"objects": []}}
-    segments, batch_metrics = t._prepare_batch_inputs_b([sample], _segments_only=True)
+    segments, batch_metrics = t._prepare_rollout_correction_inputs([sample], _segments_only=True)
     meta = segments[0][1]
 
     assert meta["shielded_anchor_indices"] == [0]
@@ -6551,8 +6481,8 @@ def test_channel_b_shielded_anchor_stays_neutral_context(monkeypatch) -> None:
     )
 
 
-def test_channel_b_explorer_only_dead_emits_no_explore_branch(monkeypatch) -> None:
-    t = Stage2TwoChannelTrainer.__new__(Stage2TwoChannelTrainer)
+def test_rollout_correction_explorer_only_dead_emits_no_explore_branch(monkeypatch) -> None:
+    t = Stage2RolloutCorrectionTrainer.__new__(Stage2RolloutCorrectionTrainer)
     cfg = {
         "maskiou_gate": 0.3,
         "candidate_top_k": 5,
@@ -6565,7 +6495,7 @@ def test_channel_b_explorer_only_dead_emits_no_explore_branch(monkeypatch) -> No
         "repetition_penalty": 1.0,
     }
     t._cfg = lambda key, default=None: cfg.get(key, default)
-    t._ab_channel_b_get = lambda key, default=None: {
+    t._rollout_correction_cfg_get = lambda key, default=None: {
         "triage_posterior.explorer_temperature": 0.7,
         "triage_posterior.rollout_temperatures": [0.0, 0.7],
         "triage_posterior.unlabeled_consistent_iou_threshold": 0.8,
@@ -6673,7 +6603,7 @@ def test_channel_b_explorer_only_dead_emits_no_explore_branch(monkeypatch) -> No
         invalid_rollout=False,
     )
     monkeypatch.setattr(
-        "src.trainers.stage2_two_channel.parse_rollout_for_matching",
+        "src.trainers.rollout_correction.parse_rollout_for_matching",
         lambda **kwargs: (
             anchor_parse
             if int(kwargs["response_token_ids"][0]) == 101
@@ -6681,15 +6611,15 @@ def test_channel_b_explorer_only_dead_emits_no_explore_branch(monkeypatch) -> No
         ),
     )
     monkeypatch.setattr(
-        "src.trainers.stage2_two_channel.points_from_coord_tokens",
+        "src.trainers.rollout_correction.points_from_coord_tokens",
         lambda **kwargs: [10, 10, 20, 20],
     )
     monkeypatch.setattr(
-        "src.trainers.stage2_two_channel._extract_gt_bboxonly",
+        "src.trainers.rollout_correction._extract_gt_bboxonly",
         lambda _sample: [],
     )
     monkeypatch.setattr(
-        "src.trainers.stage2_two_channel._assign_stage2_channel_b_objects",
+        "src.trainers.rollout_correction._assign_stage2_rollout_correction_objects",
         lambda **kwargs: types.SimpleNamespace(
             matched_pairs=[],
             fn_gt_indices=[],
@@ -6701,7 +6631,7 @@ def test_channel_b_explorer_only_dead_emits_no_explore_branch(monkeypatch) -> No
     )
 
     sample = {"messages": [], "assistant_payload": {"objects": []}}
-    segments, batch_metrics = t._prepare_batch_inputs_b([sample], _segments_only=True)
+    segments, batch_metrics = t._prepare_rollout_correction_inputs([sample], _segments_only=True)
     meta = segments[0][1]
 
     assert meta["dead_explorer_indices_by_view"] == [[0]]
@@ -6714,10 +6644,10 @@ def test_channel_b_explorer_only_dead_emits_no_explore_branch(monkeypatch) -> No
     assert batch_metrics["train/triage/explorer_only_dead_count"] == pytest.approx(1.0)
 
 
-def test_channel_b_recovered_ground_truth_weight_multipliers_only_apply_to_recovered_tail_objects(
+def test_rollout_correction_recovered_ground_truth_weight_multipliers_only_apply_to_recovered_tail_objects(
     monkeypatch,
 ) -> None:
-    t = Stage2TwoChannelTrainer.__new__(Stage2TwoChannelTrainer)
+    t = Stage2RolloutCorrectionTrainer.__new__(Stage2RolloutCorrectionTrainer)
     cfg = {
         "maskiou_gate": 0.3,
         "candidate_top_k": 5,
@@ -6730,7 +6660,7 @@ def test_channel_b_recovered_ground_truth_weight_multipliers_only_apply_to_recov
         "repetition_penalty": 1.0,
     }
     t._cfg = lambda key, default=None: cfg.get(key, default)
-    t._ab_channel_b_get = lambda key, default=None: {
+    t._rollout_correction_cfg_get = lambda key, default=None: {
         "triage_posterior.explorer_temperature": 0.7,
         "triage_posterior.rollout_temperatures": [0.0, 0.7],
         "triage_posterior.recovered_ground_truth_weight_multiplier": 2.5,
@@ -6839,7 +6769,7 @@ def test_channel_b_recovered_ground_truth_weight_multipliers_only_apply_to_recov
         invalid_rollout=False,
     )
     monkeypatch.setattr(
-        "src.trainers.stage2_two_channel.parse_rollout_for_matching",
+        "src.trainers.rollout_correction.parse_rollout_for_matching",
         lambda **kwargs: (
             anchor_parse
             if int(kwargs["response_token_ids"][0]) == 101
@@ -6847,7 +6777,7 @@ def test_channel_b_recovered_ground_truth_weight_multipliers_only_apply_to_recov
         ),
     )
     monkeypatch.setattr(
-        "src.trainers.stage2_two_channel.points_from_coord_tokens",
+        "src.trainers.rollout_correction.points_from_coord_tokens",
         lambda **kwargs: [10, 10, 20, 20],
     )
 
@@ -6871,7 +6801,7 @@ def test_channel_b_recovered_ground_truth_weight_multipliers_only_apply_to_recov
         )
 
     monkeypatch.setattr(
-        "src.trainers.stage2_two_channel._assign_stage2_channel_b_objects",
+        "src.trainers.rollout_correction._assign_stage2_rollout_correction_objects",
         _fake_match,
     )
 
@@ -6885,7 +6815,7 @@ def test_channel_b_recovered_ground_truth_weight_multipliers_only_apply_to_recov
         },
     }
 
-    segments, _batch_metrics = t._prepare_batch_inputs_b([sample], _segments_only=True)
+    segments, _batch_metrics = t._prepare_rollout_correction_inputs([sample], _segments_only=True)
     meta = segments[0][1]
 
     assert meta["recovered_gt_indices"] == [0]
@@ -6900,14 +6830,13 @@ def test_channel_b_recovered_ground_truth_weight_multipliers_only_apply_to_recov
     }
 
 
-def test_channel_b_tail_desc_weights_scale_desc_ce() -> None:
-    t = Stage2TwoChannelTrainer.__new__(Stage2TwoChannelTrainer)
-    t.stage2_ab_cfg = {
-        "schedule": {"b_ratio": 1.0},
+def test_rollout_correction_tail_desc_weights_scale_desc_ce() -> None:
+    t = Stage2RolloutCorrectionTrainer.__new__(Stage2RolloutCorrectionTrainer)
+    t.stage2_rollout_correction_cfg = {
+        "correction": {},
         "desc_ce_weight": 1.0,
         "bbox_smoothl1_weight": 0.0,
         "bbox_ciou_weight": 0.0,
-        "channel_b": {},
     }
     t.stage2_pipeline_manifest = _make_stage2_pipeline_manifest(
         desc_ce_weight=1.0,
@@ -6936,7 +6865,7 @@ def test_channel_b_tail_desc_weights_scale_desc_ce() -> None:
     loss_default = t.compute_loss(
         model,
         {
-            "_stage2_ab_channel": "B",
+            "_stage2_rollout_correction_phase": "rollout_correction",
             "_rollout_matching_meta": [dict(meta_base)],
             "input_ids": input_ids,
         },
@@ -6947,7 +6876,7 @@ def test_channel_b_tail_desc_weights_scale_desc_ce() -> None:
     loss_weighted = t.compute_loss(
         model,
         {
-            "_stage2_ab_channel": "B",
+            "_stage2_rollout_correction_phase": "rollout_correction",
             "_rollout_matching_meta": [meta_weighted],
             "input_ids": input_ids,
         },
@@ -6959,7 +6888,7 @@ def test_channel_b_tail_desc_weights_scale_desc_ce() -> None:
 
 
 def test_derive_rollout_seed_base_is_deterministic_and_matches_formula():
-    t = Stage2TwoChannelTrainer.__new__(Stage2TwoChannelTrainer)
+    t = Stage2RolloutCorrectionTrainer.__new__(Stage2RolloutCorrectionTrainer)
     t.args = types.SimpleNamespace(seed=123)
 
     out1 = t._derive_rollout_seed_base(global_step=7)
@@ -6972,7 +6901,7 @@ def test_derive_rollout_seed_base_is_deterministic_and_matches_formula():
 
 
 def test_hf_sampling_seeding_calls_seed_everything(monkeypatch):
-    t = Stage2TwoChannelTrainer.__new__(Stage2TwoChannelTrainer)
+    t = Stage2RolloutCorrectionTrainer.__new__(Stage2RolloutCorrectionTrainer)
 
     # Verify we call transformers.trainer_utils.set_seed(...) during HF sampling seeding.
     called = {}
@@ -6991,7 +6920,7 @@ def test_hf_sampling_seeding_calls_seed_everything(monkeypatch):
 
 
 def test_hf_sampling_seeding_restores_python_rng_state():
-    t = Stage2TwoChannelTrainer.__new__(Stage2TwoChannelTrainer)
+    t = Stage2RolloutCorrectionTrainer.__new__(Stage2RolloutCorrectionTrainer)
 
     import random
 
@@ -7036,7 +6965,7 @@ def test_packing_enabled_requires_qwen_packing_metadata():
         trainer.compute_loss(
             model,
             {
-                "_stage2_ab_channel": "A",
+                "_stage2_rollout_correction_phase": "rollout_correction",
                 "_rollout_matching_meta": meta,
                 "input_ids": input_ids,
             },
@@ -7193,7 +7122,7 @@ def test_build_canonical_prefix_text_data_preserves_object_sequence() -> None:
     assert "earlier" not in boundary_prefix_texts[1]
 
 
-def test_stage2_channel_b_fragment_supports_geometry_first_order():
+def test_stage2_rollout_correction_fragment_supports_geometry_first_order():
     frag = _serialize_append_fragment(
         fn_objects=[
             GTObject(
@@ -7235,7 +7164,7 @@ def test_compute_loss_raises_on_sliced_logits():
         trainer.compute_loss(
             model,
             {
-                "_stage2_ab_channel": "A",
+                "_stage2_rollout_correction_phase": "rollout_correction",
                 "_rollout_matching_meta": meta,
                 "input_ids": input_ids,
                 "position_ids": position_ids,
@@ -7244,14 +7173,13 @@ def test_compute_loss_raises_on_sliced_logits():
         )
 
 
-def test_channel_b_unused_meta_flag_does_not_change_supervision_semantics() -> None:
-    t = Stage2TwoChannelTrainer.__new__(Stage2TwoChannelTrainer)
-    t.stage2_ab_cfg = {
-        "schedule": {"b_ratio": 1.0},
+def test_rollout_correction_unused_meta_flag_does_not_change_supervision_semantics() -> None:
+    t = Stage2RolloutCorrectionTrainer.__new__(Stage2RolloutCorrectionTrainer)
+    t.stage2_rollout_correction_cfg = {
+        "correction": {},
         "desc_ce_weight": 1.0,
         "bbox_smoothl1_weight": 1.0,
         "bbox_ciou_weight": 1.0,
-        "channel_b": {},
     }
     t.stage2_pipeline_manifest = _make_stage2_pipeline_manifest(
         desc_ce_weight=1.0,
@@ -7278,7 +7206,7 @@ def test_channel_b_unused_meta_flag_does_not_change_supervision_semantics() -> N
     loss_no_repeat = t.compute_loss(
         model,
         {
-            "_stage2_ab_channel": "B",
+            "_stage2_rollout_correction_phase": "rollout_correction",
             "_rollout_matching_meta": [dict(base_meta, legacy_unused_flag=0)],
             "input_ids": input_ids,
         },
@@ -7286,7 +7214,7 @@ def test_channel_b_unused_meta_flag_does_not_change_supervision_semantics() -> N
     loss_with_repeat = t.compute_loss(
         model,
         {
-            "_stage2_ab_channel": "B",
+            "_stage2_rollout_correction_phase": "rollout_correction",
             "_rollout_matching_meta": [dict(base_meta, legacy_unused_flag=1)],
             "input_ids": input_ids,
         },
@@ -7297,14 +7225,13 @@ def test_channel_b_unused_meta_flag_does_not_change_supervision_semantics() -> N
     )
 
 
-def test_channel_b_tail_ignore_pos_masks_ce_tokens():
-    t = Stage2TwoChannelTrainer.__new__(Stage2TwoChannelTrainer)
-    t.stage2_ab_cfg = {
-        "schedule": {"b_ratio": 1.0},
+def test_rollout_correction_tail_ignore_pos_masks_ce_tokens():
+    t = Stage2RolloutCorrectionTrainer.__new__(Stage2RolloutCorrectionTrainer)
+    t.stage2_rollout_correction_cfg = {
+        "correction": {},
         "desc_ce_weight": 1.0,
         "bbox_smoothl1_weight": 0.0,
         "bbox_ciou_weight": 0.0,
-        "channel_b": {},
     }
     t.stage2_pipeline_manifest = _make_stage2_pipeline_manifest(
         desc_ce_weight=1.0,
@@ -7331,7 +7258,7 @@ def test_channel_b_tail_ignore_pos_masks_ce_tokens():
     loss_full = t.compute_loss(
         model,
         {
-            "_stage2_ab_channel": "B",
+            "_stage2_rollout_correction_phase": "rollout_correction",
             "_rollout_matching_meta": [dict(meta_base)],
             "input_ids": input_ids,
         },
@@ -7343,7 +7270,7 @@ def test_channel_b_tail_ignore_pos_masks_ce_tokens():
     loss_masked = t.compute_loss(
         model,
         {
-            "_stage2_ab_channel": "B",
+            "_stage2_rollout_correction_phase": "rollout_correction",
             "_rollout_matching_meta": [meta_mask],
             "input_ids": input_ids,
         },
@@ -7429,14 +7356,13 @@ def test_matched_prefix_structure_positions_uses_parser_char_frame_for_span_chec
     assert desc_tok_idx not in rel
 
 
-def test_channel_b_prefix_structure_supervision_uses_global_prefix_knob():
-    t = Stage2TwoChannelTrainer.__new__(Stage2TwoChannelTrainer)
-    t.stage2_ab_cfg = {
-        "schedule": {"b_ratio": 1.0},
+def test_rollout_correction_prefix_structure_supervision_uses_global_prefix_knob():
+    t = Stage2RolloutCorrectionTrainer.__new__(Stage2RolloutCorrectionTrainer)
+    t.stage2_rollout_correction_cfg = {
+        "correction": {},
         "desc_ce_weight": 1.0,
         "bbox_smoothl1_weight": 0.0,
         "bbox_ciou_weight": 0.0,
-        "channel_b": {},
     }
     t.stage2_pipeline_manifest = _make_stage2_pipeline_manifest(
         desc_ce_weight=1.0,
@@ -7474,7 +7400,7 @@ def test_channel_b_prefix_structure_supervision_uses_global_prefix_knob():
     loss_matched_only = t.compute_loss(
         model,
         {
-            "_stage2_ab_channel": "B",
+            "_stage2_rollout_correction_phase": "rollout_correction",
             "_rollout_matching_meta": [meta_matched_only],
             "input_ids": input_ids,
         },
@@ -7483,7 +7409,7 @@ def test_channel_b_prefix_structure_supervision_uses_global_prefix_knob():
     loss_oversupervised = t.compute_loss(
         model,
         {
-            "_stage2_ab_channel": "B",
+            "_stage2_rollout_correction_phase": "rollout_correction",
             "_rollout_matching_meta": [meta_oversupervised],
             "input_ids": input_ids,
         },
@@ -7496,14 +7422,13 @@ def test_channel_b_prefix_structure_supervision_uses_global_prefix_knob():
     )
 
 
-def test_channel_b_fn_desc_default_on_and_can_be_disabled_via_pipeline() -> None:
-    t = Stage2TwoChannelTrainer.__new__(Stage2TwoChannelTrainer)
-    t.stage2_ab_cfg = {
-        "schedule": {"b_ratio": 1.0},
+def test_rollout_correction_fn_desc_default_on_and_can_be_disabled_via_pipeline() -> None:
+    t = Stage2RolloutCorrectionTrainer.__new__(Stage2RolloutCorrectionTrainer)
+    t.stage2_rollout_correction_cfg = {
+        "correction": {},
         "desc_ce_weight": 1.0,
         "bbox_smoothl1_weight": 0.0,
         "bbox_ciou_weight": 0.0,
-        "channel_b": {},
     }
     t.stage2_pipeline_manifest = _make_stage2_pipeline_manifest(
         desc_ce_weight=1.0,
@@ -7538,7 +7463,7 @@ def test_channel_b_fn_desc_default_on_and_can_be_disabled_via_pipeline() -> None
     loss_default = t.compute_loss(
         model,
         {
-            "_stage2_ab_channel": "B",
+            "_stage2_rollout_correction_phase": "rollout_correction",
             "_rollout_matching_meta": [dict(meta_base)],
             "input_ids": input_ids,
         },
@@ -7552,7 +7477,7 @@ def test_channel_b_fn_desc_default_on_and_can_be_disabled_via_pipeline() -> None
     loss_fn_desc_off = t.compute_loss(
         model,
         {
-            "_stage2_ab_channel": "B",
+            "_stage2_rollout_correction_phase": "rollout_correction",
             "_rollout_matching_meta": [dict(meta_base)],
             "input_ids": input_ids,
         },
@@ -7568,7 +7493,7 @@ def test_channel_b_fn_desc_default_on_and_can_be_disabled_via_pipeline() -> None
     loss_tail_masked = t.compute_loss(
         model,
         {
-            "_stage2_ab_channel": "B",
+            "_stage2_rollout_correction_phase": "rollout_correction",
             "_rollout_matching_meta": [meta_mask_tail],
             "input_ids": input_ids,
         },
@@ -7582,18 +7507,17 @@ def test_channel_b_fn_desc_default_on_and_can_be_disabled_via_pipeline() -> None
     )
 
 
-def test_stage2_pipeline_default_parity_channel_b_desc_weighting_unpacked() -> None:
+def test_stage2_pipeline_default_parity_rollout_correction_desc_weighting_unpacked() -> None:
     desc_w = 0.35
 
-    t = Stage2TwoChannelTrainer.__new__(Stage2TwoChannelTrainer)
-    t.stage2_ab_cfg = {
-        "schedule": {"b_ratio": 1.0},
+    t = Stage2RolloutCorrectionTrainer.__new__(Stage2RolloutCorrectionTrainer)
+    t.stage2_rollout_correction_cfg = {
+        "correction": {},
         "desc_ce_weight": float(desc_w),
         "bbox_smoothl1_weight": 0.0,
         "bbox_ciou_weight": 0.0,
         "coord_ce_weight": 0.0,
         "coord_gate_weight": 0.0,
-        "channel_b": {},
     }
     t.stage2_pipeline_manifest = _make_stage2_pipeline_manifest(
         desc_ce_weight=float(desc_w),
@@ -7622,7 +7546,7 @@ def test_stage2_pipeline_default_parity_channel_b_desc_weighting_unpacked() -> N
     loss_from_desc_ce = t.compute_loss(
         model,
         {
-            "_stage2_ab_channel": "B",
+            "_stage2_rollout_correction_phase": "rollout_correction",
             "_rollout_matching_meta": [dict(meta)],
             "input_ids": input_ids,
         },
@@ -7635,7 +7559,7 @@ def test_stage2_pipeline_default_parity_channel_b_desc_weighting_unpacked() -> N
     loss_from_rollout_fn_desc = t.compute_loss(
         model,
         {
-            "_stage2_ab_channel": "B",
+            "_stage2_rollout_correction_phase": "rollout_correction",
             "_rollout_matching_meta": [dict(meta)],
             "input_ids": input_ids,
         },
@@ -7646,18 +7570,17 @@ def test_stage2_pipeline_default_parity_channel_b_desc_weighting_unpacked() -> N
     )
 
 
-def test_stage2_pipeline_default_parity_channel_b_desc_weighting_packed() -> None:
+def test_stage2_pipeline_default_parity_rollout_correction_desc_weighting_packed() -> None:
     desc_w = 0.4
 
-    t = Stage2TwoChannelTrainer.__new__(Stage2TwoChannelTrainer)
-    t.stage2_ab_cfg = {
-        "schedule": {"b_ratio": 1.0},
+    t = Stage2RolloutCorrectionTrainer.__new__(Stage2RolloutCorrectionTrainer)
+    t.stage2_rollout_correction_cfg = {
+        "correction": {},
         "desc_ce_weight": float(desc_w),
         "bbox_smoothl1_weight": 0.0,
         "bbox_ciou_weight": 0.0,
         "coord_ce_weight": 0.0,
         "coord_gate_weight": 0.0,
-        "channel_b": {},
     }
     t.stage2_pipeline_manifest = _make_stage2_pipeline_manifest(
         desc_ce_weight=float(desc_w),
@@ -7721,7 +7644,7 @@ def test_stage2_pipeline_default_parity_channel_b_desc_weighting_packed() -> Non
     loss_from_desc_ce = t.compute_loss(
         model,
         {
-            "_stage2_ab_channel": "B",
+            "_stage2_rollout_correction_phase": "rollout_correction",
             "_rollout_matching_meta": [dict(meta[0]), dict(meta[1])],
             "input_ids": input_ids,
         },
@@ -7734,7 +7657,7 @@ def test_stage2_pipeline_default_parity_channel_b_desc_weighting_packed() -> Non
     loss_from_rollout_fn_desc = t.compute_loss(
         model,
         {
-            "_stage2_ab_channel": "B",
+            "_stage2_rollout_correction_phase": "rollout_correction",
             "_rollout_matching_meta": [dict(meta[0]), dict(meta[1])],
             "input_ids": input_ids,
         },
@@ -7821,7 +7744,7 @@ def test_tail_closure_positions_prefer_turn_end_after_json_close():
     assert ignore_rel == [len(json_text) - 1, len(json_text)]
 
 
-def test_channel_b_sequential_dedup_attaches_duplicates_to_clean_boundaries() -> None:
+def test_rollout_correction_sequential_dedup_attaches_duplicates_to_clean_boundaries() -> None:
     raw = [
         GTObject(
             index=0, geom_type="bbox_2d", points_norm1000=[10, 10, 20, 20], desc="cat"
@@ -7857,7 +7780,7 @@ def test_channel_b_sequential_dedup_attaches_duplicates_to_clean_boundaries() ->
     assert diag["dup/raw/saturation_rate"] == pytest.approx(0.0)
 
 
-def test_channel_b_sequential_dedup_with_zero_center_radius_still_suppresses_iou_duplicates() -> (
+def test_rollout_correction_sequential_dedup_with_zero_center_radius_still_suppresses_iou_duplicates() -> (
     None
 ):
     raw = [
@@ -8030,7 +7953,7 @@ def test_duplicate_control_diagnostics_resolve_boundary_crossing_tokenization() 
     assert tok.decode([y_train_ids[diagnostic["clean_rel_pos"]]]) == "5"
 
 
-def test_stage2_channel_b_removed_duplicate_burst_unlikelihood_does_not_log_live_loss() -> (
+def test_stage2_rollout_correction_removed_duplicate_burst_unlikelihood_does_not_log_live_loss() -> (
     None
 ):
     t = _make_min_trainer()
@@ -8042,7 +7965,7 @@ def test_stage2_channel_b_removed_duplicate_burst_unlikelihood_does_not_log_live
     input_ids = torch.tensor([[10, 11, 12, 13]], dtype=torch.long)
     meta = [
         {
-            "stage2_channel": "B",
+            "stage2_surface": "rollout_correction",
             "prompt_len": 2,
             "prefix_len": 0,
             "train_len": 2,
@@ -8063,7 +7986,7 @@ def test_stage2_channel_b_removed_duplicate_burst_unlikelihood_does_not_log_live
     loss = t.compute_loss(
         model,
         {
-            "_stage2_ab_channel": "B",
+            "_stage2_rollout_correction_phase": "rollout_correction",
             "_rollout_matching_meta": meta,
             "input_ids": input_ids,
         },
@@ -8072,10 +7995,10 @@ def test_stage2_channel_b_removed_duplicate_burst_unlikelihood_does_not_log_live
     assert torch.isfinite(loss.detach()).item()
     pending = t._stage2_pending_train_logs[1].finalize()
     assert "train/optimization/loss_duplicate_burst_unlikelihood" not in pending
-    assert "loss/B_rollout_text/duplicate_burst_unlikelihood" not in pending
+    assert "loss/stage2_rollout_correction/duplicate_burst_unlikelihood" not in pending
 
 
-def test_stage2_channel_b_compute_loss_copies_triage_and_split_rollout_telemetry() -> (
+def test_stage2_rollout_correction_compute_loss_copies_triage_and_split_rollout_telemetry() -> (
     None
 ):
     t = _make_min_trainer()
@@ -8087,7 +8010,7 @@ def test_stage2_channel_b_compute_loss_copies_triage_and_split_rollout_telemetry
     input_ids = torch.tensor([[10, 11, 12, 13]], dtype=torch.long)
     meta = [
         {
-            "stage2_channel": "B",
+            "stage2_surface": "rollout_correction",
             "prompt_len": 2,
             "prefix_len": 0,
             "train_len": 2,
@@ -8108,7 +8031,7 @@ def test_stage2_channel_b_compute_loss_copies_triage_and_split_rollout_telemetry
     t.compute_loss(
         model,
         {
-            "_stage2_ab_channel": "B",
+            "_stage2_rollout_correction_phase": "rollout_correction",
             "_rollout_matching_meta": meta,
             "_rollout_matching_batch_metrics": {
                 "train/triage/gt_backed_count": 2.0,
@@ -8149,7 +8072,7 @@ def test_stage2_channel_b_compute_loss_copies_triage_and_split_rollout_telemetry
         0.5
     )
     assert "train/optimization/loss_duplicate_burst_unlikelihood" not in pending
-    assert "loss/B_rollout_text/duplicate_burst_unlikelihood" not in pending
+    assert "loss/stage2_rollout_correction/duplicate_burst_unlikelihood" not in pending
     stale_duplicate_diag_prefix = "diag/" + "duplicate_burst" + "/"
     assert all(
         not key.startswith(stale_duplicate_diag_prefix) for key in pending
@@ -8161,8 +8084,8 @@ def test_pending_stage2_log_aggregates_closure_and_invalid_rollout_metrics() -> 
     pending.add(
         {
             "stage2/raw_rollouts": 3.0,
-            "stage2_ab/channel_b/invalid_rollout": 1.0,
-            "stage2_ab/channel_b/closure_supervision/N_drop": 1.0,
+            "stage2_rollout_correction/invalid_rollout": 1.0,
+            "stage2_rollout_correction/closure_supervision/N_drop": 1.0,
             "rollout/_parse_truncated_num": 1.0,
             "rollout/_parse_truncated_den": 3.0,
         }
@@ -8170,8 +8093,8 @@ def test_pending_stage2_log_aggregates_closure_and_invalid_rollout_metrics() -> 
     pending.add(
         {
             "stage2/raw_rollouts": 7.0,
-            "stage2_ab/channel_b/invalid_rollout": 2.0,
-            "stage2_ab/channel_b/closure_supervision/N_drop": 4.0,
+            "stage2_rollout_correction/invalid_rollout": 2.0,
+            "stage2_rollout_correction/closure_supervision/N_drop": 4.0,
             "rollout/_parse_truncated_num": 4.0,
             "rollout/_parse_truncated_den": 7.0,
         }
@@ -8180,8 +8103,8 @@ def test_pending_stage2_log_aggregates_closure_and_invalid_rollout_metrics() -> 
     out = pending.finalize()
 
     assert out["stage2/raw_rollouts"] == pytest.approx(10.0)
-    assert out["stage2_ab/channel_b/invalid_rollout"] == pytest.approx(3.0)
-    assert out["stage2_ab/channel_b/closure_supervision/N_drop"] == pytest.approx(5.0)
+    assert out["stage2_rollout_correction/invalid_rollout"] == pytest.approx(3.0)
+    assert out["stage2_rollout_correction/closure_supervision/N_drop"] == pytest.approx(5.0)
     assert out["rollout/parse_truncated_rate"] == pytest.approx(0.5)
     assert "rollout/_parse_truncated_num" not in out
     assert "rollout/_parse_truncated_den" not in out
@@ -8204,14 +8127,14 @@ def test_pending_stage2_log_aggregates_closure_and_invalid_rollout_metrics() -> 
         "rollout/peer/valid_pred_objects",
     ],
 )
-def test_channel_b_direct_batch_metric_filter_keeps_compact_fallback_metrics(
+def test_rollout_correction_direct_batch_metric_filter_keeps_compact_fallback_metrics(
     metric_key: str,
 ) -> None:
-    assert _is_stage2_channel_b_direct_batch_metric_key(metric_key) is True
+    assert _is_rollout_correction_direct_batch_metric_key(metric_key) is True
 
 
-def test_channel_b_direct_batch_metric_filter_rejects_unscoped_rollout_metric() -> None:
-    assert _is_stage2_channel_b_direct_batch_metric_key("rollout/debug_blob") is False
+def test_rollout_correction_direct_batch_metric_filter_rejects_unscoped_rollout_metric() -> None:
+    assert _is_rollout_correction_direct_batch_metric_key("rollout/debug_blob") is False
 
 
 def test_pending_stage2_log_aggregates_compact_fallback_metrics() -> None:
@@ -8250,32 +8173,32 @@ def test_pending_stage2_log_aggregates_strict_drop_metrics_and_reasons() -> None
     pending = _PendingStage2Log()
     pending.add(
         {
-            "stage2_ab/channel_b/strict_drop/N_valid_pred": 3.0,
-            "stage2_ab/channel_b/strict_drop/N_drop_invalid": 2.0,
-            "stage2_ab/channel_b/strict_drop/reason/order_violation": 1.0,
-            "stage2_ab/channel_b/strict_drop/reason/wrong_arity": 1.0,
+            "stage2_rollout_correction/strict_drop/N_valid_pred": 3.0,
+            "stage2_rollout_correction/strict_drop/N_drop_invalid": 2.0,
+            "stage2_rollout_correction/strict_drop/reason/order_violation": 1.0,
+            "stage2_rollout_correction/strict_drop/reason/wrong_arity": 1.0,
         }
     )
     pending.add(
         {
-            "stage2_ab/channel_b/strict_drop/N_valid_pred": 4.0,
-            "stage2_ab/channel_b/strict_drop/N_drop_invalid": 3.0,
-            "stage2_ab/channel_b/strict_drop/reason/order_violation": 2.0,
-            "stage2_ab/channel_b/strict_drop/reason/missing_desc": 1.0,
+            "stage2_rollout_correction/strict_drop/N_valid_pred": 4.0,
+            "stage2_rollout_correction/strict_drop/N_drop_invalid": 3.0,
+            "stage2_rollout_correction/strict_drop/reason/order_violation": 2.0,
+            "stage2_rollout_correction/strict_drop/reason/missing_desc": 1.0,
         }
     )
 
     out = pending.finalize()
 
-    assert out["stage2_ab/channel_b/strict_drop/N_valid_pred"] == pytest.approx(7.0)
-    assert out["stage2_ab/channel_b/strict_drop/N_drop_invalid"] == pytest.approx(5.0)
+    assert out["stage2_rollout_correction/strict_drop/N_valid_pred"] == pytest.approx(7.0)
+    assert out["stage2_rollout_correction/strict_drop/N_drop_invalid"] == pytest.approx(5.0)
     assert out[
-        "stage2_ab/channel_b/strict_drop/reason/order_violation"
+        "stage2_rollout_correction/strict_drop/reason/order_violation"
     ] == pytest.approx(3.0)
-    assert out["stage2_ab/channel_b/strict_drop/reason/wrong_arity"] == pytest.approx(
+    assert out["stage2_rollout_correction/strict_drop/reason/wrong_arity"] == pytest.approx(
         1.0
     )
-    assert out["stage2_ab/channel_b/strict_drop/reason/missing_desc"] == pytest.approx(
+    assert out["stage2_rollout_correction/strict_drop/reason/missing_desc"] == pytest.approx(
         1.0
     )
 
@@ -8285,59 +8208,58 @@ def test_pending_stage2_log_aggregates_residual_set_counts_and_weighted_scalars(
     pending.add(
         {
             "stage2/_log_weight": 1.0,
-            "stage2_ab/channel_b/residual_set/atom_count": 2.0,
-            "stage2_ab/channel_b/residual_set/sequence_count": 1.0,
-            "stage2_ab/channel_b/residual_set/eos_targets": 1.0,
-            "stage2_ab/channel_b/residual_set/sequence_loss": 10.0,
-            "stage2_ab/channel_b/residual_set/type_loss": 1.0,
-            "stage2_ab/channel_b/residual_set/valid_set_mass": 0.2,
+            "stage2_rollout_correction/residual_set/atom_count": 2.0,
+            "stage2_rollout_correction/residual_set/sequence_count": 1.0,
+            "stage2_rollout_correction/residual_set/eos_targets": 1.0,
+            "stage2_rollout_correction/residual_set/sequence_loss": 10.0,
+            "stage2_rollout_correction/residual_set/type_loss": 1.0,
+            "stage2_rollout_correction/residual_set/valid_set_mass": 0.2,
         }
     )
     pending.add(
         {
             "stage2/_log_weight": 3.0,
-            "stage2_ab/channel_b/residual_set/atom_count": 5.0,
-            "stage2_ab/channel_b/residual_set/sequence_count": 2.0,
-            "stage2_ab/channel_b/residual_set/eos_targets": 2.0,
-            "stage2_ab/channel_b/residual_set/sequence_loss": 20.0,
-            "stage2_ab/channel_b/residual_set/type_loss": 3.0,
-            "stage2_ab/channel_b/residual_set/valid_set_mass": 0.8,
+            "stage2_rollout_correction/residual_set/atom_count": 5.0,
+            "stage2_rollout_correction/residual_set/sequence_count": 2.0,
+            "stage2_rollout_correction/residual_set/eos_targets": 2.0,
+            "stage2_rollout_correction/residual_set/sequence_loss": 20.0,
+            "stage2_rollout_correction/residual_set/type_loss": 3.0,
+            "stage2_rollout_correction/residual_set/valid_set_mass": 0.8,
         }
     )
 
     out = pending.finalize()
 
-    assert out["stage2_ab/channel_b/residual_set/atom_count"] == pytest.approx(7.0)
-    assert out["stage2_ab/channel_b/residual_set/sequence_count"] == pytest.approx(3.0)
-    assert out["stage2_ab/channel_b/residual_set/eos_targets"] == pytest.approx(3.0)
-    assert out["stage2_ab/channel_b/residual_set/sequence_loss"] == pytest.approx(
+    assert out["stage2_rollout_correction/residual_set/atom_count"] == pytest.approx(7.0)
+    assert out["stage2_rollout_correction/residual_set/sequence_count"] == pytest.approx(3.0)
+    assert out["stage2_rollout_correction/residual_set/eos_targets"] == pytest.approx(3.0)
+    assert out["stage2_rollout_correction/residual_set/sequence_loss"] == pytest.approx(
         (10.0 * 1.0 + 20.0 * 3.0) / 4.0
     )
-    assert out["stage2_ab/channel_b/residual_set/type_loss"] == pytest.approx(
+    assert out["stage2_rollout_correction/residual_set/type_loss"] == pytest.approx(
         (1.0 * 1.0 + 3.0 * 3.0) / 4.0
     )
-    assert out["stage2_ab/channel_b/residual_set/valid_set_mass"] == pytest.approx(
+    assert out["stage2_rollout_correction/residual_set/valid_set_mass"] == pytest.approx(
         (0.2 * 1.0 + 0.8 * 3.0) / 4.0
     )
 
 
-def test_pending_stage2_log_omits_channel_b_keys_when_not_provided() -> None:
+def test_pending_stage2_log_omits_rollout_correction_keys_when_not_provided() -> None:
     pending = _PendingStage2Log()
     pending.add(
         {
-            "stage2/channel_a": 1.0,
-            "loss/B_rollout_text/struct_ce": 0.25,
+            "loss/stage2_rollout_correction/stage2_trie_ce": 0.25,
         }
     )
 
     out = pending.finalize()
 
-    assert out["stage2/channel_a"] == pytest.approx(1.0)
-    assert out["loss/B_rollout_text/struct_ce"] == pytest.approx(0.25)
+    assert out["loss/stage2_rollout_correction/stage2_trie_ce"] == pytest.approx(0.25)
+    assert "stage2/channel_a" not in out
     assert "stage2/channel_b" not in out
-    assert "stage2_ab/channel_b/invalid_rollout" not in out
-    assert "stage2_ab/channel_b/strict_drop/N_valid_pred" not in out
-    assert "stage2_ab/channel_b/strict_drop/N_drop_invalid" not in out
+    assert "stage2_rollout_correction/invalid_rollout" not in out
+    assert "stage2_rollout_correction/strict_drop/N_valid_pred" not in out
+    assert "stage2_rollout_correction/strict_drop/N_drop_invalid" not in out
 
 
 def test_reduce_stage2_pending_metrics_global_recomputes_ratio_and_sums_invalid_rollout() -> (
@@ -8364,7 +8286,7 @@ def test_reduce_stage2_pending_metrics_global_recomputes_ratio_and_sums_invalid_
                     )
                 )
 
-    trainer = Stage2TwoChannelTrainer.__new__(Stage2TwoChannelTrainer)
+    trainer = Stage2RolloutCorrectionTrainer.__new__(Stage2RolloutCorrectionTrainer)
     trainer._dist_info = lambda: (0, 2, _FakeDist())
 
     out = trainer._reduce_stage2_pending_metrics_global(
@@ -8372,13 +8294,13 @@ def test_reduce_stage2_pending_metrics_global_recomputes_ratio_and_sums_invalid_
             "rollout/_parse_truncated_num": 1.0,
             "rollout/_parse_truncated_den": 4.0,
             "stage2/raw_rollouts": 4.0,
-            "stage2_ab/channel_b/invalid_rollout": 1.0,
+            "stage2_rollout_correction/invalid_rollout": 1.0,
             "rollout/parse_truncated": 1.0,
         }
     )
 
     assert out["rollout/parse_truncated_rate"] == pytest.approx(0.4)
-    assert out["stage2_ab/channel_b/invalid_rollout"] == pytest.approx(2.0)
+    assert out["stage2_rollout_correction/invalid_rollout"] == pytest.approx(2.0)
     assert "rollout/_parse_truncated_num" not in out
     assert "rollout/_parse_truncated_den" not in out
 
@@ -8407,17 +8329,17 @@ def test_reduce_stage2_pending_metrics_global_uses_weight_total_for_means() -> N
                     )
                 )
 
-    trainer = Stage2TwoChannelTrainer.__new__(Stage2TwoChannelTrainer)
+    trainer = Stage2RolloutCorrectionTrainer.__new__(Stage2RolloutCorrectionTrainer)
     trainer._dist_info = lambda: (0, 2, _FakeDist())
 
     out = trainer._reduce_stage2_pending_metrics_global(
         {
             "stage2/_log_weight_total": 1.0,
-            "loss/B_rollout_text/struct_ce": 10.0,
+            "loss/stage2_rollout_correction/stage2_trie_ce": 10.0,
         }
     )
 
-    assert out["loss/B_rollout_text/struct_ce"] == pytest.approx(
+    assert out["loss/stage2_rollout_correction/stage2_trie_ce"] == pytest.approx(
         (10.0 * 1.0 + 20.0 * 3.0) / 4.0
     )
     assert "stage2/_log_weight_total" not in out
@@ -8447,17 +8369,17 @@ def test_reduce_stage2_pending_metrics_global_treats_train_optimization_losses_a
                     )
                 )
 
-    trainer = Stage2TwoChannelTrainer.__new__(Stage2TwoChannelTrainer)
+    trainer = Stage2RolloutCorrectionTrainer.__new__(Stage2RolloutCorrectionTrainer)
     trainer._dist_info = lambda: (0, 2, _FakeDist())
 
     out = trainer._reduce_stage2_pending_metrics_global(
         {
             "stage2/_log_weight_total": 1.0,
-            "loss/B_rollout_text/struct_ce": 10.0,
+            "loss/stage2_rollout_correction/stage2_trie_ce": 10.0,
         }
     )
 
-    assert out["loss/B_rollout_text/struct_ce"] == pytest.approx((10.0 * 1.0 + 20.0 * 3.0) / 4.0)
+    assert out["loss/stage2_rollout_correction/stage2_trie_ce"] == pytest.approx((10.0 * 1.0 + 20.0 * 3.0) / 4.0)
     assert "stage2/_log_weight_total" not in out
 
 
@@ -8483,40 +8405,38 @@ def test_reduce_stage2_pending_metrics_global_handles_residual_set_metric_specs(
                     )
                 )
 
-    trainer = Stage2TwoChannelTrainer.__new__(Stage2TwoChannelTrainer)
+    trainer = Stage2RolloutCorrectionTrainer.__new__(Stage2RolloutCorrectionTrainer)
     trainer._dist_info = lambda: (0, 2, _FakeDist())
 
     out = trainer._reduce_stage2_pending_metrics_global(
         {
             "stage2/_log_weight_total": 1.0,
-            "stage2_ab/channel_b/residual_set/atom_count": 2.0,
-            "stage2_ab/channel_b/residual_set/sequence_loss": 10.0,
-            "stage2_ab/channel_b/residual_set/valid_set_mass": 0.2,
+            "stage2_rollout_correction/residual_set/atom_count": 2.0,
+            "stage2_rollout_correction/residual_set/sequence_loss": 10.0,
+            "stage2_rollout_correction/residual_set/valid_set_mass": 0.2,
         }
     )
 
-    assert out["stage2_ab/channel_b/residual_set/atom_count"] == pytest.approx(7.0)
-    assert out["stage2_ab/channel_b/residual_set/sequence_loss"] == pytest.approx(
+    assert out["stage2_rollout_correction/residual_set/atom_count"] == pytest.approx(7.0)
+    assert out["stage2_rollout_correction/residual_set/sequence_loss"] == pytest.approx(
         (10.0 * 1.0 + 20.0 * 3.0) / 4.0
     )
-    assert out["stage2_ab/channel_b/residual_set/valid_set_mass"] == pytest.approx(
+    assert out["stage2_rollout_correction/residual_set/valid_set_mass"] == pytest.approx(
         (0.2 * 1.0 + 0.8 * 3.0) / 4.0
     )
     assert "stage2/_log_weight_total" not in out
 
 
-def test_stage2_core_loss_logs_preserves_legacy_trie_metrics_without_rewriting() -> None:
+def test_stage2_core_loss_logs_preserves_rollout_correction_trie_metrics_only() -> None:
     out = build_stage2_core_loss_logs(
-        channel="B",
+        channel="rollout_correction",
         pipeline_metrics_ctx={
             "stage2_trie/target_positions": 3.0,
             "stage2_trie/branch_points": 2.0,
             "stage2_trie/candidate_count_mean": 4.0,
-            "loss/B/stage2_trie_ce": 1.25,
-            "loss/stage2_trie_ce": 1.25,
+            "loss/stage2_rollout_correction/stage2_trie_ce": 1.25,
+            "loss/stage2_trie_ce": 88.0,
             "trie/target_positions": 99.0,
-            "stage2_ab/channel_b/stage2_trie/target_positions": 88.0,
-            "stage2_ab/channel_b/loss/stage2_trie_ce": 77.0,
             "diagnostic/debug_only": 66.0,
         },
         token_ce_module_w=0.0,
@@ -8528,23 +8448,21 @@ def test_stage2_core_loss_logs_preserves_legacy_trie_metrics_without_rewriting()
     assert out["stage2_trie/target_positions"] == pytest.approx(3.0)
     assert out["stage2_trie/branch_points"] == pytest.approx(2.0)
     assert out["stage2_trie/candidate_count_mean"] == pytest.approx(4.0)
-    assert out["loss/B/stage2_trie_ce"] == pytest.approx(1.25)
-    assert out["loss/stage2_trie_ce"] == pytest.approx(1.25)
+    assert out["loss/stage2_rollout_correction/stage2_trie_ce"] == pytest.approx(1.25)
     assert "trie/target_positions" not in out
-    assert "stage2_ab/channel_b/stage2_trie/target_positions" not in out
-    assert "stage2_ab/channel_b/loss/stage2_trie_ce" not in out
+    assert "loss/stage2_trie_ce" not in out
     assert "diagnostic/debug_only" not in out
 
 
 def test_stage2_core_loss_logs_passes_residual_set_metrics_only_under_stable_prefix() -> None:
     out = build_stage2_core_loss_logs(
-        channel="B",
+        channel="rollout_correction",
         pipeline_metrics_ctx={
-            "stage2_ab/channel_b/residual_set/atom_count": 1.0,
-            "stage2_ab/channel_b/residual_set/type_loss": 0.5,
-            "stage2_ab/channel_b/residual_set/valid_set_mass": 0.75,
+            "stage2_rollout_correction/residual_set/atom_count": 1.0,
+            "stage2_rollout_correction/residual_set/type_loss": 0.5,
+            "stage2_rollout_correction/residual_set/valid_set_mass": 0.75,
             "residual_set/atom_count": 99.0,
-            "stage2_ab/channel_b/residual/atom_count": 88.0,
+            "stage2_rollout_correction/residual/atom_count": 88.0,
             "diagnostic/debug_only": 99.0,
         },
         token_ce_module_w=0.0,
@@ -8553,11 +8471,11 @@ def test_stage2_core_loss_logs_passes_residual_set_metrics_only_under_stable_pre
         fn_desc_ce_weight=1.0,
     )
 
-    assert out["stage2_ab/channel_b/residual_set/atom_count"] == pytest.approx(1.0)
-    assert out["stage2_ab/channel_b/residual_set/type_loss"] == pytest.approx(0.5)
-    assert out["stage2_ab/channel_b/residual_set/valid_set_mass"] == pytest.approx(0.75)
+    assert out["stage2_rollout_correction/residual_set/atom_count"] == pytest.approx(1.0)
+    assert out["stage2_rollout_correction/residual_set/type_loss"] == pytest.approx(0.5)
+    assert out["stage2_rollout_correction/residual_set/valid_set_mass"] == pytest.approx(0.75)
     assert "residual_set/atom_count" not in out
-    assert "stage2_ab/channel_b/residual/atom_count" not in out
+    assert "stage2_rollout_correction/residual/atom_count" not in out
     assert "diagnostic/debug_only" not in out
 
 
@@ -8607,11 +8525,10 @@ def _make_stage2_residual_target_ir(
 def test_stage2_objective_pipelines_threads_role_vocab_for_residual_set_sidecar() -> None:
     logits = torch.zeros((1, 2, 50), dtype=torch.float32)
     result = run_stage2_objective_pipelines(
-        channel="B",
+        channel="rollout_correction",
         objective_specs=[
             {
                 "name": "residual_set_correction",
-                "channels": ["B"],
                 "config": {},
             }
         ],
@@ -8635,7 +8552,7 @@ def test_stage2_objective_pipelines_threads_role_vocab_for_residual_set_sidecar(
     )
 
     assert result.pipeline_metrics_ctx[
-        "stage2_ab/channel_b/residual_set/atom_count"
+        "stage2_rollout_correction/residual_set/atom_count"
     ] == pytest.approx(1.0)
     assert "residual_set_correction_contrib" in result.pipeline_ctx_result.state
 
@@ -8646,11 +8563,10 @@ def test_stage2_objective_pipelines_rebase_residual_sidecars_for_unpacked_rows()
     logits[:, 0, 10] = 20.0
 
     result = run_stage2_objective_pipelines(
-        channel="B",
+        channel="rollout_correction",
         objective_specs=[
             {
                 "name": "residual_set_correction",
-                "channels": ["B"],
                 "config": {},
             }
         ],
@@ -8679,10 +8595,10 @@ def test_stage2_objective_pipelines_rebase_residual_sidecars_for_unpacked_rows()
     )
 
     assert result.pipeline_metrics_ctx[
-        "stage2_ab/channel_b/residual_set/atom_count"
+        "stage2_rollout_correction/residual_set/atom_count"
     ] == pytest.approx(2.0)
     assert result.pipeline_metrics_ctx[
-        "stage2_ab/channel_b/residual_set/sequence_loss"
+        "stage2_rollout_correction/residual_set/sequence_loss"
     ] == pytest.approx(0.0, abs=1.0e-6)
 
 
@@ -8691,11 +8607,10 @@ def test_stage2_objective_pipelines_fail_closed_without_role_vocab_for_residual_
 
     with pytest.raises(ValueError, match="role_vocab"):
         run_stage2_objective_pipelines(
-            channel="B",
+            channel="rollout_correction",
             objective_specs=[
                 {
                     "name": "residual_set_correction",
-                    "channels": ["B"],
                     "config": {},
                 }
             ],
@@ -8723,11 +8638,10 @@ def test_stage2_objective_pipelines_raise_when_residual_sidecar_missing() -> Non
 
     with pytest.raises(ValueError, match="residual_set_target_ir"):
         run_stage2_objective_pipelines(
-            channel="B",
+            channel="rollout_correction",
             objective_specs=[
                 {
                     "name": "residual_set_correction",
-                    "channels": ["B"],
                     "config": {},
                 }
             ],
@@ -8747,7 +8661,7 @@ def test_stage2_objective_pipelines_raise_when_residual_sidecar_missing() -> Non
 
 
 def test_reduce_stage2_pending_metrics_global_strips_internal_underscore_keys() -> None:
-    trainer = Stage2TwoChannelTrainer.__new__(Stage2TwoChannelTrainer)
+    trainer = Stage2RolloutCorrectionTrainer.__new__(Stage2RolloutCorrectionTrainer)
     trainer._dist_info = lambda: (0, 1, None)
 
     out = trainer._reduce_stage2_pending_metrics_global(
@@ -8757,7 +8671,7 @@ def test_reduce_stage2_pending_metrics_global_strips_internal_underscore_keys() 
             "rollout/_parse_truncated_den": 4.0,
             "rollout/parse_truncated": 1.0,
             "stage2/raw_rollouts": 4.0,
-            "loss/B_rollout_text/struct_ce": 1.0,
+            "loss/stage2_rollout_correction/stage2_trie_ce": 1.0,
         }
     )
 
@@ -8767,8 +8681,8 @@ def test_reduce_stage2_pending_metrics_global_strips_internal_underscore_keys() 
     assert all(not str(k).startswith("rollout/_") for k in out)
 
 
-def test_channel_b_step_budgeted_path_is_supported_under_ddp_mock(monkeypatch):
-    # Stage2-AB standardizes Channel-B to a single step-budgeted pathway.
+def test_rollout_correction_step_budgeted_path_is_supported_under_ddp_mock(monkeypatch):
+    # Stage-2 rollout-correction standardizes training to a single step-budgeted pathway.
     # This should not be rejected just because torch.distributed is initialized.
     monkeypatch.setattr(torch.distributed, "is_available", lambda: True, raising=False)
     monkeypatch.setattr(
@@ -8776,21 +8690,18 @@ def test_channel_b_step_budgeted_path_is_supported_under_ddp_mock(monkeypatch):
     )
     monkeypatch.setattr(torch.distributed, "get_world_size", lambda: 2, raising=False)
 
-    t = Stage2TwoChannelTrainer.__new__(Stage2TwoChannelTrainer)
-    # Even if a legacy key is present in a hand-built dict, the trainer should not consult it.
-    t.stage2_ab_cfg = {"schedule": {"b_ratio": 1.0}, "channel_b": {"mode": "async"}}
+    t = Stage2RolloutCorrectionTrainer.__new__(Stage2RolloutCorrectionTrainer)
+    t.stage2_rollout_correction_cfg = {"correction": {"mode": "async"}}
 
     t._stage2_pending_train_logs = {}
     t._rm_pending_train_logs = {}
-    t._stage2_channel_override = None
-
     t.args = types.SimpleNamespace(seed=123)
     t.state = types.SimpleNamespace(global_step=0)
 
     # Minimal executor shim state.
-    t._stage2_b_step_gs = None
-    t._stage2_b_step_micro = 0
-    t._stage2_b_step_raw = []
+    t._stage2_rollout_correction_step_gs = None
+    t._stage2_rollout_correction_step_micro = 0
+    t._stage2_rollout_correction_step_raw = []
 
     # Avoid heavy rollout/packing work: just confirm the call path is allowed.
     t._stage2_training_step_b_step_mode = (
@@ -8804,15 +8715,15 @@ def test_channel_b_step_budgeted_path_is_supported_under_ddp_mock(monkeypatch):
     assert isinstance(out, torch.Tensor)
 
 
-def test_b_ratio_realized_tracks_optimizer_steps_once():
-    t = Stage2TwoChannelTrainer.__new__(Stage2TwoChannelTrainer)
-    t._stage2_ab_realized_last_gs = None
+def test_rollout_correction_realized_tracks_optimizer_steps_once():
+    t = Stage2RolloutCorrectionTrainer.__new__(Stage2RolloutCorrectionTrainer)
+    t._stage2_rollout_correction_realized_last_gs = None
 
     t._stage2_record_realized_step(global_step=0, executed_b=False)
     t._stage2_record_realized_step(global_step=0, executed_b=True)  # same step, ignored
     t._stage2_record_realized_step(global_step=1, executed_b=True)
 
-    assert pytest.approx(t._stage2_b_ratio_realized(), rel=1e-6) == 0.5
+    assert pytest.approx(t._stage2_rollout_correction_realized(), rel=1e-6) == 0.5
 
 
 def test_merge_rollout_matching_batch_metrics_preserves_existing_keys():
@@ -8821,18 +8732,18 @@ def test_merge_rollout_matching_batch_metrics_preserves_existing_keys():
     t._merge_rollout_matching_batch_metrics(
         batch,
         {
-            "stage2_ab/b_ratio_realized": 3.0,
+            "stage2_rollout_correction/active": 1.0,
             "rollout/backend_vllm": 2.0,
         },
     )
     bm = batch.get("_rollout_matching_batch_metrics")
     assert isinstance(bm, dict)
-    assert bm["stage2_ab/b_ratio_realized"] == 3.0
+    assert bm["stage2_rollout_correction/active"] == 1.0
     assert bm["rollout/backend_vllm"] == 2.0
 
 
-def _make_eval_ready_stage2_ab_trainer() -> Stage2TwoChannelTrainer:
-    trainer = object.__new__(Stage2TwoChannelTrainer)
+def _make_eval_ready_stage2_rollout_correction_trainer() -> Stage2RolloutCorrectionTrainer:
+    trainer = object.__new__(Stage2RolloutCorrectionTrainer)
 
     class _EvalModel:
         def __init__(self) -> None:
@@ -8867,10 +8778,10 @@ def _make_eval_ready_stage2_ab_trainer() -> Stage2TwoChannelTrainer:
     return trainer
 
 
-def test_stage2_two_channel_eval_emits_rollout_map_and_coco_contract(
+def test_stage2_rollout_correction_eval_emits_rollout_map_and_coco_contract(
     monkeypatch,
 ) -> None:
-    trainer = _make_eval_ready_stage2_ab_trainer()
+    trainer = _make_eval_ready_stage2_rollout_correction_trainer()
 
     parse_obj = types.SimpleNamespace(
         response_token_ids=[101],
@@ -8938,8 +8849,8 @@ def test_stage2_two_channel_eval_emits_rollout_map_and_coco_contract(
     assert all(not k.startswith("eval/detection/segm_") for k in metrics)
 
 
-def test_stage2_two_channel_eval_raises_when_coco_eval_fails(monkeypatch) -> None:
-    trainer = _make_eval_ready_stage2_ab_trainer()
+def test_stage2_rollout_correction_eval_raises_when_coco_eval_fails(monkeypatch) -> None:
+    trainer = _make_eval_ready_stage2_rollout_correction_trainer()
 
     parse_obj = types.SimpleNamespace(
         response_token_ids=[101],

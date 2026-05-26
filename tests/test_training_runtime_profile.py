@@ -10,7 +10,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from src.bootstrap.trainer_setup import compose_trainer_class
+from src.bootstrap.trainer_setup import compose_trainer_class, instantiate_trainer
 from src.trainers.metrics.mixins import (
     AggregateTokenTypeMetricsMixin,
     CoordSoftCEW1LossMixin,
@@ -27,6 +27,57 @@ PROFILE_PATH = REPO_ROOT / "src" / "training_runtime" / "profile.py"
 
 def _profile_module():
     return importlib.import_module("src.training_runtime.profile")
+
+
+class _SwiftLikeTrainer:
+    def __init__(
+        self,
+        *,
+        model,
+        args,
+        train_dataset,
+        eval_dataset,
+        callbacks,
+        template,
+        **kwargs,
+    ):
+        if "data_collator" in kwargs:
+            raise AssertionError("data_collator leaked past Swift-like trainer mixin")
+        self.model = model
+        self.args = args
+        self.data_collator = self._get_data_collator(args, template)
+        self.train_dataset = train_dataset
+        self.eval_dataset = eval_dataset
+        self.callbacks = callbacks
+        self.template = template
+
+    def _get_data_collator(self, args, template):
+        return "base-collator"
+
+
+_SwiftLikeTrainer.__module__ = "swift.fake"
+
+
+class _PlainTrainer:
+    def __init__(
+        self,
+        *,
+        model,
+        args,
+        data_collator,
+        train_dataset,
+        eval_dataset,
+        callbacks,
+        template,
+        **kwargs,
+    ):
+        self.model = model
+        self.args = args
+        self.data_collator = data_collator
+        self.train_dataset = train_dataset
+        self.eval_dataset = eval_dataset
+        self.callbacks = callbacks
+        self.template = template
 
 
 def test_profile_module_is_import_safe() -> None:
@@ -67,6 +118,44 @@ def test_profile_module_is_import_safe() -> None:
     )
 
 
+def test_instantiate_trainer_injects_collator_via_swift_factory() -> None:
+    collator = object()
+
+    trainer = instantiate_trainer(
+        trainer_cls=_SwiftLikeTrainer,
+        sft_model="model",
+        training_args=SimpleNamespace(),
+        data_collator=collator,
+        dataset=["train"],
+        eval_dataset=["eval"],
+        callbacks=["callback"],
+        template=SimpleNamespace(),
+        trainer_kwargs={},
+        heartbeat_writer=None,
+    )
+
+    assert trainer.data_collator is collator
+
+
+def test_instantiate_trainer_preserves_plain_hf_collator_path() -> None:
+    collator = object()
+
+    trainer = instantiate_trainer(
+        trainer_cls=_PlainTrainer,
+        sft_model="model",
+        training_args=SimpleNamespace(),
+        data_collator=collator,
+        dataset=["train"],
+        eval_dataset=["eval"],
+        callbacks=["callback"],
+        template=SimpleNamespace(),
+        trainer_kwargs={},
+        heartbeat_writer=None,
+    )
+
+    assert trainer.data_collator is collator
+
+
 def test_default_profile_derives_generic_stage1_policy_from_plan() -> None:
     profile_mod = _profile_module()
 
@@ -91,10 +180,14 @@ def test_default_profile_derives_generic_stage1_policy_from_plan() -> None:
 @pytest.mark.parametrize(
     ("variant", "pipeline_namespace", "manifest_family"),
     [
-        ("stage2_two_channel", "stage2_ab.pipeline", "stage2_ab"),
+        (
+            "stage2_rollout_correction",
+            "stage2_rollout_correction.pipeline",
+            "stage2_rollout_correction",
+        ),
     ],
 )
-def test_stage2_two_channel_profile_derives_rollout_policy_from_plan(
+def test_stage2_rollout_correction_profile_derives_rollout_policy_from_plan(
     variant: str,
     pipeline_namespace: str,
     manifest_family: str,
@@ -122,10 +215,11 @@ def test_stage2_two_channel_profile_derives_rollout_policy_from_plan(
 @pytest.mark.parametrize(
     ("variant", "replacement"),
     [
-        ("stage2_ab_training", "stage2_two_channel"),
-        ("rollout_matching_sft", "stage2_two_channel"),
-        ("stage2_rollout_aligned", "stage2_two_channel"),
-        ("stage2_rollout_runtime", "stage2_two_channel"),
+        ("stage2_ab_training", "stage2_rollout_correction"),
+        ("stage2_two_channel", "stage2_rollout_correction"),
+        ("rollout_matching_sft", "stage2_rollout_correction"),
+        ("stage2_rollout_aligned", "stage2_rollout_correction"),
+        ("stage2_rollout_runtime", "stage2_rollout_correction"),
         ("stage1_set_continuation", "prefix_rollin_et_rmp_ce"),
     ],
 )
@@ -146,7 +240,7 @@ def test_profile_removed_variants_fail_fast_with_replacement_guidance(
 def test_training_runtime_profile_is_frozen() -> None:
     profile_mod = _profile_module()
 
-    profile = profile_mod.resolve_training_runtime_profile("stage2_two_channel")
+    profile = profile_mod.resolve_training_runtime_profile("stage2_rollout_correction")
 
     with pytest.raises(FrozenInstanceError):
         profile.collator_family = "default"
@@ -235,7 +329,7 @@ def test_compose_trainer_class_rejects_auxiliary_losses_with_recursive_ce(
 @pytest.mark.parametrize(
     "variant",
     [
-        "stage2_two_channel",
+        "stage2_rollout_correction",
     ],
 )
 def test_compose_trainer_class_excludes_ordinary_stage1_mixins_via_profile(
@@ -252,10 +346,11 @@ def test_compose_trainer_class_excludes_ordinary_stage1_mixins_via_profile(
 @pytest.mark.parametrize(
     ("variant", "replacement"),
     [
-        ("stage2_ab_training", "stage2_two_channel"),
-        ("rollout_matching_sft", "stage2_two_channel"),
-        ("stage2_rollout_aligned", "stage2_two_channel"),
-        ("stage2_rollout_runtime", "stage2_two_channel"),
+        ("stage2_ab_training", "stage2_rollout_correction"),
+        ("stage2_two_channel", "stage2_rollout_correction"),
+        ("rollout_matching_sft", "stage2_rollout_correction"),
+        ("stage2_rollout_aligned", "stage2_rollout_correction"),
+        ("stage2_rollout_runtime", "stage2_rollout_correction"),
         ("stage1_set_continuation", "prefix_rollin_et_rmp_ce"),
     ],
 )

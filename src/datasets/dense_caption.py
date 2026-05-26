@@ -13,7 +13,10 @@ from public_data.view_contracts import (
     load_view_metadata,
 )
 from torch.utils.data import Dataset
-from swift.llm import MaxLengthError
+try:
+    from swift.llm import MaxLengthError
+except ImportError:
+    from swift.template import MaxLengthError
 
 from src.common.geometry.bbox_parameterization import (
     AllowedBBoxFormat,

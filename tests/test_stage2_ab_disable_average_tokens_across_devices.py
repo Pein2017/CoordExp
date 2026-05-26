@@ -2,11 +2,11 @@ import contextlib
 from types import SimpleNamespace
 
 
-def test_stage2_ab_step_budgeted_disables_average_tokens_across_devices(monkeypatch):
+def test_stage2_rollout_correction_step_budgeted_disables_average_tokens_across_devices(monkeypatch):
     import torch
     import torch.distributed as dist
 
-    from src.trainers.stage2_two_channel.executors import Stage2ABChannelExecutorsMixin
+    from src.trainers.rollout_correction.executors import RolloutCorrectionExecutorsMixin
 
     class DummyModel:
         device = torch.device("cpu")
@@ -21,7 +21,7 @@ def test_stage2_ab_step_budgeted_disables_average_tokens_across_devices(monkeypa
         def data_collator(self, _batch):
             return {"loss": torch.tensor(1.0, requires_grad=True)}
 
-    class DummyTrainer(Stage2ABChannelExecutorsMixin):
+    class DummyTrainer(RolloutCorrectionExecutorsMixin):
         def __init__(self):
             self.model = DummyModel()
             self.template = DummyTemplate()
@@ -56,12 +56,12 @@ def test_stage2_ab_step_budgeted_disables_average_tokens_across_devices(monkeypa
             assert self.args.average_tokens_across_devices is False
             return batch["loss"]
 
-        def _prepare_batch_inputs_a(self, inputs, *, _segments_only: bool):
+        def _prepare_rollout_correction_inputs(self, inputs, *, _segments_only: bool):
             assert _segments_only is True
             segs = [({"input_ids": [1]}, {}, 1) for _ in inputs]
             return segs, {}
 
-        def _prepare_batch_inputs_b(self, inputs, *, _segments_only: bool):
+        def _prepare_rollout_correction_inputs(self, inputs, *, _segments_only: bool):
             assert _segments_only is True
             segs = [({"input_ids": [1]}, {}, 1) for _ in inputs]
             return segs, {}
@@ -81,7 +81,7 @@ def test_stage2_ab_step_budgeted_disables_average_tokens_across_devices(monkeypa
         def _rollout_decode_batch_size_per_rank(self):
             return 1
 
-        def _ab_channel_b_get(self, key: str, default=None):
+        def _rollout_correction_cfg_get(self, key: str, default=None):
             if key == "ddp_phase_timeout_s":
                 return 120.0
             return default
@@ -109,7 +109,7 @@ def test_stage2_ab_step_budgeted_disables_average_tokens_across_devices(monkeypa
     assert isinstance(loss_a, torch.Tensor)
     assert t.args.average_tokens_across_devices is True
 
-    loss_b = t._stage2_b_step_budgeted_train(
+    loss_b = t._stage2_rollout_correction_step_budgeted_train(
         t.model,
         raw_samples=[{}, {}, {}],
         global_step=1,

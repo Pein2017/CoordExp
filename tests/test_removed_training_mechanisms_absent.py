@@ -10,7 +10,7 @@ import yaml
 
 from src.config.loader import ConfigLoader
 from src.config.schema import PromptOverrides, TrainingConfig
-from src.trainers.stage2_two_channel.objective_runner import (
+from src.trainers.rollout_correction.objective_runner import (
     build_stage2_core_loss_logs,
 )
 from src.trainers.teacher_forcing.module_registry import OBJECTIVE_MODULE_CATALOG
@@ -19,7 +19,7 @@ from src.trainers.teacher_forcing.module_registry import OBJECTIVE_MODULE_CATALO
 REMOVED_DUPLICATE_BURST_OBJECTIVE = "loss_duplicate_burst_unlikelihood"
 REMOVED_DUPLICATE_BURST_LIVE_KEYS = {
     "train/optimization/loss_duplicate_burst_unlikelihood",
-    "loss/B_rollout_text/duplicate_burst_unlikelihood",
+    "loss/rollout_correction_text/duplicate_burst_unlikelihood",
     "loss_duplicate_burst_unlikelihood_contrib",
 }
 REMOVED_ADJACENT_REPULSION_CONFIG_KEYS = {
@@ -35,7 +35,7 @@ REMOVED_ADJACENT_REPULSION_LIVE_KEYS = {
     "coord_diag/adjacent_repulsion_applied_count",
     "coord_diag/adjacent_repulsion_copy_score_mean",
     "loss/adjacent_repulsion",
-    "loss/B_coord/adjacent_repulsion",
+    "loss/rollout_correction_coord/adjacent_repulsion",
     "adjacent_repulsion_contrib",
 }
 ACTIVE_OPENSPEC_CHANGE_EXCLUSIONS_FOR_REMOVED_MECHANISMS: set[str] = set()
@@ -97,11 +97,11 @@ PROHIBITED_ADJACENT_REPULSION_LIVE_SUPPORT_CLAIMS = (
 )
 
 RETAINED_DUPLICATE_DIAGNOSTIC_KEYS = {
-    "stage2_ab/channel_b/dup/N_clusters_total",
-    "stage2_ab/channel_b/dup/N_clusters_suppressed",
-    "stage2_ab/channel_b/dup/N_objects_suppressed",
-    "stage2_ab/channel_b/dup/N_duplicate_control_first_divergence_boundaries",
-    "stage2_ab/channel_b/dup/N_duplicate_control_first_divergence_skipped_no_divergence",
+    "stage2_rollout_correction/correction/dup/N_clusters_total",
+    "stage2_rollout_correction/correction/dup/N_clusters_suppressed",
+    "stage2_rollout_correction/correction/dup/N_objects_suppressed",
+    "stage2_rollout_correction/correction/dup/N_duplicate_control_first_divergence_boundaries",
+    "stage2_rollout_correction/correction/dup/N_duplicate_control_first_divergence_skipped_no_divergence",
 }
 
 ALLOWED_DOC_REMOVAL_CONTEXT = (
@@ -139,8 +139,8 @@ PROHIBITED_STALE_DUPLICATE_BURST_CLAIMS = (
 )
 
 PROHIBITED_STALE_DUPLICATE_METRIC_KEYS = (
-    "stage2_ab/channel_b/dup/N_ul_boundaries",
-    "stage2_ab/channel_b/dup/N_duplicate_burst_unlikelihood_skipped_no_divergence",
+    "stage2_rollout_correction/correction/dup/N_ul_boundaries",
+    "stage2_rollout_correction/correction/dup/N_duplicate_burst_unlikelihood_skipped_no_divergence",
     "diag/duplicate_burst/",
 )
 
@@ -287,15 +287,26 @@ def _is_allowed_task_1c_decision_evidence(
 def _canonical_live_stage2_objective() -> list[dict]:
     return [
         {
-            "name": "token_ce",
+            "name": "residual_set_correction",
             "enabled": True,
             "weight": 1.0,
-            "channels": ["A", "B"],
-            "application": {"preset": "anchor_text_only"},
+            "application": {"preset": "rollout_self_prefix"},
             "config": {
-                "desc_ce_weight": 1.0,
-                "rollout_fn_desc_weight": 1.0,
-                "rollout_global_prefix_struct_ce_weight": 1.0,
+                "expected_num_rollouts": 4,
+                "base_seed": 17,
+                "lambda_type": 1.0,
+                "lambda_inner": 1.0,
+                "fallback_loss_weight": 1.0,
+                "lambda_ul_promoted": 0.5,
+                "label_conflict_weight": 0.25,
+                "commit_iou_threshold": 0.75,
+                "duplicate_burst_iou_threshold": 0.95,
+                "ul_cluster_iou_threshold": 0.9,
+                "ul_gray_iou_low": 0.30,
+                "ul_consensus_ratio": 1.0,
+                "min_ul_valid_rollouts": 4,
+                "clean_gt_sft_mix": 0,
+                "strict_builder_invariants": True,
             },
         },
     ]
@@ -311,21 +322,20 @@ def _stage2_training_payload(*, objective: list[dict]) -> dict:
             "emit_norm": "none",
             "json_format": "standard",
             "object_field_order": "desc_first",
-            "trainer_variant": "stage2_two_channel",
+            "trainer_variant": "stage2_rollout_correction",
         },
         "training": {"per_device_train_batch_size": 1, "effective_batch_size": 1},
         "rollout_matching": {
             "rollout_backend": "hf",
-            "channel_b_decode_batch_size": 1,
+            "rollout_decode_batch_size": 1,
             "eval_decode_batch_size": 1,
         },
-        "stage2_ab": {
-            "schedule": {"b_ratio": 1.0},
+        "stage2_rollout_correction": {
             "pipeline": {
                 "objective": objective,
                 "diagnostics": [],
             },
-            "channel_b": {},
+            "correction": {},
         },
     }
 
@@ -335,8 +345,7 @@ def _duplicate_burst_objective_spec() -> dict:
         "name": REMOVED_DUPLICATE_BURST_OBJECTIVE,
         "enabled": True,
         "weight": 1.0,
-        "channels": ["B"],
-        "application": {"preset": "rollout_only"},
+        "application": {"preset": "rollout_self_prefix"},
         "config": {},
     }
 
@@ -437,8 +446,7 @@ def test_training_config_rejects_adjacent_repulsion_coord_reg_keys(key: str) -> 
             "name": "coord_reg",
             "enabled": True,
             "weight": 1.0,
-            "channels": ["A", "B"],
-            "application": {"preset": "anchor_only"},
+            "application": {"preset": "rollout_self_prefix"},
             "config": {key: 0.0 if key != "adjacent_repulsion_filter_mode" else "same_desc"},
         },
     ]
@@ -450,7 +458,8 @@ def test_training_config_rejects_adjacent_repulsion_coord_reg_keys(key: str) -> 
 
 def test_active_stage2_configs_do_not_declare_duplicate_burst_objective() -> None:
     repo_root = Path(__file__).resolve().parents[1]
-    active_config_root = repo_root / "configs" / "stage2_two_channel"
+    active_config_root = repo_root / "configs" / "stage2_rollout_correction"
+    assert active_config_root.exists()
 
     offenders: list[str] = []
     for path in sorted(active_config_root.rglob("*.yaml")):
@@ -463,7 +472,8 @@ def test_active_stage2_configs_do_not_declare_duplicate_burst_objective() -> Non
 
 def test_active_stage2_configs_do_not_declare_adjacent_repulsion_keys() -> None:
     repo_root = Path(__file__).resolve().parents[1]
-    active_config_root = repo_root / "configs" / "stage2_two_channel"
+    active_config_root = repo_root / "configs" / "stage2_rollout_correction"
+    assert active_config_root.exists()
 
     offenders: list[str] = []
     for path in sorted(active_config_root.rglob("*.yaml")):
@@ -632,7 +642,7 @@ def test_metric_writer_does_not_publish_duplicate_burst_live_loss_keys() -> None
     source = inspect.getsource(build_stage2_core_loss_logs)
     repo_root = Path(__file__).resolve().parents[1]
     stage2_trainer_source = (
-        repo_root / "src" / "trainers" / "stage2_two_channel.py"
+        repo_root / "src" / "trainers" / "stage2_rollout_correction_impl.py"
     ).read_text(encoding="utf-8")
 
     assert "duplicate_burst_unlikelihood_module_w" not in signature.parameters
@@ -651,7 +661,7 @@ def test_metric_writers_do_not_publish_adjacent_repulsion_live_loss_keys() -> No
     checked_paths = [
         repo_root / "src" / "trainers" / "metrics" / "coord_losses.py",
         repo_root / "src" / "trainers" / "teacher_forcing" / "objective_atoms.py",
-        repo_root / "src" / "trainers" / "stage2_two_channel" / "objective_runner.py",
+        repo_root / "src" / "trainers" / "rollout_correction" / "objective_runner.py",
         repo_root / "src" / "trainers" / "monitoring" / "loss_gradient_monitor.py",
     ]
 

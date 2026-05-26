@@ -1,8 +1,8 @@
 {
   "sample_id": "stage2-golden-rollout",
   "surface": {
-    "surface_id": "stage2_two_channel",
-    "pipeline_id": "stage2_two_channel",
+    "surface_id": "stage2_rollout_correction",
+    "pipeline_id": "stage2_rollout_correction",
     "lifecycle": "shadow"
   },
   "duplicate_decisions": [
@@ -55,7 +55,7 @@
   },
   "plan": {
     "stage": "stage2",
-    "channel": "channel_b",
+    "channel": "rollout_correction",
     "provenance": "stage2_greedy_iou_shadow_planner",
     "object_ids": [
       "pred-dog-survivor",

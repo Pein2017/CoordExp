@@ -1,14 +1,13 @@
 from __future__ import annotations
 
 import copy
-from dataclasses import asdict, replace
+from dataclasses import replace
 import sys
 from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
 
-from src.bootstrap.pipeline_manifest import build_pipeline_manifest
 from src.config.loader import ConfigLoader
 from src.config.schema import DetectionTrainingConfig, TrainingConfig
 from src.detection.runtime import (
@@ -31,9 +30,10 @@ from test_detection_training_dataset import (
     _raw_row,
     _write_jsonl,
 )
-from test_stage2_ab_config_contract import (
-    _canonical_stage2_pipeline,
-    _make_stage2_training_payload,
+from test_stage2_rollout_correction_contract import (
+    _base_payload as _stage2_rollout_correction_payload,
+    _load as _load_stage2_rollout_correction,
+    _rollout_correction_pipeline,
 )
 
 
@@ -88,23 +88,6 @@ def _latest_teacher_payload(**objective_updates: object) -> dict:
     return payload
 
 
-def _stage2_teacher_payload(
-    *,
-    objective: dict | None = None,
-    training: dict | None = None,
-    pipeline: dict | None = None,
-) -> dict:
-    payload = _make_stage2_training_payload(training)
-    payload["objective"] = objective or _teacher_forcing_objective()
-    if pipeline is not None:
-        payload["stage2_ab"]["pipeline"] = pipeline
-    return payload
-
-
-def _migrated_teacher_forcing_pipeline() -> dict:
-    return {"objective": [], "diagnostics": []}
-
-
 def _hard_sft_objective() -> dict:
     return _teacher_forcing_objective(
         profile="hard_sft",
@@ -121,12 +104,6 @@ def _hard_sft_objective() -> dict:
             "continuation_margin": {"enabled": False},
         }
     }
-
-
-def _teacher_forcing_stage2_objective_names(cfg: TrainingConfig) -> list[str]:
-    assert cfg.stage2_ab is not None
-    return [module.name for module in cfg.stage2_ab.pipeline.objective]
-
 
 @pytest.mark.parametrize(
     "profile",
@@ -214,16 +191,14 @@ def test_hard_sft_rejects_target_ir_only_modules(
         DetectionTrainingConfig.from_mapping(payload)
 
 
-def test_stage2_hard_sft_rejects_enabled_valid_set_likelihood_module() -> None:
+def test_training_config_hard_sft_rejects_enabled_valid_set_likelihood_module() -> None:
     objective = _hard_sft_objective()
     objective["modules"] = {
         **objective["modules"],
         "conditional_valid_set_likelihood": {"enabled": True},
     }
-    raw = _stage2_teacher_payload(
-        objective=objective,
-        pipeline=_migrated_teacher_forcing_pipeline(),
-    )
+    raw = _stage2_rollout_correction_payload()
+    raw["objective"] = objective
 
     prompts = ConfigLoader.resolve_prompts(raw)
     with pytest.raises(
@@ -325,7 +300,7 @@ def test_latest_teacher_forcing_rejects_legacy_objective_ids(old_id: str) -> Non
 
 @pytest.mark.parametrize("old_id", OLD_OBJECTIVE_IDS)
 def test_training_config_rejects_legacy_objective_ids(old_id: str) -> None:
-    raw = _make_stage2_training_payload()
+    raw = _stage2_rollout_correction_payload()
     raw["objective"] = {"id": old_id}
 
     prompts = ConfigLoader.resolve_prompts(raw)
@@ -340,16 +315,16 @@ def test_training_config_rejects_legacy_objective_ids(old_id: str) -> None:
 def test_stage2_teacher_forcing_rejects_legacy_pipeline_modules(
     module_name: str,
 ) -> None:
-    pipeline = _canonical_stage2_pipeline()
-    pipeline["objective"][0]["name"] = module_name
-    raw = _stage2_teacher_payload(pipeline=pipeline)
+    raw = _stage2_rollout_correction_payload()
+    raw["stage2_rollout_correction"]["pipeline"] = _rollout_correction_pipeline(  # type: ignore[index]
+        name=module_name
+    )
 
-    prompts = ConfigLoader.resolve_prompts(raw)
     with pytest.raises(
         ValueError,
-        match=rf"teacher_forcing.*stage2_ab\.pipeline\.objective.*{module_name}",
+        match=rf"{module_name}.*removed.*residual_set_correction",
     ):
-        TrainingConfig.from_mapping(raw, prompts)
+        _load_stage2_rollout_correction(raw)
 
 
 @pytest.mark.parametrize(
@@ -359,88 +334,33 @@ def test_stage2_teacher_forcing_rejects_legacy_pipeline_modules(
 def test_stage2_teacher_forcing_rejects_legacy_gate_config_keys(
     legacy_key: str,
 ) -> None:
-    pipeline = _canonical_stage2_pipeline()
-    pipeline["objective"][0]["config"][legacy_key] = 0.25
-    raw = _stage2_teacher_payload(pipeline=pipeline)
+    raw = _stage2_rollout_correction_payload()
+    pipeline = raw["stage2_rollout_correction"]["pipeline"]  # type: ignore[index]
+    pipeline["objective"][0]["config"][legacy_key] = 0.25  # type: ignore[index]
 
-    prompts = ConfigLoader.resolve_prompts(raw)
     with pytest.raises(
         ValueError,
-        match=rf"teacher_forcing.*stage2_ab\.pipeline\.objective.*{legacy_key}",
+        match=rf"residual_set_correction.*{legacy_key}",
     ):
-        TrainingConfig.from_mapping(raw, prompts)
+        _load_stage2_rollout_correction(raw)
 
 
-def test_stage2_teacher_forcing_rejects_packing_without_exact_mapping() -> None:
-    raw = _stage2_teacher_payload(
-        training={
-            "per_device_train_batch_size": 1,
-            "effective_batch_size": 1,
-            "packing": True,
-        }
+def test_stage2_rollout_correction_rejects_hard_sft_pipeline_module() -> None:
+    raw = _stage2_rollout_correction_payload()
+    raw["stage2_rollout_correction"]["pipeline"] = _rollout_correction_pipeline(  # type: ignore[index]
+        name="hard_sft"
     )
 
-    prompts = ConfigLoader.resolve_prompts(raw)
-    with pytest.raises(
-        ValueError,
-        match=r"teacher_forcing.*training\.packing=true.*not implemented",
-    ):
-        TrainingConfig.from_mapping(raw, prompts)
+    with pytest.raises(ValueError, match=r"hard_sft.*removed.*residual_set_correction"):
+        _load_stage2_rollout_correction(raw)
 
 
-def test_stage2_teacher_forcing_rejects_exact_packing_mapping_as_unsupported() -> None:
-    objective = _teacher_forcing_objective(exact_packing_mapping=True)
-    raw = _stage2_teacher_payload(
-        objective=objective,
-        pipeline=_migrated_teacher_forcing_pipeline(),
-    )
+def test_stage2_rollout_correction_rejects_top_level_stage2_ab_namespace() -> None:
+    raw = _stage2_rollout_correction_payload()
+    raw["stage2_ab"] = {"pipeline": {"objective": []}}
 
-    prompts = ConfigLoader.resolve_prompts(raw)
-    with pytest.raises(ValueError, match=r"exact_packing_mapping.*unsupported"):
-        TrainingConfig.from_mapping(raw, prompts)
-
-
-def test_stage2_teacher_forcing_hard_sft_compiles_runtime_manifest() -> None:
-    raw = _stage2_teacher_payload(
-        objective=_hard_sft_objective(),
-        pipeline=_migrated_teacher_forcing_pipeline(),
-    )
-
-    prompts = ConfigLoader.resolve_prompts(raw)
-    cfg = TrainingConfig.from_mapping(raw, prompts)
-
-    assert cfg.objective is not None
-    assert cfg.objective.id == "teacher_forcing"
-    assert cfg.objective.profile == "hard_sft"
-    assert cfg.stage2_ab is not None
-    assert _teacher_forcing_stage2_objective_names(cfg) == ["hard_sft"]
-
-
-@pytest.mark.parametrize(
-    "objective",
-    [
-        _teacher_forcing_objective(),
-        _teacher_forcing_objective(
-            profile="hybrid_valid_set_marginal",
-            coverage_enabled=True,
-            coverage_strength=0.1,
-        ),
-    ],
-)
-def test_stage2_teacher_forcing_valid_set_profiles_require_runtime_wiring(
-    objective: dict,
-) -> None:
-    raw = _stage2_teacher_payload(
-        objective=objective,
-        pipeline=_migrated_teacher_forcing_pipeline(),
-    )
-
-    prompts = ConfigLoader.resolve_prompts(raw)
-    with pytest.raises(
-        ValueError,
-        match=r"valid-set profiles require target IR runtime wiring",
-    ):
-        TrainingConfig.from_mapping(raw, prompts)
+    with pytest.raises(ValueError, match=r"stage2_ab.*removed.*stage2_rollout_correction"):
+        _load_stage2_rollout_correction(raw)
 
 
 def test_training_config_accepts_teacher_forcing_objective_without_stage2() -> None:
@@ -574,48 +494,10 @@ def test_latest_teacher_forcing_runtime_rejects_packing_surfaces(
         )
 
 
-def test_checked_in_stage2_teacher_forcing_smoke_config_materializes() -> None:
-    config_path = (
-        Path(__file__).resolve().parents[1]
-        / "configs/stage2_two_channel/teacher_forcing/hard_sft_smoke.yaml"
-    )
+def test_removed_stage2_teacher_forcing_config_tree_is_absent() -> None:
+    repo_root = Path(__file__).resolve().parents[1]
 
-    cfg = ConfigLoader.load_materialized_training_config(str(config_path))
-
-    assert isinstance(cfg, TrainingConfig)
-    assert cfg.objective is not None
-    assert cfg.objective.id == "teacher_forcing"
-    assert cfg.objective.profile == "hard_sft"
-    assert cfg.stage2_ab is not None
-    assert _teacher_forcing_stage2_objective_names(cfg) == ["hard_sft"]
-
-
-def test_checked_in_stage2_teacher_forcing_smoke_builds_nonempty_manifest() -> None:
-    config_path = (
-        Path(__file__).resolve().parents[1]
-        / "configs/stage2_two_channel/teacher_forcing/hard_sft_smoke.yaml"
-    )
-    cfg = ConfigLoader.load_materialized_training_config(str(config_path))
-    assert isinstance(cfg, TrainingConfig)
-    assert cfg.stage2_ab is not None
-
-    manifest = build_pipeline_manifest(
-        asdict(cfg.stage2_ab),
-        default_objective=["token_ce"],
-        default_diagnostics=[],
-        trainer_variant="stage2_two_channel",
-        config_path=str(config_path),
-        run_name=str(cfg.training.get("run_name", "")),
-        seed=17,
-    )
-
-    objective_names = [module["name"] for module in manifest["objective"]]
-    assert objective_names == ["hard_sft"]
-    assert not {
-        "bbox_geo",
-        "bbox_size_aux",
-        "coord_reg",
-        "token_ce",
-        "coord_gate",
-        "text_gate",
-    }.intersection(objective_names)
+    assert not (repo_root / "configs/stage2_two_channel").exists()
+    assert not (
+        repo_root / "configs/stage2_rollout_correction/teacher_forcing"
+    ).exists()

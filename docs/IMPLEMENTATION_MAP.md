@@ -14,7 +14,7 @@ Purpose: route common research and engineering changes to the smallest useful se
 Authority: code-navigation guide for the current repo; for current defaults, defer to `docs/PROJECT_CONTEXT.md` and runbooks; for stable contract semantics, defer to `openspec/specs/`.
 Read this after: `docs/SYSTEM_OVERVIEW.md`
 Read this before: opening many source files blindly or doing broad repo-wide searches
-Primary code handles: `src/sft.py`, `src/training/`, `src/detection/runtime.py`, `src/detection/template.py`, `src/common/detection_sequence.py`, `src/common/detection_compact_rows.py`, `src/bootstrap/`, `src/config/schema.py`, `src/datasets/`, `src/trainers/metrics/`, `src/metrics/events.py`, `src/trainers/stage2_two_channel.py`, `src/trainers/stage2_two_channel/`, `src/trainers/stage2_rollout_runtime.py`, `src/trainers/rollout_aligned_targets.py`, `src/trainers/rollout_aligned_evaluator.py`, `src/trainers/rollout_runtime/`, `src/launchers/stage2_vllm_server.py`, `src/infer/pipeline.py`, `src/infer/engine.py`, `src/infer/backends.py`, `src/infer/artifacts.py`, `src/eval/detection.py`, `src/eval/detection_orchestrator.py`, `src/eval/detection_records.py`, `src/eval/detection_geometry.py`, `src/eval/detection_coco.py`, `src/eval/detection_lvis.py`, `src/eval/detection_duplicate_guard.py`, `src/eval/detection_f1ish.py`, `src/eval/orchestration.py`, `src/eval/artifacts.py`
+Primary code handles: `src/sft.py`, `src/training/`, `src/detection/runtime.py`, `src/detection/template.py`, `src/common/detection_sequence.py`, `src/common/detection_compact_rows.py`, `src/bootstrap/`, `src/config/schema.py`, `src/datasets/`, `src/trainers/metrics/`, `src/metrics/events.py`, `src/trainers/stage2_rollout_correction.py`, `src/trainers/stage2_rollout_runtime.py`, `src/trainers/rollout_aligned_targets.py`, `src/trainers/rollout_aligned_evaluator.py`, `src/trainers/rollout_runtime/`, `src/launchers/stage2_vllm_server.py`, `src/infer/pipeline.py`, `src/infer/engine.py`, `src/infer/backends.py`, `src/infer/artifacts.py`, `src/eval/detection.py`, `src/eval/detection_orchestrator.py`, `src/eval/detection_records.py`, `src/eval/detection_geometry.py`, `src/eval/detection_coco.py`, `src/eval/detection_lvis.py`, `src/eval/detection_duplicate_guard.py`, `src/eval/detection_f1ish.py`, `src/eval/orchestration.py`, `src/eval/artifacts.py`
 Verification: use the targeted test files listed below before running broader suites
 
 ## 1. Data Contract, JSONL Rendering, Or Geometry
@@ -86,7 +86,7 @@ Open these code files first:
 Compact recursive detection ownership:
 - `src/training/surfaces.py` owns the guarded shadow resolver and supported
   `surface.id` values: `stage1_json_ce`, `stage1_compact_trie_ce`, and
-  `stage2_two_channel`.
+  `stage2_rollout_correction`.
 - Shadow objective profiles resolve through text/trie teacher-forcing modules;
   geometry regularizers are not part of the active Stage-2 objective surface.
 - `src/detection/runtime.py` owns detection runtime support/preflight, recursive CE runtime config resolution, prompt/mode/custom shim resolution, and `build_detection_training_dataset`.
@@ -121,12 +121,12 @@ Run these tests first:
 - `tests/test_compact_span_projector.py`
 - `tests/test_training_architecture_golden_thread.py`
 
-## 3. Stage-2 Two-Channel Or Rollout-Aligned Training, Matching, Triage, Or Duplicate Control Diagnostics
+## 3. Stage-2 Rollout-Correction Training, Matching, Triage, Or Duplicate Control Diagnostics
 
 Open these docs first:
 - [`docs/training/STAGE2_RUNBOOK.md`](training/STAGE2_RUNBOOK.md)
 - [`docs/training/METRICS.md`](training/METRICS.md)
-- [`openspec/specs/stage2-ab-training/spec.md`](../openspec/specs/stage2-ab-training/spec.md)
+- [`openspec/specs/stage2-rollout-correction/spec.md`](../openspec/specs/stage2-rollout-correction/spec.md)
 - [`openspec/specs/rollout-matching-sft/spec.md`](../openspec/specs/rollout-matching-sft/spec.md)
 - [`openspec/specs/teacher-forcing-unified-loss-registry/spec.md`](../openspec/specs/teacher-forcing-unified-loss-registry/spec.md)
 - [`openspec/specs/runtime-architecture-refactor-program/spec.md`](../openspec/specs/runtime-architecture-refactor-program/spec.md)
@@ -135,20 +135,19 @@ Historical context only:
 - Use `progress/` notes only for historical evidence after checking the current docs above.
 
 Open these configs first:
-- `configs/stage2_two_channel/base.yaml`
+- `configs/stage2_rollout_correction/base.yaml`
 - `configs/_shared/datasets/`
 - `configs/_shared/prompts/`
-- `configs/stage2_two_channel/prod/`
-- `configs/stage2_two_channel/smoke/`
-  - residual-set ckpt3664 smoke: `compact_full_residual_set_ckpt3664_hf_1step.yaml`, `compact_full_residual_set_ckpt3664_hf_thorough.yaml`
+- `configs/stage2_rollout_correction/prod/`
+- `configs/stage2_rollout_correction/smoke/`
 
 Key v3 config handles:
-- `stage2_ab.channel_b.triage_posterior.*`
+- `stage2_rollout_correction.correction.triage_posterior.*`
 - `rollout_matching.decoding.*`
 
 Open these code files first:
 - `src/training/surfaces.py`
-- `src/training/pipelines/stage2_two_channel.py`
+- `src/trainers/stage2_rollout_correction.py`
 - `src/training/stage2/assignment.py`
 - `src/training/stage2/duplicate_filter.py`
 - `src/training/stage2/planners.py`
@@ -157,14 +156,7 @@ Open these code files first:
 - `src/bootstrap/pipeline_manifest.py`
 - `src/bootstrap/trainer_setup.py`
 - `src/trainers/stage2_coordination.py`
-- `src/trainers/stage2_two_channel.py`
-- `src/trainers/stage2_two_channel/scheduler.py`
-- `src/trainers/stage2_two_channel/target_builder.py`
-- `src/trainers/stage2_two_channel/objective_runner.py`
-- `src/trainers/stage2_two_channel/types.py`
-- `src/trainers/stage2_two_channel/rollout_views.py`
-- `src/trainers/stage2_two_channel/coordination.py`
-- `src/trainers/stage2_two_channel/executors.py`
+- `src/trainers/stage2_rollout_correction.py`
 - `src/trainers/stage2_rollout_runtime.py`
 - `src/trainers/rollout_aligned_targets.py`
 - `src/trainers/rollout_aligned_evaluator.py`
@@ -183,23 +175,18 @@ Stage-2 planning direction:
 - `src/training/stage2/assignment.py::GreedyIoUAssignment` is the target
   assignment strategy for new shadow planning.
 - `src/training/stage2/planners.py::Stage2GreedyIoUShadowPlanner` derives
-  false-negative GT insertions for Channel-B after duplicate filtering.
+  false-negative GT insertions after duplicate filtering.
 - `src/trainers/rollout_matching/matching.py::greedy_match_iou` is the
   shared rollout matching helper used by Stage-2 runtime code.
 
 Run these tests first:
-- `tests/test_stage2_ab_config_contract.py`
-- `tests/test_stage2_ab_training.py`
+- `tests/test_stage2_rollout_correction_contract.py`
 - `tests/test_stage2_rollout_runtime.py`
-- `tests/test_stage2_two_channel_training.py`
 - `tests/test_stage2_objective_atoms_projection.py`
 - `tests/test_teacher_forcing_token_ce.py`
 - `tests/test_stage2_pending_metrics_aggregation.py`
 - `tests/test_stage2_rollout_import_boundaries.py`
 - `tests/test_training_config_strict_unknown_keys.py`
-- `tests/test_stage2_ab_vllm_server_mode_smoke.py`
-- `tests/test_stage2_ab_ddp_phase_monitor_disable.py`
-- `tests/test_stage2_ab_disable_average_tokens_across_devices.py`
 - `tests/test_stage2_assignment_greedy_iou.py`
 - `tests/test_stage2_duplicate_filter.py`
 - `tests/test_stage2_supervision_planning_smoke.py`

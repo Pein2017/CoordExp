@@ -29,7 +29,7 @@ from src.training.span_adapters.stage1_compact import (
 from src.training.stage2.assignment import GreedyIoUAssignment
 from src.training.stage2.duplicate_filter import DuplicateFilter
 from src.training.stage2.planners import (
-    Stage2ChannelBPlanner,
+    Stage2RolloutCorrectionPlanner,
     Stage2GreedyIoUShadowPlanner,
     Stage2PlanningObject,
 )
@@ -347,7 +347,7 @@ def build_stage2_golden_thread(source: Mapping[str, Any]) -> Stage2GoldenThread:
 
     planner = Stage2GreedyIoUShadowPlanner(
         assignment_strategy=GreedyIoUAssignment(iou_threshold=assignment_iou),
-        channel_b_planner=Stage2ChannelBPlanner(
+        rollout_correction_planner=Stage2RolloutCorrectionPlanner(
             duplicate_filter=DuplicateFilter(iou_threshold=duplicate_iou),
         ),
     )

@@ -15,6 +15,8 @@ from src.sft import (
     StaticPackingCacheRuntimeConfig,
     _append_dataset_epoch_callback,
     _build_static_packing_fingerprint,
+    _pipeline_base_callbacks,
+    _pipeline_data_collator,
     _parse_static_packing_cache_config,
     _resolve_static_packing_cache_dir,
     _parse_encoded_sample_cache_config,
@@ -291,7 +293,7 @@ def test_validate_stage1_static_packing_policy_rejects_recursive_objective() -> 
 def test_validate_stage1_static_packing_policy_skips_rollout_matching_variants() -> None:
     _validate_stage1_static_packing_policy(
         packing_cfg=PackingRuntimeConfig(enabled=True, mode="dynamic"),
-        trainer_variant="stage2_two_channel",
+        trainer_variant="stage2_rollout_correction",
     )
 
 
@@ -317,6 +319,38 @@ def test_append_dataset_epoch_callback_registers_set_epoch_datasets() -> None:
         control=SimpleNamespace(),
     )
     assert dataset.epochs == [3]
+
+
+def test_pipeline_base_callbacks_tolerates_new_swift_pipeline_api() -> None:
+    assert _pipeline_base_callbacks(SimpleNamespace()) == []
+
+
+def test_pipeline_base_callbacks_copies_legacy_callbacks() -> None:
+    original = [object()]
+    copied = _pipeline_base_callbacks(SimpleNamespace(callbacks=original))
+
+    assert copied == original
+    assert copied is not original
+
+
+def test_pipeline_data_collator_uses_legacy_pipeline_method() -> None:
+    collator = object()
+    pipeline = SimpleNamespace(_get_data_collator=lambda: collator)
+
+    assert _pipeline_data_collator(pipeline, SimpleNamespace()) is collator
+
+
+def test_pipeline_data_collator_falls_back_to_template_collator() -> None:
+    def template_collator(batch, *, padding_to=None):
+        return {"batch": batch, "padding_to": padding_to}
+
+    template = SimpleNamespace(max_length=128, data_collator=template_collator)
+    pipeline = SimpleNamespace(template=template)
+    train_args = SimpleNamespace(training_args=SimpleNamespace(tuner_type="longlora"))
+
+    collator = _pipeline_data_collator(pipeline, train_args)
+
+    assert collator(["sample"]) == {"batch": ["sample"], "padding_to": 128}
 
 
 def test_static_packing_fingerprint_includes_dataset_source_identity(
@@ -771,48 +805,58 @@ def test_lvis_stage1_smoke_config_only_overrides_runtime_limits() -> None:
     assert cfg.training["logging_dir"] == "./tb/stage1/smoke/lvis_bbox_max60_1024_coord_softce_w1"
 
 
-def test_stage2_a_only_config_keeps_text_pipeline_contract() -> None:
-    repo_root = Path(__file__).resolve().parents[1]
-    cfg = ConfigLoader.load_materialized_training_config(
-        str(repo_root / "configs/stage2_two_channel/prod/a_only.yaml")
-    )
-
-    assert cfg.training["run_name"] == "epoch_2-eff_size_64-add_coord_ce"
-    assert cfg.custom.object_ordering == "sorted"
-    assert cfg.custom.object_field_order == "desc_first"
-    assert cfg.rollout_matching.eval_detection.metrics == "coco"
-    assert cfg.training["artifact_subdir"] == "stage2_ab/coco_bbox_max60/a_only"
-    objective = {module.name: module for module in cfg.stage2_ab.pipeline.objective}
-    assert list(objective) == ["token_ce"]
-
-
-def test_stage2_a_only_smoke_config_resolves_token_ce_pipeline() -> None:
+def test_stage2_rollout_correction_prod_config_keeps_residual_pipeline_contract() -> None:
     repo_root = Path(__file__).resolve().parents[1]
     cfg = ConfigLoader.load_materialized_training_config(
         str(
             repo_root
-            / "configs/stage2_two_channel/smoke/a_only.yaml"
+            / "configs/stage2_rollout_correction/prod/coco1024_online_residual_correction_vllm_tail_append.yaml"
         )
     )
 
-    objective = {module.name: module for module in cfg.stage2_ab.pipeline.objective}
-    assert cfg.training["run_name"] == "smoke_20steps-stage2-a_only"
-    assert cfg.training["artifact_subdir"] == "stage2_ab/smoke/a_only"
-    assert list(objective) == ["token_ce"]
+    assert cfg.custom.trainer_variant == "stage2_rollout_correction"
+    assert cfg.rollout_matching.eval_detection.metrics == "coco"
+    assert "stage2_rollout_correction" in cfg.training["output_dir"]
+    objective = {
+        module.name: module
+        for module in cfg.stage2_rollout_correction.pipeline.objective
+    }
+    assert list(objective) == ["residual_set_correction"]
+    assert objective["residual_set_correction"].application["preset"] == "rollout_self_prefix"
+
+
+def test_stage2_rollout_correction_smoke_config_resolves_residual_pipeline() -> None:
+    repo_root = Path(__file__).resolve().parents[1]
+    cfg = ConfigLoader.load_materialized_training_config(
+        str(
+            repo_root
+            / "configs/stage2_rollout_correction/smoke/compact_full_hf_1step.yaml"
+        )
+    )
+
+    objective = {
+        module.name: module
+        for module in cfg.stage2_rollout_correction.pipeline.objective
+    }
+    assert cfg.training["run_name"] == "compact_full_hf_1step"
+    assert "stage2_rollout_correction" in cfg.training["output_dir"]
+    assert list(objective) == ["residual_set_correction"]
 
 
 def test_representative_raw_leaves_still_author_model_run_name_and_artifact_subdir() -> None:
     repo_root = Path(__file__).resolve().parents[1]
     raw_paths = [
         repo_root / "configs/stage1/lvis_bbox_max60_1024.yaml",
-        repo_root / "configs/stage2_two_channel/prod/a_only.yaml",
+        repo_root
+        / "configs/stage2_rollout_correction/prod/coco1024_online_residual_correction_vllm_tail_append.yaml",
     ]
 
     for path in raw_paths:
-        payload = yaml.safe_load(path.read_text(encoding="utf-8"))
+        payload = ConfigLoader.load_yaml_with_extends(str(path))
+        payload = ConfigLoader._materialize_training_artifact_paths(payload)
         assert payload["model"]["model"]
         assert payload["training"]["run_name"]
-        assert payload["training"]["artifact_subdir"]
+        assert payload["training"]["output_dir"]
 
 
 def test_shared_dataset_and_prompt_facets_materialize_through_minimal_stage1_leaf(

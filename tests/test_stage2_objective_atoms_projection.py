@@ -14,7 +14,6 @@ def _token_ce_spec(weight: float = 1.0) -> dict:
         "name": "token_ce",
         "enabled": True,
         "weight": float(weight),
-        "channels": ["A", "B"],
         "config": {},
     }
 
@@ -24,7 +23,6 @@ def _schema_format_ce_spec(weight: float = 1.0) -> dict:
         "name": "schema_format_ce",
         "enabled": True,
         "weight": float(weight),
-        "channels": ["B"],
         "config": {"schema_ce_weight": 1.0},
     }
 
@@ -43,15 +41,15 @@ def test_project_stage2_objective_atoms_is_strictly_additive_for_token_ce() -> N
     atoms = project_stage2_objective_atoms(
         pipeline_result=pipeline_result,
         objective_specs=[_token_ce_spec(weight=3.0)],
-        text_provenance="B_rollout_text",
+        text_provenance="rollout_correction_text",
         coord_provenance=None,
         emit_text=True,
         emit_coord=False,
         require_additive=True,
     )
 
-    assert atoms["loss/B_rollout_text/struct_ce"] == pytest.approx(1.2)
-    assert atoms["loss/B_rollout_text/desc_ce"] == pytest.approx(0.3)
+    assert atoms["loss/rollout_correction_text/struct_ce"] == pytest.approx(1.2)
+    assert atoms["loss/rollout_correction_text/desc_ce"] == pytest.approx(0.3)
     assert sum(atoms.values()) == pytest.approx(1.5)
 
 
@@ -66,14 +64,14 @@ def test_project_stage2_objective_atoms_projects_schema_format_ce() -> None:
     atoms = project_stage2_objective_atoms(
         pipeline_result=pipeline_result,
         objective_specs=[_schema_format_ce_spec(weight=1.5)],
-        text_provenance="B_rollout_text",
+        text_provenance="rollout_correction_text",
         coord_provenance=None,
         emit_text=True,
         emit_coord=False,
         require_additive=True,
     )
 
-    assert atoms == {"loss/B_rollout_text/schema_format_ce": pytest.approx(0.75)}
+    assert atoms == {"loss/rollout_correction_text/schema_format_ce": pytest.approx(0.75)}
 
 
 def test_project_stage2_objective_atoms_allows_disabling_text_emission() -> None:
@@ -115,7 +113,7 @@ def test_project_stage2_objective_atoms_raises_on_mismatch() -> None:
         _ = project_stage2_objective_atoms(
             pipeline_result=pipeline_result,
             objective_specs=[_token_ce_spec()],
-            text_provenance="B_rollout_text",
+            text_provenance="rollout_correction_text",
             coord_provenance=None,
             emit_text=True,
             emit_coord=False,
@@ -145,7 +143,6 @@ def test_project_stage2_objective_atoms_rejects_removed_modules(
                     "name": module_name,
                     "enabled": True,
                     "weight": 1.0,
-                    "channels": ["A", "B"],
                     "config": {},
                 }
             ],

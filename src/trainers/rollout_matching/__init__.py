@@ -1,7 +1,7 @@
 """Public rollout-matching contracts.
 
 This package provides stable, import-light helpers shared by rollout-matching SFT
-and Stage-2 AB, without relying on trainer implementation modules.
+and Stage-2 rollout-correction, without relying on trainer implementation modules.
 """
 
 from .contracts import GTObject, GeomType, MatchResult, ParsedPredObject, RolloutParseResult

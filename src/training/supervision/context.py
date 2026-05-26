@@ -8,13 +8,13 @@ from typing import Literal, TypeAlias, cast
 
 
 SupervisionStage: TypeAlias = Literal["stage1", "stage2"]
-SupervisionChannel: TypeAlias = Literal["primary", "channel_a", "channel_b"]
+SupervisionChannel: TypeAlias = Literal["primary", "rollout_correction"]
 SemanticScalar: TypeAlias = str | int | float | bool | None
 SemanticMetadata: TypeAlias = Mapping[str, SemanticScalar]
 
 VALID_SUPERVISION_STAGES: frozenset[str] = frozenset(("stage1", "stage2"))
 VALID_SUPERVISION_CHANNELS: frozenset[str] = frozenset(
-    ("primary", "channel_a", "channel_b")
+    ("primary", "rollout_correction")
 )
 FORBIDDEN_SEMANTIC_METADATA_KEYS: frozenset[str] = frozenset(
     (

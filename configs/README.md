@@ -4,7 +4,7 @@ layer: configs
 doc_type: router
 status: canonical
 domain: training
-updated: 2026-05-20
+updated: 2026-05-25
 ---
 
 # Configs
@@ -26,8 +26,9 @@ attempt.
   or comparing.
 - `configs/stage1/recursive_detection_ce/smoke/`: minimal smoke and
   preflight overlays for the retained recursive detection configs.
-- `configs/stage2_two_channel/`: compact Stage-2 two-channel surface. This is
-  intentionally narrow while Stage-2 is not the main generation path.
+- `configs/stage2_rollout_correction/`: active Stage-2 rollout-correction
+  surface. These configs use rollout prefix plus GT/residual correction and the
+  canonical `stage2_rollout_correction` namespace.
 
 ## Policy
 
@@ -40,6 +41,8 @@ attempt.
   GPU files for every variant.
 - If a config exists only to remember an old run, record the artifact path in
   `progress/` and remove the runnable YAML from `configs/`.
+- The retired Stage-2 AB/two-channel config root is removed; do not add active
+  configs under old `stage2_ab` or `stage2_two_channel` names.
 - `configs/analysis/`, `configs/infer/`, `configs/eval/`, `configs/postop/`,
   and `configs/bench/` are tool/config inputs, not training profile families.
   Clean them separately from Stage-1/Stage-2 training YAML.

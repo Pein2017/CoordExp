@@ -26,7 +26,7 @@ from src.training.supervision.distributions import (
 from src.training.supervision.spans import SupervisionSpan
 
 
-Stage2CompactChannel = Literal["channel_a", "channel_b"]
+Stage2CompactChannel = Literal["rollout_correction"]
 
 
 @dataclass(frozen=True, slots=True)
@@ -138,7 +138,7 @@ class Stage2CompactTokenTargetSpec:
     :param label_position: Target-token label position to supervise.
     :param token_ids: Positive token ids accepted at the target position.
     :param token_weights: Optional positive multiplicity weights for token ids.
-    :param channel: Stage-2 channel ownership for this target.
+    :param channel: Stage-2 rollout-correction ownership for this target.
     :param provenance: Scalar Stage-2 provenance metadata.
     :param span_provenance: Optional semantic source label for the span.
     """
@@ -153,13 +153,13 @@ class Stage2CompactTokenTargetSpec:
     def __post_init__(self) -> None:
         """Validate Stage-2 target spec fields."""
 
-        # validate target-token identity and channel ownership.
+        # validate target-token identity and rollout-correction ownership.
         if type(self.label_position) is not int:
             raise TypeError("label position must be an integer")
         if self.label_position < 0:
             raise ValueError("label position must be non-negative")
-        if self.channel not in ("channel_a", "channel_b"):
-            raise ValueError("Stage-2 compact channel must be channel_a or channel_b")
+        if self.channel != "rollout_correction":
+            raise ValueError("Stage-2 compact channel must be rollout_correction")
         if type(self.provenance) is not Stage2SpanProvenance:
             raise TypeError("provenance must be Stage2SpanProvenance")
 
@@ -206,7 +206,7 @@ class Stage2CompactSpanAdapter:
         # resolve the compact projection boundary.
         compact_projection = self._coerce_projection(projection)
 
-        # convert channel target specs to supervision spans without logit shifting.
+        # convert rollout-correction target specs to supervision spans without logit shifting.
         spans: list[SupervisionSpan] = []
         for target in targets:
             self._validate_target(target, compact_projection)

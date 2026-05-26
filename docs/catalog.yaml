@@ -55,11 +55,11 @@ config_surfaces:
         - trie_ce
         - coord_soft_ce
       notes: "Primary Stage-1 architecture direction: compact-full token-span supervision with trie CE, coordinate soft CE, and optional box regression. Disabled objectives remain explicit in the resolved profile."
-    - id: unified_training_shadow_stage2_two_channel
-      status: shadow-design-direction
-      surface_id: stage2_two_channel
+    - id: unified_training_shadow_stage2_rollout_correction
+      status: active
+      surface_id: stage2_rollout_correction
       resolver: src/training/surfaces.py::TrainingSurfaceResolver
-      pipeline: src/training/pipelines/stage2_two_channel.py::Stage2TwoChannelPipeline
+      pipeline: src/trainers/stage2_rollout_correction.py::Stage2RolloutCorrectionTrainer
       domains:
         - run
         - surface
@@ -72,8 +72,8 @@ config_surfaces:
         - runtime
       assignment_strategy: greedy_iou
       duplicate_filter_order: before_assignment_and_target_realization
-      channel_b_false_negative_insertion: true
-      notes: "Guarded Stage-2 design direction. Duplicate filtering runs before greedy-IoU assignment; unmatched GT becomes Channel-B false-negative insertion. Greedy IoU is the only live Stage-2 assignment strategy."
+      residual_set_correction: true
+      notes: "Active Stage-2 rollout-correction direction. Duplicate filtering runs before greedy-IoU assignment; unmatched GT becomes residual GT-correction events. Greedy IoU is the only live Stage-2 assignment strategy."
     - id: stage1_latest_compact_detection_random_permutation_et_rmp_ce
       status: legacy-comparator
       config: configs/stage1/recursive_detection_ce/prod/compact_full_support2.yaml

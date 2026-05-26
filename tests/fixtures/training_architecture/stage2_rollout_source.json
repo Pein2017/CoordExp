@@ -7,7 +7,7 @@
       "seed": 12
     },
     "surface": {
-      "id": "stage2_two_channel",
+      "id": "stage2_rollout_correction",
       "version": "golden-v1",
       "description": "Golden Stage-2 rollout planning fixture."
     },
@@ -21,23 +21,15 @@
       "object_format": "coord_token_xyxy"
     },
     "supervision": {
-      "mode": "two_channel",
-      "channels": {
-        "a": {
-          "source": "ground_truth",
-          "objective_scope": "teacher_forcing"
-        },
-        "b": {
-          "source": "rollout",
-          "objective_scope": "rollout_plus_false_negative",
-          "planner": "greedy_iou_shadow"
-        }
-      },
+      "mode": "rollout_correction",
+      "rollout_prefix_source": "rollout",
+      "correction_scope": "rollout_plus_false_negative",
+      "planner": "greedy_iou_shadow",
       "assignment": "greedy_iou",
       "duplicate_filter": "deterministic_duplicate_filter"
     },
     "objectives": {
-      "token_ce": {
+      "residual_set_correction": {
         "enabled": true,
         "weight": 1.0
       },
@@ -54,7 +46,7 @@
     },
     "runtime": {
       "trainer": "fixture",
-      "trainer_variant": "stage2_two_channel",
+      "trainer_variant": "stage2_rollout_correction",
       "precision": "float32"
     }
   },

@@ -38,7 +38,7 @@ class RolloutOffloadConfig:
 class RolloutMonitorDumpConfig:
     enabled: bool = False
     every_steps: Optional[int] = None
-    every_channel_b_steps: Optional[int] = None
+    every_rollout_steps: Optional[int] = None
     dump_first_step: Optional[bool] = None
     only_world_process_zero: bool = True
     max_events: int = 20
@@ -71,7 +71,7 @@ class RolloutMonitorDumpConfig:
 
         _validate_positive_optional_int(self.every_steps, field_name="every_steps")
         _validate_positive_optional_int(
-            self.every_channel_b_steps, field_name="every_channel_b_steps"
+            self.every_rollout_steps, field_name="every_rollout_steps"
         )
 
 
@@ -214,7 +214,9 @@ class VllmServerConfig:
 
 @dataclass(frozen=True)
 class VllmSyncConfig:
-    mode: str = "full"  # full (only supported mode in this stack)
+    # adapter: official ms-swift/vLLM LoRA adapter sync.
+    # full is accepted only for legacy config parsing when vLLM is inactive.
+    mode: str = "full"
     # Deprecated/ignored: kept for backwards-compatible config parsing only.
     fallback_to_full: bool = True
 
@@ -229,7 +231,9 @@ class VllmConfig:
     gpu_memory_utilization: float = 0.45
 
     enable_lora: bool = False
+    max_lora_rank: Optional[int] = None
     load_format: Optional[str] = None
+    enable_tower_connector_lora: Optional[bool] = None
 
     enable_prefix_caching: bool = True
     enforce_eager: bool = False
@@ -269,11 +273,11 @@ class VllmConfig:
 class RolloutMatchingConfig:
     # Core backend selection.
     rollout_backend: str = "hf"
-    eval_rollout_backend: str = "vllm"
+    eval_rollout_backend: str = "hf"
 
     # Decode / generation.
     # Explicit per-context rollout decode batch sizes (required).
-    channel_b_decode_batch_size: Optional[int] = None
+    rollout_decode_batch_size: Optional[int] = None
     eval_decode_batch_size: Optional[int] = None
     decode_mode: str = "greedy"
     max_new_tokens: int = 512
@@ -348,18 +352,18 @@ class RolloutMatchingConfig:
         )
         effective_eval_backend = eval_backend
 
-        if self.channel_b_decode_batch_size is None:
+        if self.rollout_decode_batch_size is None:
             raise ValueError(
-                "rollout_matching.channel_b_decode_batch_size must be provided explicitly"
+                "rollout_matching.rollout_decode_batch_size must be provided explicitly"
             )
         try:
-            channel_b_decode_bs = int(self.channel_b_decode_batch_size)
+            rollout_decode_bs = int(self.rollout_decode_batch_size)
         except (TypeError, ValueError) as exc:
             raise TypeError(
-                "rollout_matching.channel_b_decode_batch_size must be an int"
+                "rollout_matching.rollout_decode_batch_size must be an int"
             ) from exc
-        if channel_b_decode_bs <= 0:
-            raise ValueError("rollout_matching.channel_b_decode_batch_size must be > 0")
+        if rollout_decode_bs <= 0:
+            raise ValueError("rollout_matching.rollout_decode_batch_size must be > 0")
 
         if self.eval_decode_batch_size is None:
             raise ValueError(
@@ -409,19 +413,36 @@ class RolloutMatchingConfig:
 
         if self.vllm is not None and self.vllm.sync is not None:
             mode = str(self.vllm.sync.mode or "full").strip().lower()
-            if mode != "full":
+            if mode not in {"full", "adapter"}:
                 raise ValueError(
-                    "rollout_matching.vllm.sync.mode must be 'full' in this stack "
-                    "(adapter/auto sync modes are unsupported)."
+                    "rollout_matching.vllm.sync.mode must be one of {'full', 'adapter'}."
                 )
 
         if (
             rollout_backend == "vllm" or effective_eval_backend == "vllm"
         ) and self.vllm is not None:
-            if bool(getattr(self.vllm, "enable_lora", False)):
+            enable_lora = bool(getattr(self.vllm, "enable_lora", False))
+            sync_cfg = getattr(self.vllm, "sync", None)
+            sync_mode = str(getattr(sync_cfg, "mode", "full") or "full").strip().lower()
+            if sync_mode != "adapter":
                 raise ValueError(
-                    "vLLM rollouts require full merged-weight sync in this stack: "
-                    "set rollout_matching.vllm.enable_lora=false."
+                    "vLLM rollouts require official adapter sync: set "
+                    "rollout_matching.vllm.sync.mode=adapter."
+                )
+            if not enable_lora:
+                raise ValueError(
+                    "vLLM rollouts require official adapter sync: set "
+                    "rollout_matching.vllm.enable_lora=true."
+                )
+            if enable_lora and sync_mode != "adapter":
+                raise ValueError(
+                    "rollout_matching.vllm.enable_lora=true requires "
+                    "rollout_matching.vllm.sync.mode=adapter."
+                )
+            if sync_mode == "adapter" and not enable_lora:
+                raise ValueError(
+                    "rollout_matching.vllm.sync.mode=adapter requires "
+                    "rollout_matching.vllm.enable_lora=true."
                 )
 
         if self.eval_prompt_variant is not None and not isinstance(

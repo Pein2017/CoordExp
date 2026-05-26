@@ -164,7 +164,7 @@ def builder_rejection_events(reason_counts: Mapping[str, int]) -> tuple[MetricEv
             "teacher_forcing/builder/rejected_samples",
             total,
             unit="sample",
-            metric_surface="target_builder",
+            metric_surface="target_realizer",
         )
     ]
     for reason, count in sorted(normalized.items()):
@@ -173,7 +173,7 @@ def builder_rejection_events(reason_counts: Mapping[str, int]) -> tuple[MetricEv
                 f"{TEACHER_FORCING_BUILDER_REJECTION_PREFIX}/{reason}",
                 count,
                 unit="sample",
-                metric_surface="target_builder",
+                metric_surface="target_realizer",
             )
         )
     return tuple(events)

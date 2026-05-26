@@ -33,7 +33,7 @@ def make_spec(
         name="residual_set_correction",
         enabled=True,
         weight=weight,
-        channels=("A", "B"),
+        surfaces=("rollout_correction",),
         config=dict(config or {}),
     )
 
@@ -113,7 +113,7 @@ def make_multi_atom_ir(
 
 def make_context(
     *,
-    channel: str = "B",
+    channel: str = "rollout_correction",
     logits: torch.Tensor | None = None,
     logits_ce: torch.Tensor | None = None,
     input_ids: torch.Tensor | None = None,
@@ -164,8 +164,8 @@ def test_valid_set_marginal_is_not_selected_token_ce() -> None:
     result = run_residual_set_correction_module(context=context, spec=make_spec())
 
     assert result.loss.item() == pytest.approx(0.0, abs=1.0e-6)
-    assert result.metrics["stage2_ab/channel_b/residual_set/atom_count"] == 1.0
-    assert result.metrics["stage2_ab/channel_b/residual_set/sequence_loss"] == pytest.approx(
+    assert result.metrics["stage2_rollout_correction/residual_set/atom_count"] == 1.0
+    assert result.metrics["stage2_rollout_correction/residual_set/sequence_loss"] == pytest.approx(
         result.loss.item()
     )
     selected_only_ce = -torch.log_softmax(context.logits[0, 0], dim=-1)[10]
@@ -228,9 +228,9 @@ def test_residual_set_module_counts_ambiguous_strict_and_mismatch_atoms() -> Non
 
     result = run_residual_set_correction_module(context=context, spec=make_spec())
 
-    assert result.metrics["stage2_ab/channel_b/residual_set/ambiguous_token_targets"] == 1.0
-    assert result.metrics["stage2_ab/channel_b/residual_set/strict_token_targets"] == 1.0
-    assert result.metrics["stage2_ab/channel_b/residual_set/target_token_mismatch"] == 1.0
+    assert result.metrics["stage2_rollout_correction/residual_set/ambiguous_token_targets"] == 1.0
+    assert result.metrics["stage2_rollout_correction/residual_set/strict_token_targets"] == 1.0
+    assert result.metrics["stage2_rollout_correction/residual_set/target_token_mismatch"] == 1.0
     assert result.loss.item() > 10.0
 
 
@@ -325,7 +325,7 @@ def test_residual_set_module_applies_lambda_inner_to_valid_set_term() -> None:
     )
 
     assert default_weight.loss.item() > disabled_inner.loss.item() + 0.5
-    assert disabled_inner.metrics["stage2_ab/channel_b/residual_set/inner_loss"] == 0.0
+    assert disabled_inner.metrics["stage2_rollout_correction/residual_set/inner_loss"] == 0.0
 
 
 def test_residual_set_type_loss_is_default_on() -> None:
@@ -351,7 +351,7 @@ def test_residual_set_type_loss_is_default_on() -> None:
     )
 
     assert default_weight.loss.item() > 1.0
-    assert default_weight.metrics["stage2_ab/channel_b/residual_set/type_loss"] == pytest.approx(
+    assert default_weight.metrics["stage2_rollout_correction/residual_set/type_loss"] == pytest.approx(
         default_weight.loss.item()
     )
     assert disabled_type.loss.item() == pytest.approx(0.0, abs=1.0e-6)
@@ -398,8 +398,8 @@ def test_stop_singleton_uses_stop_role_only() -> None:
     result = run_residual_set_correction_module(context=context, spec=make_spec())
 
     assert result.loss.item() == pytest.approx(0.0, abs=1.0e-6)
-    assert result.metrics["stage2_ab/channel_b/residual_set/eos_targets"] == 1.0
-    assert result.metrics["stage2_ab/channel_b/residual_set/continue_targets"] == 0.0
+    assert result.metrics["stage2_rollout_correction/residual_set/eos_targets"] == 1.0
+    assert result.metrics["stage2_rollout_correction/residual_set/continue_targets"] == 0.0
 
 
 def test_no_role_vocab_fails_closed_with_clear_error() -> None:
@@ -414,7 +414,7 @@ def test_no_role_vocab_fails_closed_with_clear_error() -> None:
         )
 
 
-def test_b_channel_requires_residual_set_target_ir_sidecar() -> None:
+def test_rollout_correction_requires_residual_set_target_ir_sidecar() -> None:
     from src.trainers.teacher_forcing.modules.residual_set_correction import (
         run_residual_set_correction_module,
     )
@@ -465,7 +465,7 @@ def test_present_empty_residual_set_target_ir_returns_zero() -> None:
         "clean_success_skipped",
     }
     for key in expected_zero_keys:
-        assert result.metrics[f"stage2_ab/channel_b/residual_set/{key}"] == 0.0
+        assert result.metrics[f"stage2_rollout_correction/residual_set/{key}"] == 0.0
 
 
 def test_packed_segments_rebase_segment_local_residual_ir_positions() -> None:
@@ -478,7 +478,7 @@ def test_packed_segments_rebase_segment_local_residual_ir_positions() -> None:
     logits[0, 0, 10] = 20.0
     logits[0, 2, 11] = 20.0
     context = TeacherForcingContext(
-        channel="B",
+        channel="rollout_correction",
         registry_context="rollout",
         input_ids=input_ids,
         logits=logits,
@@ -514,7 +514,7 @@ def test_packed_segments_rebase_segment_local_residual_ir_positions() -> None:
             == "selected_path_singleton"
         )
         assert target_ir.atoms[0].provenance["source_position_kind"] == "unit_test"
-    assert result.metrics["stage2_ab/channel_b/residual_set/atom_count"] == 2.0
+    assert result.metrics["stage2_rollout_correction/residual_set/atom_count"] == 2.0
     assert result.loss.item() == pytest.approx(0.0, abs=1.0e-6)
 
 
@@ -535,7 +535,7 @@ def test_batch_tensor_residual_ir_uses_declared_positions_without_offset() -> No
         position_space="batch_tensor",
     )
     context = TeacherForcingContext(
-        channel="B",
+        channel="rollout_correction",
         registry_context="rollout",
         input_ids=input_ids,
         logits=logits,
@@ -550,7 +550,7 @@ def test_batch_tensor_residual_ir_uses_declared_positions_without_offset() -> No
 
     result = run_residual_set_correction_module(context=context, spec=make_spec())
 
-    assert result.metrics["stage2_ab/channel_b/residual_set/atom_count"] == 1.0
+    assert result.metrics["stage2_rollout_correction/residual_set/atom_count"] == 1.0
     assert result.loss.item() == pytest.approx(0.0, abs=1.0e-6)
 
 
@@ -606,7 +606,7 @@ def test_compact_metrics_include_builder_and_decode_slices() -> None:
     result = run_residual_set_correction_module(context=context, spec=make_spec())
 
     metrics = result.metrics
-    prefix = "stage2_ab/channel_b/residual_set"
+    prefix = "stage2_rollout_correction/residual_set"
     assert metrics[f"{prefix}/dirty_prefix_sequence_count"] == 1.0
     assert metrics[f"{prefix}/committed_gt_rows"] == 2.0
     assert metrics[f"{prefix}/committed_ul_rows"] == 1.0
@@ -640,7 +640,7 @@ def test_no_atom_residual_set_metrics_survive_zero_loss_result() -> None:
 
     result = run_residual_set_correction_module(context=context, spec=make_spec())
 
-    prefix = "stage2_ab/channel_b/residual_set"
+    prefix = "stage2_rollout_correction/residual_set"
     assert result.loss.item() == 0.0
     assert result.metrics[f"{prefix}/sequence_count"] == 0.0
     assert result.metrics[f"{prefix}/atom_count"] == 0.0
@@ -691,7 +691,7 @@ def test_sequence_losses_are_weight_normalized_then_batch_meaned() -> None:
         position_space="batch_tensor",
     ).atoms[0]
     context = TeacherForcingContext(
-        channel="B",
+        channel="rollout_correction",
         registry_context="rollout",
         input_ids=input_ids,
         logits=logits,
@@ -713,9 +713,9 @@ def test_sequence_losses_are_weight_normalized_then_batch_meaned() -> None:
     expected = (expected_seq0 + expected_seq1) / 2.0
 
     assert result.loss.item() == pytest.approx(expected.item())
-    assert result.metrics["stage2_ab/channel_b/residual_set/sequence_count"] == 2.0
-    assert result.metrics["stage2_ab/channel_b/residual_set/atom_count"] == 3.0
-    assert result.metrics["stage2_ab/channel_b/residual_set/atom_weight_sum"] == 14.0
+    assert result.metrics["stage2_rollout_correction/residual_set/sequence_count"] == 2.0
+    assert result.metrics["stage2_rollout_correction/residual_set/atom_count"] == 3.0
+    assert result.metrics["stage2_rollout_correction/residual_set/atom_weight_sum"] == 14.0
 
 
 @pytest.mark.parametrize(
@@ -786,12 +786,12 @@ def test_module_reads_full_logits_row_not_logits_ce_shifted_view() -> None:
     assert result.loss.item() == pytest.approx(0.0, abs=1.0e-6)
 
 
-def test_non_b_channel_is_zero_noop_even_without_role_vocab() -> None:
+def test_non_rollout_correction_surface_is_zero_noop_even_without_role_vocab() -> None:
     from src.trainers.teacher_forcing.modules.residual_set_correction import (
         run_residual_set_correction_module,
     )
 
-    context = make_context(channel="A", include_role_vocab=False)
+    context = make_context(channel="offline_sft", include_role_vocab=False)
     result = run_residual_set_correction_module(
         context=context,
         spec=PipelineModuleSpec(
@@ -801,7 +801,7 @@ def test_non_b_channel_is_zero_noop_even_without_role_vocab() -> None:
     )
 
     assert result.loss.item() == 0.0
-    assert result.metrics["stage2_ab/channel_b/residual_set/atom_count"] == 0.0
+    assert result.metrics["stage2_rollout_correction/residual_set/atom_count"] == 0.0
     assert result.state["residual_set_correction_contrib"].item() == 0.0
 
 
@@ -828,7 +828,6 @@ def test_state_contribution_and_pipeline_projection_route_are_visible() -> None:
             {
                 "name": "residual_set_correction",
                 "weight": 2.0,
-                "channels": ["B"],
                 "config": {},
             }
         ],
@@ -844,20 +843,19 @@ def test_state_contribution_and_pipeline_projection_route_are_visible() -> None:
             {
                 "name": "residual_set_correction",
                 "weight": 2.0,
-                "channels": ["B"],
                 "config": {},
             }
         ],
-        text_provenance="B_rollout_text",
+        text_provenance="rollout_correction_text",
         coord_provenance=None,
     )
 
-    assert atoms["loss/B_rollout_text/residual_set"] == pytest.approx(
+    assert atoms["loss/rollout_correction_text/residual_set"] == pytest.approx(
         float(pipeline_out.total_loss.detach().cpu().item())
     )
 
 
-def test_stage2_trie_ce_alias_routes_to_residual_state_valid_set() -> None:
+def test_stage2_trie_ce_legacy_alias_routes_to_residual_state_valid_set() -> None:
     logits = torch.zeros((1, 2, 50), dtype=torch.float32)
     context = make_context(
         logits=logits,
@@ -867,7 +865,6 @@ def test_stage2_trie_ce_alias_routes_to_residual_state_valid_set() -> None:
         {
             "name": "stage2_trie_ce",
             "weight": 2.0,
-            "channels": ["B"],
             "application": {"preset": "rollout_trie_hard_ce"},
             "config": {},
         }
@@ -886,14 +883,14 @@ def test_stage2_trie_ce_alias_routes_to_residual_state_valid_set() -> None:
     atoms = project_stage2_objective_atoms(
         pipeline_result=pipeline_out,
         objective_specs=objective_specs,
-        text_provenance="B_rollout_text",
+        text_provenance="rollout_correction_text",
         coord_provenance=None,
     )
 
-    assert atoms["loss/B_rollout_text/residual_state_trie_ce"] == pytest.approx(
+    assert atoms["loss/rollout_correction_text/residual_state_trie_ce"] == pytest.approx(
         float(pipeline_out.total_loss.detach().cpu().item())
     )
-    assert "loss/B_rollout_text/trie_ce" not in atoms
+    assert "loss/rollout_correction_text/trie_ce" not in atoms
 
 
 def test_pipeline_rejects_removed_residual_set_live_config_key() -> None:
@@ -906,7 +903,6 @@ def test_pipeline_rejects_removed_residual_set_live_config_key() -> None:
                 {
                     "name": "residual_set_correction",
                     "weight": 1.0,
-                    "channels": ["B"],
                     "config": {"bbox_geo": 1.0},
                 }
             ],
@@ -923,7 +919,6 @@ def test_pipeline_accepts_residual_set_runtime_config_keys() -> None:
             {
                 "name": "residual_set_correction",
                 "weight": 1.0,
-                "channels": ["B"],
                 "config": {
                     "expected_num_rollouts": 4,
                     "base_seed": 17,
@@ -939,4 +934,4 @@ def test_pipeline_accepts_residual_set_runtime_config_keys() -> None:
         diagnostics_specs=[],
     )
 
-    assert result.metrics["stage2_ab/channel_b/residual_set/atom_count"] == 1.0
+    assert result.metrics["stage2_rollout_correction/residual_set/atom_count"] == 1.0

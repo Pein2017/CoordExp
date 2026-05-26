@@ -108,7 +108,7 @@ def test_validate_bbox_format_contract_rejects_stage2_cxcy_logw_logh() -> None:
     with pytest.raises(ValueError, match="custom.bbox_format=cxcy_logw_logh"):
         _validate_bbox_format_contract(
             custom_config=SimpleNamespace(bbox_format="cxcy_logw_logh"),
-            trainer_variant="stage2_two_channel",
+            trainer_variant="stage2_rollout_correction",
         )
 
 
@@ -228,5 +228,5 @@ def test_validate_bbox_format_contract_rejects_stage2_cxcywh() -> None:
     with pytest.raises(ValueError, match="custom.bbox_format=cxcywh"):
         _validate_bbox_format_contract(
             custom_config=SimpleNamespace(bbox_format="cxcywh"),
-            trainer_variant="stage2_two_channel",
+            trainer_variant="stage2_rollout_correction",
         )

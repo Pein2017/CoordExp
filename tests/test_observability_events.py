@@ -16,7 +16,7 @@ def test_objective_metric_events_use_canonical_metric_event_with_axes() -> None:
         value=2.5,
         weight=4,
         stage="stage2",
-        channel="B",
+        channel="rollout_correction",
         objective_id="token_ce",
         unit="token",
         provenance="objective_runner",
@@ -28,11 +28,11 @@ def test_objective_metric_events_use_canonical_metric_event_with_axes() -> None:
     assert event.numerator == pytest.approx(10.0)
     assert event.denominator == pytest.approx(4.0)
     assert event.stage == "stage2"
-    assert event.channel == "B"
+    assert event.channel == "rollout_correction"
     assert event.objective_id == "token_ce"
     assert event.provenance == "objective_runner"
     assert event.identity.stage == "stage2"
-    assert event.identity.channel == "B"
+    assert event.identity.channel == "rollout_correction"
     assert event.identity.objective_id == "token_ce"
     assert event.identity.provenance == "objective_runner"
 
@@ -45,7 +45,7 @@ def test_service_flattens_canonical_metric_events_for_ms_swift_reporting() -> No
             value=1.0,
             weight=2,
             stage="stage2",
-            channel="A",
+            channel="rollout_correction",
             objective_id="token_ce",
             unit="token",
             provenance="objective_runner",
@@ -55,7 +55,7 @@ def test_service_flattens_canonical_metric_events_for_ms_swift_reporting() -> No
             value=3.0,
             weight=6,
             stage="stage2",
-            channel="A",
+            channel="rollout_correction",
             objective_id="token_ce",
             unit="token",
             provenance="objective_runner",
@@ -75,7 +75,7 @@ def test_flattening_rejects_same_key_with_different_observability_axes() -> None
             value=1.0,
             weight=1,
             stage="stage2",
-            channel="A",
+            channel="rollout_correction",
             objective_id="token_ce",
             unit="token",
             provenance="objective_runner",
@@ -85,7 +85,7 @@ def test_flattening_rejects_same_key_with_different_observability_axes() -> None
             value=2.0,
             weight=1,
             stage="stage2",
-            channel="A",
+            channel="rollout_correction",
             objective_id="trie_ce",
             unit="token",
             provenance="objective_runner",
@@ -105,7 +105,7 @@ def test_service_rejects_removed_mechanism_writer_keys() -> None:
             value=1.0,
             weight=1,
             stage="stage2",
-            channel="B",
+            channel="rollout_correction",
             objective_id="loss_duplicate_burst_unlikelihood",
             unit="token",
             provenance="objective_runner",
@@ -122,7 +122,7 @@ def test_removed_metric_keys_are_rejected_by_writers_and_legacy_readers() -> Non
                 value=1.0,
                 weight=1,
                 stage="stage2",
-                channel="B",
+                channel="rollout_correction",
                 objective_id="retired",
                 unit="token",
                 provenance="objective_runner",
@@ -135,18 +135,18 @@ def test_duplicate_diagnostic_counters_and_gauges_use_explicit_reducers() -> Non
     service = ObservabilityService()
 
     count = service.duplicate_count(
-        "stage2_ab/channel_b/dup/N_duplicate_control_first_divergence_boundaries",
+        "stage2_rollout_correction/correction/dup/N_duplicate_control_first_divergence_boundaries",
         3,
         stage="stage2",
-        channel="B",
+        channel="rollout_correction",
         provenance="duplicate_diagnostics",
     )
     gauge = service.duplicate_gauge(
-        "stage2_ab/channel_b/dup/raw_duplicate_iou_mean",
+        "stage2_rollout_correction/correction/dup/raw_duplicate_iou_mean",
         value=0.75,
         weight=4,
         stage="stage2",
-        channel="B",
+        channel="rollout_correction",
         provenance="duplicate_diagnostics",
     )
 
@@ -163,36 +163,36 @@ def test_duplicate_training_loss_keys_are_rejected_but_diagnostics_are_allowed()
 
     with pytest.raises(ValueError, match="removed training mechanism"):
         service.duplicate_gauge(
-            "loss/B_rollout_text/duplicate_burst_unlikelihood",
+            "loss/rollout_correction_text/duplicate_burst_unlikelihood",
             value=0.5,
             weight=2,
             stage="stage2",
-            channel="B",
+            channel="rollout_correction",
             provenance="duplicate_diagnostics",
         )
 
     diagnostic = service.duplicate_count(
-        "stage2_ab/channel_b/dup/N_clusters_total",
+        "stage2_rollout_correction/correction/dup/N_clusters_total",
         2,
         stage="stage2",
-        channel="B",
+        channel="rollout_correction",
         provenance="duplicate_diagnostics",
     )
 
-    assert diagnostic.key == "stage2_ab/channel_b/dup/N_clusters_total"
+    assert diagnostic.key == "stage2_rollout_correction/correction/dup/N_clusters_total"
     assert diagnostic.diagnostic_only is True
 
 
 def test_legacy_adapter_preserves_duplicate_reducer_semantics() -> None:
     count_keys = (
-        "stage2_ab/channel_b/dup/N_raw_bbox_valid",
-        "stage2_ab/channel_b/dup/N_clean_accepted",
-        "stage2_ab/channel_b/dup/N_clusters_total",
-        "stage2_ab/channel_b/dup/N_clusters_exempt",
-        "stage2_ab/channel_b/dup/N_clusters_suppressed",
-        "stage2_ab/channel_b/dup/N_objects_suppressed",
-        "stage2_ab/channel_b/dup/N_duplicate_control_first_divergence_boundaries",
-        "stage2_ab/channel_b/dup/N_duplicate_control_first_divergence_skipped_no_divergence",
+        "stage2_rollout_correction/correction/dup/N_raw_bbox_valid",
+        "stage2_rollout_correction/correction/dup/N_clean_accepted",
+        "stage2_rollout_correction/correction/dup/N_clusters_total",
+        "stage2_rollout_correction/correction/dup/N_clusters_exempt",
+        "stage2_rollout_correction/correction/dup/N_clusters_suppressed",
+        "stage2_rollout_correction/correction/dup/N_objects_suppressed",
+        "stage2_rollout_correction/correction/dup/N_duplicate_control_first_divergence_boundaries",
+        "stage2_rollout_correction/correction/dup/N_duplicate_control_first_divergence_skipped_no_divergence",
         "dup/raw/example_count",
         "dup/raw/example_total",
         "dup/raw/example_sum",
@@ -202,7 +202,7 @@ def test_legacy_adapter_preserves_duplicate_reducer_semantics() -> None:
         "dup/raw/near_iou90_pairs_any_desc_count",
     )
     gauge_keys = (
-        "stage2_ab/channel_b/dup/raw_duplicate_iou_mean",
+        "stage2_rollout_correction/correction/dup/raw_duplicate_iou_mean",
         "dup/raw/max_desc_count",
         "dup/raw/saturation_rate",
         "dup/raw/duplicate_like_max_cluster_size",

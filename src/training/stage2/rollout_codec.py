@@ -189,7 +189,7 @@ class Stage2RolloutParseResult:
 
 @dataclass(frozen=True)
 class Stage2RolloutTargetMetadata:
-    """Metadata for a rendered Stage-2 Channel-B rollout target."""
+    """Metadata for a rendered Stage-2 rollout-correction target."""
 
     template_family: Stage2RolloutTemplateFamily
     parser_id: str
@@ -276,12 +276,16 @@ def resolve_stage2_rollout_template_policy(
         resolved_fallback_loss_weight = float(fallback_loss_weight)
     except (TypeError, ValueError) as exc:
         raise TypeError(
-            "stage2_ab.channel_b.fallback_loss_weight must be a float/int"
+            "stage2_rollout_correction.correction.fallback_loss_weight must be a float/int"
         ) from exc
     if not math.isfinite(resolved_fallback_loss_weight):
-        raise ValueError("stage2_ab.channel_b.fallback_loss_weight must be finite")
+        raise ValueError(
+            "stage2_rollout_correction.correction.fallback_loss_weight must be finite"
+        )
     if resolved_fallback_loss_weight < 0.0:
-        raise ValueError("stage2_ab.channel_b.fallback_loss_weight must be >= 0")
+        raise ValueError(
+            "stage2_rollout_correction.correction.fallback_loss_weight must be >= 0"
+        )
     if isinstance(strict_rollout_preflight, bool):
         resolved_strict_rollout_preflight = bool(strict_rollout_preflight)
     elif isinstance(strict_rollout_preflight, int) and strict_rollout_preflight in {
@@ -297,11 +301,11 @@ def resolve_stage2_rollout_template_policy(
             resolved_strict_rollout_preflight = False
         else:
             raise ValueError(
-                "stage2_ab.channel_b.strict_rollout_preflight must be boolean"
+                "stage2_rollout_correction.correction.strict_rollout_preflight must be boolean"
             )
     else:
         raise TypeError(
-            "stage2_ab.channel_b.strict_rollout_preflight must be boolean"
+            "stage2_rollout_correction.correction.strict_rollout_preflight must be boolean"
         )
 
     # normalize optional runtime policies
@@ -319,7 +323,7 @@ def resolve_stage2_rollout_template_policy(
         FALLBACK_GT_FN_APPEND_ONLY,
     }:
         raise ValueError(
-            "stage2_ab.channel_b.invalid_rollout_policy must be one of "
+            "stage2_rollout_correction.correction.invalid_rollout_policy must be one of "
             "{'abort', 'dump_and_continue', 'fallback_gt_fn_append_only'}"
         )
 
@@ -329,12 +333,12 @@ def resolve_stage2_rollout_template_policy(
         decode_policy = decode_policy.replace("-", "_")
         if decode_policy not in {"unconstrained", "compact_grammar"}:
             raise ValueError(
-                "stage2_ab.channel_b.rollout_decode_policy for compact_full must be "
+                "stage2_rollout_correction.correction.rollout_decode_policy for compact_full must be "
                 "'unconstrained' or 'compact_grammar'"
             )
         if invalid_policy is not None and invalid_policy != FALLBACK_GT_FN_APPEND_ONLY:
             raise ValueError(
-                "stage2_ab.channel_b.invalid_rollout_policy for compact_full must be "
+                "stage2_rollout_correction.correction.invalid_rollout_policy for compact_full must be "
                 "'fallback_gt_fn_append_only' until alternate invalid-rollout "
                 "behavior is implemented"
             )
@@ -354,7 +358,7 @@ def resolve_stage2_rollout_template_policy(
         decode_policy = decode_policy.replace("-", "_")
         if decode_policy != "legacy_coordjson":
             raise ValueError(
-                "stage2_ab.channel_b.rollout_decode_policy for coordjson must be "
+                "stage2_rollout_correction.correction.rollout_decode_policy for coordjson must be "
                 "'legacy_coordjson'; compact-only decode policies are not supported"
             )
         if invalid_policy == FALLBACK_GT_FN_APPEND_ONLY:
@@ -505,13 +509,13 @@ class CompactFullRolloutCodec:
             detection_sequence_format=COMPACT_FULL_FORMAT,
         )
 
-    def build_channel_b_target(
+    def build_rollout_correction_target(
         self,
         parse_result: Stage2RolloutParseResult,
         *,
         fn_objects: Sequence[_AppendObjectLike],
     ) -> Stage2RolloutTarget:
-        """Build a Channel-B target from a parse result and FN objects."""
+        """Build a rollout-correction target from a parse result and FN objects."""
 
         # validate parser/template alignment
         if parse_result.template_family != "compact_full":
@@ -654,7 +658,7 @@ class LegacyCoordJsonRolloutCodec:
             object_field_order="desc_first",
         )
 
-    def build_channel_b_target(
+    def build_rollout_correction_target(
         self,
         parse_result: Stage2RolloutParseResult,
         *,

@@ -47,11 +47,11 @@ def test_supervision_plan_is_semantic_only() -> None:
 
 
 def test_stage2_plan_records_per_example_channel_ownership_and_provenance() -> None:
-    channel_b_plan = SupervisionPlan(
+    rollout_correction_plan = SupervisionPlan(
         sample_id="fixture-stage2",
         stage="stage2",
         template_id="compact_full",
-        channel="channel_b",
+        channel="rollout_correction",
         objects=(
             SupervisionObject(
                 object_id="pred-4",
@@ -66,21 +66,21 @@ def test_stage2_plan_records_per_example_channel_ownership_and_provenance() -> N
         metadata={"assignment": "greedy_iou"},
     )
 
-    assert channel_b_plan.sample_id == "fixture-stage2"
-    assert channel_b_plan.stage == "stage2"
-    assert channel_b_plan.channel == "channel_b"
-    assert channel_b_plan.provenance == "rollout_matching"
-    assert channel_b_plan.context_id == "ctx-stage2-smoke"
-    assert channel_b_plan.objects[0].object_id == "pred-4"
-    assert channel_b_plan.objects[0].provenance == "rollout_unmatched"
-    assert channel_b_plan.objects[0].metadata["pseudo_positive"] is True
+    assert rollout_correction_plan.sample_id == "fixture-stage2"
+    assert rollout_correction_plan.stage == "stage2"
+    assert rollout_correction_plan.channel == "rollout_correction"
+    assert rollout_correction_plan.provenance == "rollout_matching"
+    assert rollout_correction_plan.context_id == "ctx-stage2-smoke"
+    assert rollout_correction_plan.objects[0].object_id == "pred-4"
+    assert rollout_correction_plan.objects[0].provenance == "rollout_unmatched"
+    assert rollout_correction_plan.objects[0].metadata["pseudo_positive"] is True
 
-    assert not hasattr(channel_b_plan, "rendered_assistant_text")
-    assert not hasattr(channel_b_plan, "input_ids")
-    assert not hasattr(channel_b_plan, "model_inputs")
-    assert not hasattr(channel_b_plan, "raw_config")
-    assert not hasattr(channel_b_plan, "tokenizer")
-    assert not hasattr(channel_b_plan, "tensors")
+    assert not hasattr(rollout_correction_plan, "rendered_assistant_text")
+    assert not hasattr(rollout_correction_plan, "input_ids")
+    assert not hasattr(rollout_correction_plan, "model_inputs")
+    assert not hasattr(rollout_correction_plan, "raw_config")
+    assert not hasattr(rollout_correction_plan, "tokenizer")
+    assert not hasattr(rollout_correction_plan, "tensors")
 
 
 def test_plan_and_context_are_frozen() -> None:
@@ -120,15 +120,15 @@ def test_context_and_plan_split_execution_context_from_per_example_plan() -> Non
         split="train",
         template_id="compact_full",
         stage="stage2",
-        channel="channel_a",
+        channel="rollout_correction",
         experiment_id="exp-stage2",
-        metadata={"surface": "two_channel"},
+        metadata={"surface": "rollout_correction"},
     )
     plan = SupervisionPlan(
         sample_id="sample-9",
         stage="stage2",
         template_id="compact_full",
-        channel="channel_a",
+        channel="rollout_correction",
         context_id=context.context_id,
         objects=(
             SupervisionObject(
@@ -138,14 +138,14 @@ def test_context_and_plan_split_execution_context_from_per_example_plan() -> Non
                 provenance="gt_matched",
             ),
         ),
-        provenance="channel_a_ground_truth",
+        provenance="rollout_correction_ground_truth",
     )
 
     assert context.dataset_id == "coco1024_lvis_proxy"
     assert context.split == "train"
     assert context.template_id == "compact_full"
     assert context.stage == "stage2"
-    assert context.channel == "channel_a"
+    assert context.channel == "rollout_correction"
     assert context.experiment_id == "exp-stage2"
 
     assert plan.sample_id == "sample-9"
@@ -228,20 +228,20 @@ def test_supervision_contract_rejects_invalid_stage_and_channel() -> None:
 
     with pytest.raises(ValueError, match="stage1 supervision channel"):
         SupervisionContext(
-            context_id="ctx-stage1-channel-b",
+            context_id="ctx-stage1-rollout-correction",
             dataset_id="coco1024",
             split="train",
             template_id="compact_full",
             stage="stage1",
-            channel="channel_b",
+            channel="rollout_correction",
         )
 
     with pytest.raises(ValueError, match="stage1 supervision channel"):
         SupervisionPlan(
-            sample_id="sample-stage1-channel-a",
+            sample_id="sample-stage1-rollout-correction",
             stage="stage1",
             template_id="compact_full",
-            channel="channel_a",
+            channel="rollout_correction",
         )
 
 

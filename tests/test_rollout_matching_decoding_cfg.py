@@ -11,7 +11,7 @@ def _mk_uninit_trainer(cfg, *, include_decode_defaults: bool = True):
     t = Stage2RolloutRuntime.__new__(Stage2RolloutRuntime)
     if include_decode_defaults:
         merged = {
-            "channel_b_decode_batch_size": 1,
+            "rollout_decode_batch_size": 1,
             "eval_decode_batch_size": 1,
         }
         merged.update(dict(cfg))
@@ -45,7 +45,7 @@ def test_decode_batch_size_requires_explicit_context_keys():
     t = _mk_uninit_trainer({}, include_decode_defaults=False)
     with pytest.raises(
         ValueError,
-        match=r"channel_b_decode_batch_size must be provided explicitly",
+        match=r"rollout_decode_batch_size must be provided explicitly",
     ):
         t._validate_rollout_matching_cfg()
 
@@ -53,19 +53,19 @@ def test_decode_batch_size_requires_explicit_context_keys():
 def test_decode_batch_size_rejects_non_positive_values():
     t0 = _mk_uninit_trainer(
         {
-            "channel_b_decode_batch_size": 0,
+            "rollout_decode_batch_size": 0,
             "eval_decode_batch_size": 1,
         }
     )
     with pytest.raises(
         ValueError,
-        match=r"channel_b_decode_batch_size must be > 0",
+        match=r"rollout_decode_batch_size must be > 0",
     ):
         t0._validate_rollout_matching_cfg()
 
     t1 = _mk_uninit_trainer(
         {
-            "channel_b_decode_batch_size": 1,
+            "rollout_decode_batch_size": 1,
             "eval_decode_batch_size": -3,
         }
     )

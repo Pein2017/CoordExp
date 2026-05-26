@@ -34,10 +34,11 @@ from src.training.teacher_forcing.vocab import RoleVocab
 @pytest.mark.parametrize(
     ("variant", "replacement"),
     [
-        ("stage2_ab_training", "stage2_two_channel"),
-        ("rollout_matching_sft", "stage2_two_channel"),
-        ("stage2_rollout_aligned", "stage2_two_channel"),
-        ("stage2_rollout_runtime", "stage2_two_channel"),
+        ("stage2_ab_training", "stage2_rollout_correction"),
+        ("stage2_two_channel", "stage2_rollout_correction"),
+        ("rollout_matching_sft", "stage2_rollout_correction"),
+        ("stage2_rollout_aligned", "stage2_rollout_correction"),
+        ("stage2_rollout_runtime", "stage2_rollout_correction"),
         ("stage1_set_continuation", "prefix_rollin_et_rmp_ce"),
     ],
 )
@@ -58,7 +59,7 @@ def test_resolve_trainer_cls_removed_variants_fail_through_runtime_plan(
     [
         None,
         "",
-        "stage2_two_channel",
+        "stage2_rollout_correction",
     ],
 )
 def test_sft_variant_helpers_agree_with_runtime_plan(variant: str | None) -> None:
@@ -86,7 +87,7 @@ def test_validate_stage1_static_packing_policy_rejects_stage1_dynamic_mode() -> 
 
 
 def test_validate_stage1_static_packing_policy_allows_stage2_trainer_owned_packing() -> None:
-    variant = "stage2_two_channel"
+    variant = "stage2_rollout_correction"
     plan = resolve_training_runtime_plan(variant)
     assert plan.post_rollout_packing_owner == "trainer"
 
@@ -99,27 +100,30 @@ def test_validate_stage1_static_packing_policy_allows_stage2_trainer_owned_packi
 def test_teacher_forcing_stage2_packing_fails_runtime_preflight() -> None:
     config = SimpleNamespace(
         objective=SimpleNamespace(id="teacher_forcing"),
-        custom=SimpleNamespace(trainer_variant="stage2_two_channel"),
+        custom=SimpleNamespace(trainer_variant="stage2_rollout_correction"),
         training={"packing": True},
     )
 
-    with pytest.raises(ValueError, match=r"teacher_forcing.*stage2_two_channel.*packing"):
+    with pytest.raises(
+        ValueError,
+        match=r"teacher_forcing.*stage2_rollout_correction.*packing",
+    ):
         validate_training_runtime_preflight(
             config,
-            runtime_plan=resolve_training_runtime_plan("stage2_two_channel"),
+            runtime_plan=resolve_training_runtime_plan("stage2_rollout_correction"),
         )
 
 
 def test_non_teacher_forcing_stage2_packing_stays_trainer_owned() -> None:
     config = SimpleNamespace(
-        objective=SimpleNamespace(id="stage2_ab"),
-        custom=SimpleNamespace(trainer_variant="stage2_two_channel"),
+        objective=SimpleNamespace(id="stage2_rollout_correction"),
+        custom=SimpleNamespace(trainer_variant="stage2_rollout_correction"),
         training={"packing": True},
     )
 
     preflight = validate_training_runtime_preflight(
         config,
-        runtime_plan=resolve_training_runtime_plan("stage2_two_channel"),
+        runtime_plan=resolve_training_runtime_plan("stage2_rollout_correction"),
     )
 
     assert preflight.runtime_plan.post_rollout_packing_owner == "trainer"
@@ -147,7 +151,7 @@ def test_sft_runtime_preflight_rejects_teacher_forcing_encoded_sample_cache() ->
     with pytest.raises(ValueError, match="teacher_forcing encoded training cache"):
         _validate_sft_runtime_preflight(
             training_config=config,
-            runtime_plan=resolve_training_runtime_plan("stage2_two_channel"),
+            runtime_plan=resolve_training_runtime_plan("stage2_rollout_correction"),
         )
 
 
@@ -173,7 +177,7 @@ def test_sft_runtime_preflight_bypasses_teacher_forcing_encoded_sample_cache() -
 
     preflight = _validate_sft_runtime_preflight(
         training_config=config,
-        runtime_plan=resolve_training_runtime_plan("stage2_two_channel"),
+        runtime_plan=resolve_training_runtime_plan("stage2_rollout_correction"),
     )
     decision = _apply_sft_encoded_sample_cache_preflight(
         encoded_sample_cache_cfg=EncodedSampleCacheRuntimeConfig(
@@ -336,7 +340,7 @@ def test_static_packing_accumulation_warning_is_skipped_for_trainer_owned_packin
 
     _validate_static_packing_accumulation_windows(
         packing_cfg=PackingRuntimeConfig(enabled=True, mode="static"),
-        trainer_variant="stage2_two_channel",
+        trainer_variant="stage2_rollout_correction",
         per_rank_batches_est=1,
         gradient_accumulation_steps=2,
         world_size=1,
@@ -360,7 +364,7 @@ def test_static_packing_accumulation_warning_is_skipped_for_trainer_owned_packin
 @pytest.mark.parametrize(
     ("trainer_variant", "required_namespace"),
     [
-        ("stage2_two_channel", "stage2_ab.pipeline"),
+        ("stage2_rollout_correction", "stage2_rollout_correction.pipeline"),
     ],
 )
 def test_pipeline_manifest_missing_pipeline_error_uses_runtime_namespace(
@@ -370,7 +374,7 @@ def test_pipeline_manifest_missing_pipeline_error_uses_runtime_namespace(
     with pytest.raises(ValueError, match=required_namespace):
         _build_pipeline_manifest(
             {},
-            default_objective=["token_ce"],
+            default_objective=["residual_set_correction"],
             default_diagnostics=["coord_diag"],
             trainer_variant=trainer_variant,
             config_path="configs/example.yaml",
@@ -402,7 +406,7 @@ def test_rollout_decode_batch_size_override_skips_non_rollout_profiles(
 
 
 def test_rollout_decode_batch_size_override_uses_rollout_runtime_profile() -> None:
-    variant = "stage2_two_channel"
+    variant = "stage2_rollout_correction"
     profile = resolve_training_runtime_profile(variant)
     assert profile.rollout_runtime_owned is True
 

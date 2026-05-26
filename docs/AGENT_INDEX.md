@@ -30,7 +30,7 @@ Human support entrypoints:
 4. the relevant domain router
 5. relevant `openspec/specs/` only for stable contract semantics
    - use [`runtime-architecture-refactor-program/spec.md`](../openspec/specs/runtime-architecture-refactor-program/spec.md) for runtime structure, internal seams, and compatibility-preserving refactors
-   - use [`stage2-ab-training/spec.md`](../openspec/specs/stage2-ab-training/spec.md) for active Stage-2 behavior and config contracts
+   - use [`stage2-rollout-correction/spec.md`](../openspec/specs/stage2-rollout-correction/spec.md) for active Stage-2 behavior and config contracts
 6. `progress/` only when current docs do not answer the historical or empirical question
 
 ## Query Routing
@@ -65,11 +65,11 @@ Human support entrypoints:
   - [docs/training/README.md](training/README.md)
   - [docs/training/STAGE2_RUNBOOK.md](training/STAGE2_RUNBOOK.md) for current behavior, launcher workflow, and historical-context pointers
   - [docs/training/METRICS.md](training/METRICS.md)
-  - [`stage2-ab-training/spec.md`](../openspec/specs/stage2-ab-training/spec.md)
+  - [`stage2-rollout-correction/spec.md`](../openspec/specs/stage2-rollout-correction/spec.md)
   - [`rollout-matching-sft/spec.md`](../openspec/specs/rollout-matching-sft/spec.md) for the retired rollout-matching trainer contract
   - [`runtime-architecture-refactor-program/spec.md`](../openspec/specs/runtime-architecture-refactor-program/spec.md)
-  - Shadow surface ID: `stage2_two_channel`.
-  - Planning direction: duplicate filtering before target realization, greedy-IoU assignment over retained rollout objects, and Channel-B false-negative insertion for unmatched GT.
+  - Shadow surface ID: `stage2_rollout_correction`.
+  - Planning direction: duplicate filtering before target realization, greedy-IoU assignment over retained rollout objects, and GT correction event construction for unmatched GT.
   - Greedy IoU is the only live Stage-2 assignment strategy; do not reintroduce alternate assignment mechanisms without a new spec.
 - Metrics, diagnostics, and artifacts:
   - [docs/training/METRICS.md](training/METRICS.md) for `MetricEvent`, `DiagnosticEvent`, bounded diagnostic profiles, and clean-write/tolerant-read metric behavior
@@ -100,7 +100,7 @@ Do not answer current-behavior questions from `progress/` if `docs/` or `openspe
 ## Suggested Search Seeds
 
 ```bash
-rg -n "stage2_two_channel|stage2_ab|stage2_coordination|stage2_rollout_runtime|rollout_runtime|rollout_aligned_targets|rollout_aligned_evaluator|stage2_vllm_server" docs openspec src scripts configs
+rg -n "stage2_rollout_correction|stage2_coordination|stage2_rollout_runtime|rollout_runtime|rollout_aligned_targets|rollout_aligned_evaluator|stage2_vllm_server" docs openspec src scripts configs
 rg -n "surface.id|stage1_json_ce|stage1_compact_trie_ce|MetricEvent|DiagnosticEvent|GreedyIoUAssignment|Stage2GreedyIoUShadowPlanner" docs src tests
 rg -n "runtime-architecture-refactor-program|pipeline_manifest|run_metadata|trainer_setup|resolved_config.json|effective_runtime.json" docs openspec src tests
 rg -n "contract|jsonl|geometry|packing" docs/data src/datasets

@@ -5,7 +5,7 @@ doc_type: reference
 status: canonical
 domain: training
 summary: Stage-1 objective surfaces and coord-token training behavior.
-updated: 2026-05-19
+updated: 2026-05-25
 ---
 
 # Coord Objective & Adapter
@@ -18,8 +18,9 @@ Scope note:
   one hard `global_max_length` cap, offline static packing, full-length probing before plan build,
   and fail-fast when any atomic sample exceeds the cap.
 - For Stage-2 pipeline-declared training, the canonical objective surface now lives under:
-  - `stage2_ab.pipeline` for `custom.trainer_variant: stage2_two_channel`
-- In those Stage-2 paths, active objective ownership is text/trie-only through the pipeline surface described in:
+  - `stage2_rollout_correction.pipeline` for `custom.trainer_variant: stage2_rollout_correction`
+- In those Stage-2 paths, active objective ownership is residual rollout
+  correction through the pipeline surface described in:
   - `docs/training/STAGE2_RUNBOOK.md`
   - `docs/training/METRICS.md`
 - Legacy `custom.coord_soft_ce_w1.*` authoring should not be used for pipeline-declared Stage-2 configs.
@@ -145,7 +146,7 @@ custom:
   - The older `coord_diag/*` diagnostic namespace is historical and is not an
     active coord-aux objective contract.
 - Stage-2 note:
-  - `stage2_two_channel` uses provenance-aware text/trie metric families and routes Channel-A through `loss/text/*`, while Channel-B uses `loss/B_rollout_text/*`.
+  - `stage2_rollout_correction` uses rollout-prefix roll-in plus residual/GT correction target IR metrics under `stage2_rollout_correction/*`.
   - Historical coord/bbox groups such as `loss/coord/*`, `loss/B_coord/*`, `loss/A1_*`, `loss/A2_*`, `coord_diag/*`, `coord_diag/A1/*`, and `coord_diag/A2/*` are no longer part of the active Stage-2 objective contract.
 
 ## Stage-1 compact recursive detection and prefix roll-in

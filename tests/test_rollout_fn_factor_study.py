@@ -87,8 +87,8 @@ execution:
 checkpoints:
   - alias: original
     path: output/stage1_2b/coco_bbox_max60-hard_ce_soft_ce_w1_gate_merged-1332
-  - alias: a_only
-    path: output/stage2_ab/2b_1024/a_only_iter1/merged_ckpt-900
+  - alias: rollout_correction
+    path: output/stage2_rollout_correction/2b_1024/rollout_correction_iter1/merged_ckpt-900
 
 splits:
   train:
@@ -483,8 +483,8 @@ execution:
 checkpoints:
   - alias: original
     path: output/stage1_2b/coco_bbox_max60-hard_ce_soft_ce_w1_gate_merged-1332
-  - alias: a_only
-    path: output/stage2_ab/2b_1024/a_only_iter1/merged_ckpt-900
+  - alias: rollout_correction
+    path: output/stage2_rollout_correction/2b_1024/rollout_correction_iter1/merged_ckpt-900
 
 splits:
   train:
@@ -499,7 +499,7 @@ splits:
     assignments = _worker_assignments(config)
     assert assignments == {
         ("train", "original"): 0,
-        ("train", "a_only"): 1,
+        ("train", "rollout_correction"): 1,
         ("val", "original"): 0,
-        ("val", "a_only"): 1,
+        ("val", "rollout_correction"): 1,
     }

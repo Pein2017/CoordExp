@@ -1,4 +1,4 @@
-from src.trainers.stage2_two_channel.attempt_table import (
+from src.trainers.rollout_correction.attempt_table import (
     build_attempt_table,
     wrap_rollout_attempt_view,
 )

@@ -45,14 +45,14 @@ These parts of the current pipeline remain valid:
 - Standard token CE remains valid for annotated LVIS objects.
 - The existing JSONL contract, collators, and assistant payload shape still
   work.
-- The current clean-prefix / FN-append Stage-2 structure remains the right
-  backbone.
+- The current Stage-2 rollout-correction structure remains the right backbone:
+  rollout prefix plus GT/residual correction.
 
 The default training geometry for LVIS should remain bbox-only.
 
 Why bbox-only is the default:
 
-- the active `stage2_two_channel` Channel-B target builder is explicitly bbox-only
+- the active Stage-2 rollout-correction target realization is bbox-only
 - LVIS polygons are still useful for optional evaluation and ablations
 - bbox-only keeps LVIS and COCO training behavior aligned at the objective level
 
@@ -107,17 +107,17 @@ New teacher-forcing work should prefer the unified typed objective surface and
 should not add new bbox-auxiliary or coordinate-regularizer modules without a
 separate spec.
 
-## Stage-2 / Channel-B Changes
+## Stage-2 Rollout-Correction Changes
 
-The active Channel-B triage is now LVIS-aware.
+The active rollout-correction triage is LVIS-aware.
 
-Final teacher-forced sequencing is also configurable through:
+Final correction sequencing is configurable through:
 
-- `stage2_ab.channel_b.insertion_order: tail_append | sorted`
+- `stage2_rollout_correction.correction.insertion_order: tail_append | sorted`
 - `tail_append` remains the default and preserves the historical retained-anchor
-  clean prefix plus FN tail behavior
+  rollout-prefix plus recovered-GT tail behavior
 - `sorted` applies a final top-left sort over the retained anchor objects plus
-  FN objects before teacher-forced serialization
+  recovered GT objects before correction serialization
 
 For unmatched anchor objects:
 
@@ -139,7 +139,7 @@ The resulting behavior is intentionally minimal:
 - existing explorer support and pseudo-positive promotion remain the mechanism
 - LVIS policy only gates which unmatched anchors are even eligible
 
-New Channel-B telemetry now separates:
+Rollout-correction telemetry now separates:
 
 - `train/triage/lvis_verified_positive_dead_count`
 - `train/triage/lvis_verified_negative_dead_count`
@@ -201,9 +201,10 @@ Primary implementation surfaces:
 - `src/infer/pipeline.py`
 - `src/bootstrap/trainer_setup.py`
 - `src/trainers/metrics/mixins.py`
-- `src/trainers/stage2_two_channel.py`
-- `src/trainers/stage2_two_channel/target_builder.py`
-- `src/trainers/stage2_two_channel/types.py`
+- `src/trainers/stage2_rollout_correction.py`
+- `src/trainers/stage2_rollout_correction_impl.py`
+- `src/trainers/rollout_correction/target_builder.py`
+- `src/trainers/rollout_correction/types.py`
 - `src/trainers/stage2_rollout_runtime.py`
 
 Useful config handles:
@@ -291,14 +292,12 @@ config=configs/stage1/smoke/lvis_bbox_max60_1024.yaml gpus=0 conda run -n ms bas
 ### 3. Stage-2 Training
 
 There is no current ready-to-run LVIS Stage-2 leaf in
-`configs/stage2_two_channel/`.
+`configs/stage2_rollout_correction/`.
 
-Future LVIS Stage-2 leaves should use the active text/trie objective surface
+Future LVIS Stage-2 leaves should use the active residual correction objective
 only:
 
-- `token_ce`
-- `hard_sft`
-- `stage2_trie_ce`
+- `residual_set_correction` with `application.preset: rollout_self_prefix`
 
 Removed Stage-2 geometry/coordinate auxiliary modules are no longer valid in
 the active pipeline. Do not revive old LVIS leaves that depend on deleted
@@ -341,7 +340,7 @@ PYTHONPATH=. conda run -n ms python scripts/evaluate_detection.py --config confi
 
 Reasonable follow-ups, ordered from lowest to highest complexity:
 
-- add a dedicated LVIS Stage-2 smoke config under `configs/stage2_two_channel/`
+- add a dedicated LVIS Stage-2 smoke config under `configs/stage2_rollout_correction/`
 - add semantic-desc calibration specifically for long-tail LVIS categories
 - add stricter parity tests against the external `lvis-api` package when that
   dependency is available in the runtime env

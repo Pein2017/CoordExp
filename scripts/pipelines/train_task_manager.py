@@ -13,11 +13,11 @@ Queue format:
 - blank lines and lines beginning with `#` are ignored
 
 Backwards-compatible queue entries still work:
-    {"session":"a_only","launch":false,"config":"configs/...yaml","stop_after_step":300,"require_eval":true}
+    {"session":"stage2_rollout_correction","launch":false,"config":"configs/stage2_rollout_correction/base.yaml","stop_after_step":300,"require_eval":true}
 
 Preferred flexible queue entries use:
     {
-      "session": "a_only",
+      "session": "stage2_rollout_correction",
       "launch": false,
       "config": "configs/...yaml",
       "monitor_after_seconds": 7200,

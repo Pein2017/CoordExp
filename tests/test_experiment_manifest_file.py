@@ -14,22 +14,22 @@ def test_write_experiment_manifest_file_captures_soft_and_hard_context(
 ) -> None:
     stage2_policy = {
         "assignment_strategy": "greedy_iou",
-        "duplicate_filter_strategy": "legacy_channel_b_duplicate_control",
+        "duplicate_filter_strategy": "rollout_correction_duplicate_control",
         "object_ordering_policy": "sorted",
     }
     out_path = write_experiment_manifest_file(
         output_dir=tmp_path,
-        config_path="configs/stage2_two_channel/smoke/a_only.yaml",
+        config_path="configs/stage2_rollout_correction/smoke/compact_full_hf_1step.yaml",
         base_config_path="configs/base.yaml",
-        run_name="smoke_20steps-stage2-a_only",
+        run_name="compact_full_hf_1step",
         dataset_seed=17,
         experiment={
-            "title": "Stage-2 A-only smoke",
-            "purpose": "Validate the compact A-only smoke path.",
-            "key_deviations": ["Uses the retained canonical A-only smoke profile."],
+            "title": "Stage-2 rollout-correction smoke",
+            "purpose": "Validate the compact rollout-correction smoke path.",
+            "key_deviations": ["Uses the canonical residual_set_correction objective."],
         },
         effective_runtime={
-            "trainer_variant": "stage2_two_channel",
+            "trainer_variant": "stage2_rollout_correction",
             "checkpoint_mode": "artifact_only",
             "save_model_only": False,
             "gradient_accumulation_steps": 4,
@@ -38,7 +38,7 @@ def test_write_experiment_manifest_file_captures_soft_and_hard_context(
         },
         pipeline_manifest={
             "checksum": "abc123",
-            "objective": [{"name": "token_ce"}, {"name": "bbox_geo"}],
+            "objective": [{"name": "residual_set_correction"}],
             "diagnostics": [],
         },
         run_metadata={
@@ -59,15 +59,14 @@ def test_write_experiment_manifest_file_captures_soft_and_hard_context(
     payload = json.loads(out_path.read_text(encoding="utf-8"))
 
     assert out_path.name == "experiment_manifest.json"
-    assert payload["identity"]["run_name"] == "smoke_20steps-stage2-a_only"
+    assert payload["identity"]["run_name"] == "compact_full_hf_1step"
     assert payload["experiment"]["authored"]["purpose"] == (
-        "Validate the compact A-only smoke path."
+        "Validate the compact rollout-correction smoke path."
     )
-    assert payload["runtime_summary"]["trainer_variant"] == "stage2_two_channel"
+    assert payload["runtime_summary"]["trainer_variant"] == "stage2_rollout_correction"
     assert payload["runtime_summary"]["save_model_only"] is False
     assert payload["runtime_summary"]["pipeline"]["objective"] == [
-        "token_ce",
-        "bbox_geo",
+        "residual_set_correction",
     ]
     assert payload["runtime_summary"]["stage2_policy_provenance"] == stage2_policy
     assert payload["stage2_policy_provenance"] == stage2_policy

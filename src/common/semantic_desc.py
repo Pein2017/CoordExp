@@ -3,7 +3,7 @@
 This module is the single source of truth for semantic description matching
 used across:
 - evaluation (category mapping / F1-ish semantic scoring helpers)
-- Stage-2 AB semantic gating
+- Stage-2 rollout-correction semantic diagnostics
 - monitoring/diagnostics
 
 The implementation intentionally keeps the encoder behavior consistent across
@@ -49,7 +49,7 @@ class SemanticDescEncoder:
     """Lightweight sentence-embedding encoder with caching.
 
     Runs under inference mode (no gradients). This is used for both monitoring and
-    Stage-2 AB semantic gating: it can affect training by masking/weighting CE on
+    Stage-2 rollout-correction semantic diagnostics: it can affect training by masking/weighting CE on
     matched description tokens, but it does not introduce gradients through the
     encoder itself.
     """

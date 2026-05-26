@@ -8,6 +8,7 @@ import logging
 import math
 import os
 import re
+from functools import partial
 from dataclasses import asdict, dataclass, is_dataclass
 from pathlib import Path
 from multiprocessing import Manager
@@ -37,8 +38,12 @@ except Exception:
         return fn
 
 
-from swift.llm.train.rlhf import SwiftRLHF
-from swift.llm.train.sft import SwiftSft
+try:
+    from swift.llm.train.rlhf import SwiftRLHF
+    from swift.llm.train.sft import SwiftSft
+except ImportError:
+    from swift.pipelines.train.rlhf import SwiftRLHF
+    from swift.pipelines.train.sft import SwiftSft
 from swift.trainers import TrainerFactory
 from swift.utils import get_dist_setting
 
@@ -130,10 +135,10 @@ def resolve_trainer_cls(train_args):
     trainer_variant = getattr(train_args, "trainer_variant", None)
     runtime_plan = resolve_training_runtime_plan(trainer_variant)
     trainer_variant = runtime_plan.variant
-    if trainer_variant == "stage2_two_channel":
-        from .trainers.stage2_two_channel import Stage2TwoChannelTrainer
+    if trainer_variant == "stage2_rollout_correction":
+        from .trainers.stage2_rollout_correction import Stage2RolloutCorrectionTrainer
 
-        trainer_cls = Stage2TwoChannelTrainer
+        trainer_cls = Stage2RolloutCorrectionTrainer
     elif (
         getattr(train_args, "rlhf_type", None) == "gkd"
         and trainer_variant == "gkd_monitor"
@@ -1255,7 +1260,7 @@ def _validate_stage2_step_budget_windows(
     accumulation window. Underfull windows would otherwise allow optimizer.step()
     with stale/zero gradients.
     """
-    if str(trainer_variant or "") != "stage2_two_channel":
+    if str(trainer_variant or "") != "stage2_rollout_correction":
         return
     if not bool(packing_enabled):
         return
@@ -1267,7 +1272,7 @@ def _validate_stage2_step_budget_windows(
     per_rank_batches = max(0, int(per_rank_batches_est))
     if per_rank_batches < gas:
         raise ValueError(
-            "stage2-ab requires per-rank batches >= gradient_accumulation_steps. "
+            "stage2_rollout_correction requires per-rank batches >= gradient_accumulation_steps. "
             f"Got per_rank_batches_est={int(per_rank_batches)} "
             f"but gradient_accumulation_steps={int(gas)}. "
             "Mitigations: increase custom.train_sample_limit, reduce world_size, "
@@ -1277,7 +1282,7 @@ def _validate_stage2_step_budget_windows(
     remainder = int(per_rank_batches % gas)
     if (not bool(dataloader_drop_last)) and remainder != 0:
         raise ValueError(
-            "stage2-ab step-budgeted mode does not support a partial gradient-accumulation window. "
+            "stage2_rollout_correction step-budgeted mode does not support a partial gradient-accumulation window. "
             f"Got dataloader_drop_last=false with per_rank_batches_est={int(per_rank_batches)} and "
             f"gradient_accumulation_steps={int(gas)} (remainder={int(remainder)}). "
             "Mitigations: set training.dataloader_drop_last=true (recommended), or adjust "
@@ -1796,6 +1801,27 @@ def _append_dataset_epoch_callback(callbacks: list[Any], dataset: Any) -> list[A
 
     callbacks.append(DatasetEpochCallback(dataset))
     return callbacks
+
+
+def _pipeline_base_callbacks(pipeline: Any) -> list[Any]:
+    callbacks = getattr(pipeline, "callbacks", None)
+    if callbacks is None:
+        return []
+    return list(callbacks)
+
+
+def _pipeline_data_collator(pipeline: Any, train_args: Any) -> Any:
+    get_collator = getattr(pipeline, "_get_data_collator", None)
+    if callable(get_collator):
+        return get_collator()
+    template = getattr(pipeline, "template")
+    training_args = getattr(train_args, "training_args", train_args)
+    padding_to = (
+        getattr(template, "max_length", None)
+        if getattr(training_args, "tuner_type", None) == "longlora"
+        else None
+    )
+    return partial(template.data_collator, padding_to=padding_to)
 
 
 def _attach_encoded_sample_cache_run_metadata(
@@ -2969,13 +2995,13 @@ def main():
         # If drop_last would yield 0 samples per rank, handle it explicitly.
         #
         # For most trainer variants, switching drop_last off makes training feasible
-        # (DistributedSampler will pad by repeating indices). For stage2-ab step-budgeted
+        # (DistributedSampler will pad by repeating indices). For Stage-2 rollout-correction
         # trainers with gradient_accumulation_steps>1, this still cannot produce a full
         # accumulation window, so we fail fast instead of silently doing zero-grad steps.
         if drop_last_flag and base_len_i > 0 and per_rank_floor <= 0:
-            if str(trainer_variant or "") == "stage2_two_channel" and gas > 1:
+            if str(trainer_variant or "") == "stage2_rollout_correction" and gas > 1:
                 raise ValueError(
-                    "stage2-ab requires at least one full gradient-accumulation window per rank. "
+                    "stage2_rollout_correction requires at least one full gradient-accumulation window per rank. "
                     f"Got dataset_len={int(base_len_i)} world_size={int(world_size)} -> per_rank_floor=0 with "
                     f"dataloader_drop_last=true and gradient_accumulation_steps={int(gas)}. "
                     "Mitigations: reduce gpus/world_size, increase custom.train_sample_limit, "
@@ -3526,15 +3552,17 @@ def main():
         )
 
         try:
-            from swift.trainers.rlhf_trainer.utils import identity_data_collator
-
+            try:
+                from swift.rlhf_trainers.utils import identity_data_collator
+            except ImportError:
+                from swift.trainers.rlhf_trainer.utils import identity_data_collator
             base_collator = identity_data_collator
         except ImportError as exc:
             raise RuntimeError(
                 "rollout-matching trainer requires ms-swift identity_data_collator"
             ) from exc
     else:
-        base_collator = sft._get_data_collator()
+        base_collator = _pipeline_data_collator(sft, train_args)
     token_type_cfg = getattr(custom_config, "token_type_metrics", None)
     coord_soft_ce_w1_cfg = getattr(custom_config, "coord_soft_ce_w1", None)
     sft_structural_close_cfg = getattr(custom_config, "sft_structural_close", None)
@@ -3708,7 +3736,7 @@ def main():
         )
 
     callbacks = build_trainer_callbacks(
-        base_callbacks=sft.callbacks.copy() if sft.callbacks else [],
+        base_callbacks=_pipeline_base_callbacks(sft),
         dataset=dataset,
         append_dataset_epoch_callback_fn=_append_dataset_epoch_callback,
         stage1_eval_detection_callback=stage1_eval_detection_callback,
@@ -3802,13 +3830,13 @@ def main():
 
             rollout_cfg: dict[str, Any] = dict(rollout_cfg_raw)
 
-            if (
-                runtime_profile.required_pipeline_namespace == "stage2_ab.pipeline"
-                and isinstance(rollout_cfg.get("pipeline"), Mapping)
+            if runtime_profile.required_pipeline_namespace is not None and isinstance(
+                rollout_cfg.get("pipeline"), Mapping
             ):
                 raise ValueError(
                     "rollout_matching.pipeline has been removed. "
-                    "Use stage2_ab.pipeline with custom.trainer_variant=stage2_two_channel instead."
+                    "Use stage2_rollout_correction.pipeline with "
+                    "custom.trainer_variant=stage2_rollout_correction instead."
                 )
 
             # BREAKING: decoding knobs moved under rollout_matching.decoding.*.
@@ -3915,34 +3943,30 @@ def main():
         except (AttributeError, KeyError, TypeError, ValueError) as exc:
             raise RuntimeError(
                 "Failed to inject rollout_matching_cfg into trainer. "
-                "This is required for rollout-matching/stage2-ab trainer variants."
+                "This is required for rollout-matching/stage2 rollout-correction variants."
             ) from exc
 
-    if runtime_profile.required_pipeline_namespace == "stage2_ab.pipeline":
-        stage2_ab_typed = getattr(training_config, "stage2_ab", None)
-        if stage2_ab_typed is None:
+    if runtime_profile.required_pipeline_namespace == "stage2_rollout_correction.pipeline":
+        stage2_typed = getattr(training_config, "stage2_rollout_correction", None)
+        if stage2_typed is None:
             raise ValueError(
-                "training_config.stage2_ab is required for stage2_two_channel; "
-                "check config parsing (top-level stage2_ab section)."
+                "training_config.stage2_rollout_correction is required for "
+                "stage2_rollout_correction; check config parsing."
             )
-        stage2_ab_cfg: dict[str, Any] = asdict(stage2_ab_typed)
+        stage2_cfg: dict[str, Any] = asdict(stage2_typed)
 
-        setattr(trainer, "stage2_ab_cfg", stage2_ab_cfg)
-
-        sched = stage2_ab_cfg.get("schedule")
-        b_ratio = sched.get("b_ratio") if isinstance(sched, Mapping) else None
+        setattr(trainer, "stage2_rollout_correction_cfg", stage2_cfg)
 
         stage2_manifest = _resolve_pipeline_manifest(
-            stage2_ab_cfg,
-            default_objective=["token_ce"],
+            stage2_cfg,
+            default_objective=["residual_set_correction"],
             default_diagnostics=[],
             coord_soft_cfg=coord_soft_cfg_for_manifest,
         )
         setattr(trainer, "stage2_pipeline_manifest", stage2_manifest)
 
         logger.info(
-            "Stage2-AB config injected: b_ratio=%s pipeline_checksum=%s objective=%s diagnostics=%s config=%s run_name=%s seed=%s",
-            b_ratio,
+            "Stage-2 rollout-correction config injected: pipeline_checksum=%s objective=%s diagnostics=%s config=%s run_name=%s seed=%s",
             stage2_manifest.get("checksum", ""),
             [m.get("name") for m in stage2_manifest.get("objective", [])],
             [m.get("name") for m in stage2_manifest.get("diagnostics", [])],

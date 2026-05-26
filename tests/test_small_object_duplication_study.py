@@ -33,7 +33,7 @@ monitor_dumps:
 
 checkpoint:
   alias: test-ckpt
-  path: output/stage2_ab/prod/pseudo_positive-ckpt_300_merged-v1
+  path: output/stage2_rollout_correction/prod/pseudo_positive-ckpt_300_merged-v1
 
 execution:
   device: cuda:0
@@ -200,7 +200,7 @@ monitor_dumps:
 
 checkpoint:
   alias: test-ckpt
-  path: output/stage2_ab/prod/pseudo_positive-ckpt_300_merged-v1
+  path: output/stage2_rollout_correction/prod/pseudo_positive-ckpt_300_merged-v1
 
 execution:
   device: cuda:0

@@ -2,11 +2,15 @@
 
 import logging
 import math
+from dataclasses import fields
 from pathlib import Path
 from typing import Any, Dict, List, Mapping, Optional, Set
 
 import yaml
-from swift.llm.argument import RLHFArguments, TrainArguments
+try:
+    from swift.llm.argument import RLHFArguments, TrainArguments
+except ImportError:
+    from swift.arguments import RLHFArguments, SftArguments as TrainArguments
 from swift.utils import get_dist_setting
 
 from src.common.object_field_order import (
@@ -87,7 +91,7 @@ class ConfigLoader:
     def _canonical_stage2_profile_kind(config_path: str) -> Optional[str]:
         config_abs = Path(config_path).resolve()
         repo_root = Path(__file__).resolve().parents[2]
-        stage2_root = (repo_root / "configs" / "stage2_two_channel").resolve()
+        stage2_root = (repo_root / "configs" / "stage2_rollout_correction").resolve()
         for kind in ("prod", "smoke", "ablation"):
             kind_root = (stage2_root / kind).resolve()
             try:
@@ -278,7 +282,7 @@ class ConfigLoader:
             "training.eval_steps",
             "training.save_strategy",
             "training.save_steps",
-            "stage2_ab.schedule.b_ratio",
+            "stage2_rollout_correction.pipeline.objective",
         ]
 
         missing = [
@@ -586,18 +590,20 @@ class ConfigLoader:
 
         # Auto-calculate gradient_accumulation_steps from effective_batch_size
         #
-        # Stage2-AB standardizes step semantics around a true (exact) global effective batch.
-        is_stage2_ab = bool(
+        # Stage-2 rollout correction standardizes step semantics around a true
+        # (exact) global effective batch.
+        is_stage2_rollout_correction = bool(
             not is_detection
             and
             str(getattr(getattr(config, "custom", None), "trainer_variant", "") or "")
-            == "stage2_two_channel"
+            == "stage2_rollout_correction"
         )
 
         effective_batch_size = training_section.pop("effective_batch_size", None)
-        if is_stage2_ab and effective_batch_size is None:
+        if is_stage2_rollout_correction and effective_batch_size is None:
             raise ValueError(
-                "stage2_two_channel requires training.effective_batch_size to be set (global raw rollouts per optimizer step)."
+                "stage2_rollout_correction requires training.effective_batch_size "
+                "to be set (global raw rollouts per optimizer step)."
             )
 
         if effective_batch_size is not None:
@@ -642,14 +648,14 @@ class ConfigLoader:
             if denominator <= 0:
                 denominator = 1
 
-            if is_stage2_ab and (effective_batch_size % denominator != 0):
+            if is_stage2_rollout_correction and (effective_batch_size % denominator != 0):
                 raise ValueError(
-                    "For stage2_two_channel, training.effective_batch_size must be divisible by "
+                    "For stage2_rollout_correction, training.effective_batch_size must be divisible by "
                     f"training.per_device_train_batch_size*world_size ({per_device_train_batch_size}*{world_size}={denominator}). "
                     f"Got effective_batch_size={effective_batch_size}."
                 )
 
-            if is_stage2_ab:
+            if is_stage2_rollout_correction:
                 gradient_accumulation_steps = max(
                     1, int(effective_batch_size // denominator)
                 )
@@ -726,7 +732,16 @@ class ConfigLoader:
         )
 
         args_cls = RLHFArguments if args_dict.get("rlhf_type") else TrainArguments
+        allowed_arg_names = {f.name for f in fields(args_cls)}
+        if (
+            "train_type" in args_dict
+            and "train_type" not in allowed_arg_names
+            and "tuner_type" in allowed_arg_names
+        ):
+            args_dict["tuner_type"] = args_dict.pop("train_type")
         train_args = args_cls(**args_dict)
+        if not hasattr(train_args, "train_type") and hasattr(train_args, "tuner_type"):
+            setattr(train_args, "train_type", getattr(train_args, "tuner_type"))
 
         try:
             setattr(train_args, "save_last_epoch", save_last_epoch)

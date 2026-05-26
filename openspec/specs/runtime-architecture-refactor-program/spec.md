@@ -24,18 +24,18 @@ Normative behavior:
 - **THEN** stable config, metric, geometry, and artifact behavior remains unchanged
 - **AND** the slice is treated as an internal decomposition rather than a silent contract change.
 
-### Requirement: Stage-2 training paths expose dedicated runtime seams by concern
-The Stage-2 training implementation SHALL separate scheduling, step execution, target construction, rollout runtime, and objective execution through dedicated seams by concern.
+### Requirement: Stage-2 rollout correction exposes dedicated runtime seams by concern
+The Stage-2 rollout-correction implementation SHALL separate step execution, correction target construction, rollout runtime, and objective execution through dedicated seams by concern.
 
 Normative behavior:
 
-- the `stage2_two_channel` path MUST preserve a scheduler seam independent from Channel-A / Channel-B target construction,
-- Channel-B target construction and clean-prefix supervision assembly MUST be isolatable from step-execution and DDP coordination logic,
+- the `stage2_rollout_correction` path MUST NOT reintroduce an A/B scheduler seam,
+- rollout-correction target construction and residual supervision assembly MUST be isolatable from step-execution and DDP coordination logic,
 - objective execution / metric projection MUST be isolatable from rollout/target construction,
 - trainer-facing compatibility adapters MAY remain during migration, but responsibility ownership MUST move toward the dedicated seams.
 
-#### Scenario: Channel-B target construction can be tested without executor runtime coupling
-- **WHEN** Channel-B clean-prefix target construction is exercised in targeted tests
+#### Scenario: rollout-correction target construction can be tested without executor runtime coupling
+- **WHEN** rollout-correction residual target construction is exercised in targeted tests
 - **THEN** it can be invoked and validated without requiring the full threaded executor / DDP coordination path
 - **AND** the resulting supervision payload remains compatible with trainer loss execution.
 
@@ -69,4 +69,3 @@ Normative behavior:
 - **WHEN** infer/eval parity tests are run against the refactored implementation
 - **THEN** emitted artifacts remain byte-compatible or contract-compatible with the pre-refactor behavior
 - **AND** downstream workflows continue to consume them without migration changes.
-

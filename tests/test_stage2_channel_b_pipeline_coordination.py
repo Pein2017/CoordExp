@@ -1,8 +1,8 @@
 import pytest
 import torch
 
-from src.trainers.stage2_two_channel.coordination import (
-    finalize_channel_b_pipeline_step,
+from src.trainers.rollout_correction.coordination import (
+    finalize_rollout_correction_pipeline_step,
 )
 
 
@@ -25,7 +25,7 @@ class _Owner:
 def test_pipeline_finalize_allows_multiple_segments_per_raw_rollout() -> None:
     owner = _Owner()
 
-    loss = finalize_channel_b_pipeline_step(
+    loss = finalize_rollout_correction_pipeline_step(
         thread_obj=_DoneThread(),
         owner=owner,
         target_log_step=7,
@@ -44,7 +44,7 @@ def test_pipeline_finalize_still_rejects_wrong_raw_rollout_count() -> None:
     owner = _Owner()
 
     with pytest.raises(ValueError, match="unexpected raw-rollout count"):
-        finalize_channel_b_pipeline_step(
+        finalize_rollout_correction_pipeline_step(
             thread_obj=_DoneThread(),
             owner=owner,
             target_log_step=7,

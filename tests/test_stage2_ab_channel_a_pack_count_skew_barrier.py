@@ -3,8 +3,8 @@ import contextlib
 import pytest
 
 
-def test_stage2_ab_channel_a_calls_barrier_on_final_pack(monkeypatch):
-    """Channel-A step-budgeted packing must align ranks on the final (sync) backward.
+def test_stage2_rollout_correction_rollout_correction_calls_barrier_on_final_pack(monkeypatch):
+    """rollout-correction step-budgeted packing must align ranks on the final (sync) backward.
 
     Without a barrier, differing per-rank pack counts can deadlock DDP because one rank
     enters the synchronized backward (allreduce) while another rank is still in a
@@ -14,7 +14,7 @@ def test_stage2_ab_channel_a_calls_barrier_on_final_pack(monkeypatch):
     import torch
     import torch.distributed as dist
 
-    from src.trainers.stage2_two_channel.executors import Stage2ABChannelExecutorsMixin
+    from src.trainers.rollout_correction.executors import RolloutCorrectionExecutorsMixin
 
     class DummyModel:
         device = torch.device("cpu")
@@ -29,7 +29,7 @@ def test_stage2_ab_channel_a_calls_barrier_on_final_pack(monkeypatch):
         def data_collator(self, _batch):
             return {"loss": torch.tensor(1.0, requires_grad=True)}
 
-    class DummyTrainer(Stage2ABChannelExecutorsMixin):
+    class DummyTrainer(RolloutCorrectionExecutorsMixin):
         def __init__(self):
             self.model = DummyModel()
             self.template = DummyTemplate()
@@ -58,7 +58,7 @@ def test_stage2_ab_channel_a_calls_barrier_on_final_pack(monkeypatch):
         def compute_loss(self, _model, batch):
             return batch["loss"]
 
-        def _prepare_batch_inputs_a(self, inputs, *, _segments_only: bool):
+        def _prepare_rollout_correction_inputs(self, inputs, *, _segments_only: bool):
             assert _segments_only is True
             segs = [({"input_ids": [1]}, {}, 1) for _ in inputs]
             return segs, {}
@@ -85,8 +85,8 @@ def test_stage2_ab_channel_a_calls_barrier_on_final_pack(monkeypatch):
         barrier_calls["n"] += 1
 
     monkeypatch.setattr(
-        Stage2ABChannelExecutorsMixin,
-        "_stage2_ab_ddp_monitored_barrier",
+        RolloutCorrectionExecutorsMixin,
+        "_stage2_rollout_correction_ddp_monitored_barrier",
         _monitored_barrier,
     )
 
@@ -101,11 +101,11 @@ def test_stage2_ab_channel_a_calls_barrier_on_final_pack(monkeypatch):
     assert barrier_calls["n"] == 2
 
 
-def test_stage2_ab_channel_a_uses_shadow_slots_for_pack_count_skew(monkeypatch):
+def test_stage2_rollout_correction_rollout_correction_uses_shadow_slots_for_pack_count_skew(monkeypatch):
     import torch
     import torch.distributed as dist
 
-    from src.trainers.stage2_two_channel.executors import Stage2ABChannelExecutorsMixin
+    from src.trainers.rollout_correction.executors import RolloutCorrectionExecutorsMixin
 
     class DummyModel:
         device = torch.device("cpu")
@@ -120,7 +120,7 @@ def test_stage2_ab_channel_a_uses_shadow_slots_for_pack_count_skew(monkeypatch):
         def data_collator(self, _batch):
             return {"loss": torch.tensor(1.0, requires_grad=True)}
 
-    class DummyTrainer(Stage2ABChannelExecutorsMixin):
+    class DummyTrainer(RolloutCorrectionExecutorsMixin):
         def __init__(self):
             self.model = DummyModel()
             self.template = DummyTemplate()
@@ -149,13 +149,13 @@ def test_stage2_ab_channel_a_uses_shadow_slots_for_pack_count_skew(monkeypatch):
             return None
 
         def compute_loss(self, _model, batch):
-            self.shadow_flags.append(bool(batch.get("_stage2_ab_shadow_pack", False)))
+            self.shadow_flags.append(bool(batch.get("_stage2_rollout_correction_shadow_pack", False)))
             self.sync_flags.append(
                 bool(getattr(self, "_loss_gradient_monitor_sync_gradients", False))
             )
             return batch["loss"]
 
-        def _prepare_batch_inputs_a(self, inputs, *, _segments_only: bool):
+        def _prepare_rollout_correction_inputs(self, inputs, *, _segments_only: bool):
             assert _segments_only is True
             return [({"input_ids": [1]}, {}, 1) for _ in inputs], {}
 
@@ -180,8 +180,8 @@ def test_stage2_ab_channel_a_uses_shadow_slots_for_pack_count_skew(monkeypatch):
         barrier_calls["n"] += 1
 
     monkeypatch.setattr(
-        Stage2ABChannelExecutorsMixin,
-        "_stage2_ab_ddp_monitored_barrier",
+        RolloutCorrectionExecutorsMixin,
+        "_stage2_rollout_correction_ddp_monitored_barrier",
         _monitored_barrier,
     )
 

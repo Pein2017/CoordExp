@@ -8,11 +8,11 @@ import torch
 
 from src.trainers.metrics.mixins import AggregateTokenTypeMetricsMixin
 from src.trainers.stage2_rollout_runtime import Stage2RolloutRuntime
-from src.trainers.stage2_two_channel import Stage2TwoChannelTrainer
+from src.trainers.stage2_rollout_correction import Stage2RolloutCorrectionTrainer
 
 
-def _mk_min_stage2_trainer() -> Stage2TwoChannelTrainer:
-    t = Stage2TwoChannelTrainer.__new__(Stage2TwoChannelTrainer)
+def _mk_min_stage2_trainer() -> Stage2RolloutCorrectionTrainer:
+    t = Stage2RolloutCorrectionTrainer.__new__(Stage2RolloutCorrectionTrainer)
     t.model = types.SimpleNamespace(device=torch.device("cpu"))
     return t
 

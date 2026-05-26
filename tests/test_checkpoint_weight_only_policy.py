@@ -770,7 +770,7 @@ def test_default_configs_use_public_inference_only_checkpoint_policy() -> None:
 
     audited = [
         "configs/stage1/profiles/4b/coord_soft_ce_gate_coco80_desc_first_1024_lvis_proxy.yaml",
-        "configs/stage2_two_channel/prod/ab_mixed.yaml",
+        "configs/stage2_rollout_correction/prod/coco1024_online_residual_correction_vllm_tail_append.yaml",
     ]
 
     for path in audited:

@@ -6,8 +6,8 @@ from typing import Any, Mapping
 
 
 STAGE2_POLICY_PROVENANCE_SCHEMA_VERSION = 1
-STAGE2_TWO_CHANNEL_TRAINER_VARIANT = "stage2_two_channel"
-LEGACY_CHANNEL_B_DUPLICATE_FILTER_POLICY_ID = "legacy_channel_b_duplicate_control"
+STAGE2_ROLLOUT_CORRECTION_TRAINER_VARIANT = "stage2_rollout_correction"
+ROLLOUT_CORRECTION_DUPLICATE_FILTER_POLICY_ID = "rollout_correction_duplicate_control"
 
 
 def _as_mapping(value: Any) -> dict[str, Any]:
@@ -52,32 +52,30 @@ def build_stage2_policy_provenance(
     *,
     trainer_variant: str | None = None,
 ) -> dict[str, Any] | None:
-    """Return first-class Stage-2 policy provenance for rank-0 manifests.
+    """Return rollout-correction policy provenance for rank-0 manifests.
 
     :param training_config: Resolved typed training config or equivalent mapping.
     :param trainer_variant: Resolved trainer variant. When omitted, the helper
         falls back to ``custom.trainer_variant`` from ``training_config``.
-    :returns: A JSON-serializable policy block for ``stage2_two_channel`` runs,
-        or ``None`` when the active run is not a Stage-2 two-channel surface.
+    :returns: A JSON-serializable policy block for ``stage2_rollout_correction``
+        runs, or ``None`` when the active run is not the unified Stage-2 surface.
     """
 
-    # normalize the resolved config into the policy-owning sections
     root = _as_mapping(training_config)
     custom = _as_mapping(root.get("custom"))
     variant = str(trainer_variant or custom.get("trainer_variant") or "").strip()
-    if variant != STAGE2_TWO_CHANNEL_TRAINER_VARIANT:
+    if variant != STAGE2_ROLLOUT_CORRECTION_TRAINER_VARIANT:
         return None
 
-    stage2_ab = _as_mapping(root.get("stage2_ab"))
-    if not stage2_ab:
+    stage2_cfg = _as_mapping(root.get("stage2_rollout_correction"))
+    if not stage2_cfg:
         return None
 
-    channel_b = _as_mapping(stage2_ab.get("channel_b"))
-    assignment = _as_mapping(channel_b.get("assignment"))
-    duplicate_control = _as_mapping(channel_b.get("duplicate_control"))
+    correction = _as_mapping(stage2_cfg.get("correction"))
+    assignment = _as_mapping(correction.get("assignment"))
+    duplicate_control = _as_mapping(correction.get("duplicate_control"))
     rollout_matching = _as_mapping(root.get("rollout_matching"))
 
-    # resolve assignment strategy and effective IoU threshold
     assignment_strategy = _string_field(
         assignment,
         "strategy",
@@ -92,22 +90,21 @@ def build_stage2_policy_provenance(
     if configured_assignment_iou is not None:
         effective_assignment_iou = configured_assignment_iou
         assignment_iou_threshold_source = (
-            "stage2_ab.channel_b.assignment.iou_threshold"
+            "stage2_rollout_correction.correction.assignment.iou_threshold"
         )
     else:
         effective_assignment_iou = rollout_maskiou_gate
         assignment_iou_threshold_source = "rollout_matching.maskiou_gate"
 
-    # resolve duplicate-control and ordering policies
     duplicate_iou_threshold = _optional_finite_float(
         duplicate_control.get("iou_threshold", 0.90)
     )
     duplicate_center_radius_scale = _optional_finite_float(
         duplicate_control.get("center_radius_scale", 0.80)
     )
-    insertion_order = _string_field(channel_b, "insertion_order", "tail_append")
+    insertion_order = _string_field(correction, "insertion_order", "tail_append")
     fallback_loss_weight = _optional_finite_float(
-        channel_b.get("fallback_loss_weight", 1.0)
+        correction.get("fallback_loss_weight", 1.0)
     )
 
     return {
@@ -117,24 +114,24 @@ def build_stage2_policy_provenance(
         "assignment_iou_threshold": configured_assignment_iou,
         "assignment_iou_threshold_effective": effective_assignment_iou,
         "assignment_iou_threshold_source": assignment_iou_threshold_source,
-        "duplicate_filter_strategy": LEGACY_CHANNEL_B_DUPLICATE_FILTER_POLICY_ID,
+        "duplicate_filter_strategy": ROLLOUT_CORRECTION_DUPLICATE_FILTER_POLICY_ID,
         "duplicate_iou_threshold": duplicate_iou_threshold,
         "duplicate_center_radius_scale": duplicate_center_radius_scale,
         "object_ordering_policy": insertion_order,
         "object_ordering_strategy_id": _object_ordering_strategy_id(insertion_order),
         "sample_object_ordering": _string_field(custom, "object_ordering", "sorted"),
         "rollout_template_family": _string_field(
-            channel_b,
+            correction,
             "rollout_template_family",
             "coordjson",
         ),
         "rollout_decode_policy": _string_field(
-            channel_b,
+            correction,
             "rollout_decode_policy",
             "legacy_coordjson",
         ),
         "invalid_rollout_policy": _string_field(
-            channel_b,
+            correction,
             "invalid_rollout_policy",
             "abort",
         ),

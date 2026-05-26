@@ -33,7 +33,7 @@ def run_schema_format_ce_module(
         name="token_ce",
         enabled=spec.enabled,
         weight=1.0,
-        channels=spec.channels,
+        surfaces=spec.surfaces,
         application={"preset": "rollout_text_only"},
         config={
             "desc_ce_weight": 0.0,

@@ -6,7 +6,7 @@ import pytest
 import torch
 
 from src.trainers.stage2_rollout_runtime import Stage2RolloutRuntime
-from src.trainers.stage2_two_channel import Stage2TwoChannelTrainer
+from src.trainers.stage2_rollout_correction import Stage2RolloutCorrectionTrainer
 
 
 def _mk_min_rm_trainer() -> Stage2RolloutRuntime:
@@ -83,7 +83,7 @@ def test_rollout_matching_training_step_rejects_empty_raw_batch(
         t.training_step(model=object(), inputs=[])
 
 
-def test_stage2_two_channel_step_rejects_empty_raw_batch(
+def test_stage2_rollout_correction_step_rejects_empty_raw_batch(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(torch.distributed, "is_available", lambda: True, raising=False)
@@ -91,7 +91,7 @@ def test_stage2_two_channel_step_rejects_empty_raw_batch(
     monkeypatch.setattr(torch.distributed, "get_world_size", lambda: 2, raising=False)
     monkeypatch.setattr(torch.distributed, "get_rank", lambda: 1, raising=False)
 
-    t = Stage2TwoChannelTrainer.__new__(Stage2TwoChannelTrainer)
+    t = Stage2RolloutCorrectionTrainer.__new__(Stage2RolloutCorrectionTrainer)
     t.state = types.SimpleNamespace(global_step=3)
 
     with pytest.raises(ValueError, match=r"empty raw batch"):

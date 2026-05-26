@@ -29,7 +29,7 @@ def test_artifact_contract_docs_freeze_rank0_and_stage2_eval_surfaces() -> None:
     assert "Artifact/Provenance Freeze" in artifacts
     assert "Stage-2 Policy Provenance" in artifacts
     assert "Diagnostic Compatibility Freeze" in artifacts
-    assert "Rank-0 Stage-2 two-channel" in artifacts
+    assert "Rank-0 Stage-2 rollout-correction" in artifacts
     assert "not yet written by all rank-0 manifests" not in artifacts
 
     for policy_surface in (
@@ -45,8 +45,8 @@ def test_artifact_contract_docs_freeze_rank0_and_stage2_eval_surfaces() -> None:
         "stage2_policy_provenance.invalid_rollout_policy",
         "stage2_policy_provenance.fallback_loss_weight",
         "src/training/stage2/assignment.py::GreedyIoUAssignment",
-        "src/trainers/stage2_two_channel/target_builder.py::_apply_channel_b_duplicate_control",
-        "stage2_ab.channel_b.insertion_order",
+        "stage2_rollout_correction.correction.duplicate_control",
+        "stage2_rollout_correction.correction.insertion_order",
     ):
         assert policy_surface in artifacts
 
@@ -63,21 +63,16 @@ def test_artifact_contract_docs_freeze_rank0_and_stage2_eval_surfaces() -> None:
         assert diagnostic_surface in artifacts
 
 
-def test_stage2_ab_spec_allows_channel_b_insertion_order_key() -> None:
+def test_stage2_rollout_correction_spec_rejects_removed_scheduler_and_channel_keys() -> None:
     spec = (
-        REPO_ROOT / "openspec" / "specs" / "stage2-ab-training" / "spec.md"
+        REPO_ROOT / "openspec" / "specs" / "stage2-rollout-correction" / "spec.md"
     ).read_text(encoding="utf-8")
-    allowed_key_section = spec.split(
-        "- `stage2_ab.channel_b` MUST accept only:",
-        maxsplit=1,
-    )[1].split(
-        "- `stage2_ab.channel_b.duplicate_control` MUST be a typed mapping",
-        maxsplit=1,
-    )[0]
 
-    assert "- `insertion_order`" in allowed_key_section
-    assert "stage2_ab.channel_b.insertion_order: tail_append" in spec
-    assert "MUST remain the default" in spec
+    assert "`stage2_rollout_correction.schedule`" in spec
+    assert "`stage2_rollout_correction.b_ratio`" in spec
+    assert "`stage2_rollout_correction.channel_b`" in spec
+    assert "`stage2_rollout_correction.pipeline.objective[].channels`" in spec
+    assert "`_stage2_ab_channel`" in spec
 
 
 def test_training_decision_export_matches_stage2_shadow_ordering_contract() -> None:
@@ -149,7 +144,7 @@ def test_catalog_unified_shadow_surfaces_share_closed_domains() -> None:
     assert {surface["surface_id"] for surface in shadow_surfaces} == {
         "stage1_json_ce",
         "stage1_compact_trie_ce",
-        "stage2_two_channel",
+        "stage2_rollout_correction",
     }
     assert all(surface["domains"] == expected_domains for surface in shadow_surfaces)
 

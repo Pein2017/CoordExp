@@ -17,10 +17,7 @@ EncodedCachePolicy: TypeAlias = Literal[
     "static_cache_disabled",
     "trainer_post_rollout_dynamic",
 ]
-ManifestFamily: TypeAlias = Literal[
-    "stage1",
-    "stage2_ab",
-]
+ManifestFamily: TypeAlias = Literal["stage1", "stage2_rollout_correction"]
 PackingPolicy: TypeAlias = Literal[
     "dataset_static_packing",
     "packing_disabled",
@@ -118,8 +115,12 @@ def _derive_manifest_family(
     plan: TrainingRuntimePlan,
     runtime_stage: RuntimeStage,
 ) -> ManifestFamily:
+    if plan.required_pipeline_namespace == "stage2_rollout_correction.pipeline":
+        return "stage2_rollout_correction"
     if plan.required_pipeline_namespace is not None:
-        return "stage2_ab"
+        raise ValueError(
+            f"Unknown Stage-2 pipeline namespace: {plan.required_pipeline_namespace}"
+        )
     return "stage1"
 
 

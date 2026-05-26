@@ -8,7 +8,7 @@ manual/debug.
 ## Stable entrypoints
 
 - Training (YAML-first): `scripts/train.sh` (wraps `python -m src.sft --config ...`).
-- Stage-2 AB server-mode launcher (vLLM server + multi-GPU learner): `scripts/train_stage2.sh`.
+- Stage-2 rollout-correction server-mode launcher (vLLM server + multi-GPU learner): `scripts/train_stage2.sh`.
 - Unified inference pipeline (YAML-first): `scripts/run_infer.py`.
 - Confidence scoring / score materialization (YAML-first): `scripts/postop_confidence.py`.
 - Offline detection evaluation (YAML-first): `scripts/evaluate_detection.py`.

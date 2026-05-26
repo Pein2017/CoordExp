@@ -8,7 +8,9 @@ from src.config.loader import ConfigLoader
 from src.config.schema import DetectionTrainingConfig, TrainingConfig
 from src.training.pipelines.stage1_compact_trie_ce import Stage1CompactTrieCEPipeline
 from src.training.pipelines.stage1_json_ce import Stage1JsonCEPipeline
-from src.training.pipelines.stage2_two_channel import Stage2TwoChannelPipeline
+from src.training.pipelines.stage2_rollout_correction import (
+    Stage2RolloutCorrectionPipeline,
+)
 from src.training.surfaces import TrainingSurfaceResolver
 
 
@@ -18,13 +20,12 @@ def _removed_key(*parts: str) -> str:
 
 def _shadow_config(surface_id: str = "stage1_json_ce") -> dict[str, object]:
     supervision: dict[str, object]
-    if surface_id == "stage2_two_channel":
+    if surface_id == "stage2_rollout_correction":
         supervision = {
-            "mode": "two_channel",
-            "channels": {
-                "a": {"source": "ground_truth"},
-                "b": {"source": "rollout"},
-            },
+            "mode": "rollout_correction",
+            "assignment": {"strategy": "greedy_iou"},
+            "duplicate_filter": {"strategy": "rollout_correction_duplicate_control"},
+            "target_ir": {"required": True},
         }
     elif surface_id == "stage1_compact_trie_ce":
         supervision = {"mode": "compact_trie"}
@@ -50,10 +51,9 @@ def _surface_objectives(surface_id: str) -> dict[str, dict[str, object]]:
             "trie_ce": {"enabled": True, "weight": 1.0},
             "coord_soft_ce": {"enabled": False, "weight": 0.25},
         }
-    if surface_id == "stage2_two_channel":
+    if surface_id == "stage2_rollout_correction":
         return {
-            "token_ce": {"enabled": True, "weight": 1.0},
-            "box_regression": {"enabled": False, "weight": 0.1},
+            "teacher_forcing": {"enabled": True, "weight": 1.0},
         }
 
     return {"token_ce": {"enabled": True, "weight": 1.0}}
@@ -113,7 +113,11 @@ def test_shadow_config_rejects_missing_required_domain() -> None:
             Stage1CompactTrieCEPipeline,
             "stage1_compact_trie_ce",
         ),
-        ("stage2_two_channel", Stage2TwoChannelPipeline, "stage2_two_channel"),
+        (
+            "stage2_rollout_correction",
+            Stage2RolloutCorrectionPipeline,
+            "stage2_rollout_correction",
+        ),
     ],
 )
 def test_surface_id_selects_shadow_pipeline(
@@ -139,39 +143,27 @@ def test_stage1_json_rejects_stage2_supervision_sections() -> None:
         TrainingSurfaceResolver().resolve(cfg)
 
 
-def test_stage2_two_channel_requires_channel_supervision() -> None:
-    cfg = _shadow_config("stage2_two_channel")
-    cfg["supervision"] = {"mode": "two_channel"}
+def test_stage2_rollout_correction_rejects_channels_supervision() -> None:
+    cfg = _shadow_config("stage2_rollout_correction")
+    cfg["supervision"] = {"mode": "rollout_correction", "channels": {"a": {}, "b": {}}}
 
-    with pytest.raises(ValueError, match="supervision.channels"):
+    with pytest.raises(ValueError, match="channels"):
         TrainingSurfaceResolver().resolve(cfg)
 
 
-def test_stage2_two_channel_rejects_non_mapping_channel_descriptor() -> None:
-    cfg = _shadow_config("stage2_two_channel")
-    cfg["supervision"] = {
-        "mode": "two_channel",
-        "channels": {
-            "a": True,
-            "b": {"source": "rollout"},
-        },
-    }
+def test_stage2_rollout_correction_requires_rollout_correction_mode() -> None:
+    cfg = _shadow_config("stage2_rollout_correction")
+    cfg["supervision"] = {"mode": "clean_prefix"}
 
-    with pytest.raises(TypeError, match=r"supervision\.channels\.a"):
+    with pytest.raises(ValueError, match="rollout_correction"):
         TrainingSurfaceResolver().resolve(cfg)
 
 
-def test_stage2_two_channel_channel_descriptor_requires_source() -> None:
-    cfg = _shadow_config("stage2_two_channel")
-    cfg["supervision"] = {
-        "mode": "two_channel",
-        "channels": {
-            "a": {"source": "ground_truth"},
-            "b": {"objective_scope": "rollout"},
-        },
-    }
+def test_stage2_rollout_correction_rejects_split_stage_surface_id() -> None:
+    cfg = _shadow_config("stage2_rollout_correction")
+    cfg["surface"] = {"id": "stage2_two_channel"}
 
-    with pytest.raises(ValueError, match=r"supervision\.channels\.b\.source"):
+    with pytest.raises(ValueError, match="unsupported surface.id"):
         TrainingSurfaceResolver().resolve(cfg)
 
 
@@ -209,18 +201,18 @@ def test_stage1_json_surface_rejects_trie_objectives() -> None:
         TrainingSurfaceResolver().resolve(cfg)
 
 
-def test_stage2_two_channel_surface_requires_enabled_token_objective() -> None:
-    cfg = _shadow_config("stage2_two_channel")
-    cfg["objectives"] = {"box_regression": {"enabled": True, "weight": 0.1}}
+def test_stage2_rollout_correction_surface_requires_enabled_teacher_forcing_objective() -> None:
+    cfg = _shadow_config("stage2_rollout_correction")
+    cfg["objectives"] = {"token_ce": {"enabled": True, "weight": 1.0}}
 
-    with pytest.raises(ValueError, match="requires enabled objectives.*token_ce"):
+    with pytest.raises(ValueError, match="does not support objective keys.*token_ce"):
         TrainingSurfaceResolver().resolve(cfg)
 
 
-def test_stage2_two_channel_surface_rejects_trie_objective_profile() -> None:
-    cfg = _shadow_config("stage2_two_channel")
+def test_stage2_rollout_correction_surface_rejects_trie_objective_profile() -> None:
+    cfg = _shadow_config("stage2_rollout_correction")
     cfg["objectives"] = {
-        "token_ce": {"enabled": True, "weight": 1.0},
+        "teacher_forcing": {"enabled": True, "weight": 1.0},
         "trie_ce": {"enabled": True, "weight": 0.5},
     }
 
@@ -347,8 +339,7 @@ def test_removed_nested_objective_config_keys_fail_fast(removed_key: str) -> Non
             "configs/stage1/recursive_detection_ce/prod/compact_full_support2.yaml",
             DetectionTrainingConfig,
         ),
-        ("configs/stage2_two_channel/smoke/a_only.yaml", TrainingConfig),
-        ("configs/stage2_two_channel/prod/a_only.yaml", TrainingConfig),
+        ("configs/stage2_rollout_correction/base.yaml", TrainingConfig),
     ],
 )
 def test_current_config_loader_configs_remain_passthrough(

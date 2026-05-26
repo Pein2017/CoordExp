@@ -3,8 +3,8 @@ from __future__ import annotations
 import pytest
 
 from src.trainers.rollout_matching.contracts import GTObject
-from src.trainers.stage2_two_channel.target_builder import (
-    _apply_channel_b_duplicate_control,
+from src.trainers.rollout_correction.target_builder import (
+    _apply_rollout_correction_duplicate_control,
 )
 from src.training.stage2.duplicate_filter import (
     DuplicateCandidate,
@@ -191,7 +191,7 @@ def test_legacy_duplicate_control_adapter_matches_live_channel_b_owner() -> None
             bbox=(300.0, 300.0, 400.0, 400.0),
         ),
     )
-    legacy_result = _apply_channel_b_duplicate_control(
+    legacy_result = _apply_rollout_correction_duplicate_control(
         anchor_objects_raw=[
             GTObject(
                 index=0,
@@ -230,11 +230,11 @@ def test_legacy_duplicate_control_adapter_matches_live_channel_b_owner() -> None
         candidates[index].object_id for index in legacy_result.suppressed_anchor_indices
     ]
     assert adapter_result.metrics["suppressed_count"] == int(
-        legacy_result.counter_metrics["stage2_ab/channel_b/dup/N_objects_suppressed"]
+        legacy_result.counter_metrics["stage2_rollout_correction/correction/dup/N_objects_suppressed"]
     )
     assert {
         decision.policy_id for decision in adapter_result.decisions
-    } == {"legacy_channel_b_duplicate_control"}
+    } == {"rollout_correction_duplicate_control"}
 
 
 def test_passthrough_duplicate_filter_marks_already_filtered_legacy_outputs() -> None:

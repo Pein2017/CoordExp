@@ -3,7 +3,7 @@ from __future__ import annotations
 import pytest
 import torch
 
-from src.trainers.stage2_two_channel.residual_set import (
+from src.trainers.rollout_correction.residual_set import (
     CorrectionAtomDraft,
     CorrectionEvent,
     CorrectionKind,
@@ -17,10 +17,10 @@ from src.trainers.stage2_two_channel.residual_set import (
     scan_dirty_prefix_rows,
     transition_state,
 )
-from src.trainers.stage2_two_channel.teacher_forcing_adapter import (
+from src.trainers.rollout_correction.teacher_forcing_adapter import (
     build_residual_set_target_ir,
 )
-from src.trainers.stage2_two_channel.target_builder import _with_selected_path_metadata
+from src.trainers.rollout_correction.target_builder import _with_selected_path_metadata
 from src.training.teacher_forcing.roles import TokenRole
 from src.training.teacher_forcing.vocab import RoleVocab
 
@@ -569,6 +569,33 @@ def test_duplicate_burst_is_uncommitted_and_cannot_vote_for_ul() -> None:
     assert result.events == ()
 
 
+def test_duplicate_burst_prefix_rollback_truncates_at_last_stable_boundary() -> None:
+    state = make_state_for_objects(
+        make_object("a", "person_left", x1=120, x2=220),
+        make_object("b", "car", x1=500, x2=650),
+    )
+
+    result = scan_dirty_prefix_rows(
+        state,
+        (
+            row("person_left", (120, 20, 220, 40), object_start=2, object_end=10),
+            row("person_left", (120, 20, 220, 40), object_start=10, object_end=18),
+            row("car", (500, 20, 650, 40), object_start=18, object_end=26),
+        ),
+        rollback_duplicate_burst=True,
+    )
+
+    assert [decision.kind for decision in result.row_decisions] == [
+        "committed",
+        "duplicate_burst",
+    ]
+    duplicate = result.row_decisions[1]
+    assert duplicate.metadata["prefix_rollback"] is True
+    assert result.final_state.remaining_object_ids == frozenset({"b"})
+    assert result.retained_prefix_end == 10
+    assert result.events == ()
+
+
 def test_malformed_span_context_has_no_atoms_or_type_loss() -> None:
     state = make_state_for_objects(make_object("a", "person_left", x1=120, x2=220))
 
@@ -967,7 +994,7 @@ def test_correction_event_to_ir_uses_next_token_logit_row() -> None:
     )
 
     assert ir.metadata["stage"] == "stage2"
-    assert ir.metadata["stage2_channel"] == "B"
+    assert ir.metadata["stage2_surface"] == "rollout_correction"
     assert ir.metadata["objective"] == "residual_set_correction"
     assert len(ir.atoms) == 1
     atom = ir.atoms[0]

@@ -6,22 +6,21 @@ from src.training.ordering import LegacyTailAppendOrdering, TopLeftSpatialOrderi
 from src.training.stage2.assignment import AssignmentObject, GreedyIoUAssignment
 from src.training.stage2.duplicate_filter import DuplicateCandidate, DuplicateFilter
 from src.training.stage2.planners import (
-    LegacyStage2ChannelBTargetBuilderAdapter,
-    Stage2ChannelAPlanner,
-    Stage2ChannelBPlanner,
+    LegacyStage2RolloutCorrectionRealizerAdapter,
+    Stage2RolloutCorrectionPlanner,
     Stage2GreedyIoUShadowPlanner,
     Stage2PlanningObject,
 )
 from src.training.supervision.plans import SupervisionPlan
 from src.trainers.rollout_matching.contracts import GTObject
 from src.trainers.stage2_rollout_runtime import _serialize_append_fragment
-from src.trainers.stage2_two_channel import (
+from src.trainers.stage2_rollout_correction import (
     _bbox_groups_from_token_ids,
     _matched_prefix_structure_positions,
 )
-from src.trainers.stage2_two_channel.target_builder import (
-    _build_channel_b_supervision_targets,
-    _build_channel_b_triage,
+from src.trainers.rollout_correction.target_builder import (
+    _build_rollout_correction_supervision_targets,
+    _build_rollout_correction_triage,
 )
 
 
@@ -73,8 +72,8 @@ class _CoordLiteralTokenizer:
         return "".join(pieces)
 
 
-def test_stage2_channel_b_planner_inserts_missing_gt_and_records_tail_append_plan() -> None:
-    planner = Stage2ChannelBPlanner(
+def test_stage2_rollout_correction_planner_inserts_missing_gt_and_records_tail_append_plan() -> None:
+    planner = Stage2RolloutCorrectionPlanner(
         duplicate_filter=DuplicateFilter(iou_threshold=0.5),
         ordering=LegacyTailAppendOrdering(),
     )
@@ -106,12 +105,12 @@ def test_stage2_channel_b_planner_inserts_missing_gt_and_records_tail_append_pla
 
     assert isinstance(plan, SupervisionPlan)
     assert plan.stage == "stage2"
-    assert plan.channel == "channel_b"
+    assert plan.channel == "rollout_correction"
     assert plan.template_id == "compact_full"
     assert plan.context_id == "ctx-stage2"
     assert [item.object_id for item in plan.objects] == ["pred-dog", "gt-cat"]
 
-    assert plan.provenance == "stage2_channel_b_shadow_planner"
+    assert plan.provenance == "stage2_rollout_correction_shadow_planner"
     assert plan.metadata["assignment_strategy"] == "external_missing_gt"
     assert plan.metadata["duplicate_filter"] == "deterministic_duplicate_filter"
     assert plan.metadata["object_ordering"] == "legacy_tail_append"
@@ -125,8 +124,8 @@ def test_stage2_channel_b_planner_inserts_missing_gt_and_records_tail_append_pla
     assert plan.objects[1].metadata["plan_index"] == 1
 
 
-def test_stage2_channel_b_planner_can_emit_sorted_top_left_snapshot() -> None:
-    planner = Stage2ChannelBPlanner(
+def test_stage2_rollout_correction_planner_can_emit_sorted_top_left_snapshot() -> None:
+    planner = Stage2RolloutCorrectionPlanner(
         duplicate_filter=DuplicateFilter(iou_threshold=0.5),
         ordering=TopLeftSpatialOrdering(),
     )
@@ -157,39 +156,8 @@ def test_stage2_channel_b_planner_can_emit_sorted_top_left_snapshot() -> None:
     assert [item.metadata["plan_index"] for item in plan.objects] == [0, 1]
 
 
-def test_stage2_channel_a_planner_emits_ground_truth_plan() -> None:
-    planner = Stage2ChannelAPlanner(ordering=TopLeftSpatialOrdering())
-    plan = planner.plan(
-        sample_id="sample-stage2-a",
-        template_id="compact_full",
-        ground_truth_objects=(
-            AssignmentObject(
-                object_id="gt-bottom",
-                description="bottom",
-                bbox=(20.0, 20.0, 30.0, 30.0),
-            ),
-            AssignmentObject(
-                object_id="gt-top",
-                description="top",
-                bbox=(0.0, 0.0, 10.0, 10.0),
-            ),
-        ),
-        context_id="ctx-stage2-a",
-    )
-
-    assert plan.stage == "stage2"
-    assert plan.channel == "channel_a"
-    assert plan.template_id == "compact_full"
-    assert [item.object_id for item in plan.objects] == ["gt-top", "gt-bottom"]
-    assert plan.provenance == "stage2_channel_a_shadow_planner"
-    assert plan.metadata["object_ordering"] == "top_left_spatial"
-    assert all(item.provenance == "ground_truth" for item in plan.objects)
-    assert [item.metadata["source_index"] for item in plan.objects] == [1, 0]
-    assert [item.metadata["plan_index"] for item in plan.objects] == [0, 1]
-
-
-def test_stage2_channel_b_planner_deduplicates_accepted_rollout_before_inserting_fn() -> None:
-    planner = Stage2ChannelBPlanner(
+def test_stage2_rollout_correction_planner_deduplicates_accepted_rollout_before_inserting_fn() -> None:
+    planner = Stage2RolloutCorrectionPlanner(
         duplicate_filter=DuplicateFilter(iou_threshold=0.5),
         ordering=LegacyTailAppendOrdering(),
     )
@@ -226,7 +194,7 @@ def test_stage2_channel_b_planner_deduplicates_accepted_rollout_before_inserting
     assert duplicate_candidate.policy_metadata["policy_id"] == "deterministic_duplicate_filter"
 
 
-def test_legacy_target_builder_adapter_matches_tail_and_sorted_object_ordering() -> None:
+def test_legacy_correction_realizer_adapter_matches_tail_and_sorted_object_ordering() -> None:
     tokenizer = _CoordLiteralTokenizer()
     accepted_objects_clean = [
         GTObject(
@@ -256,7 +224,7 @@ def test_legacy_target_builder_adapter_matches_tail_and_sorted_object_ordering()
             desc="fn",
         ),
     ]
-    triage = _build_channel_b_triage(
+    triage = _build_rollout_correction_triage(
         accepted_objects_clean=accepted_objects_clean,
         suppressed_duplicate_objects_by_boundary={},
         explorer_objects_raw_by_view=[[accepted_objects_clean[1]]],
@@ -268,7 +236,7 @@ def test_legacy_target_builder_adapter_matches_tail_and_sorted_object_ordering()
     )
     match = type("Match", (), {"matched_pairs": [(0, 0)]})()
 
-    tail_targets = _build_channel_b_supervision_targets(
+    tail_targets = _build_rollout_correction_supervision_targets(
         tokenizer=tokenizer,
         prompt_ids=[],
         coord_id_set=set(range(1000)),
@@ -283,7 +251,7 @@ def test_legacy_target_builder_adapter_matches_tail_and_sorted_object_ordering()
         matched_prefix_structure_positions_fn=_matched_prefix_structure_positions,
         serialize_append_fragment_fn=_serialize_append_fragment,
     )
-    sorted_targets = _build_channel_b_supervision_targets(
+    sorted_targets = _build_rollout_correction_supervision_targets(
         tokenizer=tokenizer,
         prompt_ids=[],
         coord_id_set=set(range(1000)),
@@ -299,7 +267,7 @@ def test_legacy_target_builder_adapter_matches_tail_and_sorted_object_ordering()
         serialize_append_fragment_fn=_serialize_append_fragment,
         insertion_order="sorted",
     )
-    adapter = LegacyStage2ChannelBTargetBuilderAdapter()
+    adapter = LegacyStage2RolloutCorrectionRealizerAdapter()
 
     tail_plan = adapter.plan_from_legacy(
         sample_id="legacy-tail",
@@ -333,8 +301,8 @@ def test_legacy_target_builder_adapter_matches_tail_and_sorted_object_ordering()
     assert tail_plan.objects[1].metadata["legacy_gt_index"] == 2
     assert tail_plan.objects[2].metadata["legacy_gt_index"] == 1
     assert tail_plan.objects[2].metadata["source_role"] == "false_negative"
-    assert tail_plan.metadata["target_builder_adapter"] == (
-        "legacy_stage2_channel_b_target_builder_adapter"
+    assert tail_plan.metadata["correction_realizer_adapter"] == (
+        "legacy_stage2_rollout_correction_realizer_adapter"
     )
 
     assert sorted_targets.clean_target_text.find(
@@ -352,8 +320,8 @@ def test_legacy_target_builder_adapter_matches_tail_and_sorted_object_ordering()
     assert sorted_plan.metadata["assignment_strategy"] == "legacy_match_result"
 
 
-def test_stage2_channel_b_planner_reconstructs_duplicate_survivors_by_input_index() -> None:
-    planner = Stage2ChannelBPlanner(
+def test_stage2_rollout_correction_planner_reconstructs_duplicate_survivors_by_input_index() -> None:
+    planner = Stage2RolloutCorrectionPlanner(
         duplicate_filter=DuplicateFilter(iou_threshold=0.5),
         ordering=LegacyTailAppendOrdering(),
     )
@@ -388,9 +356,9 @@ def test_stage2_channel_b_planner_reconstructs_duplicate_survivors_by_input_inde
     assert plan.objects[0].metadata["plan_index"] == 0
 
 
-def test_stage2_greedy_iou_shadow_planner_delegates_to_channel_b_diagnostics() -> None:
+def test_stage2_greedy_iou_shadow_planner_delegates_to_rollout_correction_diagnostics() -> None:
     planner = Stage2GreedyIoUShadowPlanner(
-        channel_b_planner=Stage2ChannelBPlanner(
+        rollout_correction_planner=Stage2RolloutCorrectionPlanner(
             duplicate_filter=DuplicateFilter(iou_threshold=0.5),
             ordering=LegacyTailAppendOrdering(),
         ),
@@ -432,7 +400,7 @@ def test_stage2_greedy_iou_shadow_planner_delegates_to_channel_b_diagnostics() -
     )
 
     assert plan.stage == "stage2"
-    assert plan.channel == "channel_b"
+    assert plan.channel == "rollout_correction"
     assert plan.context_id == "ctx-shadow"
     assert plan.provenance == "stage2_greedy_iou_shadow_planner"
     assert [item.object_id for item in plan.objects] == [
@@ -461,7 +429,7 @@ def test_stage2_greedy_iou_shadow_planner_delegates_to_channel_b_diagnostics() -
 def test_stage2_greedy_iou_shadow_planner_assigns_after_duplicate_filtering() -> None:
     planner = Stage2GreedyIoUShadowPlanner(
         assignment_strategy=GreedyIoUAssignment(iou_threshold=0.5),
-        channel_b_planner=Stage2ChannelBPlanner(
+        rollout_correction_planner=Stage2RolloutCorrectionPlanner(
             duplicate_filter=DuplicateFilter(iou_threshold=0.1),
             ordering=LegacyTailAppendOrdering(),
         ),

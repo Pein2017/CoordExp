@@ -100,12 +100,14 @@ def _is_active_stage2_trie_segment(
 ) -> bool:
     """Return whether a segment should contribute Stage-2 trie CE terms."""
 
-    if str(context.channel or "").strip().upper() != "B":
+    if str(context.channel or "").strip() != "rollout_correction":
         return False
 
-    segment_channel = segment_meta.get("stage2_channel")
-    if segment_channel is not None and str(segment_channel).strip().upper() != "B":
-        return False
+    if "stage2_channel" in segment_meta:
+        raise ValueError(
+            "stage2_channel metadata was removed; Stage-2 trie CE only accepts "
+            "the unified rollout_correction surface."
+        )
 
     if bool(segment_meta.get("stage2_trie_skip_loss")):
         return False
@@ -365,7 +367,9 @@ def _metrics_for_no_active_segments(loss: torch.Tensor) -> dict[str, float]:
         "stage2_trie/role_desc_targets": 0.0,
         "stage2_trie/role_coord_targets": 0.0,
         "stage2_trie/role_eos_targets": 0.0,
-        "loss/B/stage2_trie_ce": float(loss.detach().cpu().item()),
+        "loss/stage2_rollout_correction/stage2_trie_ce": float(
+            loss.detach().cpu().item()
+        ),
     }
 
 
@@ -577,7 +581,9 @@ def run_stage2_trie_ce_module(
             "stage2_trie/role_desc_targets": float(role_counts["desc"]),
             "stage2_trie/role_coord_targets": float(role_counts["coord"]),
             "stage2_trie/role_eos_targets": float(role_counts["eos"]),
-            "loss/B/stage2_trie_ce": float(loss.detach().cpu().item()),
+            "loss/stage2_rollout_correction/stage2_trie_ce": float(
+                loss.detach().cpu().item()
+            ),
         }
     else:
         metrics = _metrics_for_no_active_segments(loss)

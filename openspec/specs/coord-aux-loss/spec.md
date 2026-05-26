@@ -38,7 +38,8 @@ Legacy compatibility:
 - **THEN** validation fails fast.
 
 ### Requirement: Pipeline-driven Stage-2 rejects custom coord aux config
-When `stage2_ab.pipeline` is present, `custom.coord_soft_ce_w1.*` SHALL be disallowed.
+When `stage2_rollout_correction.pipeline` is present,
+`custom.coord_soft_ce_w1.*` SHALL be disallowed.
 
 Normative behavior:
 - Users MUST NOT express coord auxiliary knobs through the retired `coord_reg`
@@ -47,7 +48,7 @@ Normative behavior:
   config validation MUST fail fast.
 
 #### Scenario: Pipeline + custom coord config fails fast
-- **GIVEN** `stage2_ab.pipeline` is configured
+- **GIVEN** `stage2_rollout_correction.pipeline` is configured
 - **AND** `custom.coord_soft_ce_w1` is also configured
 - **WHEN** config validation runs
 - **THEN** validation fails fast.

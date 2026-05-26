@@ -1,6 +1,6 @@
 ## Purpose
 Define the teacher-forcing objective pipeline module contract, including stable
-module names and Channel-B duplicate-suppression ownership.
+module names and rollout-correction duplicate-suppression ownership.
 
 ## Requirements
 
@@ -16,7 +16,7 @@ Normative behavior:
   of creating a compatibility alias,
 - the retained runtime diagnostic metadata MUST encode duplicate-control
   non-survivor first-divergence records aligned to the final clean prefix
-  after the pre-match duplicate-control step and existing Channel-B matching /
+  after the pre-match duplicate-control step and existing rollout-correction matching /
   triage flow,
 - the runtime metadata producer MUST preserve deterministic record ordering for
   identical rollout inputs,
@@ -26,7 +26,7 @@ Normative behavior:
   objective module is removed from live canonical training.
 
 #### Scenario: Removed loss_duplicate_burst_unlikelihood is rejected
-- **WHEN** Channel-B v3 provides canonical cluster-aware duplicate
+- **WHEN** rollout-correction v3 provides canonical cluster-aware duplicate
   first-divergence records
 - **AND** a config declares `loss_duplicate_burst_unlikelihood`
 - **THEN** pipeline validation fails fast

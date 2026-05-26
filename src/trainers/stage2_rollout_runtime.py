@@ -3,7 +3,7 @@
 This module owns rollout prompt preparation, HF/vLLM/server dispatch, runtime
 rollout configuration, vLLM sync/debug helpers, evaluation rollout artifacts,
 and post-rollout packing helpers.  It is intentionally not a public trainer
-variant; concrete trainers such as :class:`Stage2TwoChannelTrainer` own the
+variant; concrete trainers such as :class:`Stage2RolloutCorrectionTrainer` own the
 training objective.
 """
 
@@ -38,10 +38,16 @@ import torch
 import torch.nn.functional as F
 from transformers.trainer_utils import SaveStrategy
 from swift.trainers import Seq2SeqTrainer
-from swift.trainers.rlhf_trainer.utils import (
-    get_gather_if_zero3_context,
-    replace_assistant_response_with_ids,
-)
+try:
+    from swift.rlhf_trainers.utils import (
+        get_gather_if_zero3_context,
+        replace_assistant_response_with_ids,
+    )
+except ImportError:
+    from swift.trainers.rlhf_trainer.utils import (
+        get_gather_if_zero3_context,
+        replace_assistant_response_with_ids,
+    )
 from swift.utils import get_logger, unwrap_model_for_generation
 
 from src.common.object_field_order import (
@@ -91,7 +97,6 @@ from .rollout_runtime.dispatch import (
 )
 from .rollout_runtime.vllm_engine import (
     instantiate_vllm_engine,
-    sync_vllm_full_weights_if_needed,
     shutdown_vllm_colocate_engine,
 )
 from .rollout_runtime.vllm_infer import (
@@ -104,9 +109,7 @@ from .rollout_runtime.vllm_server import (
     ensure_vllm_server_client,
     ensure_vllm_server_communicator_rank0,
     prepare_vllm_server_rollout,
-    sync_vllm_server_full_weights,
     sync_vllm_server_rollout_model_if_needed,
-    vllm_server_update_state_dict,
     shutdown_vllm_server_client,
 )
 from .rollout_aligned_evaluator import finalize_rollout_aligned_evaluation
@@ -1313,6 +1316,7 @@ class Stage2RolloutRuntime(Seq2SeqTrainer):
                 "decode_batch_size",
                 "rollout_generate_batch_size",
                 "rollout_infer_batch_size",
+                "channel_b_decode_batch_size",
                 # Removed packing-scope knob.
                 "post_rollout_pack_scope",
             )
@@ -1325,10 +1329,11 @@ class Stage2RolloutRuntime(Seq2SeqTrainer):
                     "decode_batch_size",
                     "rollout_generate_batch_size",
                     "rollout_infer_batch_size",
+                    "channel_b_decode_batch_size",
                 }:
                     rendered.append(
                         "rollout_matching."
-                        f"{k} (use rollout_matching.channel_b_decode_batch_size / rollout_matching.eval_decode_batch_size)"
+                        f"{k} (use rollout_matching.rollout_decode_batch_size / rollout_matching.eval_decode_batch_size)"
                     )
                 elif k == "post_rollout_pack_scope":
                     rendered.append(
@@ -1344,20 +1349,20 @@ class Stage2RolloutRuntime(Seq2SeqTrainer):
             )
 
         # Validate explicit per-context decode batch-size knobs.
-        channel_b_decode_bs_raw = cfg.get("channel_b_decode_batch_size", None)
-        if channel_b_decode_bs_raw is None:
+        rollout_decode_bs_raw = cfg.get("rollout_decode_batch_size", None)
+        if rollout_decode_bs_raw is None:
             raise ValueError(
-                "rollout_matching.channel_b_decode_batch_size must be provided explicitly"
+                "rollout_matching.rollout_decode_batch_size must be provided explicitly"
             )
         try:
-            channel_b_decode_bs = int(channel_b_decode_bs_raw)
+            rollout_decode_bs = int(rollout_decode_bs_raw)
         except (TypeError, ValueError) as exc:
             raise TypeError(
-                "rollout_matching.channel_b_decode_batch_size must be an int"
+                "rollout_matching.rollout_decode_batch_size must be an int"
             ) from exc
-        if channel_b_decode_bs <= 0:
+        if rollout_decode_bs <= 0:
             raise ValueError(
-                "rollout_matching.channel_b_decode_batch_size must be > 0"
+                "rollout_matching.rollout_decode_batch_size must be > 0"
             )
 
         eval_decode_bs_raw = cfg.get("eval_decode_batch_size", None)
@@ -1429,10 +1434,12 @@ class Stage2RolloutRuntime(Seq2SeqTrainer):
         if not isinstance(vllm_cfg, Mapping):
             raise TypeError("rollout_matching.vllm must be a mapping when provided")
         if train_backend == "vllm" or eval_backend == "vllm":
-            if bool(vllm_cfg.get("enable_lora", False)):
+            enable_lora = bool(vllm_cfg.get("enable_lora", False))
+            vllm_mode = str(vllm_cfg.get("mode", "") or "").strip().lower()
+            if enable_lora and vllm_mode not in {"server", ""}:
                 raise ValueError(
-                    "vLLM rollouts require full merged-weight sync in this stack: "
-                    "set rollout_matching.vllm.enable_lora=false."
+                    "rollout_matching.vllm.enable_lora=true is currently supported "
+                    "only for rollout_matching.vllm.mode=server."
                 )
             sync_raw = vllm_cfg.get("sync", {}) or {}
             if sync_raw is not None and not isinstance(sync_raw, Mapping):
@@ -1442,10 +1449,29 @@ class Stage2RolloutRuntime(Seq2SeqTrainer):
                 if isinstance(sync_raw, Mapping)
                 else "full"
             )
-            if sync_mode != "full":
+            if sync_mode not in {"full", "adapter"}:
                 raise ValueError(
-                    "rollout_matching.vllm.sync.mode must be 'full' in this stack "
-                    "(adapter/auto sync modes are unsupported)."
+                    "rollout_matching.vllm.sync.mode must be one of {'full', 'adapter'}."
+                )
+            if sync_mode != "adapter":
+                raise ValueError(
+                    "vLLM rollouts require official adapter sync: set "
+                    "rollout_matching.vllm.sync.mode=adapter."
+                )
+            if not enable_lora:
+                raise ValueError(
+                    "vLLM rollouts require official adapter sync: set "
+                    "rollout_matching.vllm.enable_lora=true."
+                )
+            if enable_lora and sync_mode != "adapter":
+                raise ValueError(
+                    "rollout_matching.vllm.enable_lora=true requires "
+                    "rollout_matching.vllm.sync.mode=adapter."
+                )
+            if sync_mode == "adapter" and not enable_lora:
+                raise ValueError(
+                    "rollout_matching.vllm.sync.mode=adapter requires "
+                    "rollout_matching.vllm.enable_lora=true."
                 )
 
         # Legacy sleep-mode lifecycle is removed.
@@ -1495,7 +1521,7 @@ class Stage2RolloutRuntime(Seq2SeqTrainer):
         if pipeline_raw is not None:
             raise ValueError(
                 "rollout_matching.pipeline has been removed. "
-                "Use stage2_ab.pipeline with custom.trainer_variant=stage2_two_channel instead."
+                "Use stage2_rollout_correction.pipeline with custom.trainer_variant=stage2_rollout_correction instead."
             )
 
         eval_det_raw = cfg.get("eval_detection", None)
@@ -2498,7 +2524,7 @@ class Stage2RolloutRuntime(Seq2SeqTrainer):
         if offload_model and not is_vllm_colocate:
             offload_model = False
 
-        # Optimizer-only offload is also useful for HF rollout generation in Channel-B
+        # Optimizer-only offload is also useful for HF rollout generation in rollout-correction
         # to avoid transient memory additive peaks (train state + decode cache).
         if not is_vllm_colocate and not offload_optimizer:
             yield
@@ -3188,7 +3214,7 @@ class Stage2RolloutRuntime(Seq2SeqTrainer):
         """Derived rollout request chunk size per learner rank.
 
         Context-specific decode caps are used per rollout phase:
-        - train: `rollout_matching.channel_b_decode_batch_size`
+        - train: `rollout_matching.rollout_decode_batch_size`
         - eval: `rollout_matching.eval_decode_batch_size`
 
         - HF backend and vLLM colocate mode: each learner rank decodes locally on its own
@@ -3246,7 +3272,7 @@ class Stage2RolloutRuntime(Seq2SeqTrainer):
             cap_key = (
                 "rollout_matching.eval_decode_batch_size"
                 if context_norm == "eval"
-                else "rollout_matching.channel_b_decode_batch_size"
+                else "rollout_matching.rollout_decode_batch_size"
             )
             raise ValueError(
                 "rollout decode batch-size cap is infeasible for the current topology: "
@@ -3288,12 +3314,12 @@ class Stage2RolloutRuntime(Seq2SeqTrainer):
             raise ValueError("rollout_matching.vllm.sync must be a mapping")
 
         mode = str(sync_raw.get("mode", "full") or "full").strip().lower()
-        if mode != "full":
+        if mode != "adapter":
             raise ValueError(
-                "rollout_matching.vllm.sync.mode must be 'full' in this stack "
-                "(adapter/auto sync modes are unsupported)."
+                "CoordExp vLLM rollouts require official adapter sync: set "
+                "rollout_matching.vllm.sync.mode=adapter."
             )
-        return "full"
+        return mode
 
     @staticmethod
     def _normalize_rollout_seed_int32(seed: int) -> int:
@@ -3336,12 +3362,12 @@ class Stage2RolloutRuntime(Seq2SeqTrainer):
             )
 
         if context_norm == "train":
-            raw = self._cfg("channel_b_decode_batch_size", None)
+            raw = self._cfg("rollout_decode_batch_size", None)
             missing_msg = (
-                "rollout_matching.channel_b_decode_batch_size must be provided explicitly"
+                "rollout_matching.rollout_decode_batch_size must be provided explicitly"
             )
-            type_msg = "rollout_matching.channel_b_decode_batch_size must be an int"
-            positive_msg = "rollout_matching.channel_b_decode_batch_size must be > 0"
+            type_msg = "rollout_matching.rollout_decode_batch_size must be an int"
+            positive_msg = "rollout_matching.rollout_decode_batch_size must be > 0"
         else:
             raw = self._cfg("eval_decode_batch_size", None)
             missing_msg = (
@@ -3674,28 +3700,16 @@ class Stage2RolloutRuntime(Seq2SeqTrainer):
         )
 
     def _sync_vllm_rollout_model_if_needed(self) -> None:
-        """Sync merged rollout weights into the colocated vLLM engine.
-
-        Full merged-weight sync is the only supported mode in this stack.
-        """
-        vcfg = self._cfg("vllm", {}) or {}
-        enable_lora = bool(vcfg.get("enable_lora", False)) if isinstance(vcfg, Mapping) else False
-        if enable_lora:
-            raise RuntimeError(
-                "vLLM rollouts require full merged-weight sync in this stack: "
-                "set rollout_matching.vllm.enable_lora=false."
-            )
-        self._sync_vllm_full_weights_if_needed()
-
-    def _sync_vllm_full_weights_if_needed(self) -> None:
-        """Sync merged (LoRA-applied) weights into vLLM when vLLM LoRA is disabled."""
-        sync_vllm_full_weights_if_needed(owner=self)
+        raise RuntimeError(
+            "Colocate vLLM sync has been removed from CoordExp. "
+            "Use rollout_matching.vllm.mode=server with official adapter sync."
+        )
 
     def _sync_vllm_lora_if_needed(self) -> None:
         raise RuntimeError(
-            "Adapter-only vLLM sync is unsupported in this stack. "
-            "vLLM rollouts require full merged-weight sync: set "
-            "rollout_matching.vllm.enable_lora=false."
+            "Colocate adapter-only vLLM sync is not wired in CoordExp. "
+            "Use rollout_matching.vllm.mode=server for official ms-swift "
+            "adapter sync."
         )
 
     def _effective_vllm_server_sync_mode(self) -> str:
@@ -4039,25 +4053,13 @@ class Stage2RolloutRuntime(Seq2SeqTrainer):
         """
         sync_vllm_server_rollout_model_if_needed(owner=self)
 
-    def _sync_vllm_server_full_weights(self, client: Any) -> None:
-        """Full merged-weight sync to vLLM server (robust default)."""
-        sync_vllm_server_full_weights(owner=self, client=client, logger=logger)
-
-    def _vllm_server_update_state_dict(
-        self, client: Any, state_dict: Mapping[str, Any]
-    ) -> None:
-        """Bucket + broadcast a state_dict into the vLLM server via NCCL."""
-        vllm_server_update_state_dict(
-            client=client,
-            state_dict=dict(state_dict),
-        )
-
     def _sync_vllm_server_adapter(self, client: Any) -> None:
-        _ = client
-        raise RuntimeError(
-            "Adapter-only vLLM server sync is unsupported in this stack. "
-            "Use rollout_matching.vllm.sync.mode=full and "
-            "rollout_matching.vllm.enable_lora=false."
+        from src.trainers.rollout_runtime.vllm_server import sync_vllm_server_adapter
+
+        sync_vllm_server_adapter(
+            owner=self,
+            client=client,
+            logger=logger,
         )
 
     def _vllm_infer_tp_group(
@@ -4182,7 +4184,9 @@ class Stage2RolloutRuntime(Seq2SeqTrainer):
         out: List[Tuple[List[int], str, str, List[int]]] = []
         mb = int(self._decode_batch_size(context=self._current_rollout_context()))
 
-        from swift.llm import to_device
+        from .rollout_runtime.swift_infer_compat import import_swift_to_device
+
+        to_device = import_swift_to_device()
 
         # Optional: offload training state during rollout generation (config-controlled).
         with self._maybe_rollout_offload_context(rollout_backend="hf"): 
@@ -4424,7 +4428,9 @@ class Stage2RolloutRuntime(Seq2SeqTrainer):
         out: List[Tuple[List[int], str, str, List[int], List[float], List[str]]] = []
         mb = int(self._decode_batch_size(context=self._current_rollout_context()))
 
-        from swift.llm import to_device
+        from .rollout_runtime.swift_infer_compat import import_swift_to_device
+
+        to_device = import_swift_to_device()
 
         idx = 0
         while idx < len(samples):

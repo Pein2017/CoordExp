@@ -31,7 +31,7 @@ owner/expiry/opt-in. Supported `surface.id` values are:
 - `stage1_json_ce`: JSON chat CE baseline.
 - `stage1_compact_trie_ce`: primary Stage-1 compact-full direction with
   token-span supervision and trie/coordinate objectives.
-- `stage2_two_channel`: Stage-2 two-channel shadow architecture.
+- `stage2_rollout_correction`: Stage-2 rollout-prefix plus GT-correction architecture.
 
 | Surface | Status | Primary config / route | Packing status | Notes |
 |---|---|---|---|---|
@@ -41,8 +41,8 @@ owner/expiry/opt-in. Supported `surface.id` values are:
 | Stage-1 compact recursive detection geometry-aware softCE | Legacy/comparator ablation candidates | `configs/stage1/recursive_detection_ce/prod/compact_full_support2_iou_gibbs_softce_a5.yaml`; `configs/stage1/recursive_detection_ce/prod/compact_full_support2_ciou_gibbs_softce_a6.yaml` | Legacy recursive sidecar packing/cache remain unsupported | Historical/unlaunched comparator candidates; not part of the active teacher-forcing objective surface. |
 | Stage-1 compact prefix roll-in ET-RMP-CE | Legacy/comparator E1 ablation handle | `configs/stage1/recursive_detection_ce/ablation/compact_full_prefix_rollin_balance2.yaml` | Packing/cache disabled; recursive sidecar offset rewriting is not implemented | Compact-full historical ablation only. EOS supervision uses ordinary teacher-forced `<|im_end|>` CE. |
 | Stage-1 compact detection bridge | Legacy bridge only | `configs/stage1/compact_detection_sequence/smoke/compact_full_tiny.yaml` | Legacy SFT smoke surface; not a latest packing example | Uses legacy `TrainingConfig` plus `custom.detection_sequence_format`; do not use as a current-schema example. |
-| Stage-2 two-channel | Active Stage-2 operator path and shadow `surface.id: stage2_two_channel` | `configs/stage2_two_channel/`; shadow pipeline in `src/training/pipelines/stage2_two_channel.py` | Post-rollout trainer packing when configured; rollout generation remains unpacked | YAML-first Channel-A plus clean-prefix Channel-B training. Residual-set ckpt3664 smoke handles live under `configs/stage2_two_channel/smoke/compact_full_residual_set_ckpt3664_hf_*.yaml`. |
-| Retired Stage-2 rollout-aligned variants | Removed | `stage2_rollout_aligned`, `stage2_rollout_runtime`, `rollout_matching_sft` fail fast with guidance to `stage2_two_channel` | Removed | Shared rollout runtime code remains internal in `src/trainers/stage2_rollout_runtime.py`. |
+| Stage-2 rollout correction | Active Stage-2 operator path and shadow `surface.id: stage2_rollout_correction` | `configs/stage2_rollout_correction/`; trainer route in `src/trainers/stage2_rollout_correction.py` | Post-rollout trainer packing when configured; rollout generation remains unpacked | YAML-first rollout-prefix + GT-correction training. The only active objective is `residual_set_correction` with `application.preset: rollout_self_prefix`. |
+| Retired Stage-2 rollout-aligned variants | Removed | `stage2_rollout_aligned`, `stage2_rollout_runtime`, `rollout_matching_sft` fail fast with guidance to `stage2_rollout_correction` | Removed | Shared rollout runtime code remains internal in `src/trainers/stage2_rollout_runtime.py`. |
 | Runtime fusion config | Removed | `custom.fusion_config` fails fast; `configs/fusion/` was deleted | Removed | Merge JSONLs offline for multi-dataset training. |
 
 Current cleanup decisions:
@@ -64,7 +64,7 @@ Current cleanup decisions:
 3. [STAGE2_RUNBOOK.md](STAGE2_RUNBOOK.md) for current Stage-2 workflows, launcher patterns, and historical-context pointers
 4. [LVIS.md](LVIS.md) for LVIS-specific dataset, prompt, Stage-2, and evaluation semantics
 5. [METRICS.md](METRICS.md) for loss-key and logging interpretation
-6. [`stage2-ab-training/spec.md`](../../openspec/specs/stage2-ab-training/spec.md) when exact `stage2_two_channel` stable contract semantics matter
+6. [`stage2-rollout-correction/spec.md`](../../openspec/specs/stage2-rollout-correction/spec.md) when exact `stage2_rollout_correction` stable contract semantics matter
 7. [`rollout-matching-sft/spec.md`](../../openspec/specs/rollout-matching-sft/spec.md) when checking the retired rollout-matching trainer contract
 8. [`runtime-architecture-refactor-program/spec.md`](../../openspec/specs/runtime-architecture-refactor-program/spec.md) when the question is about runtime ownership seams or compatibility-preserving refactors
 
@@ -115,7 +115,7 @@ latest-detection objective subkeys, but no new CLI flags.
 - [../data/PACKING.md](../data/PACKING.md)
   - surface-specific packing matrix, Stage-1 static packing contract, hard length cap, and fail-fast behavior for overlength atomic samples
 - [STAGE2_RUNBOOK.md](STAGE2_RUNBOOK.md)
-  - YAML-first runbook, smoke workflow, server-mode launcher entrypoints, and the active `stage2_two_channel` path
+  - YAML-first runbook, smoke workflow, server-mode launcher entrypoints, and the active `stage2_rollout_correction` path
 - [LVIS.md](LVIS.md)
   - LVIS federated-label design note plus migration guide for Stage-1, Stage-2, and evaluation
 - [METRICS.md](METRICS.md)
@@ -145,8 +145,7 @@ latest-detection objective subkeys, but no new CLI flags.
 - `configs/stage1/recursive_detection_ce/`
 - `configs/stage1/compact_detection_sequence/`
 - `configs/_shared/recursive_detection/` authoring snippets, not current launch inheritance
-- `src/trainers/stage2_two_channel.py`
-- `src/trainers/stage2_two_channel/`
+- `src/trainers/stage2_rollout_correction.py`
 - `src/trainers/stage2_rollout_runtime.py`
 - `src/trainers/rollout_aligned_targets.py`
 - `src/trainers/rollout_aligned_evaluator.py`
@@ -157,4 +156,4 @@ latest-detection objective subkeys, but no new CLI flags.
 - `configs/_shared/datasets/`
 - `configs/_shared/prompts/`
 - `configs/stage1/`
-- `configs/stage2_two_channel/`
+- `configs/stage2_rollout_correction/`

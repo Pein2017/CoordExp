@@ -8,7 +8,7 @@ def test_coord_token_mode_invariants_for_anchored_configs() -> None:
         "configs/stage1/profiles/4b/coord_soft_ce_gate_coco80_desc_first_1024_lvis_proxy.yaml"
     )
     stage2 = ConfigLoader.load_materialized_training_config(
-        "configs/stage2_two_channel/prod/ab_mixed.yaml"
+        "configs/stage2_rollout_correction/prod/coco1024_online_residual_correction_vllm_tail_append.yaml"
     )
 
     # Both anchored pipelines train on pre-quantized coord-token JSONLs, so runtime
@@ -24,5 +24,5 @@ def test_coord_token_mode_invariants_for_anchored_configs() -> None:
     assert len(ids) == 1000
     assert ids == list(range(int(ids[0]), int(ids[0]) + 1000))
 
-    # Stage-2 AB should not enable the coord-offset adapter.
+    # Stage-2 rollout correction should not enable the coord-offset adapter.
     assert stage2.custom.coord_offset.enabled is False

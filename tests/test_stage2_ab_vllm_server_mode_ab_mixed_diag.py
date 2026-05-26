@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import json
 import os
-import shutil
 import subprocess
 import sys
 import time
@@ -164,10 +163,10 @@ def _parse_jsonl_dicts(path: Path) -> list[dict[str, Any]]:
     return records
 
 
-def test_stage2_ab_ab_mixed_vllm_server_mode_diag(tmp_path: Path):
-    """End-to-end Stage-2 AB mixed A/B schedule with vLLM **server mode**.
+def test_stage2_rollout_correction_vllm_server_mode_diag(tmp_path: Path):
+    """End-to-end Stage-2 rollout-correction diagnostic with vLLM **server mode**.
 
-    This is a *diagnostic* integration test (longer than the B-only smoke) and is gated
+    This is a *diagnostic* integration test (longer than the minimal smoke) and is gated
     behind an env flag because it requires GPUs + a local checkpoint.
 
     Environment knobs:
@@ -188,9 +187,7 @@ def test_stage2_ab_ab_mixed_vllm_server_mode_diag(tmp_path: Path):
 
     pytest.importorskip("vllm")
 
-    swift_bin = shutil.which("swift")
-    if not swift_bin:
-        pytest.skip("`swift` CLI not found on PATH; required to launch the rollout server.")
+    swift_cmd = [sys.executable, "-m", "swift.cli.rollout"]
 
     repo_root = Path(__file__).resolve().parent.parent
     ms_swift_root = _find_ms_swift_root(repo_root)
@@ -249,32 +246,29 @@ def test_stage2_ab_ab_mixed_vllm_server_mode_diag(tmp_path: Path):
         group_port = _pick_free_port()
     base_url = f"http://127.0.0.1:{port}"
 
-    out_root = tmp_path / "stage2_ab_out"
-    tb_root = tmp_path / "stage2_ab_tb"
+    out_root = tmp_path / "stage2_rollout_correction_out"
+    tb_root = tmp_path / "stage2_rollout_correction_tb"
     out_root.mkdir(parents=True, exist_ok=True)
     tb_root.mkdir(parents=True, exist_ok=True)
 
-    run_name = f"ab_mixed_vllm_server_diag_{int(time.time())}"
+    run_name = f"rollout_correction_vllm_server_diag_{int(time.time())}"
 
-    cfg_path = tmp_path / "stage2_ab_ab_mixed_vllm_server_diag.yaml"
+    cfg_path = tmp_path / "stage2_rollout_correction_vllm_server_diag.yaml"
     cfg_path.write_text(
         "\n".join(
             [
-                f"extends: {(repo_root / 'configs/stage2_two_channel/smoke/ab_mixed_20steps.yaml').as_posix()}",
+                f"extends: {(repo_root / 'configs/stage2_rollout_correction/smoke/compact_full_hf_1step.yaml').as_posix()}",
                 f"global_max_length: {vllm_max_model_len}",
                 "model:",
                 f"  model: {model_dir}",
                 "training:",
                 f"  output_root: {out_root}",
                 f"  run_name: {run_name}",
-                "  artifact_subdir: stage2_ab/test/ab_mixed_vllm_server_diag",
+                "  artifact_subdir: stage2_rollout_correction/test/vllm_server_diag",
                 f"  logging_root: {tb_root}",
                 f"  max_steps: {max_steps}",
                 "  effective_batch_size: null",
                 "  gradient_accumulation_steps: 1",
-                "stage2_ab:",
-                "  schedule:",
-                "    b_ratio: 0.5",
                 "custom:",
                 f"  train_sample_limit: {train_sample_limit}",
                 "  val_sample_limit: 0",
@@ -292,7 +286,7 @@ def test_stage2_ab_ab_mixed_vllm_server_mode_diag(tmp_path: Path):
     )
 
     server_log = tmp_path / "swift_rollout_server.log"
-    learner_log = tmp_path / "stage2_ab_learner.log"
+    learner_log = tmp_path / "stage2_rollout_correction_learner.log"
 
     server_env = os.environ.copy()
     server_env["CUDA_VISIBLE_DEVICES"] = str(server_visible)
@@ -305,8 +299,7 @@ def test_stage2_ab_ab_mixed_vllm_server_mode_diag(tmp_path: Path):
     server_env["PYTHONPATH"] = os.pathsep.join(py_path_parts)
 
     server_cmd = [
-        swift_bin,
-        "rollout",
+        *swift_cmd,
         "--model",
         str(model_dir),
         "--host",
@@ -324,7 +317,9 @@ def test_stage2_ab_ab_mixed_vllm_server_mode_diag(tmp_path: Path):
         "--vllm_max_model_len",
         str(vllm_max_model_len),
         "--vllm_enable_lora",
-        "false",
+        "true",
+        "--vllm_max_lora_rank",
+        "16",
     ]
 
     proc: Optional[subprocess.Popen[str]] = None
@@ -390,18 +385,17 @@ def test_stage2_ab_ab_mixed_vllm_server_mode_diag(tmp_path: Path):
 
         records = _parse_jsonl_dicts(jsonl_paths[0])
 
-        a_records = [
-            r for r in records if float(r.get("stage2/channel_a", 0.0)) == pytest.approx(1.0)
-        ]
-        b_records = [
-            r for r in records if float(r.get("stage2/channel_b", 0.0)) == pytest.approx(1.0)
+        correction_records = [
+            r
+            for r in records
+            if float(r.get("stage2_rollout_correction/active", 0.0))
+            == pytest.approx(1.0)
         ]
 
-        assert a_records, "No Channel-A logs found; schedule may be misconfigured."
-        assert b_records, "No Channel-B logs found; schedule may be misconfigured."
+        assert correction_records, "No rollout-correction logs found; check the unified Stage-2 config."
 
-        assert any(float(r.get("rollout/rollout_len_mean", 0.0)) > 0.0 for r in b_records)
-        assert any(float(r.get("rollout/decode_non_beam_count", 0.0)) > 0.0 for r in b_records)
+        assert any(float(r.get("rollout/rollout_len_mean", 0.0)) > 0.0 for r in correction_records)
+        assert any(float(r.get("rollout/decode_non_beam_count", 0.0)) > 0.0 for r in correction_records)
         assert any(float(r.get("rollout/f1", 0.0)) >= 0.0 for r in b_records)
 
         # Minimal logging contract: avoid legacy/verbose rollout config gauges.

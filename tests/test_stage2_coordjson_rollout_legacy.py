@@ -39,7 +39,7 @@ def test_coordjson_legacy_codec_parses_and_appends_coordjson_text() -> None:
     )
 
     parse_result = codec.parse(raw)
-    target = codec.build_channel_b_target(
+    target = codec.build_rollout_correction_target(
         parse_result,
         fn_objects=(_gt(1, "dog", [10, 20, 30, 40]),),
     )
@@ -143,7 +143,7 @@ def test_coordjson_legacy_appender_requires_typed_prefix_for_valid_rollout() -> 
     )
 
     with pytest.raises(ValueError, match="append prefix"):
-        codec.build_channel_b_target(parse_result, fn_objects=())
+        codec.build_rollout_correction_target(parse_result, fn_objects=())
 
 
 @pytest.mark.parametrize(
@@ -213,7 +213,7 @@ def test_coordjson_legacy_rejects_malformed_fn_bbox(
     )
 
     with pytest.raises(ValueError, match="norm1000 bbox"):
-        codec.build_channel_b_target(
+        codec.build_rollout_correction_target(
             parse_result,
             fn_objects=(_gt(1, "dog", points_norm1000),),
         )

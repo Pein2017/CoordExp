@@ -4,9 +4,9 @@ This helper converts the generic `PipelineResult` emitted by the shared teacher-
 objective pipeline into the canonical Stage-2 atom keys that trainers log, such as:
 
 - `loss/text/struct_ce`
-- `loss/B_rollout_text/desc_ce`
+- `loss/rollout_correction_text/desc_ce`
 - `loss/coord/bbox_smoothl1`
-- `loss/B_coord/coord_soft_ce`
+- `loss/rollout_correction_coord/coord_soft_ce`
 
 The function is intentionally strict by default (`require_additive=True`): it verifies
 that projected atom sums reconstruct both per-module weighted losses and the overall
@@ -111,8 +111,8 @@ def project_stage2_objective_atoms(
     Args:
       pipeline_result: Output of `run_teacher_forcing_pipeline`.
       objective_specs: The exact objective spec list passed to the pipeline.
-      text_provenance: Provenance key for token-CE atoms (e.g. "B_rollout_text").
-      coord_provenance: Provenance key for bbox/coord atoms (e.g. "B_coord").
+      text_provenance: Provenance key for text atoms (e.g. "rollout_correction_text").
+      coord_provenance: Provenance key for coord atoms (e.g. "rollout_correction_coord").
       emit_text: If False, asserts token-CE weighted loss is zero.
       emit_coord: If False, asserts bbox/coord weighted losses are zero.
       require_additive: If True, validates strict additivity vs pipeline losses.

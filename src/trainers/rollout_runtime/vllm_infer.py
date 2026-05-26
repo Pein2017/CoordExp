@@ -4,6 +4,7 @@ from contextlib import nullcontext
 from typing import Any, Dict, List, Mapping, Optional, Sequence
 
 from ..rollout_matching.parsing import decode_pieces as _decode_pieces
+from .swift_infer_compat import import_swift_infer_request_and_config
 
 
 def vllm_infer_tp_group(
@@ -97,13 +98,7 @@ def rollout_many_vllm_colocate(
             f"(greedy), got {float(temperature)}"
         )
 
-    try:
-        from swift.llm import InferRequest, RequestConfig
-    except (ImportError, TypeError, ValueError) as exc:
-        raise RuntimeError(
-            "swift.llm.RequestConfig and InferRequest are required for vLLM rollouts"
-        ) from exc
-
+    InferRequest, RequestConfig = import_swift_infer_request_and_config()
     request_kwargs = owner._rollout_vllm_request_config_kwargs(
         max_tokens=max_new_tokens,
         temperature=temperature,

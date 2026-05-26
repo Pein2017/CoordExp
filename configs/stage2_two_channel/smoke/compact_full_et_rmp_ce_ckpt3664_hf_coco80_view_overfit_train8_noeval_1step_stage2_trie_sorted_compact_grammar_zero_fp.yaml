@@ -1,8 +1,0 @@
-# One-step startup check for sorted Stage-2 trie CE with compact grammar rollout decode.
-
-extends: ./compact_full_et_rmp_ce_ckpt3664_hf_coco80_view_overfit_train8_noeval_64steps_stage2_trie_sorted_compact_grammar_zero_fp.yaml
-
-training:
-  run_name: smoke_1step-coco80_view-overfit_train8-noeval-stage2_trie_ce-sorted-compact_grammar-zero_fp-compact_full-et_rmp_ce_ckpt3664
-  artifact_subdir: stage2_ab/smoke/coco80_view_stage2_trie_ce_overfit_probe/sorted_compact_grammar_train8_noeval_1step
-  max_steps: 1

@@ -14,8 +14,8 @@ Normative behavior:
 
 - `custom.bbox_size_aux` MUST fail fast when authored in active training
   configs.
-- `stage2_ab.pipeline.objective[*].name=bbox_size_aux` MUST fail fast before
-  trainer initialization.
+- `stage2_rollout_correction.pipeline.objective[*].name=bbox_size_aux` MUST
+  fail fast before trainer initialization.
 - no active trainer mixin or objective module SHALL compute decoded-box
   log-width/log-height, log-area, or oversize-penalty losses.
 - historical artifacts and archived notes MAY mention `bbox_size_aux`, but
@@ -27,6 +27,6 @@ Normative behavior:
 - **AND** the error says the bbox size auxiliary has been removed.
 
 #### Scenario: Stage-2 bbox size aux module is rejected
-- **WHEN** `stage2_ab.pipeline.objective[*].name=bbox_size_aux`
+- **WHEN** `stage2_rollout_correction.pipeline.objective[*].name=bbox_size_aux`
 - **THEN** config validation fails fast before trainer init
 - **AND** no bbox-size objective atoms are registered.

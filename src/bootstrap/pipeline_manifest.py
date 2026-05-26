@@ -51,19 +51,6 @@ def build_pipeline_manifest(
             return 0.0
         return float(out)
 
-    def _normalize_channels(channels_raw: Any) -> list[str]:
-        found: set[str] = set()
-        if isinstance(channels_raw, Sequence) and not isinstance(
-            channels_raw, (str, bytes)
-        ):
-            for ch in channels_raw:
-                ch_s = str(ch).strip().upper()
-                if ch_s in {"A", "B"}:
-                    found.add(ch_s)
-        if not found:
-            return ["A", "B"]
-        return [ch for ch in ("A", "B") if ch in found]
-
     def _normalize_json_value(value: Any) -> Any:
         if isinstance(value, Mapping):
             out: dict[str, Any] = {}
@@ -85,16 +72,6 @@ def build_pipeline_manifest(
         return _finite_float(f, 0.0)
 
     def _default_module_config(name: str) -> dict[str, Any]:
-        if runtime_profile.manifest_family == "stage2_ab":
-            desc_w = _finite_float(cfg.get("desc_ce_weight", 1.0), 1.0)
-
-            if name == "token_ce":
-                return {
-                    "desc_ce_weight": desc_w,
-                    "rollout_fn_desc_weight": desc_w,
-                    "rollout_global_prefix_struct_ce_weight": 1.0,
-                }
-
         if runtime_profile.manifest_family == "rollout_matching":
             if name == "token_ce":
                 return {
@@ -140,16 +117,14 @@ def build_pipeline_manifest(
             merged_cfg = dict(_default_module_config(name))
             merged_cfg.update(authored_cfg)
 
-            out.append(
-                {
-                    "name": name,
-                    "enabled": bool(spec.get("enabled", True)),
-                    "weight": max(0.0, _finite_float(spec.get("weight", 1.0), 1.0)),
-                    "channels": _normalize_channels(spec.get("channels", ["A", "B"])),
-                    "application": authored_app,
-                    "config": merged_cfg,
-                }
-            )
+            entry = {
+                "name": name,
+                "enabled": bool(spec.get("enabled", True)),
+                "weight": max(0.0, _finite_float(spec.get("weight", 1.0), 1.0)),
+                "application": authored_app,
+                "config": merged_cfg,
+            }
+            out.append(entry)
 
         return out
 

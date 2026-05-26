@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import json
 import os
-import shutil
 import socket
 import subprocess
 import sys
@@ -183,9 +182,7 @@ def test_vllm_server_prompt_tokenization_parity_smoke(tmp_path: Path) -> None:
 
     pytest.importorskip("vllm")
 
-    swift_bin = shutil.which("swift")
-    if not swift_bin:
-        pytest.skip("`swift` CLI not found on PATH; required to launch the rollout server.")
+    swift_cmd = [sys.executable, "-m", "swift.cli.rollout"]
 
     from PIL import Image
     from swift.llm import get_model_tokenizer, get_template
@@ -301,8 +298,7 @@ def test_vllm_server_prompt_tokenization_parity_smoke(tmp_path: Path) -> None:
     server_env["ROOT_IMAGE_DIR"] = str(tmp_path)
 
     server_cmd = [
-        swift_bin,
-        "rollout",
+        *swift_cmd,
         "--model",
         str(model_dir),
         "--host",
@@ -328,12 +324,17 @@ def test_vllm_server_prompt_tokenization_parity_smoke(tmp_path: Path) -> None:
         "--vllm_max_model_len",
         "1024",
         "--vllm_enable_lora",
-        "false",
+        "true",
+        "--vllm_max_lora_rank",
+        "16",
         "--vllm_enforce_eager",
         "true",
         "--vllm_engine_kwargs",
         json.dumps(
-            {"mm_processor_kwargs": {"do_resize": False}},
+            {
+                "enable_tower_connector_lora": True,
+                "mm_processor_kwargs": {"do_resize": False},
+            },
             sort_keys=True,
             separators=(",", ":"),
         ),
@@ -408,8 +409,8 @@ def test_vllm_server_prompt_tokenization_parity_smoke(tmp_path: Path) -> None:
                 proc.wait(timeout=30)
 
 
-def test_stage2_ab_b_only_vllm_server_mode_smoke(tmp_path: Path):
-    """End-to-end Stage-2 AB Channel-B smoke with vLLM **server mode**.
+def test_stage2_rollout_correction_vllm_server_mode_smoke(tmp_path: Path):
+    """End-to-end Stage-2 rollout-correction smoke with vLLM **server mode**.
 
     This is intentionally gated behind an env flag because it requires GPUs + a local checkpoint.
     """
@@ -426,11 +427,7 @@ def test_stage2_ab_b_only_vllm_server_mode_smoke(tmp_path: Path):
 
     pytest.importorskip("vllm")
 
-    swift_bin = shutil.which("swift")
-    if not swift_bin:
-        pytest.skip(
-            "`swift` CLI not found on PATH; required to launch the rollout server."
-        )
+    swift_cmd = [sys.executable, "-m", "swift.cli.rollout"]
 
     repo_root = Path(__file__).resolve().parent.parent
     ms_swift_root = _find_ms_swift_root(repo_root)
@@ -475,35 +472,32 @@ def test_stage2_ab_b_only_vllm_server_mode_smoke(tmp_path: Path):
         group_port = _pick_free_port()
     base_url = f"http://127.0.0.1:{port}"
 
-    out_root = tmp_path / "stage2_ab_out"
-    tb_root = tmp_path / "stage2_ab_tb"
+    out_root = tmp_path / "stage2_rollout_correction_out"
+    tb_root = tmp_path / "stage2_rollout_correction_tb"
     out_root.mkdir(parents=True, exist_ok=True)
     tb_root.mkdir(parents=True, exist_ok=True)
 
-    run_name = f"b_only_vllm_server_smoke_test_{int(time.time())}"
+    run_name = f"rollout_correction_vllm_server_smoke_test_{int(time.time())}"
 
     # Override the stock smoke config with a temp config that:
     # - uses a local checkpoint (model_dir)
     # - uses a free server port + group_port
     # - writes outputs under tmp_path
-    cfg_path = tmp_path / "stage2_ab_b_only_vllm_server_smoke.yaml"
+    cfg_path = tmp_path / "stage2_rollout_correction_vllm_server_smoke.yaml"
     cfg_path.write_text(
         "\n".join(
             [
-                f"extends: {(repo_root / 'configs/stage2_two_channel/smoke/ab_mixed_20steps.yaml').as_posix()}",
+                f"extends: {(repo_root / 'configs/stage2_rollout_correction/smoke/compact_full_hf_1step.yaml').as_posix()}",
                 f"global_max_length: {vllm_max_model_len}",
                 "model:",
                 f"  model: {model_dir}",
                 "training:",
                 f"  output_root: {out_root}",
                 f"  run_name: {run_name}",
-                "  artifact_subdir: stage2_ab/test/b_only_vllm_server_smoke",
+                "  artifact_subdir: stage2_rollout_correction/test/vllm_server_smoke",
                 f"  logging_root: {tb_root}",
                 "  max_steps: 3",
                 "  effective_batch_size: 1",
-                "stage2_ab:",
-                "  schedule:",
-                "    b_ratio: 1.0",
                 "rollout_matching:",
                 "  max_new_tokens: 256",
                 "  vllm:",
@@ -519,7 +513,7 @@ def test_stage2_ab_b_only_vllm_server_mode_smoke(tmp_path: Path):
     )
 
     server_log = tmp_path / "swift_rollout_server.log"
-    learner_log = tmp_path / "stage2_ab_learner.log"
+    learner_log = tmp_path / "stage2_rollout_correction_learner.log"
 
     server_env = os.environ.copy()
     server_env["CUDA_VISIBLE_DEVICES"] = str(server_visible)
@@ -541,8 +535,7 @@ def test_stage2_ab_b_only_vllm_server_mode_smoke(tmp_path: Path):
         server_env["ROOT_IMAGE_DIR"] = root_image_dir
 
     server_cmd = [
-        swift_bin,
-        "rollout",
+        *swift_cmd,
         "--model",
         str(model_dir),
         "--host",
@@ -560,7 +553,9 @@ def test_stage2_ab_b_only_vllm_server_mode_smoke(tmp_path: Path):
         "--vllm_max_model_len",
         str(vllm_max_model_len),
         "--vllm_enable_lora",
-        "false",
+        "true",
+        "--vllm_max_lora_rank",
+        "16",
     ]
 
     proc: Optional[subprocess.Popen[str]] = None
@@ -650,18 +645,19 @@ def test_stage2_ab_b_only_vllm_server_mode_smoke(tmp_path: Path):
         for rec in records:
             merged.update(rec)
 
-        b_records = [
+        correction_records = [
             r
             for r in records
-            if float(r.get("stage2/channel_b", 0.0)) == pytest.approx(1.0)
+            if float(r.get("stage2_rollout_correction/active", 0.0))
+            == pytest.approx(1.0)
         ]
-        assert b_records, (
-            "No Channel-B logs found. Check stage2_ab.schedule.b_ratio and max_steps for this smoke run.\n\n"
+        assert correction_records, (
+            "No rollout-correction logs found. Check the unified Stage-2 smoke config and max_steps.\n\n"
             + _tail(learner_log)
         )
-        merged_b = dict(b_records[-1])
+        merged_b = dict(correction_records[-1])
 
-        assert float(merged_b.get("stage2/channel_b", 0.0)) == pytest.approx(1.0)
+        assert float(merged_b.get("stage2_rollout_correction/active", 0.0)) == pytest.approx(1.0)
         assert float(merged_b.get("rollout/decode_non_beam_count", 0.0)) > 0.0
         assert float(merged_b.get("rollout/rollout_len_mean", 0.0)) > 0.0
         assert float(merged_b.get("rollout/f1", 0.0)) >= 0.0
