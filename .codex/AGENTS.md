@@ -6,9 +6,9 @@
 - User instructions override all instruction files.
 
 ## Operating Loop
-- Inspect relevant files before editing.
-- State assumptions when requirements are underspecified; proceed with the smallest reversible change.
-- Prefer implementation plus verification over extended planning.
+- Inspecnts are underspecified; proceed with the smallest reversible change.
+- Prefer implementation plus verift relevant files before editing.
+- State assumptions when requiremeication over extended planning.
 - Ask only when a choice affects research meaning, high cost, destructive cleanup, external publication, security/privacy, or irreversible compatibility.
 - Keep changes scoped; do not refactor unrelated code.
 
