@@ -41,7 +41,7 @@ Historical provenance only:
 
 - [x] User approved the P0 eval-validity implementation scope as the first
   slice.
-- [ ] User approved broader runtime-boundary implementation scope.
+- [x] User approved broader runtime-boundary implementation scope.
 - [x] Subagent convergence register is complete, with P0 accepted into the
   first implementation slice and remaining P1s carried as sequencing/spec
   precision work.
@@ -52,7 +52,8 @@ Historical provenance only:
 
 P0 production-code implementation is now approved and scoped by
 `docs/superpowers/plans/2026-05-27-p0-stage2-eval-validity-implementation.md`.
-Broader refactor implementation remains blocked until separately approved.
+Broader refactor implementation has since been approved and is tracked in the
+OpenSpec task list.
 
 ## Read-Only Review Tasks
 
@@ -109,18 +110,18 @@ Return:
 
 | Lane | Agent | Status | P0/P1 blockers | Required doc changes | Main-session disposition |
 |---|---|---|---|---|---|
-| OpenSpec governance | Bacon | Returned | P1 stable Stage-2 spec promotion gap; P1 `shared-inference-runtime` Purpose placeholder; P1 upstream API/provenance contract coverage location | Keep this as runtime-boundary hardening only; use stable specs as authority; split unrelated config/fusion cleanup | Incorporated; implementation remains blocked pending unresolved P1 decisions. |
+| OpenSpec governance | Bacon | Returned | P1 stable Stage-2 spec promotion gap; P1 `shared-inference-runtime` Purpose placeholder; P1 upstream API/provenance contract coverage location | Keep this as runtime-boundary hardening only; use stable specs as authority; split unrelated config/fusion cleanup | Incorporated; follow-up hygiene remains in later cleanup slices. |
 | Stage-2 trainer/runtime boundary | Heisenberg / Maxwell | Heisenberg errored remotely; Maxwell returned | P1 projection payload needs naming; P1 target-construction payload needs explicit exclusions; P1 DDP/packing owner contract needs characterization; P1 A/B deletion taxonomy needs precision; P1 proposal artifacts must stay separate from dirty production edits | Add named `Stage2RuntimeProjection`/equivalent contract, target I/O boundary, DDP/packing contract, A/B taxonomy, and implementation split guidance | Incorporated; qualified convergence on inclusion, sequencing still requires user decision. |
-| Shared inference/provenance boundary | Carver | Returned | P0 fabricated/best-effort Stage-2 eval geometry; P0 salvage parser in metric-bearing eval; P1 synthetic prompt provenance; P1 owner-shaped `src/infer`; P1 stable ownership disagreement | Add metric-bearing strictness, exact source geometry, real prompt provenance, owner-boundary requirements; recommend split inference/provenance from training hardening | Incorporated as P0 prerequisite; implementation blocked. |
+| Shared inference/provenance boundary | Carver | Returned | P0 fabricated/best-effort Stage-2 eval geometry; P0 salvage parser in metric-bearing eval; P1 synthetic prompt provenance; P1 owner-shaped `src/infer`; P1 stable ownership disagreement | Add metric-bearing strictness, exact source geometry, real prompt provenance, owner-boundary requirements; recommend split inference/provenance from training hardening | P0 incorporated; P1 owner-boundary work remains in the shared inference slice. |
 | Superpowers doc shape | Beauvoir | Returned | P1 proposal docs can look executable; P1 archived OpenSpec path drift; P1 older two-channel vocabulary conflicts with stable Stage-2 | Rename plan to proposal-review, pin stable specs, mark archive historical, add approval boundary and convergence register | Incorporated. |
 
-## No-Code Stop Condition
+## Historical No-Code Stop Condition
 
 This plan is complete when the user receives a decision packet and can choose
 whether to approve implementation scope, request more proposal changes, split
 the OpenSpec change, or abandon the change.
 
-Current non-convergence state:
+Current implementation state:
 
 - Shared inference/provenance returned P0 blockers; the user approved them as
   the first implementation slice for metric-bearing Stage-2 eval validity.
@@ -128,12 +129,15 @@ Current non-convergence state:
   projection, target construction, DDP/packing, and A/B/channel deletion belong
   under the umbrella, but require sequential implementation slices and tighter
   payload/taxonomy definitions.
-- P0 implementation is approved and scoped by the separate implementation plan.
-  Broader implementation is blocked until the user approves the next slice.
+- P0 implementation landed first and is committed.
+- Stage-2 runtime projection now has a named `Stage2RuntimeProjection` module,
+  with unknown non-empty trainer variants rejected unless explicitly registered
+  as extension-style variants.
+- Remaining work proceeds through the target-construction, DDP/packing,
+  shared-inference/provenance, and cleanup/search-gate slices.
 
-## Future Implementation Placeholder
+## Implementation Notes
 
-After explicit user approval, write a separate implementation plan. That future
-plan must include exact files, tests, command outputs expected from failing and
-passing tests, docs/spec sync steps, and verification commands. Do not reuse
-this proposal-review plan as an implementation handoff.
+The proposal-review plan remains historical evidence for convergence. Active
+implementation progress is tracked in
+`openspec/changes/harden-unified-training-runtime-boundaries/tasks.md`.

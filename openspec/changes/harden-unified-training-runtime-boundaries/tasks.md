@@ -32,9 +32,9 @@ convergence.
 
 ## 3. Characterization Gates After P0 Slice
 
-- [ ] 3.1 Add tests proving `custom.trainer_variant` rejects unknown non-empty
+- [x] 3.1 Add tests proving `custom.trainer_variant` rejects unknown non-empty
   variants unless an explicit extension contract exists.
-- [ ] 3.2 Add tests proving Stage-2 runtime projection records authored and
+- [x] 3.2 Add tests proving Stage-2 runtime projection records authored and
   resolved policy sources without relying on hidden `custom.extra` fallbacks.
 - [ ] 3.3 Add tests proving rollout-correction target construction can be
   exercised without vLLM lifecycle, DDP coordination, or full trainer setup.
@@ -50,13 +50,13 @@ convergence.
 
 ## 4. Runtime Projection And Bootstrap After P0 Slice
 
-- [ ] 4.1 Move Stage-2 runtime policy projection into a dedicated
+- [x] 4.1 Move Stage-2 runtime policy projection into a dedicated
   config/runtime module while preserving public YAML namespaces.
-- [ ] 4.2 Keep `src/sft.py` as the launcher that obtains resolved runtime state
+- [x] 4.2 Keep `src/sft.py` as the launcher that obtains resolved runtime state
   and passes it into trainer/bootstrap setup.
-- [ ] 4.3 Preserve run manifest, policy provenance, and pipeline manifest output
+- [x] 4.3 Preserve run manifest, policy provenance, and pipeline manifest output
   contracts.
-- [ ] 4.4 Update docs/spec references only after tests prove behavior parity.
+- [x] 4.4 Update docs/spec references only after tests prove behavior parity.
 
 ## 5. Stage-2 Trainer Boundary After Runtime Projection
 

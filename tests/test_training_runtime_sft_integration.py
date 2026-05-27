@@ -25,6 +25,10 @@ from src.training_runtime import (
     resolve_training_runtime_plan,
     resolve_training_runtime_profile,
 )
+from src.training_runtime.stage2_projection import (
+    apply_stage2_runtime_projection,
+    resolve_stage2_runtime_projection,
+)
 from src.trainers.metrics.mixins import TeacherForcingObjectiveMixin
 from src.training.teacher_forcing.ir import SupervisionAtom, TeacherForcingTargetIR
 from src.training.teacher_forcing.roles import TokenRole
@@ -73,6 +77,14 @@ def test_sft_variant_helpers_agree_with_runtime_plan(variant: str | None) -> Non
 def test_sft_rejects_removed_stage1_set_continuation_variant() -> None:
     with pytest.raises(ValueError, match=r"stage1_set_continuation.*removed"):
         resolve_training_runtime_plan("stage1_set_continuation")
+
+
+def test_sft_rejects_unknown_non_empty_trainer_variant() -> None:
+    with pytest.raises(
+        ValueError,
+        match=r"custom\.trainer_variant=experimental_unknown.*not supported",
+    ):
+        resolve_training_runtime_plan("experimental_unknown")
 
 
 def test_validate_stage1_static_packing_policy_rejects_stage1_dynamic_mode() -> None:
@@ -425,3 +437,169 @@ def test_rollout_decode_batch_size_override_uses_rollout_runtime_profile() -> No
     assert resolved == 5
     assert train_args.per_device_eval_batch_size == 5
     assert train_args.training_args.per_device_eval_batch_size == 5
+
+
+def _runtime_projection_custom_config(
+    *,
+    extra_prompt_variant: str | None = "default",
+) -> SimpleNamespace:
+    extra = {}
+    if extra_prompt_variant is not None:
+        extra["prompt_variant"] = extra_prompt_variant
+    return SimpleNamespace(
+        extra=extra,
+        object_ordering="sorted",
+        object_field_order="desc_first",
+        bbox_format="xyxy",
+        detection_sequence_format="coordjson",
+    )
+
+
+def _runtime_projection_packing_config() -> SimpleNamespace:
+    return SimpleNamespace(
+        enabled=True,
+        packing_length=1024,
+        buffer_size=8,
+        min_fill_ratio=0.75,
+        drop_last=False,
+    )
+
+
+def test_stage2_runtime_projection_records_authored_policy_sources() -> None:
+    projection = resolve_stage2_runtime_projection(
+        training_config=SimpleNamespace(
+            rollout_matching={
+                "rollout_backend": "hf",
+                "eval_rollout_backend": "hf",
+                "prompt_variant": "coco_80",
+                "eval_prompt_variant": "default",
+                "decoding": {"temperature": 0.2},
+            },
+            stage2_rollout_correction={
+                "pipeline": {
+                    "objective": [
+                        {
+                            "name": "residual_set_correction",
+                            "enabled": True,
+                        }
+                    ],
+                    "diagnostics": [],
+                },
+                "correction": {"insertion_order": "sorted"},
+            },
+        ),
+        custom_config=_runtime_projection_custom_config(),
+        packing_cfg=_runtime_projection_packing_config(),
+        trainer_variant="stage2_rollout_correction",
+        config_path="configs/stage2.yaml",
+        run_name="projection-test",
+        seed=17,
+    )
+
+    assert projection.rollout_matching_cfg["prompt_variant"] == "coco_80"
+    assert projection.rollout_matching_cfg["eval_prompt_variant"] == "default"
+    assert projection.policy_sources["rollout_matching.prompt_variant"] == (
+        "rollout_matching.prompt_variant"
+    )
+    assert projection.policy_sources["rollout_matching.eval_prompt_variant"] == (
+        "rollout_matching.eval_prompt_variant"
+    )
+    assert projection.policy_sources["packing.enabled"] == "training.packing"
+    assert projection.policy_sources["object_ordering"] == "custom.object_ordering"
+    assert projection.stage2_policy_provenance["runtime_policy_sources"] == (
+        projection.policy_sources
+    )
+    assert projection.stage2_policy_provenance["runtime_compatibility_fallbacks"] == []
+
+
+def test_stage2_runtime_projection_marks_custom_extra_prompt_compat_fallback() -> None:
+    projection = resolve_stage2_runtime_projection(
+        training_config=SimpleNamespace(
+            rollout_matching={
+                "rollout_backend": "hf",
+                "eval_rollout_backend": "hf",
+                "decoding": {},
+            },
+            stage2_rollout_correction={
+                "pipeline": {
+                    "objective": [
+                        {
+                            "name": "residual_set_correction",
+                            "enabled": True,
+                        }
+                    ],
+                    "diagnostics": [],
+                },
+                "correction": {},
+            },
+        ),
+        custom_config=_runtime_projection_custom_config(
+            extra_prompt_variant="coco_80"
+        ),
+        packing_cfg=_runtime_projection_packing_config(),
+        trainer_variant="stage2_rollout_correction",
+        config_path="configs/stage2.yaml",
+        run_name="projection-test",
+        seed=17,
+    )
+
+    assert projection.rollout_matching_cfg["prompt_variant"] == "coco_80"
+    assert projection.rollout_matching_cfg["eval_prompt_variant"] == "coco_80"
+    assert projection.policy_sources["rollout_matching.prompt_variant"] == (
+        "custom.extra.prompt_variant_compat_fallback"
+    )
+    assert projection.policy_sources["rollout_matching.eval_prompt_variant"] == (
+        "custom.extra.prompt_variant_compat_fallback"
+    )
+    assert projection.stage2_policy_provenance["runtime_compatibility_fallbacks"] == [
+        "custom.extra.prompt_variant"
+    ]
+
+
+def test_apply_stage2_runtime_projection_sets_trainer_boundary_attrs() -> None:
+    calls: list[str] = []
+
+    class _Trainer:
+        def _validate_rollout_matching_cfg(self) -> None:
+            calls.append("validated")
+
+    trainer = _Trainer()
+    projection = resolve_stage2_runtime_projection(
+        training_config=SimpleNamespace(
+            rollout_matching={
+                "rollout_backend": "hf",
+                "eval_rollout_backend": "hf",
+                "decoding": {},
+            },
+            stage2_rollout_correction={
+                "pipeline": {
+                    "objective": [
+                        {
+                            "name": "residual_set_correction",
+                            "enabled": True,
+                        }
+                    ],
+                    "diagnostics": [],
+                },
+                "correction": {},
+            },
+        ),
+        custom_config=_runtime_projection_custom_config(
+            extra_prompt_variant=None
+        ),
+        packing_cfg=_runtime_projection_packing_config(),
+        trainer_variant="stage2_rollout_correction",
+        config_path="configs/stage2.yaml",
+        run_name="projection-test",
+        seed=17,
+    )
+
+    apply_stage2_runtime_projection(trainer, projection)
+
+    assert calls == ["validated"]
+    assert trainer.rollout_matching_cfg is projection.rollout_matching_cfg
+    assert trainer.stage2_rollout_correction_cfg is (
+        projection.stage2_rollout_correction_cfg
+    )
+    assert trainer.stage2_pipeline_manifest is projection.stage2_pipeline_manifest
+    assert trainer.stage2_policy_provenance is projection.stage2_policy_provenance

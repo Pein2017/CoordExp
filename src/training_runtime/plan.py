@@ -31,12 +31,17 @@ _REMOVED_VARIANT_REPLACEMENTS: Final[dict[str, str]] = {
     "stage2_rollout_runtime": "stage2_rollout_correction",
     "stage1_set_continuation": "prefix_rollin_et_rmp_ce",
 }
+_GENERIC_STAGE1_EXTENSION_VARIANTS: Final[frozenset[str]] = frozenset(
+    {
+        "gkd_monitor",
+    }
+)
 
 
 def resolve_training_runtime_plan(trainer_variant: str | None) -> TrainingRuntimePlan:
     """Resolve setup policy for a trainer variant without importing trainer code."""
 
-    variant = str(trainer_variant or "")
+    variant = str(trainer_variant or "").strip()
     replacement = _REMOVED_VARIANT_REPLACEMENTS.get(variant)
     if replacement is not None:
         raise ValueError(
@@ -47,6 +52,13 @@ def resolve_training_runtime_plan(trainer_variant: str | None) -> TrainingRuntim
         return _stage2_plan(
             variant=variant,
             required_pipeline_namespace="stage2_rollout_correction.pipeline",
+        )
+
+    if variant and variant not in _GENERIC_STAGE1_EXTENSION_VARIANTS:
+        raise ValueError(
+            f"custom.trainer_variant={variant} is not supported; "
+            "use stage2_rollout_correction for Stage-2 rollout correction or omit "
+            "custom.trainer_variant for the default Stage-1 SFT runtime."
         )
 
     return TrainingRuntimePlan(

@@ -1,6 +1,6 @@
 # Unified Training Runtime Boundaries Design
 
-Status: proposal design; P0 eval-validity slice approved first, broader refactor not approved for implementation.
+Status: implementation active; P0 eval-validity and runtime-projection slices approved.
 
 Date: 2026-05-27
 
@@ -25,11 +25,11 @@ by moving real responsibilities behind deeper boundaries:
 - single-owned raw/scored artifact provenance and parser metric-bearing status;
 - deletion gates for retired Stage-2 and shadow pipeline authority.
 
-This document records one scoped implementation decision: the P0
-metric-bearing Stage-2 eval-validity hardening slice is approved to go first.
-Broader runtime projection, target-construction, DDP/packing, shared-runtime
-owner narrowing, and A/B deletion work still require a separate implementation
-plan and approval.
+This document records the approved implementation direction. The P0
+metric-bearing Stage-2 eval-validity hardening slice landed first. The next
+approved slice moves Stage-2 runtime projection behind a named
+`Stage2RuntimeProjection` boundary before target-construction, DDP/packing,
+shared-runtime owner narrowing, and deletion-gate work.
 
 ## Current Contract Anchors
 
@@ -55,7 +55,9 @@ implementation targets unless a new active OpenSpec change reopens them.
 
 The current branch has useful new seams, but several are still shallow:
 
-- `src/sft.py` still interprets and injects too much runtime meaning.
+- `src/sft.py` now obtains a named `Stage2RuntimeProjection` and applies it to
+  trainer/bootstrap setup; remaining shallow seams are target construction,
+  DDP/packing coordination, shared inference owner adapters, and deletion gates.
 - `Stage2RolloutRuntime` still owns too many shared-runtime and trainer
   concerns.
 - Stage-2 target construction passes large argument bundles and depends on
@@ -96,8 +98,8 @@ enough.
 
 ## Subagent Convergence Gate
 
-Implementation stays blocked until all review lanes return or the user
-explicitly waives a lane:
+Implementation began after all review lanes returned and the user approved the
+scope:
 
 | Lane | Scope | Required convergence |
 |---|---|---|

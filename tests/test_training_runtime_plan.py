@@ -82,10 +82,10 @@ def test_training_runtime_package_root_is_import_safe() -> None:
     )
 
 
-def test_default_empty_and_unknown_variants_keep_generic_stage1_policy() -> None:
+def test_default_empty_and_gkd_monitor_keep_generic_stage1_policy() -> None:
     plan_mod = _plan_module()
 
-    for variant in (None, "", "legacy_custom_trainer"):
+    for variant in (None, "", "gkd_monitor"):
         plan = plan_mod.resolve_training_runtime_plan(variant)
 
         assert plan.variant == str(variant or "")
@@ -97,6 +97,20 @@ def test_default_empty_and_unknown_variants_keep_generic_stage1_policy() -> None
         assert plan.ordinary_stage1_mixins_allowed is True
         assert plan.required_pipeline_namespace is None
         assert plan.requires_top_level_rollout_matching is False
+
+
+@pytest.mark.parametrize(
+    "variant",
+    ["legacy_custom_trainer", "stage2_rollout_correcton"],
+)
+def test_unknown_non_empty_variants_fail_fast(variant: str) -> None:
+    plan_mod = _plan_module()
+
+    with pytest.raises(
+        ValueError,
+        match=rf"custom\.trainer_variant={variant} is not supported",
+    ):
+        plan_mod.resolve_training_runtime_plan(variant)
 
 
 @pytest.mark.parametrize(
@@ -167,7 +181,7 @@ def test_resolved_plans_use_known_policy_vocabularies() -> None:
     for variant in (
         None,
         "",
-        "legacy_custom_trainer",
+        "gkd_monitor",
         "stage2_rollout_correction",
     ):
         plan = plan_mod.resolve_training_runtime_plan(variant)
