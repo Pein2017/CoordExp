@@ -1,5 +1,12 @@
 # Tasks
 
+Status note (2026-05-26): this completed change is historical/deferred for
+active unified Stage-2 rollout-correction server training. Do not use its
+native full-sync evidence or `src/trainers/rollout_runtime/*` implementation
+locations as the active server sync route for `unify-inference-runtime`.
+Unified Stage-2 server training uses adapter sync plus CoordExp coord-row
+updates unless a later OpenSpec explicitly revives native full-sync.
+
 These tasks are draft approval gates. Do not implement until the user approves
 the OpenSpec and super-power plan.
 
@@ -33,8 +40,10 @@ the OpenSpec and super-power plan.
   `engine.inner_model.load_weights`.
 - [x] 3.3 Preserve adapter-only checkpoint saving and ensure temporary PEFT
   merge/unmerge leaves no lasting live-model mutation.
-- [x] 3.4 Preserve `rollout_matching.vllm.enable_lora=false` default for active
-  token-row adapters and keep unsupported adapter-only sync fail-fast.
+- [x] 3.4 Historical original full-sync path preserved
+  `rollout_matching.vllm.enable_lora=false` for token-row adapters; this is
+  superseded for active unified Stage-2 server rollout by adapter sync plus
+  coord-row updates.
 
 ## 4. Tests
 
@@ -75,21 +84,22 @@ the OpenSpec and super-power plan.
 Evidence:
 - Targeted tests:
   `conda run -n ms python -m pytest tests/tokens/test_vllm_sync_materialization.py tests/test_stage2_rollout_runtime.py tests/test_training_config_strict_unknown_keys.py -q`
-  passed with `205 passed in 1.58s`.
+  passed with `205 passed in 1.58s`. This is sync-materialization evidence,
+  not evidence for the unified runtime generated-token logprob trace contract.
 - OpenSpec strict validation:
   `openspec validate materialize-vllm-full-sync-adapter-rows --strict`
   passed.
 - cfg-only for the vLLM 6-server / 2-learner gate exited with
   `status=ok`.
 - Runtime vLLM 6:2 gate completed without OOM or vLLM unknown-key failure:
-  output root
+  historical output root
   `output/stage2_ab/smoke/coco80_view_online_residual_trie_train128_val64/tail_append_zero_fp_lr1e5_decode4_vllm6srv2lr_gate/.../v3-20260523-183336`.
   The log includes `materialized coord_offset_adapter rows for vLLM full-sync:
   rows=1002`, `rollout/backend_vllm=1`, zero invalid rollouts, zero parse
   truncation, final eval recall `0.53409091`, eval FN total `205`, and no
   CUDA OOM.
 - Adapter-save gate completed without OOM:
-  output root
+  historical output root
   `output/stage2_ab/smoke/coco80_view_online_residual_trie_train128_val64/tail_append_zero_fp_lr1e5_decode4_vllm6srv2lr_save_gate/.../v1-20260523-184751`.
   Checkpoint `checkpoint-1` is 38M and contains `adapter_model.safetensors`,
   `adapter_config.json`, and `modules_to_save=["coord_offset_adapter"]`, with

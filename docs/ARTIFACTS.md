@@ -61,6 +61,13 @@ analysis artifacts into the resolved run directory and its eval subdirectory.
 - `gt_vs_pred_scored.jsonl`
   - Score-provenanced artifact consumed by COCO evaluation and official
     submission export.
+  - Official metric/export entrypoints require comparable provenance, either
+    from `gt_vs_pred_scored.jsonl.provenance.json` or a run-level carrier bound
+    to this exact artifact. The score carrier must include first-class
+    prompt/decode/model fingerprints plus `score_policy_fingerprint`.
+  - `source_raw_artifact_identity` records raw-artifact lineage. Its raw
+    content hash participates in the score-policy fingerprint; its path is
+    informational so copied equivalent artifacts keep a stable score identity.
 - `gt_vs_pred_guarded.jsonl`
   - Optional offline duplicate-control guarded companion for raw evaluation
     inputs.
@@ -132,7 +139,8 @@ Current helper ownership for these artifacts:
 - infer summary / resolved metadata:
   - `src/infer/artifacts.py`
 - backend generation:
-  - `src/infer/backends.py`
+  - `src/infer/backend.py`
+  - `src/infer/runtime.py`
 - confidence post-op scoring:
   - `src/eval/confidence_postop.py`
   - `src/eval/bbox_confidence.py`
@@ -317,6 +325,9 @@ artifacts into `training.output_dir` before training starts:
   - Stage-2 writes this directory when
     `rollout_matching.eval_detection.materialize_artifacts: true`
     (default).
+  - Official Stage-2 eval metrics require this materialized directory; setting
+    `materialize_artifacts: false` now fails fast instead of computing
+    metric-bearing results without scored-artifact provenance.
   - The intent is parity with the offline infer/eval pipeline so each eval
     window can be inspected with the same artifact readers used for standalone
     inference.
@@ -364,6 +375,9 @@ Stage-2 eval artifact materialization is likewise frozen at the current
 default-on location:
 
 - `rollout_matching.eval_detection.materialize_artifacts: true`
+- disabling materialization is not valid for official Stage-2 eval metrics,
+  because metric-bearing eval must pass through `gt_vs_pred_scored.jsonl`
+  score-provenance checks
 - `training.output_dir/eval_detection/step_<global_step>/`
 - `gt_vs_pred.jsonl`
 - `gt_vs_pred_scored.jsonl`

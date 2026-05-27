@@ -197,7 +197,8 @@ Primary implementation surfaces:
 - `src/common/lvis_semantics.py`
 - `src/config/schema.py`
 - `src/eval/detection.py`
-- `src/infer/engine.py`
+- `src/infer/runtime.py`
+- `src/infer/backend.py`
 - `src/infer/pipeline.py`
 - `src/bootstrap/trainer_setup.py`
 - `src/trainers/metrics/mixins.py`

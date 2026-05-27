@@ -8,6 +8,9 @@ template:
   template: qwen3_vl
   truncation_strategy: raise
 
+model:
+  model: /data/CoordExp/model_cache/models/Qwen/Qwen3-VL-2B-Instruct-coordexp
+
 tuner:
   train_type: lora
   use_swift_lora: false
@@ -113,6 +116,7 @@ stage2_rollout_correction:
 custom:
   json_format: standard
   emit_norm: none
+  detection_sequence_format: coordjson
   trainer_variant: stage2_rollout_correction
   train_sample_limit: null
   val_sample_limit: null

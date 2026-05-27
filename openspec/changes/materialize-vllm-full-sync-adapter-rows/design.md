@@ -90,7 +90,13 @@ separate contract.
 
 ## Proposed Architecture
 
-Add one small sync adapter module, for example:
+Historical/deferred implementation location: this change originally added one
+small sync adapter module under trainer-owned rollout runtime. For active
+unified Stage-2 rollout-correction, do not add new sync ownership under
+`src/trainers/rollout_runtime/*`; migrate any still-needed behavior behind the
+shared `src/infer/backend.py` seam.
+
+Original helper location:
 
 ```text
 src/trainers/rollout_runtime/vllm_sync_materialization.py

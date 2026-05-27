@@ -1,5 +1,14 @@
 ## Why
 
+Status note (2026-05-26): this change is superseded for active unified
+Stage-2 rollout-correction server training by
+`openspec/changes/unify-inference-runtime`. The current active server rollout
+contract uses official adapter sync plus CoordExp coord-row sync:
+`rollout_matching.vllm.mode=server`,
+`rollout_matching.vllm.sync.mode=adapter`, and
+`rollout_matching.vllm.enable_lora=true`. Native full-sync materialization is
+historical/deferred unless a later OpenSpec explicitly revives it.
+
 Stage-2 online vLLM rollout needs to run from the same effective policy as the
 learner while preserving the research contract that the base model remains
 frozen and checkpoints save only adapters. The current full-sync path can send
@@ -20,10 +29,10 @@ would make rollout semantics diverge from HF learner semantics.
   after they have been materialized.
 - Fail fast when active token-row adapter state cannot be materialized safely;
   silent skip is not allowed.
-- Keep current Stage-2 vLLM server rollout on
+- Historical original scope kept Stage-2 vLLM server rollout on
   `rollout_matching.vllm.sync.mode=full` and
-  `rollout_matching.vllm.enable_lora=false` for this change. True
-  adapter-only vLLM sync with token-row runtime updates is deferred.
+  `rollout_matching.vllm.enable_lora=false`; this is no longer the active
+  unified Stage-2 server rollout contract.
 - Add targeted tests and a vLLM gate run before treating the path as usable for
   the 6-server / 2-learner online residual-trie experiment.
 
@@ -68,11 +77,13 @@ would make rollout semantics diverge from HF learner semantics.
 
 ## Non-Goals
 
-- Do not implement true vLLM adapter-only sync for multimodal LoRA/DoRA plus
-  token-row adapters in this change.
+- This historical/deferred full-sync change does not own active unified
+  Stage-2 server adapter sync. Active unified Stage-2 server training is owned
+  by `unify-inference-runtime` and uses official adapter sync plus CoordExp
+  coord-row updates.
 - Do not permanently merge adapters into the base model for training.
 - Do not change adapter checkpoint format or stop saving `coord_offset_adapter`
   through PEFT `modules_to_save`.
-- Do not make `rollout_matching.vllm.enable_lora=true` the default Stage-2
-  path when an active CoordExp token-row adapter exists.
+- Do not use native full-sync materialization as the active default Stage-2
+  server rollout path unless a later OpenSpec explicitly revives it.
 - Do not make model-quality or val200 improvement an OpenSpec validity gate.

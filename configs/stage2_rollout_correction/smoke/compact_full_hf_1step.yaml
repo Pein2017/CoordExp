@@ -13,7 +13,7 @@ experiment:
     - HF rollout backend.
     - Canonical residual_set_correction objective only.
   runtime_settings:
-    - custom.trainer_variant: stage2_rollout_correction
+    - "custom.trainer_variant: stage2_rollout_correction"
 
 training:
   output_dir: output/stage2_rollout_correction/smoke/compact_full_hf_1step
@@ -27,6 +27,10 @@ training:
   logging_steps: 1
 
 custom:
+  train_jsonl: public_data/coco/rescale_32_1024_bbox_max60/train.coord.jsonl
+  val_jsonl: public_data/coco/rescale_32_1024_bbox_max60/val.coord.jsonl
+  detection_sequence_format: coordjson
+  object_field_order: desc_first
   train_sample_limit: 8
   val_sample_limit: 0
 

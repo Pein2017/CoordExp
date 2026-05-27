@@ -42,7 +42,7 @@ owner/expiry/opt-in. Supported `surface.id` values are:
 | Stage-1 compact prefix roll-in ET-RMP-CE | Legacy/comparator E1 ablation handle | `configs/stage1/recursive_detection_ce/ablation/compact_full_prefix_rollin_balance2.yaml` | Packing/cache disabled; recursive sidecar offset rewriting is not implemented | Compact-full historical ablation only. EOS supervision uses ordinary teacher-forced `<|im_end|>` CE. |
 | Stage-1 compact detection bridge | Legacy bridge only | `configs/stage1/compact_detection_sequence/smoke/compact_full_tiny.yaml` | Legacy SFT smoke surface; not a latest packing example | Uses legacy `TrainingConfig` plus `custom.detection_sequence_format`; do not use as a current-schema example. |
 | Stage-2 rollout correction | Active Stage-2 operator path and shadow `surface.id: stage2_rollout_correction` | `configs/stage2_rollout_correction/`; trainer route in `src/trainers/stage2_rollout_correction.py` | Post-rollout trainer packing when configured; rollout generation remains unpacked | YAML-first rollout-prefix + GT-correction training. The only active objective is `residual_set_correction` with `application.preset: rollout_self_prefix`. |
-| Retired Stage-2 rollout-aligned variants | Removed | `stage2_rollout_aligned`, `stage2_rollout_runtime`, `rollout_matching_sft` fail fast with guidance to `stage2_rollout_correction` | Removed | Shared rollout runtime code remains internal in `src/trainers/stage2_rollout_runtime.py`. |
+| Retired Stage-2 rollout-aligned variants | Removed | `stage2_rollout_aligned`, `stage2_rollout_runtime`, `rollout_matching_sft` fail fast with guidance to `stage2_rollout_correction` | Removed | Shared prompt/decode/backend/trace behavior is owned by `src/infer/*`; Stage-2 trainer code owns residual correction orchestration. |
 | Runtime fusion config | Removed | `custom.fusion_config` fails fast; `configs/fusion/` was deleted | Removed | Merge JSONLs offline for multi-dataset training. |
 
 Current cleanup decisions:
@@ -146,10 +146,13 @@ latest-detection objective subkeys, but no new CLI flags.
 - `configs/stage1/compact_detection_sequence/`
 - `configs/_shared/recursive_detection/` authoring snippets, not current launch inheritance
 - `src/trainers/stage2_rollout_correction.py`
-- `src/trainers/stage2_rollout_runtime.py`
 - `src/trainers/rollout_aligned_targets.py`
 - `src/trainers/rollout_aligned_evaluator.py`
-- `src/trainers/rollout_runtime/`
+- `src/infer/runtime.py`
+- `src/infer/backend.py`
+- `src/infer/backend_vllm_server.py`
+- `src/infer/backend_sync.py`
+- `src/infer/rollout_dispatch.py`
 - `src/trainers/rollout_matching/`
 - `src/trainers/teacher_forcing/`
 - `src/launchers/stage2_vllm_server.py`

@@ -20,9 +20,10 @@ The current contract is:
 - Stage-2 remains YAML-first; no new CLI flags are required
 
 The older split public trainer variants have been removed.
-`src/trainers/stage2_rollout_runtime.py` remains as an internal runtime base for
-rollout prompt preparation, HF/vLLM/server dispatch, eval artifacts, and
-post-rollout packing.
+Shared prompt preparation, decode requests, backend dispatch, generated-token
+trace normalization, and parser policy route through `src/infer/*`. Stage-2
+trainer code owns rollout-correction orchestration, residual target
+construction, post-rollout packing, and training metrics.
 
 ## Normative References
 
@@ -49,12 +50,14 @@ Current internal ownership seams:
   - `src/bootstrap/run_metadata.py`
 - Stage-2 trainer/runtime:
   - `src/trainers/stage2_rollout_correction.py`
-  - `src/trainers/stage2_rollout_correction.py`
   - `src/trainers/stage2_rollout_correction/` when package-local helpers are present
-  - `src/trainers/stage2_rollout_runtime.py`
   - `src/trainers/rollout_aligned_targets.py`
   - `src/trainers/rollout_aligned_evaluator.py`
-  - `src/trainers/rollout_runtime/`
+  - `src/infer/runtime.py`
+  - `src/infer/backend.py`
+  - `src/infer/backend_vllm_server.py`
+  - `src/infer/backend_sync.py`
+  - `src/infer/rollout_dispatch.py`
 - server-mode orchestration:
   - `src/launchers/stage2_vllm_server.py`
 
@@ -235,6 +238,11 @@ The base config uses `rollout_matching.*` only for rollout runtime/backend,
 decode, and eval settings. It still exercises live rollout-correction decode,
 DDP, batch decode, and eval artifact materialization. Validate vLLM server or
 colocate mode in a separate gate before claiming vLLM production readiness.
+Rollout backend/decode/trace adapters are implementation-owned by `src/infer/*`;
+`rollout_matching.*` is the authored Stage-2 runtime namespace, not a separate
+objective or parser implementation root. Server-mode vLLM with adapter sync
+records backend-sync identity for metric-bearing eval provenance, while HF eval
+ignores stale vLLM sync state.
 Set `stage2_rollout_correction.correction.ddp_phase_timeout_s` conservatively
 for large HF batch decode runs because rollout and target construction can
 create substantial rank skew before the learner step.
@@ -384,6 +392,9 @@ What to expect:
   `eval_detection/step_<global_step>/` when
   `rollout_matching.eval_detection.materialize_artifacts: true`
   this is the default authored behavior in the base Stage-2 config
+  - official Stage-2 eval metrics require materialized scored artifacts and
+    fail fast if `materialize_artifacts: false` or `training.output_dir` would
+    bypass score-provenance checks
   - expect `gt_vs_pred.jsonl`, `gt_vs_pred_scored.jsonl`, `infer_summary.json`,
     `metrics.json`, `per_image.json`, and evaluator sidecars for that window
   - Stage-2 additionally writes `raw_rollouts.jsonl` so rollout text, token
@@ -403,9 +414,10 @@ Checkpoint restart note:
 
 Rollout runtime note:
 
-- `src/trainers/stage2_rollout_runtime.py` shares the refactored
-  bootstrap/runtime seams and vLLM server infrastructure, but it is not a public
-  trainer variant. Repo-owned YAML examples use `stage2_rollout_correction`.
+- Repo-owned YAML examples use `stage2_rollout_correction`; removed public
+  variants fail fast. Shared inference behavior belongs under `src/infer/*`.
+  Remaining Stage-2 trainer modules are private orchestration surfaces, not
+  public trainer variants or shared inference APIs.
 
 ## Historical Context
 

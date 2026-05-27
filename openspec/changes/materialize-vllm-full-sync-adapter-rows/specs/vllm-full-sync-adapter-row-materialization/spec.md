@@ -6,6 +6,12 @@ Define how CoordExp presents adapter-backed learner weights to native vLLM
 full-sync without changing training-time frozen-base or adapter-only checkpoint
 semantics.
 
+Status note (2026-05-26): this capability is historical/deferred for active
+unified Stage-2 rollout-correction server training. The active server rollout
+contract is governed by `unify-inference-runtime` and uses official adapter
+sync plus CoordExp coord-row updates rather than native full-sync
+materialization.
+
 ## ADDED Requirements
 
 ### Requirement: vLLM full-sync uses a transient ordinary-weight snapshot
@@ -118,25 +124,29 @@ Normative behavior:
 - **THEN** the run fails before vLLM `load_weights()` is called
 - **AND** the error identifies the forbidden key family.
 
-### Requirement: vLLM adapter-only sync remains out of scope for active token-row adapters
+### Requirement: Native vLLM adapter-only sync without row endpoint remains out of scope
 
 The system SHALL NOT route active CoordExp token-row adapters through native
-vLLM LoRA adapter-sync unless a future contract explicitly adds row-sync
-runtime support.
+vLLM LoRA adapter-sync unless a row-sync runtime path is available. Active
+unified Stage-2 server rollout uses the ms-swift adapter-sync path plus the
+patched CoordExp token-row update endpoint.
 
 Normative behavior:
 
-- `rollout_matching.vllm.enable_lora=true` with active CoordExp token-row
-  adapter state MUST fail fast by default.
-- Native vLLM LoRA adapter-sync MAY remain valid for cases without
-  `modules_to_save` token-row adapters.
+- native vLLM LoRA adapter-sync without CoordExp row-sync support MUST fail
+  fast when active token-row adapter state is present;
+- ms-swift server adapter sync with the patched token-row update endpoint is
+  governed by `unify-inference-runtime` and is not rejected by this historical
+  full-sync materialization capability;
 - This change does not require vLLM server workers to host a CoordExp private
   adapter module.
 
-#### Scenario: vLLM LoRA sync rejects active token-row adapter by default
+#### Scenario: Native LoRA sync without row endpoint rejects active token-row adapter
 
 - **GIVEN** a Stage-2 learner has active `coord_offset_adapter` state
-- **AND** config enables vLLM adapter-only LoRA sync
+- **AND** config enables native vLLM LoRA sync without the CoordExp row-update
+  endpoint
 - **WHEN** config/runtime validation runs
-- **THEN** validation fails with guidance to use full-sync materialization or a
-  future row-sync implementation.
+- **THEN** validation fails with guidance to use the active ms-swift server
+  adapter-sync plus coord-row update path or a future native row-sync
+  implementation.

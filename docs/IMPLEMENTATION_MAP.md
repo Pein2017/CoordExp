@@ -14,7 +14,7 @@ Purpose: route common research and engineering changes to the smallest useful se
 Authority: code-navigation guide for the current repo; for current defaults, defer to `docs/PROJECT_CONTEXT.md` and runbooks; for stable contract semantics, defer to `openspec/specs/`.
 Read this after: `docs/SYSTEM_OVERVIEW.md`
 Read this before: opening many source files blindly or doing broad repo-wide searches
-Primary code handles: `src/sft.py`, `src/training/`, `src/detection/runtime.py`, `src/detection/template.py`, `src/common/detection_sequence.py`, `src/common/detection_compact_rows.py`, `src/bootstrap/`, `src/config/schema.py`, `src/datasets/`, `src/trainers/metrics/`, `src/metrics/events.py`, `src/trainers/stage2_rollout_correction.py`, `src/trainers/stage2_rollout_runtime.py`, `src/trainers/rollout_aligned_targets.py`, `src/trainers/rollout_aligned_evaluator.py`, `src/trainers/rollout_runtime/`, `src/launchers/stage2_vllm_server.py`, `src/infer/pipeline.py`, `src/infer/engine.py`, `src/infer/backends.py`, `src/infer/artifacts.py`, `src/eval/detection.py`, `src/eval/detection_orchestrator.py`, `src/eval/detection_records.py`, `src/eval/detection_geometry.py`, `src/eval/detection_coco.py`, `src/eval/detection_lvis.py`, `src/eval/detection_duplicate_guard.py`, `src/eval/detection_f1ish.py`, `src/eval/orchestration.py`, `src/eval/artifacts.py`
+Primary code handles: `src/sft.py`, `src/training/`, `src/detection/runtime.py`, `src/detection/template.py`, `src/common/detection_sequence.py`, `src/common/detection_compact_rows.py`, `src/bootstrap/`, `src/config/schema.py`, `src/datasets/`, `src/trainers/metrics/`, `src/metrics/events.py`, `src/trainers/stage2_rollout_correction.py`, `src/trainers/stage2_rollout_runtime.py`, `src/trainers/rollout_aligned_targets.py`, `src/trainers/rollout_aligned_evaluator.py`, `src/launchers/stage2_vllm_server.py`, `src/infer/pipeline.py`, `src/infer/runtime.py`, `src/infer/backend.py`, `src/infer/backend_sync.py`, `src/infer/backend_vllm_server.py`, `src/infer/constraints.py`, `src/infer/artifacts.py`, `src/eval/detection.py`, `src/eval/detection_orchestrator.py`, `src/eval/detection_records.py`, `src/eval/detection_geometry.py`, `src/eval/detection_coco.py`, `src/eval/detection_lvis.py`, `src/eval/detection_duplicate_guard.py`, `src/eval/detection_f1ish.py`, `src/eval/orchestration.py`, `src/eval/artifacts.py`
 Verification: use the targeted test files listed below before running broader suites
 
 ## 1. Data Contract, JSONL Rendering, Or Geometry
@@ -160,8 +160,10 @@ Open these code files first:
 - `src/trainers/stage2_rollout_runtime.py`
 - `src/trainers/rollout_aligned_targets.py`
 - `src/trainers/rollout_aligned_evaluator.py`
-- `src/trainers/rollout_runtime/`
 - `src/launchers/stage2_vllm_server.py`
+- `src/infer/backend_vllm_server.py`
+- `src/infer/backend_sync.py`
+- `src/infer/rollout_dispatch.py`
 - `src/trainers/rollout_matching/parsing.py`
 - `src/trainers/rollout_matching/matching.py`
 - `src/trainers/teacher_forcing/module_registry.py`
@@ -212,8 +214,9 @@ Open these configs first:
 Open these code files first:
 - `scripts/run_infer.py`
 - `src/infer/pipeline.py`
-- `src/infer/engine.py`
-- `src/infer/backends.py`
+- `src/infer/runtime.py`
+- `src/infer/backend.py`
+- `src/infer/constraints.py`
 - `src/infer/artifacts.py`
 - `scripts/postop_confidence.py`
 - `scripts/evaluate_detection.py`
@@ -227,6 +230,20 @@ Open these code files first:
 - `src/eval/detection_orchestrator.py`
 - `src/eval/orchestration.py`
 - `src/eval/artifacts.py`
+
+Runtime ownership notes:
+
+- `src/infer/runtime.py` is the shared inference seam for offline inference and
+  live-model eval callers. It owns the offline inference owner lifecycle and
+  artifact loop; the legacy engine module is not an active surface.
+- `src/infer/backend.py` owns decode backend projection and strict trace
+  normalization. Trace-bearing HF and vLLM results must normalize into the same
+  generated-token IDs, token text, and logprob fields before they can feed
+  metric-bearing artifacts.
+- OpenAI-compatible vLLM server inference may use
+  `infer.generation.trace_logprobs: true` only when the server returns generated
+  token IDs and generated-token logprobs; otherwise the shared backend fails
+  before emitting comparable artifacts.
 
 Detection eval ownership:
 - `src/eval/detection.py` is the import-compatible facade.
