@@ -173,6 +173,33 @@ class _ChannelBSupervisionTargets:
 
 
 @dataclass(frozen=True)
+class RolloutCorrectionTargetContextInput:
+    """Parsed-rollout and policy facts needed before target realization."""
+
+    sample_id: str
+    gt_objects: Sequence[GTObject]
+    accepted_objects_clean: Sequence[GTObject]
+    suppressed_duplicate_objects_by_boundary: Mapping[int, Sequence[GTObject]]
+    explorer_objects_raw_by_view: Sequence[Sequence[GTObject]]
+    anchor_match_by_pred: Mapping[int, int]
+    explorer_match_by_pred_by_view: Sequence[Mapping[int, int]]
+    anchor_policy_statuses: Sequence[Optional[str]]
+    unlabeled_consistent_iou_threshold: float
+    duplicate_iou_threshold: float
+    pseudo_positive_enabled: bool
+    expected_peer_count: int
+
+
+@dataclass(frozen=True)
+class RolloutCorrectionTargetContext:
+    """Target context isolated from rollout/DDP/trainer lifecycle."""
+
+    sample_id: str
+    triage: _ChannelBTriageResult
+    metrics: Dict[str, float]
+
+
+@dataclass(frozen=True)
 class _ResidualSetUniverseObject:
     object_id: str
     source: str
@@ -1170,6 +1197,51 @@ def _build_rollout_correction_triage(
         suppressed_duplicate_objects_by_boundary=(
             remapped_suppressed_duplicate_objects_by_boundary
         ),
+    )
+
+
+def construct_rollout_correction_target_context(
+    request: RolloutCorrectionTargetContextInput,
+) -> RolloutCorrectionTargetContext:
+    """Build target context from parsed rollout/GT facts and correction policy.
+
+    This boundary intentionally receives already-parsed rollout objects and
+    matching maps. Rollout backend calls, DDP/packing coordination, model
+    forward/loss execution, and metric projection stay with the trainer.
+    """
+
+    triage = _build_rollout_correction_triage(
+        accepted_objects_clean=request.accepted_objects_clean,
+        suppressed_duplicate_objects_by_boundary=(
+            request.suppressed_duplicate_objects_by_boundary
+        ),
+        explorer_objects_raw_by_view=request.explorer_objects_raw_by_view,
+        anchor_match_by_pred=request.anchor_match_by_pred,
+        explorer_match_by_pred_by_view=request.explorer_match_by_pred_by_view,
+        anchor_policy_statuses=request.anchor_policy_statuses,
+        unlabeled_consistent_iou_threshold=float(
+            request.unlabeled_consistent_iou_threshold
+        ),
+        duplicate_iou_threshold=float(request.duplicate_iou_threshold),
+        pseudo_positive_enabled=bool(request.pseudo_positive_enabled),
+        expected_peer_count=int(request.expected_peer_count),
+    )
+    metrics = {
+        "gt_objects": float(len(request.gt_objects)),
+        "accepted_objects": float(len(request.accepted_objects_clean)),
+        "anchor_gt_backed": float(len(triage.anchor_gt_backed_indices)),
+        "dead_anchor": float(len(triage.dead_anchor_indices)),
+        "recovered_gt": float(len(triage.recovered_gt_indices)),
+        "pseudo_positive_candidate": float(
+            len(triage.pseudo_positive_candidate_indices)
+        ),
+        "pseudo_positive_selected": float(len(triage.pseudo_positive_anchor_indices)),
+        "valid_explorer_count": float(triage.valid_explorer_count),
+    }
+    return RolloutCorrectionTargetContext(
+        sample_id=str(request.sample_id),
+        triage=triage,
+        metrics=metrics,
     )
 
 
@@ -4123,6 +4195,9 @@ def _desc_tail_positions_and_weights(
 
 
 __all__ = [
+    "RolloutCorrectionTargetContext",
+    "RolloutCorrectionTargetContextInput",
+    "construct_rollout_correction_target_context",
     "_ValueSpanObject",
     "_CanonicalPrefixData",
     "_ChannelBTriageResult",

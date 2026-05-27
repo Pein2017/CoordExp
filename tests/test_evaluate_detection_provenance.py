@@ -86,4 +86,44 @@ def test_evaluate_detection_cli_allows_f1ish_inspection_without_score_provenance
     eval_script.main()
 
     assert captured == {"pred_path": pred_jsonl, "metrics": "f1ish"}
-    assert '"f1ish": 1.0' in capsys.readouterr().out
+    out = capsys.readouterr().out
+    assert '"f1ish": 1.0' in out
+    assert '"evaluation_status": "inspection"' in out
+    assert '"comparability": "non_comparable"' in out
+    assert '"comparison_scope": "raw_f1ish"' in out
+
+
+def test_evaluate_detection_cli_reports_f1ish_status_for_both_metrics(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    import scripts.evaluate_detection as eval_script
+
+    pred_jsonl = tmp_path / "gt_vs_pred_scored.jsonl"
+    _write_jsonl(pred_jsonl)
+
+    def _fake_eval(pred_path, *, options):  # type: ignore[no-untyped-def]
+        return {
+            "metrics": {"coco_map": 1.0, "f1ish": 0.5},
+            "counters": {},
+            "f1ish_evaluation_status": "inspection",
+            "f1ish_comparability": "non_comparable",
+            "f1ish_comparison_scope": "diagnostic_f1ish",
+        }
+
+    monkeypatch.setattr(eval_script, "load_comparable_artifact", lambda *_args, **_kwargs: {})
+    monkeypatch.setattr(eval_script, "evaluate_and_save", _fake_eval)
+    monkeypatch.setattr(
+        "sys.argv",
+        _argv(pred_jsonl, tmp_path / "eval", metrics="both"),
+    )
+
+    eval_script.main()
+
+    out = capsys.readouterr().out
+    assert '"coco_map": 1.0' in out
+    assert '"f1ish": 0.5' in out
+    assert '"f1ish_evaluation_status": "inspection"' in out
+    assert '"f1ish_comparability": "non_comparable"' in out
+    assert '"f1ish_comparison_scope": "diagnostic_f1ish"' in out

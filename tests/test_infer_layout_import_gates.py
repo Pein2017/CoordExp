@@ -145,6 +145,8 @@ def test_active_scripts_and_docs_do_not_import_stage2_rollout_runtime() -> None:
             rel = path.relative_to(REPO_ROOT)
             if rel.parts[:2] == ("docs", "superpowers"):
                 continue
+            if rel == Path("tests/test_infer_layout_import_gates.py"):
+                continue
             text = path.read_text(encoding="utf-8")
             for needle in needles:
                 if needle in text:
@@ -167,10 +169,45 @@ def test_active_docs_do_not_describe_stage2_runtime_as_shared_infer_runtime() ->
             rel = path.relative_to(REPO_ROOT)
             if rel.parts[:2] == ("docs", "superpowers"):
                 continue
+            if rel == Path("tests/test_infer_layout_import_gates.py"):
+                continue
             text = path.read_text(encoding="utf-8")
             for phrase in forbidden_phrases:
                 if phrase in text:
                     offenders.append(f"{rel}:{phrase}")
+    assert offenders == []
+
+
+def test_stage2_runtime_path_mentions_are_qualified_outside_current_routing() -> None:
+    needles = ("stage2_rollout_runtime", "src/trainers/stage2_rollout_runtime.py")
+    allowed_context = (
+        "trainer-owned",
+        "facade",
+        "retired",
+        "historical",
+        "removed",
+        "fail fast",
+        "variant",
+        "test",
+        "search",
+    )
+    skipped_files = {
+        Path("openspec/specs/rollout-matching-sft/spec.md"),
+    }
+    offenders: list[str] = []
+    for root in (REPO_ROOT / "docs", REPO_ROOT / "openspec" / "specs"):
+        for path in root.rglob("*"):
+            if not path.is_file() or path.suffix not in {".md", ".yaml", ".yml"}:
+                continue
+            rel = path.relative_to(REPO_ROOT)
+            if rel.parts[:2] == ("docs", "superpowers") or rel in skipped_files:
+                continue
+            for line_no, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
+                lowered = line.lower()
+                if not any(needle in lowered for needle in needles):
+                    continue
+                if not any(context in lowered for context in allowed_context):
+                    offenders.append(f"{rel}:{line_no}:{line.strip()}")
     assert offenders == []
 
 
@@ -193,6 +230,110 @@ def test_infer_modules_do_not_import_trainer_internals() -> None:
         text = path.read_text(encoding="utf-8")
         if "from src.trainers" in text or "import src.trainers" in text:
             offenders.append(str(path.relative_to(REPO_ROOT)))
+    assert offenders == []
+
+
+def test_infer_owner_coupling_is_confined_to_designated_adapters() -> None:
+    adapter_files = {
+        Path("src/infer/artifacts.py"),
+        Path("src/infer/backend.py"),
+        Path("src/infer/backend_vllm_config.py"),
+        Path("src/infer/backend_vllm_engine.py"),
+        Path("src/infer/backend_vllm_infer.py"),
+        Path("src/infer/backend_vllm_server.py"),
+        Path("src/infer/prompt.py"),
+        Path("src/infer/rollout_dispatch.py"),
+        Path("src/infer/runtime.py"),
+    }
+    owner_needles = (
+        "owner: Any",
+        "owner._",
+        "getattr(owner",
+        "rollout_matching_cfg = getattr(owner",
+    )
+    offenders: list[str] = []
+    for path in (REPO_ROOT / "src" / "infer").rglob("*.py"):
+        rel = path.relative_to(REPO_ROOT)
+        text = path.read_text(encoding="utf-8")
+        if not any(needle in text for needle in owner_needles):
+            continue
+        if rel not in adapter_files:
+            offenders.append(str(rel))
+
+    assert offenders == []
+
+
+def test_stage2_eval_score_provenance_uses_shared_sidecar_writer() -> None:
+    evaluator = REPO_ROOT / "src" / "trainers" / "rollout_aligned_evaluator.py"
+    text = evaluator.read_text(encoding="utf-8")
+
+    assert "from src.infer.artifacts import write_score_provenance_sidecar" in text
+    assert "write_score_provenance_sidecar(" in text
+    assert "scored_path=scored_path" in text
+
+
+def test_dead_rollout_matching_manifest_family_branch_is_absent() -> None:
+    roots = (
+        REPO_ROOT / "src",
+        REPO_ROOT / "tests",
+        REPO_ROOT / "docs",
+        REPO_ROOT / "openspec" / "specs",
+    )
+    needles = (
+        'manifest_family == "rollout_matching"',
+        "manifest_family == 'rollout_matching'",
+    )
+    offenders: list[str] = []
+    for root in roots:
+        for path in root.rglob("*"):
+            if not path.is_file() or path.suffix not in ACTIVE_TEXT_SUFFIXES:
+                continue
+            rel = path.relative_to(REPO_ROOT)
+            if rel == Path("tests/test_infer_layout_import_gates.py"):
+                continue
+            if rel.parts[:2] == ("docs", "superpowers"):
+                continue
+            text = path.read_text(encoding="utf-8")
+            for needle in needles:
+                if needle in text:
+                    offenders.append(f"{rel}:{needle}")
+    assert offenders == []
+
+
+def test_current_specs_do_not_have_archive_purpose_placeholders() -> None:
+    offenders: list[str] = []
+    for path in (REPO_ROOT / "openspec" / "specs").rglob("*.md"):
+        text = path.read_text(encoding="utf-8")
+        if "TBD - created by archiving" in text or "Update Purpose after archive" in text:
+            offenders.append(str(path.relative_to(REPO_ROOT)))
+    assert offenders == []
+
+
+def test_retired_stage2_specs_are_not_current_routing_authority() -> None:
+    retired_needles = (
+        "stage2-ab-training",
+        "rollout-matching-sft",
+        "channel-b-lightweight-pseudopositive",
+    )
+    allowed_context = ("retired", "historical", "rejection")
+    offenders: list[str] = []
+    for root in (REPO_ROOT / "docs", REPO_ROOT / "openspec" / "specs"):
+        for path in root.rglob("*"):
+            if not path.is_file() or path.suffix not in {".md", ".yaml", ".yml"}:
+                continue
+            rel = path.relative_to(REPO_ROOT)
+            if rel.parts[:2] == ("docs", "superpowers"):
+                continue
+            if rel == Path("openspec/specs/rollout-matching-sft/spec.md"):
+                continue
+            if rel == Path("openspec/specs/stage2-ab-training/spec.md"):
+                continue
+            for line_no, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
+                lowered = line.lower()
+                if not any(needle in lowered for needle in retired_needles):
+                    continue
+                if not any(context in lowered for context in allowed_context):
+                    offenders.append(f"{rel}:{line_no}:{line.strip()}")
     assert offenders == []
 
 

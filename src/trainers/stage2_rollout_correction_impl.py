@@ -3592,22 +3592,31 @@ class Stage2RolloutCorrectionTrainer(
                 accepted_objects_clean=accepted_objects_clean,
             )
             expected_peer_count_for_triage = max(0, int(num_rollouts) - 1)
-            triage = _correction_targets._build_rollout_correction_triage(
-                accepted_objects_clean=accepted_objects_clean,
-                suppressed_duplicate_objects_by_boundary=(
-                    suppressed_duplicate_objects_by_boundary
-                ),
-                explorer_objects_raw_by_view=explorer_objects_raw_by_view,
-                anchor_match_by_pred=anchor_match_by_pred,
-                explorer_match_by_pred_by_view=explorer_match_by_pred_by_view,
-                anchor_policy_statuses=anchor_policy_statuses,
-                unlabeled_consistent_iou_threshold=float(
-                    unlabeled_consistent_iou_threshold
-                ),
-                duplicate_iou_threshold=float(duplicate_iou_threshold),
-                pseudo_positive_enabled=bool(pseudo_positive_enabled),
-                expected_peer_count=int(expected_peer_count_for_triage),
+            target_context = (
+                _correction_targets.construct_rollout_correction_target_context(
+                    _correction_targets.RolloutCorrectionTargetContextInput(
+                        sample_id=str(sample_attempt_id),
+                        gt_objects=gts,
+                        accepted_objects_clean=accepted_objects_clean,
+                        suppressed_duplicate_objects_by_boundary=(
+                            suppressed_duplicate_objects_by_boundary
+                        ),
+                        explorer_objects_raw_by_view=explorer_objects_raw_by_view,
+                        anchor_match_by_pred=anchor_match_by_pred,
+                        explorer_match_by_pred_by_view=(
+                            explorer_match_by_pred_by_view
+                        ),
+                        anchor_policy_statuses=anchor_policy_statuses,
+                        unlabeled_consistent_iou_threshold=float(
+                            unlabeled_consistent_iou_threshold
+                        ),
+                        duplicate_iou_threshold=float(duplicate_iou_threshold),
+                        pseudo_positive_enabled=bool(pseudo_positive_enabled),
+                        expected_peer_count=int(expected_peer_count_for_triage),
+                    )
+                )
             )
+            triage = target_context.triage
             association_pairs_by_view = [
                 list(pairs) for pairs in triage.association_pairs_by_view
             ]

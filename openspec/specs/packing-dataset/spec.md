@@ -294,8 +294,8 @@ exists.
 Normative behavior:
 - This reuse path applies to dataset-level static pack planning and shared
   deterministic sample-fetch helpers; it does NOT redefine trainer-owned
-  dynamic post-rollout packing governed by `stage2-ab-training` and
-  `rollout-matching-sft`.
+  dynamic post-rollout packing governed by `stage2-rollout-correction` and
+  `runtime-architecture-refactor-program`.
 - Static planning MAY use a prepared-record or encoded-sample sidecar when it
   is valid for the active dataset and template contract.
 - When a valid warm sidecar exists, planning MUST obtain lengths from that

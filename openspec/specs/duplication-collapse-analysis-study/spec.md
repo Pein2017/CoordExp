@@ -1,7 +1,10 @@
 # duplication-collapse-analysis-study Specification
 
 ## Purpose
-TBD - created by archiving change add-duplication-collapse-analysis-study. Update Purpose after archive.
+Define the fixed-checkpoint duplication-collapse analysis workflow for
+manifest-driven comparison of existing checkpoints, infer/eval artifacts,
+prompt controls, decode settings, and curated diagnostic cases without
+launching new training.
 ## Requirements
 ### Requirement: The study shall be fixed-checkpoint and fixed-decode
 The system SHALL provide a manifest-driven duplication-collapse analysis study

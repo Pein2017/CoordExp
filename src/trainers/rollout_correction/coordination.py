@@ -2,7 +2,7 @@ import contextlib
 import queue
 import threading
 import time
-from typing import Any, Dict, Mapping, Sequence, Tuple
+from typing import Any, Dict, Mapping, Protocol, Sequence, Tuple
 
 import torch
 
@@ -14,9 +14,86 @@ from ..stage2_coordination import (
 from .pack_schedule import Stage2PackSchedule, Stage2PackSlot
 
 
+class RolloutCorrectionCoordinationOwner(Protocol):
+    """Trainer responsibilities consumed by rollout-correction coordination."""
+
+    args: Any
+    accelerator: Any
+    model: Any
+    template: Any
+
+    def _rollout_correction_cfg_get(self, path: str, default: Any = None) -> Any: ...
+
+    def _vllm_server_timeouts(self) -> tuple[float | None, float | None]: ...
+
+    def _stage2_append_post_rollout_segments(
+        self,
+        *,
+        channel: str,
+        segments: Sequence[tuple[dict[str, Any], dict[str, Any], int]],
+    ) -> None: ...
+
+    def _stage2_post_rollout_buffer(self, *, channel: str) -> list[Any]: ...
+
+    def _stage2_pop_post_rollout_pack(
+        self,
+        *,
+        channel: str,
+    ) -> tuple[Sequence[tuple[dict[str, Any], dict[str, Any], int]], dict[str, float]]: ...
+
+    def _stage2_flush_train_monitor_dump(self, *, global_step: int) -> None: ...
+
+    def _stage2_record_ddp_phase_trace(
+        self,
+        *,
+        global_step: int,
+        phase: str,
+        rank: int,
+        world_size: int,
+        payload: Mapping[str, Any],
+    ) -> None: ...
+
+    def _stage2_stage_wallclock_ctx(self, stage: str) -> contextlib.AbstractContextManager[Any]: ...
+
+    def _template_packing_enabled(self) -> contextlib.AbstractContextManager[Any]: ...
+
+    def _assert_single_packed_forward(
+        self,
+        batch: Mapping[str, Any],
+        *,
+        where: str,
+    ) -> None: ...
+
+    def _merge_rollout_matching_batch_metrics(
+        self,
+        batch: dict[str, Any],
+        metrics: Mapping[str, float],
+    ) -> None: ...
+
+    def compute_loss(self, model: Any, batch: Mapping[str, Any]) -> Any: ...
+
+    def compute_loss_context_manager(self) -> contextlib.AbstractContextManager[Any]: ...
+
+    def _rollout_correction_disable_average_tokens_across_devices_for_packed_step(
+        self,
+        *,
+        dist: Any,
+        ddp_rank: int,
+        ddp_world_size: int,
+        where: str,
+    ) -> contextlib.AbstractContextManager[Any]: ...
+
+    def _prepare_rollout_correction_inputs(
+        self,
+        inputs: Sequence[Mapping[str, Any]],
+        *,
+        _segments_only: bool,
+    ) -> tuple[list[tuple[dict[str, Any], dict[str, Any], int]], Mapping[str, Any]]: ...
+
+
 def run_rollout_correction_ddp_monitored_barrier(
     *,
-    owner: Any,
+    owner: RolloutCorrectionCoordinationOwner,
     dist: Any,
     phase: str,
     rank: int,
@@ -46,7 +123,7 @@ def run_rollout_correction_ddp_monitored_barrier(
 
 def resolve_rollout_correction_timeouts(
     *,
-    owner: Any,
+    owner: RolloutCorrectionCoordinationOwner,
     ddp_world_size: int,
 ) -> Tuple[float, bool, float, float]:
     wait_timeout_cfg = owner._rollout_correction_cfg_get("producer_wait_timeout_s", None)
@@ -131,7 +208,7 @@ def accumulate_rollout_correction_producer_item(
 
 def consume_rollout_correction_queue_item(
     *,
-    owner: Any,
+    owner: RolloutCorrectionCoordinationOwner,
     item: Any,
     rollout_static: Dict[str, float],
     pending_totals: Dict[str, float],
@@ -161,7 +238,7 @@ def consume_rollout_correction_queue_item(
 
 def prepare_rollout_correction_pipeline_pack_step(
     *,
-    owner: Any,
+    owner: RolloutCorrectionCoordinationOwner,
     selected: Sequence[tuple[dict[str, Any], dict[str, Any], int]],
     pending_totals: Dict[str, float],
     seen_raw: int,
@@ -184,7 +261,7 @@ def prepare_rollout_correction_pipeline_pack_step(
 def finalize_rollout_correction_pipeline_step(
     *,
     thread_obj: Any,
-    owner: Any,
+    owner: RolloutCorrectionCoordinationOwner,
     target_log_step: int,
     producer_exc: Sequence[Exception],
     total_segments_target: int,
@@ -221,7 +298,7 @@ def finalize_rollout_correction_pipeline_step(
 
 def run_rollout_correction_train_one_pack(
     *,
-    owner: Any,
+    owner: RolloutCorrectionCoordinationOwner,
     model: Any,
     selected: Sequence[tuple[dict[str, Any], dict[str, Any], int]],
     pack_metrics: Mapping[str, float],
@@ -310,7 +387,12 @@ def run_rollout_correction_train_one_pack(
     return loss.detach() * float(weight)
 
 
-def _rollout_correction_pack_count_gather_device(*, owner: Any, model: Any, dist: Any) -> torch.device:
+def _rollout_correction_pack_count_gather_device(
+    *,
+    owner: RolloutCorrectionCoordinationOwner,
+    model: Any,
+    dist: Any,
+) -> torch.device:
     backend = None
     get_backend = getattr(dist, "get_backend", None)
     if callable(get_backend):
@@ -374,7 +456,7 @@ def _rollout_correction_pack_count_gather_device(*, owner: Any, model: Any, dist
 
 def gather_rollout_correction_local_pack_counts(
     *,
-    owner: Any,
+    owner: RolloutCorrectionCoordinationOwner,
     model: Any,
     local_pack_count: int,
     dist: Any,
@@ -425,7 +507,7 @@ def gather_rollout_correction_local_pack_counts(
 
 def build_rollout_correction_pack_schedule(
     *,
-    owner: Any,
+    owner: RolloutCorrectionCoordinationOwner,
     model: Any,
     local_pack_count: int,
     dist: Any,
@@ -446,7 +528,7 @@ def build_rollout_correction_pack_schedule(
 
 def run_rollout_correction_nonpipeline_learning_loop(
     *,
-    owner: Any,
+    owner: RolloutCorrectionCoordinationOwner,
     model: Any,
     segments: list[tuple[dict[str, Any], dict[str, Any], int]],
     batch_metrics: Mapping[str, Any],
@@ -700,7 +782,7 @@ def run_rollout_correction_nonpipeline_learning_loop(
 
 def run_rollout_correction_pipeline_learning_loop(
     *,
-    owner: Any,
+    owner: RolloutCorrectionCoordinationOwner,
     model: Any,
     raw_samples: Sequence[Mapping[str, Any]],
     rollout_decode_bs: int,
@@ -825,7 +907,7 @@ def run_rollout_correction_pipeline_learning_loop(
 
 def run_rollout_correction_pipeline_producer(
     *,
-    owner: Any,
+    owner: RolloutCorrectionCoordinationOwner,
     raw_samples: Sequence[Mapping[str, Any]],
     rollout_decode_bs: int,
     queue_obj: Any,
@@ -864,7 +946,7 @@ def run_rollout_correction_pipeline_producer(
 
 def accumulate_step_mode_microbatches(
     *,
-    owner: Any,
+    owner: RolloutCorrectionCoordinationOwner,
     gs_attr: str,
     micro_attr: str,
     raw_attr: str,
@@ -896,6 +978,7 @@ def accumulate_step_mode_microbatches(
 
 
 __all__ = [
+    "RolloutCorrectionCoordinationOwner",
     "accumulate_rollout_correction_producer_item",
     "accumulate_step_mode_microbatches",
     "build_rollout_correction_pack_schedule",

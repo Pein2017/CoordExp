@@ -36,16 +36,16 @@ convergence.
   variants unless an explicit extension contract exists.
 - [x] 3.2 Add tests proving Stage-2 runtime projection records authored and
   resolved policy sources without relying on hidden `custom.extra` fallbacks.
-- [ ] 3.3 Add tests proving rollout-correction target construction can be
+- [x] 3.3 Add tests proving rollout-correction target construction can be
   exercised without vLLM lifecycle, DDP coordination, or full trainer setup.
-- [ ] 3.4 Add tests proving post-rollout packing/DDP coordination has a bounded
+- [x] 3.4 Add tests proving post-rollout packing/DDP coordination has a bounded
   responsibility surface around pack production/consumption, rank behavior,
   zero-pack behavior, shadow slots, final-sync barriers, and pack metrics.
-- [ ] 3.5 Add tests proving shared inference modules do not depend on broad
+- [x] 3.5 Add tests proving shared inference modules do not depend on broad
   trainer/offline-owner private methods outside designated edge adapters.
-- [ ] 3.6 Add tests proving raw/scored artifact provenance has one writer and
+- [x] 3.6 Add tests proving raw/scored artifact provenance has one writer and
   metric-bearing parser status is auditable.
-- [ ] 3.7 Add search gates for retired A/B or Channel-B public surfaces, dead
+- [x] 3.7 Add search gates for retired A/B or Channel-B public surfaces, dead
   `rollout_matching` manifest family paths, and retired current-authority docs.
 
 ## 4. Runtime Projection And Bootstrap After P0 Slice
@@ -60,37 +60,42 @@ convergence.
 
 ## 5. Stage-2 Trainer Boundary After Runtime Projection
 
-- [ ] 5.1 Extract or deepen the rollout-correction target-construction
+- [x] 5.1 Extract or deepen the rollout-correction target-construction
   responsibility around parsed rollout/GT/correction-policy inputs.
-- [ ] 5.2 Keep rollout backend lifecycle, DDP coordination, model forward, loss
+- [x] 5.2 Keep rollout backend lifecycle, DDP coordination, model forward, loss
   execution, and metric projection outside that target-construction boundary.
-- [ ] 5.3 Narrow packing/DDP coordination from `owner: Any` toward explicit
+- [x] 5.3 Narrow packing/DDP coordination from `owner: Any` toward explicit
   responsibilities after characterization tests exist.
-- [ ] 5.4 Convert obsolete A/B and Channel-B behavior tests into absence or
+- [x] 5.4 Convert obsolete A/B and Channel-B behavior tests into absence or
   rejection tests before renaming or deleting compatibility aliases.
-- [ ] 5.5 Classify remaining A/B or Channel-B old-name matches as active public
+- [x] 5.5 Classify remaining A/B or Channel-B old-name matches as active public
   surface, private implementation identifier, rejection/absence test, migration
   adapter, historical fixture, or archived history before deleting/renaming.
 
 ## 6. Shared Inference And Artifact Boundary After P0 Slice
 
-- [ ] 6.1 Confine trainer/offline owner introspection to designated edge
+- [x] 6.1 Confine trainer/offline owner introspection to designated edge
   adapters.
 - [ ] 6.2 Route prompt/decode/backend/artifact helpers through resolved facts
   rather than arbitrary private owner attributes.
-- [ ] 6.3 Single-own score sidecar construction, score policy fingerprinting,
+  - [x] 6.2a Route rollout prompt normalization through a resolved prompt-facts
+    helper while keeping `*_from_owner` as the edge adapter.
+  - [ ] 6.2b Complete the deeper backend/decode/artifact lifecycle facts
+    migration so shared inference no longer needs broad owner-shaped helper
+    files as migration adapters.
+- [x] 6.3 Single-own score sidecar construction, score policy fingerprinting,
   parser policy, and metric-bearing status.
-- [ ] 6.4 Preserve raw/scored artifact separation and Stage-2
+- [x] 6.4 Preserve raw/scored artifact separation and Stage-2
   `eval_detection/step_<global_step>/` artifact names.
-- [ ] 6.5 Ensure provenance-free raw or F1-ish eval paths report
+- [x] 6.5 Ensure provenance-free raw or F1-ish eval paths report
   `inspection` / `non_comparable` status and cannot be reported as official
   comparable evaluation.
 
 ## 7. Final Cleanup And Validation After Approval
 
-- [ ] 7.1 Delete or quarantine dead `rollout_matching` manifest family branches.
-- [ ] 7.2 Demote retired specs and progress notes from current routing
+- [x] 7.1 Delete or quarantine dead `rollout_matching` manifest family branches.
+- [x] 7.2 Demote retired specs and progress notes from current routing
   authority.
-- [ ] 7.3 Tighten architecture gates to match the moved boundaries.
-- [ ] 7.4 Run narrow contract suites first, then broaden only across affected
+- [x] 7.3 Tighten architecture gates to match the moved boundaries.
+- [x] 7.4 Run narrow contract suites first, then broaden only across affected
   config/runtime/infer/eval surfaces.

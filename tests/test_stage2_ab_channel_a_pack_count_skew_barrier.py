@@ -14,6 +14,7 @@ def test_stage2_rollout_correction_rollout_correction_calls_barrier_on_final_pac
     import torch
     import torch.distributed as dist
 
+    import src.trainers.rollout_correction.executors as executors_mod
     from src.trainers.rollout_correction.executors import RolloutCorrectionExecutorsMixin
 
     class DummyModel:
@@ -45,6 +46,36 @@ def test_stage2_rollout_correction_rollout_correction_calls_barrier_on_final_pac
 
         def _packing_min_fill_ratio(self):
             return 0.0
+
+        def _rollout_backend(self):
+            return "hf"
+
+        def _vllm_mode(self):
+            return ""
+
+        def _stage2_rollout_correction_pipeline_enabled(self, *, backend: str, mode: str):
+            return False
+
+        def _rollout_decode_batch_size_per_rank(self):
+            return 1
+
+        def _rollout_correction_cfg_get(self, _key: str, default=None):
+            return default
+
+        def _vllm_server_timeouts(self):
+            return 1.0, 1.0
+
+        def _stage2_reset_train_monitor_dump(self, *, global_step: int):
+            self._stage2_train_monitor_dump_written_step = global_step
+
+        def _stage2_flush_train_monitor_dump(self, *, global_step: int):
+            self._stage2_train_monitor_dump_written_step = global_step
+
+        def _stage2_stage_wallclock_ctx(self, _stage: str):
+            return contextlib.nullcontext()
+
+        def _stage2_record_ddp_phase_trace(self, **_kwargs):
+            return None
 
         def _template_packing_enabled(self):
             return contextlib.nullcontext()
@@ -81,17 +112,17 @@ def test_stage2_rollout_correction_rollout_correction_calls_barrier_on_final_pac
 
     barrier_calls = {"n": 0}
 
-    def _monitored_barrier(self, **_kwargs):
+    def _monitored_barrier(**_kwargs):
         barrier_calls["n"] += 1
 
     monkeypatch.setattr(
-        RolloutCorrectionExecutorsMixin,
-        "_stage2_rollout_correction_ddp_monitored_barrier",
+        executors_mod,
+        "run_rollout_correction_ddp_monitored_barrier",
         _monitored_barrier,
     )
 
     t = DummyTrainer()
-    loss = t._stage2_a_step_budgeted_train(
+    loss = t._stage2_rollout_correction_step_budgeted_train(
         t.model,
         raw_samples=[{}, {}, {}],
         global_step=1,
@@ -105,6 +136,7 @@ def test_stage2_rollout_correction_rollout_correction_uses_shadow_slots_for_pack
     import torch
     import torch.distributed as dist
 
+    import src.trainers.rollout_correction.executors as executors_mod
     from src.trainers.rollout_correction.executors import RolloutCorrectionExecutorsMixin
 
     class DummyModel:
@@ -138,6 +170,36 @@ def test_stage2_rollout_correction_rollout_correction_uses_shadow_slots_for_pack
 
         def _packing_min_fill_ratio(self):
             return 0.0
+
+        def _rollout_backend(self):
+            return "hf"
+
+        def _vllm_mode(self):
+            return ""
+
+        def _stage2_rollout_correction_pipeline_enabled(self, *, backend: str, mode: str):
+            return False
+
+        def _rollout_decode_batch_size_per_rank(self):
+            return 1
+
+        def _rollout_correction_cfg_get(self, _key: str, default=None):
+            return default
+
+        def _vllm_server_timeouts(self):
+            return 1.0, 1.0
+
+        def _stage2_reset_train_monitor_dump(self, *, global_step: int):
+            self._stage2_train_monitor_dump_written_step = global_step
+
+        def _stage2_flush_train_monitor_dump(self, *, global_step: int):
+            self._stage2_train_monitor_dump_written_step = global_step
+
+        def _stage2_stage_wallclock_ctx(self, _stage: str):
+            return contextlib.nullcontext()
+
+        def _stage2_record_ddp_phase_trace(self, **_kwargs):
+            return None
 
         def _template_packing_enabled(self):
             return contextlib.nullcontext()
@@ -176,17 +238,17 @@ def test_stage2_rollout_correction_rollout_correction_uses_shadow_slots_for_pack
 
     barrier_calls = {"n": 0}
 
-    def _monitored_barrier(self, **_kwargs):
+    def _monitored_barrier(**_kwargs):
         barrier_calls["n"] += 1
 
     monkeypatch.setattr(
-        RolloutCorrectionExecutorsMixin,
-        "_stage2_rollout_correction_ddp_monitored_barrier",
+        executors_mod,
+        "run_rollout_correction_ddp_monitored_barrier",
         _monitored_barrier,
     )
 
     t = DummyTrainer()
-    loss = t._stage2_a_step_budgeted_train(
+    loss = t._stage2_rollout_correction_step_budgeted_train(
         t.model,
         raw_samples=[{}],
         global_step=1,
