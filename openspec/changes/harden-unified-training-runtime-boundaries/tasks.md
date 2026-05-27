@@ -76,11 +76,11 @@ convergence.
 
 - [x] 6.1 Confine trainer/offline owner introspection to designated edge
   adapters.
-- [ ] 6.2 Route prompt/decode/backend/artifact helpers through resolved facts
+- [x] 6.2 Route prompt/decode/backend/artifact helpers through resolved facts
   rather than arbitrary private owner attributes.
   - [x] 6.2a Route rollout prompt normalization through a resolved prompt-facts
     helper while keeping `*_from_owner` as the edge adapter.
-  - [ ] 6.2b Complete the deeper backend/decode/artifact lifecycle facts
+  - [x] 6.2b Complete the deeper backend/decode/artifact lifecycle facts
     migration so shared inference no longer needs broad owner-shaped helper
     files as migration adapters.
 - [x] 6.3 Single-own score sidecar construction, score policy fingerprinting,

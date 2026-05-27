@@ -5,7 +5,10 @@ from types import SimpleNamespace
 
 from src.infer.artifacts import (
     build_infer_resolved_meta,
+    build_infer_resolved_meta_from_facts,
     build_infer_summary_payload,
+    build_infer_summary_payload_from_facts,
+    resolve_infer_artifact_facts_from_owner,
 )
 
 
@@ -14,7 +17,12 @@ class _Counters:
         return {"count": 0}
 
 
-def _owner() -> SimpleNamespace:
+def _owner(
+    *,
+    distributed: bool = False,
+    requested_mode: str = "text",
+    backend_cfg: dict[str, object] | None = None,
+) -> SimpleNamespace:
     cfg = SimpleNamespace(
         model_checkpoint="model",
         adapter_checkpoint=None,
@@ -27,7 +35,11 @@ def _owner() -> SimpleNamespace:
         pred_coord_mode="auto",
         device="cpu",
         limit=200,
-        distributed_enabled=False,
+        distributed_enabled=distributed,
+        rank=2 if distributed else 0,
+        local_rank=1 if distributed else 0,
+        world_size=4 if distributed else 1,
+        backend=backend_cfg,
     )
     gen_cfg = SimpleNamespace(
         temperature=0.0,
@@ -49,7 +61,7 @@ def _owner() -> SimpleNamespace:
         cfg=cfg,
         gen_cfg=gen_cfg,
         resolved_mode="text",
-        requested_mode="text",
+        requested_mode=requested_mode,
         mode_reason="requested",
         prompt_variant="coco_80",
         bbox_format="xyxy",
@@ -115,3 +127,71 @@ def test_infer_artifacts_record_compact_grammar_decode_provenance() -> None:
         "stop_tokens": ["<|im_end|>"],
         "processor_do_resize": False,
     }
+
+
+def test_infer_artifacts_core_builders_consume_resolved_facts() -> None:
+    cases = [
+        ("hf", _owner()),
+        (
+            "vllm",
+            _owner(
+                backend_cfg={
+                    "mode": "server",
+                    "base_url": "http://127.0.0.1:8000",
+                    "model": "demo",
+                    "timeout_s": 30,
+                    "client_concurrency": 2,
+                    "private": "hidden",
+                },
+            ),
+        ),
+        ("hf", _owner(distributed=True)),
+        ("hf", _owner(requested_mode="auto")),
+    ]
+
+    for backend, owner in cases:
+        facts = resolve_infer_artifact_facts_from_owner(
+            owner=owner,
+            backend=backend,
+            batch_size=1,
+        )
+        resolved = build_infer_resolved_meta_from_facts(
+            facts=facts,
+            out_path=Path("gt_vs_pred.jsonl"),
+            summary_path=Path("summary.json"),
+            trace_path=Path("pred_token_trace.jsonl"),
+        )
+        summary = build_infer_summary_payload_from_facts(
+            facts=facts,
+            counters=_Counters(),
+            determinism="deterministic",
+        )
+
+        assert resolved == build_infer_resolved_meta(
+            owner=owner,
+            backend=backend,
+            batch_size=1,
+            out_path=Path("gt_vs_pred.jsonl"),
+            summary_path=Path("summary.json"),
+            trace_path=Path("pred_token_trace.jsonl"),
+        )
+        assert summary == build_infer_summary_payload(
+            owner=owner,
+            counters=_Counters(),
+            backend=backend,
+            determinism="deterministic",
+            batch_size=1,
+        )
+        if backend == "vllm":
+            assert resolved["backend_cfg"] == {
+                "mode": "server",
+                "base_url": "http://127.0.0.1:8000",
+                "model": "demo",
+                "timeout_s": 30,
+                "client_concurrency": 2,
+            }
+        if owner.cfg.distributed_enabled:
+            assert resolved["distributed"]["world_size"] == 4
+            assert summary["distributed"]["rank"] == 2
+        if owner.requested_mode == "auto":
+            assert summary["mode_resolution_reason"] == owner.mode_reason

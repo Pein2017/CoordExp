@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+import ast
+import inspect
 from pathlib import Path
 import subprocess
 import sys
+import textwrap
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -260,6 +263,61 @@ def test_infer_owner_coupling_is_confined_to_designated_adapters() -> None:
         if rel not in adapter_files:
             offenders.append(str(rel))
 
+    assert offenders == []
+
+
+def test_decode_and_artifact_cores_consume_resolved_facts() -> None:
+    from src.infer.backend import (
+        rollout_many_hf_traced_with_handles,
+        rollout_many_hf_with_handles,
+    )
+    from src.infer.artifacts import (
+        build_infer_resolved_meta_from_facts,
+        build_infer_summary_payload_from_facts,
+    )
+    from src.infer.backend_vllm_infer import rollout_many_vllm_colocate_with_handles
+    from src.infer.backend_vllm_server import (
+        dispatch_vllm_server_rounds_with_handles,
+        infer_on_vllm_server_slice_with_handles,
+        prepare_vllm_server_rollout_with_handles,
+        rollout_many_vllm_server_with_handles,
+    )
+    from src.infer.rollout_dispatch import (
+        rollout_many_traced_with_handles,
+        rollout_many_with_handles,
+    )
+    from src.infer.runtime import build_decode_request_from_rollout_facts
+
+    def _uses_owner_or_getattr(fn) -> bool:  # type: ignore[no-untyped-def]
+        tree = ast.parse(textwrap.dedent(inspect.getsource(fn)))
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Name) and node.id == "owner":
+                return True
+            if isinstance(node, ast.Call):
+                func = node.func
+                if isinstance(func, ast.Name) and func.id == "getattr":
+                    first_arg = node.args[0] if node.args else None
+                    if isinstance(first_arg, ast.Name) and first_arg.id == "owner":
+                        return True
+        return False
+
+    offenders: list[str] = []
+    for fn in (
+        rollout_many_hf_with_handles,
+        rollout_many_hf_traced_with_handles,
+        rollout_many_vllm_colocate_with_handles,
+        prepare_vllm_server_rollout_with_handles,
+        infer_on_vllm_server_slice_with_handles,
+        dispatch_vllm_server_rounds_with_handles,
+        rollout_many_vllm_server_with_handles,
+        rollout_many_with_handles,
+        rollout_many_traced_with_handles,
+        build_decode_request_from_rollout_facts,
+        build_infer_resolved_meta_from_facts,
+        build_infer_summary_payload_from_facts,
+    ):
+        if _uses_owner_or_getattr(fn):
+            offenders.append(fn.__name__)
     assert offenders == []
 
 

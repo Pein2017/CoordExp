@@ -3,7 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import math
-from dataclasses import asdict
+from dataclasses import asdict, dataclass
 from numbers import Integral
 from pathlib import Path
 from typing import Any, Dict, List, Mapping, Optional, Sequence
@@ -759,6 +759,163 @@ def _qwen_chat_generation_meta(owner: Any) -> Dict[str, Any]:
     }
 
 
+@dataclass(frozen=True)
+class InferArtifactFacts:
+    """Resolved offline inference facts used for artifact metadata payloads."""
+
+    mode: str
+    requested_mode: str
+    mode_reason: str
+    backend: str
+    model_checkpoint: Any
+    adapter_checkpoint: Any
+    checkpoint_meta: Dict[str, Any]
+    gt_jsonl: Any
+    pred_coord_mode: Any
+    prompt_variant: Any
+    bbox_format: Any
+    detection_sequence_format: str
+    object_field_order: Any
+    object_ordering: Any
+    parsing: Dict[str, Any]
+    prompt_template_hash: Any
+    device: Any
+    limit: Any
+    generation: Dict[str, Any]
+    inference_provenance: Dict[str, Any]
+    distributed: Optional[Dict[str, Any]]
+    backend_cfg: Optional[Dict[str, Any]]
+    attn_implementation_requested: Any
+    attn_implementation_selected: Any
+
+
+def resolve_infer_artifact_facts_from_owner(
+    *,
+    owner: Any,
+    backend: str,
+    batch_size: int,
+) -> InferArtifactFacts:
+    """Translate an offline inference owner into artifact metadata facts."""
+
+    checkpoint_meta = _checkpoint_meta(owner)
+    generation_meta = _generation_meta(owner, backend=backend, batch_size=batch_size)
+    parsing = {
+        "compact_full": {
+            "mode": getattr(
+                owner.cfg,
+                "compact_full_parse_mode",
+                "marker_delimited_strict",
+            ),
+        },
+    }
+    distributed: Optional[Dict[str, Any]] = None
+    if bool(getattr(owner.cfg, "distributed_enabled", False)):
+        distributed = {
+            "enabled": True,
+            "rank": int(getattr(owner.cfg, "rank", 0) or 0),
+            "local_rank": int(getattr(owner.cfg, "local_rank", 0) or 0),
+            "world_size": max(int(getattr(owner.cfg, "world_size", 1) or 1), 1),
+            "merge_strategy": "ordinal_restore",
+        }
+    backend_cfg: Optional[Dict[str, Any]] = None
+    if backend == "vllm":
+        public_fields = {
+            "mode",
+            "base_url",
+            "model",
+            "timeout_s",
+            "client_concurrency",
+        }
+        backend_raw = getattr(owner.cfg, "backend", None) or {}
+        backend_cfg = {
+            k: v
+            for k, v in backend_raw.items()
+            if str(k) in public_fields
+        }
+    return InferArtifactFacts(
+        mode=owner.resolved_mode,
+        requested_mode=owner.requested_mode,
+        mode_reason=owner.mode_reason,
+        backend=backend,
+        model_checkpoint=owner.cfg.model_checkpoint,
+        adapter_checkpoint=owner.cfg.adapter_checkpoint,
+        checkpoint_meta=checkpoint_meta,
+        gt_jsonl=owner.cfg.gt_jsonl,
+        pred_coord_mode=owner.cfg.pred_coord_mode,
+        prompt_variant=owner.prompt_variant,
+        bbox_format=owner.bbox_format,
+        detection_sequence_format=getattr(owner, "detection_sequence_format", "coordjson"),
+        object_field_order=owner.object_field_order,
+        object_ordering=owner.object_ordering,
+        parsing=parsing,
+        prompt_template_hash=owner.prompt_template_hash,
+        device=owner.cfg.device,
+        limit=owner.cfg.limit,
+        generation=generation_meta,
+        inference_provenance=_build_inference_provenance(
+            owner=owner,
+            backend=backend,
+            batch_size=batch_size,
+            checkpoint_meta=checkpoint_meta,
+            generation_meta=generation_meta,
+        ),
+        distributed=distributed,
+        backend_cfg=backend_cfg,
+        attn_implementation_requested=getattr(
+            owner,
+            "attn_implementation_requested",
+            None,
+        ),
+        attn_implementation_selected=getattr(
+            owner,
+            "attn_implementation_selected",
+            None,
+        ),
+    )
+
+
+def build_infer_resolved_meta_from_facts(
+    *,
+    facts: InferArtifactFacts,
+    out_path: Path,
+    summary_path: Path,
+    trace_path: Optional[Path],
+) -> Dict[str, Any]:
+    """Build resolved-config metadata from already-resolved artifact facts."""
+
+    resolved_meta = {
+        "mode": facts.mode,
+        "mode_resolution_reason": facts.mode_reason,
+        "backend": facts.backend,
+        "model_checkpoint": facts.model_checkpoint,
+        "adapter_checkpoint": facts.adapter_checkpoint,
+        **facts.checkpoint_meta,
+        "gt_jsonl": facts.gt_jsonl,
+        "pred_coord_mode": facts.pred_coord_mode,
+        "prompt_variant": facts.prompt_variant,
+        "bbox_format": facts.bbox_format,
+        "detection_sequence_format": facts.detection_sequence_format,
+        "object_field_order": facts.object_field_order,
+        "object_ordering": facts.object_ordering,
+        "parsing": dict(facts.parsing),
+        "prompt_template_hash": facts.prompt_template_hash,
+        "device": facts.device,
+        "limit": facts.limit,
+        "generation": dict(facts.generation),
+        "inference_provenance": dict(facts.inference_provenance),
+        "artifacts": {
+            "gt_vs_pred_jsonl": str(out_path),
+            "pred_token_trace_jsonl": str(trace_path) if trace_path is not None else None,
+            "summary_json": str(summary_path),
+        },
+    }
+    if facts.distributed is not None:
+        resolved_meta["distributed"] = dict(facts.distributed)
+    if facts.backend_cfg is not None:
+        resolved_meta["backend_cfg"] = dict(facts.backend_cfg)
+    return resolved_meta
+
+
 def build_infer_resolved_meta(
     *,
     owner: Any,
@@ -768,70 +925,66 @@ def build_infer_resolved_meta(
     summary_path: Path,
     trace_path: Optional[Path],
 ) -> Dict[str, Any]:
-    checkpoint_meta = _checkpoint_meta(owner)
-    generation_meta = _generation_meta(owner, backend=backend, batch_size=batch_size)
-    resolved_meta = {
-        "mode": owner.resolved_mode,
-        "mode_resolution_reason": owner.mode_reason,
-        "backend": backend,
-        "model_checkpoint": owner.cfg.model_checkpoint,
-        "adapter_checkpoint": owner.cfg.adapter_checkpoint,
-        **checkpoint_meta,
-        "gt_jsonl": owner.cfg.gt_jsonl,
-        "pred_coord_mode": owner.cfg.pred_coord_mode,
-        "prompt_variant": owner.prompt_variant,
-        "bbox_format": owner.bbox_format,
-        "detection_sequence_format": getattr(owner, "detection_sequence_format", "coordjson"),
-        "object_field_order": owner.object_field_order,
-        "object_ordering": owner.object_ordering,
-        "parsing": {
-            "compact_full": {
-                "mode": getattr(
-                    owner.cfg,
-                    "compact_full_parse_mode",
-                    "marker_delimited_strict",
-                ),
-            },
-        },
-        "prompt_template_hash": owner.prompt_template_hash,
-        "device": owner.cfg.device,
-        "limit": owner.cfg.limit,
-        "generation": generation_meta,
-        "inference_provenance": _build_inference_provenance(
+    return build_infer_resolved_meta_from_facts(
+        facts=resolve_infer_artifact_facts_from_owner(
             owner=owner,
             backend=backend,
             batch_size=batch_size,
-            checkpoint_meta=checkpoint_meta,
-            generation_meta=generation_meta,
         ),
-        "artifacts": {
-            "gt_vs_pred_jsonl": str(out_path),
-            "pred_token_trace_jsonl": str(trace_path) if trace_path is not None else None,
-            "summary_json": str(summary_path),
+        out_path=out_path,
+        summary_path=summary_path,
+        trace_path=trace_path,
+    )
+
+
+def build_infer_summary_payload_from_facts(
+    *,
+    facts: InferArtifactFacts,
+    counters: Any,
+    determinism: str,
+) -> Dict[str, Any]:
+    """Build offline inference summary from already-resolved artifact facts."""
+
+    summary_payload: Dict[str, Any] = {
+        "mode": facts.mode,
+        "determinism": determinism,
+        **counters.to_summary(),
+        "backend": {
+            "type": facts.backend,
+            "model_checkpoint": facts.model_checkpoint,
+            "adapter_checkpoint": facts.adapter_checkpoint,
+            **facts.checkpoint_meta,
+        },
+        "generation": dict(facts.generation),
+        "inference_provenance": dict(facts.inference_provenance),
+        "infer": {
+            "gt_jsonl": facts.gt_jsonl,
+            "pred_coord_mode": facts.pred_coord_mode,
+            "prompt_variant": facts.prompt_variant,
+            "bbox_format": facts.bbox_format,
+            "detection_sequence_format": facts.detection_sequence_format,
+            "object_field_order": facts.object_field_order,
+            "object_ordering": facts.object_ordering,
+            "parsing": dict(facts.parsing),
+            "prompt_template_hash": facts.prompt_template_hash,
+            "device": facts.device,
+            "limit": facts.limit,
         },
     }
-    if bool(getattr(owner.cfg, "distributed_enabled", False)):
-        resolved_meta["distributed"] = {
-            "enabled": True,
-            "rank": int(getattr(owner.cfg, "rank", 0) or 0),
-            "local_rank": int(getattr(owner.cfg, "local_rank", 0) or 0),
-            "world_size": max(int(getattr(owner.cfg, "world_size", 1) or 1), 1),
-            "merge_strategy": "ordinal_restore",
-        }
-    if backend == "vllm":
-        public_fields = {
-            "mode",
-            "base_url",
-            "model",
-            "timeout_s",
-            "client_concurrency",
-        }
-        resolved_meta["backend_cfg"] = {
-            k: v
-            for k, v in (owner.cfg.backend or {}).items()
-            if str(k) in public_fields
-        }
-    return resolved_meta
+    if facts.distributed is not None:
+        summary_payload["distributed"] = dict(facts.distributed)
+
+    if facts.requested_mode == "auto":
+        summary_payload["mode_resolution_reason"] = facts.mode_reason
+
+    if facts.backend == "hf":
+        summary_payload["backend"]["attn_implementation_requested"] = (
+            facts.attn_implementation_requested
+        )
+        summary_payload["backend"]["attn_implementation_selected"] = (
+            facts.attn_implementation_selected
+        )
+    return summary_payload
 
 
 def build_infer_summary_payload(
@@ -842,68 +995,15 @@ def build_infer_summary_payload(
     determinism: str,
     batch_size: int,
 ) -> Dict[str, Any]:
-    checkpoint_meta = _checkpoint_meta(owner)
-    generation_meta = _generation_meta(owner, backend=backend, batch_size=batch_size)
-    summary_payload: Dict[str, Any] = {
-        "mode": owner.resolved_mode,
-        "determinism": determinism,
-        **counters.to_summary(),
-        "backend": {
-            "type": backend,
-            "model_checkpoint": owner.cfg.model_checkpoint,
-            "adapter_checkpoint": owner.cfg.adapter_checkpoint,
-            **checkpoint_meta,
-        },
-        "generation": generation_meta,
-        "inference_provenance": _build_inference_provenance(
+    return build_infer_summary_payload_from_facts(
+        facts=resolve_infer_artifact_facts_from_owner(
             owner=owner,
             backend=backend,
             batch_size=batch_size,
-            checkpoint_meta=checkpoint_meta,
-            generation_meta=generation_meta,
         ),
-        "infer": {
-            "gt_jsonl": owner.cfg.gt_jsonl,
-            "pred_coord_mode": owner.cfg.pred_coord_mode,
-            "prompt_variant": owner.prompt_variant,
-            "bbox_format": owner.bbox_format,
-            "detection_sequence_format": getattr(owner, "detection_sequence_format", "coordjson"),
-            "object_field_order": owner.object_field_order,
-            "object_ordering": owner.object_ordering,
-            "parsing": {
-                "compact_full": {
-                    "mode": getattr(
-                        owner.cfg,
-                        "compact_full_parse_mode",
-                        "marker_delimited_strict",
-                    ),
-                },
-            },
-            "prompt_template_hash": owner.prompt_template_hash,
-            "device": owner.cfg.device,
-            "limit": owner.cfg.limit,
-        },
-    }
-    if bool(getattr(owner.cfg, "distributed_enabled", False)):
-        summary_payload["distributed"] = {
-            "enabled": True,
-            "rank": int(getattr(owner.cfg, "rank", 0) or 0),
-            "local_rank": int(getattr(owner.cfg, "local_rank", 0) or 0),
-            "world_size": max(int(getattr(owner.cfg, "world_size", 1) or 1), 1),
-            "merge_strategy": "ordinal_restore",
-        }
-
-    if owner.requested_mode == "auto":
-        summary_payload["mode_resolution_reason"] = owner.mode_reason
-
-    if backend == "hf":
-        summary_payload["backend"]["attn_implementation_requested"] = (
-            owner.attn_implementation_requested
-        )
-        summary_payload["backend"]["attn_implementation_selected"] = (
-            owner.attn_implementation_selected
-        )
-    return summary_payload
+        counters=counters,
+        determinism=determinism,
+    )
 
 
 def write_infer_summary(*, summary_path: Path, summary_payload: Dict[str, Any]) -> None:

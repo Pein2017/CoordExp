@@ -1283,13 +1283,18 @@ def test_rollout_many_enforces_server_chunk_cap_for_all_callers(monkeypatch) -> 
 
     def _capture_rollout_many_vllm(
         *,
-        owner,
+        handles,
+        logger,
         samples,
         debug_samples=None,
         request_index_offset=0,
+        with_logprobs=False,
         decode_override=None,
+        per_server_rank_request_caps_fn=None,
+        allocate_weighted_counts_with_caps_fn=None,
     ):
-        del owner, decode_override
+        del handles, logger, with_logprobs, decode_override
+        del per_server_rank_request_caps_fn, allocate_weighted_counts_with_caps_fn
         call_samples.append(list(samples))
         call_debug_samples.append(
             list(debug_samples) if debug_samples is not None else []
@@ -1301,7 +1306,11 @@ def test_rollout_many_enforces_server_chunk_cap_for_all_callers(monkeypatch) -> 
     trainer._effective_rollout_backend = lambda context="train": "vllm"
     trainer._rollout_decode_batch_size_per_rank = lambda **_kwargs: 2
     monkeypatch.setattr(
-        "src.infer.rollout_dispatch.rollout_many_vllm",
+        "src.infer.rollout_dispatch.resolve_vllm_server_rollout_handles_from_owner",
+        lambda **_kwargs: types.SimpleNamespace(per_rank_chunk_fn=lambda: 2),
+    )
+    monkeypatch.setattr(
+        "src.infer.rollout_dispatch.rollout_many_vllm_server_with_handles",
         _capture_rollout_many_vllm,
     )
 
@@ -1339,13 +1348,18 @@ def test_rollout_many_offsets_server_chunks_from_caller_request_index(monkeypatc
 
     def _capture_rollout_many_vllm(
         *,
-        owner,
+        handles,
+        logger,
         samples,
         debug_samples=None,
         request_index_offset=0,
+        with_logprobs=False,
         decode_override=None,
+        per_server_rank_request_caps_fn=None,
+        allocate_weighted_counts_with_caps_fn=None,
     ):
-        del owner, debug_samples, decode_override
+        del handles, logger, debug_samples, with_logprobs, decode_override
+        del per_server_rank_request_caps_fn, allocate_weighted_counts_with_caps_fn
         call_offsets.append(int(request_index_offset))
         return [([1], "{}", "greedy", [2]) for _ in samples]
 
@@ -1353,7 +1367,11 @@ def test_rollout_many_offsets_server_chunks_from_caller_request_index(monkeypatc
     trainer._effective_rollout_backend = lambda context="train": "vllm"
     trainer._rollout_decode_batch_size_per_rank = lambda **_kwargs: 2
     monkeypatch.setattr(
-        "src.infer.rollout_dispatch.rollout_many_vllm",
+        "src.infer.rollout_dispatch.resolve_vllm_server_rollout_handles_from_owner",
+        lambda **_kwargs: types.SimpleNamespace(per_rank_chunk_fn=lambda: 2),
+    )
+    monkeypatch.setattr(
+        "src.infer.rollout_dispatch.rollout_many_vllm_server_with_handles",
         _capture_rollout_many_vllm,
     )
 
@@ -1389,7 +1407,7 @@ def test_rollout_many_server_dispatch_reaches_shared_server_backend(
 
     def _capture_shared_server_backend(
         *,
-        owner,
+        handles,
         logger,
         samples,
         debug_samples=None,
@@ -1399,10 +1417,9 @@ def test_rollout_many_server_dispatch_reaches_shared_server_backend(
         per_server_rank_request_caps_fn=None,
         allocate_weighted_counts_with_caps_fn=None,
     ):
-        del logger, per_server_rank_request_caps_fn, allocate_weighted_counts_with_caps_fn
+        del handles, logger, per_server_rank_request_caps_fn, allocate_weighted_counts_with_caps_fn
         calls.append(
             {
-                "owner": owner,
                 "samples": list(samples),
                 "debug_samples": list(debug_samples or []),
                 "request_index_offset": int(request_index_offset),
@@ -1416,7 +1433,11 @@ def test_rollout_many_server_dispatch_reaches_shared_server_backend(
     trainer._effective_rollout_backend = lambda context="train": "vllm"
     trainer._rollout_decode_batch_size_per_rank = lambda **_kwargs: 2
     monkeypatch.setattr(
-        "src.infer.rollout_dispatch.rollout_many_vllm_server",
+        "src.infer.rollout_dispatch.resolve_vllm_server_rollout_handles_from_owner",
+        lambda **_kwargs: types.SimpleNamespace(per_rank_chunk_fn=lambda: 2),
+    )
+    monkeypatch.setattr(
+        "src.infer.rollout_dispatch.rollout_many_vllm_server_with_handles",
         _capture_shared_server_backend,
     )
 
@@ -1444,7 +1465,6 @@ def test_rollout_many_server_dispatch_reaches_shared_server_backend(
     assert len(calls) == 2
     assert [len(call["samples"]) for call in calls] == [2, 1]
     assert [call["request_index_offset"] for call in calls] == [5, 7]
-    assert all(call["owner"] is trainer for call in calls)
     assert all(call["decode_override"] == decode_override for call in calls)
     assert all(call["with_logprobs"] is False for call in calls)
     for call in calls:
@@ -1471,24 +1491,24 @@ def test_rollout_many_traced_vllm_prepares_prompt_and_keeps_debug_samples(
 
     def _capture_vllm_traced(
         *,
-        owner,
-        samples,
+        handles,
+        samples_for_rollout,
         debug_samples=None,
         request_index_offset=0,
         decode_override=None,
     ):
-        captured["owner"] = owner
-        captured["samples"] = list(samples)
+        del handles
+        captured["samples"] = list(samples_for_rollout)
         captured["debug_samples"] = list(debug_samples or [])
         captured["request_index_offset"] = int(request_index_offset)
         captured["decode_override"] = dict(decode_override or {})
         return [
             ([1], "{}", "greedy", [2], [0.0], ["tok"])
-            for _sample in samples
+            for _sample in samples_for_rollout
         ]
 
     monkeypatch.setattr(
-        "src.infer.rollout_dispatch.rollout_many_vllm_traced",
+        "src.infer.rollout_dispatch.rollout_many_traced_with_handles",
         _capture_vllm_traced,
     )
 
@@ -1515,7 +1535,6 @@ def test_rollout_many_traced_vllm_prepares_prompt_and_keeps_debug_samples(
     )
 
     assert out == [([1], "{}", "greedy", [2], [0.0], ["tok"])]
-    assert captured["owner"] is trainer
     assert captured["request_index_offset"] == 9
     assert captured["decode_override"] == decode_override
     prepared_samples = captured["samples"]
@@ -1597,13 +1616,18 @@ def test_rollout_many_passes_untrimmed_samples_for_server_debug_dump(monkeypatch
 
     def _capture_rollout_many_vllm(
         *,
-        owner,
+        handles,
+        logger,
         samples,
         debug_samples=None,
         request_index_offset=0,
+        with_logprobs=False,
         decode_override=None,
+        per_server_rank_request_caps_fn=None,
+        allocate_weighted_counts_with_caps_fn=None,
     ):
-        del owner, decode_override
+        del handles, logger, with_logprobs, decode_override
+        del per_server_rank_request_caps_fn, allocate_weighted_counts_with_caps_fn
         captured["samples"] = samples
         captured["debug_samples"] = debug_samples
         captured["request_index_offset"] = int(request_index_offset)
@@ -1613,7 +1637,11 @@ def test_rollout_many_passes_untrimmed_samples_for_server_debug_dump(monkeypatch
     trainer._effective_rollout_backend = lambda context="train": "vllm"
     trainer._rollout_decode_batch_size_per_rank = lambda **_kwargs: 4
     monkeypatch.setattr(
-        "src.infer.rollout_dispatch.rollout_many_vllm",
+        "src.infer.rollout_dispatch.resolve_vllm_server_rollout_handles_from_owner",
+        lambda **_kwargs: types.SimpleNamespace(per_rank_chunk_fn=lambda: 4),
+    )
+    monkeypatch.setattr(
+        "src.infer.rollout_dispatch.rollout_many_vllm_server_with_handles",
         _capture_rollout_many_vllm,
     )
 
@@ -2182,17 +2210,18 @@ def test_rollout_many_overrides_last_user_prompt_for_eval_variant(monkeypatch) -
 
     def _fake_rollout_many_hf(
         *,
-        owner,
-        samples,
-        decode_request,
-        unwrap_model_for_generation_fn,
+        handles,
+        samples_for_rollout,
+        debug_samples,
+        request_index_offset=0,
+        decode_override=None,
     ):
-        del owner, decode_request, unwrap_model_for_generation_fn
-        captured["samples"] = samples
-        return [([], "{}", "greedy", []) for _ in samples]
+        del handles, debug_samples, request_index_offset, decode_override
+        captured["samples"] = samples_for_rollout
+        return [([], "{}", "greedy", []) for _ in samples_for_rollout]
 
     monkeypatch.setattr(
-        "src.infer.rollout_dispatch.rollout_many_hf",
+        "src.infer.rollout_dispatch.rollout_many_with_handles",
         _fake_rollout_many_hf,
     )
 
@@ -2248,17 +2277,18 @@ def test_rollout_many_rebuilds_compact_full_prompt_from_coordjson_source(
 
     def _fake_rollout_many_hf(
         *,
-        owner,
-        samples,
-        decode_request,
-        unwrap_model_for_generation_fn,
+        handles,
+        samples_for_rollout,
+        debug_samples,
+        request_index_offset=0,
+        decode_override=None,
     ):
-        del owner, decode_request, unwrap_model_for_generation_fn
-        captured["samples"] = samples
-        return [([], "{}", "greedy", []) for _ in samples]
+        del handles, debug_samples, request_index_offset, decode_override
+        captured["samples"] = samples_for_rollout
+        return [([], "{}", "greedy", []) for _ in samples_for_rollout]
 
     monkeypatch.setattr(
-        "src.infer.rollout_dispatch.rollout_many_hf",
+        "src.infer.rollout_dispatch.rollout_many_with_handles",
         _fake_rollout_many_hf,
     )
 
@@ -2412,18 +2442,19 @@ def test_rollout_many_forwards_decode_override_to_hf_backend(monkeypatch) -> Non
 
     def _fake_rollout_many_hf(
         *,
-        owner,
-        samples,
-        decode_request,
-        unwrap_model_for_generation_fn,
+        handles,
+        samples_for_rollout,
+        debug_samples,
+        request_index_offset=0,
+        decode_override=None,
     ):
-        del owner, unwrap_model_for_generation_fn
-        captured["samples"] = samples
-        captured["decode_request"] = decode_request
-        return [([], "{}", "greedy", []) for _ in samples]
+        del debug_samples, request_index_offset, decode_override
+        captured["samples"] = samples_for_rollout
+        captured["decode_request"] = handles.decode_request
+        return [([], "{}", "greedy", []) for _ in samples_for_rollout]
 
     monkeypatch.setattr(
-        "src.infer.rollout_dispatch.rollout_many_hf",
+        "src.infer.rollout_dispatch.rollout_many_with_handles",
         _fake_rollout_many_hf,
     )
     trainer._effective_rollout_backend = lambda context="train": "hf"

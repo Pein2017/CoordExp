@@ -7,10 +7,15 @@ import pytest
 
 from src.infer.backend import (
     apply_hf_generation_config_from_decode_request,
+    resolve_hf_rollout_backend_handles_from_owner,
     vllm_request_config_kwargs_from_decode_request,
 )
 from src.config.rollout_matching_schema import RolloutMatchingConfig
-from src.infer.runtime import build_decode_request_from_rollout_matching_config
+from src.infer.runtime import (
+    build_decode_request_from_rollout_facts,
+    build_decode_request_from_rollout_matching_config,
+    resolve_rollout_decode_facts_from_owner,
+)
 from src.trainers.stage2_rollout_runtime import Stage2RolloutRuntime
 
 
@@ -270,6 +275,88 @@ def test_rollout_vllm_request_config_kwargs_propagates_decoding_knobs():
     assert kwargs["repetition_penalty"] == 1.05
     assert kwargs["stop"] == ["<|im_end|>"]
     assert kwargs["return_details"] is True
+
+
+def test_rollout_decode_request_core_consumes_resolved_facts() -> None:
+    trainer = object.__new__(Stage2RolloutRuntime)
+    trainer.rollout_matching_cfg = {
+        "decode_mode": "greedy",
+        "max_new_tokens": 12,
+        "num_beams": 1,
+        "repetition_penalty": 1.1,
+    }
+
+    facts = resolve_rollout_decode_facts_from_owner(trainer)
+    request = build_decode_request_from_rollout_facts(
+        facts,
+        decode_override={
+            "temperature": 0.7,
+            "top_p": 0.92,
+            "top_k": 24,
+        },
+    )
+
+    assert request.decode_mode == "sampling"
+    assert request.temperature == pytest.approx(0.7)
+    assert request.top_p == pytest.approx(0.92)
+    assert request.top_k == 24
+    assert request.repetition_penalty == pytest.approx(1.1)
+    assert request.max_new_tokens == 12
+
+
+def test_hf_backend_handles_do_not_validate_unselected_vllm_mode() -> None:
+    trainer = object.__new__(Stage2RolloutRuntime)
+    trainer.rollout_matching_cfg = {
+        "rollout_backend": "vllm",
+        "eval_rollout_backend": "vllm",
+        "rollout_decode_batch_size": 2,
+        "eval_decode_batch_size": 2,
+        "vllm": {"mode": "not-a-real-mode"},
+    }
+    trainer.template = SimpleNamespace()
+    trainer.model = SimpleNamespace()
+    trainer.model_wrapped = object()
+    trainer.accelerator = object()
+    trainer.args = SimpleNamespace(ds3_gather_for_generation=False)
+    trainer._maybe_rollout_offload_context = lambda **_kwargs: None
+    trainer._template_packing_disabled = lambda: None
+    trainer._eval_rollout_template_policy = lambda: SimpleNamespace()
+
+    handles = resolve_hf_rollout_backend_handles_from_owner(
+        owner=trainer,
+        unwrap_model_for_generation_fn=lambda *_args, **_kwargs: None,
+    )
+
+    assert handles.decode_batch_size == 2
+
+
+def test_hf_backend_handles_project_num_return_sequences() -> None:
+    trainer = object.__new__(Stage2RolloutRuntime)
+    trainer.rollout_matching_cfg = {
+        "rollout_backend": "hf",
+        "eval_rollout_backend": "hf",
+        "decode_mode": "beam",
+        "max_new_tokens": 8,
+        "num_beams": 4,
+        "num_return_sequences": 2,
+        "rollout_decode_batch_size": 1,
+        "eval_decode_batch_size": 1,
+    }
+    trainer.template = SimpleNamespace()
+    trainer.model = SimpleNamespace()
+    trainer.model_wrapped = object()
+    trainer.accelerator = object()
+    trainer.args = SimpleNamespace(ds3_gather_for_generation=False)
+    trainer._maybe_rollout_offload_context = lambda **_kwargs: None
+    trainer._template_packing_disabled = lambda: None
+    trainer._eval_rollout_template_policy = lambda: SimpleNamespace()
+
+    handles = resolve_hf_rollout_backend_handles_from_owner(
+        owner=trainer,
+        unwrap_model_for_generation_fn=lambda *_args, **_kwargs: None,
+    )
+
+    assert handles.num_return_sequences == 2
 
 
 def test_merge_rollout_matching_batch_metrics_preserves_existing_keys():

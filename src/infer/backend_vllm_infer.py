@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from contextlib import nullcontext
+from dataclasses import dataclass
 from typing import Any, Dict, List, Mapping, Optional, Sequence
 
 from src.infer.backend import (
@@ -10,7 +11,49 @@ from src.infer.backend import (
     normalize_vllm_trace_response,
     strip_left_padding_token_ids,
 )
-from src.infer.runtime import build_decode_request_from_rollout_owner
+from src.infer.runtime import (
+    build_decode_request_from_rollout_facts,
+    resolve_rollout_decode_facts_from_owner,
+)
+
+
+@dataclass(frozen=True)
+class VLLMColocateRolloutHandles:
+    """Lifecycle handles needed by the colocated vLLM rollout core."""
+
+    decode_facts: Any
+    global_step: int
+    seed_base: int
+    normalize_seed_fn: Any
+    eval_window_active: bool
+    offload_context_fn: Any
+    sync_model_fn: Any
+    infer_tp_group_fn: Any
+    tokenizer: Any
+
+
+def resolve_vllm_colocate_rollout_handles_from_owner(
+    *,
+    owner: Any,
+) -> VLLMColocateRolloutHandles:
+    """Translate a Stage-2 owner into colocated vLLM rollout handles."""
+
+    gs = int(getattr(getattr(owner, "state", None), "global_step", 0) or 0)
+    return VLLMColocateRolloutHandles(
+        decode_facts=resolve_rollout_decode_facts_from_owner(owner),
+        global_step=int(gs),
+        seed_base=int(owner._derive_rollout_seed_base(global_step=gs)),
+        normalize_seed_fn=owner._normalize_rollout_seed_int32,
+        eval_window_active=bool(getattr(owner, "_eval_vllm_window_active", False)),
+        offload_context_fn=owner._maybe_rollout_offload_context,
+        sync_model_fn=owner._sync_vllm_rollout_model_if_needed,
+        infer_tp_group_fn=lambda *, infer_requests, request_config: vllm_infer_tp_group(
+            owner=owner,
+            infer_requests=infer_requests,
+            request_config=request_config,
+        ),
+        tokenizer=owner.tokenizer,
+    )
 
 
 def vllm_infer_tp_group(
@@ -82,8 +125,29 @@ def rollout_many_vllm_colocate(
     request_index_offset: int = 0,
     decode_override: Optional[Mapping[str, Any]] = None,
 ) -> List[Any]:
-    decode_request = build_decode_request_from_rollout_owner(
-        owner,
+    return rollout_many_vllm_colocate_with_handles(
+        handles=resolve_vllm_colocate_rollout_handles_from_owner(owner=owner),
+        samples=samples,
+        logger=logger,
+        with_logprobs=with_logprobs,
+        request_index_offset=request_index_offset,
+        decode_override=decode_override,
+    )
+
+
+def rollout_many_vllm_colocate_with_handles(
+    *,
+    handles: VLLMColocateRolloutHandles,
+    samples: Sequence[Mapping[str, Any]],
+    logger: Any,
+    with_logprobs: bool = False,
+    request_index_offset: int = 0,
+    decode_override: Optional[Mapping[str, Any]] = None,
+) -> List[Any]:
+    del logger
+    rollout_facts = handles.decode_facts
+    decode_request = build_decode_request_from_rollout_facts(
+        rollout_facts,
         decode_override=decode_override
     )
     decode_mode = str(decode_request.decode_mode)
@@ -102,13 +166,11 @@ def rollout_many_vllm_colocate(
         )
 
     InferRequest, _RequestConfig = import_swift_infer_request_and_config()
-    gs = int(getattr(getattr(owner, "state", None), "global_step", 0) or 0)
-    seed_base = int(owner._derive_rollout_seed_base(global_step=gs))
     request_index_offset_i = max(0, int(request_index_offset))
     request_config = build_swift_request_config_from_decode_request(
         decode_request,
-        seed=owner._normalize_rollout_seed_int32(
-            int(seed_base + request_index_offset_i)
+        seed=handles.normalize_seed_fn(
+            int(handles.seed_base + request_index_offset_i)
         ),
         trace_logprobs=bool(with_logprobs),
     )
@@ -120,16 +182,11 @@ def rollout_many_vllm_colocate(
             raise ValueError("rollout-matching samples must contain messages (list)")
         infer_requests.append(InferRequest(messages=msgs))
 
-    offload_cm = (
-        nullcontext()
-        if bool(getattr(owner, "_eval_vllm_window_active", False))
-        else owner._maybe_rollout_offload_context(rollout_backend="vllm")
-    )
+    offload_cm = nullcontext() if handles.eval_window_active else handles.offload_context_fn(rollout_backend="vllm")
     with offload_cm:
-        if not bool(getattr(owner, "_eval_vllm_window_active", False)):
-            owner._sync_vllm_rollout_model_if_needed()
-        outs: List[Any] = vllm_infer_tp_group(
-            owner=owner,
+        if not handles.eval_window_active:
+            handles.sync_model_fn()
+        outs: List[Any] = handles.infer_tp_group_fn(
             infer_requests=infer_requests,
             request_config=request_config,
         )
@@ -161,7 +218,7 @@ def rollout_many_vllm_colocate(
             prompt_ids = [int(t) for t in prompt_ids_raw]
             prompt_ids = strip_left_padding_token_ids(
                 prompt_ids,
-                pad_token_id=getattr(owner.tokenizer, "pad_token_id", None),
+                pad_token_id=getattr(handles.tokenizer, "pad_token_id", None),
             ) or prompt_ids
             choice_logprobs = getattr(choice0, "logprobs", None)
         except (RuntimeError, TypeError, ValueError) as exc:
@@ -184,7 +241,7 @@ def rollout_many_vllm_colocate(
                 },
                 trace_logprobs=True,
                 backend_mode="ms-swift",
-                pad_token_id=getattr(owner.tokenizer, "pad_token_id", None),
+                pad_token_id=getattr(handles.tokenizer, "pad_token_id", None),
             )
             token_ids = [int(t) for t in (result.generated_token_ids or [])]
             prompt_ids = [int(t) for t in (result.prompt_token_ids or [])]
@@ -192,7 +249,7 @@ def rollout_many_vllm_colocate(
             generated_token_text = list(
                 result.generated_tokens
                 or decode_token_pieces_with_tokenizer(
-                    tokenizer=owner.tokenizer,
+                    tokenizer=handles.tokenizer,
                     token_ids=token_ids,
                 )
             )
