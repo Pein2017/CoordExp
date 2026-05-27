@@ -36,6 +36,13 @@ from src.training.stage2.assignment import (
     AssignmentStrategy,
     GreedyIoUAssignment,
 )
+from src.infer.prompt import (
+    prepare_rollout_prompt_samples_from_owner,
+    require_verified_prompt_token_parity,
+    require_verified_prompt_visual_parity,
+    rollout_visual_metadata_from_sample,
+)
+from src.infer.runtime import build_decode_request_from_rollout_owner
 from src.utils.assistant_json import dumps_coordjson
 
 from .stage2_rollout_runtime import Stage2RolloutRuntime
@@ -1598,7 +1605,7 @@ class Stage2RolloutCorrectionTrainer(
         # (Packing uses a shared carry buffer in Stage2RolloutRuntime.)
         self._stage2_post_rollout_segments: Dict[
             str, List[Tuple[Dict[str, Any], Dict[str, Any], int]]
-        ] = {"B": []}
+        ] = {"rollout_correction": []}
 
         # Step-budgeted mode state: accumulate raw samples across micro-steps
         # and execute rollout+packing+learning only on the final micro-step.
@@ -1692,7 +1699,7 @@ class Stage2RolloutCorrectionTrainer(
                 for channel, segments in segments_raw.items()
                 if isinstance(segments, list)
             }
-            for channel in ("B",):
+            for channel in ("rollout_correction",):
                 self._stage2_post_rollout_segments.setdefault(channel, [])
 
         self._stage2_rollout_correction_step_gs = payload.get("stage2_rollout_correction_step_gs")
@@ -2371,7 +2378,7 @@ class Stage2RolloutCorrectionTrainer(
         if gas <= 0:
             raise ValueError("window_raw_micro_batches is empty")
 
-        channel: Literal["B"] = "B"
+        channel: Literal["rollout_correction"] = "rollout_correction"
 
         # Flatten window samples (preserve micro-step order).
         flat_inputs: List[Mapping[str, Any]] = []
@@ -2414,7 +2421,7 @@ class Stage2RolloutCorrectionTrainer(
         t_pack_s = float(time.perf_counter() - t_pack0)
 
         template = self.template
-        from .rollout_runtime.swift_infer_compat import import_swift_to_device
+        from src.infer.backend import import_swift_to_device
 
         to_device = import_swift_to_device()
 
@@ -2625,7 +2632,8 @@ class Stage2RolloutCorrectionTrainer(
 
         backend = self._rollout_backend()
         rollout_decode_requests = [
-            self._resolve_rollout_decode_request(
+            build_decode_request_from_rollout_owner(
+                self,
                 decode_override={
                     "decode_mode": (
                         "sampling" if float(temperature) > 0.0 else "greedy"
@@ -2710,7 +2718,7 @@ class Stage2RolloutCorrectionTrainer(
                 total_ms = (time.perf_counter() - t0) * 1000.0
                 if total_ms >= _stage2_batch_timing_min_ms():
                     logger.info(
-                        "stage2_batch_timing: total_ms=%.1f channel=B global_step=%s "
+                        "stage2_batch_timing: total_ms=%.1f channel=rollout_correction global_step=%s "
                         "inputs=%s segments_only=%s num_rollouts=%s max_new_tokens=%s backend=%s",
                         total_ms,
                         int(gs),
@@ -2722,7 +2730,7 @@ class Stage2RolloutCorrectionTrainer(
                     )
                     _append_stage2_timing_line(
                         "stage2_batch_timing "
-                        f"total_ms={total_ms:.1f} channel=B global_step={int(gs)} "
+                        f"total_ms={total_ms:.1f} channel=rollout_correction global_step={int(gs)} "
                         f"inputs={len(inputs)} segments_only={bool(_segments_only)} "
                         f"num_rollouts={int(num_rollouts)} max_new_tokens={int(max_new_tokens)} "
                         f"backend={backend}"
@@ -2906,7 +2914,8 @@ class Stage2RolloutCorrectionTrainer(
                 "rollout_template_family"
             )
 
-        inputs_for_rollout = self._prepare_samples_for_rollout(
+        inputs_for_rollout = prepare_rollout_prompt_samples_from_owner(
+            self,
             inputs,
             rollout_backend=backend,
         )
@@ -2917,38 +2926,16 @@ class Stage2RolloutCorrectionTrainer(
                 f"inputs_for_rollout={len(inputs_for_rollout)} backend={backend}"
             )
 
-        def _rollout_many_with_decode_override(
-            chunk: Sequence[Mapping[str, Any]],
-            *,
-            decode_override: Mapping[str, Any],
-            request_index_offset: int,
-        ) -> Any:
-            candidates = [
-                {
-                    "decode_override": decode_override,
-                    "request_index_offset": int(request_index_offset),
-                },
-                {"decode_override": decode_override},
-                {"request_index_offset": int(request_index_offset)},
-                {},
-            ]
-            last_exc: Optional[TypeError] = None
-            for kwargs in candidates:
-                try:
-                    return self._rollout_many(chunk, **kwargs)
-                except TypeError as exc:
-                    text = str(exc)
-                    if "unexpected keyword argument" not in text:
-                        raise
-                    last_exc = exc
-            if last_exc is not None:
-                raise last_exc
-            raise AssertionError("unreachable")
-
         primary_rollout_ordinals: List[int] = []
         peer_rollout_ordinals_for_rollout: List[List[int]] = []
         raw_rollout_count = 0
+        base_prompt_source_inputs = list(inputs)
         base_inputs_for_rollout = list(inputs_for_rollout)
+        if len(base_prompt_source_inputs) != len(base_inputs_for_rollout):
+            raise RuntimeError(
+                "rollout prompt preparation changed sample cardinality "
+                f"from {len(base_prompt_source_inputs)} to {len(base_inputs_for_rollout)}"
+            )
         with self._hf_sampling_seed_context(
             seed_base=seed_base, backend=backend, do_sample=do_sample
         ) as seeded:
@@ -3006,7 +2993,7 @@ class Stage2RolloutCorrectionTrainer(
                             f"chunk_size={len(chunk)}"
                         )
 
-                    chunk_results = _rollout_many_with_decode_override(
+                    chunk_results = self._rollout_many(
                         chunk,
                         decode_override=decode_override,
                         request_index_offset=int(
@@ -3034,12 +3021,14 @@ class Stage2RolloutCorrectionTrainer(
                     )
 
             inputs_for_rollout = []
+            prompt_source_inputs_for_rollout = []
             anchor_rollout_results = []
             explorer_view_count = max(0, int(num_rollouts) - 1)
             explorer_rollout_results_by_view = [
                 [] for _ in range(int(explorer_view_count))
             ]
             for base_index, sample in enumerate(base_inputs_for_rollout):
+                prompt_source_sample = base_prompt_source_inputs[int(base_index)]
                 for primary_ordinal in range(int(num_rollouts)):
                     peer_ordinals = [
                         int(ordinal)
@@ -3047,6 +3036,7 @@ class Stage2RolloutCorrectionTrainer(
                         if int(ordinal) != int(primary_ordinal)
                     ]
                     inputs_for_rollout.append(sample)
+                    prompt_source_inputs_for_rollout.append(prompt_source_sample)
                     anchor_rollout_results.append(
                         rollout_results_by_ordinal[int(primary_ordinal)][int(base_index)]
                     )
@@ -3085,6 +3075,7 @@ class Stage2RolloutCorrectionTrainer(
         compact_anchor_fallback_total = 0
         closure_supervision_drop_total = 0
         prompt_tok_mismatch_total = 0
+        prompt_visual_mismatch_total = 0
 
         strict_valid_pred_total = 0
         strict_drop_invalid_total = 0
@@ -3156,8 +3147,8 @@ class Stage2RolloutCorrectionTrainer(
         rollout_temperature_stats: Dict[str, Dict[str, Any]] = {}
         rollout_temperature_seen: set[tuple[str, int]] = set()
 
-        for sample_index, (sample, anchor_rollout) in enumerate(
-            zip(inputs_for_rollout, anchor_rollout_results)
+        for sample_index, (sample, prompt_source_sample, anchor_rollout) in enumerate(
+            zip(inputs_for_rollout, prompt_source_inputs_for_rollout, anchor_rollout_results)
         ):
             if "messages" not in sample:
                 raise ValueError("stage2_rollout_correction requires 'messages' in dataset samples")
@@ -3433,25 +3424,25 @@ class Stage2RolloutCorrectionTrainer(
             duplicate_counter_metrics = dict(duplicate_control.counter_metrics)
             dup_clusters_total_local = int(
                 duplicate_counter_metrics.get(
-                    "stage2_rollout_correction/dup/N_clusters_total", 0.0
+                    "stage2_rollout_correction/correction/dup/N_clusters_total", 0.0
                 )
                 or 0.0
             )
             dup_clusters_exempt_local = int(
                 duplicate_counter_metrics.get(
-                    "stage2_rollout_correction/dup/N_clusters_exempt", 0.0
+                    "stage2_rollout_correction/correction/dup/N_clusters_exempt", 0.0
                 )
                 or 0.0
             )
             dup_clusters_suppressed_local = int(
                 duplicate_counter_metrics.get(
-                    "stage2_rollout_correction/dup/N_clusters_suppressed", 0.0
+                    "stage2_rollout_correction/correction/dup/N_clusters_suppressed", 0.0
                 )
                 or 0.0
             )
             dup_objects_suppressed_local = int(
                 duplicate_counter_metrics.get(
-                    "stage2_rollout_correction/dup/N_objects_suppressed", 0.0
+                    "stage2_rollout_correction/correction/dup/N_objects_suppressed", 0.0
                 )
                 or 0.0
             )
@@ -4359,49 +4350,64 @@ class Stage2RolloutCorrectionTrainer(
                     f"prompt_len={int(prompt_len)} encoded_len={int(encoded_len)} train_len={int(train_len_eff)}"
                 )
 
-            # Sanity: prompt prefix must exactly match the server-provided prompt_token_ids.
+            # Sanity: prompt prefix must exactly match the backend-provided prompt_token_ids.
             # Without this, coord-position offsets can silently drift and corrupt supervision.
             #
             # In practice, vLLM server-mode can occasionally return prompt_token_ids that do not
             # byte-for-byte match the local teacher-forced encoding (most commonly within the
             # vision token region, e.g. extra `<|image_pad|>` padding). When this happens we do
             # NOT have a safe way to reconcile offsets, so we drop the sample for this step.
-            if isinstance(prompt_ids, list) and prompt_ids:
-                prompt_ids_int = [int(t) for t in prompt_ids]
-                teacher_prefix = enc_ids_list[: len(prompt_ids_int)]
-                if teacher_prefix != prompt_ids_int:
-                    prompt_tok_mismatch_total += 1
-                    mismatch_at = next(
-                        (
-                            i
-                            for i, (a, b) in enumerate(
-                                zip(teacher_prefix, prompt_ids_int)
-                            )
-                            if int(a) != int(b)
+            if residual_set_selected and int(prompt_len) > 0:
+                try:
+                    require_verified_prompt_token_parity(
+                        local_prompt_token_ids=enc_ids_list,
+                        backend_prompt_token_ids=prompt_ids,
+                        expected_prompt_len=int(prompt_len),
+                        context=(
+                            "stage2_rollout_correction rollout-correction"
                         ),
-                        None,
                     )
-                    lo = max(0, int(mismatch_at or 0) - 3)
-                    hi = min(int(len(prompt_ids_int)), int(mismatch_at or 0) + 4)
+                except ValueError as exc:
+                    prompt_tok_mismatch_total += 1
                     rank, _world, _dist = self._dist_info()
                     if int(rank) == 0:
                         logger.warning(
-                            "stage2_rollout_correction rollout-correction prompt tokenization mismatch; dropping sample. "
-                            "mismatch_at=%s teacher_ids=%s server_ids=%s",
-                            int(mismatch_at) if mismatch_at is not None else None,
-                            teacher_prefix[lo:hi],
-                            prompt_ids_int[lo:hi],
+                            "%s; dropping sample.",
+                            str(exc),
                         )
                     continue
-                if int(prompt_len) != int(len(prompt_ids_int)):
-                    prompt_tok_mismatch_total += 1
+
+            if (
+                residual_set_selected
+                and int(prompt_len) > 0
+            ):
+                try:
+                    expected_visual_metadata = rollout_visual_metadata_from_sample(
+                        prompt_source_sample,
+                        messages=messages if isinstance(messages, list) else None,
+                    )
+                    source_visual_metadata = prompt_source_sample.get(
+                        "_coordexp_prompt_visual_metadata"
+                    )
+                    observed_visual_metadata = (
+                        source_visual_metadata
+                        if source_visual_metadata is not None
+                        else sample.get("_coordexp_prompt_visual_metadata")
+                    )
+                    require_verified_prompt_visual_parity(
+                        expected_visual_metadata=expected_visual_metadata,
+                        observed_visual_metadata=observed_visual_metadata,
+                        context=(
+                            "stage2_rollout_correction rollout-correction"
+                        ),
+                    )
+                except ValueError as exc:
+                    prompt_visual_mismatch_total += 1
                     rank, _world, _dist = self._dist_info()
                     if int(rank) == 0:
                         logger.warning(
-                            "stage2_rollout_correction rollout-correction prompt_len mismatch vs server prompt_token_ids length; "
-                            "dropping sample. prompt_len=%s server_prompt_len=%s",
-                            int(prompt_len),
-                            int(len(prompt_ids_int)),
+                            "%s; dropping sample.",
+                            str(exc),
                         )
                     continue
 
@@ -4550,7 +4556,7 @@ class Stage2RolloutCorrectionTrainer(
                 encoded_batch.append(encoded)
                 meta_unpacked.append(meta_entry)
 
-            from .rollout_runtime.swift_infer_compat import import_swift_to_device
+            from src.infer.backend import import_swift_to_device
 
             to_device = import_swift_to_device()
 
@@ -4616,6 +4622,17 @@ class Stage2RolloutCorrectionTrainer(
             "stage2_rollout_correction/prompt_tok_mismatch": float(prompt_tok_mismatch_total),
             "stage2_rollout_correction/prompt_tok_mismatch_rate": float(
                 (float(prompt_tok_mismatch_total) / float(len(anchor_rollout_results)))
+                if len(anchor_rollout_results) > 0
+                else 0.0
+            ),
+            "stage2_rollout_correction/prompt_visual_mismatch": float(
+                prompt_visual_mismatch_total
+            ),
+            "stage2_rollout_correction/prompt_visual_mismatch_rate": float(
+                (
+                    float(prompt_visual_mismatch_total)
+                    / float(len(anchor_rollout_results))
+                )
                 if len(anchor_rollout_results) > 0
                 else 0.0
             ),
@@ -4871,24 +4888,24 @@ class Stage2RolloutCorrectionTrainer(
             "dup/raw/near_iou90_pairs_any_desc_count": float(
                 dup_near_any_desc_pairs_total
             ),
-            "stage2_rollout_correction/dup/N_raw_bbox_valid": float(dup_raw_bbox_valid_total),
-            "stage2_rollout_correction/dup/N_clean_accepted": float(
+            "stage2_rollout_correction/correction/dup/N_raw_bbox_valid": float(dup_raw_bbox_valid_total),
+            "stage2_rollout_correction/correction/dup/N_clean_accepted": float(
                 dup_clean_accepted_total
             ),
-            "stage2_rollout_correction/dup/N_clusters_total": float(dup_cluster_total),
-            "stage2_rollout_correction/dup/N_clusters_exempt": float(
+            "stage2_rollout_correction/correction/dup/N_clusters_total": float(dup_cluster_total),
+            "stage2_rollout_correction/correction/dup/N_clusters_exempt": float(
                 dup_cluster_exempt_total
             ),
-            "stage2_rollout_correction/dup/N_clusters_suppressed": float(
+            "stage2_rollout_correction/correction/dup/N_clusters_suppressed": float(
                 dup_cluster_suppressed_total
             ),
-            "stage2_rollout_correction/dup/N_objects_suppressed": float(
+            "stage2_rollout_correction/correction/dup/N_objects_suppressed": float(
                 dup_objects_suppressed_total
             ),
-            "stage2_rollout_correction/dup/N_duplicate_control_first_divergence_boundaries": float(
+            "stage2_rollout_correction/correction/dup/N_duplicate_control_first_divergence_boundaries": float(
                 dup_first_divergence_boundaries_total
             ),
-            "stage2_rollout_correction/dup/N_duplicate_control_first_divergence_skipped_no_divergence": float(
+            "stage2_rollout_correction/correction/dup/N_duplicate_control_first_divergence_skipped_no_divergence": float(
                 dup_first_divergence_skipped_no_divergence_total
             ),
             "train/triage/gt_backed_count": float(
@@ -5354,7 +5371,7 @@ class Stage2RolloutCorrectionTrainer(
 
             stage2_logs["stage2_rollout_correction/active"] = 1.0
 
-            if channel == "B" and isinstance(batch_metrics, Mapping):
+            if isinstance(batch_metrics, Mapping):
                 raw_rollouts = 0.0
                 try:
                     raw_rollouts = float(
@@ -5397,7 +5414,7 @@ class Stage2RolloutCorrectionTrainer(
                         continue
                     stage2_logs[str(k)] = fv
 
-            if channel == "B":
+            if channel == "rollout_correction":
                 self._stage2_advance_train_monitor_b_step(
                     global_step=int(target_step)
                 )

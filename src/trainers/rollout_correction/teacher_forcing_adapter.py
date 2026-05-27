@@ -560,7 +560,7 @@ def _residual_atom_provenance(
     )
     provenance = {
         "stage": "stage2",
-        "channel": "B",
+        "channel": "rollout_correction",
         "correction_kind": draft.correction_kind,
         "draft_index": int(draft_index),
         "observed_token_id": _optional_int(observed_token_id),

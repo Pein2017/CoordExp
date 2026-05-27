@@ -1,24 +1,19 @@
 """Shared Stage-2 rollout runtime helpers.
 
-This module owns rollout prompt preparation, HF/vLLM/server dispatch, runtime
-rollout configuration, vLLM sync/debug helpers, evaluation rollout artifacts,
-and post-rollout packing helpers.  It is intentionally not a public trainer
-variant; concrete trainers such as :class:`Stage2RolloutCorrectionTrainer` own the
-training objective.
+This module coordinates Stage-2 rollout batches, backend lifecycle hooks,
+evaluation rollout artifacts, and post-rollout packing helpers.  Shared prompt,
+decode, backend-adapter, and trace contracts live under :mod:`src.infer`.
 """
 
 from __future__ import annotations
 
 import gc
 import json
-import inspect
 import math
 import os
-import tempfile
 import threading
 import time
 from contextlib import contextmanager, nullcontext
-from copy import deepcopy
 from dataclasses import asdict, dataclass, replace
 from pathlib import Path
 from typing import (
@@ -48,10 +43,9 @@ except ImportError:
         get_gather_if_zero3_context,
         replace_assistant_response_with_ids,
     )
-from swift.utils import get_logger, unwrap_model_for_generation
+from swift.utils import get_logger
 
 from src.common.object_field_order import (
-    build_object_payload,
     normalize_object_field_order,
     normalize_object_ordering,
 )
@@ -59,16 +53,24 @@ from src.common.detection_sequence import (
     COORDJSON_FORMAT,
     normalize_detection_sequence_format,
 )
-from src.common.geometry import flatten_points, normalize_bbox_format
-from src.common.prediction_parsing import (
-    extract_special_tokens,
-    load_prediction_dict,
-)
-from src.common.qwen_generation import resolve_qwen_chat_generation_token_ids
+from src.common.geometry import normalize_bbox_format
 from src.config.prompts import (
-    build_dense_system_prompt,
-    build_dense_user_prompt,
     resolve_dense_prompt_variant_key,
+)
+from src.infer.artifacts import (
+    build_stage2_rollout_eval_artifact_record,
+    confidence_options_from_eval_config,
+    score_stage2_confidence_eval_record,
+)
+from src.infer.parsing import parse_stage2_detection_rollout_predictions
+from src.infer.runtime import (
+    build_decode_request_from_rollout_owner,
+    build_decode_request_from_rollout_matching_config,
+    current_rollout_context_from_owner,
+    effective_rollout_backend_from_owner,
+    normalize_rollout_backend_value,
+    rollout_decode_batch_size_from_owner,
+    vllm_mode_from_rollout_owner,
 )
 from src.training.stage2.rollout_codec import (
     CompactFullRolloutCodec,
@@ -76,7 +78,6 @@ from src.training.stage2.rollout_codec import (
 )
 from src.coord_tokens.codec import (
     get_coord_token_ids,
-    token_to_int,
 )
 from src.utils.metric_key_lookup import (
     metric_lookup_candidates,
@@ -89,30 +90,47 @@ from .stage2_coordination import (
     reduce_metric_payload_global,
     resolve_rollout_log_metric_spec,
 )
-from .rollout_runtime.vllm_config import resolve_vllm_engine_config
-from .rollout_runtime.dispatch import (
+from src.infer.rollout_dispatch import (
     rollout_many,
-    rollout_many_vllm,
-    rollout_many_vllm_traced,
+    rollout_many_traced,
 )
-from .rollout_runtime.vllm_engine import (
-    instantiate_vllm_engine,
+from src.infer.backend_vllm_engine import (
+    best_effort_cleanup_vllm_sleep_mode_pools,
+    best_effort_fix_vllm_nccl_allocator_atexit_order,
+    best_effort_patch_vllm_cumem_sleep_no_empty_cache,
+    ensure_vllm_engine,
+    maybe_eval_vllm_colocate_window,
+    sleep_vllm_engine,
     shutdown_vllm_colocate_engine,
+    validate_vllm_eval_lifecycle_preflight,
+    vllm_raw_engine_or_raise,
+    vllm_reinit_each_eval,
+    vllm_sleep_level,
+    vllm_sleep_mode_enabled,
+    wake_vllm_engine,
 )
-from .rollout_runtime.vllm_infer import (
-    rollout_many_vllm_colocate,
-    vllm_infer_tp_group,
-)
-from .rollout_runtime.vllm_server import (
-    build_vllm_server_infer_requests,
-    dispatch_vllm_server_rounds,
+from src.infer.backend_vllm_server import (
+    allocate_weighted_counts_with_caps as _allocate_weighted_counts_with_caps,
+    contiguous_chunk_slices as _contiguous_chunk_slices,
+    contiguous_weighted_chunk_slices as _contiguous_weighted_chunk_slices,
+    effective_vllm_server_sync_mode,
     ensure_vllm_server_client,
     ensure_vllm_server_communicator_rank0,
-    prepare_vllm_server_rollout,
+    per_server_rank_request_caps as _per_server_rank_request_caps,
+    rollout_decode_batch_size_per_rank,
     sync_vllm_server_rollout_model_if_needed,
     shutdown_vllm_server_client,
+    vllm_server_cfg,
+    vllm_server_specs,
+    vllm_server_timeouts,
+    vllm_server_world_sizes,
 )
-from .rollout_aligned_evaluator import finalize_rollout_aligned_evaluation
+from .rollout_aligned_evaluator import (
+    build_eval_detection_record as _build_eval_detection_record,
+    build_eval_detection_record_confidence_postop_input as _build_eval_detection_record_confidence_postop_input,
+    extract_eval_gt_objects as _extract_gt_objects,
+    finalize_rollout_aligned_evaluation,
+)
 from .rollout_aligned_targets import (
     build_labels_and_coord_targets_for_batch,
     build_labels_and_coord_targets_for_sample,
@@ -120,15 +138,12 @@ from .rollout_aligned_targets import (
 
 from .rollout_matching.contracts import (
     GTObject,
-    ParsedPredObject,
 )
 from .rollout_matching.matching import _mask_iou_norm1000, greedy_match_iou
 from .rollout_matching.packing import (
     DropRemainderAccumulationWindow as _DropRemainderAccumulationWindow,
 )
 from .rollout_matching.parsing import (
-    coerce_int as _coerce_int,
-    decode_pieces as _decode_pieces,
     parse_rollout_for_matching,
     points_from_coord_tokens as _points_from_coord_tokens,
     serialize_append_fragment as _serialize_append_fragment,
@@ -137,623 +152,6 @@ from .rollout_matching.telemetry import (
     PendingTrainRolloutLog as _PendingTrainRolloutLog,
 )
 logger = get_logger()
-
-
-@dataclass(frozen=True)
-class _RolloutDecodeRequest:
-    decode_mode: str
-    temperature: float
-    top_p: float
-    top_k: int
-    repetition_penalty: float
-    max_new_tokens: int
-    num_beams: int
-
-
-def _contiguous_chunk_slices(n: int, num_chunks: int) -> List[Tuple[int, int]]:
-    """Deterministically slice `range(n)` into `num_chunks` contiguous chunks.
-
-    This is the normative chunking used for multi-server vLLM rollout distribution.
-    It preserves order and is stable across runs.
-
-    Returns a list of (start, end) index pairs of length `num_chunks`.
-    """
-    if num_chunks <= 0:
-        raise ValueError("num_chunks must be > 0")
-    if n < 0:
-        raise ValueError("n must be >= 0")
-    if n == 0:
-        return [(0, 0) for _ in range(int(num_chunks))]
-
-    chunk_size = int((n + num_chunks - 1) // num_chunks)
-    out: List[Tuple[int, int]] = []
-    for i in range(int(num_chunks)):
-        start = min(int(i * chunk_size), int(n))
-        end = min(int((i + 1) * chunk_size), int(n))
-        if end < start:
-            end = start
-        out.append((start, end))
-    return out
-
-
-def _contiguous_weighted_chunk_slices(
-    n: int, weights: Sequence[int]
-) -> List[Tuple[int, int]]:
-    """Deterministically slice `range(n)` into weighted contiguous chunks.
-
-    `weights[i]` expresses the relative capacity of chunk i.
-
-    Contract:
-    - preserves order (contiguous slices)
-    - stable across runs given the same `n` and `weights`
-    - sums to exactly `n`
-
-    Returns a list of (start, end) index pairs of length `len(weights)`.
-    """
-    if n < 0:
-        raise ValueError("n must be >= 0")
-    if not isinstance(weights, (list, tuple)) or not weights:
-        raise ValueError("weights must be a non-empty list")
-
-    ws: List[int] = []
-    for i, w_raw in enumerate(weights):
-        try:
-            w = int(w_raw)
-        except (TypeError, ValueError) as exc:
-            raise ValueError(f"weights[{int(i)}] must be an int") from exc
-        if w < 0:
-            raise ValueError(f"weights[{int(i)}] must be >= 0")
-        ws.append(int(w))
-
-    # Degenerate case: all weights are 0. Fall back to uniform chunking.
-    total = int(sum(ws))
-    if total <= 0:
-        return _contiguous_chunk_slices(int(n), int(len(ws)))
-
-    if n == 0:
-        return [(0, 0) for _ in range(int(len(ws)))]
-
-    # Base allocation via floor, then distribute the remainder by largest fractional part.
-    base_counts: List[int] = [int((int(n) * int(w)) // total) for w in ws]
-    remainder = int(n) - int(sum(base_counts))
-    if remainder < 0:
-        remainder = 0
-
-    # Fractional parts are (n*w % total). Larger means closer to receiving an extra item.
-    frac_rank: List[Tuple[int, int]] = [
-        (int((int(n) * int(w)) % total), int(i)) for i, w in enumerate(ws)
-    ]
-    frac_rank.sort(key=lambda x: (-int(x[0]), int(x[1])))
-    for k in range(int(remainder)):
-        _frac, idx = frac_rank[int(k % len(frac_rank))]
-        base_counts[int(idx)] += 1
-
-    # Convert counts to contiguous slices.
-    out: List[Tuple[int, int]] = []
-    start = 0
-    for c in base_counts:
-        end = int(start + int(c))
-        out.append((int(start), int(end)))
-        start = end
-
-    # Strict sanity check (should always hold).
-    if out and int(out[-1][1]) != int(n):
-        raise RuntimeError(
-            "weighted chunking produced invalid slices: "
-            f"n={int(n)} weights={ws} slices={out}"
-        )
-
-    return out
-
-
-def _per_server_rank_request_caps(
-    *,
-    per_rank_chunk_size: int,
-    server_world_sizes: Sequence[int],
-    learner_world_size: int,
-    learner_rank: int,
-) -> List[int]:
-    """Compute strict per-server request caps for one learner rank.
-
-    We project one optimizer-step "global budget" onto learner ranks and servers via
-    contiguous slices so each rank gets exactly `per_rank_chunk_size` requests while
-    preserving deterministic server weighting.
-
-    Let:
-      - `W = learner_world_size`
-      - `r = learner_rank`
-      - `C = per_rank_chunk_size`
-      - `global_budget = W * C`
-
-    We first split `[0, global_budget)` into server-weighted contiguous slices using
-    `server_world_sizes`, then take the overlap with this rank's interval
-    `[r*C, (r+1)*C)`.
-
-    Properties:
-      - per-rank total equals exactly `C`
-      - server totals across ranks equal the weighted global split
-      - deterministic given `(C, server_world_sizes, W, r)`
-    """
-    chunk = int(max(0, int(per_rank_chunk_size)))
-    world = int(max(1, int(learner_world_size)))
-    rank = int(max(0, int(learner_rank)))
-
-    if world > 0:
-        rank = min(rank, world - 1)
-
-    ws = [int(max(1, int(x))) for x in server_world_sizes]
-    if not ws:
-        return []
-    if chunk == 0:
-        return [0 for _ in ws]
-
-    global_budget = int(world * chunk)
-    server_slices = _contiguous_weighted_chunk_slices(int(global_budget), ws)
-
-    rank_start = int(rank * chunk)
-    rank_end = int(rank_start + chunk)
-
-    out: List[int] = []
-    for start, end in server_slices:
-        overlap = max(0, min(int(rank_end), int(end)) - max(int(rank_start), int(start)))
-        out.append(int(overlap))
-
-    if int(sum(out)) != int(chunk):
-        raise RuntimeError(
-            "invalid per-server rank cap allocation: "
-            f"chunk={int(chunk)} world={int(world)} rank={int(rank)} "
-            f"server_world_sizes={ws} caps={out}"
-        )
-
-    return out
-
-
-def _allocate_weighted_counts_with_caps(n: int, caps: Sequence[int]) -> List[int]:
-    """Allocate `n` contiguous requests across servers with strict per-server caps."""
-    n_i = int(n)
-    if n_i < 0:
-        raise ValueError("n must be >= 0")
-    caps_i: List[int] = []
-    for idx, raw in enumerate(caps):
-        try:
-            c = int(raw)
-        except (TypeError, ValueError) as exc:
-            raise ValueError(f"caps[{int(idx)}] must be an int") from exc
-        if c < 0:
-            raise ValueError(f"caps[{int(idx)}] must be >= 0")
-        caps_i.append(int(c))
-
-    total_cap = int(sum(caps_i))
-    if n_i > total_cap:
-        raise ValueError(
-            "requested batch exceeds strict per-server cap budget: "
-            f"n={n_i} total_cap={total_cap} caps={caps_i}"
-        )
-    if n_i == 0 or total_cap == 0:
-        return [0 for _ in caps_i]
-
-    pos: List[Tuple[int, int]] = [
-        (int(i), int(c)) for i, c in enumerate(caps_i) if int(c) > 0
-    ]
-    if not pos:
-        return [0 for _ in caps_i]
-
-    pos_idx = [int(i) for i, _c in pos]
-    pos_caps = [int(c) for _i, c in pos]
-
-    chunks = _contiguous_weighted_chunk_slices(int(n_i), pos_caps)
-    out = [0 for _ in caps_i]
-    for local_i, (start, end) in enumerate(chunks):
-        idx = int(pos_idx[local_i])
-        cnt = int(end - start)
-        if cnt < 0 or cnt > int(caps_i[idx]):
-            raise RuntimeError(
-                "invalid weighted capped allocation: "
-                f"idx={idx} cnt={cnt} cap={caps_i[idx]} n={n_i} caps={caps_i}"
-            )
-        out[idx] = int(cnt)
-
-    if int(sum(out)) != int(n_i):
-        raise RuntimeError(
-            "invalid weighted capped allocation total: "
-            f"sum={int(sum(out))} n={int(n_i)} caps={caps_i}"
-        )
-    return out
-
-
-def _strip_trailing_assistant_turns_for_rollout(messages: Any) -> List[Any]:
-    """Build a prompt-only message list for rollout generation.
-
-    Many training datasets include a teacher-forced assistant answer inside
-    `sample["messages"]`. For rollouts (on-policy decoding), we must generate from
-    the prompt, which should end with a user turn. This helper keeps all messages
-    up to the last user turn and drops any trailing assistant turns.
-
-    This is intentionally conservative: it preserves any earlier assistant turns
-    that may be part of the conversational context.
-    """
-
-    if not isinstance(messages, list):
-        return list(messages) if messages is not None else []
-
-    last_user_idx: int | None = None
-    for i in range(len(messages) - 1, -1, -1):
-        m = messages[i]
-        if isinstance(m, dict) and m.get("role") == "user":
-            last_user_idx = int(i)
-            break
-
-    if last_user_idx is None:
-        # Best-effort: drop assistant messages entirely (rare in our datasets).
-        trimmed: List[Any] = []
-        for m in messages:
-            if isinstance(m, dict) and m.get("role") == "assistant":
-                continue
-            trimmed.append(m)
-        return trimmed if trimmed else list(messages)
-
-    return list(messages[: last_user_idx + 1])
-
-
-def _ensure_system_prompt_message(messages: Any, system_prompt: str) -> List[Any]:
-    """Prepend a system prompt message when absent.
-
-    HF template.encode() injects the resolved template/system prompt internally.
-    In vLLM backends (colocate/server), we send raw OpenAI-style messages to
-    ms-swift/vLLM, so we must include the system instruction explicitly to keep
-    output formatting stable (e.g., top-level {"objects": [...]} CoordJSON).
-
-    NOTE: ms-swift's rollout server expects the system message `content` to be a
-    plain string (OpenAI-style), not the multimodal `[{'type':'text',...}]` list.
-    """
-
-    if not system_prompt:
-        return list(messages) if isinstance(messages, list) else []
-
-    if not isinstance(messages, list):
-        messages_list: List[Any] = []
-    else:
-        messages_list = list(messages)
-
-    for m in messages_list:
-        if isinstance(m, dict) and m.get("role") == "system":
-            return messages_list
-
-    sys_msg = {"role": "system", "content": str(system_prompt)}
-    return [sys_msg, *messages_list]
-
-
-def _force_last_user_prompt_text(messages: Any, user_prompt: str) -> List[Any]:
-    """Replace the last user-turn text while preserving multimodal image items."""
-
-    if not isinstance(messages, list):
-        return [] if messages is None else [messages]
-    if not isinstance(user_prompt, str) or not user_prompt:
-        return list(messages)
-
-    out = deepcopy(list(messages))
-
-    last_user_idx: int | None = None
-    for i in range(len(out) - 1, -1, -1):
-        msg = out[i]
-        if isinstance(msg, Mapping) and str(msg.get("role", "")).lower() == "user":
-            last_user_idx = int(i)
-            break
-    if last_user_idx is None:
-        return out
-
-    msg_any = out[last_user_idx]
-    if not isinstance(msg_any, MutableMapping):
-        return out
-
-    content = msg_any.get("content")
-    if isinstance(content, str):
-        msg_any["content"] = str(user_prompt)
-        return out
-
-    if isinstance(content, list):
-        replaced = False
-        new_content: List[Any] = []
-        for item in content:
-            if isinstance(item, Mapping):
-                is_text_item = str(item.get("type", "")).lower() == "text" or (
-                    "text" in item
-                )
-                if is_text_item:
-                    if replaced:
-                        # Keep a single text segment to avoid duplicated prompt text.
-                        continue
-                    new_item = dict(item)
-                    new_item["type"] = "text"
-                    new_item["text"] = str(user_prompt)
-                    new_content.append(new_item)
-                    replaced = True
-                    continue
-            new_content.append(item)
-        if not replaced:
-            new_content.append({"type": "text", "text": str(user_prompt)})
-        msg_any["content"] = new_content
-        return out
-
-    # Fallback for unexpected message content types.
-    msg_any["content"] = str(user_prompt)
-    return out
-
-
-def _build_eval_detection_record(
-    *,
-    sample: Mapping[str, Any],
-    gts: Sequence[GTObject],
-    preds: Sequence[GTObject],
-    pred_meta: Sequence[ParsedPredObject],
-    object_field_order: Literal["desc_first", "geometry_first"],
-    record_index: int,
-    pred_score_source: str,
-    pred_score_version: int,
-    score_mode: str,
-    constant_score: float,
-    raw_text: str | None,
-    error_codes: Sequence[str],
-    error_entries: Sequence[Mapping[str, Any]],
-) -> Dict[str, Any]:
-    out = _build_eval_detection_record_confidence_postop_input(
-        sample=sample,
-        gts=gts,
-        preds=preds,
-        pred_meta=pred_meta,
-        object_field_order=object_field_order,
-        record_index=record_index,
-        raw_text=raw_text,
-        error_codes=error_codes,
-        error_entries=error_entries,
-    )
-
-    score_mode_norm = str(score_mode or "constant").strip().lower()
-    score_const = float(constant_score)
-    pred_payload: List[Dict[str, Any]] = []
-    for payload in list(out.get("pred", [])):
-        payload = dict(payload)
-        if score_mode_norm == "constant":
-            payload["score"] = float(score_const)
-        pred_payload.append(payload)
-    out["pred"] = pred_payload
-    out["pred_score_source"] = str(pred_score_source)
-    out["pred_score_version"] = int(pred_score_version)
-    return out
-
-
-def _build_eval_detection_record_confidence_postop_input(
-    *,
-    sample: Mapping[str, Any],
-    gts: Sequence[GTObject],
-    preds: Sequence[GTObject],
-    pred_meta: Sequence[ParsedPredObject],
-    object_field_order: Literal["desc_first", "geometry_first"],
-    record_index: int,
-    raw_text: str | None,
-    error_codes: Sequence[str],
-    error_entries: Sequence[Mapping[str, Any]],
-) -> Dict[str, Any]:
-    """Build an eval-step record compatible with confidence_postop and offline infer.
-
-    The confidence scorer expects:
-      - record["pred"][*] in canonical {type, points, desc} pixel-space shape
-      - record["raw_output_json"] to preserve the original coord bins (norm1000)
-        so we can recover the exact coordinate token sequence.
-
-    This mirrors the offline `gt_vs_pred.jsonl` contract closely enough for
-    in-eval scoring and persisted eval-step artifacts.
-    """
-
-    from src.common.geometry import denorm_and_clamp
-
-    images_raw = sample.get("images")
-    images: List[str] = []
-    if isinstance(images_raw, list):
-        for v in images_raw:
-            if isinstance(v, str) and v.strip():
-                images = [str(v)]
-                break
-    if not images:
-        image_one = sample.get("image")
-        if isinstance(image_one, str) and image_one.strip():
-            images = [str(image_one)]
-    if not images:
-        images = [f"image_{int(record_index)}.jpg"]
-
-    width = sample.get("width")
-    height = sample.get("height")
-    try:
-        width = int(width) if width is not None else None
-    except (TypeError, ValueError):
-        width = None
-    try:
-        height = int(height) if height is not None else None
-    except (TypeError, ValueError):
-        height = None
-    if width is None:
-        width = 1000
-    if height is None:
-        height = 1000
-
-    def _normalize_geometry_key(value: Any) -> str:
-        key = str(value or "").strip().lower()
-        if key == "bbox":
-            return "bbox_2d"
-        return key
-
-    gt_payload: List[Dict[str, Any]] = []
-    for obj in gts:
-        gtype = _normalize_geometry_key(getattr(obj, "geom_type", ""))
-        pts_px = denorm_and_clamp(
-            [int(x) for x in obj.points_norm1000],
-            float(width),
-            float(height),
-            coord_mode="norm1000",
-        )
-        gt_payload.append(
-            {
-                "type": gtype,
-                "points": pts_px,
-                "desc": str(getattr(obj, "desc", "") or "").strip(),
-                "score": 1.0,
-            }
-        )
-
-    pred_payload: List[Dict[str, Any]] = []
-    raw_objects: List[Dict[str, Any]] = []
-    for idx, pobj in enumerate(preds):
-        desc = ""
-        if idx < len(pred_meta):
-            desc = str(getattr(pred_meta[idx], "desc", "") or "").strip()
-        gtype = _normalize_geometry_key(getattr(pobj, "geom_type", ""))
-        pts_norm = [int(x) for x in pobj.points_norm1000]
-        pts_px = denorm_and_clamp(
-            pts_norm,
-            float(width),
-            float(height),
-            coord_mode="norm1000",
-        )
-        pred_payload.append(
-            {
-                "type": gtype,
-                "points": pts_px,
-                "desc": desc,
-            }
-        )
-        # NOTE: raw_output_json must preserve coord bins (0..999) for token
-        # alignment, not the pixel-space points.
-        try:
-            raw_objects.append(
-                build_object_payload(
-                    desc=desc,
-                    geometry_key=gtype,
-                    geometry_value=pts_norm,
-                    object_field_order=object_field_order,
-                )
-            )
-        except Exception:
-            raw_objects.append({"type": gtype, "points": pts_norm, "desc": desc})
-
-    raw_text_value = str(raw_text or "")
-    raw_output_json = load_prediction_dict(raw_text_value)
-    if raw_output_json is None:
-        raw_output_json = {"objects": raw_objects}
-
-    errors_payload = [str(code) for code in list(error_codes)]
-    error_entries_payload: List[Dict[str, Any]] = []
-    for entry in error_entries:
-        if not isinstance(entry, Mapping):
-            continue
-        error_entries_payload.append(
-            {
-                "code": str(entry.get("code", "") or ""),
-                "message": str(entry.get("message", "") or ""),
-                "stage": str(entry.get("stage", "") or ""),
-            }
-        )
-
-    image_value = images[0] if images else f"image_{int(record_index)}.jpg"
-    out: Dict[str, Any] = {
-        "index": int(record_index),
-        "image": image_value,
-        "mode": "text",
-        "coord_mode": "pixel",
-        "images": images,
-        "gt": gt_payload,
-        "pred": pred_payload,
-        "width": int(width),
-        "height": int(height),
-        "raw_output_json": raw_output_json,
-        "raw_special_tokens": extract_special_tokens(
-            raw_text_value,
-            preserve_duplicates=True,
-        ),
-        "raw_ends_with_im_end": raw_text_value.endswith(_IM_END),
-        "errors": errors_payload,
-        "error_entries": error_entries_payload,
-    }
-    if sample.get("image_id") is not None:
-        out["image_id"] = sample.get("image_id")
-    metadata = sample.get("metadata")
-    if isinstance(metadata, Mapping):
-        out["metadata"] = dict(metadata)
-    return out
-
-
-def _coerce_optional_float_list(value: Any, *, path: str) -> Optional[List[float]]:
-    if value is None:
-        return None
-    if not isinstance(value, (list, tuple)):
-        raise TypeError(f"{path} must be a list[float] when provided")
-    out: List[float] = []
-    for idx, raw in enumerate(value):
-        try:
-            out.append(float(raw))
-        except (TypeError, ValueError) as exc:
-            raise TypeError(f"{path}[{int(idx)}] must be float-compatible") from exc
-    return out
-
-
-def _compute_eval_detection_coco_metrics(
-    *,
-    pred_records: Sequence[Mapping[str, Any]],
-    eval_cfg: Mapping[str, Any],
-) -> Tuple[Dict[str, float], Dict[str, int]]:
-    from src.eval.detection import EvalOptions, compute_coco_metrics_from_records
-
-    use_segm = bool(eval_cfg.get("use_segm", False))
-    strict_parse = bool(eval_cfg.get("strict_parse", True))
-    semantic_model = str(
-        eval_cfg.get("semantic_model", "sentence-transformers/all-MiniLM-L6-v2")
-        or "sentence-transformers/all-MiniLM-L6-v2"
-    ).strip()
-    semantic_threshold = float(eval_cfg.get("semantic_threshold", 0.6) or 0.6)
-    semantic_device = str(eval_cfg.get("semantic_device", "auto") or "auto").strip()
-    semantic_batch_size = int(eval_cfg.get("semantic_batch_size", 64) or 64)
-    metrics_mode = str(eval_cfg.get("metrics", "coco") or "coco").strip().lower()
-    lvis_max_dets = int(eval_cfg.get("lvis_max_dets", 300) or 300)
-    iou_thrs = _coerce_optional_float_list(
-        eval_cfg.get("iou_thrs", None),
-        path="rollout_matching.eval_detection.iou_thrs",
-    )
-    f1ish_iou_thrs = _coerce_optional_float_list(
-        eval_cfg.get("f1ish_iou_thrs", [0.3, 0.5]),
-        path="rollout_matching.eval_detection.f1ish_iou_thrs",
-    )
-    if f1ish_iou_thrs is None:
-        f1ish_iou_thrs = [0.3, 0.5]
-    f1ish_pred_scope = str(
-        eval_cfg.get("f1ish_pred_scope", "annotated") or "annotated"
-    ).strip()
-
-    with tempfile.TemporaryDirectory(prefix="coordexp_evalstep_coco_") as tmp_dir:
-        options = EvalOptions(
-            metrics=str(metrics_mode),
-            strict_parse=bool(strict_parse),
-            use_segm=bool(use_segm),
-            iou_thrs=iou_thrs,
-            f1ish_iou_thrs=[float(x) for x in f1ish_iou_thrs],
-            f1ish_pred_scope=f1ish_pred_scope,
-            output_dir=Path(tmp_dir),
-            overlay=False,
-            overlay_k=0,
-            num_workers=0,
-            semantic_model=semantic_model,
-            semantic_threshold=float(semantic_threshold),
-            semantic_device=semantic_device,
-            semantic_batch_size=int(semantic_batch_size),
-            lvis_max_dets=int(lvis_max_dets),
-        )
-
-        metrics, counters = compute_coco_metrics_from_records(
-            pred_records=[dict(r) for r in pred_records],
-            options=options,
-        )
-        return metrics, counters
-
-
-_IM_END = "<|im_end|>"
 
 
 def _sinkhorn_barycentric_targets(
@@ -802,74 +200,6 @@ def _sinkhorn_barycentric_targets(
     w = t / row_sum
     g_hat = w @ g
     return g_hat.detach().cpu().numpy()
-
-
-def _extract_gt_objects(sample: Mapping[str, Any]) -> List[GTObject]:
-    payload = sample.get("assistant_payload")
-    if not isinstance(payload, Mapping):
-        raise ValueError("rollout-matching requires assistant_payload in each sample")
-    objects_raw = payload.get("objects")
-    if not isinstance(objects_raw, list):
-        raise ValueError("assistant_payload must contain top-level 'objects' list")
-
-    objs: List[GTObject] = []
-    for idx, entry in enumerate(objects_raw):
-        if not isinstance(entry, Mapping):
-            raise ValueError(f"assistant_payload.objects[{int(idx)}] must be a mapping")
-        desc = entry.get("desc")
-        if not isinstance(desc, str) or not desc.strip():
-            raise ValueError(
-                f"assistant_payload.objects[{int(idx)}].desc must be a non-empty string"
-            )
-        geom_keys = [
-            k for k in ("bbox_2d", "poly") if k in entry and entry[k] is not None
-        ]
-        if len(geom_keys) != 1:
-            raise ValueError(
-                f"assistant_payload.objects[{int(idx)}] must contain exactly one geometry key (bbox_2d|poly)"
-            )
-        geom_key = geom_keys[0]
-        raw_pts = flatten_points(entry.get(geom_key))
-        if raw_pts is None or len(raw_pts) % 2 != 0:
-            raise ValueError(
-                f"assistant_payload.objects[{int(idx)}].{geom_key} must be a flat even-length sequence"
-            )
-        pts: List[int] = []
-        ok = True
-        for v in raw_pts:
-            if isinstance(v, str) and v.startswith("<|coord_"):
-                try:
-                    pts.append(int(token_to_int(v)))
-                except (TypeError, ValueError):
-                    ok = False
-                    break
-            else:
-                vi = _coerce_int(v)
-                if vi is None:
-                    ok = False
-                    break
-                pts.append(int(vi))
-        if not ok:
-            raise ValueError(
-                f"assistant_payload.objects[{int(idx)}].{geom_key} contains invalid coordinate values"
-            )
-        if geom_key == "bbox_2d" and len(pts) != 4:
-            raise ValueError(
-                f"assistant_payload.objects[{int(idx)}].bbox_2d must contain exactly 4 coordinates"
-            )
-        if geom_key == "poly" and (len(pts) < 6 or len(pts) % 2 != 0):
-            raise ValueError(
-                f"assistant_payload.objects[{int(idx)}].poly must contain >=6 coordinates and even arity"
-            )
-        objs.append(
-            GTObject(
-                index=int(idx),
-                geom_type=geom_key,
-                points_norm1000=pts,
-                desc=desc.strip(),
-            )
-        )
-    return objs
 
 
 def _build_labels_and_coord_targets_for_sample(
@@ -1186,35 +516,16 @@ class Stage2RolloutRuntime(Seq2SeqTrainer):
         key_path: str,
         allow_none: bool,
     ) -> Optional[Literal["hf", "vllm"]]:
-        if raw is None:
-            if allow_none:
-                return None
-            raise ValueError(f"{key_path} must be one of {{hf,vllm}}")
-        value = str(raw).strip().lower()
-        if allow_none and value in {"", "null", "none"}:
-            return None
-        if value not in {"hf", "vllm"}:
-            allowed = "{null,hf,vllm}" if allow_none else "{hf,vllm}"
-            raise ValueError(f"{key_path} must be one of {allowed}, got {raw!r}")
-        return value  # type: ignore[return-value]
+        return normalize_rollout_backend_value(
+            raw,
+            key_path=key_path,
+            allow_none=allow_none,
+        )
 
     def _effective_rollout_backend(
         self, *, context: Literal["train", "eval"] = "train"
     ) -> Literal["hf", "vllm"]:
-        train_backend = self._normalize_rollout_backend_value(
-            self._cfg("rollout_backend", "hf"),
-            key_path="rollout_matching.rollout_backend",
-            allow_none=False,
-        )
-        assert train_backend is not None
-
-        eval_backend = self._normalize_rollout_backend_value(
-            self._cfg("eval_rollout_backend", "vllm"),
-            key_path="rollout_matching.eval_rollout_backend",
-            allow_none=False,
-        )
-        assert eval_backend is not None
-        return train_backend if context == "train" else eval_backend
+        return effective_rollout_backend_from_owner(self, context=context)
 
     def _object_field_order(self) -> Literal["desc_first", "geometry_first"]:
         raw = getattr(self, "object_field_order", None)
@@ -1565,413 +876,6 @@ class Stage2RolloutRuntime(Seq2SeqTrainer):
                 raise TypeError(
                     "rollout_matching.eval_detection.pred_score_version must be int-compatible"
                 ) from exc
-
-    def _decoding_cfg(self) -> Mapping[str, Any]:
-        # `rollout_matching_cfg` is injected in src/sft.py. Use a nested dict for decoding.
-        raw = self._cfg("decoding", {})
-        if raw is None:
-            return {}
-        if not isinstance(raw, Mapping):
-            raise TypeError(
-                "rollout_matching.decoding must be a mapping when provided"
-            )
-        return raw
-
-    def _decoding_params(self) -> Tuple[float, float, int]:
-        dec = self._decoding_cfg()
-
-        temperature_raw = dec.get("temperature", 0.0)
-        try:
-            temperature = float(temperature_raw or 0.0)
-        except (TypeError, ValueError) as exc:
-            raise TypeError(
-                "rollout_matching.decoding.temperature must be a float"
-            ) from exc
-        if temperature < 0.0:
-            raise ValueError(
-                "rollout_matching.decoding.temperature must be >= 0"
-            )
-
-        top_p_raw = dec.get("top_p", 1.0)
-        try:
-            top_p = float(top_p_raw if top_p_raw is not None else 1.0)
-        except (TypeError, ValueError) as exc:
-            raise TypeError(
-                "rollout_matching.decoding.top_p must be a float"
-            ) from exc
-        if not (0.0 < top_p <= 1.0):
-            raise ValueError(
-                "rollout_matching.decoding.top_p must be in (0, 1]"
-            )
-
-        top_k_raw = dec.get("top_k", -1)
-        try:
-            top_k = int(top_k_raw)
-        except (TypeError, ValueError) as exc:
-            raise TypeError(
-                "rollout_matching.decoding.top_k must be an int"
-            ) from exc
-        if top_k != -1 and top_k < 1:
-            raise ValueError(
-                "rollout_matching.decoding.top_k must be -1 (disabled) or >= 1"
-            )
-
-        return float(temperature), float(top_p), int(top_k)
-
-    def _default_rollout_decode_request(self) -> _RolloutDecodeRequest:
-        decode_mode = str(self._cfg("decode_mode", "greedy") or "greedy").strip().lower()
-        if decode_mode not in {"greedy", "beam", "sampling"}:
-            raise ValueError(
-                "rollout_matching.decode_mode must be one of {'greedy', 'beam', 'sampling'}"
-            )
-
-        max_new_tokens = int(self._cfg("max_new_tokens", 512))
-        num_beams = int(self._cfg("num_beams", 1))
-        temperature, top_p, top_k = self._decoding_params()
-        repetition_penalty = float(self._cfg("repetition_penalty", 1.0) or 1.0)
-        if repetition_penalty <= 0:
-            raise ValueError("rollout_matching.repetition_penalty must be > 0")
-
-        return _RolloutDecodeRequest(
-            decode_mode=str(decode_mode),
-            temperature=float(temperature),
-            top_p=float(top_p),
-            top_k=int(top_k),
-            repetition_penalty=float(repetition_penalty),
-            max_new_tokens=int(max_new_tokens),
-            num_beams=max(1, int(num_beams)),
-        )
-
-    def _resolve_rollout_decode_request(
-        self,
-        *,
-        decode_override: Optional[Mapping[str, Any]] = None,
-    ) -> _RolloutDecodeRequest:
-        base = self._default_rollout_decode_request()
-        if decode_override is None:
-            return base
-        if not isinstance(decode_override, Mapping):
-            raise TypeError("rollout decode override must be a mapping when provided")
-
-        allowed = {"decode_mode", "temperature", "top_p", "top_k"}
-        unknown = [
-            str(k)
-            for k in sorted(decode_override.keys(), key=lambda item: str(item))
-            if str(k) not in allowed
-        ]
-        if unknown:
-            raise ValueError(
-                "Unknown rollout decode override keys: "
-                f"{[str(k) for k in unknown]}"
-            )
-
-        decode_mode_raw = decode_override.get("decode_mode", base.decode_mode)
-        decode_mode = str(
-            base.decode_mode if decode_mode_raw is None else decode_mode_raw
-        ).strip().lower()
-        if decode_mode not in {"greedy", "beam", "sampling"}:
-            raise ValueError(
-                "rollout decode override.decode_mode must be one of {'greedy', 'beam', 'sampling'}"
-            )
-
-        temperature_raw = decode_override.get("temperature", base.temperature)
-        try:
-            temperature = float(
-                base.temperature if temperature_raw is None else temperature_raw
-            )
-        except (TypeError, ValueError) as exc:
-            raise TypeError(
-                "rollout decode override.temperature must be a float"
-            ) from exc
-        if temperature < 0.0:
-            raise ValueError(
-                "rollout decode override.temperature must be >= 0"
-            )
-
-        top_p_raw = decode_override.get("top_p", base.top_p)
-        try:
-            top_p = float(base.top_p if top_p_raw is None else top_p_raw)
-        except (TypeError, ValueError) as exc:
-            raise TypeError("rollout decode override.top_p must be a float") from exc
-        if not (0.0 < top_p <= 1.0):
-            raise ValueError("rollout decode override.top_p must be in (0, 1]")
-
-        top_k_raw = decode_override.get("top_k", base.top_k)
-        try:
-            top_k = int(base.top_k if top_k_raw is None else top_k_raw)
-        except (TypeError, ValueError) as exc:
-            raise TypeError("rollout decode override.top_k must be an int") from exc
-        if top_k != -1 and top_k < 1:
-            raise ValueError(
-                "rollout decode override.top_k must be -1 (disabled) or >= 1"
-            )
-
-        return _RolloutDecodeRequest(
-            decode_mode=str(decode_mode),
-            temperature=float(temperature),
-            top_p=float(top_p),
-            top_k=int(top_k),
-            repetition_penalty=float(base.repetition_penalty),
-            max_new_tokens=int(base.max_new_tokens),
-            num_beams=int(base.num_beams),
-        )
-
-    @staticmethod
-    def _apply_rollout_decoding_to_generation_config(
-        *,
-        gen_cfg: Any,
-        temperature: float,
-        top_p: float,
-        top_k: int,
-        repetition_penalty: float,
-    ) -> None:
-        do_sample = bool(float(temperature) > 0.0)
-        gen_cfg.do_sample = do_sample
-        gen_cfg.temperature = max(1e-4, float(temperature)) if do_sample else 1.0
-        gen_cfg.top_p = float(top_p) if do_sample else 1.0
-        gen_cfg.top_k = int(top_k) if (do_sample and int(top_k) != -1) else 0
-        gen_cfg.repetition_penalty = float(repetition_penalty)
-        gen_cfg.use_cache = True
-
-    @staticmethod
-    def _rollout_vllm_request_config_kwargs(
-        *,
-        max_tokens: int,
-        temperature: float,
-        top_p: float,
-        top_k: int,
-        repetition_penalty: float,
-    ) -> Dict[str, Any]:
-        return {
-            "n": 1,
-            "max_tokens": int(max_tokens),
-            "temperature": float(temperature),
-            "top_p": float(top_p),
-            "top_k": int(top_k),
-            "repetition_penalty": float(repetition_penalty),
-            "stop": [_IM_END],
-            "return_details": True,
-        }
-
-
-    @staticmethod
-    def _parse_vllm_server_output(raw: Any) -> Tuple[List[int], str, List[int]]:
-        """Parse one ms-swift /infer/ response item.
-
-        Contract: server-mode rollouts require RequestConfig(return_details=True), so
-        responses must include:
-        - top-level prompt_token_ids
-        - choices[0].token_ids
-        """
-
-        if isinstance(raw, dict):
-            resp = raw.get("response")
-            if isinstance(resp, dict):
-                raw = resp
-
-        if not isinstance(raw, dict):
-            raise RuntimeError("vLLM server returned a non-dict output")
-        if raw.get("object") == "error":
-            raise RuntimeError(str(raw.get("message") or raw))
-
-        prompt_ids_raw = raw.get("prompt_token_ids")
-        if not isinstance(prompt_ids_raw, list) or not prompt_ids_raw:
-            raise RuntimeError(
-                "vLLM server response missing prompt_token_ids; ensure request_config.return_details=true"
-            )
-        prompt_ids = [int(t) for t in prompt_ids_raw]
-
-        choices = raw.get("choices")
-        if not isinstance(choices, list) or not choices:
-            raise RuntimeError("vLLM server response missing choices")
-        ch0 = choices[0]
-        if not isinstance(ch0, dict):
-            raise RuntimeError("vLLM server response choice is not a dict")
-
-        msg = ch0.get("message")
-        if not isinstance(msg, dict):
-            msg = {}
-        text = str(msg.get("content") or "")
-
-        token_ids_raw = ch0.get("token_ids")
-        if not isinstance(token_ids_raw, list):
-            raise RuntimeError(
-                "vLLM server response missing token_ids; ensure request_config.return_details=true"
-            )
-        token_ids = [int(t) for t in token_ids_raw]
-
-        return token_ids, text, prompt_ids
-
-
-    @staticmethod
-    def _extract_swift_choice_logprobs(logprobs_raw: Any) -> Tuple[List[float], List[str]]:
-        if not isinstance(logprobs_raw, Mapping):
-            raise RuntimeError(
-                "Missing vLLM logprobs in server response; ensure request_config.logprobs=true"
-            )
-        content = logprobs_raw.get("content")
-        if not isinstance(content, list):
-            raise RuntimeError(
-                "Malformed vLLM logprobs payload: expected logprobs.content as a list"
-            )
-
-        token_logprobs: List[float] = []
-        generated_token_text: List[str] = []
-        for item in content:
-            if not isinstance(item, Mapping):
-                raise RuntimeError(
-                    "Malformed vLLM logprobs payload: expected items in logprobs.content to be mappings"
-                )
-            generated_token_text.append(str(item.get("token") or ""))
-            lp_raw = item.get("logprob")
-            try:
-                lp = float(lp_raw)
-            except (TypeError, ValueError) as exc:
-                raise RuntimeError(
-                    f"Malformed vLLM logprobs payload: non-numeric logprob={lp_raw!r}"
-                ) from exc
-            if not math.isfinite(lp):
-                raise RuntimeError(
-                    f"Malformed vLLM logprobs payload: non-finite logprob={lp_raw!r}"
-                )
-            token_logprobs.append(lp)
-
-        return token_logprobs, generated_token_text
-
-
-    @staticmethod
-    def _strip_left_padding_token_ids(
-        token_ids: Sequence[int],
-        *,
-        pad_token_id: Any | None,
-    ) -> List[int]:
-        ids = [int(t) for t in token_ids]
-        try:
-            pad = int(pad_token_id) if pad_token_id is not None else None
-        except (TypeError, ValueError):
-            pad = None
-        if pad is None:
-            return ids
-
-        i = 0
-        while i < int(len(ids)) and int(ids[i]) == int(pad):
-            i += 1
-        if i == 0:
-            return ids
-
-        trimmed = ids[i:]
-        return trimmed if trimmed else ids
-
-
-    @staticmethod
-    def _parse_vllm_server_output_traced(
-        raw: Any,
-        *,
-        tokenizer: Any | None = None,
-    ) -> Tuple[List[int], str, List[int], List[float], List[str]]:
-        """Parse one ms-swift /infer/ response item including per-token logprobs.
-
-        Requires request_config.return_details=true and request_config.logprobs=true.
-        """
-
-        if isinstance(raw, dict):
-            resp = raw.get("response")
-            if isinstance(resp, dict):
-                raw = resp
-
-        if not isinstance(raw, dict):
-            raise RuntimeError("vLLM server returned a non-dict output")
-        if raw.get("object") == "error":
-            raise RuntimeError(str(raw.get("message") or raw))
-
-        prompt_ids_raw = raw.get("prompt_token_ids")
-        if not isinstance(prompt_ids_raw, list) or not prompt_ids_raw:
-            raise RuntimeError(
-                "vLLM server response missing prompt_token_ids; ensure request_config.return_details=true"
-            )
-        prompt_ids = [int(t) for t in prompt_ids_raw]
-        prompt_ids = Stage2RolloutRuntime._strip_left_padding_token_ids(
-            prompt_ids,
-            pad_token_id=getattr(tokenizer, "pad_token_id", None)
-            if tokenizer is not None
-            else None,
-        )
-
-        choices = raw.get("choices")
-        if not isinstance(choices, list) or not choices:
-            raise RuntimeError("vLLM server response missing choices")
-        ch0 = choices[0]
-        if not isinstance(ch0, dict):
-            raise RuntimeError("vLLM server response choice is not a dict")
-
-        msg = ch0.get("message")
-        if not isinstance(msg, dict):
-            msg = {}
-        text = str(msg.get("content") or "")
-
-        token_ids_raw = ch0.get("token_ids")
-        if not isinstance(token_ids_raw, list):
-            raise RuntimeError(
-                "vLLM server response missing token_ids; ensure request_config.return_details=true"
-            )
-        token_ids = [int(t) for t in token_ids_raw]
-
-        token_logprobs, generated_token_text = (
-            Stage2RolloutRuntime._extract_swift_choice_logprobs(ch0.get("logprobs"))
-        )
-        if len(token_logprobs) != len(generated_token_text):
-            pair_len = min(len(token_logprobs), len(generated_token_text))
-            logger.warning(
-                "vLLM server returned inconsistent trace payload lengths; clamping to common length. "
-                "token_ids=%s logprobs=%s text=%s",
-                int(len(token_ids)),
-                int(len(token_logprobs)),
-                int(len(generated_token_text)),
-            )
-            token_logprobs = token_logprobs[:pair_len]
-            generated_token_text = generated_token_text[:pair_len]
-
-        if len(token_logprobs) > len(token_ids):
-            # ms-swift server mode may keep trailing stop/special-token logprobs while
-            # token_ids is already post-processed via template.skip_stop_tokens(...).
-            excess_trace = int(len(token_logprobs) - len(token_ids))
-            logger.debug(
-                "vLLM server trace longer than token_ids; dropping trailing trace entries. "
-                "token_ids=%s logprobs=%s text=%s excess=%s",
-                int(len(token_ids)),
-                int(len(token_logprobs)),
-                int(len(generated_token_text)),
-                int(excess_trace),
-            )
-            token_logprobs = token_logprobs[: len(token_ids)]
-            generated_token_text = generated_token_text[: len(token_ids)]
-        elif len(token_logprobs) < len(token_ids):
-            logger.warning(
-                "vLLM server trace shorter than token_ids; keeping shorter trace for fallback scoring. "
-                "token_ids=%s logprobs=%s text=%s",
-                int(len(token_ids)),
-                int(len(token_logprobs)),
-                int(len(generated_token_text)),
-            )
-
-        if tokenizer is not None:
-            trace_token_ids = token_ids[: len(token_logprobs)]
-            canonical_token_text = [
-                str(t)
-                for t in _decode_pieces(
-                    tokenizer=tokenizer,
-                    token_ids=trace_token_ids,
-                )
-            ]
-            generated_token_text = canonical_token_text
-
-        return token_ids, text, prompt_ids, token_logprobs, generated_token_text
-
-
-    def _build_vllm_server_infer_requests(
-        self, samples: Sequence[Mapping[str, Any]]
-    ) -> List[Dict[str, Any]]:
-        return build_vllm_server_infer_requests(samples=samples)
 
     def _monitor_dump_cfg(self) -> Mapping[str, Any]:
         return self._train_monitor_dump_cfg()
@@ -2647,337 +1551,51 @@ class Stage2RolloutRuntime(Seq2SeqTrainer):
         return self._effective_rollout_backend(context="train")
 
     def _current_rollout_context(self) -> Literal["train", "eval"]:
-        model_obj = getattr(self, "model", None)
-        if model_obj is None:
-            return "train"
-        training_attr = getattr(model_obj, "training", True)
-        return "train" if bool(training_attr) else "eval"
+        return current_rollout_context_from_owner(self)
 
     def _vllm_mode(self) -> Literal["colocate", "server"]:
-        """vLLM integration mode.
-
-        - `colocate` (default): instantiate a local vLLM engine.
-        - `server`: connect to a pre-launched ms-swift rollout server.
-        """
-        vcfg_raw = self._cfg("vllm", {}) or {}
-        if not isinstance(vcfg_raw, Mapping):
-            raise ValueError("rollout_matching.vllm must be a mapping")
-        mode = str(vcfg_raw.get("mode", "colocate") or "colocate").strip().lower()
-        if mode not in {"colocate", "server"}:
-            raise ValueError(
-                "rollout_matching.vllm.mode must be 'colocate' or 'server'; "
-                f"got {mode!r}"
-            )
-        return mode  # type: ignore[return-value]
+        return vllm_mode_from_rollout_owner(self)
 
 
     def _vllm_sleep_mode_enabled(self) -> bool:
-        """Whether colocate vLLM should use sleep-mode lifecycle hooks."""
-        vcfg_raw = self._cfg("vllm", {}) or {}
-        if not isinstance(vcfg_raw, Mapping):
-            raise ValueError("rollout_matching.vllm must be a mapping")
-        return bool(vcfg_raw.get("enable_sleep_mode", False))
+        return vllm_sleep_mode_enabled(self)
 
 
     def _vllm_reinit_each_eval(self) -> bool:
-        """Whether colocate vLLM engine should be rebuilt every eval window."""
-        vcfg_raw = self._cfg("vllm", {}) or {}
-        if not isinstance(vcfg_raw, Mapping):
-            raise ValueError("rollout_matching.vllm must be a mapping")
-        raw_reinit = vcfg_raw.get("reinit_each_eval", False)
-        if not isinstance(raw_reinit, bool):
-            raise ValueError(
-                "rollout_matching.vllm.reinit_each_eval must be a bool"
-            )
-        return bool(raw_reinit)
+        return vllm_reinit_each_eval(self)
 
     def _vllm_sleep_level(self, *, default: int = 0) -> int:
-        """Normalized sleep level for optional vLLM sleep-mode lifecycle."""
-        vcfg_raw = self._cfg("vllm", {}) or {}
-        if not isinstance(vcfg_raw, Mapping):
-            raise ValueError("rollout_matching.vllm must be a mapping")
-
-        raw_level = vcfg_raw.get("sleep_level", default)
-        try:
-            level = int(default if raw_level is None else raw_level)
-        except (TypeError, ValueError) as exc:
-            raise ValueError(
-                "rollout_matching.vllm.sleep_level must be an int >= 0"
-            ) from exc
-        if level < 0:
-            raise ValueError("rollout_matching.vllm.sleep_level must be >= 0")
-        return level
+        return vllm_sleep_level(self, default=default)
 
     def _validate_vllm_eval_lifecycle_preflight(self) -> None:
-        try:
-            from vllm import EngineArgs
-        except Exception as exc:
-            raise RuntimeError(
-                "Eval-time colocate vLLM lifecycle requires a vLLM runtime with sleep/wake "
-                "support. Failed to import vllm.EngineArgs."
-            ) from exc
-
-        try:
-            ctor_sig = inspect.signature(EngineArgs.__init__)
-        except Exception as exc:
-            raise RuntimeError(
-                "Unable to inspect vLLM EngineArgs for sleep-mode support preflight."
-            ) from exc
-        if "enable_sleep_mode" not in ctor_sig.parameters:
-            raise RuntimeError(
-                "Eval-time colocate vLLM requires EngineArgs(enable_sleep_mode=...). "
-                "Upgrade vLLM to a runtime that supports sleep mode."
-            )
-
-        llm_engine_cls = None
-        for module_name in (
-            "vllm.v1.engine.llm_engine",
-            "vllm.engine.llm_engine",
-        ):
-            try:
-                module = __import__(module_name, fromlist=["LLMEngine"])
-                candidate = getattr(module, "LLMEngine", None)
-            except (AttributeError, ImportError, ModuleNotFoundError):
-                continue
-            if candidate is not None:
-                llm_engine_cls = candidate
-                break
-        if llm_engine_cls is None:
-            raise RuntimeError(
-                "Unable to locate vLLM LLMEngine class for sleep/wake preflight checks."
-            )
-        if not callable(getattr(llm_engine_cls, "sleep", None)) or not callable(
-            getattr(llm_engine_cls, "wake_up", None)
-        ):
-            raise RuntimeError(
-                "Eval-time colocate vLLM requires LLMEngine.sleep(level=...) and "
-                "LLMEngine.wake_up() APIs."
-            )
+        validate_vllm_eval_lifecycle_preflight()
 
     @staticmethod
     def _vllm_raw_engine_or_raise(engine_wrapper: Any) -> Any:
-        raw_engine = getattr(engine_wrapper, "engine", None)
-        if raw_engine is None:
-            raise RuntimeError(
-                "vLLM engine wrapper is missing an underlying `engine` handle."
-            )
-        return raw_engine
+        return vllm_raw_engine_or_raise(engine_wrapper)
 
     @classmethod
     def _wake_vllm_engine(cls, engine_wrapper: Any) -> None:
-        raw_engine = cls._vllm_raw_engine_or_raise(engine_wrapper)
-        wake_fn = getattr(raw_engine, "wake_up", None)
-        if not callable(wake_fn):
-            raise RuntimeError(
-                "vLLM runtime does not expose LLMEngine.wake_up(); "
-                "cannot satisfy eval lifecycle requirements."
-            )
-        try:
-            wake_fn()
-        except Exception as exc:
-            raise RuntimeError("Failed to wake vLLM engine for evaluation.") from exc
+        wake_vllm_engine(engine_wrapper)
 
     @classmethod
     def _sleep_vllm_engine(cls, engine_wrapper: Any, *, level: int) -> None:
-        raw_engine = cls._vllm_raw_engine_or_raise(engine_wrapper)
-        sleep_fn = getattr(raw_engine, "sleep", None)
-        if not callable(sleep_fn):
-            raise RuntimeError(
-                "vLLM runtime does not expose LLMEngine.sleep(level=...); "
-                "cannot satisfy eval lifecycle requirements."
-            )
-        try:
-            sleep_fn(int(level))
-            return
-        except TypeError:
-            try:
-                sleep_fn(level=int(level))
-                return
-            except Exception as exc:
-                raise RuntimeError(
-                    f"Failed to sleep vLLM engine at level={int(level)}."
-                ) from exc
-        except Exception as exc:
-            raise RuntimeError(
-                f"Failed to sleep vLLM engine at level={int(level)}."
-            ) from exc
+        sleep_vllm_engine(engine_wrapper, level=int(level))
 
 
     @staticmethod
     def _best_effort_fix_vllm_nccl_allocator_atexit_order() -> None:
-        """Best-effort mitigation for vLLM CUDAPluggableAllocator teardown crashes.
-
-        vLLM registers atexit handlers for its NCCL symmetric-memory pluggable
-        allocator globals. In practice we have observed process-finalization
-        crashes with CUDAPluggableAllocator when the allocator wrapper is torn
-        down before the MemPool using it.
-
-        Re-register the handlers so MemPool cleanup runs before allocator-wrapper
-        cleanup (atexit executes handlers in LIFO order).
-
-        This is a best-effort guard: if vLLM internals change or the module is
-        unavailable, we silently skip.
-        """
-        try:
-            import atexit
-
-            from vllm.distributed.device_communicators import (
-                pynccl_allocator as _pynccl_alloc,
-            )
-
-            mem_cleanup = getattr(_pynccl_alloc, "_cleanup_nccl_mem_pool", None)
-            alloc_cleanup = getattr(
-                _pynccl_alloc, "_cleanup_nccl_allocator_wrapper", None
-            )
-            if not callable(mem_cleanup) or not callable(alloc_cleanup):
-                return
-
-            try:
-                atexit.unregister(mem_cleanup)
-            except (RuntimeError, TypeError, ValueError):
-                pass
-            try:
-                atexit.unregister(alloc_cleanup)
-            except (RuntimeError, TypeError, ValueError):
-                pass
-
-            # Register allocator cleanup first, then MemPool cleanup, so MemPool
-            # runs first at exit.
-            atexit.register(alloc_cleanup)
-            atexit.register(mem_cleanup)
-        except (
-            AttributeError,
-            ImportError,
-            ModuleNotFoundError,
-            RuntimeError,
-            TypeError,
-            ValueError,
-        ):
-            return
+        best_effort_fix_vllm_nccl_allocator_atexit_order()
 
 
     @staticmethod
     def _best_effort_patch_vllm_cumem_sleep_no_empty_cache() -> None:
-        """Best-effort mitigation for CUDAPluggableAllocator teardown aborts.
-
-        In vLLM sleep mode, `CuMemAllocator.sleep()` currently calls
-        `torch.cuda.empty_cache()`. In some multi-process runs we observe a hard
-        abort during interpreter shutdown from `CUDAPluggableAllocator::raw_delete`
-        ("Trying to free a pointer not allocated here") during MemPool teardown.
-
-        One plausible trigger is `empty_cache()` interacting poorly with
-        CUDAPluggableAllocator-backed pools, leaving bookkeeping inconsistent at
-        finalization time.
-
-        As a conservative mitigation, wrap vLLM's sleep method so that
-        `torch.cuda.empty_cache()` is a no-op for the duration of the sleep call.
-
-        This patch is best-effort, version-tolerant, and only applied once.
-        """
-        try:
-            from vllm.device_allocator import cumem as _cumem
-
-            CuMemAllocator = getattr(_cumem, "CuMemAllocator", None)
-            if CuMemAllocator is None:
-                return
-
-            orig_sleep = getattr(CuMemAllocator, "sleep", None)
-            if not callable(orig_sleep):
-                return
-
-            if bool(getattr(orig_sleep, "_coordexp_no_empty_cache", False)):
-                return
-
-            def _sleep_no_empty_cache(self, *args, **kwargs):
-                import torch
-
-                orig_empty_cache = torch.cuda.empty_cache
-                try:
-                    torch.cuda.empty_cache = lambda: None
-                    return orig_sleep(self, *args, **kwargs)
-                finally:
-                    torch.cuda.empty_cache = orig_empty_cache
-
-            setattr(_sleep_no_empty_cache, "_coordexp_no_empty_cache", True)
-            CuMemAllocator.sleep = _sleep_no_empty_cache  # type: ignore[assignment]
-        except (
-            AttributeError,
-            ImportError,
-            ModuleNotFoundError,
-            RuntimeError,
-            TypeError,
-            ValueError,
-        ):
-            return
+        best_effort_patch_vllm_cumem_sleep_no_empty_cache()
 
 
     @staticmethod
     def _best_effort_cleanup_vllm_sleep_mode_pools() -> None:
-        """Best-effort cleanup for vLLM sleep-mode pluggable allocator pools.
-
-        vLLM's sleep mode uses PyTorch MemPool(s) backed by CUDAPluggableAllocator
-        instances (e.g. CuMemAllocator pools for tags like 'weights' and
-        'kv_cache'). In some multi-process runs we've observed teardown crashes
-        during Python finalization when a lingering MemPool is destructed.
-
-        To reduce the chance of that late-finalization crash, explicitly drop
-        references to vLLM's global MemPool/allocator pools while the
-        interpreter and Torch CUDA runtime are still fully alive.
-
-        This is best-effort and intentionally conservative: it only cleans up
-        already-created instances and never instantiates new allocators.
-        """
-        try:
-            import gc
-
-            # vLLM CuMemAllocator (sleep mode pools for weights/kv_cache).
-            # IMPORTANT: do not clear `pointer_to_data` here. CUDAPluggableAllocator
-            # frees may invoke the Python free callback during MemPool teardown,
-            # which expects pointer bookkeeping to still be present.
-            try:
-                from vllm.device_allocator.cumem import CuMemAllocator
-
-                inst = getattr(CuMemAllocator, "instance", None)
-                if inst is not None:
-                    try:
-                        getattr(inst, "allocator_and_pools", {}).clear()
-                    except (AttributeError, RuntimeError, TypeError, ValueError):
-                        pass
-            except (AttributeError, ImportError, ModuleNotFoundError, RuntimeError):
-                pass
-
-            # vLLM NCCL symmetric-memory allocator (if enabled).
-            try:
-                import sys
-
-                pynccl_allocator = sys.modules.get(
-                    "vllm.distributed.device_communicators.pynccl_allocator"
-                )
-                if pynccl_allocator is None:
-                    from vllm.distributed.device_communicators import (
-                        pynccl_allocator,
-                    )
-
-                # Ensure pool is dropped before wrapper (MemPool depends on it).
-                if getattr(pynccl_allocator, "_mem_pool", None) is not None:
-                    pynccl_allocator._mem_pool = None
-                if getattr(pynccl_allocator, "_allocator_wrapper", None) is not None:
-                    pynccl_allocator._allocator_wrapper = None
-                if getattr(pynccl_allocator, "_allocator", None) is not None:
-                    pynccl_allocator._allocator = None
-            except (AttributeError, ImportError, ModuleNotFoundError, RuntimeError):
-                pass
-
-            gc.collect()
-        except (
-            AttributeError,
-            ImportError,
-            ModuleNotFoundError,
-            RuntimeError,
-            TypeError,
-            ValueError,
-        ):
-            return
+        best_effort_cleanup_vllm_sleep_mode_pools()
 
     @contextmanager
     def _maybe_eval_vllm_colocate_window(
@@ -2985,224 +1603,23 @@ class Stage2RolloutRuntime(Seq2SeqTrainer):
         *,
         rollout_backend: Literal["hf", "vllm"],
     ):
-        if rollout_backend != "vllm" or self._vllm_mode() != "colocate":
-            yield
-            return
-
-        reinit_each_eval = bool(self._vllm_reinit_each_eval())
-
-        # Strict handoff lifecycle for eval-time colocate rollout:
-        # 1) Offload training model/optimizer from GPU and drain allocator.
-        # 2) Initialize and use vLLM engine.
-        # 3) Shutdown vLLM engine and drain allocator.
-        # 4) Restore training model/optimizer to GPU.
-        with self._maybe_rollout_offload_context(
+        with maybe_eval_vllm_colocate_window(
+            owner=self,
             rollout_backend=rollout_backend,
-            force_enable=True,
-            force_offload_model=True,
-            force_offload_optimizer=True,
-            require_cuda_drain=True,
         ):
-            if reinit_each_eval:
-                self._shutdown_vllm_colocate_engine(wake_before_release=False)
-                self._cuda_memory_drain(synchronize=True)
-            _ = self._ensure_vllm_engine()
-            prev = bool(getattr(self, "_eval_vllm_window_active", False))
-            self._eval_vllm_window_active = True
-            try:
-                yield
-            finally:
-                self._eval_vllm_window_active = prev
-                if reinit_each_eval:
-                    self._shutdown_vllm_colocate_engine(wake_before_release=False)
-                    self._cuda_memory_drain(synchronize=True)
+            yield
 
     def _vllm_server_cfg(self) -> Mapping[str, Any]:
-        vcfg_raw = self._cfg("vllm", {}) or {}
-        if not isinstance(vcfg_raw, Mapping):
-            raise ValueError("rollout_matching.vllm must be a mapping")
-        scfg_raw = vcfg_raw.get("server", {}) or {}
-        if not isinstance(scfg_raw, Mapping):
-            raise ValueError(
-                "rollout_matching.vllm.server must be a mapping"
-            )
-        return scfg_raw
+        return vllm_server_cfg(self)
 
     def _vllm_server_specs(self) -> List[Dict[str, Any]]:
-        """Normalize server list config to a list of {base_url, group_port} dicts.
-
-        Spec contract (2026-02-15 strict schema):
-        - Only `rollout_matching.vllm.server.servers: [...]` is supported.
-        - Legacy paired-list form (`server.base_url` + `server.group_port`) is removed.
-        """
-
-        scfg = self._vllm_server_cfg()
-
-        if "base_url" in scfg or "group_port" in scfg:
-            # Loader-level schema already fails fast for this shape, but keep a defensive
-            # runtime error for direct-instantiation / test helpers.
-            raise ValueError(
-                "Legacy rollout server config has been removed: "
-                "rollout_matching.vllm.server.base_url/group_port. "
-                "Use rollout_matching.vllm.server.servers[] (list of {base_url, group_port})."
-            )
-
-        servers_raw = scfg.get("servers", None)
-        if not isinstance(servers_raw, list) or not servers_raw:
-            raise ValueError(
-                "rollout_matching.vllm.server.servers must be a non-empty list"
-            )
-
-        out: List[Dict[str, Any]] = []
-        for i, s in enumerate(servers_raw):
-            if not isinstance(s, Mapping):
-                raise ValueError(
-                    "rollout_matching.vllm.server.servers[%d] must be a mapping"
-                    % int(i)
-                )
-
-            base_url = s.get("base_url")
-            if not isinstance(base_url, str) or not base_url.strip():
-                raise ValueError(
-                    "rollout_matching.vllm.server.servers[%d].base_url must be a non-empty string"
-                    % int(i)
-                )
-
-            group_port_entry_raw = s.get("group_port")
-            try:
-                group_port_entry = int(group_port_entry_raw)
-            except (TypeError, ValueError) as exc:
-                raise ValueError(
-                    "rollout_matching.vllm.server.servers[%d].group_port must be an int"
-                    % int(i)
-                ) from exc
-            if group_port_entry <= 0:
-                raise ValueError(
-                    "rollout_matching.vllm.server.servers[%d].group_port must be > 0"
-                    % int(i)
-                )
-
-            out.append(
-                {
-                    "base_url": base_url.strip().rstrip("/"),
-                    "group_port": int(group_port_entry),
-                }
-            )
-
-        return out
+        return vllm_server_specs(self)
 
     def _vllm_server_timeouts(self) -> Tuple[float, Optional[float]]:
-        scfg = self._vllm_server_cfg()
-
-        timeout_raw = scfg.get("timeout_s", None)
-        if timeout_raw is None:
-            timeout_s = 240.0
-        else:
-            try:
-                timeout_s = float(timeout_raw)
-            except (TypeError, ValueError) as exc:
-                raise ValueError(
-                    "rollout_matching.vllm.server.timeout_s must be a float/int"
-                ) from exc
-        if timeout_s <= 0:
-            raise ValueError(
-                "rollout_matching.vllm.server.timeout_s must be > 0"
-            )
-
-        allow_infinite_infer_timeout = bool(
-            scfg.get("allow_infinite_infer_timeout", False)
-        )
-
-        # Infer (read) timeout for /infer/ requests:
-        # - null/unset: defaults to the finite connection timeout
-        # - <= 0: rejected unless explicit infinite timeout opt-in is enabled
-        # - > 0: enforced as (connect, read) timeout tuple downstream
-        infer_timeout_raw = scfg.get("infer_timeout_s", None)
-        if infer_timeout_raw is None:
-            infer_timeout_s: Optional[float]
-            if allow_infinite_infer_timeout:
-                infer_timeout_s = None
-            else:
-                infer_timeout_s = float(timeout_s)
-        else:
-            try:
-                infer_timeout_s = float(infer_timeout_raw)
-            except (TypeError, ValueError) as exc:
-                raise ValueError(
-                    "rollout_matching.vllm.server.infer_timeout_s must be null or a float/int"
-                ) from exc
-            if infer_timeout_s <= 0:
-                if allow_infinite_infer_timeout:
-                    infer_timeout_s = None
-                else:
-                    raise ValueError(
-                        "rollout_matching.vllm.server.infer_timeout_s must be > 0 unless "
-                        "rollout_matching.vllm.server.allow_infinite_infer_timeout=true"
-                    )
-
-        if infer_timeout_s is None and allow_infinite_infer_timeout:
-            warned = bool(
-                getattr(self, "_vllm_server_infinite_timeout_warned", False)
-            )
-            if not warned:
-                logger.warning(
-                    "vLLM server infer timeout is unbounded because "
-                    "rollout_matching.vllm.server.allow_infinite_infer_timeout=true"
-                )
-                setattr(self, "_vllm_server_infinite_timeout_warned", True)
-
-        return float(timeout_s), (
-            float(infer_timeout_s) if infer_timeout_s is not None else None
-        )
+        return vllm_server_timeouts(owner=self, logger=logger)
 
     def _vllm_server_world_sizes(self) -> List[int]:
-        """Return cached vLLM server data-parallel world sizes (one per server).
-
-        The rollout server exposes `/get_world_size/` which returns JSON with a
-        `world_size` field.
-        """
-        cached = getattr(self, "_vllm_server_cached_world_sizes", None)
-        if (
-            isinstance(cached, list)
-            and cached
-            and all(isinstance(x, int) and x > 0 for x in cached)
-        ):
-            return list(int(x) for x in cached)
-
-        servers = self._vllm_server_specs()
-        timeout_s, _infer_timeout_s = self._vllm_server_timeouts()
-
-        import json as _json
-        import urllib.request as _urllib
-
-        opener = _urllib.build_opener(_urllib.ProxyHandler({}))
-        out: List[int] = []
-        for s in servers:
-            base_url = str(s["base_url"]).rstrip("/")
-            url = f"{base_url}/get_world_size/"
-            req = _urllib.Request(url, method="GET")
-            with opener.open(req, timeout=float(timeout_s)) as resp:
-                code = int(resp.getcode())
-                body = resp.read()
-            if code != 200:
-                raise RuntimeError(
-                    f"vLLM rollout server /get_world_size/ returned HTTP {code}: {url}"
-                )
-            try:
-                data = _json.loads(body.decode("utf-8"))
-            except (TypeError, ValueError) as exc:
-                raise RuntimeError(
-                    f"vLLM rollout server /get_world_size/ returned non-JSON payload: {url}"
-                ) from exc
-            try:
-                ws = int(data.get("world_size", 1)) if isinstance(data, dict) else 1
-            except (TypeError, ValueError):
-                ws = 1
-            out.append(max(1, int(ws)))
-
-        setattr(self, "_vllm_server_cached_world_sizes", list(out))
-        logger.info("vLLM rollout server world_size(s): %s", out)
-        return list(out)
+        return vllm_server_world_sizes(owner=self, logger=logger)
 
 
     def _rollout_decode_batch_size_per_rank(
@@ -3211,115 +1628,15 @@ class Stage2RolloutRuntime(Seq2SeqTrainer):
         rollout_backend: Optional[Literal["hf", "vllm"]] = None,
         rollout_context: Literal["train", "eval"] = "train",
     ) -> int:
-        """Derived rollout request chunk size per learner rank.
-
-        Context-specific decode caps are used per rollout phase:
-        - train: `rollout_matching.rollout_decode_batch_size`
-        - eval: `rollout_matching.eval_decode_batch_size`
-
-        - HF backend and vLLM colocate mode: each learner rank decodes locally on its own
-          device(s), so the per-call batch size is exactly the effective context-specific
-          decode batch size.
-        - vLLM server mode: learner ranks concurrently issue rollout RPCs to a pool of
-          rollout GPUs (data-parallel replicas). To preserve a per-rollout-GPU cap, we
-          derive a per-rank request chunk size based on the rollout server world size
-          and learner world size.
-        """
-        context_norm = str(rollout_context).strip().lower()
-        if context_norm not in {"train", "eval"}:
-            raise ValueError(
-                "rollout_context must be one of {'train', 'eval'}"
-            )
-
-        cap = int(
-            self._decode_batch_size(
-                context=("eval" if context_norm == "eval" else "train")
-            )
+        return rollout_decode_batch_size_per_rank(
+            owner=self,
+            rollout_backend=rollout_backend,
+            rollout_context=rollout_context,
+            logger=logger,
         )
-        backend = (
-            rollout_backend
-            if rollout_backend is not None
-            else self._effective_rollout_backend(context=context_norm)
-        )
-        if backend != "vllm":
-            return max(1, int(cap))
-
-        mode = str(self._vllm_mode()).strip().lower()
-        if mode != "server":
-            return max(1, int(cap))
-
-        # vLLM server mode: derive the maximum number of requests each learner rank may
-        # issue per call so that (under DDP) total concurrent requests across ranks is
-        # bounded by `cap * rollout_world_size`.
-        server_world_sizes = self._vllm_server_world_sizes()
-        rollout_world = int(sum(int(x) for x in server_world_sizes))
-        if rollout_world <= 0:
-            rollout_world = 1
-
-        learner_world = 1
-        try:
-            import torch.distributed as dist
-
-            if dist.is_available() and dist.is_initialized():
-                learner_world = int(dist.get_world_size())
-        except (TypeError, ValueError):
-            learner_world = 1
-
-        if learner_world <= 0:
-            learner_world = 1
-
-        if int(cap) * int(rollout_world) < int(learner_world):
-            cap_key = (
-                "rollout_matching.eval_decode_batch_size"
-                if context_norm == "eval"
-                else "rollout_matching.rollout_decode_batch_size"
-            )
-            raise ValueError(
-                "rollout decode batch-size cap is infeasible for the current topology: "
-                f"context={context_norm} {cap_key}={cap} rollout_world_size={rollout_world} learner_world_size={learner_world}. "
-                "Increase rollout server DP world size, reduce learner world size, or increase the context-specific decode batch size."
-            )
-
-        per_rank = max(1, int(int(cap) * int(rollout_world) // int(learner_world)))
-
-        meta = (
-            int(cap),
-            int(learner_world),
-            tuple(int(x) for x in server_world_sizes),
-            int(per_rank),
-            str(context_norm),
-        )
-        if meta != getattr(self, "_last_logged_rollout_decode_chunk_meta", None):
-            logger.info(
-                "Rollout decode batching (vLLM server): context=%s decode_batch_size_cap=%s learner_world_size=%s "
-                "rollout_server_world_sizes=%s rollout_world_size=%s per_rank_chunk=%s total_chunk_across_ranks=%s",
-                str(context_norm),
-                int(cap),
-                int(learner_world),
-                list(int(x) for x in server_world_sizes),
-                int(rollout_world),
-                int(per_rank),
-                int(per_rank) * int(learner_world),
-            )
-            setattr(self, "_last_logged_rollout_decode_chunk_meta", meta)
-
-        return int(per_rank)
 
     def _vllm_server_sync_cfg(self) -> str:
-        vcfg_raw = self._cfg("vllm", {}) or {}
-        if not isinstance(vcfg_raw, Mapping):
-            raise ValueError("rollout_matching.vllm must be a mapping")
-        sync_raw = vcfg_raw.get("sync", {}) or {}
-        if not isinstance(sync_raw, Mapping):
-            raise ValueError("rollout_matching.vllm.sync must be a mapping")
-
-        mode = str(sync_raw.get("mode", "full") or "full").strip().lower()
-        if mode != "adapter":
-            raise ValueError(
-                "CoordExp vLLM rollouts require official adapter sync: set "
-                "rollout_matching.vllm.sync.mode=adapter."
-            )
-        return mode
+        return effective_vllm_server_sync_mode(self)
 
     @staticmethod
     def _normalize_rollout_seed_int32(seed: int) -> int:
@@ -3355,39 +1672,7 @@ class Stage2RolloutRuntime(Seq2SeqTrainer):
         *,
         context: Literal["train", "eval"] = "train",
     ) -> int:
-        context_norm = str(context).strip().lower()
-        if context_norm not in {"train", "eval"}:
-            raise ValueError(
-                "decode batch-size context must be one of {'train', 'eval'}"
-            )
-
-        if context_norm == "train":
-            raw = self._cfg("rollout_decode_batch_size", None)
-            missing_msg = (
-                "rollout_matching.rollout_decode_batch_size must be provided explicitly"
-            )
-            type_msg = "rollout_matching.rollout_decode_batch_size must be an int"
-            positive_msg = "rollout_matching.rollout_decode_batch_size must be > 0"
-        else:
-            raw = self._cfg("eval_decode_batch_size", None)
-            missing_msg = (
-                "rollout_matching.eval_decode_batch_size must be provided explicitly"
-            )
-            type_msg = "rollout_matching.eval_decode_batch_size must be an int"
-            positive_msg = "rollout_matching.eval_decode_batch_size must be > 0"
-
-        if raw is None:
-            raise ValueError(missing_msg)
-
-        try:
-            v = int(raw)
-        except (TypeError, ValueError) as exc:
-            raise ValueError(type_msg) from exc
-
-        if v <= 0:
-            raise ValueError(positive_msg)
-
-        return int(v)
+        return rollout_decode_batch_size_from_owner(self, context=context)
 
     def _packing_enabled(self) -> bool:
         return bool(self._cfg("packing_enabled", False))
@@ -3638,66 +1923,8 @@ class Stage2RolloutRuntime(Seq2SeqTrainer):
     # ------------------------ rollout + batch prep ------------------------ #
     # ---- rollout backends -------------------------------------------------
     def _ensure_vllm_engine(self) -> Any:
-        """Initialize a colocated vLLM engine (lazy)."""
-        engine = getattr(self, "_vllm_engine", None)
-        if engine is not None:
-            return engine
-
-        engine_cfg = resolve_vllm_engine_config(self)
-        vcfg = dict(engine_cfg.vcfg)
-        dist = engine_cfg.dist
-        world_size = int(engine_cfg.world_size)
-        rank = int(engine_cfg.rank)
-        tp_size = int(engine_cfg.tp_size)
-        max_model_len = int(engine_cfg.max_model_len)
-        enable_lora = bool(engine_cfg.enable_lora)
-        load_format = str(engine_cfg.load_format)
-        gpu_mem = float(engine_cfg.gpu_mem)
-        enable_prefix_caching = bool(engine_cfg.enable_prefix_caching)
-        enable_sleep_mode = bool(engine_cfg.enable_sleep_mode)
-        sleep_level = int(engine_cfg.sleep_level)
-        enforce_eager = bool(engine_cfg.enforce_eager)
-        disable_custom_all_reduce = bool(engine_cfg.disable_custom_all_reduce)
-        decode_bs_per_rank = int(engine_cfg.decode_bs_per_rank)
-        max_num_seqs = engine_cfg.max_num_seqs
-        limit_mm_per_prompt = engine_cfg.limit_mm_per_prompt
-        vllm_engine_kwargs = dict(engine_cfg.vllm_engine_kwargs)
-        dist_backend = str(engine_cfg.dist_backend)
-
-        model_dir = getattr(self.model, "model_dir", None) or getattr(
-            getattr(self.model, "model", None), "model_dir", None
-        )
-        if not model_dir:
-            raise RuntimeError(
-                "vLLM rollout backend requires a ms-swift model wrapper with `model_dir`. "
-                "Set rollout_backend: hf to disable vLLM rollouts."
-            )
-        model_info = getattr(self.model, "model_info", None)
-        torch_dtype = (
-            getattr(model_info, "torch_dtype", None) if model_info is not None else None
-        )
-
-        logger.info(
-            "Initializing vLLM rollout engine: tp=%s world_size=%s max_model_len=%s gpu_memory_utilization=%.2f "
-            "decode_batch_size_per_rank=%s max_num_seqs=%s sleep_mode=%s limit_mm_per_prompt=%s engine_kwargs=%s",
-            tp_size,
-            world_size,
-            max_model_len,
-            gpu_mem,
-            int(decode_bs_per_rank),
-            max_num_seqs,
-            bool(enable_sleep_mode),
-            limit_mm_per_prompt,
-            vllm_engine_kwargs or {},
-        )
-
-        return instantiate_vllm_engine(
-            owner=self,
-            engine_cfg=engine_cfg,
-            model_dir=str(model_dir),
-            torch_dtype=torch_dtype,
-            logger=logger,
-        )
+        """Initialize a colocated vLLM engine (lazy) through the infer backend."""
+        return ensure_vllm_engine(owner=self, logger=logger)
 
     def _sync_vllm_rollout_model_if_needed(self) -> None:
         raise RuntimeError(
@@ -4054,792 +2281,13 @@ class Stage2RolloutRuntime(Seq2SeqTrainer):
         sync_vllm_server_rollout_model_if_needed(owner=self)
 
     def _sync_vllm_server_adapter(self, client: Any) -> None:
-        from src.trainers.rollout_runtime.vllm_server import sync_vllm_server_adapter
+        from src.infer.backend_vllm_server import sync_vllm_server_adapter
 
         sync_vllm_server_adapter(
             owner=self,
             client=client,
             logger=logger,
         )
-
-    def _vllm_infer_tp_group(
-        self, infer_requests: List[Dict[str, Any]], request_config: Any
-    ) -> List[Any]:
-        """TP-group gather/slice pattern for colocate vLLM rollouts (matches ms-swift behavior)."""
-        return vllm_infer_tp_group(
-            owner=self,
-            infer_requests=infer_requests,
-            request_config=request_config,
-        )
-
-    def _enforce_hf_rollout_max_position_embeddings(
-        self, *, prompt_pad_len: int, max_new_tokens: int
-    ) -> None:
-        """Fail fast for HF rollout when prompt+generation would exceed model context.
-
-        This guard is only for the HF backend (transformers.generate). vLLM uses
-        a separate `max_model_len` contract.
-        """
-
-        cfg = getattr(getattr(self, "model", None), "config", None)
-        max_pos_raw = getattr(cfg, "max_position_embeddings", None)
-        if max_pos_raw is None:
-            return
-        try:
-            max_pos = int(max_pos_raw)
-        except (TypeError, ValueError):
-            return
-        if max_pos <= 0:
-            return
-
-        needed = int(prompt_pad_len) + int(max_new_tokens)
-        if needed <= max_pos:
-            return
-
-        raise ValueError(
-            "HF rollout would exceed model.max_position_embeddings: "
-            f"prompt_pad_len={int(prompt_pad_len)} max_new_tokens={int(max_new_tokens)} "
-            f"needed={int(needed)} max_position_embeddings={int(max_pos)}. "
-            "Reduce rollout_matching.max_new_tokens and/or ensure prompts fit within the model context."
-        )
-
-    def _build_hf_rollout_logits_processor(
-        self,
-        *,
-        tokenizer: Any,
-        prompt_pad_len: int,
-        batch_size: int,
-        trailing_processors: Optional[Sequence[Any]] = None,
-    ) -> Any:
-        processors: List[Any] = []
-        rollout_template_policy = self._eval_rollout_template_policy()
-        if rollout_template_policy.decode_policy == "compact_grammar":
-            from src.infer.compact_grammar import build_compact_grammar_logits_processor
-
-            processors.append(
-                build_compact_grammar_logits_processor(
-                    tokenizer=tokenizer,
-                    prompt_lengths=[int(prompt_pad_len)] * int(batch_size),
-                    detection_sequence_format=rollout_template_policy.template_family,
-                    force_row_start=True,
-                )
-            )
-        if trailing_processors:
-            processors.extend(trailing_processors)
-        if not processors:
-            return None
-
-        from transformers import LogitsProcessorList
-
-        return LogitsProcessorList(processors)
-
-    @torch.no_grad()
-    def _rollout_many_hf(
-        self,
-        samples: Sequence[Mapping[str, Any]],
-        *,
-        decode_override: Optional[Mapping[str, Any]] = None,
-    ) -> List[Tuple[List[int], str, str, List[int]]]:
-        """HF (transformers) rollout backend with per-rank microbatching (padded batch)."""
-        template = self.template
-        tok = template.tokenizer
-        decode_request = self._resolve_rollout_decode_request(
-            decode_override=decode_override
-        )
-        decode_mode = str(decode_request.decode_mode)
-        max_new_tokens = int(decode_request.max_new_tokens)
-        num_beams = int(decode_request.num_beams)
-        temperature = float(decode_request.temperature)
-        top_p = float(decode_request.top_p)
-        top_k = int(decode_request.top_k)
-        repetition_penalty = float(decode_request.repetition_penalty)
-
-        # Build GenerationConfig from model defaults.
-        gen_cfg = getattr(self.model, "generation_config", None)
-        if gen_cfg is None:
-            from transformers import GenerationConfig
-
-            gen_cfg = GenerationConfig()
-        gen_cfg = deepcopy(gen_cfg)
-        gen_cfg.max_new_tokens = max_new_tokens
-        self._apply_rollout_decoding_to_generation_config(
-            gen_cfg=gen_cfg,
-            temperature=temperature,
-            top_p=top_p,
-            top_k=top_k,
-            repetition_penalty=repetition_penalty,
-        )
-        if decode_mode == "beam":
-            gen_cfg.num_beams = max(1, num_beams)
-            gen_cfg.num_return_sequences = max(
-                1, int(self._cfg("num_return_sequences", gen_cfg.num_beams))
-            )
-        else:
-            gen_cfg.num_beams = 1
-            gen_cfg.num_return_sequences = 1
-        qwen_generation_ids = resolve_qwen_chat_generation_token_ids(tok)
-        gen_cfg.eos_token_id = qwen_generation_ids.eos_token_id
-        gen_cfg.pad_token_id = qwen_generation_ids.pad_token_id
-
-        out: List[Tuple[List[int], str, str, List[int]]] = []
-        mb = int(self._decode_batch_size(context=self._current_rollout_context()))
-
-        from .rollout_runtime.swift_infer_compat import import_swift_to_device
-
-        to_device = import_swift_to_device()
-
-        # Optional: offload training state during rollout generation (config-controlled).
-        with self._maybe_rollout_offload_context(rollout_backend="hf"): 
-            idx = 0
-            while idx < len(samples):
-                chunk = list(samples[idx : idx + mb])
-                idx += len(chunk)
-
-                with self._template_packing_disabled():
-                    with template.generate_context():
-                        encoded_list = [
-                            template.encode(dict(s), return_length=True) for s in chunk
-                        ]
-                        # IMPORTANT: keep generate_context active for collation so we left-pad for decoder-only
-                        # generation (prevents incorrect generation + avoids HF "right-padding detected" warning).
-                        batch = template.data_collator(encoded_list)
-
-                batch = to_device(batch, self.model.device)
-                input_ids_t = batch["input_ids"]
-                attn = batch.get("attention_mask")
-                if attn is None:
-                    pad_id = int(getattr(tok, "pad_token_id", 0) or 0)
-                    attn = (input_ids_t != pad_id).to(dtype=torch.long)
-
-                # Prompt token ids for strict sanity checks (strip padding using attention_mask).
-                prompt_ids_list: List[List[int]] = []
-                for row_ids, row_mask in zip(input_ids_t, attn):
-                    ids = [
-                        int(t)
-                        for t, m in zip(
-                            row_ids.detach().cpu().tolist(),
-                            row_mask.detach().cpu().tolist(),
-                        )
-                        if int(m) == 1
-                    ]
-                    prompt_ids_list.append(ids)
-
-                prompt_pad_len = int(input_ids_t.shape[1])
-                self._enforce_hf_rollout_max_position_embeddings(
-                    prompt_pad_len=prompt_pad_len,
-                    max_new_tokens=max_new_tokens,
-                )
-                model_inputs = {k: v for k, v in batch.items() if k != "labels"}
-                model_inputs.pop("position_ids", None)
-                model_inputs.pop("text_position_ids", None)
-
-                logits_processor = self._build_hf_rollout_logits_processor(
-                    tokenizer=tok,
-                    prompt_pad_len=prompt_pad_len,
-                    batch_size=int(input_ids_t.shape[0]),
-                )
-
-                with unwrap_model_for_generation(
-                    self.model_wrapped,
-                    self.accelerator,
-                    gather_deepspeed3_params=getattr(
-                        self.args, "ds3_gather_for_generation", False
-                    ),
-                ) as unwrapped:
-                    unwrapped.eval()
-                    with self._template_packing_disabled():
-                        with template.generate_context():
-                            if (
-                                getattr(self.model, "model_meta", None) is not None
-                                and self.model.model_meta.is_multimodal
-                            ):
-                                _, model_inputs = template.pre_forward_hook(
-                                    unwrapped, None, model_inputs
-                                )
-                            model_inputs.pop("position_ids", None)
-                            model_inputs.pop("text_position_ids", None)
-                            gen_out = template.generate(
-                                unwrapped,
-                                **model_inputs,
-                                generation_config=gen_cfg,
-                                return_dict_in_generate=True,
-                                logits_processor=logits_processor,
-                            )
-                    unwrapped.train()
-
-                sequences = gen_out.sequences
-                if sequences.ndim != 2:
-                    raise ValueError("unexpected generate output shape")
-
-                bsz = int(input_ids_t.shape[0])
-                nret = int(getattr(gen_cfg, "num_return_sequences", 1) or 1)
-                if nret < 1:
-                    nret = 1
-
-                # Pick best sequence per sample for beam mode when possible.
-                if (
-                    decode_mode == "beam"
-                    and nret > 1
-                    and hasattr(gen_out, "sequences_scores")
-                    and gen_out.sequences_scores is not None
-                ):
-                    scores = gen_out.sequences_scores
-                    if scores.ndim != 1 or sequences.shape[0] != bsz * nret:
-                        best_idx = torch.zeros(
-                            (bsz,), dtype=torch.long, device=sequences.device
-                        )
-                    else:
-                        scores = scores.view(bsz, nret)
-                        best_idx = torch.argmax(scores, dim=1)
-                    sequences = sequences.view(bsz, nret, -1)
-                    best_seqs = sequences[
-                        torch.arange(bsz, device=sequences.device), best_idx
-                    ]
-                else:
-                    # Default: first sequence per sample.
-                    if sequences.shape[0] == bsz * nret:
-                        sequences = sequences.view(bsz, nret, -1)[:, 0, :]
-                    else:
-                        sequences = sequences[:bsz, :]
-                    best_seqs = sequences
-
-                for i in range(bsz):
-                    seq = best_seqs[i]
-                    resp_ids = seq[prompt_pad_len:].tolist()
-                    resp_ids = template.skip_stop_tokens(resp_ids, is_finished=True)
-                    text = template.decode(
-                        resp_ids,
-                        is_finished=True,
-                        first_token=True,
-                        clean_up_tokenization_spaces=False,
-                    )
-                    out.append((resp_ids, text, decode_mode, prompt_ids_list[i]))
-
-        return out
-
-    @torch.no_grad()
-    def _rollout_many_hf_traced(
-        self,
-        samples: Sequence[Mapping[str, Any]],
-        *,
-        decode_override: Optional[Mapping[str, Any]] = None,
-    ) -> List[Tuple[List[int], str, str, List[int], List[float], List[str]]]:
-        """HF rollout backend that also captures per-token logprobs.
-
-        This is intended for eval-step confidence scoring. It is restricted to
-        greedy, non-sampling generation.
-
-        Returns tuples:
-          (resp_token_ids, resp_text, decode_mode, prompt_token_ids,
-           token_logprobs, generated_token_text)
-
-        Where `token_logprobs[i]` is `log p(token_i | prefix)` under the exact
-        processed logits used for greedy selection.
-        """
-
-        template = self.template
-        tok = template.tokenizer
-        decode_request = self._resolve_rollout_decode_request(
-            decode_override=decode_override
-        )
-        decode_mode = str(decode_request.decode_mode)
-        if decode_mode == "beam":
-            raise ValueError(
-                "eval-step confidence scoring does not support decode_mode=beam"
-            )
-
-        max_new_tokens = int(decode_request.max_new_tokens)
-        num_beams = int(decode_request.num_beams)
-        temperature = float(decode_request.temperature)
-        top_p = float(decode_request.top_p)
-        top_k = int(decode_request.top_k)
-        repetition_penalty = float(decode_request.repetition_penalty)
-
-        if float(temperature) > 0.0:
-            raise ValueError(
-                "eval-step confidence scoring requires decoding.temperature=0.0 "
-                f"(greedy), got {float(temperature)}"
-            )
-
-        # Build GenerationConfig from model defaults.
-        gen_cfg = getattr(self.model, "generation_config", None)
-        if gen_cfg is None:
-            from transformers import GenerationConfig
-
-            gen_cfg = GenerationConfig()
-        gen_cfg = deepcopy(gen_cfg)
-        gen_cfg.max_new_tokens = max_new_tokens
-        self._apply_rollout_decoding_to_generation_config(
-            gen_cfg=gen_cfg,
-            temperature=temperature,
-            top_p=top_p,
-            top_k=top_k,
-            repetition_penalty=repetition_penalty,
-        )
-
-        # Force greedy semantics.
-        gen_cfg.num_beams = 1
-        gen_cfg.num_return_sequences = 1
-        if decode_mode == "beam":
-            gen_cfg.num_beams = max(1, num_beams)
-            gen_cfg.num_return_sequences = max(
-                1, int(self._cfg("num_return_sequences", gen_cfg.num_beams))
-            )
-        qwen_generation_ids = resolve_qwen_chat_generation_token_ids(tok)
-        gen_cfg.eos_token_id = qwen_generation_ids.eos_token_id
-        gen_cfg.pad_token_id = qwen_generation_ids.pad_token_id
-
-        try:
-            from transformers.generation.logits_process import (
-                LogitsProcessor,
-                LogitsProcessorList,
-            )
-        except Exception:  # pragma: no cover
-            from transformers.generation_logits_process import (  # type: ignore[no-redef]
-                LogitsProcessor,
-                LogitsProcessorList,
-            )
-
-        def _decode_token_pieces(token_ids: List[int]) -> List[str]:
-            if not token_ids:
-                return []
-            if hasattr(tok, "batch_decode"):
-                try:
-                    return list(
-                        tok.batch_decode(
-                            [[int(t)] for t in token_ids],
-                            skip_special_tokens=False,
-                            clean_up_tokenization_spaces=False,
-                        )
-                    )
-                except (AttributeError, RuntimeError, TypeError, ValueError):
-                    pass
-            return [
-                str(
-                    tok.decode(
-                        [int(t)],
-                        skip_special_tokens=False,
-                        clean_up_tokenization_spaces=False,
-                    )
-                )
-                for t in token_ids
-            ]
-
-        out: List[Tuple[List[int], str, str, List[int], List[float], List[str]]] = []
-        mb = int(self._decode_batch_size(context=self._current_rollout_context()))
-
-        from .rollout_runtime.swift_infer_compat import import_swift_to_device
-
-        to_device = import_swift_to_device()
-
-        idx = 0
-        while idx < len(samples):
-            chunk = list(samples[idx : idx + mb])
-            idx += len(chunk)
-
-            with self._template_packing_disabled():
-                with template.generate_context():
-                    encoded_list = [
-                        template.encode(dict(s), return_length=True) for s in chunk
-                    ]
-                    # IMPORTANT: keep generate_context active for collation so we left-pad for decoder-only
-                    # generation (prevents incorrect generation + avoids HF "right-padding detected" warning).
-                    batch = template.data_collator(encoded_list)
-
-            batch = to_device(batch, self.model.device)
-            input_ids_t = batch["input_ids"]
-            attn = batch.get("attention_mask")
-            if attn is None:
-                pad_id = int(getattr(tok, "pad_token_id", 0) or 0)
-                attn = (input_ids_t != pad_id).to(dtype=torch.long)
-
-            # Prompt token ids for strict sanity checks (strip padding using attention_mask).
-            prompt_ids_list: List[List[int]] = []
-            for row_ids, row_mask in zip(input_ids_t, attn):
-                ids = [
-                    int(t)
-                    for t, m in zip(
-                        row_ids.detach().cpu().tolist(),
-                        row_mask.detach().cpu().tolist(),
-                    )
-                    if int(m) == 1
-                ]
-                prompt_ids_list.append(ids)
-
-            prompt_pad_len = int(input_ids_t.shape[1])
-            self._enforce_hf_rollout_max_position_embeddings(
-                prompt_pad_len=prompt_pad_len,
-                max_new_tokens=max_new_tokens,
-            )
-            model_inputs = {k: v for k, v in batch.items() if k != "labels"}
-            model_inputs.pop("position_ids", None)
-            model_inputs.pop("text_position_ids", None)
-
-            class _GreedyTokenLogprobTracer(LogitsProcessor):
-                def __init__(self) -> None:
-                    self.token_logprobs: List[List[float]] = []
-
-                def __call__(self, input_ids: torch.Tensor, scores: torch.Tensor):
-                    # Lazy init: one list per batch element.
-                    if not self.token_logprobs:
-                        bsz_local = int(scores.shape[0])
-                        self.token_logprobs = [[] for _ in range(bsz_local)]
-
-                    # NOTE: restricted to greedy + do_sample=False. In this regime the
-                    # next token is argmax over the processed scores.
-                    token_ids = torch.argmax(scores, dim=-1)
-                    scores_f = scores.float()
-                    selected = scores_f.gather(
-                        dim=1, index=token_ids.unsqueeze(1)
-                    ).squeeze(1)
-                    log_norm = torch.logsumexp(scores_f, dim=-1)
-                    logprobs = (selected - log_norm).detach().cpu().tolist()
-                    for i, lp in enumerate(logprobs):
-                        self.token_logprobs[i].append(float(lp))
-                    return scores
-
-            tracer = _GreedyTokenLogprobTracer()
-            logits_processor = self._build_hf_rollout_logits_processor(
-                tokenizer=tok,
-                prompt_pad_len=prompt_pad_len,
-                batch_size=int(input_ids_t.shape[0]),
-                trailing_processors=[tracer],
-            )
-            if logits_processor is None:
-                logits_processor = LogitsProcessorList([tracer])
-
-            with unwrap_model_for_generation(
-                self.model_wrapped,
-                self.accelerator,
-                gather_deepspeed3_params=getattr(
-                    self.args, "ds3_gather_for_generation", False
-                ),
-            ) as unwrapped:
-                unwrapped.eval()
-                with self._template_packing_disabled():
-                    with template.generate_context():
-                        if (
-                            getattr(self.model, "model_meta", None) is not None
-                            and self.model.model_meta.is_multimodal
-                        ):
-                            _, model_inputs = template.pre_forward_hook(
-                                unwrapped, None, model_inputs
-                            )
-                        model_inputs.pop("position_ids", None)
-                        model_inputs.pop("text_position_ids", None)
-                        gen_out = template.generate(
-                            unwrapped,
-                            **model_inputs,
-                            generation_config=gen_cfg,
-                            return_dict_in_generate=True,
-                            logits_processor=logits_processor,
-                        )
-                unwrapped.train()
-
-            sequences = gen_out.sequences
-            if sequences.ndim != 2:
-                raise ValueError("unexpected generate output shape")
-
-            bsz = int(input_ids_t.shape[0])
-            sequences = sequences[:bsz, :]
-
-            for i in range(bsz):
-                seq = sequences[i]
-                resp_ids_full = [int(t) for t in seq[prompt_pad_len:].tolist()]
-                resp_ids = template.skip_stop_tokens(resp_ids_full, is_finished=True)
-
-                token_logprobs_full = tracer.token_logprobs[i]
-                if len(token_logprobs_full) < len(resp_ids):
-                    raise RuntimeError(
-                        "rollout logprob trace shorter than generated token ids: "
-                        f"trace_len={len(token_logprobs_full)} gen_len={len(resp_ids)}"
-                    )
-                token_logprobs = [
-                    float(x) for x in token_logprobs_full[: len(resp_ids)]
-                ]
-                generated_token_text = _decode_token_pieces(resp_ids)
-                if len(generated_token_text) != len(token_logprobs):
-                    raise RuntimeError(
-                        "rollout trace token/text length mismatch: "
-                        f"text_len={len(generated_token_text)} logprob_len={len(token_logprobs)}"
-                    )
-
-                text = template.decode(
-                    resp_ids,
-                    is_finished=True,
-                    first_token=True,
-                    clean_up_tokenization_spaces=False,
-                )
-                out.append(
-                    (
-                        resp_ids,
-                        text,
-                        decode_mode,
-                        prompt_ids_list[i],
-                        token_logprobs,
-                        generated_token_text,
-                    )
-                )
-
-        return out
-
-    @torch.no_grad()
-    def _rollout_many_vllm(
-        self,
-        samples: Sequence[Mapping[str, Any]],
-        *,
-        debug_samples: Optional[Sequence[Mapping[str, Any]]] = None,
-        request_index_offset: int = 0,
-        decode_override: Optional[Mapping[str, Any]] = None,
-    ) -> List[Tuple[List[int], str, str, List[int]]]:
-        return rollout_many_vllm(
-            owner=self,
-            samples=samples,
-            debug_samples=debug_samples,
-            request_index_offset=int(request_index_offset),
-            decode_override=decode_override,
-        )
-
-
-    @torch.no_grad()
-    def _rollout_many_vllm_traced(
-        self,
-        samples: Sequence[Mapping[str, Any]],
-        *,
-        debug_samples: Optional[Sequence[Mapping[str, Any]]] = None,
-        request_index_offset: int = 0,
-        decode_override: Optional[Mapping[str, Any]] = None,
-    ) -> List[Tuple[List[int], str, str, List[int], List[float], List[str]]]:
-        return rollout_many_vllm_traced(
-            owner=self,
-            samples=samples,
-            debug_samples=debug_samples,
-            request_index_offset=int(request_index_offset),
-            decode_override=decode_override,
-        )
-
-    @torch.no_grad()
-    def _rollout_many_vllm_colocate(
-        self,
-        samples: Sequence[Mapping[str, Any]],
-        *,
-        with_logprobs: bool = False,
-        request_index_offset: int = 0,
-        decode_override: Optional[Mapping[str, Any]] = None,
-    ) -> List[Any]:
-        """vLLM colocate rollout backend (token ids, optional token logprobs)."""
-        return rollout_many_vllm_colocate(
-            owner=self,
-            samples=samples,
-            logger=logger,
-            with_logprobs=bool(with_logprobs),
-            request_index_offset=int(request_index_offset),
-            decode_override=decode_override,
-        )
-
-    @torch.no_grad()
-    def _rollout_many_vllm_server(
-        self,
-        samples: Sequence[Mapping[str, Any]],
-        *,
-        debug_samples: Optional[Sequence[Mapping[str, Any]]] = None,
-        request_index_offset: int = 0,
-        with_logprobs: bool = False,
-        decode_override: Optional[Mapping[str, Any]] = None,
-    ) -> List[Any]:
-        """vLLM server rollout backend (token ids, optional token logprobs).
-
-        When `with_logprobs=True`, requests per-token logprobs from the server
-        (RequestConfig(logprobs=True)). This is used by eval-step confidence
-        scoring.
-        """
-        n = int(len(samples))
-        if n == 0:
-            return []
-
-        prepared = prepare_vllm_server_rollout(
-            owner=self,
-            logger=logger,
-            samples=samples,
-            request_index_offset=int(request_index_offset),
-            with_logprobs=bool(with_logprobs),
-            decode_override=decode_override,
-            per_server_rank_request_caps_fn=_per_server_rank_request_caps,
-            allocate_weighted_counts_with_caps_fn=_allocate_weighted_counts_with_caps,
-        )
-
-        out = dispatch_vllm_server_rounds(
-            owner=self,
-            logger=logger,
-            client=prepared.client,
-            servers=prepared.servers,
-            infer_requests=prepared.infer_requests,
-            base_request_config_dict=prepared.base_request_config_dict,
-            effective_seed_base=int(prepared.effective_seed_base),
-            infer_timeout_s=prepared.infer_timeout_s,
-            with_logprobs=bool(with_logprobs),
-            decode_mode=str(prepared.decode_mode),
-            per_server_rank_caps=prepared.per_server_rank_caps,
-            round_cap_total=int(prepared.round_cap_total),
-            allocate_weighted_counts_with_caps_fn=_allocate_weighted_counts_with_caps,
-        )
-
-        self._maybe_debug_dump_vllm_server_rollouts(
-            global_step=prepared.global_step,
-            seed_base=prepared.effective_seed_base,
-            infer_requests=prepared.infer_requests,
-            outputs=out,
-            samples=debug_samples if debug_samples is not None else samples,
-        )
-
-        return out
-
-
-    def _prepare_samples_for_rollout(
-        self,
-        samples: Sequence[Mapping[str, Any]],
-        *,
-        prompt_variant_override: Optional[str] = None,
-        rollout_backend: Optional[Literal["hf", "vllm"]] = None,
-    ) -> List[Mapping[str, Any]]:
-        """Normalize samples before calling the rollout backend.
-
-        - Strip any trailing assistant turns (rollouts must end at a user message).
-        - Optionally override the last user prompt (prompt_variant_override).
-        - Rebuild non-CoordJSON rollout prompts from the active template format.
-        - For vLLM, ensure a resolved system prompt message is present.
-
-        Returns a list that may contain shallow-copied sample dicts when message
-        edits are required.
-        """
-
-        backend = (
-            rollout_backend
-            if rollout_backend is not None
-            else self._effective_rollout_backend(context="train")
-        )
-
-        user_prompt_override: str | None = None
-        system_prompt_override: str | None = None
-        detection_sequence_format = self._detection_sequence_format()
-        should_rebuild_prompt = bool(
-            prompt_variant_override is not None
-            or detection_sequence_format != COORDJSON_FORMAT
-        )
-        if should_rebuild_prompt:
-            variant_key = (
-                resolve_dense_prompt_variant_key(prompt_variant_override)
-                if prompt_variant_override is not None
-                else self._training_prompt_variant()
-            )
-            ordering = self._object_ordering()
-            object_field_order = self._object_field_order()
-            user_prompt_override = build_dense_user_prompt(
-                ordering=ordering,
-                coord_mode="coord_tokens",
-                prompt_variant=variant_key,
-                object_field_order=object_field_order,
-                detection_sequence_format=detection_sequence_format,
-            )
-            system_prompt_override = build_dense_system_prompt(
-                ordering=ordering,
-                coord_mode="coord_tokens",
-                prompt_variant=variant_key,
-                object_field_order=object_field_order,
-                detection_sequence_format=detection_sequence_format,
-            )
-
-        # vLLM backends receive raw OpenAI-style messages; ensure the resolved
-        # system prompt is present so output formatting is stable.
-        system_prompt: str | None = None
-        if backend == "vllm":
-            if (
-                isinstance(system_prompt_override, str)
-                and system_prompt_override.strip()
-            ):
-                system_prompt = str(system_prompt_override)
-            else:
-                sp = getattr(self.template, "system", None)
-                if isinstance(sp, str) and sp.strip():
-                    system_prompt = sp
-                else:
-                    # Fallback: ms-swift templates may not expose the resolved system prompt
-                    # as `template.system` in all execution contexts. Use CoordExp's
-                    # canonical dense system prompt to stabilize server-mode rollouts.
-                    try:
-                        system_prompt = build_dense_system_prompt(
-                            ordering=self._object_ordering(),
-                            coord_mode="coord_tokens",
-                            prompt_variant=self._training_prompt_variant(),
-                            object_field_order=self._object_field_order(),
-                            detection_sequence_format=detection_sequence_format,
-                        )
-                    except (TypeError, ValueError):
-                        system_prompt = None
-
-        # IMPORTANT: generate from a prompt that ends with a user turn.
-        # Many datasets include a teacher-forced assistant answer in `messages` for training.
-        # For rollouts, we must drop any trailing assistant turns.
-        samples_for_rollout: List[Mapping[str, Any]] = []
-        for s in samples:
-            msgs = s.get("messages")
-            if isinstance(msgs, list):
-                modified = False
-
-                trimmed = _strip_trailing_assistant_turns_for_rollout(msgs)
-                if len(trimmed) != len(msgs):
-                    modified = True
-                    msgs_out: List[Any] = trimmed
-                else:
-                    msgs_out = msgs
-
-                if user_prompt_override is not None:
-                    msgs_prompt = _force_last_user_prompt_text(
-                        msgs_out, str(user_prompt_override)
-                    )
-                    if msgs_prompt != msgs_out:
-                        modified = True
-                        msgs_out = msgs_prompt
-
-                if backend == "vllm" and system_prompt is not None:
-                    msgs_sys = _ensure_system_prompt_message(msgs_out, system_prompt)
-                    if len(msgs_sys) != len(msgs_out):
-                        modified = True
-                        msgs_out = msgs_sys
-
-                images_out = None
-                if backend == "vllm":
-                    images_raw = s.get("images", None)
-                    if images_raw is None:
-                        img = s.get("image", None)
-                        if isinstance(img, str) and img:
-                            images_raw = [img]
-
-                    if images_raw is not None:
-                        if isinstance(images_raw, str):
-                            images_out = [images_raw]
-                        elif isinstance(images_raw, list):
-                            images_out = images_raw
-                        elif isinstance(images_raw, tuple):
-                            images_out = list(images_raw)
-
-                        if images_out is not None and not isinstance(
-                            s.get("images"), list
-                        ):
-                            modified = True
-
-                if modified:
-                    s2 = dict(s)
-                    s2["messages"] = msgs_out
-                    if images_out is not None:
-                        s2["images"] = images_out
-                    samples_for_rollout.append(s2)
-                else:
-                    samples_for_rollout.append(s)
-            else:
-                samples_for_rollout.append(s)
-
-        return samples_for_rollout
 
     @torch.no_grad()
     def _rollout_many(
@@ -5860,8 +3308,11 @@ class Stage2RolloutRuntime(Seq2SeqTrainer):
         }
 
         try:
-            temperature, top_p, top_k = self._decoding_params()
-            do_sample = bool(float(temperature) > 0.0)
+            decode_request = build_decode_request_from_rollout_owner(self)
+            temperature = float(decode_request.temperature)
+            top_p = float(decode_request.top_p)
+            top_k = int(decode_request.top_k)
+            do_sample = str(decode_request.decode_mode) == "sampling"
             payload["rollout/do_sample"] = float(1.0 if do_sample else 0.0)
             payload["rollout/temperature"] = float(temperature)
             payload["rollout/top_p"] = float(top_p)
@@ -6153,33 +3604,10 @@ class Stage2RolloutRuntime(Seq2SeqTrainer):
                     "(token logprob traces must be available)."
                 )
 
-            try:
-                from src.eval.confidence_postop import (
-                    TraceRecord,
-                    _build_scored_record,
-                    _compute_sample_confidence_objects,
-                    options_from_config,
-                )
-            except Exception as exc:
-                raise RuntimeError(
-                    "Failed to import src.eval.confidence_postop for eval-step confidence scoring"
-                ) from exc
-
-            conf_raw = eval_detection_cfg.get("confidence", None)
-            if conf_raw is None:
-                conf_cfg: Mapping[str, Any] = {}
-            elif isinstance(conf_raw, Mapping):
-                conf_cfg = conf_raw
-            else:
-                try:
-                    conf_cfg = asdict(conf_raw)
-                except Exception as exc:
-                    raise TypeError(
-                        "rollout_matching.eval_detection.confidence must be a mapping"
-                    ) from exc
-
             # Validate early so failures are consistent across ranks.
-            confidence_postop_opts = options_from_config({"confidence": conf_cfg})
+            confidence_postop_opts = confidence_options_from_eval_config(
+                eval_detection_cfg.get("confidence", None)
+            )
 
         # Optional semantic desc monitoring (metrics only).
         desc_cfg = self._desc_monitor_cfg()
@@ -6237,9 +3665,7 @@ class Stage2RolloutRuntime(Seq2SeqTrainer):
         eval_detection_records_local: List[Dict[str, Any]] = []
         eval_rollout_artifacts_local: List[Dict[str, Any]] = []
         eval_record_counter_local = 0
-        trace_fallback_count_local = 0.0
         vllm_decode_error_count_local = 0.0
-        trace_fallback_window_active = False
 
         # Optional qualitative monitor dumps during eval (rank0 only).
         gs = int(getattr(getattr(self, "state", None), "global_step", 0) or 0)
@@ -6284,67 +3710,17 @@ class Stage2RolloutRuntime(Seq2SeqTrainer):
                 has_token_trace = bool(eval_detection_use_confidence_postop)
                 sample_rollouts: List[Tuple[Mapping[str, Any], Any]] = []
                 if has_token_trace:
-                    batch_for_rollout = self._prepare_samples_for_rollout(
-                        batch,
+                    rollout_results = rollout_many_traced(
+                        owner=self,
+                        samples=batch,
                         prompt_variant_override=eval_prompt_variant,
                         rollout_backend=eval_rollout_backend,
                     )
-                    if eval_rollout_backend == "hf":
-                        rollout_results = self._rollout_many_hf_traced(batch_for_rollout)
-                        if len(rollout_results) != len(batch):
-                            raise RuntimeError(
-                                "rollout backend returned unexpected number of results"
-                            )
-                        sample_rollouts = list(zip(batch, rollout_results))
-                    elif eval_rollout_backend == "vllm":
-                        try:
-                            rollout_results = self._rollout_many_vllm_traced(
-                                batch_for_rollout
-                            )
-                            if len(rollout_results) != len(batch):
-                                raise RuntimeError(
-                                    "rollout backend returned unexpected number of results"
-                                )
-                            sample_rollouts = list(zip(batch, rollout_results))
-                        except Exception as batch_exc:
-                            sample_rollouts = []
-                            for sample_idx, sample in enumerate(batch):
-                                sample_prepared = self._prepare_samples_for_rollout(
-                                    [sample],
-                                    prompt_variant_override=eval_prompt_variant,
-                                    rollout_backend=eval_rollout_backend,
-                                )
-                                try:
-                                    rollout_one = self._rollout_many_vllm_traced(
-                                        sample_prepared,
-                                        debug_samples=[sample],
-                                        request_index_offset=int(sample_idx),
-                                    )
-                                    if len(rollout_one) != 1:
-                                        raise RuntimeError(
-                                            "rollout backend returned unexpected number of results"
-                                        )
-                                    sample_rollouts.append((sample, rollout_one[0]))
-                                except Exception as sample_exc:
-                                    vllm_decode_error_count_local += 1.0
-                                    logger.warning(
-                                        "Eval vLLM decode failed for sample_idx=%s; skipping sample. "
-                                        "error=%s: %s",
-                                        int(sample_idx),
-                                        sample_exc.__class__.__name__,
-                                        sample_exc,
-                                    )
-                            if not sample_rollouts:
-                                raise RuntimeError(
-                                    "Eval vLLM rollout failed for all samples in a batch; "
-                                    "aborting evaluation. "
-                                    f"batch_error={batch_exc.__class__.__name__}: {batch_exc}"
-                                ) from batch_exc
-                    else:
-                        raise ValueError(
-                            "eval-step confidence scoring requires effective eval rollout backend "
-                            "in {'hf','vllm'}"
+                    if len(rollout_results) != len(batch):
+                        raise RuntimeError(
+                            "rollout backend returned unexpected number of results"
                         )
+                    sample_rollouts = list(zip(batch, rollout_results))
                 else:
                     try:
                         rollout_results = self._rollout_many(
@@ -6405,107 +3781,24 @@ class Stage2RolloutRuntime(Seq2SeqTrainer):
                         generated_token_text = None
                     n_samples += 1.0
 
-                    pred_meta: List[Any] = []
-                    preds: List[GTObject] = []
-                    pred_objs_dump: List[Dict[str, Any]] = []
-
-                    # Pred objects (valid only) -> norm1000 geometry.
-                    if eval_rollout_template_policy.template_family == "compact_full":
-                        response_text = str(raw_resp_text or "")
-                        if not response_text:
-                            response_text = tok.decode(
-                                [int(t) for t in resp_ids],
-                                skip_special_tokens=False,
-                                clean_up_tokenization_spaces=False,
-                            )
-                        parse = CompactFullRolloutCodec(
-                            eval_rollout_template_policy
-                        ).parse(response_text)
-                        geometry_drop_count = 0
-                        for pobj in list(parse.valid_objects):
-                            if pobj.geom_type != "bbox_2d" or pobj.bbox_norm1000 is None:
-                                geometry_drop_count += 1
-                                continue
-                            try:
-                                pts = [int(x) for x in pobj.bbox_norm1000]
-                            except (TypeError, ValueError):
-                                geometry_drop_count += 1
-                                continue
-                            if len(pts) != 4 or pts[2] <= pts[0] or pts[3] <= pts[1]:
-                                geometry_drop_count += 1
-                                continue
-                            pred = GTObject(
-                                index=int(pobj.index),
-                                geom_type="bbox_2d",
-                                points_norm1000=pts,
-                                desc=str(pobj.desc),
-                            )
-                            pred_meta.append(pred)
-                            preds.append(pred)
-                            pred_objs_dump.append(
-                                {
-                                    "key": str(pobj.object_id),
-                                    "index": int(pobj.index),
-                                    "geom_type": "bbox_2d",
-                                    "points_norm1000": list(pts),
-                                    "desc": str(pobj.desc),
-                                }
-                            )
-                        if geometry_drop_count:
-                            drop_reasons = dict(parse.dropped_invalid_by_reason)
-                            drop_reasons["bbox_invalid"] = int(
-                                drop_reasons.get("bbox_invalid", 0)
-                            ) + int(geometry_drop_count)
-                            parse = replace(
-                                parse,
-                                dropped_invalid=(
-                                    int(parse.dropped_invalid)
-                                    + int(geometry_drop_count)
-                                ),
-                                dropped_invalid_by_reason=drop_reasons,
-                                empty_valid_object_set=not preds,
-                                fallback_reason=(
-                                    "empty_valid_object_set" if not preds else None
-                                ),
-                            )
-                        parse = replace(
-                            parse,
-                            response_token_ids=tuple(int(t) for t in resp_ids),
-                        )
-                    else:
-                        parse = parse_rollout_for_matching(
-                            tokenizer=tok,
-                            response_token_ids=resp_ids,
-                            object_field_order=object_field_order,
-                        )
-                        coord_id_to_bin = self._coord_id_map()
-                        parsed_pred_meta = list(parse.valid_objects)
-                        for pobj in parsed_pred_meta:
-                            pts = _points_from_coord_tokens(
-                                response_token_ids=parse.response_token_ids,
-                                coord_token_indices=pobj.coord_token_indices,
-                                coord_id_to_bin=coord_id_to_bin,
-                            )
-                            if pts is None:
-                                continue
-                            pred_meta.append(pobj)
-                            preds.append(
-                                GTObject(
-                                    index=int(pobj.index),
-                                    geom_type=pobj.geom_type,
-                                    points_norm1000=pts,
-                                    desc="",
-                                )
-                            )
-                            pred_objs_dump.append(
-                                {
-                                    "key": str(getattr(pobj, "key", "") or ""),
-                                    "index": int(pobj.index),
-                                    "geom_type": str(pobj.geom_type),
-                                    "points_norm1000": list(pts),
-                                    "desc": str(getattr(pobj, "desc", "") or ""),
-                                }
-                            )
+                    parsed_rollout = parse_stage2_detection_rollout_predictions(
+                        tokenizer=tok,
+                        response_token_ids=resp_ids,
+                        response_text=str(raw_resp_text or ""),
+                        rollout_template_policy=eval_rollout_template_policy,
+                        object_field_order=object_field_order,
+                        coord_id_to_bin=self._coord_id_map(),
+                        gt_object_factory=GTObject,
+                        compact_rollout_codec_factory=CompactFullRolloutCodec,
+                        parse_rollout_for_matching_fn=parse_rollout_for_matching,
+                        points_from_coord_tokens_fn=_points_from_coord_tokens,
+                    )
+                    parse = parsed_rollout.parse
+                    pred_meta: List[Any] = list(parsed_rollout.pred_meta)
+                    preds: List[GTObject] = list(parsed_rollout.preds)
+                    pred_objs_dump: List[Dict[str, Any]] = [
+                        dict(obj) for obj in parsed_rollout.pred_objects_dump
+                    ]
 
                     dropped_invalid_total += float(parse.dropped_invalid)
                     dropped_ambiguous_total += float(parse.dropped_ambiguous)
@@ -6581,9 +3874,6 @@ class Stage2RolloutRuntime(Seq2SeqTrainer):
                         eval_record_index = int(eval_record_counter_local)
                         eval_record_counter_local += 1
                         confidence_objects_payload: List[Dict[str, Any]] = []
-                        confidence_record_appended = False
-                        trace_invalid_reason: Optional[str] = None
-                        trace_fallback_counted_this_sample = False
                         base_eval_record = _build_eval_detection_record_confidence_postop_input(
                             sample=sample,
                             gts=gts,
@@ -6598,113 +3888,18 @@ class Stage2RolloutRuntime(Seq2SeqTrainer):
                         scored_eval_record: Dict[str, Any] | None = None
 
                         if eval_detection_use_confidence_postop:
-                            trace_len = int(len(parse.response_token_ids))
-                            if confidence_postop_opts is None:
-                                trace_invalid_reason = (
-                                    "confidence_postop_opts missing for eval-step scoring"
-                                )
-                            elif token_logprobs is None or generated_token_text is None:
-                                trace_invalid_reason = (
-                                    "eval-step confidence scoring requires token traces"
-                                )
-                            elif len(token_logprobs) < trace_len:
-                                trace_invalid_reason = (
-                                    "rollout trace shorter than parsed response_token_ids: "
-                                    f"trace_len={len(token_logprobs)} parsed_len={trace_len}"
-                                )
-                            elif len(generated_token_text) < trace_len:
-                                trace_invalid_reason = (
-                                    "generated_token_text shorter than parsed response_token_ids: "
-                                    f"trace_text_len={len(generated_token_text)} parsed_len={trace_len}"
-                                )
-                            elif any(
-                                not math.isfinite(float(x))
-                                for x in token_logprobs[:trace_len]
-                            ):
-                                trace_invalid_reason = (
-                                    "rollout trace contains non-finite logprobs"
-                                )
-
-                            if trace_invalid_reason is not None:
-                                trace_fallback_window_active = True
-                                trace_fallback_count_local += 1.0
-                                trace_fallback_counted_this_sample = True
-                                if trace_fallback_count_local <= 3.0:
-                                    logger.warning(
-                                        "Eval confidence trace invariant violation; falling back to "
-                                        "constant-score policy for this eval window. "
-                                        "line_idx=%s reason=%s",
-                                        int(eval_record_index),
-                                        trace_invalid_reason,
-                                    )
-
-                            confidence_record_appended = False
-                            if (
-                                trace_invalid_reason is None
-                                and not trace_fallback_window_active
-                            ):
-                                try:
-                                    trace = TraceRecord(
-                                        line_idx=int(eval_record_index),
-                                        generated_token_text=list(
-                                            generated_token_text[:trace_len]
-                                        ),
-                                        token_logprobs=[
-                                            float(x) for x in token_logprobs[:trace_len]
-                                        ],
-                                    )
-                                    confidence_objects = _compute_sample_confidence_objects(
-                                        line_idx=int(eval_record_index),
-                                        record=base_eval_record,
-                                        trace=trace,
-                                        options=confidence_postop_opts,
-                                    )
-                                    confidence_objects_payload = [
-                                        dict(obj) for obj in confidence_objects
-                                    ]
-                                    scored_record = _build_scored_record(
-                                        record=base_eval_record,
-                                        confidence_objects=confidence_objects,
-                                    )
-                                    scored_eval_record = dict(scored_record)
-                                    eval_detection_records_local.append(scored_eval_record)
-                                    confidence_record_appended = True
-                                except Exception as exc:
-                                    trace_fallback_window_active = True
-                                    trace_fallback_count_local += 1.0
-                                    trace_fallback_counted_this_sample = True
-                                    if trace_fallback_count_local <= 3.0:
-                                        logger.warning(
-                                            "Eval confidence scoring failed; falling back to "
-                                            "constant-score policy for this eval window. "
-                                            "line_idx=%s error=%s: %s",
-                                            int(eval_record_index),
-                                            exc.__class__.__name__,
-                                            exc,
-                                        )
-
-                            if not confidence_record_appended:
-                                if (
-                                    trace_fallback_window_active
-                                    and not trace_fallback_counted_this_sample
-                                ):
-                                    trace_fallback_count_local += 1.0
-                                scored_eval_record = _build_eval_detection_record(
-                                    sample=sample,
-                                    gts=gts,
-                                    preds=preds,
-                                    pred_meta=pred_meta,
-                                    object_field_order=object_field_order,
-                                    record_index=eval_record_index,
-                                    pred_score_source="eval_rollout_constant",
-                                    pred_score_version=2,
-                                    score_mode="constant",
-                                    constant_score=eval_detection_const_score,
-                                    raw_text=raw_resp_text,
-                                    error_codes=eval_error_codes,
-                                    error_entries=eval_error_entries,
-                                )
-                                eval_detection_records_local.append(scored_eval_record)
+                            (
+                                scored_eval_record,
+                                confidence_objects_payload,
+                            ) = score_stage2_confidence_eval_record(
+                                line_idx=int(eval_record_index),
+                                base_eval_record=base_eval_record,
+                                parse=parse,
+                                token_logprobs=token_logprobs,
+                                generated_token_text=generated_token_text,
+                                confidence_postop_opts=confidence_postop_opts,
+                            )
+                            eval_detection_records_local.append(scored_eval_record)
                         else:
                             if eval_detection_score_mode != "constant":
                                 raise ValueError(
@@ -6731,95 +3926,24 @@ class Stage2RolloutRuntime(Seq2SeqTrainer):
 
                         if scored_eval_record is not None:
                             eval_rollout_artifacts_local.append(
-                                {
-                                    "index": int(eval_record_index),
-                                    "sample_id": sample.get("sample_id"),
-                                    "base_idx": sample.get("base_idx"),
-                                    "image": base_eval_record.get("image"),
-                                    "images": list(base_eval_record.get("images", [])),
-                                    "width": base_eval_record.get("width"),
-                                    "height": base_eval_record.get("height"),
-                                    "image_id": sample.get("image_id"),
-                                    "metadata": (
-                                        dict(sample.get("metadata"))
-                                        if isinstance(sample.get("metadata"), Mapping)
-                                        else None
-                                    ),
-                                    "base_record": dict(base_eval_record),
-                                    "scored_record": dict(scored_eval_record),
-                                    "rollout": {
-                                        "decode_mode": str(_decode_mode),
-                                        "response_token_ids": [int(x) for x in list(resp_ids)],
-                                        "prompt_token_ids": [
-                                            int(x) for x in list(_prompt_ids)
-                                        ],
-                                        "response_text": str(raw_resp_text or ""),
-                                        "generated_token_text": (
-                                            list(generated_token_text)
-                                            if generated_token_text is not None
-                                            else None
-                                        ),
-                                        "token_logprobs": (
-                                            [float(x) for x in list(token_logprobs)]
-                                            if token_logprobs is not None
-                                            else None
-                                        ),
-                                        "trace_invalid_reason": trace_invalid_reason,
-                                    },
-                                    "parse": {
-                                        "invalid_rollout": bool(
-                                            getattr(parse, "invalid_rollout", False)
-                                        ),
-                                        "dropped_invalid": int(
-                                            getattr(parse, "dropped_invalid", 0) or 0
-                                        ),
-                                        "dropped_ambiguous": int(
-                                            getattr(parse, "dropped_ambiguous", 0) or 0
-                                        ),
-                                        "truncated": bool(
-                                            getattr(parse, "truncated", False)
-                                        ),
-                                        "response_token_ids": [
-                                            int(x)
-                                            for x in list(
-                                                getattr(parse, "response_token_ids", [])
-                                            )
-                                        ],
-                                        "response_text": str(
-                                            getattr(parse, "response_text", "") or ""
-                                        ),
-                                        "prefix_text": str(
-                                            getattr(parse, "prefix_text", "") or ""
-                                        ),
-                                        "valid_objects": list(pred_objs_dump),
-                                        "errors": list(eval_error_codes),
-                                        "error_entries": list(eval_error_entries),
-                                    },
-                                    "match": {
-                                        "matched_pairs": [
-                                            [int(a), int(b)]
-                                            for a, b in list(match.matched_pairs)
-                                        ],
-                                        "fp_pred_indices": [
-                                            int(x) for x in list(match.fp_pred_indices)
-                                        ],
-                                        "fn_gt_indices": [
-                                            int(x) for x in list(match.fn_gt_indices)
-                                        ],
-                                        "gating_rejections": int(
-                                            match.gating_rejections
-                                        ),
-                                        "matched_maskiou_sum": float(
-                                            getattr(match, "matched_maskiou_sum", 0.0)
-                                        ),
-                                        "matched_maskiou_count": int(
-                                            getattr(match, "matched_maskiou_count", 0)
-                                        ),
-                                    },
-                                    "confidence_objects": list(
-                                        confidence_objects_payload
-                                    ),
-                                }
+                                build_stage2_rollout_eval_artifact_record(
+                                    eval_record_index=int(eval_record_index),
+                                    sample=sample,
+                                    base_eval_record=base_eval_record,
+                                    scored_eval_record=scored_eval_record,
+                                    response_token_ids=resp_ids,
+                                    prompt_token_ids=_prompt_ids,
+                                    decode_mode=str(_decode_mode),
+                                    response_text=str(raw_resp_text or ""),
+                                    generated_token_text=generated_token_text,
+                                    token_logprobs=token_logprobs,
+                                    parse=parse,
+                                    pred_objects_dump=pred_objs_dump,
+                                    eval_error_codes=eval_error_codes,
+                                    eval_error_entries=eval_error_entries,
+                                    match=match,
+                                    confidence_objects_payload=confidence_objects_payload,
+                                )
                             )
 
                     if do_dump and (
@@ -7010,9 +4134,7 @@ class Stage2RolloutRuntime(Seq2SeqTrainer):
             desc_sem_sim_sum_total=float(desc_sem_sim_sum_total),
             desc_sem_sim_count_total=float(desc_sem_sim_count_total),
             sem_loaded_local=float(sem_loaded_local),
-            trace_fallback_count_local=float(trace_fallback_count_local),
             vllm_decode_error_count_local=float(vllm_decode_error_count_local),
-            trace_fallback_window_active=bool(trace_fallback_window_active),
             runtime_local_s=float(time.perf_counter() - t0),
             eval_detection_records_local=list(eval_detection_records_local),
             eval_rollout_artifacts_local=list(eval_rollout_artifacts_local),
@@ -7029,7 +4151,6 @@ class Stage2RolloutRuntime(Seq2SeqTrainer):
             fp_cost=float(fp_cost),
             fn_cost=float(fn_cost),
             was_training=bool(was_training),
-            compute_eval_detection_coco_metrics_fn=_compute_eval_detection_coco_metrics,
             metric_name_matches_key_fn=metric_name_matches_key,
             stage2_eval_metric_key_fn=stage2_eval_metric_key,
         )

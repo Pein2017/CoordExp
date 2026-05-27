@@ -61,6 +61,7 @@ def run_token_ce_module(
     desc_weights = input_ids.new_zeros(input_ids.shape, dtype=torch.float32)
 
     channel = str(context.channel or "").strip().upper()
+    rollout_correction_channel = channel == "ROLLOUT_CORRECTION"
 
     for b, seg_start, seg_end, seg in iter_segment_views(input_ids=input_ids, meta=meta):
         prompt_len = int(seg.get("prompt_len", 0) or 0)
@@ -110,7 +111,7 @@ def run_token_ce_module(
                     continue
                 prefix_desc_weight_by_pos[int(rel_i)] = float(weight_i)
 
-        if channel == "B":
+        if rollout_correction_channel:
             for p in range(int(prefix_start), int(prefix_end)):
                 if int(input_ids[b, p].item()) in coord_id_set:
                     continue
@@ -169,7 +170,9 @@ def run_token_ce_module(
 
             if rel in tail_desc:
                 desc_multiplier = float(tail_desc_weight_by_pos.get(rel, 1.0))
-                w_desc = float(fn_desc_ce_weight if channel == "B" else desc_ce_weight)
+                w_desc = float(
+                    fn_desc_ce_weight if rollout_correction_channel else desc_ce_weight
+                )
                 w_desc *= float(desc_multiplier)
                 base_weights[b, p] = float(w_desc)
                 desc_weights[b, p] = float(w_desc)

@@ -11,7 +11,7 @@ from typing import Any, Optional
 from src.config.loader import ConfigLoader
 from src.config.schema import TrainingConfig
 from src.config.strict_dataclass import dataclass_asdict_no_none
-from src.trainers.rollout_runtime.vllm_compat import validate_vllm_engine_kwargs
+from src.infer.backend import validate_vllm_engine_kwargs
 
 RolloutContract = dict[str, Any]
 Stage2LauncherPreflight = dict[str, Any]

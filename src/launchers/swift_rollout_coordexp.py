@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from src.trainers.rollout_runtime.swift_coord_row_patch import (
+from src.infer.backend_sync import (
     apply_coord_row_patch_for_rollout_server,
 )
 

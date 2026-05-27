@@ -2,12 +2,29 @@ from __future__ import annotations
 
 import json
 import time
+from dataclasses import replace
 from pathlib import Path
-from typing import Any, Dict, List, Mapping
+from typing import Any, Dict, List, Literal, Mapping, Optional, Sequence, Tuple
 
 import torch
 
+from src.common.geometry import flatten_points
+from src.common.object_field_order import build_object_payload
+from src.common.prediction_parsing import extract_special_tokens, load_prediction_dict
+from src.coord_tokens.codec import token_to_int
 from src.eval.detection import EvalOptions, evaluate_and_save
+from src.infer.artifacts import write_score_provenance_sidecar
+from src.infer.prompt import DetectionPromptPolicy, prompt_policy_fingerprint
+from src.infer.runtime import (
+    build_decode_policy_fingerprint,
+    build_decode_request_from_rollout_matching_config,
+    build_model_identity_fingerprint,
+)
+from .rollout_matching.contracts import GTObject, ParsedPredObject
+from .rollout_matching.parsing import coerce_int as _coerce_int
+
+
+_IM_END = "<|im_end|>"
 
 
 def _write_jsonl(path: Path, rows: List[Mapping[str, Any]]) -> None:
@@ -17,9 +34,381 @@ def _write_jsonl(path: Path, rows: List[Mapping[str, Any]]) -> None:
             handle.write(json.dumps(dict(row), ensure_ascii=False) + "\n")
 
 
+def _stage2_eval_model_handle(owner: Any) -> str:
+    model = getattr(owner, "model", None)
+    config = getattr(model, "config", None)
+    name_or_path = getattr(config, "name_or_path", None)
+    if isinstance(name_or_path, str) and name_or_path.strip():
+        return name_or_path.strip()
+    return str(getattr(getattr(owner, "args", None), "output_dir", "stage2_live_model"))
+
+
+def _write_stage2_eval_score_provenance(
+    *,
+    owner: Any,
+    scored_path: Path,
+    raw_path: Path,
+    eval_prompt_variant: str | None,
+    eval_rollout_backend: str,
+    eval_vllm_mode: str,
+    eval_detection_score_mode: str,
+    eval_detection_cfg: Mapping[str, Any],
+) -> None:
+    backend = "vllm" if str(eval_rollout_backend).strip().lower() == "vllm" else "hf"
+    backend_mode = str(eval_vllm_mode or ("server" if backend == "vllm" else "local"))
+    rollout_matching_cfg = getattr(owner, "rollout_matching_cfg", {}) or {}
+    if isinstance(rollout_matching_cfg, Mapping):
+        decode_request_base = build_decode_request_from_rollout_matching_config(
+            rollout_matching_cfg
+        )
+    else:
+        decode_request_base = build_decode_request_from_rollout_matching_config({})
+    decode_request = replace(
+        decode_request_base,
+        backend=backend,  # type: ignore[arg-type]
+        backend_mode=backend_mode,
+        trace_logprobs=str(eval_detection_score_mode) == "confidence_postop",
+    )
+    decode_request = replace(
+        decode_request,
+        decode_policy_fingerprint=build_decode_policy_fingerprint(decode_request),
+    )
+    prompt_fingerprint = prompt_policy_fingerprint(
+        DetectionPromptPolicy(
+            name="stage2_rollout_correction_eval",
+            version="1",
+            system_prompt="",
+            user_prompt=json.dumps(
+                {
+                    "eval_prompt_variant": eval_prompt_variant,
+                    "object_field_order": str(owner._object_field_order()),
+                    "object_ordering": str(owner._object_ordering()),
+                },
+                ensure_ascii=True,
+                sort_keys=True,
+            ),
+            image_count=1,
+            do_resize=False,
+        )
+    )
+    model_handle = _stage2_eval_model_handle(owner)
+    backend_sync_identity = None
+    if backend == "vllm" and backend_mode == "server":
+        backend_sync_identity = getattr(
+            owner,
+            "_vllm_server_last_backend_sync_identity",
+            getattr(owner, "_vllm_server_last_sync_provenance", None),
+        )
+    score_mode = str(eval_detection_score_mode or "constant")
+    pred_score_source = str(
+        eval_detection_cfg.get("pred_score_source", "eval_rollout_constant")
+    )
+    pred_score_version = int(eval_detection_cfg.get("pred_score_version", 1) or 1)
+    constant_score = float(eval_detection_cfg.get("constant_score", 1.0) or 1.0)
+    write_score_provenance_sidecar(
+        scored_path=scored_path,
+        prompt_policy_fingerprint=prompt_fingerprint,
+        decode_policy_fingerprint=build_decode_policy_fingerprint(decode_request),
+        model_identity_fingerprint=build_model_identity_fingerprint(
+            checkpoint_mode="training_live_model",
+            requested_model_checkpoint=model_handle,
+            requested_adapter_checkpoint=None,
+            resolved_base_model_checkpoint=model_handle,
+            resolved_adapter_checkpoint=None,
+            backend=backend,
+            backend_mode=backend_mode,
+            backend_model=model_handle,
+            backend_sync_identity=(
+                backend_sync_identity
+                if isinstance(backend_sync_identity, Mapping)
+                else None
+            ),
+        ),
+        policy_name="confidence_postop" if score_mode == "confidence_postop" else "constant_score",
+        score_source=(
+            "confidence_postop:v2"
+            if score_mode == "confidence_postop"
+            else f"{pred_score_source}:v{pred_score_version}"
+        ),
+        aggregation_rule=(
+            "bbox_logprob_confidence_exp"
+            if score_mode == "confidence_postop"
+            else "constant_per_prediction"
+        ),
+        token_span_rule=(
+            "generated_token_trace_bbox_and_desc_spans"
+            if score_mode == "confidence_postop"
+            else "none"
+        ),
+        constant_score_value=None if score_mode == "confidence_postop" else constant_score,
+        source_raw_artifact_path=raw_path,
+        parser_policy="stage2_rollout_correction_eval",
+        extra={"eval_surface": "stage2_rollout_correction"},
+    )
+
+
 def _stage2_eval_output_dir(*, owner: Any, global_step: int) -> Path:
     output_root = Path(str(getattr(getattr(owner, "args", None), "output_dir", ".")))
     return output_root / "eval_detection" / f"step_{int(global_step):07d}"
+
+
+def build_eval_detection_record(
+    *,
+    sample: Mapping[str, Any],
+    gts: Sequence[GTObject],
+    preds: Sequence[GTObject],
+    pred_meta: Sequence[ParsedPredObject],
+    object_field_order: Literal["desc_first", "geometry_first"],
+    record_index: int,
+    pred_score_source: str,
+    pred_score_version: int,
+    score_mode: str,
+    constant_score: float,
+    raw_text: str | None,
+    error_codes: Sequence[str],
+    error_entries: Sequence[Mapping[str, Any]],
+) -> Dict[str, Any]:
+    out = build_eval_detection_record_confidence_postop_input(
+        sample=sample,
+        gts=gts,
+        preds=preds,
+        pred_meta=pred_meta,
+        object_field_order=object_field_order,
+        record_index=record_index,
+        raw_text=raw_text,
+        error_codes=error_codes,
+        error_entries=error_entries,
+    )
+
+    score_mode_norm = str(score_mode or "constant").strip().lower()
+    score_const = float(constant_score)
+    pred_payload: List[Dict[str, Any]] = []
+    for payload in list(out.get("pred", [])):
+        payload = dict(payload)
+        if score_mode_norm == "constant":
+            payload["score"] = float(score_const)
+        pred_payload.append(payload)
+    out["pred"] = pred_payload
+    out["pred_score_source"] = str(pred_score_source)
+    out["pred_score_version"] = int(pred_score_version)
+    return out
+
+
+def build_eval_detection_record_confidence_postop_input(
+    *,
+    sample: Mapping[str, Any],
+    gts: Sequence[GTObject],
+    preds: Sequence[GTObject],
+    pred_meta: Sequence[ParsedPredObject],
+    object_field_order: Literal["desc_first", "geometry_first"],
+    record_index: int,
+    raw_text: str | None,
+    error_codes: Sequence[str],
+    error_entries: Sequence[Mapping[str, Any]],
+) -> Dict[str, Any]:
+    """Build an eval-step record compatible with confidence_postop and offline infer."""
+
+    from src.common.geometry import denorm_and_clamp
+
+    images_raw = sample.get("images")
+    images: List[str] = []
+    if isinstance(images_raw, list):
+        for v in images_raw:
+            if isinstance(v, str) and v.strip():
+                images = [str(v)]
+                break
+    if not images:
+        image_one = sample.get("image")
+        if isinstance(image_one, str) and image_one.strip():
+            images = [str(image_one)]
+    if not images:
+        images = [f"image_{int(record_index)}.jpg"]
+
+    width = sample.get("width")
+    height = sample.get("height")
+    try:
+        width = int(width) if width is not None else None
+    except (TypeError, ValueError):
+        width = None
+    try:
+        height = int(height) if height is not None else None
+    except (TypeError, ValueError):
+        height = None
+    if width is None:
+        width = 1000
+    if height is None:
+        height = 1000
+
+    def _normalize_geometry_key(value: Any) -> str:
+        key = str(value or "").strip().lower()
+        if key == "bbox":
+            return "bbox_2d"
+        return key
+
+    gt_payload: List[Dict[str, Any]] = []
+    for obj in gts:
+        gtype = _normalize_geometry_key(getattr(obj, "geom_type", ""))
+        pts_px = denorm_and_clamp(
+            [int(x) for x in obj.points_norm1000],
+            float(width),
+            float(height),
+            coord_mode="norm1000",
+        )
+        gt_payload.append(
+            {
+                "type": gtype,
+                "points": pts_px,
+                "desc": str(getattr(obj, "desc", "") or "").strip(),
+                "score": 1.0,
+            }
+        )
+
+    pred_payload: List[Dict[str, Any]] = []
+    raw_objects: List[Dict[str, Any]] = []
+    for idx, pobj in enumerate(preds):
+        desc = ""
+        if idx < len(pred_meta):
+            desc = str(getattr(pred_meta[idx], "desc", "") or "").strip()
+        gtype = _normalize_geometry_key(getattr(pobj, "geom_type", ""))
+        pts_norm = [int(x) for x in pobj.points_norm1000]
+        pts_px = denorm_and_clamp(
+            pts_norm,
+            float(width),
+            float(height),
+            coord_mode="norm1000",
+        )
+        pred_payload.append(
+            {
+                "type": gtype,
+                "points": pts_px,
+                "desc": desc,
+            }
+        )
+        # raw_output_json must preserve coord bins (0..999), not pixel points.
+        try:
+            raw_objects.append(
+                build_object_payload(
+                    desc=desc,
+                    geometry_key=gtype,
+                    geometry_value=pts_norm,
+                    object_field_order=object_field_order,
+                )
+            )
+        except Exception:
+            raw_objects.append({"type": gtype, "points": pts_norm, "desc": desc})
+
+    raw_text_value = str(raw_text or "")
+    raw_output_json = load_prediction_dict(raw_text_value)
+    if raw_output_json is None:
+        raw_output_json = {"objects": raw_objects}
+
+    errors_payload = [str(code) for code in list(error_codes)]
+    error_entries_payload: List[Dict[str, Any]] = []
+    for entry in error_entries:
+        if not isinstance(entry, Mapping):
+            continue
+        error_entries_payload.append(
+            {
+                "code": str(entry.get("code", "") or ""),
+                "message": str(entry.get("message", "") or ""),
+                "stage": str(entry.get("stage", "") or ""),
+            }
+        )
+
+    image_value = images[0] if images else f"image_{int(record_index)}.jpg"
+    out: Dict[str, Any] = {
+        "index": int(record_index),
+        "image": image_value,
+        "mode": "text",
+        "coord_mode": "pixel",
+        "images": images,
+        "gt": gt_payload,
+        "pred": pred_payload,
+        "width": int(width),
+        "height": int(height),
+        "raw_output_json": raw_output_json,
+        "raw_special_tokens": extract_special_tokens(
+            raw_text_value,
+            preserve_duplicates=True,
+        ),
+        "raw_ends_with_im_end": raw_text_value.endswith(_IM_END),
+        "errors": errors_payload,
+        "error_entries": error_entries_payload,
+    }
+    if sample.get("image_id") is not None:
+        out["image_id"] = sample.get("image_id")
+    metadata = sample.get("metadata")
+    if isinstance(metadata, Mapping):
+        out["metadata"] = dict(metadata)
+    return out
+
+
+def extract_eval_gt_objects(sample: Mapping[str, Any]) -> List[GTObject]:
+    payload = sample.get("assistant_payload")
+    if not isinstance(payload, Mapping):
+        raise ValueError("rollout-matching requires assistant_payload in each sample")
+    objects_raw = payload.get("objects")
+    if not isinstance(objects_raw, list):
+        raise ValueError("assistant_payload must contain top-level 'objects' list")
+
+    objs: List[GTObject] = []
+    for idx, entry in enumerate(objects_raw):
+        if not isinstance(entry, Mapping):
+            raise ValueError(f"assistant_payload.objects[{int(idx)}] must be a mapping")
+        desc = entry.get("desc")
+        if not isinstance(desc, str) or not desc.strip():
+            raise ValueError(
+                f"assistant_payload.objects[{int(idx)}].desc must be a non-empty string"
+            )
+        geom_keys = [
+            k for k in ("bbox_2d", "poly") if k in entry and entry[k] is not None
+        ]
+        if len(geom_keys) != 1:
+            raise ValueError(
+                f"assistant_payload.objects[{int(idx)}] must contain exactly one geometry key (bbox_2d|poly)"
+            )
+        geom_key = geom_keys[0]
+        raw_pts = flatten_points(entry.get(geom_key))
+        if raw_pts is None or len(raw_pts) % 2 != 0:
+            raise ValueError(
+                f"assistant_payload.objects[{int(idx)}].{geom_key} must be a flat even-length sequence"
+            )
+        pts: List[int] = []
+        ok = True
+        for v in raw_pts:
+            if isinstance(v, str) and v.startswith("<|coord_"):
+                try:
+                    pts.append(int(token_to_int(v)))
+                except (TypeError, ValueError):
+                    ok = False
+                    break
+            else:
+                vi = _coerce_int(v)
+                if vi is None:
+                    ok = False
+                    break
+                pts.append(int(vi))
+        if not ok:
+            raise ValueError(
+                f"assistant_payload.objects[{int(idx)}].{geom_key} contains invalid coordinate values"
+            )
+        if geom_key == "bbox_2d" and len(pts) != 4:
+            raise ValueError(
+                f"assistant_payload.objects[{int(idx)}].bbox_2d must contain exactly 4 coordinates"
+            )
+        if geom_key == "poly" and (len(pts) < 6 or len(pts) % 2 != 0):
+            raise ValueError(
+                f"assistant_payload.objects[{int(idx)}].poly must contain >=6 coordinates and even arity"
+            )
+        objs.append(
+            GTObject(
+                index=int(idx),
+                geom_type=geom_key,
+                points_norm1000=pts,
+                desc=desc.strip(),
+            )
+        )
+    return objs
 
 
 def _build_stage2_eval_infer_summary(
@@ -175,6 +564,16 @@ def _materialize_stage2_eval_artifacts(
         json.dumps(infer_summary, ensure_ascii=False, indent=2),
         encoding="utf-8",
     )
+    _write_stage2_eval_score_provenance(
+        owner=owner,
+        scored_path=eval_dir / "gt_vs_pred_scored.jsonl",
+        raw_path=eval_dir / "gt_vs_pred.jsonl",
+        eval_prompt_variant=eval_prompt_variant,
+        eval_rollout_backend=eval_rollout_backend,
+        eval_vllm_mode=eval_vllm_mode,
+        eval_detection_score_mode=eval_detection_score_mode,
+        eval_detection_cfg=eval_detection_cfg,
+    )
 
     options = _build_eval_options(eval_detection_cfg, output_dir=eval_dir)
     return evaluate_and_save(eval_dir / "gt_vs_pred_scored.jsonl", options=options)
@@ -214,9 +613,7 @@ def finalize_rollout_aligned_evaluation(
     desc_sem_sim_sum_total: float,
     desc_sem_sim_count_total: float,
     sem_loaded_local: float,
-    trace_fallback_count_local: float,
     vllm_decode_error_count_local: float,
-    trace_fallback_window_active: bool,
     runtime_local_s: float,
     eval_detection_records_local: List[Dict[str, Any]],
     eval_rollout_artifacts_local: List[Dict[str, Any]],
@@ -233,7 +630,6 @@ def finalize_rollout_aligned_evaluation(
     fp_cost: float,
     fn_cost: float,
     was_training: bool,
-    compute_eval_detection_coco_metrics_fn: Any,
     metric_name_matches_key_fn: Any,
     stage2_eval_metric_key_fn: Any,
 ) -> Dict[str, float]:
@@ -271,9 +667,7 @@ def finalize_rollout_aligned_evaluation(
             desc_sem_sim_sum_total,
             desc_sem_sim_count_total,
             sem_loaded_local,
-            trace_fallback_count_local,
             vllm_decode_error_count_local,
-            1.0 if trace_fallback_window_active else 0.0,
         ],
         device=owner.model.device,
         dtype=torch.float64,
@@ -307,12 +701,9 @@ def finalize_rollout_aligned_evaluation(
         desc_sem_sim_sum_total,
         desc_sem_sim_count_total,
         sem_loaded_sum,
-        trace_fallback_count_local,
         vllm_decode_error_count_local,
-        trace_fallback_window_active_sum,
     ) = [float(x.item()) for x in sums_t]
     runtime = float(rt_t.item())
-    trace_fallback_window_active = bool(trace_fallback_window_active_sum > 0.0)
 
     precision = (matched_total / pred_total) if pred_total > 0 else 0.0
     recall = (matched_total / gt_total) if gt_total > 0 else 0.0
@@ -360,7 +751,6 @@ def finalize_rollout_aligned_evaluation(
     metrics[_k("rollout/matched_maskiou_mean")] = (
         float(matched_iou_sum / matched_iou_count) if matched_iou_count > 0 else 0.0
     )
-    metrics[_k("rollout/trace_fallback_count")] = float(trace_fallback_count_local)
     metrics[_k("rollout/vllm_decode_error_count")] = float(
         vllm_decode_error_count_local
     )
@@ -405,9 +795,7 @@ def finalize_rollout_aligned_evaluation(
             1.0 if cfg_mode in {"confidence_postop", "confidence"} else 0.0
         )
 
-        effective_confidence_postop = bool(
-            eval_detection_use_confidence_postop and not trace_fallback_window_active
-        )
+        effective_confidence_postop = bool(eval_detection_use_confidence_postop)
         eff_mode = "confidence_postop" if effective_confidence_postop else "constant"
         metrics[_k("rollout/effective_score_mode_is_constant")] = float(
             1.0 if eff_mode == "constant" else 0.0
@@ -564,9 +952,11 @@ def finalize_rollout_aligned_evaluation(
                     coco_metrics = eval_summary.get("metrics", {})
                     coco_counters = eval_summary.get("counters", {})
                 else:
-                    coco_metrics, coco_counters = compute_eval_detection_coco_metrics_fn(
-                        pred_records=eval_records_all,
-                        eval_cfg=eval_detection_cfg,
+                    raise ValueError(
+                        "Stage-2 official eval requires "
+                        "rollout_matching.eval_detection.materialize_artifacts=true "
+                        "and training.output_dir so scored artifacts can be "
+                        "provenance-checked before metric computation."
                     )
                 eval_det_payload["ok"] = 1.0
                 eval_det_payload["metrics"] = {

@@ -234,7 +234,7 @@ def run_rollout_correction_train_one_pack(
     ddp_world_size: int,
     shadow_zero_loss: bool = False,
 ) -> torch.Tensor:
-    from ..rollout_runtime.swift_infer_compat import import_swift_to_device
+    from src.infer.backend import import_swift_to_device
 
     to_device = import_swift_to_device()
 

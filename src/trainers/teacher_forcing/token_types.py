@@ -114,7 +114,7 @@ def build_token_type_masks(
                     continue
                 if not bool(mask_coord[b, p].item()):
                     mask_struct[b, p] = True
-        elif ch != "B":
+        elif ch != "ROLLOUT_CORRECTION":
             for p in range(int(prefix_start), int(prefix_end)):
                 if bool(mask_desc[b, p].item()):
                     continue
