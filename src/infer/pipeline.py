@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import os
+import hashlib
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, List, Literal, Mapping, Optional, Tuple, cast
@@ -25,6 +26,7 @@ from src.common.detection_sequence import normalize_detection_sequence_format
 from src.config.prompts import (
     coord_mode_from_coord_tokens_enabled,
     get_template_prompt_hash,
+    get_template_prompts,
     resolve_dense_prompt_variant_key,
 )
 from src.eval.artifacts import (
@@ -37,15 +39,55 @@ from src.eval.artifacts import (
     with_constant_scores,
     write_jsonl_records,
 )
-from src.infer.artifacts import build_eval_artifact_paths
+from src.infer.artifacts import (
+    build_eval_artifact_paths,
+    build_score_policy_fingerprint,
+    load_comparable_artifact,
+)
 from src.infer.checkpoints import (
     VLLM_ADAPTER_UNSUPPORTED_MESSAGE,
     resolve_inference_checkpoint,
     validate_compact_coord_token_adapter_contract,
 )
+from src.infer.prompt import DetectionPromptPolicy, prompt_policy_fingerprint
+from src.infer.runtime import (
+    build_decode_request_from_infer_config,
+    build_model_identity_fingerprint,
+    legacy_generation_kwargs_from_decode_request,
+    run_offline_inference,
+)
 from src.utils import get_logger
 
 logger = get_logger(__name__)
+
+
+def _offline_prompt_policy_fingerprint(
+    *,
+    coord_mode: str,
+    prompt_variant: str,
+    object_field_order: ObjectFieldOrder,
+    bbox_format: str,
+    detection_sequence_format: str,
+    object_ordering: ObjectOrdering,
+) -> str:
+    system_prompt, user_prompt = get_template_prompts(
+        ordering=object_ordering,
+        coord_mode=coord_mode,
+        prompt_variant=prompt_variant,
+        object_field_order=object_field_order,
+        bbox_format=bbox_format,
+        detection_sequence_format=detection_sequence_format,
+    )
+    return prompt_policy_fingerprint(
+        DetectionPromptPolicy(
+            name="coordexp_offline_detection_prompt",
+            version="1",
+            system_prompt=system_prompt or "",
+            user_prompt=user_prompt,
+            image_count=1,
+            do_resize=False,
+        )
+    )
 
 
 def _load_yaml(path: Path) -> Dict[str, Any]:
@@ -271,13 +313,40 @@ def _resolve_infer_coord_mode(
             detect_samples = int(detect_samples_raw)
         except (TypeError, ValueError):
             detect_samples = 128
-        from src.infer.engine import detect_mode_from_gt
+        from src.infer.runtime import detect_mode_from_gt
 
         resolved_mode, _reason = detect_mode_from_gt(
             gt_jsonl, sample_size=max(detect_samples, 1)
         )
         return coord_mode_from_coord_tokens_enabled(resolved_mode == "coord")
     raise ValueError("infer.mode must be one of {'coord', 'text', 'auto'}")
+
+
+def _resolve_infer_runtime_mode(
+    infer_cfg: Mapping[str, Any],
+) -> tuple[Literal["coord", "text"], Optional[str]]:
+    requested_mode = str(infer_cfg.get("mode", "auto") or "auto").strip().lower()
+    if requested_mode == "coord":
+        return "coord", None
+    if requested_mode == "text":
+        return "text", None
+    if requested_mode != "auto":
+        raise ValueError("infer.mode must be one of {'coord', 'text', 'auto'}")
+    gt_jsonl = str(infer_cfg.get("gt_jsonl", "") or "").strip()
+    if not gt_jsonl or not Path(gt_jsonl).is_file():
+        return "coord", "default_coord_when_gt_unavailable"
+    detect_samples_raw = infer_cfg.get("detect_samples", 128)
+    try:
+        detect_samples = int(detect_samples_raw)
+    except (TypeError, ValueError):
+        detect_samples = 128
+    from src.infer.runtime import detect_mode_from_gt
+
+    resolved_mode, reason = detect_mode_from_gt(
+        gt_jsonl,
+        sample_size=max(detect_samples, 1),
+    )
+    return resolved_mode, reason
 
 
 def _derive_run_dir(cfg: Mapping[str, Any]) -> Path:
@@ -416,6 +485,108 @@ def _load_or_raise_artifact(path: Path) -> Path:
             return legacy
 
     raise FileNotFoundError(f"Required artifact not found: {path}")
+
+
+def _sha256_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _candidate_inference_provenance_payloads(
+    payload: Mapping[str, Any],
+) -> tuple[Mapping[str, Any], ...]:
+    candidates: list[Mapping[str, Any]] = [payload]
+    for key in ("provenance", "inference_provenance"):
+        value = payload.get(key)
+        if isinstance(value, Mapping):
+            candidates.append(value)
+    return tuple(candidates)
+
+
+def _extract_generation_provenance(payload: Mapping[str, Any]) -> Dict[str, str]:
+    for candidate in _candidate_inference_provenance_payloads(payload):
+        values = {
+            "prompt_policy_fingerprint": candidate.get("prompt_policy_fingerprint"),
+            "decode_policy_fingerprint": candidate.get("decode_policy_fingerprint"),
+            "model_identity_fingerprint": candidate.get("model_identity_fingerprint"),
+        }
+        if all(isinstance(value, str) and value.strip() for value in values.values()):
+            return {key: str(value) for key, value in values.items()}
+    raise ValueError("missing_provenance: raw artifact lacks generation fingerprints")
+
+
+def _parser_policy_for_score_provenance(cfg: Mapping[str, Any]) -> str:
+    return f"compact_full:{_resolve_compact_full_parse_mode(cfg)}"
+
+
+def _write_scored_artifact_provenance(
+    *,
+    cfg: Mapping[str, Any],
+    raw_path: Path,
+    scored_path: Path,
+    policy_name: str,
+    score_source: str,
+    aggregation_rule: str,
+    token_span_rule: str,
+    constant_score_value: Any,
+) -> bool:
+    """Write a score-bearing sidecar when exact raw provenance is available."""
+
+    try:
+        raw_loaded = load_comparable_artifact(raw_path)
+        generation_provenance = _extract_generation_provenance(
+            cast(Mapping[str, Any], raw_loaded["provenance"])
+        )
+    except ValueError as exc:
+        logger.warning(
+            "Could not stamp score provenance for %s because raw artifact %s "
+            "is not comparable: %s",
+            scored_path,
+            raw_path,
+            exc,
+        )
+        return False
+
+    raw_identity = {
+        "path": str(raw_path),
+        "sha256": _sha256_file(raw_path),
+    }
+    parser_policy = _parser_policy_for_score_provenance(cfg)
+    score_policy_fingerprint = build_score_policy_fingerprint(
+        policy_name=policy_name,
+        score_source=score_source,
+        aggregation_rule=aggregation_rule,
+        token_span_rule=token_span_rule,
+        constant_score_value=constant_score_value,
+        source_raw_artifact_identity=raw_identity,
+        parser_policy=parser_policy,
+        metric_bearing=True,
+    )
+    sidecar = {
+        **generation_provenance,
+        "score_policy_fingerprint": score_policy_fingerprint,
+        "metric_bearing": True,
+        "artifact_path": str(scored_path),
+        "source_raw_artifact": str(raw_path),
+        "source_raw_artifact_identity": raw_identity,
+        "parser_policy": parser_policy,
+        "score_policy": {
+            "policy_name": policy_name,
+            "score_source": score_source,
+            "aggregation_rule": aggregation_rule,
+            "token_span_rule": token_span_rule,
+            "constant_score_value": constant_score_value,
+        },
+    }
+    sidecar_path = scored_path.with_suffix(scored_path.suffix + ".provenance.json")
+    sidecar_path.write_text(
+        json.dumps(sidecar, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+    return True
 
 
 _SENSITIVE_KEYS = {
@@ -659,7 +830,10 @@ def run_pipeline(
         resolved_object_ordering,
     ) = _resolve_infer_prompt_controls(infer_cfg)
     resolved_compact_full_parse_mode = _resolve_compact_full_parse_mode(cfg)
-    resolved_coord_mode = _resolve_infer_coord_mode(infer_cfg)
+    resolved_runtime_mode, resolved_mode_reason = _resolve_infer_runtime_mode(infer_cfg)
+    resolved_coord_mode = coord_mode_from_coord_tokens_enabled(
+        resolved_runtime_mode == "coord"
+    )
     if resolved_checkpoint is not None:
         validate_compact_coord_token_adapter_contract(
             resolved_checkpoint,
@@ -673,6 +847,35 @@ def run_pipeline(
         bbox_format=resolved_bbox_format,
         detection_sequence_format=resolved_detection_sequence_format,
     )
+    resolved_prompt_policy_fingerprint = _offline_prompt_policy_fingerprint(
+        coord_mode=resolved_coord_mode,
+        prompt_variant=resolved_prompt_variant,
+        object_field_order=resolved_object_field_order,
+        bbox_format=resolved_bbox_format,
+        detection_sequence_format=resolved_detection_sequence_format,
+        object_ordering=resolved_object_ordering,
+    )
+    resolved_decode_request = None
+    if _get_map(infer_cfg, "generation"):
+        resolved_decode_request = build_decode_request_from_infer_config(infer_cfg)
+    resolved_model_identity_fingerprint = None
+    if resolved_checkpoint is not None and resolved_decode_request is not None:
+        resolved_model_identity_fingerprint = build_model_identity_fingerprint(
+            checkpoint_mode=resolved_checkpoint.checkpoint_mode,
+            requested_model_checkpoint=resolved_checkpoint.requested_model_checkpoint,
+            requested_adapter_checkpoint=(
+                resolved_checkpoint.requested_adapter_checkpoint
+            ),
+            resolved_base_model_checkpoint=(
+                resolved_checkpoint.resolved_base_model_checkpoint
+            ),
+            resolved_adapter_checkpoint=(
+                resolved_checkpoint.resolved_adapter_checkpoint
+            ),
+            backend=resolved_decode_request.backend,
+            backend_mode=resolved_decode_request.backend_mode,
+            backend_model=_get_str(backend_cfg, "model"),
+        )
     artifacts, stages = resolve_artifacts(cfg)
 
     artifacts.run_dir.mkdir(parents=True, exist_ok=True)
@@ -752,6 +955,8 @@ def run_pipeline(
                 },
             },
             "prompt_template_hash": resolved_prompt_hash,
+            "runtime_mode": resolved_runtime_mode,
+            "mode_resolution_reason": resolved_mode_reason,
             "checkpoint_mode": (
                 resolved_checkpoint.checkpoint_mode
                 if resolved_checkpoint is not None
@@ -778,6 +983,32 @@ def run_pipeline(
                 else requested_adapter_checkpoint
             ),
         },
+        "inference_provenance": (
+            {
+                "comparable": resolved_model_identity_fingerprint is not None,
+                "missing_provenance_fields": [],
+                "invalid_provenance_fields": [],
+                "score_policy": "none",
+                "prompt_policy_fingerprint": resolved_prompt_policy_fingerprint,
+                "decode_policy_fingerprint": (
+                    resolved_decode_request.decode_policy_fingerprint
+                    if resolved_decode_request is not None
+                    else None
+                ),
+                "model_identity_fingerprint": resolved_model_identity_fingerprint,
+            }
+            if resolved_decode_request is not None
+            else {
+                "comparable": False,
+                "missing_provenance_fields": [
+                    "prompt_policy_fingerprint",
+                    "decode_policy_fingerprint",
+                    "model_identity_fingerprint",
+                ],
+                "invalid_provenance_fields": [],
+                "score_policy": "none",
+            }
+        ),
         "eval": {
             "duplicate_control": {
                 "enabled": duplicate_control_enabled,
@@ -857,10 +1088,7 @@ def _run_infer_stage(
     *,
     root_image_dir: Optional[str],
 ) -> None:
-    from src.infer.engine import (
-        GenerationConfig,
-        InferenceConfig,
-        InferenceEngine,
+    from src.infer.constraints import (
         STOP_PRESSURE_MODE_MIN_NEW_TOKENS_AFTER_OBJECT_OPEN,
         STOP_PRESSURE_MODE_STEER_BBOX_TAIL_CLOSURE_TO_NEXT_OBJECT,
         STOP_PRESSURE_MODE_STEER_BBOX_TAIL_THEN_OBJECT_OPEN,
@@ -869,10 +1097,9 @@ def _run_infer_stage(
         STOP_PRESSURE_MODE_SUPPRESS_FIRST_STRUCTURAL_CLOSURE_AFTER_OBJECT_BOUNDARY,
         STOP_PRESSURE_MODE_SUPPRESS_SPECIAL_TERMINATING_TOKENS_AFTER_OBJECT_BOUNDARY,
         STOP_PRESSURE_MODE_SUPPRESS_TERMINATING_TOKENS_AFTER_OBJECT_BOUNDARY,
-        STOP_PRESSURE_TRIGGER_RULE_RAW_TEXT_OBJECT_OPEN,
         STOP_PRESSURE_TRIGGER_RULE_RAW_TEXT_OBJECT_BOUNDARY,
+        STOP_PRESSURE_TRIGGER_RULE_RAW_TEXT_OBJECT_OPEN,
     )
-
     infer_cfg = _get_map(cfg, "infer")
     if not infer_cfg:
         raise ValueError("infer section is required when stages.infer=true")
@@ -885,7 +1112,8 @@ def _run_infer_stage(
         adapter_checkpoint=adapter_checkpoint,
     )
     mode_raw = _require_choice(infer_cfg, "mode", {"coord", "text", "auto"})
-    mode = cast(Literal["coord", "text", "auto"], mode_raw)
+    requested_mode = cast(Literal["coord", "text", "auto"], mode_raw)
+    runtime_mode, mode_resolution_reason = _resolve_infer_runtime_mode(infer_cfg)
 
     (
         prompt_variant,
@@ -915,15 +1143,7 @@ def _run_infer_stage(
     gen_cfg_map = _get_map(infer_cfg, "generation")
     if not gen_cfg_map:
         raise ValueError("infer.generation section is required when stages.infer=true")
-
-    def _f(key: str, default: float) -> float:
-        val = gen_cfg_map.get(key, default)
-        if val is None:
-            return float(default)
-        try:
-            return float(val)
-        except (TypeError, ValueError) as exc:
-            raise ValueError(f"infer.generation.{key} must be a float") from exc
+    decode_request = build_decode_request_from_infer_config(infer_cfg)
 
     def _i(key: str, default: int) -> int:
         val = gen_cfg_map.get(key, default)
@@ -934,8 +1154,6 @@ def _run_infer_stage(
         except (TypeError, ValueError) as exc:
             raise ValueError(f"infer.generation.{key} must be an int") from exc
 
-    seed_val = gen_cfg_map.get("seed", None)
-    seed = int(seed_val) if seed_val is not None else None
     stop_pressure_cfg = _get_map(gen_cfg_map, "stop_pressure")
     compact_grammar_cfg = _get_map(gen_cfg_map, "compact_grammar")
     compact_grammar_enabled = _get_bool(compact_grammar_cfg, "enabled", False)
@@ -965,13 +1183,9 @@ def _run_infer_stage(
                 "infer.generation.stop_pressure.logit_bias must be a float"
             ) from exc
 
-    gen_cfg = GenerationConfig(
-        temperature=_f("temperature", 0.01),
-        top_p=_f("top_p", 0.95),
-        max_new_tokens=_i("max_new_tokens", 1024),
-        repetition_penalty=_f("repetition_penalty", 1.05),
+    generation_kwargs = legacy_generation_kwargs_from_decode_request(
+        decode_request,
         batch_size=_i("batch_size", 1),
-        seed=seed,
         stop_pressure_mode=stop_pressure_mode,
         stop_pressure_min_new_tokens=stop_pressure_min_new_tokens,
         stop_pressure_trigger_rule=stop_pressure_trigger_rule,
@@ -1120,41 +1334,74 @@ def _run_infer_stage(
 
     rank, local_rank, world_size, distributed_enabled = _detect_infer_distributed_env()
     compact_full_parse_mode = _resolve_compact_full_parse_mode(cfg)
+    device = str(_get_str(infer_cfg, "device", "cuda:0") or "cuda:0").strip() or "cuda:0"
+    if bool(distributed_enabled) and device.startswith("cuda"):
+        device = f"cuda:{int(local_rank)}"
 
-    inf_cfg = InferenceConfig(
-        gt_jsonl=gt_jsonl,
-        model_checkpoint=model_checkpoint,
-        adapter_checkpoint=adapter_checkpoint,
-        checkpoint_mode=resolved_checkpoint.checkpoint_mode,
-        requested_model_checkpoint=resolved_checkpoint.requested_model_checkpoint,
-        requested_adapter_checkpoint=resolved_checkpoint.requested_adapter_checkpoint,
-        resolved_base_model_checkpoint=resolved_checkpoint.resolved_base_model_checkpoint,
-        resolved_adapter_checkpoint=resolved_checkpoint.resolved_adapter_checkpoint,
-        mode=mode,
-        prompt_variant=prompt_variant,
-        bbox_format=bbox_format,
-        detection_sequence_format=detection_sequence_format,
-        object_field_order=object_field_order,
-        object_ordering=object_ordering,
-        compact_full_parse_mode=compact_full_parse_mode,
-        pred_coord_mode=pred_coord_mode,
-        out_path=str(artifacts.gt_vs_pred_jsonl),
-        pred_token_trace_path=str(artifacts.pred_token_trace_jsonl),
-        summary_path=str(artifacts.summary_json),
-        root_image_dir=str(root_image_dir) if root_image_dir else None,
-        device=str(_get_str(infer_cfg, "device", "cuda:0") or "cuda:0"),
-        limit=_get_limit(infer_cfg, "limit", 0),
-        backend_type=backend_type,
-        backend=dict(backend_cfg) if backend_cfg else {},
-        detect_samples=_get_int(infer_cfg, "detect_samples", 128),
-        rank=rank,
-        local_rank=local_rank,
-        world_size=world_size,
-        distributed_enabled=distributed_enabled,
+    inference_kwargs = {
+        "gt_jsonl": gt_jsonl,
+        "model_checkpoint": model_checkpoint,
+        "adapter_checkpoint": adapter_checkpoint,
+        "checkpoint_mode": resolved_checkpoint.checkpoint_mode,
+        "requested_model_checkpoint": resolved_checkpoint.requested_model_checkpoint,
+        "requested_adapter_checkpoint": resolved_checkpoint.requested_adapter_checkpoint,
+        "resolved_base_model_checkpoint": resolved_checkpoint.resolved_base_model_checkpoint,
+        "resolved_adapter_checkpoint": resolved_checkpoint.resolved_adapter_checkpoint,
+        "mode": runtime_mode,
+        "requested_mode": requested_mode,
+        "mode_resolution_reason": mode_resolution_reason,
+        "prompt_variant": prompt_variant,
+        "bbox_format": bbox_format,
+        "detection_sequence_format": detection_sequence_format,
+        "object_field_order": object_field_order,
+        "object_ordering": object_ordering,
+        "compact_full_parse_mode": compact_full_parse_mode,
+        "pred_coord_mode": pred_coord_mode,
+        "out_path": str(artifacts.gt_vs_pred_jsonl),
+        "pred_token_trace_path": str(artifacts.pred_token_trace_jsonl),
+        "summary_path": str(artifacts.summary_json),
+        "root_image_dir": str(root_image_dir) if root_image_dir else None,
+        "device": device,
+        "limit": _get_limit(infer_cfg, "limit", 0),
+        "backend_type": backend_type,
+        "backend": dict(backend_cfg) if backend_cfg else {},
+        "prompt_policy_fingerprint": _offline_prompt_policy_fingerprint(
+            coord_mode=coord_mode_from_coord_tokens_enabled(runtime_mode == "coord"),
+            prompt_variant=prompt_variant,
+            object_field_order=object_field_order,
+            bbox_format=bbox_format,
+            detection_sequence_format=detection_sequence_format,
+            object_ordering=object_ordering,
+        ),
+        "decode_policy_fingerprint": decode_request.decode_policy_fingerprint,
+        "model_identity_fingerprint": build_model_identity_fingerprint(
+            checkpoint_mode=resolved_checkpoint.checkpoint_mode,
+            requested_model_checkpoint=resolved_checkpoint.requested_model_checkpoint,
+            requested_adapter_checkpoint=(
+                resolved_checkpoint.requested_adapter_checkpoint
+            ),
+            resolved_base_model_checkpoint=(
+                resolved_checkpoint.resolved_base_model_checkpoint
+            ),
+            resolved_adapter_checkpoint=(
+                resolved_checkpoint.resolved_adapter_checkpoint
+            ),
+            backend=decode_request.backend,
+            backend_mode=decode_request.backend_mode,
+            backend_model=_get_str(backend_cfg, "model"),
+        ),
+        "detect_samples": _get_int(infer_cfg, "detect_samples", 128),
+        "rank": rank,
+        "local_rank": local_rank,
+        "world_size": world_size,
+        "distributed_enabled": distributed_enabled,
+    }
+
+    run_offline_inference(
+        inference_kwargs=inference_kwargs,
+        generation_kwargs=generation_kwargs,
+        logger=logger,
     )
-
-    engine = InferenceEngine(inf_cfg, gen_cfg)
-    engine.infer()
 
 
 def _maybe_run_confidence_postop(
@@ -1182,7 +1429,7 @@ def _maybe_run_confidence_postop(
     )
     # Non-xyxy prepared bbox formats use a deterministic constant-score scored artifact for
     # official evaluation, so infer-only runs still need scored materialization.
-    if not want_scored and bbox_format in {"xyxy", "cxcy_logw_logh", "cxcywh"}:
+    if not want_scored and bbox_format in {"cxcy_logw_logh", "cxcywh"}:
         want_scored = True
     if not want_scored:
         return
@@ -1194,9 +1441,32 @@ def _maybe_run_confidence_postop(
     if bbox_format in {"cxcy_logw_logh", "cxcywh"}:
         if not base_path.is_file():
             return
+        pred_score_source = (
+            CXCY_LOGW_LOGH_CONSTANT_PRED_SCORE_SOURCE
+            if bbox_format == "cxcy_logw_logh"
+            else CXCYWH_CONSTANT_PRED_SCORE_SOURCE
+        )
+        pred_score_version = (
+            CXCY_LOGW_LOGH_CONSTANT_PRED_SCORE_VERSION
+            if bbox_format == "cxcy_logw_logh"
+            else CXCYWH_CONSTANT_PRED_SCORE_VERSION
+        )
+        constant_score = (
+            CXCY_LOGW_LOGH_CONSTANT_SCORE
+            if bbox_format == "cxcy_logw_logh"
+            else CXCYWH_CONSTANT_SCORE
+        )
         newest_input_mtime = base_path.stat().st_mtime
         if scored_path.is_file() and scored_path.stat().st_mtime >= newest_input_mtime:
-            return
+            try:
+                load_comparable_artifact(scored_path, require_score=True)
+                return
+            except ValueError:
+                logger.info(
+                    "Recomputing constant-score artifact because %s lacks valid "
+                    "score provenance for the current pipeline contract.",
+                    scored_path,
+                )
         rows: List[Dict[str, Any]] = []
         with base_path.open("r", encoding="utf-8") as fin:
             for line in fin:
@@ -1208,22 +1478,20 @@ def _maybe_run_confidence_postop(
             scored_path,
             with_constant_scores(
                 records=rows,
-                pred_score_source=(
-                    CXCY_LOGW_LOGH_CONSTANT_PRED_SCORE_SOURCE
-                    if bbox_format == "cxcy_logw_logh"
-                    else CXCYWH_CONSTANT_PRED_SCORE_SOURCE
-                ),
-                pred_score_version=(
-                    CXCY_LOGW_LOGH_CONSTANT_PRED_SCORE_VERSION
-                    if bbox_format == "cxcy_logw_logh"
-                    else CXCYWH_CONSTANT_PRED_SCORE_VERSION
-                ),
-                constant_score=(
-                    CXCY_LOGW_LOGH_CONSTANT_SCORE
-                    if bbox_format == "cxcy_logw_logh"
-                    else CXCYWH_CONSTANT_SCORE
-                ),
+                pred_score_source=pred_score_source,
+                pred_score_version=pred_score_version,
+                constant_score=constant_score,
             ),
+        )
+        _write_scored_artifact_provenance(
+            cfg=cfg,
+            raw_path=base_path,
+            scored_path=scored_path,
+            policy_name="constant_score",
+            score_source=f"{pred_score_source}:v{pred_score_version}",
+            aggregation_rule="constant_per_prediction",
+            token_span_rule="none",
+            constant_score_value=constant_score,
         )
         return
     if not base_path.is_file():
@@ -1249,7 +1517,15 @@ def _maybe_run_confidence_postop(
         )
         >= newest_input_mtime
     ):
-        return
+        try:
+            load_comparable_artifact(scored_path, require_score=True)
+            return
+        except ValueError:
+            logger.info(
+                "Recomputing confidence scored artifact because %s lacks valid "
+                "score provenance for the current pipeline contract.",
+                scored_path,
+            )
 
     postop_cfg = {
         "confidence": dict(confidence_cfg) if confidence_cfg else {},
@@ -1266,9 +1542,22 @@ def _maybe_run_confidence_postop(
         "Running confidence post-op to materialize scored detections at %s",
         scored_path,
     )
-    run_confidence_postop(
+    summary = run_confidence_postop(
         paths_from_config(postop_cfg),
         options=options_from_config(postop_cfg),
+    )
+    _write_scored_artifact_provenance(
+        cfg=cfg,
+        raw_path=base_path,
+        scored_path=scored_path,
+        policy_name=str(summary.get("confidence_method") or "confidence_postop"),
+        score_source=(
+            f"{summary.get('pred_score_source', 'confidence_postop')}:"
+            f"v{summary.get('pred_score_version', 2)}"
+        ),
+        aggregation_rule="bbox_logprob_confidence_exp",
+        token_span_rule="generated_token_trace_bbox_and_desc_spans",
+        constant_score_value=None,
     )
 
 
@@ -1315,6 +1604,7 @@ def _run_eval_stage(cfg: Mapping[str, Any], artifacts: ResolvedArtifacts) -> Non
                 "artifacts.pred_token_trace_jsonl to be present; otherwise provide "
                 "artifacts.gt_vs_pred_scored_jsonl explicitly."
             )
+        load_comparable_artifact(scored_path, require_score=True)
         pred_path = scored_path
         guarded_pred_path = artifacts.gt_vs_pred_scored_guarded_jsonl
         active_input_family = "scored"

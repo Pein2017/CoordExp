@@ -1,11 +1,35 @@
-"""Inference utilities for CoordExp.
+"""Inference utilities for CoordExp."""
 
-This package hosts the centralized inference engine that supports both
-coord-token checkpoints (normalized 0-999 outputs) and pure-text checkpoints
-that emit pixel or normalized coordinates. The public surface is exposed via
-``src.infer.engine`` and reused by CLI tools and visualizers.
-"""
+from .backend import (
+    DetectionDecodeResult,
+    normalize_vllm_trace_response,
+    validate_decode_trace,
+)
+from .prompt import (
+    DetectionPromptPolicy,
+    build_prompt_bundle,
+    compare_prompt_bundle_parity,
+    prompt_policy_fingerprint,
+)
+from .runtime import (
+    DetectionDecodeRequest,
+    PromptBundle,
+    PromptParityResult,
+    build_decode_policy_fingerprint,
+    build_model_identity_fingerprint,
+)
 
-from .engine import GenerationConfig, InferenceConfig, InferenceEngine
-
-__all__ = ["GenerationConfig", "InferenceConfig", "InferenceEngine"]
+__all__ = [
+    "DetectionDecodeResult",
+    "DetectionDecodeRequest",
+    "DetectionPromptPolicy",
+    "PromptBundle",
+    "PromptParityResult",
+    "build_prompt_bundle",
+    "build_decode_policy_fingerprint",
+    "build_model_identity_fingerprint",
+    "compare_prompt_bundle_parity",
+    "prompt_policy_fingerprint",
+    "normalize_vllm_trace_response",
+    "validate_decode_trace",
+]
