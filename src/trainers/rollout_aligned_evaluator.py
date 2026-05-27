@@ -8,7 +8,7 @@ from typing import Any, Dict, List, Literal, Mapping, Optional, Sequence, Tuple
 
 import torch
 
-from src.common.geometry import flatten_points
+from src.common.geometry import denorm_and_clamp, flatten_points
 from src.common.object_field_order import build_object_payload
 from src.common.prediction_parsing import extract_special_tokens, load_prediction_dict
 from src.coord_tokens.codec import token_to_int
@@ -152,6 +152,197 @@ def _write_stage2_eval_score_provenance(
 def _stage2_eval_output_dir(*, owner: Any, global_step: int) -> Path:
     output_root = Path(str(getattr(getattr(owner, "args", None), "output_dir", ".")))
     return output_root / "eval_detection" / f"step_{int(global_step):07d}"
+
+
+def _resolve_stage2_eval_source_jsonl(owner: Any) -> Path | None:
+    output_dir = Path(str(getattr(getattr(owner, "args", None), "output_dir", "") or ""))
+    resolved_config_path = output_dir / "resolved_config.json"
+    if not resolved_config_path.is_file():
+        return None
+    try:
+        payload = json.loads(resolved_config_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+    resolved = payload.get("resolved")
+    if not isinstance(resolved, Mapping):
+        return None
+    custom = resolved.get("custom")
+    if not isinstance(custom, Mapping):
+        return None
+    val_jsonl_raw = custom.get("val_jsonl")
+    if not isinstance(val_jsonl_raw, str) or not val_jsonl_raw.strip():
+        return None
+
+    val_jsonl = Path(val_jsonl_raw.strip())
+    if val_jsonl.is_absolute():
+        return val_jsonl if val_jsonl.is_file() else None
+    cwd_candidate = (Path.cwd() / val_jsonl).resolve()
+    if cwd_candidate.is_file():
+        return cwd_candidate
+
+    config_path_raw = payload.get("config_path")
+    if isinstance(config_path_raw, str) and config_path_raw.strip():
+        config_path = Path(config_path_raw)
+        if config_path.is_file():
+            for parent in [config_path.parent, *config_path.parents]:
+                candidate = (parent / val_jsonl).resolve()
+                if candidate.is_file():
+                    return candidate
+    return None
+
+
+def _load_stage2_eval_source_rows_by_base_idx(owner: Any) -> Dict[int, Dict[str, Any]]:
+    source_jsonl = _resolve_stage2_eval_source_jsonl(owner)
+    if source_jsonl is None:
+        return {}
+    out: Dict[int, Dict[str, Any]] = {}
+    try:
+        with source_jsonl.open("r", encoding="utf-8") as handle:
+            for idx, raw_line in enumerate(handle):
+                line = raw_line.strip()
+                if not line:
+                    continue
+                try:
+                    row = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                if isinstance(row, Mapping):
+                    item = dict(row)
+                    item["_source_jsonl"] = str(source_jsonl)
+                    item["_source_jsonl_dir"] = str(source_jsonl.parent)
+                    out[int(idx)] = item
+    except OSError:
+        return {}
+    return out
+
+
+def _coerce_positive_int(value: Any) -> int | None:
+    try:
+        out = int(value)
+    except (TypeError, ValueError):
+        return None
+    return out if out > 0 else None
+
+
+def _first_image_from_source_row(row: Mapping[str, Any]) -> str | None:
+    images = row.get("images")
+    if isinstance(images, list):
+        for value in images:
+            if isinstance(value, str) and value.strip():
+                return value.strip()
+    image = row.get("image")
+    if isinstance(image, str) and image.strip():
+        return image.strip()
+    file_name = row.get("file_name")
+    if isinstance(file_name, str) and file_name.strip():
+        return file_name.strip()
+    return None
+
+
+def _rescale_stage2_eval_record_geometry(
+    record: Mapping[str, Any],
+    *,
+    width: int,
+    height: int,
+) -> Dict[str, Any]:
+    out = dict(record)
+    old_width = _coerce_positive_int(out.get("width")) or 1000
+    old_height = _coerce_positive_int(out.get("height")) or 1000
+
+    def _scale_points(points: Any) -> Any:
+        if not isinstance(points, list) or len(points) % 2 != 0:
+            return points
+        scaled: List[int] = []
+        for idx, value in enumerate(points):
+            try:
+                number = float(value)
+            except (TypeError, ValueError):
+                return points
+            if idx % 2 == 0:
+                scaled.append(int(round(number * float(width) / float(old_width))))
+            else:
+                scaled.append(int(round(number * float(height) / float(old_height))))
+        return denorm_and_clamp(scaled, float(width), float(height), coord_mode="pixel")
+
+    for key in ("gt", "pred"):
+        objects: List[Dict[str, Any]] = []
+        for obj in out.get(key) or []:
+            if not isinstance(obj, Mapping):
+                continue
+            copied = dict(obj)
+            if isinstance(copied.get("points"), list):
+                copied["points"] = _scale_points(copied.get("points"))
+            if isinstance(copied.get("bbox_2d"), list):
+                copied["bbox_2d"] = _scale_points(copied.get("bbox_2d"))
+            objects.append(copied)
+        out[key] = objects
+
+    out["width"] = int(width)
+    out["height"] = int(height)
+    return out
+
+
+def _enrich_stage2_eval_artifact_source_provenance(
+    artifact: Mapping[str, Any],
+    *,
+    source_rows_by_base_idx: Mapping[int, Mapping[str, Any]],
+) -> Dict[str, Any]:
+    out = dict(artifact)
+    try:
+        base_idx = int(out.get("base_idx"))
+    except (TypeError, ValueError):
+        return out
+    source = source_rows_by_base_idx.get(int(base_idx))
+    if not isinstance(source, Mapping):
+        return out
+
+    width = _coerce_positive_int(source.get("width"))
+    height = _coerce_positive_int(source.get("height"))
+    image = _first_image_from_source_row(source)
+    if width is None or height is None or image is None:
+        return out
+
+    provenance = {
+        "source_jsonl": str(source.get("_source_jsonl") or ""),
+        "source_jsonl_dir": str(source.get("_source_jsonl_dir") or ""),
+        "base_idx": int(base_idx),
+        "stage2_eval_source_enriched": True,
+    }
+    provenance = {k: v for k, v in provenance.items() if v not in ("", None)}
+
+    for record_key in ("base_record", "scored_record"):
+        record = out.get(record_key)
+        if not isinstance(record, Mapping):
+            continue
+        enriched = _rescale_stage2_eval_record_geometry(
+            record,
+            width=int(width),
+            height=int(height),
+        )
+        enriched["image"] = str(image)
+        enriched["images"] = [str(image)]
+        enriched["file_name"] = str(source.get("file_name") or image)
+        if source.get("image_id") is not None:
+            enriched["image_id"] = source.get("image_id")
+        existing_provenance = dict(enriched.get("provenance") or {})
+        existing_provenance.update(provenance)
+        enriched["provenance"] = existing_provenance
+        out[record_key] = enriched
+
+    out["image"] = str(image)
+    out["images"] = [str(image)]
+    out["width"] = int(width)
+    out["height"] = int(height)
+    if source.get("image_id") is not None:
+        out["image_id"] = source.get("image_id")
+    metadata = dict(out.get("metadata") or {})
+    source_metadata = source.get("metadata")
+    if isinstance(source_metadata, Mapping):
+        metadata.update(dict(source_metadata))
+    metadata.setdefault("source_jsonl", str(source.get("_source_jsonl") or ""))
+    metadata.setdefault("base_idx", int(base_idx))
+    out["metadata"] = {k: v for k, v in metadata.items() if v not in ("", None)}
+    return out
 
 
 def build_eval_detection_record(
@@ -522,7 +713,12 @@ def _materialize_stage2_eval_artifacts(
     scored_rows: List[Dict[str, Any]] = []
     raw_rows: List[Dict[str, Any]] = []
     trace_rows: List[Dict[str, Any]] = []
+    source_rows_by_base_idx = _load_stage2_eval_source_rows_by_base_idx(owner)
     for record_idx, artifact in enumerate(eval_rollout_artifacts_all):
+        artifact = _enrich_stage2_eval_artifact_source_provenance(
+            artifact,
+            source_rows_by_base_idx=source_rows_by_base_idx,
+        )
         base_record = dict(artifact.get("base_record", {}))
         scored_record = dict(artifact.get("scored_record", {}))
         base_record["index"] = int(record_idx)

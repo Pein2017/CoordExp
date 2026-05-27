@@ -3162,6 +3162,24 @@ class Stage2RolloutCorrectionTrainer(
             sample_attempt_id = str(
                 _sample_identifier_or_index(sample, int(sample_index))
             )
+            if timing_enabled:
+                try:
+                    anchor_token_len = len(anchor_rollout[0])
+                except Exception:
+                    anchor_token_len = -1
+                try:
+                    anchor_text_len = len(str(anchor_rollout[1] or ""))
+                except Exception:
+                    anchor_text_len = -1
+                _append_stage2_timing_line(
+                    "stage2_batch_milestone "
+                    f"event=before_prepare_sample global_step={int(gs)} "
+                    f"sample_index={int(sample_index)} sample_id={sample_attempt_id} "
+                    f"primary_rollout_ordinal={int(primary_rollout_ordinal)} "
+                    f"peer_count={len(peer_rollout_ordinals)} "
+                    f"gt_count={len(gts)} anchor_token_len={int(anchor_token_len)} "
+                    f"anchor_text_len={int(anchor_text_len)}"
+                )
             anchor_view = build_rollout_correction_view(
                 tokenizer=tok,
                 object_field_order=object_field_order,
@@ -3176,6 +3194,15 @@ class Stage2RolloutCorrectionTrainer(
                 duplicate_diagnostics_fn=_correction_targets._compute_duplicate_diagnostics,
                 rollout_template_policy=rollout_template_policy,
             )
+            if timing_enabled:
+                _append_stage2_timing_line(
+                    "stage2_batch_milestone "
+                    f"event=after_anchor_view global_step={int(gs)} "
+                    f"sample_index={int(sample_index)} sample_id={sample_attempt_id} "
+                    f"invalid={int(anchor_view.get('invalid_rollout', 0) or 0)} "
+                    f"n_valid_pred={int(anchor_view.get('n_valid_pred', 0) or 0)} "
+                    f"n_drop_invalid={int(anchor_view.get('n_drop_invalid', 0) or 0)}"
+                )
             current_attempt = wrap_rollout_attempt_view(
                 sample_id=sample_attempt_id,
                 sample_index=int(sample_index),
@@ -3196,6 +3223,37 @@ class Stage2RolloutCorrectionTrainer(
             ]
             peer_attempts = []
             for explorer_ordinal, explorer_rollout in enumerate(explorer_rollouts):
+                peer_rollout_ordinal = (
+                    int(peer_rollout_ordinals[int(explorer_ordinal)])
+                    if int(explorer_ordinal) < len(peer_rollout_ordinals)
+                    else -1
+                )
+                if timing_enabled:
+                    try:
+                        peer_token_len = (
+                            len(explorer_rollout[0])
+                            if explorer_rollout is not None
+                            else -1
+                        )
+                    except Exception:
+                        peer_token_len = -1
+                    try:
+                        peer_text_len = (
+                            len(str(explorer_rollout[1] or ""))
+                            if explorer_rollout is not None
+                            else -1
+                        )
+                    except Exception:
+                        peer_text_len = -1
+                    _append_stage2_timing_line(
+                        "stage2_batch_milestone "
+                        f"event=before_peer_view global_step={int(gs)} "
+                        f"sample_index={int(sample_index)} sample_id={sample_attempt_id} "
+                        f"explorer_ordinal={int(explorer_ordinal)} "
+                        f"peer_rollout_ordinal={int(peer_rollout_ordinal)} "
+                        f"peer_token_len={int(peer_token_len)} "
+                        f"peer_text_len={int(peer_text_len)}"
+                    )
                 if explorer_rollout is None:
                     explorer_view_item = _stage2_missing_peer_rollout_view()
                     peer_source = "missing_peer"
@@ -3215,11 +3273,17 @@ class Stage2RolloutCorrectionTrainer(
                         rollout_template_policy=rollout_template_policy,
                     )
                     peer_source = "live"
-                peer_rollout_ordinal = (
-                    int(peer_rollout_ordinals[int(explorer_ordinal)])
-                    if int(explorer_ordinal) < len(peer_rollout_ordinals)
-                    else -1
-                )
+                if timing_enabled:
+                    _append_stage2_timing_line(
+                        "stage2_batch_milestone "
+                        f"event=after_peer_view global_step={int(gs)} "
+                        f"sample_index={int(sample_index)} sample_id={sample_attempt_id} "
+                        f"explorer_ordinal={int(explorer_ordinal)} "
+                        f"peer_rollout_ordinal={int(peer_rollout_ordinal)} "
+                        f"invalid={int(explorer_view_item.get('invalid_rollout', 0) or 0)} "
+                        f"n_valid_pred={int(explorer_view_item.get('n_valid_pred', 0) or 0)} "
+                        f"n_drop_invalid={int(explorer_view_item.get('n_drop_invalid', 0) or 0)}"
+                    )
                 peer_attempts.append(
                     wrap_rollout_attempt_view(
                         sample_id=sample_attempt_id,
@@ -3236,13 +3300,20 @@ class Stage2RolloutCorrectionTrainer(
                         peer_attempts[-1].view,
                         request=rollout_decode_requests[int(peer_rollout_ordinal)],
                         rollout_index=int(peer_rollout_ordinal),
-                    )
+                )
             attempt_table = build_attempt_table(
                 sample_id=sample_attempt_id,
                 sample_index=int(sample_index),
                 primary=current_attempt,
                 peers=peer_attempts,
             )
+            if timing_enabled:
+                _append_stage2_timing_line(
+                    "stage2_batch_milestone "
+                    f"event=after_attempt_table global_step={int(gs)} "
+                    f"sample_index={int(sample_index)} sample_id={sample_attempt_id} "
+                    f"peer_views={len(peer_attempts)}"
+                )
             anchor_view = attempt_table.current_view
             explorer_views = list(attempt_table.peer_views)
             explorer_view = explorer_views[0] if explorer_views else anchor_view
@@ -3404,6 +3475,14 @@ class Stage2RolloutCorrectionTrainer(
                 != 0
             ]
 
+            if timing_enabled:
+                _append_stage2_timing_line(
+                    "stage2_batch_milestone "
+                    f"event=before_duplicate_control global_step={int(gs)} "
+                    f"sample_index={int(sample_index)} sample_id={sample_attempt_id} "
+                    f"anchor_raw={len(parsed_bbox_objects_raw)} "
+                    f"triage_peer_views={len(triage_explorer_views)}"
+                )
             duplicate_control = _correction_targets._apply_rollout_correction_duplicate_control(
                 anchor_objects_raw=parsed_bbox_objects_raw,
                 explorer_objects_raw_by_view=[
@@ -3421,6 +3500,14 @@ class Stage2RolloutCorrectionTrainer(
                 int(boundary): list(duplicates)
                 for boundary, duplicates in duplicate_control.suppressed_duplicate_objects_by_boundary.items()
             }
+            if timing_enabled:
+                _append_stage2_timing_line(
+                    "stage2_batch_milestone "
+                    f"event=after_duplicate_control global_step={int(gs)} "
+                    f"sample_index={int(sample_index)} sample_id={sample_attempt_id} "
+                    f"accepted={len(accepted_objects_clean)} "
+                    f"suppressed={sum(len(v) for v in suppressed_duplicate_objects_by_boundary.values())}"
+                )
             duplicate_counter_metrics = dict(duplicate_control.counter_metrics)
             dup_clusters_total_local = int(
                 duplicate_counter_metrics.get(

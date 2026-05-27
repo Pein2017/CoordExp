@@ -625,6 +625,82 @@ class Stage2RolloutRuntime(Seq2SeqTrainer):
             }
         return None
 
+    def _write_eval_phase_trace(
+        self,
+        *,
+        phase: str,
+        global_step: int,
+        eval_index: int,
+        payload: Mapping[str, Any] | None = None,
+    ) -> None:
+        """Write a small eval-progress breadcrumb for long vLLM/DDP runs."""
+
+        args_obj = getattr(self, "args", None)
+        output_dir = str(getattr(args_obj, "output_dir", ".") or ".")
+        if not output_dir.strip():
+            output_dir = "."
+
+        safe_phase = "".join(
+            ch if (str(ch).isalnum() or ch in ("-", "_")) else "_"
+            for ch in str(phase)
+        ).strip("_")
+        if not safe_phase:
+            safe_phase = "unknown_phase"
+
+        rank = 0
+        world_size = 1
+        try:
+            import torch.distributed as dist
+
+            if dist.is_available() and dist.is_initialized():
+                rank = int(dist.get_rank())
+                world_size = int(dist.get_world_size())
+        except (RuntimeError, TypeError, ValueError):
+            rank = 0
+            world_size = 1
+
+        out_dir = os.path.join(output_dir, "monitor_dumps", "eval_phase_trace")
+        record = {
+            "kind": "eval_phase_trace",
+            "global_step": int(global_step),
+            "eval_index": int(eval_index),
+            "epoch": float(
+                getattr(getattr(self, "state", None), "epoch", 0.0) or 0.0
+            ),
+            "time": float(time.time()),
+            "meta": {
+                "phase": "eval",
+                "stage2_surface": "rollout_correction",
+                "eval_phase": str(phase),
+                "rank": int(rank),
+                "world_size": int(world_size),
+            },
+            "payload": dict(payload) if isinstance(payload, Mapping) else {},
+        }
+
+        try:
+            os.makedirs(out_dir, exist_ok=True)
+            trace_path = os.path.join(
+                out_dir,
+                (
+                    f"eval_{int(eval_index):04d}_step_{int(global_step):06d}_"
+                    f"rank{int(rank):02d}_{safe_phase}.json"
+                ),
+            )
+            with open(trace_path, "w", encoding="utf-8") as f:
+                json.dump(record, f, ensure_ascii=True, indent=2)
+        except (OSError, TypeError, ValueError) as exc:
+            logger.warning(
+                "Failed to write rollout-correction eval phase trace for "
+                "global_step=%s eval_index=%s phase=%s rank=%s/%s: %r",
+                int(global_step),
+                int(eval_index),
+                str(phase),
+                int(rank),
+                int(world_size),
+                exc,
+            )
+
     def _validate_rollout_matching_cfg(self) -> None:
         cfg = getattr(self, "rollout_matching_cfg", None)
         if cfg is None:
@@ -3748,6 +3824,20 @@ class Stage2RolloutRuntime(Seq2SeqTrainer):
             # Mark early to avoid duplicate dumps in the same eval invocation.
             self._eval_monitor_dump_last_eval = int(eval_dump_index)
 
+        self._write_eval_phase_trace(
+            phase="start",
+            global_step=int(gs),
+            eval_index=int(eval_dump_index),
+            payload={
+                "eval_rollout_backend": str(eval_rollout_backend),
+                "eval_vllm_mode": str(eval_vllm_mode),
+                "eval_detection_enabled": bool(eval_detection_enabled),
+                "eval_detection_score_mode": str(eval_detection_score_mode),
+                "has_token_trace": bool(eval_detection_use_confidence_postop),
+                "eval_prompt_variant": str(eval_prompt_variant),
+            },
+        )
+
         with torch.no_grad(), self._maybe_eval_vllm_colocate_window(
             rollout_backend=eval_rollout_backend
         ):
@@ -3768,19 +3858,69 @@ class Stage2RolloutRuntime(Seq2SeqTrainer):
                 eval_decode_override = self._eval_decode_override(
                     has_token_trace=has_token_trace
                 )
+                batch_index = int(n_steps)
+                self._write_eval_phase_trace(
+                    phase=f"before_rollout_batch_{batch_index:04d}",
+                    global_step=int(gs),
+                    eval_index=int(eval_dump_index),
+                    payload={
+                        "batch_index": int(batch_index),
+                        "batch_size": int(len(batch)),
+                        "has_token_trace": bool(has_token_trace),
+                        "eval_rollout_backend": str(eval_rollout_backend),
+                        "eval_vllm_mode": str(eval_vllm_mode),
+                        "decode_override": (
+                            dict(eval_decode_override)
+                            if isinstance(eval_decode_override, Mapping)
+                            else None
+                        ),
+                    },
+                )
                 sample_rollouts: List[Tuple[Mapping[str, Any], Any]] = []
                 if has_token_trace:
-                    rollout_results = rollout_many_traced(
-                        owner=self,
-                        samples=batch,
-                        prompt_variant_override=eval_prompt_variant,
-                        rollout_backend=eval_rollout_backend,
-                        decode_override=eval_decode_override,
-                    )
+                    try:
+                        rollout_results = rollout_many_traced(
+                            owner=self,
+                            samples=batch,
+                            prompt_variant_override=eval_prompt_variant,
+                            rollout_backend=eval_rollout_backend,
+                            decode_override=eval_decode_override,
+                        )
+                    except Exception as exc:
+                        self._write_eval_phase_trace(
+                            phase=f"rollout_batch_{batch_index:04d}_exception",
+                            global_step=int(gs),
+                            eval_index=int(eval_dump_index),
+                            payload={
+                                "batch_index": int(batch_index),
+                                "batch_size": int(len(batch)),
+                                "has_token_trace": bool(has_token_trace),
+                                "error_type": str(exc.__class__.__name__),
+                                "error": str(exc),
+                            },
+                        )
+                        raise
                     if len(rollout_results) != len(batch):
                         raise RuntimeError(
                             "rollout backend returned unexpected number of results"
                         )
+                    rollout_token_lengths = [len(r[0]) for r in rollout_results]
+                    self._write_eval_phase_trace(
+                        phase=f"after_rollout_batch_{batch_index:04d}",
+                        global_step=int(gs),
+                        eval_index=int(eval_dump_index),
+                        payload={
+                            "batch_index": int(batch_index),
+                            "batch_size": int(len(batch)),
+                            "result_count": int(len(rollout_results)),
+                            "response_token_lengths": rollout_token_lengths,
+                            "response_token_length_max": (
+                                int(max(rollout_token_lengths))
+                                if rollout_token_lengths
+                                else 0
+                            ),
+                        },
+                    )
                     sample_rollouts = list(zip(batch, rollout_results))
                 else:
                     try:
@@ -3794,8 +3934,37 @@ class Stage2RolloutRuntime(Seq2SeqTrainer):
                             raise RuntimeError(
                                 "rollout backend returned unexpected number of results"
                             )
+                        rollout_token_lengths = [len(r[0]) for r in rollout_results]
+                        self._write_eval_phase_trace(
+                            phase=f"after_rollout_batch_{batch_index:04d}",
+                            global_step=int(gs),
+                            eval_index=int(eval_dump_index),
+                            payload={
+                                "batch_index": int(batch_index),
+                                "batch_size": int(len(batch)),
+                                "result_count": int(len(rollout_results)),
+                                "response_token_lengths": rollout_token_lengths,
+                                "response_token_length_max": (
+                                    int(max(rollout_token_lengths))
+                                    if rollout_token_lengths
+                                    else 0
+                                ),
+                            },
+                        )
                         sample_rollouts = list(zip(batch, rollout_results))
                     except Exception as batch_exc:
+                        self._write_eval_phase_trace(
+                            phase=f"rollout_batch_{batch_index:04d}_exception",
+                            global_step=int(gs),
+                            eval_index=int(eval_dump_index),
+                            payload={
+                                "batch_index": int(batch_index),
+                                "batch_size": int(len(batch)),
+                                "has_token_trace": bool(has_token_trace),
+                                "error_type": str(batch_exc.__class__.__name__),
+                                "error": str(batch_exc),
+                            },
+                        )
                         if eval_rollout_backend != "vllm":
                             raise
                         sample_rollouts = []
@@ -4164,7 +4333,22 @@ class Stage2RolloutRuntime(Seq2SeqTrainer):
                                         desc_sem_sim_sum_total += float(sim)
                                         desc_sem_sim_count_total += 1.0
 
-        return finalize_rollout_aligned_evaluation(
+        self._write_eval_phase_trace(
+            phase="before_finalize",
+            global_step=int(gs),
+            eval_index=int(eval_dump_index),
+            payload={
+                "n_steps": float(n_steps),
+                "n_samples": float(n_samples),
+                "eval_detection_records_local": int(len(eval_detection_records_local)),
+                "eval_rollout_artifacts_local": int(len(eval_rollout_artifacts_local)),
+                "dropped_invalid_total": float(dropped_invalid_total),
+                "trunc_samples": float(trunc_samples),
+                "vllm_decode_error_count_local": float(vllm_decode_error_count_local),
+            },
+        )
+
+        metrics = finalize_rollout_aligned_evaluation(
             owner=self,
             logger=logger,
             metric_key_prefix=str(metric_key_prefix),
@@ -4217,6 +4401,19 @@ class Stage2RolloutRuntime(Seq2SeqTrainer):
             metric_name_matches_key_fn=metric_name_matches_key,
             stage2_eval_metric_key_fn=stage2_eval_metric_key,
         )
+        self._write_eval_phase_trace(
+            phase="after_finalize",
+            global_step=int(gs),
+            eval_index=int(eval_dump_index),
+            payload={
+                "metric_count": int(len(metrics)) if isinstance(metrics, Mapping) else 0,
+                "has_detection_map": bool(
+                    isinstance(metrics, Mapping)
+                    and f"{metric_key_prefix}/detection/mAP" in metrics
+                ),
+            },
+        )
+        return metrics
 
     def prediction_step(
         self,

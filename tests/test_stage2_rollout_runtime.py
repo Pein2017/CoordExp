@@ -30,6 +30,7 @@ from src.trainers.rollout_matching.matching import (
     greedy_match_iou,
 )
 from src.trainers.rollout_aligned_evaluator import (
+    _enrich_stage2_eval_artifact_source_provenance,
     _write_stage2_eval_score_provenance,
     finalize_rollout_aligned_evaluation,
 )
@@ -74,6 +75,81 @@ def _assert_stage2_eval_files(eval_dir: Path, *, trace_metadata: bool) -> None:
         else EXPECTED_STAGE2_EVAL_FILES
     )
     assert expected <= names
+
+
+def test_stage2_eval_artifact_enrichment_restores_source_image_provenance() -> None:
+    artifact = {
+        "index": 0,
+        "base_idx": 7,
+        "image": "image_0.jpg",
+        "images": ["image_0.jpg"],
+        "width": 1000,
+        "height": 1000,
+        "metadata": {"split": "val"},
+        "base_record": {
+            "index": 0,
+            "image": "image_0.jpg",
+            "images": ["image_0.jpg"],
+            "coord_mode": "pixel",
+            "width": 1000,
+            "height": 1000,
+            "gt": [
+                {"type": "bbox_2d", "points": [100, 200, 300, 400], "desc": "cat"}
+            ],
+            "pred": [
+                {"type": "bbox_2d", "points": [100, 200, 300, 400], "desc": "cat"}
+            ],
+        },
+        "scored_record": {
+            "index": 0,
+            "image": "image_0.jpg",
+            "images": ["image_0.jpg"],
+            "coord_mode": "pixel",
+            "width": 1000,
+            "height": 1000,
+            "gt": [
+                {"type": "bbox_2d", "points": [100, 200, 300, 400], "desc": "cat"}
+            ],
+            "pred": [
+                {
+                    "type": "bbox_2d",
+                    "points": [100, 200, 300, 400],
+                    "desc": "cat",
+                    "score": 1.0,
+                }
+            ],
+        },
+    }
+    source_rows = {
+        7: {
+            "images": ["images/val2017/000000000123.jpg"],
+            "file_name": "images/val2017/000000000123.jpg",
+            "width": 640,
+            "height": 480,
+            "_source_jsonl": "/tmp/val.coord.jsonl",
+            "_source_jsonl_dir": "/tmp",
+        }
+    }
+
+    enriched = _enrich_stage2_eval_artifact_source_provenance(
+        artifact,
+        source_rows_by_base_idx=source_rows,
+    )
+
+    assert enriched["image"] == "images/val2017/000000000123.jpg"
+    assert enriched["images"] == ["images/val2017/000000000123.jpg"]
+    assert enriched["width"] == 640
+    assert enriched["height"] == 480
+    assert enriched["base_record"]["gt"][0]["points"] == [64, 96, 192, 192]
+    assert enriched["scored_record"]["pred"][0]["points"] == [64, 96, 192, 192]
+    assert (
+        enriched["base_record"]["provenance"]["source_jsonl_dir"]
+        == "/tmp"
+    )
+    assert (
+        enriched["base_record"]["provenance"]["stage2_eval_source_enriched"]
+        is True
+    )
 
 
 def test_stage2_rollout_correction_reuses_rollout_aligned_eval_contract() -> None:
@@ -2938,6 +3014,37 @@ def test_eval_decode_override_keeps_nontraced_sampling_temperature_positive() ->
         "top_p": 1.0,
         "top_k": -1,
     }
+
+
+def test_write_eval_phase_trace_records_rank_and_payload(tmp_path: Path) -> None:
+    trainer = object.__new__(Stage2RolloutRuntime)
+    trainer.args = types.SimpleNamespace(output_dir=str(tmp_path))
+    trainer.state = types.SimpleNamespace(epoch=1.25)
+
+    trainer._write_eval_phase_trace(
+        phase="before rollout/batch 1",
+        global_step=6,
+        eval_index=2,
+        payload={"batch_size": 4, "has_token_trace": True},
+    )
+
+    trace_path = (
+        tmp_path
+        / "monitor_dumps"
+        / "eval_phase_trace"
+        / "eval_0002_step_000006_rank00_before_rollout_batch_1.json"
+    )
+    assert trace_path.exists()
+    record = json.loads(trace_path.read_text(encoding="utf-8"))
+    assert record["kind"] == "eval_phase_trace"
+    assert record["global_step"] == 6
+    assert record["eval_index"] == 2
+    assert record["epoch"] == pytest.approx(1.25)
+    assert record["meta"]["phase"] == "eval"
+    assert record["meta"]["eval_phase"] == "before rollout/batch 1"
+    assert record["meta"]["rank"] == 0
+    assert record["meta"]["world_size"] == 1
+    assert record["payload"] == {"batch_size": 4, "has_token_trace": True}
 
 
 def test_evaluate_rejects_official_metrics_without_eval_artifact_materialization(
