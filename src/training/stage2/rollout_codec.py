@@ -457,8 +457,17 @@ class CompactFullRolloutCodec:
         parsed = parse_compact_detection_sequence(
             response_text,
             detection_sequence_format=COMPACT_FULL_FORMAT,
-            salvage_malformed_rows=True,
+            salvage_malformed_rows=False,
         )
+        fallback_reason = None
+        if parsed is None:
+            parsed = parse_compact_detection_sequence(
+                response_text,
+                detection_sequence_format=COMPACT_FULL_FORMAT,
+                salvage_malformed_rows=True,
+            )
+            if parsed is not None:
+                fallback_reason = "compact_full_salvage"
         if parsed is None:
             return self._parse_result(
                 response_text=response_text,
@@ -486,7 +495,7 @@ class CompactFullRolloutCodec:
             valid_objects=objects,
             invalid_rollout=False,
             empty_valid_object_set=False,
-            fallback_reason=None,
+            fallback_reason=fallback_reason,
         )
 
     def render_target(

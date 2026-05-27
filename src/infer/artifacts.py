@@ -4,6 +4,7 @@ import hashlib
 import json
 import math
 from dataclasses import asdict
+from numbers import Integral
 from pathlib import Path
 from typing import Any, Dict, List, Mapping, Optional, Sequence
 
@@ -127,6 +128,18 @@ def score_stage2_confidence_eval_record(
         ) from exc
 
 
+def _json_safe_exact_int_sequence(values: Sequence[Any]) -> list[Any]:
+    out: list[Any] = []
+    for value in list(values):
+        if isinstance(value, bool):
+            out.append(value)
+        elif isinstance(value, Integral):
+            out.append(int(value))
+        else:
+            out.append(value)
+    return out
+
+
 def build_stage2_rollout_eval_artifact_record(
     *,
     eval_record_index: int,
@@ -167,7 +180,9 @@ def build_stage2_rollout_eval_artifact_record(
         "rollout": {
             "decode_mode": str(decode_mode),
             "response_token_ids": [int(x) for x in list(response_token_ids)],
-            "prompt_token_ids": [int(x) for x in list(prompt_token_ids)],
+            "prompt_token_ids": _json_safe_exact_int_sequence(
+                list(prompt_token_ids),
+            ),
             "response_text": str(response_text or ""),
             "generated_token_text": (
                 list(generated_token_text) if generated_token_text is not None else None
