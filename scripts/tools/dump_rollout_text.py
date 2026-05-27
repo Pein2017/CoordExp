@@ -8,8 +8,8 @@ outputs are:
 - end with <|im_end|>,
 - truncated / malformed.
 
-It uses the same inference engine utilities as `scripts/run_infer.py`, but dumps
-RAW generation text for a small set of indices.
+It uses the shared inference runtime utilities, but dumps RAW generation text
+for a small set of indices.
 
 Example:
   CUDA_VISIBLE_DEVICES=0 /root/miniconda3/envs/ms/bin/python scripts/tools/dump_rollout_text.py \
@@ -37,7 +37,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from src.eval.parsing import extract_special_tokens, load_prediction_dict
-from src.infer.engine import GenerationConfig, InferenceConfig, InferenceEngine
+from src.infer.runtime import run_offline_debug_generations
 
 
 def _parse_indices(value: str) -> List[int]:
@@ -117,25 +117,32 @@ def main() -> None:
         missing = [i for i in sorted(set(indices)) if i not in found_idx]
         raise IndexError(f"Some indices were not found in the first {max(indices)+1} lines: {missing}")
 
-    cfg = InferenceConfig(
-        gt_jsonl=str(jsonl_path),
-        model_checkpoint=str(args.ckpt),
-        mode="coord",
-        device=str(args.device),
-        limit=0,
-        backend_type="hf",
+    generation_kwargs = {
+        "temperature": float(args.temperature),
+        "top_p": float(args.top_p),
+        "max_new_tokens": int(args.max_new_tokens),
+        "repetition_penalty": float(args.repetition_penalty),
+        "seed": int(args.seed),
+    }
+    debug_results = run_offline_debug_generations(
+        inference_kwargs={
+            "gt_jsonl": str(jsonl_path),
+            "model_checkpoint": str(args.ckpt),
+            "mode": "coord",
+            "device": str(args.device),
+            "limit": 0,
+            "backend_type": "hf",
+        },
+        generation_kwargs=generation_kwargs,
+        jsonl_path=jsonl_path,
+        records=[record for _idx, record in records],
+        batch=False,
     )
-
-    gen_cfg = GenerationConfig(
-        temperature=float(args.temperature),
-        top_p=float(args.top_p),
-        max_new_tokens=int(args.max_new_tokens),
-        repetition_penalty=float(args.repetition_penalty),
-        seed=int(args.seed),
-    )
-
-    engine = InferenceEngine(cfg, gen_cfg)
-    engine.load_model()
+    if len(debug_results) != len(records):
+        raise RuntimeError(
+            "Offline debug generation returned a row-count mismatch: "
+            f"expected {len(records)} got {len(debug_results)}"
+        )
 
     out_path: Path = args.out
     out_path.parent.mkdir(parents=True, exist_ok=True)
@@ -146,31 +153,30 @@ def main() -> None:
     lines.append(f"ROOT_IMAGE_DIR={os.environ.get('ROOT_IMAGE_DIR')}")
     lines.append(
         "GEN: "
-        f"temperature={gen_cfg.temperature} top_p={gen_cfg.top_p} "
-        f"max_new_tokens={gen_cfg.max_new_tokens} repetition_penalty={gen_cfg.repetition_penalty} seed={gen_cfg.seed}"
+        f"temperature={generation_kwargs['temperature']} top_p={generation_kwargs['top_p']} "
+        f"max_new_tokens={generation_kwargs['max_new_tokens']} repetition_penalty={generation_kwargs['repetition_penalty']} seed={generation_kwargs['seed']}"
     )
     lines.append("")
 
-    for idx, rec in records:
+    for (idx, rec), debug_result in zip(records, debug_results):
         img_rel = (rec.get("images") or [None])[0]
         objs = rec.get("objects") or []
         gt_n = len(objs) if isinstance(objs, list) else 0
         w = rec.get("width")
         h = rec.get("height")
 
-        img_path, image = engine._prepare_image(jsonl_path, rec)  # type: ignore[attr-defined]
         lines.append("=" * 80)
         lines.append(f"INDEX={idx} image={img_rel} size={w}x{h} gt_objects={gt_n}")
         if objs and isinstance(objs, list):
             descs = [o.get("desc") for o in objs[:8] if isinstance(o, dict)]
             lines.append(f"GT desc head: {descs}")
 
-        if image is None:
-            lines.append(f"IMAGE_LOAD_FAILED path={img_path}")
+        if debug_result.error is not None:
+            lines.append(f"GENERATION_FAILED path={debug_result.image_path} error={debug_result.error!r}")
             lines.append("")
             continue
 
-        raw = engine._generate(image)  # type: ignore[attr-defined]
+        raw = str(debug_result.text or "")
         ends_im_end = raw.endswith("<|im_end|>")
         specials = extract_special_tokens(raw)
 

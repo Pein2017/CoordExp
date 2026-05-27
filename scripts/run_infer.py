@@ -20,9 +20,11 @@ from __future__ import annotations
 
 import argparse
 import contextlib
+import json
 import os
 import subprocess
 import sys
+import tempfile
 import time
 import urllib.parse
 from pathlib import Path
@@ -151,41 +153,66 @@ def _yaml_overrides_from_args(args: argparse.Namespace) -> Dict[str, Any]:
 
 
 def _run_legacy_infer(args: argparse.Namespace) -> None:
-    from src.infer import GenerationConfig, InferenceConfig, InferenceEngine
-
-    gen_cfg = GenerationConfig(
-        temperature=float(args.temperature),
-        top_p=float(args.top_p),
-        max_new_tokens=int(args.max_new_tokens),
-        repetition_penalty=float(args.repetition_penalty),
-        batch_size=int(args.batch_size),
-        seed=args.seed,
+    cfg = _legacy_args_to_pipeline_config(args)
+    temp_path: Path | None = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode="w",
+            encoding="utf-8",
+            suffix=".json",
+            prefix="coordexp_legacy_infer_",
+            delete=False,
+        ) as handle:
+            json.dump(cfg, handle, ensure_ascii=True, indent=2, sort_keys=True)
+            handle.write("\n")
+            temp_path = Path(handle.name)
+        artifacts = run_pipeline(config_path=temp_path)
+    finally:
+        if temp_path is not None:
+            try:
+                temp_path.unlink()
+            except OSError:
+                pass
+    print(
+        f"Wrote predictions to {artifacts.gt_vs_pred_jsonl} "
+        f"and summary to {artifacts.summary_json}"
     )
 
-    backend_cfg: Dict[str, Any] = {}
+
+def _legacy_args_to_pipeline_config(args: argparse.Namespace) -> Dict[str, Any]:
+    backend_cfg: Dict[str, Any] = {"type": str(args.backend)}
     if args.backend == "vllm":
         if args.vllm_base_url:
             backend_cfg["base_url"] = str(args.vllm_base_url)
         if args.vllm_model:
             backend_cfg["model"] = str(args.vllm_model)
 
-    inf_cfg = InferenceConfig(
-        gt_jsonl=str(args.gt_jsonl),
-        model_checkpoint=str(args.model_checkpoint),
-        mode=str(args.mode),
-        pred_coord_mode=str(args.pred_coord_mode),
-        out_path=str(args.out),
-        summary_path=str(args.summary) if args.summary else None,
-        device=str(args.device),
-        limit=int(args.limit),
-        backend_type=str(args.backend),
-        backend=backend_cfg,
-        detect_samples=int(args.detect_samples),
-    )
+    artifacts_cfg: Dict[str, Any] = {"gt_vs_pred_jsonl": str(args.out)}
+    if args.summary:
+        artifacts_cfg["summary_json"] = str(args.summary)
 
-    engine = InferenceEngine(inf_cfg, gen_cfg)
-    out_path, summary_path = engine.infer()
-    print(f"Wrote predictions to {out_path} and summary to {summary_path}")
+    return {
+        "stages": {"infer": True, "eval": False, "vis": False},
+        "artifacts": artifacts_cfg,
+        "infer": {
+            "gt_jsonl": str(args.gt_jsonl),
+            "model_checkpoint": str(args.model_checkpoint),
+            "mode": str(args.mode),
+            "pred_coord_mode": str(args.pred_coord_mode),
+            "device": str(args.device),
+            "limit": int(args.limit),
+            "detect_samples": int(args.detect_samples),
+            "backend": backend_cfg,
+            "generation": {
+                "temperature": float(args.temperature),
+                "top_p": float(args.top_p),
+                "max_new_tokens": int(args.max_new_tokens),
+                "repetition_penalty": float(args.repetition_penalty),
+                "batch_size": int(args.batch_size),
+                "seed": args.seed,
+            },
+        },
+    }
 
 
 def _strip_gpus_args(argv: list[str]) -> list[str]:

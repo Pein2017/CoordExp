@@ -99,6 +99,7 @@ from src.eval.detection_records import (
     load_jsonl,
     preds_to_gt_records,
 )
+from src.infer.artifacts import load_comparable_artifact
 
 def _prepare_all_from_records(
     gt_records: List[Dict[str, Any]],
@@ -536,6 +537,8 @@ def evaluate_and_save(
     *,
     options: EvalOptions,
 ) -> Dict[str, Any]:
+    if _wants_official_metrics(options.metrics):
+        load_comparable_artifact(pred_path, require_score=True)
     load_counters = EvalCounters()
     pred_records = load_jsonl(pred_path, load_counters, strict=options.strict_parse)
     pred_records = _maybe_backfill_lvis_metadata_for_eval(

@@ -37,7 +37,7 @@ from src.analysis.unmatched_proposal_verifier import (
     resolve_prompt_controls_for_checkpoint,
 )
 from src.common.semantic_desc import normalize_desc
-from src.infer.engine import GenerationConfig
+from src.infer.runtime import make_offline_generation_config
 from src.trainers.rollout_matching.parsing import (
     find_desc_value_token_positions_by_span,
     parse_rollout_for_matching,
@@ -1257,7 +1257,7 @@ def run_prefix_probe(
                 )
                 conditions.append(("gt_prefix", gt_prefix, gt_last_desc))
 
-            gen_cfg = GenerationConfig(
+            gen_cfg = make_offline_generation_config(
                 temperature=float(config.prefix_probe.temperature),
                 top_p=float(config.prefix_probe.top_p),
                 max_new_tokens=int(config.prefix_probe.max_new_tokens),

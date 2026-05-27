@@ -73,6 +73,7 @@ from src.eval.detection_records import (
     _prepare_pred_objects,
     load_jsonl,
 )
+from src.infer.artifacts import load_comparable_artifact
 
 def _validate_score_provenance_for_coco(
     record: Dict[str, Any], record_idx: int
@@ -186,6 +187,7 @@ def export_coco_submission(
     out_json: Path,
     options: EvalOptions,
 ) -> Dict[str, Any]:
+    load_comparable_artifact(pred_path, require_score=True)
     counters = EvalCounters()
     pred_records = load_jsonl(pred_path, counters, strict=options.strict_parse)
     source_records = load_jsonl(source_jsonl, strict=True)

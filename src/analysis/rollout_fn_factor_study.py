@@ -27,7 +27,7 @@ from src.common.object_field_order import build_object_payload, normalize_object
 from src.config.prompts import get_template_prompts, resolve_dense_prompt_variant_key
 from src.eval.detection import EvalOptions, evaluate_and_save
 from src.eval.oracle_k import _build_match_index
-from src.infer.engine import GenerationConfig, InferenceConfig, InferenceEngine
+from src.infer.runtime import create_offline_engine, make_offline_generation_config
 from src.trainers.rollout_matching.parsing import _is_append_ready_prefix
 from src.utils.coordjson_transpiler import CoordJSONValidationError, parse_coordjson
 from src.utils.assistant_json import dumps_coordjson
@@ -906,27 +906,28 @@ class HFStudyRunner:
         device: str,
         image_root: Path,
     ) -> None:
-        cfg = InferenceConfig(
-            gt_jsonl="unused.jsonl",
-            model_checkpoint=str(checkpoint.path),
-            mode="coord",
-            prompt_variant=checkpoint.prompt_variant,
-            object_field_order=checkpoint.object_field_order,
-            out_path="unused.jsonl",
-            device=device,
-            backend_type="hf",
-            root_image_dir=str(image_root),
+        self.engine = create_offline_engine(
+            inference_kwargs={
+                "gt_jsonl": "unused.jsonl",
+                "model_checkpoint": str(checkpoint.path),
+                "mode": "coord",
+                "prompt_variant": checkpoint.prompt_variant,
+                "object_field_order": checkpoint.object_field_order,
+                "out_path": "unused.jsonl",
+                "device": device,
+                "backend_type": "hf",
+                "root_image_dir": str(image_root),
+            },
+            generation_kwargs={
+                "temperature": 0.0,
+                "top_p": 1.0,
+                "max_new_tokens": 128,
+                "repetition_penalty": 1.0,
+                "batch_size": 1,
+                "seed": 0,
+            },
+            load_model=True,
         )
-        gen_cfg = GenerationConfig(
-            temperature=0.0,
-            top_p=1.0,
-            max_new_tokens=128,
-            repetition_penalty=1.0,
-            batch_size=1,
-            seed=0,
-        )
-        self.engine = InferenceEngine(cfg, gen_cfg)
-        self.engine.load_model()
         self.tokenizer = self.engine.processor.tokenizer if self.engine.processor else None
         if self.tokenizer is None:
             raise RuntimeError("HFStudyRunner requires tokenizer")
@@ -936,7 +937,7 @@ class HFStudyRunner:
         *,
         prompt_texts: Sequence[str],
         images: Sequence[Image.Image],
-        gen_cfg: GenerationConfig,
+        gen_cfg: Any,
     ) -> List[RolloutGeneration]:
         assert self.engine.processor is not None and self.engine.model is not None
         model_inputs = self.engine.processor(
@@ -1014,7 +1015,7 @@ class HFStudyRunner:
         self,
         *,
         images: Sequence[Image.Image],
-        gen_cfg: GenerationConfig,
+        gen_cfg: Any,
     ) -> List[RolloutGeneration]:
         assert self.engine.processor is not None
         messages = [self.engine._build_messages(image) for image in images]
@@ -1035,7 +1036,7 @@ class HFStudyRunner:
         *,
         image: Image.Image,
         prefix_text: str,
-        gen_cfg: GenerationConfig,
+        gen_cfg: Any,
     ) -> RolloutGeneration:
         return self.generate_with_prefix_batch(
             images=[image],
@@ -1048,7 +1049,7 @@ class HFStudyRunner:
         *,
         images: Sequence[Image.Image],
         prefix_texts: Sequence[str],
-        gen_cfg: GenerationConfig,
+        gen_cfg: Any,
     ) -> List[RolloutGeneration]:
         assert self.engine.processor is not None
         if len(images) != len(prefix_texts):
@@ -1443,8 +1444,8 @@ def _logical_cell_from_payload(payload: Mapping[str, Any]) -> LogicalCell:
     return LogicalCell(**cell_kwargs)
 
 
-def _gen_cfg_for_cell(cell: LogicalCell, *, sample_idx: int, batch_size: int) -> GenerationConfig:
-    return GenerationConfig(
+def _gen_cfg_for_cell(cell: LogicalCell, *, sample_idx: int, batch_size: int) -> Any:
+    return make_offline_generation_config(
         temperature=float(cell.temperature),
         top_p=float(cell.top_p),
         max_new_tokens=int(cell.max_new_tokens),

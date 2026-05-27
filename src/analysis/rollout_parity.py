@@ -16,10 +16,10 @@ from src.config.prompts import get_template_prompts
 from src.config.schema import CoordTokensConfig
 from src.coord_tokens.template_adapter import apply_coord_template_adapter
 from src.datasets.builders.jsonlines import JSONLinesBuilder
-from src.infer.engine import GenerationConfig, InferenceConfig, InferenceEngine
-from src.trainers.stage2_rollout_runtime import (
-    _ensure_system_prompt_message,
-    _strip_trailing_assistant_turns_for_rollout,
+from src.infer.runtime import create_offline_engine
+from src.infer.prompt import (
+    ensure_system_prompt_message,
+    strip_trailing_assistant_turns_for_rollout,
 )
 
 _IM_END = "<|im_end|>"
@@ -67,8 +67,8 @@ def build_stage2_vllm_sample(
     messages_raw = merged.get("messages")
     if not isinstance(messages_raw, list):
         raise ValueError("JSONLinesBuilder output must contain messages as a list")
-    messages = _strip_trailing_assistant_turns_for_rollout(messages_raw)
-    messages = _ensure_system_prompt_message(messages, system_prompt)
+    messages = strip_trailing_assistant_turns_for_rollout(messages_raw)
+    messages = ensure_system_prompt_message(messages, system_prompt)
     image = None
     images_raw = record.get("images")
     if isinstance(images_raw, list) and images_raw:
@@ -265,25 +265,26 @@ def collect_stage2_parity_gt_vs_pred(
 
     os.environ["ROOT_IMAGE_DIR"] = str(root_image_dir)
 
-    helper_cfg = InferenceConfig(
-        gt_jsonl=str(jsonl_path),
-        model_checkpoint=str(checkpoint_path),
-        mode="coord",
-        prompt_variant=str(prompt_variant),
-        object_field_order=object_field_order,
-        device="cpu",
-        root_image_dir=str(root_image_dir),
-        backend_type="hf",
+    helper = create_offline_engine(
+        inference_kwargs={
+            "gt_jsonl": str(jsonl_path),
+            "model_checkpoint": str(checkpoint_path),
+            "mode": "coord",
+            "prompt_variant": str(prompt_variant),
+            "object_field_order": object_field_order,
+            "device": "cpu",
+            "root_image_dir": str(root_image_dir),
+            "backend_type": "hf",
+        },
+        generation_kwargs={
+            "temperature": float(temperature),
+            "top_p": float(top_p),
+            "max_new_tokens": int(max_new_tokens),
+            "repetition_penalty": float(repetition_penalty),
+            "batch_size": int(batch_size),
+            "seed": int(seed),
+        },
     )
-    helper_gen = GenerationConfig(
-        temperature=float(temperature),
-        top_p=float(top_p),
-        max_new_tokens=int(max_new_tokens),
-        repetition_penalty=float(repetition_penalty),
-        batch_size=int(batch_size),
-        seed=int(seed),
-    )
-    helper = InferenceEngine(helper_cfg, helper_gen)
 
     indexed_records = list(enumerate(records))
     stage2_samples: List[Stage2ParitySample] = []
