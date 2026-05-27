@@ -144,6 +144,14 @@ Current internal ownership seams:
   - compact-full rollout-correction targets do not use CoordJSON tail-closure or
     semantic-stop supervision. Stop/closure metrics should be interpreted as
     CoordJSON-specific unless explicitly documented otherwise.
+  - Train-time rollout prompt variants are authored with
+    `rollout_matching.prompt_variant`; eval-step rollout prompt variants are
+    authored separately with `rollout_matching.eval_prompt_variant`. For a
+    compact-full checkpoint whose baseline was established under the COCO-80
+    closed-class prompt, pin both keys to `coco_80` before comparing no-update
+    base-control, short pilots, or production candidates. Leaving the train-time
+    key unset falls back to the default dense prompt for backward compatibility
+    and is not the same experiment surface as `coco_80`.
   - malformed current-attempt preparation drops that attempt/sample from rollout-correction training
   - malformed peer attempts that remain invalid after salvage parsing abort the step by default only when pseudo-positive mode is enabled
   - outside pseudo-positive mode, malformed rollouts fall back to the existing empty-prefix / FN-only handling instead of taking the invalid-rollout abort path
@@ -196,6 +204,10 @@ Assignment note:
 
 - Canonical base: `configs/stage2_rollout_correction/base.yaml`
 - New production and smoke leaves should live under `configs/stage2_rollout_correction/`
+- Compact-full ckpt3664 + COCO-80 readiness leaves:
+  - `configs/stage2_rollout_correction/smoke/compact_full_hf_1step.yaml`
+  - `configs/stage2_rollout_correction/smoke/compact_full_vllm_train64_val32_base_control_lr0_1step_coco80_prompt.yaml`
+  - `configs/stage2_rollout_correction/smoke/compact_full_vllm_train64_val32_12steps_coco80_pilot.yaml`
 - Every migrated leaf must restate the full `stage2_rollout_correction.pipeline.objective[]` list because config list merging replaces lists wholesale
 - Old split-stage and pseudo-positive clean-prefix handles are removed active contracts; use historical records only when interpreting older runs
 
