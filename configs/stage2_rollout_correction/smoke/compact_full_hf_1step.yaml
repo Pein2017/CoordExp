@@ -1,7 +1,7 @@
 extends: ../base.yaml
 
 experiment:
-  title: Stage-2 rollout-correction compact-full HF one-step smoke
+  title: Stage-2 rollout-correction compact-full ckpt3664 COCO-80 HF one-step smoke
   purpose: >
     Exercise the unified residual rollout prefix plus GT correction trainer with
     the smallest practical HF rollout smoke.
@@ -14,6 +14,13 @@ experiment:
     - Canonical residual_set_correction objective only.
   runtime_settings:
     - "custom.trainer_variant: stage2_rollout_correction"
+    - "custom.detection_sequence_format: compact_full"
+    - "rollout_matching.prompt_variant/eval_prompt_variant: coco_80"
+
+model:
+  model: /data/CoordExp/model_cache/models/Qwen/Qwen3-VL-2B-Instruct-coordexp
+  adapters:
+    - /data/CoordExp/temp/baidudisk-union-sync/download-staging/outputs/CoordExp/outputs/stage1_2b/recursive_detection_ce_latest/compact_full_et_rmp_ce_support2_bsz16_4epoch_tokenrows_v2/compact-full-et-rmp-ce-support2-bsz16-4epoch-tokenrows-v2/v0-20260504-071356/checkpoint-3664
 
 training:
   output_dir: output/stage2_rollout_correction/smoke/compact_full_hf_1step
@@ -29,7 +36,7 @@ training:
 custom:
   train_jsonl: public_data/coco/rescale_32_1024_bbox_max60/train.coord.jsonl
   val_jsonl: public_data/coco/rescale_32_1024_bbox_max60/val.coord.jsonl
-  detection_sequence_format: coordjson
+  detection_sequence_format: compact_full
   object_field_order: desc_first
   train_sample_limit: 8
   val_sample_limit: 0
@@ -73,7 +80,9 @@ rollout_matching:
   eval_rollout_backend: hf
   rollout_decode_batch_size: 4
   eval_decode_batch_size: 4
-  decode_mode: sample
+  prompt_variant: coco_80
+  eval_prompt_variant: coco_80
+  decode_mode: sampling
   decoding:
     temperature: 0.0
     top_p: 1.0

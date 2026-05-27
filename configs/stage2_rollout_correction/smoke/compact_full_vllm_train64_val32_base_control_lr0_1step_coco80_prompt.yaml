@@ -12,11 +12,13 @@ experiment:
     the no-update base-control eval without changing optimizer behavior.
   key_deviations:
     - Inherits the lr≈0 one-step base-control probe.
-    - Restores the COCO-80 eval prompt variant.
+    - Pins both train-time rollout prompts and eval-step rollout prompts to
+      the COCO-80 variant.
 
 training:
   output_dir: output/stage2_rollout_correction/smoke/compact_full_vllm_train64_val32_base_control_lr0_1step_coco80_prompt
   run_name: compact_full_vllm_train64_val32_base_control_lr0_1step_coco80_prompt
 
 rollout_matching:
+  prompt_variant: coco_80
   eval_prompt_variant: coco_80

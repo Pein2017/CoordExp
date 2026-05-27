@@ -1,0 +1,30 @@
+extends: compact_full_vllm_train64_val32_12steps_baseline.yaml
+
+experiment:
+  title: Stage-2 rollout-correction compact-full ckpt3664 COCO-80 vLLM pilot
+  purpose: >
+    Run a short production-readiness pilot on the intended compact-full
+    ckpt3664 + COCO-80 prompt surface before any larger Stage-2 production run.
+  hypothesis: >
+    If the unified inference runtime and residual-set correction wiring are
+    aligned, this same-surface pilot should preserve the no-update base-control
+    eval level while exposing duplication-burst and crowded-instance symptoms in
+    materialized rollout artifacts.
+  key_deviations:
+    - Inherits the compact-full ckpt3664 vLLM 12-step baseline slice.
+    - Pins both train-time rollout prompts and eval-step rollout prompts to
+      the COCO-80 prompt variant.
+    - Keeps materialized eval artifacts and train monitor dumps enabled for
+      visual inspection before scaling.
+  runtime_settings:
+    - "custom.detection_sequence_format: compact_full"
+    - "rollout_matching.prompt_variant/eval_prompt_variant: coco_80"
+    - "rollout_matching.eval_detection.materialize_artifacts: true"
+
+training:
+  output_dir: output/stage2_rollout_correction/smoke/compact_full_vllm_train64_val32_12steps_coco80_pilot
+  run_name: compact_full_vllm_train64_val32_12steps_coco80_pilot
+
+rollout_matching:
+  prompt_variant: coco_80
+  eval_prompt_variant: coco_80

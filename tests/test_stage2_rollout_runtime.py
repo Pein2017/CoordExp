@@ -1479,6 +1479,35 @@ def test_build_rollout_metrics_from_meta_uses_counter_suffixes() -> None:
     assert "rollout/fn_appended" not in metrics
 
 
+def test_build_rollout_metrics_from_meta_does_not_revalidate_per_attempt_sampling_config() -> None:
+    trainer = object.__new__(Stage2RolloutRuntime)
+    trainer._cfg = lambda _k, default=None: default
+    trainer.rollout_matching_cfg = {
+        "rollout_backend": "vllm",
+        "decode_mode": "sampling",
+        "max_new_tokens": 512,
+        "decoding": {"temperature": 0.0, "top_p": 1.0, "top_k": -1},
+        "repetition_penalty": 1.0,
+    }
+
+    metrics = trainer._build_rollout_metrics_from_meta(
+        [
+            {
+                "rollout_len": 8,
+                "decode_mode": "sampling",
+                "rollout_temperature": 0.3,
+                "gt_objects": 2,
+                "matched_for_supervision": 1,
+                "valid_pred_objects": 2,
+                "excluded_from_supervision": 0,
+            }
+        ]
+    )
+
+    assert metrics["rollout/decode_non_beam_count"] == pytest.approx(1.0)
+    assert metrics["rollout/do_sample"] == pytest.approx(1.0)
+
+
 def test_reduce_train_rollout_log_payload_global_omits_parse_rate_without_parse_inputs() -> None:
     trainer = object.__new__(Stage2RolloutRuntime)
 
@@ -2705,6 +2734,8 @@ def test_evaluate_emits_coco_map_metrics_with_confidence_postop(
     trainer.template = types.SimpleNamespace(tokenizer=_DummyTokenizerRM())
     trainer.rollout_matching_cfg = {
         "rollout_backend": "hf",
+        "decode_mode": "sampling",
+        "decoding": {"temperature": 0.0, "top_p": 1.0, "top_k": -1},
         "eval_prompt_variant": "coco_80",
         "object_ordering": "sorted",
         "eval_detection": {
@@ -2743,11 +2774,18 @@ def test_evaluate_emits_coco_map_metrics_with_confidence_postop(
     }
     trainer.get_eval_dataloader = lambda _eval_dataset=None: [[sample]]
 
+    captured_rollout_kwargs: dict[str, object] = {}
+
+    def _fake_rollout_many_traced(*, owner, samples, **kwargs):
+        del owner
+        captured_rollout_kwargs.update(dict(kwargs))
+        return [
+            ([100], "{}", "greedy", [], [0.0], ["tok"]) for _ in samples
+        ]
+
     monkeypatch.setattr(
         "src.trainers.stage2_rollout_runtime.rollout_many_traced",
-        lambda *, owner, samples, **_kwargs: [
-            ([100], "{}", "greedy", [], [0.0], ["tok"]) for _ in samples
-        ],
+        _fake_rollout_many_traced,
     )
 
     parse_obj = types.SimpleNamespace(
@@ -2839,6 +2877,12 @@ def test_evaluate_emits_coco_map_metrics_with_confidence_postop(
     assert metrics["eval/detection/mAP"] == pytest.approx(0.123)
     assert metrics["eval/runtime/coco_eval_ok"] == pytest.approx(1.0)
     assert metrics["eval/config/prompt_variant_is_coco_80"] == pytest.approx(1.0)
+    assert captured_rollout_kwargs["decode_override"] == {
+        "decode_mode": "greedy",
+        "temperature": 0.0,
+        "top_p": 1.0,
+        "top_k": -1,
+    }
     eval_dir = tmp_path / "eval_detection" / "step_0000011"
     _assert_stage2_eval_files(eval_dir, trace_metadata=True)
     scored_provenance = load_comparable_artifact(
@@ -2863,6 +2907,37 @@ def test_evaluate_emits_coco_map_metrics_with_confidence_postop(
     assert trace_rows[0]["generated_token_text"] == ["tok"]
     assert trace_rows[0]["token_logprobs"] == [0.0]
     assert raw_rows[0]["confidence_objects"][0]["score"] == pytest.approx(0.9)
+
+
+def test_eval_decode_override_coerces_sampling_temperature_zero_to_greedy() -> None:
+    trainer = object.__new__(Stage2RolloutRuntime)
+    trainer.rollout_matching_cfg = {
+        "decode_mode": "sampling",
+        "decoding": {"temperature": 0.0, "top_p": 1.0, "top_k": -1},
+    }
+
+    assert trainer._eval_decode_override(has_token_trace=False) == {
+        "decode_mode": "greedy",
+        "temperature": 0.0,
+        "top_p": 1.0,
+        "top_k": -1,
+    }
+
+
+def test_eval_decode_override_keeps_nontraced_sampling_temperature_positive() -> None:
+    trainer = object.__new__(Stage2RolloutRuntime)
+    trainer.rollout_matching_cfg = {
+        "decode_mode": "sampling",
+        "decoding": {"temperature": 0.4, "top_p": 0.9, "top_k": 32},
+    }
+
+    assert trainer._eval_decode_override(has_token_trace=False) is None
+    assert trainer._eval_decode_override(has_token_trace=True) == {
+        "decode_mode": "greedy",
+        "temperature": 0.0,
+        "top_p": 1.0,
+        "top_k": -1,
+    }
 
 
 def test_evaluate_rejects_official_metrics_without_eval_artifact_materialization(

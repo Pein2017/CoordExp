@@ -596,6 +596,35 @@ class Stage2RolloutRuntime(Seq2SeqTrainer):
         merged.update(dict(raw))
         return merged
 
+    def _eval_decode_override(self, *, has_token_trace: bool) -> Optional[Dict[str, Any]]:
+        """Resolve eval-only decode overrides without relaxing shared runtime validation."""
+
+        cfg = getattr(self, "rollout_matching_cfg", {}) or {}
+        if not isinstance(cfg, Mapping):
+            return None
+        dec = cfg.get("decoding", {}) or {}
+        if not isinstance(dec, Mapping):
+            dec = {}
+
+        try:
+            temperature = float(dec.get("temperature", 0.0) or 0.0)
+        except (TypeError, ValueError):
+            temperature = 0.0
+        decode_mode = str(cfg.get("decode_mode", "") or "").strip().lower()
+
+        # Confidence post-op needs generated-token logprobs from a deterministic
+        # rollout. Train-time rollout-correction configs may still declare
+        # decode_mode=sampling because per-attempt temperature overrides drive
+        # the explorer rollouts; eval should use the canonical greedy pass.
+        if bool(has_token_trace) or (decode_mode == "sampling" and temperature <= 0.0):
+            return {
+                "decode_mode": "greedy",
+                "temperature": 0.0,
+                "top_p": 1.0,
+                "top_k": -1,
+            }
+        return None
+
     def _validate_rollout_matching_cfg(self) -> None:
         cfg = getattr(self, "rollout_matching_cfg", None)
         if cfg is None:
@@ -819,14 +848,16 @@ class Stage2RolloutRuntime(Seq2SeqTrainer):
                 "rollout_matching.vllm.sleep_level is no longer supported (must be 0)."
             )
 
-        eval_prompt_variant_raw = cfg.get("eval_prompt_variant", None)
-        if eval_prompt_variant_raw is not None:
-            if not isinstance(eval_prompt_variant_raw, str):
+        for prompt_variant_key in ("prompt_variant", "eval_prompt_variant"):
+            prompt_variant_raw = cfg.get(prompt_variant_key, None)
+            if prompt_variant_raw is None:
+                continue
+            if not isinstance(prompt_variant_raw, str):
                 raise TypeError(
-                    "rollout_matching.eval_prompt_variant must be a string when provided"
+                    f"rollout_matching.{prompt_variant_key} must be a string when provided"
                 )
-            if eval_prompt_variant_raw.strip():
-                resolve_dense_prompt_variant_key(eval_prompt_variant_raw.strip())
+            if prompt_variant_raw.strip():
+                resolve_dense_prompt_variant_key(prompt_variant_raw.strip())
 
         pipeline_raw = cfg.get("pipeline", None)
         if pipeline_raw is not None:
@@ -3318,7 +3349,33 @@ class Stage2RolloutRuntime(Seq2SeqTrainer):
             payload["rollout/top_p"] = float(top_p)
             payload["rollout/top_k"] = float(top_k)
         except (TypeError, ValueError):
-            raise
+            decode_modes = [str(m.get("decode_mode", "")).lower() for m in meta]
+            temperatures: List[float] = []
+            top_ps: List[float] = []
+            top_ks: List[float] = []
+            for m in meta:
+                try:
+                    temperatures.append(float(m.get("rollout_temperature")))
+                except (TypeError, ValueError):
+                    pass
+                try:
+                    top_ps.append(float(m.get("rollout_top_p")))
+                except (TypeError, ValueError):
+                    pass
+                try:
+                    top_ks.append(float(m.get("rollout_top_k")))
+                except (TypeError, ValueError):
+                    pass
+            do_sample = any(mode == "sampling" for mode in decode_modes) or any(
+                float(value) > 0.0 for value in temperatures
+            )
+            payload["rollout/do_sample"] = float(1.0 if do_sample else 0.0)
+            if temperatures:
+                payload["rollout/temperature"] = float(_mean(temperatures))
+            if top_ps:
+                payload["rollout/top_p"] = float(_mean(top_ps))
+            if top_ks:
+                payload["rollout/top_k"] = float(_mean(top_ks))
 
         # Desc monitor outputs (matched pairs only).
         try:
@@ -3708,6 +3765,9 @@ class Stage2RolloutRuntime(Seq2SeqTrainer):
                 n_steps += 1.0
 
                 has_token_trace = bool(eval_detection_use_confidence_postop)
+                eval_decode_override = self._eval_decode_override(
+                    has_token_trace=has_token_trace
+                )
                 sample_rollouts: List[Tuple[Mapping[str, Any], Any]] = []
                 if has_token_trace:
                     rollout_results = rollout_many_traced(
@@ -3715,6 +3775,7 @@ class Stage2RolloutRuntime(Seq2SeqTrainer):
                         samples=batch,
                         prompt_variant_override=eval_prompt_variant,
                         rollout_backend=eval_rollout_backend,
+                        decode_override=eval_decode_override,
                     )
                     if len(rollout_results) != len(batch):
                         raise RuntimeError(
@@ -3727,6 +3788,7 @@ class Stage2RolloutRuntime(Seq2SeqTrainer):
                             batch,
                             prompt_variant_override=eval_prompt_variant,
                             rollout_backend=eval_rollout_backend,
+                            decode_override=eval_decode_override,
                         )
                         if len(rollout_results) != len(batch):
                             raise RuntimeError(
@@ -3743,6 +3805,7 @@ class Stage2RolloutRuntime(Seq2SeqTrainer):
                                     [sample],
                                     prompt_variant_override=eval_prompt_variant,
                                     rollout_backend=eval_rollout_backend,
+                                    decode_override=eval_decode_override,
                                 )
                                 if len(rollout_one) != 1:
                                     raise RuntimeError(

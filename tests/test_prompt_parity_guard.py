@@ -7,6 +7,7 @@ from src.infer.prompt import (
     force_last_user_prompt_text,
     prepare_rollout_prompt_samples,
     require_verified_prompt_token_parity,
+    rollout_visual_metadata_from_sample,
     strip_trailing_assistant_turns_for_rollout,
 )
 
@@ -166,3 +167,110 @@ def test_prepare_rollout_prompt_samples_rebuilds_eval_prompt_and_visual_metadata
     assert len(user_texts) == 1
     assert user_texts[0] != "old prompt"
     assert "COCO" in user_texts[0]
+
+
+def test_prepare_rollout_prompt_samples_uses_default_variant_when_compact_full_train_variant_missing() -> None:
+    sample = {
+        "messages": [
+            {
+                "role": "user",
+                "content": [
+                    {"type": "image", "image": "img.jpg"},
+                    {"type": "text", "text": "old prompt"},
+                ],
+            }
+        ],
+        "images": ["img.jpg"],
+        "width": 12,
+        "height": 8,
+    }
+
+    out = prepare_rollout_prompt_samples(
+        [sample],
+        rollout_backend="hf",
+        prompt_variant_override=None,
+        detection_sequence_format="compact_full",
+        training_prompt_variant=None,
+        object_ordering="sorted",
+        object_field_order="desc_first",
+        template_system=None,
+    )
+
+    assert len(out) == 1
+    user_content = out[0]["messages"][-1]["content"]
+    user_texts = [
+        part.get("text")
+        for part in user_content
+        if isinstance(part, dict) and part.get("type") == "text"
+    ]
+    assert len(user_texts) == 1
+    assert user_texts[0] != "old prompt"
+
+
+def test_rollout_visual_metadata_accepts_message_image_when_side_channel_empty() -> None:
+    messages = [
+        {
+            "role": "user",
+            "content": [
+                {"type": "image", "image": "img.jpg"},
+                {"type": "text", "text": "detect"},
+            ],
+        }
+    ]
+    sample = {
+        "messages": messages,
+        "images": [],
+        "width": 12,
+        "height": 8,
+    }
+
+    assert rollout_visual_metadata_from_sample(sample, messages=messages) == {
+        "image_count": 1,
+        "image_path": "img.jpg",
+        "image_placement": "message_content",
+        "do_resize": False,
+        "original_width": 12,
+        "original_height": 8,
+        "post_preprocessing_width": 12,
+        "post_preprocessing_height": 8,
+    }
+
+
+def test_prepare_rollout_prompt_samples_stamps_visual_metadata_from_message_image_when_side_channel_empty() -> None:
+    sample = {
+        "messages": [
+            {
+                "role": "user",
+                "content": [
+                    {"type": "image", "image": "img.jpg"},
+                    {"type": "text", "text": "old prompt"},
+                ],
+            }
+        ],
+        "images": [],
+        "width": 12,
+        "height": 8,
+    }
+
+    out = prepare_rollout_prompt_samples(
+        [sample],
+        rollout_backend="vllm",
+        prompt_variant_override="coco_80",
+        training_prompt_variant="default",
+        detection_sequence_format="compact_full",
+        object_ordering="sorted",
+        object_field_order="desc_first",
+        template_system=None,
+    )
+
+    assert out[0]["images"] == []
+    assert out[0]["_coordexp_prompt_visual_metadata"] == {
+        "image_count": 1,
+        "image_path": "img.jpg",
+        "image_placement": "message_content",
+        "do_resize": False,
+        "original_width": 12,
+        "original_height": 8,
+        "post_preprocessing_width": 12,
+        "post_preprocessing_height": 8,
+    }

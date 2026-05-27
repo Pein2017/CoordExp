@@ -277,6 +277,27 @@ def _declared_dimension(sample: dict[str, Any], key: str) -> Optional[int]:
         raise ValueError(f"sample {key} must be an integer image dimension") from exc
 
 
+def _message_image_info(
+    messages: Optional[Sequence[Mapping[str, Any]]],
+) -> tuple[int, str | None]:
+    image_count = 0
+    image_path: str | None = None
+    if messages is None:
+        return image_count, image_path
+    for message in messages:
+        content = message.get("content") if isinstance(message, Mapping) else None
+        if not isinstance(content, Sequence) or isinstance(content, (str, bytes)):
+            continue
+        for part in content:
+            if not isinstance(part, Mapping) or part.get("type") != "image":
+                continue
+            image_count += 1
+            raw_path = part.get("image")
+            if isinstance(raw_path, (str, Path)):
+                image_path = str(raw_path)
+    return image_count, image_path
+
+
 def _visual_metadata(sample: dict[str, Any], *, image_path: Path) -> dict[str, Any]:
     original_width, original_height = _read_image_dimensions(image_path)
     declared_width = _declared_dimension(sample, "width")
@@ -331,32 +352,26 @@ def rollout_visual_metadata_from_sample(
     elif isinstance(image_raw, (str, Path)):
         images = [str(image_raw)]
 
-    if len(images) != 1:
+    message_image_count, message_image_path = _message_image_info(messages)
+    if len(images) > 1:
         raise ValueError(
             "rollout prompt visual input requires exactly one image; "
             f"found {len(images)}"
         )
-
-    message_image_count = 0
-    message_image_path: str | None = None
-    if messages is not None:
-        for message in messages:
-            content = message.get("content") if isinstance(message, Mapping) else None
-            if not isinstance(content, Sequence) or isinstance(content, (str, bytes)):
-                continue
-            for part in content:
-                if not isinstance(part, Mapping) or part.get("type") != "image":
-                    continue
-                message_image_count += 1
-                raw_path = part.get("image")
-                if isinstance(raw_path, (str, Path)):
-                    message_image_path = str(raw_path)
 
     if message_image_count > 1:
         raise ValueError(
             "rollout prompt visual input requires exactly one message image; "
             f"found {message_image_count}"
         )
+    if len(images) == 0:
+        if message_image_count == 1 and message_image_path is not None:
+            images = [message_image_path]
+        else:
+            raise ValueError(
+                "rollout prompt visual input requires exactly one image; "
+                f"found {len(images)}"
+            )
     if (
         message_image_count == 1
         and message_image_path is not None
@@ -491,7 +506,7 @@ def prepare_rollout_prompt_samples(
     rollout_backend: Literal["hf", "vllm"],
     prompt_variant_override: Optional[str] = None,
     detection_sequence_format: str = COORDJSON_FORMAT,
-    training_prompt_variant: str,
+    training_prompt_variant: Optional[str],
     object_ordering: str,
     object_field_order: str,
     template_system: Optional[str] = None,
@@ -518,7 +533,7 @@ def prepare_rollout_prompt_samples(
         variant_key = (
             resolve_dense_prompt_variant_key(prompt_variant_override)
             if prompt_variant_override is not None
-            else str(training_prompt_variant)
+            else resolve_dense_prompt_variant_key(training_prompt_variant)
         )
         user_prompt_override = build_dense_user_prompt(
             ordering=object_ordering,
@@ -543,12 +558,17 @@ def prepare_rollout_prompt_samples(
             system_prompt = str(template_system)
         else:
             try:
-                from src.config.prompts import build_dense_system_prompt
+                from src.config.prompts import (
+                    build_dense_system_prompt,
+                    resolve_dense_prompt_variant_key,
+                )
 
                 system_prompt = build_dense_system_prompt(
                     ordering=object_ordering,
                     coord_mode="coord_tokens",
-                    prompt_variant=str(training_prompt_variant),
+                    prompt_variant=resolve_dense_prompt_variant_key(
+                        training_prompt_variant
+                    ),
                     object_field_order=object_field_order,
                     detection_sequence_format=str(detection_sequence_format),
                 )
@@ -587,6 +607,7 @@ def prepare_rollout_prompt_samples(
                 messages_out = messages_sys
 
         images_out = None
+        images_from_message_only = False
         prompt_visual_metadata = None
         images_raw = sample.get("images", None)
         if images_raw is None:
@@ -594,29 +615,48 @@ def prepare_rollout_prompt_samples(
             if isinstance(image, (str, Path)) and str(image):
                 images_raw = [str(image)]
 
+        message_image_count, message_image_path = _message_image_info(
+            messages_out if isinstance(messages_out, list) else None
+        )
         if images_raw is not None:
             if isinstance(images_raw, (str, Path)):
                 images_out = [str(images_raw)]
             elif isinstance(images_raw, list):
-                images_out = images_raw
+                images_out = list(images_raw)
             elif isinstance(images_raw, tuple):
                 images_out = list(images_raw)
+
+            if (
+                images_out is not None
+                and len(images_out) == 0
+                and message_image_count == 1
+                and message_image_path is not None
+            ):
+                images_out = [message_image_path]
+                images_from_message_only = True
 
             if images_out is not None and len(images_out) != 1:
                 raise ValueError(
                     "rollout prompt visual input requires exactly one image; "
                     f"found {len(images_out)}"
                 )
+        elif message_image_count == 1 and message_image_path is not None:
+            images_out = [message_image_path]
+            images_from_message_only = True
 
+        if images_out is not None:
             if (
                 backend == "vllm"
-                and images_out is not None
-                and not isinstance(sample.get("images"), list)
+                and not images_from_message_only
+                and (
+                    not isinstance(sample.get("images"), list)
+                    or sample.get("images") != images_out
+                )
             ):
                 modified = True
 
             sample_for_visual = dict(sample)
-            if images_out is not None:
+            if not images_from_message_only:
                 sample_for_visual["images"] = list(images_out)
             prompt_visual_metadata = rollout_visual_metadata_from_sample(
                 sample_for_visual,
@@ -628,7 +668,7 @@ def prepare_rollout_prompt_samples(
         if modified:
             sample_out = dict(sample)
             sample_out["messages"] = messages_out
-            if images_out is not None:
+            if images_out is not None and not images_from_message_only:
                 sample_out["images"] = images_out
             if prompt_visual_metadata is not None:
                 sample_out["_coordexp_prompt_visual_metadata"] = prompt_visual_metadata

@@ -17,6 +17,9 @@ from typing import Any, Mapping, Optional, Sequence
 from urllib.parse import urlparse
 
 from .eval_monitor_dump_schema import EvalMonitorDumpConfig
+from .prompts import resolve_dense_prompt_variant_key
+
+
 @dataclass(frozen=True)
 class RolloutDecodingConfig:
     temperature: float = 0.0
@@ -308,6 +311,8 @@ class RolloutMatchingConfig:
         default_factory=RolloutEvalDetectionConfig
     )
     vllm: Optional[VllmConfig] = None
+    # Optional override applied to train-time rollout prompts.
+    prompt_variant: Optional[str] = None
     # Optional override applied only to eval-step rollouts.
     eval_prompt_variant: Optional[str] = None
 
@@ -445,12 +450,21 @@ class RolloutMatchingConfig:
                     "rollout_matching.vllm.enable_lora=true."
                 )
 
-        if self.eval_prompt_variant is not None and not isinstance(
-            self.eval_prompt_variant, str
-        ):
-            raise TypeError(
-                "rollout_matching.eval_prompt_variant must be a string when provided"
-            )
+        if self.prompt_variant is not None:
+            if not isinstance(self.prompt_variant, str):
+                raise TypeError(
+                    "rollout_matching.prompt_variant must be a string when provided"
+                )
+            if self.prompt_variant.strip():
+                resolve_dense_prompt_variant_key(self.prompt_variant.strip())
+
+        if self.eval_prompt_variant is not None:
+            if not isinstance(self.eval_prompt_variant, str):
+                raise TypeError(
+                    "rollout_matching.eval_prompt_variant must be a string when provided"
+                )
+            if self.eval_prompt_variant.strip():
+                resolve_dense_prompt_variant_key(self.eval_prompt_variant.strip())
 
         if self.eval_detection is not None:
             eval_det = self.eval_detection

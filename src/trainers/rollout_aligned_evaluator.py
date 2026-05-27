@@ -53,13 +53,15 @@ def _write_stage2_eval_score_provenance(
     eval_vllm_mode: str,
     eval_detection_score_mode: str,
     eval_detection_cfg: Mapping[str, Any],
+    eval_decode_override: Optional[Mapping[str, Any]] = None,
 ) -> None:
     backend = "vllm" if str(eval_rollout_backend).strip().lower() == "vllm" else "hf"
     backend_mode = str(eval_vllm_mode or ("server" if backend == "vllm" else "local"))
     rollout_matching_cfg = getattr(owner, "rollout_matching_cfg", {}) or {}
     if isinstance(rollout_matching_cfg, Mapping):
         decode_request_base = build_decode_request_from_rollout_matching_config(
-            rollout_matching_cfg
+            rollout_matching_cfg,
+            decode_override=eval_decode_override,
         )
     else:
         decode_request_base = build_decode_request_from_rollout_matching_config({})
@@ -419,19 +421,31 @@ def _build_stage2_eval_infer_summary(
     eval_vllm_mode: str,
     eval_detection_score_mode: str,
     eval_detection_cfg: Mapping[str, Any],
+    eval_decode_override: Optional[Mapping[str, Any]],
     sample_count: int,
     trace_count: int,
 ) -> Dict[str, Any]:
+    generation = {
+        "decode_mode": str(owner._cfg("decode_mode", "greedy")),
+        "max_new_tokens": int(owner._cfg("max_new_tokens", 0) or 0),
+    }
+    if isinstance(eval_decode_override, Mapping):
+        generation["decode_mode"] = str(
+            eval_decode_override.get("decode_mode", generation["decode_mode"])
+        )
+        if "temperature" in eval_decode_override:
+            generation["temperature"] = float(eval_decode_override["temperature"])
+        if "top_p" in eval_decode_override:
+            generation["top_p"] = float(eval_decode_override["top_p"])
+        if "top_k" in eval_decode_override:
+            generation["top_k"] = int(eval_decode_override["top_k"])
     return {
         "mode": "stage2_eval_rollout",
         "backend": {
             "type": str(eval_rollout_backend),
             "vllm_mode": str(eval_vllm_mode),
         },
-        "generation": {
-            "decode_mode": str(owner._cfg("decode_mode", "greedy")),
-            "max_new_tokens": int(owner._cfg("max_new_tokens", 0) or 0),
-        },
+        "generation": generation,
         "infer": {
             "prompt_variant": str(eval_prompt_variant or ""),
             "object_field_order": str(owner._object_field_order()),
@@ -499,6 +513,7 @@ def _materialize_stage2_eval_artifacts(
     eval_vllm_mode: str,
     eval_detection_score_mode: str,
     eval_detection_cfg: Mapping[str, Any],
+    eval_decode_override: Optional[Mapping[str, Any]] = None,
 ) -> Dict[str, Any]:
     eval_dir = _stage2_eval_output_dir(owner=owner, global_step=global_step)
     eval_dir.mkdir(parents=True, exist_ok=True)
@@ -557,6 +572,7 @@ def _materialize_stage2_eval_artifacts(
         eval_vllm_mode=eval_vllm_mode,
         eval_detection_score_mode=eval_detection_score_mode,
         eval_detection_cfg=eval_detection_cfg,
+        eval_decode_override=eval_decode_override,
         sample_count=len(base_rows),
         trace_count=len(trace_rows),
     )
@@ -573,6 +589,7 @@ def _materialize_stage2_eval_artifacts(
         eval_vllm_mode=eval_vllm_mode,
         eval_detection_score_mode=eval_detection_score_mode,
         eval_detection_cfg=eval_detection_cfg,
+        eval_decode_override=eval_decode_override,
     )
 
     options = _build_eval_options(eval_detection_cfg, output_dir=eval_dir)
@@ -938,6 +955,12 @@ def finalize_rollout_aligned_evaluation(
                 should_materialize_artifacts = bool(
                     eval_detection_cfg.get("materialize_artifacts", True)
                 )
+                eval_decode_override = None
+                eval_decode_override_fn = getattr(owner, "_eval_decode_override", None)
+                if callable(eval_decode_override_fn):
+                    eval_decode_override = eval_decode_override_fn(
+                        has_token_trace=bool(eval_detection_use_confidence_postop)
+                    )
                 if output_dir_raw and should_materialize_artifacts:
                     eval_summary = _materialize_stage2_eval_artifacts(
                         owner=owner,
@@ -948,6 +971,7 @@ def finalize_rollout_aligned_evaluation(
                         eval_vllm_mode=eval_vllm_mode,
                         eval_detection_score_mode=eval_detection_score_mode,
                         eval_detection_cfg=eval_detection_cfg,
+                        eval_decode_override=eval_decode_override,
                     )
                     coco_metrics = eval_summary.get("metrics", {})
                     coco_counters = eval_summary.get("counters", {})

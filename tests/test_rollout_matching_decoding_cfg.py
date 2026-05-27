@@ -9,6 +9,7 @@ from src.infer.backend import (
     apply_hf_generation_config_from_decode_request,
     vllm_request_config_kwargs_from_decode_request,
 )
+from src.config.rollout_matching_schema import RolloutMatchingConfig
 from src.infer.runtime import build_decode_request_from_rollout_matching_config
 from src.trainers.stage2_rollout_runtime import Stage2RolloutRuntime
 
@@ -159,6 +160,31 @@ def test_validate_rollout_matching_cfg_rejects_eval_detection_bad_score_mode():
 
 def test_validate_rollout_matching_cfg_rejects_unknown_eval_prompt_variant():
     t = _mk_uninit_trainer({"eval_prompt_variant": "not_a_variant"})
+    with pytest.raises(ValueError, match=r"Unknown prompt variant"):
+        t._validate_rollout_matching_cfg()
+
+
+def test_rollout_matching_schema_accepts_training_prompt_variant():
+    cfg = RolloutMatchingConfig(
+        rollout_decode_batch_size=1,
+        eval_decode_batch_size=1,
+        prompt_variant="coco_80",
+    )
+
+    assert cfg.prompt_variant == "coco_80"
+
+
+def test_rollout_matching_schema_rejects_unknown_training_prompt_variant():
+    with pytest.raises(ValueError, match=r"Unknown prompt variant"):
+        RolloutMatchingConfig(
+            rollout_decode_batch_size=1,
+            eval_decode_batch_size=1,
+            prompt_variant="not_a_variant",
+        )
+
+
+def test_validate_rollout_matching_cfg_rejects_unknown_training_prompt_variant():
+    t = _mk_uninit_trainer({"prompt_variant": "not_a_variant"})
     with pytest.raises(ValueError, match=r"Unknown prompt variant"):
         t._validate_rollout_matching_cfg()
 
