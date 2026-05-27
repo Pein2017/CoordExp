@@ -3,7 +3,7 @@ from __future__ import annotations
 import torch
 import pytest
 
-from src.infer.compact_grammar import (
+from src.infer.constraints import (
     build_compact_full_grammar_logits_processor,
     build_compact_grammar_logits_processor,
 )

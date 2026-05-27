@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from types import SimpleNamespace
 
-from src.trainers.rollout_runtime.swift_coord_row_patch import (
+from src.infer.backend_sync import (
     COORDEXP_WORKER_EXTENSION_CLS,
     CoordExpWeightSyncWorkerExtension,
     apply_coord_row_patch_for_rollout_server,

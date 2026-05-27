@@ -4,17 +4,24 @@ import types
 from pathlib import Path
 
 from PIL import Image
+import pytest
 import torch
 
-import src.infer.engine as infer_engine
-
-from src.infer.engine import (
-    GenerationConfig,
-    GenerationResult,
-    InferenceConfig,
-    InferenceEngine,
+from src.infer.runtime import (
+    OfflineInferenceEngine,
+    make_offline_generation_config,
+    make_offline_generation_result,
+    make_offline_inference_config,
+    make_offline_run_counters,
 )
-from src.infer.backends import generate_hf_batch
+import src.infer.runtime as infer_runtime
+from src.infer.backend import generate_hf_batch, generate_vllm_batch, generate_vllm_server_result
+from src.infer.prompt import build_offline_detection_chat_messages
+
+GenerationConfig = make_offline_generation_config
+GenerationResult = make_offline_generation_result
+InferenceConfig = make_offline_inference_config
+InferenceEngine = OfflineInferenceEngine
 
 
 def _write_img(path: Path, *, size: int = 32) -> None:
@@ -316,10 +323,10 @@ def test_hf_batch_compact_grammar_uses_padded_prompt_offset(monkeypatch):
 
         return _processor
 
-    import src.infer.compact_grammar as compact_grammar
+    import src.infer.constraints as constraints
 
     monkeypatch.setattr(
-        compact_grammar,
+        constraints,
         "build_compact_grammar_logits_processor",
         _fake_build_compact_grammar_logits_processor,
     )
@@ -339,7 +346,8 @@ def test_hf_batch_compact_grammar_uses_padded_prompt_offset(monkeypatch):
             compact_grammar_format="compact_full",
             compact_grammar_force_row_start=True,
         ),
-        _build_messages=lambda _img: [{"role": "user", "content": "prompt"}],
+        system_prompt="system",
+        user_prompt="prompt",
     )
 
     results = generate_hf_batch(
@@ -434,8 +442,8 @@ def test_hf_attention_backend_fallback_is_recorded_in_summary(tmp_path, monkeypa
         def from_pretrained(model_checkpoint: str, **kwargs):
             return _fake_from_pretrained(model_checkpoint, **kwargs)
 
-    monkeypatch.setattr(infer_engine, "AutoProcessor", _DummyAutoProcessor)
-    monkeypatch.setattr(infer_engine, "Qwen3VLForConditionalGeneration", _DummyQwen)
+    monkeypatch.setattr(infer_runtime, "AutoProcessor", _DummyAutoProcessor)
+    monkeypatch.setattr(infer_runtime, "Qwen3VLForConditionalGeneration", _DummyQwen)
 
     engine = InferenceEngine(inf_cfg, gen_cfg)
     engine.load_model()
@@ -558,8 +566,8 @@ def test_hf_adapter_checkpoint_loads_via_swift_shorthand_and_records_resolved_ba
     fake_swift_module = types.ModuleType("swift")
     fake_swift_module.Swift = _DummySwift
 
-    monkeypatch.setattr(infer_engine, "AutoProcessor", _DummyAutoProcessor)
-    monkeypatch.setattr(infer_engine, "Qwen3VLForConditionalGeneration", _DummyQwen)
+    monkeypatch.setattr(infer_runtime, "AutoProcessor", _DummyAutoProcessor)
+    monkeypatch.setattr(infer_runtime, "Qwen3VLForConditionalGeneration", _DummyQwen)
     monkeypatch.setitem(sys.modules, "swift", fake_swift_module)
 
     engine = InferenceEngine(inf_cfg, gen_cfg)
@@ -678,10 +686,10 @@ def test_hf_coord_offset_adapter_is_preinstalled_before_swift_reload(
     fake_swift_module = types.ModuleType("swift")
     fake_swift_module.Swift = _DummySwift
 
-    monkeypatch.setattr(infer_engine, "AutoProcessor", _DummyAutoProcessor)
-    monkeypatch.setattr(infer_engine, "Qwen3VLForConditionalGeneration", _DummyQwen)
-    monkeypatch.setattr(infer_engine, "install_coord_offset_adapter", _fake_install)
-    monkeypatch.setattr(infer_engine, "reattach_coord_offset_hooks", _fake_reattach)
+    monkeypatch.setattr(infer_runtime, "AutoProcessor", _DummyAutoProcessor)
+    monkeypatch.setattr(infer_runtime, "Qwen3VLForConditionalGeneration", _DummyQwen)
+    monkeypatch.setattr(infer_runtime, "install_coord_offset_adapter", _fake_install)
+    monkeypatch.setattr(infer_runtime, "reattach_coord_offset_hooks", _fake_reattach)
     monkeypatch.setitem(sys.modules, "swift", fake_swift_module)
 
     engine = InferenceEngine(inf_cfg, gen_cfg)
@@ -936,7 +944,11 @@ def test_infer_build_messages_respects_random_ordering() -> None:
         GenerationConfig(),
     )
 
-    messages = engine._build_messages(Image.new("RGB", (16, 16), color=(0, 0, 0)))
+    messages = build_offline_detection_chat_messages(
+        system_prompt=engine.system_prompt,
+        user_prompt=engine.user_prompt,
+        image=Image.new("RGB", (16, 16), color=(0, 0, 0)),
+    )
     system_text = str(messages[0]["content"])
     user_content = messages[1]["content"]
     user_text = next(
@@ -950,7 +962,7 @@ def test_infer_build_messages_respects_random_ordering() -> None:
     assert [item["type"] for item in user_content] == ["image", "text"]
 
 
-def test_generate_vllm_server_preserves_coord_special_tokens_in_response_payload(
+def test_backend_generate_vllm_server_preserves_coord_special_tokens_in_response_payload(
     monkeypatch,
 ) -> None:
     captured: dict[str, object] = {}
@@ -979,8 +991,8 @@ def test_generate_vllm_server_preserves_coord_special_tokens_in_response_payload
     fake_requests = types.SimpleNamespace(post=_fake_post)
     monkeypatch.setitem(sys.modules, "requests", fake_requests)
 
-    engine = InferenceEngine(
-        InferenceConfig(
+    owner = types.SimpleNamespace(
+        cfg=InferenceConfig(
             gt_jsonl="dummy.jsonl",
             model_checkpoint="dummy-checkpoint",
             mode="text",
@@ -994,7 +1006,7 @@ def test_generate_vllm_server_preserves_coord_special_tokens_in_response_payload
             backend={"base_url": "http://127.0.0.1:8000", "timeout_s": 12.5},
             detect_samples=1,
         ),
-        GenerationConfig(
+        gen_cfg=GenerationConfig(
             temperature=0.0,
             top_p=0.9,
             max_new_tokens=32,
@@ -1002,11 +1014,18 @@ def test_generate_vllm_server_preserves_coord_special_tokens_in_response_payload
             batch_size=1,
             seed=42,
         ),
+        system_prompt="system",
+        user_prompt="detect",
     )
 
-    text = engine._generate_vllm_server(Image.new("RGB", (8, 8), color=(0, 0, 0)))
+    result = generate_vllm_server_result(
+        owner=owner,
+        image=Image.new("RGB", (8, 8), color=(0, 0, 0)),
+        result_factory=GenerationResult,
+    )
 
-    assert "<|coord_1|>" in text
+    assert "<|coord_1|>" in result.text
+    assert not hasattr(owner, "_generate_vllm_server_result")
     assert captured["url"] == "http://127.0.0.1:8000/v1/chat/completions"
     payload = captured["json"]
     assert isinstance(payload, dict)
@@ -1014,6 +1033,87 @@ def test_generate_vllm_server_preserves_coord_special_tokens_in_response_payload
     assert payload["spaces_between_special_tokens"] is False
     assert payload["stream"] is False
     assert payload["stop"] == ["<|im_end|>"]
+    content = payload["messages"][1]["content"]
+    assert content[0]["type"] == "image_url"
+    assert content[0]["image_url"]["url"].startswith("data:image/png;base64,")
+    assert content[1] == {"type": "text", "text": "detect"}
+
+
+def test_backend_generate_vllm_server_trace_returns_strict_result_object(monkeypatch) -> None:
+    captured: dict[str, object] = {}
+
+    class _FakeResponse:
+        status_code = 200
+
+        def json(self):
+            return {
+                "prompt_token_ids": [11, 12],
+                "choices": [
+                    {
+                        "message": {"content": "ab"},
+                        "finish_reason": "stop",
+                        "token_ids": [101, 102],
+                        "logprobs": {
+                            "content": [
+                                {"token": "a", "logprob": -0.1},
+                                {"token": "b", "logprob": -0.2},
+                            ]
+                        },
+                    }
+                ],
+            }
+
+    def _fake_post(url, json=None, headers=None, timeout=None):
+        captured["json"] = json
+        return _FakeResponse()
+
+    fake_requests = types.SimpleNamespace(post=_fake_post)
+    monkeypatch.setitem(sys.modules, "requests", fake_requests)
+
+    owner = types.SimpleNamespace(
+        cfg=InferenceConfig(
+            gt_jsonl="dummy.jsonl",
+            model_checkpoint="dummy-checkpoint",
+            mode="text",
+            prompt_variant="coco_80",
+            object_field_order="desc_first",
+            object_ordering="sorted",
+            pred_coord_mode="auto",
+            device="cpu",
+            limit=0,
+            backend_type="vllm",
+            backend={"base_url": "http://127.0.0.1:8000", "timeout_s": 12.5},
+            detect_samples=1,
+        ),
+        gen_cfg=GenerationConfig(
+            temperature=0.0,
+            top_p=0.9,
+            max_new_tokens=32,
+            repetition_penalty=1.05,
+            batch_size=1,
+            seed=42,
+            trace_logprobs=True,
+        ),
+        system_prompt="system",
+        user_prompt="detect",
+    )
+
+    result = generate_vllm_server_result(
+        owner=owner,
+        image=Image.new("RGB", (8, 8), color=(0, 0, 0)),
+        result_factory=GenerationResult,
+    )
+
+    payload = captured["json"]
+    assert isinstance(payload, dict)
+    assert payload["logprobs"] is True
+    assert payload["return_token_ids"] is True
+    assert payload["return_tokens_as_token_ids"] is True
+    assert result.text == "ab"
+    assert result.generated_token_ids == [101, 102]
+    assert result.generated_token_text == ["a", "b"]
+    assert result.token_logprobs == [-0.1, -0.2]
+    assert result.prompt_token_ids == [11, 12]
 
 
 def test_vllm_local_contract_sets_im_end_stop_and_disables_resize(
@@ -1025,6 +1125,17 @@ def test_vllm_local_contract_sets_im_end_stop_and_disables_resize(
         def __init__(self, **kwargs):
             captured["llm_kwargs"] = kwargs
 
+        def chat(self, msg_batch, *, sampling_params, use_tqdm):
+            captured["msg_batch"] = msg_batch
+            captured["sampling_params"] = sampling_params
+            captured["use_tqdm"] = use_tqdm
+            return [
+                types.SimpleNamespace(
+                    outputs=[types.SimpleNamespace(text="local-output")]
+                )
+                for _message in msg_batch
+            ]
+
     class _FakeSamplingParams:
         def __init__(self, **kwargs):
             captured["sampling_kwargs"] = kwargs
@@ -1032,8 +1143,8 @@ def test_vllm_local_contract_sets_im_end_stop_and_disables_resize(
     fake_vllm = types.SimpleNamespace(LLM=_FakeLLM, SamplingParams=_FakeSamplingParams)
     monkeypatch.setitem(sys.modules, "vllm", fake_vllm)
 
-    engine = InferenceEngine(
-        InferenceConfig(
+    owner = types.SimpleNamespace(
+        cfg=InferenceConfig(
             gt_jsonl="dummy.jsonl",
             model_checkpoint="dummy-checkpoint",
             mode="text",
@@ -1054,7 +1165,7 @@ def test_vllm_local_contract_sets_im_end_stop_and_disables_resize(
             },
             detect_samples=1,
         ),
-        GenerationConfig(
+        gen_cfg=GenerationConfig(
             temperature=0.0,
             top_p=0.9,
             max_new_tokens=32,
@@ -1062,18 +1173,269 @@ def test_vllm_local_contract_sets_im_end_stop_and_disables_resize(
             batch_size=1,
             seed=42,
         ),
+        system_prompt="system",
+        user_prompt="detect",
+        vllm_llm=None,
     )
 
-    engine._load_vllm_local()
-    engine._vllm_sampling_params()
+    results = generate_vllm_batch(
+        owner=owner,
+        images=[Image.new("RGB", (8, 8), color=(0, 0, 0))],
+        result_factory=GenerationResult,
+    )
 
     llm_kwargs = captured["llm_kwargs"]
     sampling_kwargs = captured["sampling_kwargs"]
     assert isinstance(llm_kwargs, dict)
     assert isinstance(sampling_kwargs, dict)
+    assert llm_kwargs["model"] == "dummy-vllm-model"
+    assert llm_kwargs["trust_remote_code"] is True
+    assert llm_kwargs["allowed_local_media_path"] == str(Path(".").resolve())
+    assert llm_kwargs["seed"] == 42
+    assert llm_kwargs["tensor_parallel_size"] == 1
+    assert llm_kwargs["max_model_len"] == 4096
     assert llm_kwargs["mm_processor_kwargs"] == {"do_resize": False}
     assert sampling_kwargs["stop"] == ["<|im_end|>"]
     assert "stop_token_ids" not in sampling_kwargs
+    assert results[0].text == "local-output"
+    assert not hasattr(owner, "_vllm_mode")
+    assert not hasattr(owner, "_generate_vllm_local_batch")
+    content = captured["msg_batch"][0][1]["content"]
+    assert content[0]["type"] == "image_url"
+    assert content[0]["image_url"]["url"].startswith("data:image/png;base64,")
+    assert content[1] == {"type": "text", "text": "detect"}
+
+
+def test_vllm_local_trace_returns_strict_result_object(monkeypatch) -> None:
+    captured: dict[str, object] = {}
+
+    class _FakeLLM:
+        def __init__(self, **kwargs):
+            captured["llm_kwargs"] = kwargs
+
+        def chat(self, msg_batch, *, sampling_params, use_tqdm):
+            captured["msg_batch"] = msg_batch
+            captured["sampling_params"] = sampling_params
+            captured["use_tqdm"] = use_tqdm
+            return [
+                types.SimpleNamespace(
+                    prompt_token_ids=[11, 12],
+                    outputs=[
+                        types.SimpleNamespace(
+                            text="ab",
+                            token_ids=[101, 102],
+                            logprobs=[
+                                {
+                                    101: types.SimpleNamespace(
+                                        logprob=-0.1,
+                                        decoded_token="a",
+                                    )
+                                },
+                                {
+                                    102: types.SimpleNamespace(
+                                        logprob=-0.2,
+                                        decoded_token="b",
+                                    )
+                                },
+                            ],
+                            finish_reason="stop",
+                        )
+                    ],
+                )
+            ]
+
+    class _FakeSamplingParams:
+        def __init__(self, **kwargs):
+            captured["sampling_kwargs"] = kwargs
+
+    fake_vllm = types.SimpleNamespace(LLM=_FakeLLM, SamplingParams=_FakeSamplingParams)
+    monkeypatch.setitem(sys.modules, "vllm", fake_vllm)
+
+    owner = types.SimpleNamespace(
+        cfg=InferenceConfig(
+            gt_jsonl="dummy.jsonl",
+            model_checkpoint="dummy-checkpoint",
+            mode="text",
+            prompt_variant="coco_80",
+            object_field_order="desc_first",
+            object_ordering="sorted",
+            pred_coord_mode="auto",
+            device="cpu",
+            limit=0,
+            backend_type="vllm",
+            backend={"mode": "local", "model": "dummy-vllm-model"},
+            detect_samples=1,
+        ),
+        gen_cfg=GenerationConfig(
+            temperature=0.0,
+            top_p=0.9,
+            max_new_tokens=32,
+            repetition_penalty=1.05,
+            batch_size=1,
+            seed=42,
+            trace_logprobs=True,
+        ),
+        system_prompt="system",
+        user_prompt="detect",
+        vllm_llm=None,
+    )
+
+    [result] = generate_vllm_batch(
+        owner=owner,
+        images=[Image.new("RGB", (8, 8), color=(0, 0, 0))],
+        result_factory=GenerationResult,
+    )
+
+    assert captured["sampling_kwargs"]["logprobs"] == 1
+    assert result.text == "ab"
+    assert result.generated_token_ids == [101, 102]
+    assert result.generated_token_text == ["a", "b"]
+    assert result.token_logprobs == [-0.1, -0.2]
+    assert result.prompt_token_ids == [11, 12]
+    assert result.stop_reason == "stop"
+
+
+def test_vllm_local_trace_fails_when_logprobs_are_missing(monkeypatch) -> None:
+    captured: dict[str, object] = {}
+
+    class _FakeLLM:
+        def __init__(self, **kwargs):
+            captured["llm_kwargs"] = kwargs
+
+        def chat(self, msg_batch, *, sampling_params, use_tqdm):
+            captured["sampling_params"] = sampling_params
+            return [
+                types.SimpleNamespace(
+                    outputs=[
+                        types.SimpleNamespace(
+                            text="ab",
+                            token_ids=[101, 102],
+                            logprobs=None,
+                        )
+                    ],
+                )
+            ]
+
+    class _FakeSamplingParams:
+        def __init__(self, **kwargs):
+            captured["sampling_kwargs"] = kwargs
+
+    fake_vllm = types.SimpleNamespace(LLM=_FakeLLM, SamplingParams=_FakeSamplingParams)
+    monkeypatch.setitem(sys.modules, "vllm", fake_vllm)
+
+    owner = types.SimpleNamespace(
+        cfg=InferenceConfig(
+            gt_jsonl="dummy.jsonl",
+            model_checkpoint="dummy-checkpoint",
+            mode="text",
+            prompt_variant="coco_80",
+            object_field_order="desc_first",
+            object_ordering="sorted",
+            pred_coord_mode="auto",
+            device="cpu",
+            limit=0,
+            backend_type="vllm",
+            backend={"mode": "local", "model": "dummy-vllm-model"},
+            detect_samples=1,
+        ),
+        gen_cfg=GenerationConfig(
+            temperature=0.0,
+            top_p=0.9,
+            max_new_tokens=32,
+            repetition_penalty=1.05,
+            batch_size=1,
+            seed=42,
+            trace_logprobs=True,
+        ),
+        system_prompt="system",
+        user_prompt="detect",
+        vllm_llm=None,
+    )
+
+    with pytest.raises(RuntimeError, match="Missing vLLM local logprobs"):
+        generate_vllm_batch(
+            owner=owner,
+            images=[Image.new("RGB", (8, 8), color=(0, 0, 0))],
+            result_factory=GenerationResult,
+        )
+
+    assert captured["sampling_kwargs"]["logprobs"] == 1
+
+
+def test_vllm_local_trace_fails_when_logprob_token_id_mismatches(
+    monkeypatch,
+) -> None:
+    captured: dict[str, object] = {}
+
+    class _FakeLLM:
+        def __init__(self, **kwargs):
+            captured["llm_kwargs"] = kwargs
+
+        def chat(self, msg_batch, *, sampling_params, use_tqdm):
+            captured["sampling_params"] = sampling_params
+            return [
+                types.SimpleNamespace(
+                    outputs=[
+                        types.SimpleNamespace(
+                            text="a",
+                            token_ids=[101],
+                            logprobs=[
+                                {
+                                    999: types.SimpleNamespace(
+                                        logprob=-0.1,
+                                        decoded_token="wrong",
+                                    )
+                                }
+                            ],
+                        )
+                    ],
+                )
+            ]
+
+    class _FakeSamplingParams:
+        def __init__(self, **kwargs):
+            captured["sampling_kwargs"] = kwargs
+
+    fake_vllm = types.SimpleNamespace(LLM=_FakeLLM, SamplingParams=_FakeSamplingParams)
+    monkeypatch.setitem(sys.modules, "vllm", fake_vllm)
+
+    owner = types.SimpleNamespace(
+        cfg=InferenceConfig(
+            gt_jsonl="dummy.jsonl",
+            model_checkpoint="dummy-checkpoint",
+            mode="text",
+            prompt_variant="coco_80",
+            object_field_order="desc_first",
+            object_ordering="sorted",
+            pred_coord_mode="auto",
+            device="cpu",
+            limit=0,
+            backend_type="vllm",
+            backend={"mode": "local", "model": "dummy-vllm-model"},
+            detect_samples=1,
+        ),
+        gen_cfg=GenerationConfig(
+            temperature=0.0,
+            top_p=0.9,
+            max_new_tokens=32,
+            repetition_penalty=1.05,
+            batch_size=1,
+            seed=42,
+            trace_logprobs=True,
+        ),
+        system_prompt="system",
+        user_prompt="detect",
+        vllm_llm=None,
+    )
+
+    with pytest.raises(RuntimeError, match="missing chosen token logprob"):
+        generate_vllm_batch(
+            owner=owner,
+            images=[Image.new("RGB", (8, 8), color=(0, 0, 0))],
+            result_factory=GenerationResult,
+        )
+
+    assert captured["sampling_kwargs"]["logprobs"] == 1
 
 
 def test_hf_load_model_sets_missing_pad_to_endoftext_not_im_end(monkeypatch) -> None:
@@ -1106,14 +1468,14 @@ def test_hf_load_model_sets_missing_pad_to_endoftext_not_im_end(monkeypatch) -> 
     processor = _FakeProcessor()
 
     monkeypatch.setattr(
-        infer_engine.Qwen3VLForConditionalGeneration,
-        "from_pretrained",
-        lambda *args, **kwargs: _FakeModel(),
+        infer_runtime,
+        "Qwen3VLForConditionalGeneration",
+        types.SimpleNamespace(from_pretrained=lambda *args, **kwargs: _FakeModel()),
     )
     monkeypatch.setattr(
-        infer_engine.AutoProcessor,
-        "from_pretrained",
-        lambda *args, **kwargs: processor,
+        infer_runtime,
+        "AutoProcessor",
+        types.SimpleNamespace(from_pretrained=lambda *args, **kwargs: processor),
     )
 
     engine = InferenceEngine(
@@ -1163,7 +1525,7 @@ def test_infer_distributed_merge_preserves_order_and_trace(tmp_path, monkeypatch
     trace_path = tmp_path / "pred_token_trace.jsonl"
     summary_path = tmp_path / "summary.json"
 
-    def _build_engine(rank: int) -> InferenceEngine:
+    def _build_engine(rank: int):
         inf_cfg = InferenceConfig(
             gt_jsonl=str(gt_path),
             model_checkpoint="dummy",
@@ -1282,7 +1644,7 @@ def test_infer_distributed_tqdm_uses_global_progress_on_rank_zero(tmp_path, monk
         def update(self, n=1):
             self.updates.append(int(n))
 
-    monkeypatch.setattr(infer_engine, "tqdm", _FakeTqdm)
+    monkeypatch.setattr(infer_runtime, "tqdm", _FakeTqdm)
 
     inf_cfg = InferenceConfig(
         gt_jsonl=str(gt_path),
@@ -1313,14 +1675,16 @@ def test_infer_distributed_tqdm_uses_global_progress_on_rank_zero(tmp_path, monk
     engine = InferenceEngine(inf_cfg, gen_cfg)
     monkeypatch.setattr(engine, "load_model", lambda: None)
     monkeypatch.setattr(
-        engine,
-        "_wait_for_distributed_manifests",
-        lambda *, base_out_path: [out_path.parent / "shards" / "rank_00000" / "manifest.json"],
+        infer_runtime,
+        "wait_for_offline_inference_distributed_manifests",
+        lambda *, owner, base_out_path: [
+            out_path.parent / "shards" / "rank_00000" / "manifest.json"
+        ],
     )
     monkeypatch.setattr(
-        engine,
-        "_merge_distributed_outputs",
-        lambda **kwargs: infer_engine.RunCounters(),
+        infer_runtime,
+        "merge_offline_inference_distributed_outputs",
+        lambda **kwargs: make_offline_run_counters(),
     )
 
     def _fake_generate_batch(images):

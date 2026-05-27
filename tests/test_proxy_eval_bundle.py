@@ -1,7 +1,15 @@
 from __future__ import annotations
+import json
 from pathlib import Path
 
-from src.eval.proxy_eval_bundle import _resolve_artifacts, options_from_config
+import pytest
+
+from src.eval.proxy_eval_bundle import (
+    ProxyEvalBundleArtifacts,
+    options_from_config,
+    run_proxy_eval_bundle,
+    _resolve_artifacts,
+)
 
 
 def test_resolve_proxy_eval_bundle_artifacts_defaults(tmp_path: Path) -> None:
@@ -59,3 +67,34 @@ def test_options_from_config_resolves_local_model_cache_path(tmp_path: Path, mon
 
     options = options_from_config(cfg)
     assert options.eval_options.semantic_model == str(local_model)
+
+
+def test_proxy_eval_bundle_requires_source_score_provenance_for_official_metrics(
+    tmp_path: Path,
+) -> None:
+    artifacts = ProxyEvalBundleArtifacts(
+        run_dir=tmp_path,
+        scored_jsonl=tmp_path / "gt_vs_pred_scored.jsonl",
+        proxy_views_dir=tmp_path / "proxy_views",
+        output_root=tmp_path / "eval",
+        summary_json=tmp_path / "proxy_summary.json",
+    )
+    artifacts.scored_jsonl.write_text(
+        json.dumps(
+            {
+                "image": "demo.jpg",
+                "width": 1,
+                "height": 1,
+                "gt": [],
+                "pred": [{"bbox": [0, 0, 1, 1], "desc": "cat", "score": 1.0}],
+                "pred_score_source": "test",
+                "pred_score_version": 1,
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    options = options_from_config({"eval": {"metrics": "coco"}})
+
+    with pytest.raises(ValueError, match="missing_provenance"):
+        run_proxy_eval_bundle(artifacts, options=options)

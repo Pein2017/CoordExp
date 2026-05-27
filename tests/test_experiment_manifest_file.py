@@ -95,16 +95,15 @@ def test_write_experiment_manifest_file_marks_missing_authored_experiment(
     assert payload["experiment"]["authored"] is None
 
 
-def test_detection_authored_experiment_preserves_claim_scope() -> None:
+def test_teacher_forcing_authored_experiment_preserves_claim_scope() -> None:
     cfg = ConfigLoader.load_materialized_training_config(
-        "configs/stage1/recursive_detection_ce/ablation/compact_full_prefix_rollin_balance2.yaml"
+        "configs/stage1/teacher_forcing/smoke/compact_full_hard_sft_tiny.yaml"
     )
     assert isinstance(cfg, DetectionTrainingConfig)
 
     authored = _resolve_authored_experiment_payload(cfg)
 
     assert authored == {
-        "surface": "ablation",
-        "ablation_id": "E1",
-        "claim_scope": "none",
+        "surface": "smoke",
+        "claim_scope": "smoke",
     }

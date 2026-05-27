@@ -23,7 +23,7 @@ from src.training.stage2.rollout_codec import (
 )
 from src.training.stage2.assignment import GreedyIoUAssignment
 from src.trainers.rollout_matching.contracts import MatchResult
-from src.trainers.stage2_rollout_correction import (
+from src.trainers.rollout_correction import (
     Stage2RolloutCorrectionTrainer,
     _PendingStage2Log,
     _assign_stage2_rollout_correction_objects,
@@ -35,7 +35,7 @@ from src.trainers.stage2_rollout_correction import (
     _is_rollout_correction_direct_batch_metric_key,
     _matched_prefix_structure_positions,
     _sample_identifier_or_index,
-    _stage2_ab_tail_closure_positions,
+    _rollout_correction_tail_closure_positions,
     _stage2_compact_semantic_stop_branch_metadata,
     _stage2_compact_tail_closure_positions,
     _stage2_gt_consumed_members,
@@ -100,6 +100,29 @@ def _apply_test_duplicate_control(
         list(result.kept_anchor_objects),
         dict(result.suppressed_duplicate_objects_by_boundary),
     )
+
+
+def _test_rollout_matching_cfg(
+    cfg: dict[str, object],
+    *,
+    rollout_backend: str = "hf",
+) -> dict[str, object]:
+    decode_mode = str(cfg.get("decode_mode", "greedy") or "greedy")
+    return {
+        "rollout_backend": str(rollout_backend),
+        "eval_rollout_backend": str(rollout_backend),
+        "rollout_decode_batch_size": int(cfg.get("rollout_decode_batch_size", 1) or 1),
+        "eval_decode_batch_size": int(cfg.get("eval_decode_batch_size", 1) or 1),
+        "decode_mode": decode_mode,
+        "max_new_tokens": int(cfg.get("max_new_tokens", 8) or 8),
+        "num_beams": int(cfg.get("num_beams", 1) or 1),
+        "repetition_penalty": float(cfg.get("repetition_penalty", 1.0) or 1.0),
+        "decoding": {
+            "temperature": 0.7 if decode_mode == "sampling" else 0.0,
+            "top_p": 0.95,
+            "top_k": -1,
+        },
+    }
 
 
 def test_rollout_correction_temperature_bucket_metrics_track_invalid_and_diversity() -> None:
@@ -847,6 +870,7 @@ def _make_compact_rollout_correction_trainer(
         "repetition_penalty": 1.0,
     }
     t._cfg = lambda key, default=None: cfg.get(key, default)
+    t.rollout_matching_cfg = _test_rollout_matching_cfg(cfg)
 
     tok = _CoordLiteralTokenizer()
 
@@ -888,7 +912,6 @@ def _make_compact_rollout_correction_trainer(
     t._packing_length = lambda: 128
     t._derive_rollout_seed_base = lambda *, global_step: 0
     t._rollout_backend = lambda: "hf"
-    t._prepare_samples_for_rollout = lambda samples, rollout_backend: list(samples)
     t._rollout_decode_batch_size_per_rank = lambda: 1
     t._dist_info = lambda: (0, 1, None)
     t._object_field_order = lambda: "desc_first"
@@ -902,20 +925,6 @@ def _make_compact_rollout_correction_trainer(
             return False
 
     t._hf_sampling_seed_context = lambda **kwargs: _NoSeedCtx()
-
-    def _decode_request(decode_override=None):
-        override = dict(decode_override or {})
-        return types.SimpleNamespace(
-            decode_mode=str(override.get("decode_mode", "sampling")),
-            temperature=float(override.get("temperature", 0.7)),
-            top_p=float(override.get("top_p", 1.0)),
-            top_k=int(override.get("top_k", -1)),
-            repetition_penalty=1.0,
-            max_new_tokens=64,
-            num_beams=1,
-        )
-
-    t._resolve_rollout_decode_request = _decode_request
 
     rollout_calls = 0
 
@@ -934,6 +943,33 @@ def _make_compact_rollout_correction_trainer(
 
     t._rollout_many = _rollout_many
     return t
+
+
+def _install_nonempty_prompt_template(
+    trainer: Stage2RolloutCorrectionTrainer,
+    *,
+    prompt_ids: list[int],
+) -> None:
+    tok = trainer.template.tokenizer
+
+    class _PromptPrefixTemplate:
+        tokenizer = tok
+
+        def encode(self, data, return_length=True):
+            content = data["messages"][-1]["content"]
+            assistant_ids = (
+                [int(x) for x in content]
+                if isinstance(content, list)
+                else [int(x) for x in tok.encode(str(content), add_special_tokens=False)]
+            )
+            ids = [int(x) for x in prompt_ids] + list(assistant_ids)
+            return {
+                "input_ids": ids,
+                "labels": [-100] * len(prompt_ids) + list(assistant_ids),
+                "length": len(ids),
+            }
+
+    trainer.template = _PromptPrefixTemplate()
 
 
 def _single_bbox_sample() -> dict:
@@ -1420,6 +1456,134 @@ def test_rollout_correction_compact_full_rollout_template_uses_compact_parser_an
     assert metrics["rollout/template_family_compact_full"] == pytest.approx(1.0)
     assert metrics["rollout/invalid_fallback_gt_fn_count"] == pytest.approx(0.0)
     assert metrics["rollout/fallback_loss_share"] == pytest.approx(0.0)
+
+
+def test_rollout_correction_requires_backend_prompt_ids_for_trainable_prompt() -> None:
+    row = (
+        f"{OBJECT_REF_START_TOKEN}cat{BOX_START_TOKEN}"
+        "<|coord_10|><|coord_20|><|coord_30|><|coord_40|>"
+    )
+    t = _make_compact_rollout_correction_trainer(rollout_text=row)
+    t.stage2_pipeline_manifest = _make_residual_set_pipeline_manifest(
+        expected_num_rollouts=1
+    )
+    prompt_ids = [1100, 1101]
+    _install_nonempty_prompt_template(t, prompt_ids=prompt_ids)
+
+    ids = t.template.tokenizer.encode(row, add_special_tokens=False)
+    t._rollout_many = lambda chunk, **_kwargs: [
+        (list(ids), row, "sampling", []) for _ in chunk
+    ]
+
+    segments, metrics = t._prepare_rollout_correction_inputs(
+        [_single_bbox_sample()],
+        _segments_only=True,
+    )
+
+    assert segments == []
+    assert metrics["stage2_rollout_correction/prompt_tok_mismatch"] == pytest.approx(
+        1.0
+    )
+
+
+def test_rollout_correction_requires_visual_parity_for_trainable_prompt() -> None:
+    row = (
+        f"{OBJECT_REF_START_TOKEN}cat{BOX_START_TOKEN}"
+        "<|coord_10|><|coord_20|><|coord_30|><|coord_40|>"
+    )
+    t = _make_compact_rollout_correction_trainer(rollout_text=row)
+    t.stage2_pipeline_manifest = _make_residual_set_pipeline_manifest(
+        expected_num_rollouts=1
+    )
+    prompt_ids = [1100, 1101]
+    _install_nonempty_prompt_template(t, prompt_ids=prompt_ids)
+
+    sample = _single_bbox_sample()
+    sample.update(
+        {
+            "images": ["right.png"],
+            "width": 640,
+            "height": 480,
+            "_coordexp_prompt_visual_metadata": {
+                "image_count": 1,
+                "image_path": "wrong.png",
+                "image_placement": "sample.images",
+                "do_resize": False,
+                "original_width": 640,
+                "original_height": 480,
+                "post_preprocessing_width": 640,
+                "post_preprocessing_height": 480,
+            },
+        }
+    )
+
+    ids = t.template.tokenizer.encode(row, add_special_tokens=False)
+    t._rollout_many = lambda chunk, **_kwargs: [
+        (list(ids), row, "sampling", list(prompt_ids)) for _ in chunk
+    ]
+
+    segments, metrics = t._prepare_rollout_correction_inputs(
+        [sample],
+        _segments_only=True,
+    )
+
+    assert segments == []
+    assert metrics[
+        "stage2_rollout_correction/prompt_visual_mismatch"
+    ] == pytest.approx(1.0)
+
+
+def test_rollout_correction_accepts_shared_prepared_visual_metadata_for_trainable_prompt() -> None:
+    row = (
+        f"{OBJECT_REF_START_TOKEN}cat{BOX_START_TOKEN}"
+        "<|coord_10|><|coord_20|><|coord_30|><|coord_40|>"
+    )
+    t = _make_compact_rollout_correction_trainer(rollout_text=row)
+    t.stage2_pipeline_manifest = _make_residual_set_pipeline_manifest(
+        expected_num_rollouts=1
+    )
+    prompt_ids = [1100, 1101]
+    _install_nonempty_prompt_template(t, prompt_ids=prompt_ids)
+
+    sample = _single_bbox_sample()
+    sample.update({"images": ["img.png"], "width": 640, "height": 480})
+
+    ids = t.template.tokenizer.encode(row, add_special_tokens=False)
+    t._rollout_many = lambda chunk, **_kwargs: [
+        (list(ids), row, "sampling", list(prompt_ids)) for _ in chunk
+    ]
+
+    segments, metrics = t._prepare_rollout_correction_inputs(
+        [sample],
+        _segments_only=True,
+    )
+
+    assert len(segments) == 1
+    assert metrics[
+        "stage2_rollout_correction/prompt_visual_mismatch"
+    ] == pytest.approx(0.0)
+
+
+def test_rollout_correction_propagates_inner_rollout_typeerror() -> None:
+    row = (
+        f"{OBJECT_REF_START_TOKEN}cat{BOX_START_TOKEN}"
+        "<|coord_10|><|coord_20|><|coord_30|><|coord_40|>"
+    )
+    t = _make_compact_rollout_correction_trainer(rollout_text=row)
+    t.stage2_pipeline_manifest = _make_residual_set_pipeline_manifest(
+        expected_num_rollouts=1
+    )
+
+    def _raise_inner_typeerror(*_args, **_kwargs):
+        raise TypeError("inner unexpected keyword argument from backend")
+
+    t._rollout_many = _raise_inner_typeerror
+
+    with pytest.raises(TypeError, match="inner unexpected keyword argument"):
+        t._prepare_rollout_correction_inputs(
+            [_single_bbox_sample()],
+            _segments_only=True,
+        )
 
 
 def test_ul_consensus_rollout_evidence_skips_invalid_unmatched_boxes() -> None:
@@ -2638,6 +2802,7 @@ def test_rollout_correction_matching_uses_greedy_assignment_threshold(monkeypatc
         "repetition_penalty": 1.0,
     }
     t._cfg = lambda key, default=None: cfg.get(key, default)
+    t.rollout_matching_cfg = _test_rollout_matching_cfg(cfg)
     def _rollout_correction_get(key, default=None):
         if key == "assignment.iou_threshold":
             return 0.75
@@ -2687,9 +2852,8 @@ def test_rollout_correction_matching_uses_greedy_assignment_threshold(monkeypatc
     t._packing_length = lambda: 16
     t._derive_rollout_seed_base = lambda *, global_step: 0
     t._rollout_backend = lambda: "hf"
-    t._decoding_params = lambda: (0.7, 0.95, -1)
     t._rollout_decode_batch_size_per_rank = lambda: 1
-    t._rollout_many = lambda chunk: [([], "", "sampling", []) for _ in chunk]
+    t._rollout_many = lambda chunk, **_kwargs: [([], "", "sampling", []) for _ in chunk]
 
     class _NoSeedCtx:
         def __enter__(self):
@@ -2760,6 +2924,7 @@ def test_rollout_correction_invalid_rollout_keeps_sample_via_empty_prefix_fallba
         "repetition_penalty": 1.0,
     }
     t._cfg = lambda key, default=None: cfg.get(key, default)
+    t.rollout_matching_cfg = _test_rollout_matching_cfg(cfg)
     t._rollout_correction_cfg_get = lambda key, default=None: default
 
     tok = _CoordLiteralTokenizer()
@@ -2792,9 +2957,8 @@ def test_rollout_correction_invalid_rollout_keeps_sample_via_empty_prefix_fallba
     t._packing_length = lambda: 64
     t._derive_rollout_seed_base = lambda *, global_step: 0
     t._rollout_backend = lambda: "hf"
-    t._decoding_params = lambda: (0.7, 0.95, -1)
     t._rollout_decode_batch_size_per_rank = lambda: 1
-    t._rollout_many = lambda chunk: [([], "", "sampling", []) for _ in chunk]
+    t._rollout_many = lambda chunk, **_kwargs: [([], "", "sampling", []) for _ in chunk]
     t._dist_info = lambda: (0, 1, None)
     t._object_field_order = lambda: "desc_first"
 
@@ -2873,6 +3037,7 @@ def test_rollout_correction_enabled_pseudo_positive_drops_invalid_anchor_sample(
         "invalid_rollout_policy": "dump_and_continue",
     }
     t._cfg = lambda key, default=None: cfg.get(key, default)
+    t.rollout_matching_cfg = _test_rollout_matching_cfg(cfg)
     t._rollout_correction_cfg_get = lambda key, default=None: ab_cfg.get(key, default)
 
     tok = _CoordLiteralTokenizer()
@@ -3031,6 +3196,7 @@ def test_rollout_correction_closure_resolution_failure_falls_back_without_droppi
         "repetition_penalty": 1.0,
     }
     t._cfg = lambda key, default=None: cfg.get(key, default)
+    t.rollout_matching_cfg = _test_rollout_matching_cfg(cfg)
     t._rollout_correction_cfg_get = lambda key, default=None: default
 
     class _CoordLiteralTokenizer(_DummyTokenizer):
@@ -3075,9 +3241,8 @@ def test_rollout_correction_closure_resolution_failure_falls_back_without_droppi
     t._packing_length = lambda: 256
     t._derive_rollout_seed_base = lambda *, global_step: 0
     t._rollout_backend = lambda: "hf"
-    t._decoding_params = lambda: (0.7, 0.95, -1)
     t._rollout_decode_batch_size_per_rank = lambda: 1
-    t._rollout_many = lambda chunk: [([], "", "sampling", []) for _ in chunk]
+    t._rollout_many = lambda chunk, **_kwargs: [([], "", "sampling", []) for _ in chunk]
     t._dist_info = lambda: (0, 1, None)
     t._object_field_order = lambda: "desc_first"
 
@@ -3107,7 +3272,7 @@ def test_rollout_correction_closure_resolution_failure_falls_back_without_droppi
         lambda **kwargs: fake_parse,
     )
     monkeypatch.setattr(
-        "src.trainers.rollout_correction._stage2_ab_tail_closure_positions",
+        "src.trainers.rollout_correction._rollout_correction_tail_closure_positions",
         lambda **kwargs: (_ for _ in ()).throw(
             ValueError("synthetic closure ambiguity")
         ),
@@ -3151,6 +3316,7 @@ def test_rollout_correction_duplicate_iou_threshold_zero_propagates_to_dedup(mon
         "repetition_penalty": 1.0,
     }
     t._cfg = lambda key, default=None: cfg.get(key, default)
+    t.rollout_matching_cfg = _test_rollout_matching_cfg(cfg)
     t._rollout_correction_cfg_get = (
         lambda key, default=None: 0.0
         if key == "duplicate_control.iou_threshold"
@@ -3167,9 +3333,8 @@ def test_rollout_correction_duplicate_iou_threshold_zero_propagates_to_dedup(mon
     t._packing_length = lambda: 64
     t._derive_rollout_seed_base = lambda *, global_step: 0
     t._rollout_backend = lambda: "hf"
-    t._decoding_params = lambda: (0.7, 0.95, -1)
     t._rollout_decode_batch_size_per_rank = lambda: 1
-    t._rollout_many = lambda chunk: [([], "", "sampling", []) for _ in chunk]
+    t._rollout_many = lambda chunk, **_kwargs: [([], "", "sampling", []) for _ in chunk]
 
     class _NoSeedCtx:
         def __enter__(self):
@@ -3245,6 +3410,7 @@ def test_rollout_correction_suspicious_monitor_dump_buffers_full_eval_style_payl
         },
     }
     t._cfg = lambda key, default=None: cfg.get(key, default)
+    t.rollout_matching_cfg = _test_rollout_matching_cfg(cfg)
     t._rollout_correction_cfg_get = lambda key, default=None: default
 
     class _CoordLiteralTokenizer(_DummyTokenizer):
@@ -3289,9 +3455,8 @@ def test_rollout_correction_suspicious_monitor_dump_buffers_full_eval_style_payl
     t._packing_length = lambda: 256
     t._derive_rollout_seed_base = lambda *, global_step: 0
     t._rollout_backend = lambda: "hf"
-    t._decoding_params = lambda: (0.7, 0.95, -1)
     t._rollout_decode_batch_size_per_rank = lambda: 1
-    t._rollout_many = lambda chunk: [([], "", "sampling", []) for _ in chunk]
+    t._rollout_many = lambda chunk, **_kwargs: [([], "", "sampling", []) for _ in chunk]
     t._dist_info = lambda: (0, 1, None)
     t._object_field_order = lambda: "desc_first"
     t.state = types.SimpleNamespace(global_step=7, epoch=1.5)
@@ -3425,6 +3590,7 @@ def test_stage2_train_monitor_dump_prefers_most_duplicate_candidate():
         },
     }
     t._cfg = lambda key, default=None: cfg.get(key, default)
+    t.rollout_matching_cfg = _test_rollout_matching_cfg(cfg)
     t._rollout_backend = lambda: "hf"
     t.state = types.SimpleNamespace(global_step=11, epoch=0.0)
     t.is_world_process_zero = True
@@ -3474,6 +3640,7 @@ def test_stage2_train_monitor_dump_uses_logged_step_not_preincrement_step() -> N
         },
     }
     t._cfg = lambda key, default=None: cfg.get(key, default)
+    t.rollout_matching_cfg = _test_rollout_matching_cfg(cfg)
     t._rollout_backend = lambda: "hf"
     t.args = types.SimpleNamespace(logging_steps=10, logging_first_step=True)
     t.state = types.SimpleNamespace(global_step=39, epoch=0.0)
@@ -3523,6 +3690,7 @@ def test_stage2_train_monitor_dump_every_rollout_steps_ignores_global_step_alias
         },
     }
     t._cfg = lambda key, default=None: cfg.get(key, default)
+    t.rollout_matching_cfg = _test_rollout_matching_cfg(cfg)
     t._rollout_backend = lambda: "hf"
     t.args = types.SimpleNamespace(logging_steps=10, logging_first_step=False)
     t.state = types.SimpleNamespace(global_step=11, epoch=0.0)
@@ -3578,6 +3746,7 @@ def test_stage2_train_monitor_cadence_advances_without_suspicious_candidate() ->
         },
     }
     t._cfg = lambda key, default=None: cfg.get(key, default)
+    t.rollout_matching_cfg = _test_rollout_matching_cfg(cfg)
     t.args = types.SimpleNamespace(logging_steps=10, logging_first_step=False)
     t.is_world_process_zero = True
     t._stage2_train_monitor_pending_gs = None
@@ -3612,6 +3781,7 @@ def test_stage2_train_monitor_dump_keeps_eval_budget_and_same_step_eligibility()
         "eval_monitor_dump": {"enabled": True, "every_evals": 1},
     }
     t._cfg = lambda key, default=None: cfg.get(key, default)
+    t.rollout_matching_cfg = _test_rollout_matching_cfg(cfg)
     t._rollout_backend = lambda: "hf"
     t.args = types.SimpleNamespace(logging_steps=1, logging_first_step=True)
     t.state = types.SimpleNamespace(global_step=11, epoch=0.0)
@@ -3660,6 +3830,7 @@ def test_stage2_trie_span_score_dump_writes_jsonl(tmp_path) -> None:
         },
     }
     t._cfg = lambda key, default=None: cfg.get(key, default)
+    t.rollout_matching_cfg = _test_rollout_matching_cfg(cfg)
     t.args = types.SimpleNamespace(logging_steps=10, logging_first_step=False)
     t.state = types.SimpleNamespace(global_step=6, epoch=0.0)
     t.is_world_process_zero = True
@@ -3739,6 +3910,7 @@ def test_stage2_trie_span_score_dump_appends_same_step_without_double_count(
         },
     }
     t._cfg = lambda key, default=None: cfg.get(key, default)
+    t.rollout_matching_cfg = _test_rollout_matching_cfg(cfg)
     t.args = types.SimpleNamespace(logging_steps=10, logging_first_step=False)
     t.is_world_process_zero = True
     t._stage2_train_monitor_b_step_count = 1
@@ -3781,6 +3953,7 @@ def test_stage2_trie_span_score_dump_respects_disabled_train_monitor_dump(
         },
     }
     t._cfg = lambda key, default=None: cfg.get(key, default)
+    t.rollout_matching_cfg = _test_rollout_matching_cfg(cfg)
     t.args = types.SimpleNamespace(logging_steps=1, logging_first_step=True)
     t.is_world_process_zero = True
     t._stage2_train_monitor_b_step_count = 1
@@ -3810,6 +3983,7 @@ def test_rollout_correction_fn_bbox_groups_anchor_to_clean_prefix_not_raw_prefix
         "repetition_penalty": 1.0,
     }
     t._cfg = lambda key, default=None: cfg.get(key, default)
+    t.rollout_matching_cfg = _test_rollout_matching_cfg(cfg)
     t._rollout_correction_cfg_get = lambda key, default=None: default
 
     class _CoordLiteralTokenizer(_DummyTokenizer):
@@ -3854,9 +4028,8 @@ def test_rollout_correction_fn_bbox_groups_anchor_to_clean_prefix_not_raw_prefix
     t._packing_length = lambda: 256
     t._derive_rollout_seed_base = lambda *, global_step: 0
     t._rollout_backend = lambda: "hf"
-    t._decoding_params = lambda: (0.7, 0.95, -1)
     t._rollout_decode_batch_size_per_rank = lambda: 1
-    t._rollout_many = lambda chunk: [([], "", "sampling", []) for _ in chunk]
+    t._rollout_many = lambda chunk, **_kwargs: [([], "", "sampling", []) for _ in chunk]
     t._dist_info = lambda: (0, 1, None)
     t._object_field_order = lambda: "desc_first"
 
@@ -3972,6 +4145,7 @@ def test_rollout_correction_dual_rollout_triage_emits_recovered_ground_truth_wei
         "repetition_penalty": 1.0,
     }
     t._cfg = lambda key, default=None: cfg.get(key, default)
+    t.rollout_matching_cfg = _test_rollout_matching_cfg(cfg)
     t._rollout_correction_cfg_get = lambda key, default=None: {
         "triage_posterior.explorer_temperature": 0.7,
         "triage_posterior.rollout_temperatures": [0.0, 0.7],
@@ -4040,7 +4214,7 @@ def test_rollout_correction_dual_rollout_triage_emits_recovered_ground_truth_wei
 
     rollout_calls: list[dict[str, object]] = []
 
-    def _fake_rollout_many(chunk, decode_override=None):
+    def _fake_rollout_many(chunk, decode_override=None, **_kwargs):
         rollout_calls.append(dict(decode_override or {}))
         temp = float((decode_override or {}).get("temperature", 0.0) or 0.0)
         marker = 101 if temp <= 0.0 else 202
@@ -4201,6 +4375,7 @@ def test_rollout_correction_dual_rollout_chunking_is_policy_symmetric(monkeypatc
         "repetition_penalty": 1.0,
     }
     t._cfg = lambda key, default=None: cfg.get(key, default)
+    t.rollout_matching_cfg = _test_rollout_matching_cfg(cfg)
     t._rollout_correction_cfg_get = lambda key, default=None: default
 
     class _CoordLiteralTokenizer(_DummyTokenizer):
@@ -4262,7 +4437,7 @@ def test_rollout_correction_dual_rollout_chunking_is_policy_symmetric(monkeypatc
 
     rollout_calls: list[tuple[int, float]] = []
 
-    def _fake_rollout_many(chunk, decode_override=None):
+    def _fake_rollout_many(chunk, decode_override=None, **_kwargs):
         rollout_calls.append(
             (
                 int(len(chunk)),
@@ -4324,6 +4499,7 @@ def test_rollout_correction_dual_rollout_chunking_is_policy_symmetric(monkeypatc
 
         samples = [
             {
+                "images": ["img.png"],
                 "messages": [],
                 "assistant_payload": {
                     "objects": [{"bbox_2d": [0, 0, 1, 1], "desc": "gt"}]
@@ -4367,6 +4543,7 @@ def test_rollout_correction_enabled_pseudo_positive_uses_k4_rollouts_and_keeps_z
         "triage_posterior.explorer_top_k": -1,
     }
     t._cfg = lambda key, default=None: cfg.get(key, default)
+    t.rollout_matching_cfg = _test_rollout_matching_cfg(cfg)
     t._rollout_correction_cfg_get = lambda key, default=None: ab_cfg.get(key, default)
 
     class _CoordLiteralTokenizer(_DummyTokenizer):
@@ -4553,6 +4730,7 @@ def test_rollout_correction_enabled_pseudo_positive_aborts_on_invalid_explorer(
         "invalid_rollout_policy": "abort",
     }
     t._cfg = lambda key, default=None: cfg.get(key, default)
+    t.rollout_matching_cfg = _test_rollout_matching_cfg(cfg)
     t._rollout_correction_cfg_get = lambda key, default=None: ab_cfg.get(key, default)
 
     tok = _CoordLiteralTokenizer()
@@ -5982,6 +6160,7 @@ def test_rollout_correction_triage_posterior_nested_config_reaches_live_accessor
         "repetition_penalty": 1.0,
     }
     t._cfg = lambda key, default=None: cfg.get(key, default)
+    t.rollout_matching_cfg = _test_rollout_matching_cfg(cfg, rollout_backend="vllm")
 
     t.stage2_rollout_correction_cfg = {
         "correction": {
@@ -6139,6 +6318,7 @@ def test_rollout_correction_triage_posterior_nested_config_reaches_live_accessor
 
         samples = [
             {
+                "images": ["img.png"],
                 "messages": [],
                 "assistant_payload": {
                     "objects": [{"bbox_2d": [0, 0, 1, 1], "desc": "gt"}]
@@ -6183,6 +6363,7 @@ def test_rollout_correction_anchor_only_gt_hit_projects_anchor_gt_backed(
         "repetition_penalty": 1.0,
     }
     t._cfg = lambda key, default=None: cfg.get(key, default)
+    t.rollout_matching_cfg = _test_rollout_matching_cfg(cfg)
     t._rollout_correction_cfg_get = lambda key, default=None: {
         "triage_posterior.num_rollouts": 1,
         "triage_posterior.explorer_temperature": 0.7,
@@ -6245,7 +6426,7 @@ def test_rollout_correction_anchor_only_gt_hit_projects_anchor_gt_backed(
             return False
 
     t._hf_sampling_seed_context = lambda **kwargs: _NoSeedCtx()
-    t._rollout_many = lambda chunk, decode_override=None: [
+    t._rollout_many = lambda chunk, decode_override=None, **_kwargs: [
         (
             [
                 101
@@ -6347,6 +6528,7 @@ def test_rollout_correction_shielded_anchor_stays_neutral_context(monkeypatch) -
         "repetition_penalty": 1.0,
     }
     t._cfg = lambda key, default=None: cfg.get(key, default)
+    t.rollout_matching_cfg = _test_rollout_matching_cfg(cfg)
     t._rollout_correction_cfg_get = lambda key, default=None: {
         "triage_posterior.explorer_temperature": 0.7,
         "triage_posterior.rollout_temperatures": [0.0, 0.7],
@@ -6409,7 +6591,7 @@ def test_rollout_correction_shielded_anchor_stays_neutral_context(monkeypatch) -
             return False
 
     t._hf_sampling_seed_context = lambda **kwargs: _NoSeedCtx()
-    t._rollout_many = lambda chunk, decode_override=None: [
+    t._rollout_many = lambda chunk, decode_override=None, **_kwargs: [
         (
             [
                 101
@@ -6495,6 +6677,7 @@ def test_rollout_correction_explorer_only_dead_emits_no_explore_branch(monkeypat
         "repetition_penalty": 1.0,
     }
     t._cfg = lambda key, default=None: cfg.get(key, default)
+    t.rollout_matching_cfg = _test_rollout_matching_cfg(cfg)
     t._rollout_correction_cfg_get = lambda key, default=None: {
         "triage_posterior.explorer_temperature": 0.7,
         "triage_posterior.rollout_temperatures": [0.0, 0.7],
@@ -6557,7 +6740,7 @@ def test_rollout_correction_explorer_only_dead_emits_no_explore_branch(monkeypat
             return False
 
     t._hf_sampling_seed_context = lambda **kwargs: _NoSeedCtx()
-    t._rollout_many = lambda chunk, decode_override=None: [
+    t._rollout_many = lambda chunk, decode_override=None, **_kwargs: [
         (
             [
                 101
@@ -6660,6 +6843,7 @@ def test_rollout_correction_recovered_ground_truth_weight_multipliers_only_apply
         "repetition_penalty": 1.0,
     }
     t._cfg = lambda key, default=None: cfg.get(key, default)
+    t.rollout_matching_cfg = _test_rollout_matching_cfg(cfg)
     t._rollout_correction_cfg_get = lambda key, default=None: {
         "triage_posterior.explorer_temperature": 0.7,
         "triage_posterior.rollout_temperatures": [0.0, 0.7],
@@ -6723,7 +6907,7 @@ def test_rollout_correction_recovered_ground_truth_weight_multipliers_only_apply
             return False
 
     t._hf_sampling_seed_context = lambda **kwargs: _NoSeedCtx()
-    t._rollout_many = lambda chunk, decode_override=None: [
+    t._rollout_many = lambda chunk, decode_override=None, **_kwargs: [
         (
             [
                 101
@@ -7693,7 +7877,7 @@ def test_tail_closure_positions_match_same_brace_used_for_fn_injection():
     assistant_ids = list(tok.encode(assistant_text))
     im_end_id = int(tok.convert_tokens_to_ids("<|im_end|>"))
 
-    ignore_rel = _stage2_ab_tail_closure_positions(
+    ignore_rel = _rollout_correction_tail_closure_positions(
         tokenizer=tok,
         assistant_span_ids=assistant_ids + [im_end_id],
         prefix_len=int(len(parsed.prefix_token_ids)),
@@ -7716,7 +7900,7 @@ def test_tail_closure_positions_ignore_braces_inside_quoted_desc():
     im_end_id = int(tok.convert_tokens_to_ids("<|im_end|>"))
 
     assistant_span_ids = ids + [im_end_id]
-    ignore_rel = _stage2_ab_tail_closure_positions(
+    ignore_rel = _rollout_correction_tail_closure_positions(
         tokenizer=tok,
         assistant_span_ids=assistant_span_ids,
         prefix_len=0,
@@ -7735,7 +7919,7 @@ def test_tail_closure_positions_prefer_turn_end_after_json_close():
     im_end_id = int(tok.convert_tokens_to_ids("<|im_end|>"))
 
     assistant_span_ids = ids + [im_end_id]
-    ignore_rel = _stage2_ab_tail_closure_positions(
+    ignore_rel = _rollout_correction_tail_closure_positions(
         tokenizer=tok,
         assistant_span_ids=assistant_span_ids,
         prefix_len=0,
@@ -8780,8 +8964,10 @@ def _make_eval_ready_stage2_rollout_correction_trainer() -> Stage2RolloutCorrect
 
 def test_stage2_rollout_correction_eval_emits_rollout_map_and_coco_contract(
     monkeypatch,
+    tmp_path,
 ) -> None:
     trainer = _make_eval_ready_stage2_rollout_correction_trainer()
+    trainer.args.output_dir = str(tmp_path)
 
     parse_obj = types.SimpleNamespace(
         response_token_ids=[101],
@@ -8829,11 +9015,11 @@ def test_stage2_rollout_correction_eval_emits_rollout_map_and_coco_contract(
         ),
     )
     monkeypatch.setattr(
-        "src.trainers.stage2_rollout_runtime._compute_eval_detection_coco_metrics",
-        lambda **_kwargs: (
-            {"bbox_AP": 0.25, "bbox_AP50": 0.5, "segm_AP": 0.75},
-            {"empty_pred": 0},
-        ),
+        "src.trainers.rollout_aligned_evaluator.evaluate_and_save",
+        lambda _pred_jsonl, *, options: {
+            "metrics": {"bbox_AP": 0.25, "bbox_AP50": 0.5, "segm_AP": 0.75},
+            "counters": {"empty_pred": 0},
+        },
     )
 
     logged_metrics: dict[str, float] = {}
@@ -8898,11 +9084,11 @@ def test_stage2_rollout_correction_eval_raises_when_coco_eval_fails(monkeypatch)
         ),
     )
 
-    def _raise_coco_eval(**_kwargs):
+    def _raise_coco_eval(_pred_jsonl, *, options):
         raise ValueError("synthetic coco eval failure")
 
     monkeypatch.setattr(
-        "src.trainers.stage2_rollout_runtime._compute_eval_detection_coco_metrics",
+        "src.trainers.rollout_aligned_evaluator.evaluate_and_save",
         _raise_coco_eval,
     )
 

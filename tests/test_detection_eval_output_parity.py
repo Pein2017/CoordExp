@@ -29,6 +29,27 @@ def _write_jsonl(path: Path, records: list[dict]) -> None:
     )
 
 
+def _write_score_provenance_sidecar(path: Path) -> None:
+    path.with_suffix(path.suffix + ".provenance.json").write_text(
+        json.dumps(
+            {
+                "prompt_policy_fingerprint": "prompt:test",
+                "decode_policy_fingerprint": "decode:test",
+                "model_identity_fingerprint": "model:test",
+                "score_policy_fingerprint": "score:test",
+                "artifact_path": str(path),
+            },
+            ensure_ascii=True,
+        ),
+        encoding="utf-8",
+    )
+
+
+def _write_scored_jsonl(path: Path, records: list[dict]) -> None:
+    _write_jsonl(path, records)
+    _write_score_provenance_sidecar(path)
+
+
 def _one_record(*, image: str, gt_desc: str = "box", pred_desc: str = "box") -> dict:
     return {
         "image": image,
@@ -66,8 +87,8 @@ def _lvis_cat(category_id: int, name: str, frequency: str) -> dict:
 
 
 def test_evaluate_and_save_writes_metrics_json(tmp_path: Path) -> None:
-    pred_path = tmp_path / "gt_vs_pred.jsonl"
-    _write_jsonl(pred_path, [_one_record(image="img.png")])
+    pred_path = tmp_path / "gt_vs_pred_scored.jsonl"
+    _write_scored_jsonl(pred_path, [_one_record(image="img.png")])
 
     out_dir = tmp_path / "eval"
     options = EvalOptions(
@@ -99,8 +120,8 @@ def test_evaluate_and_save_overlay_materializes_shared_vis_sidecar(
     from PIL import Image
 
     Image.new("RGB", (64, 48), color=(128, 128, 128)).save(tmp_path / "img.png")
-    pred_path = tmp_path / "gt_vs_pred.jsonl"
-    _write_jsonl(pred_path, [_one_record(image="img.png")])
+    pred_path = tmp_path / "gt_vs_pred_scored.jsonl"
+    _write_scored_jsonl(pred_path, [_one_record(image="img.png")])
 
     out_dir = tmp_path / "eval"
     options = EvalOptions(
@@ -122,10 +143,10 @@ def test_evaluate_and_save_overlay_materializes_shared_vis_sidecar(
 def test_evaluate_and_save_reports_zero_coco_metrics_when_no_predictions(
     tmp_path: Path,
 ) -> None:
-    pred_path = tmp_path / "gt_vs_pred.jsonl"
+    pred_path = tmp_path / "gt_vs_pred_scored.jsonl"
     record = _one_record(image="img_empty.png")
     record["pred"] = []
-    _write_jsonl(pred_path, [record])
+    _write_scored_jsonl(pred_path, [record])
 
     out_dir = tmp_path / "eval_empty"
     options = EvalOptions(
@@ -164,8 +185,8 @@ def test_evaluate_and_save_reports_zero_coco_metrics_when_no_predictions(
 def test_evaluate_and_save_both_includes_f1ish_metrics(
     tmp_path: Path, monkeypatch
 ) -> None:
-    pred_path = tmp_path / "gt_vs_pred.jsonl"
-    _write_jsonl(pred_path, [_one_record(image="img.png")])
+    pred_path = tmp_path / "gt_vs_pred_scored.jsonl"
+    _write_scored_jsonl(pred_path, [_one_record(image="img.png")])
 
     class _StubEncoder:
         def __init__(self, *args, **kwargs):
@@ -213,7 +234,7 @@ def test_evaluate_and_save_duplicate_control_emits_scored_guarded_family(
             "score": 0.70,
         },
     ]
-    _write_jsonl(pred_path, [record])
+    _write_scored_jsonl(pred_path, [record])
 
     class _StubEncoder:
         def __init__(self, *args, **kwargs):
@@ -358,7 +379,7 @@ def test_apply_offline_duplicate_control_handles_gapped_prediction_indices() -> 
 def test_evaluate_and_save_both_does_not_force_lvis_backfill_for_coco_proxy_artifact(
     tmp_path: Path, monkeypatch
 ) -> None:
-    pred_path = tmp_path / "gt_vs_pred.jsonl"
+    pred_path = tmp_path / "gt_vs_pred_scored.jsonl"
     row = _one_record(image="img.png")
     row["metadata"] = {
         "coordexp_proxy_supervision": {
@@ -376,7 +397,7 @@ def test_evaluate_and_save_both_does_not_force_lvis_backfill_for_coco_proxy_arti
         "source": "coco2017",
         "split": "val",
     }
-    _write_jsonl(pred_path, [row])
+    _write_scored_jsonl(pred_path, [row])
 
     class _StubEncoder:
         def __init__(self, *args, **kwargs):
@@ -509,7 +530,7 @@ def test_evaluate_and_save_lvis_respects_federated_ignore_semantics(
             "errors": [],
         },
     ]
-    _write_jsonl(pred_path, records)
+    _write_scored_jsonl(pred_path, records)
 
     out_dir = tmp_path / "eval_lvis"
     options = EvalOptions(
@@ -611,8 +632,8 @@ def test_resolve_artifacts_populates_guarded_eval_paths(tmp_path: Path) -> None:
 def test_evaluate_and_save_fails_when_semantic_encoder_unavailable(
     tmp_path: Path, monkeypatch
 ) -> None:
-    pred_path = tmp_path / "gt_vs_pred.jsonl"
-    _write_jsonl(
+    pred_path = tmp_path / "gt_vs_pred_scored.jsonl"
+    _write_scored_jsonl(
         pred_path,
         [_one_record(image="img.png", gt_desc="cat", pred_desc="dog")],
     )
@@ -687,15 +708,32 @@ def test_eval_options_rejects_empty_semantic_model() -> None:
         )
 
 
-def test_evaluate_and_save_rejects_missing_score_provenance_for_coco(
+def test_evaluate_and_save_rejects_missing_artifact_score_provenance_for_coco(
+    tmp_path: Path,
+) -> None:
+    pred_path = tmp_path / "gt_vs_pred_scored.jsonl"
+    _write_jsonl(pred_path, [_one_record(image="img.png")])
+
+    options = EvalOptions(
+        metrics="coco",
+        strict_parse=True,
+        use_segm=False,
+        output_dir=tmp_path / "eval",
+    )
+
+    with pytest.raises(ValueError, match="missing_provenance"):
+        evaluate_and_save(pred_path, options=options)
+
+
+def test_evaluate_and_save_rejects_missing_row_score_provenance_for_coco(
     tmp_path: Path,
 ) -> None:
     record = _one_record(image="img.png")
     record.pop("pred_score_source", None)
     record.pop("pred_score_version", None)
 
-    pred_path = tmp_path / "gt_vs_pred.jsonl"
-    _write_jsonl(pred_path, [record])
+    pred_path = tmp_path / "gt_vs_pred_scored.jsonl"
+    _write_scored_jsonl(pred_path, [record])
 
     options = EvalOptions(
         metrics="coco",
@@ -712,8 +750,8 @@ def test_evaluate_and_save_rejects_missing_pred_score_for_coco(tmp_path: Path) -
     record = _one_record(image="img.png")
     record["pred"][0].pop("score", None)
 
-    pred_path = tmp_path / "gt_vs_pred.jsonl"
-    _write_jsonl(pred_path, [record])
+    pred_path = tmp_path / "gt_vs_pred_scored.jsonl"
+    _write_scored_jsonl(pred_path, [record])
 
     options = EvalOptions(
         metrics="coco",
@@ -732,8 +770,8 @@ def test_evaluate_and_save_rejects_out_of_range_pred_score_for_coco(
     record = _one_record(image="img.png")
     record["pred"][0]["score"] = 1.2
 
-    pred_path = tmp_path / "gt_vs_pred.jsonl"
-    _write_jsonl(pred_path, [record])
+    pred_path = tmp_path / "gt_vs_pred_scored.jsonl"
+    _write_scored_jsonl(pred_path, [record])
 
     options = EvalOptions(
         metrics="coco",
@@ -763,8 +801,8 @@ def test_coco_export_preserves_input_order_on_score_ties(tmp_path: Path) -> None
         },
     ]
 
-    pred_path = tmp_path / "gt_vs_pred.jsonl"
-    _write_jsonl(pred_path, [record])
+    pred_path = tmp_path / "gt_vs_pred_scored.jsonl"
+    _write_scored_jsonl(pred_path, [record])
 
     options = EvalOptions(
         metrics="coco",
@@ -788,7 +826,7 @@ def test_export_coco_submission_uses_source_image_ids(tmp_path: Path) -> None:
     ]
     pred_records[0]["pred"][0]["points"] = [10, 5, 30, 20]
     pred_records[1]["pred"][0]["points"] = [4, 8, 14, 18]
-    _write_jsonl(
+    _write_scored_jsonl(
         pred_path,
         pred_records,
     )
@@ -847,12 +885,54 @@ def test_export_coco_submission_uses_source_image_ids(tmp_path: Path) -> None:
     assert (out_json.parent / "submission_summary.json").exists()
 
 
+def test_export_coco_submission_rejects_missing_artifact_score_provenance(
+    tmp_path: Path,
+) -> None:
+    pred_path = tmp_path / "gt_vs_pred_scored.jsonl"
+    _write_jsonl(pred_path, [_one_record(image="images/test2017/000000000101.jpg")])
+
+    source_path = tmp_path / "test-dev.jsonl"
+    _write_jsonl(
+        source_path,
+        [
+            {
+                "images": ["images/test2017/000000000101.jpg"],
+                "objects": [],
+                "width": 128,
+                "height": 96,
+                "image_id": 101,
+            }
+        ],
+    )
+    categories_json = tmp_path / "categories.json"
+    categories_json.write_text(
+        json.dumps([{"id": 7, "name": "box"}], ensure_ascii=False),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="missing_provenance"):
+        export_coco_submission(
+            pred_path,
+            source_jsonl=source_path,
+            categories_json=categories_json,
+            out_json=tmp_path / "submission" / "coco_submission.json",
+            options=EvalOptions(
+                metrics="coco",
+                strict_parse=True,
+                use_segm=False,
+                output_dir=tmp_path / "submission",
+                overlay=False,
+                num_workers=0,
+            ),
+        )
+
+
 def test_export_coco_submission_semantic_maps_unknown_desc(
     tmp_path: Path, monkeypatch
 ) -> None:
     pred_path = tmp_path / "gt_vs_pred_scored.jsonl"
     record = _one_record(image="images/test2017/000000000303.jpg", pred_desc="kitten")
-    _write_jsonl(pred_path, [record])
+    _write_scored_jsonl(pred_path, [record])
 
     source_path = tmp_path / "test-dev.jsonl"
     _write_jsonl(

@@ -5,7 +5,8 @@ from types import SimpleNamespace
 from PIL import Image
 import torch
 
-from src.infer.backends import generate_hf_batch
+from src.infer.backend import generate_hf_batch
+from src.infer.runtime import GenerationConfig
 
 
 class _Tokenizer:
@@ -71,6 +72,29 @@ class _Model:
         )
 
 
+class _TraceRequiredProcessor(_Processor):
+    def __call__(
+        self,
+        *,
+        text,
+        images,
+        return_tensors: str,
+        padding: bool,
+        do_resize: bool,
+    ) -> dict[str, torch.Tensor]:
+        base = super().__call__(
+            text=text,
+            images=images,
+            return_tensors=return_tensors,
+            padding=padding,
+            do_resize=do_resize,
+        )
+        return {
+            "input_ids": torch.tensor([[11, 12]], dtype=torch.long),
+            "attention_mask": base["attention_mask"],
+        }
+
+
 def test_hf_batch_generation_uses_qwen_chat_eos_pad_and_disables_resize() -> None:
     processor = _Processor()
     model = _Model()
@@ -88,7 +112,8 @@ def test_hf_batch_generation_uses_qwen_chat_eos_pad_and_disables_resize() -> Non
             apply_hf_stop_pressure=lambda kwargs: None,
         ),
         logger=SimpleNamespace(warning=lambda *args, **kwargs: None),
-        _build_messages=lambda image: [{"role": "user", "content": "detect"}],
+        system_prompt="system",
+        user_prompt="detect",
     )
     image = Image.new("RGB", (4, 4), color="white")
 
@@ -103,3 +128,71 @@ def test_hf_batch_generation_uses_qwen_chat_eos_pad_and_disables_resize() -> Non
     assert model.generate_kwargs["eos_token_id"] == processor.tokenizer.eos_token_id
     assert model.generate_kwargs["pad_token_id"] == processor.tokenizer.pad_token_id
     assert outputs[0].text == "<tok:2>"
+    assert not hasattr(owner, "_build_messages")
+
+
+def test_hf_trace_logprobs_fail_when_generation_scores_are_short() -> None:
+    class _ShortScoreModel:
+        def generate(self, **_kwargs: object):
+            return SimpleNamespace(
+                sequences=torch.tensor([[11, 12, 2, 4]], dtype=torch.long),
+                scores=(torch.zeros((1, 16), dtype=torch.float32),),
+            )
+
+    owner = SimpleNamespace(
+        model=_ShortScoreModel(),
+        processor=_TraceRequiredProcessor(),
+        cfg=SimpleNamespace(device="cpu"),
+        gen_cfg=GenerationConfig(
+            max_new_tokens=2,
+            temperature=0.0,
+            top_p=1.0,
+            repetition_penalty=1.0,
+            trace_logprobs=True,
+        ),
+        logger=SimpleNamespace(warning=lambda *args, **kwargs: None),
+        system_prompt="system",
+        user_prompt="detect",
+    )
+
+    import pytest
+
+    with pytest.raises(ValueError, match="trace shape mismatch"):
+        generate_hf_batch(
+            owner=owner,
+            images=[Image.new("RGB", (4, 4), color="white")],
+            result_factory=lambda **kwargs: SimpleNamespace(**kwargs),
+        )
+
+
+def test_hf_trace_logprobs_fail_when_scores_api_is_unsupported() -> None:
+    class _NoScoreApiModel:
+        def generate(self, **kwargs: object):
+            if kwargs.get("return_dict_in_generate") or kwargs.get("output_scores"):
+                raise TypeError("scores unsupported")
+            return torch.tensor([[11, 12, 2]], dtype=torch.long)
+
+    owner = SimpleNamespace(
+        model=_NoScoreApiModel(),
+        processor=_TraceRequiredProcessor(),
+        cfg=SimpleNamespace(device="cpu"),
+        gen_cfg=GenerationConfig(
+            max_new_tokens=1,
+            temperature=0.0,
+            top_p=1.0,
+            repetition_penalty=1.0,
+            trace_logprobs=True,
+        ),
+        logger=SimpleNamespace(warning=lambda *args, **kwargs: None),
+        system_prompt="system",
+        user_prompt="detect",
+    )
+
+    import pytest
+
+    with pytest.raises(RuntimeError, match="logprob tracing requires"):
+        generate_hf_batch(
+            owner=owner,
+            images=[Image.new("RGB", (4, 4), color="white")],
+            result_factory=lambda **kwargs: SimpleNamespace(**kwargs),
+        )

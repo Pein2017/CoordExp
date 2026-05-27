@@ -187,6 +187,8 @@ def test_vllm_server_prompt_tokenization_parity_smoke(tmp_path: Path) -> None:
     from PIL import Image
     from swift.llm import get_model_tokenizer, get_template
 
+    from src.infer.backend_vllm_server import build_vllm_server_infer_requests
+    from src.infer.prompt import prepare_rollout_prompt_samples_from_owner
     from src.trainers.stage2_rollout_runtime import Stage2RolloutRuntime
     from src.utils.assistant_json import dumps_coordjson
 
@@ -275,10 +277,10 @@ def test_vllm_server_prompt_tokenization_parity_smoke(tmp_path: Path) -> None:
         "images": [str(image_path)],
     }
 
-    prepared = trainer._prepare_samples_for_rollout(
-        [rollout_sample], rollout_backend="vllm"
+    prepared = prepare_rollout_prompt_samples_from_owner(
+        trainer, [rollout_sample], rollout_backend="vllm"
     )
-    infer_requests = trainer._build_vllm_server_infer_requests(prepared)
+    infer_requests = build_vllm_server_infer_requests(samples=prepared)
 
     port = _pick_free_port()
     base_url = f"http://127.0.0.1:{port}"
@@ -361,12 +363,21 @@ def test_vllm_server_prompt_tokenization_parity_smoke(tmp_path: Path) -> None:
                 + _tail(server_log)
             ) from exc
 
-        request_cfg = Stage2RolloutRuntime._rollout_vllm_request_config_kwargs(
-            max_tokens=1,
-            temperature=0.0,
-            top_p=1.0,
-            top_k=-1,
-            repetition_penalty=1.0,
+        from src.infer.backend import (
+            normalize_vllm_trace_response,
+            vllm_request_config_kwargs_from_decode_request,
+        )
+        from src.infer.runtime import build_decode_request_from_rollout_matching_config
+
+        request_cfg = vllm_request_config_kwargs_from_decode_request(
+            build_decode_request_from_rollout_matching_config(
+                {
+                    "rollout_backend": "vllm",
+                    "max_new_tokens": 1,
+                    "decoding": {"temperature": 0.0, "top_p": 1.0, "top_k": -1},
+                    "repetition_penalty": 1.0,
+                }
+            )
         )
         code, body = _http_post_json(
             f"{base_url}/infer/",
@@ -384,9 +395,12 @@ def test_vllm_server_prompt_tokenization_parity_smoke(tmp_path: Path) -> None:
 
         payload = json.loads(body.decode("utf-8"))
         assert isinstance(payload, list) and payload
-        _token_ids, _text, server_prompt_ids = (
-            Stage2RolloutRuntime._parse_vllm_server_output(payload[0])
+        result = normalize_vllm_trace_response(
+            payload[0],
+            trace_logprobs=False,
+            backend_mode="ms-swift",
         )
+        server_prompt_ids = [int(t) for t in (result.prompt_token_ids or [])]
         server_image_token_count = sum(
             1
             for t in server_prompt_ids

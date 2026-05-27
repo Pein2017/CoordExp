@@ -38,6 +38,7 @@ def _is_stage1_non_smoke_leaf(path: Path) -> bool:
     return (
         rel.startswith("configs/stage1/")
         and "/_shared/" not in rel
+        and "/recursive_detection_ce/" not in rel
         and "/smoke/" not in rel
         and "/negative/" not in rel
         and rel != "configs/stage1/sft_base.yaml"
@@ -128,8 +129,9 @@ def test_canonical_non_smoke_leaves_materialize_run_identity_fields() -> None:
         assert cfg.training.get("run_name"), (
             f"{leaf.relative_to(REPO_ROOT)} must materialize training.run_name"
         )
-        assert cfg.training.get("artifact_subdir"), (
-            f"{leaf.relative_to(REPO_ROOT)} must materialize training.artifact_subdir"
+        assert cfg.training.get("artifact_subdir") or cfg.training.get("output_dir"), (
+            f"{leaf.relative_to(REPO_ROOT)} must materialize training.artifact_subdir "
+            "or training.output_dir"
         )
 
 

@@ -9,12 +9,7 @@ from PIL import Image
 
 from src.common.detection_sequence import BOX_START_TOKEN, OBJECT_REF_START_TOKEN
 from src.detection.evaluation import parse_compact_full_output_artifact
-from src.infer.engine import (
-    GenerationConfig,
-    GenerationResult,
-    InferenceConfig,
-    InferenceEngine,
-)
+from src.infer.runtime import create_offline_engine, make_offline_generation_result
 from src.infer.pipeline import load_resolved_config, run_pipeline
 
 
@@ -56,18 +51,26 @@ def _load_infer_config(
     monkeypatch: pytest.MonkeyPatch,
     cfg: dict[str, object],
 ) -> SimpleNamespace:
-    import src.infer.engine as infer_engine
-
     captured: dict[str, object] = {}
 
-    def _fake_infer(self):
-        captured["compact_full_parse_mode"] = self.cfg.compact_full_parse_mode
-        captured["compact_grammar_enabled"] = self.gen_cfg.compact_grammar_enabled
-        Path(self.cfg.out_path).write_text("", encoding="utf-8")
-        Path(self.cfg.summary_path or "").write_text("{}", encoding="utf-8")
-        return Path(self.cfg.out_path), Path(self.cfg.summary_path or "")
+    def _fake_run_offline_inference(*, inference_kwargs, generation_kwargs, logger=None):
+        del logger
+        captured["compact_full_parse_mode"] = inference_kwargs["compact_full_parse_mode"]
+        captured["compact_grammar_enabled"] = generation_kwargs["compact_grammar_enabled"]
+        out_path = Path(str(inference_kwargs["out_path"]))
+        summary_path = Path(str(inference_kwargs["summary_path"]))
+        out_path.write_text("", encoding="utf-8")
+        summary_path.write_text("{}", encoding="utf-8")
+        return SimpleNamespace(
+            base_jsonl_path=out_path,
+            summary_path=summary_path,
+            processor=None,
+        )
 
-    monkeypatch.setattr(infer_engine.InferenceEngine, "infer", _fake_infer)
+    monkeypatch.setattr(
+        "src.infer.pipeline.run_offline_inference",
+        _fake_run_offline_inference,
+    )
 
     config_path = tmp_path / "pipeline.json"
     config_path.write_text(json.dumps(cfg, ensure_ascii=False), encoding="utf-8")
@@ -204,25 +207,26 @@ def test_infer_artifact_writer_records_compact_full_parse_policy(
     out_path = tmp_path / "out" / "gt_vs_pred.jsonl"
     summary_path = tmp_path / "out" / "summary.json"
 
-    monkeypatch.setattr(InferenceEngine, "load_model", lambda self: None)
-    monkeypatch.setattr(
-        InferenceEngine,
-        "_generate_batch",
-        lambda self, images: [GenerationResult(text=raw_output) for _ in images],
+    engine = create_offline_engine(
+        inference_kwargs={
+            "gt_jsonl": str(gt_jsonl),
+            "model_checkpoint": "dummy",
+            "mode": "coord",
+            "detection_sequence_format": "compact_full",
+            "pred_coord_mode": "auto",
+            "out_path": str(out_path),
+            "summary_path": str(summary_path),
+            "root_image_dir": str(tmp_path),
+        },
+        generation_kwargs={},
     )
-
-    engine = InferenceEngine(
-        InferenceConfig(
-            gt_jsonl=str(gt_jsonl),
-            model_checkpoint="dummy",
-            mode="coord",
-            detection_sequence_format="compact_full",
-            pred_coord_mode="auto",
-            out_path=str(out_path),
-            summary_path=str(summary_path),
-            root_image_dir=str(tmp_path),
-        ),
-        GenerationConfig(),
+    monkeypatch.setattr(type(engine), "load_model", lambda self: None)
+    monkeypatch.setattr(
+        type(engine),
+        "_generate_batch",
+        lambda self, images: [
+            make_offline_generation_result(text=raw_output) for _ in images
+        ],
     )
     engine.infer()
 

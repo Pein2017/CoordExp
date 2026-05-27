@@ -15,11 +15,24 @@ import torch
 
 from src.config.prompts import build_dense_system_prompt, build_dense_user_prompt
 from src.config.rollout_matching_schema import RolloutEvalDetectionConfig
+from src.infer.artifacts import load_comparable_artifact
+from src.infer.backend import (
+    build_hf_rollout_logits_processor,
+    normalize_vllm_trace_response,
+    rollout_many_hf,
+)
+from src.infer.backend_vllm_infer import rollout_many_vllm_colocate
+from src.infer.backend_vllm_server import rollout_many_vllm_server
+from src.infer.prompt import prepare_rollout_prompt_samples_from_owner
+from src.infer.runtime import build_decode_request_from_rollout_owner
 from src.trainers.rollout_matching.matching import (
     associate_one_to_one_greedy_iou,
     greedy_match_iou,
 )
-from src.trainers.rollout_aligned_evaluator import finalize_rollout_aligned_evaluation
+from src.trainers.rollout_aligned_evaluator import (
+    _write_stage2_eval_score_provenance,
+    finalize_rollout_aligned_evaluation,
+)
 from src.trainers.stage2_rollout_runtime import (
     GTObject,
     Stage2RolloutRuntime,
@@ -35,6 +48,34 @@ from src.trainers.stage2_rollout_correction import Stage2RolloutCorrectionTraine
 from src.utils.metric_key_lookup import metric_name_matches_key, stage2_eval_metric_key
 
 
+EXPECTED_STAGE2_EVAL_FILES = {
+    "gt_vs_pred.jsonl",
+    "gt_vs_pred_scored.jsonl",
+    "infer_summary.json",
+    "metrics.json",
+    "per_image.json",
+    "raw_rollouts.jsonl",
+}
+EXPECTED_STAGE2_EVAL_FILES_WITH_TRACE = EXPECTED_STAGE2_EVAL_FILES | {
+    "pred_token_trace.jsonl",
+}
+NOOP_ROLLOUT_LOGGER = types.SimpleNamespace(
+    info=lambda *args, **kwargs: None,
+    warning=lambda *args, **kwargs: None,
+    exception=lambda *args, **kwargs: None,
+)
+
+
+def _assert_stage2_eval_files(eval_dir: Path, *, trace_metadata: bool) -> None:
+    names = {path.name for path in eval_dir.iterdir()}
+    expected = (
+        EXPECTED_STAGE2_EVAL_FILES_WITH_TRACE
+        if trace_metadata
+        else EXPECTED_STAGE2_EVAL_FILES
+    )
+    assert expected <= names
+
+
 def test_stage2_rollout_correction_reuses_rollout_aligned_eval_contract() -> None:
     assert Stage2RolloutCorrectionTrainer.evaluate is Stage2RolloutRuntime.evaluate
     assert Stage2RolloutCorrectionTrainer.prediction_step is Stage2RolloutRuntime.prediction_step
@@ -42,6 +83,208 @@ def test_stage2_rollout_correction_reuses_rollout_aligned_eval_contract() -> Non
 
 def test_eval_detection_materialization_is_default_on() -> None:
     assert RolloutEvalDetectionConfig().materialize_artifacts is True
+
+
+def test_stage2_eval_model_identity_includes_backend_sync_identity(
+    tmp_path: Path,
+) -> None:
+    raw_path = tmp_path / "gt_vs_pred.jsonl"
+    raw_path.write_text('{"image":"img.jpg","gt":[],"pred":[]}\n', encoding="utf-8")
+    scored_path = tmp_path / "gt_vs_pred_scored.jsonl"
+    owner = types.SimpleNamespace(
+        args=types.SimpleNamespace(output_dir=str(tmp_path)),
+        model=types.SimpleNamespace(
+            config=types.SimpleNamespace(name_or_path="live-stage2-model")
+        ),
+        rollout_matching_cfg={
+            "rollout_backend": "vllm",
+            "max_new_tokens": 8,
+            "decoding": {"temperature": 0.0, "top_p": 1.0, "top_k": -1},
+            "repetition_penalty": 1.0,
+            "vllm": {"mode": "server"},
+        },
+        _object_field_order=lambda: "xyxy_desc",
+        _object_ordering=lambda: "sorted",
+        _vllm_server_last_backend_sync_identity={
+            "schema_version": "coordexp_vllm_adapter_sync_v1",
+            "sync_policy": {"mode": "adapter", "global_step": 3},
+            "lora": {"digest": "sha256:lora-a"},
+            "coord_rows": {"digest": "sha256:coord-a", "status": "requested"},
+            "worker_verified": {
+                "verified": False,
+                "status": "unavailable_fire_and_forget",
+            },
+        },
+    )
+
+    _write_stage2_eval_score_provenance(
+        owner=owner,
+        scored_path=scored_path,
+        raw_path=raw_path,
+        eval_prompt_variant="coco_80",
+        eval_rollout_backend="vllm",
+        eval_vllm_mode="server",
+        eval_detection_score_mode="constant",
+        eval_detection_cfg={},
+    )
+    first = json.loads(
+        scored_path.with_suffix(scored_path.suffix + ".provenance.json").read_text(
+            encoding="utf-8"
+        )
+    )
+
+    owner._vllm_server_last_backend_sync_identity = {
+        **owner._vllm_server_last_backend_sync_identity,
+        "sync_policy": {"mode": "adapter", "global_step": 4},
+    }
+    _write_stage2_eval_score_provenance(
+        owner=owner,
+        scored_path=scored_path,
+        raw_path=raw_path,
+        eval_prompt_variant="coco_80",
+        eval_rollout_backend="vllm",
+        eval_vllm_mode="server",
+        eval_detection_score_mode="constant",
+        eval_detection_cfg={},
+    )
+    second = json.loads(
+        scored_path.with_suffix(scored_path.suffix + ".provenance.json").read_text(
+            encoding="utf-8"
+        )
+    )
+
+    assert first["model_identity_fingerprint"].startswith("model:")
+    assert second["model_identity_fingerprint"].startswith("model:")
+    assert first["model_identity_fingerprint"] != second["model_identity_fingerprint"]
+
+
+def test_stage2_hf_eval_model_identity_ignores_stale_backend_sync_identity(
+    tmp_path: Path,
+) -> None:
+    raw_path = tmp_path / "gt_vs_pred.jsonl"
+    raw_path.write_text('{"image":"img.jpg","gt":[],"pred":[]}\n', encoding="utf-8")
+    scored_path = tmp_path / "gt_vs_pred_scored.jsonl"
+    owner = types.SimpleNamespace(
+        args=types.SimpleNamespace(output_dir=str(tmp_path)),
+        model=types.SimpleNamespace(
+            config=types.SimpleNamespace(name_or_path="live-stage2-model")
+        ),
+        rollout_matching_cfg={
+            "rollout_backend": "hf",
+            "max_new_tokens": 8,
+            "decoding": {"temperature": 0.0, "top_p": 1.0, "top_k": -1},
+            "repetition_penalty": 1.0,
+        },
+        _object_field_order=lambda: "xyxy_desc",
+        _object_ordering=lambda: "sorted",
+    )
+
+    _write_stage2_eval_score_provenance(
+        owner=owner,
+        scored_path=scored_path,
+        raw_path=raw_path,
+        eval_prompt_variant="coco_80",
+        eval_rollout_backend="hf",
+        eval_vllm_mode="local",
+        eval_detection_score_mode="constant",
+        eval_detection_cfg={},
+    )
+    no_sync = json.loads(
+        scored_path.with_suffix(scored_path.suffix + ".provenance.json").read_text(
+            encoding="utf-8"
+        )
+    )
+
+    owner._vllm_server_last_backend_sync_identity = {
+        "schema_version": "coordexp_vllm_adapter_sync_v1",
+        "sync_policy": {"mode": "adapter", "global_step": 99},
+        "lora": {"digest": "sha256:stale"},
+        "coord_rows": {"digest": "sha256:stale", "status": "requested"},
+    }
+    _write_stage2_eval_score_provenance(
+        owner=owner,
+        scored_path=scored_path,
+        raw_path=raw_path,
+        eval_prompt_variant="coco_80",
+        eval_rollout_backend="hf",
+        eval_vllm_mode="local",
+        eval_detection_score_mode="constant",
+        eval_detection_cfg={},
+    )
+    stale_sync = json.loads(
+        scored_path.with_suffix(scored_path.suffix + ".provenance.json").read_text(
+            encoding="utf-8"
+        )
+    )
+
+    assert no_sync["model_identity_fingerprint"] == stale_sync[
+        "model_identity_fingerprint"
+    ]
+
+
+def test_stage2_colocate_eval_model_identity_ignores_stale_server_sync_identity(
+    tmp_path: Path,
+) -> None:
+    raw_path = tmp_path / "gt_vs_pred.jsonl"
+    raw_path.write_text('{"image":"img.jpg","gt":[],"pred":[]}\n', encoding="utf-8")
+    scored_path = tmp_path / "gt_vs_pred_scored.jsonl"
+    owner = types.SimpleNamespace(
+        args=types.SimpleNamespace(output_dir=str(tmp_path)),
+        model=types.SimpleNamespace(
+            config=types.SimpleNamespace(name_or_path="live-stage2-model")
+        ),
+        rollout_matching_cfg={
+            "rollout_backend": "vllm",
+            "max_new_tokens": 8,
+            "decoding": {"temperature": 0.0, "top_p": 1.0, "top_k": -1},
+            "repetition_penalty": 1.0,
+            "vllm": {"mode": "colocate"},
+        },
+        _object_field_order=lambda: "xyxy_desc",
+        _object_ordering=lambda: "sorted",
+    )
+
+    _write_stage2_eval_score_provenance(
+        owner=owner,
+        scored_path=scored_path,
+        raw_path=raw_path,
+        eval_prompt_variant="coco_80",
+        eval_rollout_backend="vllm",
+        eval_vllm_mode="colocate",
+        eval_detection_score_mode="constant",
+        eval_detection_cfg={},
+    )
+    no_sync = json.loads(
+        scored_path.with_suffix(scored_path.suffix + ".provenance.json").read_text(
+            encoding="utf-8"
+        )
+    )
+
+    owner._vllm_server_last_backend_sync_identity = {
+        "schema_version": "coordexp_vllm_adapter_sync_v1",
+        "sync_policy": {"mode": "adapter", "global_step": 99},
+        "lora": {"digest": "sha256:stale"},
+        "coord_rows": {"digest": "sha256:stale", "status": "requested"},
+    }
+    _write_stage2_eval_score_provenance(
+        owner=owner,
+        scored_path=scored_path,
+        raw_path=raw_path,
+        eval_prompt_variant="coco_80",
+        eval_rollout_backend="vllm",
+        eval_vllm_mode="colocate",
+        eval_detection_score_mode="constant",
+        eval_detection_cfg={},
+    )
+    stale_sync = json.loads(
+        scored_path.with_suffix(scored_path.suffix + ".provenance.json").read_text(
+            encoding="utf-8"
+        )
+    )
+
+    assert no_sync["model_identity_fingerprint"] == stale_sync[
+        "model_identity_fingerprint"
+    ]
 
 
 def test_rollout_trainer_checkpoint_runtime_state_round_trip() -> None:
@@ -171,9 +414,7 @@ def test_finalize_eval_uses_rank0_only_gather_path_for_detection_payloads(
         desc_sem_sim_sum_total=0.0,
         desc_sem_sim_count_total=0.0,
         sem_loaded_local=0.0,
-        trace_fallback_count_local=0.0,
         vllm_decode_error_count_local=0.0,
-        trace_fallback_window_active=False,
         runtime_local_s=0.25,
         eval_detection_records_local=[{"pred": [], "gt": []}],
         eval_rollout_artifacts_local=[],
@@ -190,7 +431,6 @@ def test_finalize_eval_uses_rank0_only_gather_path_for_detection_payloads(
         fp_cost=1.0,
         fn_cost=1.0,
         was_training=True,
-        compute_eval_detection_coco_metrics_fn=_fail_if_called,
         metric_name_matches_key_fn=metric_name_matches_key,
         stage2_eval_metric_key_fn=stage2_eval_metric_key,
     )
@@ -342,7 +582,6 @@ def _make_rollout_server_trainer():
     # Avoid real network calls in unit tests; treat the fake server as 1 DP replica.
     trainer._vllm_server_cached_world_sizes = [1]
 
-    trainer._decoding_params = lambda: (0.0, 1.0, -1)
     trainer._derive_rollout_seed_base = lambda global_step: 17 + int(global_step)
     trainer._sync_vllm_server_rollout_model_if_needed = lambda: None
     trainer._vllm_server_specs = lambda: [
@@ -380,7 +619,10 @@ def test_ensure_vllm_server_client_wraps_import_error(monkeypatch) -> None:
     real_import = builtins.__import__
 
     def _fake_import(name, globals=None, locals=None, fromlist=(), level=0):
-        if name == "swift.trainers.rlhf_trainer.vllm_client":
+        if name in {
+            "swift.rlhf_trainers.vllm_client",
+            "swift.trainers.rlhf_trainer.vllm_client",
+        }:
             raise ImportError("missing vllm client")
         return real_import(name, globals, locals, fromlist, level)
 
@@ -603,20 +845,7 @@ def test_vllm_server_timeouts_reject_non_positive_without_explicit_opt_in() -> N
         trainer._vllm_server_timeouts()
 
 
-def test_parse_vllm_server_traced_single_trailing_stop_is_non_warning(
-    monkeypatch,
-) -> None:
-    warned: list[str] = []
-
-    def _capture_warning(msg, *args, **kwargs):
-        del kwargs
-        warned.append(msg % args if args else str(msg))
-
-    monkeypatch.setattr(
-        "src.trainers.stage2_rollout_runtime.logger.warning",
-        _capture_warning,
-    )
-
+def test_parse_vllm_server_traced_single_trailing_stop_fails_fast() -> None:
     raw = {
         "prompt_token_ids": [1, 2],
         "choices": [
@@ -635,31 +864,15 @@ def test_parse_vllm_server_traced_single_trailing_stop_is_non_warning(
         ],
     }
 
-    token_ids, _text, prompt_ids, token_logprobs, token_text = (
-        Stage2RolloutRuntime._parse_vllm_server_output_traced(raw)
-    )
-
-    assert prompt_ids == [1, 2]
-    assert token_ids == [11, 12, 13]
-    assert len(token_logprobs) == len(token_ids)
-    assert len(token_text) == len(token_ids)
-    assert not any("trace longer than token_ids" in msg for msg in warned)
+    with pytest.raises(ValueError, match=r"trace shape"):
+        normalize_vllm_trace_response(
+            raw,
+            trace_logprobs=True,
+            backend_mode="ms-swift",
+        )
 
 
-def test_parse_vllm_server_traced_large_trailing_trace_is_non_warning(
-    monkeypatch,
-) -> None:
-    warned: list[str] = []
-
-    def _capture_warning(msg, *args, **kwargs):
-        del kwargs
-        warned.append(msg % args if args else str(msg))
-
-    monkeypatch.setattr(
-        "src.trainers.stage2_rollout_runtime.logger.warning",
-        _capture_warning,
-    )
-
+def test_parse_vllm_server_traced_large_trailing_trace_fails_fast() -> None:
     raw = {
         "prompt_token_ids": [3],
         "choices": [
@@ -679,14 +892,12 @@ def test_parse_vllm_server_traced_large_trailing_trace_is_non_warning(
         ],
     }
 
-    token_ids, _text, _prompt_ids, token_logprobs, token_text = (
-        Stage2RolloutRuntime._parse_vllm_server_output_traced(raw)
-    )
-
-    assert token_ids == [21, 22, 23]
-    assert len(token_logprobs) == len(token_ids)
-    assert len(token_text) == len(token_ids)
-    assert not any("trace longer than token_ids" in msg for msg in warned)
+    with pytest.raises(ValueError, match=r"trace shape"):
+        normalize_vllm_trace_response(
+            raw,
+            trace_logprobs=True,
+            backend_mode="ms-swift",
+        )
 
 
 def test_parse_vllm_server_traced_strips_left_padded_prompt_token_ids() -> None:
@@ -718,14 +929,17 @@ def test_parse_vllm_server_traced_strips_left_padded_prompt_token_ids() -> None:
         ],
     }
 
-    token_ids, _text, prompt_ids, token_logprobs, token_text = (
-        Stage2RolloutRuntime._parse_vllm_server_output_traced(raw, tokenizer=_Tok())
+    result = normalize_vllm_trace_response(
+        raw,
+        trace_logprobs=True,
+        backend_mode="ms-swift",
+        tokenizer=_Tok(),
     )
 
-    assert prompt_ids == [1, 2]
-    assert token_ids == [11]
-    assert len(token_logprobs) == len(token_ids)
-    assert len(token_text) == len(token_ids)
+    assert result.prompt_token_ids == [1, 2]
+    assert result.generated_token_ids == [11]
+    assert len(result.generated_logprobs or []) == len(result.generated_token_ids or [])
+    assert len(result.generated_tokens or []) == len(result.generated_token_ids or [])
 
 
 def test_rollout_decode_batch_size_per_rank_fails_fast_on_infeasible_topology(
@@ -767,7 +981,7 @@ def test_per_server_rank_caps_preserve_per_rank_chunk_on_multi_server_topology()
     assert [a + b for a, b in zip(caps_rank0, caps_rank1)] == [1, 1]
 
 
-def test_rollout_many_enforces_server_chunk_cap_for_all_callers() -> None:
+def test_rollout_many_enforces_server_chunk_cap_for_all_callers(monkeypatch) -> None:
     trainer = object.__new__(Stage2RolloutRuntime)
     trainer.rollout_matching_cfg = {}
     trainer.template = types.SimpleNamespace(system=None)
@@ -777,11 +991,14 @@ def test_rollout_many_enforces_server_chunk_cap_for_all_callers() -> None:
     call_offsets: list[int] = []
 
     def _capture_rollout_many_vllm(
-        samples,
         *,
+        owner,
+        samples,
         debug_samples=None,
         request_index_offset=0,
+        decode_override=None,
     ):
+        del owner, decode_override
         call_samples.append(list(samples))
         call_debug_samples.append(
             list(debug_samples) if debug_samples is not None else []
@@ -792,10 +1009,14 @@ def test_rollout_many_enforces_server_chunk_cap_for_all_callers() -> None:
     trainer._vllm_mode = lambda: "server"
     trainer._effective_rollout_backend = lambda context="train": "vllm"
     trainer._rollout_decode_batch_size_per_rank = lambda **_kwargs: 2
-    trainer._rollout_many_vllm = _capture_rollout_many_vllm
+    monkeypatch.setattr(
+        "src.infer.rollout_dispatch.rollout_many_vllm",
+        _capture_rollout_many_vllm,
+    )
 
     original_samples = [
         {
+            "images": [f"img-{i}.png"],
             "messages": [
                 {"role": "system", "content": "sys"},
                 {"role": "user", "content": f"prompt-{i}"},
@@ -818,7 +1039,7 @@ def test_rollout_many_enforces_server_chunk_cap_for_all_callers() -> None:
         assert all(sample["messages"][-1]["role"] == "assistant" for sample in chunk)
 
 
-def test_rollout_many_offsets_server_chunks_from_caller_request_index() -> None:
+def test_rollout_many_offsets_server_chunks_from_caller_request_index(monkeypatch) -> None:
     trainer = object.__new__(Stage2RolloutRuntime)
     trainer.rollout_matching_cfg = {}
     trainer.template = types.SimpleNamespace(system=None)
@@ -826,21 +1047,28 @@ def test_rollout_many_offsets_server_chunks_from_caller_request_index() -> None:
     call_offsets: list[int] = []
 
     def _capture_rollout_many_vllm(
-        samples,
         *,
+        owner,
+        samples,
         debug_samples=None,
         request_index_offset=0,
+        decode_override=None,
     ):
+        del owner, debug_samples, decode_override
         call_offsets.append(int(request_index_offset))
         return [([1], "{}", "greedy", [2]) for _ in samples]
 
     trainer._vllm_mode = lambda: "server"
     trainer._effective_rollout_backend = lambda context="train": "vllm"
     trainer._rollout_decode_batch_size_per_rank = lambda **_kwargs: 2
-    trainer._rollout_many_vllm = _capture_rollout_many_vllm
+    monkeypatch.setattr(
+        "src.infer.rollout_dispatch.rollout_many_vllm",
+        _capture_rollout_many_vllm,
+    )
 
     original_samples = [
         {
+            "images": [f"img-{i}.png"],
             "messages": [
                 {"role": "system", "content": "sys"},
                 {"role": "user", "content": f"prompt-{i}"},
@@ -857,6 +1085,154 @@ def test_rollout_many_offsets_server_chunks_from_caller_request_index() -> None:
 
     assert len(out) == 5
     assert call_offsets == [5, 7, 9]
+
+
+def test_rollout_many_server_dispatch_reaches_shared_server_backend(
+    monkeypatch,
+) -> None:
+    trainer = object.__new__(Stage2RolloutRuntime)
+    trainer.rollout_matching_cfg = {}
+    trainer.template = types.SimpleNamespace(system=None)
+
+    calls: list[dict[str, object]] = []
+
+    def _capture_shared_server_backend(
+        *,
+        owner,
+        logger,
+        samples,
+        debug_samples=None,
+        request_index_offset=0,
+        with_logprobs=False,
+        decode_override=None,
+        per_server_rank_request_caps_fn=None,
+        allocate_weighted_counts_with_caps_fn=None,
+    ):
+        del logger, per_server_rank_request_caps_fn, allocate_weighted_counts_with_caps_fn
+        calls.append(
+            {
+                "owner": owner,
+                "samples": list(samples),
+                "debug_samples": list(debug_samples or []),
+                "request_index_offset": int(request_index_offset),
+                "with_logprobs": bool(with_logprobs),
+                "decode_override": dict(decode_override or {}),
+            }
+        )
+        return [([1], "{}", "greedy", [2]) for _ in samples]
+
+    trainer._vllm_mode = lambda: "server"
+    trainer._effective_rollout_backend = lambda context="train": "vllm"
+    trainer._rollout_decode_batch_size_per_rank = lambda **_kwargs: 2
+    monkeypatch.setattr(
+        "src.infer.rollout_dispatch.rollout_many_vllm_server",
+        _capture_shared_server_backend,
+    )
+
+    original_samples = [
+        {
+            "images": [f"img-{i}.png"],
+            "messages": [
+                {"role": "system", "content": "sys"},
+                {"role": "user", "content": f"prompt-{i}"},
+                {"role": "assistant", "content": '{"objects": []}'},
+            ],
+        }
+        for i in range(3)
+    ]
+    decode_override = {"temperature": 0.7, "top_p": 0.9}
+
+    out = trainer._rollout_many(
+        original_samples,
+        rollout_backend="vllm",
+        decode_override=decode_override,
+        request_index_offset=5,
+    )
+
+    assert len(out) == 3
+    assert len(calls) == 2
+    assert [len(call["samples"]) for call in calls] == [2, 1]
+    assert [call["request_index_offset"] for call in calls] == [5, 7]
+    assert all(call["owner"] is trainer for call in calls)
+    assert all(call["decode_override"] == decode_override for call in calls)
+    assert all(call["with_logprobs"] is False for call in calls)
+    for call in calls:
+        assert all(
+            sample["messages"][-1]["role"] == "user"
+            for sample in call["samples"]
+        )
+        assert all(
+            sample["messages"][-1]["role"] == "assistant"
+            for sample in call["debug_samples"]
+        )
+
+
+def test_rollout_many_traced_vllm_prepares_prompt_and_keeps_debug_samples(
+    monkeypatch,
+) -> None:
+    trainer = object.__new__(Stage2RolloutRuntime)
+    trainer.rollout_matching_cfg = {}
+    trainer.template = types.SimpleNamespace(system=None)
+    trainer._vllm_mode = lambda: "server"
+    trainer._effective_rollout_backend = lambda context="train": "vllm"
+
+    captured: dict[str, object] = {}
+
+    def _capture_vllm_traced(
+        *,
+        owner,
+        samples,
+        debug_samples=None,
+        request_index_offset=0,
+        decode_override=None,
+    ):
+        captured["owner"] = owner
+        captured["samples"] = list(samples)
+        captured["debug_samples"] = list(debug_samples or [])
+        captured["request_index_offset"] = int(request_index_offset)
+        captured["decode_override"] = dict(decode_override or {})
+        return [
+            ([1], "{}", "greedy", [2], [0.0], ["tok"])
+            for _sample in samples
+        ]
+
+    monkeypatch.setattr(
+        "src.infer.rollout_dispatch.rollout_many_vllm_traced",
+        _capture_vllm_traced,
+    )
+
+    original_samples = [
+        {
+            "images": ["img.png"],
+            "messages": [
+                {"role": "system", "content": "sys"},
+                {"role": "user", "content": "prompt"},
+                {"role": "assistant", "content": '{"objects": []}'},
+            ],
+        }
+    ]
+    decode_override = {"temperature": 0.0}
+
+    from src.infer.rollout_dispatch import rollout_many_traced
+
+    out = rollout_many_traced(
+        owner=trainer,
+        samples=original_samples,
+        rollout_backend="vllm",
+        decode_override=decode_override,
+        request_index_offset=9,
+    )
+
+    assert out == [([1], "{}", "greedy", [2], [0.0], ["tok"])]
+    assert captured["owner"] is trainer
+    assert captured["request_index_offset"] == 9
+    assert captured["decode_override"] == decode_override
+    prepared_samples = captured["samples"]
+    debug_samples = captured["debug_samples"]
+    assert isinstance(prepared_samples, list) and prepared_samples
+    assert prepared_samples[0]["messages"][-1]["role"] == "user"
+    assert isinstance(debug_samples, list) and debug_samples
+    assert debug_samples[0]["messages"][-1]["role"] == "assistant"
 
 
 def test_vllm_server_rollout_uses_no_http_timeout_when_infer_timeout_disabled(
@@ -892,7 +1268,7 @@ def test_vllm_server_rollout_uses_no_http_timeout_when_infer_timeout_disabled(
     trainer._vllm_server_timeouts = lambda: (30.0, None)
 
     sample = {"messages": [{"role": "user", "content": "ping"}]}
-    trainer._rollout_many_vllm_server([sample])
+    rollout_many_vllm_server(owner=trainer, logger=NOOP_ROLLOUT_LOGGER, samples=[sample])
 
     assert captured_payloads
     assert captured_payloads[0]["timeout"] is None
@@ -914,12 +1290,14 @@ def test_vllm_server_rollout_wraps_request_config_import_error(monkeypatch) -> N
     monkeypatch.setattr(builtins, "__import__", _fake_import)
 
     with pytest.raises(RuntimeError, match=r"RequestConfig"):
-        trainer._rollout_many_vllm_server(
-            [{"messages": [{"role": "user", "content": "ping"}]}]
+        rollout_many_vllm_server(
+            owner=trainer,
+            logger=NOOP_ROLLOUT_LOGGER,
+            samples=[{"messages": [{"role": "user", "content": "ping"}]}],
         )
 
 
-def test_rollout_many_passes_untrimmed_samples_for_server_debug_dump():
+def test_rollout_many_passes_untrimmed_samples_for_server_debug_dump(monkeypatch):
     trainer = object.__new__(Stage2RolloutRuntime)
     trainer.rollout_matching_cfg = {}
     trainer.template = types.SimpleNamespace(system=None)
@@ -927,11 +1305,14 @@ def test_rollout_many_passes_untrimmed_samples_for_server_debug_dump():
     captured: dict[str, object] = {}
 
     def _capture_rollout_many_vllm(
-        samples,
         *,
+        owner,
+        samples,
         debug_samples=None,
         request_index_offset=0,
+        decode_override=None,
     ):
+        del owner, decode_override
         captured["samples"] = samples
         captured["debug_samples"] = debug_samples
         captured["request_index_offset"] = int(request_index_offset)
@@ -940,10 +1321,14 @@ def test_rollout_many_passes_untrimmed_samples_for_server_debug_dump():
     trainer._vllm_mode = lambda: "server"
     trainer._effective_rollout_backend = lambda context="train": "vllm"
     trainer._rollout_decode_batch_size_per_rank = lambda **_kwargs: 4
-    trainer._rollout_many_vllm = _capture_rollout_many_vllm
+    monkeypatch.setattr(
+        "src.infer.rollout_dispatch.rollout_many_vllm",
+        _capture_rollout_many_vllm,
+    )
 
     original_samples = [
         {
+            "images": ["img.png"],
             "messages": [
                 {"role": "system", "content": "sys"},
                 {"role": "user", "content": "prompt"},
@@ -1048,7 +1433,13 @@ def test_build_rollout_metrics_from_meta_skips_inactive_rollout_steps() -> None:
 def test_build_rollout_metrics_from_meta_uses_counter_suffixes() -> None:
     trainer = object.__new__(Stage2RolloutRuntime)
     trainer._cfg = lambda _k, default=None: default
-    trainer._decoding_params = lambda: (0.0, 1.0, -1)
+    trainer.rollout_matching_cfg = {
+        "rollout_backend": "hf",
+        "decode_mode": "greedy",
+        "max_new_tokens": 512,
+        "decoding": {"temperature": 0.0, "top_p": 1.0, "top_k": -1},
+        "repetition_penalty": 1.0,
+    }
 
     metrics = trainer._build_rollout_metrics_from_meta(
         [
@@ -1298,7 +1689,10 @@ def test_reduce_stage_wallclock_metrics_global_uses_ddp_max(monkeypatch) -> None
     assert out["time/rollout_total_time"] == pytest.approx(9.5)
 
 
-def test_evaluate_emits_rollout_metrics_and_runs_callback(monkeypatch) -> None:
+def test_evaluate_emits_rollout_metrics_and_runs_callback(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
     trainer = object.__new__(Stage2RolloutRuntime)
 
     class _DummyEvalModel:
@@ -1315,7 +1709,7 @@ def test_evaluate_emits_rollout_metrics_and_runs_callback(monkeypatch) -> None:
             return self
 
     trainer.model = _DummyEvalModel()
-    trainer.args = types.SimpleNamespace()
+    trainer.args = types.SimpleNamespace(output_dir=str(tmp_path))
     trainer.state = types.SimpleNamespace(global_step=7)
     trainer.control = types.SimpleNamespace(tag="ctrl")
     trainer.template = types.SimpleNamespace(tokenizer=_DummyTokenizerRM())
@@ -1418,6 +1812,17 @@ def test_evaluate_emits_rollout_metrics_and_runs_callback(monkeypatch) -> None:
 
     trainer.callback_handler = types.SimpleNamespace(on_evaluate=_on_evaluate)
 
+    def _fake_evaluate_and_save(pred_jsonl, *, options):
+        load_comparable_artifact(Path(pred_jsonl), require_score=True)
+        (options.output_dir / "metrics.json").write_text("{}", encoding="utf-8")
+        (options.output_dir / "per_image.json").write_text("[]", encoding="utf-8")
+        return {"metrics": {"bbox_AP": 0.0}}
+
+    monkeypatch.setattr(
+        "src.trainers.rollout_aligned_evaluator.evaluate_and_save",
+        _fake_evaluate_and_save,
+    )
+
     metrics = trainer.evaluate()
 
     assert trainer.model.training is True
@@ -1438,7 +1843,7 @@ def test_evaluate_emits_rollout_metrics_and_runs_callback(monkeypatch) -> None:
     assert "eval/runtime/runtime_s" in metrics
 
 
-def test_rollout_many_overrides_last_user_prompt_for_eval_variant() -> None:
+def test_rollout_many_overrides_last_user_prompt_for_eval_variant(monkeypatch) -> None:
     trainer = object.__new__(Stage2RolloutRuntime)
     trainer.rollout_matching_cfg = {
         "rollout_backend": "hf",
@@ -1448,11 +1853,21 @@ def test_rollout_many_overrides_last_user_prompt_for_eval_variant() -> None:
 
     captured: dict[str, object] = {}
 
-    def _fake_rollout_many_hf(samples):
+    def _fake_rollout_many_hf(
+        *,
+        owner,
+        samples,
+        decode_request,
+        unwrap_model_for_generation_fn,
+    ):
+        del owner, decode_request, unwrap_model_for_generation_fn
         captured["samples"] = samples
         return [([], "{}", "greedy", []) for _ in samples]
 
-    trainer._rollout_many_hf = _fake_rollout_many_hf
+    monkeypatch.setattr(
+        "src.infer.rollout_dispatch.rollout_many_hf",
+        _fake_rollout_many_hf,
+    )
 
     sample = {
         "messages": [
@@ -1490,7 +1905,9 @@ def test_rollout_many_overrides_last_user_prompt_for_eval_variant() -> None:
     assert user_content[-1]["text"] == expected_prompt
 
 
-def test_rollout_many_rebuilds_compact_full_prompt_from_coordjson_source() -> None:
+def test_rollout_many_rebuilds_compact_full_prompt_from_coordjson_source(
+    monkeypatch,
+) -> None:
     trainer = object.__new__(Stage2RolloutRuntime)
     trainer.rollout_matching_cfg = {
         "rollout_backend": "hf",
@@ -1502,11 +1919,21 @@ def test_rollout_many_rebuilds_compact_full_prompt_from_coordjson_source() -> No
 
     captured: dict[str, object] = {}
 
-    def _fake_rollout_many_hf(samples):
+    def _fake_rollout_many_hf(
+        *,
+        owner,
+        samples,
+        decode_request,
+        unwrap_model_for_generation_fn,
+    ):
+        del owner, decode_request, unwrap_model_for_generation_fn
         captured["samples"] = samples
         return [([], "{}", "greedy", []) for _ in samples]
 
-    trainer._rollout_many_hf = _fake_rollout_many_hf
+    monkeypatch.setattr(
+        "src.infer.rollout_dispatch.rollout_many_hf",
+        _fake_rollout_many_hf,
+    )
 
     sample = {
         "messages": [
@@ -1558,6 +1985,7 @@ def test_prepare_samples_for_rollout_vllm_fallback_uses_random_ordering_system_p
     trainer._cfg = lambda key, default=None: trainer.rollout_matching_cfg.get(key, default)
 
     sample = {
+        "images": ["img.png"],
         "messages": [
             {
                 "role": "user",
@@ -1566,7 +1994,9 @@ def test_prepare_samples_for_rollout_vllm_fallback_uses_random_ordering_system_p
         ]
     }
 
-    prepared = trainer._prepare_samples_for_rollout([sample], rollout_backend="vllm")
+    prepared = prepare_rollout_prompt_samples_from_owner(
+        trainer, [sample], rollout_backend="vllm"
+    )
 
     assert len(prepared) == 1
     messages = prepared[0]["messages"]
@@ -1593,6 +2023,7 @@ def test_prepare_samples_for_rollout_vllm_uses_compact_full_system_prompt() -> N
     trainer._cfg = lambda key, default=None: trainer.rollout_matching_cfg.get(key, default)
 
     sample = {
+        "images": ["img.png"],
         "messages": [
             {
                 "role": "user",
@@ -1601,7 +2032,9 @@ def test_prepare_samples_for_rollout_vllm_uses_compact_full_system_prompt() -> N
         ]
     }
 
-    prepared = trainer._prepare_samples_for_rollout([sample], rollout_backend="vllm")
+    prepared = prepare_rollout_prompt_samples_from_owner(
+        trainer, [sample], rollout_backend="vllm"
+    )
 
     assert len(prepared) == 1
     messages = prepared[0]["messages"]
@@ -1618,7 +2051,7 @@ def test_prepare_samples_for_rollout_vllm_uses_compact_full_system_prompt() -> N
     assert "<|object_ref_start|>" in messages[0]["content"]
 
 
-def test_resolve_rollout_decode_request_applies_per_call_overrides() -> None:
+def test_build_rollout_decode_request_applies_per_call_overrides() -> None:
     trainer = object.__new__(Stage2RolloutRuntime)
     trainer.rollout_matching_cfg = {
         "decode_mode": "greedy",
@@ -1626,9 +2059,8 @@ def test_resolve_rollout_decode_request_applies_per_call_overrides() -> None:
         "num_beams": 1,
         "repetition_penalty": 1.1,
     }
-    trainer._decoding_params = lambda: (0.0, 1.0, -1)
-
-    request = trainer._resolve_rollout_decode_request(
+    request = build_decode_request_from_rollout_owner(
+        trainer,
         decode_override={
             "temperature": 0.7,
             "top_p": 0.92,
@@ -1636,7 +2068,7 @@ def test_resolve_rollout_decode_request_applies_per_call_overrides() -> None:
         }
     )
 
-    assert request.decode_mode == "greedy"
+    assert request.decode_mode == "sampling"
     assert request.temperature == pytest.approx(0.7)
     assert request.top_p == pytest.approx(0.92)
     assert request.top_k == 24
@@ -1644,19 +2076,29 @@ def test_resolve_rollout_decode_request_applies_per_call_overrides() -> None:
     assert request.max_new_tokens == 12
 
 
-def test_rollout_many_forwards_decode_override_to_hf_backend() -> None:
+def test_rollout_many_forwards_decode_override_to_hf_backend(monkeypatch) -> None:
     trainer = object.__new__(Stage2RolloutRuntime)
     trainer.rollout_matching_cfg = {}
     trainer.template = types.SimpleNamespace(system=None)
 
     captured: dict[str, object] = {}
 
-    def _fake_rollout_many_hf(samples, *, decode_override=None):
+    def _fake_rollout_many_hf(
+        *,
+        owner,
+        samples,
+        decode_request,
+        unwrap_model_for_generation_fn,
+    ):
+        del owner, unwrap_model_for_generation_fn
         captured["samples"] = samples
-        captured["decode_override"] = decode_override
+        captured["decode_request"] = decode_request
         return [([], "{}", "greedy", []) for _ in samples]
 
-    trainer._rollout_many_hf = _fake_rollout_many_hf
+    monkeypatch.setattr(
+        "src.infer.rollout_dispatch.rollout_many_hf",
+        _fake_rollout_many_hf,
+    )
     trainer._effective_rollout_backend = lambda context="train": "hf"
 
     sample = {
@@ -1674,7 +2116,11 @@ def test_rollout_many_forwards_decode_override_to_hf_backend() -> None:
     out = trainer._rollout_many([sample], decode_override=decode_override)
 
     assert out == [([], "{}", "greedy", [])]
-    assert captured["decode_override"] == decode_override
+    decode_request = captured["decode_request"]
+    assert decode_request.decode_mode == "sampling"
+    assert decode_request.temperature == pytest.approx(0.7)
+    assert decode_request.top_p == pytest.approx(0.9)
+    assert decode_request.top_k == 16
 
 
 def test_rollout_many_hf_training_rollout_does_not_force_optimizer_offload(
@@ -1778,27 +2224,39 @@ def test_rollout_many_hf_training_rollout_does_not_force_optimizer_offload(
         "repetition_penalty": 1.0,
     }
 
-    trainer._decoding_params = lambda: (0.0, 1.0, -1)
     trainer._decode_batch_size = lambda **_kwargs: 1
     trainer._template_packing_disabled = lambda: nullcontext()
-    trainer._enforce_hf_rollout_max_position_embeddings = (
-        lambda *, prompt_pad_len, max_new_tokens: None
-    )
 
     trainer._maybe_rollout_offload_context = (
         lambda **kwargs: offload_calls.append(dict(kwargs)) or nullcontext()
     )
 
+    max_position_calls: list[dict[str, int]] = []
+
+    def _capture_max_position_guard(*, model, prompt_pad_len, max_new_tokens):
+        max_position_calls.append(
+            {
+                "prompt_pad_len": int(prompt_pad_len),
+                "max_new_tokens": int(max_new_tokens),
+            }
+        )
+
     monkeypatch.setattr(
-        "src.trainers.stage2_rollout_runtime.unwrap_model_for_generation",
-        lambda *_args, **_kwargs: nullcontext(_DummyUnwrapped()),
+        "src.infer.backend.enforce_hf_rollout_max_position_embeddings",
+        _capture_max_position_guard,
     )
 
-    outs = trainer._rollout_many_hf(
-        [{"messages": [{"role": "user", "content": "q"}]}]
+    outs = rollout_many_hf(
+        owner=trainer,
+        samples=[{"messages": [{"role": "user", "content": "q"}]}],
+        decode_request=build_decode_request_from_rollout_owner(trainer),
+        unwrap_model_for_generation_fn=lambda *_args, **_kwargs: nullcontext(
+            _DummyUnwrapped()
+        ),
     )
 
     assert len(outs) == 1
+    assert max_position_calls == [{"prompt_pad_len": 2, "max_new_tokens": 4}]
     assert len(offload_calls) == 1
     kwargs = offload_calls[0]
     assert kwargs["rollout_backend"] == "hf"
@@ -1836,15 +2294,16 @@ def test_hf_rollout_logits_processor_wires_compact_grammar(monkeypatch) -> None:
         return grammar_processor
 
     monkeypatch.setattr(
-        "src.infer.compact_grammar.build_compact_grammar_logits_processor",
+        "src.infer.constraints.build_compact_grammar_logits_processor",
         _fake_build_compact_grammar_logits_processor,
     )
 
     tokenizer = object()
-    processors = trainer._build_hf_rollout_logits_processor(
+    processors = build_hf_rollout_logits_processor(
         tokenizer=tokenizer,
         prompt_pad_len=7,
         batch_size=3,
+        rollout_template_policy=trainer._eval_rollout_template_policy(),
         trailing_processors=[trailing_processor],
     )
 
@@ -1887,8 +2346,10 @@ def test_vllm_server_rollout_uses_decode_override_request_config(monkeypatch):
     trainer._ensure_vllm_server_client = lambda: fake_client
 
     sample = {"messages": [{"role": "user", "content": "ping"}]}
-    trainer._rollout_many_vllm_server(
-        [sample],
+    rollout_many_vllm_server(
+        owner=trainer,
+        logger=NOOP_ROLLOUT_LOGGER,
+        samples=[sample],
         decode_override={
             "temperature": 0.7,
             "top_p": 0.93,
@@ -1915,11 +2376,12 @@ def test_vllm_colocate_rollout_sets_seed_from_request_offset(monkeypatch) -> Non
     trainer._vllm_mode = lambda: "colocate"
     trainer._derive_rollout_seed_base = lambda global_step: 100 + int(global_step)
     trainer._maybe_rollout_offload_context = lambda **_kwargs: nullcontext()
-    trainer._sync_vllm_rollout_model_if_needed = lambda: None
+    trainer._eval_vllm_window_active = True
 
     captured: dict[str, object] = {}
 
-    def _fake_infer(_infer_requests, request_config):
+    def _fake_infer(*, owner, infer_requests, request_config):
+        del owner, infer_requests
         captured["request_config"] = request_config
         return [
             types.SimpleNamespace(
@@ -1934,7 +2396,10 @@ def test_vllm_colocate_rollout_sets_seed_from_request_offset(monkeypatch) -> Non
             )
         ]
 
-    trainer._vllm_infer_tp_group = _fake_infer
+    monkeypatch.setattr(
+        "src.infer.backend_vllm_infer.vllm_infer_tp_group",
+        _fake_infer,
+    )
 
     monkeypatch.setitem(
         sys.modules,
@@ -1946,8 +2411,10 @@ def test_vllm_colocate_rollout_sets_seed_from_request_offset(monkeypatch) -> Non
     )
 
     sample = {"messages": [{"role": "user", "content": "ping"}]}
-    outs = trainer._rollout_many_vllm_colocate(
-        [sample],
+    outs = rollout_many_vllm_colocate(
+        owner=trainer,
+        logger=NOOP_ROLLOUT_LOGGER,
+        samples=[sample],
         request_index_offset=7,
         decode_override={"temperature": 0.7, "top_p": 0.9, "top_k": 11},
     )
@@ -1960,6 +2427,56 @@ def test_vllm_colocate_rollout_sets_seed_from_request_offset(monkeypatch) -> Non
     assert request_cfg.top_k == 11
 
 
+def test_vllm_colocate_rollout_rejects_malformed_token_metadata(
+    monkeypatch,
+) -> None:
+    trainer = object.__new__(Stage2RolloutRuntime)
+    trainer.rollout_matching_cfg = {
+        "decode_mode": "greedy",
+        "max_new_tokens": 8,
+        "repetition_penalty": 1.0,
+    }
+    trainer.state = types.SimpleNamespace(global_step=4)
+    trainer.processing_class = _DummyTokenizerRM()
+    trainer._vllm_mode = lambda: "colocate"
+    trainer._derive_rollout_seed_base = lambda global_step: 100 + int(global_step)
+    trainer._maybe_rollout_offload_context = lambda **_kwargs: nullcontext()
+    trainer._eval_vllm_window_active = True
+
+    def _fake_infer(*, owner, infer_requests, request_config):
+        del owner, infer_requests, request_config
+        return [
+            types.SimpleNamespace(
+                prompt_token_ids=[1, 2],
+                choices=[
+                    types.SimpleNamespace(
+                        message=types.SimpleNamespace(content="{}"),
+                        token_ids=["not-an-int"],
+                        logprobs=None,
+                    )
+                ],
+            )
+        ]
+
+    monkeypatch.setattr(
+        "src.infer.backend_vllm_infer.vllm_infer_tp_group",
+        _fake_infer,
+    )
+
+    monkeypatch.setitem(
+        sys.modules,
+        "swift.llm",
+        types.SimpleNamespace(
+            RequestConfig=_FakeRequestConfig,
+            InferRequest=lambda **kwargs: types.SimpleNamespace(**kwargs),
+        ),
+    )
+
+    sample = {"messages": [{"role": "user", "content": "ping"}]}
+    with pytest.raises(RuntimeError, match=r"malformed vLLM decode output.*sample_idx=0"):
+        rollout_many_vllm_colocate(owner=trainer, logger=NOOP_ROLLOUT_LOGGER, samples=[sample])
+
+
 def test_vllm_server_rollout_rejects_beam_decode_override() -> None:
     trainer = _make_rollout_server_trainer()
     sample = {"messages": [{"role": "user", "content": "ping"}]}
@@ -1968,8 +2485,10 @@ def test_vllm_server_rollout_rejects_beam_decode_override() -> None:
         ValueError,
         match=r"vLLM server rollout backend does not support decode_mode=beam",
     ):
-        trainer._rollout_many_vllm_server(
-            [sample],
+        rollout_many_vllm_server(
+            owner=trainer,
+            logger=NOOP_ROLLOUT_LOGGER,
+            samples=[sample],
             decode_override={"decode_mode": "beam"},
         )
 
@@ -2081,17 +2600,11 @@ def test_evaluate_emits_coco_map_metrics_when_eval_detection_enabled(
             matched_maskiou_count=1,
         ),
     )
-    monkeypatch.setattr(
-        "src.trainers.stage2_rollout_runtime._compute_eval_detection_coco_metrics",
-        lambda **_kwargs: (
-            {"bbox_AP": 0.123, "bbox_AP50": 0.456},
-            {"empty_pred": 0},
-        ),
-    )
     materialized_pred_rows: list[dict[str, object]] = []
 
     def _fake_evaluate_and_save(pred_jsonl, *, options):
         assert Path(pred_jsonl).name == "gt_vs_pred_scored.jsonl"
+        load_comparable_artifact(Path(pred_jsonl), require_score=True)
         rows = [
             json.loads(line)
             for line in Path(pred_jsonl).read_text(encoding="utf-8").splitlines()
@@ -2126,15 +2639,7 @@ def test_evaluate_emits_coco_map_metrics_when_eval_detection_enabled(
     assert all(not k.startswith("eval/detection/segm_") for k in metrics)
 
     eval_dir = tmp_path / "eval_detection" / "step_0000011"
-    expected_files = {
-        "gt_vs_pred.jsonl",
-        "gt_vs_pred_scored.jsonl",
-        "infer_summary.json",
-        "metrics.json",
-        "per_image.json",
-        "raw_rollouts.jsonl",
-    }
-    assert expected_files <= {path.name for path in eval_dir.iterdir()}
+    _assert_stage2_eval_files(eval_dir, trace_metadata=False)
     base_rows = [
         json.loads(line)
         for line in (eval_dir / "gt_vs_pred.jsonl").read_text(encoding="utf-8").splitlines()
@@ -2148,8 +2653,18 @@ def test_evaluate_emits_coco_map_metrics_when_eval_detection_enabled(
     infer_summary = json.loads(
         (eval_dir / "infer_summary.json").read_text(encoding="utf-8")
     )
+    scored_provenance = load_comparable_artifact(
+        eval_dir / "gt_vs_pred_scored.jsonl",
+        require_score=True,
+    )
     assert materialized_pred_rows[0]["pred"][0]["score"] == pytest.approx(1.0)
     assert materialized_pred_rows[0]["pred_score_source"] == "eval_rollout_constant"
+    assert scored_provenance["provenance_path"].endswith(
+        "gt_vs_pred_scored.jsonl.provenance.json"
+    )
+    assert scored_provenance["provenance"]["score_policy_fingerprint"].startswith(
+        "score_policy:"
+    )
     assert base_rows[0]["image"] == "img.jpg"
     assert base_rows[0]["mode"] == "text"
     assert base_rows[0]["coord_mode"] == "pixel"
@@ -2206,7 +2721,6 @@ def test_evaluate_emits_coco_map_metrics_with_confidence_postop(
     trainer._desc_monitor_cfg = lambda: {"enabled": False}
     trainer._coord_id_map = lambda: {i: i for i in range(1000)}
     trainer._effective_rollout_backend = lambda context="train": "hf"
-    trainer._prepare_samples_for_rollout = lambda batch, **_kwargs: batch
 
     sample = {
         "sample_id": 0,
@@ -2229,9 +2743,12 @@ def test_evaluate_emits_coco_map_metrics_with_confidence_postop(
     }
     trainer.get_eval_dataloader = lambda _eval_dataset=None: [[sample]]
 
-    trainer._rollout_many_hf_traced = lambda batch: [
-        ([100], "{}", "greedy", [], [0.0], ["tok"]) for _ in batch
-    ]
+    monkeypatch.setattr(
+        "src.trainers.stage2_rollout_runtime.rollout_many_traced",
+        lambda *, owner, samples, **_kwargs: [
+            ([100], "{}", "greedy", [], [0.0], ["tok"]) for _ in samples
+        ],
+    )
 
     parse_obj = types.SimpleNamespace(
         response_token_ids=[100],
@@ -2291,22 +2808,10 @@ def test_evaluate_emits_coco_map_metrics_with_confidence_postop(
         ],
     )
 
-    def _fake_coco(*, pred_records, eval_cfg):
-        assert isinstance(eval_cfg, dict)
-        assert len(pred_records) == 1
-        rec = pred_records[0]
-        assert rec["pred_score_source"] == "confidence_postop"
-        assert rec["pred_score_version"] == 2
-        assert rec["pred"][0]["score"] == pytest.approx(0.9)
-        return {"bbox_AP": 0.123, "bbox_AP50": 0.456}, {"empty_pred": 0}
-
-    monkeypatch.setattr(
-        "src.trainers.stage2_rollout_runtime._compute_eval_detection_coco_metrics",
-        _fake_coco,
-    )
 
     def _fake_evaluate_and_save(pred_jsonl, *, options):
         assert Path(pred_jsonl).name == "gt_vs_pred_scored.jsonl"
+        load_comparable_artifact(Path(pred_jsonl), require_score=True)
         rows = [
             json.loads(line)
             for line in Path(pred_jsonl).read_text(encoding="utf-8").splitlines()
@@ -2335,16 +2840,15 @@ def test_evaluate_emits_coco_map_metrics_with_confidence_postop(
     assert metrics["eval/runtime/coco_eval_ok"] == pytest.approx(1.0)
     assert metrics["eval/config/prompt_variant_is_coco_80"] == pytest.approx(1.0)
     eval_dir = tmp_path / "eval_detection" / "step_0000011"
-    expected_files = {
-        "gt_vs_pred.jsonl",
-        "gt_vs_pred_scored.jsonl",
-        "infer_summary.json",
-        "metrics.json",
-        "per_image.json",
-        "pred_token_trace.jsonl",
-        "raw_rollouts.jsonl",
-    }
-    assert expected_files <= {path.name for path in eval_dir.iterdir()}
+    _assert_stage2_eval_files(eval_dir, trace_metadata=True)
+    scored_provenance = load_comparable_artifact(
+        eval_dir / "gt_vs_pred_scored.jsonl",
+        require_score=True,
+    )
+    assert (
+        scored_provenance["provenance"]["score_policy"]["policy_name"]
+        == "confidence_postop"
+    )
     trace_rows = [
         json.loads(line)
         for line in (eval_dir / "pred_token_trace.jsonl").read_text(encoding="utf-8").splitlines()
@@ -2361,7 +2865,7 @@ def test_evaluate_emits_coco_map_metrics_with_confidence_postop(
     assert raw_rows[0]["confidence_objects"][0]["score"] == pytest.approx(0.9)
 
 
-def test_evaluate_skips_eval_artifact_materialization_when_disabled(
+def test_evaluate_rejects_official_metrics_without_eval_artifact_materialization(
     monkeypatch,
     tmp_path: Path,
 ) -> None:
@@ -2482,13 +2986,6 @@ def test_evaluate_skips_eval_artifact_materialization_when_disabled(
         "src.trainers.rollout_aligned_evaluator.evaluate_and_save",
         _fail_if_materialized,
     )
-    monkeypatch.setattr(
-        "src.trainers.stage2_rollout_runtime._compute_eval_detection_coco_metrics",
-        lambda **_kwargs: (
-            {"bbox_AP": 0.123, "bbox_AP50": 0.456},
-            {"empty_pred": 0},
-        ),
-    )
 
     logged_metrics: dict[str, float] = {}
     trainer.log = lambda metrics: logged_metrics.update(dict(metrics))
@@ -2496,15 +2993,16 @@ def test_evaluate_skips_eval_artifact_materialization_when_disabled(
         on_evaluate=lambda args, state, control, metrics: control
     )
 
-    metrics = trainer.evaluate()
+    with pytest.raises(RuntimeError, match="materialize_artifacts=true"):
+        trainer.evaluate()
 
     assert materialize_called["value"] is False
-    assert metrics["eval/detection/mAP"] == pytest.approx(0.123)
     assert not (tmp_path / "eval_detection" / "step_0000011").exists()
 
 
 def test_evaluate_emits_coco_map_metrics_with_confidence_postop_vllm(
     monkeypatch,
+    tmp_path: Path,
 ) -> None:
     trainer = object.__new__(Stage2RolloutRuntime)
 
@@ -2522,7 +3020,7 @@ def test_evaluate_emits_coco_map_metrics_with_confidence_postop_vllm(
             return self
 
     trainer.model = _DummyEvalModel()
-    trainer.args = types.SimpleNamespace()
+    trainer.args = types.SimpleNamespace(output_dir=str(tmp_path))
     trainer.state = types.SimpleNamespace(global_step=11)
     trainer.control = types.SimpleNamespace(tag="ctrl")
     trainer.template = types.SimpleNamespace(tokenizer=_DummyTokenizerRM())
@@ -2544,7 +3042,6 @@ def test_evaluate_emits_coco_map_metrics_with_confidence_postop_vllm(
     trainer._vllm_mode = lambda: "server"
     trainer._desc_monitor_cfg = lambda: {"enabled": False}
     trainer._coord_id_map = lambda: {i: i for i in range(1000)}
-    trainer._prepare_samples_for_rollout = lambda batch, **_kwargs: batch
 
     sample = {
         "sample_id": 0,
@@ -2569,11 +3066,15 @@ def test_evaluate_emits_coco_map_metrics_with_confidence_postop_vllm(
 
     called = {"vllm": 0}
 
-    def _fake_vllm_traced(batch):
+    def _fake_vllm_traced(*, owner, samples, **_kwargs):
+        del owner
         called["vllm"] += 1
-        return [([100], "{}", "greedy", [], [0.0], ["tok"]) for _ in batch]
+        return [([100], "{}", "greedy", [], [0.0], ["tok"]) for _ in samples]
 
-    trainer._rollout_many_vllm_traced = _fake_vllm_traced
+    monkeypatch.setattr(
+        "src.trainers.stage2_rollout_runtime.rollout_many_traced",
+        _fake_vllm_traced,
+    )
 
     parse_obj = types.SimpleNamespace(
         response_token_ids=[100],
@@ -2633,18 +3134,23 @@ def test_evaluate_emits_coco_map_metrics_with_confidence_postop_vllm(
         ],
     )
 
-    def _fake_coco(*, pred_records, eval_cfg):
-        assert isinstance(eval_cfg, dict)
-        assert len(pred_records) == 1
-        rec = pred_records[0]
-        assert rec["pred_score_source"] == "confidence_postop"
-        assert rec["pred_score_version"] == 2
-        assert rec["pred"][0]["score"] == pytest.approx(0.9)
-        return {"bbox_AP": 0.123, "bbox_AP50": 0.456}, {"empty_pred": 0}
+
+    def _fake_evaluate_and_save(pred_jsonl, *, options):
+        assert Path(pred_jsonl).name == "gt_vs_pred_scored.jsonl"
+        load_comparable_artifact(Path(pred_jsonl), require_score=True)
+        rows = [
+            json.loads(line)
+            for line in Path(pred_jsonl).read_text(encoding="utf-8").splitlines()
+            if line.strip()
+        ]
+        assert rows[0]["pred_score_source"] == "confidence_postop"
+        (options.output_dir / "metrics.json").write_text("{}", encoding="utf-8")
+        (options.output_dir / "per_image.json").write_text("[]", encoding="utf-8")
+        return {"metrics": {"bbox_AP": 0.123}}
 
     monkeypatch.setattr(
-        "src.trainers.stage2_rollout_runtime._compute_eval_detection_coco_metrics",
-        _fake_coco,
+        "src.trainers.rollout_aligned_evaluator.evaluate_and_save",
+        _fake_evaluate_and_save,
     )
 
     logged_metrics: dict[str, float] = {}
@@ -2670,9 +3176,10 @@ def test_validate_rollout_matching_cfg_preflights_eval_only_vllm_lifecycle() -> 
         "rollout_decode_batch_size": 1,
         "eval_decode_batch_size": 1,
         "vllm": {
-            "mode": "colocate",
+            "mode": "server",
+            "enable_lora": True,
             "enable_sleep_mode": True,
-            "sync": {"mode": "full"},
+            "sync": {"mode": "adapter"},
         },
     }
 
@@ -2691,8 +3198,9 @@ def test_validate_rollout_matching_cfg_skips_preflight_when_sleep_mode_disabled(
         "rollout_decode_batch_size": 1,
         "eval_decode_batch_size": 1,
         "vllm": {
-            "mode": "colocate",
-            "sync": {"mode": "full"},
+            "mode": "server",
+            "enable_lora": True,
+            "sync": {"mode": "adapter"},
         },
     }
     trainer._vllm_eval_lifecycle_preflight_done = False
@@ -2706,7 +3214,7 @@ def test_validate_rollout_matching_cfg_skips_preflight_when_sleep_mode_disabled(
     assert trainer._vllm_eval_lifecycle_preflight_done is False
 
 
-def test_validate_rollout_matching_cfg_allows_colocate_reinit_each_eval() -> None:
+def test_validate_rollout_matching_cfg_rejects_colocate_without_adapter_sync() -> None:
     trainer = object.__new__(Stage2RolloutRuntime)
     trainer.rollout_matching_cfg = {
         "rollout_backend": "hf",
@@ -2720,7 +3228,11 @@ def test_validate_rollout_matching_cfg_allows_colocate_reinit_each_eval() -> Non
         },
     }
 
-    trainer._validate_rollout_matching_cfg()
+    with pytest.raises(
+        ValueError,
+        match="vLLM rollouts require official adapter sync",
+    ):
+        trainer._validate_rollout_matching_cfg()
 
 
 def test_validate_rollout_matching_cfg_rejects_reinit_each_eval_for_server_mode() -> None:
@@ -2733,7 +3245,8 @@ def test_validate_rollout_matching_cfg_rejects_reinit_each_eval_for_server_mode(
         "vllm": {
             "mode": "server",
             "reinit_each_eval": True,
-            "sync": {"mode": "full"},
+            "enable_lora": True,
+            "sync": {"mode": "adapter"},
         },
     }
 
@@ -2854,8 +3367,9 @@ def test_evaluate_eval_backend_override_routes_non_traced_rollouts_to_vllm(
     assert captured.get("rollout_backend") == "vllm"
 
 
-def test_evaluate_vllm_confidence_trace_violation_falls_back_and_counts(
+def test_evaluate_vllm_confidence_trace_violation_fails_fast(
     monkeypatch,
+    tmp_path: Path,
 ) -> None:
     trainer = object.__new__(Stage2RolloutRuntime)
 
@@ -2873,7 +3387,7 @@ def test_evaluate_vllm_confidence_trace_violation_falls_back_and_counts(
             return self
 
     trainer.model = _DummyEvalModel()
-    trainer.args = types.SimpleNamespace()
+    trainer.args = types.SimpleNamespace(output_dir=str(tmp_path))
     trainer.state = types.SimpleNamespace(global_step=11)
     trainer.control = types.SimpleNamespace(tag="ctrl")
     trainer.template = types.SimpleNamespace(tokenizer=_DummyTokenizerRM())
@@ -2894,7 +3408,6 @@ def test_evaluate_vllm_confidence_trace_violation_falls_back_and_counts(
     trainer._vllm_mode = lambda: "server"
     trainer._desc_monitor_cfg = lambda: {"enabled": False}
     trainer._coord_id_map = lambda: {i: i for i in range(1000)}
-    trainer._prepare_samples_for_rollout = lambda batch, **_kwargs: batch
 
     sample = {
         "sample_id": 0,
@@ -2903,9 +3416,12 @@ def test_evaluate_vllm_confidence_trace_violation_falls_back_and_counts(
         "messages": [{"role": "user", "content": "q"}],
     }
     trainer.get_eval_dataloader = lambda _eval_dataset=None: [[sample]]
-    trainer._rollout_many_vllm_traced = lambda batch: [
-        ([100], "{}", "greedy", [], [], []) for _ in batch
-    ]
+    monkeypatch.setattr(
+        "src.trainers.stage2_rollout_runtime.rollout_many_traced",
+        lambda *, owner, samples, **_kwargs: [
+            ([100], "{}", "greedy", [], [], []) for _ in samples
+        ],
+    )
 
     parse_obj = types.SimpleNamespace(
         response_token_ids=[100],
@@ -2951,9 +3467,16 @@ def test_evaluate_vllm_confidence_trace_violation_falls_back_and_counts(
             matched_maskiou_count=1,
         ),
     )
+
+    def _fake_evaluate_and_save(pred_jsonl, *, options):
+        load_comparable_artifact(Path(pred_jsonl), require_score=True)
+        (options.output_dir / "metrics.json").write_text("{}", encoding="utf-8")
+        (options.output_dir / "per_image.json").write_text("[]", encoding="utf-8")
+        return {"metrics": {"bbox_AP": 0.123}}
+
     monkeypatch.setattr(
-        "src.trainers.stage2_rollout_runtime._compute_eval_detection_coco_metrics",
-        lambda **_kwargs: ({"bbox_AP": 0.123}, {"empty_pred": 0}),
+        "src.trainers.rollout_aligned_evaluator.evaluate_and_save",
+        _fake_evaluate_and_save,
     )
 
     trainer.log = lambda _metrics: None
@@ -2961,13 +3484,69 @@ def test_evaluate_vllm_confidence_trace_violation_falls_back_and_counts(
         on_evaluate=lambda args, state, control, metrics: control
     )
 
-    metrics = trainer.evaluate()
-    assert metrics["eval/runtime/trace_fallback_count"] == pytest.approx(1.0)
-    assert metrics["eval/config/effective_score_mode_is_constant"] == pytest.approx(1.0)
-    assert (
-        metrics["eval/config/effective_score_mode_is_confidence_postop"]
-        == pytest.approx(0.0)
+    with pytest.raises(RuntimeError, match=r"trace shorter than parsed response_token_ids"):
+        trainer.evaluate()
+
+    assert not (tmp_path / "eval_detection" / "step_0000011").exists()
+
+
+def test_evaluate_vllm_confidence_trace_exception_is_fatal(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    trainer = object.__new__(Stage2RolloutRuntime)
+
+    class _DummyEvalModel:
+        def __init__(self) -> None:
+            self.device = torch.device("cpu")
+            self.training = True
+
+        def eval(self):
+            self.training = False
+            return self
+
+        def train(self):
+            self.training = True
+            return self
+
+    trainer.model = _DummyEvalModel()
+    trainer.args = types.SimpleNamespace(output_dir=str(tmp_path))
+    trainer.state = types.SimpleNamespace(global_step=11)
+    trainer.control = types.SimpleNamespace(tag="ctrl")
+    trainer.template = types.SimpleNamespace(tokenizer=_DummyTokenizerRM())
+    trainer.rollout_matching_cfg = {
+        "rollout_backend": "hf",
+        "eval_rollout_backend": "vllm",
+        "object_ordering": "sorted",
+        "eval_detection": {
+            "enabled": True,
+            "metrics": "coco",
+            "score_mode": "confidence_postop",
+            "materialize_artifacts": True,
+            "confidence": {},
+        },
+        "vllm": {"mode": "server"},
+    }
+    trainer._vllm_mode = lambda: "server"
+    trainer._desc_monitor_cfg = lambda: {"enabled": False}
+    trainer.get_eval_dataloader = lambda _eval_dataset=None: [
+        [{"sample_id": 0, "messages": [{"role": "user", "content": "q"}]}]
+    ]
+    monkeypatch.setattr(
+        "src.trainers.stage2_rollout_runtime.rollout_many_traced",
+        lambda **_kwargs: (_ for _ in ()).throw(
+            ValueError("trace shape mismatch")
+        ),
     )
+    trainer.log = lambda _metrics: None
+    trainer.callback_handler = types.SimpleNamespace(
+        on_evaluate=lambda args, state, control, metrics: control
+    )
+
+    with pytest.raises(ValueError, match=r"trace shape mismatch"):
+        trainer.evaluate()
+
+    assert not (tmp_path / "eval_detection" / "step_0000011").exists()
 
 
 def test_evaluate_vllm_per_sample_decode_error_is_skipped_and_counted(
@@ -3509,11 +4088,11 @@ def test_evaluate_fails_fast_on_coco_error_by_default(monkeypatch) -> None:
         ),
     )
 
-    def _raise_coco(**_kwargs):
+    def _raise_coco(_pred_jsonl, *, options):
         raise RuntimeError("forced coco failure")
 
     monkeypatch.setattr(
-        "src.trainers.stage2_rollout_runtime._compute_eval_detection_coco_metrics",
+        "src.trainers.rollout_aligned_evaluator.evaluate_and_save",
         _raise_coco,
     )
 
@@ -3639,8 +4218,10 @@ def test_evaluate_fails_fast_on_coco_error_when_map_selects_best(monkeypatch) ->
         ),
     )
     monkeypatch.setattr(
-        "src.trainers.stage2_rollout_runtime._compute_eval_detection_coco_metrics",
-        lambda **_kwargs: (_ for _ in ()).throw(RuntimeError("forced coco failure")),
+        "src.trainers.rollout_aligned_evaluator.evaluate_and_save",
+        lambda _pred_jsonl, *, options: (_ for _ in ()).throw(
+            RuntimeError("forced coco failure")
+        ),
     )
 
     trainer.log = lambda _metrics: None
@@ -3702,7 +4283,7 @@ def test_vllm_server_rollout_enforces_strict_per_server_rank_caps(monkeypatch):
         {"messages": [{"role": "user", "content": "q3"}]},
     ]
 
-    outputs = trainer._rollout_many_vllm_server(samples)
+    outputs = rollout_many_vllm_server(owner=trainer, logger=NOOP_ROLLOUT_LOGGER, samples=samples)
 
     assert len(outputs) == 3
     assert [len(p["json"]["infer_requests"]) for p in captured_payloads] == [1, 1, 1]
@@ -3758,8 +4339,10 @@ def test_vllm_server_rollout_retries_on_requests_timeout(monkeypatch):
     trainer._ensure_vllm_server_client = lambda: fake_client
     monkeypatch.setattr(requests, "Session", lambda: healthy_session)
 
-    outputs = trainer._rollout_many_vllm_server(
-        [{"messages": [{"role": "user", "content": "q"}]}]
+    outputs = rollout_many_vllm_server(
+        owner=trainer,
+        logger=NOOP_ROLLOUT_LOGGER,
+        samples=[{"messages": [{"role": "user", "content": "q"}]}],
     )
 
     assert len(outputs) == 1

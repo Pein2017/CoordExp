@@ -142,6 +142,7 @@ def test_stage2_rollout_correction_leaf_contract_allows_multi_hop_when_fields_re
             "eval_rollout_backend": "vllm",
             "rollout_decode_batch_size": 1,
             "eval_decode_batch_size": 1,
+            "vllm": {"enable_lora": True, "sync": {"mode": "adapter"}},
         },
         "model": {"model": "x"},
     }

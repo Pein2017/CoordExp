@@ -1,16 +1,24 @@
 from __future__ import annotations
 
+from dataclasses import replace
 from types import SimpleNamespace
 
 import pytest
 
-from src.trainers.stage2_rollout_runtime import Stage2RolloutRuntime, _IM_END
+from src.infer.backend import (
+    apply_hf_generation_config_from_decode_request,
+    vllm_request_config_kwargs_from_decode_request,
+)
+from src.infer.runtime import build_decode_request_from_rollout_matching_config
+from src.trainers.stage2_rollout_runtime import Stage2RolloutRuntime
 
 
 def _mk_uninit_trainer(cfg, *, include_decode_defaults: bool = True):
     t = Stage2RolloutRuntime.__new__(Stage2RolloutRuntime)
     if include_decode_defaults:
         merged = {
+            "rollout_backend": "hf",
+            "eval_rollout_backend": "hf",
             "rollout_decode_batch_size": 1,
             "eval_decode_batch_size": 1,
         }
@@ -155,15 +163,17 @@ def test_validate_rollout_matching_cfg_rejects_unknown_eval_prompt_variant():
         t._validate_rollout_matching_cfg()
 
 
-def test_apply_rollout_decoding_to_generation_config_greedy_disables_sampling():
-    gen_cfg = SimpleNamespace()
-    Stage2RolloutRuntime._apply_rollout_decoding_to_generation_config(
-        gen_cfg=gen_cfg,
-        temperature=0.0,
-        top_p=0.9,
-        top_k=50,
-        repetition_penalty=1.05,
+def test_apply_hf_generation_config_from_decode_request_greedy_disables_sampling():
+    request = build_decode_request_from_rollout_matching_config(
+        {
+            "max_new_tokens": 64,
+            "decoding": {"temperature": 0.0, "top_p": 0.9, "top_k": 50},
+        }
     )
+    gen_cfg = SimpleNamespace()
+    request = replace(request, repetition_penalty=1.05)
+    apply_hf_generation_config_from_decode_request(gen_cfg=gen_cfg, request=request)
+    assert gen_cfg.max_new_tokens == 64
     assert gen_cfg.do_sample is False
     assert gen_cfg.temperature == 1.0
     assert gen_cfg.top_p == 1.0
@@ -172,29 +182,41 @@ def test_apply_rollout_decoding_to_generation_config_greedy_disables_sampling():
     assert gen_cfg.use_cache is True
 
 
-def test_apply_rollout_decoding_to_generation_config_sampling_respects_top_p_and_top_k():
-    gen_cfg0 = SimpleNamespace()
-    Stage2RolloutRuntime._apply_rollout_decoding_to_generation_config(
-        gen_cfg=gen_cfg0,
-        temperature=0.01,
-        top_p=0.9,
-        top_k=-1,
-        repetition_penalty=1.1,
+def test_apply_hf_generation_config_from_decode_request_sampling_respects_top_p_and_top_k():
+    request0 = build_decode_request_from_rollout_matching_config(
+        {
+            "max_new_tokens": 64,
+            "decode_mode": "sampling",
+            "repetition_penalty": 1.1,
+            "decoding": {
+                "temperature": 0.01,
+                "top_p": 0.9,
+                "top_k": -1,
+            },
+        }
     )
+    gen_cfg0 = SimpleNamespace()
+    apply_hf_generation_config_from_decode_request(gen_cfg=gen_cfg0, request=request0)
     assert gen_cfg0.do_sample is True
     assert gen_cfg0.temperature == 0.01
     assert gen_cfg0.top_p == 0.9
     assert gen_cfg0.top_k == 0
     assert gen_cfg0.use_cache is True
 
-    gen_cfg1 = SimpleNamespace()
-    Stage2RolloutRuntime._apply_rollout_decoding_to_generation_config(
-        gen_cfg=gen_cfg1,
-        temperature=0.01,
-        top_p=0.95,
-        top_k=50,
-        repetition_penalty=1.1,
+    request1 = build_decode_request_from_rollout_matching_config(
+        {
+            "max_new_tokens": 64,
+            "decode_mode": "sampling",
+            "repetition_penalty": 1.1,
+            "decoding": {
+                "temperature": 0.01,
+                "top_p": 0.95,
+                "top_k": 50,
+            },
+        }
     )
+    gen_cfg1 = SimpleNamespace()
+    apply_hf_generation_config_from_decode_request(gen_cfg=gen_cfg1, request=request1)
     assert gen_cfg1.do_sample is True
     assert gen_cfg1.temperature == 0.01
     assert gen_cfg1.top_p == 0.95
@@ -203,20 +225,24 @@ def test_apply_rollout_decoding_to_generation_config_sampling_respects_top_p_and
 
 
 def test_rollout_vllm_request_config_kwargs_propagates_decoding_knobs():
-    kwargs = Stage2RolloutRuntime._rollout_vllm_request_config_kwargs(
-        max_tokens=123,
-        temperature=0.01,
-        top_p=0.9,
-        top_k=50,
-        repetition_penalty=1.05,
+    request = build_decode_request_from_rollout_matching_config(
+        {
+            "rollout_backend": "vllm",
+            "max_new_tokens": 123,
+            "decode_mode": "sampling",
+            "decoding": {"temperature": 0.01, "top_p": 0.9, "top_k": 50},
+            "repetition_penalty": 1.05,
+        }
     )
+    kwargs = vllm_request_config_kwargs_from_decode_request(request)
+
     assert kwargs["n"] == 1
     assert kwargs["max_tokens"] == 123
     assert kwargs["temperature"] == 0.01
     assert kwargs["top_p"] == 0.9
     assert kwargs["top_k"] == 50
     assert kwargs["repetition_penalty"] == 1.05
-    assert kwargs["stop"] == [_IM_END]
+    assert kwargs["stop"] == ["<|im_end|>"]
     assert kwargs["return_details"] is True
 
 
@@ -239,7 +265,6 @@ def test_merge_rollout_matching_batch_metrics_preserves_existing_keys():
 def test_build_rollout_metrics_emits_only_canonical_decode_count_keys():
     t = _mk_uninit_trainer({})
     t._cfg = lambda _k, default=None: default
-    t._decoding_params = lambda: (0.0, 1.0, -1)
 
     meta = [
         {
