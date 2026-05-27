@@ -11,6 +11,10 @@ Normative behavior:
 
 - authored rollout runtime/backend/decode/eval config remains under
   `rollout_matching.*`;
+- train-time rollout prompt variants MAY be authored with
+  `rollout_matching.prompt_variant`;
+- eval-step rollout prompt variants MAY be authored separately with
+  `rollout_matching.eval_prompt_variant`;
 - Stage-2 objectives remain under `stage2_rollout_correction.*`;
 - Stage-2 rollout code MUST map `rollout_matching.*` into shared decode
   request objects;
@@ -34,6 +38,17 @@ Normative behavior:
 - **THEN** it constructs a shared decode request from `rollout_matching.*`
 - **AND** it does not require users to author a new `infer.*` namespace for
   training rollouts.
+
+#### Scenario: Train and eval rollout prompt variants are explicit
+
+- **GIVEN** a Stage-2 compact-full config authored with
+  `rollout_matching.prompt_variant: coco_80`
+- **AND** `rollout_matching.eval_prompt_variant: coco_80`
+- **WHEN** the trainer prepares train-time and eval-step rollouts
+- **THEN** train-time rollout prompts use the authored train prompt variant
+- **AND** eval-step rollout prompts use the authored eval prompt variant
+- **AND** both keys are validated against the shared dense prompt variant
+  registry before rollout construction.
 
 ### Requirement: Trainable Stage-2 rollout requires verified prompt-token and visual parity
 

@@ -21,6 +21,12 @@ Active Stage-2 rollout correction uses rollout prefix as roll-in context and
 supervises only the residual/GT correction target IR selected by
 `residual_set_correction`.
 
+#### Scenario: Token roles are stable across residual correction
+- **WHEN** residual-set correction target IR is built
+- **THEN** supervised atoms use the shared token roles `struct`, `desc`,
+  `coord`, and `eos`
+- **AND** the rollout prefix itself remains roll-in context.
+
 ### Requirement: Active Stage-2 loss component is residual-set correction
 The unified Stage-2 contract SHALL enable exactly one Stage-2 objective module:
 `residual_set_correction`.

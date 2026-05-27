@@ -49,6 +49,12 @@ as an active training objective surface.
 
 ### Requirement: Rollout runtime settings remain supported
 
-The `rollout_matching.*` namespace remains the active home for rollout backend,
-decoding, vLLM/server dispatch, eval rollout, and post-rollout packing runtime
-settings. It does not own Stage-2 objectives.
+The `rollout_matching.*` namespace MUST remain the active home for rollout
+backend, decoding, vLLM/server dispatch, eval rollout, and post-rollout packing
+runtime settings. It does not own Stage-2 objectives.
+
+#### Scenario: rollout settings stay outside objective ownership
+
+- **WHEN** a Stage-2 rollout-correction config authors runtime rollout settings
+- **THEN** backend/decode/eval settings remain under `rollout_matching.*`
+- **AND** objectives remain under `stage2_rollout_correction.pipeline`.

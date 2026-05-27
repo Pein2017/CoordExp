@@ -1,5 +1,9 @@
 # retired-lightweight-pseudopositive-v1 Specification
 
+## Purpose
+Record the retired Channel-B lightweight pseudo-positive clean-prefix contract
+and the active replacement boundary.
+
 ## Status
 
 Retired. The active Stage-2 rollout-correction contract removed the
@@ -25,3 +29,9 @@ instead of interpreting them as aliases.
 Current Stage-2 configs MUST express correction behavior through the
 `residual_set_correction` objective and rollout-correction runtime knobs, not
 through pseudo-positive clean-prefix supervision.
+
+#### Scenario: residual correction is the replacement
+
+- **WHEN** a Stage-2 rollout-correction config expresses correction behavior
+- **THEN** it uses `residual_set_correction`
+- **AND** it does not rely on pseudo-positive clean-prefix knobs.

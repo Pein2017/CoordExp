@@ -2,9 +2,9 @@
 
 ### Requirement: Superseded by unified rollout-correction server adapter sync
 
-This older Stage-2 AB/full-sync materialization contract is superseded for
-active unified Stage-2 rollout-correction server training by the
-`unify-inference-runtime` change.
+Active unified Stage-2 server rollout SHALL use the rollout-correction
+adapter-sync contract instead of reviving this older full-sync materialization
+path.
 
 Normative behavior for active unified Stage-2 server rollout:
 
@@ -25,10 +25,8 @@ Normative behavior for active unified Stage-2 server rollout:
 
 ### Requirement: Stage-2 vLLM full-sync preserves adapter-backed learner semantics
 
-Historical/deferred behavior: when Stage-2 uses native vLLM for rollout
-generation with full-sync, the rollout server receives weights that are
-semantically equivalent to the learner's current inference policy for supported
-adapter state.
+Historical native vLLM full-sync MUST preserve adapter-backed learner semantics
+before it can be treated as an active Stage-2 server rollout contract.
 
 Normative behavior:
 

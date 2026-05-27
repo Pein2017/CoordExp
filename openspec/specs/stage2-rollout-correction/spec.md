@@ -19,6 +19,10 @@ The system MUST fail fast for removed trainer variants and config namespaces:
 
 `rollout_matching.*` remains the rollout runtime/backend/decode/eval namespace.
 `rollout_matching.pipeline` remains removed and MUST NOT own Stage-2 objectives.
+Train-time rollout prompt variants MUST be authored with
+`rollout_matching.prompt_variant`; eval-step rollout prompt variants MUST be
+authored separately with `rollout_matching.eval_prompt_variant` when a run needs
+to pin a prompt surface for same-surface comparison.
 
 #### Scenario: Removed trainer variant fails fast
 - **GIVEN** a config with `custom.trainer_variant: stage2_two_channel`
@@ -31,6 +35,14 @@ The system MUST fail fast for removed trainer variants and config namespaces:
 - **WHEN** config loading parses the training config
 - **THEN** loading fails before trainer construction
 - **AND** the error points to `stage2_rollout_correction`.
+
+#### Scenario: Prompt variants stay in rollout-matching namespace
+- **GIVEN** a Stage-2 rollout-correction config with
+  `rollout_matching.prompt_variant: coco_80`
+- **AND** `rollout_matching.eval_prompt_variant: coco_80`
+- **WHEN** config loading parses the rollout-matching namespace
+- **THEN** both prompt variant keys validate against the shared prompt registry
+- **AND** no `infer.prompt_variant` key is required for training rollouts.
 
 ### Requirement: Unified Stage-2 objective is residual-set correction only
 `stage2_rollout_correction.pipeline.objective[]` MUST contain exactly one
@@ -90,3 +102,9 @@ Active manifests MUST use:
 Active training MUST NOT emit new metrics under removed branch namespaces such as
 `stage2/channel_a`, `stage2/channel_b`, `stage2_ab/b_ratio_realized`, or
 `stage2_ab/channel_b/...`.
+
+#### Scenario: Active Stage-2 emits rollout-correction identity
+- **GIVEN** a Stage-2 rollout-correction training run
+- **WHEN** metrics and manifests are emitted
+- **THEN** metric keys use the `stage2_rollout_correction/...` namespace
+- **AND** manifests identify the `stage2_rollout_correction` variant and family.

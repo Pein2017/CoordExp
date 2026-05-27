@@ -2,7 +2,6 @@
 
 ## Purpose
 Define the unified inference entrypoint contract (`scripts/run_infer.py`) including the YAML schema, artifact outputs, and backend selection behavior.
-
 ## Requirements
 ### Requirement: Unified inference CLI
 The system SHALL provide a single inference entrypoint that is primarily configured via YAML under `configs/` (with a minimal CLI wrapper that accepts `--config`).
@@ -49,7 +48,6 @@ Transition support:
 #### Scenario: Run inference with required flags
 - **WHEN** a user runs the inference CLI with `--gt_jsonl`, `--model_checkpoint`, `--mode text`, output path, and generation flags
 - **THEN** the run succeeds without prompting for missing mode/config files and processes samples up to the optional `--limit`.
-
 
 ### Requirement: Coord-mode scaling and validation
 In `coord` mode, the engine SHALL standardize both GT and predictions to pixel coordinates using per-sample `width`/`height`.
@@ -107,7 +105,6 @@ Legacy mixed-format fields (e.g., raw norm `predictions`/dual schemas) SHALL NOT
 - **WHEN** the inference engine parses and validates predictions
 - **THEN** the `line` object is excluded from `pred`, and an error/counter reflects invalid geometry.
 
-
 ### Requirement: Polygon preservation and evaluation
 Polygons (`poly`) SHALL be preserved in outputs and evaluated via COCO-style polygon segmentation (mask IoU) derived from the vertex list (single ring, clamped, non-degenerate). Bounding boxes MAY be derived for ancillary needs but SHALL NOT replace the polygon geometry in the output schema.
 
@@ -152,7 +149,6 @@ vLLM determinism scope:
 #### Scenario: Reproducible runs
 - **WHEN** inference is executed twice with identical inputs and `--seed 1234`
 - **THEN** the produced `pred.jsonl` files are byte-identical (ordering preserved, floating points only from deterministic scaling/rounding).
-
 
 ### Requirement: Limit handling
 If `infer.limit N` is set, the engine SHALL process and emit at most N samples (images) from the GT JSONL, maintaining alignment between read GT records and emitted output lines in `gt_vs_pred.jsonl`.
@@ -221,14 +217,12 @@ Contract requirements (backend-agnostic):
 - **WHEN** the user switches backend from `hf` to `vllm` in YAML
 - **THEN** the pipeline produces the same prediction JSONL schema and artifact layout, enabling evaluation/visualization without schema translation.
 
-
 ### Requirement: `line` geometry is rejected from standardized predictions
 Line geometries MAY appear in model output payloads, but they SHALL be treated as unsupported geometry for the standardized artifact contract.
 
 #### Scenario: Line present
 - **WHEN** a `line` object appears in predictions
 - **THEN** it is not included in `pred`, and it contributes to invalid-geometry diagnostics/counters.
-
 
 ### Requirement: HF attention backend selection is resilient across environments
 Inference-engine SHALL support resilient HF attention backend selection.
@@ -250,7 +244,6 @@ The selected backend (including fallback choice when applied) MUST be recorded i
 - **WHEN** artifacts are persisted
 - **THEN** `summary.json.backend.attn_implementation_requested` and `summary.json.backend.attn_implementation_selected` are present
 - **AND** operators can determine from artifacts whether fallback occurred by comparing requested vs selected values.
-
 
 ### Requirement: Backend runtime is selected through an explicit backend contract
 Inference-engine SHALL use an explicit backend runtime contract to isolate backend-specific generation details from artifact standardization.
@@ -283,7 +276,6 @@ Normative behavior:
 - **WHEN** inference writes the corresponding `gt_vs_pred.jsonl` record
 - **THEN** the emitted `pred` array preserves that same `A`, `B`, `C` order
 - **AND** it does not sort the predictions by score, geometry, or description.
-
 
 ### Requirement: Inference error reporting remains structured and sample-scoped
 Inference-engine SHALL preserve structured, per-sample error reporting in output artifacts and summary counters.
@@ -338,3 +330,53 @@ Normative behavior:
 - **WHEN** the generation backend fails for a sample before producing usable prediction text
 - **THEN** inference terminates non-zero
 - **AND** the failure is not converted into empty predictions with continued execution.
+
+### Requirement: Offline inference uses the shared inference runtime
+
+The unified inference entrypoint SHALL route detection generation through the
+shared inference runtime instead of owning separate prompt, backend, trace, or
+parser implementations.
+
+Normative behavior:
+
+- `scripts/run_infer.py` remains the offline entrypoint;
+- authored offline config remains under `infer.*`;
+- offline generation MUST construct shared prompt/decode/model policy objects;
+- offline artifacts MUST record prompt, decode, model identity, and score
+  policy provenance as applicable;
+- offline backend selection MUST use the shared backend adapter contract;
+- offline inference MUST preserve the canonical output schema required by the
+  existing inference-engine contract.
+
+#### Scenario: Offline run records shared runtime fingerprints
+
+- **GIVEN** an offline inference YAML with `infer.backend.type: hf`
+- **WHEN** `scripts/run_infer.py --config ...` completes
+- **THEN** `summary.json` and resolved metadata include
+  `prompt_policy_fingerprint`, `decode_policy_fingerprint`, and
+  `model_identity_fingerprint`
+- **AND** `gt_vs_pred.jsonl` remains schema-compatible with the existing
+  inference-engine output contract.
+
+### Requirement: Offline vLLM logprob tracing follows the shared result contract
+
+Offline inference SHALL require the shared generated-sequence trace contract
+when `infer.generation.trace_logprobs` or the equivalent resolved trace flag is
+enabled.
+
+Normative behavior:
+
+- vLLM backends MUST request generated-token logprobs for trace-required runs;
+- missing or malformed vLLM logprob payloads MUST fail fast before
+  metric-bearing artifacts are written;
+- trace validation MUST be backend-agnostic and must not silently clip or pad
+  trace arrays;
+- prompt logprobs remain optional unless explicitly requested.
+
+#### Scenario: Offline vLLM trace failure stops before metric artifacts
+
+- **GIVEN** an offline run selects vLLM and enables generated-token logprob
+  tracing
+- **WHEN** the vLLM response lacks aligned generated-token logprobs
+- **THEN** the run fails before writing a comparable `gt_vs_pred.jsonl`
+- **AND** the diagnostic identifies the trace contract failure.

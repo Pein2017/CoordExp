@@ -37,3 +37,9 @@ Current configs MUST use `custom.trainer_variant: stage2_rollout_correction`,
 top-level `stage2_rollout_correction`, and exactly one enabled
 `residual_set_correction` objective with
 `application.preset: rollout_self_prefix`.
+
+#### Scenario: Active Stage-2 config uses rollout correction
+- **GIVEN** a current Stage-2 training config
+- **WHEN** config loading resolves the trainer surface
+- **THEN** it uses `stage2_rollout_correction`
+- **AND** it contains exactly one enabled `residual_set_correction` objective.
