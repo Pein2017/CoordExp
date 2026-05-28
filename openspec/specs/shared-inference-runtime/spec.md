@@ -1,7 +1,10 @@
 # shared-inference-runtime Specification
 
 ## Purpose
-TBD - created by archiving change unify-inference-runtime. Update Purpose after archive.
+Define the shared detection inference runtime contract for prompt rendering,
+visual-input normalization, backend-agnostic decode requests, generated-token
+trace validation, strict parser policy, and provenance/score comparability
+across offline inference and online Stage-2 rollout callers.
 ## Requirements
 ### Requirement: Shared runtime owns prompt, decode, backend, trace, parse, and provenance seams
 

@@ -177,6 +177,27 @@ def test_default_profile_derives_generic_stage1_policy_from_plan() -> None:
     assert profile.manifest_family == "stage1"
 
 
+def test_profile_allows_explicit_generic_gkd_monitor_extension() -> None:
+    profile_mod = _profile_module()
+
+    profile = profile_mod.resolve_training_runtime_profile("gkd_monitor")
+
+    assert profile.variant == "gkd_monitor"
+    assert profile.runtime_stage == "stage1"
+    assert profile.ordinary_stage1_mixins_allowed is True
+    assert profile.manifest_family == "stage1"
+
+
+def test_profile_rejects_unknown_non_empty_trainer_variant() -> None:
+    profile_mod = _profile_module()
+
+    with pytest.raises(
+        ValueError,
+        match=r"custom\.trainer_variant=stage2_rollout_correcton is not supported",
+    ):
+        profile_mod.resolve_training_runtime_profile("stage2_rollout_correcton")
+
+
 @pytest.mark.parametrize(
     ("variant", "pipeline_namespace", "manifest_family"),
     [

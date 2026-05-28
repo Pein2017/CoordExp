@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import time
 from dataclasses import replace
+from numbers import Integral
 from pathlib import Path
 from typing import Any, Dict, List, Literal, Mapping, Optional, Sequence, Tuple
 
@@ -14,6 +16,7 @@ from src.common.prediction_parsing import extract_special_tokens, load_predictio
 from src.coord_tokens.codec import token_to_int
 from src.eval.detection import EvalOptions, evaluate_and_save
 from src.infer.artifacts import write_score_provenance_sidecar
+from src.infer.parsing import DetectionParserResult, require_metric_bearing
 from src.infer.prompt import DetectionPromptPolicy, prompt_policy_fingerprint
 from src.infer.runtime import (
     build_decode_policy_fingerprint,
@@ -43,6 +46,244 @@ def _stage2_eval_model_handle(owner: Any) -> str:
     return str(getattr(getattr(owner, "args", None), "output_dir", "stage2_live_model"))
 
 
+def _canonical_sha256(payload: Any) -> str:
+    encoded = json.dumps(
+        payload,
+        ensure_ascii=True,
+        separators=(",", ":"),
+        sort_keys=True,
+    ).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
+
+
+def _stage2_owner_policy_value(owner: Any, method_name: str, default: Any) -> Any:
+    method = getattr(owner, method_name, None)
+    if callable(method):
+        try:
+            return method()
+        except TypeError:
+            return default
+    return default
+
+
+def _stage2_eval_rollout_template_summary(owner: Any) -> Dict[str, Any]:
+    policy = _stage2_owner_policy_value(owner, "_eval_rollout_template_policy", None)
+    if policy is None:
+        return {}
+    out: Dict[str, Any] = {}
+    for key in (
+        "template_family",
+        "decode_policy",
+        "bbox_format",
+        "object_field_order",
+    ):
+        value = getattr(policy, key, None)
+        if value is not None:
+            out[key] = str(value)
+    return out
+
+
+def _coerce_stage2_eval_prompt_token_ids(
+    artifact: Mapping[str, Any],
+    *,
+    record_index: int,
+) -> List[int]:
+    rollout = artifact.get("rollout")
+    if not isinstance(rollout, Mapping):
+        raise ValueError(
+            "Stage-2 official eval requires recorded rollout prompt_token_ids "
+            f"before artifact materialization (missing rollout for record_index={int(record_index)})."
+        )
+    raw_ids = rollout.get("prompt_token_ids")
+    if (
+        isinstance(raw_ids, (str, bytes, bytearray, Mapping))
+        or not isinstance(raw_ids, Sequence)
+    ):
+        raise ValueError(
+            "Stage-2 official eval requires recorded rollout prompt_token_ids "
+            f"before artifact materialization (record_index={int(record_index)})."
+        )
+    if len(raw_ids) == 0:
+        raise ValueError(
+            "Stage-2 official eval requires non-empty rollout prompt_token_ids "
+            f"before artifact materialization (record_index={int(record_index)})."
+        )
+    token_ids: List[int] = []
+    for token_index, token_id in enumerate(raw_ids):
+        if isinstance(token_id, bool) or not isinstance(token_id, Integral):
+            raise ValueError(
+                "Stage-2 official eval prompt_token_ids must contain integer token ids "
+                f"(record_index={int(record_index)}, token_index={int(token_index)})."
+            )
+        token_ids.append(int(token_id))
+    return token_ids
+
+
+def _stage2_eval_visual_identity_summary(
+    artifact: Mapping[str, Any],
+    *,
+    record_index: int,
+) -> Dict[str, Any]:
+    base_record = artifact.get("base_record", {})
+    if not isinstance(base_record, Mapping):
+        base_record = {}
+    images_raw = base_record.get("images", [])
+    images = [str(image) for image in list(images_raw)] if isinstance(images_raw, list) else []
+    out: Dict[str, Any] = {
+        "record_index": int(record_index),
+        "image": str(base_record.get("image") or ""),
+        "images": images,
+        "width": int(base_record.get("width")),
+        "height": int(base_record.get("height")),
+        "source_record_id": str(base_record.get("source_record_id") or ""),
+    }
+    if base_record.get("sample_id") is not None:
+        out["sample_id"] = base_record.get("sample_id")
+    if base_record.get("base_idx") is not None:
+        out["base_idx"] = base_record.get("base_idx")
+    if base_record.get("image_id") is not None:
+        out["image_id"] = base_record.get("image_id")
+    return out
+
+
+def _build_stage2_eval_parser_provenance(
+    eval_rollout_artifacts_all: Sequence[Mapping[str, Any]],
+) -> Dict[str, Any]:
+    parser_records: List[Dict[str, Any]] = []
+    for record_idx, artifact in enumerate(eval_rollout_artifacts_all):
+        parser_metadata = artifact.get("parser_result")
+        if not isinstance(parser_metadata, Mapping):
+            raise ValueError(
+                "Stage-2 official eval requires parser provenance before score "
+                f"sidecar materialization (missing parser_result for record_index={int(record_idx)})."
+            )
+        parser_result = require_metric_bearing(
+            _parser_result_from_artifact_metadata(parser_metadata),
+            consumer="stage2_eval score provenance",
+        )
+        parser_records.append(
+            {
+                "record_index": int(record_idx),
+                "parser_id": str(parser_result.parser_id),
+                "parser_policy": str(parser_result.parser_policy),
+                "metric_bearing": bool(parser_result.metric_bearing),
+                "salvage_recovered": bool(parser_result.salvage_recovered),
+                "parser_error_count": int(
+                    parser_metadata.get("parser_error_count", len(parser_result.errors))
+                    or 0
+                ),
+            }
+        )
+
+    parser_ids = sorted({str(row["parser_id"]) for row in parser_records})
+    return {
+        "schema_version": "coordexp_stage2_eval_parser_provenance_v1",
+        "source": "stage2_eval_rollout_artifacts",
+        "record_count": int(len(parser_records)),
+        "parser_ids": parser_ids,
+        "all_metric_bearing": all(
+            bool(row["metric_bearing"]) for row in parser_records
+        ),
+        "all_parser_policy_strict": all(
+            str(row["parser_policy"]) == "strict" for row in parser_records
+        ),
+        "any_salvage_recovered": any(
+            bool(row["salvage_recovered"]) for row in parser_records
+        ),
+        "parser_records_sha256": _canonical_sha256(parser_records),
+    }
+
+
+def _build_stage2_eval_prompt_provenance(
+    *,
+    owner: Any,
+    eval_rollout_artifacts_all: Sequence[Mapping[str, Any]],
+    eval_prompt_variant: str | None,
+    eval_rollout_backend: str,
+) -> Dict[str, Any]:
+    prompt_token_records: List[Dict[str, Any]] = []
+    visual_records: List[Dict[str, Any]] = []
+    prompt_token_lengths: List[int] = []
+    image_counts: List[int] = []
+
+    for record_idx, artifact in enumerate(eval_rollout_artifacts_all):
+        token_ids = _coerce_stage2_eval_prompt_token_ids(
+            artifact,
+            record_index=record_idx,
+        )
+        prompt_token_records.append(
+            {
+                "record_index": int(record_idx),
+                "token_count": int(len(token_ids)),
+                "token_ids_sha256": _canonical_sha256(token_ids),
+            }
+        )
+        prompt_token_lengths.append(int(len(token_ids)))
+
+        visual_record = _stage2_eval_visual_identity_summary(
+            artifact,
+            record_index=record_idx,
+        )
+        visual_records.append(visual_record)
+        image_counts.append(int(len(visual_record.get("images", []) or [])))
+
+    detection_sequence_format = str(
+        _stage2_owner_policy_value(owner, "_detection_sequence_format", "coordjson")
+    )
+    object_field_order = str(
+        _stage2_owner_policy_value(owner, "_object_field_order", "desc_first")
+    )
+    object_ordering = str(_stage2_owner_policy_value(owner, "_object_ordering", "sorted"))
+    training_prompt_variant_raw = _stage2_owner_policy_value(
+        owner,
+        "_training_prompt_variant",
+        None,
+    )
+
+    return {
+        "schema_version": "coordexp_stage2_eval_prompt_provenance_v1",
+        "source": "stage2_eval_rollout_artifacts",
+        "eval_prompt_variant": str(eval_prompt_variant or ""),
+        "training_prompt_variant": (
+            str(training_prompt_variant_raw)
+            if training_prompt_variant_raw is not None
+            else None
+        ),
+        "rollout_backend": str(eval_rollout_backend),
+        "detection_sequence_format": detection_sequence_format,
+        "object_field_order": object_field_order,
+        "object_ordering": object_ordering,
+        "rollout_template_policy": _stage2_eval_rollout_template_summary(owner),
+        "visual_policy": {
+            "do_resize": False,
+            "source_metadata": "base_record_images_width_height",
+            "record_count": int(len(visual_records)),
+            "image_count_min": min(image_counts) if image_counts else 0,
+            "image_count_max": max(image_counts) if image_counts else 0,
+            "visual_records_sha256": _canonical_sha256(visual_records),
+        },
+        "prompt_tokens": {
+            "status": (
+                "backend_recorded"
+                if prompt_token_records
+                else "not_applicable_empty_eval"
+            ),
+            "record_count": int(len(prompt_token_records)),
+            "token_count_min": min(prompt_token_lengths) if prompt_token_lengths else 0,
+            "token_count_max": max(prompt_token_lengths) if prompt_token_lengths else 0,
+            "token_records_sha256": _canonical_sha256(prompt_token_records),
+        },
+        "prompt_visual_parity": {
+            "status": "not_claimed",
+            "verified": False,
+            "reason": (
+                "Stage-2 eval sidecar binds to backend-recorded prompt token ids "
+                "and validated visual source metadata, but does not claim offline-vs-online parity."
+            ),
+        },
+    }
+
+
 def _write_stage2_eval_score_provenance(
     *,
     owner: Any,
@@ -54,6 +295,9 @@ def _write_stage2_eval_score_provenance(
     eval_detection_score_mode: str,
     eval_detection_cfg: Mapping[str, Any],
     eval_decode_override: Optional[Mapping[str, Any]] = None,
+    prompt_provenance: Optional[Mapping[str, Any]] = None,
+    parser_provenance: Optional[Mapping[str, Any]] = None,
+    eval_rollout_artifacts_all: Optional[Sequence[Mapping[str, Any]]] = None,
 ) -> None:
     backend = "vllm" if str(eval_rollout_backend).strip().lower() == "vllm" else "hf"
     backend_mode = str(eval_vllm_mode or ("server" if backend == "vllm" else "local"))
@@ -75,21 +319,63 @@ def _write_stage2_eval_score_provenance(
         decode_request,
         decode_policy_fingerprint=build_decode_policy_fingerprint(decode_request),
     )
+    artifacts_for_provenance = (
+        list(eval_rollout_artifacts_all)
+        if eval_rollout_artifacts_all is not None
+        else None
+    )
+    if artifacts_for_provenance is None:
+        raise ValueError(
+            "Stage-2 official eval score sidecar requires artifact-derived "
+            "prompt/parser provenance; pass eval_rollout_artifacts_all."
+        )
+    derived_prompt_provenance = _build_stage2_eval_prompt_provenance(
+        owner=owner,
+        eval_rollout_artifacts_all=artifacts_for_provenance,
+        eval_prompt_variant=eval_prompt_variant,
+        eval_rollout_backend=eval_rollout_backend,
+    )
+    derived_parser_provenance = _build_stage2_eval_parser_provenance(
+        artifacts_for_provenance
+    )
+    if isinstance(prompt_provenance, Mapping) and dict(prompt_provenance) != derived_prompt_provenance:
+        raise ValueError(
+            "Stage-2 official eval supplied prompt provenance does not match "
+            "eval_rollout_artifacts_all."
+        )
+    if isinstance(parser_provenance, Mapping) and dict(parser_provenance) != derived_parser_provenance:
+        raise ValueError(
+            "Stage-2 official eval supplied parser provenance does not match "
+            "eval_rollout_artifacts_all."
+        )
+    prompt_provenance_payload = (
+        dict(prompt_provenance)
+        if isinstance(prompt_provenance, Mapping)
+        else derived_prompt_provenance
+    )
+    parser_provenance_payload = (
+        dict(parser_provenance)
+        if isinstance(parser_provenance, Mapping)
+        else derived_parser_provenance
+    )
+    image_count_max = 1
+    visual_policy = prompt_provenance_payload.get("visual_policy")
+    if isinstance(visual_policy, Mapping):
+        try:
+            image_count_max = max(1, int(visual_policy.get("image_count_max", 1) or 1))
+        except (TypeError, ValueError):
+            image_count_max = 1
     prompt_fingerprint = prompt_policy_fingerprint(
         DetectionPromptPolicy(
-            name="stage2_rollout_correction_eval",
-            version="1",
-            system_prompt="",
+            name="stage2_rollout_correction_eval_prompt_tokens",
+            version="2",
+            system_prompt="recorded_in_prompt_provenance",
             user_prompt=json.dumps(
-                {
-                    "eval_prompt_variant": eval_prompt_variant,
-                    "object_field_order": str(owner._object_field_order()),
-                    "object_ordering": str(owner._object_ordering()),
-                },
+                prompt_provenance_payload,
                 ensure_ascii=True,
                 sort_keys=True,
             ),
-            image_count=1,
+            image_count=image_count_max,
             do_resize=False,
         )
     )
@@ -144,8 +430,12 @@ def _write_stage2_eval_score_provenance(
         ),
         constant_score_value=None if score_mode == "confidence_postop" else constant_score,
         source_raw_artifact_path=raw_path,
-        parser_policy="stage2_rollout_correction_eval",
-        extra={"eval_surface": "stage2_rollout_correction"},
+        parser_policy="strict",
+        extra={
+            "eval_surface": "stage2_rollout_correction",
+            "prompt_provenance": prompt_provenance_payload,
+            "parser_provenance": parser_provenance_payload,
+        },
     )
 
 
@@ -387,6 +677,205 @@ def build_eval_detection_record(
     return out
 
 
+def _require_stage2_eval_source_images(
+    *,
+    sample: Mapping[str, Any],
+    record_index: int,
+) -> List[str]:
+    images_raw = sample.get("images")
+    if isinstance(images_raw, list):
+        images = [str(value).strip() for value in images_raw if isinstance(value, str) and value.strip()]
+        if len(images) == 1:
+            return images
+        if len(images) > 1:
+            raise ValueError(
+                "Stage-2 official eval currently requires exactly one source "
+                "image identity before metric-bearing artifact materialization "
+                f"(record_index={int(record_index)}, image_count={len(images)})."
+            )
+    image_one = sample.get("image")
+    if isinstance(image_one, str) and image_one.strip():
+        return [str(image_one).strip()]
+    raise ValueError(
+        "Stage-2 official eval requires exact source image identity before "
+        "metric-bearing artifact materialization "
+        f"(missing sample.images/sample.image for record_index={int(record_index)})."
+    )
+
+
+def _require_stage2_eval_source_dimensions(
+    *,
+    sample: Mapping[str, Any],
+    record_index: int,
+) -> Tuple[int, int]:
+    width = _coerce_positive_pixel_dimension(sample.get("width"))
+    height = _coerce_positive_pixel_dimension(sample.get("height"))
+    if width is None or height is None:
+        raise ValueError(
+            "Stage-2 official eval requires exact source image dimensions before "
+            "metric-bearing artifact materialization "
+            f"(missing/invalid width or height for record_index={int(record_index)})."
+        )
+    return int(width), int(height)
+
+
+def _stage2_eval_source_record_identity(
+    *,
+    sample: Mapping[str, Any],
+    record_index: int,
+) -> Dict[str, Any]:
+    metadata = sample.get("metadata")
+    metadata_source_id = None
+    if isinstance(metadata, Mapping):
+        metadata_source_id = metadata.get("source_record_id")
+    explicit_source_id = sample.get("source_record_id", metadata_source_id)
+
+    out: Dict[str, Any] = {}
+    if sample.get("sample_id") is not None:
+        out["sample_id"] = sample.get("sample_id")
+    if sample.get("base_idx") is not None:
+        out["base_idx"] = sample.get("base_idx")
+    if sample.get("image_id") is not None:
+        out["image_id"] = sample.get("image_id")
+
+    source_record_id = str(explicit_source_id or "").strip()
+    if not source_record_id:
+        for key in ("sample_id", "base_idx", "image_id"):
+            if key in out:
+                source_record_id = f"{key}:{out[key]}"
+                break
+    if not source_record_id:
+        raise ValueError(
+            "Stage-2 official eval requires source record identity before "
+            "metric-bearing artifact materialization "
+            f"(missing sample_id/base_idx/image_id/source_record_id for record_index={int(record_index)})."
+        )
+    out["source_record_id"] = source_record_id
+    return out
+
+
+def _coerce_positive_pixel_dimension(value: Any) -> int | None:
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        return int(value) if int(value) > 0 else None
+    if isinstance(value, str):
+        stripped = value.strip()
+        if not stripped.isdigit():
+            return None
+        parsed = int(stripped)
+        return int(parsed) if parsed > 0 else None
+    return None
+
+
+def _validate_stage2_eval_record_source_fields(
+    *,
+    record: Mapping[str, Any],
+    record_index: int,
+    role: str,
+) -> None:
+    _require_stage2_eval_source_images(sample=record, record_index=record_index)
+    _require_stage2_eval_source_dimensions(sample=record, record_index=record_index)
+    image = str(record.get("image") or "").strip()
+    if not image:
+        raise ValueError(
+            "Stage-2 official eval requires exact source image identity before "
+            "metric-bearing artifact materialization "
+            f"(missing {role}.image for record_index={int(record_index)})."
+        )
+    source_record_id = str(record.get("source_record_id") or "").strip()
+    if not source_record_id:
+        raise ValueError(
+            "Stage-2 official eval requires source record identity before "
+            "metric-bearing artifact materialization "
+            f"(missing {role}.source_record_id for record_index={int(record_index)})."
+        )
+
+
+def _parser_result_from_artifact_metadata(
+    metadata: Mapping[str, Any],
+) -> DetectionParserResult:
+    return DetectionParserResult(
+        predictions=(),
+        parser_id=str(metadata.get("parser_id", "") or "stage2_eval_unknown"),
+        parser_policy=str(  # type: ignore[arg-type]
+            metadata.get("parser_policy", "") or "diagnostic"
+        ),
+        metric_bearing=metadata.get("metric_bearing", False),  # type: ignore[arg-type]
+        salvage_recovered=metadata.get("salvage_recovered", False),  # type: ignore[arg-type]
+        errors=(),
+        diagnostics=dict(metadata),
+    )
+
+
+def _validate_stage2_eval_materialization_rows(
+    eval_rollout_artifacts_all: Sequence[Mapping[str, Any]],
+) -> None:
+    for record_idx, artifact in enumerate(eval_rollout_artifacts_all):
+        if not isinstance(artifact, Mapping):
+            raise TypeError(
+                "Stage-2 official eval artifact payload must be a mapping "
+                f"(record_index={int(record_idx)})."
+            )
+        invalid_reason = str(
+            artifact.get("official_eval_invalid_reason", "") or ""
+        ).strip()
+        if invalid_reason:
+            parser_metadata = artifact.get("parser_result")
+            if not isinstance(parser_metadata, Mapping):
+                raise ValueError(
+                    "Stage-2 official eval invalid payload is missing parser_result "
+                    f"(record_index={int(record_idx)}, "
+                    f"official_eval_invalid_reason={invalid_reason!r})."
+                )
+            require_metric_bearing(
+                _parser_result_from_artifact_metadata(parser_metadata),
+                consumer="stage2_eval official artifacts",
+            )
+            invalid_message = str(
+                artifact.get("official_eval_invalid_message", "") or ""
+            ).strip()
+            raise ValueError(
+                "Stage-2 official eval rejected invalid payload before artifact "
+                f"materialization (record_index={int(record_idx)}, "
+                f"official_eval_invalid_reason={invalid_reason!r}, "
+                f"message={invalid_message!r})."
+            )
+        base_record = artifact.get("base_record", {})
+        scored_record = artifact.get("scored_record", {})
+        if not isinstance(base_record, Mapping):
+            raise TypeError(
+                "Stage-2 official eval base_record must be a mapping "
+                f"(record_index={int(record_idx)})."
+            )
+        if not isinstance(scored_record, Mapping):
+            raise TypeError(
+                "Stage-2 official eval scored_record must be a mapping "
+                f"(record_index={int(record_idx)})."
+            )
+        _validate_stage2_eval_record_source_fields(
+            record=base_record,
+            record_index=record_idx,
+            role="base_record",
+        )
+        _validate_stage2_eval_record_source_fields(
+            record=scored_record,
+            record_index=record_idx,
+            role="scored_record",
+        )
+        parser_metadata = artifact.get("parser_result")
+        if not isinstance(parser_metadata, Mapping):
+            raise ValueError(
+                "Stage-2 official eval requires parser metric-bearing status "
+                "before artifact materialization "
+                f"(missing parser_result for record_index={int(record_idx)})."
+            )
+        require_metric_bearing(
+            _parser_result_from_artifact_metadata(parser_metadata),
+            consumer="stage2_eval official artifacts",
+        )
+
+
 def build_eval_detection_record_confidence_postop_input(
     *,
     sample: Mapping[str, Any],
@@ -403,34 +892,19 @@ def build_eval_detection_record_confidence_postop_input(
 
     from src.common.geometry import denorm_and_clamp
 
-    images_raw = sample.get("images")
-    images: List[str] = []
-    if isinstance(images_raw, list):
-        for v in images_raw:
-            if isinstance(v, str) and v.strip():
-                images = [str(v)]
-                break
-    if not images:
-        image_one = sample.get("image")
-        if isinstance(image_one, str) and image_one.strip():
-            images = [str(image_one)]
-    if not images:
-        images = [f"image_{int(record_index)}.jpg"]
+    images = _require_stage2_eval_source_images(
+        sample=sample,
+        record_index=record_index,
+    )
 
-    width = sample.get("width")
-    height = sample.get("height")
-    try:
-        width = int(width) if width is not None else None
-    except (TypeError, ValueError):
-        width = None
-    try:
-        height = int(height) if height is not None else None
-    except (TypeError, ValueError):
-        height = None
-    if width is None:
-        width = 1000
-    if height is None:
-        height = 1000
+    width, height = _require_stage2_eval_source_dimensions(
+        sample=sample,
+        record_index=record_index,
+    )
+    source_identity = _stage2_eval_source_record_identity(
+        sample=sample,
+        record_index=record_index,
+    )
 
     def _normalize_geometry_key(value: Any) -> str:
         key = str(value or "").strip().lower()
@@ -508,7 +982,7 @@ def build_eval_detection_record_confidence_postop_input(
             }
         )
 
-    image_value = images[0] if images else f"image_{int(record_index)}.jpg"
+    image_value = images[0]
     out: Dict[str, Any] = {
         "index": int(record_index),
         "image": image_value,
@@ -519,6 +993,7 @@ def build_eval_detection_record_confidence_postop_input(
         "pred": pred_payload,
         "width": int(width),
         "height": int(height),
+        **source_identity,
         "raw_output_json": raw_output_json,
         "raw_special_tokens": extract_special_tokens(
             raw_text_value,
@@ -528,8 +1003,6 @@ def build_eval_detection_record_confidence_postop_input(
         "errors": errors_payload,
         "error_entries": error_entries_payload,
     }
-    if sample.get("image_id") is not None:
-        out["image_id"] = sample.get("image_id")
     metadata = sample.get("metadata")
     if isinstance(metadata, Mapping):
         out["metadata"] = dict(metadata)
@@ -706,6 +1179,17 @@ def _materialize_stage2_eval_artifacts(
     eval_detection_cfg: Mapping[str, Any],
     eval_decode_override: Optional[Mapping[str, Any]] = None,
 ) -> Dict[str, Any]:
+    _validate_stage2_eval_materialization_rows(eval_rollout_artifacts_all)
+    prompt_provenance = _build_stage2_eval_prompt_provenance(
+        owner=owner,
+        eval_rollout_artifacts_all=eval_rollout_artifacts_all,
+        eval_prompt_variant=eval_prompt_variant,
+        eval_rollout_backend=eval_rollout_backend,
+    )
+    parser_provenance = _build_stage2_eval_parser_provenance(
+        eval_rollout_artifacts_all
+    )
+
     eval_dir = _stage2_eval_output_dir(owner=owner, global_step=global_step)
     eval_dir.mkdir(parents=True, exist_ok=True)
 
@@ -786,6 +1270,9 @@ def _materialize_stage2_eval_artifacts(
         eval_detection_score_mode=eval_detection_score_mode,
         eval_detection_cfg=eval_detection_cfg,
         eval_decode_override=eval_decode_override,
+        prompt_provenance=prompt_provenance,
+        parser_provenance=parser_provenance,
+        eval_rollout_artifacts_all=eval_rollout_artifacts_all,
     )
 
     options = _build_eval_options(eval_detection_cfg, output_dir=eval_dir)

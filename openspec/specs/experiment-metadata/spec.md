@@ -1,7 +1,9 @@
 # experiment-metadata Specification
 
 ## Purpose
-TBD - created by archiving change add-structured-experiment-metadata. Update Purpose after archive.
+Define the authored experiment metadata and run-level experiment manifest
+contract so human intent, resolved runtime facts, provenance, and authoritative
+artifact pointers remain available from one stable training output.
 ## Requirements
 ### Requirement: Training configs SHALL support a first-class experiment metadata section
 The training config schema SHALL support an optional top-level `experiment`

@@ -79,6 +79,7 @@ def diagnostic_parser_result(
     parser_id: str,
     errors: Sequence[str] = (),
     diagnostics: Mapping[str, Any] | None = None,
+    salvage_recovered: bool = True,
 ) -> DetectionParserResult:
     """Build a non-metric diagnostic/salvage parser result."""
 
@@ -87,7 +88,7 @@ def diagnostic_parser_result(
         parser_id=parser_id,
         parser_policy="diagnostic",
         metric_bearing=False,
-        salvage_recovered=True,
+        salvage_recovered=bool(salvage_recovered),
         errors=tuple(errors),
         diagnostics=dict(diagnostics or {}),
     )
@@ -126,6 +127,71 @@ class Stage2ParsedRolloutPredictions:
     pred_meta: tuple[Any, ...]
     preds: tuple[Any, ...]
     pred_objects_dump: tuple[dict[str, Any], ...]
+    parser_result: DetectionParserResult
+
+
+def _stage2_parser_result_from_parse(
+    *,
+    parse: Any,
+    parser_id: str,
+    predictions: Sequence[Mapping[str, Any]],
+) -> DetectionParserResult:
+    dropped_invalid = int(getattr(parse, "dropped_invalid", 0) or 0)
+    dropped_ambiguous = int(getattr(parse, "dropped_ambiguous", 0) or 0)
+    invalid_rollout = bool(getattr(parse, "invalid_rollout", False))
+    truncated = bool(getattr(parse, "truncated", False))
+    empty_valid_object_set = bool(getattr(parse, "empty_valid_object_set", False))
+    fallback_reason_raw = getattr(parse, "fallback_reason", None)
+    fallback_reason = str(fallback_reason_raw or "").strip()
+    strict_policy_advertised = (
+        str(getattr(parse, "parser_policy", "") or "").strip().lower() == "strict"
+    )
+    salvage_recovered = (
+        (
+            str(parser_id).strip().lower() == "coordjson"
+            and not strict_policy_advertised
+        )
+        or fallback_reason == "compact_full_salvage"
+    )
+
+    diagnostics = {
+        "dropped_invalid": int(dropped_invalid),
+        "dropped_ambiguous": int(dropped_ambiguous),
+        "invalid_rollout": bool(invalid_rollout),
+        "truncated": bool(truncated),
+        "empty_valid_object_set": bool(empty_valid_object_set),
+        "fallback_reason": fallback_reason or None,
+        "salvage_recovered": bool(salvage_recovered),
+    }
+    errors: list[str] = []
+    if invalid_rollout:
+        errors.append("invalid_rollout")
+    if dropped_invalid > 0:
+        errors.append("dropped_invalid")
+    if dropped_ambiguous > 0:
+        errors.append("dropped_ambiguous")
+    if truncated:
+        errors.append("truncated")
+    if empty_valid_object_set:
+        errors.append("empty_valid_object_set")
+    if fallback_reason:
+        errors.append(f"fallback:{fallback_reason}")
+    if salvage_recovered:
+        errors.append("salvage_parser_policy")
+
+    if errors:
+        return diagnostic_parser_result(
+            predictions=tuple(predictions),
+            parser_id=parser_id,
+            errors=tuple(errors),
+            diagnostics=diagnostics,
+            salvage_recovered=bool(salvage_recovered),
+        )
+    return strict_parser_result(
+        predictions=tuple(predictions),
+        parser_id=parser_id,
+        diagnostics=diagnostics,
+    )
 
 
 def parse_stage2_detection_rollout_predictions(
@@ -207,6 +273,7 @@ def parse_stage2_detection_rollout_predictions(
                 fallback_reason=("empty_valid_object_set" if not preds else None),
             )
         parse = replace(parse, response_token_ids=resp_ids)
+        parser_id = str(getattr(parse, "parser_id", "") or "compact_full")
     else:
         parse = parse_rollout_for_matching_fn(
             tokenizer=tokenizer,
@@ -240,12 +307,18 @@ def parse_stage2_detection_rollout_predictions(
                     "desc": str(getattr(pobj, "desc", "") or ""),
                 }
             )
+        parser_id = str(getattr(parse, "parser_id", "") or "coordjson")
 
     return Stage2ParsedRolloutPredictions(
         parse=parse,
         pred_meta=tuple(pred_meta),
         preds=tuple(preds),
         pred_objects_dump=tuple(pred_objs_dump),
+        parser_result=_stage2_parser_result_from_parse(
+            parse=parse,
+            parser_id=parser_id,
+            predictions=tuple(pred_objs_dump),
+        ),
     )
 
 

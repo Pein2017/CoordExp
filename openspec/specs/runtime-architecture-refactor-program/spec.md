@@ -78,13 +78,13 @@ after migration.
 
 Normative behavior:
 
-- final active code MUST NOT depend on `src.trainers.rollout_runtime.*`;
-- final active code MUST NOT depend on `src.trainers.stage2_rollout_runtime`
+- final active code MUST NOT depend on the retired trainer rollout-runtime
+  package;
+- final active code MUST NOT depend on the legacy Stage-2 rollout runtime module
   for prompt rendering, backend lifecycle, decode request conversion, trace
   normalization, or parser policy; any remaining Stage-2 module with that
   responsibility must be renamed or reduced to a thin trainer-owned facade;
-- final active code MUST NOT depend on `src.infer.engine` or
-  `src.infer.backends`;
+- final active code MUST NOT depend on legacy infer engine/backend aliases;
 - final active caller-facing code MUST NOT import `src.infer.compact_grammar`
   or `src.infer.stop_pressure`; compact grammar and stop-pressure behavior must
   be exposed through the shared constraints facade or private helper modules;
@@ -99,11 +99,9 @@ Normative behavior:
 - **WHEN** implementation claims the unified inference runtime refactor is
   complete
 - **THEN** search gates over active `src`, `scripts`, `tests`, `configs`,
-  `docs`, and non-archived OpenSpec surfaces find no active imports of
-  `src.trainers.rollout_runtime`, decode-owning
-  `src.trainers.stage2_rollout_runtime`, `src.infer.engine`,
-  `src.infer.backends`, `src.infer.compact_grammar`, or
-  `src.infer.stop_pressure`
+  `docs`, and non-archived OpenSpec surfaces find no active imports of retired
+  trainer rollout-runtime, legacy Stage-2 rollout-runtime, legacy infer engine,
+  infer backend alias, compact-grammar, or stop-pressure import surfaces
 - **AND** archived records are the only allowed remaining historical mentions.
 
 ### Requirement: Shared runtime stays small and caller boundaries remain explicit

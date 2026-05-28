@@ -21,6 +21,63 @@ class DetectionDecodeResult:
     prompt_token_ids: Optional[list[int]] = None
 
 
+@dataclass(frozen=True)
+class HFRolloutBackendHandles:
+    """Lifecycle handles needed by the HF rollout backend core."""
+
+    template: Any
+    model: Any
+    model_wrapped: Any
+    accelerator: Any
+    ds3_gather_for_generation: bool
+    decode_batch_size: int
+    offload_context_fn: Callable[..., Any]
+    template_packing_disabled_fn: Callable[[], Any]
+    rollout_template_policy: Any
+    unwrap_model_for_generation_fn: Callable[..., Any]
+    num_return_sequences: int
+
+
+def resolve_hf_rollout_backend_handles_from_owner(
+    *,
+    owner: Any,
+    unwrap_model_for_generation_fn: Callable[..., Any],
+) -> HFRolloutBackendHandles:
+    """Translate a Stage-2 owner into explicit HF rollout backend handles."""
+
+    from src.infer.runtime import resolve_rollout_runtime_facts_from_owner, rollout_owner_cfg
+
+    rollout_facts = resolve_rollout_runtime_facts_from_owner(
+        owner,
+        rollout_backend="hf",
+    )
+    num_beams = max(1, int(rollout_owner_cfg(owner, "num_beams", 1)))
+    return HFRolloutBackendHandles(
+        template=owner.template,
+        model=owner.model,
+        model_wrapped=owner.model_wrapped,
+        accelerator=owner.accelerator,
+        ds3_gather_for_generation=bool(
+            getattr(owner.args, "ds3_gather_for_generation", False)
+        ),
+        decode_batch_size=int(rollout_facts.decode_batch_size),
+        offload_context_fn=owner._maybe_rollout_offload_context,
+        template_packing_disabled_fn=owner._template_packing_disabled,
+        rollout_template_policy=owner._eval_rollout_template_policy(),
+        unwrap_model_for_generation_fn=unwrap_model_for_generation_fn,
+        num_return_sequences=max(
+            1,
+            int(
+                rollout_owner_cfg(
+                    owner,
+                    "num_return_sequences",
+                    int(num_beams),
+                )
+            ),
+        ),
+    )
+
+
 @lru_cache(maxsize=2)
 def vllm_engine_args_fields(*, async_engine: bool = False) -> frozenset[str]:
     try:
@@ -230,15 +287,33 @@ def rollout_many_hf(
     decode_request: Any,
     unwrap_model_for_generation_fn: Callable[..., Any],
 ) -> List[Tuple[List[int], str, str, List[int]]]:
+    """Owner adapter for the HF rollout backend."""
+
+    return rollout_many_hf_with_handles(
+        handles=resolve_hf_rollout_backend_handles_from_owner(
+            owner=owner,
+            unwrap_model_for_generation_fn=unwrap_model_for_generation_fn,
+        ),
+        samples=samples,
+        decode_request=decode_request,
+    )
+
+
+def rollout_many_hf_with_handles(
+    *,
+    handles: HFRolloutBackendHandles,
+    samples: Sequence[Mapping[str, Any]],
+    decode_request: Any,
+) -> List[Tuple[List[int], str, str, List[int]]]:
     """HF rollout backend using the shared inference backend implementation."""
 
-    template = owner.template
+    template = handles.template
     tokenizer = template.tokenizer
     decode_mode = str(decode_request.decode_mode)
     max_new_tokens = int(decode_request.max_new_tokens)
     num_beams = int(decode_request.num_beams)
 
-    gen_cfg = getattr(owner.model, "generation_config", None)
+    gen_cfg = getattr(handles.model, "generation_config", None)
     if gen_cfg is None:
         from transformers import GenerationConfig
 
@@ -249,7 +324,7 @@ def rollout_many_hf(
         gen_cfg.num_beams = max(1, num_beams)
         gen_cfg.num_return_sequences = max(
             1,
-            int(owner._cfg("num_return_sequences", gen_cfg.num_beams)),
+            int(handles.num_return_sequences),
         )
     else:
         gen_cfg.num_beams = 1
@@ -261,37 +336,27 @@ def rollout_many_hf(
     gen_cfg.eos_token_id = qwen_generation_ids.eos_token_id
     gen_cfg.pad_token_id = qwen_generation_ids.pad_token_id
 
-    from src.infer.runtime import (
-        current_rollout_context_from_owner,
-        rollout_decode_batch_size_from_owner,
-    )
-
     out: List[Tuple[List[int], str, str, List[int]]] = []
-    microbatch = int(
-        rollout_decode_batch_size_from_owner(
-            owner,
-            context=current_rollout_context_from_owner(owner),
-        )
-    )
+    microbatch = int(handles.decode_batch_size)
     to_device = import_swift_to_device()
 
-    with owner._maybe_rollout_offload_context(rollout_backend="hf"):
+    with handles.offload_context_fn(rollout_backend="hf"):
         idx = 0
         while idx < len(samples):
             chunk = list(samples[idx : idx + microbatch])
             idx += len(chunk)
 
-            with owner._template_packing_disabled():
+            with handles.template_packing_disabled_fn():
                 batch, input_ids_t, prompt_ids_list = _hf_rollout_batch_inputs(
                     template=template,
                     samples=chunk,
                     to_device=to_device,
-                    device=owner.model.device,
+                    device=handles.model.device,
                 )
 
             prompt_pad_len = int(input_ids_t.shape[1])
             enforce_hf_rollout_max_position_embeddings(
-                model=owner.model,
+                model=handles.model,
                 prompt_pad_len=prompt_pad_len,
                 max_new_tokens=max_new_tokens,
             )
@@ -303,24 +368,20 @@ def rollout_many_hf(
                 tokenizer=tokenizer,
                 prompt_pad_len=prompt_pad_len,
                 batch_size=int(input_ids_t.shape[0]),
-                rollout_template_policy=owner._eval_rollout_template_policy(),
+                rollout_template_policy=handles.rollout_template_policy,
             )
 
-            with unwrap_model_for_generation_fn(
-                owner.model_wrapped,
-                owner.accelerator,
-                gather_deepspeed3_params=getattr(
-                    owner.args,
-                    "ds3_gather_for_generation",
-                    False,
-                ),
+            with handles.unwrap_model_for_generation_fn(
+                handles.model_wrapped,
+                handles.accelerator,
+                gather_deepspeed3_params=handles.ds3_gather_for_generation,
             ) as unwrapped:
                 unwrapped.eval()
-                with owner._template_packing_disabled():
+                with handles.template_packing_disabled_fn():
                     with template.generate_context():
                         if (
-                            getattr(owner.model, "model_meta", None) is not None
-                            and owner.model.model_meta.is_multimodal
+                            getattr(handles.model, "model_meta", None) is not None
+                            and handles.model.model_meta.is_multimodal
                         ):
                             _, model_inputs = template.pre_forward_hook(
                                 unwrapped,
@@ -399,11 +460,29 @@ def rollout_many_hf_traced(
     decode_request: Any,
     unwrap_model_for_generation_fn: Callable[..., Any],
 ) -> List[Tuple[List[int], str, str, List[int], List[float], List[str]]]:
+    """Owner adapter for traced HF rollout generation."""
+
+    return rollout_many_hf_traced_with_handles(
+        handles=resolve_hf_rollout_backend_handles_from_owner(
+            owner=owner,
+            unwrap_model_for_generation_fn=unwrap_model_for_generation_fn,
+        ),
+        samples=samples,
+        decode_request=decode_request,
+    )
+
+
+def rollout_many_hf_traced_with_handles(
+    *,
+    handles: HFRolloutBackendHandles,
+    samples: Sequence[Mapping[str, Any]],
+    decode_request: Any,
+) -> List[Tuple[List[int], str, str, List[int], List[float], List[str]]]:
     """HF rollout backend with strict generated-token logprob tracing."""
 
     import torch
 
-    template = owner.template
+    template = handles.template
     tokenizer = template.tokenizer
     decode_mode = str(decode_request.decode_mode)
     if decode_mode == "beam":
@@ -414,7 +493,7 @@ def rollout_many_hf_traced(
             f"(greedy), got {float(decode_request.temperature)}"
         )
 
-    gen_cfg = getattr(owner.model, "generation_config", None)
+    gen_cfg = getattr(handles.model, "generation_config", None)
     if gen_cfg is None:
         from transformers import GenerationConfig
 
@@ -459,18 +538,8 @@ def rollout_many_hf_traced(
                 self.token_logprobs[index].append(float(logprob))
             return scores
 
-    from src.infer.runtime import (
-        current_rollout_context_from_owner,
-        rollout_decode_batch_size_from_owner,
-    )
-
     out: List[Tuple[List[int], str, str, List[int], List[float], List[str]]] = []
-    microbatch = int(
-        rollout_decode_batch_size_from_owner(
-            owner,
-            context=current_rollout_context_from_owner(owner),
-        )
-    )
+    microbatch = int(handles.decode_batch_size)
     to_device = import_swift_to_device()
 
     idx = 0
@@ -478,17 +547,17 @@ def rollout_many_hf_traced(
         chunk = list(samples[idx : idx + microbatch])
         idx += len(chunk)
 
-        with owner._template_packing_disabled():
+        with handles.template_packing_disabled_fn():
             batch, input_ids_t, prompt_ids_list = _hf_rollout_batch_inputs(
                 template=template,
                 samples=chunk,
                 to_device=to_device,
-                device=owner.model.device,
+                device=handles.model.device,
             )
 
         prompt_pad_len = int(input_ids_t.shape[1])
         enforce_hf_rollout_max_position_embeddings(
-            model=owner.model,
+            model=handles.model,
             prompt_pad_len=prompt_pad_len,
             max_new_tokens=int(decode_request.max_new_tokens),
         )
@@ -501,27 +570,23 @@ def rollout_many_hf_traced(
             tokenizer=tokenizer,
             prompt_pad_len=prompt_pad_len,
             batch_size=int(input_ids_t.shape[0]),
-            rollout_template_policy=owner._eval_rollout_template_policy(),
+            rollout_template_policy=handles.rollout_template_policy,
             trailing_processors=[tracer],
         )
         if logits_processor is None:
             logits_processor = LogitsProcessorList([tracer])
 
-        with unwrap_model_for_generation_fn(
-            owner.model_wrapped,
-            owner.accelerator,
-            gather_deepspeed3_params=getattr(
-                owner.args,
-                "ds3_gather_for_generation",
-                False,
-            ),
+        with handles.unwrap_model_for_generation_fn(
+            handles.model_wrapped,
+            handles.accelerator,
+            gather_deepspeed3_params=handles.ds3_gather_for_generation,
         ) as unwrapped:
             unwrapped.eval()
-            with owner._template_packing_disabled():
+            with handles.template_packing_disabled_fn():
                 with template.generate_context():
                     if (
-                        getattr(owner.model, "model_meta", None) is not None
-                        and owner.model.model_meta.is_multimodal
+                        getattr(handles.model, "model_meta", None) is not None
+                        and handles.model.model_meta.is_multimodal
                     ):
                         _, model_inputs = template.pre_forward_hook(
                             unwrapped,

@@ -16,6 +16,18 @@ COORDJSON_FORMAT = "coordjson"
 
 
 @dataclass(frozen=True)
+class RolloutPromptPolicyFacts:
+    """Resolved prompt policy consumed by rollout prompt normalization."""
+
+    rollout_backend: Literal["hf", "vllm"]
+    detection_sequence_format: str
+    training_prompt_variant: str
+    object_ordering: str
+    object_field_order: str
+    template_system: Optional[str]
+
+
+@dataclass(frozen=True)
 class DetectionPromptPolicy:
     name: str
     version: str
@@ -694,20 +706,42 @@ def prepare_rollout_prompt_samples_from_owner(
 
     from src.infer.runtime import effective_rollout_backend_from_owner
 
-    backend = (
-        rollout_backend
-        if rollout_backend is not None
-        else effective_rollout_backend_from_owner(owner, context="train")
+    facts = RolloutPromptPolicyFacts(
+        rollout_backend=(
+            rollout_backend
+            if rollout_backend is not None
+            else effective_rollout_backend_from_owner(owner, context="train")
+        ),
+        detection_sequence_format=str(owner._detection_sequence_format()),
+        training_prompt_variant=str(owner._training_prompt_variant()),
+        object_ordering=str(owner._object_ordering()),
+        object_field_order=str(owner._object_field_order()),
+        template_system=getattr(getattr(owner, "template", None), "system", None),
     )
+    return prepare_rollout_prompt_samples_from_facts(
+        samples,
+        facts=facts,
+        prompt_variant_override=prompt_variant_override,
+    )
+
+
+def prepare_rollout_prompt_samples_from_facts(
+    samples: Sequence[Mapping[str, Any]],
+    *,
+    facts: RolloutPromptPolicyFacts,
+    prompt_variant_override: Optional[str] = None,
+) -> list[Mapping[str, Any]]:
+    """Normalize rollout prompt samples from resolved prompt facts."""
+
     return prepare_rollout_prompt_samples(
         samples,
-        rollout_backend=backend,
+        rollout_backend=facts.rollout_backend,
         prompt_variant_override=prompt_variant_override,
-        detection_sequence_format=owner._detection_sequence_format(),
-        training_prompt_variant=owner._training_prompt_variant(),
-        object_ordering=owner._object_ordering(),
-        object_field_order=owner._object_field_order(),
-        template_system=getattr(getattr(owner, "template", None), "system", None),
+        detection_sequence_format=facts.detection_sequence_format,
+        training_prompt_variant=facts.training_prompt_variant,
+        object_ordering=facts.object_ordering,
+        object_field_order=facts.object_field_order,
+        template_system=facts.template_system,
     )
 
 

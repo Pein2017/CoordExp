@@ -407,6 +407,14 @@ def _evaluate_preloaded_records(
             options=options,
         )
         summary["metrics"].update(f1ish_summary["metrics"])
+        if not want_official:
+            summary["evaluation_status"] = "inspection"
+            summary["comparability"] = "non_comparable"
+            summary["comparison_scope"] = "raw_f1ish"
+        else:
+            summary["f1ish_evaluation_status"] = "inspection"
+            summary["f1ish_comparability"] = "non_comparable"
+            summary["f1ish_comparison_scope"] = "diagnostic_f1ish"
     else:
         f1ish_summary = {"matches_by_thr": {}}
 

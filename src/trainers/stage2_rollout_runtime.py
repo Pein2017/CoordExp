@@ -62,7 +62,10 @@ from src.infer.artifacts import (
     confidence_options_from_eval_config,
     score_stage2_confidence_eval_record,
 )
-from src.infer.parsing import parse_stage2_detection_rollout_predictions
+from src.infer.parsing import (
+    diagnostic_parser_result,
+    parse_stage2_detection_rollout_predictions,
+)
 from src.infer.runtime import (
     build_decode_request_from_rollout_owner,
     build_decode_request_from_rollout_matching_config,
@@ -152,6 +155,33 @@ from .rollout_matching.telemetry import (
     PendingTrainRolloutLog as _PendingTrainRolloutLog,
 )
 logger = get_logger()
+
+
+def _build_stage2_eval_invalid_artifact_record(
+    *,
+    eval_record_index: int,
+    sample: Mapping[str, Any],
+    parser_artifact_metadata: Mapping[str, Any],
+    reason: str,
+    message: str | None = None,
+) -> Dict[str, Any]:
+    images_raw = sample.get("images")
+    images = list(images_raw) if isinstance(images_raw, list) else []
+    metadata = sample.get("metadata")
+    return {
+        "index": int(eval_record_index),
+        "sample_id": sample.get("sample_id"),
+        "base_idx": sample.get("base_idx"),
+        "image": sample.get("image"),
+        "images": images,
+        "width": sample.get("width"),
+        "height": sample.get("height"),
+        "image_id": sample.get("image_id"),
+        "metadata": dict(metadata) if isinstance(metadata, Mapping) else None,
+        "parser_result": dict(parser_artifact_metadata),
+        "official_eval_invalid_reason": str(reason),
+        "official_eval_invalid_message": str(message or reason),
+    }
 
 
 def _sinkhorn_barycentric_targets(
@@ -4013,18 +4043,47 @@ class Stage2RolloutRuntime(Seq2SeqTrainer):
                         generated_token_text = None
                     n_samples += 1.0
 
-                    parsed_rollout = parse_stage2_detection_rollout_predictions(
-                        tokenizer=tok,
-                        response_token_ids=resp_ids,
-                        response_text=str(raw_resp_text or ""),
-                        rollout_template_policy=eval_rollout_template_policy,
-                        object_field_order=object_field_order,
-                        coord_id_to_bin=self._coord_id_map(),
-                        gt_object_factory=GTObject,
-                        compact_rollout_codec_factory=CompactFullRolloutCodec,
-                        parse_rollout_for_matching_fn=parse_rollout_for_matching,
-                        points_from_coord_tokens_fn=_points_from_coord_tokens,
-                    )
+                    try:
+                        parsed_rollout = parse_stage2_detection_rollout_predictions(
+                            tokenizer=tok,
+                            response_token_ids=resp_ids,
+                            response_text=str(raw_resp_text or ""),
+                            rollout_template_policy=eval_rollout_template_policy,
+                            object_field_order=object_field_order,
+                            coord_id_to_bin=self._coord_id_map(),
+                            gt_object_factory=GTObject,
+                            compact_rollout_codec_factory=CompactFullRolloutCodec,
+                            parse_rollout_for_matching_fn=parse_rollout_for_matching,
+                            points_from_coord_tokens_fn=_points_from_coord_tokens,
+                        )
+                    except Exception as exc:
+                        if not eval_detection_enabled:
+                            raise
+                        eval_record_index = int(eval_record_counter_local)
+                        eval_record_counter_local += 1
+                        parser_artifact_metadata = diagnostic_parser_result(
+                            predictions=(),
+                            parser_id="stage2_eval_parse_exception",
+                            errors=(exc.__class__.__name__,),
+                            diagnostics={
+                                "exception_type": exc.__class__.__name__,
+                                "exception_message": str(exc),
+                            },
+                            salvage_recovered=False,
+                        ).to_artifact_metadata()
+                        eval_rollout_artifacts_local.append(
+                            _build_stage2_eval_invalid_artifact_record(
+                                eval_record_index=int(eval_record_index),
+                                sample=sample,
+                                parser_artifact_metadata=parser_artifact_metadata,
+                                reason="parser_exception_not_metric_bearing",
+                                message=(
+                                    "Stage-2 official eval parser raised before "
+                                    f"metric-bearing output: {exc.__class__.__name__}: {exc}"
+                                ),
+                            )
+                        )
+                        continue
                     parse = parsed_rollout.parse
                     pred_meta: List[Any] = list(parsed_rollout.pred_meta)
                     preds: List[GTObject] = list(parsed_rollout.preds)
@@ -4105,18 +4164,53 @@ class Stage2RolloutRuntime(Seq2SeqTrainer):
                     if eval_detection_enabled:
                         eval_record_index = int(eval_record_counter_local)
                         eval_record_counter_local += 1
-                        confidence_objects_payload: List[Dict[str, Any]] = []
-                        base_eval_record = _build_eval_detection_record_confidence_postop_input(
-                            sample=sample,
-                            gts=gts,
-                            preds=preds,
-                            pred_meta=pred_meta,
-                            object_field_order=object_field_order,
-                            record_index=eval_record_index,
-                            raw_text=raw_resp_text,
-                            error_codes=eval_error_codes,
-                            error_entries=eval_error_entries,
+                        parser_result = parsed_rollout.parser_result
+                        parser_artifact_metadata = (
+                            parser_result.to_artifact_metadata()
                         )
+                        if (
+                            not bool(parser_result.metric_bearing)
+                            or parser_result.parser_policy != "strict"
+                            or bool(parser_result.salvage_recovered)
+                        ):
+                            eval_rollout_artifacts_local.append(
+                                _build_stage2_eval_invalid_artifact_record(
+                                    eval_record_index=int(eval_record_index),
+                                    sample=sample,
+                                    parser_artifact_metadata=parser_artifact_metadata,
+                                    reason="parser_result_not_metric_bearing",
+                                    message=(
+                                        "Stage-2 official eval requires strict "
+                                        "metric-bearing parser output."
+                                    ),
+                                )
+                            )
+                            continue
+
+                        confidence_objects_payload: List[Dict[str, Any]] = []
+                        try:
+                            base_eval_record = _build_eval_detection_record_confidence_postop_input(
+                                sample=sample,
+                                gts=gts,
+                                preds=preds,
+                                pred_meta=pred_meta,
+                                object_field_order=object_field_order,
+                                record_index=eval_record_index,
+                                raw_text=raw_resp_text,
+                                error_codes=eval_error_codes,
+                                error_entries=eval_error_entries,
+                            )
+                        except ValueError as exc:
+                            eval_rollout_artifacts_local.append(
+                                _build_stage2_eval_invalid_artifact_record(
+                                    eval_record_index=int(eval_record_index),
+                                    sample=sample,
+                                    parser_artifact_metadata=parser_artifact_metadata,
+                                    reason="source_identity_or_dimensions_invalid",
+                                    message=str(exc),
+                                )
+                            )
+                            continue
                         scored_eval_record: Dict[str, Any] | None = None
 
                         if eval_detection_use_confidence_postop:
@@ -4157,7 +4251,7 @@ class Stage2RolloutRuntime(Seq2SeqTrainer):
                             eval_detection_records_local.append(scored_eval_record)
 
                         if scored_eval_record is not None:
-                            eval_rollout_artifacts_local.append(
+                            artifact_record = (
                                 build_stage2_rollout_eval_artifact_record(
                                     eval_record_index=int(eval_record_index),
                                     sample=sample,
@@ -4177,6 +4271,15 @@ class Stage2RolloutRuntime(Seq2SeqTrainer):
                                     confidence_objects_payload=confidence_objects_payload,
                                 )
                             )
+                            artifact_record["parser_result"] = dict(
+                                parser_artifact_metadata
+                            )
+                            parse_payload = artifact_record.get("parse")
+                            if isinstance(parse_payload, MutableMapping):
+                                parse_payload["parser_result"] = dict(
+                                    parser_artifact_metadata
+                                )
+                            eval_rollout_artifacts_local.append(artifact_record)
 
                     if do_dump and (
                         len(dump_fail_samples) < dump_max_samples

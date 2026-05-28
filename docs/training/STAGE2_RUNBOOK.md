@@ -28,7 +28,7 @@ construction, post-rollout packing, and training metrics.
 ## Normative References
 
 - [`openspec/specs/stage2-rollout-correction/spec.md`](../../openspec/specs/stage2-rollout-correction/spec.md)
-- [`openspec/specs/rollout-matching-sft/spec.md`](../../openspec/specs/rollout-matching-sft/spec.md)
+- [`openspec/specs/rollout-matching-sft/spec.md`](../../openspec/specs/rollout-matching-sft/spec.md) only for retired-contract rejection checks
 - [`openspec/specs/teacher-forcing-unified-loss-registry/spec.md`](../../openspec/specs/teacher-forcing-unified-loss-registry/spec.md)
 - [`openspec/specs/trainer-metrics-components/spec.md`](../../openspec/specs/trainer-metrics-components/spec.md)
 - [`openspec/specs/runtime-architecture-refactor-program/spec.md`](../../openspec/specs/runtime-architecture-refactor-program/spec.md)

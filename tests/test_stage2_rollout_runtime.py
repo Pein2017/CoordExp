@@ -15,6 +15,7 @@ import torch
 
 from src.config.prompts import build_dense_system_prompt, build_dense_user_prompt
 from src.config.rollout_matching_schema import RolloutEvalDetectionConfig
+from src.common.detection_sequence import BOX_START_TOKEN, OBJECT_REF_START_TOKEN
 from src.infer.artifacts import load_comparable_artifact
 from src.infer.backend import (
     build_hf_rollout_logits_processor,
@@ -23,6 +24,7 @@ from src.infer.backend import (
 )
 from src.infer.backend_vllm_infer import rollout_many_vllm_colocate
 from src.infer.backend_vllm_server import rollout_many_vllm_server
+from src.infer.parsing import diagnostic_parser_result
 from src.infer.prompt import prepare_rollout_prompt_samples_from_owner
 from src.infer.runtime import build_decode_request_from_rollout_owner
 from src.trainers.rollout_matching.matching import (
@@ -32,6 +34,7 @@ from src.trainers.rollout_matching.matching import (
 from src.trainers.rollout_aligned_evaluator import (
     _enrich_stage2_eval_artifact_source_provenance,
     _write_stage2_eval_score_provenance,
+    build_eval_detection_record_confidence_postop_input,
     finalize_rollout_aligned_evaluation,
 )
 from src.trainers.stage2_rollout_runtime import (
@@ -65,6 +68,35 @@ NOOP_ROLLOUT_LOGGER = types.SimpleNamespace(
     warning=lambda *args, **kwargs: None,
     exception=lambda *args, **kwargs: None,
 )
+
+
+def _stage2_eval_writer_artifact(
+    *,
+    prompt_token_ids: list[object] | None = None,
+    parser_result: dict[str, object] | None = None,
+) -> dict[str, object]:
+    base_record = {
+        "image": "img.jpg",
+        "images": ["img.jpg"],
+        "width": 640,
+        "height": 480,
+        "source_record_id": "sample_id:0",
+        "sample_id": 0,
+        "gt": [],
+        "pred": [],
+    }
+    return {
+        "base_record": dict(base_record),
+        "scored_record": dict(base_record),
+        "rollout": {"prompt_token_ids": list(prompt_token_ids or [1, 2])},
+        "parser_result": parser_result
+        or {
+            "parser_id": "compact_full",
+            "parser_policy": "strict",
+            "metric_bearing": True,
+            "salvage_recovered": False,
+        },
+    }
 
 
 def _assert_stage2_eval_files(eval_dir: Path, *, trace_metadata: bool) -> None:
@@ -202,6 +234,7 @@ def test_stage2_eval_model_identity_includes_backend_sync_identity(
         eval_vllm_mode="server",
         eval_detection_score_mode="constant",
         eval_detection_cfg={},
+        eval_rollout_artifacts_all=[_stage2_eval_writer_artifact()],
     )
     first = json.loads(
         scored_path.with_suffix(scored_path.suffix + ".provenance.json").read_text(
@@ -222,6 +255,7 @@ def test_stage2_eval_model_identity_includes_backend_sync_identity(
         eval_vllm_mode="server",
         eval_detection_score_mode="constant",
         eval_detection_cfg={},
+        eval_rollout_artifacts_all=[_stage2_eval_writer_artifact()],
     )
     second = json.loads(
         scored_path.with_suffix(scored_path.suffix + ".provenance.json").read_text(
@@ -264,6 +298,7 @@ def test_stage2_hf_eval_model_identity_ignores_stale_backend_sync_identity(
         eval_vllm_mode="local",
         eval_detection_score_mode="constant",
         eval_detection_cfg={},
+        eval_rollout_artifacts_all=[_stage2_eval_writer_artifact()],
     )
     no_sync = json.loads(
         scored_path.with_suffix(scored_path.suffix + ".provenance.json").read_text(
@@ -286,6 +321,7 @@ def test_stage2_hf_eval_model_identity_ignores_stale_backend_sync_identity(
         eval_vllm_mode="local",
         eval_detection_score_mode="constant",
         eval_detection_cfg={},
+        eval_rollout_artifacts_all=[_stage2_eval_writer_artifact()],
     )
     stale_sync = json.loads(
         scored_path.with_suffix(scored_path.suffix + ".provenance.json").read_text(
@@ -329,6 +365,7 @@ def test_stage2_colocate_eval_model_identity_ignores_stale_server_sync_identity(
         eval_vllm_mode="colocate",
         eval_detection_score_mode="constant",
         eval_detection_cfg={},
+        eval_rollout_artifacts_all=[_stage2_eval_writer_artifact()],
     )
     no_sync = json.loads(
         scored_path.with_suffix(scored_path.suffix + ".provenance.json").read_text(
@@ -351,6 +388,7 @@ def test_stage2_colocate_eval_model_identity_ignores_stale_server_sync_identity(
         eval_vllm_mode="colocate",
         eval_detection_score_mode="constant",
         eval_detection_cfg={},
+        eval_rollout_artifacts_all=[_stage2_eval_writer_artifact()],
     )
     stale_sync = json.loads(
         scored_path.with_suffix(scored_path.suffix + ".provenance.json").read_text(
@@ -361,6 +399,259 @@ def test_stage2_colocate_eval_model_identity_ignores_stale_server_sync_identity(
     assert no_sync["model_identity_fingerprint"] == stale_sync[
         "model_identity_fingerprint"
     ]
+
+
+def test_stage2_eval_score_provenance_requires_rollout_artifacts(
+    tmp_path: Path,
+) -> None:
+    raw_path = tmp_path / "gt_vs_pred.jsonl"
+    raw_path.write_text(
+        '{"image":"img.jpg","images":["img.jpg"],"width":640,"height":480,"gt":[],"pred":[]}\n',
+        encoding="utf-8",
+    )
+    scored_path = tmp_path / "gt_vs_pred_scored.jsonl"
+    owner = types.SimpleNamespace(
+        args=types.SimpleNamespace(output_dir=str(tmp_path)),
+        model=types.SimpleNamespace(
+            config=types.SimpleNamespace(name_or_path="live-stage2-model")
+        ),
+        rollout_matching_cfg={"rollout_backend": "hf", "max_new_tokens": 8},
+        _object_field_order=lambda: "desc_first",
+        _object_ordering=lambda: "sorted",
+        _detection_sequence_format=lambda: "compact_full",
+    )
+
+    with pytest.raises(ValueError, match="artifact-derived prompt/parser provenance"):
+        _write_stage2_eval_score_provenance(
+            owner=owner,
+            scored_path=scored_path,
+            raw_path=raw_path,
+            eval_prompt_variant="coco_80",
+            eval_rollout_backend="hf",
+            eval_vllm_mode="local",
+            eval_detection_score_mode="constant",
+            eval_detection_cfg={},
+        )
+
+    assert not scored_path.with_suffix(scored_path.suffix + ".provenance.json").exists()
+
+
+def test_stage2_eval_score_provenance_rejects_synthetic_supplied_maps(
+    tmp_path: Path,
+) -> None:
+    raw_path = tmp_path / "gt_vs_pred.jsonl"
+    raw_path.write_text(
+        '{"image":"img.jpg","images":["img.jpg"],"width":640,"height":480,"gt":[],"pred":[]}\n',
+        encoding="utf-8",
+    )
+    scored_path = tmp_path / "gt_vs_pred_scored.jsonl"
+    owner = types.SimpleNamespace(
+        args=types.SimpleNamespace(output_dir=str(tmp_path)),
+        model=types.SimpleNamespace(
+            config=types.SimpleNamespace(name_or_path="live-stage2-model")
+        ),
+        rollout_matching_cfg={"rollout_backend": "hf", "max_new_tokens": 8},
+        _object_field_order=lambda: "desc_first",
+        _object_ordering=lambda: "sorted",
+        _detection_sequence_format=lambda: "compact_full",
+    )
+
+    with pytest.raises(ValueError, match="pass eval_rollout_artifacts_all"):
+        _write_stage2_eval_score_provenance(
+            owner=owner,
+            scored_path=scored_path,
+            raw_path=raw_path,
+            eval_prompt_variant="coco_80",
+            eval_rollout_backend="hf",
+            eval_vllm_mode="local",
+            eval_detection_score_mode="constant",
+            eval_detection_cfg={},
+            prompt_provenance={
+                "schema_version": "coordexp_stage2_eval_prompt_provenance_v1",
+                "source": "synthetic_test_payload",
+            },
+            parser_provenance={
+                "schema_version": "coordexp_stage2_eval_parser_provenance_v1",
+                "source": "synthetic_test_payload",
+                "all_parser_policy_strict": True,
+            },
+        )
+
+    assert not scored_path.with_suffix(scored_path.suffix + ".provenance.json").exists()
+
+
+def test_stage2_eval_prompt_provenance_binds_prompt_tokens_and_format(
+    tmp_path: Path,
+) -> None:
+    raw_path = tmp_path / "gt_vs_pred.jsonl"
+    raw_path.write_text(
+        '{"image":"img.jpg","images":["img.jpg"],"width":640,"height":480,"gt":[],"pred":[]}\n',
+        encoding="utf-8",
+    )
+    scored_path = tmp_path / "gt_vs_pred_scored.jsonl"
+    scored_path.write_text("", encoding="utf-8")
+
+    def _owner(detection_sequence_format: str):
+        return types.SimpleNamespace(
+            args=types.SimpleNamespace(output_dir=str(tmp_path)),
+            model=types.SimpleNamespace(
+                config=types.SimpleNamespace(name_or_path="live-stage2-model")
+            ),
+            rollout_matching_cfg={
+                "rollout_backend": "hf",
+                "max_new_tokens": 8,
+                "repetition_penalty": 1.0,
+            },
+            _object_field_order=lambda: "desc_first",
+            _object_ordering=lambda: "sorted",
+            _training_prompt_variant=lambda: "default",
+            _detection_sequence_format=lambda: detection_sequence_format,
+            _eval_rollout_template_policy=lambda: types.SimpleNamespace(
+                template_family=detection_sequence_format,
+                decode_policy="compact_grammar",
+                bbox_format="xyxy",
+                object_field_order="desc_first",
+            ),
+        )
+
+    def _artifact(prompt_token_ids: list[int]) -> dict[str, object]:
+        base_record = {
+            "image": "img.jpg",
+            "images": ["img.jpg"],
+            "width": 640,
+            "height": 480,
+            "source_record_id": "sample_id:0",
+            "sample_id": 0,
+            "gt": [],
+            "pred": [],
+        }
+        return {
+            "base_record": dict(base_record),
+            "scored_record": dict(base_record),
+            "rollout": {"prompt_token_ids": list(prompt_token_ids)},
+            "parser_result": {
+                "parser_id": "compact_full",
+                "parser_policy": "strict",
+                "metric_bearing": True,
+                "salvage_recovered": False,
+            },
+        }
+
+    _write_stage2_eval_score_provenance(
+        owner=_owner("compact_full"),
+        scored_path=scored_path,
+        raw_path=raw_path,
+        eval_prompt_variant="coco_80",
+        eval_rollout_backend="hf",
+        eval_vllm_mode="local",
+        eval_detection_score_mode="constant",
+        eval_detection_cfg={},
+        eval_rollout_artifacts_all=[_artifact([1, 2, 3])],
+    )
+    first = json.loads(
+        scored_path.with_suffix(scored_path.suffix + ".provenance.json").read_text(
+            encoding="utf-8"
+        )
+    )
+
+    _write_stage2_eval_score_provenance(
+        owner=_owner("compact_full"),
+        scored_path=scored_path,
+        raw_path=raw_path,
+        eval_prompt_variant="coco_80",
+        eval_rollout_backend="hf",
+        eval_vllm_mode="local",
+        eval_detection_score_mode="constant",
+        eval_detection_cfg={},
+        eval_rollout_artifacts_all=[_artifact([1, 2, 4])],
+    )
+    token_changed = json.loads(
+        scored_path.with_suffix(scored_path.suffix + ".provenance.json").read_text(
+            encoding="utf-8"
+        )
+    )
+
+    _write_stage2_eval_score_provenance(
+        owner=_owner("coordjson"),
+        scored_path=scored_path,
+        raw_path=raw_path,
+        eval_prompt_variant="coco_80",
+        eval_rollout_backend="hf",
+        eval_vllm_mode="local",
+        eval_detection_score_mode="constant",
+        eval_detection_cfg={},
+        eval_rollout_artifacts_all=[_artifact([1, 2, 3])],
+    )
+    format_changed = json.loads(
+        scored_path.with_suffix(scored_path.suffix + ".provenance.json").read_text(
+            encoding="utf-8"
+        )
+    )
+
+    assert first["prompt_policy_fingerprint"].startswith("prompt_policy:")
+    assert first["prompt_policy_fingerprint"] != token_changed[
+        "prompt_policy_fingerprint"
+    ]
+    assert first["prompt_policy_fingerprint"] != format_changed[
+        "prompt_policy_fingerprint"
+    ]
+    assert first["prompt_provenance"]["source"] == "stage2_eval_rollout_artifacts"
+    assert first["prompt_provenance"]["detection_sequence_format"] == "compact_full"
+    assert first["prompt_provenance"]["prompt_tokens"]["record_count"] == 1
+    assert first["prompt_provenance"]["prompt_tokens"]["status"] == "backend_recorded"
+    assert first["prompt_provenance"]["prompt_visual_parity"]["verified"] is False
+    assert first["parser_policy"] == "strict"
+    assert first["parser_provenance"]["all_parser_policy_strict"] is True
+    assert first["parser_provenance"]["any_salvage_recovered"] is False
+    assert first["prompt_provenance"]["prompt_tokens"]["token_records_sha256"] != (
+        token_changed["prompt_provenance"]["prompt_tokens"]["token_records_sha256"]
+    )
+
+
+def test_stage2_eval_score_provenance_rejects_non_strict_parser_metadata(
+    tmp_path: Path,
+) -> None:
+    raw_path = tmp_path / "gt_vs_pred.jsonl"
+    raw_path.write_text(
+        '{"image":"img.jpg","images":["img.jpg"],"width":640,"height":480,"gt":[],"pred":[]}\n',
+        encoding="utf-8",
+    )
+    scored_path = tmp_path / "gt_vs_pred_scored.jsonl"
+    owner = types.SimpleNamespace(
+        args=types.SimpleNamespace(output_dir=str(tmp_path)),
+        model=types.SimpleNamespace(
+            config=types.SimpleNamespace(name_or_path="live-stage2-model")
+        ),
+        rollout_matching_cfg={"rollout_backend": "hf", "max_new_tokens": 8},
+        _object_field_order=lambda: "desc_first",
+        _object_ordering=lambda: "sorted",
+        _training_prompt_variant=lambda: "default",
+        _detection_sequence_format=lambda: "compact_full",
+    )
+
+    with pytest.raises(ValueError, match="metric_bearing=false"):
+        _write_stage2_eval_score_provenance(
+            owner=owner,
+            scored_path=scored_path,
+            raw_path=raw_path,
+            eval_prompt_variant="coco_80",
+            eval_rollout_backend="hf",
+            eval_vllm_mode="local",
+            eval_detection_score_mode="constant",
+            eval_detection_cfg={},
+            eval_rollout_artifacts_all=[
+                _stage2_eval_writer_artifact(
+                    parser_result={
+                        "parser_id": "compact_full",
+                        "parser_policy": "diagnostic",
+                        "metric_bearing": False,
+                        "salvage_recovered": True,
+                    },
+                )
+            ],
+        )
+
+    assert not scored_path.with_suffix(scored_path.suffix + ".provenance.json").exists()
 
 
 def test_rollout_trainer_checkpoint_runtime_state_round_trip() -> None:
@@ -1068,13 +1359,18 @@ def test_rollout_many_enforces_server_chunk_cap_for_all_callers(monkeypatch) -> 
 
     def _capture_rollout_many_vllm(
         *,
-        owner,
+        handles,
+        logger,
         samples,
         debug_samples=None,
         request_index_offset=0,
+        with_logprobs=False,
         decode_override=None,
+        per_server_rank_request_caps_fn=None,
+        allocate_weighted_counts_with_caps_fn=None,
     ):
-        del owner, decode_override
+        del handles, logger, with_logprobs, decode_override
+        del per_server_rank_request_caps_fn, allocate_weighted_counts_with_caps_fn
         call_samples.append(list(samples))
         call_debug_samples.append(
             list(debug_samples) if debug_samples is not None else []
@@ -1086,7 +1382,11 @@ def test_rollout_many_enforces_server_chunk_cap_for_all_callers(monkeypatch) -> 
     trainer._effective_rollout_backend = lambda context="train": "vllm"
     trainer._rollout_decode_batch_size_per_rank = lambda **_kwargs: 2
     monkeypatch.setattr(
-        "src.infer.rollout_dispatch.rollout_many_vllm",
+        "src.infer.rollout_dispatch.resolve_vllm_server_rollout_handles_from_owner",
+        lambda **_kwargs: types.SimpleNamespace(per_rank_chunk_fn=lambda: 2),
+    )
+    monkeypatch.setattr(
+        "src.infer.rollout_dispatch.rollout_many_vllm_server_with_handles",
         _capture_rollout_many_vllm,
     )
 
@@ -1124,13 +1424,18 @@ def test_rollout_many_offsets_server_chunks_from_caller_request_index(monkeypatc
 
     def _capture_rollout_many_vllm(
         *,
-        owner,
+        handles,
+        logger,
         samples,
         debug_samples=None,
         request_index_offset=0,
+        with_logprobs=False,
         decode_override=None,
+        per_server_rank_request_caps_fn=None,
+        allocate_weighted_counts_with_caps_fn=None,
     ):
-        del owner, debug_samples, decode_override
+        del handles, logger, debug_samples, with_logprobs, decode_override
+        del per_server_rank_request_caps_fn, allocate_weighted_counts_with_caps_fn
         call_offsets.append(int(request_index_offset))
         return [([1], "{}", "greedy", [2]) for _ in samples]
 
@@ -1138,7 +1443,11 @@ def test_rollout_many_offsets_server_chunks_from_caller_request_index(monkeypatc
     trainer._effective_rollout_backend = lambda context="train": "vllm"
     trainer._rollout_decode_batch_size_per_rank = lambda **_kwargs: 2
     monkeypatch.setattr(
-        "src.infer.rollout_dispatch.rollout_many_vllm",
+        "src.infer.rollout_dispatch.resolve_vllm_server_rollout_handles_from_owner",
+        lambda **_kwargs: types.SimpleNamespace(per_rank_chunk_fn=lambda: 2),
+    )
+    monkeypatch.setattr(
+        "src.infer.rollout_dispatch.rollout_many_vllm_server_with_handles",
         _capture_rollout_many_vllm,
     )
 
@@ -1174,7 +1483,7 @@ def test_rollout_many_server_dispatch_reaches_shared_server_backend(
 
     def _capture_shared_server_backend(
         *,
-        owner,
+        handles,
         logger,
         samples,
         debug_samples=None,
@@ -1184,10 +1493,9 @@ def test_rollout_many_server_dispatch_reaches_shared_server_backend(
         per_server_rank_request_caps_fn=None,
         allocate_weighted_counts_with_caps_fn=None,
     ):
-        del logger, per_server_rank_request_caps_fn, allocate_weighted_counts_with_caps_fn
+        del handles, logger, per_server_rank_request_caps_fn, allocate_weighted_counts_with_caps_fn
         calls.append(
             {
-                "owner": owner,
                 "samples": list(samples),
                 "debug_samples": list(debug_samples or []),
                 "request_index_offset": int(request_index_offset),
@@ -1201,7 +1509,11 @@ def test_rollout_many_server_dispatch_reaches_shared_server_backend(
     trainer._effective_rollout_backend = lambda context="train": "vllm"
     trainer._rollout_decode_batch_size_per_rank = lambda **_kwargs: 2
     monkeypatch.setattr(
-        "src.infer.rollout_dispatch.rollout_many_vllm_server",
+        "src.infer.rollout_dispatch.resolve_vllm_server_rollout_handles_from_owner",
+        lambda **_kwargs: types.SimpleNamespace(per_rank_chunk_fn=lambda: 2),
+    )
+    monkeypatch.setattr(
+        "src.infer.rollout_dispatch.rollout_many_vllm_server_with_handles",
         _capture_shared_server_backend,
     )
 
@@ -1229,7 +1541,6 @@ def test_rollout_many_server_dispatch_reaches_shared_server_backend(
     assert len(calls) == 2
     assert [len(call["samples"]) for call in calls] == [2, 1]
     assert [call["request_index_offset"] for call in calls] == [5, 7]
-    assert all(call["owner"] is trainer for call in calls)
     assert all(call["decode_override"] == decode_override for call in calls)
     assert all(call["with_logprobs"] is False for call in calls)
     for call in calls:
@@ -1256,24 +1567,24 @@ def test_rollout_many_traced_vllm_prepares_prompt_and_keeps_debug_samples(
 
     def _capture_vllm_traced(
         *,
-        owner,
-        samples,
+        handles,
+        samples_for_rollout,
         debug_samples=None,
         request_index_offset=0,
         decode_override=None,
     ):
-        captured["owner"] = owner
-        captured["samples"] = list(samples)
+        del handles
+        captured["samples"] = list(samples_for_rollout)
         captured["debug_samples"] = list(debug_samples or [])
         captured["request_index_offset"] = int(request_index_offset)
         captured["decode_override"] = dict(decode_override or {})
         return [
             ([1], "{}", "greedy", [2], [0.0], ["tok"])
-            for _sample in samples
+            for _sample in samples_for_rollout
         ]
 
     monkeypatch.setattr(
-        "src.infer.rollout_dispatch.rollout_many_vllm_traced",
+        "src.infer.rollout_dispatch.rollout_many_traced_with_handles",
         _capture_vllm_traced,
     )
 
@@ -1300,7 +1611,6 @@ def test_rollout_many_traced_vllm_prepares_prompt_and_keeps_debug_samples(
     )
 
     assert out == [([1], "{}", "greedy", [2], [0.0], ["tok"])]
-    assert captured["owner"] is trainer
     assert captured["request_index_offset"] == 9
     assert captured["decode_override"] == decode_override
     prepared_samples = captured["samples"]
@@ -1382,13 +1692,18 @@ def test_rollout_many_passes_untrimmed_samples_for_server_debug_dump(monkeypatch
 
     def _capture_rollout_many_vllm(
         *,
-        owner,
+        handles,
+        logger,
         samples,
         debug_samples=None,
         request_index_offset=0,
+        with_logprobs=False,
         decode_override=None,
+        per_server_rank_request_caps_fn=None,
+        allocate_weighted_counts_with_caps_fn=None,
     ):
-        del owner, decode_override
+        del handles, logger, with_logprobs, decode_override
+        del per_server_rank_request_caps_fn, allocate_weighted_counts_with_caps_fn
         captured["samples"] = samples
         captured["debug_samples"] = debug_samples
         captured["request_index_offset"] = int(request_index_offset)
@@ -1398,7 +1713,11 @@ def test_rollout_many_passes_untrimmed_samples_for_server_debug_dump(monkeypatch
     trainer._effective_rollout_backend = lambda context="train": "vllm"
     trainer._rollout_decode_batch_size_per_rank = lambda **_kwargs: 4
     monkeypatch.setattr(
-        "src.infer.rollout_dispatch.rollout_many_vllm",
+        "src.infer.rollout_dispatch.resolve_vllm_server_rollout_handles_from_owner",
+        lambda **_kwargs: types.SimpleNamespace(per_rank_chunk_fn=lambda: 4),
+    )
+    monkeypatch.setattr(
+        "src.infer.rollout_dispatch.rollout_many_vllm_server_with_handles",
         _capture_rollout_many_vllm,
     )
 
@@ -1818,7 +2137,13 @@ def test_evaluate_emits_rollout_metrics_and_runs_callback(
     trainer.state = types.SimpleNamespace(global_step=7)
     trainer.control = types.SimpleNamespace(tag="ctrl")
     trainer.template = types.SimpleNamespace(tokenizer=_DummyTokenizerRM())
-    trainer._cfg = lambda _k, default=None: default
+
+    def _cfg(key, default=None):
+        if key == "eval_detection":
+            return {"enabled": False}
+        return default
+
+    trainer._cfg = _cfg
     trainer._effective_rollout_backend = lambda context="train": "hf"
     trainer._desc_monitor_cfg = lambda: {"enabled": False}
     trainer._coord_id_map = lambda: {i: i for i in range(1000)}
@@ -1846,6 +2171,7 @@ def test_evaluate_emits_rollout_metrics_and_runs_callback(
             dropped_invalid=0,
             dropped_ambiguous=0,
             truncated=False,
+            parser_policy="strict",
         ),
         101: types.SimpleNamespace(
             response_token_ids=[101],
@@ -1960,17 +2286,18 @@ def test_rollout_many_overrides_last_user_prompt_for_eval_variant(monkeypatch) -
 
     def _fake_rollout_many_hf(
         *,
-        owner,
-        samples,
-        decode_request,
-        unwrap_model_for_generation_fn,
+        handles,
+        samples_for_rollout,
+        debug_samples,
+        request_index_offset=0,
+        decode_override=None,
     ):
-        del owner, decode_request, unwrap_model_for_generation_fn
-        captured["samples"] = samples
-        return [([], "{}", "greedy", []) for _ in samples]
+        del handles, debug_samples, request_index_offset, decode_override
+        captured["samples"] = samples_for_rollout
+        return [([], "{}", "greedy", []) for _ in samples_for_rollout]
 
     monkeypatch.setattr(
-        "src.infer.rollout_dispatch.rollout_many_hf",
+        "src.infer.rollout_dispatch.rollout_many_with_handles",
         _fake_rollout_many_hf,
     )
 
@@ -2026,17 +2353,18 @@ def test_rollout_many_rebuilds_compact_full_prompt_from_coordjson_source(
 
     def _fake_rollout_many_hf(
         *,
-        owner,
-        samples,
-        decode_request,
-        unwrap_model_for_generation_fn,
+        handles,
+        samples_for_rollout,
+        debug_samples,
+        request_index_offset=0,
+        decode_override=None,
     ):
-        del owner, decode_request, unwrap_model_for_generation_fn
-        captured["samples"] = samples
-        return [([], "{}", "greedy", []) for _ in samples]
+        del handles, debug_samples, request_index_offset, decode_override
+        captured["samples"] = samples_for_rollout
+        return [([], "{}", "greedy", []) for _ in samples_for_rollout]
 
     monkeypatch.setattr(
-        "src.infer.rollout_dispatch.rollout_many_hf",
+        "src.infer.rollout_dispatch.rollout_many_with_handles",
         _fake_rollout_many_hf,
     )
 
@@ -2190,18 +2518,19 @@ def test_rollout_many_forwards_decode_override_to_hf_backend(monkeypatch) -> Non
 
     def _fake_rollout_many_hf(
         *,
-        owner,
-        samples,
-        decode_request,
-        unwrap_model_for_generation_fn,
+        handles,
+        samples_for_rollout,
+        debug_samples,
+        request_index_offset=0,
+        decode_override=None,
     ):
-        del owner, unwrap_model_for_generation_fn
-        captured["samples"] = samples
-        captured["decode_request"] = decode_request
-        return [([], "{}", "greedy", []) for _ in samples]
+        del debug_samples, request_index_offset, decode_override
+        captured["samples"] = samples_for_rollout
+        captured["decode_request"] = handles.decode_request
+        return [([], "{}", "greedy", []) for _ in samples_for_rollout]
 
     monkeypatch.setattr(
-        "src.infer.rollout_dispatch.rollout_many_hf",
+        "src.infer.rollout_dispatch.rollout_many_with_handles",
         _fake_rollout_many_hf,
     )
     trainer._effective_rollout_backend = lambda context="train": "hf"
@@ -2598,10 +2927,12 @@ def test_vllm_server_rollout_rejects_beam_decode_override() -> None:
         )
 
 
-def test_evaluate_emits_coco_map_metrics_when_eval_detection_enabled(
-    monkeypatch,
+def _make_eval_validity_trainer(
+    *,
     tmp_path: Path,
-) -> None:
+    sample: dict[str, object],
+    monkeypatch,
+) -> Stage2RolloutRuntime:
     trainer = object.__new__(Stage2RolloutRuntime)
 
     class _DummyEvalModel:
@@ -2638,6 +2969,528 @@ def test_evaluate_emits_coco_map_metrics_when_eval_detection_enabled(
     trainer._desc_monitor_cfg = lambda: {"enabled": False}
     trainer._coord_id_map = lambda: {i: i for i in range(1000)}
     trainer._effective_rollout_backend = lambda context="train": "hf"
+    trainer.get_eval_dataloader = lambda _eval_dataset=None: [[sample]]
+    trainer._rollout_many = (
+        lambda batch, **_kwargs: [([100], "{}", "greedy", []) for _ in batch]
+    )
+
+    parse_obj = types.SimpleNamespace(
+        response_token_ids=[100],
+        valid_objects=[
+            types.SimpleNamespace(
+                index=0,
+                geom_type="bbox_2d",
+                coord_token_indices=[0, 1, 2, 3],
+                desc="cat",
+            )
+        ],
+        dropped_invalid=0,
+        dropped_ambiguous=0,
+        truncated=False,
+        parser_policy="strict",
+    )
+    monkeypatch.setattr(
+        "src.trainers.stage2_rollout_runtime.parse_rollout_for_matching",
+        lambda **_kwargs: parse_obj,
+    )
+    monkeypatch.setattr(
+        "src.trainers.stage2_rollout_runtime._points_from_coord_tokens",
+        lambda **_kwargs: [0, 0, 10, 10],
+    )
+    monkeypatch.setattr(
+        "src.trainers.stage2_rollout_runtime._extract_gt_objects",
+        lambda _sample: [
+            GTObject(
+                index=0,
+                geom_type="bbox_2d",
+                points_norm1000=[0, 0, 10, 10],
+                desc="cat",
+            )
+        ],
+    )
+    monkeypatch.setattr(
+        "src.trainers.stage2_rollout_runtime.greedy_match_iou",
+        lambda **_kwargs: types.SimpleNamespace(
+            matched_pairs=[(0, 0)],
+            fp_pred_indices=[],
+            fn_gt_indices=[],
+            gating_rejections=0,
+            matched_maskiou_sum=0.9,
+            matched_maskiou_count=1,
+        ),
+    )
+
+    monkeypatch.setattr(
+        "src.trainers.rollout_aligned_evaluator.evaluate_and_save",
+        lambda _pred_jsonl, *, options: {"metrics": {"bbox_AP": 0.123}},
+    )
+    trainer.log = lambda _metrics: None
+    trainer.callback_handler = types.SimpleNamespace(
+        on_evaluate=lambda args, state, control, metrics: control
+    )
+    return trainer
+
+
+def _valid_eval_sample() -> dict[str, object]:
+    return {
+        "sample_id": 0,
+        "width": 640,
+        "height": 480,
+        "images": ["img.jpg"],
+        "messages": [
+            {
+                "role": "user",
+                "content": [
+                    {"type": "image", "image": "img.jpg"},
+                    {"type": "text", "text": "old prompt"},
+                ],
+            },
+            {
+                "role": "assistant",
+                "content": [{"type": "text", "text": '{"objects": []}'}],
+            },
+        ],
+    }
+
+
+def test_stage2_eval_missing_image_identity_raises_before_artifacts_exist(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    sample = _valid_eval_sample()
+    sample.pop("images")
+    trainer = _make_eval_validity_trainer(
+        tmp_path=tmp_path,
+        sample=sample,
+        monkeypatch=monkeypatch,
+    )
+
+    with pytest.raises(RuntimeError, match="source image identity"):
+        trainer.evaluate()
+
+    assert not (tmp_path / "eval_detection" / "step_0000011").exists()
+
+
+def test_stage2_eval_missing_image_dimensions_raises_before_artifacts_exist(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    sample = _valid_eval_sample()
+    sample.pop("width")
+    trainer = _make_eval_validity_trainer(
+        tmp_path=tmp_path,
+        sample=sample,
+        monkeypatch=monkeypatch,
+    )
+
+    with pytest.raises(RuntimeError, match="source image dimensions"):
+        trainer.evaluate()
+
+    assert not (tmp_path / "eval_detection" / "step_0000011").exists()
+
+
+def test_stage2_eval_missing_source_record_identity_raises_before_artifacts_exist(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    sample = _valid_eval_sample()
+    sample.pop("sample_id")
+    trainer = _make_eval_validity_trainer(
+        tmp_path=tmp_path,
+        sample=sample,
+        monkeypatch=monkeypatch,
+    )
+    trainer._rollout_many = (
+        lambda batch, **_kwargs: [([100], "{}", "greedy", [1, 2]) for _ in batch]
+    )
+
+    with pytest.raises(RuntimeError, match="source record identity"):
+        trainer.evaluate()
+
+    assert not (tmp_path / "eval_detection" / "step_0000011").exists()
+
+
+def test_stage2_eval_missing_prompt_token_ids_raises_before_artifacts_exist(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    sample = _valid_eval_sample()
+    trainer = _make_eval_validity_trainer(
+        tmp_path=tmp_path,
+        sample=sample,
+        monkeypatch=monkeypatch,
+    )
+
+    with pytest.raises(RuntimeError, match="prompt_token_ids"):
+        trainer.evaluate()
+
+    assert not (tmp_path / "eval_detection" / "step_0000011").exists()
+
+
+@pytest.mark.parametrize("prompt_token_ids", [["1"], [1.5]])
+def test_stage2_eval_non_exact_prompt_token_ids_raise_before_artifacts_exist(
+    prompt_token_ids,
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    sample = _valid_eval_sample()
+    trainer = _make_eval_validity_trainer(
+        tmp_path=tmp_path,
+        sample=sample,
+        monkeypatch=monkeypatch,
+    )
+    trainer._rollout_many = (
+        lambda batch, **_kwargs: [
+            ([100], "{}", "greedy", list(prompt_token_ids)) for _ in batch
+        ]
+    )
+
+    with pytest.raises(RuntimeError, match="prompt_token_ids must contain integer token ids"):
+        trainer.evaluate()
+
+    assert not (tmp_path / "eval_detection" / "step_0000011").exists()
+
+
+def test_stage2_eval_source_dimensions_accept_large_int_and_digit_string() -> None:
+    record = build_eval_detection_record_confidence_postop_input(
+        sample={
+            "sample_id": 0,
+            "images": ["img.jpg"],
+            "width": 2048,
+            "height": "1024",
+        },
+        gts=[],
+        preds=[],
+        pred_meta=[],
+        object_field_order="desc_first",
+        record_index=0,
+        raw_text="{}",
+        error_codes=[],
+        error_entries=[],
+    )
+
+    assert record["width"] == 2048
+    assert record["height"] == 1024
+
+
+def test_stage2_eval_multi_image_source_rejected() -> None:
+    with pytest.raises(ValueError, match="exactly one source image identity"):
+        build_eval_detection_record_confidence_postop_input(
+            sample={
+                "sample_id": 0,
+                "images": ["a.jpg", "b.jpg"],
+                "width": 640,
+                "height": 480,
+            },
+            gts=[],
+            preds=[],
+            pred_meta=[],
+            object_field_order="desc_first",
+            record_index=0,
+            raw_text="{}",
+            error_codes=[],
+            error_entries=[],
+        )
+
+
+@pytest.mark.parametrize(
+    ("width", "height"),
+    [
+        (None, 480),
+        (True, 480),
+        (640.5, 480),
+        ("640.5", 480),
+        ("", 480),
+        (0, 480),
+        (640, False),
+        (640, -1),
+    ],
+)
+def test_stage2_eval_source_dimensions_reject_non_exact_pixels(
+    width,
+    height,
+) -> None:
+    with pytest.raises(ValueError, match="source image dimensions"):
+        build_eval_detection_record_confidence_postop_input(
+            sample={
+                "images": ["img.jpg"],
+                "width": width,
+                "height": height,
+            },
+            gts=[],
+            preds=[],
+            pred_meta=[],
+            object_field_order="desc_first",
+            record_index=0,
+            raw_text="{}",
+            error_codes=[],
+            error_entries=[],
+        )
+
+
+def test_stage2_eval_non_metric_parser_status_raises_before_artifacts_exist(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    sample = _valid_eval_sample()
+    trainer = _make_eval_validity_trainer(
+        tmp_path=tmp_path,
+        sample=sample,
+        monkeypatch=monkeypatch,
+    )
+    parse_obj = types.SimpleNamespace(
+        response_token_ids=[100],
+        valid_objects=[],
+        dropped_invalid=1,
+        dropped_ambiguous=0,
+        truncated=False,
+        invalid_rollout=False,
+        fallback_reason="recovered_from_malformed_json",
+    )
+    pred = GTObject(
+        index=0,
+        geom_type="bbox_2d",
+        points_norm1000=[0, 0, 10, 10],
+        desc="cat",
+    )
+    monkeypatch.setattr(
+        "src.trainers.stage2_rollout_runtime.parse_stage2_detection_rollout_predictions",
+        lambda **_kwargs: types.SimpleNamespace(
+            parse=parse_obj,
+            pred_meta=(pred,),
+            preds=(pred,),
+            pred_objects_dump=(
+                {
+                    "key": "obj-0",
+                    "index": 0,
+                    "geom_type": "bbox_2d",
+                    "points_norm1000": [0, 0, 10, 10],
+                    "desc": "cat",
+                },
+            ),
+            parser_result=diagnostic_parser_result(
+                predictions=(),
+                parser_id="coordjson_salvage",
+                diagnostics={"fallback_reason": "recovered_from_malformed_json"},
+            ),
+        ),
+    )
+
+    with pytest.raises(RuntimeError, match="metric_bearing=false"):
+        trainer.evaluate()
+
+    assert not (tmp_path / "eval_detection" / "step_0000011").exists()
+
+
+def test_stage2_eval_invalid_parser_payload_reaches_ddp_gather_before_failure(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    sample = _valid_eval_sample()
+    trainer = _make_eval_validity_trainer(
+        tmp_path=tmp_path,
+        sample=sample,
+        monkeypatch=monkeypatch,
+    )
+    parse_obj = types.SimpleNamespace(
+        response_token_ids=[100],
+        valid_objects=[],
+        dropped_invalid=1,
+        dropped_ambiguous=0,
+        truncated=False,
+        invalid_rollout=False,
+        fallback_reason="compact_full_salvage",
+    )
+    pred = GTObject(
+        index=0,
+        geom_type="bbox_2d",
+        points_norm1000=[0, 0, 10, 10],
+        desc="cat",
+    )
+    monkeypatch.setattr(
+        "src.trainers.stage2_rollout_runtime.parse_stage2_detection_rollout_predictions",
+        lambda **_kwargs: types.SimpleNamespace(
+            parse=parse_obj,
+            pred_meta=(pred,),
+            preds=(pred,),
+            pred_objects_dump=(
+                {
+                    "key": "obj-0",
+                    "index": 0,
+                    "geom_type": "bbox_2d",
+                    "points_norm1000": [0, 0, 10, 10],
+                    "desc": "cat",
+                },
+            ),
+            parser_result=diagnostic_parser_result(
+                predictions=(),
+                parser_id="compact_full",
+                diagnostics={"fallback_reason": "compact_full_salvage"},
+            ),
+        ),
+    )
+
+    import torch.distributed as dist
+
+    monkeypatch.setattr(dist, "is_available", lambda: True)
+    monkeypatch.setattr(dist, "is_initialized", lambda: True)
+    monkeypatch.setattr(dist, "get_world_size", lambda: 2)
+    monkeypatch.setattr(dist, "get_rank", lambda: 1)
+    monkeypatch.setattr(dist, "get_backend", lambda: "gloo", raising=False)
+
+    class _FakeReduceOp:
+        SUM = "sum"
+        MAX = "max"
+
+    monkeypatch.setattr(dist, "ReduceOp", _FakeReduceOp, raising=False)
+    monkeypatch.setattr(dist, "all_reduce", lambda tensor, op: None, raising=False)
+
+    gathered_local_objects: list[object] = []
+
+    def _gather_object(obj, object_gather_list=None, dst=0):
+        assert dst == 0
+        assert object_gather_list is None
+        gathered_local_objects.append(obj)
+
+    def _broadcast_object_list(payload_list, src=0, device=None):
+        del src, device
+        payload_list[0] = {
+            "ok": 0.0,
+            "runtime_s": 0.1,
+            "metrics": {},
+            "counters": {},
+            "error": "metric_bearing=false",
+        }
+
+    monkeypatch.setattr(dist, "gather_object", _gather_object, raising=False)
+    monkeypatch.setattr(
+        dist, "broadcast_object_list", _broadcast_object_list, raising=False
+    )
+
+    with pytest.raises(RuntimeError, match="metric_bearing=false"):
+        trainer.evaluate()
+
+    assert gathered_local_objects[0] == []
+    invalid_artifacts = gathered_local_objects[1]
+    assert invalid_artifacts[0]["official_eval_invalid_reason"] == (
+        "parser_result_not_metric_bearing"
+    )
+    assert invalid_artifacts[0]["parser_result"]["metric_bearing"] is False
+    assert not (tmp_path / "eval_detection" / "step_0000011").exists()
+
+
+def test_stage2_eval_parser_exception_reaches_ddp_gather_before_failure(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    sample = _valid_eval_sample()
+    trainer = _make_eval_validity_trainer(
+        tmp_path=tmp_path,
+        sample=sample,
+        monkeypatch=monkeypatch,
+    )
+
+    monkeypatch.setattr(
+        "src.trainers.stage2_rollout_runtime.parse_stage2_detection_rollout_predictions",
+        lambda **_kwargs: (_ for _ in ()).throw(
+            RuntimeError("forced compact-full template mismatch")
+        ),
+    )
+
+    import torch.distributed as dist
+
+    monkeypatch.setattr(dist, "is_available", lambda: True)
+    monkeypatch.setattr(dist, "is_initialized", lambda: True)
+    monkeypatch.setattr(dist, "get_world_size", lambda: 2)
+    monkeypatch.setattr(dist, "get_rank", lambda: 1)
+    monkeypatch.setattr(dist, "get_backend", lambda: "gloo", raising=False)
+
+    class _FakeReduceOp:
+        SUM = "sum"
+        MAX = "max"
+
+    monkeypatch.setattr(dist, "ReduceOp", _FakeReduceOp, raising=False)
+    monkeypatch.setattr(dist, "all_reduce", lambda tensor, op: None, raising=False)
+
+    gathered_local_objects: list[object] = []
+
+    def _gather_object(obj, object_gather_list=None, dst=0):
+        assert dst == 0
+        assert object_gather_list is None
+        gathered_local_objects.append(obj)
+
+    def _broadcast_object_list(payload_list, src=0, device=None):
+        del src, device
+        payload_list[0] = {
+            "ok": 0.0,
+            "runtime_s": 0.1,
+            "metrics": {},
+            "counters": {},
+            "error": "parser_exception_not_metric_bearing",
+        }
+
+    monkeypatch.setattr(dist, "gather_object", _gather_object, raising=False)
+    monkeypatch.setattr(
+        dist,
+        "broadcast_object_list",
+        _broadcast_object_list,
+        raising=False,
+    )
+
+    with pytest.raises(RuntimeError, match="parser_exception_not_metric_bearing"):
+        trainer.evaluate()
+
+    assert gathered_local_objects[0] == []
+    invalid_artifacts = gathered_local_objects[1]
+    assert invalid_artifacts[0]["official_eval_invalid_reason"] == (
+        "parser_exception_not_metric_bearing"
+    )
+    assert invalid_artifacts[0]["parser_result"]["parser_policy"] == "diagnostic"
+    assert invalid_artifacts[0]["parser_result"]["metric_bearing"] is False
+    assert not (tmp_path / "eval_detection" / "step_0000011").exists()
+
+
+def test_evaluate_emits_coco_map_metrics_when_eval_detection_enabled(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    trainer = object.__new__(Stage2RolloutRuntime)
+
+    class _DummyEvalModel:
+        def __init__(self) -> None:
+            self.device = torch.device("cpu")
+            self.training = True
+
+        def eval(self):
+            self.training = False
+            return self
+
+        def train(self):
+            self.training = True
+            return self
+
+    trainer.model = _DummyEvalModel()
+    trainer.args = types.SimpleNamespace(output_dir=str(tmp_path))
+    trainer.state = types.SimpleNamespace(global_step=11)
+    trainer.control = types.SimpleNamespace(tag="ctrl")
+    trainer.template = types.SimpleNamespace(tokenizer=_DummyTokenizerRM())
+    trainer.rollout_matching_cfg = {
+        "rollout_backend": "hf",
+        "eval_prompt_variant": "coco_80",
+        "object_ordering": "sorted",
+        "detection_sequence_format": "compact_full",
+        "eval_detection": {
+            "enabled": True,
+            "metrics": "coco",
+            "score_mode": "constant",
+            "constant_score": 1.0,
+            "pred_score_source": "eval_rollout_constant",
+            "pred_score_version": 2,
+        },
+    }
+    trainer._desc_monitor_cfg = lambda: {"enabled": False}
+    trainer._coord_id_map = lambda: {i: i for i in range(1000)}
+    trainer._effective_rollout_backend = lambda context="train": "hf"
 
     sample = {
         "sample_id": 0,
@@ -2659,29 +3512,24 @@ def test_evaluate_emits_coco_map_metrics_when_eval_detection_enabled(
         ],
     }
     trainer.get_eval_dataloader = lambda _eval_dataset=None: [[sample]]
-    trainer._rollout_many = lambda batch, **_kwargs: [([100], "{}", "greedy", []) for _ in batch]
-
-    parse_obj = types.SimpleNamespace(
-        response_token_ids=[100],
-        valid_objects=[
-            types.SimpleNamespace(
-                index=0,
-                geom_type="bbox_2d",
-                coord_token_indices=[0, 1, 2, 3],
-                desc="cat",
-            )
-        ],
-        dropped_invalid=0,
-        dropped_ambiguous=0,
-        truncated=False,
+    compact_response = (
+        f"{OBJECT_REF_START_TOKEN}cat{BOX_START_TOKEN}"
+        "<|coord_0|><|coord_0|><|coord_10|><|coord_10|>"
     )
+    trainer._rollout_many = lambda batch, **_kwargs: [
+        ([100], compact_response, "greedy", [1, 2]) for _ in batch
+    ]
     monkeypatch.setattr(
         "src.trainers.stage2_rollout_runtime.parse_rollout_for_matching",
-        lambda **_kwargs: parse_obj,
+        lambda **_kwargs: (_ for _ in ()).throw(
+            AssertionError("compact_full eval should not use CoordJSON parser")
+        ),
     )
     monkeypatch.setattr(
         "src.trainers.stage2_rollout_runtime._points_from_coord_tokens",
-        lambda **_kwargs: [0, 0, 10, 10],
+        lambda **_kwargs: (_ for _ in ()).throw(
+            AssertionError("compact_full eval should not use coord-token points")
+        ),
     )
     monkeypatch.setattr(
         "src.trainers.stage2_rollout_runtime._extract_gt_objects",
@@ -2770,18 +3618,75 @@ def test_evaluate_emits_coco_map_metrics_when_eval_detection_enabled(
     assert scored_provenance["provenance"]["score_policy_fingerprint"].startswith(
         "score_policy:"
     )
+    prompt_provenance = scored_provenance["provenance"]["prompt_provenance"]
+    assert prompt_provenance["source"] == "stage2_eval_rollout_artifacts"
+    assert prompt_provenance["detection_sequence_format"] == "compact_full"
+    assert prompt_provenance["prompt_tokens"]["status"] == "backend_recorded"
+    assert prompt_provenance["prompt_tokens"]["record_count"] == 1
+    assert prompt_provenance["prompt_visual_parity"]["verified"] is False
+    parser_provenance = scored_provenance["provenance"]["parser_provenance"]
+    assert parser_provenance["all_parser_policy_strict"] is True
+    assert parser_provenance["any_salvage_recovered"] is False
     assert base_rows[0]["image"] == "img.jpg"
+    assert base_rows[0]["sample_id"] == 0
+    assert base_rows[0]["source_record_id"] == "sample_id:0"
+    assert materialized_pred_rows[0]["sample_id"] == 0
+    assert materialized_pred_rows[0]["source_record_id"] == "sample_id:0"
     assert base_rows[0]["mode"] == "text"
     assert base_rows[0]["coord_mode"] == "pixel"
-    assert base_rows[0]["raw_output_json"]["objects"][0]["bbox_2d"] == [0, 0, 10, 10]
+    assert base_rows[0]["pred"][0]["points"] == [0, 0, 6, 5]
+    assert base_rows[0]["raw_output_json"]["objects"][0]["bbox_2d"] == [
+        "<|coord_0|>",
+        "<|coord_0|>",
+        "<|coord_10|>",
+        "<|coord_10|>",
+    ]
     assert base_rows[0]["raw_output_json"]["objects"][0]["desc"] == "cat"
-    assert base_rows[0]["raw_special_tokens"] == []
+    assert OBJECT_REF_START_TOKEN in base_rows[0]["raw_special_tokens"]
+    assert BOX_START_TOKEN in base_rows[0]["raw_special_tokens"]
     assert base_rows[0]["raw_ends_with_im_end"] is False
     assert base_rows[0]["errors"] == []
     assert raw_rows[0]["rollout"]["response_token_ids"] == [100]
     assert raw_rows[0]["parse"]["valid_objects"][0]["points_norm1000"] == [0, 0, 10, 10]
+    assert raw_rows[0]["parser_result"]["parser_policy"] == "strict"
+    assert raw_rows[0]["parser_result"]["metric_bearing"] is True
+    assert raw_rows[0]["parse"]["parser_result"]["parser_policy"] == "strict"
+    assert raw_rows[0]["parse"]["parser_result"]["metric_bearing"] is True
     assert infer_summary["backend"]["type"] == "hf"
     assert infer_summary["infer"]["prompt_variant"] == "coco_80"
+
+
+def test_stage2_eval_default_coordjson_rejects_official_artifacts(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    sample = _valid_eval_sample()
+    trainer = _make_eval_validity_trainer(
+        tmp_path=tmp_path,
+        sample=sample,
+        monkeypatch=monkeypatch,
+    )
+    response_text = (
+        '{"objects": [{"desc": "cat", "bbox_2d": ['
+        "<|coord_0|>, <|coord_0|>, <|coord_10|>, <|coord_10|>"
+        "]}]}"
+    )
+    response_token_ids = trainer.template.tokenizer.encode(
+        response_text,
+        add_special_tokens=False,
+    )
+    trainer._rollout_many = lambda batch, **_kwargs: [
+        (response_token_ids, response_text, "greedy", []) for _ in batch
+    ]
+    monkeypatch.setattr(
+        "src.trainers.stage2_rollout_runtime.parse_rollout_for_matching",
+        parse_rollout_for_matching,
+    )
+
+    with pytest.raises(RuntimeError, match="metric_bearing=false"):
+        trainer.evaluate()
+
+    assert not (tmp_path / "eval_detection" / "step_0000011").exists()
 
 
 def test_evaluate_emits_coco_map_metrics_with_confidence_postop(
@@ -2856,7 +3761,7 @@ def test_evaluate_emits_coco_map_metrics_with_confidence_postop(
         del owner
         captured_rollout_kwargs.update(dict(kwargs))
         return [
-            ([100], "{}", "greedy", [], [0.0], ["tok"]) for _ in samples
+            ([100], "{}", "greedy", [1, 2], [0.0], ["tok"]) for _ in samples
         ]
 
     monkeypatch.setattr(
@@ -2877,6 +3782,7 @@ def test_evaluate_emits_coco_map_metrics_with_confidence_postop(
         dropped_invalid=0,
         dropped_ambiguous=0,
         truncated=False,
+        parser_policy="strict",
     )
     monkeypatch.setattr(
         "src.trainers.stage2_rollout_runtime.parse_rollout_for_matching",
@@ -3126,6 +4032,7 @@ def test_evaluate_rejects_official_metrics_without_eval_artifact_materialization
         dropped_invalid=0,
         dropped_ambiguous=0,
         truncated=False,
+        parser_policy="strict",
     )
     monkeypatch.setattr(
         "src.trainers.stage2_rollout_runtime.parse_rollout_for_matching",
@@ -3251,7 +4158,7 @@ def test_evaluate_emits_coco_map_metrics_with_confidence_postop_vllm(
     def _fake_vllm_traced(*, owner, samples, **_kwargs):
         del owner
         called["vllm"] += 1
-        return [([100], "{}", "greedy", [], [0.0], ["tok"]) for _ in samples]
+        return [([100], "{}", "greedy", [1, 2], [0.0], ["tok"]) for _ in samples]
 
     monkeypatch.setattr(
         "src.trainers.stage2_rollout_runtime.rollout_many_traced",
@@ -3271,6 +4178,7 @@ def test_evaluate_emits_coco_map_metrics_with_confidence_postop_vllm(
         dropped_invalid=0,
         dropped_ambiguous=0,
         truncated=False,
+        parser_policy="strict",
     )
     monkeypatch.setattr(
         "src.trainers.stage2_rollout_runtime.parse_rollout_for_matching",
@@ -3508,6 +4416,7 @@ def test_evaluate_eval_backend_override_routes_non_traced_rollouts_to_vllm(
         dropped_invalid=0,
         dropped_ambiguous=0,
         truncated=False,
+        parser_policy="strict",
     )
     monkeypatch.setattr(
         "src.trainers.stage2_rollout_runtime.parse_rollout_for_matching",
@@ -3595,6 +4504,7 @@ def test_evaluate_vllm_confidence_trace_violation_fails_fast(
         "sample_id": 0,
         "width": 640,
         "height": 480,
+        "images": ["img.jpg"],
         "messages": [{"role": "user", "content": "q"}],
     }
     trainer.get_eval_dataloader = lambda _eval_dataset=None: [[sample]]
@@ -3618,6 +4528,7 @@ def test_evaluate_vllm_confidence_trace_violation_fails_fast(
         dropped_invalid=0,
         dropped_ambiguous=0,
         truncated=False,
+        parser_policy="strict",
     )
     monkeypatch.setattr(
         "src.trainers.stage2_rollout_runtime.parse_rollout_for_matching",
@@ -3793,6 +4704,7 @@ def test_evaluate_vllm_per_sample_decode_error_is_skipped_and_counted(
         dropped_invalid=0,
         dropped_ambiguous=0,
         truncated=False,
+        parser_policy="strict",
     )
     monkeypatch.setattr(
         "src.trainers.stage2_rollout_runtime.parse_rollout_for_matching",
@@ -3932,6 +4844,7 @@ def test_evaluate_vllm_colocate_window_wakes_sleeps_and_offloads_once_per_eval(
         dropped_invalid=0,
         dropped_ambiguous=0,
         truncated=False,
+        parser_policy="strict",
     )
     monkeypatch.setattr(
         "src.trainers.stage2_rollout_runtime.parse_rollout_for_matching",
@@ -4048,6 +4961,7 @@ def test_evaluate_vllm_colocate_window_without_sleep_mode_skips_wake_sleep(
         dropped_invalid=0,
         dropped_ambiguous=0,
         truncated=False,
+        parser_policy="strict",
     )
     monkeypatch.setattr(
         "src.trainers.stage2_rollout_runtime.parse_rollout_for_matching",
@@ -4238,6 +5152,7 @@ def test_evaluate_fails_fast_on_coco_error_by_default(monkeypatch) -> None:
         dropped_invalid=0,
         dropped_ambiguous=0,
         truncated=False,
+        parser_policy="strict",
     )
     monkeypatch.setattr(
         "src.trainers.stage2_rollout_runtime.parse_rollout_for_matching",
@@ -4368,6 +5283,7 @@ def test_evaluate_fails_fast_on_coco_error_when_map_selects_best(monkeypatch) ->
         dropped_invalid=0,
         dropped_ambiguous=0,
         truncated=False,
+        parser_policy="strict",
     )
     monkeypatch.setattr(
         "src.trainers.stage2_rollout_runtime.parse_rollout_for_matching",

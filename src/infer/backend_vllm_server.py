@@ -16,10 +16,11 @@ from src.infer.backend import (
     normalize_vllm_trace_response,
 )
 from src.infer.runtime import (
-    build_decode_request_from_rollout_owner,
-    current_rollout_context_from_owner,
+    build_decode_request_from_rollout_facts,
     effective_rollout_backend_from_owner,
     rollout_decode_batch_size_from_owner,
+    resolve_rollout_decode_facts_from_owner,
+    resolve_rollout_runtime_facts_from_owner,
     vllm_mode_from_rollout_owner,
 )
 from src.tokens.row_offsets import CoordOffsetAdapter
@@ -50,6 +51,16 @@ class PreparedVLLMServerRollout:
     per_server_rank_caps: List[int]
     round_cap_total: int
     seed_plan: List[Dict[str, Any]]
+
+
+@dataclass(frozen=True)
+class VLLMServerDispatchHandles:
+    """Resolved handles used by the vLLM server dispatch core."""
+
+    client: Any
+    normalize_seed_fn: Any
+    infer_guard_fn: Any
+    tokenizer: Any
 
 
 def _instance_override(owner: Any, name: str) -> Any:
@@ -577,6 +588,87 @@ def build_vllm_server_infer_requests(
     return infer_requests
 
 
+@dataclass(frozen=True)
+class VLLMServerRolloutHandles:
+    """Resolved handles/facts needed to prepare a vLLM server rollout."""
+
+    runtime_facts: Any
+    global_step: int
+    rollout_seed_base: int
+    servers: List[Dict[str, Any]]
+    infer_timeout_s: Optional[float]
+    client_fn: Any
+    server_world_sizes_fn: Any
+    per_rank_chunk_fn: Any
+    sync_mode: str
+    last_logged_step: int
+    set_last_logged_step_fn: Any
+    normalize_seed_fn: Any
+    infer_guard_fn: Any
+    tokenizer: Any
+    sync_model_fn: Any
+    skip_sync: bool
+    debug_dump_fn: Any
+
+
+def resolve_vllm_server_rollout_handles_from_owner(
+    *,
+    owner: Any,
+    logger: Any,
+) -> VLLMServerRolloutHandles:
+    """Translate a Stage-2 owner into vLLM server rollout handles."""
+
+    runtime_facts = resolve_rollout_runtime_facts_from_owner(owner)
+    global_step = int(getattr(getattr(owner, "state", None), "global_step", 0) or 0)
+    rollout_context = runtime_facts.context
+    return VLLMServerRolloutHandles(
+        runtime_facts=runtime_facts,
+        global_step=int(global_step),
+        rollout_seed_base=int(owner._derive_rollout_seed_base(global_step=global_step)),
+        servers=[dict(server) for server in vllm_server_specs(owner)],
+        infer_timeout_s=vllm_server_timeouts(owner=owner, logger=logger)[1],
+        client_fn=owner._ensure_vllm_server_client,
+        server_world_sizes_fn=lambda: [
+            int(x) for x in vllm_server_world_sizes(owner=owner, logger=logger)
+        ],
+        per_rank_chunk_fn=lambda: int(
+            rollout_decode_batch_size_per_rank(
+                owner=owner,
+                rollout_context=rollout_context,
+                logger=logger,
+            )
+        ),
+        sync_mode=effective_vllm_server_sync_mode(owner),
+        last_logged_step=int(getattr(owner, "_vllm_server_last_logged_step", -1)),
+        set_last_logged_step_fn=lambda step: setattr(
+            owner,
+            "_vllm_server_last_logged_step",
+            int(step),
+        ),
+        normalize_seed_fn=owner._normalize_rollout_seed_int32,
+        infer_guard_fn=owner._vllm_server_infer_guard,
+        tokenizer=owner.tokenizer,
+        sync_model_fn=owner._sync_vllm_server_rollout_model_if_needed,
+        skip_sync=bool(getattr(owner, "_stage2_skip_vllm_server_sync", False)),
+        debug_dump_fn=getattr(owner, "_maybe_debug_dump_vllm_server_rollouts", None),
+    )
+
+
+def resolve_vllm_server_dispatch_handles_from_owner(
+    *,
+    owner: Any,
+    client: Any,
+) -> VLLMServerDispatchHandles:
+    """Translate owner state needed by vLLM server dispatch into handles."""
+
+    return VLLMServerDispatchHandles(
+        client=client,
+        normalize_seed_fn=owner._normalize_rollout_seed_int32,
+        infer_guard_fn=owner._vllm_server_infer_guard,
+        tokenizer=owner.tokenizer,
+    )
+
+
 def prepare_vllm_server_rollout(
     *,
     owner: Any,
@@ -590,10 +682,36 @@ def prepare_vllm_server_rollout(
 ) -> PreparedVLLMServerRollout:
     """Resolve server rollout config, capacity, and reproducibility metadata."""
 
-    decode_request = build_decode_request_from_rollout_owner(
-        owner,
-        decode_override=decode_override
+    decode_request = build_decode_request_from_rollout_facts(
+        resolve_rollout_decode_facts_from_owner(owner),
+        decode_override=decode_override,
     )
+    validate_vllm_server_decode_request(
+        decode_request=decode_request,
+        with_logprobs=with_logprobs,
+    )
+    return prepare_vllm_server_rollout_with_handles(
+        handles=resolve_vllm_server_rollout_handles_from_owner(
+            owner=owner,
+            logger=logger,
+        ),
+        logger=logger,
+        samples=samples,
+        request_index_offset=request_index_offset,
+        with_logprobs=with_logprobs,
+        decode_override=decode_override,
+        per_server_rank_request_caps_fn=per_server_rank_request_caps_fn,
+        allocate_weighted_counts_with_caps_fn=allocate_weighted_counts_with_caps_fn,
+    )
+
+
+def validate_vllm_server_decode_request(
+    *,
+    decode_request: Any,
+    with_logprobs: bool,
+) -> None:
+    """Reject decode modes the vLLM server backend cannot execute."""
+
     decode_mode = str(decode_request.decode_mode)
     if decode_mode == "beam":
         raise ValueError(
@@ -601,16 +719,41 @@ def prepare_vllm_server_rollout(
             "use greedy or sampling overrides instead"
         )
 
-    if not bool(getattr(owner, "_stage2_skip_vllm_server_sync", False)):
-        owner._sync_vllm_server_rollout_model_if_needed()
-
     temperature = float(decode_request.temperature)
-
     if with_logprobs and float(temperature) > 0.0:
         raise ValueError(
             "eval-step confidence scoring requires decoding.temperature=0.0 "
             f"(greedy), got {float(temperature)}"
         )
+
+
+def prepare_vllm_server_rollout_with_handles(
+    *,
+    handles: VLLMServerRolloutHandles,
+    logger: Any,
+    samples: Sequence[Mapping[str, Any]],
+    request_index_offset: int,
+    with_logprobs: bool,
+    decode_override: Optional[Mapping[str, Any]],
+    per_server_rank_request_caps_fn: Any | None = None,
+    allocate_weighted_counts_with_caps_fn: Any | None = None,
+) -> PreparedVLLMServerRollout:
+    """Prepare server rollout config from resolved handles/facts."""
+
+    rollout_facts = handles.runtime_facts
+    decode_request = build_decode_request_from_rollout_facts(
+        rollout_facts,
+        decode_override=decode_override
+    )
+    validate_vllm_server_decode_request(
+        decode_request=decode_request,
+        with_logprobs=with_logprobs,
+    )
+    decode_mode = str(decode_request.decode_mode)
+    temperature = float(decode_request.temperature)
+
+    if not bool(handles.skip_sync):
+        handles.sync_model_fn()
 
     base_request_config = build_swift_request_config_from_decode_request(
         decode_request,
@@ -618,24 +761,22 @@ def prepare_vllm_server_rollout(
     )
     base_request_config_dict = asdict(base_request_config)
 
-    global_step = int(getattr(getattr(owner, "state", None), "global_step", 0) or 0)
-    rollout_seed_base = int(owner._derive_rollout_seed_base(global_step=global_step))
+    global_step = int(handles.global_step)
+    rollout_seed_base = int(handles.rollout_seed_base)
     request_index_offset_i = max(0, int(request_index_offset))
     effective_seed_base = int(rollout_seed_base + request_index_offset_i)
 
     infer_requests = build_vllm_server_infer_requests(samples=samples)
 
-    servers = [dict(server) for server in vllm_server_specs(owner)]
+    servers = [dict(server) for server in handles.servers]
     if not servers:
         raise ValueError("vLLM server mode requires a non-empty server list")
 
-    _timeout_s, infer_timeout_s = vllm_server_timeouts(owner=owner, logger=logger)
+    infer_timeout_s = handles.infer_timeout_s
 
-    client = owner._ensure_vllm_server_client()
+    client = handles.client_fn()
 
-    server_world_sizes = [
-        int(x) for x in vllm_server_world_sizes(owner=owner, logger=logger)
-    ]
+    server_world_sizes = list(int(x) for x in handles.server_world_sizes_fn())
     if len(server_world_sizes) != int(len(servers)):
         raise RuntimeError(
             "vLLM server world_size discovery returned unexpected length: "
@@ -656,17 +797,9 @@ def prepare_vllm_server_rollout(
     learner_world = max(1, int(learner_world))
     learner_rank = max(0, int(learner_rank))
 
-    rollout_context = current_rollout_context_from_owner(owner)
-    decode_batch_size_cap = int(
-        rollout_decode_batch_size_from_owner(owner, context=rollout_context)
-    )
-    per_rank_chunk = int(
-        rollout_decode_batch_size_per_rank(
-            owner=owner,
-            rollout_context=rollout_context,
-            logger=logger,
-        )
-    )
+    rollout_context = rollout_facts.context
+    decode_batch_size_cap = int(rollout_facts.decode_batch_size)
+    per_rank_chunk = int(handles.per_rank_chunk_fn())
 
     caps_fn = per_server_rank_request_caps_fn or per_server_rank_request_caps
     alloc_fn = allocate_weighted_counts_with_caps_fn or allocate_weighted_counts_with_caps
@@ -690,20 +823,20 @@ def prepare_vllm_server_rollout(
         )
 
     seed_plan = build_vllm_server_seed_plan(
-        owner=owner,
         servers=servers,
         infer_requests=infer_requests,
         effective_seed_base=int(effective_seed_base),
         per_server_rank_caps=per_server_rank_caps,
         round_cap_total=int(round_cap_total),
         allocate_weighted_counts_with_caps_fn=alloc_fn,
+        normalize_seed_fn=handles.normalize_seed_fn,
     )
 
-    if global_step != int(getattr(owner, "_vllm_server_last_logged_step", -1)):
+    if global_step != int(handles.last_logged_step):
         logger.info(
             "vLLM server rollout metadata: servers=%s sync_mode=%s request_n=%s rollout_seed_base=%s request_index_offset=%s effective_seed_base=%s decode_batch_size_cap=%s per_rank_chunk=%s learner_world_size=%s learner_rank=%s server_world_sizes=%s per_server_rank_caps=%s round_cap_total=%s seed_plan=%s",
             servers,
-            effective_vllm_server_sync_mode(owner),
+            str(handles.sync_mode),
             int(len(infer_requests)),
             int(rollout_seed_base),
             int(request_index_offset_i),
@@ -717,7 +850,7 @@ def prepare_vllm_server_rollout(
             int(round_cap_total),
             seed_plan,
         )
-        owner._vllm_server_last_logged_step = int(global_step)
+        handles.set_last_logged_step_fn(int(global_step))
 
     return PreparedVLLMServerRollout(
         decode_mode=str(decode_mode),
@@ -1545,13 +1678,49 @@ def infer_on_vllm_server_slice(
     start: int,
     end: int,
 ) -> None:
+    infer_on_vllm_server_slice_with_handles(
+        handles=resolve_vllm_server_dispatch_handles_from_owner(
+            owner=owner,
+            client=client,
+        ),
+        logger=logger,
+        servers=servers,
+        infer_requests=infer_requests,
+        base_request_config_dict=base_request_config_dict,
+        effective_seed_base=effective_seed_base,
+        infer_timeout_s=infer_timeout_s,
+        with_logprobs=with_logprobs,
+        decode_mode=decode_mode,
+        results=results,
+        server_idx=server_idx,
+        start=start,
+        end=end,
+    )
+
+
+def infer_on_vllm_server_slice_with_handles(
+    *,
+    handles: VLLMServerDispatchHandles,
+    logger: Any,
+    servers: Sequence[Mapping[str, Any]],
+    infer_requests: Sequence[Any],
+    base_request_config_dict: Mapping[str, Any],
+    effective_seed_base: int,
+    infer_timeout_s: Optional[float],
+    with_logprobs: bool,
+    decode_mode: str,
+    results: List[Any],
+    server_idx: int,
+    start: int,
+    end: int,
+) -> None:
     if start >= end:
         return
     base_url = str(servers[server_idx]["base_url"]).rstrip("/")
 
     req_cfg = dict(base_request_config_dict)
     req_cfg["seed"] = int(
-        owner._normalize_rollout_seed_int32(int(effective_seed_base + int(start)))
+        handles.normalize_seed_fn(int(effective_seed_base + int(start)))
     )
 
     payload = {
@@ -1563,7 +1732,7 @@ def infer_on_vllm_server_slice(
     }
 
     url = f"{base_url}/infer/"
-    session = client.sessions[server_idx]
+    session = handles.client.sessions[server_idx]
     req_timeout: Optional[Tuple[float, float]]
     if infer_timeout_s is None:
         req_timeout = None
@@ -1579,13 +1748,13 @@ def infer_on_vllm_server_slice(
         ValueError,
     )
     try:
-        with owner._vllm_server_infer_guard():
+        with handles.infer_guard_fn():
             resp = session.post(url, json=payload, timeout=req_timeout)
     except request_errors as exc:
         try:
-            client.sessions[server_idx] = requests.Session()
-            session = client.sessions[server_idx]
-            with owner._vllm_server_infer_guard():
+            handles.client.sessions[server_idx] = requests.Session()
+            session = handles.client.sessions[server_idx]
+            with handles.infer_guard_fn():
                 resp = session.post(url, json=payload, timeout=req_timeout)
         except request_errors as exc2:
             if int(end - start) > 1:
@@ -1598,10 +1767,9 @@ def infer_on_vllm_server_slice(
                     int(mid),
                     exc2,
                 )
-                infer_on_vllm_server_slice(
-                    owner=owner,
+                infer_on_vllm_server_slice_with_handles(
+                    handles=handles,
                     logger=logger,
-                    client=client,
                     servers=servers,
                     infer_requests=infer_requests,
                     base_request_config_dict=base_request_config_dict,
@@ -1614,10 +1782,9 @@ def infer_on_vllm_server_slice(
                     start=int(start),
                     end=int(mid),
                 )
-                infer_on_vllm_server_slice(
-                    owner=owner,
+                infer_on_vllm_server_slice_with_handles(
+                    handles=handles,
                     logger=logger,
-                    client=client,
                     servers=servers,
                     infer_requests=infer_requests,
                     base_request_config_dict=base_request_config_dict,
@@ -1657,7 +1824,7 @@ def infer_on_vllm_server_slice(
             raw_out,
             trace_logprobs=bool(with_logprobs),
             backend_mode="ms-swift",
-            tokenizer=owner.tokenizer,
+            tokenizer=handles.tokenizer,
         )
         token_ids = [int(t) for t in (result.generated_token_ids or [])]
         text = str(result.text or "")
@@ -1680,6 +1847,40 @@ def dispatch_vllm_server_rounds(
     owner: Any,
     logger: Any,
     client: Any,
+    servers: Sequence[Mapping[str, Any]],
+    infer_requests: Sequence[Any],
+    base_request_config_dict: Mapping[str, Any],
+    effective_seed_base: int,
+    infer_timeout_s: Optional[float],
+    with_logprobs: bool,
+    decode_mode: str,
+    per_server_rank_caps: Sequence[int],
+    round_cap_total: int,
+    allocate_weighted_counts_with_caps_fn: Any,
+) -> List[Any]:
+    return dispatch_vllm_server_rounds_with_handles(
+        handles=resolve_vllm_server_dispatch_handles_from_owner(
+            owner=owner,
+            client=client,
+        ),
+        logger=logger,
+        servers=servers,
+        infer_requests=infer_requests,
+        base_request_config_dict=base_request_config_dict,
+        effective_seed_base=effective_seed_base,
+        infer_timeout_s=infer_timeout_s,
+        with_logprobs=with_logprobs,
+        decode_mode=decode_mode,
+        per_server_rank_caps=per_server_rank_caps,
+        round_cap_total=round_cap_total,
+        allocate_weighted_counts_with_caps_fn=allocate_weighted_counts_with_caps_fn,
+    )
+
+
+def dispatch_vllm_server_rounds_with_handles(
+    *,
+    handles: VLLMServerDispatchHandles,
+    logger: Any,
     servers: Sequence[Mapping[str, Any]],
     infer_requests: Sequence[Any],
     base_request_config_dict: Mapping[str, Any],
@@ -1722,10 +1923,9 @@ def dispatch_vllm_server_rounds(
         with ThreadPoolExecutor(max_workers=int(len(round_slices))) as ex:
             futs = [
                 ex.submit(
-                    infer_on_vllm_server_slice,
-                    owner=owner,
+                    infer_on_vllm_server_slice_with_handles,
+                    handles=handles,
                     logger=logger,
-                    client=client,
                     servers=servers,
                     infer_requests=infer_requests,
                     base_request_config_dict=base_request_config_dict,
@@ -1771,11 +1971,56 @@ def rollout_many_vllm_server(
     if int(len(samples)) == 0:
         return []
 
+    runtime_facts = resolve_rollout_runtime_facts_from_owner(
+        owner,
+        rollout_backend="vllm",
+    )
+    decode_request = build_decode_request_from_rollout_facts(
+        runtime_facts,
+        decode_override=decode_override,
+    )
+    validate_vllm_server_decode_request(
+        decode_request=decode_request,
+        with_logprobs=with_logprobs,
+    )
+    return rollout_many_vllm_server_with_handles(
+        handles=resolve_vllm_server_rollout_handles_from_owner(
+            owner=owner,
+            logger=logger,
+        ),
+        logger=logger,
+        samples=samples,
+        debug_samples=debug_samples,
+        request_index_offset=request_index_offset,
+        with_logprobs=with_logprobs,
+        decode_override=decode_override,
+        per_server_rank_request_caps_fn=per_server_rank_request_caps_fn,
+        allocate_weighted_counts_with_caps_fn=allocate_weighted_counts_with_caps_fn,
+    )
+
+
+def rollout_many_vllm_server_with_handles(
+    *,
+    handles: VLLMServerRolloutHandles,
+    logger: Any,
+    samples: Sequence[Mapping[str, Any]],
+    debug_samples: Optional[Sequence[Mapping[str, Any]]] = None,
+    request_index_offset: int = 0,
+    with_logprobs: bool = False,
+    decode_override: Optional[Mapping[str, Any]] = None,
+    per_server_rank_request_caps_fn: Any | None = None,
+    allocate_weighted_counts_with_caps_fn: Any | None = None,
+) -> List[Any]:
+    """vLLM server rollout backend core using resolved handles/facts."""
+
+    if int(len(samples)) == 0:
+        return []
+
     caps_fn = per_server_rank_request_caps_fn or per_server_rank_request_caps
     alloc_fn = allocate_weighted_counts_with_caps_fn or allocate_weighted_counts_with_caps
 
-    prepared = prepare_vllm_server_rollout(
-        owner=owner,
+    prepared = prepare_vllm_server_rollout_with_handles(
+        handles=handles,
         logger=logger,
         samples=samples,
         request_index_offset=int(request_index_offset),
@@ -1785,10 +2030,15 @@ def rollout_many_vllm_server(
         allocate_weighted_counts_with_caps_fn=alloc_fn,
     )
 
-    out = dispatch_vllm_server_rounds(
-        owner=owner,
-        logger=logger,
+    dispatch_handles = VLLMServerDispatchHandles(
         client=prepared.client,
+        normalize_seed_fn=handles.normalize_seed_fn,
+        infer_guard_fn=handles.infer_guard_fn,
+        tokenizer=handles.tokenizer,
+    )
+    out = dispatch_vllm_server_rounds_with_handles(
+        handles=dispatch_handles,
+        logger=logger,
         servers=prepared.servers,
         infer_requests=prepared.infer_requests,
         base_request_config_dict=prepared.base_request_config_dict,
@@ -1802,7 +2052,7 @@ def rollout_many_vllm_server(
     )
     if len(out) != len(samples):
         raise RuntimeError("vLLM server returned unexpected number of outputs")
-    dump_fn = getattr(owner, "_maybe_debug_dump_vllm_server_rollouts", None)
+    dump_fn = handles.debug_dump_fn
     if callable(dump_fn):
         dump_fn(
             global_step=prepared.global_step,
@@ -1816,13 +2066,13 @@ def rollout_many_vllm_server(
 
 def build_vllm_server_seed_plan(
     *,
-    owner: Any,
     servers: Sequence[Mapping[str, Any]],
     infer_requests: Sequence[Any],
     effective_seed_base: int,
     per_server_rank_caps: Sequence[int],
     round_cap_total: int,
     allocate_weighted_counts_with_caps_fn: Any,
+    normalize_seed_fn: Any,
 ) -> List[Dict[str, Any]]:
     seed_plan: List[Dict[str, Any]] = []
     if int(len(infer_requests)) <= 0 or int(round_cap_total) <= 0:
@@ -1851,9 +2101,7 @@ def build_vllm_server_seed_plan(
                     "end": int(end),
                     "cap_for_rank": int(per_server_rank_caps[i]),
                     "seed": int(
-                        owner._normalize_rollout_seed_int32(
-                            int(effective_seed_base + int(start))
-                        )
+                        normalize_seed_fn(int(effective_seed_base + int(start)))
                     ),
                 }
             )

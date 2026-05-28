@@ -206,7 +206,8 @@ Primary implementation surfaces:
 - `src/trainers/stage2_rollout_correction_impl.py`
 - `src/trainers/rollout_correction/target_builder.py`
 - `src/trainers/rollout_correction/types.py`
-- `src/trainers/stage2_rollout_runtime.py`
+- `src/trainers/stage2_rollout_runtime.py` (trainer-owned facade only; shared
+  prompt/decode/backend/artifact policy belongs under `src/infer/`)
 
 Useful config handles:
 

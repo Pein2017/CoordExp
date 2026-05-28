@@ -100,7 +100,7 @@ Do not answer current-behavior questions from `progress/` if `docs/` or `openspe
 ## Suggested Search Seeds
 
 ```bash
-rg -n "stage2_rollout_correction|stage2_coordination|stage2_rollout_runtime|rollout_runtime|rollout_aligned_targets|rollout_aligned_evaluator|stage2_vllm_server" docs openspec src scripts configs
+rg -n "stage2_rollout_correction|stage2_coordination|stage2_rollout_runtime|rollout_runtime|rollout_aligned_targets|rollout_aligned_evaluator|stage2_vllm_server" docs openspec src scripts configs  # search
 rg -n "surface.id|stage1_json_ce|stage1_compact_trie_ce|MetricEvent|DiagnosticEvent|GreedyIoUAssignment|Stage2GreedyIoUShadowPlanner" docs src tests
 rg -n "runtime-architecture-refactor-program|pipeline_manifest|run_metadata|trainer_setup|resolved_config.json|effective_runtime.json" docs openspec src tests
 rg -n "contract|jsonl|geometry|packing" docs/data src/datasets

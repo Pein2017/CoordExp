@@ -55,7 +55,6 @@ from .tokens.row_offsets import (
 )
 from .bootstrap.pipeline_manifest import build_pipeline_manifest
 from .bootstrap.experiment_manifest import write_experiment_manifest_file
-from .bootstrap.stage2_policy_provenance import build_stage2_policy_provenance
 from .bootstrap.trainer_setup import (
     build_trainer_callbacks,
     compose_trainer_class,
@@ -113,6 +112,10 @@ from .training_runtime import (
     resolve_training_runtime_plan,
     resolve_training_runtime_profile,
     validate_training_runtime_preflight,
+)
+from .training_runtime.stage2_projection import (
+    apply_stage2_runtime_projection,
+    resolve_stage2_runtime_projection,
 )
 from .utils import (
     FileLoggingConfig,
@@ -3815,127 +3818,58 @@ def main():
 
     if runtime_profile.rollout_runtime_owned:
         try:
-            rollout_cfg_obj = getattr(training_config, "rollout_matching", None)
-            if rollout_cfg_obj is None:
-                rollout_cfg_raw = {}
-            elif is_dataclass(rollout_cfg_obj):
-                rollout_cfg_raw = dataclass_asdict_no_none(rollout_cfg_obj)
-            else:
-                rollout_cfg_raw = rollout_cfg_obj
-
-            if rollout_cfg_raw is None:
-                rollout_cfg_raw = {}
-            if not isinstance(rollout_cfg_raw, Mapping):
-                raise TypeError("rollout_matching must be a mapping when provided")
-
-            rollout_cfg: dict[str, Any] = dict(rollout_cfg_raw)
-
-            if runtime_profile.required_pipeline_namespace is not None and isinstance(
-                rollout_cfg.get("pipeline"), Mapping
-            ):
-                raise ValueError(
-                    "rollout_matching.pipeline has been removed. "
-                    "Use stage2_rollout_correction.pipeline with "
-                    "custom.trainer_variant=stage2_rollout_correction instead."
-                )
-
-            # BREAKING: decoding knobs moved under rollout_matching.decoding.*.
-            legacy_decoding_keys = [
-                k for k in ("temperature", "top_p", "top_k") if k in rollout_cfg
-            ]
-            if legacy_decoding_keys:
-                keys_s = ", ".join(
-                    f"rollout_matching.{k}" for k in legacy_decoding_keys
-                )
-                raise ValueError(
-                    "Legacy rollout decoding keys have been removed: "
-                    f"{keys_s}. Use rollout_matching.decoding.* instead. "
-                    "(No backward compatibility.)"
-                )
-
-            # BREAKING: rollout_buffer was an old sync reuse optimization and is removed.
-            if "rollout_buffer" in rollout_cfg:
-                raise ValueError(
-                    "rollout_matching.rollout_buffer has been removed. "
-                    "Remove this section from your config. (No backward compatibility.)"
-                )
-
-            decoding_raw = rollout_cfg.get("decoding", None)
-            if decoding_raw is None:
-                decoding: dict[str, Any] = {}
-            elif isinstance(decoding_raw, Mapping):
-                decoding = dict(decoding_raw)
-            else:
-                raise TypeError(
-                    "rollout_matching.decoding must be a mapping when provided"
-                )
-            rollout_cfg["decoding"] = decoding
-
-            custom_extra = getattr(custom_config, "extra", {}) or {}
-            prompt_variant_from_extra: str | None = None
-            if isinstance(custom_extra, Mapping):
-                raw_prompt_variant = custom_extra.get("prompt_variant")
-                if isinstance(raw_prompt_variant, str) and raw_prompt_variant.strip():
-                    prompt_variant_from_extra = str(raw_prompt_variant).strip()
-            if (
-                prompt_variant_from_extra is not None
-                and rollout_cfg.get("eval_prompt_variant", None) is None
-            ):
-                # Keep eval-step rollouts aligned with custom.extra.prompt_variant unless
-                # rollout_matching.eval_prompt_variant explicitly overrides it.
-                rollout_cfg["eval_prompt_variant"] = str(prompt_variant_from_extra)
-
-            # Inject packing runtime knobs (stage_2 uses dynamic post-rollout packing; dataset packing is disabled).
-            rollout_cfg.update(
-                {
-                    "packing_enabled": bool(packing_cfg.enabled),
-                    "packing_length": int(packing_cfg.packing_length),
-                    "packing_buffer": int(packing_cfg.buffer_size),
-                    "packing_min_fill_ratio": float(packing_cfg.min_fill_ratio),
-                    "packing_drop_last": bool(packing_cfg.drop_last),
-                    "prompt_variant": prompt_variant_from_extra,
-                    "object_ordering": str(custom_config.object_ordering),
-                    "object_field_order": str(custom_config.object_field_order),
-                    "bbox_format": str(custom_config.bbox_format),
-                    "detection_sequence_format": str(
-                        custom_config.detection_sequence_format
-                    ),
-                }
+            stage2_projection = resolve_stage2_runtime_projection(
+                training_config=training_config,
+                custom_config=custom_config,
+                packing_cfg=packing_cfg,
+                trainer_variant=str(trainer_variant or ""),
+                config_path=str(config_path),
+                run_name=str(getattr(train_args, "run_name", "") or ""),
+                seed=int(getattr(train_args.training_args, "seed", 0) or 0),
+                coord_soft_cfg=coord_soft_cfg_for_manifest,
             )
-            setattr(trainer, "rollout_matching_cfg", rollout_cfg)
-            setattr(
-                trainer, "object_field_order", str(custom_config.object_field_order)
-            )
-
-            validate_hook = getattr(trainer, "_validate_rollout_matching_cfg", None)
-            if callable(validate_hook):
-                validate_hook()
-
-            rollout_manifest = {
-                "payload": {
-                    "objective": [],
-                    "diagnostics": [],
-                    "extra": {"variant": str(trainer_variant or "")},
-                },
-                "objective": [],
-                "diagnostics": [],
-                "extra": {"variant": str(trainer_variant or "")},
-                "checksum": "",
-                "run_context": {
-                    "config": str(config_path),
-                    "run_name": str(getattr(train_args, "run_name", "") or ""),
-                    "seed": int(getattr(train_args.training_args, "seed", 0) or 0),
-                },
-            }
-            setattr(trainer, "rollout_pipeline_manifest", rollout_manifest)
+            if stage2_projection is None:
+                raise ValueError(
+                    "rollout runtime profile did not resolve a Stage-2 runtime projection"
+                )
+            apply_stage2_runtime_projection(trainer, stage2_projection)
 
             logger.info(
                 "Rollout-matching config injected: rollout_backend=%s packing_enabled=%s pipeline_checksum=%s objective=%s diagnostics=%s config=%s run_name=%s seed=%s",
-                rollout_cfg.get("rollout_backend", "hf"),
-                rollout_cfg.get("packing_enabled", False),
-                rollout_manifest.get("checksum", ""),
-                [m.get("name") for m in rollout_manifest.get("objective", [])],
-                [m.get("name") for m in rollout_manifest.get("diagnostics", [])],
+                stage2_projection.rollout_matching_cfg.get("rollout_backend", "hf"),
+                stage2_projection.rollout_matching_cfg.get("packing_enabled", False),
+                stage2_projection.rollout_pipeline_manifest.get("checksum", ""),
+                [
+                    m.get("name")
+                    for m in stage2_projection.rollout_pipeline_manifest.get(
+                        "objective", []
+                    )
+                ],
+                [
+                    m.get("name")
+                    for m in stage2_projection.rollout_pipeline_manifest.get(
+                        "diagnostics", []
+                    )
+                ],
+                str(config_path),
+                str(getattr(train_args, "run_name", "") or ""),
+                int(getattr(train_args.training_args, "seed", 0) or 0),
+            )
+            logger.info(
+                "Stage-2 rollout-correction config injected: pipeline_checksum=%s objective=%s diagnostics=%s config=%s run_name=%s seed=%s",
+                stage2_projection.stage2_pipeline_manifest.get("checksum", ""),
+                [
+                    m.get("name")
+                    for m in stage2_projection.stage2_pipeline_manifest.get(
+                        "objective", []
+                    )
+                ],
+                [
+                    m.get("name")
+                    for m in stage2_projection.stage2_pipeline_manifest.get(
+                        "diagnostics", []
+                    )
+                ],
                 str(config_path),
                 str(getattr(train_args, "run_name", "") or ""),
                 int(getattr(train_args.training_args, "seed", 0) or 0),
@@ -3946,34 +3880,6 @@ def main():
                 "This is required for rollout-matching/stage2 rollout-correction variants."
             ) from exc
 
-    if runtime_profile.required_pipeline_namespace == "stage2_rollout_correction.pipeline":
-        stage2_typed = getattr(training_config, "stage2_rollout_correction", None)
-        if stage2_typed is None:
-            raise ValueError(
-                "training_config.stage2_rollout_correction is required for "
-                "stage2_rollout_correction; check config parsing."
-            )
-        stage2_cfg: dict[str, Any] = asdict(stage2_typed)
-
-        setattr(trainer, "stage2_rollout_correction_cfg", stage2_cfg)
-
-        stage2_manifest = _resolve_pipeline_manifest(
-            stage2_cfg,
-            default_objective=["residual_set_correction"],
-            default_diagnostics=[],
-            coord_soft_cfg=coord_soft_cfg_for_manifest,
-        )
-        setattr(trainer, "stage2_pipeline_manifest", stage2_manifest)
-
-        logger.info(
-            "Stage-2 rollout-correction config injected: pipeline_checksum=%s objective=%s diagnostics=%s config=%s run_name=%s seed=%s",
-            stage2_manifest.get("checksum", ""),
-            [m.get("name") for m in stage2_manifest.get("objective", [])],
-            [m.get("name") for m in stage2_manifest.get("diagnostics", [])],
-            str(config_path),
-            str(getattr(train_args, "run_name", "") or ""),
-            int(getattr(train_args.training_args, "seed", 0) or 0),
-        )
     if coord_soft_ce_w1_cfg is not None:
         setattr(trainer, "coord_soft_ce_w1_cfg", coord_soft_ce_w1_cfg)
     if sft_structural_close_cfg is not None:
@@ -4034,10 +3940,9 @@ def main():
     if not isinstance(selected_pipeline_manifest, Mapping):
         selected_pipeline_manifest = None
 
-    stage2_policy_provenance = build_stage2_policy_provenance(
-        training_config,
-        trainer_variant=str(trainer_variant or ""),
-    )
+    stage2_policy_provenance = getattr(trainer, "stage2_policy_provenance", None)
+    if not isinstance(stage2_policy_provenance, Mapping):
+        stage2_policy_provenance = None
 
     train_sample_limit_i = _normalize_optional_sample_limit(train_sample_limit)
     val_sample_limit_i = _normalize_optional_sample_limit(val_sample_limit)

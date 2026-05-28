@@ -72,13 +72,6 @@ def build_pipeline_manifest(
         return _finite_float(f, 0.0)
 
     def _default_module_config(name: str) -> dict[str, Any]:
-        if runtime_profile.manifest_family == "rollout_matching":
-            if name == "token_ce":
-                return {
-                    "rollout_fn_desc_weight": 1.0,
-                    "rollout_global_prefix_struct_ce_weight": 1.0,
-                }
-
         return {}
 
     def _resolve(path: str, defaults: list[str]) -> list[dict[str, Any]]:

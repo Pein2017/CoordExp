@@ -77,6 +77,65 @@ def rollout_owner_cfg(owner: Any, key: str, default: Any) -> Any:
     return cfg.get(str(key), default)
 
 
+@dataclass(frozen=True)
+class RolloutDecodeFacts:
+    """Resolved Stage-2 rollout config facts consumed by decode policy mapping."""
+
+    rollout_matching_cfg: Mapping[str, Any]
+
+
+@dataclass(frozen=True)
+class RolloutRuntimeFacts:
+    """Resolved rollout runtime facts consumed by shared dispatch/decode helpers."""
+
+    rollout_matching_cfg: Mapping[str, Any]
+    context: Literal["train", "eval"]
+    effective_backend: Literal["hf", "vllm"]
+    decode_batch_size: int
+    vllm_mode: Literal["colocate", "server"]
+
+
+def resolve_rollout_decode_facts_from_owner(owner: Any) -> RolloutDecodeFacts:
+    """Translate an owner-like Stage-2 trainer into decode-policy facts."""
+
+    rollout_matching_cfg = getattr(owner, "rollout_matching_cfg", {}) or {}
+    if not isinstance(rollout_matching_cfg, Mapping):
+        raise TypeError("owner.rollout_matching_cfg must be a mapping")
+    return RolloutDecodeFacts(rollout_matching_cfg=rollout_matching_cfg)
+
+
+def resolve_rollout_runtime_facts_from_owner(
+    owner: Any,
+    *,
+    context: Optional[Literal["train", "eval"]] = None,
+    rollout_backend: Optional[Literal["hf", "vllm"]] = None,
+) -> RolloutRuntimeFacts:
+    """Translate an owner-like Stage-2 trainer into shared rollout facts."""
+
+    rollout_context = (
+        context if context is not None else current_rollout_context_from_owner(owner)
+    )
+    backend = (
+        rollout_backend
+        if rollout_backend is not None
+        else effective_rollout_backend_from_owner(owner, context=rollout_context)
+    )
+    decode_facts = resolve_rollout_decode_facts_from_owner(owner)
+    vllm_mode: Literal["colocate", "server"] = (
+        vllm_mode_from_rollout_owner(owner) if backend == "vllm" else "colocate"
+    )
+    return RolloutRuntimeFacts(
+        rollout_matching_cfg=decode_facts.rollout_matching_cfg,
+        context=rollout_context,
+        effective_backend=backend,
+        decode_batch_size=rollout_decode_batch_size_from_owner(
+            owner,
+            context=rollout_context,
+        ),
+        vllm_mode=vllm_mode,
+    )
+
+
 def normalize_rollout_backend_value(
     raw: Any,
     *,
@@ -1418,8 +1477,11 @@ def run_offline_artifact_inference(owner: Any) -> Tuple[Path, Path]:
     from src.detection.evaluation import parse_compact_full_output_artifact
     from src.infer.artifacts import (
         build_infer_resolved_meta,
+        build_infer_resolved_meta_from_facts,
         build_infer_summary_payload,
+        build_infer_summary_payload_from_facts,
         ensure_infer_artifact_dirs,
+        resolve_infer_artifact_facts_from_owner,
         resolve_infer_artifact_paths,
         write_infer_summary,
     )
@@ -1460,10 +1522,13 @@ def run_offline_artifact_inference(owner: Any) -> Tuple[Path, Path]:
         summary_path=worker_summary_path,
         trace_path=worker_trace_path,
     )
-    resolved_meta = build_infer_resolved_meta(
+    artifact_facts = resolve_infer_artifact_facts_from_owner(
         owner=self,
         backend=backend,
         batch_size=batch_size,
+    )
+    resolved_meta = build_infer_resolved_meta_from_facts(
+        facts=artifact_facts,
         out_path=worker_out_path,
         summary_path=worker_summary_path,
         trace_path=worker_trace_path,
@@ -1751,12 +1816,10 @@ def run_offline_artifact_inference(owner: Any) -> Tuple[Path, Path]:
 
         _flush_pending(pending)
 
-    summary_payload = build_infer_summary_payload(
-        owner=self,
+    summary_payload = build_infer_summary_payload_from_facts(
+        facts=artifact_facts,
         counters=counters,
-        backend=backend,
         determinism=determinism,
-        batch_size=batch_size,
     )
     write_infer_summary(
         summary_path=worker_summary_path,
@@ -1782,12 +1845,10 @@ def run_offline_artifact_inference(owner: Any) -> Tuple[Path, Path]:
                 final_summary_path=summary_path,
                 final_trace_path=trace_path,
             )
-            final_summary_payload = build_infer_summary_payload(
-                owner=self,
+            final_summary_payload = build_infer_summary_payload_from_facts(
+                facts=artifact_facts,
                 counters=merged_counters,
-                backend=backend,
                 determinism=determinism,
-                batch_size=batch_size,
             )
             write_infer_summary(
                 summary_path=summary_path,
@@ -2749,6 +2810,19 @@ def build_decode_request_from_rollout_matching_config(
     )
 
 
+def build_decode_request_from_rollout_facts(
+    facts: RolloutDecodeFacts | RolloutRuntimeFacts,
+    *,
+    decode_override: Optional[Mapping[str, Any]] = None,
+) -> DetectionDecodeRequest:
+    """Map resolved Stage-2 rollout facts into a shared decode request."""
+
+    return build_decode_request_from_rollout_matching_config(
+        facts.rollout_matching_cfg,
+        decode_override=decode_override,
+    )
+
+
 def build_decode_request_from_rollout_owner(
     owner: Any,
     *,
@@ -2760,10 +2834,7 @@ def build_decode_request_from_rollout_owner(
     keeping decode-policy parsing under the shared inference runtime.
     """
 
-    rollout_matching_cfg = getattr(owner, "rollout_matching_cfg", {}) or {}
-    if not isinstance(rollout_matching_cfg, Mapping):
-        raise TypeError("owner.rollout_matching_cfg must be a mapping")
-    return build_decode_request_from_rollout_matching_config(
-        rollout_matching_cfg,
+    return build_decode_request_from_rollout_facts(
+        resolve_rollout_decode_facts_from_owner(owner),
         decode_override=decode_override,
     )

@@ -284,6 +284,29 @@ def test_stage2_compact_full_parser_adapter_filters_bad_geometry() -> None:
     )
 
 
+def test_stage2_parser_adapter_exposes_non_metric_status_for_diagnostic_parse() -> None:
+    parsed = parse_stage2_detection_rollout_predictions(
+        tokenizer=_FakeTokenizer(),
+        response_token_ids=[11, 12, 13],
+        response_text="",
+        rollout_template_policy=SimpleNamespace(template_family="compact_full"),
+        object_field_order="desc_first",
+        coord_id_to_bin={},
+        gt_object_factory=_FakeGTObject,
+        compact_rollout_codec_factory=_FakeCompactCodec,
+        parse_rollout_for_matching_fn=lambda **_kwargs: None,
+        points_from_coord_tokens_fn=lambda **_kwargs: None,
+    )
+
+    assert parsed.parser_result.parser_policy == "diagnostic"
+    assert parsed.parser_result.metric_bearing is False
+    assert parsed.parser_result.salvage_recovered is False
+    assert parsed.parser_result.diagnostics["dropped_invalid"] == 1
+
+    with unittest.TestCase().assertRaisesRegex(ValueError, "metric_bearing=false"):
+        require_metric_bearing(parsed.parser_result, consumer="stage2_eval")
+
+
 def test_stage2_compact_full_parser_adapter_uses_real_codec_fixture() -> None:
     raw = (
         f"{OBJECT_REF_START_TOKEN}cat{BOX_START_TOKEN}"
@@ -304,6 +327,14 @@ def test_stage2_compact_full_parser_adapter_uses_real_codec_fixture() -> None:
     )
 
     assert parsed.parse.parser_id == "compact_full"
+    require_metric_bearing(parsed.parser_result, consumer="stage2_eval")
+    assert parsed.parser_result.to_artifact_metadata() == {
+        "parser_id": "compact_full",
+        "parser_policy": "strict",
+        "metric_bearing": True,
+        "salvage_recovered": False,
+        "parser_error_count": 0,
+    }
     assert parsed.parse.response_token_ids == (31, 32, 33)
     assert parsed.parse.dropped_invalid == 0
     assert parsed.pred_meta == parsed.preds
@@ -324,6 +355,46 @@ def test_stage2_compact_full_parser_adapter_uses_real_codec_fixture() -> None:
             "desc": "cat",
         },
     )
+
+
+def test_stage2_compact_full_real_salvage_adapter_is_non_metric() -> None:
+    valid_row = (
+        f"{OBJECT_REF_START_TOKEN}cat{BOX_START_TOKEN}"
+        "<|coord_1|><|coord_2|><|coord_10|><|coord_20|>"
+    )
+    malformed_neighbor = (
+        f"{OBJECT_REF_START_TOKEN}bad{BOX_START_TOKEN}"
+        "<|coord_5|><|coord_6|>"
+    )
+
+    parsed = parse_stage2_detection_rollout_predictions(
+        tokenizer=_FakeTokenizer(),
+        response_token_ids=[41, 42, 43],
+        response_text=f"{valid_row}\n{malformed_neighbor}",
+        rollout_template_policy=resolve_stage2_rollout_template_policy("compact_full"),
+        object_field_order="desc_first",
+        coord_id_to_bin={},
+        gt_object_factory=_FakeGTObject,
+        compact_rollout_codec_factory=CompactFullRolloutCodec,
+        parse_rollout_for_matching_fn=lambda **_kwargs: None,
+        points_from_coord_tokens_fn=lambda **_kwargs: None,
+    )
+
+    assert parsed.preds == (
+        _FakeGTObject(
+            index=0,
+            geom_type="bbox_2d",
+            points_norm1000=[1, 2, 10, 20],
+            desc="cat",
+        ),
+    )
+    assert parsed.parse.fallback_reason == "compact_full_salvage"
+    assert parsed.parser_result.parser_policy == "diagnostic"
+    assert parsed.parser_result.metric_bearing is False
+    assert parsed.parser_result.salvage_recovered is True
+
+    with unittest.TestCase().assertRaisesRegex(ValueError, "metric_bearing=false"):
+        require_metric_bearing(parsed.parser_result, consumer="stage2_eval")
 
 
 def test_stage2_coord_token_parser_adapter_uses_injected_trainer_functions() -> None:
@@ -400,6 +471,11 @@ def test_stage2_coord_token_parser_adapter_uses_real_parser_fixture() -> None:
     )
 
     assert parsed.parse.invalid_rollout is False
+    assert parsed.parser_result.parser_policy == "diagnostic"
+    assert parsed.parser_result.metric_bearing is False
+    assert parsed.parser_result.salvage_recovered is True
+    with unittest.TestCase().assertRaisesRegex(ValueError, "metric_bearing=false"):
+        require_metric_bearing(parsed.parser_result, consumer="stage2_eval")
     assert parsed.parse.response_text == response_text
     assert parsed.parse.prefix_text == response_text[:-2]
     assert [obj.desc for obj in parsed.pred_meta] == ["cat"]
