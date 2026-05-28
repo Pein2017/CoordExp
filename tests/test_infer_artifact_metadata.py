@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -8,6 +9,7 @@ from src.infer.artifacts import (
     build_infer_resolved_meta_from_facts,
     build_infer_summary_payload,
     build_infer_summary_payload_from_facts,
+    load_comparable_artifact,
     resolve_infer_artifact_facts_from_owner,
 )
 
@@ -195,3 +197,56 @@ def test_infer_artifacts_core_builders_consume_resolved_facts() -> None:
             assert summary["distributed"]["rank"] == 2
         if owner.requested_mode == "auto":
             assert summary["mode_resolution_reason"] == owner.mode_reason
+
+
+def test_comparable_artifact_loader_accepts_run_relative_artifact_bindings(
+    tmp_path: Path, monkeypatch
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    run_dir = Path("run")
+    run_dir.mkdir()
+    raw_path = run_dir / "gt_vs_pred.jsonl"
+    scored_path = run_dir / "gt_vs_pred_scored.jsonl"
+    raw_path.write_text("{}\n", encoding="utf-8")
+    scored_path.write_text("{}\n", encoding="utf-8")
+
+    generation_provenance = {
+        "prompt_policy_fingerprint": "prompt_policy:v1:" + "a" * 64,
+        "decode_policy_fingerprint": "decode:" + "b" * 64,
+        "model_identity_fingerprint": "model:" + "c" * 64,
+    }
+    (run_dir / "resolved_config.json").write_text(
+        json.dumps(
+            {
+                "inference_provenance": {
+                    "comparable": True,
+                    "score_policy": "none",
+                    **generation_provenance,
+                },
+                "artifacts": {
+                    "gt_vs_pred_jsonl": str(raw_path),
+                    "gt_vs_pred_scored_jsonl": str(scored_path),
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    scored_path.with_suffix(scored_path.suffix + ".provenance.json").write_text(
+        json.dumps(
+            {
+                **generation_provenance,
+                "score_policy_fingerprint": "score_policy:v1:" + "d" * 64,
+                "artifact_path": str(scored_path),
+                "metric_bearing": True,
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    raw_loaded = load_comparable_artifact(raw_path)
+    scored_loaded = load_comparable_artifact(scored_path, require_score=True)
+
+    assert raw_loaded["provenance_path"] == str(run_dir / "resolved_config.json")
+    assert scored_loaded["provenance_path"] == str(
+        scored_path.with_suffix(scored_path.suffix + ".provenance.json")
+    )

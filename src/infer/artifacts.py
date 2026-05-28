@@ -424,9 +424,11 @@ def _artifact_path_matches(value: Any, *, carrier: Path, artifact_path: Path) ->
     if not isinstance(value, str) or not value.strip():
         return False
     candidate = Path(value).expanduser()
+    candidate_paths = [candidate]
     if not candidate.is_absolute():
-        candidate = carrier.parent / candidate
-    return candidate.resolve() == artifact_path.resolve()
+        candidate_paths.append(carrier.parent / candidate)
+    resolved_artifact_path = artifact_path.resolve()
+    return any(path.resolve() == resolved_artifact_path for path in candidate_paths)
 
 
 def _is_provenance_bound_to_artifact(
