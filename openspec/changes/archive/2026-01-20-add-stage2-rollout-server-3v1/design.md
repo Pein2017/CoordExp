@@ -11,7 +11,7 @@ Key principle: keep stage_2 correctness and reproducibility while eliminating th
 ## Target Topology (3 vs 1)
 Single node, 4 GPUs:
 - GPUs 0-2: vLLM rollout server (3 GPUs)
-- GPU 3: learner (1 GPU) running `RolloutMatchingSFTTrainer` (single training process / `world_size == 1`)
+- GPU 3: learner (1 GPU) running `Stage2RolloutRuntime` (single training process / `world_size == 1`)
 
 This is intentionally compatible with the fact that Qwen3-VL-8B can fit on a single GPU, and it leaves room to reduce `global_max_length` (e.g. 16k -> 12k) if needed.
 

@@ -5,7 +5,28 @@ from pathlib import Path
 
 import pytest
 
+from src.training_runtime import (
+    resolve_training_runtime_plan,
+    validate_training_runtime_preflight,
+)
 from src.trainers.rollout_matching.preflight import build_stage2_launcher_preflight
+
+
+def test_stage2_teacher_forcing_packing_fails_before_launcher_rollout_setup() -> None:
+    training_config = types.SimpleNamespace(
+        objective=types.SimpleNamespace(id="teacher_forcing"),
+        custom=types.SimpleNamespace(trainer_variant="stage2_rollout_correction"),
+        training={"packing": True},
+    )
+
+    with pytest.raises(
+        ValueError,
+        match=r"teacher_forcing.*stage2_rollout_correction.*training\.packing=true",
+    ):
+        validate_training_runtime_preflight(
+            training_config,
+            runtime_plan=resolve_training_runtime_plan("stage2_rollout_correction"),
+        )
 
 
 def test_stage2_launcher_preflight_resolves_expected_fields_for_server_cfg() -> None:
@@ -47,7 +68,9 @@ def test_stage2_launcher_preflight_resolves_expected_fields_for_server_cfg() -> 
             "vllm": {
                 "mode": "server",
                 "max_model_len": 14000,
-                "enable_lora": False,
+                "enable_lora": True,
+                "enable_tower_connector_lora": True,
+                "sync": {"mode": "adapter"},
                 "mm_processor_kwargs": {"do_resize": False},
                 "gpu_memory_utilization": 0.85,
                 "server": {
@@ -87,7 +110,8 @@ def test_stage2_launcher_preflight_resolves_expected_fields_for_server_cfg() -> 
     assert int(out["server_max_length"]) == 14000
     assert out["server_truncation_strategy"] == "delete"
 
-    assert bool(out["vllm_enable_lora"]) is False
+    assert bool(out["vllm_enable_lora"]) is True
+    assert int(out["vllm_max_lora_rank"]) == 16
     assert pytest.approx(float(out["vllm_gpu_memory_utilization"]), rel=1e-6) == 0.85
     assert out["server_torch_dtype"] in {"bfloat16", "bf16"}
 
@@ -103,7 +127,9 @@ def test_stage2_launcher_preflight_accepts_vllm_train_backend() -> None:
             "vllm": {
                 "mode": "server",
                 "max_model_len": 2048,
-                "enable_lora": False,
+                "enable_lora": True,
+                "enable_tower_connector_lora": True,
+                "sync": {"mode": "adapter"},
                 "mm_processor_kwargs": {"do_resize": False},
                 "server": {
                     "servers": [
@@ -139,7 +165,9 @@ def test_stage2_launcher_preflight_prefers_custom_offline_max_pixels() -> None:
             "vllm": {
                 "mode": "server",
                 "max_model_len": 2048,
-                "enable_lora": False,
+                "enable_lora": True,
+                "enable_tower_connector_lora": True,
+                "sync": {"mode": "adapter"},
                 "mm_processor_kwargs": {"do_resize": False},
                 "server": {
                     "servers": [
@@ -170,7 +198,9 @@ def test_stage2_launcher_preflight_rejects_base_url_0_0_0_0() -> None:
             "vllm": {
                 "mode": "server",
                 "max_model_len": 2048,
-                "enable_lora": False,
+                "enable_lora": True,
+                "enable_tower_connector_lora": True,
+                "sync": {"mode": "adapter"},
                 "mm_processor_kwargs": {"do_resize": False},
                 "server": {
                     "servers": [
@@ -200,7 +230,9 @@ def test_stage2_launcher_preflight_rejects_multi_server_configs() -> None:
             "vllm": {
                 "mode": "server",
                 "max_model_len": 128,
-                "enable_lora": False,
+                "enable_lora": True,
+                "enable_tower_connector_lora": True,
+                "sync": {"mode": "adapter"},
                 "mm_processor_kwargs": {"do_resize": False},
                 "server": {
                     "servers": [
@@ -251,7 +283,9 @@ def test_stage2_launcher_preflight_requires_group_port() -> None:
             "vllm": {
                 "mode": "server",
                 "max_model_len": 128,
-                "enable_lora": False,
+                "enable_lora": True,
+                "enable_tower_connector_lora": True,
+                "sync": {"mode": "adapter"},
                 "mm_processor_kwargs": {"do_resize": False},
                 "server": {
                     "servers": [
@@ -279,7 +313,9 @@ def test_stage2_launcher_preflight_requires_mm_processor_do_resize_false() -> No
             "vllm": {
                 "mode": "server",
                 "max_model_len": 2048,
-                "enable_lora": False,
+                "enable_lora": True,
+                "enable_tower_connector_lora": True,
+                "sync": {"mode": "adapter"},
                 "server": {
                     "servers": [
                         {
@@ -307,7 +343,9 @@ def test_stage2_launcher_preflight_rejects_mm_processor_do_resize_true() -> None
             "vllm": {
                 "mode": "server",
                 "max_model_len": 2048,
-                "enable_lora": False,
+                "enable_lora": True,
+                "enable_tower_connector_lora": True,
+                "sync": {"mode": "adapter"},
                 "mm_processor_kwargs": {"do_resize": True},
                 "server": {
                     "servers": [

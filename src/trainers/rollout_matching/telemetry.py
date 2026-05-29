@@ -73,7 +73,7 @@ class PendingTrainRolloutLog:
 
     # Stage-2 objective atoms (already post-weighting) accumulated across micro-batches.
     #
-    # Keys should be full provenance keys (e.g. `loss/B_coord/bbox_smoothl1`).
+    # Keys should be full provenance keys (e.g. `loss/rollout_correction_coord/bbox_smoothl1`).
     objective_atom_sum: Dict[str, float] = field(default_factory=dict)
 
     # Segment-weighted objective sums (weight = number of meta entries in the micro-pack).

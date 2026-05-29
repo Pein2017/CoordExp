@@ -110,7 +110,7 @@ training suppression and offline post-op guarding as unrelated mechanisms.
   - [orchestration.py](/data/home/xiaoyan/AIteam/data/CoordExp/src/eval/orchestration.py)
   - [artifacts.py](/data/home/xiaoyan/AIteam/data/CoordExp/src/eval/artifacts.py)
 - No new CLI flags are introduced.
-- `stage2_rollout_aligned` is explicitly out of scope for the first landing.
+- `stage2_rollout_runtime` is explicitly out of scope for the first landing.
 - Backward compatibility is not a goal for this refactor. Legacy sequential
   duplicate handling, legacy metric aliases, and compatibility shims may be
   removed rather than preserved.

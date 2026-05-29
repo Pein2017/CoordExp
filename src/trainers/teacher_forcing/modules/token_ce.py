@@ -6,7 +6,6 @@ import torch
 import torch.nn.functional as F
 
 from ..contracts import ModuleResult, PipelineModuleSpec, TeacherForcingContext
-from ..module_registry import normalize_token_ce_stop_signal_damping_config
 from ..token_types import build_token_type_masks, iter_segment_views
 
 
@@ -28,12 +27,6 @@ def run_token_ce_module(
     coord_id_set = context.coord_id_set
 
     cfg = spec.config if isinstance(spec.config, Mapping) else {}
-    if "stop_signal_damping" in cfg:
-        normalize_token_ce_stop_signal_damping_config(
-            cfg.get("stop_signal_damping"),
-            path="token_ce.config.stop_signal_damping",
-        )
-
     desc_ce_weight = max(
         0.0,
         _coerce_float(
@@ -55,12 +48,20 @@ def run_token_ce_module(
             1.0,
         ),
     )
+    schema_struct_ce_weight = max(
+        0.0,
+        _coerce_float(
+            cfg.get("schema_ce_weight", 1.0),
+            1.0,
+        ),
+    )
     labels_masked = torch.full_like(input_ids, -100)
     base_weights = input_ids.new_zeros(input_ids.shape, dtype=torch.float32)
     struct_weights = input_ids.new_zeros(input_ids.shape, dtype=torch.float32)
     desc_weights = input_ids.new_zeros(input_ids.shape, dtype=torch.float32)
 
     channel = str(context.channel or "").strip().upper()
+    rollout_correction_channel = channel == "ROLLOUT_CORRECTION"
 
     for b, seg_start, seg_end, seg in iter_segment_views(input_ids=input_ids, meta=meta):
         prompt_len = int(seg.get("prompt_len", 0) or 0)
@@ -71,6 +72,8 @@ def run_token_ce_module(
         tail_desc_pos = [int(p) for p in (seg.get("tail_desc_pos") or [])]
         tail_desc_weights = list(seg.get("tail_desc_weights") or [])
         tail_closure_pos = [int(p) for p in (seg.get("tail_closure_pos") or [])]
+        prefix_desc_pos = [int(p) for p in (seg.get("prefix_desc_pos") or [])]
+        prefix_desc_weights = list(seg.get("prefix_desc_weights") or [])
 
         seg_start_i = int(seg_start)
         seg_end_i = int(seg_end)
@@ -89,19 +92,50 @@ def run_token_ce_module(
             min(seg_end_i, seg_start_i + prompt_len + train_len),
         )
 
-        if channel == "B" and global_prefix_struct_ce_weight > 0.0:
+        prefix_desc = {int(x) for x in prefix_desc_pos if int(x) >= 0}
+        prefix_desc_weight_by_pos: dict[int, float] = {}
+        if prefix_desc_weights:
+            if len(prefix_desc_weights) != len(prefix_desc_pos):
+                raise ValueError(
+                    "prefix_desc_weights must align 1:1 with prefix_desc_pos entries"
+                )
+            for rel_raw, weight_raw in zip(prefix_desc_pos, prefix_desc_weights):
+                try:
+                    rel_i = int(rel_raw)
+                    weight_i = float(weight_raw)
+                except (TypeError, ValueError) as exc:
+                    raise ValueError(
+                        "prefix_desc_weights entries must be float-compatible"
+                    ) from exc
+                if rel_i < 0:
+                    continue
+                prefix_desc_weight_by_pos[int(rel_i)] = float(weight_i)
+
+        if rollout_correction_channel:
             for p in range(int(prefix_start), int(prefix_end)):
                 if int(input_ids[b, p].item()) in coord_id_set:
                     continue
-                labels_masked[b, p] = input_ids[b, p]
-                base_weights[b, p] = max(
-                    float(base_weights[b, p].item()),
-                    float(global_prefix_struct_ce_weight),
-                )
-                struct_weights[b, p] = max(
-                    float(struct_weights[b, p].item()),
-                    float(global_prefix_struct_ce_weight),
-                )
+                rel = int(p - prefix_start)
+                if rel in prefix_desc:
+                    desc_multiplier = float(prefix_desc_weight_by_pos.get(rel, 1.0))
+                    w_desc = float(fn_desc_ce_weight) * float(desc_multiplier)
+                    labels_masked[b, p] = input_ids[b, p]
+                    base_weights[b, p] = float(w_desc)
+                    desc_weights[b, p] = float(w_desc)
+                    continue
+
+                if global_prefix_struct_ce_weight > 0.0:
+                    labels_masked[b, p] = input_ids[b, p]
+                    base_weights[b, p] = max(
+                        float(base_weights[b, p].item()),
+                        float(global_prefix_struct_ce_weight)
+                        * float(schema_struct_ce_weight),
+                    )
+                    struct_weights[b, p] = max(
+                        float(struct_weights[b, p].item()),
+                        float(global_prefix_struct_ce_weight)
+                        * float(schema_struct_ce_weight),
+                    )
 
         tail_ignore = {int(x) for x in tail_ignore_pos if int(x) >= 0}
         tail_desc = {int(x) for x in tail_desc_pos if int(x) >= 0}
@@ -136,13 +170,15 @@ def run_token_ce_module(
 
             if rel in tail_desc:
                 desc_multiplier = float(tail_desc_weight_by_pos.get(rel, 1.0))
-                w_desc = float(fn_desc_ce_weight if channel == "B" else desc_ce_weight)
+                w_desc = float(
+                    fn_desc_ce_weight if rollout_correction_channel else desc_ce_weight
+                )
                 w_desc *= float(desc_multiplier)
                 base_weights[b, p] = float(w_desc)
                 desc_weights[b, p] = float(w_desc)
             else:
-                base_weights[b, p] = 1.0
-                struct_weights[b, p] = 1.0
+                base_weights[b, p] = float(schema_struct_ce_weight)
+                struct_weights[b, p] = float(schema_struct_ce_weight)
 
         for rel in tail_closure:
             p = int(tail_start + rel)
@@ -151,8 +187,14 @@ def run_token_ce_module(
             if int(input_ids[b, p].item()) in coord_id_set:
                 continue
             labels_masked[b, p] = input_ids[b, p]
-            base_weights[b, p] = max(float(base_weights[b, p].item()), 1.0)
-            struct_weights[b, p] = max(float(struct_weights[b, p].item()), 1.0)
+            base_weights[b, p] = max(
+                float(base_weights[b, p].item()),
+                float(schema_struct_ce_weight),
+            )
+            struct_weights[b, p] = max(
+                float(struct_weights[b, p].item()),
+                float(schema_struct_ce_weight),
+            )
 
     bsz, _, vocab = logits_ce.shape
     logits_next = logits_ce[:, :-1, :]

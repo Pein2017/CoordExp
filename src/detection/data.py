@@ -10,10 +10,12 @@ from typing import Any, Literal, Mapping, Sequence
 _RAW_TOP_LEVEL_KEYS = frozenset(
     {"file_name", "height", "image_id", "images", "metadata", "objects", "width"}
 )
-_RAW_OBJECT_KEYS = frozenset(
+_RAW_REQUIRED_OBJECT_KEYS = frozenset(
     {"bbox_2d", "category_id", "category_name", "coco_ann_id", "desc"}
 )
+_RAW_OPTIONAL_OBJECT_KEYS = frozenset({"object_id"})
 _RAW_METADATA_KEYS = frozenset({"source", "split"})
+_RAW_OPTIONAL_METADATA_KEYS = frozenset({"supervision"})
 _COORD_TOKEN_RE = re.compile(r"<\|coord_(\d{1,3})\|>")
 
 ObjectOrderingStrategy = Literal["sorted", "random_permutation"]
@@ -21,20 +23,31 @@ ObjectOrderingStrategy = Literal["sorted", "random_permutation"]
 
 @dataclass(frozen=True)
 class CoordinateTokenBox:
-    x1: str
-    y1: str
-    x2: str
-    y2: str
+    x1: str | int
+    y1: str | int
+    x2: str | int
+    y2: str | int
 
     @property
     def tokens(self) -> tuple[str, str, str, str]:
-        return (self.x1, self.y1, self.x2, self.y2)
+        return tuple(
+            _coordinate_component_token(component)
+            for component in (self.x1, self.y1, self.x2, self.y2)
+        )
+
+    @property
+    def values(self) -> tuple[int, int, int, int]:
+        return tuple(
+            _coordinate_component_value(component)
+            for component in (self.x1, self.y1, self.x2, self.y2)
+        )
 
 
 @dataclass(frozen=True)
 class DetectionMetadata:
     source: str
     split: str
+    supervision: Mapping[str, Any] | None = None
 
 
 @dataclass(frozen=True)
@@ -45,6 +58,7 @@ class RawDetectionObject:
     category_id: int
     category_name: str
     coco_ann_id: int
+    object_id: str | None = None
 
 
 @dataclass(frozen=True)
@@ -68,6 +82,9 @@ class NormalizedDetectionObject:
     category_id: int
     category_name: str
     coco_ann_id: int
+    object_id: str | None = None
+    source_role: str | None = None
+    relation_snapshot: Mapping[str, Any] | None = None
 
 
 @dataclass(frozen=True)
@@ -127,11 +144,17 @@ class NormalizedDetectionSample:
 
 
 def parse_raw_detection_row(row: Mapping[str, Any]) -> RawDetectionRow:
-    """Parse a source COCO coord-token JSONL row into frozen typed containers."""
+    """Parse legacy coord-token or canonical norm1000 rows into typed containers."""
 
     _validate_key_set(row, expected=_RAW_TOP_LEVEL_KEYS, label="top-level")
     metadata_raw = _require_mapping(row["metadata"], path="metadata")
-    _validate_key_set(metadata_raw, expected=_RAW_METADATA_KEYS, label="metadata")
+    _validate_key_set(
+        metadata_raw,
+        expected=_RAW_METADATA_KEYS,
+        optional=_RAW_OPTIONAL_METADATA_KEYS,
+        label="metadata",
+    )
+    supervision = _parse_optional_supervision(metadata_raw)
 
     objects_raw = _require_sequence(row["objects"], path="objects")
     if not objects_raw:
@@ -156,6 +179,7 @@ def parse_raw_detection_row(row: Mapping[str, Any]) -> RawDetectionRow:
         metadata=DetectionMetadata(
             source=_require_str(metadata_raw["source"], path="metadata.source"),
             split=_require_str(metadata_raw["split"], path="metadata.split"),
+            supervision=supervision,
         ),
     )
 
@@ -169,6 +193,7 @@ def normalize_detection_row(
     normalized_objects: list[NormalizedDetectionObject] = []
     for normalized_index, source_index in enumerate(source_indices):
         source = raw.objects[source_index]
+        relation_snapshot = _relation_snapshot_for_object(raw.metadata, source.object_id)
         normalized_objects.append(
             NormalizedDetectionObject(
                 normalized_object_index=normalized_index,
@@ -179,6 +204,9 @@ def normalize_detection_row(
                 category_id=source.category_id,
                 category_name=source.category_name,
                 coco_ann_id=source.coco_ann_id,
+                object_id=source.object_id,
+                source_role=_source_role_from_snapshot(relation_snapshot),
+                relation_snapshot=relation_snapshot,
             )
         )
 
@@ -197,32 +225,139 @@ def normalize_detection_row(
 def _parse_raw_object(obj: Any, *, index: int) -> RawDetectionObject:
     path = f"objects[{index}]"
     obj_raw = _require_mapping(obj, path=path)
-    _validate_key_set(obj_raw, expected=_RAW_OBJECT_KEYS, label=path, key_name="object")
+    _validate_key_set(
+        obj_raw,
+        expected=_RAW_REQUIRED_OBJECT_KEYS,
+        optional=_RAW_OPTIONAL_OBJECT_KEYS,
+        label=path,
+        key_name="object",
+    )
+    bbox_2d = _parse_coordinate_box(obj_raw["bbox_2d"], path=f"{path}.bbox_2d")
+    object_id = (
+        _require_str(obj_raw["object_id"], path=f"{path}.object_id")
+        if "object_id" in obj_raw
+        else None
+    )
+    if _is_norm1000_integer_box(bbox_2d) and object_id is None:
+        raise ValueError(f"{path}.object_id is required for norm1000 integer bbox_2d rows")
+
     return RawDetectionObject(
         source_object_index=index,
         desc=_require_str(obj_raw["desc"], path=f"{path}.desc"),
-        bbox_2d=_parse_coordinate_token_box(obj_raw["bbox_2d"], path=f"{path}.bbox_2d"),
+        bbox_2d=bbox_2d,
         category_id=_require_int(obj_raw["category_id"], path=f"{path}.category_id"),
         category_name=_require_str(obj_raw["category_name"], path=f"{path}.category_name"),
         coco_ann_id=_require_int(obj_raw["coco_ann_id"], path=f"{path}.coco_ann_id"),
+        object_id=object_id,
     )
 
 
-def _parse_coordinate_token_box(value: Any, *, path: str) -> CoordinateTokenBox:
+def _parse_optional_supervision(
+    metadata_raw: Mapping[str, Any],
+) -> Mapping[str, Any] | None:
+    if "supervision" not in metadata_raw:
+        return None
+
+    supervision_raw = _require_mapping(
+        metadata_raw["supervision"],
+        path="metadata.supervision",
+    )
+    if "object_supervision" in supervision_raw:
+        object_supervision = _require_mapping(
+            supervision_raw["object_supervision"],
+            path="metadata.supervision.object_supervision",
+        )
+        for object_id, snapshot in object_supervision.items():
+            if not isinstance(object_id, str) or not object_id:
+                raise ValueError(
+                    "metadata.supervision.object_supervision keys must be non-empty strings"
+                )
+            _require_mapping(
+                snapshot,
+                path=f"metadata.supervision.object_supervision[{object_id!r}]",
+            )
+    if "support_objects" in supervision_raw:
+        _require_sequence(
+            supervision_raw["support_objects"],
+            path="metadata.supervision.support_objects",
+        )
+
+    return _copy_json_safe_metadata(supervision_raw, path="metadata.supervision")
+
+
+def _relation_snapshot_for_object(
+    metadata: DetectionMetadata, object_id: str | None
+) -> Mapping[str, Any] | None:
+    if object_id is None or metadata.supervision is None:
+        return None
+    object_supervision = metadata.supervision.get("object_supervision")
+    if not isinstance(object_supervision, Mapping):
+        return None
+    snapshot = object_supervision.get(object_id)
+    if not isinstance(snapshot, Mapping):
+        return None
+    return _copy_json_safe_metadata(
+        snapshot,
+        path=f"metadata.supervision.object_supervision[{object_id!r}]",
+    )
+
+
+def _source_role_from_snapshot(snapshot: Mapping[str, Any] | None) -> str | None:
+    if snapshot is None or "source_role" not in snapshot:
+        return None
+    source_role = snapshot["source_role"]
+    if source_role is None:
+        return None
+    if not isinstance(source_role, str):
+        raise ValueError("metadata supervision source_role must be a string when present")
+    return source_role
+
+
+def _copy_json_safe_metadata(value: Any, *, path: str) -> Any:
+    if isinstance(value, Mapping):
+        copied: dict[str, Any] = {}
+        for key, item in value.items():
+            if not isinstance(key, str) or not key:
+                raise ValueError(f"{path} keys must be non-empty strings")
+            copied[key] = _copy_json_safe_metadata(item, path=f"{path}.{key}")
+        return copied
+    if isinstance(value, Sequence) and not isinstance(value, (str, bytes, bytearray)):
+        return [
+            _copy_json_safe_metadata(item, path=f"{path}[{index}]")
+            for index, item in enumerate(value)
+        ]
+    if value is None or isinstance(value, (str, int, float, bool)):
+        return value
+    raise ValueError(f"{path} must contain JSON-safe metadata values")
+
+
+def _parse_coordinate_box(value: Any, *, path: str) -> CoordinateTokenBox:
     values = _require_sequence(value, path=path)
     if len(values) != 4:
-        raise ValueError(f"{path} must contain exactly four coordinate-token strings")
-    tokens = tuple(
-        _require_coordinate_token(token, path=f"{path}[{idx}]")
-        for idx, token in enumerate(values)
-    )
-    x1, y1, x2, y2 = (_coordinate_token_value(token) for token in tokens)
-    if x1 > x2 or y1 > y2:
         raise ValueError(
-            f"{path} must be a non-inverted xyxy coordinate-token box; "
-            f"got x1={x1}, y1={y1}, x2={x2}, y2={y2}"
+            f"{path} must contain exactly four coordinate-token strings "
+            "or norm1000 integers"
         )
-    return CoordinateTokenBox(*tokens)
+    if _all_norm1000_integer_components(values):
+        coords = tuple(
+            _require_norm1000_integer_coord(coord, path=f"{path}[{idx}]")
+            for idx, coord in enumerate(values)
+        )
+        _validate_non_inverted_xyxy(coords, path=path, format_label="norm1000 integer")
+        return CoordinateTokenBox(*coords)
+    if all(isinstance(component, str) for component in values):
+        tokens = tuple(
+            _require_coordinate_token(token, path=f"{path}[{idx}]")
+            for idx, token in enumerate(values)
+        )
+        coords = tuple(_coordinate_token_value(token) for token in tokens)
+        _validate_non_inverted_xyxy(
+            coords, path=path, format_label="coordinate-token"
+        )
+        return CoordinateTokenBox(*tokens)
+    raise ValueError(
+        f"{path} must contain either four norm1000 integers or four coordinate-token strings"
+    )
 
 
 def _require_coordinate_token(value: Any, *, path: str) -> str:
@@ -246,6 +381,53 @@ def _coordinate_token_value(token: str) -> int:
     return int(match.group(1))
 
 
+def _coordinate_component_token(value: str | int) -> str:
+    if isinstance(value, str):
+        return value
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise ValueError(f"coordinate value must be a string token or integer, got {value!r}")
+    if value < 0 or value > 999:
+        raise ValueError(f"coordinate integer must be in the 0..999 range, got {value}")
+    return f"<|coord_{value}|>"
+
+
+def _coordinate_component_value(value: str | int) -> int:
+    if isinstance(value, str):
+        return _coordinate_token_value(value)
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise ValueError(f"coordinate value must be a string token or integer, got {value!r}")
+    return value
+
+
+def _all_norm1000_integer_components(values: Sequence[Any]) -> bool:
+    return all(isinstance(value, int) and not isinstance(value, bool) for value in values)
+
+
+def _require_norm1000_integer_coord(value: Any, *, path: str) -> int:
+    coord = _require_int(value, path=path)
+    if coord < 0 or coord > 999:
+        raise ValueError(f"{path} norm1000 coordinate must be in the 0..999 range")
+    return coord
+
+
+def _validate_non_inverted_xyxy(
+    coords: tuple[int, int, int, int], *, path: str, format_label: str
+) -> None:
+    x1, y1, x2, y2 = coords
+    if x1 > x2 or y1 > y2:
+        raise ValueError(
+            f"{path} must be a non-inverted xyxy {format_label} box; "
+            f"got x1={x1}, y1={y1}, x2={x2}, y2={y2}"
+        )
+
+
+def _is_norm1000_integer_box(box: CoordinateTokenBox) -> bool:
+    return all(
+        isinstance(component, int) and not isinstance(component, bool)
+        for component in (box.x1, box.y1, box.x2, box.y2)
+    )
+
+
 def _realize_object_order(
     raw: RawDetectionRow, *, object_ordering: ObjectOrderingPlan
 ) -> tuple[int, ...]:
@@ -253,8 +435,8 @@ def _realize_object_order(
     if object_ordering.strategy == "sorted":
         geometry_keys = tuple(
             (
-                _coordinate_token_value(obj.bbox_2d.y1),
-                _coordinate_token_value(obj.bbox_2d.x1),
+                obj.bbox_2d.values[1],
+                obj.bbox_2d.values[0],
                 obj.source_object_index,
             )
             for obj in raw.objects
@@ -289,12 +471,13 @@ def _validate_key_set(
     mapping: Mapping[str, Any],
     *,
     expected: frozenset[str],
+    optional: frozenset[str] = frozenset(),
     label: str,
     key_name: str = "top-level",
 ) -> None:
     keys = set(mapping.keys())
     missing = sorted(expected - keys)
-    extra = sorted(keys - expected)
+    extra = sorted(keys - expected - optional)
     if missing:
         raise ValueError(f"{label} missing {key_name} keys: {', '.join(missing)}")
     if extra:

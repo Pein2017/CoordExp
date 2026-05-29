@@ -112,8 +112,8 @@ dataset or prompt identity.
 Normative behavior:
 
 - `configs/stage1/sft_base.yaml` MUST remain the Stage-1 runtime base.
-- `configs/stage2_two_channel/base.yaml` MUST remain the Stage-2 two-channel
-  runtime base.
+- `configs/stage2_rollout_correction/base.yaml` MUST remain the Stage-2
+  rollout-correction runtime base.
 - for canonical migrated families, both stage-local runtime bases SHOULD layer
   on top of `configs/base.yaml` so the universal base remains truly universal.
 - those stage-local bases MAY define stage-specific runtime defaults, but MUST
@@ -140,23 +140,22 @@ exception to base-purity rules.
 
 Normative behavior:
 
-- legacy example config surfaces under `configs/fusion/` MAY remain in-tree as
-  dormant reference assets.
+- legacy example config surfaces under `configs/fusion/` MUST be removed from
+  the active tree.
 - legacy `custom.fusion_config` capability in schema/runtime/tests/docs MUST be
-  disabled in the same cleanup rather than preserved as an active side contract.
+  removed in the same cleanup rather than preserved as an active side contract.
 - multi-dataset or fusion-first config authoring is outside this hierarchy
   contract unless a separate future change explicitly reintroduces it.
 - base-purity or facet-migration rules MUST NOT leave `configs/fusion/` as an
   unreviewed consumer of hidden dataset defaults.
 
-#### Scenario: Fusion is shut down coherently while dormant assets remain
+#### Scenario: Fusion is shut down coherently with no dormant config folder
 
 - **GIVEN** a hierarchy cleanup that removes dataset defaults from
   `configs/base.yaml`
 - **WHEN** legacy fusion config surfaces are reviewed
-- **THEN** the `configs/fusion/` folder may remain only as dormant reference
-  material
-- **AND** `custom.fusion_config` is disabled across schema, runtime, docs,
+- **THEN** the `configs/fusion/` folder is removed from the active tree
+- **AND** `custom.fusion_config` is removed across schema, runtime, docs,
   specs, and tests
 - **AND** the cleanup does not leave them as silent consumers of the old hidden
   base defaults.

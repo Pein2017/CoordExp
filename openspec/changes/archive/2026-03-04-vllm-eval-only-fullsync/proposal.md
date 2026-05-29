@@ -27,7 +27,7 @@ Stage-2 evaluation currently runs full rollout-based decoding via the HF backend
   - Default colocate behavior prioritizes teardown stability (sleep mode disabled); for additional memory relief use `rollout_matching.offload` or vLLM `server` mode.
   - Eval-step confidence-based scoring (e.g., `confidence_postop`-style token-trace scoring used by detection eval) becomes a first-class supported path under vLLM (no "experimental" behavior).
 - Code impacted (expected):
-  - `src/trainers/stage2_rollout_aligned.py` (evaluation loop and vLLM colocate lifecycle).
+  - `src/trainers/stage2_rollout_runtime.py` (evaluation loop and vLLM colocate lifecycle).
   - `src/config/rollout_matching_schema.py` and `src/config/schema.py` (new YAML knobs / validation).
   - `configs/stage2_two_channel/prod/` (new example profile(s)).
 - Dependencies:

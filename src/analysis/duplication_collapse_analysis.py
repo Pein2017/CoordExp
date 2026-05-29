@@ -56,7 +56,7 @@ from src.eval.artifacts import (
     write_jsonl_records,
 )
 from src.eval.confidence_postop import ConfidencePostOpOptions, ConfidencePostOpPaths, run_confidence_postop
-from src.infer.engine import GenerationConfig, InferenceConfig, InferenceEngine
+from src.infer.runtime import create_offline_engine, make_offline_generation_config
 from src.utils.assistant_json import dumps_coordjson
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -1573,30 +1573,31 @@ def _run_reproduction_for_checkpoint(
     subset_path = reproduce_root / "subset.jsonl"
     _write_jsonl(subset_path, subset_rows)
 
-    infer_cfg = InferenceConfig(
-        gt_jsonl=str(subset_path),
-        model_checkpoint=str(checkpoint.resolved.path),
-        mode="coord",
-        prompt_variant=checkpoint.resolved.prompt_variant,
-        bbox_format=checkpoint.spec.bbox_format,
-        object_field_order=checkpoint.resolved.object_field_order,
-        out_path=str(reproduce_root / "gt_vs_pred.jsonl"),
-        pred_token_trace_path=str(reproduce_root / "pred_token_trace.jsonl"),
-        summary_path=str(reproduce_root / "summary.json"),
-        root_image_dir=str(REPO_ROOT),
-        device=cfg.execution.device,
-        backend_type="hf",
-        backend={"attn_implementation": cfg.execution.reproduce_attn_implementation},
+    engine = create_offline_engine(
+        inference_kwargs={
+            "gt_jsonl": str(subset_path),
+            "model_checkpoint": str(checkpoint.resolved.path),
+            "mode": "coord",
+            "prompt_variant": checkpoint.resolved.prompt_variant,
+            "bbox_format": checkpoint.spec.bbox_format,
+            "object_field_order": checkpoint.resolved.object_field_order,
+            "out_path": str(reproduce_root / "gt_vs_pred.jsonl"),
+            "pred_token_trace_path": str(reproduce_root / "pred_token_trace.jsonl"),
+            "summary_path": str(reproduce_root / "summary.json"),
+            "root_image_dir": str(REPO_ROOT),
+            "device": cfg.execution.device,
+            "backend_type": "hf",
+            "backend": {"attn_implementation": cfg.execution.reproduce_attn_implementation},
+        },
+        generation_kwargs={
+            "temperature": float(cfg.decode.temperature),
+            "top_p": float(cfg.decode.top_p),
+            "max_new_tokens": int(cfg.decode.max_new_tokens),
+            "repetition_penalty": float(cfg.decode.repetition_penalty),
+            "batch_size": int(cfg.execution.reproduce_batch_size),
+            "seed": int(cfg.decode.seed),
+        },
     )
-    gen_cfg = GenerationConfig(
-        temperature=float(cfg.decode.temperature),
-        top_p=float(cfg.decode.top_p),
-        max_new_tokens=int(cfg.decode.max_new_tokens),
-        repetition_penalty=float(cfg.decode.repetition_penalty),
-        batch_size=int(cfg.execution.reproduce_batch_size),
-        seed=int(cfg.decode.seed),
-    )
-    engine = InferenceEngine(infer_cfg, gen_cfg)
     out_path, summary_path = engine.infer()
     pred_confidence_path = reproduce_root / "pred_confidence.jsonl"
     scored_path = reproduce_root / "gt_vs_pred_scored.jsonl"
@@ -1879,28 +1880,27 @@ class Qwen3VLSurgeryProber:
             torch.cuda.empty_cache()
 
     def _prompt_inputs(self, image: Image.Image) -> Dict[str, torch.Tensor]:
-        temp_cfg = InferenceConfig(
-            gt_jsonl="unused.jsonl",
-            model_checkpoint=str(self.checkpoint.path),
-            mode="coord",
-            prompt_variant=self.checkpoint.prompt_variant,
-            bbox_format=self.bbox_format,
-            object_field_order=self.checkpoint.object_field_order,
-            out_path="unused.jsonl",
-            device=self.device,
-            backend_type="hf",
-            root_image_dir=str(REPO_ROOT),
-            backend={"attn_implementation": self.attn_implementation},
-        )
-        temp_engine = InferenceEngine(
-            temp_cfg,
-            GenerationConfig(
-                temperature=_AUTHORITATIVE_TEMPERATURE,
-                top_p=_AUTHORITATIVE_TOP_P,
-                repetition_penalty=_AUTHORITATIVE_REPETITION_PENALTY,
-                max_new_tokens=16,
-                seed=_AUTHORITATIVE_SEED,
-            ),
+        temp_engine = create_offline_engine(
+            inference_kwargs={
+                "gt_jsonl": "unused.jsonl",
+                "model_checkpoint": str(self.checkpoint.path),
+                "mode": "coord",
+                "prompt_variant": self.checkpoint.prompt_variant,
+                "bbox_format": self.bbox_format,
+                "object_field_order": self.checkpoint.object_field_order,
+                "out_path": "unused.jsonl",
+                "device": self.device,
+                "backend_type": "hf",
+                "root_image_dir": str(REPO_ROOT),
+                "backend": {"attn_implementation": self.attn_implementation},
+            },
+            generation_kwargs={
+                "temperature": _AUTHORITATIVE_TEMPERATURE,
+                "top_p": _AUTHORITATIVE_TOP_P,
+                "repetition_penalty": _AUTHORITATIVE_REPETITION_PENALTY,
+                "max_new_tokens": 16,
+                "seed": _AUTHORITATIVE_SEED,
+            },
         )
         temp_engine.processor = self.processor
         temp_engine.model = self.model
@@ -3897,7 +3897,7 @@ def run_study(config_path: Path) -> Dict[str, Any]:
                 )
                 generation = runner.generate_image_only_batch(
                     images=[image],
-                    gen_cfg=GenerationConfig(
+                    gen_cfg=make_offline_generation_config(
                         temperature=cfg.decode.temperature,
                         top_p=cfg.decode.top_p,
                         repetition_penalty=cfg.decode.repetition_penalty,

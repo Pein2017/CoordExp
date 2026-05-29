@@ -23,7 +23,8 @@ Primary configs:
 
 - rollout proposal collection:
   - `src/infer/pipeline.py`
-  - `src/infer/engine.py`
+  - `src/infer/runtime.py`
+  - `src/infer/backend.py`
 - matched / unmatched bucketing:
   - `src/eval/detection.py`
 - desc-span parsing:

@@ -8,8 +8,15 @@ import random
 import time
 from typing import Any, Dict, List, Literal, Mapping, MutableMapping, Optional, Sequence
 
+from public_data.view_contracts import (
+    IMAGE_PATH_SEMANTICS_IMAGE_STORE_RELATIVE,
+    load_view_metadata,
+)
 from torch.utils.data import Dataset
-from swift.llm import MaxLengthError
+try:
+    from swift.llm import MaxLengthError
+except ImportError:
+    from swift.template import MaxLengthError
 
 from src.common.geometry.bbox_parameterization import (
     AllowedBBoxFormat,
@@ -47,6 +54,22 @@ from .utils import (
 # Exposed for debugging (e.g., OOM tracing)
 LAST_SAMPLE_DEBUG: Dict[str, Any] = {}
 logger = logging.getLogger(__name__)
+
+
+def _jsonl_uses_image_store_relative_view(path: Path) -> bool:
+    """Return whether a JSONL belongs to an image-store-relative annotation view."""
+
+    meta_path = path.parent / "meta.json"
+    if not meta_path.exists():
+        return False
+
+    metadata = load_view_metadata(meta_path)
+    if path.name not in set(metadata.primary_jsonl.values()):
+        raise ValueError(
+            f"JSONL path {path} is not listed in sibling view meta.json primary_jsonl."
+        )
+
+    return metadata.image_path_semantics == IMAGE_PATH_SEMANTICS_IMAGE_STORE_RELATIVE
 
 
 def _prepared_bbox_slot_order_for_format(bbox_format: AllowedBBoxFormat) -> str:
@@ -316,10 +339,11 @@ class BaseCaptionDataset(Dataset):
         template: Any,
         **kwargs,
     ) -> "BaseCaptionDataset":
+        path = Path(str(jsonl_path))
         records, _invalid_count = load_jsonl_with_diagnostics(
-            Path(str(jsonl_path)),
+            path,
             strict=True,
-            resolve_relative=True,
+            resolve_relative=not _jsonl_uses_image_store_relative_view(path),
         )
         # Optional sample limiting for quick smoke tests
         sample_limit = kwargs.pop("sample_limit", None)

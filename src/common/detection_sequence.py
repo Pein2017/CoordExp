@@ -14,15 +14,15 @@ from typing import Any, Mapping, Sequence, cast
 
 from src.common.detection_compact_rows import (
     BOX_START_TOKEN,
+    COMPACT_DESC_FORBIDDEN_SUBSTRINGS,
+    END_OF_TEXT_TOKEN,
+    IM_END_TOKEN,
     OBJECT_REF_START_TOKEN,
     STRICT_COMPACT_ROW_COORD_TOKEN_RE,
     parse_compact_row,
     render_compact_row,
 )
 from src.utils.assistant_json import dumps_coordjson
-
-IM_END_TOKEN = "<|im_end|>"
-END_OF_TEXT_TOKEN = "<|endoftext|>"
 
 DetectionSequenceFormat = str
 
@@ -40,16 +40,7 @@ ALLOWED_DETECTION_SEQUENCE_FORMATS = {
     COMPACT_MIN_FORMAT,
 }
 
-_FORBIDDEN_DESC_SUBSTRINGS = (
-    "\n",
-    "\r",
-    "\t",
-    OBJECT_REF_START_TOKEN,
-    BOX_START_TOKEN,
-    "<|coord_",
-    "<|im_start|>",
-    IM_END_TOKEN,
-)
+_FORBIDDEN_DESC_SUBSTRINGS = COMPACT_DESC_FORBIDDEN_SUBSTRINGS
 
 
 def _compact_marker_flags(fmt: DetectionSequenceFormat) -> tuple[bool, bool]:
@@ -138,6 +129,15 @@ def render_compact_detection_sequence(
     fmt = normalize_detection_sequence_format(detection_sequence_format)
     if fmt == COORDJSON_FORMAT:
         return dumps_coordjson(payload)
+    if fmt == COMPACT_FULL_FORMAT:
+        from src.detection.teacher_forcing.compact_full_policy import (
+            render_compact_full,
+        )
+
+        return render_compact_full(
+            payload,
+            serialization_policy="marker_delimited",
+        )
 
     objects = payload.get("objects")
     if not isinstance(objects, Sequence) or isinstance(objects, (str, bytes)):
@@ -208,6 +208,7 @@ def parse_compact_detection_sequence(
     text: str,
     *,
     detection_sequence_format: str | None = None,
+    salvage_malformed_rows: bool = False,
 ) -> dict[str, Any] | None:
     """Parse compact generated text back into canonical prediction objects.
 
@@ -231,6 +232,15 @@ def parse_compact_detection_sequence(
     )
     if fmt == COORDJSON_FORMAT:
         return None
+    if fmt == COMPACT_FULL_FORMAT:
+        from src.detection.teacher_forcing.compact_full_policy import parse_compact_full
+
+        result = parse_compact_full(stripped, mode="legacy_compatible")
+        if not result.ok and bool(salvage_malformed_rows):
+            return _salvage_compact_full_payload(stripped)
+        if not result.ok:
+            return None
+        return result.to_payload()
 
     objects: list[dict[str, Any]] = []
     for row in stripped.split("\n"):
@@ -240,6 +250,37 @@ def parse_compact_detection_sequence(
         if parsed is None:
             return None
         objects.append(parsed)
+    return {"objects": objects}
+
+
+def _salvage_compact_full_payload(text: str) -> dict[str, Any] | None:
+    """Return valid compact_full rows when a generated neighbor row is malformed."""
+
+    from src.detection.teacher_forcing.compact_full_policy import parse_compact_full
+
+    candidates: list[str] = []
+    if "\n" in text:
+        candidates = [row for row in text.split("\n") if row]
+    elif OBJECT_REF_START_TOKEN in text:
+        candidates = [
+            f"{OBJECT_REF_START_TOKEN}{part}"
+            for part in text.split(OBJECT_REF_START_TOKEN)[1:]
+            if part
+        ]
+    if not candidates:
+        return None
+
+    objects: list[dict[str, Any]] = []
+    for candidate in candidates:
+        candidate = _strip_generation_suffix(candidate)
+        if not candidate:
+            continue
+        parsed = parse_compact_full(candidate, mode="legacy_compatible")
+        if parsed.ok:
+            objects.extend(obj.to_payload_object() for obj in parsed.objects)
+
+    if not objects:
+        return None
     return {"objects": objects}
 
 

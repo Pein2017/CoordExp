@@ -22,7 +22,8 @@ from src.eval.artifacts import (
     resolve_duplicate_guard_report_path,
     resolve_guarded_prediction_artifact_path,
 )
-from src.eval.detection import EvalOptions, evaluate_and_save
+from src.eval.detection import EvalOptions, _wants_official_metrics, evaluate_and_save
+from src.infer.artifacts import load_comparable_artifact
 from src.utils import get_logger
 
 logger = get_logger(__name__)
@@ -330,8 +331,25 @@ def main() -> None:
     else:
         pred_jsonl, options = _resolve_legacy(args)
 
+    if _wants_official_metrics(options.metrics):
+        load_comparable_artifact(pred_jsonl, require_score=True)
     summary = evaluate_and_save(pred_jsonl, options=options)
-    print(json.dumps(summary.get("metrics", {}), indent=2))
+    if str(options.metrics) == "f1ish":
+        summary.setdefault("evaluation_status", "inspection")
+        summary.setdefault("comparability", "non_comparable")
+        summary.setdefault("comparison_scope", "raw_f1ish")
+    metrics_payload: dict[str, Any] = {"metrics": summary.get("metrics", {})}
+    for key in (
+        "evaluation_status",
+        "comparability",
+        "comparison_scope",
+        "f1ish_evaluation_status",
+        "f1ish_comparability",
+        "f1ish_comparison_scope",
+    ):
+        if key in summary:
+            metrics_payload[key] = summary[key]
+    print(json.dumps(metrics_payload, indent=2))
     print("Counters:", json.dumps(summary.get("counters", {}), indent=2))
 
 

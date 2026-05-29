@@ -9,12 +9,20 @@ from typing import Any, Literal, Mapping, Protocol, runtime_checkable
 
 from src.common.detection_compact_rows import (
     BOX_START_TOKEN,
+    COMPACT_DESC_FORBIDDEN_SUBSTRINGS,
     COMPACT_ROW_COORD_TOKEN_RE,
     OBJECT_REF_START_TOKEN,
-    parse_compact_row,
-    render_compact_row,
+    valid_xyxy_positive_area,
 )
-from src.detection.data import NormalizedDetectionObject, NormalizedDetectionSample
+from src.detection.data import (
+    CoordinateTokenBox,
+    NormalizedDetectionObject,
+    NormalizedDetectionSample,
+)
+from src.detection.teacher_forcing.compact_full_policy import (
+    parse_compact_full,
+    render_compact_full,
+)
 from src.utils.assistant_json import dumps_coordjson
 
 
@@ -75,16 +83,7 @@ SpanProvenance = Literal[
 ]
 
 _COORD_TOKEN_RE = COMPACT_ROW_COORD_TOKEN_RE
-_COMPACT_FORBIDDEN_DESC_SUBSTRINGS = (
-    "\n",
-    "\r",
-    "\t",
-    OBJECT_REF_START_TOKEN,
-    BOX_START_TOKEN,
-    "<|coord_",
-    "<|im_start|>",
-    "<|im_end|>",
-)
+_COMPACT_FORBIDDEN_DESC_SUBSTRINGS = COMPACT_DESC_FORBIDDEN_SUBSTRINGS
 _COORD_SLOT_NAMES = ("x1", "y1", "x2", "y2")
 _ROLE_PRIORITIES: Mapping[TokenRoleName, int] = {
     "COORD": 100,
@@ -148,6 +147,15 @@ class RenderSpanEvent:
     geometry_kind: str | None = None
     slot_name: str | None = None
     provenance: SpanProvenance | None = None
+    object_id: str | None = None
+    supervision_key: str | None = None
+    span_family: str | None = None
+    field_name: str | None = None
+    source_role: str | None = None
+    relation_snapshot: Mapping[str, Any] | None = None
+    coordinate_weight: float | None = None
+    regression_weight: float | None = None
+    hard_bbox_supervision: bool | None = None
 
 
 @dataclass(frozen=True)
@@ -164,6 +172,12 @@ class RenderedObjectEntry:
     separator_span: CharSpan | None
     control_spans: tuple[CharSpan, ...]
     trie_eligible_span: CharSpan
+    object_id: str | None = None
+    source_role: str | None = None
+    relation_snapshot: Mapping[str, Any] | None = None
+    coordinate_weight: float | None = None
+    regression_weight: float | None = None
+    hard_bbox_supervision: bool | None = None
 
     @property
     def bbox_opener_span(self) -> CharSpan:
@@ -374,7 +388,7 @@ class CompactFullTemplate:
         coordinate_surface="coord_token",
         bbox_format="xyxy",
         object_field_order="compact_full_row",
-        object_separator="\n",
+        object_separator="",
         terminal_close="",
     )
 
@@ -395,6 +409,7 @@ class CompactFullTemplate:
         )
         for obj in sample.objects:
             _validate_compact_desc(obj.desc)
+            _validate_compact_full_bbox_geometry(obj)
 
     def render_assistant(
         self,
@@ -452,22 +467,14 @@ class CompactFullTemplate:
     def parse_assistant(self, text: str) -> dict[str, Any]:
         if not text:
             return {"objects": []}
-        if text.endswith("\n") or "\n\n" in text:
-            raise ValueError("text is not strict compact_full")
-
-        objects: list[dict[str, Any]] = []
-        for row in text.split("\n"):
-            objects.append(_parse_compact_full_row(row))
-        return {"objects": objects}
+        result = parse_compact_full(text, mode="marker_delimited_strict")
+        if not result.ok:
+            raise ValueError(f"strict compact_full parse failed: {result.error_code}")
+        return result.to_payload()
 
     def render_entry(self, obj: NormalizedDetectionObject) -> str:
         _validate_compact_desc(obj.desc)
-        return render_compact_row(
-            obj.desc,
-            obj.bbox_2d.tokens,
-            include_object_ref_marker=True,
-            include_bbox_start_marker=True,
-        )
+        return render_compact_full({"objects": [obj]})
 
     def render_separator(self, before_index: int, after_index: int) -> str:
         del before_index, after_index
@@ -517,6 +524,8 @@ class _RenderEventBuilder:
         mask_groups: tuple[MaskGroup, ...],
         classifying: bool,
         object_entry: RenderedObjectEntry | None = None,
+        span_family: str | None = None,
+        field_name: str | None = None,
         geometry_kind: str | None = None,
         slot_name: str | None = None,
         provenance: SpanProvenance | None = None,
@@ -530,6 +539,8 @@ class _RenderEventBuilder:
                 mask_groups=mask_groups,
                 classifying=classifying,
                 object_entry=object_entry,
+                span_family=span_family,
+                field_name=field_name,
                 geometry_kind=geometry_kind,
                 slot_name=slot_name,
                 provenance=provenance,
@@ -593,7 +604,7 @@ def _append_stage1_json_entry(
     structural_spans.append(bbox_start_span)
 
     coordinate_spans: list[CharSpan] = []
-    for coord_index, token in enumerate(obj.bbox_2d.tokens):
+    for coord_index, token in enumerate(_render_bbox_coord_tokens(obj.bbox_2d)):
         if coord_index:
             structural_spans.append(builder.append(", ", "coordinate_separator"))
         coordinate_spans.append(builder.append(token, f"coord_{coord_index}"))
@@ -619,6 +630,15 @@ def _append_stage1_json_entry(
         separator_span=None,
         control_spans=tuple(structural_spans),
         trie_eligible_span=entry_span,
+        object_id=obj.object_id,
+        source_role=obj.source_role,
+        relation_snapshot=obj.relation_snapshot,
+        coordinate_weight=_metadata_weight(obj.relation_snapshot, "coordinate_weight"),
+        regression_weight=_metadata_weight(obj.relation_snapshot, "regression_weight"),
+        hard_bbox_supervision=_hard_bbox_supervision(
+            source_role=obj.source_role,
+            relation_snapshot=obj.relation_snapshot,
+        ),
     )
 
 
@@ -632,7 +652,7 @@ def _append_compact_full_entry(
 
     coordinate_spans = tuple(
         builder.append(token, f"coord_{coord_index}")
-        for coord_index, token in enumerate(obj.bbox_2d.tokens)
+        for coord_index, token in enumerate(_render_bbox_coord_tokens(obj.bbox_2d))
     )
     entry_span = CharSpan(entry_start, len(builder), "object_entry")
     bbox_span = CharSpan(bbox_start_span.end, len(builder), "bbox")
@@ -649,7 +669,46 @@ def _append_compact_full_entry(
         separator_span=None,
         control_spans=(object_ref_span, bbox_start_span),
         trie_eligible_span=entry_span,
+        object_id=obj.object_id,
+        source_role=obj.source_role,
+        relation_snapshot=obj.relation_snapshot,
+        coordinate_weight=_metadata_weight(obj.relation_snapshot, "coordinate_weight"),
+        regression_weight=_metadata_weight(obj.relation_snapshot, "regression_weight"),
+        hard_bbox_supervision=_hard_bbox_supervision(
+            source_role=obj.source_role,
+            relation_snapshot=obj.relation_snapshot,
+        ),
     )
+
+
+def _metadata_weight(
+    relation_snapshot: Mapping[str, Any] | None,
+    key: str,
+) -> float | None:
+    if relation_snapshot is None or key not in relation_snapshot:
+        return None
+    value = relation_snapshot[key]
+    if value is None:
+        return None
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise ValueError(f"relation snapshot {key} must be numeric when present")
+    return float(value)
+
+
+def _hard_bbox_supervision(
+    *,
+    source_role: str | None,
+    relation_snapshot: Mapping[str, Any] | None,
+) -> bool | None:
+    coordinate_weight = _metadata_weight(relation_snapshot, "coordinate_weight")
+    regression_weight = _metadata_weight(relation_snapshot, "regression_weight")
+    if source_role == "proxy_candidate":
+        return False
+    if coordinate_weight == 0.0 or regression_weight == 0.0:
+        return False
+    if coordinate_weight is None and regression_weight is None:
+        return None
+    return True
 
 
 def _render_event(
@@ -660,6 +719,8 @@ def _render_event(
     mask_groups: tuple[MaskGroup, ...],
     classifying: bool,
     object_entry: RenderedObjectEntry | None = None,
+    span_family: str | None = None,
+    field_name: str | None = None,
     geometry_kind: str | None = None,
     slot_name: str | None = None,
     provenance: SpanProvenance | None = None,
@@ -687,6 +748,23 @@ def _render_event(
         geometry_kind=geometry_kind,
         slot_name=slot_name,
         provenance=provenance,
+        object_id=None if object_entry is None else object_entry.object_id,
+        supervision_key=None if object_entry is None else object_entry.object_id,
+        span_family=span_family,
+        field_name=field_name,
+        source_role=None if object_entry is None else object_entry.source_role,
+        relation_snapshot=(
+            None if object_entry is None else object_entry.relation_snapshot
+        ),
+        coordinate_weight=(
+            None if object_entry is None else object_entry.coordinate_weight
+        ),
+        regression_weight=(
+            None if object_entry is None else object_entry.regression_weight
+        ),
+        hard_bbox_supervision=(
+            None if object_entry is None else object_entry.hard_bbox_supervision
+        ),
     )
 
 
@@ -767,6 +845,8 @@ def _stage1_json_entry_events(entry: RenderedObjectEntry) -> tuple[RenderSpanEve
                     mask_groups=("schema", "control"),
                     classifying=True,
                     object_entry=entry,
+                    span_family="geometry",
+                    field_name="bbox_2d",
                     geometry_kind="bbox_2d",
                     provenance="rendered_control",
                 )
@@ -796,6 +876,8 @@ def _stage1_json_entry_events(entry: RenderedObjectEntry) -> tuple[RenderSpanEve
             mask_groups=("desc",),
             classifying=True,
             object_entry=entry,
+            span_family="description",
+            field_name="desc",
             provenance="rendered_leaf",
         )
     )
@@ -837,6 +919,8 @@ def _compact_full_entry_events(entry: RenderedObjectEntry) -> tuple[RenderSpanEv
             mask_groups=("desc",),
             classifying=True,
             object_entry=entry,
+            span_family="description",
+            field_name="desc",
             provenance="rendered_leaf",
         )
     )
@@ -848,6 +932,8 @@ def _compact_full_entry_events(entry: RenderedObjectEntry) -> tuple[RenderSpanEv
             mask_groups=("schema", "control"),
             classifying=True,
             object_entry=entry,
+            span_family="geometry",
+            field_name="bbox_2d",
             geometry_kind="bbox_2d",
             provenance="rendered_control",
         )
@@ -865,6 +951,8 @@ def _coordinate_slot_events(entry: RenderedObjectEntry) -> tuple[RenderSpanEvent
             mask_groups=("coord",),
             classifying=True,
             object_entry=entry,
+            span_family="geometry",
+            field_name="bbox_2d",
             geometry_kind="bbox_2d",
             slot_name=_COORD_SLOT_NAMES[coord_index],
             provenance="rendered_leaf",
@@ -940,7 +1028,7 @@ def _char_spans_overlap(left: CharSpan, right: CharSpan) -> bool:
 def _object_payload(obj: NormalizedDetectionObject) -> dict[str, Any]:
     return {
         "desc": obj.desc,
-        "bbox_2d": list(obj.bbox_2d.tokens),
+        "bbox_2d": list(_render_bbox_coord_tokens(obj.bbox_2d)),
     }
 
 
@@ -982,11 +1070,25 @@ def _validate_common_surface(
 
 
 def _validate_bbox_tokens(obj: NormalizedDetectionObject) -> None:
-    for token in obj.bbox_2d.tokens:
+    for token in _render_bbox_coord_tokens(obj.bbox_2d):
         if not _is_strict_coord_token(token):
             raise ValueError(
                 f"object {obj.object_instance_id} must use coord-token bbox_2d values"
             )
+
+
+def _validate_compact_full_bbox_geometry(obj: NormalizedDetectionObject) -> None:
+    if not valid_xyxy_positive_area(_render_bbox_coord_tokens(obj.bbox_2d)):
+        raise ValueError(
+            f"object {obj.object_instance_id} compact_full bbox_2d must be a "
+            "valid xyxy positive-area box"
+        )
+
+
+def _render_bbox_coord_tokens(bbox_2d: CoordinateTokenBox) -> tuple[str, str, str, str]:
+    """Return the coord-token render surface for legacy and norm1000 boxes."""
+
+    return bbox_2d.tokens
 
 
 def _is_strict_coord_token(token: object) -> bool:
@@ -1018,21 +1120,6 @@ def _validate_compact_desc(desc: str) -> None:
     for forbidden in _COMPACT_FORBIDDEN_DESC_SUBSTRINGS:
         if forbidden in desc:
             raise ValueError(f"compact_full desc contains forbidden marker {forbidden!r}")
-
-
-def _parse_compact_full_row(row: str) -> dict[str, Any]:
-    parts = parse_compact_row(
-        row,
-        require_object_ref_marker=True,
-        require_bbox_start_marker=True,
-        bbox_marker_split="first",
-    )
-    if parts is None:
-        raise ValueError("text is not strict compact_full")
-    _validate_compact_desc(parts.desc)
-    coords = list(parts.bbox_tokens)
-    _validate_strict_coord_tokens(coords, context="strict compact_full bbox_2d")
-    return {"desc": parts.desc, "bbox_2d": coords}
 
 
 def _loads_coordjson_with_bare_coord_tokens(text: str) -> dict[str, Any]:

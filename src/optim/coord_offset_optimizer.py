@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from typing import List, Tuple
+from types import SimpleNamespace
 
 import torch
 from transformers import Trainer
@@ -12,10 +13,26 @@ try:
         create_multimodal_optimizer,
         get_param_startswith,
     )
-except ImportError as exc:  # pragma: no cover - defensive for environments without swift
-    raise ImportError(
-        "swift.plugin.optimizer is required for coord_offset optimizer."
-    ) from exc
+    _OPTIMIZER_CALLBACK_BASE = None
+except ImportError:
+    try:
+        from swift.optimizers import OptimizerCallback, optimizers_map
+        from swift.optimizers.multimodal import (
+            MultimodalOptimizerCallback,
+            get_param_startswith,
+        )
+    except ImportError as exc:  # pragma: no cover - defensive for environments without swift
+        raise ImportError(
+            "swift optimizer plugin APIs are required for coord_offset optimizer."
+        ) from exc
+
+    _OPTIMIZER_CALLBACK_BASE = OptimizerCallback
+
+    def create_multimodal_optimizer(args, model, dataset):
+        _ = dataset
+        trainer = SimpleNamespace(model=model)
+        optimizer = MultimodalOptimizerCallback(args, trainer).create_optimizer(model)
+        return optimizer, None
 
 
 def _split_decay(
@@ -125,9 +142,29 @@ def create_multimodal_coord_offset_optimizer(args, model, dataset):
 
 
 def register_coord_offset_optimizer() -> None:
-    from swift.plugin import optimizers_map
+    try:
+        from swift.plugin import optimizers_map as plugin_optimizers_map
+    except ImportError:
+        plugin_optimizers_map = None
+
+    if plugin_optimizers_map is not None:
+        if "multimodal_coord_offset" not in plugin_optimizers_map:
+            plugin_optimizers_map["multimodal_coord_offset"] = (
+                create_multimodal_coord_offset_optimizer
+            )
+        return
+
+    class CoordOffsetOptimizerCallback(_OPTIMIZER_CALLBACK_BASE):
+        def create_optimizer(self, model=None):
+            model = model if model is not None else self.trainer.model
+            optimizer, _scheduler = create_multimodal_coord_offset_optimizer(
+                self.args,
+                model,
+                None,
+            )
+            return optimizer
 
     if "multimodal_coord_offset" not in optimizers_map:
         optimizers_map["multimodal_coord_offset"] = (
-            create_multimodal_coord_offset_optimizer
+            CoordOffsetOptimizerCallback
         )

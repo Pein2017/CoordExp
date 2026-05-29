@@ -1,9 +1,10 @@
 from __future__ import annotations
 
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
-import torch
+from public_data.view_contracts import write_view_metadata
 
 from src.common.coord_standardizer import CoordinateStandardizer
 from src.common.geometry.bbox_parameterization import (
@@ -12,8 +13,6 @@ from src.common.geometry.bbox_parameterization import (
 )
 from src.config.schema import PromptOverrides, TrainingConfig
 from src.sft import _validate_bbox_format_contract
-from src.trainers.losses.bbox_geo import compute_stage1_bbox_geo_loss
-from src.trainers.losses.bbox_size_aux import compute_stage1_bbox_size_aux_loss
 
 
 def _base_training_payload() -> dict:
@@ -29,23 +28,32 @@ def _base_training_payload() -> dict:
     }
 
 
-def _build_coord_id_map(vocab_size: int, coord_token_ids: list[int]) -> torch.Tensor:
-    coord_id_map = torch.full((vocab_size,), -1, dtype=torch.long)
-    for idx, tok_id in enumerate(coord_token_ids):
-        coord_id_map[int(tok_id)] = int(idx)
-    return coord_id_map
-
-
-def _perfect_next_token_logits(labels: torch.Tensor, *, vocab: int) -> torch.Tensor:
-    seq_len = max(int(labels.shape[1]) - 1, 0)
-    logits = torch.full((int(labels.shape[0]), seq_len, vocab), -20.0)
-    if seq_len <= 0:
-        return logits
-    next_labels = labels[:, 1:]
-    for row in range(int(next_labels.shape[0])):
-        for col in range(int(next_labels.shape[1])):
-            logits[row, col, int(next_labels[row, col].item())] = 20.0
-    return logits
+def _write_qwen_coord_token_view_meta(view_root: Path) -> None:
+    write_view_metadata(
+        view_root / "meta.json",
+        {
+            "schema_version": 1,
+            "kind": "annotation_view",
+            "dataset": "coco",
+            "view": "coco80/len-12000",
+            "image_store": "public_data/coco/images/res-1024",
+            "path_anchor": "repo_root",
+            "image_path_semantics": "image_store_relative",
+            "coordinate_space": "norm1000",
+            "coordinate_storage": "integer",
+            "coordinate_range": [0, 999],
+            "coordinate_chart": "xyxy",
+            "assistant_coordinate_rendering": "qwen_coord_tokens",
+            "primary_jsonl": {"train": "train.jsonl", "val": "val.jsonl"},
+            "sample_policy": {
+                "type": "length_budget",
+                "max_total_tokens": 12000,
+            },
+            "length_budget_scope": {"rendered_families": ["assistant"]},
+            "length_budget_template_id": "compact_full",
+            "summary": {},
+        },
+    )
 
 
 def test_custom_bbox_format_accepts_cxcy_logw_logh_and_rejects_unknown() -> None:
@@ -96,49 +104,11 @@ def test_coord_standardizer_converts_cxcy_logw_logh_predictions_to_xyxy() -> Non
     assert preds[0]["points_text"] == "100 200 400 699"
 
 
-def test_stage1_bbox_losses_accept_cxcy_logw_logh_serialization() -> None:
-    vocab = 1200
-    coord_token_ids = [100 + i for i in range(1000)]
-    coord_id_map = _build_coord_id_map(vocab, coord_token_ids)
-    encoded_bins = xyxy_norm1000_to_cxcy_logw_logh_bins([200, 300, 500, 700])
-    labels = torch.tensor(
-        [[0, 100 + encoded_bins[0], 100 + encoded_bins[1], 100 + encoded_bins[2], 100 + encoded_bins[3]]],
-        dtype=torch.long,
-    )
-    logits = _perfect_next_token_logits(labels, vocab=vocab)
-
-    geo = compute_stage1_bbox_geo_loss(
-        logits=logits,
-        labels=labels,
-        coord_token_ids=coord_token_ids,
-        coord_id_map=coord_id_map,
-        tokenizer=None,
-        cfg={"smoothl1_weight": 1.0, "ciou_weight": 1.0},
-        decode_temperature=1.0,
-        bbox_format="cxcy_logw_logh",
-    )
-    size = compute_stage1_bbox_size_aux_loss(
-        logits=logits,
-        labels=labels,
-        coord_token_ids=coord_token_ids,
-        coord_id_map=coord_id_map,
-        tokenizer=None,
-        cfg={"log_wh_weight": 1.0, "oversize_penalty_weight": 0.0, "eps": 1e-6},
-        decode_temperature=1.0,
-        bbox_format="cxcy_logw_logh",
-    )
-
-    assert geo is not None
-    assert size is not None
-    assert float(geo.total_loss.detach().cpu().item()) == pytest.approx(0.0, abs=1e-8)
-    assert float(size.total_loss.detach().cpu().item()) == pytest.approx(0.0, abs=1e-8)
-
-
 def test_validate_bbox_format_contract_rejects_stage2_cxcy_logw_logh() -> None:
     with pytest.raises(ValueError, match="custom.bbox_format=cxcy_logw_logh"):
         _validate_bbox_format_contract(
             custom_config=SimpleNamespace(bbox_format="cxcy_logw_logh"),
-            trainer_variant="stage2_two_channel",
+            trainer_variant="stage2_rollout_correction",
         )
 
 
@@ -167,6 +137,45 @@ def test_validate_bbox_format_contract_rejects_coord_mode_on_norm_surface() -> N
                 bbox_format="xyxy",
                 coord_tokens=SimpleNamespace(enabled=True),
                 train_jsonl="public_data/coco/demo/train.norm.jsonl",
+            ),
+            trainer_variant="",
+        )
+
+
+def test_validate_bbox_format_contract_accepts_canonical_view_coord_rendering(
+    tmp_path: Path,
+) -> None:
+    view_root = tmp_path / "public_data/coco/views/coco80/len-12000"
+    view_root.mkdir(parents=True)
+    _write_qwen_coord_token_view_meta(view_root)
+
+    _validate_bbox_format_contract(
+        custom_config=SimpleNamespace(
+            bbox_format="xyxy",
+            coord_tokens=SimpleNamespace(enabled=True),
+            train_jsonl=str(view_root / "train.jsonl"),
+            val_jsonl=str(view_root / "val.jsonl"),
+        ),
+        trainer_variant="",
+    )
+
+
+def test_validate_bbox_format_contract_rejects_raw_text_mode_on_canonical_view(
+    tmp_path: Path,
+) -> None:
+    view_root = tmp_path / "public_data/coco/views/coco80/len-12000"
+    view_root.mkdir(parents=True)
+    _write_qwen_coord_token_view_meta(view_root)
+
+    with pytest.raises(
+        ValueError,
+        match="assistant_coordinate_rendering=qwen_coord_tokens",
+    ):
+        _validate_bbox_format_contract(
+            custom_config=SimpleNamespace(
+                bbox_format="xyxy",
+                coord_tokens=SimpleNamespace(enabled=False),
+                train_jsonl=str(view_root / "train.jsonl"),
             ),
             trainer_variant="",
         )
@@ -215,35 +224,9 @@ def test_coord_standardizer_converts_cxcywh_predictions_to_xyxy() -> None:
     assert preds[0]["points_text"] == "100 200 400 699"
 
 
-def test_stage1_bbox_geo_loss_accepts_cxcywh_serialization() -> None:
-    vocab = 1200
-    coord_token_ids = [100 + i for i in range(1000)]
-    coord_id_map = _build_coord_id_map(vocab, coord_token_ids)
-    encoded_bins = xyxy_norm1000_to_cxcywh_bins([200, 300, 500, 700])
-    labels = torch.tensor(
-        [[0, 100 + encoded_bins[0], 100 + encoded_bins[1], 100 + encoded_bins[2], 100 + encoded_bins[3]]],
-        dtype=torch.long,
-    )
-    logits = _perfect_next_token_logits(labels, vocab=vocab)
-
-    geo = compute_stage1_bbox_geo_loss(
-        logits=logits,
-        labels=labels,
-        coord_token_ids=coord_token_ids,
-        coord_id_map=coord_id_map,
-        tokenizer=None,
-        cfg={"smoothl1_weight": 1.0, "ciou_weight": 1.0},
-        decode_temperature=1.0,
-        bbox_format="cxcywh",
-    )
-
-    assert geo is not None
-    assert float(geo.total_loss.detach().cpu().item()) == pytest.approx(0.0, abs=1e-8)
-
-
 def test_validate_bbox_format_contract_rejects_stage2_cxcywh() -> None:
     with pytest.raises(ValueError, match="custom.bbox_format=cxcywh"):
         _validate_bbox_format_contract(
             custom_config=SimpleNamespace(bbox_format="cxcywh"),
-            trainer_variant="stage2_two_channel",
+            trainer_variant="stage2_rollout_correction",
         )

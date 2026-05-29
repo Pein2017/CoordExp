@@ -201,7 +201,7 @@ Key YAML:
 - Stage-1 evaluation (teacher-forced):
   - Uses upstream ms-swift/transformers evaluation loop over `eval_dataset` (optionally packed when `training.eval_packing=true`).
 - Stage-2 evaluation (rollout-style; no teacher-forced loss):
-  - `src/trainers/rollout_matching_sft.py:RolloutMatchingSFTTrainer.evaluate` runs: rollout -> parse -> Hungarian match.
+  - `src/trainers/rollout_matching_sft.py:Stage2RolloutRuntime.evaluate` runs: rollout -> parse -> Hungarian match.
   - Eval batches are `list[dict]` (identity collator); batching is controlled by `rollout_matching.decode_batch_size`
     via `src/sft.py:_apply_rollout_decode_batch_size_override`.
 - Trainer metric emission sites:

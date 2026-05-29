@@ -11,8 +11,8 @@ run:
 subset:
   dataset_jsonl: /data/CoordExp/public_data/coco/rescale_32_1024_bbox_max60/train.coord.jsonl
   monitor_dump_paths:
-    - /data/CoordExp/output/stage2_ab/prod/pseudo_positive/k_4-eff_size_96-b_ratio_0.85-epoch_1-global_struct_ce_fixed-stronger_FN-from_300_v1/v0-20260325-025922/monitor_dumps/step_000002.json
-    - /data/CoordExp/output/stage2_ab/prod/pseudo_positive/k_4-eff_size_96-b_ratio_0.85-epoch_1-global_struct_ce_fixed-stronger_FN-from_300_v1/v0-20260325-025922/monitor_dumps/step_000036.json
+    - /data/CoordExp/output/stage2_rollout_correction/prod/pseudo_positive/k_4-eff_size_96-residual_correction-epoch_1-global_struct_ce_fixed-stronger_FN-from_300_v1/v0-20260325-025922/monitor_dumps/step_000002.json
+    - /data/CoordExp/output/stage2_rollout_correction/prod/pseudo_positive/k_4-eff_size_96-residual_correction-epoch_1-global_struct_ce_fixed-stronger_FN-from_300_v1/v0-20260325-025922/monitor_dumps/step_000036.json
   max_samples: 8
   min_fp_count: 20
   require_selection: suspicious_duplication
@@ -20,7 +20,7 @@ subset:
   small_object_max_area_frac: 0.01
 
 checkpoint:
-  path: /data/CoordExp/output/stage2_ab/prod/pseudo_positive-ckpt_300_merged-v1
+  path: /data/CoordExp/output/stage2_rollout_correction/prod/pseudo_positive-ckpt_300_merged-v1
   alias: ckpt300_merged
 
 decode:

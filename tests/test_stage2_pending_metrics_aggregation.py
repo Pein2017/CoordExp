@@ -4,11 +4,12 @@ import types
 
 import pytest
 
-from src.trainers.stage2_two_channel import (
-    Stage2ABTrainingTrainer,
+from src.trainers.stage2_rollout_correction import (
+    Stage2RolloutCorrectionTrainer,
     _PendingStage2Log,
     _merge_stage2_metric_snapshots,
 )
+from src.trainers.stage2_coordination import resolve_rollout_correction_metric_spec
 
 
 def test_stage2_pending_log_finalize_averages_losses_and_sums_counters() -> None:
@@ -16,9 +17,8 @@ def test_stage2_pending_log_finalize_averages_losses_and_sums_counters() -> None
 
     pending.add(
         {
-            "loss/B_coord/bbox_smoothl1": 1.0,
-            "loss/B_coord/coord_soft_ce": 2.0,
-            "stage2/channel_b": 1.0,
+            "stage2_rollout_correction/residual_set/type_loss": 1.0,
+            "stage2_rollout_correction/residual_set/inner_loss": 2.0,
             "stage2/raw_rollouts": 1.0,
             "rollout/seed_base": 10.0,
             "rollout/parse_truncated": 1.0,
@@ -26,9 +26,8 @@ def test_stage2_pending_log_finalize_averages_losses_and_sums_counters() -> None
     )
     pending.add(
         {
-            "loss/B_coord/bbox_smoothl1": 3.0,
-            "loss/B_coord/coord_soft_ce": 4.0,
-            "stage2/channel_b": 0.0,
+            "stage2_rollout_correction/residual_set/type_loss": 3.0,
+            "stage2_rollout_correction/residual_set/inner_loss": 4.0,
             "stage2/raw_rollouts": 2.0,
             "rollout/seed_base": 10.0,
             "rollout/parse_truncated": 0.0,
@@ -38,9 +37,8 @@ def test_stage2_pending_log_finalize_averages_losses_and_sums_counters() -> None
     out = pending.finalize(drop_internal=False)
 
     # Averaged across micro-batches (n_micro=2).
-    assert out["loss/B_coord/bbox_smoothl1"] == pytest.approx(2.0)
-    assert out["loss/B_coord/coord_soft_ce"] == pytest.approx(3.0)
-    assert out["stage2/channel_b"] == pytest.approx(0.5)
+    assert out["stage2_rollout_correction/residual_set/type_loss"] == pytest.approx(2.0)
+    assert out["stage2_rollout_correction/residual_set/inner_loss"] == pytest.approx(3.0)
     assert out["rollout/seed_base"] == pytest.approx(10.0)
 
     # Summed counters.
@@ -56,14 +54,14 @@ def test_stage2_pending_log_finalize_uses_segment_weight_when_provided() -> None
 
     pending.add(
         {
-            "loss/B_coord/bbox_smoothl1": 10.0,
+            "stage2_rollout_correction/residual_set/sequence_loss": 10.0,
             "stage2/_log_weight": 1.0,
             "stage2/raw_rollouts": 1.0,
         }
     )
     pending.add(
         {
-            "loss/B_coord/bbox_smoothl1": 20.0,
+            "stage2_rollout_correction/residual_set/sequence_loss": 20.0,
             "stage2/_log_weight": 3.0,
             "stage2/raw_rollouts": 2.0,
         }
@@ -71,9 +69,21 @@ def test_stage2_pending_log_finalize_uses_segment_weight_when_provided() -> None
 
     out = pending.finalize()
 
-    assert out["loss/B_coord/bbox_smoothl1"] == pytest.approx((10.0 * 1.0 + 20.0 * 3.0) / 4.0)
+    assert out["stage2_rollout_correction/residual_set/sequence_loss"] == pytest.approx((10.0 * 1.0 + 20.0 * 3.0) / 4.0)
     assert out["stage2/raw_rollouts"] == pytest.approx(3.0)
     assert "stage2/_log_weight_total" not in out
+
+
+def test_stage2_pack_schedule_metric_specs_are_explicit_gauges() -> None:
+    for key in (
+        "packing/post_rollout_local_pack_count",
+        "packing/post_rollout_global_slot_count",
+        "packing/post_rollout_empty_slot_count",
+    ):
+        spec = resolve_rollout_correction_metric_spec(key)
+        assert spec.local_mode == "weighted_mean"
+        assert spec.ddp_mode == "max"
+        assert spec.ddp_weight_key is None
 
 
 def test_stage2_pending_log_counter_suffixes_sum_not_weighted() -> None:
@@ -116,23 +126,22 @@ def test_stage2_pending_log_counter_suffixes_sum_not_weighted() -> None:
     assert "rollout/_parse_truncated_den" not in out
 
 
-def test_stage2_pending_log_emits_canonical_loss_prefix_only() -> None:
+def test_stage2_pending_log_emits_rollout_correction_loss_prefix_only() -> None:
     pending = _PendingStage2Log()
     pending.add(
         {
-            "loss/text/struct_ce": 0.5,
-            "loss/text/desc_ce": 0.25,
-            "loss/coord/bbox_smoothl1": 0.25,
-            "loss/coord/coord_soft_ce": 0.125,
+            "stage2_rollout_correction/residual_set/sequence_loss": 0.5,
+            "stage2_rollout_correction/residual_set/type_loss": 0.25,
+            "stage2_rollout_correction/residual_set/inner_loss": 0.125,
         }
     )
 
     out = pending.finalize()
 
-    assert "loss/text/struct_ce" in out
-    assert "loss/text/desc_ce" in out
-    assert "loss/coord/bbox_smoothl1" in out
-    assert "loss/coord/coord_soft_ce" in out
+    assert "stage2_rollout_correction/residual_set/sequence_loss" in out
+    assert "stage2_rollout_correction/residual_set/type_loss" in out
+    assert "stage2_rollout_correction/residual_set/inner_loss" in out
+    assert "loss/text/struct_ce" not in out
     assert "loss/token_ce_obj" not in out
     assert "loss/bbox_geo_obj" not in out
     assert "loss/coord_reg_obj" not in out
@@ -147,8 +156,8 @@ def test_stage2_pending_log_aggregates_duplicate_metrics_with_mean_and_sum_seman
             "dup/raw/duplicate_like_max_cluster_size": 3.0,
             "dup/raw/desc_entropy": 0.4,
             "dup/raw/near_iou90_pairs_same_desc_count": 3.0,
-            "stage2_ab/channel_b/dup/N_clusters_total": 4.0,
-            "stage2_ab/channel_b/dup/N_ul_boundaries": 1.0,
+            "stage2_rollout_correction/correction/dup/N_clusters_total": 4.0,
+            "stage2_rollout_correction/correction/dup/N_duplicate_control_first_divergence_boundaries": 1.0,
             "stage2/_log_weight": 1.0,
         }
     )
@@ -159,8 +168,8 @@ def test_stage2_pending_log_aggregates_duplicate_metrics_with_mean_and_sum_seman
             "dup/raw/duplicate_like_max_cluster_size": 5.0,
             "dup/raw/desc_entropy": 1.2,
             "dup/raw/near_iou90_pairs_same_desc_count": 5.0,
-            "stage2_ab/channel_b/dup/N_clusters_total": 7.0,
-            "stage2_ab/channel_b/dup/N_ul_boundaries": 2.0,
+            "stage2_rollout_correction/correction/dup/N_clusters_total": 7.0,
+            "stage2_rollout_correction/correction/dup/N_duplicate_control_first_divergence_boundaries": 2.0,
             "stage2/_log_weight": 3.0,
         }
     )
@@ -174,62 +183,59 @@ def test_stage2_pending_log_aggregates_duplicate_metrics_with_mean_and_sum_seman
     )
     assert out["dup/raw/desc_entropy"] == pytest.approx((0.4 * 1.0 + 1.2 * 3.0) / 4.0)
     assert out["dup/raw/near_iou90_pairs_same_desc_count"] == pytest.approx(8.0)
-    assert out["stage2_ab/channel_b/dup/N_clusters_total"] == pytest.approx(11.0)
-    assert out["stage2_ab/channel_b/dup/N_ul_boundaries"] == pytest.approx(3.0)
+    assert out["stage2_rollout_correction/correction/dup/N_clusters_total"] == pytest.approx(11.0)
+    assert out[
+        "stage2_rollout_correction/correction/dup/N_duplicate_control_first_divergence_boundaries"
+    ] == pytest.approx(3.0)
 
-def test_stage2_metric_snapshots_carry_forward_channel_specific_keys() -> None:
+def test_stage2_metric_snapshots_carry_forward_rollout_correction_keys() -> None:
     snapshots: dict[str, float] = {}
 
     first = _merge_stage2_metric_snapshots(
         snapshots,
         {
-            "loss/text/struct_ce": 0.5,
-            "coord_diag/acc_top5": 0.4,
-            "stage2/channel_a": 1.0,
-            "time/channel_a_teacher_encode_s": 1.2,
+            "stage2_rollout_correction/residual_set/sequence_loss": 0.5,
+            "stage2_rollout_correction/residual_set/valid_set_mass": 0.4,
+            "time/rollout_prepare_s": 1.2,
             "time/forward_s": 12.0,
         },
     )
 
-    assert first["snapshot/loss/text/struct_ce"] == pytest.approx(0.5)
-    assert first["snapshot/coord_diag/acc_top5"] == pytest.approx(0.4)
-    assert first["snapshot/stage2/channel_a"] == pytest.approx(1.0)
-    assert first["snapshot/time/channel_a_teacher_encode_s"] == pytest.approx(1.2)
+    assert first["snapshot/stage2_rollout_correction/residual_set/sequence_loss"] == pytest.approx(0.5)
+    assert first["snapshot/stage2_rollout_correction/residual_set/valid_set_mass"] == pytest.approx(0.4)
+    assert first["snapshot/time/rollout_prepare_s"] == pytest.approx(1.2)
     assert "time/forward_s" not in first
 
     second = _merge_stage2_metric_snapshots(
         snapshots,
         {
-            "loss/B_rollout_text/struct_ce": 0.8,
+            "stage2_rollout_correction/residual_set/type_loss": 0.8,
             "rollout/f1": 0.3,
-            "stage2/channel_b": 1.0,
             "time/rollout_generate_s": 9.0,
         },
     )
 
-    assert second["snapshot/loss/text/struct_ce"] == pytest.approx(0.5)
-    assert second["snapshot/loss/B_rollout_text/struct_ce"] == pytest.approx(0.8)
+    assert second["snapshot/stage2_rollout_correction/residual_set/sequence_loss"] == pytest.approx(0.5)
+    assert second["snapshot/stage2_rollout_correction/residual_set/type_loss"] == pytest.approx(0.8)
     assert second["snapshot/rollout/f1"] == pytest.approx(0.3)
-    assert second["snapshot/stage2/channel_b"] == pytest.approx(1.0)
     assert second["snapshot/time/rollout_generate_s"] == pytest.approx(9.0)
 
 
 def test_stage2_log_emits_snapshots_alongside_current_reduced_metrics(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    trainer = Stage2ABTrainingTrainer.__new__(Stage2ABTrainingTrainer)
+    trainer = Stage2RolloutCorrectionTrainer.__new__(Stage2RolloutCorrectionTrainer)
     trainer.state = types.SimpleNamespace(global_step=1)
     trainer._stage2_pending_train_logs = {1: _PendingStage2Log()}
     trainer._stage2_pending_train_logs[1].add(
         {
-            "loss/B_rollout_text/struct_ce": 0.8,
-            "stage2/channel_b": 1.0,
+            "stage2_rollout_correction/residual_set/type_loss": 0.8,
             "rollout/f1": 0.3,
         }
     )
     trainer._stage2_metric_snapshots = {
-        "snapshot/loss/text/struct_ce": 0.5,
-        "snapshot/coord_diag/acc_top5": 0.4,
+        "snapshot/stage2_rollout_correction/residual_set/sequence_loss": 0.5,
+        "snapshot/stage2_rollout_correction/residual_set/valid_set_mass": 0.4,
     }
     trainer._ddp_assert_all_ranks_true_or_raise = (
         lambda **_kwargs: None
@@ -252,19 +258,19 @@ def test_stage2_log_emits_snapshots_alongside_current_reduced_metrics(
         return None
 
     monkeypatch.setattr(
-        "src.trainers.stage2_rollout_aligned.RolloutMatchingSFTTrainer.log",
+        "src.trainers.stage2_rollout_runtime.Stage2RolloutRuntime.log",
         _capture_super_log,
     )
 
-    Stage2ABTrainingTrainer.log(trainer, {"loss": 1.0})
+    Stage2RolloutCorrectionTrainer.log(trainer, {"loss": 1.0})
 
     assert captured["loss"] == pytest.approx(1.0)
-    assert captured["loss/B_rollout_text/struct_ce"] == pytest.approx(0.8)
+    assert captured["stage2_rollout_correction/residual_set/type_loss"] == pytest.approx(0.8)
     assert captured["rollout/f1"] == pytest.approx(0.3)
-    assert captured["snapshot/loss/text/struct_ce"] == pytest.approx(0.5)
-    assert captured["snapshot/coord_diag/acc_top5"] == pytest.approx(0.4)
+    assert captured["snapshot/stage2_rollout_correction/residual_set/sequence_loss"] == pytest.approx(0.5)
+    assert captured["snapshot/stage2_rollout_correction/residual_set/valid_set_mass"] == pytest.approx(0.4)
     assert "snapshot/rollout/f1" not in captured
-    assert captured["loss/B_rollout_text/struct_ce"] == pytest.approx(0.8)
+    assert captured["stage2_rollout_correction/residual_set/type_loss"] == pytest.approx(0.8)
     assert captured["rollout/f1"] == pytest.approx(0.3)
     assert captured["time/sft_total_time"] == pytest.approx(12.0)
     assert captured["time/rollout_total_time"] == pytest.approx(5.0)
@@ -273,13 +279,12 @@ def test_stage2_log_emits_snapshots_alongside_current_reduced_metrics(
 def test_stage2_log_reduces_pending_metrics_once_per_step(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    trainer = Stage2ABTrainingTrainer.__new__(Stage2ABTrainingTrainer)
+    trainer = Stage2RolloutCorrectionTrainer.__new__(Stage2RolloutCorrectionTrainer)
     trainer.state = types.SimpleNamespace(global_step=1)
     trainer._stage2_pending_train_logs = {1: _PendingStage2Log()}
     trainer._stage2_pending_train_logs[1].add(
         {
-            "loss/B_rollout_text/struct_ce": 0.8,
-            "stage2/channel_b": 1.0,
+            "stage2_rollout_correction/residual_set/type_loss": 0.8,
         }
     )
     trainer._stage2_metric_snapshots = {}
@@ -308,24 +313,23 @@ def test_stage2_log_reduces_pending_metrics_once_per_step(
         return None
 
     monkeypatch.setattr(
-        "src.trainers.stage2_rollout_aligned.RolloutMatchingSFTTrainer.log",
+        "src.trainers.stage2_rollout_runtime.Stage2RolloutRuntime.log",
         _capture_super_log,
     )
 
-    Stage2ABTrainingTrainer.log(trainer, {"loss": 1.0})
+    Stage2RolloutCorrectionTrainer.log(trainer, {"loss": 1.0})
 
     assert len(reduction_calls) == 1
-    assert reduction_calls[0]["loss/B_rollout_text/struct_ce"] == pytest.approx(0.8)
-    assert reduction_calls[0]["stage2/channel_b"] == pytest.approx(1.0)
+    assert reduction_calls[0]["stage2_rollout_correction/residual_set/type_loss"] == pytest.approx(0.8)
     assert trainer._stage2_pending_train_logs == {}
-    assert captured["loss/B_rollout_text/struct_ce"] == pytest.approx(0.8)
+    assert captured["stage2_rollout_correction/residual_set/type_loss"] == pytest.approx(0.8)
 
 
 def test_stage2_pending_log_preserves_sparse_gradmon_weighting() -> None:
     pending = _PendingStage2Log()
     pending.add(
         {
-            "loss/B_coord/bbox_smoothl1": 1.0,
+            "stage2_rollout_correction/residual_set/sequence_loss": 1.0,
             "stage2/_log_weight": 1.0,
         }
     )
@@ -340,7 +344,7 @@ def test_stage2_pending_log_preserves_sparse_gradmon_weighting() -> None:
 
     out = pending.finalize(drop_internal=False)
 
-    assert out["loss/B_coord/bbox_smoothl1"] == pytest.approx(0.25)
+    assert out["stage2_rollout_correction/residual_set/sequence_loss"] == pytest.approx(0.25)
     assert out["gradmon/neg_cosine_pair_frac"] == pytest.approx(0.75)
     assert out["gradmon/num_terms"] == pytest.approx(4.0)
     assert out["time/gradmon_s"] == pytest.approx(0.2)

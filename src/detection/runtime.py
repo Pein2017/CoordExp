@@ -28,9 +28,10 @@ DetectionRuntimeMode = Literal[
 
 @dataclass(frozen=True)
 class DetectionRuntimeSupport:
-    """Resolved detection runtime support policy."""
+    """Resolved latest-detection runtime support policy."""
 
     recursive_sidecars_required: bool
+    teacher_forcing_target_ir_required: bool = False
 
 
 @dataclass(frozen=True)
@@ -39,14 +40,11 @@ class RecursiveDetectionCERuntimeConfig:
     trie_support_weight: float
     trie_balance_weight: float
     variant: str = "random_permutation_et_rmp_ce"
-    separator_continue_weight: float = 0.50
-    eos_stop_weight: float = 0.50
-    boundary_component_weight: float = 0.30
     coord_soft_ce: CoordSoftTargetRuntimeConfig | None = None
     type_gate: Any | None = None
 
 
-def is_detection_training_config(training_config: Any) -> bool:
+def is_detection_config(training_config: Any) -> bool:
     return isinstance(training_config, DetectionTrainingConfig)
 
 
@@ -158,9 +156,27 @@ def build_detection_runtime_custom_shim(
     )
 
 
-def detection_runtime_mode(
+def detection_mode(
     training_config: DetectionTrainingConfig,
 ) -> DetectionRuntimeMode:
+    objective_id = getattr(training_config.objective, "id", None)
+    if objective_id == "teacher_forcing":
+        if training_config.objective.profile not in {
+            "hard_sft",
+            "pure_valid_set_marginal",
+        }:
+            raise ValueError(
+                "teacher_forcing detection runtime currently supports "
+                "objective.profile in {'hard_sft', 'pure_valid_set_marginal'}"
+            )
+        rollin_policy = training_config.objective.target_ir.rollin_policy
+        if rollin_policy.name != "random_permutation":
+            raise ValueError(
+                "teacher_forcing detection runtime currently supports only "
+                "objective.target_ir.rollin_policy.name=random_permutation"
+            )
+        return "random_order_sft"
+
     variant = training_config.objective.variant
     supported = {
         "sorted_sft",
@@ -180,11 +196,15 @@ def detection_runtime_mode(
 def resolve_detection_runtime_support(
     training_config: DetectionTrainingConfig,
 ) -> DetectionRuntimeSupport:
+    objective_id = getattr(training_config.objective, "id", None)
+    is_compact = training_config.detection_template.id == "compact_full"
     return DetectionRuntimeSupport(
         recursive_sidecars_required=(
-            training_config.detection_template.id == "compact_full"
-            and training_config.objective.id == "recursive_detection_ce"
-        )
+            is_compact and objective_id == "recursive_detection_ce"
+        ),
+        teacher_forcing_target_ir_required=(
+            is_compact and objective_id == "teacher_forcing"
+        ),
     )
 
 
@@ -195,24 +215,57 @@ def assert_detection_runtime_supported(
     tokenizer: object | None = None,
 ) -> None:
     support = resolve_detection_runtime_support(training_config)
+    if support.teacher_forcing_target_ir_required:
+        if bool(training_config.training.get("packing", False)):
+            raise ValueError(
+                "latest teacher_forcing_target_ir requires "
+                "training.packing=false; exact atom-position packing mapping "
+                "is not implemented yet"
+            )
+        if bool(training_config.training.get("eval_packing", False)):
+            raise ValueError(
+                "latest teacher_forcing_target_ir requires "
+                "training.eval_packing=false; exact atom-position packing "
+                "mapping is not implemented yet"
+            )
+        if training_config.packing.static_packing:
+            raise ValueError(
+                "latest teacher_forcing_target_ir requires "
+                "packing.static_packing=false; exact atom-position packing "
+                "mapping is not implemented yet"
+            )
+        if training_config.packing.padding_free_packed:
+            raise ValueError(
+                "latest teacher_forcing_target_ir requires "
+                "packing.padding_free_packed=false; exact atom-position "
+                "packing mapping is not implemented yet"
+            )
+        if getattr(encoded_sample_cache_cfg, "enabled", False):
+            raise ValueError(
+                "latest teacher_forcing_target_ir requires "
+                "training.encoded_sample_cache.enabled=false; exact "
+                "atom-position cache replay is not implemented yet"
+            )
+        return
     if not support.recursive_sidecars_required:
         return
 
     configured_padding_side = training_config.training.get("padding_side")
     if configured_padding_side not in (None, "", "right"):
         raise ValueError(
-            "recursive detection sidecars require training.padding_side='right' "
+            "latest recursive detection sidecars require training.padding_side='right' "
             "until sidecar offset rewriting is implemented"
         )
     if tokenizer is not None:
         padding_side = getattr(tokenizer, "padding_side", "right")
         if padding_side not in (None, "right"):
             raise ValueError(
-                "recursive detection sidecars require tokenizer.padding_side='right' "
+                "latest recursive detection sidecars require tokenizer.padding_side='right' "
                 "until sidecar offset rewriting is implemented"
             )
 
-    if training_config.objective.variant == "prefix_rollin_et_rmp_ce":
+    objective_variant = str(getattr(training_config.objective, "variant", "") or "")
+    if objective_variant == "prefix_rollin_et_rmp_ce":
         if tokenizer is None:
             raise ValueError(
                 "prefix_rollin_et_rmp_ce requires tokenizer context for <|im_end|> "
@@ -222,43 +275,43 @@ def assert_detection_runtime_supported(
 
     if bool(training_config.training.get("packing", False)):
         raise ValueError(
-            "recursive detection sidecars currently require "
+            "latest recursive detection sidecars currently require "
             "training.packing=false; "
             "packed target-position offset rewriting is not implemented yet"
         )
     if bool(training_config.training.get("eval_packing", False)):
         raise ValueError(
-            "recursive detection sidecars currently require "
+            "latest recursive detection sidecars currently require "
             "training.eval_packing=false; "
             "packed target-position offset rewriting is not implemented yet"
         )
     if bool(training_config.training.get("use_logits_to_keep", False)):
         raise ValueError(
-            "recursive detection sidecars require "
+            "latest recursive detection sidecars require "
             "training.use_logits_to_keep=false because full logits are required"
         )
     if "loss_scale" in training_config.training and training_config.training.get(
         "loss_scale"
     ) not in (None, ""):
         raise ValueError(
-            "recursive detection sidecars do not support training.loss_scale; "
+            "latest recursive detection sidecars do not support training.loss_scale; "
             "recursive_detection_ce owns the token loss and metric scale"
         )
     if training_config.packing.static_packing:
         raise ValueError(
-            "recursive detection sidecars currently require "
+            "latest recursive detection sidecars currently require "
             "packing.static_packing=false; "
             "packed target-position offset rewriting is not implemented yet"
         )
     if training_config.packing.padding_free_packed:
         raise ValueError(
-            "recursive detection sidecars currently require "
+            "latest recursive detection sidecars currently require "
             "packing.padding_free_packed=false; "
             "packed target-position offset rewriting is not implemented yet"
         )
     if encoded_sample_cache_cfg.enabled:
         raise ValueError(
-            "recursive detection sidecars currently reject "
+            "latest recursive detection sidecars currently reject "
             "training.encoded_sample_cache until sidecar cache fingerprints are implemented"
         )
 
@@ -299,9 +352,6 @@ def resolve_recursive_detection_ce_runtime_cfg(
     if variant == "random_permutation_et_rmp_ce":
         trie_support_weight = _objective_float("trie_support_weight")
         trie_balance_weight = _objective_float("trie_balance_weight")
-        separator_continue_weight = 0.50
-        eos_stop_weight = 0.50
-        boundary_component_weight = 0.30
     elif variant == "prefix_rollin_et_rmp_ce":
         target = _field(objective, "target")
         if target is None:
@@ -318,25 +368,6 @@ def resolve_recursive_detection_ce_runtime_cfg(
             if not math.isfinite(value) or value <= 0.0:
                 raise ValueError(
                     f"objective.target.{field_name} must be finite and > 0 "
-                    "for prefix_rollin_et_rmp_ce"
-                )
-        boundary = _field(objective, "boundary")
-        if boundary is None:
-            raise ValueError(
-                "objective.boundary is required for "
-                "objective.variant=prefix_rollin_et_rmp_ce"
-            )
-        separator_continue_weight = float(_field(boundary, "separator_continue_weight"))
-        eos_stop_weight = float(_field(boundary, "eos_stop_weight"))
-        boundary_component_weight = float(_field(boundary, "component_weight"))
-        for field_name, value in (
-            ("separator_continue_weight", separator_continue_weight),
-            ("eos_stop_weight", eos_stop_weight),
-            ("component_weight", boundary_component_weight),
-        ):
-            if not math.isfinite(value) or value <= 0.0:
-                raise ValueError(
-                    f"objective.boundary.{field_name} must be finite and > 0 "
                     "for prefix_rollin_et_rmp_ce"
                 )
     else:
@@ -360,9 +391,6 @@ def resolve_recursive_detection_ce_runtime_cfg(
         trie_support_weight=trie_support_weight,
         trie_balance_weight=trie_balance_weight,
         variant=variant,
-        separator_continue_weight=separator_continue_weight,
-        eos_stop_weight=eos_stop_weight,
-        boundary_component_weight=boundary_component_weight,
         coord_soft_ce=coord_soft_ce,
         type_gate=_field(objective, "type_gate"),
     )
@@ -435,7 +463,7 @@ def _resolve_coord_soft_ce_runtime_config(
     )
 
 
-def build_detection_training_dataset(
+def build_detection_dataset(
     jsonl_path: str | Path,
     *,
     swift_template: Any,
@@ -446,35 +474,42 @@ def build_detection_training_dataset(
     sample_limit: int | None,
     dataset_name: str,
 ) -> DetectionTrainingDataset:
-    eos_trust_weight_config = None
     type_gate_config = None
-    if training_config.objective.eos is not None:
-        eos_trust_weight_config = training_config.objective.eos.eos_trust_weight
-    if training_config.objective.variant == "prefix_rollin_et_rmp_ce":
-        eos_cfg = training_config.objective.eos
-        if eos_cfg is None:
-            raise ValueError("prefix_rollin_et_rmp_ce requires objective.eos")
-        eos_trust_weight_config = eos_cfg.eos_trust_weight
-    if training_config.objective.variant in {
+    objective = training_config.objective
+    objective_id = str(getattr(objective, "id", "") or "")
+    objective_variant = str(getattr(objective, "variant", "") or "")
+    if objective_variant in {
         "random_permutation_et_rmp_ce",
         "prefix_rollin_et_rmp_ce",
     }:
-        type_gate_config = training_config.objective.type_gate
+        type_gate_config = getattr(objective, "type_gate", None)
+    if objective_id == "teacher_forcing":
+        state_weighting = "uniform_permutation"
+        normalization = "semantic_image_bucket_balanced"
+        teacher_forcing_profile = str(getattr(objective, "profile"))
+        teacher_forcing_rollin_base_seed = int(
+            getattr(objective.target_ir.rollin_policy, "base_seed")
+        )
+    else:
+        state_weighting = getattr(objective, "state_weighting")
+        normalization = getattr(objective, "normalization")
+        teacher_forcing_profile = None
+        teacher_forcing_rollin_base_seed = None
     return DetectionTrainingDataset.from_jsonl(
         jsonl_path,
         swift_template=swift_template,
         image_root=training_config.data.image_root,
         detection_template_id=training_config.detection_template.id,
-        mode=detection_runtime_mode(training_config),
+        mode=detection_mode(training_config),
         object_ordering=training_config.data.object_ordering,
         user_prompt=custom_config.user_prompt,
         system_prompt=system_prompt,
-        max_objects=training_config.data.max_objects,
         seed=seed,
-        state_weighting=training_config.objective.state_weighting,
-        normalization=training_config.objective.normalization,
-        eos_trust_weight_config=eos_trust_weight_config,
+        state_weighting=state_weighting,
+        normalization=normalization,
         type_gate_config=type_gate_config,
+        teacher_forcing_profile=teacher_forcing_profile,
+        teacher_forcing_rollin_base_seed=teacher_forcing_rollin_base_seed,
         sample_limit=sample_limit,
         dataset_name=dataset_name,
     )
@@ -485,10 +520,10 @@ __all__ = [
     "DetectionRuntimeMode",
     "RecursiveDetectionCERuntimeConfig",
     "assert_detection_runtime_supported",
-    "build_detection_training_dataset",
+    "build_detection_dataset",
     "build_detection_runtime_custom_shim",
-    "is_detection_training_config",
-    "detection_runtime_mode",
+    "is_detection_config",
+    "detection_mode",
     "detection_prompt_variant",
     "detection_sequence_format",
     "resolve_detection_runtime_support",

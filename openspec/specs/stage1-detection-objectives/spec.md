@@ -85,15 +85,9 @@ Normative behavior:
 - suffix order MUST remain `same_sampled_permutation` for the V1 checked-in
   route,
 - support and balance weights MUST be authored under `objective.target`,
-- append-boundary weights MUST be authored under `objective.boundary`,
 - obsolete flat support/balance aliases MUST fail fast for this variant,
-- `objective.boundary.type` MUST be `compact_full_append_boundary`,
-- `objective.boundary.separator_continue_weight`,
-  `objective.boundary.eos_stop_weight`, and
-  `objective.boundary.component_weight` MUST be explicit,
-- the E1 ablation route MUST NOT be described as production-ready while it uses
-  `objective.eos.eos_trust_weight.source:
-  empirical_unlabeled_poisson_v0`.
+- E1/E2 boundary-pressure and EOS-loosening variants MUST remain historical
+  evidence only, not live latest-detection training surfaces.
 
 #### Scenario: Prefix-rollin rejects obsolete flat trie weights
 - **WHEN** `objective.variant: prefix_rollin_et_rmp_ce` is authored with legacy

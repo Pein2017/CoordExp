@@ -11,6 +11,7 @@ from typing import Any, Optional
 from src.config.loader import ConfigLoader
 from src.config.schema import TrainingConfig
 from src.config.strict_dataclass import dataclass_asdict_no_none
+from src.infer.backend import validate_vllm_engine_kwargs
 
 RolloutContract = dict[str, Any]
 Stage2LauncherPreflight = dict[str, Any]
@@ -193,6 +194,12 @@ def build_stage2_launcher_preflight(
     if not isinstance(model_raw, str) or not model_raw.strip():
         raise ValueError("model.model must be set (rollout model path).")
     model_path = model_raw.strip()
+    model_type_raw = training_config.model.get("model_type")
+    server_model_type = ""
+    if model_type_raw is not None:
+        if not isinstance(model_type_raw, str):
+            raise TypeError("model.model_type must be a string when set")
+        server_model_type = model_type_raw.strip()
 
     train_jsonl_raw = getattr(training_config.custom, "train_jsonl", None)
     if not isinstance(train_jsonl_raw, str) or not train_jsonl_raw.strip():
@@ -251,6 +258,15 @@ def build_stage2_launcher_preflight(
         raise ValueError("rollout_matching.vllm.max_model_len must be > 0")
 
     enable_lora = bool(vllm_cfg.get("enable_lora", False))
+    tuner_raw = getattr(training_config, "tuner", {})
+    tuner_cfg = tuner_raw if isinstance(tuner_raw, Mapping) else {}
+    max_lora_rank_raw = vllm_cfg.get("max_lora_rank", tuner_cfg.get("lora_rank", 16))
+    try:
+        max_lora_rank = int(max_lora_rank_raw)
+    except (TypeError, ValueError) as exc:
+        raise TypeError("rollout_matching.vllm.max_lora_rank must be an int") from exc
+    if max_lora_rank <= 0:
+        raise ValueError("rollout_matching.vllm.max_lora_rank must be > 0")
 
     tensor_parallel_size = 1
     tp_raw = vllm_cfg.get("tensor_parallel_size")
@@ -383,6 +399,13 @@ def build_stage2_launcher_preflight(
 
     mm_processor_kwargs["do_resize"] = False
     vllm_engine_kwargs["mm_processor_kwargs"] = mm_processor_kwargs
+    if bool(vllm_cfg.get("enable_tower_connector_lora", False)):
+        vllm_engine_kwargs["enable_tower_connector_lora"] = True
+    vllm_engine_kwargs = validate_vllm_engine_kwargs(
+        vllm_engine_kwargs,
+        context="rollout_matching.vllm server engine kwargs",
+        required=frozenset({"mm_processor_kwargs"}),
+    )
 
     return {
         "rollout_backend": rollout_contract["rollout_backend"],
@@ -391,6 +414,7 @@ def build_stage2_launcher_preflight(
         "server_base_urls": server_base_urls,
         "server_group_ports": server_group_ports,
         "server_model": model_path,
+        "server_model_type": server_model_type,
         "train_jsonl_resolved": str(train_jsonl_path),
         "val_jsonl_resolved": "" if val_jsonl_path is None else str(val_jsonl_path),
         "offline_max_pixels": offline_max_pixels,
@@ -403,6 +427,7 @@ def build_stage2_launcher_preflight(
         "vllm_enforce_eager": enforce_eager,
         "vllm_max_model_len": max_model_len,
         "vllm_enable_lora": enable_lora,
+        "vllm_max_lora_rank": max_lora_rank,
         "vllm_gpu_memory_utilization": gpu_memory_utilization,
         "vllm_engine_kwargs": vllm_engine_kwargs,
         "server_torch_dtype": server_torch_dtype,

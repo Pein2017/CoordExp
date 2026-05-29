@@ -4,48 +4,34 @@ layer: docs
 doc_type: design-note
 status: historical
 domain: training
-summary: Historical design note for the active single-pass Channel-A plus clean-prefix Channel-B Stage-2 contract.
-updated: 2026-05-03
+summary: Retired Stage-2 AB/two-channel design history.
+updated: 2026-05-25
 ---
 
 # Stage-2 Design History
 
-This page is historical context, not the primary operator runbook.
+This page is historical context only. It describes the retired Stage-2
+AB/two-channel era and must not be used as the active operator contract.
 
-The active Stage-2 contract removed Channel-A self-context iteration and keeps
-one stable design frame:
-
-- Channel-A: one GT-anchored teacher-forced forward
-- Channel-B: rollout-aligned clean-prefix supervision
-- Canonical Channel-A families: `loss/text/*`, `loss/coord/*`, `coord_diag/*`
-- Canonical Channel-B families: `loss/B_rollout_text/*`, `loss/B_coord/*`, `coord_diag/B/*`, `dup/raw/*`, and `stage2_ab/channel_b/dup/N_*`
-
-## Current Runtime Ownership
-
-The public entrypoints remain stable, but the implementation is now split
-across narrower runtime seams:
-
-- training/bootstrap entrypoint:
-  - `src/sft.py`
-  - `src/bootstrap/`
-- Stage-2 two-channel trainer surface:
-  - `src/trainers/stage2_two_channel.py`
-  - `src/trainers/stage2_two_channel/`
-- shared rollout runtime:
-  - `src/trainers/rollout_runtime/`
-- server-mode launcher:
-  - `scripts/train_stage2.sh`
-  - `src/launchers/stage2_vllm_server.py`
-
-## Prefer These For Active Work
+For current work, use:
 
 - [docs/training/STAGE2_RUNBOOK.md](STAGE2_RUNBOOK.md)
 - [docs/training/METRICS.md](METRICS.md)
-- [`openspec/specs/stage2-ab-training/spec.md`](../../openspec/specs/stage2-ab-training/spec.md)
-- [`openspec/specs/runtime-architecture-refactor-program/spec.md`](../../openspec/specs/runtime-architecture-refactor-program/spec.md)
+- [`openspec/specs/stage2-rollout-correction/spec.md`](../../openspec/specs/stage2-rollout-correction/spec.md)
 
-## Historical Rationale
+The active Stage-2 contract is Stage-2 rollout correction:
 
-The removal rationale lives in:
+- `custom.trainer_variant: stage2_rollout_correction`
+- top-level `stage2_rollout_correction`
+- exactly one enabled `residual_set_correction` objective
+- `application.preset: rollout_self_prefix`
+- rollout-prefix roll-in plus GT/residual correction target IR
+
+The retired AB/two-channel public names, per-channel scheduler, clean-prefix
+teacher-forcing objectives, and A/B metric namespaces are removed from active
+configs and fail fast when authored.
+
+Historical rationale for retiring the old split lives in progress notes, for
+example:
 
 - [progress/diagnostics/2026-03-20_stage2_channel_a_self_context_iter_ablation.md](../../progress/diagnostics/2026-03-20_stage2_channel_a_self_context_iter_ablation.md)

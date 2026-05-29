@@ -5,7 +5,7 @@ doc_type: overview
 status: canonical
 domain: repo
 summary: End-to-end flow from data intake to training, inference, evaluation, and artifacts.
-updated: 2026-05-04
+updated: 2026-05-16
 ---
 
 # System Overview
@@ -14,8 +14,8 @@ Purpose: map the end-to-end CoordExp flow from data intake to training, inferenc
 Authority: explanatory system guide for the current codebase; if this page conflicts with a spec or runbook, defer to `docs/PROJECT_CONTEXT.md` and `openspec/specs/`.
 Read this after: `docs/PROJECT_CONTEXT.md`
 Read this before: domain runbooks under `docs/data/`, `docs/training/`, and `docs/eval/`
-Primary code handles: `src/config/loader.py`, `src/datasets/`, `src/sft.py`, `src/detection/runtime.py`, `src/detection/template.py`, `src/common/detection_sequence.py`, `src/common/detection_compact_rows.py`, `src/bootstrap/`, `src/trainers/metrics/`, `src/metrics/events.py`, `src/trainers/stage2_two_channel.py`, `src/trainers/stage2_two_channel/`, `src/trainers/stage2_rollout_aligned.py`, `src/trainers/rollout_aligned_targets.py`, `src/trainers/rollout_aligned_evaluator.py`, `src/trainers/rollout_runtime/`, `src/launchers/stage2_vllm_server.py`, `src/infer/pipeline.py`, `src/infer/engine.py`, `src/infer/backends.py`, `src/infer/artifacts.py`, `src/eval/detection.py`, `src/eval/detection_records.py`, `src/eval/detection_geometry.py`, `src/eval/detection_coco.py`, `src/eval/detection_lvis.py`, `src/eval/detection_duplicate_guard.py`, `src/eval/detection_f1ish.py`, `src/eval/detection_orchestrator.py`, `src/eval/orchestration.py`, `src/eval/artifacts.py`
-Verification: `rg -n "detection/runtime|detection_sequence|detection_compact_rows|MetricEvent|flatten_metric_events|detection_orchestrator|stage2_two_channel|stage2_rollout_aligned|pipeline_manifest|run_metadata|backends|artifacts|orchestration" src scripts configs docs`
+Primary code handles: `src/config/loader.py`, `src/datasets/`, `src/sft.py`, `src/detection/runtime.py`, `src/detection/template.py`, `src/common/detection_sequence.py`, `src/common/detection_compact_rows.py`, `src/bootstrap/`, `src/trainers/metrics/`, `src/metrics/events.py`, `src/training/`, `src/training/surfaces.py::TrainingSurfaceResolver`, `src/trainers/stage2_rollout_correction.py`, `src/trainers/rollout_aligned_targets.py`, `src/trainers/rollout_aligned_evaluator.py`, `src/launchers/stage2_vllm_server.py`, `src/infer/pipeline.py`, `src/infer/runtime.py`, `src/infer/backend.py`, `src/infer/backend_sync.py`, `src/infer/backend_vllm_server.py`, `src/infer/constraints.py`, `src/infer/artifacts.py`, `src/eval/detection.py`, `src/eval/detection_records.py`, `src/eval/detection_geometry.py`, `src/eval/detection_coco.py`, `src/eval/detection_lvis.py`, `src/eval/detection_duplicate_guard.py`, `src/eval/detection_f1ish.py`, `src/eval/detection_orchestrator.py`, `src/eval/orchestration.py`, `src/eval/artifacts.py`
+Verification search: `rg -n "detection/runtime|detection_sequence|detection_compact_rows|MetricEvent|flatten_metric_events|TrainingSurfaceResolver|stage1_compact_trie_ce|stage2_rollout_correction|stage2_rollout_runtime|pipeline_manifest|run_metadata|backends|artifacts|orchestration" src scripts configs docs`
 
 ## Flow At A Glance
 
@@ -122,61 +122,57 @@ Use Stage-1 when you want teacher-forced baseline training without rollout-aware
   - `src/trainers/metrics/mixins.py`
   - `src/trainers/metrics/batch_contract.py`
   - `src/trainers/metrics/structural_close.py`
-  - `src/trainers/metrics/recursive_detection.py`
-  - `src/trainers/metrics/aggregate_tokens.py`
-  - `src/trainers/metrics/coord_losses.py`
-  - `src/trainers/metrics/bbox_losses.py`
+- `src/trainers/metrics/recursive_detection.py`
+- `src/trainers/metrics/aggregate_tokens.py`
+- `src/trainers/metrics/coord_losses.py`
 
 ### Stage-1 Compact Recursive Detection
 
 Use this surface when the run is explicitly latest-schema compact detection CE.
 
-- Current config route: `configs/stage1/recursive_detection_ce_latest/`
+- Current config route: `configs/stage1/recursive_detection_ce/`
 - Runtime policy owner: `src/detection/runtime.py`
 - Template owner: `src/detection/template.py`
 - Compatibility sequence facade: `src/common/detection_sequence.py`
 - Row helper: `src/common/detection_compact_rows.py`
 
 Current source contract:
-- `src/detection/runtime.py` owns latest detection runtime support/preflight, recursive CE runtime config resolution, prompt/mode/custom shim resolution, and `build_latest_detection_dataset`.
+- `src/detection/runtime.py` owns detection runtime support/preflight, recursive CE runtime config resolution, prompt/mode/custom shim resolution, and `build_detection_training_dataset`.
 - `src/sft.py` delegates these policies and keeps backward-compatible private aliases.
 - packing/cache fail fast remains in force for latest compact recursive CE surfaces.
 - no new CLI flags or config schema keys are introduced by this extraction.
 
 ### Stage-2 Rollout-Aware Training
 
-Use Stage-2 when you need rollout-time matching, clean-prefix Channel-B supervision, or vLLM server-mode training.
+Use Stage-2 when you need rollout prefix plus GT correction supervision or vLLM server-mode training.
 
-- Current config tree: `configs/stage2_two_channel/`
+- Current config tree: `configs/stage2_rollout_correction/`
 - Main docs:
   - [`docs/training/STAGE2_RUNBOOK.md`](training/STAGE2_RUNBOOK.md)
   - [`docs/training/METRICS.md`](training/METRICS.md)
-  - [`openspec/specs/stage2-ab-training/spec.md`](../openspec/specs/stage2-ab-training/spec.md)
-  - [`openspec/specs/rollout-matching-sft/spec.md`](../openspec/specs/rollout-matching-sft/spec.md)
+  - [`openspec/specs/stage2-rollout-correction/spec.md`](../openspec/specs/stage2-rollout-correction/spec.md)
+  - [`openspec/specs/rollout-matching-sft/spec.md`](../openspec/specs/rollout-matching-sft/spec.md) only for retired-contract rejection checks
   - [`openspec/specs/runtime-architecture-refactor-program/spec.md`](../openspec/specs/runtime-architecture-refactor-program/spec.md)
 - Main code handles:
-  - `src/trainers/stage2_two_channel.py`
+  - `src/trainers/stage2_rollout_correction.py`
   - `src/trainers/stage2_coordination.py`
-  - `src/trainers/stage2_two_channel/scheduler.py`
-  - `src/trainers/stage2_two_channel/target_builder.py`
-  - `src/trainers/stage2_two_channel/objective_runner.py`
-  - `src/trainers/stage2_two_channel/coordination.py`
-  - `src/trainers/stage2_two_channel/executors.py`
-  - `src/trainers/stage2_ab/`
-  - `src/trainers/stage2_rollout_aligned.py`
   - `src/trainers/rollout_aligned_targets.py`
   - `src/trainers/rollout_aligned_evaluator.py`
-  - `src/trainers/rollout_runtime/`
   - `src/launchers/stage2_vllm_server.py`
+  - `src/infer/runtime.py`
+  - `src/infer/backend.py`
+  - `src/infer/backend_vllm_server.py`
+  - `src/infer/backend_sync.py`
+  - `src/infer/rollout_dispatch.py`
   - `src/trainers/rollout_matching/parsing.py`
   - `src/trainers/rollout_matching/matching.py`
   - `src/trainers/teacher_forcing/module_registry.py`
-  - `src/trainers/teacher_forcing/modules/loss_duplicate_burst_unlikelihood.py`
 
 Compatibility note:
-- `src/trainers/stage2_ab_training.py` is a compatibility wrapper.
-- `src/trainers/stage2_two_channel.py` remains the public two-channel trainer surface, with shared Stage-2 coordination in `src/trainers/stage2_coordination.py` and helper modules under `src/trainers/stage2_ab/` and `src/trainers/stage2_two_channel/`.
-- `src/trainers/stage2_rollout_aligned.py` remains the rollout-matching compatibility trainer surface and now imports `src/trainers/rollout_aligned_targets.py`, `src/trainers/rollout_aligned_evaluator.py`, and `src/trainers/rollout_runtime/`.
+- `src/trainers/stage2_rollout_correction.py` is the public Stage-2 trainer surface.
+- Shared Stage-2 rollout prompt/decode/backend/trace behavior routes through
+  `src/infer/*`; trainer modules own residual correction orchestration,
+  post-rollout packing, and training/eval metric projection.
 - Stage-2 historical rationale is summarized from the current runbook; use [`docs/training/STAGE2_RUNBOOK.md`](training/STAGE2_RUNBOOK.md) and stable specs for current behavior.
 
 ## 4. Inference, Confidence, And Evaluation
@@ -187,8 +183,9 @@ Compatibility note:
   - `scripts/run_infer.py`
 - Main runtime code:
   - `src/infer/pipeline.py`
-  - `src/infer/engine.py`
-  - `src/infer/backends.py`
+  - `src/infer/runtime.py`
+  - `src/infer/backend.py`
+  - `src/infer/constraints.py`
   - `src/infer/artifacts.py`
 - Config surfaces:
   - `configs/infer/`
@@ -267,7 +264,7 @@ CoordExp writes paper-ready artifacts as part of normal execution.
 - Change Stage-2 training behavior:
   - [`docs/training/STAGE2_RUNBOOK.md`](training/STAGE2_RUNBOOK.md)
   - [`docs/training/METRICS.md`](training/METRICS.md)
-  - [`openspec/specs/stage2-ab-training/spec.md`](../openspec/specs/stage2-ab-training/spec.md)
+  - [`openspec/specs/stage2-rollout-correction/spec.md`](../openspec/specs/stage2-rollout-correction/spec.md)
   - [`openspec/specs/runtime-architecture-refactor-program/spec.md`](../openspec/specs/runtime-architecture-refactor-program/spec.md)
   - [`docs/IMPLEMENTATION_MAP.md`](IMPLEMENTATION_MAP.md)
 - Change infer/eval artifacts:

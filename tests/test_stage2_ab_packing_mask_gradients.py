@@ -10,8 +10,8 @@ from swift.llm import get_model_tokenizer, get_template
 from src.utils.assistant_json import dumps_coordjson
 
 
-def test_stage2_ab_packing_masks_and_coord_grads_smoke():
-    """Regression test mirroring temp/smoke_stage2_ab_packing.py.
+def test_stage2_rollout_correction_packing_masks_and_coord_grads_smoke():
+    """Regression test mirroring temp/smoke_stage2_rollout_correction_packing.py.
 
     Validates:
     - ms-swift packing metadata matches concatenated encoded lengths

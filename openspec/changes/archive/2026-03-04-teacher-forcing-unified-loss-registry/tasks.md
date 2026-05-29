@@ -4,11 +4,11 @@
 - [x] 0.2 If renaming, rename: worktree dir, branch, and `openspec/changes/<name>` directory; ensure `openspec list` reflects the updated name.
 - [x] 0.3 Remove backward-compat trainer naming and sync the codebase to a single naming:
   - `custom.trainer_variant: stage2_two_channel` (two-channel Expectation/Rollout)
-  - `custom.trainer_variant: stage2_rollout_aligned` (rollout-only)
+  - `custom.trainer_variant: stage2_rollout_runtime` (rollout-only)
   - The old strings (`stage2_ab_training`, `rollout_matching_sft`) MUST fail fast with actionable guidance.
 - [x] 0.4 Rename trainer modules + subpackages to match the canonical naming, and update all imports/references:
   - `src/trainers/stage2_ab_training.py` → `src/trainers/stage2_two_channel.py`
-  - `src/trainers/rollout_matching_sft.py` → `src/trainers/stage2_rollout_aligned.py`
+  - `src/trainers/rollout_matching_sft.py` → `src/trainers/stage2_rollout_runtime.py`
   - `src/trainers/stage2_ab/` → `src/trainers/stage2_two_channel/`
   - `configs/stage2_ab/` → `configs/stage2_two_channel/`
   - Update: `src/config/schema.py`, `src/config/loader.py`, `configs/**`, `docs/**`, `tests/**`, and any scripts that reference the old module paths.
@@ -53,7 +53,7 @@
 - [x] 3B.1 Add a typed YAML surface for rollout-matching SFT pipeline declaration at `rollout_matching.pipeline` (objective + diagnostics module lists) with strict unknown-key fail-fast.
 - [x] 3B.2 Add trainer-variant guardrails:
   - if `custom.trainer_variant=stage2_two_channel`, presence of `rollout_matching.pipeline` fails fast with guidance,
-  - if `custom.trainer_variant=stage2_rollout_aligned`, presence of `stage2_ab.pipeline` fails fast with guidance.
+  - if `custom.trainer_variant=stage2_rollout_runtime`, presence of `stage2_ab.pipeline` fails fast with guidance.
 - [x] 3B.3 Emit a stable pipeline checksum + resolved module list in rollout-matching SFT trainer init logs (include config path, run_name, seed context).
 
 ## 4. Pipeline Runtime Scaffolding (TeacherForcingContext + Executor)
@@ -128,7 +128,7 @@
   - Counter-like keys MUST use an explicit suffix: `*_total`, `*_count`, `*_sum`, `*_num`, or `*_den`.
   - Mean-like monitor keys SHOULD use `*_mean` (or `*_rate`/`*_frac` for ratios).
   - Internal reduction helpers MUST be prefixed with an underscore (e.g., `rollout/_...`) and MUST be removed from final logs.
-- [x] 7C.3 Normalize rollout monitoring payload keys that are currently counter-like but ambiguous (example targets from `src/trainers/stage2_rollout_aligned.py` payload):
+- [x] 7C.3 Normalize rollout monitoring payload keys that are currently counter-like but ambiguous (example targets from `src/trainers/stage2_rollout_runtime.py` payload):
   - `rollout/fn_appended` → `rollout/fn_appended_total` (and optionally add `rollout/fn_appended_per_sample_mean`).
   - `rollout/gt_objects` → `rollout/gt_objects_total` (keep `rollout/gt_per_sample` as mean-like).
   - `rollout/valid_pred_objects` → `rollout/valid_pred_objects_total` (keep `rollout/pred_per_sample`).
@@ -156,7 +156,7 @@
 - [x] 8.3 Update/extend the delta specs in this change if the final YAML key names or semantics differ from the draft.
 - [x] 8.4 Update `docs/training/STAGE2_RUNBOOK.md` to:
   - document the config-declared objective pipeline and how it maps to Stage-2 loss terms,
-  - make bbox geometry loss (SmoothL1 + CIoU) expectation explicit for both `stage2_rollout_aligned` and `stage2_two_channel`,
+  - make bbox geometry loss (SmoothL1 + CIoU) expectation explicit for both `stage2_rollout_runtime` and `stage2_two_channel`,
   - and document the deterministic Stage-2 Two-Channel scheduler as the canonical router.
 - [x] 8.5 Update `progress/full_idea.md` routing language to match the deterministic schedule used in code (Bresenham on `global_step`), and clarify what “realized b_ratio” means under strict fail-fast vs optional fallbacks.
 - [x] 8.6 Update `docs/training/STAGE2_RUNBOOK.md` and `docs/training/METRICS_LOSSES.md` to document eval-step detection metrics:
@@ -175,7 +175,7 @@
   - resolved pipeline checksum matches a golden string (so implementers cannot drift while remaining “spec compliant”).
 - [x] 9.1C Add **guardrail tests** for single-mode config:
   - if `custom.trainer_variant=stage2_two_channel`, presence of `rollout_matching.pipeline` fails fast,
-  - if `custom.trainer_variant=stage2_rollout_aligned`, presence of `stage2_ab.pipeline` fails fast,
+  - if `custom.trainer_variant=stage2_rollout_runtime`, presence of `stage2_ab.pipeline` fails fast,
   - if a pipeline is provided, presence of disallowed flat objective knobs fails fast (per spec; list the knobs in the test).
 - [x] 9.2 Add parity tests asserting “current monolith” == “implicit pipeline default” for fixed teacher-forced batches (Channel-A and Channel-B; packed and unpacked modes when feasible).
   - MUST include a case with `stage2_ab.desc_ce_weight != 1.0` and assert Channel-B FN `desc` weighting matches the current behavior (tail `desc` tokens use the same weight).
@@ -195,5 +195,5 @@
   - `conda run -n ms python -m pytest tests/test_stage2_ab_config_contract.py`
   - `conda run -n ms python -m pytest tests/test_stage2_pending_metrics_aggregation.py`
   - `conda run -n ms python -m pytest tests/test_stage2_two_channel_training.py`
-  - `conda run -n ms python -m pytest tests/test_stage2_rollout_aligned.py`
+  - `conda run -n ms python -m pytest tests/test_stage2_rollout_runtime.py`
   - Result (2026-02-23): all targeted suites pass (`109 passed` total when run together).

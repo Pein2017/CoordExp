@@ -5,7 +5,7 @@ doc_type: artifacts-reference
 status: canonical
 domain: repo
 summary: Runtime artifacts, logging controls, and provenance surfaces.
-updated: 2026-05-11
+updated: 2026-05-16
 ---
 
 # Artifacts & Provenance
@@ -61,6 +61,13 @@ analysis artifacts into the resolved run directory and its eval subdirectory.
 - `gt_vs_pred_scored.jsonl`
   - Score-provenanced artifact consumed by COCO evaluation and official
     submission export.
+  - Official metric/export entrypoints require comparable provenance, either
+    from `gt_vs_pred_scored.jsonl.provenance.json` or a run-level carrier bound
+    to this exact artifact. The score carrier must include first-class
+    prompt/decode/model fingerprints plus `score_policy_fingerprint`.
+  - `source_raw_artifact_identity` records raw-artifact lineage. Its raw
+    content hash participates in the score-policy fingerprint; its path is
+    informational so copied equivalent artifacts keep a stable score identity.
 - `gt_vs_pred_guarded.jsonl`
   - Optional offline duplicate-control guarded companion for raw evaluation
     inputs.
@@ -132,7 +139,8 @@ Current helper ownership for these artifacts:
 - infer summary / resolved metadata:
   - `src/infer/artifacts.py`
 - backend generation:
-  - `src/infer/backends.py`
+  - `src/infer/backend.py`
+  - `src/infer/runtime.py`
 - confidence post-op scoring:
   - `src/eval/confidence_postop.py`
   - `src/eval/bbox_confidence.py`
@@ -189,6 +197,31 @@ is the v1 contract boundary.
 
 ## Training Artifacts (Rank 0)
 
+Training artifact policy is clean-write / tolerant-read:
+
+- New runs write current artifact names and typed observability surfaces.
+- Readers may tolerate historical flat metric keys, older diagnostic payloads,
+  or migration-only Stage-2 policy metadata when explicitly documented.
+- Tolerant reads do not authorize new writers to emit removed training
+  mechanisms or undocumented legacy policy names. Historical Stage-2 assignment
+  identifiers are tolerated only when reading archived artifacts; new writers
+  must emit `greedy_iou`.
+
+Resolved config artifacts are the primary bridge between configs, metrics, and
+runtime behavior:
+
+- `resolved_config.json` records the exact resolved training config.
+- `effective_runtime.json` records the executed runtime after bootstrap,
+  launcher mutation, and derived runtime decisions.
+- `experiment_manifest.json` is the first human orientation artifact and points
+  back to authoritative sibling artifacts.
+- `config_source.yaml` and `base_config_source.yaml` keep best-effort authored
+  YAML copies when the source files are readable.
+- Shadow unified-training configs record the `surface.id` direction through the
+  resolved domains `run`, `surface`, `data`, `template`, `supervision`,
+  `objectives`, `observability`, `artifacts`, and `runtime`; optional
+  `experimental` remains an explicit opt-in escape hatch, not a hidden store.
+
 During training (`python -m src.sft ...`), rank 0 writes reproducibility
 artifacts into `training.output_dir` before training starts:
 
@@ -203,10 +236,9 @@ artifacts into `training.output_dir` before training starts:
   - Use this instead of only `resolved_config.json` when debugging the true
     launched topology or runtime knobs.
   - Latest compact detection runs also record:
-    - `latest_detection_objective`: objective id/variant, template id,
+    - `detection_objective`: objective id/variant, template id,
       coordinate surface, bbox format, state weighting, normalization,
-      support/balance weights, append-boundary type and weights, roll-in
-      source, type-gate mode, EOS token, and EOS trust-weight source.
+      support/balance weights, roll-in source, type-gate mode, and EOS token.
     - `effective_batch_size` and `effective_batch_size_source`, because
       `gradient_accumulation_steps` is derived when effective batch is authored.
     - `actual_global_effective_batch_size`, `world_size`, and
@@ -265,16 +297,25 @@ artifacts into `training.output_dir` before training starts:
   `rollout_matching.eval_monitor_dump.enabled: true`
   - Qualitative rollout diagnostics written as `.json` and optional `.md`.
   - `eval_step` uses the configured eval-window cadence (`every_evals`).
-  - `stage2_two_channel` Channel-B `train_step` writes only suspicious
+  - `stage2_rollout_correction` `train_step` writes only suspicious
     duplicate-heavy rollouts for the current optimizer step.
-    `train_monitor_dump.every_channel_b_steps` counts realized Channel-B
+    `train_monitor_dump.every_correction_steps` counts realized rollout-correction
     rollout steps when set; otherwise the trainer falls back to `every_steps`.
-  - Channel-B `prepare_failures/` dumps preserve both token IDs and decoded
+  - rollout-correction `prepare_failures/` dumps preserve both token IDs and decoded
     rollout/prefix text so malformed JSON failure modes can be inspected without
     manual retokenization.
+  - Stage-2 residual-set UL consensus writes the canonical review sidecar
+    `monitor_dumps/ul_clusters.jsonl` when promoted/rejected/review UL cluster
+    artifact dumping is enabled. Rows carry step/sample/rollout provenance and
+    norm1000 xyxy boxes; the path is flat under `monitor_dumps/`, not nested by
+    step.
   - These remain raw telemetry artifacts; shared GT-vs-Pred review rendering
     uses an explicit normalized `vis_resources/gt_vs_pred.jsonl` sidecar
     instead of taking ownership of the monitor-dump path layout.
+- Residual correction no longer consumes prepared-rollout JSONL caches.
+  Rollout-correction online-learning runs generate live rollout attempts from the
+  current batch and record the resulting supervision/UL evidence under the
+  run-local `monitor_dumps/` artifacts above.
 - `eval_detection/step_<global_step>/` when Stage-1 `custom.eval_detection.enabled: true`
   - Generation-backed eval-step artifacts for standard Stage-1 SFT runs.
   - Writes `gt_vs_pred.jsonl`, `gt_vs_pred_scored.jsonl`, `infer_summary.json`,
@@ -284,6 +325,9 @@ artifacts into `training.output_dir` before training starts:
   - Stage-2 writes this directory when
     `rollout_matching.eval_detection.materialize_artifacts: true`
     (default).
+  - Official Stage-2 eval metrics require this materialized directory; setting
+    `materialize_artifacts: false` now fails fast instead of computing
+    metric-bearing results without scored-artifact provenance.
   - The intent is parity with the offline infer/eval pipeline so each eval
     window can be inspected with the same artifact readers used for standalone
     inference.
@@ -300,6 +344,122 @@ artifacts into `training.output_dir` before training starts:
       metadata, parsing diagnostics, and match details
     - `pred_token_trace.jsonl` when traced rollout outputs are available for the
       eval window (for example confidence-postop-backed scoring)
+
+### Artifact/Provenance Freeze
+
+The unified training infrastructure refactor freezes the current rank-0
+artifact names and owners so later surface / runtime hierarchy cleanup cannot
+silently weaken reproducibility. Future refactors may move the owner only with
+an explicit replacement artifact and tests that preserve or deliberately
+migrate the name.
+
+| Artifact | Current owner | Compatibility decision |
+| --- | --- | --- |
+| `resolved_config.json` | `src/utils/run_manifest.py::write_run_manifest_files` | Preserve the exact filename as the canonical resolved training config snapshot. |
+| `runtime_env.json` | `src/utils/run_manifest.py::write_run_manifest_files` | Preserve the exact filename and whitelisted-env behavior. |
+| `effective_runtime.json` | `src/utils/run_manifest.py::write_run_manifest_files`; payload built in `src/sft.py::_build_effective_runtime_payload` | Preserve the exact filename as the executed-runtime truth after bootstrap / launcher mutation. |
+| `pipeline_manifest.json` | `src/bootstrap/pipeline_manifest.py::build_pipeline_manifest` plus `src/utils/run_manifest.py::write_run_manifest_files` | Preserve the exact filename when the runtime surface has a real pipeline manifest; do not fabricate it for not-applicable surfaces. |
+| `experiment_manifest.json` | `src/bootstrap/experiment_manifest.py::write_experiment_manifest_file` | Preserve the exact filename as the first run-level orientation artifact. |
+| `run_metadata.json` | `src/bootstrap/run_metadata.py::write_run_metadata_file_from_payload` | Preserve the exact filename as the detailed git / dependency / launcher / cache provenance sidecar. |
+| `train_data_provenance.json` | `src/utils/run_manifest.py::write_run_manifest_files`; source identity assembled in `src/sft.py` | Preserve the exact filename and split wrapper for train data identity. |
+| `eval_data_provenance.json` | `src/utils/run_manifest.py::write_run_manifest_files`; source identity assembled in `src/sft.py` | Preserve the exact filename and split wrapper when eval data is configured. |
+| `config_source.yaml` | `src/utils/run_manifest.py::write_run_manifest_files` | Preserve the exact filename for the authored config copy when the source path is locally readable. |
+| `base_config_source.yaml` | `src/utils/run_manifest.py::write_run_manifest_files` | Preserve the exact filename for the authored base-config copy when the source path is locally readable. |
+
+The run-manifest file map returned by `write_run_manifest_files` is also part of
+the compatibility surface because `run_metadata.json` and
+`experiment_manifest.json` consume it to point at authoritative sibling
+artifacts.
+
+Stage-2 eval artifact materialization is likewise frozen at the current
+default-on location:
+
+- `rollout_matching.eval_detection.materialize_artifacts: true`
+- disabling materialization is not valid for official Stage-2 eval metrics,
+  because metric-bearing eval must pass through `gt_vs_pred_scored.jsonl`
+  score-provenance checks
+- `training.output_dir/eval_detection/step_<global_step>/`
+- `gt_vs_pred.jsonl`
+- `gt_vs_pred_scored.jsonl`
+- `infer_summary.json`
+- `metrics.json`
+- `per_image.json`
+- `raw_rollouts.jsonl`
+- `pred_token_trace.jsonl` when trace metadata is available
+
+No Stage-2 executable-path migration, resolver default flip, or observability
+rewrite should pass review unless it preserves these artifacts or deliberately
+migrates them with explicit docs and tests.
+
+### Stage-2 Policy Provenance
+
+Stage-2 assignment, duplicate filtering, and object ordering have first-class
+policy provenance as the architecture moves from legacy trainer internals to
+the reusable `src/training/stage2/` planning stack. Rank-0 Stage-2 rollout-correction
+runs write the same `stage2_policy_provenance` block into the executable
+manifest family:
+
+- `effective_runtime.json` at top-level `stage2_policy_provenance` and under
+  `runtime.stage2_policy_provenance`
+- `pipeline_manifest.json` at top-level `stage2_policy_provenance`
+- `run_metadata.json` at top-level `stage2_policy_provenance`
+- `experiment_manifest.json` at top-level `stage2_policy_provenance` and under
+  `runtime_summary.stage2_policy_provenance`
+
+The block contains these exact policy identifiers, thresholds, and rollout
+surface fields:
+
+- `stage2_policy_provenance.schema_version`
+- `stage2_policy_provenance.trainer_variant`
+- `stage2_policy_provenance.assignment_strategy`
+- `stage2_policy_provenance.assignment_iou_threshold`
+- `stage2_policy_provenance.assignment_iou_threshold_effective`
+- `stage2_policy_provenance.assignment_iou_threshold_source`
+- `stage2_policy_provenance.duplicate_filter_strategy`
+- `stage2_policy_provenance.duplicate_iou_threshold`
+- `stage2_policy_provenance.duplicate_center_radius_scale`
+- `stage2_policy_provenance.object_ordering_policy`
+- `stage2_policy_provenance.object_ordering_strategy_id`
+- `stage2_policy_provenance.sample_object_ordering`
+- `stage2_policy_provenance.rollout_template_family`
+- `stage2_policy_provenance.rollout_decode_policy`
+- `stage2_policy_provenance.invalid_rollout_policy`
+- `stage2_policy_provenance.fallback_loss_weight`
+
+| Policy surface | Current owner / location | Current artifact visibility | Compatibility decision |
+| --- | --- | --- | --- |
+| `stage2_policy_provenance.assignment_strategy` | `src/training/stage2/assignment.py::GreedyIoUAssignment` through the Stage-2 assignment seam | First-class manifest fields: `stage2_policy_provenance.{assignment_strategy,assignment_iou_threshold,assignment_iou_threshold_effective,assignment_iou_threshold_source}`. Corroborating non-manifest telemetry: `resolved_config.json` at `stage2_rollout_correction.correction.assignment.{strategy,iou_threshold}`, rollout-correction meta (`assignment_strategy`, `assignment_iou_threshold`), and batch metrics under `stage2_rollout_correction/correction/assignment/*`. | Active Stage-2 runs must record `greedy_iou` over the post-duplicate survivor set. Removed assignment identifiers are tolerant-read only for archived artifacts and must not be emitted by new training runs. |
+| `stage2_policy_provenance.duplicate_filter_strategy` | `src/training/stage2/duplicate_filter.py::DuplicateFilter`; live owner `src/config/schema.py::Stage2RolloutCorrectionDuplicateControlConfig`; rollout-correction target construction | First-class manifest fields: `stage2_policy_provenance.{duplicate_filter_strategy,duplicate_iou_threshold,duplicate_center_radius_scale}`. Corroborating config visibility: `resolved_config.json` at `stage2_rollout_correction.correction.duplicate_control.{iou_threshold,center_radius_scale}`. | Duplicate filtering must run before assignment and target realization. Preserve thresholds and diagnostic counters, or add an explicit replacement field plus tests before changing filtering order or semantics. |
+| `stage2_policy_provenance.object_ordering_policy` | `src/training/ordering.py`; `src/sft.py` injection into rollout configs; rollout-correction target construction for `stage2_rollout_correction.correction.insertion_order` | First-class manifest fields: `stage2_policy_provenance.{object_ordering_policy,object_ordering_strategy_id,sample_object_ordering}`. Corroborating non-manifest visibility: `resolved_config.json` at `custom.object_ordering` and `stage2_rollout_correction.correction.insertion_order`, plus Stage-2 eval summaries when materialized. | Preserve rollout-correction final-target insertion ordering: default `tail_append` keeps retained accepted rollout objects first and appends false-negative GT objects; `sorted` applies final top-left ordering over retained accepted objects plus inserted false negatives. |
+
+Manifest field names are reserved as
+`stage2_policy_provenance.assignment_strategy`,
+`stage2_policy_provenance.duplicate_filter_strategy`, and
+`stage2_policy_provenance.object_ordering_policy` unless a later OpenSpec
+migration deliberately replaces them. Any future Stage-2 assignment,
+duplicate-filtering, or object-ordering rewrite must update these fields and
+their tests in the same change.
+
+### Diagnostic Compatibility Freeze
+
+The infrastructure cleanup must keep high-value structured diagnostics, not only
+scalar metrics. Current diagnostic surfaces map to future bounded writers as
+follows:
+
+`MetricEvent` remains the scalar metric contract. `DiagnosticEvent` is the
+bounded structured-diagnostic contract with `off`, `standard`, and `debug`
+profiles. Future diagnostic writers may be richer than scalar metrics, but they
+must remain bounded by profile and keep enough provenance to locate the source
+artifact, run config, and rollout/eval window.
+
+| Current diagnostic surface | Current owner / producer | Future bounded-writer compatibility decision |
+| --- | --- | --- |
+| `monitor_dumps/` | Stage-2 rollout monitor dumping under the trainer `rollout_matching.*monitor_dump` configs | Keep a bounded qualitative rollout dump writer with the same directory-level discoverability, cadence controls, and raw text/token visibility. |
+| `prepare_failures/` | Rollout-correction preparation failure dumps under `monitor_dumps/prepare_failures/` | Keep structured malformed-rollout evidence with token IDs, decoded rollout text, prefix text, and parse/error classes. |
+| `raw_rollouts.jsonl` | Stage-2 eval artifact materialization under `eval_detection/step_<global_step>/` | Keep per-sample rollout text, token IDs, parse diagnostics, match diagnostics, score metadata, and pre/post score prediction views. |
+| `pred_token_trace.jsonl` | Inference and traced Stage-2 eval generation paths | Keep line-aligned token text/logprob traces whenever trace metadata is available; downstream confidence and rollout inspection depend on this name. |
+| guarded eval/post-op artifacts (`gt_vs_pred_guarded.jsonl`, `gt_vs_pred_scored_guarded.jsonl`, `metrics_guarded.json`, `per_image_guarded.json`) | `src/eval/detection_duplicate_guard.py`, `src/eval/artifacts.py`, and confidence/eval orchestration | Keep guarded artifacts additive to the raw/scored families; do not replace authoritative raw artifacts with guarded-only outputs. |
+| duplicate/EOS diagnostic probes | `src/analysis/duplication_collapse_analysis.py`, `src/analysis/small_object_duplication_diagnostics.py`, prefix-rollin / raw-text coordinate analysis probes, and related progress notes | Keep probe outputs as structured analysis artifacts with explicit source artifact roots, checkpoint/config handles, token-trace links, duplicate counters, and EOS/continue evidence. |
 
 Notes:
 
@@ -367,13 +527,17 @@ Common ones you may see in logs or artifacts:
 Stage-2 trainers also emit rollout-specific metrics directly
 (see `docs/training/STAGE2_RUNBOOK.md` and `docs/training/METRICS.md`).
 
-- `stage2_two_channel` includes clean-prefix Channel-B duplicate-control
+- `stage2_rollout_correction` includes residual-correction duplicate-control
   diagnostics under:
   - `dup/raw/*`
-  - `stage2_ab/channel_b/dup/N_*`
-  - `train/optimization/loss_duplicate_burst_unlikelihood`
-  - `stage2_ab/channel_b/closure_supervision/N_drop` for the
+  - `stage2_rollout_correction/correction/dup/N_*`
+  - `stage2_rollout_correction/correction/closure_supervision/N_drop` for the
     legacy-named closure-resolution fallback activation counter
+- `stage2_rollout_correction` residual-set correction metrics live under
+  `stage2_rollout_correction/residual_set/` and include compact loss/source counters
+  such as `sequence_count`, `atom_count`, `sequence_loss`, `type_loss`,
+  `inner_loss`, `wrong_type_mass`, `valid_set_mass`, dirty-prefix counters, and
+  decode-mode slices.
 
 ---
 

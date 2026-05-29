@@ -85,7 +85,7 @@ checkpoints:
     family_comparison_role: ce_proxy_disabled_continuation
 
   - alias: stage2_pseudo_positive_ckpt300
-    path: output/stage2_ab/prod/pseudo_positive-ckpt_300_merged-v1
+    path: output/stage2_rollout_correction/prod/pseudo_positive-ckpt_300_merged-v1
     historical_artifact_dirs:
       - output/infer/suspicious_duplication_subset_guarded_eval
     prompt_variant: coco_80

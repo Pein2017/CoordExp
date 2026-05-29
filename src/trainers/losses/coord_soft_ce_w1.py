@@ -21,7 +21,6 @@ class CoordSoftCEW1Result:
     ce_contrib: torch.Tensor
     gate_contrib: torch.Tensor
     text_gate_contrib: torch.Tensor
-    adjacent_repulsion_contrib: torch.Tensor
 
     coord_tokens: int
 
@@ -33,9 +32,6 @@ class CoordSoftCEW1Result:
     coord_expected_bin_mae: torch.Tensor | None
     coord_expected_bin_abs_err_p90: torch.Tensor | None
     coord_w1_to_delta: torch.Tensor | None
-    adjacent_repulsion_pair_count: int
-    adjacent_repulsion_applied_count: int
-    adjacent_repulsion_copy_score_mean: torch.Tensor | None
 
 
 def mask_coord_targets(labels: torch.Tensor, coord_token_ids: list[int]) -> torch.Tensor:
@@ -400,63 +396,6 @@ def compute_coord_soft_ce_w1_loss(
     w1_contrib = w1_weight * w1_loss
     ce_contrib = ce_weight * ce_loss
     gate_contrib = gate_weight * gate_loss
-    adjacent_repulsion_contrib = softce_sum.new_tensor(0.0)
-    adjacent_repulsion_pair_count = 0
-    adjacent_repulsion_applied_count = 0
-    adjacent_repulsion_copy_score_mean = None
-    adjacent_repulsion_weight = max(
-        0.0, float(getattr(cfg, "adjacent_repulsion_weight", 0.0))
-    )
-    if adjacent_repulsion_weight != 0.0:
-        from src.trainers.teacher_forcing.adjacent_repulsion import (
-            compute_adjacent_repulsion,
-        )
-        from src.trainers.teacher_forcing.stage1 import extract_stage1_bbox_quartets
-
-        filter_mode = str(
-            getattr(cfg, "adjacent_repulsion_filter_mode", "same_desc")
-        ).strip().lower()
-        quartets = extract_stage1_bbox_quartets(
-            logits=logits,
-            labels=labels,
-            coord_token_ids=coord_token_ids,
-            coord_id_map=coord_id_map,
-            tokenizer=tokenizer,
-            include_adjacent_metadata=True,
-            require_desc_keys=(filter_mode == "same_desc"),
-            object_field_order=object_field_order,
-            bbox_format=bbox_format,
-        )
-        if (
-            quartets is not None
-            and isinstance(quartets.adjacent_prev_target_bins, torch.Tensor)
-            and isinstance(quartets.adjacent_has_prev_mask, torch.Tensor)
-            and isinstance(quartets.adjacent_same_desc_prev_mask, torch.Tensor)
-            and int(quartets.coord_logits.numel()) > 0
-        ):
-            adjacent_result = compute_adjacent_repulsion(
-                coord_logits=quartets.coord_logits.reshape(
-                    -1, 4, flat_logits.shape[-1]
-                ),
-                prev_target_bins=quartets.adjacent_prev_target_bins,
-                has_previous_mask=quartets.adjacent_has_prev_mask,
-                same_desc_mask=quartets.adjacent_same_desc_prev_mask,
-                margin_ratio=max(
-                    0.0, float(getattr(cfg, "adjacent_repulsion_margin_ratio", 0.05))
-                ),
-                copy_margin=float(
-                    getattr(cfg, "adjacent_repulsion_copy_margin", 0.8)
-                ),
-                filter_mode=filter_mode,
-                temperature=temperature,
-                group_weights=None,
-            )
-            adjacent_repulsion_contrib = (
-                float(adjacent_repulsion_weight) * adjacent_result.loss
-            )
-            adjacent_repulsion_pair_count = int(adjacent_result.pair_count)
-            adjacent_repulsion_applied_count = int(adjacent_result.applied_count)
-            adjacent_repulsion_copy_score_mean = adjacent_result.copy_score_mean
 
     coord_loss = (
         ce_contrib
@@ -464,7 +403,6 @@ def compute_coord_soft_ce_w1_loss(
         + w1_contrib
         + gate_contrib
         + text_gate_contrib
-        + adjacent_repulsion_contrib
     )
 
     if average_tokens_across_devices and model_accepts_loss_kwargs:
@@ -483,7 +421,6 @@ def compute_coord_soft_ce_w1_loss(
         + w1_contrib
         + gate_contrib
         + text_gate_contrib
-        + adjacent_repulsion_contrib
     )
 
     coord_loss = torch.nan_to_num(coord_loss, nan=0.0, posinf=1e4, neginf=0.0)
@@ -493,9 +430,6 @@ def compute_coord_soft_ce_w1_loss(
     gate_contrib = torch.nan_to_num(gate_contrib, nan=0.0, posinf=1e4, neginf=0.0)
     text_gate_contrib = torch.nan_to_num(
         text_gate_contrib, nan=0.0, posinf=1e4, neginf=0.0
-    )
-    adjacent_repulsion_contrib = torch.nan_to_num(
-        adjacent_repulsion_contrib, nan=0.0, posinf=1e4, neginf=0.0
     )
 
     coord_tokens = int(coord_positions_mask.sum().detach().item())
@@ -507,7 +441,6 @@ def compute_coord_soft_ce_w1_loss(
         ce_contrib=ce_contrib,
         gate_contrib=gate_contrib,
         text_gate_contrib=text_gate_contrib,
-        adjacent_repulsion_contrib=adjacent_repulsion_contrib,
         coord_tokens=coord_tokens,
         gate_mass_mean=gate_mass_mean,
         text_gate_coord_mass_mean=text_gate_coord_mass_mean,
@@ -517,7 +450,4 @@ def compute_coord_soft_ce_w1_loss(
         coord_expected_bin_mae=coord_expected_bin_mae,
         coord_expected_bin_abs_err_p90=coord_expected_bin_abs_err_p90,
         coord_w1_to_delta=coord_w1_to_delta,
-        adjacent_repulsion_pair_count=int(adjacent_repulsion_pair_count),
-        adjacent_repulsion_applied_count=int(adjacent_repulsion_applied_count),
-        adjacent_repulsion_copy_score_mean=adjacent_repulsion_copy_score_mean,
     )

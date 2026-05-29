@@ -15,7 +15,7 @@ This page describes the current production path from inference to scored evaluat
 
 Implementation ownership note:
 - pipeline orchestration lives in `src/infer/pipeline.py`
-- generation/backend selection lives in `src/infer/engine.py` and `src/infer/backends.py`
+- shared decode requests and backend selection live in `src/infer/runtime.py` and `src/infer/backend.py`
 - infer/eval artifact writing lives in `src/infer/artifacts.py`, `src/eval/orchestration.py`, and `src/eval/artifacts.py`
 
 ## Default Flow
@@ -163,13 +163,19 @@ After confidence post-op:
 
 - `pred_confidence.jsonl`
 - `gt_vs_pred_scored.jsonl`
+- `gt_vs_pred_scored.jsonl.provenance.json`
 - `confidence_postop_summary.json`
 
 After non-canonical official-eval compatibility scoring:
 
 - `gt_vs_pred_scored.jsonl`
+- `gt_vs_pred_scored.jsonl.provenance.json`
 - no `pred_confidence.jsonl`
 - no `confidence_postop_summary.json`
+
+Plain `xyxy` infer-only/debug runs do not materialize scored artifacts unless
+`confidence:` is configured or official COCO/LVIS/both evaluation is requested.
+This keeps raw inference artifacts unscored by default.
 
 After evaluation:
 

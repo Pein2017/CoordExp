@@ -2,7 +2,11 @@ from dataclasses import replace
 
 import pytest
 
-from src.common.detection_sequence import BOX_START_TOKEN, OBJECT_REF_START_TOKEN
+from src.common.detection_sequence import (
+    BOX_START_TOKEN,
+    END_OF_TEXT_TOKEN,
+    OBJECT_REF_START_TOKEN,
+)
 from src.detection.data import (
     CoordinateTokenBox,
     DetectionMetadata,
@@ -79,13 +83,14 @@ def test_compact_full_renders_approved_token_grammar_without_json_closure() -> N
 
     assert rendered.text == (
         f"{OBJECT_REF_START_TOKEN}traffic light{BOX_START_TOKEN}"
-        "<|coord_10|><|coord_20|><|coord_30|><|coord_40|>\n"
+        "<|coord_10|><|coord_20|><|coord_30|><|coord_40|>"
         f"{OBJECT_REF_START_TOKEN}person{BOX_START_TOKEN}"
         "<|coord_100|><|coord_200|><|coord_300|><|coord_400|>"
     )
+    assert "\n" not in rendered.text
     assert '{"objects"' not in rendered.text
     assert "]}" not in rendered.text
-    assert rendered.separator_spans[0].text(rendered.text) == "\n"
+    assert rendered.separator_spans[0].text(rendered.text) == ""
     assert rendered.terminal_close_span.start == len(rendered.text)
     assert rendered.terminal_close_span.end == len(rendered.text)
     assert rendered.terminal_close_span.text(rendered.text) == ""
@@ -201,6 +206,7 @@ def test_compact_full_strict_parser_round_trips_rendered_text() -> None:
         "bad <|coord_1|>",
         "bad <|im_start|>",
         "bad <|im_end|>",
+        f"bad {END_OF_TEXT_TOKEN}",
     ],
 )
 def test_compact_full_rejects_desc_values_that_collide_with_grammar(
@@ -208,6 +214,40 @@ def test_compact_full_rejects_desc_values_that_collide_with_grammar(
 ) -> None:
     with pytest.raises(ValueError, match="compact_full desc"):
         CompactFullTemplate().render_assistant(_sample(desc=bad_desc))
+
+
+@pytest.mark.parametrize(
+    "bbox_2d",
+    [
+        CoordinateTokenBox(
+            "<|coord_30|>",
+            "<|coord_20|>",
+            "<|coord_10|>",
+            "<|coord_40|>",
+        ),
+        CoordinateTokenBox(
+            "<|coord_10|>",
+            "<|coord_20|>",
+            "<|coord_10|>",
+            "<|coord_40|>",
+        ),
+        CoordinateTokenBox(
+            "<|coord_10|>",
+            "<|coord_40|>",
+            "<|coord_30|>",
+            "<|coord_40|>",
+        ),
+    ],
+)
+def test_compact_full_render_rejects_non_positive_area_boxes(
+    bbox_2d: CoordinateTokenBox,
+) -> None:
+    sample = _sample()
+    bad_object = replace(sample.objects[0], bbox_2d=bbox_2d)
+    bad_sample = replace(sample, objects=(bad_object,))
+
+    with pytest.raises(ValueError, match="valid xyxy positive-area box"):
+        CompactFullTemplate().render_assistant(bad_sample)
 
 
 def test_compact_full_preserves_distinct_repeated_object_instances() -> None:

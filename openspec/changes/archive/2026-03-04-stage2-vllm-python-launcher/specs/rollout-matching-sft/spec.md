@@ -3,7 +3,7 @@
 ## MODIFIED Requirements
 
 ### Requirement: Rollout generation supports vLLM backends (colocate default, server optional)
-When rollout-matching training is enabled (`custom.trainer_variant: stage2_rollout_aligned`), the system SHALL support generating rollouts using a vLLM backend, while keeping teacher-forced forward/backprop on the normal training model.
+When rollout-matching training is enabled (`custom.trainer_variant: stage2_rollout_runtime`), the system SHALL support generating rollouts using a vLLM backend, while keeping teacher-forced forward/backprop on the normal training model.
 
 Rollout-matching settings are a first-class top-level namespace:
 - Rollout-matching settings MUST be authored under top-level `rollout_matching.*`.

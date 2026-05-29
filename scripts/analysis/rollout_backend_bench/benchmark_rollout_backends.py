@@ -1,6 +1,6 @@
 """Benchmark rollout-stage inference: HF (PtEngine) vs vLLM (VllmEngine).
 
-This script focuses on the rollout stage used by `src/trainers/rollout_matching_sft.py`:
+This script focuses on the shared inference runtime used by Stage-2 rollout correction:
   - generate a rollout response
   - strict token-aligned parsing
   - optional matching against GT assistant_payload (for sanity + qualitative diffs)
@@ -41,12 +41,14 @@ import numpy as np
 
 from src.config.loader import ConfigLoader
 from src.datasets.builders.jsonlines import JSONLinesBuilder
-from src.trainers.rollout_matching_sft import (
+from src.trainers.rollout_aligned_evaluator import (
+    extract_eval_gt_objects as _extract_gt_objects,
+)
+from src.trainers.rollout_matching import (
     GTObject,
-    hungarian_match_maskiou,
+    greedy_match_iou,
     parse_rollout_for_matching,
-    _extract_gt_objects,
-    _points_from_coord_tokens,
+    points_from_coord_tokens as _points_from_coord_tokens,
 )
 from src.utils.logger import get_logger
 
@@ -687,11 +689,7 @@ def _infer_one_pass(
         raise RuntimeError("Unable to locate tokenizer on engine")
 
     # Matching knobs (keep aligned with rollout trainer defaults).
-    top_k = 10
     gate_thr = 0.3
-    mask_res = 256
-    fp_cost = 1.0
-    fn_cost = 1.0
 
     idx = 0
     n = len(infer_requests)
@@ -762,14 +760,10 @@ def _infer_one_pass(
                     gts = _extract_gt_objects(meta)
                 except Exception:
                     gts = []
-                match = hungarian_match_maskiou(
+                match = greedy_match_iou(
                     preds=preds_for_match,
                     gts=gts,
-                    top_k=top_k,
                     gate_threshold=gate_thr,
-                    mask_resolution=mask_res,
-                    fp_cost=fp_cost,
-                    fn_cost=fn_cost,
                 )
 
                 gt_vis = _gt_to_vis(

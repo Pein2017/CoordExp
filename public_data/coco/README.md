@@ -7,6 +7,8 @@ COCO 2017 images + annotations and convert them into CoordExp's JSONL contract:
 Outputs live under:
 - `public_data/coco/raw/` (downloaded artifacts + converted JSONL)
 - `public_data/coco/<preset>/` (shared unified pipeline artifacts via `public_data/run.sh`)
+- `public_data/coco/images/res-1024/` (Phase 1 shared 1024 image store)
+- `public_data/coco/views/{coco80,coco80-lvis-proxy}/...` (Phase 1 canonical annotation views)
 
 ## What you get
 - Raw COCO 2017 download (images + `instances_{train,val}2017.json`)
@@ -102,13 +104,52 @@ Canonical preset artifacts:
 - `train.norm.jsonl` / `val.norm.jsonl` (norm1000 integers)
 - `train.coord.jsonl` / `val.coord.jsonl` (coord tokens)
 
-Optional max-object filter (off by default):
+## Phase 1 COCO View Architecture
+
+Phase 1 introduces a shared image-store plus annotation-view layout for COCO
+1024 artifacts:
+
+```text
+public_data/coco/images/res-1024/
+public_data/coco/views/coco80/full/
+public_data/coco/views/coco80/len-12000/
+public_data/coco/views/coco80/max-60/
+public_data/coco/views/coco80-lvis-proxy/len-12000/
+```
+
+Canonical view JSONLs under `views/**` store:
+
+- `images[]` paths relative to `public_data/coco/images/res-1024/`, such as
+  `images/train2017/000000123456.jpg`;
+- strict-JSON norm1000 integer coordinates in `bbox_2d` / `poly`;
+- COCO80 or COCO80+LVIS-proxy annotation rows according to the view path and
+  local `meta.json`;
+- assistant coordinate rendering as Qwen `<|coord_k|>` tokens at training or
+  inspection time, not as the stored view format.
+
+For `len-12000` views, the budget includes Qwen image patch tokens,
+system/user chat-template tokens, and the rendered assistant object sequence.
+For proxy views, the budget is applied after LVIS-proxy augmentation so the
+final rendered object sequence fits the 12k scope. Support sidecars that are
+not rendered into the assistant response are not part of that budget.
+
+`max-60` remains a legacy object-count-filtered view for historical
+comparison. Treat `max_objects` as deprecated runtime policy; prefer a prepared
+view path instead of runtime object-count admission.
+
+Generated `images/res-1024` and `views/**` data products stay local. Git tracks
+the corresponding provenance manifests under `manifests/public_data_provenance/`
+when they are materialized for cross-node reproducibility. This Phase 1 layout
+does not imply that older preset roots have been deleted or that production
+configs have already migrated.
+
+Optional max-object filter (off by default, legacy):
 ```bash
 PUBLIC_DATA_MAX_OBJECTS=60 ./public_data/run.sh coco coord --preset rescale_32_768_bbox
 ```
 When enabled, output preset naming uses canonical suffix `..._max60`.
 
-Recommended 1024-budget + `max_objects<=60` flow:
+Legacy 1024-budget + `max_objects<=60` flow:
 ```bash
 ./public_data/run.sh coco rescale --preset rescale_32_1024_bbox -- \
   --image-factor 32 --max-pixels $((32*32*1024))

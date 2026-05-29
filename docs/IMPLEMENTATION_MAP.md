@@ -5,7 +5,7 @@ doc_type: implementation-map
 status: canonical
 domain: repo
 summary: Task-to-file routing guide for common CoordExp changes.
-updated: 2026-05-09
+updated: 2026-05-16
 ---
 
 # Implementation Map
@@ -14,7 +14,7 @@ Purpose: route common research and engineering changes to the smallest useful se
 Authority: code-navigation guide for the current repo; for current defaults, defer to `docs/PROJECT_CONTEXT.md` and runbooks; for stable contract semantics, defer to `openspec/specs/`.
 Read this after: `docs/SYSTEM_OVERVIEW.md`
 Read this before: opening many source files blindly or doing broad repo-wide searches
-Primary code handles: `src/sft.py`, `src/detection/runtime.py`, `src/detection/template.py`, `src/common/detection_sequence.py`, `src/common/detection_compact_rows.py`, `src/bootstrap/`, `src/config/schema.py`, `src/datasets/`, `src/trainers/metrics/`, `src/metrics/events.py`, `src/trainers/stage2_two_channel.py`, `src/trainers/stage2_two_channel/`, `src/trainers/stage2_rollout_aligned.py`, `src/trainers/rollout_aligned_targets.py`, `src/trainers/rollout_aligned_evaluator.py`, `src/trainers/rollout_runtime/`, `src/launchers/stage2_vllm_server.py`, `src/infer/pipeline.py`, `src/infer/engine.py`, `src/infer/backends.py`, `src/infer/artifacts.py`, `src/eval/detection.py`, `src/eval/detection_orchestrator.py`, `src/eval/detection_records.py`, `src/eval/detection_geometry.py`, `src/eval/detection_coco.py`, `src/eval/detection_lvis.py`, `src/eval/detection_duplicate_guard.py`, `src/eval/detection_f1ish.py`, `src/eval/orchestration.py`, `src/eval/artifacts.py`
+Primary code handles: `src/sft.py`, `src/training/`, `src/detection/runtime.py`, `src/detection/template.py`, `src/common/detection_sequence.py`, `src/common/detection_compact_rows.py`, `src/bootstrap/`, `src/config/schema.py`, `src/datasets/`, `src/trainers/metrics/`, `src/metrics/events.py`, `src/trainers/stage2_rollout_correction.py`, `src/trainers/rollout_aligned_targets.py`, `src/trainers/rollout_aligned_evaluator.py`, `src/launchers/stage2_vllm_server.py`, `src/infer/pipeline.py`, `src/infer/runtime.py`, `src/infer/backend.py`, `src/infer/backend_sync.py`, `src/infer/backend_vllm_server.py`, `src/infer/constraints.py`, `src/infer/artifacts.py`, `src/eval/detection.py`, `src/eval/detection_orchestrator.py`, `src/eval/detection_records.py`, `src/eval/detection_geometry.py`, `src/eval/detection_coco.py`, `src/eval/detection_lvis.py`, `src/eval/detection_duplicate_guard.py`, `src/eval/detection_f1ish.py`, `src/eval/orchestration.py`, `src/eval/artifacts.py`
 Verification: use the targeted test files listed below before running broader suites
 
 ## 1. Data Contract, JSONL Rendering, Or Geometry
@@ -47,9 +47,9 @@ Open these docs first:
 - [`docs/training/README.md`](training/README.md)
 - [`docs/training/STAGE1_OBJECTIVE.md`](training/STAGE1_OBJECTIVE.md)
 - [`docs/data/PACKING.md`](data/PACKING.md)
-- [`configs/stage1/recursive_detection_ce_latest/prod/compact_full_support2.yaml`](../configs/stage1/recursive_detection_ce_latest/prod/compact_full_support2.yaml) for the compact recursive detection production baseline/comparator
-- [`configs/stage1/recursive_detection_ce_latest/ablation/compact_full_prefix_rollin_balance2.yaml`](../configs/stage1/recursive_detection_ce_latest/ablation/compact_full_prefix_rollin_balance2.yaml) for the compact-full prefix-rollin E1 ablation route
-- [`configs/stage1/recursive_detection_ce_latest/ablation/compact_full_prefix_rollin_separator2.yaml`](../configs/stage1/recursive_detection_ce_latest/ablation/compact_full_prefix_rollin_separator2.yaml) for the E2 separator-continue diagnostic ablation
+- [`configs/stage1/teacher_forcing/`](../configs/stage1/teacher_forcing/) for active compact teacher-forcing Stage-1 configs
+- [`configs/stage1/recursive_detection_ce/prod/compact_full_support2.yaml`](../configs/stage1/recursive_detection_ce/prod/compact_full_support2.yaml) as a legacy/comparator compact recursive detection handle, not an active production objective
+- [`configs/stage1/recursive_detection_ce/ablation/compact_full_prefix_rollin_balance2.yaml`](../configs/stage1/recursive_detection_ce/ablation/compact_full_prefix_rollin_balance2.yaml) as a legacy/comparator compact-full prefix-rollin E1 ablation handle
 
 Open these configs first:
 - `configs/stage1/sft_base.yaml`
@@ -57,10 +57,16 @@ Open these configs first:
 - `configs/_shared/prompts/`
 - `configs/stage1/profiles/`
 - `configs/stage1/smoke/`
-- `configs/stage1/recursive_detection_ce_latest/prod/`
-- `configs/stage1/recursive_detection_ce_latest/ablation/`
+- `configs/stage1/recursive_detection_ce/prod/`
+- `configs/stage1/recursive_detection_ce/ablation/`
 
 Open these code files first:
+- `src/training/surfaces.py`
+- `src/training/pipelines/stage1_json_ce.py`
+- `src/training/pipelines/stage1_compact_trie_ce.py`
+- `src/training/objectives/`
+- `src/training/supervision/`
+- `src/training/templates/compact_full.py`
 - `src/sft.py`
 - `src/detection/runtime.py`
 - `src/detection/template.py`
@@ -75,18 +81,22 @@ Open these code files first:
 - `src/trainers/metrics/recursive_detection.py`
 - `src/trainers/metrics/aggregate_tokens.py`
 - `src/trainers/metrics/coord_losses.py`
-- `src/trainers/metrics/bbox_losses.py`
 - `src/data_collators/batch_extras_collator.py`
 
 Compact recursive detection ownership:
-- `src/detection/runtime.py` owns latest detection runtime support/preflight, recursive CE runtime config resolution, prompt/mode/custom shim resolution, and `build_latest_detection_dataset`.
-- `src/detection/objective.py`, `src/detection/rollin.py`, `src/detection/dataset.py`, `src/detection/token_types.py`, and `src/detection/loss.py` own the `prefix_rollin_et_rmp_ce` roll-in state, objectized sparse targets, compact type gates, EOS trust weight, and loss-sidecar behavior.
+- `src/training/surfaces.py` owns the guarded shadow resolver and supported
+  `surface.id` values: `stage1_json_ce`, `stage1_compact_trie_ce`, and
+  `stage2_rollout_correction`.
+- Shadow objective profiles resolve through text/trie teacher-forcing modules;
+  geometry regularizers are not part of the active Stage-2 objective surface.
+- `src/detection/runtime.py` owns detection runtime support/preflight, recursive CE runtime config resolution, prompt/mode/custom shim resolution, and `build_detection_training_dataset`.
+- `src/detection/objective.py`, `src/detection/rollin.py`, `src/detection/dataset.py`, `src/detection/token_types.py`, and `src/detection/loss.py` own the `prefix_rollin_et_rmp_ce` roll-in state, objectized sparse targets, compact type gates, ordinary teacher-forced `<|im_end|>` CE, and loss-sidecar behavior.
 - `src/sft.py` delegates policy and keeps backward-compatible private aliases.
 - `src/detection/template.py` owns strict templates; only `stage1_json_pretty` and `compact_full` are factory-visible strict IDs.
 - `src/common/detection_sequence.py` is the compatibility facade; malformed helper-format rows return `None`.
 - `src/common/detection_compact_rows.py` is the stdlib-only low-level marker/render/split helper.
 - `compact_no_desc`, `compact_no_bbox`, and `compact_min` stay compatibility/helper formats.
-- latest compact recursive CE keeps packing/cache fail-fast policy and remains config-first. Prefix-rollin adds objectized latest-detection objective subkeys (`objective.rollin`, `objective.target`, `objective.type_gate`, `objective.eos`) but no CLI flags.
+- latest compact recursive CE keeps packing/cache fail-fast policy and remains config-first. Prefix-rollin adds objectized latest-detection objective subkeys (`objective.rollin`, `objective.target`, `objective.type_gate`) plus ordinary teacher-forced `<|im_end|>` CE, but no CLI flags.
 
 Trainer metric ownership:
 - `src/trainers/metrics/mixins.py` is a compatibility re-export facade.
@@ -105,78 +115,84 @@ Run these tests first:
 - `tests/test_compact_type_gate.py`
 - `tests/test_recursive_detection_ce_loss_adapter.py`
 - `tests/test_recursive_detection_ce_sft_wiring.py`
+- `tests/test_training_surface_resolver.py`
+- `tests/test_objective_profile_resolution.py`
+- `tests/test_compact_full_encoding_contract.py`
+- `tests/test_compact_span_projector.py`
+- `tests/test_training_architecture_golden_thread.py`
 
-## 3. Stage-2 Two-Channel Or Rollout-Aligned Training, Matching, Triage, Or Duplicate UL
+## 3. Stage-2 Rollout-Correction Training, Matching, Triage, Or Duplicate Control Diagnostics
 
 Open these docs first:
 - [`docs/training/STAGE2_RUNBOOK.md`](training/STAGE2_RUNBOOK.md)
 - [`docs/training/METRICS.md`](training/METRICS.md)
-- [`openspec/specs/stage2-ab-training/spec.md`](../openspec/specs/stage2-ab-training/spec.md)
-- [`openspec/specs/rollout-matching-sft/spec.md`](../openspec/specs/rollout-matching-sft/spec.md)
+- [`openspec/specs/stage2-rollout-correction/spec.md`](../openspec/specs/stage2-rollout-correction/spec.md)
+- [`openspec/specs/rollout-matching-sft/spec.md`](../openspec/specs/rollout-matching-sft/spec.md) only for retired-contract rejection checks
 - [`openspec/specs/teacher-forcing-unified-loss-registry/spec.md`](../openspec/specs/teacher-forcing-unified-loss-registry/spec.md)
 - [`openspec/specs/runtime-architecture-refactor-program/spec.md`](../openspec/specs/runtime-architecture-refactor-program/spec.md)
 
 Historical context only:
-- Historical context: use [`docs/training/STAGE2_RUNBOOK.md`](training/STAGE2_RUNBOOK.md) plus `progress/` notes when needed
+- Use `progress/` notes only for historical evidence after checking the current docs above.
 
 Open these configs first:
-- `configs/stage2_two_channel/base.yaml`
+- `configs/stage2_rollout_correction/base.yaml`
 - `configs/_shared/datasets/`
 - `configs/_shared/prompts/`
-- `configs/stage2_two_channel/prod/`
-- `configs/stage2_two_channel/smoke/`
-
-For `custom.trainer_variant: stage2_rollout_aligned`:
-- author `rollout_matching.pipeline.objective[]` and `rollout_matching.pipeline.diagnostics[]`
-- do not author `stage2_ab.pipeline.*`
+- `configs/stage2_rollout_correction/prod/`
+- `configs/stage2_rollout_correction/smoke/`
 
 Key v3 config handles:
-- `stage2_ab.channel_b.triage_posterior.*`
-- `rollout_matching.pipeline.*`
+- `stage2_rollout_correction.correction.triage_posterior.*`
 - `rollout_matching.decoding.*`
 
 Open these code files first:
+- `src/training/surfaces.py`
+- `src/trainers/stage2_rollout_correction.py`
+- `src/training/stage2/assignment.py`
+- `src/training/stage2/duplicate_filter.py`
+- `src/training/stage2/planners.py`
+- `src/training/ordering.py`
 - `src/sft.py`
 - `src/bootstrap/pipeline_manifest.py`
 - `src/bootstrap/trainer_setup.py`
 - `src/trainers/stage2_coordination.py`
-- `src/trainers/stage2_two_channel.py`
-- `src/trainers/stage2_two_channel/scheduler.py`
-- `src/trainers/stage2_two_channel/target_builder.py`
-- `src/trainers/stage2_two_channel/objective_runner.py`
-- `src/trainers/stage2_two_channel/types.py`
-- `src/trainers/stage2_two_channel/rollout_views.py`
-- `src/trainers/stage2_two_channel/coordination.py`
-- `src/trainers/stage2_two_channel/executors.py`
-- `src/trainers/stage2_ab/`
-- `src/trainers/stage2_rollout_aligned.py`
+- `src/trainers/stage2_rollout_correction.py`
+- `src/trainers/stage2_rollout_runtime.py` (trainer-owned facade; do not add
+  shared prompt, decode, backend, parser, trace, or artifact policy here)
 - `src/trainers/rollout_aligned_targets.py`
 - `src/trainers/rollout_aligned_evaluator.py`
-- `src/trainers/rollout_matching_sft.py`
-- `src/trainers/rollout_runtime/`
 - `src/launchers/stage2_vllm_server.py`
+- `src/infer/backend_vllm_server.py`
+- `src/infer/backend_sync.py`
+- `src/infer/rollout_dispatch.py`
 - `src/trainers/rollout_matching/parsing.py`
 - `src/trainers/rollout_matching/matching.py`
 - `src/trainers/teacher_forcing/module_registry.py`
 - `src/trainers/teacher_forcing/objective_atoms.py`
 - `src/trainers/teacher_forcing/modules/token_ce.py`
-- `src/trainers/teacher_forcing/modules/loss_duplicate_burst_unlikelihood.py`
-- `src/trainers/teacher_forcing/modules/bbox_geo.py`
-- `src/trainers/teacher_forcing/modules/coord_reg.py`
+- `src/trainers/teacher_forcing/modules/stage2_trie_ce.py`
+
+Stage-2 planning direction:
+- `src/training/stage2/duplicate_filter.py` filters accepted rollout objects
+  before assignment and target realization.
+- `src/training/stage2/assignment.py::GreedyIoUAssignment` is the target
+  assignment strategy for new shadow planning.
+- `src/training/stage2/planners.py::Stage2GreedyIoUShadowPlanner` derives
+  false-negative GT insertions after duplicate filtering.
+- `src/trainers/rollout_matching/matching.py::greedy_match_iou` is the
+  shared rollout matching helper used by Stage-2 runtime code.
 
 Run these tests first:
-- `tests/test_stage2_ab_config_contract.py`
-- `tests/test_stage2_ab_training.py`
-- `tests/test_stage2_rollout_aligned.py`
-- `tests/test_stage2_two_channel_training.py`
+- `tests/test_stage2_rollout_correction_contract.py`
+- `tests/test_stage2_rollout_runtime.py`
 - `tests/test_stage2_objective_atoms_projection.py`
 - `tests/test_teacher_forcing_token_ce.py`
 - `tests/test_stage2_pending_metrics_aggregation.py`
 - `tests/test_stage2_rollout_import_boundaries.py`
 - `tests/test_training_config_strict_unknown_keys.py`
-- `tests/test_stage2_ab_vllm_server_mode_smoke.py`
-- `tests/test_stage2_ab_ddp_phase_monitor_disable.py`
-- `tests/test_stage2_ab_disable_average_tokens_across_devices.py`
+- `tests/test_stage2_assignment_greedy_iou.py`
+- `tests/test_stage2_duplicate_filter.py`
+- `tests/test_stage2_supervision_planning_smoke.py`
 
 ## 4. Inference, Confidence, And Offline Evaluation
 
@@ -199,8 +215,9 @@ Open these configs first:
 Open these code files first:
 - `scripts/run_infer.py`
 - `src/infer/pipeline.py`
-- `src/infer/engine.py`
-- `src/infer/backends.py`
+- `src/infer/runtime.py`
+- `src/infer/backend.py`
+- `src/infer/constraints.py`
 - `src/infer/artifacts.py`
 - `scripts/postop_confidence.py`
 - `scripts/evaluate_detection.py`
@@ -214,6 +231,20 @@ Open these code files first:
 - `src/eval/detection_orchestrator.py`
 - `src/eval/orchestration.py`
 - `src/eval/artifacts.py`
+
+Runtime ownership notes:
+
+- `src/infer/runtime.py` is the shared inference seam for offline inference and
+  live-model eval callers. It owns the offline inference owner lifecycle and
+  artifact loop; the legacy engine module is not an active surface.
+- `src/infer/backend.py` owns decode backend projection and strict trace
+  normalization. Trace-bearing HF and vLLM results must normalize into the same
+  generated-token IDs, token text, and logprob fields before they can feed
+  metric-bearing artifacts.
+- OpenAI-compatible vLLM server inference may use
+  `infer.generation.trace_logprobs: true` only when the server returns generated
+  token IDs and generated-token logprobs; otherwise the shared backend fails
+  before emitting comparable artifacts.
 
 Detection eval ownership:
 - `src/eval/detection.py` is the import-compatible facade.
@@ -234,8 +265,17 @@ Open these docs first:
 - [`docs/ARTIFACTS.md`](ARTIFACTS.md)
 - [`docs/training/METRICS.md`](training/METRICS.md)
 
+Freeze/gate reference:
+- `docs/ARTIFACTS.md#artifactprovenance-freeze` records the current rank-0
+  artifact owner/name map and the Stage-2 eval diagnostic compatibility table.
+  Preserve those names or add an explicit migration with tests.
+
 Open these code files first:
 - `src/sft.py`
+- `src/training/observability/events.py`
+- `src/training/observability/service.py`
+- `src/training/observability/legacy.py`
+- `src/training/observability/contracts.py`
 - `src/bootstrap/experiment_manifest.py`
 - `src/bootstrap/pipeline_manifest.py`
 - `src/bootstrap/run_metadata.py`
@@ -250,6 +290,10 @@ Open these code files first:
 
 Metric event contract:
 - `src/metrics/events.py` defines `MetricEvent` and `flatten_metric_events`.
+- `src/training/observability/events.py` defines `DiagnosticEvent` and the
+  bounded diagnostic profiles `off`, `standard`, and `debug`.
+- New writers should use clean current `MetricEvent` / `DiagnosticEvent`
+  surfaces. Legacy flat metric records are read through tolerant adapters only.
 - aggregate coord token metrics publish canonical identities `coord_token_acc/full_vocab/top1` and `coord_token_acc/full_vocab/top5`.
 - legacy aliases remain `coord_token_acc` and `coord_token_acc_top5`.
 - the reserved-alias collision guard prevents new canonical identities from colliding with reserved legacy flat keys.
@@ -261,6 +305,9 @@ Run these tests first:
 - `tests/test_dependency_provenance.py`
 - `tests/test_launcher_metadata_env.py`
 - `tests/test_trainer_metrics_payload_contract.py`
+- `tests/test_observability_events.py`
+- `tests/test_diagnostic_sampling_policy.py`
+- `tests/test_artifact_contract_docs.py`
 
 ## 6. When To Update Docs And Specs Too
 

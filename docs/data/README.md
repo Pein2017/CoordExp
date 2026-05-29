@@ -38,7 +38,7 @@ workflow, packing policy, or dataset-specific intake caveats.
 - Runtime transforms should stay minimal; image resize and geometry conversion happen offline.
 - Canonical raw and preset JSONL remain model-independent `xyxy` surfaces.
 - Non-canonical bbox charts such as `cxcy_logw_logh` and `cxcywh` must be authored as offline sibling preset roots and converted back to canonical `xyxy` before inference/eval/visualization boundaries.
-- Runtime fusion config authoring is dormant in the supported training surface. If multi-dataset training is needed now, prepare each dataset independently, merge JSONLs offline, and point `custom.train_jsonl` / `custom.val_jsonl` at the merged artifact.
+- Runtime fusion config authoring has been removed from the supported training surface. If multi-dataset training is needed now, prepare each dataset independently, merge JSONLs offline, and point `custom.train_jsonl` / `custom.val_jsonl` at the merged artifact.
 
 ## Use This Router For
 
@@ -46,7 +46,7 @@ workflow, packing policy, or dataset-specific intake caveats.
 - "How are images resized and validated?"
 - "What are the current packing defaults for this training surface?"
 - "What happens if a raw JSONL sample exceeds `global_max_length`?"
-- "How should I handle multi-dataset mixing while runtime fusion is disabled?"
+- "How should I handle multi-dataset mixing after runtime fusion removal?"
 
 ## Primary Code Handles
 

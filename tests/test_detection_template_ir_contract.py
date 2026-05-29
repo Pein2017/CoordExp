@@ -1,4 +1,4 @@
-from dataclasses import replace
+from dataclasses import fields, replace
 from typing import get_args
 
 import pytest
@@ -181,6 +181,29 @@ def _equal_priority_classifying_overlaps(
     return conflicts
 
 
+def test_render_span_event_preserves_legacy_positional_field_order() -> None:
+    field_names = tuple(field.name for field in fields(RenderSpanEvent))
+
+    assert field_names[
+        field_names.index("source_object_index") + 1 :
+        field_names.index("provenance") + 1
+    ] == ("geometry_kind", "slot_name", "provenance")
+    assert all(
+        field_names.index(field_name) > field_names.index("provenance")
+        for field_name in (
+            "object_id",
+            "supervision_key",
+            "span_family",
+            "field_name",
+            "source_role",
+            "relation_snapshot",
+            "coordinate_weight",
+            "regression_weight",
+            "hard_bbox_supervision",
+        )
+    )
+
+
 def test_stage1_json_pretty_render_bytes_stay_canonical() -> None:
     rendered = Stage1JsonPrettyTemplate().render_assistant(_sample())
 
@@ -238,13 +261,13 @@ def test_compact_full_two_object_render_bytes_and_separator_stay_exact() -> None
 
     assert rendered.text == (
         f"{OBJECT_REF_START_TOKEN}cat{BOX_START_TOKEN}"
-        "<|coord_1|><|coord_2|><|coord_3|><|coord_4|>\n"
+        "<|coord_1|><|coord_2|><|coord_3|><|coord_4|>"
         f"{OBJECT_REF_START_TOKEN}dog{BOX_START_TOKEN}"
         "<|coord_10|><|coord_20|><|coord_30|><|coord_40|>"
     )
     assert len(rendered.object_entries) == 2
     assert len(rendered.separator_spans) == 1
-    assert rendered.separator_spans[0].text(rendered.text) == "\n"
+    assert rendered.separator_spans[0].text(rendered.text) == ""
     assert rendered.object_entries[0].separator_span == rendered.separator_spans[0]
     assert rendered.object_entries[0].entry_span.text(rendered.text) == (
         f"{OBJECT_REF_START_TOKEN}cat{BOX_START_TOKEN}"
@@ -492,6 +515,27 @@ def test_common_compact_parser_returns_none_for_diagnostic_failures() -> None:
     )
     with pytest.raises(ValueError):
         template.parse_assistant(malformed_row)
+
+
+def test_common_compact_parser_can_salvage_valid_rows_when_explicitly_enabled() -> None:
+    template = CompactFullTemplate()
+    rendered = template.render_assistant(_two_object_sample())
+    malformed_second_row = rendered.text.replace("<|coord_20|>", " bad<|coord_20|>")
+
+    assert (
+        parse_compact_detection_sequence(
+            malformed_second_row,
+            detection_sequence_format="compact_full",
+        )
+        is None
+    )
+    assert parse_compact_detection_sequence(
+        malformed_second_row,
+        detection_sequence_format="compact_full",
+        salvage_malformed_rows=True,
+    ) == _payload()
+    with pytest.raises(ValueError):
+        template.parse_assistant(malformed_second_row)
 
 
 @pytest.mark.parametrize("bad_coord", ["<|coord_1000|>", "<|coord_01|>"])

@@ -5,7 +5,7 @@ doc_type: reference
 status: canonical
 domain: data
 summary: Surface-specific packing policy, hard caps, cache behavior, and efficiency tradeoffs.
-updated: 2026-05-09
+updated: 2026-05-25
 ---
 
 # Packing Policy Matrix
@@ -13,17 +13,19 @@ updated: 2026-05-09
 Note:
 - This guide applies to baseline SFT runs (stage_1 style) where training uses standard
   padding/packing dataset wrappers.
-- Stage-2 trainers (`custom.trainer_variant: stage2_rollout_aligned` for the legacy rollout-matching
-  compatibility path and `stage2_two_channel` for the active two-channel path) support
-  **post-rollout packing inside the trainer** when `training.packing: true`:
+- Stage-2 rollout-correction training (`custom.trainer_variant:
+  stage2_rollout_correction`) supports **post-rollout packing inside the
+  trainer** when `training.packing: true`:
   - rollout generation remains un-packed (padded batch),
-  - each post-rollout `Y_train` is treated as an atomic segment (no splitting),
-  - for `stage2_two_channel` clean-prefix v2, that packed Channel-B segment is built from the canonical clean teacher-forced target derived from `accepted_objects_clean`, not from the raw rollout prefix token ids,
-  - `stage2_ab.channel_b.insertion_order` determines whether that final Channel-B target keeps the historical retained-anchor prefix plus FN tail (`tail_append`, default) or applies a final top-left sort over retained anchors plus FN objects (`sorted`),
+  - each rollout-correction train segment is atomic (no splitting),
+  - the rollout prefix is roll-in context and the trainable target is the
+    residual/GT correction target IR,
+  - `stage2_rollout_correction.correction.insertion_order` controls how
+    recovered GT objects are serialized for correction,
   - `training.packing_buffer` / `training.packing_min_fill_ratio` control the dynamic packer.
-  - `training.packing_drop_last: true` is required (no end-of-run flush steps; `stage2_rollout_aligned` uses a carry buffer).
-  - `stage2_two_channel` (step-budgeted) uses a *pool-aware* selector that prioritizes minimizing the total number of packed
-    sequences per optimizer step (fewer forward/backward calls) and secondarily avoids tiny remainder packs.
+  - `training.packing_drop_last: true` is required (no end-of-run flush steps).
+  - rollout correction uses a *pool-aware* selector that prioritizes minimizing the total number of packed
+    sequences per optimizer step and secondarily avoids tiny remainder packs.
     - This may select a shorter current pack than FIFO-greedy when it reduces the overall number of packs for the per-step pool.
 - Stage-2 runbook: [`../training/STAGE2_RUNBOOK.md`](../training/STAGE2_RUNBOOK.md).
 
@@ -34,7 +36,7 @@ Note:
 | Stage-1 baseline `configs/stage1/sft_base.yaml` | `12000` | `32` | static dataset packing | Uses `training.packing: true` and `training.eval_packing: true` where supported. |
 | Stage-1 shared 4B coord recipes | `12000` | `128` | static dataset packing | Match comparisons by samples/epochs and record exact config. |
 | Stage-1 compact recursive detection latest | `12000` | `128` | disabled | Packing remains disabled until sidecar target-position offset rewriting is implemented and validated. |
-| Stage-2 two-channel base | `12000` | `64` | post-rollout trainer packing | Rollout generation remains padded/unpacked; each post-rollout `Y_train` is atomic. |
+| Stage-2 rollout-correction base | `12000` | `64` | post-rollout trainer packing | Rollout generation remains padded/unpacked; correction segments are atomic. |
 | Historical 12k packing probe | `12000` | `12` | historical probe | Useful as prior efficiency evidence, not the global default. |
 
 ## Effective Batch Source Of Truth
@@ -86,9 +88,9 @@ packing:
 ```
 
 Until recursive sidecar target-position offset rewriting is implemented and
-validated, `configs/stage1/recursive_detection_ce_latest/` must not enable
+validated, `configs/stage1/recursive_detection_ce/` must not enable
 dataset/static packing or padding-free packed runtime. Expected-failure packing
-examples belong under `configs/stage1/recursive_detection_ce_latest/negative/`
+examples belong under `configs/stage1/recursive_detection_ce/negative/`
 or another explicit `contract_failures/` location, not under positive `smoke/`
 profiles.
 
@@ -96,7 +98,7 @@ profiles.
 
 Current implementation:
 - Stage-1 dataset-level packing requires `training.packing_mode: static` (default). `training.packing_mode: dynamic` is deprecated/unsupported and fails fast.
-- If you need multi-dataset mixing *and* Stage-1 static packing, materialize an offline merged JSONL first. Runtime fusion config authoring is temporarily disabled in the canonical training surface.
+- If you need multi-dataset mixing *and* Stage-1 static packing, materialize an offline merged JSONL first. Runtime fusion config authoring has been removed from the canonical training surface.
 - Static packing may forward `set_epoch` into the raw dataset only for length-invariant per-epoch changes such as `custom.object_ordering: random`; `raw_plan` and `aligned_plan` stay fixed across epochs for eligible datasets.
 - If epoch-varying content changes per-index planning length or sample schedule, static packing fails fast; use a length-invariant ordering configuration or disable `training.packing`.
 - For sorted-vs-random ordering ablations, pin `training.encoded_sample_cache.enabled` explicitly in YAML. Random-order runs remain cache-ineligible, and the sorted arm should not keep an implicit cache-only advantage.

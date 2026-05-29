@@ -61,7 +61,7 @@ free-text description positions.
 
 ## Orthogonal Token-Type Supervision
 
-The active ablation objective separates token-type validity from
+This historical ablation objective separated token-type validity from
 coordinate smoothness. Schema/control/boundary tokens use hard CE plus the
 struct/eos type gate. Free-text description tokens use hard CE and, at
 description trie branch positions, support/balance trie CE plus the desc type
@@ -291,7 +291,7 @@ probability to every recombination coordinate when the radius is nonzero.
 
 ## Ablation Config Surface
 
-The active ablation successor configs are:
+The historical ablation successor configs were:
 
 - main: `configs/stage1/recursive_detection_ce/prod/compact_full_support2_instance_trie_focused_cap8_frac0p04_mix0p1.yaml`
 - slope ablation: `configs/stage1/recursive_detection_ce/prod/compact_full_support2_instance_trie_focused_cap8_frac0p06_mix0p1.yaml`

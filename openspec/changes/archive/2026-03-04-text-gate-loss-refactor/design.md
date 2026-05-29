@@ -41,7 +41,7 @@ Constraints:
 
 Decision:
 - Require `stage2_ab.pipeline` for `custom.trainer_variant=stage2_two_channel`.
-- Require `rollout_matching.pipeline` for `custom.trainer_variant=stage2_rollout_aligned`.
+- Require `rollout_matching.pipeline` for `custom.trainer_variant=stage2_rollout_runtime`.
 
 Rationale:
 - Eliminates hidden “default manifest” behavior that is currently split across schema defaults, `src/sft.py` manifest building, and trainer local fallbacks.

@@ -1,0 +1,184 @@
+extends: ../base.yaml
+
+# Stage-2 rollout-correction canonical runtime base.
+
+global_max_length: 12000
+
+template:
+  template: qwen3_vl
+  truncation_strategy: raise
+
+model:
+  model: /data/CoordExp/model_cache/models/Qwen/Qwen3-VL-2B-Instruct-coordexp
+
+tuner:
+  train_type: lora
+  use_swift_lora: false
+  use_dora: true
+  freeze_llm: false
+  freeze_vit: false
+  freeze_aligner: false
+  target_modules: [all-linear]
+  target_regex: null
+  modules_to_save: []
+  lora_rank: 16
+  lora_alpha: 32
+  lora_dropout: 0.0
+  lora_bias: none
+
+deepspeed:
+  enabled: false
+
+training:
+  gradient_checkpointing: true
+  lr_scheduler_type: cosine_warmup_with_min_lr
+  bf16: true
+  report_to: [tensorboard]
+  seed: 17
+  warmup_ratio: 0.05
+  max_grad_norm: 1.0
+  add_version: true
+  save_safetensors: true
+  save_total_limit: 2
+  save_last_epoch: true
+  save_model_only: false
+  logging_steps: 10
+  logging_first_step: true
+  lr_scheduler_kwargs:
+    min_lr: 1.0e-6
+  num_train_epochs: 4
+  per_device_train_batch_size: 1
+  per_device_eval_batch_size: 4
+  effective_batch_size: 64
+  dataloader_drop_last: true
+  packing: true
+  packing_buffer: 256
+  packing_min_fill_ratio: 0.5
+  packing_drop_last: true
+  eval_packing: false
+  metric_for_best_model: rollout/f1
+  greater_is_better: true
+  optimizer: multimodal
+  learning_rate: 2.0e-5
+  vit_lr: 2.0e-5
+  aligner_lr: 5.0e-5
+  weight_decay: 0.0
+  eval_strategy: steps
+  eval_steps: 80
+  save_strategy: steps
+  save_steps: 200
+
+stage2_rollout_correction:
+  pipeline:
+    objective:
+      - name: residual_set_correction
+        enabled: true
+        weight: 1.0
+        application:
+          preset: rollout_self_prefix
+        config:
+          expected_num_rollouts: 4
+          base_seed: 17
+          lambda_type: 1.0
+          lambda_inner: 1.0
+          fallback_loss_weight: 1.0
+          lambda_ul_promoted: 0.5
+          label_conflict_weight: 0.25
+          commit_iou_threshold: 0.75
+          duplicate_burst_iou_threshold: 0.95
+          ul_cluster_iou_threshold: 0.9
+          ul_gray_iou_low: 0.30
+          ul_consensus_ratio: 1.0
+          min_ul_valid_rollouts: 4
+          clean_gt_sft_mix: 0
+          strict_builder_invariants: true
+    diagnostics: []
+  correction:
+    assignment:
+      strategy: greedy_iou
+      iou_threshold: null
+    rollout_template_family: coordjson
+    rollout_decode_policy: legacy_coordjson
+    invalid_rollout_policy: abort
+    fallback_loss_weight: 1.0
+    insertion_order: tail_append
+    duplicate_control:
+      iou_threshold: 0.90
+      center_radius_scale: 0.8
+    triage_posterior:
+      num_rollouts: 2
+      explorer_temperature: 0.7
+      explorer_top_p: 0.95
+      explorer_top_k: 64
+      unlabeled_consistent_iou_threshold: 0.9
+      recovered_ground_truth_weight_multiplier: 2.0
+
+custom:
+  json_format: standard
+  emit_norm: none
+  detection_sequence_format: coordjson
+  trainer_variant: stage2_rollout_correction
+  train_sample_limit: null
+  val_sample_limit: null
+  coord_tokens:
+    enabled: true
+    skip_bbox_norm: true
+
+debug:
+  enabled: false
+
+rollout_matching:
+  offload:
+    enabled: false
+  rollout_backend: hf
+  eval_rollout_backend: hf
+  rollout_decode_batch_size: 4
+  eval_decode_batch_size: 4
+  vllm:
+    mode: server
+    tensor_parallel_size: 1
+    enforce_eager: true
+    gpu_memory_utilization: 0.85
+    max_model_len: 14000
+    enable_lora: true
+    max_lora_rank: 16
+    enable_tower_connector_lora: true
+    sync:
+      mode: adapter
+    enable_prefix_caching: true
+    mm_processor_kwargs:
+      do_resize: false
+    server:
+      timeout_s: 240.0
+      infer_timeout_s: 240.0
+      servers:
+        - base_url: http://127.0.0.1:8000
+          group_port: 51216
+  decode_mode: greedy
+  max_new_tokens: 3084
+  decoding:
+    temperature: 0.0
+    top_p: 1.0
+    top_k: -1
+  repetition_penalty: 1.1
+  candidate_top_k: 5
+  maskiou_gate: 0.5
+  maskiou_resolution: 256
+  fp_cost: 1
+  fn_cost: 1.2
+  eval_detection:
+    enabled: true
+    materialize_artifacts: true
+    metrics: coco
+    use_segm: false
+    strict_parse: true
+    score_mode: confidence_postop
+    constant_score: 1.0
+    pred_score_source: eval_rollout_constant
+    pred_score_version: 2
+    confidence:
+      fusion_w_geom: 1.0
+      fusion_w_desc: 0.0
+  ot_cost: l2
+  ot_epsilon: 10
+  ot_iters: 1

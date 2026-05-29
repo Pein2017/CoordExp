@@ -185,7 +185,7 @@ Treat configs as first-class artifacts:
 Config validation is intentionally fail-fast:
 - Unknown top-level keys are rejected during config load.
 - Each top-level section (`model`, `quantization`, `template`, `data`, `tuner`, `training`, `rlhf`, `custom`,
-  `debug`, `stage2_ab`, `rollout_matching`, `deepspeed`, `global_max_length`) is validated for unknown keys
+  `debug`, `stage2_rollout_correction`, `rollout_matching`, `deepspeed`, `global_max_length`) is validated for unknown keys
   before trainer construction.
 - Top-level `extra:` is reserved and rejected. Use `custom.extra` for minor residual knobs only.
 

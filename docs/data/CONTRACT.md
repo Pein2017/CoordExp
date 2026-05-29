@@ -5,7 +5,7 @@ doc_type: contract
 status: canonical
 domain: data
 summary: Authoritative JSONL, geometry, and runtime assumptions for dataset ingestion.
-updated: 2026-04-13
+updated: 2026-05-17
 ---
 
 # Data JSONL Contract (Global)
@@ -18,7 +18,11 @@ Important separation:
 
 ## Top-Level Record
 - **Provenance**: Records are typically produced by dataset-specific converters (e.g., `public_data/scripts/convert_lvis.py`) and then resized/tokenized via `public_data/scripts/rescale_jsonl.py` and `public_data/scripts/convert_to_coord_tokens.py` (see [`PREPARATION.md`](PREPARATION.md)). Regardless of source, they MUST match this contract.
-- `images` (list[str], required): Relative paths to image files; resolved against the JSONL directory.
+- `images` (list[str], required): Relative paths to image files. Legacy preset
+  JSONLs resolve these against the JSONL directory. Phase 1 public-data
+  annotation views under `public_data/<dataset>/views/**` resolve them against
+  the view's declared image store, for example
+  `public_data/coco/images/res-1024`.
 - `objects` (list[object], required): Structured annotations (see below).
 - `width` (int, required): Image width in pixels (original or post-resize if applied offline).
 - `height` (int, required): Image height in pixels.
@@ -47,10 +51,42 @@ Note: only `bbox_2d` and `poly` are supported in CoordExp; `line` geometries are
 - Raw JSONL must stay strict JSON:
   - coord-token surfaces store quoted token strings (e.g., `"<|coord_123|>"`),
   - raw-text norm1000 surfaces store bare numeric integers (e.g., `123`).
+- Canonical Phase 1 public-data views store bare norm1000 integer coordinates
+  in JSONL. Assistant targets for Qwen-family compact detection still render
+  those integers as Qwen coord-token literals at template/build time.
 - Assistant dense outputs use top-level `{"objects": [...]}` and either:
   - bare CoordTok literals in geometry arrays (e.g., `[<|coord_123|>, <|coord_456|>, ...]`), or
   - bare norm1000 integers (e.g., `[123, 456, 789, 900]`).
 - Parsing boundary for assistant-output-like text is `CoordJSON -> strict JSON` transpilation, then `json.loads`.
+
+### Phase 1 public-data views
+The Phase 1 COCO public-data layout separates reusable image stores from
+annotation views:
+
+```text
+public_data/coco/images/res-1024/
+public_data/coco/views/coco80/full/
+public_data/coco/views/coco80/len-12000/
+public_data/coco/views/coco80/max-60/
+public_data/coco/views/coco80-lvis-proxy/len-12000/
+```
+
+View JSONLs are model/eval annotation surfaces. Their `images[]` entries are
+image-store-relative paths such as `images/train2017/000000123456.jpg`, not
+paths relative to the view directory. Each view root should carry local
+metadata declaring:
+
+- `image_store`: repo-root-relative path to the shared store, e.g.
+  `public_data/coco/images/res-1024`
+- `image_path_semantics: image_store_relative`
+- `coordinate_space: norm1000`
+- `coordinate_storage: integer`
+- `coordinate_chart: xyxy`
+- `assistant_coordinate_rendering: qwen_coord_tokens`
+
+The view JSONL stays strict JSON with integer coordinates; Qwen coord-token
+assistant text is a rendering boundary, not the storage format for these
+canonical views.
 
 ### Canonical preset data vs offline-prepared bbox-format branches
 - Canonical raw and preset JSONL remain model-independent `xyxy` surfaces.
@@ -89,7 +125,9 @@ Note: only `bbox_2d` and `poly` are supported in CoordExp; `line` geometries are
   model-independent geometry surfaces. Offline-prepared bbox-format branches may
   encode model-facing bbox slots differently, but they must declare that branch
   provenance explicitly instead of relying on runtime reinterpretation.
-- Image paths remain relative in JSONL; loaders resolve them to absolute paths.
+- Image paths remain relative in JSONL. Legacy preset loaders resolve them from
+  the JSONL directory; Phase 1 view-aware loaders resolve them from the view's
+  declared image store.
 - Geometry is validated; records with multiple geometry fields per object are rejected.
 - Runtime payload emission is fail-fast: builders/preprocessors reject objects with missing geometry, multiple geometry fields, invalid bbox/poly arity, or empty `desc` instead of serializing partial objects.
 - Default ordering invariant: when `custom.object_ordering: sorted` (default), object sequences must already be sorted by `(minY, minX)` in the source JSONL.
@@ -104,6 +142,9 @@ Note: only `bbox_2d` and `poly` are supported in CoordExp; `line` geometries are
   - `custom.coord_tokens.enabled: true` => coord-token assistant targets backed by `*.coord.jsonl`
   - `custom.coord_tokens.enabled: false` => raw-text norm1000 assistant targets backed by `*.norm.jsonl`
   In both cases keep `custom.coord_tokens.skip_bbox_norm: true`.
+- Phase 1 canonical views are norm1000-integer `*.jsonl` views. Training code
+  may render assistant geometry as Qwen coord tokens while keeping the stored
+  JSONL coordinates as integers.
 
 ## Example
 ```json

@@ -6,7 +6,7 @@ status: canonical
 domain: research-history
 summary: Router for failure investigations, mechanism studies, threshold sweeps, and operator notes that support diagnosis.
 tags: [progress, diagnostics, investigations]
-updated: 2026-05-18
+updated: 2026-05-19
 ---
 
 # Diagnostics Index
@@ -20,7 +20,7 @@ Use this folder when the primary question is:
 
 Prefer `progress/benchmarks/` when the output is mainly a measured run-vs-run or checkpoint-vs-checkpoint comparison.
 
-## Current Clusters
+## Diagnostic Clusters
 
 - Hard-CE coordinate-logit and token-embedding locality diagnostics
   - Start with
@@ -37,29 +37,36 @@ Prefer `progress/benchmarks/` when the output is mainly a measured run-vs-run or
 - Compact-full coord-confidence / stop-gate diagnostics
   - Start with
     [2026-05-08_compact_full_coord_confidence_stop_gate_diagnostics.md](2026-05-08_compact_full_coord_confidence_stop_gate_diagnostics.md)
-    for the current root-cause read on low training loss but conservative
+    for the diagnostic-only root-cause read on low training loss but conservative
     compact-full decode, `coord_mean_logprob` as a plausible-object versus
     invalid/duplicate-tail separator, `rp=1.10` as the main decode surface,
     the HF batched compact-grammar prompt-offset bug under decoder-only left
     padding, the fixed val200 prompt-offset comparison, and the fixed-artifact
-    coord-confidence / counterfactual boundary probe plan.
+    coord-confidence / counterfactual boundary probe plan. This is preserved as
+    mechanism evidence, not current stop-gate training guidance.
+  - A2 EOS-Loosen Clean Ablation is concluded negative:
+    [2026-05-14_a2_eos_loosen_ablation.md](2026-05-14_a2_eos_loosen_ablation.md).
+    Keep it as diagnostic/historical evidence; do not route it as active
+    training guidance or a current launch recommendation.
 - Canonical ET-RMP continuation / repetition-penalty / FN diagnostics
   - Start with
     [2026-04-29_et_rmp_rp_continuation_bias_hypothesis.md](2026-04-29_et_rmp_rp_continuation_bias_hypothesis.md)
     for the pre-support-mass-enhancement ET-RMP objective context, `val200`
     and core-6 RP sweeps, fixed representative sample bank, FN latent probes,
-    length/count close-pressure read, and hard stop-control ablation.
+    length/count close-pressure read, and hard stop-control ablation. Treat the
+    stop-control material as historical diagnostics, not a stop-gate training
+    recipe.
 - Closed Qwen3-VL coord-token instance-binding mechanism study
   - Start with
     [2026-04-24_qwen3_vl_instance_binding_mechanism_findings.md](2026-04-24_qwen3_vl_instance_binding_mechanism_findings.md)
     for the fixed-checkpoint mechanism conclusion: partial pre-`x1` binding,
     late schema/pre-coordinate readout, and `x1/y1` as the hard commitment
     boundary.
-- Active Stage-2 birth-first Channel-B decision study
+- Stage-2 birth-first Channel-B decision evidence
   - Start with
     [2026-04-22_stage2_birth_first_channel_b_decision_study.md](2026-04-22_stage2_birth_first_channel_b_decision_study.md)
     for the merged-vLLM operator fix, the paired small-fraction control versus
-    birth-first result, and the current recommendation.
+    birth-first result, and the recorded decision context.
 - Active Stage-1 raw-text mechanism and coordinate-family investigations
   - Start here for the current raw-text mechanism read:
     [2026-04-21_raw_text_coordinate_mechanism_findings.md](2026-04-21_raw_text_coordinate_mechanism_findings.md)
@@ -96,10 +103,12 @@ Prefer `progress/benchmarks/` when the output is mainly a measured run-vs-run or
     as planning and follow-up context.
 - Active Channel-A random-order self-context investigations
   - [2026-03-20_stage2_channel_a_self_context_iter_ablation.md](2026-03-20_stage2_channel_a_self_context_iter_ablation.md)
-- Active Stage-2 duplication / UL investigations
+- Historical Stage-2 duplication / UL diagnostic evidence
   - Start with
     [2026-03-26_stage2_small_object_duplication_offline_synthesis.md](2026-03-26_stage2_small_object_duplication_offline_synthesis.md)
-    for the small-object offline cluster.
+    for the small-object offline cluster. This cluster is retained for
+    duplicate-diagnostic provenance only; retired duplicate-burst UL objectives
+    are not current launch guidance.
   - Supporting cluster notes live in:
     [2026-03-25_stage2_small_object_duplication_offline_protocol.md](2026-03-25_stage2_small_object_duplication_offline_protocol.md),
     [2026-03-26_stage2_small_object_duplication_offline_harness_findings.md](2026-03-26_stage2_small_object_duplication_offline_harness_findings.md),
@@ -116,7 +125,7 @@ Prefer `progress/benchmarks/` when the output is mainly a measured run-vs-run or
     [2026-03-11_rollout_duplication_thresholds_ul_vs_ulv2.md](2026-03-11_rollout_duplication_thresholds_ul_vs_ulv2.md),
     and
     [2026-03-24_stage2_pseudo_positive_k4_coord_only_findings.md](2026-03-24_stage2_pseudo_positive_k4_coord_only_findings.md).
-- Active Stage-1 coord-basin duplication investigations
+- Stage-1 coord-basin duplication diagnostic evidence
   - [2026-04-11_stage1_coord_basin_duplication_mechanism.md](2026-04-11_stage1_coord_basin_duplication_mechanism.md)
 - Historical Stage-2 failure diagnoses
   - [2026-02-17_stage2_b_ratio_085_instability.md](2026-02-17_stage2_b_ratio_085_instability.md)

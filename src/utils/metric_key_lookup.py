@@ -48,13 +48,20 @@ _DESCRIPTION_KEYS = frozenset(
 _CONFIG_KEYS = frozenset(
     {
         "prompt_variant_is_coco_80",
+        "config_score_mode_is_constant",
+        "config_score_mode_is_confidence_postop",
         "effective_score_mode_is_constant",
         "effective_score_mode_is_confidence_postop",
+        "config_pred_score_version",
+        "effective_pred_score_version",
+        "config_pred_score_source_is_eval_rollout_constant",
+        "config_pred_score_source_is_confidence_postop",
+        "effective_pred_score_source_is_eval_rollout_constant",
+        "effective_pred_score_source_is_confidence_postop",
     }
 )
 _RUNTIME_KEYS = frozenset(
     {
-        "trace_fallback_count",
         "vllm_decode_error_count",
         "coco_eval_ok",
     }

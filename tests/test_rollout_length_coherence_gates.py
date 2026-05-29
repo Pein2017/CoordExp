@@ -25,7 +25,7 @@ def test_vllm_max_model_len_must_cover_global_max_length() -> None:
     payload["rollout_matching"] = {
         "rollout_backend": "hf",
         "eval_rollout_backend": "vllm",
-        "channel_b_decode_batch_size": 1,
+        "rollout_decode_batch_size": 1,
         "eval_decode_batch_size": 1,
         "max_new_tokens": 64,
         "vllm": {
@@ -55,7 +55,7 @@ def test_vllm_guardrails_apply_case_insensitive_backend_value() -> None:
     payload["rollout_matching"] = {
         "rollout_backend": "VLLM",
         "eval_rollout_backend": "VLLM",
-        "channel_b_decode_batch_size": 1,
+        "rollout_decode_batch_size": 1,
         "eval_decode_batch_size": 1,
         "max_new_tokens": 64,
         "vllm": {
@@ -82,7 +82,7 @@ def test_rollout_max_new_tokens_must_be_less_than_vllm_max_model_len() -> None:
     payload["rollout_matching"] = {
         "rollout_backend": "hf",
         "eval_rollout_backend": "vllm",
-        "channel_b_decode_batch_size": 1,
+        "rollout_decode_batch_size": 1,
         "eval_decode_batch_size": 1,
         "max_new_tokens": 2048,
         "vllm": {
@@ -113,7 +113,7 @@ def test_eval_only_vllm_triggers_length_guardrails() -> None:
     payload["rollout_matching"] = {
         "rollout_backend": "hf",
         "eval_rollout_backend": "vllm",
-        "channel_b_decode_batch_size": 1,
+        "rollout_decode_batch_size": 1,
         "eval_decode_batch_size": 1,
         "max_new_tokens": 2048,
         "vllm": {
@@ -143,7 +143,7 @@ def test_eval_only_vllm_rejects_enable_lora_true() -> None:
     payload["rollout_matching"] = {
         "rollout_backend": "hf",
         "eval_rollout_backend": "vllm",
-        "channel_b_decode_batch_size": 1,
+        "rollout_decode_batch_size": 1,
         "eval_decode_batch_size": 1,
         "vllm": {
             "mode": "server",
@@ -174,7 +174,7 @@ def test_hf_eval_skips_vllm_length_guardrails() -> None:
     payload["rollout_matching"] = {
         "rollout_backend": "hf",
         "eval_rollout_backend": "hf",
-        "channel_b_decode_batch_size": 1,
+        "rollout_decode_batch_size": 1,
         "eval_decode_batch_size": 1,
         "max_new_tokens": 2048,
     }

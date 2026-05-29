@@ -19,6 +19,12 @@ COMPACT_TEXT = (
     f"{OBJECT_REF_START_TOKEN}cat{BOX_START_TOKEN}"
     "<|coord_1|><|coord_2|><|coord_3|><|coord_4|>"
 )
+COMPACT_LEGACY_TEXT = (
+    f"{OBJECT_REF_START_TOKEN}cat{BOX_START_TOKEN}"
+    "<|coord_1|><|coord_2|><|coord_3|><|coord_4|>\n"
+    f"{OBJECT_REF_START_TOKEN}dog{BOX_START_TOKEN}"
+    "<|coord_10|><|coord_20|><|coord_30|><|coord_40|>"
+)
 
 
 def test_compact_full_strict_expected_parses_valid_compact_output() -> None:
@@ -44,6 +50,71 @@ def test_compact_full_strict_expected_parses_valid_compact_output() -> None:
 def test_compact_full_strict_expected_rejects_json_like_output() -> None:
     with pytest.raises(ValueError, match="expected compact_full"):
         parse_compact_full_strict_expected(STAGE1_JSON_TEXT)
+
+
+def test_compact_full_eval_routes_marker_strict_and_legacy_compatible_modes() -> None:
+    with pytest.raises(ValueError, match="legacy_separator_in_new_format"):
+        parse_detection_output_strict_expected(
+            COMPACT_LEGACY_TEXT,
+            expected_template="compact_full",
+            parser_mode="marker_delimited_strict",
+        )
+
+    assert parse_detection_output_strict_expected(
+        COMPACT_LEGACY_TEXT,
+        expected_template="compact_full",
+        parser_mode="legacy_compatible",
+    ) == {
+        "objects": [
+            {
+                "desc": "cat",
+                "bbox_2d": [
+                    "<|coord_1|>",
+                    "<|coord_2|>",
+                    "<|coord_3|>",
+                    "<|coord_4|>",
+                ],
+            },
+            {
+                "desc": "dog",
+                "bbox_2d": [
+                    "<|coord_10|>",
+                    "<|coord_20|>",
+                    "<|coord_30|>",
+                    "<|coord_40|>",
+                ],
+            },
+        ]
+    }
+
+
+def test_compact_full_marker_strict_treats_im_end_as_terminal_not_endoftext() -> None:
+    marker_with_padding = COMPACT_TEXT + "<|im_end|><|endoftext|><|endoftext|>"
+
+    assert parse_detection_output_strict_expected(
+        marker_with_padding,
+        expected_template="compact_full",
+        parser_mode="marker_delimited_strict",
+    ) == {
+        "objects": [
+            {
+                "desc": "cat",
+                "bbox_2d": [
+                    "<|coord_1|>",
+                    "<|coord_2|>",
+                    "<|coord_3|>",
+                    "<|coord_4|>",
+                ],
+            }
+        ]
+    }
+
+    with pytest.raises(ValueError, match="trailing_garbage"):
+        parse_detection_output_strict_expected(
+            COMPACT_TEXT + "<|endoftext|>",
+            expected_template="compact_full",
+            parser_mode="marker_delimited_strict",
+        )
 
 
 def test_stage1_json_pretty_strict_expected_parses_valid_json_output() -> None:
@@ -107,14 +178,14 @@ def test_strict_expected_parse_rejects_non_string_parser_mode(
 def test_eval_manifest_records_metric_surface_contract() -> None:
     manifest = build_detection_template_eval_manifest(
         expected_template="compact_full",
-        parser_mode="strict_expected",
+        parser_mode="marker_delimited_strict",
         coordinate_surface="coord_token",
         benchmark_scope="val200",
     )
 
     assert manifest == DetectionTemplateEvalManifest(
         expected_template="compact_full",
-        parser_mode="strict_expected",
+        parser_mode="marker_delimited_strict",
         coordinate_surface="coord_token",
         benchmark_scope="val200",
         metric_surface="strict_expected_template",
@@ -126,7 +197,7 @@ def test_eval_manifest_records_metric_surface_contract() -> None:
     )
     assert manifest.to_manifest_dict() == {
         "expected_template": "compact_full",
-        "parser_mode": "strict_expected",
+        "parser_mode": "marker_delimited_strict",
         "coordinate_surface": "coord_token",
         "benchmark_scope": "val200",
         "metric_surface": "strict_expected_template",

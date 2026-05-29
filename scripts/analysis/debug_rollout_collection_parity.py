@@ -18,7 +18,7 @@ from src.analysis.rollout_parity import (
     load_records_by_indices,
     run_stage2_style_vllm,
 )
-from src.infer.engine import GenerationConfig, InferenceConfig, InferenceEngine
+from src.infer.runtime import run_offline_debug_generations
 
 
 def parse_args() -> argparse.Namespace:
@@ -99,50 +99,55 @@ def main() -> None:
     )
     del stage2_engine
 
-    infer_cfg = InferenceConfig(
-        gt_jsonl=str(args.jsonl),
-        model_checkpoint=str(args.ckpt),
-        mode="coord",
-        device=str(args.device),
-        limit=0,
-        backend_type="vllm",
-        prompt_variant=str(args.prompt_variant),
-        object_field_order=str(args.object_field_order),
-        root_image_dir=root_image_dir,
-        backend={
-            "type": "vllm",
-            "mode": "local",
-            "server_options": {
-                "vllm_tensor_parallel_size": int(args.tensor_parallel_size),
-                "vllm_gpu_memory_utilization": float(args.gpu_memory_utilization),
-                "vllm_max_model_len": int(args.max_model_len),
+    infer_results = run_offline_debug_generations(
+        inference_kwargs={
+            "gt_jsonl": str(args.jsonl),
+            "model_checkpoint": str(args.ckpt),
+            "mode": "coord",
+            "device": str(args.device),
+            "limit": 0,
+            "backend_type": "vllm",
+            "prompt_variant": str(args.prompt_variant),
+            "object_field_order": str(args.object_field_order),
+            "root_image_dir": root_image_dir,
+            "backend": {
+                "type": "vllm",
+                "mode": "local",
+                "server_options": {
+                    "vllm_tensor_parallel_size": int(args.tensor_parallel_size),
+                    "vllm_gpu_memory_utilization": float(args.gpu_memory_utilization),
+                    "vllm_max_model_len": int(args.max_model_len),
+                },
             },
         },
+        generation_kwargs={
+            "temperature": float(args.temperature),
+            "top_p": float(args.top_p),
+            "max_new_tokens": int(args.max_new_tokens),
+            "repetition_penalty": float(args.repetition_penalty),
+            "batch_size": int(args.batch_size),
+            "seed": int(args.seed),
+        },
+        jsonl_path=args.jsonl,
+        records=[record for _line_idx, record in records],
+        batch=True,
     )
-    gen_cfg = GenerationConfig(
-        temperature=float(args.temperature),
-        top_p=float(args.top_p),
-        max_new_tokens=int(args.max_new_tokens),
-        repetition_penalty=float(args.repetition_penalty),
-        batch_size=int(args.batch_size),
-        seed=int(args.seed),
-    )
-    infer_engine = InferenceEngine(infer_cfg, gen_cfg)
-    infer_engine.load_model()
-
-    infer_images = []
-    for _line_idx, record in records:
-        _img_path, image = infer_engine._prepare_image(args.jsonl, record)
-        if image is None:
-            raise RuntimeError("Failed to load image for infer-engine parity path.")
-        infer_images.append(image)
-    infer_outputs = infer_engine._generate_vllm_local_batch(infer_images)
+    if len(infer_results) != len(records):
+        raise RuntimeError(
+            "Offline debug generation returned a row-count mismatch: "
+            f"expected {len(records)} got {len(infer_results)}"
+        )
 
     rows: List[Dict[str, Any]] = []
-    for (line_idx, record), sample, stage2_res, infer_res in zip(
-        records, stage2_samples, stage2_results, infer_outputs
+    for (line_idx, record), sample, stage2_res, infer_result in zip(
+        records, stage2_samples, stage2_results, infer_results
     ):
-        infer_text = str(infer_res.text or "")
+        if infer_result.error is not None:
+            raise RuntimeError(
+                f"Failed to generate infer-runtime parity output for line_idx={line_idx}: "
+                f"{infer_result.error!r}"
+            )
+        infer_text = str(infer_result.text or "")
         infer_raw = infer_text and infer_text or ""
         parsed_infer = None
         infer_pred_count = 0

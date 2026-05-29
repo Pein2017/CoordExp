@@ -1,6 +1,8 @@
 {
+  "artifact_type": "processed_directory",
   "checksums": {
     "aggregate_sha256": "50c9290fe987fed2e9251d235dbe898276ef854865ebb87f38ffc5f4c40c3a47",
+    "aggregate_source": "sorted path sha256 size_bytes records lines",
     "algorithm": "sha256",
     "files": [
       {

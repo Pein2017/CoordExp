@@ -13,7 +13,7 @@
 ## 2. Evaluation Backend Override Wiring
 
 - [x] 2.1 Implement a single authoritative resolver for rollout backend selection (e.g., `_effective_rollout_backend(context="train"|"eval")`) and apply it consistently so eval-only vLLM cannot silently fall back to HF.
-- [x] 2.2 Wire the eval override through **all** evaluation call-sites in `src/trainers/stage2_rollout_aligned.py`, including:
+- [x] 2.2 Wire the eval override through **all** evaluation call-sites in `src/trainers/stage2_rollout_runtime.py`, including:
   - traced/confidence scoring path, and
   - non-traced `_rollout_many(...)` path (avoid `_rollout_many` re-resolving backend via training defaults).
 - [x] 2.3 Ensure the override is rank-symmetric (DDP safe) and does not leak into training-time rollouts.

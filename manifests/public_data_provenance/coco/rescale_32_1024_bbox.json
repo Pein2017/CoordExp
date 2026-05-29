@@ -1,5 +1,6 @@
 {
   "schema_version": 1,
+  "artifact_type": "processed_directory",
   "relative_path": "public_data/coco/rescale_32_1024_bbox",
   "producer_script": "public_data/run.sh",
   "working_dir": ".",

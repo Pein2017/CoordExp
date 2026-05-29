@@ -30,7 +30,7 @@ baseline_run:
   # overrides:
   #   infer.gt_jsonl: public_data/coco/rescale_32_1024_bbox_max60/val.coord.jsonl
   #   infer.limit: 200
-  #   infer.model_checkpoint: output/stage2_ab/prod/ul-res_1024-ckpt_300_merged
+  #   infer.model_checkpoint: output/stage2_rollout_correction/prod/ul-res_1024-ckpt_300_merged
   #   infer.generation.temperature: 0.0
   #   infer.generation.seed: 42
 
@@ -48,7 +48,7 @@ oracle_runs:
     overrides:
       infer.gt_jsonl: public_data/coco/rescale_32_1024_bbox_max60/val.coord.jsonl
       infer.limit: 200
-      infer.model_checkpoint: output/stage2_ab/prod/ul-res_1024-v2-ckpt_300_merged
+      infer.model_checkpoint: output/stage2_rollout_correction/prod/ul-res_1024-v2-ckpt_300_merged
       infer.generation.temperature: 0.7
       infer.generation.top_p: 0.95
       infer.generation.seed: 102

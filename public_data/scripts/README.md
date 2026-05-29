@@ -42,3 +42,16 @@ Training config alignment
 - Numeric JSONL (norm1000 ints): set `custom.emit_norm: none`, `coord_tokens.enabled: false`.
 - Coord-token JSONL (norm1000 tokens): set `coord_tokens.enabled: true`; no runtime scaling.
 - Avoid double-scaling: don’t set `emit_norm: norm1000` when using pre-normalized numeric JSONLs.
+
+Phase 1 COCO views
+==================
+
+Canonical COCO views under `public_data/coco/views/**` store norm1000 integer
+coordinates in strict JSON and resolve `images[]` through the shared image
+store `public_data/coco/images/res-1024`. Assistant targets may still render
+those integers as Qwen `<|coord_k|>` tokens; that is a builder/template
+boundary, not the stored view format.
+
+The 12k `len-12000` policy counts image patch tokens, system/user tokens, and
+the rendered assistant object sequence. `max_objects` / `max-60` is retained as
+legacy artifact provenance rather than current runtime filtering policy.

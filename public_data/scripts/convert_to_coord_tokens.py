@@ -1,6 +1,11 @@
-"""Convert geometry coords in JSONL to norm1000 ints and/or coord tokens.
+"""Legacy/debug conversion export for norm1000 ints and coord-token JSONLs.
 
-Offline pipeline support:
+This script remains available for old shared-preset preprocessing and ad hoc
+debug exports. It is not the canonical Phase 1 public_data/coco/views writer.
+Canonical COCO norm1000 annotation views are planned to be produced by the
+dedicated factory at ``public_data/scripts/build_coco_views.py``.
+
+Legacy/debug conversion support:
 - Pixel coords → norm1000 ints (numeric JSONL)
 - Pixel coords → norm1000 tokens (coord JSONL)
 - Already-normalized ints/tokens → tokens without re-scaling (assume-normalized)
@@ -198,23 +203,36 @@ def normalize_list(
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Convert coords to norm1000 ints and/or coord tokens in JSONL")
+    parser = argparse.ArgumentParser(
+        description=(
+            "Legacy/debug converter for old coord-token JSONLs. "
+            "Not the canonical Phase 1 public_data/coco/views writer; "
+            "use public_data/scripts/build_coco_views.py for the planned "
+            "dedicated COCO view factory once Task 5 adds it."
+        )
+    )
     parser.add_argument("--input", type=Path, required=True, help="Input JSONL path")
     # Backward-compatible default token output
     parser.add_argument(
         "--output",
         type=Path,
-        help="(Deprecated) token output path; use --output-tokens",
+        help="(Deprecated) legacy/debug token output path; use --output-tokens",
     )
     parser.add_argument(
         "--output-tokens",
         type=Path,
-        help="Output JSONL path for coord tokens",
+        help=(
+            "Legacy/debug output JSONL path for coord tokens; "
+            "not canonical public_data/coco/views/{train,val}.jsonl"
+        ),
     )
     parser.add_argument(
         "--output-norm",
         type=Path,
-        help="Output JSONL path for normalized integer coords",
+        help=(
+            "Legacy/debug output JSONL path for normalized integer coords; "
+            "not canonical public_data/coco/views/{train,val}.jsonl"
+        ),
     )
     parser.add_argument(
         "--assume-normalized",

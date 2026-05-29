@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import sys
 from pathlib import Path
 
 import pytest
@@ -85,6 +86,7 @@ def test_build_swift_rollout_cmd_contains_required_flags(tmp_path: Path) -> None
     base = launcher.parse_base_url("http://127.0.0.1:8000")
     cmd = launcher.build_swift_rollout_cmd(
         server_model=model_dir,
+        server_model_type="qwen3_vl",
         base_url=base,
         server_torch_dtype="bfloat16",
         vllm_dp=2,
@@ -92,14 +94,15 @@ def test_build_swift_rollout_cmd_contains_required_flags(tmp_path: Path) -> None
         vllm_enforce_eager=True,
         vllm_gpu_memory_utilization=0.8,
         vllm_max_model_len=4096,
-        vllm_enable_lora=False,
+        vllm_enable_lora=True,
         template="qwen3_vl",
         template_max_pixels=10485760,
         template_max_length=2048,
         truncation_strategy="delete",
+        vllm_max_lora_rank=16,
     )
 
-    assert cmd[:2] == ["swift", "rollout"]
+    assert cmd[:3] == [sys.executable, "-m", "src.launchers.swift_rollout_coordexp"]
     assert "--infer_backend" in cmd
     assert "vllm" in cmd
     assert "--host" in cmd
@@ -108,6 +111,8 @@ def test_build_swift_rollout_cmd_contains_required_flags(tmp_path: Path) -> None
     assert "8000" in cmd
     assert "--max_pixels" in cmd
     assert "10485760" in cmd
+    assert "--model_type" in cmd
+    assert "qwen3_vl" in cmd
 
 
 def test_build_swift_rollout_cmd_serializes_vllm_engine_kwargs(tmp_path: Path) -> None:
@@ -123,19 +128,27 @@ def test_build_swift_rollout_cmd_serializes_vllm_engine_kwargs(tmp_path: Path) -
         vllm_enforce_eager=True,
         vllm_gpu_memory_utilization=0.8,
         vllm_max_model_len=4096,
-        vllm_enable_lora=False,
+        vllm_enable_lora=True,
         template="qwen3_vl",
         template_max_pixels=10485760,
         template_max_length=2048,
         truncation_strategy="delete",
-        vllm_engine_kwargs={"mm_processor_kwargs": {"do_resize": False}},
+        vllm_max_lora_rank=16,
+        vllm_engine_kwargs={
+            "enable_tower_connector_lora": True,
+            "mm_processor_kwargs": {"do_resize": False},
+        },
     )
 
     idx = cmd.index("--vllm_engine_kwargs")
-    assert json.loads(cmd[idx + 1]) == {"mm_processor_kwargs": {"do_resize": False}}
+    assert json.loads(cmd[idx + 1]) == {
+        "enable_tower_connector_lora": True,
+        "mm_processor_kwargs": {"do_resize": False},
+    }
 
 
-def test_build_torchrun_cmd_uses_src_sft(tmp_path: Path) -> None:
+def test_build_torchrun_cmd_uses_src_sft(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(launcher.shutil, "which", lambda name: "/usr/bin/torchrun" if name == "torchrun" else None)
     cfg = tmp_path / "cfg.yaml"
     cfg.write_text("x: 1\n", encoding="utf-8")
 
@@ -146,8 +159,26 @@ def test_build_torchrun_cmd_uses_src_sft(tmp_path: Path) -> None:
         master_port=12345,
     )
 
-    assert cmd[0] == "torchrun"
+    assert cmd[0] == "/usr/bin/torchrun"
     assert "-m" in cmd
+    assert "src.sft" in cmd
+    assert "--config" in cmd
+    assert str(cfg) in cmd
+
+
+def test_build_torchrun_cmd_falls_back_to_current_python(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(launcher.shutil, "which", lambda _name: None)
+    cfg = tmp_path / "cfg.yaml"
+    cfg.write_text("x: 1\n", encoding="utf-8")
+
+    cmd = launcher.build_torchrun_cmd(
+        config_path=cfg,
+        num_gpus=2,
+        master_addr="127.0.0.1",
+        master_port=12345,
+    )
+
+    assert cmd[:3] == [sys.executable, "-m", "torch.distributed.run"]
     assert "src.sft" in cmd
     assert "--config" in cmd
     assert str(cfg) in cmd
@@ -346,7 +377,8 @@ def test_main_uses_server_dp_for_readiness_without_prechecking_group_port(
             "server_torch_dtype": "bfloat16",
             "vllm_enforce_eager": True,
             "vllm_max_model_len": 4096,
-            "vllm_enable_lora": False,
+            "vllm_enable_lora": True,
+            "vllm_max_lora_rank": 16,
             "vllm_gpu_memory_utilization": 0.8,
             "server_template": "qwen3_vl",
             "server_max_length": 2048,
@@ -430,7 +462,8 @@ def test_main_fails_fast_on_stale_local_vllm_processes(
             "server_torch_dtype": "bfloat16",
             "vllm_enforce_eager": True,
             "vllm_max_model_len": 4096,
-            "vllm_enable_lora": False,
+            "vllm_enable_lora": True,
+            "vllm_max_lora_rank": 16,
             "vllm_gpu_memory_utilization": 0.8,
             "server_template": "qwen3_vl",
             "server_max_length": 2048,

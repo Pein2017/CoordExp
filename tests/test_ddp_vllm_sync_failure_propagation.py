@@ -6,7 +6,7 @@ from typing import Any
 import pytest
 import torch
 
-from src.trainers.stage2_rollout_aligned import RolloutMatchingSFTTrainer
+from src.trainers.stage2_rollout_runtime import Stage2RolloutRuntime
 
 
 class _FakeDist:
@@ -67,14 +67,14 @@ class _FakeDist:
             object_list[0] = self.last_broadcast_msg
 
 
-def _mk_min_trainer() -> RolloutMatchingSFTTrainer:
-    t = RolloutMatchingSFTTrainer.__new__(RolloutMatchingSFTTrainer)
+def _mk_min_trainer() -> Stage2RolloutRuntime:
+    t = Stage2RolloutRuntime.__new__(Stage2RolloutRuntime)
     t.state = types.SimpleNamespace(global_step=0)
     t.model = types.SimpleNamespace(device=torch.device("cpu"))
     t.rollout_matching_cfg = {
         "vllm": {
-            "enable_lora": False,
-            "sync": {"mode": "full", "fallback_to_full": True},
+            "enable_lora": True,
+            "sync": {"mode": "adapter", "fallback_to_full": False},
         }
     }
     return t
@@ -107,7 +107,7 @@ def test_ddp_vllm_weight_sync_failure_is_broadcast_and_raises_on_all_ranks(
     def _fail(client: Any) -> None:
         raise RuntimeError("boom")
 
-    t0._sync_vllm_server_full_weights = _fail  # type: ignore[attr-defined]
+    t0._sync_vllm_server_adapter = _fail  # type: ignore[attr-defined]
 
     fake.current_rank = 0
     with pytest.raises(RuntimeError, match=r"boom"):
@@ -120,4 +120,3 @@ def test_ddp_vllm_weight_sync_failure_is_broadcast_and_raises_on_all_ranks(
     fake.current_rank = 1
     with pytest.raises(RuntimeError, match=r"boom"):
         t1._sync_vllm_server_rollout_model_if_needed()
-

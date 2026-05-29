@@ -6,7 +6,7 @@
   - “warn and continue” patterns
 - [x] 0.2 Record known high-risk sites (initial evidence):
   - Stage-2 AB pending-metric reduction (`src/trainers/stage2_two_channel.py`)
-  - rollout-aligned metric reduction (`src/trainers/stage2_rollout_aligned.py`)
+  - rollout-aligned metric reduction (`src/trainers/stage2_rollout_runtime.py`)
   - dataset metric key sync (`src/trainers/metrics/mixins.py`)
   - Stage-2 AB phase barriers / monitored-barrier fallback (`src/trainers/stage2_two_channel/executors.py`)
 - [x] 0.3 Document a short incident note referencing the recent DDP deadlock fix (“align final backward”) and the general rule it implies: no rank divergence around collectives.
@@ -66,7 +66,7 @@
   - 1.2: `openspec/changes/fail-fast-ddp-enforcement/specs/trainer-metrics-components/spec.md`
   - 2.1: `src/utils/ddp_fail_fast.py`
   - 2.2: `src/trainers/stage2_two_channel.py`
-  - 2.3: `src/trainers/stage2_rollout_aligned.py`
+  - 2.3: `src/trainers/stage2_rollout_runtime.py`
   - 2.4: `src/trainers/metrics/mixins.py`
   - 2.5: `src/trainers/stage2_two_channel/executors.py`
   - 2.6: `src/launchers/stage2_vllm_server.py`

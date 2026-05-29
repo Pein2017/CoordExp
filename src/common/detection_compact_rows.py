@@ -8,6 +8,20 @@ from typing import Literal, Sequence
 
 OBJECT_REF_START_TOKEN = "<|object_ref_start|>"
 BOX_START_TOKEN = "<|box_start|>"
+IM_END_TOKEN = "<|im_end|>"
+END_OF_TEXT_TOKEN = "<|endoftext|>"
+
+COMPACT_DESC_FORBIDDEN_SUBSTRINGS = (
+    "\n",
+    "\r",
+    "\t",
+    OBJECT_REF_START_TOKEN,
+    BOX_START_TOKEN,
+    "<|coord_",
+    "<|im_start|>",
+    IM_END_TOKEN,
+    END_OF_TEXT_TOKEN,
+)
 
 COMPACT_ROW_COORD_TOKEN_RE: re.Pattern[str] = re.compile(r"<\|coord_\d+\|>")
 STRICT_COMPACT_ROW_COORD_TOKEN_RE: re.Pattern[str] = re.compile(
@@ -35,6 +49,17 @@ def render_compact_row(
     prefix = OBJECT_REF_START_TOKEN if include_object_ref_marker else ""
     bbox_start = BOX_START_TOKEN if include_bbox_start_marker else ""
     return f"{prefix}{desc}{bbox_start}{''.join(bbox_tokens)}"
+
+
+def valid_xyxy_positive_area(tokens: Sequence[str]) -> bool:
+    """Return whether four strict coord tokens form a positive-area xyxy box."""
+
+    if len(tokens) != 4:
+        return False
+    if not all(STRICT_COMPACT_ROW_COORD_TOKEN_RE.fullmatch(token) for token in tokens):
+        return False
+    x1, y1, x2, y2 = (_coord_token_value(token) for token in tokens)
+    return x2 > x1 and y2 > y1
 
 
 def parse_compact_row(
@@ -107,3 +132,7 @@ def _coord_tokens_from_matches(
     if coord_matches[-1].end() != len(text):
         return None
     return tuple(match.group(0) for match in coord_matches)
+
+
+def _coord_token_value(token: str) -> int:
+    return int(token.removeprefix("<|coord_").removesuffix("|>"))

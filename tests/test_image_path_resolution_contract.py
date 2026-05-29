@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Any, Dict
 
 from PIL import Image
+from public_data.view_contracts import write_view_metadata
 
 from src.config.schema import CoordTokensConfig
 from src.datasets.dense_caption import BaseCaptionDataset
@@ -69,3 +70,62 @@ def test_jsonl_image_paths_resolve_relative_to_jsonl_dir_not_root_image_dir(
     assert os.path.isabs(resolved)
     assert Path(resolved).resolve() == img_path.resolve()
 
+
+def test_view_jsonl_image_paths_remain_image_store_relative(
+    tmp_path: Path, monkeypatch
+) -> None:
+    repo_root = tmp_path
+    image_store = repo_root / "public_data/coco/images/res-1024"
+    img_path = image_store / "images/train2017/img_0.png"
+    _write_img(img_path)
+
+    view_root = repo_root / "public_data/coco/views/coco80/full"
+    view_root.mkdir(parents=True)
+    write_view_metadata(
+        view_root / "meta.json",
+        {
+            "schema_version": 1,
+            "kind": "annotation_view",
+            "dataset": "coco",
+            "view": "coco80/full",
+            "image_store": "public_data/coco/images/res-1024",
+            "path_anchor": "repo_root",
+            "image_path_semantics": "image_store_relative",
+            "coordinate_space": "norm1000",
+            "coordinate_storage": "integer",
+            "coordinate_range": [0, 999],
+            "coordinate_chart": "xyxy",
+            "assistant_coordinate_rendering": "qwen_coord_tokens",
+            "primary_jsonl": {"train": "train.jsonl", "val": "val.jsonl"},
+            "sample_policy": None,
+            "summary": {},
+        },
+    )
+    jsonl_path = view_root / "train.jsonl"
+    record = {
+        "images": ["images/train2017/img_0.png"],
+        "width": 32,
+        "height": 32,
+        "objects": [
+            {
+                "desc": "obj",
+                "bbox_2d": [0, 0, 1, 1],
+            }
+        ],
+    }
+    jsonl_path.write_text(json.dumps(record, ensure_ascii=True) + "\n", encoding="utf-8")
+    monkeypatch.setenv("ROOT_IMAGE_DIR", str(image_store))
+
+    ds = BaseCaptionDataset.from_jsonl(
+        str(jsonl_path),
+        template=_FakeTemplate(),
+        user_prompt="prompt",
+        emit_norm="none",
+        json_format="standard",
+        coord_tokens=CoordTokensConfig(enabled=True, skip_bbox_norm=True),
+    )
+
+    sample = ds[0]
+    image_ref = sample["messages"][0]["content"][0]["image"]
+
+    assert Path(image_ref).resolve() == img_path.resolve()

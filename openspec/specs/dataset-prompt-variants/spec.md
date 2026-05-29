@@ -125,12 +125,12 @@ The system MUST reject legacy fusion prompt overrides with the disabled fusion
 surface rather than treating them as supported prompt variants.
 
 Fusion dataset-level prompt overrides are no longer part of the supported
-training surface because fusion-config training is temporarily disabled.
+training surface because fusion-config training has been removed.
 
-#### Scenario: legacy fusion prompt override is rejected with the disabled surface
+#### Scenario: legacy fusion prompt override is rejected with the removed surface
 - **WHEN** a legacy fusion config attempts to provide explicit `user_prompt`
   and/or `system_prompt`
-- **THEN** the run SHALL fail on the temporarily disabled
+- **THEN** the run SHALL fail on the removed
   `custom.fusion_config` surface
 - **AND** prompt-variant resolution SHALL NOT imply that fusion overrides remain
   supported

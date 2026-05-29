@@ -1,0 +1,24 @@
+extends: compact_full_vllm_train64_val32_base_control_lr0_1step.yaml
+
+experiment:
+  title: Stage-2 rollout-correction same-surface base-control eval with COCO-80 prompt
+  purpose: >
+    Diagnose whether the low no-update base-control AP comes from evaluating the
+    ckpt3664 adapter without the COCO-80 prompt variant used by the historical
+    Stage-1 val200 reference artifacts.
+  hypothesis: >
+    If the prompt variant mismatch is the dominant cause, restoring
+    rollout_matching.prompt_variant/eval_prompt_variant to coco_80 should improve
+    the no-update base-control eval without changing optimizer behavior.
+  key_deviations:
+    - Inherits the lr≈0 one-step base-control probe.
+    - Pins both train-time rollout prompts and eval-step rollout prompts to
+      the COCO-80 variant.
+
+training:
+  output_dir: output/stage2_rollout_correction/smoke/compact_full_vllm_train64_val32_base_control_lr0_1step_coco80_prompt
+  run_name: compact_full_vllm_train64_val32_base_control_lr0_1step_coco80_prompt
+
+rollout_matching:
+  prompt_variant: coco_80
+  eval_prompt_variant: coco_80

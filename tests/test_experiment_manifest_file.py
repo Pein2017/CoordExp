@@ -12,19 +12,24 @@ from src.sft import _resolve_authored_experiment_payload
 def test_write_experiment_manifest_file_captures_soft_and_hard_context(
     tmp_path: Path,
 ) -> None:
+    stage2_policy = {
+        "assignment_strategy": "greedy_iou",
+        "duplicate_filter_strategy": "rollout_correction_duplicate_control",
+        "object_ordering_policy": "sorted",
+    }
     out_path = write_experiment_manifest_file(
         output_dir=tmp_path,
-        config_path="configs/stage2_two_channel/smoke/a_only.yaml",
+        config_path="configs/stage2_rollout_correction/smoke/compact_full_hf_1step.yaml",
         base_config_path="configs/base.yaml",
-        run_name="smoke_20steps-stage2-a_only",
+        run_name="compact_full_hf_1step",
         dataset_seed=17,
         experiment={
-            "title": "Stage-2 A-only smoke",
-            "purpose": "Validate the compact A-only smoke path.",
-            "key_deviations": ["Uses the retained canonical A-only smoke profile."],
+            "title": "Stage-2 rollout-correction smoke",
+            "purpose": "Validate the compact rollout-correction smoke path.",
+            "key_deviations": ["Uses the canonical residual_set_correction objective."],
         },
         effective_runtime={
-            "trainer_variant": "stage2_two_channel",
+            "trainer_variant": "stage2_rollout_correction",
             "checkpoint_mode": "artifact_only",
             "save_model_only": False,
             "gradient_accumulation_steps": 4,
@@ -33,7 +38,7 @@ def test_write_experiment_manifest_file_captures_soft_and_hard_context(
         },
         pipeline_manifest={
             "checksum": "abc123",
-            "objective": [{"name": "token_ce"}, {"name": "bbox_geo"}],
+            "objective": [{"name": "residual_set_correction"}],
             "diagnostics": [],
         },
         run_metadata={
@@ -48,21 +53,23 @@ def test_write_experiment_manifest_file_captures_soft_and_hard_context(
             "effective_runtime": "effective_runtime.json",
             "pipeline_manifest": "pipeline_manifest.json",
         },
+        stage2_policy_provenance=stage2_policy,
     )
 
     payload = json.loads(out_path.read_text(encoding="utf-8"))
 
     assert out_path.name == "experiment_manifest.json"
-    assert payload["identity"]["run_name"] == "smoke_20steps-stage2-a_only"
+    assert payload["identity"]["run_name"] == "compact_full_hf_1step"
     assert payload["experiment"]["authored"]["purpose"] == (
-        "Validate the compact A-only smoke path."
+        "Validate the compact rollout-correction smoke path."
     )
-    assert payload["runtime_summary"]["trainer_variant"] == "stage2_two_channel"
+    assert payload["runtime_summary"]["trainer_variant"] == "stage2_rollout_correction"
     assert payload["runtime_summary"]["save_model_only"] is False
     assert payload["runtime_summary"]["pipeline"]["objective"] == [
-        "token_ce",
-        "bbox_geo",
+        "residual_set_correction",
     ]
+    assert payload["runtime_summary"]["stage2_policy_provenance"] == stage2_policy
+    assert payload["stage2_policy_provenance"] == stage2_policy
     assert payload["provenance_summary"]["git_sha"] == "deadbeef"
     assert payload["artifacts"]["run_metadata"] == "run_metadata.json"
     assert payload["artifacts"]["resolved_config"] == "resolved_config.json"
@@ -88,16 +95,15 @@ def test_write_experiment_manifest_file_marks_missing_authored_experiment(
     assert payload["experiment"]["authored"] is None
 
 
-def test_detection_authored_experiment_preserves_claim_scope() -> None:
+def test_teacher_forcing_authored_experiment_preserves_claim_scope() -> None:
     cfg = ConfigLoader.load_materialized_training_config(
-        "configs/stage1/recursive_detection_ce/ablation/compact_full_prefix_rollin_balance2.yaml"
+        "configs/stage1/teacher_forcing/smoke/compact_full_hard_sft_tiny.yaml"
     )
     assert isinstance(cfg, DetectionTrainingConfig)
 
     authored = _resolve_authored_experiment_payload(cfg)
 
     assert authored == {
-        "surface": "ablation",
-        "ablation_id": "E1",
-        "claim_scope": "none",
+        "surface": "smoke",
+        "claim_scope": "smoke",
     }

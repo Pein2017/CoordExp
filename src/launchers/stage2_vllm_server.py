@@ -1,4 +1,4 @@
-"""Stage-2 AB combined launcher (vLLM rollout server + learner).
+"""Stage-2 rollout-correction launcher (vLLM rollout server + learner).
 
 Operator contract:
 - Hyperparameters live in YAML.
@@ -13,6 +13,7 @@ from __future__ import annotations
 import json
 import os
 import random
+import shutil
 import shlex
 import signal
 import socket
@@ -365,11 +366,14 @@ def build_swift_rollout_cmd(
     template_max_pixels: int,
     template_max_length: int | None,
     truncation_strategy: str | None,
+    server_model_type: str | None = None,
+    vllm_max_lora_rank: int | None = None,
     vllm_engine_kwargs: Mapping[str, Any] | None = None,
 ) -> list[str]:
     cmd = [
-        "swift",
-        "rollout",
+        sys.executable,
+        "-m",
+        "src.launchers.swift_rollout_coordexp",
         "--model",
         str(server_model),
         "--host",
@@ -393,6 +397,13 @@ def build_swift_rollout_cmd(
         "--vllm_enable_lora",
         "true" if bool(vllm_enable_lora) else "false",
     ]
+    if server_model_type is not None and str(server_model_type).strip():
+        cmd.extend(["--model_type", str(server_model_type).strip()])
+
+    if bool(vllm_enable_lora):
+        if vllm_max_lora_rank is None:
+            raise ValueError("vllm_max_lora_rank is required when vllm_enable_lora=true")
+        cmd.extend(["--vllm_max_lora_rank", str(int(vllm_max_lora_rank))])
 
     if template:
         cmd.extend(["--template", template])
@@ -419,8 +430,10 @@ def build_torchrun_cmd(
     master_addr: str,
     master_port: int,
 ) -> list[str]:
+    torchrun = shutil.which("torchrun")
+    runner_prefix = [torchrun] if torchrun else [sys.executable, "-m", "torch.distributed.run"]
     return [
-        "torchrun",
+        *runner_prefix,
         f"--nproc_per_node={int(num_gpus)}",
         f"--master_addr={master_addr}",
         f"--master_port={int(master_port)}",
@@ -634,7 +647,7 @@ def main() -> int:
         if config_raw is None:
             _die(
                 "Missing config. Set env var `config=...` (or `CONFIG=...`). Example: "
-                "config=configs/stage2_two_channel/prod/ab_mixed.yaml",
+                "config=configs/stage2_rollout_correction/base.yaml",
                 rc=2,
             )
 
@@ -743,6 +756,7 @@ def main() -> int:
 
         vllm_max_model_len = int(preflight.get("vllm_max_model_len"))
         vllm_enable_lora = bool(preflight.get("vllm_enable_lora"))
+        vllm_max_lora_rank = int(preflight.get("vllm_max_lora_rank", 16))
         vllm_engine_kwargs_raw = preflight.get("vllm_engine_kwargs") or {}
         if not isinstance(vllm_engine_kwargs_raw, Mapping):
             raise TypeError("Preflight returned non-mapping vllm_engine_kwargs")
@@ -807,8 +821,11 @@ def main() -> int:
             n=0,
         )
 
+        server_model_type = str(preflight.get("server_model_type") or "").strip()
+
         server_cmd = build_swift_rollout_cmd(
             server_model=server_model,
+            server_model_type=server_model_type,
             base_url=base_url,
             server_torch_dtype=server_torch_dtype,
             vllm_dp=server_dp,
@@ -817,6 +834,7 @@ def main() -> int:
             vllm_gpu_memory_utilization=vllm_gpu_memory_utilization,
             vllm_max_model_len=vllm_max_model_len,
             vllm_enable_lora=vllm_enable_lora,
+            vllm_max_lora_rank=vllm_max_lora_rank,
             template=template,
             template_max_pixels=template_max_pixels,
             template_max_length=template_max_length,
@@ -883,6 +901,7 @@ def main() -> int:
                 "COORDEXP_STAGE2_SERVER_ENABLE_LORA": "true"
                 if vllm_enable_lora
                 else "false",
+                "COORDEXP_STAGE2_SERVER_MAX_LORA_RANK": str(int(vllm_max_lora_rank)),
                 "COORDEXP_STAGE2_SERVER_GPUS": str(server_gpus_raw),
                 "COORDEXP_STAGE2_LEARNER_GPUS": str(train_gpus_raw),
             }
@@ -891,7 +910,7 @@ def main() -> int:
         _info(
             "========================================================================"
         )
-        _info("  Stage-2 AB vLLM Server + Learner Launcher (Python)")
+        _info("  Stage-2 Rollout-Correction vLLM Server + Learner Launcher (Python)")
         _info(
             "========================================================================"
         )
@@ -900,12 +919,14 @@ def main() -> int:
         _info(f"[INFO] Train GPUs:  {train_gpus_raw} (world_size={train_world_size})")
         _info(f"[INFO] Server:      {base_url.host}:{base_url.port}")
         _info(f"[INFO] Model:       {server_model}")
+        if server_model_type:
+            _info(f"[INFO] model_type:  {server_model_type}")
         _info(f"[INFO] ROOT_IMAGE_DIR: {root_image_dir}")
         _info(f"[INFO] torch_dtype: {server_torch_dtype}")
         _info(f"[INFO] eager:       {vllm_enforce_eager}")
         _info(f"[INFO] max_model_len:{vllm_max_model_len}")
         _info(
-            f"[INFO] enable_lora: {vllm_enable_lora} (full-sync-only; adapter sync unsupported)"
+            f"[INFO] enable_lora: {vllm_enable_lora} max_lora_rank: {vllm_max_lora_rank} (official adapter sync)"
         )
         if vllm_engine_kwargs:
             _info(

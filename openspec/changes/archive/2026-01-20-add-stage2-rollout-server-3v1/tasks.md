@@ -9,7 +9,7 @@
 - [x] 1.3 Add a new config template (YAML) for the 3v1 workflow (3 rollout GPUs + 1 learner GPU) with dlora + post-rollout packing and explicit sync mode.
 
 ## 2. Trainer Integration (No Behavior Change by Default)
-- [x] 2.1 Extend `RolloutMatchingSFTTrainer` to support `custom.extra.rollout_matching.vllm.mode: server`:
+- [x] 2.1 Extend `Stage2RolloutRuntime` to support `custom.extra.rollout_matching.vllm.mode: server`:
   - fail fast if learner `world_size > 1` (v1 is single-process learner)
   - connect to pre-launched ms-swift rollout server(s)
   - send JSON-serializable rollout requests compatible with ms-swift `RolloutInferRequest` (images as strings)

@@ -1,19 +1,19 @@
-"""Rollout-matching: matching and cost computation helpers.
+"""Rollout-matching: greedy matching and cost computation helpers.
 
 This module is intentionally import-light with respect to trainers (no swift/HF
 trainer imports). It provides the stable matching surface used by both
-rollout-matching SFT and Stage-2 AB.
+rollout-matching SFT and Stage-2 rollout-correction.
 """
 
 from __future__ import annotations
 
+import math
 from typing import List, Sequence, Tuple
 
-import numpy as np
 from pycocotools import mask as maskUtils
-from scipy.optimize import linear_sum_assignment
 
 from src.common.geometry import bbox_from_points, bbox_to_quadrilateral
+from src.training.stage2.assignment import AssignmentObject, GreedyIoUAssignment
 
 from .contracts import GTObject, GeomType, MatchResult
 
@@ -102,16 +102,37 @@ def _mask_iou_norm1000(
         return 0.0
 
 
-def hungarian_match_maskiou(
+def _assignment_object_from_gt_object(
+    *,
+    obj: GTObject,
+    role: str,
+    position: int,
+) -> AssignmentObject:
+    """Return a Stage-2 assignment object from a rollout-matching object."""
+
+    return AssignmentObject(
+        object_id=f"{role}:{int(position)}:{int(obj.index)}",
+        bbox=_bbox_xyxy_from_norm(obj.points_norm1000, obj.geom_type),
+        description=str(obj.desc),
+        metadata={
+            "source_index": int(position),
+            "object_index": int(obj.index),
+        },
+    )
+
+
+def greedy_match_iou(
     *,
     preds: Sequence[GTObject],
     gts: Sequence[GTObject],
-    top_k: int,
     gate_threshold: float,
-    mask_resolution: int,
-    fp_cost: float,
-    fn_cost: float,
 ) -> MatchResult:
+    """Return deterministic greedy IoU matches for rollout predictions and GT.
+
+    The returned ``MatchResult`` keeps the historical field names used by
+    telemetry, but the summed score is bbox IoU from the greedy assignment.
+    """
+
     pred_n = len(preds)
     gt_n = len(gts)
     if pred_n == 0:
@@ -133,181 +154,54 @@ def hungarian_match_maskiou(
             matched_maskiou_count=0,
         )
 
-    k = max(1, int(top_k))
-    gate = float(gate_threshold)
-    inf = 1e6
-
-    gt_boxes = [_bbox_xyxy_from_norm(gt.points_norm1000, gt.geom_type) for gt in gts]
-    pred_boxes = [
-        _bbox_xyxy_from_norm(pr.points_norm1000, pr.geom_type) for pr in preds
-    ]
-
-    # Candidate pruning per pred.
-    cand: List[List[int]] = []
-    for pb in pred_boxes:
-        ious = [(_bbox_iou_xyxy(pb, gb), j) for j, gb in enumerate(gt_boxes)]
-        ious.sort(key=lambda t: (-t[0], t[1]))
-        best = [j for _, j in ious[:k]]
-        if ious and ious[0][0] <= 0.0:
-            # Fallback: center distance.
-            pcx = 0.5 * (pb[0] + pb[2])
-            pcy = 0.5 * (pb[1] + pb[3])
-            dists = []
-            for j, gb in enumerate(gt_boxes):
-                gcx = 0.5 * (gb[0] + gb[2])
-                gcy = 0.5 * (gb[1] + gb[3])
-                d = (pcx - gcx) ** 2 + (pcy - gcy) ** 2
-                dists.append((float(d), j))
-            dists.sort(key=lambda t: (t[0], t[1]))
-            best = [j for _, j in dists[:k]]
-        cand.append(best)
-
-    gating_rejections = 0
-    cost_pg = np.full((pred_n, gt_n), inf, dtype=np.float64)
-    for i, pr in enumerate(preds):
-        for j in cand[i]:
-            iou = _mask_iou_norm1000(
-                pred_kind=pr.geom_type,
-                pred_points=pr.points_norm1000,
-                gt_kind=gts[j].geom_type,
-                gt_points=gts[j].points_norm1000,
-                resolution=mask_resolution,
+    strategy = GreedyIoUAssignment(iou_threshold=float(gate_threshold))
+    result = strategy.assign(
+        predictions=[
+            _assignment_object_from_gt_object(
+                obj=pred,
+                role="pred",
+                position=pred_i,
             )
-            if iou < gate:
-                gating_rejections += 1
-                continue
-            cost_pg[i, j] = 1.0 - float(iou)
+            for pred_i, pred in enumerate(preds)
+        ],
+        ground_truth=[
+            _assignment_object_from_gt_object(
+                obj=gt,
+                role="gt",
+                position=gt_i,
+            )
+            for gt_i, gt in enumerate(gts)
+        ],
+    )
 
-    # Dummy-augmented square matrix.
-    n = pred_n + gt_n
-    cost = np.full((n, n), 0.0, dtype=np.float64)
-    cost[:pred_n, :gt_n] = cost_pg
-    cost[:pred_n, gt_n:] = float(fp_cost)
-    cost[pred_n:, :gt_n] = float(fn_cost)
-    cost[pred_n:, gt_n:] = 0.0
+    matched_pairs = [
+        (int(pair.prediction_index), int(pair.ground_truth_index))
+        for pair in result.pairs
+    ]
+    fp_preds = [int(item.index) for item in result.unmatched_predictions]
+    fn_gts = [int(item.index) for item in result.unmatched_ground_truth]
+    matched_iou_sum = float(sum(float(pair.iou) for pair in result.pairs))
 
-    row_ind, col_ind = linear_sum_assignment(cost)
-    assign = {int(r): int(c) for r, c in zip(row_ind, col_ind)}
-
-    matched_pairs: List[Tuple[int, int]] = []
-    matched_maskiou_sum = 0.0
-    matched_maskiou_count = 0
-    fp_preds: List[int] = []
-    matched_gt: set[int] = set()
-
-    for i in range(pred_n):
-        c = assign.get(i)
-        if c is None:
-            fp_preds.append(i)
-            continue
-        if c < gt_n and cost_pg[i, c] < inf * 0.5:
-            matched_pairs.append((i, c))
-            matched_gt.add(c)
-            # cost_pg is (1 - iou) for allowed candidates.
-            iou = 1.0 - float(cost_pg[i, c])
-            if iou < 0.0:
-                iou = 0.0
-            if iou > 1.0:
-                iou = 1.0
-            matched_maskiou_sum += float(iou)
-            matched_maskiou_count += 1
-        else:
-            fp_preds.append(i)
-
-    fn_gts = [j for j in range(gt_n) if j not in matched_gt]
     return MatchResult(
         matched_pairs=matched_pairs,
         fn_gt_indices=fn_gts,
         fp_pred_indices=fp_preds,
-        gating_rejections=int(gating_rejections),
-        matched_maskiou_sum=float(matched_maskiou_sum),
-        matched_maskiou_count=int(matched_maskiou_count),
+        gating_rejections=0,
+        matched_maskiou_sum=float(matched_iou_sum),
+        matched_maskiou_count=int(len(result.pairs)),
     )
 
 
-def _max_weight_pair_sum(
-    *,
-    candidates: Sequence[Tuple[int, int, float]],
-) -> float:
-    if not candidates:
-        return 0.0
-
-    anchor_ids = sorted({int(anchor_i) for anchor_i, _, _ in candidates})
-    explorer_ids = sorted({int(explorer_i) for _, explorer_i, _ in candidates})
-    if not anchor_ids or not explorer_ids:
-        return 0.0
-
-    anchor_to_row = {int(anchor_i): idx for idx, anchor_i in enumerate(anchor_ids)}
-    explorer_to_col = {
-        int(explorer_i): idx for idx, explorer_i in enumerate(explorer_ids)
-    }
-
-    n_anchor = int(len(anchor_ids))
-    n_explorer = int(len(explorer_ids))
-    n = int(n_anchor + n_explorer)
-    weights = np.zeros((n, n), dtype=np.float64)
-    for anchor_i, explorer_i, score in candidates:
-        weights[
-            int(anchor_to_row[int(anchor_i)]),
-            int(explorer_to_col[int(explorer_i)]),
-        ] = float(score)
-
-    row_ind, col_ind = linear_sum_assignment(-weights)
-    total = 0.0
-    for row_i, col_i in zip(row_ind, col_ind):
-        if row_i >= n_anchor or col_i >= n_explorer:
-            continue
-        total += float(weights[int(row_i), int(col_i)])
-    return float(total)
-
-
-def _lexicographic_max_weight_pairs(
-    *,
-    candidates: Sequence[Tuple[int, int, float]],
-    tol: float = 1e-9,
-) -> List[Tuple[int, int]]:
-    best_total = _max_weight_pair_sum(candidates=candidates)
-    if best_total <= float(tol):
-        return []
-
-    ordered = sorted(
-        candidates,
-        key=lambda item: (int(item[0]), int(item[1])),
-    )
-    for anchor_i, explorer_i, score in ordered:
-        residual = [
-            (int(next_anchor_i), int(next_explorer_i), float(next_score))
-            for next_anchor_i, next_explorer_i, next_score in ordered
-            if int(next_anchor_i) != int(anchor_i)
-            and int(next_explorer_i) != int(explorer_i)
-            and (int(next_anchor_i), int(next_explorer_i))
-            > (int(anchor_i), int(explorer_i))
-        ]
-        with_pair_total = float(score) + _max_weight_pair_sum(candidates=residual)
-        if abs(float(with_pair_total) - float(best_total)) <= float(tol):
-            return [(int(anchor_i), int(explorer_i))] + _lexicographic_max_weight_pairs(
-                candidates=residual,
-                tol=float(tol),
-            )
-    return []
-
-
-def associate_one_to_one_max_iou(
+def associate_one_to_one_greedy_iou(
     *,
     anchors: Sequence[GTObject],
     explorers: Sequence[GTObject],
     min_iou: float,
 ) -> List[Tuple[int, int]]:
-    """Associate anchor/explorer objects by max total IoU with stable tie-breaks.
-
-    Among all one-to-one assignments whose pairs satisfy `IoU >= min_iou`, choose
-    the assignment with the maximum total IoU. If multiple assignments achieve the
-    same maximum total IoU, choose the one whose sorted pair list is
-    lexicographically smallest.
-    """
+    """Associate anchor/explorer objects by deterministic greedy IoU."""
 
     threshold = float(min_iou)
-    if not np.isfinite(threshold):
+    if not math.isfinite(threshold):
         raise ValueError("min_iou must be finite")
     if threshold < 0.0 or threshold > 1.0:
         raise ValueError("min_iou must be in [0, 1]")
@@ -330,7 +224,21 @@ def associate_one_to_one_max_iou(
                 continue
             candidates.append((int(anchor_i), int(explorer_i), float(iou)))
 
-    return _lexicographic_max_weight_pairs(candidates=candidates)
+    candidates.sort(key=lambda item: (-float(item[2]), int(item[0]), int(item[1])))
+
+    matched_anchors: set[int] = set()
+    matched_explorers: set[int] = set()
+    pairs: List[Tuple[int, int]] = []
+    for anchor_i, explorer_i, _score in candidates:
+        if int(anchor_i) in matched_anchors:
+            continue
+        if int(explorer_i) in matched_explorers:
+            continue
+        pairs.append((int(anchor_i), int(explorer_i)))
+        matched_anchors.add(int(anchor_i))
+        matched_explorers.add(int(explorer_i))
+
+    return pairs
 
 
-__all__ = ["associate_one_to_one_max_iou", "hungarian_match_maskiou"]
+__all__ = ["associate_one_to_one_greedy_iou", "greedy_match_iou"]

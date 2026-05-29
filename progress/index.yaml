@@ -38,6 +38,7 @@ groups:
     - progress/diagnostics/2026-04-20_coord_family_basin_and_recall_comparison.md
     - progress/diagnostics/2026-04-20_raw_text_and_coord_family_decision_summary.md
     - progress/diagnostics/2026-04-20_raw_text_coord_continuity_probe.md
+    - progress/diagnostics/2026-05-14_a2_eos_loosen_ablation.md
     - progress/diagnostics/2026-04-11_stage1_coord_basin_duplication_mechanism.md
     - progress/diagnostics/2026-04-13_duplication_collapse_final_analysis.md
     - progress/diagnostics/2026-04-15_cxcy_logw_logh_retrained_performance_analysis.md
@@ -87,6 +88,7 @@ groups:
     - progress/benchmarks/2026-03-11_stage2_rollout_temperature_refinement.md
   explorations:
     - progress/explorations/README.md
+    - progress/explorations/2026-05-15_training_infrastructure_architecture_decisions.md
     - progress/explorations/2026-03-19_runtime_refactor_architecture_program.md
     - progress/explorations/2026-01-26_stage2_infrastructure.md
   pretrain:
@@ -113,8 +115,8 @@ notes:
   - path: progress/directions/full_idea_v4.md
     title: Full Idea v4
     kind: direction
-    status: active-reference
-    summary: Current historical summary for the Stage-1 plus Stage-2 direction, including the pseudo-positive K=4 line.
+    status: superseded
+    summary: Superseded Stage-1 plus Stage-2 pseudo-positive direction summary; preserve for design lineage and K=4 context, not current training guidance.
   - path: progress/diagnostics/README.md
     title: Diagnostics Index
     kind: router
@@ -138,8 +140,8 @@ notes:
   - path: progress/diagnostics/2026-05-08_compact_full_coord_confidence_stop_gate_diagnostics.md
     title: Compact-Full Coord-Confidence And Stop-Gate Diagnostics
     kind: diagnostic-study
-    status: active-reference
-    summary: Root-cause diagnostic for compact-full prefix-rollin training where low loss coexists with conservative decode, covering the HF batched compact-grammar prompt-offset bug, fixed val200 comparison, coord_mean_logprob separation, and A3/A4 follow-up instability with mechanism-probe caveats.
+    status: mechanism-evidence
+    summary: Diagnostic-only root-cause evidence for compact-full prefix-rollin training where low loss coexists with conservative decode, covering the HF batched compact-grammar prompt-offset bug, fixed val200 comparison, coord_mean_logprob separation, and A3/A4 follow-up instability with mechanism-probe caveats.
   - path: progress/diagnostics/2026-05-14_a2_eos_loosen_ablation.md
     title: A2 EOS-Loosen Clean Ablation
     kind: ablation-tracking-note
@@ -158,8 +160,8 @@ notes:
   - path: progress/diagnostics/2026-04-22_stage2_birth_first_channel_b_decision_study.md
     title: Stage-2 Birth-First Channel-B Decision Study
     kind: diagnostic-study
-    status: active-reference
-    summary: Decision-facing record of the merged-vLLM operator fix and the birth-first versus control small-fraction study.
+    status: decision-evidence
+    summary: Recorded decision context for the merged-vLLM operator fix and the birth-first versus control small-fraction study; preserve as evidence, not active routing guidance.
   - path: progress/diagnostics/2026-04-24_qwen3_vl_instance_binding_mechanism_findings.md
     title: Qwen3-VL Instance Binding Mechanism Findings
     kind: diagnostic-study
@@ -173,8 +175,13 @@ notes:
   - path: progress/diagnostics/2026-03-26_stage2_small_object_duplication_offline_synthesis.md
     title: Stage-2 Small-Object Duplication Offline Diagnostics Synthesis
     kind: diagnostic-study
-    status: canonical-cluster-entry
-    summary: Canonical synthesis for the small-object duplication offline cluster, unifying the protocol, broad harness, and crowded deep-dive.
+    status: mechanism-evidence
+    summary: Diagnostic-only synthesis for the small-object duplication offline cluster, unifying the protocol, broad harness, and crowded deep-dive as duplicate evidence rather than duplicate-burst UL launch guidance.
+  - path: progress/diagnostics/2026-04-11_stage1_coord_basin_duplication_mechanism.md
+    title: Stage-1 Coordinate-Basin Duplication Mechanism
+    kind: mechanism-summary
+    status: mechanism-evidence
+    summary: Diagnostic-only mechanism evidence for Stage-1 coordinate-basin duplication; keep it as failure analysis, not active anti-duplication training guidance.
   - path: progress/benchmarks/stage1_2b_val200_leaderboard.md
     title: Stage-1 2B Val200 Detection Leaderboard
     kind: dashboard
@@ -188,8 +195,8 @@ notes:
   - path: progress/diagnostics/2026-04-13_duplication_collapse_final_analysis.md
     title: Duplication Collapse Final Analysis
     kind: diagnostic-study
-    status: active-reference
-    summary: Consolidated final record of the duplication-collapse investigation and its supporting artifact map.
+    status: mechanism-evidence
+    summary: Consolidated diagnostic record of the duplication-collapse investigation and its supporting artifact map; keep it as mechanism evidence, not current anti-duplication training guidance.
   - path: progress/benchmarks/README.md
     title: Benchmarks Index
     kind: router
@@ -220,6 +227,11 @@ notes:
     kind: router
     status: canonical
     summary: Router for architecture, infrastructure, and implementation-planning explorations.
+  - path: progress/explorations/2026-05-15_training_infrastructure_architecture_decisions.md
+    title: Training Infrastructure Architecture Decisions
+    kind: exploration
+    status: active-reference
+    summary: Architecture decision record from the 2026-05-15 training infrastructure audit and grill-me loop, including duplicate-negative training and adjacent-repulsion removal, training-time EOS hack removal with diagnostics retained, and staged Hungarian replacement.
   - path: progress/explorations/2026-03-19_runtime_refactor_architecture_program.md
     title: Runtime Refactor Architecture Program (2026-03-19)
     kind: exploration

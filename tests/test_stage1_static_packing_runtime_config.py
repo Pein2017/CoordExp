@@ -15,6 +15,8 @@ from src.sft import (
     StaticPackingCacheRuntimeConfig,
     _append_dataset_epoch_callback,
     _build_static_packing_fingerprint,
+    _pipeline_base_callbacks,
+    _pipeline_data_collator,
     _parse_static_packing_cache_config,
     _resolve_static_packing_cache_dir,
     _parse_encoded_sample_cache_config,
@@ -291,7 +293,7 @@ def test_validate_stage1_static_packing_policy_rejects_recursive_objective() -> 
 def test_validate_stage1_static_packing_policy_skips_rollout_matching_variants() -> None:
     _validate_stage1_static_packing_policy(
         packing_cfg=PackingRuntimeConfig(enabled=True, mode="dynamic"),
-        trainer_variant="stage2_two_channel",
+        trainer_variant="stage2_rollout_correction",
     )
 
 
@@ -317,6 +319,38 @@ def test_append_dataset_epoch_callback_registers_set_epoch_datasets() -> None:
         control=SimpleNamespace(),
     )
     assert dataset.epochs == [3]
+
+
+def test_pipeline_base_callbacks_tolerates_new_swift_pipeline_api() -> None:
+    assert _pipeline_base_callbacks(SimpleNamespace()) == []
+
+
+def test_pipeline_base_callbacks_copies_legacy_callbacks() -> None:
+    original = [object()]
+    copied = _pipeline_base_callbacks(SimpleNamespace(callbacks=original))
+
+    assert copied == original
+    assert copied is not original
+
+
+def test_pipeline_data_collator_uses_legacy_pipeline_method() -> None:
+    collator = object()
+    pipeline = SimpleNamespace(_get_data_collator=lambda: collator)
+
+    assert _pipeline_data_collator(pipeline, SimpleNamespace()) is collator
+
+
+def test_pipeline_data_collator_falls_back_to_template_collator() -> None:
+    def template_collator(batch, *, padding_to=None):
+        return {"batch": batch, "padding_to": padding_to}
+
+    template = SimpleNamespace(max_length=128, data_collator=template_collator)
+    pipeline = SimpleNamespace(template=template)
+    train_args = SimpleNamespace(training_args=SimpleNamespace(tuner_type="longlora"))
+
+    collator = _pipeline_data_collator(pipeline, train_args)
+
+    assert collator(["sample"]) == {"batch": ["sample"], "padding_to": 128}
 
 
 def test_static_packing_fingerprint_includes_dataset_source_identity(
@@ -655,49 +689,13 @@ def test_static_packing_fingerprint_tracks_prompt_variant_and_template_hash() ->
     assert default_fp["custom_prompt_template_hash"] != lvis_fp["custom_prompt_template_hash"]
 
 
-def test_static_packing_fingerprint_preserves_legacy_null_fusion_keys() -> None:
-    packing_cfg = _parse_packing_config(
-        training_cfg={"packing": True, "packing_mode": "static"},
-        template=_Template(max_length=128),
-        train_args=SimpleNamespace(max_model_len=0),
-    )
-
-    fingerprint = _build_static_packing_fingerprint(
-        training_config=SimpleNamespace(
-            global_max_length=1024,
-            template={"system": "sys", "truncation_strategy": "raise"},
-            training={"train_dataloader_shuffle": True},
-        ),
-        custom_config=SimpleNamespace(
-            user_prompt="prompt",
-            emit_norm="none",
-            json_format="standard",
-            object_ordering="none",
-            object_field_order="geometry_first",
-            use_summary=False,
-            system_prompt_dense=None,
-            system_prompt_summary=None,
-        ),
-        template=_Template(max_length=128),
-        train_args=SimpleNamespace(max_model_len=512),
-        dataset_seed=7,
-        packing_cfg=packing_cfg,
-        train_jsonl="train.jsonl",
-    )
-
-    assert "custom_fusion_config" in fingerprint
-    assert fingerprint["custom_fusion_config"] is None
-    assert "dataset_source_fusion_config" in fingerprint
-    assert fingerprint["dataset_source_fusion_config"] is None
-
-
 def test_fingerprint_diff_keys_reports_missing_vs_null() -> None:
     differing = _fingerprint_diff_keys(
-        {"custom_fusion_config": None},
+        {"custom_prompt_variant": None},
         {},
     )
 
-    assert differing == ["custom_fusion_config"]
+    assert differing == ["custom_prompt_variant"]
 
 
 def test_resolve_static_packing_cache_dir_defaults_to_dataset_local_root(
@@ -718,7 +716,6 @@ def test_resolve_static_packing_cache_dir_defaults_to_dataset_local_root(
         training_config=SimpleNamespace(global_max_length=12000),
         train_args=SimpleNamespace(output_dir=str(tmp_path / "out_v003")),
         dataset_jsonl=str(train_jsonl),
-        fusion_config_path=None,
         dataset_split="train",
         packing_cfg=packing_cfg,
     )
@@ -732,6 +729,24 @@ def test_resolve_static_packing_cache_dir_defaults_to_dataset_local_root(
     ).resolve()
 
 
+@pytest.mark.parametrize(
+    ("config_relpath", "expected_ordering"),
+    [
+        ("configs/stage1/lvis_bbox_max60_1024.yaml", "sorted"),
+        ("configs/stage1/smoke/lvis_bbox_max60_1024.yaml", "sorted"),
+    ],
+)
+def test_stage1_profiles_pin_cache_parity_and_ordering(
+    config_relpath: str,
+    expected_ordering: str,
+) -> None:
+    repo_root = Path(__file__).resolve().parents[1]
+    cfg = ConfigLoader.load_materialized_training_config(str(repo_root / config_relpath))
+
+    assert cfg.training["seed"] == 17
+    assert cfg.custom.object_ordering == expected_ordering
+
+
 def test_lvis_stage1_config_keeps_canonical_recipe_and_desc_first_sorted_contract() -> None:
     repo_root = Path(__file__).resolve().parents[1]
     cfg = ConfigLoader.load_materialized_training_config(
@@ -739,10 +754,7 @@ def test_lvis_stage1_config_keeps_canonical_recipe_and_desc_first_sorted_contrac
     )
 
     assert cfg.training["optimizer"] == "multimodal_coord_offset"
-    assert (
-        cfg.training["run_name"]
-        == "epoch_4-hard_ce_soft_ce_w1_ciou_bbox_size-adjrep_global-2b"
-    )
+    assert cfg.training["run_name"] == "epoch_4-hard_ce_soft_ce_w1-2b"
     assert cfg.custom.train_jsonl == "public_data/lvis/rescale_32_1024_bbox_max60/train.coord.jsonl"
     assert cfg.custom.val_jsonl == "public_data/lvis/rescale_32_1024_bbox_max60/val.coord.jsonl"
     assert cfg.custom.val_sample_limit == 512
@@ -758,17 +770,11 @@ def test_lvis_stage1_config_keeps_canonical_recipe_and_desc_first_sorted_contrac
     assert cfg.custom.coord_soft_ce_w1.soft_ce_weight == pytest.approx(1.0)
     assert cfg.custom.coord_soft_ce_w1.w1_weight == pytest.approx(1.0)
     assert cfg.custom.coord_soft_ce_w1.gate_weight == pytest.approx(5.0)
-    assert cfg.custom.bbox_geo.enabled is True
-    assert cfg.custom.bbox_geo.smoothl1_weight == pytest.approx(0.01)
-    assert cfg.custom.bbox_geo.ciou_weight == pytest.approx(1.0)
-    assert cfg.custom.bbox_geo.parameterization == "xyxy"
-    assert cfg.custom.bbox_geo.center_weight == pytest.approx(1.0)
-    assert cfg.custom.bbox_geo.size_weight == pytest.approx(1.0)
-    assert cfg.custom.bbox_size_aux.enabled is True
-    assert cfg.custom.bbox_size_aux.log_wh_weight == pytest.approx(0.05)
-    assert cfg.training["artifact_subdir"] == "stage1/lvis_bbox_max60_1024_adjacent_repulsion_global"
-    assert cfg.training["output_dir"] == "./output/stage1/lvis_bbox_max60_1024_adjacent_repulsion_global"
-    assert cfg.training["logging_dir"] == "./tb/stage1/lvis_bbox_max60_1024_adjacent_repulsion_global"
+    assert cfg.custom.bbox_geo.enabled is False
+    assert cfg.custom.bbox_size_aux.enabled is False
+    assert cfg.training["artifact_subdir"] == "stage1/lvis_bbox_max60_1024_coord_softce_w1"
+    assert cfg.training["output_dir"] == "./output/stage1/lvis_bbox_max60_1024_coord_softce_w1"
+    assert cfg.training["logging_dir"] == "./tb/stage1/lvis_bbox_max60_1024_coord_softce_w1"
 
 
 def test_lvis_stage1_smoke_config_only_overrides_runtime_limits() -> None:
@@ -785,37 +791,72 @@ def test_lvis_stage1_smoke_config_only_overrides_runtime_limits() -> None:
     assert cfg.custom.coord_soft_ce_w1.ce_weight == pytest.approx(1.0)
     assert cfg.custom.coord_soft_ce_w1.soft_ce_weight == pytest.approx(1.0)
     assert cfg.custom.coord_soft_ce_w1.w1_weight == pytest.approx(1.0)
-    assert cfg.custom.bbox_geo.enabled is True
-    assert cfg.custom.bbox_geo.ciou_weight == pytest.approx(1.0)
-    assert cfg.custom.bbox_geo.parameterization == "xyxy"
-    assert cfg.custom.bbox_geo.center_weight == pytest.approx(1.0)
-    assert cfg.custom.bbox_geo.size_weight == pytest.approx(1.0)
-    assert cfg.custom.bbox_size_aux.enabled is True
+    assert cfg.custom.bbox_geo.enabled is False
+    assert cfg.custom.bbox_size_aux.enabled is False
     assert cfg.training["max_steps"] == 2
     assert cfg.custom.train_sample_limit == 32
     assert cfg.custom.val_sample_limit == 8
     assert (
         cfg.training["run_name"]
-        == "smoke_2steps-stage1-lvis_bbox_max60_1024-hard_ce_soft_ce_w1_ciou_bbox_size-adjrep_global0p01"
+        == "smoke_2steps-stage1-lvis_bbox_max60_1024-hard_ce_soft_ce_w1"
     )
-    assert cfg.training["artifact_subdir"] == "stage1/smoke/lvis_bbox_max60_1024_adjacent_repulsion_global"
-    assert cfg.training["output_dir"] == "./output/stage1/smoke/lvis_bbox_max60_1024_adjacent_repulsion_global"
-    assert cfg.training["logging_dir"] == "./tb/stage1/smoke/lvis_bbox_max60_1024_adjacent_repulsion_global"
+    assert cfg.training["artifact_subdir"] == "stage1/smoke/lvis_bbox_max60_1024_coord_softce_w1"
+    assert cfg.training["output_dir"] == "./output/stage1/smoke/lvis_bbox_max60_1024_coord_softce_w1"
+    assert cfg.training["logging_dir"] == "./tb/stage1/smoke/lvis_bbox_max60_1024_coord_softce_w1"
 
 
-def test_representative_retained_leaves_still_author_model_run_name_and_artifact_subdir() -> None:
+def test_stage2_rollout_correction_prod_config_keeps_residual_pipeline_contract() -> None:
+    repo_root = Path(__file__).resolve().parents[1]
+    cfg = ConfigLoader.load_materialized_training_config(
+        str(
+            repo_root
+            / "configs/stage2_rollout_correction/prod/coco1024_online_residual_correction_vllm_tail_append.yaml"
+        )
+    )
+
+    assert cfg.custom.trainer_variant == "stage2_rollout_correction"
+    assert cfg.rollout_matching.eval_detection.metrics == "coco"
+    assert "stage2_rollout_correction" in cfg.training["output_dir"]
+    objective = {
+        module.name: module
+        for module in cfg.stage2_rollout_correction.pipeline.objective
+    }
+    assert list(objective) == ["residual_set_correction"]
+    assert objective["residual_set_correction"].application["preset"] == "rollout_self_prefix"
+
+
+def test_stage2_rollout_correction_smoke_config_resolves_residual_pipeline() -> None:
+    repo_root = Path(__file__).resolve().parents[1]
+    cfg = ConfigLoader.load_materialized_training_config(
+        str(
+            repo_root
+            / "configs/stage2_rollout_correction/smoke/compact_full_hf_1step.yaml"
+        )
+    )
+
+    objective = {
+        module.name: module
+        for module in cfg.stage2_rollout_correction.pipeline.objective
+    }
+    assert cfg.training["run_name"] == "compact_full_hf_1step"
+    assert "stage2_rollout_correction" in cfg.training["output_dir"]
+    assert list(objective) == ["residual_set_correction"]
+
+
+def test_representative_raw_leaves_still_author_model_run_name_and_artifact_subdir() -> None:
     repo_root = Path(__file__).resolve().parents[1]
     raw_paths = [
         repo_root / "configs/stage1/lvis_bbox_max60_1024.yaml",
-        repo_root / "configs/stage2_two_channel/prod/a_only.yaml",
-        repo_root / "configs/stage2_two_channel/prod/ab_mixed.yaml",
+        repo_root
+        / "configs/stage2_rollout_correction/prod/coco1024_online_residual_correction_vllm_tail_append.yaml",
     ]
 
     for path in raw_paths:
-        payload = yaml.safe_load(path.read_text(encoding="utf-8"))
+        payload = ConfigLoader.load_yaml_with_extends(str(path))
+        payload = ConfigLoader._materialize_training_artifact_paths(payload)
         assert payload["model"]["model"]
         assert payload["training"]["run_name"]
-        assert payload["training"]["artifact_subdir"]
+        assert payload["training"]["output_dir"]
 
 
 def test_shared_dataset_and_prompt_facets_materialize_through_minimal_stage1_leaf(
@@ -1078,6 +1119,32 @@ def test_validate_static_packing_accumulation_windows_warns_on_remainder(
         "is not divisible by gradient_accumulation_steps=8" in msg
         for msg in warning_logs
     )
+
+
+@pytest.mark.parametrize(
+    ("config_name", "expected_ordering"),
+    [
+        ("../lvis_bbox_max60_1024.yaml", "sorted"),
+        ("../smoke/lvis_bbox_max60_1024.yaml", "sorted"),
+    ],
+)
+def test_stage1_leaves_pin_ordering_cache_seed_and_paths(
+    config_name: str,
+    expected_ordering: str,
+) -> None:
+    repo_root = Path(__file__).resolve().parents[1]
+    cfg = ConfigLoader.load_materialized_training_config(
+        str(repo_root / "configs" / "stage1" / "ablation" / config_name)
+    )
+
+    training = cfg.training
+    custom = cfg.custom
+    template = cfg.template
+
+    assert custom.object_ordering == expected_ordering
+    assert training["seed"] == 17
+    assert template["max_pixels"] == 1048576
+    assert "rescale_32_1024_bbox_max60/train.coord.jsonl" in str(custom.train_jsonl)
 
 
 def test_static_packing_avoids_thread_pool_for_unsafe_length_helper_in_distributed_runtime(

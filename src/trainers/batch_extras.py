@@ -4,6 +4,8 @@ from dataclasses import dataclass
 from collections.abc import MutableMapping
 from typing import Any
 
+from src.training.teacher_forcing.constants import TEACHER_FORCING_TARGET_IR_KEY
+
 
 # NOTE: These keys are emitted by collators and consumed by trainer-side diagnostics.
 # They MUST NOT be forwarded into model(**inputs).
@@ -27,6 +29,7 @@ BATCH_EXTRAS_KEYS: tuple[str, ...] = (
     PROXY_COORD_TOKEN_WEIGHTS_KEY,
     SFT_STRUCTURAL_CLOSE_TOKEN_WEIGHTS_KEY,
     RECURSIVE_DETECTION_TARGETS_KEY,
+    TEACHER_FORCING_TARGET_IR_KEY,
 )
 
 
@@ -48,6 +51,7 @@ class BatchExtras:
     proxy_coord_token_weights: Any = None
     sft_structural_close_token_weights: Any = None
     recursive_detection_targets: Any = None
+    teacher_forcing_target_ir: Any = None
 
 
 _STASH_ATTR = "_coordexp_batch_extras"
@@ -68,6 +72,7 @@ def pop_batch_extras(inputs: MutableMapping[str, Any]) -> BatchExtras:
             SFT_STRUCTURAL_CLOSE_TOKEN_WEIGHTS_KEY, None
         ),
         recursive_detection_targets=inputs.pop(RECURSIVE_DETECTION_TARGETS_KEY, None),
+        teacher_forcing_target_ir=inputs.pop(TEACHER_FORCING_TARGET_IR_KEY, None),
     )
 
 

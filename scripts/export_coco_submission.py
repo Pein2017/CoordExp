@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any, Dict, Mapping
 
 from src.eval.detection import EvalOptions, export_coco_submission
+from src.infer.artifacts import load_comparable_artifact
 from src.utils import get_logger
 
 logger = get_logger(__name__)
@@ -215,6 +216,7 @@ def main() -> None:
     }
     logger.info("Resolved COCO submission export config: %s", json.dumps(resolved))
 
+    load_comparable_artifact(pred_jsonl, require_score=True)
     summary = export_coco_submission(
         pred_jsonl,
         source_jsonl=source_jsonl,

@@ -5,11 +5,12 @@ import pytest
 import torch
 from PIL import Image
 
-import src.infer.engine as infer_engine_module
 import src.infer.pipeline as infer_pipeline
 from src.infer.artifacts import build_infer_resolved_meta, build_infer_summary_payload
-from src.infer.backends import generate_hf_batch
-from src.infer.engine import GenerationConfig
+from src.infer.backend import generate_hf_batch
+from src.infer.runtime import make_offline_generation_config
+
+GenerationConfig = make_offline_generation_config
 
 
 def _minimal_infer_stage_cfg(
@@ -46,6 +47,20 @@ def _minimal_artifacts(tmp_path: Path) -> infer_pipeline.ResolvedArtifacts:
         summary_json=tmp_path / "summary.json",
         eval_dir=tmp_path / "eval",
         vis_dir=tmp_path / "vis",
+    )
+
+
+def _patch_offline_runner_capture(monkeypatch, captured: dict[str, object]) -> None:
+    def _fake_run_offline_inference(*, inference_kwargs, generation_kwargs, logger=None):
+        del logger
+        captured["inf_cfg"] = types.SimpleNamespace(**dict(inference_kwargs))
+        captured["gen_cfg"] = GenerationConfig(**dict(generation_kwargs))
+        captured["infer_called"] = True
+
+    monkeypatch.setattr(
+        infer_pipeline,
+        "run_offline_inference",
+        _fake_run_offline_inference,
     )
 
 
@@ -403,16 +418,7 @@ def test_run_infer_stage_accepts_special_only_terminator_suppression_mode(
         ),
     )
     captured: dict[str, object] = {}
-
-    class _DummyInferenceEngine:
-        def __init__(self, inf_cfg, gen_cfg) -> None:
-            captured["inf_cfg"] = inf_cfg
-            captured["gen_cfg"] = gen_cfg
-
-        def infer(self) -> None:
-            captured["infer_called"] = True
-
-    monkeypatch.setattr(infer_engine_module, "InferenceEngine", _DummyInferenceEngine)
+    _patch_offline_runner_capture(monkeypatch, captured)
 
     cfg = _minimal_infer_stage_cfg(
         tmp_path,
@@ -432,7 +438,7 @@ def test_run_infer_stage_accepts_special_only_terminator_suppression_mode(
 
     gen_cfg = captured["gen_cfg"]
     assert captured["infer_called"] is True
-    assert isinstance(gen_cfg, GenerationConfig)
+    assert hasattr(gen_cfg, "stop_pressure_active")
     assert (
         gen_cfg.stop_pressure_mode
         == "suppress_special_terminating_tokens_after_object_boundary"
@@ -457,16 +463,7 @@ def test_run_infer_stage_accepts_first_structural_closure_suppression_mode(
         ),
     )
     captured: dict[str, object] = {}
-
-    class _DummyInferenceEngine:
-        def __init__(self, inf_cfg, gen_cfg) -> None:
-            captured["inf_cfg"] = inf_cfg
-            captured["gen_cfg"] = gen_cfg
-
-        def infer(self) -> None:
-            captured["infer_called"] = True
-
-    monkeypatch.setattr(infer_engine_module, "InferenceEngine", _DummyInferenceEngine)
+    _patch_offline_runner_capture(monkeypatch, captured)
 
     cfg = _minimal_infer_stage_cfg(
         tmp_path,
@@ -486,7 +483,7 @@ def test_run_infer_stage_accepts_first_structural_closure_suppression_mode(
 
     gen_cfg = captured["gen_cfg"]
     assert captured["infer_called"] is True
-    assert isinstance(gen_cfg, GenerationConfig)
+    assert hasattr(gen_cfg, "stop_pressure_active")
     assert (
         gen_cfg.stop_pressure_mode
         == "suppress_first_structural_closure_after_object_boundary"
@@ -511,16 +508,7 @@ def test_run_infer_stage_accepts_array_branch_continuation_steering_mode(
         ),
     )
     captured: dict[str, object] = {}
-
-    class _DummyInferenceEngine:
-        def __init__(self, inf_cfg, gen_cfg) -> None:
-            captured["inf_cfg"] = inf_cfg
-            captured["gen_cfg"] = gen_cfg
-
-        def infer(self) -> None:
-            captured["infer_called"] = True
-
-    monkeypatch.setattr(infer_engine_module, "InferenceEngine", _DummyInferenceEngine)
+    _patch_offline_runner_capture(monkeypatch, captured)
 
     cfg = _minimal_infer_stage_cfg(
         tmp_path,
@@ -541,7 +529,7 @@ def test_run_infer_stage_accepts_array_branch_continuation_steering_mode(
 
     gen_cfg = captured["gen_cfg"]
     assert captured["infer_called"] is True
-    assert isinstance(gen_cfg, GenerationConfig)
+    assert hasattr(gen_cfg, "stop_pressure_active")
     assert (
         gen_cfg.stop_pressure_mode
         == "steer_first_array_branch_to_next_object_after_object_boundary"
@@ -567,16 +555,7 @@ def test_run_infer_stage_accepts_bbox_tail_closure_steering_mode(
         ),
     )
     captured: dict[str, object] = {}
-
-    class _DummyInferenceEngine:
-        def __init__(self, inf_cfg, gen_cfg) -> None:
-            captured["inf_cfg"] = inf_cfg
-            captured["gen_cfg"] = gen_cfg
-
-        def infer(self) -> None:
-            captured["infer_called"] = True
-
-    monkeypatch.setattr(infer_engine_module, "InferenceEngine", _DummyInferenceEngine)
+    _patch_offline_runner_capture(monkeypatch, captured)
 
     cfg = _minimal_infer_stage_cfg(
         tmp_path,
@@ -597,7 +576,7 @@ def test_run_infer_stage_accepts_bbox_tail_closure_steering_mode(
 
     gen_cfg = captured["gen_cfg"]
     assert captured["infer_called"] is True
-    assert isinstance(gen_cfg, GenerationConfig)
+    assert hasattr(gen_cfg, "stop_pressure_active")
     assert gen_cfg.stop_pressure_mode == "steer_bbox_tail_closure_to_next_object"
     assert gen_cfg.stop_pressure_trigger_rule == "raw_text_object_boundary"
     assert gen_cfg.stop_pressure_logit_bias == 8.5
@@ -620,16 +599,7 @@ def test_run_infer_stage_accepts_bbox_tail_then_object_open_steering_mode(
         ),
     )
     captured: dict[str, object] = {}
-
-    class _DummyInferenceEngine:
-        def __init__(self, inf_cfg, gen_cfg) -> None:
-            captured["inf_cfg"] = inf_cfg
-            captured["gen_cfg"] = gen_cfg
-
-        def infer(self) -> None:
-            captured["infer_called"] = True
-
-    monkeypatch.setattr(infer_engine_module, "InferenceEngine", _DummyInferenceEngine)
+    _patch_offline_runner_capture(monkeypatch, captured)
 
     cfg = _minimal_infer_stage_cfg(
         tmp_path,
@@ -650,7 +620,7 @@ def test_run_infer_stage_accepts_bbox_tail_then_object_open_steering_mode(
 
     gen_cfg = captured["gen_cfg"]
     assert captured["infer_called"] is True
-    assert isinstance(gen_cfg, GenerationConfig)
+    assert hasattr(gen_cfg, "stop_pressure_active")
     assert gen_cfg.stop_pressure_mode == "steer_bbox_tail_then_object_open"
     assert gen_cfg.stop_pressure_trigger_rule == "raw_text_object_boundary"
     assert gen_cfg.stop_pressure_logit_bias == 8.5
@@ -673,16 +643,7 @@ def test_run_infer_stage_accepts_bbox_tail_then_object_open_once_steering_mode(
         ),
     )
     captured: dict[str, object] = {}
-
-    class _DummyInferenceEngine:
-        def __init__(self, inf_cfg, gen_cfg) -> None:
-            captured["inf_cfg"] = inf_cfg
-            captured["gen_cfg"] = gen_cfg
-
-        def infer(self) -> None:
-            captured["infer_called"] = True
-
-    monkeypatch.setattr(infer_engine_module, "InferenceEngine", _DummyInferenceEngine)
+    _patch_offline_runner_capture(monkeypatch, captured)
 
     cfg = _minimal_infer_stage_cfg(
         tmp_path,
@@ -703,7 +664,7 @@ def test_run_infer_stage_accepts_bbox_tail_then_object_open_once_steering_mode(
 
     gen_cfg = captured["gen_cfg"]
     assert captured["infer_called"] is True
-    assert isinstance(gen_cfg, GenerationConfig)
+    assert hasattr(gen_cfg, "stop_pressure_active")
     assert gen_cfg.stop_pressure_mode == "steer_bbox_tail_then_object_open_once"
     assert gen_cfg.stop_pressure_trigger_rule == "raw_text_object_boundary"
     assert gen_cfg.stop_pressure_logit_bias == 8.5
@@ -791,7 +752,8 @@ def test_generate_hf_batch_sets_min_new_tokens_for_targeted_stop_pressure():
             stop_pressure_min_new_tokens=9,
             stop_pressure_trigger_rule="raw_text_object_open",
         ),
-        _build_messages=lambda _image: [{"role": "user", "content": "describe"}],
+        system_prompt="system",
+        user_prompt="describe",
     )
 
     results = generate_hf_batch(
@@ -882,7 +844,8 @@ def test_generate_hf_batch_suppresses_terminating_tokens_at_object_boundary():
             stop_pressure_min_new_tokens=0,
             stop_pressure_trigger_rule="raw_text_object_boundary",
         ),
-        _build_messages=lambda _image: [{"role": "user", "content": "describe"}],
+        system_prompt="system",
+        user_prompt="describe",
     )
 
     results = generate_hf_batch(
@@ -973,7 +936,8 @@ def test_generate_hf_batch_special_only_mode_suppresses_only_special_terminators
             stop_pressure_min_new_tokens=0,
             stop_pressure_trigger_rule="raw_text_object_boundary",
         ),
-        _build_messages=lambda _image: [{"role": "user", "content": "describe"}],
+        system_prompt="system",
+        user_prompt="describe",
     )
 
     results = generate_hf_batch(
@@ -1076,7 +1040,8 @@ def test_generate_hf_batch_first_structural_closure_mode_is_local_to_fresh_bound
             stop_pressure_min_new_tokens=0,
             stop_pressure_trigger_rule="raw_text_object_boundary",
         ),
-        _build_messages=lambda _image: [{"role": "user", "content": "describe"}],
+        system_prompt="system",
+        user_prompt="describe",
     )
 
     results = generate_hf_batch(
@@ -1192,7 +1157,8 @@ def test_generate_hf_batch_array_branch_continuation_steering_is_local_and_posit
             stop_pressure_trigger_rule="raw_text_object_boundary",
             stop_pressure_logit_bias=8.5,
         ),
-        _build_messages=lambda _image: [{"role": "user", "content": "describe"}],
+        system_prompt="system",
+        user_prompt="describe",
     )
 
     results = generate_hf_batch(
@@ -1299,7 +1265,8 @@ def test_generate_hf_batch_bbox_tail_closure_steering_targets_fused_close_tokens
             stop_pressure_trigger_rule="raw_text_object_boundary",
             stop_pressure_logit_bias=8.5,
         ),
-        _build_messages=lambda _image: [{"role": "user", "content": "describe"}],
+        system_prompt="system",
+        user_prompt="describe",
     )
 
     results = generate_hf_batch(
@@ -1421,7 +1388,8 @@ def test_generate_hf_batch_bbox_tail_then_object_open_steering_targets_followup_
             stop_pressure_trigger_rule="raw_text_object_boundary",
             stop_pressure_logit_bias=8.5,
         ),
-        _build_messages=lambda _image: [{"role": "user", "content": "describe"}],
+        system_prompt="system",
+        user_prompt="describe",
     )
 
     results = generate_hf_batch(
@@ -1555,7 +1523,8 @@ def test_generate_hf_batch_bbox_tail_then_object_open_once_turns_off_after_next_
             stop_pressure_trigger_rule="raw_text_object_boundary",
             stop_pressure_logit_bias=8.5,
         ),
-        _build_messages=lambda _image: [{"role": "user", "content": "describe"}],
+        system_prompt="system",
+        user_prompt="describe",
     )
 
     results = generate_hf_batch(
@@ -1640,7 +1609,8 @@ def test_generate_hf_batch_does_not_suppress_bbox_closing_bracket_inside_object(
             stop_pressure_min_new_tokens=0,
             stop_pressure_trigger_rule="raw_text_object_boundary",
         ),
-        _build_messages=lambda _image: [{"role": "user", "content": "describe"}],
+        system_prompt="system",
+        user_prompt="describe",
     )
 
     results = generate_hf_batch(

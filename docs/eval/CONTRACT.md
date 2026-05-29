@@ -59,6 +59,10 @@ This page defines the current infer/eval artifact contract.
 - F1-ish-only evaluation may consume the base pipeline artifact.
 - COCO evaluation consumes the scored artifact `gt_vs_pred_scored.jsonl`.
 - COCO scoring uses `pred[*].score` from the scored artifact.
+- Official COCO/LVIS/both metric reducers and COCO submission export fail fast
+  unless the consumed artifact has comparable score-bearing provenance. The
+  artifact family must be score-bearing, not the raw `gt_vs_pred.jsonl` family,
+  and the carrier must include `score_policy_fingerprint`.
 - when `infer.bbox_format` is `cxcy_logw_logh` or `cxcywh`, official
   score-aware evaluation may still consume `gt_vs_pred_scored.jsonl`, but that
   scored artifact is materialized from the canonical raw artifact with

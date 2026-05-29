@@ -1,17 +1,31 @@
 from __future__ import annotations
 
+from dataclasses import replace
 from types import SimpleNamespace
 
 import pytest
 
-from src.trainers.stage2_rollout_aligned import RolloutMatchingSFTTrainer, _IM_END
+from src.infer.backend import (
+    apply_hf_generation_config_from_decode_request,
+    resolve_hf_rollout_backend_handles_from_owner,
+    vllm_request_config_kwargs_from_decode_request,
+)
+from src.config.rollout_matching_schema import RolloutMatchingConfig
+from src.infer.runtime import (
+    build_decode_request_from_rollout_facts,
+    build_decode_request_from_rollout_matching_config,
+    resolve_rollout_decode_facts_from_owner,
+)
+from src.trainers.stage2_rollout_runtime import Stage2RolloutRuntime
 
 
 def _mk_uninit_trainer(cfg, *, include_decode_defaults: bool = True):
-    t = RolloutMatchingSFTTrainer.__new__(RolloutMatchingSFTTrainer)
+    t = Stage2RolloutRuntime.__new__(Stage2RolloutRuntime)
     if include_decode_defaults:
         merged = {
-            "channel_b_decode_batch_size": 1,
+            "rollout_backend": "hf",
+            "eval_rollout_backend": "hf",
+            "rollout_decode_batch_size": 1,
             "eval_decode_batch_size": 1,
         }
         merged.update(dict(cfg))
@@ -45,7 +59,7 @@ def test_decode_batch_size_requires_explicit_context_keys():
     t = _mk_uninit_trainer({}, include_decode_defaults=False)
     with pytest.raises(
         ValueError,
-        match=r"channel_b_decode_batch_size must be provided explicitly",
+        match=r"rollout_decode_batch_size must be provided explicitly",
     ):
         t._validate_rollout_matching_cfg()
 
@@ -53,19 +67,19 @@ def test_decode_batch_size_requires_explicit_context_keys():
 def test_decode_batch_size_rejects_non_positive_values():
     t0 = _mk_uninit_trainer(
         {
-            "channel_b_decode_batch_size": 0,
+            "rollout_decode_batch_size": 0,
             "eval_decode_batch_size": 1,
         }
     )
     with pytest.raises(
         ValueError,
-        match=r"channel_b_decode_batch_size must be > 0",
+        match=r"rollout_decode_batch_size must be > 0",
     ):
         t0._validate_rollout_matching_cfg()
 
     t1 = _mk_uninit_trainer(
         {
-            "channel_b_decode_batch_size": 1,
+            "rollout_decode_batch_size": 1,
             "eval_decode_batch_size": -3,
         }
     )
@@ -155,66 +169,194 @@ def test_validate_rollout_matching_cfg_rejects_unknown_eval_prompt_variant():
         t._validate_rollout_matching_cfg()
 
 
-def test_apply_rollout_decoding_to_generation_config_greedy_disables_sampling():
-    gen_cfg = SimpleNamespace()
-    RolloutMatchingSFTTrainer._apply_rollout_decoding_to_generation_config(
-        gen_cfg=gen_cfg,
-        temperature=0.0,
-        top_p=0.9,
-        top_k=50,
-        repetition_penalty=1.05,
+def test_rollout_matching_schema_accepts_training_prompt_variant():
+    cfg = RolloutMatchingConfig(
+        rollout_decode_batch_size=1,
+        eval_decode_batch_size=1,
+        prompt_variant="coco_80",
     )
+
+    assert cfg.prompt_variant == "coco_80"
+
+
+def test_rollout_matching_schema_rejects_unknown_training_prompt_variant():
+    with pytest.raises(ValueError, match=r"Unknown prompt variant"):
+        RolloutMatchingConfig(
+            rollout_decode_batch_size=1,
+            eval_decode_batch_size=1,
+            prompt_variant="not_a_variant",
+        )
+
+
+def test_validate_rollout_matching_cfg_rejects_unknown_training_prompt_variant():
+    t = _mk_uninit_trainer({"prompt_variant": "not_a_variant"})
+    with pytest.raises(ValueError, match=r"Unknown prompt variant"):
+        t._validate_rollout_matching_cfg()
+
+
+def test_apply_hf_generation_config_from_decode_request_greedy_disables_sampling():
+    request = build_decode_request_from_rollout_matching_config(
+        {
+            "max_new_tokens": 64,
+            "decoding": {"temperature": 0.0, "top_p": 0.9, "top_k": 50},
+        }
+    )
+    gen_cfg = SimpleNamespace()
+    request = replace(request, repetition_penalty=1.05)
+    apply_hf_generation_config_from_decode_request(gen_cfg=gen_cfg, request=request)
+    assert gen_cfg.max_new_tokens == 64
     assert gen_cfg.do_sample is False
     assert gen_cfg.temperature == 1.0
     assert gen_cfg.top_p == 1.0
     assert gen_cfg.top_k == 0
     assert gen_cfg.repetition_penalty == 1.05
+    assert gen_cfg.use_cache is True
 
 
-def test_apply_rollout_decoding_to_generation_config_sampling_respects_top_p_and_top_k():
-    gen_cfg0 = SimpleNamespace()
-    RolloutMatchingSFTTrainer._apply_rollout_decoding_to_generation_config(
-        gen_cfg=gen_cfg0,
-        temperature=0.01,
-        top_p=0.9,
-        top_k=-1,
-        repetition_penalty=1.1,
+def test_apply_hf_generation_config_from_decode_request_sampling_respects_top_p_and_top_k():
+    request0 = build_decode_request_from_rollout_matching_config(
+        {
+            "max_new_tokens": 64,
+            "decode_mode": "sampling",
+            "repetition_penalty": 1.1,
+            "decoding": {
+                "temperature": 0.01,
+                "top_p": 0.9,
+                "top_k": -1,
+            },
+        }
     )
+    gen_cfg0 = SimpleNamespace()
+    apply_hf_generation_config_from_decode_request(gen_cfg=gen_cfg0, request=request0)
     assert gen_cfg0.do_sample is True
     assert gen_cfg0.temperature == 0.01
     assert gen_cfg0.top_p == 0.9
     assert gen_cfg0.top_k == 0
+    assert gen_cfg0.use_cache is True
 
-    gen_cfg1 = SimpleNamespace()
-    RolloutMatchingSFTTrainer._apply_rollout_decoding_to_generation_config(
-        gen_cfg=gen_cfg1,
-        temperature=0.01,
-        top_p=0.95,
-        top_k=50,
-        repetition_penalty=1.1,
+    request1 = build_decode_request_from_rollout_matching_config(
+        {
+            "max_new_tokens": 64,
+            "decode_mode": "sampling",
+            "repetition_penalty": 1.1,
+            "decoding": {
+                "temperature": 0.01,
+                "top_p": 0.95,
+                "top_k": 50,
+            },
+        }
     )
+    gen_cfg1 = SimpleNamespace()
+    apply_hf_generation_config_from_decode_request(gen_cfg=gen_cfg1, request=request1)
     assert gen_cfg1.do_sample is True
     assert gen_cfg1.temperature == 0.01
     assert gen_cfg1.top_p == 0.95
     assert gen_cfg1.top_k == 50
+    assert gen_cfg1.use_cache is True
 
 
 def test_rollout_vllm_request_config_kwargs_propagates_decoding_knobs():
-    kwargs = RolloutMatchingSFTTrainer._rollout_vllm_request_config_kwargs(
-        max_tokens=123,
-        temperature=0.01,
-        top_p=0.9,
-        top_k=50,
-        repetition_penalty=1.05,
+    request = build_decode_request_from_rollout_matching_config(
+        {
+            "rollout_backend": "vllm",
+            "max_new_tokens": 123,
+            "decode_mode": "sampling",
+            "decoding": {"temperature": 0.01, "top_p": 0.9, "top_k": 50},
+            "repetition_penalty": 1.05,
+        }
     )
+    kwargs = vllm_request_config_kwargs_from_decode_request(request)
+
     assert kwargs["n"] == 1
     assert kwargs["max_tokens"] == 123
     assert kwargs["temperature"] == 0.01
     assert kwargs["top_p"] == 0.9
     assert kwargs["top_k"] == 50
     assert kwargs["repetition_penalty"] == 1.05
-    assert kwargs["stop"] == [_IM_END]
+    assert kwargs["stop"] == ["<|im_end|>"]
     assert kwargs["return_details"] is True
+
+
+def test_rollout_decode_request_core_consumes_resolved_facts() -> None:
+    trainer = object.__new__(Stage2RolloutRuntime)
+    trainer.rollout_matching_cfg = {
+        "decode_mode": "greedy",
+        "max_new_tokens": 12,
+        "num_beams": 1,
+        "repetition_penalty": 1.1,
+    }
+
+    facts = resolve_rollout_decode_facts_from_owner(trainer)
+    request = build_decode_request_from_rollout_facts(
+        facts,
+        decode_override={
+            "temperature": 0.7,
+            "top_p": 0.92,
+            "top_k": 24,
+        },
+    )
+
+    assert request.decode_mode == "sampling"
+    assert request.temperature == pytest.approx(0.7)
+    assert request.top_p == pytest.approx(0.92)
+    assert request.top_k == 24
+    assert request.repetition_penalty == pytest.approx(1.1)
+    assert request.max_new_tokens == 12
+
+
+def test_hf_backend_handles_do_not_validate_unselected_vllm_mode() -> None:
+    trainer = object.__new__(Stage2RolloutRuntime)
+    trainer.rollout_matching_cfg = {
+        "rollout_backend": "vllm",
+        "eval_rollout_backend": "vllm",
+        "rollout_decode_batch_size": 2,
+        "eval_decode_batch_size": 2,
+        "vllm": {"mode": "not-a-real-mode"},
+    }
+    trainer.template = SimpleNamespace()
+    trainer.model = SimpleNamespace()
+    trainer.model_wrapped = object()
+    trainer.accelerator = object()
+    trainer.args = SimpleNamespace(ds3_gather_for_generation=False)
+    trainer._maybe_rollout_offload_context = lambda **_kwargs: None
+    trainer._template_packing_disabled = lambda: None
+    trainer._eval_rollout_template_policy = lambda: SimpleNamespace()
+
+    handles = resolve_hf_rollout_backend_handles_from_owner(
+        owner=trainer,
+        unwrap_model_for_generation_fn=lambda *_args, **_kwargs: None,
+    )
+
+    assert handles.decode_batch_size == 2
+
+
+def test_hf_backend_handles_project_num_return_sequences() -> None:
+    trainer = object.__new__(Stage2RolloutRuntime)
+    trainer.rollout_matching_cfg = {
+        "rollout_backend": "hf",
+        "eval_rollout_backend": "hf",
+        "decode_mode": "beam",
+        "max_new_tokens": 8,
+        "num_beams": 4,
+        "num_return_sequences": 2,
+        "rollout_decode_batch_size": 1,
+        "eval_decode_batch_size": 1,
+    }
+    trainer.template = SimpleNamespace()
+    trainer.model = SimpleNamespace()
+    trainer.model_wrapped = object()
+    trainer.accelerator = object()
+    trainer.args = SimpleNamespace(ds3_gather_for_generation=False)
+    trainer._maybe_rollout_offload_context = lambda **_kwargs: None
+    trainer._template_packing_disabled = lambda: None
+    trainer._eval_rollout_template_policy = lambda: SimpleNamespace()
+
+    handles = resolve_hf_rollout_backend_handles_from_owner(
+        owner=trainer,
+        unwrap_model_for_generation_fn=lambda *_args, **_kwargs: None,
+    )
+
+    assert handles.num_return_sequences == 2
 
 
 def test_merge_rollout_matching_batch_metrics_preserves_existing_keys():
@@ -236,7 +378,6 @@ def test_merge_rollout_matching_batch_metrics_preserves_existing_keys():
 def test_build_rollout_metrics_emits_only_canonical_decode_count_keys():
     t = _mk_uninit_trainer({})
     t._cfg = lambda _k, default=None: default
-    t._decoding_params = lambda: (0.0, 1.0, -1)
 
     meta = [
         {

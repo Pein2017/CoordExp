@@ -42,18 +42,17 @@ image" when training or evaluating LVIS.
 These parts of the current pipeline remain valid:
 
 - Stage-1 teacher-forced serialization stays dense object-sequence SFT.
-- Standard token CE and bbox geometry losses remain valid for annotated LVIS
-  objects.
+- Standard token CE remains valid for annotated LVIS objects.
 - The existing JSONL contract, collators, and assistant payload shape still
   work.
-- The current clean-prefix / FN-append Stage-2 structure remains the right
-  backbone.
+- The current Stage-2 rollout-correction structure remains the right backbone:
+  rollout prefix plus GT/residual correction.
 
 The default training geometry for LVIS should remain bbox-only.
 
 Why bbox-only is the default:
 
-- the active `stage2_two_channel` Channel-B target builder is explicitly bbox-only
+- the active Stage-2 rollout-correction target realization is bbox-only
 - LVIS polygons are still useful for optional evaluation and ablations
 - bbox-only keeps LVIS and COCO training behavior aligned at the objective level
 
@@ -98,25 +97,27 @@ This keeps Stage-1 close to the current infrastructure while avoiding the main
 LVIS failure mode: teaching the model that every unlabeled category omission is
 negative evidence.
 
-The canonical LVIS Stage-1 preset now makes the teacher-forcing loss bundle
-explicit:
+Historical LVIS Stage-1 coord-token recipes made the teacher-forcing loss
+bundle explicit:
 
 - base CE stays active for text + JSON structure tokens
 - `custom.coord_soft_ce_w1` enables coord-token hard CE + soft CE + W1 + gate
-- `custom.bbox_geo` enables Stage-1 decoded-box CIoU supervision
-- `custom.bbox_size_aux` enables the existing bbox size auxiliary loss
 
-## Stage-2 / Channel-B Changes
+New teacher-forcing work should prefer the unified typed objective surface and
+should not add new bbox-auxiliary or coordinate-regularizer modules without a
+separate spec.
 
-The active Channel-B triage is now LVIS-aware.
+## Stage-2 Rollout-Correction Changes
 
-Final teacher-forced sequencing is also configurable through:
+The active rollout-correction triage is LVIS-aware.
 
-- `stage2_ab.channel_b.insertion_order: tail_append | sorted`
+Final correction sequencing is configurable through:
+
+- `stage2_rollout_correction.correction.insertion_order: tail_append | sorted`
 - `tail_append` remains the default and preserves the historical retained-anchor
-  clean prefix plus FN tail behavior
+  rollout-prefix plus recovered-GT tail behavior
 - `sorted` applies a final top-left sort over the retained anchor objects plus
-  FN objects before teacher-forced serialization
+  recovered GT objects before correction serialization
 
 For unmatched anchor objects:
 
@@ -138,7 +139,7 @@ The resulting behavior is intentionally minimal:
 - existing explorer support and pseudo-positive promotion remain the mechanism
 - LVIS policy only gates which unmatched anchors are even eligible
 
-New Channel-B telemetry now separates:
+Rollout-correction telemetry now separates:
 
 - `train/triage/lvis_verified_positive_dead_count`
 - `train/triage/lvis_verified_negative_dead_count`
@@ -196,15 +197,17 @@ Primary implementation surfaces:
 - `src/common/lvis_semantics.py`
 - `src/config/schema.py`
 - `src/eval/detection.py`
-- `src/infer/engine.py`
+- `src/infer/runtime.py`
+- `src/infer/backend.py`
 - `src/infer/pipeline.py`
 - `src/bootstrap/trainer_setup.py`
-- `src/trainers/losses/bbox_geo.py`
 - `src/trainers/metrics/mixins.py`
-- `src/trainers/stage2_two_channel.py`
-- `src/trainers/stage2_two_channel/target_builder.py`
-- `src/trainers/stage2_two_channel/types.py`
-- `src/trainers/stage2_rollout_aligned.py`
+- `src/trainers/stage2_rollout_correction.py`
+- `src/trainers/stage2_rollout_correction_impl.py`
+- `src/trainers/rollout_correction/target_builder.py`
+- `src/trainers/rollout_correction/types.py`
+- `src/trainers/stage2_rollout_runtime.py` (trainer-owned facade only; shared
+  prompt/decode/backend/artifact policy belongs under `src/infer/`)
 
 Useful config handles:
 
@@ -212,7 +215,6 @@ Useful config handles:
 - `custom.val_jsonl`
 - `custom.eval_detection.*`
 - `custom.extra.prompt_variant`
-- `custom.bbox_geo`
 - `rollout_matching.eval_detection.metrics`
 - `rollout_matching.eval_detection.lvis_max_dets`
 - `eval.metrics`
@@ -246,13 +248,11 @@ Ready-to-run Stage-1 config:
 
 Key overrides in that config:
 
-- extends the shared Stage-1 coord-token recipe (`configs/stage1/_shared/coord_soft_ce_gate_4b.yaml`)
+- extends the canonical 4B Stage-1 coord-token recipe (`profiles/4b/coord_soft_ce_gate_coco80_desc_first.yaml`)
 - extends the shared dataset facet `configs/_shared/datasets/lvis_1024_bbox_max60.yaml`
 - extends the shared prompt facet `configs/_shared/prompts/lvis_stage1_federated.yaml`
-- authors `training.artifact_subdir: stage1/lvis_bbox_max60_1024_adjacent_repulsion_global`
-- `custom.coord_soft_ce_w1: { ce_weight: 1.0, soft_ce_weight: 1.0, w1_weight: 1.0, gate_weight: 5.0, adjacent_repulsion_weight: 0.01, adjacent_repulsion_filter_mode: global, adjacent_repulsion_margin_ratio: 0.05, adjacent_repulsion_copy_margin: 0.8 }`
-- `custom.bbox_geo: { enabled: true, smoothl1_weight: 0.01, ciou_weight: 1.0 }`
-- `custom.bbox_size_aux.enabled: true`
+- authors `training.artifact_subdir: stage1/lvis_bbox_max60_1024_coord_softce_w1`
+- `custom.coord_soft_ce_w1: { ce_weight: 1.0, soft_ce_weight: 1.0, w1_weight: 1.0, gate_weight: 5.0, temperature: 0.9, target_sigma: 1.5, target_truncate: 8 }`
 - `custom.eval_detection: { enabled: true, metrics: lvis, lvis_annotations_json: public_data/lvis/raw/annotations/lvis_v1_val.json }`
 - reuses `training.output_root: ./output` and `training.logging_root: ./tb` from `configs/base.yaml`
 - resolves to the same effective dataset paths, prompt variant, and `1024/max60` image budget as before
@@ -293,19 +293,17 @@ config=configs/stage1/smoke/lvis_bbox_max60_1024.yaml gpus=0 conda run -n ms bas
 
 ### 3. Stage-2 Training
 
-There is no current ready-to-run LVIS Stage-2 leaf in `configs/stage2_two_channel/`.
-The previous dedicated LVIS Stage-2 YAML was retired during the config-surface
-cleanup because Stage-2 is being kept to a compact COCO/LVIS-proxy production and
-smoke set until the two-channel surface is regenerated.
+There is no current ready-to-run LVIS Stage-2 leaf in
+`configs/stage2_rollout_correction/`.
 
-When LVIS Stage-2 is reintroduced, derive it from the retained Stage-2 prod
-templates rather than reviving the old leaf:
+Future LVIS Stage-2 leaves should use the active residual correction objective
+only:
 
-- start from `configs/stage2_two_channel/prod/a_only.yaml` or `configs/stage2_two_channel/prod/ab_mixed.yaml`
-- swap in `configs/_shared/datasets/lvis_1024_bbox_max60.yaml`
-- use `configs/_shared/prompts/lvis_stage2_federated.yaml`
-- keep `rollout_matching.eval_detection.metrics: f1ish` unless the JSONL carries
-  metadata sufficient for `metrics: lvis` or `metrics: both`
+- `residual_set_correction` with `application.preset: rollout_self_prefix`
+
+Removed Stage-2 geometry/coordinate auxiliary modules are no longer valid in
+the active pipeline. Do not revive old LVIS leaves that depend on deleted
+decoded-box or coordinate-regularizer objectives.
 
 ### 4. LVIS Inference + Evaluation
 
@@ -344,7 +342,7 @@ PYTHONPATH=. conda run -n ms python scripts/evaluate_detection.py --config confi
 
 Reasonable follow-ups, ordered from lowest to highest complexity:
 
-- add a dedicated LVIS Stage-2 smoke config under `configs/stage2_two_channel/`
+- add a dedicated LVIS Stage-2 smoke config under `configs/stage2_rollout_correction/`
 - add semantic-desc calibration specifically for long-tail LVIS categories
 - add stricter parity tests against the external `lvis-api` package when that
   dependency is available in the runtime env

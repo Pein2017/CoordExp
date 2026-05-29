@@ -31,15 +31,15 @@ def _clamp_stage2_ddp_phase_timeout(timeout_s: float) -> float:
     return float(max(30.0, min(3600.0, float(timeout_s))))
 
 
-def resolve_stage2_ab_ddp_phase_config(
+def resolve_rollout_correction_ddp_phase_config(
     owner: Any,
     *,
     ddp_world_size: int,
 ) -> Stage2DDPPhaseConfig:
-    channel_b_get = getattr(owner, "_ab_channel_b_get", None)
+    correction_get = getattr(owner, "_rollout_correction_runtime_get", None)
     ddp_phase_timeout_raw = (
-        channel_b_get("ddp_phase_timeout_s", None)
-        if callable(channel_b_get)
+        correction_get("ddp_phase_timeout_s", None)
+        if callable(correction_get)
         else None
     )
     if ddp_phase_timeout_raw is None:
@@ -50,13 +50,13 @@ def resolve_stage2_ab_ddp_phase_config(
             ddp_phase_timeout_s = float(ddp_phase_timeout_raw)
         except (TypeError, ValueError) as exc:
             raise ValueError(
-                "stage2_ab.channel_b.ddp_phase_timeout_s must be a float/int when set"
+                "stage2_rollout_correction.correction.ddp_phase_timeout_s must be a float/int when set"
             ) from exc
 
         if float(ddp_phase_timeout_s) <= 0.0:
             if int(ddp_world_size) > 1:
                 raise ValueError(
-                    "stage2_ab.channel_b.ddp_phase_timeout_s must be > 0 under DDP "
+                    "stage2_rollout_correction.correction.ddp_phase_timeout_s must be > 0 under DDP "
                     "(coordination barriers must be bounded to prevent deadlocks)."
                 )
             ddp_phase_monitor_enabled = False
@@ -95,7 +95,7 @@ def prime_stage2_ddp_monitor_group(
     world_size: int,
     config: Stage2DDPPhaseConfig,
     logger: Any | None = None,
-    warning_prefix: str = "stage2-ab DDP phase monitor disabled (gloo group init failed)",
+    warning_prefix: str = "stage2_rollout_correction DDP phase monitor disabled (gloo group init failed)",
 ) -> None:
     if (
         dist is None
@@ -107,7 +107,7 @@ def prime_stage2_ddp_monitor_group(
     ):
         return
 
-    group = getattr(owner, "_stage2_ab_ddp_monitor_group", None)
+    group = getattr(owner, "_stage2_rollout_correction_ddp_monitor_group", None)
     if group is not None:
         return
 
@@ -121,14 +121,14 @@ def prime_stage2_ddp_monitor_group(
             ),
         )
     except (AttributeError, RuntimeError, TypeError, ValueError) as exc:
-        warned = bool(getattr(owner, "_stage2_ab_ddp_monitor_group_warned", False))
+        warned = bool(getattr(owner, "_stage2_rollout_correction_ddp_monitor_group_warned", False))
         if int(rank) == 0 and not warned and logger is not None:
             logger.warning("%s: %r", str(warning_prefix), exc)
-            setattr(owner, "_stage2_ab_ddp_monitor_group_warned", True)
-        setattr(owner, "_stage2_ab_ddp_monitor_group", False)
+            setattr(owner, "_stage2_rollout_correction_ddp_monitor_group_warned", True)
+        setattr(owner, "_stage2_rollout_correction_ddp_monitor_group", False)
         return
 
-    setattr(owner, "_stage2_ab_ddp_monitor_group", group)
+    setattr(owner, "_stage2_rollout_correction_ddp_monitor_group", group)
 
 
 def run_stage2_ddp_monitored_barrier(
@@ -149,9 +149,9 @@ def run_stage2_ddp_monitored_barrier(
 
     if not bool(config.monitor_enabled):
         raise RuntimeError(
-            "stage2-ab DDP phase monitor is disabled under DDP. "
+            "stage2_rollout_correction DDP phase monitor is disabled under DDP. "
             "Coordination barriers must be bounded to prevent deadlocks. "
-            "Set stage2_ab.channel_b.ddp_phase_timeout_s to a positive value."
+            "Set stage2_rollout_correction.correction.ddp_phase_timeout_s to a positive value."
         )
 
     if not hasattr(dist, "monitored_barrier"):
@@ -160,7 +160,7 @@ def run_stage2_ddp_monitored_barrier(
             f"(phase={str(phase)} rank={int(rank)}/{int(world_size)})."
         )
 
-    group = getattr(owner, "_stage2_ab_ddp_monitor_group", None)
+    group = getattr(owner, "_stage2_rollout_correction_ddp_monitor_group", None)
     if group is None:
         try:
             group = dist.new_group(
@@ -173,15 +173,15 @@ def run_stage2_ddp_monitored_barrier(
             )
         except Exception as exc:
             raise RuntimeError(
-                "stage2-ab DDP monitored barrier requested but gloo group init failed; "
+                "stage2_rollout_correction DDP monitored barrier requested but gloo group init failed; "
                 f"phase={str(phase)} rank={int(rank)}/{int(world_size)} "
                 f"timeout_s={float(config.monitor_group_timeout_s):.1f}."
             ) from exc
-        setattr(owner, "_stage2_ab_ddp_monitor_group", group)
+        setattr(owner, "_stage2_rollout_correction_ddp_monitor_group", group)
 
     if group is False:
         raise RuntimeError(
-            "stage2-ab internal error: DDP monitor group is disabled under DDP; "
+            "stage2_rollout_correction internal error: DDP monitor group is disabled under DDP; "
             "this is unsafe because unbounded barriers can deadlock"
         )
 
@@ -212,9 +212,12 @@ def _resolve_stage2_collective_monitor_config(
     *,
     world_size: int,
 ) -> Stage2DDPPhaseConfig:
-    get_ab_cfg = getattr(owner, "_ab_channel_b_get", None)
-    if callable(get_ab_cfg):
-        return resolve_stage2_ab_ddp_phase_config(owner, ddp_world_size=int(world_size))
+    get_correction_cfg = getattr(owner, "_rollout_correction_runtime_get", None)
+    if callable(get_correction_cfg):
+        return resolve_rollout_correction_ddp_phase_config(
+            owner,
+            ddp_world_size=int(world_size),
+        )
     return Stage2DDPPhaseConfig(
         monitor_enabled=bool(int(world_size) > 1),
         final_sync_timeout_s=120.0,
@@ -285,23 +288,14 @@ def stage2_snapshot_metric_key(metric_key: str) -> str | None:
     if (
         key.startswith(("loss/text/", "loss/coord/"))
         or (key.startswith("coord_diag/") and not key.startswith("coord_diag/B/"))
-        or key.startswith("time/channel_a_")
-        or key == "stage2/channel_a"
-    ):
-        return f"{STAGE2_SNAPSHOT_PREFIX}{key}"
-
-    if (
-        key.startswith("loss/B_")
+        or key.startswith("loss/rollout_correction_")
         or key.startswith("coord_diag/B/")
-        or key.startswith("stage2_ab/channel_b/")
+        or key.startswith("stage2_rollout_correction/")
         or key.startswith("dup/")
         or key.startswith("train/triage/")
-        or key.startswith("diag/duplicate_burst/")
         or key.startswith("rollout/")
         or key.startswith("time/rollout_")
-        or key
-        in {
-            "stage2/channel_b",
+        or key in {
             "stage2/raw_rollouts",
             "stage2/invalid_rollout",
             "stage2/drop_poly",
@@ -351,7 +345,7 @@ def build_stage2_snapshot_logs(
     }
 
 
-def resolve_stage2_ab_metric_spec(key: str) -> MetricSpec:
+def resolve_rollout_correction_metric_spec(key: str) -> MetricSpec:
     key = str(key)
     gradmon_weight_key = "gradmon/_log_weight_total"
     stage2_weight_key = "stage2/_log_weight_total"
@@ -373,23 +367,73 @@ def resolve_stage2_ab_metric_spec(key: str) -> MetricSpec:
         return MetricSpec(local_mode="sum", ddp_mode="sum")
 
     if key in {
+        "packing/post_rollout_local_pack_count",
+        "packing/post_rollout_global_slot_count",
+        "packing/post_rollout_empty_slot_count",
+    }:
+        return MetricSpec(local_mode="weighted_mean", ddp_mode="max")
+
+    residual_prefix = "stage2_rollout_correction/residual_set/"
+    if key.startswith(residual_prefix):
+        residual_leaf = key[len(residual_prefix) :]
+        if residual_leaf.startswith("decode_mode/") and residual_leaf.endswith(
+            ("/sequence_count", "/atom_count")
+        ):
+            return MetricSpec(local_mode="sum", ddp_mode="sum")
+        if residual_leaf in {
+            "sequence_count",
+            "atom_count",
+            "atom_weight_sum",
+            "raw_atom_loss_sum",
+            "dirty_prefix_sequence_count",
+            "committed_gt_rows",
+            "committed_ul_rows",
+            "pending_ul_candidates",
+            "promoted_ul_clusters",
+            "uncommitted_invalid_geometry",
+            "uncommitted_malformed",
+            "uncommitted_duplicate",
+            "uncommitted_fp_or_unpromoted",
+            "spatial_wrong_desc_conflict",
+            "label_conflict_atoms",
+            "label_conflict_no_atom",
+            "eos_targets",
+            "continue_targets",
+            "dirty_prefix_reencoded",
+            "clean_success_skipped",
+        }:
+            return MetricSpec(local_mode="sum", ddp_mode="sum")
+        if residual_leaf in {
+            "sequence_loss",
+            "type_loss",
+            "inner_loss",
+            "wrong_type_mass",
+            "valid_set_mass",
+        }:
+            return MetricSpec(
+                local_mode="weighted_mean",
+                ddp_mode="weighted_mean",
+                ddp_weight_key=stage2_weight_key,
+            )
+
+    if key in {
         "stage2/raw_rollouts",
         "stage2/invalid_rollout",
-        "stage2_ab/channel_b/invalid_rollout",
+        "stage2_rollout_correction/invalid_rollout",
         "stage2/drop_poly",
         "stage2/drop_unknown",
         "stage2/drop_bbox_invalid",
         "rollout/parse_truncated",
         "rollout/_parse_truncated_num",
         "rollout/_parse_truncated_den",
-        "stage2_ab/channel_b/closure_supervision/N_drop",
+        "stage2_rollout_correction/closure_supervision/N_drop",
     }:
         return MetricSpec(local_mode="sum", ddp_mode="sum")
 
-    if key.startswith("stage2_ab/channel_b/strict_drop/reason/"):
+    if key.startswith("stage2_rollout_correction/strict_drop/reason/"):
         return MetricSpec(local_mode="sum", ddp_mode="sum")
 
-    if key.startswith("stage2_ab/") and "/N_" in key:
+    if key.startswith("stage2_rollout_correction/") and "/N_" in key:
         return MetricSpec(local_mode="sum", ddp_mode="sum")
 
     if key.startswith("dup/raw/"):
@@ -425,11 +469,9 @@ def resolve_stage2_ab_metric_spec(key: str) -> MetricSpec:
     if (
         key.startswith("loss/")
         or key.startswith("train/optimization/")
-        or key.startswith("stage2/channel_")
+        or key.startswith("stage2_rollout_correction/")
         or key.startswith("rollout/")
         or key.startswith("coord_diag/")
-        or key == "stage2_ab/b_ratio_realized"
-        or (key.startswith("stage2_ab/") and "/is_" in key)
     ):
         return MetricSpec(
             local_mode="weighted_mean",
@@ -756,10 +798,10 @@ __all__ = [
     "merge_stage2_metric_snapshots",
     "prime_stage2_ddp_monitor_group",
     "reduce_metric_payload_global",
-    "resolve_stage2_ab_ddp_phase_config",
+    "resolve_rollout_correction_ddp_phase_config",
     "resolve_stage2_prepare_barrier_timeout",
     "resolve_rollout_log_metric_spec",
-    "resolve_stage2_ab_metric_spec",
+    "resolve_rollout_correction_metric_spec",
     "run_stage2_ddp_monitored_barrier",
     "stage2_snapshot_metric_key",
     "stage2_snapshot_source_key",

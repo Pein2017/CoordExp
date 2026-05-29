@@ -10,12 +10,42 @@ from src.callbacks.stage1_detection_eval import (
     Stage1DetectionEvalCallback,
     _eval_generation_hygiene_metrics,
 )
+from src.infer.artifacts import load_comparable_artifact
 
 
 class _FakeModel(torch.nn.Module):
     def __init__(self) -> None:
         super().__init__()
         self.weight = torch.nn.Parameter(torch.zeros(1))
+
+
+def _patch_stage1_offline_runner(monkeypatch, infer_fn) -> None:
+    def _fake_run_offline_inference(
+        *,
+        inference_kwargs,
+        generation_kwargs,
+        model=None,
+        processor=None,
+        logger=None,
+    ):
+        del logger
+        owner = SimpleNamespace(
+            cfg=SimpleNamespace(**dict(inference_kwargs)),
+            gen_cfg=SimpleNamespace(**dict(generation_kwargs)),
+            model=model,
+            processor=processor,
+        )
+        base_jsonl_path, summary_path = infer_fn(owner)
+        return SimpleNamespace(
+            base_jsonl_path=base_jsonl_path,
+            summary_path=summary_path,
+            processor=getattr(owner, "processor", None),
+        )
+
+    monkeypatch.setattr(
+        "src.callbacks.stage1_detection_eval.run_offline_inference",
+        _fake_run_offline_inference,
+    )
 
 
 def test_stage1_detection_eval_backfills_lvis_metadata_and_logs_metrics(
@@ -134,6 +164,7 @@ def test_stage1_detection_eval_backfills_lvis_metadata_and_logs_metrics(
         return out_path, summary_path
 
     def _fake_evaluate_and_save(pred_jsonl, options):
+        load_comparable_artifact(Path(pred_jsonl), require_score=True)
         rows = [
             json.loads(line)
             for line in Path(pred_jsonl).read_text(encoding="utf-8").splitlines()
@@ -146,11 +177,7 @@ def test_stage1_detection_eval_backfills_lvis_metadata_and_logs_metrics(
         assert rows[0]["pred"][0]["score"] == 1.0
         assert options.metrics == "lvis"
         return {"metrics": {"bbox_AP": 0.5}}
-
-    monkeypatch.setattr(
-        "src.callbacks.stage1_detection_eval.InferenceEngine.infer",
-        _fake_infer,
-    )
+    _patch_stage1_offline_runner(monkeypatch, _fake_infer)
     monkeypatch.setattr(
         "src.callbacks.stage1_detection_eval.evaluate_and_save",
         _fake_evaluate_and_save,
@@ -179,7 +206,19 @@ def test_stage1_detection_eval_backfills_lvis_metadata_and_logs_metrics(
         for line in base_jsonl.read_text(encoding="utf-8").splitlines()
         if line.strip()
     ]
+    scored_provenance = load_comparable_artifact(
+        tmp_path
+        / "output"
+        / "eval_detection"
+        / "step_0000012"
+        / "gt_vs_pred_scored.jsonl",
+        require_score=True,
+    )
     assert base_rows[0]["metadata"]["dataset_policy"] == "lvis_federated"
+    assert (
+        scored_provenance["provenance"]["score_policy"]["policy_name"]
+        == "constant_score"
+    )
 
 
 def test_stage1_detection_eval_nonzero_rank_shards_generation_without_scoring(
@@ -233,11 +272,7 @@ def test_stage1_detection_eval_nonzero_rank_shards_generation_without_scoring(
 
     def _fail_evaluate_and_save(*_args, **_kwargs):
         raise AssertionError("nonzero eval ranks must not run final detection scoring")
-
-    monkeypatch.setattr(
-        "src.callbacks.stage1_detection_eval.InferenceEngine.infer",
-        _fake_infer,
-    )
+    _patch_stage1_offline_runner(monkeypatch, _fake_infer)
     monkeypatch.setattr(
         "src.callbacks.stage1_detection_eval.evaluate_and_save",
         _fail_evaluate_and_save,
@@ -352,11 +387,7 @@ def test_stage1_detection_eval_rank_zero_scores_after_distributed_generation(
         assert len(rows) == 1
         assert options.metrics == "f1ish"
         return {"metrics": {"f1_full_micro": 0.25}}
-
-    monkeypatch.setattr(
-        "src.callbacks.stage1_detection_eval.InferenceEngine.infer",
-        _fake_infer,
-    )
+    _patch_stage1_offline_runner(monkeypatch, _fake_infer)
     monkeypatch.setattr(
         "src.callbacks.stage1_detection_eval.evaluate_and_save",
         _fake_evaluate_and_save,
@@ -500,6 +531,7 @@ def test_stage1_detection_eval_can_score_map_with_confidence_postop(
         return {"kept_fraction": 1.0}
 
     def _fake_evaluate_and_save(pred_jsonl, options):
+        load_comparable_artifact(Path(pred_jsonl), require_score=True)
         captured["eval_pred_jsonl"] = str(pred_jsonl)
         rows = [
             json.loads(line)
@@ -516,11 +548,7 @@ def test_stage1_detection_eval_can_score_map_with_confidence_postop(
                 "f1ish@0.50_f1_full_micro": 0.66,
             }
         }
-
-    monkeypatch.setattr(
-        "src.callbacks.stage1_detection_eval.InferenceEngine.infer",
-        _fake_infer,
-    )
+    _patch_stage1_offline_runner(monkeypatch, _fake_infer)
     monkeypatch.setattr(
         "src.callbacks.stage1_detection_eval.run_confidence_postop",
         _fake_run_confidence_postop,
@@ -548,6 +576,14 @@ def test_stage1_detection_eval_can_score_map_with_confidence_postop(
         eval_dir / "pred_token_trace.jsonl"
     )
     assert captured["eval_pred_jsonl"] == str(eval_dir / "gt_vs_pred_scored.jsonl")
+    scored_provenance = load_comparable_artifact(
+        eval_dir / "gt_vs_pred_scored.jsonl",
+        require_score=True,
+    )
+    assert (
+        scored_provenance["provenance"]["score_policy"]["policy_name"]
+        == "confidence_postop"
+    )
     assert metrics["eval_det_bbox_AP"] == 0.44
     assert metrics["eval_det_bbox_AP50"] == 0.55
     assert metrics["eval_det_f1ish@0.50_f1_full_micro"] == 0.66

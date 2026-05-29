@@ -131,7 +131,7 @@ Training config knobs (already set in the current Stage-1 baseline tree such as 
 
 ### 4) Merge VG + LVIS for single-dataset training
 
-Runtime multi-dataset fusion is temporarily disabled in CoordExp. To train on LVIS + VG together today, merge JSONLs offline.
+Runtime multi-dataset fusion has been removed in CoordExp. To train on LVIS + VG together today, merge JSONLs offline.
 
 Important: merging requires rewriting relative image paths, because loaders resolve images relative to the merged JSONL directory.
 Use:
@@ -145,7 +145,7 @@ PYTHONPATH=. conda run -n ms python public_data/scripts/merge_jsonl.py \
   --strategy round_robin
 ```
 
-Then point your current training config under `configs/stage1/` or `configs/stage2_two_channel/` to the merged file.
+Then point your current training config under `configs/stage1/` or `configs/stage2_rollout_correction/` to the merged file.
 
 ## Dataset-specific Notes
 

@@ -44,7 +44,7 @@ def test_custom_extra_rollout_matching_is_rejected():
                 "extra": {
                     "rollout_matching": {
                         "rollout_backend": "hf",
-                        "channel_b_decode_batch_size": 2,
+                        "rollout_decode_batch_size": 2,
                         "eval_decode_batch_size": 2,
                     }
                 },

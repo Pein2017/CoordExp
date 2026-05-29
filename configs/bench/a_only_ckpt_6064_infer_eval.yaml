@@ -9,9 +9,9 @@ stages:
 
 infer:
   gt_jsonl: public_data/lvis/rescale_32_768_bbox_max60/val.bbox_only.max60.coord.jsonl
-  model_checkpoint: output/stage2_ab/a_only_ckpt_6064
+  model_checkpoint: output/stage2_rollout_correction/a_only_ckpt_6064
 
-  # output/stage2_ab/a_only_iter_1_ckpt_6064
+  # output/stage2_rollout_correction/a_only_iter_1_ckpt_6064
 
   mode: auto
   pred_coord_mode: auto

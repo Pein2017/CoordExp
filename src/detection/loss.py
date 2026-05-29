@@ -28,6 +28,7 @@ from src.metrics.detection_sequence import (
     schema_token_cross_entropy_event,
 )
 from src.metrics.events import MetricEvent, last_event, ratio_event, weighted_mean_event
+from src.training.teacher_forcing.ir import TeacherForcingTargetIR
 
 _OBJECT_ROLE_WEIGHTS = {
     SemanticRole.DESC_IDENTITY: 0.35,
@@ -35,13 +36,8 @@ _OBJECT_ROLE_WEIGHTS = {
     SemanticRole.ENTRY_TRIE_DECISION: 0.15,
     SemanticRole.OBJECT_CONTROL: 0.05,
 }
-_BOUNDARY_ROLE_WEIGHTS = {
-    "separator_continue": 0.50,
-    "terminal_stop": 0.50,
-}
 _IMAGE_MIXTURE_WEIGHTS = {
     "objects": 1.00,
-    "boundary": 0.30,
     "schema": 0.10,
 }
 _COORD_SLOT_INDEX = {"x1": 0, "y1": 1, "x2": 2, "y2": 3}
@@ -80,18 +76,12 @@ _COMPACT_METRIC_SUMMARY_CHUNK_SIZE = 64
 class RecursiveDetectionLossWeights:
     support_weight: float = 1.0
     balance_weight: float = 1.0
-    separator_continue_weight: float = 0.50
-    eos_stop_weight: float = 0.50
-    boundary_component_weight: float = 0.30
     coord_soft_ce: CoordSoftTargetRuntimeConfig | None = None
 
     def __post_init__(self) -> None:
         for field_name in (
             "support_weight",
             "balance_weight",
-            "separator_continue_weight",
-            "eos_stop_weight",
-            "boundary_component_weight",
         ):
             value = float(getattr(self, field_name))
             if not math.isfinite(value) or value < 0.0:
@@ -101,13 +91,6 @@ class RecursiveDetectionLossWeights:
         if float(self.support_weight) + float(self.balance_weight) <= 0.0:
             raise ValueError(
                 "RecursiveDetectionLossWeights support and balance weights must sum to > 0"
-            )
-        if (
-            float(self.separator_continue_weight) + float(self.eos_stop_weight)
-            <= 0.0
-        ):
-            raise ValueError(
-                "RecursiveDetectionLossWeights separator/eos weights must sum to > 0"
             )
 
 
@@ -253,6 +236,11 @@ def compute_recursive_detection_ce_batch_loss(
     sample_losses: list[torch.Tensor] = []
     per_position_losses: list[dict[int, torch.Tensor]] = []
     for batch_index, recursive_targets in enumerate(targets):
+        if isinstance(recursive_targets, TeacherForcingTargetIR):
+            raise TypeError(
+                "teacher_forcing_target_ir is not a recursive_detection_ce "
+                "target; route it through the teacher_forcing objective runner"
+            )
         sample_loss, sample_position_losses = _compute_sample_loss(
             logits=batch_logits[batch_index],
             recursive_targets=recursive_targets,
@@ -353,12 +341,6 @@ def _recursive_objective_diagnostic_events(
                 if role is None and atom is not None:
                     role = getattr(atom, "semantic_role", None)
                 return role
-
-            eos_token_id = None
-            for target in recursive_targets.token_targets:
-                if _span_category_for_semantic_role(_role_for_target(target)) == "stop":
-                    eos_token_id = int(target.teacher_token_id)
-                    break
 
             for target in recursive_targets.token_targets:
                 if target.position <= 0 or target.position > time_steps:
@@ -535,14 +517,6 @@ def _recursive_objective_diagnostic_events(
                                 valid_child_kl_to_uniform,
                             )
                         )
-                        if eos_token_id is not None and 0 <= eos_token_id < vocab_size:
-                            events.append(
-                                _event(
-                                    "recursive_detection_ce/entry/continue_minus_eos_margin",
-                                    log_valid_mass - step_log_probs[eos_token_id],
-                                )
-                            )
-
                 if target.type_gate_token_ids and float(target.type_gate_weight) > 0.0:
                     unique_type_gate_ids = tuple(
                         dict.fromkeys(
@@ -590,38 +564,10 @@ def _recursive_objective_diagnostic_events(
                             )
                         )
 
-                if (
-                    span_category == "separator"
-                    and eos_token_id is not None
-                    and 0 <= eos_token_id < vocab_size
-                ):
-                    continue_logprob = step_log_probs[int(target.teacher_token_id)]
-                    events.append(
-                        _event(
-                            "recursive_detection_ce/free_boundary/continue_minus_eos_margin",
-                            continue_logprob - step_log_probs[eos_token_id],
-                        )
-                    )
-                    events.append(
-                        _event(
-                            "recursive_detection_ce/free_boundary/continue_mass",
-                            torch.exp(continue_logprob),
-                        )
-                    )
                 if span_category == "stop":
                     unweighted_ce = -step_log_probs[int(target.teacher_token_id)]
-                    trust_weight = float(_target_loss_weight(target))
                     events.append(
                         _event("recursive_detection_ce/eos_unweighted_ce", unweighted_ce)
-                    )
-                    events.append(
-                        _event(
-                            "recursive_detection_ce/eos_weighted_loss",
-                            unweighted_ce * trust_weight,
-                        )
-                    )
-                    events.append(
-                        _event("recursive_detection_ce/eos_trust_weight", trust_weight)
                     )
     return tuple(events)
 
@@ -1081,7 +1027,10 @@ def _compute_sample_loss(
             support_weight=float(weights.support_weight),
             balance_weight=float(weights.balance_weight),
         )
-        if getattr(target, "token_role", None) is TokenRole.DESC:
+        if (
+            getattr(target, "token_role", None) is TokenRole.DESC
+            and getattr(target, "semantic_role", None) is SemanticRole.DESC_IDENTITY
+        ):
             position_loss = position_loss + (-step_log_probs[target.teacher_token_id])
         per_position_main_losses[target.position] = _loss_float(position_loss)
         per_position_losses[target.position] = _apply_type_gate_loss(
@@ -1403,8 +1352,8 @@ def _normalize_sample_loss(
         for atom in recursive_targets.loss_atoms
     }
 
-    component_losses: dict[str, torch.Tensor] = {}
-    component_weights: dict[str, float] = {}
+    loss_terms: list[torch.Tensor] = []
+    loss_weights: list[float] = []
 
     object_atoms: dict[str, list[tuple[SemanticRole, torch.Tensor]]] = {}
     for atom in recursive_targets.loss_atoms:
@@ -1421,30 +1370,22 @@ def _normalize_sample_loss(
             )
             for atoms in object_atoms.values()
         ]
-        component_losses["objects"] = _stack_loss_values(object_losses).mean()
-        component_weights["objects"] = _IMAGE_MIXTURE_WEIGHTS["objects"]
+        loss_terms.append(_stack_loss_values(object_losses).mean())
+        loss_weights.append(_IMAGE_MIXTURE_WEIGHTS["objects"])
 
-    separator_losses = [
+    ordinary_boundary_losses = [
         atom_losses[atom.atom_id]
         for atom in recursive_targets.loss_atoms
-        if atom.semantic_role is SemanticRole.SEPARATOR_CONTINUE
+        if atom.semantic_role
+        in {
+            SemanticRole.SEPARATOR_CONTINUE,
+            SemanticRole.TERMINAL_STOP,
+            SemanticRole.CHAT_STOP,
+        }
     ]
-    stop_losses = [
-        atom_losses[atom.atom_id]
-        for atom in recursive_targets.loss_atoms
-        if atom.semantic_role in {SemanticRole.TERMINAL_STOP, SemanticRole.CHAT_STOP}
-    ]
-    if separator_losses or stop_losses:
-        boundary_terms: list[torch.Tensor] = []
-        boundary_weights: list[float] = []
-        if separator_losses:
-            boundary_terms.append(_stack_loss_values(separator_losses).mean())
-            boundary_weights.append(float(weights.separator_continue_weight))
-        if stop_losses:
-            boundary_terms.append(_stack_loss_values(stop_losses).mean())
-            boundary_weights.append(float(weights.eos_stop_weight))
-        component_losses["boundary"] = _weighted_tensor_mean(boundary_terms, boundary_weights)
-        component_weights["boundary"] = float(weights.boundary_component_weight)
+    for boundary_loss in ordinary_boundary_losses:
+        loss_terms.append(boundary_loss)
+        loss_weights.append(1.0)
 
     schema_losses = [
         atom_losses[atom.atom_id]
@@ -1452,18 +1393,15 @@ def _normalize_sample_loss(
         if atom.semantic_role is SemanticRole.SCHEMA_CONTROL
     ]
     if schema_losses:
-        component_losses["schema"] = _stack_loss_values(schema_losses).mean()
-        component_weights["schema"] = _IMAGE_MIXTURE_WEIGHTS["schema"]
+        loss_terms.append(_stack_loss_values(schema_losses).mean())
+        loss_weights.append(_IMAGE_MIXTURE_WEIGHTS["schema"])
 
-    if not component_losses:
+    if not loss_terms:
         raise ValueError(
-            "semantic_image_bucket_balanced requires at least one loss component "
-            "(object, boundary, or schema)"
+            "semantic_image_bucket_balanced requires at least one loss term "
+            "(object, separator/stop, or schema)"
         )
-    return _weighted_tensor_mean(
-        list(component_losses.values()),
-        [component_weights[name] for name in component_losses],
-    )
+    return _weighted_tensor_mean(loss_terms, loss_weights)
 
 
 def _weighted_tensor_mean(values: Sequence[torch.Tensor], weights: Sequence[float]) -> torch.Tensor:

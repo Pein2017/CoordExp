@@ -25,7 +25,7 @@ The repo exploration shows the Stage-2 side is straightforward:
   box math,
 - `src/trainers/teacher_forcing/modules/bbox_geo.py` already has predicted and
   target `xyxy` boxes at the right abstraction level,
-- `stage2_two_channel` and `stage2_rollout_aligned` already reuse the same
+- `stage2_two_channel` and `stage2_rollout_runtime` already reuse the same
   `bbox_geo` pipeline module.
 
 The only real ambiguity is Stage-1.

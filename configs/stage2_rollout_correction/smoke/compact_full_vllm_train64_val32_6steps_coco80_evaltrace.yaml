@@ -1,0 +1,40 @@
+extends: compact_full_vllm_train64_val32_12steps_coco80_pilot.yaml
+
+experiment:
+  title: Stage-2 rollout-correction compact-full COCO-80 eval-trace debug
+  purpose: >
+    Reproduce the step-6 pilot eval boundary with explicit eval phase traces,
+    vLLM request dumps, and a shorter stop condition before scaling further.
+  hypothesis: >
+    If the previous 12-step pilot stalled during eval rollout or artifact
+    materialization, this six-step debug run should leave monitor_dumps/
+    eval_phase_trace breadcrumbs identifying the last completed phase.
+  key_deviations:
+    - Stops at the first scheduled evaluation step.
+    - Dumps train monitor samples every rollout step to inspect invalid growth.
+    - Enables vLLM server debug dumps for successful requests.
+
+training:
+  output_dir: output/stage2_rollout_correction/smoke/compact_full_vllm_train64_val32_6steps_coco80_evaltrace
+  run_name: compact_full_vllm_train64_val32_6steps_coco80_evaltrace
+  max_steps: 6
+  eval_steps: 6
+
+rollout_matching:
+  train_monitor_dump:
+    enabled: true
+    every_rollout_steps: 1
+    dump_first_step: true
+    max_samples: 8
+    max_events: 64
+    max_text_chars: 12000
+  vllm:
+    server:
+      timeout_s: 240.0
+      infer_timeout_s: 180.0
+      debug_dump:
+        enabled: true
+        only_world_process_zero: true
+        max_events: 8
+        max_samples: 2
+        max_chars: 8000

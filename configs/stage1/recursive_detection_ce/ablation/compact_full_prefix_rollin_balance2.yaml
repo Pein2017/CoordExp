@@ -1,7 +1,6 @@
 # E1 ablation config for compact-full prefix roll-in ET-RMP-CE.
 # This is the first runnable surface for Prefix-Closed Multi-Target SFT.
-# It is not a production config: the EOS prior uses the empirical unlabeled-count
-# formula and must be replaced by calibrated_formula_ref before production claims.
+# It is not a production config.
 model:
   model: model_cache/models/Qwen/Qwen3-VL-2B-Instruct-coordexp
   attn_impl: flash_attention_2
@@ -63,7 +62,6 @@ data:
   train_jsonl: public_data/coco/rescale_32_1024_bbox_max60/train.coord.jsonl
   val_jsonl: public_data/coco/rescale_32_1024_bbox_max60/val.coord.jsonl
   image_root: public_data/coco/rescale_32_1024_bbox_max60
-  max_objects: 60
   object_ordering: random_permutation
 
 prompt:
@@ -119,11 +117,6 @@ objective:
     control_tokens: hard_ce
     support_weight: 1.0
     balance_weight: 2.0
-  boundary:
-    type: compact_full_append_boundary
-    separator_continue_weight: 0.5
-    eos_stop_weight: 0.5
-    component_weight: 0.3
   type_gate:
     enabled: true
     mode: allowed_type_mass
@@ -132,22 +125,6 @@ objective:
       coord: 1.0
       desc: 0.2
       eos: 0.5
-  eos:
-    eos_token: "<|im_end|>"
-    policy: missing_label_prior_weighted_ce
-    eos_trust_weight:
-      source: empirical_unlabeled_poisson_v0
-      expected_unlabeled_count:
-        intercept: -0.35
-        slope: 0.43
-        floor: 0.0
-      trust_mapping:
-        type: log_linear_missing_count_penalty
-        penalty_per_missing: 1.0
-        temperature: 1.0
-        min_weight: 0.0
-        max_weight: 1.0
-
 packing:
   static_packing: false
   padding_free_packed: false

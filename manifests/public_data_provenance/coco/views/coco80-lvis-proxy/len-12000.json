@@ -1,0 +1,113 @@
+{
+  "schema_version": 1,
+  "artifact_type": "annotation_view",
+  "relative_path": "public_data/coco/views/coco80-lvis-proxy/len-12000",
+  "producer_script": "public_data/scripts/build_coco_views.py",
+  "working_dir": ".",
+  "command": "PYTHONPATH=. conda run -n ms python public_data/scripts/build_coco_views.py --config configs/stage1/recursive_detection_ce_latest/prod/compact_full_support2.yaml --model-path model_cache/models/Qwen/Qwen3-VL-2B-Instruct-coordexp --source-preset public_data/coco/rescale_32_1024_bbox --image-store-root public_data/coco/images/res-1024 --views-root public_data/coco/views --legacy-max-objects-source public_data/coco/rescale_32_1024_bbox_max60 --proxy-source public_data/coco/rescale_32_1024_bbox_lvis_proxy_len12000 --splits train val --views coco80/full coco80-lvis-proxy/len-12000 --max-total-tokens 12000 --image-store-mode reuse-existing",
+  "inputs": [
+    {
+      "kind": "image_store_manifest",
+      "path": "manifests/public_data_provenance/coco/images/res-1024.json",
+      "notes": "Shared Phase 1 COCO 1024 image-store contract."
+    },
+    {
+      "kind": "parent_view_manifest",
+      "path": "manifests/public_data_provenance/coco/views/coco80/full.json",
+      "notes": "Canonical full COCO80 view used as the non-proxy parent semantics."
+    },
+    {
+      "kind": "processed_dataset_manifest",
+      "path": "manifests/public_data_provenance/coco/rescale_32_1024_bbox_lvis_proxy_len12000.json",
+      "notes": "Legacy all-proxy length-budget source used to preserve Phase 1 research-view membership."
+    },
+    {
+      "kind": "processed_dataset",
+      "path": "public_data/coco/rescale_32_1024_bbox_lvis_proxy_len12000",
+      "notes": "All-proxy norm1000 source rows converted into canonical image-store-relative view layout."
+    }
+  ],
+  "key_params": {
+    "dataset": "coco",
+    "view": "coco80-lvis-proxy/len-12000",
+    "annotation_policy": "all_proxy",
+    "sample_policy": "length_budget",
+    "max_total_tokens": 12000,
+    "image_store": "public_data/coco/images/res-1024",
+    "image_path_semantics": "image_store_relative",
+    "coordinate_space": "norm1000",
+    "coordinate_storage": "integer",
+    "coordinate_range": [
+      0,
+      999
+    ],
+    "assistant_coordinate_rendering": "qwen_coord_tokens",
+    "length_budget_template_id": "compact-detection-v1",
+    "routine_sync_policy": "regenerate_from_raw_plus_manifest",
+    "view_summary": {
+      "records": 122218,
+      "rendered_object_count": 977576,
+      "support_sidecar_count": 0,
+      "rendered_proxy_candidate_count": 91294,
+      "object_supervision_count": 977576
+    },
+    "length_budget_scope": {
+      "excluded_sidecars": [
+        "metadata.supervision.support_objects"
+      ],
+      "rendered_families": [
+        "objects"
+      ]
+    }
+  },
+  "checksums": {
+    "scope": "jsonl_training_samples_only",
+    "algorithm": "sha256",
+    "aggregate_sha256": "a89315c97a758c6bfd0e91d719c4946691088bfe0168ab936fcba168fd2960ef",
+    "aggregate_source": "sorted path sha256 size_bytes records lines",
+    "files": [
+      {
+        "path": "public_data/coco/views/coco80-lvis-proxy/len-12000/train.jsonl",
+        "sha256": "82812f43beff246b59dd56e8c73e6ee8cdf79d22cfbe06c319f6c21b4c988e59",
+        "size_bytes": 433380066,
+        "records": 117266
+      },
+      {
+        "path": "public_data/coco/views/coco80-lvis-proxy/len-12000/val.jsonl",
+        "sha256": "72f644775703b4ce6c7c9b273840a73e8fed27e44564f31a24cde12679fd8bd2",
+        "size_bytes": 18925513,
+        "records": 4952
+      }
+    ]
+  },
+  "metadata": {
+    "view_metadata": {
+      "path": "public_data/coco/views/coco80-lvis-proxy/len-12000/meta.json",
+      "sha256": "03a7eb650bef70c02ac9c4ce19aec5fc489138da02424773baa236fd00cc8afe",
+      "size_bytes": 1960
+    },
+    "source_comparison": {
+      "path": "public_data/coco/views/coco80-lvis-proxy/len-12000/source_comparison.json",
+      "sha256": "2e3e477d27a03a7966ef49489af1853af474715448bce73a91809004567b1a39",
+      "size_bytes": 2180769
+    },
+    "length_stats": {
+      "train": {
+        "path": "public_data/coco/views/coco80-lvis-proxy/len-12000/train.length_stats.json",
+        "sha256": "e1546b3be792d88f80b6a33ff2ec21e992943d3093bb7fd8b968015c4c940419",
+        "size_bytes": 1385474
+      },
+      "val": {
+        "path": "public_data/coco/views/coco80-lvis-proxy/len-12000/val.length_stats.json",
+        "sha256": "b9df3b8679513d39252e4a02d0a90ee4a8ee199797ff679582d1440f80c25d34",
+        "size_bytes": 59086
+      }
+    }
+  },
+  "code_ref": {
+    "git_commit": "593e9357ae2fc2126521b30fcc6c239cbd5af304",
+    "git_dirty_allowed": true
+  },
+  "generated_at_utc": null,
+  "notes": "Phase 1 all-proxy LVIS research annotation view. This records the broad all-proxy surface and does not imply hard-proxy training safety."
+}

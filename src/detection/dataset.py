@@ -3,11 +3,17 @@
 from __future__ import annotations
 
 import copy
+import inspect
 import random
 from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any, Literal, Mapping, MutableMapping, Sequence
 
+from public_data.view_contracts import (
+    load_view_metadata,
+    resolve_view_image_root,
+    resolve_view_repo_root,
+)
 from torch.utils.data import Dataset
 
 from src.common.detection_chat import build_detection_chat_messages
@@ -23,15 +29,22 @@ from src.detection.objective import (
     RecursiveDetectionTargets,
     StateWeightingStrategy,
     build_compact_prefix_rollin_example,
-    compute_eos_trust_weight,
     prepare_detection_training_example,
 )
+from src.detection.teacher_forcing.target_builder import (
+    TeacherForcingBuildResult,
+    build_teacher_forcing_target,
+)
 from src.detection.template import TemplateId, get_detection_template
+from src.training.teacher_forcing.constants import TEACHER_FORCING_TARGET_IR_KEY
+from src.training.teacher_forcing.ir import TeacherForcingTargetIR
 
 DetectionObjectOrdering = Literal["sorted", "random_permutation"]
 
 REGISTERED_DETECTION_SIDECAR_KEYS: tuple[str, ...] = (
     "recursive_detection_targets",
+    TEACHER_FORCING_TARGET_IR_KEY,
+    "rendered_span_sources",
     "detection_metadata",
     "assistant_payload",
     "sample_id",
@@ -61,6 +74,7 @@ DETECTION_MODEL_INPUT_KEYS: frozenset[str] = frozenset(
         "cache_position",
         "past_key_values",
         "use_cache",
+        "output_router_logits",
         "logits_to_keep",
         "cu_seq_lens_q",
         "cu_seq_lens_k",
@@ -84,20 +98,137 @@ TRAINER_BATCH_EXTRA_KEYS: frozenset[str] = frozenset(
 )
 
 
+def resolve_detection_jsonl_image_root(
+    jsonl_path: str | Path,
+    *,
+    image_root: str | Path | None,
+) -> Path:
+    """Resolve the image root for a latest compact detection JSONL.
+
+    :param jsonl_path: Training or evaluation JSONL path.
+    :param image_root: Optional legacy explicit image root override.
+    :returns: Absolute image-store root path.
+    """
+
+    path = Path(jsonl_path)
+
+    meta_path = path.parent / "meta.json"
+    if meta_path.exists():
+        metadata = load_view_metadata(meta_path)
+        metadata_repo_root = (
+            None
+            if Path(metadata.image_store).is_absolute()
+            else resolve_view_repo_root(metadata, path.parent)
+        )
+        metadata_image_root = resolve_view_image_root(
+            metadata,
+            path.parent,
+            repo_root=metadata_repo_root,
+        )
+        explicit_image_root = _resolve_explicit_image_root(
+            image_root,
+            metadata_image_root=metadata_image_root,
+            metadata_image_store=metadata.image_store,
+            metadata_repo_root=metadata_repo_root,
+        )
+        if (
+            explicit_image_root is not None
+            and explicit_image_root != metadata_image_root
+        ):
+            raise ValueError(
+                "explicit image_root does not match view metadata image_store: "
+                f"image_root={explicit_image_root}, "
+                f"meta.json={meta_path}, "
+                f"resolved_image_store={metadata_image_root}"
+            )
+
+        return metadata_image_root
+
+    explicit_image_root = _resolve_explicit_image_root(
+        image_root,
+        metadata_image_root=None,
+        metadata_image_store=None,
+        metadata_repo_root=None,
+    )
+    if explicit_image_root is not None:
+        return explicit_image_root
+
+    raise ValueError(
+        "DetectionTrainingDataset requires image_root or view metadata: "
+        f"expected meta.json next to JSONL at {meta_path}"
+    )
+
+
+def _resolve_explicit_image_root(
+    image_root: str | Path | None,
+    *,
+    metadata_image_root: Path | None,
+    metadata_image_store: str | None,
+    metadata_repo_root: Path | None,
+) -> Path | None:
+    """Resolve an explicit image root without CWD dependence when metadata exists."""
+
+    if image_root is None:
+        return None
+
+    explicit_path = Path(image_root).expanduser()
+    if explicit_path.is_absolute():
+        return explicit_path.resolve(strict=False)
+
+    if (
+        metadata_image_root is None
+        or metadata_image_store is None
+        or metadata_repo_root is None
+    ):
+        return explicit_path.resolve(strict=False)
+
+    metadata_image_store_path = Path(metadata_image_store)
+    if metadata_image_store_path.is_absolute():
+        return explicit_path.resolve(strict=False)
+
+    if explicit_path == metadata_image_store_path:
+        return metadata_image_root
+
+    return (metadata_repo_root / explicit_path).resolve(strict=False)
+
+
 @dataclass(frozen=True)
 class DetectionDatasetRuntimeConfig:
-    image_root: str
+    image_root: str | None
     detection_template_id: TemplateId
     mode: DetectionTrainingMode
     object_ordering: DetectionObjectOrdering
     user_prompt: str
     system_prompt: str | None
-    max_objects: int
     seed: int
     state_weighting: str
     normalization: str
-    eos_trust_weight_config: Any | None = None
     type_gate_config: Any | None = None
+    teacher_forcing_profile: str | None = None
+    teacher_forcing_rollin_base_seed: int | None = None
+
+
+def _encode_swift_template_no_resize(
+    swift_template: Any,
+    payload: Mapping[str, Any],
+) -> Any:
+    encode = getattr(swift_template, "encode")
+    if _callable_accepts_keyword(encode, "do_resize"):
+        return encode(payload, return_length=True, do_resize=False)
+    return encode(payload, return_length=True)
+
+
+def _callable_accepts_keyword(callable_obj: Any, keyword: str) -> bool:
+    try:
+        signature = inspect.signature(callable_obj)
+    except (TypeError, ValueError):
+        return True
+    for parameter in signature.parameters.values():
+        if parameter.kind is inspect.Parameter.VAR_KEYWORD:
+            return True
+        if parameter.name == keyword:
+            return True
+    return False
 
 
 class DetectionTrainingDataset(Dataset):
@@ -118,8 +249,11 @@ class DetectionTrainingDataset(Dataset):
     ) -> None:
         if not rows:
             raise ValueError("DetectionTrainingDataset requires at least one row")
-        if config.max_objects <= 0:
-            raise ValueError("max_objects must be positive")
+        if config.image_root is None:
+            raise ValueError(
+                "DetectionTrainingDataset requires resolved image_root; call "
+                "from_jsonl with data.image_root or a sibling view meta.json"
+            )
         self.rows = tuple(copy.deepcopy(dict(row)) for row in rows)
         self.swift_template = swift_template
         self.template = swift_template
@@ -137,22 +271,27 @@ class DetectionTrainingDataset(Dataset):
         jsonl_path: str | Path,
         *,
         swift_template: Any,
-        image_root: str | Path,
+        image_root: str | Path | None,
         detection_template_id: TemplateId,
         mode: DetectionTrainingMode,
         object_ordering: DetectionObjectOrdering,
         user_prompt: str,
         system_prompt: str | None,
-        max_objects: int,
         seed: int,
         state_weighting: str,
         normalization: str,
-        eos_trust_weight_config: Any | None = None,
         type_gate_config: Any | None = None,
+        teacher_forcing_profile: str | None = None,
+        teacher_forcing_rollin_base_seed: int | None = None,
         sample_limit: int | None = None,
         dataset_name: str | None = None,
     ) -> "DetectionTrainingDataset":
         path = Path(jsonl_path)
+        resolved_image_root = resolve_detection_jsonl_image_root(
+            path,
+            image_root=image_root,
+        )
+
         rows, _invalid_count = load_jsonl_with_diagnostics(path, strict=True)
         if sample_limit is not None:
             if sample_limit <= 0:
@@ -162,18 +301,18 @@ class DetectionTrainingDataset(Dataset):
             rows,
             swift_template=swift_template,
             config=DetectionDatasetRuntimeConfig(
-                image_root=str(image_root),
+                image_root=str(resolved_image_root),
                 detection_template_id=detection_template_id,
                 mode=mode,
                 object_ordering=object_ordering,
                 user_prompt=user_prompt,
                 system_prompt=system_prompt,
-                max_objects=int(max_objects),
                 seed=int(seed),
                 state_weighting=str(state_weighting),
                 normalization=str(normalization),
-                eos_trust_weight_config=eos_trust_weight_config,
                 type_gate_config=type_gate_config,
+                teacher_forcing_profile=teacher_forcing_profile,
+                teacher_forcing_rollin_base_seed=teacher_forcing_rollin_base_seed,
             ),
             dataset_name=dataset_name or path.stem,
         )
@@ -213,11 +352,6 @@ class DetectionTrainingDataset(Dataset):
 
         base_idx = self._base_index(index)
         raw = parse_raw_detection_row(self.rows[base_idx])
-        if len(raw.objects) > self.config.max_objects:
-            raise ValueError(
-                f"row {base_idx} has {len(raw.objects)} objects, exceeding "
-                f"data.max_objects={self.config.max_objects}"
-            )
 
         ordering_plan = self._ordering_plan(base_idx=base_idx, epoch=epoch)
         normalized = normalize_detection_row(raw, object_ordering=ordering_plan)
@@ -245,52 +379,85 @@ class DetectionTrainingDataset(Dataset):
     def __getitem__(self, index: int) -> dict[str, Any]:
         base_idx = self._base_index(index)
         raw = parse_raw_detection_row(self.rows[base_idx])
-        if len(raw.objects) > self.config.max_objects:
-            raise ValueError(
-                f"row {base_idx} has {len(raw.objects)} objects, exceeding "
-                f"data.max_objects={self.config.max_objects}"
-            )
 
         ordering_plan = self._ordering_plan(base_idx=base_idx)
         normalized = normalize_detection_row(raw, object_ordering=ordering_plan)
         detection_template = get_detection_template(self.config.detection_template_id)
-        rendered_assistant = detection_template.render_assistant(normalized)
-        messages = self._messages(raw.images, assistant_text=rendered_assistant.text)
-        eos_trust_weight = (
-            compute_eos_trust_weight(
-                len(normalized.objects),
-                self.config.eos_trust_weight_config,
+        recursive_detection_targets = None
+        teacher_forcing_target_ir = None
+        metadata_object_ordering = normalized.object_ordering
+        if self.config.teacher_forcing_profile is not None:
+            if self.config.detection_template_id != "compact_full":
+                raise ValueError("teacher_forcing target IR requires compact_full template")
+            build_result = build_teacher_forcing_target(
+                normalized,
+                tokenizer=self.tokenizer,
+                profile=self.config.teacher_forcing_profile,
+                epoch=self._epoch,
+                stable_sample_id=_make_sample_id(self.dataset_name, base_idx),
+                base_seed=int(self.config.teacher_forcing_rollin_base_seed or 17),
+                input_prefix_token_id=self._teacher_forcing_input_prefix_token_id(),
             )
-            if self.config.eos_trust_weight_config is not None
-            else None
-        )
-
-        if self.config.mode == "prefix_rollin_et_rmp_ce":
+            if not build_result.ok:
+                raise ValueError(
+                    "teacher_forcing target IR construction failed: "
+                    f"{build_result.drop_reason}"
+                )
+            selected_indices = tuple(
+                int(index)
+                for index in build_result.target_ir.metadata[
+                    "selected_normalized_object_indices"
+                ]
+            )
+            rendered_sample = replace(
+                normalized,
+                objects=tuple(normalized.objects[index] for index in selected_indices),
+                object_ordering=normalized.object_ordering.with_realized(
+                    tuple(
+                        normalized.objects[index].source_object_index
+                        for index in selected_indices
+                    )
+                ),
+            )
+            rendered_assistant = detection_template.render_assistant(rendered_sample)
+            metadata_object_ordering = rendered_sample.object_ordering
+            if rendered_assistant.text != build_result.rendered_text:
+                raise ValueError(
+                    "teacher_forcing rendered assistant does not match target IR roll-in"
+                )
+            messages = self._messages(raw.images, assistant_text=build_result.rendered_text)
+            encoded = self._encode_messages(messages)
+            teacher_forcing_target_ir = self._align_teacher_forcing_target_to_encoded(
+                encoded,
+                build_result,
+            )
+            prepared = None
+        elif self.config.mode == "prefix_rollin_et_rmp_ce":
+            rendered_assistant = detection_template.render_assistant(normalized)
+            messages = self._messages(raw.images, assistant_text=rendered_assistant.text)
             if self.config.detection_template_id != "compact_full":
                 raise ValueError(
                     "prefix_rollin_et_rmp_ce requires compact_full template"
                 )
-            if self.config.eos_trust_weight_config is None:
-                raise ValueError(
-                    "prefix_rollin_et_rmp_ce requires eos_trust_weight_config"
-                )
             k_rng = random.Random(_mix_seed(self.config.seed, self._epoch, base_idx))
             k = k_rng.randint(0, len(normalized.objects))
-            if eos_trust_weight is None:
-                raise ValueError(
-                    "prefix_rollin_et_rmp_ce requires computed eos_trust_weight"
-                )
             prepared = build_compact_prefix_rollin_example(
                 objects=normalized.objects,
                 rollin_order=normalized.objects,
                 k=k,
                 tokenizer=self.tokenizer,
-                eos_trust_weight=eos_trust_weight,
                 normalized_sample=normalized,
                 type_gate_config=self.config.type_gate_config,
                 messages=messages,
             )
+            encoded = self._encode_messages(messages)
+            recursive_detection_targets = self._align_prepared_targets_to_encoded(
+                encoded,
+                prepared,
+            )
         else:
+            rendered_assistant = detection_template.render_assistant(normalized)
+            messages = self._messages(raw.images, assistant_text=rendered_assistant.text)
             prepared = prepare_detection_training_example(
                 normalized,
                 template=detection_template,
@@ -299,35 +466,33 @@ class DetectionTrainingDataset(Dataset):
                 state_weighting=self._state_weighting_for_prepare(),
                 normalization=self._normalization_for_prepare(),
                 type_gate_config=self.config.type_gate_config,
-                eos_trust_weight=eos_trust_weight,
                 messages=messages,
             )
-
-        encoded = self._encode_messages(messages)
-        recursive_detection_targets = self._align_prepared_targets_to_encoded(
-            encoded,
-            prepared,
-        )
+            encoded = self._encode_messages(messages)
+            recursive_detection_targets = self._align_prepared_targets_to_encoded(
+                encoded,
+                prepared,
+            )
 
         encoded["messages"] = copy.deepcopy(messages)
         encoded["assistant_payload"] = detection_template.parse_assistant(
-            prepared.rendered_assistant.text
+            rendered_assistant.text
         )
         detection_metadata = {
             "dataset": self.dataset_name,
             "base_idx": base_idx,
-            "template_id": prepared.template_id,
-            "template_version": prepared.template_version,
-            "mode": prepared.mode,
-            "object_ordering": prepared.object_ordering.strategy,
-            "object_ordering_seed": prepared.object_ordering.seed,
-            "object_ordering_seed_source": prepared.object_ordering.seed_source,
+            "template_id": rendered_assistant.template_id,
+            "template_version": rendered_assistant.template_version,
+            "mode": self.config.mode,
+            "object_ordering": metadata_object_ordering.strategy,
+            "object_ordering_seed": metadata_object_ordering.seed,
+            "object_ordering_seed_source": metadata_object_ordering.seed_source,
             "realized_source_object_indices": list(
-                prepared.realized_source_object_indices
+                metadata_object_ordering.realized_source_object_indices
             ),
             "object_count": len(normalized.objects),
         }
-        if self.config.mode == "prefix_rollin_et_rmp_ce":
+        if prepared is not None and self.config.mode == "prefix_rollin_et_rmp_ce":
             detection_metadata.update(
                 {
                     "rollin_k": int(prepared.rollin_state.k),
@@ -346,11 +511,8 @@ class DetectionTrainingDataset(Dataset):
                     "semantic_eos_token_count": len(
                         prepared.debug_spans["semantic_eos"].token_positions
                     ),
-                    "eos_trust_weight": float(prepared.eos_trust_weight),
                 }
             )
-        elif eos_trust_weight is not None:
-            detection_metadata["eos_trust_weight"] = float(eos_trust_weight)
         encoded["metadata"] = {
             "source": raw.metadata.source,
             "split": raw.metadata.split,
@@ -358,11 +520,16 @@ class DetectionTrainingDataset(Dataset):
             "file_name": raw.file_name,
         }
         encoded["detection_metadata"] = detection_metadata
+        encoded["rendered_span_sources"] = _rendered_span_sources(
+            rendered_assistant.render_span_events
+        )
         encoded["sample_id"] = _make_sample_id(self.dataset_name, base_idx)
         encoded["dataset"] = self.dataset_name
         encoded["base_idx"] = base_idx
         if recursive_detection_targets is not None:
             encoded["recursive_detection_targets"] = recursive_detection_targets
+        if teacher_forcing_target_ir is not None:
+            encoded[TEACHER_FORCING_TARGET_IR_KEY] = teacher_forcing_target_ir
         return dict(encoded)
 
     def _ordering_plan(
@@ -414,9 +581,9 @@ class DetectionTrainingDataset(Dataset):
     def _encode_messages(
         self, messages: Sequence[Mapping[str, Any]]
     ) -> MutableMapping[str, Any]:
-        encoded = self.swift_template.encode(
+        encoded = _encode_swift_template_no_resize(
+            self.swift_template,
             {"messages": copy.deepcopy([dict(message) for message in messages])},
-            return_length=True,
         )
         if not isinstance(encoded, MutableMapping):
             raise TypeError("swift_template.encode must return a mutable mapping")
@@ -558,6 +725,87 @@ class DetectionTrainingDataset(Dataset):
                 raise ValueError("shifted recursive target is not supervised by labels")
         return shifted
 
+    def _align_teacher_forcing_target_to_encoded(
+        self,
+        encoded: MutableMapping[str, Any],
+        build_result: TeacherForcingBuildResult,
+    ) -> TeacherForcingTargetIR:
+        target_ir = build_result.target_ir
+        if target_ir is None:
+            raise ValueError("teacher_forcing build result missing target_ir")
+        encoded_input_ids = _as_int_tuple(
+            encoded.get("input_ids"), path="encoded.input_ids"
+        )
+        encoded_labels = _as_int_tuple(encoded.get("labels"), path="encoded.labels")
+        if len(encoded_input_ids) != len(encoded_labels):
+            raise ValueError("encoded input_ids and labels must have the same length")
+        encoded_positions = tuple(
+            index for index, label in enumerate(encoded_labels) if int(label) != -100
+        )
+        atom_positions = tuple(int(atom.target_position) for atom in target_ir.atoms)
+        if len(atom_positions) != len(encoded_positions):
+            raise ValueError(
+                "encoded labels do not supervise the same target count as "
+                "teacher_forcing_target_ir"
+            )
+        if not atom_positions:
+            raise ValueError("teacher_forcing_target_ir requires at least one atom")
+        position_delta = int(encoded_positions[0]) - int(atom_positions[0])
+        expected_encoded_positions = tuple(
+            int(position) + position_delta for position in atom_positions
+        )
+        if expected_encoded_positions != encoded_positions:
+            raise ValueError(
+                "encoded supervised positions are not a constant shift of "
+                "teacher_forcing_target_ir positions"
+            )
+        build_input_ids = tuple(int(token_id) for token_id in build_result.input_ids)
+        shifted_atoms = []
+        for atom in target_ir.atoms:
+            target_position = int(atom.target_position)
+            if build_input_ids[target_position] != int(atom.selected_token_id):
+                raise ValueError(
+                    "teacher_forcing target IR selected_token_id does not match "
+                    "builder input_ids"
+                )
+            shifted_target_position = target_position + position_delta
+            shifted_logit_position = int(atom.logit_position) + position_delta
+            if encoded_input_ids[shifted_target_position] != int(atom.selected_token_id):
+                raise ValueError(
+                    "shifted teacher_forcing target does not match encoded input_ids"
+                )
+            if encoded_labels[shifted_target_position] != int(atom.selected_token_id):
+                raise ValueError(
+                    "shifted teacher_forcing target is not supervised by labels"
+                )
+            shifted_atoms.append(
+                replace(
+                    atom,
+                    logit_position=shifted_logit_position,
+                    target_position=shifted_target_position,
+                )
+            )
+        return replace(
+            target_ir,
+            atoms=tuple(shifted_atoms),
+            metadata={
+                **dict(target_ir.metadata),
+                "token_position_origin": "DetectionTrainingDataset.encoded",
+            },
+        )
+
+    def _teacher_forcing_input_prefix_token_id(self) -> int | None:
+        bos_token_id = getattr(self.tokenizer, "bos_token_id", None)
+        if bos_token_id is not None:
+            return int(bos_token_id)
+        convert = getattr(self.tokenizer, "convert_tokens_to_ids", None)
+        unk = getattr(self.tokenizer, "unk_token_id", None)
+        if callable(convert):
+            token_id = convert("<|im_start|>")
+            if token_id is not None and token_id != unk:
+                return int(token_id)
+        return None
+
     def _state_weighting_for_prepare(self) -> StateWeightingStrategy:
         if self.config.mode in {"sorted_sft", "random_order_sft"}:
             return "uniform_permutation"
@@ -593,6 +841,48 @@ def _make_sample_id(dataset_name: str, base_idx: int) -> int:
 
     namespace = zlib.crc32(str(dataset_name).encode("utf-8")) & 0xFFFF
     return (namespace << 32) | (int(base_idx) & 0xFFFFFFFF)
+
+
+def _rendered_span_sources(render_span_events: Sequence[Any]) -> list[dict[str, Any]]:
+    sources: list[dict[str, Any]] = []
+    for event in render_span_events:
+        if getattr(event, "object_instance_id", None) is None:
+            continue
+        if getattr(event, "span_family", None) is None:
+            continue
+        sources.append(
+            {
+                "char_span": {
+                    "start": int(event.char_span.start),
+                    "end": int(event.char_span.end),
+                    "label": str(event.char_span.label),
+                },
+                "event_kind": str(event.span_kind),
+                "object_id": getattr(event, "object_id", None),
+                "object_instance_id": str(event.object_instance_id),
+                "supervision_key": getattr(event, "supervision_key", None),
+                "span_family": getattr(event, "span_family", None),
+                "field_name": getattr(event, "field_name", None),
+                "source_role": getattr(event, "source_role", None),
+                "relation_snapshot": _json_safe_sidecar_value(
+                    getattr(event, "relation_snapshot", None)
+                ),
+                "coordinate_weight": getattr(event, "coordinate_weight", None),
+                "regression_weight": getattr(event, "regression_weight", None),
+                "hard_bbox_supervision": getattr(event, "hard_bbox_supervision", None),
+            }
+        )
+    return sources
+
+
+def _json_safe_sidecar_value(value: Any) -> Any:
+    if isinstance(value, Mapping):
+        return {str(key): _json_safe_sidecar_value(item) for key, item in value.items()}
+    if isinstance(value, Sequence) and not isinstance(value, (str, bytes, bytearray)):
+        return [_json_safe_sidecar_value(item) for item in value]
+    if value is None or isinstance(value, (str, int, float, bool)):
+        return value
+    return str(value)
 
 
 def strip_non_model_detection_sidecars(
@@ -642,5 +932,6 @@ __all__ = [
     "DetectionTrainingDataset",
     "REGISTERED_DETECTION_SIDECAR_KEYS",
     "DETECTION_DROPPED_BEFORE_MODEL_KEYS",
+    "resolve_detection_jsonl_image_root",
     "strip_non_model_detection_sidecars",
 ]

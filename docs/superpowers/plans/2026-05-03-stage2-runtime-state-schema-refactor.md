@@ -4,7 +4,7 @@ Status: planned follow-up only. Task 10 created this plan as a decision-gate out
 
 ## Goal
 
-Introduce a dedicated typed object for the Stage-2 checkpoint runtime-state payload owned by `Stage2ABTrainingTrainer._coordexp_checkpoint_runtime_state()` and `Stage2ABTrainingTrainer._coordexp_restore_checkpoint_runtime_state()`, while preserving all existing serialized checkpoint keys and avoiding metric/logging-key reshaping.
+Introduce a dedicated typed object for the Stage-2 checkpoint runtime-state payload owned by `Stage2TwoChannelTrainer._coordexp_checkpoint_runtime_state()` and `Stage2TwoChannelTrainer._coordexp_restore_checkpoint_runtime_state()`, while preserving all existing serialized checkpoint keys and avoiding metric/logging-key reshaping.
 
 First concrete runtime state object selected by Task 10:
 
@@ -128,7 +128,7 @@ def test_stage2_checkpoint_runtime_state_rejects_malformed_pending_log():
 
 
 def test_stage2_checkpoint_runtime_state_hooks_roundtrip(monkeypatch):
-    from src.trainers.stage2_rollout_aligned import RolloutMatchingSFTTrainer
+    from src.trainers.stage2_rollout_runtime import Stage2RolloutRuntime
     from src.trainers.stage2_two_channel.runtime_state import (
         Stage2CheckpointRuntimeState,
     )
@@ -136,7 +136,7 @@ def test_stage2_checkpoint_runtime_state_hooks_roundtrip(monkeypatch):
     restored_base_payloads = []
 
     monkeypatch.setattr(
-        RolloutMatchingSFTTrainer,
+        Stage2RolloutRuntime,
         "_coordexp_checkpoint_runtime_state",
         lambda self: {"base_runtime_state": "preserved"},
     )
@@ -145,7 +145,7 @@ def test_stage2_checkpoint_runtime_state_hooks_roundtrip(monkeypatch):
         restored_base_payloads.append(dict(payload))
 
     monkeypatch.setattr(
-        RolloutMatchingSFTTrainer,
+        Stage2RolloutRuntime,
         "_coordexp_restore_checkpoint_runtime_state",
         _restore_base_runtime_state,
     )
@@ -545,6 +545,6 @@ git diff --check exits 0.
 - `ModuleResult` and `PipelineResult` remain the canonical teacher-forcing result containers.
 - `Stage2PreparedSegment` remains unchanged in this follow-up.
 - The Stage-2 checkpoint payload keeps all existing key names.
-- `test_stage2_checkpoint_runtime_state_hooks_roundtrip()` calls both `Stage2ABTrainingTrainer._coordexp_checkpoint_runtime_state()` and `_coordexp_restore_checkpoint_runtime_state()`.
+- `test_stage2_checkpoint_runtime_state_hooks_roundtrip()` calls both `Stage2TwoChannelTrainer._coordexp_checkpoint_runtime_state()` and `_coordexp_restore_checkpoint_runtime_state()`.
 - Dynamic metric maps remain mappings and no logging key is renamed.
 - Malformed pending-log payloads fail fast through `Stage2CheckpointRuntimeState.from_mapping()`.

@@ -99,6 +99,7 @@ from src.eval.detection_records import (
     load_jsonl,
     preds_to_gt_records,
 )
+from src.infer.artifacts import load_comparable_artifact
 
 def _prepare_all_from_records(
     gt_records: List[Dict[str, Any]],
@@ -406,6 +407,14 @@ def _evaluate_preloaded_records(
             options=options,
         )
         summary["metrics"].update(f1ish_summary["metrics"])
+        if not want_official:
+            summary["evaluation_status"] = "inspection"
+            summary["comparability"] = "non_comparable"
+            summary["comparison_scope"] = "raw_f1ish"
+        else:
+            summary["f1ish_evaluation_status"] = "inspection"
+            summary["f1ish_comparability"] = "non_comparable"
+            summary["f1ish_comparison_scope"] = "diagnostic_f1ish"
     else:
         f1ish_summary = {"matches_by_thr": {}}
 
@@ -536,6 +545,8 @@ def evaluate_and_save(
     *,
     options: EvalOptions,
 ) -> Dict[str, Any]:
+    if _wants_official_metrics(options.metrics):
+        load_comparable_artifact(pred_path, require_score=True)
     load_counters = EvalCounters()
     pred_records = load_jsonl(pred_path, load_counters, strict=options.strict_parse)
     pred_records = _maybe_backfill_lvis_metadata_for_eval(

@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 from pathlib import Path, PurePosixPath
+from types import SimpleNamespace
 from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence
 
 from transformers import (
@@ -16,7 +17,14 @@ from src.common.semantic_desc import normalize_desc
 from src.eval.artifacts import with_constant_scores
 from src.eval.confidence_postop import ConfidencePostOpPaths, run_confidence_postop
 from src.eval.detection import EvalOptions, evaluate_and_save
-from src.infer.engine import GenerationConfig, InferenceConfig, InferenceEngine
+from src.infer.artifacts import write_score_provenance_sidecar
+from src.infer.prompt import DetectionPromptPolicy, prompt_policy_fingerprint
+from src.infer.runtime import (
+    DetectionDecodeRequest,
+    build_decode_policy_fingerprint,
+    build_model_identity_fingerprint,
+    run_offline_inference,
+)
 from src.utils import get_logger
 
 logger = get_logger(__name__)
@@ -118,6 +126,17 @@ def _write_jsonl(path: Path, rows: Sequence[Mapping[str, Any]]) -> None:
     with path.open("w", encoding="utf-8") as fout:
         for row in rows:
             fout.write(json.dumps(dict(row), ensure_ascii=False) + "\n")
+
+
+def _stage1_eval_score_source(
+    *,
+    score_mode: str,
+    pred_score_source: str,
+    pred_score_version: int,
+) -> str:
+    if score_mode == "confidence_postop":
+        return "confidence_postop:v2"
+    return f"{pred_score_source}:v{int(pred_score_version)}"
 
 
 def _token_trace_start_form(tokens: Sequence[Any]) -> str:
@@ -459,19 +478,109 @@ class Stage1DetectionEvalCallback(TrainerCallback):
         self.lvis_annotations_json = (
             str(lvis_annotations_json) if lvis_annotations_json is not None else None
         )
-        self.gen_cfg = GenerationConfig(
-            temperature=float(temperature),
-            top_p=float(top_p),
-            max_new_tokens=int(max_new_tokens),
-            repetition_penalty=float(repetition_penalty),
-            batch_size=int(batch_size),
-            seed=self.seed,
-        )
+        self.generation_kwargs = {
+            "temperature": float(temperature),
+            "top_p": float(top_p),
+            "max_new_tokens": int(max_new_tokens),
+            "repetition_penalty": float(repetition_penalty),
+            "batch_size": int(batch_size),
+            "seed": self.seed,
+        }
+        self.gen_cfg = SimpleNamespace(**self.generation_kwargs)
         self._processor: Any | None = None
 
     def _eval_dir(self, state: TrainerState) -> Path:
         step = int(getattr(state, "global_step", 0) or 0)
         return self.output_root / "eval_detection" / f"step_{step:07d}"
+
+    def _write_score_provenance(
+        self,
+        *,
+        base_jsonl_path: Path,
+        scored_jsonl_path: Path,
+    ) -> None:
+        decode_request = DetectionDecodeRequest(
+            backend="hf",
+            backend_mode="local",
+            decode_mode=(
+                "greedy" if float(self.gen_cfg.temperature or 0.0) <= 0.0 else "sampling"
+            ),
+            max_new_tokens=int(self.gen_cfg.max_new_tokens),
+            temperature=float(self.gen_cfg.temperature or 0.0),
+            top_p=float(self.gen_cfg.top_p)
+            if self.gen_cfg.top_p is not None
+            else None,
+            repetition_penalty=(
+                float(self.gen_cfg.repetition_penalty)
+                if self.gen_cfg.repetition_penalty is not None
+                else None
+            ),
+            seed=self.seed,
+            stop_strings=("<|im_end|>",),
+            trace_logprobs=self.score_mode == "confidence_postop",
+        )
+        decode_fingerprint = build_decode_policy_fingerprint(decode_request)
+        prompt_fingerprint = prompt_policy_fingerprint(
+            DetectionPromptPolicy(
+                name="stage1_detection_eval",
+                version="1",
+                system_prompt="",
+                user_prompt=json.dumps(
+                    {
+                        "prompt_variant": self.prompt_variant,
+                        "bbox_format": self.bbox_format,
+                        "object_field_order": self.object_field_order,
+                        "object_ordering": self.object_ordering,
+                    },
+                    ensure_ascii=True,
+                    sort_keys=True,
+                ),
+                image_count=1,
+                do_resize=False,
+            )
+        )
+        model_fingerprint = build_model_identity_fingerprint(
+            checkpoint_mode="training_live_model",
+            requested_model_checkpoint=self.model_checkpoint,
+            requested_adapter_checkpoint=None,
+            resolved_base_model_checkpoint=self.model_checkpoint,
+            resolved_adapter_checkpoint=None,
+            backend="hf",
+            backend_mode="local",
+            backend_model=self.model_checkpoint,
+        )
+        write_score_provenance_sidecar(
+            scored_path=scored_jsonl_path,
+            prompt_policy_fingerprint=prompt_fingerprint,
+            decode_policy_fingerprint=decode_fingerprint,
+            model_identity_fingerprint=model_fingerprint,
+            policy_name=(
+                "confidence_postop"
+                if self.score_mode == "confidence_postop"
+                else "constant_score"
+            ),
+            score_source=_stage1_eval_score_source(
+                score_mode=self.score_mode,
+                pred_score_source=self.pred_score_source,
+                pred_score_version=self.pred_score_version,
+            ),
+            aggregation_rule=(
+                "bbox_logprob_confidence_exp"
+                if self.score_mode == "confidence_postop"
+                else "constant_per_prediction"
+            ),
+            token_span_rule=(
+                "generated_token_trace_bbox_and_desc_spans"
+                if self.score_mode == "confidence_postop"
+                else "none"
+            ),
+            constant_score_value=(
+                None if self.score_mode == "confidence_postop" else self.constant_score
+            ),
+            source_raw_artifact_path=base_jsonl_path,
+            parser_policy="stage1_detection_eval",
+            extra={"eval_surface": "stage1_detection_eval"},
+        )
 
     def on_evaluate(
         self,
@@ -501,38 +610,41 @@ class Stage1DetectionEvalCallback(TrainerCallback):
         eval_dir = self._eval_dir(state)
         eval_dir.mkdir(parents=True, exist_ok=True)
 
-        infer_cfg = InferenceConfig(
-            gt_jsonl=str(self.gt_jsonl),
-            model_checkpoint=self.model_checkpoint,
-            mode="auto",
-            prompt_variant=self.prompt_variant,
-            bbox_format=self.bbox_format,
-            object_field_order=self.object_field_order,
-            object_ordering=self.object_ordering,
-            pred_coord_mode="auto",
-            out_path=str(eval_dir / "gt_vs_pred.jsonl"),
-            summary_path=str(eval_dir / "infer_summary.json"),
-            device=device,
-            limit=int(self.limit or 0),
-            backend_type="hf",
-            rank=rank if distributed_eval else 0,
-            local_rank=local_rank if distributed_eval else 0,
-            world_size=world_size if distributed_eval else 1,
-            distributed_enabled=distributed_eval,
-        )
-        engine = InferenceEngine(infer_cfg, self.gen_cfg, logger=logger)
-        engine.model = runtime_model
-        if self._processor is not None:
-            engine.processor = self._processor
+        inference_kwargs = {
+            "gt_jsonl": str(self.gt_jsonl),
+            "model_checkpoint": self.model_checkpoint,
+            "mode": "auto",
+            "prompt_variant": self.prompt_variant,
+            "bbox_format": self.bbox_format,
+            "object_field_order": self.object_field_order,
+            "object_ordering": self.object_ordering,
+            "pred_coord_mode": "auto",
+            "out_path": str(eval_dir / "gt_vs_pred.jsonl"),
+            "summary_path": str(eval_dir / "infer_summary.json"),
+            "device": device,
+            "limit": int(self.limit or 0),
+            "backend_type": "hf",
+            "rank": rank if distributed_eval else 0,
+            "local_rank": local_rank if distributed_eval else 0,
+            "world_size": world_size if distributed_eval else 1,
+            "distributed_enabled": distributed_eval,
+        }
 
         was_training = bool(getattr(runtime_model, "training", False))
         runtime_model.eval()
         try:
-            base_jsonl_path, _summary_path = engine.infer()
+            infer_result = run_offline_inference(
+                inference_kwargs=inference_kwargs,
+                generation_kwargs=self.generation_kwargs,
+                model=runtime_model,
+                processor=self._processor,
+                logger=logger,
+            )
+            base_jsonl_path = Path(infer_result.base_jsonl_path)
         finally:
             if was_training:
                 runtime_model.train()
-        self._processor = engine.processor
+        self._processor = infer_result.processor
 
         if distributed_eval and not is_rank0:
             logger.info(
@@ -581,6 +693,10 @@ class Stage1DetectionEvalCallback(TrainerCallback):
                     constant_score=self.constant_score,
                 )
                 _write_jsonl(pred_jsonl_path, scored_rows)
+            self._write_score_provenance(
+                base_jsonl_path=base_jsonl_path,
+                scored_jsonl_path=pred_jsonl_path,
+            )
 
         options = EvalOptions(
             metrics=self.eval_options.metrics,

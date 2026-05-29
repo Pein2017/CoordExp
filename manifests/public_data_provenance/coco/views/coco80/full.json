@@ -1,0 +1,86 @@
+{
+  "schema_version": 1,
+  "artifact_type": "annotation_view",
+  "relative_path": "public_data/coco/views/coco80/full",
+  "producer_script": "public_data/scripts/build_coco_views.py",
+  "working_dir": ".",
+  "command": "PYTHONPATH=. conda run -n ms python public_data/scripts/build_coco_views.py --config configs/stage1/recursive_detection_ce_latest/prod/compact_full_support2.yaml --model-path model_cache/models/Qwen/Qwen3-VL-2B-Instruct-coordexp --source-preset public_data/coco/rescale_32_1024_bbox --image-store-root public_data/coco/images/res-1024 --views-root public_data/coco/views --legacy-max-objects-source public_data/coco/rescale_32_1024_bbox_max60 --proxy-source public_data/coco/rescale_32_1024_bbox_lvis_proxy_len12000 --splits train val --views coco80/full --image-store-mode reuse-existing",
+  "inputs": [
+    {
+      "kind": "image_store_manifest",
+      "path": "manifests/public_data_provenance/coco/images/res-1024.json",
+      "notes": "Shared Phase 1 COCO 1024 image-store contract."
+    },
+    {
+      "kind": "processed_dataset_manifest",
+      "path": "manifests/public_data_provenance/coco/rescale_32_1024_bbox.json",
+      "notes": "Legacy full-object COCO 1024 source JSONL provenance."
+    },
+    {
+      "kind": "processed_dataset",
+      "path": "public_data/coco/rescale_32_1024_bbox",
+      "notes": "Resized pixel-space source rows converted into canonical norm1000 integer view rows."
+    }
+  ],
+  "key_params": {
+    "dataset": "coco",
+    "view": "coco80/full",
+    "annotation_policy": "coco80",
+    "sample_policy": "full",
+    "image_store": "public_data/coco/images/res-1024",
+    "image_path_semantics": "image_store_relative",
+    "coordinate_space": "norm1000",
+    "coordinate_storage": "integer",
+    "coordinate_range": [
+      0,
+      999
+    ],
+    "assistant_coordinate_rendering": "qwen_coord_tokens",
+    "routine_sync_policy": "regenerate_from_raw_plus_manifest",
+    "view_summary": {
+      "records": 122218,
+      "rendered_object_count": 886282,
+      "support_sidecar_count": 0,
+      "rendered_proxy_candidate_count": 0,
+      "object_supervision_count": 0
+    }
+  },
+  "checksums": {
+    "scope": "jsonl_training_samples_only",
+    "algorithm": "sha256",
+    "aggregate_sha256": "09cc60178ec538fd6ecd2333b6f29391beea5b3981774574126165bb33847a9a",
+    "aggregate_source": "sorted path sha256 size_bytes records lines",
+    "files": [
+      {
+        "path": "public_data/coco/views/coco80/full/train.jsonl",
+        "sha256": "6b2749fabe26151441a84db05c0b56396bb8f1e35b8e267c55883432a39a02fd",
+        "size_bytes": 150227988,
+        "records": 117266
+      },
+      {
+        "path": "public_data/coco/views/coco80/full/val.jsonl",
+        "sha256": "b5cd35fc5acd832df0647c5864607d11558d5a9e1c155f9df38aecedce6d6551",
+        "size_bytes": 6379230,
+        "records": 4952
+      }
+    ]
+  },
+  "metadata": {
+    "view_metadata": {
+      "path": "public_data/coco/views/coco80/full/meta.json",
+      "sha256": "172e452544152fbfd25791cbe0602efc2b90d43fe713d2ca4c94ff56144f5bf3",
+      "size_bytes": 859
+    },
+    "source_comparison": {
+      "path": "public_data/coco/views/coco80/full/source_comparison.json",
+      "sha256": "468694adbfafbf580984adccfaba571a3351f942fa167c3cd4c342b1aeb310bf",
+      "size_bytes": 2494
+    }
+  },
+  "code_ref": {
+    "git_commit": "593e9357ae2fc2126521b30fcc6c239cbd5af304",
+    "git_dirty_allowed": true
+  },
+  "generated_at_utc": null,
+  "notes": "Phase 1 canonical COCO80 full annotation view with image-store-relative image paths and norm1000 integer geometry."
+}

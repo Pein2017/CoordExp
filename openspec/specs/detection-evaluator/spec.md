@@ -134,7 +134,7 @@ Normative behavior:
 - score-aware COCO guarded outputs MUST preserve score provenance and therefore
   operate on `gt_vs_pred_scored.jsonl` -> `gt_vs_pred_scored_guarded.jsonl`
   rather than silently falling back to the unscored raw artifact,
-- because offline evaluation has no explorer views, the evaluator MUST use a
+- because offline evaluation has no peer rollout views, the evaluator MUST use a
   documented offline conservative subset of the shared policy.
 
 #### Scenario: Guarded artifacts remain schema-compatible with raw outputs

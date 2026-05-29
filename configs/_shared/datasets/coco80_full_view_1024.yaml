@@ -1,0 +1,8 @@
+template:
+  max_pixels: 1048576
+
+custom:
+  offline_max_pixels: 1048576
+  train_jsonl: public_data/coco/views/coco80/full/train.jsonl
+  val_jsonl: public_data/coco/views/coco80/full/val.jsonl
+  object_ordering: sorted

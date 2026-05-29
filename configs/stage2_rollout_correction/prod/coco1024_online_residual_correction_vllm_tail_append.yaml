@@ -1,0 +1,101 @@
+extends: ../base.yaml
+
+experiment:
+  title: Stage-2 rollout-correction COCO1024 vLLM tail-append production profile
+  purpose: >
+    Train the unified Stage-2 residual rollout prefix plus GT correction objective
+    with vLLM server rollouts.
+  hypothesis: >
+    Residual correction over live rollout prefixes improves recovered-object
+    supervision without reintroducing the removed clean-prefix branch.
+  key_deviations:
+    - Uses the canonical residual_set_correction objective only.
+    - Uses tail_append ordering for recovered GT objects.
+  runtime_settings:
+    - "custom.trainer_variant: stage2_rollout_correction"
+    - "rollout_matching.vllm.sync.mode: adapter"
+
+training:
+  output_dir: output/stage2_rollout_correction/prod/coco1024_online_residual_correction_vllm_tail_append
+  logging_dir: output/stage2_rollout_correction/logs
+  run_name: coco1024_online_residual_correction_vllm_tail_append
+  num_train_epochs: 1
+  eval_steps: 80
+  save_steps: 200
+  learning_rate: 1.0e-5
+  vit_lr: 1.0e-5
+  aligner_lr: 5.0e-5
+
+custom:
+  train_jsonl: public_data/coco/rescale_32_1024_bbox_max60/train.coord.jsonl
+  val_jsonl: public_data/coco/rescale_32_1024_bbox_max60/val.coord.jsonl
+  detection_sequence_format: coordjson
+  object_field_order: desc_first
+
+stage2_rollout_correction:
+  pipeline:
+    objective:
+      - name: residual_set_correction
+        enabled: true
+        weight: 1.0
+        application:
+          preset: rollout_self_prefix
+        config:
+          expected_num_rollouts: 4
+          base_seed: 17
+          lambda_type: 1.0
+          lambda_inner: 1.0
+          fallback_loss_weight: 1.0
+          lambda_ul_promoted: 0.5
+          label_conflict_weight: 0.25
+          commit_iou_threshold: 0.75
+          duplicate_burst_iou_threshold: 0.95
+          ul_cluster_iou_threshold: 0.9
+          ul_gray_iou_low: 0.30
+          ul_consensus_ratio: 1.0
+          min_ul_valid_rollouts: 4
+          clean_gt_sft_mix: 0
+          strict_builder_invariants: true
+    diagnostics: []
+  correction:
+    insertion_order: tail_append
+    triage_posterior:
+      num_rollouts: 4
+      rollout_temperatures: [0.0, 0.3, 0.5, 0.7]
+
+rollout_matching:
+  rollout_backend: vllm
+  eval_rollout_backend: vllm
+  rollout_decode_batch_size: 4
+  eval_decode_batch_size: 4
+  vllm:
+    mode: server
+    tensor_parallel_size: 1
+    gpu_memory_utilization: 0.80
+    max_model_len: 20000
+    enable_lora: true
+    max_lora_rank: 16
+    enable_tower_connector_lora: true
+    sync:
+      mode: adapter
+    enable_prefix_caching: true
+    enforce_eager: true
+    disable_custom_all_reduce: true
+    mm_processor_kwargs:
+      do_resize: false
+    server:
+      timeout_s: 240.0
+      infer_timeout_s: 240.0
+      servers:
+        - base_url: http://127.0.0.1:8000
+          group_port: 51216
+        - base_url: http://127.0.0.1:8001
+          group_port: 51217
+        - base_url: http://127.0.0.1:8002
+          group_port: 51218
+        - base_url: http://127.0.0.1:8003
+          group_port: 51219
+        - base_url: http://127.0.0.1:8004
+          group_port: 51220
+        - base_url: http://127.0.0.1:8005
+          group_port: 51221

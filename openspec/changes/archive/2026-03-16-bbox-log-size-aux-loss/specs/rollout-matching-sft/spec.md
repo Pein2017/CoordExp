@@ -41,7 +41,7 @@ Normative behavior:
 The rollout-aligned trainer MUST reuse the same decoded-box size auxiliaries
 through `bbox_size_aux` that Stage-2 AB uses.
 
-When `custom.trainer_variant: stage2_rollout_aligned`, the rollout-aligned
+When `custom.trainer_variant: stage2_rollout_runtime`, the rollout-aligned
 teacher-forcing path SHALL support the same optional decoded-box size
 auxiliaries through `bbox_size_aux` that Stage-2 AB uses.
 

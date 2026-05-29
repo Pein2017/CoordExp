@@ -5,16 +5,14 @@ from typing import Any, Mapping, Sequence
 
 import torch
 
-from .contracts import PipelineModuleSpec, PipelineResult, TeacherForcingContext
-from .module_registry import DIAGNOSTIC_MODULE_CATALOG, OBJECTIVE_MODULE_CATALOG
-from .modules import (
-    run_bbox_size_aux_module,
-    run_bbox_geo_module,
-    run_coord_diag_module,
-    run_coord_reg_module,
-    run_loss_duplicate_burst_unlikelihood_module,
-    run_token_ce_module,
+from .contracts import (
+    ModuleResult,
+    PipelineModuleSpec,
+    PipelineResult,
+    TeacherForcingContext,
 )
+from .module_registry import DIAGNOSTIC_MODULE_CATALOG, OBJECTIVE_MODULE_CATALOG
+from .modules import run_schema_format_ce_module, run_token_ce_module
 
 logger = logging.getLogger(__name__)
 
@@ -46,6 +44,76 @@ def _validate_registry_coverage(
         )
 
 
+def _validate_module_config_keys(
+    spec: PipelineModuleSpec,
+    *,
+    catalog: Mapping[str, object],
+    kind: str,
+) -> None:
+    definition = catalog.get(spec.name)
+    if definition is None:
+        return
+    allowed = {str(key) for key in getattr(definition, "config_keys", frozenset())}
+    allowed.update(
+        str(key) for key in getattr(definition, "optional_config_keys", frozenset())
+    )
+    unknown = sorted(str(key) for key in spec.config if str(key) not in allowed)
+    if unknown:
+        raise ValueError(
+            f"{kind} module {spec.name!r} config contains unsupported key(s): "
+            + ", ".join(unknown)
+        )
+
+
+def _run_residual_set_correction_module(
+    *,
+    context: TeacherForcingContext,
+    spec: PipelineModuleSpec,
+) -> ModuleResult:
+    try:
+        from .modules.residual_set_correction import run_residual_set_correction_module
+    except ModuleNotFoundError as exc:
+        expected_missing_modules = {
+            f"{__package__}.modules.residual_set_correction",
+            "src.trainers.teacher_forcing.modules.residual_set_correction",
+        }
+        if exc.name not in expected_missing_modules:
+            raise
+        raise NotImplementedError(
+            "residual_set_correction objective is registered for config/import "
+            "sanity, but its loss module is implemented by Task 5."
+        ) from exc
+
+    return run_residual_set_correction_module(context=context, spec=spec)
+
+
+def _run_stage2_residual_trie_ce_module(
+    *,
+    context: TeacherForcingContext,
+    spec: PipelineModuleSpec,
+) -> ModuleResult:
+    """Run the canonical Stage-2 trie name through residual-state valid sets."""
+
+    residual_spec = PipelineModuleSpec(
+        name="residual_set_correction",
+        enabled=spec.enabled,
+        weight=1.0,
+        surfaces=spec.surfaces,
+        application={"preset": "rollout_self_prefix"},
+        config=spec.config,
+    )
+    out = _run_residual_set_correction_module(context=context, spec=residual_spec)
+    metrics = dict(out.metrics)
+    metrics["stage2_trie/residual_state_alias"] = 1.0
+    metrics["loss/stage2_rollout_correction/stage2_trie_ce"] = float(
+        out.loss.detach().cpu().item()
+    )
+    state = dict(out.state)
+    state["stage2_trie_ce"] = out.loss
+    state["stage2_trie_ce_contrib"] = out.loss
+    return ModuleResult(loss=out.loss, metrics=metrics, state=state)
+
+
 def run_teacher_forcing_pipeline(
     *,
     context: TeacherForcingContext,
@@ -64,16 +132,22 @@ def run_teacher_forcing_pipeline(
 
     objective_registry = {
         "token_ce": lambda spec: run_token_ce_module(context=context, spec=spec),
-        "loss_duplicate_burst_unlikelihood": lambda spec: run_loss_duplicate_burst_unlikelihood_module(
-            context=context, spec=spec
-        ),
-        "bbox_geo": lambda spec: run_bbox_geo_module(context=context, spec=spec),
-        "bbox_size_aux": lambda spec: run_bbox_size_aux_module(
+        "hard_sft": lambda spec: run_token_ce_module(
             context=context,
             spec=spec,
-            state=state,
         ),
-        "coord_reg": lambda spec: run_coord_reg_module(context=context, spec=spec, state=state),
+        "stage2_trie_ce": lambda spec: _run_stage2_residual_trie_ce_module(
+            context=context,
+            spec=spec,
+        ),
+        "schema_format_ce": lambda spec: run_schema_format_ce_module(
+            context=context,
+            spec=spec,
+        ),
+        "residual_set_correction": lambda spec: _run_residual_set_correction_module(
+            context=context,
+            spec=spec,
+        ),
     }
     _validate_registry_coverage(
         objective_registry,
@@ -81,9 +155,7 @@ def run_teacher_forcing_pipeline(
         kind="objective",
     )
 
-    diag_registry = {
-        "coord_diag": lambda spec: run_coord_diag_module(context=context, spec=spec, state=state),
-    }
+    diag_registry = {}
     _validate_registry_coverage(
         diag_registry,
         allowed=set(DIAGNOSTIC_MODULE_CATALOG),
@@ -91,11 +163,16 @@ def run_teacher_forcing_pipeline(
     )
 
     for spec in obj_specs:
-        if not spec.enabled_for_channel(context.channel):
+        if not spec.enabled_for_surface(context.channel):
             continue
         module_fn = objective_registry.get(spec.name)
         if module_fn is None:
             raise ValueError(f"unknown objective module: {spec.name}")
+        _validate_module_config_keys(
+            spec,
+            catalog=OBJECTIVE_MODULE_CATALOG,
+            kind="objective",
+        )
         out = module_fn(spec)
         weighted_loss = out.loss * float(spec.weight)
         total = total + weighted_loss
@@ -111,7 +188,7 @@ def run_teacher_forcing_pipeline(
 
     warn_cache = warn_once_cache if warn_once_cache is not None else set()
     for spec in diag_specs:
-        if not spec.enabled_for_channel(context.channel):
+        if not spec.enabled_for_surface(context.channel):
             continue
         module_fn = diag_registry.get(spec.name)
         if module_fn is None:

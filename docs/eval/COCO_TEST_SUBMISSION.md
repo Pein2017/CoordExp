@@ -106,6 +106,8 @@ PYTHONPATH=. conda run -n ms python scripts/export_coco_submission.py \
 What the exporter does:
 
 - reads scored predictions from the resized inference run
+- refuses to export unless the scored prediction artifact has comparable
+  score-bearing provenance, including `score_policy_fingerprint`
 - reads `public_data/coco/raw/test-dev.jsonl` for the original COCO `image_id`, `width`, and `height`
 - converts the scored boxes from resized pixel space back to original COCO test-dev resolution
 - writes a valid official detection submission JSON

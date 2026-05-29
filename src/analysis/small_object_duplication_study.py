@@ -34,7 +34,7 @@ from src.common.object_field_order import (
     normalize_object_field_order,
 )
 from src.config.prompts import resolve_dense_prompt_variant_key
-from src.infer.engine import GenerationConfig
+from src.infer.runtime import make_offline_generation_config
 from src.utils.assistant_json import dumps_coordjson
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -780,8 +780,12 @@ def _build_case_row(
             "precision": float(stats.get("precision", 0.0) or 0.0),
             "recall": float(stats.get("recall", 0.0) or 0.0),
             "f1": float(stats.get("f1", 0.0) or 0.0),
-            "duplicate_burst_unlikelihood_boundary_count": int(
-                stats.get("duplicate_burst_unlikelihood_boundary_count", 0) or 0
+            "duplicate_control_first_divergence_boundary_count": int(
+                stats.get(
+                    "duplicate_control_first_divergence_boundary_count",
+                    stats.get("duplicate_burst_unlikelihood_boundary_count", 0),
+                )
+                or 0
             ),
         },
         "triage": {
@@ -962,7 +966,7 @@ def _run_generation_batch(
     runner: HFStudyRunner,
     *,
     rows: Sequence[Mapping[str, Any]],
-    gen_cfg: GenerationConfig,
+    gen_cfg: Any,
     prefix_texts: Optional[Sequence[str]] = None,
 ) -> List[Dict[str, Any]]:
     images = [_load_case_image(row) for row in rows]
@@ -1037,7 +1041,7 @@ def _stage_decode(
     )
     result_rows: List[Dict[str, Any]] = []
     for temperature, seed in _decode_settings(cfg):
-        gen_cfg = GenerationConfig(
+        gen_cfg = make_offline_generation_config(
             temperature=float(temperature),
             top_p=float(cfg.decode.top_p),
             max_new_tokens=int(cfg.decode.max_new_tokens),
@@ -1209,7 +1213,7 @@ def _stage_prefix(
             requests.append(payload)
     result_rows: List[Dict[str, Any]] = []
     for temperature, seed in _decode_settings(cfg):
-        gen_cfg = GenerationConfig(
+        gen_cfg = make_offline_generation_config(
             temperature=float(temperature),
             top_p=float(cfg.decode.top_p),
             max_new_tokens=int(cfg.decode.max_new_tokens),

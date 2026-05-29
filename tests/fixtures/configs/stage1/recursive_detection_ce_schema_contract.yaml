@@ -20,7 +20,6 @@ data:
   train_jsonl: schema-contract://train.coord.jsonl
   val_jsonl: schema-contract://val.coord.jsonl
   image_root: schema-contract://image-root
-  max_objects: 60
   object_ordering: random_permutation
 
 prompt:

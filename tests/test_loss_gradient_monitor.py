@@ -6,11 +6,8 @@ import pytest
 import torch
 
 from src.trainers.monitoring.loss_gradient_monitor import (
-    build_stage2_coord_monitor_terms_from_pipeline,
-    build_stage2_two_channel_coord_monitor_terms,
     get_loss_gradient_monitor,
 )
-from src.trainers.teacher_forcing.contracts import PipelineResult
 
 
 def _t(value: float) -> torch.Tensor:
@@ -92,89 +89,6 @@ def test_loss_gradient_monitor_does_not_change_loss_or_backward_grads() -> None:
         float(baseline_total.detach().cpu().item())
     )
     assert torch.allclose(monitored_model.probe.grad, baseline_grad)
-
-
-def test_build_stage2_coord_monitor_terms_from_pipeline_excludes_text_terms() -> None:
-    pipeline_result = PipelineResult(
-        total_loss=_t(0.0),
-        state={
-            "bbox_smoothl1_contrib": _t(0.4),
-            "bbox_ciou_contrib": _t(0.6),
-            "bbox_log_wh_contrib": _t(0.1),
-            "coord_token_ce_contrib": _t(0.2),
-            "coord_soft_ce_contrib": _t(0.3),
-            "coord_w1_contrib": _t(0.5),
-            "coord_el1_contrib": _t(0.7),
-            "coord_gate_contrib": _t(0.9),
-            "text_gate_contrib": _t(1.1),
-        },
-    )
-    objective_specs = [
-        {"name": "token_ce", "weight": 7.0},
-        {"name": "bbox_geo", "weight": 2.0},
-        {"name": "bbox_size_aux", "weight": 4.0},
-        {"name": "coord_reg", "weight": 3.0},
-    ]
-
-    terms = build_stage2_coord_monitor_terms_from_pipeline(
-        pipeline_result=pipeline_result,
-        objective_specs=objective_specs,
-        coord_provenance="B_coord",
-    )
-
-    assert set(terms.keys()) == {
-        "B_coord/bbox_smoothl1",
-        "B_coord/bbox_ciou",
-        "B_coord/bbox_log_wh",
-        "B_coord/coord_token_ce",
-        "B_coord/coord_soft_ce",
-        "B_coord/coord_w1",
-        "B_coord/coord_el1",
-        "B_coord/coord_gate",
-    }
-    assert float(terms["B_coord/bbox_smoothl1"].detach().cpu().item()) == pytest.approx(0.8)
-    assert float(terms["B_coord/bbox_log_wh"].detach().cpu().item()) == pytest.approx(0.4)
-    assert float(terms["B_coord/coord_soft_ce"].detach().cpu().item()) == pytest.approx(0.9)
-    assert "B_coord/text_gate" not in terms
-
-
-def test_build_stage2_two_channel_coord_monitor_terms_uses_single_pass_coord_group_for_channel_a() -> None:
-    pipeline_result = PipelineResult(
-        total_loss=_t(0.0),
-        state={
-            "bbox_smoothl1_contrib": _t(0.4),
-            "bbox_ciou_contrib": _t(0.6),
-            "bbox_log_wh_contrib": _t(0.2),
-            "coord_soft_ce_contrib": _t(0.2),
-            "coord_w1_contrib": _t(0.3),
-        },
-    )
-    objective_specs = [
-        {"name": "bbox_geo", "weight": 2.0},
-        {"name": "bbox_size_aux", "weight": 3.0},
-        {"name": "coord_reg", "weight": 5.0},
-    ]
-
-    terms = build_stage2_two_channel_coord_monitor_terms(
-        channel="A",
-        pipeline_result=pipeline_result,
-        objective_specs=objective_specs,
-        bbox_module_weight=2.0,
-        bbox_size_aux_module_weight=3.0,
-        coord_module_weight=5.0,
-    )
-
-    assert set(terms.keys()) == {
-        "coord/bbox_smoothl1",
-        "coord/bbox_ciou",
-        "coord/bbox_log_wh",
-        "coord/coord_soft_ce",
-        "coord/coord_w1",
-    }
-    assert float(terms["coord/bbox_smoothl1"].detach().cpu().item()) == pytest.approx(0.8)
-    assert float(terms["coord/bbox_log_wh"].detach().cpu().item()) == pytest.approx(0.6)
-    assert float(terms["coord/coord_w1"].detach().cpu().item()) == pytest.approx(1.5)
-    assert all("text_gate" not in key for key in terms)
 
 
 def test_loss_gradient_monitor_apply_caps_rejects_oversized_first_param() -> None:

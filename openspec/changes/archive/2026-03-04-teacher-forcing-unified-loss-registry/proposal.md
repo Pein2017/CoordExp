@@ -6,11 +6,11 @@ training-time telemetry to a monolithic `compute_loss()` implementation (includi
 iterations, CE masking/weighting, bbox regression losses, coord distribution regularizers, and step-level logging
 aggregation).
 
-Rollout-aligned teacher forcing is currently exposed as `custom.trainer_variant: stage2_rollout_aligned` and has the
+Rollout-aligned teacher forcing is currently exposed as `custom.trainer_variant: stage2_rollout_runtime` and has the
 same core problem:
-- It implements a separate monolithic teacher-forcing objective (`RolloutMatchingSFTTrainer.compute_loss()`) with its
+- It implements a separate monolithic teacher-forcing objective (`Stage2RolloutRuntime.compute_loss()`) with its
   own masking + coord distribution supervision, and
-- Stage-2 two-channel inherits from `RolloutMatchingSFTTrainer`, so “Stage-2 refactors” that do not also refactor
+- Stage-2 two-channel inherits from `Stage2RolloutRuntime`, so “Stage-2 refactors” that do not also refactor
   rollout-matching tend to accumulate duplication and subtle semantic drift.
 
 This makes research iteration expensive and error-prone:
@@ -101,7 +101,7 @@ And we want to **implement the `full_idea` teacher-forcing objective semantics**
 - `stage2-ab-training`: Extend the Stage-2 two-channel training surface to allow an explicit objective/diagnostics module
   pipeline declaration, add ST config knobs, and require that defaults preserve the current objective semantics when the
   pipeline keys are not provided (via an explicit Default Pipeline Manifest in the delta spec).
-- `rollout-matching-sft`: Extend Stage-2 rollout-aligned teacher forcing (`custom.trainer_variant: stage2_rollout_aligned`)
+- `rollout-matching-sft`: Extend Stage-2 rollout-aligned teacher forcing (`custom.trainer_variant: stage2_rollout_runtime`)
   to support the same config-declared objective/diagnostics module pipeline and unified loss registry contract,
   preserving default behavior when not configured.
 
@@ -110,7 +110,7 @@ And we want to **implement the `full_idea` teacher-forcing objective semantics**
 To avoid confusing public readers with internal “AB” terminology and to keep the codebase single-mode, this change
 standardizes trainer naming with no backward-compat layer:
 - `custom.trainer_variant: stage2_two_channel` (two-channel Expectation/Rollout)
-- `custom.trainer_variant: stage2_rollout_aligned` (rollout-only)
+- `custom.trainer_variant: stage2_rollout_runtime` (rollout-only)
 
 The older strings (`stage2_ab_training`, `rollout_matching_sft`) are removed and MUST fail fast with actionable
 guidance.
@@ -119,7 +119,7 @@ guidance.
 
 - Trainer implementation:
   - `src/trainers/stage2_two_channel.py` (refactor compute_loss orchestration; ST bridge; preserve DDP-safe logging)
-  - `src/trainers/stage2_rollout_aligned.py` (refactor compute_loss orchestration to use pipeline + registry)
+  - `src/trainers/stage2_rollout_runtime.py` (refactor compute_loss orchestration to use pipeline + registry)
   - Shared registry + module pipeline runtime (added under `src/trainers/`).
   - Stage-1 mixins and Stage-2 Two-Channel modules reuse the same shared loss/mask utilities (no duplicated definitions).
 - Config schema + validation:

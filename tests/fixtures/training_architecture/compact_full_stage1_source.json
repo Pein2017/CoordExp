@@ -1,0 +1,96 @@
+{
+  "sample_id": "stage1-golden-compact",
+  "surface_config": {
+    "run": {
+      "id": "stage1-golden-compact",
+      "scope": "tiny",
+      "seed": 12
+    },
+    "surface": {
+      "id": "stage1_compact_trie_ce",
+      "version": "golden-v1",
+      "description": "Golden compact-full Stage-1 fixture."
+    },
+    "data": {
+      "dataset_id": "fixture:compact-full-stage1",
+      "train_jsonl": "fixture://compact_full_stage1_train.jsonl",
+      "validation_jsonl": "fixture://compact_full_stage1_val.jsonl"
+    },
+    "template": {
+      "id": "compact_full",
+      "object_format": "coord_token_xyxy"
+    },
+    "supervision": {
+      "mode": "compact_trie",
+      "source": "ground_truth",
+      "compact_full": "object_ref_box",
+      "coordinate_format": "coord_token_xyxy"
+    },
+    "objectives": {
+      "trie_ce": {
+        "enabled": true,
+        "weight": 1.0
+      },
+      "coord_soft_ce": {
+        "enabled": true,
+        "weight": 0.25
+      }
+    },
+    "observability": {
+      "level": "fixture"
+    },
+    "artifacts": {
+      "output_root": "output/test-fixtures/training_architecture/stage1"
+    },
+    "runtime": {
+      "trainer": "fixture",
+      "precision": "float32",
+      "packing": false
+    }
+  },
+  "image": "stage1-golden-compact.jpg",
+  "width": 1024,
+  "height": 1024,
+  "image_id": 42,
+  "objects": [
+    {
+      "object_id": "stage1-golden-compact:ann-100:src-2",
+      "description": "traffic light",
+      "bbox": [0, 1, 20, 30],
+      "source_object_index": 2,
+      "category_id": 10,
+      "category_name": "traffic light",
+      "annotation_id": 100
+    },
+    {
+      "object_id": "stage1-golden-compact:ann-101:src-4",
+      "description": "red car",
+      "bbox": [22, 31, 80, 90],
+      "source_object_index": 4,
+      "category_id": 3,
+      "category_name": "car",
+      "annotation_id": 101
+    },
+    {
+      "object_id": "stage1-golden-compact:ann-102:src-7",
+      "description": "person",
+      "bbox": [900, 910, 998, 999],
+      "source_object_index": 7,
+      "category_id": 1,
+      "category_name": "person",
+      "annotation_id": 102
+    }
+  ],
+  "stage1_targets": {
+    "trie": {
+      "label_selector": "first_description_token",
+      "target_token_texts": ["traffic", "red", "person"],
+      "target_token_weights": [0.6, 0.25, 0.15]
+    },
+    "coordinate": {
+      "label_selector": "first_coordinate_token",
+      "target_token_texts": ["<|coord_0|>", "<|coord_1|>"],
+      "target_token_weights": [0.8, 0.2]
+    }
+  }
+}

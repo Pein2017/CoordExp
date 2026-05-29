@@ -4,7 +4,7 @@ import builtins
 
 import pytest
 
-from src.trainers.stage2_rollout_aligned import RolloutMatchingSFTTrainer
+from src.trainers.stage2_rollout_runtime import Stage2RolloutRuntime
 
 
 def _fifo_greedy_selected_total(lengths: list[int], cap: int) -> int:
@@ -23,11 +23,11 @@ def test_post_rollout_selection_deterministic_with_stable_tiebreak():
     # Oldest=6 (pinned). Residual cap=4 can be filled by any two of the three "2"s:
     # {2,3}, {2,4}, {3,4}. Stable tie-break picks lexicographically-smallest => [2,3].
     expected = [0, 2, 3]
-    out0 = RolloutMatchingSFTTrainer._select_post_rollout_segment_indices(lengths, cap)
+    out0 = Stage2RolloutRuntime._select_post_rollout_segment_indices(lengths, cap)
     assert out0 == expected
     for _ in range(5):
         assert (
-            RolloutMatchingSFTTrainer._select_post_rollout_segment_indices(lengths, cap)
+            Stage2RolloutRuntime._select_post_rollout_segment_indices(lengths, cap)
             == expected
         )
     assert out0[0] == 0
@@ -37,7 +37,7 @@ def test_post_rollout_selection_deterministic_with_stable_tiebreak():
 def test_post_rollout_selection_improves_fill_vs_fifo_example():
     cap = 10
     lengths = [6, 3, 2, 2]
-    out = RolloutMatchingSFTTrainer._select_post_rollout_segment_indices(lengths, cap)
+    out = Stage2RolloutRuntime._select_post_rollout_segment_indices(lengths, cap)
 
     fifo_total = _fifo_greedy_selected_total(lengths, cap)
     assert fifo_total == 9
@@ -50,7 +50,7 @@ def test_post_rollout_selection_improves_fill_vs_fifo_example():
 
 
 def test_post_rollout_buffer_rejects_oversized_segment_on_insertion():
-    trainer = RolloutMatchingSFTTrainer.__new__(RolloutMatchingSFTTrainer)
+    trainer = Stage2RolloutRuntime.__new__(Stage2RolloutRuntime)
     trainer.rollout_matching_cfg = {
         "packing_enabled": True,
         "packing_length": 10,
@@ -68,7 +68,7 @@ def test_post_rollout_buffer_rejects_oversized_segment_on_insertion():
 
 
 def test_post_rollout_buffer_overflow_does_not_mutate_state():
-    trainer = RolloutMatchingSFTTrainer.__new__(RolloutMatchingSFTTrainer)
+    trainer = Stage2RolloutRuntime.__new__(Stage2RolloutRuntime)
     trainer.rollout_matching_cfg = {
         "packing_enabled": True,
         "packing_length": 10,
@@ -94,7 +94,7 @@ def test_post_rollout_selection_missing_binpacking_fails_fast(monkeypatch):
     monkeypatch.setattr(builtins, "__import__", fake_import)
 
     with pytest.raises(ImportError) as excinfo:
-        RolloutMatchingSFTTrainer._select_post_rollout_segment_indices([6, 3, 2, 2], 10)
+        Stage2RolloutRuntime._select_post_rollout_segment_indices([6, 3, 2, 2], 10)
     msg = str(excinfo.value).lower()
     assert "binpacking" in msg
     assert "install" in msg

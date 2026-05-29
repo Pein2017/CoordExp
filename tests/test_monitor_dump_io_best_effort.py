@@ -1,10 +1,10 @@
 import types
 
-from src.trainers.stage2_rollout_aligned import RolloutMatchingSFTTrainer
+from src.trainers.stage2_rollout_runtime import Stage2RolloutRuntime
 
 
 def test_monitor_dump_does_not_raise_on_json_io_error(monkeypatch, tmp_path) -> None:
-    t = object.__new__(RolloutMatchingSFTTrainer)
+    t = object.__new__(Stage2RolloutRuntime)
     t.args = types.SimpleNamespace(output_dir=str(tmp_path))
     t.rollout_matching_cfg = {
         "monitor_dump": {"out_dir": str(tmp_path / "dumps"), "write_markdown": False}
@@ -20,7 +20,7 @@ def test_monitor_dump_does_not_raise_on_json_io_error(monkeypatch, tmp_path) -> 
 
 
 def test_monitor_dump_does_not_raise_on_markdown_format_error(tmp_path) -> None:
-    t = object.__new__(RolloutMatchingSFTTrainer)
+    t = object.__new__(Stage2RolloutRuntime)
     t.args = types.SimpleNamespace(output_dir=str(tmp_path))
     t.rollout_matching_cfg = {
         "monitor_dump": {"out_dir": str(tmp_path / "dumps"), "write_markdown": True}
@@ -36,7 +36,7 @@ def test_monitor_dump_does_not_raise_on_markdown_format_error(tmp_path) -> None:
 
 
 def test_train_monitor_dump_markdown_keeps_full_text(tmp_path) -> None:
-    t = object.__new__(RolloutMatchingSFTTrainer)
+    t = object.__new__(Stage2RolloutRuntime)
     t.args = types.SimpleNamespace(output_dir=str(tmp_path))
     t.rollout_matching_cfg = {"train_monitor_dump": {"max_text_chars": 8}}
 
@@ -69,7 +69,7 @@ def test_train_monitor_dump_markdown_keeps_full_text(tmp_path) -> None:
 
 
 def test_eval_monitor_dump_uses_every_evals_cadence() -> None:
-    t = object.__new__(RolloutMatchingSFTTrainer)
+    t = object.__new__(Stage2RolloutRuntime)
     t.rollout_matching_cfg = {
         "eval_monitor_dump": {"enabled": True, "every_evals": 2}
     }

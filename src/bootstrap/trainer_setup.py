@@ -6,14 +6,57 @@ from src.config import SaveDelayConfig
 from src.training_runtime import resolve_training_runtime_profile
 from src.trainers.metrics.mixins import (
     AggregateTokenTypeMetricsMixin,
-    BBoxGeoLossMixin,
-    BBoxSizeAuxLossMixin,
     CoordSoftCEW1LossMixin,
     GradAccumLossScaleMixin,
     InstabilityMonitorMixin,
     RecursiveDetectionCEMixin,
     SFTStructuralCloseLossMixin,
+    TeacherForcingObjectiveMixin,
 )
+
+
+class _InjectedSwiftDataCollatorMixin:
+    """Route CoordExp's collator through ms-swift's current trainer lifecycle."""
+
+    def __init__(self, *args: Any, data_collator: Any = None, **kwargs: Any) -> None:
+        self._coordexp_injected_data_collator = data_collator
+        super().__init__(*args, **kwargs)  # type: ignore[misc]
+
+    def _get_data_collator(self, args: Any, template: Any) -> Any:
+        collator = getattr(self, "_coordexp_injected_data_collator", None)
+        if collator is not None:
+            return collator
+        return super()._get_data_collator(args, template)  # type: ignore[misc]
+
+
+_SWIFT_COLLATOR_WRAPPER_CACHE: dict[type, type] = {}
+
+
+def _trainer_uses_swift_collator_factory(trainer_cls: type) -> bool:
+    for cls in trainer_cls.mro():
+        if str(getattr(cls, "__module__", "")).startswith("swift.") and hasattr(
+            cls, "_get_data_collator"
+        ):
+            return True
+    return False
+
+
+def _with_injected_swift_data_collator(trainer_cls: type) -> type:
+    if not _trainer_uses_swift_collator_factory(trainer_cls):
+        return trainer_cls
+    if issubclass(trainer_cls, _InjectedSwiftDataCollatorMixin):
+        return trainer_cls
+    cached = _SWIFT_COLLATOR_WRAPPER_CACHE.get(trainer_cls)
+    if cached is not None:
+        return cached
+    wrapped = type(
+        f"{trainer_cls.__name__}WithInjectedDataCollator",
+        (_InjectedSwiftDataCollatorMixin, trainer_cls),
+        {},
+    )
+    wrapped.__module__ = trainer_cls.__module__
+    _SWIFT_COLLATOR_WRAPPER_CACHE[trainer_cls] = wrapped
+    return wrapped
 
 
 def compose_trainer_class(
@@ -27,6 +70,7 @@ def compose_trainer_class(
     coord_soft_ce_w1_cfg: Any,
     sft_structural_close_cfg: Any = None,
     recursive_detection_ce_cfg: Any = None,
+    teacher_forcing_objective_cfg: Any = None,
 ) -> type:
     mixins: list[type] = []
     runtime_profile = resolve_training_runtime_profile(trainer_variant)
@@ -35,8 +79,12 @@ def compose_trainer_class(
             recursive_detection_ce_cfg
             and getattr(recursive_detection_ce_cfg, "enabled", False)
         )
+        teacher_forcing_enabled = bool(
+            teacher_forcing_objective_cfg
+            and getattr(teacher_forcing_objective_cfg, "enabled", True)
+        )
         mixins.append(GradAccumLossScaleMixin)
-        if recursive_ce_enabled:
+        if recursive_ce_enabled or teacher_forcing_enabled:
             incompatible = []
             for name, cfg in (
                 ("bbox_size_aux", bbox_size_aux_cfg),
@@ -49,8 +97,8 @@ def compose_trainer_class(
             if incompatible:
                 joined = ", ".join(sorted(incompatible))
                 raise ValueError(
-                    "recursive_detection_ce currently owns the teacher-forced token "
-                    "loss and does not support auxiliary loss mixins in the same "
+                    "teacher-forced target sidecars currently own the token loss "
+                    "and do not support auxiliary loss mixins in the same "
                     f"trainer composition: {joined}"
                 )
         if isinstance(instability_monitor_cfg, Mapping) and bool(
@@ -61,14 +109,8 @@ def compose_trainer_class(
             mixins.append(AggregateTokenTypeMetricsMixin)
         if recursive_ce_enabled:
             mixins.append(RecursiveDetectionCEMixin)
-        elif bbox_size_aux_cfg and getattr(bbox_size_aux_cfg, "enabled", False):
-            mixins.append(BBoxSizeAuxLossMixin)
-        if (
-            not recursive_ce_enabled
-            and bbox_geo_cfg
-            and getattr(bbox_geo_cfg, "enabled", False)
-        ):
-            mixins.append(BBoxGeoLossMixin)
+        elif teacher_forcing_enabled:
+            mixins.append(TeacherForcingObjectiveMixin)
         if (
             not recursive_ce_enabled
             and coord_soft_ce_w1_cfg
@@ -164,6 +206,7 @@ def instantiate_trainer(
 ) -> Any:
     if heartbeat_writer is not None:
         heartbeat_writer.emit("trainer_init_start")
+    trainer_cls = _with_injected_swift_data_collator(trainer_cls)
     trainer = trainer_cls(
         model=sft_model,
         args=training_args,

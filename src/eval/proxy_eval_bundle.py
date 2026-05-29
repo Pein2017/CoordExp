@@ -5,12 +5,13 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, Mapping
 
-from src.eval.detection import EvalOptions, evaluate_and_save
+from src.eval.detection import EvalOptions, _wants_official_metrics, evaluate_and_save
 from src.eval.proxy_views import (
     DEFAULT_METADATA_NAMESPACE,
     materialize_proxy_eval_views,
     supported_proxy_views,
 )
+from src.infer.artifacts import load_comparable_artifact
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 COMMON_REPO_ROOT = (
@@ -130,6 +131,14 @@ def run_proxy_eval_bundle(
         raise FileNotFoundError(
             f"scored eval artifact not found: {artifacts.scored_jsonl}"
         )
+    source_provenance: Dict[str, Any] | None = None
+    if _wants_official_metrics(options.eval_options.metrics):
+        source_provenance = dict(
+            load_comparable_artifact(
+                artifacts.scored_jsonl,
+                require_score=True,
+            )["provenance"]
+        )
 
     view_summary = materialize_proxy_eval_views(
         artifacts.scored_jsonl,
@@ -141,6 +150,14 @@ def run_proxy_eval_bundle(
     results: Dict[str, Any] = {}
     for view in options.views:
         pred_jsonl = Path(view_summary["outputs"][view])
+        if source_provenance is not None:
+            view_provenance = dict(source_provenance)
+            view_provenance["artifact_path"] = str(pred_jsonl)
+            view_provenance["source_score_artifact"] = str(artifacts.scored_jsonl)
+            pred_jsonl.with_suffix(pred_jsonl.suffix + ".provenance.json").write_text(
+                json.dumps(view_provenance, ensure_ascii=False, indent=2),
+                encoding="utf-8",
+            )
         per_view_options = EvalOptions(
             metrics=options.eval_options.metrics,
             strict_parse=options.eval_options.strict_parse,

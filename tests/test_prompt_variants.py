@@ -12,10 +12,10 @@ from src.config.prompt_variants import (
 from src.config.prompts import (
     SYSTEM_PROMPT_SUMMARY,
     USER_PROMPT_SUMMARY,
+    coord_mode_from_coord_tokens_enabled,
     get_template_prompt_hash,
     get_template_prompts,
 )
-from src.infer.engine import GenerationConfig, InferenceConfig, InferenceEngine
 
 
 def _message_text(content: object) -> str:
@@ -29,6 +29,30 @@ def _message_text(content: object) -> str:
     ]
     assert text_parts
     return "".join(text_parts)
+
+
+def _build_inference_messages(
+    *,
+    mode: str = "coord",
+    prompt_variant: str = "coco_80",
+    object_ordering: str = "sorted",
+    object_field_order: str = "desc_first",
+    bbox_format: str = "xyxy",
+    detection_sequence_format: str = "coordjson",
+) -> list[dict[str, object]]:
+    system_prompt, user_prompt = get_template_prompts(
+        ordering=object_ordering,
+        coord_mode=coord_mode_from_coord_tokens_enabled(mode == "coord"),
+        prompt_variant=prompt_variant,
+        object_field_order=object_field_order,
+        bbox_format=bbox_format,
+        detection_sequence_format=detection_sequence_format,
+    )
+    return build_detection_chat_messages(
+        system_prompt=system_prompt,
+        user_prompt=user_prompt,
+        images=[Image.new("RGB", (16, 16), color=(0, 0, 0))],
+    )
 
 
 def test_detection_chat_builder_keeps_text_roles_swift_compatible() -> None:
@@ -114,16 +138,10 @@ def test_prompt_variant_cross_surface_parity_between_training_and_inference(
         }
     )
 
-    inf_cfg = InferenceConfig(
-        gt_jsonl="dummy.jsonl",
-        model_checkpoint="dummy",
-        mode="coord",
+    messages = _build_inference_messages(
         prompt_variant="coco_80",
         object_ordering=object_ordering,
     )
-    engine = InferenceEngine(inf_cfg, GenerationConfig())
-
-    messages = engine._build_messages(Image.new("RGB", (16, 16), color=(0, 0, 0)))
     infer_system = _message_text(messages[0]["content"])
     infer_user = _message_text(messages[1]["content"])
 
@@ -144,17 +162,11 @@ def test_compact_prompt_variant_cross_surface_parity_between_training_and_infere
         }
     )
 
-    inf_cfg = InferenceConfig(
-        gt_jsonl="dummy.jsonl",
-        model_checkpoint="dummy",
-        mode="coord",
+    messages = _build_inference_messages(
         prompt_variant="coco_80",
         object_ordering="sorted",
         detection_sequence_format="compact_full",
     )
-    engine = InferenceEngine(inf_cfg, GenerationConfig())
-
-    messages = engine._build_messages(Image.new("RGB", (16, 16), color=(0, 0, 0)))
     infer_system = _message_text(messages[0]["content"])
     infer_user = _message_text(messages[1]["content"])
 
@@ -183,18 +195,12 @@ def test_prompt_variant_cross_surface_parity_for_cxcy_logw_logh(
         }
     )
 
-    inf_cfg = InferenceConfig(
-        gt_jsonl="dummy.jsonl",
-        model_checkpoint="dummy",
-        mode="coord",
+    messages = _build_inference_messages(
         prompt_variant="lvis_stage1_federated",
         bbox_format="cxcy_logw_logh",
         object_field_order=object_field_order,
         object_ordering="sorted",
     )
-    engine = InferenceEngine(inf_cfg, GenerationConfig())
-
-    messages = engine._build_messages(Image.new("RGB", (16, 16), color=(0, 0, 0)))
     infer_system = _message_text(messages[0]["content"])
     infer_user = _message_text(messages[1]["content"])
 
@@ -209,16 +215,16 @@ def test_prompt_variant_cross_surface_parity_for_cxcy_logw_logh(
 
 
 def test_inference_object_ordering_defaults_to_sorted() -> None:
-    engine = InferenceEngine(
-        InferenceConfig(
-            gt_jsonl="dummy.jsonl",
-            model_checkpoint="dummy",
-            mode="text",
-        ),
-        GenerationConfig(),
+    default_system, default_user = get_template_prompts(
+        coord_mode=coord_mode_from_coord_tokens_enabled(False)
+    )
+    sorted_system, sorted_user = get_template_prompts(
+        ordering="sorted",
+        coord_mode=coord_mode_from_coord_tokens_enabled(False),
     )
 
-    assert engine.object_ordering == "sorted"
+    assert default_system == sorted_system
+    assert default_user == sorted_user
 
 
 def test_training_prompt_resolution_uses_ordering_plus_variant() -> None:

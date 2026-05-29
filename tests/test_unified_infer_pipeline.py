@@ -11,13 +11,13 @@ import pytest
 from PIL import Image
 
 import src.infer.pipeline as infer_pipeline
-from src.infer.engine import detect_mode_from_gt
 from src.infer.pipeline import (
     load_resolved_config,
     resolve_artifacts,
     resolve_root_image_dir_for_jsonl,
     run_pipeline,
 )
+from src.infer.runtime import detect_mode_from_gt
 from src.infer.vis import render_vis_from_jsonl
 
 
@@ -109,6 +109,72 @@ def test_detect_mode_from_gt_within_bounds(tmp_path: Path) -> None:
     mode, reason = detect_mode_from_gt(str(gt), sample_size=128)
     assert mode == "text"
     assert reason == "within_image_bounds"
+
+
+def test_detect_mode_from_gt_nested_poly_points_within_bounds(tmp_path: Path) -> None:
+    gt = tmp_path / "gt.jsonl"
+    _write_jsonl(
+        gt,
+        [
+            {
+                "width": 10,
+                "height": 10,
+                "objects": [
+                    {
+                        "poly": [[0, 0], [9, 0], [9, 9], [0, 9]],
+                        "desc": "square",
+                    }
+                ],
+            }
+        ],
+    )
+
+    mode, reason = detect_mode_from_gt(str(gt), sample_size=128)
+    assert mode == "text"
+    assert reason == "within_image_bounds"
+
+
+def test_detect_mode_from_gt_skips_empty_then_finds_coord_token(tmp_path: Path) -> None:
+    gt = tmp_path / "gt.jsonl"
+    _write_jsonl(
+        gt,
+        [
+            {"width": 10, "height": 10, "objects": []},
+            {
+                "width": 10,
+                "height": 10,
+                "objects": [
+                    {
+                        "poly": [
+                            ["<|coord_1|>", "<|coord_2|>"],
+                            ["<|coord_3|>", "<|coord_4|>"],
+                        ],
+                    }
+                ],
+            },
+        ],
+    )
+
+    mode, reason = detect_mode_from_gt(str(gt), sample_size=128)
+    assert mode == "coord"
+    assert reason == "coord_tokens_found"
+
+
+def test_detect_mode_from_gt_rejects_non_list_object_container(tmp_path: Path) -> None:
+    gt = tmp_path / "gt.jsonl"
+    _write_jsonl(
+        gt,
+        [
+            {
+                "width": 10,
+                "height": 10,
+                "objects": {"bbox_2d": [0, 0, 9, 9]},
+            }
+        ],
+    )
+
+    with pytest.raises(ValueError, match="objects/gt must be a list"):
+        detect_mode_from_gt(str(gt), sample_size=128)
 
 
 def test_detect_mode_from_gt_no_valid_records(tmp_path: Path) -> None:
@@ -365,6 +431,8 @@ def test_run_pipeline_writes_manifest_pointer_for_non_default_artifact_layout(
 def test_run_pipeline_auto_materializes_scored_artifact_from_token_trace(
     tmp_path: Path, monkeypatch
 ) -> None:
+    from src.infer.artifacts import load_comparable_artifact
+
     monkeypatch.delenv("ROOT_IMAGE_DIR", raising=False)
 
     yaml_stub = types.SimpleNamespace(safe_load=lambda raw: json.loads(raw))
@@ -377,7 +445,12 @@ def test_run_pipeline_auto_materializes_scored_artifact_from_token_trace(
     cfg = {
         "run": {"name": "demo", "output_dir": str(tmp_path / "out")},
         "stages": {"infer": False, "eval": False, "vis": False},
-        "infer": {"gt_jsonl": str(gt_jsonl)},
+        "infer": {
+            "gt_jsonl": str(gt_jsonl),
+            "model_checkpoint": "model",
+            "generation": {"temperature": 0.0, "max_new_tokens": 16},
+        },
+        "confidence": {"desc_span_policy": "best_effort"},
     }
     config_path = tmp_path / "pipeline.json"
     config_path.write_text(json.dumps(cfg, ensure_ascii=False), encoding="utf-8")
@@ -451,6 +524,56 @@ def test_run_pipeline_auto_materializes_scored_artifact_from_token_trace(
     assert scored[0]["pred_score_source"] == "confidence_postop"
     assert scored[0]["pred_score_version"] == 2
     assert scored[0]["pred"][0]["score"] > 0.0
+    scored_provenance = load_comparable_artifact(artifacts.gt_vs_pred_scored_jsonl)
+    assert scored_provenance["provenance"]["score_policy_fingerprint"].startswith(
+        "score_policy:"
+    )
+
+
+def test_run_pipeline_does_not_auto_materialize_xyxy_scored_artifact_without_request(
+    tmp_path: Path, monkeypatch
+) -> None:
+    monkeypatch.delenv("ROOT_IMAGE_DIR", raising=False)
+
+    yaml_stub = types.SimpleNamespace(safe_load=lambda raw: json.loads(raw))
+    monkeypatch.setitem(sys.modules, "yaml", yaml_stub)
+
+    gt_jsonl = tmp_path / "data" / "gt.jsonl"
+    gt_jsonl.parent.mkdir(parents=True, exist_ok=True)
+    gt_jsonl.write_text("", encoding="utf-8")
+
+    cfg = {
+        "run": {"name": "demo", "output_dir": str(tmp_path / "out")},
+        "stages": {"infer": False, "eval": False, "vis": False},
+        "infer": {
+            "gt_jsonl": str(gt_jsonl),
+            "model_checkpoint": "model",
+            "generation": {"temperature": 0.0, "max_new_tokens": 16},
+        },
+    }
+    config_path = tmp_path / "pipeline.json"
+    config_path.write_text(json.dumps(cfg, ensure_ascii=False), encoding="utf-8")
+
+    artifacts, _stages = resolve_artifacts(cfg)
+    artifacts.run_dir.mkdir(parents=True, exist_ok=True)
+    _write_jsonl(
+        artifacts.gt_vs_pred_jsonl,
+        [{"image": "img.png", "width": 1, "height": 1, "gt": [], "pred": []}],
+    )
+    _write_jsonl(
+        artifacts.pred_token_trace_jsonl,
+        [{"line_idx": 0, "generated_token_text": [], "token_logprobs": []}],
+    )
+
+    run_pipeline(config_path=config_path)
+
+    assert artifacts.gt_vs_pred_scored_jsonl is not None
+    assert not artifacts.gt_vs_pred_scored_jsonl.exists()
+    assert not (
+        artifacts.gt_vs_pred_scored_jsonl.with_suffix(
+            artifacts.gt_vs_pred_scored_jsonl.suffix + ".provenance.json"
+        )
+    ).exists()
 
 
 def test_resolve_root_image_dir_for_jsonl_uses_manifest_pointer(tmp_path: Path, monkeypatch) -> None:
@@ -678,18 +801,17 @@ def test_run_pipeline_passes_resolved_root_to_infer_without_env_mutation(
     config_path = tmp_path / "pipeline.json"
     config_path.write_text(json.dumps(cfg, ensure_ascii=False), encoding="utf-8")
 
-    import src.infer.engine as infer_engine
-
     captured: dict[str, object] = {}
 
-    def _fake_infer(self):
-        captured["root_image_dir"] = self.cfg.root_image_dir
-        captured["pred_token_trace_path"] = self.cfg.pred_token_trace_path
-        Path(self.cfg.out_path).write_text("", encoding="utf-8")
-        Path(self.cfg.summary_path or "").write_text("{}", encoding="utf-8")
-        return Path(self.cfg.out_path), Path(self.cfg.summary_path or "")
+    def _fake_run_offline_inference(*, inference_kwargs, generation_kwargs, logger=None):
+        del generation_kwargs, logger
+        captured["root_image_dir"] = inference_kwargs["root_image_dir"]
+        captured["pred_token_trace_path"] = inference_kwargs["pred_token_trace_path"]
+        Path(inference_kwargs["out_path"]).write_text("", encoding="utf-8")
+        Path(inference_kwargs["summary_path"] or "").write_text("{}", encoding="utf-8")
+        return Path(inference_kwargs["out_path"]), Path(inference_kwargs["summary_path"] or "")
 
-    monkeypatch.setattr(infer_engine.InferenceEngine, "infer", _fake_infer)
+    monkeypatch.setattr(infer_pipeline, "run_offline_inference", _fake_run_offline_inference)
 
     run_pipeline(config_path=config_path)
 
@@ -737,19 +859,18 @@ def test_run_pipeline_wires_and_records_prompt_variant(
     config_path = tmp_path / "pipeline.json"
     config_path.write_text(json.dumps(cfg, ensure_ascii=False), encoding="utf-8")
 
-    import src.infer.engine as infer_engine
-
     captured: dict[str, object] = {}
 
-    def _fake_infer(self):
-        captured["prompt_variant"] = self.cfg.prompt_variant
-        captured["object_field_order"] = self.cfg.object_field_order
-        captured["object_ordering"] = self.cfg.object_ordering
-        Path(self.cfg.out_path).write_text("", encoding="utf-8")
-        Path(self.cfg.summary_path or "").write_text("{}", encoding="utf-8")
-        return Path(self.cfg.out_path), Path(self.cfg.summary_path or "")
+    def _fake_run_offline_inference(*, inference_kwargs, generation_kwargs, logger=None):
+        del generation_kwargs, logger
+        captured["prompt_variant"] = inference_kwargs["prompt_variant"]
+        captured["object_field_order"] = inference_kwargs["object_field_order"]
+        captured["object_ordering"] = inference_kwargs["object_ordering"]
+        Path(inference_kwargs["out_path"]).write_text("", encoding="utf-8")
+        Path(inference_kwargs["summary_path"] or "").write_text("{}", encoding="utf-8")
+        return Path(inference_kwargs["out_path"]), Path(inference_kwargs["summary_path"] or "")
 
-    monkeypatch.setattr(infer_engine.InferenceEngine, "infer", _fake_infer)
+    monkeypatch.setattr(infer_pipeline, "run_offline_inference", _fake_run_offline_inference)
 
     artifacts = run_pipeline(config_path=config_path)
 
@@ -805,25 +926,24 @@ def test_run_pipeline_records_adapter_shorthand_resolution(
     config_path = tmp_path / "pipeline.json"
     config_path.write_text(json.dumps(cfg, ensure_ascii=False), encoding="utf-8")
 
-    import src.infer.engine as infer_engine
-
     captured: dict[str, object] = {}
 
-    def _fake_infer(self):
-        captured["checkpoint_mode"] = self.cfg.checkpoint_mode
-        captured["requested_model_checkpoint"] = self.cfg.requested_model_checkpoint
-        captured["requested_adapter_checkpoint"] = self.cfg.requested_adapter_checkpoint
+    def _fake_run_offline_inference(*, inference_kwargs, generation_kwargs, logger=None):
+        del generation_kwargs, logger
+        captured["checkpoint_mode"] = inference_kwargs["checkpoint_mode"]
+        captured["requested_model_checkpoint"] = inference_kwargs["requested_model_checkpoint"]
+        captured["requested_adapter_checkpoint"] = inference_kwargs["requested_adapter_checkpoint"]
         captured["resolved_base_model_checkpoint"] = (
-            self.cfg.resolved_base_model_checkpoint
+            inference_kwargs["resolved_base_model_checkpoint"]
         )
         captured["resolved_adapter_checkpoint"] = (
-            self.cfg.resolved_adapter_checkpoint
+            inference_kwargs["resolved_adapter_checkpoint"]
         )
-        Path(self.cfg.out_path).write_text("", encoding="utf-8")
-        Path(self.cfg.summary_path or "").write_text("{}", encoding="utf-8")
-        return Path(self.cfg.out_path), Path(self.cfg.summary_path or "")
+        Path(inference_kwargs["out_path"]).write_text("", encoding="utf-8")
+        Path(inference_kwargs["summary_path"] or "").write_text("{}", encoding="utf-8")
+        return Path(inference_kwargs["out_path"]), Path(inference_kwargs["summary_path"] or "")
 
-    monkeypatch.setattr(infer_engine.InferenceEngine, "infer", _fake_infer)
+    monkeypatch.setattr(infer_pipeline, "run_offline_inference", _fake_run_offline_inference)
 
     artifacts = run_pipeline(config_path=config_path)
     resolved = load_resolved_config(artifacts.run_dir / "resolved_config.json")
@@ -958,17 +1078,16 @@ def test_run_pipeline_defaults_object_ordering_to_sorted(
     config_path = tmp_path / "pipeline.json"
     config_path.write_text(json.dumps(cfg, ensure_ascii=False), encoding="utf-8")
 
-    import src.infer.engine as infer_engine
-
     captured: dict[str, object] = {}
 
-    def _fake_infer(self):
-        captured["object_ordering"] = self.cfg.object_ordering
-        Path(self.cfg.out_path).write_text("", encoding="utf-8")
-        Path(self.cfg.summary_path or "").write_text("{}", encoding="utf-8")
-        return Path(self.cfg.out_path), Path(self.cfg.summary_path or "")
+    def _fake_run_offline_inference(*, inference_kwargs, generation_kwargs, logger=None):
+        del generation_kwargs, logger
+        captured["object_ordering"] = inference_kwargs["object_ordering"]
+        Path(inference_kwargs["out_path"]).write_text("", encoding="utf-8")
+        Path(inference_kwargs["summary_path"] or "").write_text("{}", encoding="utf-8")
+        return Path(inference_kwargs["out_path"]), Path(inference_kwargs["summary_path"] or "")
 
-    monkeypatch.setattr(infer_engine.InferenceEngine, "infer", _fake_infer)
+    monkeypatch.setattr(infer_pipeline, "run_offline_inference", _fake_run_offline_inference)
 
     artifacts = run_pipeline(config_path=config_path)
     resolved = load_resolved_config(artifacts.run_dir / "resolved_config.json")
@@ -1012,6 +1131,8 @@ def test_run_pipeline_rejects_cxcy_logw_logh_confidence_postop(
 def test_run_pipeline_supports_cxcy_logw_logh_official_eval_via_constant_scores(
     tmp_path: Path, monkeypatch
 ) -> None:
+    from src.infer.artifacts import load_comparable_artifact
+
     monkeypatch.delenv("ROOT_IMAGE_DIR", raising=False)
 
     yaml_stub = types.SimpleNamespace(safe_load=lambda raw: json.loads(raw))
@@ -1026,7 +1147,9 @@ def test_run_pipeline_supports_cxcy_logw_logh_official_eval_via_constant_scores(
         "stages": {"infer": False, "eval": True, "vis": False},
         "infer": {
             "gt_jsonl": str(gt_jsonl),
+            "model_checkpoint": "model",
             "bbox_format": "cxcy_logw_logh",
+            "generation": {"temperature": 0.0, "max_new_tokens": 16},
         },
         "eval": {"metrics": "coco"},
     }
@@ -1099,6 +1222,10 @@ def test_run_pipeline_supports_cxcy_logw_logh_official_eval_via_constant_scores(
     assert artifacts.gt_vs_pred_scored_jsonl is not None
     assert artifacts.gt_vs_pred_scored_jsonl.exists()
     assert captured["pred_path"] == artifacts.gt_vs_pred_scored_jsonl
+    scored_provenance = load_comparable_artifact(artifacts.gt_vs_pred_scored_jsonl)
+    assert scored_provenance["provenance"]["score_policy_fingerprint"].startswith(
+        "score_policy:"
+    )
 
 
 def test_run_pipeline_rejects_cxcywh_confidence_postop(
@@ -1136,6 +1263,8 @@ def test_run_pipeline_rejects_cxcywh_confidence_postop(
 def test_run_pipeline_supports_cxcywh_official_eval_via_constant_scores(
     tmp_path: Path, monkeypatch
 ) -> None:
+    from src.infer.artifacts import load_comparable_artifact
+
     monkeypatch.delenv("ROOT_IMAGE_DIR", raising=False)
 
     yaml_stub = types.SimpleNamespace(safe_load=lambda raw: json.loads(raw))
@@ -1150,7 +1279,9 @@ def test_run_pipeline_supports_cxcywh_official_eval_via_constant_scores(
         "stages": {"infer": False, "eval": True, "vis": False},
         "infer": {
             "gt_jsonl": str(gt_jsonl),
+            "model_checkpoint": "model",
             "bbox_format": "cxcywh",
+            "generation": {"temperature": 0.0, "max_new_tokens": 16},
         },
         "eval": {"metrics": "coco"},
     }
@@ -1223,6 +1354,191 @@ def test_run_pipeline_supports_cxcywh_official_eval_via_constant_scores(
     assert artifacts.gt_vs_pred_scored_jsonl is not None
     assert artifacts.gt_vs_pred_scored_jsonl.exists()
     assert captured["pred_path"] == artifacts.gt_vs_pred_scored_jsonl
+    scored_provenance = load_comparable_artifact(artifacts.gt_vs_pred_scored_jsonl)
+    assert scored_provenance["provenance"]["score_policy_fingerprint"].startswith(
+        "score_policy:"
+    )
+
+
+def test_constant_score_cache_hit_without_score_provenance_is_recomputed(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("ROOT_IMAGE_DIR", raising=False)
+
+    yaml_stub = types.SimpleNamespace(safe_load=lambda raw: json.loads(raw))
+    monkeypatch.setitem(sys.modules, "yaml", yaml_stub)
+
+    gt_jsonl = tmp_path / "data" / "gt.jsonl"
+    gt_jsonl.parent.mkdir(parents=True, exist_ok=True)
+    gt_jsonl.write_text("", encoding="utf-8")
+
+    cfg = {
+        "run": {"name": "demo", "output_dir": str(tmp_path / "out")},
+        "stages": {"infer": False, "eval": False, "vis": False},
+        "infer": {
+            "gt_jsonl": str(gt_jsonl),
+            "model_checkpoint": "model",
+            "bbox_format": "cxcywh",
+            "generation": {"temperature": 0.0, "max_new_tokens": 16},
+        },
+    }
+    config_path = tmp_path / "pipeline.json"
+    config_path.write_text(json.dumps(cfg, ensure_ascii=False), encoding="utf-8")
+
+    artifacts, _ = resolve_artifacts(cfg)
+    artifacts.run_dir.mkdir(parents=True, exist_ok=True)
+    _write_jsonl(
+        artifacts.gt_vs_pred_jsonl,
+        [
+            {
+                "image": "demo.jpg",
+                "width": 640,
+                "height": 480,
+                "mode": "coord",
+                "coord_mode": "norm1000",
+                "gt": [],
+                "pred": [{"bbox": [10, 20, 110, 120], "desc": "cat"}],
+            }
+        ],
+    )
+    assert artifacts.gt_vs_pred_scored_jsonl is not None
+    _write_jsonl(
+        artifacts.gt_vs_pred_scored_jsonl,
+        [
+            {
+                "image": "demo.jpg",
+                "width": 640,
+                "height": 480,
+                "gt": [],
+                "pred": [{"bbox": [10, 20, 110, 120], "desc": "cat", "score": 0.01}],
+                "pred_score_source": "manual_wrong_source",
+                "pred_score_version": 99,
+            }
+        ],
+    )
+    future_mtime = artifacts.gt_vs_pred_jsonl.stat().st_mtime + 100.0
+    os.utime(artifacts.gt_vs_pred_scored_jsonl, (future_mtime, future_mtime))
+
+    run_pipeline(config_path=config_path)
+
+    scored = [
+        json.loads(line)
+        for line in artifacts.gt_vs_pred_scored_jsonl.read_text(
+            encoding="utf-8"
+        ).splitlines()
+        if line.strip()
+    ]
+    assert scored[0]["pred_score_source"] == "cxcywh_constant"
+    assert scored[0]["pred_score_version"] == 1
+    assert scored[0]["pred"][0]["score"] == 1.0
+    sidecar = artifacts.gt_vs_pred_scored_jsonl.with_suffix(
+        artifacts.gt_vs_pred_scored_jsonl.suffix + ".provenance.json"
+    )
+    assert sidecar.exists()
+
+
+def test_official_eval_rejects_scored_artifact_without_score_provenance(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    cfg = {
+        "eval": {"metrics": "coco"},
+    }
+    artifacts = infer_pipeline.ResolvedArtifacts(
+        run_dir=tmp_path,
+        gt_vs_pred_jsonl=tmp_path / "gt_vs_pred.jsonl",
+        pred_token_trace_jsonl=tmp_path / "pred_token_trace.jsonl",
+        gt_vs_pred_scored_jsonl=tmp_path / "gt_vs_pred_scored.jsonl",
+        gt_vs_pred_guarded_jsonl=tmp_path / "gt_vs_pred_guarded.jsonl",
+        gt_vs_pred_scored_guarded_jsonl=tmp_path / "gt_vs_pred_scored_guarded.jsonl",
+        metrics_guarded_json=tmp_path / "eval" / "metrics_guarded.json",
+        duplicate_guard_report_json=tmp_path / "eval" / "duplicate_guard_report.json",
+        summary_json=tmp_path / "summary.json",
+        eval_dir=tmp_path / "eval",
+        vis_dir=tmp_path / "vis",
+    )
+    _write_jsonl(
+        artifacts.gt_vs_pred_scored_jsonl,
+        [
+            {
+                "image": "demo.jpg",
+                "width": 640,
+                "height": 480,
+                "gt": [],
+                "pred": [{"bbox": [0, 0, 1, 1], "desc": "cat", "score": 1.0}],
+                "pred_score_source": "test",
+                "pred_score_version": 1,
+            }
+        ],
+    )
+
+    import src.eval.detection as detection
+
+    def _forbidden_eval(*_args, **_kwargs):  # type: ignore[no-untyped-def]
+        raise AssertionError("evaluate_and_save should not run without provenance")
+
+    monkeypatch.setattr(detection, "evaluate_and_save", _forbidden_eval)
+
+    with pytest.raises(ValueError, match="missing_provenance"):
+        infer_pipeline._run_eval_stage(cfg, artifacts)
+
+
+def test_official_eval_rejects_custom_scored_path_with_raw_provenance(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    cfg = {
+        "eval": {"metrics": "coco"},
+    }
+    custom_scored_path = tmp_path / "custom_predictions.jsonl"
+    artifacts = infer_pipeline.ResolvedArtifacts(
+        run_dir=tmp_path,
+        gt_vs_pred_jsonl=tmp_path / "gt_vs_pred.jsonl",
+        pred_token_trace_jsonl=tmp_path / "pred_token_trace.jsonl",
+        gt_vs_pred_scored_jsonl=custom_scored_path,
+        gt_vs_pred_guarded_jsonl=tmp_path / "gt_vs_pred_guarded.jsonl",
+        gt_vs_pred_scored_guarded_jsonl=tmp_path / "gt_vs_pred_scored_guarded.jsonl",
+        metrics_guarded_json=tmp_path / "eval" / "metrics_guarded.json",
+        duplicate_guard_report_json=tmp_path / "eval" / "duplicate_guard_report.json",
+        summary_json=tmp_path / "summary.json",
+        eval_dir=tmp_path / "eval",
+        vis_dir=tmp_path / "vis",
+    )
+    _write_jsonl(
+        custom_scored_path,
+        [
+            {
+                "image": "demo.jpg",
+                "width": 640,
+                "height": 480,
+                "gt": [],
+                "pred": [{"bbox": [0, 0, 1, 1], "desc": "cat", "score": 1.0}],
+            }
+        ],
+    )
+    (tmp_path / "resolved_config.json").write_text(
+        json.dumps(
+            {
+                "prompt_policy_fingerprint": "prompt:1",
+                "decode_policy_fingerprint": "decode:1",
+                "model_identity_fingerprint": "model:1",
+                "score_policy": "none",
+                "artifacts": {"gt_vs_pred_scored_jsonl": str(custom_scored_path)},
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    import src.eval.detection as detection
+
+    def _forbidden_eval(*_args, **_kwargs):  # type: ignore[no-untyped-def]
+        raise AssertionError("evaluate_and_save should not run without score provenance")
+
+    monkeypatch.setattr(detection, "evaluate_and_save", _forbidden_eval)
+
+    with pytest.raises(ValueError, match="score_policy_fingerprint"):
+        infer_pipeline._run_eval_stage(cfg, artifacts)
 
 
 def test_run_pipeline_rejects_unknown_prompt_variant_with_available_keys(
@@ -1433,22 +1749,21 @@ def test_run_pipeline_passes_distributed_runtime_and_null_limit(
     config_path = tmp_path / "pipeline.json"
     config_path.write_text(json.dumps(cfg, ensure_ascii=False), encoding="utf-8")
 
-    import src.infer.engine as infer_engine
-
     captured: dict[str, object] = {}
 
-    def _fake_infer(self):
-        captured["limit"] = self.cfg.limit
-        captured["rank"] = self.cfg.rank
-        captured["local_rank"] = self.cfg.local_rank
-        captured["world_size"] = self.cfg.world_size
-        captured["distributed_enabled"] = self.cfg.distributed_enabled
-        captured["device"] = self.cfg.device
-        Path(self.cfg.out_path).write_text("", encoding="utf-8")
-        Path(self.cfg.summary_path or "").write_text("{}", encoding="utf-8")
-        return Path(self.cfg.out_path), Path(self.cfg.summary_path or "")
+    def _fake_run_offline_inference(*, inference_kwargs, generation_kwargs, logger=None):
+        del generation_kwargs, logger
+        captured["limit"] = inference_kwargs["limit"]
+        captured["rank"] = inference_kwargs["rank"]
+        captured["local_rank"] = inference_kwargs["local_rank"]
+        captured["world_size"] = inference_kwargs["world_size"]
+        captured["distributed_enabled"] = inference_kwargs["distributed_enabled"]
+        captured["device"] = inference_kwargs["device"]
+        Path(inference_kwargs["out_path"]).write_text("", encoding="utf-8")
+        Path(inference_kwargs["summary_path"] or "").write_text("{}", encoding="utf-8")
+        return Path(inference_kwargs["out_path"]), Path(inference_kwargs["summary_path"] or "")
 
-    monkeypatch.setattr(infer_engine.InferenceEngine, "infer", _fake_infer)
+    monkeypatch.setattr(infer_pipeline, "run_offline_inference", _fake_run_offline_inference)
 
     run_pipeline(config_path=config_path)
 

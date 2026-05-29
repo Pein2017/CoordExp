@@ -5,13 +5,45 @@ doc_type: reference
 status: canonical
 domain: training
 summary: Canonical training metric families for Stage-1 and the active Stage-2 single-pass contract.
-updated: 2026-05-07
+updated: 2026-05-16
 ---
 
 # Training Metrics and Losses
 
 This reference describes the canonical metric families for Stage-1 and the
 active single-pass Stage-2 contract.
+
+## Observability Event Contract
+
+Current training observability is typed at the producer boundary:
+
+- `MetricEvent` is the canonical metric record for objective losses, counts,
+  gauges, weighted means, ratios, and legacy aliases.
+- `MetricEvent` identities include the metric key plus axes such as `stage`,
+  `channel`, `objective_id`, `provenance`, and reducer/unit metadata. Flattening
+  for ms-swift happens only at the logging boundary through
+  `flatten_metric_events`.
+- New writers should produce clean current keys. Removed training-mechanism
+  writer keys are rejected by `src/training/observability/service.py`.
+- Legacy flat metric keys are tolerated only through read/adaptation helpers
+  such as `src/training/observability/legacy.py::adapt_legacy_metric`; tolerant
+  reads do not authorize new writes.
+
+Structured non-scalar diagnostics use `DiagnosticEvent`:
+
+- `DiagnosticEvent` is for bounded payloads that should not become scalar
+  training metrics.
+- Diagnostic profiles are `off`, `standard`, and `debug`.
+- `standard` keeps a small scalar summary and drops nested payloads.
+- `debug` keeps richer nested payloads, but still enforces entry, item, depth,
+  and string-length bounds.
+- Event payloads may be truncated; consumers must check the event `truncated`
+  flag before treating a diagnostic as complete evidence.
+
+When interpreting any metric run, join the metric stream against the resolved
+run artifacts documented in [`../ARTIFACTS.md`](../ARTIFACTS.md), especially
+`resolved_config.json`, `effective_runtime.json`, and
+`experiment_manifest.json`.
 
 ## Stage-1 Baseline Metric Families
 
@@ -32,7 +64,7 @@ Stage-1 training families that parity tests expect to stay user-visible.
 - `base_ce/noncoord_tokens_per_sample`
 - `stage1/total_loss_per_sample_est`
 
-### Coord Objective And Diagnostics
+### Coord Objective
 
 - coord objective atoms:
   - `coord_softce_w1/loss`
@@ -41,74 +73,12 @@ Stage-1 training families that parity tests expect to stay user-visible.
   - `coord_softce_w1/w1`
   - `coord_softce_w1/gate`
   - `coord_softce_w1/text_gate`
-  - `coord_softce_w1/adjacent_repulsion`
-- coord diagnostics:
-  - `coord_diag/enabled`
-  - `coord_diag/loss`
-  - `coord_diag/loss_per_sample`
-  - `coord_diag/ce`
-  - `coord_diag/soft_ce`
-  - `coord_diag/w1`
-  - `coord_diag/gate`
-  - `coord_diag/text_gate`
-  - `coord_diag/adjacent_repulsion`
-  - `coord_diag/coord_tokens`
-  - `coord_diag/coord_tokens_per_sample`
-  - `coord_diag/coord_vocab_mass`
-  - `coord_diag/text_coord_vocab_mass`
-  - `coord_diag/adjacent_repulsion_pair_count`
-  - `coord_diag/adjacent_repulsion_applied_count`
-  - `coord_diag/adjacent_repulsion_copy_score_mean`
-  - `coord_diag/acc_top5`
-  - `coord_diag/p_gt_mean`
-  - `coord_diag/margin_mean`
-  - `coord_diag/expected_bin_mae`
-  - `coord_diag/expected_bin_abs_err_p90`
-  - `coord_diag/w1_to_delta`
 
 Stage-1 non-canonical bbox note:
 
 - The `cxcy_logw_logh` and `cxcywh` Stage-1 profiles use
   `coord_softce_w1/ce`, `coord_softce_w1/gate`, and
   `coord_softce_w1/text_gate` while forcing `soft_ce` and `w1` to zero.
-
-### BBox Geo
-
-- `loss/geo/bbox_geo`
-- `loss/geo/bbox_smoothl1`
-- `loss/geo/bbox_ciou`
-- `bbox_geo/loss_per_sample`
-- `bbox_geo/groups_total`
-- `bbox_geo/groups_per_sample`
-- `bbox_geo/coord_slots_total`
-- `bbox_geo/skipped_incomplete_rows`
-- `bbox_geo/skipped_incomplete_coord_slots`
-
-Interpretation note:
-
-- `loss/geo/bbox_smoothl1` is the stable key for the configured bbox regression
-  term
-- with `parameterization: xyxy`, it is the canonical decoded-box regression term
-- with `parameterization: center_size`, it is the internal center-strong plus
-  soft `log_w` / `log_h` regression term derived from canonical `xyxy`
-- `loss/geo/bbox_ciou` remains CIoU on canonical `xyxy` across both modes
-- compare `bbox_smoothl1` across runs only after joining against
-  `resolved_config.json`
-
-### BBox Size Aux
-
-- `loss/geo/bbox_size_aux`
-- `loss/geo/bbox_log_wh`
-- `loss/geo/bbox_oversize`
-- `bbox_size_aux/loss_per_sample`
-- `bbox_size_aux/groups_total`
-- `bbox_size_aux/groups_per_sample`
-- `bbox_size_aux/coord_slots_total`
-- `bbox_size_aux/skipped_incomplete_rows`
-- `bbox_size_aux/skipped_incomplete_coord_slots`
-- `bbox_size_aux/mean_width`
-- `bbox_size_aux/mean_height`
-- `bbox_size_aux/mean_log_area`
 
 ### Token-Type Aggregates And Coord Monitors
 
@@ -160,7 +130,7 @@ Canonical recursive CE objective `MetricEvent` keys:
 - `detection_sequence/objective/recursive_detection_ce/batch_size`
 
 Diagnostic-only recursive CE objective keys expose internal multi-positive and
-EOS forces without changing the loss tensor:
+ordinary EOS CE behavior without changing the loss tensor:
 
 - `recursive_detection_ce/trie_valid_mass`
 - `recursive_detection_ce/support_loss`
@@ -170,14 +140,11 @@ EOS forces without changing the loss tensor:
 - `recursive_detection_ce/type_gate_allowed_tokens`
 - `recursive_detection_ce/type_gate_weight`
 - `recursive_detection_ce/eos_unweighted_ce`
-- `recursive_detection_ce/eos_weighted_loss`
-- `recursive_detection_ce/eos_trust_weight`
 
 `support_loss` and `balance_loss` are unweighted branch-local components.
 `type_gate_loss` is the weighted allowed-type-mass contribution.
-`eos_weighted_loss` equals `eos_unweighted_ce * eos_trust_weight` at stop
-targets, so it is the right key for checking whether censored EOS supervision
-is actually being softened.
+`eos_unweighted_ce` tracks ordinary teacher-forced `<|im_end|>` CE at stop
+targets.
 
 Canonical compact recursive-detection Phase-1 semantic `MetricEvent` keys:
 
@@ -242,22 +209,15 @@ trainer metric implementation entrypoints are:
 - `src/trainers/metrics/recursive_detection.py`
 - `src/trainers/metrics/aggregate_tokens.py`
 - `src/trainers/metrics/coord_losses.py`
-- `src/trainers/metrics/bbox_losses.py`
 
 Use these modules for source-level changes. Keep `mixins.py` import-compatible
 for existing trainer imports and downstream tests.
-
-### Retired Stage-1 Continuation Metrics
-
-The former continuation metric family is no longer an active logging contract. Current metric claims should use the active baseline, compact recursive detection, or Stage-2 metric families documented above, with exact scope labels and artifact references.
 
 ## Interpreting Key Stage-2 Families
 
 - `loss/<...>`:
   - post-weighting objective atoms
-- `coord_diag/<...>`:
-  - coord-distribution diagnostics
-- `dup/raw/<...>` and `stage2_ab/channel_b/dup/<...>`:
+- `dup/raw/<...>` and `stage2_rollout_correction/correction/dup/<...>`:
   - pre-match duplicate-control diagnostics and policy counters
 - `rollout/<...>`:
   - rollout parsing, matching, and coverage diagnostics
@@ -268,82 +228,66 @@ The former continuation metric family is no longer an active logging contract. C
   - emitted when the current step did not freshly observe that metric family
   - live current-step namespaces such as `rollout/*` remain sparse and are not reused for stale values
 
-## Stage-2 Channel-A Objective Families
+## Removed Stage-2 Clean-Prefix Families
 
-Channel-A uses the normal single-pass GT-anchor groups only:
+The old GT-anchored clean-prefix branch is not part of active Stage-2 training.
+Do not interpret these metric families as current rollout-correction evidence:
 
 - `loss/text/struct_ce`
 - `loss/text/desc_ce`
-- `loss/coord/bbox_smoothl1`
-- `loss/coord/bbox_ciou`
-- `loss/coord/bbox_log_wh`
-- `loss/coord/bbox_oversize`
-- `loss/coord/coord_token_ce`
-- `loss/coord/coord_soft_ce`
-- `loss/coord/coord_w1`
-- `loss/coord/coord_gate`
-- `loss/coord/text_gate`
-- `coord_diag/*`
-- `gradmon/*/coord/*` when gradient monitoring is enabled
 
-Interpretation note:
+## Stage-2 Rollout-Correction Objective Families
 
-- `loss/coord/bbox_smoothl1` keeps the same public key even when
-  `bbox_geo.config.parameterization: center_size` is enabled
-- the key means “the configured bbox regression term” and therefore must be
-  interpreted together with `resolved_config.json`
-- `loss/coord/bbox_ciou` remains canonical `xyxy` CIoU
+Rollout-correction keeps rollout-specific provenance:
 
-## Stage-2 Channel-B Objective Families
-
-Channel-B keeps rollout-specific provenance:
-
+- assignment policy:
+  - `stage2_rollout_correction/correction/assignment/strategy_greedy_iou_count`
+  - `stage2_rollout_correction/correction/assignment/iou_threshold`
 - rollout-text atoms:
-  - `loss/B_rollout_text/struct_ce`
-  - `loss/B_rollout_text/desc_ce`
-- duplicate suppression:
-  - `train/optimization/loss_duplicate_burst_unlikelihood`
-- rollout-context coord atoms:
-- `loss/B_coord/bbox_smoothl1`
-- `loss/B_coord/bbox_ciou`
-  - `loss/B_coord/bbox_log_wh`
-  - `loss/B_coord/bbox_oversize`
-  - `loss/B_coord/coord_token_ce`
-  - `loss/B_coord/coord_soft_ce`
-  - `loss/B_coord/coord_w1`
-  - `loss/B_coord/adjacent_repulsion`
-  - `loss/B_coord/coord_gate`
-  - `loss/B_coord/text_gate`
-- coord diagnostics:
-  - `coord_diag/B/*`
-- gradient monitors:
-- `gradmon/*/B_coord/*` when enabled
+  - `stage2_rollout_correction/residual_set/*`
+- duplicate-burst UL objective loss keys are retired; `train/optimization/loss_duplicate_burst_unlikelihood`
+  is no longer a live training metric
+- removed rollout-context coord/bbox atoms such as `loss/B_coord/*` are not
+  part of the active Stage-2 objective pipeline
 
 Interpretation note:
 
-- `loss/B_coord/bbox_smoothl1` follows the same configured regression semantics
-  as Channel-A
-- `loss/B_coord/bbox_ciou` remains canonical `xyxy` CIoU
-- duplicate control now runs on the assembled anchor plus explorer object
-  surface before GT matching
+- duplicate control now runs on the assembled current-attempt plus peer-attempt
+  object surface before GT matching
 - non-exempt non-survivors disappear from the positive clean prefix and only
-  contribute the unchanged collapsed UL payload shape
+  contribute duplicate-control diagnostic metadata and counters; live
+  duplicate-burst UL loss keys remain retired
 
-## Channel-B Pseudo-Positive And Arbitrary-K Notes
+## Rollout Evidence And Arbitrary-K Notes
 
-When `stage2_ab.channel_b.pseudo_positive.enabled=true`, Channel-B still emits a
-single clean teacher-forced forward, but the rollout evidence path widens from
-`1` anchor + `1` explorer to `1 + (K-1)` views.
+The active residual-correction path emits a residual target IR from `1` current
+rollout attempt plus `K-1` peer attempts.
 
 Operational semantics:
 
 - `stage2/raw_rollouts`
   - total number of rollout generations used for the batch
   - under the default pseudo-positive profile this is `4` per eligible sample
+- `rollout/peer/*`
+  - canonical peer-attempt aggregate metrics
+  - interpreted as means over valid peer views under arbitrary `K`
+  - with legacy `K=2`, these reduce to the single peer-attempt values
 - `rollout/explorer/*`
-  - preserved as compatibility metrics
-  - now interpreted as means over valid explorer views under arbitrary `K`
-  - with legacy `K=2`, these still reduce to the single explorer values
+  - preserved as compatibility aliases for older dashboards
+  - mirrors `rollout/peer/*`; prefer `rollout/peer/*` in new analysis
+- `rollout/temperature_config/ordinal_<i>/*`
+  - records the configured decode request for rollout ordinal `i`
+  - includes `temperature`, `top_p`, `top_k`, and `do_sample`
+- `rollout/by_temperature/t<value>/*`
+  - aggregates all valid current and peer rollout views for the same sampling
+    temperature, for example `t0`, `t0p3`, `t0p5`, `t0p7`
+  - includes `raw_rollouts`, `invalid_rollout_rate`,
+    `parse_dropped_invalid`, `parse_truncated_rate`, `pred_objects`,
+    `valid_pred_objects`, `gen_new_tokens_mean`, `gen_new_tokens_p90`,
+    `unique_sequence_count`, and `unique_sequence_rate`
+  - use these keys to check whether invalid outputs correlate with sampling
+    temperature and whether non-greedy samples provide enough sequence
+    diversity for a learning signal
 - `train/triage/unlabeled_consistent_count`
   - total shielded-anchor count
   - includes support-positive-but-subthreshold anchors and cluster-demoted pseudo-positive candidates
@@ -359,33 +303,52 @@ Operational semantics:
 - `train/triage/pseudo_positive_cluster_demoted_count`
   - pseudo-positive candidates demoted back to shielded due to overlap clustering
 - `train/triage/pseudo_positive_support_rate_num`
-  - summed explorer-support numerators over pseudo-positive candidates
+  - summed peer-support numerators over pseudo-positive candidates
 - `train/triage/pseudo_positive_support_rate_den`
-  - summed explorer-support denominators over pseudo-positive candidates
+  - summed peer-support denominators over pseudo-positive candidates
 - `train/triage/pseudo_positive_selected_support_rate_num`
-  - summed explorer-support numerators over selected pseudo-positive winners
+  - summed peer-support numerators over selected pseudo-positive winners
 - `train/triage/pseudo_positive_selected_support_rate_den`
-  - summed explorer-support denominators over selected pseudo-positive winners
+  - summed peer-support denominators over selected pseudo-positive winners
 - supervision note for interpretation:
   - selected pseudo-positive winners contribute fixed-weight prefix bbox/coord supervision
   - support-positive retained shielded anchors that are not cluster-demoted contribute support-rate-weighted prefix bbox/coord supervision
   - cluster-demoted pseudo-positive candidates remain structure-only prefix context
 - `train/triage/recovered_ground_truth_rate_num`
-  - summed explorer-hit numerators for recovered GT objects missed by the anchor
+  - summed peer-hit numerators for recovered GT objects missed by the current attempt
 - `train/triage/recovered_ground_truth_rate_den`
-  - summed valid-explorer denominators for those recovered GT objects
+  - summed valid-peer denominators for those recovered GT objects
 - `train/triage/recovered_ground_truth_rate`
   - `rate_num / rate_den` when the denominator is non-zero
+- `train/triage/current_preparation_dropped_count`
+  - enabled pseudo-positive samples dropped because current-attempt accepted-clean preparation was malformed
 - `train/triage/anchor_preparation_dropped_count`
-  - enabled pseudo-positive samples dropped because anchor accepted-clean preparation was malformed
+  - compatibility alias for `train/triage/current_preparation_dropped_count`
 
 Failure telemetry:
 
 - malformed rollouts that remain invalid after salvage parsing abort the step
   by default instead of emitting an ordinary finalized `train/triage/*` counter
-- with `stage2_ab.channel_b.invalid_rollout_policy=dump_and_continue`, the
-  trainer logs `stage2_ab/channel_b/invalid_rollout_sample_dropped` and
-  `stage2_ab/channel_b/invalid_rollout_sample_dropped_rate`
+- with `stage2_rollout_correction.correction.invalid_rollout_policy=dump_and_continue`, the
+  trainer logs `stage2_rollout_correction/correction/invalid_rollout_sample_dropped` and
+  `stage2_rollout_correction/correction/invalid_rollout_sample_dropped_rate`
+- compact-full uses a different invalid/empty policy:
+  `fallback_gt_fn_append_only`. Malformed compact output, empty compact output,
+  or compact rows whose bboxes are dropped before any valid survivor remain
+  trainable as GT/FN-only correction targets. These fallback samples do not
+  count as valid rollouts for readiness gates.
+- compact-full fallback diagnostics:
+  - `rollout/invalid_fallback_gt_fn_count`
+  - `rollout/invalid_fallback_gt_fn_rate`
+  - `rollout/empty_valid_object_rate`
+  - `rollout/fallback_loss_share`
+  - `rollout/fallback_dominance_warning`
+  - `rollout/fallback_gt_fn_append_only_count`
+  - `rollout/fallback_loss_weight`
+- compact-full explorer rollouts that enter fallback are included in raw
+  rollout/fallback metrics but excluded from posterior-support denominators,
+  including `valid_explorer_count`, support rates, recovered-GT rates, and
+  pseudo-positive selection.
 - treat those aborts as failure telemetry / run outcome, not as a step-level
   rolling metric
 
@@ -394,7 +357,7 @@ Failure telemetry:
 Canonical duplicate/rollout families include:
 
 - `dup/raw/*`
-- `stage2_ab/channel_b/dup/N_*`
+- `stage2_rollout_correction/correction/dup/N_*`
 - `rollout/*`
 - `time/rollout_*`
 
@@ -405,19 +368,25 @@ finalize as weighted means:
 - `dup/raw/saturation_rate`
 - `dup/raw/duplicate_like_max_cluster_size`
 - `dup/raw/desc_entropy`
+
+Raw duplicate-pathology counters are also emitted on the raw pre-match object
+surface, but remain additive counts:
+
 - `dup/raw/near_iou90_pairs_same_desc_count`
 - `dup/raw/near_iou90_pairs_any_desc_count`
 
-Canonical Channel-B duplicate-control counters remain additive:
+Canonical rollout-correction duplicate-control counters remain additive
+diagnostic metadata only. Duplicate-burst UL is not part of the current
+canonical objective list:
 
-- `stage2_ab/channel_b/dup/N_raw_bbox_valid`
-- `stage2_ab/channel_b/dup/N_clean_accepted`
-- `stage2_ab/channel_b/dup/N_clusters_total`
-- `stage2_ab/channel_b/dup/N_clusters_exempt`
-- `stage2_ab/channel_b/dup/N_clusters_suppressed`
-- `stage2_ab/channel_b/dup/N_objects_suppressed`
-- `stage2_ab/channel_b/dup/N_ul_boundaries`
-- `stage2_ab/channel_b/dup/N_duplicate_burst_unlikelihood_skipped_no_divergence`
+- `stage2_rollout_correction/correction/dup/N_raw_bbox_valid`
+- `stage2_rollout_correction/correction/dup/N_clean_accepted`
+- `stage2_rollout_correction/correction/dup/N_clusters_total`
+- `stage2_rollout_correction/correction/dup/N_clusters_exempt`
+- `stage2_rollout_correction/correction/dup/N_clusters_suppressed`
+- `stage2_rollout_correction/correction/dup/N_objects_suppressed`
+- `stage2_rollout_correction/correction/dup/N_duplicate_control_first_divergence_boundaries`
+- `stage2_rollout_correction/correction/dup/N_duplicate_control_first_divergence_skipped_no_divergence`
 
 Use `docs/training/STAGE2_RUNBOOK.md` for the contract that produces these
 families and `docs/ARTIFACTS.md` for where the corresponding monitor dumps and
@@ -434,7 +403,7 @@ Two distinct eval surfaces exist during training:
 - offline evaluator callback:
   - `eval_det_*`
 - trainer-native Stage-2 rollout eval:
-  - shared by `stage2_two_channel` and `stage2_rollout_aligned`
+  - owned by `stage2_rollout_correction` and implemented through the internal shared Stage-2 rollout runtime
   - `eval/detection/*`
   - `eval/parsing/*`
   - `eval/description/*`
@@ -443,11 +412,12 @@ Two distinct eval surfaces exist during training:
 
 ## Removed Historical Families
 
-Legacy iterative Channel-A provenance groups are no longer part of the active
+Legacy iterative clean-prefix provenance groups are no longer part of the active
 contract:
 
 - `loss/A1_*`
 - `loss/A2_*`
+- `coord_diag/<...>`
 - `coord_diag/A1/*`
 - `coord_diag/A2/*`
 - `eval_rollout/*`

@@ -13,21 +13,17 @@ class PipelineModuleSpec:
     name: str
     enabled: bool = True
     weight: float = 1.0
-    channels: tuple[str, ...] = ("A", "B")
+    surfaces: tuple[str, ...] = ("rollout_correction",)
     application: Mapping[str, Any] = field(default_factory=dict)
     config: Mapping[str, Any] = field(default_factory=dict)
 
     @classmethod
     def from_mapping(cls, payload: Mapping[str, Any]) -> "PipelineModuleSpec":
-        channels_raw = payload.get("channels", ("A", "B"))
-        channels: list[str] = []
-        if isinstance(channels_raw, Sequence) and not isinstance(channels_raw, (str, bytes)):
-            for ch in channels_raw:
-                ch_s = str(ch).strip().upper()
-                if ch_s in {"A", "B"}:
-                    channels.append(ch_s)
-        if not channels:
-            channels = ["A", "B"]
+        if "channels" in payload:
+            raise ValueError(
+                "Pipeline module channels were removed; use the unified "
+                "rollout_correction surface."
+            )
 
         cfg_raw = payload.get("config", {})
         cfg = dict(cfg_raw) if isinstance(cfg_raw, Mapping) else {}
@@ -45,14 +41,14 @@ class PipelineModuleSpec:
             name=str(payload.get("name", "") or "").strip(),
             enabled=bool(payload.get("enabled", True)),
             weight=max(0.0, float(weight)),
-            channels=tuple(channels),
+            surfaces=("rollout_correction",),
             application=application,
             config=cfg,
         )
 
-    def enabled_for_channel(self, channel: str) -> bool:
-        ch = str(channel or "").strip().upper()
-        return bool(self.enabled and ch in set(self.channels))
+    def enabled_for_surface(self, surface: str) -> bool:
+        resolved = str(surface or "").strip()
+        return bool(self.enabled and resolved in set(self.surfaces))
 
 
 @dataclass(frozen=True)

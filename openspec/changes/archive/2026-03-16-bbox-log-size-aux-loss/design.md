@@ -27,7 +27,7 @@ Current behavior is already close to the requested feature on the Stage-2 side:
 - `canonicalize_bbox_xyxy(...)` and `bbox_smoothl1_ciou_loss(...)` already
   provide canonicalization and numerical-stability rules for decoded box loss.
 - `stage2_two_channel` Channel-A and Channel-B both converge on `bbox_geo`.
-- `stage2_rollout_aligned` uses the same teacher-forcing pipeline and therefore
+- `stage2_rollout_runtime` uses the same teacher-forcing pipeline and therefore
   can reuse the same `bbox_geo` extension.
 
 The Stage-1 side is the only non-trivial design point:
@@ -94,7 +94,7 @@ Authoring surface:
 
 - for `custom.trainer_variant: stage2_two_channel`, the authored YAML knob is
   `stage2_ab.pipeline.objective` with a `name: bbox_size_aux` entry,
-- for `custom.trainer_variant: stage2_rollout_aligned`, the mirror surface
+- for `custom.trainer_variant: stage2_rollout_runtime`, the mirror surface
   remains `rollout_matching.pipeline.objective`.
 
 Why:
@@ -102,7 +102,7 @@ Why:
 - it matches the user's plugin-first requirement more closely,
 - it keeps the new loss independently enable-able and easier to revert,
 - it avoids bloating `bbox_geo` into a catch-all module,
-- and `stage2_two_channel` plus `stage2_rollout_aligned` can still share the
+- and `stage2_two_channel` plus `stage2_rollout_runtime` can still share the
   same implementation through the existing pipeline surface.
 
 Recommended `bbox_size_aux.config` additions:

@@ -827,4 +827,3 @@ Expected: changed files are limited to objective/loss/runtime/config/tests/docs 
 - Placeholder scan: this plan contains no placeholder implementation steps.
 - Type consistency: all named functions and files exist in the current worktree except the new behavior-specific tests and helper rename planned above.
 - Commit policy: this plan intentionally omits commit steps because the repo instructions say to use commits when requested; ask the user before staging or committing.
-

@@ -89,11 +89,20 @@ def build_token_type_masks(
         tail_ignore_rel = _to_rel_set(seg.get("tail_ignore_pos"))
         tail_closure_rel = _to_rel_set(seg.get("tail_closure_pos"))
         prefix_struct_rel = _to_rel_set(seg.get("prefix_struct_pos"))
+        prefix_desc_rel = _to_rel_set(seg.get("prefix_desc_pos"))
 
         # Coord mask across the whole supervised assistant span.
         for p in range(int(assistant_start), int(assistant_end)):
             if int(input_ids[b, p].item()) in coord_id_set:
                 mask_coord[b, p] = True
+
+        # Prefix description mask.
+        for rel in prefix_desc_rel:
+            p = int(prefix_start + rel)
+            if p < int(prefix_start) or p >= int(prefix_end):
+                continue
+            if not bool(mask_coord[b, p].item()):
+                mask_desc[b, p] = True
 
         # Prefix structure mask.
         if prefix_struct_rel:
@@ -101,10 +110,14 @@ def build_token_type_masks(
                 p = int(prefix_start + rel)
                 if p < int(prefix_start) or p >= int(prefix_end):
                     continue
+                if rel in prefix_desc_rel:
+                    continue
                 if not bool(mask_coord[b, p].item()):
                     mask_struct[b, p] = True
-        elif ch != "B":
+        elif ch != "ROLLOUT_CORRECTION":
             for p in range(int(prefix_start), int(prefix_end)):
+                if bool(mask_desc[b, p].item()):
+                    continue
                 if not bool(mask_coord[b, p].item()):
                     mask_struct[b, p] = True
 

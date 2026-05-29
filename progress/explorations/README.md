@@ -6,7 +6,7 @@ status: canonical
 domain: research-history
 summary: Router for architecture, infrastructure, and implementation-planning explorations.
 tags: [progress, explorations, architecture, infrastructure]
-updated: 2026-04-23
+updated: 2026-05-16
 ---
 
 # Explorations Index
@@ -21,6 +21,8 @@ contracts. Prefer `docs/` and `openspec/specs/` for current structure.
 
 ## Current Entry Points
 
+- [2026-05-15_training_infrastructure_architecture_decisions.md](2026-05-15_training_infrastructure_architecture_decisions.md)
+  - active architecture decision record for the training infrastructure audit and `grill-me` cleanup decisions; use it as cleanup rationale, not current training run guidance
 - [2026-03-19_runtime_refactor_architecture_program.md](2026-03-19_runtime_refactor_architecture_program.md)
   - merged architecture diagnosis plus completion checkpoint for the March 2026 runtime refactor program
 - [2026-01-26_stage2_infrastructure.md](2026-01-26_stage2_infrastructure.md)

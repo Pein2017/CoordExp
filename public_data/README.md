@@ -43,8 +43,37 @@ For a dataset id `<ds>`:
   - matching `val.*` files when a val split exists
   - `public_data/<ds>/<preset>_<bbox_format>/pipeline_manifest.json`
 
-Image paths in JSONL are a contract requirement: they MUST be relative to the JSONL directory
-(`docs/data/CONTRACT.md`).
+Image paths in JSONL are a contract requirement: they MUST be relative. Legacy
+preset JSONLs resolve them from the JSONL directory; Phase 1 view JSONLs
+resolve them from the declared image store (`docs/data/CONTRACT.md`).
+
+## Phase 1 View Layout (COCO 1024)
+
+Phase 1 separates the shared image store from annotation views:
+
+```text
+public_data/coco/images/res-1024/
+public_data/coco/views/coco80/full/
+public_data/coco/views/coco80/len-12000/
+public_data/coco/views/coco80/max-60/
+public_data/coco/views/coco80-lvis-proxy/len-12000/
+```
+
+The canonical view JSONLs under `public_data/coco/views/**` differ from legacy
+preset JSONLs in two important ways:
+
+- `images[]` entries are relative to the declared image store
+  (`public_data/coco/images/res-1024`), for example
+  `images/val2017/000000000139.jpg`.
+- geometry is stored as strict-JSON norm1000 integers. Qwen coord tokens are
+  rendered for assistant targets by the training/template layer, not stored in
+  these canonical view JSONLs.
+
+View-local `meta.json` files describe the image store, coordinate storage, and
+sample policy. Generated image-store and view artifacts stay local, while
+Git-tracked provenance manifests under `manifests/public_data_provenance/`
+remain the reproducibility source of truth. Phase 1 does not imply that old
+preset roots have been deleted or that every production config has migrated.
 
 ## Quick Start (Unified Runner)
 
@@ -129,7 +158,7 @@ feature.
   same lattice.
 - `all` remains canonical-only and does not create bbox-format branches.
 
-## Max-Object Filtering (`max{N}`)
+## Max-Object Filtering (`max{N}`, Legacy)
 Max-object filtering is **off by default**.
 
 Enable it during the **coord step** by setting:
@@ -143,12 +172,16 @@ Behavior:
 - Legacy `_max_<N>` naming is rejected with an actionable rename/rebuild hint.
 - Strict fail-fast: using `PUBLIC_DATA_MAX_OBJECTS` with `rescale`, `validate`, or `all` is rejected. Use two-step flow (`all`/`rescale` first, then `coord` with max filtering).
 
+For Phase 1 COCO views, object-count filtering is represented as a legacy
+prepared view such as `public_data/coco/views/coco80/max-60/`. Latest
+compact-full training should not rely on runtime `max_objects` filtering.
+
 ## Length-Budget Filtering (`len{N}`)
 
 For compact-full Stage-1 datasets, prefer a total-token budget over an object
-count cap. The COCO length-budget factory uses the configured compact-full
-prompt, the local Qwen3-VL tokenizer, rendered assistant rows, and post-merge
-image patch tokens:
+count cap. The 12k COCO budget includes image patch tokens, system/user
+chat-template tokens, and the rendered assistant object sequence after any
+LVIS-proxy augmentation:
 
 ```bash
 PYTHONPATH=. conda run -n ms python public_data/scripts/build_coco_length_budget_artifacts.py \
@@ -164,17 +197,24 @@ PYTHONPATH=. conda run -n ms python public_data/scripts/build_coco_length_budget
   --force
 ```
 
-The emitted roots are JSONL/meta-only derived artifacts. They share the same
-1024-resolution images by writing JSONL image paths that point back to
-`public_data/coco/rescale_32_1024_bbox/images/`; they do not copy or hardlink
-an `images/` tree.
+The emitted legacy roots are JSONL/meta-only derived artifacts. Phase 1 view
+artifacts use `public_data/coco/images/res-1024/` as the shared store and write
+image-store-relative `images[]` paths; they do not copy or hardlink an
+`images/` tree into each view.
 
-Current 12k outputs:
+Current legacy 12k outputs:
 - `public_data/coco/rescale_32_1024_bbox_len12000/`
 - `public_data/coco/rescale_32_1024_bbox_lvis_proxy_len12000/`
 
-Each split writes `*.length_budget_stats.json`, and each root writes
-`pipeline_manifest.json`. Git-tracked provenance manifests live under
+Phase 1 canonical 12k view paths:
+- `public_data/coco/views/coco80/len-12000/`
+- `public_data/coco/views/coco80-lvis-proxy/len-12000/`
+
+Legacy `build_coco_length_budget_artifacts.py` roots write
+`*.length_budget_stats.json` split sidecars and `pipeline_manifest.json`.
+Phase 1 `build_coco_views.py` views instead write `meta.json`,
+`source_comparison.json`, and, for length-budgeted views,
+`*.length_stats.json`. Git-tracked provenance manifests live under
 `manifests/public_data_provenance/coco/`.
 
 ## Rescale Safety (Fail-Fast)

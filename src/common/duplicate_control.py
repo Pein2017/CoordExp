@@ -642,14 +642,14 @@ def apply_duplicate_policy(
         decisions_by_index[int(obj.index)] for obj in ordered_anchor_objects
     )
     counter_metrics = {
-        "stage2_ab/channel_b/dup/N_clusters_total": float(len(clusters_out)),
-        "stage2_ab/channel_b/dup/N_clusters_exempt": float(
+        "stage2_rollout_correction/correction/dup/N_clusters_total": float(len(clusters_out)),
+        "stage2_rollout_correction/correction/dup/N_clusters_exempt": float(
             sum(1 for cluster in clusters_out if bool(cluster.is_exempt))
         ),
-        "stage2_ab/channel_b/dup/N_clusters_suppressed": float(
+        "stage2_rollout_correction/correction/dup/N_clusters_suppressed": float(
             sum(1 for cluster in clusters_out if not bool(cluster.is_exempt))
         ),
-        "stage2_ab/channel_b/dup/N_objects_suppressed": float(len(suppressed_indices)),
+        "stage2_rollout_correction/correction/dup/N_objects_suppressed": float(len(suppressed_indices)),
     }
     return DuplicateControlResult(
         config=config,

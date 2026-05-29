@@ -1,0 +1,103 @@
+model:
+  model: model_cache/models/Qwen/Qwen3-VL-2B-Instruct-coordexp
+
+template:
+  max_pixels: 1048576
+  truncation_strategy: raise
+
+training:
+  run_name: smoke-compact-full-teacher-forcing-hard-sft-tiny
+  output_root: temp/teacher_forcing/output
+  logging_root: temp/teacher_forcing/tb
+  artifact_subdir: compact_full_hard_sft_tiny
+  max_steps: 8
+  num_train_epochs: 1
+  per_device_train_batch_size: 1
+  effective_batch_size: 8
+  per_device_eval_batch_size: 1
+  packing: false
+  eval_packing: false
+  dataloader_num_workers: 0
+  dataloader_prefetch_factor: null
+  dataloader_persistent_workers: false
+
+data:
+  train_jsonl: public_data/coco/rescale_32_1024_bbox_max60/train.coord.jsonl
+  val_jsonl: public_data/coco/rescale_32_1024_bbox_max60/val.coord.jsonl
+  image_root: public_data/coco/rescale_32_1024_bbox_max60
+  object_ordering: random_permutation
+
+prompt:
+  system_variant: stage1_detection
+  user_variant: compact_detection
+  include_template_summary: true
+  prompt_variant_enabled: true
+
+detection_template:
+  id: compact_full
+  coordinate_surface: coord_token
+  bbox_format: xyxy
+  strict_parse: true
+
+token_rows:
+  enabled: true
+  tie_head: true
+  groups:
+    coord_geometry:
+      role: coord_geometry
+      start_token: "<|coord_0|>"
+      end_token: "<|coord_999|>"
+      expected_start: 151670
+      expected_end: 152669
+    compact_structure:
+      role: structural_ce_only
+      tokens:
+        - "<|object_ref_start|>"
+        - "<|box_start|>"
+      expected_ids:
+        "<|object_ref_start|>": 151646
+        "<|box_start|>": 151648
+  embed_lr: 5.0e-5
+  weight_decay: 0.0
+
+objective:
+  id: teacher_forcing
+  profile: hard_sft
+  target_ir:
+    rollin_policy:
+      name: random_permutation
+      base_seed: 17
+    exact_packing_mapping:
+      enabled: false
+  modules:
+    token_type_mass:
+      enabled: false
+    conditional_valid_set_likelihood:
+      enabled: false
+    within_valid_coverage:
+      enabled: false
+      coverage_strength: 0.0
+    continuation_margin:
+      enabled: false
+
+packing:
+  static_packing: false
+  padding_free_packed: false
+
+evaluation:
+  expected_template: compact_full
+  parser_mode: strict_expected
+
+validation:
+  validate_span_alignment: true
+  validate_template_capabilities: true
+  fail_fast: true
+
+debug:
+  enabled: true
+  train_sample_limit: 64
+  val_sample_limit: 8
+
+experiment:
+  surface: smoke
+  claim_scope: smoke

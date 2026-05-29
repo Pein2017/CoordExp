@@ -2,14 +2,14 @@ from __future__ import annotations
 
 import pytest
 
-from src.trainers.stage2_rollout_aligned import (
-    RolloutMatchingSFTTrainer,
+from src.trainers.stage2_rollout_runtime import (
+    Stage2RolloutRuntime,
     _contiguous_chunk_slices,
 )
 
 
 def _mk_uninit_trainer(cfg):
-    t = RolloutMatchingSFTTrainer.__new__(RolloutMatchingSFTTrainer)
+    t = Stage2RolloutRuntime.__new__(Stage2RolloutRuntime)
     t.rollout_matching_cfg = cfg
     return t
 

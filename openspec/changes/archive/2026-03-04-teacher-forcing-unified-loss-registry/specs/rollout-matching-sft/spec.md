@@ -3,7 +3,7 @@
 ## ADDED Requirements
 
 ### Requirement: Rollout-aligned Stage-2 supports a config-declared objective and diagnostics pipeline
-When `custom.trainer_variant: stage2_rollout_aligned`, the system SHALL support a YAML-declared module pipeline for
+When `custom.trainer_variant: stage2_rollout_runtime`, the system SHALL support a YAML-declared module pipeline for
 rollout-aligned teacher-forcing objective and diagnostics.
 
 Normative configuration shape:
@@ -18,7 +18,7 @@ Normative behavior:
 - If `rollout_matching.pipeline` is absent, the trainer MUST construct and use a default pipeline that is coherent
   with the unified teacher-forcing objective semantics.
   - The default objective MUST include bbox geometry regression (`bbox_geo`) so the Stage-2 objective described in
-    `docs/training/STAGE2_RUNBOOK.md` applies consistently across `stage2_rollout_aligned` and `stage2_two_channel`.
+    `docs/training/STAGE2_RUNBOOK.md` applies consistently across `stage2_rollout_runtime` and `stage2_two_channel`.
     Disabling geometry MUST be expressed explicitly via an authored pipeline (e.g., `bbox_geo.enabled=false` or
     `bbox_geo` weights set to `0`).
 - Pipeline parsing and module resolution MUST be strict and MUST fail fast on unknown module names.
@@ -172,14 +172,14 @@ Normative behavior:
 To reduce public-facing confusion, the system SHALL support clear trainer variant naming for rollout-aligned Stage-2.
 
 Normative behavior:
-- The system MUST accept `custom.trainer_variant: stage2_rollout_aligned` as the canonical trainer variant string.
+- The system MUST accept `custom.trainer_variant: stage2_rollout_runtime` as the canonical trainer variant string.
 - The system MUST reject `custom.trainer_variant: rollout_matching_sft` (fail fast) with actionable guidance to use
-  `stage2_rollout_aligned`.
+  `stage2_rollout_runtime`.
 
 #### Scenario: Legacy rollout-matching trainer alias is rejected
 - **WHEN** configuration sets `custom.trainer_variant: rollout_matching_sft`
 - **THEN** config validation fails fast
-- **AND** the error recommends `custom.trainer_variant: stage2_rollout_aligned`.
+- **AND** the error recommends `custom.trainer_variant: stage2_rollout_runtime`.
 
 ### Requirement: Rollout-aligned Stage-2 rollout-context semantics are coherent with the two-channel Rollout channel
 Rollout-aligned Stage-2 SHALL apply the same rollout-context masking semantics as the two-channel Rollout channel by default
@@ -266,7 +266,7 @@ To avoid “config declared but ignored” ambiguity, the system SHALL enforce s
 Normative behavior:
 - If `custom.trainer_variant: stage2_two_channel`, the presence of `rollout_matching.pipeline` MUST fail fast with
   guidance to use `stage2_ab.pipeline`.
-- If `custom.trainer_variant: stage2_rollout_aligned`, the presence of `stage2_ab.pipeline` MUST fail fast with guidance
+- If `custom.trainer_variant: stage2_rollout_runtime`, the presence of `stage2_ab.pipeline` MUST fail fast with guidance
   to use `rollout_matching.pipeline`.
 
 #### Scenario: Stage-2 Two-Channel rejects rollout-matching pipeline keys
@@ -275,6 +275,6 @@ Normative behavior:
 - **THEN** config validation fails fast with guidance to use `stage2_ab.pipeline`.
 
 #### Scenario: Rollout-matching rejects stage2_ab pipeline keys
-- **WHEN** `custom.trainer_variant=stage2_rollout_aligned`
+- **WHEN** `custom.trainer_variant=stage2_rollout_runtime`
 - **AND** `stage2_ab.pipeline` is present
 - **THEN** config validation fails fast with guidance to use `rollout_matching.pipeline`.

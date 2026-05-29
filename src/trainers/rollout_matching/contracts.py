@@ -1,7 +1,7 @@
 """Public contracts for rollout-matching.
 
 This module is intentionally import-light (no trainer/framework imports) so it can
-be used by Stage-2 AB and by tests/static tooling without pulling in trainer
+be used by Stage-2 rollout-correction and by tests/static tooling without pulling in trainer
 implementation details.
 """
 

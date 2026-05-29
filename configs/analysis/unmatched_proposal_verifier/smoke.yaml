@@ -66,4 +66,4 @@ manual_audit:
 
 checkpoints:
   - name: ul-res_1024-ckpt_300_merged
-    path: output/stage2_ab/prod/ul-res_1024-ckpt_300_merged
+    path: output/stage2_rollout_correction/prod/ul-res_1024-ckpt_300_merged
