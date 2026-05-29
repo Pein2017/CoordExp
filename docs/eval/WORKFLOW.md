@@ -49,14 +49,14 @@ Official metric guardrail:
 Run inference:
 
 ```bash
-PYTHONPATH=. conda run -n ms python scripts/run_infer.py \
+PYTHONPATH=. python scripts/run_infer.py \
   --config configs/infer/pipeline.yaml
 ```
 
 Run confidence post-op:
 
 ```bash
-PYTHONPATH=. conda run -n ms python scripts/postop_confidence.py \
+PYTHONPATH=. python scripts/postop_confidence.py \
   --config configs/postop/confidence.yaml
 ```
 
@@ -90,7 +90,7 @@ Raw-text xyxy norm1000 benchmark note:
 Run evaluation:
 
 ```bash
-PYTHONPATH=. conda run -n ms python scripts/evaluate_detection.py \
+PYTHONPATH=. python scripts/evaluate_detection.py \
   --config configs/eval/detection.yaml
 ```
 
@@ -131,7 +131,7 @@ Duplicate-control guard note:
 Run Oracle-K analysis:
 
 ```bash
-PYTHONPATH=. conda run -n ms python scripts/evaluate_oracle_k.py \
+PYTHONPATH=. python scripts/evaluate_oracle_k.py \
   --config configs/eval/oracle_k.yaml
 ```
 

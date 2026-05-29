@@ -81,7 +81,7 @@ or delete that tree in place. Instead, absorb it into `outputs/` with a
 no-overwrite copy:
 
 ```bash
-conda run -n ms python scripts/absorb_output_remote_into_outputs.py --apply
+python scripts/absorb_output_remote_into_outputs.py --apply
 ```
 
 This keeps `output_remote/` intact for the active writer while making

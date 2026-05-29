@@ -31,11 +31,13 @@ When code moves, prefer the current checked-in pipeline/config surfaces over mem
 Commands:
 
 ```bash
-PYTHONPATH=. conda run -n ms python scripts/run_infer.py --config <infer.yaml>
-PYTHONPATH=. conda run -n ms python scripts/postop_confidence.py --config <postop.yaml>
-PYTHONPATH=. conda run -n ms python scripts/evaluate_detection.py --config <eval.yaml>
-PYTHONPATH=. conda run -n ms python scripts/evaluate_oracle_k.py --config <oracle.yaml>
+PYTHONPATH=. python scripts/run_infer.py --config <infer.yaml>
+PYTHONPATH=. python scripts/postop_confidence.py --config <postop.yaml>
+PYTHONPATH=. python scripts/evaluate_detection.py --config <eval.yaml>
+PYTHONPATH=. python scripts/evaluate_oracle_k.py --config <oracle.yaml>
 ```
+
+Codex shells initialize the `ms` conda environment by default; do not add `conda run -n ms` unless working outside that initialized environment.
 
 Wrap with `rtk` when filtered output is acceptable.
 

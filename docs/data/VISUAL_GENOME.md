@@ -65,7 +65,7 @@ export https_proxy=http://127.0.0.1:9090
 This writes everything under `public_data/vg/`:
 
 ```bash
-PYTHONPATH=. conda run -n ms python public_data/scripts/prepare_visual_genome.py \
+PYTHONPATH=. python public_data/scripts/prepare_visual_genome.py \
   --download \
   --objects-version 1.2.0 \
   --val-mod 5
@@ -74,7 +74,7 @@ PYTHONPATH=. conda run -n ms python public_data/scripts/prepare_visual_genome.py
 For a smoke run that stops downloads after 300 seconds:
 
 ```bash
-PYTHONPATH=. conda run -n ms python public_data/scripts/prepare_visual_genome.py \
+PYTHONPATH=. python public_data/scripts/prepare_visual_genome.py \
   --download \
   --objects-version 1.2.0 \
   --max-seconds 300
@@ -91,7 +91,7 @@ Follow the shared intake pipeline (**[`PREPARATION.md`](PREPARATION.md)**).
 Example:
 
 ```bash
-PYTHONPATH=. conda run -n ms python public_data/scripts/rescale_jsonl.py \
+PYTHONPATH=. python public_data/scripts/rescale_jsonl.py \
   --input-jsonl public_data/vg/raw/train.jsonl \
   --output-jsonl public_data/vg/rescale_32_768_bbox/train.jsonl \
   --output-images public_data/vg/rescale_32_768_bbox \
@@ -104,7 +104,7 @@ PYTHONPATH=. conda run -n ms python public_data/scripts/rescale_jsonl.py \
 
 Larger budget example (`max_pixels = 32*32*1024`):
 ```bash
-PYTHONPATH=. conda run -n ms python public_data/scripts/rescale_jsonl.py \
+PYTHONPATH=. python public_data/scripts/rescale_jsonl.py \
   --input-jsonl public_data/vg/raw/train.jsonl \
   --output-jsonl public_data/vg/rescale_32_1024_bbox/train.jsonl \
   --output-images public_data/vg/rescale_32_1024_bbox \
@@ -120,7 +120,7 @@ PYTHONPATH=. conda run -n ms python public_data/scripts/rescale_jsonl.py \
 CoordExp training defaults to coord-token supervision. Convert pixel coords to `<|coord_k|>`:
 
 ```bash
-PYTHONPATH=. conda run -n ms python public_data/scripts/convert_to_coord_tokens.py \
+PYTHONPATH=. python public_data/scripts/convert_to_coord_tokens.py \
   --input public_data/vg/rescale_32_768_bbox/train.jsonl \
   --output-tokens public_data/vg/rescale_32_768_bbox/train.coord.jsonl
 ```
@@ -137,7 +137,7 @@ Important: merging requires rewriting relative image paths, because loaders reso
 Use:
 
 ```bash
-PYTHONPATH=. conda run -n ms python public_data/scripts/merge_jsonl.py \
+PYTHONPATH=. python public_data/scripts/merge_jsonl.py \
   --inputs \
     public_data/lvis/rescale_32_768_poly_20/train.filtered_max100_dense50_u3_t095.coord.jsonl \
     public_data/vg/rescale_32_768_bbox/train.coord.jsonl \
@@ -184,14 +184,14 @@ Tip: if `public_data/vg/raw/images/` already exists, `vg_ref` will skip re-downl
 - Pixel JSONL sanity (bbox-only validator):
 
 ```bash
-PYTHONPATH=. conda run -n ms python public_data/scripts/validate_jsonl.py \
+PYTHONPATH=. python public_data/scripts/validate_jsonl.py \
   public_data/vg/rescale_32_768_bbox/train.jsonl
 ```
 
 - Prompt/template compliance on coord-token JSONL:
 
 ```bash
-PYTHONPATH=. conda run -n ms python scripts/tools/inspect_chat_template.py \
+PYTHONPATH=. python scripts/tools/inspect_chat_template.py \
   --jsonl public_data/vg/rescale_32_768_bbox/train.coord.jsonl \
   --index 0
 ```

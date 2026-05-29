@@ -15,14 +15,16 @@ rtk git diff --stat
 rtk git diff --name-only
 rtk grep "TargetSymbol" src
 rtk read docs/IMPLEMENTATION_MAP.md
-rtk conda run -n ms python -m pytest tests/test_example.py
+rtk pytest tests/test_example.py
 ```
 
-Preserve project wrappers under RTK; in this repo, tests should usually be:
+CoordExp Codex shells initialize the `ms` conda environment by default, so tests should usually be:
 
 ```bash
-rtk conda run -n ms python -m pytest <target>
+rtk pytest <target>
 ```
+
+Use plain `python`/`pytest` for exact stdout or when RTK has no useful rewrite.
 
 ## Skip RTK
 

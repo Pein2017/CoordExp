@@ -100,7 +100,7 @@ The preferred way to prepare public datasets is the unified runner:
 ### 1. Smart Resize (Budget-Filling + Grid)
 
 ```bash
-PYTHONPATH=. conda run -n ms python public_data/scripts/rescale_jsonl.py \
+PYTHONPATH=. python public_data/scripts/rescale_jsonl.py \
   --input-jsonl path/to/raw/train.jsonl \
   --output-jsonl path/to/out/train.jsonl \
   --output-images path/to/out \
@@ -126,7 +126,7 @@ PYTHONPATH=. conda run -n ms python public_data/scripts/rescale_jsonl.py \
 ### 2. Tiny Subset (Smoke Tests)
 
 ```bash
-PYTHONPATH=. conda run -n ms python public_data/scripts/sample_dataset.py \
+PYTHONPATH=. python public_data/scripts/sample_dataset.py \
   --input path/to/out/train.jsonl \
   --output path/to/out/train_tiny.jsonl \
   --num_samples 256 \
@@ -137,7 +137,7 @@ Use `--strategy stratified` for long-tail datasets like LVIS.
 ### 3. Coord-Token Conversion (Strict 0–999)
 
 ```bash
-PYTHONPATH=. conda run -n ms python public_data/scripts/convert_to_coord_tokens.py \
+PYTHONPATH=. python public_data/scripts/convert_to_coord_tokens.py \
   --input path/to/out/train.jsonl \
   --output-norm path/to/out/train.norm.jsonl \
   --output-tokens path/to/out/train.coord.jsonl
@@ -160,7 +160,7 @@ PYTHONPATH=. conda run -n ms python public_data/scripts/convert_to_coord_tokens.
 Some datasets (LVIS) contain images with many repeated instances but low semantic diversity. We filter these at the record/image level to keep the dataset semantically rich.
 
 ```bash
-PYTHONPATH=. conda run -n ms python public_data/scripts/filter_low_diversity_images.py \
+PYTHONPATH=. python public_data/scripts/filter_low_diversity_images.py \
   --input  path/to/train.coord.jsonl \
   --output path/to/train.filtered.coord.jsonl \
   --hard_max_objects 101 \
@@ -174,7 +174,7 @@ Tip: add `--stats_json output/<name>.json` to record filter statistics for repro
 
 If you want simple, transparent control over sequence length, cap objects per image:
 ```bash
-PYTHONPATH=. conda run -n ms python public_data/scripts/filter_jsonl_max_objects.py \
+PYTHONPATH=. python public_data/scripts/filter_jsonl_max_objects.py \
   --input  train.jsonl \
   --output train.max60.jsonl \
   --max-objects 60
@@ -198,7 +198,7 @@ budget instead of object count. The 12k COCO view budget counts:
 Use the same tokenizer as the target compact-full checkpoint:
 
 ```bash
-PYTHONPATH=. conda run -n ms python public_data/scripts/build_coco_length_budget_artifacts.py \
+PYTHONPATH=. python public_data/scripts/build_coco_length_budget_artifacts.py \
   --model-path model_cache/models/Qwen/Qwen3-VL-2B-Instruct-coordexp \
   --source-preset public_data/coco/rescale_32_1024_bbox \
   --coco-output public_data/coco/rescale_32_1024_bbox_len12000 \

@@ -56,10 +56,10 @@ Avoid overriding learning rate, optimizer, checkpoint, template, packing, max le
 Run from repo root:
 
 ```bash
-rtk conda run -n ms python <entrypoint> --config <smoke.yaml>
+rtk python <entrypoint> --config <smoke.yaml>
 ```
 
-Use raw `conda run -n ms python ...` only when exact stdout matters.
+Codex shells initialize the `ms` conda environment by default. Use raw `python ...` only when exact stdout matters.
 
 ## CoordExp Gotchas
 

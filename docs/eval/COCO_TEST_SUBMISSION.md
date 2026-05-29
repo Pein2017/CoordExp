@@ -42,7 +42,7 @@ Artifacts:
 This is the actual inference input for the model.
 
 ```bash
-PYTHONPATH=. conda run -n ms python public_data/scripts/rescale_jsonl.py \
+PYTHONPATH=. python public_data/scripts/rescale_jsonl.py \
   --input-jsonl public_data/coco/raw/test-dev.jsonl \
   --output-jsonl public_data/coco/rescale_32_1024_bbox/test-dev.jsonl \
   --output-images public_data/coco/rescale_32_1024_bbox \
@@ -66,7 +66,7 @@ Point the config either to your final merged checkpoint, or set
 pipeline resolves the base model from `adapter_config.json`, and run:
 
 ```bash
-PYTHONPATH=. conda run -n ms python scripts/run_infer.py \
+PYTHONPATH=. python scripts/run_infer.py \
   --config configs/infer/ablation/coco80_testdev_desc_first.yaml
 ```
 
@@ -81,7 +81,7 @@ Expected artifact:
 ## 4. Score The Predictions
 
 ```bash
-PYTHONPATH=. conda run -n ms python scripts/postop_confidence.py \
+PYTHONPATH=. python scripts/postop_confidence.py \
   --config configs/postop/confidence.yaml
 ```
 
@@ -99,7 +99,7 @@ Non-canonical bbox note:
 Use the original-resolution source JSONL here, not the resized inference JSONL.
 
 ```bash
-PYTHONPATH=. conda run -n ms python scripts/export_coco_submission.py \
+PYTHONPATH=. python scripts/export_coco_submission.py \
   --config configs/eval/coco_submission.yaml
 ```
 

@@ -35,9 +35,10 @@
 - Treat `superpowers` as plugin-managed: source is `superpowers@openai-curated`, not a vendored repo-local copy. Verify provenance via `.codex/config.toml` and `.codex/plugins/cache/openai-curated/superpowers/*/.codex-plugin/plugin.json` when changing it.
 
 ## Commands
-- Targeted tests: `conda run -n ms python -m pytest <target>`.
+- Codex shells initialize the `ms` conda environment by default; use plain `python`, `pytest`, and repo entrypoints without `conda run -n ms`.
+- Targeted tests: `python -m pytest <target>`.
 - Noisy summaries: `rtk git status --short --branch`, `rtk git diff --stat`, `rtk grep "<pattern>" <path>`.
-- Wrapped tests under RTK: `rtk conda run -n ms python -m pytest <target>`.
+- Wrapped tests under RTK: `rtk pytest <target>` or `rtk python -m pytest <target>` when compact output is useful.
 - Exact reads or machine-readable stdout: use raw `sed`, `nl`, structured parsers, or the underlying command.
 - One-off debug artifacts: write under `temp/`; remove them when no longer needed.
 

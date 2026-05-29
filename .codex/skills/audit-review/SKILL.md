@@ -96,7 +96,7 @@ Check for:
 When validation is allowed or requested:
 
 - prefer existing targeted tests from `docs/IMPLEMENTATION_MAP.md`
-- use `rtk conda run -n ms python -m pytest ...` for noisy test output in this repo
+- Codex shells initialize the `ms` conda environment by default; use `rtk pytest ...` for noisy test output in this repo
 - prefer artifact and manifest checks over broad reruns
 - for long or sharded runs, check merged summaries/manifests rather than log lines
 

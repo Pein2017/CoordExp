@@ -52,14 +52,14 @@ Later stages may reuse frozen earlier artifacts instead of forcing a monolithic 
 Smoke:
 
 ```bash
-conda run -n ms python scripts/analysis/run_unmatched_proposal_verifier.py \
+python scripts/analysis/run_unmatched_proposal_verifier.py \
   --config configs/analysis/unmatched_proposal_verifier/smoke.yaml
 ```
 
 Default two-checkpoint matrix:
 
 ```bash
-conda run -n ms python scripts/analysis/run_unmatched_proposal_verifier.py \
+python scripts/analysis/run_unmatched_proposal_verifier.py \
   --config configs/analysis/unmatched_proposal_verifier/default.yaml
 ```
 
@@ -181,7 +181,7 @@ For packaged manual-audit queues such as
 `output/analysis/unmatched-proposal-verifier-manual-audit-v1/`, launch:
 
 ```bash
-conda run -n ms python scripts/analysis/run_manual_audit_reviewer.py \
+python scripts/analysis/run_manual_audit_reviewer.py \
   --audit-csv output/analysis/unmatched-proposal-verifier-manual-audit-v1/manual_audit_recommended96.csv \
   --port 8765
 ```
