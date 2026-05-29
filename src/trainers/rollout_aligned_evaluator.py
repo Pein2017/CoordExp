@@ -506,6 +506,10 @@ def _load_stage2_eval_source_rows_by_base_idx(owner: Any) -> Dict[int, Dict[str,
     return out
 
 
+def load_stage2_eval_source_rows_by_base_idx(owner: Any) -> Dict[int, Dict[str, Any]]:
+    return _load_stage2_eval_source_rows_by_base_idx(owner)
+
+
 def _coerce_positive_int(value: Any) -> int | None:
     try:
         out = int(value)
@@ -625,6 +629,52 @@ def _enrich_stage2_eval_artifact_source_provenance(
     out["height"] = int(height)
     if source.get("image_id") is not None:
         out["image_id"] = source.get("image_id")
+    metadata = dict(out.get("metadata") or {})
+    source_metadata = source.get("metadata")
+    if isinstance(source_metadata, Mapping):
+        metadata.update(dict(source_metadata))
+    metadata.setdefault("source_jsonl", str(source.get("_source_jsonl") or ""))
+    metadata.setdefault("base_idx", int(base_idx))
+    out["metadata"] = {k: v for k, v in metadata.items() if v not in ("", None)}
+    return out
+
+
+def enrich_stage2_eval_sample_source_provenance(
+    sample: Mapping[str, Any],
+    *,
+    source_rows_by_base_idx: Mapping[int, Mapping[str, Any]],
+) -> Dict[str, Any]:
+    out = dict(sample)
+    try:
+        base_idx = int(out.get("base_idx"))
+    except (TypeError, ValueError):
+        return out
+    source = source_rows_by_base_idx.get(int(base_idx))
+    if not isinstance(source, Mapping):
+        return out
+
+    width = _coerce_positive_int(source.get("width"))
+    height = _coerce_positive_int(source.get("height"))
+    image = _first_image_from_source_row(source)
+    if width is None or height is None or image is None:
+        return out
+
+    images_raw = out.get("images")
+    if not isinstance(images_raw, list) or not any(
+        isinstance(value, str) and value.strip() for value in images_raw
+    ):
+        out["images"] = [str(image)]
+    if not isinstance(out.get("image"), str) or not str(out.get("image") or "").strip():
+        out["image"] = str(image)
+    if not isinstance(out.get("file_name"), str) or not str(out.get("file_name") or "").strip():
+        out["file_name"] = str(source.get("file_name") or image)
+    if _coerce_positive_int(out.get("width")) is None:
+        out["width"] = int(width)
+    if _coerce_positive_int(out.get("height")) is None:
+        out["height"] = int(height)
+    if out.get("image_id") is None and source.get("image_id") is not None:
+        out["image_id"] = source.get("image_id")
+
     metadata = dict(out.get("metadata") or {})
     source_metadata = source.get("metadata")
     if isinstance(source_metadata, Mapping):
@@ -1179,6 +1229,15 @@ def _materialize_stage2_eval_artifacts(
     eval_detection_cfg: Mapping[str, Any],
     eval_decode_override: Optional[Mapping[str, Any]] = None,
 ) -> Dict[str, Any]:
+    source_rows_by_base_idx = _load_stage2_eval_source_rows_by_base_idx(owner)
+    if source_rows_by_base_idx:
+        eval_rollout_artifacts_all = [
+            _enrich_stage2_eval_artifact_source_provenance(
+                artifact,
+                source_rows_by_base_idx=source_rows_by_base_idx,
+            )
+            for artifact in eval_rollout_artifacts_all
+        ]
     _validate_stage2_eval_materialization_rows(eval_rollout_artifacts_all)
     prompt_provenance = _build_stage2_eval_prompt_provenance(
         owner=owner,
@@ -1197,7 +1256,6 @@ def _materialize_stage2_eval_artifacts(
     scored_rows: List[Dict[str, Any]] = []
     raw_rows: List[Dict[str, Any]] = []
     trace_rows: List[Dict[str, Any]] = []
-    source_rows_by_base_idx = _load_stage2_eval_source_rows_by_base_idx(owner)
     for record_idx, artifact in enumerate(eval_rollout_artifacts_all):
         artifact = _enrich_stage2_eval_artifact_source_provenance(
             artifact,

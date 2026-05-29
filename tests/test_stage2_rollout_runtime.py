@@ -3173,6 +3173,164 @@ def test_stage2_eval_source_dimensions_accept_large_int_and_digit_string() -> No
     assert record["height"] == 1024
 
 
+def test_stage2_eval_rehydrates_encoded_sample_source_identity(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    val_jsonl = tmp_path / "val.coord.jsonl"
+    val_jsonl.write_text(
+        json.dumps(
+            {
+                "images": ["images/val2017/000000000139.jpg"],
+                "width": 1248,
+                "height": 832,
+                "image_id": 139,
+                "file_name": "images/val2017/000000000139.jpg",
+                "objects": [],
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "resolved_config.json").write_text(
+        json.dumps({"resolved": {"custom": {"val_jsonl": str(val_jsonl)}}}),
+        encoding="utf-8",
+    )
+
+    sample = {
+        "sample_id": 0,
+        "base_idx": 0,
+        "messages": [
+            {"role": "user", "content": [{"type": "text", "text": "old prompt"}]},
+            {
+                "role": "assistant",
+                "content": [{"type": "text", "text": '{"objects": []}'}],
+            },
+        ],
+    }
+    trainer = _make_eval_validity_trainer(
+        tmp_path=tmp_path,
+        sample=sample,
+        monkeypatch=monkeypatch,
+    )
+    trainer._rollout_many = (
+        lambda batch, **_kwargs: [([100], "{}", "greedy", [1, 2]) for _ in batch]
+    )
+
+    materialized_rows: list[dict[str, object]] = []
+
+    def _fake_evaluate_and_save(pred_jsonl, *, options):
+        rows = [
+            json.loads(line)
+            for line in Path(pred_jsonl).read_text(encoding="utf-8").splitlines()
+            if line.strip()
+        ]
+        materialized_rows[:] = rows
+        (options.output_dir / "metrics.json").write_text("{}", encoding="utf-8")
+        (options.output_dir / "per_image.json").write_text("[]", encoding="utf-8")
+        return {"metrics": {"bbox_AP": 0.123}}
+
+    monkeypatch.setattr(
+        "src.trainers.rollout_aligned_evaluator.evaluate_and_save",
+        _fake_evaluate_and_save,
+    )
+
+    metrics = trainer.evaluate()
+
+    assert metrics["eval/runtime/coco_eval_ok"] == pytest.approx(1.0)
+    assert materialized_rows[0]["image"] == "images/val2017/000000000139.jpg"
+    assert materialized_rows[0]["images"] == ["images/val2017/000000000139.jpg"]
+    assert materialized_rows[0]["width"] == 1248
+    assert materialized_rows[0]["height"] == 832
+    assert materialized_rows[0]["image_id"] == 139
+
+
+def test_stage2_eval_non_metric_parser_output_counts_as_empty_prediction(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    sample = _valid_eval_sample()
+    trainer = _make_eval_validity_trainer(
+        tmp_path=tmp_path,
+        sample=sample,
+        monkeypatch=monkeypatch,
+    )
+    trainer._rollout_many = (
+        lambda batch, **_kwargs: [([100], "{}", "greedy", [1, 2]) for _ in batch]
+    )
+
+    parse_obj = types.SimpleNamespace(
+        response_token_ids=[100],
+        valid_objects=[
+            types.SimpleNamespace(
+                index=0,
+                geom_type="bbox_2d",
+                coord_token_indices=[0, 1, 2, 3],
+                desc="cat",
+            )
+        ],
+        dropped_invalid=1,
+        dropped_invalid_by_reason={"bbox_invalid": 1},
+        dropped_ambiguous=0,
+        truncated=False,
+        invalid_rollout=False,
+        parser_policy="strict",
+    )
+    monkeypatch.setattr(
+        "src.trainers.stage2_rollout_runtime.parse_rollout_for_matching",
+        lambda **_kwargs: parse_obj,
+    )
+    monkeypatch.setattr(
+        "src.trainers.stage2_rollout_runtime.greedy_match_iou",
+        lambda **_kwargs: types.SimpleNamespace(
+            matched_pairs=[],
+            fp_pred_indices=[],
+            fn_gt_indices=[0],
+            gating_rejections=0,
+            matched_maskiou_sum=0.0,
+            matched_maskiou_count=0,
+        ),
+    )
+
+    materialized_rows: list[dict[str, object]] = []
+
+    def _fake_evaluate_and_save(pred_jsonl, *, options):
+        rows = [
+            json.loads(line)
+            for line in Path(pred_jsonl).read_text(encoding="utf-8").splitlines()
+            if line.strip()
+        ]
+        materialized_rows[:] = rows
+        (options.output_dir / "metrics.json").write_text("{}", encoding="utf-8")
+        (options.output_dir / "per_image.json").write_text("[]", encoding="utf-8")
+        return {"metrics": {"bbox_AP": 0.0}}
+
+    monkeypatch.setattr(
+        "src.trainers.rollout_aligned_evaluator.evaluate_and_save",
+        _fake_evaluate_and_save,
+    )
+
+    metrics = trainer.evaluate()
+
+    assert metrics["eval/runtime/coco_eval_ok"] == pytest.approx(1.0)
+    assert metrics["eval/detection/pred_objects"] == pytest.approx(0.0)
+    assert metrics["eval/detection/fn_total"] == pytest.approx(1.0)
+    assert materialized_rows[0]["pred"] == []
+    assert "non_metric_parser_output" in materialized_rows[0]["errors"]
+
+    raw_rows = [
+        json.loads(line)
+        for line in (
+            tmp_path / "eval_detection" / "step_0000011" / "raw_rollouts.jsonl"
+        ).read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
+    parser_result = raw_rows[0]["parser_result"]
+    assert parser_result["parser_policy"] == "strict"
+    assert parser_result["metric_bearing"] is True
+    assert "non_metric_parser_output" in raw_rows[0]["parse"]["errors"]
+
+
 def test_stage2_eval_multi_image_source_rejected() -> None:
     with pytest.raises(ValueError, match="exactly one source image identity"):
         build_eval_detection_record_confidence_postop_input(
@@ -3228,7 +3386,7 @@ def test_stage2_eval_source_dimensions_reject_non_exact_pixels(
         )
 
 
-def test_stage2_eval_non_metric_parser_status_raises_before_artifacts_exist(
+def test_stage2_eval_non_metric_parser_status_materializes_empty_prediction(
     monkeypatch,
     tmp_path: Path,
 ) -> None:
@@ -3237,6 +3395,9 @@ def test_stage2_eval_non_metric_parser_status_raises_before_artifacts_exist(
         tmp_path=tmp_path,
         sample=sample,
         monkeypatch=monkeypatch,
+    )
+    trainer._rollout_many = (
+        lambda batch, **_kwargs: [([100], "{}", "greedy", [1, 2]) for _ in batch]
     )
     parse_obj = types.SimpleNamespace(
         response_token_ids=[100],
@@ -3276,10 +3437,19 @@ def test_stage2_eval_non_metric_parser_status_raises_before_artifacts_exist(
         ),
     )
 
-    with pytest.raises(RuntimeError, match="metric_bearing=false"):
-        trainer.evaluate()
+    metrics = trainer.evaluate()
 
-    assert not (tmp_path / "eval_detection" / "step_0000011").exists()
+    assert metrics["eval/runtime/coco_eval_ok"] == pytest.approx(1.0)
+    assert metrics["eval/detection/pred_objects"] == pytest.approx(0.0)
+    eval_dir = tmp_path / "eval_detection" / "step_0000011"
+    assert eval_dir.exists()
+    raw_rows = [
+        json.loads(line)
+        for line in (eval_dir / "raw_rollouts.jsonl").read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
+    assert raw_rows[0]["parser_result"]["metric_bearing"] is True
+    assert "non_metric_parser_output" in raw_rows[0]["parse"]["errors"]
 
 
 def test_stage2_eval_invalid_parser_payload_reaches_ddp_gather_before_failure(
@@ -3291,6 +3461,9 @@ def test_stage2_eval_invalid_parser_payload_reaches_ddp_gather_before_failure(
         tmp_path=tmp_path,
         sample=sample,
         monkeypatch=monkeypatch,
+    )
+    trainer._rollout_many = (
+        lambda batch, **_kwargs: [([100], "{}", "greedy", [1, 2]) for _ in batch]
     )
     parse_obj = types.SimpleNamespace(
         response_token_ids=[100],
@@ -3370,12 +3543,12 @@ def test_stage2_eval_invalid_parser_payload_reaches_ddp_gather_before_failure(
     with pytest.raises(RuntimeError, match="metric_bearing=false"):
         trainer.evaluate()
 
-    assert gathered_local_objects[0] == []
-    invalid_artifacts = gathered_local_objects[1]
-    assert invalid_artifacts[0]["official_eval_invalid_reason"] == (
-        "parser_result_not_metric_bearing"
-    )
-    assert invalid_artifacts[0]["parser_result"]["metric_bearing"] is False
+    gathered_records = gathered_local_objects[0]
+    gathered_artifacts = gathered_local_objects[1]
+    assert gathered_records[0]["pred"] == []
+    assert "non_metric_parser_output" in gathered_records[0]["errors"]
+    assert gathered_artifacts[0]["parser_result"]["metric_bearing"] is True
+    assert "non_metric_parser_output" in gathered_artifacts[0]["parse"]["errors"]
     assert not (tmp_path / "eval_detection" / "step_0000011").exists()
 
 
@@ -3656,7 +3829,7 @@ def test_evaluate_emits_coco_map_metrics_when_eval_detection_enabled(
     assert infer_summary["infer"]["prompt_variant"] == "coco_80"
 
 
-def test_stage2_eval_default_coordjson_rejects_official_artifacts(
+def test_stage2_eval_default_coordjson_materializes_empty_prediction(
     monkeypatch,
     tmp_path: Path,
 ) -> None:
@@ -3676,17 +3849,26 @@ def test_stage2_eval_default_coordjson_rejects_official_artifacts(
         add_special_tokens=False,
     )
     trainer._rollout_many = lambda batch, **_kwargs: [
-        (response_token_ids, response_text, "greedy", []) for _ in batch
+        (response_token_ids, response_text, "greedy", [1, 2]) for _ in batch
     ]
     monkeypatch.setattr(
         "src.trainers.stage2_rollout_runtime.parse_rollout_for_matching",
         parse_rollout_for_matching,
     )
 
-    with pytest.raises(RuntimeError, match="metric_bearing=false"):
-        trainer.evaluate()
+    metrics = trainer.evaluate()
 
-    assert not (tmp_path / "eval_detection" / "step_0000011").exists()
+    assert metrics["eval/runtime/coco_eval_ok"] == pytest.approx(1.0)
+    assert metrics["eval/detection/pred_objects"] == pytest.approx(0.0)
+    eval_dir = tmp_path / "eval_detection" / "step_0000011"
+    assert eval_dir.exists()
+    raw_rows = [
+        json.loads(line)
+        for line in (eval_dir / "raw_rollouts.jsonl").read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
+    assert raw_rows[0]["parser_result"]["metric_bearing"] is True
+    assert "non_metric_parser_output" in raw_rows[0]["parse"]["errors"]
 
 
 def test_evaluate_emits_coco_map_metrics_with_confidence_postop(

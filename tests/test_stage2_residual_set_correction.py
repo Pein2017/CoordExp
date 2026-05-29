@@ -20,7 +20,11 @@ from src.trainers.rollout_correction.residual_set import (
 from src.trainers.rollout_correction.teacher_forcing_adapter import (
     build_residual_set_target_ir,
 )
-from src.trainers.rollout_correction.target_builder import _with_selected_path_metadata
+from src.trainers.rollout_correction.target_builder import (
+    _can_render_observed_prefix,
+    _observed_prefix_objects,
+    _with_selected_path_metadata,
+)
 from src.training.teacher_forcing.roles import TokenRole
 from src.training.teacher_forcing.vocab import RoleVocab
 
@@ -78,6 +82,26 @@ def only_action(actions: tuple[ValidAction, ...]) -> ValidAction:
 
 def valid_coord_actions(state: ResidualState, role: CoordRole) -> tuple[ValidAction, ...]:
     return enumerate_valid_actions(state, slot=role)
+
+
+def test_observed_prefix_with_forbidden_marker_is_not_clean_renderable() -> None:
+    rows = [
+        ObservedResidualRow(
+            object_start=0,
+            object_end=6,
+            desc="person<|box_start|>",
+            bbox_norm1000=(10, 20, 30, 40),
+        )
+    ]
+
+    prefix_objects = _observed_prefix_objects(rows=rows, retained_prefix_end=6)
+
+    assert prefix_objects == []
+    assert not _can_render_observed_prefix(
+        rows=rows,
+        retained_prefix_end=6,
+        prefix_objects=prefix_objects,
+    )
 
 
 def apply_action(state: ResidualState, action: ValidAction) -> ResidualState:
@@ -594,6 +618,50 @@ def test_duplicate_burst_prefix_rollback_truncates_at_last_stable_boundary() -> 
     assert result.final_state.remaining_object_ids == frozenset({"b"})
     assert result.retained_prefix_end == 10
     assert result.events == ()
+
+
+def test_dirty_prefix_scan_uses_stricter_duplicate_threshold_than_commit_threshold() -> None:
+    state = make_state_for_objects(
+        make_object("a", "person_left", x1=100, y1=100, x2=200, y2=200),
+        make_object("b", "car", x1=500, y1=100, x2=600, y2=200),
+    )
+
+    result = scan_dirty_prefix_rows(
+        state,
+        (
+            row("person_left", (100, 100, 200, 200), object_start=2, object_end=10),
+            row("person_left", (105, 100, 205, 200), object_start=10, object_end=18),
+        ),
+        commit_iou_threshold=0.75,
+        duplicate_burst_iou_threshold=0.95,
+    )
+
+    assert [decision.kind for decision in result.row_decisions] == [
+        "committed",
+        "unmatched_dirty_context",
+    ]
+    assert result.row_decisions[1].iou is None
+    assert result.final_state.remaining_object_ids == frozenset({"b"})
+
+
+def test_dirty_prefix_scan_does_not_commit_low_iou_assignment_gate_overlap() -> None:
+    state = make_state_for_objects(
+        make_object("a", "person_left", x1=100, y1=100, x2=200, y2=200),
+    )
+
+    result = scan_dirty_prefix_rows(
+        state,
+        (row("person_left", (120, 100, 220, 200), object_start=2, object_end=10),),
+        iou_threshold=0.10,
+        commit_iou_threshold=0.75,
+        duplicate_burst_iou_threshold=0.95,
+    )
+
+    decision = result.row_decisions[0]
+    assert decision.kind == "unmatched_dirty_context"
+    assert decision.remaining_before == frozenset({"a"})
+    assert decision.remaining_after == frozenset({"a"})
+    assert result.final_state.remaining_object_ids == frozenset({"a"})
 
 
 def test_malformed_span_context_has_no_atoms_or_type_loss() -> None:

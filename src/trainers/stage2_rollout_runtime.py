@@ -65,6 +65,7 @@ from src.infer.artifacts import (
 from src.infer.parsing import (
     diagnostic_parser_result,
     parse_stage2_detection_rollout_predictions,
+    strict_parser_result,
 )
 from src.infer.runtime import (
     build_decode_request_from_rollout_owner,
@@ -131,8 +132,10 @@ from src.infer.backend_vllm_server import (
 from .rollout_aligned_evaluator import (
     build_eval_detection_record as _build_eval_detection_record,
     build_eval_detection_record_confidence_postop_input as _build_eval_detection_record_confidence_postop_input,
+    enrich_stage2_eval_sample_source_provenance,
     extract_eval_gt_objects as _extract_gt_objects,
     finalize_rollout_aligned_evaluation,
+    load_stage2_eval_source_rows_by_base_idx,
 )
 from .rollout_aligned_targets import (
     build_labels_and_coord_targets_for_batch,
@@ -3829,6 +3832,11 @@ class Stage2RolloutRuntime(Seq2SeqTrainer):
         eval_rollout_artifacts_local: List[Dict[str, Any]] = []
         eval_record_counter_local = 0
         vllm_decode_error_count_local = 0.0
+        eval_source_rows_by_base_idx = (
+            load_stage2_eval_source_rows_by_base_idx(self)
+            if eval_detection_enabled
+            else {}
+        )
 
         # Optional qualitative monitor dumps during eval (rank0 only).
         gs = int(getattr(getattr(self, "state", None), "global_step", 0) or 0)
@@ -4028,6 +4036,11 @@ class Stage2RolloutRuntime(Seq2SeqTrainer):
                             ) from batch_exc
 
                 for sample, rollout in sample_rollouts:
+                    if eval_source_rows_by_base_idx:
+                        sample = enrich_stage2_eval_sample_source_provenance(
+                            sample,
+                            source_rows_by_base_idx=eval_source_rows_by_base_idx,
+                        )
                     if has_token_trace:
                         (
                             resp_ids,
@@ -4090,6 +4103,13 @@ class Stage2RolloutRuntime(Seq2SeqTrainer):
                     pred_objs_dump: List[Dict[str, Any]] = [
                         dict(obj) for obj in parsed_rollout.pred_objects_dump
                     ]
+                    parser_result = parsed_rollout.parser_result
+                    parser_result_is_metric_bearing = (
+                        bool(getattr(parser_result, "metric_bearing", False))
+                        and str(getattr(parser_result, "parser_policy", "") or "")
+                        == "strict"
+                        and not bool(getattr(parser_result, "salvage_recovered", False))
+                    )
 
                     dropped_invalid_total += float(parse.dropped_invalid)
                     dropped_ambiguous_total += float(parse.dropped_ambiguous)
@@ -4098,6 +4118,25 @@ class Stage2RolloutRuntime(Seq2SeqTrainer):
                     gts = _extract_gt_objects(sample)
                     eval_error_codes: List[str] = []
                     eval_error_entries: List[Dict[str, str]] = []
+                    if bool(eval_detection_enabled) and not parser_result_is_metric_bearing:
+                        source_parser_metadata = parser_result.to_artifact_metadata()
+                        eval_error_codes.append("non_metric_parser_output")
+                        eval_error_entries.append(
+                            {
+                                "code": "non_metric_parser_output",
+                                "message": (
+                                    "Parser output was not metric-bearing; official "
+                                    "eval counts this sample as an empty prediction "
+                                    "instead of consuming diagnostic predictions."
+                                ),
+                                "stage": "eval_rollout_parse",
+                            }
+                        )
+                        pred_meta = []
+                        preds = []
+                        pred_objs_dump = []
+                    else:
+                        source_parser_metadata = None
                     if bool(getattr(parse, "invalid_rollout", False)):
                         eval_error_codes.append("invalid_rollout")
                         eval_error_entries.append(
@@ -4164,28 +4203,23 @@ class Stage2RolloutRuntime(Seq2SeqTrainer):
                     if eval_detection_enabled:
                         eval_record_index = int(eval_record_counter_local)
                         eval_record_counter_local += 1
-                        parser_result = parsed_rollout.parser_result
-                        parser_artifact_metadata = (
-                            parser_result.to_artifact_metadata()
-                        )
-                        if (
-                            not bool(parser_result.metric_bearing)
-                            or parser_result.parser_policy != "strict"
-                            or bool(parser_result.salvage_recovered)
-                        ):
-                            eval_rollout_artifacts_local.append(
-                                _build_stage2_eval_invalid_artifact_record(
-                                    eval_record_index=int(eval_record_index),
-                                    sample=sample,
-                                    parser_artifact_metadata=parser_artifact_metadata,
-                                    reason="parser_result_not_metric_bearing",
-                                    message=(
-                                        "Stage-2 official eval requires strict "
-                                        "metric-bearing parser output."
-                                    ),
-                                )
+                        if parser_result_is_metric_bearing:
+                            parser_artifact_metadata = (
+                                parser_result.to_artifact_metadata()
                             )
-                            continue
+                        else:
+                            parser_artifact_metadata = strict_parser_result(
+                                predictions=(),
+                                parser_id=(
+                                    str(getattr(parser_result, "parser_id", "") or "")
+                                    or "stage2_eval_empty_on_non_metric"
+                                ),
+                                errors=tuple(eval_error_codes),
+                                diagnostics={
+                                    "empty_prediction_due_to_non_metric_parser": True,
+                                    "source_parser_result": source_parser_metadata,
+                                },
+                            ).to_artifact_metadata()
 
                         confidence_objects_payload: List[Dict[str, Any]] = []
                         try:

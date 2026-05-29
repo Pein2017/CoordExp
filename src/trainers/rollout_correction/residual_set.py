@@ -422,10 +422,27 @@ def scan_dirty_prefix_rows(
     state: ResidualState,
     rows: tuple[ObservedResidualRow, ...],
     *,
-    iou_threshold: float = 0.75,
+    iou_threshold: float | None = None,
+    commit_iou_threshold: float | None = None,
+    duplicate_burst_iou_threshold: float | None = None,
     sample_id: str = "sample-1",
     rollback_duplicate_burst: bool = False,
 ) -> ResidualRowScanResult:
+    legacy_threshold = None if iou_threshold is None else float(iou_threshold)
+    commit_threshold = (
+        legacy_threshold
+        if commit_iou_threshold is None and legacy_threshold is not None
+        else 0.75
+        if commit_iou_threshold is None
+        else float(commit_iou_threshold)
+    )
+    duplicate_threshold = (
+        legacy_threshold
+        if duplicate_burst_iou_threshold is None and legacy_threshold is not None
+        else 0.95
+        if duplicate_burst_iou_threshold is None
+        else float(duplicate_burst_iou_threshold)
+    )
     decisions: list[ResidualRowDecision] = []
     events: list[CorrectionEvent] = []
     dirty_context_spans: list[tuple[int, int]] = []
@@ -495,7 +512,7 @@ def scan_dirty_prefix_rows(
             observed,
             emitted_ids=emitted_ids,
             state=state,
-            iou_threshold=float(iou_threshold),
+            iou_threshold=float(duplicate_threshold),
         )
         if duplicate is not None:
             metadata: dict[str, Any] = {"row_index": int(row_index)}
@@ -521,7 +538,7 @@ def scan_dirty_prefix_rows(
         selected = _select_commit_candidate(
             observed,
             current,
-            iou_threshold=float(iou_threshold),
+            iou_threshold=float(commit_threshold),
         )
         if selected is not None:
             object_id, iou = selected
@@ -546,7 +563,7 @@ def scan_dirty_prefix_rows(
         spatial_conflict = _select_spatial_conflict(
             observed,
             current,
-            iou_threshold=float(iou_threshold),
+            iou_threshold=float(commit_threshold),
         )
         if spatial_conflict is not None:
             object_id, iou = spatial_conflict

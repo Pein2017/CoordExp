@@ -18,6 +18,7 @@ from src.common.detection_sequence import (
     OBJECT_REF_START_TOKEN,
     render_compact_detection_sequence,
 )
+from src.common.detection_compact_rows import COMPACT_DESC_FORBIDDEN_SUBSTRINGS
 from src.common.object_field_order import build_object_payload
 from src.common.semantic_desc import normalize_desc
 from src.training.stage2.rollout_codec import (
@@ -1889,6 +1890,8 @@ def _build_residual_set_correction_events(
     match: MatchResult,
     ul_promoted_objects: Sequence[Mapping[str, Any]] = (),
     assignment_iou_threshold: float,
+    commit_iou_threshold: float | None = None,
+    duplicate_burst_iou_threshold: float | None = None,
     sample_id: str,
     rollout_index: int,
     lambda_ul_promoted: float,
@@ -1924,6 +1927,18 @@ def _build_residual_set_correction_events(
     }
     del parsed_bbox_objects_raw, compact_full_object_spans, accepted_objects_clean, match
     raw_ids = [int(token_id) for token_id in response_token_ids]
+    commit_threshold = (
+        float(assignment_iou_threshold)
+        if commit_iou_threshold is None
+        else float(commit_iou_threshold)
+    )
+    duplicate_threshold = (
+        0.95
+        if duplicate_burst_iou_threshold is None
+        else float(duplicate_burst_iou_threshold)
+    )
+    metrics["scanner_commit_iou_threshold"] = float(commit_threshold)
+    metrics["scanner_duplicate_burst_iou_threshold"] = float(duplicate_threshold)
 
     initial_state = ResidualState(
         objects=tuple(item.residual_object for item in universe),
@@ -1940,7 +1955,8 @@ def _build_residual_set_correction_events(
     scan = scan_dirty_prefix_rows(
         initial_state,
         observed_rows,
-        iou_threshold=float(assignment_iou_threshold),
+        commit_iou_threshold=float(commit_threshold),
+        duplicate_burst_iou_threshold=float(duplicate_threshold),
         sample_id=str(sample_id),
         rollback_duplicate_burst=bool(duplicate_burst_prefix_rollback),
     )
@@ -2313,6 +2329,8 @@ def _observed_prefix_objects(
             continue
         if row.desc is None or row.bbox_norm1000 is None:
             continue
+        if not _is_renderable_compact_desc(str(row.desc)):
+            continue
         objects.append(
             GTObject(
                 index=int(row_index),
@@ -2322,6 +2340,15 @@ def _observed_prefix_objects(
             )
         )
     return objects
+
+
+def _is_renderable_compact_desc(desc: str) -> bool:
+    text = str(desc)
+    if not text.strip():
+        return False
+    return not any(
+        str(forbidden) in text for forbidden in COMPACT_DESC_FORBIDDEN_SUBSTRINGS
+    )
 
 
 def _can_render_observed_prefix(
@@ -2341,6 +2368,8 @@ def _can_render_observed_prefix(
     if len(complete_rows) != len(prefix_objects):
         return False
     for row in complete_rows:
+        if row.desc is None or not _is_renderable_compact_desc(str(row.desc)):
+            return False
         if row.bbox_norm1000 is None:
             return False
         x1, y1, x2, y2 = [int(value) for value in row.bbox_norm1000]
@@ -2399,6 +2428,8 @@ def _build_residual_universe_objects(
     for ul_index, item in enumerate(ul_promoted_objects):
         obj = item.get("object") if isinstance(item, Mapping) else None
         if not isinstance(obj, GTObject):
+            continue
+        if not _is_renderable_compact_desc(str(obj.desc)):
             continue
         try:
             loss_weight = float(item.get("loss_weight", lambda_ul_promoted))

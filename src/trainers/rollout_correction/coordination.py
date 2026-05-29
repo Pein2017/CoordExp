@@ -296,6 +296,24 @@ def finalize_rollout_correction_pipeline_step(
     return loss_total
 
 
+def build_trainable_parameter_zero_loss(model: Any) -> torch.Tensor:
+    """Create a graph-connected zero touching every trainable parameter."""
+
+    zero_loss = None
+    for param in model.parameters():
+        if not bool(getattr(param, "requires_grad", False)):
+            continue
+        if param.numel() <= 0:
+            continue
+        term = param.reshape(-1)[0] * 0.0
+        zero_loss = term if zero_loss is None else zero_loss + term
+    if zero_loss is None:
+        raise RuntimeError(
+            "stage2_rollout_correction shadow DDP slot found no trainable parameters"
+        )
+    return zero_loss
+
+
 def run_rollout_correction_train_one_pack(
     *,
     owner: RolloutCorrectionCoordinationOwner,
@@ -311,6 +329,25 @@ def run_rollout_correction_train_one_pack(
     ddp_world_size: int,
     shadow_zero_loss: bool = False,
 ) -> torch.Tensor:
+    if bool(shadow_zero_loss):
+        loss_scaled = build_trainable_parameter_zero_loss(model)
+        cm = contextlib.nullcontext()
+        if not bool(sync_gradients):
+            acc = getattr(owner, "accelerator", None)
+            if acc is not None and hasattr(acc, "no_sync"):
+                cm = acc.no_sync(model)
+            else:
+                no_sync = getattr(model, "no_sync", None)
+                if callable(no_sync):
+                    cm = model.no_sync()
+        with cm:
+            acc = getattr(owner, "accelerator", None)
+            if acc is not None and hasattr(acc, "backward"):
+                acc.backward(loss_scaled)
+            else:
+                loss_scaled.backward()
+        return loss_scaled.detach()
+
     from src.infer.backend import import_swift_to_device
 
     to_device = import_swift_to_device()

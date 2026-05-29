@@ -61,12 +61,12 @@ class Stage2PackSchedule:
         empty_count = int(global_count - local_count)
         slots: list[Stage2PackSlot] = []
         for slot_index in range(global_count):
-            local_index = int(slot_index) - int(empty_count)
+            local_index = int(slot_index)
             slots.append(
                 Stage2PackSlot(
                     slot_index=int(slot_index),
                     local_pack_index=(
-                        int(local_index) if int(local_index) >= 0 else None
+                        int(local_index) if int(local_index) < int(local_count) else None
                     ),
                     sync_gradients=bool(
                         sync_every_slot or int(slot_index) == int(global_count - 1)
