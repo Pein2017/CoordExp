@@ -6,7 +6,7 @@ status: canonical
 domain: research-history
 summary: Router for architecture, infrastructure, and implementation-planning explorations.
 tags: [progress, explorations, architecture, infrastructure]
-updated: 2026-05-16
+updated: 2026-05-29
 ---
 
 # Explorations Index
@@ -21,6 +21,8 @@ contracts. Prefer `docs/` and `openspec/specs/` for current structure.
 
 ## Current Entry Points
 
+- [2026-05-29_anchor_first_grid_anchor_design.md](2026-05-29_anchor_first_grid_anchor_design.md)
+  - active pressure-test notes for the anchor-first / grid-anchor autoregressive detection design
 - [2026-05-15_training_infrastructure_architecture_decisions.md](2026-05-15_training_infrastructure_architecture_decisions.md)
   - active architecture decision record for the training infrastructure audit and `grill-me` cleanup decisions; use it as cleanup rationale, not current training run guidance
 - [2026-03-19_runtime_refactor_architecture_program.md](2026-03-19_runtime_refactor_architecture_program.md)
