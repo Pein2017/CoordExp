@@ -22,9 +22,9 @@ Superpowers plan.
 
 ## 2. Archive And Classification Gates After Approval
 
-- [ ] 2.1 Create or identify the pre-cleanup archive checkpoint commit, branch,
+- [x] 2.1 Create or identify the pre-cleanup archive checkpoint commit, branch,
   or tag.
-- [ ] 2.2 Record the archive checkpoint in the appropriate progress or docs
+- [x] 2.2 Record the archive checkpoint in the appropriate progress or docs
   surface.
 - [ ] 2.3 Classify active and historical surfaces as keep/rename, temporary
   migration handle, quarantine, or delete.
