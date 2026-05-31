@@ -18,7 +18,7 @@ Superpowers plan.
   implementation.
 - [x] 1.6 Produce a decision packet that states changed files, convergence
   status, unresolved blockers, skipped validation, and the no-code hold point.
-- [ ] 1.7 Receive explicit user approval before production implementation.
+- [x] 1.7 Receive explicit user approval before production implementation.
 
 ## 2. Archive And Classification Gates After Approval
 

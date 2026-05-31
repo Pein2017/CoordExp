@@ -1,6 +1,6 @@
 # DetectionScene Clean-Break Proposal Review and Implementation Roadmap
 
-> **Proposal review only. Do not implement production code, configs, stable current-behavior docs, or runtime refactors from this file until the user gives final implementation approval.** This roadmap ends with an approval decision packet.
+> **Implementation approved on 2026-05-31.** This roadmap now governs the clean-break implementation sequence. Production code, configs, stable current-behavior docs, and runtime refactors must still follow the OpenSpec contract and the archive/classification gates below.
 
 **Goal:** Converge the OpenSpec contract and implementation sequence for the clean-break `DetectionScene` architecture.
 
@@ -50,11 +50,11 @@ Current adjacent stable specs:
 - [x] User approved OpenSpec for the main architecture contract and Superpowers
   for implementation sequencing.
 - [x] Subagent audits have returned and been incorporated.
-- [ ] User has reviewed the final decision packet.
-- [ ] User has explicitly approved production implementation.
+- [x] User has reviewed the final decision packet.
+- [x] User has explicitly approved production implementation.
 
-Production implementation remains blocked until the final approval item is
-checked by a direct user instruction.
+Production implementation is approved by direct user instruction and proceeds
+through the archive/classification gates before runtime replacement work.
 
 ## Read-Only Review Lanes
 
