@@ -36,6 +36,13 @@ python .codex/skills/baidudisk-union-sync/scripts/baidu_union_sync.py \
   --config temp/baidudisk-union-sync/config.json sync outputs --apply
 ```
 
+## Operator Preflight
+
+- Sync or intentionally snapshot Git state before long `outputs/` transfers, especially from `main`.
+- Discover the actual `BaiduPCS-Go` binary and confirm the remote root with `BaiduPCS-Go ls /CoordExp/outputs` before trusting status output.
+- Confirm the exact artifact family before transfer: list the remote parent, inspect names such as `gaussian`, `iou`, `ciou`, or `mix0p*`, and check `resolved_config.json` when variants are easy to confuse.
+- Treat `remote_manifest_count: 0` in a dry run as "remote state was not proven", not as proof of a conflict-free remote tree.
+
 ## Safety Rules
 
 - Use `--policy skip` for automated uploads.

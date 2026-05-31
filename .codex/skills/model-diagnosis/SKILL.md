@@ -59,6 +59,25 @@ Track innovation-specific probability mass:
 
 Healthy launch signal: intended terms move, valid mass rises, schema health holds, free rollout agrees with teacher-forced trend, and no provenance/mask/precision contradiction is visible.
 
+## Stage-1 Coordinate Locality
+
+For SoftCE, Gaussian, or hard-CE coordinate objective decisions, keep the readout slot-wise and rollout-aware:
+
+- compare `x1`, `y1`, `x2`, and `y2` separately;
+- include teacher-forced logits and self-prefix logits;
+- pair distribution tables with plots when judging shape;
+- keep A5/A6 or other variants separate instead of flattening them into one "SoftCE" verdict;
+- use guarded rollout metrics only with explicit scope labels such as `val200`, checkpoint id, and decode settings.
+
+Existing harness:
+
+```bash
+PYTHONPATH=/data/CoordExp python scripts/analysis/run_hard_ce_coord_logit_locality.py --help
+python -m pytest tests/test_hard_ce_coord_logit_locality.py -q
+```
+
+If a direct script launch cannot import `src`, set `PYTHONPATH=/data/CoordExp` explicitly.
+
 ## Output
 
 ```text

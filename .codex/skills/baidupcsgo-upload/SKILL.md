@@ -40,6 +40,12 @@ COOKIE=$(tr -d '\n' < baidu_net_cookie.txt)
 
 Do not ask the user to type account credentials in the terminal if cookies are available.
 
+## Filename Safety
+
+Before large uploads, scan for Baidu/Windows-hostile names such as `:`, `>`, control characters, or visual arrows embedded in generated figure names. If the transfer fails on a small set of files, rename those files and write a mapping manifest near the artifact, for example `outputs/_baidu_filename_mapping/`, instead of silently dropping them.
+
+Keep the mapping manifest with the artifact so future readers can recover the original figure identity.
+
 ## Upload
 
 ```bash
@@ -83,3 +89,4 @@ Detach with `Ctrl-b d`; reattach with `tmux attach -t baidupcs_upload`.
 - Need speed: raise `BAIDUPCS_UPLOAD_PARALLEL_FILES` first.
 - Download completes but files are not where expected: inspect the account-prefixed staging tree.
 - Existing `bypy` files are invisible: recreate the target path under `/` and transfer with BaiduPCS-Go.
+- ETA questions need live evidence: combine current shard progress, local file size, and remote `BaiduPCS-Go ls` visibility rather than pane output alone.

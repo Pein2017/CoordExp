@@ -106,6 +106,22 @@ After eval:
 
 For sharded runs, trust merged top-level summaries/manifests over shard logs.
 
+## Stage-2 Eval Validity Gate
+
+Before treating Stage-2 eval artifacts as metric-bearing, reject or repair runs where:
+
+- a row lacks real source image identity or dimensions;
+- strict parser status is replaced by diagnostic fallback or `metric_bearing=false`;
+- multi-image inputs were collapsed instead of rejected;
+- prompt-token / detection-format provenance or score fingerprints are missing;
+- `resolved_config.path` cannot recover the authoritative pipeline config.
+
+Useful debug surfaces:
+
+- `monitor_dumps/eval_phase_trace` for the last completed eval phase;
+- source-JSONL provenance and image-root metadata when archived artifacts need geometry recovery;
+- `configs/stage2_rollout_correction/smoke/compact_full_vllm_train64_val32_6steps_coco80_evaltrace.yaml` for compact-full COCO-80 evaltrace smoke coverage.
+
 ## Failure Modes
 
 - `metrics: both` on COCO proxy artifacts can route into LVIS-federated assumptions; inspect `src/eval/detection.py`.

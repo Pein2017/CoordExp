@@ -92,6 +92,20 @@ When independent surfaces exist and subagents are available, split by disjoint s
 - artifact/eval;
 - tests/diagnostics.
 
+## Stage-2 Production Gate
+
+For Stage-2 rollout-correction, residual-set, trie, or vLLM candidates, return a bounded launch/promote decision instead of an open-ended audit. Check:
+
+- config load and resolved pipeline namespace;
+- prepared-data versus live-rollout mode;
+- prompt/template/decode parity and vLLM adapter/token-row synchronization;
+- parser health, invalid/drop counters, and metric-bearing eval validity;
+- residual, trie, duplicate, and unlikelihood counters with scope labels;
+- `run_metadata.json`, `resolved_config.json`, `pipeline_manifest.json`, and artifact roots;
+- whether a paired baseline or ablation is required before promotion.
+
+Output one of: `promote`, `hold`, `rerun gate`, or `needs user decision`, with the smallest verification command or artifact check that would change the verdict.
+
 ## References
 
 Load only when needed:

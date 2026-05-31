@@ -1,0 +1,4 @@
+interface:
+  display_name: "Workflow Self-Distillation"
+  short_description: "Mine recent work for reusable workflows"
+  default_prompt: "Use $workflow-self-distillation when asked to review recent Codex work, memories, sessions, or task history to identify repeated manual workflows worth packaging as skills, subagents, automations, extensions, or deliberate skips. Launch focused subagents when useful and avoid duplicating existing assets."

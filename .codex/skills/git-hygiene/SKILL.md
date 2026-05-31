@@ -69,3 +69,10 @@ Skip `pull` when already up to date; skip `push` when there is nothing to publis
 - Do not create a branch unless asked or required by the user's workflow.
 - If a pull/merge is needed, split local work into logical commits first when feasible.
 - Final report should include commits created, checks run, sync status (fetch/pull/push), and remaining dirty files.
+
+## CoordExp Notes
+
+- `.codex/memories/` is local-only; verify with `git ls-files .codex/memories` before any memory-related commit.
+- Before Baidu `outputs/` sync or artifact publication, align the intended branch with remote unless the user explicitly wants a local-only transfer.
+- `output_remote/` is transitional. Use `scripts/absorb_output_remote_into_outputs.py --apply` for no-overwrite absorption while active writers still use the old root.
+- For old benchmark CSV conflicts, prefer canonical `outputs/...` paths over stale `output_remote/...` strings unless the user is preserving historical evidence verbatim.

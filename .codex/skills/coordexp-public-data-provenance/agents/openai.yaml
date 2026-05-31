@@ -1,0 +1,4 @@
+interface:
+  display_name: "Public Data Provenance"
+  short_description: "Verify public_data manifests and JSONL checksums"
+  default_prompt: "Use $coordexp-public-data-provenance when auditing, updating, or handing off CoordExp public_data provenance manifests, JSONL-only checksums, active-root guardrails, or cross-node regeneration from raw datasets. Keep raw and processed public_data out of Baidu mirror workflows."
