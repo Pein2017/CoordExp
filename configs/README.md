@@ -19,13 +19,16 @@ attempt.
 - `configs/stage1/profiles/`: small legacy Stage-1 SFT profile set. Keep only
   non-redundant 2B/4B hyperparameter surfaces that remain useful as baselines
   or comparison anchors.
-- `configs/stage1/recursive_detection_ce/prod/`: compact
-  recursive detection production/comparison configs.
-- `configs/stage1/recursive_detection_ce/ablation/`: current
-  mechanism-level recursive detection ablations that are still worth launching
-  or comparing.
-- `configs/stage1/recursive_detection_ce/smoke/`: minimal smoke and
-  preflight overlays for the retained recursive detection configs.
+- `configs/stage1/detection_teacher_forcing/`: canonical
+  `stage1_detection_teacher_forcing` Stage-1 detection teacher-forcing surface.
+  New compact-full teacher-forcing production and smoke configs belong here.
+- `configs/stage1/recursive_detection_ce/prod/`: legacy/comparator compact
+  recursive-detection CE production and comparison configs. Keep only for
+  migration history or explicitly named comparisons.
+- `configs/stage1/recursive_detection_ce/ablation/`: legacy/comparator
+  mechanism-level recursive-detection CE ablations.
+- `configs/stage1/recursive_detection_ce/smoke/`: migration smoke and
+  preflight overlays for the legacy recursive-detection CE configs.
 - `configs/stage2_rollout_correction/`: active Stage-2 rollout-correction
   surface. These configs use rollout prefix plus GT/residual correction and the
   canonical `stage2_rollout_correction` namespace.

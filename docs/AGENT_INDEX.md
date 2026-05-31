@@ -52,14 +52,15 @@ Human support entrypoints:
   - [docs/data/PACKING.md](data/PACKING.md) for Stage-1 static-packing and hard-cap questions
 - Stage-1 training:
   - [docs/training/README.md](training/README.md)
-  - [docs/training/STAGE1_OBJECTIVE.md](training/STAGE1_OBJECTIVE.md) for baseline Stage-1 behavior, compact recursive detection, prefix-rollin ablation boundaries, and retired candidate-objective boundaries
+  - [docs/training/STAGE1_OBJECTIVE.md](training/STAGE1_OBJECTIVE.md) for baseline Stage-1 behavior, canonical detection teacher forcing, legacy prefix-rollin ablation boundaries, and retired candidate-objective boundaries
   - [docs/data/PACKING.md](data/PACKING.md)
+  - Current public Stage-1 detection teacher-forcing route: `stage1_detection_teacher_forcing` in `configs/stage1/detection_teacher_forcing/`.
   - Shadow surface IDs: `stage1_json_ce` for the JSON chat CE baseline and `stage1_compact_trie_ce` for the compact-full primary architecture direction.
   - Shadow resolver and pipeline map: `src/training/surfaces.py`, `src/training/pipelines/stage1_json_ce.py`, and `src/training/pipelines/stage1_compact_trie_ce.py`.
   - Objective profile order: `token_ce`, `trie_ce`, `coord_soft_ce`; disabled objectives remain explicit.
   - legacy/comparator latest compact detection handle: `configs/stage1/recursive_detection_ce/prod/compact_full_support2.yaml`; do not use as a new active teacher-forcing config.
   - legacy/comparator prefix-rollin E1 handle: `configs/stage1/recursive_detection_ce/ablation/compact_full_prefix_rollin_balance2.yaml`; compact_full only, with ordinary teacher-forced `<|im_end|>` CE.
-  - Latest compact detection authoring snippets, not yet consumed by canonical launch configs: `configs/_shared/recursive_detection/`
+  - Legacy recursive-detection authoring snippets, not consumed by canonical launch configs: `configs/_shared/recursive_detection/`
   - Legacy compact bridge example only: `configs/stage1/compact_detection_sequence/smoke/compact_full_tiny.yaml`
 - Stage-2 training:
   - [docs/training/README.md](training/README.md)

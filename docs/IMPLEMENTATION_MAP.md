@@ -47,9 +47,9 @@ Open these docs first:
 - [`docs/training/README.md`](training/README.md)
 - [`docs/training/STAGE1_OBJECTIVE.md`](training/STAGE1_OBJECTIVE.md)
 - [`docs/data/PACKING.md`](data/PACKING.md)
-- [`configs/stage1/teacher_forcing/`](../configs/stage1/teacher_forcing/) for active compact teacher-forcing Stage-1 configs
-- [`configs/stage1/recursive_detection_ce/prod/compact_full_support2.yaml`](../configs/stage1/recursive_detection_ce/prod/compact_full_support2.yaml) as a legacy/comparator compact recursive detection handle, not an active production objective
-- [`configs/stage1/recursive_detection_ce/ablation/compact_full_prefix_rollin_balance2.yaml`](../configs/stage1/recursive_detection_ce/ablation/compact_full_prefix_rollin_balance2.yaml) as a legacy/comparator compact-full prefix-rollin E1 ablation handle
+- [`configs/stage1/detection_teacher_forcing/`](../configs/stage1/detection_teacher_forcing/) for the canonical `stage1_detection_teacher_forcing` compact Stage-1 detection teacher-forcing route
+- [`configs/stage1/recursive_detection_ce/prod/compact_full_support2.yaml`](../configs/stage1/recursive_detection_ce/prod/compact_full_support2.yaml) only as a legacy/comparator recursive-detection CE handle, not the current public teacher-forcing route
+- [`configs/stage1/recursive_detection_ce/ablation/compact_full_prefix_rollin_balance2.yaml`](../configs/stage1/recursive_detection_ce/ablation/compact_full_prefix_rollin_balance2.yaml) only as a legacy/comparator compact-full prefix-rollin E1 ablation handle
 
 Open these configs first:
 - `configs/stage1/sft_base.yaml`
@@ -57,8 +57,9 @@ Open these configs first:
 - `configs/_shared/prompts/`
 - `configs/stage1/profiles/`
 - `configs/stage1/smoke/`
-- `configs/stage1/recursive_detection_ce/prod/`
-- `configs/stage1/recursive_detection_ce/ablation/`
+- `configs/stage1/detection_teacher_forcing/`
+- `configs/stage1/recursive_detection_ce/prod/` only for legacy/comparator migration references
+- `configs/stage1/recursive_detection_ce/ablation/` only for legacy/comparator ablation references
 
 Open these code files first:
 - `src/training/surfaces.py`
@@ -83,20 +84,26 @@ Open these code files first:
 - `src/trainers/metrics/coord_losses.py`
 - `src/data_collators/batch_extras_collator.py`
 
-Compact recursive detection ownership:
+Stage-1 detection teacher-forcing ownership:
 - `src/training/surfaces.py` owns the guarded shadow resolver and supported
   `surface.id` values: `stage1_json_ce`, `stage1_compact_trie_ce`, and
   `stage2_rollout_correction`.
 - Shadow objective profiles resolve through text/trie teacher-forcing modules;
   geometry regularizers are not part of the active Stage-2 objective surface.
-- `src/detection/runtime.py` owns detection runtime support/preflight, recursive CE runtime config resolution, prompt/mode/custom shim resolution, and `build_detection_training_dataset`.
+- `src/detection/runtime.py` owns detection runtime support/preflight,
+  teacher-forcing runtime policy, prompt/mode/custom shim resolution, and
+  `build_detection_training_dataset`.
 - `src/detection/objective.py`, `src/detection/rollin.py`, `src/detection/dataset.py`, `src/detection/token_types.py`, and `src/detection/loss.py` own the `prefix_rollin_et_rmp_ce` roll-in state, objectized sparse targets, compact type gates, ordinary teacher-forced `<|im_end|>` CE, and loss-sidecar behavior.
 - `src/sft.py` delegates policy and keeps backward-compatible private aliases.
 - `src/detection/template.py` owns strict templates; only `stage1_json_pretty` and `compact_full` are factory-visible strict IDs.
 - `src/common/detection_sequence.py` is the compatibility facade; malformed helper-format rows return `None`.
 - `src/common/detection_compact_rows.py` is the stdlib-only low-level marker/render/split helper.
 - `compact_no_desc`, `compact_no_bbox`, and `compact_min` stay compatibility/helper formats.
-- latest compact recursive CE keeps packing/cache fail-fast policy and remains config-first. Prefix-rollin adds objectized latest-detection objective subkeys (`objective.rollin`, `objective.target`, `objective.type_gate`) plus ordinary teacher-forced `<|im_end|>` CE, but no CLI flags.
+- `stage1_detection_teacher_forcing` keeps packing/cache fail-fast policy and
+  remains config-first under `configs/stage1/detection_teacher_forcing/`.
+  Legacy/comparator recursive-detection CE configs under
+  `configs/stage1/recursive_detection_ce/` remain only as migration history,
+  ablation anchors, or explicit comparator handles.
 
 Trainer metric ownership:
 - `src/trainers/metrics/mixins.py` is a compatibility re-export facade.
@@ -113,8 +120,8 @@ Run these tests first:
 - `tests/test_prefix_rollin_sampler.py`
 - `tests/test_prefix_rollin_dataset_alignment.py`
 - `tests/test_compact_type_gate.py`
-- `tests/test_recursive_detection_ce_loss_adapter.py`
-- `tests/test_recursive_detection_ce_sft_wiring.py`
+- `tests/test_recursive_detection_ce_loss_adapter.py` for legacy/comparator recursive_detection_ce loss-adapter checks
+- `tests/test_recursive_detection_ce_sft_wiring.py` for legacy/comparator recursive_detection_ce wiring checks
 - `tests/test_training_surface_resolver.py`
 - `tests/test_objective_profile_resolution.py`
 - `tests/test_compact_full_encoding_contract.py`

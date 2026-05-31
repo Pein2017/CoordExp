@@ -74,34 +74,41 @@ config_surfaces:
       duplicate_filter_order: before_assignment_and_target_realization
       residual_set_correction: true
       notes: "Active Stage-2 rollout-correction direction. Duplicate filtering runs before greedy-IoU assignment; unmatched GT becomes residual GT-correction events. Greedy IoU is the only live Stage-2 assignment strategy."
-    - id: stage1_latest_compact_detection_random_permutation_et_rmp_ce
+    - id: stage1_detection_teacher_forcing
+      status: canonical
+      config: configs/stage1/detection_teacher_forcing/prod/compact_full_support2.yaml
+      smoke_config: configs/stage1/detection_teacher_forcing/smoke/compact_full_tiny.yaml
+      parser: src/config/schema.py::DetectionTrainingConfig
+      runtime: src/detection/runtime.py
+      notes: "Canonical clean-break Stage-1 detection teacher-forcing public route. New compact-full teacher-forcing configs should live under configs/stage1/detection_teacher_forcing/."
+    - id: stage1_legacy_recursive_detection_ce_random_permutation_et_rmp_ce
       status: legacy-comparator
       config: configs/stage1/recursive_detection_ce/prod/compact_full_support2.yaml
       authoring_snippets: configs/_shared/recursive_detection/
       parser: src/config/schema.py::DetectionTrainingConfig
       runtime: src/detection/runtime.py
-      notes: "Latest compact detection trusted anchor using random_permutation_et_rmp_ce with flat trie weights. Keep as comparator/baseline; do not use it as the prefix-rollin config surface."
-    - id: stage1_latest_compact_detection_iou_gibbs_coord_softce_a5
+      notes: "Legacy/comparator recursive_detection_ce anchor using random_permutation_et_rmp_ce with flat trie weights. Keep as migration/comparator history; do not use as the current public Stage-1 detection teacher-forcing route."
+    - id: stage1_legacy_recursive_detection_ce_iou_gibbs_coord_softce_a5
       status: ablation-candidate
       config: configs/stage1/recursive_detection_ce/prod/compact_full_support2_iou_gibbs_softce_a5.yaml
       authoring_snippets: configs/_shared/recursive_detection/
       parser: src/config/schema.py::DetectionTrainingConfig
       runtime: src/detection/runtime.py
-      notes: "A5 production-scale ablation candidate: A2/support2 plus iou_gibbs_v0 coordinate soft targets preserving recursive support/balance coefficients. Claim scope remains none until measured; launch preparation uses one 4-GPU slice."
-    - id: stage1_latest_compact_detection_ciou_gibbs_coord_softce_a6
+      notes: "Legacy/comparator recursive_detection_ce A5 ablation candidate: A2/support2 plus iou_gibbs_v0 coordinate soft targets preserving recursive support/balance coefficients. Claim scope remains none until measured; launch preparation uses one 4-GPU slice."
+    - id: stage1_legacy_recursive_detection_ce_ciou_gibbs_coord_softce_a6
       status: ablation-candidate
       config: configs/stage1/recursive_detection_ce/prod/compact_full_support2_ciou_gibbs_softce_a6.yaml
       authoring_snippets: configs/_shared/recursive_detection/
       parser: src/config/schema.py::DetectionTrainingConfig
       runtime: src/detection/runtime.py
-      notes: "A6 production-scale ablation candidate: A2/support2 plus ciou_gibbs_v0 coordinate soft targets preserving recursive support/balance coefficients; intended to run beside A5 on a separate 4-GPU slice."
-    - id: stage1_latest_compact_detection_prefix_rollin_et_rmp_ce_ablation
+      notes: "Legacy/comparator recursive_detection_ce A6 ablation candidate: A2/support2 plus ciou_gibbs_v0 coordinate soft targets preserving recursive support/balance coefficients; intended to run beside A5 on a separate 4-GPU slice."
+    - id: stage1_legacy_recursive_detection_ce_prefix_rollin_et_rmp_ce_ablation
       status: ablation
       config: configs/stage1/recursive_detection_ce/ablation/compact_full_prefix_rollin_balance2.yaml
       authoring_snippets: configs/_shared/recursive_detection/
       parser: src/config/schema.py::DetectionTrainingConfig
       runtime: src/detection/runtime.py
-      notes: "Compact-full-only prefix_rollin_et_rmp_ce E1/A3 mechanism surface. EOS supervision targets the Qwen chat-template <|im_end|> marker with ordinary teacher-forced CE. Treat A3 as a mechanism probe rather than a fair A2 challenger unless supervised-token density is matched."
+      notes: "Legacy/comparator recursive_detection_ce compact-full-only prefix_rollin_et_rmp_ce E1/A3 mechanism surface. EOS supervision targets the Qwen chat-template <|im_end|> marker with ordinary teacher-forced CE. Treat A3 as a mechanism probe rather than a fair A2 challenger unless supervised-token density is matched."
     - id: stage1_legacy_compact_bridge
       status: legacy-bridge
       config: configs/stage1/compact_detection_sequence/smoke/compact_full_tiny.yaml

@@ -126,21 +126,30 @@ Use Stage-1 when you want teacher-forced baseline training without rollout-aware
 - `src/trainers/metrics/aggregate_tokens.py`
 - `src/trainers/metrics/coord_losses.py`
 
-### Stage-1 Compact Recursive Detection
+### Stage-1 Detection Teacher Forcing
 
-Use this surface when the run is explicitly latest-schema compact detection CE.
+Use this surface for the canonical clean-break Stage-1 detection
+teacher-forcing route, `stage1_detection_teacher_forcing`.
 
-- Current config route: `configs/stage1/recursive_detection_ce/`
+- Current config route: `configs/stage1/detection_teacher_forcing/`
 - Runtime policy owner: `src/detection/runtime.py`
 - Template owner: `src/detection/template.py`
 - Compatibility sequence facade: `src/common/detection_sequence.py`
 - Row helper: `src/common/detection_compact_rows.py`
 
 Current source contract:
-- `src/detection/runtime.py` owns detection runtime support/preflight, recursive CE runtime config resolution, prompt/mode/custom shim resolution, and `build_detection_training_dataset`.
+- `src/detection/runtime.py` owns detection runtime support/preflight,
+  teacher-forcing runtime policy, prompt/mode/custom shim resolution, and
+  `build_detection_training_dataset`.
 - `src/sft.py` delegates these policies and keeps backward-compatible private aliases.
-- packing/cache fail fast remains in force for latest compact recursive CE surfaces.
+- packing/cache fail fast remains in force for compact Stage-1 detection
+  teacher-forcing surfaces.
 - no new CLI flags or config schema keys are introduced by this extraction.
+
+Legacy/comparator note:
+- `configs/stage1/recursive_detection_ce/` remains only as
+  recursive-detection CE migration history and comparator/ablation material. Do
+  not use it as the current public Stage-1 detection teacher-forcing route.
 
 ### Stage-2 Rollout-Aware Training
 
