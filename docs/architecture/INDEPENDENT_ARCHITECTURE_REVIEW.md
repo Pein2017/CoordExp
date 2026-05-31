@@ -189,6 +189,149 @@ If the change affects stable training/eval behavior, config schema, artifact
 names, loss semantics, or normative metric meaning, it should be routed through
 the appropriate docs and, when compatibility-sensitive, OpenSpec.
 
+Backward compatibility with historical execution paths is **not** a requirement
+for the next architecture. The new stack should optimize for conceptual clarity
+and the next research direction rather than preserving old runnable surfaces.
+
+Historical behavior should be preserved through an explicit archive boundary,
+not live compatibility code. Before large cleanup, create or identify a stable
+pre-cleanup git commit, branch, or tag and record it as the historical
+compatibility boundary. After that point, the current codebase may drop legacy
+training configs, retired trainer variants, import compatibility facades,
+runtime-fusion dataset paths, stale script-only workflows, old public
+`rollout_matching` trainer surfaces, and legacy compact bridge examples when
+they are not part of the new canonical direction.
+
+Under this clean-break policy, "behavior-preserving" means semantic parity for
+retained canonical surfaces and hard detection invariants, not runnable
+compatibility with historical surfaces. Deleting retired paths, renaming
+misleading public concepts, removing compatibility facades, replacing historical
+config namespaces, and breaking imports/scripts/configs outside the new
+canonical stack are allowed after the archive checkpoint. Changes to coordinate
+frames, object ordering, bbox/poly meaning, retained template semantics,
+retained token labels/masks, retained Stage-2 assignment/correction semantics,
+eval metric meaning, or raw/scored artifact interpretation still require an
+explicit semantic-change decision.
+
+Compatibility can break, but core detection semantics must not drift
+accidentally. The clean-break architecture should preserve the following
+invariants unless a later explicit research/design decision changes them:
+
+- image and geometry alignment is preserved end to end;
+- training uses offline-prepared geometry, with no silent runtime resize;
+- coordinate frames are explicit and deterministic;
+- object ordering policy is explicit and stable within each surface;
+- bbox/poly interpretation is explicit rather than inferred from loose keys;
+- template/chat boundary behavior is owned by template code;
+- token supervision semantics are derived from template/tokenization ownership,
+  not ad hoc trainer logic;
+- Stage-2 assignment and correction target construction are explicit
+  projections from GT plus rollout predictions;
+- inference parse failures and invalid/drop reasons are represented explicitly;
+- eval artifacts distinguish raw predictions from scored predictions;
+- metrics and provenance preserve enough scope to interpret results;
+- config resolution is deterministic and inspectable.
+
+The clean-break stack still uses CoordExp's durable governance surfaces. New
+stable entrypoints, recommended workflows, artifact names, config schemas, eval
+behavior, metric semantics, and loss semantics should be documented in the
+appropriate `docs/` surface. OpenSpec remains reserved for normative,
+compatibility-sensitive contracts such as training/eval behavior, config
+schemas, loss semantics, artifact names, and metric semantics. It should not be
+used for ordinary cleanup, temporary experiment planning, prototype-only code
+motion, or implementation checklists.
+
+Historical names are not protected. The clean-break architecture should rename
+modules, config namespaces, trainer variants, artifact families, docs routing
+terms, and public concepts when their current names preserve historical
+mechanisms rather than current meaning. Renames should be concept-driven rather
+than cosmetic: first choose canonical terms for the target architecture, then
+rename surfaces that conflict with those terms.
+
+The central semantic object for active detection workflows should be named
+`DetectionScene`, not `DetectionDocument`. `DetectionScene` represents one
+image's detection semantics: image identity, image dimensions, coordinate frame,
+ground-truth objects, ordering policy, and metadata needed by Stage-1, Stage-2,
+inference, and eval projections. `DetectionDocument` is rejected as too
+text/document-shaped for the center of a visual geometry stack.
+
+Target vocabulary:
+
+| Concept | Canonical term | Meaning |
+| --- | --- | --- |
+| Semantic GT/image/object unit | `DetectionScene` | In-memory detection meaning for one image/example |
+| One annotated object | `DetectionObject` | Label/description plus geometry and object metadata |
+| Geometry value | `DetectionGeometry` | Explicit bbox/poly representation with coordinate frame |
+| Rendered target text | `RenderedDetectionSequence` | Template-produced text plus semantic span events |
+| Strict template owner | `DetectionSequenceTemplate` | Renderer/parser for a concrete detection sequence format |
+| Token-level training projection | `DetectionSupervisionView` | Labels, masks, coordinate spans, sidecars, and loss-alignment data |
+| Model rollout parse | `RolloutPrediction` | Parsed/generated prediction object before Stage-2 assignment |
+| GT/pred matching result | `DetectionAssignment` | Assignment output between rollout predictions and GT objects |
+| Stage-2 target unit | `CorrectionEvent` | Residual correction action derived from GT plus rollout state |
+| Inference output | `DecodedDetectionResult` | Parsed predictions plus invalid/drop metadata |
+| Raw eval comparison row | `DetectionEvalRecord` | GT/pred comparison before scoring |
+| Scored eval row | `ScoredDetectionEvalRecord` | Eval comparison with IoU/match/metric annotations |
+
+Expanded renaming scope includes historical names such as `dense_caption`,
+`recursive_detection_ce`, `compact_detection_sequence`, `detection_sequence`,
+`rollout_matching`, `stage2_rollout_runtime`, `rollout_aligned`, `stage2_ab`,
+`set_continuation`, `BaseCaptionDataset`, `ConversationRecord`,
+`NormalizedDetectionSample`, `DetectionDocument`, and `gt_vs_pred`. These
+surfaces should be classified before renaming:
+
+- rename now when the name is a public concept in the new architecture;
+- rename during migration when the module name actively misleads maintainers;
+- leave as historical/archive when the path will be deleted or quarantined;
+- keep only when the current name still describes the implementation precisely.
+
+The `gt_vs_pred.jsonl` and `gt_vs_pred_scored.jsonl` artifact filenames should
+remain stable for now. They are terse but still accurately describe the artifact
+family, and renaming them would create high operational blast radius for low
+architectural payoff. Internal code should use the conceptual names
+`DetectionEvalRecord` and `ScoredDetectionEvalRecord`. A future artifact-file
+rename, if desired, should be treated as a separate artifact-contract decision.
+
+Before code cleanup, produce a compact OpenSpec change for the clean-break
+detection stack rather than a heavyweight local target-architecture document.
+The OpenSpec change should be the durable architecture contract for the
+`DetectionScene` transition: vocabulary, ownership model, Stage-1/Stage-2
+projection model, clean-break policy, artifact policy, archive-checkpoint
+requirement, rename/delete policy, and verification gates. A superpower
+implementation plan should own sequencing, task breakdown, and execution
+checklists. `docs/architecture/` should remain the review and decision context,
+not the primary implementation roadmap.
+
+The active OpenSpec planning surface for this decision is
+`openspec/changes/detection-scene-clean-break/`. The associated implementation
+roadmap surface is
+`docs/superpowers/plans/2026-05-31-detection-scene-clean-break.md`.
+
+The OpenSpec change is implementation-ready only after it defines these gates:
+
+- archive checkpoint gate: a pre-cleanup commit, branch, or tag is identified
+  and recorded;
+- surface classification gate: existing surfaces are classified as keep and
+  rename, keep temporarily as migration handle, quarantine, or delete;
+- semantic parity gate: behavior-preserving pieces state their expected
+  pre/post equivalence;
+- Stage-1 projection gate: `DetectionScene -> RenderedDetectionSequence ->
+  DetectionSupervisionView` is specified;
+- Stage-2 projection gate: `DetectionScene + RolloutPrediction ->
+  DetectionAssignment -> CorrectionEvent -> DetectionSupervisionView` is
+  specified;
+- inference/eval gate: `DecodedDetectionResult`, `DetectionEvalRecord`,
+  `ScoredDetectionEvalRecord`, and the `gt_vs_pred` artifact policy are
+  specified;
+- naming gate: canonical terms and forbidden or retired public names are
+  listed;
+- config gate: new config namespace direction is specified, especially for
+  Stage-1 and Stage-2;
+- verification gate: narrow template/render/parse, tokenization/span, Stage-1
+  smoke/config, Stage-2 target-construction, inference decode, and eval
+  artifact/scoring checks are named before code starts;
+- governance gate: the document states what belongs in docs, OpenSpec, and
+  progress.
+
 ### Evidence
 
 - Scope: `none-yet` for implementation; source/docs inspection only.
