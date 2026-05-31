@@ -54,13 +54,23 @@ Scope note:
 
 ## Current Stage-1 Direction
 
+The current public compact Stage-1 detection teacher-forcing route is
+`stage1_detection_teacher_forcing` under
+`configs/stage1/detection_teacher_forcing/`. The shadow surface IDs below are
+architecture/research resolver IDs, not replacements for that public config
+route.
+
 The new unified training architecture defines two Stage-1 shadow surfaces:
 
 - `surface.id: stage1_compact_trie_ce`
-  - primary direction for new Stage-1 architecture work
+  - shadow architecture ID for compact-full Stage-1 objective research
   - uses `template.id: compact_full`
   - supervises token spans, object-entry trie targets, coordinate soft targets,
     and optional decoded-box regression through typed objective atoms
+  - not the canonical public compact teacher-forcing config route; use
+    `stage1_detection_teacher_forcing` under
+    `configs/stage1/detection_teacher_forcing/` for active compact
+    teacher-forcing configs
 - `surface.id: stage1_json_ce`
   - JSON chat CE baseline for regression and fallback comparison
   - keeps the baseline teacher-forced JSON surface available without making it

@@ -29,14 +29,17 @@ run, surface, data, template, supervision, objectives, observability, artifacts,
 owner/expiry/opt-in. Supported `surface.id` values are:
 
 - `stage1_json_ce`: JSON chat CE baseline.
-- `stage1_compact_trie_ce`: primary Stage-1 compact-full direction with
-  token-span supervision and trie/coordinate objectives.
+- `stage1_compact_trie_ce`: shadow architecture ID for compact-full
+  token-span supervision and trie/coordinate objective research. It is not the
+  canonical public config route; use `stage1_detection_teacher_forcing` under
+  `configs/stage1/detection_teacher_forcing/` for active compact
+  teacher-forcing configs.
 - `stage2_rollout_correction`: Stage-2 rollout-prefix plus GT-correction architecture.
 
 | Surface | Status | Primary config / route | Packing status | Notes |
 |---|---|---|---|---|
 | Stage-1 JSON CE | Current baseline and shadow `surface.id: stage1_json_ce` | `configs/stage1/sft_base.yaml`, shared Stage-1 profiles, and `src/training/pipelines/stage1_json_ce.py` | Static packing where supported | JSON chat CE remains the baseline/regression surface; do not treat it as the compact-full target architecture. |
-| Stage-1 compact teacher-forcing | Active compact-full direction and shadow `surface.id: stage1_compact_trie_ce` | `stage1_detection_teacher_forcing` under `configs/stage1/detection_teacher_forcing/`; runtime policy in `src/detection/runtime.py`; shared objective runner in `src/training/objectives/teacher_forcing.py` | Packing/cache fail fast until exact `teacher_forcing_target_ir` atom-position mapping is implemented and validated | Compact-full teacher-forcing is the active Stage-1 direction: global token-role stability plus singleton hard SFT or valid-set marginal atoms. |
+| Stage-1 compact teacher-forcing | Active canonical public route: `stage1_detection_teacher_forcing`; related shadow architecture ID: `surface.id: stage1_compact_trie_ce` | `configs/stage1/detection_teacher_forcing/`; runtime policy in `src/detection/runtime.py`; shared objective runner in `src/training/objectives/teacher_forcing.py` | Packing/cache fail fast until exact `teacher_forcing_target_ir` atom-position mapping is implemented and validated | Compact-full teacher-forcing is the active Stage-1 route: global token-role stability plus singleton hard SFT or valid-set marginal atoms. Treat `stage1_compact_trie_ce` as a separate shadow architecture ID, not the public config route. |
 | Stage-1 compact recursive detection | Legacy/comparator handle, not an active new-training route | `configs/stage1/recursive_detection_ce/prod/compact_full_support2.yaml` | Legacy recursive sidecar packing/cache remain unsupported | Use only to interpret historical random-permutation ET-RMP-CE runs or explicit comparator reports. New active configs should use `objective.id: teacher_forcing`. |
 | Stage-1 compact recursive detection geometry-aware softCE | Legacy/comparator ablation candidates | `configs/stage1/recursive_detection_ce/prod/compact_full_support2_iou_gibbs_softce_a5.yaml`; `configs/stage1/recursive_detection_ce/prod/compact_full_support2_ciou_gibbs_softce_a6.yaml` | Legacy recursive sidecar packing/cache remain unsupported | Historical/unlaunched comparator candidates; not part of the active teacher-forcing objective surface. |
 | Stage-1 compact prefix roll-in ET-RMP-CE | Legacy/comparator E1 ablation handle | `configs/stage1/recursive_detection_ce/ablation/compact_full_prefix_rollin_balance2.yaml` | Packing/cache disabled; recursive sidecar offset rewriting is not implemented | Compact-full historical ablation only. EOS supervision uses ordinary teacher-forced `<|im_end|>` CE. |
