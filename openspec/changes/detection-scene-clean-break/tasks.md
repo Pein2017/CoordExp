@@ -34,11 +34,11 @@ Superpowers plan.
 
 ## 3. DetectionScene Semantic Layer After Approval
 
-- [ ] 3.1 Introduce the `DetectionScene`, `DetectionObject`, and
+- [x] 3.1 Introduce the `DetectionScene`, `DetectionObject`, and
   `DetectionGeometry` semantic layer.
-- [ ] 3.2 Route raw JSONL loading into the semantic layer without making raw rows
+- [x] 3.2 Route raw JSONL loading into the semantic layer without making raw rows
   the in-memory authority.
-- [ ] 3.3 Preserve image/geometry alignment, coordinate frame, bbox/poly meaning,
+- [x] 3.3 Preserve image/geometry alignment, coordinate frame, bbox/poly meaning,
   and object ordering invariants for retained canonical surfaces.
 
 ## 4. Stage-1 Projection After Approval

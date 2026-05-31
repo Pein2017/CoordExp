@@ -30,9 +30,17 @@ from src.detection.dataset import (
 from src.detection.ir import (
     DetectionCoordinateSlot,
     DetectionDocument,
-    DetectionGeometry,
+    DetectionGeometry as DetectionDocumentGeometry,
     DetectionObjectEntry,
     detection_document_from_normalized_sample,
+)
+from src.detection.scene import (
+    DetectionGeometry,
+    DetectionObject,
+    DetectionScene,
+    detection_scene_from_normalized_sample,
+    detection_scene_from_raw_row,
+    normalized_detection_sample_from_scene,
 )
 from src.detection.loss import (
     RecursiveDetectionLossResult,
@@ -109,8 +117,11 @@ __all__ = [
     "DetectionMetadata",
     "DetectionCoordinateSlot",
     "DetectionDocument",
+    "DetectionDocumentGeometry",
     "DetectionGeometry",
+    "DetectionObject",
     "DetectionObjectEntry",
+    "DetectionScene",
     "LossAtom",
     "LossNormalizationDiagnostics",
     "LossNormalizationResult",
@@ -160,7 +171,10 @@ __all__ = [
     "full_vocab_coord_support_balance_ce",
     "get_detection_template",
     "detection_document_from_normalized_sample",
+    "detection_scene_from_normalized_sample",
+    "detection_scene_from_raw_row",
     "normalize_detection_row",
+    "normalized_detection_sample_from_scene",
     "normalize_recursive_detection_token_losses",
     "parse_raw_detection_row",
     "prepare_detection_training_example",

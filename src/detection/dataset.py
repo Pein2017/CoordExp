@@ -21,7 +21,11 @@ from src.common.io import load_jsonl_with_diagnostics
 from src.detection.data import (
     ObjectOrderingPlan,
     parse_raw_detection_row,
-    normalize_detection_row,
+)
+from src.detection.scene import (
+    DetectionScene,
+    detection_scene_from_raw_row,
+    normalized_detection_sample_from_scene,
 )
 from src.detection.objective import (
     DetectionTrainingMode,
@@ -334,6 +338,17 @@ class DetectionTrainingDataset(Dataset):
     def set_epoch(self, epoch: int) -> None:
         self._epoch = int(epoch)
 
+    def scene_for_row(
+        self,
+        index: int,
+        *,
+        epoch: int | None = None,
+    ) -> DetectionScene:
+        """Return the canonical semantic scene for one raw JSONL row."""
+
+        base_idx = self._base_index(index)
+        return self._scene_for_base_index(base_idx, epoch=epoch)
+
     def encoded_length_for_row(
         self,
         index: int,
@@ -351,10 +366,8 @@ class DetectionTrainingDataset(Dataset):
         """
 
         base_idx = self._base_index(index)
-        raw = parse_raw_detection_row(self.rows[base_idx])
-
-        ordering_plan = self._ordering_plan(base_idx=base_idx, epoch=epoch)
-        normalized = normalize_detection_row(raw, object_ordering=ordering_plan)
+        scene = self._scene_for_base_index(base_idx, epoch=epoch)
+        normalized = normalized_detection_sample_from_scene(scene)
         if forced_rollin_k is not None:
             if self.config.mode != "prefix_rollin_et_rmp_ce":
                 raise ValueError(
@@ -369,7 +382,7 @@ class DetectionTrainingDataset(Dataset):
 
         detection_template = get_detection_template(self.config.detection_template_id)
         rendered_assistant = detection_template.render_assistant(normalized)
-        messages = self._messages(raw.images, assistant_text=rendered_assistant.text)
+        messages = self._messages(scene.images, assistant_text=rendered_assistant.text)
         encoded = self._encode_messages(messages)
         length = encoded.get("length")
         if length is not None:
@@ -378,10 +391,8 @@ class DetectionTrainingDataset(Dataset):
 
     def __getitem__(self, index: int) -> dict[str, Any]:
         base_idx = self._base_index(index)
-        raw = parse_raw_detection_row(self.rows[base_idx])
-
-        ordering_plan = self._ordering_plan(base_idx=base_idx)
-        normalized = normalize_detection_row(raw, object_ordering=ordering_plan)
+        scene = self._scene_for_base_index(base_idx)
+        normalized = normalized_detection_sample_from_scene(scene)
         detection_template = get_detection_template(self.config.detection_template_id)
         recursive_detection_targets = None
         teacher_forcing_target_ir = None
@@ -425,7 +436,7 @@ class DetectionTrainingDataset(Dataset):
                 raise ValueError(
                     "teacher_forcing rendered assistant does not match target IR roll-in"
                 )
-            messages = self._messages(raw.images, assistant_text=build_result.rendered_text)
+            messages = self._messages(scene.images, assistant_text=build_result.rendered_text)
             encoded = self._encode_messages(messages)
             teacher_forcing_target_ir = self._align_teacher_forcing_target_to_encoded(
                 encoded,
@@ -434,7 +445,7 @@ class DetectionTrainingDataset(Dataset):
             prepared = None
         elif self.config.mode == "prefix_rollin_et_rmp_ce":
             rendered_assistant = detection_template.render_assistant(normalized)
-            messages = self._messages(raw.images, assistant_text=rendered_assistant.text)
+            messages = self._messages(scene.images, assistant_text=rendered_assistant.text)
             if self.config.detection_template_id != "compact_full":
                 raise ValueError(
                     "prefix_rollin_et_rmp_ce requires compact_full template"
@@ -457,7 +468,7 @@ class DetectionTrainingDataset(Dataset):
             )
         else:
             rendered_assistant = detection_template.render_assistant(normalized)
-            messages = self._messages(raw.images, assistant_text=rendered_assistant.text)
+            messages = self._messages(scene.images, assistant_text=rendered_assistant.text)
             prepared = prepare_detection_training_example(
                 normalized,
                 template=detection_template,
@@ -514,10 +525,10 @@ class DetectionTrainingDataset(Dataset):
                 }
             )
         encoded["metadata"] = {
-            "source": raw.metadata.source,
-            "split": raw.metadata.split,
-            "image_id": raw.image_id,
-            "file_name": raw.file_name,
+            "source": scene.metadata.source,
+            "split": scene.metadata.split,
+            "image_id": scene.image_id,
+            "file_name": scene.file_name,
         }
         encoded["detection_metadata"] = detection_metadata
         encoded["rendered_span_sources"] = _rendered_span_sources(
@@ -531,6 +542,28 @@ class DetectionTrainingDataset(Dataset):
         if teacher_forcing_target_ir is not None:
             encoded[TEACHER_FORCING_TARGET_IR_KEY] = teacher_forcing_target_ir
         return dict(encoded)
+
+    def _scene_for_base_index(
+        self,
+        base_idx: int,
+        *,
+        epoch: int | None = None,
+    ) -> DetectionScene:
+        raw = parse_raw_detection_row(self.rows[base_idx])
+        ordering_plan = self._ordering_plan(base_idx=base_idx, epoch=epoch)
+        return detection_scene_from_raw_row(
+            raw,
+            object_ordering=ordering_plan,
+            image_reference=self._resolve_scene_image_reference(raw.images),
+        )
+
+    def _resolve_scene_image_reference(self, images: Sequence[str]) -> str:
+        if len(images) != 1:
+            raise ValueError(
+                "DetectionScene requires exactly one image reference; "
+                f"got {len(images)}"
+            )
+        return self._resolve_image(images[0])
 
     def _ordering_plan(
         self, *, base_idx: int, epoch: int | None = None

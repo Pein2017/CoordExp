@@ -189,37 +189,13 @@ def normalize_detection_row(
 ) -> NormalizedDetectionSample:
     """Normalize raw detection objects while preserving source provenance."""
 
-    source_indices = _realize_object_order(raw, object_ordering=object_ordering)
-    normalized_objects: list[NormalizedDetectionObject] = []
-    for normalized_index, source_index in enumerate(source_indices):
-        source = raw.objects[source_index]
-        relation_snapshot = _relation_snapshot_for_object(raw.metadata, source.object_id)
-        normalized_objects.append(
-            NormalizedDetectionObject(
-                normalized_object_index=normalized_index,
-                source_object_index=source.source_object_index,
-                object_instance_id=_stable_object_instance_id(raw, source),
-                desc=source.desc,
-                bbox_2d=source.bbox_2d,
-                category_id=source.category_id,
-                category_name=source.category_name,
-                coco_ann_id=source.coco_ann_id,
-                object_id=source.object_id,
-                source_role=_source_role_from_snapshot(relation_snapshot),
-                relation_snapshot=relation_snapshot,
-            )
-        )
-
-    return NormalizedDetectionSample(
-        images=raw.images,
-        objects=tuple(normalized_objects),
-        width=raw.width,
-        height=raw.height,
-        image_id=raw.image_id,
-        file_name=raw.file_name,
-        metadata=raw.metadata,
-        object_ordering=object_ordering.with_realized(source_indices),
+    from src.detection.scene import (
+        detection_scene_from_raw_row,
+        normalized_detection_sample_from_scene,
     )
+
+    scene = detection_scene_from_raw_row(raw, object_ordering=object_ordering)
+    return normalized_detection_sample_from_scene(scene)
 
 
 def _parse_raw_object(obj: Any, *, index: int) -> RawDetectionObject:
